@@ -651,7 +651,7 @@ def test_minutes_ready_while_a_forced_rerun_is_queued(client, mdb, mseed):
 
 def test_minutes_pending_while_queued(client, mdb, mseed):
     meeting = _meeting(mdb, mseed["ws"])
-    _extraction(mdb, meeting, summary_requested_at=T0)
+    _extraction(mdb, meeting, summary_requested_at=datetime.now(timezone.utc))
 
     data = _status(client, meeting)
 
@@ -660,17 +660,37 @@ def test_minutes_pending_while_queued(client, mdb, mseed):
 
 def test_minutes_pending_after_a_failed_first_try(client, mdb, mseed):
     meeting = _meeting(mdb, mseed["ws"])
-    _extraction(mdb, meeting, summary_requested_at=T0, summary_attempts=1, summary_claimed_at=T0 - timedelta(days=1))
+    now = datetime.now(timezone.utc)
+    _extraction(mdb, meeting, summary_requested_at=now, summary_attempts=1,
+                summary_claimed_at=now - summary.SUMMARY_LEASE - timedelta(seconds=1))
 
     assert _status(client, meeting)["summary_status"] == "pending"
 
 
 def test_minutes_pending_during_the_last_try(client, mdb, mseed):
     meeting = _meeting(mdb, mseed["ws"])
-    _extraction(mdb, meeting, summary_requested_at=T0, summary_attempts=2,
-                summary_claimed_at=datetime.now(timezone.utc))
+    now = datetime.now(timezone.utc)
+    _extraction(mdb, meeting, summary_requested_at=now, summary_attempts=2, summary_claimed_at=now)
 
     assert _status(client, meeting)["summary_status"] == "pending"
+
+
+def test_minutes_none_when_nothing_picked_the_summary_up_in_time(client, mdb, mseed):
+    meeting = _meeting(mdb, mseed["ws"])
+    late = datetime.now(timezone.utc) - summary.SUMMARY_PENDING_WINDOW - timedelta(seconds=1)
+    _extraction(mdb, meeting, summary_requested_at=late)
+
+    assert _status(client, meeting)["summary_status"] == "none"
+
+
+def test_minutes_stale_summary_stays_claimable(client, mdb, mseed):
+    meeting = _meeting(mdb, mseed["ws"])
+    late = datetime.now(timezone.utc) - summary.SUMMARY_PENDING_WINDOW - timedelta(seconds=1)
+    extraction = _extraction(mdb, meeting, summary_requested_at=late)
+
+    claimed = summary.claim_next(mdb)
+
+    assert claimed.extraction_id == extraction.extraction_id
 
 
 def test_minutes_none_once_attempts_ran_out(client, mdb, mseed):

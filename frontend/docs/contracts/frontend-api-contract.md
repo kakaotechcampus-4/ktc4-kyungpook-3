@@ -1244,8 +1244,8 @@ POST .../meetings/upload            multipart/form-data
 | 값 | 뜻 |
 |---|---|
 | `ready` | 읽을 수 있는 요약이 있다. `summary` 가 `null` 이 아닌 것과 같다. 다시 요약하는 중에도 기존 요약이 있으면 `ready` 다 |
-| `pending` | 요약 대기 중이거나 만드는 중이다. 곧 나올 수 있다 |
-| `none` | 요약이 없다. 두 번 실패, 채팅 회의, 표시되지 않은 옛 회의, 처리 중인 회의가 여기 든다. 재시도 안내는 두지 않는다(사용자 결정 2026-11-06) |
+| `pending` | 요약 대기 중이거나 만드는 중이다. 곧 나올 수 있다. 줄 세운 지 1시간 안에만 이 값이다 |
+| `none` | 요약이 없다. 두 번 실패, 줄 세운 지 1시간이 지난 회의, 채팅 회의, 표시되지 않은 옛 회의, 처리 중인 회의가 여기 든다. 1시간이 지난 회의도 일감은 남아 있어 나중에 `ready` 가 될 수 있다. 재시도 안내는 두지 않는다(사용자 결정 2026-11-06) |
 
 **`summary` 의 더한 키.** `overview`, `key_points`, `decisions`(문자열 목록)는 그대로 항상 있다. AI 가 저장한 요약에는 `schema_version`, `discussion`, `decision_details`, `facts`, `task_changes`, `schedule`, `open_items`, `topics`(이름 목록), `meta` 가 더 있다.
 

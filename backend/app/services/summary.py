@@ -57,6 +57,9 @@ logger = logging.getLogger(__name__)
 SUMMARIZED_SOURCES = (str(MeetingSource.DISCORD), str(MeetingSource.MANUAL_UPLOAD))
 SUMMARY_MAX_ATTEMPTS = 2
 SUMMARY_LEASE = timedelta(minutes=15)
+# 표시한 지 이만큼 지나면 화면에 요약 중이라 하지 않는다. 스위치가 꺼졌거나 워커가 멈추면 끝없이 요약 중으로 보이기 때문이다.
+# 일감은 그대로 남아 나중에 집히면 요약이 나타난다
+SUMMARY_PENDING_WINDOW = timedelta(hours=1)
 JOB_TOPIC_LIMIT = 100
 JOB_DECISION_LIMIT = 50
 SCHEMA_VERSION = 1
@@ -304,9 +307,10 @@ def load_document(extraction: Extraction | None) -> dict | None:
 def summary_status(extraction: Extraction | None, *, now: datetime | None = None) -> Literal["ready", "pending", "none"]:
     if load_document(extraction) is not None:
         return "ready"
-    if extraction is not None and _queue_alive(extraction, now or datetime.now(timezone.utc)):
-        return "pending"
-    return "none"
+    now = now or datetime.now(timezone.utc)
+    if extraction is None or not _queue_alive(extraction, now):
+        return "none"
+    return "pending" if utc(extraction.summary_requested_at) > utc(now) - SUMMARY_PENDING_WINDOW else "none"
 
 
 def normalize_topic_name(name: str) -> str:
