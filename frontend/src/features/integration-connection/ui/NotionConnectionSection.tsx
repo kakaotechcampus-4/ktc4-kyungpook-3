@@ -28,6 +28,7 @@ import {
   SECTION,
   TITLE_ROW,
 } from './connectionStyles'
+import { NotionMark } from './marks'
 
 export interface NotionConnectionSectionProps {
   workspaceId: string
@@ -52,24 +53,6 @@ const CONNECT_LABEL: Record<DisconnectedStatus, string> = {
 const NOTICE: Record<NotionConnectionNotice, string> = {
   cancelled: 'Notion 연결을 취소했어요. 연결하려면 다시 시도해 주세요.',
   failed: 'Notion을 연결하지 못했어요. 잠시 후 다시 시도해 주세요.',
-}
-
-function NotionMark() {
-  return (
-    <svg
-      width="21"
-      height="21"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="3" y="3" width="18" height="18" rx="3" />
-      <path d="M8.5 16.5v-9l7 9v-9" strokeLinecap="round" />
-    </svg>
-  )
 }
 
 /**

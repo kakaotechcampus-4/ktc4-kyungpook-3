@@ -43,7 +43,6 @@ import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
-import { Skeleton } from '@/shared/ui/skeleton'
 import {
   approvalHeading,
   approvalStatusLabel,
@@ -55,15 +54,12 @@ import {
   gapSummary,
   memberLabel,
 } from '../lib/approvalView'
+import { ApprovalSkeleton } from './ApprovalSkeleton'
+import { BACK, CARD, CARD_BODY, CARD_FOOT, EVIDENCE, ROOT } from './frame'
 
-/* 본문 폭은 리스트·보드와 같은 960 컨테이너다(본문 864, #466). 좁은 화면은 좌우 16 */
-const ROOT = 'mx-auto flex w-full max-w-[960px] flex-col gap-22 px-16 pt-40 pb-72 sm:px-48'
-const BACK =
-  'inline-flex min-h-32 items-center gap-4 self-start text-[13px] font-semibold text-sub hover:text-ink'
 const TITLE = 'text-[30px] leading-[1.3] font-bold tracking-h2 text-ink'
 const LEAD = 'text-[15px] leading-[1.6] text-sub'
 const META = 'text-meta text-dim tabular-nums'
-const CARD = 'flex flex-col overflow-hidden rounded-16 border border-line bg-surface'
 const CARD_HEAD =
   'flex flex-wrap items-center justify-between gap-x-16 gap-y-6 border-b border-divider px-20 py-14'
 const CARD_TITLE = 'flex items-center gap-10 text-[14px] font-normal text-ink'
@@ -72,9 +68,6 @@ const ATTENTION_BADGE =
 const RESOLVED_BADGE =
   'inline-flex h-22 shrink-0 items-center rounded-6 bg-control px-9 text-[12px] leading-none font-semibold text-dim'
 const HEAD_LINK = 'inline-flex items-center gap-5 text-[13px] text-sub hover:text-ink tabular-nums'
-const CARD_BODY = 'flex flex-col gap-16 p-20'
-const CARD_FOOT = 'flex flex-col gap-12 border-t border-divider px-20 py-14'
-const EVIDENCE = 'flex flex-col gap-8 rounded-12 bg-surface-sunken px-18 py-16'
 const EVIDENCE_HEAD = 'flex flex-wrap items-center justify-between gap-x-12 gap-y-4'
 const EVIDENCE_META = 'text-caption text-dim tabular-nums'
 const QUOTE = 'text-[15px] leading-[1.6] font-bold text-ink'
@@ -889,44 +882,5 @@ function ResolvedTask({
         <TaskNotionSyncStatus workspaceId={workspaceId} taskId={taskId} canRetry />
       </dd>
     </dl>
-  )
-}
-
-/**
- * 확인 요청을 기다리는 뼈대 (#508). 실제 화면과 같은 틀이다 — 제목(30px)·안내 줄, 카드(머리 줄 · 칸 셋 · 근거 · 아래 줄).
- * 제목은 요청마다 달라 막대다. 치수는 TITLE · LEAD · CARD · CARD_HEAD · CARD_BODY · EVIDENCE · CARD_FOOT 와 같다
- */
-function ApprovalSkeleton() {
-  return (
-    <div aria-hidden="true" className="flex flex-col gap-22">
-      <div className="flex flex-col gap-8">
-        <div className="flex h-lh items-center text-[30px] leading-[1.3]">
-          <Skeleton variant="block" width={280} height={30} className="rounded-8" />
-        </div>
-        <div className="flex h-lh items-center text-[15px] leading-[1.6]">
-          <Skeleton width="60%" />
-        </div>
-      </div>
-      <div className={CARD}>
-        <div className="flex h-[46px] items-center border-b border-divider px-20">
-          <Skeleton width={160} />
-        </div>
-        <div className={CARD_BODY}>
-          <div className="grid grid-cols-[2fr_1fr_1fr] gap-12 max-md:grid-cols-1">
-            {[0, 1, 2].map((field) => (
-              <div key={field} className="flex flex-col gap-6">
-                <Skeleton width={56} />
-                <Skeleton variant="block" height={40} className="rounded-9" />
-              </div>
-            ))}
-          </div>
-          <div className={EVIDENCE}>
-            <Skeleton width={120} />
-            <Skeleton width="70%" />
-          </div>
-        </div>
-        <div className={`${CARD_FOOT} h-[60px]`} />
-      </div>
-    </div>
   )
 }

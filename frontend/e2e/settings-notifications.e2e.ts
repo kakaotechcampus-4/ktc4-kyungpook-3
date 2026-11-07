@@ -20,8 +20,17 @@ test('PM 이 재촉 토글과 재촉 규칙을 바꾸면 새로고침 뒤에도 
   await page.getByRole('option', { name: '18:00', exact: true }).click()
   const renamed = page.getByRole('switch', { name: '마감 2일 전 18:00에 담당자에게 DM' })
   await expect(renamed).toBeChecked()
+  // 저장은 공간마다 하나씩 차례로 나간다. 토글을 끈 저장이 끝나기 전에 새로고침하면 그 요청이 끊긴다 —
+  // 화면은 고른 값을 먼저 보이므로 화면만 보고 새로고침하면 저장과 경주한다 (#510 CI 에서 드러났다)
+  const toggleSaved = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PATCH' &&
+      response.url().endsWith('/message-settings') &&
+      (response.request().postData() ?? '').includes('"due_reminder":false'),
+  )
   await renamed.click()
   await expect(renamed).not.toBeChecked()
+  expect((await toggleSaved).ok()).toBe(true)
 
   await page.reload()
   const reloaded = page.getByRole('switch', { name: '마감 2일 전 18:00에 담당자에게 DM' })
