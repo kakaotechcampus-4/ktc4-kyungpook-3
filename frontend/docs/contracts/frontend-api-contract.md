@@ -1619,7 +1619,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 
 - [mapper.ts](../../src/entities/message/model/mapper.ts) 는 `member` 가 아니면 봇 가지로 보내므로 `pm` 글은 `봇` 말풍선으로 보인다. `author_name` 표시와 `Message` 유니온의 `pm` 가지가 필요하다.
 - 목록의 `나:` 표시는 `last.sender === policy.ownSender` 비교라 `pm` 글에는 붙지 않는다([MessageInbox.tsx](../../src/widgets/message-inbox/ui/MessageInbox.tsx)). 푸시 안내 조건 `sender === 'bot'`([ThreadDetail.tsx](../../src/widgets/message-inbox/ui/ThreadDetail.tsx))은 FE 가 `pm` 가지를 더하면 PM 글만 있는 대화에서 사라진다.
-- `message_received` 는 [display.ts](../../src/entities/notification/model/display.ts) 의 `KINDS` 에 없어 제목이 `새 알림` 이고 메시지 조회를 다시 부르지 않는다. `aboutMessages: true` 로 넣어야 한다.
+- `message_received` 는 [display.ts](../../src/entities/notification/model/display.ts) 의 `KINDS` 에 없어 제목이 `새 알림` 이고 메시지 조회를 다시 부르지 않는다. `refreshes: ['messages']` 로 넣어야 한다.
 - 팀원을 고르는 흐름, 빈 화면에서 먼저 쓰기, PM 답장 칸(지금 안내 바), D-174 정책 4 갱신은 FE 요청 이슈로 넘긴다.
 
 **스케줄러** (#318 에서 BE 구현). 결정 근거는 [결정 0038](../../../ai/docs/basis_for_decision/ai/2026-11-04-0038-reminder-scheduler-and-notifications.md). 시각 기준은 한국 시간이다.
