@@ -72,7 +72,10 @@ D-099(정리 중 Notion 해제 시 실패)와 D-100(그때 재연결 모달)은 
 
 ## 실제 검증
 
-검증 결과는 아래 「검사」에 명령과 숫자로 적는다.
+- `npm run typecheck`·`npm run lint`·`npm run format:check`·`npm run build` 통과(Node v24.11.0).
+- 바꾼 곳과 관련된 테스트 파일(회의 올리기·Notion 연결·정리 추적·경합·회의록·온보딩 연결·설정·대시보드·MSW 흐름·시나리오·업로드 모델·경로·회의 통합)을 돌렸다. `settingsPage.test.tsx` 의 저장 실패 알림 2건만 실패했고, 이 2건은 origin/develop 에서도 실패한다(이 작업과 무관). 전체 Vitest 는 CI 에 맡겼다.
+- E2E `meeting-flow.e2e.ts`·`meeting-keyboard.e2e.ts` 11건 통과(로컬, Chromium).
+- MSW 개발 서버(Chromium, `verify-managers-manager` 의 `meetings ①`)로 Notion 미연결 공간에서 회의 올리기 → 정리 → 회의록 → 그 회의가 만든 태스크 상세(Notion `반영 상태 없음`)까지 돌았다. 증거는 `frontend/.verify/reports/507/`(커밋하지 않음)이다.
 
 ## 남은 일
 
