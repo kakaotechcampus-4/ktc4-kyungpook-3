@@ -15,6 +15,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models import Integration, Member, Session as SessionModel, User, Workspace
 from app.services import chat_channel, discord
+from app.services.sessions import hash_session_token
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 SERVICE_TOKEN = "test-service-token"
@@ -72,7 +73,7 @@ def _user(db, email: str, token: str) -> User:
     user = User(email=email, name=email.split("@")[0])
     db.add(user)
     db.flush()
-    db.add(SessionModel(user_id=user.user_id, session_token=token, expires_at=datetime.now(timezone.utc) + timedelta(days=1)))
+    db.add(SessionModel(user_id=user.user_id, session_token=hash_session_token(token), expires_at=datetime.now(timezone.utc) + timedelta(days=1)))
     return user
 
 

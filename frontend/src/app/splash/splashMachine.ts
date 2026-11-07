@@ -19,10 +19,13 @@ export const REVEAL_MS = 300
 export const LOOK_AT_MS = 1500
 /** 둘러보기 한 동작 */
 export const LOOK_MS = 1700
-/** 눈웃음을 보이는 시간 */
-export const SMILE_MS = 600
-/** 사라짐. index.html 의 splash-out 0.4s 와 같다 */
-export const FADE_MS = 400
+/**
+ * 눈웃음 단계. 눈웃음이 지어지는 데 약 0.5초(Mascot 의 SMILE_LAMBDA, 90% 까지), 다 지은 얼굴로 머무는 데 0.6초다 (#506).
+ * 지어지는 시간보다 짧으면 웃는 중에 사라지는 것처럼 보인다
+ */
+export const SMILE_MS = 1100
+/** 사라짐. index.html 의 splash-out 0.6s 와 같다 */
+export const FADE_MS = 600
 /** 잡기가 0이 된 뒤 이만큼 0이 이어져야 준비다. 가드 → 이동 → 화면 코드 사이 빈 커밋에서 끝나지 않게 한다 */
 export const SETTLE_MS = 100
 

@@ -27,6 +27,7 @@ from app.models import (
     Workspace,
 )
 from app.schemas.meeting import MAX_EVIDENCE_SEQS
+from app.services.sessions import hash_session_token
 
 
 # 추출 등록은 봇 경로라 서비스 토큰을 요구한다.
@@ -59,7 +60,7 @@ def seed(db):
     db.add(user)
     db.flush()
     db.add(SessionModel(
-        user_id=user.user_id, session_token="pm-token",
+        user_id=user.user_id, session_token=hash_session_token("pm-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     ws = Workspace(name="A")

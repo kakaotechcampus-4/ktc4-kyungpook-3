@@ -154,13 +154,7 @@ export const meetingHandlers = [
       return fail('MEETING_PROCESSING_IN_PROGRESS', '처리 중인 회의가 있습니다.', 409, {
         meeting_id: processing.meeting_id,
       })
-    const notion = db.integrations[workspaceId]?.notion.status
-    if (notion !== 'connected')
-      return fail(
-        notion === 'revoked' ? 'INTEGRATION_REVOKED' : 'INTEGRATION_NOT_CONNECTED',
-        'Notion 연결을 확인해주세요.',
-        409,
-      )
+    // Notion 연결은 보지 않는다 — 백엔드 업로드도 묻지 않는다 (D-182)
     const meeting: MeetingDto = {
       meeting_id: nextId(
         'mt',

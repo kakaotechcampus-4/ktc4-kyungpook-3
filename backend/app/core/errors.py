@@ -86,6 +86,9 @@ class ErrorCode(StrEnum):
     PASSWORD_RESET_TOKEN_INVALID = "PASSWORD_RESET_TOKEN_INVALID"
     MAIL_UNAVAILABLE = "MAIL_UNAVAILABLE"
 
+    # 로그인 시도 제한
+    TOO_MANY_LOGIN_ATTEMPTS = "TOO_MANY_LOGIN_ATTEMPTS"
+
 
 ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.INVALID_REQUEST: 400,
@@ -157,6 +160,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.REPLY_CHANGE_NOT_UNDOABLE: 409,
     ErrorCode.PASSWORD_RESET_TOKEN_INVALID: 400,
     ErrorCode.MAIL_UNAVAILABLE: 503,
+    ErrorCode.TOO_MANY_LOGIN_ATTEMPTS: 429,
 }
 
 ERROR_MESSAGE: dict[ErrorCode, str] = {
@@ -229,6 +233,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.REPLY_CHANGE_NOT_UNDOABLE: "되돌릴 수 없는 답장 변경입니다.",
     ErrorCode.PASSWORD_RESET_TOKEN_INVALID: "쓸 수 없는 재설정 링크입니다.",
     ErrorCode.MAIL_UNAVAILABLE: "지금은 메일을 보낼 수 없습니다.",
+    ErrorCode.TOO_MANY_LOGIN_ATTEMPTS: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
 }
 
 
@@ -256,8 +261,10 @@ class AppError(Exception):
         code: ErrorCode,
         message: str | None = None,
         details: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.code = code
+        self.headers = headers
         self.message = message or ERROR_MESSAGE.get(code, "오류가 발생했습니다.")
         self.details = details
         self.status_code = ERROR_STATUS.get(code, 500)

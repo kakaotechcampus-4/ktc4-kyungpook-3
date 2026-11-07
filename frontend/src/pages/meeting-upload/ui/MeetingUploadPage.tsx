@@ -1,9 +1,6 @@
-import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { Navigate, useNavigate } from 'react-router'
+import { Navigate } from 'react-router'
 import { MeetingUploadForm, useUploadEntry } from '@/features/meeting-upload'
-import type { NotionBlockReason } from '@/features/meeting-upload'
-import { NotionRequiredModal } from '@/features/integration-connection'
 import { paths } from '@/shared/config/routes'
 import { useRouteId } from '@/shared/lib/url'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
@@ -16,7 +13,8 @@ const TITLE = 'text-[30px] leading-[1.25] font-bold tracking-h1 text-ink'
 const LEAD = 'text-body text-sub'
 
 /**
- * 회의 올리기 (PM 전용 — 가드는 라우터의 RequirePM). 들어올 때 정리 중 회의와 Notion 연결을 먼저 본다 (U3-1).
+ * 회의 올리기 (PM 전용 — 가드는 라우터의 RequirePM). 들어올 때 정리 중 회의를 먼저 본다 (U3-1).
+ * Notion 연결은 묻지 않는다 — 선택 기능이다 (D-182).
  * 텍스트 회의록 탭은 없다(D-084). `창을 닫아도 됩니다` 는 다른 화면을 써도 된다는 뜻으로 바꿨다(D-094).
  */
 export function MeetingUploadPage() {
@@ -43,9 +41,6 @@ function UploadLayout({ children }: { children: ReactNode }) {
 
 function MeetingUpload({ workspaceId }: { workspaceId: string }) {
   const entry = useUploadEntry(workspaceId)
-  const navigate = useNavigate()
-  // 업로드 응답이 연동 오류(409)였을 때의 모달. 진입 판정의 모달과 같은 컴포넌트다
-  const [blocked, setBlocked] = useState<NotionBlockReason | null>(null)
 
   switch (entry.kind) {
     case 'processing':
@@ -68,27 +63,10 @@ function MeetingUpload({ workspaceId }: { workspaceId: string }) {
           />
         </UploadLayout>
       )
-    case 'blocked':
-      // 업로드 화면으로 들어오지 않는다 — 취소하면 회의록 목록으로 (D-097)
-      return (
-        <UploadLayout>
-          <NotionRequiredModal
-            workspaceId={workspaceId}
-            reason={entry.reason}
-            onCancel={() => void navigate(paths.meetings(workspaceId), { replace: true })}
-          />
-        </UploadLayout>
-      )
     case 'ready':
       return (
         <UploadLayout>
-          <MeetingUploadForm workspaceId={workspaceId} onBlocked={setBlocked} />
-          <NotionRequiredModal
-            workspaceId={workspaceId}
-            reason={blocked}
-            onCancel={() => setBlocked(null)}
-            onLeave={() => setBlocked(null)}
-          />
+          <MeetingUploadForm workspaceId={workspaceId} />
         </UploadLayout>
       )
   }

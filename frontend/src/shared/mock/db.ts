@@ -29,7 +29,6 @@ import type { MockReplies } from './reply-state'
  *   채팅은 대기 → 앞 두 값(발화 저장) → `extracted` → `done` 이다 (#483). 브라우저 데모용
  * - `instant`: 첫 조회에 바로 `done`. 인위적 지연이 없다 — E2E 용
  * - `fail`: 첫 조회에 `failed`
- * - `fail-notion-revoked`: 첫 조회에 `failed`, 그 공간의 Notion 연동이 `revoked` 가 된다 (D-099, D-100)
  * - `fail-chat-stalled`: 채팅 회의만 첫 조회에 `failed`(`chat_stalled`)다. 업로드 회의는 `manual` 처럼 그대로다 (#450)
  * - `speakers`: 업로드 회의가 첫 조회에 화자 지정 대기가 된다. PM 이 지정을 내면 조회마다 한 단계씩(`staged`) 끝난다 (#256)
  */
@@ -38,7 +37,6 @@ export type MeetingFlowMode =
   | 'staged'
   | 'instant'
   | 'fail'
-  | 'fail-notion-revoked'
   | 'fail-diarize'
   | 'fail-expired'
   | 'fail-chat-stalled'
@@ -49,7 +47,6 @@ export const MEETING_FLOW_MODES = [
   'staged',
   'instant',
   'fail',
-  'fail-notion-revoked',
   'fail-diarize',
   'fail-expired',
   'fail-chat-stalled',

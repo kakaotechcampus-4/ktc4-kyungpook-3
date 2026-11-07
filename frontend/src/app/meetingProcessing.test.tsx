@@ -704,7 +704,6 @@ describe('실패 (U4-6, U4-7)', () => {
 
   it('처리 화면을 보고 있으면 회의록 목록으로 옮기고 재업로드 안내 토스트로 바꾼다 — 실패 회의는 목록에서 빠진다', async () => {
     fakeIntervals()
-    const log = recordRequests()
     const app = await openProcessing({ strict: true })
 
     failMeeting('mt_10')
@@ -715,8 +714,6 @@ describe('실패 (U4-6, U4-7)', () => {
     await until(() => expect(signalsWith(PROCESSING_FAILED_TITLE)).toHaveLength(1))
     expect(signalsWith(PROCESSING_FAILED_TITLE)[0]).toHaveTextContent('파일을 다시 올려 주세요.')
     expect(screen.queryByRole('dialog')).toBeNull()
-    // 끊김인지 연동 상태를 새로 물었다
-    expect(log.started).toContainEqual({ method: 'GET', path: '/workspaces/ws_01/integrations' })
     await until(() =>
       expect(
         app.queryClient
@@ -740,54 +737,19 @@ describe('실패 (U4-6, U4-7)', () => {
     expect(app.visited().map(({ pathname }) => pathname)).toEqual([paths.tasks('ws_01')])
   })
 
-  it('Notion 연결이 끊겨 실패하면 재업로드 토스트 대신 재연결 모달 — 처리 화면이면 회의록 목록으로 (D-100)', async () => {
+  it('Notion 연결이 실패(revoked)한 공간에서 정리가 실패해도 재연결 모달 없이 재업로드 안내다 (D-182)', async () => {
     fakeIntervals()
+    db.integrations.ws_01.notion = { ...db.integrations.ws_01.notion, status: 'revoked' }
     const app = await openProcessing()
 
-    failMeeting('mt_10', { notionRevoked: true })
+    failMeeting('mt_10')
     await act(() => vi.advanceTimersByTimeAsync(3_000))
-    const dialog = await screen.findByRole('dialog', { name: 'Notion 연결을 마치지 못했어요' })
-    // 회의록 목록으로 옮겼다. U5 부터 목록은 가장 최근 회의록(mt_09)으로 주소를 바꾼다 (D-106, U5-1)
     await until(() => expect(app.visited().at(-1)?.pathname).toBe(paths.meetings('ws_01', 'mt_09')))
-    expect(app.visited().map(({ pathname }) => pathname)).toContain(paths.meetings('ws_01'))
-    expect(processingSignals()).toEqual([])
-
-    // 재연결은 설정의 Notion 영역에서 시작하고, 끝나면 회의 올리기로 돌아온다 — 원본은 다시 올린다 (D-099)
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Notion 다시 연결하기' }))
-    await until(() => {
-      const last = app.visited().at(-1)
-      expect(last?.pathname).toBe(paths.settings('ws_01'))
-      expect(new URLSearchParams(last?.search).get('next')).toBe(paths.meetingUpload('ws_01'))
-    })
-    await until(() => expect(screen.queryByRole('dialog')).toBeNull())
-  })
-
-  it('다른 화면에서 끊김 실패를 들으면 모달만 띄우고 옮기지 않는다 — 취소하면 닫힌다', async () => {
-    fakeIntervals()
-    const user = userEvent.setup()
-    const app = await openDashboard()
-    await until(() => expect(tracked()).toEqual([MEETING]))
-
-    failMeeting('mt_10', { notionRevoked: true })
-    await act(() => vi.advanceTimersByTimeAsync(3_000))
-    const dialog = await screen.findByRole('dialog', { name: 'Notion 연결을 마치지 못했어요' })
-    expect(app.visited().map(({ pathname }) => pathname)).toEqual([paths.dashboard('ws_01')])
-    await user.click(within(dialog).getByRole('button', { name: '취소' }))
-    await until(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(app.visited().map(({ pathname }) => pathname)).toEqual([paths.dashboard('ws_01')])
-  })
-
-  it('연동 상태를 다시 묻지 못하면 끊김으로 단정하지 않고 재업로드 안내를 띄운다', async () => {
-    fakeIntervals()
-    server.use(
-      http.get('/api/v1/workspaces/:workspaceId/integrations', () => fail('FORBIDDEN', 'no', 403)),
-    )
-    await openDashboard()
-    await until(() => expect(tracked()).toEqual([MEETING]))
-    failMeeting('mt_10', { notionRevoked: true })
-    await act(() => vi.advanceTimersByTimeAsync(3_000))
     await until(() => expect(signalsWith(PROCESSING_FAILED_TITLE)).toHaveLength(1))
+    expect(signalsWith(PROCESSING_FAILED_TITLE)[0]).toHaveTextContent('파일을 다시 올려 주세요.')
+    await settle()
     expect(screen.queryByRole('dialog')).toBeNull()
+    expect(app.visited().map(({ pathname }) => pathname)).not.toContain(paths.settings('ws_01'))
   })
 })
 
