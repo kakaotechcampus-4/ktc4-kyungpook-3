@@ -318,3 +318,27 @@ def test_assignee_item_of_falls_back_to_extraction_item_id():
 
 def test_assignee_item_of_none_when_neither():
     assert assignee_item_of({}) is None
+
+
+def test_assignee_merge_that_clears_existing_assignee_puts_card_on_hold():
+    # 담당자 표현이 없는(none·group) assignee 항목이 찾아 둔 담당자를 지우면, 그 항목 gate 가 review 여도 카드는 hold 다.
+    # review 로 두면 PM 화면에서 담당자가 지워졌다는 것이 드러나지 않는다
+    merged = _merge(category="assignee", assignee_member_id=None, assignee_raw=None, gate="review")
+
+    assert merged["assignee_member_id"] is None
+    assert merged["gate"] == "hold"
+    assert merged["assignee_item_id"] == "item-2"
+
+
+def test_assignee_merge_without_existing_assignee_keeps_item_gate():
+    payload = {**_base_payload(), "assignee_member_id": None}
+
+    merged = _merge(payload, category="assignee", assignee_member_id=None, assignee_raw=None, gate="review")
+
+    assert merged["gate"] == "review"
+
+
+def test_assignee_merge_that_sets_assignee_keeps_item_gate():
+    merged = _merge(category="assignee", assignee_member_id="mem-3", assignee_raw="수아", gate="review")
+
+    assert (merged["assignee_member_id"], merged["gate"]) == ("mem-3", "review")
