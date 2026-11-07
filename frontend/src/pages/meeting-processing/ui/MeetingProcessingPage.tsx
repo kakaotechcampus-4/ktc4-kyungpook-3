@@ -118,7 +118,8 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
 
   if (meeting === null || indicator.pending) {
     if (indicator.pending) return <Loading indicator={indicator} />
-    if (isMeetingUnavailable(detail.error)) return <Unavailable workspaceId={workspaceId} />
+    if (isMeetingUnavailable(detail.error))
+      return <Unavailable workspaceId={workspaceId} reveal={reveal} />
     if (detail.error !== null)
       return (
         <Layout status="정리 상태를 불러오지 못했어요" reveal={reveal}>
@@ -327,9 +328,9 @@ function StepRow({ step }: { step: ProcessingStep }) {
   )
 }
 
-function Unavailable({ workspaceId }: { workspaceId: string }) {
+function Unavailable({ workspaceId, reveal }: { workspaceId: string; reveal: boolean }) {
   return (
-    <Layout status="이 회의를 볼 수 없어요">
+    <Layout status="이 회의를 볼 수 없어요" reveal={reveal}>
       <h1 className={TITLE}>이 회의를 볼 수 없어요</h1>
       <p className={META}>회의가 없거나 볼 수 있는 권한이 없어요.</p>
       <GuardedLink to={paths.meetings(workspaceId)} className={LINK}>

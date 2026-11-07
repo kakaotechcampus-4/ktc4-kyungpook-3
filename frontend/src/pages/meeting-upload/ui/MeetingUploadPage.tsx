@@ -88,13 +88,18 @@ function MeetingUpload({ workspaceId }: { workspaceId: string }) {
 function UploadSkeleton() {
   return (
     <div aria-hidden="true" className="flex flex-col gap-26">
-      <div className="flex flex-col items-center gap-14 rounded-16 border border-line bg-surface-sunken px-32 py-44">
-        <Skeleton variant="block" width={48} height={48} className="rounded-9" />
-        <div className="flex w-full flex-col items-center gap-5">
-          <Skeleton width={200} />
-          <Skeleton width={140} />
+      {/* 파일 칸은 정해진 글자뿐이라 글자로 그린다 — AudioDropzone 의 ZONE · ICON_BOX · HEADLINE · SUBLINE · LIMITS 와 같다 */}
+      <div className="flex flex-col items-center gap-14 rounded-16 border border-line bg-surface-sunken px-32 py-44 text-center">
+        <span className="inline-flex h-48 w-48 items-center justify-center rounded-9 border border-input-border bg-surface" />
+        <div className="flex flex-col items-center gap-5">
+          <p className="text-[15px] font-semibold text-ink">파일을 여기로 끌어다 놓으세요</p>
+          <p className="text-control font-normal text-dim">
+            또는 <span className="text-ink underline underline-offset-3">컴퓨터에서 찾기</span>
+          </p>
         </div>
-        <Skeleton width={260} />
+        <p className="text-meta text-dim tabular-nums">
+          mp3 · wav · m4a · ogg · webm — 최대 200 MiB · 2시간
+        </p>
       </div>
       <div className="flex flex-col gap-18 rounded-16 border border-line bg-surface p-22">
         <div className="grid grid-cols-[minmax(0px,1fr)_200px] gap-14 max-md:grid-cols-1">

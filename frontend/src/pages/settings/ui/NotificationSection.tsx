@@ -24,25 +24,32 @@ type SwitchKey = 'dueReminder' | 'reminderAutoApprove' | 'minutesSummary' | 'sil
 
 interface SwitchCopy {
   key: SwitchKey
-  title: ReactNode
+  /** 설정을 받기 전(뼈대)에는 설정에 따라 달라지는 문구가 null 이다 */
+  title: ReactNode | null
   description: string
-  offEffect: string
+  offEffect: string | null
   /** 저장만 되고 아직 동작하지 않는 항목의 안내 */
   note?: string
 }
 
 const NOT_YET = '아직 준비 중이라 설정만 저장돼요'
 
-/* 문구는 D-174 설정 알림 항목이다. 캔버스 파일은 고치지 않는다. 재촉 제목은 저장된 재촉 규칙을 따른다 */
-function switchCopies(settings: MessageSettings): SwitchCopy[] {
+/*
+ * 문구는 D-174 설정 알림 항목이다. 캔버스 파일은 고치지 않는다. 재촉 제목은 저장된 재촉 규칙을 따른다.
+ * 설정을 받기 전(null)에는 설정에 따라 달라지는 문구만 null 이다 — 뼈대가 나머지 정해진 글자를 그대로 그린다 (#508)
+ */
+function switchCopies(settings: MessageSettings | null): SwitchCopy[] {
   return [
     {
       key: 'dueReminder',
-      title: `${nudgeRuleLabel(settings.nudgeRule)}에 담당자에게 DM`,
+      title: settings === null ? null : `${nudgeRuleLabel(settings.nudgeRule)}에 담당자에게 DM`,
       description: '자동 승인을 켜지 않으면 보내기 전에 문구를 확인합니다',
-      offEffect: settings.reminderAutoApprove
-        ? '끄면 재촉 제안을 만들지 않고, 이미 만든 제안도 자동으로 보내지 않습니다. 태스크 안내 DM은 그대로 보냅니다'
-        : '끄면 재촉 제안을 만들지 않습니다. 태스크 안내 DM은 그대로 보냅니다',
+      offEffect:
+        settings === null
+          ? null
+          : settings.reminderAutoApprove
+            ? '끄면 재촉 제안을 만들지 않고, 이미 만든 제안도 자동으로 보내지 않습니다. 태스크 안내 DM은 그대로 보냅니다'
+            : '끄면 재촉 제안을 만들지 않습니다. 태스크 안내 DM은 그대로 보냅니다',
     },
     {
       key: 'reminderAutoApprove',
@@ -69,6 +76,8 @@ function switchCopies(settings: MessageSettings): SwitchCopy[] {
     },
   ]
 }
+
+const METHOD_NOTE = '지금은 웹으로만 알려요. Discord DM은 준비 중이라 고른 방식은 저장만 돼요.'
 
 const METHODS: readonly RadioCardOption<PmAlertMethod>[] = [
   { value: 'web', title: '웹', description: 'Discord DM 없이 웹에만 표시합니다' },
@@ -109,21 +118,8 @@ export function NotificationSection({ workspaceId, canManage }: NotificationSect
     >
       <BrowserPushControl className={`${OPTION_CARD} ${ROW}`} />
       {indicator.pending ? (
-        <DeferredSkeleton indicator={indicator} className="flex flex-col gap-10">
-          {/* 알림 칸과 같은 틀 — 제목 · 설명 두 줄과 오른쪽 토글. 칸마다 문구는 설정을 받아야 알아 막대다 (#508) */}
-          {[0, 1].map((card) => (
-            <div key={card} aria-hidden="true" className={`${OPTION_CARD} ${ROW} border-line`}>
-              <div className="flex flex-1 flex-col gap-4">
-                <div className="flex h-lh items-center text-body">
-                  <Skeleton width={`${[48, 40][card]}%`} />
-                </div>
-                <div className="flex h-lh items-center text-caption">
-                  <Skeleton width="64%" />
-                </div>
-              </div>
-              <span className="h-[23px] w-40 shrink-0 rounded-999 bg-control" />
-            </div>
-          ))}
+        <DeferredSkeleton indicator={indicator} className="flex flex-col gap-14">
+          <NotificationSkeleton />
         </DeferredSkeleton>
       ) : (
         <Reveal indicator={indicator}>
@@ -135,6 +131,70 @@ export function NotificationSection({ workspaceId, canManage }: NotificationSect
         </Reveal>
       )}
     </SettingsSection>
+  )
+}
+
+/**
+ * 알림 설정을 받는 동안의 뼈대 (#508). NotificationControls 와 같은 틀이다 — 알림 칸 넷(재촉 칸에는 날짜·시각 입력),
+ * PM 알림 방식 제목 · 안내와 라디오 칸 셋. 정해진 글자는 같은 문구(switchCopies · METHODS · METHOD_NOTE)를 글자로 그리고,
+ * 설정에 따라 달라지는 문구 · 값만 막대다. 자리표시라 스크린리더에서 뺀다
+ */
+function NotificationSkeleton() {
+  return (
+    <>
+      {switchCopies(null).map(({ key, title, description, offEffect, note }) => (
+        <div key={key} aria-hidden="true" className={`${OPTION_CARD} ${ROW} border-line`}>
+          <div className="flex-1">
+            {title === null ? (
+              <span className={`${OPTION_TITLE} flex h-lh items-center`}>
+                <Skeleton width="44%" />
+              </span>
+            ) : (
+              <span className={`${OPTION_TITLE} text-sub`}>{title}</span>
+            )}
+            <span className={`${OPTION_DESCRIPTION} text-dim`}>{description}</span>
+            {offEffect === null ? (
+              <span className={`${OPTION_DESCRIPTION} flex h-lh items-center`}>
+                <Skeleton width="72%" />
+              </span>
+            ) : (
+              <span className={`${OPTION_DESCRIPTION} text-dim`}>{offEffect}</span>
+            )}
+            {note === undefined ? null : (
+              <span className={`${OPTION_DESCRIPTION} text-sub`}>{note}</span>
+            )}
+            {key === 'dueReminder' ? (
+              <div className="mt-8 flex flex-wrap items-center gap-8 text-body text-ink">
+                <span>마감</span>
+                <Skeleton variant="block" width={96} height={36} className="rounded-9" />
+                <Skeleton variant="block" width={92} height={36} className="rounded-9" />
+                <span>에 보내요</span>
+              </div>
+            ) : null}
+          </div>
+          <span className="h-[23px] w-40 shrink-0 rounded-999 bg-control" />
+        </div>
+      ))}
+      <p aria-hidden="true" className={OPTION_TITLE}>
+        PM 알림 방식
+      </p>
+      <p aria-hidden="true" className={CAPTION}>
+        {METHOD_NOTE}
+      </p>
+      {METHODS.map((option) => (
+        <div
+          key={option.value}
+          aria-hidden="true"
+          className={`${OPTION_CARD} flex items-start gap-13 border-line px-18 py-16`}
+        >
+          <span className="mt-3 h-[17px] w-[17px] shrink-0 rounded-999 border border-input-border" />
+          <span className="flex-1">
+            <span className={`${OPTION_TITLE} text-ink`}>{option.title}</span>
+            <span className={`${OPTION_DESCRIPTION} text-dim`}>{option.description}</span>
+          </span>
+        </div>
+      ))}
+    </>
   )
 }
 
@@ -201,7 +261,7 @@ function NotificationControls({
         PM 알림 방식
       </p>
       <p id={methodNoteId} className={CAPTION}>
-        지금은 웹으로만 알려요. Discord DM은 준비 중이라 고른 방식은 저장만 돼요.
+        {METHOD_NOTE}
       </p>
       {webOnly === null ? null : (
         <p id={noticeId} className={CAPTION}>

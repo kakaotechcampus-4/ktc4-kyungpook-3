@@ -223,6 +223,9 @@ export function TaskBoard({
   )
 
   const isList = view.view === 'list'
+  // 캘린더·간트가 보는 기간. 보기와 그 뼈대가 같은 값을 쓴다
+  const viewMonth = view.month ?? monthOf(today)
+  const viewFrom = view.from ?? mondayOf(today)
   const memberList = members.data ?? []
   // 보기의 줄·칩은 memo 다. 부모가 다시 그려도 같은 배열을 넘겨야 바뀌지 않은 줄을 건너뛴다 (AC-A-04)
   const createList = useMemo(() => createApprovals(approvalList ?? []), [approvalList])
@@ -340,7 +343,7 @@ export function TaskBoard({
         meetings={calendarMeetings}
         names={names}
         today={today}
-        month={view.month ?? monthOf(today)}
+        month={viewMonth}
         onMonthChange={(month) => onViewChange({ ...view, month })}
         compact={compact}
       />
@@ -355,7 +358,7 @@ export function TaskBoard({
         approvals={createList}
         approvalsMissing={approvalsMissing}
         today={today}
-        from={view.from ?? mondayOf(today)}
+        from={viewFrom}
         onFromChange={(from) => onViewChange({ ...view, from })}
       />
     )
@@ -380,10 +383,29 @@ export function TaskBoard({
   if (indicator.pending)
     body = isList ? (
       <DeferredSkeleton indicator={indicator}>
-        <TaskViewSkeleton view="list" />
+        <TaskViewSkeleton
+          month={viewMonth}
+          from={viewFrom}
+          view="list"
+          listCards={
+            !isPm
+              ? 'none'
+              : query.tab === 'all'
+                ? 'mixed'
+                : query.tab === 'needs_review'
+                  ? 'only'
+                  : 'none'
+          }
+        />
       </DeferredSkeleton>
     ) : (
-      <ViewLoading label="태스크를 불러오는 중" view={view.view} indicator={indicator} />
+      <ViewLoading
+        label="태스크를 불러오는 중"
+        view={view.view}
+        month={viewMonth}
+        from={viewFrom}
+        indicator={indicator}
+      />
     )
   else body = <Reveal indicator={indicator}>{body}</Reveal>
 
@@ -455,6 +477,8 @@ export function TaskBoard({
                   <ViewLoading
                     label={`${VIEW_LABEL[view.view]} 화면을 불러오는 중`}
                     view={view.view}
+                    month={viewMonth}
+                    from={viewFrom}
                   />
                 }
               >
@@ -478,16 +502,20 @@ const CODE_WAIT = { skeletonVisible: true }
 function ViewLoading({
   label,
   view,
+  month,
+  from,
   indicator = CODE_WAIT,
 }: {
   label: string
   /** 그 보기와 같은 틀의 뼈대를 그린다 (#508) */
   view: TaskViewKind
+  month: string
+  from: string
   indicator?: { skeletonVisible: boolean }
 }) {
   return (
     <DeferredSkeleton indicator={indicator} role="status" aria-label={label}>
-      <TaskViewSkeleton view={view} />
+      <TaskViewSkeleton view={view} month={month} from={from} />
     </DeferredSkeleton>
   )
 }
