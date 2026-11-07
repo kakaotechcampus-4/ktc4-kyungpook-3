@@ -18,7 +18,7 @@ function KakaoSymbol() {
   )
 }
 
-/** `또는` 과 카카오 버튼. 누르면 현재 탭이 카카오로 간다 (D-180) */
+/** `또는` 과 카카오 버튼. 누르면 현재 탭이 카카오로 간다 (D-182) */
 export function AlternativeAuth() {
   const startKakao = useStartKakao()
   return (

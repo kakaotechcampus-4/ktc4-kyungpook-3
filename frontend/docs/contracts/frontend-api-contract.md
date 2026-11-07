@@ -932,7 +932,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 | POST | `/api/v1/auth/signup` | **201**. 본문이 바뀌었다 (§4.1.4) | ✅ |
 | POST | `/auth/login` · `/auth/logout` | | ✅ |
 | GET | `/api/v1/auth/me` | | ✅ |
-| ~~GET~~ | ~~`/api/v1/auth/google/start?state=` · `/auth/google/callback`~~ | Google 로그인은 이번 범위에서 하지 않는다 (D-180). 카카오는 §4.1.4 | 해당 없음 |
+| ~~GET~~ | ~~`/api/v1/auth/google/start?state=` · `/auth/google/callback`~~ | Google 로그인은 이번 범위에서 하지 않는다 (D-182). 카카오는 §4.1.4 | 해당 없음 |
 
 ```jsonc
 // signup 요청 {"verification_token"?, "name", "password", "link_kakao"} (§4.1.4)   login 요청 {"email", "password"}
@@ -1098,7 +1098,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - MSW: [가입 코드 handler](../../src/shared/mock/handlers/signupCode.ts), [가입 handler](../../src/shared/mock/handlers/auth.ts), [모의 카카오](../../src/shared/mock/oauth/mockKakao.ts). 개발·MSW 모드에서만 `/__mock/kakao`가 새 사용자, 이어진 계정, 이메일 없음, 이메일 충돌, 취소, 실패를 고르게 하고 `/__mock/mail`이 코드를 보인다.
 - 검증: Vitest 단위·통합, 실제 Chromium E2E [signup-kakao.e2e.ts](../../e2e/signup-kakao.e2e.ts).
 
-**돌아갈 경로.** 로그인 화면의 회원가입 링크와 `/signup`은 `next`를 들고 있어 로그인으로 옮겨도 이어진다. 가입을 마친 새 계정은 `next`를 쓰지 않고 시작 화면으로 간다(#411, D-180).
+**돌아갈 경로.** 로그인 화면의 회원가입 링크와 `/signup`은 `next`를 들고 있어 로그인으로 옮겨도 이어진다. 가입을 마친 새 계정은 `next`를 쓰지 않고 시작 화면으로 간다(#411, D-182).
 
 **확인하지 않은 것.** 실제 카카오 로그인, 실제 메일 수신, 실서버 왕복은 하지 않았다. BE 코드는 읽어서 대조만 했다. `Secure` 쿠키와 카카오 redirect URI, 비즈 앱 이메일 동의 설정은 배포 환경에서 확인해야 한다. 배포 순서상 BE의 새 signup이 먼저 나가면 지금 배포된 FE의 가입이 400이 되므로 FE와 함께 내보낸다.
 
