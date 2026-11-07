@@ -197,10 +197,23 @@ import draft.doc_draft as doc_draft  # noqa: E402
 import judge.final_judge as final_judge  # noqa: E402
 import judge.pipeline as pipeline  # noqa: E402
 import judge.semantic_judge as semantic_judge  # noqa: E402
-from judge.pipeline import PipelineUnavailableError, run  # noqa: E402
+from judge.pipeline import PipelineUnavailableError  # noqa: E402
+from judge.pipeline import run as run_pipeline  # noqa: E402
 from judge.semantic_judge import FindingExtractionUnavailableError  # noqa: E402
 from jev import FakeJev  # noqa: E402
 from llm import FakeLLM, NullLLM  # noqa: E402
+
+
+def run(*args, **kwargs):
+    """이 파일의 모든 회의에서 outcomes 가 나간 카드와 실패를 순서대로 정확히 한 번씩 가리키는지 본다(#217).
+    채팅 경로는 outcomes 로 만든 항목을 그대로 BE 에 보내므로 어긋나면 카드가 사라지거나 두 번 나간다."""
+    out = run_pipeline(*args, **kwargs)
+    cards = [o.item for o in out.outcomes if o.kind == "item"]
+    failures = [o.failure for o in out.outcomes if o.kind == "failure"]
+    assert [id(c) for c in cards] == [id(i) for i in out.items]
+    assert [id(f) for f in failures] == [id(f) for f in out.failures]
+    return out
+
 
 MEETING = Transcript(segments=[
     TranscriptSegment(speaker="uid_pm", start=1.0, end=4.0, text="결제 환불 기능은 지민님이 다음 주까지 만들어 주세요.", seq=1),
@@ -1067,3 +1080,56 @@ def test_run_passes_context_to_stage1(monkeypatch):
     ctx = Transcript(segments=[], source="chat")
     run(MEETING, workspace_id="ws_1", today=date(2026, 11, 5), candidates=FakeCandidates(), context=ctx)
     assert seen["context"] is ctx
+
+
+def _ends(out):
+    return [(o.indices, o.kind) for o in out.outcomes]
+
+
+def test_each_finding_ends_as_an_item_or_a_skip_with_its_sentences(monkeypatch):
+    _install(monkeypatch, stage1={"findings": FINDINGS}, terra=TERRA_OK, luna_draft=LUNA_DRAFT_OK)
+
+    assert _ends(_run()) == [([0], "item"), ([1, 2, 3], "item"), ([4], "skip"), ([5], "skip")]
+
+
+def test_a_failed_finding_keeps_its_sentences(monkeypatch):
+    _install(monkeypatch, stage1={"findings": FINDINGS[:2]}, terra=TERRA_OK[:1], luna_draft=LUNA_DRAFT_OK[:1])
+
+    out = _run(FakeCandidates(fail_on="로그인"))
+
+    assert _ends(out) == [([0], "item"), ([1, 2, 3], "failure")]
+
+
+def test_findings_merged_into_a_new_card_share_its_outcome(monkeypatch):
+    """합친 카드의 근거 문장을 전부 들고 있어야 다른 실행이 뒷부분만 항목으로 낼 때 같은 얘기로 묶인다."""
+    _install(monkeypatch, stage1={"findings": [REFUND_OWNER, REFUND_DUE]},
+             terra=[_terra(is_new=True, matched_candidate_index=None), _terra(category="schedule")],
+             luna_draft=[{"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "지민님이 맡기로 함"},
+                         {"task": None, "due_date": "2026-10-09", "doc_text": "마감을 10/9로 정함"}])
+
+    assert _ends(_run_dedup()) == [([0, 1], "item")]
+
+
+def test_findings_merged_into_a_change_share_its_outcome(monkeypatch):
+    _install(monkeypatch, stage1={"findings": [LOGIN_DELAY, LOGIN_KEEP]},
+             terra=[_terra(category="schedule"), _terra(category="schedule")],
+             luna_draft=[{"task": None, "due_date": "2026-10-06", "doc_text": "마감을 10/6으로 연기"},
+                         {"task": None, "due_date": "2026-10-09", "doc_text": "마감을 10/9로 다시 연기"}])
+
+    assert _ends(_run_dedup()) == [([2, 3, 4], "item")]
+
+
+def test_a_card_reverted_in_the_meeting_ends_as_one_skip(monkeypatch):
+    """되돌려 카드가 사라졌다. 뒤에 만든 카드를 가리키는 결과는 그대로여야 한다."""
+    noti = NOTI_NEW | {"indices": [3]}
+    delay = LOGIN_DELAY | {"indices": [2]}
+    _install(monkeypatch, stage1={"findings": [delay, noti, LOGIN_KEEP]},
+             terra=[_terra(category="schedule"), _terra(is_new=True, matched_candidate_index=None), _terra(category="schedule")],
+             luna_draft=[{"task": None, "due_date": "2026-10-06", "doc_text": "마감을 10/6으로 연기"},
+                         {"task": "알림 설정 페이지", "due_date": None, "doc_text": "알림 설정 페이지를 만들기로 함"},
+                         {"task": None, "due_date": "2026-10-02", "doc_text": "마감을 10/2로 되돌림"}])
+
+    out = _run_dedup()
+
+    assert sorted(_ends(out)) == [([2, 4], "skip"), ([3], "item")]
+    assert out.outcomes[1].item is out.items[0] and out.items[0]["task_title"] == "알림 설정 페이지"
