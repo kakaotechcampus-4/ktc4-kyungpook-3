@@ -251,7 +251,7 @@ def test_unread_by_thread_query_count_is_constant(mdb, seed):
     assert len(statements) == 1
 
 
-def test_concurrent_first_mark_read_keeps_one_row_and_latest(mdb, seed):
+def test_concurrent_first_mark_read_keeps_one_row_and_latest(mdb, seed, monkeypatch):
     if mdb.get_bind().dialect.name != "postgresql":
         pytest.skip("동시 INSERT 경쟁은 PostgreSQL 에서만 확인한다")
     thread = _thread(mdb, seed["alice"])
@@ -264,6 +264,18 @@ def test_concurrent_first_mark_read_keeps_one_row_and_latest(mdb, seed):
     # 첫 세션이 INSERT 를 실행한 뒤 커밋 전에 멈추고, 그동안 둘째 세션이 같은 행을 넣게 해
     # 기본 키 충돌(IntegrityError)에서 조건부 UPDATE 로 가는 길을 반드시 지나게 한다.
     second_updates = []
+    # 둘째 세션의 첫 조회가 None 이었는지 남긴다. 첫째의 커밋 뒤에 조회가 돌면 충돌 없이 기존 행을 보고 UPDATE 로
+    # 가도 아래 UPDATE 단언이 통과하므로, INSERT 충돌 경로를 지났는지는 이 값으로 가린다.
+    second_first_lookup = []
+    original_stored_position = reads._stored_position
+
+    def recording_stored_position(db, thread_id, member_id):
+        value = original_stored_position(db, thread_id, member_id)
+        if threading.current_thread().name == "second" and not second_first_lookup:
+            second_first_lookup.append(value)
+        return value
+
+    monkeypatch.setattr(reads, "_stored_position", recording_stored_position)
 
     def after_execute(conn, cursor, statement, params, context, executemany):
         name = threading.current_thread().name
@@ -305,6 +317,7 @@ def test_concurrent_first_mark_read_keeps_one_row_and_latest(mdb, seed):
         event.remove(engine, "after_cursor_execute", after_execute)
 
     assert results == {"first": "ok", "second": "ok"}
+    assert second_first_lookup == [None], "둘째 세션이 첫째의 커밋 뒤에 조회해 INSERT 충돌 경로를 지나지 않았다"
     assert len(second_updates) == 1, "둘째 세션이 충돌 뒤 조건부 UPDATE 를 지나지 않았다"
     mdb.expire_all()
     rows = mdb.scalars(select(MessageThreadRead).where(
