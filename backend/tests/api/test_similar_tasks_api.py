@@ -251,6 +251,30 @@ def test_include_pending_adds_up_to_two_after_k_tasks(
     assert pending_calls["calls"] == [{"limit": 2, "min_similarity": 0.3}]
 
 
+def test_task_comes_before_pending_candidate_with_the_same_similarity(
+    client, db, workspace, monkeypatch, pending_calls
+):
+    """계약이 약속한 순서: 유사도가 같으면 task 가 대기 후보보다 앞이다."""
+    monkeypatch.setattr(embedding, "embed_texts", lambda texts: [[0.1] * 3 for _ in texts])
+    task = Task(workspace_id=workspace.workspace_id, title="task", status="todo")
+    db.add(task)
+    db.commit()
+    monkeypatch.setattr(
+        embedding, "search_similar_tasks",
+        lambda db, ws, vec, *, k, min_similarity: [(task, 0.8)],
+    )
+    pending_calls["results"] = [(_approval(db, workspace, {"task_title": "대기"}), 0.8)]
+
+    r = client.post(
+        _url(workspace.workspace_id),
+        json={"text": "로그인", "include_pending": True},
+        headers=HEADERS,
+    )
+
+    assert r.status_code == 200
+    assert [i["title"] for i in r.json()["data"]["items"]] == ["task", "대기"]
+
+
 def test_pending_candidate_fields(client, db, workspace, search_calls, pending_calls):
     req = _approval(db, workspace, {
         "task_title": "환불", "due_date": "2026-11-20", "assignee_member_id": "m1",
