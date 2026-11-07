@@ -456,7 +456,7 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 
 ### 운영 메일 설정
 
-`.env` 에 `SMTP_HOST`·`SMTP_USERNAME`·`SMTP_PASSWORD`·`APP_BASE_URL` 이 모두 있어야 켜진다(나머지는 [.env.example](.env.example)). 팀 Gmail 을 쓰는 경우:
+`.env` 에 `SMTP_HOST`·`SMTP_USERNAME`·`SMTP_PASSWORD`·`APP_BASE_URL` 이 모두 있어야 켜진다(나머지는 [.env.example](.env.example)). `APP_BASE_URL` 은 PM 글 DM 의 대화 링크에도 쓰이므로 메일을 쓰지 않아도 넣는다. 팀 Gmail 을 쓰는 경우:
 
 1. 팀 전용 Gmail 계정에 2단계 인증을 켠다.
 2. Google 계정 > 보안 > 앱 비밀번호에서 비밀번호를 만든다. 일반 비밀번호로는 SMTP 로그인이 안 된다.
