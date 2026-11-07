@@ -651,3 +651,6 @@ def test_pending_created_earlier_in_the_same_request_does_not_block_auto(client,
 
     items = client.get(f"/api/v1/extractions/{extraction_id}").json()["data"]["items"]
     assert [i["gate"] for i in items] == ["review", "auto"]
+    # 첫 항목이 실제로 pending task_create 를 만들었는데도 두 번째 항목은 auto 다
+    pending = [r for r in _approvals(db) if r.type == "task_create" and r.status == "pending"]
+    assert len(pending) == 1
