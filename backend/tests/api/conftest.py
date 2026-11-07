@@ -12,6 +12,7 @@ from app.main import app
 from app.models import Member, Session as SessionModel, Task, User, Workspace
 from app.schemas.email import normalize_email
 from app.services import oauth_state, signup_codes
+from app.services.sessions import hash_session_token
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 SERVICE_TOKEN = "test-service-token"
@@ -73,7 +74,7 @@ def _user(db, name: str) -> User:
     db.add(user)
     db.flush()
     db.add(SessionModel(
-        user_id=user.user_id, session_token=f"{name}-token",
+        user_id=user.user_id, session_token=hash_session_token(f"{name}-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     return user

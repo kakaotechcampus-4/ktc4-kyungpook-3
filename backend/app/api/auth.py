@@ -1,8 +1,7 @@
 import hmac
 import logging
-import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -14,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Invitation, InvitationStatus, Member, Session as SessionModel, User
+from app.models import Invitation, InvitationStatus, Member, User
 from app.schemas.auth import (
     AuthResponse,
     KakaoPendingResponse,
@@ -30,7 +29,7 @@ from app.schemas.auth import (
     SignupRequest,
     UserResponse,
 )
-from app.services import kakao_oauth, login_limit, mailer, oauth_state, password_reset, signup_codes
+from app.services import kakao_oauth, login_limit, mailer, oauth_state, password_reset, sessions, signup_codes
 from app.services.kakao_oauth import KakaoIdentity, KakaoOAuthError
 from app.services.passwords import DUMMY_PASSWORD_HASH, hash_password, verify_password
 
@@ -39,10 +38,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 def _create_session(db: Session, user: User, response: Response):
-    token = secrets.token_urlsafe(32)
-    expires = datetime.now(timezone.utc) + timedelta(days=7)
-    db_session = SessionModel(user_id=user.user_id, session_token=token, expires_at=expires)
-    db.add(db_session)
+    token = sessions.create_session(db, user.user_id)
     db.commit()
     response.set_cookie(
         key="session_token",
@@ -213,7 +209,7 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
 def logout(request: Request, response: Response, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     session_token = request.cookies.get("session_token")
     if session_token:
-        db.query(SessionModel).filter(SessionModel.session_token == session_token).delete()
+        sessions.delete_session(db, session_token)
         db.commit()
     response.delete_cookie("session_token")
     return success({})
