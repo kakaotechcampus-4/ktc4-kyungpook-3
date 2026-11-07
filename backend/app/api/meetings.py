@@ -21,7 +21,7 @@ from app.schemas.meeting import (
     MeetingStageResponse,
 )
 from app.schemas.upload import SpeakerAssignRequest, SpeakerAssignResponse, SpeakerViewResponse
-from app.services import meeting_failure, meeting_stage, speaker_assignment
+from app.services import meeting_failure, meeting_stage, speaker_assignment, summary
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
@@ -220,7 +220,6 @@ def get_meeting_minutes(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> dict:
-    import json
     meeting = _get_meeting(db, meeting_id)
     
     member = db.query(Member).filter(
@@ -259,18 +258,7 @@ def get_meeting_minutes(
         for member_id, display_name in first_spoken.items()
     ]
 
-    summary = None
-
     extraction = db.query(Extraction).filter(Extraction.meeting_id == meeting_id).order_by(Extraction.created_at.desc()).first()
-    if extraction:
-        if extraction.summary:
-            try:
-                summary = json.loads(extraction.summary)
-            except ValueError:  # JSONDecodeError 포함. 깨진 요약은 없는 것으로 본다
-                pass
-            # JSON으로는 맞아도 객체가 아니면(목록·문자열) 응답 스키마(dict | None)에서 500이 난다. 없는 것으로 본다
-            if not isinstance(summary, dict):
-                summary = None
 
     return success(MeetingMinutesResponse(
         meeting_id=meeting.meeting_id,
@@ -279,7 +267,8 @@ def get_meeting_minutes(
         duration_ms=meeting.duration_ms or 0,
         source=meeting.source,
         attendees=attendees,
-        summary=summary,
+        summary=summary.load_document(extraction),
+        summary_status=summary.summary_status(extraction),
         transcript=transcript,
         permissions={"can_review": member.role == "pm", "can_undo": member.role == "pm"}
     ).model_dump(mode="json"))
