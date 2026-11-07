@@ -638,3 +638,44 @@ def test_run_worker_also_fills_approvals(monkeypatch):
     embedding.run_worker(FakeStopEvent(), 5)
 
     assert calls == ["task", "approval"]
+
+
+# ── 검색 못 하는 승인 대기 요청 ──
+
+def _set_approval(db, request: ApprovalRequest, **values) -> None:
+    db.execute(
+        ApprovalRequest.__table__.update()
+        .where(ApprovalRequest.approval_id == request.approval_id)
+        .values(**values)
+    )
+    db.commit()
+
+
+def test_has_unsearchable_pending(db):
+    workspace = _workspace(db)
+    other = _workspace(db)
+    assert embedding.has_unsearchable_pending(db, workspace.workspace_id) is False
+
+    # 다른 워크스페이스, task_update, 처리된 요청은 세지 않는다
+    _approval(db, other, {"task_title": "다른 곳"})
+    _approval(db, workspace, {"task_title": "수정"}, type=ApprovalType.TASK_UPDATE)
+    _approval(db, workspace, {"task_title": "끝남"}, status=ApprovalStatus.APPROVED)
+    _approval(db, workspace, {"task_title": "거절됨"}, status=ApprovalStatus.REJECTED)
+    # 빈 제목은 같은 할 일일 수 없어 세지 않는다
+    blank = _approval(db, workspace, {"task_title": "  "})
+    _set_approval(db, blank, embedding_rejected_title="")
+    assert embedding.has_unsearchable_pending(db, workspace.workspace_id) is False
+
+    # 임베딩 없는 pending task_create 는 센다
+    waiting = _approval(db, workspace, {"task_title": "로그인 API 구현"})
+    assert embedding.has_unsearchable_pending(db, workspace.workspace_id) is True
+    assert embedding.has_unsearchable_pending(db, other.workspace_id) is True  # other 의 pending
+
+    # 임베딩이 있으면 세지 않는다
+    _set_approval(db, waiting, embedding=_vector(1.0))
+    assert embedding.has_unsearchable_pending(db, workspace.workspace_id) is False
+
+    # API 가 거절한 제목은 검색에 빠져 있으므로 센다
+    rejected = _approval(db, workspace, {"task_title": "거절되는 제목"})
+    _set_approval(db, rejected, embedding_rejected_title="거절되는 제목")
+    assert embedding.has_unsearchable_pending(db, workspace.workspace_id) is True
