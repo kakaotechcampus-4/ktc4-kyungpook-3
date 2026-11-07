@@ -100,9 +100,11 @@ export function ProcessingToastCard({
           {signal.kind === 'processing' ? (
             <>
               정리 중
-              <span className="font-normal text-inactive tabular-nums">
-                {signal.doneCount}/{signal.steps.length}
-              </span>
+              {signal.steps === null ? null : (
+                <span className="font-normal text-inactive tabular-nums">
+                  {signal.doneCount}/{signal.steps.length}
+                </span>
+              )}
             </>
           ) : (
             SPEAKERS_NEEDED_TITLE
@@ -146,15 +148,19 @@ function Card({
             <CollapseButton toggleButton={toggleButton} onCollapse={onCollapse} />
           </div>
           <p className={SUB}>{signal.sentence}</p>
-          {/* 칸 수는 회의 출처마다 다르다 — 녹음 셋, 채팅 둘 (#483) */}
-          <div aria-hidden="true" className="grid auto-cols-fr grid-flow-col gap-4">
-            {signal.steps.map((state, index) => (
-              <span key={index} className={`h-5 rounded-999 ${SEGMENT[state]}`} />
-            ))}
-          </div>
+          {/* 칸 수는 회의 출처마다 다르다 — 녹음 셋, 채팅 둘. 출처를 모르면 칸·수를 그리지 않는다 (#483) */}
+          {signal.steps === null ? null : (
+            <div aria-hidden="true" className="grid auto-cols-fr grid-flow-col gap-4">
+              {signal.steps.map((state, index) => (
+                <span key={index} className={`h-5 rounded-999 ${SEGMENT[state]}`} />
+              ))}
+            </div>
+          )}
           <div className={FOOTER}>
             <span className={META}>
-              {signal.doneCount} / {signal.steps.length} 단계 완료
+              {signal.steps === null
+                ? null
+                : `${signal.doneCount} / ${signal.steps.length} 단계 완료`}
             </span>
             <button type="button" className={LINK} onClick={onOpenProcessing}>
               자세히 보기

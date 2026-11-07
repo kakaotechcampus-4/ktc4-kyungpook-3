@@ -15,7 +15,7 @@ const HANDOFF = { ...SOURCES, extracted: true }
 
 describe('processingSteps (U4-4, #483)', () => {
   it('녹음·업로드 회의는 차례 기다리기 → 텍스트로 옮기기 → 뽑아내기 세 단계다', () => {
-    for (const source of ['discord', 'manual_upload', null] as const)
+    for (const source of ['discord', 'manual_upload'] as const)
       expect(labels(null, 'processing', source)).toEqual([
         '차례 기다리는 중',
         '음성을 텍스트로 옮기기',
@@ -45,12 +45,12 @@ describe('processingSteps (U4-4, #483)', () => {
   })
 
   it('progress 가 없으면 첫 단계부터다. 완료 회의는 모두 끝났다', () => {
-    expect(states(null, 'processing', null)).toEqual(['current', 'waiting', 'waiting'])
-    expect(states(null, 'done', null)).toEqual(['done', 'done', 'done'])
+    expect(states(null, 'processing', 'manual_upload')).toEqual(['current', 'waiting', 'waiting'])
+    expect(states(null, 'done', 'manual_upload')).toEqual(['done', 'done', 'done'])
   })
 
   it('정리 중이 아니면 진행 중 단계를 만들지 않는다', () => {
-    expect(states(STT, 'failed', null)).toEqual(['done', 'waiting', 'waiting'])
+    expect(states(STT, 'failed', 'manual_upload')).toEqual(['done', 'waiting', 'waiting'])
     expect(states(SOURCES, 'awaiting_speakers', 'manual_upload')).toEqual([
       'done',
       'done',
@@ -59,13 +59,13 @@ describe('processingSteps (U4-4, #483)', () => {
   })
 
   it('#383 뒤 extracted 가 남은 회의 — 완료는 모두 끝, 실패는 마지막 단계를 끝내지 않았다 (#384)', () => {
-    expect(states(HANDOFF, 'done', null)).toEqual(['done', 'done', 'done'])
-    expect(states(SOURCES, 'done', null)).toEqual(['done', 'done', 'done'])
-    expect(states(HANDOFF, 'failed', null)).toEqual(['done', 'done', 'waiting'])
+    expect(states(HANDOFF, 'done', 'manual_upload')).toEqual(['done', 'done', 'done'])
+    expect(states(SOURCES, 'done', 'manual_upload')).toEqual(['done', 'done', 'done'])
+    expect(states(HANDOFF, 'failed', 'manual_upload')).toEqual(['done', 'done', 'waiting'])
   })
 
   it('단계 이름 말고 숫자(백분율·시간)를 내지 않는다', () => {
-    for (const step of processingSteps(null, 'processing', null))
+    for (const step of processingSteps(null, 'processing', 'manual_upload'))
       expect(Object.keys(step).sort()).toEqual(['key', 'label', 'state'])
   })
 })

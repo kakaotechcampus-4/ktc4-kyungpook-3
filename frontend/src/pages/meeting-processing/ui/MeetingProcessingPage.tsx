@@ -8,6 +8,7 @@ import {
   meetingListQueryOptions,
   processingSteps,
   trackMeeting,
+  useMeetingSources,
   viewableMeeting,
 } from '@/entities/meeting'
 import type { Meeting, MeetingSource, ProcessingStep } from '@/entities/meeting'
@@ -82,7 +83,7 @@ function Layout({ status, children }: { status: string; children: ReactNode }) {
 
 function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; meetingId: string }) {
   const detail = useQuery(meetingDetailQueryOptions(workspaceId, meetingId))
-  // 참석 인원·출처는 목록에만 있다. 추적기의 발견과 같은 캐시라 보통 새 요청이 없다
+  // 참석 인원은 목록에만 있다. 추적기의 발견과 같은 캐시라 보통 새 요청이 없다
   const summary = useQuery({
     ...meetingListQueryOptions(workspaceId),
     select: (meetings) => meetings.find(({ id }) => id === meetingId) ?? null,
@@ -90,6 +91,11 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
   const meeting = viewableMeeting(detail)
   const watched = meeting?.status === 'processing' || meeting?.status === 'awaiting_speakers'
   const isPm = useMemberWorkspace(workspaceId)?.role === 'pm'
+  // 단계 목록이 출처마다 달라(#483) 출처를 목록에서 읽는다. 목록에 없으면 한 번 새로 받고, 모르는 동안 단계를 그리지 않는다
+  const sourceOf = useMeetingSources(
+    workspaceId,
+    meeting?.status === 'processing' ? [meetingId] : [],
+  )
 
   useEffect(() => {
     if (watched) trackMeeting({ workspaceId, meetingId })
@@ -111,7 +117,7 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
   }
 
   const attendeeCount = summary.data?.attendeeCount ?? null
-  const source = summary.data?.source ?? null
+  const source = sourceOf(meetingId)
   // 받아 둔 상태가 있는데 다시 묻지 못했다 — 정리 실패가 아니다. 다시 물어볼 때까지 마지막 상태를 둔다 (U4-8).
   // 403·404·다른 공간은 다시 물어도 같은 답이라 viewableMeeting 이 먼저 걸러 볼 수 없는 회의로 그린다. 그 밖의 재조회 실패
   // (네트워크 오류·408·5xx 등)는 마지막 상태를 두고, 연결 불안정 안내는 네트워크 오류일 때만 보인다 (#405)
@@ -163,9 +169,6 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
         </Layout>
       )
     default:
-      // 단계 목록이 출처마다 달라(#483) 목록을 처음 받는 동안은 기다린다 — 채팅 회의가 녹음 세 단계로 잠깐 보이지 않게 한다.
-      // 목록을 받지 못하면 출처를 모르는 채(녹음 회의 단계로) 그린다
-      if (summary.isPending) return <Loading />
       return (
         <Processing
           meeting={meeting}
@@ -225,23 +228,11 @@ function Processing({
   attendeeCount: number | null
   stale: boolean
 }) {
-  const steps = processingSteps(meeting.progress, meeting.status, source)
-  const doneCount = steps.filter(({ state }) => state === 'done').length
-  const current = steps.find(({ state }) => state === 'current')
-  const position = `${doneCount} / ${steps.length} 단계 완료`
   return (
-    <Layout status={current === undefined ? position : `${position} · ${current.label} 진행 중`}>
+    <Layout status={source === null ? '정리하고 있어요' : stepStatus(meeting, source)}>
       <Heading meeting={meeting} attendeeCount={attendeeCount} title="정리하고 있어요" />
-      <div className="flex flex-col gap-10">
-        <p className={STATUS} aria-hidden="true">
-          {position}
-        </p>
-        <ol aria-label="정리 단계" className="flex flex-col">
-          {steps.map((step) => (
-            <StepRow key={step.key} step={step} />
-          ))}
-        </ol>
-      </div>
+      {/* 출처를 모르는 동안은 단계를 그리지 않는다 — 단계 수가 출처마다 다르다 (#483) */}
+      {source === null ? null : <Steps meeting={meeting} source={source} />}
       {stale ? (
         <p className={META}>연결이 불안정해요. 다시 연결되면 정리 상태를 바로 확인할게요.</p>
       ) : null}
@@ -250,6 +241,33 @@ function Processing({
         {NOTION_NOTE[isPm ? 'pm' : 'member']}
       </p>
     </Layout>
+  )
+}
+
+function stepStatus(meeting: Meeting, source: MeetingSource): string {
+  const steps = processingSteps(meeting.progress, meeting.status, source)
+  const position = stepPosition(steps)
+  const current = steps.find(({ state }) => state === 'current')
+  return current === undefined ? position : `${position} · ${current.label} 진행 중`
+}
+
+function stepPosition(steps: ProcessingStep[]): string {
+  return `${steps.filter(({ state }) => state === 'done').length} / ${steps.length} 단계 완료`
+}
+
+function Steps({ meeting, source }: { meeting: Meeting; source: MeetingSource }) {
+  const steps = processingSteps(meeting.progress, meeting.status, source)
+  return (
+    <div className="flex flex-col gap-10">
+      <p className={STATUS} aria-hidden="true">
+        {stepPosition(steps)}
+      </p>
+      <ol aria-label="정리 단계" className="flex flex-col">
+        {steps.map((step) => (
+          <StepRow key={step.key} step={step} />
+        ))}
+      </ol>
+    </div>
   )
 }
 

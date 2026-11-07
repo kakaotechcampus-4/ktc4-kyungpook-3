@@ -10,7 +10,7 @@ import { PROCESSING_DONE_TITLE, PROCESSING_FAILED_TITLE, SPEAKERS_NEEDED_TITLE }
 
 /**
  * 진행 토스트가 보는 회의 하나. 정리 중·대기는 상세 캐시에서, 완료·실패는 끝난 결과 기록에서 온다 (#424).
- * `source` 는 상세에 없어 목록 요약에서 온다. 모르면 null — 녹음 회의 단계다 (#483)
+ * `source` 는 상세에 없어 목록 요약에서 온다. 모르면 null — 단계 칸·수 없이 보인다 (#483)
  */
 export type ProcessingSubject =
   | {
@@ -29,8 +29,9 @@ export type ProcessingSignal =
       kind: 'processing'
       title: string
       sentence: string
-      steps: ProcessingStepState[]
-      doneCount: number
+      /** 출처를 모르면 null — 단계 수를 정하지 않는다 */
+      steps: ProcessingStepState[] | null
+      doneCount: number | null
     }
   | { kind: 'speakers'; title: string }
   | { kind: 'done'; title: string }
@@ -58,10 +59,21 @@ const STAGE_SENTENCES: Record<ProcessingStepKey, string> = {
 
 const WAITING_SENTENCE = '화자 지정을 기다리고 있어요'
 
+/** 출처를 몰라 지금 단계를 말할 수 없을 때 */
+const UNKNOWN_STAGE_SENTENCE = '회의를 정리하고 있어요'
+
 function progressSignal(
   subject: Extract<ProcessingSubject, { phase: 'processing' | 'awaiting_speakers' }>,
   waiting: boolean,
 ): ProcessingSignal {
+  if (subject.source === null)
+    return {
+      kind: 'processing',
+      title: subject.title,
+      sentence: waiting ? WAITING_SENTENCE : UNKNOWN_STAGE_SENTENCE,
+      steps: null,
+      doneCount: null,
+    }
   const steps = processingSteps(subject.progress, subject.phase, subject.source)
   const current = steps.find(({ state }) => state === 'current')
   return {

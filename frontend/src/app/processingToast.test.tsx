@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http } from 'msw'
 import { onTestFinished } from 'vitest'
 import { clearTrackedMeetings, trackMeeting, useMeetingTrackerStore } from '@/entities/meeting'
 import { advanceSessionGeneration } from '@/entities/user'
@@ -18,9 +19,11 @@ import {
   setMeetingFlowMode,
   startChatMeeting,
 } from '@/shared/mock/meetingFlow'
+import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { awaitSpeakers } from '@/shared/mock/speakerFlow'
 import { AWAITING_MEETING_ID, createSpeakerScenarioDb } from '@/shared/mock/speakerScenarios'
+import { deferred } from '@/shared/test/deferred'
 import { processingSignals, signalsWith } from './test/processingToast'
 import { renderApp } from './test/renderApp'
 
@@ -273,10 +276,19 @@ describe('같은 공간의 이어진 정리', () => {
       extraction_id: null,
       progress: { audio_merged: false, transcribed: false, extracted: false },
     })
+    // 서버 목록에도 정리 중으로 있다 — 토스트는 출처를 목록에서 읽고, 받아 둔 목록에 없으면 한 번 새로 받는다 (#483)
+    db.meetingSummaries.push({
+      ...structuredClone(
+        db.meetingSummaries.find(({ meeting_id }) => meeting_id === AWAITING_MEETING_ID)!,
+      ),
+      meeting_id: 'mt_12',
+      title: '두 번째 회의',
+      status: 'processing',
+    })
     db.meetingFlow.attendees.mt_12 = db.meetingFlow.attendees[AWAITING_MEETING_ID]
     act(() => trackMeeting({ workspaceId: 'ws_01', meetingId: 'mt_12' }))
     await waitFor(() => expect(processingSignals()).toHaveLength(2))
-    expect(pill()).toHaveTextContent('정리 중0/3')
+    await waitFor(() => expect(pill()).toHaveTextContent('정리 중0/3'))
 
     completeMeeting('mt_12')
     await poll()
@@ -531,6 +543,36 @@ describe('단계 표시는 처리 화면과 같은 목록이다 (#483)', () => {
     await poll()
     await poll()
     expect(processingCard()).toHaveTextContent('1 / 2 단계 완료')
+  })
+})
+
+describe('출처를 모를 때 — 토스트도 단계 수를 짐작하지 않는다 (#483 리뷰)', () => {
+  it('처리 화면이 목록을 기다리는 사이 떠나면 알약은 단계 수 없이 「정리 중」이고, 목록이 오면 채팅 0/2 다', async () => {
+    completeMeeting('mt_10')
+    const chatId = startChatMeeting()
+    const list = deferred()
+    server.use(
+      http.get('/api/v1/workspaces/ws_01/meetings', async () => {
+        await list.promise
+        return undefined
+      }),
+    )
+    const app = renderApp(paths.meetingProcessing('ws_01', chatId))
+    expect(await screen.findByRole('heading', { name: '정리하고 있어요' })).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: '정리 단계' })).toBeNull()
+
+    act(() => app.navigate(paths.tasks('ws_01')))
+    const button = await waitForPill()
+    expect(button).toHaveTextContent(/^정리 중/)
+    expect(button).not.toHaveTextContent(/\d\//)
+    fireEvent.click(button)
+    const card = await waitForCard()
+    expect(card).toHaveTextContent('회의를 정리하고 있어요')
+    expect(card).not.toHaveTextContent('단계 완료')
+
+    list.resolve()
+    await waitFor(() => expect(processingCard()).toHaveTextContent('0 / 2 단계 완료'))
+    expect(processingCard()).toHaveTextContent('대화를 모으고 있어요')
   })
 })
 

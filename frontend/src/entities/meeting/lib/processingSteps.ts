@@ -43,13 +43,13 @@ const CHAT_STEPS: readonly StepDefinition[] = [
 /**
  * 처리 화면·진행 토스트의 단계 표시. 끝난 단계는 `done`, 정리 중이면 끝나지 않은 첫 단계가 `current` 다.
  * 백분율·남은 시간은 계산하지 않는다 — 서버 값이 아닌 숫자를 만들지 않는다.
- * `source` 를 모르면(목록을 아직 받지 못함) 녹음 회의 단계다. `progress` 가 없으면(옛 응답) 모두 아직이다.
+ * 출처를 모르면 부르지 않는다 — 단계 수가 출처마다 달라 짐작하면 나중에 바뀐다(`useMeetingSources`). `progress` 가 없으면(옛 응답) 모두 아직이다.
  * 완료 회의는 모든 단계가 끝났다
  */
 export function processingSteps(
   progress: MeetingProgress | null,
   status: MeetingStatus,
-  source: MeetingSource | null,
+  source: MeetingSource,
 ): ProcessingStep[] {
   let currentTaken = status !== 'processing'
   return (source === 'chat' ? CHAT_STEPS : RECORDING_STEPS).map(({ key, label, doneWhen }) => {

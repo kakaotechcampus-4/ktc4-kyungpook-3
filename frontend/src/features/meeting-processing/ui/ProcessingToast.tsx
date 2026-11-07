@@ -1,10 +1,10 @@
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQueries } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useLocation } from 'react-router'
 import {
   dismissSettled,
   meetingDetailQueryOptions,
-  meetingListQueryOptions,
+  useMeetingSources,
   useMeetingTrackerStore,
 } from '@/entities/meeting'
 import type { Meeting, MeetingSource, SettledMeeting, TrackedMeeting } from '@/entities/meeting'
@@ -46,6 +46,10 @@ function trackedSubject(
   }
 }
 
+function isWatched(detail: Meeting | undefined): boolean {
+  return detail?.status === 'processing' || detail?.status === 'awaiting_speakers'
+}
+
 /**
  * 지금 공간의 회의 정리 진행 토스트 (#424). 토스트 자리 맨 아래에 고정된다.
  *
@@ -76,10 +80,14 @@ export function ProcessingToast({ workspaceId }: { workspaceId: string }) {
     })),
   })
 
-  // 단계 목록은 회의 출처마다 다르다(#483). 출처는 상세에 없어 발견과 같은 목록 캐시에서 읽는다 — 요청을 더하지 않는다
-  const { data: summaries } = useQuery(meetingListQueryOptions(workspaceId))
-  const sourceOf = (meetingId: string) =>
-    summaries?.find(({ id }) => id === meetingId)?.source ?? null
+  // 단계 목록은 회의 출처마다 다르다(#483). 출처는 상세에 없어 발견과 같은 목록 캐시에서 읽고, 정리 중 회의가 목록에 없으면
+  // 한 번 새로 받는다. 모르는 동안 카드는 단계 수 없이 보인다
+  const sourceOf = useMeetingSources(
+    workspaceId,
+    trackedHere
+      .filter((_, index) => isWatched(details[index]?.data))
+      .map(({ meetingId }) => meetingId),
+  )
 
   if (role === undefined) return null
   const items: { meeting: TrackedMeeting; signal: ProcessingSignal }[] = []

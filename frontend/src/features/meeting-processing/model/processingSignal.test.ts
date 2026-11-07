@@ -137,11 +137,26 @@ describe('정리 중 단계 문장 (#483)', () => {
     ).toMatchObject({ steps: ['done', 'current'], doneCount: 1 })
   })
 
-  it('progress 가 없는 옛 응답은 첫 단계부터다. 출처를 모르면 녹음 회의 단계다', () => {
-    expect(processingSignal(processing(null, null), 'pm')).toMatchObject({
+  it('progress 가 없는 옛 응답은 첫 단계부터다', () => {
+    expect(processingSignal(processing(null), 'pm')).toMatchObject({
       sentence: '차례를 기다리고 있어요',
       steps: ['current', 'waiting', 'waiting'],
       doneCount: 0,
+    })
+  })
+
+  it('출처를 모르면 단계 칸·수 없이 정리 중이라고만 한다 — 녹음 단계로 짐작하지 않는다', () => {
+    const none = { audioMerged: false, transcribed: false, extracted: false }
+    expect(processingSignal(processing(none, null), 'pm')).toEqual({
+      kind: 'processing',
+      title: TITLE,
+      sentence: '회의를 정리하고 있어요',
+      steps: null,
+      doneCount: null,
+    })
+    expect(processingSignal({ ...AWAITING, source: null }, 'member')).toMatchObject({
+      sentence: '화자 지정을 기다리고 있어요',
+      steps: null,
     })
   })
 })

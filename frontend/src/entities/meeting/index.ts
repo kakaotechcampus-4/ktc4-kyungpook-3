@@ -26,6 +26,7 @@ export {
   meetingListQueryOptions,
   viewableMeeting,
 } from './api/meetingQueries'
+export { useMeetingSources } from './api/meetingSources'
 export { assignSpeakers, meetingAudioUrl, speakerViewQueryOptions } from './api/speakers'
 export { speakerTitle, speakingTime } from './lib/speakers'
 export type { UploadMeetingOptions } from './api/uploadMeeting'

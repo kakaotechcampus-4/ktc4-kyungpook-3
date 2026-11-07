@@ -1,7 +1,12 @@
-import { screen, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
+import { http } from 'msw'
+import { onTestFinished } from 'vitest'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { completeMeeting, failMeeting, startChatMeeting } from '@/shared/mock/meetingFlow'
+import { fail } from '@/shared/mock/envelope'
+import { server } from '@/shared/mock/server'
+import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -105,6 +110,56 @@ describe('처리 화면과 #383 의 progress (#384)', () => {
       paths.meetings('ws_01', 'mt_10'),
     )
     expect(screen.queryByRole('list', { name: '정리 단계' })).toBeNull()
+    expect(screen.getByRole('main')).not.toHaveTextContent('단계 완료')
+  })
+})
+
+const LIST = '/api/v1/workspaces/ws_01/meetings'
+
+/** 처리 화면의 단계 안내(role=status)가 지나간 문장. 같은 문장이 이어지면 하나다 */
+function recordAnnouncements() {
+  const seen: string[] = []
+  const observer = new MutationObserver(() => {
+    const text = document.querySelector('main [role="status"]')?.textContent ?? ''
+    if (text !== '' && seen.at(-1) !== text) seen.push(text)
+  })
+  observer.observe(document.body, { subtree: true, childList: true, characterData: true })
+  onTestFinished(() => observer.disconnect())
+  return seen
+}
+
+describe('출처를 모를 때 — 단계 수를 짐작하지 않는다 (#483 리뷰)', () => {
+  it('받아 둔 최신 목록에 없는 채팅 회의로 들어오면 목록을 한 번 새로 받고, 그동안 단계를 그리지 않는다', async () => {
+    const app = renderApp(paths.tasks('ws_01'))
+    await screen.findByRole('heading', { name: '태스크' })
+    const log = recordRequests()
+    // 목록을 받은 뒤 생긴 채팅 회의. 목록 캐시(30초)는 아직 최신이다
+    const chatId = startChatMeeting()
+    const seen = recordAnnouncements()
+
+    act(() => app.navigate(paths.meetingProcessing('ws_01', chatId)))
+    expect(await screen.findByRole('heading', { name: '정리하고 있어요' })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(within(screen.getByRole('main')).getByRole('status')).toHaveTextContent(
+        /^0 \/ 2 단계 완료 · 대화 모으기 진행 중$/,
+      ),
+    )
+    expect(seen.filter((text) => text.includes('/ 3'))).toEqual([])
+    expect(
+      log.started.filter(
+        ({ method, path }) => method === 'GET' && path === '/workspaces/ws_01/meetings',
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('목록 조회가 실패하면 녹음 단계로 짐작하지 않고 단계 없이 정리 중이라고만 한다', async () => {
+    server.use(http.get(LIST, () => fail('INTERNAL_ERROR', '서버 오류', 500)))
+    const chatId = startChatMeeting()
+    renderApp(paths.meetingProcessing('ws_01', chatId))
+
+    expect(await screen.findByRole('heading', { name: '정리하고 있어요' })).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: '정리 단계' })).toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent(/^정리하고 있어요$/)
     expect(screen.getByRole('main')).not.toHaveTextContent('단계 완료')
   })
 })
