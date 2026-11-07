@@ -4,6 +4,8 @@ PM 이 웹에서 쓴 글을 sender=pm 으로 저장하고 쓴 사람을 thread_m
 sender 는 문자열 칸이라 값 추가에 스키마 변경이 없다.
 
 되돌리면 pm 글을 bot 으로 바꾸고 작성자는 잃는다. 옛 코드가 pm 을 팀원 말로 읽지 않게 하려는 것이다.
+아직 안 나간 pm 글은 못 보냄으로 닫는다. 옛 코드는 저장된 본문을 그대로 DM 으로 보내기 때문이다.
+나간 pm 글은 옛 코드에서 재촉으로 읽혀 답장 기다림 표시가 생기고 첫 재촉 소개가 빠질 수 있다.
 
 Revision ID: 5ae76a6102a8
 Revises: 3c9a1f7d2b64
@@ -31,6 +33,10 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
+    op.execute(
+        "UPDATE thread_message SET dm_status = 'failed', dm_failure_reason = 'unknown' "
+        "WHERE sender = 'pm' AND dm_status IN ('pending', 'claimed')"
+    )
     op.execute("UPDATE thread_message SET sender = 'bot' WHERE sender = 'pm'")
     op.drop_constraint(op.f('fk_thread_message_author_member_id_member'), 'thread_message', type_='foreignkey')
     op.drop_column('thread_message', 'author_member_id')
