@@ -101,7 +101,10 @@ const mockMailRoute =
 export const appRoutes = (
   <Route path="/" element={<RootLayout />}>
     <Route element={<RedirectIfAuthed />}>
-      <Route index element={<LandingEntry>{screen(landingPage)}</LandingEntry>} />
+      {/* 써 본 브라우저가 바깥에서 `/` 로 오면 랜딩 코드를 받기 전에 로그인으로 보낸다 (#510) */}
+      <Route element={<LandingEntry />}>
+        <Route index element={screen(landingPage)} />
+      </Route>
       <Route path="login" element={screen(loginPage)} />
       <Route path="signup" element={screen(signupPage)} />
       <Route path="forgot-password" element={screen(forgotPasswordPage)} />
