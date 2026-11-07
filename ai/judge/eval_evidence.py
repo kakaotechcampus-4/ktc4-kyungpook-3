@@ -94,6 +94,30 @@ def score(rows: list[dict], threshold: float) -> dict[str, dict]:
     return out
 
 
+def score_by_sentence(rows: list[dict], threshold: float) -> dict[str, dict]:
+    """대사 단위 결과. 같은 대사를 여러 번 돌린 것은 독립 표본이 아니라서 오답률·신뢰 상한은 대사로 센다(#382 재리뷰).
+
+    한 번이라도 잘못 certain 이 된 대사를 잘못된 certain 으로, 한 번이라도 놓친 대사를 놓친 certain 으로 센다(보수적).
+    """
+    groups: dict[tuple, list[dict]] = defaultdict(list)
+    for r in rows:
+        groups[(r["set"], r["case"], r["field"])].append(r)
+    out = {}
+    for field in ("task", "due"):
+        gs = [g for (_, _, f), g in groups.items() if f == field]
+        neg = [g for g in gs if not g[0]["want"]]
+        pos = [g for g in gs if g[0]["want"]]
+        fc = sum(1 for g in neg if any(r["p_yes"] is not None and r["p_yes"] >= threshold for r in g))
+        missed = sum(1 for g in pos if any(r["p_yes"] is None or r["p_yes"] < threshold for r in g))
+        out[field] = {
+            "sentences": len(gs), "negatives": len(neg), "positives": len(pos),
+            "false_certain": fc, "false_certain_rate": fc / len(neg) if neg else None,
+            "false_certain_rate_upper95": wilson_upper(fc, len(neg)),
+            "missed_certain": missed, "recall": (len(pos) - missed) / len(pos) if pos else None,
+        }
+    return out
+
+
 def by_category(rows: list[dict], threshold: float) -> dict[str, dict]:
     groups: dict[str, list[dict]] = defaultdict(list)
     for r in rows:
@@ -140,6 +164,7 @@ def summarize(rows: list[dict], cases: list[dict], repeat: int) -> dict:
         "cases": len(cases), "repeat": repeat,
         "calls": len(cases) * repeat,
         "no_answer": sum(1 for r in rows if r["p_yes"] is None),
+        "by_sentence": score_by_sentence(rows, YES_THRESHOLD),
         "at_threshold": score(rows, YES_THRESHOLD),
         "sweep": {str(t): score(rows, t) for t in THRESHOLDS},
         "by_category": by_category(rows, YES_THRESHOLD),
@@ -155,6 +180,12 @@ def _pct(x: float | None) -> str:
 def report(s: dict) -> None:
     print(f"기준값 {s['threshold_in_use']} · 대사 {s['cases']}개 × {s['repeat']}회 · Jev 호출 {s['calls']}회 · "
           f"응답 없음 {s['no_answer']}\n")
+    print("대사 단위 (오답률·신뢰 상한은 이것으로 본다. 반복 중 한 번이라도 틀리면 틀린 대사):")
+    for field, m in s["by_sentence"].items():
+        print(f"  {field:4}: 잘못된 certain {m['false_certain']}/{m['negatives']} ({_pct(m['false_certain_rate'])}, "
+              f"95% 상한 {_pct(m['false_certain_rate_upper95'])}) · 놓친 certain {m['missed_certain']}/{m['positives']} "
+              f"(재현율 {_pct(m['recall'])})")
+    print("\n실행 단위 (반복은 흔들림을 보는 데만 쓴다. 독립 표본이 아니다):")
     for field, m in s["at_threshold"].items():
         print(f"{field:4}: 정답 {m['correct']}/{m['n']} · 잘못된 certain {m['false_certain']}/{m['negatives']} "
               f"({_pct(m['false_certain_rate'])}, 95% 상한 {_pct(m['false_certain_rate_upper95'])}) · "
@@ -180,7 +211,17 @@ def main() -> None:
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--sets", default="", help="쉼표로 구분한 대사 파일 이름(base,extended). 비우면 전부")
     ap.add_argument("--out", default="", help="요약을 쓸 경로(예: judge/eval_results/<날짜>-evidence.json)")
+    ap.add_argument("--from-runs", default="", help="Jev 를 부르지 않고 저장된 실행 원자료(runs/evidence_eval.json)로 다시 요약")
     args = ap.parse_args()
+    if args.from_runs:
+        today, cases = load_cases([n for n in args.sets.split(",") if n] or None)
+        rows = json.loads(Path(args.from_runs).read_text(encoding="utf-8"))
+        s = summarize(rows, cases, max(r["run"] for r in rows) + 1)
+        report(s)
+        if args.out:
+            Path(args.out).write_text(json.dumps({"meeting_date": today.isoformat(), **s}, ensure_ascii=False,
+                                                 indent=1), encoding="utf-8")
+        return
     client = get_jev()
     if isinstance(client, NullJev):
         raise SystemExit("JEV_API_KEY 가 없습니다.")

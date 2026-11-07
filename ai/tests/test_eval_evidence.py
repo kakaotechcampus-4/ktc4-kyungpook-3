@@ -152,3 +152,22 @@ def test_run_asks_due_only_when_a_due_date_is_given_and_repeats():
     s = E.summarize(rows, cases, 2)
     assert s["calls"] == 4 and s["no_answer"] == 1
     assert [u["field"] for u in s["unstable"]] == ["due", "task"]   # 0.9→0.7, 0.95→None
+
+
+def test_sentence_level_counts_each_sentence_once_and_widens_the_ceiling():
+    # 같은 대사가 3회 모두 틀려도 잘못된 대사는 1개다. 실행 단위(3/249)보다 신뢰 상한이 넓다(#382 재리뷰)
+    rows = [_row(False, 0.97, case="틀림", run=i) for i in range(3)]
+    rows += [_row(False, 0.1, case=f"맞음{j}", run=i) for j in range(82) for i in range(3)]
+    by_run, by_sentence = E.score(rows, 0.8)["task"], E.score_by_sentence(rows, 0.8)["task"]
+    assert (by_run["false_certain"], by_run["negatives"]) == (3, 249)
+    assert (by_sentence["false_certain"], by_sentence["negatives"]) == (1, 83)
+    assert by_sentence["false_certain_rate_upper95"] > by_run["false_certain_rate_upper95"]
+    assert by_sentence["false_certain_rate_upper95"] == pytest.approx(0.065, abs=0.003)
+
+
+def test_sentence_counts_as_wrong_if_any_run_is_wrong():
+    rows = [_row(False, 0.79, case="흔들림", run=0), _row(False, 0.81, case="흔들림", run=1),
+            _row(True, 0.85, case="맞음", run=0), _row(True, 0.78, case="맞음", run=1)]
+    m = E.score_by_sentence(rows, 0.8)["task"]
+    assert (m["false_certain"], m["missed_certain"]) == (1, 1)
+

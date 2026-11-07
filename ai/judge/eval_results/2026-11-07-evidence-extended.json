@@ -5,6 +5,28 @@
  "repeat": 3,
  "calls": 651,
  "no_answer": 0,
+ "by_sentence": {
+  "task": {
+   "sentences": 217,
+   "negatives": 83,
+   "positives": 134,
+   "false_certain": 1,
+   "false_certain_rate": 0.012048192771084338,
+   "false_certain_rate_upper95": 0.0651373778765888,
+   "missed_certain": 2,
+   "recall": 0.9850746268656716
+  },
+  "due": {
+   "sentences": 109,
+   "negatives": 44,
+   "positives": 65,
+   "false_certain": 1,
+   "false_certain_rate": 0.022727272727272728,
+   "false_certain_rate_upper95": 0.11807979131537633,
+   "missed_certain": 24,
+   "recall": 0.6307692307692307
+  }
+ },
  "at_threshold": {
   "task": {
    "n": 651,
