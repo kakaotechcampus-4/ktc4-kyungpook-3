@@ -84,6 +84,8 @@ export const ERROR_CODES = {
   // #356 에서 BE 와 합의했고 backend core/errors.py 에는 아직 없다 (계약 §4.1.1)
   PASSWORD_RESET_TOKEN_INVALID: 'PASSWORD_RESET_TOKEN_INVALID',
   MAIL_UNAVAILABLE: 'MAIL_UNAVAILABLE',
+  // #457 BE PR #456 에 있고 아직 병합 전이다 (계약 §4.1)
+  TOO_MANY_LOGIN_ATTEMPTS: 'TOO_MANY_LOGIN_ATTEMPTS',
 } as const
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES]
