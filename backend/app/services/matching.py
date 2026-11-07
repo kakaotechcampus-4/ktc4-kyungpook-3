@@ -48,8 +48,9 @@ def name_candidates(text: str | None) -> list[str]:
     AI 의 _name_candidates(ai/extract/eval_golden_set.py)와 같은 규칙이다. 바꾸면 둘 다 바꾼다.
     조사가 붙었는지 겉보기로 알 수 없다("하은"의 "은"은 이름, "환은"의 "은"은 조사). 그래서 조사를 뗀 것까지
     후보를 모두 만들고, 긴 후보(원문에 가까운 것)부터 찾는다. 예: "하은이가" → 하은이가, 하은이, 하은.
-    AI 규칙과 다른 점 하나: 공백을 한 칸으로 줄이고 후보마다 앞뒤 공백을 지운다. 그래야 띄어 쓴 님("환 님이" →
-    "환")도 찾는다(#463 리뷰). AI 쪽에도 같이 바꾸도록 알린다.
+    AI 규칙과 다른 점(AI 쪽도 같이 맞춘다, #463 리뷰): ① 공백을 한 칸으로 줄이고 후보마다 앞뒤 공백을 지운다.
+    그래야 띄어 쓴 님("환 님이" → "환")도 찾는다. ② 조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보다.
+    "하은이는" → 하은이는, 하은이, 하은.
     """
     if not text:
         return []
@@ -63,6 +64,10 @@ def name_candidates(text: str | None) -> list[str]:
                 stripped = form[: -len(particle)]
                 out.add(stripped)
                 if stripped.endswith("님"):
+                    out.add(stripped[:-1])
+                # 조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보로 둔다. "하은이는"·"하은이한테"는 목록에서
+                # "이가"만 한 덩어리라 "하은이"에서 멈췄다. "세이"처럼 이름이 "이"로 끝나도 긴 후보부터 찾아 지킨다.
+                if stripped.endswith("이") and len(stripped) > 1:
                     out.add(stripped[:-1])
     trimmed = {x.strip() for x in out}
     return sorted((x for x in trimmed if x), key=lambda s: (-len(s), s))

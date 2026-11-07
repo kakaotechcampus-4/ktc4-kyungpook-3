@@ -68,6 +68,14 @@ def _alias(db, member, text, *, verified=True, confidence=1.0) -> MemberAlias:
         ("지민 님", ["지민 님", "지민"]),
         ("  하은  님 ", ["하은 님", "하은"]),
         ("BE  리더가", ["BE 리더가", "BE 리더"]),
+        # 조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보다(#463 리뷰). "이가"만 한 덩어리 조사라 되던 것을 넓힌다
+        ("하은이는", ["하은이는", "하은이", "하은"]),
+        ("하은이를", ["하은이를", "하은이", "하은"]),
+        ("하은이한테", ["하은이한테", "하은이", "하은"]),
+        ("하은이에게", ["하은이에게", "하은이", "하은"]),
+        ("하은이께서", ["하은이께서", "하은이", "하은"]),
+        ("세이가", ["세이가", "세이", "세"]),
+        ("지민이", ["지민이", "지민"]),
     ],
 )
 def test_name_candidates(text, expected):
@@ -231,3 +239,23 @@ def test_spaced_honorific_finds_alias(db, ws):
         r = resolve_assignee(db, ws, said)
         assert (r.result, r.member_id) == (ResolutionResult.MATCHED, kim.member_id), said
     assert resolved_texts(db, ws, ["지민 님이"]) == {"지민 님이"}
+
+
+def test_particle_after_i_still_reaches_the_name(db, ws):
+    haeun = _member(db, ws, "이하은")
+    _alias(db, haeun, "하은")
+
+    for said in ("하은이는", "하은이를", "하은이한테", "하은이에게"):
+        r = resolve_assignee(db, ws, said)
+        assert (r.result, r.member_id, r.needs_check) == (ResolutionResult.MATCHED, haeun.member_id, False), said
+    assert resolved_texts(db, ws, ["하은이는", "하은이한테"]) == {"하은이는", "하은이한테"}
+
+
+def test_name_ending_in_i_is_kept_by_longest_first(db, ws):
+    # "세이" 는 "이"로 끝나는 이름이다. 긴 후보부터 보므로 "세이는" 은 "세"가 아니라 "세이"로 간다
+    sei = _member(db, ws, "세이")
+    se = _member(db, ws, "한세")
+    _alias(db, sei, "세이")
+    _alias(db, se, "세")
+
+    assert resolve_assignee(db, ws, "세이는").member_id == sei.member_id
