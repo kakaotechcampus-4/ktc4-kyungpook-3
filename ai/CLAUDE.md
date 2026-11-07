@@ -17,6 +17,7 @@ make setup                      # uv venv + 의존성 + .env.example 복사. ven
 python -m capture.run_recorder  # 개발용 봇 (/join /record /stop)
 python -m capture.worker        # 저장된 회의 처리. --retry <서버ID> 로 포기한 회의 재시도
 python -m capture.chat_poll     # 채팅 폴링: BE 가 알려 준 채널마다 (운영은 타이머). [--workspace ID] [--dry-run] (--dry-run 은 BE 에 쓰지 않고 판단만)
+python -m capture.backfill_summaries --workspace ID --all --dry-run   # 옛 회의 요약 대상과 예상 원. --preview 는 BE 에 안 쓰고, --run 은 지정 회의만 돈다(둘 다 유료, 파일 상단 주석)
 ```
 
 lint/format 설정은 없다. 있다고 가정하지 않는다.
@@ -25,12 +26,13 @@ lint/format 설정은 없다. 있다고 가정하지 않는다.
 
 | 위치 | 역할 | 먼저 볼 곳 |
 |---|---|---|
-| `capture/` | Discord 녹음, 워커, 단계 진행, BE 인계 | `recorder.py`의 `process_session`, `worker.py`, `handoff.py` |
+| `capture/` | Discord 녹음, 워커, 단계 진행, BE 인계. 회의 요약 대기열을 도는 `summary_sweep.py`(`MM_SUMMARY_LLM`), 재처리 명령 `backfill_summaries.py` | `recorder.py`의 `process_session`, `worker.py`, `handoff.py` |
 | `stt/` | 화자별 트랙 전사 (운영 기본 Elice API, 로컬 faster-whisper는 장애 대응) | `batch.py`의 `run`, `transcribe.py` 상단 주석 |
 | `upload/` | 수동 업로드 오디오를 화자 분리해 화자별 가상 트랙과 `diarized` 매니페스트로 만들고, 사람이 라벨을 멤버에 지정해 `mapped` 로 둔다. 워커가 바퀴 끝에(`MM_UPLOAD_INTAKE=1` 일 때만) `intake.py` 로 BE 의 웹 업로드를 가져오고 `report.py` 로 가져온 회의의 화자 라벨·샘플 구간을 BE 에 보고하고 `assign.py` 로 PM 이 지정한 회의를 `mapped` 로 바꾼다. 처리 바퀴는 `mapped` 이고 BE 회의·워크스페이스가 있는 업로드를 디스코드 회의보다 먼저 집어 전사·인계하고(`/meetings`·`/end` 는 안 부름, 화자는 `speaker_member_id`), `diarized` 와 BE 정보 없는 업로드는 집지 않는다 | `intake.py`의 `intake_one`, `report.py`의 `report_one`, `assign.py`의 `assign_one`, `prepare.py`의 `prepare_upload`, `mapping.py`의 `apply_mapping`(`python -m upload.mapping`) |
 | `judge/` | 판단 파이프라인: 1단계 → 유사 task 검색 → Terra → Luna Phase 2 | `pipeline.py` 상단 주석 |
 | `extract/` | 옛 추출 경로 (`MM_EXTRACT_PATH=legacy`, 기본값) | [extract/README.md](extract/README.md), [TASK_CRITERIA.md](extract/TASK_CRITERIA.md) |
 | `draft/` | 승인 항목의 제목·마감일·설명 초안 (Luna Phase 2) | `doc_draft.py` |
+| `summary/` | 회의 하나를 요약본 JSON 으로. 지역 키(I1, T1, N1, D1)는 이 안에서만 쓴다. `judge/` 와 프롬프트를 섞지 않는다 | `summarize.py`의 `summarize`, `parse_summary`, `prompt.py` |
 | `shared/` | BE와 공유하는 타입 계약, `.env` 로딩 | `schemas.py`, `config.py` |
 | `llm.py`, `embedding.py`, `jev.py` | Terra·Luna·임베딩·Jev(판정 API) 클라이언트 (Elice MLAPI) | 파일 상단 주석 |
 | `deploy/systemd/` | 운영 서비스 `mm-bot`, `mm-worker`, 매일 09:00 KST 타이머 `mm-chat-poll` | |
@@ -41,7 +43,7 @@ saved → transcribed → extracted → handed_off)는 [README](README.md)의 "A
 
 ## 깨면 안 되는 규칙
 
-1. **Discord는 `capture/` 안에만 있다.** `stt`, `extract`, `judge`, `draft`, `shared`는 `discord`를
+1. **Discord는 `capture/` 안에만 있다.** `stt`, `extract`, `judge`, `draft`, `summary`, `shared`는 `discord`를
    import하지 않고 순수 dict와 `shared.schemas` 타입만 주고받는다. 화자는 불투명한 문자열 uid로 다룬다.
    예외는 설정 이름(`DISCORD_BOT_TOKEN` 등)과 주석뿐이다. `tests/test_platform_isolation.py`가 지키고,
    워커는 `tests/capture/test_worker.py::test_the_worker_does_not_import_discord`가 따로 지킨다.
@@ -65,6 +67,7 @@ saved → transcribed → extracted → handed_off)는 [README](README.md)의 "A
 | 하나의 모듈 | `tests/` 아래 같은 이름의 테스트부터: `-k`나 파일 경로로 좁혀 실행 |
 | `judge/` 프롬프트·로직 | pytest 후, 요청이 있으면 `python -m judge.eval_golden_set` · `python -m judge.eval_pipeline` (키 필요, 비용 발생) |
 | `extract/` | 요청이 있으면 `python -m extract.eval_golden_set` (키 필요) |
+| `summary/` 프롬프트 | pytest 후, 요청이 있으면 `python -m capture.backfill_summaries --preview` (키 필요, 비용 발생) |
 | `stt/` 전사 방식 | `stt/eval/` 도구. 측정 방법은 결정 기록 0008, 0012와 `2026-10-06-server-capacity` |
 
 완료라고 말하기 전에 실제로 돌린 명령과 결과를 보고한다. 돌리지 못했으면 못 했다고 쓴다.
