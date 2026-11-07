@@ -84,7 +84,7 @@ def _stored_position(db: Session, thread_id: str, member_id: str) -> datetime | 
     return utc(value) if value is not None else None
 
 
-def _advance(db: Session, thread_id: str, member_id: str, at: datetime) -> datetime:
+def _advance(db: Session, thread_id: str, member_id: str, at: datetime) -> datetime | None:
     """읽은 위치를 at 까지 옮기고 저장된 값을 돌려준다. 이미 더 늦으면 그대로 둔다.
 
     처음 넣을 때 다른 요청과 겹치면 기본 키 충돌이 나므로, 그때는 조건부 UPDATE 로 바꾼다.
