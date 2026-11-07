@@ -38,12 +38,15 @@ function Meetings({
   isPm: boolean
 }) {
   const latestId = useDefaultMinutesSelection(workspaceId, meetingId !== null || invalidMeetingId)
-  // 목록을 이미 받아 둔 채 들어왔으면(셸의 미리 받기, 다시 방문) 주소를 바꾸기 전 첫 렌더부터 기본 회의를 그린다 — 주소가 바뀔 때까지
-  // 본문이 빈 자리로 한두 프레임 비지 않는다 (#536). 목록이 들어온 뒤 늦게 왔으면 전처럼 주소가 바뀐 뒤에 그린다 —
-  // 그 사이 다른 곳으로 떠나는 중이면 기본 회의를 부르지 않는다
-  const [listedAtMount] = useState(latestId !== undefined)
+  // 목록을 이미 받아 둔 채 들어왔으면(셸의 미리 받기, 다시 방문) 주소를 바꾸기 전 첫 렌더부터 그때의 기본 회의를 그린다 — 주소가
+  // 바뀔 때까지 본문이 빈 자리로 한두 프레임 비지 않는다 (#536). 마운트 때의 기본 회의만 쓴다. 그 뒤 목록이 바뀌어 고른 다른 회의는
+  // 주소가 바뀐 뒤에 그린다 — 그 사이 다른 곳으로 떠나는 중이면 기본 선택이 주소를 바꾸지 않으므로 그 회의를 부르지 않는다
+  const [latestAtMount] = useState(latestId)
   const shownMeetingId =
-    meetingId ?? (listedAtMount && !invalidMeetingId ? (latestId ?? null) : null)
+    meetingId ??
+    (!invalidMeetingId && latestAtMount != null && latestId === latestAtMount
+      ? latestAtMount
+      : null)
   return (
     <MeetingMinutes
       workspaceId={workspaceId}
