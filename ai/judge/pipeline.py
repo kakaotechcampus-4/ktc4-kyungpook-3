@@ -14,12 +14,14 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any, Protocol
 
 from draft.doc_draft import DraftUnavailableError, draft
 from jev import get_jev
+from judge import asr_check
 from judge.evidence import verify, worse
 from judge.final_judge import JudgeUnavailableError, judge
 from judge.semantic_judge import empty_drops, extract_findings_counted
@@ -63,6 +65,8 @@ def _evidence(finding: JudgeFinding, transcript: Transcript) -> dict[str, Any]:
         "evidence_at_ms": _evidence_at_ms(finding, transcript),
     }
 
+
+logger = logging.getLogger(__name__)
 
 _MAX_EVIDENCE_SEQS = 100  # BE MAX_EVIDENCE_SEQS(schemas/meeting.py)와 같은 값. 넘으면 요청 전체가 400 이다
 
@@ -234,6 +238,50 @@ def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult
             card["status"] = None
 
 
+def _member_words(candidates: Any, workspace_id: str) -> list[str]:
+    """팀원 이름·별칭. 유사 검색 구현(BeClient)이 member_names 를 주면 쓰고, 못 받으면 빈 목록이다."""
+    fetch = getattr(candidates, "member_names", None)
+    if fetch is None:
+        return []
+    try:
+        rows = fetch(workspace_id)
+    except Exception:  # noqa: BLE001 - 이름을 못 받아도 검사는 업무 용어·회의 발화로 돈다
+        return []
+    words: list[str] = []
+    for r in rows or []:
+        if isinstance(r, dict):
+            words += [w for w in [r.get("name"), *(r.get("aliases") or [])] if isinstance(w, str)]
+    return words
+
+
+def _annotate_asr(items: list[dict[str, Any]], transcript: Transcript, titles: set[str], members: list[str]) -> None:
+    """새 항목마다 전사 오인식 의심 단어(asr_suspects)를 붙인다. 있으면 BE 가 auto 대신 review 로 보낸다.
+
+    근거 발화는 evidence_seqs 의 발화 전부다. 같은 회의의 다른 발화에 나온 말은 의심하지 않는다(팀이 쓰는 말).
+    수정(update) 항목은 BE 가 항상 review 라 보지 않는다. 채팅은 전사를 거치지 않아 run 에서 부르지 않는다.
+    """
+    creates = [i for i in items if i["action"] == "create"]
+    if not creates:
+        return
+    try:
+        seg_nouns = {seg.seq: asr_check._nouns(seg.text) for seg in transcript.segments}
+        base = asr_check.Vocabulary.build(members=members, task_titles=titles)
+    except Exception as e:  # noqa: BLE001 - 분석기를 올리지 못하면 모든 새 항목을 보수적으로 막는다
+        for item in creates:
+            item["asr_suspects"] = asr_check.failed()
+        logger.warning("전사 오인식 검사를 준비하지 못했다: %s: %s", type(e).__name__, e)
+        return
+    for item in creates:
+        own = set(item.get("evidence_seqs") or [])
+        vocab = asr_check.Vocabulary(set(base.known), set(base.candidates))
+        for seq, nouns in seg_nouns.items():
+            if seq not in own:
+                vocab.known |= nouns
+                vocab.candidates |= nouns
+        lines = [seg.text for seg in transcript.segments if seg.seq in own] or [item.get("evidence_quote") or ""]
+        item["asr_suspects"] = asr_check.check_item(lines, item.get("task_title"), vocab)
+
+
 class CandidateSource(Protocol):
     """유사 task 검색 — 실제로는 BE 의 POST /workspaces/{id}/tasks/similar (#102)."""
 
@@ -300,6 +348,7 @@ def run(
         findings = [f for f in findings if f.seq == judge_seq]
 
     out = PipelineResult(dropped=dropped)
+    seen_titles: set[str] = set()  # 유사 검색에서 본 기존 태스크 제목. 전사 오인식 검사의 팀 용어다
     new_cards: list[dict[str, Any]] = []                         # 이번 회의 새 항목 카드
     edits: dict[str, tuple[NotionCandidate, dict[str, Any]]] = {}  # task_id → (DB 원래 후보, 수정 카드)
     for finding in findings:
@@ -309,6 +358,7 @@ def run(
             out.failures.append(PipelineFailure("similar", finding.text, f"{type(e).__name__}: {e}"))
             continue
 
+        seen_titles.update(c.title for c in found if c.title)
         shown = [_with_edit(*edits[c.task_id]) if c.task_id in edits else c for c in found]
         # 검색이 못 찾은 수정 카드도 보여 준다 — "마감은 원래대로" 처럼 Task 이름 없이 오면 검색에 안 잡혀
         # 번복을 못 알아본다(PR #206 리뷰). 새 항목 카드처럼 검색과 상관없이 넣는다
@@ -380,4 +430,6 @@ def run(
             new_cards.append(item)
         else:
             edits[task_id] = (target, item)  # 여기 오는 target 은 덮어 보이지 않은 DB 원래 후보다
+    if transcript.source != "chat":
+        _annotate_asr(out.items, transcript, seen_titles, _member_words(candidates, workspace_id))
     return out
