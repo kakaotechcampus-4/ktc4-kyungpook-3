@@ -1,0 +1,477 @@
+"""회의 요약 대기열과 저장. Extraction.summary*, Topic*, Decision 의 유일한 작성자다.
+
+대기열 상태는 Extraction 칸 셋에서 나온다.
+
+- 대상 아님: summary_requested_at 이 NULL. 옛 회의와 채팅 회의가 여기 있어 표시 없이는 돌지 않는다.
+- 대기: 표시가 있고 attempts 가 상한 아래이며 임대가 없거나 지났다.
+- 처리 중: 임대가 살아 있다.
+- 포기: attempts 가 상한에 닿았고 임대가 지났다. 재처리(force)로만 살아난다.
+- 완료: summary 가 있고 표시가 비었다.
+
+실패를 알리는 API 가 없다. 봇이 보내지 않으면 임대가 지나 다음 claim 이 다시 집으므로 LLM 실패와 워커 크래시가 같은 길을 간다.
+"""
+import json
+import logging
+import unicodedata
+from datetime import date, datetime, timedelta, timezone
+from typing import Literal
+
+from sqlalchemy import delete, exists, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, aliased
+
+from app.core.errors import AppError, ErrorCode
+from app.models import (
+    Decision,
+    Extraction,
+    ExtractionItem,
+    Meeting,
+    MeetingSource,
+    MeetingStatus,
+    Member,
+    Source,
+    Topic,
+    TopicItem,
+    TopicMeeting,
+    Workspace,
+)
+from app.schemas.project_map import (
+    SummaryClaimResponse,
+    SummaryInputDecision,
+    SummaryInputItem,
+    SummaryInputLine,
+    SummaryInputResponse,
+    SummaryInputTopic,
+    SummaryRequestResponse,
+    SummaryRequestRow,
+    SummaryRequestState,
+    SummarySaveResponse,
+    SummaryTopicIn,
+    SummaryWriteRequest,
+)
+from app.services.messages import utc
+from app.services.scheduler import WORKSPACE_TZ
+
+logger = logging.getLogger(__name__)
+
+SUMMARIZED_SOURCES = (str(MeetingSource.DISCORD), str(MeetingSource.MANUAL_UPLOAD))
+SUMMARY_MAX_ATTEMPTS = 2
+SUMMARY_LEASE = timedelta(minutes=15)
+JOB_TOPIC_LIMIT = 100
+JOB_DECISION_LIMIT = 50
+SCHEMA_VERSION = 1
+
+
+def meeting_date(started_at: datetime) -> date:
+    """회의가 열린 날. 워크스페이스 시간대 기준이다."""
+    return utc(started_at).astimezone(WORKSPACE_TZ).date()
+
+
+def mark_requested(db: Session, meeting: Meeting, extraction: Extraction) -> None:
+    """요약 대상이면 줄 세운다. 커밋은 호출자가 한다."""
+    if meeting.source not in SUMMARIZED_SOURCES:
+        return
+    if db.scalar(select(exists().where(Source.meeting_id == meeting.meeting_id))):
+        extraction.summary_requested_at = datetime.now(timezone.utc)
+
+
+def claim_next(db: Session, *, only: list[str] | None = None, now: datetime | None = None) -> SummaryClaimResponse | None:
+    """가장 오래된 회의 하나를 가져간다. 앞 회의의 주제와 결정이 있어야 뒤 회의가 재사용하고 뒤집을 수 있어 회의 시각 순이다.
+
+    only 를 주면 그 extraction 안에서만 고른다. 빈 목록이면 아무것도 고르지 않는다. 커밋은 호출자가 한다.
+    """
+    now = now or datetime.now(timezone.utc)
+    stmt = (
+        select(Extraction)
+        .join(Meeting, Meeting.meeting_id == Extraction.meeting_id)
+        .where(
+            Extraction.summary_requested_at.is_not(None),
+            Extraction.summary_attempts < SUMMARY_MAX_ATTEMPTS,
+            or_(Extraction.summary_claimed_at.is_(None), Extraction.summary_claimed_at <= now - SUMMARY_LEASE),
+        )
+        .order_by(Meeting.started_at, Extraction.extraction_id)
+        .limit(1)
+        .with_for_update(skip_locked=True, of=Extraction)
+        .execution_options(populate_existing=True)
+    )
+    if only is not None:
+        stmt = stmt.where(Extraction.extraction_id.in_(only))
+    extraction = db.scalars(stmt).first()
+    if extraction is None:
+        return None
+    extraction.summary_attempts += 1
+    extraction.summary_claimed_at = now
+    db.flush()
+    return SummaryClaimResponse(
+        extraction_id=extraction.extraction_id,
+        meeting_id=extraction.meeting_id,
+        workspace_id=extraction.meeting.workspace_id,
+        attempt=extraction.summary_attempts,
+    )
+
+
+def summary_input(db: Session, extraction_id: str) -> SummaryInputResponse:
+    """요약 재료. 상태를 바꾸지 않아 미리 보기가 같이 쓴다."""
+    extraction = db.get(Extraction, extraction_id)
+    if extraction is None:
+        raise AppError(ErrorCode.EXTRACTION_NOT_FOUND, details={"extraction_id": extraction_id})
+    meeting = extraction.meeting
+    return SummaryInputResponse(
+        extraction_id=extraction.extraction_id,
+        meeting_id=meeting.meeting_id,
+        workspace_id=meeting.workspace_id,
+        title=meeting.title,
+        started_at=meeting.started_at,
+        lines=_input_lines(db, meeting.meeting_id),
+        items=_input_items(db, extraction_id),
+        topics=_input_topics(db, meeting.workspace_id),
+        decisions=_input_decisions(db, meeting),
+    )
+
+
+def _input_lines(db: Session, meeting_id: str) -> list[SummaryInputLine]:
+    rows = db.execute(
+        select(Source, Member.display_name)
+        .outerjoin(Member, Member.member_id == Source.member_id)
+        .where(Source.meeting_id == meeting_id)
+        .order_by(Source.seq)
+    ).all()
+    return [
+        SummaryInputLine(
+            seq=src.seq,
+            at_ms=src.start_ms,
+            speaker=display_name or src.speaker_name or src.speaker_discord_user_id or "Unknown",
+            text=src.text,
+        )
+        for src, display_name in rows
+    ]
+
+
+def _input_items(db: Session, extraction_id: str) -> list[SummaryInputItem]:
+    rows = db.execute(
+        select(ExtractionItem, Member.display_name)
+        .outerjoin(Member, Member.member_id == ExtractionItem.assignee_member_id)
+        .where(ExtractionItem.extraction_id == extraction_id)
+        .order_by(ExtractionItem.created_at, ExtractionItem.item_id)
+    ).all()
+    return [
+        SummaryInputItem(
+            item_id=item.item_id,
+            action=item.action,
+            title=item.task_title,
+            assignee=display_name or item.assignee_raw,
+            due_date=item.due_date,
+        )
+        for item, display_name in rows
+    ]
+
+
+def _input_topics(db: Session, workspace_id: str) -> list[SummaryInputTopic]:
+    rows = db.scalars(
+        select(Topic)
+        .join(TopicMeeting, TopicMeeting.topic_id == Topic.topic_id)
+        .join(Meeting, Meeting.meeting_id == TopicMeeting.meeting_id)
+        .where(Topic.workspace_id == workspace_id)
+        .group_by(Topic.topic_id)
+        .order_by(func.max(Meeting.started_at).desc(), Topic.topic_id)
+        .limit(JOB_TOPIC_LIMIT)
+    ).all()
+    return [SummaryInputTopic(topic_id=t.topic_id, name=t.name, description=t.description) for t in rows]
+
+
+def _input_decisions(db: Session, meeting: Meeting) -> list[SummaryInputDecision]:
+    """이 회의 시점에 유효했던 결정. 순서가 어긋난 측정이나 전체 재실행도 같은 조건으로 돈다."""
+    replacement = aliased(Decision)
+    replacement_meeting = aliased(Meeting)
+    rows = db.execute(
+        select(Decision.decision_id, Decision.text, Topic.name, Meeting.started_at)
+        .join(Topic, Topic.topic_id == Decision.topic_id)
+        .join(Meeting, Meeting.meeting_id == Decision.meeting_id)
+        .outerjoin(replacement, replacement.decision_id == Decision.replaced_by)
+        .outerjoin(replacement_meeting, replacement_meeting.meeting_id == replacement.meeting_id)
+        .where(
+            Decision.workspace_id == meeting.workspace_id,
+            Meeting.started_at < meeting.started_at,
+            or_(Decision.replaced_by.is_(None), replacement_meeting.started_at >= meeting.started_at),
+        )
+        .order_by(Meeting.started_at.desc(), Meeting.meeting_id, Decision.position)
+        .limit(JOB_DECISION_LIMIT)
+    ).all()
+    return [
+        SummaryInputDecision(decision_id=decision_id, text=text, topic=topic, decided_on=meeting_date(started_at))
+        for decision_id, text, topic, started_at in rows
+    ]
+
+
+def request_summaries(
+    db: Session,
+    workspace_id: str,
+    *,
+    meeting_ids: list[str] | None,
+    include_all: bool,
+    force: bool,
+    dry_run: bool,
+    now: datetime | None = None,
+) -> SummaryRequestResponse:
+    """재처리 표시. dry_run 이면 쓰지 않고, state=requested 는 표시할 회의라는 뜻이다.
+
+    force 면 시도 횟수를 비우고 다시 줄 세운다. 기존 요약은 새 요약이 올 때까지 남는다. 커밋은 호출자가 한다.
+    """
+    now = now or datetime.now(timezone.utc)
+    if db.get(Workspace, workspace_id) is None:
+        raise AppError(ErrorCode.WORKSPACE_NOT_FOUND, details={"workspace_id": workspace_id})
+    stmt = select(Meeting).where(Meeting.workspace_id == workspace_id).order_by(Meeting.started_at, Meeting.meeting_id)
+    if not include_all:
+        stmt = stmt.where(Meeting.meeting_id.in_(meeting_ids))
+    meetings = db.scalars(stmt).all()
+    if not include_all:
+        missing = set(meeting_ids) - {meeting.meeting_id for meeting in meetings}
+        if missing:
+            raise AppError(ErrorCode.MEETING_NOT_FOUND, details={"meeting_ids": sorted(missing)})
+
+    found_ids = [meeting.meeting_id for meeting in meetings]
+    # 시각 오름차순으로 덮어 회의마다 최신 추출만 남긴다. /minutes 가 읽는 행과 같다
+    extractions = {
+        extraction.meeting_id: extraction
+        for extraction in db.scalars(
+            select(Extraction).where(Extraction.meeting_id.in_(found_ids)).order_by(Extraction.created_at)
+        )
+    }
+    chars = dict(db.execute(
+        select(Source.meeting_id, func.sum(func.length(Source.text)))
+        .where(Source.meeting_id.in_(found_ids))
+        .group_by(Source.meeting_id)
+    ).all())
+
+    rows = []
+    for meeting in meetings:
+        extraction = extractions.get(meeting.meeting_id)
+        meeting_chars = int(chars.get(meeting.meeting_id) or 0)
+        state = _request_state(meeting, extraction, meeting_chars, force=force, now=now)
+        if state == "requested" and not dry_run:
+            extraction.summary_requested_at = now
+            extraction.summary_attempts = 0
+            extraction.summary_claimed_at = None
+        rows.append(SummaryRequestRow(
+            meeting_id=meeting.meeting_id,
+            extraction_id=extraction.extraction_id if extraction else None,
+            title=meeting.title,
+            started_at=meeting.started_at,
+            state=state,
+            chars=meeting_chars,
+        ))
+    db.flush()
+    return SummaryRequestResponse(items=rows)
+
+
+def _request_state(
+    meeting: Meeting, extraction: Extraction | None, chars: int, *, force: bool, now: datetime
+) -> SummaryRequestState:
+    if meeting.source not in SUMMARIZED_SOURCES:
+        return "not_summarized_source"
+    if meeting.status != MeetingStatus.DONE or extraction is None:
+        return "not_done"
+    if not chars:
+        return "no_sources"
+    if force:
+        return "requested"
+    if extraction.summary_requested_at is not None:
+        return "queued" if _queue_alive(extraction, now) else "gave_up"
+    return "done" if load_document(extraction) is not None else "requested"
+
+
+def _queue_alive(extraction: Extraction, now: datetime) -> bool:
+    """표시된 행이 아직 끝나지 않았는가. 마지막 시도의 임대가 살아 있으면 끝난 것이 아니다."""
+    if extraction.summary_requested_at is None:
+        return False
+    if extraction.summary_attempts < SUMMARY_MAX_ATTEMPTS:
+        return True
+    claimed_at = extraction.summary_claimed_at
+    return claimed_at is not None and utc(claimed_at) > utc(now) - SUMMARY_LEASE
+
+
+def load_document(extraction: Extraction | None) -> dict | None:
+    """저장된 요약. 없거나, 깨졌거나, 객체가 아니면 None."""
+    if extraction is None or not extraction.summary:
+        return None
+    try:
+        document = json.loads(extraction.summary)
+    except ValueError:  # JSONDecodeError 포함
+        return None
+    return document if isinstance(document, dict) else None
+
+
+def summary_status(extraction: Extraction | None, *, now: datetime | None = None) -> Literal["ready", "pending", "none"]:
+    if load_document(extraction) is not None:
+        return "ready"
+    if extraction is not None and _queue_alive(extraction, now or datetime.now(timezone.utc)):
+        return "pending"
+    return "none"
+
+
+def normalize_topic_name(name: str) -> str:
+    """표기만 다른 이름을 하나로 모은다. 비슷하지만 다른 이름을 합치는 일은 하지 않는다."""
+    letters = (
+        ch for ch in unicodedata.normalize("NFKC", name).lower() if unicodedata.category(ch)[0] in "LMN"
+    )
+    # NFKC 가 글자 수를 늘릴 수 있어 칸 길이에 맞춘다
+    return "".join(letters)[:100]
+
+
+def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) -> SummarySaveResponse:
+    """요약, 주제, 연결, 결정을 한 트랜잭션에 쓴다. 커밋은 호출자가 한다.
+
+    행을 잠그고 표시가 비어 있으면 쓰지 않는다(늦은 중복). 이 회의의 연결과 결정은 지우고 다시 쓰므로 재실행해도 한 벌이다.
+    다른 extraction 의 항목, 다른 워크스페이스의 주제와 결정, 이 회의보다 늦은 결정은 건너뛴다.
+    """
+    extraction = db.get(Extraction, extraction_id, with_for_update=True, populate_existing=True)
+    if extraction is None:
+        raise AppError(ErrorCode.EXTRACTION_NOT_FOUND, details={"extraction_id": extraction_id})
+    if extraction.summary_requested_at is None:
+        return SummarySaveResponse(
+            extraction_id=extraction_id, meeting_id=extraction.meeting_id, applied=False, topic_count=0, decision_count=0
+        )
+
+    meeting = extraction.meeting
+    previous_topics = set(
+        db.scalars(select(TopicMeeting.topic_id).where(TopicMeeting.meeting_id == meeting.meeting_id))
+    )
+    _clear_meeting(db, meeting.meeting_id, extraction_id)
+
+    item_ids = set(db.scalars(select(ExtractionItem.item_id).where(ExtractionItem.extraction_id == extraction_id)))
+    topics: dict[str, str] = {}
+    links: set[tuple[str, str]] = set()
+    details: list[dict] = []
+    for entry in payload.topics:
+        topic = _resolve_topic(db, meeting.workspace_id, entry)
+        if topic is None:
+            logger.warning(
+                "주제를 찾지 못해 건너뜁니다. 그 아래 결정도 저장하지 않습니다. extraction_id=%s topic_id=%s name=%s",
+                extraction_id, entry.topic_id, entry.name,
+            )
+            continue
+        topics.setdefault(topic.topic_id, topic.name)
+        links.update((topic.topic_id, item_id) for item_id in entry.item_ids if item_id in item_ids)
+        for decision in entry.decisions:
+            row = Decision(
+                workspace_id=meeting.workspace_id,
+                meeting_id=meeting.meeting_id,
+                topic_id=topic.topic_id,
+                position=len(details),
+                text=decision.text,
+                reason=decision.reason,
+            )
+            db.add(row)
+            db.flush()
+            details.append({
+                "text": decision.text,
+                "reason": decision.reason,
+                "rejected": decision.rejected,
+                "topic": topic.name,
+                "replaces": _replace_decisions(db, row, meeting, decision.replaces),
+            })
+
+    db.add_all(TopicMeeting(topic_id=topic_id, meeting_id=meeting.meeting_id) for topic_id in topics)
+    db.add_all(TopicItem(topic_id=topic_id, item_id=item_id) for topic_id, item_id in links)
+    extraction.summary = json.dumps(_document(payload, list(topics.values()), details), ensure_ascii=False)
+    extraction.summary_requested_at = None
+    extraction.summary_attempts = 0
+    extraction.summary_claimed_at = None
+    db.flush()
+    _delete_orphan_topics(db, previous_topics - set(topics))
+    return SummarySaveResponse(
+        extraction_id=extraction_id,
+        meeting_id=meeting.meeting_id,
+        applied=True,
+        topic_count=len(topics),
+        decision_count=len(details),
+    )
+
+
+def _clear_meeting(db: Session, meeting_id: str, extraction_id: str) -> None:
+    decision_ids = select(Decision.decision_id).where(Decision.meeting_id == meeting_id)
+    # 이 회의가 뒤집었던 옛 결정을 유효로 되돌린다. 새 요약이 다시 뒤집으면 다시 걸린다
+    db.execute(update(Decision).where(Decision.replaced_by.in_(decision_ids)).values(replaced_by=None))
+    db.execute(delete(Decision).where(Decision.meeting_id == meeting_id))
+    item_ids = select(ExtractionItem.item_id).where(ExtractionItem.extraction_id == extraction_id)
+    db.execute(delete(TopicItem).where(TopicItem.item_id.in_(item_ids)))
+    db.execute(delete(TopicMeeting).where(TopicMeeting.meeting_id == meeting_id))
+
+
+def _resolve_topic(db: Session, workspace_id: str, entry: SummaryTopicIn) -> Topic | None:
+    if entry.topic_id is not None:
+        topic = db.get(Topic, entry.topic_id)
+        return topic if topic is not None and topic.workspace_id == workspace_id else None
+    key = normalize_topic_name(entry.name)
+    if not key:
+        return None
+    return _topic_by_key(db, workspace_id, key) or _create_topic(db, workspace_id, key, entry)
+
+
+def _topic_by_key(db: Session, workspace_id: str, key: str) -> Topic | None:
+    return db.scalars(select(Topic).where(Topic.workspace_id == workspace_id, Topic.name_key == key)).first()
+
+
+def _create_topic(db: Session, workspace_id: str, key: str, entry: SummaryTopicIn) -> Topic:
+    topic = Topic(workspace_id=workspace_id, name=entry.name.strip(), name_key=key, description=entry.description)
+    try:
+        # 워커와 측정 명령이 같은 새 이름을 동시에 만들 수 있다. claim 은 회의 단위라 막지 못하고 유니크 제약이 막는다
+        with db.begin_nested():
+            db.add(topic)
+            db.flush()
+    except IntegrityError:
+        return _topic_by_key(db, workspace_id, key)
+    return topic
+
+
+def _replace_decisions(db: Session, new: Decision, meeting: Meeting, replaces: list[str]) -> list[dict]:
+    """옛 결정에 뒤집은 결정을 걸고, 문서에 넣을 사본을 돌려준다. 사본은 옛 결정이 또 바뀌어도 그 회의의 기록으로 남는다."""
+    if not replaces:
+        return []
+    rows = db.execute(
+        select(Decision, Meeting)
+        .join(Meeting, Meeting.meeting_id == Decision.meeting_id)
+        .where(
+            Decision.decision_id.in_(replaces),
+            Decision.workspace_id == meeting.workspace_id,
+            Meeting.started_at < meeting.started_at,
+        )
+        .order_by(Meeting.started_at, Decision.position)
+    ).all()
+    copies = []
+    for old, old_meeting in rows:
+        old.replaced_by = new.decision_id
+        copies.append({
+            "decision_id": old.decision_id,
+            "text": old.text,
+            "meeting_id": old_meeting.meeting_id,
+            "meeting_title": old_meeting.title,
+            "decided_on": meeting_date(old_meeting.started_at).isoformat(),
+        })
+    return copies
+
+
+def _delete_orphan_topics(db: Session, topic_ids: set[str]) -> None:
+    """이 회의가 더 쓰지 않는 주제 중 어느 회의에도 남지 않은 것을 지운다. 결정과 항목 연결은 회의를 통해서만 달리므로 함께 남는 것이 없다."""
+    if topic_ids:
+        db.execute(
+            delete(Topic).where(Topic.topic_id.in_(topic_ids), ~exists().where(TopicMeeting.topic_id == Topic.topic_id))
+        )
+
+
+def _document(payload: SummaryWriteRequest, topic_names: list[str], details: list[dict]) -> dict:
+    """저장할 JSON 을 만드는 유일한 곳. 화면이 읽는 overview, key_points, decisions(문자열 목록)가 항상 있다."""
+    return {
+        "overview": payload.overview,
+        "key_points": payload.key_points,
+        "decisions": [detail["text"] for detail in details],
+        "schema_version": SCHEMA_VERSION,
+        "discussion": [block.model_dump() for block in payload.discussion],
+        "decision_details": details,
+        "facts": payload.facts,
+        "task_changes": [entry.model_dump() for entry in payload.task_changes],
+        "schedule": [entry.model_dump() for entry in payload.schedule],
+        "open_items": payload.open_items,
+        "topics": topic_names,
+        "meta": {"model": payload.model_name, "truncated_input": payload.truncated_input},
+    }

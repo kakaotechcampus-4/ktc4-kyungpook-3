@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import approvals, bot_lookups, bot_messages, extractions, invitations, messages, meetings, members, similar_tasks, sources, tasks, uploads, workspaces, auth, integrations
-from app.api import message_settings, notifications
+from app.api import bot_summaries, message_settings, notifications
 from app.services import scheduler
 from app.core.errors import AppError, Envelope, ErrorCode, failure, success
 from app.services import embedding, notion_sync, upload_sweeper
@@ -80,6 +80,7 @@ app.include_router(notifications.router, prefix=API_PREFIX)
 app.include_router(notifications.push_router, prefix=API_PREFIX)
 app.include_router(message_settings.router, prefix=API_PREFIX)
 app.include_router(bot_lookups.router, prefix=API_PREFIX)
+app.include_router(bot_summaries.router, prefix=API_PREFIX)
 
 
 @app.exception_handler(AppError)

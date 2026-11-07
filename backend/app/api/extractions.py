@@ -57,7 +57,7 @@ from app.services.matching import (
     resolve_speaker,
     speaker_match,
 )
-from app.services import upload_storage
+from app.services import summary, upload_storage
 from app.services.embedding import has_unsearchable_tasks
 from app.services.tasks import create_task, delete_task
 
@@ -346,6 +346,7 @@ def create_extraction(
             db.flush()
             item.approval_id = approval.approval_id
 
+    summary.mark_requested(db, meeting, extraction)
     db.commit()
     db.refresh(extraction)
     # 결과를 저장했으니 업로드 녹음은 더 필요 없다(처리 중에만 보관). 커밋이 성공한 뒤에 지운다
