@@ -1058,6 +1058,21 @@ def test_lines_written_at_the_same_moment_keep_their_history_in_the_timeline(mdb
     assert entry.reply_change_id == min(line.change_id for line in lines)
 
 
+def test_line_goes_to_the_oldest_of_cards_with_the_same_value(mdb, mseed, two):
+    a, _ = two
+    cards = [_meeting_card(mdb, mseed, a, due_date="2026-11-27") for _ in range(4)]
+    for offset, card in enumerate(cards):
+        card.created_at = AT - timedelta(hours=offset + 1)
+    mdb.commit()
+    oldest = cards[-1]
+
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-27", claimed=item))
+
+    assert _lines(mdb, item)[(a.task_id, "due_date")].approval_id == oldest.approval_id
+
+
 def test_repeated_assignee_shows_approved_on_both_replies(mdb, mseed, two):
     a, _ = two
     mdb.add(MemberAlias(

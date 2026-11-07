@@ -490,8 +490,9 @@ def _waiting_cards(db: Session, task_id: str, group: list[tuple]) -> list[str] |
             ApprovalRequest.related_task_id == task_id,
             ApprovalRequest.status == ApprovalStatus.PENDING,
             ApprovalRequest.type == str(ApprovalType.TASK_UPDATE),
-        )
+        ).order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.approval_id.desc())
     ).all()
+    # 같은 값의 카드가 여럿이면 가장 먼저 나온 카드가 남는다.
     waiting = {}
     for card in cards:
         payload = json.loads(card.payload)
