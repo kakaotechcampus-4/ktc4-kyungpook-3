@@ -27,7 +27,7 @@
   - 수정 제안 상태(`features/approval-resolve/ui/TaskUpdateOverrideFields.tsx`): 상태 표식, 「원래 제안 유지」 줄, 저장 중 잠김.
   - 재촉 만들기(`features/reminder-create/ui/ReminderCreateForm.tsx`): 받는 사람 둘째 줄은 「진행 중 N개」, Discord 미연결이면 빨간 글씨 「Discord 미연결 · DM 이 나가지 않아요」(고를 수는 있다). 태스크 둘째 줄은 「09/20 마감 · 기한 지남」(빨간 글씨)·「09/24 마감 · 진행 중」·「마감 없음 · 할 일」. 그 팀원의 완료 태스크는 끝에 비활성으로 두고 「완료한 태스크는 재촉할 수 없어요」. 목록 줄이 8개를 넘으면 `Combobox`.
   - 설정(`pages/settings/ui/NotificationSection.tsx`): 「마감 [1일 전] [09:00]에 보내요」 문장 안에 36px 선택 상자 두 개. 시트 제목은 「재촉 며칠 전」「재촉 보낼 시각」. PM 이 아니면 잠긴다.
-- 바꾸지 않은 곳: `features/task-status/ui/TaskStatusControl.tsx` 는 #471 이 이미 4칸 트랙(`Segmented`)으로 바꿨고 이슈가 「겹치면 그쪽을 따른다」고 해서 import 줄만 옮겼다. `TaskBoard.tsx` 는 #478 이 고치는 중이라 손대지 않았다. 그래서 `features/task-status` 가 `TASK_STATUS_LABEL` 을 다시 내보내는 줄 하나가 남는다. #478 뒤 지운다.
+- 바꾸지 않은 곳: `features/task-status/ui/TaskStatusControl.tsx` 는 #471 이 이미 4칸 트랙(`Segmented`)으로 바꿨고 이슈가 「겹치면 그쪽을 따른다」고 해서 import 줄만 옮겼다. `TaskBoard.tsx` 는 #478(#492) 병합 뒤 `TASK_STATUS_LABEL` import 만 `@/entities/task` 로 옮기고, `features/task-status` 의 다시 내보내기 줄을 지웠다. 보드 칸 정의(`COLUMN_SPEC`·`BOARD_COLUMNS`)와 휴대폰 칸 고르기는 #492 그대로이고, 칸 머리 표식만 `TaskStatusMark` 를 쓴다.
 
 ## 완료조건 확인
 

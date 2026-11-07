@@ -220,7 +220,7 @@ export const 팀원_내_대화: Story = {
     await expect(detail.getByText('DM 못 보냄 · Discord 계정이 연결되지 않았어요')).toBeVisible()
     await expect(detail.getByText(/봇 DM 창에 쓴 글은 모두 PM 대화에 보여요/)).toBeVisible()
     await expect(detail.queryByRole('link', { name: '확인하기' })).toBeNull()
-    await expect(detail.getByRole('button', { name: '답장 보내기' })).toBeEnabled()
+    await expect(detail.getByRole('button', { name: '답장 보내기' })).toBeDisabled()
   },
 }
 
@@ -277,7 +277,7 @@ export const PM_내_대화: Story = {
       within(canvas.getByRole('region', { name: '대화' })).getAllByRole('link'),
     ).toHaveLength(4)
     await expect(detail.getByText('Discord 개인 메시지 · 웹에서도 답장할 수 있어요')).toBeVisible()
-    await expect(detail.getByRole('button', { name: '답장 보내기' })).toBeEnabled()
+    await expect(detail.getByRole('button', { name: '답장 보내기' })).toBeDisabled()
     await expect(detail.queryByText(/메시지는 항상/)).toBeNull()
   },
 }

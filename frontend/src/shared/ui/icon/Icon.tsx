@@ -192,6 +192,29 @@ const ICONS = {
       </>
     ),
   },
+  /** 휴대폰 아래 탭 막대(PwaDashboard)의 다섯 탭 — 홈 · 회의록 · 태스크 · 메시지 · 팀 */
+  home: { strokeWidth: 1.7, paths: <path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z" /> },
+  minutes: {
+    strokeWidth: 1.7,
+    paths: (
+      <>
+        <rect x="5" y="3" width="14" height="18" rx="2" />
+        <path d="M9 8h6M9 12h6M9 16h3" />
+      </>
+    ),
+  },
+  tasks: { strokeWidth: 1.7, paths: <path d="M4 6h3M4 12h3M4 18h3M10 6h10M10 12h10M10 18h10" /> },
+  message: { strokeWidth: 1.7, paths: <path d="M4 5h16v11H9l-5 4z" /> },
+  team: {
+    strokeWidth: 1.7,
+    paths: (
+      <>
+        <circle cx="9" cy="9" r="3.5" />
+        <path d="M3 20c.8-3.4 3.2-5 6-5s5.2 1.6 6 5" />
+        <path d="M16 5.5a3 3 0 0 1 0 6M18 15c1.6.6 2.6 2.1 3 5" />
+      </>
+    ),
+  },
   calendar: {
     strokeWidth: 1.7,
     paths: (

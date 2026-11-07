@@ -34,6 +34,8 @@ export interface ReviewDetailProps {
   workspaceId: string
   botName: string
   bundle: Bundle
+  /** 스크롤 끝에 둘 여백(px). `보내지 않음`·`이대로 발송` 을 정리 중 토스트 위로 꺼낼 수 있게 한다. 토스트가 없으면 0 */
+  toastClearance: number
   /** 승인하거나 보내지 않거나 마지막 태스크를 빼거나 다른 묶음과 합쳐져 이 항목이 바뀐다 — 누른 버튼도 사라지므로 포커스를 맡길 자리로 옮긴다 */
   onSettled: () => void
 }
@@ -46,7 +48,13 @@ export interface ReviewDetailProps {
  * 열린 것은 한 번에 하나다(ReviewDraft).
  * 잠금은 `aria-disabled` 라 누른 버튼에서 포커스가 빠지지 않는다. 시각 저장만으로 잠긴 동안은 버튼 모양을 그대로 둔다
  */
-export function ReviewDetail({ workspaceId, botName, bundle, onSettled }: ReviewDetailProps) {
+export function ReviewDetail({
+  workspaceId,
+  botName,
+  bundle,
+  toastClearance,
+  onSettled,
+}: ReviewDetailProps) {
   const headingId = useId()
   const lockHintId = useId()
   const tasksHeadingRef = useRef<HTMLHeadingElement>(null)
@@ -81,7 +89,10 @@ export function ReviewDetail({ workspaceId, botName, bundle, onSettled }: Review
   }
 
   return (
-    <div className={PAGE}>
+    <div
+      className={PAGE}
+      style={toastClearance > 56 ? { paddingBottom: toastClearance } : undefined}
+    >
       <article aria-labelledby={headingId} className={COLUMN}>
         <div className="flex flex-col gap-8">
           <h2 id={headingId} className={TITLE}>
