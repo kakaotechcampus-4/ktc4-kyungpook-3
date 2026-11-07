@@ -280,7 +280,7 @@ def test_chat_meeting_stuck_processing_is_failed(db, seed):
 
 
 def test_chat_meeting_alive_within_poller_timeout_is_not_swept(db, seed):
-    """폴러 시간 제한(6시간) 안에서 돌고 있는 회의는 정리하지 않는다. 정리하면 추출 결과가 409 로 버려진다."""
+    """폴러 시간 제한을 6시간까지 올려도(#431 에서 진행 중) 그 안에서 돌고 있는 회의는 정리하지 않는다. 정리하면 추출 결과가 409 로 버려진다."""
     alive = _chat_meeting(db, seed, status="processing", ended_ago=timedelta(hours=6))
 
     assert upload_sweeper.sweep_stalled_uploads(db) == []
