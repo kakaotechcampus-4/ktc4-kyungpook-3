@@ -185,7 +185,7 @@ def test_first_person_still_uses_speaker_and_saves_type(client, db, seed):
 
 
 def test_legacy_thirdrole_item_is_not_auto(client, db, seed):
-    """학습한 역할 별칭으로 legacy 확신도가 높아져도 역할 지목은 PM 이 본다(#459)."""
+    """AI 가 thirdrole 로 추측한 이름이 확인된 별칭에 걸려 legacy 확신도가 높아져도 역할 지목은 PM 이 본다(#459)."""
     r = _post(client, seed, [_legacy("백엔드 배포", 0.95, assignee_type="thirdrole", assignee_raw="BE 리더")])
 
     assert r.status_code == 201

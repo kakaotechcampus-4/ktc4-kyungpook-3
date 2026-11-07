@@ -255,7 +255,8 @@ def create_extraction(
                 blockers=blockers,
             )
             if raw_item.assignee_type == "thirdrole" and gate == Gate.AUTO:
-                # 역할 지목("BE 리더가")은 학습한 별칭(0.9)으로 legacy 확신도가 높아져도 PM이 본다(#459).
+                # 역할 지목은 AI가 역할 원문 대신 문맥으로 추측한 이름을 assignee_raw로 보낼 수 있다. 그 이름이 별칭에
+                # 걸려 legacy 확신도가 높아져도 추측이라 PM이 본다(#459).
                 # 판단 경로(judge)는 auto_blockers가 이미 막으므로 사실상 legacy에 걸리지만, 경로와 무관하게 막는다.
                 # 채팅 강등보다 먼저 둔다. 아래 로그가 "채팅이 아니었으면 auto였을 항목"만 세게 하려는 것이다
                 gate = Gate.REVIEW
