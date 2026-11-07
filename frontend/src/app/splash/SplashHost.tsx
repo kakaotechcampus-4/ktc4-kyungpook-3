@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useReducer,
   useRef,
@@ -37,6 +38,8 @@ const STATIC_SPLASH_ID = 'boot-splash'
  */
 const BOOT_MODE_ATTRIBUTE = 'data-splash'
 const LOOK_POSES: readonly MascotPose[] = ['idle', 'left', 'right']
+/** 시작하기 스플래시가 걷힌 뒤 로그인 화면이 아직 뼈대면 첫 입력이 나타날 때까지 이만큼 기다린다 */
+const FOCUS_WAIT_MS = 10_000
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
 
 interface SplashRun {
@@ -88,6 +91,38 @@ function initialState(run: SplashRun): SplashState {
     landing: run.landing,
     mode: run.mode,
   })
+}
+
+/** 포커스가 아직 판에 있거나 아무 데도 없다 — 사람이 옮기지 않았다 */
+function focusUnclaimed(): boolean {
+  const active = document.activeElement
+  return active === null || active === document.body || active.closest('.splash') !== null
+}
+
+/**
+ * 시작하기 스플래시가 걷힌 뒤 로그인 화면의 시작점(첫 입력)으로 포커스를 옮긴다 (#510).
+ * 건너뛰어 화면이 아직 뼈대면 입력이 나타날 때까지 기다린다. 그 사이 사람이 포커스를 옮겼으면 그만둔다
+ */
+function focusFirstField(appRoot: HTMLElement): void {
+  const tryFocus = (): boolean => {
+    if (!focusUnclaimed()) return true
+    const field = appRoot.querySelector<HTMLElement>(
+      'main input:not([type="hidden"]):not(:disabled)',
+    )
+    if (field === null) return false
+    field.focus({ preventScroll: true })
+    return true
+  }
+  if (tryFocus()) return
+  const observer = new MutationObserver(() => {
+    if (tryFocus()) stop()
+  })
+  const timer = setTimeout(stop, FOCUS_WAIT_MS)
+  function stop() {
+    observer.disconnect()
+    clearTimeout(timer)
+  }
+  observer.observe(appRoot, { childList: true, subtree: true })
 }
 
 interface SplashHostProps {
@@ -221,8 +256,9 @@ function SplashRunView({ run, appRoot, onDone }: SplashRunViewProps) {
   }, [looking])
 
   const shown = stage.phase === 'hidden' ? run.coversWhileHidden : stage.phase !== 'done'
-  // 움직임 줄이기면 준비되는 순간 걷히므로, 남은 확인 시간(SETTLE_MS) 동안은 이미 그려진 첫 화면을 막지 않는다
-  const inert = shown && stage.phase !== 'leave' && !(reduced && holds === 0)
+  // 움직임 줄이기면 준비되는 순간 걷히므로, 남은 확인 시간(SETTLE_MS) 동안은 이미 그려진 첫 화면을 막지 않는다.
+  // 시작하기는 포커스를 판에 두므로 걷히기 시작할 때까지 막는다 — 그때 로그인 화면으로 포커스를 넘긴다
+  const inert = shown && stage.phase !== 'leave' && (skippable || !(reduced && holds === 0))
   useLayoutEffect(() => {
     if (!inert) return
     appRoot.setAttribute('inert', '')
@@ -230,6 +266,14 @@ function SplashRunView({ run, appRoot, onDone }: SplashRunViewProps) {
       appRoot.removeAttribute('inert')
     }
   }, [inert, appRoot])
+
+  // 시작하기: 사라지기 시작하거나 끝나거나 건너뛰면 로그인 화면의 첫 입력으로 포커스를 넘긴다. 한 번만이다
+  const handedOff = useRef(false)
+  useEffect(() => {
+    if (!skippable || inert || handedOff.current) return
+    handedOff.current = true
+    focusFirstField(appRoot)
+  }, [skippable, inert, appRoot])
 
   if (!shown) return null
 
@@ -257,6 +301,7 @@ function SplashRunView({ run, appRoot, onDone }: SplashRunViewProps) {
       leaving={stage.phase === 'leave'}
       quickFade={run.mode === 'quick'}
       instant={run.mode === 'start'}
+      skippable={skippable}
     />,
     document.body,
   )
@@ -276,6 +321,8 @@ interface SplashOverlayProps {
   quickFade: boolean
   /** 등장 없이 처음부터 정면으로 보인다 */
   instant: boolean
+  /** 시작하기 스플래시. 포커스를 받는 대화상자이고 건너뛰는 법을 스크린리더에 알린다 */
+  skippable: boolean
 }
 
 /** index.html 의 #boot-splash 와 같은 마크업·클래스다. 모양과 등장·사라짐은 index.html 의 CSS 가 맡는다 */
@@ -290,17 +337,33 @@ function SplashOverlay({
   leaving,
   quickFade,
   instant,
+  skippable,
 }: SplashOverlayProps) {
   // 그려진 순간까지 지난 시간만큼 CSS 등장을 앞당긴다. 이어받을 때 등장이 처음부터 다시 돌지 않는다
   const [shift] = useState(() => performance.now() - startedAt)
+  const wordId = useId()
+  const hintId = useId()
+  const root = useRef<HTMLDivElement>(null)
+  // 누른 `시작하기` 링크는 로그인으로 옮기며 사라진다. 포커스를 판에 두어 안내를 읽히고 Enter·Esc 를 받는다
+  useLayoutEffect(() => {
+    if (skippable) root.current?.focus({ preventScroll: true })
+  }, [skippable])
   return (
     <div
+      ref={root}
       className="splash"
       data-phase={leaving ? 'leave' : undefined}
       data-settling={unseen ? '' : undefined}
       data-fade={quickFade ? 'quick' : undefined}
       data-instant={instant ? '' : undefined}
       style={{ '--splash-shift': `${shift}ms` } as CSSProperties}
+      {...(skippable && {
+        role: 'dialog',
+        'aria-modal': true,
+        'aria-labelledby': wordId,
+        'aria-describedby': hintId,
+        tabIndex: -1,
+      })}
     >
       <div className="splash__group">
         <div className="splash__mascot">
@@ -314,8 +377,15 @@ function SplashOverlay({
             dialHz={0.55}
           />
         </div>
-        <p className="splash__word">Manager&apos;s Manager</p>
+        <p id={wordId} className="splash__word">
+          Manager&apos;s Manager
+        </p>
       </div>
+      {skippable && (
+        <p id={hintId} className="sr-only">
+          로그인 화면을 준비하고 있어요. Enter 나 Esc 를 누르면 건너뛰어요.
+        </p>
+      )}
       <p className="splash__status" role="status">
         {status}
       </p>

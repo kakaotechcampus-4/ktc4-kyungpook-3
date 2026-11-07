@@ -99,31 +99,65 @@ test('처음 방문 → 랜딩 → 시작하기 → 스플래시 → 로그인. 
   await expect(page.locator('.splash')).toHaveCount(0)
 })
 
+/** 세션 확인을 늦춘 채 path 로 들어간다. 둘러보기가 시작되는 1.5초를 넘겨 전체 스플래시가 반드시 보인다 (msw-auth-delay) */
+async function openHeld(page: Page, path: string): Promise<void> {
+  await page.goto(`${path}?msw-scenario=signed-out&msw-auth-delay=2500`)
+}
+
+const splashStatus = (page: Page) => page.locator('.splash [role="status"]')
+
 test('12시간 안 새로고침은 정적 스플래시 없이 뼈대 → 화면, 12시간이 지나면 다시 전체 스플래시다', async ({
   page,
 }) => {
   await watchReactSplash(page)
-  await start(page, 'signed-out', '/login')
-  // 처음 접속은 전체 스플래시다. 개발 서버 첫 로딩은 0.3초를 넘겨 보이고 기록된다
-  expect(await reactSplashSeen(page)).toBe(true)
+  // 처음 접속. 세션 확인을 붙잡아 두어 스플래시가 둘러보기까지 보이고 기록된다
+  await openHeld(page, '/login')
+  await expect(splashStatus(page)).toHaveText('로그인 확인 중')
   expect(Number(await record(page))).toBe(NOW.getTime())
-
-  await page.clock.setFixedTime(new Date(NOW.getTime() + 11 * HOUR))
-  await page.reload()
+  await expect(page.locator('.splash')).toHaveCount(0, { timeout: 15_000 })
   await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible()
+
+  // 11시간 뒤 다시 들어온다. 같은 2.5초를 붙잡아도 판 없이 뼈대가 기다린다
+  await page.clock.setFixedTime(new Date(NOW.getTime() + 11 * HOUR))
+  await openHeld(page, '/login')
   await expect(page.locator('html')).toHaveAttribute('data-splash', 'skip')
+  await expect(page.locator('main[aria-busy="true"]')).toBeVisible()
   await expect(page.locator('#boot-splash')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible({ timeout: 15_000 })
   expect(await reactSplashSeen(page)).toBe(false)
   // 건너뛴 접속은 기록을 고치지 않는다
   expect(Number(await record(page))).toBe(NOW.getTime())
 
+  // 13시간 뒤에는 다시 전체 스플래시가 보이고 새 시각을 기록한다
   await page.clock.setFixedTime(new Date(NOW.getTime() + 13 * HOUR))
-  await page.reload()
+  await openHeld(page, '/login')
+  await expect(page.locator('html')).not.toHaveAttribute('data-splash')
+  await expect(splashStatus(page)).toHaveText('로그인 확인 중')
+  expect(Number(await record(page))).toBe(NOW.getTime() + 13 * HOUR)
+  await expect(page.locator('.splash')).toHaveCount(0, { timeout: 15_000 })
+})
+
+test('등장 시각(0.3초) 전에 준비되면 스플래시가 보이지 않고 기록도 바뀌지 않는다', async ({
+  page,
+}) => {
+  // 준비가 등장 시각보다 먼저 오도록 앱이 읽는 performance.now 만 30초 늦춘다. 스플래시 시계의 차이(경과)만 바뀌고
+  // 개발 서버 속도와 상관없이 등장 시각 전에 준비된 것과 같다. 기록 시각은 Date(고정)라 영향이 없다
+  await page.addInitScript(() => {
+    const now = performance.now.bind(performance)
+    performance.now = () => now() - 30_000
+  })
+  const shownAt = NOW.getTime() - 13 * HOUR
+  await page.addInitScript(
+    ([key, value]) => {
+      window.localStorage.setItem(key, value)
+    },
+    [RECORD_KEY, String(shownAt)],
+  )
+
+  await start(page, 'signed-out', '/login')
   await expect(page.locator('html')).not.toHaveAttribute('data-splash')
   await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible()
-  await expect(page.locator('.splash')).toHaveCount(0, { timeout: 15_000 })
-  expect(await reactSplashSeen(page)).toBe(true)
-  expect(Number(await record(page))).toBe(NOW.getTime() + 13 * HOUR)
+  expect(Number(await record(page))).toBe(shownAt)
 })
 
 test('설치한 앱은 12시간 안이어도 정적 판을 그리고, 끝맺음 없이 짧게 사라진다', async ({

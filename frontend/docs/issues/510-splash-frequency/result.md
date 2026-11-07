@@ -41,8 +41,10 @@
 | `start` | 랜딩 `시작하기` | 0에 정면, `GLANCE_AT_MS`(100)에 모자 누르고 왼쪽 보기(`glance`), `GLANCE_END_MS`(800)에 눈웃음 1.1초 → 사라짐 0.6초. 약 2.5초 |
 
 - `start` 는 glance 가 끝나기 전에 온 준비를 미뤘다가 glance 끝에 눈웃음으로 간다(`readyEarly`). 0.8초까지 로그인 화면이 준비되지 않으면 새로 접속처럼 둘러보며 기다린다.
+- 미뤄 둔 준비는 다시 잡히면(`held`) 지운다. 다시 잡힌 로딩이 풀리고 `SETTLE_MS` 가 지난 새 준비만 스플래시를 끝낸다(리뷰 반영). 그렇지 않으면 다시 로딩 중인데도 0.8초에 눈웃음으로 가거나, 움직임 줄이기에서 준비되지 않은 화면을 드러냈다.
 - `skip` 이벤트는 바로 `done` 이다. `start` 실행만 문서의 `pointerdown`·`keydown`(Enter·Escape)을 듣는다. 판이 화면 전체를 덮어 어디를 눌러도 판을 누른 것이다.
 - 움직임 줄이기: `quick` 은 준비되면 바로 걷힌다. `start` 는 정면으로 0.8초 머문 뒤 걷힌다.
+- 접근성(리뷰 반영): `start` 판은 `role="dialog"`·`aria-modal`, 이름은 워드마크 「Manager's Manager」, 설명은 화면에 보이지 않는(sr-only) 안내 「로그인 화면을 준비하고 있어요. Enter 나 Esc 를 누르면 건너뛰어요.」다. 누른 `시작하기` 링크는 로그인으로 옮기며 사라지므로 판이 뜨는 순간 판에 포커스를 둔다. 판이 걷히기 시작하거나(사라짐) 끝나거나 건너뛰면 로그인 화면의 첫 입력(이메일)으로 포커스를 넘긴다. 건너뛰어 아직 뼈대면 입력이 나타날 때까지(최대 10초) 기다리고, 그 사이 사람이 포커스를 옮겼으면 그만둔다. 판에 포커스를 두는 동안은 움직임 줄이기여도 앱을 `inert` 로 둔다. 화면 전체 판의 포커스 테두리는 그리지 않는다(`.splash:focus`). 보이는 건너뛰기 버튼은 디자인 결정이라 더하지 않았다.
 - `start` 판은 `data-instant` 로 CSS 등장(0.3초 대기 + 올라옴)을 끈다. 누른 순간 정적 판과 같은 정면이다. `quick` 판은 `data-fade="quick"` 으로 사라짐이 0.2초다(`staticSplash.test.tsx` 가 `QUICK_FADE_MS` 와 비교).
 - 모자 누르기는 둘러보기 0단계에서 「glance 또는 look 이 시작될 때」로 바꿨다. 새로 접속 순서는 그대로다.
 - 끝맺음 값(`SMILE_MS` 1100, `FADE_MS` 600, `splash-out 0.6s`)은 바꾸지 않았다.
@@ -81,7 +83,7 @@
 | 3. `시작하기` → 로그인 스플래시, 12시간 규칙, 누르면 건너뜀, 새 탭 비가로채기 | 충족 | `SplashHost.test.tsx` 「랜딩 시작하기」, `landingEntry.test.tsx`, E2E 첫째 |
 | 4. 다시 온 사람 `/` → `/login`, 앱 안 이동은 랜딩, 랜딩 JS 전 판단 | 충족 | `landingEntry.test.tsx`, E2E 첫째(랜딩 모듈 요청이 없다) |
 | 단위 테스트(12시간 판정·기록 시점·첫 진입·앱 안 이동·시작하기·건너뛰기·새 탭) | 충족 | 아래 검증 |
-| E2E(MSW, 시계 고정) | 충족 | [splash-frequency.e2e.ts](../../../e2e/splash-frequency.e2e.ts) 3개 |
+| E2E(MSW, 시계 고정) | 충족 | [splash-frequency.e2e.ts](../../../e2e/splash-frequency.e2e.ts) 4개 |
 | 결정 기록·D-147 허용 키·결과 문서, 스토리·README 줄 없음 | 충족 | 위 문서. `*.stories.tsx`·`frontend/README.md` 는 건드리지 않았다 |
 | 건너뛸 때의 뼈대를 화면별로 | **남음** | #508 2단계 병합 뒤 이어서 한다 |
 
@@ -97,15 +99,18 @@
 | 들어온 뒤 생긴 기록 | 보지 않는다 | 지금 기록으로 판정: 처음 온 사람이 `시작하기` 뒤 뒤로 가기로 랜딩에 돌아오지 못한다 |
 | `시작하기` 의 움직임 줄이기 | 정면으로 0.8초 머문 뒤 걷힘 | 준비되면 바로 걷힘: 로그인 화면이 이미 준비돼 있어 0.1초 번쩍인다. 0.3초 대기 뒤 보이기: 대부분 보이지 않아 기록이 남지 않고 다시 온 사람 판정이 어긋난다 |
 | 설치한 앱의 짧은 사라짐 | 기록하지 않는다 | 기록: 설치한 앱은 전체 스플래시를 다시 보지 못한다 |
-| `start` 의 준비 처리 | glance 끝까지 미룬다(`readyEarly`) | 바로 눈웃음: 로그인 화면이 0.1초 안에 준비돼 정면 → 눈웃음이 되고 둘러보기가 없다 |
+| `start` 의 준비 처리 | glance 끝까지 미룬다(`readyEarly`). 다시 잡히면 버린다 | 바로 눈웃음: 로그인 화면이 0.1초 안에 준비돼 정면 → 눈웃음이 되고 둘러보기가 없다. 다시 잡혀도 유지: 다시 로딩 중인 화면을 드러낸다 |
+| `start` 의 포커스 | 뜰 때 판(대화상자)에, 걷히기 시작하면 로그인 첫 입력에 | 그대로 두기: 누른 링크가 사라져 포커스가 body 로 떨어지고 새 화면 시작점을 다시 찾아야 한다. 로그인 제목: 제목은 포커스를 받지 않는 요소라 tabindex 를 더해야 하고, 로그인 화면의 할 일은 입력이다 |
+| 건너뛰는 법 안내 | 판의 설명으로 붙인 sr-only 문장 | 보이는 「건너뛰기」 버튼: 디자인 결정이라 이번에 하지 않았다. `role="status"` 에 넣기: 뜰 때 이미 있는 내용은 읽히지 않을 수 있다. 판에 포커스를 두면 설명이 함께 읽힌다 |
+| 표시 여부를 보는 E2E | 세션 확인을 `msw-auth-delay` 로 2.5초 붙잡아 둘러보기(「로그인 확인 중」)까지 보인 뒤 기록을 본다. 빠른 경우는 앱이 읽는 `performance.now` 를 30초 늦춰 등장 시각 전 준비를 만든다 | 개발 서버 속도에 맡기기: 빠른 환경에서 정상 동작을 실패로 판정한다(리뷰 지적) |
 
 ## 검증
 
 | 범위 | 명령·방법 | 결과 |
 |---|---|---|
-| 바꾼 곳 단위 | `npx vitest run src/app/splash src/shared/lib/splash src/app/landingEntry.test.tsx src/app/landing.test.tsx src/app/splash.test.tsx` | 6개 파일 91개 통과 |
+| 바꾼 곳 단위 | `npx vitest run src/app/splash src/shared/lib/splash src/app/landingEntry.test.tsx src/app/landing.test.tsx src/app/splash.test.tsx` | 6개 파일 96개 통과(리뷰 반영 뒤) |
 | 관련 앱 테스트 | `npx vitest run src/app/landing.test.tsx src/app/splash.test.tsx src/app/boot.test.tsx src/app/authFlow.test.tsx src/app/logout.test.tsx src/app/loginReturn.test.tsx …`(기본 병렬) | 병렬 실행에서 6개가 5초 시간 초과. 실패한 파일만 단독으로 다시 돌려 `splash.test.tsx` 2개, `logout.test.tsx` 5개, `loginReturn.test.tsx` 9개 모두 통과. 부하로 본다 |
-| E2E | `E2E_PORT=5231 npx playwright test e2e/splash-frequency.e2e.ts` | 3개 통과 |
+| E2E | `E2E_PORT=5231 npx playwright test e2e/splash-frequency.e2e.ts` | 4개 통과(리뷰 반영 뒤) |
 | 타입·린트·포맷·빌드 | `npm run typecheck`, `npx eslint . --ignore-pattern .verify`, `npx prettier --check .`, `npm run build` | 통과. 포맷 경고 1개는 git 제외 로컬 파일 `.verify/brief.md` 다. `dist/index.html` 에 인라인 스크립트가 남는다 |
 | 전체 단위·E2E | — | 미실행. 감독 규칙대로 CI 에 맡긴다 |
 | 브라우저 | MSW 개발 서버(5232), Chromium 1280×800·390×844, 시계 고정, 로컬 스크립트 | 아래 |

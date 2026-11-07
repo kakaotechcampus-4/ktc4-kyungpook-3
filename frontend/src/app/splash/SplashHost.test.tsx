@@ -643,11 +643,60 @@ describe('랜딩 `시작하기` (#510)', () => {
     })
     return {
       appRoot,
+      startLoading: () => {
+        app.rerender(<Screen loading />)
+      },
       finishLoading: () => {
         app.rerender(<Screen loading={false} />)
       },
     }
   }
+
+  it('한쪽 보기 중에 준비됐다가 다시 잡히면 미뤄 둔 준비를 버리고, 새로 풀린 뒤의 준비로 끝난다', () => {
+    stubMotion()
+    const { appRoot, startLoading, finishLoading } = mountForStart()
+
+    // 0.1초에 준비 확인이 끝나 미뤄 둔다. 0.3초에 로그인 화면 뼈대가 다시 잡는다
+    advance(300)
+    startLoading()
+    advance(500)
+    // 한쪽 보기가 끝나도 눈웃음이 아니라 둘러보며 기다린다
+    expect(status()).toBe('로그인 확인 중')
+    expect(smiling()).toBe(false)
+    advance(1000)
+    expect(status()).toBe('로그인 확인 중')
+    expect(appRoot).toHaveAttribute('inert')
+
+    finishLoading()
+    advance(90)
+    expect(status()).toBe('로그인 확인 중')
+    advance(10)
+    expect(status()).toBe('준비됐어요')
+    advance(1100)
+    expect(overlay()).toHaveAttribute('data-phase', 'leave')
+    advance(600)
+    expect(overlay()).toBeNull()
+  })
+
+  it('움직임 줄이기에서도 다시 잡히면 한쪽 보기 시간에 걷히지 않고, 새로 풀린 뒤의 준비에 걷힌다', () => {
+    stubMotion({ reduced: true })
+    const { appRoot, startLoading, finishLoading } = mountForStart()
+
+    advance(300)
+    startLoading()
+    advance(500)
+    expect(overlay()).toBeInTheDocument()
+    advance(1000)
+    expect(overlay()).toBeInTheDocument()
+    expect(appRoot).toHaveAttribute('inert')
+
+    finishLoading()
+    advance(90)
+    expect(overlay()).toBeInTheDocument()
+    advance(10)
+    expect(overlay()).toBeNull()
+    expect(appRoot).not.toHaveAttribute('inert')
+  })
 
   it('누른 순간 정면으로 보이고, 한쪽을 한 번 본 뒤 눈웃음 → 사라짐으로 약 2.5초에 끝난다', () => {
     stubMotion()

@@ -62,7 +62,7 @@ export interface SplashState {
   revealAt: number
   /** 잡기가 0이 된 시각. 잡혀 있으면 null 이다. 준비는 확인(SETTLE_MS) 뒤에 오지만 0.3초 안인지는 이 시각으로 정한다 */
   idleAt: number | null
-  /** start 에서 glance 가 끝나기 전에 준비됐다. glance 가 끝날 때 눈웃음으로 간다 */
+  /** start 에서 glance 가 끝나기 전에 준비됐다. glance 가 끝날 때 눈웃음으로 간다. 다시 잡히면 지운다 */
   readyEarly: boolean
 }
 
@@ -181,7 +181,9 @@ export function stepSplash(state: SplashState, event: SplashEvent): SplashState 
     case 'idle':
       return { ...state, idleAt: event.at }
     case 'held':
-      return state.idleAt === null ? state : { ...state, idleAt: null }
+      // 미뤄 둔 준비도 지운다. 다시 잡힌 로딩이 풀리고 SETTLE_MS 뒤에 오는 새 준비만 끝낼 수 있다
+      if (state.idleAt === null && !state.readyEarly) return state
+      return { ...state, idleAt: null, readyEarly: false }
     case 'ready':
       if (defersReady(state)) return state.readyEarly ? state : { ...state, readyEarly: true }
       return withStage(state, afterReady(state, event.at))
