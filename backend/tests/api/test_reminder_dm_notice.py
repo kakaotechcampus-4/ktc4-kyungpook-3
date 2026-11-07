@@ -11,7 +11,7 @@ from app.models import ReplyChangeField as F
 from app.models import ReplyChangeOutcome as O
 from app.models import ReplyJudgmentState as S
 from app.services import messages, replies
-from tests.api.test_messages_api import P, client
+from tests.api.test_messages_api import P, _sent_message, client
 from tests.api.test_reply_clock import _judged
 from tests.api.test_replies import _reply
 from tests.api.test_scheduler import SLOT, H, _approve_all, tick
@@ -206,3 +206,51 @@ def test_a_web_reply_reaches_the_judgment_queue(mdb, mseed):
     _sent(mdb, mseed, mseed["tasks"][:1], SLOT)
     message = _reply(mdb, mseed, SLOT + H)
     assert replies.claim(mdb, SLOT + H).message_id == message.message_id
+
+
+# 봇이 받는 응답
+
+def _claim_data():
+    response = client(service=True).post(f"{P}/bot/messages/claim")
+    assert response.status_code == 200, response.text
+    return response.json()["data"]
+
+
+def test_the_claim_response_sends_the_notice_and_the_web_url(mdb, mseed):
+    bid = _sent_message(mdb, mseed)
+    data = _claim_data()
+    stored = mdb.get(ReminderBundle, bid).body
+    assert data["web_url"] == BASE
+    assert [i["body"].splitlines()[0] for i in data["items"]] == [_head("A", 1)]
+    assert data["items"][0]["body"] != stored
+
+
+def test_the_web_url_comes_with_an_empty_claim(mdb, mseed):
+    assert _claim_data() == {"items": [], "total": 0, "web_url": BASE}
+
+
+def test_the_web_url_is_null_when_unset(mdb, mseed, monkeypatch):
+    monkeypatch.delenv("APP_BASE_URL")
+    assert _claim_data()["web_url"] is None
+
+
+# 대화 응답
+
+def _summaries(mseed):
+    inbox = client("pm").get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]
+    return {t["member_id"]: t for t in inbox["threads"]}
+
+
+def test_a_thread_says_whether_its_member_can_reply_on_the_web(mdb, mseed):
+    alice, carol = mseed["alice"], mseed["carol"]
+    _due(mdb, mseed, mseed["tasks"][:1], SLOT)
+    _due(mdb, mseed, mseed["tasks"][1:2], SLOT, who="carol")
+    messages.claim_for_bot(mdb, SLOT)
+    mdb.commit()
+    summaries = _summaries(mseed)
+    assert summaries[alice.member_id]["web_reply_available"] is True
+    assert summaries[carol.member_id]["web_reply_available"] is False
+
+    thread_id = _thread_id(mdb, mseed, "carol")
+    detail = client("pm").get(f"{P}/workspaces/{mseed['ws']}/messages/threads/{thread_id}").json()["data"]
+    assert detail["thread"]["web_reply_available"] is False

@@ -143,6 +143,7 @@ class ThreadSummary(BaseModel):
     last_message: LastMessage | None
     awaiting_reply_since: datetime | None
     dm_failed: bool
+    web_reply_available: bool
 
 
 class InboxResponse(BaseModel):
@@ -168,6 +169,7 @@ class ClaimedMessageResponse(BaseModel):
 class ClaimResponse(BaseModel):
     items: list[ClaimedMessageResponse]
     total: int
+    web_url: str | None
 
 
 class DmResultRequest(BaseModel):
