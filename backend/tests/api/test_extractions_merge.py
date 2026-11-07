@@ -15,6 +15,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models import (
     EMBEDDING_DIMENSIONS,
+    AliasResolutionLog,
     ApprovalRequest,
     ExtractionItem,
     Meeting,
@@ -253,6 +254,30 @@ def test_assignee_category_merge_overwrites_card_assignee(client, db, seed):
     payload = _card_payload(db, card_id)
     assert payload["assignee_member_id"] == seed["sua"].member_id
     assert payload["assignee_item_id"] == item.item_id
+
+
+def test_schedule_merge_does_not_look_up_the_assignee(client, db, seed):
+    # 일정만 바꾸는 merge 는 카드 담당자를 바꾸지 않는다. 실려 온 이름으로 별칭을 찾거나 판정 로그를 쌓지 않고,
+    # 항목 행의 gate 도 그 매칭 결과(hold)가 아니라 카드와 같은 review 다
+    card_id = _pending_card(client, db, seed)
+    logs_before = _count(db, AliasResolutionLog)
+
+    _extract(client, seed, 1, [_merge_item(card_id, assignee_type="thirdname", assignee_raw="모르는사람")])
+
+    assert _count(db, AliasResolutionLog) == logs_before
+    [item] = _items(db, seed["meetings"][1].meeting_id)
+    assert item.action == "merge"
+    assert item.gate == "review"
+    assert _card_payload(db, card_id)["assignee_member_id"] == seed["jimin"].member_id
+
+
+def test_assignee_merge_still_looks_up_the_assignee(client, db, seed):
+    card_id = _pending_card(client, db, seed)
+    logs_before = _count(db, AliasResolutionLog)
+
+    _extract(client, seed, 1, [_merge_item(card_id, category="assignee", assignee_raw="수아님")])
+
+    assert _count(db, AliasResolutionLog) == logs_before + 1
 
 
 def test_two_merges_into_same_card_in_one_request_apply_in_order(client, db, seed):
