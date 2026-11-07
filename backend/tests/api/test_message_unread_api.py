@@ -220,3 +220,38 @@ def test_inbox_unread_query_count_does_not_grow_with_threads(mdb, seed, monkeypa
     # 목록 요청 하나에서 한 번만 불러 쿼리 수가 대화 수와 상관없이 같다.
     assert len(few) == len(many) == 1
     assert few == many
+
+
+def _patch_role(c, seed, key, role):
+    return c.patch(f"{P}/members/{seed[key].member_id}", json={"role": role})
+
+
+def test_promoted_pm_does_not_count_replies_before_promotion(mdb, seed):
+    thread = _thread(mdb, seed["carol"])
+    _msg(mdb, thread, MessageSender.MEMBER, 1)
+    _msg(mdb, thread, MessageSender.MEMBER, 2)
+
+    assert _patch_role(client("pm"), seed, "bob", "pm").status_code == 200
+
+    bob = client("bob")
+    assert _count(bob, seed) == 0
+    # 올린 뒤에 온 답장만 센다.
+    mdb.add(ThreadMessage(
+        thread_id=thread.thread_id, sender=MessageSender.MEMBER, body="새 답장",
+        created_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    ))
+    mdb.commit()
+    assert _count(bob, seed) == 1
+
+
+def test_demote_keeps_reads(mdb, seed):
+    _second_pm(mdb, seed)
+    mine = _thread(mdb, seed["pm"])
+    _msg(mdb, mine, MessageSender.BOT, 1)
+    other = _thread(mdb, seed["carol"])
+    _msg(mdb, other, MessageSender.MEMBER, 2)
+
+    assert _patch_role(client("pm2"), seed, "pm", "member").status_code == 200
+
+    # 내려간 뒤에는 자기 대화의 봇 메시지만 센다.
+    assert _count(client("pm"), seed) == 1
