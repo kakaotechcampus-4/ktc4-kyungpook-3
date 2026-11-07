@@ -1,4 +1,4 @@
-import type { TaskStatus } from '@/entities/task'
+import type { TaskStatus } from './types'
 
 /** 상태를 고르는 순서. 서버 TaskStatus 네 값이다 */
 export const TASK_STATUSES = [

@@ -1,5 +1,6 @@
 import { memo, useId, useLayoutEffect, useRef } from 'react'
 import type { KeyboardEvent, RefObject } from 'react'
+import { TaskStatusMark } from '@/entities/task'
 import type { Task, TaskStatus } from '@/entities/task'
 import { AutoBlockNotice, useTaskAutoBlock } from '@/features/task-auto-block'
 import { TaskQuickAdd } from '@/features/task-create'
@@ -33,14 +34,6 @@ const COLUMN_SPEC: Record<
   done: { title: '완료', statuses: ['done'], createAs: 'done' },
 }
 const COLUMNS = BOARD_COLUMNS.map((key) => ({ key, ...COLUMN_SPEC[key] }))
-
-/* 칸 머리 표식 — 8px·둥글기 2px 네모. 시작 전은 1.5px 실선 `#BDBDBD` 테두리, 완료는 `#E8E8E8` 면이다 (TasksBoard).
-   `border-dashed` 는 점선 모양까지 함께 주므로 시작 전은 색만 점선 토큰에서 가져온다. 2px 둥글기는 토큰에 없어 값으로 적는다 */
-const MARK: Record<Column, string> = {
-  todo: 'rounded-[2px] border-[1.5px] border-(--color-dashed) bg-transparent',
-  active: 'rounded-[2px] bg-ink',
-  done: 'rounded-[2px] bg-line',
-}
 
 /* 넓은 화면은 세 칸을 나란히 두고, 휴대폰은 칸 고르기 아래에 고른 칸 하나를 쌓는다(사이 10px) */
 const COLUMNS_LAYOUT =
@@ -188,6 +181,7 @@ export function BoardView({
             ) : (
               <ColumnHead
                 column={column.key}
+                mark={column.createAs}
                 title={column.title}
                 count={column.tasks.length}
                 note={columnNote(column.key, column.tasks, today, sort)}
@@ -369,11 +363,14 @@ function columnNote(column: Column, tasks: readonly Task[], today: string, sort:
 
 function ColumnHead({
   column,
+  mark,
   title,
   count,
   note,
 }: {
   column: Column
+  /** 칸 머리 표식은 그 칸에 새로 만드는 태스크의 상태 표식이다 */
+  mark: TaskStatus
   title: string
   count: number
   note: string
@@ -381,7 +378,7 @@ function ColumnHead({
   return (
     <div className="flex flex-col gap-4 border-b border-line px-2 pb-12">
       <div className="flex items-center gap-8">
-        <span aria-hidden="true" className={`h-8 w-8 shrink-0 ${MARK[column]}`} />
+        <TaskStatusMark status={mark} />
         <h2
           className={`flex-1 text-body font-semibold ${column === 'done' ? 'text-dim' : 'text-ink'}`}
         >

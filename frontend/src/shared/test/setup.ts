@@ -25,6 +25,10 @@ if (!Reflect.has(Element.prototype, 'hasPointerCapture')) {
   Element.prototype.hasPointerCapture = () => false
   Element.prototype.releasePointerCapture = () => {}
 }
+// 시트는 손잡이를 끄는 동안 포인터를 붙잡는다
+if (!Reflect.has(Element.prototype, 'setPointerCapture')) {
+  Element.prototype.setPointerCapture = () => {}
+}
 if (!Reflect.has(Element.prototype, 'scrollIntoView')) {
   Element.prototype.scrollIntoView = () => {}
 }
