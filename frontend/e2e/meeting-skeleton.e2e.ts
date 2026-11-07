@@ -31,9 +31,9 @@ const GUARD_LAG = 300
 
 /* widgets/meeting-minutes/model/useShownMeeting.ts 의 값. E2E 는 앱 모듈(별칭 `@`)을 가져오지 않아 옮겨 적었다 */
 /** 고른 회의의 답을 기다리며 이전 본문을 들고 있는 최대 시간 */
-const MINUTES_HOLD_MS = 250
+const MINUTES_HOLD_MS = 200
 /** 회의를 바꾸며 그린 본문 뼈대를 두는 최소 시간 */
-const MINUTES_SKELETON_MIN_MS = 300
+const MINUTES_SKELETON_MIN_MS = 400
 /** 한 프레임(60Hz). 샘플은 커밋 뒤에 적히므로 뼈대가 붙은 샘플이 커밋보다 이만큼까지 늦을 수 있다 */
 const FRAME_MS = 1000 / 60
 

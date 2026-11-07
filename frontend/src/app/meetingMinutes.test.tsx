@@ -124,6 +124,8 @@ describe('목록과 기본 선택 (U5-1)', () => {
     const user = userEvent.setup()
     const app = renderApp(paths.meetings('ws_01'))
     await app.expectPath(MT_09)
+    // 목록은 로딩 자리의 최소 표시가 끝난 뒤 그려진다 (#508)
+    await within(meetingList()).findByRole('list', { name: '정리된 회의' })
 
     await user.click(within(minutesList()).getByRole('link', { name: /2주차 정기회의/ }))
     await app.expectPath(MT_07)

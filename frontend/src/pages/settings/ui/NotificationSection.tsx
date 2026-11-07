@@ -8,9 +8,11 @@ import type {
 } from '@/entities/message-settings'
 import { BrowserPushControl } from '@/features/browser-push'
 import { useMessageSettings } from '@/features/message-settings'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Select } from '@/shared/ui/select'
 import type { SelectOption } from '@/shared/ui/select'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { existingSuggestionNote, pmWebOnlyNotice } from '../lib/notificationCopy'
 import { OPTION_CARD, OPTION_DESCRIPTION, OPTION_TITLE } from './settingsStyles'
@@ -98,6 +100,7 @@ export interface NotificationSectionProps {
  */
 export function NotificationSection({ workspaceId, canManage }: NotificationSectionProps) {
   const { settings, error, retry, change } = useMessageSettings(workspaceId)
+  const indicator = useLoadingIndicator(settings === undefined && !error)
   return (
     <SettingsSection
       id="settings-notifications"
@@ -105,14 +108,18 @@ export function NotificationSection({ workspaceId, canManage }: NotificationSect
       description={settings === undefined ? undefined : existingSuggestionNote(settings)}
     >
       <BrowserPushControl className={`${OPTION_CARD} ${ROW}`} />
-      {settings !== undefined ? (
-        <NotificationControls settings={settings} canManage={canManage} onChange={change} />
-      ) : error ? (
-        <QueryErrorState error={error} onRetry={retry} />
-      ) : (
-        <div aria-busy="true">
+      {indicator.pending ? (
+        <DeferredSkeleton indicator={indicator}>
           <Skeleton width={220} />
-        </div>
+        </DeferredSkeleton>
+      ) : (
+        <Reveal indicator={indicator}>
+          {settings !== undefined ? (
+            <NotificationControls settings={settings} canManage={canManage} onChange={change} />
+          ) : (
+            <QueryErrorState error={error} onRetry={retry} />
+          )}
+        </Reveal>
       )}
     </SettingsSection>
   )

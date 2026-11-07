@@ -10,9 +10,11 @@ import {
 import type { MemberMappingForm } from '@/features/member-mapping'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Button } from '@/shared/ui/button'
 import { Modal } from '@/shared/ui/modal'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { LINK_BUTTON } from './teamStyles'
 
@@ -132,6 +134,7 @@ export function MemberConnectDialog({
   source,
 }: MemberConnectDialogProps) {
   const [saving, setSaving] = useState(false)
+  const indicator = useLoadingIndicator(source.status === 'loading')
   const close = () => onOpenChange(false)
   const requestOpenChange = (next: boolean) => {
     if (!next && saving) return
@@ -153,35 +156,39 @@ export function MemberConnectDialog({
       width={WIDTH}
       className={SCROLL}
     >
-      {source.status === 'loading' ? (
-        <div aria-busy="true">
+      {source.status === 'loading' || indicator.pending ? (
+        <DeferredSkeleton indicator={indicator}>
           <Skeleton lines={3} />
-        </div>
-      ) : source.status === 'error' ? (
-        <>
-          <QueryErrorState error={source.error} onRetry={source.retry} />
-          {closeOnly}
-        </>
-      ) : source.status === 'not_connected' ? (
-        <>
-          <p className="text-body text-dim">
-            Discord를 연결하지 않아 팀원을 불러올 수 없어요. 설정에서 Discord를 연결하면 이 창이
-            다시 열려요.
-          </p>
-          <GuardedLink to={paths.settings(workspaceId)} className={LINK_BUTTON}>
-            설정에서 Discord 연결하기
-          </GuardedLink>
-          {closeOnly}
-        </>
+        </DeferredSkeleton>
       ) : (
-        <MappingForm
-          workspaceId={workspaceId}
-          discordUsers={source.discordUsers}
-          members={source.members}
-          onCancel={close}
-          onSaved={close}
-          onSavingChange={setSaving}
-        />
+        <Reveal indicator={indicator}>
+          {source.status === 'error' ? (
+            <>
+              <QueryErrorState error={source.error} onRetry={source.retry} />
+              {closeOnly}
+            </>
+          ) : source.status === 'not_connected' ? (
+            <>
+              <p className="text-body text-dim">
+                Discord를 연결하지 않아 팀원을 불러올 수 없어요. 설정에서 Discord를 연결하면 이 창이
+                다시 열려요.
+              </p>
+              <GuardedLink to={paths.settings(workspaceId)} className={LINK_BUTTON}>
+                설정에서 Discord 연결하기
+              </GuardedLink>
+              {closeOnly}
+            </>
+          ) : (
+            <MappingForm
+              workspaceId={workspaceId}
+              discordUsers={source.discordUsers}
+              members={source.members}
+              onCancel={close}
+              onSaved={close}
+              onSavingChange={setSaving}
+            />
+          )}
+        </Reveal>
       )}
     </Modal>
   )

@@ -13,9 +13,11 @@ import type { MappingRow } from '@/features/member-mapping'
 import { useOnboardingSave } from '@/features/onboarding'
 import { errorMessage } from '@/shared/api/errorMessages'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Button } from '@/shared/ui/button'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { ExitLink } from './ExitLink'
 import { OnboardingCard } from './OnboardingCard'
@@ -244,16 +246,20 @@ export function MembersStep({ workspaceId }: MembersStepProps) {
   const members = useQuery(memberListQueryOptions(workspaceId))
   const notice = integrations.data?.notion.status === 'connected' ? '노션 연동 완료' : undefined
   const { previous } = useStepNavPaths(workspaceId, 'connect_members')
-
-  if (
+  const notConnected =
     (discordStatus !== undefined && discordStatus !== 'connected') ||
     isNotConnected(discordUsers.error)
-  ) {
+  const error = discordUsers.error ?? members.error
+  // 두 목록을 받는 중이다. 받은 뒤의 화면(연결 안 됨 · 팀원 잇기)은 단계 머리가 같아 전환 없이 바로 바꾼다 (#508)
+  const indicator = useLoadingIndicator(
+    !notConnected && (discordUsers.data === undefined || members.data === undefined) && !error,
+  )
+
+  if (notConnected && !indicator.pending) {
     return <DiscordNotConnected workspaceId={workspaceId} notice={notice} previous={previous} />
   }
 
-  if (discordUsers.data === undefined || members.data === undefined) {
-    const error = discordUsers.error ?? members.error
+  if (discordUsers.data === undefined || members.data === undefined || indicator.pending) {
     return (
       <OnboardingLayout
         stepNumber={STEP_NUMBER.connect_members}
@@ -264,18 +270,20 @@ export function MembersStep({ workspaceId }: MembersStepProps) {
         nav={{ previous }}
       >
         <OnboardingCard title={CARD.title} description={CARD.description}>
-          {error ? (
-            <QueryErrorState
-              error={error}
-              onRetry={() => {
-                void discordUsers.refetch()
-                void members.refetch()
-              }}
-            />
+          {error && !indicator.pending ? (
+            <Reveal indicator={indicator}>
+              <QueryErrorState
+                error={error}
+                onRetry={() => {
+                  void discordUsers.refetch()
+                  void members.refetch()
+                }}
+              />
+            </Reveal>
           ) : (
-            <div aria-busy="true" className="pt-6">
+            <DeferredSkeleton indicator={indicator} className="pt-6">
               <Skeleton lines={3} />
-            </div>
+            </DeferredSkeleton>
           )}
         </OnboardingCard>
       </OnboardingLayout>

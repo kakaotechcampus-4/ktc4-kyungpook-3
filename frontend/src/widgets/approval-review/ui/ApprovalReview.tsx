@@ -37,10 +37,12 @@ import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { formatMonthDayWeekday, formatSeoulDateTime, seoulDateOf } from '@/shared/lib/date'
 import { GuardedLink, useUnsavedChanges } from '@/shared/lib/unsaved-changes'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { Skeleton } from '@/shared/ui/skeleton'
 import {
   approvalHeading,
@@ -125,6 +127,7 @@ export function ApprovalReview({
 }: ApprovalReviewProps) {
   const approval = useQuery(approvalDetailQueryOptions(workspaceId, approvalId))
   const [fillIn] = useState(fillInOnArrival)
+  const indicator = useLoadingIndicator(approval.isPending)
 
   let body: ReactNode
   if (approval.data !== undefined)
@@ -139,12 +142,14 @@ export function ApprovalReview({
         onRetry={() => void approval.refetch()}
       />
     )
-  else
-    body = (
-      <div aria-busy="true">
-        <Skeleton lines={5} />
-      </div>
-    )
+  else body = null
+  body = indicator.pending ? (
+    <DeferredSkeleton indicator={indicator}>
+      <Skeleton lines={5} />
+    </DeferredSkeleton>
+  ) : (
+    <Reveal indicator={indicator}>{body}</Reveal>
+  )
 
   return (
     <main className={ROOT}>
@@ -152,7 +157,9 @@ export function ApprovalReview({
         <Icon name="chevron-left" size={14} />
         태스크 목록
       </GuardedLink>
-      {approval.data === undefined ? <h1 className="sr-only">확인 필요</h1> : null}
+      {approval.data === undefined || indicator.pending ? (
+        <h1 className="sr-only">확인 필요</h1>
+      ) : null}
       {body}
     </main>
   )

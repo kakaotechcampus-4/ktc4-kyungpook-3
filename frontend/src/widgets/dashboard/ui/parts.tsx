@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 import { COMMON_MESSAGES } from '@/shared/api/errorMessages'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Button } from '@/shared/ui/button'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
 import type { Loadable } from '../model/useDashboardData'
@@ -37,21 +39,27 @@ interface SectionBodyProps<T> {
   children: (data: T) => ReactNode
 }
 
-/** 영역 하나의 로딩·실패·데이터. 한 영역이 실패해도 다른 영역은 그대로 그린다 (계획 §5) */
+/**
+ * 영역 하나의 로딩·실패·데이터. 한 영역이 실패해도 다른 영역은 그대로 그린다 (계획 §5).
+ * 로딩은 지연·최소 표시 규칙을 따른다 — 짧은 응답은 빈 자리만, 보인 뼈대는 최소 시간 둔다 (#508)
+ */
 export function SectionBody<T>({ state, errorTitle, children }: SectionBodyProps<T>) {
-  if (state.status === 'loading')
+  const indicator = useLoadingIndicator(state.status === 'loading')
+  if (state.status === 'loading' || indicator.pending)
     return (
-      <div aria-busy="true" className="flex flex-col gap-8 py-18">
+      <DeferredSkeleton indicator={indicator} className="flex flex-col gap-8 py-18">
         <Skeleton lines={3} />
-      </div>
+      </DeferredSkeleton>
     )
-  if (state.status === 'error')
-    return (
+  const body =
+    state.status === 'error' ? (
       <div className="py-18">
         <QueryErrorState error={state.error} title={errorTitle} onRetry={state.retry} />
       </div>
+    ) : (
+      children(state.data)
     )
-  return <>{children(state.data)}</>
+  return <Reveal indicator={indicator}>{body}</Reveal>
 }
 
 /**
