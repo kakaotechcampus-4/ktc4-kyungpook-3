@@ -54,7 +54,7 @@
 - `source: "chat"`과 `started_at`은 디스코드 채팅 자동 수집용이다(구현됨, #378). `started_at`은 이 회의에 담긴 첫 메시지 시각이고, 채팅 회의의 발화 `start`·`end`(초)는 이 시각에서 잰 값이다.
 - 요청 본문 `source: "chat"`(sources)은 `source`가 `chat`인 회의에만 보낼 수 있다. 다른 회의에 보내면 400 `INVALID_REQUEST`다(24시간 상한 우회 방지).
 - 채팅 회의가 `processing`으로 남아도 웹 업로드를 막지 않는다. 폴러가 죽어 `/end` 뒤 7시간이 지나도록 `processing`이면 BE sweeper가 `failed`(`failed_stage=chat_stalled`)로 바꾼다. 7시간은 폴러 시간 제한(`ai/deploy/systemd/mm-chat-poll.service`의 `TimeoutStartSec`)보다 길게 잡은 값이라, 제한을 7시간 이상으로 올리면 이 값도 함께 올린다. 업로드 409 검사(`MEETING_PROCESSING_IN_PROGRESS`)는 `source`가 `chat`인 회의를 세지 않는다.
-- 합의 상태: 채팅 수집은 AI 담당이 설계를 정했고 #378 에서 BE 리뷰를 거쳐 머지됐다. 정리 기준 7시간은 #431 리뷰에서 BE 가 맡기로 한 값이고, #431 에 알렸으나 AI 담당의 확인은 아직 없다(#449).
+- 합의 상태: 채팅 수집은 AI 담당이 설계를 정했고 #378 에서 BE 리뷰를 거쳐 머지됐다. 정리 기준 7시간은 #431 리뷰에서 BE 가 맡기로 한 값이고, #431 에 알렸고 AI 담당이 #431 에서 확인했다(#449 를 먼저 배포하는 순서, 2026-11-07).
 
 ### `GET /workspaces/{workspace_id}/chat-cursor` → 200
 
