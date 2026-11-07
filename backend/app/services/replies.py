@@ -673,6 +673,15 @@ def undo_change(db: Session, task: Task, change_id: str, *, changed_by: str) -> 
     return task
 
 
+def has_assignee_line(db: Session, approval_id: str) -> bool:
+    """이 카드에 담당자 줄이 있는지. 답장 카드에서만 PM 이 담당자를 고를 수 있다."""
+    return db.scalar(
+        select(ReplyChange.change_id)
+        .where(ReplyChange.approval_id == approval_id, ReplyChange.field == ReplyChangeField.ASSIGNEE)
+        .limit(1)
+    ) is not None
+
+
 def link_history(db: Session, approval_id: str, entries: list[TaskHistory]) -> None:
     """승인이 남긴 이력을 제안한 줄에 잇는다. PM 이 고쳐 승인한 줄도 같은 필드라 같이 이어진다."""
     db.flush()
@@ -750,7 +759,7 @@ def _reply_item(
 def _result(line: ReplyChange, approvals: dict[str, str], entries: list[TaskHistory]) -> str:
     if line.outcome == ReplyChangeOutcome.PROPOSED:
         status = approvals[line.approval_id]
-        # 담당자를 못 찾은 카드는 승인해도 바뀌는 값이 없다.
+        # 담당자를 못 찾은 카드를 고르지 않고 승인했거나 지금 담당자를 고르면 바뀌는 값이 없다.
         unchanged = status == ApprovalStatus.APPROVED and line.field == ReplyChangeField.ASSIGNEE and not entries
         return "noted" if unchanged else status
     if line.outcome in (ReplyChangeOutcome.APPLIED, ReplyChangeOutcome.RECORDED):
