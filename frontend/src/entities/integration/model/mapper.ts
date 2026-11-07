@@ -1,6 +1,10 @@
-import type { IntegrationDto, IntegrationsDto } from '@/shared/types/api/integration'
+import type {
+  ChatChannelDto,
+  IntegrationDto,
+  IntegrationsDto,
+} from '@/shared/types/api/integration'
 import { enumValue } from '@/shared/lib/enum'
-import type { Integration, IntegrationProvider, Integrations } from './types'
+import type { ChatChannel, Integration, IntegrationProvider, Integrations } from './types'
 
 function toIntegration(dto: IntegrationDto, provider: IntegrationProvider): Integration {
   return {
@@ -15,9 +19,15 @@ function toIntegration(dto: IntegrationDto, provider: IntegrationProvider): Inte
     connectedAt: dto.connected_at,
   }
 }
+export function toChatChannel(dto: ChatChannelDto): ChatChannel {
+  return { channelId: dto.channel_id, name: dto.name }
+}
 export function toIntegrations(dto: IntegrationsDto): Integrations {
   return {
-    discord: toIntegration(dto.discord, 'discord'),
+    discord: {
+      ...toIntegration(dto.discord, 'discord'),
+      chatChannel: dto.discord.chat_channel ? toChatChannel(dto.discord.chat_channel) : null,
+    },
     notion: toIntegration(dto.notion, 'notion'),
   }
 }

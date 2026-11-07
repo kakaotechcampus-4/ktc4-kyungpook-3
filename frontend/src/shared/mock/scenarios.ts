@@ -14,7 +14,7 @@ import {
   reply,
   schedulePassedBundle,
 } from './fixtures/message'
-import { completeMeeting, failMeeting, setMeetingFlowMode } from './meetingFlow'
+import { completeMeeting, failMeeting, setMeetingFlowMode, startChatMeeting } from './meetingFlow'
 import { notificationFixtures } from './fixtures/notification'
 import { addReplyJudgments } from './fixtures/reply'
 import { setMockRole } from './sessions'
@@ -34,6 +34,8 @@ import { blockBySilence, createTask } from './task-state'
 
 export const MOCK_SCENARIOS = [
   'signed-out',
+  // #457 비로그인이고 pm@example.com 이 로그인 시도 제한에 걸려 있다. 맞는 비밀번호도 429 다
+  'login-rate-limited',
   'no-workspace',
   'single-workspace',
   'multiple-workspaces',
@@ -49,6 +51,9 @@ export const MOCK_SCENARIOS = [
   'meeting-notion-not-connected',
   'meeting-notion-revoked',
   'meeting-member',
+  // 정리 중 채팅 회의가 있는 업로드 (#450). 둘째는 그 회의가 첫 상세 조회에 chat_stalled 로 실패한다
+  'meeting-chat-processing',
+  'meeting-chat-stalled',
   ...SPEAKER_SCENARIOS,
   // M6 태스크·승인. 모두 ws_01 하나에 PM 으로 로그인한다(마지막만 일반 팀원). 전이는 handler 가 만든다
   'tasks-default',
@@ -169,7 +174,12 @@ function addCreatedWorkspace(state: MockDb, workspace: WorkspaceDto): void {
     created_at: MOCK_NOW,
   })
   state.integrations[workspace.workspace_id] = {
-    discord: { status: 'not_connected', display_name: null, connected_at: null },
+    discord: {
+      status: 'not_connected',
+      display_name: null,
+      connected_at: null,
+      chat_channel: null,
+    },
     notion: { status: 'not_connected', display_name: null, connected_at: null },
   }
 }
@@ -592,6 +602,15 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'signed-out':
       state.authenticated = false
       break
+    case 'login-rate-limited':
+      state.authenticated = false
+      // 같은 시나리오는 늘 같은 db 여야 해서 지금 시각이 아니라 고정 시각까지 막는다
+      state.loginLimit['pm@example.com'] = {
+        failures: 10,
+        windowStartedAt: Date.parse('2099-12-30T23:45:00.000Z'),
+        blockedUntil: Date.parse('2099-12-31T00:00:00.000Z'),
+      }
+      break
     case 'no-workspace':
       signInWith(state, [], null)
       break
@@ -643,6 +662,14 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       signInWith(state, ['ws_01'], 'ws_01')
       setMockRole('member', 'ws_01', state)
       setMeetingFlowMode('instant', state)
+      break
+    case 'meeting-chat-processing':
+      readyToUpload(state, 'manual')
+      startChatMeeting(state)
+      break
+    case 'meeting-chat-stalled':
+      readyToUpload(state, 'fail-chat-stalled')
+      startChatMeeting(state)
       break
     case 'tasks-default':
       // 픽스처 그대로의 정상 목록: 태스크 10개(반영 완료 2개), 보완이 필요한 대기 생성 승인 3개
@@ -869,6 +896,7 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
         status: 'not_connected',
         display_name: null,
         connected_at: null,
+        chat_channel: null,
       }
       break
     case 'notifications-default':

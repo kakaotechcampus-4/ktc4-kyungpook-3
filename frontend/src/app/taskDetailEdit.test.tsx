@@ -135,8 +135,11 @@ describe('PM 의 담당자·마감 고치기 (#471)', () => {
     await openDetail('tk_01', '로그인 API 연동')
     await user.click(screen.getByRole('button', { name: '담당자 수정' }))
     const assignee = screen.getByRole('combobox', { name: '담당자' })
-    expect(await within(assignee).findByRole('option', { name: '이재환' })).toBeInTheDocument()
-    await user.selectOptions(assignee, '이재환')
+    expect(assignee).toHaveFocus()
+    // 팀원 목록이 오면 지금 담당자가 트리거에 보인다
+    await waitFor(() => expect(assignee).toHaveTextContent('김서연'))
+    await user.click(assignee)
+    await user.click(await screen.findByRole('option', { name: '이재환' }))
     await editDue(user, '')
 
     expect(

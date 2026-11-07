@@ -270,6 +270,7 @@ describe('팀 화면 — 일반 팀원', () => {
       status: 'connected',
       display_name: '카테캠 3팀 서버',
       connected_at: '2026-09-01T00:00:00Z',
+      chat_channel: null,
     }
   })
 

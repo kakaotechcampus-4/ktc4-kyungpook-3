@@ -31,7 +31,7 @@ import { MinutesTabs } from './MinutesTabs'
 import { MinutesTitle } from './MinutesTitle'
 
 /* Meetings 캔버스 실측 — 머리 위 44 · 좌우 36 · 아래 18, 제목 26px · 1.3, 메타 12.5px 흐림 */
-const HEAD = 'flex flex-col gap-7 px-36 pt-44 pb-18'
+const HEAD = 'flex flex-col gap-7 px-36 pt-44 pb-18 max-md:px-20'
 /* 안내(정리 중 · 실패 등)의 제목. 뒤에 탭 줄이 없어 접혀도 밀릴 것이 없다 — 회의록 머리의 제목은 MinutesTitle(한 줄 · 말줄임) */
 const TITLE = 'text-[26px] leading-[1.3] font-bold tracking-h1 text-ink'
 /* 메타와 출처 칩 줄 — 칩 한 줄 높이(22)로 고정하고 접지 않는다. 뼈대의 같은 줄(MinutesSkeleton CHIP_ROW)과 같은 높이라
@@ -43,7 +43,7 @@ const META = 'text-caption text-dim tabular-nums'
    움직임이 없어 줄이기 설정(global.css 는 transition-duration 만 줄인다)과 상관없이 같다 */
 const HELD_BODY = 'flex flex-col opacity-55 transition-opacity duration-0'
 const HELD_BODY_STYLE = { transitionDelay: `${MINUTES_DIM_DELAY_MS}ms` }
-const NOTICE = 'flex flex-col items-start gap-10 px-36 pt-44 pb-56'
+const NOTICE = 'flex flex-col items-start gap-10 px-36 pt-44 pb-56 max-md:px-20'
 const NOTICE_TEXT = 'text-body text-sub'
 const LINK =
   'inline-flex h-36 items-center justify-center rounded-9 bg-ink px-16 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
@@ -234,7 +234,7 @@ export function MinutesDetail({
           <p className={NOTICE_TEXT}>{meeting.title || '제목 없는 회의'}</p>
           <p className={META}>{formatSeoulDateTime(meeting.startedAt)}</p>
           <p className={NOTICE_TEXT}>{failure.description}</p>
-          {isPm ? (
+          {!failure.reupload ? null : isPm ? (
             <GuardedLink to={paths.meetingUpload(workspaceId)} className={LINK}>
               다시 업로드
             </GuardedLink>

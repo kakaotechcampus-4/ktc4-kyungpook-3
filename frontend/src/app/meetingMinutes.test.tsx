@@ -7,7 +7,7 @@ import { paths } from '@/shared/config/routes'
 import { db, replaceDb } from '@/shared/mock/db'
 import { fail, list, ok } from '@/shared/mock/envelope'
 import { meetingSummaryFixtures } from '@/shared/mock/fixtures/meeting'
-import { completeMeeting, failMeeting } from '@/shared/mock/meetingFlow'
+import { completeMeeting, failMeeting, startChatMeeting } from '@/shared/mock/meetingFlow'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { AWAITING_MEETING_ID, createSpeakerScenarioDb } from '@/shared/mock/speakerScenarios'
@@ -164,6 +164,20 @@ describe('상태 항목과 빈 상태 (U5-2)', () => {
     )
     expect(minutesRequests(log)).toEqual([])
     expect(extractionRequests(log)).toEqual([])
+  })
+
+  it('멈춘 채팅 회의(chat_stalled)를 직접 열면 다시 올리라고 하지 않는다 (#450)', async () => {
+    const chatId = startChatMeeting()
+    failMeeting(chatId, { failedStage: 'chat_stalled' })
+    renderApp(paths.meetings('ws_01', chatId))
+    expect(
+      await screen.findByRole('heading', { name: '채팅 대화를 정리하지 못했어요' }),
+    ).toBeInTheDocument()
+    expect(
+      within(detail()).getByText('채팅 대화를 정리하다 멈췄어요. 다음 수집 때 다시 정리해요.'),
+    ).toBeInTheDocument()
+    expect(within(detail()).queryByRole('link', { name: '다시 업로드' })).toBeNull()
+    expect(within(detail()).queryByText(/재업로드|다시 올려/)).toBeNull()
   })
 
   it('정리 중 회의는 진행 중 항목으로 처리 화면에 잇고, 정리된 회의에는 없다', async () => {

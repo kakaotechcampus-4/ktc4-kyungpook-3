@@ -37,4 +37,21 @@ describe('QueryErrorState', () => {
     )
     expect(container).toBeEmptyDOMElement()
   })
+
+  it('본문을 받으면 공용 문구 대신 쓰고, 취소면 본문이 있어도 그리지 않는다', () => {
+    const failed = new ApiError({ code: 'DISCORD_API_FAILED', message: 'raw', details: null }, 502)
+    const { rerender } = render(
+      <QueryErrorState error={failed} onRetry={vi.fn()} message="채널 목록 문구" />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent('채널 목록 문구')
+    expect(screen.getByRole('alert')).not.toHaveTextContent('사용자 목록')
+    rerender(
+      <QueryErrorState
+        error={createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)}
+        onRetry={vi.fn()}
+        message="채널 목록 문구"
+      />,
+    )
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
 })

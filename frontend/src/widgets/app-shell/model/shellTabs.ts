@@ -1,4 +1,3 @@
-import { useSyncExternalStore } from 'react'
 import { paths } from '@/shared/config/routes'
 import type { IconName } from '@/shared/ui/icon'
 
@@ -18,24 +17,3 @@ export const SHELL_TABS: readonly {
   { label: '메시지', barLabel: '메시지', icon: 'message', to: paths.messages },
   { label: '팀', barLabel: '팀', icon: 'team', to: paths.members },
 ]
-
-/* Tailwind `md`(768px) 아래와 같은 경계다 */
-const COMPACT_QUERY = '(max-width: 767.98px)'
-
-function subscribe(onChange: () => void): () => void {
-  const query = window.matchMedia(COMPACT_QUERY)
-  query.addEventListener('change', onChange)
-  return () => query.removeEventListener('change', onChange)
-}
-
-/**
- * 폭 768px 미만이면 휴대폰 셸(줄인 헤더 + 아래 탭 막대)이다. CSS 로 둘 다 그리고 숨기지 않는 것은
- * 같은 이름의 탭 링크가 두 벌 생기지 않게 하려는 것이다
- */
-export function useCompactShell(): boolean {
-  return useSyncExternalStore(
-    subscribe,
-    () => window.matchMedia(COMPACT_QUERY).matches,
-    () => false,
-  )
-}

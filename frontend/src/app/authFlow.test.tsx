@@ -129,6 +129,22 @@ describe('회원가입 제출 (U2-6·U2-8)', () => {
     await waitFor(() => expect(email).not.toHaveAttribute('aria-invalid'))
   })
 
+  it('이름이 100자를 넘으면 이름 입력 아래에 알리고 가입 요청을 보내지 않는다 (#446)', async () => {
+    const log = recordRequests()
+    await openSignup()
+    const name = screen.getByLabelText('이름')
+    await userEvent.click(name)
+    await userEvent.paste('가'.repeat(101))
+    await userEvent.type(screen.getByLabelText('이메일'), 'new@example.com')
+    await userEvent.type(screen.getByLabelText('비밀번호'), 'pass1234')
+    await userEvent.click(screen.getByRole('button', { name: '계정 만들기' }))
+
+    await waitFor(() => expect(name).toHaveAttribute('aria-invalid', 'true'))
+    expect(name).toHaveAccessibleDescription(AUTH_MESSAGES.nameTooLong)
+    expect(name).toHaveFocus()
+    expect(posts(log, '/auth/signup')).toEqual([])
+  })
+
   it('중복 제출 방지: 응답 전의 연속 제출은 가입 요청 하나다', async () => {
     const gate = deferred()
     server.use(
@@ -195,6 +211,20 @@ describe('로그인 제출 (U2-4·U2-6·U2-8)', () => {
     )
     expect(screen.getByLabelText('이메일')).toHaveValue('pm@example.com')
     expect(screen.getByLabelText('이메일')).not.toHaveAttribute('aria-invalid')
+    await app.expectPath('/login')
+    expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull()
+  })
+
+  it('시도가 너무 많으면 맞는 비밀번호여도 서버 문장을 그대로 알리고 남은 시간은 말하지 않는다 (#457)', async () => {
+    applyScenario('login-rate-limited')
+    const app = await openLogin()
+    await fillLogin('pm@example.com', 'mock-password')
+    await userEvent.click(screen.getByRole('button', { name: '로그인' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /^로그인 시도가 너무 많습니다\. 잠시 후 다시 시도해 주세요\.$/,
+    )
+    expect(screen.queryByText(/\d+\s*(초|분)/)).toBeNull()
     await app.expectPath('/login')
     expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull()
   })

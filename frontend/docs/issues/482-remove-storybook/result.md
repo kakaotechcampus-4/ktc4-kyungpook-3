@@ -2,14 +2,14 @@
 
 - 기록일: 2026-11-07
 - 대상: [#482](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/482)의 할 일(분류·옮기기·지우기·문서·검증)
-- 기준: develop `94c04ddb`. PR은 아직 만들지 않았다.
+- 기준: develop `94c04ddb` 에서 분류·옮기기를 하고, develop `ade90b1c`(#477·#478 ②a·②b·#429·#450·#446·#457 병합 뒤)를 merge 했다. PR #496.
 - 상태: **할 일을 모두 반영했다.** MSW 기준 Vitest·E2E 로 검증했다. CI 통과는 PR 에서 확인한다.
 
 ## 작업 근거와 요약
 
 마일스톤 계획에 없는 작업이다. 근거는 이슈 #482 와 팀 결정(2026-11-07)이다. Storybook 은 D-141 이 정한 범위보다 커져 화면 단위 스토리까지 늘었고, CI `test:storybook` 이 play 단언까지 봤다. 같은 동작을 E2E·RTL·play 세 곳에서 검사해 화면을 바꿀 때 세 곳을 고쳤다(#423, #424).
 
-이번 작업으로 Storybook 을 모두 지웠다. 지우기 전에 play 192건을 하나씩 분류해, 다른 테스트가 보지 않던 48건만 Vitest(RTL)와 Playwright E2E 로 옮겼다. 옮긴 테스트는 play 의 단언 값과 의도를 그대로 지켰고, 테스트마다 기대값을 일부러 깨서 실패하는 것을 확인했다.
+이번 작업으로 Storybook 을 모두 지웠다. 지우기 전에 play 195건을 하나씩 분류해, 다른 테스트가 보지 않던 48건만 Vitest(RTL)와 Playwright E2E 로 옮겼다. 옮긴 테스트는 play 의 단언 값과 의도를 그대로 지켰고, 테스트마다 기대값을 일부러 깨서 실패하는 것을 확인했다.
 
 ## 분류
 
@@ -17,16 +17,16 @@ play 가 있는 스토리를 셋으로 나눴다. ① 같은 상태와 같은 �
 
 | 분류 | 건수 |
 |---|---|
-| ① | 142 |
+| ① | 145 |
 | ② RTL | 37 |
 | ② E2E | 11 |
 | ③ | 2 |
-| 합계 | 192 |
+| 합계 | 195 |
 
-- 이슈는 play 184건이라고 적었다. `fde92d13` 에서 185건(`DropdownMenu` 의 `비활성_항목` 이 `열림` 의 play 를 물려받는다), #471·#478·#417·#474 병합 뒤 `94c04ddb` 에서 192건이다.
+- 이슈는 play 184건이라고 적었다. `fde92d13` 에서 185건(`DropdownMenu` 의 `비활성_항목` 이 `열림` 의 play 를 물려받는다), #471·#478·#417·#474 병합 뒤 `94c04ddb` 에서 192건, #477 병합 뒤 `ade90b1c` 에서 195건이다.
 - ① 의 근거 테스트 이름 169개가 `94c04ddb` 의 파일에 글자 그대로 있는지 스크립트로 확인했다(없는 이름 0).
 - ③ 두 건: `DropdownMenu.비활성_항목`(`열림` 과 같은 play), `MinutesSkeleton.본문`(testid 와 `aria-busy` 만 보고, 같은 뼈대를 `RouteSkeleton.test.tsx`·`meetingMinutesSelection.test.tsx` 가 그린다).
-- 열린 브랜치 `feature/477-select-rollout` 이 바꾸거나 더하는 play 네 건(`ReminderCreateForm.팀원과_태스크_고르기`, `Combobox.찾기`, `Combobox.휴대폰_시트`, `Select.휴대폰_시트`)은 모두 ① 이다. 그 브랜치를 병합할 때 스토리 파일만 지우면 된다.
+- #477 이 바꾸거나 더한 play 네 건(`ReminderCreateForm.팀원과_태스크_고르기`, `Combobox.찾기`, `Combobox.휴대폰_시트`, `Select.휴대폰_시트`)은 모두 ① 이다. 근거는 `reminderCreateMsw.test.tsx`(태스크 줄은 마감·상태를 보이고, 기한이 지났으면 빨간 글씨, 완료한 태스크는 고를 수 없다), `Combobox.test.tsx`, `Select.test.tsx` 다. develop merge 에서 그 스토리 파일과 새 `Combobox.stories.tsx` 를 지웠다. #478 ②a·②b, #429, #450, #446·#457 은 스토리에 args(`compact: false`)만 더했거나 스토리를 건드리지 않아 새로 옮길 play 가 없다.
 
 ## 옮긴 곳
 
@@ -81,7 +81,7 @@ play 가 있는 스토리를 셋으로 나눴다. ① 같은 상태와 같은 �
 
 ## 지운 것
 
-- 스토리 43개(`src/**/*.stories.tsx`), `.storybook/`(`main.ts`, `preview.tsx`, `playOutcome.ts`), `e2e/storybook/`(`serve.mjs`, `stories.sb.ts`), `playwright.storybook.config.ts`.
+- 스토리 44개(`src/**/*.stories.tsx`, #477 의 `Combobox.stories.tsx` 포함), `.storybook/`(`main.ts`, `preview.tsx`, `playOutcome.ts`), `e2e/storybook/`(`serve.mjs`, `stories.sb.ts`), `playwright.storybook.config.ts`.
 - `package.json` 스크립트 `storybook`·`build-storybook`·`test:storybook`, 의존성 `storybook`·`@storybook/react-vite`. `package-lock.json` 은 develop 의 lock 에서 root 의 두 의존성을 빼고, root 에서 lock 그래프(dependencies·optionalDependencies·필수 peer)로 더 닿지 않는 엔트리 143개만 스크립트로 지웠다(740 → 597). 남은 엔트리는 develop 과 글자 그대로 같고 diff 는 삭제뿐이다. Windows 의 npm 으로 lock 을 다시 만들면 wasm32 전용 `@emnapi/core`·`@emnapi/runtime` 까지 빠져 Linux CI 의 `npm ci` 가 실패했기 때문이다.
 - `.gitignore`·`.prettierignore`·`eslint.config.js` ignores 의 `storybook-static`·`playwright-report-storybook`·`test-results-storybook`. eslint 의 `.storybook`·`*.stories.tsx` 대상, `tsconfig.json` include 의 `.storybook`·`playwright.storybook.config.ts`.
 - `.github/workflows/frontend-ci.yml` 의 `storybook` job. 이 job 을 `needs` 로 기다리는 job 은 없다. check·build·e2e job 은 그대로다.
@@ -92,7 +92,7 @@ play 가 있는 스토리를 셋으로 나눴다. ① 같은 상태와 같은 �
 
 - [결정 기록](../../plan/m8/basis-for-decision/2026-11-07-remove-storybook.md)에 근거를 남기고, [결정 문서](../../decision/frontend-decisions.md)에 D-181 을 더했다. D-141 은 폐기, D-143(CI 게이트)·D-146(MSW 공유 대상)은 Storybook 부분만 바꿨다고 각 줄 끝에 적었다.
 - [MSW 사용 안내](../../msw-guide.md) 「Storybook·E2E 에서 고르기」를 「E2E 에서 고르기」로 고쳤다.
-- [Frontend README](../../../README.md) 의 Storybook 절을 지우고 MSW 를 쓰는 곳에서 Storybook 을 뺐다.
+- [Frontend README](../../../README.md) 는 이 PR 에서 고치지 않았다(README 정리 PR 이 따로 들어온다). 그때 고칠 곳: 「Storybook」 절(27~35행)과 「개발 모드의 모의 데이터」 의 `E2E·Storybook·Vitest`(51행). 116행(#236) 은 그때의 기록이다.
 - [API 계약](../../contracts/frontend-api-contract.md) 의 MSW 공유 대상 두 줄에서 Storybook 을 뺐다. 166행은 `당시` 상황을 적은 인용이라 그대로 뒀다. 인터페이스는 바뀌지 않았다.
 - verify 스킬(`.cursor/skills/verify-managers-manager/`, `.claude/skills/`)에는 Storybook 줄이 없었다. 원본 checkout 에만 있는 로컬 `verify-frontend` 스킬은 이 저장소 밖이라 고치지 않았다.
 - 지난 마일스톤의 plan·result·basis-for-decision, `issues/*/result.md`, `plan/refactor/*` 에 나오는 Storybook 은 그때의 사실이라 고치지 않았다.
@@ -142,6 +142,7 @@ play 가 있는 스토리를 셋으로 나눴다. ① 같은 상태와 같은 �
 | 빌드 | `npm run build` | 통과 |
 | 전체 Vitest | `npm run test -- --maxWorkers=1` | 252개 파일 중 251개, 3121개 중 3119개 통과. 실패 2개는 이번에 고치지 않은 `settingsPage.test.tsx` 의 저장 실패 알림 두 행이다. 그 파일만 다시 돌리면 21개 모두 통과해 부하로 인한 시간 초과로 본다 |
 | 설치 | 커밋한 `package.json`·`package-lock.json` 으로 WSL Linux(CI 와 같은 Node 24.22.2·npm 11.19.1)와 Windows 에서 `npm ci`, lock 그래프 대조 스크립트 | Linux 529개·Windows 596개 설치 통과, 풀리지 않는 요구 0건(develop 과 같다). Windows npm 으로 만든 이전 lock 은 Linux 에서 CI 와 같은 `Missing: @emnapi/core@1.11.3` 으로 실패했다 |
+| develop `ade90b1c` merge 뒤 | `npm run typecheck`, 충돌·바꾼 파일 관련 `npx vitest run <27개 파일> --maxWorkers=1`, `E2E_PORT=5231 npx playwright test` `auth-limits`·`messages-layout`·`settings-team`·`task-views-design` `--workers=1` | 타입 통과(#429 가 `DiscordIntegrationDto.chat_channel` 을 필수로 만들어 `settingsConnections.test.tsx` 의 옮긴 테스트에 `chat_channel: null` 을 더했다). Vitest 751개, E2E 19개 통과 |
 | 흔적 | `git grep -i "storybook\|\.stories\|playOutcome\|watchStoryPlay"` (결정·결과·지난 기록 제외) | 코드·설정·CI 에 없음. `playwright.config.ts` 28행 주석의 옛 결정 문서 파일 이름 하나만 남는다 |
 
 ## 확인하지 못한 것

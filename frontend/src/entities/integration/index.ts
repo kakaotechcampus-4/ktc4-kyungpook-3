@@ -1,5 +1,7 @@
 export type {
+  ChatChannel,
   DisconnectedStatus,
+  DiscordIntegration,
   Integration,
   Integrations,
   IntegrationProvider,
@@ -7,9 +9,13 @@ export type {
 } from './model/types'
 export { toIntegrations } from './model/mapper'
 export {
+  clearChatChannel,
   disconnectIntegration,
+  discordChannelsQueryOptions,
+  fetchDiscordChannels,
   fetchIntegrations,
   integrationsQueryOptions,
+  setChatChannel,
 } from './api/integrations'
 export { integrationStartUrl } from './api/oauth'
 export type { IntegrationReturn } from './lib/oauthReturn'

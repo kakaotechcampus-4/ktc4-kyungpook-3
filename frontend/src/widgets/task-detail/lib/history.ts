@@ -5,7 +5,7 @@ import type {
   TaskHistoryEntry,
   TaskTimelineItem,
 } from '@/entities/task'
-import { TASK_STATUSES, TASK_STATUS_LABEL } from '@/features/task-status'
+import { TASK_STATUSES, TASK_STATUS_LABEL } from '@/entities/task'
 import { formatSeoulDateTime } from '@/shared/lib/date'
 import { parseEnumParam } from '@/shared/lib/url'
 

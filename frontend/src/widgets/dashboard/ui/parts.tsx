@@ -8,7 +8,8 @@ import type { DashboardRefreshFailure } from '../model/useRefreshFailure'
 
 /* Main 시안의 본문 영역 공통 모양 — 머리줄(제목·오른쪽 링크) 아래 1px 선, 행 사이 1px 선 */
 export const SECTION_HEAD = 'flex items-center justify-between gap-16 border-b border-line py-15'
-export const SECTION_TITLE = 'text-[14px] leading-[1.75] font-semibold text-ink'
+export const SECTION_TITLE =
+  'text-[14px] leading-[1.75] font-semibold text-ink max-md:text-[17px] max-md:leading-[1.5]'
 export const HEAD_LINK =
   'inline-flex items-center gap-4 text-caption text-sub hover:text-ink tabular-nums'
 export const BADGE =
