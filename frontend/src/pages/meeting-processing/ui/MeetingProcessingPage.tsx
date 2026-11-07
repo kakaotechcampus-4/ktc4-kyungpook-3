@@ -16,8 +16,11 @@ import { useMemberWorkspace } from '@/entities/workspace'
 import { ApiError } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf } from '@/shared/lib/date'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
+import type { LoadingIndicator } from '@/shared/lib/loading-indicator'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { useRouteId } from '@/shared/lib/url'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { Icon } from '@/shared/ui/icon'
 import { Mascot } from '@/shared/ui/mascot'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
@@ -67,11 +70,20 @@ export function MeetingProcessingPage() {
   return <MeetingProcessing workspaceId={workspaceId} meetingId={meetingId} />
 }
 
-function Layout({ status, children }: { status: string; children: ReactNode }) {
+function Layout({
+  status,
+  reveal = false,
+  children,
+}: {
+  status: string
+  /** 정리 상태를 기다린 뒤 나타났다 — 내용에 불투명도 전환을 건다 (#508) */
+  reveal?: boolean
+  children: ReactNode
+}) {
   return (
     <main className={PAGE}>
       <div className={COLUMN}>
-        {children}
+        <Reveal indicator={{ reveal }}>{children}</Reveal>
         {/* 상태 변화를 스크린리더에 알린다. 화면의 상태가 바뀌어도 같은 자리에 남아 있어야 읽힌다 (U4-10) */}
         <p role="status" className="sr-only">
           {status}
@@ -100,12 +112,16 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
   useEffect(() => {
     if (watched) trackMeeting({ workspaceId, meetingId })
   }, [watched, workspaceId, meetingId])
+  // 정리 상태를 받는 자리의 지연·최소 표시 (#508)
+  const indicator = useLoadingIndicator(meeting === null && detail.error === null)
+  const reveal = indicator.reveal
 
-  if (meeting === null) {
+  if (meeting === null || indicator.pending) {
+    if (indicator.pending) return <Loading indicator={indicator} />
     if (isMeetingUnavailable(detail.error)) return <Unavailable workspaceId={workspaceId} />
     if (detail.error !== null)
       return (
-        <Layout status="정리 상태를 불러오지 못했어요">
+        <Layout status="정리 상태를 불러오지 못했어요" reveal={reveal}>
           <QueryErrorState
             error={detail.error}
             onRetry={() => void detail.refetch()}
@@ -113,7 +129,7 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
           />
         </Layout>
       )
-    return <Loading />
+    return <Loading indicator={indicator} />
   }
 
   const attendeeCount = summary.data?.attendeeCount ?? null
@@ -129,7 +145,7 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
   switch (meeting.status) {
     case 'done':
       return (
-        <Layout status="정리가 끝났어요">
+        <Layout status="정리가 끝났어요" reveal={reveal}>
           <Heading meeting={meeting} attendeeCount={attendeeCount} title="정리가 끝났어요" />
           <GuardedLink to={paths.meetings(workspaceId, meetingId)} className={LINK}>
             회의록 보기
@@ -139,7 +155,7 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
     case 'failed': {
       const failure = meetingFailure(meeting.failedStage)
       return (
-        <Layout status={failure.title}>
+        <Layout status={failure.title} reveal={reveal}>
           <Heading meeting={meeting} attendeeCount={attendeeCount} title={failure.title} />
           <p className={META}>{failure.description}</p>
           <GuardedLink to={paths.meetings(workspaceId, meetingId)} className={LINK}>
@@ -150,7 +166,7 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
     }
     case 'awaiting_speakers':
       return (
-        <Layout status="화자 지정이 필요해요">
+        <Layout status="화자 지정이 필요해요" reveal={reveal}>
           <Heading meeting={meeting} attendeeCount={attendeeCount} title="화자 지정이 필요해요" />
           {isPm ? (
             <>
@@ -176,17 +192,18 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
           isPm={isPm}
           attendeeCount={attendeeCount}
           stale={stale}
+          reveal={reveal}
         />
       )
   }
 }
 
-function Loading() {
+function Loading({ indicator }: { indicator: Pick<LoadingIndicator, 'skeletonVisible'> }) {
   return (
     <Layout status="정리 상태를 불러오는 중이에요">
-      <div aria-busy="true">
+      <DeferredSkeleton indicator={indicator}>
         <Skeleton lines={4} />
-      </div>
+      </DeferredSkeleton>
     </Layout>
   )
 }
@@ -221,15 +238,20 @@ function Processing({
   isPm,
   attendeeCount,
   stale,
+  reveal,
 }: {
   meeting: Meeting
   source: MeetingSource | null
   isPm: boolean
   attendeeCount: number | null
   stale: boolean
+  reveal: boolean
 }) {
   return (
-    <Layout status={source === null ? '정리하고 있어요' : stepStatus(meeting, source)}>
+    <Layout
+      status={source === null ? '정리하고 있어요' : stepStatus(meeting, source)}
+      reveal={reveal}
+    >
       <Heading meeting={meeting} attendeeCount={attendeeCount} title="정리하고 있어요" />
       {/* 출처를 모르는 동안은 단계를 그리지 않는다 — 단계 수가 출처마다 다르다 (#483) */}
       {source === null ? null : <Steps meeting={meeting} source={source} />}
