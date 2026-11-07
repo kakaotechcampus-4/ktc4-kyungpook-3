@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import event
 
-from app.models import Member, MessageSender, MessageThread, Session as SessionModel, ThreadMessage, User, Workspace
+from app.models import Member, MessageSender, MessageThread, MessageThreadRead, Session as SessionModel, ThreadMessage, User, Workspace
 from app.services import message_reads
 from app.services.sessions import hash_session_token
 from tests.api.test_messages_api import P, client
@@ -245,13 +245,18 @@ def test_promoted_pm_does_not_count_replies_before_promotion(mdb, seed):
 
 
 def test_demote_keeps_reads(mdb, seed):
-    _second_pm(mdb, seed)
-    mine = _thread(mdb, seed["pm"])
-    _msg(mdb, mine, MessageSender.BOT, 1)
     other = _thread(mdb, seed["carol"])
-    _msg(mdb, other, MessageSender.MEMBER, 2)
+    _msg(mdb, other, MessageSender.MEMBER, 1)
+    pm = client("pm")
+    # bob 을 올렸다 내린다. 올릴 때 남의 대화에 읽은 위치가 생긴다.
+    assert _patch_role(pm, seed, "bob", "pm").status_code == 200
+    bob_id = seed["bob"].member_id
+    before = mdb.query(MessageThreadRead).filter_by(member_id=bob_id).count()
+    assert before >= 1
 
-    assert _patch_role(client("pm2"), seed, "pm", "member").status_code == 200
+    assert _patch_role(pm, seed, "bob", "member").status_code == 200
 
-    # 내려간 뒤에는 자기 대화의 봇 메시지만 센다.
-    assert _count(client("pm"), seed) == 1
+    mdb.expire_all()
+    assert mdb.query(MessageThreadRead).filter_by(member_id=bob_id).count() == before
+    # 내려간 뒤에는 남의 대화를 세지 않는다.
+    assert _count(client("bob"), seed) == 0
