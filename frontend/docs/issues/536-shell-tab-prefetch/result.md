@@ -69,6 +69,14 @@ D-130 은 「브라우저 유휴 시간 사전 로드는 1차에서 적용하지
 - 기존 앱 테스트(관련 파일): appShell·authFlow·dashboard·lateAsyncRaces·meetingMinutesRaces·messagesCompact·splash·taskBoardCompact·router/*·splash/*·meetingProcessing·meetingMinutesSelection·messagesMsw(22개 파일 410개), meetingMinutes·meetingMinutesRaces·meetingMinutesSelection·router/meetingRoutes(73개), loginReturn(9개) 통과.
 - typecheck·lint·format:check 통과. build 통과(메인 번들에 다섯 화면 문구 없음).
 
+### CI 에서 바뀐 기존 E2E (PR #541)
+
+`e2e/meeting-flow.e2e.ts` ③(일반 팀원이 회의 올리기 주소로 바로 들어오면 막히고 업로드 요청이 없다)이 CI 에서 실패했다. 「업로드 진입 판정(연동 상태) 요청이 없다」를 `/integrations` 요청 0건으로 보는데, 셸의 한가할 때 미리 받기가 대시보드·팀 화면의 연동 상태 `GET /workspaces/ws_01/integrations` 를 부른 것이 잡혔다(로컬에서도 3/3 재현).
+
+- 역할 위반은 아니다. 대시보드(`useDashboardData`)와 팀(`TeamOverview`) 화면은 역할과 상관없이 연동 상태를 묻는다 — 미리 받기는 화면과 같은 조회를 받았다.
+- 테스트의 뜻(업로드 화면의 진입 판정이 없다)은 지키고, 그 테스트에서만 브라우저가 한가해지지 않는 것처럼 둬(`requestIdleCallback` 이 부르지 않음) 셸의 미리 받기를 빼고 화면 자신의 요청만 적는다. 단위 테스트 setup 과 같은 방법이다.
+- 수정 뒤 ③ 3회 반복·파일 전체 11개 통과(로컬). `task-views-design.e2e.ts:71` 은 CI 재시도에서 통과해 흔들림으로 보고 손대지 않았다.
+
 ## 남긴 것
 
 - D-130(라우트 분할·유휴 사전 로드 미적용) 결정 문서 갱신. #539 의 기록 항목과 함께 정하는 것이 맞아 여기서 하지 않았다.
