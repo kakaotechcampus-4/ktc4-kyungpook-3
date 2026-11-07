@@ -64,7 +64,7 @@ describe('설정의 Discord 연결 영역 — PM', () => {
     expect((await notionArea()).queryByRole('button', { name: /연결하기/ })).toBeNull()
   })
 
-  it('연결된 Discord 에는 연결 액션 대신 `채널 바꾸기` 와 `연결 끊기` 만 있다', async () => {
+  it('연결된 Discord 에는 연결 액션 대신 `연결 끊기` 만 있다 — 채널은 아래 `회의 채팅 채널` 칸에서 고른다 (#505)', async () => {
     db.integrations[WS].discord = {
       status: 'connected',
       display_name: 'Discord 연결됨',
@@ -74,10 +74,9 @@ describe('설정의 Discord 연결 영역 — PM', () => {
     renderApp(SETTINGS)
     const area = await discordArea()
     expect(await area.findByText('연결됨')).toBeInTheDocument()
-    expect(area.getAllByRole('button').map((button) => button.textContent)).toEqual([
-      '채널 바꾸기',
-      '연결 끊기',
-    ])
+    expect(area.getAllByRole('button').map((button) => button.textContent)).toEqual(['연결 끊기'])
+    expect(area.queryByRole('button', { name: '채널 바꾸기' })).toBeNull()
+    expect(area.getByRole('combobox', { name: '회의 채팅 채널' })).toBeInTheDocument()
   })
 
   it('끊긴(revoked) Discord 는 `연결 끊김` 과 `Discord 다시 연결하기` 다 — 문구로도 구분한다', async () => {
