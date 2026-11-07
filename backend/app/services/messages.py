@@ -38,6 +38,7 @@ from app.models import (
     ReminderKind,
     ReminderOrigin,
     ReminderStatus,
+    ReminderWatch,
     ReplyChannel,
     Task,
     ThreadMessage,
@@ -860,8 +861,9 @@ def _pick_member_for_discord_user(
 ) -> Member:
     """DM 에는 서버 id 가 없어서 같은 디스코드 계정이 여러 워크스페이스에 있으면 어느 대화인지 골라야 한다.
 
-    답장 기능으로 고른 봇 DM, 그 DM 창에서 이 글 바로 앞에 나간 리마인드, 가장 최근에 나간 리마인드,
-    가장 나중에 만든 팀원 순서로 정한다. PM 글 안내는 답을 기다리지 않으므로 답장 기능으로 고른 때만 본다. 봇 DM 시각은 디스코드 id 에 든 보낸 시각이다. 결과 보고는 답장보다
+    답장 기능으로 고른 봇 DM, 답을 기다리는 시계가 한 공간에만 있으면 그 공간, 그 DM 창에서 이 글 바로 앞에 봇이
+    보낸 DM, 봇이 가장 최근에 말을 건 쪽, 가장 나중에 만든 팀원 순서로 정한다. 시계를 먼저 보는 것은 다른 공간의
+    PM 글 안내가 재촉의 답을 가져가면 재촉한 공간의 태스크가 응답 없음으로 막히기 때문이다. 봇 DM 시각은 디스코드 id 에 든 보낸 시각이다. 결과 보고는 답장보다
     늦게 올 수 있으므로, 가져갔지만 보고가 없는 메시지(시간 초과 포함)는 가져간 시각에 나간 것으로 본다.
     """
     members = db.scalars(
@@ -888,10 +890,20 @@ def _pick_member_for_discord_user(
         )
         if owner is not None:
             return by_id[owner]
+    if reply_to is None:
+        waiting = set(db.scalars(
+            thread_messages()
+            .join(ReminderBundle, ReminderBundle.message_id == ThreadMessage.message_id)
+            .join(Reminder, Reminder.bundle_id == ReminderBundle.bundle_id)
+            .join(ReminderWatch, ReminderWatch.reminder_id == Reminder.reminder_id)
+            .where(ReminderWatch.state.in_(scheduler._OPEN_STATES), ThreadMessage.dm_status != DmStatus.FAILED)
+        ).all())
+        if len(waiting) == 1:
+            return by_id[waiting.pop()]
     sent_before = []
     for member_id, claimed_at, reported_at, part_id in db.execute(
         thread_messages()
-        .where(ThreadMessage.sender == MessageSender.BOT)
+        .where(ThreadMessage.dm_status.is_not(None))
         .add_columns(ThreadMessage.claimed_at, ThreadMessage.dm_reported_at, BotDmPart.discord_message_id)
         .outerjoin(BotDmPart, BotDmPart.message_id == ThreadMessage.message_id)
         .where(ThreadMessage.claimed_at.is_not(None))
@@ -911,7 +923,7 @@ def _pick_member_for_discord_user(
         db.execute(
             select(MessageThread.member_id, func.max(ThreadMessage.created_at))
             .join(ThreadMessage, ThreadMessage.thread_id == MessageThread.thread_id)
-            .where(MessageThread.member_id.in_(by_id), ThreadMessage.sender == MessageSender.BOT)
+            .where(MessageThread.member_id.in_(by_id), ThreadMessage.dm_status != DmStatus.FAILED)
             .group_by(MessageThread.member_id)
         ).all()
     )
