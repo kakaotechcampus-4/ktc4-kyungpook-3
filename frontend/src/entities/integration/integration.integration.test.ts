@@ -15,7 +15,13 @@ it('maps integrations and persists a disconnected provider', async () => {
   expect(await removed.text()).toBe('')
   expect(
     toIntegrations(await fetchDto<IntegrationsDto>('/workspaces/ws_01/integrations')).discord,
-  ).toEqual({ provider: 'discord', status: 'not_connected', displayName: null, connectedAt: null })
+  ).toEqual({
+    provider: 'discord',
+    status: 'not_connected',
+    displayName: null,
+    connectedAt: null,
+    chatChannel: null,
+  })
   await expect(fetchDto('/workspaces/ws_01/discord/members')).rejects.toMatchObject({
     code: 'INTEGRATION_NOT_CONNECTED',
     status: 409,

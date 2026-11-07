@@ -165,7 +165,12 @@ function addCreatedWorkspace(state: MockDb, workspace: WorkspaceDto): void {
     created_at: MOCK_NOW,
   })
   state.integrations[workspace.workspace_id] = {
-    discord: { status: 'not_connected', display_name: null, connected_at: null },
+    discord: {
+      status: 'not_connected',
+      display_name: null,
+      connected_at: null,
+      chat_channel: null,
+    },
     notion: { status: 'not_connected', display_name: null, connected_at: null },
   }
 }
@@ -849,6 +854,7 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
         status: 'not_connected',
         display_name: null,
         connected_at: null,
+        chat_channel: null,
       }
       break
     case 'notifications-default':

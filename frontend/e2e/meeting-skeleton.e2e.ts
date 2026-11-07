@@ -626,11 +626,20 @@ test.describe('참석자 줄은 몇 명이든 칩 한 줄이고 남는 사람은
         await page.setViewportSize({ width, height: 900 })
         const at = `${count}명 · ${width}px`
         // 줄 폭이 바뀌면 ResizeObserver 가 다시 잰다 — 정한 프레임 수가 아니라 보이는 칩 · `+N` 이 새 폭에 맞을 때까지 기다린다.
-        // 끝내 맞지 않으면 그 까닭과 함께 실패한다
+        // 맞는 상태를 한 번 읽은 바로 뒤에 한 사람이 모자란 상태가 100ms 안쪽으로 보였다가 돌아오는 때가 있다(develop 에서도 10번 중 2번).
+        // 잇따른 두 읽기가 같을 때만 자리 잡은 것으로 보고 그 상태로 아래를 본다. 끝내 맞지 않으면 그 까닭과 함께 실패한다
+        let state = await readAttendeeRow(page)
         await expect
-          .poll(async () => fitProblem(await readAttendeeRow(page), count), { message: at })
+          .poll(
+            async () => {
+              const next = await readAttendeeRow(page)
+              const settled = JSON.stringify(next) === JSON.stringify(state)
+              state = next
+              return settled ? fitProblem(next, count) : '줄이 아직 바뀌는 중'
+            },
+            { message: at },
+          )
           .toBeNull()
-        const state = await readAttendeeRow(page)
 
         // 한 줄 높이 — 칩 높이 그대로다. 보이는 칩은 모두 그 줄 위에 있다
         expect(state.row.height, at).toBe(22)

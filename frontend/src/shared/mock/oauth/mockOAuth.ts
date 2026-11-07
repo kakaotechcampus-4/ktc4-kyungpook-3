@@ -44,11 +44,15 @@ export function settleMockOAuth({
   if (outcome !== 'success') return outcome
   const integrations = db.integrations[workspaceId]
   if (requirePmRole(workspaceId) !== null || integrations === undefined) return 'failed'
-  integrations[provider] = {
+  const connected = {
     status: 'connected',
     display_name: `${PROVIDER_NAME[provider]} 연결됨`,
     connected_at: MOCK_NOW,
   }
+  // 모의 Discord 서버는 하나라 다시 연결해도 같은 서버다. 백엔드는 같은 서버로 다시 연결하면 채팅 수집 채널을 남긴다
+  if (provider === 'discord')
+    integrations.discord = { ...connected, chat_channel: integrations.discord.chat_channel }
+  else integrations.notion = connected
   return 'success'
 }
 

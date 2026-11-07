@@ -7,6 +7,7 @@ import {
   addMonths,
   calendarGrid,
   cardBadges,
+  columnSummary,
   daysBetween,
   ganttTitle,
   mondayOf,
@@ -27,10 +28,11 @@ describe('보기 조건 URL', () => {
       from: null,
       period: 'all',
       sort: 'due',
+      column: 'active',
     })
-    expect(read('?view=table&month=2026-13&from=2026-02-30&period=week&sort=priority')).toEqual(
-      read(''),
-    )
+    expect(
+      read('?view=table&month=2026-13&from=2026-02-30&period=week&sort=priority&column=blocked'),
+    ).toEqual(read(''))
   })
 
   it('쓴 값을 그대로 읽고, 탭·날짜 조건 파라미터는 건드리지 않는다', () => {
@@ -41,19 +43,35 @@ describe('보기 조건 URL', () => {
       from: null,
       period: 'month' as const,
       sort: 'updated' as const,
+      column: 'done' as const,
     }
     const written = viewSearch(new URLSearchParams('?tab=done&due=overdue,soon'), next)
     expect(written).toBe(
-      '?tab=done&due=overdue,soon&view=calendar&assignee=mb_02&month=2026-09&period=month&sort=updated',
+      '?tab=done&due=overdue,soon&view=calendar&assignee=mb_02&month=2026-09&period=month&sort=updated&column=done',
     )
     expect(read(written)).toEqual(next)
   })
 
   it('기본값으로 돌아오면 파라미터가 남지 않는다', () => {
     expect(
-      viewSearch(new URLSearchParams('?view=board&assignee=mb_01&sort=created'), read('')),
+      viewSearch(
+        new URLSearchParams('?view=board&assignee=mb_01&sort=created&column=todo'),
+        read(''),
+      ),
     ).toBe('')
     expect(viewSearch(new URLSearchParams('?tab=done&view=board'), read(''))).toBe('?tab=done')
+  })
+
+  it('휴대폰 보드의 칸은 시작 전·진행 중·완료 가운데 하나이고, 칸만 바꿔도 다른 조건은 남는다', () => {
+    expect(['todo', 'active', 'done'].map((column) => read(`?column=${column}`).column)).toEqual([
+      'todo',
+      'active',
+      'done',
+    ])
+    const current = new URLSearchParams('?view=board&assignee=mb_01&period=month&tab=done')
+    expect(viewSearch(current, { ...read(current.toString()), column: 'todo' })).toBe(
+      '?tab=done&view=board&assignee=mb_01&period=month&column=todo',
+    )
   })
 })
 
@@ -80,6 +98,33 @@ describe('보드 카드 배지', () => {
 
   it('캘린더·간트가 쓰는 색 구분에서는 막힌 태스크가 여전히 위험이다', () => {
     expect(taskTone(task('blocked', '2026-10-30'), today)).toBe('danger')
+  })
+})
+
+describe('휴대폰 보드의 칸 요약 줄', () => {
+  const today = '2026-09-18'
+  const task = (status: Task['status'], dueDate: string | null): Task => ({
+    ...toTask(toTaskResponse(taskFixtures[0])),
+    status,
+    dueDate,
+  })
+
+  it('시안처럼 막힘·위험 수 뒤에 순서를 붙인다. 막혔고 기한도 지난 카드는 둘 다에 센다', () => {
+    const tasks = [
+      task('in_progress', '2026-09-17'),
+      task('in_progress', '2026-09-16'),
+      task('blocked', '2026-09-15'),
+      task('in_progress', '2026-09-10'),
+    ]
+    expect(columnSummary(tasks, today, '마감 빠른 순')).toBe('막힘 1 · 위험 4 · 마감 빠른 순')
+  })
+
+  it('0 인 개수는 빼고, 주의는 세지 않는다', () => {
+    expect(columnSummary([task('blocked', '2026-10-30')], today, '최근 생성순')).toBe(
+      '막힘 1 · 최근 생성순',
+    )
+    expect(columnSummary([task('todo', '2026-09-20')], today, '마감 빠른 순')).toBe('마감 빠른 순')
+    expect(columnSummary([], today, '최근 완료순')).toBe('최근 완료순')
   })
 })
 

@@ -8,7 +8,7 @@ import { Skeleton } from '@/shared/ui/skeleton'
 import type { Attention } from '../lib/team'
 import { LINK_BUTTON, SIDE_CARD, SIDE_TITLE, SMALL_BUTTON } from './teamStyles'
 
-const BODY = 'text-[13px] leading-[1.7] text-ink'
+const BODY = 'text-[13px] leading-[1.7] text-ink max-md:wrap-anywhere'
 const NOTE = 'text-caption leading-[1.65] text-dim'
 
 /** `먼저 챙길 것` 문장. 조사가 붙는 자리에 태스크 제목을 두지 않는다 */

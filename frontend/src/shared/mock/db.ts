@@ -11,7 +11,8 @@ import {
   unresolvedAliasFixtures,
 } from './fixtures/member'
 import { workspaceFixtures } from './fixtures/workspace'
-import { integrationFixtures } from './fixtures/integration'
+import { discordChannelFixtures, integrationFixtures } from './fixtures/integration'
+import type { MockDiscordChannel } from './fixtures/integration'
 import { meetingFixtures, meetingSummaryFixtures } from './fixtures/meeting'
 import { minutesFixtures } from './fixtures/minutes'
 import { extractionFixtures } from './fixtures/extraction'
@@ -161,6 +162,8 @@ export interface MockDb {
   unresolvedAliases: typeof unresolvedAliasFixtures
   discordUsers: typeof discordUserFixtures
   integrations: typeof integrationFixtures
+  /** #428 모의 Discord 서버의 텍스트 채널. 팀원 목록(`discordUsers`)처럼 서버가 하나라 어느 공간이든 연결하면 이 목록이다 */
+  discordChannels: MockDiscordChannel[]
   meetings: typeof meetingFixtures
   meetingSummaries: typeof meetingSummaryFixtures
   minutes: typeof minutesFixtures
@@ -205,6 +208,7 @@ export function initialDb(): MockDb {
     unresolvedAliases: structuredClone(unresolvedAliasFixtures),
     discordUsers: structuredClone(discordUserFixtures),
     integrations: structuredClone(integrationFixtures),
+    discordChannels: structuredClone(discordChannelFixtures),
     meetings: structuredClone(meetingFixtures),
     meetingSummaries: structuredClone(meetingSummaryFixtures),
     minutes: structuredClone(minutesFixtures),

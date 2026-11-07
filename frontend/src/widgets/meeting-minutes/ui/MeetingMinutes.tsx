@@ -13,7 +13,9 @@ import { useShownMeeting } from '../model/useShownMeeting'
 import { MinutesDetail, UnavailableMeeting } from './MinutesDetail'
 
 /* Meetings 캔버스 실측 — 왼쪽 목록 308 · 오른쪽 선, 목록 제목 17px, 행 위아래 13 · 좌우 14 · 라운드 10 · 간격 4 */
-const ASIDE = 'flex w-aside shrink-0 flex-col border-r border-divider'
+/* 폭 768 미만은 목록 위 · 본문 아래 한 열이다(D-180). 목록 아래 선이 본문과 가른다 */
+const ASIDE =
+  'flex w-aside shrink-0 flex-col border-r border-divider max-md:w-full max-md:border-r-0 max-md:border-b'
 /* 머리 줄은 PM 의 `회의 올리기`(32px) 높이로 고정한다(위 18 + 32 + 아래 14). 팀원은 버튼이 없어 줄이 낮아지면 목록이 역할마다
    다른 자리에서 시작하고, 역할을 모르는 라우트 스켈레톤(shared/ui/page-skeleton 의 MinutesPageSkeleton)과 어긋난다 */
 const ASIDE_HEAD = 'flex min-h-64 items-center justify-between gap-12 px-20 pt-18 pb-14'
@@ -31,7 +33,7 @@ const STATUS_BADGE =
 /* 업로드 진입. PM 만 본다 — 캔버스의 검색 자리다(검색은 범위 밖) */
 const UPLOAD_LINK =
   'inline-flex h-32 items-center gap-6 rounded-9 bg-ink px-12 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
-const EMPTY_PAGE = 'flex flex-1 items-center justify-center px-48 pt-48 pb-96'
+const EMPTY_PAGE = 'flex flex-1 items-center justify-center px-48 pt-48 pb-96 max-md:px-20'
 const EMPTY_UPLOAD =
   'inline-flex h-40 items-center justify-center rounded-9 bg-ink px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
 
@@ -103,7 +105,7 @@ export function MeetingMinutes({
     )
   else if (list.data !== undefined && list.data.minutes.length === 0)
     detail = (
-      <div className="flex justify-center px-36 pt-72 pb-56">
+      <div className="flex justify-center px-36 pt-72 pb-56 max-md:px-20">
         <EmptyState
           titleAs="h2"
           title={
@@ -125,7 +127,7 @@ export function MeetingMinutes({
     detail = <MinutesDetailSkeleton />
 
   return (
-    <main className="flex flex-1 items-stretch">
+    <main className="flex flex-1 items-stretch max-md:flex-col">
       <aside aria-label="회의 목록" className={ASIDE}>
         <div className={ASIDE_HEAD}>
           <h1 className={ASIDE_TITLE}>회의록</h1>
