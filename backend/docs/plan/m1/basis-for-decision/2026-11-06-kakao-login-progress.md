@@ -30,7 +30,7 @@
 | backend pytest PostgreSQL | 3271 통과, 44 건너뜀 |
 | alembic | 빈 PostgreSQL 에서 upgrade, check, downgrade, upgrade 통과 |
 | frontend vitest | 3362 통과 |
-| frontend e2e | 149 통과, 1 실패. `tasks-approval.e2e.ts` 의 키보드 시나리오이고 이번 변경 전 develop 에서도 실패한다 |
+| frontend e2e | 271 통과, 1 실패. `tasks-approval.e2e.ts` 의 키보드 시나리오이고 이번 변경 전 develop 에서도 실패한다 |
 | 비용 | 0원 |
 
 실제 메일은 Gmail 계정으로 가입 코드 API 를 호출해 받아 봤다. 실제 카카오 로그인은 아직 안 했고 가짜 카카오 서버로 확인했다.
