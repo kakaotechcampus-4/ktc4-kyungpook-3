@@ -309,10 +309,13 @@ def _finish_kakao_login(request: Request, code: str, state: str, error: str, db:
     _clear_pending(response)
     # 주입받은 Response 의 쿠키는 RedirectResponse 를 돌려주면 사라지므로 redirect 에 직접 싣는다.
     _create_session(db, outcome.user, response)
-    if outcome.linked_now and mailer.is_configured():
+    if outcome.linked_now:
         # 인증 없이 만든 옛 계정이면 남이 선점했을 수 있다. 메일함 주인에게 알려 재설정으로 되찾게 한다.
-        subject, text = kakao_oauth.link_notice(mailer.app_base_url())
-        mailer.send_in_background(outcome.user.email, subject, text, log_label="kakao_link")
+        if mailer.is_configured():
+            subject, text = kakao_oauth.link_notice(mailer.app_base_url())
+            mailer.send_in_background(outcome.user.email, subject, text, log_label="kakao_link")
+        else:
+            logger.warning("카카오 연결 알림 못 보냄 reason=mail_unconfigured")
     return response
 
 

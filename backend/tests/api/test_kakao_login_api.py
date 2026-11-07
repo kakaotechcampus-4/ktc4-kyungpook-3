@@ -585,11 +585,13 @@ def test_refused_link_sends_no_link_notice(mdb, client, kakao, notices):
     assert notices == []
 
 
-def test_link_still_logs_in_when_mail_is_not_configured(mdb, client, kakao, monkeypatch):
+def test_link_still_logs_in_when_mail_is_not_configured(mdb, client, kakao, monkeypatch, caplog):
     _user(mdb)
     monkeypatch.setattr(auth.mailer, "is_configured", lambda: False)
 
-    res = _login(client, VERIFIED, kakao)
+    with caplog.at_level(logging.WARNING, logger="app.api.auth"):
+        res = _login(client, VERIFIED, kakao)
 
     assert _query(res)["oauth_result"] == ["success"]
     assert _row(mdb).provider_id == "77"
+    assert "reason=mail_unconfigured" in caplog.text
