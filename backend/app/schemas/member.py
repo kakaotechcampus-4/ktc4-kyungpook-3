@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models import AliasSource, AliasType, MemberRole
+from app.services.matching import normalize_alias_text
 
 # member.discord_user_id 컬럼 길이
 DISCORD_USER_ID_MAX_LENGTH = 64
@@ -66,6 +67,15 @@ class MemberAliasCreateRequest(BaseModel):
     source: AliasSource = AliasSource.MANUAL
     confidence: float = Field(1.0, ge=0.0, le=1.0)
     verified: bool = True
+
+    @field_validator("alias_text")
+    @classmethod
+    def _normalize_alias_text(cls, value: str) -> str:
+        # 후보를 만들 때와 같은 규칙으로 공백을 정리해 저장한다. 공백뿐인 표기는 어떤 입력으로도 걸리지 않으니 막는다.
+        normalized = normalize_alias_text(value)
+        if not normalized:
+            raise ValueError("별칭은 공백만으로 이루어질 수 없습니다")
+        return normalized
 
     @field_validator("source")
     @classmethod

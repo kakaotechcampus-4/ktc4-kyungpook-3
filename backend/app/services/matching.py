@@ -34,6 +34,14 @@ class MatchResult:
 _PARTICLES = ("께서", "한테", "에게", "이가", "이", "가", "은", "는", "을", "를", "께")
 
 
+def normalize_alias_text(text: str) -> str:
+    """별칭 표기의 공백을 한 칸으로 줄이고 앞뒤를 지운다. 후보를 만들 때와 별칭을 저장할 때 같이 쓴다.
+
+    저장하는 쪽도 같은 규칙이어야 공백이 든 별칭(" 환", "환  님")이 어떤 입력으로도 못 찾히는 일이 없다.
+    """
+    return " ".join(text.split())
+
+
 def name_candidates(text: str | None) -> list[str]:
     """담당자 표기에서 님·조사를 뗀 후보들을 긴 것부터 돌려준다. 빈 표기는 빈 리스트다.
 
@@ -45,7 +53,7 @@ def name_candidates(text: str | None) -> list[str]:
     """
     if not text:
         return []
-    base = " ".join(text.split())
+    base = normalize_alias_text(text)
     out = {base}
     if base.endswith("님"):
         out.add(base[:-1])

@@ -404,3 +404,38 @@ def test_post_alias_learned_source_promotes_auto_alias(client, mdb, mseed):
     assert r.status_code == 201
     assert r.json()["data"]["source"] == "learned"
 
+
+
+def test_post_alias_text_whitespace_is_normalized_like_candidates(client, mdb, mseed):
+    # 후보는 공백을 한 칸으로 줄이고 앞뒤를 지운다. 저장하는 쪽도 같은 규칙이어야 공백이 든 별칭이 못 찾히는 일이 없다.
+    from app.services.matching import resolve_assignee
+
+    member = mseed["bob"]
+    for raw, stored in ((" 환 ", "환"), ("환  님", "환 님"), ("BE   리더", "BE 리더")):
+        r = _create_alias(client, member.member_id, alias_text=raw)
+        assert r.status_code == 201
+        assert r.json()["data"]["alias_text"] == stored
+
+    assert resolve_assignee(mdb, member.workspace_id, " 환").member_id == member.member_id
+    assert resolve_assignee(mdb, member.workspace_id, "BE  리더가").member_id == member.member_id
+
+
+def test_post_alias_text_same_after_normalizing_is_the_same_alias(client, mdb, mseed):
+    first = _post(client, mseed["ws"], "김민수").json()["data"]["member_id"]
+
+    r = _create_alias(client, first, alias_text=" 민수 ")
+
+    assert r.status_code == 201
+    assert [a.alias_text for a in _aliases(mdb, first)].count("민수") == 1
+    assert next(a for a in _aliases(mdb, first) if a.alias_text == "민수").source == "manual"
+
+
+@pytest.mark.parametrize("raw", ["   ", "\t\n"])
+def test_post_alias_blank_text_is_rejected(client, mdb, mseed, raw):
+    member = mseed["bob"]
+
+    r = _create_alias(client, member.member_id, alias_text=raw)
+
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+    assert _aliases(mdb, member.member_id) == []
