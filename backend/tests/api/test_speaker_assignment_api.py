@@ -19,6 +19,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.services import upload_storage
 from app.models import Meeting, MeetingUpload, Member, Session as SessionModel, User, Workspace
+from app.services.sessions import hash_session_token
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 SERVICE_TOKEN = "test-service-token"
@@ -76,7 +77,7 @@ def _add_user(db, email, token, ws_id, role, name):
     db.add(user)
     db.flush()
     db.add(SessionModel(
-        user_id=user.user_id, session_token=token,
+        user_id=user.user_id, session_token=hash_session_token(token),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     member = Member(workspace_id=ws_id, user_id=user.user_id, display_name=name, role=role)

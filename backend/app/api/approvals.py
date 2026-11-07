@@ -16,6 +16,12 @@ from app.schemas.approval import (
     ApprovalResponse,
 )
 from app.services import replies
+from app.services.alias_learning import (
+    alias_lookup_forms,
+    approval_alias_texts,
+    learn_alias,
+    learnable_alias_text,
+)
 from app.services.tasks import (
     apply_task_updates,
     create_task,
@@ -208,6 +214,7 @@ def _apply_approval(
     *,
     overrides: dict[str, object],
     confirm_task_version: int | None = None,
+    save_alias: bool = False,
 ) -> None:
     """승인된 요청을 실제 Task 생성/수정으로 반영한다.
 
@@ -272,6 +279,16 @@ def _apply_approval(
 
         if ext_item is not None:
             ext_item.task_id = task.task_id
+            # 별칭은 create_task 가 담당자(탈퇴·다른 공간)를 검증한 뒤에 저장한다. 담당자를 못 고른 항목은 건너뛴다
+            alias_text = learnable_alias_text(ext_item) if save_alias and final["assignee_member_id"] else None
+            if alias_text is not None:
+                learn_alias(
+                    db,
+                    workspace_id=approval.workspace_id,
+                    member_id=final["assignee_member_id"],
+                    alias_text=alias_text,
+                    lookup_forms=alias_lookup_forms(ext_item.assignee_raw, alias_text),
+                )
 
     elif approval.type == str(ApprovalType.TASK_UPDATE):
         if approval.related_task_id is None:
@@ -349,8 +366,11 @@ def _apply_approval(
         approval.payload = json.dumps({**payload, "task_overrides": changed}, ensure_ascii=False)
 
 
-def _to_response(row: ApprovalRequest) -> ApprovalResponse:
-    """DB 모델 → Pydantic 응답 변환. payload JSON 파싱 포함."""
+def _to_response(row: ApprovalRequest, alias_text: str | None = None) -> ApprovalResponse:
+    """DB 모델 → Pydantic 응답 변환. payload JSON 파싱 포함.
+
+    alias_text 는 approval_alias_texts 가 구한 값이다. 있으면 별칭 등록을 물어볼 승인이다.
+    """
     return ApprovalResponse(
         approval_id=row.approval_id,
         workspace_id=row.workspace_id,
@@ -362,6 +382,8 @@ def _to_response(row: ApprovalRequest) -> ApprovalResponse:
         resolved_by=row.resolved_by,
         created_at=row.created_at,
         resolved_at=row.resolved_at,
+        alias_candidate=alias_text is not None,
+        alias_text=alias_text,
     )
 
 
@@ -434,7 +456,8 @@ def create_approval(
     db.commit()
     db.refresh(approval)
 
-    return success(_to_response(approval).model_dump(mode="json"))
+    texts = approval_alias_texts(db, [approval])
+    return success(_to_response(approval, texts.get(approval.approval_id)).model_dump(mode="json"))
 
 
 @router.get("", response_model=Envelope[ApprovalListResponse])
@@ -461,9 +484,10 @@ def list_approvals(
         count_stmt = count_stmt.where(ApprovalRequest.status == str(status))
     total = db.execute(count_stmt).scalar() or 0
 
+    texts = approval_alias_texts(db, rows)
     return success(
         ApprovalListResponse(
-            items=[_to_response(r) for r in rows],
+            items=[_to_response(r, texts.get(r.approval_id)) for r in rows],
             total=total,
         ).model_dump(mode="json")
     )
@@ -483,7 +507,8 @@ def get_approval(
             details={"approval_id": approval_id},
         )
     require_member(db, user, approval.workspace_id)
-    return success(_to_response(approval).model_dump(mode="json"))
+    texts = approval_alias_texts(db, [approval])
+    return success(_to_response(approval, texts.get(approval.approval_id)).model_dump(mode="json"))
 
 
 @router.patch("/{approval_id}", response_model=Envelope[ApprovalResponse])
@@ -546,7 +571,10 @@ def resolve_approval(
 
     if payload.status == ApprovalStatus.APPROVED:
         try:
-            _apply_approval(db, approval, overrides=overrides, confirm_task_version=payload.confirm_task_version)
+            _apply_approval(
+                db, approval, overrides=overrides,
+                confirm_task_version=payload.confirm_task_version, save_alias=payload.save_alias,
+            )
         except AppError:
             # 반영하지 못했으면 승인 처리도 되돌려 pending으로 남긴다. 충돌을 확인한 PM이 다시 처리할 수 있다
             db.rollback()
@@ -554,4 +582,5 @@ def resolve_approval(
 
     db.commit()
     db.refresh(approval)
-    return success(_to_response(approval).model_dump(mode="json"))
+    texts = approval_alias_texts(db, [approval])
+    return success(_to_response(approval, texts.get(approval.approval_id)).model_dump(mode="json"))

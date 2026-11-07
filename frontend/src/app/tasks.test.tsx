@@ -16,6 +16,7 @@ import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { deferred } from '@/shared/test/deferred'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
+import { onTestFinished } from 'vitest'
 import { App } from './App'
 import { createApp } from './createApp'
 import { appRoutes } from './router/routes'
@@ -356,6 +357,68 @@ describe('키보드 Tab 순서 (#337)', () => {
       await screen.findByRole('heading', { name: '이 구분에는 항목이 없어요' }, { timeout: 5_000 }),
     ).toBeVisible()
     expect(await tabIntoPanel(user)).toBe(screen.getByRole('tabpanel'))
+  })
+})
+
+describe('목록 탭 키보드', () => {
+  it('화살표·End·Home 으로 탭을 옮기면 그 탭에 포커스가 가고 골라진다', async () => {
+    const user = userEvent.setup()
+    await openList()
+    await waitFor(() => expect(tabTexts()).toHaveLength(4))
+    act(() => tab('전체').focus())
+
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => expect(tab('확인 필요')).toHaveAttribute('aria-selected', 'true'))
+    expect(tab('확인 필요')).toHaveFocus()
+    expect(
+      within(screen.getByRole('list', { name: '확인 필요 목록' })).getAllByRole('article'),
+    ).toHaveLength(3)
+
+    await user.keyboard('{End}')
+    await waitFor(() => expect(tab('완료')).toHaveAttribute('aria-selected', 'true'))
+    expect(tab('완료')).toHaveFocus()
+
+    await user.keyboard('{Home}')
+    await waitFor(() => expect(tab('전체')).toHaveAttribute('aria-selected', 'true'))
+    expect(tab('전체')).toHaveFocus()
+  })
+})
+
+describe('리스트 보기의 대기·실패·빈 목록', () => {
+  it('태스크를 받는 동안 탭은 개수 없이 이름만이고, 목록 자리는 기다림 표시이며 태스크 목록이 없다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get('/api/v1/tasks', async () => {
+        await gate.promise
+        return undefined
+      }),
+    )
+    renderApp(paths.tasks('ws_01'))
+    expect(await screen.findByRole('tab', { name: '전체' })).toBeInTheDocument()
+    expect(tabTexts()).toEqual(['전체', '확인 필요', '진행 중', '완료'])
+    expect(screen.getByRole('tabpanel').querySelector('[aria-busy="true"]')).not.toBeNull()
+    expect(screen.queryByRole('list', { name: '태스크 목록' })).toBeNull()
+  })
+
+  it('태스크 목록을 받지 못하면 목록 자리에 오류와 다시 시도를 보인다', async () => {
+    server.use(http.get('/api/v1/tasks', () => fail('INVALID_REQUEST', 'x', 400)))
+    renderApp(paths.tasks('ws_01'))
+    expect(
+      await within(await screen.findByRole('tabpanel')).findByText(
+        '태스크 목록을 불러오지 못했어요',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(screen.getByRole('tabpanel')).getByRole('button', { name: '다시 시도' }),
+    ).toBeInTheDocument()
+  })
+
+  it('태스크도 확인 필요도 없으면 `아직 태스크가 없어요` 이고 탭 개수는 모두 0 이다', async () => {
+    replaceDb(createScenarioDb('tasks-empty'))
+    renderApp(paths.tasks('ws_01'))
+    expect(await screen.findByText('아직 태스크가 없어요')).toBeInTheDocument()
+    expect(tabTexts()).toEqual(['전체 0', '확인 필요 0', '진행 중 0', '완료 0'])
   })
 })
 
@@ -724,6 +787,24 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     await openDetail('tk_03', 'DB 스키마 정리')
     expect(shownStatus()).toBe('막힘')
     expect(field('막힌 사유')).toHaveTextContent('Notion 권한 대기')
+  })
+
+  it('상세를 받는 동안 `태스크 목록` 링크와 기다림 표시가 있고 태스크 제목은 없다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get('/api/v1/tasks/:taskId', async () => {
+        await gate.promise
+        return undefined
+      }),
+    )
+    renderApp(paths.tasks('ws_01', 'tk_01'))
+    expect(await screen.findByRole('link', { name: '태스크 목록' })).toHaveAttribute(
+      'href',
+      paths.tasks('ws_01'),
+    )
+    expect(screen.getByRole('main').querySelector('[aria-busy="true"]')).not.toBeNull()
+    expect(screen.queryByRole('heading', { name: '로그인 API 연동' })).toBeNull()
   })
 
   it('없는 태스크는 볼 수 없다고 알리고 목록으로 돌려보낸다', async () => {

@@ -6,8 +6,10 @@ import { db } from '@/shared/mock/db'
 import { fail } from '@/shared/mock/envelope'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
+import { deferred } from '@/shared/test/deferred'
 import { recordRequests } from '@/shared/test/requests'
 import type { RecordedRequest } from '@/shared/test/requests'
+import { onTestFinished } from 'vitest'
 import { renderApp } from './test/renderApp'
 
 /* U3-1·U3-2·U3-5·U3-6·U3-7. 제품과 같은 배선(renderApp) + MSW + 실제 request 경로 */
@@ -95,6 +97,25 @@ describe('워크스페이스 만들기 (U3-2)', () => {
     await waitFor(() => expect(input).toHaveAccessibleDescription(message))
     expect(input).toHaveAttribute('aria-invalid', 'true')
     expect(count(log.started, 'POST', '/workspaces')).toBe(0)
+  })
+
+  it('만드는 요청에 답이 오기 전에는 `만들기` 가 잠겨 다시 보낼 수 없다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.post('/api/v1/workspaces', async () => {
+        await gate.promise
+        return undefined
+      }),
+    )
+    const log = recordRequests()
+    await openCreate()
+    await userEvent.type(screen.getByLabelText('팀 이름'), '새 팀')
+    await userEvent.click(screen.getByRole('button', { name: '만들기' }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '만들기' })).toBeDisabled())
+    await userEvent.click(screen.getByRole('button', { name: '만들기' }))
+    expect(count(log.started, 'POST', '/workspaces')).toBe(1)
   })
 
   it('20자는 된다 — 이모지도 한 글자로 센다', async () => {

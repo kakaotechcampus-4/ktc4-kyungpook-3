@@ -66,8 +66,8 @@ const INPUT_BASE = 'w-full border bg-surface font-normal text-ink'
 
 const INPUT_DISABLED = 'disabled:border-line disabled:bg-surface-sunken disabled:text-faint'
 
-/* min-w-[0px] 은 오타가 아니다 — tokens.css 가 --spacing 을 비워서 min-w-0 유틸이 없다.
-   padding 은 preflight 의 `*{padding:0}` 이 이미 지운다 (p-0 도 같은 이유로 없다).
+/* min-w-[0px] 은 tokens.css 에 --spacing-0 이 없어 min-w-0 유틸이 없던 때의 값이다. #497 부터는 min-w-0 과 같다.
+   padding 은 preflight 의 `*{padding:0}` 이 이미 지운다.
    docs/impl-decision/2026-09-16-values-outside-token-scale.md
    포커스는 래퍼가 그리므로 안쪽 input 은 끈다 — 래퍼 테두리 안쪽에 선이 하나 더 생긴다. */
 const BARE_INPUT =

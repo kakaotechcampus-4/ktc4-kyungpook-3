@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Mascot } from '@/shared/ui/mascot'
+import { FADE_MS } from './splashMachine'
 import { SPLASH_SIZE } from './splashSize'
 
 /*
@@ -77,6 +78,16 @@ describe('index.html 정적 스플래시', () => {
     expect(computed('.splash__group').gap).toBe(`${SPLASH_SIZE.gap}px`)
     expect(computed('.splash__word').fontSize).toBe(`${SPLASH_SIZE.wordmark}px`)
     style.remove()
+  })
+
+  it('사라짐 애니메이션이 덮개를 걷는 시각(FADE_MS)과 같은 길이다', () => {
+    // 짧으면 다 사라진 판이 남아 있고, 길면 사라지는 도중에 판이 뚝 끊긴다 (#506)
+    const style = parse(html).querySelector('style')?.textContent ?? ''
+    const fade = /\.splash\[data-phase='leave'\]\s*\{[^}]*animation:\s*splash-out\s+([\d.]+)s/.exec(
+      style,
+    )
+    if (fade === null) throw new Error('splash-out 애니메이션이 없다')
+    expect(Number(fade[1]) * 1000).toBe(FADE_MS)
   })
 
   it('탭 제목이 서비스 이름이다', () => {

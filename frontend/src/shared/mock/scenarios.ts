@@ -3,9 +3,15 @@ import { initialDb, replaceDb } from './db'
 import type { MeetingFlowMode, MockDb, MockInvitation } from './db'
 import { MOCK_NOW } from './fixtures/constants'
 import {
+  LONG_BUNDLE_BODY,
+  LONG_RECIPIENT_NAME,
+  LONG_UNBROKEN_URL,
+  LONG_WORKSPACE_NAME,
+  longConversation,
   mergeSourceBundle,
   messagesMemberBundle,
   messagesMemberThread,
+  reply,
   schedulePassedBundle,
 } from './fixtures/message'
 import { completeMeeting, failMeeting, setMeetingFlowMode, startChatMeeting } from './meetingFlow'
@@ -91,6 +97,7 @@ export const MOCK_SCENARIOS = [
   'messages-pm-self',
   'messages-schedule-passed',
   'messages-merge',
+  'messages-long-content',
   // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
   'settings-discord-skipped',
   'settings-unmapped',
@@ -227,6 +234,24 @@ function addLongContent(state: MockDb): void {
       'manual',
       state,
     )
+}
+
+function addLongMessages(state: MockDb): void {
+  const workspace = state.workspaces.find(({ workspace_id }) => workspace_id === 'ws_01')
+  const bundle = state.messageBundles.find(({ bundle_id }) => bundle_id === 'bd_01')
+  const thread = state.messageThreads.find(({ thread_id }) => thread_id === 'th_01')
+  const longThread = state.messageThreads.find(({ thread_id }) => thread_id === 'th_02')
+  if (!workspace || !bundle || !thread || !longThread)
+    throw new Error('mock ws_01, bundle bd_01 or thread th_01·th_02 is missing')
+  workspace.name = LONG_WORKSPACE_NAME
+  bundle.recipient_name = LONG_RECIPIENT_NAME
+  bundle.body = LONG_BUNDLE_BODY
+  bundle.reminders[0].note = `링크 남겨요 ${LONG_UNBROKEN_URL}`
+  thread.name = LONG_RECIPIENT_NAME
+  thread.messages.push(
+    reply('mg_80', `링크 남겨요\n${LONG_UNBROKEN_URL}`, '2026-09-16T19:00:00+09:00'),
+  )
+  longThread.messages.push(...structuredClone(longConversation))
 }
 
 /** ws_01 의 태스크·이력·승인을 모두 비운다. 그 공간 추출 항목의 연결도 끊어 없는 태스크·승인을 가리키지 않게 한다 */
@@ -842,6 +867,12 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
           : bundle,
       )
       state.messageBundles.push(structuredClone(mergeSourceBundle))
+      break
+    case 'messages-long-content':
+      // messages-default 에 긴 문구를 더한다. 공간(봇) 이름과 이재환(bd_01·th_01)의 이름이 띄어 쓰지 않은 긴 이름이고,
+      // bd_01 은 여러 줄 본문 끝에 줄바꿈할 곳이 없는 주소가 있다. th_01 에는 그 주소의 답장, th_02(박민수)에는 며칠에 걸친 30통이 더 있다
+      signInWith(state, ['ws_01'], 'ws_01')
+      addLongMessages(state)
       break
     case 'settings-discord-skipped':
       // 설정에서 Discord 를 연결한다. 연결해도 건너뜀으로 저장된 단계는 그대로다 (D-173)
