@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import type { Page } from '@playwright/test'
+import type { Page, Response } from '@playwright/test'
 import { expectAudioReady, expectMinutesOpened, SHORT_AUDIO, start } from './support'
 
 /*
@@ -7,9 +7,10 @@ import { expectAudioReady, expectMinutesOpened, SHORT_AUDIO, start } from './sup
  * 테스트마다 새 컨텍스트에서 `?msw-scenario=` 로 모의 db 를 처음부터 만든다 — 서로 상태를 나누지 않는다.
  *
  * - meeting-instant: 업로드 뒤 첫 상세 조회에 정리가 끝난다(인위적 지연 없음)
- * - meeting-demo: 상세 조회마다 한 단계씩 간다. 앱의 3초 polling 으로 세 단계 + 완료를 밟는다 — 정리 중에 다른 화면으로
+ * - meeting-notion-not-connected: meeting-instant 와 같고 Notion 을 연결하지 않았다. Notion 은 선택 기능이다(D-182)
+ * - meeting-demo: 상세 조회마다 한 단계씩 간다. 앱의 3초 polling 으로 대기·세 단계·넘기기 + 완료를 밟는다(#483) — 정리 중에 다른 화면으로
  *   떠날 틈이 있어야 하는 ② 에만 쓴다. instant 는 처리 화면이 첫 조회에서 끝을 보고 회의록으로 옮겨 그 틈이 없다(U4-5)
- * - meeting-fail: 첫 상세 조회에 실패로 끝난다. Notion 은 연결된 채다(일반 실패, D-092)
+ * - meeting-fail: 첫 상세 조회에 실패로 끝난다(일반 실패, D-092)
  * - meeting-member: ws_01 의 일반 팀원
  */
 
@@ -77,9 +78,14 @@ async function uploadShortAudio(page: Page) {
   await page.getByRole('button', { name: '정리 시작하기' }).click()
 }
 
-test('① 짧은 음원을 올리면 정리가 끝나고 그 회의의 회의록이 열린다', async ({ page }) => {
-  await start(page, 'meeting-instant', UPLOAD)
+test('① Notion 을 연결하지 않은 공간에서도 짧은 음원을 올리면 정리가 끝나고 그 회의의 회의록이 열린다', async ({
+  page,
+}) => {
+  await start(page, 'meeting-notion-not-connected', UPLOAD)
+  // 연결을 요구하는 모달 없이 바로 업로드 폼이다 (D-182)
   await expect(page.getByRole('heading', { name: '회의를 올려 주세요' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '컴퓨터에서 찾기' })).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
   const requests = recordRequests(page)
   const urls = recordUrls(page)
 
@@ -104,6 +110,18 @@ test('① 짧은 음원을 올리면 정리가 끝나고 그 회의의 회의록
   ).toHaveAttribute('aria-current', 'page')
   // 처리 화면을 보고 있었으니 바로 옮겨졌고, 진행 토스트는 완료로 바뀌었다
   await expect(signalOf(page, '회의 정리가 끝났어요')).toBeVisible()
+  // 회의록·정리 어디에도 Notion 연결을 요구하는 창이 뜨지 않았다
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  // 그 회의가 만든 태스크도 Notion 없이 쓴다 — 반영 중·실패가 아니라 반영 상태 없음이다
+  await page.getByRole('tab', { name: /추출된 일/ }).click()
+  const taskLink = page.getByRole('tabpanel').locator('a[href*="/tasks/"]').first()
+  const taskTitle = (await taskLink.textContent())?.trim() ?? ''
+  expect(taskTitle).not.toBe('')
+  await taskLink.click()
+  await expect(page.getByRole('heading', { level: 1, name: taskTitle })).toBeVisible(FIRST_PAINT)
+  await expect(page.getByTestId('notion-sync-status')).toHaveText('반영 상태 없음')
+  await expect(page.getByRole('button', { name: '다시 반영하기' })).toHaveCount(0)
 })
 
 test('② 정리 중에 다른 화면으로 가면 진행 토스트가 따라오고, 완료로 바뀐 토스트의 `회의록 보기`로 그 회의록에 간다', async ({
@@ -133,9 +151,9 @@ test('② 정리 중에 다른 화면으로 가면 진행 토스트가 따라오
     .click()
   await expect(processing.getByRole('button', { name: '자세히 보기' })).toBeVisible()
 
-  // 앱 수준 추적기가 polling 을 이어 간다(3초 간격, 세 단계 + 완료). 다른 화면이라 옮기지 않고 토스트만 완료로 바뀐다 (U4-1, U4-5)
+  // 앱 수준 추적기가 polling 을 이어 간다(3초 간격, 대기·세 단계·넘기기 + 완료, #483). 다른 화면이라 옮기지 않고 토스트만 완료로 바뀐다 (U4-1, U4-5)
   const toast = signalOf(page, '회의 정리가 끝났어요')
-  await expect(toast).toBeVisible({ timeout: 20_000 })
+  await expect(toast).toBeVisible({ timeout: 25_000 })
   await expect(page).toHaveURL(`${WORKSPACE}/tasks`)
   await expect(processing).toHaveCount(0)
 
@@ -231,7 +249,7 @@ test('⑤ 화자 지정 기한 만료는 목록과 상세에 남고 새로고침
   await expect(page.getByRole('heading', { name: '회의를 올려 주세요' })).toBeVisible(FIRST_PAINT)
 })
 
-test('⑥ 음성 처리 실패는 Notion 연결도 끊겨 있어도 해당 사유를 먼저 안내한다', async ({ page }) => {
+test('⑥ 음성 처리 실패는 그 사유로 안내한다', async ({ page }) => {
   await start(page, 'meeting-fail-diarize', UPLOAD)
   await uploadShortAudio(page)
   await expect(
@@ -301,4 +319,121 @@ test('⑨ 멈춘 채팅 회의(chat_stalled)는 토스트·처리 화면·회의
   await expect(page.getByRole('link', { name: '다시 업로드', exact: true })).toHaveCount(0)
   await expect(detail.getByText(/재업로드|다시 올려/)).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('chat-stalled-minutes.png') })
+})
+
+/*
+ * #483 — 처리 화면의 단계가 서버의 실제 처리 순서대로 바뀌고, 넘기는 중(`extracted` 참, 아직 processing)에도 마지막 단계가
+ * 진행 중이다. 흐름 방식 staged 는 조회마다 서버 순서로 한 단계씩 간다(shared/mock/meetingFlow.ts readMeeting).
+ */
+
+/** 상세 조회 주소에서 회의 ID 를 꺼낸다 */
+const DETAIL_URL = /\/api\/v1\/meetings\/(mt_\w+)$/
+
+/** 상세 응답 하나를 `상태:progress 세 값` 으로 적는다. 다른 응답이면 null */
+async function detailAnswer(response: Response, meetingId: string): Promise<string | null> {
+  if (response.request().method() !== 'GET') return null
+  if (DETAIL_URL.exec(new URL(response.url()).pathname)?.[1] !== meetingId) return null
+  const { data } = (await response.json()) as {
+    data: { status: string; progress: Record<string, boolean> | null }
+  }
+  const bits = ['audio_merged', 'transcribed', 'extracted']
+    .map((key) => Number(data.progress?.[key] === true))
+    .join('')
+  return `${data.status}:${bits}`
+}
+
+/** 처리 화면의 단계 안내(role=status) 중 단계 문장만 지나간 순서대로 모은다. 같은 문장이 이어지면 하나다 */
+async function recordStepAnnouncements(page: Page) {
+  await page.addInitScript(() => {
+    const seen: string[] = []
+    Object.assign(window, { __stepAnnouncements: seen })
+    new MutationObserver(() => {
+      const text = document.querySelector('main [role="status"]')?.textContent ?? ''
+      if (text.includes('단계 완료') && seen.at(-1) !== text) seen.push(text)
+    }).observe(document, { subtree: true, childList: true, characterData: true })
+  })
+  return () =>
+    page.evaluate(
+      () => (window as unknown as { __stepAnnouncements: string[] }).__stepAnnouncements,
+    )
+}
+
+/**
+ * 처리 화면 코드를 미리 변환해 둔다. 대기 단계는 첫 조회 한 번(3초)만 보이는데, 개발 서버가 lazy 화면을 처음 변환하는 동안
+ * 추적기가 다음 조회를 하면 처리 화면이 대기를 그리기 전에 지나간다
+ */
+async function warmProcessingScreen(page: Page) {
+  for (const module of [
+    '/src/pages/meeting-processing/index.ts',
+    '/src/pages/meeting-processing/ui/MeetingProcessingPage.tsx',
+  ])
+    expect((await page.request.get(module)).ok()).toBe(true)
+}
+
+test('⑩ 녹음 회의의 단계는 대기 → 텍스트로 옮기기 → 뽑아내기 순서이고, 넘기는 중에도 마지막 단계가 진행 중이다 (#483)', async ({
+  page,
+}) => {
+  await warmProcessingScreen(page)
+  const announcements = await recordStepAnnouncements(page)
+  await start(page, 'meeting-demo', UPLOAD)
+  const answers: string[] = []
+  let meetingId = ''
+  page.on('response', (response) => {
+    if (meetingId === '') return
+    void detailAnswer(response, meetingId).then((answer) => {
+      if (answer !== null && answers.at(-1) !== answer) answers.push(answer)
+    })
+  })
+  const handoff = page.waitForResponse(
+    async (response) =>
+      meetingId !== '' && (await detailAnswer(response, meetingId)) === 'processing:111',
+    { timeout: 30_000 },
+  )
+
+  await uploadShortAudio(page)
+  await expect(page).toHaveURL(PROCESSING_URL, FIRST_PAINT)
+  meetingId = PROCESSING_URL.exec(new URL(page.url()).pathname)?.[1] ?? ''
+  const steps = page.getByRole('list', { name: '정리 단계' }).getByRole('listitem')
+
+  // 서버가 넘기기(extracted 참)를 답해도 회의는 아직 processing — 마지막 단계는 진행 중이다
+  await handoff
+  await expect(steps).toHaveText([
+    /차례 기다리는 중\s*완료/,
+    /음성을 텍스트로 옮기기\s*완료/,
+    /결정사항과 할 일 뽑아내기\s*진행 중/,
+  ])
+  await expect(steps.nth(2)).toHaveAttribute('aria-current', 'step')
+
+  await expectMinutesOpened(page, 20_000)
+  expect(await announcements()).toEqual([
+    '0 / 3 단계 완료 · 차례 기다리는 중 진행 중',
+    '1 / 3 단계 완료 · 음성을 텍스트로 옮기기 진행 중',
+    '2 / 3 단계 완료 · 결정사항과 할 일 뽑아내기 진행 중',
+  ])
+  expect(answers).toEqual(
+    expect.arrayContaining(['processing:100', 'processing:110', 'processing:111', 'done:111']),
+  )
+})
+
+test('⑪ 채팅 회의는 대화 모으기 → 뽑아내기 두 단계이고, 넘기는 중에도 둘째 단계가 진행 중이다 (#483)', async ({
+  page,
+}) => {
+  await warmProcessingScreen(page)
+  const announcements = await recordStepAnnouncements(page)
+  const handoff = page.waitForResponse(
+    async (response) => (await detailAnswer(response, 'mt_11')) === 'processing:111',
+    { timeout: 30_000 },
+  )
+  await start(page, 'meeting-chat-demo', `${WORKSPACE}/meetings/mt_11/processing`)
+  const steps = page.getByRole('list', { name: '정리 단계' }).getByRole('listitem')
+
+  await handoff
+  await expect(steps).toHaveText([/대화 모으기\s*완료/, /결정사항과 할 일 뽑아내기\s*진행 중/])
+  await expect(steps.nth(1)).toHaveAttribute('aria-current', 'step')
+
+  await expect(page).toHaveURL(`${WORKSPACE}/meetings/mt_11`, { timeout: 15_000 })
+  expect(await announcements()).toEqual([
+    '0 / 2 단계 완료 · 대화 모으기 진행 중',
+    '1 / 2 단계 완료 · 결정사항과 할 일 뽑아내기 진행 중',
+  ])
 })

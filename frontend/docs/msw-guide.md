@@ -85,7 +85,6 @@ it('빈 목록의 total도 0이다', async () => {
 | `staged` | 한 단계 (`audio_merged` → `transcribed` → `extracted` → `done`) | 브라우저 데모 |
 | `instant` | 바로 `done` | E2E |
 | `fail` | 바로 `failed` | 실패 흐름 |
-| `fail-notion-revoked` | `failed` + 그 공간 Notion `revoked` | 끊김 실패(D-099·D-100) |
 | `fail-chat-stalled` | 채팅 회의만 `failed`(`chat_stalled`), 업로드 회의는 그대로 | 멈춘 채팅 회의(#450) |
 
 처리 화면과 앱 수준 추적기가 3초마다 상세를 부르므로 `staged` 는 3초 간격으로 단계가 보인다.
@@ -96,15 +95,14 @@ it('빈 목록의 total도 0이다', async () => {
 
 | 시나리오 | 역할 | mode | Notion | 해 볼 것 |
 |---|---|---|---|---|
-| `meeting-demo` | PM | `staged` | 연결됨 | 올리고 처리 화면에서 세 단계가 차례로 끝나는 것, 다른 화면으로 가서 완료 토스트 |
+| `meeting-demo` | PM | `staged` | 연결됨 | 올리고 처리 화면에서 대기부터 세 단계가 차례로 진행되는 것(넘기는 중에도 마지막 단계 진행 중, #483), 다른 화면으로 가서 완료 토스트 |
 | `meeting-instant` | PM | `instant` | 연결됨 | 올리자마자 회의록으로 |
 | `meeting-fail` | PM | `fail` | 연결됨 | 재업로드 토스트, 목록에서 빠진 회의 |
-| `meeting-fail-notion-revoked` | PM | `fail-notion-revoked` | 실패 때 끊김 | 재연결 모달 |
-| `meeting-notion-not-connected` | PM | `instant` | 미연결 | 회의 올리기 진입 차단 모달 → 설정 Notion 영역 → 모의 OAuth → 복귀 |
-| `meeting-notion-revoked` | PM | `instant` | 끊김 | 재연결 차단 모달 |
+| `meeting-notion-not-connected` | PM | `instant` | 미연결 | Notion 없이 회의 올리기 → 정리 → 회의록·태스크(D-182). 설정 Notion 영역 → 모의 OAuth → 설정 복귀 |
 | `meeting-member` | 일반 팀원 | `instant` | 연결됨 | 헤더 `정리 중`·회의록. 업로드 주소는 막힌다 |
 | `meeting-chat-processing` | PM | `manual` | 연결됨 | 채팅 회의 `mt_11` 이 정리 중이어도 업로드 화면에 머물고 올릴 수 있다 (#450) |
 | `meeting-chat-stalled` | PM | `fail-chat-stalled` | 연결됨 | 채팅 회의 `mt_11` 이 첫 상세 조회에 `chat_stalled` 로 실패한다. 토스트·처리 화면·회의록 상세의 안내가 업로드를 권하지 않는다 (#450) |
+| `meeting-chat-demo` | PM | `staged` | 연결됨 | 채팅 회의 `mt_11` 이 상세 조회마다 대화 모으기 → 결정사항과 할 일 뽑아내기로 진행하고 끝난다. 처리 화면·토스트가 두 단계다 (#483) |
 | `meeting-speakers` | PM | `speakers` | 연결됨 | 업로드 회의 `mt_11` 이 화자 지정 대기. 목록의 `화자 지정 필요` 행 → 지정 화면 → 제출 → 처리 재개 (#256) |
 | `meeting-speakers-flow` | PM | `speakers` | 연결됨 | 올리면 첫 상세 조회에 화자 지정 대기가 된다. 처리 화면 → 지정 화면 이동, 다른 화면이면 `화자 지정하기` 토스트 |
 | `meeting-speakers-expired` | PM | `speakers` | 연결됨 | 지정을 내면 409 `details.status=failed`. 만료 안내와 재업로드 링크, 다시 낼 수 없다 |
@@ -135,7 +133,7 @@ setMockRole('member') // ws_01 의 역할을 일반 팀원으로
 
 ### E2E 에서 고르기
 
-E2E 는 `start(page, 'meeting-instant', '/workspaces/ws_01/meetings/upload')`(`e2e/support.ts`)처럼 시나리오와 주소를 함께 준다. 테스트마다 새 컨텍스트라 서로 상태를 나누지 않는다. 정리 중에 다른 화면으로 떠날 틈이 필요하면 `meeting-demo`(3초 × 4회)를 쓴다 — `instant` 는 처리 화면이 첫 조회에서 끝을 보고 회의록으로 옮긴다.
+E2E 는 `start(page, 'meeting-instant', '/workspaces/ws_01/meetings/upload')`(`e2e/support.ts`)처럼 시나리오와 주소를 함께 준다. 테스트마다 새 컨텍스트라 서로 상태를 나누지 않는다. 정리 중에 다른 화면으로 떠날 틈이 필요하면 `meeting-demo`(3초 × 5회, #483)를 쓴다 — `instant` 는 처리 화면이 첫 조회에서 끝을 보고 회의록으로 옮긴다.
 
 승인 요청에는 계약 §2.5의 `resolved_by`도 보낸다.
 

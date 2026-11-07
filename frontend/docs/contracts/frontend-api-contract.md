@@ -1,5 +1,30 @@
 # 프론트엔드 API 계약
 
+## Notion 선택 기능 (#507, 2026-11-07)
+
+근거는 [이슈 #507](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/507)의 사용자 결정(2026-11-07)과 [D-182](../decision/frontend-decisions.md)다. 프론트엔드는 회의 올리기·정리·회의록·태스크·승인에 Notion 연결을 요구하지 않는다. 아래 서버 동작은 정적 코드 확인이고, 실 API 호출과 실제 Notion 반영은 실행하지 않았다.
+
+### 합의된 규약
+
+- Notion 은 선택 기능이다. 연결하면 태스크가 Notion 에도 반영된다(확실한 태스크는 바로, 확인 필요는 승인 뒤). 연결하지 않아도 회의 올리기·정리·회의록·태스크를 웹에서 모두 쓴다 — 사용자 결정(#507).
+- 회의록 본문은 Notion 에 올리지 않는다. 반영 대상은 태스크뿐이다 — 서버 구현 사실(`backend/app/services/notion_sync.py`)을 사용자 결정 기록(D-182)에 적었다. 회의록 반영을 다시 넣을지는 합의 여부 확인 필요.
+
+### 현재 구현
+
+| 쪽 | 확인한 사실 |
+|---|---|
+| BE 업로드 | `POST /workspaces/{id}/meetings/upload`(`api/workspaces.upload_meeting`)는 정리 중 회의(409 `MEETING_PROCESSING_IN_PROGRESS`)·참석자·형식·크기만 검사한다. Notion 연결 검사가 없다 |
+| BE 정리 실패 | `failed_stage` 는 AI 의 `PATCH /meetings/{id}/fail`(`stt`·`sources`·`extract`·`handoff`·`diarize`)과 멈춤 정리(`diarize`·`speaker_assignment_expired`·`chat_stalled`)에서만 온다. Notion 때문에 실패하는 경로가 없다 |
+| BE 태스크 | 미연동 공간의 태스크는 `notion_sync_status = null` 이다(`enqueue_task_sync`). 반영 잡은 「Notion 연동이 없습니다」로 SKIPPED 된다 |
+| FE 회의 올리기 | 진입 판정은 회의 목록만 본다. `GET /integrations` 를 부르지 않고 차단 모달이 없다. 업로드 응답 409 `INTEGRATION_NOT_CONNECTED`·`INTEGRATION_REVOKED` 는 특별 처리하지 않고 폼 오류로 보인다(서버가 내지 않는다) |
+| FE 정리 실패 | 알 수 없는 `failed_stage` 도 일반 실패 안내(D-092)다. 연동 상태를 다시 묻지 않고 재연결 모달(D-100)이 없다 |
+| FE 설정 Notion 연결 | OAuth 복귀 경로는 `settings?section=notion` 하나다. `next`(업로드 복귀, D-098)를 싣지 않고 연결 뒤 설정에 머문다 |
+| MSW | 업로드 handler 가 Notion 상태로 409 를 내지 않는다. `fail-notion-revoked` 흐름과 `meeting-fail-notion-revoked`·`meeting-notion-revoked` 시나리오를 지웠다. `meeting-notion-not-connected` 는 미연결 공간에서 업로드·정리가 끝나는 시나리오다 |
+
+### 합의 필요 변경
+
+없음. 서버는 이미 Notion 없이 동작한다. 아래 기존 요청 중 Notion 차단·끊김 모달을 근거로 한 것은 프론트엔드가 철회한다(§4.0-②-6 의 이유 변경, ②-9 의 Notion 409, ③-3). 각 줄에 「2026-11-07(#507)」로 적었다.
+
 ## 진행률 제거와 보완 승인 경계 (#311, 2026-11-04)
 
 작업 근거는 [FE 요청 #305](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/305)와 [구현 이슈 #311](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/311)이다. 서버 규약은 [BE PR #307](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/307)의 스키마·승인 처리·계약 변경을 대조했다. 확인 당시 PR은 OPEN이며, 아래 규약이 로컬 백엔드나 배포 서버에 적용됐다고 가정하지 않는다. 아래의 예전 M6 필수값·MSW 전용 보완 기록보다 이 절의 후속 요구사항이 우선한다.
@@ -405,8 +430,10 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
   - 상태: #383 은 2026-11-05 기준 열려 있다. 병합 뒤 열의 내용은 PR 코드와 #384 명세에서 확인한 것이며 실서버로 확인하지 않았다.
   - 단계를 알리지 않는 회의는 병합 뒤에도 현재 develop 열처럼 데이터로 판정한다. 옛 회의, 웹 업로드 회의(업로드 처리 소비자 #254·#255 가 보고를 붙이기 전까지), 채팅 회의(PR #378, 병합 전)가 그렇다. 이 회의들은 `audio_merged`·`transcribed` 가 함께 바뀌어 처리 화면의 둘째 단계가 진행 중으로 보이지 않는다.
   - 병합 뒤 달라지는 두 경우. 항목 0개로 `done` 된 회의와 인계 단계에서 `failed` 된 회의도 `extracted` 가 true 다(단계 값이 `done`·`failed` 뒤에도 남는다). FE 는 `done` 이면 `progress` 와 관계없이 세 단계를 끝난 것으로 보고, `failed` 이면 단계 목록을 그리지 않고 `failed_stage` 로 실패 안내를 고른다. 그래서 화면은 같다. [단계 테스트](../../src/entities/meeting/lib/processingSteps.test.ts)와 [처리 화면 테스트](../../src/app/meetingProcessingProgress.test.tsx)가 두 경우를 확인한다.
-  - 처리 화면의 세 단계 이름은 바꾸지 않는다. 병합 뒤 단계 구간은 1단계 「음성 파일 준비하기」가 워커 대기·모델 준비, 2단계 「음성을 텍스트로 옮기기」가 전사, 3단계 「결정사항과 할 일 뽑아내기」가 발화 저장과 추출이다. 인계 중에는 `status: processing` 인 채 세 단계가 모두 끝난 것(`3 / 3 단계 완료`)으로 보인다.
-  - FE 는 현재 처리 단계 값(`processing_stage`)을 요청하지 않는다. 화면의 세 단계는 `progress` 세 값으로 정해지고, 3단계 안의 발화 저장·추출은 나눠 보이지 않는다. 단계를 알리는 회의의 인계 구간은 `processing` + `extracted: true` 로 이미 알 수 있다.
+  - ~~처리 화면의 세 단계 이름은 바꾸지 않는다. 병합 뒤 단계 구간은 1단계 「음성 파일 준비하기」가 워커 대기·모델 준비, 2단계 「음성을 텍스트로 옮기기」가 전사, 3단계 「결정사항과 할 일 뽑아내기」가 발화 저장과 추출이다. 인계 중에는 `status: processing` 인 채 세 단계가 모두 끝난 것(`3 / 3 단계 완료`)으로 보인다.~~ #483 B안(2026-11-07 사용자 결정, AI·BE 변경 없음)으로 FE 표시만 바뀌었다. 응답 키·시점은 위 표 그대로다.
+  - 현재 구현(#483): 녹음·업로드 회의는 1단계 「차례 기다리는 중」(`audio_merged` 로 끝), 2단계 「음성을 텍스트로 옮기기」(`transcribed` 로 끝), 3단계 「결정사항과 할 일 뽑아내기」다. 채팅 회의(`source: chat`)는 「대화 모으기」(`transcribed` 로 끝) → 「결정사항과 할 일 뽑아내기」 두 단계다. 채팅 수집([chat_poll.py](../../../ai/capture/chat_poll.py))은 단계를 알리지 않고 `/end` → `sources` → 판단 → `/extractions` 순서라, 발화가 저장되면 `_compute_progress` 가 앞 두 값을 함께 true 로 만든다. 마지막 단계는 `extracted` 와 관계없이 `status` 가 `done` 이 될 때까지 진행 중이다 — 인계 중은 녹음 `2 / 3`, 채팅 `1 / 2` 단계 완료로 보인다. 진행 토스트의 단계 수(`n/3`·`n/2`)도 같은 목록이다. 구현: [processingSteps.ts](../../src/entities/meeting/lib/processingSteps.ts).
+  - `source` 는 상세 응답(`MeetingDetailResponse`)에 없다. FE 는 처리 화면이 이미 참석 인원 때문에 읽는 회의 목록 요약(`GET /workspaces/{id}/meetings` 의 `source`)에서 가져온다. 받아 둔 목록에 그 회의가 없으면(목록을 받은 뒤 생긴 회의, 오래된 목록) 회의마다 한 번 목록을 새로 받는다. 출처를 모르는 동안(목록 대기·재조회 중·조회 실패·새로 받아도 없음)은 처리 화면과 진행 토스트 모두 단계 수를 정하지 않고 정리 중이라고만 보인다. 녹음 단계로 짐작하지 않는다. 구현: [meetingSources.ts](../../src/entities/meeting/api/meetingSources.ts). 상세에 `source` 를 더해 달라는 BE 요청은 하지 않았다.
+  - FE 는 현재 처리 단계 값(`processing_stage`)을 요청하지 않는다. 화면의 단계는 `progress` 값과 `status` 로 정해지고, 마지막 단계 안의 발화 저장·추출·인계는 나눠 보이지 않는다. 단계를 알리는 회의의 인계 구간은 `processing` + `extracted: true` 로 이미 알 수 있다.
 - 이미 종료된 회의에 `/end` 를 호출하면 409 `MEETING_ALREADY_ENDED`.
 
 ### 2.3.1 업로드 회의 화자 지정 — PM 경로 (#266)
@@ -818,10 +845,10 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 | 3 | `onboarding` | **스텁이다.** `current_step` 이 하드코딩, `steps` 가 고정, `skipped` 가 절대 안 나온다 | 단계별 상태를 실제로 저장. `PATCH .../onboarding` 의 `skip` 이 동작해야 한다 (D-008, D-012) |
 | 4 | `onboarding.current_step` | 완료 시 **빈 문자열** `""` | 완료 시 `null` |
 | 5 | 온보딩 미완료 대시보드 접근 | 검사가 없다 | 403 `ONBOARDING_INCOMPLETE` + `details.current_step` (D-071) |
-| 6 | `GET /integrations` | `status` 가 `connected` \| `not_connected` **둘뿐.** `revoked` 가 절대 안 나온다 | **`revoked` 를 구분해 달라.** 미연결과 끊김은 다른 모달이다 (D-097, D-100) |
+| 6 | `GET /integrations` | `status` 가 `connected` \| `not_connected` **둘뿐.** `revoked` 가 절대 안 나온다 | **`revoked` 를 구분해 달라.** 미연결과 끊김은 다른 모달이다 (D-097, D-100). **2026-11-07(#507):** 두 모달을 없앴다. 구분은 설정 카드의 `연결 안 됨`·`연결 실패` 표시에만 쓴다 (D-182) |
 | 7 | `integration.display_name` | `"Discord 연결됨"` 같은 **생성 문자열** | 실제 서버 · 워크스페이스 이름 |
 | 8 | `DELETE .../integrations/{provider}` | **204, 본문 없음** | 봉투로 (§1) |
-| 9 | `POST .../meetings/upload` | `attendee_member_ids` 를 **받고 버린다.** 파일도 저장하지 않는다(TODO). 게다가 **`str = Form(...)` 단일 값**이라 같은 이름을 반복해 보내도 하나만 잡는다 | 참석자 저장 (D-085, D-086). **받는 형식을 `list[str] = Form(...)` 로** — 프론트는 같은 이름 필드를 반복해 보낸다(impl-decision 2026-09-18). 지금 형식으로 저장을 구현하면 **참석자 일부만 저장된다.** Notion 미연결 409 `INTEGRATION_NOT_CONNECTED` (D-096), 용량 초과 413 `AUDIO_TOO_LARGE` |
+| 9 | `POST .../meetings/upload` | `attendee_member_ids` 를 **받고 버린다.** 파일도 저장하지 않는다(TODO). 게다가 **`str = Form(...)` 단일 값**이라 같은 이름을 반복해 보내도 하나만 잡는다 | 참석자 저장 (D-085, D-086). **받는 형식을 `list[str] = Form(...)` 로** — 프론트는 같은 이름 필드를 반복해 보낸다(impl-decision 2026-09-18). 지금 형식으로 저장을 구현하면 **참석자 일부만 저장된다.** Notion 미연결 409 `INTEGRATION_NOT_CONNECTED` (D-096), 용량 초과 413 `AUDIO_TOO_LARGE`. **2026-11-07(#507):** Notion 미연결 409 요청은 철회한다 — 업로드는 Notion 을 요구하지 않는다 (D-182) |
 | 10 | `GET .../discord/members` | **하드코딩 2명** (`disc_01`, `disc_02`) | 연결된 서버의 실제 사용자 목록 |
 | 11 | `GET /meetings/{id}/minutes` | `transcript` 가 **하드코딩 1줄.** `attendees` 는 `audio_segment` 에서 역산 | §4.7-5 의 구조화 응답. 참석자는 회의 참석자 명단에서 |
 | 12 | 승인·반려 처리 | `extraction_item.approval_id` 를 **어느 쪽으로 닫혀도 비우지 않는다.** 반려는 `extraction_item` 을 아예 건드리지 않는다 | **승인이든 반려든 닫히면 `approval_id` 를 `null` 로.** 안 되면 프론트가 `GET /approvals?status=pending` 과 조인해 우회한다 (§3.1) |
@@ -1120,6 +1147,7 @@ M4 에서 실 API 로 완결되지 않는다. 그때까지 MSW 로 진행한다.
 
 - `status` 는 `not_connected`, `connected`, `revoked` 3가지다.
   **`not_connected` 와 `revoked` 를 구분해 달라.** 미연결은 `Notion 연결이 필요해요`(D-097), 끊김은 `Notion 연결이 끊어졌어요`(D-100) 로 다른 모달을 띄운다.
+  **2026-11-07(#507):** 두 모달을 없앴다. 프론트엔드는 이 값을 설정 카드 표시에만 쓴다 (D-182).
   → ⚠️ 구현은 `integration` 행의 **존재 여부만** 본다. 행이 있으면 `connected`, 없으면 `not_connected` 다.
   **`revoked` 를 표현할 컬럼이 없다.** 끊김 모달(D-100)은 실 API 로 뜨지 않는다. 프론트엔드는 세 값을 계속 다룬다.
 - `display_name` 이 `"Discord 연결됨"` 같은 **생성 문자열**이다 (§4.0-②-7). 화면에 그대로 쓸 수 없다.
@@ -1175,7 +1203,7 @@ POST .../meetings/upload            multipart/form-data
 ```
 
 - 409 `MEETING_PROCESSING_IN_PROGRESS` 와 `details.meeting_id` — 워크스페이스에 처리 중인 회의가 있다 (D-088, D-089). → ✅ 그대로
-- 409 `INTEGRATION_NOT_CONNECTED` — Notion 미연결 (D-096, D-097). → ❌ 검사가 없다
+- 409 `INTEGRATION_NOT_CONNECTED` — Notion 미연결 (D-096, D-097). → ❌ 검사가 없다. **2026-11-07(#507):** 요청 철회. 업로드는 Notion 을 요구하지 않는다 (D-182)
 - 413 `AUDIO_TOO_LARGE` → ❌ 검사가 없다. 코드만 있다
 - ⚠️ **`attendee_member_ids` 를 받고 버린다.** `Form(...)` 으로 필수로 받지만 저장하지 않는다.
   D-085·D-086 의 「로컬 업로드는 참석자 1명 이상」이 서버에서 보장되지 않는다. 프론트엔드가 폼에서 강제한다.
@@ -1299,7 +1327,7 @@ POST .../meetings/upload            multipart/form-data
 |---|---|---|---|---|
 | 1 | `GET /meetings/{id}` | `audio_merged` · `transcribed` · `extracted` 를 다시 내려 달라 | ✅ **반영.** `MeetingProgress` 로 **필수** 필드다 | 모델에는 있는데 API 에 없었다. `status` 만으로는 진행률 UI 를 그릴 수 없다 (D-094) |
 | 2 | `meeting.started_at` | 업로드 요청의 사용자 지정 날짜를 그대로 저장 | ✅ **반영.** `started_at or now` | 지난 녹음을 나중에 올리면 회의 날짜가 업로드 날짜가 된다. 목록 정렬이 깨진다 (D-079, D-106, D-164) |
-| 3 | `meeting.failed_stage` | Notion 연결 끊김을 구분할 수 있는 값 포함 | ❌ 자유 문자열 그대로. 봇이 `"STT"` · `"LLM"` 같은 값을 보낸다 | 차단 모달(D-100)과 오류 토스트(D-092)로 화면이 갈린다 |
+| 3 | `meeting.failed_stage` | Notion 연결 끊김을 구분할 수 있는 값 포함 | ❌ 자유 문자열 그대로. 봇이 `"STT"` · `"LLM"` 같은 값을 보낸다. **2026-11-07(#507): 철회** — 서버에 Notion 때문에 정리가 실패하는 경로가 없다 | 차단 모달(D-100)과 오류 토스트(D-092)로 화면이 갈린다. 지금은 일반 실패 안내 하나다 (D-182) |
 | 4 | `extraction` | 회의 요약을 저장할 컬럼 또는 테이블 | ⚠️ **절반.** `Extraction.summary`(TEXT, JSON 문자열) 컬럼이 생겼고 `/minutes` 가 읽는다. **채우는 쪽이 없다** | 회의록 상세의 요약 영역에 데이터 출처가 없다 (D-156) |
 | 5 | `extraction.transcript_path` | 화자·시각이 붙은 구조화 응답으로 제공 | ❌ `/minutes` 의 `transcript` 가 하드코딩 1줄이다 | 브라우저가 서버 파일을 읽을 수 없다. `audio_segment` 에 화자와 구간이 이미 있다 (D-028, D-105) |
 | 6 | `task` | `start_date` (nullable, `YYYY-MM-DD`) 를 응답과 `POST`·`PATCH` 에 추가 | ✅ **반영.** `TaskResponse` · `POST` · `PATCH` · `ChangedField.START_DATE` 전부 | 간트차트에 기간 축이 없다. `due_date` 만으로는 막대를 그릴 수 없다 (D-016, D-170) |
@@ -1353,6 +1381,7 @@ DISCORD_USER_ALREADY_MAPPED(409)
 **정의만 있고 던지는 곳이 없는 것 3개** — `ONBOARDING_INCOMPLETE`(§4.0-②-5) · `INTEGRATION_REVOKED`(②-6) · `AUDIO_TOO_LARGE`(②-9).
 프론트엔드는 세 코드를 `ERROR_CODES` 에 두지만 **실 API 로는 오지 않는다.**
 MSW 도 `INTEGRATION_REVOKED` 만 낼 수 있고(업로드 handler), 나머지 둘은 픽스처 경로가 없어 `server.use()` override 로만 만든다.
+**2026-11-07(#507):** MSW 업로드 handler 도 Notion 상태로 409 를 내지 않는다. 세 코드 모두 `server.use()` override 로만 만든다.
 
 ---
 
@@ -1479,7 +1508,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 
 | 화면 | 호출 | 상태 |
 |---|---|---|
-| 회의 올리기 진입 가드 | `GET /workspaces/{id}/integrations` 로 Notion 연결 확인 | **구현됨** §4.3 |
+| 회의 올리기 진입 가드 | `GET /workspaces/{id}/meetings` 로 정리 중 회의만 확인. Notion 연결은 보지 않는다 (D-182) | **구현됨** §4.4 |
 | 참석자 선택 | `GET /members?workspace_id=` | **구현됨** §2.2 |
 | 업로드 | `POST /workspaces/{id}/meetings/upload` (multipart) | **구현됨** — 파일·참석자 저장, 화자 지정은 §2.3.1 |
 | 정리 중 — 폴링 | `GET /meetings/{meeting_id}` | **구현됨** §2.3 — `progress` 포함 |
@@ -1488,7 +1517,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 | 회의록 본문 | `GET /meetings/{meeting_id}/minutes` | ⚠️ **스텁** §4.4 — `transcript` 가 안내 문구 1줄, `summary` 는 항상 `null` |
 | 회의록의 태스크 영역 | `GET /extractions/{extraction_id}` | **구현됨** §2.4 |
 
-- Notion 미연결이면 업로드 화면으로 보내지 않고 차단 모달을 띄운다 (D-097).
+- ~~Notion 미연결이면 업로드 화면으로 보내지 않고 차단 모달을 띄운다 (D-097).~~ **2026-11-07(#507):** Notion 연결과 상관없이 업로드 화면을 연다 (D-182).
 - 회의록 상세의 `반영된 태스크` 와 `확인이 필요한 일` 은 **`minutes` 가 아니라 `extractions` 에서 온다** (§2.4, §3.1).
   - `반영된 태스크` — `task_id` 가 있고, `approval_id` 가 없거나 `approval_status` 가 `approved` 인 항목. 수정 항목은 승인 전에도 `task_id` 가 있어 `task_id` 만으로는 고르지 않는다 (#419, §2.4).
   - `확인이 필요한 일` — **PM 전용이다.** 반영되지 않은 항목 중 `GET /approvals?workspace_id=&status=pending` 과 조인해
