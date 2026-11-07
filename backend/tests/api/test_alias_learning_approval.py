@@ -670,10 +670,11 @@ def test_alias_form_held_by_two_members_is_not_candidate_and_not_saved(client, p
 
     item = _extraction_item(pm_client, extraction_id)
     before = len(_aliases(db))
+    assert item["assignee"]["member_id"] is None
+    # 추출 조회, 승인 상세, 승인 목록이 같은 기준(learnable_alias_texts)으로 후보가 아니라고 답한다
+    _assert_not_candidate_everywhere(pm_client, db, extraction_id)
     r = _approve(pm_client, db, assignee=seed["leader"].member_id)
 
-    assert item["assignee"]["member_id"] is None
-    assert (item["alias_candidate"], item["alias_text"]) == (False, None)
     _assert_approved_with_task(db, r)
     assert len(_aliases(db)) == before
 
