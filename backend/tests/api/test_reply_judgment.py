@@ -1000,14 +1000,19 @@ def test_approving_links_history_to_the_first_line_and_timeline_shows_both(mdb, 
     assert [item["changes"][0]["result"] for item in items] == ["approved", "approved"]
 
 
-def test_timeline_of_a_reply_tied_to_a_meeting_card(mdb, mseed, two):
-    a, _ = two
-    meeting_card = ApprovalRequest(
-        workspace_id=mseed["ws"], type="task_update", related_task_id=a.task_id,
-        payload=json.dumps({"due_date": "2026-11-27", "change_source": "meeting"}),
+def _meeting_card(db, seed, task, **values):
+    card = ApprovalRequest(
+        workspace_id=seed["ws"], type="task_update", related_task_id=task.task_id,
+        payload=json.dumps({**values, "change_source": "meeting"}),
     )
-    mdb.add(meeting_card)
-    mdb.commit()
+    db.add(card)
+    db.commit()
+    return card
+
+
+def test_meeting_card_keeps_its_own_history_in_the_timeline(mdb, mseed, two):
+    a, _ = two
+    meeting_card = _meeting_card(mdb, mseed, a, due_date="2026-11-27")
     _reply(mdb, mseed, AT)
     item = _claim()
     _judge(item, _change(a, "due_date", "2026-11-27", claimed=item))
@@ -1015,8 +1020,26 @@ def test_timeline_of_a_reply_tied_to_a_meeting_card(mdb, mseed, two):
 
     mdb.expire_all()
     [entry] = mdb.query(TaskHistory).filter(TaskHistory.task_id == a.task_id, TaskHistory.changed_field == "due_date").all()
-    assert entry.reply_change_id == _lines(mdb, item)[(a.task_id, "due_date")].change_id
-    [reply] = [i for i in client("pm").get(f"{P}/tasks/{a.task_id}/timeline").json()["data"]["items"] if i["kind"] == "reply"]
+    assert entry.reply_change_id is None
+    items = client("pm").get(f"{P}/tasks/{a.task_id}/timeline").json()["data"]["items"]
+    [reply] = [i for i in items if i["kind"] == "reply"]
+    [history] = [i for i in items if i["kind"] == "history" and i["changed_field"] == "due_date"]
+    assert reply["changes"][0]["result"] == "approved"
+    assert history["change_source"] == "meeting"
+
+
+def test_assignee_tied_to_a_meeting_card_reads_as_approved(mdb, mseed, two):
+    a, _ = two
+    bob = mseed["bob"].member_id
+    mdb.add(MemberAlias(workspace_id=mseed["ws"], member_id=bob, alias_text="밥", alias_type="name", source="manual"))
+    meeting_card = _meeting_card(mdb, mseed, a, assignee_member_id=bob)
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "assignee", "밥", assignee_type="name", assignee_raw="밥", claimed=item))
+    _resolve(meeting_card)
+
+    items = client("pm").get(f"{P}/tasks/{a.task_id}/timeline").json()["data"]["items"]
+    [reply] = [i for i in items if i["kind"] == "reply"]
     assert reply["changes"][0]["result"] == "approved"
 
 

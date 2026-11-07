@@ -741,10 +741,12 @@ def timeline(db: Session, task: Task, viewer: Member) -> list[dict]:
     for line in lines:
         if line.approval_id:
             linked[line.change_id] = linked[first.setdefault((line.approval_id, line.field), line.change_id)]
-    approvals = dict(db.execute(
-        select(ApprovalRequest.approval_id, ApprovalRequest.status)
-        .where(ApprovalRequest.approval_id.in_({line.approval_id for line in lines} - {None}))
-    ).all())
+    approvals = {
+        card.approval_id: card
+        for card in db.scalars(
+            select(ApprovalRequest).where(ApprovalRequest.approval_id.in_({line.approval_id for line in lines} - {None}))
+        )
+    }
     by_message = defaultdict(list)
     for line in lines:
         by_message[line.message_id].append(line)
@@ -763,7 +765,7 @@ def timeline(db: Session, task: Task, viewer: Member) -> list[dict]:
 
 def _reply_item(
     db: Session, message_id: str, group: list[ReplyChange], linked: dict[str, list[TaskHistory]],
-    approvals: dict[str, str], viewer: Member,
+    approvals: dict[str, ApprovalRequest], viewer: Member,
 ) -> dict:
     message = db.get(ThreadMessage, message_id)
     owner = message.thread.member
@@ -789,12 +791,15 @@ def _reply_item(
     }
 
 
-def _result(line: ReplyChange, approvals: dict[str, str], entries: list[TaskHistory]) -> str:
+def _result(line: ReplyChange, approvals: dict[str, ApprovalRequest], entries: list[TaskHistory]) -> str:
     if line.outcome == ReplyChangeOutcome.PROPOSED:
-        status = approvals[line.approval_id]
-        # 담당자를 못 찾은 카드는 승인해도 바뀌는 값이 없다.
-        unchanged = status == ApprovalStatus.APPROVED and line.field == ReplyChangeField.ASSIGNEE and not entries
-        return "noted" if unchanged else status
+        card = approvals[line.approval_id]
+        # 담당자를 못 찾은 카드는 승인해도 바뀌는 값이 없다. 회의 카드의 이력은 줄에 잇지 않아 카드의 값으로 가른다.
+        unchanged = (
+            card.status == ApprovalStatus.APPROVED and line.field == ReplyChangeField.ASSIGNEE and not entries
+            and _PAYLOAD_KEY[ReplyChangeField.ASSIGNEE] not in json.loads(card.payload)
+        )
+        return "noted" if unchanged else card.status
     if line.outcome in (ReplyChangeOutcome.APPLIED, ReplyChangeOutcome.RECORDED):
         return line.outcome
     return "noted"
