@@ -6,9 +6,12 @@
   visibility: hidden;
 }
 
-/* Reveal 의 자식들 — 감싸는 요소는 display: contents 라 상자가 없어 자식에 건다. 움직임 줄이기를 켰으면 없다 */
+/* Reveal 의 자식들 — 감싸는 요소는 display: contents 라 상자가 없어 자식에 건다. 자식이 또 Reveal 상자면 그 안으로 건너간다
+   (세 겹까지). reveal.ts 의 REVEAL_TARGETS 와 같은 선택자다 — 테스트가 둘이 같은지 본다. 움직임 줄이기를 켰으면 없다 */
 @media (prefers-reduced-motion: no-preference) {
-  [data-reveal] > * {
+  [data-reveal] > :not([data-reveal-box]),
+  [data-reveal] > [data-reveal-box] > :not([data-reveal-box]),
+  [data-reveal] > [data-reveal-box] > [data-reveal-box] > :not([data-reveal-box]) {
     animation: loading-reveal 150ms ease-out;
   }
 }

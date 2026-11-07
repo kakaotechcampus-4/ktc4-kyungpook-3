@@ -26,6 +26,8 @@ export function DeferredSkeleton({ indicator, children, ...rest }: DeferredSkele
  * 로딩을 거쳐 나타난 내용을 감싸 그 자식들에 불투명도 전환을 건다. 처음부터 데이터가 있던 자리는 전환하지 않는다.
  * 감싸는 요소는 `display: contents` 라 상자를 만들지 않는다 — 부모의 flex·grid 간격과 배치가 그대로다.
  * 전환 여부와 상관없이 늘 같은 요소다 — 감싸기가 생기고 없어지면 안의 컴포넌트가 다시 마운트되고, 조회가 다시 시작된다.
+ * 감싸는 요소는 모두 `data-reveal-box` 를 단다. 바깥 Reveal 의 전환은 안쪽 Reveal 상자(상자가 없어 불투명도가 듣지 않는다)를
+ * 건너 실제 내용에 걸린다 — 목록을 기다린 뒤 캐시된 대화가 나타나는 자리처럼 바깥만 로딩을 거친 경우다(REVEAL_TARGETS).
  * 내용의 바깥 요소에 직접 `revealClass` 를 붙일 수 없을 때(다른 컴포넌트, 여러 요소) 쓴다
  */
 export function Reveal({
@@ -36,7 +38,7 @@ export function Reveal({
   children: ReactNode
 }) {
   return (
-    <div data-reveal={indicator.reveal ? '' : undefined} className="contents">
+    <div data-reveal-box="" data-reveal={indicator.reveal ? '' : undefined} className="contents">
       {children}
     </div>
   )

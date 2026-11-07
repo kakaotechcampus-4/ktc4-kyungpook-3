@@ -7,6 +7,10 @@ export const LOADING_DELAY_MS = 200
 /** 한 번 보인 스켈레톤은 적어도 이만큼 둔다 — 지연을 막 넘긴 응답에 뼈대가 잠깐 보였다 사라지지 않게 한다 (#508) */
 export const LOADING_MIN_MS = 400
 
+/**
+ * 시간 옵션은 한 자리(호출)가 살아 있는 동안 바꾸지 않는 상수로 쓴다. 도중에 바꾸면 남은 시간을 로딩·표시 시작이 아니라
+ * 바꾼 때부터 다시 잰다. 지금 호출자는 모두 기본값이다
+ */
 export interface LoadingIndicatorOptions {
   /** 기본 LOADING_DELAY_MS */
   delayMs?: number

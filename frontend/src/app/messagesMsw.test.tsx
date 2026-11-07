@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
-import { messageThreadQueryOptions } from '@/entities/message'
+import { messageInboxQueryOptions, messageThreadQueryOptions } from '@/entities/message'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
@@ -12,6 +12,7 @@ import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { isMemberOf, setMockRole } from '@/shared/mock/sessions'
 import { recordRequests } from '@/shared/test/requests'
+import { REVEAL_TARGETS } from '@/shared/ui/deferred-skeleton'
 import { SELF_SECTION_TITLE } from '@/widgets/message-inbox'
 import { onTestFinished } from 'vitest'
 import {
@@ -353,6 +354,30 @@ describe('빈 상태·로딩·목록 오류·대화 오류가 서로 구분되�
     act(() => gate.resolve())
     expect(await detail().findByRole('heading', { name: '이 메시지, 보낼까요?' })).toBeVisible()
     expect(screen.queryByTestId('message-list-skeleton')).toBeNull()
+  })
+
+  it('목록을 기다린 뒤 캐시된 기본 대화가 나타나면 대화 내용에 전환이 걸린다 — 안쪽 대화 자리는 로딩을 거치지 않았다 (#508)', async () => {
+    applyScenario('messages-member')
+    const app = await openInbox()
+    expect(await detail().findByRole('heading', { level: 2, name: '카테캠 3팀 봇' })).toBeVisible()
+    // 기본 대화는 캐시에 둔 채 목록만 다시 기다리게 한다
+    const gate = hold('/workspaces/ws_01/messages')
+    onTestFinished(() => gate.resolve())
+    act(() => {
+      void app.queryClient.resetQueries({ queryKey: messageInboxQueryOptions('ws_01').queryKey })
+    })
+    expect(await screen.findByTestId('message-list-skeleton')).toHaveAttribute('aria-busy', 'true')
+    act(() => gate.resolve())
+    const heading = await detail().findByRole(
+      'heading',
+      { level: 2, name: '카테캠 3팀 봇' },
+      { timeout: 3_000 },
+    )
+    // 전환은 상자가 없는 Reveal 감싸기(data-reveal-box)가 아니라 실제 대화 요소에 걸린다
+    const target = heading.closest(REVEAL_TARGETS)
+    expect(target).not.toBeNull()
+    expect(target).not.toHaveAttribute('data-reveal-box')
+    expect(detail().getByRole('region', { name: '대화 내용' }).closest(REVEAL_TARGETS)).toBe(target)
   })
 
   it('목록 오류는 목록 칸에서 다시 시도로 알리고, 고른 대화는 그대로 보인다', async () => {

@@ -24,7 +24,7 @@
 |---|---|---|
 | `useLoadingIndicator(loading)` | `src/shared/lib/loading-indicator` | `pending`(내용 대신 로딩 자리) · `skeletonVisible` · `reveal` 을 돌려준다. `LOADING_DELAY_MS` 200 · `LOADING_MIN_MS` 400 |
 | `DeferredSkeleton` | `src/shared/ui/deferred-skeleton` | 로딩 자리 컨테이너. `aria-busy="true"` 와 `data-skeleton="blank"·"shown"`. `blank` 동안 뼈대를 `visibility: hidden` 으로 숨겨 높이를 지킨다 |
-| `Reveal` · `revealClass` | 같은 폴더 | 로딩을 거쳐 나타난 내용에만 150ms 불투명도 전환. `Reveal` 은 늘 같은 `display: contents` 상자라 부모의 flex·grid 배치를 바꾸지 않고, 전환이 켜져도 안의 컴포넌트가 다시 마운트되지 않는다 |
+| `Reveal` · `revealClass` | 같은 폴더 | 로딩을 거쳐 나타난 내용에만 150ms 불투명도 전환. `Reveal` 은 늘 같은 `display: contents` 상자(`data-reveal-box`)라 부모의 flex·grid 배치를 바꾸지 않고, 전환이 켜져도 안의 컴포넌트가 다시 마운트되지 않는다. 바깥 Reveal 만 로딩을 거쳤으면 전환이 안쪽 Reveal 상자를 세 겹까지 건너 실제 내용에 걸린다(`REVEAL_TARGETS`, CSS 와 같은 선택자) |
 
 - 기존 `useShownAfter`(저장 표시, 지연만)는 바꾸지 않았다.
 - 라우트 뼈대 이어받기: 로딩 중으로 처음 그려질 때 라우트 뼈대(스플래시 잡기)가 아직 그려져 있으면 빈 자리 없이 스켈레톤으로 시작한다. 앱 안에서 처음 가는 화면이 라우트 뼈대 → 빈 자리 → 스켈레톤으로 깜빡이지 않게 했다. 이슈에 없던 선택이라 결정 기록에 이유를 적었다.
@@ -43,7 +43,7 @@
 | 팀 | 팀원 목록, 연결되지 않은 계정, 팀원 연결 창 | |
 | 설정 | 알림 | |
 | 워크스페이스 선택 | 목록 | |
-| 온보딩 | 팀원 잇기 단계 | 연결 안 됨·팀원 잇기 화면은 단계 머리가 같아 전환 없이 바꾼다 |
+| 온보딩 | 팀원 잇기 단계 | 연결 안 됨·팀원 잇기·오류로 바뀔 때 단계 머리·카드 제목은 그대로이고 카드 본문과 버튼만 전환한다 |
 
 ## 적용하지 않은 자리
 
@@ -63,14 +63,15 @@
 ## 검증
 
 - 훅 단위 테스트(`useLoadingIndicator.test.ts`): 150ms 응답은 스켈레톤 0회, 250ms 응답은 200ms 에 보이고 600ms 에 사라짐, 1초 응답은 1초에 사라짐. 붙잡는 동안 다시 로딩, 지연 안에 끝났다 다시 로딩, 라우트 뼈대 이어받기도 본다.
-- 컴포넌트 테스트(`DeferredSkeleton.test.tsx`): 빈 자리에도 `aria-busy`, `data-skeleton`, `Reveal` 의 감싸기.
+- 컴포넌트 테스트(`DeferredSkeleton.test.tsx`): 빈 자리에도 `aria-busy`, `data-skeleton`, `Reveal` 의 감싸기, 중첩된 Reveal 에서 전환 대상, CSS 선택자와 `REVEAL_TARGETS` 일치.
+- 경로 테스트: 메시지에서 목록을 기다린 뒤 캐시된 기본 대화가 나타나면 실제 대화 요소가 전환 대상이다(`messagesMsw.test.tsx`). 온보딩 팀원 잇기·연결 안 됨의 카드 본문과 버튼이 전환 대상이다(`onboardingMembers.test.tsx`).
 - 바꾼 화면의 앱 단위 Vitest 와 typecheck·lint 는 아래 「검사 결과」에 적는다. 전체 Vitest 와 E2E 는 CI 가 돈다(감독 지시, 2026-11-07).
 
 ## 검사 결과
 
 | 검사 | 결과 |
 |---|---|
-| `useLoadingIndicator.test.ts` · `DeferredSkeleton.test.tsx` | 13 · 4 통과 |
+| `useLoadingIndicator.test.ts` · `DeferredSkeleton.test.tsx` | 첫 커밋 9 · 4 통과(합계 13). 리뷰 반영 뒤 9 · 7 통과 |
 | `src/app` 등 바꾼 화면의 Vitest 83파일, `--maxWorkers=1` (Reveal 을 늘 감싸도록 바꾸기 전) | 1259 중 1253 통과, 6 실패 → 아래처럼 고친 뒤 그 4파일 154 통과 |
 | 관련 19파일을 기본 병렬로 (Reveal 변경 뒤) | 다른 워커와 함께 돌아 5초 시간 초과가 대부분. 실패한 10파일을 하나씩 다시 돌려 모두 통과(approvals 37, dashboard 66, meetingMinutes 47, messagesMsw 58, onboardingStart 11, taskViewsCodeSplit 3, tasks 38, onboardingMembers 34, meetingUpload 41, team·settings 앞 실행 통과) |
 | `npm run typecheck` · `npm run lint` | 통과 |
@@ -83,3 +84,14 @@
 - 회의록 404·다른 공간 두 건은 코드 버그였다. 최소 표시가 끝날 때 `Reveal` 감싸기가 새로 생겨 `MinutesDetail` 이 다시 마운트됐고, 새 관찰자가 실패한 상세를 다시 받으며(`retryOnMount`) 대기 → 실패 → 대기가 끝없이 돌았다. `Reveal` 을 늘 같은 요소로 바꿨다.
 
 브라우저 확인(로컬 전용 E2E `frontend/.verify/e2e/skeleton-delay.e2e.ts`, git 제외): 메시지에서 다른 대화를 고르고 대화 조회를 700ms 늦추면, 고른 뒤 빈 자리(`aria-busy`) → 약 355ms 에 뼈대 → 약 580ms 뒤 대화다. 다섯 번 중 네 번 통과했고, 한 번은 고른 뒤 뼈대 자리가 한 번도 적히지 않았다(원인 미확인). 그래서 저장소 E2E 로 넣지 않았다. 규칙의 정확한 경계는 훅 단위 테스트가 가짜 시계로 본다.
+
+## 리뷰 반영 (Codex 리뷰, 2026-11-07)
+
+| 지적 | 반영 |
+|---|---|
+| 온보딩 성공·연결 해제 경로에 전환이 없다 | `MembersForm`·`DiscordNotConnected` 의 카드 본문과 버튼을 `Reveal` 로 감쌌다. 단계 머리·카드 제목은 기다리는 동안에도 같아 그대로 둔다 |
+| 중첩된 Reveal 에서 바깥 전환이 상자 없는 안쪽 감싸기에 걸린다 | Reveal 감싸기에 `data-reveal-box` 를 달고, 전환 선택자가 안쪽 감싸기를 세 겹까지 건너 실제 내용에 걸리게 했다. 옛 선택자로 되돌리면 새 경로 테스트가 실패하는 것을 확인했다 |
+| 시간 옵션을 도중에 바꾸면 바꾼 때부터 다시 잰다 | 코드는 두고 계약을 주석에 적었다 — 옵션은 호출이 살아 있는 동안 상수로 쓴다. 지금 호출자는 모두 기본값이다 |
+| 결과 문서의 테스트 수 | 파일별(9 · 4)로 바로잡았다 |
+
+리뷰 반영 뒤 검사: `DeferredSkeleton.test.tsx` 7, `useLoadingIndicator.test.ts` 9, `messagesMsw.test.tsx` 59, `onboardingMembers.test.tsx` 34 통과. typecheck·lint 통과, format:check 는 커밋 대상 통과.

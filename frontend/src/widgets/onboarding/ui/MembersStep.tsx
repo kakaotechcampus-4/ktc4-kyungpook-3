@@ -51,6 +51,8 @@ interface MembersFormProps {
   notice: string | undefined
   /** `이전 단계` 가 갈 Notion 둘러보기 */
   previous: string | null
+  /** 두 목록을 기다린 뒤 나타났다 — 카드 본문과 버튼에 불투명도 전환을 건다. 단계 머리·카드 제목은 기다리는 동안에도 같았다 (#508) */
+  reveal: boolean
 }
 
 /**
@@ -59,7 +61,14 @@ interface MembersFormProps {
  * `나중에 하기`·나가기 저장은 PM 체크를 막지 않는다.
  * 하단 `다음 단계` 는 `나중에 하기` 와 같다(같은 잠금). `이전 단계` 는 공통 이탈 확인을 거친다 — 입력을 저장하지 않는다.
  */
-function MembersForm({ workspaceId, initialRows, pms, notice, previous }: MembersFormProps) {
+function MembersForm({
+  workspaceId,
+  initialRows,
+  pms,
+  notice,
+  previous,
+  reveal,
+}: MembersFormProps) {
   const mapping = useMemberMappingForm(workspaceId, initialRows, pms)
   const {
     form: {
@@ -140,7 +149,7 @@ function MembersForm({ workspaceId, initialRows, pms, notice, previous }: Member
           title={CARD.title}
           description={CARD.description}
           actions={
-            <>
+            <Reveal indicator={{ reveal }}>
               <Button
                 type="submit"
                 variant="primary"
@@ -159,10 +168,12 @@ function MembersForm({ workspaceId, initialRows, pms, notice, previous }: Member
               >
                 나중에 하기
               </Button>
-            </>
+            </Reveal>
           }
         >
-          <MemberMappingFields mapping={mapping} />
+          <Reveal indicator={{ reveal }}>
+            <MemberMappingFields mapping={mapping} />
+          </Reveal>
         </OnboardingCard>
       </form>
     </OnboardingLayout>
@@ -173,13 +184,15 @@ interface DiscordNotConnectedProps {
   workspaceId: string
   notice: string | undefined
   previous: string | null
+  /** 두 목록을 기다리다 연결이 없다고 알았다 — 카드 본문과 버튼에 불투명도 전환을 건다 (#508) */
+  reveal: boolean
 }
 
 /**
  * Discord 를 연결하지 않은 채 온 팀원 연결 (D-073 개정, 2026-09-29). 불러올 Discord 사용자가 없다 —
  * 오류 대신 까닭을 알리고 `건너뛰기` 만 둔다. 저장은 `나중에 하기` 와 같다. `‹` 로 Notion·Discord 둘러보기에 가서 연결할 수 있다.
  */
-function DiscordNotConnected({ workspaceId, notice, previous }: DiscordNotConnectedProps) {
+function DiscordNotConnected({ workspaceId, notice, previous, reveal }: DiscordNotConnectedProps) {
   const onboarding = useOnboardingSave(workspaceId)
   const [formError, setFormError] = useState<string | null>(null)
   // 카드 버튼과 `›` 가 겹쳐 눌려도 건너뛰기 요청은 하나다
@@ -210,13 +223,17 @@ function DiscordNotConnected({ workspaceId, notice, previous }: DiscordNotConnec
         title={CARD.title}
         description={CARD.description}
         actions={
-          <Button variant="primary" size="lg-onboarding" loading={busy} onClick={skip}>
-            건너뛰기
-          </Button>
+          <Reveal indicator={{ reveal }}>
+            <Button variant="primary" size="lg-onboarding" loading={busy} onClick={skip}>
+              건너뛰기
+            </Button>
+          </Reveal>
         }
       >
-        <FormErrorPanel message={formError} className="mt-6" />
-        <p className="pt-6 text-body text-dim">{NOT_CONNECTED}</p>
+        <Reveal indicator={{ reveal }}>
+          <FormErrorPanel message={formError} className="mt-6" />
+          <p className="pt-6 text-body text-dim">{NOT_CONNECTED}</p>
+        </Reveal>
       </OnboardingCard>
     </OnboardingLayout>
   )
@@ -250,13 +267,20 @@ export function MembersStep({ workspaceId }: MembersStepProps) {
     (discordStatus !== undefined && discordStatus !== 'connected') ||
     isNotConnected(discordUsers.error)
   const error = discordUsers.error ?? members.error
-  // 두 목록을 받는 중이다. 받은 뒤의 화면(연결 안 됨 · 팀원 잇기)은 단계 머리가 같아 전환 없이 바로 바꾼다 (#508)
+  // 두 목록을 받는 중이다. 받은 뒤의 화면(연결 안 됨 · 팀원 잇기)은 단계 머리·카드 제목이 같아 카드 본문과 버튼만 전환한다 (#508)
   const indicator = useLoadingIndicator(
     !notConnected && (discordUsers.data === undefined || members.data === undefined) && !error,
   )
 
   if (notConnected && !indicator.pending) {
-    return <DiscordNotConnected workspaceId={workspaceId} notice={notice} previous={previous} />
+    return (
+      <DiscordNotConnected
+        workspaceId={workspaceId}
+        notice={notice}
+        previous={previous}
+        reveal={indicator.reveal}
+      />
+    )
   }
 
   if (discordUsers.data === undefined || members.data === undefined || indicator.pending) {
@@ -297,6 +321,7 @@ export function MembersStep({ workspaceId }: MembersStepProps) {
       pms={pmsOf(members.data)}
       notice={notice}
       previous={previous}
+      reveal={indicator.reveal}
     />
   )
 }
