@@ -6,6 +6,7 @@ import { todayInSeoul } from '@/shared/lib/date'
 import { MOCK_TODAY } from '@/shared/mock/fixtures/constants'
 import { approvalFixtures } from '@/shared/mock/fixtures/approval'
 import { taskFixtures } from '@/shared/mock/fixtures/task'
+import { toTaskResponse } from '@/shared/mock/task-state'
 import {
   addDays,
   boardItems,
@@ -15,17 +16,17 @@ import {
   matchesDue,
   readBoardQuery,
   soonUntil,
-  sortTasks,
   withPendingStatus,
 } from './taskBoard'
 import type { BoardInput, BoardItem, DueCondition } from './taskBoard'
+import { TASK_SORTS } from './taskSort'
 
 /*
  * M6 S3 — 목록 조립의 공통 판정 (AC-02, AC-03). 화면 통합 테스트는 app/tasks.test.tsx 가 본다.
  * 픽스처: ws_01 의 태스크 10건(미완료 7 · 완료 3), 대기 승인 3건(ap_01 · ap_02 · ap_03), 서울 오늘 2026-09-18.
  */
 
-const tasks = taskFixtures.map(toTask)
+const tasks = taskFixtures.map((row) => toTask(toTaskResponse(row)))
 const approvals = approvalFixtures.map(toApproval)
 const ids = (items: readonly BoardItem[]) =>
   items.map((item) => (item.kind === 'approval' ? item.approval.id : item.task.id))
@@ -35,7 +36,7 @@ function task(id: string, patch: Partial<Task> = {}): Task {
 }
 
 function input(due: readonly DueCondition[] = [], pm = true): BoardInput {
-  return { tasks, approvals: pm ? approvals : null, due, today: MOCK_TODAY }
+  return { tasks, approvals: pm ? approvals : null, due, today: MOCK_TODAY, sort: 'due' }
 }
 
 describe('날짜 조건 — 서울 날짜 문자열로 판정한다', () => {
@@ -113,24 +114,45 @@ describe('날짜 조건 — 서울 날짜 문자열로 판정한다', () => {
   })
 })
 
-describe('정렬', () => {
-  it('태스크는 마감 오름차순, 마감 없는 항목은 마지막, 같은 마감은 생성 시각 내림차순이다', () => {
-    const sorted = sortTasks([
-      task('none_old', { dueDate: null, createdAt: '2026-09-01T00:00:00Z' }),
-      task('d20_old', { dueDate: '2026-09-20', createdAt: '2026-09-01T00:00:00Z' }),
-      task('none_new', { dueDate: null, createdAt: '2026-09-10T00:00:00Z' }),
-      task('d19', { dueDate: '2026-09-19', createdAt: '2026-09-01T00:00:00Z' }),
-      task('d20_new', { dueDate: '2026-09-20', createdAt: '2026-09-05T00:00:00Z' }),
-    ])
-    expect(sorted.map(({ id }) => id)).toEqual([
-      'd19',
-      'd20_new',
-      'd20_old',
-      'none_new',
-      'none_old',
-    ])
+describe('막힘 조건 (D-176)', () => {
+  const today = '2026-09-18'
+
+  it.each([
+    ['막힘·마감 없음', null, 'blocked', true],
+    ['막힘·기한 지남', '2026-09-10', 'blocked', true],
+    ['막힘·먼 마감', '2026-10-30', 'blocked', true],
+    ['진행 중·기한 지남', '2026-09-10', 'in_progress', false],
+    ['할 일·마감 없음', null, 'todo', false],
+    ['완료', '2026-09-10', 'done', false],
+  ] as const)('%s', (_, dueDate, status, expected) => {
+    expect(matchesDue(task('tk_x', { dueDate, status }), ['blocked'], today)).toBe(expected)
   })
 
+  it('다른 조건과 함께 고르면 어느 하나에 맞는 태스크다(OR)', () => {
+    const soonOnly = task('tk_a', { dueDate: '2026-09-20', status: 'todo' })
+    const blockedOnly = task('tk_b', { dueDate: null, status: 'blocked' })
+    const neither = task('tk_c', { dueDate: '2026-10-30', status: 'in_progress' })
+    const done = task('tk_d', { dueDate: '2026-09-20', status: 'done' })
+    expect(
+      [soonOnly, blockedOnly, neither, done].map((each) =>
+        matchesDue(each, ['soon', 'blocked'], today),
+      ),
+    ).toEqual([true, true, false, false])
+  })
+
+  it('픽스처에서는 막힌 태스크 하나(tk_03)만 남고, 진행 중 탭에 든다', () => {
+    const board = buildTaskBoard(input(['blocked']), true, 'in_progress')
+    expect(ids(board.items)).toEqual(['tk_03'])
+    expect(board.tabs).toEqual([
+      { tab: 'all', count: 4 },
+      { tab: 'needs_review', count: 3 },
+      { tab: 'in_progress', count: 1 },
+      { tab: 'done', count: 0 },
+    ])
+  })
+})
+
+describe('정렬', () => {
   it('PM 의 전체는 대기 승인(대기 시작 오래된 순)을 먼저, 그 다음 태스크다 — 서버 순서와 무관하다', () => {
     const reversed: BoardInput = { ...input(), approvals: [...approvals].reverse() }
     expect(ids(boardItems(reversed, 'all'))).toEqual([
@@ -148,6 +170,18 @@ describe('정렬', () => {
       'tk_04',
       'tk_05',
     ])
+  })
+
+  it('최근 생성순도 대기 승인을 먼저 두고, 승인과 태스크를 각각 생성 시각 내림차순으로 둔다', () => {
+    const items = boardItems({ ...input(), sort: 'created' }, 'all')
+    const created = (item: BoardItem) =>
+      Date.parse(item.kind === 'approval' ? item.approval.createdAt : item.task.createdAt)
+    const approvalItems = items.filter((item) => item.kind === 'approval')
+    const taskItems = items.filter((item) => item.kind === 'task')
+    expect(items.slice(0, approvalItems.length)).toEqual(approvalItems)
+    expect(ids(approvalItems)).toEqual(['ap_03', 'ap_02', 'ap_01'])
+    expect(taskItems.map(created)).toEqual(taskItems.map(created).sort((a, b) => b - a))
+    expect(taskItems).toHaveLength(10)
   })
 
   it('대기가 아닌 승인은 목록에 넣지 않는다', () => {
@@ -180,6 +214,14 @@ describe('역할별 탭과 개수', () => {
     // 탭 개수와 그 탭의 목록은 같은 판정이다
     for (const { tab, count } of board.tabs)
       expect(buildTaskBoard(input(due, isPm), isPm, tab).items).toHaveLength(count)
+  })
+
+  it.each([true, false])('탭 개수는 정렬과 무관하다 (PM %s)', (isPm) => {
+    const tabs = TASK_SORTS.map(
+      (sort) => buildTaskBoard({ ...input(['overdue', 'soon'], isPm), sort }, isPm, 'all').tabs,
+    )
+    expect(tabs[1]).toEqual(tabs[0])
+    expect(tabs[2]).toEqual(tabs[0])
   })
 
   it('일반 팀원은 승인을 넘겨받아도 승인 항목·확인 필요 탭이 없다', () => {
@@ -247,6 +289,21 @@ describe('URL 조건', () => {
     expect(read('?due=soon,overdue').due).toEqual(['overdue', 'soon'])
     expect(read('?due=overdue%2Csoon,soon').due).toEqual(['overdue', 'soon'])
     expect(read('?due=soon').due).toEqual(['soon'])
+    expect(read('?due=blocked').due).toEqual(['blocked'])
+    expect(read('?due=blocked,overdue').due).toEqual(['overdue', 'blocked'])
+  })
+
+  it('막힘은 날짜 조건 뒤에 쓴다 — 날짜 조건만 고른 주소는 그대로다', () => {
+    const empty = new URLSearchParams()
+    expect(boardSearch(empty, { tab: 'in_progress', due: ['blocked', 'soon', 'overdue'] })).toBe(
+      '?tab=in_progress&due=overdue,soon,blocked',
+    )
+    expect(boardSearch(empty, { tab: 'in_progress', due: ['soon', 'overdue'] })).toBe(
+      '?tab=in_progress&due=overdue,soon',
+    )
+    expect(boardSearch(empty, { tab: 'in_progress', due: ['blocked'] })).toBe(
+      '?tab=in_progress&due=blocked',
+    )
   })
 
   it('쓸 때는 전체·빈 조건을 빼고 쉼표를 그대로 둔다. 다른 파라미터는 남는다', () => {

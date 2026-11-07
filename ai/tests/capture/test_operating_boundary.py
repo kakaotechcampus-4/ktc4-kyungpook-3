@@ -1,4 +1,4 @@
-"""운영 봇의 경계. 운영 Cog 는 RecordingCog 하나이고 실시간 폴더에 기대지 않는다 (docs/basis_for_decision/member/2026-09-12-0006-two-capture-adapters-side-by-side.md).
+"""운영 봇의 경계. 녹음 Cog 는 RecordingCog 하나이고 실시간 폴더에 기대지 않는다 (docs/basis_for_decision/member/2026-09-12-0006-two-capture-adapters-side-by-side.md).
 
 실시간 경로(capture/realtime, stt/realtime)는 비교 실행과 회귀 근거로 남겨 둔 것이라, 지우기로
 정하면 폴더째 지울 수 있어야 한다. 그 전제를 여기서 지킨다.
@@ -17,7 +17,26 @@ async def test_the_operating_runner_attaches_only_the_recording_cog(monkeypatch)
     import capture.run_recorder as runner
 
     monkeypatch.setattr(runner, "S", types.SimpleNamespace(discord_bot_token="x", discord_guild_id=""))
+    monkeypatch.setattr(runner, "handoff_from_env", lambda: None)
     assert list(runner.build_bot().cogs) == ["RecordingCog"]
+
+
+async def test_the_operating_runner_adds_the_dm_cog_when_the_be_is_configured(monkeypatch):
+    import capture.run_recorder as runner
+
+    monkeypatch.setattr(runner, "S", types.SimpleNamespace(discord_bot_token="x", discord_guild_id=""))
+    monkeypatch.setattr(runner, "handoff_from_env", lambda: types.SimpleNamespace(client=object()))
+    assert sorted(runner.build_bot().cogs) == ["DmCog", "RecordingCog"]
+
+
+async def test_the_dm_cog_gets_the_reply_judger_of_the_settings(monkeypatch):
+    import capture.run_recorder as runner
+
+    judger = object()
+    monkeypatch.setattr(runner, "S", types.SimpleNamespace(discord_bot_token="x", discord_guild_id=""))
+    monkeypatch.setattr(runner, "handoff_from_env", lambda: types.SimpleNamespace(client=object()))
+    monkeypatch.setattr(runner, "reply_judger", lambda: judger)
+    assert runner.build_bot().cogs["DmCog"]._judger is judger
 
 
 def test_the_operating_bot_loads_nothing_from_the_realtime_folders():

@@ -12,6 +12,9 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from capture import handoff as H
 from capture import ops_record as O
@@ -23,11 +26,25 @@ from tests.capture.test_recorder import EchoStt, _extractor, _session
 AI_DIR = Path(__file__).resolve().parents[2]
 
 
-def _worker(tmp_path, *, handoff=None, extractor=None, interval_s=3600.0, poll_s=0.02, notifier=None, debug=False):
+def _worker(tmp_path, *, handoff=None, extractor=None, interval_s=3600.0, poll_s=0.02, notifier=None, debug=False,
+            intake=None):
     return W.Worker(tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts",
                     stt_factory=lambda: (EchoStt(), "echo", 1), gate_factory=lambda: None,
                     extractor_factory=lambda: extractor, handoff_factory=lambda: handoff,
-                    interval_s=interval_s, poll_s=poll_s, notifier=notifier, debug=debug)
+                    interval_s=interval_s, poll_s=poll_s, notifier=notifier, debug=debug,
+                    intake_factory=lambda: intake)      # 기본은 intake 없음: 환경 변수에 기대지 않는다
+
+
+@pytest.fixture(autouse=True)
+def _no_assign(monkeypatch):
+    """기본은 지정 받기 없음(가짜 client 문자열로 BE 를 부르지 않는다). 쓰는 테스트가 W.assign_one 을 다시 끼운다."""
+    monkeypatch.setattr(W, "assign_one", lambda *a, **k: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_report(monkeypatch):
+    """기본은 라벨 보고 없음(가짜 client 문자열로 BE 를 부르지 않는다). 쓰는 테스트가 W.report_one 을 다시 끼운다."""
+    monkeypatch.setattr(W, "report_one", lambda *a, **k: None, raising=False)
 
 
 def _status(path):
@@ -38,6 +55,14 @@ def _edit(path, **fields):
     m = json.loads(path.read_text(encoding="utf-8"))
     m.update(fields)
     R.save_manifest(path, m)
+
+
+def test_the_worker_sends_batch_audio_without_the_speech_gate(tmp_path):
+    """배치 전사는 말 필터를 걸지 않는다. 필터가 짧은 대답을 버리는 손해가 거르는 이득보다 컸다(결정 기록 0030)."""
+    worker = W.Worker(tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts",
+                      stt_factory=lambda: (EchoStt(), "echo", 1), extractor_factory=lambda: None,
+                      handoff_factory=lambda: None, debug=False)
+    assert worker._gate_factory() is None
 
 
 def test_the_worker_does_not_import_discord():
@@ -480,3 +505,412 @@ def test_retry_asks_the_running_worker_and_says_whether_it_is_alive(tmp_path):
     assert (rec / ".worker" / "wake-77").exists() and "워커가 곧" in said
     (rec / ".worker" / "heartbeat.json").unlink()
     assert "워커 신호가 없습니다" in W.retry(rec, "77")
+
+
+def test_a_pass_never_lists_an_unready_upload_manifest(tmp_path):
+    """지정 시각·화자별 member_id·BE 회의가 없는 업로드 매니페스트(diarized, status 만 mapped·saved 로 고친 것)는
+    자동 바퀴도 수동 바퀴도 결과에 넣지 않는다. 갖춘 mapped 업로드는 아래 테스트가 본다(#286)."""
+    from tests.conftest import SEGS, STARTED, FakeDiarizer, _audio
+    from upload.prepare import prepare_upload
+
+    w = _worker(tmp_path)
+    path, m = prepare_upload(_audio(tmp_path), w.recordings_dir, diarizer=FakeDiarizer(SEGS), started_at=STARTED)
+    for status in (R.STATUS_DIARIZED, R.STATUS_MAPPED, R.STATUS_SAVED):
+        _edit(path, status=status)
+        assert asyncio.run(w.run_pass()) == ([], [])
+        assert asyncio.run(w.run_pass(guild_id="123", manual=True)) == ([], [])
+        assert _status(path) == status
+
+
+# ---- 웹 업로드 가져오기(upload.intake)를 바퀴 끝에서 한 번 돌린다 ----
+
+class _Intake:
+    """W.intake_one 자리에 끼우는 기록기. 부른 횟수와 그때 워커의 current 를 남긴다."""
+    def __init__(self, worker, events=(), after=None):
+        self.worker, self.events, self.calls, self.currents, self.after = worker, list(events), 0, [], after
+        self.locked = []
+
+    def __call__(self, recordings_dir, *, client, diarizer, **kw):
+        self.calls += 1
+        self.currents.append(self.worker._current)
+        self.locked.append(self.worker._sem.locked())
+        if self.after:
+            self.after(self.calls)
+        return self.events.pop(0) if self.events else None
+
+
+async def _laps(worker, n):
+    """n 바퀴 돌고 끝낸다(바퀴는 run_pass 한 번으로 센다)."""
+    real, seen = worker.run_pass, []
+
+    async def counted(**kw):
+        seen.append(1)
+        out = await real(**kw)
+        if len(seen) >= n:
+            worker.stop()
+        return out
+
+    worker.run_pass = counted
+    await asyncio.wait_for(worker.run(), 20)
+    return len(seen)
+
+
+async def test_each_lap_runs_intake_once_after_the_pass(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=("client", "diarizer"), interval_s=0.05)
+    rec = _Intake(w)
+    monkeypatch.setattr(W, "intake_one", rec)
+    assert await _laps(w, 3) == 3
+    assert rec.calls == 2      # 세 번째 바퀴는 그 안에서 멈춤 신호를 받아 가져오지 않는다
+
+
+async def test_intake_does_not_run_without_a_factory_result(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=None, interval_s=0.05)
+    rec = _Intake(w)
+    monkeypatch.setattr(W, "intake_one", rec)
+    await _laps(w, 2)
+    assert rec.calls == 0
+
+
+async def test_no_claim_after_the_stop_signal(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=("client", "diarizer"))
+    rec = _Intake(w)
+    monkeypatch.setattr(W, "intake_one", rec)
+    w.stop()
+    await w._intake_once()
+    assert rec.calls == 0
+    w2 = _worker(tmp_path, intake=("client", "diarizer"))          # 바퀴 도중에 멈춘 경우
+    rec2 = _Intake(w2)
+    monkeypatch.setattr(W, "intake_one", rec2)
+    real = w2.run_pass
+
+    async def stop_during(**kw):
+        out = await real(**kw)
+        w2.stop()
+        return out
+
+    w2.run_pass = stop_during
+    await asyncio.wait_for(w2.run(), 20)
+    assert rec2.calls == 0
+
+
+async def test_intake_marks_the_heartbeat_while_it_runs_and_logs_a_line(tmp_path, monkeypatch, capsys):
+    w = _worker(tmp_path, intake=("client", "diarizer"))
+    rec = _Intake(w, events=[SimpleNamespace(meeting_id="m9", event="claimed")])
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert rec.currents == ["upload"]               # 부르는 동안 하트비트의 current. 끝나면 비운다
+    assert rec.locked == [True] and not w._sem.locked()   # 한 번에 한 회의 자리(_sem) 안에서 돌고 끝나면 놓는다
+    assert w._current is None
+    assert "[worker] 업로드 m9 claimed" in capsys.readouterr().out
+
+
+async def test_an_intake_crash_does_not_stop_the_worker(tmp_path, monkeypatch, capsys):
+    w = _worker(tmp_path, intake=("client", "diarizer"), interval_s=0.05)
+
+    def boom(*a, **k):
+        raise RuntimeError("터졌다")
+
+    monkeypatch.setattr(W, "intake_one", boom)
+    await _laps(w, 2)
+    assert "[worker] 업로드 가져오기 오류: RuntimeError: 터졌다" in capsys.readouterr().out
+
+
+async def test_an_imported_upload_is_never_picked_by_the_pass(tmp_path):
+    """가져오기가 만든 diarized 매니페스트는 같은 워커의 다음 run_pass 가 집지 않는다."""
+    import io
+    import numpy as np
+    import soundfile as sf
+    from tests.conftest import SEGS, FakeDiarizer
+
+    t = np.arange(12 * 16000) / 16000
+    buf = io.BytesIO()
+    sf.write(buf, (0.3 * np.sin(2 * np.pi * 220 * t)).astype(np.float32), 16000, format="WAV", subtype="PCM_16")
+    fake = FakeBe()
+    fake.add_upload("m1", audio=buf.getvalue(), stored_filename="a.wav", original_filename="회의.wav")
+    client = H.BeClient("http://be", session=fake, service_token="svc-token")
+    w = _worker(tmp_path, intake=(client, FakeDiarizer(SEGS)))
+    for _ in range(8):
+        await w._intake_once()
+    path = R.manifest_path(w.recordings_dir, "upload_m1")
+    assert _status(path) == "diarized"
+    assert await w.run_pass() == ([], [])
+    assert await w.run_pass(guild_id="1", manual=True) == ([], [])
+    assert _status(path) == "diarized"
+
+
+async def test_an_intake_factory_crash_is_logged_once_and_the_worker_keeps_going(tmp_path, monkeypatch, capsys):
+    calls = []
+
+    def bad_factory():
+        calls.append(1)
+        raise RuntimeError("설정이 틀렸다")
+
+    w = W.Worker(tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts",
+                 stt_factory=lambda: (EchoStt(), "echo", 1), gate_factory=lambda: None, extractor_factory=lambda: None,
+                 handoff_factory=lambda: None, intake_factory=bad_factory, interval_s=0.05, poll_s=0.02, debug=False)
+    assert await _laps(w, 3) == 3
+    assert "[worker] 업로드 가져오기 오류: RuntimeError: 설정이 틀렸다" in capsys.readouterr().out
+    assert calls == [1]      # 매 바퀴 다시 만들어 로그를 채우지 않는다
+
+
+def _be_env(monkeypatch, url="http://be", token="svc", key="pk", flag="1"):
+    from shared import config
+    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": url, "be_service_token": token})())
+    monkeypatch.setenv("PYANNOTEAI_API_KEY", key)
+    if flag is None:
+        monkeypatch.delenv("MM_UPLOAD_INTAKE", raising=False)
+    else:
+        monkeypatch.setenv("MM_UPLOAD_INTAKE", flag)
+
+
+def test_default_intake_needs_the_flag_be_url_token_and_pyannote_key(monkeypatch):
+    from upload.diarize import PyannoteAiDiarizer
+    for url, token, key, on in [("http://be", "svc", "pk", True), ("", "svc", "pk", False),
+                                ("http://be", "", "pk", False), ("http://be", "svc", "", False)]:
+        _be_env(monkeypatch, url, token, key)
+        assert (W.intake_from_env() is not None) is on
+    _be_env(monkeypatch)
+    client, diarizer = W.intake_from_env()
+    assert isinstance(client, H.BeClient) and isinstance(diarizer, PyannoteAiDiarizer)
+
+
+def test_default_intake_is_off_without_the_flag_even_with_everything_else_set(monkeypatch):
+    for flag in (None, "", "0", "true", "yes"):    # 명시적 opt-in: 정확히 "1" 일 때만 켠다
+        _be_env(monkeypatch, flag=flag)
+        assert W.intake_from_env() is None, flag
+
+
+def test_default_intake_logs_the_names_of_missing_settings_without_values(monkeypatch, capsys):
+    """#289 리뷰: 켰는데 설정이 비어 조용히 꺼지면 업로드가 processing 으로 남는다. 빠진 이름만 한 줄 남긴다."""
+    _be_env(monkeypatch, url="http://be-secret-host", token="", key="")
+    assert W.intake_from_env() is None
+    out = capsys.readouterr().out
+    assert "BE_SERVICE_TOKEN" in out and "PYANNOTEAI_API_KEY" in out and "BE_BASE_URL" not in out
+    assert "be-secret-host" not in out
+
+
+def test_default_intake_is_silent_when_the_flag_is_off(monkeypatch, capsys):
+    _be_env(monkeypatch, url="", token="", key="", flag=None)
+    assert W.intake_from_env() is None
+    assert capsys.readouterr().out == ""
+
+
+# ---- 지정 받기(upload.assign)를 가져오기보다 먼저, 같은 한 회의 자리 안에서 부른다 ----
+
+class _Assign:
+    def __init__(self, worker, events=(), order=None):
+        self.worker, self.events, self.calls, self.locked, self.clients, self.order = worker, list(events), 0, [], [], order
+
+    def __call__(self, recordings_dir, *, client, **kw):
+        self.calls += 1
+        self.locked.append(self.worker._sem.locked())
+        self.clients.append(client)
+        if self.order is not None:
+            self.order.append("assign")
+        return self.events.pop(0) if self.events else None
+
+
+async def test_assign_runs_inside_the_sem_before_intake_with_the_intake_client(tmp_path, monkeypatch, capsys):
+    w = _worker(tmp_path, intake=("the-client", "diarizer"))
+    order = []
+    asg = _Assign(w, events=[SimpleNamespace(meeting_id="m7", event="mapped")], order=order)
+    rec = _Intake(w, after=lambda n: order.append("intake"))
+    monkeypatch.setattr(W, "assign_one", asg)
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert order == ["assign", "intake"]
+    assert asg.locked == [True] and asg.clients == ["the-client"] and not w._sem.locked() and w._current is None
+    assert "[worker] 업로드 m7 mapped" in capsys.readouterr().out
+
+
+async def test_assign_does_not_run_without_intake_or_after_stop(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=None)
+    asg = _Assign(w)
+    monkeypatch.setattr(W, "assign_one", asg)
+    await w._intake_once()
+    w2 = _worker(tmp_path, intake=("c", "d"))
+    asg2 = _Assign(w2)
+    monkeypatch.setattr(W, "assign_one", asg2)
+    monkeypatch.setattr(W, "intake_one", _Intake(w2))
+    w2.stop()
+    await w2._intake_once()
+    assert asg.calls == 0 and asg2.calls == 0
+
+
+async def test_stop_during_assign_skips_intake(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=("c", "d"))
+    rec = _Intake(w)
+
+    def stop_midway(*a, **k):
+        w.stop()
+        return None
+
+    monkeypatch.setattr(W, "assign_one", stop_midway)
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert rec.calls == 0 and w._current is None
+
+
+async def test_an_assign_crash_is_logged_and_intake_still_runs(tmp_path, monkeypatch, capsys):
+    w = _worker(tmp_path, intake=("c", "d"))
+    rec = _Intake(w)
+
+    def boom(*a, **k):
+        raise RuntimeError("지정 터짐")
+
+    monkeypatch.setattr(W, "assign_one", boom)
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert "[worker] 업로드 가져오기 오류: RuntimeError: 지정 터짐" in capsys.readouterr().out
+    assert rec.calls == 1 and w._current is None
+
+
+class _Report:
+    def __init__(self, worker, events=(), order=None, effect=None):
+        self.worker, self.events, self.calls, self.locked, self.clients, self.order, self.effect = worker, list(events), 0, [], [], order, effect
+
+    def __call__(self, recordings_dir, *, client, **kw):
+        self.calls += 1
+        self.locked.append(self.worker._sem.locked())
+        self.clients.append(client)
+        if self.order is not None:
+            self.order.append("report")
+        if self.effect:
+            self.effect()
+        return self.events.pop(0) if self.events else None
+
+
+async def test_report_runs_between_assign_and_intake_inside_the_sem(tmp_path, monkeypatch, capsys):
+    w = _worker(tmp_path, intake=("the-client", "diarizer"))
+    order = []
+    monkeypatch.setattr(W, "assign_one", _Assign(w, order=order))
+    rep = _Report(w, events=[SimpleNamespace(meeting_id="m7", event="reported")], order=order)
+    monkeypatch.setattr(W, "report_one", rep)
+    monkeypatch.setattr(W, "intake_one", _Intake(w, after=lambda n: order.append("intake")))
+    await w._intake_once()
+    assert order == ["assign", "report", "intake"]
+    assert rep.locked == [True] and rep.clients == ["the-client"] and w._current is None
+    assert "[worker] 업로드 m7 reported" in capsys.readouterr().out
+
+
+async def test_stop_during_report_skips_intake(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=("c", "d"))
+    rec = _Intake(w)
+    monkeypatch.setattr(W, "report_one", _Report(w, effect=w.stop))
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert rec.calls == 0 and w._current is None
+
+
+async def test_stop_during_assign_skips_report_and_intake(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=("c", "d"))
+    rep, rec = _Report(w), _Intake(w)
+    monkeypatch.setattr(W, "assign_one", lambda *a, **k: w.stop())
+    monkeypatch.setattr(W, "report_one", rep)
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert rep.calls == 0 and rec.calls == 0
+
+
+async def test_a_report_crash_is_logged_and_intake_still_runs(tmp_path, monkeypatch, capsys):
+    w = _worker(tmp_path, intake=("c", "d"))
+    rec = _Intake(w)
+
+    def boom(*a, **k):
+        raise RuntimeError("보고 터짐")
+
+    monkeypatch.setattr(W, "report_one", boom)
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert "[worker] 업로드 가져오기 오류: RuntimeError: 보고 터짐" in capsys.readouterr().out
+    assert rec.calls == 1 and w._current is None
+
+
+async def test_an_upload_goes_from_intake_to_handed_off_through_the_worker_laps(tmp_path, monkeypatch):
+    """업로드가 진짜 report_one·assign_one·intake_one 과 처리 바퀴로 끝까지 간다: 가져오기 → 라벨 보고 → 지정 받기(mapped)
+    → 처리 바퀴(전사·발화 저장·추출·인계) → handed_off. 서버(guild_id)가 없어도 바퀴가 집고 새 BE 회의는 만들지 않는다."""
+    import io
+    import numpy as np
+    import soundfile as sf
+    from tests.conftest import SEGS, FakeDiarizer
+    from upload import assign as A
+    from upload import report as RP
+
+    t = np.arange(12 * 16000) / 16000
+    buf = io.BytesIO()
+    sf.write(buf, (0.3 * np.sin(2 * np.pi * 220 * t)).astype(np.float32), 16000, format="WAV", subtype="PCM_16")
+    fake = FakeBe()
+    fake.add_upload("m1", audio=buf.getvalue(), stored_filename="a.wav", original_filename="회의.wav")
+    fake.members["ws-1"] = [{"member_id": "u1", "name": "민수", "discord_user_id": None, "aliases": []}]
+    client = H.BeClient("http://be", session=fake, service_token="svc-token")
+    w = _worker(tmp_path, intake=(client, FakeDiarizer(SEGS)), handoff=H.Handoff(client), extractor=_extractor({}))
+    monkeypatch.setattr(W, "assign_one", A.assign_one)
+    monkeypatch.setattr(W, "report_one", RP.report_one)   # 보고도 진짜로: 워커 바퀴가 intake → report 로 이어진다
+    for _ in range(8):
+        await w._intake_once()
+    path = R.manifest_path(w.recordings_dir, "upload_m1")
+    assert _status(path) == "diarized"
+    assert await w.run_pass() == ([], [])                  # 지정 전에는 집지 않는다
+    assert sum(1 for m, p, _ in fake.calls if m == "POST" and p.endswith("/speakers")) == 1   # 워커가 한 번 보고했다
+    fake.assign("m1", {"SPEAKER_00": "u1", "SPEAKER_01": None})
+    await w._intake_once()
+    assert _status(path) == "mapped"
+    assert sum(1 for m, p, _ in fake.calls if m == "PATCH" and p.endswith("/resume")) == 1
+    assert await w.run_pass(guild_id="1", manual=True) == ([], [])      # 서버별 바퀴는 서버 없는 업로드를 집지 않는다
+    results, _ = await w.run_pass()
+    assert [r["session"] for r in results] == ["upload_m1"] and results[0]["status"] == "handed_off"
+    assert _status(path) == "handed_off"
+    assert not any(p == "/meetings" or p.endswith("/end") for _, p, _ in fake.calls)
+    assert fake.meetings["m1"]["status"] == "done" and "m1" in fake.extractions
+    assert {s["member_id"] for s in fake.sources["m1"].values() if s.get("member_id")} == {"u1"}
+
+
+async def test_a_pass_processes_a_mapped_upload_before_discord_meetings(tmp_path):
+    from tests.capture.test_recorder import _mapped_upload
+    rec, dpath, _ = _session(tmp_path, ts=500)
+    _, upath, m = _mapped_upload(tmp_path)
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    fake.members["ws-1"] = [{"member_id": "u1", "name": "민수", "discord_user_id": None, "aliases": []}]
+    w = _worker(tmp_path, extractor=_extractor({}),
+                handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
+    results, _ = await w.run_pass()
+    assert [r["session"] for r in results] == [m["session"], "77_500"]
+    assert _status(upath) == "handed_off" and _status(dpath) == "handed_off"
+
+
+async def test_a_pass_waits_for_assign_to_close_the_resume_record_before_picking_a_mapped_upload(tmp_path):
+    """apply_mapping 이 매니페스트를 mapped 로 썼어도 resume 기록이 resuming 이면 바퀴는 집지 않는다. 지정 받기 재시도가
+    그 회의의 로컬을 지울 수 있기 때문이다. assign_one 이 mapped 로 닫은 뒤에야 집는다."""
+    from datetime import datetime, timezone
+    from tests.capture.test_recorder import _mapped_upload
+    from upload import assign as A
+    rec, upath, m = _mapped_upload(tmp_path, resume="resuming", session="upload_m-up1")
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    fake.members["ws-1"] = [{"member_id": "u1", "name": "민수", "discord_user_id": None, "aliases": []}]
+    fake.mark_reported("m-up1", ["SPEAKER_00", "SPEAKER_01"])
+    fake.assign("m-up1", {"SPEAKER_00": "u1", "SPEAKER_01": None})
+    client = H.BeClient("http://be", session=fake, service_token="svc-token")
+    w = _worker(tmp_path, extractor=_extractor({}), handoff=H.Handoff(client))
+    assert await w.run_pass() == ([], [])
+    assert _status(upath) == "mapped"
+    prog = A.assign_one(rec, client=client, now=lambda: datetime.now(timezone.utc))
+    assert prog is not None and prog.event == "mapped"
+    results, _ = await w.run_pass()
+    assert [r["session"] for r in results] == [m["session"]] and results[0]["status"] == "handed_off"
+
+
+async def test_an_upload_ended_in_be_is_dropped_by_the_pass_and_logged_without_a_failure(tmp_path, capsys):
+    from tests.capture.test_recorder import _mapped_upload
+    rec, upath, m = _mapped_upload(tmp_path)
+    fake = FakeBe()
+    fake.add_upload("m-up1", status="failed")
+    w = _worker(tmp_path, extractor=_extractor({}),
+                handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
+    results, _ = await w.run_pass()
+    assert [r["ended"] is not None for r in results] == [True]
+    assert not upath.exists() and not upath.with_suffix(".lock").exists() and not (rec / m["session"]).exists()
+    assert await w.run_pass() == ([], [])
+    assert "끝난 회의" in capsys.readouterr().out
+    assert not any(p.endswith("/fail") for _, p, _ in fake.calls)

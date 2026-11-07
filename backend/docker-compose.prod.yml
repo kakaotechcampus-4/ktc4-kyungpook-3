@@ -38,6 +38,10 @@ services:
       OAUTH_STATE_SECRET: ${OAUTH_STATE_SECRET:?OAUTH_STATE_SECRET를 .env에 설정하세요}
       # 포트를 127.0.0.1에만 열어서 같은 서버의 리버스 프록시만 붙을 수 있다. 그래서 전달 헤더를 모두 믿는다.
       FORWARDED_ALLOW_IPS: "*"
+      # 웹 업로드 녹음. 아래 uploads 볼륨이라 재배포해도 남는다
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -54,3 +58,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:

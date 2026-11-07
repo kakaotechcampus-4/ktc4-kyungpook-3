@@ -73,7 +73,7 @@ describe('TextField', () => {
     expect(screen.getByText('담당자')).toHaveClass('text-accent')
     expect(screen.getByLabelText('담당자')).toHaveClass(
       'border-accent',
-      'placeholder:text-accent-soft',
+      'placeholder:text-accent-solid',
     )
   })
 
@@ -103,6 +103,22 @@ describe('TextField', () => {
       'rounded-8',
       'border-line-strong',
     )
+  })
+
+  it('draws 44px with size lg, on a plain and an adorned input', () => {
+    render(
+      <>
+        <TextField size="lg" label="태스크명" />
+        <TextField size="lg" label="마감" endAdornment={<span />} />
+      </>,
+    )
+
+    const plain = screen.getByLabelText('태스크명')
+    expect(plain).toHaveClass('h-44', 'rounded-9')
+    expect(plain).not.toHaveClass('h-[42px]')
+    const adorned = screen.getByLabelText('마감').parentElement
+    expect(adorned).toHaveClass('h-44')
+    expect(adorned).not.toHaveClass('h-[42px]')
   })
 
   it('draws the auth tone at 48px and radius 12', () => {
@@ -164,7 +180,7 @@ describe('TextField', () => {
     render(<TextField label="담당자" error="담당자를 골라 주세요" />)
     const input = screen.getByLabelText('담당자')
 
-    expect(input).toHaveClass('focus-visible:outline-accent')
+    expect(input).toHaveClass('focus-visible:outline-accent-point')
     expect(input.className).not.toMatch(/outline-ink/)
   })
 
@@ -172,14 +188,14 @@ describe('TextField', () => {
     render(<TextField label="담당자" labelTone="required-blocking" />)
     const input = screen.getByLabelText('담당자')
 
-    expect(input).toHaveClass('focus-visible:outline-accent')
+    expect(input).toHaveClass('focus-visible:outline-accent-point')
     expect(input.className).not.toMatch(/outline-ink/)
   })
 
   it('leaves the accent focus line off a plain input', () => {
     render(<TextField label="이메일" />)
 
-    expect(screen.getByLabelText('이메일')).not.toHaveClass('focus-visible:outline-accent')
+    expect(screen.getByLabelText('이메일')).not.toHaveClass('focus-visible:outline-accent-point')
   })
 
   it.each([
@@ -196,9 +212,9 @@ describe('TextField', () => {
     const input = screen.getByLabelText('비밀번호')
     const wrapper = input.parentElement
 
-    expect(wrapper).toHaveClass('has-[input:focus-visible]:outline-accent')
+    expect(wrapper).toHaveClass('has-[input:focus-visible]:outline-accent-point')
     expect(wrapper).not.toHaveClass('has-[input:focus-visible]:outline-ink')
     expect(input).toHaveClass('focus-visible:outline-none')
-    expect(input).not.toHaveClass('focus-visible:outline-accent')
+    expect(input).not.toHaveClass('focus-visible:outline-accent-point')
   })
 })

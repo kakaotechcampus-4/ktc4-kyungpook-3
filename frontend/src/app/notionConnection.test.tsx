@@ -77,14 +77,25 @@ function startedState(): string | null {
 }
 
 describe('설정의 Notion 연결 영역 (U3-3)', () => {
-  it('설정 화면에는 기존 입력과 Notion 연결 영역만 있다 — 연결됨이면 연결 액션이 없다', async () => {
+  it('설정 화면은 Settings 캔버스의 절을 갖고, 연결된 Notion 에는 연결 액션 대신 관리 버튼만 있다', async () => {
     renderApp(paths.settings('ws_01'))
     const area = await section()
     expect(await area.findByText('연결됨')).toBeInTheDocument()
-    expect(area.queryByRole('button')).toBeNull()
+    expect(area.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      '속성 다시 맞추기',
+      '연결 끊기',
+    ])
     expect(screen.getByLabelText('워크스페이스 이름')).toBeInTheDocument()
-    // Settings 캔버스의 다른 절(자동 반영·알림·팀 삭제·Discord)은 M8 이다
+    // M8-B 에서 설정을 Settings 캔버스대로 만들었다. 연결 절 안에 Discord·Notion 카드가 있다
     expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      '일반',
+      '연결',
+      '자동 반영 기준',
+      '알림',
+      '이 팀 삭제하기',
+    ])
+    expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([
+      'Discord 연결',
       'Notion 연결',
     ])
   })
@@ -104,13 +115,17 @@ describe('설정의 Notion 연결 영역 (U3-3)', () => {
     expect(startedState()).toBe(paths.settingsNotion('ws_01'))
   })
 
-  it.each(['not_connected', 'revoked'] as const)(
-    '일반 팀원 — %s 상태와 PM 에게 연결을 요청하라는 안내만 본다',
-    async (status) => {
+  it.each([
+    ['not_connected', '연결 안 됨'],
+    ['revoked', '연결 실패'],
+  ] as const)(
+    '일반 팀원 — %s 는 %s 상태와 PM 에게 연결을 요청하라는 안내만 본다',
+    async (status, label) => {
       notion(status)
       setMockRole('member')
       renderApp(paths.settings('ws_01'))
       const area = await section()
+      expect(await area.findByText(label)).toBeInTheDocument()
       expect(
         await area.findByText(
           'Notion 연결은 PM만 할 수 있어요. 회의를 정리하려면 PM에게 Notion 연결을 요청해 주세요.',
@@ -135,7 +150,7 @@ describe('설정의 Notion 연결 영역 (U3-3)', () => {
     expect(area.queryByRole('button', { name: /Notion .*연결하기/ })).toBeNull()
   })
 
-  it('연동 상태를 불러오지 못하면 다시 시도를 준다', async () => {
+  it('연동 상태를 불러오지 못하면 미연결로 보이지 않고 다시 시도를 준다', async () => {
     server.use(
       http.get('/api/v1/workspaces/:workspaceId/integrations', () => fail('FORBIDDEN', 'no', 403), {
         once: true,
@@ -144,7 +159,9 @@ describe('설정의 Notion 연결 영역 (U3-3)', () => {
     const user = userEvent.setup()
     renderApp(paths.settings('ws_01'))
     const area = await section()
-    await user.click(await area.findByRole('button', { name: '다시 시도' }))
+    const retry = await area.findByRole('button', { name: '다시 시도' })
+    expect(area.queryByText('연결 안 됨')).toBeNull()
+    await user.click(retry)
     expect(await area.findByText('연결됨')).toBeInTheDocument()
   })
 })

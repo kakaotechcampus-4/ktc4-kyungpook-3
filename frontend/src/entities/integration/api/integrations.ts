@@ -1,19 +1,24 @@
 import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
 import { workspaceKey } from '@/shared/api/queryKeys'
-import type { IntegrationsDto } from '@/shared/types/api/integration'
+import type {
+  ChatChannelClearDto,
+  ChatChannelDto,
+  DiscordChannelListDto,
+  IntegrationsDto,
+} from '@/shared/types/api/integration'
 import { CONNECTING_POLL_MS } from '../lib/waitWhileConnecting'
-import { toIntegrations } from '../model/mapper'
-import type { Integrations } from '../model/types'
+import { toChatChannel, toIntegrations } from '../model/mapper'
+import type { ChatChannel, IntegrationProvider, Integrations } from '../model/types'
+
+const workspacePath = (workspaceId: string) => `/workspaces/${encodeURIComponent(workspaceId)}`
 
 export async function fetchIntegrations(
   workspaceId: string,
   signal?: AbortSignal,
 ): Promise<Integrations> {
   return toIntegrations(
-    await request<IntegrationsDto>(`/workspaces/${encodeURIComponent(workspaceId)}/integrations`, {
-      signal,
-    }),
+    await request<IntegrationsDto>(`${workspacePath(workspaceId)}/integrations`, { signal }),
   )
 }
 
@@ -32,4 +37,71 @@ export function integrationsQueryOptions(workspaceId: string) {
         ? CONNECTING_POLL_MS
         : false,
   })
+}
+
+/**
+ * 연동 해제. PM 만 할 수 있고 204 무본문이다 (계약 §4.3, §5.8). 이미 반영한 내용은 남고 새 내용만 쓰지 않는다.
+ * 지울 행이 없어도 204 다. 화면은 성공 뒤 연동 상태를 다시 받는다 (D-137)
+ */
+export async function disconnectIntegration(
+  workspaceId: string,
+  provider: IntegrationProvider,
+): Promise<void> {
+  await request<void>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/integrations/${encodeURIComponent(provider)}`,
+    { method: 'DELETE' },
+  )
+}
+
+/** 연결한 Discord 서버의 텍스트 채널. PM 만 받는다. 연결이 없으면 409 `INTEGRATION_NOT_CONNECTED` 다 */
+export async function fetchDiscordChannels(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<ChatChannel[]> {
+  const { items } = await request<DiscordChannelListDto>(
+    `${workspacePath(workspaceId)}/discord/channels`,
+    { signal },
+  )
+  return items.map(toChatChannel)
+}
+
+/** 회의 채팅 채널 고르기의 선택지 (#429) */
+export function discordChannelsQueryOptions(workspaceId: string) {
+  return queryOptions({
+    queryKey: workspaceKey(workspaceId, 'discord-channels'),
+    queryFn: ({ signal }) => fetchDiscordChannels(workspaceId, signal),
+  })
+}
+
+/**
+ * 채팅 자동 수집 채널을 정한다 (#428). 서버가 채널을 읽어 보고 켬 안내를 보낸 뒤에만 저장한다 — 실패하면 아무것도 바뀌지 않는다.
+ * 이미 고른 채널이면 Discord 를 부르지 않고 그대로 돌려준다
+ */
+export async function setChatChannel(
+  workspaceId: string,
+  channelId: string,
+  signal?: AbortSignal,
+): Promise<ChatChannel> {
+  return toChatChannel(
+    await request<ChatChannelDto>(
+      `${workspacePath(workspaceId)}/integrations/discord/chat-channel`,
+      {
+        method: 'PUT',
+        body: { channel_id: channelId },
+        signal,
+      },
+    ),
+  )
+}
+
+/** 채팅 자동 수집을 끈다. 이미 꺼져 있어도 성공이다. `offNoticeSent` 는 채널에 끔 안내를 남겼는지다 */
+export async function clearChatChannel(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<{ offNoticeSent: boolean }> {
+  const dto = await request<ChatChannelClearDto>(
+    `${workspacePath(workspaceId)}/integrations/discord/chat-channel`,
+    { method: 'DELETE', signal },
+  )
+  return { offNoticeSent: dto.off_notice_sent }
 }

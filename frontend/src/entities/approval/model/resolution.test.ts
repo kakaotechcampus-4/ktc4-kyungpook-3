@@ -1,5 +1,5 @@
 import { toApprovalResolveRequestDto } from './mapper'
-import { planApprovalResolution, toApprovalTransport, validateTaskCreateFields } from './resolution'
+import { planApprovalResolution, taskCreateValues, validateTaskCreateFields } from './resolution'
 import type { ApprovalResolveContext, TaskCreateFields } from './resolution'
 import type { Approval, TaskCreateApproval, TaskUpdateApproval } from './types'
 
@@ -26,7 +26,7 @@ function createApproval(overrides: Partial<TaskCreateApproval> = {}): TaskCreate
     dueDate: '2026-10-15',
     dueRaw: '다음 주 목요일',
     missing: [],
-    evidence: { quote: null, speaker: null, atMs: null },
+    evidence: { quote: null, speaker: null, speakerMemberId: null, atMs: null },
     meetingId: 'mt_09',
     extractionItemId: 'ei_04',
     gate: 'review',
@@ -41,6 +41,11 @@ function updateApproval(overrides: Partial<TaskUpdateApproval> = {}): TaskUpdate
     relatedTaskId: 'tk_01',
     title: null,
     changes: [{ field: 'due_date', value: '2026-10-20' }],
+    category: null,
+    docText: null,
+    evidence: { quote: null, speaker: null, speakerMemberId: null, atMs: null },
+    meetingId: null,
+    replyMessageId: null,
     ...overrides,
   }
 }
@@ -58,22 +63,8 @@ function body(
   context: ApprovalResolveContext,
 ) {
   const plan = planApprovalResolution(approval, decision, context)
-  return plan.ok ? toApprovalResolveRequestDto(plan.resolution, context.transport) : null
+  return plan.ok ? toApprovalResolveRequestDto(plan.resolution) : null
 }
-
-describe('transport', () => {
-  it.each([
-    ['msw', 'msw'],
-    ['live', 'live'],
-    [undefined, 'live'],
-    [null, 'live'],
-    ['MSW', 'live'],
-    ['mock', 'live'],
-    [true, 'live'],
-  ])('%s 는 %s 로 본다', (raw, expected) => {
-    expect(toApprovalTransport(raw)).toBe(expected)
-  })
-})
 
 describe('생성 승인 필수값', () => {
   it('세 값이 유효하면 이슈가 없다', () => {
@@ -110,19 +101,19 @@ describe('생성 승인 필수값', () => {
     expect(validateTaskCreateFields(fields('😀'.repeat(301)), MEMBERS)).toEqual(['title'])
   })
 
-  it.each([
-    ['담당자 없음', null],
-    ['현재 공간 팀원이 아님', 'mb_99'],
-  ])('%s 은 assignee 이슈다', (_label, assigneeMemberId) => {
-    expect(
-      validateTaskCreateFields(
-        { taskTitle: '제목', assigneeMemberId, dueDate: '2026-10-15' },
-        MEMBERS,
-      ),
-    ).toEqual(['assignee'])
-  })
+  it.each([['현재 공간 팀원이 아님', 'mb_99']])(
+    '%s 은 assignee 이슈다',
+    (_label, assigneeMemberId) => {
+      expect(
+        validateTaskCreateFields(
+          { taskTitle: '제목', assigneeMemberId, dueDate: '2026-10-15' },
+          MEMBERS,
+        ),
+      ).toEqual(['assignee'])
+    },
+  )
 
-  it.each([null, '', '2026-02-30', '2026/10/15', '2026-10-15T00:00:00Z', '26-10-15'])(
+  it.each(['', '2026-02-30', '2026/10/15', '2026-10-15T00:00:00Z', '26-10-15'])(
     '마감 %s 은 due 이슈다',
     (dueDate) => {
       expect(
@@ -135,85 +126,28 @@ describe('생성 승인 필수값', () => {
   )
 })
 
-describe('live 생성 승인', () => {
-  it('필수값이 채워져 있으면 보완값 없이 승인 본문을 만든다', () => {
-    const result = body(createApproval(), 'approved', { transport: 'live', memberIds: MEMBERS })
-    expect(result).toEqual({ status: 'approved' })
-    expect(result).not.toHaveProperty('task_overrides')
-    expect(result).not.toHaveProperty('resolved_by')
+describe('생성 승인과 부분 보완', () => {
+  it('담당자와 마감은 미정으로 승인할 수 있다', () => {
+    expect(body(createApproval({ assigneeMemberId: null, dueDate: null }), 'approved', {})).toEqual(
+      { status: 'approved' },
+    )
   })
-
-  it('호출자가 보완값을 넘겨도 본문에 싣지 않는다', () => {
-    const result = body(createApproval(), 'approved', {
-      transport: 'live',
-      memberIds: MEMBERS,
-      overrides: OVERRIDES,
-    })
-    expect(result).toEqual({ status: 'approved' })
-  })
-
-  it('transport 가 빠지거나 모르는 값이면 live 로 처리해 보완값을 싣지 않는다', () => {
-    for (const transport of [undefined, 'staging']) {
-      expect(
-        body(createApproval(), 'approved', { transport, memberIds: MEMBERS, overrides: OVERRIDES }),
-      ).toEqual({ status: 'approved' })
-    }
-  })
-
-  it('필수값이 빠지면 승인 본문을 만들지 않고 이유를 돌려준다. 반려는 가능하다', () => {
-    const approval = createApproval({
-      assigneeMemberId: null,
-      dueDate: null,
-      missing: ['assignee', 'due'],
-    })
-    const plan = planApprovalResolution(approval, 'approved', {
-      transport: 'live',
-      memberIds: MEMBERS,
-    })
-    expect(plan).toEqual({
-      ok: false,
-      issues: ['assignee', 'due'],
-      reason:
-        '승인하려면 담당자·마감 정보를 올바르게 채워야 해요. 지금 서버는 승인 전 보완을 지원하지 않아요.',
-    })
-    expect(body(approval, 'rejected', { transport: 'live', memberIds: MEMBERS })).toEqual({
-      status: 'rejected',
+  it('보완 없이 승인하면 status만 보낸다', () => {
+    expect(body(createApproval(), 'approved', { memberIds: MEMBERS })).toEqual({
+      status: 'approved',
     })
   })
-
-  // live 는 보완을 받지 않으므로 넘어온 보완값이 유효해도 기존 값으로만 판정한다
-  it('기존 값이 비어 있으면 유효한 보완값을 넘겨도 승인할 수 없다', () => {
-    const plan = planApprovalResolution(createApproval({ dueDate: null }), 'approved', {
-      transport: 'live',
-      memberIds: MEMBERS,
-      overrides: OVERRIDES,
-    })
-    expect(plan).toMatchObject({ ok: false, issues: ['due'] })
-  })
-
-  it('담당자가 현재 공간 팀원 목록에 없으면 승인할 수 없다', () => {
+  it('실 API 본문에 보완한 값만 보내고 명시적 null은 보존한다', () => {
     expect(
-      planApprovalResolution(createApproval(), 'approved', {
-        transport: 'live',
-        memberIds: ['mb_02'],
-      }),
-    ).toMatchObject({ ok: false, issues: ['assignee'] })
-    expect(
-      planApprovalResolution(createApproval(), 'approved', { transport: 'live' }),
-    ).toMatchObject({
-      ok: false,
-      issues: ['assignee'],
-    })
-  })
-})
-
-describe('msw 생성 승인', () => {
-  it('approved task_create 에만 보완값 세 필드를 싣는다', () => {
-    expect(
-      body(createApproval({ dueDate: null }), 'approved', {
-        transport: 'msw',
+      body(createApproval(), 'approved', {
         memberIds: MEMBERS,
-        overrides: OVERRIDES,
+        edits: { kind: 'task_create', values: { dueDate: null } },
+      }),
+    ).toEqual({ status: 'approved', task_overrides: { due_date: null } })
+    expect(
+      body(createApproval(), 'approved', {
+        memberIds: MEMBERS,
+        edits: { kind: 'task_create', values: OVERRIDES },
       }),
     ).toEqual({
       status: 'approved',
@@ -224,40 +158,50 @@ describe('msw 생성 승인', () => {
       },
     })
   })
-
-  it('보완값이 없으면 기존 값으로 판정하고 보완값을 싣지 않는다', () => {
-    expect(body(createApproval(), 'approved', { transport: 'msw', memberIds: MEMBERS })).toEqual({
-      status: 'approved',
-    })
+  it('undefined는 미정이 아닌 생략이다', () => {
+    const approval = createApproval()
+    expect(taskCreateValues(approval, { dueDate: undefined }).dueDate).toBe(approval.dueDate)
+    expect(
+      body(approval, 'approved', {
+        memberIds: MEMBERS,
+        edits: { kind: 'task_create', values: { dueDate: undefined } },
+      }),
+    ).toEqual({ status: 'approved' })
   })
-
-  it('보완값이 유효하지 않으면 승인 본문을 만들지 않는다', () => {
-    const plan = planApprovalResolution(createApproval(), 'approved', {
-      transport: 'msw',
-      memberIds: MEMBERS,
-      overrides: { taskTitle: ' ', assigneeMemberId: 'mb_99', dueDate: '2026-13-01' },
-    })
-    expect(plan).toEqual({
-      ok: false,
-      issues: ['title', 'assignee', 'due'],
-      reason: '승인하려면 제목·담당자·마감 정보를 올바르게 채워야 해요.',
-    })
-  })
-
-  it('반려 본문에는 보완값을 싣지 않는다', () => {
+  it('빈 보완은 생략하고 반려는 보완과 확인 버전을 보내지 않는다', () => {
+    expect(
+      body(createApproval(), 'approved', {
+        memberIds: MEMBERS,
+        edits: { kind: 'task_create', values: {} },
+      }),
+    ).toEqual({ status: 'approved' })
     expect(
       body(createApproval(), 'rejected', {
-        transport: 'msw',
-        memberIds: MEMBERS,
-        overrides: OVERRIDES,
+        edits: { kind: 'task_create', values: OVERRIDES },
+        confirmTaskVersion: 5,
       }),
     ).toEqual({ status: 'rejected' })
   })
-
-  it('task_update 에는 보완값을 싣지 않는다', () => {
-    expect(body(updateApproval(), 'approved', { transport: 'msw', overrides: OVERRIDES })).toEqual({
-      status: 'approved',
-    })
+  it('잘못된 제목·담당자·날짜는 요청을 만들지 않는다', () => {
+    expect(
+      planApprovalResolution(createApproval(), 'approved', {
+        memberIds: MEMBERS,
+        edits: {
+          kind: 'task_create',
+          values: { taskTitle: ' ', assigneeMemberId: 'mb_99', dueDate: '2026-02-30' },
+        },
+      }),
+    ).toMatchObject({ ok: false, issues: ['title', 'assignee', 'due'] })
+  })
+  it('수정 제안에는 상태와 마감만 보완하며 제안에 없던 필드도 명시적으로 정할 수 있다', () => {
+    expect(
+      body(updateApproval(), 'approved', {
+        edits: { kind: 'task_update', values: { status: 'blocked', dueDate: null } },
+      }),
+    ).toEqual({ status: 'approved', task_overrides: { status: 'blocked', due_date: null } })
+    expect(
+      body(updateApproval(), 'approved', { edits: { kind: 'task_create', values: OVERRIDES } }),
+    ).toBeNull()
   })
 })
 
@@ -309,17 +253,22 @@ describe('처리할 수 없는 승인', () => {
   })
 })
 
-describe('본문 변환의 방어', () => {
-  it('처리 내용에 보완값이 있어도 live 본문에는 싣지 않는다', () => {
-    const resolution = {
-      status: 'approved',
-      taskOverrides: { taskTitle: '제목', assigneeMemberId: 'mb_01', dueDate: '2026-10-15' },
-    } as const
-    expect(toApprovalResolveRequestDto(resolution, 'live')).toEqual({ status: 'approved' })
-    expect(toApprovalResolveRequestDto(resolution, undefined)).toEqual({ status: 'approved' })
-    expect(toApprovalResolveRequestDto(resolution, 'msw')).toEqual({
-      status: 'approved',
-      task_overrides: { task_title: '제목', assignee_member_id: 'mb_01', due_date: '2026-10-15' },
-    })
+describe('본문 변환', () => {
+  it('각 종류에서 허용한 키만 직렬화한다', () => {
+    expect(
+      toApprovalResolveRequestDto({
+        status: 'approved',
+        kind: 'task_create',
+        taskOverrides: { assigneeMemberId: null, dueDate: null },
+      }),
+    ).toEqual({ status: 'approved', task_overrides: { assignee_member_id: null, due_date: null } })
+    expect(
+      toApprovalResolveRequestDto({
+        status: 'approved',
+        kind: 'task_update',
+        taskOverrides: { dueDate: null },
+        confirmTaskVersion: 4,
+      }),
+    ).toEqual({ status: 'approved', task_overrides: { due_date: null }, confirm_task_version: 4 })
   })
 })

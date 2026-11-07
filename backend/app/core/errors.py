@@ -47,6 +47,44 @@ class ErrorCode(StrEnum):
     LAST_PM_REQUIRED = "LAST_PM_REQUIRED"
     EMBEDDING_UNAVAILABLE = "EMBEDDING_UNAVAILABLE"
     DISCORD_API_FAILED = "DISCORD_API_FAILED"
+    DISCORD_CHANNEL_NOT_FOUND = "DISCORD_CHANNEL_NOT_FOUND"
+    DISCORD_CHANNEL_NOT_ACCESSIBLE = "DISCORD_CHANNEL_NOT_ACCESSIBLE"
+    UPLOAD_NOT_CLAIMED = "UPLOAD_NOT_CLAIMED"
+    SPEAKERS_ALREADY_REPORTED = "SPEAKERS_ALREADY_REPORTED"
+    MEETING_NOT_AWAITING_SPEAKERS = "MEETING_NOT_AWAITING_SPEAKERS"
+    SPEAKERS_NOT_ASSIGNED = "SPEAKERS_NOT_ASSIGNED"
+
+    # 리마인드·대화 메시지
+    REMINDER_NOT_FOUND = "REMINDER_NOT_FOUND"
+    REMINDER_NOT_EDITABLE = "REMINDER_NOT_EDITABLE"
+    REMINDER_SCHEDULED_AT_PASSED = "REMINDER_SCHEDULED_AT_PASSED"
+    REMINDER_BUNDLE_NOT_FOUND = "REMINDER_BUNDLE_NOT_FOUND"
+    BUNDLE_CHANGED = "BUNDLE_CHANGED"
+    DRAFT_STALE = "DRAFT_STALE"
+    MESSAGE_THREAD_NOT_FOUND = "MESSAGE_THREAD_NOT_FOUND"
+    MESSAGE_NOT_FOUND = "MESSAGE_NOT_FOUND"
+    MESSAGE_RESULT_CONFLICT = "MESSAGE_RESULT_CONFLICT"
+    NOTIFICATION_NOT_FOUND = "NOTIFICATION_NOT_FOUND"
+    AUTO_BLOCK_NOT_FOUND = "AUTO_BLOCK_NOT_FOUND"
+
+    # 팀원 초대
+    INVITATION_NOT_FOUND = "INVITATION_NOT_FOUND"
+    INVITATION_NOT_PENDING = "INVITATION_NOT_PENDING"
+    INVITATION_NOT_ACCEPTED = "INVITATION_NOT_ACCEPTED"
+    MEMBER_ALREADY_LINKED = "MEMBER_ALREADY_LINKED"
+    ALREADY_WORKSPACE_MEMBER = "ALREADY_WORKSPACE_MEMBER"
+    EMAIL_ALREADY_INVITED = "EMAIL_ALREADY_INVITED"
+    PM_MEMBER_NOT_INVITABLE = "PM_MEMBER_NOT_INVITABLE"
+    MEMBER_HAS_PENDING_INVITATION = "MEMBER_HAS_PENDING_INVITATION"
+
+    # 리마인드 답장 판단
+    REPLY_JUDGMENT_NOT_FOUND = "REPLY_JUDGMENT_NOT_FOUND"
+    REPLY_JUDGMENT_STALE = "REPLY_JUDGMENT_STALE"
+    REPLY_ATTRIBUTION_NOT_NEEDED = "REPLY_ATTRIBUTION_NOT_NEEDED"
+    REPLY_CHANGE_NOT_UNDOABLE = "REPLY_CHANGE_NOT_UNDOABLE"
+    # 비밀번호 재설정
+    PASSWORD_RESET_TOKEN_INVALID = "PASSWORD_RESET_TOKEN_INVALID"
+    MAIL_UNAVAILABLE = "MAIL_UNAVAILABLE"
 
 
 ERROR_STATUS: dict[ErrorCode, int] = {
@@ -88,6 +126,37 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.LAST_PM_REQUIRED: 409,
     ErrorCode.EMBEDDING_UNAVAILABLE: 502,
     ErrorCode.DISCORD_API_FAILED: 502,
+    ErrorCode.DISCORD_CHANNEL_NOT_FOUND: 404,
+    ErrorCode.DISCORD_CHANNEL_NOT_ACCESSIBLE: 409,
+    ErrorCode.UPLOAD_NOT_CLAIMED: 409,
+    ErrorCode.SPEAKERS_ALREADY_REPORTED: 409,
+    ErrorCode.MEETING_NOT_AWAITING_SPEAKERS: 409,
+    ErrorCode.SPEAKERS_NOT_ASSIGNED: 409,
+    ErrorCode.REMINDER_NOT_FOUND: 404,
+    ErrorCode.REMINDER_NOT_EDITABLE: 409,
+    ErrorCode.REMINDER_SCHEDULED_AT_PASSED: 409,
+    ErrorCode.REMINDER_BUNDLE_NOT_FOUND: 404,
+    ErrorCode.BUNDLE_CHANGED: 409,
+    ErrorCode.DRAFT_STALE: 409,
+    ErrorCode.MESSAGE_THREAD_NOT_FOUND: 404,
+    ErrorCode.MESSAGE_NOT_FOUND: 404,
+    ErrorCode.MESSAGE_RESULT_CONFLICT: 409,
+    ErrorCode.NOTIFICATION_NOT_FOUND: 404,
+    ErrorCode.AUTO_BLOCK_NOT_FOUND: 409,
+    ErrorCode.INVITATION_NOT_FOUND: 404,
+    ErrorCode.INVITATION_NOT_PENDING: 409,
+    ErrorCode.INVITATION_NOT_ACCEPTED: 409,
+    ErrorCode.MEMBER_ALREADY_LINKED: 409,
+    ErrorCode.ALREADY_WORKSPACE_MEMBER: 409,
+    ErrorCode.EMAIL_ALREADY_INVITED: 409,
+    ErrorCode.PM_MEMBER_NOT_INVITABLE: 409,
+    ErrorCode.MEMBER_HAS_PENDING_INVITATION: 409,
+    ErrorCode.REPLY_JUDGMENT_NOT_FOUND: 404,
+    ErrorCode.REPLY_JUDGMENT_STALE: 409,
+    ErrorCode.REPLY_ATTRIBUTION_NOT_NEEDED: 409,
+    ErrorCode.REPLY_CHANGE_NOT_UNDOABLE: 409,
+    ErrorCode.PASSWORD_RESET_TOKEN_INVALID: 400,
+    ErrorCode.MAIL_UNAVAILABLE: 503,
 }
 
 ERROR_MESSAGE: dict[ErrorCode, str] = {
@@ -128,7 +197,38 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.DISCORD_USER_ALREADY_MAPPED: "이미 다른 팀원에 연결된 Discord 사용자입니다.",
     ErrorCode.LAST_PM_REQUIRED: "워크스페이스에 PM이 한 명은 있어야 합니다. 다른 팀원을 먼저 PM으로 지정해 주세요.",
     ErrorCode.EMBEDDING_UNAVAILABLE: "임베딩 서버 호출에 실패했습니다. 잠시 후 다시 시도해 주세요.",
-    ErrorCode.DISCORD_API_FAILED: "Discord 서버의 사용자 목록을 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    ErrorCode.DISCORD_API_FAILED: "Discord 요청에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+    ErrorCode.DISCORD_CHANNEL_NOT_FOUND: "연결된 Discord 서버에서 이 텍스트 채널을 찾을 수 없습니다. 목록을 새로고침해 주세요.",
+    ErrorCode.DISCORD_CHANNEL_NOT_ACCESSIBLE: "봇이 이 채널을 읽거나 메시지를 보낼 수 없습니다. 채널 권한에 봇을 추가해 주세요.",
+    ErrorCode.UPLOAD_NOT_CLAIMED: "AI가 아직 가져가지 않은 업로드입니다.",
+    ErrorCode.SPEAKERS_ALREADY_REPORTED: "이미 화자 목록을 받은 업로드입니다.",
+    ErrorCode.MEETING_NOT_AWAITING_SPEAKERS: "회의가 화자 지정 대기 상태가 아닙니다.",
+    ErrorCode.SPEAKERS_NOT_ASSIGNED: "화자 지정이 끝나지 않았습니다.",
+    ErrorCode.REMINDER_NOT_FOUND: "해당 리마인드를 찾을 수 없습니다.",
+    ErrorCode.REMINDER_NOT_EDITABLE: "예정 상태의 리마인드만 고치거나 승인하거나 취소할 수 있습니다.",
+    ErrorCode.REMINDER_SCHEDULED_AT_PASSED: "예정 시각이 지났어요. 시각을 다시 골라 주세요.",
+    ErrorCode.REMINDER_BUNDLE_NOT_FOUND: "해당 보낼 메시지를 찾을 수 없습니다.",
+    ErrorCode.BUNDLE_CHANGED: "보낼 메시지가 바뀌었어요. 다시 확인해 주세요.",
+    ErrorCode.DRAFT_STALE: "초안을 맡긴 뒤 보낼 메시지가 바뀌었거나 이미 승인·발송됐습니다.",
+    ErrorCode.MESSAGE_THREAD_NOT_FOUND: "해당 대화를 찾을 수 없습니다.",
+    ErrorCode.MESSAGE_NOT_FOUND: "해당 봇 메시지를 찾을 수 없습니다.",
+    ErrorCode.MESSAGE_RESULT_CONFLICT: "이미 다른 결과가 보고된 메시지이거나 아직 가져가지 않은 메시지입니다.",
+    ErrorCode.NOTIFICATION_NOT_FOUND: "알림을 찾을 수 없습니다.",
+    ErrorCode.AUTO_BLOCK_NOT_FOUND: "스케줄러가 건 막힘이 아니거나 그 뒤 바뀌어 되돌릴 수 없습니다.",
+    ErrorCode.INVITATION_NOT_FOUND: "해당 초대를 찾을 수 없습니다.",
+    ErrorCode.INVITATION_NOT_PENDING: "이미 수락·거절·취소된 초대입니다.",
+    ErrorCode.INVITATION_NOT_ACCEPTED: "수락한 초대만 연결을 끊을 수 있습니다.",
+    ErrorCode.MEMBER_ALREADY_LINKED: "이미 로그인 계정이 연결된 팀원입니다.",
+    ErrorCode.ALREADY_WORKSPACE_MEMBER: "이미 이 워크스페이스의 팀원인 계정입니다.",
+    ErrorCode.EMAIL_ALREADY_INVITED: "이 이메일로 다른 팀원에게 보낸 초대가 대기 중입니다.",
+    ErrorCode.PM_MEMBER_NOT_INVITABLE: "PM 인 팀원은 초대할 수 없습니다. 팀원으로 바꿔 초대하고, 수락한 뒤 PM 으로 바꿔 주세요.",
+    ErrorCode.MEMBER_HAS_PENDING_INVITATION: "대기 중인 초대가 있어 PM 으로 바꿀 수 없습니다. 초대를 수락한 뒤 바꾸거나 초대를 취소해 주세요.",
+    ErrorCode.REPLY_JUDGMENT_NOT_FOUND: "해당 답장의 판단 기록을 찾을 수 없습니다.",
+    ErrorCode.REPLY_JUDGMENT_STALE: "이미 끝났거나 다시 맡긴 판단입니다.",
+    ErrorCode.REPLY_ATTRIBUTION_NOT_NEEDED: "태스크를 고를 필요가 없는 답장입니다.",
+    ErrorCode.REPLY_CHANGE_NOT_UNDOABLE: "되돌릴 수 없는 답장 변경입니다.",
+    ErrorCode.PASSWORD_RESET_TOKEN_INVALID: "쓸 수 없는 재설정 링크입니다.",
+    ErrorCode.MAIL_UNAVAILABLE: "지금은 메일을 보낼 수 없습니다.",
 }
 
 

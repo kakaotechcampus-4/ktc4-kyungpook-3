@@ -9,6 +9,7 @@ import { start } from './support'
  *
  * - dashboard-default: ws_01 의 PM. 대기 승인 3건(ap_01 보류 · ap_02 · ap_03), 마감 임박 6건, 최근 반영 3건(모두 반영 완료)
  * - dashboard-member: 같은 공간의 일반 팀원
+ * - dashboard-recent-overflow: dashboard-default 에 최근 반영 auto 항목이 12개다 (D-176)
  */
 
 test.describe.configure({ timeout: 60_000 })
@@ -16,7 +17,10 @@ test.describe.configure({ timeout: 60_000 })
 const FIRST_PAINT = { timeout: 15_000 }
 const DASHBOARD = '/workspaces/ws_01/dashboard'
 
-async function openDashboard(page: Page, scenario: 'dashboard-default' | 'dashboard-member') {
+async function openDashboard(
+  page: Page,
+  scenario: 'dashboard-default' | 'dashboard-member' | 'dashboard-recent-overflow',
+) {
   await page.clock.setFixedTime(new Date('2026-09-18T09:00:00+09:00'))
   await start(page, scenario, DASHBOARD)
   await expect(page.getByRole('list', { name: '최근 반영 목록' })).toBeVisible(FIRST_PAINT)
@@ -94,6 +98,92 @@ test('키보드로 되돌리기를 열고 닫고, 확인하면 행이 `되돌림
   await reviewLink.focus()
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/\/workspaces\/ws_01\/approvals\/ap_\d+$/)
+})
+
+test('막힌 일은 목록의 막힘 조건으로, 채워 넣기는 첫 빈 칸에 포커스를 둔 상세로 간다. 새로고침하면 포커스를 옮기지 않는다 (D-176)', async ({
+  page,
+}) => {
+  await openDashboard(page, 'dashboard-default')
+  await page.getByRole('link', { name: '막힌 일 1' }).click()
+  await expect(page).toHaveURL('/workspaces/ws_01/tasks?tab=in_progress&due=blocked')
+  await expect(page.getByRole('list', { name: '태스크 목록' }).getByRole('link')).toHaveText(
+    ['DB 스키마 정리'],
+    FIRST_PAINT,
+  )
+  await page.goBack()
+
+  await page.getByRole('link', { name: '채워 넣기 — 알림 문구 검토' }).click()
+  await expect(page).toHaveURL('/workspaces/ws_01/approvals/ap_01')
+  const assignee = page.getByRole('combobox', { name: '담당자 · 미정' })
+  await expect(assignee).toBeFocused(FIRST_PAINT)
+
+  await page.reload()
+  await expect(assignee).toBeEnabled(FIRST_PAINT)
+  await expect(assignee).not.toBeFocused()
+
+  // 뒤로 갔다 앞으로 와도 포커스를 옮기지 않는다
+  await page.goBack()
+  await expect(page).toHaveURL(DASHBOARD)
+  await page.goForward()
+  await expect(assignee).toBeEnabled(FIRST_PAINT)
+  await expect(assignee).not.toBeFocused()
+})
+
+/** 보이는 최근 반영 행 수와 마지막 행 아래 끝(문서 기준), 행 평균 높이 */
+async function recentLayout(page: Page) {
+  return page.getByTestId('recent-row').evaluateAll((rows) => {
+    const boxes = rows.map((row) => row.getBoundingClientRect())
+    const last = boxes[boxes.length - 1]
+    return {
+      count: rows.length,
+      bottom: last.bottom + window.scrollY,
+      rowHeight: boxes.reduce((sum, box) => sum + box.height, 0) / boxes.length,
+    }
+  })
+}
+
+/** 첫 화면에 들어가는 만큼이다 — 마지막 행 아래에 `외 N건` 줄(32px)까지 들어가고, 한 행 더는 들어가지 않는다 */
+async function expectRecentFits(page: Page, height: number) {
+  const more = page.getByRole('link', { name: /^외 \d+건 · 회의록에서 보기$/ })
+  await expect(more).toBeVisible(FIRST_PAINT)
+  const { count, bottom, rowHeight } = await recentLayout(page)
+  expect(count).toBeGreaterThanOrEqual(3)
+  expect(count).toBeLessThanOrEqual(8)
+  await expect(more).toHaveText(`외 ${12 - count}건 · 회의록에서 보기`)
+  if (count > 3) expect(bottom + 32).toBeLessThanOrEqual(height)
+  if (count < 8) expect(bottom + rowHeight + 32).toBeGreaterThan(height)
+  return count
+}
+
+test('최근 반영은 첫 화면에 들어가는 만큼 보이고, 넘친 수는 회의록으로 이어진다 (D-176)', async ({
+  page,
+}) => {
+  await openDashboard(page, 'dashboard-recent-overflow')
+  // 위 영역(요약·마감 임박)이 다 그려진 뒤에 잰 값을 본다
+  await expect(page.getByRole('list', { name: '마감 임박 목록' }).getByRole('link')).toHaveCount(
+    5,
+    FIRST_PAINT,
+  )
+  await expect(page.getByRole('definition')).toHaveText(['3', '2', '4', '1'])
+  await expect(async () => {
+    await expectRecentFits(page, 900)
+  }).toPass()
+  const at900 = (await recentLayout(page)).count
+
+  await page.setViewportSize({ width: 1280, height: 1080 })
+  await expect(async () => {
+    const at1080 = await expectRecentFits(page, 1080)
+    expect(at1080).toBeGreaterThan(at900)
+  }).toPass()
+
+  // 스크롤로는 다시 재지 않는다
+  const before = (await recentLayout(page)).count
+  await page.mouse.wheel(0, 400)
+  await page.waitForTimeout(200)
+  expect((await recentLayout(page)).count).toBe(before)
+
+  await page.getByRole('link', { name: /^외 \d+건 · 회의록에서 보기$/ }).click()
+  await expect(page).toHaveURL('/workspaces/ws_01/meetings/mt_09')
 })
 
 test('일반 팀원은 확인 필요·되돌리기가 없고 승인 목록을 부르지 않는다', async ({ page }) => {

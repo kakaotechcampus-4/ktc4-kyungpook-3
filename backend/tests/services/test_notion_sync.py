@@ -188,9 +188,9 @@ def test_older_versions_are_not_sent_twice(db):
     task = _create(db, _workspace(db))
     notion_sync.process_due_jobs(db, transport=FakeNotion(_page()).transport)
 
-    apply_task_updates(db, task, {"progress": 10}, change_source="manual")
+    apply_task_updates(db, task, {"blocker": "a"}, change_source="manual")
     db.commit()
-    apply_task_updates(db, task, {"progress": 20}, change_source="manual")
+    apply_task_updates(db, task, {"blocker": "b"}, change_source="manual")
     db.commit()
     assert task.version == 3
 
@@ -427,7 +427,7 @@ def test_changed_database_creates_new_page_instead_of_updating_old_one(db):
     workspace = _workspace(db)
     task = _synced_task(db, workspace)
     _switch_database(db, workspace, "db_456")
-    apply_task_updates(db, task, {"progress": 10}, change_source="manual")
+    apply_task_updates(db, task, {"blocker": "a"}, change_source="manual")
     db.commit()
 
     fake = FakeNotion(_page("page-2"))
@@ -461,7 +461,7 @@ def test_unknown_create_result_in_changed_database_looks_up_new_database(db):
     workspace = _workspace(db)
     task = _synced_task(db, workspace)
     _switch_database(db, workspace, "db_456")
-    apply_task_updates(db, task, {"progress": 10}, change_source="manual")
+    apply_task_updates(db, task, {"blocker": "a"}, change_source="manual")
     db.commit()
     fake = FakeNotion(
         httpx.ReadTimeout("timed out"),
@@ -509,7 +509,7 @@ def test_retry_is_allowed_when_database_changed_even_if_version_was_synced(db):
     task = _create(db, workspace)
     fake = FakeNotion(httpx.Response(400, json={"message": "invalid"}), _page(), _page("page-2"))
     notion_sync.process_due_jobs(db, transport=fake.transport)  # v1은 실패
-    apply_task_updates(db, task, {"progress": 10}, change_source="manual")
+    apply_task_updates(db, task, {"blocker": "a"}, change_source="manual")
     db.commit()
     notion_sync.process_due_jobs(db, transport=fake.transport)  # v2가 page-1로 반영
     db.refresh(task)

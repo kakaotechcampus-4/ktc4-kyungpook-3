@@ -110,6 +110,26 @@ describe('회의 시나리오 (U2-4)', () => {
     await expect(upload()).rejects.toMatchObject({ code, status: 409 })
   })
 
+  it('meeting-chat-processing: 정리 중인 채팅 회의가 있어도 업로드는 202 이고 채팅 회의는 저절로 끝나지 않는다 (#450)', async () => {
+    applyScenario('meeting-chat-processing')
+    await expect(detail('mt_11')).resolves.toMatchObject({
+      status: 'processing',
+      progress: { audio_merged: false, transcribed: false, extracted: false },
+    })
+    await expect(upload()).resolves.toMatchObject({ meeting_id: 'mt_12', status: 'processing' })
+  })
+
+  it('meeting-chat-stalled: 채팅 회의만 첫 조회에 chat_stalled 로 끝나고 올린 회의는 그대로다 (#450)', async () => {
+    applyScenario('meeting-chat-stalled')
+    await expect(detail('mt_11')).resolves.toMatchObject({
+      status: 'failed',
+      failed_stage: 'chat_stalled',
+      progress: { audio_merged: false, transcribed: false, extracted: false },
+    })
+    await upload()
+    await expect(detail('mt_12')).resolves.toMatchObject({ status: 'processing' })
+  })
+
   it('브라우저 주소의 시나리오 파라미터로 고른다', () => {
     const prepared = prepareBrowserDb(
       new URL(`/login?${MOCK_SCENARIO_PARAM}=meeting-demo`, location.origin),
@@ -160,6 +180,9 @@ describe('sessionStorage 영속 (U2-4)', () => {
     expect(db.meetingFlow).toEqual({
       mode: 'staged',
       attendees: { [meeting_id]: ['mb_01', 'mb_04'] },
+      speakers: {
+        [meeting_id]: { speakers: [], mapping: null, audio: true, expireOnSubmit: false },
+      },
     })
     // 복원된 진행 단계에서 이어 간다
     await expect(detail(meeting_id)).resolves.toMatchObject({

@@ -30,7 +30,7 @@ const ACTION_TEXT = 'flex-1 text-control font-semibold text-sub'
  * 헤더의 워크스페이스 메뉴 (D-066~D-070). 선택 화면과 같은 목록·같은 진입 정책(`useEnterWorkspace`)을 쓴다.
  * 공간을 고르면 완료 공간은 대시보드, 미완료 공간은 온보딩 재개 지점이다. 저장하지 않은 변경이 있으면 먼저 묻는다.
  * `새 워크스페이스 만들기` 는 지금 공간을 돌아올 곳으로 기억한다 (D-068, D-069).
- * 설정은 탭이 아니라 이 메뉴에서 연다.
+ * 설정은 탭도 이 메뉴도 아니라 오른쪽 프로필 메뉴(UserMenu)에서 연다 (#244 사용자 요청으로 옮김).
  */
 export function WorkspaceMenu({ workspaceId }: WorkspaceMenuProps) {
   const workspaces = useQuery(workspaceListQueryOptions())
@@ -60,10 +60,6 @@ export function WorkspaceMenu({ workspaceId }: WorkspaceMenuProps) {
         <DropdownMenuItem onSelect={() => startNew(workspaceId)}>
           <DashedIcon name="plus" />
           <span className={ACTION_TEXT}>새 워크스페이스 만들기</span>
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => navigate(paths.settings(workspaceId))}>
-          <DashedIcon name="settings" />
-          <span className={ACTION_TEXT}>워크스페이스 설정</span>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => navigate(paths.workspaceSelect())}>
           <span className="h-28 w-28 shrink-0" aria-hidden="true" />

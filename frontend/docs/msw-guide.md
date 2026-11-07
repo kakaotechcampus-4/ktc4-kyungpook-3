@@ -86,6 +86,7 @@ it('빈 목록의 total도 0이다', async () => {
 | `instant` | 바로 `done` | E2E |
 | `fail` | 바로 `failed` | 실패 흐름 |
 | `fail-notion-revoked` | `failed` + 그 공간 Notion `revoked` | 끊김 실패(D-099·D-100) |
+| `fail-chat-stalled` | 채팅 회의만 `failed`(`chat_stalled`), 업로드 회의는 그대로 | 멈춘 채팅 회의(#450) |
 
 처리 화면과 앱 수준 추적기가 3초마다 상세를 부르므로 `staged` 는 3초 간격으로 단계가 보인다.
 
@@ -102,6 +103,13 @@ it('빈 목록의 total도 0이다', async () => {
 | `meeting-notion-not-connected` | PM | `instant` | 미연결 | 회의 올리기 진입 차단 모달 → 설정 Notion 영역 → 모의 OAuth → 복귀 |
 | `meeting-notion-revoked` | PM | `instant` | 끊김 | 재연결 차단 모달 |
 | `meeting-member` | 일반 팀원 | `instant` | 연결됨 | 헤더 `정리 중`·회의록. 업로드 주소는 막힌다 |
+| `meeting-chat-processing` | PM | `manual` | 연결됨 | 채팅 회의 `mt_11` 이 정리 중이어도 업로드 화면에 머물고 올릴 수 있다 (#450) |
+| `meeting-chat-stalled` | PM | `fail-chat-stalled` | 연결됨 | 채팅 회의 `mt_11` 이 첫 상세 조회에 `chat_stalled` 로 실패한다. 토스트·처리 화면·회의록 상세의 안내가 업로드를 권하지 않는다 (#450) |
+| `meeting-speakers` | PM | `speakers` | 연결됨 | 업로드 회의 `mt_11` 이 화자 지정 대기. 목록의 `화자 지정 필요` 행 → 지정 화면 → 제출 → 처리 재개 (#256) |
+| `meeting-speakers-flow` | PM | `speakers` | 연결됨 | 올리면 첫 상세 조회에 화자 지정 대기가 된다. 처리 화면 → 지정 화면 이동, 다른 화면이면 `화자 지정하기` 토스트 |
+| `meeting-speakers-expired` | PM | `speakers` | 연결됨 | 지정을 내면 409 `details.status=failed`. 만료 안내와 재업로드 링크, 다시 낼 수 없다 |
+| `meeting-speakers-member` | 일반 팀원 | `speakers` | 연결됨 | 지정 화면에서 `PM이 화자를 지정하고 있어요` 안내만 본다. 화자 API 를 부르지 않는다 |
+| `meeting-speakers-no-audio` | PM | `speakers` | 연결됨 | 녹음이 없어(`audio: null`) 샘플 버튼 없이 고른다 |
 
 ```text
 http://localhost:5173/workspaces/ws_01/meetings/upload?msw-scenario=meeting-demo
@@ -125,10 +133,9 @@ setMockRole('member') // ws_01 의 역할을 일반 팀원으로
 
 `afterEach` 의 `resetDb()` 가 mode·역할까지 되돌린다.
 
-### Storybook·E2E 에서 고르기
+### E2E 에서 고르기
 
-- Storybook: `parameters.scenario` 에 시나리오 이름, `parameters.setup` 에 그 위의 손질(`() => void completeMeeting('mt_10')`, `() => setMockRole('member')`)을 준다(`.storybook/preview.tsx`). 스토리를 열 때마다 db 를 다시 만든다.
-- E2E: `start(page, 'meeting-instant', '/workspaces/ws_01/meetings/upload')`(`e2e/support.ts`). 테스트마다 새 컨텍스트라 서로 상태를 나누지 않는다. 정리 중에 다른 화면으로 떠날 틈이 필요하면 `meeting-demo`(3초 × 4회)를 쓴다 — `instant` 는 처리 화면이 첫 조회에서 끝을 보고 회의록으로 옮긴다.
+E2E 는 `start(page, 'meeting-instant', '/workspaces/ws_01/meetings/upload')`(`e2e/support.ts`)처럼 시나리오와 주소를 함께 준다. 테스트마다 새 컨텍스트라 서로 상태를 나누지 않는다. 정리 중에 다른 화면으로 떠날 틈이 필요하면 `meeting-demo`(3초 × 4회)를 쓴다 — `instant` 는 처리 화면이 첫 조회에서 끝을 보고 회의록으로 옮긴다.
 
 승인 요청에는 계약 §2.5의 `resolved_by`도 보낸다.
 
@@ -141,11 +148,56 @@ await fetch('/api/v1/approvals/ap_01', {
 // 다음 tasks 조회는 11개, pending approvals는 2개. 같은 승인 재처리는 409.
 ```
 
+## 메시지 화면 (M8)
+
+메시지 화면은 모든 모드에서 실제 메시지 API(계약 §5.7)를 부른다. MSW 를 켜면 같은 경로·응답 모양·오류 코드(`BUNDLE_CHANGED`, `REMINDER_SCHEDULED_AT_PASSED`, `REMINDER_NOT_EDITABLE`, `REMINDER_BUNDLE_NOT_FOUND`, `MESSAGE_THREAD_NOT_FOUND`)로 목이 답한다(#315, [M8-C 결과](plan/m8/result-c.md)). 시나리오는 위와 같이 `?msw-scenario=<이름>` 으로 고른다. `messages-member` 만 팀원이고, 나머지는 `ws_01` 의 PM 이다. 보낼 시각을 같은 대화의 다른 예정 묶음과 같은 시각으로 옮기면 목도 BE 처럼 그 묶음으로 합치고 문구를 다시 만들고 승인을 푼다(#368). 스케줄러 발송·만료·AI 초안 도착은 흉내 내지 않는다 — 예정 시각이 지나도 스스로 나가지 않는다.
+
+| 시나리오 | 해 볼 것 |
+|---|---|
+| `messages-default` | 보낼 메시지 2통(이재환 `bd_01` 마감 하루 전, 정하늘 `bd_02` 직접 정한 시각이고 `문구 다듬는 중`), 대화 4건(이재환 `th_01` 이 오늘로 3일째 답장 없음, `bd_01` 이 그 대화에서 승인 대기, 박지훈 `th_04` 는 `DM 못 보냄`). 승인·보내지 않음·문구·시각 고치기가 성공한다 |
+| `messages-empty` | `ws_01` 의 묶음·대화가 모두 없음 → 빈 상태 |
+| `messages-list-error` | 목록만 5xx. 대화 주소로 바로 들어오면 대화는 보인다 |
+| `messages-thread-error` | 목록은 정상, `th_01` 대화만 5xx |
+| `messages-send-fail` | 조회는 정상, 승인·보내지 않음·문구·시각 고치기·답장만 5xx(db 는 그대로) |
+| `messages-member` | 팀원. 자기 대화 `th_06` 만 보이고 보내기 전 확인은 없다(`bundles: null`). 마지막 봇 메시지는 `DM 못 보냄`, 웹 답장은 그 대화에만 남는다. 남의 대화는 403 |
+| `messages-member-push` | `messages-member` 에 서버 푸시 공개키를 더했다. `th_06` 대화 머리 아래에 `기기 알림` 띠가 보이고, `알림 켜기` 를 눌러야 브라우저 알림 허용을 묻는다(#411) |
+| `messages-schedule-passed` | `bd_06` 은 승인 전에 보낼 시각이 지났고 마감은 오늘이다. 이대로 발송은 409 `REMINDER_SCHEDULED_AT_PASSED` 이고, 시각을 다시 고른 뒤에 승인할 수 있다 |
+| `messages-merge` | 이재환에게 보낼 메시지가 둘이다. `bd_07`(09/21 18:00, 승인 전)에서 `마감 하루 전`(09/23 09:00)을 고르면 승인해 둔 `bd_01` 과 같은 시각이라 합쳐진다. 화면은 `?review=bd_01` 로 옮겨 가고 승인이 풀렸다고 알린다 |
+
+```text
+http://localhost:5173/workspaces/ws_01/messages?msw-scenario=messages-default
+```
+
+고른 대화는 `/messages/threads/<id>`, 고른 보낼 메시지는 `/messages?review=<묶음 id>` 다. `review` 없이 들어오면 아직 승인하지 않은 첫 묶음이 골라진다. 로딩은 시나리오가 아니라 테스트에서 응답을 붙잡아 재현한다. `답장 3일째 없음`·`지남` 같은 표기는 기기의 오늘로 계산한다 — 픽스처는 MOCK_NOW(2026-09-18) 기준이라 실제 날짜로 열면 숫자가 커진다.
+
+## 설정·팀 (M8-B)
+
+설정 화면(Settings 캔버스)과 팀 화면(Team 캔버스)을 확인하는 시나리오다. 위 「브라우저에서 고르기」처럼 `?msw-scenario=<이름>`을 붙인다. 결과는 [M8-B 결과](plan/m8/result-b.md)에 있다.
+
+| 시나리오 | 역할 | 공간 | 해 볼 것 |
+|---|---|---|---|
+| `settings-discord-skipped` | PM | `ws_03`(온보딩 완료, Discord·팀원 연결 건너뜀, Notion 연결됨, 팀원은 생성자 PM 하나) | 설정에서 Discord 연결 → 모의 OAuth → 연결이 확인되면 팀 화면의 팀원 연결 창으로 간다(D-074). 온보딩 단계는 그대로 `건너뜀`이다(D-173). 팀 화면의 `연결되지 않은 계정`은 Discord 미연결 안내다 |
+| `settings-unmapped` | PM | `ws_01` 픽스처 그대로(Discord 연결됨, 미매핑·서버를 떠난 사용자·봇 포함) | 팀 화면의 `연결되지 않은 계정`(`jihun_dev`)과 `팀원 관리`·`연결` → 팀원 연결 창. 정하늘은 서버를 떠난 팀원이다. 설정의 연결 카드에서 `연결 끊기` |
+| `settings-member` | 일반 팀원 | `ws_01`(Discord 미연결, Notion 연결됨) | 설정은 상태와 요청 안내만 보이고 선택지·토글이 꺼져 있다. 팀 화면에는 `팀원 관리`·`연결`이 없다 |
+
+```text
+http://localhost:5173/workspaces/ws_03/settings?msw-scenario=settings-discord-skipped
+http://localhost:5173/workspaces/ws_01/members?msw-scenario=settings-unmapped
+```
+
+**연결·매핑 쓰기는 PM만 한다.** 백엔드에 맞춰 다음 쓰기는 그 공간의 PM만 허용한다(`shared/mock/auth-guard.ts`의 `requirePmRole`).
+
+- 연동 해제 `DELETE /workspaces/{id}/integrations/{provider}`
+- 팀원 생성·수정 `POST`·`PATCH /members`
+- 모의 OAuth의 연결 성공
+
+일반 팀원은 403을 받고 데이터가 바뀌지 않는다. 모의 OAuth 성공은 `failed`로 돌아간다. 조회는 소속 팀원이면 그대로 된다. `PATCH /members/{id}`는 대상 팀원이 없으면 권한보다 404가 먼저다. 아래 「실 백엔드와 다른 점」의 "`members`에는 일부러 붙이지 않았다"에서 `POST`·`PATCH /members`의 PM 검사는 예외다. 근거는 [결정 기록](plan/m8/basis-for-decision/2026-10-31-msw-pm-only-connection-writes.md)에 있다.
+
 ## 미처리 요청 읽기
 
 테스트는 `onUnhandledRequest: 'error'`이므로 등록하지 않은 요청이 실패한다. 로그의 method와 URL을 보고 `/api/v1` prefix, origin, handler 등록, 동적 경로 순서를 확인한다. `/members/aliases`와 `/members/unresolved-aliases`는 `/members/:id`보다 먼저 등록해야 한다.
 
-로컬 브라우저는 `warn`으로 경고하고 실제 네트워크로 보낸다. 의도한 mock에서 경고가 나면 handler 누락을 먼저 확인한다. OAuth `start`·`callback` 같은 302 네비게이션, AI→BE 전용 생성 경로, 메시지 API는 M1 mock 범위 밖이다.
+로컬 브라우저는 `warn`으로 경고하고 실제 네트워크로 보낸다. 의도한 mock에서 경고가 나면 handler 누락을 먼저 확인한다. OAuth `start`·`callback` 같은 302 네비게이션, AI→BE 전용 생성 경로는 M1 mock 범위 밖이다. 메시지는 계약 §5.7 의 화면용 경로(조회 `/workspaces/{id}/messages`, `/workspaces/{id}/messages/threads/{id}`, 행동 `PATCH …/messages/bundles/{id}`, `POST …/bundles/{id}/approve`, `POST …/bundles/{id}/cancel`, `POST …/messages/threads/{id}/replies`, #370 의 재촉 만들기 `POST …/messages/reminders`, 리마인드 고치기 `PATCH …/messages/reminders/{id}`, 빼기 `POST …/messages/reminders/{id}/cancel`)만 둔다. 봇 경로는 화면이 부르지 않아 두지 않았다(`messages-*` 시나리오).
 
 ## 실 백엔드와 다른 점
 

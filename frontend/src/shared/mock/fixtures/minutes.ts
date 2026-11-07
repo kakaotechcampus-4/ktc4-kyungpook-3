@@ -64,4 +64,48 @@ export const minutesFixtures: MinutesDto[] = [
     duration_ms: 2700000,
   },
   minutes,
+  {
+    meeting_id: 'mt_08',
+    title: '채팅 2026-09-11',
+    started_at: '2026-09-11T00:12:00Z',
+    duration_ms: 84_480_000,
+    source: 'chat',
+    attendees: memberFixtures.slice(0, 3).map((member) => ({
+      member_id: member.member_id,
+      display_name: member.display_name,
+    })),
+    summary: null,
+    // 메시지 하나가 한 줄이다. at_ms 는 첫 메시지 기준 오프셋이라 실제 작성 시각은 started_at + at_ms 다
+    transcript: [
+      {
+        at_ms: 0,
+        speaker_member_id: 'mb_01',
+        speaker_display_name: '김서연',
+        speaker_fallback: 'seoyeon_01',
+        text: '배포 스크립트 초안 올려 둘게요.',
+      },
+      {
+        at_ms: 7_380_000,
+        speaker_member_id: 'mb_02',
+        speaker_display_name: '박민수',
+        speaker_fallback: 'minsu',
+        text: '스테이징 환경 변수도 같이 정리해 주세요.',
+      },
+      {
+        at_ms: 34_080_000,
+        speaker_member_id: 'mb_01',
+        speaker_display_name: '김서연',
+        speaker_fallback: 'seoyeon_01',
+        text: '네, 배포 스크립트는 제가 24일까지 마칠게요.',
+      },
+      {
+        at_ms: 84_480_000,
+        speaker_member_id: 'mb_03',
+        speaker_display_name: '이재환',
+        speaker_fallback: 'jaehwan',
+        text: '확인했어요. 내일 리뷰할게요.',
+      },
+    ],
+    permissions: { can_review: true, can_undo: true },
+  },
 ]

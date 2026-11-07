@@ -30,6 +30,8 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
+    // 로딩 스플래시(#430)가 연출 없이 첫 화면이 준비되는 즉시 걷힌다. 움직임에 기대는 spec 은 없다
+    reducedMotion: 'reduce',
   },
   projects: [
     {

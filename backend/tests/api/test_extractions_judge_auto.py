@@ -18,7 +18,9 @@ from app.models import (
     Member,
     MemberAlias,
     Session as SessionModel,
+    Source,
     Task,
+    TaskHistory,
     User,
     Workspace,
 )
@@ -186,6 +188,18 @@ def test_first_person_assignee_resolved_by_speaker_is_auto(client, seed):
     assert gate == "auto"
 
 
+def test_first_person_assignee_resolved_by_speaker_member_id_is_auto(client, seed):
+    """멤버 ID 로 정한 화자도 uid 와 같게 확정(확신도 1.0, 확인 필요 없음)이라 auto 가 될 수 있다."""
+    item = _only_item(client, _extract(client, seed, [_judge(
+        assignee_type="first", assignee_raw=None, evidence_speaker=None,
+        evidence_speaker_member_id=seed["jimin"].member_id,
+    )]))
+
+    assert item["gate"] == "auto"
+    assert item["assignee"]["member_id"] == seed["jimin"].member_id
+    assert (item["assignee"]["confidence"], item["assignee"]["needs_check"]) == (1.0, False)
+
+
 @pytest.mark.parametrize(
     "fields",
     [
@@ -325,6 +339,35 @@ def test_revert_deletes_task_and_turns_item_into_pending_review(client, db, seed
     assert reverted["reverted_at"] is not None
     assert reverted["task_id"] is None
     assert (reverted["approval_id"], reverted["approval_status"]) == (data["approval_id"], "pending")
+
+
+def test_revert_payload_carries_evidence_speaker_member_id(client, db, seed):
+    jimin_id = seed["jimin"].member_id
+    db.add(Source(
+        meeting_id=seed["meeting"].meeting_id, seq=3, speaker_discord_user_id="uid-jimin", member_id=jimin_id,
+        start_ms=3000, end_ms=3900, text="제가 할게요",
+    ))
+    db.commit()
+    extraction_id = _extract(client, seed, [_judge(evidence_seqs=[3])])
+    item = _only_item(client, extraction_id)
+    assert item["gate"] == "auto"
+    assert item["evidence"]["speaker_member_id"] == jimin_id
+
+    assert _revert(client, extraction_id, item["item_id"]).status_code == 200
+
+    [approval] = _approvals(db)
+    assert json.loads(approval.payload)["evidence_speaker_member_id"] == jimin_id
+
+
+def test_revert_payload_speaker_member_id_is_null_without_evidence(client, db, seed):
+    extraction_id, item = _auto_item(client, seed)
+
+    assert _revert(client, extraction_id, item["item_id"]).status_code == 200
+
+    [approval] = _approvals(db)
+    payload = json.loads(approval.payload)
+    assert "evidence_speaker_member_id" in payload
+    assert payload["evidence_speaker_member_id"] is None
 
 
 def test_approving_reverted_item_creates_new_task_for_it(client, db, seed):
@@ -482,3 +525,71 @@ def test_notion_retry_still_reaches_deleted_task(client, seed):
 
     # 404가 아니라 재시도 자체의 판단까지 간다(이 워크스페이스는 Notion 미연동)
     assert r.json()["error"]["code"] == "INTEGRATION_NOT_CONNECTED"
+
+
+# ── 채팅 회의: 자동 반영 금지, 승인 이력 출처 chat ─────────────────────────────
+
+
+def _make_chat(db, seed) -> None:
+    seed["meeting"].source = "chat"
+    db.commit()
+
+
+def _approve_only(client, db) -> None:
+    [approval] = _approvals(db)
+    r = client.patch(f"/api/v1/approvals/{approval.approval_id}", json={"status": "approved"})
+    assert r.status_code == 200, r.text
+
+
+def test_chat_meeting_create_never_auto(client, db, seed, caplog):
+    _make_chat(db, seed)
+
+    with caplog.at_level("INFO", logger="app.api.extractions"):
+        item = _only_item(client, _extract(client, seed, [_judge()]))
+
+    assert "chat 회의라 auto 항목을 review로 내립니다" in caplog.text
+
+    assert item["gate"] == "review"
+    assert item["task_id"] is None
+    assert db.execute(select(Task).where(Task.title == "결제 API 연동")).scalar_one_or_none() is None
+
+
+def test_chat_meeting_hold_stays_hold(client, db, seed):
+    _make_chat(db, seed)
+
+    assert _gate(client, seed, assignee_raw="없는사람") == "hold"
+
+
+def test_approve_chat_create_records_chat_source(client, db, seed):
+    _make_chat(db, seed)
+    _only_item(client, _extract(client, seed, [_judge()]))
+
+    _approve_only(client, db)
+
+    task = db.execute(select(Task).where(Task.title == "결제 API 연동")).scalar_one()
+    [history] = db.execute(select(TaskHistory).where(TaskHistory.task_id == task.task_id)).scalars().all()
+    assert history.change_source == "chat"
+
+
+def test_approve_chat_update_records_chat_source(client, db, seed):
+    _make_chat(db, seed)
+    _only_item(client, _extract(client, seed, [_judge(
+        action="update", target_task_id=seed["login"].task_id, due_date="2026-10-06",
+    )]))
+
+    _approve_only(client, db)
+
+    sources = db.execute(
+        select(TaskHistory.change_source).where(TaskHistory.task_id == seed["login"].task_id)
+    ).scalars().all()
+    assert sources and set(sources) == {"chat"}
+
+
+def test_approve_meeting_create_still_records_meeting_source(client, db, seed):
+    _only_item(client, _extract(client, seed, [_judge(similar_count=1, top_similarity=0.5)]))
+
+    _approve_only(client, db)
+
+    task = db.execute(select(Task).where(Task.title == "결제 API 연동")).scalar_one()
+    [history] = db.execute(select(TaskHistory).where(TaskHistory.task_id == task.task_id)).scalars().all()
+    assert history.change_source == "meeting"

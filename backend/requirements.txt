@@ -1,6 +1,7 @@
 # models/models.py 가 StrEnum(3.11+)을 씀 → Python 3.12 고정 (.python-version 참고)
 # 운영 이미지(Dockerfile)에 들어가는 의존성만 둔다. 개발/테스트용은 requirements-dev.txt.
 fastapi>=0.115
+starlette>=0.39  # 원본 재생(FileResponse)의 Range 처리가 0.39 부터다
 uvicorn[standard]>=0.30
 sqlalchemy>=2.0
 psycopg[binary]>=3.2
@@ -10,3 +11,5 @@ pydantic[email]>=2.9   # app/schemas/auth.py 의 EmailStr 에 email-validator �
 python-dotenv>=1.0
 httpx>=0.27   # app/services/notion.py 의 Notion API 호출에도 쓴다
 python-multipart>=0.0.9   # app/api/workspaces.py 회의록 업로드(Form/File)에 필요하다
+pywebpush>=2.0   # app/services/push.py 의 웹 푸시(VAPID) 발송
+urllib3>=2.0   # app/schemas/notification.py 가 발송과 같은 파서로 구독 주소를 검사한다

@@ -5,7 +5,8 @@ import { ok, list, fail } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
 import { requireMember } from '../auth-guard'
 import { readJson, nextId } from '../utils'
-import { tickMeeting } from '../meetingFlow'
+import { isChatMeeting, tickMeeting } from '../meetingFlow'
+import { registerSpeakerUpload } from '../speakerFlow'
 
 export const meetingHandlers = [
   http.get('/api/v1/workspaces/:workspaceId/meetings', ({ params }) => {
@@ -15,7 +16,14 @@ export const meetingHandlers = [
     if (!db.workspaces.some(({ workspace_id }) => workspace_id === params.workspaceId))
       return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
     const meetings = db.meetings.filter(
-      (meeting) => meeting.workspace_id === params.workspaceId && meeting.status !== 'failed',
+      (meeting) =>
+        meeting.workspace_id === params.workspaceId &&
+        (meeting.status !== 'failed' ||
+          (meeting.failed_stage === 'speaker_assignment_expired' &&
+            db.meetingSummaries.some(
+              (summary) =>
+                summary.meeting_id === meeting.meeting_id && summary.source === 'manual_upload',
+            ))),
     )
     return list(
       db.meetingSummaries
@@ -25,6 +33,7 @@ export const meetingHandlers = [
           return {
             ...summary,
             status: meeting.status,
+            failed_stage: meeting.failed_stage,
             // 백엔드는 audio 가 없으면 0 을 주고, processed_at 에는 상태와 무관하게
             // ended_at 을 넣는다 (workspaces.py 의 list_workspace_meetings)
             duration_ms: summary.duration_ms ?? 0,
@@ -135,8 +144,12 @@ export const meetingHandlers = [
       )
     )
       return fail('INVALID_REQUEST', '파일·제목·회의 날짜·참석자가 필요합니다.', 400)
+    // 채팅 회의는 정리 중이어도 업로드를 막지 않는다 (backend-ai-contract 「회의」, #450)
     const processing = db.meetings.find(
-      (meeting) => meeting.workspace_id === workspaceId && meeting.status === 'processing',
+      (meeting) =>
+        meeting.workspace_id === workspaceId &&
+        meeting.status === 'processing' &&
+        !isChatMeeting(meeting.meeting_id),
     )
     if (processing)
       return fail('MEETING_PROCESSING_IN_PROGRESS', '처리 중인 회의가 있습니다.', 409, {
@@ -167,6 +180,7 @@ export const meetingHandlers = [
     // 실 API 는 참석자를 버린다(계약 §4.0-②-9). MSW 는 정리 결과의 참석자로 쓰려고 ID 만 남긴다.
     // 파일은 어디에도 남기지 않는다 — sessionStorage 영속에도 원본이 들어가지 않는다
     db.meetingFlow.attendees[meeting.meeting_id] = attendees.map(String)
+    registerSpeakerUpload(meeting.meeting_id)
     db.meetingSummaries.push({
       meeting_id: meeting.meeting_id,
       title,

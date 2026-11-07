@@ -1,8 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { clearTrackedMeetings } from '@/entities/meeting'
 import { SESSION_QUERY_KEY, advanceSessionGeneration } from '@/entities/user'
-import { workspaceListQueryOptions } from '@/entities/workspace'
-import type { Workspace } from '@/entities/workspace'
 import { clearReturnWorkspace } from '@/shared/lib/return-workspace'
 import { clearUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { toast } from '@/shared/ui/toast'
@@ -28,9 +26,4 @@ export async function clearUserScope(queryClient: QueryClient): Promise<void> {
   toast.clear()
   await queryClient.cancelQueries()
   queryClient.removeQueries({ predicate: ({ queryKey }) => !isSessionQuery(queryKey) })
-}
-
-/** 새 사용자의 워크스페이스 목록을 서버에서 새로 받는다. 이 목록으로 로그인 뒤 갈 곳을 정한다 (D-010) */
-export function fetchFreshWorkspaces(queryClient: QueryClient): Promise<Workspace[]> {
-  return queryClient.fetchQuery({ ...workspaceListQueryOptions(), staleTime: 0 })
 }

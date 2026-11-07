@@ -2,14 +2,17 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import {
+  isMeetingUnavailable,
   meetingDetailQueryOptions,
+  meetingFailure,
   meetingListQueryOptions,
   PROCESSING_STEP_COUNT,
   processingSteps,
   trackMeeting,
+  viewableMeeting,
 } from '@/entities/meeting'
 import type { Meeting, ProcessingStep } from '@/entities/meeting'
-import { isAccessLost } from '@/features/meeting-processing'
+import { useMemberWorkspace } from '@/entities/workspace'
 import { ApiError } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf } from '@/shared/lib/date'
@@ -21,7 +24,7 @@ import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
 
 /* Processing 캔버스 실측 — 위 48 · 아래 72, 본문 560px 한 단, 제목 30px, 마스코트 64px, 단계 행 위아래 16 */
-const PAGE = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72'
+const PAGE = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72 max-md:px-20'
 const COLUMN = 'flex w-full max-w-[560px] flex-col gap-30'
 const TITLE = 'text-[30px] leading-[1.25] font-bold tracking-h1 text-ink'
 const META = 'text-body text-sub'
@@ -46,7 +49,7 @@ const STEP_TEXT: Record<ProcessingStep['state'], string> = {
 /**
  * 회의 정리 중 (U4). 워크스페이스 팀원 모두 볼 수 있다.
  * 상태는 상세 Query 캐시를 읽는다. polling 은 앱 수준 추적기가 한다 — 이 화면이 없어도 추적은 이어지고,
- * 이 화면은 같은 캐시를 그린다. 이 화면에서 정리 중 회의를 보면 추적기에 등록한다(다른 팀원이 올린 회의, 직접 링크).
+ * 이 화면은 같은 캐시를 그린다. 이 화면에서 정리 중·화자 지정 대기 회의를 보면 추적기에 등록한다(다른 팀원이 올린 회의, 직접 링크).
  * 완료·실패 뒤 이동은 추적기가 한다 — 이 화면을 보고 있을 때만이다.
  *
  * 서버의 `progress` 세 값을 단계로만 보인다. 캔버스의 진행 막대·경과·단계별 시간·말 겹침 안내·`중단하기` 는 넣지 않는다 —
@@ -80,19 +83,16 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
     ...meetingListQueryOptions(workspaceId),
     select: (meetings) => meetings.find(({ id }) => id === meetingId) ?? null,
   })
-  const meeting =
-    detail.data !== undefined && detail.data.workspaceId === workspaceId ? detail.data : null
-  const processing = meeting?.status === 'processing'
+  const meeting = viewableMeeting(detail)
+  const watched = meeting?.status === 'processing' || meeting?.status === 'awaiting_speakers'
+  const isPm = useMemberWorkspace(workspaceId)?.role === 'pm'
 
   useEffect(() => {
-    if (processing) trackMeeting({ workspaceId, meetingId })
-  }, [processing, workspaceId, meetingId])
+    if (watched) trackMeeting({ workspaceId, meetingId })
+  }, [watched, workspaceId, meetingId])
 
-  if (detail.data !== undefined && meeting === null)
-    return <Unavailable workspaceId={workspaceId} />
   if (meeting === null) {
-    if (detail.error !== null && isAccessLost(detail.error))
-      return <Unavailable workspaceId={workspaceId} />
+    if (isMeetingUnavailable(detail.error)) return <Unavailable workspaceId={workspaceId} />
     if (detail.error !== null)
       return (
         <Layout status="정리 상태를 불러오지 못했어요">
@@ -113,7 +113,9 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
   }
 
   const attendeeCount = summary.data?.attendeeCount ?? null
-  // 받아 둔 상태가 있는데 다시 묻지 못했다 — 정리 실패가 아니다. 다시 물어볼 때까지 마지막 상태를 둔다 (U4-8)
+  // 받아 둔 상태가 있는데 다시 묻지 못했다 — 정리 실패가 아니다. 다시 물어볼 때까지 마지막 상태를 둔다 (U4-8).
+  // 403·404·다른 공간은 다시 물어도 같은 답이라 viewableMeeting 이 먼저 걸러 볼 수 없는 회의로 그린다. 그 밖의 재조회 실패
+  // (네트워크 오류·408·5xx 등)는 마지막 상태를 두고, 연결 불안정 안내는 네트워크 오류일 때만 보인다 (#405)
   const stale =
     detail.error instanceof ApiError &&
     detail.error.kind === 'network' &&
@@ -129,18 +131,36 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
           </GuardedLink>
         </Layout>
       )
-    case 'failed':
+    case 'failed': {
+      const failure = meetingFailure(meeting.failedStage)
       return (
-        <Layout status="회의를 정리하지 못했어요">
-          <Heading
-            meeting={meeting}
-            attendeeCount={attendeeCount}
-            title="회의를 정리하지 못했어요"
-          />
-          <p className={META}>정리한 결과는 남기지 않아요. 파일을 다시 올려 주세요.</p>
-          <GuardedLink to={paths.meetings(workspaceId)} className={LINK}>
-            회의록으로 가기
+        <Layout status={failure.title}>
+          <Heading meeting={meeting} attendeeCount={attendeeCount} title={failure.title} />
+          <p className={META}>{failure.description}</p>
+          <GuardedLink to={paths.meetings(workspaceId, meetingId)} className={LINK}>
+            실패 사유 보기
           </GuardedLink>
+        </Layout>
+      )
+    }
+    case 'awaiting_speakers':
+      return (
+        <Layout status="화자 지정이 필요해요">
+          <Heading meeting={meeting} attendeeCount={attendeeCount} title="화자 지정이 필요해요" />
+          {isPm ? (
+            <>
+              <p className={META}>
+                녹음에서 화자를 나눴어요. 화자마다 누구인지 골라 주시면 정리를 이어 갈게요.
+              </p>
+              <GuardedLink to={paths.meetingSpeakers(workspaceId, meetingId)} className={LINK}>
+                화자 지정하기
+              </GuardedLink>
+            </>
+          ) : (
+            <p className={META}>
+              PM이 화자를 지정하고 있어요. 지정이 끝나면 정리를 이어 가고, 끝나면 알려드릴게요.
+            </p>
+          )}
         </Layout>
       )
     default:

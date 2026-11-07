@@ -1,7 +1,8 @@
 import { toApproval } from '@/entities/approval'
 import { toExtraction } from '@/entities/extraction'
 import type { ExtractionItem } from '@/entities/extraction'
-import { toMeetingSummary } from '@/entities/meeting'
+import { latestMinutesId, toMeetingSummary } from '@/entities/meeting'
+import type { MeetingStatus } from '@/entities/meeting'
 import { toTask } from '@/entities/task'
 import type { Task } from '@/entities/task'
 import { approvalFixtures } from '@/shared/mock/fixtures/approval'
@@ -9,13 +10,16 @@ import { MOCK_TODAY } from '@/shared/mock/fixtures/constants'
 import { extractionFixtures } from '@/shared/mock/fixtures/extraction'
 import { meetingSummaryFixtures } from '@/shared/mock/fixtures/meeting'
 import { taskFixtures } from '@/shared/mock/fixtures/task'
+import { toTaskResponse } from '@/shared/mock/task-state'
 import {
   LIST_LIMIT,
-  RECENT_LIMIT,
+  RECENT_MORE_LINE_PX,
+  RECENT_ROWS,
   approvalReason,
   dateWithWeekday,
   dueSoonTasks,
   durationLabel,
+  fitRecentRows,
   hasPendingSync,
   latestDoneMeeting,
   monthDayLabel,
@@ -33,7 +37,7 @@ import {
  * 픽스처: ws_01 의 태스크 10건, 대기 승인 3건, 최신 완료 회의 mt_09(auto 항목 it_01~it_03), 서울 오늘 2026-09-18.
  */
 
-const tasks = taskFixtures.map(toTask)
+const tasks = taskFixtures.map((row) => toTask(toTaskResponse(row)))
 const base = tasks[0]
 
 function task(id: string, patch: Partial<Task> = {}): Task {
@@ -119,6 +123,18 @@ describe('정렬 (AC-02 판정부)', () => {
     expect(approvalReason(hold)).toBe('정보가 부족해 태스크 초안을 만들지 않았어요')
     expect(approvalReason(review)).toBe('마감을 정해야 해요')
   })
+
+  it('범위 변경 승인은 바꿀 값이 있어도 범위 변경을 확인하라고 한다 (#205)', () => {
+    const update = (payload: Record<string, unknown>) =>
+      toApproval({ ...approvalFixtures[0], type: 'task_update', payload })
+    expect(approvalReason(update({ category: 'scope' }))).toBe('범위 변경을 확인해야 해요')
+    expect(approvalReason(update({ category: 'scope', due_date: '2026-09-30' }))).toBe(
+      '범위 변경을 확인해야 해요',
+    )
+    expect(approvalReason(update({ category: 'schedule', due_date: '2026-09-30' }))).toBe(
+      '변경 제안을 확인해야 해요',
+    )
+  })
 })
 
 describe('최근 반영 (AC-03 판정부)', () => {
@@ -131,15 +147,155 @@ describe('최근 반영 (AC-03 판정부)', () => {
     expect(latestDoneMeeting(meetings.filter(({ status }) => status !== 'done'))).toBeNull()
   })
 
-  it('gate=auto 항목만 응답 순서대로 최대 3개다', () => {
+  it('지워진(404) 회의를 빼면 그다음 완료 회의를 고르고, 모두 빼면 null 이다 (#405)', () => {
+    const meetings = meetingSummaryFixtures.map(toMeetingSummary)
+    expect(latestDoneMeeting(meetings, new Set(['mt_09']))?.id).toBe('mt_08')
+    expect(latestDoneMeeting(meetings, new Set(['mt_09', 'mt_08']))?.id).toBe('mt_07')
+    expect(latestDoneMeeting(meetings, new Set(['mt_09', 'mt_08', 'mt_07']))).toBeNull()
+  })
+
+  describe('최신 완료 회의 선택 기준 (#350)', () => {
+    const [summary] = meetingSummaryFixtures.map(toMeetingSummary)
+    const meeting = (id: string, startedAt: string, status: MeetingStatus = 'done') => ({
+      ...summary,
+      id,
+      startedAt,
+      status,
+    })
+
+    it('빈 목록이면 null 이다', () => {
+      expect(latestDoneMeeting([])).toBeNull()
+    })
+
+    it('서버 순서와 상관없이 시작 시각이 가장 늦은 완료 회의다 — 더 늦은 미완료 회의는 건너뛴다', () => {
+      const meetings = [
+        meeting('old', '2026-09-01T01:00:00Z'),
+        meeting('processing', '2026-09-20T01:00:00Z', 'processing'),
+        meeting('newest', '2026-09-15T01:00:00Z'),
+        meeting('failed', '2026-09-19T01:00:00Z', 'failed'),
+        meeting('middle', '2026-09-10T01:00:00Z'),
+      ]
+      expect(latestDoneMeeting(meetings)).toBe(meetings[2])
+    })
+
+    it('시각은 문자열이 아니라 시점으로 비교한다', () => {
+      const meetings = [
+        meeting('utc', '2026-09-15T00:30:00Z'),
+        meeting('seoul', '2026-09-15T09:00:00+09:00'),
+      ]
+      expect(latestDoneMeeting(meetings)?.id).toBe('utc')
+    })
+
+    it('같은 시작 시각이면 받은 순서에서 앞의 회의다', () => {
+      const meetings = [
+        meeting('older', '2026-09-01T01:00:00Z'),
+        meeting('first', '2026-09-15T01:00:00Z'),
+        meeting('second', '2026-09-15T01:00:00Z'),
+      ]
+      expect(latestDoneMeeting(meetings)?.id).toBe('first')
+      expect(latestDoneMeeting([meetings[2], meetings[1]])?.id).toBe('second')
+    })
+
+    it('시작 시각을 읽을 수 없는 완료 회의는 날짜가 있는 회의보다 뒤다', () => {
+      const meetings = [
+        meeting('missing', ''),
+        meeting('broken', 'not-a-date'),
+        meeting('dated', '2020-01-01T00:00:00Z'),
+      ]
+      expect(latestDoneMeeting(meetings)?.id).toBe('dated')
+    })
+
+    it('모든 완료 회의의 시작 시각을 읽을 수 없으면 받은 순서에서 앞의 완료 회의다', () => {
+      const meetings = [
+        meeting('processing', '2026-09-20T01:00:00Z', 'processing'),
+        meeting('broken', 'not-a-date'),
+        meeting('missing', ''),
+      ]
+      expect(latestDoneMeeting(meetings)?.id).toBe('broken')
+    })
+
+    it('회의록 기본 진입과 같은 회의를 고른다', () => {
+      const statuses: MeetingStatus[] = ['created', 'recording', 'processing', 'done', 'failed']
+      const times = [
+        '2026-09-01T01:00:00Z',
+        '2026-09-15T01:00:00Z',
+        '2026-09-15T10:00:00+09:00',
+        '',
+      ]
+      let seed = 350
+      const next = (size: number) => {
+        seed = (seed * 48_271) % 2_147_483_647
+        return seed % size
+      }
+      for (let round = 0; round < 200; round += 1) {
+        const meetings = Array.from({ length: next(8) }, (_, index) =>
+          meeting(`mt_${index}`, times[next(times.length)], statuses[next(statuses.length)]),
+        )
+        expect(latestDoneMeeting(meetings)?.id ?? null).toBe(latestMinutesId(meetings))
+      }
+    })
+  })
+
+  it('gate=auto 항목만 응답 순서대로 전부다 — 몇 개를 보일지는 화면이 잰다 (D-176)', () => {
     const many: ExtractionItem[] = [
       ...extraction.items,
       { ...extraction.items[0], id: 'it_90' },
       { ...extraction.items[1], id: 'it_91' },
     ]
-    expect(recentAutoItems(many).map(({ id }) => id)).toEqual(['it_01', 'it_02', 'it_03'])
-    expect(RECENT_LIMIT).toBe(3)
+    expect(recentAutoItems(many).map(({ id }) => id)).toEqual([
+      'it_01',
+      'it_02',
+      'it_03',
+      'it_90',
+      'it_91',
+    ])
+    expect(RECENT_ROWS).toEqual({ min: 3, max: 8 })
+    expect(RECENT_MORE_LINE_PX).toBe(32)
     expect(recentAutoItems(extraction.items.filter(({ gate }) => gate !== 'auto'))).toEqual([])
+  })
+
+  describe('보일 행 수 (D-176)', () => {
+    const rows = (count: number, height = 50) => Array.from({ length: count }, () => height)
+
+    it.each([
+      ['잰 높이가 없으면 3개', { available: 900, heights: [], total: 12 }, 3],
+      [
+        '잰 높이가 없고 항목이 2개면 2개',
+        { available: 900, heights: [undefined, undefined], total: 2 },
+        2,
+      ],
+      ['항목이 2개면 늘 2개다 — 채우지 않는다', { available: 900, heights: rows(2), total: 2 }, 2],
+      [
+        '5개가 모두 들어가면 5개 — 외 N건 줄이 없어 그 높이를 빼지 않는다',
+        { available: 250, heights: rows(5), total: 5 },
+        5,
+      ],
+      [
+        '5개 중 4개만 들어가면 외 N건 줄을 뺀 높이로 다시 센다',
+        { available: 230, heights: rows(5), total: 5 },
+        3,
+      ],
+      ['외 N건 줄을 빼도 4개가 들어가면 4개', { available: 232, heights: rows(5), total: 5 }, 4],
+      ['넉넉하면 8개까지다', { available: 2000, heights: rows(8), total: 12 }, 8],
+      ['좁으면 3개 아래로 줄이지 않는다', { available: 40, heights: rows(8), total: 12 }, 3],
+      ['남은 높이가 음수여도 3개다', { available: -100, heights: rows(8), total: 12 }, 3],
+      [
+        '못 잰 행은 바로 앞에서 잰 높이로 친다',
+        { available: 332, heights: [50, 50, 50, undefined, 100, undefined], total: 12 },
+        5,
+      ],
+      [
+        '앞 행을 못 쟀으면 처음 잰 높이로 친다',
+        { available: 282, heights: [undefined, 50, undefined], total: 12 },
+        5,
+      ],
+    ] as const)('%s', (_, input, expected) => {
+      expect(fitRecentRows({ ...input, moreLine: RECENT_MORE_LINE_PX })).toBe(expected)
+    })
+
+    it('8개가 넘으면 다 들어가도 외 N건 줄을 둔다', () => {
+      expect(fitRecentRows({ available: 400, heights: rows(8), total: 9, moreLine: 32 })).toBe(7)
+    })
   })
 
   it('상태는 태스크의 notion_sync_status 로 정하고, 되돌림이 가장 먼저다', () => {

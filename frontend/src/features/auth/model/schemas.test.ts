@@ -1,4 +1,10 @@
-import { AUTH_MESSAGES, loginSchema, signupSchema } from './schemas'
+import {
+  AUTH_MESSAGES,
+  forgotPasswordSchema,
+  loginSchema,
+  resetPasswordSchema,
+  signupSchema,
+} from './schemas'
 
 function issues(result: {
   success: boolean
@@ -20,6 +26,19 @@ describe('회원가입 검증', () => {
     expect(issues(signupSchema.safeParse({ ...valid, name: '   ' }))).toEqual([
       ['name', AUTH_MESSAGES.nameRequired],
     ])
+  })
+
+  it('이름은 100자까지다 — 101자는 거절한다 (#446)', () => {
+    expect(issues(signupSchema.safeParse({ ...valid, name: 'a'.repeat(101) }))).toEqual([
+      ['name', AUTH_MESSAGES.nameTooLong],
+    ])
+    expect(signupSchema.safeParse({ ...valid, name: 'a'.repeat(100) }).success).toBe(true)
+  })
+
+  it('이름 길이는 앞뒤 공백을 지운 뒤에 센다', () => {
+    expect(signupSchema.parse({ ...valid, name: `  ${'a'.repeat(100)} ` }).name).toBe(
+      'a'.repeat(100),
+    )
   })
 
   it.each([
@@ -57,5 +76,36 @@ describe('로그인 검증', () => {
       ['email', AUTH_MESSAGES.emailFormat],
       ['password', AUTH_MESSAGES.passwordRequired],
     ])
+  })
+})
+
+describe('비밀번호 재설정 검증 (#356)', () => {
+  it('요청은 이메일 하나다. 앞뒤 공백을 지우고 형식을 본다', () => {
+    expect(forgotPasswordSchema.parse({ email: ' pm@example.com ' })).toEqual({
+      email: 'pm@example.com',
+    })
+    expect(issues(forgotPasswordSchema.safeParse({ email: '' }))).toEqual([
+      ['email', AUTH_MESSAGES.emailRequired],
+    ])
+    expect(issues(forgotPasswordSchema.safeParse({ email: 'pm' }))).toEqual([
+      ['email', AUTH_MESSAGES.emailFormat],
+    ])
+  })
+
+  it.each([
+    ['', AUTH_MESSAGES.passwordRequired],
+    ['abc123', AUTH_MESSAGES.passwordRule],
+    ['abcdefgh', AUTH_MESSAGES.passwordRule],
+  ])('새 비밀번호 %j 는 가입과 같은 규칙으로 거절한다', (newPassword, message) => {
+    expect(issues(resetPasswordSchema.safeParse({ newPassword }))[0]).toEqual([
+      'newPassword',
+      message,
+    ])
+  })
+
+  it('새 비밀번호는 8자 이상이고 숫자가 있으면 된다. 공백도 값이다', () => {
+    expect(resetPasswordSchema.parse({ newPassword: ' pass1234 ' })).toEqual({
+      newPassword: ' pass1234 ',
+    })
   })
 })

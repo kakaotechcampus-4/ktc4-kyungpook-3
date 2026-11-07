@@ -391,14 +391,69 @@ def test_locks_meeting_row_on_postgresql(client, db, meeting):
     assert any("FROM meeting" in s and "FOR UPDATE" in s for s in statements)
 
 
-def test_chat_transcript_is_400(client, db, meeting):
-    r = client.post(
-        f"/api/v1/meetings/{meeting.meeting_id}/sources",
-        json={"source": "chat", "segments": [_seg(0)]},
+def _post_chat(client, meeting_id: str, segments: list[dict]):
+    return client.post(
+        f"/api/v1/meetings/{meeting_id}/sources",
+        json={"source": "chat", "segments": segments},
         headers=HEADERS,
     )
 
+
+def test_create_meeting_with_started_at_and_chat_source(client, db):
+    ws = Workspace(name="A")
+    db.add(ws)
+    db.commit()
+
+    r = client.post(
+        "/api/v1/meetings",
+        json={
+            "workspace_id": ws.workspace_id,
+            "title": "채팅",
+            "source": "chat",
+            "started_at": "2026-11-03T01:00:00Z",
+        },
+        headers=HEADERS,
+    )
+
+    assert r.status_code == 201
+    data = r.json()["data"]
+    # SQLite 는 시간대를 돌려주지 않아 벽시계 시각만 비교한다
+    assert datetime.fromisoformat(data["started_at"]).replace(tzinfo=None) == datetime(2026, 11, 3, 1, 0)
+    db.expire_all()
+    assert db.get(Meeting, data["meeting_id"]).source == "chat"
+
+
+def _chat_meeting(db) -> Meeting:
+    ws = Workspace(name="C")
+    db.add(ws)
+    db.flush()
+    m = Meeting(workspace_id=ws.workspace_id, source="chat", status=str(MeetingStatus.PROCESSING))
+    db.add(m)
+    db.commit()
+    return m
+
+
+def test_chat_source_accepts_offsets_over_24h(client, db):
+    meeting = _chat_meeting(db)
+    r = _post_chat(client, meeting.meeting_id, [_seg(0, start=90000.0, end=90000.0)])
+
+    assert r.status_code == 201
+    assert r.json()["data"]["duration_ms"] == 90_000_000
+
+
+def test_meeting_source_still_rejects_over_24h(client, db, meeting):
+    r = _post(client, meeting.meeting_id, [_seg(0, start=90000.0, end=90000.0)])
+
     assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+
+
+def test_chat_source_over_14_days_rejected(client, db):
+    meeting = _chat_meeting(db)
+    r = _post_chat(client, meeting.meeting_id, [_seg(0, start=1_209_601.0, end=1_209_601.0)])
+
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
 
 
 def test_unknown_meeting_is_404(client, db, meeting):
@@ -430,3 +485,202 @@ def test_rejects_requests_without_valid_service_token(client, db, meeting, heade
     assert r.status_code == 401
     assert r.json()["error"]["code"] == "UNAUTHENTICATED"
     assert _sources(db, meeting.meeting_id) == []
+
+
+# --- speaker_member_id: 화자를 멤버 ID 로 받는다 ---
+
+
+def _seg_m(seq: int, member_id, *, speaker: str | None = "uid_a") -> dict:
+    return {**_seg(seq, speaker=speaker), "speaker_member_id": member_id}
+
+
+def _other_workspace_member(db) -> Member:
+    other_ws = Workspace(name="B")
+    db.add(other_ws)
+    db.commit()
+    return _member(db, other_ws.workspace_id, "uid_x")
+
+
+def test_saves_speaker_member_id_as_member_id(client, db, meeting):
+    minsu = _member(db, meeting.workspace_id, "uid_minsu")
+
+    r = _post(
+        client, meeting.meeting_id, [_seg_m(0, minsu.member_id, speaker="uid_zzz")],
+        speaker_names={"uid_zzz": "표시 이름"},
+    )
+
+    assert r.status_code == 201
+    [row] = _sources(db, meeting.meeting_id)
+    assert (row.member_id, row.speaker_discord_user_id, row.speaker_name) == (
+        minsu.member_id, "uid_zzz", "표시 이름",
+    )
+
+
+def test_upload_shaped_segment_saves_only_member_id(client, db, meeting):
+    """업로드 회의 모양(uid 없이 speaker_member_id 만)은 member_id 만 저장하고 uid·이름은 비운다."""
+    minsu = _member(db, meeting.workspace_id, "uid_minsu")
+
+    r = _post(client, meeting.meeting_id, [_seg_m(0, minsu.member_id, speaker=None)])
+
+    assert r.status_code == 201
+    [row] = _sources(db, meeting.meeting_id)
+    assert (row.member_id, row.speaker_discord_user_id, row.speaker_name) == (minsu.member_id, None, None)
+
+
+def test_speaker_member_id_wins_over_uid_match(client, db, meeting):
+    a = _member(db, meeting.workspace_id, "uid_a", name="A")
+    b = _member(db, meeting.workspace_id, "uid_b", name="B")
+
+    _post(client, meeting.meeting_id, [_seg_m(0, b.member_id, speaker="uid_a")])
+
+    [row] = _sources(db, meeting.meeting_id)
+    assert row.member_id == b.member_id != a.member_id
+
+
+@pytest.mark.parametrize("kind", ["other-workspace", "unknown", "deleted"])
+def test_wrong_speaker_member_id_rejects_whole_request(client, db, meeting, kind):
+    good = _member(db, meeting.workspace_id, "uid_good")
+    if kind == "other-workspace":
+        bad_id = _other_workspace_member(db).member_id
+    elif kind == "deleted":
+        bad_id = _member(db, meeting.workspace_id, "uid_left", deleted=True).member_id
+    else:
+        bad_id = "no-such-member"
+
+    r = _post(client, meeting.meeting_id, [
+        _seg_m(0, good.member_id), _seg_m(1, bad_id), _seg_m(2, bad_id), _seg(3),
+    ])
+
+    assert r.status_code == 400
+    body = r.json()["error"]
+    assert body["code"] == "INVALID_REQUEST"
+    assert body["details"]["member_ids"] == [bad_id]
+    assert _sources(db, meeting.meeting_id) == []
+    assert db.get(Meeting, meeting.meeting_id).duration_ms is None
+
+
+def test_wrong_member_ids_keep_first_seen_order(client, db, meeting):
+    r = _post(client, meeting.meeting_id, [
+        _seg_m(0, "z-bad"), _seg_m(1, "a-bad"), _seg_m(2, "z-bad"),
+    ])
+
+    assert r.json()["error"]["details"]["member_ids"] == ["z-bad", "a-bad"]
+
+
+def test_wrong_speaker_member_id_on_resent_seq_is_400(client, db, meeting):
+    minsu = _member(db, meeting.workspace_id, "uid_minsu")
+    _post(client, meeting.meeting_id, [_seg_m(0, minsu.member_id)])
+
+    r = _post(client, meeting.meeting_id, [_seg_m(0, "no-such-member")])
+
+    assert r.status_code == 400
+    assert r.json()["error"]["details"]["member_ids"] == ["no-such-member"]
+    [row] = _sources(db, meeting.meeting_id)
+    assert row.member_id == minsu.member_id
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_blank_speaker_member_id_falls_back_to_uid(client, db, meeting, blank):
+    minsu = _member(db, meeting.workspace_id, "uid_minsu")
+
+    r = _post(client, meeting.meeting_id, [_seg_m(0, blank, speaker="uid_minsu")])
+
+    assert r.status_code == 201
+    [row] = _sources(db, meeting.meeting_id)
+    assert row.member_id == minsu.member_id
+
+
+@pytest.mark.parametrize("value", ["x" * 37, 123], ids=["too-long", "number"])
+def test_invalid_speaker_member_id_is_400(client, db, meeting, value):
+    r = _post(client, meeting.meeting_id, [_seg_m(0, value)])
+
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+    assert _sources(db, meeting.meeting_id) == []
+
+
+def test_looks_up_member_ids_once_and_skips_uid_lookup_for_them(client, db, meeting, monkeypatch):
+    minsu = _member(db, meeting.workspace_id, "uid_minsu")
+    member_calls: list[set] = []
+    uid_calls: list[str] = []
+    real_members, real_uid = sources_api.active_members_by_id, sources_api.resolve_speaker
+
+    def counting_members(db, workspace_id, ids):
+        member_calls.append(set(ids))
+        return real_members(db, workspace_id, ids)
+
+    def counting_uid(db, workspace_id, uid):
+        uid_calls.append(uid)
+        return real_uid(db, workspace_id, uid)
+
+    monkeypatch.setattr(sources_api, "active_members_by_id", counting_members)
+    monkeypatch.setattr(sources_api, "resolve_speaker", counting_uid)
+
+    r = _post(client, meeting.meeting_id, [
+        _seg_m(0, minsu.member_id, speaker="uid_a"),
+        _seg_m(1, minsu.member_id, speaker="uid_a"),
+        _seg(2, speaker="uid_b"),
+    ])
+
+    assert r.status_code == 201
+    assert member_calls == [{minsu.member_id}]
+    assert uid_calls == ["uid_b"]
+
+
+def test_unknown_segment_keys_are_ignored(client, db, meeting):
+    r = _post(client, meeting.meeting_id, [{**_seg(0), "speaker_member_ids": ["x"], "foo": 1}])
+
+    assert r.status_code == 201
+
+
+def test_chat_source_on_non_chat_meeting_rejected(client, db, meeting):
+    # 24시간 상한을 요청 필드 하나로 우회하지 못하게, 회의의 출처와 요청의 출처가 같아야 한다
+    r = _post_chat(client, meeting.meeting_id, [_seg(0, start=90000.0, end=90000.0)])
+
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+    assert db.query(Source).filter(Source.meeting_id == meeting.meeting_id).count() == 0
+
+
+def _create_chat_meeting(client, ws_id, started_at):
+    return client.post(
+        "/api/v1/meetings",
+        json={"workspace_id": ws_id, "source": "chat", "started_at": started_at},
+        headers=HEADERS,
+    )
+
+
+def test_started_at_with_offset_is_stored_as_utc(client, db):
+    ws = Workspace(name="A")
+    db.add(ws)
+    db.commit()
+
+    r = _create_chat_meeting(client, ws.workspace_id, "2026-11-03T10:00:00+09:00")
+
+    assert r.status_code == 201
+    db.expire_all()
+    stored = db.get(Meeting, r.json()["data"]["meeting_id"]).started_at
+    assert stored.replace(tzinfo=None) == datetime(2026, 11, 3, 1, 0)   # SQLite 는 벽시계 시각만 돌려준다
+
+
+def test_started_at_without_timezone_rejected(client, db):
+    ws = Workspace(name="A")
+    db.add(ws)
+    db.commit()
+
+    r = _create_chat_meeting(client, ws.workspace_id, "2026-11-03T10:00:00")
+
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+
+
+def test_started_at_in_the_future_rejected(client, db):
+    ws = Workspace(name="A")
+    db.add(ws)
+    db.commit()
+
+    r = _create_chat_meeting(client, ws.workspace_id, "2099-01-01T00:00:00Z")
+
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+    assert db.query(Meeting).count() == 0

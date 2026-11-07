@@ -48,15 +48,15 @@ def today() -> date:
 @dataclass(frozen=True)
 class Settings:
     discord_bot_token: str = env("DISCORD_BOT_TOKEN")
-    discord_channel_id: str = env("DISCORD_CHANNEL_ID")
     discord_guild_id: str = env("DISCORD_GUILD_ID")
-    chat_poll_bot_token: str = env("CHAT_POLL_BOT_TOKEN")  # capture/chat_poll.py 전용 테스트 봇. 음성 봇과 따로 둔다
     embedding_api_key: str = env("EMBEDDING_API_KEY")
     embedding_base_url: str = env("EMBEDDING_BASE_URL")
     terra_api_key: str = env("TERRA_API_KEY")
     terra_base_url: str = env("TERRA_BASE_URL")
     luna_api_key: str = env("LUNA_API_KEY")
     luna_base_url: str = env("LUNA_BASE_URL")
+    jev_api_key: str = env("JEV_API_KEY")  # 근거 검증(judge/evidence.py) 전용
+    jev_base_url: str = env("JEV_BASE_URL")
     # 추출(Phase 1, extract/llm.py) 전용. Terra/Luna 와 같은 게이트웨이지만 엔드포인트가 또 다르다.
     # 구 변수명(GEMINI_*)도 계속 읽는다 — 팀원 .env 를 한꺼번에 바꾸게 만들지 않기 위함.
     llm_api_key: str = env("LLM_API_KEY") or env("GEMINI_API_KEY")
@@ -70,6 +70,11 @@ class Settings:
     be_base_url: str = env("BE_BASE_URL")
     # 사용자 세션 없이 부르는 BE 경로(유사 task 검색)가 요구한다. BE 의 SERVICE_TOKEN 과 같은 값이다
     be_service_token: str = env("BE_SERVICE_TOKEN")
+    # 채팅 폴링(capture/chat_poll.py): 참고 문맥 메시지 수, 커서가 없을 때 되돌아볼 시간, 한 번에 따라잡을 최대 일수
+    chat_poll_context_messages: int = int(env("CHAT_POLL_CONTEXT_MESSAGES") or "30")
+    chat_poll_initial_hours: int = int(env("CHAT_POLL_INITIAL_HOURS") or "24")
+    # BE 가 chat 발화 시각을 14일까지만 받아서 그 위로는 올리지 않는다(넘으면 sources 가 400 으로 매일 멈춘다)
+    chat_poll_max_days: int = min(int(env("CHAT_POLL_MAX_DAYS") or "14"), 14)
     # 회의 시작 시각을 이 시간대의 날짜로 바꿔 "내일" 같은 상대 날짜의 기준일로 쓴다
     meeting_timezone: str = env("MEETING_TIMEZONE", "Asia/Seoul")
 

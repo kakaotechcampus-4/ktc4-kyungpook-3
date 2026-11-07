@@ -1,6 +1,6 @@
 import { safeReturnPath, withOAuthResult } from '@/shared/lib/oauth'
 import type { OAuthOutcome } from '@/shared/lib/oauth'
-import { requireMember } from '../auth-guard'
+import { requirePmRole } from '../auth-guard'
 import { db } from '../db'
 import { MOCK_NOW } from '../fixtures/constants'
 import { saveDb } from '../persistence'
@@ -32,7 +32,8 @@ export interface MockOAuthRequest {
 
 /**
  * 실 API 콜백(`/workspaces/{id}/integrations/{provider}/callback`)이 할 일을 흉내낸다.
- * 성공이면 연동 행을 `connected` 로 만든다. 로그인·소속이 없거나 공간이 없으면 실패로 돌아간다.
+ * 성공이면 연동 행을 `connected` 로 만든다. 로그인·소속이 없거나 PM 이 아니거나 공간이 없으면 실패로 돌아간다 —
+ * 백엔드 `_start_connection` 이 PM 이 아니면 제공자 화면 대신 `failed` 로 돌려보낸다.
  * `display_name` 은 실 API 처럼 생성 문자열이다 (계약 §4.0-②-7).
  */
 export function settleMockOAuth({
@@ -42,12 +43,16 @@ export function settleMockOAuth({
 }: Omit<MockOAuthRequest, 'state'>): OAuthOutcome {
   if (outcome !== 'success') return outcome
   const integrations = db.integrations[workspaceId]
-  if (requireMember(workspaceId) !== null || integrations === undefined) return 'failed'
-  integrations[provider] = {
+  if (requirePmRole(workspaceId) !== null || integrations === undefined) return 'failed'
+  const connected = {
     status: 'connected',
     display_name: `${PROVIDER_NAME[provider]} 연결됨`,
     connected_at: MOCK_NOW,
   }
+  // 모의 Discord 서버는 하나라 다시 연결해도 같은 서버다. 백엔드는 같은 서버로 다시 연결하면 채팅 수집 채널을 남긴다
+  if (provider === 'discord')
+    integrations.discord = { ...connected, chat_channel: integrations.discord.chat_channel }
+  else integrations.notion = connected
   return 'success'
 }
 

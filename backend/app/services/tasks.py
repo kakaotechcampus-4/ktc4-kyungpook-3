@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
-from app.models import ChangedField, Meeting, Member, Task, TaskHistory, TaskStatus
+from app.models import ChangedField, ChangeSource, Meeting, Member, Task, TaskHistory, TaskStatus
 from app.services import notion_sync
 
 # TaskUpdateRequest/승인 payload의 필드명 -> ChangedField 매핑
@@ -16,7 +16,6 @@ _FIELD_MAP: dict[str, ChangedField] = {
     "title": ChangedField.TITLE,
     "assignee_member_id": ChangedField.ASSIGNEE,
     "status": ChangedField.STATUS,
-    "progress": ChangedField.PROGRESS,
     "blocker": ChangedField.BLOCKER,
     "start_date": ChangedField.START_DATE,
     "due_date": ChangedField.DUE_DATE,
@@ -27,7 +26,7 @@ _VALID_STATUSES = {str(s) for s in TaskStatus}
 
 
 def validate_task_fields(updates: dict[str, object]) -> None:
-    """status·progress 등 업무 규칙을 검증한다.
+    """status·title 등 업무 규칙을 검증한다.
 
     PATCH API, 승인 반영, 자동 반영 모든 경로가 이 함수를 거쳐야 한다.
     """
@@ -40,23 +39,6 @@ def validate_task_fields(updates: dict[str, object]) -> None:
                 details={"field": "status", "value": status_val, "allowed": sorted(_VALID_STATUSES)},
             )
         updates["status"] = status_val
-
-    if "progress" in updates and updates["progress"] is not None:
-        try:
-            progress_val = int(updates["progress"])
-        except (TypeError, ValueError):
-            raise AppError(
-                ErrorCode.INVALID_REQUEST,
-                message=f"progress는 정수여야 합니다: {updates['progress']}",
-                details={"field": "progress", "value": str(updates["progress"])},
-            )
-        if not (0 <= progress_val <= 100):
-            raise AppError(
-                ErrorCode.INVALID_REQUEST,
-                message=f"progress는 0~100 범위여야 합니다: {progress_val}",
-                details={"field": "progress", "value": progress_val},
-            )
-        updates["progress"] = progress_val
 
     if "title" in updates:
         title_val = updates["title"]
@@ -107,7 +89,7 @@ def validate_workspace_ownership(
     """
     if assignee_member_id is not None:
         member = db.get(Member, assignee_member_id)
-        if member is None:
+        if member is None or member.is_deleted:
             raise AppError(
                 ErrorCode.MEMBER_NOT_FOUND,
                 details={"member_id": assignee_member_id},
@@ -152,16 +134,6 @@ def _serialize(value: object) -> str | None:
     return str(value)
 
 
-def _deserialize(field: str, value: str | None) -> object:
-    if value is None:
-        return None
-    if field == "progress":
-        return int(value)
-    if field in {"due_date", "start_date"}:
-        return date.fromisoformat(value)
-    return value
-
-
 def _clear_embedding(task: Task) -> None:
     """제목이 바뀌면 옛 제목의 임베딩을 지운다. 임베딩 워커가 새 제목으로 다시 채운다."""
     task.embedding = None
@@ -177,21 +149,22 @@ def create_task(
     start_date: date | None = None,
     due_date: date | None = None,
     status: str = TaskStatus.TODO,
-    progress: int | None = None,
     blocker: str | None = None,
     change_source: str,
     changed_by: str | None = None,
+    history_title: str | None = None,
 ) -> Task:
     """태스크를 새로 만들고, 생성 사실을 반영 로그 한 줄로 남긴다.
+
+    생성 줄에는 history_title(없으면 title)을 남긴다. 승인에서 PM이 제목을 고쳤을 때 제안한 제목을 남기려고 쓴다.
 
     수동 생성, 승인 반영, 자동 반영 모든 경로가 이 함수에서 같은 도메인 검증을 거친다.
     embedding은 NULL로 생기고 임베딩 워커가 채운다(app/services/embedding.py).
     """
-    fields: dict[str, object] = {"title": title, "status": status, "progress": progress}
+    fields: dict[str, object] = {"title": title, "status": status}
     validate_task_fields(fields)
     title = fields["title"]
     status = fields["status"]
-    progress = fields["progress"]
 
     validate_workspace_ownership(
         db, workspace_id,
@@ -207,7 +180,6 @@ def create_task(
         start_date=start_date,
         due_date=due_date,
         status=str(status),
-        progress=progress,
         blocker=blocker,
         version=1,
     )
@@ -219,13 +191,35 @@ def create_task(
             task_id=task.task_id,
             changed_field=str(ChangedField.TITLE),
             old_value=None,
-            new_value=title,
+            new_value=title if history_title is None else history_title,
             change_source=str(change_source),
             changed_by=changed_by,
         )
     )
     notion_sync.enqueue_task_sync(db, task)
     return task
+
+
+def log_manual_edit(
+    db: Session,
+    task: Task,
+    field: str,
+    *,
+    old_value: str | None,
+    new_value: str | None,
+    changed_by: str | None,
+) -> None:
+    """이미 task에 들어간 값을 PM이 고친 것으로 반영 로그 한 줄만 남긴다(값은 바꾸지 않는다)."""
+    db.add(
+        TaskHistory(
+            task_id=task.task_id,
+            changed_field=str(_FIELD_MAP[field]),
+            old_value=old_value,
+            new_value=new_value,
+            change_source=str(ChangeSource.MANUAL),
+            changed_by=changed_by,
+        )
+    )
 
 
 def apply_task_updates(
@@ -238,10 +232,12 @@ def apply_task_updates(
 ) -> list[TaskHistory]:
     """필드별로 변경을 적용하고, 실제로 바뀐 필드마다 반영 로그를 남긴다."""
     validate_task_fields(updates)
-    if "assignee_member_id" in updates and updates["assignee_member_id"] is not None:
+    # 지금 담당자를 그대로 보내면 검증하지 않는다. 담당자가 탈퇴한 태스크의 다른 칸은 계속 고칠 수 있어야 한다
+    new_assignee = updates.get("assignee_member_id")
+    if new_assignee is not None and new_assignee != task.assignee_member_id:
         validate_workspace_ownership(
             db, task.workspace_id,
-            assignee_member_id=str(updates["assignee_member_id"]),
+            assignee_member_id=str(new_assignee),
         )
     entries: list[TaskHistory] = []
     for field, new_value in updates.items():
@@ -332,7 +328,15 @@ def rollback_task_history(
             },
         )
 
-    restored_value = _deserialize(field, history.old_value)
+    # 승인하면서 PM이 고친 줄의 old_value는 검증하지 않은 제안 값일 수 있다(형식이 틀린 날짜, 다른 공간 담당자)
+    if field in {"due_date", "start_date"}:
+        restored_value = parse_date(history.old_value, field=field)
+    else:
+        restored_value = history.old_value
+        if restored_value is not None:
+            validate_task_fields({field: restored_value})
+            if field == "assignee_member_id":
+                validate_workspace_ownership(db, task.workspace_id, assignee_member_id=restored_value)
     setattr(task, field, restored_value)
     if field == "title":
         _clear_embedding(task)

@@ -1,40 +1,42 @@
 import { ApiError } from '@/shared/api/errors'
+import type { TimelineItemDto } from '@/shared/types/api/reply'
 import type { TaskDto } from '@/shared/types/api/task'
 import { taskFixtures, taskHistoryFixtures } from '@/shared/mock/fixtures/task'
-import { isNotionSynced, toTask, toTaskHistory } from './mapper'
+import { isNotionSynced, toTask, toTaskHistory, toTaskTimeline } from './mapper'
+
+const taskDtos: TaskDto[] = taskFixtures.map((row) => ({ ...row, auto_blocked: false }))
 
 it('maps snake case, version and Notion sync status while retaining date strings', () => {
-  expect(toTask(taskFixtures[0])).toEqual({
+  expect(toTask(taskDtos[0])).toEqual({
     id: 'tk_01',
     workspaceId: 'ws_01',
     meetingId: 'mt_09',
     title: '로그인 API 연동',
     assigneeMemberId: 'mb_01',
     status: 'in_progress',
-    progress: 40,
     blocker: null,
     dueDate: '2026-09-20',
     startDate: '2026-09-15',
     notionPageId: 'notion_tk_01',
     version: 1,
     notionSyncStatus: 'synced',
+    autoBlocked: false,
     createdAt: '2026-09-15T04:00:00Z',
     updatedAt: '2026-09-17T04:00:00Z',
   })
 })
 
 it('falls back null and omitted start dates to creation date and preserves other null values', () => {
-  expect(toTask(taskFixtures[1])).toMatchObject({
+  expect(toTask(taskDtos[1])).toMatchObject({
     startDate: '2026-09-10',
     notionPageId: null,
     notionSyncStatus: null,
   })
   // 계약 §4.7-6 반영 뒤 start_date 는 항상 온다. 서버가 빠뜨려도 폴백이 도는지만 지킨다
-  const dto = { ...structuredClone(taskFixtures[6]), start_date: undefined } as unknown as TaskDto
+  const dto = { ...structuredClone(taskDtos[6]), start_date: undefined } as unknown as TaskDto
   expect(toTask(dto)).toMatchObject({
     startDate: '2026-09-08',
     assigneeMemberId: null,
-    progress: null,
     blocker: null,
     meetingId: null,
   })
@@ -56,7 +58,7 @@ it('maps task history flags and unknown enum fallbacks', () => {
   })
   const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
   try {
-    expect(toTask({ ...taskFixtures[0], status: 'future' }).status).toBe('todo')
+    expect(toTask({ ...taskDtos[0], status: 'future' }).status).toBe('todo')
     expect(
       toTaskHistory({
         ...taskHistoryFixtures[0],
@@ -89,6 +91,27 @@ it('keeps start_date history as its own field instead of falling back to title',
   }
 })
 
+it('keeps scope history as its own field with only the new sentence (#205)', () => {
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    expect(
+      toTaskHistory({
+        ...taskHistoryFixtures[0],
+        changed_field: 'scope',
+        old_value: null,
+        new_value: '소셜 로그인은 이번 범위에서 빼기로 했어요.',
+      }),
+    ).toMatchObject({
+      field: 'scope',
+      oldValue: null,
+      newValue: '소셜 로그인은 이번 범위에서 빼기로 했어요.',
+    })
+    expect(warning).not.toHaveBeenCalled()
+  } finally {
+    warning.mockRestore()
+  }
+})
+
 describe('Notion 반영 상태', () => {
   it.each([
     ['pending', 'pending', false],
@@ -96,7 +119,7 @@ describe('Notion 반영 상태', () => {
     ['failed', 'failed', false],
     [null, null, false],
   ] as const)('notion_sync_status %s 는 %s 로 읽고 반영 완료=%s', (raw, status, synced) => {
-    const task = toTask({ ...taskFixtures[0], notion_sync_status: raw })
+    const task = toTask({ ...taskDtos[0], notion_sync_status: raw })
     expect(task.notionSyncStatus).toBe(status)
     expect(isNotionSynced(task)).toBe(synced)
   })
@@ -106,7 +129,7 @@ describe('Notion 반영 상태', () => {
     '페이지 ID 가 있어도 상태가 %s 면 반영 완료가 아니다',
     (raw) => {
       const task = toTask({
-        ...taskFixtures[0],
+        ...taskDtos[0],
         notion_page_id: 'notion_tk_01',
         notion_sync_status: raw,
       })
@@ -116,7 +139,7 @@ describe('Notion 반영 상태', () => {
   )
 
   it('페이지 ID 가 없어도 서버가 synced 라고 하면 그 상태를 따른다', () => {
-    const task = toTask({ ...taskFixtures[1], notion_page_id: null, notion_sync_status: 'synced' })
+    const task = toTask({ ...taskDtos[1], notion_page_id: null, notion_sync_status: 'synced' })
     expect(isNotionSynced(task)).toBe(true)
   })
 
@@ -124,7 +147,7 @@ describe('Notion 반영 상태', () => {
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       for (const raw of ['done', 'SYNCED', 'synced ', '']) {
-        const task = toTask({ ...taskFixtures[0], notion_sync_status: raw })
+        const task = toTask({ ...taskDtos[0], notion_sync_status: raw })
         expect(task.notionSyncStatus).toBeNull()
         expect(isNotionSynced(task)).toBe(false)
       }
@@ -136,7 +159,7 @@ describe('Notion 반영 상태', () => {
 
 describe('버전', () => {
   it('서버 정수 버전을 그대로 읽는다', () => {
-    expect(toTask({ ...taskFixtures[0], version: 7 }).version).toBe(7)
+    expect(toTask({ ...taskDtos[0], version: 7 }).version).toBe(7)
   })
 
   it.each([
@@ -147,10 +170,140 @@ describe('버전', () => {
     ['null', null],
     ['없음', undefined],
   ])('version 이 %s 이면 매핑하지 않고 잘못된 응답으로 던진다', (_label, version) => {
-    const dto = { ...taskFixtures[0], version } as unknown as TaskDto
+    const dto = { ...taskDtos[0], version } as unknown as TaskDto
     expect(() => toTask(dto)).toThrow(ApiError)
     expect(() => toTask(dto)).toThrow(
       expect.objectContaining({ code: 'INVALID_RESPONSE', kind: 'invalid_response' }) as Error,
     )
+  })
+})
+
+describe('자동 막힘', () => {
+  it.each([
+    [true, true],
+    [false, false],
+  ])('auto_blocked %s 를 그대로 읽는다', (raw, autoBlocked) => {
+    expect(toTask({ ...taskDtos[2], status: 'blocked', auto_blocked: raw }).autoBlocked).toBe(
+      autoBlocked,
+    )
+  })
+
+  it.each([
+    ['문자열', 'true'],
+    ['숫자', 1],
+    ['null', null],
+    ['없음', undefined],
+  ])('auto_blocked 가 %s 이면 던지지 않고 풀 수 없는 것(false)으로 읽는다', (_label, raw) => {
+    const dto = { ...taskDtos[2], status: 'blocked', auto_blocked: raw } as unknown as TaskDto
+    expect(toTask(dto).autoBlocked).toBe(false)
+  })
+})
+
+describe('태스크 기록 (#344)', () => {
+  const reply: TimelineItemDto = {
+    kind: 'reply',
+    at: '2026-09-17T01:00:00Z',
+    message_id: 'mg_31',
+    member_name: '이재환',
+    channel: 'discord',
+    body: 'DB 스키마 정리는 끝냈어요.',
+    changes: [
+      {
+        change_id: 'rc_02',
+        field: 'status',
+        new_value: 'done',
+        evidence_status: 'certain',
+        summary: 'DB 스키마 정리를 끝냈대요',
+        evidence_quote: 'DB 스키마 정리는 끝냈어요',
+        result: 'applied',
+        undoable: true,
+      },
+    ],
+  }
+  const historyRow = (historyId: string): TimelineItemDto => ({
+    kind: 'history',
+    at: '2026-09-16T06:00:00Z',
+    history_id: historyId,
+    changed_field: 'due_date',
+    old_value: '2026-09-13',
+    new_value: '2026-09-20',
+    change_source: 'meeting',
+  })
+
+  it('답장은 그 답장이 바꾼 줄과 한 칸이다', () => {
+    expect(toTaskTimeline([reply], [], 'tk_03')).toEqual([
+      {
+        kind: 'reply',
+        id: 'mg_31',
+        at: '2026-09-17T01:00:00Z',
+        memberName: '이재환',
+        channel: 'discord',
+        body: 'DB 스키마 정리는 끝냈어요.',
+        changes: [
+          {
+            id: 'rc_02',
+            field: 'status',
+            newValue: 'done',
+            evidenceStatus: 'certain',
+            summary: 'DB 스키마 정리를 끝냈대요',
+            evidenceQuote: 'DB 스키마 정리는 끝냈어요',
+            result: 'applied',
+            undoable: true,
+          },
+        ],
+      },
+    ])
+  })
+
+  it('이력 칸은 /history 의 같은 이력으로 변경자·되돌림을 채운다', () => {
+    const full = toTaskHistory({
+      ...taskHistoryFixtures[0],
+      changed_by: 'mb_01',
+      is_auto: false,
+      is_rolled_back: true,
+      rolled_back_at: '2026-09-17T00:00:00Z',
+    })
+    expect(toTaskTimeline([historyRow(full.id)], [full], 'tk_01')).toEqual([
+      { kind: 'history', entry: full },
+    ])
+  })
+
+  it('/history 에 없는 이력 칸은 타임라인 칸만으로 만들고 변경자는 모른다', () => {
+    expect(toTaskTimeline([historyRow('hs_99')], [], 'tk_01')).toEqual([
+      {
+        kind: 'history',
+        entry: {
+          id: 'hs_99',
+          taskId: 'tk_01',
+          field: 'due_date',
+          oldValue: '2026-09-13',
+          newValue: '2026-09-20',
+          source: 'meeting',
+          changedBy: null,
+          isAuto: false,
+          isRolledBack: false,
+          rolledBackAt: null,
+          createdAt: '2026-09-16T06:00:00Z',
+        },
+      },
+    ])
+  })
+
+  it('모르는 줄·결과는 값을 읽지 못한 줄, 반영하지 않음으로 둔다', () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const future = {
+        ...reply,
+        changes: [{ ...reply.changes[0], field: 'priority', result: 'escalated' }],
+      } as unknown as TimelineItemDto
+      const [item] = toTaskTimeline([future], [], 'tk_03')
+      expect(item.kind === 'reply' && item.changes[0]).toMatchObject({
+        field: 'failed',
+        result: 'noted',
+        undoable: true,
+      })
+    } finally {
+      warning.mockRestore()
+    }
   })
 })

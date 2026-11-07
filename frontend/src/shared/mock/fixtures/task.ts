@@ -1,5 +1,7 @@
 import type { TaskDto, TaskHistoryDto } from '@/shared/types/api/task'
 
+export type MockTask = Omit<TaskDto, 'auto_blocked'>
+
 const seeds: [string, string, string | null, string, string | null, string | null, string][] = [
   ['tk_01', '로그인 API 연동', 'mb_01', 'in_progress', '2026-09-20', '2026-09-15', '2026-09-15'],
   ['tk_02', '회원가입 화면', 'mb_02', 'todo', '2026-09-16', null, '2026-09-10'],
@@ -12,7 +14,7 @@ const seeds: [string, string, string | null, string, string | null, string | nul
   ['tk_09', '폰트 적용', 'mb_01', 'done', '2026-09-14', null, '2026-09-10'],
   ['tk_10', '토큰 정리', 'mb_02', 'done', '2026-09-17', '2026-09-12', '2026-09-12'],
 ]
-export const taskFixtures: TaskDto[] = seeds.map(
+export const taskFixtures: MockTask[] = seeds.map(
   ([task_id, title, assignee_member_id, status, due_date, start_date, created]) => ({
     task_id,
     workspace_id: 'ws_01',
@@ -20,7 +22,6 @@ export const taskFixtures: TaskDto[] = seeds.map(
     title,
     assignee_member_id,
     status,
-    progress: task_id === 'tk_01' ? 40 : null,
     blocker: task_id === 'tk_03' ? 'Notion 권한 대기' : null,
     due_date,
     start_date,

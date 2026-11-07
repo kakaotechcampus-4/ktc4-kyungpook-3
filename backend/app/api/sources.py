@@ -11,9 +11,9 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_service_token
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Meeting, MeetingStatus, Source
+from app.models import Meeting, MeetingSource, MeetingStatus, Source
 from app.schemas.source import TranscriptCreateRequest, TranscriptCreateResponse
-from app.services.matching import resolve_speaker
+from app.services.matching import active_members_by_id, resolve_speaker
 
 router = APIRouter(
     prefix="/meetings", tags=["meetings"], dependencies=[Depends(require_service_token)]
@@ -84,6 +84,13 @@ def create_sources(
     ).scalar_one_or_none()
     if meeting is None:
         raise AppError(ErrorCode.MEETING_NOT_FOUND, details={"meeting_id": meeting_id})
+    if payload.source == "chat" and meeting.source != MeetingSource.CHAT:
+        # 24시간 상한은 초·ms 를 잘못 보낸 버그를 막는 장치다. 요청 필드 하나로 우회하지 못하게 한다
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message="source 'chat' 은 채팅 회의에만 보낼 수 있습니다.",
+            details={"meeting_id": meeting_id, "meeting_source": meeting.source},
+        )
     if meeting.status == MeetingStatus.FAILED:
         # MEETING_ALREADY_ENDED가 아니다. 봇은 그 코드를 "이미 처리됨"으로 보고 넘어가는데,
         # 여기서는 발화가 저장되지 않았으니 새 회의로 다시 올려야 한다.
@@ -92,8 +99,22 @@ def create_sources(
             details={"meeting_id": meeting_id, "status": meeting.status},
         )
 
+    # 요청에 처음 나온 순서로, 중복 없이. 틀린 ID 가 하나라도 있으면 아무것도 저장하지 않는다.
+    requested_member_ids = list(
+        dict.fromkeys(seg.speaker_member_id for seg in payload.segments if seg.speaker_member_id)
+    )
+    active = active_members_by_id(db, meeting.workspace_id, requested_member_ids)
+    unknown_ids = [mid for mid in requested_member_ids if mid not in active]
+    if unknown_ids:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message="이 워크스페이스 팀원이 아닌 speaker_member_id 가 있습니다.",
+            details={"member_ids": unknown_ids},
+        )
     member_ids = _member_ids_by_speaker(
-        db, meeting.workspace_id, {seg.speaker for seg in payload.segments if seg.speaker}
+        db,
+        meeting.workspace_id,
+        {seg.speaker for seg in payload.segments if seg.speaker and not seg.speaker_member_id},
     )
     # seq 순으로 넣는다. 겹치는 seq를 담은 요청들이 같은 행을 다른 순서로 잡아 서로 기다리지 않게 한다.
     rows = [
@@ -102,7 +123,7 @@ def create_sources(
             "seq": seg.seq,
             "speaker_discord_user_id": seg.speaker,
             "speaker_name": _speaker_name(payload.speaker_names, seg.speaker),
-            "member_id": member_ids.get(seg.speaker) if seg.speaker else None,
+            "member_id": seg.speaker_member_id or (member_ids.get(seg.speaker) if seg.speaker else None),
             "start_ms": _to_ms(seg.start),
             "end_ms": _to_ms(seg.end),
             "text": seg.text,

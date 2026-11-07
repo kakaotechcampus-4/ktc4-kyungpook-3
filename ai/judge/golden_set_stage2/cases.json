@@ -396,5 +396,216 @@
       ]
     },
     "expected": {"is_meaningful": true, "is_new": true, "matched_task_id": null}
+  },
+  {
+    "description": "사실 보고 완료 — PR 머지까지 끝남(#207)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "결제 API 연동은 PR 올렸고 머지까지 됐어요.",
+      "candidates": [
+        {"notion_page_id": "n3", "task_id": "task_payment", "title": "결제 API 연동", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_payment", "status": "done", "category": "status"}
+  },
+  {
+    "description": "사실 보고 완료 — 배포 나감(#207)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "검색 성능 개선 건은 어제 배포 나갔어요.",
+      "candidates": [
+        {"notion_page_id": "n6", "task_id": "task_search", "title": "검색 기능 성능 개선", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_search", "status": "done", "category": "status"}
+  },
+  {
+    "description": "사실 보고 완료 — QA 로 넘김(#207)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "회원가입 이메일 인증은 QA 쪽에 넘겼습니다.",
+      "candidates": [
+        {"notion_page_id": "n8", "task_id": "task_signup", "title": "회원가입 이메일 인증 기능 구현", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_signup", "status": "done", "category": "status"}
+  },
+  {
+    "description": "사실 보고 시작 — 오늘부터 잡음(todo → in_progress, #207)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "알림 설정 페이지는 오늘부터 제가 잡았어요.",
+      "candidates": [
+        {"notion_page_id": "n10", "task_id": "task_noti", "title": "알림 설정 페이지 만들기", "status": "todo", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_noti", "status": "in_progress"}
+  },
+  {
+    "description": "사실 보고 막힘 — 시안이 안 와서 손 놓음(#207)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "온보딩 튜토리얼은 디자인 시안이 안 와서 손 놓고 있어요.",
+      "candidates": [
+        {"notion_page_id": "n11", "task_id": "task_onboarding", "title": "온보딩 튜토리얼 제작", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_onboarding", "status": "blocked", "category": "status"}
+  },
+  {
+    "description": "사실 보고 막힘 — 서버 권한 대기(#207)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "배포 파이프라인은 서버 권한 기다리는 중이에요. 그거 없으면 더 못 해요.",
+      "candidates": [
+        {"notion_page_id": "n12", "task_id": "task_deploy", "title": "배포 파이프라인 구성", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_deploy", "status": "blocked", "category": "status"}
+  },
+  {
+    "description": "사실 보고 재개 — 권한 받아서 다시 손댐(blocked → in_progress, #207)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "서버 권한 받아서 배포 파이프라인 오늘 다시 손대고 있어요.",
+      "candidates": [
+        {"notion_page_id": "n12", "task_id": "task_deploy", "title": "배포 파이프라인 구성", "status": "blocked", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_deploy", "status": "in_progress", "category": "status"}
+  },
+  {
+    "description": "리마인드 답장 완료 — 명세서 올림(chat, #207)",
+    "judge_input": {
+      "source": "chat",
+      "text": "명세서 올렸어요!",
+      "candidates": [
+        {"notion_page_id": "n13", "task_id": "task_api_spec", "title": "API 명세서 작성", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_api_spec", "status": "done", "category": "status"}
+  },
+  {
+    "description": "리마인드 답장 시작 — 짧은 착수 답(chat, #207)",
+    "judge_input": {
+      "source": "chat",
+      "text": "네 지금 하고 있어요",
+      "candidates": [
+        {"notion_page_id": "n10", "task_id": "task_noti", "title": "알림 설정 페이지 만들기", "status": "todo", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_noti", "status": "in_progress", "category": "status"}
+  },
+  {
+    "description": "리마인드 답장 막힘 — 다른 사람 응답 대기(chat, #207)",
+    "judge_input": {
+      "source": "chat",
+      "text": "백엔드 응답 형식이 아직 안 정해져서 대기 중이에요. 정해지면 바로 할게요",
+      "candidates": [
+        {"notion_page_id": "n14", "task_id": "task_fe_api", "title": "프론트 API 연결", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_fe_api", "status": "blocked", "category": "status"}
+  },
+  {
+    "description": "사실 보고 완료 — PR 올리고 리뷰 대기, 리뷰 대기는 막힘 아님(#207, 11/4 정함)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "결제 API 연동 PR 올렸어요, 지금 리뷰 기다리고 있어요.",
+      "candidates": [
+        {"notion_page_id": "n3", "task_id": "task_payment", "title": "결제 API 연동", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_payment", "status": "done", "category": "status"}
+  },
+  {
+    "description": "사실 보고 완료 — PR 만 올림(#207, 11/4 정함)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "결제 API 연동 PR 올렸어요.",
+      "candidates": [
+        {"notion_page_id": "n3", "task_id": "task_payment", "title": "결제 API 연동", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_payment", "status": "done", "category": "status"}
+  },
+  {
+    "description": "경계 완료 아님 — 거의 붙임(#207)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "로그인 API 거의 다 붙였어요.",
+      "candidates": [
+        {"notion_page_id": "n7", "task_id": "task_login_api", "title": "로그인 API 연동", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": false}
+  },
+  {
+    "description": "경계 완료 아님 — 올릴 예정(#207)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "검색 성능 개선은 내일 배포 올리려고요.",
+      "candidates": [
+        {"notion_page_id": "n6", "task_id": "task_search", "title": "검색 기능 성능 개선", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": false},
+    "observe_only": true
+  },
+  {
+    "description": "경계 완료 아님 — 일부만 함(#207)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "결제 API 는 결제 쪽만 붙였고 취소 쪽은 아직이에요.",
+      "candidates": [
+        {"notion_page_id": "n3", "task_id": "task_payment", "title": "결제 API 연동", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": false},
+    "observe_only": true
+  },
+  {
+    "description": "경계 완료 아님 — 리마인드 답장 거의 다 함(chat, #207)",
+    "judge_input": {
+      "source": "chat",
+      "text": "거의 다 했어요",
+      "candidates": [
+        {"notion_page_id": "n13", "task_id": "task_api_spec", "title": "API 명세서 작성", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": false}
+  },
+  {
+    "description": "이미 반영된 사실 보고 — done 작업의 배포 재언급(#207)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "검색 성능 개선은 지난주에 배포 나갔죠.",
+      "candidates": [
+        {"notion_page_id": "n6", "task_id": "task_search", "title": "검색 기능 성능 개선", "status": "done", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": false}
+  },
+  {
+    "description": "시작 전 작업을 거의 다 함 — done 이 아니라 in_progress (#207)",
+    "judge_input": {
+      "source": "chat",
+      "text": "알림 설정 페이지 거의 다 만들었어요",
+      "candidates": [
+        {"notion_page_id": "n10", "task_id": "task_noti", "title": "알림 설정 페이지 만들기", "status": "todo", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_noti", "status": "in_progress"}
+  },
+  {
+    "description": "막혔던 작업을 다시 해서 일부 함 — done 이 아니라 in_progress (#207)",
+    "judge_input": {
+      "source": "chat",
+      "text": "권한 받아서 배포 파이프라인 절반쯤 해 놨어요",
+      "candidates": [
+        {"notion_page_id": "n12", "task_id": "task_deploy", "title": "배포 파이프라인 구성", "status": "blocked", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_deploy", "status": "in_progress"}
   }
 ]

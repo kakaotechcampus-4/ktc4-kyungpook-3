@@ -4,7 +4,7 @@ import type { Extraction, ExtractionApprovalStatus, ExtractionItem } from './typ
 
 const APPROVAL_STATUSES = ['pending', 'approved', 'rejected'] as const
 
-// 없는 값(이전 서버 응답)은 null 이다. 모르는 값은 대기로 보지 않고 null 로 내린다 — 승인 상태로 판정하는 곳이 없어 경고만 남긴다
+// 없는 값(이전 서버 응답)·모르는 값은 null 이다. 승인이 걸린 항목이 null 이면 반영으로 보지 않는다(extractionView). 모르는 값은 경고를 남긴다
 function approvalStatusOf(value: string | null | undefined): ExtractionApprovalStatus | null {
   if (value === null || value === undefined) return null
   if ((APPROVAL_STATUSES as readonly string[]).includes(value))
@@ -29,6 +29,7 @@ export function toExtractionItem(dto: ExtractionItemDto): ExtractionItem {
     evidence: {
       quote: dto.evidence.quote,
       speaker: dto.evidence.speaker,
+      speakerMemberId: dto.evidence.speaker_member_id,
       atMs: dto.evidence.at_ms,
     },
     appliedTaskId: dto.task_id,

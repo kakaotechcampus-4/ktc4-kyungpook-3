@@ -57,6 +57,7 @@ class StreamingVAD:
     frame_ms: int = FRAME_MS
     speech_rms: float = SPEECH_RMS
     max_segment_ms: int = MAX_SEGMENT_MS   # 배치 경로는 파일 전체를 들고 있어 더 크게 주고 뒤에서 조용한 자리에서 가른다
+    min_speech_ms: int | None = None       # None 이면 MIN_SPEECH_MS. 배치는 batch.BATCH_MIN_SPEECH_MS 를 준다(0031)
 
     _buf: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.float32))
     _pending: list[np.ndarray] = field(default_factory=list)
@@ -71,6 +72,10 @@ class StreamingVAD:
     _run_ms: int = 0                # 임계를 넘는 프레임이 연속으로 이어진 길이
     _run: list[np.ndarray] = field(default_factory=list)  # 발화 시작 전 런의 프레임 (뒤늦게 붙인다)
     _silence_at_run: int = 0        # 이 런이 시작되기 직전까지 쌓인 침묵
+
+    @property
+    def _min_speech_ms(self) -> int:
+        return MIN_SPEECH_MS if self.min_speech_ms is None else self.min_speech_ms
 
     @property
     def _frame(self) -> int:
@@ -217,7 +222,7 @@ class StreamingVAD:
         if self._run_ms == ONSET_MS:
             # 지금 막 말로 확정됐다. 런 동안 침묵으로 셌던 것을 되돌린다.
             self._silence_ms = 0
-            if self._speech_ms < MIN_SPEECH_MS and self._silence_at_run >= RESTART_SILENCE_MS:
+            if self._speech_ms < self._min_speech_ms and self._silence_at_run >= RESTART_SILENCE_MS:
                 # 앞에 있던 소리는 기침이나 알림음이다. 여기서부터 다시 센다. 앞 소리를 pcm 에
                 # 두면 말 필터의 비율이 희석돼 진짜 말이 버려진다.
                 self._seg_start_ms = frame_start_ms - (ONSET_MS - self.frame_ms)
@@ -244,7 +249,7 @@ class StreamingVAD:
         self._run_ms = 0
         self._run = []
 
-        if speech_ms < MIN_SPEECH_MS or len(pcm) == 0:
+        if speech_ms < self._min_speech_ms or len(pcm) == 0:
             return None
 
         self._seq += 1

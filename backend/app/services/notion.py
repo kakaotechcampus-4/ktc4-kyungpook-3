@@ -33,7 +33,6 @@ PROPERTY_NAMES = {
     "status": "Status",
     "assignee": "Assignee",
     "due_date": "Due Date",
-    "progress": "Progress",
     "blocker": "Blocker",
     # 페이지와 Task를 잇는 키. 생성 결과가 불명확할 때 이 값으로 기존 페이지를 찾는다.
     "task_id": "Task ID",
@@ -45,7 +44,6 @@ DATABASE_SCHEMA = {
     PROPERTY_NAMES["status"]: "select",
     PROPERTY_NAMES["assignee"]: "rich_text",
     PROPERTY_NAMES["due_date"]: "date",
-    PROPERTY_NAMES["progress"]: "number",
     PROPERTY_NAMES["blocker"]: "rich_text",
     PROPERTY_NAMES["task_id"]: "rich_text",
 }
@@ -112,7 +110,6 @@ def build_properties(db: Session, task: Task) -> dict[str, object]:
     properties[PROPERTY_NAMES["due_date"]] = {
         "date": {"start": task.due_date.isoformat()} if task.due_date else None
     }
-    properties[PROPERTY_NAMES["progress"]] = {"number": task.progress}
     properties[PROPERTY_NAMES["blocker"]] = {
         "rich_text": [{"text": {"content": task.blocker}}] if task.blocker else []
     }
