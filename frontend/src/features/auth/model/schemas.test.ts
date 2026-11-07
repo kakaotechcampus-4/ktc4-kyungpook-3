@@ -28,6 +28,19 @@ describe('회원가입 검증', () => {
     ])
   })
 
+  it('이름은 100자까지다 — 101자는 거절한다 (#446)', () => {
+    expect(issues(signupSchema.safeParse({ ...valid, name: 'a'.repeat(101) }))).toEqual([
+      ['name', AUTH_MESSAGES.nameTooLong],
+    ])
+    expect(signupSchema.safeParse({ ...valid, name: 'a'.repeat(100) }).success).toBe(true)
+  })
+
+  it('이름 길이는 앞뒤 공백을 지운 뒤에 센다', () => {
+    expect(signupSchema.parse({ ...valid, name: `  ${'a'.repeat(100)} ` }).name).toBe(
+      'a'.repeat(100),
+    )
+  })
+
   it.each([
     ['', AUTH_MESSAGES.emailRequired],
     ['pm', AUTH_MESSAGES.emailFormat],

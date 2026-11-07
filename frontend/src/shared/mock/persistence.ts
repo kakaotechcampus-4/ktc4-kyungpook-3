@@ -23,9 +23,10 @@ export const MOCK_DB_STORAGE_KEY = 'msw-db'
  * 13: 되돌릴 자동 막힘(`autoBlocks`) 칸 추가 (#365). 응답의 `auto_blocked` 를 이력이 아니라 이 기록으로 판정한다.
  * 14: 리마인드 답장 판단(`replies`) 칸 추가 (#344). 태스크 고르기·태스크 기록·되돌리기가 이 기록을 읽는다.
  * 15: Discord 연동에 회의 채팅 채널(`chat_channel`)과 모의 서버의 텍스트 채널(`discordChannels`) 칸 추가 (#429).
+ * 16: 로그인 시도 제한(`loginLimit`) 칸 추가 (#457).
  * 올리면 e2e/restore.e2e.ts 와 src/shared/mock/taskScenarios.test.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
  */
-export const MOCK_DB_VERSION = 15
+export const MOCK_DB_VERSION = 16
 
 interface StoredDb {
   version: number
@@ -117,7 +118,14 @@ function isMockDb(value: unknown): value is MockDb {
       hasStrings(channel, ['channel_id', 'name', 'access']),
     ) &&
     isMeetingFlow(state.meetingFlow) &&
-    isPasswordReset(state.passwordReset)
+    isPasswordReset(state.passwordReset) &&
+    Object.values(state.loginLimit).every(
+      (entry) =>
+        isRecord(entry) &&
+        typeof entry.failures === 'number' &&
+        typeof entry.windowStartedAt === 'number' &&
+        (entry.blockedUntil === null || typeof entry.blockedUntil === 'number'),
+    )
   )
 }
 
