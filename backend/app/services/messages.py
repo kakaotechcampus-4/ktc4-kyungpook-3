@@ -44,12 +44,14 @@ from app.models import (
     Workspace,
     WorkspaceMessageSettings,
 )
-from app.services import replies, scheduler
+from app.services import notifications, replies, scheduler
 
 # 봇이 가져간 뒤 결과 보고가 이 시간 안에 없으면 못 보냄(알 수 없음)으로 닫는다. 다시 주지 않는다(최대 한 번).
 CLAIM_TIMEOUT = timedelta(minutes=10)
 # 초안은 다시 써도 해가 없으므로, 맡긴 뒤 이 시간 안에 안 돌아오면 다시 맡긴다.
 DRAFT_CLAIM_TIMEOUT = timedelta(minutes=10)
+# 이어 쓴 글이 줄줄이 울리지 않게 대화·방향마다 이 구간에 알림 하나만 낸다.
+MESSAGE_NOTICE_SECONDS = 300
 STYLE_EXAMPLE_LIMIT = 5
 # 디스코드 DM 한 통의 한도. 초안은 틀을 씌운 전체가 이 안이어야 한다.
 DRAFT_MAX_LENGTH = 2000
@@ -929,6 +931,27 @@ def add_web_reply(db: Session, thread: MessageThread, *, body: str, now: datetim
     return message
 
 
+def notify_new_message(db: Session, message: ThreadMessage, now: datetime) -> None:
+    """상대편에게 새 글을 알린다. PM 글은 대화 주인에게, 팀원 글은 쓴 사람을 뺀 PM 전원에게 간다.
+
+    구간은 알림을 내는 시각으로 나눈다. 봇이 밀린 디스코드 글을 한꺼번에 넣으면 글의 시각은 흩어져 있어도 한 번만 울린다.
+    """
+    now = utc(now)
+    thread = message.thread
+    args = dict(
+        kind="message_received", link_type="thread", link_id=thread.thread_id, now=now,
+        dedupe_key=f"message:{thread.thread_id}:{message.sender}:{int(now.timestamp()) // MESSAGE_NOTICE_SECONDS}",
+    )
+    preview = scheduler._preview(message.body)
+    if message.sender == MessageSender.PM:
+        notifications.notify(db, member_id=thread.member_id, text=f"{message.author_name}: {preview}", **args)
+    else:
+        notifications.notify_pms(
+            db, workspace_id=thread.workspace_id, text=f"{thread.member.display_name}: {preview}",
+            exclude=thread.member_id, **args,
+        )
+
+
 def add_pm_message(db: Session, thread: MessageThread, *, author: Member, body: str, now: datetime) -> ThreadMessage:
     """PM 이 웹에서 쓴 글. 예약·승인 없이 바로 발송 대기로 가고, 시계·판단은 건드리지 않는다."""
     now = utc(now)
@@ -943,4 +966,5 @@ def add_pm_message(db: Session, thread: MessageThread, *, author: Member, body: 
     )
     db.add(message)
     db.flush()
+    notify_new_message(db, message, now)
     return message
