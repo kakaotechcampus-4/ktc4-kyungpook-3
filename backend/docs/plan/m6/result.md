@@ -123,7 +123,7 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 | 변경 | 위치 |
 |---|---|
 | 새 표 `message_thread_read`(`thread_id`·`member_id` 기본 키, `last_read_at`, `updated_at`). 마이그레이션이 탈퇴하지 않은 팀원의 자기 대화와 PM 의 워크스페이스 모든 대화를 마이그레이션 시각으로 채운다 | [models.py](../../../app/models/models.py) `MessageThreadRead`, [마이그레이션](../../../migrations/versions/5d2e8a41c7b3_add_message_thread_read.py) |
-| 읽지 않은 수 계산(쿼리 하나), 읽음 처리(뒤로 가지 않음, 처음 넣기 경쟁은 savepoint 와 조건부 UPDATE), 승격 때 모든 대화 읽음 | [message_reads.py](../../../app/services/message_reads.py) |
+| 읽지 않은 수 계산(쿼리 하나), 읽음 처리(뒤로 가지 않음, 처음 넣기 경쟁은 savepoint 와 조건부 UPDATE), 승격 때 남의 대화 읽음(자기 대화는 제외) | [message_reads.py](../../../app/services/message_reads.py) |
 | `GET /api/v1/workspaces/{ws}/messages/unread-count` → `{unread_count}`, `POST /api/v1/workspaces/{ws}/messages/threads/{thread_id}/read` → `{thread_id, unread_count: 0, total_unread_count, last_read_at}`, `ThreadSummary.unread_count`. 새 오류 코드 없음 | [messages.py](../../../app/api/messages.py), [message.py](../../../app/schemas/message.py) |
 | 팀원을 PM 으로 올리면 같은 PATCH 커밋 안에서 그 순간까지 읽음 | [members.py](../../../app/api/members.py) `update_member` |
 | 테스트 | [test_message_reads_service.py](../../../tests/api/test_message_reads_service.py), [test_message_unread_api.py](../../../tests/api/test_message_unread_api.py), [test_migration_message_thread_read.py](../../../tests/test_migration_message_thread_read.py) |
@@ -138,7 +138,7 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 | PM 마다 따로, PM 자기 대화 봇 메시지 포함 | 구현 | 서비스·API 테스트 통과 |
 | 팀원 답장 앞 봇 메시지는 읽음 | 구현 | 서비스 테스트 통과 |
 | 탈퇴 팀원 대화·보내기 전 묶음 제외 | 구현 | 서비스·API 테스트 통과 |
-| 승격 때 그 순간까지 읽음 | 구현 | API 테스트(기능 없이 실패 확인) 통과 |
+| 승격 때 그 순간까지 남의 대화 읽음, 자기 대화의 봇 메시지는 그대로 | 구현 | API 테스트(기능 없이 실패 확인) 통과 |
 | 목록 쿼리 수가 대화 수에 비례하지 않음 | 구현 | 대화 2개·4개에서 집계 SELECT 1개 |
 | 종 알림 변경 없음 | 지킴 | `notifications` 코드를 바꾸지 않았다 |
 | FE 전달 | 이슈 #480 댓글 | PR 본문 참고 |

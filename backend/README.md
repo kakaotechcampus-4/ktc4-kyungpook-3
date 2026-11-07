@@ -531,9 +531,9 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 다른 SMTP 로 옮길 때
 | `POST /api/v1/workspaces/{workspace_id}/messages/threads/{thread_id}/read` | PM 또는 대화 주인 | 그 대화의 가장 늦은 메시지까지 읽음으로 옮긴다(뒤로 가지 않음). `{thread_id, unread_count: 0, total_unread_count, last_read_at}`. 다시 불러도 200, 메시지 없는 대화는 `last_read_at` null. 없음·다른 워크스페이스·(PM 이 보낸) 탈퇴 팀원 대화는 404 `MESSAGE_THREAD_NOT_FOUND`, 팀원이 남의 대화면 403 `FORBIDDEN` |
 
 - 대화 목록(`GET .../messages`)의 `threads[]` 와 대화 상세(`GET .../threads/{id}`)의 `thread` 에 `unread_count` 가 있다. 조회는 읽음을 바꾸지 않는다.
-- 도착 시각은 `coalesce(received_at, created_at)` 다. 늦게 들어온 디스코드 답장도 센다.
+- 도착 시각은 `coalesce(received_at, created_at)` 다. 늦게 들어온 디스코드 답장도 센다. 단 봇 메시지에 답했는지는 보낸 시각(`created_at`)으로 가른다. `awaiting_reply_since` 와 같은 기준이다.
 - 상대편: 자기 대화면 봇 메시지, 남의 대화(PM)면 대화 주인의 답장. 자기 대화에서 봇 메시지 뒤에 내가 답했으면 그 봇 메시지는 세지 않는다.
 - PM 마다 따로 센다. PM 자기 대화의 봇 메시지도 센다. 탈퇴한 팀원 대화와 보내기 전 묶음은 세지 않는다.
 - 읽은 위치가 없으면 그 사람이 들어온 시각이 기준이다. 배포 때 있던 메시지는 마이그레이션이 모두 읽음으로 채웠다.
-- 팀원을 PM 으로 올리면 그 순간까지 모든 대화가 읽음이 된다.
+- 팀원을 PM 으로 올리면 그 순간까지 남의 대화가 읽음이 된다. 자기 대화의 봇 메시지는 그대로 센다.
 - 종 알림(`notifications`)과는 별개다. 결정 근거는 [결정 기록](docs/plan/m6/basis-for-decision/2026-11-07-message-unread-count.md).
