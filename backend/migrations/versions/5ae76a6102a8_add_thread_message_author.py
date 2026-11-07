@@ -6,7 +6,7 @@ sender 는 문자열 칸이라 값 추가에 스키마 변경이 없다.
 되돌리면 pm 글을 bot 으로 바꾸고 작성자는 잃는다. 옛 코드가 pm 을 팀원 말로 읽지 않게 하려는 것이다.
 
 Revision ID: 5ae76a6102a8
-Revises: b0d32ee4abcb
+Revises: 3c9a1f7d2b64
 Create Date: 2026-11-07 20:04:38.337124
 
 """
@@ -18,7 +18,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '5ae76a6102a8'
-down_revision: Union[str, Sequence[str], None] = 'b0d32ee4abcb'
+down_revision: Union[str, Sequence[str], None] = '3c9a1f7d2b64'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
