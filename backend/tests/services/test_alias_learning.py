@@ -86,6 +86,8 @@ def test_learnable_alias_text_for_unmatched_name():
         {"assignee_raw": "저희들이"},
         {"assignee_raw": "우리들이"},
         {"assignee_raw": "저희들도"},
+        # 이름 끝 "은"은 조사로 떼지 않아("하은"·"나은") "본인은"은 목록에 직접 둔다
+        {"assignee_raw": "본인은"},
     ],
 )
 def test_learnable_alias_text_is_none_when_not_learnable(fields):
@@ -114,3 +116,16 @@ def test_alias_lookup_forms_include_matching_candidates_and_saved_text():
     forms = alias_learning.alias_lookup_forms("하은은", "하은은")
     assert forms == {"하은은", "하은"}
     assert alias_learning.alias_lookup_forms("화은 님이", "화은") == {"화은 님이", "화은 님", "화은"}
+
+
+@pytest.mark.parametrize("raw, expected", [("제인", "제인"), ("나연", "나연"), ("나은", "나은"), ("제인이가", "제인")])
+def test_names_that_start_with_self_reference_letters_are_still_learned(raw, expected):
+    """통째로 일치할 때만 거르므로 "제"·"나"로 시작하는 이름은 배운다. startswith 로 바꾸면 이 이름들이 막힌다."""
+    assert alias_learning.learnable_alias_text(_item(assignee_raw=raw)) == expected
+
+
+@pytest.mark.parametrize("raw", ["제이", "제이가", "나이", "나이가"])
+def test_names_that_trim_to_self_reference_are_not_learned(raw):
+    """받아들인 제약: 조사 "이"를 떼면 "제"·"나"가 되는 이름은 배우지 않는다. 못 배우는 쪽이라 해가 없고 PM 이
+    별칭을 직접 등록할 수 있다(#464 리뷰)."""
+    assert alias_learning.learnable_alias_text(_item(assignee_raw=raw)) is None
