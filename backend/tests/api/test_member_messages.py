@@ -4,7 +4,16 @@
 """
 from datetime import datetime, timedelta, timezone
 
-from app.models import Member, ReminderBundle, ReminderWatch, ReplyJudgment, ThreadMessage, Workspace, WatchState
+from app.models import (
+    Member,
+    MessageThread,
+    ReminderBundle,
+    ReminderWatch,
+    ReplyJudgment,
+    ThreadMessage,
+    WatchState,
+    Workspace,
+)
 from app.services import messages as svc
 from tests.api.test_messages_api import P, _approve, _claim, _create, _due, _first, _future, _iso, _sent_message, client
 from tests.api.test_replies import _remind, _reply
@@ -343,3 +352,67 @@ def test_pm_cannot_write_to_a_deleted_thread_owner(mdb, mseed):
     r = _send(client("pm"), mseed, tid)
     assert r.status_code == 404 and r.json()["error"]["code"] == "MEMBER_NOT_FOUND"
     assert mdb.query(ThreadMessage).count() == 0
+
+
+# 대화 열기
+
+def _open(c, seed, member_id):
+    return c.post(f"{P}/workspaces/{seed['ws']}/messages/threads", json={"member_id": member_id})
+
+
+def test_pm_opens_a_thread_in_a_workspace_with_no_reminders_and_it_reaches_the_bot(mdb, mseed):
+    pm = client("pm")
+    r = _open(pm, mseed, mseed["alice"].member_id)
+
+    assert r.status_code == 200, r.text
+    thread = r.json()["data"]
+    assert thread["member_id"] == mseed["alice"].member_id and thread["name"] == "앨리스"
+    assert thread["last_message"] is None and thread["dm_failed"] is False
+    detail = pm.get(f"{P}/workspaces/{mseed['ws']}/messages/threads/{thread['thread_id']}").json()["data"]
+    assert detail["messages"] == []
+
+    assert _send(pm, mseed, thread["thread_id"], "안녕하세요").status_code == 201
+    assert [i["body"] for i in _claim()] == ["[A] PM\n안녕하세요"]
+
+
+def test_opening_a_thread_twice_gives_the_same_thread(mdb, mseed):
+    pm = client("pm")
+    first = _open(pm, mseed, mseed["alice"].member_id).json()["data"]
+    _send(pm, mseed, first["thread_id"], "글")
+    again = _open(pm, mseed, mseed["alice"].member_id).json()["data"]
+
+    assert again["thread_id"] == first["thread_id"]
+    assert again["last_message"]["body"] == "글"
+
+
+def test_member_may_open_only_their_own_thread_and_write_first(mdb, mseed):
+    alice = client("alice")
+    thread = _open(alice, mseed, mseed["alice"].member_id)
+    assert thread.status_code == 200
+    assert _send(alice, mseed, thread.json()["data"]["thread_id"], "먼저 써요").status_code == 201
+
+    other = _open(alice, mseed, mseed["bob"].member_id)
+    assert other.status_code == 403 and other.json()["error"]["code"] == "FORBIDDEN"
+
+
+def test_member_learns_nothing_about_ids_that_are_not_theirs(mdb, mseed):
+    assert _open(client("alice"), mseed, "no-such-member").status_code == 403
+
+
+def test_outsider_cannot_open_a_thread(mdb, mseed):
+    assert _open(client("outsider"), mseed, mseed["alice"].member_id).status_code == 403
+
+
+def test_pm_cannot_open_a_thread_with_a_missing_foreign_or_deleted_member(mdb, mseed):
+    other = Workspace(name="B")
+    mdb.add(other)
+    mdb.flush()
+    stranger = Member(workspace_id=other.workspace_id, display_name="남", role="member")
+    mdb.add(stranger)
+    mseed["bob"].is_deleted = True
+    mdb.commit()
+
+    for member_id in ("no-such-member", stranger.member_id, mseed["bob"].member_id):
+        r = _open(client("pm"), mseed, member_id)
+        assert r.status_code == 404 and r.json()["error"]["code"] == "MEMBER_NOT_FOUND"
+    assert mdb.query(MessageThread).count() == 0

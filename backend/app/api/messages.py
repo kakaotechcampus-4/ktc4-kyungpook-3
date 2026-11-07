@@ -31,6 +31,7 @@ from app.schemas.message import (
     ReminderWithBundleResponse,
     ReplyCreateRequest,
     ThreadDetailResponse,
+    ThreadOpenRequest,
     ThreadSummary,
 )
 from app.schemas.reply import AttributionRequest, AttributionResponse, ReplyAttributionListResponse
@@ -162,6 +163,24 @@ def get_inbox(
         "threads": [t.model_dump(mode="json") for t in with_message + without],
         "bundles": _scheduled_bundles(db, workspace_id) if is_pm else None,
     })
+
+
+@router.post("/threads", response_model=Envelope[ThreadSummary])
+def open_thread(
+    workspace_id: str,
+    payload: ThreadOpenRequest,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+) -> dict:
+    """팀원과의 대화를 연다. 있으면 그 대화를 돌려준다. PM 은 공간의 팀원 누구든, 팀원은 자기 대화만 연다."""
+    if member.role != MemberRole.PM and payload.member_id != member.member_id:
+        raise AppError(ErrorCode.FORBIDDEN, details={"member_id": payload.member_id})
+    target = db.get(Member, payload.member_id)
+    if target is None or target.workspace_id != workspace_id or target.is_deleted:
+        raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": payload.member_id})
+    thread = svc.get_or_create_thread(db, workspace_id, target.member_id)
+    db.commit()
+    return success(_summary(db, thread).model_dump(mode="json"))
 
 
 @router.get("/threads/{thread_id}", response_model=Envelope[ThreadDetailResponse])
