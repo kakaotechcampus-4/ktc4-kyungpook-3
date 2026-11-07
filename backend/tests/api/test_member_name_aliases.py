@@ -359,3 +359,48 @@ def test_patch_locks_member_only_when_aliases_may_change(client, mdb, mseed, mon
 
     assert r.status_code == 200
     assert calls == ([mseed["bob"].member_id] if locked else [])
+
+
+def test_post_alias_promotion_needs_a_human_source(client, mdb, mseed):
+    # 자동 별칭을 올리는 것은 요청의 source 가 manual·learned 일 때만이다. discord_profile 로 보내면 이름을 바꿔도
+    # 안 지워지고 확정 매칭이 되는 별칭이 된다(#463 리뷰).
+    first = _post(client, mseed["ws"], "김민수").json()["data"]["member_id"]
+    before = next(a for a in _aliases(mdb, first) if a.alias_text == "민수")
+
+    r = _create_alias(client, first, alias_text="민수", source="discord_profile")
+
+    assert r.status_code == 201
+    assert (r.json()["data"]["source"], r.json()["data"]["verified"], r.json()["data"]["confidence"]) == (
+        "display_name", True, 1.0
+    )
+    row = next(a for a in _aliases(mdb, first) if a.alias_text == "민수")
+    assert (row.alias_id, row.source, row.alias_type, row.verified, row.confidence) == (
+        before.alias_id, "display_name", before.alias_type, True, 1.0
+    )
+
+
+def test_post_alias_discord_source_does_not_verify_nickname_alias(client, mdb, mseed):
+    member = mseed["bob"]
+    mdb.add(MemberAlias(
+        workspace_id=member.workspace_id, member_id=member.member_id, alias_text="동우",
+        alias_type="nickname", source="discord_profile", confidence=0.8, verified=False,
+    ))
+    mdb.commit()
+
+    r = _create_alias(client, member.member_id, alias_text="동우", source="discord_profile", verified=True)
+
+    assert r.status_code == 201
+    rows = _aliases(mdb, member.member_id)
+    assert [(a.alias_text, a.source, a.verified, a.confidence) for a in rows] == [
+        ("동우", "discord_profile", False, 0.8)
+    ]
+
+
+def test_post_alias_learned_source_promotes_auto_alias(client, mdb, mseed):
+    first = _post(client, mseed["ws"], "김민수").json()["data"]["member_id"]
+
+    r = _create_alias(client, first, alias_text="민수", source="learned")
+
+    assert r.status_code == 201
+    assert r.json()["data"]["source"] == "learned"
+

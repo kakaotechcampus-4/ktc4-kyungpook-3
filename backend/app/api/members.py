@@ -365,9 +365,14 @@ def create_alias(
         )
     ).scalar_one_or_none()
     if exists is not None:
-        # 자동 별칭(이름·디스코드 닉네임)과 같은 글자를 PM 이 등록하면 사람이 정한 별칭으로 올린다. 그래야 다른
-        # 팀원의 자동 별칭을 막고 이름을 바꿔도 지워지지 않는다. 이미 사람이 정한 별칭은 그대로 둔다.
-        if exists.source in (str(AliasSource.DISPLAY_NAME), str(AliasSource.DISCORD_PROFILE)):
+        # 자동 별칭(이름·디스코드 닉네임)과 같은 글자를 PM 이 사람이 정한 출처(manual·learned)로 등록하면 그 출처로
+        # 올린다. 그래야 다른 팀원의 자동 별칭을 막고 이름을 바꿔도 지워진다. 요청의 출처가 자동 별칭 표시
+        # (discord_profile)면 올리지 않는다. 올리면 이름을 바꿔도 안 지워지는데 확정 매칭이 되는 별칭이 생긴다.
+        # 이미 사람이 정한 별칭은 그대로 둔다.
+        if exists.source in (str(AliasSource.DISPLAY_NAME), str(AliasSource.DISCORD_PROFILE)) and payload.source in (
+            AliasSource.MANUAL,
+            AliasSource.LEARNED,
+        ):
             exists.alias_type = str(payload.alias_type)
             exists.source = str(payload.source)
             exists.confidence = payload.confidence
