@@ -187,9 +187,10 @@
         background: #ffffff;
         color: #171717;
       }
+      /* 사라짐 시간은 splashMachine.ts 의 FADE_MS 와 같다(staticSplash.test.tsx 가 본다) */
       .splash[data-phase='leave'] {
         pointer-events: none;
-        animation: splash-out 0.4s ease forwards;
+        animation: splash-out 0.6s ease forwards;
       }
       .splash__group {
         display: flex;
