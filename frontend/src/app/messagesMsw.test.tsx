@@ -13,6 +13,7 @@ import { server } from '@/shared/mock/server'
 import { isMemberOf, setMockRole } from '@/shared/mock/sessions'
 import { recordRequests } from '@/shared/test/requests'
 import { SELF_SECTION_TITLE } from '@/widgets/message-inbox'
+import { onTestFinished } from 'vitest'
 import {
   conversation,
   current,
@@ -388,6 +389,20 @@ describe('빈 상태·로딩·목록 오류·대화 오류가 서로 구분되�
     expect(current()[0]).toHaveTextContent('박민수')
     act(() => gate.resolve())
     expect(await detail().findByRole('heading', { level: 2, name: '박민수' })).toBeVisible()
+  })
+
+  it('대화 주소에서 목록과 대화를 함께 받는 동안 목록 칸과 상세 칸이 모두 스켈레톤이다 — 빈 상태도 오류도 아니다', async () => {
+    const lists = hold('/workspaces/ws_01/messages')
+    const thread = hold('/workspaces/ws_01/messages/threads/th_01')
+    onTestFinished(() => {
+      lists.resolve()
+      thread.resolve()
+    })
+    renderApp(paths.messageThread('ws_01', 'th_01'))
+    expect(await screen.findByTestId('message-list-skeleton')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByTestId('message-thread-skeleton')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.queryByText('보낼 메시지가 없어요')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it.each([

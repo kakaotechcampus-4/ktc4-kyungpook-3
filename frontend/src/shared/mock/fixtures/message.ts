@@ -298,3 +298,34 @@ export const messagesMemberBundle: MockBundle = {
     reminder('rm_05', 'bd_05', { task_id: 'tk_03', title: '기획서', due_date: '2026-09-24' }),
   ],
 }
+
+/*
+ * `messages-long-content` 의 긴 문구 — 여러 줄 본문, 줄바꿈 기회가 없는 긴 주소, 띄어 쓰지 않은 긴 이름
+ * (전역 `keep-all` 이라 한글도 끊기지 않는다)
+ */
+export const LONG_UNBROKEN_URL = `https://discord.com/channels/@me/${'a1b2c3d4'.repeat(16)}`
+export const LONG_RECIPIENT_NAME = '알렉산더막시밀리안몽고메리김백엔드리드개발자'
+/** 메시지 화면의 봇 이름은 공간 이름이다 */
+export const LONG_WORKSPACE_NAME = '카카오테크캠퍼스경북대학교3기세번째팀프로젝트공간'
+export const LONG_BUNDLE_BODY = [
+  ...Array.from(
+    { length: 12 },
+    (_, index) =>
+      `${index + 1}번째 줄이에요. 카드 폭보다 길게 써서 자동 줄바꿈이 일어나도 내용이 잘리지 않는지 봅니다.`,
+  ),
+  LONG_UNBROKEN_URL,
+].join('\n')
+
+/** 며칠(9/10~9/17)에 걸쳐 오간 30통. 셋에 하나는 답장이다 */
+export const longConversation: MockThreadMessage[] = Array.from({ length: 30 }, (_, index) => {
+  const day = String(10 + Math.floor(index / 4)).padStart(2, '0')
+  const at = `2026-09-${day}T${String(9 + (index % 4)).padStart(2, '0')}:00:00+09:00`
+  const id = `mg_${String(50 + index)}`
+  return index % 3 === 0
+    ? reply(id, `${index + 1}번째 답장이에요. 확인했습니다.`, at)
+    : botMessage(
+        id,
+        `${index + 1}번째 메시지예요. 진행 상황을 한 번 더 알려 주세요 🙂\n막히는 부분이 있으면 편하게 말해 주세요.`,
+        at,
+      )
+})

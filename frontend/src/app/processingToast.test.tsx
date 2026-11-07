@@ -108,6 +108,7 @@ describe('상태 전환 — 같은 회의의 토스트 하나가 바뀐다', () 
     expect(processing).toHaveTextContent('주간 회고 녹음 정리 중')
     expect(processing).toHaveTextContent('음성 파일을 준비하고 있어요')
     expect(processing).toHaveTextContent('0 / 3 단계 완료')
+    expect(within(processing).queryByRole('button', { name: '닫기' })).toBeNull()
     const status = announcement()
 
     awaitSpeakers(AWAITING_MEETING_ID)
@@ -192,6 +193,24 @@ describe('역할별 노출', () => {
     await waitFor(() => expect(signalsWith(SPEAKERS_NEEDED_TITLE)).toHaveLength(1))
     expect(signalsWith(SPEAKERS_NEEDED_TITLE)[0].tagName).toBe('SECTION')
     expect(processingSignals()).toHaveLength(1)
+  })
+
+  it('PM: 「화자 지정하기」는 그 회의의 화자 지정 화면으로 간다', async () => {
+    const user = userEvent.setup()
+    replaceDb(createSpeakerScenarioDb('meeting-speakers'))
+    const app = renderApp(paths.members('ws_01'))
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    act(() => trackMeeting(UPLOAD))
+    const speakers = await waitFor(() => {
+      expect(signalsWith(SPEAKERS_NEEDED_TITLE)).toHaveLength(1)
+      return signalsWith(SPEAKERS_NEEDED_TITLE)[0]
+    })
+
+    await user.click(within(speakers).getByRole('button', { name: '화자 지정하기' }))
+    await app.expectPath(paths.meetingSpeakers('ws_01', AWAITING_MEETING_ID))
+    expect(
+      await screen.findByRole('heading', { name: '누가 말했는지 골라 주세요', level: 1 }),
+    ).toBeInTheDocument()
   })
 
   it('팀원: 새로 연 앱도 화자 지정 대기 회의를 찾아 정리 중 알약을 보이고, 펼치면 기다린다는 문장이다', async () => {
@@ -433,6 +452,28 @@ describe('접기', () => {
     )
     expect(pill()).toBeNull()
   }, 15_000)
+
+  it('접은 화자 지정 필요 알약을 누르면 화자 지정 카드를 다시 펼친다', async () => {
+    const user = userEvent.setup()
+    replaceDb(createSpeakerScenarioDb('meeting-speakers'))
+    renderApp(paths.members('ws_01'))
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    act(() => trackMeeting(UPLOAD))
+    const speakers = await waitFor(() => {
+      expect(signalsWith(SPEAKERS_NEEDED_TITLE)).toHaveLength(1)
+      return signalsWith(SPEAKERS_NEEDED_TITLE)[0]
+    })
+    await user.click(within(speakers).getByRole('button', { name: '접기' }))
+    const collapsed = pill()!
+    expect(collapsed).toHaveTextContent(SPEAKERS_NEEDED_TITLE)
+
+    await user.click(collapsed)
+    expect(pill()).toBeNull()
+    const expanded = signalsWith(SPEAKERS_NEEDED_TITLE)
+    expect(expanded).toHaveLength(1)
+    expect(expanded[0].tagName).toBe('SECTION')
+    expect(within(expanded[0]).getByRole('button', { name: '화자 지정하기' })).toBeVisible()
+  })
 
   it('알약으로 시작한 정리 중이 화자 지정 필요를 거쳐 정리 중으로 돌아오면 펼쳐 보인다', async () => {
     fakeIntervals()
