@@ -6,7 +6,9 @@ import type { MessageThread, ReplyAttribution } from '@/entities/message'
 import { ApiError } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { now as clockNow, todayInSeoul } from '@/shared/lib/date'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { Reveal } from '@/shared/ui/deferred-skeleton'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
@@ -78,32 +80,41 @@ export function ThreadDetail({
   toastClearance: number
 }) {
   const thread = useQuery(messageThreadQueryOptions(workspaceId, threadId))
+  const indicator = useLoadingIndicator(thread.isPending)
+  if (thread.isPending || indicator.pending) return <ThreadSkeleton indicator={indicator} />
   if (thread.data !== undefined)
     return (
-      <ThreadView
-        workspaceId={workspaceId}
-        botName={botName}
-        thread={thread.data}
-        viewer={viewer}
-        floorRef={floorRef}
-        toastClearance={toastClearance}
-      />
+      <Reveal indicator={indicator}>
+        <ThreadView
+          workspaceId={workspaceId}
+          botName={botName}
+          thread={thread.data}
+          viewer={viewer}
+          floorRef={floorRef}
+          toastClearance={toastClearance}
+        />
+      </Reveal>
     )
-  if (thread.error === null) return <ThreadSkeleton />
   // 없는 대화와 볼 수 없는 남의 대화는 다시 받아도 같다 — 다시 시도 대신 찾을 수 없다고 알린다
   if (
     thread.error instanceof ApiError &&
     (thread.error.status === 404 || thread.error.status === 403)
   )
-    return <ThreadUnavailable />
+    return (
+      <Reveal indicator={indicator}>
+        <ThreadUnavailable />
+      </Reveal>
+    )
   return (
-    <div className="px-28 pt-28">
-      <QueryErrorState
-        error={thread.error}
-        onRetry={() => void thread.refetch()}
-        title="대화를 불러오지 못했어요"
-      />
-    </div>
+    <Reveal indicator={indicator}>
+      <div className="px-28 pt-28">
+        <QueryErrorState
+          error={thread.error}
+          onRetry={() => void thread.refetch()}
+          title="대화를 불러오지 못했어요"
+        />
+      </div>
+    </Reveal>
   )
 }
 

@@ -9,7 +9,9 @@ import {
   useHideShellChrome,
   useVisibleViewport,
 } from '@/shared/lib/compact-screen'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { Reveal } from '@/shared/ui/deferred-skeleton'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
@@ -132,6 +134,9 @@ export function MessageInbox({
     invalidPath,
     composing: canCompose,
   })
+  // 목록과, 목록을 받아야 고를 수 있는 상세의 로딩 자리 (#508). 상세는 목록을 받은 뒤 고른 항목이 제 조회를 한다
+  const listIndicator = useLoadingIndicator(inbox.data === undefined && inbox.error === null)
+  const detailIndicator = useLoadingIndicator(selection.kind === 'loading' && inbox.error === null)
   const pane = inboxPane({
     compact: useCompactScreen(),
     threadId,
@@ -146,6 +151,7 @@ export function MessageInbox({
     !invalidPath &&
     selection.kind !== 'compose' &&
     inbox.data !== undefined &&
+    !listIndicator.pending &&
     inbox.data.threads.length === 0 &&
     (inbox.data.viewer === 'member' || inbox.data.bundles.length === 0)
   useHideShellChrome(pane === 'detail' && !nothing)
@@ -226,7 +232,8 @@ export function MessageInbox({
     )
 
   let detail
-  if (selection.kind === 'invalid') detail = <ThreadUnavailable />
+  if (detailIndicator.pending) detail = <ReviewSkeleton indicator={detailIndicator} />
+  else if (selection.kind === 'invalid') detail = <ThreadUnavailable />
   else if (selection.kind === 'thread')
     // 대화가 바뀌면 상세를 새로 마운트한다 — 이전 대화의 스크롤 자리를 들고 있지 않는다
     detail = (
@@ -266,8 +273,9 @@ export function MessageInbox({
         onCancel={() => void navigate(paths.messages(workspaceId), { replace: true })}
       />
     )
-  else if (selection.kind === 'loading') detail = inbox.error === null ? <ReviewSkeleton /> : null
+  else if (selection.kind === 'loading') detail = null
   else detail = <p className={EMPTY_DETAIL}>왼쪽 목록에서 확인할 메시지나 대화를 골라 주세요.</p>
+  if (!detailIndicator.pending) detail = <Reveal indicator={detailIndicator}>{detail}</Reveal>
 
   // 목록에서 열었으면 기록 한 칸 뒤가 그 목록이다 — 브라우저 뒤로 가기와 같게 기록을 되돌린다.
   // 주소로 바로 들어왔으면 목록으로 바꿔 끼운다. 쓰던 답장이 있으면 어느 쪽이든 이탈 확인이 먼저 묻는다
@@ -310,27 +318,31 @@ export function MessageInbox({
             </GuardedLink>
           ) : null}
         </div>
-        {inbox.data !== undefined ? (
-          <InboxList
-            workspaceId={workspaceId}
-            botName={botName}
-            inbox={inbox.data}
-            viewer={viewer}
-            threadId={highlighted?.kind === 'thread' ? highlighted.threadId : null}
-            bundleId={highlighted?.kind === 'bundle' ? highlighted.bundle.id : null}
-            openState={pane === 'list' ? FROM_LIST : undefined}
-          />
-        ) : inbox.error !== null ? (
-          // 목록 오류는 목록 칸에만 알린다. 고른 대화는 따로 받아 그대로 보인다
-          <div className="px-8">
-            <QueryErrorState
-              error={inbox.error}
-              onRetry={() => void inbox.refetch()}
-              title="메시지 목록을 불러오지 못했어요"
+        {listIndicator.pending ? (
+          <InboxListSkeleton indicator={listIndicator} />
+        ) : inbox.data !== undefined ? (
+          <Reveal indicator={listIndicator}>
+            <InboxList
+              workspaceId={workspaceId}
+              botName={botName}
+              inbox={inbox.data}
+              viewer={viewer}
+              threadId={highlighted?.kind === 'thread' ? highlighted.threadId : null}
+              bundleId={highlighted?.kind === 'bundle' ? highlighted.bundle.id : null}
+              openState={pane === 'list' ? FROM_LIST : undefined}
             />
-          </div>
+          </Reveal>
         ) : (
-          <InboxListSkeleton />
+          // 목록 오류는 목록 칸에만 알린다. 고른 대화는 따로 받아 그대로 보인다
+          <Reveal indicator={listIndicator}>
+            <div className="px-8">
+              <QueryErrorState
+                error={inbox.error}
+                onRetry={() => void inbox.refetch()}
+                title="메시지 목록을 불러오지 못했어요"
+              />
+            </div>
+          </Reveal>
         )}
       </aside>
       {/* 처리한 항목이 버튼째 사라지면 포커스를 이 칸이 받는다 — 다음 Tab 이 새로 골라진 항목으로 간다.
