@@ -79,14 +79,18 @@ it('returns the processing conflict then accepts multipart upload and preserves 
   })
 })
 
-it('rejects incomplete multipart requests and disconnected Notion', async () => {
+it('rejects incomplete multipart requests but accepts uploads without Notion (D-182)', async () => {
   await expect(
     fetchDto('/workspaces/ws_01/meetings/upload', jsonRequest('POST', {})),
   ).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
   db.meetings[2].status = 'done'
-  db.integrations.ws_01.notion.status = 'revoked'
-  await expect(fetchDto('/workspaces/ws_01/meetings/upload', uploadBody())).rejects.toMatchObject({
-    code: 'INTEGRATION_REVOKED',
-    status: 409,
-  })
+  for (const status of ['not_connected', 'revoked'] as const) {
+    db.integrations.ws_01.notion.status = status
+    const uploaded = await fetchDto<MeetingUploadDto>(
+      '/workspaces/ws_01/meetings/upload',
+      uploadBody(),
+    )
+    expect(uploaded).toMatchObject({ status: 'processing' })
+    db.meetings.find(({ meeting_id }) => meeting_id === uploaded.meeting_id)!.status = 'done'
+  }
 })

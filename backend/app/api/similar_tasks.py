@@ -3,7 +3,9 @@
 디스코드 봇이 사용자 세션 없이 부르는 경로라 세션 대신 서비스 토큰(X-Service-Token)으로 막는다.
 task 제목과 담당자를 돌려주므로 POST /extractions처럼 열어 두지 않는다.
 """
+import json
 import logging
+from datetime import date
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -11,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_service_token
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Workspace
+from app.models import ApprovalRequest, Workspace
 from app.schemas.task import SimilarTaskCandidate, SimilarTaskListResponse, SimilarTaskSearchRequest
 from app.services import embedding
 
@@ -20,6 +22,38 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/workspaces", tags=["tasks"], dependencies=[Depends(require_service_token)]
 )
+
+
+def _pending_candidate(req: ApprovalRequest, similarity: float) -> SimilarTaskCandidate | None:
+    """승인 대기 요청을 후보로 바꾼다. 제목을 못 읽으면 None(후보에서 뺀다)."""
+    title = embedding.pending_title(req.payload)
+    if title is None:
+        return None
+    try:
+        data = json.loads(req.payload)
+    except (TypeError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    due_date = None
+    raw_due = data.get("due_date")
+    if isinstance(raw_due, str):
+        try:
+            due_date = date.fromisoformat(raw_due)
+        except ValueError:
+            due_date = None
+    assignee = data.get("assignee_member_id")
+    return SimilarTaskCandidate(
+        task_id=None,
+        approval_id=req.approval_id,
+        notion_page_id=None,
+        title=title,
+        assignee_member_id=assignee if isinstance(assignee, str) else None,
+        due_date=due_date,
+        status=None,
+        similarity=round(similarity, 4),
+        updated_at=req.created_at,
+    )
 
 
 @router.post(
@@ -62,4 +96,12 @@ def search_similar_tasks(
         )
         for task, similarity in results
     ]
+    if payload.include_pending:
+        pending = embedding.search_similar_pending_approvals(
+            db, workspace_id, query_vector,
+            limit=embedding.MAX_PENDING_CANDIDATES, min_similarity=payload.min_similarity,
+        )
+        items += [c for req, sim in pending if (c := _pending_candidate(req, sim)) is not None]
+        # task 를 먼저 놓고 안정 정렬하므로 같은 유사도면 task 가 앞에 온다.
+        items.sort(key=lambda c: c.similarity, reverse=True)
     return success(SimilarTaskListResponse(items=items).model_dump(mode="json"))
