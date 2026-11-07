@@ -942,3 +942,29 @@ def test_rejected_override_assignee_leaves_extraction_item_unlinked(client, db, 
     assert db.get(ExtractionItem, item_id).task_id is None
     assert _pending(db, approval_id)
     assert _task_count(db) == 1
+
+
+def test_manual_card_claiming_reply_source_refuses_an_assignee_override(client, db, seed):
+    """payload 에 답장 출처를 써도 담당자 줄(ReplyChange)이 없으면 일반 카드와 같이 거절한다."""
+    approval_id = _create_approval(
+        client, seed, "task_update",
+        {"status": "done", "change_source": "reminder_reply", "reply_message_id": "m-1", "assignee_raw": "김철수"},
+        related_task_id=seed["login"].task_id,
+    )
+
+    r = _resolve(client, approval_id, task_overrides={"assignee_member_id": seed["jimin"].member_id})
+
+    assert r.status_code == 400, r.text
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+    assert _pending(db, approval_id)
+    assert db.get(Task, seed["login"].task_id).assignee_member_id is None
+
+
+def test_task_create_empty_assignee_override_is_404(client, db, seed):
+    approval_id = _new_create(client, seed)
+
+    r = _resolve(client, approval_id, task_overrides={"assignee_member_id": ""})
+
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "MEMBER_NOT_FOUND"
+    assert _pending(db, approval_id)
