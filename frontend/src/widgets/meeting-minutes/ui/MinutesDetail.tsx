@@ -234,7 +234,7 @@ export function MinutesDetail({
           <p className={NOTICE_TEXT}>{meeting.title || '제목 없는 회의'}</p>
           <p className={META}>{formatSeoulDateTime(meeting.startedAt)}</p>
           <p className={NOTICE_TEXT}>{failure.description}</p>
-          {isPm ? (
+          {!failure.reupload ? null : isPm ? (
             <GuardedLink to={paths.meetingUpload(workspaceId)} className={LINK}>
               다시 업로드
             </GuardedLink>
