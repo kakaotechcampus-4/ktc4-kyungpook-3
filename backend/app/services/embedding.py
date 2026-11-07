@@ -62,6 +62,8 @@ SEARCHABLE_STATUSES = (
 # docs/basis_for_decision/ai/2026-09-22-0010-embedding-similarity-threshold.md: 명확한 불일치 최고점 0.33, 명확한 매치 최저점 0.42
 DEFAULT_MIN_SIMILARITY = 0.4
 DEFAULT_K = 3
+# 승인 대기 요청 후보는 task 후보와 따로 최대 이만큼만 돌려준다.
+MAX_PENDING_CANDIDATES = 2
 
 
 class EmbeddingError(Exception):
@@ -186,6 +188,30 @@ def has_unsearchable_tasks(db: Session, workspace_id: str) -> bool:
             *_searchable_tasks(),
             Task.embedding.is_(None),
             func.trim(Task.title) != "",
+        )
+        .limit(1)
+    ).first() is not None
+
+
+def has_unsearchable_pending(db: Session, workspace_id: str) -> bool:
+    """워크스페이스에 임베딩이 없어 유사 검색(search_similar_pending_approvals)이 보지 못하는 승인 대기 task_create 요청이 있는지.
+
+    has_unsearchable_tasks 와 같은 이유로 auto 판단을 막는 데 쓴다. API 가 제목을 거절해
+    워커가 건너뛴 요청(embedding_rejected_title 에 제목이 있음)은 검색에 빠져 있는 것이 같으므로 센다.
+    반면 빈 제목("")으로 표시된 요청은 제목이 비었거나 payload 를 읽을 수 없어 같은 할 일일 수
+    없으므로 세지 않는다. 그래서 거절 제목 != "" 로 가른다.
+    """
+    return db.execute(
+        select(ApprovalRequest.approval_id)
+        .where(
+            ApprovalRequest.workspace_id == workspace_id,
+            ApprovalRequest.status == ApprovalStatus.PENDING,
+            ApprovalRequest.type == ApprovalType.TASK_CREATE,
+            ApprovalRequest.embedding.is_(None),
+            or_(
+                ApprovalRequest.embedding_rejected_title.is_(None),
+                ApprovalRequest.embedding_rejected_title != "",
+            ),
         )
         .limit(1)
     ).first() is not None
@@ -442,6 +468,35 @@ def search_similar_tasks(
         .limit(k)
     ).all()
     return [(task, 1 - float(dist)) for task, dist in rows]
+
+
+def search_similar_pending_approvals(
+    db: Session,
+    workspace_id: str,
+    query_vector: list[float],
+    *,
+    limit: int = MAX_PENDING_CANDIDATES,
+    min_similarity: float = DEFAULT_MIN_SIMILARITY,
+) -> list[tuple[ApprovalRequest, float]]:
+    """코사인 유사도가 높은 순으로 최대 limit개의 (승인 대기 task_create 요청, 유사도)를 돌려준다.
+
+    같은 워크스페이스의 pending task_create 요청 중 임베딩이 있는 것이 대상이다.
+    min_similarity 미만인 후보는 뺀다. 남는 게 없으면 빈 목록이다.
+    """
+    distance = ApprovalRequest.embedding.cosine_distance(query_vector)
+    rows = db.execute(
+        select(ApprovalRequest, distance.label("distance"))
+        .where(
+            ApprovalRequest.workspace_id == workspace_id,
+            ApprovalRequest.status == ApprovalStatus.PENDING,
+            ApprovalRequest.type == ApprovalType.TASK_CREATE,
+            ApprovalRequest.embedding.is_not(None),
+            distance <= 1 - min_similarity,
+        )
+        .order_by(distance)
+        .limit(limit)
+    ).all()
+    return [(request, 1 - float(dist)) for request, dist in rows]
 
 
 def run_worker(stop_event: threading.Event, interval: float) -> None:
