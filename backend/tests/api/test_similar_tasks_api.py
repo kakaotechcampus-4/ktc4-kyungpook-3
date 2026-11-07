@@ -205,11 +205,20 @@ def _approval(db, workspace, payload: dict) -> ApprovalRequest:
     return req
 
 
-def test_default_does_not_search_pending(client, workspace, search_calls, pending_calls):
+def test_default_does_not_search_pending(client, db, workspace, search_calls, pending_calls):
+    task = Task(workspace_id=workspace.workspace_id, title="로그인 API 구현", status="todo")
+    db.add(task)
+    db.commit()
+
     r = client.post(_url(workspace.workspace_id), json={"text": "로그인"}, headers=HEADERS)
 
     assert r.status_code == 200
     assert pending_calls["calls"] == []
+    # include_pending 없이 부르는 AI 의 응답은 task 후보만이고 approval_id 는 null 이다(AI 호환)
+    [item] = r.json()["data"]["items"]
+    assert (item["task_id"], item["title"], item["similarity"], item["approval_id"]) == (
+        task.task_id, "로그인 API 구현", 0.9123, None,
+    )
 
 
 def test_include_pending_adds_up_to_two_after_k_tasks(
