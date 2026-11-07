@@ -800,3 +800,53 @@ def test_save_alias_ignores_forged_assignee_item_id(client, pm_client, db, seed)
     assert resp.status_code == 200, resp.text
     assert _learned(db) == []
     assert db.get(ExtractionItem, other_item.item_id).task_id is None
+
+
+# --- 합쳐진 카드: 별칭 후보도 카드의 담당 항목에서만 나온다(저장 규칙과 같다) ---
+
+
+def _candidates(pm_client, db, seed, card_id: str, *extraction_ids: str) -> dict:
+    """같은 카드의 후보를 승인 목록·상세·추출 조회에서 모아 본다."""
+    listed = pm_client.get(
+        "/api/v1/approvals", params={"workspace_id": seed["ws"].workspace_id}
+    ).json()["data"]["items"]
+    detail = pm_client.get(f"/api/v1/approvals/{card_id}").json()["data"]
+    return {
+        "list": [(a["alias_candidate"], a["alias_text"]) for a in listed if a["approval_id"] == card_id],
+        "detail": (detail["alias_candidate"], detail["alias_text"]),
+        "extractions": [
+            [(i["alias_candidate"], i["alias_text"]) for i in
+             pm_client.get(f"/api/v1/extractions/{eid}").json()["data"]["items"]]
+            for eid in extraction_ids
+        ],
+    }
+
+
+def test_alias_candidate_follows_merged_assignee_item(client, pm_client, db, seed):
+    """A(화은이가)가 만든 카드에 B(회은이가)가 담당자로 합쳐지면 후보는 B 글자뿐이고 A 행에는 없다."""
+    a_extraction = _hold_item(client, seed)
+    card = _approvals(db, "task_create")[0]
+    r = _post_in_new_meeting(client, db, seed, [_merge(card.approval_id, assignee_raw="회은이가")])
+    assert r.status_code == 201, r.text
+
+    got = _candidates(pm_client, db, seed, card.approval_id, a_extraction, r.json()["data"]["extraction_id"])
+
+    assert got["list"] == [(True, "회은")]
+    assert got["detail"] == (True, "회은")
+    assert got["extractions"] == [[(False, None)], [(True, "회은")]]
+
+
+def test_alias_candidate_stays_on_creator_when_merged_item_is_not_assignee(client, pm_client, db, seed):
+    """담당자를 말하지 않은 merge 항목(category 가 assignee 가 아님)은 이름 지목이어도 후보가 아니다."""
+    a_extraction = _hold_item(client, seed)
+    card = _approvals(db, "task_create")[0]
+    r = _post_in_new_meeting(client, db, seed, [
+        _merge(card.approval_id, category="other", assignee_raw="회은이가")
+    ])
+    assert r.status_code == 201, r.text
+
+    got = _candidates(pm_client, db, seed, card.approval_id, a_extraction, r.json()["data"]["extraction_id"])
+
+    assert got["list"] == [(True, "화은")]
+    assert got["detail"] == (True, "화은")
+    assert got["extractions"] == [[(True, "화은")], [(False, None)]]
