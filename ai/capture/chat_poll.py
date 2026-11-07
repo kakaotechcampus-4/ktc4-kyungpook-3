@@ -160,12 +160,13 @@ def _attempt_path(workspace_id: str):
     return RUNS_DIR / f"chat_poll_attempt_{workspace_id}.json"
 
 
-def _begin_attempt(workspace_id: str, cursor: datetime | None, after: datetime) -> datetime:
+def _begin_attempt(workspace_id: str, cursor: datetime | None, after: datetime, channel_id: str | None = None) -> datetime:
     """이번 실행을 시도로 남기고 읽기 시작 시각을 돌려준다. 성공하면 _end_attempt 가 지운다.
 
     실패한 회의는 커서에 들지 않아 같은 구간을 다시 읽는다. 매번 실패하는 구간이면 수집이 멈추므로, 같은 커서에서 두 번째
     시도부터 경고한다. 시작할 때 남기므로 시간 제한으로 죽어 except 를 못 탄 실행도 센다.
     커서가 없을 때(첫 실행) 실패하면 다음 실행의 now - initial_hours 가 그 구간을 건너뛰므로 지난 시작점부터 읽는다.
+    채널이 바뀌었으면 새 시도로 센다. 옛 채널의 시작점을 이어받으면 새 채널을 24시간보다 훨씬 전부터 읽는다.
     ponytail: 기록은 이 서버의 runs/ 에만 있다. 서버를 옮기거나 runs/ 를 지우면 센 횟수와 첫 실행 시작점을 잃는다.
     """
     path = _attempt_path(workspace_id)
@@ -175,7 +176,7 @@ def _begin_attempt(workspace_id: str, cursor: datetime | None, after: datetime) 
         prev = None
     key = cursor.isoformat() if cursor else None
     count = 1
-    if isinstance(prev, dict) and prev.get("cursor") == key:
+    if isinstance(prev, dict) and prev.get("cursor") == key and prev.get("channel_id") == channel_id:
         count = int(prev.get("count", 0)) + 1
         if cursor is None and prev.get("after"):
             after = min(after, datetime.fromisoformat(prev["after"]))
@@ -183,7 +184,8 @@ def _begin_attempt(workspace_id: str, cursor: datetime | None, after: datetime) 
         print(f"[chat] ws={workspace_id} 경고: 같은 구간(커서 {key or '없음'}, {after:%Y-%m-%d %H:%M} 이후)에서 {count}번째 시도입니다. "
               f"지난 {count - 1}번은 끝나지 못했습니다(failed 채팅 회의·journal 을 확인하세요).", file=sys.stderr)
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"cursor": key, "after": after.isoformat(), "count": count}), encoding="utf-8")
+    path.write_text(json.dumps({"cursor": key, "channel_id": channel_id, "after": after.isoformat(), "count": count}),
+                    encoding="utf-8")
     return after
 
 
@@ -191,7 +193,8 @@ def _end_attempt(workspace_id: str) -> None:
     _attempt_path(workspace_id).unlink(missing_ok=True)
 
 
-def poll(reader: ChannelReader, client, extract, *, workspace_id: str, now: datetime, cfg, dry_run: bool = False) -> int:
+def poll(reader: ChannelReader, client, extract, *, workspace_id: str, now: datetime, cfg, dry_run: bool = False,
+         channel_id: str | None = None) -> int:
     """한 번 돈다. 종료 코드를 돌려준다(0 정상·읽을 것 없음, 1 실패)."""
     from capture.handoff import clean_item
     from capture.judge_path import JudgeAllFailed
@@ -200,7 +203,7 @@ def poll(reader: ChannelReader, client, extract, *, workspace_id: str, now: date
     cursor = client.chat_cursor(ws)
     after = cursor or now - timedelta(hours=cfg.chat_poll_initial_hours)
     if not dry_run:
-        after = _begin_attempt(ws, cursor, after)
+        after = _begin_attempt(ws, cursor, after, channel_id)
     # 커서 뒤 ~ now 를 다 읽고 첫 사람 메시지부터 max_days 까지만 보낸다. 나머지는 커서가 나아간 다음 실행이 읽는다.
     # 읽는 구간을 먼저 자르면 그 안에 메시지가 없을 때 커서가 못 나아가 같은 빈 구간에서 영원히 멈춘다.
     # 이미 BE 에 있는 시각(커서 이하)과 now 이후는 뺀다. 리액션 줄도 원래 메시지 시각이라 같이 빠진다
@@ -281,12 +284,15 @@ def poll_all(channels: list[dict], open_reader, client, extract, *, now: datetim
     """BE 가 준 채널마다 워크스페이스별로 poll 한다. 하나가 실패해도 나머지는 돌고, 실패가 있으면 1.
 
     워크스페이스마다 읽기 직전에 목록을 다시 받아 없으면 건너뛴다(종료 코드 0). 재조회 실패는 그 워크스페이스 실패(1).
+    지난 실행이 끝내지 못한(시도 기록이 남은) 워크스페이스는 뒤로 보낸다. 한 곳이 시간 제한을 다 써도 나머지는 먼저 돈다.
+    ponytail: 한 프로세스가 차례로 돈다. 한 워크스페이스가 6시간을 넘기는 일이 실제로 보이면 --workspace 로 자식 프로세스마다 제한을 준다.
     """
     if only is not None:
         channels = [c for c in channels if c.get("workspace_id") == only]
         if not channels:
             print(f"[chat] 워크스페이스 {only} 는 채팅 채널 목록에 없습니다.", file=sys.stderr)
             return 1
+    channels = sorted(channels, key=lambda c: _attempt_path(str(c.get("workspace_id"))).exists())
     rc = 0
     for c in channels:
         ws, started = c.get("workspace_id"), time.monotonic()
@@ -296,9 +302,11 @@ def poll_all(channels: list[dict], open_reader, client, extract, *, now: datetim
                        for x in client.chat_channels()):
                 print(f"[chat] ws={ws} 채널 {channel_id} 이 채팅 채널 목록에 없어 건너뜁니다(실행 중 꺼졌거나 바뀜).")
                 continue
+            print(f"[chat] ws={ws} 시작 (채널 {channel_id})", flush=True)
             reader = open_reader(int(channel_id))
             try:
-                if poll(reader, client, extract, workspace_id=ws, now=now, cfg=cfg, dry_run=dry_run):
+                if poll(reader, client, extract, workspace_id=ws, now=now, cfg=cfg, dry_run=dry_run,
+                        channel_id=str(channel_id)):
                     rc = 1
             finally:
                 if hasattr(reader, "close"):

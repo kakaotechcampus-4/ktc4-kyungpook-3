@@ -288,6 +288,20 @@ def test_first_run_failure_is_reread_by_next_run():
     assert [s["text"] for s in fake.sources["m1"].values()] == ["로그인 할게요"]
 
 
+def test_attempt_on_another_channel_starts_fresh(capsys):
+    # 첫 실행이 실패한 뒤 채널이 바뀌면 옛 채널의 시작점을 이어받지 않고 새 시도로 센다(#431 리뷰)
+    msgs = [("1", "하은", False, _at(hours=20), "로그인 할게요")]
+    fake, client = _env()
+    assert poll(FakeReader(msgs), client, FakeExtract(error=JudgeAllFailed("x")), workspace_id="ws-1",
+                channel_id="1", now=NOW, cfg=CFG) == 1
+    fake, client = _env()
+    reader = FakeReader(msgs)
+    later = NOW + timedelta(days=1)
+    assert poll(reader, client, FakeExtract(), workspace_id="ws-1", channel_id="2", now=later, cfg=CFG) == 0
+    assert reader.read_args[0] == later - timedelta(hours=24)
+    assert "번째 시도" not in capsys.readouterr().err
+
+
 def test_dry_run_leaves_no_attempt_record(tmp_path):
     fake, client = _env()
     poll(FakeReader([("1", "하은", False, _at(hours=1), "글")]), client,
@@ -350,6 +364,17 @@ def test_poll_all_runs_each_workspace_with_its_channel():
     assert rc == 0 and opened == [1, 2]
     assert _meeting_workspaces(fake) == ["ws-1", "ws-2"]
     assert readers[1].closed and readers[2].closed
+
+
+def test_workspace_left_unfinished_last_time_runs_last(tmp_path, capsys):
+    # 지난 실행이 끝내지 못한(시도 기록이 남은) 워크스페이스는 뒤로 보내 다른 곳이 시간 제한에 같이 막히지 않게 한다
+    (tmp_path / "chat_poll_attempt_ws-1.json").write_text(json.dumps({"cursor": None, "after": None, "count": 1}),
+                                                          encoding="utf-8")
+    fake, client = _env()
+    rc, opened = _all(client, {1: FakeReader(_msg()), 2: FakeReader(_msg())})
+    assert rc == 0 and opened == [2, 1]
+    out = capsys.readouterr().out
+    assert out.index("[chat] ws=ws-2 시작") < out.index("[chat] ws=ws-1 시작")
 
 
 def test_one_workspace_failure_does_not_stop_others():
