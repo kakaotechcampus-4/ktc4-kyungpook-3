@@ -21,11 +21,8 @@ export const LOGIN_PARAMS = { next: 'next' } as const
  */
 export const SIGNUP_PARAMS = { next: 'next', kakao: 'kakao' } as const
 
-/**
- * 설정 화면의 검색 파라미터. `section=notion` 이면 Notion 연결 영역으로 포커스를 옮기고,
- * `next` 는 Notion 연결이 끝난 뒤 돌아갈 곳이다 — 그 공간의 업로드 경로만 받는다 (D-097, D-098)
- */
-export const SETTINGS_PARAMS = { section: 'section', next: 'next' } as const
+/** 설정 화면의 검색 파라미터. `section=notion` 이면 Notion 연결 영역으로 포커스를 옮긴다 */
+export const SETTINGS_PARAMS = { section: 'section' } as const
 
 /**
  * 메시지 화면의 검색 파라미터. `review` 는 보내기 전 확인에서 고른 보낼 메시지(묶음 ID)다 (paths.messageReview).
@@ -100,12 +97,9 @@ export const paths = {
   membersConnect: (workspaceId: string) =>
     `${workspaceBase(workspaceId)}/members?${MEMBERS_PARAMS.connect}=members`,
   settings: (workspaceId: string) => `${workspaceBase(workspaceId)}/settings`,
-  /** 설정의 Notion 연결 영역. `next` 를 주면 연결 성공 뒤 그곳으로 돌아간다 — 받는 쪽이 업로드 경로인지 다시 확인한다 */
-  settingsNotion: (workspaceId: string, next?: string) => {
-    const query = new URLSearchParams({ [SETTINGS_PARAMS.section]: 'notion' })
-    if (next !== undefined) query.set(SETTINGS_PARAMS.next, next)
-    return `${workspaceBase(workspaceId)}/settings?${query.toString()}`
-  },
+  /** 설정의 Notion 연결 영역 */
+  settingsNotion: (workspaceId: string) =>
+    `${workspaceBase(workspaceId)}/settings?${new URLSearchParams({ [SETTINGS_PARAMS.section]: 'notion' }).toString()}`,
 } as const
 
 /*

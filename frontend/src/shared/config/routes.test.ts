@@ -33,10 +33,6 @@ it.each([
   [paths.members('ws_01'), '/workspaces/ws_01/members'],
   [paths.settings('ws_01'), '/workspaces/ws_01/settings'],
   [paths.settingsNotion('ws_01'), '/workspaces/ws_01/settings?section=notion'],
-  [
-    paths.settingsNotion('ws_01', '/workspaces/ws_01/meetings/upload'),
-    '/workspaces/ws_01/settings?section=notion&next=%2Fworkspaces%2Fws_01%2Fmeetings%2Fupload',
-  ],
 ])('%s 를 만든다 (기대값 %s)', (actual, expected) => {
   expect(actual).toBe(expected)
 })

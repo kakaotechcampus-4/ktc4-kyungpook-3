@@ -53,7 +53,36 @@ plan.md 가 비어 있어 완료조건이 없다. 아래는 이슈 #381 의 설�
 - 한 회의의 현재 단계만 저장하므로 단계별 시각 이력은 없다.
 - 마이그레이션을 실제 DB 에 적용해 확인하지 않았다.
 
+## 2026-11-07 추가: 답장 담당자 변경 승인에서 PM 이 고른 담당자 받기
+
+M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 정한 것은 사용자다. 근거는 이슈 #460 과 설계 확정 댓글(2026-11-07)이고, BE 몫만 구현했다. FE 고르기 화면은 #344 에서 한다. M6 완료는 판정하지 않는다.
+
+| 변경 | 위치 |
+|---|---|
+| 담당자 줄이 있는 답장 카드만 `task_overrides.assignee_member_id` 를 받는다 | `backend/app/api/approvals.py`(`_normalize_overrides`), `backend/app/services/replies.py`(`has_assignee_line`) |
+| 담당자를 못 찾은 줄에도 충돌 기준값을 남긴다 | `backend/app/services/replies.py`(`_propose`) |
+| 요청 설명 | `backend/app/schemas/approval.py` |
+
+| 이슈 요구 | 상태 | 근거 |
+|---|---|---|
+| 고른 값(미정 포함)으로 담당자를 바꾸고 이력을 남긴다 | 충족 | `test_unresolved_card_takes_the_member_the_pm_picked`, `test_unresolved_card_can_clear_the_assignee` |
+| 값 검증은 `task_create` 와 같다 | 충족 | `test_assignee_override_value_is_checked` 외 다른 공간·탈퇴자 테스트 |
+| 골라 승인하면 `noted` 가 아니라 `approved` | 충족. 지금 담당자와 같은 사람을 고르면 `noted`(설계 확정에서 정함) | `test_unresolved_card_with_the_current_assignee_stays_noted` |
+| 찾은 카드도 고칠 수 있다 | 충족 | `test_resolved_card_can_be_changed_to_another_member` |
+| 다른 카드는 지금처럼 거절 | 충족 | `test_assignee_override_is_judged_per_card`, `test_meeting_task_update_refuses_an_assignee_override`, `test_manual_card_claiming_reply_source_refuses_an_assignee_override` |
+| 계약 문서 갱신 | 미충족(BE 몫 아님). `frontend/` 문서라 바꿀 곳과 문구를 #460 댓글로 전달하고 FE 가 반영한다 | #460 댓글 |
+
+검증(2026-11-07, `backend/`):
+
+- `.venv/Scripts/python.exe -m ruff check --no-cache .`: All checks passed
+- `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`: 1804 passed, 1298 skipped, 3 warnings
+- 행 잠금과 조건부 UPDATE 의 실제 경합은 sqlite 로 재현되지 않아 코드로만 확인했다. PostgreSQL 파라미터는 CI 에서 돈다.
+- 실제 FE·AI 와 붙인 종단 확인과 배포 환경 확인은 하지 않았다. 모델·마이그레이션 변경은 없다.
+
+남은 작업: FE 고르기 화면과 계약 반영(#344). BE 배포 뒤 #460 에 알린다. 회의 추출의 못 찾은 담당자 카드는 범위 밖이다.
+
 ## 관련 기록
 
+- [답장 담당자 변경 승인에서 PM 이 담당자를 고르게 한다](basis-for-decision/2026-11-07-reply-assignee-override.md)
 - [처리 단계 보고를 회의 컬럼으로 저장한다](basis-for-decision/2026-11-05-processing-stage-report.md)
 - [BE↔AI 계약](../../contracts/backend-ai-contract.md)

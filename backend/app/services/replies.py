@@ -516,9 +516,11 @@ def _propose(
     for line, change, line_match in group:
         match = line_match or match
         key = _PAYLOAD_KEY.get(line.field)
-        # 담당자를 못 찾았으면 원문만 보여 준다. 원문은 팀원 ID 가 아니라 값으로 싣지 않으므로 승인해도 담당자는 그대로다.
-        if key and not (line_match and line_match.member_id is None):
-            values[key] = line.new_value
+        # 담당자를 못 찾았으면 원문만 보여 준다. 원문은 팀원 ID 가 아니라 값으로 싣지 않는다.
+        # 기준값은 남겨 PM 이 고를 때 그사이 바뀐 담당자를 알린다.
+        if key:
+            if not (line_match and line_match.member_id is None):
+                values[key] = line.new_value
             if line.field == ReplyChangeField.STATUS:
                 base_values[key] = _claimed_status(row, task)
             else:
@@ -706,6 +708,15 @@ def undo_change(db: Session, task: Task, change_id: str, *, changed_by: str) -> 
     return task
 
 
+def has_assignee_line(db: Session, approval_id: str) -> bool:
+    """이 카드에 담당자 줄이 있는지. 답장 카드에서만 PM 이 담당자를 고를 수 있다."""
+    return db.scalar(
+        select(ReplyChange.change_id)
+        .where(ReplyChange.approval_id == approval_id, ReplyChange.field == ReplyChangeField.ASSIGNEE)
+        .limit(1)
+    ) is not None
+
+
 def link_history(db: Session, approval_id: str, entries: list[TaskHistory]) -> None:
     """승인이 남긴 이력을 제안한 줄에 잇는다. PM 이 고쳐 승인한 줄도 같은 필드라 같이 이어진다.
 
@@ -795,7 +806,8 @@ def _reply_item(
 def _result(line: ReplyChange, approvals: dict[str, ApprovalRequest], entries: list[TaskHistory]) -> str:
     if line.outcome == ReplyChangeOutcome.PROPOSED:
         card = approvals[line.approval_id]
-        # 담당자를 못 찾은 카드는 승인해도 바뀌는 값이 없다. 회의 카드의 이력은 줄에 잇지 않아 카드의 값으로 가른다.
+        # 담당자를 못 찾은 카드를 고르지 않고 승인했거나 지금 담당자를 고르면 바뀌는 값이 없다. 회의 카드의 이력은
+        # 줄에 잇지 않아 카드의 값으로 가른다(고른 값은 payload.task_overrides 에 있어 이 키와 섞이지 않는다).
         unchanged = (
             card.status == ApprovalStatus.APPROVED and line.field == ReplyChangeField.ASSIGNEE and not entries
             and _PAYLOAD_KEY[ReplyChangeField.ASSIGNEE] not in json.loads(card.payload)
