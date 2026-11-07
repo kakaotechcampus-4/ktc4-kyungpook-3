@@ -11,9 +11,11 @@ commit 은 부르는 쪽 몫이다. 시각은 UTC 로 바꿔 저장한다. sqlit
 씌워 저장한다. 그 대화에 나간(delivered) 봇 DM 이 없으면 PM 소개와 맺음을, 있으면 PM 이름만 붙인다. PM 이 고친
 문구는 보이는 전체를 고친 것이라 틀을 다시 씌우지 않는다.
 """
+import logging
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from urllib.parse import quote
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -35,13 +37,16 @@ from app.models import (
     ReminderKind,
     ReminderOrigin,
     ReminderStatus,
+    ReminderWatch,
     ReplyChannel,
     Task,
     ThreadMessage,
     Workspace,
     WorkspaceMessageSettings,
 )
-from app.services import replies, scheduler
+from app.services import mailer, replies, scheduler
+
+logger = logging.getLogger(__name__)
 
 # 봇이 가져간 뒤 결과 보고가 이 시간 안에 없으면 못 보냄(알 수 없음)으로 닫는다. 다시 주지 않는다(최대 한 번).
 CLAIM_TIMEOUT = timedelta(minutes=10)
@@ -657,6 +662,46 @@ class ClaimedMessage:
     workspace_id: str
     member_id: str
     discord_user_id: str
+    body: str
+
+
+def _segment(value: str) -> str:
+    """프론트 라우트의 segment()(encodeURIComponent)와 같은 결과를 낸다."""
+    return quote(value, safe="!*'()")
+
+
+def _reply_guide(member: Member, thread: MessageThread) -> str:
+    """DM 첫 줄 아래의 웹 답장 안내. 계정 없는 팀원은 대화 링크가 403 이고 가입만으로는 팀원과 이어지지 않아 초대를 안내한다."""
+    base = mailer.app_base_url()
+    if not base:
+        logger.warning("APP_BASE_URL 이 비어 DM 안내에 링크를 넣지 못한다")
+    if member.user_id is None:
+        guide, path = "웹 답장을 하려면 PM 에게 초대를 요청하고, 초대받은 이메일로 가입해 주세요.", "/signup"
+    else:
+        guide = "웹에서 답장해 주세요." if base else "웹사이트에서 답장해 주세요."
+        path = f"/workspaces/{_segment(thread.workspace_id)}/messages/threads/{_segment(thread.thread_id)}"
+    return f"{guide}\n{base}{path}" if base else guide
+
+
+def _dm_body(db: Session, message: ThreadMessage) -> str:
+    """봇이 보낼 글. 답장은 웹으로만 받아 저장된 문구 대신 안내를 보낸다. 시계는 가져간 뒤에 열릴 수 있어 이번 묶음을 합쳐 센다."""
+    db.flush()
+    thread = message.thread
+    tasks = set(db.scalars(
+        select(ReminderWatch.task_id).where(
+            ReminderWatch.thread_id == thread.thread_id, ReminderWatch.state.in_(scheduler._OPEN_STATES)
+        )
+    ).all())
+    bundle_id = db.scalar(select(ReminderBundle.bundle_id).where(ReminderBundle.message_id == message.message_id))
+    without_task = 0
+    for reminder in bundle_reminders(db, bundle_id, status=ReminderStatus.SENT):
+        if reminder.task_id is None:
+            without_task += 1
+        else:
+            tasks.add(reminder.task_id)
+    workspace = db.get(Workspace, thread.workspace_id).name
+    head = f"{workspace}에서 답장을 기다리는 리마인드가 {len(tasks) + without_task}개 있어요."
+    return f"{head}\n{_reply_guide(thread.member, thread)}"
 
 
 def claim_for_bot(db: Session, now: datetime) -> list[ClaimedMessage]:
@@ -693,7 +738,9 @@ def claim_for_bot(db: Session, now: datetime) -> list[ClaimedMessage]:
             continue
         message.dm_status = DmStatus.CLAIMED
         message.claimed_at = now
-        claimed.append(ClaimedMessage(message, message.thread.workspace_id, member.member_id, member.discord_user_id))
+        claimed.append(ClaimedMessage(
+            message, message.thread.workspace_id, member.member_id, member.discord_user_id, _dm_body(db, message),
+        ))
     db.flush()
     return claimed
 
