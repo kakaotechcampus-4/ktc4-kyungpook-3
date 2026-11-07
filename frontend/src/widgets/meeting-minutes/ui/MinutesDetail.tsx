@@ -20,6 +20,7 @@ import { paths } from '@/shared/config/routes'
 import { formatSeoulDateTime } from '@/shared/lib/date'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import type { LoadingIndicator } from '@/shared/lib/loading-indicator'
 import { MinutesDetailSkeleton } from '@/shared/ui/page-skeleton'
 import { extractedTasks } from '../lib/extractedTasks'
 import { detailMeta, SOURCE_LABEL } from '../lib/format'
@@ -67,6 +68,11 @@ export interface MinutesDetailProps {
    * 들고 있는 동안이면 이 회의(이전 회의)의 본문 대신 뼈대 위에서 기다린다 — 그동안 받은 이 회의 본문을 처음 보이지 않는다
    */
   keepSkeleton?: boolean
+  /**
+   * 첫 진입의 로딩 자리(#508, MeetingMinutes 가 잰다). `pending` 이면 답이 와도 뼈대를 두고, 지연 구간에는 빈 자리다.
+   * 회의를 바꾼 뒤는 `keepSkeleton` 이 정하고 뼈대는 바로 보인다
+   */
+  waiting?: Pick<LoadingIndicator, 'pending' | 'skeletonVisible'>
 }
 
 /**
@@ -152,6 +158,7 @@ export function MinutesDetail({
   selected = null,
   holding = false,
   keepSkeleton = false,
+  waiting,
 }: MinutesDetailProps) {
   const detail = useQuery(meetingDetailQueryOptions(workspaceId, meetingId))
   const meeting = viewableMeeting(detail)
@@ -159,6 +166,7 @@ export function MinutesDetail({
   // 기다리는 동안의 자리. 고른 회의의 요약을 알면 머리 뼈대 대신 그 요약이다 (UX1-M02)
   const loading = (
     <MinutesDetailSkeleton
+      indicator={waiting?.pending ? waiting : undefined}
       head={
         selected !== null && (held !== null || selected.id === meetingId) ? (
           <SummaryHead summary={selected} />
@@ -167,7 +175,7 @@ export function MinutesDetail({
     />
   )
 
-  if (keepSkeleton) return loading
+  if (keepSkeleton || waiting?.pending) return loading
   // 들고 있을 수 있는 것은 이전 회의의 회의록 본문뿐이다. 이전 회의의 안내·오류를 고른 회의의 머리 아래 남기지 않는다
   if (held !== null && meeting?.status !== 'done') return loading
   if (meeting === null) {

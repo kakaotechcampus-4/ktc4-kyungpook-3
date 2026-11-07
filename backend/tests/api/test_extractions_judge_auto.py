@@ -659,7 +659,10 @@ def test_unknown_switch_values_count_as_off_and_warn_once(client, db, seed, monk
     monkeypatch.setenv("AUTO_CREATE_ENABLED", value)
     with caplog.at_level("WARNING", logger="app.api.extractions"):
         assert _gate(client, seed) == "review"
-        assert _gate(client, seed, task_title="다른 결제 작업") == "review"
+        # 경고 횟수는 스위치를 직접 두 번 읽어 본다. 두 번째 등록은 앞 등록이 만든 임베딩 없는 승인 대기에
+        # 먼저 막혀(unsearched_pending_exists) 스위치를 읽지 않을 수 있다(#526 리뷰)
+        assert extractions.auto_create_enabled() is False
+        assert extractions.auto_create_enabled() is False
     warnings = [m for m in caplog.messages if "AUTO_CREATE_ENABLED" in m]
     assert len(warnings) == 1   # 요청마다 읽지만 같은 값은 한 번만 경고한다
 
@@ -669,3 +672,64 @@ def test_legacy_auto_item_is_auto_when_switch_is_on(client, db, seed, monkeypatc
     monkeypatch.delenv("AUTO_CREATE_ENABLED", raising=False)
     item = _only_item(client, _extract(client, seed, [_legacy_auto()]))
     assert item["gate"] == "auto"
+
+
+# ── 승인 대기 요청(pending) 이 유사 검색에 잡히는지 ────────────────────────────
+
+
+def _pending_create(db, seed, *, embedding=None, rejected_title=None, title="결제 API 붙이기") -> ApprovalRequest:
+    """다른 회의에서 만든 승인 대기 task_create 요청."""
+    approval = ApprovalRequest(
+        workspace_id=seed["ws"].workspace_id,
+        type="task_create",
+        payload=json.dumps({"task_title": title}, ensure_ascii=False),
+        status="pending",
+        embedding=embedding,
+        embedding_rejected_title=rejected_title,
+    )
+    db.add(approval)
+    db.commit()
+    return approval
+
+
+def test_unembedded_pending_from_another_meeting_blocks_auto(client, db, seed):
+    # 임베딩이 채워지기 전의 pending 은 AI 의 유사 검색에 잡히지 않아 similar_count=0 을 믿을 수 없다
+    _pending_create(db, seed)
+
+    item = _only_item(client, _extract(client, seed, [_judge()]))
+
+    assert item["gate"] == "review"
+    assert item["task_id"] is None
+
+
+def test_embedded_pending_does_not_block_auto(client, db, seed):
+    _pending_create(db, seed, embedding=EMBEDDED)
+
+    assert _gate(client, seed) == "auto"
+
+
+def test_pending_with_blank_title_does_not_block_auto(client, db, seed):
+    # 제목이 없어 같은 할 일일 수 없는 요청이라 워커가 "" 로 표시해 둔다
+    _pending_create(db, seed, rejected_title="")
+
+    assert _gate(client, seed) == "auto"
+
+
+def test_pending_rejected_by_embedding_api_blocks_auto(client, db, seed):
+    _pending_create(db, seed, rejected_title="결제 API 붙이기")
+
+    assert _gate(client, seed) == "review"
+
+
+def test_pending_created_earlier_in_the_same_request_does_not_block_auto(client, db, seed):
+    # 앞 항목이 review 로 pending 을 만들어도, 신호는 처음 읽은 값을 쓰므로 뒤 항목을 막지 않는다
+    extraction_id = _extract(client, seed, [
+        _judge(task_title="로그인 개선", similar_count=1, top_similarity=0.5),
+        _judge(),
+    ])
+
+    items = client.get(f"/api/v1/extractions/{extraction_id}").json()["data"]["items"]
+    assert [i["gate"] for i in items] == ["review", "auto"]
+    # 첫 항목이 실제로 pending task_create 를 만들었는데도 두 번째 항목은 auto 다
+    pending = [r for r in _approvals(db) if r.type == "task_create" and r.status == "pending"]
+    assert len(pending) == 1

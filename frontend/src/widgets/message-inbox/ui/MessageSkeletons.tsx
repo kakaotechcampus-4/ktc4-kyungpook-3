@@ -1,10 +1,20 @@
+import type { LoadingIndicator } from '@/shared/lib/loading-indicator'
+import { DeferredSkeleton } from '@/shared/ui/deferred-skeleton'
 import { Skeleton } from '@/shared/ui/skeleton'
 
-/* 목록 행·대화 머리·말풍선과 같은 치수의 뼈대다. 컨테이너가 aria-busy 를 진다 (M2 Skeleton 약속) */
+/* 목록 행·대화 머리·말풍선과 같은 치수의 뼈대다. 컨테이너(DeferredSkeleton)가 aria-busy 를 지고, 지연 구간에는 빈 자리다 (#508) */
 
-export function InboxListSkeleton() {
+interface SkeletonProps {
+  indicator: Pick<LoadingIndicator, 'skeletonVisible'>
+}
+
+export function InboxListSkeleton({ indicator }: SkeletonProps) {
   return (
-    <div aria-busy="true" data-testid="message-list-skeleton" className="flex flex-col gap-6">
+    <DeferredSkeleton
+      indicator={indicator}
+      data-testid="message-list-skeleton"
+      className="flex flex-col gap-6"
+    >
       <div className="px-8 py-4">
         <Skeleton width={72} />
       </div>
@@ -29,13 +39,17 @@ export function InboxListSkeleton() {
           </div>
         </div>
       ))}
-    </div>
+    </DeferredSkeleton>
   )
 }
 
-export function ThreadSkeleton() {
+export function ThreadSkeleton({ indicator }: SkeletonProps) {
   return (
-    <div aria-busy="true" data-testid="message-thread-skeleton" className="flex flex-1 flex-col">
+    <DeferredSkeleton
+      indicator={indicator}
+      data-testid="message-thread-skeleton"
+      className="flex flex-1 flex-col"
+    >
       <div className="flex h-header shrink-0 items-center gap-11 border-b border-divider px-28 max-md:hidden">
         <Skeleton variant="circle" width={34} height={34} />
         <div className="flex flex-col gap-6">
@@ -48,15 +62,15 @@ export function ThreadSkeleton() {
         <Skeleton variant="block" width={280} height={48} className="ml-36 rounded-[15px]" />
         <Skeleton variant="block" width={360} height={48} className="self-end rounded-[15px]" />
       </div>
-    </div>
+    </DeferredSkeleton>
   )
 }
 
 /** 보내기 전 확인 미리보기 자리 — 가운데 604 열의 제목·설명·카드 */
-export function ReviewSkeleton() {
+export function ReviewSkeleton({ indicator }: SkeletonProps) {
   return (
-    <div
-      aria-busy="true"
+    <DeferredSkeleton
+      indicator={indicator}
       data-testid="message-review-skeleton"
       className="flex justify-center px-36 pt-44"
     >
@@ -67,6 +81,6 @@ export function ReviewSkeleton() {
         </div>
         <Skeleton variant="block" height={160} className="rounded-16" />
       </div>
-    </div>
+    </DeferredSkeleton>
   )
 }

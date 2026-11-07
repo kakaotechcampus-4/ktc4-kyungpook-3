@@ -12,10 +12,12 @@ import { paths } from '@/shared/config/routes'
 import { monthDayOf } from '@/shared/lib/date'
 import { queryView } from '@/shared/lib/query-view'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Button } from '@/shared/ui/button'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { assigneeLabel } from '../lib/history'
 import { TaskHistory } from './TaskHistory'
@@ -68,6 +70,7 @@ export function TaskDetail({ workspaceId, taskId, isPm, today }: TaskDetailProps
   const retryRefresh = () => void task.refetch({ cancelRefetch: false })
 
   const view = queryView(task)
+  const indicator = useLoadingIndicator(view === 'loading')
 
   let body: ReactNode
   if (task.data !== undefined)
@@ -89,12 +92,14 @@ export function TaskDetail({ workspaceId, taskId, isPm, today }: TaskDetailProps
         onRetry={() => void task.refetch()}
       />
     )
-  else
-    body = (
-      <div aria-busy="true">
-        <Skeleton lines={5} />
-      </div>
-    )
+  else body = null
+  body = indicator.pending ? (
+    <DeferredSkeleton indicator={indicator}>
+      <Skeleton lines={5} />
+    </DeferredSkeleton>
+  ) : (
+    <Reveal indicator={indicator}>{body}</Reveal>
+  )
 
   return (
     <main className={ROOT}>

@@ -71,6 +71,8 @@ async function openUpload(options: { strict?: boolean } = {}) {
   const app = renderApp(UPLOAD_PATH, options)
   await screen.findByRole('heading', { name: '회의를 올려 주세요' })
   await screen.findByRole('button', { name: '정리 시작하기' })
+  // 참석자 고르기는 팀원 목록 로딩 자리의 최소 표시(#508)가 끝난 뒤 그려진다
+  await screen.findByRole('list', { name: '고른 참석자' }, { timeout: 3_000 })
   return { user, app }
 }
 

@@ -23,10 +23,12 @@ import { seoulDateOf, soonUntil } from '@/shared/lib/date'
 import { queryView } from '@/shared/lib/query-view'
 import { panelTabStop } from '@/shared/lib/tab-panel'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Button } from '@/shared/ui/button'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { tabKeyTarget } from '../lib/tabKeys'
 import { boardTabs, buildTaskBoard, parseDue, withPendingStatus } from '../lib/taskBoard'
@@ -251,6 +253,8 @@ export function TaskBoard({
         })
 
   let body: ReactNode
+  // 태스크를 받는 중이다. 지연·최소 표시 규칙은 아래 useLoadingIndicator 가 정한다 (#508)
+  let loading = false
   if (isList) {
     const failed = tasks.error ?? (isPm ? approvals.error : null)
     if (ready && board !== null && filtered !== null)
@@ -278,12 +282,7 @@ export function TaskBoard({
           }}
         />
       )
-    else
-      body = (
-        <div aria-busy="true" className="flex flex-col gap-8">
-          <Skeleton lines={4} />
-        </div>
-      )
+    else loading = true
   } else if (queryView(tasks) === 'error')
     body = (
       <QueryErrorState
@@ -297,7 +296,7 @@ export function TaskBoard({
     filtered === null ||
     sources.some(({ query }) => queryView(query) === 'loading')
   )
-    body = <ViewLoading label="태스크를 불러오는 중" />
+    loading = true
   // 받은 태스크도 확인 필요도 없다. 확인 필요를 받지 못했으면 비었다고 하지 않는다. 캘린더는 받은 회의가 있으면 그대로 그린다
   else if (
     overlaid.length === 0 &&
@@ -376,6 +375,17 @@ export function TaskBoard({
     />
   )
 
+  const indicator = useLoadingIndicator(loading)
+  if (indicator.pending)
+    body = isList ? (
+      <DeferredSkeleton indicator={indicator} className="flex flex-col gap-8">
+        <Skeleton lines={4} />
+      </DeferredSkeleton>
+    ) : (
+      <ViewLoading label="태스크를 불러오는 중" indicator={indicator} />
+    )
+  else body = <Reveal indicator={indicator}>{body}</Reveal>
+
   return (
     <main className={PAGE[view.view]}>
       <div className={COLUMN[view.view]}>
@@ -452,12 +462,29 @@ export function TaskBoard({
   )
 }
 
-/** 보기 자리의 대기. 이름으로 코드 대기(`보드 화면을 불러오는 중`)와 조회 대기(`태스크를 불러오는 중`)를 구분한다 */
-function ViewLoading({ label }: { label: string }) {
+/** 화면 코드를 기다리는 뼈대는 바로 보인다 — Suspense 가 그리는 동안만 있어 최소 표시를 둘 수 없다 */
+const CODE_WAIT = { skeletonVisible: true }
+
+/**
+ * 보기 자리의 대기. 이름으로 코드 대기(`보드 화면을 불러오는 중`)와 조회 대기(`태스크를 불러오는 중`)를 구분한다.
+ * 조회 대기는 지연·최소 표시 규칙을 따른다 (#508)
+ */
+function ViewLoading({
+  label,
+  indicator = CODE_WAIT,
+}: {
+  label: string
+  indicator?: { skeletonVisible: boolean }
+}) {
   return (
-    <div role="status" aria-busy="true" aria-label={label} className="flex flex-col gap-8">
+    <DeferredSkeleton
+      indicator={indicator}
+      role="status"
+      aria-label={label}
+      className="flex flex-col gap-8"
+    >
       <Skeleton lines={4} />
-    </div>
+    </DeferredSkeleton>
   )
 }
 
