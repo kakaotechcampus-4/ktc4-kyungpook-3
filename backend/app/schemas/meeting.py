@@ -187,6 +187,14 @@ class ExtractionItemResponse(BaseModel):
             "approved는 태스크 반영과 승인 처리가 함께 커밋된 상태다"
         ),
     )
+    alias_candidate: bool = Field(
+        False,
+        description="담당자를 못 찾은 이름 지목(thirdname) 항목의 pending 생성 승인이고, 같은 워크스페이스에서 탈퇴하지 않은 팀원 누구도 그 글자를 별칭으로 갖고 있지 않으면 true. PM 이 담당자를 골라 save_alias=true 로 승인하면 alias_text 를 그 팀원의 별칭으로 저장한다. 탈퇴하지 않은 누군가가 이미 갖고 있으면 false 이고 저장하지 않는다(탈퇴한 팀원의 별칭은 세지 않는다)",
+    )
+    alias_text: str | None = Field(
+        None,
+        description="저장될 별칭 글자(원문에서 끝 조사·님을 뗀 것). alias_candidate 가 false 면 null",
+    )
 
 
 class ExtractionDetailResponse(BaseModel):
@@ -246,7 +254,8 @@ class ExtractionItemCreate(BaseModel):
     )
     assignee_type: str | None = Field(
         None,
-        description="'first'(1인칭), 'second', 'thirdname', 'group', 'none' 등. "
+        description="담당자 표현의 종류. 'first'(1인칭), 'second', 'thirdname', 'thirdpronoun', 'thirdrole', "
+        "'group', 'none' 중 하나다. BE가 추출 항목에 저장하며(승인 때 별칭 학습에 쓴다) 모르는 값은 NULL로 저장한다. "
         "first이면 assignee_raw 대신 화자로 팀원을 찾는다. 화자는 다음 순서로 정한다. "
         "(1) evidence_speaker_member_id가 있으면 그 팀원이다. 이 워크스페이스의 탈퇴하지 않은 팀원이 아니면 "
         "화자를 못 찾은 것이고 (2)(3)으로 넘어가지 않는다. "
