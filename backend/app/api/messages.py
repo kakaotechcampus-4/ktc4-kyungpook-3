@@ -117,7 +117,8 @@ def _summary(db: Session, thread: MessageThread) -> ThreadSummary:
         name=thread.member.display_name,
         last_message=None if last is None else {
             "message_id": last.message_id, "sender": last.sender, "body": last.body,
-            "created_at": svc.utc(last.created_at),
+            "created_at": svc.utc(last.created_at), "author_member_id": last.author_member_id,
+            "author_name": last.author_name,
         },
         awaiting_reply_since=awaiting_since and svc.utc(awaiting_since),
         dm_failed=last_bot is not None and last_bot.dm_status == DmStatus.FAILED,
