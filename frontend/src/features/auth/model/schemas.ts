@@ -1,8 +1,11 @@
 import { z } from 'zod'
 
+export const NAME_MAX_LENGTH = 100
+
 /* 캔버스에 오류 문구가 한 줄도 없다(ErrorText 참고). 아래 문구는 D-142·D-149 에 맞춘 이 기능 전용 문구다 */
 export const AUTH_MESSAGES = {
   nameRequired: '이름을 입력해 주세요.',
+  nameTooLong: `이름은 ${NAME_MAX_LENGTH}자 이하로 입력해 주세요.`,
   emailRequired: '이메일을 입력해 주세요.',
   emailFormat: '이메일 형식으로 입력해 주세요.',
   passwordRequired: '비밀번호를 입력해 주세요.',
@@ -51,7 +54,11 @@ export const signupCodeSchema = z.object({
 export type SignupCodeValues = z.infer<typeof signupCodeSchema>
 
 export const signupProfileSchema = z.object({
-  name: z.string().trim().min(1, AUTH_MESSAGES.nameRequired),
+  name: z
+    .string()
+    .trim()
+    .min(1, AUTH_MESSAGES.nameRequired)
+    .max(NAME_MAX_LENGTH, AUTH_MESSAGES.nameTooLong),
   password: newPassword,
 })
 export type SignupProfileValues = z.infer<typeof signupProfileSchema>

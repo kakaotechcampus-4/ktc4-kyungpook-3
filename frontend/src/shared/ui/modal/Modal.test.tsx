@@ -29,10 +29,9 @@ describe('Modal', () => {
     render(<Modal open onOpenChange={vi.fn()} title="팀을 삭제할까요?" />)
     const { card, overlay } = parts()
 
-    // inset-0 은 tokens.css 가 간격 스케일을 꺼서 CSS 에 생성되지 않는다 — 명시 값이어야 화면을 덮는다
+    // 오버레이가 화면을 덮는 값. inset-0 이 생성되지 않던 때(#497 전)의 명시 값을 그대로 둔다
     // (docs/impl-decision/2026-09-29-modal-inset-zero.md)
     expect(overlay).toHaveClass('fixed', 'inset-[0px]', 'z-100', 'flex', 'items-center', 'p-24')
-    expect(overlay).not.toHaveClass('inset-0')
 
     const scrim = overlay?.querySelector('button')
     expect(scrim).toHaveClass('absolute', 'inset-[0px]', 'bg-ink/32', 'cursor-pointer')

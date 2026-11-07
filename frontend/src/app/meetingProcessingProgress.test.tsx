@@ -50,7 +50,9 @@ describe('처리 화면과 #383 의 progress (#384)', () => {
         paths.meetings('ws_01', 'mt_07'),
       )
       expect(screen.queryByRole('list', { name: '정리 단계' })).toBeNull()
-      expect(screen.getByRole('status')).toHaveTextContent('정리가 끝났어요')
+      expect(within(screen.getByRole('main')).getByRole('status')).toHaveTextContent(
+        '정리가 끝났어요',
+      )
     },
   )
 

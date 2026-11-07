@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-DkW27tQK.js";import{n as t,t as n}from"./OnboardingSkeleton-C5wYOKLs.js";var r,i,a;function o(){return(o=e((()=>{t(),r={title:`M4 온보딩/OnboardingSkeleton`,component:n,parameters:{layout:`fullscreen`}},i={},a=[`기본`]})))()}o();export{a as __namedExportsOrder,r as default,i as 기본};

@@ -15,11 +15,26 @@ function issues(result: {
   return (result.error?.issues ?? []).map(({ path, message }) => [path.join('.'), message])
 }
 
+const profile = { name: '새 사용자', password: 'pass1234' }
+
 describe('회원가입 이메일 단계', () => {
   it('앞뒤 공백을 지운다', () => {
     expect(signupEmailSchema.parse({ email: ' pm@example.com ' })).toEqual({
       email: 'pm@example.com',
     })
+  })
+
+  it('이름은 100자까지다 — 101자는 거절한다 (#446)', () => {
+    expect(issues(signupProfileSchema.safeParse({ ...profile, name: 'a'.repeat(101) }))).toEqual([
+      ['name', AUTH_MESSAGES.nameTooLong],
+    ])
+    expect(signupProfileSchema.safeParse({ ...profile, name: 'a'.repeat(100) }).success).toBe(true)
+  })
+
+  it('이름 길이는 앞뒤 공백을 지운 뒤에 센다', () => {
+    expect(signupProfileSchema.parse({ ...profile, name: `  ${'a'.repeat(100)} ` }).name).toBe(
+      'a'.repeat(100),
+    )
   })
 
   it.each([

@@ -360,6 +360,21 @@ describe('프로필 단계', () => {
     await waitFor(() => expect(password).not.toHaveAttribute('aria-invalid'))
   })
 
+  it('이름이 100자를 넘으면 이름 입력 아래에 알리고 가입 요청을 보내지 않는다 (#446)', async () => {
+    const bodies = recordRequestBodies('POST', '/auth/signup')
+    await openSignup()
+    await reachProfile()
+    const name = screen.getByLabelText('이름')
+    await userEvent.click(name)
+    await userEvent.paste('가'.repeat(101))
+    await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+    await click('계정 만들기')
+
+    await waitFor(() => expect(name).toHaveAttribute('aria-invalid', 'true'))
+    expect(name).toHaveAccessibleDescription(AUTH_MESSAGES.nameTooLong)
+    expect(bodies).toEqual([])
+  })
+
   it('증명이 만료되면 이메일 단계로 돌아가 까닭을 알린다', async () => {
     await openSignup()
     await reachProfile()

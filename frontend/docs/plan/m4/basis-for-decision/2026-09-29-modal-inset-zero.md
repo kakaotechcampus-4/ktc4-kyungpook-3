@@ -37,3 +37,12 @@ const SCRIM = 'absolute inset-[0px] cursor-pointer bg-ink/32'
 - 새 위치 유틸을 쓸 때는 `npm run build` 뒤 산출 CSS 에 그 선택자가 있는지 확인한다(`grep -F '.inset-' dist/assets/*.css`).
   배치가 있는 확인은 jsdom 이 아니라 E2E 가 맡는다.
 - `--spacing` 스케일 정책을 바꾸게 되면 이 임의값들을 토큰 유틸로 되돌린다.
+
+## 후속 (2026-11-07, #497)
+
+뿌리를 고쳤다. `tokens.css` 에 `--spacing-0: 0px` 를 더해 `inset-0`·`min-w-0`·`px-0` 같은 `*-0` 유틸이 CSS 를 만든다.
+
+- 위 `왜` 의 첫 줄(0 을 더하면 스케일 정책이 흔들린다)을 다시 따졌다. 스케일 정책이 막으려던 것은 시안에 없는 px(예: `gap-7` 이 28px)다. 0 은 간격 값이 아니라 간격이 없음이라 정책을 넓히지 않는다.
+- 0 이 없는 비용이 더 컸다. 클래스가 붙어 있는데 효과가 없어 빌드·타입·Vitest 가 모두 통과했다. #490 에서는 회의록 참석자 줄의 재는 칸이 `inset-0` 을 써서 참석자 20명일 때 페이지가 가로로 스크롤됐다.
+- 기존 `inset-[0px]`·`min-w-[0px]` 는 그대로 둔다. 값이 같아 화면이 바뀌지 않고, 바꾸면 다른 작업과 겹치는 파일만 늘어난다.
+- 다시 빠지지 않게 `src/app/styles/tokens.test.ts` 가 `index.css` 를 Tailwind 로 직접 컴파일해 `.inset-0`·`.min-w-0`·`.px-0`·`.top-0`·`.gap-0`·`.after:inset-0` 이 생기는지 본다.

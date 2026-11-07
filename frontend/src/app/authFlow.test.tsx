@@ -77,6 +77,20 @@ describe('로그인 제출 (U2-4·U2-6·U2-8)', () => {
     expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull()
   })
 
+  it('시도가 너무 많으면 맞는 비밀번호여도 서버 문장을 그대로 알리고 남은 시간은 말하지 않는다 (#457)', async () => {
+    applyScenario('login-rate-limited')
+    const app = await openLogin()
+    await fillLogin('pm@example.com', 'mock-password')
+    await userEvent.click(screen.getByRole('button', { name: '로그인' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /^로그인 시도가 너무 많습니다\. 잠시 후 다시 시도해 주세요\.$/,
+    )
+    expect(screen.queryByText(/\d+\s*(초|분)/)).toBeNull()
+    await app.expectPath('/login')
+    expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull()
+  })
+
   it('서버 오류도 비필드 오류다. 다시 제출하면 패널이 사라지고 이어 간다', async () => {
     server.use(
       http.post('/api/v1/auth/login', () => fail('INTERNAL_ERROR', 'boom', 500), { once: true }),
@@ -104,10 +118,12 @@ describe('로그인 제출 (U2-4·U2-6·U2-8)', () => {
     const log = recordRequests()
     await openLogin()
     await fillLogin('pm@example.com', 'mock-password')
-    const form = screen.getByRole('button', { name: '로그인' }).closest('form')!
+    const submitButton = screen.getByRole('button', { name: '로그인' })
+    const form = submitButton.closest('form')!
     fireEvent.submit(form)
     fireEvent.submit(form)
     fireEvent.submit(form)
+    await waitFor(() => expect(submitButton).toBeDisabled())
     gate.resolve()
     await screen.findByRole('heading', { name: '워크스페이스 선택' })
     expect(posts(log, '/auth/login')).toHaveLength(1)

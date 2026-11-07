@@ -10,6 +10,16 @@
     -webkit-text-size-adjust: 100%;
   }
 
+  /* 아래 탭 막대(768px 미만 셸, D-180)의 높이. 위 선 1 + 위 8 + 탭 47 + 아래 안전 영역(없으면 8). 홈 표시줄(34)이 있으면 시안의 90px.
+     막대가 없는 화면은 0 이라 본문 아래 여백과 토스트 독이 그대로다 */
+  :root {
+    --bottom-tab-bar: 0px;
+  }
+
+  :root:has([data-bottom-tab-bar]) {
+    --bottom-tab-bar: calc(56px + max(8px, env(safe-area-inset-bottom)));
+  }
+
   body {
     margin: 0;
     background: var(--color-surface);

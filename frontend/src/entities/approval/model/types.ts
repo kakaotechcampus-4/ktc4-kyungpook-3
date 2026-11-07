@@ -38,6 +38,8 @@ export interface TaskUpdateApproval extends ApprovalBase {
   docText: string | null
   evidence: ExtractionEvidence
   meetingId: string | null
+  /** 리마인드 답장에서 온 제안이면 그 답장. 이때 meetingId 는 null 이고 근거는 답장 글이다 */
+  replyMessageId: string | null
 }
 export interface UnsupportedApproval extends ApprovalBase {
   kind: 'unsupported'

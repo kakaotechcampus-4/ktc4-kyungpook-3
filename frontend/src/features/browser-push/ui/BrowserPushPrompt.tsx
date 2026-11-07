@@ -10,7 +10,7 @@ import { PUSH_COPY } from './copy'
 
 /* 대화 머리 아래 한 줄 띠 — 머리와 같은 좌우 28 · 아래 선. 좁으면 버튼이 글 아래로 내려간다 */
 const BAND =
-  'flex shrink-0 flex-wrap items-center gap-x-16 gap-y-10 border-b border-divider bg-surface px-28 py-12'
+  'flex shrink-0 flex-wrap items-center gap-x-16 gap-y-10 border-b border-divider bg-surface px-28 py-12 max-md:px-16'
 const TEXT = 'min-w-[0px] flex-1 basis-[240px]'
 
 /**

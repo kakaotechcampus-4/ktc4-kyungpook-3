@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-DkW27tQK.js";function t({data:e,error:t}){let n=t!=null;return e===void 0?n?`error`:`loading`:n?`refreshFailed`:`ready`}function n(){return(n=e((()=>{})))()}export{t as n,n as t};

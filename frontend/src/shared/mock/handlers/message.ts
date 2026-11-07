@@ -1,6 +1,6 @@
 import { http } from 'msw'
 import { db } from '../db'
-import { ok, fail } from '../envelope'
+import { ok, fail, list } from '../envelope'
 import { requireMember, requirePmRole } from '../auth-guard'
 import { MOCK_NOW } from '../fixtures/constants'
 import { reply } from '../fixtures/message'
@@ -18,6 +18,8 @@ import {
   threadDetailOf,
   utc,
 } from '../message-state'
+import { attributeReply, replyAttributions } from '../reply-state'
+import type { AttributeError } from '../reply-state'
 import type {
   BundleContext,
   BundleRefusal,
@@ -65,6 +67,26 @@ const REFUSAL: Record<BundleRefusal | ReminderRefusal, () => ReturnType<typeof f
     ),
   task_not_found: () => fail('TASK_NOT_FOUND', '해당 태스크를 찾을 수 없습니다.', 404),
   member_not_found: () => fail('MEMBER_NOT_FOUND', '해당 팀원을 찾을 수 없습니다.', 404),
+}
+
+function attributeError(
+  error: AttributeError,
+  messageId: string,
+  taskId: string | null,
+): ReturnType<typeof fail> {
+  switch (error) {
+    case 'REPLY_JUDGMENT_NOT_FOUND':
+      return fail(error, '해당 답장의 판단 기록을 찾을 수 없습니다.', 404, {
+        message_id: messageId,
+      })
+    case 'REPLY_ATTRIBUTION_NOT_NEEDED':
+      return fail(error, '태스크를 고를 필요가 없는 답장입니다.', 409, {
+        message_id: messageId,
+        state: db.replies.judgments.find(({ message_id }) => message_id === messageId)?.state,
+      })
+    case 'INVALID_REQUEST':
+      return fail(error, '후보에 없는 태스크입니다.', 400, { task_id: taskId })
+  }
 }
 
 function reminderResponse(result: ReminderResult, status = 200) {
@@ -249,6 +271,42 @@ export const messageHandlers = [
         { ...message, thread_id: thread.thread_id, created_at: utc(message.created_at) },
         { status: 201 },
       )
+    },
+  ),
+
+  /** 그 대화에서 PM 이 태스크를 고를 답장과 고른 답장. PM 만 본다 */
+  http.get(
+    '/api/v1/workspaces/:workspaceId/messages/threads/:threadId/attributions',
+    ({ params }) => {
+      const workspaceId = String(params.workspaceId)
+      const denied = requirePmRole(workspaceId)
+      if (denied) return denied
+      const thread = findThread(workspaceId, params.threadId)
+      if (!thread) return threadNotFound(params.threadId)
+      return list(replyAttributions(workspaceId, thread.thread_id))
+    },
+  ),
+
+  /** 답장의 태스크를 고른다. task_id 가 null 이면 해당 없음이다. 목은 고른 태스크로 다시 판단하지 않는다 */
+  http.post(
+    '/api/v1/workspaces/:workspaceId/messages/replies/:messageId/attribution',
+    async ({ params, request }) => {
+      const workspaceId = String(params.workspaceId)
+      const denied = requirePmRole(workspaceId)
+      if (denied) return denied
+      const input = await readJson(request)
+      const taskId = input?.task_id
+      if (
+        input === null ||
+        !('task_id' in input) ||
+        (taskId !== null && typeof taskId !== 'string')
+      )
+        return invalid('task_id 는 태스크 ID 이거나 null 이어야 합니다.')
+      if (db.messageFailures.actions) return actionError()
+      const messageId = String(params.messageId)
+      const error = attributeReply(workspaceId, messageId, taskId)
+      if (error !== null) return attributeError(error, messageId, taskId)
+      return ok({ message_id: messageId })
     },
   ),
 

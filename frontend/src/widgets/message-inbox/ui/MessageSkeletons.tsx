@@ -36,14 +36,14 @@ export function InboxListSkeleton() {
 export function ThreadSkeleton() {
   return (
     <div aria-busy="true" data-testid="message-thread-skeleton" className="flex flex-1 flex-col">
-      <div className="flex h-header shrink-0 items-center gap-11 border-b border-divider px-28">
+      <div className="flex h-header shrink-0 items-center gap-11 border-b border-divider px-28 max-md:hidden">
         <Skeleton variant="circle" width={34} height={34} />
         <div className="flex flex-col gap-6">
           <Skeleton width={56} />
           <Skeleton width={120} />
         </div>
       </div>
-      <div className="flex flex-1 flex-col gap-16 bg-surface-sunken px-28 pt-24">
+      <div className="flex flex-1 flex-col gap-16 bg-surface-sunken px-28 pt-24 max-md:px-16 *:max-w-full">
         <Skeleton variant="block" width={320} height={48} className="self-end rounded-[15px]" />
         <Skeleton variant="block" width={280} height={48} className="ml-36 rounded-[15px]" />
         <Skeleton variant="block" width={360} height={48} className="self-end rounded-[15px]" />

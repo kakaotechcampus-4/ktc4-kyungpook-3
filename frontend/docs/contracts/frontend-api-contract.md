@@ -64,7 +64,7 @@ FE 변경과 실제 검증은 [M6 후속 결과](../plan/m6/result.md)에 기록
 |---|---|---|
 | `POST /auth/signup`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | 가입 `{email,password,name}`, 로그인 `{email,password}`. 세션 DTO를 도메인 세션으로 변환, 토큰을 화면에 전달하지 않음 | [인증](../../src/entities/user/api/auth.ts), [세션](../../src/entities/user/api/session.ts), [인증 DTO](../../src/shared/types/api/auth.ts) |
 | `/workspaces` 목록·생성·상세, `PATCH /workspaces/{id}/onboarding` | 공간·역할·단계 상태를 사용. 단계 갱신 후 상세 재조회 | [공간 API](../../src/entities/workspace/api), [공간 DTO](../../src/shared/types/api/workspace.ts) |
-| `GET /workspaces/{id}/integrations`, `DELETE /workspaces/{id}/integrations/{provider}` | Discord·Notion 상태. 해제는 204 무본문 | [연동 API](../../src/entities/integration/api/integrations.ts), [연동 DTO](../../src/shared/types/api/integration.ts) |
+| `GET /workspaces/{id}/integrations`, `DELETE /workspaces/{id}/integrations/{provider}` | Discord·Notion 상태. 해제는 204 무본문. Discord 의 `chat_channel` 과 채팅 채널 목록·저장·해제는 §4.3.1 | [연동 API](../../src/entities/integration/api/integrations.ts), [연동 DTO](../../src/shared/types/api/integration.ts) |
 | `POST /workspaces/{id}/meetings/upload` | multipart `title`, ISO `started_at`, 참석자별 반복 `attendee_member_ids`, `file`. 202 data `{meeting_id,status}` | [업로드](../../src/entities/meeting/api/uploadMeeting.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
 | `GET /workspaces/{id}/meetings`, `GET /meetings/{id}` | 목록은 `{items,total}`, nullable title. 상세는 workspace_id·status·progress·extraction_id·failed_stage | [회의 조회](../../src/entities/meeting/api/meetingQueries.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
 | `GET /meetings/{id}/minutes` | nullable summary·title, 참석자 배열, 전사 배열, permissions `{can_review,can_undo}` | [회의록 조회](../../src/entities/minutes/api/minutesQuery.ts), [회의록 DTO](../../src/shared/types/api/minutes.ts) |
@@ -297,6 +297,8 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 ```
 
 - `WORKSPACE_MISMATCH` 는 **400** 이다. 이전 판이 409 로 적은 것은 오류였다.
+- 회의 채팅 채널(#428)이 `DISCORD_CHANNEL_NOT_FOUND(404)`·`DISCORD_CHANNEL_NOT_ACCESSIBLE(409)` 를 더했다. 위 목록의 개수는 이 절을 처음 쓴 때 기준이며 전체 목록은 `core/errors.py` 가 원천이다 → §4.3.1.
+- 로그인 시도 제한 `TOO_MANY_LOGIN_ATTEMPTS(429)` 는 BE PR #456 에 있고 병합 전이라 위 목록에 넣지 않았다. FE 는 먼저 반영했다 → §4.1.3.
 - 아래 3개는 **정의만 되고 아직 아무도 던지지 않는다.** 화면은 처리 경로를 갖되 실제로 오는지는 기대하지 않는다 → §4.0.
   `ONBOARDING_INCOMPLETE` · `INTEGRATION_REVOKED` · `AUDIO_TOO_LARGE`
 
@@ -927,13 +929,13 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 
 | Method | Path | 비고 | 구현 |
 |---|---|---|---|
-| POST | `/api/v1/auth/signup` | **201**. 본문이 바뀌었다 (§4.1.2) | ✅ |
+| POST | `/api/v1/auth/signup` | **201**. 본문이 바뀌었다 (§4.1.4) | ✅ |
 | POST | `/auth/login` · `/auth/logout` | | ✅ |
 | GET | `/api/v1/auth/me` | | ✅ |
-| ~~GET~~ | ~~`/api/v1/auth/google/start?state=` · `/auth/google/callback`~~ | Google 로그인은 이번 범위에서 하지 않는다 (D-180). 카카오는 §4.1.2 | 해당 없음 |
+| ~~GET~~ | ~~`/api/v1/auth/google/start?state=` · `/auth/google/callback`~~ | Google 로그인은 이번 범위에서 하지 않는다 (D-180). 카카오는 §4.1.4 | 해당 없음 |
 
 ```jsonc
-// signup 요청 {"verification_token"?, "name", "password", "link_kakao"} (§4.1.2)   login 요청 {"email", "password"}
+// signup 요청 {"verification_token"?, "name", "password", "link_kakao"} (§4.1.4)   login 요청 {"email", "password"}
 // signup · login · me 의 응답 data
 {"user": {"user_id": "us_01", "email": "pm@example.com", "name": "최진호", "avatar_url": null},
  "workspace_count": 2,
@@ -947,7 +949,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
   2. 로그아웃 시 즉시 무효화한다. → ✅ `session` 행을 삭제하고 쿠키를 지운다
   3. **토큰과 세션에 역할·권한을 담지 않는다.** → ✅ `secrets.token_urlsafe(32)` 의 opaque 값이라 담길 수 없다.
      권한은 `get_current_member` · `require_member` 가 요청마다 멤버십에서 조회한다. ~~`tasks` · `approvals` · `extractions` · `members` 에는 걸려 있지 않다~~ — 2026-09-29 기준 모두 걸려 있다 (②-1)
-- OAuth 는 본문 없는 302 다. ~~`state` 에 복귀 경로를 담는다 (D-158). → ❌ 미구현. 로그인 화면의 Google 버튼은 M4 에서 비활성으로 둔다.~~ → 카카오 로그인이 이 방식이다 (§4.1.2). Google 버튼은 없앴다.
+- OAuth 는 본문 없는 302 다. ~~`state` 에 복귀 경로를 담는다 (D-158). → ❌ 미구현. 로그인 화면의 Google 버튼은 M4 에서 비활성으로 둔다.~~ → 카카오 로그인이 이 방식이다 (§4.1.4). Google 버튼은 없앴다.
 - 미인증 요청은 401 `UNAUTHENTICATED`. → ✅ `deps.get_current_user`
 - 쿠키가 `secure=True` 라서 **HTTPS 가 아니면 브라우저가 저장하지 않는다.** `localhost` 는 예외로 허용되므로 Vite 프록시 경유 개발은 된다.
 - **만료는 서버 세션에만 있다.** `session.expires_at` 이 발급 후 7일이고 `get_current_user` 가 지나면 401 을 낸다. `set_cookie` 에는 `max_age` · `expires` 가 없어
@@ -1000,9 +1002,54 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - MSW: [handler](../../src/shared/mock/handlers/passwordReset.ts), [시나리오](../../src/shared/mock/passwordResetScenarios.ts). 정상·만료·재사용·재요청 무효·재요청 제한·서버 오류(500)·메일 미설정(503)을 고정 토큰으로 재현한다. 개발·MSW 모드에서만 모의 메일함 `/__mock/mail`이 보낸 링크를 보여 준다.
 - 검증: Vitest 단위·통합, 실제 Chromium E2E [password-reset.e2e.ts](../../e2e/password-reset.e2e.ts)(요청 → 모의 메일함 링크 → 변경 → 새 비밀번호 로그인, 만료 링크). BE PR 코드는 읽어서 대조만 했다. 실서버 왕복, 실제 메일 발송, 서버 세션 끊김은 BE 병합·배포와 메일 설정 뒤 확인한다.
 
-#### 4.1.2 가입 이메일 인증과 카카오 로그인 (#427): 코드 구현, 실제 로그인·메일 수신 미확인
+#### 4.1.2 가입 이름 규칙 (#446) — BE PR #445 병합됨
 
-제공자는 BE, 소비자는 FE `/signup`과 `/login`이다. 아래 규약은 이슈 #427 명세(2026-11-06 사용자 결정)와 같은 브랜치 `feature/427-kakao-login-signup`의 `backend/app/api/auth.py`, `schemas/auth.py`, `services/signup_codes.py`, `services/kakao_oauth.py`, `core/errors.py`를 읽고 대조했다. 팀 합의는 PR 리뷰 전이라 합의 여부 확인이 필요하다.
+제공자는 BE `POST /api/v1/auth/signup`, 소비자는 FE 회원가입 폼이다. 근거는 [#446 요청](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/446)과 [FE 반영 방침](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/446#issuecomment-6690116872) 댓글이다. 서버 구현은 [BE PR #445](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/445)이고 2026-11-06 develop에 병합됐다. 아래 규약은 develop의 `backend/app/schemas/auth.py` `validate_name`을 읽고 대조했다. 배포 서버에 적용됐는지는 확인하지 않았다.
+
+**규약 (BE 코드 기준).** 경로·필드·오류 코드는 그대로다.
+
+- 앞뒤 공백을 지운 이름을 저장한다. 응답 `user.name`도 지운 값이다.
+- 지운 뒤 비었거나, 100자(코드 포인트)를 넘거나, 제어문자(Cc)·서로게이트(Cs)·줄 구분자(Zl·Zp)·글자 방향 제어 문자(U+202A~202E, U+2066~2069)가 있거나, 보이지 않는 글자(Cf·Mn·Me)와 공백(Z*)만 있으면 400 `INVALID_REQUEST`다. `details.fields`는 `[{"loc": ["body", "name"], "msg": "Value error, 이름은 앞뒤 공백을 뺀 1~100자이고 제어문자를 포함할 수 없습니다."}]` 모양이다.
+- 본문 검증이 이메일 중복 확인보다 먼저다. 규칙을 어긴 이름과 이미 있는 이메일이 함께 오면 409 대신 400이다.
+- ZWJ·ZWNJ는 허용한다.
+
+**현재 구현 (2026-11-07).**
+
+- 폼: [signupSchema](../../src/features/auth/model/schemas.ts)가 앞뒤 공백을 지운 뒤 비었으면 「이름을 입력해 주세요.」, 100자를 넘으면 「이름은 100자 이하로 입력해 주세요.」를 이름 칸 아래에 보이고 요청을 보내지 않는다. 길이는 UTF-16 단위로 센다. BE(코드 포인트)보다 엄격해서 폼을 통과한 이름이 길이로 400이 되지 않는다. 이모지 같은 BMP 밖 글자가 많은 이름은 100 코드 포인트 안이어도 폼에서 막힐 수 있다.
+- 폼은 보이지 않는 글자·제어문자를 검사하지 않는다. 그런 이름은 BE 400을 받아 폼 상단에 「요청 내용을 다시 확인해 주세요.」가 보인다. 입력창으로 넣기 어려운 글자라 이번에는 폼 검사를 더하지 않았다.
+- MSW: [가입 handler](../../src/shared/mock/handlers/auth.ts)가 위 규칙과 순서를 따른다. 공백 제거는 Python `str.strip()`과 같은 글자 집합이고 길이는 코드 포인트로 센다. 비밀번호 규칙은 여전히 검사하지 않는다(§4.1.1 「합의와 구현의 차이」).
+- 검증: Vitest(스키마, MSW handler 규칙, 회원가입 화면 통합)와 MSW 모드 브라우저 확인. 실서버 왕복은 확인하지 않았다.
+
+#### 4.1.3 로그인 시도 제한 429 (#457) — 합의됨, BE PR #456 열림·미병합
+
+제공자는 BE `POST /api/v1/auth/login`, 소비자는 FE 로그인 폼이다. 근거는 [#457 요청](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/457)과 [FE 반영 방침](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/457#issuecomment-6690117714) 댓글이다. 서버 구현은 [BE PR #456](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/456)이다. 2026-11-07 확인 당시 PR은 열려 있고 병합 전이다. 아래 규약은 그 PR의 `backend/app/api/auth.py`, `services/login_limit.py`, `core/errors.py`를 읽고 대조했다. 로컬 백엔드나 배포 서버에 적용됐다고 가정하지 않는다.
+
+**규약 (BE PR #456 코드 기준).**
+
+| 상태 | code | message | details | 헤더 |
+|---|---|---|---|---|
+| 429 | `TOO_MANY_LOGIN_ATTEMPTS` | 로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요. | `{"retry_after_seconds": <정수 초>}` | `Retry-After: <같은 값>` |
+
+- 같은 이메일로 15분 안에 10번 실패하거나 같은 IP에서 15분 안에 50번 실패하면 15분 동안 막힌다. 막힌 동안에는 맞는 비밀번호도 429다.
+- 시간이 지나거나 비밀번호 재설정(§4.1.1 confirm)을 마치면 풀린다. 이미 로그인한 세션은 영향이 없다.
+- 있는 이메일과 없는 이메일의 응답이 같다. 화면은 계정이 잠겼다고 단정하면 안 된다.
+- 로그인의 오류는 이로써 400 `INVALID_REQUEST`(본문 검증), 401 `INVALID_CREDENTIALS`, 429 `TOO_MANY_LOGIN_ATTEMPTS`다.
+
+**FE가 정한 동작.** [FE 반영 방침](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/457#issuecomment-6690117714)은 감독 세션이 사용자 대신 정한 기본값이고 사용자 확인 전이다.
+
+- 서버 문구를 그대로 폼 상단 오류로 보인다. 다른 오류 문구의 해요체와 다르다. 남은 시간은 보이지 않는다. `retry_after_seconds`와 `Retry-After`는 읽지 않는다.
+- 로그인 화면의 「비밀번호를 잊으셨나요?」는 이 작업에서 켜지 않는다. #451(PR #458)이 BE 메일 설정 뒤에 켠다.
+
+**현재 구현 (2026-11-07).**
+
+- 오류 코드: `TOO_MANY_LOGIN_ATTEMPTS`를 [오류 코드 목록](../../src/shared/api/errors.ts)과 [문구](../../src/shared/api/errorMessages.ts)에 더했다. [LoginForm](../../src/features/auth/ui/LoginForm.tsx)은 바꾸지 않았다. 401처럼 비필드 오류라 기존 경로로 폼 상단에 보인다. §1 「오류 코드」의 서버 목록은 BE PR 병합 뒤에 고친다.
+- 재시도: [queryClient](../../src/shared/api/queryClient.ts)는 네트워크 오류·408·5xx만 다시 보내고 mutation은 다시 보내지 않는다. 429를 다시 보내지 않는 것은 기존 테스트가 확인한다.
+- MSW: [로그인 handler](../../src/shared/mock/handlers/auth.ts)가 BE처럼 앞뒤 공백을 지우고 소문자로 바꾼 이메일별로 실패를 센다. 첫 실패부터 15분 안에 10번째 실패는 401이고, 그 뒤 15분 동안은 맞는 비밀번호도 429이며 `retry_after_seconds`와 `Retry-After`를 같은 값으로 준다. 막히기 전에 첫 실패부터 15분이 지나면 횟수를 새로 센다. 성공하면 그 이메일의 횟수를 지우고, 재설정 confirm을 마쳐도 지운다. IP 제한은 흉내 내지 않는다. BE는 공인 IP만 세고 사설·루프백 주소는 세지 않아 로컬 개발 요청은 IP 제한에 닿지 않고, 모의 요청에는 클라이언트 IP도 없다. 시나리오 `login-rate-limited`는 `pm@example.com`이 이미 막힌 상태로 시작하고 남은 시간은 900초다.
+- 검증: Vitest(MSW handler 규칙, 로그인 화면 통합)와 MSW 모드 브라우저 확인. 실서버 왕복은 BE PR 병합·배포 뒤 확인한다.
+
+#### 4.1.4 가입 이메일 인증과 카카오 로그인 (#427): 코드 구현, 실제 로그인·메일 수신 미확인
+
+제공자는 BE, 소비자는 FE `/signup`과 `/login`이다. 아래 규약은 이슈 #427 명세(2026-11-06 사용자 결정)와 같은 브랜치 `feature/427-kakao-login-signup`의 `backend/app/api/auth.py`, `schemas/auth.py`, `services/signup_codes.py`, `services/kakao_oauth.py`, `core/errors.py`를 읽고 대조했다. 팀 합의를 마쳤다.
 
 **규약 (같은 브랜치 BE 코드 기준).** 모두 로그인이 필요 없다. 응답은 기존 봉투다.
 
@@ -1102,7 +1149,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - **합의된 규약.** [#367](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/367) 댓글의 BE 설계 확정과 구현 완료(PR #374, develop 병합)에 따른다. `POST /workspaces`, `GET /workspaces` 의 각 항목, `GET /workspaces/{id}` 응답의 `role` 바로 뒤에 `member_id: string | null` 이 온다.
 - 값은 로그인 계정이 연결된, 탈퇴하지 않은 이 공간의 팀원 행이다. 같은 응답의 `role` 과 같은 행이고, 메시지 답장 API 가 대화 주인을 판정하는 행과 같다(§5.7). `null` 은 `role` 이 `null` 인 경우와 같은 뜻(이 공간 팀원이 아님)이고 정상 경로에서는 오지 않는다.
 - **현재 서버 구현.** [schemas/workspace.py](../../../backend/app/schemas/workspace.py)의 `WorkspaceResponse.member_id` 는 `Optional[str]`, 기본값 `None` 이다. [api/workspaces.py](../../../backend/app/api/workspaces.py)의 `_build_workspace_response` 가 팀원 행이 있을 때만 채운다.
-- **현재 프론트 구현.** DTO [workspace.ts](../../src/shared/types/api/workspace.ts)는 이 필드를 선택(`member_id?: string | null`)으로 받는다. 이 필드가 없는 BE 배포 전 응답도 깨지지 않게 하려는 것이다. 매퍼는 필드가 없거나 `null` 이면 `memberId: null` 로 둔다. 화면은 이 값을 메시지 답장 칸 판정에만 쓴다(§5.7). 소속 판정은 지금처럼 목록에 있는지로 한다(§4.0-①).
+- **현재 프론트 구현.** DTO [workspace.ts](../../src/shared/types/api/workspace.ts)는 이 필드를 선택(`member_id?: string | null`)으로 받는다. 이 필드가 없는 BE 배포 전 응답도 깨지지 않게 하려는 것이다. 매퍼는 필드가 없거나 `null` 이면 `memberId: null` 로 둔다. 화면은 이 값을 메시지 대화 주인 판정(답장 칸, #417 의 PM 자기 대화 구역과 표시 규칙)에만 쓴다(§5.7). 소속 판정은 지금처럼 목록에 있는지로 한다(§4.0-①).
 - **모의 서버(MSW).** 목록·상세·생성 응답에 세션의 팀원 ID(`sessionMemberId`)를 싣는다. 계정과 팀원 행의 대응은 수락한 초대, 아니면 모의 DB 계정의 `memberIds` 다. 픽스처 계정은 `ws_01` 에서 PM 이면서 팀원 행 `mb_01` 이다. 공간을 만들면 BE 처럼 생성자 계정이 새 PM 행과 이어진다. 그래서 생성·목록·상세의 `member_id` 가 그 행 ID 이고, 그 행 대화의 답장은 201 이다. 같은 대응 때문에 생성자 PM 행을 초대하면 BE 처럼 409 `MEMBER_ALREADY_LINKED` 다.
 
 ### 4.3 integrations
@@ -1133,7 +1180,26 @@ M4 에서 실 API 로 완결되지 않는다. 그때까지 MSW 로 진행한다.
 - `display_name` 이 `"Discord 연결됨"` 같은 **생성 문자열**이다 (§4.0-②-7). 화면에 그대로 쓸 수 없다.
   연동 카드는 provider 이름을 프론트엔드가 쓰고, `display_name` 은 실제 값이 올 때까지 표시하지 않는다.
 - 연결 요청에 본문이 없다. Notion 은 OAuth 만 수행하고 데이터베이스 선택 화면을 만들지 않는다 (D-154). → 연결 경로 자체가 아직 없다.
-- 복귀 주소의 결과 이름 `oauth`, `oauth_result`는 카카오 로그인(§4.1.2)도 같다. 그쪽에만 `oauth_reason`이 더 있고, 연동 화면은 이 값을 읽지 않는다. [복귀 주소 코드](../../src/shared/lib/oauth/returnParams.ts)가 한 곳에서 다룬다.
+- 복귀 주소의 결과 이름 `oauth`, `oauth_result`는 카카오 로그인(§4.1.4)도 같다. 그쪽에만 `oauth_reason`이 더 있고, 연동 화면은 이 값을 읽지 않는다. [복귀 주소 코드](../../src/shared/lib/oauth/returnParams.ts)가 한 곳에서 다룬다.
+
+#### 4.3.1 회의 채팅 채널 (#428·#429, 2026-11-07)
+
+- **합의된 규약.** [#428](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/428) 댓글의 BE 설계 확정과 구현(PR #432, 2026-11-06 develop 병합)에 따른다. PM 이 설정에서 디스코드 서버의 텍스트 채널 하나를 고르면 매일 09:00(KST)에 그 채널 대화를 읽어 task 제안을 만든다. 채널은 워크스페이스마다 하나이고 별도 봇 초대는 없다. FE 위치(설정 연결 탭의 Discord 항목 아래, PM 만)와 저장 전 안내 문구는 [#429](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/429) 의 FE 진행 기본값 댓글(2026-11-07)을 따른다. 그 댓글은 이견이 있으면 이슈에 남기라고 했으므로 PM·디자인의 최종 확인은 **합의 여부 확인 필요**로 둔다.
+
+| Method | Path | 권한 | 응답 `data` |
+|---|---|---|---|
+| GET | `/api/v1/workspaces/{workspace_id}/integrations` | 소속 팀원 | `discord.chat_channel: {channel_id, name} \| null` 이 더해졌다. `notion` 에는 없다 |
+| GET | `/api/v1/workspaces/{workspace_id}/discord/channels` | PM | `{items: [{channel_id, name}], total}`. 일반 텍스트 채널(type 0)만이다 |
+| PUT | `/api/v1/workspaces/{workspace_id}/integrations/discord/chat-channel` | PM | 요청 `{channel_id}`, 응답 `{channel_id, name}` |
+| DELETE | `/api/v1/workspaces/{workspace_id}/integrations/discord/chat-channel` | PM | 200 `{off_notice_sent: boolean}`. 이미 꺼져 있거나 연결이 없어도 200 이다 |
+
+- **저장 순서와 실패.** 서버는 연결 행을 잠그고 (1) 연결한 서버의 텍스트 채널인지 (2) 봇이 읽을 수 있는지(`GET /channels/{id}/messages?limit=1`) (3) 켬 공지를 보낼 수 있는지를 거친 뒤에만 저장한다. 하나라도 실패하면 저장하지 않는다. 같은 채널을 다시 저장하면 Discord 를 부르지 않고 성공한다. 채널 이름은 저장 시점 값이다.
+- **오류.** `channel_id` 가 숫자 1~20자가 아니면 400 `INVALID_REQUEST`. 연결이 없으면 409 `INTEGRATION_NOT_CONNECTED`(`details.provider`). 서버의 텍스트 채널이 아니면 404 `DISCORD_CHANNEL_NOT_FOUND`(`details.channel_id`). 봇이 읽거나 보낼 수 없으면 409 `DISCORD_CHANNEL_NOT_ACCESSIBLE`(`details.need` 가 `read` 또는 `send`, `channel_id`, `discord_code`). Discord 장애·봇 토큰 없음은 502 `DISCORD_API_FAILED`. 목록에 보이는 채널도 비공개면 저장이 실패할 수 있다.
+- **해제.** 채널을 바꾸거나 끄거나 Discord 연결을 해제하면 서버가 옛 채널에 끔 공지를 시도한다. 공지 실패는 끄기를 되돌리지 않고 `off_notice_sent: false` 로만 알린다. `DELETE /integrations/discord`(§4.3)도 채팅 채널을 함께 지운다. 다른 서버로 다시 연결하면 공지 없이 채널 값만 비운다.
+- **현재 서버 구현.** [api/integrations.py](../../../backend/app/api/integrations.py)의 `get_integrations`·`list_discord_channels`·`set_discord_chat_channel`·`clear_discord_chat_channel`·`delete_integration`, [services/chat_channel.py](../../../backend/app/services/chat_channel.py), [schemas/integration.py](../../../backend/app/schemas/integration.py), [core/errors.py](../../../backend/app/core/errors.py)다.
+- **현재 프론트 구현(#429).** DTO [integration.ts](../../src/shared/types/api/integration.ts), 엔티티 [연동 API](../../src/entities/integration/api/integrations.ts)가 조회·목록·저장·해제를 맡고 매퍼가 `discord.chatChannel` 로 바꾼다. 설정 연결 탭의 Discord 카드 아래 `회의 채팅 채널` 칸은 PM 에게만 보이고, Discord 가 연결돼 있지 않으면 비활성이며 목록을 부르지 않는다. 채널을 고르면 저장 전에 칸 아래 안내를 보이고 `저장` 으로 PUT, `사용 안 함` 저장은 DELETE 다. 쓰기는 세션 범위(`captureSessionScope`)를 잡아 세션이 바뀐 뒤 보내지 않는다. 오류 코드별 문구는 기능 안의 문구 표가 정하고, `need=read`·`need=send` 는 채널 권한에서 고칠 방법을 알린다. `DISCORD_CHANNEL_NOT_FOUND` 면 채널 목록을 다시 받는다. Discord 연결 해제 확인 창은 채팅 채널이 있을 때 함께 꺼진다고 알린다. 선택 칸은 공용 선택 상자(`shared/ui/select`, #471)다.
+- **모의 서버(MSW).** [integration handler](../../src/shared/mock/handlers/integration.ts)가 위 세 경로와 오류를 BE 모양으로 흉내낸다. 모의 채널마다 접근 상태(`ok`·`no_read`·`no_send`)를 두어 409 `need` 두 경우를 재현한다.
+- **검증 한계.** 실제 Discord 서버와 BE 를 붙인 저장·공지는 확인하지 않았다. FE 확인은 MSW 기준이다.
 
 ### 4.4 meetings 웹 경로
 
@@ -1173,6 +1239,7 @@ POST .../meetings/upload            multipart/form-data
 - ⚠️ **파일도 저장하지 않는다** (`# TODO: 파일 저장 및 큐 전송`). 업로드는 `processing` 회의 행만 만든다.
   회의는 영원히 `processing` 에 머무르며, 이 상태가 **다음 업로드를 409 로 막는다(채팅 회의 제외).**
 - `source` 가 `"manual_upload"` 로 고정된다. `MeetingSource` = `discord` \| `manual_upload` \| `chat`이다 (D-157). `chat`은 디스코드 채팅 자동 수집이 만들고(구현됨, BE 담당 리뷰 대기) 웹 업로드는 계속 `manual_upload`다. `chat` 회의가 `processing`이어도 업로드는 막히지 않는다.
+- FE 구현(#450, 2026-11-07): 업로드 진입 판정과 응답을 잃은 업로드의 복구도 `processing` 인 `chat` 회의를 세지 않는다. 채팅 회의만 정리 중이면 업로드 화면에 머물고, 응답을 잃으면 채팅 회의를 방금 올린 회의로 보지 않는다. 정리 중 토스트는 채팅 회의도 그대로 따라간다. 구현: [업로드를 막는 회의](../../src/entities/meeting/lib/uploadBlockingMeeting.ts), [진입 판정](../../src/features/meeting-upload/model/useUploadEntry.ts), [업로드](../../src/features/meeting-upload/model/useMeetingUpload.ts). MSW 기준 검증이며 실서버는 미검증이다.
 - `started_at` 을 보내지 않으면 서버 시각이 된다. 프론트엔드는 **항상 보낸다** (D-079, D-164).
 
 ```jsonc
@@ -1207,6 +1274,7 @@ POST .../meetings/upload            multipart/form-data
 |---|---|
 | `diarize` | 음성 화자 분리 단계 실패. 음성 처리를 완료하지 못했다는 안내와 재업로드 안내를 표시한다. 이 값만으로 3시간 초과라고 단정하지 않는다. |
 | `speaker_assignment_expired` | 화자 지정 대기가 7일을 넘어 종료됐다. 사유와 원본 파일 재업로드 안내를 표시한다. |
+| `chat_stalled` | 채팅 회의가 `/end` 뒤 7시간 넘게 `processing` 이라 BE sweeper 가 실패로 바꿨다([BE·AI 계약](../../../backend/docs/contracts/backend-ai-contract.md) 「회의」). 재업로드를 권하지 않고 「채팅 대화를 정리하다 멈췄어요. 다음 수집 때 다시 정리해요.」를 표시한다. 다음 수집 시각은 계약에 없어 말하지 않는다. Notion 끊김 재조회를 하지 않는다. FE 구현(#450, 2026-11-07). 문구는 [이슈 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/450#issuecomment-6690118831)의 감독 기본값이며 사용자 확인 전이다. |
 
 - 목록은 `source=manual_upload`, `status=failed`, `failed_stage=speaker_assignment_expired`인 회의를 보존한다. 나머지 실패 회의는 기존처럼 제외한다. 상세는 `GET /meetings/{meeting_id}`로 읽으며 만료된 회의의 회의록·추출은 조회하지 않는다. 멤버십 제한은 유지한다.
 - FE 합의 근거는 [이슈 결정 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256#issuecomment-6609243822)과 D-091~D-093의 2026-11-04 보완이다. BE 목록 변경은 이 작업의 구현 제안이며 파트 간 리뷰·합의와 실서버 배포 확인은 별도다.
@@ -1365,8 +1433,8 @@ MSW 픽스처의 단위이자 M1-C 의 작업 단위이기도 하다.
 | 화면 | 호출 | 상태 |
 |---|---|---|
 | 랜딩 | 없음 | — |
-| 로그인 | `POST /auth/login` | **구현됨** §4.1 |
-| 회원가입 | `POST /auth/signup` | **구현됨** §4.1 — 201 |
+| 로그인 | `POST /auth/login` | **구현됨** §4.1 — 429 시도 제한은 BE PR #456 미병합 §4.1.3 |
+| 회원가입 | `POST /auth/signup` | **구현됨** §4.1 — 201, 이름 규칙 §4.1.2 |
 | 비밀번호 재설정 요청·변경 | `POST /auth/password-reset/request` · `verify` · `confirm` | ❌ **없다** §4.1.1 — BE PR #398 열림·미병합. MSW 로 개발 |
 | Google 로그인 | `GET /auth/google/start?state=` 로 **페이지 이동** | ❌ **없다** §4.1 — M4 에서 버튼 비활성 |
 | 앱 부팅 | `GET /auth/me` | **구현됨** §4.1 |
@@ -1538,7 +1606,8 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 화면 표시: `draft_status` 가 `needed`·`claimed` 면 `문구 다듬는 중`, `body` 는 줄바꿈 그대로(`whitespace-pre-line`), `body_source` 는 미리보기 밑단의 작은 글자(`직접 고친 문구`·`AI 초안`·`기본 문구`)다. 봇 메시지 `dm_status: failed` 는 말풍선 아래 `DM 못 보냄 · {이유}`(`dm_blocked` 서버 DM 이 막혀 있어요, `discord_not_linked` Discord 계정이 연결되지 않았어요, `unknown` 이유를 알 수 없어요), 목록 행의 `dm_failed` 는 `DM 못 보냄` 표시다. 팀원 메시지 `reply_channel: web` 은 `웹에서 답장` 을 붙인다.
 - 대화 화면은 메시지와(PM 에게만) 예정 묶음을 나갈 시각 순으로 섞는다. 취소·만료된 재촉 줄은 응답에 없어 그리지 않는다.
 - 팀원 화면: 자기 대화를 보고 웹 답장을 쓴다. 답장 칸 아래에 `봇 DM 창에 쓴 글은 모두 PM 대화에 보여요.` 를 보인다.
-- 대화 주인 판정(#367, 2026-11-05): 화면은 워크스페이스 응답의 `member_id`(§4.2.1)를 대화의 `member_id` 와 비교한다. 같으면 PM 이어도 자기 대화라 답장 칸을 보인다. BE 답장 API 도 같은 팀원 행으로 판정해 201 이고, 다르면 403 이다([api/messages.py](../../../backend/app/api/messages.py)의 답장 경로). PM 이 남의 대화를 열면 지금처럼 답장 칸 대신 안내 바를 보인다. 워크스페이스 응답에 `member_id` 가 없거나 `null` 이면 PM 에게는 답장 칸을 숨긴다. 팀원은 자기 대화만 받으므로 이 값과 상관없이 답장 칸을 보인다. PM 의 자기 대화도 답장 기다림 배지·`여기서부터 답장이 없습니다`·말풍선 자리(봇이 오른쪽)는 PM 화면 그대로다.
+- 대화 주인 판정(#367, 2026-11-05): 화면은 워크스페이스 응답의 `member_id`(§4.2.1)를 대화의 `member_id` 와 비교한다. 같으면 PM 이어도 자기 대화라 답장 칸을 보인다. BE 답장 API 도 같은 팀원 행으로 판정해 201 이고, 다르면 403 이다([api/messages.py](../../../backend/app/api/messages.py)의 답장 경로). PM 이 남의 대화를 열면 지금처럼 답장 칸 대신 안내 바를 보인다. 워크스페이스 응답에 `member_id` 가 없거나 `null` 이면 PM 에게는 답장 칸을 숨긴다. 팀원은 자기 대화만 받으므로 이 값과 상관없이 답장 칸을 보인다.
+- PM 자기 대화의 표시(#417, 2026-11-07): 위 판정으로 PM 의 자기 대화로 가려진 대화는 메시지 목록 맨 위의 별도 구역 `내 리마인드`(이름은 사용자 결정, 2026-11-07)에 두고, 그 아래 `보내기 전 확인`·`대화` 는 그대로다. `대화` 목록과 `답장 기다리는 중 N` 에서는 뺀다. 상세는 팀원 화면 규칙이다. 봇 말풍선이 왼쪽, 자기 답장이 오른쪽이고, 답장 기다림 배지·목록 점·`여기서부터 답장이 없습니다` 가 없으며, #411 기기 알림 띠를 보인다. 예정 묶음과 `확인하기`, 답장의 태스크 고르기 같은 PM 권한 기능은 그대로다. 워크스페이스 응답에 `member_id` 가 없거나 `null` 이면 구역을 만들지 않고 전처럼 `대화` 에 PM 화면 규칙으로 둔다. 표시 규칙은 (역할, 대화 주인)으로 고르는 표 하나([viewer.ts](../../src/widgets/message-inbox/model/viewer.ts)의 `threadPolicy`)가 정하고 답장 칸도 그 표의 값이다. 새 경로·필드는 없다. **FE 화면 규칙이며 BE 합의가 필요한 변경은 없다.**
 - 다시 받기(#371, 2026-11-06, D-136): 화면 재진입·탭 복귀·행동 성공 뒤 다시 받기는 그대로다. 받은 `GET /messages` 나 `GET /messages/threads/{thread_id}` 응답에 `draft_status` 가 `needed`·`claimed` 인 묶음이 있으면 그 조회만 10초마다 다시 부르고, 없으면 멈춘다. 탭이 백그라운드면 부르지 않는다. 알림 목록(30초 polling)에 메시지 알림(`reminder_sent`·`nudge_suggested`·`nudge_reapprove`·`reminder_auto_cancelled`)이 새로 들어오면 그 공간의 메시지 조회를 다시 부른다. 알림 목록은 `limit=50` 으로 부르고, 꽉 찬 목록이 지난 목록과 하나도 겹치지 않으면 놓친 알림이 있을 수 있어 메시지 조회를 한 번 다시 부른다. 메시지 조회는 시작한 세션이 끝나면 보내지 않는다. 새 경로·필드는 없고 BE 가 받는 요청 수만 는다. 구현: [messageQueries.ts](../../src/entities/message/api/messageQueries.ts), [알림 종류](../../src/entities/notification/model/display.ts).
 - 화면에서 뺀 것은 [결정 기록](../plan/m8/basis-for-decision/2026-11-04-messages-real-api-drop-unbacked-ui.md)에 있다: 답장의 태스크 판정, `지금 바로`, 채널 대화, 팀 역할, Discord 대화 주소, 재촉 이유 문장·근거 링크·요약, 취소·만료 재촉 줄, 승인자 이름.
 - 검증: MSW 기준 단위·화면 테스트와 브라우저 확인만 했다. 실제 서버(배포 BE)에 붙인 확인은 하지 않았다.
@@ -1581,7 +1650,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 대화 목록 한 줄은 `{thread_id, member_id, name, last_message, awaiting_reply_since, dm_failed}` 다. `dm_failed` 는 그 팀원에게 마지막으로 나간 봇 메시지가 `failed` 인지다. 최근 메시지 순이고, 메시지가 없는 대화는 아래에 둔다.
 - 팀원이 봇 DM 창에 쓴 글은 리마인드에 대한 답인지와 상관없이 모두 대화에 들어가 PM 이 본다. 팀원 화면에 이를 안내해야 한다.
 - 팀원 권한은 로그인 계정이 연결된 팀원(`member.user_id`) 기준이다. 계정이 연결되지 않은 팀원은 웹 답장을 할 수 없다. 대화 주인은 팀원 행으로 판단하므로, 탈퇴했다가 새 팀원 행으로 돌아온 계정은 예전 행의 대화를 열 수 없다.
-- 아직 없는 것: 웹의 답장 판정 입력(`답장 확인 필요`)과 판정 결과 표시(BE 는 아래 「리마인드 답장 판단」에 구현, 프론트엔드 미연결, 합의 여부 확인 필요), 태스크 안내 DM·#회의록 요약, `지금 바로` 5분 합치기, AI 초안 워커, 시안의 `지금 바로`(`send_timing: now`)에 대응하는 BE 경로. 프론트엔드는 #315 에서 MSW 임시 경로 `reviews/{id}/send|dismiss` 를 `bundles/{id}/approve|cancel` 로 옮겼다.
+- 아직 없는 것: ~~웹의 답장 판정 입력(`답장 확인 필요`)과 판정 결과 표시~~(#344 에서 연결, 아래 「리마인드 답장 판단」의 FE 연결), 태스크 안내 DM·#회의록 요약, `지금 바로` 5분 합치기, AI 초안 워커, 시안의 `지금 바로`(`send_timing: now`)에 대응하는 BE 경로. 프론트엔드는 #315 에서 MSW 임시 경로 `reviews/{id}/send|dismiss` 를 `bundles/{id}/approve|cancel` 로 옮겼다.
 
 **스케줄러** (#318 에서 BE 구현). 결정 근거는 [결정 0038](../../../ai/docs/basis_for_decision/ai/2026-11-04-0038-reminder-scheduler-and-notifications.md). 시각 기준은 한국 시간이다.
 
@@ -1591,7 +1660,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 마감이 지난 예정 재촉은 `expired` 가 된다. 서버가 멈췄던 경우도 같고, 마감 전이면 응답을 다시 확인한 뒤 보낸다. 묶음의 나머지가 남아 승인이 풀리면 PM 에게 알린다.
 - 담당자가 바뀌면 처음부터 다시 시작한다. 예정 재촉은 승인된 것까지 취소하고 PM 에게 알리며, 열린 시계는 막지 않고 닫는다. 같은 마감이어도 새 담당자에게 다시 제안하고 PM 이 다시 승인한다(기본값. 메시지·알림 설정 항목 참조). 이미 걸린 자동 막힘은 그대로 두며, PM 이 풀거나 새 재촉에 대한 답장으로 풀린다(답장이 막혔다는 내용이면 풀지 않는다). 담당자가 바뀐 뒤 옛 담당자 대화에 온 답장은 응답으로 세지 않는다.
 - DM 전달 보고 시각부터 72시간 안에 응답이 없으면 태스크를 `blocked` 로 바꾸고 사유를 `리마인드에 72시간 동안 응답이 없어요` 로 적고 PM 에게 알린다(기본값. `silence_alert` 를 끄면 알리지 않는다. 메시지·알림 설정 항목 참조). 새 재촉이 나가면 처음부터 다시 잰다. DM 이 실패했거나 전달 보고 전이면 막지 않는다. 자동 막힘이 걸린 채 새 재촉이 나간 경우도 완료, 담당자 변경, 사람의 상태·마감 변경이 있으면 다시 막지 않는다. 이미 막힘이면 상태와 사유는 그대로 두고 PM 에게만 알린다.
-- 대화에 답장이 오면 판단이 끝나기를 기다렸다가 그 결과를 따른다(#331 에서 BE 구현, 합의 여부 확인 필요, 아래 「리마인드 답장 판단」). 그 태스크를 말했거나 바꿀 것이 없는 답장이면 재촉이 나갔던 태스크의 막힘을 풀고 사유를 비운다. 판단이 실패했거나 10분 안에 끝나지 않은 답장도 같다. 막혔다는 답장이면 막힘을 풀지 않고 시계만 닫으며(D-179), 사유가 비었거나 무응답 문구일 때만 답장 근거로 바꾼다. PM 이 쓴 사유는 둔다. 다른 태스크만 말한 답장이면 시계는 계속 간다. 이력 출처는 `reminder_reply` 다. 답장보다 뒤에 사람이 건 막힘은 풀지 않는다.
+- 대화에 답장이 오면 판단이 끝나기를 기다렸다가 그 결과를 따른다(#331 에서 BE 구현, #344 에서 FE 연결, 아래 「리마인드 답장 판단」). 그 태스크를 말했거나 바꿀 것이 없는 답장이면 재촉이 나갔던 태스크의 막힘을 풀고 사유를 비운다. 판단이 실패했거나 10분 안에 끝나지 않은 답장도 같다. 막혔다는 답장이면 막힘을 풀지 않고 시계만 닫으며(D-179, 2026-11-06 확정), 사유가 비었거나 무응답 문구일 때만 답장 근거로 바꾼다. PM 이 쓴 사유는 둔다. 다른 태스크만 말한 답장이면 시계는 계속 간다. 이력 출처는 `reminder_reply` 다. 답장보다 뒤에 사람이 건 막힘은 풀지 않는다.
 
 **자동 막힘 풀기.** 카톡이나 회의로 이미 들은 경우를 위해 PM 이 한 번에 되돌리는 경로다.
 
@@ -1633,7 +1702,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 계정이 연결되지 않은 팀원은 목록에만 쌓인다. 푸시가 실패해도 목록에는 남는다.
 - 일시 오류는 최대 3번 다시 보낸다. 기기가 꺼져 있으면 푸시 서비스가 24시간까지 붙잡아 두고, 그 뒤에는 버린다. 푸시 서비스가 구독이 없어졌다고 답하면(404·410) 그 구독을 지운다. 요청을 거절하면(400·401·403) 다시 보내지 않고 구독은 남긴다. VAPID 키를 바꾸면 기존 구독이 이렇게 거절되니 브라우저에서 다시 구독한다.
 
-**리마인드 답장 판단** (#331 에서 BE 구현, 프론트엔드 미연결, 합의 여부 확인 필요). 봇 쪽 경로는 [backend-ai 계약](../../../backend/docs/contracts/backend-ai-contract.md)의 「리마인드 답장 판단」에 있다. 시계는 판단이 끝난 뒤 판단 결과대로 움직이고, 10분 안에 끝나지 않으면 답장을 응답으로 친다.
+**리마인드 답장 판단** (#331 에서 BE 구현, #344 에서 FE 연결. 경로·모양은 #344 이슈 본문의 BE 요청 그대로 쓴다). 봇 쪽 경로는 [backend-ai 계약](../../../backend/docs/contracts/backend-ai-contract.md)의 「리마인드 답장 판단」에 있다. 시계는 판단이 끝난 뒤 판단 결과대로 움직이고, 10분 안에 끝나지 않으면 답장을 응답으로 친다.
 
 - 상태 변경이면서 근거가 확실한 변경만 자동 반영하고, 나머지는 기존 `task_update` 승인 요청으로 간다. 승인 payload 는 추출 경로와 키가 같고 `change_source: "reminder_reply"`, `reply_message_id` 가 더해지며 `meeting_id`, `extraction_item_id` 가 없다.
 - 답장 하나에 알림 하나다. 바꿀 것이 없는 답장은 알리지 않는다.
@@ -1674,7 +1743,18 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 | `reply_judged` | PM 전원 | `task` · `thread` | 변경 한 건이면 태스크 상세, 그 밖은 대화. PM 이 고른 뒤 바꿀 내용을 못 찾아도 대화로 온다 |
 | `reply_unjudged` | PM 전원 | `thread` | 그 대화. 판단 실패는 바로, 끝나지 않으면 10분 뒤 한 번 |
 
-- MSW 와 다른 점(합의 필요). 메시지 DTO 의 `attribution`, 대화 요약의 `needs_attribution` 은 BE 응답에 없고 새 `…/attributions` 경로로 준다. 고를 차례가 아닌 답장은 MSW 의 404 `MESSAGE_REPLY_NOT_FOUND` 대신 위 오류 코드다. 답장 승인 카드에는 `meeting_id` 가 없다.
+- ~~MSW 와 다른 점(합의 필요). 메시지 DTO 의 `attribution`, 대화 요약의 `needs_attribution` 은 BE 응답에 없고 새 `…/attributions` 경로로 준다. 고를 차례가 아닌 답장은 MSW 의 404 `MESSAGE_REPLY_NOT_FOUND` 대신 위 오류 코드다. 답장 승인 카드에는 `meeting_id` 가 없다.~~ #315 가 MSW 의 두 칸을 이미 지웠고, #344 에서 MSW 가 위 경로·모양·오류 코드를 그대로 쓴다(아래).
+
+FE 연결 (#344, 2026-11-06). 응답 타입은 [reply.ts](../../src/shared/types/api/reply.ts)가 `schemas/reply.py` 와 칸을 1:1 로 맞춘다.
+
+- 태스크 고르기. PM 이 대화를 열면 `…/attributions` 를 받는다(쿼리 키 `['workspace', id, 'messages', 'threads', thread_id, 'attributions']`, 메시지 행동이 무효화하는 `messages` 접두어 안). 팀원은 부르지 않는다. `needs_pm` 답장 아래에 후보와 `해당 없음` 라디오, `정하기` 가 있고(라디오만 옮겨서는 보내지 않는다), `resolved` 답장 아래에는 `태스크: {제목}` 또는 `해당 없음으로 정했어요` 가 붙는다([ThreadDetail](../../src/widgets/message-inbox/ui/ThreadDetail.tsx)·[AttributionPicker](../../src/widgets/message-inbox/ui/AttributionPicker.tsx)). 고르기는 메시지 쓰기 행동 `attribute` 다. 다른 쓰기처럼 세션을 잡아 끝난 세션이면 보내지 않고, 한 공간에서 한 번에 하나만 나간다. 404 `REPLY_JUDGMENT_NOT_FOUND`·409 `REPLY_ATTRIBUTION_NOT_NEEDED` 는 `이미 처리된 답장이에요. 대화를 다시 불러올게요.` 토스트 뒤 다시 받는다. 고르기를 받지 못해도 대화는 보이고 위에 다시 시도가 붙는다. 대화 목록의 `답장 확인 필요` 표시는 두지 않았다. 목록 응답에 칸이 없고 대화마다 부르면 요청이 대화 수만큼 늘어난다. PM 은 `reply_judged` 알림(`어느 태스크인지 골라 주세요`)으로 그 대화에 온다.
+- 태스크 기록. 태스크 상세의 `변경 이력` 이 `/history` 와 `/timeline` 을 함께 받아 `/timeline` 순서대로 그린다. 타임라인의 `history` 칸에는 변경자·되돌림이 없어서 같은 `history_id` 의 `/history` 행으로 채운다. 두 응답은 기존 이력 쿼리 키 `['workspace', id, 'tasks', 'history', task_id]` 하나에 둔다. 상태 변경·승인 처리가 이 키를 정확히 무효화하기 때문이다([taskApi](../../src/entities/task/api/taskApi.ts)). 답장 칸은 `{이름} 답장 · Discord|웹 · 시각`, 답장 글, 바뀐 값 줄(값과 결과 표시 `자동 반영`·`되돌림`·`승인 대기`·`승인함`·`반려함`·`반영하지 않음`·`기록함`, AI 해석)이다. `body` 가 null 이면 `답장 내용은 PM과 답장한 팀원만 볼 수 있어요.` 다. 모르는 `field` 는 `failed`, 모르는 `result` 는 `noted` 로 읽는다.
+- 되돌리기. `undoable` 이 true 인 줄에 PM 에게만 `되돌리기` 가 있다([useReplyChangeUndo](../../src/features/reply-change-undo/model/useReplyChangeUndo.ts)). 누를 때 세션을 잡고, 성공하면 응답 태스크를 상세·목록 캐시에 쓰고 `tasks` 접두어 전체(상세·목록·이력)를 무효화한다. 409 `REPLY_CHANGE_NOT_UNDOABLE` 이면 같은 무효화 뒤 `되돌리지 못했어요` 토스트다. 404 `TASK_NOT_FOUND`(보는 사이 지워짐)면 상세를 비우고 다시 받아 `이 태스크를 볼 수 없어요` 로 바꾸고, 이력을 지우고 목록을 다시 받는다.
+- 승인. 답장에서 온 `task_update` 는 `replyMessageId` 로 읽는다(`change_source` 가 `reminder_reply` 일 때만). 승인 상세는 `팀원 답장` 칸에 AI 해석(`doc_text`)과 근거 인용, `리마인드 답장 · {이름}` 을 보이고 회의 링크·회의 시각을 만들지 않는다. 담당자를 찾지 못한 카드(`assignee_member_id` 없이 `assignee_raw` 만 있음)는 이 단계에서 따로 다루지 않아 바꿀 값 표가 빈 채 승인할 수 있다. 승인해도 담당자는 바뀌지 않는다. 카드에서 담당자를 고르는 화면은 BE #460 합의 뒤 붙인다.
+- 알림. `reply_judged` 제목은 `팀원 답장을 판단했어요`, `reply_unjudged` 는 `답장을 자동으로 판단하지 못했어요` 다. 종이 처음 보면 그 공간의 캐시를 다시 받는다. `reply_judged` 는 메시지·태스크(상세·목록·기록)·승인을, `reply_unjudged` 는 메시지·태스크를 받는다. BE 는 태스크를 바꾸고 승인 요청을 만든 뒤 알리고, 판단하지 못한 답장도 막힘을 풀 수 있다. 같은 이유로 `silence_blocked` 는 태스크를 받는다([display.ts](../../src/entities/notification/model/display.ts)의 종류 표). 링크는 기존 `task`·`thread` 경로다.
+- 검증. MSW 기준 단위·화면 테스트와 E2E `reply-judgment.e2e.ts` 3개. 실제 서버와 봇의 다시 판단은 확인하지 않았다.
+
+**MSW 동작 (리마인드 답장 판단).** [reply-state.ts](../../src/shared/mock/reply-state.ts)가 판단 결과(`judgments`·`changes`)와 답장 줄에 이어진 이력(`historyLinks`)을 들고 BE `attributions`·`attribute`·`timeline`·`undo_change`·`link_history` 를 따른다. 판단 자체(봇·AI)와 PM 이 고른 뒤의 다시 판단, 무응답 자동 막힘을 넘어온 변경의 막기 전 상태 복원은 흉내 내지 않는다. 시나리오 `reply-judgment`(PM)·`reply-judgment-member`(팀원)가 결과를 넣는다. 모의 DB 버전이 14 가 되었다.
 
 **MSW 동작 (임시, 합의 전).** 아래는 개발 서버 목의 현재 구현이다. 백엔드와 합의한 규약이 아니고, 합의 여부 확인 필요. 재촉 자동 승인은 목에서 꺼져 있으며, 예약 시각이 지나도 스스로 나가지 않는다.
 
@@ -1736,7 +1816,7 @@ FE 연결 (#340, 2026-11-05).
 
 **MSW 동작 (메시지·알림 설정).** [handlers/messageSettings.ts](../../src/shared/mock/handlers/messageSettings.ts)가 위 경로를 흉내 낸다. 저장 전에는 기본값과 `saved: false`, 처음 `PATCH` 때 행을 만든다. `GET` 은 소속 팀원, `PATCH` 는 PM(아니면 403 `FORBIDDEN`)이다. 빈 본문·모르는 키(`nudge_rule` 안 포함)·`null`·범위 밖 값·`"true"`·`1`·`9.0` 같은 다른 타입은 400 `INVALID_REQUEST` 다. `pms[].discord_linked` 는 공간의 Discord 연동이 `not_connected` 가 아니고 그 PM 의 `discord_user_id` 가 있을 때 true 다. 스케줄러 동작(제안·자동 승인)은 흉내 내지 않는다. 모의 DB 버전이 10 이 되었다.
 
-**MSW 동작.** 개발 서버·테스트·Storybook 의 목([handlers/message.ts](../../src/shared/mock/handlers/message.ts))은 위 백엔드 경로·응답 모양·오류 코드를 그대로 쓴다(#315).
+**MSW 동작.** 개발 서버·테스트의 목([handlers/message.ts](../../src/shared/mock/handlers/message.ts))은 위 백엔드 경로·응답 모양·오류 코드를 그대로 쓴다(#315).
 
 - 흉내 내는 것: 승인 때 `draft_version` 비교(다르면 409 `BUNDLE_CHANGED`, 이미 승인했으면 그대로 200), 지난 시각 승인·시각 고치기 409 `REMINDER_SCHEDULED_AT_PASSED`, 예정이 아닌 묶음 409 `REMINDER_NOT_EDITABLE`, 없는 묶음 404 `REMINDER_BUNDLE_NOT_FOUND`, 문구를 고치면 `body_source: pm`·판 올림·승인 유지, 시각만 옮기면 판 그대로, 팀원에게 `bundles: null`, 남의 대화 조회·답장 403 `FORBIDDEN`(PM 의 답장 포함), 시간대 없는 `scheduled_at` 400, 시각은 UTC 로 응답.
 - 흉내 내는 것(묶음 합치기, #368): 옮긴 시각에 같은 대화의 예정 묶음이 있으면 리마인드를 그 묶음으로 옮기고 합쳐진 묶음을 돌려준다. 두 묶음 모두 문구를 규칙대로 다시 만들고 판을 올리고 승인을 푼다. 리마인드가 남지 않은 옮긴 묶음은 `cancelled` 다. 합쳐지는 시각으로 옮기면서 문구를 같이 보내면 400 `INVALID_REQUEST` 다. 시나리오 `messages-merge` 가 합치기를 재현한다.
@@ -1774,6 +1854,7 @@ FE 연결 (#340, 2026-11-05).
 | 건너뛴 온보딩 마저 하기 | 5.3 과 같다 | |
 | 팀원 초대·취소·연결 끊기 | `GET`·`POST /workspaces/{id}/invitations`, `POST /invitations/{id}/cancel`·`revoke` | BE 구현, 프론트엔드 미연결 §5.9 |
 | 알림(메시지·알림 설정) | `GET`·`PATCH /workspaces/{id}/message-settings` | **구현됨** §5.7 (#340) |
+| 회의 채팅 채널(PM) | `GET /workspaces/{id}/discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel` | **구현됨** §4.3.1 (#428, #429) |
 
 - `unresolved-aliases` 가 쓰이는 곳이 여기다. 온보딩의 팀원 연결과 목적이 다르다 (§4.5).
 - 그 밖의 설정 항목은 결정 대기다.
@@ -1892,7 +1973,7 @@ FE 연결 (#340, 2026-11-05).
 
 ## 7. MSW
 
-- 로컬 개발·Vitest·Storybook 이 같은 핸들러를 공유한다. production 번들에서 제외한다 (D-146).
+- 로컬 개발·Vitest·E2E 가 같은 핸들러를 공유한다. production 번들에서 제외한다 (D-146, Storybook 은 #482 에서 지웠다).
 - 정상 응답이 기본이다. 빈 상태·권한 오류·검증 오류·서버 오류·느린 응답은 테스트와 Story 에서 개별 override 한다.
 - 고정 ID·고정 날짜를 쓴다. 자동 테스트에 인위적 지연을 넣지 않는다.
 - `onUnhandledRequest` 는 테스트에서 실패, 로컬에서 경고.

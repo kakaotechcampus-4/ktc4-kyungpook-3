@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-DkW27tQK.js";function t(e=new Date){return new Intl.DateTimeFormat(`en-CA`,{timeZone:`Asia/Seoul`}).format(e)}function n(){return(n=e((()=>{})))()}export{t as n,n as t};

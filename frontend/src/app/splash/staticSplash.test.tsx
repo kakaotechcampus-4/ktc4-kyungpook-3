@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Mascot } from '@/shared/ui/mascot'
+import { FADE_MS } from './splashMachine'
+import { SPLASH_SIZE } from './splashSize'
 
 /*
  * index.html 의 정적 스플래시는 JS 보다 먼저 그리려고 Mascot 을 손으로 옮겨 둔 사본이다 (#430).
@@ -50,14 +52,42 @@ function parse(markup: string): Document {
 }
 
 describe('index.html 정적 스플래시', () => {
-  it('마스코트가 Mascot 의 정면 + 다이얼(96px)과 같은 그림이다', () => {
+  it('마스코트가 SplashHost 가 그리는 Mascot 정면 + 다이얼과 같은 그림·크기다', () => {
     const staticSvg = parse(html).querySelector('#boot-splash .splash__mascot > svg')
     const mascotSvg = parse(
-      renderToStaticMarkup(<Mascot pose="idle" dial size={96} />),
+      renderToStaticMarkup(<Mascot pose="idle" dial size={SPLASH_SIZE.mascot} />),
     ).querySelector('svg')
     if (staticSvg === null || mascotSvg === null) throw new Error('svg 가 없다')
 
     expect(svgShape(staticSvg)).toEqual(svgShape(mascotSvg))
+  })
+
+  it('CSS 의 마스코트 상자·간격·워드마크 크기가 SplashHost 와 같다', () => {
+    const style = document.createElement('style')
+    style.textContent = parse(html).querySelector('style')?.textContent ?? ''
+    document.head.append(style)
+    document.body.innerHTML = parse(html).body.innerHTML
+    const computed = (selector: string) => {
+      const element = document.querySelector(selector)
+      if (element === null) throw new Error(`${selector} 가 없다`)
+      return getComputedStyle(element)
+    }
+
+    expect(computed('.splash__mascot').width).toBe(`${SPLASH_SIZE.mascot}px`)
+    expect(computed('.splash__mascot').height).toBe(`${SPLASH_SIZE.mascot}px`)
+    expect(computed('.splash__group').gap).toBe(`${SPLASH_SIZE.gap}px`)
+    expect(computed('.splash__word').fontSize).toBe(`${SPLASH_SIZE.wordmark}px`)
+    style.remove()
+  })
+
+  it('사라짐 애니메이션이 덮개를 걷는 시각(FADE_MS)과 같은 길이다', () => {
+    // 짧으면 다 사라진 판이 남아 있고, 길면 사라지는 도중에 판이 뚝 끊긴다 (#506)
+    const style = parse(html).querySelector('style')?.textContent ?? ''
+    const fade = /\.splash\[data-phase='leave'\]\s*\{[^}]*animation:\s*splash-out\s+([\d.]+)s/.exec(
+      style,
+    )
+    if (fade === null) throw new Error('splash-out 애니메이션이 없다')
+    expect(Number(fade[1]) * 1000).toBe(FADE_MS)
   })
 
   it('탭 제목이 서비스 이름이다', () => {

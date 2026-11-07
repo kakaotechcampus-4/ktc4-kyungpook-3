@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-DkW27tQK.js";function t(){try{return window.sessionStorage}catch{return null}}function n(e){try{e===null?t()?.removeItem(a):t()?.setItem(a,e)}catch{}}function r(){try{return t()?.getItem(a)??null}catch{return null}}function i(){n(null)}var a;function o(){return(o=e((()=>{a=`onboarding-return-workspace`})))()}export{n as i,o as n,r,i as t};

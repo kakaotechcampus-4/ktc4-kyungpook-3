@@ -17,11 +17,16 @@ import { db } from '@/shared/mock/db'
 import { fail, list, ok } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { minutesFixtures } from '@/shared/mock/fixtures/minutes'
-import { advanceMeeting, completeMeeting, failMeeting } from '@/shared/mock/meetingFlow'
+import {
+  advanceMeeting,
+  completeMeeting,
+  failMeeting,
+  startChatMeeting,
+} from '@/shared/mock/meetingFlow'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { businessRequests, recordRequests, trackerRequests } from '@/shared/test/requests'
-import { toast } from '@/shared/ui/toast'
+import { processingSignals, signalsWith } from './test/processingToast'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -34,6 +39,7 @@ import { renderApp } from './test/renderApp'
 const MEETING = { workspaceId: 'ws_01', meetingId: 'mt_10' }
 const PROCESSING_PATH = paths.meetingProcessing('ws_01', 'mt_10')
 const PROCESSING_HEADING = '정리하고 있어요'
+const CHAT_STALLED_DESCRIPTION = '채팅 대화를 정리하다 멈췄어요. 다음 수집 때 다시 정리해요.'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -48,11 +54,6 @@ const detailRequests = (log: Log, meetingId = 'mt_10') =>
 const listRequests = (log: Log) =>
   log.started.filter(
     ({ method, path }) => method === 'GET' && /^\/workspaces\/[^/]+\/meetings$/.test(path),
-  )
-/** 지금 그려진 토스트 중 제목이 title 인 것 */
-const toastsWith = (title: string) =>
-  Array.from(document.querySelectorAll<HTMLElement>('[data-toast-key]')).filter((node) =>
-    node.textContent?.includes(title),
   )
 const tracked = () => useMeetingTrackerStore.getState().meetings
 
@@ -97,7 +98,7 @@ function addCompletedWorkspace() {
   })
   db.accounts[0].workspaceIds.push('ws_04')
   db.integrations.ws_04 = {
-    discord: { status: 'connected', display_name: 'x', connected_at: MOCK_NOW },
+    discord: { status: 'connected', display_name: 'x', connected_at: MOCK_NOW, chat_channel: null },
     notion: { status: 'connected', display_name: 'x', connected_at: MOCK_NOW },
   }
 }
@@ -131,28 +132,32 @@ async function openProcessing(options: { strict?: boolean } = {}) {
   return app
 }
 
-function processingLink() {
-  return within(screen.getByRole('navigation', { name: '주요 화면' })).queryByRole('link', {
-    name: '정리 중',
-  })
+/** 정리 중 진행 토스트. 접힌 알약으로 시작하므로 알약이나 펼친 카드다. 지금 공간·지금 화면에서 보이는 것 */
+function processingCard() {
+  return (
+    screen.queryByRole('region', { name: /정리 중$/ }) ??
+    screen.queryByRole('button', { name: /^정리 중.*펼치기$/ })
+  )
+}
+
+/** 알약을 눌러 펼친 정리 중 카드 */
+async function openProcessingCard() {
+  fireEvent.click(await screen.findByRole('button', { name: /^정리 중.*펼치기$/ }))
+  return screen.findByRole('region', { name: /정리 중$/ })
 }
 
 describe('발견과 등록 (U4-1, U4-2)', () => {
-  it('지금 공간 목록에서 정리 중 회의를 찾아 헤더에 `정리 중` 링크를 단다 — 업무 요청은 추적기 두 모양뿐이다', async () => {
+  it('지금 공간 목록에서 정리 중 회의를 찾아 진행 토스트를 띄운다 — 헤더 링크는 없고, 업무 요청은 추적기 두 모양뿐이다', async () => {
     const log = recordRequests()
     await openQuietScreen()
 
-    const link = await waitFor(() => {
-      const found = processingLink()
-      expect(found).not.toBeNull()
-      return found!
-    })
-    expect(link).toHaveAttribute('href', PROCESSING_PATH)
-    // 회의록 탭 바로 옆이다
+    const card = await openProcessingCard()
+    expect(card).toHaveTextContent('음성을 텍스트로 옮기고 있어요')
+    expect(card).toHaveTextContent('1 / 3 단계 완료')
     const names = within(screen.getByRole('navigation', { name: '주요 화면' }))
       .getAllByRole('link')
       .map((node) => node.textContent)
-    expect(names.slice(0, 3)).toEqual(['대시보드', '회의록', '정리 중'])
+    expect(names).toEqual(['대시보드', '회의록', '태스크', '메시지', '팀'])
     expect(tracked()).toEqual([MEETING])
     await waitFor(() => expect(detailRequests(log)).toHaveLength(1))
     await settle()
@@ -200,7 +205,7 @@ describe('발견과 등록 (U4-1, U4-2)', () => {
     // StrictMode 로 탭 넷을 차례로 그린다. M8-B 로 팀 탭이 자리표시자에서 실제 화면이 되어 전체 실행 부하에서 5초를 넘겼다
   }, 10_000)
 
-  it('정리 중 회의가 없으면 상세 요청은 0회이고 링크도 없다', async () => {
+  it('정리 중 회의가 없으면 상세 요청은 0회이고 진행 토스트도 없다', async () => {
     completeMeeting('mt_10')
     const log = recordRequests()
     const app = await openQuietScreen()
@@ -210,27 +215,27 @@ describe('발견과 등록 (U4-1, U4-2)', () => {
       ),
     )
     await settle()
-    expect(processingLink()).toBeNull()
+    expect(processingSignals()).toEqual([])
     expect(tracked()).toEqual([])
     expect(listRequests(log)).toEqual([{ method: 'GET', path: '/workspaces/ws_01/meetings' }])
     expect(log.started.filter(({ path }) => path.startsWith('/meetings/'))).toEqual([])
   })
 
-  it('업로드 202 등록 지점만으로 상세 polling 과 헤더 링크가 시작된다 — 목록에 없어도', async () => {
+  it('업로드 202 등록 지점만으로 상세 polling 과 진행 토스트가 시작된다 — 목록에 없어도', async () => {
     // 목록이 아직 처리 중 회의를 모른다(업로드 직후). 등록만으로 시작하는지 본다
     server.use(http.get('/api/v1/workspaces/:workspaceId/meetings', () => list([])))
     const log = recordRequests()
     await openDashboard()
     await settle()
-    expect(processingLink()).toBeNull()
+    expect(processingSignals()).toEqual([])
     expect(detailRequests(log)).toHaveLength(0)
 
     act(() => trackMeeting(MEETING))
-    await waitFor(() => expect(processingLink()).toHaveAttribute('href', PROCESSING_PATH))
+    await waitFor(() => expect(processingCard()).not.toBeNull())
     await waitFor(() => expect(detailRequests(log)).toHaveLength(1))
   })
 
-  it('다른 화면으로 옮겨도 polling 이 이어지고, 다른 화면에서 끝나면 토스트만 띄우고 옮기지 않는다', async () => {
+  it('다른 화면으로 옮겨도 polling 이 이어지고, 다른 화면에서 끝나면 진행 토스트가 완료로 바뀌고 옮기지 않는다', async () => {
     const user = userEvent.setup()
     const app = await openProcessing({ strict: true })
     await user.click(screen.getByRole('link', { name: '태스크' }))
@@ -238,14 +243,15 @@ describe('발견과 등록 (U4-1, U4-2)', () => {
 
     completeMeeting('mt_10')
     // 다음 polling(3초 안)이 완료를 받는다
-    await waitFor(() => expect(toastsWith(PROCESSING_DONE_TITLE)).toHaveLength(1), {
+    await waitFor(() => expect(signalsWith(PROCESSING_DONE_TITLE)).toHaveLength(1), {
       timeout: 5000,
     })
     await app.expectPath(paths.tasks('ws_01'))
     expect(app.visited().map(({ pathname }) => pathname)).not.toContain(
       paths.meetings('ws_01', 'mt_10'),
     )
-    expect(processingLink()).toBeNull()
+    expect(processingCard()).toBeNull()
+    expect(processingSignals()).toHaveLength(1)
   }, 10_000)
 
   it('공간을 바꿔도 끝날 때까지 추적하고, 다른 공간 목록을 돌며 조회하지 않는다', async () => {
@@ -253,7 +259,7 @@ describe('발견과 등록 (U4-1, U4-2)', () => {
     const log = recordRequests()
     const user = userEvent.setup()
     const app = await openQuietScreen()
-    await waitFor(() => expect(processingLink()).not.toBeNull())
+    await waitFor(() => expect(processingCard()).not.toBeNull())
 
     await user.click(await screen.findByRole('button', { name: /^워크스페이스 바꾸기/ }))
     await user.click(
@@ -263,19 +269,21 @@ describe('발견과 등록 (U4-1, U4-2)', () => {
       ),
     )
     await app.expectPath(paths.dashboard('ws_04'))
-    // ws_04 에는 정리 중 회의가 없다 — 이 공간의 헤더에는 링크가 없지만 ws_01 의 추적은 남는다
+    // ws_04 에는 정리 중 회의가 없다 — 이 공간에는 진행 토스트가 없지만 ws_01 의 추적은 남는다 (D-088)
     await waitFor(() =>
       expect(listRequests(log).map(({ path }) => path)).toContain('/workspaces/ws_04/meetings'),
     )
-    expect(processingLink()).toBeNull()
+    expect(processingSignals()).toEqual([])
     expect(tracked()).toEqual([MEETING])
 
     completeMeeting('mt_10')
-    await waitFor(() => expect(toastsWith(PROCESSING_DONE_TITLE)).toHaveLength(1), {
-      timeout: 5000,
-    })
+    await waitFor(() => expect(tracked()).toEqual([]), { timeout: 5000 })
     await app.expectPath(paths.dashboard('ws_04'))
-    expect(tracked()).toEqual([])
+    // 끝난 결과도 그 회의의 공간에서만 보인다
+    expect(processingSignals()).toEqual([])
+    expect(useMeetingTrackerStore.getState().settled).toMatchObject([
+      { ...MEETING, outcome: 'done' },
+    ])
     // 본 공간의 목록만 받았다 — 소속된 ws_02 목록은 한 번도 묻지 않았다
     expect(new Set(listRequests(log).map(({ path }) => path))).toEqual(
       new Set(['/workspaces/ws_01/meetings', '/workspaces/ws_04/meetings']),
@@ -297,7 +305,7 @@ describe('발견과 등록 (U4-1, U4-2)', () => {
     const log = recordRequests()
     renderApp(paths.tasks('ws_01'))
     await screen.findByRole('heading', { name: '태스크' })
-    await waitFor(() => expect(processingLink()).toHaveAttribute('href', PROCESSING_PATH))
+    await waitFor(() => expect(processingCard()).not.toBeNull())
     expect(listRequests(log)).toEqual([{ method: 'GET', path: '/workspaces/ws_01/meetings' }])
   })
 
@@ -332,7 +340,7 @@ describe('polling (U4-3)', () => {
     completeMeeting('mt_10')
     await act(() => vi.advanceTimersByTimeAsync(3_000))
     await until(() => expect(detailRequests(log)).toHaveLength(4))
-    await until(() => expect(toastsWith(PROCESSING_DONE_TITLE)).toHaveLength(1))
+    await until(() => expect(signalsWith(PROCESSING_DONE_TITLE)).toHaveLength(1))
 
     // 끝난 뒤에는 시간이 흘러도 묻지 않는다
     await act(() => vi.advanceTimersByTimeAsync(15_000))
@@ -349,7 +357,7 @@ describe('polling (U4-3)', () => {
 
     failMeeting('mt_10')
     await act(() => vi.advanceTimersByTimeAsync(3_000))
-    await until(() => expect(toastsWith(PROCESSING_FAILED_TITLE)).toHaveLength(1))
+    await until(() => expect(signalsWith(PROCESSING_FAILED_TITLE)).toHaveLength(1))
     const count = detailRequests(log).length
     await act(() => vi.advanceTimersByTimeAsync(15_000))
     await settle()
@@ -375,7 +383,7 @@ describe('polling (U4-3)', () => {
       // 다시 묻지 않는다(재시도 대상도 아니다)
       expect(detailRequests(log)).toHaveLength(2)
       expect(document.querySelectorAll('[data-toast-key]')).toHaveLength(0)
-      expect(processingLink()).toBeNull()
+      expect(processingSignals()).toEqual([])
       await app.expectPath(paths.dashboard('ws_01'))
     },
   )
@@ -390,7 +398,12 @@ describe('polling (U4-3)', () => {
     await user.click(await screen.findByRole('menuitem', { name: '로그아웃' }))
     await screen.findByRole('heading', { name: '로그인' })
     await app.expectPath('/login')
-    expect(useMeetingTrackerStore.getState()).toEqual({ meetings: [], finished: [], prompted: [] })
+    expect(useMeetingTrackerStore.getState()).toEqual({
+      meetings: [],
+      finished: [],
+      prompted: [],
+      settled: [],
+    })
 
     // 다음 polling 시점이 지나도 이전 사용자의 회의를 묻지 않는다
     completeMeeting('mt_10')
@@ -399,7 +412,7 @@ describe('polling (U4-3)', () => {
     expect(
       log.timeline.slice(after + 1).filter((line) => line.startsWith('start GET /meetings/')),
     ).toEqual([])
-    expect(toastsWith(PROCESSING_DONE_TITLE)).toHaveLength(0)
+    expect(processingSignals()).toEqual([])
   }, 10_000)
 
   it('세션이 만료되어도 추적을 비운다', async () => {
@@ -409,7 +422,12 @@ describe('polling (U4-3)', () => {
       expireSession(app.queryClient)
     })
     await screen.findByRole('heading', { name: '로그인' })
-    expect(useMeetingTrackerStore.getState()).toEqual({ meetings: [], finished: [], prompted: [] })
+    expect(useMeetingTrackerStore.getState()).toEqual({
+      meetings: [],
+      finished: [],
+      prompted: [],
+      settled: [],
+    })
   })
 })
 
@@ -435,6 +453,16 @@ describe('처리 화면 (U4-4, U4-10)', () => {
     expect(main).toHaveTextContent('회의록과 확실한 태스크는 바로 Notion에 반영하고')
   })
 
+  it('아직 끝난 단계가 없으면 정리하고 있다는 제목과 0 / 3 단계 완료를 알린다', async () => {
+    db.meetings.find(({ meeting_id }) => meeting_id === 'mt_10')!.progress = {
+      audio_merged: false,
+      transcribed: false,
+      extracted: false,
+    }
+    await openProcessing()
+    expect(screen.getByRole('status')).toHaveTextContent('0 / 3 단계 완료')
+  })
+
   it('단계가 바뀌면 role="status" 안내가 바뀐다 (U4-10)', async () => {
     fakeIntervals()
     await openProcessing()
@@ -453,29 +481,36 @@ describe('처리 화면 (U4-4, U4-10)', () => {
   it('PM 이 정리 중에 회의 올리기로 가면 지금 처리 화면으로 간다 (D-090)', async () => {
     setMockRole('pm')
     const app = await openDashboard()
-    await waitFor(() => expect(processingLink()).not.toBeNull())
+    await waitFor(() => expect(processingCard()).not.toBeNull())
     act(() => app.navigate(paths.meetingUpload('ws_01')))
     expect(await screen.findByRole('heading', { name: PROCESSING_HEADING })).toBeInTheDocument()
     await app.expectPath(PROCESSING_PATH)
     expect(screen.queryByRole('heading', { name: '회의를 올려 주세요' })).toBeNull()
   })
 
-  it('헤더 `정리 중` 링크로 일반 팀원도 처리 화면에 간다 (U4-9)', async () => {
+  it('진행 토스트의 `자세히 보기` 로 일반 팀원도 처리 화면에 가고, 처리 화면에서는 토스트를 숨긴다 (U4-9)', async () => {
     setMockRole('member')
     const user = userEvent.setup()
     const app = renderApp(paths.tasks('ws_01'))
     await screen.findByRole('heading', { name: '태스크' })
-    await waitFor(() => expect(processingLink()).not.toBeNull())
-    await user.click(processingLink()!)
+    const card = await openProcessingCard()
+    await user.click(within(card).getByRole('button', { name: '자세히 보기' }))
     expect(await screen.findByRole('heading', { name: PROCESSING_HEADING })).toBeInTheDocument()
     await app.expectPath(PROCESSING_PATH)
-    expect(processingLink()).toHaveAttribute('aria-current', 'page')
+    expect(processingSignals()).toEqual([])
   })
 
   it('목록이 모르는 정리 중 회의(직접 링크)도 처리 화면에 들어오면 추적에 등록한다', async () => {
     server.use(http.get('/api/v1/workspaces/:workspaceId/meetings', () => list([])))
     await openProcessing()
     await waitFor(() => expect(tracked()).toEqual([MEETING]))
+  })
+
+  it('처음 상세 조회가 실패하면 불러오지 못했다고 알리고 다시 시도를 준다', async () => {
+    server.use(http.get('/api/v1/meetings/:meetingId', () => fail('INVALID_REQUEST', 'x', 400)))
+    renderApp(PROCESSING_PATH)
+    expect(await screen.findByRole('button', { name: '다시 시도' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('정리 상태를 불러오지 못했어요')
   })
 
   it('볼 수 없는 회의는 안내를 보인다', async () => {
@@ -504,9 +539,8 @@ describe('처리 화면 (U4-4, U4-10)', () => {
 })
 
 describe('완료 (U4-5)', () => {
-  it('처리 화면을 보고 있으면 끝났을 때 그 회의록으로 옮기고, 관련 캐시를 무효화하고, 토스트는 한 번이다', async () => {
+  it('처리 화면을 보고 있으면 끝났을 때 그 회의록으로 옮기고, 관련 캐시를 무효화하고, 완료 토스트는 하나다', async () => {
     fakeIntervals()
-    const show = vi.spyOn(toast, 'show')
     const app = await openProcessing({ strict: true })
     // 끝나면 다시 받아야 할 캐시 — 회의록·추출·태스크·승인.
     // U5 부터 옮겨 간 회의록 화면이 회의록 본문·대기 승인 캐시를 읽어 그린다. 그 둘은 화면이 그릴 수 있는 모양으로 넣는다
@@ -528,12 +562,11 @@ describe('완료 (U4-5)', () => {
     // 처리 화면은 기록에서 바뀌었다 — 뒤로 가도 끝난 처리 화면으로 돌아오지 않는다
     expect(app.visited().at(-1)?.key).not.toBe(app.visited().at(-2)?.key)
 
-    await until(() => expect(toastsWith(PROCESSING_DONE_TITLE)).toHaveLength(1))
-    const doneToast = toastsWith(PROCESSING_DONE_TITLE)[0]
+    await until(() => expect(signalsWith(PROCESSING_DONE_TITLE)).toHaveLength(1))
+    const doneToast = signalsWith(PROCESSING_DONE_TITLE)[0]
     expect(within(doneToast).getByRole('button', { name: '회의록 보기' })).toBeInTheDocument()
-    expect(show.mock.calls.filter(([input]) => input.title === PROCESSING_DONE_TITLE)).toHaveLength(
-      1,
-    )
+    expect(processingSignals()).toHaveLength(1)
+    expect(document.querySelectorAll('[data-toast-key]')).toHaveLength(0)
     // 무효화됐다. 회의록 화면이 지켜보는 key(본문·승인)는 무효화되자마자 다시 받아 넣어 둔 값이 서버 값으로 바뀐다 —
     // 무효화 없이는 최신 시간(5분·30초) 안이라 다시 받지 않는다. 지켜보지 않는 key 는 무효화된 채로 남는다
     for (const [key, value] of related)
@@ -548,16 +581,21 @@ describe('완료 (U4-5)', () => {
     ).toBeGreaterThan(0)
   })
 
-  it('재렌더·재발견·탭 이동에도 완료 토스트는 회의마다 한 번이다', async () => {
-    const show = vi.spyOn(toast, 'show')
+  it('재렌더·재발견·탭 이동에도 완료 토스트는 회의마다 한 번이다 — 닫은 뒤 다시 뜨지 않는다', async () => {
     const user = userEvent.setup()
     const app = await openDashboard({ strict: true })
     await waitFor(() => expect(tracked()).toEqual([MEETING]))
 
     completeMeeting('mt_10')
-    await waitFor(() => expect(toastsWith(PROCESSING_DONE_TITLE)).toHaveLength(1), {
-      timeout: 5000,
-    })
+    const doneToast = await waitFor(
+      () => {
+        expect(signalsWith(PROCESSING_DONE_TITLE)).toHaveLength(1)
+        return signalsWith(PROCESSING_DONE_TITLE)[0]
+      },
+      { timeout: 5000 },
+    )
+    await user.click(within(doneToast).getByRole('button', { name: '닫기' }))
+    expect(processingSignals()).toEqual([])
 
     // 낡은 목록이 같은 회의를 다시 「정리 중」으로 보여 준다 — 다시 등록되지 않는다
     act(() => {
@@ -577,27 +615,24 @@ describe('완료 (U4-5)', () => {
     await settle(300)
 
     expect(tracked()).toEqual([])
-    expect(show.mock.calls.filter(([input]) => input.title === PROCESSING_DONE_TITLE)).toHaveLength(
-      1,
-    )
-    expect(toastsWith(PROCESSING_DONE_TITLE).length).toBeLessThanOrEqual(1)
+    expect(processingSignals()).toEqual([])
   }, 10_000)
 
-  it('토스트의 `회의록 보기` 는 방금 끝난 회의록으로 간다', async () => {
+  it('토스트의 `회의록 보기` 는 방금 끝난 회의록으로 가고 토스트를 닫는다', async () => {
     fakeIntervals()
     const app = await openDashboard()
     await until(() => expect(tracked()).toEqual([MEETING]))
     completeMeeting('mt_10')
     await act(() => vi.advanceTimersByTimeAsync(3_000))
     const button = await until(() =>
-      within(toastsWith(PROCESSING_DONE_TITLE)[0]).getByRole('button', { name: '회의록 보기' }),
+      within(signalsWith(PROCESSING_DONE_TITLE)[0]).getByRole('button', { name: '회의록 보기' }),
     )
     // 대시보드는 그대로였다 — 보던 화면이 처리 화면이 아니었다
     expect(app.visited().map(({ pathname }) => pathname)).toEqual([paths.dashboard('ws_01')])
 
-    // Radix 토스트는 pointer capture 를 쓴다 — jsdom 에서는 fireEvent 로 누른다 (Toast.test.tsx)
     fireEvent.click(button)
     await until(() => expect(app.visited().at(-1)?.pathname).toBe(paths.meetings('ws_01', 'mt_10')))
+    expect(processingSignals()).toEqual([])
   })
 })
 
@@ -618,11 +653,41 @@ describe('실패 (U4-6, U4-7)', () => {
     )
     expect(app.visited().map(({ pathname }) => pathname)).toEqual([paths.tasks('ws_01')])
     expect(tracked()).toEqual([])
-    expect(toastsWith('화자 지정 대기가 7일을 넘어')).toHaveLength(1)
+    expect(signalsWith('화자 지정 대기가 7일을 넘어')).toHaveLength(1)
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('처리 화면을 보고 있으면 회의록 목록으로 옮기고 재업로드 토스트를 띄운다 — 실패 회의는 목록에서 빠진다', async () => {
+  it('채팅 회의가 멈춰 실패하면(chat_stalled) 토스트가 다시 올리라고 하지 않는다 (#450)', async () => {
+    fakeIntervals()
+    const chatId = startChatMeeting()
+    const log = recordRequests()
+    const app = renderApp(paths.tasks('ws_01'))
+    await screen.findByRole('heading', { name: '태스크' })
+    await until(() => expect(tracked()).toContainEqual({ workspaceId: 'ws_01', meetingId: chatId }))
+    failMeeting(chatId, { failedStage: 'chat_stalled' })
+    await act(() => vi.advanceTimersByTimeAsync(3_000))
+    await until(() => expect(signalsWith(CHAT_STALLED_DESCRIPTION)).toHaveLength(1))
+    expect(signalsWith('다시 올려')).toEqual([])
+    // 알려진 사유라 Notion 끊김인지 묻지 않는다
+    expect(log.started).not.toContainEqual({
+      method: 'GET',
+      path: '/workspaces/ws_01/integrations',
+    })
+    expect(app.visited().map(({ pathname }) => pathname)).toEqual([paths.tasks('ws_01')])
+  })
+
+  it('멈춘 채팅 회의(chat_stalled)의 처리 화면은 다시 올리라고 하지 않는다 (#450)', async () => {
+    const chatId = startChatMeeting()
+    failMeeting(chatId, { failedStage: 'chat_stalled' })
+    renderApp(paths.meetingProcessing('ws_01', chatId))
+    expect(
+      await screen.findByRole('heading', { name: '채팅 대화를 정리하지 못했어요' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(CHAT_STALLED_DESCRIPTION)).toBeInTheDocument()
+    expect(screen.queryByText(/다시 올려/)).toBeNull()
+  })
+
+  it('처리 화면을 보고 있으면 회의록 목록으로 옮기고 재업로드 안내 토스트로 바꾼다 — 실패 회의는 목록에서 빠진다', async () => {
     fakeIntervals()
     const log = recordRequests()
     const app = await openProcessing({ strict: true })
@@ -632,7 +697,8 @@ describe('실패 (U4-6, U4-7)', () => {
     // 회의록 목록으로 옮겼다. U5 부터 목록은 가장 최근 회의록(mt_09)으로 주소를 바꾼다 (D-106, U5-1)
     await until(() => expect(app.visited().at(-1)?.pathname).toBe(paths.meetings('ws_01', 'mt_09')))
     expect(app.visited().map(({ pathname }) => pathname)).toContain(paths.meetings('ws_01'))
-    await until(() => expect(toastsWith(PROCESSING_FAILED_TITLE)).toHaveLength(1))
+    await until(() => expect(signalsWith(PROCESSING_FAILED_TITLE)).toHaveLength(1))
+    expect(signalsWith(PROCESSING_FAILED_TITLE)[0]).toHaveTextContent('파일을 다시 올려 주세요.')
     expect(screen.queryByRole('dialog')).toBeNull()
     // 끊김인지 연동 상태를 새로 물었다
     expect(log.started).toContainEqual({ method: 'GET', path: '/workspaces/ws_01/integrations' })
@@ -654,7 +720,7 @@ describe('실패 (U4-6, U4-7)', () => {
 
     failMeeting('mt_10')
     await act(() => vi.advanceTimersByTimeAsync(3_000))
-    await until(() => expect(toastsWith(PROCESSING_FAILED_TITLE)).toHaveLength(1))
+    await until(() => expect(signalsWith(PROCESSING_FAILED_TITLE)).toHaveLength(1))
     await settle()
     expect(app.visited().map(({ pathname }) => pathname)).toEqual([paths.tasks('ws_01')])
   })
@@ -669,7 +735,7 @@ describe('실패 (U4-6, U4-7)', () => {
     // 회의록 목록으로 옮겼다. U5 부터 목록은 가장 최근 회의록(mt_09)으로 주소를 바꾼다 (D-106, U5-1)
     await until(() => expect(app.visited().at(-1)?.pathname).toBe(paths.meetings('ws_01', 'mt_09')))
     expect(app.visited().map(({ pathname }) => pathname)).toContain(paths.meetings('ws_01'))
-    expect(toastsWith(PROCESSING_FAILED_TITLE)).toHaveLength(0)
+    expect(processingSignals()).toEqual([])
 
     // 재연결은 설정의 Notion 영역에서 시작하고, 끝나면 회의 올리기로 돌아온다 — 원본은 다시 올린다 (D-099)
     fireEvent.click(within(dialog).getByRole('button', { name: 'Notion 다시 연결하기' }))
@@ -705,7 +771,7 @@ describe('실패 (U4-6, U4-7)', () => {
     await until(() => expect(tracked()).toEqual([MEETING]))
     failMeeting('mt_10', { notionRevoked: true })
     await act(() => vi.advanceTimersByTimeAsync(3_000))
-    await until(() => expect(toastsWith(PROCESSING_FAILED_TITLE)).toHaveLength(1))
+    await until(() => expect(signalsWith(PROCESSING_FAILED_TITLE)).toHaveLength(1))
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 })
@@ -762,7 +828,7 @@ describe('일시적 조회 오류 (U4-8)', () => {
       await until(() =>
         expect(app.visited().at(-1)?.pathname).toBe(paths.meetings('ws_01', 'mt_10')),
       )
-      await until(() => expect(toastsWith(PROCESSING_DONE_TITLE)).toHaveLength(1))
+      await until(() => expect(signalsWith(PROCESSING_DONE_TITLE)).toHaveLength(1))
     },
     10_000,
   )
@@ -802,6 +868,7 @@ describe('상세가 다른 공간의 회의라고 답할 때 (#349)', () => {
     await settle()
     expect(detailRequests(log)).toHaveLength(1)
     expect(document.querySelectorAll('[data-toast-key]')).toHaveLength(0)
+    expect(processingSignals()).toEqual([])
   })
 
   it('받아 둔 정리 중 상태가 있으면 그 상태로 계속 지켜보고, 바른 답이 오면 끝을 알린다', async () => {
@@ -822,7 +889,7 @@ describe('상세가 다른 공간의 회의라고 답할 때 (#349)', () => {
     completeMeeting('mt_10')
     await act(() => vi.advanceTimersByTimeAsync(3_000))
     await until(() => expect(detailRequests(log)).toHaveLength(3))
-    await until(() => expect(toastsWith(PROCESSING_DONE_TITLE)).toHaveLength(1))
+    await until(() => expect(signalsWith(PROCESSING_DONE_TITLE)).toHaveLength(1))
     expect(tracked()).toEqual([])
   })
 })

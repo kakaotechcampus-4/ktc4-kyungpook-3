@@ -111,6 +111,25 @@ describe('task_update 의 범위 변경 (#205)', () => {
     ).toBe(false)
   })
 
+  it('리마인드 답장에서 온 제안은 회의 대신 답장을 가리킨다', () => {
+    const approval = update({
+      status: 'done',
+      change_source: 'reminder_reply',
+      reply_message_id: 'mg_31',
+      evidence_quote: 'DB 스키마 정리는 끝냈어요',
+      evidence_speaker_member_id: 'mb_03',
+      evidence_at_ms: null,
+    })
+    expect(approval).toMatchObject({
+      replyMessageId: 'mg_31',
+      meetingId: null,
+      evidence: { quote: 'DB 스키마 정리는 끝냈어요', speakerMemberId: 'mb_03', atMs: null },
+    })
+    expect(update({ status: 'done', reply_message_id: 'mg_31' })).toMatchObject({
+      replyMessageId: null,
+    })
+  })
+
   it('does not guess an unknown category', () => {
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
