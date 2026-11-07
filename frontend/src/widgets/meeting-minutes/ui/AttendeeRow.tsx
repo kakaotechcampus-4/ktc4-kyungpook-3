@@ -14,8 +14,10 @@ export const CHIP =
 export const ATTENDEE_ROW = 'flex h-22 min-w-[0px] items-center gap-6'
 const MORE = `${CHIP} cursor-pointer hover:text-ink data-[state=open]:text-ink`
 /* 재는 칸 — 이름 칩 전부와 `+전체 인원` 칩을 한 줄로 늘어놓는다. 줄 크기 안에 잘리고 보이지 않으며 읽히지도 않는다.
-   글자는 ::before 의 content 로만 그린다 — 화면 글자(textContent)가 두 번 생기지 않는다 */
-const MEASURE_BOX = 'pointer-events-none invisible absolute inset-0 overflow-hidden'
+   글자는 ::before 의 content 로만 그린다 — 화면 글자(textContent)가 두 번 생기지 않는다.
+   `inset-0` 은 생성되지 않는다(tokens.css 가 간격 스케일을 꺼서, Modal 과 같은 까닭). 그때 이 칸이 칩 전체 길이만큼 줄 밖으로
+   나가 페이지가 가로로 스크롤됐다 (#490) */
+const MEASURE_BOX = 'pointer-events-none invisible absolute inset-[0px] overflow-hidden'
 const MEASURE_CHIP = `${CHIP} before:content-[attr(data-label)]`
 
 /**
