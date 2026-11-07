@@ -96,7 +96,7 @@ it('빈 목록의 total도 0이다', async () => {
 
 | 시나리오 | 역할 | mode | Notion | 해 볼 것 |
 |---|---|---|---|---|
-| `meeting-demo` | PM | `staged` | 연결됨 | 올리고 처리 화면에서 세 단계가 차례로 끝나는 것, 다른 화면으로 가서 완료 토스트 |
+| `meeting-demo` | PM | `staged` | 연결됨 | 올리고 처리 화면에서 대기부터 세 단계가 차례로 진행되는 것(넘기는 중에도 마지막 단계 진행 중, #483), 다른 화면으로 가서 완료 토스트 |
 | `meeting-instant` | PM | `instant` | 연결됨 | 올리자마자 회의록으로 |
 | `meeting-fail` | PM | `fail` | 연결됨 | 재업로드 토스트, 목록에서 빠진 회의 |
 | `meeting-fail-notion-revoked` | PM | `fail-notion-revoked` | 실패 때 끊김 | 재연결 모달 |
@@ -105,6 +105,7 @@ it('빈 목록의 total도 0이다', async () => {
 | `meeting-member` | 일반 팀원 | `instant` | 연결됨 | 헤더 `정리 중`·회의록. 업로드 주소는 막힌다 |
 | `meeting-chat-processing` | PM | `manual` | 연결됨 | 채팅 회의 `mt_11` 이 정리 중이어도 업로드 화면에 머물고 올릴 수 있다 (#450) |
 | `meeting-chat-stalled` | PM | `fail-chat-stalled` | 연결됨 | 채팅 회의 `mt_11` 이 첫 상세 조회에 `chat_stalled` 로 실패한다. 토스트·처리 화면·회의록 상세의 안내가 업로드를 권하지 않는다 (#450) |
+| `meeting-chat-demo` | PM | `staged` | 연결됨 | 채팅 회의 `mt_11` 이 상세 조회마다 대화 모으기 → 결정사항과 할 일 뽑아내기로 진행하고 끝난다. 처리 화면·토스트가 두 단계다 (#483) |
 | `meeting-speakers` | PM | `speakers` | 연결됨 | 업로드 회의 `mt_11` 이 화자 지정 대기. 목록의 `화자 지정 필요` 행 → 지정 화면 → 제출 → 처리 재개 (#256) |
 | `meeting-speakers-flow` | PM | `speakers` | 연결됨 | 올리면 첫 상세 조회에 화자 지정 대기가 된다. 처리 화면 → 지정 화면 이동, 다른 화면이면 `화자 지정하기` 토스트 |
 | `meeting-speakers-expired` | PM | `speakers` | 연결됨 | 지정을 내면 409 `details.status=failed`. 만료 안내와 재업로드 링크, 다시 낼 수 없다 |
