@@ -10,7 +10,9 @@
 
 - `replies._waiting_cards` 를 더했다. 그 태스크의 대기 `task_update` 카드에서 줄마다 같은 값을 찾는다. 출처는 가리지 않는다.
 - `_judged` 는 그룹의 값이 모두 대기 카드에 있으면 새 카드를 만들지 않고 줄을 그 카드에 잇는다. 이 줄은 알림에서 뺀다.
-- 승인 이력을 답장 줄에 잇는 `link_history` 를 모든 `task_update` 승인에서 부르고, 같은 카드에 줄이 여럿이면 처음 줄에 잇는다. 타임라인은 뒷 줄도 처음 줄의 이력을 같이 읽는다.
+- 같은 카드에 줄이 여럿이면 `link_history` 는 이력을 처음 줄에 잇고, 타임라인은 뒷 줄도 처음 줄의 이력을 같이 읽는다.
+- 회의 카드의 이력은 줄에 잇지 않아 타임라인에 회의 이력으로 남는다. 답장 줄의 `result` 는 카드 상태로 읽는다. 담당자 줄은 카드에 담당자 값이 있으면 `approved` 다.
+- 같은 값의 대기 카드가 여럿이면 가장 오래된 카드에 잇는다.
 - 계약 문서의 답장 처리 표에 이 동작을 적었다.
 
 ## 왜
@@ -21,8 +23,8 @@
 
 ## 결과
 
-- `cd backend && python -m pytest -q`: 1794 통과, 1288 건너뜀(건너뛴 것은 `TEST_DATABASE_URL` 이 있어야 도는 PostgreSQL 쪽)
-- 임시 PostgreSQL 에서 `test_reply_judgment.py`·`test_reply_review.py`·`test_reply_clock.py`·`test_approval_task_overrides.py`: 531 통과, 3 건너뜀
+- `cd backend && python -m pytest -q`: 1798 통과, 1292 건너뜀(건너뛴 것은 `TEST_DATABASE_URL` 이 있어야 도는 PostgreSQL 쪽)
+- 임시 PostgreSQL 에서 `test_reply_judgment.py`·`test_reply_review.py`·`test_reply_clock.py`·`test_approval_task_overrides.py`: 539 통과, 3 건너뜀
 - 고치기 전 재현 테스트 7개가 실패했다. 같은 값 두 번에 카드 2장, 알림 2건이었다.
 - 유료 호출 없음(0원). 운영 서버에서는 아직 돌려 보지 않았다.
 
