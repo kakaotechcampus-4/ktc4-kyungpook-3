@@ -57,7 +57,8 @@ class ApprovalResolveRequest(BaseModel):
         None,
         description="승인하면서 PM이 고친 값. approved 일 때만 보낸다. 키가 없으면 제안 그대로이고, "
         "null 이면 미정(due_date, assignee_member_id 만 가능)이다. "
-        "task_create 는 task_title, assignee_member_id, due_date, task_update 는 status, due_date 를 고칠 수 있다",
+        "task_create 는 task_title, assignee_member_id, due_date, task_update 는 status, due_date 를 고칠 수 있다. "
+        "담당자 줄이 있는 답장 카드는 assignee_member_id 도(null 이면 미정)",
     )
     save_alias: bool = Field(
         False,
