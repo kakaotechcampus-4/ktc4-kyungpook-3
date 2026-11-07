@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -278,6 +278,30 @@ def test_assignee_merge_still_looks_up_the_assignee(client, db, seed):
     _extract(client, seed, 1, [_merge_item(card_id, category="assignee", assignee_raw="수아님")])
 
     assert _count(db, AliasResolutionLog) == logs_before + 1
+
+
+def test_merge_lock_query_is_limited_to_the_meeting_workspace(client, db, seed):
+    # 다른 워크스페이스 카드 ID 가 와도 그 카드를 잠그지 않는다. 잠그면 그 PM 의 승인이 이 요청이 끝날 때까지 기다린다.
+    # sqlite 는 FOR UPDATE 를 내지 않으므로 잠금 쿼리가 워크스페이스로 좁혀지는지를 문장으로 확인한다
+    card_id = _pending_card(client, db, seed)
+    db.get(ApprovalRequest, card_id).workspace_id = seed["other_ws"].workspace_id
+    db.commit()
+    lock_selects = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        if "FROM approval_request" in statement and "approval_id IN" in statement and "ORDER BY" in statement:
+            lock_selects.append((statement, parameters))
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        _extract(client, seed, 1, [_merge_item(card_id)])
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+    [(statement, parameters)] = lock_selects
+    assert "approval_request.workspace_id = ?" in statement
+    assert seed["ws"].workspace_id in parameters
 
 
 def test_two_merges_into_same_card_in_one_request_apply_in_order(client, db, seed):
