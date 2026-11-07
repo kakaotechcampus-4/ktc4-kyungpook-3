@@ -514,16 +514,16 @@ def run_worker(stop_event: threading.Event, interval: float) -> None:
             delay = retry_delay(interval, failures, exc)
             if exc.is_auth_error:
                 logger.error(
-                    "task 임베딩 API 인증 실패. EMBEDDING_API_KEY를 확인하세요. %.0f초 뒤 다시 시도합니다: %s",
+                    "임베딩 API 인증 실패. EMBEDDING_API_KEY를 확인하세요. %.0f초 뒤 다시 시도합니다: %s",
                     delay, exc,
                 )
             else:
                 logger.warning(
-                    "task 임베딩 계산 실패(연속 %d회), %.0f초 뒤 다시 시도합니다: %s",
+                    "임베딩 계산 실패(연속 %d회), %.0f초 뒤 다시 시도합니다: %s",
                     failures, delay, exc,
                 )
         except Exception:
-            logger.exception("task 임베딩 워커 오류")
+            logger.exception("임베딩 워커 오류")
             db.rollback()
         finally:
             db.close()
