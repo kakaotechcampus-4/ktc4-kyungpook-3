@@ -34,7 +34,8 @@ from shared.schemas import (
 )
 
 # 별칭 텍스트가 아닌 호칭 — "네가", "그분", "백엔드 리더" 를 BE 가 별칭으로 조회하면 영원히 안 맞는다.
-# 문맥으로 풀린 이름(assignee_resolved)이 없으면 보내지 않는다 (capture/handoff.py 와 같은 규칙).
+# 문맥으로 풀린 이름(assignee_resolved)만 보낸다. 그 밖(thirdname 등)은 원문만 보낸다 — 추측한 이름이
+# BE 별칭으로 학습되지 않게 (capture/handoff.py 와 같은 규칙).
 _NOT_ALIAS_TYPES = {"second", "thirdpronoun", "thirdrole"}
 
 # 답장 판단(judge/reply.py)이 이 값으로 마감 지움을 알아본다
@@ -43,8 +44,9 @@ DUE_CLEARED_REASON = "마감을 없애는 변경은 아직 보낼 수 없습니�
 
 def _assignee(finding: JudgeFinding) -> tuple[str | None, str | None]:
     """(assignee_type, assignee_raw) — BE 가 member_id 로 해소할 값."""
-    mention = None if finding.assignee_type in _NOT_ALIAS_TYPES else finding.assignee_raw
-    return finding.assignee_type, finding.assignee_resolved or mention
+    if finding.assignee_type in _NOT_ALIAS_TYPES:
+        return finding.assignee_type, finding.assignee_resolved
+    return finding.assignee_type, finding.assignee_raw
 
 
 def _evidence_at_ms(finding: JudgeFinding, transcript: Transcript) -> int | None:

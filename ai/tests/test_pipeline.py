@@ -77,6 +77,9 @@ def test_create_item_carries_all_three_stages():
     ("second", "너", None, None),
     ("thirdrole", "백엔드 리더", None, None),
     ("first", None, None, None),                # 1인칭은 BE 가 evidence_speaker 로 푼다
+    ("thirdname", "화은님", "하은", "화은님"),  # 이름 지목은 원문만 — 추측한 이름이 별칭으로 학습되지 않게
+    ("first", None, "민수", None),              # first 에 섞여 온 resolved 도 보내지 않는다
+    ("thirdrole", "백엔드 리더", "환", "환"),   # 역할 지목은 지금처럼 푼 이름(별도 이슈)
 ])
 def test_assignee_raw_is_only_a_lookupable_alias(a_type, raw, resolved, expected):
     finding = _finding(assignee_type=a_type, assignee_raw=raw, assignee_resolved=resolved)

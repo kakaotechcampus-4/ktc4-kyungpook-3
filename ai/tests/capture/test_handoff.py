@@ -265,6 +265,17 @@ def test_unresolved_second_person_and_pronouns_are_not_sent_as_aliases():
     assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "민수"
 
 
+def test_thirdname_sends_the_original_mention_even_when_resolved():
+    """이름 지목은 원문만 보낸다. 추출기가 고친 이름이 틀리면 BE 가 그 글자를 별칭으로 배운다."""
+    t = _task(assignee_type="thirdname", assignee_mention="화은이가", assignee_resolved="하은")
+    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "화은이가"
+    t = _task(assignee_type="first", assignee_mention=None, assignee_resolved="민수")
+    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] is None
+    # 역할 지목은 이번엔 그대로 푼 이름을 보낸다(원문 전송은 별도 이슈)
+    t = _task(assignee_type="thirdrole", assignee_mention="백엔드 리더가", assignee_resolved="환")
+    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "환"
+
+
 def test_register_marks_a_partial_meeting_in_the_be_record(tmp_path):
     fake = FakeBe()
     m, tdir = _manifest(tmp_path)
