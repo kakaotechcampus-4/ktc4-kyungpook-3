@@ -1,6 +1,6 @@
 """가입 이메일 인증 코드 발급·확인(#427). 메일은 보내지 않고 보낼 내용을 돌려준다.
 
-코드가 맞으면 행을 지우고, 그 이메일을 담은 서명 토큰(증명)을 준다. 증명은 되돌릴 수 없지만 풀어 주는 일이
+코드가 맞으면 코드를 만료시키고, 그 이메일을 담은 서명 토큰(증명)을 준다. 행은 남겨 보낸 수에 계속 잡히게 한다. 증명은 되돌릴 수 없지만 풀어 주는 일이
 이메일 unique 로 막힌 insert 하나뿐이라 한 번만 쓰는 표시를 따로 두지 않는다.
 """
 import hmac
@@ -144,7 +144,13 @@ def confirm_code(db: DbSession, email: str, code: str, *, now: datetime) -> str:
         db.commit()
         raise _invalid("wrong", attempts_left=MAX_ATTEMPTS - claimed.attempts)
 
-    db.execute(delete(SignupEmailCode).where(SignupEmailCode.email == email))
+    # 행을 지우면 재발송 제한과 전체 상한의 집계에서 빠져, 자기 메일함으로 인증을 되풀이해 발송 한도를 쓸 수 있다.
+    db.execute(
+        update(SignupEmailCode)
+        .where(SignupEmailCode.email == email)
+        .values(expires_at=now)
+        .execution_options(synchronize_session=False)
+    )
     db.commit()
     return oauth_state.seal(PROOF_KIND, PROOF_TTL_SECONDS, {"m": email}, now=now.timestamp())
 

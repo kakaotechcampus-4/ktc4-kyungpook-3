@@ -65,13 +65,12 @@ def test_code_is_stored_only_as_a_hash(mdb):
     assert len(row.code_hash) == 64
 
 
-def test_correct_code_gives_a_proof_of_that_email_and_removes_the_row(mdb):
+def test_correct_code_gives_a_proof_of_that_email(mdb):
     code = _code(_request(mdb))
 
     proof = svc.confirm_code(mdb, EMAIL, code, now=NOW)
 
     assert svc.read_proof(proof, now=NOW.timestamp()) == EMAIL
-    assert mdb.scalar(select(SignupEmailCode.email)) is None
 
 
 def test_proof_expires_after_thirty_minutes(mdb):
@@ -319,3 +318,43 @@ def test_cap_also_stops_a_resend_and_lifts_after_the_hour(mdb):
 
 def test_cap_keeps_a_day_under_the_gmail_daily_limit():
     assert svc.GLOBAL_HOURLY_LIMIT * 24 < 500
+
+
+def test_verifying_keeps_the_resend_cooldown(mdb):
+    code = _code(_request(mdb))
+    svc.confirm_code(mdb, EMAIL, code, now=NOW + timedelta(seconds=10))
+
+    err = _failure(lambda: svc.request_code(mdb, EMAIL, now=NOW + timedelta(seconds=20)))
+
+    assert err.details["reason"] == "cooldown"
+
+
+def test_verifying_does_not_free_the_hourly_limit(mdb):
+    for n in range(svc.HOURLY_LIMIT):
+        at = NOW + timedelta(minutes=2 * n)
+        code = _code(_request(mdb, at=at))
+        svc.confirm_code(mdb, EMAIL, code, now=at + timedelta(seconds=10))
+
+    err = _failure(lambda: svc.request_code(mdb, EMAIL, now=NOW + timedelta(minutes=30)))
+
+    assert err.details["reason"] == "hourly"
+
+
+def test_verifying_does_not_free_the_global_cap(mdb):
+    for n in range(svc.GLOBAL_HOURLY_LIMIT):
+        email = f"user{n}@example.com"
+        mail = svc.request_code(mdb, email, now=NOW)
+        svc.confirm_code(mdb, email, _code(mail), now=NOW + timedelta(seconds=1))
+
+    err = _failure(lambda: svc.request_code(mdb, "late@example.com", now=NOW + timedelta(minutes=1)))
+
+    assert err.details["reason"] == "global"
+
+
+def test_used_code_cannot_be_confirmed_again(mdb):
+    code = _code(_request(mdb))
+    svc.confirm_code(mdb, EMAIL, code, now=NOW + timedelta(seconds=1))
+
+    err = _failure(lambda: svc.confirm_code(mdb, EMAIL, code, now=NOW + timedelta(seconds=2)))
+
+    assert err.details["reason"] == "expired"
