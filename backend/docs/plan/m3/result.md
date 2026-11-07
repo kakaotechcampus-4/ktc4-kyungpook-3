@@ -78,7 +78,7 @@ M3 plan.md 가 비어 있어 완료조건이 없다. 마일스톤 완료를 판�
 
 2026-11-06 #459 PR ②: 로컬(SQLite)에서 `ruff check --no-cache .` 통과, `pytest -q -p no:cacheprovider` 전체 1836 passed, 1301 skipped. 새 두 파일은 60 passed, 31 skipped(PostgreSQL 파라미터, `TEST_DATABASE_URL` 없음). 새 테스트는 구현 전에 실패하는 것을 확인했다. 마이그레이션은 DB 로 돌리지 않았다(`alembic upgrade`·`alembic check` 는 CI migrations 잡에서 확인).
 
-2026-11-07 #463 머지 뒤 develop 을 합치고 마이그레이션 `down_revision` 을 `1032faab5855` 로 맞췄다(`ScriptDirectory` 로 최신 단계가 하나인 것만 확인, DB 는 안 씀). 리뷰 반영(도·들, 찾기 후보 전체 비교, #463 과 이어지는 통합 테스트) 뒤 `ruff check --no-cache .` 통과, `pytest -q -p no:cacheprovider` 전체 2114 passed, 1434 skipped(SQLite). 통합 테스트 `test_learned_alias_is_found_in_the_next_meeting` 은 승인 → 다음 회의에서 찾힘과 미매칭 목록에서 빠짐을 띄어 쓴 입력까지 확인한다.
+2026-11-07 #463 머지 뒤 develop 을 합치고 마이그레이션 `down_revision` 을 `1032faab5855` 로 맞췄다. 그 뒤 #437 의 `3c9a1f7d2b64`(세션 토큰 해시)도 같은 `1032faab5855` 뒤에 들어와 CI `alembic upgrade head` 가 최신 단계 둘로 실패했고, develop 을 다시 합치며 `3c9a1f7d2b64` 로 다시 맞췄다(`ScriptDirectory` 로 최신 단계가 하나인 것만 확인, DB 는 안 씀). 리뷰 반영(도·들, 찾기 후보 전체 비교, #463 과 이어지는 통합 테스트) 뒤 `ruff check --no-cache .` 통과, `pytest -q -p no:cacheprovider` 전체 2142 passed, 1443 skipped(SQLite). 통합 테스트 `test_learned_alias_is_found_in_the_next_meeting` 은 승인 → 다음 회의에서 찾힘과 미매칭 목록에서 빠짐을 띄어 쓴 입력까지 확인한다.
 
 ## 계획 대비 변경
 

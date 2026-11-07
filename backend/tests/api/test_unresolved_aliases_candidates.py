@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.models import AliasResolutionLog, Member, MemberAlias, Session as SessionModel, User, Workspace
+from app.services.sessions import hash_session_token
 
 
 @pytest.fixture
@@ -38,7 +39,7 @@ def seed(db):
     db.add(user)
     db.flush()
     db.add(SessionModel(
-        user_id=user.user_id, session_token="pm-token",
+        user_id=user.user_id, session_token=hash_session_token("pm-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     ws = Workspace(name="A")
