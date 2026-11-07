@@ -265,6 +265,18 @@ def test_stt_progress_update_keeps_stage_at(client, db, seed):
     assert _processing(client, seed["meeting"])["stt"] == {"done": 2, "total": 5}
 
 
+def test_first_stt_progress_after_bare_stt_stage(client, db, seed):
+    """봇은 stt 단계를 진행 없이 먼저 알리고, 첫 진행은 그 뒤 같은 단계로 온다."""
+    _stage(client, seed["meeting"], "stt")
+    first_at = _meeting(db, seed["meeting"]).processing_stage_at
+
+    r = _stt(client, seed["meeting"], 0, 5)
+
+    assert r.json()["data"]["applied"] is True
+    assert r.json()["data"]["stt"] == {"done": 0, "total": 5}
+    assert _meeting(db, seed["meeting"]).processing_stage_at == first_at
+
+
 def test_same_stt_progress_is_ignored(client, seed):
     _stt(client, seed["meeting"], 2, 5)
 
@@ -340,6 +352,7 @@ def test_late_stt_progress_does_not_change_stored_value_after_handoff(client, db
         ("stt", {"done": 1, "total": "5"}),
         ("stt", {"done": True, "total": 5}),
         ("stt", {"done": 1, "total": True}),
+        ("stt", {"done": 0, "total": 2_147_483_648}),
         ("sources", {"done": 1, "total": 5}),
     ],
 )
