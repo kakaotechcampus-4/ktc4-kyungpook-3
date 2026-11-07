@@ -22,12 +22,10 @@ import { Button } from '@/shared/ui/button'
 import { DeferredSkeleton } from '@/shared/ui/deferred-skeleton'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
+import { ASSIGN_TITLE, COLUMN, PAGE, TITLE } from './styles'
 
-const PAGE = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72 max-md:px-20'
-const COLUMN = 'flex w-full max-w-[700px] flex-col gap-26'
 /* 로딩을 거쳐 나타난 내용의 불투명도 전환 (#508). 로딩 중에도 보이던 제목(h1)은 빼고 그 아래만 */
 const REVEAL_BELOW_TITLE = 'motion-safe:[&>:not(h1)]:animate-[loading-reveal_150ms_ease-out]'
-const TITLE = 'text-[30px] leading-[1.25] font-bold tracking-h1 text-ink'
 const LEAD = 'text-body text-sub'
 const META = 'text-caption text-dim tabular-nums'
 const LINK =
@@ -120,7 +118,7 @@ function MeetingSpeakers({ workspaceId, meetingId }: { workspaceId: string; meet
 
   if (screen.kind === 'loading' || indicator.pending)
     return (
-      <Layout title="누가 말했는지 골라 주세요">
+      <Layout title={ASSIGN_TITLE}>
         <DeferredSkeleton indicator={indicator}>
           <Skeleton lines={4} />
         </DeferredSkeleton>
@@ -138,7 +136,7 @@ function MeetingSpeakers({ workspaceId, meetingId }: { workspaceId: string; meet
       )
     case 'error':
       return (
-        <Layout reveal={reveal} title="누가 말했는지 골라 주세요">
+        <Layout reveal={reveal} title={ASSIGN_TITLE}>
           <QueryErrorState
             error={screen.error}
             onRetry={screen.retry}
@@ -174,7 +172,7 @@ function MeetingSpeakers({ workspaceId, meetingId }: { workspaceId: string; meet
         .filter((part) => part !== null && part !== '')
         .join(' · ')
       return (
-        <Layout reveal={reveal} title="누가 말했는지 골라 주세요">
+        <Layout reveal={reveal} title={ASSIGN_TITLE}>
           <div className="flex flex-col gap-8">
             <p className={META}>{meta}</p>
             <p className={LEAD}>

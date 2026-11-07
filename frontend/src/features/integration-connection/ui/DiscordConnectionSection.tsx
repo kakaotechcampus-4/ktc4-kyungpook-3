@@ -28,6 +28,7 @@ import {
   SECTION,
   TITLE_ROW,
 } from './connectionStyles'
+import { DiscordMark } from './marks'
 
 export interface DiscordConnectionSectionProps {
   workspaceId: string
@@ -50,15 +51,6 @@ const CONNECT_LABEL: Record<DisconnectedStatus, string> = {
 const NOTICE: Record<IntegrationConnectionNotice, string> = {
   cancelled: 'Discord 연결을 취소했어요. 연결하려면 다시 시도해 주세요.',
   failed: 'Discord를 연결하지 못했어요. 잠시 후 다시 시도해 주세요.',
-}
-
-/* Settings 캔버스 `연결` 절의 Discord 표식 */
-function DiscordMark() {
-  return (
-    <svg width="21" height="21" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M19.7 5.1A18 18 0 0 0 15.4 3.8l-.5 1.1a16 16 0 0 0-5.8 0l-.5-1.1a18 18 0 0 0-4.3 1.3C1.6 9.1.9 13 .9 16.8a17 17 0 0 0 5.3 2.7l1.1-1.8-1.7-.9.4-.3a13 13 0 0 0 12 0l.4.3-1.7.9 1.1 1.8a17 17 0 0 0 5.3-2.7c0-4.4-.9-8-3.4-11.7ZM8.1 14.6c-1 0-1.7-.9-1.7-2s.7-2 1.7-2 1.8.9 1.8 2-.8 2-1.8 2Zm7.8 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.7.9 1.7 2-.7 2-1.7 2Z" />
-    </svg>
-  )
 }
 
 /** 카드의 설명 줄. 연결됐으면 서버 이름과 연결 시각, 아니면 연결하면 무엇을 하는지다. 채널은 카드 아래 `회의 채팅 채널` 칸에서 고른다 (#505) */

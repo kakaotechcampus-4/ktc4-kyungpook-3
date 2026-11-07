@@ -6,13 +6,9 @@ import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { useRouteId } from '@/shared/lib/url'
 import { DeferredSkeleton } from '@/shared/ui/deferred-skeleton'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
-import { Skeleton } from '@/shared/ui/skeleton'
+import { COLUMN, LEAD, LEAD_TEXT, PAGE, TITLE, TITLE_TEXT } from './styles'
+import { UploadSkeleton } from './UploadSkeleton'
 
-/* Upload 캔버스 실측 — 위 48 · 아래 72, 본문 700px 한 단, 제목 30px (docs/impl-decision/2026-10-02-meeting-upload-screen.md) */
-const PAGE = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72 max-md:px-20'
-const COLUMN = 'flex w-full max-w-[700px] flex-col gap-26'
-const TITLE = 'text-[30px] leading-[1.25] font-bold tracking-h1 text-ink'
-const LEAD = 'text-body text-sub'
 /* 로딩을 거쳐 나타난 내용의 불투명도 전환 (#508). 로딩 중에도 보이던 제목 묶음(첫 자식)은 빼고 그 아래만 */
 const REVEAL_BELOW_TITLE =
   'motion-safe:[&>:not(:first-child)]:animate-[loading-reveal_150ms_ease-out]'
@@ -33,10 +29,8 @@ function UploadLayout({ reveal = false, children }: { reveal?: boolean; children
     <main className={PAGE}>
       <div className={reveal ? `${COLUMN} ${REVEAL_BELOW_TITLE}` : COLUMN}>
         <div className="flex flex-col gap-8">
-          <h1 className={TITLE}>회의를 올려 주세요</h1>
-          <p className={LEAD}>
-            정리가 끝나면 알려드릴게요. 정리하는 동안 다른 화면을 써도 괜찮아요.
-          </p>
+          <h1 className={TITLE}>{TITLE_TEXT}</h1>
+          <p className={LEAD}>{LEAD_TEXT}</p>
         </div>
         {children}
       </div>
@@ -78,53 +72,4 @@ function MeetingUpload({ workspaceId }: { workspaceId: string }) {
         </UploadLayout>
       )
   }
-}
-
-/**
- * 올릴 수 있는지 확인하는 동안의 뼈대 (#508). 업로드 폼과 같은 틀이다 — 파일 끌어 놓기 칸, 회의 정보 칸(제목 · 날짜 · 참석자).
- * 정해진 글자(칸 이름)는 글자로 그린다. 자리표시라 스크린리더에서 뺀다. 치수는 AudioDropzone 의 ZONE, MeetingUploadForm 의
- * ROOT · FIELDS · ROW 와 같다
- */
-function UploadSkeleton() {
-  return (
-    <div aria-hidden="true" className="flex flex-col gap-26">
-      {/* 파일 칸은 정해진 글자뿐이라 글자로 그린다 — AudioDropzone 의 ZONE · ICON_BOX · HEADLINE · SUBLINE · LIMITS 와 같다 */}
-      <div className="flex flex-col items-center gap-14 rounded-16 border border-line bg-surface-sunken px-32 py-44 text-center">
-        <span className="inline-flex h-48 w-48 items-center justify-center rounded-9 border border-input-border bg-surface" />
-        <div className="flex flex-col items-center gap-5">
-          <p className="text-[15px] font-semibold text-ink">파일을 여기로 끌어다 놓으세요</p>
-          <p className="text-control font-normal text-dim">
-            또는 <span className="text-ink underline underline-offset-3">컴퓨터에서 찾기</span>
-          </p>
-        </div>
-        <p className="text-meta text-dim tabular-nums">
-          mp3 · wav · m4a · ogg · webm — 최대 200 MiB · 2시간
-        </p>
-      </div>
-      <div className="flex flex-col gap-18 rounded-16 border border-line bg-surface p-22">
-        <div className="grid grid-cols-[minmax(0px,1fr)_200px] gap-14 max-md:grid-cols-1">
-          {['회의 제목', '회의 날짜'].map((label) => (
-            <div key={label} className="flex flex-col gap-6">
-              <span className="text-caption text-sub">{label}</span>
-              <Skeleton variant="block" height={45} className="rounded-9" />
-            </div>
-          ))}
-        </div>
-        <div className="flex flex-col gap-6">
-          <span className="text-caption text-sub">참석자</span>
-          <Skeleton variant="block" width={64} height={32} className="rounded-9" />
-          <div className="flex h-lh items-center text-caption">
-            <Skeleton width={240} />
-          </div>
-        </div>
-      </div>
-      {/* 아래 줄 — 안내 문구와 `정리 시작하기` (MeetingUploadForm 의 FOOTER) */}
-      <div className="flex items-center justify-between gap-20 max-md:flex-wrap">
-        <div className="flex h-lh flex-1 items-center text-caption">
-          <Skeleton width="60%" />
-        </div>
-        <Skeleton variant="block" width={132} height={44} className="rounded-9" />
-      </div>
-    </div>
-  )
 }

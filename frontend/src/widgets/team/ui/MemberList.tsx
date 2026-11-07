@@ -4,18 +4,15 @@ import type { Task } from '@/entities/task'
 import { TASK_STATUS_LABEL, isOverdue } from '@/entities/task'
 import { monthDayOf, seoulDateOf } from '@/shared/lib/date'
 import { Icon } from '@/shared/ui/icon'
-import { Skeleton } from '@/shared/ui/skeleton'
 import { avatarText, memberRisk } from '../lib/team'
 import type { MemberRisk } from '../lib/team'
-import { BADGE, BADGE_DOT } from './teamStyles'
+import { BADGE, BADGE_DOT, HEAD, ROW } from './teamStyles'
 
-const HEAD = 'flex items-center gap-12 border-b border-line py-14'
 const AVATAR =
   'inline-flex h-30 w-30 shrink-0 items-center justify-center rounded-999 bg-divider text-meta leading-none font-semibold text-ink'
 /* 휴대폰 한 열은 이름·태스크명 칸이 좁다. 공백 없는 긴 글자도 그 칸 안에서 접어 옆 칸(마감·상태·배지)을 덮지 않는다 */
 const NAME = 'text-[14.5px] leading-[1.75] font-semibold text-ink max-md:wrap-anywhere'
 const ROLE = 'text-[12px] text-dim'
-const ROW = 'flex items-center gap-16 border-b border-line py-13 last:border-b-0 max-md:gap-10'
 const TASK_TITLE = 'text-[13px] leading-[1.75] text-ink max-md:wrap-anywhere'
 const TASK_META = 'text-[11px] tabular-nums'
 const DUE = 'inline-flex w-56 shrink-0 items-center justify-end gap-3 text-caption tabular-nums'
@@ -109,44 +106,5 @@ export function MemberSection({ member, tasks, today, inactive, invite }: Member
         </ul>
       )}
     </section>
-  )
-}
-
-/**
- * 팀원 목록을 기다리는 뼈대 (#508). 팀원 영역과 같은 틀이다 — 머리 줄(이름 원 · 이름 · 역할), 맡은 일 줄(제목 · 기준 날짜 · 마감 · 상태).
- * 치수는 HEAD · AVATAR · NAME · ROW · TASK_TITLE · STATUS 와 같다
- */
-export function MemberListSkeleton() {
-  return (
-    <div aria-hidden="true" className="flex flex-col gap-[38px]">
-      {[2, 3].map((tasks, member) => (
-        <div key={member}>
-          <div className={HEAD}>
-            <span className="h-30 w-30 shrink-0 rounded-999 bg-divider" />
-            <div className="flex min-w-[0px] flex-1 flex-col">
-              <div className="flex h-lh items-center text-[14.5px] leading-[1.75]">
-                <Skeleton width={64} />
-              </div>
-              <div className="flex h-lh items-center text-[12px]">
-                <Skeleton width={32} />
-              </div>
-            </div>
-          </div>
-          {Array.from({ length: tasks }, (_task, index) => (
-            <div key={index} className={ROW}>
-              <div className="flex min-w-[0px] flex-1 flex-col">
-                <div className="flex h-lh items-center text-[13px] leading-[1.75]">
-                  <Skeleton width={`${[48, 36, 56][index]}%`} />
-                </div>
-                <div className="flex h-lh items-center text-[11px]">
-                  <Skeleton width={56} />
-                </div>
-              </div>
-              <span className="h-[21px] w-[58px] shrink-0 rounded-6 border border-line" />
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
   )
 }

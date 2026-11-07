@@ -25,10 +25,8 @@ import { Icon } from '@/shared/ui/icon'
 import { Mascot } from '@/shared/ui/mascot'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
+import { COLUMN, PAGE } from './styles'
 
-/* Processing 캔버스 실측 — 위 48 · 아래 72, 본문 560px 한 단, 제목 30px, 마스코트 64px, 단계 행 위아래 16 */
-const PAGE = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72 max-md:px-20'
-const COLUMN = 'flex w-full max-w-[560px] flex-col gap-30'
 /* 정리 상태를 기다린 뒤 나타난 내용의 불투명도 전환 (#508). 감싸는 요소를 더하지 않는다 — 단의 자식(제목 · 단계 · 안내)에 바로
    건다. 상태 알림(role=status)은 늘 같은 자리에 남아 읽혀야 해 뺀다 */
 const REVEAL_CONTENT = 'motion-safe:[&>:not([role=status])]:animate-[loading-reveal_150ms_ease-out]'
