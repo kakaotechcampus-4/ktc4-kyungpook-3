@@ -6,8 +6,10 @@ import { useNavigate } from 'react-router'
 import { memberListQueryOptions } from '@/entities/member'
 import { paths } from '@/shared/config/routes'
 import { useAppForm } from '@/shared/lib/form'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { confirmLeave, hasPendingLeave, useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { ErrorText } from '@/shared/ui/error-text'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { Icon } from '@/shared/ui/icon'
@@ -49,6 +51,7 @@ const NOTE = 'text-caption text-dim'
 export function MeetingUploadForm({ workspaceId }: MeetingUploadFormProps) {
   const navigate = useNavigate()
   const members = useQuery(memberListQueryOptions(workspaceId))
+  const membersIndicator = useLoadingIndicator(members.isPending)
   const { form, submit } = useAppForm(meetingUploadSchema, EMPTY)
   const { errors } = form.formState
   const attendees = useController({ control: form.control, name: 'attendeeMemberIds' })
@@ -162,25 +165,29 @@ export function MeetingUploadForm({ workspaceId }: MeetingUploadFormProps) {
             {...form.register('date')}
           />
         </div>
-        {members.data !== undefined ? (
-          <AttendeePicker
-            members={members.data}
-            value={attendees.field.value}
-            onChange={(next) => attendees.field.onChange(next)}
-            triggerRef={attendees.field.ref}
-            error={errors.attendeeMemberIds?.message}
-            disabled={locked}
-          />
-        ) : members.isError ? (
-          <QueryErrorState
-            error={members.error}
-            onRetry={() => void members.refetch()}
-            title="팀원 목록을 불러오지 못했어요"
-          />
-        ) : (
-          <div aria-busy="true">
+        {membersIndicator.pending || members.isPending ? (
+          <DeferredSkeleton indicator={membersIndicator}>
             <Skeleton lines={2} />
-          </div>
+          </DeferredSkeleton>
+        ) : (
+          <Reveal indicator={membersIndicator}>
+            {members.data !== undefined ? (
+              <AttendeePicker
+                members={members.data}
+                value={attendees.field.value}
+                onChange={(next) => attendees.field.onChange(next)}
+                triggerRef={attendees.field.ref}
+                error={errors.attendeeMemberIds?.message}
+                disabled={locked}
+              />
+            ) : (
+              <QueryErrorState
+                error={members.error}
+                onRetry={() => void members.refetch()}
+                title="팀원 목록을 불러오지 못했어요"
+              />
+            )}
+          </Reveal>
         )}
       </fieldset>
 

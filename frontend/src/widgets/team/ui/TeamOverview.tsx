@@ -5,9 +5,11 @@ import { discordUsersQueryOptions, memberListQueryOptions } from '@/entities/mem
 import { taskListQueryOptions } from '@/entities/task'
 import { MemberInviteControl } from '@/features/member-invite'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Button } from '@/shared/ui/button'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { firstAttention, inactiveMemberIds, tasksByMember, unlinkedDiscordUsers } from '../lib/team'
 import { MemberConnectDialog } from './MemberConnectDialog'
@@ -111,6 +113,9 @@ export function TeamOverview({
       : mappingSource
 
   const listError = members.error ?? tasks.error
+  const listIndicator = useLoadingIndicator(
+    (members.data === undefined || tasks.data === undefined) && !listError,
+  )
   const retryList = () => {
     if (members.isError) void members.refetch()
     if (tasks.isError) void tasks.refetch()
@@ -140,25 +145,29 @@ export function TeamOverview({
 
       <div className={COLUMNS}>
         <div className="flex flex-col gap-[38px]">
-          {members.data !== undefined && tasks.data !== undefined ? (
-            members.data.map((member) => (
-              <MemberSection
-                key={member.id}
-                member={member}
-                tasks={grouped.get(member.id) ?? EMPTY_TASKS}
-                today={today}
-                inactive={inactive.has(member.id)}
-                invite={
-                  isPm ? <MemberInviteControl workspaceId={workspaceId} member={member} /> : null
-                }
-              />
-            ))
-          ) : listError ? (
-            <QueryErrorState error={listError} onRetry={retryList} />
-          ) : (
-            <div aria-busy="true" className="py-14">
+          {listIndicator.pending ? (
+            <DeferredSkeleton indicator={listIndicator} className="py-14">
               <Skeleton lines={4} />
-            </div>
+            </DeferredSkeleton>
+          ) : members.data !== undefined && tasks.data !== undefined ? (
+            <Reveal indicator={listIndicator}>
+              {members.data.map((member) => (
+                <MemberSection
+                  key={member.id}
+                  member={member}
+                  tasks={grouped.get(member.id) ?? EMPTY_TASKS}
+                  today={today}
+                  inactive={inactive.has(member.id)}
+                  invite={
+                    isPm ? <MemberInviteControl workspaceId={workspaceId} member={member} /> : null
+                  }
+                />
+              ))}
+            </Reveal>
+          ) : (
+            <Reveal indicator={listIndicator}>
+              <QueryErrorState error={listError} onRetry={retryList} />
+            </Reveal>
           )}
         </div>
         <div className="flex flex-col gap-14">

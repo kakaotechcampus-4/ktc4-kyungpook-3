@@ -3,8 +3,10 @@ import type { ExtractionItem } from '@/entities/extraction'
 import type { MinutesSummary, TranscriptLine } from '@/entities/minutes'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { Skeleton } from '@/shared/ui/skeleton'
 import type { ExtractedTasks, PendingTask } from '../lib/extractedTasks'
 import { formatDue } from '../lib/format'
@@ -275,7 +277,9 @@ function ReviewSection({
   review: Exclude<ReviewState, { kind: 'hidden' }>
   momentOf: MomentOf
 }) {
-  const count = review.kind === 'ready' && pending !== null ? pending.length : null
+  const indicator = useLoadingIndicator(review.kind === 'loading')
+  const count =
+    review.kind === 'ready' && pending !== null && !indicator.pending ? pending.length : null
   return (
     <Section
       title={
@@ -290,32 +294,38 @@ function ReviewSection({
         </>
       }
     >
-      {review.kind === 'loading' ? (
-        <div aria-busy="true">
+      {review.kind === 'loading' || indicator.pending ? (
+        <DeferredSkeleton indicator={indicator}>
           <Skeleton lines={3} />
-        </div>
+        </DeferredSkeleton>
       ) : review.kind === 'error' ? (
-        <QueryErrorState
-          error={review.error}
-          onRetry={review.retry}
-          title="확인이 필요한 일을 불러오지 못했어요"
-        />
+        <Reveal indicator={indicator}>
+          <QueryErrorState
+            error={review.error}
+            onRetry={review.retry}
+            title="확인이 필요한 일을 불러오지 못했어요"
+          />
+        </Reveal>
       ) : pending === null || pending.length === 0 ? (
-        <SectionEmpty
-          title="확인이 필요한 일이 없어요"
-          description="이 회의에서 나온 할 일은 모두 반영됐거나 처리됐어요."
-        />
+        <Reveal indicator={indicator}>
+          <SectionEmpty
+            title="확인이 필요한 일이 없어요"
+            description="이 회의에서 나온 할 일은 모두 반영됐거나 처리됐어요."
+          />
+        </Reveal>
       ) : (
-        <ul className="flex flex-col">
-          {pending.map((task) => (
-            <PendingRow
-              key={task.item.id}
-              workspaceId={workspaceId}
-              task={task}
-              momentOf={momentOf}
-            />
-          ))}
-        </ul>
+        <Reveal indicator={indicator}>
+          <ul className="flex flex-col">
+            {pending.map((task) => (
+              <PendingRow
+                key={task.item.id}
+                workspaceId={workspaceId}
+                task={task}
+                momentOf={momentOf}
+              />
+            ))}
+          </ul>
+        </Reveal>
       )}
     </Section>
   )
@@ -338,17 +348,13 @@ export function TasksPanel({
   momentOf: MomentOf
 }) {
   const note = review.kind === 'hidden' ? NOTION_NOTE_FOR_MEMBER : NOTION_NOTE_FOR_PM
+  const indicator = useLoadingIndicator(state.kind === 'loading')
   let body: ReactNode
   if (state.kind === 'missing')
     body = (
       <SectionEmpty title="추출된 일이 없어요" description="이 회의에서는 할 일을 찾지 못했어요." />
     )
-  else if (state.kind === 'loading')
-    body = (
-      <div aria-busy="true">
-        <Skeleton lines={4} />
-      </div>
-    )
+  else if (state.kind === 'loading') body = null
   else if (state.kind === 'error')
     body = (
       <QueryErrorState
@@ -373,6 +379,13 @@ export function TasksPanel({
         )}
       </>
     )
+  body = indicator.pending ? (
+    <DeferredSkeleton indicator={indicator}>
+      <Skeleton lines={4} />
+    </DeferredSkeleton>
+  ) : (
+    <Reveal indicator={indicator}>{body}</Reveal>
+  )
   return (
     <>
       {body}
