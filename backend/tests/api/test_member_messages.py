@@ -253,10 +253,11 @@ def test_reply_to_a_pm_dm_lands_in_that_workspace(mdb, mseed):
     later = datetime.now(timezone.utc) + timedelta(minutes=5)
     assert _discord("r1", reply_to="dm_b", sent_at=later)["workspace_id"] == other_ws
     assert _discord("r2", reply_to="dm_a", sent_at=later)["workspace_id"] == mseed["ws"]
-    assert _discord("r3", sent_at=later)["workspace_id"] == other_ws
+    # PM 글은 안내뿐이라 답을 기다리지 않는다. 답장 기능 없는 글이 재촉이 나간 공간의 응답을 빼앗으면 그 태스크가 막힌다.
+    assert _discord("r3", sent_at=later)["workspace_id"] == mseed["ws"]
 
 
-def test_reply_before_any_report_goes_to_the_workspace_the_bot_last_spoke_in(mdb, mseed):
+def test_reply_before_any_report_stays_with_the_reminder_not_the_later_pm_notice(mdb, mseed):
     other_ws, other_thread = _second_workspace(mdb, mseed)
     mdb.add(ThreadMessage(
         thread_id=_thread(mdb, mseed), sender="bot", body="A 의 재촉", dm_status="pending",
@@ -265,7 +266,7 @@ def test_reply_before_any_report_goes_to_the_workspace_the_bot_last_spoke_in(mdb
     mdb.commit()
     _send_in(other_ws, other_thread)
 
-    assert _discord("r1")["workspace_id"] == other_ws
+    assert _discord("r1")["workspace_id"] == mseed["ws"]
 
 
 # 시계와 판단

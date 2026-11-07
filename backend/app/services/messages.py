@@ -860,8 +860,8 @@ def _pick_member_for_discord_user(
 ) -> Member:
     """DM 에는 서버 id 가 없어서 같은 디스코드 계정이 여러 워크스페이스에 있으면 어느 대화인지 골라야 한다.
 
-    답장 기능으로 고른 봇 DM, 그 DM 창에서 이 글 바로 앞에 봇이 보낸 DM, 봇이 가장 최근에 말을 건 쪽,
-    가장 나중에 만든 팀원 순서로 정한다. 봇 DM 시각은 디스코드 id 에 든 보낸 시각이다. 결과 보고는 답장보다
+    답장 기능으로 고른 봇 DM, 그 DM 창에서 이 글 바로 앞에 나간 리마인드, 가장 최근에 나간 리마인드,
+    가장 나중에 만든 팀원 순서로 정한다. PM 글 안내는 답을 기다리지 않으므로 답장 기능으로 고른 때만 본다. 봇 DM 시각은 디스코드 id 에 든 보낸 시각이다. 결과 보고는 답장보다
     늦게 올 수 있으므로, 가져갔지만 보고가 없는 메시지(시간 초과 포함)는 가져간 시각에 나간 것으로 본다.
     """
     members = db.scalars(
@@ -873,16 +873,16 @@ def _pick_member_for_discord_user(
         return members[0]
     by_id = {m.member_id: m for m in members}
 
-    def bot_messages():
+    def thread_messages():
         return (
             select(MessageThread.member_id)
             .join(ThreadMessage, ThreadMessage.thread_id == MessageThread.thread_id)
-            .where(MessageThread.member_id.in_(by_id), ThreadMessage.dm_status.is_not(None))
+            .where(MessageThread.member_id.in_(by_id))
         )
 
     if reply_to is not None:
         owner = db.scalar(
-            bot_messages()
+            thread_messages()
             .join(BotDmPart, BotDmPart.message_id == ThreadMessage.message_id)
             .where(BotDmPart.discord_message_id == reply_to)
         )
@@ -890,7 +890,8 @@ def _pick_member_for_discord_user(
             return by_id[owner]
     sent_before = []
     for member_id, claimed_at, reported_at, part_id in db.execute(
-        bot_messages()
+        thread_messages()
+        .where(ThreadMessage.sender == MessageSender.BOT)
         .add_columns(ThreadMessage.claimed_at, ThreadMessage.dm_reported_at, BotDmPart.discord_message_id)
         .outerjoin(BotDmPart, BotDmPart.message_id == ThreadMessage.message_id)
         .where(ThreadMessage.claimed_at.is_not(None))
@@ -910,7 +911,7 @@ def _pick_member_for_discord_user(
         db.execute(
             select(MessageThread.member_id, func.max(ThreadMessage.created_at))
             .join(ThreadMessage, ThreadMessage.thread_id == MessageThread.thread_id)
-            .where(MessageThread.member_id.in_(by_id), ThreadMessage.dm_status.is_not(None))
+            .where(MessageThread.member_id.in_(by_id), ThreadMessage.sender == MessageSender.BOT)
             .group_by(MessageThread.member_id)
         ).all()
     )
