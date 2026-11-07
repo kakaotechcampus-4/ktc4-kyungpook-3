@@ -47,9 +47,8 @@ export const MOCK_SCENARIOS = [
   'meeting-fail-diarize',
   'meeting-fail-expired',
   'meeting-expired-member',
-  'meeting-fail-notion-revoked',
+  // Notion 을 연결하지 않은 공간. 회의 올리기·정리·회의록·태스크를 그대로 쓴다 (D-182)
   'meeting-notion-not-connected',
-  'meeting-notion-revoked',
   'meeting-member',
   // 정리 중 채팅 회의가 있는 업로드 (#450). 둘째는 그 회의가 첫 상세 조회에 chat_stalled 로 실패한다
   'meeting-chat-processing',
@@ -204,12 +203,12 @@ function readyToUpload(state: MockDb, mode: MeetingFlowMode): void {
   setMeetingFlowMode(mode, state)
 }
 
-function setNotionStatus(state: MockDb, status: 'not_connected' | 'revoked'): void {
-  const integrations = state.integrations.ws_01
-  integrations.notion =
-    status === 'not_connected'
-      ? { status, display_name: null, connected_at: null }
-      : { ...integrations.notion, status }
+function disconnectNotion(state: MockDb): void {
+  state.integrations.ws_01.notion = {
+    status: 'not_connected',
+    display_name: null,
+    connected_at: null,
+  }
 }
 
 function addLongContent(state: MockDb): void {
@@ -646,16 +645,9 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       setMockRole('member', 'ws_01', state)
       failMeeting('mt_10', { failedStage: 'speaker_assignment_expired' }, state)
       break
-    case 'meeting-fail-notion-revoked':
-      readyToUpload(state, 'fail-notion-revoked')
-      break
     case 'meeting-notion-not-connected':
       readyToUpload(state, 'instant')
-      setNotionStatus(state, 'not_connected')
-      break
-    case 'meeting-notion-revoked':
-      readyToUpload(state, 'instant')
-      setNotionStatus(state, 'revoked')
+      disconnectNotion(state)
       break
     case 'meeting-member':
       // 일반 팀원. 처리 중인 mt_10 은 그대로 두고 첫 상세 조회에 끝나게 한다 — 정리 중·회의록 보기를 함께 본다
@@ -748,7 +740,7 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'dashboard-notion-not-connected':
       // 최근 반영 빈 상태 ② → Notion 설정. auto 항목이 있어도 Notion 이 먼저다
       signInWith(state, ['ws_01'], 'ws_01')
-      setNotionStatus(state, 'not_connected')
+      disconnectNotion(state)
       break
     case 'dashboard-no-auto':
       // 최신 완료 회의가 항목 0건인 mt_07 이다. 최근 반영 빈 상태 ③ → 최근 회의록
