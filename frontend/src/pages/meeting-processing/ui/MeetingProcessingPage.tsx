@@ -20,7 +20,7 @@ import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import type { LoadingIndicator } from '@/shared/lib/loading-indicator'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { useRouteId } from '@/shared/lib/url'
-import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
+import { DeferredSkeleton } from '@/shared/ui/deferred-skeleton'
 import { Icon } from '@/shared/ui/icon'
 import { Mascot } from '@/shared/ui/mascot'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
@@ -29,6 +29,9 @@ import { Skeleton } from '@/shared/ui/skeleton'
 /* Processing 캔버스 실측 — 위 48 · 아래 72, 본문 560px 한 단, 제목 30px, 마스코트 64px, 단계 행 위아래 16 */
 const PAGE = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72 max-md:px-20'
 const COLUMN = 'flex w-full max-w-[560px] flex-col gap-30'
+/* 정리 상태를 기다린 뒤 나타난 내용의 불투명도 전환 (#508). 감싸는 요소를 더하지 않는다 — 단의 자식(제목 · 단계 · 안내)에 바로
+   건다. 상태 알림(role=status)은 늘 같은 자리에 남아 읽혀야 해 뺀다 */
+const REVEAL_CONTENT = 'motion-safe:[&>:not([role=status])]:animate-[loading-reveal_150ms_ease-out]'
 const TITLE = 'text-[30px] leading-[1.25] font-bold tracking-h1 text-ink'
 const META = 'text-body text-sub'
 const STATUS = 'text-caption text-dim tabular-nums'
@@ -82,8 +85,8 @@ function Layout({
 }) {
   return (
     <main className={PAGE}>
-      <div className={COLUMN}>
-        <Reveal indicator={{ reveal }}>{children}</Reveal>
+      <div className={reveal ? `${COLUMN} ${REVEAL_CONTENT}` : COLUMN}>
+        {children}
         {/* 상태 변화를 스크린리더에 알린다. 화면의 상태가 바뀌어도 같은 자리에 남아 있어야 읽힌다 (U4-10) */}
         <p role="status" className="sr-only">
           {status}
