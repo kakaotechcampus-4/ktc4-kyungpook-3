@@ -2,7 +2,7 @@ import { fetchDto, fetchSessionDto, jsonRequest } from '@/shared/test/api'
 import type { ApprovalDto } from '@/shared/types/api/approval'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { ExtractionDto } from '@/shared/types/api/extraction'
-import type { TaskDto } from '@/shared/types/api/task'
+import type { TaskDto, TaskHistoryDto } from '@/shared/types/api/task'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { db, initialDb, replaceDb, resetDb } from './db'
 import { MOCK_DB_VERSION, restoreDb, saveDb } from './persistence'
@@ -26,6 +26,9 @@ const M6_SCENARIOS = [
   'approval-rejected',
   'approval-resolved',
   'approval-conflict',
+  'approval-scope',
+  'approval-chat',
+  'minutes-edit-pending',
   'notion-sync-pending',
   'notion-sync-failed',
   'tasks-member',
@@ -70,7 +73,7 @@ describe('M6 시나리오 목록', () => {
   })
 
   it.each(M6_SCENARIOS)('%s 는 저장 버전 그대로 sessionStorage 에서 복원된다', (scenario) => {
-    expect(MOCK_DB_VERSION).toBe(2)
+    expect(MOCK_DB_VERSION).toBe(16)
     replaceDb(createScenarioDb(scenario))
     saveDb(sessionStorage)
     resetDb()
@@ -192,8 +195,103 @@ describe('M6 시나리오 상태와 전이', () => {
     })
     await expect(fetchDto('/tasks/tk_01')).resolves.toMatchObject({
       status: 'done',
-      progress: 100,
       version: 2,
+    })
+  })
+
+  describe('minutes-edit-pending: 수정 제안은 승인 전에도 대상 태스크를 가리킨다 (#419)', () => {
+    const editItem = async () =>
+      (await fetchDto<ExtractionDto>('/extractions/ex_01')).items.find(
+        ({ item_id }) => item_id === 'it_08',
+      )
+
+    it('대기 중이면 task_id 는 tk_04 이고 approval_status 는 pending 이다', async () => {
+      applyScenario('minutes-edit-pending')
+      await expect(editItem()).resolves.toMatchObject({
+        task_id: 'tk_04',
+        approval_id: 'ap_08',
+        approval_status: 'pending',
+      })
+      expect((await pending()).items.map(({ approval_id }) => approval_id)).toContain('ap_08')
+    })
+
+    it('승인하면 approval_status 만 approved 로 바뀌고 태스크 마감이 반영된다', async () => {
+      applyScenario('minutes-edit-pending')
+      expect(await resolve('ap_08', { status: 'approved' })).toMatchObject({ status: 'approved' })
+      await expect(editItem()).resolves.toMatchObject({
+        task_id: 'tk_04',
+        approval_status: 'approved',
+      })
+      await expect(fetchDto('/tasks/tk_04')).resolves.toMatchObject({ due_date: '2026-09-26' })
+    })
+
+    it('반려하면 approval_status 만 rejected 로 바뀌고 태스크는 그대로다', async () => {
+      applyScenario('minutes-edit-pending')
+      expect(await resolve('ap_08', { status: 'rejected' })).toMatchObject({ status: 'rejected' })
+      await expect(editItem()).resolves.toMatchObject({
+        task_id: 'tk_04',
+        approval_status: 'rejected',
+      })
+      await expect(fetchDto('/tasks/tk_04')).resolves.toMatchObject({ due_date: '2026-09-24' })
+    })
+  })
+
+  describe('approval-scope: 범위 변경 승인은 이력에 범위 한 줄을 남긴다 (#205)', () => {
+    const history = (taskId: string) =>
+      fetchDto<ListDto<TaskHistoryDto>>(`/tasks/${taskId}/history`)
+    const scopeRows = async (taskId: string) =>
+      (await history(taskId)).items.filter(({ changed_field }) => changed_field === 'scope')
+
+    it('바꿀 필드가 없으면 범위 이력만 남고 태스크 버전·수정 시각·Notion 반영은 그대로다', async () => {
+      applyScenario('approval-scope')
+      const before = await fetchDto<TaskDto>('/tasks/tk_01')
+      const beforeRows = (await history('tk_01')).items.length
+      expect(await resolve('ap_05', { status: 'approved' })).toMatchObject({ status: 'approved' })
+      expect(await fetchDto<TaskDto>('/tasks/tk_01')).toEqual(before)
+      const rows = (await history('tk_01')).items
+      expect(rows).toHaveLength(beforeRows + 1)
+      expect(rows[0]).toMatchObject({
+        changed_field: 'scope',
+        old_value: null,
+        new_value: '소셜 로그인은 이번 범위에서 빼기로 했어요.',
+        change_source: 'meeting',
+        changed_by: 'mb_01',
+      })
+    })
+
+    it('마감 변경이 함께 오면 마감 이력과 범위 이력을 모두 남긴다', async () => {
+      applyScenario('approval-scope')
+      await resolve('ap_06', { status: 'approved' })
+      await expect(fetchDto('/tasks/tk_02')).resolves.toMatchObject({
+        due_date: '2026-09-25',
+        version: 2,
+      })
+      const fields = (await history('tk_02')).items.map(({ changed_field }) => changed_field)
+      expect(fields.filter((field) => field === 'due_date')).toHaveLength(1)
+      expect(await scopeRows('tk_02')).toMatchObject([
+        { new_value: '회원가입은 이메일 인증까지만 하고 마감을 25일로 미뤄요.' },
+      ])
+    })
+
+    it('반려하면 이력을 남기지 않는다', async () => {
+      applyScenario('approval-scope')
+      const before = (await history('tk_01')).items
+      await resolve('ap_05', { status: 'rejected' })
+      expect((await history('tk_01')).items).toEqual(before)
+    })
+
+    it('범위 이력은 되돌릴 수 없다 — 400 이고 아무것도 바꾸지 않는다', async () => {
+      applyScenario('approval-scope')
+      const [row] = await scopeRows('tk_01')
+      const before = structuredClone(db)
+      await expect(
+        fetchDto(`/tasks/tk_01/history/${row.history_id}/rollback`, { method: 'POST' }),
+      ).rejects.toMatchObject({
+        code: 'INVALID_REQUEST',
+        status: 400,
+        message: '되돌릴 수 없는 변경 항목입니다.',
+      })
+      expect(db).toEqual(before)
     })
   })
 

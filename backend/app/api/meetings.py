@@ -1,13 +1,14 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import exists, select, update
+from fastapi.responses import FileResponse
+from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_member, require_service_token
+from app.api.deps import get_current_user, require_member, require_pm, require_service_token
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Extraction, Meeting, MeetingStatus, Member, Source, User
+from app.models import Extraction, Meeting, MeetingProcessingStage, MeetingStatus, Member, Source, User
 from app.schemas.meeting import (
     MeetingCreateRequest,
     MeetingCreateResponse,
@@ -15,12 +16,23 @@ from app.schemas.meeting import (
     MeetingEndResponse,
     MeetingFailRequest,
     MeetingMinutesResponse,
+    MeetingProcessing,
     MeetingProgress,
+    MeetingStageRequest,
+    MeetingStageResponse,
+    MeetingSttProgress,
 )
+from app.schemas.upload import SpeakerAssignRequest, SpeakerAssignResponse, SpeakerViewResponse
+from app.services import meeting_failure, meeting_stage, speaker_assignment
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
-_ENDED_STATUSES = {MeetingStatus.PROCESSING, MeetingStatus.DONE, MeetingStatus.FAILED}
+_ENDED_STATUSES = {
+    MeetingStatus.PROCESSING,
+    MeetingStatus.AWAITING_SPEAKERS,
+    MeetingStatus.DONE,
+    MeetingStatus.FAILED,
+}
 
 
 def _get_meeting(db: Session, meeting_id: str) -> Meeting:
@@ -39,13 +51,39 @@ def _compute_progress(db: Session, meeting: Meeting) -> MeetingProgress:
         .order_by(Extraction.created_at.desc())
         .first()
     )
-    audio_merged = bool(
+    has_source = bool(
         db.scalar(select(exists().where(Source.meeting_id == meeting.meeting_id)))
     )
-    transcribed = audio_merged
-    extracted = bool(extraction and extraction.items)
+    # AI 가 알린 단계가 기본이고, 발화·추출 항목이 이미 있으면 단계가 늦거나 빠져도 그쪽을 믿는다
+    rank = meeting_stage.stage_rank(meeting.processing_stage)
+    audio_merged = rank >= 1 or has_source
+    transcribed = rank >= 2 or has_source
+    extracted = rank >= 4 or bool(extraction and extraction.items)
     return MeetingProgress(
         audio_merged=audio_merged, transcribed=transcribed, extracted=extracted
+    )
+
+
+def _stt_progress(meeting: Meeting) -> MeetingSttProgress | None:
+    """stt 단계이고 두 값이 모두 있을 때만 전사 진행을 돌려준다."""
+    if (
+        meeting.processing_stage == MeetingProcessingStage.STT
+        and meeting.processing_stt_done is not None
+        and meeting.processing_stt_total is not None
+    ):
+        return MeetingSttProgress(
+            done=meeting.processing_stt_done, total=meeting.processing_stt_total
+        )
+    return None
+
+
+def _processing(meeting: Meeting) -> MeetingProcessing | None:
+    if meeting.status != MeetingStatus.PROCESSING:
+        return None
+    return MeetingProcessing(
+        stage=meeting.processing_stage,
+        stage_at=meeting.processing_stage_at,
+        stt=_stt_progress(meeting),
     )
 
 
@@ -66,6 +104,11 @@ def create_meeting(
         source=str(payload.source),
         status=str(MeetingStatus.CREATED),
     )
+    if payload.started_at is not None:
+        # 미래 시각이 done 이 되면 chat-cursor 가 그 뒤를 가리켜 채팅 수집이 멈춘다
+        if payload.started_at > datetime.now(timezone.utc):
+            raise AppError(ErrorCode.INVALID_REQUEST, message="started_at 은 지금보다 늦을 수 없습니다.")
+        meeting.started_at = payload.started_at.astimezone(timezone.utc)
     db.add(meeting)
     db.commit()
     db.refresh(meeting)
@@ -104,6 +147,33 @@ def end_meeting(
 
 
 @router.patch(
+    "/{meeting_id}/stage",
+    status_code=200,
+    response_model=Envelope[MeetingStageResponse],
+    dependencies=[Depends(require_service_token)],
+)
+def report_meeting_stage(
+    meeting_id: str,
+    payload: MeetingStageRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    """봇이 처리 단계를 시작할 때 알린다. 같은 단계·역행·processing 이 아닌 회의는 오류 없이 applied=false 다."""
+    _get_meeting(db, meeting_id)
+    applied = meeting_stage.report_stage(db, meeting_id, payload.stage, payload.stt)
+    meeting = _get_meeting(db, meeting_id)
+    db.refresh(meeting)
+    return success(
+        MeetingStageResponse(
+            meeting_id=meeting.meeting_id,
+            status=meeting.status,
+            processing_stage=meeting.processing_stage,
+            stt=_stt_progress(meeting),
+            applied=applied,
+        ).model_dump(mode="json")
+    )
+
+
+@router.patch(
     "/{meeting_id}/fail",
     status_code=200,
     response_model=Envelope[MeetingDetailResponse],
@@ -114,34 +184,14 @@ def fail_meeting(
     payload: MeetingFailRequest,
     db: Session = Depends(get_db),
 ) -> dict:
-    # ── 조건부 UPDATE (CAS): 아직 끝나지 않은 회의만 failed로 전이한다 ──
-    # 상태를 읽고 나서 쓰면, 그 사이 추출 등록이 processing → done으로 선점한 결과를
-    # 늦게 도착한 실패 요청이 failed로 덮을 수 있다. 판정과 쓰기를 한 문장으로 묶는다.
-    fail_stmt = (
-        update(Meeting)
-        .where(
-            Meeting.meeting_id == meeting_id,
-            Meeting.status.not_in([str(MeetingStatus.DONE), str(MeetingStatus.FAILED)]),
-        )
-        .values(
-            status=str(MeetingStatus.FAILED),
-            failed_stage=payload.failed_stage,
-            ended_at=datetime.now(timezone.utc),
-        )
-    )
-    result = db.execute(fail_stmt)
-
-    if result.rowcount == 0:
-        db.rollback()
+    if not meeting_failure.fail_meeting_if(db, meeting_id, payload.failed_stage):
         meeting = _get_meeting(db, meeting_id)
         raise AppError(
             ErrorCode.MEETING_ALREADY_ENDED,
             details={"meeting_id": meeting_id, "status": meeting.status},
         )
 
-    db.commit()
     meeting = _get_meeting(db, meeting_id)
-
     detail = MeetingDetailResponse(
         meeting_id=meeting.meeting_id,
         workspace_id=meeting.workspace_id,
@@ -152,6 +202,7 @@ def fail_meeting(
         extraction_id=None,
         failed_stage=meeting.failed_stage,
         progress=_compute_progress(db, meeting),
+        processing=_processing(meeting),
     )
     return success(detail.model_dump(mode="json"))
 
@@ -186,6 +237,7 @@ def get_meeting(
         extraction_id=extraction_id,
         failed_stage=meeting.failed_stage,
         progress=_compute_progress(db, meeting),
+        processing=_processing(meeting),
     )
     return success(detail.model_dump(mode="json"))
 
@@ -260,3 +312,54 @@ def get_meeting_minutes(
         permissions={"can_review": member.role == "pm", "can_undo": member.role == "pm"}
     ).model_dump(mode="json"))
 
+
+@router.get("/{meeting_id}/speakers", response_model=Envelope[SpeakerViewResponse])
+def get_meeting_speakers(
+    meeting_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """업로드 회의의 화자 라벨과 지정 상태. 그 워크스페이스 PM 만 본다."""
+    meeting = _get_meeting(db, meeting_id)
+    require_pm(db, user, meeting.workspace_id)
+    view = speaker_assignment.get_speaker_view(db, meeting)
+    return success(SpeakerViewResponse.model_validate(view).model_dump(mode="json"))
+
+
+@router.put("/{meeting_id}/speakers", response_model=Envelope[SpeakerAssignResponse])
+def assign_meeting_speakers(
+    meeting_id: str,
+    payload: SpeakerAssignRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """PM 이 라벨마다 팀원(또는 null)을 지정하고 처리를 이어 가게 한다. 같은 지정을 다시 보내도 성공한다."""
+    meeting = _get_meeting(db, meeting_id)
+    require_pm(db, user, meeting.workspace_id)
+    updated = speaker_assignment.assign_speakers(db, meeting, payload.mapping)
+    return success(
+        SpeakerAssignResponse(meeting_id=updated.meeting_id, status=updated.status).model_dump(mode="json")
+    )
+
+
+@router.get(
+    "/{meeting_id}/audio",
+    response_class=FileResponse,
+    responses={200: {"content": {"audio/*": {}}, "description": "업로드한 녹음 원본(Range 지원)"}},
+)
+def get_meeting_audio(
+    meeting_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """PM 이 화자를 가리려고 듣는 원본. 폴더가 있는 동안 상태와 무관하게 준다. Range 는 starlette 가 처리한다."""
+    meeting = _get_meeting(db, meeting_id)
+    require_pm(db, user, meeting.workspace_id)
+    path, content_type = speaker_assignment.get_audio_for_playback(db, meeting)
+    # get_db 정리는 응답을 다 보낸 뒤라, 닫지 않으면 파일을 보내는 동안(브라우저가 요청을 열어 둔 동안) DB 연결을 잡고 있다
+    db.close()
+    return FileResponse(
+        path,
+        media_type=content_type,
+        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
+    )

@@ -1,5 +1,7 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -7,6 +9,9 @@ from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import (
     AliasResolutionLog,
+    AliasSource,
+    Invitation,
+    InvitationStatus,
     Member,
     MemberAlias,
     MemberRole,
@@ -25,7 +30,13 @@ from app.schemas.member import (
     UnresolvedAliasResponse,
 )
 from app.api.deps import get_current_member, get_current_user, require_member, require_pm
-from app.services.matching import resolved_alias_texts
+from app.services import message_reads
+from app.services.matching import resolved_texts
+from app.services.member_aliases import (
+    add_discord_nickname_alias,
+    remove_discord_profile_aliases,
+    sync_name_aliases,
+)
 
 router = APIRouter(prefix="/members", tags=["members"])
 
@@ -36,6 +47,20 @@ def _get_member(db: Session, member_id: str, user: User, *, pm: bool = False) ->
         raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
     (require_pm if pm else require_member)(db, user, member.workspace_id)
     return member
+
+
+def _lock_member(db: Session, member: Member) -> None:
+    """팀원 행을 커밋까지 잠그고 최신 값으로 다시 읽는다. 이름·디스코드 계정을 바꾸는 PATCH 가 쓴다.
+
+    같은 팀원을 동시에 고치면 두 요청이 모두 같은 별칭이 없다고 보고 넣어, 뒤쪽이 uq_alias_per_member 에 걸려
+    500 이 된다(#463 리뷰). 잠근 뒤 별칭을 읽으면 앞 요청이 넣은 것을 보고 건너뛴다.
+    """
+    db.execute(
+        select(Member)
+        .where(Member.member_id == member.member_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one()
 
 
 def _discord_user_taken(
@@ -64,6 +89,20 @@ def _ensure_discord_user_free(
         )
 
 
+def _ensure_no_pending_invitation(db: Session, member: Member) -> None:
+    """대기 초대가 있는 팀원은 PM 으로 올리지 않는다. 수락한 계정이 바로 PM 이 되면 원래 PM 을 내려 연결 끊기를 막을 수
+    있다(결정 0036). 초대 만들기와 같은 팀원 행을 잠가, 확인과 역할 변경 사이에 초대가 생기지 않게 한다."""
+    db.execute(select(Member.member_id).where(Member.member_id == member.member_id).with_for_update()).first()
+    pending = db.execute(
+        select(Invitation.invitation_id).where(
+            Invitation.member_id == member.member_id,
+            Invitation.status == str(InvitationStatus.PENDING),
+        ).limit(1)
+    ).first()
+    if pending is not None:
+        raise AppError(ErrorCode.MEMBER_HAS_PENDING_INVITATION, details={"member_id": member.member_id})
+
+
 def _commit_member(db: Session, member: Member) -> None:
     """팀원 변경을 커밋한다. 같은 계정을 동시에 연결해 사전 검사를 함께 통과했으면 DB 유일 인덱스에 걸린다.
     이때 500 대신 사전 검사와 같은 409로 돌려준다. 다른 이유의 무결성 오류는 그대로 올린다.
@@ -88,14 +127,20 @@ def _ensure_other_pm(db: Session, member: Member) -> None:
     로그인 계정이 없는 팀원(디스코드 연결로 만든 명단)은 PM이어도 웹에 들어올 수 없어 세지 않는다.
     내리려는 팀원까지 포함해 PM 행을 모두 커밋까지 잠근다. 서로 다른 행만 잠그면, 두 PM이 동시에 서로를
     내릴 때 둘 다 "다른 PM이 있다"고 보고 PM이 없어진다. 순서를 정해 잠가 교착을 피한다.
+    member는 지금 PM이 아니어도 함께 잠근다. 따로 잠그면 이 순서를 벗어나 역할을 바꾸는 요청과 교착한다.
     """
     pm_ids = db.execute(
         select(Member.member_id)
         .where(
-            Member.workspace_id == member.workspace_id,
-            Member.role == str(MemberRole.PM),
-            Member.user_id.is_not(None),
-            Member.is_deleted.is_(False),
+            or_(
+                Member.member_id == member.member_id,
+                and_(
+                    Member.workspace_id == member.workspace_id,
+                    Member.role == str(MemberRole.PM),
+                    Member.user_id.is_not(None),
+                    Member.is_deleted.is_(False),
+                ),
+            )
         )
         .order_by(Member.member_id)
         .with_for_update()
@@ -129,8 +174,15 @@ def create_member(
         role=str(payload.role),
     )
     db.add(member)
+    # 이름 별칭은 팀원과 한 커밋으로 들어간다(flush 하지 않는다). 디스코드 유일 위반이 _commit_member 안에서 나야 409 가 된다.
+    sync_name_aliases(db, member)
     _commit_member(db, member)
     db.refresh(member)
+    if payload.discord_user_id:
+        # 서버 닉네임은 팀원 커밋 뒤에 Discord 에서 읽는다. 실패해도 팀원 등록은 그대로다.
+        workspace_id, member_id = payload.workspace_id, member.member_id
+        add_discord_nickname_alias(db, workspace_id, member_id, payload.discord_user_id)
+        db.refresh(member)
     return success(MemberResponse.model_validate(member).model_dump(mode="json"))
 
 
@@ -187,9 +239,6 @@ def list_unresolved_aliases(
     db: Session = Depends(get_db),
 ) -> dict:
     """담당자 매핑 화면의 '미매칭' 행 — 회의에서 감지됐지만 아직 팀원과 연결 안 된 이름."""
-    # 매칭 판정(resolve_assignee)과 같은 기준으로 해결 여부를 가른다.
-    resolved_aliases = resolved_alias_texts(db, workspace_id)
-
     stmt = (
         select(
             AliasResolutionLog.alias_text,
@@ -201,6 +250,9 @@ def list_unresolved_aliases(
         .order_by(func.max(AliasResolutionLog.created_at).desc())
     )
     rows = db.execute(stmt).all()
+
+    # 매칭 판정(resolve_assignee)과 같은 기준(님·조사를 뗀 후보)으로 해결 여부를 가른다.
+    resolved_aliases = resolved_texts(db, workspace_id, [r.alias_text for r in rows])
 
     items = [
         UnresolvedAliasResponse(
@@ -255,11 +307,28 @@ def update_member(
     # PM을 넘길 때는 다른 팀원을 먼저 PM으로 올리고 나서 자기를 내린다. 마지막 PM은 내릴 수 없다.
     if updates.get("role") == MemberRole.MEMBER and member.role == MemberRole.PM:
         _ensure_other_pm(db, member)
+    if updates.get("role") == MemberRole.PM and member.role != MemberRole.PM:
+        _ensure_no_pending_invitation(db, member)
 
     _ensure_discord_user_free(
         db, member.workspace_id, updates.get("discord_user_id"), exclude_member_id=member_id
     )
 
+    # 별칭이 바뀔 수 있는 PATCH 는 팀원 행을 잠근다. 위 PM·초대 검사가 잠그는 행보다 뒤에 잠가 순서가 꼬이지 않게 한다.
+    if "display_name" in updates or "discord_user_id" in updates:
+        _lock_member(db, member)
+
+    # 승격은 이 PATCH 의 commit 에 함께 넣는다. 올라가기 전 대화는 PM 이 되기 전 일이라 읽지 않은 것으로 세지 않는다.
+    if updates.get("role") == MemberRole.PM and member.role != MemberRole.PM:
+        message_reads.mark_workspace_read(db, member, datetime.now(timezone.utc))
+
+    old_name = member.display_name
+    # 디스코드 계정이 바뀌면(풀리는 것 포함) 옛 계정의 닉네임 별칭을 지운다. 조회가 팀원 변경을 먼저 flush 해
+    # 유일 위반이 409 처리 밖에서 나지 않도록 값을 바꾸기 전에 한다.
+    discord_changed = "discord_user_id" in updates and updates["discord_user_id"] != member.discord_user_id
+    removed_nicknames: set[str] = set()
+    if discord_changed:
+        removed_nicknames = remove_discord_profile_aliases(db, member)
     for field, value in updates.items():
         if field == "role":
             if value is not None:
@@ -267,8 +336,20 @@ def update_member(
             continue
         setattr(member, field, value)
 
+    # 이름이 바뀌면 이름 별칭을 전부 다시 맞춘다. 이름이 그대로인데 닉네임 별칭을 지웠다면, 닉네임과 겹쳐 건너뛴
+    # 이름 꼴만 채운다. PM 이 지운 다른 이름 별칭을 되살리지 않기 위해서다.
+    name_changed = "display_name" in updates and updates["display_name"] != old_name
+    if name_changed:
+        sync_name_aliases(db, member, old_name)
+    elif removed_nicknames:
+        sync_name_aliases(db, member, only_texts=removed_nicknames)
+
+    workspace_id, new_discord = member.workspace_id, updates.get("discord_user_id")
     _commit_member(db, member)
     db.refresh(member)
+    if discord_changed and new_discord:
+        add_discord_nickname_alias(db, workspace_id, member_id, new_discord)
+        db.refresh(member)
     return success(MemberResponse.model_validate(member).model_dump(mode="json"))
 
 
@@ -291,6 +372,20 @@ def create_alias(
         )
     ).scalar_one_or_none()
     if exists is not None:
+        # 자동 별칭(이름·디스코드 닉네임)과 같은 글자를 PM 이 사람이 정한 출처(manual·learned)로 등록하면 그 출처로
+        # 올린다. 그래야 다른 팀원의 자동 별칭을 막고 이름을 바꿔도 지워진다. 요청의 출처가 자동 별칭 표시
+        # (discord_profile)면 올리지 않는다. 올리면 이름을 바꿔도 안 지워지는데 확정 매칭이 되는 별칭이 생긴다.
+        # 이미 사람이 정한 별칭은 그대로 둔다.
+        if exists.source in (str(AliasSource.DISPLAY_NAME), str(AliasSource.DISCORD_PROFILE)) and payload.source in (
+            AliasSource.MANUAL,
+            AliasSource.LEARNED,
+        ):
+            exists.alias_type = str(payload.alias_type)
+            exists.source = str(payload.source)
+            exists.confidence = payload.confidence
+            exists.verified = payload.verified
+            db.commit()
+            db.refresh(exists)
         return success(MemberAliasResponse.model_validate(exists).model_dump(mode="json"))
 
     alias = MemberAlias(

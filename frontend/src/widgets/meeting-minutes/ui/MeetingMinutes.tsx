@@ -2,18 +2,22 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { meetingListQueryOptions, toMinutesList } from '@/entities/meeting'
 import type { MeetingSummary, MinutesList } from '@/entities/meeting'
 import { paths } from '@/shared/config/routes'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { Reveal } from '@/shared/ui/deferred-skeleton'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { MinutesDetailSkeleton, MinutesListSkeleton } from '@/shared/ui/page-skeleton'
-import { listMeta } from '../lib/format'
+import { listMeta, SOURCE_BADGE } from '../lib/format'
 import { prefetchMinutes } from '../lib/prefetchMinutes'
 import { useShownMeeting } from '../model/useShownMeeting'
 import { MinutesDetail, UnavailableMeeting } from './MinutesDetail'
 
 /* Meetings 캔버스 실측 — 왼쪽 목록 308 · 오른쪽 선, 목록 제목 17px, 행 위아래 13 · 좌우 14 · 라운드 10 · 간격 4 */
-const ASIDE = 'flex w-aside shrink-0 flex-col border-r border-divider'
+/* 폭 768 미만은 목록 위 · 본문 아래 한 열이다(D-180). 목록 아래 선이 본문과 가른다 */
+const ASIDE =
+  'flex w-aside shrink-0 flex-col border-r border-divider max-md:w-full max-md:border-r-0 max-md:border-b'
 /* 머리 줄은 PM 의 `회의 올리기`(32px) 높이로 고정한다(위 18 + 32 + 아래 14). 팀원은 버튼이 없어 줄이 낮아지면 목록이 역할마다
    다른 자리에서 시작하고, 역할을 모르는 라우트 스켈레톤(shared/ui/page-skeleton 의 MinutesPageSkeleton)과 어긋난다 */
 const ASIDE_HEAD = 'flex min-h-64 items-center justify-between gap-12 px-20 pt-18 pb-14'
@@ -31,7 +35,7 @@ const STATUS_BADGE =
 /* 업로드 진입. PM 만 본다 — 캔버스의 검색 자리다(검색은 범위 밖) */
 const UPLOAD_LINK =
   'inline-flex h-32 items-center gap-6 rounded-9 bg-ink px-12 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
-const EMPTY_PAGE = 'flex flex-1 items-center justify-center px-48 pt-48 pb-96'
+const EMPTY_PAGE = 'flex flex-1 items-center justify-center px-48 pt-48 pb-96 max-md:px-20'
 const EMPTY_UPLOAD =
   'inline-flex h-40 items-center justify-center rounded-9 bg-ink px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
 
@@ -68,13 +72,28 @@ export function MeetingMinutes({
     selectedSummary !== null,
   )
   const selected = meetingId !== null || invalidMeetingId
+  // 로딩 자리의 지연·최소 표시 (#508). 본문은 첫 진입(목록 → 기본 회의 → 회의록)을 한 자리로 잰다 — 단계마다 다시 지연하면
+  // 뼈대 → 빈 자리 → 뼈대로 깜빡인다. 회의를 바꾼 뒤는 들고 있기 · 최소 뼈대(useShownMeeting)가 정한다
+  const listIndicator = useLoadingIndicator(list.data === undefined && list.error === null)
+  const pickingDefault =
+    !invalidMeetingId &&
+    meetingId === null &&
+    !(list.data !== undefined && list.data.minutes.length === 0) &&
+    !(list.error !== null && list.data === undefined)
+  const detailIndicator = useLoadingIndicator(
+    !shown.switched &&
+      !invalidMeetingId &&
+      (pickingDefault || (meetingId !== null && !shown.holding && !shown.settled)),
+  )
 
   // 회의가 하나도 없다 — EmptyMeetings 캔버스 한 장 (U5-2)
   if (
     !selected &&
+    !listIndicator.pending &&
     list.data !== undefined &&
     list.data.minutes.length === 0 &&
-    list.data.inProgress.length === 0
+    list.data.inProgress.length === 0 &&
+    list.data.expired.length === 0
   )
     return (
       <main className={EMPTY_PAGE}>
@@ -98,25 +117,40 @@ export function MeetingMinutes({
         holding={shown.holding}
         // 회의를 바꾸며 그린 본문 뼈대는 최소 시간 동안 둔다 — 답이 들고 있기 상한을 막 넘겨 와도 번쩍이지 않는다 (UX1-N03)
         keepSkeleton={shown.keepSkeleton}
+        waiting={detailIndicator}
       />
     )
+  else if (detailIndicator.pending) detail = <MinutesDetailSkeleton indicator={detailIndicator} />
   else if (list.data !== undefined && list.data.minutes.length === 0)
     detail = (
-      <div className="flex justify-center px-36 pt-72 pb-56">
+      <div className="flex justify-center px-36 pt-72 pb-56 max-md:px-20">
         <EmptyState
           titleAs="h2"
-          title="아직 정리가 끝난 회의가 없어요"
-          description="정리가 끝나면 여기에서 회의록을 볼 수 있어요."
+          title={
+            list.data.expired.length > 0
+              ? '화자 지정 기한이 지난 회의가 있어요'
+              : '아직 정리가 끝난 회의가 없어요'
+          }
+          description={
+            list.data.expired.length > 0
+              ? '목록에서 회의를 선택해 만료 사유를 확인해 주세요.'
+              : '정리가 끝나면 여기에서 회의록을 볼 수 있어요.'
+          }
         />
       </div>
     )
   else if (list.error !== null && list.data === undefined) detail = null
   else
     // 목록을 받는 중이거나, 가장 최근 회의록으로 URL 을 바꾸는 중이다. 라우트 스켈레톤과 같은 본문 뼈대다
-    detail = <MinutesDetailSkeleton />
+    detail = <MinutesDetailSkeleton indicator={detailIndicator} />
+  // 첫 진입에서 로딩을 거쳐 나타난 본문만 전환한다. 회의를 바꾼 뒤의 본문은 바로 바뀐다(빠른 답은 깜빡임 없이)
+  // 늘 감싼다 — 기다리는 동안에도 MinutesDetail 이 그려져 있어, 감싸기가 바뀌면 다시 마운트되고 상세를 다시 받는다
+  detail = (
+    <Reveal indicator={{ reveal: detailIndicator.reveal && !shown.switched }}>{detail}</Reveal>
+  )
 
   return (
-    <main className="flex flex-1 items-stretch">
+    <main className="flex flex-1 items-stretch max-md:flex-col">
       <aside aria-label="회의 목록" className={ASIDE}>
         <div className={ASIDE_HEAD}>
           <h1 className={ASIDE_TITLE}>회의록</h1>
@@ -127,18 +161,22 @@ export function MeetingMinutes({
             </GuardedLink>
           ) : null}
         </div>
-        {list.data !== undefined ? (
-          <MeetingList workspaceId={workspaceId} list={list.data} isPm={isPm} />
-        ) : list.error !== null ? (
-          <div className="px-20">
-            <QueryErrorState
-              error={list.error}
-              onRetry={() => void list.refetch()}
-              title="회의 목록을 불러오지 못했어요"
-            />
-          </div>
+        {listIndicator.pending ? (
+          <MinutesListSkeleton indicator={listIndicator} />
+        ) : list.data !== undefined ? (
+          <Reveal indicator={listIndicator}>
+            <MeetingList workspaceId={workspaceId} list={list.data} isPm={isPm} />
+          </Reveal>
         ) : (
-          <MinutesListSkeleton />
+          <Reveal indicator={listIndicator}>
+            <div className="px-20">
+              <QueryErrorState
+                error={list.error}
+                onRetry={() => void list.refetch()}
+                title="회의 목록을 불러오지 못했어요"
+              />
+            </div>
+          </Reveal>
         )}
       </aside>
       <section aria-label="회의록 본문" className="flex min-w-[0px] flex-1 flex-col">
@@ -207,42 +245,88 @@ function MeetingList({
                 onPointerEnter={() => prefetch(meeting.id)}
                 onFocus={() => prefetch(meeting.id)}
               >
-                <span className={ROW_TITLE}>
-                  {meeting.title === '' ? '제목 없는 회의' : meeting.title}
-                </span>
+                <RowTitle meeting={meeting} />
                 <span className={ROW_META}>{listMeta(meeting)}</span>
               </GuardedLink>
             </li>
           ))}
         </ul>
       )}
+      {list.expired.length === 0 ? null : (
+        <div className="flex flex-col gap-4">
+          <p id="meetings-expired" className={GROUP_LABEL}>
+            화자 지정 기한 만료
+          </p>
+          <ul aria-labelledby="meetings-expired" className={LIST}>
+            {list.expired.map((meeting) => (
+              <li key={meeting.id}>
+                <GuardedLink to={paths.meetings(workspaceId, meeting.id)} className={ROW}>
+                  <RowTitle meeting={meeting} />
+                  <span className={STATUS_BADGE}>화자 지정 기한 만료</span>
+                  <span className={ROW_META}>{listMeta(meeting)}</span>
+                </GuardedLink>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }
 
+function SourceBadge({ meeting }: { meeting: MeetingSummary }) {
+  const badge = SOURCE_BADGE[meeting.source]
+  return badge === null ? null : <span className={STATUS_BADGE}>{badge}</span>
+}
+
+function RowTitle({ meeting }: { meeting: MeetingSummary }) {
+  return (
+    <span className="flex w-full items-center gap-8">
+      <span className={ROW_TITLE}>{meeting.title === '' ? '제목 없는 회의' : meeting.title}</span>
+      <SourceBadge meeting={meeting} />
+    </span>
+  )
+}
+
+function inProgressStatus(
+  workspaceId: string,
+  meeting: MeetingSummary,
+): { label: string; to: string | null } {
+  switch (meeting.status) {
+    case 'processing':
+      return { label: '정리 중', to: paths.meetingProcessing(workspaceId, meeting.id) }
+    case 'awaiting_speakers':
+      return { label: '화자 지정 필요', to: paths.meetingSpeakers(workspaceId, meeting.id) }
+    default:
+      return { label: '회의 중', to: null }
+  }
+}
+
 /**
- * 회의록이 아직 없는 회의의 상태 항목 (U5-2). 정리 중이면 처리 화면으로 잇는다.
+ * 회의록이 아직 없는 회의의 상태 항목 (U5-2). 정리 중이면 처리 화면, 화자 지정 대기면 지정 화면으로 잇는다.
  * Discord 봇이 기록 중인 회의(`created`·`recording`)는 갈 곳이 없어 상태만 보인다 (U5-9).
+ * 채팅 회의도 처리 화면으로 잇는다 — 처리 화면에 채팅 두 단계가 생겼다 (#483, #379 의 「잇지 않는다」를 바꿨다).
  */
 function InProgressRow({ workspaceId, meeting }: { workspaceId: string; meeting: MeetingSummary }) {
   const title = meeting.title === '' ? '제목 없는 회의' : meeting.title
-  const content = (status: string) => (
+  const status = inProgressStatus(workspaceId, meeting)
+  const content = (
     <>
       <span className="flex w-full items-center gap-8">
         <span className="flex-1 text-body text-sub group-hover:text-ink">{title}</span>
+        <SourceBadge meeting={meeting} />
         <span className={STATUS_BADGE}>
           <span aria-hidden="true" className="size-5 shrink-0 rounded-999 bg-ink" />
-          {status}
+          {status.label}
         </span>
       </span>
       <span className={ROW_META}>{listMeta(meeting)}</span>
     </>
   )
-  if (meeting.status === 'processing')
-    return (
-      <GuardedLink to={paths.meetingProcessing(workspaceId, meeting.id)} className={ROW}>
-        {content('정리 중')}
-      </GuardedLink>
-    )
-  return <div className={ROW}>{content('회의 중')}</div>
+  if (status.to === null) return <div className={ROW}>{content}</div>
+  return (
+    <GuardedLink to={status.to} className={ROW}>
+      {content}
+    </GuardedLink>
+  )
 }

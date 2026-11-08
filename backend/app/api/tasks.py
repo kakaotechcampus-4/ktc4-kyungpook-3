@@ -1,21 +1,25 @@
-from datetime import date
+from collections.abc import Sequence
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_member, get_current_user, require_pm, require_task_member
+from app.api.deps import get_current_member, get_current_user, require_member, require_pm, require_task_member
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import ChangeSource, Member, Task, TaskHistory, TaskStatus, User, Workspace
+from app.schemas.reply import TaskTimelineResponse
 from app.schemas.task import (
     TaskCreateRequest,
     TaskHistoryListResponse,
     TaskHistoryResponse,
     TaskListResponse,
+    TaskFields,
     TaskResponse,
     TaskUpdateRequest,
 )
+from app.services import replies, scheduler
 from app.services.notion_sync import retry_failed_sync
 from app.services.tasks import apply_task_updates, create_task, rollback_task_history
 
@@ -43,6 +47,19 @@ def _get_task(db: Session, task_id: str, *, lock: bool = False, include_deleted:
     return task
 
 
+def _task_responses(db: Session, tasks: Sequence[Task]) -> list[TaskResponse]:
+    """auto_blocked 는 감시 기록을 봐야 알 수 있어 목록 전체를 한 번에 판정한다."""
+    blocked = scheduler.auto_blocked_ids(db, tasks)
+    return [
+        TaskResponse(**TaskFields.model_validate(t).model_dump(), auto_blocked=t.task_id in blocked)
+        for t in tasks
+    ]
+
+
+def _task_response(db: Session, task: Task) -> dict:
+    return _task_responses(db, [task])[0].model_dump(mode="json")
+
+
 @router.post("", status_code=201, response_model=Envelope[TaskResponse])
 def create_task_endpoint(
     payload: TaskCreateRequest,
@@ -64,14 +81,13 @@ def create_task_endpoint(
         start_date=payload.start_date,
         due_date=payload.due_date,
         status=str(payload.status),
-        progress=payload.progress,
         blocker=payload.blocker,
         change_source=str(ChangeSource.MANUAL),
         changed_by=member.member_id,
     )
     db.commit()
     db.refresh(task)
-    return success(TaskResponse.model_validate(task).model_dump(mode="json"))
+    return success(_task_response(db, task))
 
 
 @router.get("", response_model=Envelope[TaskListResponse])
@@ -102,7 +118,7 @@ def list_tasks(
 
     return success(
         TaskListResponse(
-            items=[TaskResponse.model_validate(r) for r in rows], total=total
+            items=_task_responses(db, rows), total=total
         ).model_dump(mode="json")
     )
 
@@ -110,7 +126,7 @@ def list_tasks(
 @router.get("/{task_id}", response_model=Envelope[TaskResponse])
 def get_task(task_id: str, db: Session = Depends(get_db)) -> dict:
     task = _get_task(db, task_id)
-    return success(TaskResponse.model_validate(task).model_dump(mode="json"))
+    return success(_task_response(db, task))
 
 
 @router.patch("/{task_id}", response_model=Envelope[TaskResponse])
@@ -141,7 +157,7 @@ def update_task(
     )
     db.commit()
     db.refresh(task)
-    return success(TaskResponse.model_validate(task).model_dump(mode="json"))
+    return success(_task_response(db, task))
 
 
 @router.get("/{task_id}/history", response_model=Envelope[TaskHistoryListResponse])
@@ -185,7 +201,50 @@ def rollback_history_endpoint(
     rollback_task_history(db, task, history, changed_by=member.member_id)
     db.commit()
     db.refresh(task)
-    return success(TaskResponse.model_validate(task).model_dump(mode="json"))
+    return success(_task_response(db, task))
+
+
+@router.post("/{task_id}/auto-block/undo", response_model=Envelope[TaskResponse])
+def undo_auto_block(
+    task_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """리마인드 무응답으로 스케줄러가 건 막힘을 막기 전 상태·사유로 되돌린다. 그 뒤 바뀌었으면 409."""
+    member = require_pm(db, user, _get_task(db, task_id).workspace_id)
+    task = _get_task(db, task_id, lock=True)
+    scheduler.undo_auto_block(db, task, changed_by=member.member_id, now=datetime.now(timezone.utc))
+    db.commit()
+    db.refresh(task)
+    return success(_task_response(db, task))
+
+
+@router.get("/{task_id}/timeline", response_model=Envelope[TaskTimelineResponse])
+def task_timeline(
+    task_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """답장과 변경을 한 줄로 묶은 태스크 기록. 같은 변경이 두 줄로 나오지 않는다. 기존 /history 는 그대로다."""
+    task = _get_task(db, task_id)
+    items = replies.timeline(db, task, require_member(db, user, task.workspace_id))
+    return success(TaskTimelineResponse(items=items, total=len(items)).model_dump(mode="json"))
+
+
+@router.post("/{task_id}/reply-changes/{change_id}/undo", response_model=Envelope[TaskResponse])
+def undo_reply_change(
+    task_id: str,
+    change_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """답장으로 자동 반영한 변경을 되돌린다. 그 뒤 바뀌었으면 409."""
+    member = require_pm(db, user, _get_task(db, task_id).workspace_id)
+    task = _get_task(db, task_id, lock=True)
+    replies.undo_change(db, task, change_id, changed_by=member.member_id)
+    db.commit()
+    db.refresh(task)
+    return success(_task_response(db, task))
 
 
 @router.post("/{task_id}/notion-sync/retry", response_model=Envelope[TaskResponse])
@@ -203,4 +262,4 @@ def retry_notion_sync(
     retry_failed_sync(db, task)
     db.commit()
     db.refresh(task)
-    return success(TaskResponse.model_validate(task).model_dump(mode="json"))
+    return success(_task_response(db, task))

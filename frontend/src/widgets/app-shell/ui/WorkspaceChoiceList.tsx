@@ -1,9 +1,16 @@
-import { useQuery } from '@tanstack/react-query'
+import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
+import { myInvitationsQueryOptions } from '@/entities/invitation'
 import { workspaceListQueryOptions } from '@/entities/workspace'
 import { useStartNewWorkspace } from '@/features/onboarding'
 import { useEnterWorkspace } from '@/features/workspace-switch'
+import { paths } from '@/shared/config/routes'
+import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
+import { Button } from '@/shared/ui/button'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { DeferredSkeleton, Reveal, revealClass } from '@/shared/ui/deferred-skeleton'
 import { Skeleton } from '@/shared/ui/skeleton'
+import { MyInvitations } from './MyInvitations'
 import { DashedIcon, WorkspaceRowContent } from './WorkspaceBadge'
 
 const LIST = 'flex flex-col gap-1 rounded-[14px] border border-line bg-surface p-8'
@@ -15,25 +22,55 @@ const ROW =
  * 선택 화면의 공간 목록. 헤더 메뉴와 같은 줄 모양·같은 진입 정책이다.
  * 선택 화면은 어느 공간 안도 아니라서 미완료 공간의 온보딩 나가기는 이 화면으로 돌아온다(기억 없음).
  */
-export function WorkspaceChoiceList() {
+export function WorkspaceChoiceList({
+  showCreate = true,
+  variant = 'default',
+}: {
+  showCreate?: boolean
+  variant?: 'default' | 'onboarding'
+}) {
   const workspaces = useQuery(workspaceListQueryOptions())
+  const indicator = useLoadingIndicator(workspaces.isPending)
   const enter = useEnterWorkspace()
   const startNew = useStartNewWorkspace()
-
-  if (workspaces.data === undefined) {
-    return workspaces.isError ? (
-      <QueryErrorState error={workspaces.error} onRetry={() => void workspaces.refetch()} />
-    ) : (
-      <div aria-busy="true">
-        <Skeleton lines={3} />
-      </div>
-    )
+  const queryClient = useQueryClient()
+  const invitationsKey = myInvitationsQueryOptions().queryKey
+  const invitationsFetching = useIsFetching({ queryKey: invitationsKey }) > 0
+  // 초대는 메일로 오지 않는다 — 다시 확인하면 소속과 받은 초대를 함께 다시 받는다
+  const refetchAll = () => {
+    void workspaces.refetch()
+    void queryClient.refetchQueries({ queryKey: invitationsKey })
   }
 
+  if (workspaces.isPending || indicator.pending)
+    return (
+      <DeferredSkeleton indicator={indicator}>
+        <Skeleton lines={3} />
+      </DeferredSkeleton>
+    )
+  if (workspaces.data === undefined)
+    return (
+      <Reveal indicator={indicator}>
+        <QueryErrorState error={workspaces.error} onRetry={() => void workspaces.refetch()} />
+      </Reveal>
+    )
+
   return (
-    <div className={LIST}>
+    <div
+      className={[variant === 'onboarding' ? 'flex flex-col gap-1' : LIST, revealClass(indicator)]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      <MyInvitations />
       {workspaces.data.length === 0 ? (
-        <p className="px-10 py-9 text-body text-dim">아직 소속된 워크스페이스가 없어요.</p>
+        <div className="flex flex-col items-start gap-12 px-10 py-9">
+          <p className="text-body text-dim">아직 소속된 워크스페이스가 없어요.</p>
+          {showCreate ? (
+            <GuardedLink to={paths.onboardingStart()} className="text-body text-sub underline">
+              시작 방식 다시 선택
+            </GuardedLink>
+          ) : null}
+        </div>
       ) : (
         <ul className="flex flex-col gap-1">
           {workspaces.data.map((workspace) => (
@@ -45,11 +82,35 @@ export function WorkspaceChoiceList() {
           ))}
         </ul>
       )}
-      <span className="mx-4 my-6 h-1 bg-divider" aria-hidden="true" />
-      <button type="button" className={ROW} onClick={() => startNew(null)}>
-        <DashedIcon name="plus" />
-        <span className="flex-1 text-control font-semibold text-sub">새 워크스페이스 만들기</span>
-      </button>
+      {workspaces.isError ? (
+        <QueryErrorState error={workspaces.error} onRetry={() => void workspaces.refetch()} />
+      ) : null}
+      {showCreate ? (
+        <>
+          <span className="mx-4 my-6 h-1 bg-divider" aria-hidden="true" />
+          <button type="button" className={ROW} onClick={() => startNew(null)}>
+            <DashedIcon name="plus" />
+            <span className="flex-1 text-control font-semibold text-sub">
+              새 워크스페이스 만들기
+            </span>
+          </button>
+        </>
+      ) : variant === 'onboarding' ? (
+        <div className="flex justify-end pt-8">
+          <Button
+            variant="primary"
+            size="lg-onboarding"
+            loading={workspaces.isFetching || invitationsFetching}
+            onClick={refetchAll}
+          >
+            목록 다시 확인
+          </Button>
+        </div>
+      ) : (
+        <Button loading={workspaces.isFetching || invitationsFetching} onClick={refetchAll}>
+          목록 다시 확인
+        </Button>
+      )}
     </div>
   )
 }

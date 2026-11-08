@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { getResponse, http } from 'msw'
 import { clearTrackedMeetings } from '@/entities/meeting'
 import { minutesQueryOptions } from '@/entities/minutes'
+import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { ok } from '@/shared/mock/envelope'
@@ -283,7 +284,7 @@ describe('느린 답은 본문 모양의 스켈레톤을 그리고 이전 회의
     ).toBeInTheDocument()
     expect(within(detail()).queryByRole('heading', { name: '3주차 정기회의' })).toBeNull()
     await settle(150)
-    expect(requestsOf(log, /^\/meetings\/mt_07$/)).toEqual(['/meetings/mt_07'])
+    expect(requestsOf(log, /^\/meetings\/mt_07$/)).toEqual(['/meetings/mt_07', '/meetings/mt_07'])
     expect(requestsOf(log, /\/minutes$/)).toEqual([])
     expect(requestsOf(log, /^\/extractions\//)).toEqual([])
   })
@@ -368,7 +369,7 @@ describe('목록 행을 가리키거나 포커스하면 그 회의록을 미리 
       }),
     )
     const user = userEvent.setup()
-    await openMt09()
+    const app = await openMt09()
     const log = recordRequests()
 
     await user.hover(rowLink(/2주차 정기회의/))
@@ -376,6 +377,9 @@ describe('목록 행을 가리키거나 포커스하면 그 회의록을 미리 
     await settle(150)
     expect(requestsOf(log, /\/meetings\/mt_07\/minutes$/)).toEqual([])
     expect(requestsOf(log, /^\/extractions\//)).toEqual([])
+    expect(
+      app.queryClient.getQueryData(workspaceKey('ws_01', 'meetings', 'detail', 'mt_07')),
+    ).toBeUndefined()
   })
 })
 
@@ -436,7 +440,7 @@ function recordFrames() {
 
 /**
  * 상세 답이 오는 가짜 시각마다 화면이 거치는 길 — 들고 있기(머리는 고른 회의 · 본문은 이전 회의) → 상한이 지나면 본문 뼈대
- * (MINUTES_SKELETON_MIN_MS 는 둔다) → 회의록. 상한 안(0 · 180ms)이면 뼈대가 없고, 상한을 막 넘기면(260ms) 뼈대를 최소 시간
+ * (MINUTES_SKELETON_MIN_MS 는 둔다) → 회의록. 상한 안(0 · 180ms)이면 뼈대가 없고, 상한을 막 넘기면(210ms) 뼈대를 최소 시간
  * 두며, 한참 늦으면(650ms) 답이 오는 대로 바뀐다.
  * 3회차까지는 실제 시간으로 「들고 있기 < 100ms · < 350ms」를 쟀다 — 전체 실행 부하에서 어긋났다(UX1-T01). 이제 시각은 가짜
  * 시계가 정하고, 기대값은 규칙이 정한 정확한 시각이다(넓히지 않았다). 실제 프레임의 흐림 · 밀리초는 Chromium E2E 다.

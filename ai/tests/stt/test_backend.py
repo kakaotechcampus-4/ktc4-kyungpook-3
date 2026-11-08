@@ -1,3 +1,4 @@
+import os
 import re
 from types import SimpleNamespace
 
@@ -187,6 +188,86 @@ def test_elice_refuses_a_plain_http_address(monkeypatch):
     assert "https" in str(e.value) and "mlapi.example" not in str(e.value)
 
 
+def _through_requests(monkeypatch):
+    """서버에 닿기 직전까지 진짜 requests 를 태우고, 호출마다 정해진 TLS 검증값을 주소별로 남긴다."""
+    seen = {}
+
+    def send(self, request, **kwargs):
+        seen[request.url] = kwargs["verify"]
+        r = requests.Response()
+        r.status_code = 200
+        r.url = request.url
+        r._content = b'{"text": " ok", "data": {"workspace_id": "w1"}}'
+        return r
+
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", send)
+    monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
+    monkeypatch.delenv("CURL_CA_BUNDLE", raising=False)
+    monkeypatch.setenv("ELICE_API_KEY", "test-key")
+    monkeypatch.setenv("ELICE_STT_BASE_URL", URL)
+    return seen
+
+
+STT_CALL = URL + "/v1/audio/transcriptions"
+
+
+def test_elice_ca_bundle_applies_to_the_transcription_call_only(monkeypatch, tmp_path):
+    """자체 서명 GPU 서버의 인증서다. 프로세스 전체로 번지면 워커의 BE 호출이 공인 CA 를 못 믿게 된다."""
+    from capture.handoff import BeClient
+    from stt.elice import EliceStt
+
+    seen = _through_requests(monkeypatch)
+    ca = tmp_path / "ca.pem"
+    ca.write_text("-----BEGIN CERTIFICATE-----\n")
+    monkeypatch.setenv("ELICE_STT_CA_BUNDLE", str(ca))
+    before = dict(os.environ)
+
+    EliceStt().transcribe(SAMPLES, 16_000)
+    BeClient("https://be.example").guild_workspace("g1")
+    requests.Session().get("https://other.example/")
+
+    assert seen.pop(STT_CALL) == str(ca)
+    assert list(seen.values()) == [True, True]
+    assert dict(os.environ) == before
+
+
+@pytest.mark.parametrize("ca_env", [None, ""])   # .env.example 을 복사하면 빈 값으로 들어온다
+def test_elice_without_ca_bundle_keeps_system_trust(monkeypatch, ca_env):
+    from stt.elice import EliceStt
+
+    seen = _through_requests(monkeypatch)
+    if ca_env is None:
+        monkeypatch.delenv("ELICE_STT_CA_BUNDLE", raising=False)
+    else:
+        monkeypatch.setenv("ELICE_STT_CA_BUNDLE", ca_env)
+    EliceStt().transcribe(SAMPLES, 16_000)
+    assert seen == {STT_CALL: True}
+
+
+def test_elice_without_ca_bundle_still_honours_requests_ca_bundle(monkeypatch):
+    """측정 도구는 REQUESTS_CA_BUNDLE 로 자체 서명 서버를 부른다(결과 문서 2026-11-04-gpu-serving)."""
+    from stt.elice import EliceStt
+
+    seen = _through_requests(monkeypatch)
+    monkeypatch.delenv("ELICE_STT_CA_BUNDLE", raising=False)
+    monkeypatch.setenv("REQUESTS_CA_BUNDLE", "/from/env.pem")
+    EliceStt().transcribe(SAMPLES, 16_000)
+    assert seen == {STT_CALL: "/from/env.pem"}
+
+
+def test_elice_missing_ca_bundle_fails_as_stt_error_before_any_call(monkeypatch, tmp_path):
+    """없는 경로를 requests 에 넘기면 RequestException 이 아닌 OSError 라 호출자의 except SttError 를 지나친다."""
+    from stt.elice import EliceStt
+
+    monkeypatch.setenv("ELICE_API_KEY", "test-key")
+    monkeypatch.setenv("ELICE_STT_BASE_URL", URL)
+    monkeypatch.setenv("ELICE_STT_CA_BUNDLE", str(tmp_path / "nothing.pem"))
+    monkeypatch.setattr(requests, "post", lambda *a, **k: pytest.fail("없는 인증서로 요청을 보내면 안 된다"))
+    with pytest.raises(SttError) as e:
+        EliceStt().transcribe(SAMPLES, 16_000)
+    assert "ELICE_STT_CA_BUNDLE" in str(e.value)
+
+
 def test_elice_turns_string_word_times_into_floats(monkeypatch):
     """문자열 시각을 그대로 두면 batch 가 transcribe 밖에서 더하다 TypeError 로 회의 전체가 멈춘다."""
     from stt.elice import EliceStt
@@ -343,6 +424,52 @@ def test_prompted_backend_passes_the_prompt_and_keeps_the_inner_attributes():
     assert b.name == "elice/whisper-large-v3" and b.reclip_unmapped is False
 
 
+def test_prompted_backend_sends_no_prompt_for_short_chunks():
+    """1.5초보다 짧은 묶음은 프롬프트 없이 보낸다. 말이 거의 없는 짧은 묶음에서 위스퍼가 프롬프트의 이름을
+    되풀이했다(결정 기록 0030)."""
+    import numpy as np
+
+    from stt.backend import PROMPT_MIN_S, Prompted
+
+    class Inner:
+        def __init__(self):
+            self.prompts = []
+
+        def transcribe(self, samples, sample_rate, prompt=None):
+            self.prompts.append(prompt)
+            return SttResult(text="그", words=[])
+
+    inner = Inner()
+    b = Prompted(inner, "동우님.", min_s=PROMPT_MIN_S)
+    b.transcribe(np.zeros(int(16_000 * PROMPT_MIN_S) - 1, dtype=np.float32), 16_000)
+    b.transcribe(np.zeros(int(16_000 * PROMPT_MIN_S), dtype=np.float32), 16_000)
+    assert PROMPT_MIN_S == 1.5 and inner.prompts == [None, "동우님."]
+
+
+def test_prompted_backend_sends_the_line_before_as_the_prompt_of_a_short_chunk():
+    """짧은 묶음은 이름 대신 앞 줄을 프롬프트로 싣는다. 앞 줄이 없으면 프롬프트 없이(결정 기록 0031)."""
+    import numpy as np
+
+    from stt.backend import PROMPT_MIN_S, Prompted
+
+    class Inner:
+        def __init__(self):
+            self.prompts = []
+
+        def transcribe(self, samples, sample_rate, prompt=None):
+            self.prompts.append(prompt)
+            return SttResult(text="네", words=[])
+
+    inner = Inner()
+    b = Prompted(inner, "동우님.", min_s=PROMPT_MIN_S)
+    short = np.zeros(int(16_000 * 0.5), dtype=np.float32)
+    long_ = np.zeros(int(16_000 * 2), dtype=np.float32)
+    b.transcribe(short, 16_000, context="빼기로 하죠.")
+    b.transcribe(short, 16_000)
+    b.transcribe(long_, 16_000, context="빼기로 하죠.")
+    assert inner.prompts == ["빼기로 하죠.", None, "동우님."] and b.takes_context is True
+
+
 def test_name_prompt_dedupes_skips_blanks_and_caps_the_list():
     from stt.backend import NAME_PROMPT_MAX, name_prompt
 
@@ -374,3 +501,17 @@ def test_hint_prompt_groups_forms_per_person_dedupes_and_caps_people():
     assert hint_prompt([]) is None
     people = [f"김{chr(0xAC00 + i)}{chr(0xAC00 + i)}" for i in range(HINT_PEOPLE_MAX + 3)]
     assert hint_prompt(people).count("님") == HINT_PEOPLE_MAX
+
+
+def test_member_names_set_by_the_pm_are_hinted_in_three_forms():
+    """BE 에는 PM 이 온보딩에서 정한 실명이 있다. 디스코드 표시 이름과 달리 두 글자 이름도 첫 글자를 성으로 본다.
+    별칭은 한글인 것만 뒤에 붙인다(아이디 꼴은 들리는 소리와 글자가 달라 힌트가 안 된다)."""
+    from stt.backend import member_forms, member_prompt
+
+    assert member_forms("김동우") == ["동우님", "동우", "김동우"]
+    assert member_forms("김환") == ["환님", "환", "김환"]
+    assert member_forms("김환", ["환이", "Hwan", "환", " "]) == ["환님", "환", "김환", "환이"]
+    assert member_forms("sora") == []
+    assert member_prompt([{"name": "김동우", "aliases": []}, {"name": "김환", "aliases": ["환이"]}]) == \
+        "동우님, 동우, 김동우, 환님, 환, 김환, 환이."
+    assert member_prompt([]) is None and member_prompt([{"name": "sora", "aliases": []}]) is None

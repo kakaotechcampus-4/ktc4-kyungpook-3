@@ -10,7 +10,7 @@ export function toMinutes(dto: MinutesDto): Minutes {
     durationMs: dto.duration_ms,
     source: enumValue(
       dto.source,
-      ['discord', 'manual_upload'] as const,
+      ['discord', 'manual_upload', 'chat'] as const,
       'discord',
       'minutes source',
     ),

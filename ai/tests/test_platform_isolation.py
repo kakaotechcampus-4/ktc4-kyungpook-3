@@ -10,7 +10,7 @@ import ast
 from pathlib import Path
 
 AI_ROOT = Path(__file__).resolve().parents[1]
-GUARDED = ["stt", "extract", "judge", "draft", "shared", "llm.py", "embedding.py"]
+GUARDED = ["stt", "extract", "judge", "draft", "shared", "llm.py", "embedding.py", "upload"]
 PLATFORM_MODULES = {"discord"}
 
 REMEDIATION = (
@@ -53,3 +53,11 @@ def test_guarded_paths_exist():
 def test_judgement_code_does_not_import_discord():
     violations = [v for f in _guarded_files() for v in _platform_imports(f)]
     assert not violations, "\n".join(violations) + "\n\n" + REMEDIATION
+
+
+def test_upload_code_does_not_mention_discord_at_all():
+    # 업로드 경로는 플랫폼과 무관하다. import 뿐 아니라 이름도 두지 않는다
+    hits = [f"{f.relative_to(AI_ROOT)}:{i}" for f in sorted((AI_ROOT / "upload").rglob("*.py"))
+            for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1)
+            if "discord" in line.lower()]
+    assert not hits, "\n".join(hits) + "\n\n" + REMEDIATION

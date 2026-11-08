@@ -93,14 +93,14 @@ describe('회원가입 화면 (U2-3·U2-4)', () => {
 })
 
 describe('회원가입 제출 (U2-6·U2-8)', () => {
-  it('가입 성공: 공간 0개라 워크스페이스 만들기로 간다', async () => {
+  it('가입 성공: 공간 0개라 시작 작업 선택으로 간다', async () => {
     const log = recordRequests()
     const app = await openSignup()
     await fillSignup({ name: '새 사용자', email: 'new@example.com', password: 'pass1234' })
     await userEvent.click(screen.getByRole('button', { name: '계정 만들기' }))
 
-    expect(await screen.findByRole('heading', { name: '워크스페이스 만들기' })).toBeInTheDocument()
-    await app.expectPath('/onboarding/create_workspace')
+    expect(await screen.findByRole('heading', { name: '어떻게 시작할까요?' })).toBeInTheDocument()
+    await app.expectPath('/onboarding/start')
     expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toMatchObject({
       user: { email: 'new@example.com', name: '새 사용자' },
       workspaceCount: 0,
@@ -129,6 +129,22 @@ describe('회원가입 제출 (U2-6·U2-8)', () => {
     await waitFor(() => expect(email).not.toHaveAttribute('aria-invalid'))
   })
 
+  it('이름이 100자를 넘으면 이름 입력 아래에 알리고 가입 요청을 보내지 않는다 (#446)', async () => {
+    const log = recordRequests()
+    await openSignup()
+    const name = screen.getByLabelText('이름')
+    await userEvent.click(name)
+    await userEvent.paste('가'.repeat(101))
+    await userEvent.type(screen.getByLabelText('이메일'), 'new@example.com')
+    await userEvent.type(screen.getByLabelText('비밀번호'), 'pass1234')
+    await userEvent.click(screen.getByRole('button', { name: '계정 만들기' }))
+
+    await waitFor(() => expect(name).toHaveAttribute('aria-invalid', 'true'))
+    expect(name).toHaveAccessibleDescription(AUTH_MESSAGES.nameTooLong)
+    expect(name).toHaveFocus()
+    expect(posts(log, '/auth/signup')).toEqual([])
+  })
+
   it('중복 제출 방지: 응답 전의 연속 제출은 가입 요청 하나다', async () => {
     const gate = deferred()
     server.use(
@@ -150,7 +166,7 @@ describe('회원가입 제출 (U2-6·U2-8)', () => {
     expect(submitButton).toHaveAttribute('aria-busy', 'true')
 
     gate.resolve()
-    expect(await screen.findByRole('heading', { name: '워크스페이스 만들기' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '어떻게 시작할까요?' })).toBeInTheDocument()
     expect(posts(log, '/auth/signup')).toHaveLength(1)
   })
 })
@@ -199,6 +215,20 @@ describe('로그인 제출 (U2-4·U2-6·U2-8)', () => {
     expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull()
   })
 
+  it('시도가 너무 많으면 맞는 비밀번호여도 서버 문장을 그대로 알리고 남은 시간은 말하지 않는다 (#457)', async () => {
+    applyScenario('login-rate-limited')
+    const app = await openLogin()
+    await fillLogin('pm@example.com', 'mock-password')
+    await userEvent.click(screen.getByRole('button', { name: '로그인' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /^로그인 시도가 너무 많습니다\. 잠시 후 다시 시도해 주세요\.$/,
+    )
+    expect(screen.queryByText(/\d+\s*(초|분)/)).toBeNull()
+    await app.expectPath('/login')
+    expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull()
+  })
+
   it('서버 오류도 비필드 오류다. 다시 제출하면 패널이 사라지고 이어 간다', async () => {
     server.use(
       http.post('/api/v1/auth/login', () => fail('INTERNAL_ERROR', 'boom', 500), { once: true }),
@@ -226,17 +256,19 @@ describe('로그인 제출 (U2-4·U2-6·U2-8)', () => {
     const log = recordRequests()
     await openLogin()
     await fillLogin('pm@example.com', 'mock-password')
-    const form = screen.getByRole('button', { name: '로그인' }).closest('form')!
+    const submitButton = screen.getByRole('button', { name: '로그인' })
+    const form = submitButton.closest('form')!
     fireEvent.submit(form)
     fireEvent.submit(form)
     fireEvent.submit(form)
+    await waitFor(() => expect(submitButton).toBeDisabled())
     gate.resolve()
     await screen.findByRole('heading', { name: '워크스페이스 선택' })
     expect(posts(log, '/auth/login')).toHaveLength(1)
   })
 
   it.each([
-    ['공간 0개', 'no-workspace', '/onboarding/create_workspace', '워크스페이스 만들기'],
+    ['공간 0개', 'no-workspace', '/onboarding/start', '어떻게 시작할까요?'],
     ['공간 1개', 'single-workspace', '/workspaces/ws_01/dashboard', '대시보드'],
     ['공간 여러 개', 'multiple-workspaces', '/workspaces', '워크스페이스 선택'],
     [
@@ -352,8 +384,8 @@ describe('로그인 제출 (U2-4·U2-6·U2-8)', () => {
 
     failing = false
     await userEvent.click(retry)
-    expect(await screen.findByRole('heading', { name: '워크스페이스 만들기' })).toBeInTheDocument()
-    await app.expectPath('/onboarding/create_workspace')
+    expect(await screen.findByRole('heading', { name: '어떻게 시작할까요?' })).toBeInTheDocument()
+    await app.expectPath('/onboarding/start')
     expect(posts(log, '/auth/signup')).toHaveLength(1)
   }, 10_000)
 })
@@ -397,7 +429,7 @@ describe('인증 화면 재방문 (U2-6·U2-8)', () => {
   it('마지막 공간이 없으면 로그인 직후와 같은 분기다', async () => {
     applyScenario('no-workspace')
     const app = renderApp('/login')
-    expect(await screen.findByRole('heading', { name: '워크스페이스 만들기' })).toBeInTheDocument()
-    await app.expectPath('/onboarding/create_workspace')
+    expect(await screen.findByRole('heading', { name: '어떻게 시작할까요?' })).toBeInTheDocument()
+    await app.expectPath('/onboarding/start')
   })
 })

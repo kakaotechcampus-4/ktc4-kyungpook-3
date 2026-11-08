@@ -14,6 +14,8 @@ interface IconShape {
 const ICONS = {
   /** Main 팀 버튼 · 드롭다운 열기 */
   'chevron-down': { strokeWidth: 1.9, paths: <path d="m6 9 6 6 6-6" /> },
+  /** 접힌 정리 알약의 펼치기 (#424). chevron-down 을 뒤집었다 */
+  'chevron-up': { strokeWidth: 1.9, paths: <path d="m6 15 6-6 6 6" /> },
   /** Main · Landing 의 `확인하기` · `전부 보기` */
   'chevron-right': { strokeWidth: 2, paths: <path d="m9 6 6 6-6 6" /> },
   /** 온보딩 `이전 단계`. 캔버스에 없어 chevron-right 를 뒤집었다 */
@@ -145,6 +147,71 @@ const ICONS = {
       <>
         <circle cx="12" cy="12" r="9" />
         <path d="M12 16v-4M12 8h.01" />
+      </>
+    ),
+  },
+  /* 아래 넷은 Messages·MessagesThread 캔버스 그대로다 — 고쳐 쓰기·이대로 발송·답장 없음 칩·Discord 바깥 링크 */
+  edit: {
+    strokeWidth: 1.8,
+    paths: (
+      <>
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+      </>
+    ),
+  },
+  send: { strokeWidth: 2, paths: <path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z" /> },
+  clock: {
+    strokeWidth: 1.8,
+    paths: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 8v4l3 2" />
+      </>
+    ),
+  },
+  'link-out': { strokeWidth: 2, paths: <path d="M15 3h6v6M10 14 21 3" /> },
+  /** Team 의 `팀원 관리` */
+  users: {
+    strokeWidth: 1.8,
+    paths: (
+      <>
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M22 21v-2a4 4 0 0 0-3-3.9" />
+      </>
+    ),
+  },
+  /** Team 의 `먼저 챙길 것` */
+  alert: {
+    strokeWidth: 1.8,
+    paths: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 8v5M12 16h.01" />
+      </>
+    ),
+  },
+  /** 휴대폰 아래 탭 막대(PwaDashboard)의 다섯 탭 — 홈 · 회의록 · 태스크 · 메시지 · 팀 */
+  home: { strokeWidth: 1.7, paths: <path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z" /> },
+  minutes: {
+    strokeWidth: 1.7,
+    paths: (
+      <>
+        <rect x="5" y="3" width="14" height="18" rx="2" />
+        <path d="M9 8h6M9 12h6M9 16h3" />
+      </>
+    ),
+  },
+  tasks: { strokeWidth: 1.7, paths: <path d="M4 6h3M4 12h3M4 18h3M10 6h10M10 12h10M10 18h10" /> },
+  message: { strokeWidth: 1.7, paths: <path d="M4 5h16v11H9l-5 4z" /> },
+  team: {
+    strokeWidth: 1.7,
+    paths: (
+      <>
+        <circle cx="9" cy="9" r="3.5" />
+        <path d="M3 20c.8-3.4 3.2-5 6-5s5.2 1.6 6 5" />
+        <path d="M16 5.5a3 3 0 0 1 0 6M18 15c1.6.6 2.6 2.1 3 5" />
       </>
     ),
   },

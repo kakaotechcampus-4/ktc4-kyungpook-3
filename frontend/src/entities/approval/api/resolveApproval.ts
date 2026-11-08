@@ -1,7 +1,7 @@
 import { request } from '@/shared/api/client'
 import type { ApprovalDto } from '@/shared/types/api/approval'
 import { toApproval, toApprovalResolveRequestDto } from '../model/mapper'
-import { planApprovalResolution, toApprovalTransport } from '../model/resolution'
+import { planApprovalResolution } from '../model/resolution'
 import type { ApprovalDecision, ApprovalResolveContext, TaskCreateIssue } from '../model/resolution'
 import type { Approval } from '../model/types'
 
@@ -36,7 +36,7 @@ export async function resolveApproval(
   return toApproval(
     await request<ApprovalDto>(`/approvals/${encodeURIComponent(approval.id)}`, {
       method: 'PATCH',
-      body: toApprovalResolveRequestDto(plan.resolution, toApprovalTransport(context.transport)),
+      body: toApprovalResolveRequestDto(plan.resolution),
     }),
   )
 }

@@ -1,13 +1,5 @@
 export { onboardingExitPath } from './lib/exitPath'
 export { planOnboardingUpdates, saveOnboardingProgress } from './model/progress'
-export {
-  MappingSaveError,
-  buildMappingRows,
-  findMappingIssues,
-  planRow,
-  saveMemberMappings,
-} from './model/memberMapping'
-export type { MappingIssue, MappingOperation, MappingRow } from './model/memberMapping'
 export { useOnboardingSave } from './model/useOnboardingSave'
 export type { OnboardingSave } from './model/useOnboardingSave'
 export { useCreateWorkspace } from './model/useCreateWorkspace'

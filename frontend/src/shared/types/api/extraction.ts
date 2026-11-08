@@ -11,7 +11,12 @@ export interface ExtractionItemDto {
   due_date: { value: string | null; raw: string | null; confidence: number }
   confidence: number
   gate: string
-  evidence: { quote: string | null; speaker: string | null; at_ms: number | null }
+  evidence: {
+    quote: string | null
+    speaker: string | null
+    at_ms: number | null
+    speaker_member_id: string | null
+  }
   /** auto 로 만든 태스크를 PM 이 되돌린 시각. 되돌려도 gate 는 auto 로 남는다. 되돌리지 않았으면 null */
   reverted_at: string | null
   task_id: string | null

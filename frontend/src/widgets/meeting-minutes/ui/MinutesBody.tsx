@@ -3,11 +3,13 @@ import type { ExtractionItem } from '@/entities/extraction'
 import type { MinutesSummary, TranscriptLine } from '@/entities/minutes'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { Skeleton } from '@/shared/ui/skeleton'
 import type { ExtractedTasks, PendingTask } from '../lib/extractedTasks'
-import { formatClock, formatDue } from '../lib/format'
+import { formatDue } from '../lib/format'
 
 /* Meetings 캔버스 실측 — 영역 제목 14px 600 · 제목과 내용 14, 반영 카드 16 라운드 · 위아래 15 · 좌우 18 · 시각 칸 44,
    확인 필요 행 위아래 18 · 구분선, 제목 15px 600, 배지 21px */
@@ -16,7 +18,8 @@ const SECTION_TITLE = 'text-[14px] leading-[1.55] font-semibold text-ink'
 const BODY = 'text-[14px] leading-[1.7] text-ink'
 const EMPTY_TITLE = 'text-body font-semibold text-ink'
 const EMPTY_TEXT = 'text-caption text-dim'
-const TIME = 'w-44 shrink-0 text-[12px] leading-[1.7] text-dim tabular-nums'
+/* 녹음 회의의 `mm:ss` 는 44 칸에 들고, 채팅 회의의 `MM/DD HH:mm` 은 글자만큼 넓어진다 — 줄마다 글자 수가 같아 열이 맞는다 */
+const TIME = 'min-w-44 shrink-0 text-[12px] leading-[1.7] whitespace-nowrap text-dim tabular-nums'
 const APPLIED_ROW = 'flex items-start gap-14 rounded-16 border border-line bg-surface px-18 py-15'
 const PENDING_ROW = 'flex items-start gap-16 border-b border-line py-18 last:border-b-0'
 const BADGE_REVIEW =
@@ -34,12 +37,13 @@ const TRANSCRIPT_LINE =
 
 /**
  * Notion 반영 안내 (D-101, U5-8). 확실한 것은 바로, 확인이 필요한 것은 승인 뒤다.
+ * Notion 은 선택 기능이고 Notion 에 올라가는 것은 태스크뿐이다 — 회의록 본문은 올라가지 않는다 (D-182).
  * 일반 팀원에게는 확인 필요의 존재를 드러내지 않는 앞 문장만 보인다 (D-104)
  */
 export const NOTION_NOTE_FOR_PM =
-  '회의록과 확실한 태스크는 정리가 끝나면 바로 Notion에 반영하고, 확인이 필요한 일은 승인한 뒤 반영해요.'
+  'Notion을 연결했다면 확실한 태스크는 바로, 확인이 필요한 태스크는 승인한 뒤 Notion에도 올라가요.'
 export const NOTION_NOTE_FOR_MEMBER =
-  '회의록과 확실한 태스크는 정리가 끝나면 바로 Notion에 반영해요.'
+  'Notion을 연결했다면 확실한 태스크는 바로 Notion에도 올라가요.'
 
 /** 빈 상태 한 칸. 영역마다 따로 비어 있을 수 있어 화면 전체 빈 상태(EmptyState)가 아니라 영역 안의 글이다 */
 function SectionEmpty({ title, description }: { title: string; description: string }) {
@@ -113,8 +117,17 @@ export function SummaryPanel({ summary }: { summary: MinutesSummary | null }) {
   )
 }
 
+/** 회의 안 시각(ms)을 보이는 글자로. 녹음 회의와 채팅 회의가 읽는 방식이 달라 회의록이 정해 준다 (`formatMoment`) */
+export type MomentOf = (atMs: number) => string
+
 /** 전사문 탭. 화자 이름이 등록되지 않았으면 Discord 이름으로 보인다 (D-028) */
-export function TranscriptPanel({ transcript }: { transcript: readonly TranscriptLine[] }) {
+export function TranscriptPanel({
+  transcript,
+  momentOf,
+}: {
+  transcript: readonly TranscriptLine[]
+  momentOf: MomentOf
+}) {
   if (transcript.length === 0)
     return (
       <SectionEmpty title="전사문이 없어요" description="이 회의에서 옮겨 적은 발언이 없어요." />
@@ -123,7 +136,7 @@ export function TranscriptPanel({ transcript }: { transcript: readonly Transcrip
     <ol aria-label="전사문" className="flex flex-col">
       {transcript.map((line, index) => (
         <li key={index} className={TRANSCRIPT_LINE}>
-          <span className={TIME}>{formatClock(line.atMs)}</span>
+          <span className={TIME}>{momentOf(line.atMs)}</span>
           <div className="flex min-w-0 flex-1 flex-col gap-2">
             <span
               className={
@@ -164,11 +177,19 @@ function itemMeta(item: ExtractionItem): string {
     .join(' · ')
 }
 
-function evidenceTime(item: ExtractionItem): string {
-  return item.evidence.atMs === null ? '' : formatClock(item.evidence.atMs)
+function evidenceTime(item: ExtractionItem, momentOf: MomentOf): string {
+  return item.evidence.atMs === null ? '' : momentOf(item.evidence.atMs)
 }
 
-function AppliedList({ workspaceId, items }: { workspaceId: string; items: ExtractionItem[] }) {
+function AppliedList({
+  workspaceId,
+  items,
+  momentOf,
+}: {
+  workspaceId: string
+  items: ExtractionItem[]
+  momentOf: MomentOf
+}) {
   if (items.length === 0)
     return (
       <SectionEmpty
@@ -182,7 +203,7 @@ function AppliedList({ workspaceId, items }: { workspaceId: string; items: Extra
         const meta = itemMeta(item)
         return (
           <li key={item.id} className={APPLIED_ROW}>
-            <span className={TIME}>{evidenceTime(item)}</span>
+            <span className={TIME}>{evidenceTime(item, momentOf)}</span>
             <div className="flex min-w-0 flex-1 flex-col gap-4">
               {item.appliedTaskId === null ? null : (
                 <GuardedLink
@@ -201,7 +222,15 @@ function AppliedList({ workspaceId, items }: { workspaceId: string; items: Extra
   )
 }
 
-function PendingRow({ workspaceId, task }: { workspaceId: string; task: PendingTask }) {
+function PendingRow({
+  workspaceId,
+  task,
+  momentOf,
+}: {
+  workspaceId: string
+  task: PendingTask
+  momentOf: MomentOf
+}) {
   const hold = task.item.gate === 'hold'
   const action = hold ? '채워 넣기' : '확인하기'
   return (
@@ -219,7 +248,9 @@ function PendingRow({ workspaceId, task }: { workspaceId: string; task: PendingT
           <span className="text-[15px] leading-[1.55] font-semibold text-ink">
             {task.item.title}
           </span>
-          <span className="text-meta text-dim tabular-nums">{evidenceTime(task.item)}</span>
+          <span className="text-meta text-dim tabular-nums">
+            {evidenceTime(task.item, momentOf)}
+          </span>
         </div>
         <p className="text-caption text-sub">{task.reason}</p>
       </div>
@@ -239,12 +270,16 @@ function ReviewSection({
   workspaceId,
   pending,
   review,
+  momentOf,
 }: {
   workspaceId: string
   pending: PendingTask[] | null
   review: Exclude<ReviewState, { kind: 'hidden' }>
+  momentOf: MomentOf
 }) {
-  const count = review.kind === 'ready' && pending !== null ? pending.length : null
+  const indicator = useLoadingIndicator(review.kind === 'loading')
+  const count =
+    review.kind === 'ready' && pending !== null && !indicator.pending ? pending.length : null
   return (
     <Section
       title={
@@ -259,27 +294,38 @@ function ReviewSection({
         </>
       }
     >
-      {review.kind === 'loading' ? (
-        <div aria-busy="true">
+      {review.kind === 'loading' || indicator.pending ? (
+        <DeferredSkeleton indicator={indicator}>
           <Skeleton lines={3} />
-        </div>
+        </DeferredSkeleton>
       ) : review.kind === 'error' ? (
-        <QueryErrorState
-          error={review.error}
-          onRetry={review.retry}
-          title="확인이 필요한 일을 불러오지 못했어요"
-        />
+        <Reveal indicator={indicator}>
+          <QueryErrorState
+            error={review.error}
+            onRetry={review.retry}
+            title="확인이 필요한 일을 불러오지 못했어요"
+          />
+        </Reveal>
       ) : pending === null || pending.length === 0 ? (
-        <SectionEmpty
-          title="확인이 필요한 일이 없어요"
-          description="이 회의에서 나온 할 일은 모두 반영됐거나 처리됐어요."
-        />
+        <Reveal indicator={indicator}>
+          <SectionEmpty
+            title="확인이 필요한 일이 없어요"
+            description="이 회의에서 나온 할 일은 모두 반영됐거나 처리됐어요."
+          />
+        </Reveal>
       ) : (
-        <ul className="flex flex-col">
-          {pending.map((task) => (
-            <PendingRow key={task.item.id} workspaceId={workspaceId} task={task} />
-          ))}
-        </ul>
+        <Reveal indicator={indicator}>
+          <ul className="flex flex-col">
+            {pending.map((task) => (
+              <PendingRow
+                key={task.item.id}
+                workspaceId={workspaceId}
+                task={task}
+                momentOf={momentOf}
+              />
+            ))}
+          </ul>
+        </Reveal>
       )}
     </Section>
   )
@@ -294,23 +340,21 @@ export function TasksPanel({
   workspaceId,
   state,
   review,
+  momentOf,
 }: {
   workspaceId: string
   state: TasksState
   review: ReviewState
+  momentOf: MomentOf
 }) {
   const note = review.kind === 'hidden' ? NOTION_NOTE_FOR_MEMBER : NOTION_NOTE_FOR_PM
+  const indicator = useLoadingIndicator(state.kind === 'loading')
   let body: ReactNode
   if (state.kind === 'missing')
     body = (
       <SectionEmpty title="추출된 일이 없어요" description="이 회의에서는 할 일을 찾지 못했어요." />
     )
-  else if (state.kind === 'loading')
-    body = (
-      <div aria-busy="true">
-        <Skeleton lines={4} />
-      </div>
-    )
+  else if (state.kind === 'loading') body = null
   else if (state.kind === 'error')
     body = (
       <QueryErrorState
@@ -323,13 +367,25 @@ export function TasksPanel({
     body = (
       <>
         <Section title="반영된 것">
-          <AppliedList workspaceId={workspaceId} items={state.tasks.applied} />
+          <AppliedList workspaceId={workspaceId} items={state.tasks.applied} momentOf={momentOf} />
         </Section>
         {review.kind === 'hidden' ? null : (
-          <ReviewSection workspaceId={workspaceId} pending={state.tasks.pending} review={review} />
+          <ReviewSection
+            workspaceId={workspaceId}
+            pending={state.tasks.pending}
+            review={review}
+            momentOf={momentOf}
+          />
         )}
       </>
     )
+  body = indicator.pending ? (
+    <DeferredSkeleton indicator={indicator}>
+      <Skeleton lines={4} />
+    </DeferredSkeleton>
+  ) : (
+    <Reveal indicator={indicator}>{body}</Reveal>
+  )
   return (
     <>
       {body}

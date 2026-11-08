@@ -24,15 +24,7 @@ npm run build
 
 포맷을 맞출 때는 `npm run format`, 린트 자동 수정은 `npm run lint:fix`.
 
-## Storybook
-
-```bash
-npm run storybook        # http://localhost:6006
-npm run build-storybook  # storybook-static/
-npm run test:storybook   # 빌드 뒤 정적으로 띄워 스토리 handler 회귀를 본다 (포트 6211)
-```
-
-스토리는 앱과 같은 MSW handler 로 데이터를 받는다. 스토리마다 `parameters.scenario` 로 시작 상태를 고르고, `parameters.msw` 는 기본 handler 위에 얹는다 (`.storybook/preview.tsx`).
+화면 단위 검사는 `npm run test`(Vitest + React Testing Library, 앱과 같은 MSW handler)로, 사용자 흐름은 아래 E2E 로 본다. Storybook 은 쓰지 않는다(#482).
 
 ## E2E
 
@@ -48,7 +40,7 @@ E2E 는 매번 자기 개발 서버를 새로 띄운다 — 이미 떠 있는 �
 
 ## 개발 모드의 모의 데이터
 
-모의 데이터는 `VITE_ENABLE_MSW=true`를 명시했을 때만 쓴다. E2E·Storybook·Vitest는 이 설정과 상관없이 MSW를 쓴다. 실제 API 호출이 실패해도 모의 응답으로 자동 전환하지 않는다.
+모의 데이터는 `VITE_ENABLE_MSW=true`를 명시했을 때만 쓴다. E2E·Vitest는 이 설정과 상관없이 MSW를 쓴다. 실제 API 호출이 실패해도 모의 응답으로 자동 전환하지 않는다.
 
 `VITE_ENABLE_MSW=true` 면 브라우저는 **비로그인**으로 시작하고, 가입·워크스페이스·온보딩 진행이 같은 탭의 sessionStorage 에 남는다(새로고침·OAuth 왕복).
 픽스처 계정은 `pm@example.com` / `mock-password` 다. 시작 상태를 고르려면 주소에 `?msw-scenario=` 를 붙인다 —
@@ -92,7 +84,7 @@ API_PROXY_TARGET=https://managers-manager.duckdns.org npm run dev
 - [문서 안내](docs/README.md): 대표 경로, 기존 문서 대응과 유지한 자료.
 - [API 계약](docs/contracts/frontend-api-contract.md): 기존 백엔드 요청과 현재 코드 차이를 한 문서에서 관리.
 - [전체 계획](docs/plan/frontend-plan.md) · [마일스톤 상태·기록](docs/plan/README.md): M0~M8. M0~M5는 기존 계획 원문을 각 `plan.md`로 이동했다. M6·M7은 계획과 결과([M6](docs/plan/m6/result.md), [M7](docs/plan/m7/result.md))가 있고 M8은 0바이트 초기화 파일이다.
-- 마일스톤 밖 수정: 온보딩에서 기존 PM을 체크해 Discord 중복 멤버 생성 방지(#228) — [계획](docs/plan/refactor/plan-onboarding-pm-discord-link.md) · [결과](docs/plan/refactor/result-onboarding-pm-discord-link.md). MSW 기준 검증, 실서버 미검증.
+- 마일스톤 밖 수정: 이슈마다 [docs/issues/](docs/issues/) 아래 `<번호>-<이름>/result.md` 에 결과를 둔다. 이 README 에는 줄을 더하지 않는다. 2026-11-07 까지의 목록은 [docs/issues/README.md](docs/issues/README.md) 에 있다.
 - [공통 작업 규칙](../docs/agent-rules.md) · [문서 양식](../docs/README.md).
 - `docs/requests/`: 실제 독립 요청 발생 시 기록. 기존 백엔드 요청은 API 계약 §4에 유지.
 - [제품·기술 결정](docs/decision/frontend-decisions.md) · [구현 결정 안내](docs/plan/basis-for-decision-guide.md): 구현 결정 원문은 해당 마일스톤의 `basis-for-decision/`에 있다.

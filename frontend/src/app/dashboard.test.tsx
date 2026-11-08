@@ -1,10 +1,11 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
-import { clearTrackedMeetings } from '@/entities/meeting'
+import { clearTrackedMeetings, meetingDetailQueryOptions } from '@/entities/meeting'
+import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
 import { db, replaceDb } from '@/shared/mock/db'
-import { fail } from '@/shared/mock/envelope'
+import { fail, ok } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { taskFixtures } from '@/shared/mock/fixtures/task'
 import { createScenarioDb } from '@/shared/mock/scenarios'
@@ -88,6 +89,15 @@ function summary(): Record<string, string> {
     ]),
   )
 }
+/** 요약 안의 링크 — 이름과 주소 */
+function summaryLinks(): [string | null, string | null][] {
+  const list = document.querySelector<HTMLElement>('dl[aria-label="현황 요약"]')
+  if (list === null) throw new Error('summary is missing')
+  return within(list)
+    .queryAllByRole('link')
+    .map((link) => [link.getAttribute('aria-label'), link.getAttribute('href')])
+}
+const TASKS = paths.tasks('ws_01')
 function headline(): string {
   return (
     screen.getByText(/확인이 필요한 일이|워크스페이스 현황/, { selector: 'p' }).textContent ?? ''
@@ -132,7 +142,7 @@ async function openDashboard(path = DASHBOARD) {
 }
 
 describe('요약·제목·회의 안내 (AC-01 · AC-05)', () => {
-  it('PM 은 요약 넷을 전체 데이터로 보고, 제목에는 개수가 없다. 요약은 누를 수 없다', async () => {
+  it('PM 은 요약 넷을 전체 데이터로 보고, 제목에는 개수가 없다. 네 숫자 모두 그 조건의 목록으로 간다', async () => {
     await openDashboard()
     await waitFor(() =>
       expect(summary()).toEqual({
@@ -147,12 +157,25 @@ describe('요약·제목·회의 안내 (AC-01 · AC-05)', () => {
       '9월 15일 3주차 정기회의를 정리했어요 · 46분 분량',
     )
     expect(screen.getByText('2026-09-18 금요일')).toBeInTheDocument()
-    // 요약 안에 링크·버튼이 없다 (D-061)
+    // 숫자마다 그 수만큼 보이는 태스크 목록 조건으로 간다 (D-178)
+    expect(summaryLinks()).toEqual([
+      ['확인 대기 3', `${TASKS}?tab=needs_review`],
+      ['기한 지남 2', `${TASKS}?tab=in_progress&due=overdue`],
+      ['7일 이내 마감 4', `${TASKS}?tab=in_progress&due=soon`],
+      ['막힌 일 1', `${TASKS}?tab=in_progress&due=blocked`],
+    ])
     const list = screen.getByText('확인 대기').closest('dl')!
-    expect(within(list).queryAllByRole('link')).toEqual([])
     expect(within(list).queryAllByRole('button')).toEqual([])
     // 마감 임박은 5개만 보여도 집계는 6이다 (D-052)
     expect(dueTitles()).toHaveLength(5)
+  })
+
+  it('최근 회의가 채팅 회의면 기간을 분량으로 쓰지 않는다 (#379)', async () => {
+    db.meetingSummaries.find(({ meeting_id }) => meeting_id === 'mt_09')!.source = 'chat'
+    await openDashboard()
+    expect(screen.getByText(/정리했어요/).textContent?.replace(/\s+/g, ' ')).toBe(
+      '9월 15일 3주차 정기회의를 정리했어요',
+    )
   })
 
   it('대기 승인이 없으면 `확인이 필요한 일이 없어요` 이고 확인 대기는 0 이다', async () => {
@@ -163,11 +186,62 @@ describe('요약·제목·회의 안내 (AC-01 · AC-05)', () => {
     expect(screen.getByText('지금 확인할 일이 없어요.')).toBeInTheDocument()
   })
 
+  /*
+   * 요약 숫자를 누르면 그 수만큼 보이는 목록이다 (D-178). 수는 누르기 전 요약에서 읽는다.
+   * 확인 대기는 확인 필요 카드, 나머지는 진행 중 탭의 태스크 행이다
+   */
+  it.each([
+    {
+      label: '확인 대기',
+      search: '?tab=needs_review',
+      tab: /^확인 필요/,
+      due: '마감 조건: 마감 전체',
+      rows: () =>
+        within(screen.getByRole('list', { name: '확인 필요 목록' })).getAllByRole('article'),
+    },
+    {
+      label: '기한 지남',
+      search: '?tab=in_progress&due=overdue',
+      tab: /^진행 중/,
+      due: '마감 조건: 기한 지남',
+      rows: () => within(screen.getByRole('list', { name: '태스크 목록' })).getAllByRole('link'),
+    },
+    {
+      label: '7일 이내 마감',
+      search: '?tab=in_progress&due=soon',
+      tab: /^진행 중/,
+      due: '마감 조건: 7일 안에 마감',
+      rows: () => within(screen.getByRole('list', { name: '태스크 목록' })).getAllByRole('link'),
+    },
+    {
+      label: '막힌 일',
+      search: '?tab=in_progress&due=blocked',
+      tab: /^진행 중/,
+      due: '마감 조건: 막힘',
+      rows: () => within(screen.getByRole('list', { name: '태스크 목록' })).getAllByRole('link'),
+    },
+  ])(
+    '$label 숫자를 누르면 태스크 목록의 그 조건이고 같은 수가 보인다 (D-178)',
+    async ({ label, search, tab, due, rows }) => {
+      const user = userEvent.setup()
+      const app = await openDashboard()
+      await waitFor(() => expect(summary()['확인 대기']).toBe('3'))
+      const count = Number(summary()[label])
+      await user.click(screen.getByRole('link', { name: `${label} ${count}` }))
+      await app.expectPath(TASKS)
+      await app.expectSearch(search)
+      await waitFor(() => expect(rows()).toHaveLength(count))
+      expect(screen.getByRole('tab', { name: tab })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByRole('button', { name: due })).toBeInTheDocument()
+    },
+  )
+
   it('정리한 회의가 없으면 안내 문구만 있다 (D-065)', async () => {
     useScenario('dashboard-no-meeting')
     renderApp(DASHBOARD)
     await screen.findByRole('heading', { name: '대시보드' })
-    expect(await screen.findAllByText('아직 정리한 회의가 없어요')).toHaveLength(2)
+    // 제목 아래 안내와 최근 반영 영역 — 두 자리는 로딩 자리의 최소 표시가 따로 끝난다 (#508)
+    await waitFor(() => expect(screen.getAllByText('아직 정리한 회의가 없어요')).toHaveLength(2))
   })
 })
 
@@ -183,6 +257,11 @@ describe('역할 (AC-05)', () => {
 
     expect(headline()).toBe('워크스페이스 현황')
     expect(Object.keys(summary())).toEqual(['기한 지남', '7일 이내 마감', '막힌 일'])
+    expect(summaryLinks()).toEqual([
+      ['기한 지남 2', `${TASKS}?tab=in_progress&due=overdue`],
+      ['7일 이내 마감 4', `${TASKS}?tab=in_progress&due=soon`],
+      ['막힌 일 1', `${TASKS}?tab=in_progress&due=blocked`],
+    ])
     expect(screen.queryByRole('heading', { name: '확인이 필요한 일' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /되돌리기$/ })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '마감 임박' })).toBeInTheDocument()
@@ -252,6 +331,44 @@ describe('확인 필요 (AC-02)', () => {
     expect(summary()['확인 대기']).toBe('7')
   })
 
+  describe('근거 시각 (#397)', () => {
+    const reviewRow = (title: string) => {
+      const row = within(screen.getByRole('list', { name: '확인이 필요한 일 목록' }))
+        .getAllByRole('listitem')
+        .find((item) => item.textContent?.includes(title))
+      if (!row) throw new Error(`review row ${title} is missing`)
+      return row
+    }
+
+    it('채팅 회의에서 나온 일은 실제 작성 시각, 녹음 회의에서 나온 일은 녹음 안 위치다', async () => {
+      useScenario('approval-chat')
+      await openDashboard()
+      await waitFor(() =>
+        expect(reviewRow('배포 체크리스트 정리')).toHaveTextContent('09/11 18:40'),
+      )
+      expect(reviewRow('배포 체크리스트 정리')).not.toHaveTextContent('9:28:00')
+      expect(reviewRow('테스트 계획 정리')).toHaveTextContent('02:45')
+    })
+
+    it('회의 목록을 받지 못하면 시각을 녹음 위치로 짐작하지 않고 숨긴다', async () => {
+      useScenario('approval-chat')
+      server.use(
+        http.get('/api/v1/workspaces/:workspaceId/meetings', () =>
+          fail('INTERNAL_ERROR', 'x', 500),
+        ),
+      )
+      const log = recordRequests()
+      renderApp(DASHBOARD)
+      await waitFor(() => expect(reviewTitles()).toContain('배포 체크리스트 정리'))
+      await waitFor(() =>
+        expect(log.answered).toContainEqual({ method: 'GET', path: '/workspaces/ws_01/meetings' }),
+      )
+      await settle()
+      expect(reviewRow('배포 체크리스트 정리')).not.toHaveTextContent(/\d+:\d{2}/)
+      expect(reviewRow('테스트 계획 정리')).not.toHaveTextContent(/\d+:\d{2}/)
+    })
+  })
+
   it('`확인하기` 를 누르면 그 확인 필요 상세로 간다', async () => {
     const user = userEvent.setup()
     const app = await openDashboard()
@@ -309,6 +426,78 @@ describe('마감 임박 (AC-02)', () => {
     expect(screen.queryByRole('list', { name: '확인 필요 목록' })).not.toBeInTheDocument()
   })
 
+  it('태스크를 받는 중에는 태스크 요약 숫자가 링크가 아니다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get('/api/v1/tasks', async () => {
+        await gate.promise
+        return undefined
+      }),
+    )
+    renderApp(DASHBOARD)
+    await waitFor(() => expect(summary()['막힌 일']).toBe('불러오는 중'))
+    await waitFor(() => expect(summary()['확인 대기']).toBe('3'))
+    expect(summaryLinks()).toEqual([['확인 대기 3', `${TASKS}?tab=needs_review`]])
+    gate.resolve()
+    expect(await screen.findByRole('link', { name: '막힌 일 1' })).toBeInTheDocument()
+    expect(summaryLinks().map(([name]) => name)).toEqual([
+      '확인 대기 3',
+      '기한 지남 2',
+      '7일 이내 마감 4',
+      '막힌 일 1',
+    ])
+  })
+
+  it('태스크와 승인을 함께 받는 중이면 PM 제목은 `워크스페이스 현황` 이고 요약 넷이 모두 불러오는 중이다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    for (const path of ['/api/v1/tasks', '/api/v1/approvals'])
+      server.use(
+        http.get(path, async () => {
+          await gate.promise
+          return undefined
+        }),
+      )
+    renderApp(DASHBOARD)
+    await waitFor(() =>
+      expect(summary()).toEqual({
+        '확인 대기': '불러오는 중',
+        '기한 지남': '불러오는 중',
+        '7일 이내 마감': '불러오는 중',
+        '막힌 일': '불러오는 중',
+      }),
+    )
+    expect(headline()).toBe('워크스페이스 현황')
+    expect(summaryLinks()).toEqual([])
+    expect(screen.queryByRole('list', { name: '확인이 필요한 일 목록' })).toBeNull()
+    expect(screen.queryByRole('list', { name: '마감 임박 목록' })).toBeNull()
+  })
+
+  it('승인을 받는 중이거나 받지 못하면 확인 대기는 링크가 아니다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get('/api/v1/approvals', async () => {
+        await gate.promise
+        return fail('INTERNAL_ERROR', 'boom', 500)
+      }),
+    )
+    renderApp(DASHBOARD)
+    await waitFor(() => expect(summary()['기한 지남']).toBe('2'))
+    expect(summary()['확인 대기']).toBe('불러오는 중')
+    expect(screen.queryByRole('link', { name: /^확인 대기/ })).toBeNull()
+    gate.resolve()
+    await waitFor(() => expect(summary()['확인 대기']).toBe('–불러오지 못했어요'), {
+      timeout: 8_000,
+    })
+    expect(summaryLinks().map(([name]) => name)).toEqual([
+      '기한 지남 2',
+      '7일 이내 마감 4',
+      '막힌 일 1',
+    ])
+  })
+
   it('행을 누르면 태스크 상세로 간다', async () => {
     const user = userEvent.setup()
     const app = await openDashboard()
@@ -338,7 +527,7 @@ describe('최근 반영 (AC-03)', () => {
     expect(screen.getByRole('button', { name: '전체 로그' })).toBeDisabled()
   })
 
-  it('auto 항목이 3개를 넘어도 앞의 3개만이다', async () => {
+  it('화면 높이를 모르면 앞의 3개만 보이고, 나머지 수는 그 회의록으로 이어진다 (D-176)', async () => {
     const extraction = db.extractions.find(({ extraction_id }) => extraction_id === 'ex_01')!
     extraction.items.push({
       ...structuredClone(extraction.items[0]),
@@ -349,6 +538,74 @@ describe('최근 반영 (AC-03)', () => {
     await openDashboard()
     expect(recentText()).toHaveLength(3)
     expect(screen.queryByText('네 번째 자동 항목')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '외 1건 · 회의록에서 보기' })).toHaveAttribute(
+      'href',
+      paths.meetings('ws_01', 'mt_09'),
+    )
+  })
+
+  it('모두 보이면 외 N건 줄이 없다', async () => {
+    await openDashboard()
+    expect(recentText()).toHaveLength(3)
+    expect(screen.queryByRole('link', { name: /^외 \d+건/ })).toBeNull()
+  })
+
+  describe('첫 화면에 들어가는 만큼 보인다 (D-176)', () => {
+    /** 최근 반영 목록 위쪽과 행 높이만 정한다. 나머지 요소는 jsdom 처럼 크기가 없다 */
+    function stubLayout(layout: { innerHeight: number; listTop: number; rowHeight: number }) {
+      const rect = (top: number, height: number) =>
+        ({
+          x: 0,
+          y: top,
+          top,
+          left: 0,
+          right: 0,
+          bottom: top + height,
+          width: 0,
+          height,
+          toJSON: () => ({}),
+        }) as DOMRect
+      vi.stubGlobal('innerHeight', layout.innerHeight)
+      const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: Element,
+      ) {
+        if (this.matches('ul[aria-label="최근 반영 목록"]')) return rect(layout.listTop, 0)
+        if (this.matches('[data-testid="recent-row"]')) return rect(0, layout.rowHeight)
+        return rect(0, 0)
+      })
+      onTestFinished(() => {
+        spy.mockRestore()
+        vi.unstubAllGlobals()
+      })
+    }
+
+    it('남은 300px 에 50px 행 5개와 외 N건 줄이 들어간다. 창이 커지면 다시 잰다', async () => {
+      useScenario('dashboard-recent-overflow')
+      stubLayout({ innerHeight: 900, listTop: 600, rowHeight: 50 })
+      await openDashboard()
+      await waitFor(() => expect(recentText()).toHaveLength(5))
+      expect(recentText()[3]).toContain('자동 반영 4')
+      const more = screen.getByRole('link', { name: '외 7건 · 회의록에서 보기' })
+      expect(more).toHaveAttribute('href', paths.meetings('ws_01', 'mt_09'))
+
+      vi.stubGlobal('innerHeight', 1000)
+      fireEvent(window, new Event('resize'))
+      await waitFor(() => expect(recentText()).toHaveLength(7))
+      expect(screen.getByRole('link', { name: '외 5건 · 회의록에서 보기' })).toBeInTheDocument()
+    })
+
+    it('아주 좁아도 3개, 아주 넓어도 8개다', async () => {
+      useScenario('dashboard-recent-overflow')
+      stubLayout({ innerHeight: 900, listTop: 880, rowHeight: 50 })
+      await openDashboard()
+      await waitFor(() => expect(recentText()).toHaveLength(3))
+      expect(screen.getByRole('link', { name: '외 9건 · 회의록에서 보기' })).toBeInTheDocument()
+
+      vi.stubGlobal('innerHeight', 3000)
+      fireEvent(window, new Event('resize'))
+      await waitFor(() => expect(recentText()).toHaveLength(8))
+      expect(screen.getByRole('link', { name: '외 4건 · 회의록에서 보기' })).toBeInTheDocument()
+    })
   })
 
   it.each([
@@ -420,7 +677,7 @@ describe('반영 대기 polling (AC-03)', () => {
     await screen.findByRole('list', { name: '최근 반영 목록' })
     await waitFor(() => expect(rowOf('회원가입 화면')).toHaveTextContent('반영 대기'))
     await user.click(screen.getByRole('link', { name: '회의록' }))
-    await app.expectPath(paths.meetings('ws_01'))
+    await app.expectPath(paths.meetings('ws_01', 'mt_09'))
     await pause(150)
     const left = listGets(log)
     await advance(9_000)
@@ -684,6 +941,8 @@ describe('부분 오류·공간 전환 (AC-05)', () => {
     expect(summary()['확인 대기']).toBe('3')
     for (const label of ['기한 지남', '7일 이내 마감', '막힌 일'])
       expect(summary()[label]).toBe('–불러오지 못했어요')
+    // 숫자를 모르면 링크가 아니다. 받은 확인 대기만 링크다 (D-178)
+    expect(summaryLinks()).toEqual([['확인 대기 3', `${TASKS}?tab=needs_review`]])
     expect(await screen.findByText(/반영 상태를 알 수 없어요/)).toBeInTheDocument()
   })
 
@@ -696,6 +955,47 @@ describe('부분 오류·공간 전환 (AC-05)', () => {
     await waitFor(() => expect(summary()['기한 지남']).toBe('2'))
     expect(reviewTitles()).toHaveLength(3)
     expect(dueTitles()).toHaveLength(5)
+  })
+
+  it('최신 완료 회의의 상세가 다른 공간의 회의면 최근 반영을 오류로 그리고 추출을 부르지 않는다 (#349)', async () => {
+    server.use(
+      http.get('/api/v1/meetings/mt_09', () => {
+        const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_09')!
+        return ok({ ...meeting, workspace_id: 'ws_02' })
+      }),
+    )
+    const log = recordRequests()
+    renderApp(DASHBOARD)
+    expect(
+      await screen.findByText('최근 반영을 불러오지 못했어요', {}, { timeout: 8_000 }),
+    ).toBeInTheDocument()
+    await waitFor(() => expect(summary()['기한 지남']).toBe('2'))
+    await settle(150)
+    expect(log.started.filter(({ path }) => path.startsWith('/extractions'))).toEqual([])
+    expect(screen.queryByRole('list', { name: '최근 반영 목록' })).toBeNull()
+  })
+
+  it('받아 둔 최근 반영이 있어도 다시 받은 상세가 다른 공간이면 최근 반영을 오류로 바꾸고 추출을 다시 묻지 않는다 (#349)', async () => {
+    const app = await openDashboard()
+    server.use(
+      http.get('/api/v1/meetings/mt_09', () => {
+        const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_09')!
+        return ok({ ...meeting, workspace_id: 'ws_02' })
+      }),
+    )
+    await act(() =>
+      app.queryClient.invalidateQueries({
+        queryKey: workspaceKey('ws_01', 'meetings', 'detail', 'mt_09'),
+      }),
+    )
+    expect(await screen.findByText('최근 반영을 불러오지 못했어요')).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: '최근 반영 목록' })).toBeNull()
+    const log = recordRequests()
+    await act(() =>
+      app.queryClient.invalidateQueries({ queryKey: workspaceKey('ws_01', 'extractions') }),
+    )
+    await settle(150)
+    expect(log.started.filter(({ path }) => path.startsWith('/extractions'))).toEqual([])
   })
 
   it('공간을 바꾸면 이전 공간의 데이터가 섞이지 않는다', async () => {
@@ -713,7 +1013,8 @@ describe('부분 오류·공간 전환 (AC-05)', () => {
     await waitFor(() => expect(screen.getByText('마감이 임박한 태스크가 없습니다')).toBeVisible())
     expect(screen.queryByText('로그인 API 연동')).not.toBeInTheDocument()
     expect(reviewTitles()).toEqual([])
-    expect(await screen.findAllByText('아직 정리한 회의가 없어요')).toHaveLength(2)
+    // 제목 아래 안내와 최근 반영 영역 — 두 자리는 로딩 자리의 최소 표시가 따로 끝난다 (#508)
+    await waitFor(() => expect(screen.getAllByText('아직 정리한 회의가 없어요')).toHaveLength(2))
     expect(log.started.map(({ path }) => path)).toContain('/tasks?workspace_id=ws_04')
   })
 })
@@ -987,5 +1288,169 @@ describe('키보드·포커스 (AC-06)', () => {
     elsewhere.focus()
     await settle(200)
     expect(elsewhere).toHaveFocus()
+  })
+})
+
+describe('최신 완료 회의의 상세가 403·404 (#405)', () => {
+  const notFound = (...ids: string[]) =>
+    http.get('/api/v1/meetings/:meetingId', ({ params }) =>
+      ids.includes(String(params.meetingId))
+        ? fail('MEETING_NOT_FOUND', '회의가 없습니다.', 404)
+        : undefined,
+    )
+  const lead = () => screen.getByText(/정리했어요/).textContent?.replace(/\s+/g, ' ')
+  const detailRequests = (log: Log, id: string) =>
+    log.started.filter(({ method, path }) => method === 'GET' && path === `/meetings/${id}`)
+  const listRequests = (log: Log) =>
+    log.started.filter(
+      ({ method, path }) => method === 'GET' && path === '/workspaces/ws_01/meetings',
+    )
+  function deleteMeeting(id: string) {
+    db.meetings.splice(
+      db.meetings.findIndex(({ meeting_id }) => meeting_id === id),
+      1,
+    )
+    db.meetingSummaries.splice(
+      db.meetingSummaries.findIndex(({ meeting_id }) => meeting_id === id),
+      1,
+    )
+  }
+
+  it('받아 둔 최근 반영의 회의가 지워져 404 가 오면 회의 목록을 다시 받아 다음 완료 회의를 보인다', async () => {
+    const app = await openDashboard()
+    deleteMeeting('mt_09')
+    const log = recordRequests()
+    await act(() =>
+      app.queryClient.invalidateQueries({
+        queryKey: workspaceKey('ws_01', 'meetings', 'detail', 'mt_09'),
+      }),
+    )
+    await waitFor(() => expect(lead()).toContain('채팅 2026-09-11'))
+    await waitFor(() => expect(recentText().join(' ')).toContain('배포 스크립트'))
+    expect(listRequests(log).length).toBeGreaterThan(0)
+    expect(screen.queryByText('최근 반영을 불러오지 못했어요')).toBeNull()
+  })
+
+  it('목록에 남은 회의가 연달아 404 여도 다음 완료 회의로 넘어가고, 404 받은 회의를 다시 묻지 않는다', async () => {
+    server.use(notFound('mt_09', 'mt_08'))
+    const log = recordRequests()
+    const app = renderApp(DASHBOARD)
+    await waitFor(() => expect(lead()).toContain('2주차 정기회의'), { timeout: 8_000 })
+    expect(screen.queryByText('최근 반영을 불러오지 못했어요')).toBeNull()
+    await settle(150)
+    const asked = [detailRequests(log, 'mt_09').length, detailRequests(log, 'mt_08').length]
+    await act(() =>
+      app.queryClient.invalidateQueries({ queryKey: workspaceKey('ws_01', 'meetings', 'list') }),
+    )
+    await settle(150)
+    expect([detailRequests(log, 'mt_09').length, detailRequests(log, 'mt_08').length]).toEqual(
+      asked,
+    )
+    expect(lead()).toContain('2주차 정기회의')
+  })
+
+  it('완료 회의가 모두 404 면 정리한 회의가 없다고 보인다', async () => {
+    server.use(notFound('mt_09', 'mt_08', 'mt_07'))
+    renderApp(DASHBOARD)
+    await waitFor(() => expect(screen.getAllByText('아직 정리한 회의가 없어요')).toHaveLength(2), {
+      timeout: 8_000,
+    })
+    expect(screen.queryByText('최근 반영을 불러오지 못했어요')).toBeNull()
+  })
+
+  it('받아 둔 최근 반영이 있어도 다시 받은 상세가 403 이면 최근 반영을 오류로 바꾸고 추출을 다시 묻지 않는다', async () => {
+    const app = await openDashboard()
+    server.use(
+      http.get('/api/v1/meetings/mt_09', () =>
+        fail('FORBIDDEN', '이 작업을 수행할 권한이 없습니다.', 403),
+      ),
+    )
+    await act(() =>
+      app.queryClient.invalidateQueries({
+        queryKey: workspaceKey('ws_01', 'meetings', 'detail', 'mt_09'),
+      }),
+    )
+    expect(await screen.findByText('최근 반영을 불러오지 못했어요')).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: '최근 반영 목록' })).toBeNull()
+    const log = recordRequests()
+    await act(() =>
+      app.queryClient.invalidateQueries({ queryKey: workspaceKey('ws_01', 'extractions') }),
+    )
+    await settle(150)
+    expect(log.started.filter(({ path }) => path.startsWith('/extractions'))).toEqual([])
+  })
+
+  async function leaveAndReturn(app: ReturnType<typeof renderApp>) {
+    act(() => app.navigate(paths.messages('ws_01')))
+    await screen.findByRole('heading', { level: 1, name: '메시지' })
+    act(() => app.navigate(DASHBOARD))
+    await screen.findByRole('heading', { name: '대시보드' })
+  }
+
+  it('받아 둔 상세 수십 개가 404 로 남은 채 목록 갱신도 실패하고 다시 들어와도 렌더가 깨지지 않고 빈 상태에 닿는다 (#405 리뷰)', async () => {
+    const [detailTemplate] = db.meetings.filter(({ meeting_id }) => meeting_id === 'mt_09')
+    const [summaryTemplate] = db.meetingSummaries.filter(({ meeting_id }) => meeting_id === 'mt_09')
+    const added = Array.from({ length: 26 }, (_, index) => `mt_${500 + index}`)
+    added.forEach((id, index) => {
+      const startedAt = new Date(Date.parse('2026-09-17T05:00:00Z') - index * 3_600_000)
+      db.meetings.push({
+        ...structuredClone(detailTemplate),
+        meeting_id: id,
+        started_at: startedAt.toISOString(),
+        extraction_id: null,
+      })
+      db.meetingSummaries.push({
+        ...structuredClone(summaryTemplate),
+        meeting_id: id,
+        started_at: startedAt.toISOString(),
+      })
+    })
+    const done = [...added, 'mt_09', 'mt_08', 'mt_07']
+    const app = renderApp(DASHBOARD, { strict: true })
+    await screen.findByRole('heading', { name: '대시보드' })
+    await waitFor(() => expect(lead()).toContain('3주차 정기회의'))
+    await act(() =>
+      Promise.all(
+        done.map((id) => app.queryClient.fetchQuery(meetingDetailQueryOptions('ws_01', id))),
+      ),
+    )
+    server.use(
+      notFound(...done),
+      http.get('/api/v1/workspaces/ws_01/meetings', () =>
+        fail('SERVICE_UNAVAILABLE', '잠시 뒤 다시 시도해 주세요.', 503),
+      ),
+    )
+    await act(() =>
+      app.queryClient.invalidateQueries({
+        queryKey: workspaceKey('ws_01', 'meetings', 'detail'),
+      }),
+    )
+    await waitFor(() => expect(screen.getAllByText('아직 정리한 회의가 없어요')).toHaveLength(2), {
+      timeout: 10_000,
+    })
+
+    await leaveAndReturn(app)
+    await waitFor(() => expect(screen.getAllByText('아직 정리한 회의가 없어요')).toHaveLength(2), {
+      timeout: 10_000,
+    })
+    expect(screen.queryByText('최근 반영을 불러오지 못했어요')).toBeNull()
+  }, 30_000)
+
+  it('지난 방문에 404 였던 회의가 다시 들어올 때 정상이면 다시 그 회의를 보인다 (#405 리뷰)', async () => {
+    const app = await openDashboard()
+    server.use(notFound('mt_09'))
+    await act(() =>
+      app.queryClient.invalidateQueries({
+        queryKey: workspaceKey('ws_01', 'meetings', 'detail', 'mt_09'),
+      }),
+    )
+    await waitFor(() => expect(lead()).toContain('채팅 2026-09-11'))
+
+    server.resetHandlers()
+    const log = recordRequests()
+    await leaveAndReturn(app)
+    await waitFor(() => expect(lead()).toContain('3주차 정기회의'))
+    await screen.findByRole('list', { name: '최근 반영 목록' })
+    expect(detailRequests(log, 'mt_09').length).toBeGreaterThan(0)
   })
 })

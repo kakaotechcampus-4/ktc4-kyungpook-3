@@ -13,6 +13,8 @@ test('가입한 계정·세션·만든 공간·온보딩 단계가 새로고침 
   await page.getByLabel('이메일').fill('restore@example.com')
   await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
   await page.getByRole('button', { name: '계정 만들기' }).click()
+  await expect(page).toHaveURL('/onboarding/start')
+  await page.getByRole('link', { name: /PM으로 팀 만들기/ }).click()
   await expect(page).toHaveURL('/onboarding/create_workspace')
 
   await page.getByLabel('팀 이름').fill('복원 팀')
@@ -36,10 +38,10 @@ test('가입한 계정·세션·만든 공간·온보딩 단계가 새로고침 
   await expect(page).toHaveURL(/\/connect_notion$/)
 
   // 가입 계정도 버전 키 봉투로 sessionStorage 에 남아 있다. 버전은 shared/mock/persistence.ts 의 MOCK_DB_VERSION —
-  // E2E 는 앱 모듈을 불러오지 않으므로 숫자를 그대로 맞춘다 (M5 `meetingFlow` 칸 추가로 2, 2026-10-02)
+  // E2E 는 앱 모듈을 불러오지 않으므로 숫자를 그대로 맞춘다 (M5 `meetingFlow` 칸 추가로 2, 2026-10-02 · M8 메시지 칸 추가로 3, 2026-10-31 · M8 메시지 필드 추가로 4, 2026-11-01 · 재촉을 검토 행 하나로 두어 5, 2026-11-04 · 팀원 초대 칸 추가로 6 · 메시지를 백엔드 계약 모양으로 옮겨 7, 2026-11-04 · 화자 지정 칸 추가로 8, 2026-11-05 · 비밀번호 재설정 칸 추가로 9, 2026-11-05 · 계정의 팀원 행 칸 추가로 12, 2026-11-06 · 되돌릴 자동 막힘 칸 추가로 13, 2026-11-06 · 답장 판단 칸 추가로 14, 2026-11-06 · 회의 채팅 채널 칸 추가로 15, 2026-11-07 · 로그인 시도 제한 칸 추가로 16, 2026-11-07)
   const store = await page.evaluate(() => sessionStorage.getItem('msw-db'))
   expect(store).toContain('restore@example.com')
-  expect(JSON.parse(store ?? '{}')).toMatchObject({ version: 2 })
+  expect(JSON.parse(store ?? '{}')).toMatchObject({ version: 16 })
 })
 
 test('OAuth 왕복(현재 탭 이동 두 번)을 지나도 로그인·연동·단계가 이어진다', async ({ page }) => {
@@ -94,7 +96,8 @@ test('손상된 저장값은 버리고 비로그인으로 시작한다', async (
     sessionStorage.setItem('e2e-corrupted', 'written')
   })
   await page.reload()
-  await expect(page).toHaveURL('/login')
+  // 보던 화면은 로그인 뒤 돌아갈 경로로 남는다 (#411)
+  await expect(page).toHaveURL('/login?next=%2Fworkspaces%2Fws_01%2Fdashboard')
 
   const after = await page.evaluate(() => ({
     marker: sessionStorage.getItem('e2e-corrupted'),
@@ -105,7 +108,7 @@ test('손상된 저장값은 버리고 비로그인으로 시작한다', async (
   // 손상값은 버려지고 비로그인 시작 상태가 현재 버전(MOCK_DB_VERSION, 위 첫 시나리오 참고)으로 새로 저장됐다
   expect(after.stored).not.toBe('{broken')
   expect(JSON.parse(after.stored ?? 'null')).toMatchObject({
-    version: 2,
+    version: 16,
     db: { authenticated: false },
   })
 })

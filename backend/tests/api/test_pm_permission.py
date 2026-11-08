@@ -25,6 +25,7 @@ from app.models import (
     User,
     Workspace,
 )
+from app.services.sessions import hash_session_token
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
@@ -75,7 +76,7 @@ def _user(db, name: str, token: str) -> User:
     db.add(user)
     db.flush()
     db.add(SessionModel(
-        user_id=user.user_id, session_token=token,
+        user_id=user.user_id, session_token=hash_session_token(token),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     return user
@@ -148,6 +149,10 @@ def _call(token: str, name: str, seed):
             f"/api/v1/members/{seed['roster'].member_id}/aliases", json={"alias_text": "민수씨"}),
         "alias_delete": lambda: c.delete(f"/api/v1/members/aliases/{seed['alias'].alias_id}"),
         "integration_delete": lambda: c.delete(f"/api/v1/workspaces/{ws_id}/integrations/discord"),
+        "discord_channels": lambda: c.get(f"/api/v1/workspaces/{ws_id}/discord/channels"),
+        "chat_channel_set": lambda: c.put(
+            f"/api/v1/workspaces/{ws_id}/integrations/discord/chat-channel", json={"channel_id": "31"}),
+        "chat_channel_clear": lambda: c.delete(f"/api/v1/workspaces/{ws_id}/integrations/discord/chat-channel"),
         "meeting_upload": lambda: c.post(
             f"/api/v1/workspaces/{ws_id}/meetings/upload",
             data={"title": "회의", "attendee_member_ids": seed["pm"].member_id},
@@ -160,6 +165,7 @@ def _call(token: str, name: str, seed):
 PM_ONLY = [
     "approval_resolve", "task_create", "task_update", "task_rollback", "notion_retry",
     "member_create", "member_update", "alias_create", "alias_delete", "integration_delete", "meeting_upload",
+    "discord_channels", "chat_channel_set", "chat_channel_clear",
 ]
 
 

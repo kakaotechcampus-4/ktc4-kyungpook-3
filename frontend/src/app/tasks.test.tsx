@@ -7,14 +7,16 @@ import { WORKSPACE_LIST_QUERY_KEY } from '@/entities/workspace'
 import { TASK_STATUS_FAILED_TITLE } from '@/features/task-status'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
-import { db } from '@/shared/mock/db'
+import { db, replaceDb } from '@/shared/mock/db'
 import { fail, list } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { handlers } from '@/shared/mock/handlers'
+import { createScenarioDb } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { deferred } from '@/shared/test/deferred'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
+import { onTestFinished } from 'vitest'
 import { App } from './App'
 import { createApp } from './createApp'
 import { appRoutes } from './router/routes'
@@ -94,7 +96,8 @@ function rowStatus(title: string): string {
 }
 async function openList(path = paths.tasks('ws_01')) {
   const app = renderApp(path)
-  await waitFor(() => expect(rows().length).toBeGreaterThan(0))
+  // 목록은 로딩 자리의 최소 표시(400ms, #508)가 끝난 뒤 그려진다 — 기본 1초는 부하에서 빠듯하다
+  await waitFor(() => expect(rows().length).toBeGreaterThan(0), { timeout: 3000 })
   return app
 }
 
@@ -192,7 +195,7 @@ describe('역할별 탭·개수·병합·정렬 (AC-02)', () => {
     expect(approvalRequests(log)).toHaveLength(0)
     // 상세도 승인 API 를 부르지 않는다
     await userEvent.click(screen.getByRole('link', { name: '로그인 API 연동' }))
-    expect(await screen.findByRole('heading', { level: 2, name: '로그인 API 연동' })).toBeVisible()
+    expect(await screen.findByRole('heading', { level: 1, name: '로그인 API 연동' })).toBeVisible()
     await settle(200)
     expect(approvalRequests(log)).toHaveLength(0)
   })
@@ -203,7 +206,7 @@ describe('역할별 탭·개수·병합·정렬 (AC-02)', () => {
  * 새로고침은 앱을 내리고 같은 주소로 처음부터 다시 띄우는 것이다.
  */
 describe('목록 안 확인 필요 카드 (시안)', () => {
-  it('실 API 에서는 필수값이 없으면 승인을 끄고 사유를 보인다. 반려는 목록 안에서 바로 처리하고 카드가 빠진다', async () => {
+  it('실 API에서도 보완과 미정 승인을 허용하고 반려하면 카드가 빠진다', async () => {
     const user = userEvent.setup()
     await openList(`${paths.tasks('ws_01')}?tab=needs_review`)
     const cards = within(screen.getByRole('list', { name: '확인 필요 목록' })).getAllByRole(
@@ -211,24 +214,15 @@ describe('목록 안 확인 필요 카드 (시안)', () => {
     )
     expect(cards).toHaveLength(3)
     const target = cards.find((each) => each.textContent?.includes('테스트 계획 정리'))!
-    // 읽기 전용 — 보완 입력이 없고 승인은 꺼져 있다. 사유는 보완 미지원 문장으로 끝난다
-    expect(within(target).getByRole('button', { name: '승인' })).toBeDisabled()
-    expect(target).toHaveTextContent('승인하려면 마감 정보를 올바르게 채워야 해요.')
-    expect(target).toHaveTextContent('지금 서버는 승인 전 보완을 지원하지 않아요.')
+    await waitFor(() => expect(within(target).getByRole('button', { name: '승인' })).toBeEnabled())
+    expect(within(target).getByRole('textbox', { name: '태스크명' })).not.toHaveAttribute(
+      'readonly',
+    )
     expect(within(target).getByRole('button', { name: '반려' })).toBeEnabled()
-
-    // 보류(ap_01)도 접힌 카드 안에서 같은 계약이다. 승인을 숨기거나 반려를 `제외` 로 바꾸지 않는다
     const held = cards.find((each) => each.textContent?.includes('알림 문구 검토'))!
-    expect(within(held).getByRole('button', { name: '승인' })).toBeDisabled()
+    expect(within(held).getByRole('button', { name: '직접 채우기' })).toBeEnabled()
     expect(within(held).getByRole('button', { name: '반려' })).toBeEnabled()
     expect(within(held).queryByRole('button', { name: '제외' })).toBeNull()
-    expect(within(held).queryByRole('button', { name: '직접 채우기' })).toBeNull()
-    expect(held).toHaveTextContent(
-      '승인하려면 담당자·마감 정보를 올바르게 채워야 해요. 지금 서버는 승인 전 보완을 지원하지 않아요.',
-    )
-    expect(within(held).getByRole('button', { name: '승인' })).toHaveAccessibleDescription(
-      /지금 서버는 승인 전 보완을 지원하지 않아요\.$/,
-    )
 
     await user.click(within(target).getByRole('button', { name: '반려' }))
     await waitFor(() =>
@@ -237,6 +231,65 @@ describe('목록 안 확인 필요 카드 (시안)', () => {
       ).toHaveLength(2),
     )
     expect(tab('확인 필요')).toHaveTextContent('2')
+  })
+
+  it('팀원이 아닌 담당자로 승인이 막힌 칸은 포커스 선도 포인트 빨강이다 (#423)', async () => {
+    const user = userEvent.setup()
+    const outsider = db.approvals.find(
+      ({ status, workspace_id, type }) =>
+        status === 'pending' && workspace_id === 'ws_01' && type === 'task_create',
+    )!
+    Object.assign(outsider.payload, { assignee_member_id: 'mb_99' })
+    await openList(`${paths.tasks('ws_01')}?tab=needs_review`)
+    const list = screen.getByRole('list', { name: '확인 필요 목록' })
+    for (const fill of within(list).queryAllByRole('button', { name: '직접 채우기' }))
+      await user.click(fill)
+    const selects = await within(list).findAllByRole('combobox', { name: /담당자/ })
+    const blocked = selects.filter((each) => each.getAttribute('aria-invalid') === 'true')
+    expect(blocked).toHaveLength(1)
+    expect(blocked[0]).toHaveClass('border-accent', 'focus-visible:outline-accent-point')
+    for (const select of selects.filter((each) => !blocked.includes(each)))
+      expect(select).not.toHaveClass('focus-visible:outline-accent-point')
+  })
+
+  describe('근거 시각 (#397)', () => {
+    const NEEDS_REVIEW = `${paths.tasks('ws_01')}?tab=needs_review`
+    const card = (title: string) => {
+      const found = within(screen.getByRole('list', { name: '확인 필요 목록' }))
+        .getAllByRole('article')
+        .find((each) => each.textContent?.includes(title))
+      if (!found) throw new Error(`approval card ${title} is missing`)
+      return found
+    }
+    const meetingLink = (title: string) =>
+      within(card(title)).getByRole('link', { name: /회의|채팅/ })
+
+    it('채팅 회의에서 나온 카드는 실제 작성 시각, 녹음 회의에서 나온 카드는 녹음 안 위치다', async () => {
+      replaceDb(createScenarioDb('approval-chat'))
+      await openList(NEEDS_REVIEW)
+      await waitFor(() =>
+        expect(meetingLink('배포 체크리스트 정리')).toHaveTextContent('채팅 2026-09-1109/11 18:40'),
+      )
+      expect(meetingLink('배포 체크리스트 정리')).not.toHaveTextContent('9:28:00')
+      expect(meetingLink('테스트 계획 정리')).toHaveTextContent('3주차 정기회의02:45')
+    })
+
+    it('회의 목록을 받지 못하면 시각을 녹음 위치로 짐작하지 않고 숨긴다', async () => {
+      replaceDb(createScenarioDb('approval-chat'))
+      server.use(
+        http.get('/api/v1/workspaces/:workspaceId/meetings', () =>
+          fail('INTERNAL_ERROR', 'x', 500),
+        ),
+      )
+      const log = recordRequests()
+      await openList(NEEDS_REVIEW)
+      await waitFor(() =>
+        expect(log.answered).toContainEqual({ method: 'GET', path: '/workspaces/ws_01/meetings' }),
+      )
+      await settle()
+      expect(meetingLink('배포 체크리스트 정리').textContent).toBe('연결된 회의')
+      expect(meetingLink('테스트 계획 정리').textContent).toBe('연결된 회의')
+    })
   })
 })
 
@@ -260,7 +313,7 @@ describe('보기 전환 (Tasks 시안 4장)', () => {
     expect(screen.getByRole('region', { name: '완료' })).toBeVisible()
 
     await user.click(within(switcher).getByRole('radio', { name: '캘린더' }))
-    expect(await screen.findByRole('grid', { name: /^\d{4}년 \d{1,2}월$/ })).toBeVisible()
+    expect(await screen.findByRole('table', { name: /^\d{4}년 \d{1,2}월$/ })).toBeVisible()
     expect(screen.getByRole('region', { name: '마감일 없음' })).toBeVisible()
 
     await user.click(within(switcher).getByRole('radio', { name: '간트' }))
@@ -276,6 +329,97 @@ describe('보기 전환 (Tasks 시안 4장)', () => {
     await waitFor(() =>
       expect(rows().slice(3)).toEqual(['회원가입 화면', '토큰 정리', '회의록 요약 검수']),
     )
+  })
+})
+
+describe('키보드 Tab 순서 (#337)', () => {
+  async function tabIntoPanel(user: ReturnType<typeof userEvent.setup>) {
+    const panel = screen.getByRole('tabpanel')
+    act(() => screen.getByRole('tab', { selected: true }).focus())
+    for (let press = 0; press < 10 && !panel.contains(document.activeElement); press++) {
+      await user.tab()
+    }
+    return document.activeElement
+  }
+
+  it('항목이 있는 목록 패널은 Tab 이 패널을 건너 첫 항목 링크로 간다', async () => {
+    const user = userEvent.setup()
+    renderApp(paths.tasks('ws_01'))
+    const first = await screen.findByRole('link', { name: '알림 문구 검토' }, { timeout: 5_000 })
+    expect(await tabIntoPanel(user)).toBe(first)
+  })
+
+  it('누를 것이 없는 빈 패널은 패널 자신이 Tab 으로 닿아 안내를 읽는다', async () => {
+    const user = userEvent.setup()
+    db.tasks = db.tasks.filter(({ workspace_id }) => workspace_id !== 'ws_01')
+    db.approvals = db.approvals.filter(({ workspace_id }) => workspace_id !== 'ws_01')
+    renderApp(`${paths.tasks('ws_01')}?tab=in_progress`)
+    expect(
+      await screen.findByRole('heading', { name: '이 구분에는 항목이 없어요' }, { timeout: 5_000 }),
+    ).toBeVisible()
+    expect(await tabIntoPanel(user)).toBe(screen.getByRole('tabpanel'))
+  })
+})
+
+describe('목록 탭 키보드', () => {
+  it('화살표·End·Home 으로 탭을 옮기면 그 탭에 포커스가 가고 골라진다', async () => {
+    const user = userEvent.setup()
+    await openList()
+    await waitFor(() => expect(tabTexts()).toHaveLength(4))
+    act(() => tab('전체').focus())
+
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => expect(tab('확인 필요')).toHaveAttribute('aria-selected', 'true'))
+    expect(tab('확인 필요')).toHaveFocus()
+    expect(
+      within(screen.getByRole('list', { name: '확인 필요 목록' })).getAllByRole('article'),
+    ).toHaveLength(3)
+
+    await user.keyboard('{End}')
+    await waitFor(() => expect(tab('완료')).toHaveAttribute('aria-selected', 'true'))
+    expect(tab('완료')).toHaveFocus()
+
+    await user.keyboard('{Home}')
+    await waitFor(() => expect(tab('전체')).toHaveAttribute('aria-selected', 'true'))
+    expect(tab('전체')).toHaveFocus()
+  })
+})
+
+describe('리스트 보기의 대기·실패·빈 목록', () => {
+  it('태스크를 받는 동안 탭은 개수 없이 이름만이고, 목록 자리는 기다림 표시이며 태스크 목록이 없다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get('/api/v1/tasks', async () => {
+        await gate.promise
+        return undefined
+      }),
+    )
+    renderApp(paths.tasks('ws_01'))
+    expect(await screen.findByRole('tab', { name: '전체' })).toBeInTheDocument()
+    expect(tabTexts()).toEqual(['전체', '확인 필요', '진행 중', '완료'])
+    expect(screen.getByRole('tabpanel').querySelector('[aria-busy="true"]')).not.toBeNull()
+    expect(screen.queryByRole('list', { name: '태스크 목록' })).toBeNull()
+  })
+
+  it('태스크 목록을 받지 못하면 목록 자리에 오류와 다시 시도를 보인다', async () => {
+    server.use(http.get('/api/v1/tasks', () => fail('INVALID_REQUEST', 'x', 400)))
+    renderApp(paths.tasks('ws_01'))
+    expect(
+      await within(await screen.findByRole('tabpanel')).findByText(
+        '태스크 목록을 불러오지 못했어요',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(screen.getByRole('tabpanel')).getByRole('button', { name: '다시 시도' }),
+    ).toBeInTheDocument()
+  })
+
+  it('태스크도 확인 필요도 없으면 `아직 태스크가 없어요` 이고 탭 개수는 모두 0 이다', async () => {
+    replaceDb(createScenarioDb('tasks-empty'))
+    renderApp(paths.tasks('ws_01'))
+    expect(await screen.findByText('아직 태스크가 없어요')).toBeInTheDocument()
+    expect(tabTexts()).toEqual(['전체 0', '확인 필요 0', '진행 중 0', '완료 0'])
   })
 })
 
@@ -445,10 +589,10 @@ describe('URL 탭·날짜 조건 (AC-03)', () => {
     expect(await screen.findByRole('heading', { name: '조건에 맞는 항목이 없어요' })).toBeVisible()
 
     // 빈 상태의 해제와 조건 줄의 해제가 같은 동작이다. 조건 줄의 것을 누른다
-    const clear = screen.getAllByRole('button', { name: '날짜 조건 해제' })[0]
+    const clear = screen.getAllByRole('button', { name: '마감 조건 해제' })[0]
     await user.click(clear)
     await expectView({ search: '?tab=done', tab: '완료', overdue: false, soon: false, rows: DONE })
-    expect(screen.queryByRole('button', { name: '날짜 조건 해제' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '마감 조건 해제' })).toBeNull()
 
     await user.click(tab('전체'))
     await expectView({ search: '', tab: '전체', overdue: false, soon: false, rows: PM_ALL })
@@ -464,6 +608,113 @@ describe('URL 탭·날짜 조건 (AC-03)', () => {
       soon: false,
       rows: [],
     })
+  })
+
+  it('막힘 조건으로 들어오면 막힌 태스크만 보이고, 메뉴에서 켜고 끄면 주소에 남는다 (D-176)', async () => {
+    const user = userEvent.setup()
+    open(`${paths.tasks('ws_01')}?tab=in_progress&due=blocked`)
+    await waitFor(() => {
+      expect(rows()).toEqual(['DB 스키마 정리'])
+      expect(tab('진행 중')).toHaveAttribute('aria-selected', 'true')
+    })
+    expect(screen.getByRole('button', { name: '마감 조건: 막힘' })).toBeVisible()
+    expect(tabTexts()).toEqual(['전체 4', '확인 필요 3', '진행 중 1', '완료 0'])
+
+    await toggleDue(user, '7일 안에 마감')
+    await waitFor(() => {
+      expect(search()).toBe('?tab=in_progress&due=soon,blocked')
+      expect(rows()).toEqual([
+        'STT 정확도 측정',
+        '로그인 API 연동',
+        'DB 스키마 정리',
+        '배포 스크립트',
+      ])
+    })
+    expect(
+      screen.getByRole('button', { name: '마감 조건: 7일 안에 마감 · 막힘' }),
+    ).toBeInTheDocument()
+
+    await toggleDue(user, '막힘')
+    await waitFor(() => expect(search()).toBe('?tab=in_progress&due=soon'))
+    act(() => window.history.back())
+    await waitFor(() => expect(search()).toBe('?tab=in_progress&due=soon,blocked'))
+  })
+
+  it('막힘으로 비면 마감 조건 해제로 조건을 푼다', async () => {
+    const user = userEvent.setup()
+    open(`${paths.tasks('ws_01')}?tab=done&due=blocked`)
+    expect(await screen.findByRole('heading', { name: '조건에 맞는 항목이 없어요' })).toBeVisible()
+    expect(screen.getByText('마감 조건을 풀면 다른 항목을 볼 수 있어요.')).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: '마감 조건 해제' }))
+    await expectView({ search: '?tab=done', tab: '완료', overdue: false, soon: false, rows: DONE })
+  })
+})
+
+describe('정렬 (D-175)', () => {
+  const sortButton = () => screen.getByRole('button', { name: /^정렬:/ })
+  async function chooseSort(user: ReturnType<typeof userEvent.setup>, name: string) {
+    await user.click(sortButton())
+    await user.click(await screen.findByRole('menuitemradio', { name }))
+  }
+  const taskRequests = (log: Log) => log.started.filter(({ path }) => path.startsWith('/tasks'))
+
+  it('기본은 마감 빠른 순이다. 최근 생성순을 고르면 URL 에 남고 승인·태스크가 각각 생성 최신순이 된다. 탭 개수는 그대로다', async () => {
+    const user = userEvent.setup()
+    const app = await openList()
+    await waitFor(() => expect(rows()).toEqual(PM_ALL))
+    expect(sortButton()).toHaveAccessibleName('정렬: 마감 빠른 순')
+    const log = recordRequests()
+
+    await chooseSort(user, '최근 생성순')
+    await app.expectSearch('?sort=created')
+    expect(sortButton()).toHaveAccessibleName('정렬: 최근 생성순')
+    await waitFor(() =>
+      expect(rows().slice(0, 4)).toEqual([
+        '배포 문서 보완',
+        '테스트 계획 정리',
+        '알림 문구 검토',
+        '배포 스크립트',
+      ]),
+    )
+    const createdAt = new Map(db.tasks.map(({ title, created_at }) => [title, created_at]))
+    const taskCreated = rows()
+      .slice(3)
+      .map((title) => createdAt.get(title))
+    expect(taskCreated).toEqual([...taskCreated].sort().reverse())
+    expect(tabTexts()).toEqual(['전체 13', '확인 필요 3', '진행 중 7', '완료 3'])
+
+    await user.click(tab('완료'))
+    await app.expectSearch('?sort=created&tab=done')
+    await waitFor(() => expect(rows()).toEqual(['토큰 정리', '폰트 적용', '랜딩 카피']))
+
+    await chooseSort(user, '마감 빠른 순')
+    await app.expectSearch('?tab=done')
+    await waitFor(() => expect(rows()).toEqual(['랜딩 카피', '폰트 적용', '토큰 정리']))
+    // 정렬은 받은 목록 안에서만 한다 — 다시 부르지 않는다
+    expect(taskRequests(log)).toEqual([])
+  })
+
+  it('주소로 최근 변경순을 열면 가장 최근에 바뀐 태스크가 태스크 중 맨 앞이다', async () => {
+    db.tasks.find(({ task_id }) => task_id === 'tk_06')!.updated_at = '2026-09-18T01:00:00Z'
+    await openList(`${paths.tasks('ws_01')}?sort=updated`)
+    expect(sortButton()).toHaveAccessibleName('정렬: 최근 변경순')
+    // 승인은 변경 시각이 없어 생성 최신순이다. 나머지 태스크는 변경 시각이 같아 생성 최신순이다
+    await waitFor(() =>
+      expect(rows().slice(0, 5)).toEqual([
+        '배포 문서 보완',
+        '테스트 계획 정리',
+        '알림 문구 검토',
+        'STT 정확도 측정',
+        '배포 스크립트',
+      ]),
+    )
+  })
+
+  it('모르는 정렬 값은 마감 빠른 순이다', async () => {
+    await openList(`${paths.tasks('ws_01')}?sort=priority`)
+    expect(sortButton()).toHaveAccessibleName('정렬: 마감 빠른 순')
+    await waitFor(() => expect(rows()).toEqual(PM_ALL))
   })
 })
 
@@ -482,10 +733,11 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
   }
   async function openDetail(taskId: string, title: string) {
     const app = renderApp(paths.tasks('ws_01', taskId))
-    await screen.findByRole('heading', { level: 2, name: title })
+    await screen.findByRole('heading', { level: 1, name: title })
     return app
   }
   const shownStatus = () => screen.getByTestId('task-status').textContent
+  const statusOption = (label: string) => screen.getByRole('radio', { name: label })
 
   /** 태스크마다 PATCH 응답 시점을 쥔다. fail 이면 500, 아니면 원래 handler 가 처리한다 */
   function holdPatches(plan: Record<string, { fail: boolean }>) {
@@ -504,18 +756,18 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
   const toastFor = (taskId: string) =>
     document.querySelectorAll(`[data-toast-key="task-status-${taskId}"]`)
 
-  it('담당자·상태·마감·진행률·막힌 사유·연결 회의·이력을 읽는다', async () => {
+  it('담당자·상태·마감·출처 회의·이력을 읽고, 막히지 않았으면 막힌 사유 줄이 없다', async () => {
     await openDetail('tk_01', '로그인 API 연동')
-    expect(screen.getByRole('heading', { level: 1, name: '태스크' })).toBeInTheDocument()
     await waitFor(() => expect(field('담당자')).toHaveTextContent('김서연'))
-    expect(field('상태')).toHaveTextContent('진행 중')
+    expect(shownStatus()).toBe('진행 중')
     expect(field('마감')).toHaveTextContent('2026-09-20')
-    expect(field('진행률')).toHaveTextContent('40%')
-    expect(field('막힌 사유')).toHaveTextContent('없음')
+    expect(screen.queryByText('진행률')).toBeNull()
+    expect(within(info()).queryByText('막힌 사유')).toBeNull()
     await waitFor(() =>
-      expect(
-        within(field('연결 회의')).getByRole('link', { name: '3주차 정기회의' }),
-      ).toHaveAttribute('href', paths.meetings('ws_01', 'mt_09')),
+      expect(screen.getByRole('link', { name: '3주차 정기회의에서 나온 일' })).toHaveAttribute(
+        'href',
+        paths.meetings('ws_01', 'mt_09'),
+      ),
     )
     await waitFor(() =>
       expect(history()).toEqual(['상태: 할 일 → 진행 중', '마감: 2026-09-13 → 2026-09-20']),
@@ -528,14 +780,32 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     await openDetail('tk_05', '회의록 요약 검수')
     expect(field('담당자')).toHaveTextContent('담당자 없음')
     expect(field('마감')).toHaveTextContent('마감 없음')
-    expect(field('연결 회의')).toHaveTextContent('없음')
     expect(await screen.findByText('아직 변경 이력이 없어요.')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /에서 나온 일$/ })).toBeNull()
   })
 
   it('막힌 태스크는 막힌 사유를 보여 준다', async () => {
     await openDetail('tk_03', 'DB 스키마 정리')
-    expect(field('상태')).toHaveTextContent('막힘')
+    expect(shownStatus()).toBe('막힘')
     expect(field('막힌 사유')).toHaveTextContent('Notion 권한 대기')
+  })
+
+  it('상세를 받는 동안 `태스크 목록` 링크와 기다림 표시가 있고 태스크 제목은 없다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get('/api/v1/tasks/:taskId', async () => {
+        await gate.promise
+        return undefined
+      }),
+    )
+    renderApp(paths.tasks('ws_01', 'tk_01'))
+    expect(await screen.findByRole('link', { name: '태스크 목록' })).toHaveAttribute(
+      'href',
+      paths.tasks('ws_01'),
+    )
+    expect(screen.getByRole('main').querySelector('[aria-busy="true"]')).not.toBeNull()
+    expect(screen.queryByRole('heading', { name: '로그인 API 연동' })).toBeNull()
   })
 
   it('없는 태스크는 볼 수 없다고 알리고 목록으로 돌려보낸다', async () => {
@@ -547,12 +817,27 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     )
   })
 
+  it('처음부터 조회가 실패하면 일반 팀원도 다시 시도 버튼으로 복구한다 (#236)', async () => {
+    setMockRole('member')
+    server.use(http.get('/api/v1/tasks/:taskId', () => fail('INTERNAL_ERROR', 'boom', 500)))
+    renderApp(paths.tasks('ws_01', 'tk_01'))
+    expect(
+      await screen.findByText('태스크를 불러오지 못했어요', {}, { timeout: 5_000 }),
+    ).toBeVisible()
+    expect(screen.queryByText('최신 상태를 받지 못했어요')).toBeNull()
+    server.resetHandlers()
+    fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+    expect(await screen.findByRole('heading', { level: 1, name: '로그인 API 연동' })).toBeVisible()
+    expect(screen.queryByText('태스크를 불러오지 못했어요')).toBeNull()
+  })
+
   it('일반 팀원은 상태를 바꿀 수 없다 — 고르는 칸이 없고 PATCH 도 없다', async () => {
     setMockRole('member')
     const log = recordRequests()
     await openDetail('tk_01', '로그인 API 연동')
-    expect(field('상태')).toHaveTextContent('진행 중')
+    expect(shownStatus()).toBe('진행 중')
     expect(screen.queryByLabelText('상태 바꾸기')).toBeNull()
+    expect(screen.queryByRole('radio')).toBeNull()
     expect(screen.queryByRole('combobox')).toBeNull()
     await settle(200)
     expect(log.started.filter(({ method }) => method === 'PATCH')).toEqual([])
@@ -563,25 +848,28 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     const bodies = recordRequestBodies('PATCH', '/tasks/tk_01')
     const log = recordRequests()
     const app = await openDetail('tk_01', '로그인 API 연동')
-    const select = await screen.findByLabelText('상태 바꾸기')
+    await screen.findByRole('radiogroup', { name: '상태 바꾸기' })
 
     // 같은 틱의 두 입력 — 두 번째는 진행 중인 요청 때문에 보내지 않는다
     act(() => {
-      fireEvent.change(select, { target: { value: 'done' } })
-      fireEvent.change(select, { target: { value: 'blocked' } })
+      fireEvent.click(statusOption('완료'))
+      fireEvent.click(statusOption('막힘'))
     })
     // mutation 캐시 알림은 다음 틱에 묶여 온다 — 응답(쥐고 있음)보다 먼저 보이는지를 본다
     await waitFor(() => expect(shownStatus()).toBe('완료'))
-    expect(select).toBeDisabled()
-    expect(screen.getByRole('status')).toHaveTextContent('바꾸는 중이에요')
+    for (const label of ['할 일', '진행 중', '막힘', '완료'])
+      expect(statusOption(label)).toBeDisabled()
+    expect(within(screen.getByRole('main')).getByRole('status')).toHaveTextContent(
+      '바꾸는 중이에요',
+    )
     // 잠긴 뒤의 입력도 보내지 않는다
-    fireEvent.change(select, { target: { value: 'todo' } })
+    fireEvent.click(statusOption('할 일'))
     await settle()
     expect(log.started.filter(({ method }) => method === 'PATCH')).toHaveLength(1)
     expect(bodies).toEqual([{ status: 'done' }])
 
     act(() => gates.get('tk_01')!.resolve())
-    await waitFor(() => expect(select).toBeEnabled())
+    await waitFor(() => expect(statusOption('완료')).toBeEnabled())
     expect(shownStatus()).toBe('완료')
     expect(db.tasks.find(({ task_id }) => task_id === 'tk_01')?.status).toBe('done')
     // 이력을 다시 받아 새 변경이 맨 위에 있다
@@ -605,7 +893,7 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     const log = recordRequests()
     await openDetail('tk_01', '로그인 API 연동')
     const user = userEvent.setup()
-    await user.selectOptions(await screen.findByLabelText('상태 바꾸기'), '완료')
+    await user.click(await screen.findByRole('radio', { name: '완료' }))
     await waitFor(() => expect(shownStatus()).toBe('완료'))
 
     act(() => gates.get('tk_01')!.resolve())
@@ -613,8 +901,8 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     await waitFor(() => expect(toastFor('tk_01')).toHaveLength(1))
     expect(toastFor('tk_01')[0]).toHaveTextContent(TASK_STATUS_FAILED_TITLE)
     expect(toastFor('tk_01')[0]).toHaveTextContent('서버에 문제가 생겼어요')
-    expect(screen.getByLabelText('상태 바꾸기')).toHaveValue('in_progress')
-    expect(screen.getByLabelText('상태 바꾸기')).toBeEnabled()
+    expect(statusOption('진행 중')).toBeChecked()
+    expect(statusOption('완료')).toBeEnabled()
     // 실패 뒤 그 태스크의 상세·이력·목록을 다시 묻는다
     const answered = log.timeline.indexOf('answer PATCH /tasks/tk_01')
     await waitFor(() =>
@@ -630,11 +918,11 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     const user = userEvent.setup()
     const log = recordRequests()
     const app = await openDetail('tk_01', '로그인 API 연동')
-    await user.selectOptions(await screen.findByLabelText('상태 바꾸기'), '완료')
+    await user.click(await screen.findByRole('radio', { name: '완료' }))
 
     act(() => app.navigate(paths.tasks('ws_01', 'tk_02')))
-    await screen.findByRole('heading', { level: 2, name: '회원가입 화면' })
-    await user.selectOptions(await screen.findByLabelText('상태 바꾸기'), '진행 중')
+    await screen.findByRole('heading', { level: 1, name: '회원가입 화면' })
+    await user.click(await screen.findByRole('radio', { name: '진행 중' }))
     await waitFor(() => expect(shownStatus()).toBe('진행 중'))
 
     act(() => app.navigate(paths.tasks('ws_01')))
@@ -680,7 +968,7 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
       const gates = holdPatches({ tk_01: { fail: true } })
       const log = recordRequests()
       const app = await openDetail('tk_01', '로그인 API 연동')
-      await userEvent.selectOptions(await screen.findByLabelText('상태 바꾸기'), '완료')
+      await userEvent.click(await screen.findByRole('radio', { name: '완료' }))
 
       await userEvent.click(screen.getByRole('button', { name: /^내 계정/ }))
       await userEvent.click(await screen.findByRole('menuitem', { name: '로그아웃' }))
@@ -729,7 +1017,7 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
       ws02.onboarding.completed = true
       const gates = holdPatches({ tk_01: { fail: true } })
       const app = await openDetail('tk_01', '로그인 API 연동')
-      await userEvent.selectOptions(await screen.findByLabelText('상태 바꾸기'), '완료')
+      await userEvent.click(await screen.findByRole('radio', { name: '완료' }))
 
       act(() => app.navigate(paths.tasks('ws_02')))
       await app.expectPath(paths.tasks('ws_02'))
@@ -751,7 +1039,7 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     it('PM 이 아니게 된 뒤 도착한 실패는 알리지 않고, 고르는 칸도 사라진다', async () => {
       const gates = holdPatches({ tk_01: { fail: true } })
       const app = await openDetail('tk_01', '로그인 API 연동')
-      await userEvent.selectOptions(await screen.findByLabelText('상태 바꾸기'), '완료')
+      await userEvent.click(await screen.findByRole('radio', { name: '완료' }))
 
       setMockRole('member')
       await act(() => app.queryClient.refetchQueries({ queryKey: WORKSPACE_LIST_QUERY_KEY }))

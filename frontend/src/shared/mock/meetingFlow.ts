@@ -6,6 +6,7 @@ import { db } from './db'
 import type { MeetingFlowMode, MockDb } from './db'
 import { MOCK_NOW } from './fixtures/constants'
 import { createTask } from './task-state'
+import { awaitSpeakers, needsSpeakers } from './speakerFlow'
 import { nextId } from './utils'
 
 /*
@@ -41,8 +42,7 @@ export interface CompletedMeeting {
 }
 
 export interface FailMeetingOptions {
-  /** 정리 중 Notion 연결이 끊겨 실패했다. 그 공간의 Notion 연동을 `revoked` 로 바꾼다 (D-099, D-100) */
-  notionRevoked?: boolean
+  failedStage?: string
 }
 
 function processingMeeting(state: MockDb, meetingId: string): MeetingDto {
@@ -63,12 +63,17 @@ export function nextStage(meeting: MeetingDto): MeetingStage | null {
   return MEETING_STAGES.find((stage) => !progress[stage]) ?? null
 }
 
-/** 처리 중 회의를 한 단계 진행한다. 세 단계가 이미 끝났으면 완료한다. 진행한 뒤의 회의를 돌려준다 */
+/**
+ * 처리 중 회의를 한 단계 진행한다. 세 단계가 이미 끝났으면 완료한다. 진행한 뒤의 회의를 돌려준다.
+ * 채팅 회의는 단계를 알리지 않아 발화 저장(sources)에 서버 `_compute_progress` 가 앞 두 값을 함께 참으로 만든다 (#483)
+ */
 export function advanceMeeting(meetingId: string, state: MockDb = db): MeetingDto {
   const meeting = processingMeeting(state, meetingId)
   const stage = nextStage(meeting)
   if (stage === null) return completeMeeting(meetingId, state).meeting
   meeting.progress = { ...progressOf(meeting), [stage]: true }
+  if (stage === 'audio_merged' && isChatMeeting(meetingId, state))
+    meeting.progress.transcribed = true
   return meeting
 }
 
@@ -145,6 +150,8 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
   const meeting = processingMeeting(state, meetingId)
   const attendees = attendeesOf(state, meeting)
   const speaker = (index: number) => attendees[index % Math.max(attendees.length, 1)]
+  // 업로드 녹음에는 Discord 트랙이 없다. 근거 화자는 화자 지정으로 정한 팀원 ID 만 온다 (#256)
+  const uploaded = sourceOf(state, meeting.meeting_id) === 'manual_upload'
 
   const minutes: MinutesDto = {
     meeting_id: meeting.meeting_id,
@@ -204,8 +211,9 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
       gate: seed.gate,
       evidence: {
         quote: TRANSCRIPT_LINES[index % TRANSCRIPT_LINES.length],
-        speaker: speaker(index)?.discord_user_id ?? null,
+        speaker: uploaded ? null : (speaker(index)?.discord_user_id ?? null),
         at_ms: index * 60_000,
+        speaker_member_id: speaker(index)?.member_id ?? null,
       },
       reverted_at: null,
       task_id: null,
@@ -245,6 +253,7 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
           due_raw: seed.dueRaw,
           evidence_quote: item.evidence.quote,
           evidence_speaker: item.evidence.speaker,
+          evidence_speaker_member_id: item.evidence.speaker_member_id,
           evidence_at_ms: item.evidence.at_ms,
           extraction_item_id: itemId,
           meeting_id: meeting.meeting_id,
@@ -289,8 +298,8 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
 }
 
 /**
- * 처리 중 회의를 실패로 끝낸다. 회의록·추출·태스크·승인을 만들지 않는다 — 실패 결과를 남기지 않는다 (D-091, D-099).
- * 실패 회의는 목록 handler 가 뺀다 (D-093).
+ * 처리 중 회의를 실패로 끝낸다. 회의록·추출·태스크·승인을 만들지 않는다 — 실패 결과를 남기지 않는다 (D-091).
+ * 일반 실패는 목록에서 빼고, 수동 업로드의 화자 지정 기한 만료만 이력으로 남긴다 (#256).
  */
 export function failMeeting(
   meetingId: string,
@@ -299,18 +308,71 @@ export function failMeeting(
 ): MeetingDto {
   const meeting = processingMeeting(state, meetingId)
   meeting.status = 'failed'
-  // 실 API 의 failed_stage 는 자유 문자열이다(계약 §4.7-3). 봇이 보내는 `STT` 같은 꼴로 둔다.
-  // 화면은 이 값으로 갈리지 않는다 — 끊김은 연동 상태를 다시 조회해 판단한다 (D-100)
-  meeting.failed_stage = options.notionRevoked ? 'NOTION' : 'STT'
+  // 알려진 실패 사유가 없으면 기존 봇의 STT 값을 쓴다
+  meeting.failed_stage = options.failedStage ?? 'STT'
   meeting.ended_at = MOCK_NOW
   meeting.extraction_id = null
   const summary = state.meetingSummaries.find(({ meeting_id }) => meeting_id === meetingId)
   if (summary) summary.status = 'failed'
-  if (options.notionRevoked) {
-    const integrations = state.integrations[meeting.workspace_id]
-    if (integrations) integrations.notion = { ...integrations.notion, status: 'revoked' }
-  }
   return meeting
+}
+
+export function isChatMeeting(meetingId: string, state: MockDb = db): boolean {
+  return state.meetingSummaries.some(
+    (summary) => summary.meeting_id === meetingId && summary.source === 'chat',
+  )
+}
+
+/**
+ * 디스코드 채팅 자동 수집이 정리 중인 회의를 하나 더한다 (#379, #450).
+ * `/end` 뒤 아직 단계를 알리지 않았고 발화도 없는 회의라 서버 `_compute_progress` 처럼 세 값이 모두 false 다
+ */
+export function startChatMeeting(state: MockDb = db): string {
+  const meetingId = nextId(
+    'mt',
+    state.meetings.map(({ meeting_id }) => meeting_id),
+  )
+  const title = '채팅 2026-09-18'
+  const startedAt = '2026-09-18T02:00:00Z'
+  state.meetings.push({
+    meeting_id: meetingId,
+    workspace_id: 'ws_01',
+    title,
+    status: 'processing',
+    started_at: startedAt,
+    ended_at: '2026-09-18T09:40:00Z',
+    extraction_id: null,
+    failed_stage: null,
+    progress: { audio_merged: false, transcribed: false, extracted: false },
+  })
+  state.meetingSummaries.push({
+    meeting_id: meetingId,
+    title,
+    status: 'processing',
+    source: 'chat',
+    started_at: startedAt,
+    duration_ms: null,
+    attendee_count: 3,
+    processed_at: null,
+  })
+  return meetingId
+}
+
+/**
+ * 상세 조회(`GET /meetings/{id}`) 한 번. 답할 회의를 돌려준다(없으면 undefined).
+ * `staged` 는 지금 모습을 답하고 다음 조회 몫으로 한 단계 진행한다 — 첫 조회가 대기(셋 다 거짓)라 서버 순서
+ * 대기 → stt → sources → handoff → done 을 조회마다 하나씩 본다 (#483). 그 밖의 방식은 진행한 뒤에 답한다
+ */
+export function readMeeting(meetingId: string, state: MockDb = db): MeetingDto | undefined {
+  const find = () => state.meetings.find(({ meeting_id }) => meeting_id === meetingId)
+  if (state.meetingFlow.mode !== 'staged') {
+    tickMeeting(meetingId, state)
+    return find()
+  }
+  const found = find()
+  const answered = found && structuredClone(found)
+  tickMeeting(meetingId, state)
+  return answered
 }
 
 /** 상세 조회 한 번에 처리 중 회의를 흐름 방식대로 진행한다. 처리 중이 아니거나 `manual` 이면 그대로다 */
@@ -330,8 +392,19 @@ export function tickMeeting(meetingId: string, state: MockDb = db): void {
     case 'fail':
       failMeeting(meetingId, {}, state)
       return
-    case 'fail-notion-revoked':
-      failMeeting(meetingId, { notionRevoked: true }, state)
+    case 'fail-diarize':
+      failMeeting(meetingId, { failedStage: 'diarize' }, state)
+      return
+    case 'fail-expired':
+      failMeeting(meetingId, { failedStage: 'speaker_assignment_expired' }, state)
+      return
+    case 'fail-chat-stalled':
+      if (isChatMeeting(meetingId, state))
+        failMeeting(meetingId, { failedStage: 'chat_stalled' }, state)
+      return
+    case 'speakers':
+      if (needsSpeakers(meetingId, state)) awaitSpeakers(meetingId, undefined, state)
+      else advanceMeeting(meetingId, state)
       return
   }
 }

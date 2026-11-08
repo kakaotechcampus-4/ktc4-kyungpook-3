@@ -12,7 +12,7 @@ export interface PendingTask {
 }
 
 export interface ExtractedTasks {
-  /** `반영된 것` — 태스크가 만들어진 항목. 승인으로 태스크가 생긴 항목도 여기 한 번만 있다 */
+  /** `반영된 것` — 태스크에 반영된 항목. 승인으로 반영된 항목도 여기 한 번만 있다 */
   applied: ExtractionItem[]
   /** `확인이 필요한 일` — 대기 승인과 이어진 항목. 볼 수 없는 사람(일반 팀원)이면 null */
   pending: PendingTask[] | null
@@ -29,8 +29,9 @@ function reasonOf(approval: Approval | undefined): string {
 /**
  * 회의록의 태스크 영역 (U5-5). 추출과 승인 두 엔티티를 잇는 자리라 widget 에 있다 (계약 §3.1, §5.5).
  *
- * - 반영 = `appliedItems` — `task_id` 가 있는 항목. 승인 뒤 `approval_id` 가 남아도(§4.0-②-12) 여기에만 든다.
- * - 확인 필요 = `pendingItems` ∩ 대기 승인 ID. 반려·승인으로 닫힌 승인은 대기 목록에 없어 빠진다.
+ * - 반영 = `appliedItems` — `task_id` 가 있고 승인이 없거나 `approval_status` 가 `approved` 인 항목.
+ *   수정 제안은 승인 전에도 `task_id` 가 있어 `task_id` 만으로는 고르지 않는다 (#419).
+ * - 확인 필요 = 반영되지 않은 항목 ∩ 대기 승인 ID. 반려·승인으로 닫힌 승인은 대기 목록에 없어 빠진다.
  * - `openApprovals` 가 null 이면 확인 필요를 만들지 않는다 — 일반 팀원은 승인 목록을 부르지 않는다 (D-104, D-163).
  */
 export function extractedTasks(

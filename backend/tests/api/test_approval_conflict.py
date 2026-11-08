@@ -26,6 +26,7 @@ from app.models import (
     User,
     Workspace,
 )
+from app.services.sessions import hash_session_token
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
@@ -85,7 +86,7 @@ def seed(db):
     db.add(pm_user)
     db.flush()
     db.add(SessionModel(
-        user_id=pm_user.user_id, session_token="pm-token",
+        user_id=pm_user.user_id, session_token=hash_session_token("pm-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     pm = Member(workspace_id=ws.workspace_id, user_id=pm_user.user_id, display_name="PM", role="pm")
@@ -545,3 +546,17 @@ def test_request_without_base_title_skips_the_title_check(client, db, seed):
 
     assert r.status_code == 200, r.text
     assert _login(db, seed).due_date == date(2026, 10, 6)
+
+
+def test_meeting_task_update_refuses_an_assignee_override(client, db, seed):
+    """회의에서 나온 카드의 담당자는 PM 이 승인할 때 고치지 않는다. 담당자 줄이 있는 답장 카드만 예외다."""
+    approval = _propose(client, db, seed, status="done")
+
+    r = _approve(client, approval, task_overrides={"assignee_member_id": seed["jimin"].member_id})
+
+    assert r.status_code == 400, r.text
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+    assert r.json()["error"]["details"]["fields"] == ["assignee_member_id"]
+    task = _login(db, seed)
+    assert (task.status, task.assignee_member_id) == ("in_progress", None)
+    assert _approval(db).status == "pending"

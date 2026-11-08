@@ -3,6 +3,10 @@ import { paths } from './routes'
 it.each([
   [paths.landing(), '/'],
   [paths.login(), '/login'],
+  [
+    paths.login('/workspaces/ws_01/tasks/tk_01'),
+    '/login?next=%2Fworkspaces%2Fws_01%2Ftasks%2Ftk_01',
+  ],
   [paths.signup(), '/signup'],
   [paths.workspaceSelect(), '/workspaces'],
   [paths.onboardingCreate(), '/onboarding/create_workspace'],
@@ -20,13 +24,12 @@ it.each([
   [paths.tasks('ws_01', 'tk_01'), '/workspaces/ws_01/tasks/tk_01'],
   [paths.approval('ws_01', 'ap_01'), '/workspaces/ws_01/approvals/ap_01'],
   [paths.messages('ws_01'), '/workspaces/ws_01/messages'],
+  [paths.messageReview('ws_01', 'rv_01'), '/workspaces/ws_01/messages?review=rv_01'],
+  [paths.messageCompose('ws_01'), '/workspaces/ws_01/messages?new=reminder'],
+  [paths.messageThread('ws_01', 'th_01'), '/workspaces/ws_01/messages/threads/th_01'],
   [paths.members('ws_01'), '/workspaces/ws_01/members'],
   [paths.settings('ws_01'), '/workspaces/ws_01/settings'],
   [paths.settingsNotion('ws_01'), '/workspaces/ws_01/settings?section=notion'],
-  [
-    paths.settingsNotion('ws_01', '/workspaces/ws_01/meetings/upload'),
-    '/workspaces/ws_01/settings?section=notion&next=%2Fworkspaces%2Fws_01%2Fmeetings%2Fupload',
-  ],
 ])('%s 를 만든다 (기대값 %s)', (actual, expected) => {
   expect(actual).toBe(expected)
 })

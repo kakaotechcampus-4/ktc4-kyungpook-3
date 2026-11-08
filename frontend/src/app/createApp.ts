@@ -1,10 +1,14 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { clearTrackedMeetings } from '@/entities/meeting'
 import { advanceSessionGeneration } from '@/entities/user'
+import { clearSignOutMark } from '@/features/auth'
 import { onUnauthorized } from '@/shared/api/client'
 import { createQueryClient } from '@/shared/api/queryClient'
+import { provideScreenCode } from '@/shared/lib/screen-code'
 import { startBootQueries } from './bootQueries'
 import { expireSession } from './expireSession'
+import { appRoutes } from './router/routes'
+import { screenCodePreloader } from './router/screenCode'
 
 export interface AppInstance {
   queryClient: QueryClient
@@ -24,14 +28,18 @@ export function createApp(): AppInstance {
     expireSession(queryClient)
   })
   startBootQueries(queryClient)
+  // 로그인 중·셸 탭에서 「이 경로의 화면 코드를 받아 두라」는 신호를 경로 표로 받는다 (#536, #539)
+  const stopScreenCode = provideScreenCode(screenCodePreloader(appRoutes))
   return {
     queryClient,
     dispose: () => {
       stopListening()
+      stopScreenCode()
       // 앱 한 벌의 세션도 끝난다. 버린 앱의 늦은 비동기 작업이 다음 앱(테스트)에 알림을 남기지 않는다
       advanceSessionGeneration()
-      // 정리 추적 store 는 모듈과 함께 살아남는다. 앱 한 벌을 버릴 때 함께 비운다
+      // 정리 추적 store·로그아웃 표시는 모듈과 함께 살아남는다. 앱 한 벌을 버릴 때 함께 비운다
       clearTrackedMeetings()
+      clearSignOutMark()
       queryClient.clear()
     },
   }

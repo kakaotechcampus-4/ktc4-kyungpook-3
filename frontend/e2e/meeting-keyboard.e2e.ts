@@ -143,34 +143,3 @@ test('이탈 확인 모달은 포커스를 가두고 닫히면 연 링크로 돌
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL('/workspaces/ws_01/tasks')
 })
-
-test('Notion 차단 모달은 포커스를 가두고, 연결로 가면 설정의 Notion 영역이 포커스를 받는다', async ({
-  page,
-}) => {
-  await start(page, 'meeting-notion-not-connected', UPLOAD)
-  const dialog = page.getByRole('dialog', { name: 'Notion 연결이 필요해요' })
-  await expect(dialog).toBeVisible(FIRST_PAINT)
-  const cancel = dialog.getByRole('button', { name: '취소' })
-  const connect = dialog.getByRole('button', { name: 'Notion 연결하기' })
-  // 화면에 들어오며 열린 모달이다 — 포커스는 처음부터 모달 안이다
-  await expect(cancel).toBeFocused()
-  for (const [key, next] of [
-    ['Tab', connect],
-    ['Tab', cancel],
-    ['Shift+Tab', connect],
-  ] as const) {
-    await page.keyboard.press(key)
-    await expect(next).toBeFocused()
-    await expectFocusInside(dialog)
-  }
-
-  // 연결로 간다 — 새 화면(설정)이 자기 포커스 정책대로 Notion 영역 제목에 포커스를 둔다. 모달이 그 포커스를 가로채지 않는다
-  await page.keyboard.press('Enter')
-  await expect(page).toHaveURL(/\/workspaces\/ws_01\/settings\?section=notion/, FIRST_PAINT)
-  await expect(dialog).toBeHidden()
-  const section = page.getByTestId('notion-connection')
-  await expect(section.getByRole('heading', { name: 'Notion 연결' })).toBeFocused(FIRST_PAINT)
-  // 그 다음 Tab 은 영역 안의 연결 버튼이다
-  await page.keyboard.press('Tab')
-  await expect(section.getByRole('button', { name: 'Notion 연결하기' })).toBeFocused()
-})

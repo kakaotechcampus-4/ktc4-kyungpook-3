@@ -23,15 +23,23 @@ export interface TextFieldProps extends Omit<ComponentPropsWithRef<'input'>, 'si
   startAdornment?: ReactNode
   /** 비밀번호 보기 버튼, 캘린더 아이콘 등 */
   endAdornment?: ReactNode
+  /** 'lg' 는 44px — 선택 상자(Select md)와 한 줄에 둘 때. 기본은 화면군 높이다 */
+  size?: 'lg'
 }
 
 /* 표는 모듈 스코프. 42px 는 §5-7 이 이미 `h-[42px]` 로 적어 둔 값이고,
    15px 는 타이포 스케일 밖이다 — docs/impl-decision/2026-09-16-values-outside-token-scale.md */
 
 const TONE_SHAPE: Record<FieldTone, string> = {
-  product: 'h-[42px] rounded-9 px-13',
-  onboarding: 'h-[42px] rounded-8 px-13',
-  auth: 'h-48 rounded-12 px-16',
+  product: 'rounded-9 px-13',
+  onboarding: 'rounded-8 px-13',
+  auth: 'rounded-12 px-16',
+}
+
+const TONE_HEIGHT: Record<FieldTone, string> = {
+  product: 'h-[42px]',
+  onboarding: 'h-[42px]',
+  auth: 'h-48',
 }
 
 const TONE_TEXT: Record<FieldTone, string> = {
@@ -58,8 +66,8 @@ const INPUT_BASE = 'w-full border bg-surface font-normal text-ink'
 
 const INPUT_DISABLED = 'disabled:border-line disabled:bg-surface-sunken disabled:text-faint'
 
-/* min-w-[0px] 은 오타가 아니다 — tokens.css 가 --spacing 을 비워서 min-w-0 유틸이 없다.
-   padding 은 preflight 의 `*{padding:0}` 이 이미 지운다 (p-0 도 같은 이유로 없다).
+/* min-w-[0px] 은 tokens.css 에 --spacing-0 이 없어 min-w-0 유틸이 없던 때의 값이다. #497 부터는 min-w-0 과 같다.
+   padding 은 preflight 의 `*{padding:0}` 이 이미 지운다.
    docs/impl-decision/2026-09-16-values-outside-token-scale.md
    포커스는 래퍼가 그리므로 안쪽 input 은 끈다 — 래퍼 테두리 안쪽에 선이 하나 더 생긴다. */
 const BARE_INPUT =
@@ -73,11 +81,11 @@ const ADORNED_BOX =
 /* 포커스 선 색. 강조색 테두리 입력은 선도 강조색이다 — 먹 선이 덮으면 포커스 중에
    "승인이 막힌 칸"이라는 신호가 사라진다. 장식 없는 보통 입력은 전역 먹 선을 그대로 쓴다.
    docs/impl-decision/2026-09-23-focus-outline-over-border.md */
-const INPUT_FOCUS_ACCENT = 'focus-visible:outline-accent'
+const INPUT_FOCUS_ACCENT = 'focus-visible:outline-accent-point'
 
 const ADORNED_FOCUS = 'has-[input:focus-visible]:outline-ink'
 
-const ADORNED_FOCUS_ACCENT = 'has-[input:focus-visible]:outline-accent'
+const ADORNED_FOCUS_ACCENT = 'has-[input:focus-visible]:outline-accent-point'
 
 /**
  * 네이티브 `<input>`. Radix 를 쓰지 않는다 (§7-0).
@@ -100,6 +108,7 @@ export function TextField({
   error,
   startAdornment,
   endAdornment,
+  size,
   id,
   className,
   ...rest
@@ -114,7 +123,7 @@ export function TextField({
   // 경계색·플레이스홀더색·포커스 선 색은 한 곳에서만 고른다 — 두 클래스를 같이 붙이면 CSS 순서가 이긴다
   const accent = Boolean(error) || blocking
   const borderColor = accent ? 'border-accent' : TONE_BORDER[tone]
-  const placeholderColor = accent ? 'placeholder:text-accent-soft' : 'placeholder:text-faint'
+  const placeholderColor = accent ? 'placeholder:text-accent-solid' : 'placeholder:text-dim'
   const inputFocusColor = accent ? INPUT_FOCUS_ACCENT : undefined
   const adornedFocusColor = accent ? ADORNED_FOCUS_ACCENT : ADORNED_FOCUS
 
@@ -124,6 +133,7 @@ export function TextField({
       .join(' ') || undefined
 
   const hasAdornment = Boolean(startAdornment) || Boolean(endAdornment)
+  const height = size === 'lg' ? 'h-44' : TONE_HEIGHT[tone]
 
   const inputProps = {
     id: fieldId,
@@ -152,6 +162,7 @@ export function TextField({
           className={[
             ADORNED_BOX,
             adornedFocusColor,
+            height,
             TONE_SHAPE[tone],
             TONE_TEXT[tone],
             borderColor,
@@ -166,6 +177,7 @@ export function TextField({
           className={[
             INPUT_BASE,
             INPUT_DISABLED,
+            height,
             TONE_SHAPE[tone],
             TONE_TEXT[tone],
             borderColor,

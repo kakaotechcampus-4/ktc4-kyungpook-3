@@ -1,13 +1,14 @@
 import type { MeetingSummary } from '../model/types'
 
 /**
- * 회의록 목록 한 벌. 정리가 끝난 회의(`minutes`)와 아직 회의록이 없는 회의(`inProgress`)로 나눈다 (U5-1, U5-2).
- * 둘 다 회의 날짜 최신순이다 (D-106). 실패 회의는 어느 쪽에도 없다 — 서버가 빼고(D-093), 남아 있어도 여기서 뺀다.
+ * 완료·진행 중·화자 지정 기한 만료 이력을 회의 날짜 최신순으로 나눈다.
+ * 일반 실패는 기존 D-093대로 숨기고, 수동 업로드의 화자 지정 만료만 남긴다 (#256).
  */
 export interface MinutesList {
   minutes: MeetingSummary[]
-  /** 정리 중(`processing`)·회의 중(`created`·`recording`). 회의록이 아니라 상태 항목으로 보인다 */
+  /** 정리 중(`processing`)·화자 지정 대기(`awaiting_speakers`)·회의 중(`created`·`recording`). 회의록이 아니라 상태 항목으로 보인다 */
   inProgress: MeetingSummary[]
+  expired: MeetingSummary[]
 }
 
 function startedAtOf(meeting: MeetingSummary): number {
@@ -25,6 +26,12 @@ export function toMinutesList(meetings: readonly MeetingSummary[]): MinutesList 
   return {
     minutes: sorted.filter(({ status }) => status === 'done'),
     inProgress: sorted.filter(({ status }) => status !== 'done' && status !== 'failed'),
+    expired: sorted.filter(
+      ({ status, source, failedStage }) =>
+        status === 'failed' &&
+        source === 'manual_upload' &&
+        failedStage === 'speaker_assignment_expired',
+    ),
   }
 }
 

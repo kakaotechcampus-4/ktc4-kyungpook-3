@@ -2,6 +2,7 @@ import type { TaskDto, TaskHistoryDto } from '@/shared/types/api/task'
 import { db } from './db'
 import type { MockDb } from './db'
 import { MOCK_NOW } from './fixtures/constants'
+import type { MockTask } from './fixtures/task'
 import { nextId } from './utils'
 
 // 백엔드 services/tasks.py 의 _FIELD_MAP 과 같은 집합이다. 이 목록에 있으면 이력이 남는다.
@@ -9,13 +10,12 @@ export const taskFields = [
   'title',
   'assignee_member_id',
   'status',
-  'progress',
   'blocker',
   'start_date',
   'due_date',
 ] as const
 export type TaskField = (typeof taskFields)[number]
-export type TaskUpdates = Partial<Pick<TaskDto, TaskField>>
+export type TaskUpdates = Partial<Pick<MockTask, TaskField>>
 // PATCH 로 null 을 보내 지울 수 있는 필드는 title·status 를 뺀 나머지다.
 // 그 둘은 NOT NULL 이라 validTaskFields 가 400 으로 거른다.
 
@@ -25,18 +25,17 @@ export const approvalTaskUpdateFields: readonly TaskField[] = [
   'title',
   'assignee_member_id',
   'status',
-  'progress',
   'blocker',
   'due_date',
 ]
 /** `state` 를 주면 그 상태에 쓴다 — 시나리오가 `db` 에 넣기 전의 상태를 만들 때다. 기본은 `db` */
 export function createTask(
-  input: Pick<TaskDto, 'workspace_id' | 'title'> & Partial<TaskDto>,
+  input: Pick<MockTask, 'workspace_id' | 'title'> & Partial<MockTask> & { history_title?: string },
   actor: string | null,
   source = 'manual',
   state: MockDb = db,
-): TaskDto {
-  const task: TaskDto = {
+): MockTask {
+  const task: MockTask = {
     task_id: nextId(
       'tk',
       state.tasks.map(({ task_id }) => task_id),
@@ -47,7 +46,6 @@ export function createTask(
     title: input.title,
     assignee_member_id: input.assignee_member_id ?? null,
     status: input.status ?? 'todo',
-    progress: input.progress ?? null,
     blocker: input.blocker ?? null,
     due_date: input.due_date ?? null,
     start_date: input.start_date ?? null,
@@ -58,7 +56,7 @@ export function createTask(
     updated_at: MOCK_NOW,
   }
   state.tasks.push(task)
-  addHistory(task.task_id, 'title', null, task.title, actor, source, state)
+  addHistory(task.task_id, 'title', null, input.history_title ?? task.title, actor, source, state)
   enqueueTaskSync(task, state)
   return task
 }
@@ -76,7 +74,7 @@ export function notionConnected(workspaceId: string, state: MockDb = db): boolea
  * 미연동이면 아무것도 하지 않는다 — 기존 값도 그대로다. 잡 테이블·워커는 흉내내지 않는다:
  * `synced`·`failed` 는 테스트와 시나리오가 태스크 필드를 직접 넣어 만든다
  */
-export function enqueueTaskSync(task: TaskDto, state: MockDb = db): void {
+export function enqueueTaskSync(task: MockTask, state: MockDb = db): void {
   if (notionConnected(task.workspace_id, state)) task.notion_sync_status = 'pending'
 }
 export function addHistory(
@@ -113,7 +111,7 @@ export function addHistory(
  * version 을 1 올리고 Notion 반영을 대기열에 넣는다. 모두 같은 값이면 아무것도 바꾸지 않는다. 바뀐 필드 수를 돌려준다
  */
 export function updateTask(
-  task: TaskDto,
+  task: MockTask,
   updates: TaskUpdates,
   actor: string | null,
   source = 'manual',
@@ -143,29 +141,25 @@ export function updateTask(
   return changed
 }
 
-/**
- * 생성 승인의 제목·담당자·마감 판정. 제목은 앞뒤 공백을 뺀 코드 포인트 1~300자(백엔드 Python len 과 같은 셈),
- * 담당자는 비어 있지 않은 ID(소속은 ownershipError 가 본다), 마감은 달력에 있는 YYYY-MM-DD 다.
- * 통과하면 저장할 값(제목은 trim 한 값)을, 아니면 처음 걸린 필드를 돌려준다
- */
 export function taskCreateFields(input: {
   title: unknown
   assignee_member_id: unknown
   due_date: unknown
 }):
-  | { ok: true; title: string; assignee_member_id: string; due_date: string }
+  | { ok: true; title: string; assignee_member_id: string | null; due_date: string | null }
   | { ok: false; field: 'task_title' | 'assignee_member_id' | 'due_date' } {
   const title = typeof input.title === 'string' ? input.title.trim() : ''
   const length = [...title].length
   if (length < 1 || length > 300) return { ok: false, field: 'task_title' }
-  if (typeof input.assignee_member_id !== 'string' || input.assignee_member_id === '')
+  if (input.assignee_member_id != null && typeof input.assignee_member_id !== 'string')
     return { ok: false, field: 'assignee_member_id' }
-  if (!validDate(input.due_date)) return { ok: false, field: 'due_date' }
+  if (input.due_date != null && !validDate(input.due_date)) return { ok: false, field: 'due_date' }
   return {
     ok: true,
     title,
-    assignee_member_id: input.assignee_member_id,
-    due_date: input.due_date,
+    assignee_member_id:
+      typeof input.assignee_member_id === 'string' ? input.assignee_member_id : null,
+    due_date: typeof input.due_date === 'string' ? input.due_date : null,
   }
 }
 
@@ -186,7 +180,7 @@ export interface TaskConflict {
  * 값은 payload 에 저장된 모양(날짜는 ISO 문자열)이라 태스크 값과 그대로 비교한다
  */
 export function findConflicts(
-  task: TaskDto,
+  task: MockTask,
   proposed: Record<string, unknown>,
   baseValues: unknown,
 ): TaskConflict[] {
@@ -194,7 +188,7 @@ export function findConflicts(
   const conflicts: TaskConflict[] = []
   for (const [field, proposedValue] of Object.entries(proposed)) {
     if (!Object.hasOwn(baseValues, field)) continue
-    const current = task[field as keyof TaskDto]
+    const current = task[field as keyof MockTask]
     if (current !== baseValues[field] && current !== proposedValue)
       conflicts.push({ field, base: baseValues[field], current, proposed: proposedValue })
   }
@@ -217,17 +211,11 @@ export function validTaskFields(body: Record<string, unknown>): boolean {
   return (
     (body.title === undefined ||
       (typeof body.title === 'string' &&
-        body.title.trim().length > 0 &&
-        body.title.length <= 300)) &&
+        [...body.title.trim()].length > 0 &&
+        [...body.title.trim()].length <= 300)) &&
     (body.status === undefined ||
       (typeof body.status === 'string' &&
         ['todo', 'in_progress', 'blocked', 'done'].includes(body.status))) &&
-    (body.progress === undefined ||
-      body.progress === null ||
-      (typeof body.progress === 'number' &&
-        Number.isInteger(body.progress) &&
-        body.progress >= 0 &&
-        body.progress <= 100)) &&
     ['assignee_member_id', 'blocker'].every(
       (field) =>
         body[field] === undefined || body[field] === null || typeof body[field] === 'string',
@@ -268,4 +256,47 @@ export function taskUpdates(body: Record<string, unknown>): TaskUpdates {
     if (body[field] !== undefined) updates[field] = body[field]
   }
   return updates
+}
+
+/** 스케줄러가 72시간 무응답으로 건 막힘의 사유 (계약 §5.7 「스케줄러」) */
+export const SILENCE_BLOCKER = '리마인드에 72시간 동안 응답이 없어요'
+
+/** 백엔드 scheduler `_block` 과 같다. 이력 출처는 scheduler 다 */
+export function blockBySilence(task: MockTask, at: string, state: MockDb = db): void {
+  if (task.status === 'blocked') return
+  state.autoBlocks[task.task_id] = { prev_status: task.status, prev_blocker: task.blocker }
+  const changes = [
+    ['status', 'blocked'],
+    ['blocker', SILENCE_BLOCKER],
+  ] as const
+  for (const [field, value] of changes) {
+    const entry = addHistory(task.task_id, field, task[field], value, null, 'scheduler', state)
+    entry.is_auto = true
+    entry.created_at = at
+    task[field] = value
+  }
+  task.updated_at = at
+  task.version += 1
+}
+
+/** 백엔드 `_auto_block_state`·`_undoable_watches` 와 같다. 풀기와 응답 조립이 이 판정 하나를 같이 쓴다 */
+export function canUndoAutoBlock(task: MockTask, state: MockDb = db): boolean {
+  return (
+    Object.hasOwn(state.autoBlocks, task.task_id) &&
+    task.status === 'blocked' &&
+    task.blocker === SILENCE_BLOCKER
+  )
+}
+
+export function toTaskResponse(task: MockTask, state: MockDb = db): TaskDto {
+  return { ...task, auto_blocked: canUndoAutoBlock(task, state) }
+}
+
+/** 백엔드 `undo_auto_block` 과 같다. false 면 409 `AUTO_BLOCK_NOT_FOUND` 다 */
+export function undoAutoBlock(task: MockTask, actor: string): boolean {
+  if (!canUndoAutoBlock(task)) return false
+  const { prev_status, prev_blocker } = db.autoBlocks[task.task_id]
+  updateTask(task, { status: prev_status, blocker: prev_blocker }, actor)
+  delete db.autoBlocks[task.task_id]
+  return true
 }

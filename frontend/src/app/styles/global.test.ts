@@ -35,3 +35,27 @@ describe('NanumSquare @font-face', () => {
     }
   })
 })
+
+describe('index.html 폰트 preload', () => {
+  const frontend = resolve(import.meta.dirname, '../../..')
+  const html = readFileSync(resolve(frontend, 'index.html'), 'utf8')
+  const fonts = readFileSync(resolve(import.meta.dirname, 'fonts.css'), 'utf8')
+  const preloads = (html.match(/<link\b[^>]*rel="preload"[^>]*>/g) ?? []).filter((tag) =>
+    tag.includes('as="font"'),
+  )
+  const hrefOf = (tag: string) => /href="([^"]+)"/.exec(tag)?.[1] ?? ''
+
+  it('본문 굵기(Regular) 한 벌만 미리 받는다', () => {
+    expect(preloads.map(hrefOf)).toEqual(['/src/shared/styles/fonts/NanumSquare-Regular.woff2'])
+  })
+
+  it('미리 받은 파일을 @font-face 가 그대로 쓴다 — 다르면 같은 굵기를 두 번 받는다', () => {
+    const faceFiles = [...fonts.matchAll(/url\('([^']+)'\)/g)].map(([, url]) =>
+      resolve(import.meta.dirname, url),
+    )
+    for (const tag of preloads) {
+      expect(tag).toMatch(/\scrossorigin[\s>]/)
+      expect(faceFiles).toContain(resolve(frontend, '.' + hrefOf(tag)))
+    }
+  })
+})

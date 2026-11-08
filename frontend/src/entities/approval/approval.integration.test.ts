@@ -78,39 +78,27 @@ it('resets approval and task data between tests and rejects without creating a t
   expect((await fetchDto<ListDto<TaskDto>>('/tasks?workspace_id=ws_01')).total).toBe(10)
 })
 
-// 백엔드 _apply_approval 은 payload 의 status·progress 도 읽고 validate_task_fields 를 거친다
-it('honours status and progress in a task_create payload and rejects invalid ones', async () => {
-  db.approvals[0].payload = {
-    ...db.approvals[0].payload,
-    status: 'in_progress',
-    progress: 30,
-  }
-  await fetchDto(
-    '/approvals/ap_01',
-    jsonRequest('PATCH', { status: 'approved', task_overrides: overrides }),
-  )
-  expect(await fetchDto<TaskDto>('/tasks/tk_90')).toMatchObject({
-    status: 'in_progress',
-    progress: 30,
-  })
+it('creates todo tasks regardless of legacy payload status and progress', async () => {
+  db.approvals[0].payload = { ...db.approvals[0].payload, status: 'invalid', progress: 200 }
+  await fetchDto('/approvals/ap_01', jsonRequest('PATCH', { status: 'approved' }))
+  const task = await fetchDto<TaskDto>('/tasks/tk_90')
+  expect(task).toMatchObject({ status: 'todo', assignee_member_id: null, due_date: null })
+  expect(task).not.toHaveProperty('progress')
 })
 
-it('refuses an approval whose payload carries an invalid status or progress', async () => {
-  db.approvals[1].payload = { ...db.approvals[1].payload, progress: 200 }
+it('rejects invalid overrides without changing pending approval or tasks', async () => {
+  const before = structuredClone({
+    approvals: db.approvals,
+    tasks: db.tasks,
+    history: db.taskHistory,
+  })
   await expect(
     fetchDto(
       '/approvals/ap_02',
-      jsonRequest('PATCH', {
-        status: 'approved',
-        task_overrides: { ...overrides, task_title: '테스트 계획 정리' },
-      }),
+      jsonRequest('PATCH', { status: 'approved', task_overrides: { status: 'done' } }),
     ),
   ).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
-  // 실패한 승인은 그대로 pending 이고 태스크도 생기지 않는다
-  expect(
-    (await fetchDto<ListDto<ApprovalDto>>('/approvals?workspace_id=ws_01&status=pending')).total,
-  ).toBe(3)
-  expect((await fetchDto<ListDto<TaskDto>>('/tasks?workspace_id=ws_01')).total).toBe(10)
+  expect({ approvals: db.approvals, tasks: db.tasks, history: db.taskHistory }).toEqual(before)
 })
 
 // 백엔드 _apply_approval 은 Task 를 만들기 전에 _get_linkable_extraction_item 으로
@@ -207,14 +195,12 @@ it('applies task-update payload instead of creating another task', async () => {
   db.approvals[0].related_task_id = 'tk_01'
   db.approvals[0].payload = {
     status: 'done',
-    progress: 100,
     due_date: null,
     start_date: '2020-01-01',
   }
   await fetchDto('/approvals/ap_01', jsonRequest('PATCH', { status: 'approved' }))
   expect(await fetchDto('/tasks/tk_01')).toMatchObject({
     status: 'done',
-    progress: 100,
     due_date: null,
     start_date: '2026-09-15',
   })

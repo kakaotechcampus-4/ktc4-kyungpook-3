@@ -1,7 +1,16 @@
 import { CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
+import type { TimelineChangeDto, TimelineItemDto } from '@/shared/types/api/reply'
 import type { TaskDto, TaskHistoryDto } from '@/shared/types/api/task'
 import { enumValue } from '@/shared/lib/enum'
-import type { NotionSyncStatus, Task, TaskHistoryEntry } from './types'
+import type {
+  NotionSyncStatus,
+  ReplyChangeField,
+  ReplyChangeLine,
+  ReplyChangeResult,
+  Task,
+  TaskHistoryEntry,
+  TaskTimelineItem,
+} from './types'
 
 const notionSyncStatuses: readonly NotionSyncStatus[] = ['pending', 'synced', 'failed']
 
@@ -41,13 +50,13 @@ export function toTask(dto: TaskDto): Task {
       'todo',
       'task status',
     ),
-    progress: dto.progress,
     blocker: dto.blocker,
     dueDate: dto.due_date,
     startDate: dto.start_date ?? dto.created_at.slice(0, 10),
     notionPageId: dto.notion_page_id,
     version,
     notionSyncStatus: toNotionSyncStatus(dto.notion_sync_status),
+    autoBlocked: dto.auto_blocked === true,
     createdAt: dto.created_at,
     updatedAt: dto.updated_at,
   }
@@ -58,7 +67,16 @@ export function toTaskHistory(dto: TaskHistoryDto): TaskHistoryEntry {
     taskId: dto.task_id,
     field: enumValue(
       dto.changed_field,
-      ['assignee', 'start_date', 'due_date', 'status', 'title', 'progress', 'blocker'] as const,
+      [
+        'assignee',
+        'start_date',
+        'due_date',
+        'status',
+        'title',
+        'progress',
+        'blocker',
+        'scope',
+      ] as const,
       'title',
       'history field',
     ),
@@ -66,7 +84,7 @@ export function toTaskHistory(dto: TaskHistoryDto): TaskHistoryEntry {
     newValue: dto.new_value,
     source: enumValue(
       dto.change_source,
-      ['meeting', 'chat', 'checkin', 'notion', 'reminder_reply', 'manual'] as const,
+      ['meeting', 'chat', 'checkin', 'notion', 'reminder_reply', 'manual', 'scheduler'] as const,
       'manual',
       'history source',
     ),
@@ -76,4 +94,81 @@ export function toTaskHistory(dto: TaskHistoryDto): TaskHistoryEntry {
     rolledBackAt: dto.rolled_back_at,
     createdAt: dto.created_at,
   }
+}
+
+const replyChangeFields: readonly ReplyChangeField[] = [
+  'status',
+  'due_date',
+  'assignee',
+  'scope',
+  'unknown',
+  'due_clear',
+  'failed',
+  'none',
+]
+
+const replyChangeResults: readonly ReplyChangeResult[] = [
+  'applied',
+  'undone',
+  'pending',
+  'approved',
+  'rejected',
+  'noted',
+  'recorded',
+]
+
+function toReplyChangeLine(dto: TimelineChangeDto): ReplyChangeLine {
+  return {
+    id: dto.change_id,
+    // 모르는 줄은 값을 읽지 못한 줄로, 모르는 결과는 반영하지 않은 것으로 둔다. 되돌리기는 `undoable` 만 따른다
+    field: enumValue(dto.field, replyChangeFields, 'failed', 'reply change field'),
+    newValue: dto.new_value,
+    evidenceStatus: dto.evidence_status,
+    summary: dto.summary,
+    evidenceQuote: dto.evidence_quote,
+    result: enumValue(dto.result, replyChangeResults, 'noted', 'reply change result'),
+    undoable: dto.undoable === true,
+  }
+}
+
+/**
+ * 타임라인 응답을 태스크 기록으로 바꾼다. 이력 칸에는 변경자·되돌림 여부가 없어서 `/history` 의 같은 이력(history_id)으로
+ * 채우고, 거기 없으면 타임라인 칸만으로 만든다
+ */
+export function toTaskTimeline(
+  items: readonly TimelineItemDto[],
+  history: readonly TaskHistoryEntry[],
+  taskId: string,
+): TaskTimelineItem[] {
+  const byId = new Map(history.map((entry) => [entry.id, entry]))
+  return items.map((dto): TaskTimelineItem => {
+    if (dto.kind === 'reply')
+      return {
+        kind: 'reply',
+        id: dto.message_id,
+        at: dto.at,
+        memberName: dto.member_name,
+        channel: dto.channel,
+        body: dto.body,
+        changes: dto.changes.map(toReplyChangeLine),
+      }
+    return {
+      kind: 'history',
+      entry:
+        byId.get(dto.history_id) ??
+        toTaskHistory({
+          history_id: dto.history_id,
+          task_id: taskId,
+          changed_field: dto.changed_field,
+          old_value: dto.old_value,
+          new_value: dto.new_value,
+          change_source: dto.change_source,
+          changed_by: null,
+          is_auto: false,
+          is_rolled_back: false,
+          rolled_back_at: null,
+          created_at: dto.at,
+        }),
+    }
+  })
 }

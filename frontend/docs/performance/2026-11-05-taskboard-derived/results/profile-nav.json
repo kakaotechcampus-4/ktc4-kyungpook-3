@@ -1,0 +1,371 @@
+{
+  "base": "http://localhost:5291",
+  "rounds": 3,
+  "chromium": "153.0.8010.12",
+  "sizes": {
+    "500": [
+      {
+        "action": "calendar 다음 달",
+        "search": "?view=calendar&month=2026-10&from=2026-09-14",
+        "busyMs": 169.34899999999956,
+        "buildTaskBoard": 1.412,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "calendar 이전 달",
+        "search": "?view=calendar&month=2026-09&from=2026-09-14",
+        "busyMs": 170.5929999999998,
+        "buildTaskBoard": 0.479,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "calendar → gantt",
+        "search": "?view=gantt&month=2026-09&from=2026-09-14",
+        "busyMs": 227.44000000000008,
+        "buildTaskBoard": 0.635,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt 다음 3주",
+        "search": "?view=gantt&month=2026-09&from=2026-10-05",
+        "busyMs": 33.818,
+        "buildTaskBoard": 1.211,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt 이전 3주",
+        "search": "?view=gantt&month=2026-09&from=2026-08-24",
+        "busyMs": 126.55499999999996,
+        "buildTaskBoard": 0,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt → calendar",
+        "search": "?view=calendar&month=2026-09&from=2026-10-05",
+        "busyMs": 170.59299999999988,
+        "buildTaskBoard": 0.621,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "calendar 다음 달",
+        "search": "?view=calendar&month=2026-10&from=2026-10-05",
+        "busyMs": 58.947000000000024,
+        "buildTaskBoard": 0.678,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "calendar 이전 달",
+        "search": "?view=calendar&month=2026-09&from=2026-10-05",
+        "busyMs": 212.6490000000001,
+        "buildTaskBoard": 0.513,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "calendar → gantt",
+        "search": "?view=gantt&month=2026-09&from=2026-10-05",
+        "busyMs": 185.76199999999992,
+        "buildTaskBoard": 0.61,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt 다음 3주",
+        "search": "?view=gantt&month=2026-09&from=2026-10-26",
+        "busyMs": 27.243999999999996,
+        "buildTaskBoard": 0.515,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt 이전 3주",
+        "search": "?view=gantt&month=2026-09&from=2026-10-05",
+        "busyMs": 69.61100000000003,
+        "buildTaskBoard": 0.658,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt → calendar",
+        "search": "?view=calendar&month=2026-09&from=2026-10-26",
+        "busyMs": 220.99499999999983,
+        "buildTaskBoard": 0.527,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "calendar 다음 달",
+        "search": "?view=calendar&month=2026-10&from=2026-10-26",
+        "busyMs": 63.49399999999999,
+        "buildTaskBoard": 0.534,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "calendar 이전 달",
+        "search": "?view=calendar&month=2026-09&from=2026-10-26",
+        "busyMs": 209.28599999999992,
+        "buildTaskBoard": 0.978,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "calendar → gantt",
+        "search": "?view=gantt&month=2026-09&from=2026-10-26",
+        "busyMs": 221.02600000000007,
+        "buildTaskBoard": 0.66,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt 다음 3주",
+        "search": "?view=gantt&month=2026-09&from=2026-11-16",
+        "busyMs": 27.128,
+        "buildTaskBoard": 1.121,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt 이전 3주",
+        "search": "?view=gantt&month=2026-09&from=2026-10-26",
+        "busyMs": 69.50699999999999,
+        "buildTaskBoard": 0.925,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt → calendar",
+        "search": "?view=calendar&month=2026-09&from=2026-11-16",
+        "busyMs": 224.17599999999993,
+        "buildTaskBoard": 0,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      }
+    ],
+    "2000": [
+      {
+        "action": "calendar 다음 달",
+        "search": "?view=calendar&month=2026-10&from=2026-09-14",
+        "busyMs": 381.6939999999996,
+        "buildTaskBoard": 2.424,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "calendar 이전 달",
+        "search": "?view=calendar&month=2026-09&from=2026-09-14",
+        "busyMs": 314.01700000000005,
+        "buildTaskBoard": 2.5210000000000004,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "calendar → gantt",
+        "search": "?view=gantt&month=2026-09&from=2026-09-14",
+        "busyMs": 866.2929999999998,
+        "buildTaskBoard": 2.548,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt 다음 3주",
+        "search": "?view=gantt&month=2026-09&from=2026-10-05",
+        "busyMs": 68.079,
+        "buildTaskBoard": 3.106,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt 이전 3주",
+        "search": "?view=gantt&month=2026-09&from=2026-08-24",
+        "busyMs": 132.809,
+        "buildTaskBoard": 0,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt → calendar",
+        "search": "?view=calendar&month=2026-09&from=2026-09-14",
+        "busyMs": 469.22699999999986,
+        "buildTaskBoard": 2.458,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "calendar 다음 달",
+        "search": "?view=calendar&month=2026-10&from=2026-09-14",
+        "busyMs": 349.39699999999993,
+        "buildTaskBoard": 2.58,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "calendar 이전 달",
+        "search": "?view=calendar&month=2026-09&from=2026-09-14",
+        "busyMs": 308.0279999999999,
+        "buildTaskBoard": 3.221,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "calendar → gantt",
+        "search": "?view=gantt&month=2026-09&from=2026-09-14",
+        "busyMs": 734.8370000000001,
+        "buildTaskBoard": 2.556,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt 다음 3주",
+        "search": "?view=gantt&month=2026-09&from=2026-10-05",
+        "busyMs": 53.23,
+        "buildTaskBoard": 2.629,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt 이전 3주",
+        "search": "?view=gantt&month=2026-09&from=2026-08-24",
+        "busyMs": 132.53099999999998,
+        "buildTaskBoard": 2.355,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt → calendar",
+        "search": "?view=calendar&month=2026-09&from=2026-09-14",
+        "busyMs": 425.4969999999998,
+        "buildTaskBoard": 2.642,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "calendar 다음 달",
+        "search": "?view=calendar&month=2026-10&from=2026-09-14",
+        "busyMs": 361.7589999999999,
+        "buildTaskBoard": 2.141,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "calendar 이전 달",
+        "search": "?view=calendar&month=2026-09&from=2026-09-14",
+        "busyMs": 343.69100000000014,
+        "buildTaskBoard": 2.667,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "calendar → gantt",
+        "search": "?view=gantt&month=2026-09&from=2026-09-14",
+        "busyMs": 744.0429999999998,
+        "buildTaskBoard": 2.4930000000000003,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt 다음 3주",
+        "search": "?view=gantt&month=2026-09&from=2026-10-05",
+        "busyMs": 66.14799999999998,
+        "buildTaskBoard": 2.532,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt 이전 3주",
+        "search": "?view=gantt&month=2026-09&from=2026-08-24",
+        "busyMs": 108.02799999999999,
+        "buildTaskBoard": 0,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "gantt → calendar",
+        "search": "?view=calendar&month=2026-09&from=2026-09-14",
+        "busyMs": 440.3969999999999,
+        "buildTaskBoard": 2.588,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      }
+    ]
+  }
+}

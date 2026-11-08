@@ -12,11 +12,8 @@ export default tseslint.config(
     ignores: [
       'dist',
       'coverage',
-      'storybook-static',
       'playwright-report',
       'test-results',
-      'playwright-report-storybook',
-      'test-results-storybook',
       'docs',
       'public/mockServiceWorker.js',
     ],
@@ -25,7 +22,7 @@ export default tseslint.config(
   js.configs.recommended,
 
   {
-    // Node 로 실행하는 보조 스크립트 (예: e2e/storybook/serve.mjs)
+    // Node 로 실행하는 보조 스크립트 (예: scripts/startup-images.mjs)
     files: ['**/*.mjs'],
     languageOptions: { globals: globals.node },
   },
@@ -160,9 +157,8 @@ export default tseslint.config(
   },
 
   {
-    // Storybook 설정·스토리·E2E 는 앱 모듈이 아니라 fast refresh 경계가 없다.
-    // 스토리 파일은 meta 객체와 스토리 객체를, preview 는 설정 객체와 감싸는 컴포넌트를 함께 내보낸다
-    files: ['.storybook/**/*.{ts,tsx}', 'src/**/*.stories.tsx', 'e2e/**/*.ts'],
+    // E2E 는 앱 모듈이 아니라 fast refresh 경계가 없다
+    files: ['e2e/**/*.ts'],
     rules: {
       'react-refresh/only-export-components': 'off',
     },

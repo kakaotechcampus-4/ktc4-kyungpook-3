@@ -25,11 +25,11 @@ vi.mock('@/entities/integration', async (importOriginal) => ({
 }))
 
 const UPLOAD_PATH = paths.meetingUpload('ws_01')
-const FROM_MODAL = paths.settingsNotion('ws_01', UPLOAD_PATH)
+const SETTINGS_NOTION = paths.settingsNotion('ws_01')
 
 beforeEach(() => {
   vi.mocked(leaveApp).mockClear()
-  // 업로드로 돌아왔을 때 처리 화면으로 가지 않도록 픽스처의 정리 중 회의를 끝내 둔다
+  // 업로드로 잘못 가더라도 처리 화면으로 새지 않게 픽스처의 정리 중 회의를 끝내 둔다
   completeMeeting('mt_10')
 })
 
@@ -77,14 +77,25 @@ function startedState(): string | null {
 }
 
 describe('설정의 Notion 연결 영역 (U3-3)', () => {
-  it('설정 화면에는 기존 입력과 Notion 연결 영역만 있다 — 연결됨이면 연결 액션이 없다', async () => {
+  it('설정 화면은 Settings 캔버스의 절을 갖고, 연결된 Notion 에는 연결 액션 대신 관리 버튼만 있다', async () => {
     renderApp(paths.settings('ws_01'))
     const area = await section()
     expect(await area.findByText('연결됨')).toBeInTheDocument()
-    expect(area.queryByRole('button')).toBeNull()
+    expect(area.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      '속성 다시 맞추기',
+      '연결 끊기',
+    ])
     expect(screen.getByLabelText('워크스페이스 이름')).toBeInTheDocument()
-    // Settings 캔버스의 다른 절(자동 반영·알림·팀 삭제·Discord)은 M8 이다
+    // M8-B 에서 설정을 Settings 캔버스대로 만들었다. 연결 절 안에 Discord·Notion 카드가 있다
     expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      '일반',
+      '연결',
+      '자동 반영 기준',
+      '알림',
+      '이 팀 삭제하기',
+    ])
+    expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([
+      'Discord 연결',
       'Notion 연결',
     ])
   })
@@ -104,22 +115,35 @@ describe('설정의 Notion 연결 영역 (U3-3)', () => {
     expect(startedState()).toBe(paths.settingsNotion('ws_01'))
   })
 
-  it.each(['not_connected', 'revoked'] as const)(
-    '일반 팀원 — %s 상태와 PM 에게 연결을 요청하라는 안내만 본다',
-    async (status) => {
+  it.each([
+    ['not_connected', '연결 안 됨'],
+    ['revoked', '연결 실패'],
+  ] as const)(
+    '일반 팀원 — %s 는 %s 상태와 PM 에게 연결을 요청하라는 안내만 본다',
+    async (status, label) => {
       notion(status)
       setMockRole('member')
       renderApp(paths.settings('ws_01'))
       const area = await section()
+      expect(await area.findByText(label)).toBeInTheDocument()
       expect(
         await area.findByText(
-          'Notion 연결은 PM만 할 수 있어요. 회의를 정리하려면 PM에게 Notion 연결을 요청해 주세요.',
+          'Notion 연결은 PM만 할 수 있어요. 태스크를 Notion에도 올리려면 PM에게 연결을 요청해 주세요.',
         ),
       ).toBeInTheDocument()
       expect(area.queryByRole('button')).toBeNull()
       expect(area.queryByRole('link')).toBeNull()
     },
   )
+
+  it('연결하지 않았으면 선택 기능임을 알린다 — 연결하지 않아도 된다 (D-182)', async () => {
+    notion('not_connected')
+    renderApp(paths.settings('ws_01'))
+    const area = await section()
+    expect(
+      await area.findByText('연결하지 않아도 돼요. 연결하면 승인한 태스크가 Notion에도 올라가요.'),
+    ).toBeInTheDocument()
+  })
 
   it('복귀 없이 열어도 준비 중이면 `준비 중` 을 보이고 다시 연결하게 하지 않는다 (#204)', async () => {
     db.integrations.ws_01.notion = {
@@ -135,7 +159,7 @@ describe('설정의 Notion 연결 영역 (U3-3)', () => {
     expect(area.queryByRole('button', { name: /Notion .*연결하기/ })).toBeNull()
   })
 
-  it('연동 상태를 불러오지 못하면 다시 시도를 준다', async () => {
+  it('연동 상태를 불러오지 못하면 미연결로 보이지 않고 다시 시도를 준다', async () => {
     server.use(
       http.get('/api/v1/workspaces/:workspaceId/integrations', () => fail('FORBIDDEN', 'no', 403), {
         once: true,
@@ -144,60 +168,61 @@ describe('설정의 Notion 연결 영역 (U3-3)', () => {
     const user = userEvent.setup()
     renderApp(paths.settings('ws_01'))
     const area = await section()
-    await user.click(await area.findByRole('button', { name: '다시 시도' }))
+    const retry = await area.findByRole('button', { name: '다시 시도' })
+    expect(area.queryByText('연결 안 됨')).toBeNull()
+    await user.click(retry)
     expect(await area.findByText('연결됨')).toBeInTheDocument()
   })
 })
 
-describe('차단 모달에서 시작한 연결 (U3-2, D-098)', () => {
-  it('모달에서 오면 Notion 영역 제목에 포커스가 가고, 연결 시작은 복귀 목적지를 그대로 싣는다', async () => {
+describe('OAuth 복귀 (U3-2)', () => {
+  it('Notion 영역으로 오면 제목에 포커스가 가고, 연결 시작의 복귀는 설정의 Notion 영역이다', async () => {
     notion('not_connected')
     const user = userEvent.setup()
-    renderApp(FROM_MODAL)
+    renderApp(SETTINGS_NOTION)
     expect(await screen.findByRole('heading', { name: 'Notion 연결' })).toHaveFocus()
     const area = await section()
     await user.click(await area.findByRole('button', { name: 'Notion 연결하기' }))
-    expect(startedState()).toBe(FROM_MODAL)
+    expect(startedState()).toBe(SETTINGS_NOTION)
   })
 
-  it('성공 콜백 뒤 연동 상태를 다시 조회해 connected 면 업로드로 replace 복귀한다', async () => {
+  it('성공 콜백 뒤 연동 상태를 다시 조회해 connected 면 설정에 머물며 연결됨을 보인다 (D-182)', async () => {
     settleMockOAuth({ workspaceId: 'ws_01', provider: 'notion', outcome: 'success' })
     const log = recordRequests()
-    const app = renderApp(returnFrom(FROM_MODAL, 'success'))
+    const app = renderApp(returnFrom(SETTINGS_NOTION, 'success'))
 
-    expect(await screen.findByRole('heading', { name: '회의를 올려 주세요' })).toBeInTheDocument()
-    await app.expectPath(UPLOAD_PATH)
-    // 방금 받은 연동 캐시가 있어도 업로드 진입 판정을 끝내 폼이 열린다
-    expect(await screen.findByRole('button', { name: '정리 시작하기' })).toBeInTheDocument()
-    // 복귀 표시만 믿지 않았다 — 업로드로 가기 전에 연동 상태를 새로 받았다
-    const started = log.timeline.filter((line) => line.startsWith('start'))
-    expect(started).toContain('start GET /workspaces/ws_01/integrations')
-    expect(started.indexOf('start GET /workspaces/ws_01/integrations')).toBeLessThan(
-      started.indexOf('start GET /workspaces/ws_01/meetings'),
-    )
+    const area = await section()
+    expect(await area.findByText('연결됨')).toBeInTheDocument()
+    await waitFor(() => expect(area.queryByText('연결을 확인하고 있어요.')).toBeNull())
+    await app.expectPath(paths.settings('ws_01'))
+    await app.expectSearch('?section=notion')
+    // 복귀 표시만 믿지 않았다 — 연동 상태를 새로 받았다
+    expect(log.started.map(({ path }) => path)).toContain('/workspaces/ws_01/integrations')
+    expect(app.visited().map(({ pathname }) => pathname)).not.toContain(UPLOAD_PATH)
     expect(leaveApp).not.toHaveBeenCalled()
   })
 
-  it('StrictMode 에서도 복귀 확인이 끝까지 가서 업로드로 돌아간다', async () => {
+  it('StrictMode 에서도 복귀 확인이 끝까지 가서 연결됨을 보인다', async () => {
     settleMockOAuth({ workspaceId: 'ws_01', provider: 'notion', outcome: 'success' })
-    const app = renderApp(returnFrom(FROM_MODAL, 'success'), { strict: true })
-    await app.expectPath(UPLOAD_PATH)
-    expect(await screen.findByRole('heading', { name: '회의를 올려 주세요' })).toBeInTheDocument()
+    const app = renderApp(returnFrom(SETTINGS_NOTION, 'success'), { strict: true })
+    const area = await section()
+    expect(await area.findByText('연결됨')).toBeInTheDocument()
+    await app.expectPath(paths.settings('ws_01'))
   })
 
-  it('복귀 확인에서 준비 중(connecting)이면 실패로 보지 않고 기다렸다가, connected 가 되면 업로드로 돌아간다 (#204)', async () => {
+  it('복귀 확인에서 준비 중(connecting)이면 실패로 보지 않고 기다렸다가, connected 가 되면 연결됨을 보인다 (#204)', async () => {
     settleMockOAuth({ workspaceId: 'ws_01', provider: 'notion', outcome: 'success' })
     const next = deferred()
     const asked = connectingFirst(1, next)
-    const app = renderApp(returnFrom(FROM_MODAL, 'success'))
+    const app = renderApp(returnFrom(SETTINGS_NOTION, 'success'))
 
     const area = await section()
     // 두 번째 조회를 붙잡아 둔 동안 `준비 중` 이 보인다
     await waitFor(() => expect(asked()).toBe(2))
     expect(area.getByText('Notion을 준비하고 있어요. 1분 정도 걸릴 수 있어요.')).toBeInTheDocument()
     next.resolve()
-    expect(await screen.findByRole('heading', { name: '회의를 올려 주세요' })).toBeInTheDocument()
-    await app.expectPath(UPLOAD_PATH)
+    expect(await area.findByText('연결됨')).toBeInTheDocument()
+    await app.expectPath(paths.settings('ws_01'))
     expect(asked()).toBeGreaterThanOrEqual(2)
   })
 
@@ -205,7 +230,7 @@ describe('차단 모달에서 시작한 연결 (U3-2, D-098)', () => {
     settleMockOAuth({ workspaceId: 'ws_01', provider: 'notion', outcome: 'success' })
     notion('revoked')
     connectingFirst(2)
-    const app = renderApp(returnFrom(FROM_MODAL, 'success'))
+    const app = renderApp(returnFrom(SETTINGS_NOTION, 'success'))
 
     const area = await section()
     expect(
@@ -218,14 +243,14 @@ describe('차단 모달에서 시작한 연결 (U3-2, D-098)', () => {
 
   it('성공이라고 돌아왔어도 다시 조회한 상태가 connected 가 아니면 설정에 머물고 안내한다', async () => {
     notion('not_connected')
-    const app = renderApp(returnFrom(FROM_MODAL, 'success'))
+    const app = renderApp(returnFrom(SETTINGS_NOTION, 'success'))
     const area = await section()
     expect(
       await area.findByText('Notion을 연결하지 못했어요. 잠시 후 다시 시도해 주세요.'),
     ).toBeInTheDocument()
     await app.expectPath(paths.settings('ws_01'))
-    // 복귀 표시는 지우고 `section`·`next` 는 남긴다 — 다시 연결해도 업로드로 돌아간다
-    await app.expectSearch(`?section=notion&next=${encodeURIComponent(UPLOAD_PATH)}`)
+    // 복귀 표시는 지우고 `section` 은 남긴다
+    await app.expectSearch('?section=notion')
   })
 
   it.each([
@@ -234,12 +259,11 @@ describe('차단 모달에서 시작한 연결 (U3-2, D-098)', () => {
   ] as const)('%s 는 설정에 머물며 안내를 보이고 재조회하지 않는다', async (outcome, message) => {
     notion('not_connected')
     const log = recordRequests()
-    const app = renderApp(returnFrom(FROM_MODAL, outcome))
+    const app = renderApp(returnFrom(SETTINGS_NOTION, outcome))
     const area = await section()
     expect(await area.findByText(message)).toBeInTheDocument()
-    await app.expectSearch(`?section=notion&next=${encodeURIComponent(UPLOAD_PATH)}`)
+    await app.expectSearch('?section=notion')
     await app.expectPath(paths.settings('ws_01'))
-    expect(app.visited().map(({ pathname }) => pathname)).not.toContain(UPLOAD_PATH)
     // 연결 버튼이 그대로 있다
     expect(await area.findByRole('button', { name: 'Notion 연결하기' })).toBeInTheDocument()
     expect(
@@ -247,39 +271,16 @@ describe('차단 모달에서 시작한 연결 (U3-2, D-098)', () => {
     ).toHaveLength(1)
   })
 
-  it.each([
-    ['다른 공간의 업로드', '/workspaces/ws_02/meetings/upload'],
-    ['외부 주소', 'https://evil.example/workspaces/ws_01/meetings/upload'],
-    ['프로토콜 상대 주소', '//evil.example/workspaces/ws_01/meetings/upload'],
-    ['같은 공간의 다른 화면', '/workspaces/ws_01/tasks'],
-  ])('복귀 목적지가 %s 면 성공해도 설정에 머문다', async (_, next) => {
+  it('옛 차단 모달의 복귀 주소(`next` = 업로드)로 돌아와도 설정에 머문다 (D-182)', async () => {
     settleMockOAuth({ workspaceId: 'ws_01', provider: 'notion', outcome: 'success' })
-    const app = renderApp(returnFrom(paths.settingsNotion('ws_01', next), 'success'))
+    const legacy = `${SETTINGS_NOTION}&next=${encodeURIComponent(UPLOAD_PATH)}`
+    const app = renderApp(returnFrom(legacy, 'success'))
     const area = await section()
     expect(await area.findByText('연결됨')).toBeInTheDocument()
     await waitFor(() => expect(area.queryByText('연결을 확인하고 있어요.')).toBeNull())
     await app.expectPath(paths.settings('ws_01'))
-    // 복귀 표시를 지우는 replace 만 있었다 — 다른 경로를 거치지 않았다
-    expect(new Set(app.visited().map(({ pathname }) => pathname))).toEqual(
-      new Set([paths.settings('ws_01')]),
-    )
-    expect(leaveApp).not.toHaveBeenCalled()
-  })
-
-  it('목적지가 없으면 성공해도 설정에 머문다 — 연결됨을 보인다', async () => {
-    settleMockOAuth({ workspaceId: 'ws_01', provider: 'notion', outcome: 'success' })
-    const app = renderApp(returnFrom(paths.settingsNotion('ws_01'), 'success'))
-    const area = await section()
-    expect(await area.findByText('연결됨')).toBeInTheDocument()
-    await app.expectSearch('?section=notion')
-  })
-
-  it('이미 연결된 채 모달에서 왔으면 업로드로 돌아가는 링크를 준다', async () => {
-    const user = userEvent.setup()
-    const app = renderApp(FROM_MODAL)
-    const area = await section()
-    await user.click(await area.findByRole('link', { name: '회의 올리기로 돌아가기' }))
-    await app.expectPath(UPLOAD_PATH)
+    expect(app.visited().map(({ pathname }) => pathname)).not.toContain(UPLOAD_PATH)
+    expect(area.queryByRole('link')).toBeNull()
   })
 })
 
@@ -300,99 +301,27 @@ describe('복귀 확인이 늦게 끝날 때 (U3-2)', () => {
     return gate
   }
 
-  /** 확인을 기다리는 설정 화면을 StrictMode 로 연다 */
-  async function openVerifying() {
+  it('확인 중에 고친 입력이 있어도 끝났을 때 옮기거나 묻지 않는다 — 입력과 연결됨이 남는다', async () => {
     settleMockOAuth({ workspaceId: 'ws_01', provider: 'notion', outcome: 'success' })
     const gate = holdVerification()
     const user = userEvent.setup()
-    const app = renderApp(returnFrom(FROM_MODAL, 'success'), { strict: true })
+    const app = renderApp(returnFrom(SETTINGS_NOTION, 'success'), { strict: true })
     const area = await section()
     expect(await area.findByText('연결을 확인하고 있어요.')).toBeInTheDocument()
-    return { gate, user, app, area }
-  }
+    const name = screen.getByLabelText('워크스페이스 이름')
+    await user.clear(name)
+    await user.type(name, 'unsaved-review-draft')
 
-  /** 붙잡았던 확인을 풀고 그 결과가 캐시에 들어갈 때까지 기다린다 — 이동을 한다면 이 직후다 */
-  async function release(app: ReturnType<typeof renderApp>, gate: ReturnType<typeof deferred>) {
     gate.resolve()
     await waitFor(() =>
       expect(
         app.queryClient.getQueryData(integrationsQueryOptions('ws_01').queryKey)?.notion.status,
       ).toBe('connected'),
     )
+    expect(await area.findByText('연결됨')).toBeInTheDocument()
     await act(async () => {})
-  }
-
-  it('확인을 기다리는 동안 다른 화면으로 갔으면 끝나도 업로드로 데려오지 않는다', async () => {
-    const { gate, user, app } = await openVerifying()
-    await user.click(screen.getByRole('link', { name: '대시보드' }))
-    await app.expectPath(paths.dashboard('ws_01'))
-
-    await release(app, gate)
-    await app.expectPath(paths.dashboard('ws_01'))
-    expect(app.visited().map(({ pathname }) => pathname)).not.toContain(UPLOAD_PATH)
-  })
-
-  it('확인 중에 고친 입력이 있으면 끝났을 때 이탈 확인을 묻는다 — 머무르면 입력이 남는다', async () => {
-    const { gate, user, app, area } = await openVerifying()
-    const name = screen.getByLabelText('워크스페이스 이름')
-    await user.clear(name)
-    await user.type(name, 'unsaved-review-draft')
-
-    await release(app, gate)
-    const dialog = await screen.findByRole('dialog', { name: '저장하지 않은 변경 내용이 있어요' })
-    await app.expectPath(paths.settings('ws_01'))
-    await user.click(within(dialog).getByRole('button', { name: '계속 작성하기' }))
-
+    expect(screen.queryByRole('dialog')).toBeNull()
     await app.expectPath(paths.settings('ws_01'))
     expect(screen.getByLabelText('워크스페이스 이름')).toHaveValue('unsaved-review-draft')
-    expect(app.visited().map(({ pathname }) => pathname)).not.toContain(UPLOAD_PATH)
-    // 확인은 끝났다 — 연결됨과 업로드로 돌아가는 링크가 남는다
-    expect(await area.findByText('연결됨')).toBeInTheDocument()
-    expect(area.getByRole('link', { name: '회의 올리기로 돌아가기' })).toBeInTheDocument()
-  })
-
-  it('확인 중에 고친 입력은 이탈 확인에서 버리기를 골라야 업로드로 간다', async () => {
-    const { gate, user, app } = await openVerifying()
-    await user.type(screen.getByLabelText('워크스페이스 이름'), ' 수정')
-
-    await release(app, gate)
-    const dialog = await screen.findByRole('dialog', { name: '저장하지 않은 변경 내용이 있어요' })
-    await user.click(within(dialog).getByRole('button', { name: '변경 내용 버리고 나가기' }))
-    await app.expectPath(UPLOAD_PATH)
-  })
-
-  it('다른 곳으로 가려다 이탈 확인을 고르는 중이면 끝나도 그 이동을 가로채지 않는다', async () => {
-    const { gate, user, app } = await openVerifying()
-    await user.type(screen.getByLabelText('워크스페이스 이름'), ' 수정')
-    await user.click(screen.getByRole('link', { name: '대시보드' }))
-    const dialog = await screen.findByRole('dialog', { name: '저장하지 않은 변경 내용이 있어요' })
-
-    await release(app, gate)
-    await app.expectPath(paths.settings('ws_01'))
-    await user.click(within(dialog).getByRole('button', { name: '변경 내용 버리고 나가기' }))
-    await app.expectPath(paths.dashboard('ws_01'))
-    expect(app.visited().map(({ pathname }) => pathname)).not.toContain(UPLOAD_PATH)
-  })
-})
-
-describe('모달 → 설정 → OAuth → 업로드 한 바퀴 (U3-1·U3-2)', () => {
-  it('미연결 모달의 `Notion 연결하기` 부터 업로드 복귀까지', async () => {
-    notion('not_connected')
-    const user = userEvent.setup()
-    const first = renderApp(UPLOAD_PATH)
-    const dialog = await screen.findByRole('dialog', { name: 'Notion 연결이 필요해요' })
-    await user.click(within(dialog).getByRole('button', { name: 'Notion 연결하기' }))
-    await first.expectPath(paths.settings('ws_01'))
-    const area = await section()
-    await user.click(await area.findByRole('button', { name: 'Notion 연결하기' }))
-    const state = startedState()
-    expect(state).toBe(FROM_MODAL)
-    first.unmount()
-
-    // 모의 OAuth 가 연결을 허용하고 state 로 돌려보냈다
-    settleMockOAuth({ workspaceId: 'ws_01', provider: 'notion', outcome: 'success' })
-    const back = renderApp(returnFrom(state!, 'success'))
-    await back.expectPath(UPLOAD_PATH)
-    expect(await screen.findByRole('button', { name: '정리 시작하기' })).toBeInTheDocument()
   })
 })

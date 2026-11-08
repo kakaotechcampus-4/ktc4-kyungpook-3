@@ -13,7 +13,8 @@ export function fail(
   message: string,
   status: number,
   details: Record<string, unknown> | null = null,
+  headers?: HeadersInit,
 ): HttpResponse<Envelope<never>> {
   const error: ApiErrorDto = { code, message, details }
-  return HttpResponse.json({ data: null, error } satisfies Envelope<never>, { status })
+  return HttpResponse.json({ data: null, error } satisfies Envelope<never>, { status, headers })
 }

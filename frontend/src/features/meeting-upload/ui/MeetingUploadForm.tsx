@@ -6,8 +6,10 @@ import { useNavigate } from 'react-router'
 import { memberListQueryOptions } from '@/entities/member'
 import { paths } from '@/shared/config/routes'
 import { useAppForm } from '@/shared/lib/form'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { confirmLeave, hasPendingLeave, useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { ErrorText } from '@/shared/ui/error-text'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { Icon } from '@/shared/ui/icon'
@@ -21,7 +23,6 @@ import type { MeetingUploadValues } from '../model/uploadSchema'
 import { selectedFile, useAudioSelection } from '../model/useAudioSelection'
 import { useMeetingUpload } from '../model/useMeetingUpload'
 import type { MeetingUploadHandlers } from '../model/useMeetingUpload'
-import type { NotionBlockReason } from '../model/useUploadEntry'
 import { AttendeePicker } from './AttendeePicker'
 import { AudioDropzone } from './AudioDropzone'
 import { SelectedAudio } from './SelectedAudio'
@@ -29,8 +30,6 @@ import { UploadStatus } from './UploadStatus'
 
 export interface MeetingUploadFormProps {
   workspaceId: string
-  /** 업로드가 Notion 연동 오류(409)로 막혔다. 화면이 차단 모달을 띄운다 (D-097, D-100) */
-  onBlocked: (reason: NotionBlockReason) => void
 }
 
 const EMPTY: MeetingUploadValues = { title: '', date: '', attendeeMemberIds: [] }
@@ -38,8 +37,9 @@ const EMPTY: MeetingUploadValues = { title: '', date: '', attendeeMemberIds: [] 
 /* Upload 캔버스 실측 — 카드 22 · 칸 사이 18 · 제목/날짜 14 · 날짜 칸 200px */
 const ROOT = 'flex flex-col gap-26'
 const FIELDS = 'flex flex-col gap-18 rounded-16 border border-line bg-surface p-22'
-const ROW = 'grid grid-cols-[minmax(0px,1fr)_200px] gap-14'
-const FOOTER = 'flex items-center justify-between gap-20'
+/* 폭 768 미만은 제목 · 날짜를 한 열로 쌓는다. 날짜 칸 200 이 옆에 남으면 제목 칸이 몇 px 로 눌린다 */
+const ROW = 'grid grid-cols-[minmax(0px,1fr)_200px] gap-14 max-md:grid-cols-1'
+const FOOTER = 'flex items-center justify-between gap-20 max-md:flex-wrap'
 const NOTE = 'text-caption text-dim'
 
 /**
@@ -48,9 +48,10 @@ const NOTE = 'text-caption text-dim'
  * - 파일을 고른 뒤부터 떠나려 하면 기존 이탈 확인을 묻는다. 202 를 받으면 입력과 파일을 놓고 묻지 않고 간다 (U3-9)
  * - 제출은 한 번에 하나다. 보내는 동안 입력을 잠그고 다시 보내지 않는다 (U3-8)
  */
-export function MeetingUploadForm({ workspaceId, onBlocked }: MeetingUploadFormProps) {
+export function MeetingUploadForm({ workspaceId }: MeetingUploadFormProps) {
   const navigate = useNavigate()
   const members = useQuery(memberListQueryOptions(workspaceId))
+  const membersIndicator = useLoadingIndicator(members.isPending)
   const { form, submit } = useAppForm(meetingUploadSchema, EMPTY)
   const { errors } = form.formState
   const attendees = useController({ control: form.control, name: 'attendeeMemberIds' })
@@ -86,9 +87,8 @@ export function MeetingUploadForm({ workspaceId, onBlocked }: MeetingUploadFormP
     return {
       onAccepted: (meetingId) => leave(paths.meetingProcessing(workspaceId, meetingId)),
       onProcessing: (meetingId) => leave(paths.meetingProcessing(workspaceId, meetingId)),
-      onBlocked,
     }
-  }, [unsaved, audio, form, navigate, workspaceId, onBlocked])
+  }, [unsaved, audio, form, navigate, workspaceId])
   const upload = useMeetingUpload(workspaceId, handlers)
   const locked = upload.pending
 
@@ -165,25 +165,29 @@ export function MeetingUploadForm({ workspaceId, onBlocked }: MeetingUploadFormP
             {...form.register('date')}
           />
         </div>
-        {members.data !== undefined ? (
-          <AttendeePicker
-            members={members.data}
-            value={attendees.field.value}
-            onChange={(next) => attendees.field.onChange(next)}
-            triggerRef={attendees.field.ref}
-            error={errors.attendeeMemberIds?.message}
-            disabled={locked}
-          />
-        ) : members.isError ? (
-          <QueryErrorState
-            error={members.error}
-            onRetry={() => void members.refetch()}
-            title="팀원 목록을 불러오지 못했어요"
-          />
-        ) : (
-          <div aria-busy="true">
+        {membersIndicator.pending || members.isPending ? (
+          <DeferredSkeleton indicator={membersIndicator}>
             <Skeleton lines={2} />
-          </div>
+          </DeferredSkeleton>
+        ) : (
+          <Reveal indicator={membersIndicator}>
+            {members.data !== undefined ? (
+              <AttendeePicker
+                members={members.data}
+                value={attendees.field.value}
+                onChange={(next) => attendees.field.onChange(next)}
+                triggerRef={attendees.field.ref}
+                error={errors.attendeeMemberIds?.message}
+                disabled={locked}
+              />
+            ) : (
+              <QueryErrorState
+                error={members.error}
+                onRetry={() => void members.refetch()}
+                title="팀원 목록을 불러오지 못했어요"
+              />
+            )}
+          </Reveal>
         )}
       </fieldset>
 
@@ -191,7 +195,8 @@ export function MeetingUploadForm({ workspaceId, onBlocked }: MeetingUploadFormP
 
       <div className={FOOTER}>
         <p className={NOTE}>
-          회의록과 확실한 태스크는 바로 Notion에 반영하고, 확인이 필요한 항목은 승인한 뒤 반영해요.
+          Notion을 연결했다면 태스크도 Notion에 올라가요. 확인이 필요한 태스크는 승인한 뒤에
+          올라가요.
         </p>
         <Button
           type="submit"

@@ -21,7 +21,7 @@ def _finding(**overrides) -> JudgeFinding:
     base = dict(
         text="로그인 화면 마감을 다음 주 화요일로 연기하는 데 동의함",
         evidence=["로그인 화면 마감 좀 미룰 수 있을까요?", "네, 알겠습니다."],
-        seq=4, speaker="uid_haeun", method="llm",
+        seq=4, seqs=[3, 4], speaker="uid_haeun", method="llm",
     )
     base.update(overrides)
     return JudgeFinding(**base)
@@ -66,7 +66,7 @@ def test_create_item_carries_all_three_stages():
         "assignee_type": "thirdname", "assignee_raw": "지민님",
         "doc_text": "결제 환불 기능 구현을 지민님이 10/4까지",
         "evidence_quote": "결제 환불 기능은 지민님이 다음 주까지 만들어 주세요.",
-        "evidence_speaker": "uid_haeun", "evidence_at_ms": 15500,
+        "evidence_speaker": "uid_haeun", "evidence_at_ms": 15500, "evidence_seqs": [3, 4],
     }
 
 
@@ -199,6 +199,7 @@ import judge.pipeline as pipeline  # noqa: E402
 import judge.semantic_judge as semantic_judge  # noqa: E402
 from judge.pipeline import PipelineUnavailableError, run  # noqa: E402
 from judge.semantic_judge import FindingExtractionUnavailableError  # noqa: E402
+from jev import FakeJev  # noqa: E402
 from llm import FakeLLM, NullLLM  # noqa: E402
 
 MEETING = Transcript(segments=[
@@ -263,9 +264,11 @@ class FakeCandidates:
         return []
 
 
-def _install(monkeypatch, *, stage1, terra, luna_draft):
+def _install(monkeypatch, *, stage1, terra, luna_draft, jev=()):
+    # jev 를 안 주면 근거 검증은 모두 None(확인 못 함 → inferred). 실제 Jev 를 부르지 않게 항상 바꿔 끼운다
     fakes = {"stage1": FakeLLM(responses=[stage1]), "terra": FakeLLM(responses=list(terra)),
-             "draft": FakeLLM(responses=list(luna_draft))}
+             "draft": FakeLLM(responses=list(luna_draft)), "jev": FakeJev(list(jev))}
+    monkeypatch.setattr(pipeline, "get_jev", lambda: fakes["jev"])
     monkeypatch.setattr(semantic_judge, "get_llm", lambda which: fakes["stage1"])
     monkeypatch.setattr(final_judge, "get_llm", lambda which: fakes["terra"])
     monkeypatch.setattr(doc_draft, "get_llm", lambda which: fakes["draft"])
@@ -461,6 +464,124 @@ def test_same_new_item_twice_becomes_one_card(monkeypatch):
     assert "맡기로" in card["doc_text"] and "10/9" in card["doc_text"]
 
 
+OWNER_MEETING = Transcript(segments=[
+    TranscriptSegment(speaker="uid_alice", start=1.0, end=3.0, text="결제 환불 기능 만들어야 해요.", seq=1),
+    TranscriptSegment(speaker="uid_bob", start=4.0, end=5.0, text="그건 제가 맡을게요.", seq=2),
+    TranscriptSegment(speaker="uid_carol", start=6.0, end=7.0, text="환불 기능은 금요일까지 해 주세요.", seq=3),
+])
+REFUND_NEW = {"indices": [0], "summary": "결제 환불 기능을 만들기로 함", "assignee_type": "first", "reason": "새 할일"}
+REFUND_BOB = {"indices": [1], "summary": "결제 환불 기능을 Bob 이 맡기로 함", "assignee_type": "first", "reason": "담당"}
+REFUND_FRI = {"indices": [2], "summary": "결제 환불 기능 마감을 금요일로 정함", "assignee_type": "none", "reason": "마감"}
+
+
+def _run_owner(monkeypatch, findings, terra, luna):
+    _install(monkeypatch, stage1={"findings": findings}, terra=terra, luna_draft=luna)
+    return run(OWNER_MEETING, workspace_id="ws_1", today=date(2026, 9, 28), candidates=DedupCandidates())
+
+
+def test_merged_assignee_carries_the_speaker_who_took_it(monkeypatch):
+    # Alice 카드에 Bob 의 "제가 맡을게요" 를 합치면 BE 는 evidence_speaker 로 Bob 을 찾아야 한다
+    out = _run_owner(
+        monkeypatch, [REFUND_NEW, REFUND_BOB],
+        [_terra(is_new=True, matched_candidate_index=None), _terra(category="assignee")],
+        [{"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "결제 환불 기능 구현"},
+         {"task": None, "due_date": None, "doc_text": "Bob 이 맡기로 함"}],
+    )
+
+    card = out.items[0]
+    assert card["assignee_type"] == "first"
+    assert card["evidence_speaker"] == "uid_bob"
+    assert card["evidence_quote"] == "그건 제가 맡을게요."
+    assert card["evidence_at_ms"] == 4000
+
+
+def test_later_due_date_keeps_the_assignee_evidence(monkeypatch):
+    # 담당을 정한 뒤 다른 사람이 마감을 말해도 담당자 근거는 그대로다
+    out = _run_owner(
+        monkeypatch, [REFUND_NEW, REFUND_BOB, REFUND_FRI],
+        [_terra(is_new=True, matched_candidate_index=None), _terra(category="assignee"), _terra(category="schedule")],
+        [{"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "결제 환불 기능 구현"},
+         {"task": None, "due_date": None, "doc_text": "Bob 이 맡기로 함"},
+         {"task": None, "due_date": "2026-10-02", "doc_text": "마감을 10/2 로 정함"}],
+    )
+
+    card = out.items[0]
+    assert card["due_date"] == "2026-10-02"
+    assert card["evidence_speaker"] == "uid_bob"
+    assert card["evidence_quote"] == "그건 제가 맡을게요."
+
+
+def test_evidence_seqs_are_segment_seqs_not_sentence_positions(monkeypatch):
+    # 근거 문장 번호 1, 2 는 seq 2 한 발화에서, 3 은 seq 3 에서 나온다
+    _install(monkeypatch, stage1={"findings": FINDINGS[1:2]}, terra=[_terra(category="schedule")],
+             luna_draft=[{"task": None, "due_date": "2026-10-06", "doc_text": "마감 연기"}])
+
+    out = run(MEETING, workspace_id="ws_1", today=date(2026, 9, 28), candidates=FakeCandidates())
+
+    assert out.items[0]["evidence_seqs"] == [2, 3]
+
+
+def test_merged_card_keeps_every_evidence_seq(monkeypatch):
+    out = _run_owner(
+        monkeypatch, [{**REFUND_NEW, "assignee_type": "none"}, {**REFUND_BOB, "assignee_type": "none"}, REFUND_FRI],
+        [_terra(is_new=True, matched_candidate_index=None), _terra(category="assignee"), _terra(category="schedule")],
+        [{"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "결제 환불 기능 구현"},
+         {"task": None, "due_date": None, "doc_text": "Bob 이 맡기로 함"},
+         {"task": None, "due_date": "2026-10-02", "doc_text": "마감을 10/2 로 정함"}],
+    )
+
+    assert out.items[0]["evidence_seqs"] == [1, 2, 3]
+
+
+def test_first_person_without_speaker_does_not_take_a_later_seq(monkeypatch):
+    # 화자가 없으면 BE 는 가장 큰 seq 의 화자로 찾는다. 뒤에 마감을 말한 사람이 담당자가 되면 안 된다
+    meeting = Transcript(segments=[
+        TranscriptSegment(speaker=None, start=1.0, end=3.0, text="결제 환불 기능 제가 만들게요.", seq=1),
+        TranscriptSegment(speaker="uid_carol", start=4.0, end=5.0, text="환불 기능은 금요일까지 해 주세요.", seq=2),
+    ])
+    _install(
+        monkeypatch,
+        stage1={"findings": [{"indices": [0], "summary": "결제 환불 기능을 맡기로 함", "assignee_type": "first", "reason": "담당"},
+                             {"indices": [1], "summary": "결제 환불 기능 마감을 금요일로 정함", "assignee_type": "none", "reason": "마감"}]},
+        terra=[_terra(is_new=True, matched_candidate_index=None), _terra(category="schedule")],
+        luna_draft=[{"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "결제 환불 기능 구현"},
+                    {"task": None, "due_date": "2026-10-02", "doc_text": "마감을 10/2 로 정함"}],
+    )
+
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28), candidates=DedupCandidates())
+
+    assert out.items[0]["evidence_speaker"] is None
+    assert out.items[0]["evidence_seqs"] == [1]
+
+
+def test_first_person_of_an_upload_label_does_not_take_a_later_seq(monkeypatch):
+    # 업로드는 인계 때 라벨을 지운다. 외부 참석자면 BE 가 가장 큰 seq 의 화자로 찾아, 마감을 말한 팀원이 담당자가 된다
+    meeting = Transcript(segments=[
+        TranscriptSegment(speaker="SPEAKER_00", start=1.0, end=3.0, text="결제 환불 기능 제가 만들게요.", seq=1),
+        TranscriptSegment(speaker="SPEAKER_01", start=4.0, end=5.0, text="환불 기능은 금요일까지 해 주세요.", seq=2),
+    ])
+    _install(
+        monkeypatch,
+        stage1={"findings": [{"indices": [0], "summary": "결제 환불 기능을 맡기로 함", "assignee_type": "first", "reason": "담당"},
+                             {"indices": [1], "summary": "결제 환불 기능 마감을 금요일로 정함", "assignee_type": "none", "reason": "마감"}]},
+        terra=[_terra(is_new=True, matched_candidate_index=None), _terra(category="schedule")],
+        luna_draft=[{"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "결제 환불 기능 구현"},
+                    {"task": None, "due_date": "2026-10-02", "doc_text": "마감을 10/2 로 정함"}],
+    )
+
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28), candidates=DedupCandidates())
+
+    assert out.items[0]["evidence_speaker"] == "SPEAKER_00"
+    assert out.items[0]["evidence_seqs"] == [1]
+
+
+def test_evidence_seqs_stay_within_the_be_limit():
+    # BE 는 항목 하나에 seq 가 100개를 넘으면 요청 전체를 400 으로 막는다. 결론에 가까운 뒤쪽을 남긴다
+    item = to_item(_finding(seqs=list(range(150))), _result(), _drafted(due_date="2026-10-06"), _target(), TRANSCRIPT)
+
+    assert item["evidence_seqs"] == list(range(50, 150))
+
+
 def test_different_new_items_stay_separate(monkeypatch):
     _install(
         monkeypatch, stage1={"findings": [REFUND_OWNER, NOTI_NEW]},
@@ -645,6 +766,23 @@ def test_reverting_is_caught_even_when_search_misses_the_task(monkeypatch):
     assert out.items == []
 
 
+def test_scope_merged_into_a_change_goes_as_scope_with_the_change(monkeypatch):
+    scope = {"indices": [3], "summary": "로그인 화면에서 소셜 로그인은 이번 버전에서 빼기로 함",
+             "assignee_type": "none", "reason": "범위"}
+    _install(
+        monkeypatch, stage1={"findings": [LOGIN_DELAY, scope]},
+        terra=[_terra(category="schedule"), _terra(category="scope")],
+        luna_draft=[
+            {"task": None, "due_date": "2026-10-06", "doc_text": "로그인 화면 마감을 10/2에서 10/6으로 연기"},
+            {"task": None, "due_date": None, "doc_text": "소셜 로그인은 이번 버전 범위에서 제외"},
+        ],
+    )
+
+    (card,) = _run_dedup().items
+
+    assert (card["category"], card["due_date"]) == ("scope", "2026-10-06")
+
+
 def test_scope_decision_survives_when_schedule_is_reverted(monkeypatch):
     # 마감 변경 → 같은 Task 범위 결정 → 마감 원래대로. 마감은 지워져도 범위 결정은 남아야 하고,
     # 필드 없는 결정이라 BE 가 받도록 category 를 scope 로(PR #206 리뷰)
@@ -666,3 +804,266 @@ def test_scope_decision_survives_when_schedule_is_reverted(monkeypatch):
     card = out.items[0]
     assert (card["category"], card["due_date"]) == ("scope", None)
     assert "소셜 로그인" in card["doc_text"]
+
+
+# ── 근거 상태 · 유사 검색 값 (이슈 #232) ───────────────────────────────────
+
+class ListCandidates:
+    """검색 결과를 그대로 돌려준다."""
+
+    def __init__(self, found):
+        self.found = found
+
+    def similar_tasks(self, workspace_id, text):
+        return list(self.found)
+
+
+def _one_line_meeting(*texts):
+    return Transcript(segments=[
+        TranscriptSegment(speaker="uid_pm", start=1.0 + 3 * i, end=3.0 + 3 * i, text=t, seq=i + 1)
+        for i, t in enumerate(texts)])
+
+
+def _stage1(*indices, summary="결제 환불 기능 담당과 마감을 정함"):
+    return {"indices": list(indices), "summary": summary, "assignee_type": "none", "reason": "새 할일"}
+
+
+def _sim(similarity):
+    return replace(SEARCH, similarity=similarity)
+
+
+NEW = _terra(is_new=True, matched_candidate_index=None)
+
+
+def _jev(task_yes, due_yes=None):
+    """Jev answers. yes 확률만 정한다."""
+    out = {"task": {"choice": "yes", "probabilities": {"yes": task_yes, "no": 1 - task_yes, "unclear": 0.0}}}
+    if due_yes is not None:
+        out["due"] = {"choice": "yes", "probabilities": {"yes": due_yes, "no": 1 - due_yes, "unclear": 0.0}}
+    return out
+
+
+def test_run_create_carries_evidence_and_similar_values(monkeypatch):
+    meeting = _one_line_meeting("그건 제가 이번 주 금요일까지 할게요.")
+    fakes = _install(monkeypatch, stage1={"findings": [_stage1(0)]}, terra=[NEW],
+                     luna_draft=[{"task": "환불 구현", "due_date": "2026-10-02", "due_raw": "이번 주 금요일까지",
+                                  "doc_text": "환불 구현을 10/2까지"}],
+                     jev=[_jev(0.95, 0.9)])
+
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28),
+              candidates=ListCandidates([_sim(0.5), _sim(0.7)]))
+
+    item = out.items[0]
+    assert (item["task_status"], item["due_status"], item["due_raw"]) == ("certain", "certain", "이번 주 금요일까지")
+    (state, questions), = fakes["jev"].calls  # 항목당 한 번, 할 일과 마감을 같이 묻는다
+    assert set(questions) == {"task", "due"}
+    assert "할 일: 환불 구현" in state and '- "그건 제가 이번 주 금요일까지 할게요."' in state
+    assert (item["similar_count"], item["top_similarity"]) == (2, 0.7)
+
+
+def test_run_create_without_due_is_missing(monkeypatch):
+    meeting = _one_line_meeting("그건 제가 할게요.")
+    _install(monkeypatch, stage1={"findings": [_stage1(0)]}, terra=[NEW],
+             luna_draft=[{"task": "환불 구현", "due_date": None, "due_raw": None, "doc_text": "환불 구현"}],
+             jev=[_jev(0.95)])
+
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28), candidates=ListCandidates([]))
+
+    item = out.items[0]
+    assert (item["due_status"], item["due_date"], item["due_raw"]) == ("missing", None, None)
+    assert (item["similar_count"], item["top_similarity"]) == (0, None)
+
+
+def test_run_update_has_no_evidence_keys(monkeypatch):
+    _install(monkeypatch, stage1={"findings": FINDINGS}, terra=TERRA_OK, luna_draft=LUNA_DRAFT_OK)
+
+    update = _run().items[1]
+
+    assert update["action"] == "update"
+    assert not {"task_status", "due_status", "due_raw", "similar_count", "top_similarity"} & update.keys()
+
+
+def test_run_merge_updates_create_card_status(monkeypatch):
+    meeting = _one_line_meeting("결제 환불 기능은 제가 할게요.", "그 환불 기능은 다음 주 화요일까지 가능할까요?")
+    _install(monkeypatch, stage1={"findings": [_stage1(0), _stage1(1, summary="환불 기능 마감을 정함")]},
+             terra=[NEW, _terra(category="schedule", matched_candidate_index=1)],  # 0 검색 후보, 1 이번 회의 카드,
+             luna_draft=[{"task": "환불 구현", "due_date": None, "due_raw": None, "doc_text": "환불 구현"},
+                         {"task": None, "due_date": "2026-10-06", "due_raw": "다음 주 화요일",
+                          "doc_text": "마감을 10/6으로"}],
+             jev=[_jev(0.95), _jev(0.4, 0.9)])
+
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28), candidates=ListCandidates([_sim(0.6)]))
+
+    assert len(out.items) == 1
+    card = out.items[0]
+    assert (card["due_status"], card["due_raw"], card["due_date"]) == ("certain", "다음 주 화요일", "2026-10-06")
+    assert card["task_status"] == "inferred"   # 앞은 certain, 뒤는 Jev 가 낮게 봄 → 나쁜 쪽
+    assert (card["similar_count"], card["top_similarity"]) == (1, 0.6)
+
+
+def test_run_merge_due_cleared_sets_missing(monkeypatch):
+    meeting = _one_line_meeting("그건 제가 다음 주 화요일까지 할게요.", "아 마감은 없던 걸로 합시다.")
+    _install(monkeypatch, stage1={"findings": [_stage1(0), _stage1(1, summary="환불 마감을 없앰")]},
+             terra=[NEW, _terra(category="schedule", matched_candidate_index=0)],
+             luna_draft=[{"task": "환불 구현", "due_date": "2026-10-06", "due_raw": "다음 주 화요일",
+                          "doc_text": "환불 구현"},
+                         {"task": None, "due_date": "none", "due_raw": None, "doc_text": "마감 취소"}])
+
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28), candidates=ListCandidates([]))
+
+    card = out.items[0]
+    assert (card["due_status"], card["due_raw"], card["due_date"]) == ("missing", None, None)
+
+
+def test_evidence_fields_without_evidence_lines_do_not_fall_back_to_summary(monkeypatch):
+    # 근거 줄이 비면 LLM 요약("...하기로 했음")을 원문 대신 Jev 에 보여 주지 않는다 — 묻지 않고 inferred
+    jev = FakeJev([_jev(1.0)])
+    monkeypatch.setattr(pipeline, "get_jev", lambda: jev)
+    finding = _finding(text="결제 환불 기능을 지민님이 구현하기로 했음", evidence=[])
+
+    fields = pipeline._evidence_fields(finding, _drafted(task="환불 구현"), "환불 구현", date(2026, 9, 28))
+
+    assert fields["task_status"] == "inferred"
+    assert jev.calls == []
+
+
+class SequenceCandidates:
+    """호출마다 정해 둔 검색 결과를 차례로 돌려준다."""
+
+    def __init__(self, *results):
+        self.results = list(results)
+
+    def similar_tasks(self, workspace_id, text):
+        return list(self.results.pop(0))
+
+
+def test_run_merge_keeps_first_certain_due_when_later_finding_has_none(monkeypatch):
+    meeting = _one_line_meeting("그건 제가 다음 주 화요일까지 할게요.", "그 환불 기능 설명은 조금 더 붙일게요.")
+    _install(monkeypatch, stage1={"findings": [_stage1(0), _stage1(1, summary="환불 기능 설명을 더함")]},
+             terra=[NEW, _terra(category="decision", matched_candidate_index=0)],
+             luna_draft=[{"task": "환불 구현", "due_date": "2026-10-06", "due_raw": "다음 주 화요일",
+                          "doc_text": "환불 구현"},
+                         {"task": None, "due_date": None, "due_raw": None, "doc_text": "설명 추가"}],
+             jev=[_jev(0.9, 0.9), _jev(0.9)])
+
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28), candidates=ListCandidates([]))
+
+    assert len(out.items) == 1
+    card = out.items[0]
+    assert (card["due_date"], card["due_status"], card["due_raw"]) == ("2026-10-06", "certain", "다음 주 화요일")
+
+
+def test_merged_update_card_has_no_evidence_keys(monkeypatch):
+    _install(
+        monkeypatch, stage1={"findings": [LOGIN_DELAY, LOGIN_KEEP]},
+        terra=[_terra(category="schedule"), _terra(category="schedule")],
+        luna_draft=[{"task": None, "due_date": "2026-10-06", "doc_text": "로그인 화면 마감을 10/6으로 연기"},
+                    {"task": None, "due_date": "2026-10-07", "doc_text": "로그인 화면 마감을 다시 10/7로 조정"}],
+    )
+
+    out = _run_dedup()
+
+    assert len(out.items) == 1 and out.items[0]["action"] == "update"
+    assert not {"task_status", "due_status", "due_raw", "similar_count", "top_similarity"} & out.items[0].keys()
+
+
+def test_run_merge_takes_max_similar_count_and_top_similarity(monkeypatch):
+    meeting = _one_line_meeting("결제 환불 기능은 제가 할게요.", "그 환불 기능은 다음 주 화요일까지 가능할까요?")
+    _install(monkeypatch, stage1={"findings": [_stage1(0), _stage1(1, summary="환불 기능 마감을 정함")]},
+             terra=[NEW, _terra(category="schedule", matched_candidate_index=2)],  # 검색 후보 2개 뒤가 이번 회의 카드
+             luna_draft=[{"task": "환불 구현", "due_date": None, "due_raw": None, "doc_text": "환불 구현"},
+                         {"task": None, "due_date": "2026-10-06", "due_raw": "다음 주 화요일",
+                          "doc_text": "마감을 10/6으로"}])
+
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28),
+              candidates=SequenceCandidates([_sim(0.6)], [_sim(0.3), _sim(0.8)]))
+
+    card = out.items[0]
+    assert (card["similar_count"], card["top_similarity"]) == (2, 0.8)
+
+
+# ── 답장 판단: 이번 답장의 finding 만 (judge_seq) ─────────────────────────
+
+
+CHAT = Transcript(source="chat", segments=[
+    TranscriptSegment(speaker="PM", start=0.0, end=0.0, text="로그인 화면 마감 어떻게 될까요?", seq=1),
+    TranscriptSegment(speaker="재환", start=1.0, end=1.0, text="로그인 화면은 10월 6일까지 할게요", seq=2),
+    TranscriptSegment(speaker="재환", start=2.0, end=2.0, text="아니요 로그인 화면은 10월 8일까지요", seq=3),
+])
+CHAT_FINDINGS = [
+    {"indices": [0, 1], "summary": "로그인 화면 마감을 10월 6일로 미룸", "assignee_type": "none", "reason": "일정"},
+    {"indices": [2], "summary": "로그인 화면 마감을 10월 8일로 다시 미룸", "assignee_type": "none", "reason": "일정"},
+]
+
+
+def _run_chat(monkeypatch, *, terra, drafts, **kwargs):
+    fakes = _install(monkeypatch, stage1={"findings": CHAT_FINDINGS}, terra=terra, luna_draft=drafts)
+    source = FakeCandidates()
+    out = run(CHAT, workspace_id="ws_1", today=date(2026, 10, 1), candidates=source, **kwargs)
+    return out, fakes, source
+
+
+def test_judge_seq_does_not_merge_into_a_change_from_an_earlier_reply(monkeypatch):
+    out, fakes, source = _run_chat(
+        monkeypatch, terra=[_terra(category="schedule")],
+        drafts=[{"task": None, "due_date": "2026-10-08", "doc_text": "로그인 마감을 10/8로 미룸"}], judge_seq=3)
+
+    (item,) = out.items
+    assert item["due_date"] == "2026-10-08"
+    assert item["evidence_quote"] == "아니요 로그인 화면은 10월 8일까지요"
+    assert item["doc_text"] == "로그인 마감을 10/8로 미룸"
+    assert [text for _, text in source.calls] == [CHAT_FINDINGS[1]["summary"]]
+    assert len(fakes["terra"].prompts) == 1 and len(fakes["draft"].prompts) == 1
+
+
+def test_without_judge_seq_the_later_finding_merges_as_in_a_meeting(monkeypatch):
+    out, fakes, _ = _run_chat(
+        monkeypatch, terra=[_terra(category="schedule"), _terra(category="schedule")],
+        drafts=[{"task": None, "due_date": "2026-10-06", "doc_text": "10/6으로"},
+                {"task": None, "due_date": "2026-10-08", "doc_text": "10/8로"}])
+
+    (item,) = out.items
+    assert item["due_date"] == "2026-10-08"
+    assert item["evidence_quote"] == "로그인 화면은 10월 6일까지 할게요"
+    assert len(fakes["terra"].prompts) == 2
+
+
+def test_judge_seq_with_nothing_from_this_reply_judges_nothing(monkeypatch):
+    out, fakes, source = _run_chat(monkeypatch, terra=[], drafts=[], judge_seq=9)
+
+    assert out.items == [] and out.failures == []
+    assert source.calls == [] and fakes["terra"].prompts == []
+
+
+def test_clearing_an_existing_due_carries_the_reason_callers_can_match(monkeypatch):
+    _install(
+        monkeypatch, stage1={"findings": [LOGIN_KEEP]}, terra=[_terra(category="schedule")],
+        luna_draft=[{"task": None, "due_date": "none", "doc_text": "로그인 화면 마감을 없앰"}],
+    )
+
+    (failure,) = _run_dedup().failures
+    assert (failure.reason, failure.task_id) == (pipeline.DUE_CLEARED_REASON, LOGIN_FRI.task_id)
+
+
+def test_run_uses_per_seq_dates(monkeypatch):
+    _install(monkeypatch, stage1={"findings": FINDINGS}, terra=TERRA_OK, luna_draft=LUNA_DRAFT_OK)
+    seen = []
+    real = pipeline.draft
+    monkeypatch.setattr(pipeline, "draft", lambda finding, result, **kw: (seen.append((finding.seq, kw["today"])), real(finding, result, **kw))[1])
+
+    # 결제 환불 finding 은 seq=1, 로그인(1,2,3 → 앵커 seq=3)
+    run(MEETING, workspace_id="ws_1", today=date(2026, 11, 5), candidates=FakeCandidates(),
+        dates={3: date(2026, 11, 4)})
+
+    assert (3, date(2026, 11, 4)) in seen
+    assert (1, date(2026, 11, 5)) in seen  # dates 에 없는 seq 는 today
+
+
+def test_run_passes_context_to_stage1(monkeypatch):
+    _install(monkeypatch, stage1={"findings": []}, terra=[], luna_draft=[])
+    seen = {}
+    monkeypatch.setattr(pipeline, "extract_findings_counted",
+                        lambda t, context=None: (seen.update(context=context) or ([], pipeline.empty_drops())))
+    ctx = Transcript(segments=[], source="chat")
+    run(MEETING, workspace_id="ws_1", today=date(2026, 11, 5), candidates=FakeCandidates(), context=ctx)
+    assert seen["context"] is ctx

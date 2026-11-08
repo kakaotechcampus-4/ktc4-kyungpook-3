@@ -38,7 +38,10 @@ describe('예상할 수 있는 조회 실패', () => {
     const alert = await screen.findByRole('alert', {}, { timeout: 3000 })
     expect(alert).toHaveTextContent('서버에 문제가 생겼어요')
     expect(alert).not.toHaveTextContent('Traceback')
-    expect(businessRequests(log.started)).toHaveLength(2)
+    // 팀 화면은 태스크·연동·Discord 사용자도 함께 부른다(Team 캔버스). 재시도는 실패한 팀원 조회만 센다
+    expect(
+      businessRequests(log.started).filter(({ path }) => path.startsWith('/members?')),
+    ).toHaveLength(2)
   })
 })
 

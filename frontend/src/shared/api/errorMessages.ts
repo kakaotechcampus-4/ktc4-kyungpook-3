@@ -9,12 +9,14 @@ export const COMMON_MESSAGES = {
   fallback: '문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
 } as const
 
-/* 서버 코드 38개 전부 (backend core/errors.py). `Record<ErrorCode, string>` 이라 코드가 늘면 여기서 타입 오류가 난다 */
+/* 서버 코드 전부 (backend core/errors.py). AI 경로에서만 오는 코드는 뺐다(계약 §2.3.1). 비밀번호 재설정의 두 코드는 합의만 됐고 BE 에 아직 없다(계약 §4.1.1).
+   로그인 시도 제한은 BE PR #456 이 병합 전이고, 서버 문장을 그대로 쓴다 — 남은 시간도 잠금도 말하지 않는다 (#457) */
 const SERVER_MESSAGES: Record<ErrorCode, string> = {
   INVALID_REQUEST: '요청 내용을 다시 확인해 주세요.',
   MEETING_NOT_FOUND: '회의를 찾을 수 없어요.',
   MEETING_ALREADY_ENDED: '이미 끝난 회의예요.',
   MEETING_NOT_PROCESSING: '정리 중인 회의가 아니에요.',
+  MEETING_NOT_AWAITING_SPEAKERS: '화자를 지정할 수 있는 회의가 아니에요.',
   AUDIO_UPLOAD_FAILED: '파일을 올리지 못했어요. 다시 시도해 주세요.',
   AUDIO_FORMAT_UNSUPPORTED: '지원하지 않는 파일 형식이에요.',
   TRANSCRIPTION_FAILED: '회의 음성을 글로 옮기지 못했어요.',
@@ -50,6 +52,30 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
     '워크스페이스에 PM이 한 명은 있어야 해요. 다른 팀원을 먼저 PM으로 지정해 주세요.',
   EMBEDDING_UNAVAILABLE: '비슷한 태스크를 찾지 못했어요. 잠시 후 다시 시도해 주세요.',
   DISCORD_API_FAILED: 'Discord 서버의 사용자 목록을 가져오지 못했어요. 잠시 후 다시 시도해 주세요.',
+  DISCORD_CHANNEL_NOT_FOUND:
+    '연결된 Discord 서버에서 이 텍스트 채널을 찾을 수 없어요. 목록을 새로고침해 주세요.',
+  DISCORD_CHANNEL_NOT_ACCESSIBLE:
+    '봇이 이 채널을 읽거나 메시지를 보낼 수 없어요. 채널 권한에 봇을 추가해 주세요.',
+  NOTIFICATION_NOT_FOUND: '알림을 찾을 수 없어요.',
+  AUTO_BLOCK_NOT_FOUND:
+    '막힌 뒤 상태나 사유가 바뀌어 되돌릴 수 없어요. 최신 태스크를 다시 불러왔어요.',
+  REPLY_JUDGMENT_NOT_FOUND: '이 답장의 판단 기록을 찾을 수 없어요.',
+  REPLY_ATTRIBUTION_NOT_NEEDED: '이미 태스크를 정한 답장이에요.',
+  REPLY_CHANGE_NOT_UNDOABLE:
+    '그 뒤에 태스크가 바뀌어 되돌릴 수 없어요. 최신 태스크를 다시 불러왔어요.',
+  INVITATION_NOT_FOUND: '초대를 찾을 수 없어요.',
+  INVITATION_NOT_PENDING: '이미 처리된 초대예요.',
+  INVITATION_NOT_ACCEPTED: '수락하지 않은 초대라 연결을 끊을 수 없어요.',
+  MEMBER_ALREADY_LINKED: '이미 로그인 계정이 연결된 팀원이에요.',
+  ALREADY_WORKSPACE_MEMBER: '이미 이 워크스페이스에 속한 계정이에요.',
+  EMAIL_ALREADY_INVITED:
+    '이 이메일로 다른 팀원에게 보낸 초대가 기다리고 있어요. 그 초대를 먼저 취소해 주세요.',
+  PM_MEMBER_NOT_INVITABLE:
+    'PM인 팀원은 초대할 수 없어요. 팀원 역할로 초대하고, 수락한 뒤 PM으로 바꿔 주세요.',
+  MEMBER_HAS_PENDING_INVITATION: '초대를 수락한 뒤 바꾸거나 초대를 취소해 주세요.',
+  PASSWORD_RESET_TOKEN_INVALID: '쓸 수 없는 링크예요. 비밀번호 재설정을 다시 요청해 주세요.',
+  MAIL_UNAVAILABLE: '지금은 메일을 보낼 수 없어요. 잠시 뒤 다시 시도해 주세요.',
+  TOO_MANY_LOGIN_ATTEMPTS: '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.',
 }
 
 const CLIENT_MESSAGES: Record<ClientErrorCode, string> = {

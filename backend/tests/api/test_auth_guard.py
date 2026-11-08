@@ -20,6 +20,7 @@ from app.models import (
     User,
     Workspace,
 )
+from app.services.sessions import hash_session_token
 
 
 @pytest.fixture
@@ -50,7 +51,7 @@ def _user_with_session(db, email: str, token: str) -> User:
     db.add(
         SessionModel(
             user_id=user.user_id,
-            session_token=token,
+            session_token=hash_session_token(token),
             expires_at=datetime.now(timezone.utc) + timedelta(days=1),
         )
     )
@@ -194,7 +195,7 @@ def test_member_can_read_workspace_resources(seed):
 
 
 def test_expired_session_is_rejected(db, seed):
-    session = db.query(SessionModel).filter_by(session_token="alice-token").one()
+    session = db.query(SessionModel).filter_by(session_token=hash_session_token("alice-token")).one()
     session.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
     db.commit()
 
@@ -211,6 +212,7 @@ def _bot_requests(ids: dict) -> list[tuple[str, str, dict]]:
         ("POST", "/api/v1/meetings", {"workspace_id": ids["ws"], "source": "discord"}),
         ("PATCH", f"/api/v1/meetings/{ids['created_meeting']}/end", {}),
         ("PATCH", f"/api/v1/meetings/{ids['failing_meeting']}/fail", {"failed_stage": "stt"}),
+        ("PATCH", f"/api/v1/meetings/{ids['processing_meeting']}/stage", {"stage": "stt"}),
         ("POST", "/api/v1/extractions",
          {"meeting_id": ids["processing_meeting"], "workspace_id": ids["ws"], "items": []}),
     ]
@@ -257,7 +259,7 @@ def test_bot_routes_reject_requests_without_valid_service_token(db, bot_seed, cl
 
 def test_bot_routes_accept_service_token_without_session(bot_seed):
     client = TestClient(app, headers={"X-Service-Token": SERVICE_TOKEN})
-    expected = [201, 202, 200, 201]
+    expected = [201, 202, 200, 200, 201]
     for (method, url, body), status in zip(_bot_requests(bot_seed), expected):
         response = client.request(method, url, json=body)
         assert response.status_code == status, (method, url, response.text)

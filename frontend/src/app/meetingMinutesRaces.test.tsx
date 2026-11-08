@@ -1,14 +1,15 @@
-import { act, screen, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { getResponse, http } from 'msw'
 import type { ComponentType } from 'react'
-import { clearTrackedMeetings } from '@/entities/meeting'
+import { clearTrackedMeetings, meetingListQueryOptions } from '@/entities/meeting'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { handlers } from '@/shared/mock/handlers'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
+import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -92,7 +93,7 @@ function addCompletedWorkspace() {
   })
   db.accounts[0].workspaceIds.push('ws_04')
   db.integrations.ws_04 = {
-    discord: { status: 'connected', display_name: 'x', connected_at: MOCK_NOW },
+    discord: { status: 'connected', display_name: 'x', connected_at: MOCK_NOW, chat_channel: null },
     notion: { status: 'connected', display_name: 'x', connected_at: MOCK_NOW },
   }
 }
@@ -112,9 +113,7 @@ describe('기본 선택은 늦게 온 목록으로 사용자를 옮기지 않는
     list.resolve()
     await settle()
     paint.release()
-    expect(
-      await screen.findByRole('heading', { name: '메시지는 준비 중이에요' }),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: '메시지' })).toBeInTheDocument()
     await settle()
 
     expect(pathsOf(app).at(-1)).toBe(paths.messages('ws_01'))
@@ -168,5 +167,46 @@ describe('기본 선택은 늦게 온 목록으로 사용자를 옮기지 않는
     await settle()
     expect(screen.queryByText('3주차 정기회의')).toBeNull()
     expect(screen.queryByRole('complementary', { name: '회의 목록' })).toBeNull()
+  })
+
+  it('회의록 없는 목록을 받아 둔 채 들어와 떠나는 중에 새 목록이 와도, 떠나는 화면이 새 기본 회의를 부르지 않는다 (#536 리뷰)', async () => {
+    // 들어갈 때의 목록에는 정리 끝난 회의가 없다 — 기본 회의가 없다
+    const done = db.meetings.filter(({ status }) => status === 'done')
+    db.meetings = db.meetings.filter(({ status }) => status !== 'done')
+    const user = userEvent.setup()
+    const app = renderApp(paths.settings('ws_01'))
+    await screen.findByRole('heading', { level: 1, name: '설정' })
+    // 추적기가 이 공간의 회의 목록을 받아 둔다 — 회의록 화면은 그 목록을 가진 채 마운트된다
+    await waitFor(() =>
+      expect(app.queryClient.getQueryState(meetingListQueryOptions('ws_01').queryKey)?.status).toBe(
+        'success',
+      ),
+    )
+    await user.click(headerLink('회의록'))
+    expect(await screen.findByRole('heading', { level: 1, name: '회의록' })).toBeInTheDocument()
+    await settle()
+
+    // 새 목록에는 정리 끝난 회의가 있다. 그 목록을 붙잡은 채 다시 받게 하고, 팀으로 떠나는 중(화면 코드 대기)에 푼다.
+    // 팀은 이 파일에서 아직 그리지 않은 화면이다 — 지연 로드는 화면마다 한 번이라 붙잡을 수 있다
+    db.meetings.push(...done)
+    const list = holdMeetingList()
+    void app.queryClient.invalidateQueries({
+      queryKey: meetingListQueryOptions('ws_01').queryKey,
+    })
+    const requests = recordRequests()
+    const paint = holdFirstPaints()
+    await user.click(headerLink('팀'))
+    expect(screen.getByRole('heading', { level: 1, name: '회의록' })).toBeInTheDocument()
+
+    list.resolve()
+    await settle()
+    paint.release()
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toBeInTheDocument()
+    await settle()
+
+    const started = requests.started.map(({ path }) => path)
+    expect(started).not.toContain('/meetings/mt_09')
+    expect(started).not.toContain('/meetings/mt_09/minutes')
+    expect(pathsOf(app)).not.toContain(LATEST)
   })
 })

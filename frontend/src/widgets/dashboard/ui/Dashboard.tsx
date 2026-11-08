@@ -1,25 +1,28 @@
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 import type { Approval } from '@/entities/approval'
+import { evidenceMoment, MEETING_SOURCE_TRAITS } from '@/entities/meeting'
+import type { MeetingSummary } from '@/entities/meeting'
 import type { Member } from '@/entities/member'
 import type { Task } from '@/entities/task'
-import { isOverdue } from '@/entities/task'
-import { TASK_STATUS_LABEL } from '@/features/task-status'
+import { TASK_STATUS_LABEL, isOverdue } from '@/entities/task'
+import { FILL_IN_ARRIVAL } from '@/features/approval-resolve'
 import { paths } from '@/shared/config/routes'
+import { objectParticle } from '@/shared/lib/korean'
 import { seoulDateOf } from '@/shared/lib/date'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { DeferredSkeleton, revealClass } from '@/shared/ui/deferred-skeleton'
 import { Icon } from '@/shared/ui/icon'
 import { Skeleton } from '@/shared/ui/skeleton'
 import {
   LIST_LIMIT,
   approvalReason,
   approvalTitle,
-  clock,
   dateWithWeekday,
   dueSoonTasks,
   durationLabel,
   monthDayLabel,
-  objectParticle,
   shortDate,
   taskCounts,
   waitingApprovals,
@@ -39,22 +42,38 @@ import {
   SectionBody,
 } from './parts'
 import { RecentSection } from './RecentSection'
+import {
+  COLUMNS,
+  HEADER,
+  LEAD,
+  MAIN,
+  SIDE,
+  SUMMARY,
+  SUMMARY_ITEM,
+  SUMMARY_ITEM_ALERT,
+  SUMMARY_ITEM_PLAIN,
+  SUMMARY_LINK,
+  SUMMARY_VALUE,
+  TITLE,
+  TODAY,
+} from './frame'
 
-/* Main 시안 — main 패딩 48/48/72, 블록 사이 32px, 본문은 `1fr | 360px` 두 단(간격 68px) */
-const MAIN = 'mx-auto flex w-full max-w-shell flex-1 flex-col gap-32 px-48 pt-48 pb-72'
-const HEADER = 'flex items-end justify-between gap-24'
-const TITLE = 'text-[32px] leading-[1.4] font-bold tracking-h1 text-ink'
-const LEAD = 'text-body text-sub'
-const TODAY = 'text-caption text-dim tabular-nums'
-const SUMMARY = 'flex flex-wrap items-baseline gap-36 pb-8'
-const SUMMARY_ITEM = 'flex items-center gap-5 text-control text-sub'
-const SUMMARY_VALUE = 'text-[20px] leading-none font-semibold text-ink tabular-nums'
-const COLUMNS = 'grid grid-cols-[minmax(0px,1fr)_360px] items-start gap-[68px]'
-const SIDE = 'flex flex-col gap-40'
 const REVIEW_ROW = 'flex items-start gap-16 border-b border-line py-18 last:border-b-0'
 const REVIEW_TITLE = 'text-[15px] leading-[1.55] font-semibold text-ink'
 const DUE_ROW =
-  'flex items-center gap-12 px-18 py-12 text-ink hover:bg-surface-sunken focus-visible:-outline-offset-2'
+  'flex items-center gap-12 px-18 py-12 text-ink hover:bg-surface-sunken focus-visible:-outline-offset-2 max-md:gap-10 max-md:px-[0px]'
+
+/** 요약 숫자마다 그 수만큼 보이는 태스크 목록 주소 (D-178). 페이지가 목록의 URL 규칙으로 만든다 */
+export interface SummaryHrefs {
+  /** `확인 필요` 탭 (PM 만 보인다) */
+  needsReview: string
+  /** `진행 중` + `기한 지남` */
+  overdue: string
+  /** `진행 중` + `7일 안에 마감` */
+  dueSoon: string
+  /** `진행 중` + `막힘` */
+  blocked: string
+}
 
 export interface DashboardProps {
   workspaceId: string
@@ -66,6 +85,8 @@ export interface DashboardProps {
   needsReviewHref: string
   /** 태스크 목록 `진행 중` + `기한 지남·7일 이내` 주소 (D-046) */
   dueSoonHref: string
+  /** 상단 요약 숫자의 이동 주소 (D-178) */
+  summaryHrefs: SummaryHrefs
 }
 
 /**
@@ -79,6 +100,7 @@ export function Dashboard({
   today,
   needsReviewHref,
   dueSoonHref,
+  summaryHrefs,
 }: DashboardProps) {
   const data = useDashboardData(workspaceId, isPm)
   // 재조회가 실패해도 영역은 마지막 값을 그대로 그린다. 갱신 실패는 제목 근처 표시 하나와 토스트 한 번으로만 알린다 (E-02)
@@ -113,13 +135,14 @@ export function Dashboard({
         </time>
       </header>
 
-      <Summary isPm={isPm} data={data} waiting={waiting} today={today} />
+      <Summary isPm={isPm} data={data} waiting={waiting} today={today} hrefs={summaryHrefs} />
 
       <div className={COLUMNS}>
         {isPm ? (
           <ReviewSection
             workspaceId={workspaceId}
             approvals={data.approvals ?? { status: 'loading' }}
+            meetings={data.meetings.status === 'ready' ? data.meetings.data : undefined}
             needsReviewHref={needsReviewHref}
           />
         ) : (
@@ -142,17 +165,27 @@ function headline(isPm: boolean, waiting: readonly Approval[] | null): string {
 
 /** 제목 아래 최근 처리 회의 안내 (D-063, D-065). 정보 문구라 링크가 아니다 */
 function MeetingLead({ data }: { data: DashboardData }) {
-  if (data.meetings.status === 'loading') return <Skeleton width={240} />
+  const indicator = useLoadingIndicator(data.meetings.status === 'loading')
+  if (data.meetings.status === 'loading' || indicator.pending)
+    return (
+      // 안내 줄(LEAD)과 같은 한 줄 높이 — 문구가 와도 아래 날짜·요약이 밀리지 않는다
+      <DeferredSkeleton indicator={indicator} className="flex h-lh items-center text-body">
+        <Skeleton width={240} />
+      </DeferredSkeleton>
+    )
+  const lead = [LEAD, revealClass(indicator)].filter(Boolean).join(' ')
   if (data.meetings.status === 'error')
-    return <p className={LEAD}>최근 회의 정보를 불러오지 못했어요</p>
+    return <p className={lead}>최근 회의 정보를 불러오지 못했어요</p>
   const meeting = data.recent
   if (meeting === null || meeting === undefined)
-    return <p className={LEAD}>아직 정리한 회의가 없어요</p>
+    return <p className={lead}>아직 정리한 회의가 없어요</p>
   const date = seoulDateOf(meeting.meeting.startedAt)
-  const duration = durationLabel(meeting.meeting.durationMs)
-  const { title } = meeting.meeting
+  const { title, source, durationMs } = meeting.meeting
+  // 채팅 회의의 길이는 녹음 분량이 아니라 첫 메시지부터 마지막 메시지까지의 기간이라 쓰지 않는다 (#379)
+  const duration =
+    MEETING_SOURCE_TRAITS[source].timeAxis === 'recording' ? durationLabel(durationMs) : null
   return (
-    <p className={LEAD}>
+    <p className={lead}>
       {date === null ? '' : `${monthDayLabel(date)} `}
       {title}
       {objectParticle(title)} 정리했어요
@@ -171,10 +204,13 @@ interface SummaryProps {
   data: DashboardData
   waiting: readonly Approval[] | null
   today: string
+  hrefs: SummaryHrefs
 }
 
-/** 상단 요약 넷 (D-052~D-056, D-061). 전체 데이터로 센다. 모두 정보라 누를 수 없다 */
-function Summary({ isPm, data, waiting, today }: SummaryProps) {
+/**
+ * 상단 요약 넷 (D-052~D-056). 전체 데이터로 센다. 숫자마다 그 수만큼 보이는 태스크 목록 조건으로 간다 (D-178)
+ */
+function Summary({ isPm, data, waiting, today, hrefs }: SummaryProps) {
   const counts = useMemo(
     () => (data.tasks.status === 'ready' ? taskCounts(data.tasks.data, today) : null),
     [data.tasks, today],
@@ -185,45 +221,85 @@ function Summary({ isPm, data, waiting, today }: SummaryProps) {
     <div className="flex flex-col gap-8">
       <dl aria-label="현황 요약" className={SUMMARY}>
         {isPm ? (
-          <SummaryItem label="확인 대기" state={approvalState} value={waiting?.length} />
+          <SummaryItem
+            label="확인 대기"
+            state={approvalState}
+            value={waiting?.length}
+            href={hrefs.needsReview}
+          />
         ) : null}
-        <SummaryItem label="기한 지남" state={taskState} value={counts?.overdue} />
-        <SummaryItem label="7일 이내 마감" state={taskState} value={counts?.dueSoon} />
-        <SummaryItem label="막힌 일" state={taskState} value={counts?.blocked} />
+        <SummaryItem
+          label="기한 지남"
+          alert={(counts?.overdue ?? 0) > 0}
+          state={taskState}
+          value={counts?.overdue}
+          href={hrefs.overdue}
+        />
+        <SummaryItem
+          label="7일 이내 마감"
+          state={taskState}
+          value={counts?.dueSoon}
+          href={hrefs.dueSoon}
+        />
+        <SummaryItem
+          label="막힌 일"
+          state={taskState}
+          value={counts?.blocked}
+          href={hrefs.blocked}
+        />
       </dl>
     </div>
   )
 }
 
+/** 숫자를 안 뒤에만 링크다(0 포함). 불러오는 중·실패(`–`)는 링크가 아니다 */
 function SummaryItem({
   label,
+  alert = false,
   state,
   value,
+  href,
 }: {
   label: string
+  /** 휴대폰 요약 칸을 경고 면으로 그린다. 0 건이면 경고가 아니라 끈다 */
+  alert?: boolean
   state: Loadable<unknown>['status']
   value: number | undefined
+  href: string
 }) {
+  const indicator = useLoadingIndicator(state === 'loading')
   let shown: ReactNode
-  if (state === 'error' || (state === 'ready' && value === undefined))
+  if (state === 'loading' || indicator.pending)
+    shown = (
+      <>
+        {/* 숫자 한 줄 높이 안에 앉는다 — 숫자가 와도 칸 높이가 그대로다 */}
+        <DeferredSkeleton indicator={indicator} className="flex h-lh items-center">
+          <Skeleton variant="block" width={18} height={18} />
+        </DeferredSkeleton>
+        <span className="sr-only">불러오는 중</span>
+      </>
+    )
+  else if (state === 'error' || value === undefined)
     shown = (
       <>
         <span aria-hidden="true">–</span>
         <span className="sr-only">불러오지 못했어요</span>
       </>
     )
-  else if (state === 'loading' || value === undefined)
+  else
     shown = (
-      <>
-        <Skeleton variant="block" width={18} height={18} aria-hidden="true" />
-        <span className="sr-only">불러오는 중</span>
-      </>
+      <GuardedLink
+        to={href}
+        aria-label={`${label} ${value}`}
+        className={[SUMMARY_LINK, revealClass(indicator)].filter(Boolean).join(' ')}
+      >
+        {value}
+      </GuardedLink>
     )
-  else shown = value
   return (
-    <div className={SUMMARY_ITEM}>
+    <div className={`${SUMMARY_ITEM} ${alert ? SUMMARY_ITEM_ALERT : SUMMARY_ITEM_PLAIN}`}>
       <dt>{label}</dt>
-      <dd className={SUMMARY_VALUE}>{shown}</dd>
+      <dd className={alert ? `${SUMMARY_VALUE} max-md:text-accent` : SUMMARY_VALUE}>{shown}</dd>
     </div>
   )
 }
@@ -231,11 +307,13 @@ function SummaryItem({
 interface ReviewSectionProps {
   workspaceId: string
   approvals: Loadable<Approval[]>
+  /** 근거 시각을 읽을 회의. 받기 전이거나 못 받았으면 시각을 숨긴다 */
+  meetings: readonly MeetingSummary[] | undefined
   needsReviewHref: string
 }
 
 /** 확인이 필요한 일 (PM). 대기 시작 오래된 순으로 5개, 나머지는 태스크의 확인 필요 탭에서 (D-049~D-051, D-162) */
-function ReviewSection({ workspaceId, approvals, needsReviewHref }: ReviewSectionProps) {
+function ReviewSection({ workspaceId, approvals, meetings, needsReviewHref }: ReviewSectionProps) {
   return (
     <section aria-labelledby="dashboard-review">
       <div className={SECTION_HEAD}>
@@ -247,14 +325,23 @@ function ReviewSection({ workspaceId, approvals, needsReviewHref }: ReviewSectio
           <Icon name="chevron-right" size={13} />
         </GuardedLink>
       </div>
-      <SectionBody state={approvals} errorTitle="확인이 필요한 일을 불러오지 못했어요">
+      <SectionBody
+        state={approvals}
+        errorTitle="확인이 필요한 일을 불러오지 못했어요"
+        skeleton={{ rows: 3, kind: 'review' }}
+      >
         {(list) => {
           const shown = waitingApprovals(list).slice(0, LIST_LIMIT)
           if (shown.length === 0) return <p className={EMPTY_NOTE}>지금 확인할 일이 없어요.</p>
           return (
             <ul aria-label="확인이 필요한 일 목록">
               {shown.map((approval) => (
-                <ReviewRow key={approval.id} workspaceId={workspaceId} approval={approval} />
+                <ReviewRow
+                  key={approval.id}
+                  workspaceId={workspaceId}
+                  approval={approval}
+                  meetings={meetings}
+                />
               ))}
             </ul>
           )
@@ -264,12 +351,21 @@ function ReviewSection({ workspaceId, approvals, needsReviewHref }: ReviewSectio
   )
 }
 
-function ReviewRow({ workspaceId, approval }: { workspaceId: string; approval: Approval }) {
+interface ReviewRowProps {
+  workspaceId: string
+  approval: Approval
+  meetings: readonly MeetingSummary[] | undefined
+}
+
+function ReviewRow({ workspaceId, approval, meetings }: ReviewRowProps) {
   const hold = approval.kind === 'task_create' && approval.gate === 'hold'
   const title = approvalTitle(approval)
   const at =
-    approval.kind === 'task_create' && approval.evidence.atMs !== null
-      ? clock(approval.evidence.atMs)
+    approval.kind === 'task_create'
+      ? evidenceMoment(
+          meetings?.find(({ id }) => id === approval.meetingId),
+          approval.evidence.atMs,
+        )
       : null
   return (
     <li className={REVIEW_ROW}>
@@ -288,10 +384,11 @@ function ReviewRow({ workspaceId, approval }: { workspaceId: string; approval: A
         </div>
         <p className="text-control font-normal text-sub">{approvalReason(approval)}</p>
       </div>
-      {/* D-034·D-162: 처리는 확인 필요 상세에서 한다. 보류는 `채워 넣기` 다 */}
+      {/* D-034·D-162: 처리는 확인 필요 상세에서 한다. 보류는 `채워 넣기` 다 — 보완 폼을 열고 간다 (D-176) */}
       {/* 행마다 같은 글자라 읽는 이름에 제목을 붙인다. 보이는 글자로 시작한다 */}
       <GuardedLink
         to={paths.approval(workspaceId, approval.id)}
+        state={hold ? FILL_IN_ARRIVAL : undefined}
         className={ACTION_LINK}
         aria-label={`${hold ? '채워 넣기' : '확인하기'} — ${title}`}
       >
@@ -336,7 +433,11 @@ function DueSection({ workspaceId, tasks, members, today, dueSoonHref }: DueSect
           </GuardedLink>
         ) : null}
       </div>
-      <SectionBody state={tasks} errorTitle="태스크를 불러오지 못했어요">
+      <SectionBody
+        state={tasks}
+        errorTitle="태스크를 불러오지 못했어요"
+        skeleton={{ rows: 5, kind: 'line' }}
+      >
         {() =>
           due.length === 0 ? (
             <p className={EMPTY_NOTE}>마감이 임박한 태스크가 없습니다</p>
@@ -386,7 +487,7 @@ function DueRow({ workspaceId, task, assignee, overdue }: DueRowProps) {
       >
         {shortDate(dueDate)}
       </time>
-      <span className="min-w-[0px] flex-1 truncate text-control font-normal text-ink">
+      <span className="min-w-[0px] flex-1 truncate text-control font-normal text-ink max-md:leading-[1.45] max-md:whitespace-normal">
         {task.title}
       </span>
       {overdue ? (
