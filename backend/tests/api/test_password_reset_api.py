@@ -290,7 +290,7 @@ def test_global_cap_response_identical_known_unknown(mdb, sent, smtp_env):
     c = _client()
     for i in range(5):
         email = f"user{i}@example.com"
-        assert c.post("/api/v1/auth/signup", json={"email": email, "password": OLD_PW, "name": "r"}).status_code == 201
+        assert signup_verified(c, email, OLD_PW, "r").status_code == 201
         assert _request(_client(), email).status_code == 200
     assert len(sent) == 5
     _signup(_client())
