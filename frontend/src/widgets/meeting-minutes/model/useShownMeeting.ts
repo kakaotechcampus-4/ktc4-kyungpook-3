@@ -77,6 +77,7 @@ export function useSelectionTimeline(
   meetingId: string | null,
   settled: boolean,
   canHold: boolean,
+  unavailableId: string | null = null,
 ): ShownMeeting {
   const [shownId, setShownId] = useState(meetingId)
   const [expired, setExpired] = useState(false)
@@ -84,7 +85,12 @@ export function useSelectionTimeline(
   // 뼈대를 최소 시간 동안 두는 회의. 시간이 차면 null
   const [skeletonFor, setSkeletonFor] = useState<string | null>(null)
   const waiting =
-    canHold && shownId !== null && meetingId !== null && shownId !== meetingId && !settled
+    canHold &&
+    shownId !== unavailableId &&
+    shownId !== null &&
+    meetingId !== null &&
+    shownId !== meetingId &&
+    !settled
   const holding = waiting && !expired
 
   useEffect(() => {
@@ -129,10 +135,11 @@ export function useShownMeeting(
   workspaceId: string,
   meetingId: string | null,
   canHold: boolean,
+  unavailableId: string | null = null,
 ): ShownMeeting & {
   /** URL 의 회의를 그릴 수 있다 — 화면이 그릴 조회가 답(또는 실패)을 받았다. 첫 진입의 로딩 자리(#508)가 이것을 본다 */
   settled: boolean
 } {
   const settled = useMinutesSettled(workspaceId, meetingId)
-  return { ...useSelectionTimeline(meetingId, settled, canHold), settled }
+  return { ...useSelectionTimeline(meetingId, settled, canHold, unavailableId), settled }
 }

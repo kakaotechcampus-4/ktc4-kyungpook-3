@@ -6,6 +6,7 @@ export interface Task {
   id: string
   workspaceId: string
   meetingId: string | null
+  meetingDeleted: boolean
   title: string
   assigneeMemberId: string | null
   status: TaskStatus

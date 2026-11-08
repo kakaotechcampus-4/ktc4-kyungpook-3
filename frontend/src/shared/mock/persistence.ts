@@ -26,9 +26,10 @@ export const MOCK_DB_STORAGE_KEY = 'msw-db'
  * 16: 로그인 시도 제한(`loginLimit`) 칸 추가 (#457).
  * 17: 가입 인증·카카오 대기(#427)와 별칭 후보(#523)가 각 브랜치에서 같은 버전 번호를 사용했다.
  * 18: 가입 인증·카카오 대기와 별칭 후보를 함께 저장한다. 서로 다른 17 저장본은 복원하지 않는다.
+ * 19: 삭제된 회의의 원문 없는 삭제 기록을 저장한다 (#576).
  * 올리면 e2e/restore.e2e.ts 와 src/shared/mock/taskScenarios.test.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
  */
-export const MOCK_DB_VERSION = 18
+export const MOCK_DB_VERSION = 19
 
 interface StoredDb {
   version: number
@@ -104,6 +105,14 @@ function isMockDb(value: unknown): value is MockDb {
   const state = value as unknown as MockDb
   return (
     isSession(state.session) &&
+    state.meetingDeletions.every(
+      (receipt) =>
+        isRecord(receipt) &&
+        hasStrings(receipt, ['meeting_id', 'workspace_id', 'deleted_at']) &&
+        (receipt.cleanup_status === 'pending' || receipt.cleanup_status === 'complete') &&
+        Array.isArray(receipt.deleted_meeting_ids) &&
+        receipt.deleted_meeting_ids.every((id) => typeof id === 'string'),
+    ) &&
     state.accounts.every(
       (account) =>
         isRecord(account) &&

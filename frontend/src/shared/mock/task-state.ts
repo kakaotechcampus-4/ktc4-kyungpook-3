@@ -289,7 +289,13 @@ export function canUndoAutoBlock(task: MockTask, state: MockDb = db): boolean {
 }
 
 export function toTaskResponse(task: MockTask, state: MockDb = db): TaskDto {
-  return { ...task, auto_blocked: canUndoAutoBlock(task, state) }
+  return {
+    ...task,
+    auto_blocked: canUndoAutoBlock(task, state),
+    meeting_deleted: state.meetingDeletions.some(
+      ({ meeting_id }) => meeting_id === task.meeting_id,
+    ),
+  }
 }
 
 /** 백엔드 `undo_auto_block` 과 같다. false 면 409 `AUTO_BLOCK_NOT_FOUND` 다 */
