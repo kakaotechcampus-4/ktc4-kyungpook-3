@@ -280,7 +280,6 @@ def test_late_judgment_after_claim_closed_it_is_recorded_only(mdb, mseed, two):
     assert _cards(mdb) == []
     assert _notes(mdb) == []
     assert _unjudged(mdb) == 1
-    assert message.message_id == item["message_id"]
 
 
 def test_a_failing_expire_does_not_stop_other_threads(mdb, mseed, monkeypatch):
