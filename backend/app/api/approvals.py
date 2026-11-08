@@ -589,7 +589,8 @@ def resolve_approval(
 
     # 카드를 본 뒤 payload 가 바뀌었으면 승인·반려 모두 되돌리고 새 내용을 보게 한다. refresh 한 값으로 비교해야 한다
     current_version = _payload_version(approval)
-    if payload.payload_version is not None and current_version is not None and payload.payload_version != current_version:
+    requested_version = payload.payload_version
+    if requested_version is not None and current_version is not None and requested_version != current_version:
         db.rollback()
         raise AppError(
             ErrorCode.APPROVAL_CHANGED,

@@ -1,4 +1,3 @@
-# ruff: noqa: F811  (다른 테스트 모듈의 픽스처를 가져와 쓴다)
 """승인 카드 payload_version(#535): 응답에 싣고, PATCH 에 같은 값이 오면 지금 값과 비교해 다르면 409 APPROVAL_CHANGED.
 
 카드를 본 뒤 다른 회의 항목이 합쳐져 payload 가 바뀌었는데 PM 이 옛 내용으로 승인·반려하는 일을 막는다.
@@ -24,17 +23,17 @@ from tests.api.test_approval_merged_card import (  # noqa: F401  (픽스처 재�
 CHANGED_MESSAGE = "보신 뒤 승인 요청 내용이 바뀌었습니다. 새 내용을 확인한 뒤 다시 처리해 주세요."
 
 
-def _detail(client, card_id: str) -> dict:
+def _detail(client, card_id: str) -> dict:  # noqa: F811
     r = client.get(f"/api/v1/approvals/{card_id}")
     assert r.status_code == 200, r.text
     return r.json()["data"]
 
 
-def _version(client, card_id: str):
+def _version(client, card_id: str):  # noqa: F811
     return _detail(client, card_id)["payload_version"]
 
 
-def _item_statuses(client, db, seed) -> list[str]:
+def _item_statuses(client, db, seed) -> list[str]:  # noqa: F811
     """회의 1·2 의 추출 항목이 API 에 보이는 approval_status (카드를 따라간다)."""
     statuses = []
     for meeting in seed["meetings"][:2]:
@@ -46,14 +45,14 @@ def _item_statuses(client, db, seed) -> list[str]:
     return statuses
 
 
-def _tasks(db, seed) -> list[Task]:
+def _tasks(db, seed) -> list[Task]:  # noqa: F811
     db.expire_all()
     return list(db.execute(
         select(Task).where(Task.workspace_id == seed["ws"].workspace_id, Task.title == "결제 API 연동")
     ).scalars().all())
 
 
-def _assert_untouched(db, seed, card_id: str) -> None:
+def _assert_untouched(db, seed, card_id: str) -> None:  # noqa: F811
     db.expire_all()
     card = db.get(ApprovalRequest, card_id)
     assert (card.status, card.resolved_by, card.resolved_at) == ("pending", None, None)
@@ -61,7 +60,7 @@ def _assert_untouched(db, seed, card_id: str) -> None:
     assert all(i.task_id is None for i in _items_of(db, card_id))
 
 
-def test_task_create_list_and_detail_expose_same_version(client, db, seed):
+def test_task_create_list_and_detail_expose_same_version(client, db, seed):  # noqa: F811
     card_id = _pending_card(client, db, seed)
     update_card = ApprovalRequest(
         workspace_id=seed["ws"].workspace_id, type="task_update", status="pending",
@@ -82,7 +81,7 @@ def test_task_create_list_and_detail_expose_same_version(client, db, seed):
     assert _version(client, update_card.approval_id) is None
 
 
-def test_merge_changes_version_only_for_merged_card(client, db, seed):
+def test_merge_changes_version_only_for_merged_card(client, db, seed):  # noqa: F811
     card_id = _pending_card(client, db, seed)
     other = ApprovalRequest(
         workspace_id=seed["ws"].workspace_id, type="task_create", status="pending",
@@ -98,7 +97,7 @@ def test_merge_changes_version_only_for_merged_card(client, db, seed):
     assert _version(client, other.approval_id) == other_before
 
 
-def test_approve_with_current_version_succeeds(client, db, seed):
+def test_approve_with_current_version_succeeds(client, db, seed):  # noqa: F811
     card_id = _merged_card(client, db, seed)
 
     r = _patch(client, card_id, {"status": "approved", "payload_version": _version(client, card_id)})
@@ -109,7 +108,7 @@ def test_approve_with_current_version_succeeds(client, db, seed):
     assert len(_tasks(db, seed)) == 1
 
 
-def test_approve_with_stale_version_returns_409_and_keeps_pending(client, db, seed):
+def test_approve_with_stale_version_returns_409_and_keeps_pending(client, db, seed):  # noqa: F811
     card_id = _pending_card(client, db, seed)
     stale = _version(client, card_id)
     _extract(client, seed, 1, [_merge_item(card_id)])
@@ -125,7 +124,7 @@ def test_approve_with_stale_version_returns_409_and_keeps_pending(client, db, se
     _assert_untouched(db, seed, card_id)
 
 
-def test_retry_with_new_version_after_409_succeeds(client, db, seed):
+def test_retry_with_new_version_after_409_succeeds(client, db, seed):  # noqa: F811
     card_id = _pending_card(client, db, seed)
     stale = _version(client, card_id)
     _extract(client, seed, 1, [_merge_item(card_id)])
@@ -140,7 +139,7 @@ def test_retry_with_new_version_after_409_succeeds(client, db, seed):
     assert len(_tasks(db, seed)) == 1
 
 
-def test_approve_without_version_after_merge_still_succeeds(client, db, seed):
+def test_approve_without_version_after_merge_still_succeeds(client, db, seed):  # noqa: F811
     card_id = _merged_card(client, db, seed)
 
     r = _patch(client, card_id, {"status": "approved"})
@@ -148,7 +147,7 @@ def test_approve_without_version_after_merge_still_succeeds(client, db, seed):
     assert r.status_code == 200, r.text
 
 
-def test_reject_with_stale_version_returns_409_and_keeps_items(client, db, seed):
+def test_reject_with_stale_version_returns_409_and_keeps_items(client, db, seed):  # noqa: F811
     card_id = _pending_card(client, db, seed)
     stale = _version(client, card_id)
     _extract(client, seed, 1, [_merge_item(card_id)])
@@ -164,7 +163,7 @@ def test_reject_with_stale_version_returns_409_and_keeps_items(client, db, seed)
     assert _item_statuses(client, db, seed) == statuses_before
 
 
-def test_task_update_ignores_payload_version(client, db, seed):
+def test_task_update_ignores_payload_version(client, db, seed):  # noqa: F811
     task_id = db.execute(select(Task.task_id)).scalars().first()
     card = ApprovalRequest(
         workspace_id=seed["ws"].workspace_id, type="task_update", status="pending",
@@ -179,7 +178,7 @@ def test_task_update_ignores_payload_version(client, db, seed):
     assert r.json()["data"]["payload_version"] is None
 
 
-def test_resolved_card_reports_already_resolved_before_version(client, db, seed):
+def test_resolved_card_reports_already_resolved_before_version(client, db, seed):  # noqa: F811
     card_id = _merged_card(client, db, seed)
     version = _version(client, card_id)
     assert _patch(client, card_id, {"status": "approved"}).status_code == 200
@@ -190,7 +189,7 @@ def test_resolved_card_reports_already_resolved_before_version(client, db, seed)
     assert r.json()["error"]["code"] == "APPROVAL_ALREADY_RESOLVED"
 
 
-def test_payload_change_between_check_and_update_uses_refreshed_payload(client, db, seed, monkeypatch):
+def test_payload_change_between_check_and_update_uses_refreshed_payload(client, db, seed, monkeypatch):  # noqa: F811
     card_id = _pending_card(client, db, seed)
     seen = _version(client, card_id)
     original = approvals_api._normalize_overrides
@@ -215,7 +214,7 @@ def test_payload_change_between_check_and_update_uses_refreshed_payload(client, 
     _assert_untouched(db, seed, card_id)
 
 
-def test_payload_version_too_long_is_400(client, db, seed):
+def test_payload_version_too_long_is_400(client, db, seed):  # noqa: F811
     card_id = _pending_card(client, db, seed)
 
     r = _patch(client, card_id, {"status": "approved", "payload_version": "a" * 65})
