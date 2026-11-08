@@ -42,7 +42,7 @@ def db():
 
 
 @pytest.fixture
-def items_by_title(db, monkeypatch):
+def items_by_title(db, monkeypatch, caplog):
     """AI 출력을 BE 에 넣고 추출 결과 조회의 항목을 제목으로 돌려준다. 화자 uid 는 각 팀원의 디스코드 id 다."""
     monkeypatch.setenv("SERVICE_TOKEN", SERVICE_TOKEN)
     # 자동 생성 스위치(기본 켜짐)를 고정한다. 꺼진 환경에서도 auto 판정을 본다
@@ -67,13 +67,24 @@ def items_by_title(db, monkeypatch):
 
     client = TestClient(app, base_url="https://testserver")
     client.cookies.set("session_token", "pm-token")
-    r = client.post("/api/v1/extractions", json={
-        "meeting_id": meeting.meeting_id, "workspace_id": ws.workspace_id, "items": ITEMS,
-    }, headers={"X-Service-Token": SERVICE_TOKEN})
+    with caplog.at_level("INFO", logger="app.api.extractions"):
+        r = client.post("/api/v1/extractions", json={
+            "meeting_id": meeting.meeting_id, "workspace_id": ws.workspace_id, "items": ITEMS,
+        }, headers={"X-Service-Token": SERVICE_TOKEN})
     assert r.status_code == 201, r.text
     got = client.get(f"/api/v1/extractions/{r.json()['data']['extraction_id']}")
     assert got.status_code == 200, got.text
     return {i["task"]["title"]: i for i in got.json()["data"]["items"]}
+
+
+@pytest.fixture
+def blockers(items_by_title, caplog):
+    """auto 를 막은 항목들의 사유를 항목 순서대로(로그에 제목이 없다). 막힌 항목이 없으면 로그도 없다."""
+    return [
+        set(r.getMessage().rsplit("reasons=", 1)[1].split(","))
+        for r in caplog.get_records("setup")
+        if "reasons=" in r.getMessage()
+    ]
 
 
 def test_evidence_status_from_ai_is_stored_as_sent(items_by_title):
@@ -93,15 +104,20 @@ def test_certain_task_and_due_becomes_task_automatically(items_by_title, db):
     assert task.assignee_member_id == haeun.member_id
 
 
-def test_inferred_due_goes_to_pm_review(items_by_title):
+def test_inferred_due_goes_to_pm_review(items_by_title, blockers):
     item = items_by_title["검색 성능 개선 검토"]
     assert item["due_date"]["evidence_status"] == "inferred"
     assert item["gate"] == "review" and item["task_id"] is None
+    # 사유는 둘이다. 마감이 inferred 라서(due_not_certain) 막힌다. unsearched_task_exists 는 앞 항목 때문에 따라 붙는다
+    assert blockers[0] == {"due_not_certain", "unsearched_task_exists"}
 
 
-def test_item_after_an_auto_task_in_the_same_meeting_is_reviewed(items_by_title):
+def test_item_after_an_auto_task_in_the_same_meeting_is_reviewed(items_by_title, blockers):
     # 마감이 없어(missing) 그 자체로는 auto 조건을 만족하지만, 같은 회의에서 앞서 auto 로 만든 태스크가 아직 임베딩 전이라
     # 중복인지 확인할 수 없어 PM 이 본다(unsearched_task_exists)
     item = items_by_title["알림 설정 페이지 개발"]
     assert item["due_date"]["evidence_status"] == "missing"
-    assert item["gate"] == "review"
+    assert item["gate"] == "review" and item["task_id"] is None
+    # 다른 차단 조건(asr_suspects 등)이 아니라 이 사유 하나만으로 막혔다
+    assert blockers[1] == {"unsearched_task_exists"}
+    assert len(blockers) == 2
