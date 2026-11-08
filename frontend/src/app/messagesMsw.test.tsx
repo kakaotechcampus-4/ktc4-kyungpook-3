@@ -77,8 +77,8 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
     )
     // 승인 전 묶음은 가장 이른 마감일과 묶은 태스크를 쓴다
     expect(rowTexts(reviewList())).toEqual([
-      '이재환09/24 마감API 명세서',
-      '정하늘09/30 마감퍼블리싱 외 1건',
+      '이재환09/24 마감API 명세서 진행 상황 확인',
+      '정하늘09/30 마감퍼블리싱 외 1건 진행 상황 확인',
     ])
     expect(rowTexts(threadList())).toEqual([
       '이재환나: DB 스키마가 확정됐다고 들었어요. 명세서 작업은 시작하셨나요?09/16답장 기다리는 중',
@@ -914,7 +914,7 @@ describe('PM 의 자기 대화는 목록 맨 위 구역에 따로 두고 팀원 
     // 자기 대화도 마지막이 봇 메시지라 남의 대화였다면 셋째로 셌다 — member_id 없음 테스트가 3 을 본다
     expect(within(threadList()).getByText('답장 기다리는 중 2')).toBeInTheDocument()
     // 자기 대화의 보낼 메시지도 PM 권한으로 그대로 확인한다
-    expect(rowTexts(reviewList())).toContain('김서연09/24 마감기획서')
+    expect(rowTexts(reviewList())).toContain('김서연09/24 마감기획서 진행 상황 확인')
   })
 
   it('자기 대화는 봇이 왼쪽·자기 답장이 오른쪽이고, 답장 기다림 없이 답장 칸과 예정 묶음 확인하기가 있다', async () => {

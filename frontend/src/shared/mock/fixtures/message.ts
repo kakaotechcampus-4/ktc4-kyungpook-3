@@ -9,6 +9,7 @@ import type {
  * 메시지 픽스처 (계약 §5.7 모양). 기준 시각은 MOCK_NOW(2026-09-18 금 09:00)다. 시각은 읽기 쉽게 +09:00 으로 두고
  * handler 가 응답할 때 서버처럼 UTC 로 바꾼다.
  * ws_01: 보낼 메시지 2통(이재환 bd_01 은 마감 하루 전, 정하늘 bd_02 는 직접 정한 시각이고 AI 초안을 기다린다).
+ * 재촉 이유는 bd_01 이 태스크 변경(tk_01 의 이력), bd_02 는 진행 소식이 없고 '발표 자료' 는 PM(김서연)이 직접 만든 재촉이다.
  * 대화 4건 — 이재환은 3일째 답장이 없고, 박지훈에게 마지막으로 보낸 DM 은 서버 DM 이 막혀 가지 못했다 (계획 C-7 `messages-default`).
  * ws_02: 대화 1건 — 공간을 바꾸면 이전 공간의 메시지가 보이지 않는지 확인한다 (AC-05)
  */
@@ -24,9 +25,13 @@ export interface MockMessageThread {
   messages: MockThreadMessage[]
 }
 
-/** 리마인드. 취소 시각은 응답에 없다 — 닫힌 묶음의 응답에 함께 취소된 것만 싣는 데 쓴다 (백엔드 bundle_reminders) */
-export interface MockReminder extends ReminderDto {
+/**
+ * 리마인드. 취소 시각·만든 사람은 응답에 없다 — 취소 시각은 닫힌 묶음의 응답에 함께 취소된 것만 싣는 데 (백엔드 bundle_reminders),
+ * 만든 사람(PM 의 member_id)은 PM 이 만든 재촉의 이유 문장에 쓴다 (백엔드 reminder_reason). 응답의 이유·근거는 handler 가 계산한다
+ */
+export interface MockReminder extends Omit<ReminderDto, 'reason' | 'evidence'> {
   cancelled_at: string | null
+  created_by: string | null
 }
 
 /** 보낼 메시지. 리마인드는 묶음과 함께 저장하고, 응답에는 묶음과 같은 상태인 것만 싣는다 */
@@ -81,6 +86,7 @@ function reminder(
   bundle_id: string,
   task: { task_id: string; title: string; due_date: string | null },
   note: string | null = null,
+  createdBy: string | null = null,
 ): MockReminder {
   return {
     reminder_id,
@@ -91,8 +97,9 @@ function reminder(
     note,
     status: 'scheduled',
     kind: 'nudge',
-    origin: 'scheduler',
+    origin: createdBy === null ? 'scheduler' : 'pm',
     created_at: '2026-09-15T09:00:00+09:00',
+    created_by: createdBy,
     cancelled_at: null,
   }
 }
@@ -139,7 +146,13 @@ export const messageBundleFixtures: MockBundle[] = [
         { task_id: 'tk_04', title: '퍼블리싱', due_date: null },
         '시안 2차 반영분까지',
       ),
-      reminder('rm_03', 'bd_02', { task_id: 'tk_06', title: '발표 자료', due_date: '2026-09-30' }),
+      reminder(
+        'rm_03',
+        'bd_02',
+        { task_id: 'tk_06', title: '발표 자료', due_date: '2026-09-30' },
+        null,
+        'mb_01',
+      ),
     ],
   },
 ]

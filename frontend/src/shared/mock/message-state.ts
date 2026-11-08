@@ -3,10 +3,12 @@ import type {
   InboxDto,
   MessageDto,
   ReminderDto,
+  ReminderEvidenceDto,
   ReminderWithBundleDto,
   ThreadDetailDto,
   ThreadSummaryDto,
 } from '@/shared/types/api/message'
+import type { TaskHistoryDto } from '@/shared/types/api/task'
 import type { MockBundle, MockMessageThread, MockReminder } from './fixtures/message'
 import { nextId } from './utils'
 
@@ -27,7 +29,110 @@ export function utc(timestamp: string): string {
 
 const utcOrNull = (timestamp: string | null) => (timestamp === null ? null : utc(timestamp))
 
-export function reminderDto(reminder: MockReminder): ReminderDto {
+/**
+ * 재촉 이유에 읽는 것 (백엔드 reminder_reason) — 태스크를 만든 때와 이력, 묶음 대화의 팀원 메시지, 재촉을 만든 PM.
+ * members 는 그 공간의 팀원이다
+ */
+export interface ReasonContext {
+  tasks: readonly { task_id: string; created_at: string }[]
+  taskHistory: readonly Pick<
+    TaskHistoryDto,
+    'task_id' | 'changed_field' | 'change_source' | 'created_at'
+  >[]
+  threads: readonly MockMessageThread[]
+  members: readonly { member_id: string; display_name: string }[]
+}
+
+const WEEKDAYS = '일월화수목금토'
+const DELETED_TASK_TITLE = '지워진 태스크'
+
+/** 한국 시간 `M/D(요일)` (백엔드 _kst_day). `YYYY-MM-DD` 는 그 날 그대로다 */
+function kstDay(value: string): string {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T00:00:00Z`)
+    : new Date(time(value) + 9 * 60 * 60 * 1000)
+  return `${String(date.getUTCMonth() + 1)}/${String(date.getUTCDate())}(${WEEKDAYS.charAt(date.getUTCDay())})`
+}
+
+/* 진행 소식은 스케줄러의 응답과 같다 (백엔드 scheduler._RESPONSE_FIELDS·_NOT_RESPONSE_SOURCES) */
+const RESPONSE_FIELDS = ['status', 'due_date']
+const NOT_RESPONSE_SOURCES = ['scheduler', 'reminder_reply']
+/** 승인 카드에서 값을 고쳐 만든 태스크는 만든 직후 manual 이력이 남는다. 생성의 일부라 소식이 아니다 (백엔드 CREATION_GRACE) */
+const CREATION_GRACE_MS = 5000
+
+/** 태스크를 만든 뒤의 마지막 진행 소식 — 묶음 대화의 팀원 메시지와 그 태스크의 응답 이력 중 늦은 것. 같은 시각이면 답장이다 */
+function latestNews(
+  taskId: string,
+  taskCreatedAt: string,
+  threadId: string,
+  context: ReasonContext,
+): ReminderEvidenceDto | null {
+  const floor = time(taskCreatedAt)
+  const thread = context.threads.find(({ thread_id }) => thread_id === threadId)
+  const reply = (thread?.messages ?? [])
+    .filter(({ sender, created_at }) => sender === 'member' && time(created_at) > floor)
+    .sort(
+      (left, right) =>
+        time(right.created_at) - time(left.created_at) ||
+        right.message_id.localeCompare(left.message_id),
+    )
+    .at(0)
+  const changes = context.taskHistory
+    .filter(
+      (entry) =>
+        entry.task_id === taskId &&
+        RESPONSE_FIELDS.includes(entry.changed_field) &&
+        !NOT_RESPONSE_SOURCES.includes(entry.change_source) &&
+        time(entry.created_at) > floor + CREATION_GRACE_MS,
+    )
+    .map(({ created_at }) => time(created_at))
+  const changedAt = changes.length === 0 ? null : Math.max(...changes)
+  if (reply !== undefined && (changedAt === null || time(reply.created_at) >= changedAt))
+    return { kind: 'reply', at: utc(reply.created_at), message_id: reply.message_id }
+  if (changedAt === null) return null
+  return { kind: 'task_change', at: new Date(changedAt).toISOString(), message_id: null }
+}
+
+/**
+ * 재촉 이유와 근거 (백엔드 reminder_reason). 지운 태스크면 둘 다 null 이다.
+ * 제목·마감은 같은 응답의 task_title·due_date 인 리마인드의 값이다 — 백엔드는 둘 다 지금 태스크에서 읽어 같다.
+ * 픽스처에 없는 태스크는 리마인드를 만든 때를 태스크를 만든 때로 본다
+ */
+function reminderReason(
+  reminder: MockReminder,
+  threadId: string,
+  context: ReasonContext,
+): Pick<ReminderDto, 'reason' | 'evidence'> {
+  if (reminder.task_id === null || reminder.task_title === null)
+    return { reason: null, evidence: null }
+  const createdAt =
+    context.tasks.find(({ task_id }) => task_id === reminder.task_id)?.created_at ??
+    reminder.created_at
+  const evidence = latestNews(reminder.task_id, createdAt, threadId, context)
+  const news =
+    evidence === null
+      ? `${kstDay(createdAt)}에 태스크를 만든 뒤로 진행 소식이 없어요.`
+      : `${kstDay(evidence.at)} 이후로 진행 소식이 없어요.`
+  if (reminder.origin === 'pm') {
+    const creator = context.members.find(({ member_id }) => member_id === reminder.created_by)
+    return {
+      reason: `${creator?.display_name ?? 'PM'}님이 직접 만든 재촉이에요. ${news}`,
+      evidence,
+    }
+  }
+  if (reminder.due_date !== null)
+    return {
+      reason: `'${reminder.task_title}' 마감이 ${kstDay(reminder.due_date)}인데, ${news}`,
+      evidence,
+    }
+  return { reason: news, evidence }
+}
+
+export function reminderDto(
+  reminder: MockReminder,
+  threadId: string,
+  context: ReasonContext,
+): ReminderDto {
   return {
     reminder_id: reminder.reminder_id,
     bundle_id: reminder.bundle_id,
@@ -39,6 +144,7 @@ export function reminderDto(reminder: MockReminder): ReminderDto {
     kind: reminder.kind,
     origin: reminder.origin,
     created_at: utc(reminder.created_at),
+    ...reminderReason(reminder, threadId, context),
   }
 }
 
@@ -57,8 +163,19 @@ function shownReminders(bundle: MockBundle): MockReminder[] {
   return same.filter(({ cancelled_at }) => cancelled_at !== null && time(cancelled_at) === closedAt)
 }
 
+/** 목록 한 줄 (백엔드 bundle_summary) */
+function bundleSummary(reminders: readonly MockReminder[]): string {
+  const [first] = reminders
+  if (first === undefined) return ''
+  const title = first.task_title ?? DELETED_TASK_TITLE
+  return reminders.length === 1
+    ? `${title} 진행 상황 확인`
+    : `${title} 외 ${String(reminders.length - 1)}건 진행 상황 확인`
+}
+
 /** 응답에는 묶음과 같은 상태인 리마인드만 싣는다 */
-export function bundleDto(bundle: MockBundle): BundleDto {
+export function bundleDto(bundle: MockBundle, context: ReasonContext): BundleDto {
+  const reminders = shownReminders(bundle)
   return {
     bundle_id: bundle.bundle_id,
     thread_id: bundle.thread_id,
@@ -72,7 +189,8 @@ export function bundleDto(bundle: MockBundle): BundleDto {
     draft_version: bundle.draft_version,
     scheduled_at: utc(bundle.scheduled_at),
     approved_at: utcOrNull(bundle.approved_at),
-    reminders: shownReminders(bundle).map(reminderDto),
+    summary: bundleSummary(reminders),
+    reminders: reminders.map((reminder) => reminderDto(reminder, bundle.thread_id, context)),
   }
 }
 
@@ -120,14 +238,14 @@ export function threadSummaryOf(thread: MockMessageThread): ThreadSummaryDto {
   }
 }
 
-function scheduledBundles(bundles: readonly MockBundle[], threadId?: string): BundleDto[] {
-  return bundles
+function scheduledBundles(context: BundleContext, threadId?: string): BundleDto[] {
+  return context.bundles
     .filter(
       (bundle) =>
         bundle.status === 'scheduled' && (threadId === undefined || bundle.thread_id === threadId),
     )
     .sort((left, right) => time(left.scheduled_at) - time(right.scheduled_at))
-    .map(bundleDto)
+    .map((bundle) => bundleDto(bundle, context))
 }
 
 /** 최근 대화가 위로. 메시지가 없는 대화는 아래로 간다 */
@@ -137,31 +255,26 @@ function byRecent(left: ThreadSummaryDto, right: ThreadSummaryDto): number {
   return time(right.last_message.created_at) - time(left.last_message.created_at)
 }
 
-/** PM 은 모든 대화와 예정 묶음을, 팀원은 자기 대화만 본다 */
-export function inboxOf(
-  threads: readonly MockMessageThread[],
-  bundles: readonly MockBundle[],
-  viewer: Viewer,
-  ownerId: string | null,
-): InboxDto {
+/** PM 은 그 공간의 모든 대화와 예정 묶음을, 팀원은 자기 대화만 본다 */
+export function inboxOf(context: BundleContext, viewer: Viewer, ownerId: string | null): InboxDto {
   return {
-    threads: threads
+    threads: context.threads
       .filter((thread) => viewer === 'pm' || thread.member_id === ownerId)
       .map(threadSummaryOf)
       .sort(byRecent),
-    bundles: viewer === 'pm' ? scheduledBundles(bundles) : null,
+    bundles: viewer === 'pm' ? scheduledBundles(context) : null,
   }
 }
 
 export function threadDetailOf(
   thread: MockMessageThread,
-  bundles: readonly MockBundle[],
+  context: BundleContext,
   viewer: Viewer,
 ): ThreadDetailDto {
   return {
     thread: threadSummaryOf(thread),
     messages: sortedMessages(thread),
-    bundles: viewer === 'pm' ? scheduledBundles(bundles, thread.thread_id) : null,
+    bundles: viewer === 'pm' ? scheduledBundles(context, thread.thread_id) : null,
   }
 }
 
@@ -188,27 +301,23 @@ export function approveBundle(
 }
 
 /**
- * 묶음 구성이 바뀔 때 백엔드가 db 에서 읽는 것 — 합칠 상대가 될 그 공간의 묶음, 규칙 문구에 쓸 지금의 태스크,
- * 문구 틀의 PM 이름·공간 이름·나간 DM
+ * 묶음을 응답하거나 구성을 바꿀 때 백엔드가 db 에서 읽는 것 — 합칠 상대가 될 그 공간의 묶음, 규칙 문구에 쓸 지금의 태스크,
+ * 문구 틀의 PM 이름·공간 이름·나간 DM, 재촉 이유에 쓸 것
  */
-export interface BundleContext {
+export interface BundleContext extends ReasonContext {
   bundles: readonly MockBundle[]
-  tasks: readonly { task_id: string; title: string; due_date: string | null }[]
-  threads: readonly MockMessageThread[]
+  tasks: readonly { task_id: string; title: string; due_date: string | null; created_at: string }[]
   pmName: string
   workspaceName: string
 }
 
-const WEEKDAYS = '일월화수목금토'
 const ASK = '지금 어디까지 됐는지 편하게 알려 주세요!'
 
 /** 규칙 문구(가운데). 백엔드 rule_line. 픽스처는 지운 태스크의 제목을 남기지 않는다 */
 function ruleLine(title: string | null, due: string | null): string {
-  const name = title ?? '지워진 태스크'
+  const name = title ?? DELETED_TASK_TITLE
   if (due === null) return `'${name}' 진행 상황 한번 여쭤봐요.\n${ASK}`
-  const date = new Date(`${due}T00:00:00Z`)
-  const when = `${String(date.getUTCMonth() + 1)}/${String(date.getUTCDate())}(${WEEKDAYS.charAt(date.getUTCDay())})`
-  return `'${name}' 마감이 ${when}이라 한번 여쭤봐요.\n${ASK}`
+  return `'${name}' 마감이 ${kstDay(due)}이라 한번 여쭤봐요.\n${ASK}`
 }
 
 /** 이름 뒤 '이에요/예요'. 마지막 글자가 한글이 아니면 받침을 알 수 없다 (백엔드 _copula) */
@@ -341,11 +450,10 @@ export type ReminderRefusal = 'task_not_found' | 'member_not_found' | 'time_pass
 
 /**
  * 리마인드를 만들거나 다른 시각으로 옮길 때 더 읽고 쓰는 것 (백엔드 create_reminder·edit_reminder).
- * members 는 그 공간의 지워지지 않은 팀원이다. allThreads·allBundles 는 db 의 칸 그대로라 새 대화·묶음을 넣고 ID 를 매긴다
+ * allThreads·allBundles 는 db 의 칸 그대로라 새 대화·묶음을 넣고 ID 를 매긴다
  */
 export interface ReminderContext extends BundleContext {
   workspaceId: string
-  members: readonly { member_id: string; display_name: string }[]
   allThreads: MockMessageThread[]
   allBundles: MockBundle[]
 }
@@ -415,7 +523,13 @@ function threadOf(memberId: string, name: string, context: ReminderContext): Moc
  * 같은 묶음에 같은 태스크가 이미 있으면 새로 만들지 않고 그 리마인드를 돌려준다 — 묶음도 그대로다
  */
 export function createReminder(
-  input: { task_id: string; member_id: string; scheduled_at: string; note: string | null },
+  input: {
+    task_id: string
+    member_id: string
+    scheduled_at: string
+    note: string | null
+    created_by: string | null
+  },
   now: string,
   context: ReminderContext,
 ): ReminderResult {
@@ -446,6 +560,7 @@ export function createReminder(
     kind: 'nudge',
     origin: 'pm',
     created_at: now,
+    created_by: input.created_by,
     cancelled_at: null,
   }
   bundle.reminders.push(reminder)
@@ -503,9 +618,12 @@ export function cancelReminder(
   return { reminder, bundle }
 }
 
-export function reminderWithBundleDto(result: {
-  reminder: MockReminder
-  bundle: MockBundle
-}): ReminderWithBundleDto {
-  return { reminder: reminderDto(result.reminder), bundle: bundleDto(result.bundle) }
+export function reminderWithBundleDto(
+  result: { reminder: MockReminder; bundle: MockBundle },
+  context: ReasonContext,
+): ReminderWithBundleDto {
+  return {
+    reminder: reminderDto(result.reminder, result.bundle.thread_id, context),
+    bundle: bundleDto(result.bundle, context),
+  }
 }
