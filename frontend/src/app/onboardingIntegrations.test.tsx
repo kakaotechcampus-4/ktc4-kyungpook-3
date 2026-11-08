@@ -199,6 +199,18 @@ describe('Discord·Notion 연결 (U3-3)', () => {
     expect(url.searchParams.get('state')).toBe('/onboarding/ws_03/connect_notion')
   })
 
+  it('Notion 단계는 선택임을 알리고 건너뛸 수 있다 (D-182)', async () => {
+    atNotion('completed')
+    renderApp('/onboarding/ws_03/connect_notion')
+    expect(
+      await screen.findByText(
+        '노션은 꼭 연결하지 않아도 돼요. 연결하면 승인한 태스크가 노션에도 올라가요.',
+      ),
+    ).toBeInTheDocument()
+    const card = await screen.findByRole('region', { name: '노션 연동' })
+    expect(await within(card).findByRole('button', { name: '건너뛰기' })).toBeEnabled()
+  })
+
   it('Notion 복귀 확인에서 준비 중(connecting)이면 기다렸다가, connected 가 되면 팀원 연결 단계로 간다 (#204)', async () => {
     atNotion('completed')
     settleMockOAuth({ workspaceId: 'ws_03', provider: 'notion', outcome: 'success' })

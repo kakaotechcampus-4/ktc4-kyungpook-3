@@ -25,10 +25,10 @@ import type { MockReplies } from './reply-state'
 /**
  * 처리 중 회의를 상세 조회(`GET /meetings/{id}`)가 어떻게 진행시키는가. 진행 규칙은 meetingFlow.ts 에 있다.
  * - `manual`: 저절로 바뀌지 않는다. 테스트가 `advanceMeeting` 등으로 직접 바꾼다 — Vitest 와 기존 시나리오의 기본값
- * - `staged`: 조회마다 한 단계(`audio_merged` → `transcribed` → `extracted` → `done`). 브라우저 데모용
+ * - `staged`: 조회마다 한 단계. 서버 순서대로 녹음은 대기 → `audio_merged`(stt) → `transcribed`(sources) → `extracted`(handoff, 아직 processing) → `done`,
+ *   채팅은 대기 → 앞 두 값(발화 저장) → `extracted` → `done` 이다 (#483). 브라우저 데모용
  * - `instant`: 첫 조회에 바로 `done`. 인위적 지연이 없다 — E2E 용
  * - `fail`: 첫 조회에 `failed`
- * - `fail-notion-revoked`: 첫 조회에 `failed`, 그 공간의 Notion 연동이 `revoked` 가 된다 (D-099, D-100)
  * - `fail-chat-stalled`: 채팅 회의만 첫 조회에 `failed`(`chat_stalled`)다. 업로드 회의는 `manual` 처럼 그대로다 (#450)
  * - `speakers`: 업로드 회의가 첫 조회에 화자 지정 대기가 된다. PM 이 지정을 내면 조회마다 한 단계씩(`staged`) 끝난다 (#256)
  */
@@ -37,7 +37,6 @@ export type MeetingFlowMode =
   | 'staged'
   | 'instant'
   | 'fail'
-  | 'fail-notion-revoked'
   | 'fail-diarize'
   | 'fail-expired'
   | 'fail-chat-stalled'
@@ -48,7 +47,6 @@ export const MEETING_FLOW_MODES = [
   'staged',
   'instant',
   'fail',
-  'fail-notion-revoked',
   'fail-diarize',
   'fail-expired',
   'fail-chat-stalled',
@@ -154,6 +152,38 @@ export interface MockAutoBlock {
   prev_blocker: string | null
 }
 
+/** #427 이메일별 가입 코드. 실 API 는 해시만 저장하지만 모의 메일함이 코드를 보여야 해서 원문을 둔다. 시각은 ms 다 */
+export interface MockSignupCode {
+  code: string
+  attempts: number
+  expiresAt: number
+  sentAt: number
+  windowStartedAt: number
+  windowCount: number
+}
+
+/** 보낸 가입 인증 메일 */
+export interface MockSignupMail {
+  to: string
+  code: string
+  sentAt: string
+}
+
+export interface MockSignupVerification {
+  /** 정규화한 이메일이 키다 */
+  codes: Record<string, MockSignupCode>
+  outbox: MockSignupMail[]
+  /** 코드 확인이 준 증명 토큰이 키다. 값은 그 이메일과 만료 시각(ms)이다 */
+  proofs: Record<string, { email: string; expiresAt: number }>
+}
+
+/** 가입을 기다리는 카카오 신원. 실 API 의 HttpOnly 대기 쿠키 자리다. 이메일은 카카오가 인증했을 때만 있다 */
+export interface MockKakaoPending {
+  kakaoId: string
+  email: string | null
+  nickname: string | null
+}
+
 /** 저장한 메시지·알림 설정 행. 응답의 `saved`·`pms` 는 handler 가 붙인다 */
 export type MockMessageSettings = Omit<MessageSettingsDto, 'saved' | 'pms'>
 
@@ -163,6 +193,8 @@ interface MockAccount {
   workspaceIds: string[]
   /** 공간별로 이 계정이 연결된 팀원 행. 백엔드 Member.user_id 의 대응이다. 초대로 이어진 행은 수락한 초대가 대응이라 여기 두지 않는다 */
   memberIds: Record<string, string>
+  /** 이어진 카카오 계정. 백엔드 User.provider_id 의 대응이다 (#427) */
+  kakaoId?: string
 }
 export interface MockDb {
   session: SessionDto
@@ -200,6 +232,8 @@ export interface MockDb {
   push: { publicKey: string | null; subscriptions: MockPushSubscription[] }
   invitations: MockInvitation[]
   passwordReset: MockPasswordReset
+  signupVerification: MockSignupVerification
+  kakao: { pending: MockKakaoPending | null }
   /** loginLimitKey 로 정규화한 이메일이 키다 */
   loginLimit: Record<string, MockLoginLimit>
 }
@@ -241,6 +275,8 @@ export function initialDb(): MockDb {
     push: { publicKey: null, subscriptions: [] },
     invitations: [],
     passwordReset: { tokens: [], nextMailAt: {}, outbox: [], failure: 'none' },
+    signupVerification: { codes: {}, outbox: [], proofs: {} },
+    kakao: { pending: null },
     loginLimit: {},
   }
 }

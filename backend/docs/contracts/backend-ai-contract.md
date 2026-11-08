@@ -144,17 +144,20 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 
 ```jsonc
 // 요청
-{ "text": "…", "k": 3, "min_similarity": 0.4 }      // k 1~20, min_similarity 0.0~1.0. 봇은 text만 보내 기본값을 쓴다
+{ "text": "…", "k": 3, "min_similarity": 0.4, "include_pending": false }      // k 1~20, min_similarity 0.0~1.0, include_pending 기본 false(불리언만 받는다). 봇은 text만 보내 기본값을 쓴다
 // data
 { "items": [
-  { "task_id": "…", "notion_page_id": "…" | null, "title": "…", "content_snippet": "",
-    "assignee_member_id": "…" | null, "due_date": "YYYY-MM-DD" | null, "status": "…",
+  { "task_id": "…" | null, "approval_id": "…" | null, "notion_page_id": "…" | null, "title": "…", "content_snippet": "",
+    "assignee_member_id": "…" | null, "due_date": "YYYY-MM-DD" | null, "status": "…" | null,
     "similarity": 0.83, "updated_at": "…" }
 ] }
 ```
 
 - 항목 필드는 AI `NotionCandidate`(`ai/shared/schemas.py`)와 이름을 맞춘다. `content_snippet`은 지금 항상 빈 문자열이다.
 - 같은 워크스페이스에서 임베딩이 있는 task만 유사도 순으로 돌려준다.
+- `include_pending`이 true이면 승인 대기 중인 task_create 요청을 후보에 합친다(합의됨 #141). task 상위 `k`개에 pending 최대 2개를 더해 유사도 내림차순(같으면 task가 앞)으로 돌려주고, pending 검색에도 같은 `min_similarity`를 쓴다. false(기본)이면 지금과 같다.
+- pending 후보는 `task_id`·`status`·`notion_page_id`가 null이고 `approval_id`가 있다. `title`·`due_date`·`assignee_member_id`는 요청 payload에서 읽고(날짜·담당자 형식이 틀리면 null), `updated_at`은 요청 생성 시각이다. task 후보는 `approval_id`가 null이다.
+- AI는 BE 합치기(action=merge, [추출 등록](#추출-등록-post-extractions--201)) 배포 뒤에 `include_pending`을 켠다. pending 후보와 같은 일이면 `action: "merge"`와 그 후보의 `approval_id`를 `target_approval_id`로 보낸다. 모르는 action은 400이라 BE를 먼저 배포한다.
 - 없는 워크스페이스는 404 `WORKSPACE_NOT_FOUND`. 임베딩 호출 실패는 빈 목록이 아니라 502 `EMBEDDING_UNAVAILABLE`이다. 봇도 실패를 빈 목록으로 바꾸지 않는다.
 
 ## 추출 등록 `POST /extractions` → 201
@@ -165,9 +168,10 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
   "meeting_id": "…", "workspace_id": "…",
   "transcript_path": "…" | null, "model_name": "…" | null,
   "items": [ {
-    "action": "create" | "update",            // 기본 create
+    "action": "create" | "update" | "merge",  // 기본 create. merge 는 승인 대기 카드에 합친다(#141)
     "target_task_id": "…" | null,             // update일 때 수정할 task
-    "task_title": "…" | null,                 // create면 필수
+    "target_approval_id": "…" | null,         // merge일 때 합칠 승인 대기 카드(유사 검색 후보의 approval_id). 36자 이하
+    "task_title": "…" | null,                 // create·merge면 필수
     "task_confidence": 0.0 | null,            // legacy만 보낸다. 보내지 않으면 null(측정 안 함)
     "assignee_raw": "…" | null, "assignee_type": "first" | "second" | "thirdname" | "thirdpronoun" | "thirdrole" | "group" | "none" | null,   // BE가 저장한다. 그 밖의 값은 NULL로 저장(요청은 받음)
     "due_date": "YYYY-MM-DD" | null, "due_raw": "…" | null, "due_confidence": 0.0 | null,
@@ -196,14 +200,16 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | 담당자 | `assignee_type`이 `first`면 화자로 팀원을 찾고, 그 외에는 `assignee_raw`를 별칭으로 매칭한다. 별칭은 "님"·조사를 뗀 후보를 긴 것부터 찾아 처음 걸린 후보로 판정하므로(#459, AI `_name_candidates`와 같은 규칙) AI는 원문("하은이가", "지민님", "환 님이")을 그대로 보내도 된다. BE는 AI 규칙과 달리 공백을 한 칸으로 줄이고 후보마다 앞뒤 공백을 지우며, 조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보로 두고("하은이는" → 하은이는, 하은이, 하은), "님"처럼 "씨"도 떼며("민수 씨" → 민수), 호칭을 뗀 뒤에도 "이"를 한 번 더 뗀다("하은이님이" → 하은). 탈퇴한 팀원의 별칭은 보지 않는다. 한 글자 별칭으로 찾은 담당자는 확인 필요로 두어 auto 가 되지 않는다. 1인칭 화자는 아래 순서로 정한다. ① `evidence_speaker_member_id`가 있으면 그 팀원이다. 이 워크스페이스의 탈퇴하지 않은 팀원이 아니면 uid를 못 찾은 것과 같게 처리하고(`not_found`, `assignee_hint`는 그 ID) ②③으로 넘어가지 않는다. ② `evidence_speaker`(Discord uid)가 있으면 그 uid로 `Member.discord_user_id`를 찾는다. ③ 둘 다 없고 대표 근거 발화(아래 근거 행)가 `evidence_seqs` 중 가장 큰 seq(결론 발화)일 때만 쓴다. 그 발화의 `member_id`가 이 워크스페이스의 탈퇴하지 않은 팀원이면 그 팀원이고, 아니면 그 발화의 `speaker_discord_user_id`로 찾는다. 결론 발화를 찾지 못했으면 쓰지 않는다. ④ 그래도 없으면 화자가 없는 1인칭 항목이다. 화자가 없는 1인칭 항목은 `assignee_raw`를 별칭으로 찾지 않고 담당자를 언급했는데 찾지 못한 것으로 본다(게이트는 아래 create 게이트 행). 틀린 `evidence_speaker_member_id`는 그 항목만 화자를 못 찾은 1인칭으로 처리하고 다른 항목은 그대로 처리한다. 예외로 36자를 넘거나 문자열이 아닌 값은 요청 검증에서 막혀 그 항목만이 아니라 요청 전체가 400 `INVALID_REQUEST`다. AI는 BE가 준 멤버 ID만 보내므로 생기지 않는 경우로 본다. `assignee_hint`가 그 ID 문자열이라 담당자 확신도 0.0이 항목 확신도에 들어가므로, 새 항목은 judge·legacy·경로 불명 어느 쪽이든 `hold`이고 update 항목은 항상 `review`다. 화자도 `assignee_raw`도 없는 1인칭(④)은 새 항목이 judge·경로 불명이면 `hold`이지만 legacy는 확신도로 정해서 `review`가 될 수 있다. `evidence_speaker_member_id`와 `evidence_speaker`는 AI가 결론을 말한 사람으로 직접 보낸 값이라 먼저 쓴다. 대표 근거 발화는 가장 큰 seq가 빠지면 더 앞 발화(보통 일을 요청한 사람)가 되어 다른 사람을 가리킬 수 있다 |
 | 근거 | `evidence_seqs`의 seq마다 이 회의의 발화(`source`)를 찾아 `evidence`(type=`task`) 한 줄씩 저장한다. 순서는 자유이고 같은 seq는 한 번만 저장한다. 이 회의에 없는 seq는 그 seq만 건너뛰고(항목마다 빠진 seq를 모아 경고 로그 한 줄) 요청은 그대로 받는다. seq가 0 ~ 2^31-1(발화 저장 API의 seq 범위) 밖이거나 항목 하나의 seq가 100개를 넘으면 400 `INVALID_REQUEST`다. 찾은 발화 중 seq가 가장 큰 것(결론을 말한 마지막 발화)이 대표 근거 발화다. 승인 요청 payload의 `evidence_quote`·`evidence_speaker`·`evidence_at_ms`·`evidence_speaker_member_id`, 별칭 판정 로그의 `source_id`, 추출 조회의 `evidence`에 쓰고, 멤버 ID·`evidence_speaker`가 없고 결론 발화(가장 큰 seq)를 찾았을 때 1인칭 담당자에도 쓴다. 하나도 못 찾으면 evidence 행을 저장하지 않고(추출 조회의 `evidence` 객체는 모든 필드가 null이다) 승인 요청 payload에 요청의 `evidence_quote`·`evidence_speaker`·`evidence_at_ms`를 쓴다. `evidence_speaker_member_id`도 이 워크스페이스의 탈퇴하지 않은 팀원으로 확인된 값이면 payload에 쓴다. 그래서 AI는 `evidence_seqs`와 세 필드(화자의 멤버 ID를 보내면 그것도)를 항상 함께 보낸다 |
 | 근거 화자의 멤버 ID | 같은 근거 화자의 멤버 ID가 두 곳에 다른 이름으로 실린다. 승인 요청 payload는 `evidence_speaker_member_id`이고 추출 조회 `evidence`는 `speaker_member_id`다(`EvidenceInfo`). 값은 대표 근거 발화를 찾았으면 그 발화에 저장된 `member_id` 그대로(탈퇴한 팀원이어도, 비어 있으면 null)다. 못 찾았을 때 요청의 `evidence_speaker_member_id`를 쓰는 것은 승인 요청 payload뿐이고, 이 워크스페이스의 탈퇴하지 않은 팀원으로 확인된 값만 싣고 아니면 null이다. 근거 발화를 못 찾으면 저장된 근거(evidence 행)가 없어 추출 조회의 `evidence` 객체는 있지만 `quote`·`speaker`·`at_ms`·`speaker_member_id` 모두 null이다. 그래서 이때는 요청에 활성 팀원의 멤버 ID가 있으면 payload에는 그 값이 실리고 조회 값은 null이라 두 값이 다를 수 있다. 근거 발화를 찾았을 때는 두 값이 같다. 두 출처를 섞지 않는다. 승인 요청은 새 항목·update 항목·auto 되돌리기 세 경로가 같은 규칙이고, 되돌릴 때 근거가 없으면 null이다 |
-| 잘못된 항목 | update의 대상이 없거나 다른 워크스페이스 task, create의 제목이 비어 있으면 그 항목만 건너뛴다. `item_count`는 저장된 항목 수 |
+| 잘못된 항목 | update의 대상이 없거나 다른 워크스페이스 task, create·merge의 제목이 비어 있으면 그 항목만 건너뛴다. `item_count`는 저장된 항목 수(합쳐진 merge 항목 포함) |
+| merge 처리 | `target_approval_id`의 카드가 같은 워크스페이스의 승인 대기 task_create 카드면 새 카드·task를 만들지 않고 그 카드에 합친다(팀원이 직접 만든 카드도 받는다). 마감(`due_date`·`due_raw`)은 새 값이 있을 때만, `status`는 보냈을 때만 덮어쓴다(`status`는 카드에 표시용으로만 남고, 승인으로 만드는 task 는 항상 `todo`다). 담당자(`assignee_member_id`·`assignee_raw`)와 카드 gate는 `category`가 `assignee`일 때만 덮어쓴다. 이때 카드에 있던 담당자가 지워지면(담당자 표현이 없는 none·group 항목) 카드 gate 는 `hold`가 된다. 그 밖의 merge 항목은 `assignee_type`·`assignee_raw`를 보지 않는다(별칭을 찾지 않고 판정 로그도 남기지 않으며, 항목의 gate 는 `review`다. AI 는 보내지 않아도 된다). `doc_text`는 " / "로 이어 붙인다. 제목과 대표 근거는 처음 회의 것 그대로이고, 합친 항목의 근거는 payload `merged_items`에 쌓인다. 한 요청에서 같은 카드에 여러 번 합치면 항목 순서대로 덮어쓴다. 마감 지우기는 merge로 전달되지 않는다. 합친 항목의 gate는 `auto`가 되지 않고(auto면 `review`, `hold`는 그대로) judge auto 조건을 보지 않는다 |
+| merge 대상을 쓸 수 없을 때 | `target_approval_id`가 없거나, 카드가 없거나, 다른 워크스페이스거나, task_create가 아니거나, 이미 승인·반려됐거나, payload가 깨졌으면 400 없이 그 항목을 create로 처리한다(새 카드). 이때 gate가 `auto`면 `review`로 내린다. 검색 뒤 PM이 먼저 승인한 경우 등이다. BE 로그에 `merge_target_unavailable`과 이유가 남는다 |
 | update 처리 | 게이트·승인 생성 규칙과 `target_snapshot`의 충돌 기준값은 [Backend README 유사 task 검색과 AI 판단 접수](../../README.md#유사-task-검색과-ai-판단-접수)를 따른다 |
 | `target_snapshot.title` | 유사 검색 응답의 `title`을 그대로 보낸다. 제목을 바꾸는 값이 아니라 승인 때 대상 task가 그대로인지 확인하는 기준이다. 없거나 null이면 등록 시점의 제목을 쓴다. 필드 모양은 #185에서 AI·BE가 정했다 |
 | 확신도 | `task_confidence`·`due_confidence`를 보내지 않으면 null(측정 안 함)로 저장하고 0.0(측정했는데 낮음)과 구분한다. 할 일 확신도가 null이면 항목 확신도도 null이다 |
 | 추출 경로 | AI가 경로를 따로 보내지 않으므로 BE가 항목이 보낸 키로 가린다. `action`·`category`·`doc_text` 중 하나라도 보냈으면 judge, 아니고 `task_confidence`·`due_confidence`를 보냈으면 legacy, 둘 다 아니면 판별 불가다. 모든 항목이 같은 경로일 때만 추출의 `extraction_path`에 기록하고, 항목이 없거나 섞였거나 판별 불가 항목이 있으면 null이다(#201) |
 | create 게이트 | 담당자를 언급했는데 BE가 한 명으로 찾지 못했으면 `hold`다. 이름으로 풀지 못해 `assignee_raw` 없이 `second`·`thirdpronoun`·`thirdrole`만 보낸 항목과 화자가 없는 1인칭 항목(틀린 `evidence_speaker_member_id` 포함)도 언급했는데 찾지 못한 것으로 본다. 단 화자도 `assignee_raw`도 없는 legacy 1인칭은 `hint`가 없어 확신도 계산에서 담당자가 빠지므로 아래 legacy 기준(확신도)대로 `hold`가 아니라 `review`가 될 수 있다. 멤버 ID로 정한 화자는 확신도 1.0이라 다른 조건을 만족하면 `auto`가 될 수 있다. judge 항목은 그다음 아래 auto 조건을 모두 만족하면 `auto`, 아니면 `review`다. 경로를 가릴 수 없고 확신도도 없는 항목은 `review`, legacy는 확신도로 정한다(0.8 이상이고 담당자 확인 불필요면 `auto`, 0.5 이상 `review`, 그 아래 `hold`). 경로와 상관없이 `thirdrole` 새 항목은 `auto`가 나와도 `review`로 내린다(#459, 역할은 맡은 사람이 바뀔 수 있음). update는 지금처럼 항상 `review`다 |
-| judge auto 조건 | `task_status`가 certain, 담당자를 언급했으면 BE가 한 명으로 확정(검증된 별칭·화자, 확신도 0.8 이상), `assignee_type`이 `second`·`thirdpronoun`·`thirdrole`이 아님, `due_status`가 certain이거나 missing이고 `due_date` 유무와 맞음(missing인데 날짜가 있거나 certain인데 날짜가 없으면 탈락), `similar_count`가 0이고 워크스페이스에 임베딩이 없는 활성 task가 없음(그런 task는 유사 검색에 잡히지 않는다. 같은 요청에서 앞 항목이 auto로 만든 task와 임베딩 API가 제목을 거절한 task도 해당). `task_status`·`due_status`·`similar_count` 중 하나라도 null이면 `review`라, 이 키를 보내지 않는 AI에서는 지금 동작이 그대로다. 상태 값이 셋 중 하나가 아니면 400 `INVALID_REQUEST`, `similar_count`가 음수거나 `top_similarity`가 0~1 밖이어도 400이다(#232) |
-| 근거 상태·유사 검색 값 | `similar_count`는 그 finding을 판단할 때 유사 검색 응답의 후보 수다(BE가 이미 `min_similarity` 미만을 뺀 결과). 같은 회의 앞부분 카드(pending)는 세지 않는다. update 항목은 보내지 않아도 되고 보내도 게이트에 쓰지 않는다. 값은 추출 항목에 저장되고 추출 조회에 실린다 |
+| judge auto 조건 | `task_status`가 certain, 담당자를 언급했으면 BE가 한 명으로 확정(검증된 별칭·화자, 확신도 0.8 이상), `assignee_type`이 `second`·`thirdpronoun`·`thirdrole`이 아님, `due_status`가 certain이거나 missing이고 `due_date` 유무와 맞음(missing인데 날짜가 있거나 certain인데 날짜가 없으면 탈락), `similar_count`가 0이고 워크스페이스에 임베딩이 없는 활성 task가 없음(그런 task는 유사 검색에 잡히지 않는다. 같은 요청에서 앞 항목이 auto로 만든 task와 임베딩 API가 제목을 거절한 task도 해당)이며, 승인 대기 중인 task_create 요청 가운데 임베딩이 없는 것이 없음(`unsearched_pending_exists`. `include_pending`을 켜도 검색이 못 보는 요청이다. 빈 제목으로 건너뛴 요청은 뺀다. 같은 요청에서 앞 항목이 review로 만든 pending은 보지 않는다). `task_status`·`due_status`·`similar_count` 중 하나라도 null이면 `review`라, 이 키를 보내지 않는 AI에서는 지금 동작이 그대로다. 상태 값이 셋 중 하나가 아니면 400 `INVALID_REQUEST`, `similar_count`가 음수거나 `top_similarity`가 0~1 밖이어도 400이다(#232) |
+| 근거 상태·유사 검색 값 | `similar_count`는 그 finding을 판단할 때 유사 검색 응답의 후보 수다(BE가 이미 `min_similarity` 미만을 뺀 결과). 같은 회의 앞부분 카드(pending)는 세지 않는다. `include_pending`을 켜면 BE가 준 승인 대기 후보도 센다. update 항목은 보내지 않아도 되고 보내도 게이트에 쓰지 않는다. 값은 추출 항목에 저장되고 추출 조회에 실린다 |
 
 - 담당자 종류 저장과 승인 때 별칭 학습(#459, 현재 구현): BE가 `assignee_type`을 저장해, 담당자를 못 찾은 `thirdname` 항목을 PM이 담당자를 골라 승인할 때 `assignee_raw`를 다듬어 그 팀원의 확인된 별칭으로 저장한다. 요청 모양은 바뀌지 않는다. 학습한 별칭은 전사 힌트(`GET .../members/names`의 `aliases`)에도 실린다. AI가 1인칭을 `thirdname`으로 잘못 보내도 그 말이 할 일의 주어로 쓰인 꼴이면(어간 제·저·나·내 / 저희·우리 / 본인 × 복수 들 × 주어 표지, 예: "제가"·"저도"·"저희들은") 학습하지 않는다(#502). 부사어·구("우리끼리")는 막지 않는다. 오분류를 줄이는 것은 AI 몫이다. 규칙은 Backend README의 "1인칭 거르기의 범위"에 있다. `thirdrole`은 지금 학습하지 않는다. AI가 역할 원문을 빼고 문맥으로 추측한 이름을 `assignee_raw`로 보낼 수 있어서다. 역할 원문("BE 리더가")을 보내고 추측 이름은 보내지 않는 것은 AI 쪽 변경이라 합의 필요 변경이고, 그 뒤 BE가 `thirdrole`을 학습 대상에 다시 넣는다. 규칙은 [Backend README 승인 때 별칭 학습](../../README.md#승인-때-별칭-학습)에 있다.
 - 경로 판별의 전제: judge 항목(`ai/judge/pipeline.py`의 `to_item`)은 `action`·`category`·`doc_text`를 값이 null이어도 키째 보내고 확신도를 보내지 않는다. legacy 항목(`ai/capture/handoff.py`의 `to_extraction_items`)은 확신도 둘을 항상 보내고 judge의 키는 보내지 않는다. 판단 경로는 확신도를 만들지 않고 인계기에 임의 고정값을 넣지 않는다는 AI 쪽 기록(`ai/docs/plan/전체 계획.md`의 확신도 항목)을 따랐다.
@@ -516,7 +522,7 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 - 가져간 뒤 10분 안에 결과 보고가 없으면 BE 가 못 보냄(`unknown`)으로 닫고 다시 주지 않는다. 같은 DM 이 두 번 가는 것을 막으려는 것이다. 봇이 재시작하면 가져갔지만 보고하지 못한 메시지는 보내지 말고, 보냈다면 결과를 보고한다(늦은 보고는 받는다).
 - 디스코드가 연결되지 않은 팀원(`discord_user_id` 없음)의 메시지는 봇에 주지 않는다. BE 가 만드는 순간 `discord_not_linked` 로 표시한다. 만든 뒤 가져가기 직전에 팀원이 탈퇴했거나 연결을 끊은 경우도 그 메시지만 같은 사유(`failed` / `discord_not_linked`)로 닫고 봇에 주지 않는다. 같은 응답의 다른 메시지는 그대로 준다.
 - 디스코드 DM 은 한 통에 2,000자까지다. BE 는 길이를 자르지 않으므로 넘으면 봇이 나눠 보낸다.
-- PM 글의 `body` 는 쓴 글이 아니라 안내다. 첫 줄은 `{공간 이름} {PM 이름} PM 이 메시지를 보냈어요.` 이고 `APP_BASE_URL` 이 있으면 다음 줄이 대화 링크다. 답장을 웹 대화로만 받기로 해서(#515) 본문은 DM 으로 나가지 않는다. 안내는 가져갈 때 만들고 저장하지 않는다.
+- PM 글의 `body` 는 쓴 글이 아니라 안내다. 첫 줄은 `{공간 이름} {PM 이름} PM 이 메시지를 보냈어요.` 이고 `APP_BASE_URL` 이 있으면 다음 줄이 대화 링크다. 답장을 웹 대화로만 받기로 해서(#515) 본문은 DM 으로 나가지 않는다. 작성자를 찾을 수 없으면 이름을 뺀다. 안내는 가져갈 때 만들고 저장하지 않는다.
 
 ### `POST /bot/messages/{message_id}/result` → 200
 
@@ -549,9 +555,8 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 - 같은 `discord_message_id` 는 한 번만 저장한다. 처음이면 201, 다시 보내면 200 과 같은 메시지다. 재시도해도 안전하다.
 - DM 에는 디스코드 서버 정보가 없다. 같은 디스코드 계정이 여러 워크스페이스의 팀원이면 BE 가 아래 순서로 대화를 고른다.
   1. `reply_to_discord_message_id` 가 봇이 보낸 DM 이면 그 DM 의 워크스페이스. 리마인드와 PM 글 안내를 모두 뜻한다
-  2. 답장 기능을 쓰지 않은 글이고 나간 재촉의 시계가 열린 워크스페이스가 하나면 그 워크스페이스
-  3. 그 DM 창에서 이 글 바로 앞에 나간 봇 DM 의 워크스페이스. 리마인드와 PM 글 안내를 모두 뜻한다. 두 글의 시각은 보고 받은 시각이 아니라 디스코드 메시지 id(snowflake)에 든 보낸 시각으로 비교한다. 결과 보고는 답장보다 늦게 올 수 있으므로, 봇이 가져갔지만 아직 보고하지 않은 메시지(10분 시간 초과로 닫힌 것 포함)는 가져간 시각에 나간 것으로 본다. 이 글의 id 가 숫자가 아니면 `sent_at` 을 쓴다
-  4. 봇이 가장 최근에 DM 을 보낸 워크스페이스(못 보낸 DM 은 뺀다), 그것도 없으면 가장 나중에 등록된 팀원
+  2. 그 DM 창에서 이 글 바로 앞에 나간 봇 DM 의 워크스페이스. 리마인드와 PM 글 안내를 모두 뜻한다. 그 DM 이 PM 글 안내이고 답장 기능을 쓰지 않았으며 나간 재촉의 시계가 열린 워크스페이스가 하나면 그 워크스페이스로 간다. 두 글의 시각은 보고 받은 시각이 아니라 디스코드 메시지 id(snowflake)에 든 보낸 시각으로 비교한다. 결과 보고는 답장보다 늦게 올 수 있으므로, 봇이 가져갔지만 아직 보고하지 않은 메시지(10분 시간 초과로 닫힌 것 포함)는 가져간 시각에 나간 것으로 본다. 이 글의 id 가 숫자가 아니면 `sent_at` 을 쓴다
+  3. 봇이 가장 최근에 DM 을 보낸 워크스페이스(못 보낸 DM 은 뺀다), 그것도 없으면 가장 나중에 등록된 팀원
 - 404 `MEMBER_NOT_FOUND`: 어느 워크스페이스에도 그 디스코드 계정의 팀원이 없다. 버리고 넘어간다.
 - 응답에는 판단 결과가 없다. 이 경로는 리마인드 후보가 있는 글을 저장과 같은 트랜잭션에서 판단 큐에 넣고, 어느 태스크에 대한 답인지는 아래 「리마인드 답장 판단」 경로가 정한다. 후보가 없는 글은 PM 에게 바로 웹 알림(`message_received`)이 간다.
 
@@ -578,7 +583,7 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 { "item": {
     "message_id": "…", "attempt": 1, "workspace_id": "…", "member_name": "재환",
     "reply_date": "2026-11-04",                        // 보낸 날, 한국 시간
-    "lines": [{ "sender": "pm" | "member", "text": "…" }],  // 시간순, 마지막이 이번 답장, 최대 12줄
+    "lines": [{ "sender": "pm" | "member", "text": "…" }],  // 시간순, 마지막이 이번 답장, 최대 12줄. PM 글은 DM 안내가 아니라 쓴 글 전체다
     "candidates": [{ "task_id": "…", "title": "…", "status": "in_progress", "due_date": "2026-11-20" | null,
                      "assignee_member_id": "…" | null, "updated_at": "…" }]
 } }   // 맡길 것이 없으면 { "item": null }

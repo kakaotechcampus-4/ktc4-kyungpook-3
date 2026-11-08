@@ -32,9 +32,12 @@ from app.schemas.message import (
     ReplyCreateRequest,
     ThreadDetailResponse,
     ThreadOpenRequest,
+    ThreadReadResponse,
     ThreadSummary,
+    UnreadCountResponse,
 )
 from app.schemas.reply import AttributionRequest, AttributionResponse, ReplyAttributionListResponse
+from app.services import message_reads as reads
 from app.services import messages as svc
 from app.services import replies
 from app.services.reminder_reason import bundle_summary, reminder_reason
@@ -93,7 +96,7 @@ def _scheduled_bundles(db: Session, workspace_id: str, thread_id: str | None = N
     return [_bundle_dict(db, b) for b in db.scalars(stmt).all()]
 
 
-def _summary(db: Session, thread: MessageThread) -> ThreadSummary:
+def _summary(db: Session, thread: MessageThread, unread_count: int) -> ThreadSummary:
     def messages():
         return select(ThreadMessage).where(ThreadMessage.thread_id == thread.thread_id)
 
@@ -123,6 +126,7 @@ def _summary(db: Session, thread: MessageThread) -> ThreadSummary:
         },
         awaiting_reply_since=awaiting_since and svc.utc(awaiting_since),
         dm_failed=last_dm is not None and last_dm.dm_status == DmStatus.FAILED,
+        unread_count=unread_count,
     )
 
 
@@ -153,7 +157,9 @@ def get_inbox(
     )
     if not is_pm:
         stmt = stmt.where(MessageThread.member_id == member.member_id)
-    threads = [_summary(db, t) for t in db.scalars(stmt).all()]
+    # 대화 수와 무관하게 쿼리 하나로 센다.
+    unread = reads.unread_by_thread(db, member)
+    threads = [_summary(db, t, unread.get(t.thread_id, 0)) for t in db.scalars(stmt).all()]
     # 최근 대화가 위로. 메시지가 없는 대화(예정 묶음만 있음)는 아래로 간다.
     with_message = sorted(
         (t for t in threads if t.last_message), key=lambda t: t.last_message.created_at, reverse=True
@@ -180,7 +186,42 @@ def open_thread(
         raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": payload.member_id})
     thread = svc.get_or_create_thread(db, workspace_id, target.member_id)
     db.commit()
-    return success(_summary(db, thread).model_dump(mode="json"))
+    unread = reads.unread_by_thread(db, member)
+    return success(_summary(db, thread, unread.get(thread.thread_id, 0)).model_dump(mode="json"))
+
+
+# /threads/{thread_id} 와 경로가 겹치지 않는 고정 경로.
+@router.get("/unread-count", response_model=Envelope[UnreadCountResponse])
+def get_unread_count(
+    workspace_id: str,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+) -> dict:
+    """내게 보이는 대화 전체의 읽지 않은 메시지 수. 사이드바 배지용이다."""
+    return success({"unread_count": reads.unread_count(db, member)})
+
+
+@router.post("/threads/{thread_id}/read", response_model=Envelope[ThreadReadResponse])
+def read_thread(
+    workspace_id: str,
+    thread_id: str,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+) -> dict:
+    """대화를 열었을 때 화면이 부른다. 조회 API 는 읽음 처리를 하지 않으므로 명시적으로 옮긴다."""
+    thread = _get_thread(db, workspace_id, thread_id)
+    _check_thread_access(thread, member)
+    # 탈퇴한 팀원의 대화는 목록과 숫자에서 빠지므로 읽음 처리 대상도 아니다.
+    if thread.member.is_deleted:
+        raise AppError(ErrorCode.MESSAGE_THREAD_NOT_FOUND, details={"thread_id": thread_id})
+    last_read_at = reads.mark_read(db, member, thread)
+    db.commit()
+    return success({
+        "thread_id": thread_id,
+        "unread_count": 0,
+        "total_unread_count": reads.unread_count(db, member),
+        "last_read_at": None if last_read_at is None else svc.utc(last_read_at),
+    })
 
 
 @router.get("/threads/{thread_id}", response_model=Envelope[ThreadDetailResponse])
@@ -198,7 +239,7 @@ def get_thread(
         .order_by(ThreadMessage.created_at, ThreadMessage.message_id)
     ).all()
     return success({
-        "thread": _summary(db, thread).model_dump(mode="json"),
+        "thread": _summary(db, thread, reads.unread_by_thread(db, member).get(thread_id, 0)).model_dump(mode="json"),
         "messages": [MessageResponse.model_validate(m).model_dump(mode="json") for m in rows],
         "bundles": _scheduled_bundles(db, workspace_id, thread_id) if member.role == MemberRole.PM else None,
     })

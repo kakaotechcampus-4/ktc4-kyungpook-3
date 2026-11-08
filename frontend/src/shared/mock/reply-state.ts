@@ -147,14 +147,17 @@ function changeResult(
   state: MockDb,
 ): TimelineChangeResult {
   if (line.outcome === 'proposed') {
-    const stored = state.approvals.find(
-      ({ approval_id }) => approval_id === line.approval_id,
-    )?.status
-    const status = stored === 'approved' || stored === 'rejected' ? stored : 'pending'
-    // 담당자를 못 찾은 카드는 승인해도 바뀌는 값이 없다
-    return status === 'approved' && line.field === 'assignee' && entries.length === 0
-      ? 'noted'
-      : status
+    const card = state.approvals.find(({ approval_id }) => approval_id === line.approval_id)
+    const status =
+      card?.status === 'approved' || card?.status === 'rejected' ? card.status : 'pending'
+    // 담당자를 못 찾은 카드를 고르지 않고 승인했거나 지금 담당자를 고르면 바뀌는 값이 없다. 담당자를 찾은 카드는
+    // 이력이 없어도 승인함이다 — BE 와 같다. 고른 값은 payload.task_overrides 에 있어 이 키와 섞이지 않는다
+    const unchanged =
+      status === 'approved' &&
+      line.field === 'assignee' &&
+      entries.length === 0 &&
+      !Object.hasOwn(card?.payload ?? {}, 'assignee_member_id')
+    return unchanged ? 'noted' : status
   }
   if (line.outcome === 'applied' || line.outcome === 'recorded') return line.outcome
   return 'noted'
@@ -194,10 +197,9 @@ export function taskTimeline(
           .map((line): TimelineChangeDto => {
             const entries = linkedEntries(line.change_id, state)
             const live = entries.filter(({ is_rolled_back }) => !is_rolled_back)
-            // PM 이 고쳐 승인했으면 이력의 값이 실제 값이다
-            const value =
-              entries.find(({ changed_field }) => changed_field === line.field)?.new_value ??
-              line.new_value
+            // PM 이 고쳐 승인했으면 이력의 값이 실제 값이다. 미정으로 고르면 이력의 null 이 그 값이다
+            const entry = entries.find(({ changed_field }) => changed_field === line.field)
+            const value = entry === undefined ? line.new_value : entry.new_value
             return {
               change_id: line.change_id,
               field: line.field,

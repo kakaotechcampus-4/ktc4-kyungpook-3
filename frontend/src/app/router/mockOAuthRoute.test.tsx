@@ -3,6 +3,7 @@ import { createRoutesFromElements } from 'react-router'
 import type { RouteObject } from 'react-router'
 import { devPaths, paths } from '@/shared/config/routes'
 import { renderApp } from '../test/renderApp'
+import { db } from '@/shared/mock/db'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { appRoutes } from './routes'
 
@@ -22,7 +23,7 @@ describe('개발·MSW 모드의 모의 OAuth 경로', () => {
     expect(
       root.children?.filter(({ path }) => path === '__mock/oauth/:workspaceId/:provider'),
     ).toHaveLength(1)
-    expect(allRoutes([root]).filter(({ path }) => path?.startsWith('__mock'))).toHaveLength(2)
+    expect(allRoutes([root]).filter(({ path }) => path?.startsWith('__mock'))).toHaveLength(3)
   })
 
   it('devPaths.mockOAuth 주소로 들어가면 모의 화면이 뜬다', async () => {
@@ -49,9 +50,31 @@ describe('개발·MSW 모드의 모의 메일함 (#356)', () => {
     ])
   })
 
+  it('가입 인증 코드도 메일함에서 본다', async () => {
+    applyScenario('signed-out')
+    db.signupVerification.outbox.push({
+      to: 'new@example.com',
+      code: '012345',
+      sentAt: '2026-11-06T00:00:00.000Z',
+    })
+    renderApp(devPaths.mockMail())
+    expect(await screen.findByText('012345')).toBeInTheDocument()
+    expect(screen.getByText(/new@example.com/)).toBeInTheDocument()
+  })
+
   it('메일이 없으면 비었다고 알린다', async () => {
     applyScenario('signed-out')
     renderApp(devPaths.mockMail())
     expect(await screen.findByText('받은 메일이 없어요.')).toBeInTheDocument()
+  })
+})
+
+describe('개발·MSW 모드의 모의 카카오 화면 (#427)', () => {
+  it('가드 밖에 한 칸 등록되고 devPaths.mockKakao 주소로 뜬다', async () => {
+    const [root] = createRoutesFromElements(appRoutes)
+    expect(root.children?.filter(({ path }) => path === '__mock/kakao')).toHaveLength(1)
+    applyScenario('signed-out')
+    renderApp(devPaths.mockKakao())
+    expect(await screen.findByRole('heading', { name: '모의 카카오 로그인' })).toBeInTheDocument()
   })
 })

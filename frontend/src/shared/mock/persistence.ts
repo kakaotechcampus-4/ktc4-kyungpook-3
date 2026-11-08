@@ -24,9 +24,10 @@ export const MOCK_DB_STORAGE_KEY = 'msw-db'
  * 14: 리마인드 답장 판단(`replies`) 칸 추가 (#344). 태스크 고르기·태스크 기록·되돌리기가 이 기록을 읽는다.
  * 15: Discord 연동에 회의 채팅 채널(`chat_channel`)과 모의 서버의 텍스트 채널(`discordChannels`) 칸 추가 (#429).
  * 16: 로그인 시도 제한(`loginLimit`) 칸 추가 (#457).
+ * 17: 가입 인증(`signupVerification`)과 카카오 대기(`kakao`) 칸 추가 (#427).
  * 올리면 e2e/restore.e2e.ts 와 src/shared/mock/taskScenarios.test.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
  */
-export const MOCK_DB_VERSION = 16
+export const MOCK_DB_VERSION = 17
 
 interface StoredDb {
   version: number
@@ -76,6 +77,16 @@ function isPasswordReset(value: unknown): boolean {
   )
 }
 
+function isSignupVerification(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isRecord(value.codes) &&
+    isRecord(value.proofs) &&
+    Array.isArray(value.outbox) &&
+    value.outbox.every((mail) => hasStrings(mail, ['to', 'code', 'sentAt']))
+  )
+}
+
 /**
  * 모양만 본다. 칸마다 시작 상태와 같은 종류(배열·객체·불리언)인지, 화면 흐름이 기대는 칸은
  * 필드까지 맞는지 확인한다. 하나라도 어긋나면 손상으로 본다.
@@ -119,6 +130,8 @@ function isMockDb(value: unknown): value is MockDb {
     ) &&
     isMeetingFlow(state.meetingFlow) &&
     isPasswordReset(state.passwordReset) &&
+    isSignupVerification(state.signupVerification) &&
+    (state.kakao.pending === null || hasStrings(state.kakao.pending, ['kakaoId'])) &&
     Object.values(state.loginLimit).every(
       (entry) =>
         isRecord(entry) &&

@@ -6,15 +6,13 @@ import { monthDayOf, seoulDateOf } from '@/shared/lib/date'
 import { Icon } from '@/shared/ui/icon'
 import { avatarText, memberRisk } from '../lib/team'
 import type { MemberRisk } from '../lib/team'
-import { BADGE, BADGE_DOT } from './teamStyles'
+import { BADGE, BADGE_DOT, HEAD, ROW } from './teamStyles'
 
-const HEAD = 'flex items-center gap-12 border-b border-line py-14'
 const AVATAR =
   'inline-flex h-30 w-30 shrink-0 items-center justify-center rounded-999 bg-divider text-meta leading-none font-semibold text-ink'
 /* 휴대폰 한 열은 이름·태스크명 칸이 좁다. 공백 없는 긴 글자도 그 칸 안에서 접어 옆 칸(마감·상태·배지)을 덮지 않는다 */
 const NAME = 'text-[14.5px] leading-[1.75] font-semibold text-ink max-md:wrap-anywhere'
 const ROLE = 'text-[12px] text-dim'
-const ROW = 'flex items-center gap-16 border-b border-line py-13 last:border-b-0 max-md:gap-10'
 const TASK_TITLE = 'text-[13px] leading-[1.75] text-ink max-md:wrap-anywhere'
 const TASK_META = 'text-[11px] tabular-nums'
 const DUE = 'inline-flex w-56 shrink-0 items-center justify-end gap-3 text-caption tabular-nums'

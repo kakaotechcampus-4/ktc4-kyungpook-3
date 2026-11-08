@@ -151,6 +151,18 @@ class ThreadSummary(BaseModel):
     last_message: LastMessage | None
     awaiting_reply_since: datetime | None
     dm_failed: bool
+    unread_count: int = Field(description="이 대화에서 내가 아직 읽지 않은 메시지 수. 목록과 상세 조회는 읽음 처리를 하지 않는다")
+
+
+class UnreadCountResponse(BaseModel):
+    unread_count: int = Field(description="내게 보이는 모든 대화의 읽지 않은 메시지 수 합")
+
+
+class ThreadReadResponse(BaseModel):
+    thread_id: str
+    unread_count: int = Field(description="읽음 처리 뒤 이 대화의 읽지 않은 수. 항상 0")
+    total_unread_count: int = Field(description="읽음 처리 뒤 내게 보이는 모든 대화의 읽지 않은 메시지 수 합")
+    last_read_at: datetime | None = Field(description="저장된 읽은 위치. 메시지가 없고 읽은 적도 없으면 null")
 
 
 class InboxResponse(BaseModel):

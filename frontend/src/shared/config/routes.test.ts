@@ -8,6 +8,9 @@ it.each([
     '/login?next=%2Fworkspaces%2Fws_01%2Ftasks%2Ftk_01',
   ],
   [paths.signup(), '/signup'],
+  [paths.signup({ next: '/workspaces/ws_01' }), '/signup?next=%2Fworkspaces%2Fws_01'],
+  [paths.signup({ kakao: true }), '/signup?kakao=1'],
+  [paths.signup({ kakao: true, next: '/workspaces' }), '/signup?kakao=1&next=%2Fworkspaces'],
   [paths.workspaceSelect(), '/workspaces'],
   [paths.onboardingCreate(), '/onboarding/create_workspace'],
   [paths.onboardingStep('ws_02', 'connect_notion'), '/onboarding/ws_02/connect_notion'],
@@ -30,10 +33,6 @@ it.each([
   [paths.members('ws_01'), '/workspaces/ws_01/members'],
   [paths.settings('ws_01'), '/workspaces/ws_01/settings'],
   [paths.settingsNotion('ws_01'), '/workspaces/ws_01/settings?section=notion'],
-  [
-    paths.settingsNotion('ws_01', '/workspaces/ws_01/meetings/upload'),
-    '/workspaces/ws_01/settings?section=notion&next=%2Fworkspaces%2Fws_01%2Fmeetings%2Fupload',
-  ],
 ])('%s 를 만든다 (기대값 %s)', (actual, expected) => {
   expect(actual).toBe(expected)
 })
