@@ -5,8 +5,14 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.models import Member, User
 from app.services.passwords import hash_password
+from tests.api.conftest import signup_verified
 
 PASSWORD = "pw-123456"
+
+
+@pytest.fixture(autouse=True)
+def _secret(signup_secret):
+    pass
 
 
 def _client():
@@ -14,7 +20,7 @@ def _client():
 
 
 def _signup(client, name, email="name@example.com"):
-    return client.post("/api/v1/auth/signup", json={"email": email, "password": PASSWORD, "name": name})
+    return signup_verified(client, email, PASSWORD, name)
 
 
 def _assert_name_rejected(res):

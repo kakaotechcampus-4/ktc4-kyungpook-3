@@ -8,6 +8,7 @@ import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
+import { walkSignup } from './test/walkSignup'
 
 /*
  * #320 — 초대받은 사람은 가입하거나 로그인한 뒤 받은 초대를 보고, 수락하면 그 공간에 들어간다.
@@ -26,10 +27,7 @@ async function signUpAsInvitee() {
   db.authenticated = false
   const app = renderApp('/signup')
   await screen.findByRole('heading', { name: '회원가입' })
-  await userEvent.type(screen.getByLabelText('이름'), '이재환')
-  await userEvent.type(screen.getByLabelText('이메일'), 'jaehwan@example.com')
-  await userEvent.type(screen.getByLabelText('비밀번호'), 'pass1234')
-  await userEvent.click(screen.getByRole('button', { name: '계정 만들기' }))
+  await walkSignup({ name: '이재환', email: 'jaehwan@example.com', password: 'pass1234' })
   await app.expectPath('/onboarding/start')
   return app
 }
