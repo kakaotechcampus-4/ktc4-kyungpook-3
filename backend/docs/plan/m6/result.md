@@ -188,6 +188,35 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 
 남은 작업: AI 의 merge 전송과 `include_pending` 켜기(BE 배포 뒤), FE 답(#512)과 합친 카드 표시, 승인 사이에 담당 항목이 바뀐 경우의 별칭 저장(결정 기록의 장단점).
 
+## 2026-11-08 추가: PM 글과 읽지 않은 수 통합
+
+### 작업 근거와 실제 변경
+
+사용자가 PR #454, #518, #524의 순차 백엔드 작업을 요청해 #518을 최신 `develop`과 대조했다. M6 계획은 비어 있으므로 마일스톤 완료를 판정하지 않는다.
+
+- `messages.py` 병합에서 대화 열기와 최신 읽음 API를 모두 유지했다. 대화 열기 응답도 현재 사용자의 `unread_count`를 대화 요약에 전달한다.
+- 자기 대화의 상대편 메시지를 기존 `MessageSender`의 `BOT`, `PM` 값으로 조회한다. 다른 팀원의 대화를 보는 PM은 기존처럼 `MEMBER`만 센다. 대화 주인의 후속 답장과 명시적 읽음 처리는 PM 글에도 적용된다.
+- `5ae76a6102a8`의 부모를 최신 기반의 `5d2e8a41c7b3`으로 연결했다. 별도 스키마 변경은 추가하지 않았다.
+- [프론트엔드 대표 계약](../../../../frontend/docs/contracts/frontend-api-contract.md#57-메시지) §5.7에 확인한 읽음 API와 PM 글 집계의 구현 사실을 기록했다. FE 연결·합의 완료는 선언하지 않았다.
+
+### 검증 내역
+
+2026-11-08 로컬 Windows에서 Python 3.12로 실행했다.
+
+- 수정 전 새 회귀에서 PM 글의 읽지 않은 수가 1 대신 0으로 나오는 실패 2건과 대화 열기의 `_summary` 인자 누락 `TypeError` 1건을 확인했다. 기존 `test_opening_a_thread_twice_gives_the_same_thread`도 같은 `TypeError`로 실패했다.
+- 수정 후 `pytest tests/api/test_member_messages.py tests/api/test_message_notifications.py tests/api/test_message_reads_service.py tests/api/test_message_unread_api.py tests/api/test_messages_api.py -q --tb=short --basetemp=<격리 경로>`는 123개 통과, PostgreSQL 미설정 및 관련 조건으로 125개 건너뜀.
+- PM 글 전송 후 팀원 배지 증가, 팀원 웹 답장 후 팀원 배지 해제·PM 배지 증가, 명시적 읽음 후 0, PM 작성 글의 다른 대화 미집계를 확인했다.
+- `ruff check .` 통과. `alembic heads`는 `5ae76a6102a8 (head)` 하나를 반환했다.
+- `develop@2ba38e96` 기반 전체 백엔드 회귀는 2318개 통과, 1561개 건너뜀. 이후 `033293b4`를 추가 병합하고 메시지·알림·읽음 및 #533 추출 합치기 관련 테스트를 함께 실행해 207개 통과, 185개 건너뜀을 확인했다. 최신 기반 전체 PostgreSQL 회귀는 CI에서 확인해야 한다.
+
+### 계획 대비 변경과 제한 사항
+
+PR 작성 뒤 #480의 읽음 수가 `develop`에 들어와 새 PM 글과 연결할 필요가 생겼다. 기존 읽음 위치와 집계 쿼리 구조를 유지하고 상대편 발신자 범위만 늘렸다. 실제 PostgreSQL 마이그레이션·동시성·Discord 송신은 이번 로컬 검증에서 실행하지 않았다.
+
+사용자의 순차 병합 요청에 따라 선행 #454의 최종 코드를 이 브랜치에 일반 병합하고, `5ae76a6102a8`의 부모를 가입 인증의 `d2f6b81c4e07`으로 연결했다. 최종 체인은 읽음 위치 → 가입 인증 → PM 작성자 순서이며 단일 head는 `5ae76a6102a8`이다. 실제 develop 병합은 #454 다음에 진행한다. PR의 base와 기존 이력은 유지한다.
+
+최종 통합 후 PM 메시지·알림·읽음·가입·카카오 API 테스트는 131개 통과, 133개 건너뜀이다. Ruff와 단일 Alembic head 확인도 통과했다. PostgreSQL 전체 회귀와 업그레이드는 이 통합 커밋의 CI에서 확인한다.
+
 ## 2026-11-08 추가: 웹 답장 안내의 대기 수와 읽음 응답 통합
 
 ### 작업 근거와 실제 변경
@@ -211,7 +240,12 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 
 이미 답한 태스크가 PM 확인 때문에 정지한 상태를 안내 집계가 구분하지 못해 실제 응답 대기보다 큰 수가 나왔다. 기존 시계의 `paused_at`을 조회 조건에 추가해 해결했다. 전체 회귀·PostgreSQL·실제 Discord 발송은 이번 타깃 검증의 범위 밖이다.
 
-#518은 별도 PR이며 같은 `_dm_body`에 PM 글 안내를 추가한다. 두 PR을 통합할 때 PM 글의 발신자·작성자 안내 분기를 보존하고 봇 리마인드에만 개수 안내를 적용해야 한다. 이번 작업에서 #518 코드를 미리 섞거나 AI 코드를 새로 수정하지 않았다.
+초기 개별 수정 뒤 사용자가 순차 병합까지 요청해 선행 #518의 최종 코드를 이 브랜치에 일반 병합했다. `_dm_body`는 기존 `MessageSender`로 PM 글을 먼저 분기하고, PM 글에는 공간·작성자 안내, 봇 리마인드에는 응답 대기 수를 붙인다. 두 경우 모두 기존 `_reply_guide`로 계정 연결 여부에 맞는 웹 안내를 만든다. 별도 PM·리마인드 헬퍼를 늘리면 같은 안내와 단일 호출자를 나누게 되어 한 함수의 작은 분기를 유지했다.
+
+- 통합 직후 PM 글이 `리마인드가 0개` 안내로 바뀌는 실패 2건을 먼저 확인했다. 수정 후 PM 작성자·본문 비노출, 계정이 없는 수신자의 초대 요청·가입 링크, 정상 리마인드 수와 정지 시계 제외를 함께 확인했다.
+- 최종 타깃 `test_member_messages.py`, `test_message_notifications.py`, `test_reminder_dm_notice.py`, `test_messages_api.py`, `test_message_unread_api.py`, `test_reply_clock.py`는 171개 통과, 170개 건너뜀이다. Ruff와 `5ae76a6102a8` 단일 head 확인도 통과했다.
+- 대화 요약은 PM 작성자, 마지막 봇·PM DM 실패, `web_reply_available`, `unread_count`를 모두 보존한다. API·문서의 옛 Discord DM 자동 저장 정책은 웹 답장 안내 정책으로 유지했다. AI 코드는 새로 수정하지 않았다.
+- 이 통합의 실제 PostgreSQL 전체 회귀와 업그레이드는 최종 CI에서 확인한다. 실제 develop 병합은 #454, #518 다음에 진행한다.
 
 ## 관련 기록
 

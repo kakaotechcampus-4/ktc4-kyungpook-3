@@ -540,21 +540,22 @@ def test_discord_dm_with_empty_or_padded_text_is_stored_as_is(mdb, mseed):
     assert bodies == {"e1": "", "e2": "  네  "}
 
 
-def test_web_reply_only_by_thread_owner_and_never_goes_to_bot(mdb, mseed):
+def test_owner_web_reply_never_goes_to_bot_and_pm_message_does(mdb, mseed):
     pm = client("pm")
     _create(pm, mseed, "alice")
     ws = mseed["ws"]
     tid = pm.get(f"{P}/workspaces/{ws}/messages").json()["data"]["threads"][0]["thread_id"]
     url = f"{P}/workspaces/{ws}/messages/threads/{tid}/replies"
 
-    assert pm.post(url, json={"body": "PM 이 대신"}).status_code == 403
     assert client("bob").post(url, json={"body": "남이"}).status_code == 403
     assert client("alice").post(url, json={"body": "  "}).status_code == 400
     r = client("alice").post(url, json={"body": "웹으로 답해요"})
     assert r.status_code == 201 and r.json()["data"]["reply_channel"] == "web"
     assert _claim() == []
+    assert pm.post(url, json={"body": "PM 글"}).status_code == 201
+    assert [i["body"] for i in _claim()] == ["A PM PM 이 메시지를 보냈어요.\n웹사이트에서 답장해 주세요."]
     msgs = pm.get(f"{P}/workspaces/{ws}/messages/threads/{tid}").json()["data"]["messages"]
-    assert [m["body"] for m in msgs] == ["웹으로 답해요"]
+    assert [m["body"] for m in msgs] == ["웹으로 답해요", "PM 글"]
 
 
 def test_deleted_member_bundles_leave_inbox_with_their_thread(mdb, mseed):

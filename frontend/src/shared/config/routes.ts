@@ -15,6 +15,12 @@ export const ONBOARDING_REVIEW_PARAM = 'review'
 /** 로그인 화면의 검색 파라미터. `next` 는 로그인 뒤 돌아갈 앱 안 경로다 — 받는 쪽이 parseReturnPath 로 다시 확인한다 */
 export const LOGIN_PARAMS = { next: 'next' } as const
 
+/**
+ * 회원가입 화면의 검색 파라미터. `next` 는 LOGIN_PARAMS 와 같다.
+ * `kakao=1` 이면 가입이 끝날 때 카카오 계정을 잇는다. 주소에는 모드만 있고 카카오 신원은 서버 쿠키에 있다
+ */
+export const SIGNUP_PARAMS = { next: 'next', kakao: 'kakao' } as const
+
 /** 설정 화면의 검색 파라미터. `section=notion` 이면 Notion 연결 영역으로 포커스를 옮긴다 */
 export const SETTINGS_PARAMS = { section: 'section' } as const
 
@@ -41,7 +47,14 @@ export const paths = {
     next === undefined
       ? '/login'
       : `/login?${new URLSearchParams({ [LOGIN_PARAMS.next]: next }).toString()}`,
-  signup: () => '/signup',
+  /** `next` 는 로그인과 같다. `kakao` 는 카카오 연결 가입이다 (#427) */
+  signup: ({ next, kakao }: { next?: string; kakao?: boolean } = {}) => {
+    const query = new URLSearchParams()
+    if (kakao) query.set(SIGNUP_PARAMS.kakao, '1')
+    if (next !== undefined) query.set(SIGNUP_PARAMS.next, next)
+    const search = query.toString()
+    return search === '' ? '/signup' : `/signup?${search}`
+  },
   /** 비밀번호 재설정 메일 요청. 로그인한 사용자는 가드가 돌려보낸다 */
   forgotPassword: () => '/forgot-password',
   /** 메일 링크가 여는 변경 화면. 토큰은 `#token=` 으로 온다 — BE 가 이 경로로 링크를 만든다 (#356) */
@@ -97,6 +110,8 @@ export const devPaths = {
   /** 모의 OAuth 화면. 실 API 의 `/workspaces/{id}/integrations/{provider}/start` 자리다 */
   mockOAuth: (workspaceId: string, provider: string) =>
     `/__mock/oauth/${segment(workspaceId)}/${segment(provider)}`,
-  /** 모의 메일함. 실 API 가 보낼 비밀번호 재설정 메일을 여기서 열어 본다 (#356) */
+  /** 모의 메일함. 실 API 가 보낼 비밀번호 재설정 메일과 가입 인증 코드를 여기서 본다 (#356, #427) */
   mockMail: () => '/__mock/mail',
+  /** 모의 카카오 동의 화면. 실 API 의 `/auth/kakao/start` 자리다 (#427) */
+  mockKakao: () => '/__mock/kakao',
 } as const

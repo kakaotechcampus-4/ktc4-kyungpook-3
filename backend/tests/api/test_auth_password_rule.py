@@ -3,6 +3,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from tests.api.conftest import signup_verified
+
+pytestmark = pytest.mark.usefixtures("signup_secret")
 
 
 def _client():
@@ -10,7 +13,7 @@ def _client():
 
 
 def _signup(client, email, password):
-    return client.post("/api/v1/auth/signup", json={"email": email, "password": password, "name": "테스터"})
+    return signup_verified(client, email, password)
 
 
 @pytest.mark.parametrize("password", ["abcdefgh", "1234567", "abcdefg١"])

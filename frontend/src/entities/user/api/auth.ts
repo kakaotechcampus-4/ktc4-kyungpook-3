@@ -13,9 +13,17 @@ export async function login(input: LoginInput): Promise<Session> {
   return toSession(await request<SessionDto>('/auth/login', { method: 'POST', body }))
 }
 
-/** 201. 가입과 동시에 로그인된다. 이미 있는 이메일은 409 `EMAIL_ALREADY_EXISTS` */
+/**
+ * 201. 가입과 동시에 로그인된다. 이미 있는 이메일은 409 `EMAIL_ALREADY_EXISTS`.
+ * 증명이 없거나 만료면 400 `SIGNUP_VERIFICATION_INVALID`, 카카오 대기가 만료면 400 `KAKAO_LINK_EXPIRED`
+ */
 export async function signup(input: SignupInput): Promise<Session> {
-  const body: SignupDto = { email: input.email, password: input.password, name: input.name }
+  const body: SignupDto = {
+    password: input.password,
+    name: input.name,
+    link_kakao: input.linkKakao,
+    ...(input.verificationToken === null ? {} : { verification_token: input.verificationToken }),
+  }
   return toSession(await request<SessionDto>('/auth/signup', { method: 'POST', body }))
 }
 

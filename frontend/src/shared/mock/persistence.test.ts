@@ -1,4 +1,4 @@
-import { fetchDto, jsonRequest } from '@/shared/test/api'
+import { fetchDto, jsonRequest, signUpVerified } from '@/shared/test/api'
 import type { SessionDto } from '@/shared/types/api/auth'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { IntegrationsDto } from '@/shared/types/api/integration'
@@ -22,10 +22,7 @@ afterEach(() => {
 
 /** 가입부터 팀원 연결까지 한 번씩 바꾼다. 새로고침 뒤에 이 상태가 남아야 한다 */
 async function walkThroughOnboarding(): Promise<string> {
-  await fetchDto(
-    '/auth/signup',
-    jsonRequest('POST', { email: 'new@example.com', password: 'pass1234', name: '새 사용자' }),
-  )
+  await signUpVerified({ email: 'new@example.com', password: 'pass1234', name: '새 사용자' })
   const { workspace_id } = await fetchDto<WorkspaceDto>(
     '/workspaces',
     jsonRequest('POST', { name: '새 팀' }),
