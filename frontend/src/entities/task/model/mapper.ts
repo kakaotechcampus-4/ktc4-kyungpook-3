@@ -38,10 +38,13 @@ export function toTask(dto: TaskDto): Task {
   const version: unknown = dto.version
   if (typeof version !== 'number' || !Number.isInteger(version))
     throw createClientError(CLIENT_ERROR_CODES.INVALID_RESPONSE)
+  if (dto.meeting_deleted !== undefined && typeof dto.meeting_deleted !== 'boolean')
+    throw createClientError(CLIENT_ERROR_CODES.INVALID_RESPONSE)
   return {
     id: dto.task_id,
     workspaceId: dto.workspace_id,
     meetingId: dto.meeting_id,
+    meetingDeleted: dto.meeting_deleted === true,
     title: dto.title,
     assigneeMemberId: dto.assignee_member_id,
     status: enumValue(

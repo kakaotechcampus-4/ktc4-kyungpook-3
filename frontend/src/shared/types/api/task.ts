@@ -2,6 +2,7 @@ export interface TaskDto {
   task_id: string
   workspace_id: string
   meeting_id: string | null
+  meeting_deleted?: boolean
   title: string
   assignee_member_id: string | null
   status: string

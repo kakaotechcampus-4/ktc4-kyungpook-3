@@ -16,6 +16,7 @@ def test_stem_parsing():
     assert T.parse_wav_stem("528123830867066880_1788526909") == ("528123830867066880", "1788526909")
     assert T.parse_transcript_stem("528_1788__small") == ("528", "1788", "small")
     assert T.parse_transcript_stem("528_1788") == ("528", "1788", "?")
+    assert T.parse_transcript_stem("session_upload_A__528_1788__echo") == ("528", "upload_A", "echo")
 
 
 def test_collect_wavs_filters_by_session_and_dedupes(tmp_path):

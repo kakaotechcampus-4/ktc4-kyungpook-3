@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_service_token
 from app.core.database import get_db
+from app.services.meeting_deletion import assert_live
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Meeting, MeetingSource, MeetingStatus, Source
 from app.schemas.source import TranscriptCreateRequest, TranscriptCreateResponse
@@ -84,6 +85,7 @@ def create_sources(
     ).scalar_one_or_none()
     if meeting is None:
         raise AppError(ErrorCode.MEETING_NOT_FOUND, details={"meeting_id": meeting_id})
+    assert_live(meeting)
     if payload.source == "chat" and meeting.source != MeetingSource.CHAT:
         # 24시간 상한은 초·ms 를 잘못 보낸 버그를 막는 장치다. 요청 필드 하나로 우회하지 못하게 한다
         raise AppError(

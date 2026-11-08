@@ -621,12 +621,15 @@ def test_an_upload_ended_in_be_is_dropped_locally_after_the_lock_is_released_and
                       transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=_handoff(fake),
                       wait_for_workspace=True)
     assert r["ended"] and r["error"] is None and not r["gave_up"] and r["attempts"] == 0
-    assert not path.exists() and not path.with_suffix(".lock").exists() and not (rec / m["session"]).exists()
+    assert not path.exists() and not (rec / m["session"]).exists()
+    released = R.try_lock(path)
+    assert released is not None
+    released.release()
     assert sorted(p.name for p in (tmp_path / "transcripts").iterdir()) == sorted(others)   # 이 회의 전사본만 지운다(#389 리뷰)
     assert not any(c[1].endswith("/fail") or c[1] == "/meetings" or c[1].endswith("/end") for c in fake.calls)
     assert R.pending_sessions(rec) == [] and R.recover(rec, backend=EchoStt(), model_name="echo", workers=1,
                                                       claims=claims, handoff=_handoff(fake)) == []
-    assert not path.exists() and not path.with_suffix(".lock").exists()          # 정리한 뒤 다시 생기지 않는다
+    assert not path.exists()          # 정리한 뒤 다시 생기지 않는다
 
 
 def test_a_failed_upload_stage_is_counted_and_kept_not_dropped(tmp_path, clock):

@@ -4,6 +4,7 @@ import { paths } from '@/shared/config/routes'
 import { db, loginLimitKey } from '../db'
 import type { MockResetToken } from '../db'
 import { fail, ok } from '../envelope'
+import { invalidBody, passwordField, stringField } from '../validation'
 
 /*
  * #356 비밀번호 재설정 (계약 §4.1.1). BE PR #398 의 동작을 따른다.
@@ -22,9 +23,6 @@ const HOUR_MS = 60 * 60_000
 const HOURLY_MAIL_LIMIT = 5
 
 const EMAIL = z.email()
-
-/** BE validate_password. 길이는 코드 포인트로 세고(u), 숫자는 ASCII 0-9 만 본다 */
-const PASSWORD_RULE = /^(?=.*[0-9]).{8,}$/u
 
 type TokenCheck = { row: MockResetToken } | { reason: 'invalid' | 'expired' | 'used' }
 
@@ -75,24 +73,6 @@ function sendResetMail(email: string): void {
   })
 }
 
-/** BE 본문 검증(pydantic) 오류 한 칸. 400 `INVALID_REQUEST` 의 `details.fields` 에 들어간다 */
-interface FieldError {
-  loc: string[]
-  msg: string
-}
-
-/** 필수 문자열 칸을 BE 처럼 검사한다. 없거나 문자열이 아니면 그 칸의 오류다 */
-function stringField(body: Record<string, unknown>, name: string): FieldError | null {
-  const value = body[name]
-  if (value === undefined) return { loc: ['body', name], msg: 'Field required' }
-  if (typeof value !== 'string')
-    return { loc: ['body', name], msg: 'Input should be a valid string' }
-  return null
-}
-
-const invalidBody = (fields: FieldError[]) =>
-  fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400, { fields })
-
 async function readBody(request: Request): Promise<Record<string, unknown>> {
   const body: unknown = await request.json()
   return typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
@@ -102,20 +82,23 @@ export const passwordResetHandlers = [
   http.post(`${base}/request`, async ({ request }) => {
     if (db.passwordReset.failure === 'server-error') return serverError()
     const body = await readBody(request)
-    const emailError = stringField(body, 'email')
-    if (emailError) return invalidBody([emailError])
-    if (typeof body.email !== 'string' || !EMAIL.safeParse(body.email).success)
-      return invalidBody([{ loc: ['body', 'email'], msg: 'value is not a valid email address' }])
+    const bodyError = invalidBody(
+      stringField(body, 'email') ??
+        (EMAIL.safeParse(body.email).success
+          ? null
+          : { loc: ['body', 'email'], msg: 'value is not a valid email address' }),
+    )
+    if (bodyError) return bodyError
     if (db.passwordReset.failure === 'mail-unavailable')
       return fail('MAIL_UNAVAILABLE', '메일을 보낼 수 없습니다.', 503)
-    sendResetMail(body.email)
+    sendResetMail(body.email as string)
     return ok({})
   }),
   http.post(`${base}/verify`, async ({ request }) => {
     if (db.passwordReset.failure === 'server-error') return serverError()
     const body = await readBody(request)
-    const tokenError = stringField(body, 'token')
-    if (tokenError) return invalidBody([tokenError])
+    const tokenError = invalidBody(stringField(body, 'token'))
+    if (tokenError) return tokenError
     const checked = checkToken(body.token)
     if ('reason' in checked) return tokenInvalid(checked.reason)
     return ok({ expires_at: checked.row.expiresAt, email_masked: maskEmail(checked.row.email) })
@@ -123,19 +106,9 @@ export const passwordResetHandlers = [
   http.post(`${base}/confirm`, async ({ request }) => {
     if (db.passwordReset.failure === 'server-error') return serverError()
     const body = await readBody(request)
-    // BE 는 본문 검증이 토큰 확인보다 먼저다. 칸마다 오류를 모아 한 번에 답하고, 규칙 위반은 토큰을 쓰지 않는다
-    const passwordError =
-      stringField(body, 'new_password') ??
-      (PASSWORD_RULE.test(body.new_password as string)
-        ? null
-        : {
-            loc: ['body', 'new_password'],
-            msg: 'Value error, 비밀번호는 8자 이상이고 숫자를 하나 이상 포함해야 합니다.',
-          })
-    const fields = [stringField(body, 'token'), passwordError].filter(
-      (error): error is FieldError => error !== null,
-    )
-    if (fields.length > 0) return invalidBody(fields)
+    // BE 는 본문 검증이 토큰 확인보다 먼저다. 규칙 위반은 토큰을 쓰지 않는다
+    const bodyError = invalidBody(stringField(body, 'token'), passwordField(body, 'new_password'))
+    if (bodyError) return bodyError
     const newPassword = body.new_password as string
     const checked = checkToken(body.token)
     if ('reason' in checked) return tokenInvalid(checked.reason)
