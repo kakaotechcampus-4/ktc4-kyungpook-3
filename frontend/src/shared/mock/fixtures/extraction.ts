@@ -1,4 +1,5 @@
-import type { ExtractionDto, ExtractionItemDto } from '@/shared/types/api/extraction'
+import type { ExtractionDto } from '@/shared/types/api/extraction'
+import type { MockExtractionItem } from '../aliasLearning'
 
 const seeds: [
   string,
@@ -18,7 +19,7 @@ const seeds: [
   ['it_05', '테스트 계획 정리', 'mb_02', '박민수', null, 'review', null, 'ap_02', 0.6],
   ['it_06', '배포 문서 보완', null, '지훈', '2026-09-25', 'review', null, 'ap_03', 0.7],
 ]
-const items: ExtractionItemDto[] = seeds.map(
+const items: MockExtractionItem[] = seeds.map(
   ([item_id, title, member_id, raw, due, gate, task_id, approval_id, confidence], index) => ({
     item_id,
     task: { title, confidence: 0.95 },
@@ -47,10 +48,11 @@ const items: ExtractionItemDto[] = seeds.map(
     approval_id,
     // 조회 handler 가 지금 승인 상태로 다시 채운다. 저장값은 시작 상태다
     approval_status: approval_id === null ? null : 'pending',
-    // 추출 때의 값이다. 응답은 handler 가 지금 상태로 다시 구한다 (#523). '지훈' 은 누구의 별칭도 아니라 담당자를 고르며
-    // 별칭으로 등록할 수 있다. '민수' 는 이미 박민수의 별칭이다
-    alias_candidate: item_id === 'it_06',
-    alias_text: item_id === 'it_06' ? raw : null,
+    // 담당자를 못 찾은 이름 지목이다. 별칭 후보는 응답마다 이 유형·원문과 지금 별칭으로 구한다 (#523, aliasLearning).
+    // '지훈' 은 누구의 별칭도 아니라 후보이고, '민수' 는 박민수의 이름 별칭이 막는다
+    assignee_type: member_id === null ? 'thirdname' : null,
+    alias_candidate: false,
+    alias_text: null,
   }),
 )
 export const extractionFixtures: ExtractionDto[] = [

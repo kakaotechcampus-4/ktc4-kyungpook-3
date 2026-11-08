@@ -16,37 +16,15 @@ import {
   validDate,
   addHistory,
 } from '../task-state'
+import { aliasCandidateOf, aliasFieldsOf } from '../aliasLearning'
 import { linkApprovalHistory } from '../reply-state'
 import type { ApprovalDto } from '@/shared/types/api/approval'
 
 type Failure = ReturnType<typeof fail>
-type AliasFields = Pick<ApprovalDto, 'alias_candidate' | 'alias_text'>
 
-/**
- * 백엔드 approval_alias_texts 처럼 별칭 후보는 응답마다 지금 상태로 구한다 (#523). 저장값은 추출 때의 값이다.
- * 처리된 승인, 생성이 아닌 승인, 그 공간의 누군가 이미 그 글자를 별칭으로 가진 경우는 후보가 아니다.
- * 추출 항목은 연결된 승인으로 판정한다
- */
-export function liveAliasFields(
-  stored: AliasFields,
-  approval: ApprovalDto | undefined,
-): AliasFields {
-  const text =
-    stored.alias_candidate === true &&
-    typeof stored.alias_text === 'string' &&
-    approval?.type === 'task_create' &&
-    approval.status === 'pending' &&
-    !db.aliases.some(
-      ({ workspace_id, alias_text }) =>
-        workspace_id === approval.workspace_id && alias_text === stored.alias_text,
-    )
-      ? stored.alias_text
-      : null
-  return { alias_candidate: text !== null, alias_text: text }
-}
-
+/** 별칭 후보는 저장값이 아니라 응답마다 지금 상태로 구한다 (#523, `aliasLearning`) */
 function approvalResponse(approval: ApprovalDto): ApprovalDto {
-  return { ...approval, ...liveAliasFields(approval, approval) }
+  return { ...approval, ...aliasFieldsOf(approval) }
 }
 
 /**
@@ -412,7 +390,7 @@ export const approvalHandlers = [
         current_status: approval.status,
       })
     // 처리하면 후보가 아니게 되므로 상태를 바꾸기 전에 읽는다. 후보가 아니면 save_alias 는 조용히 무시한다
-    const learnable = liveAliasFields(approval, approval).alias_text
+    const learnable = aliasCandidateOf(approval)
     if (body.status === 'approved') {
       const prepared =
         approval.type === 'task_create'
