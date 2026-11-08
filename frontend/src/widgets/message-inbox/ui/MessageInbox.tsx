@@ -16,7 +16,7 @@ import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { PinnedToastHost } from '@/shared/ui/toast'
-import { avatarText, bundleDateLabel, bundleSummary, shortDate } from '../lib/format'
+import { avatarText, bundleDateLabel, shortDate } from '../lib/format'
 import { threadHeading } from '../model/conversation'
 import { inboxPane, nextPaneMemory, selectDetail } from '../model/selection'
 import type { DetailSelection, PaneMemory } from '../model/selection'
@@ -525,7 +525,7 @@ function BundleRow({
         <span className={REVIEW_NAME}>{bundle.recipientName}</span>
         <span className={DATE}>{bundleDateLabel(bundle)}</span>
       </span>
-      <span className={REVIEW_SUMMARY}>{bundleSummary(bundle)}</span>
+      <span className={REVIEW_SUMMARY}>{bundle.summary}</span>
     </GuardedLink>
   )
 }

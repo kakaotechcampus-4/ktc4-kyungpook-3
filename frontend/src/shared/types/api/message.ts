@@ -11,7 +11,14 @@ export type ReplyChannelDto = 'discord' | 'web'
 export type DmStatusDto = 'pending' | 'claimed' | 'delivered' | 'failed'
 export type DmFailureReasonDto = 'dm_blocked' | 'discord_not_linked' | 'unknown'
 
-/** `ReminderResponse`. 태스크가 지워졌으면 task_* 칸이 null 이다 */
+/** `ReminderEvidence` — 그 태스크의 마지막 진행 소식. message_id 는 reply 에만 있다 */
+export interface ReminderEvidenceDto {
+  kind: 'reply' | 'task_change'
+  at: string
+  message_id: string | null
+}
+
+/** `ReminderResponse`. 태스크가 지워졌으면 task_*·reason·evidence 칸이 null 이다 */
 export interface ReminderDto {
   reminder_id: string
   bundle_id: string
@@ -24,6 +31,10 @@ export interface ReminderDto {
   kind: 'nudge'
   origin: 'pm' | 'scheduler'
   created_at: string
+  // reason·evidence·summary 는 #418 이전 서버가 보내지 않아 선택 칸이다. 매퍼가 채운다
+  reason?: string | null
+  /** 진행 소식이 한 번도 없었으면 null */
+  evidence?: ReminderEvidenceDto | null
 }
 
 /** `BundleResponse` — 보낼 메시지 한 통 */
@@ -40,6 +51,8 @@ export interface BundleDto {
   body_source: BodySourceDto
   draft_status: DraftStatusDto
   draft_version: number
+  /** 목록 한 줄 — `API 명세서 진행 상황 확인`, 여럿이면 `퍼블리싱 외 1건 진행 상황 확인` */
+  summary?: string
   reminders: ReminderDto[]
 }
 

@@ -2,6 +2,8 @@ import type {
   BundleDto,
   InboxDto,
   MessageDto,
+  ReminderDto,
+  ReminderEvidenceDto,
   ReminderWithBundleDto,
   ThreadDetailDto,
   ThreadSummaryDto,
@@ -15,6 +17,7 @@ import type {
   MessageInbox,
   MessageThread,
   MessageThreadSummary,
+  ReminderEvidence,
   ReplyAttribution,
   TaskRef,
 } from './types'
@@ -56,6 +59,21 @@ function stageOf(dto: BundleDto): BundleStage | null {
   return { stage: 'approved', approvedAt: dto.approved_at }
 }
 
+/** #418 이전 서버는 요약을 보내지 않는다. 그때는 태스크 제목으로 줄인다 — `API 명세서`, `퍼블리싱 외 1건` */
+function titleSummary(reminders: readonly ReminderDto[]): string {
+  const [first, ...rest] = reminders
+  if (first === undefined) return ''
+  const title = first.task_title ?? '지워진 태스크'
+  return rest.length === 0 ? title : `${title} 외 ${String(rest.length)}건`
+}
+
+/** 메시지 ID 없는 답장 근거는 링크만 뺀다. DM 실패 이유처럼 곁가지 칸 하나로 목록 전체를 막지 않는다 */
+function toEvidence(dto: ReminderEvidenceDto | null | undefined): ReminderEvidence | null {
+  if (dto === null || dto === undefined) return null
+  if (dto.kind === 'task_change') return { kind: 'taskChange', at: dto.at }
+  return dto.message_id === null ? null : { kind: 'reply', at: dto.at, messageId: dto.message_id }
+}
+
 /** 예정이 아닌 묶음은 null 이다. 목록·대화 응답에는 예정 묶음만 온다 */
 export function toBundle(dto: BundleDto): Bundle | null {
   const stage = stageOf(dto)
@@ -71,12 +89,15 @@ export function toBundle(dto: BundleDto): Bundle | null {
     bodySource: dto.body_source,
     drafting: dto.draft_status !== 'done',
     draftVersion: dto.draft_version,
+    summary: dto.summary ?? titleSummary(dto.reminders),
     tasks: dto.reminders.map((reminder) => ({
       reminderId: reminder.reminder_id,
       taskId: reminder.task_id,
       title: reminder.task_title,
       dueDate: reminder.due_date,
       note: reminder.note,
+      reason: reminder.reason ?? null,
+      evidence: toEvidence(reminder.evidence),
     })),
   }
 }
