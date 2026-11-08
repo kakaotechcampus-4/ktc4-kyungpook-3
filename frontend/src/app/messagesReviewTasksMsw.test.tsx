@@ -269,4 +269,27 @@ describe('재촉 이유와 근거', () => {
     expect(shown[0]).not.toHaveTextContent('명세서 작업은 시작하셨나요?')
     expect(scrolled).toHaveBeenCalledWith({ block: 'center' })
   })
+
+  it('같은 대화에서 주소의 메시지가 바뀌면 그 메시지를, 빠지면 맨 아래를 보인다', async () => {
+    const scrolled = vi.spyOn(Element.prototype, 'scrollIntoView')
+    onTestFinished(() => scrolled.mockRestore())
+    const app = renderApp(paths.messageThread('ws_01', 'th_01', 'mg_02'))
+    const body = await screen.findByRole('region', { name: '대화 내용' })
+    const target = (text: RegExp) =>
+      scrolled.mock.contexts.filter(
+        (element): element is Element =>
+          element instanceof Element && element.contains(within(body).getByText(text)),
+      )
+    await waitFor(() => expect(target(/네 확인했습니다\./)).toHaveLength(1))
+
+    act(() => app.navigate(paths.messageThread('ws_01', 'th_01', 'mg_03')))
+    await app.expectSearch('?message=mg_03')
+    await waitFor(() => expect(target(/명세서 작업은 시작하셨나요\?/)).toHaveLength(1))
+
+    // jsdom 은 배치를 계산하지 않는다 — 칸의 높이를 주고 맨 아래로 내렸는지 본다
+    Object.defineProperty(body, 'scrollHeight', { configurable: true, value: 640 })
+    act(() => app.navigate(paths.messageThread('ws_01', 'th_01')))
+    await app.expectSearch('')
+    await waitFor(() => expect(body.scrollTop).toBe(640))
+  })
 })

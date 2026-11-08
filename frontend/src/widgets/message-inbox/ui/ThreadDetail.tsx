@@ -154,9 +154,10 @@ function ThreadView({
   const [now] = useState(clockNow)
   const atBottom = useRef(true)
   const [searchParams] = useSearchParams()
-  const [shownMessageId] = useState(() => searchParams.get(MESSAGE_PARAMS.message))
+  const shownMessageId = searchParams.get(MESSAGE_PARAMS.message)
   // 대화를 열면 가장 최근 메시지부터 보인다. 대화가 바뀌면 화면이 새로 마운트된다 (MessageInbox 의 key).
-  // 주소가 메시지를 가리키면 그 메시지를 가운데에 둔다. 맨 아래를 보지 않는 것으로 두어 아래에 붙이는 효과들이 다시 끌어내리지 않게 한다
+  // 주소가 메시지를 가리키면 그 메시지를 가운데에 둔다. 맨 아래를 보지 않는 것으로 두어 아래에 붙이는 효과들이 다시 끌어내리지 않게 한다.
+  // 같은 대화 안에서 주소의 메시지가 바뀌거나 빠져도(다른 근거 링크, 목록 행, 뒤로 가기) 다시 맞춘다
   useLayoutEffect(() => {
     const body = bodyRef.current
     if (body === null) return
@@ -164,6 +165,7 @@ function ThreadView({
       (element) => element.dataset.messageId === shownMessageId,
     )
     if (shown === undefined) {
+      atBottom.current = true
       body.scrollTop = body.scrollHeight
       return
     }
