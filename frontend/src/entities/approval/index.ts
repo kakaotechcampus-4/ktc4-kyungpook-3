@@ -23,6 +23,7 @@ export type {
 } from './model/resolution'
 export {
   APPROVAL_RESOLUTION_REASONS,
+  ASSIGNEE_PICK_REASON,
   TASK_TITLE_MAX_LENGTH,
   aliasToLearn,
   planApprovalResolution,
