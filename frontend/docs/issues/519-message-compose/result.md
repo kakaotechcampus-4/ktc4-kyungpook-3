@@ -43,7 +43,8 @@
 
 ## 검증
 
-- RTL·단위: 바꾼 곳 테스트를 `--maxWorkers=1` 로 돌렸다(위임자 19개 파일 334개 통과, 라우트 뼈대 1개 파일 66개 통과). 전체 결과는 아래 「전체 검사」에 적는다.
+- RTL·단위: 바꾼 곳 테스트를 `--maxWorkers=1` 로 돌렸다(위임자 19개 파일 334개 통과, 라우트 뼈대 1개 파일 66개 통과).
+- 전체 검사(`72d77f38`): `npm run build` 통과. `npm run test -- --maxWorkers=1` 은 281개 파일 3622개 중 3618개 통과, 4개 실패였다. 실패한 네 파일(`meetingProcessing`·`messagesAttributionMsw`·`messagesSync`·`splash`)은 단독으로 다시 돌리면 모두 통과했다(40·7·10·5개). 실패 내용이 5초 시간 초과와 `findBy` 대기 초과라 기계 부하로 본다(같은 기계에서 다른 워커가 돌고 있었다). typecheck·lint·format:check 는 통과했다.
 - 브라우저: MSW 개발 서버에서 Chromium 1280·390 으로 PM·팀원 여정을 돌렸다. 확인 57개가 모두 통과했다. PM 은 목록의 `웹 답장 불가`·`나:`, 다른 PM 글의 이름·DM 실패, 초대 안내와 링크 이동, PM 입력칸 문구, 보낸 글의 오른쪽 자리와 새로고침 뒤 유지, `새 대화` 로 대화 열기, 빈 화면의 `새 대화` 를 봤다. 팀원은 PM 글의 왼쪽 자리와 이름, 입력칸 문구, 빈 화면 버튼으로 대화를 열고 먼저 쓰기를 봤다. 스크립트와 스크린샷은 git 에서 뺀 `frontend/.verify/519-525/` 에 있다.
 - 리뷰 반영: 두 수정 모두 테스트를 먼저 써 실패를 본 뒤 고쳤다. PM 실패 제목은 `messagesMsw`, 알림은 `message-state`·`messageScenarios`·`messagesSync`(받는 계정의 알림 종과 대화 다시 받기)가 본다. 바꾼 4개 파일 182개 테스트, typecheck, lint 가 통과했다.
 - 하지 않은 것: 배포 BE·로컬 BE 에 붙인 확인, Playwright E2E(CI 가 돌린다, 바뀐 기대값만 고쳤다), Storybook.
