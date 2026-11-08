@@ -172,9 +172,9 @@ export const memberHandlers = [
       body.source === undefined ||
       (typeof body.source === 'string' &&
         ['manual', 'discord_profile', 'learned'].includes(body.source))
-    // 길이는 받은 그대로 재고, 저장은 앞뒤 공백을 지우고 안쪽 공백을 한 칸으로 줄인 값이다 (matching.py normalize_alias_text)
+    // 길이는 받은 그대로 문자(코드 포인트)로 재고(Python len), 저장은 앞뒤 공백을 지우고 안쪽 공백을 한 칸으로 줄인 값이다 (matching.py normalize_alias_text)
     const aliasText =
-      typeof body.alias_text === 'string' && body.alias_text.length <= 100
+      typeof body.alias_text === 'string' && [...body.alias_text].length <= 100
         ? body.alias_text.trim().replace(/\s+/g, ' ')
         : ''
     if (aliasText === '' || !validType || !validSource)

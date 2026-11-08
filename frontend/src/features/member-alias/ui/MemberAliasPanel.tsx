@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Member, MemberAlias } from '@/entities/member'
 import { COMMON_MESSAGES } from '@/shared/api/errorMessages'
 import { Button } from '@/shared/ui/button'
@@ -45,6 +45,19 @@ export interface MemberAliasPanelProps {
 export function MemberAliasPanel({ workspaceId, member, state, canManage }: MemberAliasPanelProps) {
   const actions = useMemberAliasActions(workspaceId, member.id)
   const [text, setText] = useState('')
+  const listRef = useRef<HTMLUListElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  // 지운 칩의 단추가 사라지면 포커스를 잃는다. 지운 별칭이 목록에서 빠지고 단추가 다시 풀리면 옆 단추로, 없으면 새 별칭 칸으로 옮긴다
+  const removed = useRef<{ id: string; index: number } | null>(null)
+  const aliases = state.status === 'ready' ? state.aliases : null
+  useEffect(() => {
+    const target = removed.current
+    if (target === null || aliases === null || actions.removing) return
+    removed.current = null
+    if (aliases.some(({ id }) => id === target.id)) return
+    const buttons = listRef.current?.querySelectorAll<HTMLButtonElement>('button') ?? []
+    ;(buttons[Math.min(target.index, buttons.length - 1)] ?? inputRef.current)?.focus()
+  }, [aliases, actions.removing])
 
   if (state.status === 'loading')
     return (
@@ -70,8 +83,8 @@ export function MemberAliasPanel({ workspaceId, member, state, canManage }: Memb
       {state.aliases.length === 0 ? (
         <p className={NOTE}>{ALIAS_EMPTY}</p>
       ) : (
-        <ul className={CHIPS} aria-label={`${member.displayName}의 별칭`}>
-          {state.aliases.map((alias) => (
+        <ul ref={listRef} className={CHIPS} aria-label={`${member.displayName}의 별칭`}>
+          {state.aliases.map((alias, index) => (
             <li key={alias.id} className={CHIP}>
               <span className={CHIP_TEXT}>{alias.text}</span>
               <span className={CHIP_TAG}>
@@ -84,7 +97,10 @@ export function MemberAliasPanel({ workspaceId, member, state, canManage }: Memb
                   className={CHIP_REMOVE}
                   aria-label={`'${alias.text}' 별칭 지우기`}
                   disabled={actions.removing}
-                  onClick={() => actions.remove(alias)}
+                  onClick={() => {
+                    removed.current = { id: alias.id, index }
+                    actions.remove(alias)
+                  }}
                 >
                   <Icon name="close" size={12} />
                 </button>
@@ -102,10 +118,13 @@ export function MemberAliasPanel({ workspaceId, member, state, canManage }: Memb
           }}
         >
           <TextField
+            ref={inputRef}
             className="min-w-[0px] flex-1"
             aria-label={`${member.displayName}의 새 별칭`}
             placeholder="새 별칭"
             autoComplete="off"
+            // 보내는 동안 고친 글자를 성공 뒤 비우기가 지우지 않게, 포커스는 두되 고칠 수 없게 한다
+            readOnly={actions.adding}
             value={text}
             onChange={(event) => {
               setText(event.target.value)

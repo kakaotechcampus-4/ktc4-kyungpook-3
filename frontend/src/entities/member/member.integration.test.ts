@@ -251,6 +251,12 @@ describe('alias writes', () => {
     expect((await post('mb_99', { alias_text: '새 별칭' })).status).toBe(404)
   })
 
+  it('counts the length in characters (code points) like the server, not UTF-16 units', async () => {
+    const emoji = String.fromCodePoint(0x1f600)
+    expect((await post('mb_03', { alias_text: emoji.repeat(100) })).status).toBe(201)
+    expect((await post('mb_03', { alias_text: emoji.repeat(101) })).status).toBe(400)
+  })
+
   it('upgrades an automatic alias to manual when a PM adds the same text', async () => {
     expect(await read(await post('mb_02', { alias_text: '민수' }))).toMatchObject({
       alias_id: 'al_04',

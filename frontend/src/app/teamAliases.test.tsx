@@ -1,8 +1,10 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http } from 'msw'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { applyScenario } from '@/shared/mock/scenarios'
+import { server } from '@/shared/mock/server'
 import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
@@ -113,6 +115,70 @@ describe('팀 화면 — 별칭 (PM)', () => {
 
     expect(input).toHaveAccessibleDescription('별칭은 1~100자로 적어 주세요.')
     expect(log.started.filter(({ method }) => method === 'POST')).toEqual([])
+  })
+
+  it('글자 수는 서버처럼 문자로 센다 — 이모지 51개는 보낸다', async () => {
+    renderApp(TEAM)
+    const { user, row } = await openAliases('이재환')
+    const input = row.getByRole('textbox', { name: '이재환의 새 별칭' })
+    const smiles = String.fromCodePoint(0x1f600).repeat(51)
+    await user.click(input)
+    await user.paste(smiles)
+    await user.click(row.getByRole('button', { name: '추가' }))
+
+    const list = row.getByRole('list', { name: '이재환의 별칭' })
+    await waitFor(() => expect(chipTexts(list)).toContain(`${smiles}직접 추가`))
+    expect(input).not.toHaveAccessibleDescription('별칭은 1~100자로 적어 주세요.')
+  })
+
+  it('보내는 동안 칸은 읽기 전용이라 그 사이 적은 글자를 성공 응답이 지우지 않는다', async () => {
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    server.use(
+      http.post('/api/v1/members/:memberId/aliases', async () => {
+        await gate
+      }),
+    )
+    renderApp(TEAM)
+    const { user, row } = await openAliases('이재환')
+    const input = row.getByRole('textbox', { name: '이재환의 새 별칭' })
+    await user.type(input, 'first')
+    await user.click(row.getByRole('button', { name: '추가' }))
+    await user.type(input, 'second')
+    expect(input).toHaveValue('first')
+
+    release()
+    const list = row.getByRole('list', { name: '이재환의 별칭' })
+    await waitFor(() => expect(chipTexts(list)).toContain('first직접 추가'))
+    expect(input).toHaveValue('')
+    await user.type(input, 'third')
+    expect(input).toHaveValue('third')
+  })
+
+  it('지우면 포커스가 옆 지우기 단추로, 마지막 별칭이면 새 별칭 칸으로 간다', async () => {
+    renderApp(TEAM)
+    const { user, row } = await openAliases('이재환')
+    const list = () => row.getByRole('list', { name: '이재환의 별칭' })
+    // 칩 순서: 재한, 이재환, 재환
+    row.getByRole('button', { name: "'재한' 별칭 지우기" }).focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(chipTexts(list())).toEqual(['이재환이름', '재환이름']))
+    await waitFor(() =>
+      expect(row.getByRole('button', { name: "'이재환' 별칭 지우기" })).toHaveFocus(),
+    )
+
+    row.getByRole('button', { name: "'재환' 별칭 지우기" }).focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(chipTexts(list())).toEqual(['이재환이름']))
+    await waitFor(() =>
+      expect(row.getByRole('button', { name: "'이재환' 별칭 지우기" })).toHaveFocus(),
+    )
+
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(row.getByText('등록된 별칭이 없어요.')).toBeVisible())
+    await waitFor(() =>
+      expect(row.getByRole('textbox', { name: '이재환의 새 별칭' })).toHaveFocus(),
+    )
   })
 
   it('잘못 배운 별칭을 지우면 칩이 사라지고 알림이 뜬다', async () => {

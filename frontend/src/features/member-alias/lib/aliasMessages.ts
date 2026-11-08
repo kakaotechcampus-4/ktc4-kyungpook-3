@@ -28,9 +28,9 @@ export function normalizeAliasText(text: string): string {
   return text.trim().replace(/\s+/g, ' ')
 }
 
-/** 보내기 전에 막을 입력의 문구. 비었으면 추가 단추가 잠겨 있어 문구가 없다 */
+/** 보내기 전에 막을 입력의 문구. 비었으면 추가 단추가 잠겨 있어 문구가 없다. 서버(Python)처럼 문자(코드 포인트)로 센다 */
 export function aliasInputFailure(aliasText: string): string | null {
-  return aliasText.length > ALIAS_MAX_LENGTH ? ALIAS_LENGTH : null
+  return [...aliasText].length > ALIAS_MAX_LENGTH ? ALIAS_LENGTH : null
 }
 
 const KNOWN: Readonly<Record<string, string>> = {
