@@ -66,7 +66,7 @@ it('creates a workspace and rejects duplicate names or unknown workspace request
 })
 
 it('allows different accounts to use the same workspace name', async () => {
-  await signUpVerified({ email: 'new@example.com', password: 'secret', name: '새 사용자' })
+  await signUpVerified({ email: 'new@example.com', password: 'secret12', name: '새 사용자' })
 
   const created = await fetch('http://localhost:3000/api/v1/workspaces', {
     method: 'POST',
@@ -149,7 +149,7 @@ it('advances onboarding steps in a workspace the user owns', async () => {
 // DTO 의 role 은 여전히 Optional 이라 null → member 폴백은 mapper 단위 테스트가 지킨다
 it('refuses the detail of a workspace the signed-in user does not belong to', async () => {
   const base = `${location.origin}/api/v1`
-  await signUpVerified({ email: 'outsider@example.com', password: 'secret', name: '외부인' })
+  await signUpVerified({ email: 'outsider@example.com', password: 'secret12', name: '외부인' })
 
   const detail = await fetch(`${base}/workspaces/ws_01`)
   expect(detail.status).toBe(403)
