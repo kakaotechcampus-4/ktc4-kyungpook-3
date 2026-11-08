@@ -54,7 +54,7 @@
 
 ## 검증
 
-Node v24.11.0, `frontend/` 에서 실행했다(2026-11-08).
+Node v24.11.0, `frontend/` 에서 실행했다. 아래 숫자는 리뷰 반영 뒤 마지막 실행(2026-11-09)이다.
 
 | 검사 | 결과 |
 |---|---|
@@ -62,9 +62,9 @@ Node v24.11.0, `frontend/` 에서 실행했다(2026-11-08).
 | `npm run lint` | 통과 |
 | `npm run format:check` | 통과 |
 | `npm run build` | 통과 |
-| `npm run test -- --maxWorkers=1` | 276 파일·3472 건 통과. `src/shared/api/client.test.ts` 는 부하로 워커가 뜨지 못해(`Timeout waiting for worker to respond`) 돌지 않았다. 따로 돌려 21 건 통과 |
+| `npm run test -- --maxWorkers=1` | 277 파일·3505 건 통과 |
 
-- 첫 전체 실행에서는 `notionSyncPolling.test.tsx` 한 건이 실패했다. 갱신 응답을 `auto_blocked` 없는 mock 행 그대로 돌려줬기 때문이다. 테스트가 `toTaskResponse` 로 실제 응답 모양을 돌려주게 고쳤고, `auto_blocked` 보수 폴백도 되살렸다(위). 두 번째 실행에서 통과했다.
+- 첫 전체 실행에서는 `notionSyncPolling.test.tsx` 한 건이 실패했다. 갱신 응답을 `auto_blocked` 없는 mock 행 그대로 돌려줬기 때문이다. 테스트가 `toTaskResponse` 로 실제 응답 모양을 돌려주게 고쳤고, `auto_blocked` 보수 폴백도 되살렸다(위). 두 번째 실행에서 통과했다. 두 번째 실행은 부하로 `client.test.ts` 의 워커가 뜨지 못해 그 파일만 따로 돌렸다(21 건 통과). 리뷰 반영 뒤 실행은 다른 워커와 겹치지 않게 차례를 받아 한 번에 돌렸다.
 - 새·바꾼 테스트:
   - `shared/api/parseResponse.test.ts`: 정상, 필수 필드 누락, 타입 오류, 목록 한 건의 모르는 상태, 응답 전체가 다른 모양 → `INVALID_RESPONSE`, entity·필드 경로, 재시도 안 함. 받은 값은 경고에만 있다.
   - `shared/api/unknownValue.test.ts`: 표시용 보존과 보수 폴백, 경고.
@@ -76,10 +76,10 @@ Node v24.11.0, `frontend/` 에서 실행했다(2026-11-08).
 
   | | develop | 이 변경 | 차이 |
   |---|---|---|---|
-  | 원본 | 922,593 B | 927,966 B | +5,373 B (+0.58%) |
-  | gzip | 289,614 B | 291,045 B | +1,431 B (+0.49%) |
+  | 원본 | 922,593 B | 928,418 B | +5,825 B (+0.63%) |
+  | gzip | 289,614 B | 291,085 B | +1,471 B (+0.51%) |
 
-  늘어난 곳은 `task` chunk(+1.7 KB, 스키마)와 zod 가 든 공용 chunk(+3.7 KB)다. 공용 chunk 에 zod 의 `ZodDiscriminatedUnion`·`ZodLiteral` 이 새로 들어왔다(기록 `kind` 판별). 다른 초기 chunk 는 ±5 B 안이다.
+  늘어난 곳은 `task` chunk(+1.7 KB, 스키마)와 zod 가 든 공용 chunk(+3.7 KB)다. 공용 chunk 에 zod 의 `ZodDiscriminatedUnion`·`ZodLiteral` 이 새로 들어왔다(기록 `kind` 판별). 다른 초기 chunk 는 ±5 B 안이다. 리뷰 반영(쓰기 응답 토스트·답장 줄 되돌리기 판정)으로 원본 +452 B, gzip +40 B 가 더해졌다.
 - 브라우저(ego lite, MSW 모드 `single-workspace`): 태스크 목록 13 건이 그려졌다. 앱 안 이동으로 `tk_01`·`tk_03` 상세를 열었다. 콘솔 경고·오류와 `role=alert` 가 없었다. 스크린샷은 ego lite 창 문제로 찍지 못했다.
 
 ## 남은 일
