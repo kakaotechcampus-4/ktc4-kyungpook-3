@@ -272,10 +272,20 @@ def test_the_same_story_from_two_runs_goes_out_once():
     """두 실행이 같은 얘기를 둘 다 항목으로 만들면 실행 하나의 것만 쓴다. 둘 다 보내면 PM 앞에 같은 카드가 두 장 선다."""
     other = _item(task_title="로그인 화면 마감을 금요일로")
     assert J.merge_runs([[_o("item", A1, at=[3])], [_o("item", other, at=[3])]]) == ([A1], [])
-    # 실패 없이 끝난 실행의 항목을 먼저 쓴다
+    # 항목 수가 같으면 실패 없이 끝난 실행의 항목을 쓴다
     first = [_o("item", A1, at=[3]), _o("failure", FB, at=[3, 4])]
     second = [_o("item", other, at=[3, 4])]
     assert J.merge_runs([first, second]) == ([other], [])
+
+
+def test_a_story_keeps_the_run_with_more_cards_over_one_broad_card():
+    """회의 안 카드 합치기는 근거 문장을 넓혀서, 한 실행의 넓은 카드 하나가 다른 실행의 카드 여럿과 한 얘기가 된다.
+    실패 없는 실행을 먼저 고르면 카드 다섯 장이 흔적 없이 한 장으로 준다. 카드가 많은 실행을 먼저 고른다.
+    그 대가로 고른 실행의 실패 하나는 다른 실행이 실패 없이 끝냈으므로 실패로 세지 않는다."""
+    cards = [_item(task_title=f"할 일 {k}") for k in range(5)]
+    first = [_o("item", c, at=[k]) for k, c in enumerate(cards)] + [_o("failure", FB, at=[5])]
+    second = [_o("item", A1, at=[0, 1, 2, 3, 4, 5])]
+    assert J.merge_runs([first, second]) == (cards, [])
 
 
 def test_a_card_merged_in_one_run_stays_one_story_when_the_other_run_splits_it():

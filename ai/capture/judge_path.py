@@ -72,8 +72,8 @@ def merge_runs(runs: list[list[dict]]) -> tuple[list[dict], list[dict]]:
 
     1단계는 실행마다 발화를 다르게 묶고 요약 문장도 다시 쓴다. 근거 문장 번호는 같은 전사를 가리키므로, 번호가
     하나라도 겹치는 finding 은 실행이 달라도 같은 얘기로 묶는다. 얘기마다 이렇게 정한다.
-      한 번이라도 항목이 나왔으면 항목을 남긴다. 같은 카드가 두 장 서지 않게 실행 하나의 것만 쓴다(실패 없이 끝난
-      실행, 항목이 많은 실행, 먼저 돈 실행 순). 실행마다 판단이 엇갈려도 남긴다. 어디로 갈지는 BE 게이트가 정한다
+      한 번이라도 항목이 나왔으면 항목을 남긴다. 같은 카드가 두 장 서지 않게 실행 하나의 것만 쓴다(항목이 많은
+      실행, 실패 없이 끝난 실행, 먼저 돈 실행 순). 실행마다 판단이 엇갈려도 남긴다. 어디로 갈지는 BE 게이트가 정한다
       어느 실행에서든 실패 없이 끝났으면 실패로 세지 않는다. 모든 실행이 실패했을 때만 실패로 남긴다
     finding 이 하나도 없는 실행(1단계가 응답을 이상하게 준 경우)은 아무것도 바꾸지 않는다. 얘기는 처음 나온 순서라, 실행이 하나면 받은 순서 그대로다.
     """
@@ -107,7 +107,7 @@ def merge_runs(runs: list[list[dict]]) -> tuple[list[dict], list[dict]]:
         clean = [r for r in by_run if not count(r, "failure")]
         with_items = [r for r in by_run if count(r, "item")]
         if with_items:
-            pick = min(with_items, key=lambda r: (count(r, "failure") > 0, -count(r, "item"), r))
+            pick = min(with_items, key=lambda r: (-count(r, "item"), count(r, "failure") > 0, r))
         elif not clean:
             pick = min(by_run, key=lambda r: (count(r, "failure"), r))
         else:
