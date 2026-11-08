@@ -194,10 +194,9 @@ export function taskTimeline(
           .map((line): TimelineChangeDto => {
             const entries = linkedEntries(line.change_id, state)
             const live = entries.filter(({ is_rolled_back }) => !is_rolled_back)
-            // PM 이 고쳐 승인했으면 이력의 값이 실제 값이다
-            const value =
-              entries.find(({ changed_field }) => changed_field === line.field)?.new_value ??
-              line.new_value
+            // PM 이 고쳐 승인했으면 이력의 값이 실제 값이다. 미정으로 고르면 이력의 null 이 그 값이다
+            const entry = entries.find(({ changed_field }) => changed_field === line.field)
+            const value = entry === undefined ? line.new_value : entry.new_value
             return {
               change_id: line.change_id,
               field: line.field,

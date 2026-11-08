@@ -34,14 +34,13 @@ function historyText(value: unknown): string | null {
   return typeof value === 'string' ? value : (JSON.stringify(value) ?? null)
 }
 
-/** 답장이 말한 담당자를 팀원에서 찾지 못한 담당자 변경 카드. PM 이 카드에서 담당자를 고른다 (#344, BE #460 합의 대기) */
-function picksAssignee(approval: ApprovalDto): boolean {
-  const payload = approval.payload
+/** 담당자 줄이 있는 답장 카드만 담당자를 받는다. 담당자를 찾은 카드도 받는다 (BE #460) */
+function takesAssignee(approval: ApprovalDto): boolean {
   return (
     approval.type === 'task_update' &&
-    payload.change_source === 'reminder_reply' &&
-    payload.category === 'assignee' &&
-    !Object.hasOwn(payload, 'assignee_member_id')
+    db.replies.changes.some(
+      ({ approval_id, field }) => approval_id === approval.approval_id && field === 'assignee',
+    )
   )
 }
 
@@ -58,7 +57,7 @@ function normalizeOverrides(
     type === 'task_create'
       ? ['task_title', 'assignee_member_id', 'due_date']
       : type === 'task_update'
-        ? ['status', 'due_date', ...(picksAssignee(approval) ? ['assignee_member_id'] : [])]
+        ? ['status', 'due_date', ...(takesAssignee(approval) ? ['assignee_member_id'] : [])]
         : []
   if (status !== 'approved' || Object.keys(value).some((field) => !allowed.includes(field)))
     return fail('INVALID_REQUEST', '이 요청에서 고칠 수 없는 필드입니다.', 400)
