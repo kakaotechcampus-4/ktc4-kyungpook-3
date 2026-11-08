@@ -36,7 +36,7 @@ def claim_messages(db: Session = Depends(get_db)) -> dict:
             "workspace_id": c.workspace_id,
             "member_id": c.member_id,
             "discord_user_id": c.discord_user_id,
-            "body": c.message.body,
+            "body": c.body,
             "scheduled_at": c.message.scheduled_at and svc.utc(c.message.scheduled_at),
         }
         for c in claimed

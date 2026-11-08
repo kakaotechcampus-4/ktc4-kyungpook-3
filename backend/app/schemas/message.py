@@ -72,6 +72,10 @@ class ReplyCreateRequest(BaseModel):
     _strip_body = field_validator("body")(_non_blank)
 
 
+class ThreadOpenRequest(BaseModel):
+    member_id: str
+
+
 class ReminderEvidence(BaseModel):
     kind: Literal["reply", "task_change"]
     at: datetime
@@ -127,6 +131,8 @@ class MessageResponse(BaseModel):
     dm_status: str | None
     dm_failure_reason: str | None
     scheduled_at: datetime | None
+    author_member_id: str | None
+    author_name: str | None
 
 
 class LastMessage(BaseModel):
@@ -134,6 +140,8 @@ class LastMessage(BaseModel):
     sender: str
     body: str
     created_at: datetime
+    author_member_id: str | None
+    author_name: str | None
 
 
 class ThreadSummary(BaseModel):

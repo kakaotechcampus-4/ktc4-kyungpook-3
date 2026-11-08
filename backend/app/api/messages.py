@@ -31,6 +31,7 @@ from app.schemas.message import (
     ReminderWithBundleResponse,
     ReplyCreateRequest,
     ThreadDetailResponse,
+    ThreadOpenRequest,
     ThreadReadResponse,
     ThreadSummary,
     UnreadCountResponse,
@@ -110,8 +111,8 @@ def _summary(db: Session, thread: MessageThread, unread_count: int) -> ThreadSum
     )
     if last_member_at is not None:
         awaiting = awaiting.where(ThreadMessage.created_at > last_member_at)
-    last_bot = db.scalar(
-        messages().where(ThreadMessage.sender == MessageSender.BOT).order_by(ThreadMessage.created_at.desc()).limit(1)
+    last_dm = db.scalar(
+        messages().where(ThreadMessage.dm_status.is_not(None)).order_by(ThreadMessage.created_at.desc()).limit(1)
     )
     awaiting_since = db.scalar(awaiting)
     return ThreadSummary(
@@ -120,10 +121,11 @@ def _summary(db: Session, thread: MessageThread, unread_count: int) -> ThreadSum
         name=thread.member.display_name,
         last_message=None if last is None else {
             "message_id": last.message_id, "sender": last.sender, "body": last.body,
-            "created_at": svc.utc(last.created_at),
+            "created_at": svc.utc(last.created_at), "author_member_id": last.author_member_id,
+            "author_name": last.author_name,
         },
         awaiting_reply_since=awaiting_since and svc.utc(awaiting_since),
-        dm_failed=last_bot is not None and last_bot.dm_status == DmStatus.FAILED,
+        dm_failed=last_dm is not None and last_dm.dm_status == DmStatus.FAILED,
         unread_count=unread_count,
     )
 
@@ -167,6 +169,25 @@ def get_inbox(
         "threads": [t.model_dump(mode="json") for t in with_message + without],
         "bundles": _scheduled_bundles(db, workspace_id) if is_pm else None,
     })
+
+
+@router.post("/threads", response_model=Envelope[ThreadSummary])
+def open_thread(
+    workspace_id: str,
+    payload: ThreadOpenRequest,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+) -> dict:
+    """팀원과의 대화를 연다. 있으면 그 대화를 돌려준다. PM 은 공간의 팀원 누구든, 팀원은 자기 대화만 연다."""
+    if member.role != MemberRole.PM and payload.member_id != member.member_id:
+        raise AppError(ErrorCode.FORBIDDEN, details={"member_id": payload.member_id})
+    target = db.get(Member, payload.member_id)
+    if target is None or target.workspace_id != workspace_id or target.is_deleted:
+        raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": payload.member_id})
+    thread = svc.get_or_create_thread(db, workspace_id, target.member_id)
+    db.commit()
+    unread = reads.unread_by_thread(db, member)
+    return success(_summary(db, thread, unread.get(thread.thread_id, 0)).model_dump(mode="json"))
 
 
 # /threads/{thread_id} 와 경로가 겹치지 않는 고정 경로.
@@ -330,11 +351,13 @@ def post_reply(
     member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
-    """대화 주인인 팀원의 웹 답장. PM 도 남의 대화에는 쓸 수 없다. 웹 답장은 디스코드로 보내지 않는다."""
+    """대화 주인의 웹 답장은 디스코드로 보내지 않는다. PM 이 남의 대화에 쓰면 바로 봇 DM 으로 나간다."""
     thread = _get_thread(db, workspace_id, thread_id)
-    if thread.member_id != member.member_id:
-        raise AppError(ErrorCode.FORBIDDEN, details={"thread_id": thread_id})
-    message = svc.add_web_reply(db, thread, body=payload.body, now=_now())
+    _check_thread_access(thread, member)
+    if thread.member_id == member.member_id:
+        message = svc.add_web_reply(db, thread, body=payload.body, now=_now())
+    else:
+        message = svc.add_pm_message(db, thread, author=member, body=payload.body, now=_now())
     db.commit()
     return success(MessageResponse.model_validate(message).model_dump(mode="json"))
 
