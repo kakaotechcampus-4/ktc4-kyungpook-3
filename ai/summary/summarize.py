@@ -100,8 +100,12 @@ def _decision(raw: dict, decision_keys: dict[str, str]) -> DecisionDraft | None:
                          _ids(raw.get("replaces"), decision_keys))
 
 
+# 짝 없는 서로게이트와 NUL 은 BE 가 저장하지 못해 PUT 이 통째로 떨어진다
+_UNSTORABLE = re.compile("[\x00\ud800-\udfff]")
+
+
 def _text(value: Any) -> str:
-    return value.strip() if isinstance(value, str) else ""
+    return _UNSTORABLE.sub("", value).strip() if isinstance(value, str) else ""
 
 
 def _texts(value: Any) -> list[str]:

@@ -1,4 +1,5 @@
 """요약 대기열. 표시된 회의만 시간순으로 돌고, 임대가 지나면 한 번 더 돌고, 먼저 끝난 쪽만 저장된다."""
+import json
 import threading
 from datetime import datetime, timedelta, timezone
 
@@ -265,11 +266,17 @@ def test_put_unknown_extraction_is_404(client, mdb, mseed):
     {**BODY, "overview": ""},
     {"model_name": "m", "overview": "핵심"},
     {**BODY, "topics": [{"item_ids": []}]},
+    # DB 에 쓸 수 없는 글자다. 막지 않으면 500 이 난다
+    {**BODY, "facts": ["\ud83d 깨진 이모지"]},
+    {**BODY, "topics": [{"name": "주제\u0000"}]},
+    {**BODY, "topics": [{"name": "주제", "decisions": [{"text": "결정\u0000"}]}]},
 ])
 def test_put_rejects_malformed_body(client, mdb, mseed, body):
     _, extraction = _meeting(mdb, mseed["ws"])
 
-    r = client.put(f"/api/v1/extractions/{extraction.extraction_id}/summary", json=body, headers=H)
+    # 짝 없는 서로게이트는 \ud83d 이스케이프로만 보낼 수 있어 직접 직렬화한다
+    r = client.put(f"/api/v1/extractions/{extraction.extraction_id}/summary", content=json.dumps(body),
+                   headers={**H, "Content-Type": "application/json"})
 
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "INVALID_REQUEST"

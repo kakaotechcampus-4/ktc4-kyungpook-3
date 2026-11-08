@@ -225,3 +225,11 @@ def test_relative_dates_resolve_from_the_meeting_date_not_the_processing_date(st
 def test_braces_in_a_transcript_do_not_break_the_prompt():
     lines = [SummaryLine(1, 0, "민수", "{key_points} 는 {그대로} 둔다")]
     assert "{key_points} 는 {그대로} 둔다" in build_prompt(_input(lines=lines), FULL)[0]
+
+
+def test_characters_the_db_cannot_store_are_dropped_before_the_put():
+    """짝 없는 서로게이트와 NUL 은 BE 가 받지 않는다. 그 시도의 비용이 통째로 사라지지 않게 여기서 지운다."""
+    draft = _parse(_raw(overview="요약\ud83d", facts=["사실\u0000"],
+                        topics=[{"key": "N1", "name": "주제\u0000", "decisions": [{"text": "결정\udc00"}]}]))
+    assert draft.overview == "요약" and draft.facts == ["사실"]
+    assert (draft.topics[0].name, draft.topics[0].decisions[0].text) == ("주제", "결정")

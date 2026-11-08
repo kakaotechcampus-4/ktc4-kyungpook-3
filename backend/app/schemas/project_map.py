@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -106,7 +106,19 @@ class ScheduleEntry(BaseModel):
     what: str
 
 
+def _has_unstorable(value: Any) -> bool:
+    if isinstance(value, str):
+        return any(ch == "\x00" or "\ud800" <= ch <= "\udfff" for ch in value)
+    if isinstance(value, dict):
+        return any(_has_unstorable(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_has_unstorable(v) for v in value)
+    return False
+
+
 class SummaryWriteRequest(BaseModel):
+    """LLM 이 만든 글이 들어오는 신뢰 경계다. DB 에 쓸 수 없는 글자(NUL, 짝 없는 서로게이트)는 500 대신 400 으로 막는다."""
+
     model_name: str
     truncated_input: bool = False
     overview: str = Field(min_length=1)
@@ -117,6 +129,13 @@ class SummaryWriteRequest(BaseModel):
     schedule: list[ScheduleEntry] = []
     open_items: list[str] = []
     topics: list[SummaryTopicIn] = []
+
+    @model_validator(mode="before")
+    @classmethod
+    def _storable_text(cls, data: Any) -> Any:
+        if _has_unstorable(data):
+            raise ValueError("NUL 이나 짝 없는 서로게이트 글자는 저장할 수 없습니다.")
+        return data
 
 
 class SummarySaveResponse(BaseModel):
