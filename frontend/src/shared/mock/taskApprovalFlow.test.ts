@@ -1,6 +1,8 @@
 import { fetchDto, jsonRequest } from '@/shared/test/api'
 import type { ApprovalDto } from '@/shared/types/api/approval'
 import type { ListDto } from '@/shared/types/api/envelope'
+import type { ExtractionDto } from '@/shared/types/api/extraction'
+import type { MemberAliasDto } from '@/shared/types/api/member'
 import type { TaskDto, TaskHistoryDto } from '@/shared/types/api/task'
 import type { MockTask } from './fixtures/task'
 import { db } from './db'
@@ -697,4 +699,134 @@ describe('PR307 partial edits and history', () => {
     expect(snapshot()).toEqual(before)
     expect(task('tk_01')).not.toHaveProperty('progress')
   })
+})
+
+describe('별칭 후보와 승인하며 등록 (#523, alias_learning)', () => {
+  const aliasesOf = async (text: string) =>
+    (await fetchDto<ListDto<MemberAliasDto>>('/members/aliases?workspace_id=ws_01')).items.filter(
+      ({ alias_text }) => alias_text === text,
+    )
+  const itemDto = async (id: string) =>
+    (await fetchDto<ExtractionDto>('/extractions/ex_01')).items.find(
+      ({ item_id }) => item_id === id,
+    )
+  const notCandidate = { alias_candidate: false, alias_text: null }
+
+  it('아직 누구의 별칭도 아닌 이름의 대기 중 생성 승인만 후보다', async () => {
+    expect(await fetchDto<ApprovalDto>('/approvals/ap_03')).toMatchObject({
+      alias_candidate: true,
+      alias_text: '지훈',
+    })
+    expect(await itemDto('it_06')).toMatchObject({ alias_candidate: true, alias_text: '지훈' })
+    // '민수' 는 이미 박민수의 별칭이다
+    expect(await fetchDto<ApprovalDto>('/approvals/ap_01')).toMatchObject(notCandidate)
+    expect(await itemDto('it_04')).toMatchObject(notCandidate)
+  })
+
+  it('그 공간의 누군가 같은 글자를 별칭으로 가지면 목록·상세·추출 모두 후보가 아니고 승인해도 더 달지 않는다', async () => {
+    await fetchDto('/members/mb_04/aliases', jsonRequest('POST', { alias_text: '지훈' }))
+    const pending = await fetchDto<ListDto<ApprovalDto>>('/approvals?workspace_id=ws_01')
+    expect(pending.items.find(({ approval_id }) => approval_id === 'ap_03')).toMatchObject(
+      notCandidate,
+    )
+    expect(await fetchDto<ApprovalDto>('/approvals/ap_03')).toMatchObject(notCandidate)
+    expect(await itemDto('it_06')).toMatchObject(notCandidate)
+
+    await resolve('ap_03', {
+      status: 'approved',
+      save_alias: true,
+      task_overrides: { assignee_member_id: 'mb_02' },
+    })
+    expect((await aliasesOf('지훈')).map(({ member_id }) => member_id)).toEqual(['mb_04'])
+  })
+
+  it('막던 별칭을 지우면 원문 이름이 다시 후보가 되고, 그 이름으로 배울 수 있다 (BE 는 원문·유형으로 응답마다 계산한다)', async () => {
+    const deleted = await fetch(`${location.origin}/api/v1/members/aliases/al_04`, {
+      method: 'DELETE',
+    })
+    expect(deleted.status).toBe(204)
+    const candidate = { alias_candidate: true, alias_text: '민수' }
+    expect(await fetchDto<ApprovalDto>('/approvals/ap_01')).toMatchObject(candidate)
+    expect(await itemDto('it_04')).toMatchObject(candidate)
+
+    await resolve('ap_01', {
+      status: 'approved',
+      save_alias: true,
+      task_overrides: { assignee_member_id: 'mb_03', due_date: '2026-09-30' },
+    })
+    expect((await aliasesOf('민수')).map(({ member_id, source }) => [member_id, source])).toEqual([
+      ['mb_03', 'learned'],
+    ])
+  })
+
+  it.each([
+    ['지훈이가', '지훈'],
+    [' 지훈 님 ', '지훈'],
+    ['제가', null],
+    ['우리들은', null],
+  ])('원문 %s 는 끝 조사·님을 떼어 %s 로 배운다 — 1인칭이면 후보가 아니다', async (raw, text) => {
+    const item = db.extractions
+      .flatMap(({ items }) => items)
+      .find(({ item_id }) => item_id === 'it_06')
+    if (item === undefined) throw new Error('it_06 픽스처가 없다')
+    item.assignee.raw = raw
+    expect(await fetchDto<ApprovalDto>('/approvals/ap_03')).toMatchObject({
+      alias_candidate: text !== null,
+      alias_text: text,
+    })
+  })
+
+  it('이름 지목이 아닌 항목이나 담당자를 이미 찾은 항목은 별칭을 지워도 후보가 아니다', async () => {
+    db.aliases = []
+    expect(await fetchDto<ApprovalDto>('/approvals/ap_02')).toMatchObject(notCandidate)
+    expect(await itemDto('it_05')).toMatchObject(notCandidate)
+  })
+
+  it('save_alias 로 승인하면 보완한 최종 담당자에게 배운 별칭을 달고, 처리된 승인은 더는 후보가 아니다', async () => {
+    const resolved = await resolve('ap_03', {
+      status: 'approved',
+      save_alias: true,
+      task_overrides: { assignee_member_id: 'mb_02' },
+    })
+    expect(resolved).toMatchObject({ status: 'approved', ...notCandidate })
+    expect(await aliasesOf('지훈')).toEqual([
+      expect.objectContaining({
+        member_id: 'mb_02',
+        workspace_id: 'ws_01',
+        source: 'learned',
+        verified: true,
+        confidence: 0.9,
+        alias_type: 'nickname',
+        created_at: MOCK_NOW,
+      }),
+    ])
+    expect(await itemDto('it_06')).toMatchObject(notCandidate)
+  })
+
+  it.each<[string, Record<string, unknown>]>([
+    [
+      'save_alias 없이 승인',
+      { status: 'approved', task_overrides: { assignee_member_id: 'mb_02' } },
+    ],
+    ['담당자를 미정으로 두고 승인', { status: 'approved', save_alias: true }],
+    ['반려', { status: 'rejected', save_alias: true }],
+  ])('%s 하면 별칭을 달지 않는다', async (_, body) => {
+    expect(await resolve('ap_03', body)).toMatchObject(notCandidate)
+    expect(await aliasesOf('지훈')).toEqual([])
+  })
+
+  it.each(['yes', 1, null])(
+    'save_alias 가 %s 이면 400 이고 아무것도 바꾸지 않는다',
+    async (value) => {
+      const before = structuredClone({ ...snapshot(), aliases: db.aliases })
+      await expect(
+        resolve('ap_03', {
+          status: 'approved',
+          save_alias: value,
+          task_overrides: { assignee_member_id: 'mb_02' },
+        }),
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
+      expect(structuredClone({ ...snapshot(), aliases: db.aliases })).toEqual(before)
+    },
+  )
 })

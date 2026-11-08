@@ -58,7 +58,10 @@ describe('팀 화면 — 팀원 초대', () => {
     expect(haneul.getByRole('button', { name: '다시 초대' })).toBeInTheDocument()
 
     const seoyeon = await row('김서연')
-    expect(seoyeon.queryByRole('button')).toBeNull()
+    // 별칭 단추(#523)만 남는다 — 초대 조작이 없다
+    expect(seoyeon.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      expect.stringMatching(/^별칭/),
+    ])
     expect(seoyeon.queryByText(/^(대기|수락|거절|취소|연결 끊김)$/)).toBeNull()
   })
 
