@@ -31,3 +31,5 @@ export {
   replyAttributionsQueryOptions,
   requestMessageAction,
 } from './api/messageQueries'
+export { connectMessageSignals } from './api/messageSignals'
+export type { MessageSyncCause } from './api/messageSignals'
