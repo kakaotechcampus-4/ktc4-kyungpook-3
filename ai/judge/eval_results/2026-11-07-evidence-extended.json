@@ -265,49 +265,94 @@
  },
  "by_category": {
   "A": {
-   "n": 180,
+   "negatives": 1,
    "false_certain": 0,
-   "missed_certain": 24
+   "false_certain_rate_upper95": 0.7934567085261071,
+   "positives": 59,
+   "missed_certain": 10,
+   "runs": 180,
+   "false_certain_runs": 0,
+   "missed_certain_runs": 24
   },
   "B": {
-   "n": 54,
+   "negatives": 0,
    "false_certain": 0,
-   "missed_certain": 3
+   "false_certain_rate_upper95": null,
+   "positives": 18,
+   "missed_certain": 1,
+   "runs": 54,
+   "false_certain_runs": 0,
+   "missed_certain_runs": 3
   },
   "C": {
-   "n": 120,
+   "negatives": 40,
    "false_certain": 0,
-   "missed_certain": 0
+   "false_certain_rate_upper95": 0.08762453925039232,
+   "positives": 0,
+   "missed_certain": 0,
+   "runs": 120,
+   "false_certain_runs": 0,
+   "missed_certain_runs": 0
   },
   "D": {
-   "n": 228,
+   "negatives": 30,
    "false_certain": 0,
-   "missed_certain": 7
+   "false_certain_rate_upper95": 0.11351709139047801,
+   "positives": 46,
+   "missed_certain": 3,
+   "runs": 228,
+   "false_certain_runs": 0,
+   "missed_certain_runs": 7
   },
   "E": {
-   "n": 96,
+   "negatives": 9,
    "false_certain": 0,
-   "missed_certain": 10
+   "false_certain_rate_upper95": 0.2991527535509594,
+   "positives": 23,
+   "missed_certain": 4,
+   "runs": 96,
+   "false_certain_runs": 0,
+   "missed_certain_runs": 10
   },
   "F": {
-   "n": 36,
-   "false_certain": 3,
-   "missed_certain": 0
+   "negatives": 12,
+   "false_certain": 1,
+   "false_certain_rate_upper95": 0.35388592179859524,
+   "positives": 0,
+   "missed_certain": 0,
+   "runs": 36,
+   "false_certain_runs": 3,
+   "missed_certain_runs": 0
   },
   "G": {
-   "n": 72,
-   "false_certain": 3,
-   "missed_certain": 7
+   "negatives": 7,
+   "false_certain": 1,
+   "false_certain_rate_upper95": 0.5131345033190299,
+   "positives": 17,
+   "missed_certain": 4,
+   "runs": 72,
+   "false_certain_runs": 3,
+   "missed_certain_runs": 7
   },
   "H": {
-   "n": 66,
+   "negatives": 7,
    "false_certain": 0,
-   "missed_certain": 7
+   "false_certain_rate_upper95": 0.35433884297520657,
+   "positives": 15,
+   "missed_certain": 3,
+   "runs": 66,
+   "false_certain_runs": 0,
+   "missed_certain_runs": 7
   },
   "기존": {
-   "n": 126,
+   "negatives": 21,
    "false_certain": 0,
-   "missed_certain": 3
+   "false_certain_rate_upper95": 0.15464382326420195,
+   "positives": 21,
+   "missed_certain": 1,
+   "runs": 126,
+   "false_certain_runs": 0,
+   "missed_certain_runs": 3
   }
  },
  "unstable": [

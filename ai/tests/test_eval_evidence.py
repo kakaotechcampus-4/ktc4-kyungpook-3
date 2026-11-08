@@ -127,11 +127,26 @@ def test_unstable_lists_cases_whose_verdict_flips_between_runs():
     assert [u["case"] for u in E.unstable(rows, 0.8)] == ["흔들림"]
 
 
-def test_by_category_splits_errors():
-    rows = [_row(False, 0.9, category="C"), _row(True, 0.1, category="D"), _row(True, 0.9, category="A")]
+def test_by_category_counts_sentences_not_runs():
+    # C: 부정 대사 2개(하나는 3회 중 1회 certain, 하나는 안전) + 정답 True 대사 1개는 부정 분모에 섞이면 안 된다
+    rows = [_row(False, 0.9 if i == 0 else 0.1, case="새는것", category="C", run=i) for i in range(3)]
+    rows += [_row(False, 0.1, case="안전", category="C", run=i) for i in range(3)]
+    rows += [_row(True, 0.1, case="놓침", category="C", run=i) for i in range(3)]
+    rows += [_row(True, 0.9, case="맞음", category="A")]
     cats = E.by_category(rows, 0.8)
-    assert cats["C"]["false_certain"] == 1 and cats["D"]["missed_certain"] == 1 and cats["A"] == {
-        "n": 1, "false_certain": 0, "missed_certain": 0}
+    c = cats["C"]
+    assert (c["negatives"], c["false_certain"], c["positives"], c["missed_certain"]) == (2, 1, 1, 1)
+    assert (c["runs"], c["false_certain_runs"], c["missed_certain_runs"]) == (9, 1, 3)
+    assert c["false_certain_rate_upper95"] == E.wilson_upper(1, 2)
+    assert cats["A"]["negatives"] == 0 and cats["A"]["false_certain_rate_upper95"] is None
+    assert cats["A"]["positives"] == 1 and cats["A"]["missed_certain"] == 0
+
+
+def test_by_category_keeps_task_and_due_sentences_apart():
+    # 같은 대사의 task·due 는 서로 다른 판정이라 따로 센다
+    rows = [_row(True, 0.9, field="task", case="x", category="D"), _row(False, 0.1, field="due", case="x", category="D")]
+    d = E.by_category(rows, 0.8)["D"]
+    assert (d["negatives"], d["positives"]) == (1, 1)
 
 
 # ── 실행 ──────────────────────────────────────────────────────────────────

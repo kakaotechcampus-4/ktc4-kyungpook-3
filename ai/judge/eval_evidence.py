@@ -119,14 +119,33 @@ def score_by_sentence(rows: list[dict], threshold: float) -> dict[str, dict]:
 
 
 def by_category(rows: list[dict], threshold: float) -> dict[str, dict]:
-    groups: dict[str, list[dict]] = defaultdict(list)
+    """유형별 결과. 오답률은 정답이 False 인 고유 대사(부정)만 분모로, 놓침은 정답 True 대사(긍정)로 센다.
+
+    대사는 (파일, 이름, field) 하나다. 반복 중 한 번이라도 틀리면 틀린 대사(score_by_sentence 와 같다).
+    `runs`·`*_runs` 는 반복을 푼 실행 단위 값이고 분모로 쓰지 않는다.
+    """
+    cats: dict[str, dict[tuple, list[dict]]] = defaultdict(lambda: defaultdict(list))
     for r in rows:
-        groups[r["category"]].append(r)
+        cats[r["category"]][(r["set"], r["case"], r["field"])].append(r)
+
+    def sure(r: dict) -> bool:
+        return r["p_yes"] is not None and r["p_yes"] >= threshold
+
     result = {}
-    for cat, rs in sorted(groups.items()):
-        fc = sum(1 for r in rs if not r["want"] and r["p_yes"] is not None and r["p_yes"] >= threshold)
-        missed = sum(1 for r in rs if r["want"] and (r["p_yes"] is None or r["p_yes"] < threshold))
-        result[cat] = {"n": len(rs), "false_certain": fc, "missed_certain": missed}
+    for cat, groups in sorted(cats.items()):
+        gs = list(groups.values())
+        neg = [g for g in gs if not g[0]["want"]]
+        pos = [g for g in gs if g[0]["want"]]
+        fc = sum(1 for g in neg if any(sure(r) for r in g))
+        flat = [r for g in gs for r in g]
+        result[cat] = {
+            "negatives": len(neg), "false_certain": fc,
+            "false_certain_rate_upper95": wilson_upper(fc, len(neg)),
+            "positives": len(pos), "missed_certain": sum(1 for g in pos if any(not sure(r) for r in g)),
+            "runs": len(flat),
+            "false_certain_runs": sum(1 for r in flat if not r["want"] and sure(r)),
+            "missed_certain_runs": sum(1 for r in flat if r["want"] and not sure(r)),
+        }
     return result
 
 
@@ -194,9 +213,10 @@ def report(s: dict) -> None:
     for t, by_field in s["sweep"].items():
         cells = "  ".join(f"{f} {m['false_certain']}/{m['missed_certain']}" for f, m in by_field.items())
         print(f"  {t:>5}: {cells}")
-    print("\n유형별 (잘못된 certain / 놓친 certain / 건수):")
+    print("\n유형별 대사 단위 (잘못된 certain/부정 대사 · 95% 상한 · 놓친 certain/긍정 대사):")
     for cat, m in s["by_category"].items():
-        print(f"  {cat}: {m['false_certain']} / {m['missed_certain']} / {m['n']}")
+        print(f"  {cat}: {m['false_certain']}/{m['negatives']} ({_pct(m['false_certain_rate_upper95'])}) · "
+              f"{m['missed_certain']}/{m['positives']}")
     print(f"\n반복 사이 판정이 바뀐 것 {len(s['unstable'])}건")
     for u in s["unstable"]:
         print(f"  [{u['field']}] {u['case']}: yes {u['p_yes']}")
