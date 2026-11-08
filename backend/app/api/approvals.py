@@ -28,6 +28,7 @@ from app.services.tasks import (
     apply_task_updates,
     create_task,
     log_manual_edit,
+    log_scope_change,
     parse_date,
     validate_task_fields,
 )
@@ -345,12 +346,14 @@ def _apply_approval(
         proposed = {k: v for k, v in updates.items() if k not in changed}
         if "due_date" in proposed:
             proposed["due_date"] = parse_date(proposed["due_date"], field="due_date")
+        source = payload.get("change_source") or _change_source(
+            db, payload.get("meeting_id"), ChangeSource.MEETING
+        )
         entries = apply_task_updates(
             db,
             task,
             proposed,
-            change_source=payload.get("change_source")
-            or _change_source(db, payload.get("meeting_id"), ChangeSource.MEETING),
+            change_source=source,
             changed_by=approval.resolved_by,
         )
         edited = dict(changed)
@@ -363,6 +366,18 @@ def _apply_approval(
             change_source=str(ChangeSource.MANUAL),
             changed_by=approval.resolved_by,
         )
+        if payload.get("category") == "scope":
+            doc_text = payload.get("doc_text")
+            text = doc_text.strip() if isinstance(doc_text, str) else ""
+            entries.append(
+                log_scope_change(
+                    db,
+                    task,
+                    new_value=text or None,
+                    change_source=source,
+                    changed_by=approval.resolved_by,
+                )
+            )
         if payload.get("change_source") == str(ChangeSource.REMINDER_REPLY):
             replies.link_history(db, approval.approval_id, entries)
 
