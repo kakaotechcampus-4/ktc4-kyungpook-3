@@ -9,7 +9,10 @@ import type {
  * 메시지 픽스처 (계약 §5.7 모양). 기준 시각은 MOCK_NOW(2026-09-18 금 09:00)다. 시각은 읽기 쉽게 +09:00 으로 두고
  * handler 가 응답할 때 서버처럼 UTC 로 바꾼다.
  * ws_01: 보낼 메시지 2통(이재환 bd_01 은 마감 하루 전, 정하늘 bd_02 는 직접 정한 시각이고 AI 초안을 기다린다).
- * 재촉 이유는 bd_01 이 태스크 변경(tk_01 의 이력), bd_02 는 진행 소식이 없고 '발표 자료' 는 PM(김서연)이 직접 만든 재촉이다.
+ * 리마인드의 task_id 가 태스크 픽스처에 있으면 응답의 제목·마감·이유는 그 태스크를 따른다(백엔드처럼 응답할 때 읽는다). bd_01 은 tk_04(배포 스크립트)이고,
+ * messages-default 시나리오가 tk_04 의 상태 변경 이력을 더해 재촉 이유의 근거가 태스크 변경이다.
+ * 나머지 리마인드의 tk_91~tk_95 는 태스크 픽스처에 없는 ID 라 여기 옮겨 둔 제목·마감 그대로다 — 같은 ID 가 다른 태스크를 가리키지 않게 한다.
+ * bd_02 는 진행 소식이 없고 '발표 자료' 는 PM(김서연)이 직접 만든 재촉이다.
  * 대화 4건 — 이재환은 3일째 답장이 없고, 박지훈에게 마지막으로 보낸 DM 은 서버 DM 이 막혀 가지 못했다 (계획 C-7 `messages-default`).
  * ws_02: 대화 1건 — 공간을 바꾸면 이전 공간의 메시지가 보이지 않는지 확인한다 (AC-05)
  */
@@ -119,12 +122,16 @@ export const messageBundleFixtures: MockBundle[] = [
     recipient_name: '이재환',
     scheduled_at: '2026-09-23T09:00:00+09:00',
     ...waiting,
-    body: '재환님, API 명세서 마감이 다음 주 목요일(9/24)이에요 🙂\n혹시 막히는 부분 있으면 알려주세요. 필요하면 마감을 옮겨도 괜찮아요!',
+    body: '재환님, 배포 스크립트 마감이 다음 주 목요일(9/24)이에요 🙂\n혹시 막히는 부분 있으면 알려주세요. 필요하면 마감을 옮겨도 괜찮아요!',
     body_source: 'ai',
     draft_status: 'done',
     draft_version: 2,
     reminders: [
-      reminder('rm_01', 'bd_01', { task_id: 'tk_01', title: 'API 명세서', due_date: '2026-09-24' }),
+      reminder('rm_01', 'bd_01', {
+        task_id: 'tk_04',
+        title: '배포 스크립트',
+        due_date: '2026-09-24',
+      }),
     ],
   },
   {
@@ -143,13 +150,13 @@ export const messageBundleFixtures: MockBundle[] = [
       reminder(
         'rm_02',
         'bd_02',
-        { task_id: 'tk_04', title: '퍼블리싱', due_date: null },
+        { task_id: 'tk_91', title: '퍼블리싱', due_date: null },
         '시안 2차 반영분까지',
       ),
       reminder(
         'rm_03',
         'bd_02',
-        { task_id: 'tk_06', title: '발표 자료', due_date: '2026-09-30' },
+        { task_id: 'tk_92', title: '발표 자료', due_date: '2026-09-30' },
         null,
         'mb_01',
       ),
@@ -172,7 +179,7 @@ export const schedulePassedBundle: MockBundle = {
   draft_version: 1,
   reminders: [
     reminder('rm_06', 'bd_06', {
-      task_id: 'tk_07',
+      task_id: 'tk_94',
       title: '배포 체크리스트',
       due_date: '2026-09-18',
     }),
@@ -196,7 +203,7 @@ export const mergeSourceBundle: MockBundle = {
   draft_status: 'done',
   draft_version: 1,
   reminders: [
-    reminder('rm_07', 'bd_07', { task_id: 'tk_11', title: 'ERD 정리', due_date: '2026-09-24' }),
+    reminder('rm_07', 'bd_07', { task_id: 'tk_95', title: 'ERD 정리', due_date: '2026-09-24' }),
   ],
 }
 
@@ -308,7 +315,7 @@ export const messagesMemberBundle: MockBundle = {
   draft_status: 'done',
   draft_version: 1,
   reminders: [
-    reminder('rm_05', 'bd_05', { task_id: 'tk_03', title: '기획서', due_date: '2026-09-24' }),
+    reminder('rm_05', 'bd_05', { task_id: 'tk_93', title: '기획서', due_date: '2026-09-24' }),
   ],
 }
 

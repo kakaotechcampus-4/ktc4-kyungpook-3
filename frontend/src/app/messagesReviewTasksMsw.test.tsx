@@ -4,6 +4,7 @@ import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { mergeSourceBundle } from '@/shared/mock/fixtures/message'
+import { applyScenario } from '@/shared/mock/scenarios'
 import { recordRequestBodies } from '@/shared/test/requests'
 import { conversation, current, detail, hold, reviewList, rowTexts } from './test/messageScreen'
 import { renderApp } from './test/renderApp'
@@ -106,7 +107,7 @@ describe('태스크 빼기', () => {
 
   it('마지막 태스크를 빼면 보내지 않음처럼 묶음이 닫히고 목록의 다음 메시지로 떠난다', async () => {
     const app = await openBundle('bd_01')
-    await userEvent.click(button("'API 명세서' 빼기"))
+    await userEvent.click(button("'배포 스크립트' 빼기"))
     const confirm = detail().getByRole('group', {
       name: '마지막 태스크예요. 빼면 이재환님에게 이 메시지를 보내지 않아요.',
     })
@@ -170,8 +171,7 @@ describe('메모 고치기', () => {
       await screen.findByText('메모를 고쳤어요. 문구를 다시 만들었으니 확인하고 승인해 주세요.'),
     ).toBeInTheDocument()
     await waitFor(() => expect(detail().queryByRole('textbox')).toBeNull())
-    // 목은 문구를 다시 만들 때 태스크의 지금 제목을 읽는다 — 픽스처의 tk_04 는 '배포 스크립트' 다
-    expect(button("'배포 스크립트' 메모 고치기")).toHaveFocus()
+    expect(button("'퍼블리싱' 메모 고치기")).toHaveFocus()
     expect(bodies).toEqual([{ note: '시안 3차까지' }])
     expect(await detail().findByText('메모: 시안 3차까지')).toBeVisible()
     expect(
@@ -211,18 +211,19 @@ describe('재촉 이유와 근거', () => {
   const rows = () => within(tasks()).getAllByRole('listitem')
 
   it('태스크 하나인 묶음은 이유 아래에 근거 링크를 둔다 — 태스크 변경이면 그 태스크 상세로 간다', async () => {
+    applyScenario('messages-default')
     const app = await openBundle('bd_01')
     const [row] = rows()
     expect(
       within(row).getByText(
-        "'API 명세서' 마감이 9/24(목)인데, 9/16(수) 이후로 진행 소식이 없어요.",
+        "'배포 스크립트' 마감이 9/24(목)인데, 9/17(목) 이후로 진행 소식이 없어요.",
       ),
     ).toBeVisible()
-    const link = within(row).getByRole('link', { name: "'API 명세서' 변경 보기" })
+    const link = within(row).getByRole('link', { name: "'배포 스크립트' 변경 보기" })
     expect(link).toHaveTextContent('변경 보기')
 
     await userEvent.click(link)
-    await app.expectPath(paths.tasks('ws_01', 'tk_01'))
+    await app.expectPath(paths.tasks('ws_01', 'tk_04'))
     expect(await screen.findByLabelText('태스크 정보')).toBeVisible()
   })
 
@@ -230,7 +231,7 @@ describe('재촉 이유와 근거', () => {
     await openBundle('bd_02')
     const [publishing, slides] = rows()
     expect(
-      within(publishing).getByText('9/16(수)에 태스크를 만든 뒤로 진행 소식이 없어요.'),
+      within(publishing).getByText('9/15(화)에 태스크를 만든 뒤로 진행 소식이 없어요.'),
     ).toBeVisible()
     expect(
       within(slides).getByText(

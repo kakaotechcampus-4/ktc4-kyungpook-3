@@ -34,7 +34,7 @@ const utcOrNull = (timestamp: string | null) => (timestamp === null ? null : utc
  * members 는 그 공간의 팀원이다
  */
 export interface ReasonContext {
-  tasks: readonly { task_id: string; created_at: string }[]
+  tasks: readonly { task_id: string; title: string; due_date: string | null; created_at: string }[]
   taskHistory: readonly Pick<
     TaskHistoryDto,
     'task_id' | 'changed_field' | 'change_source' | 'created_at'
@@ -93,21 +93,36 @@ function latestNews(
   return { kind: 'task_change', at: new Date(changedAt).toISOString(), message_id: null }
 }
 
+interface TaskNow {
+  title: string | null
+  due_date: string | null
+  created_at: string
+}
+
 /**
- * 재촉 이유와 근거 (백엔드 reminder_reason). 지운 태스크면 둘 다 null 이다.
- * 제목·마감은 같은 응답의 task_title·due_date 인 리마인드의 값이다 — 백엔드는 둘 다 지금 태스크에서 읽어 같다.
- * 픽스처에 없는 태스크는 리마인드를 만든 때를 태스크를 만든 때로 본다
+ * 리마인드의 지금 태스크. 백엔드는 응답할 때마다 태스크에서 제목·마감을 읽는다 — 태스크를 고치면 다음 조회부터 바뀐다.
+ * 픽스처에 없는 태스크는 리마인드에 옮겨 둔 제목·마감과, 리마인드를 만든 때를 태스크를 만든 때로 쓴다
  */
+function taskNow(reminder: MockReminder, context: ReasonContext): TaskNow {
+  const task = context.tasks.find(({ task_id }) => task_id === reminder.task_id)
+  return (
+    task ?? {
+      title: reminder.task_title,
+      due_date: reminder.due_date,
+      created_at: reminder.created_at,
+    }
+  )
+}
+
+/** 재촉 이유와 근거 (백엔드 reminder_reason). 지운 태스크면 둘 다 null 이다 */
 function reminderReason(
   reminder: MockReminder,
+  task: TaskNow,
   threadId: string,
   context: ReasonContext,
 ): Pick<ReminderDto, 'reason' | 'evidence'> {
-  if (reminder.task_id === null || reminder.task_title === null)
-    return { reason: null, evidence: null }
-  const createdAt =
-    context.tasks.find(({ task_id }) => task_id === reminder.task_id)?.created_at ??
-    reminder.created_at
+  if (reminder.task_id === null || task.title === null) return { reason: null, evidence: null }
+  const createdAt = task.created_at
   const evidence = latestNews(reminder.task_id, createdAt, threadId, context)
   const news =
     evidence === null
@@ -120,9 +135,9 @@ function reminderReason(
       evidence,
     }
   }
-  if (reminder.due_date !== null)
+  if (task.due_date !== null)
     return {
-      reason: `'${reminder.task_title}' 마감이 ${kstDay(reminder.due_date)}인데, ${news}`,
+      reason: `'${task.title}' 마감이 ${kstDay(task.due_date)}인데, ${news}`,
       evidence,
     }
   return { reason: news, evidence }
@@ -133,18 +148,19 @@ export function reminderDto(
   threadId: string,
   context: ReasonContext,
 ): ReminderDto {
+  const task = taskNow(reminder, context)
   return {
     reminder_id: reminder.reminder_id,
     bundle_id: reminder.bundle_id,
     task_id: reminder.task_id,
-    task_title: reminder.task_title,
-    due_date: reminder.due_date,
+    task_title: task.title,
+    due_date: task.due_date,
     note: reminder.note,
     status: reminder.status,
     kind: reminder.kind,
     origin: reminder.origin,
     created_at: utc(reminder.created_at),
-    ...reminderReason(reminder, threadId, context),
+    ...reminderReason(reminder, task, threadId, context),
   }
 }
 
@@ -163,11 +179,11 @@ function shownReminders(bundle: MockBundle): MockReminder[] {
   return same.filter(({ cancelled_at }) => cancelled_at !== null && time(cancelled_at) === closedAt)
 }
 
-/** 목록 한 줄 (백엔드 bundle_summary) */
-function bundleSummary(reminders: readonly MockReminder[]): string {
+/** 목록 한 줄 (백엔드 bundle_summary). 첫 태스크의 지금 제목이다 */
+function bundleSummary(reminders: readonly MockReminder[], context: ReasonContext): string {
   const [first] = reminders
   if (first === undefined) return ''
-  const title = first.task_title ?? DELETED_TASK_TITLE
+  const title = taskNow(first, context).title ?? DELETED_TASK_TITLE
   return reminders.length === 1
     ? `${title} 진행 상황 확인`
     : `${title} 외 ${String(reminders.length - 1)}건 진행 상황 확인`
@@ -189,7 +205,7 @@ export function bundleDto(bundle: MockBundle, context: ReasonContext): BundleDto
     draft_version: bundle.draft_version,
     scheduled_at: utc(bundle.scheduled_at),
     approved_at: utcOrNull(bundle.approved_at),
-    summary: bundleSummary(reminders),
+    summary: bundleSummary(reminders, context),
     reminders: reminders.map((reminder) => reminderDto(reminder, bundle.thread_id, context)),
   }
 }

@@ -214,23 +214,24 @@ describe('묶음 응답의 요약·재촉 이유·근거 — 백엔드 reminder_
     bundle.reminders.map(({ reminder_id, reason, evidence }) => ({ reminder_id, reason, evidence }))
 
   it('목록과 대화의 묶음마다 요약을, 태스크마다 이유와 마지막 진행 소식을 싣는다. PM 이 만든 재촉은 만든 PM 의 이름이다', async () => {
+    applyScenario('messages-default')
     const { bundles } = await inbox()
     expect(bundles?.map(({ summary }) => summary)).toEqual([
-      'API 명세서 진행 상황 확인',
+      '배포 스크립트 진행 상황 확인',
       '퍼블리싱 외 1건 진행 상황 확인',
     ])
     const expected = [
       [
         {
           reminder_id: 'rm_01',
-          reason: "'API 명세서' 마감이 9/24(목)인데, 9/16(수) 이후로 진행 소식이 없어요.",
-          evidence: { kind: 'task_change', at: '2026-09-16T06:00:00.000Z', message_id: null },
+          reason: "'배포 스크립트' 마감이 9/24(목)인데, 9/17(목) 이후로 진행 소식이 없어요.",
+          evidence: { kind: 'task_change', at: '2026-09-17T06:00:00.000Z', message_id: null },
         },
       ],
       [
         {
           reminder_id: 'rm_02',
-          reason: '9/16(수)에 태스크를 만든 뒤로 진행 소식이 없어요.',
+          reason: '9/15(화)에 태스크를 만든 뒤로 진행 소식이 없어요.',
           evidence: null,
         },
         {
@@ -255,6 +256,20 @@ describe('묶음 응답의 요약·재촉 이유·근거 — 백엔드 reminder_
         evidence: { kind: 'reply', at: '2026-09-15T00:31:00.000Z', message_id: 'mg_02' },
       },
     ])
+  })
+
+  it('태스크의 제목·마감을 고치면 다음 조회의 제목·마감·요약·이유가 지금 태스크를 따른다', async () => {
+    applyScenario('messages-default')
+    const task = db.tasks.find(({ task_id }) => task_id === 'tk_04')!
+    task.title = '배포 스크립트 정리'
+    task.due_date = '2026-11-14'
+    const bundle = (await inbox()).bundles?.find(({ bundle_id }) => bundle_id === 'bd_01')
+    expect(bundle?.summary).toBe('배포 스크립트 정리 진행 상황 확인')
+    expect(bundle?.reminders[0]).toMatchObject({
+      task_title: '배포 스크립트 정리',
+      due_date: '2026-11-14',
+      reason: "'배포 스크립트 정리' 마감이 11/14(토)인데, 9/17(목) 이후로 진행 소식이 없어요.",
+    })
   })
 
   it('재촉 만들기 응답은 리마인드와 묶음 모두 이유를 싣고, 만든 사람은 요청한 PM 이다', async () => {

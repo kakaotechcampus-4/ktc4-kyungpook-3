@@ -180,7 +180,7 @@ describe('editBundle — 같은 대화의 예정 묶음이 있는 시각으로 �
       draft_version: 3,
       body_source: 'rule',
       draft_status: 'needed',
-      body: `이재환님, 김서연이에요.\n'API 명세서' 마감이 9/24(목)이라 한번 여쭤봐요.\n${ASK}\n\n'ERD 정리' 마감이 9/24(목)이라 한번 여쭤봐요.\n${ASK}`,
+      body: `이재환님, 김서연이에요.\n'배포 스크립트' 마감이 9/24(목)이라 한번 여쭤봐요.\n${ASK}\n\n'ERD 정리' 마감이 9/24(목)이라 한번 여쭤봐요.\n${ASK}`,
     })
     expect(into.reminders.map(({ reminder_id, bundle_id }) => [reminder_id, bundle_id])).toEqual([
       ['rm_01', 'bd_01'],
@@ -192,7 +192,7 @@ describe('editBundle — 같은 대화의 예정 묶음이 있는 시각으로 �
     const { into, source } = pair()
     const tasks = [
       {
-        task_id: 'tk_11',
+        task_id: 'tk_95',
         title: 'ERD 최종본',
         due_date: '2026-09-25',
         created_at: '2026-09-14T00:00:00Z',
@@ -204,14 +204,14 @@ describe('editBundle — 같은 대화의 예정 묶음이 있는 시각으로 �
     })
     expect(into.body).toBe(
       `이재환님, 김서연이에요.
-'API 명세서' 마감이 9/24(목)이라 한번 여쭤봐요.
+'배포 스크립트' 마감이 9/24(목)이라 한번 여쭤봐요.
 ${ASK}
 
 'ERD 최종본' 마감이 9/25(금)이라 한번 여쭤봐요.
 ${ASK}`,
     )
     expect(bundleDto(into, context()).reminders.at(-1)).toMatchObject({
-      task_id: 'tk_11',
+      task_id: 'tk_95',
       task_title: 'ERD 최종본',
       due_date: '2026-09-25',
     })
@@ -225,7 +225,7 @@ ${ASK}`,
       'rm_07',
       'rm_01',
     ])
-    expect(into.body.indexOf("'ERD 정리'")).toBeLessThan(into.body.indexOf("'API 명세서'"))
+    expect(into.body.indexOf("'ERD 정리'")).toBeLessThan(into.body.indexOf("'배포 스크립트'"))
   })
 
   it('지금과 같은 시각은 옮긴 것이 아니라 아무것도 합치지 않는다', () => {
@@ -296,8 +296,8 @@ describe('rebuildBundle', () => {
 describe('재촉 이유·근거·요약 — 백엔드 reminder_reason', () => {
   // 한국 시간 9/15(화) 09:00
   const TASK = {
-    task_id: 'tk_01',
-    title: 'API 명세서',
+    task_id: 'tk_04',
+    title: '배포 스크립트',
     due_date: '2026-09-24',
     created_at: '2026-09-15T00:00:00Z',
   }
@@ -306,7 +306,7 @@ describe('재촉 이유·근거·요약 — 백엔드 reminder_reason', () => {
     messages,
   })
   const change = (patch: Partial<BundleContext['taskHistory'][number]> = {}) => ({
-    task_id: 'tk_01',
+    task_id: 'tk_04',
     changed_field: 'status',
     change_source: 'manual',
     created_at: '2026-09-16T03:00:00Z',
@@ -318,19 +318,20 @@ describe('재촉 이유·근거·요약 — 백엔드 reminder_reason', () => {
 
   it('진행 소식이 없으면 태스크를 만든 날을 쓰고, 마감이 있으면 마감을 앞에 둔다', () => {
     expect(first()).toMatchObject({
-      reason: "'API 명세서' 마감이 9/24(목)인데, 9/15(화)에 태스크를 만든 뒤로 진행 소식이 없어요.",
+      reason:
+        "'배포 스크립트' 마감이 9/24(목)인데, 9/15(화)에 태스크를 만든 뒤로 진행 소식이 없어요.",
       evidence: null,
     })
-    const noDue = bundle()
-    noDue.reminders[0].due_date = null
-    expect(first({}, noDue).reason).toBe('9/15(화)에 태스크를 만든 뒤로 진행 소식이 없어요.')
+    expect(first({ tasks: [{ ...TASK, due_date: null }] }).reason).toBe(
+      '9/15(화)에 태스크를 만든 뒤로 진행 소식이 없어요.',
+    )
   })
 
   it('묶음 대화의 팀원 답장과 그 태스크의 변경 중 늦은 것이 근거이고, 같은 시각이면 답장이다. 날짜는 한국 시간이다', () => {
     // UTC 로는 9/16 이지만 한국 시간으로는 9/17 01:00 이다
     const answered = thread([reply('mg_9', '하는 중이에요', '2026-09-16T16:00:00Z')])
     expect(first({ threads: [answered], taskHistory: [change()] })).toMatchObject({
-      reason: "'API 명세서' 마감이 9/24(목)인데, 9/17(목) 이후로 진행 소식이 없어요.",
+      reason: "'배포 스크립트' 마감이 9/24(목)인데, 9/17(목) 이후로 진행 소식이 없어요.",
       evidence: { kind: 'reply', at: '2026-09-16T16:00:00.000Z', message_id: 'mg_9' },
     })
     expect(
@@ -362,7 +363,8 @@ describe('재촉 이유·근거·요약 — 백엔드 reminder_reason', () => {
       ],
     })
     expect(notNews).toMatchObject({
-      reason: "'API 명세서' 마감이 9/24(목)인데, 9/15(화)에 태스크를 만든 뒤로 진행 소식이 없어요.",
+      reason:
+        "'배포 스크립트' 마감이 9/24(목)인데, 9/15(화)에 태스크를 만든 뒤로 진행 소식이 없어요.",
       evidence: null,
     })
     expect(
@@ -386,12 +388,12 @@ describe('재촉 이유·근거·요약 — 백엔드 reminder_reason', () => {
     const target = bundle()
     target.reminders[0].created_at = '2026-09-12T09:00:00+09:00'
     expect(first({ tasks: [] }, target).reason).toBe(
-      "'API 명세서' 마감이 9/24(목)인데, 9/12(토)에 태스크를 만든 뒤로 진행 소식이 없어요.",
+      "'배포 스크립트' 마감이 9/24(목)인데, 9/12(토)에 태스크를 만든 뒤로 진행 소식이 없어요.",
     )
   })
 
   it('요약은 첫 태스크와 나머지 건수다. 지운 태스크는 이유·근거가 null 이고 요약에서 지워진 태스크다', () => {
-    expect(bundleDto(bundle(), context()).summary).toBe('API 명세서 진행 상황 확인')
+    expect(bundleDto(bundle(), context()).summary).toBe('배포 스크립트 진행 상황 확인')
     expect(bundleDto(structuredClone(messageBundleFixtures[1]), context()).summary).toBe(
       '퍼블리싱 외 1건 진행 상황 확인',
     )
@@ -407,11 +409,10 @@ describe('재촉 이유·근거·요약 — 백엔드 reminder_reason', () => {
 
 const CREATED = '2026-09-10T00:00:00Z'
 const TASKS = [
-  { task_id: 'tk_01', title: 'API 명세서', due_date: '2026-09-24', created_at: CREATED },
+  { task_id: 'tk_01', title: '로그인 API 연동', due_date: '2026-09-20', created_at: CREATED },
   { task_id: 'tk_02', title: '회원가입 화면', due_date: '2026-09-16', created_at: CREATED },
   { task_id: 'tk_03', title: 'DB 스키마 정리', due_date: '2026-09-22', created_at: CREATED },
-  { task_id: 'tk_04', title: '퍼블리싱', due_date: null, created_at: CREATED },
-  { task_id: 'tk_06', title: '발표 자료', due_date: '2026-09-30', created_at: CREATED },
+  { task_id: 'tk_04', title: '배포 스크립트', due_date: '2026-09-24', created_at: CREATED },
 ]
 
 /** ws_01 하나. allBundles·allThreads 는 db 칸처럼 새 묶음·대화가 들어간다 */
@@ -529,7 +530,7 @@ describe('createReminder', () => {
       body_source: 'rule',
     })
     expect(bundleDto(bundle, space).reminders.map(({ task_id }) => task_id)).toEqual([
-      'tk_01',
+      'tk_04',
       'tk_03',
     ])
   })
@@ -540,7 +541,7 @@ describe('createReminder', () => {
     const result = accepted(
       createReminder(
         {
-          task_id: 'tk_01',
+          task_id: 'tk_04',
           member_id: 'mb_03',
           scheduled_at: '2026-09-23T09:00:00+09:00',
           note: '다른 메모',
