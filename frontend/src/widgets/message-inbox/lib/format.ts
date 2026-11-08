@@ -51,13 +51,6 @@ export function taskTitle(task: BundleTask): string {
   return task.title ?? DELETED_TASK
 }
 
-/** 보내기 전 확인 행의 한 줄 — `API 명세서`, 여럿이면 `퍼블리싱 외 1건` */
-export function bundleSummary(bundle: Bundle): string {
-  const [first, ...rest] = bundle.tasks
-  if (first === undefined) return ''
-  return rest.length === 0 ? taskTitle(first) : `${taskTitle(first)} 외 ${String(rest.length)}건`
-}
-
 /** 태스크 한 줄의 마감 — `09/24 마감`, 없으면 `마감 없음` */
 export function taskDueLabel(task: BundleTask): string {
   return task.dueDate === null ? '마감 없음' : `${dueLabel(task.dueDate)} 마감`
