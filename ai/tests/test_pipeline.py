@@ -1139,3 +1139,36 @@ def test_run_chat_items_are_not_checked(monkeypatch):
     monkeypatch.setattr(asr_check, "_kiwi", lambda: (_ for _ in ()).throw(AssertionError("분석기를 올리면 안 된다")))
     out = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요."], "배포 문서 정리", source="chat")
     assert "asr_suspects" not in out.items[0]
+
+
+def _asr_run_spoken(monkeypatch, spoken, task):
+    """[(화자, 발화)] 회의. 첫 발화가 근거다."""
+    meeting = Transcript(segments=[
+        TranscriptSegment(speaker=who, start=1.0 + 3 * i, end=3.0 + 3 * i, text=t, seq=i + 1)
+        for i, (who, t) in enumerate(spoken)])
+    _install(monkeypatch, stage1={"findings": [_stage1(0)]}, terra=[NEW],
+             luna_draft=[{"task": task, "due_date": None, "due_raw": None, "doc_text": task}], jev=[_jev(0.95)])
+    return run(meeting, workspace_id="ws_1", today=date(2026, 9, 28), candidates=ListCandidates([]))
+
+
+def test_run_misrecognition_repeated_by_one_speaker_is_still_flagged(monkeypatch):
+    # STT 는 한 사람의 같은 발음을 같은 꼴로 거듭 잘못 듣는다. 그 사람의 다른 발화에 나왔다고 팀 용어로 보면
+    # 오인식이 auto 로 샌다(#532 리뷰)
+    out = _asr_run_spoken(monkeypatch, [("uid_a", "애포문서 정리는 제가 맡을게요."),
+                                        ("uid_a", "애포 일정은 금요일이에요.")], "배포 문서 정리")
+    assert [s["word"] for s in out.items[0]["asr_suspects"]] == ["애포"]
+
+
+def test_run_unknown_word_said_by_two_speakers_counts_as_team_word(monkeypatch):
+    # 분석기가 모르는 말이라도 다른 두 사람이 쓰면 팀이 쓰는 말이다(다른 목소리를 같은 꼴로 잘못 듣기는 드물다)
+    out = _asr_run_spoken(monkeypatch, [("uid_a", "핀테크볼트 정산 정리는 제가 맡을게요."),
+                                        ("uid_b", "핀테크볼트 연동은 다음 주예요.")], "핀테크볼트 정산 정리")
+    assert out.items[0]["asr_suspects"] == []
+
+
+def test_run_dictionary_word_from_another_line_is_still_a_candidate(monkeypatch):
+    # 분석기가 아는 말은 화자 수와 상관없이 다른 발화에서 교정 후보로 쓴다
+    out = _asr_run_spoken(monkeypatch, [("uid_a", "기획소 정리는 제가 맡을게요."),
+                                        ("uid_a", "기획서 초안은 어제 올렸어요.")], "기획서 정리")
+    [s] = out.items[0]["asr_suspects"]
+    assert "기획서" in s["candidates"]

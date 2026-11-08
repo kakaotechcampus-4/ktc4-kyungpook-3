@@ -6,7 +6,8 @@ Jev 근거 검증은 근거 원문에 충실한지만 본다. 근거 문장 자�
 
 두 규칙으로 찾는다. 둘 다 코드만 쓰고 LLM 을 부르지 않는다.
 1. 모르는 명사: 형태소 분석기(kiwipiepy)가 사전에 없는 말을 형태 없는 미등록 형태소로 표시한다("애포", "테스뜨").
-   업무 용어 파일·기존 태스크 제목·팀원 이름·같은 회의의 다른 발화에 있으면 의심하지 않는다.
+   업무 용어 파일·기존 태스크 제목·팀원 이름·같은 회의의 다른 발화(두 사람 이상이 쓴 말, judge/pipeline.py)에 있으면
+   의심하지 않는다.
 2. 업무 용어와 한 끗 차이: 분석기가 아는 형태소로 잘못 쪼갠 경우("티자인" → 티자+이+ㄴ, "기획소" → 기획+소).
    토큰 경계에 맞는 구간이 업무 용어와 자모 하나 차이이고 그 자체로는 아는 낱말이 아니면 의심한다.
 의심 단어마다 발음이 가까운 업무 용어를 교정 후보로 최대 5개 붙인다(자모 편집 거리). 팀원 이름은 후보에 넣지 않는다
@@ -137,6 +138,13 @@ def _core(kiwi, word: str, vocab: "Vocabulary") -> str:
         if _knows(kiwi, word[:i], vocab) and len(word[i:]) >= 2:
             return word[i:]
     return word
+
+
+def is_dictionary_word(word: str) -> bool:
+    """분석기가 아는 형태소로만 이뤄진 말인가. "배포문서" 는 그렇고 "애포문서" 는 아니다."""
+    kiwi = _kiwi()
+    toks = kiwi.tokenize(word)
+    return bool(toks) and not any(_is_unknown(kiwi, t) for t in toks)
 
 
 def _is_unknown(kiwi, token) -> bool:

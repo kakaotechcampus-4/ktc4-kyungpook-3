@@ -257,7 +257,9 @@ def _member_words(candidates: Any, workspace_id: str) -> list[str]:
 def _annotate_asr(items: list[dict[str, Any]], transcript: Transcript, titles: set[str], members: list[str]) -> None:
     """새 항목마다 전사 오인식 의심 단어(asr_suspects)를 붙인다. 있으면 BE 가 auto 대신 review 로 보낸다.
 
-    근거 발화는 evidence_seqs 의 발화 전부다. 같은 회의의 다른 발화에 나온 말은 의심하지 않는다(팀이 쓰는 말).
+    근거 발화는 evidence_seqs 의 발화 전부다. 같은 회의의 다른 발화에 나온 말은 분석기가 아는 말이거나 두 사람 이상이
+    쓴 말이면 의심하지 않는다(팀이 쓰는 말). 한 사람만 쓴 모르는 말은 믿지 않는다 — STT 는 한 사람의 같은 발음을 같은
+    꼴로 거듭 잘못 듣는다(#532 리뷰).
     수정(update) 항목은 BE 가 항상 review 라 보지 않는다. 채팅은 전사를 거치지 않아 run 에서 부르지 않는다.
     """
     creates = [i for i in items if i["action"] == "create"]
@@ -265,6 +267,12 @@ def _annotate_asr(items: list[dict[str, Any]], transcript: Transcript, titles: s
         return
     try:
         seg_nouns = {seg.seq: asr_check._nouns(seg.text) for seg in transcript.segments}
+        speakers: dict[str, set[str]] = {}
+        for seg in transcript.segments:
+            who = seg.speaker or seg.speaker_member_id
+            for w in seg_nouns[seg.seq]:
+                speakers.setdefault(w, set()).update([who] if who else [])
+        team = {w for w, who in speakers.items() if len(who) >= 2 or asr_check.is_dictionary_word(w)}
         base = asr_check.Vocabulary.build(members=members, task_titles=titles)
     except Exception as e:  # noqa: BLE001 - 분석기를 올리지 못하면 모든 새 항목을 보수적으로 막는다
         for item in creates:
@@ -276,8 +284,8 @@ def _annotate_asr(items: list[dict[str, Any]], transcript: Transcript, titles: s
         vocab = asr_check.Vocabulary(set(base.known), set(base.candidates))
         for seq, nouns in seg_nouns.items():
             if seq not in own:
-                vocab.known |= nouns
-                vocab.candidates |= nouns
+                vocab.known |= nouns & team
+                vocab.candidates |= nouns & team
         lines = [seg.text for seg in transcript.segments if seg.seq in own] or [item.get("evidence_quote") or ""]
         item["asr_suspects"] = asr_check.check_item(lines, item.get("task_title"), vocab)
 
