@@ -26,11 +26,15 @@ import os
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+import numpy as np
+
+from stt.backend import SttError
 
 KST = ZoneInfo("Asia/Seoul")
 USD_PER_HOUR = 0.647      # GPU 서버 가동 단가(g 계열 한 대, 결정 0039)
@@ -506,3 +510,269 @@ def route_of(s: FailoverState, now: float) -> Route:
     if holds and s.hold_until is not None and now < s.hold_until:
         return Route.HOLD
     return Route.ELICE
+
+
+# ─────────────────────────────────────────────────────────────── 파일
+STATE_FILE = "gpu-failover.json"
+REQUEST_FILE = "gpu-request"
+REQUESTS = ("on", "off")
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+
+
+def request(state_dir: Path, verb: str) -> Path:
+    """사람의 켜기·끄기. 떠 있는 워커의 다음 tick 이 읽고 지운다. 나중 요청이 앞 요청을 덮는다."""
+    if verb not in REQUESTS:
+        raise ValueError(f"모르는 요청: {verb}")
+    path = Path(state_dir) / REQUEST_FILE
+    _atomic_write(path, verb)
+    return path
+
+
+def read_state_file(state_dir: Path) -> dict | None:
+    try:
+        return json.loads((Path(state_dir) / STATE_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _dump(s: FailoverState, mode: Mode, now: float) -> str:
+    d = asdict(s)
+    d.pop("mark")
+    d["phase"] = s.phase.value
+    d["mode"] = mode.value
+    d["saved_at"] = now
+    return json.dumps(d, ensure_ascii=False, indent=1)
+
+
+def _load(state_dir: Path, now: float) -> FailoverState:
+    """다시 뜬 워커가 이어 간다. 표본 누계는 프로세스와 함께 사라지므로 mark 는 0 부터다. ON_GPU 는 단계 시작을
+    지금으로 두어 다시 뜨자마자 일 없음으로 끄지 않는다. 깨진 파일은 NORMAL 이고 켜진 서버는 StopAt 이 끈다."""
+    fresh = FailoverState(phase=Phase.NORMAL, since=now, day=kst_day(now))
+    path = Path(state_dir) / STATE_FILE
+    if not path.exists():
+        return fresh
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+        d.pop("mode", None)
+        d.pop("saved_at", None)
+        d["phase"] = Phase(d["phase"])
+        d["server"] = ServerView(**d["server"]) if d.get("server") else None
+        d["session"] = tuple(d["session"]) if d.get("session") else None
+        s = FailoverState(**d)
+    except (OSError, ValueError, TypeError, KeyError) as e:
+        print(f"[failover] 상태 파일을 읽지 못해 NORMAL 로 시작한다: {type(e).__name__}", flush=True)
+        return fresh
+    return replace(s, since=now) if s.phase is Phase.ON_GPU else s
+
+
+def status_text(state_dir: Path, now: float | None = None, limits: Limits = LIMITS) -> str:
+    """--gpu status 와 디스코드 /gpu status 의 답. 상태 파일만 읽는다."""
+    now = time.time() if now is None else now
+    d = read_state_file(state_dir)
+    if d is None:
+        return "GPU 전환 상태가 없습니다. 워커가 MM_GPU_FAILOVER 를 켜고 돈 적이 없습니다."
+    s = _load(state_dir, now)
+    lines = [f"GPU 전환: {d.get('mode')}, 단계 {s.phase.value} ({int((now - float(d.get('since') or now)) // 60)}분째"
+             f"{', 이유 ' + s.why if s.why else ''})"]
+    v = s.server
+    if v is not None:
+        lines.append(f"서버: {v.state}" + (f", 종료 예정 {kst_clock(v.stop_at)} KST" if v.live else ""))
+    ons = s.day_ons if s.day == kst_day(now) else 0
+    used = today_used_s(s, now) if s.day == kst_day(now) else 0.0
+    total = (f", 누적 {v.used_min / 60:.1f}/{v.cap_min / 60:.0f}시간 {cost_text(v.used_min)}" if v is not None else "")
+    lines.append(f"오늘 켠 횟수 {ons}/{limits.day_ons}, 오늘 {used / 3600:.1f}/{limits.day_on_s / 3600:.0f}시간{total}")
+    if s.paused_until and now < s.paused_until:
+        lines.append(f"자동 켜기 멈춤: {datetime.fromtimestamp(s.paused_until, KST):%m-%d %H:%M} KST 까지")
+    if s.hold_until and now < s.hold_until and s.phase in (Phase.SUSPECT, Phase.STARTING, Phase.STOPPING):
+        lines.append(f"전사 기다림: {kst_clock(s.hold_until)} 까지")
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────── 감싸개
+PROBE_WAV = Path(__file__).with_name("probe.wav")
+_OUTAGE = ("service", "auth")
+
+
+def _probe_audio() -> tuple[np.ndarray, int]:
+    import soundfile as sf
+
+    samples, sr = sf.read(str(PROBE_WAV), dtype="float32")
+    return samples, sr
+
+
+class FailoverStt:
+    """SttBackend 모양. 호출마다 route_of 로 길을 고른다. name·accepts_prompt 는 Elice 와 같게 둬 회의록과
+    batch.json 의 모델 이름이 그대로다. takes_context 는 두지 않는다. 두면 이름 없는 회의에도 batch 가 context= 로 부른다.
+
+    표본(Signals)은 전사 스레드들이 락 안에서 더하고, 상태는 tick 만 바꾼다. 상태가 바뀌면 notify_all 로 기다리는
+    호출을 깨운다. 기다림은 wait_poll_s 마다 주입된 시계로 다시 본다.
+    """
+
+    name = "elice/whisper-large-v3"
+    accepts_prompt = True
+    gives_word_times = False
+    language = "ko"
+
+    def __init__(self, elice, gpu, *, switch, mode: Mode, state_dir: Path, notify: Callable[[Notice], None],
+                 on_gpu: Callable[[float], None] | None = None, limits: Limits = LIMITS,
+                 clock: Callable[[], float] = time.time, probe: tuple[np.ndarray, int] | None = None,
+                 wait_poll_s: float = 1.0) -> None:
+        self._elice, self._gpu, self._switch = elice, gpu, switch
+        self.mode = mode
+        self.state_dir = Path(state_dir)
+        self._notify, self._on_gpu = notify, on_gpu
+        self._limits = limits
+        self._clock = clock
+        self._probe = probe
+        self._wait_poll_s = wait_poll_s
+        self._cond = threading.Condition()
+        self._tick_lock = threading.Lock()
+        self._sig = Signals()
+        self.state = _load(self.state_dir, clock())
+
+    @property
+    def phase(self) -> Phase:
+        return self.state.phase
+
+    def stt_factory(self) -> tuple["FailoverStt", str, int]:
+        from stt.batch import default_workers
+        return self, "elice", default_workers("elice")
+
+    def signals(self) -> Signals:
+        with self._cond:
+            return self._sig
+
+    def _add(self, **kw) -> None:
+        with self._cond:
+            self._sig = replace(self._sig, **kw)
+
+    # 전사 스레드 ───────────────────────────────────────────────
+    def transcribe(self, samples: np.ndarray, sample_rate: int, prompt: str | None = None):
+        route = self._wait_route()
+        if route is Route.GPU:
+            return self._gpu_call(samples, sample_rate)
+        return self._elice_call(samples, sample_rate, prompt)
+
+    def _wait_route(self) -> Route:
+        with self._cond:
+            route = route_of(self.state, self._clock())
+            if route is not Route.HOLD:
+                return route
+            self._sig = replace(self._sig, waiting=self._sig.waiting + 1)
+            try:
+                while route is Route.HOLD:
+                    self._cond.wait(self._wait_poll_s)
+                    route = route_of(self.state, self._clock())
+                return route
+            finally:
+                self._sig = replace(self._sig, waiting=self._sig.waiting - 1)
+
+    def _gpu_call(self, samples, sample_rate):
+        with self._cond:
+            self._sig = replace(self._sig, gpu_inflight=self._sig.gpu_inflight + 1, last_gpu_call=self._clock())
+        ok = False
+        try:
+            # 이름·문맥 프롬프트를 싣지 않는다. GPU 서버에서 프롬프트가 구간을 비웠다(2026-11-07 재현, 무프롬프트 CER 은 Elice 와 같다)
+            r = self._gpu.transcribe(samples, sample_rate)
+            ok = True
+            return r
+        except SttError as e:
+            if e.cause not in _OUTAGE:
+                ok = None
+            raise
+        finally:
+            with self._cond:
+                sig = self._sig
+                streak = {True: 0, False: sig.gpu_streak + 1, None: sig.gpu_streak}[ok]
+                self._sig = replace(sig, gpu_inflight=sig.gpu_inflight - 1, last_gpu_call=self._clock(),
+                                    gpu_streak=streak)
+
+    def _elice_call(self, samples, sample_rate, prompt):
+        try:
+            r = self._elice.transcribe(samples, sample_rate, prompt=prompt)
+        except SttError as e:
+            if e.cause in _OUTAGE:
+                with self._cond:
+                    sig = self._sig
+                    self._sig = replace(sig, elice_fails=sig.elice_fails + 1, elice_streak=sig.elice_streak + 1,
+                                        streak_since=sig.streak_since or self._clock(),
+                                        auth=sig.auth or e.cause == "auth")
+            raise
+        with self._cond:
+            self._sig = replace(self._sig, elice_oks=self._sig.elice_oks + 1, elice_streak=0, streak_since=None,
+                                auth=False)
+        return r
+
+    # 컨트롤러 ─────────────────────────────────────────────────
+    def tick(self) -> None:
+        """컨트롤러 한 번. 요청 파일 → plan → I/O → step → 저장 → 깨우기 → 알림. 예외는 로그만 남긴다.
+        컨트롤러가 죽어도 전사는 지금 길로 계속 간다."""
+        with self._tick_lock:
+            try:
+                self._tick()
+            except Exception as e:  # noqa: BLE001 - tick 이 깨져도 워커와 전사는 계속 돈다
+                print(f"[failover] tick 실패: {type(e).__name__}: {e}", flush=True)
+
+    def _tick(self) -> None:
+        L = self._limits
+        s = self.state
+        req_path = self.state_dir / REQUEST_FILE
+        req = None
+        try:
+            req = req_path.read_text(encoding="utf-8").strip() or None
+        except OSError:
+            pass
+        if req == "on" and s.phase is Phase.STOPPING:
+            req = None                  # 끄는 중의 켜기는 파일에 두고 꺼진 뒤의 단계가 읽는다
+        elif req is not None and req not in REQUESTS:
+            req_path.unlink(missing_ok=True)
+            req = None
+        ios = plan(s, self.signals(), self._clock(), L)
+        server, switch_error = None, False
+        action = "off" if Io.SWITCH_OFF in ios else "on" if Io.SWITCH_ON in ios else None
+        if action:
+            from stt.gpu_switch import SwitchError
+            try:
+                server = self._switch.call(action)
+            except SwitchError as e:
+                switch_error = True
+                print(f"[failover] 스위치 {action} 실패: {e}", flush=True)
+        gpu_ok = self._check(self._gpu) if Io.CHECK_GPU in ios else None
+        elice_ok = self._check(self._elice) if Io.CHECK_ELICE in ios else None
+        now = self._clock()
+        new, notices = step(s, Facts(now=now, mode=self.mode, signals=self.signals(), request=req, server=server,
+                                     switch_error=switch_error, gpu_ok=gpu_ok, elice_ok=elice_ok), L)
+        if new != s:
+            _atomic_write(self.state_dir / STATE_FILE, _dump(new, self.mode, now))
+        if req is not None:
+            req_path.unlink(missing_ok=True)
+        with self._cond:
+            self.state = new
+            self._cond.notify_all()
+        if new.phase is not s.phase:
+            print(f"[failover] {s.phase.value} → {new.phase.value} ({new.why})", flush=True)
+        for n in notices:
+            print(f"[failover] {n.text}", flush=True)
+            try:
+                self._notify(n)
+            except Exception as e:  # noqa: BLE001 - 알림이 실패해도 전환은 간다
+                print(f"[failover] 알림 실패: {type(e).__name__}: {e}", flush=True)
+        if new.phase is Phase.ON_GPU and s.phase is not Phase.ON_GPU and self._on_gpu is not None:
+            self._on_gpu(new.outage_since or now)
+
+    def _check(self, backend) -> bool:
+        """확인 호출. 고정 합성음을 프롬프트 없이 보내 글자가 돌아와야 성공이다. 표본에는 넣지 않는다."""
+        if self._probe is None:
+            self._probe = _probe_audio()
+        samples, sr = self._probe
+        try:
+            return bool(backend.transcribe(samples, sr).text.strip())
+        except Exception as e:  # noqa: BLE001 - 어떤 실패든 확인 실패다
+            print(f"[failover] 확인 실패({getattr(backend, 'name', '?')}): {type(e).__name__}: {e}", flush=True)
+            return False
