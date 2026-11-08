@@ -1745,7 +1745,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 서버는 같은 글 두 번 제출을 막지 않는다. 화면이 전송 중 버튼을 막고 mutation 재시도를 끈 것에 기댄다. 나간 DM 은 지울 수 없다.
 - PM 글은 시계, 재촉 제안, 답장 판단 후보를 바꾸지 않는다. 팀원 글은 지금처럼 응답으로 친다.
 - 알림은 표의 `message_received` 다. PM 글은 대화 주인에게, 팀원 글(웹·디스코드)은 쓴 사람을 뺀 PM 전원에게 간다. `text` 는 `{이름}: {미리보기}` 다. 미리보기는 첫 줄 60자다. 글 하나에 알림 하나다. 판단 행이 생기지 않은 글은 바로 알리고, 판단을 타는 글은 결과가 `reply_judged` 면 그것만, 바꿀 것이 없으면 그때 `message_received` 를, 판단 실패·시간 초과면 `reply_unjudged` 만 낸다. 대화·방향마다 5분 구간에 한 번이라 이어 쓴 글은 첫 글의 미리보기만 보인다.
-- 실시간 신호는 없다. 화면은 기존 조회와 알림 목록 polling 으로 새 글을 받는다.
+- ~~실시간 신호는 없다. 화면은 기존 조회와 알림 목록 polling 으로 새 글을 받는다.~~ #520 에서 아래 **대화 신호 웹소켓** 이 생겼고 #558 에서 화면에 이었다. 알림 목록 polling 은 그대로다.
 
 **프론트엔드 연결** (#519·#525, 2026-11-09). 위 BE 동작에 화면을 이었다. 화면 규칙은 #519·#525 의 FE 안(2026-11-08)이고 사용자가 같은 날 확정했다(#525 마지막 댓글). 아래는 코드와 MSW 기준 테스트·브라우저로 확인한 사실이다. 실제 서버(배포 BE)에 붙인 확인은 하지 않았다.
 
@@ -1767,7 +1767,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 실패 안내: PM 이 남의 대화에 쓴 글을 보내지 못하면 입력칸 위 제목은 `메시지를 보내지 못했어요` 다. 팀원·PM 자기 대화는 행동 표([actionMessages.ts](../../src/features/message-action/lib/actionMessages.ts))의 `답장을 보내지 못했어요` 를 그대로 쓴다.
 - MSW: PM 글을 저장하면 BE `notify_new_message` 처럼 대화 주인에게 `message_received` 를 만든다. 본문은 `{작성자}: {첫 줄 60자}`, 링크는 그 대화이고, 같은 대화·5분 구간에는 하나만 만든다. 팀원 글의 알림은 BE 가 답장 판단을 거쳐 내므로 MSW 는 만들지 않는다.
 
-**대화 신호 웹소켓** (#520 에서 BE 구현, 프론트엔드 미연결, 합의 여부 확인 필요). 대화에 새 줄이 생겼음을 열린 화면에 바로 알린다. 소켓은 신호만 보내고 본문은 보내지 않는다. 화면은 신호를 받으면 기존 조회를 다시 부르므로 권한 검사는 조회 한 곳에 있다. 30초 polling 은 그대로 돈다.
+**대화 신호 웹소켓** (#520 에서 BE 구현, #558 에서 프론트엔드 연결, 합의 여부 확인 필요). 대화에 새 줄이 생겼음을 열린 화면에 바로 알린다. 소켓은 신호만 보내고 본문은 보내지 않는다. 화면은 신호를 받으면 기존 조회를 다시 부르므로 권한 검사는 조회 한 곳에 있다. 30초 polling 은 그대로 돈다.
 
 - 경로: `GET /api/v1/workspaces/{workspace_id}/messages/ws` 업그레이드. 인증은 로그인과 같은 `session_token` 쿠키다. 소켓용 토큰이나 쿼리 값은 없다.
 - 서버가 보내는 프레임은 하나다. `{"type":"thread_updated","thread_id":"..."}`. 클라이언트가 보낸 프레임은 읽고 버린다.
@@ -1788,6 +1788,15 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 로컬 Vite: 지금의 `/api` 규칙은 `ws` 가 없고 `changeOrigin: true` 라 `Host` 가 바뀌어 위 검사에 걸린다. 이 경로만 `ws: true, changeOrigin: false` 인 규칙을 따로 둬야 한다.
 - 연결표가 프로세스 메모리에 있어 BE `--workers 1` 에서만 모든 소켓에 닿는다.
 - 검증: `backend/tests/api/test_message_socket.py`(sqlite·PostgreSQL)와 로컬 uvicorn(`--workers 1`, PostgreSQL, websockets 17.4) 실제 연결로 확인했다. 실제 POST 뒤 PM·대화 주인 소켓에 프레임이 201 응답보다 먼저 나갔고, 잘못된 세션 4401, 비소속 4403, 다른 `Origin`·`Origin` 없음·다른 포트는 HTTP 403 이었다. 열린 소켓 30개가 있어도 POST 는 201 이었다. 클라이언트 프로세스를 강제 종료하면 0.03초 안에 연결이 빠졌고, 응답 없이 멈춘 클라이언트는 uvicorn 기본 ping(20초 간격, 20초 대기)으로 30.6초 뒤 1011 로 닫혔다. 서버 SIGTERM 은 소켓이 열린 채 0.12초에 끝났고 클라이언트는 1012 를 받았다. Caddy 를 거친 운영 연결, 브라우저, Vite 프록시는 확인하지 않았다.
+
+**프론트엔드 연결** (#558, 2026-11-09). 아래는 코드와 MSW 기준 테스트·브라우저, 가짜 백엔드에 붙인 Vite 프록시 확인으로 본 사실이다. 실제 BE(로컬·배포)에 붙인 확인은 하지 않았다.
+
+- 메시지 화면(`MessageInbox`)이 떠 있는 동안 소켓 하나를 연다([messageSignals.ts](../../src/entities/message/api/messageSignals.ts), [useMessageSignals.ts](../../src/widgets/message-inbox/model/useMessageSignals.ts)). 주소는 REST 와 같은 API 기준 주소에 `/workspaces/{workspace_id}/messages/ws` 를 붙이고, 경로뿐이면 `window.location` 의 출처를 쓴다. `https:` 면 `wss:` 다. 라우터의 `useLocation()` 은 쓰지 않는다. 화면은 소켓으로 아무것도 보내지 않는다.
+- 열릴 때마다(처음과 다시 붙을 때) 그 공간의 메시지 조회(`messageKeys(workspaceId)`)를 한 번 다시 부른다. 처음 열릴 때 이미 받는 중인 조회는 끊지 않고 그 결과를 쓴다. `thread_updated` 를 받으면 받는 중인 조회를 끊고 다시 부른다. JSON 이 아니거나 모양이 다른 프레임은 버린다.
+- 닫힘 코드는 한 표로 정한다. 4401·4403 은 다시 붙지 않는다. 그 밖의 코드(1000·1011·1012·1013, 네트워크 끊김 1006, 핸드셰이크 HTTP 403)는 1·2·4·8·16·30초, 그 뒤 30초마다 다시 붙고, 열리면 간격이 처음으로 돌아간다. 끊김은 화면에 보이지 않고 polling 은 그대로다.
+- 화면을 떠나거나 공간을 바꾸면 닫고 다시 붙지 않는다. 연결을 연 세션이 끝나면(로그아웃·계정 전환) 화면이 떠 있어도 바로 닫는다. 그 뒤 이전 소켓의 이벤트는 캐시에 닿지 않는다.
+- 로컬 Vite: [vite.config.ts](../../vite.config.ts) 에 `'^/api/v1/workspaces/[^/]+/messages/ws$': { ws: true, changeOrigin: false }` 규칙을 `/api` 보다 앞에 두었다. 가짜 백엔드로 확인했을 때 업그레이드(101)가 그대로 넘어갔고, 백엔드가 받은 `Host` 와 `Origin` 이 둘 다 개발 서버 주소였다. 같은 때 일반 `/api` 요청은 지금처럼 `Host` 가 백엔드 주소로 바뀌었다. `API_PROXY_TARGET` 을 배포 서버로 두면 `Host` 가 맞지 않아 소켓은 계속 다시 붙기만 하고 polling 으로 동작한다.
+- MSW: `ws.link` 로 같은 경로를 흉내 낸다([messageSocket.ts](../../src/shared/mock/handlers/messageSocket.ts)). 세션이 없으면 4401, 공간 소속이 아니면 4403 으로 닫는다. 답장 쓰기 경로가 글을 저장하면 그 대화의 주인과 PM 전원(쓴 사람 포함)의 소켓에 `thread_updated` 를 보낸다.
 
 **스케줄러** (#318 에서 BE 구현). 결정 근거는 [결정 0038](../../../ai/docs/basis_for_decision/ai/2026-11-04-0038-reminder-scheduler-and-notifications.md). 시각 기준은 한국 시간이다.
 
