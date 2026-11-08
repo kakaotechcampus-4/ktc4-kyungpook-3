@@ -120,3 +120,44 @@ def test_broken_manifest_and_bad_entries_do_not_raise(tmp_path):
                                                   "speakers": [{"user_id": "1"}, "x"]})
     _meeting(rec, "g_1", status=R.STATUS_HANDED_OFF, stages=HANDED)
     assert R.prune_audio(rec, now=NOW) == ["g_1"]
+
+
+def _stalled(rec, session, *, at, **extra):
+    """인계도 포기도 못 하고 멈춘 디스코드 회의. 저장 시각(recorded_at)이 at 이다."""
+    return _meeting(rec, session, status=R.STATUS_SAVED, recorded_at=R._iso(at), **extra)
+
+
+def test_stalled_meeting_keeps_tracks_six_days_and_drops_them_after_eight(tmp_path):
+    rec = tmp_path / "recordings"
+    saved = R.AUDIO_PRUNE_SINCE + timedelta(days=1)
+    _stalled(rec, "g_1", at=saved, workspace_wait=R._iso(saved + timedelta(days=7)))   # 연결 확인은 진행이 아니다
+    assert R.prune_audio(rec, now=saved + timedelta(days=6)) == []
+    assert R.prune_audio(rec, now=saved + timedelta(days=8)) == ["g_1"]
+    assert _wavs(rec, "g_1") == []
+    assert (rec / "g_1" / "transcript.md").exists()
+
+
+def test_stalled_meeting_counts_from_its_latest_progress(tmp_path):
+    """마지막 진행은 저장 시각·단계 시각·다음 재시도 시각 가운데 가장 늦은 것이다."""
+    rec = tmp_path / "recordings"
+    saved = R.AUDIO_PRUNE_SINCE + timedelta(days=1)
+    _stalled(rec, "g_stage", at=saved, stages={"transcribed": R._iso(saved + timedelta(days=3))})
+    _stalled(rec, "g_retry", at=saved, recovery={"attempts": 2, "next_at": R._iso(saved + timedelta(days=3))})
+    assert R.prune_audio(rec, now=saved + timedelta(days=8)) == []
+    assert R.prune_audio(rec, now=saved + timedelta(days=11)) == ["g_retry", "g_stage"]
+
+
+def test_stalled_meeting_before_the_policy_keeps_its_tracks(tmp_path):
+    rec = tmp_path / "recordings"
+    _stalled(rec, "g_old", at=R.AUDIO_PRUNE_SINCE - timedelta(seconds=1))
+    _meeting(rec, "g_no_time", status=R.STATUS_SAVED)
+    assert R.prune_audio(rec, now=R.AUDIO_PRUNE_SINCE + timedelta(days=30)) == []
+
+
+def test_stalled_rule_skips_uploads_and_recordings(tmp_path):
+    """업로드는 #439 정리와 BE 만료가 맡고, 녹음 중인 회의는 지우지 않는다."""
+    rec = tmp_path / "recordings"
+    saved = R.AUDIO_PRUNE_SINCE + timedelta(days=1)
+    _stalled(rec, "upload_m1", at=saved, source="upload")
+    _meeting(rec, "g_rec", status=R.STATUS_RECORDING, recorded_at=R._iso(saved))
+    assert R.prune_audio(rec, now=saved + timedelta(days=30)) == []
