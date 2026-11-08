@@ -9,7 +9,7 @@ import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { recordRequestBodies } from '@/shared/test/requests'
-import { current, detail, list, reviewList, rowTexts } from './test/messageScreen'
+import { current, detail, list, rowTexts } from './test/messageScreen'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -91,7 +91,8 @@ describe('메시지 화면의 새 재촉', () => {
     expect(
       await detail().findByRole('heading', { level: 2, name: '이 메시지, 보낼까요?' }),
     ).toBeVisible()
-    expect(rowTexts(reviewList())).toHaveLength(3)
+    // 목록 칸은 상세와 따로 기다린다(#508 최소 표시) — 목록이 그려진 뒤 행을 센다
+    expect(rowTexts(await list().findByRole('region', { name: /^보내기 전 확인/ }))).toHaveLength(3)
     expect(current()[0]).toHaveTextContent('이재환')
     expect(bodies).toEqual([
       {
@@ -127,7 +128,9 @@ describe('메시지 화면의 새 재촉', () => {
     ).toBeInTheDocument()
     await app.expectSearch('?review=bd_01')
     expect(await detail().findByText('묶은 태스크 2')).toBeVisible()
-    expect(rowTexts(reviewList())).toHaveLength(2)
+    // 목록 칸은 상세와 따로 기다린다 — 목록이 오래 걸려 뼈대를 보였으면 상세가 먼저 그려지고 목록은 최소 표시(#508)가 끝난 뒤 온다
+    const review = await list().findByRole('region', { name: /^보내기 전 확인/ })
+    expect(rowTexts(review)).toHaveLength(2)
   })
 
   it('팀원을 바꾸면 태스크를 비우고, 맡은 진행 중인 태스크가 없으면 그렇게 알린다', async () => {
@@ -357,6 +360,17 @@ describe('태스크 상세의 재촉', () => {
         note: null,
       },
     ])
+  })
+
+  it('Discord 가 연결된 담당자에게는 미연결 안내 없이 마감 기준 시각을 골라 두고 바로 만들 수 있다', async () => {
+    const section = await openTask('tk_01', '로그인 API 연동')
+    await userEvent.click(section.getByRole('button', { name: '재촉 만들기' }))
+    expect(form().getByText('김서연')).toBeVisible()
+    expect(
+      await form().findByRole('radio', { name: '마감 하루 전09/19 09:00', checked: true }),
+    ).toBeInTheDocument()
+    expect(form().queryByText(/Discord가 연결되지 않아/)).toBeNull()
+    expect(submit()).not.toHaveAttribute('aria-disabled')
   })
 
   it('취소하면 폼을 접고 재촉 만들기로 포커스가 돌아간다', async () => {

@@ -2,7 +2,9 @@ import { http } from 'msw'
 import { db, loginLimitKey, type MockLoginLimit } from '../db'
 import { fail, ok } from '../envelope'
 import { requireAuth } from '../auth-guard'
-import { workspaceCountOf } from '../sessions'
+import { accountWithEmail, workspaceCountOf } from '../sessions'
+import { readJson } from '../utils'
+import { readSignupProof } from './signupCode'
 
 const base = '/api/v1/auth'
 
@@ -47,13 +49,8 @@ const authResponse = () => ({
 
 export const authHandlers = [
   http.post(`${base}/signup`, async ({ request }) => {
-    const body = (await request.json()) as { email?: unknown; password?: unknown; name?: unknown }
-    // BE 는 본문 검증(pydantic)이 중복 이메일 확인보다 먼저다
-    if (
-      typeof body.email !== 'string' ||
-      typeof body.password !== 'string' ||
-      typeof body.name !== 'string'
-    )
+    const body = (await readJson(request)) ?? {}
+    if (typeof body.password !== 'string' || typeof body.name !== 'string')
       return fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400)
     const name = checkedName(body.name)
     if (name === null)
@@ -65,12 +62,19 @@ export const authHandlers = [
           },
         ],
       })
-    if (db.accounts.some((account) => account.session.user.email === body.email))
+    const kakao = body.link_kakao === true ? db.kakao.pending : null
+    if (body.link_kakao === true && kakao === null)
+      return fail('KAKAO_LINK_EXPIRED', '카카오 로그인 정보가 만료됐습니다.', 400)
+    const email = kakao?.email ?? readSignupProof(body.verification_token)
+    if (email === null) return fail('SIGNUP_VERIFICATION_INVALID', '이메일 인증이 필요합니다.', 400)
+    if (accountWithEmail(email))
       return fail('EMAIL_ALREADY_EXISTS', '이미 가입된 이메일입니다.', 409)
+    if (kakao !== null && db.accounts.some(({ kakaoId }) => kakaoId === kakao.kakaoId))
+      return fail('KAKAO_ALREADY_LINKED', '이미 다른 계정에 연결된 카카오 계정입니다.', 409)
     db.session = {
       user: {
         user_id: `us_${String(db.accounts.length + 1).padStart(2, '0')}`,
-        email: body.email,
+        email,
         name,
         avatar_url: null,
       },
@@ -82,8 +86,10 @@ export const authHandlers = [
       password: body.password,
       workspaceIds: [],
       memberIds: {},
+      ...(kakao === null ? {} : { kakaoId: kakao.kakaoId }),
     })
     db.authenticated = true
+    db.kakao.pending = null
     return ok(authResponse(), { status: 201 })
   }),
   http.post(`${base}/login`, async ({ request }) => {
@@ -108,7 +114,7 @@ export const authHandlers = [
         { 'Retry-After': String(seconds) },
       )
     }
-    const account = db.accounts.find(({ session }) => session.user.email === email)
+    const account = accountWithEmail(email)
     if (!account || body.password !== account.password) {
       // BE _bump 처럼 센 뒤에 본다. 10번째 실패는 401 이고 그다음 시도부터 막힌다
       const failures = (limit?.failures ?? 0) + 1
@@ -130,6 +136,11 @@ export const authHandlers = [
     db.authenticated = false
     return ok({})
   }),
+  http.get(`${base}/kakao/pending`, () =>
+    db.kakao.pending === null
+      ? fail('KAKAO_LINK_EXPIRED', '카카오 로그인 정보가 만료됐습니다.', 400)
+      : ok({ email: db.kakao.pending.email, nickname: db.kakao.pending.nickname }),
+  ),
   http.get(`${base}/me`, () =>
     db.authenticated ? ok(authResponse()) : fail('UNAUTHENTICATED', '로그인이 필요합니다.', 401),
   ),

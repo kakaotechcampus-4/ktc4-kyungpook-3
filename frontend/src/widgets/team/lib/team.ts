@@ -1,4 +1,4 @@
-import type { DiscordUser, Member } from '@/entities/member'
+import type { DiscordUser, Member, MemberAlias } from '@/entities/member'
 import { linkDiscordUsers } from '@/entities/member'
 import { isDueSoon, isOverdue } from '@/entities/task'
 import type { Task } from '@/entities/task'
@@ -43,6 +43,17 @@ export function tasksByMember(tasks: readonly Task[]): Map<string, Task[]> {
   }
   for (const list of grouped.values())
     list.sort((a, b) => Number(a.status === 'done') - Number(b.status === 'done') || byDue(a, b))
+  return grouped
+}
+
+/** 공간의 별칭을 팀원별로 나눈다. 팀원별 조회가 없다. 받은 순서(최근에 만든 것부터)를 지킨다 */
+export function aliasesByMember(aliases: readonly MemberAlias[]): Map<string, MemberAlias[]> {
+  const grouped = new Map<string, MemberAlias[]>()
+  for (const alias of aliases) {
+    const list = grouped.get(alias.memberId)
+    if (list === undefined) grouped.set(alias.memberId, [alias])
+    else list.push(alias)
+  }
   return grouped
 }
 

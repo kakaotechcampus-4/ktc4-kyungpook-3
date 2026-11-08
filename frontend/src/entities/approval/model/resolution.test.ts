@@ -1,5 +1,10 @@
 import { toApprovalResolveRequestDto } from './mapper'
-import { planApprovalResolution, taskCreateValues, validateTaskCreateFields } from './resolution'
+import {
+  aliasToLearn,
+  planApprovalResolution,
+  taskCreateValues,
+  validateTaskCreateFields,
+} from './resolution'
 import type { ApprovalResolveContext, TaskCreateFields } from './resolution'
 import type { Approval, TaskCreateApproval, TaskUpdateApproval } from './types'
 
@@ -30,6 +35,7 @@ function createApproval(overrides: Partial<TaskCreateApproval> = {}): TaskCreate
     meetingId: 'mt_09',
     extractionItemId: 'ei_04',
     gate: 'review',
+    aliasCandidate: null,
     ...overrides,
   }
 }
@@ -46,6 +52,7 @@ function updateApproval(overrides: Partial<TaskUpdateApproval> = {}): TaskUpdate
     evidence: { quote: null, speaker: null, speakerMemberId: null, atMs: null },
     meetingId: null,
     replyMessageId: null,
+    assigneePick: null,
     ...overrides,
   }
 }
@@ -205,6 +212,43 @@ describe('생성 승인과 부분 보완', () => {
   })
 })
 
+describe('담당자를 찾지 못한 답장 카드 (#344)', () => {
+  const pickCard = () =>
+    updateApproval({
+      changes: [],
+      category: 'assignee',
+      replyMessageId: 'mg_31',
+      assigneePick: { raw: '민지' },
+    })
+  const pick = (assigneeMemberId: string | null) => ({
+    memberIds: MEMBERS,
+    edits: { kind: 'task_update' as const, values: { assigneeMemberId } },
+  })
+
+  it('담당자를 고르기 전에는 승인할 수 없고 반려는 된다', () => {
+    expect(planApprovalResolution(pickCard(), 'approved', { memberIds: MEMBERS })).toMatchObject({
+      ok: false,
+      reason: '담당자를 골라 주세요.',
+    })
+    expect(body(pickCard(), 'rejected', {})).toEqual({ status: 'rejected' })
+  })
+
+  it('고른 팀원이나 미정(null)을 task_overrides.assignee_member_id 로 보낸다', () => {
+    expect(body(pickCard(), 'approved', pick('mb_02'))).toEqual({
+      status: 'approved',
+      task_overrides: { assignee_member_id: 'mb_02' },
+    })
+    expect(body(pickCard(), 'approved', pick(null))).toEqual({
+      status: 'approved',
+      task_overrides: { assignee_member_id: null },
+    })
+  })
+
+  it('팀원이 아닌 값은 보내지 않는다', () => {
+    expect(body(pickCard(), 'approved', pick('mb_99'))).toBeNull()
+  })
+})
+
 describe('변경 승인과 confirm_task_version', () => {
   it('서버 버전을 주지 않으면 싣지 않는다', () => {
     expect(body(updateApproval(), 'approved', {})).toEqual({ status: 'approved' })
@@ -230,6 +274,65 @@ describe('변경 승인과 confirm_task_version', () => {
     expect(
       body(createApproval(), 'approved', { memberIds: MEMBERS, confirmTaskVersion: 4 }),
     ).toEqual({ status: 'approved' })
+  })
+})
+
+describe('별칭 등록 (save_alias, #523)', () => {
+  const candidate = createApproval({ assigneeMemberId: null, aliasCandidate: '지훈' })
+  const chosen = { kind: 'task_create', values: { assigneeMemberId: 'mb_02' } } as const
+
+  it('후보에 담당자를 골라 등록을 켜고 승인하면 save_alias 를 보낸다', () => {
+    expect(
+      body(candidate, 'approved', { memberIds: MEMBERS, edits: { ...chosen, saveAlias: true } }),
+    ).toEqual({
+      status: 'approved',
+      save_alias: true,
+      task_overrides: { assignee_member_id: 'mb_02' },
+    })
+  })
+
+  it('담당자가 처음부터 있는 후보도 등록을 켜면 보낸다', () => {
+    expect(
+      body(createApproval({ aliasCandidate: '지훈' }), 'approved', {
+        memberIds: MEMBERS,
+        edits: { kind: 'task_create', values: {}, saveAlias: true },
+      }),
+    ).toEqual({ status: 'approved', save_alias: true })
+  })
+
+  it.each([
+    ['등록을 끔', candidate, { ...chosen, saveAlias: false }],
+    ['등록을 고르지 않음', candidate, chosen],
+    [
+      '담당자가 미정',
+      candidate,
+      { kind: 'task_create', values: { assigneeMemberId: null }, saveAlias: true },
+    ],
+    ['후보가 아님', createApproval({ assigneeMemberId: null }), { ...chosen, saveAlias: true }],
+  ] as const)('%s 이면 save_alias 를 싣지 않는다', (_, approval, edits) => {
+    const sent = body(approval, 'approved', { memberIds: MEMBERS, edits })
+    expect(sent).toMatchObject({ status: 'approved' })
+    expect(sent).not.toHaveProperty('save_alias')
+  })
+
+  it('반려에는 싣지 않는다', () => {
+    expect(
+      body(candidate, 'rejected', { memberIds: MEMBERS, edits: { ...chosen, saveAlias: true } }),
+    ).toEqual({ status: 'rejected' })
+  })
+
+  it('변경 승인은 등록을 실을 수 없다', () => {
+    const sent = body(updateApproval(), 'approved', {
+      edits: { kind: 'task_update', values: {} },
+    })
+    expect(sent).toEqual({ status: 'approved' })
+  })
+
+  it('등록할 별칭은 담당자가 있을 때만 있다', () => {
+    const fields = { taskTitle: '배포 문서 보완', dueDate: null }
+    expect(aliasToLearn(candidate, { ...fields, assigneeMemberId: 'mb_01' })).toBe('지훈')
+    expect(aliasToLearn(candidate, { ...fields, assigneeMemberId: null })).toBeNull()
+    expect(aliasToLearn(createApproval(), { ...fields, assigneeMemberId: 'mb_01' })).toBeNull()
   })
 })
 

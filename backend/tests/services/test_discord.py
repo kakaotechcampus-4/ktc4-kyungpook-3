@@ -7,6 +7,7 @@ import pytest
 from app.services import discord
 from app.services.discord import (
     DiscordApiError,
+    get_guild_member,
     list_guild_members,
     list_text_channels,
     post_channel_message,
@@ -251,3 +252,51 @@ def test_network_error_hides_token_and_url(call):
 
     assert "bot-token" not in str(info.value)
     assert "discord.com" not in str(info.value)
+
+
+# ---------- 서버 사용자 한 명(#459) ----------
+
+
+def test_get_guild_member_asks_for_one_user_with_the_bot_token():
+    seen: list[httpx.Request] = []
+    body = {"nick": "동우", "user": {"id": "u1"}}
+
+    result = get_guild_member("bot-token", "g/1", "u 1", transport=_transport(httpx.Response(200, json=body), seen))
+
+    assert result == body
+    assert seen[0].method == "GET"
+    assert seen[0].url.raw_path.decode() == "/api/v10/guilds/g%2F1/members/u%201"
+    assert seen[0].headers["Authorization"] == "Bot bot-token"
+
+
+def test_get_guild_member_uses_a_short_timeout():
+    seen: list[httpx.Request] = []
+
+    get_guild_member("bot-token", "g1", "u1", transport=_transport(httpx.Response(200, json={}), seen))
+
+    assert seen[0].extensions["timeout"]["read"] == 3.0
+
+
+def test_get_guild_member_404_is_a_discord_api_error():
+    response = httpx.Response(404, json={"message": "Unknown Member", "code": 10007})
+
+    with pytest.raises(DiscordApiError) as info:
+        get_guild_member("bot-token", "g1", "u1", transport=_transport(response))
+
+    assert info.value.status_code == 404
+
+
+def test_get_guild_member_network_error_hides_token_and_url():
+    error = httpx.ReadTimeout("https://discord.com/api/v10/... bot-token")
+
+    with pytest.raises(DiscordApiError) as info:
+        get_guild_member("bot-token", "g1", "u1", transport=_transport(error))
+
+    assert info.value.reason == "요청 실패: ReadTimeout"
+
+
+def test_get_guild_member_rejects_non_dict():
+    with pytest.raises(DiscordApiError) as info:
+        get_guild_member("bot-token", "g1", "u1", transport=_transport(httpx.Response(200, json=[])))
+
+    assert info.value.status_code == 200

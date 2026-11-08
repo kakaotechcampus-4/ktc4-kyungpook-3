@@ -37,7 +37,7 @@ const SCREENS: {
     role: 'button',
     scenario: 'signed-out',
     path: '/signup',
-    landmark: '계정 만들기',
+    landmark: '인증 코드 받기',
   },
   {
     name: '워크스페이스 선택',

@@ -181,6 +181,10 @@ describe('캘린더·간트의 표시 기간 (AC-A-05)', () => {
     expect(screen.getByRole('region', { name: '마감일 없음' })).toHaveTextContent(
       '회의록 요약 검수',
     )
+
+    await user.click(screen.getByRole('button', { name: '이전 달' }))
+    expect(await screen.findByRole('table', { name: '2026년 9월' })).toBeVisible()
+    expect(screen.queryByText('이 달에는 마감인 일이 없어요.')).toBeNull()
   })
 
   it('간트 — 일정이 없는 3주로 옮기면 표와 함께 그렇다고 알린다', async () => {

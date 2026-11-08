@@ -16,18 +16,7 @@ import { NotificationSection } from './NotificationSection'
 import { SettingsNav } from './SettingsNav'
 import type { SettingsSectionId } from './settingsSections'
 import { SettingsSection } from './SettingsSection'
-
-/* Settings 캔버스 — main 패딩 48/48/72, 안쪽 1000px 에 목차 176px 과 본문(간격 44), 절 사이 40px */
-const MAIN =
-  'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72 max-md:px-20 max-md:pt-12 max-md:pb-32'
-/* 폭 768 미만은 목차 위 · 절 아래 한 열이다(D-180). 목차는 따라 내려오지 않는다 — 붙어 있으면 절을 가린다 */
-const COLUMNS = 'flex w-full max-w-column items-start gap-44 max-md:flex-col max-md:items-stretch'
-const ASIDE =
-  'sticky top-[34px] flex w-[176px] shrink-0 flex-col gap-16 max-md:static max-md:w-full'
-/* 제목은 들어올 때 포커스를 받는 자리다(tabIndex -1). 절 제목과 같이 포커스 표시는 없다 */
-const TITLE =
-  'px-10 text-[22px] leading-[1.4] font-bold tracking-h1 text-ink focus-visible:outline-none'
-const CONTENT = 'flex min-w-[0px] flex-1 flex-col gap-40'
+import { ASIDE, COLUMNS, CONNECTIONS_LEAD, CONTENT, MAIN, TITLE } from './settingsStyles'
 
 /**
  * 설정 화면 (Settings 캔버스). 목차 · 일반 · 연결 · 자동 반영 기준 · 알림 · 이 팀 삭제하기.
@@ -90,11 +79,7 @@ function SettingsScreen({ workspaceId, initialName, isPm }: SettingsScreenProps)
           <SettingsSection id="settings-general" title="일반">
             <WorkspaceNameField initialName={initialName} canManage={isPm} />
           </SettingsSection>
-          <SettingsSection
-            id="settings-connections"
-            title="연결"
-            description="연결을 끊으면 이미 반영한 내용은 그대로 남고, 새 내용만 쓰지 않게 됩니다."
-          >
+          <SettingsSection id="settings-connections" title="연결" description={CONNECTIONS_LEAD}>
             <DiscordConnectionSection workspaceId={workspaceId} canManage={isPm} />
             <NotionConnectionSection workspaceId={workspaceId} canManage={isPm} />
           </SettingsSection>

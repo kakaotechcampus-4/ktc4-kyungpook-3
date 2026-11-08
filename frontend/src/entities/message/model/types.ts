@@ -28,7 +28,11 @@ export interface MemberMessage {
 
 export type Message = BotMessage | MemberMessage
 
-/** 묶음 안의 태스크 하나. 태스크가 지워졌으면 제목·마감이 null 이다 */
+/** 재촉 이유의 근거 — 그 태스크의 마지막 진행 소식. 답장이면 그 메시지가, 태스크 변경이면 그 태스크가 근거다 */
+export type ReminderEvidence =
+  { kind: 'reply'; at: string; messageId: string } | { kind: 'taskChange'; at: string }
+
+/** 묶음 안의 태스크 하나. 태스크가 지워졌으면 제목·마감·이유·근거가 null 이다 */
 export interface BundleTask {
   reminderId: string
   taskId: string | null
@@ -36,6 +40,10 @@ export interface BundleTask {
   /** `YYYY-MM-DD` */
   dueDate: string | null
   note: string | null
+  /** 왜 재촉하는지 한 문장. 서버가 만든다 */
+  reason: string | null
+  /** 진행 소식이 한 번도 없었으면 null 이다 */
+  evidence: ReminderEvidence | null
 }
 
 export type BodySource = 'pm' | 'ai' | 'rule'
@@ -59,6 +67,8 @@ export type Bundle = BundleStage & {
   drafting: boolean
   /** 승인할 때 그대로 돌려보내는 문구의 판 */
   draftVersion: number
+  /** 목록 한 줄 — `API 명세서 진행 상황 확인` */
+  summary: string
   tasks: BundleTask[]
 }
 

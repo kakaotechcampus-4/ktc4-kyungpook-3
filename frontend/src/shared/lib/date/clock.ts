@@ -1,6 +1,6 @@
 let read: () => number = () => Date.now()
 
-/** 지금 시각(ms). 브라우저 MSW(개발 서버·Storybook)에서는 목과 같은 고정 시각이다 */
+/** 지금 시각(ms). 브라우저 MSW(개발 서버·E2E)에서는 목과 같은 고정 시각이다 */
 export function now(): number {
   return read()
 }

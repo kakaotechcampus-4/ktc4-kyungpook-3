@@ -1,8 +1,7 @@
-import { paths } from '@/shared/config/routes'
-import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { BrandMark } from '@/shared/ui/brand-mark'
 import { Button } from '@/shared/ui/button'
 import { CARD_WIDTH, LINK_PRIMARY, NAV_SIZE } from './styles'
+import { StartLink } from './StartLink'
 
 /* 요금제 절을 뺐고(가격 미정) 가이드는 1차 범위 밖이라(D-001 시작 가이드) 그 두 칸은 두지 않는다.
    남은 셋은 같은 페이지의 절로 옮긴다 — docs/impl-decision/2026-09-28-landing-scope.md */
@@ -47,9 +46,7 @@ export function LandingHeader() {
           <Button variant="outline" size="landing-nav" aria-disabled="true">
             문의하기
           </Button>
-          <GuardedLink to={paths.login()} className={`${LINK_PRIMARY} ${NAV_SIZE}`}>
-            시작하기
-          </GuardedLink>
+          <StartLink className={`${LINK_PRIMARY} ${NAV_SIZE}`}>시작하기</StartLink>
         </div>
       </div>
     </header>

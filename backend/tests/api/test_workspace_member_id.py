@@ -77,7 +77,7 @@ def test_member_id_from_detail_is_what_reply_permission_checks(mdb, mseed):
         threads[who] = t
     mdb.commit()
 
-    for who in ("alice", "pm"):
+    for who, on_theirs in (("alice", 403), ("pm", 201)):
         c = client(who)
         my_id = c.get(f"{P}/workspaces/{ws}").json()["data"]["member_id"]
         mine = next(t for t in threads.values() if t.member_id == my_id)
@@ -85,7 +85,7 @@ def test_member_id_from_detail_is_what_reply_permission_checks(mdb, mseed):
         assert c.post(url, json={"body": "내 대화"}).status_code == 201
         theirs = threads["bob"]
         url = f"{P}/workspaces/{ws}/messages/threads/{theirs.thread_id}/replies"
-        assert c.post(url, json={"body": "남의 대화"}).status_code == 403
+        assert c.post(url, json={"body": "남의 대화"}).status_code == on_theirs
 
 
 def test_builder_without_member_gives_null_member_id():

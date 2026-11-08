@@ -14,7 +14,14 @@ from sqlalchemy import create_engine, text, update
 from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base
-from app.models import EMBEDDING_DIMENSIONS, Task, Workspace
+from app.models import (
+    EMBEDDING_DIMENSIONS,
+    ApprovalRequest,
+    ApprovalStatus,
+    ApprovalType,
+    Task,
+    Workspace,
+)
 from app.services import embedding
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
@@ -117,3 +124,78 @@ def test_excludes_deleted_tasks(db):
     db.commit()
 
     assert _titles(embedding.search_similar_tasks(db, ws.workspace_id, QUERY)) == ["남은 task"]
+
+
+def _approval(
+    db,
+    workspace: Workspace,
+    title: str,
+    similarity: float | None,
+    *,
+    type: str = ApprovalType.TASK_CREATE,
+    status: str = ApprovalStatus.PENDING,
+) -> ApprovalRequest:
+    request = ApprovalRequest(
+        workspace_id=workspace.workspace_id,
+        type=type,
+        status=status,
+        payload=f'{{"task_title": "{title}"}}',
+    )
+    db.add(request)
+    db.flush()
+    if similarity is not None:
+        db.execute(
+            update(ApprovalRequest)
+            .where(ApprovalRequest.approval_id == request.approval_id)
+            .values(embedding=_vector(similarity))
+        )
+    return request
+
+
+def _pending_ids(results) -> list[str]:
+    return [request.approval_id for request, _ in results]
+
+
+def test_pending_search_returns_at_most_two_by_similarity(db):
+    ws = _workspace(db)
+    low = _approval(db, ws, "0.6", 0.6)
+    top = _approval(db, ws, "0.9", 0.9)
+    mid = _approval(db, ws, "0.7", 0.7)
+    db.commit()
+
+    results = embedding.search_similar_pending_approvals(db, ws.workspace_id, QUERY)
+
+    assert embedding.MAX_PENDING_CANDIDATES == 2
+    assert _pending_ids(results) == [top.approval_id, mid.approval_id]
+    assert [round(s, 3) for _, s in results] == [0.9, 0.7]
+    assert low.approval_id not in _pending_ids(results)
+
+
+def test_pending_search_excludes_other_workspace_resolved_update_and_unembedded(db):
+    ws, other = _workspace(db, "A"), _workspace(db, "B")
+    keep = _approval(db, ws, "대기", 0.8)
+    _approval(db, other, "다른 워크스페이스", 0.99)
+    _approval(db, ws, "승인됨", 0.99, status=ApprovalStatus.APPROVED)
+    _approval(db, ws, "거절됨", 0.99, status=ApprovalStatus.REJECTED)
+    _approval(db, ws, "수정 요청", 0.99, type=ApprovalType.TASK_UPDATE)
+    _approval(db, ws, "임베딩 없음", None)
+    db.commit()
+
+    results = embedding.search_similar_pending_approvals(db, ws.workspace_id, QUERY, limit=10)
+
+    assert _pending_ids(results) == [keep.approval_id]
+
+
+def test_pending_search_respects_min_similarity(db):
+    ws = _workspace(db)
+    above = _approval(db, ws, "0.42", 0.42)
+    _approval(db, ws, "0.38", 0.38)
+    db.commit()
+
+    assert _pending_ids(embedding.search_similar_pending_approvals(db, ws.workspace_id, QUERY)) == [
+        above.approval_id
+    ]
+    assert (
+        embedding.search_similar_pending_approvals(db, ws.workspace_id, QUERY, min_similarity=0.95)
+        == []
+    )

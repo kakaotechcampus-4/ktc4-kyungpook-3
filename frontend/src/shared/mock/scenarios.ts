@@ -3,9 +3,15 @@ import { initialDb, replaceDb } from './db'
 import type { MeetingFlowMode, MockDb, MockInvitation } from './db'
 import { MOCK_NOW } from './fixtures/constants'
 import {
+  LONG_BUNDLE_BODY,
+  LONG_RECIPIENT_NAME,
+  LONG_UNBROKEN_URL,
+  LONG_WORKSPACE_NAME,
+  longConversation,
   mergeSourceBundle,
   messagesMemberBundle,
   messagesMemberThread,
+  reply,
   schedulePassedBundle,
 } from './fixtures/message'
 import { completeMeeting, failMeeting, setMeetingFlowMode, startChatMeeting } from './meetingFlow'
@@ -41,13 +47,14 @@ export const MOCK_SCENARIOS = [
   'meeting-fail-diarize',
   'meeting-fail-expired',
   'meeting-expired-member',
-  'meeting-fail-notion-revoked',
+  // Notion 을 연결하지 않은 공간. 회의 올리기·정리·회의록·태스크를 그대로 쓴다 (D-182)
   'meeting-notion-not-connected',
-  'meeting-notion-revoked',
   'meeting-member',
   // 정리 중 채팅 회의가 있는 업로드 (#450). 둘째는 그 회의가 첫 상세 조회에 chat_stalled 로 실패한다
   'meeting-chat-processing',
   'meeting-chat-stalled',
+  // 정리 중 채팅 회의 mt_11 이 상세 조회마다 한 단계씩 간다 — 대화 모으기 → 뽑아내기 (#483)
+  'meeting-chat-demo',
   ...SPEAKER_SCENARIOS,
   // M6 태스크·승인. 모두 ws_01 하나에 PM 으로 로그인한다(마지막만 일반 팀원). 전이는 handler 가 만든다
   'tasks-default',
@@ -91,6 +98,7 @@ export const MOCK_SCENARIOS = [
   'messages-pm-self',
   'messages-schedule-passed',
   'messages-merge',
+  'messages-long-content',
   // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
   'settings-discord-skipped',
   'settings-unmapped',
@@ -197,12 +205,12 @@ function readyToUpload(state: MockDb, mode: MeetingFlowMode): void {
   setMeetingFlowMode(mode, state)
 }
 
-function setNotionStatus(state: MockDb, status: 'not_connected' | 'revoked'): void {
-  const integrations = state.integrations.ws_01
-  integrations.notion =
-    status === 'not_connected'
-      ? { status, display_name: null, connected_at: null }
-      : { ...integrations.notion, status }
+function disconnectNotion(state: MockDb): void {
+  state.integrations.ws_01.notion = {
+    status: 'not_connected',
+    display_name: null,
+    connected_at: null,
+  }
 }
 
 function addLongContent(state: MockDb): void {
@@ -227,6 +235,24 @@ function addLongContent(state: MockDb): void {
       'manual',
       state,
     )
+}
+
+function addLongMessages(state: MockDb): void {
+  const workspace = state.workspaces.find(({ workspace_id }) => workspace_id === 'ws_01')
+  const bundle = state.messageBundles.find(({ bundle_id }) => bundle_id === 'bd_01')
+  const thread = state.messageThreads.find(({ thread_id }) => thread_id === 'th_01')
+  const longThread = state.messageThreads.find(({ thread_id }) => thread_id === 'th_02')
+  if (!workspace || !bundle || !thread || !longThread)
+    throw new Error('mock ws_01, bundle bd_01 or thread th_01·th_02 is missing')
+  workspace.name = LONG_WORKSPACE_NAME
+  bundle.recipient_name = LONG_RECIPIENT_NAME
+  bundle.body = LONG_BUNDLE_BODY
+  bundle.reminders[0].note = `링크 남겨요 ${LONG_UNBROKEN_URL}`
+  thread.name = LONG_RECIPIENT_NAME
+  thread.messages.push(
+    reply('mg_80', `링크 남겨요\n${LONG_UNBROKEN_URL}`, '2026-09-16T19:00:00+09:00'),
+  )
+  longThread.messages.push(...structuredClone(longConversation))
 }
 
 /** ws_01 의 태스크·이력·승인을 모두 비운다. 그 공간 추출 항목의 연결도 끊어 없는 태스크·승인을 가리키지 않게 한다 */
@@ -320,6 +346,8 @@ function conflictingUpdateApproval(state: MockDb): void {
     resolved_by: null,
     created_at: '2026-09-17T03:00:00Z',
     resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
   })
 }
 
@@ -376,6 +404,8 @@ function addScopeChanges(state: MockDb): void {
       resolved_by: null,
       created_at: createdAt,
       resolved_at: null,
+      alias_candidate: false,
+      alias_text: null,
     })
   state.taskHistory.push({
     history_id: 'hs_03',
@@ -419,6 +449,8 @@ function addEditProposal(state: MockDb): void {
     task_id: task.task_id,
     approval_id: 'ap_08',
     approval_status: 'pending',
+    alias_candidate: false,
+    alias_text: null,
   })
   state.approvals.push({
     approval_id: 'ap_08',
@@ -445,6 +477,8 @@ function addEditProposal(state: MockDb): void {
     resolved_by: null,
     created_at: '2026-09-17T04:00:00Z',
     resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
   })
 }
 
@@ -476,6 +510,8 @@ function addChatApproval(state: MockDb): void {
     resolved_by: null,
     created_at: '2026-09-12T00:03:00Z',
     resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
   })
 }
 
@@ -621,16 +657,9 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       setMockRole('member', 'ws_01', state)
       failMeeting('mt_10', { failedStage: 'speaker_assignment_expired' }, state)
       break
-    case 'meeting-fail-notion-revoked':
-      readyToUpload(state, 'fail-notion-revoked')
-      break
     case 'meeting-notion-not-connected':
       readyToUpload(state, 'instant')
-      setNotionStatus(state, 'not_connected')
-      break
-    case 'meeting-notion-revoked':
-      readyToUpload(state, 'instant')
-      setNotionStatus(state, 'revoked')
+      disconnectNotion(state)
       break
     case 'meeting-member':
       // 일반 팀원. 처리 중인 mt_10 은 그대로 두고 첫 상세 조회에 끝나게 한다 — 정리 중·회의록 보기를 함께 본다
@@ -644,6 +673,10 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       break
     case 'meeting-chat-stalled':
       readyToUpload(state, 'fail-chat-stalled')
+      startChatMeeting(state)
+      break
+    case 'meeting-chat-demo':
+      readyToUpload(state, 'staged')
       startChatMeeting(state)
       break
     case 'tasks-default':
@@ -723,7 +756,7 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'dashboard-notion-not-connected':
       // 최근 반영 빈 상태 ② → Notion 설정. auto 항목이 있어도 Notion 이 먼저다
       signInWith(state, ['ws_01'], 'ws_01')
-      setNotionStatus(state, 'not_connected')
+      disconnectNotion(state)
       break
     case 'dashboard-no-auto':
       // 최신 완료 회의가 항목 0건인 mt_07 이다. 최근 반영 빈 상태 ③ → 최근 회의록
@@ -765,6 +798,8 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
         resolved_by: null,
         created_at: '2026-09-17T05:00:00Z',
         resolved_at: null,
+        alias_candidate: false,
+        alias_text: null,
       })
       break
     case 'dashboard-member':
@@ -786,8 +821,22 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       break
     case 'messages-default':
       // 보낼 메시지 2통(이재환 bd_01 은 마감 하루 전, 정하늘 bd_02 는 직접 정한 시각이고 AI 초안을 기다린다), 대화 4건.
-      // 이재환 th_01 은 오늘로 3일째 답장이 없고 bd_01 이 그 대화에서 승인을 기다린다. 박지훈에게 마지막으로 보낸 DM 은 가지 못했다
+      // 이재환 th_01 은 오늘로 3일째 답장이 없고 bd_01 이 그 대화에서 승인을 기다린다. 박지훈에게 마지막으로 보낸 DM 은 가지 못했다.
+      // bd_01 의 태스크 tk_04 는 9/17 에 진행 중으로 바뀌어, 재촉 이유의 근거가 그 변경이다(변경 보기)
       signInWith(state, ['ws_01'], 'ws_01')
+      state.taskHistory.push({
+        history_id: 'hs_m1',
+        task_id: 'tk_04',
+        changed_field: 'status',
+        old_value: 'todo',
+        new_value: 'in_progress',
+        change_source: 'manual',
+        changed_by: 'mb_01',
+        is_auto: false,
+        is_rolled_back: false,
+        rolled_back_at: null,
+        created_at: '2026-09-17T06:00:00Z',
+      })
       break
     case 'messages-empty':
       signInWith(state, ['ws_01'], 'ws_01')
@@ -842,6 +891,12 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
           : bundle,
       )
       state.messageBundles.push(structuredClone(mergeSourceBundle))
+      break
+    case 'messages-long-content':
+      // messages-default 에 긴 문구를 더한다. 공간(봇) 이름과 이재환(bd_01·th_01)의 이름이 띄어 쓰지 않은 긴 이름이고,
+      // bd_01 은 여러 줄 본문 끝에 줄바꿈할 곳이 없는 주소가 있다. th_01 에는 그 주소의 답장, th_02(박민수)에는 며칠에 걸친 30통이 더 있다
+      signInWith(state, ['ws_01'], 'ws_01')
+      addLongMessages(state)
       break
     case 'settings-discord-skipped':
       // 설정에서 Discord 를 연결한다. 연결해도 건너뜀으로 저장된 단계는 그대로다 (D-173)

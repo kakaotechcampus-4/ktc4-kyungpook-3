@@ -26,9 +26,15 @@ export function setMockRole(role: MockRole, workspaceId = 'ws_01', state: MockDb
  * 초대로 이어진 계정은 수락한 초대가 대응이다. 둘 다 없는 공간에서는 세션 팀원을 정할 수 없으므로 태스크·승인 쓰기가 403 이다.
  */
 
-/** 초대 이메일 비교 형태. 백엔드 normalize_email 과 같다. 가입·로그인 이메일은 백엔드도 입력 그대로 비교한다 */
+/** 이메일 비교 형태. 백엔드 normalize_email 과 같다 */
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
+}
+
+/** 백엔드 by_email_stmt 처럼 대소문자·앞뒤 공백을 빼고 계정을 찾는다 */
+export function accountWithEmail(email: string) {
+  const wanted = normalizeEmail(email)
+  return db.accounts.find(({ session }) => normalizeEmail(session.user.email) === wanted)
 }
 
 const currentUserId = (state: MockDb) => state.session.user.user_id

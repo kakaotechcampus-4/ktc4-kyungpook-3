@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
-import { messageThreadQueryOptions } from '@/entities/message'
+import { messageInboxQueryOptions, messageThreadQueryOptions } from '@/entities/message'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
@@ -12,13 +12,16 @@ import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { isMemberOf, setMockRole } from '@/shared/mock/sessions'
 import { recordRequests } from '@/shared/test/requests'
+import { REVEAL_TARGETS } from '@/shared/ui/deferred-skeleton'
 import { SELF_SECTION_TITLE } from '@/widgets/message-inbox'
+import { onTestFinished } from 'vitest'
 import {
   conversation,
   current,
   detail,
   hold,
   list,
+  listSkeleton,
   readable,
   reviewList,
   rowTexts,
@@ -74,8 +77,8 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
     )
     // 승인 전 묶음은 가장 이른 마감일과 묶은 태스크를 쓴다
     expect(rowTexts(reviewList())).toEqual([
-      '이재환09/24 마감API 명세서',
-      '정하늘09/30 마감퍼블리싱 외 1건',
+      '이재환09/24 마감배포 스크립트 진행 상황 확인',
+      '정하늘09/30 마감퍼블리싱 외 1건 진행 상황 확인',
     ])
     expect(rowTexts(threadList())).toEqual([
       '이재환나: DB 스키마가 확정됐다고 들었어요. 명세서 작업은 시작하셨나요?09/16답장 기다리는 중',
@@ -87,7 +90,7 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
     expect(current()[0]).toHaveTextContent('이재환')
     expect(detail().getByRole('heading', { level: 2, name: '이 메시지, 보낼까요?' })).toBeVisible()
     expect(detail().getByRole('region', { name: '보낼 메시지 미리보기' })).toHaveTextContent(
-      '재환님, API 명세서 마감이 다음 주 목요일(9/24)이에요 🙂',
+      '재환님, 배포 스크립트 마감이 다음 주 목요일(9/24)이에요 🙂',
     )
   })
 
@@ -110,14 +113,16 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
     expect(within(preview).getByText(/하늘님, 최진호예요/)).toHaveClass('whitespace-pre-line')
     expect(readable(detail().getByRole('region', { name: '묶은 태스크 2' }))).toBe(
       '묶은 태스크 2퍼블리싱마감 없음메모: 시안 2차 반영분까지메모 고치기빼기' +
-        '발표 자료09/30 마감메모 고치기빼기',
+        '9/15(화)에 태스크를 만든 뒤로 진행 소식이 없어요.' +
+        '발표 자료09/30 마감메모 고치기빼기' +
+        '김서연님이 직접 만든 재촉이에요. 9/15(화)에 태스크를 만든 뒤로 진행 소식이 없어요.',
     )
     // 서버가 정한 시각이 마감 하루 전(9/29 09:00)이 아니라 직접 정한 시각이다
     expect(detail().getByRole('radio', { name: '마감 하루 전09/29 09:00' })).not.toBeChecked()
     expect(detail().getByRole('radio', { name: '직접 정하기09/25 14:00' })).toBeChecked()
   })
 
-  it('보내기 전 확인은 미리보기·묶은 태스크·보낼 시각 두 가지·행동·안내를 갖는다 — 지금 바로와 재촉 이유는 없다', async () => {
+  it('보내기 전 확인은 미리보기·묶은 태스크·보낼 시각 두 가지·행동·안내를 갖는다 — 지금 바로와 따로 선 「왜 보내려 하나요」 블록은 없다(이유는 태스크 행마다 있다)', async () => {
     await openInbox(paths.messageReview('ws_01', 'bd_01'))
     const preview = detail().getByRole('region', { name: '보낼 메시지 미리보기' })
     expect(within(preview).getByText('Discord 개인 메시지 · 카테캠 3팀 봇')).toBeInTheDocument()
@@ -251,7 +256,7 @@ describe('대화는 날짜 구분·보낸 쪽·시각·답장 대기·예정 묶
       '이재환: 네 확인했습니다. DB 스키마 확정되면 바로 붙일게요.09:31',
       '봇: DB 스키마가 확정됐다고 들었어요. 명세서 작업은 시작하셨나요?18:00',
       '여기서부터 답장이 없습니다 — 오늘로 3일째예요',
-      '봇(승인 대기): 재환님, API 명세서 마감이 다음 주 목요일(9/24)이에요 🙂\n혹시 막히는 부분 있으면 알려주세요. 필요하면 마감을 옮겨도 괜찮아요!09/23 09:00 발송 예정확인하기',
+      '봇(승인 대기): 재환님, 배포 스크립트 마감이 다음 주 목요일(9/24)이에요 🙂\n혹시 막히는 부분 있으면 알려주세요. 필요하면 마감을 옮겨도 괜찮아요!09/23 09:00 발송 예정확인하기',
     ])
     expect(within(conversation()).getByRole('link', { name: '확인하기' })).toHaveAttribute(
       'href',
@@ -344,14 +349,61 @@ describe('빈 상태·로딩·목록 오류·대화 오류가 서로 구분되�
   it('목록을 받는 동안 목록 칸과 상세 칸은 스켈레톤이다 — 빈 상태도 오류도 아니다', async () => {
     const gate = hold('/workspaces/ws_01/messages')
     renderApp(paths.messages('ws_01'))
-    const skeleton = await screen.findByTestId('message-list-skeleton')
+    const skeleton = await listSkeleton()
     expect(skeleton).toHaveAttribute('aria-busy', 'true')
-    expect(screen.getByTestId('message-review-skeleton')).toBeInTheDocument()
+    expect(detail().getByTestId('message-review-skeleton')).toBeInTheDocument()
     expect(screen.queryByText('보낼 메시지가 없어요')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
     act(() => gate.resolve())
     expect(await detail().findByRole('heading', { name: '이 메시지, 보낼까요?' })).toBeVisible()
     expect(screen.queryByTestId('message-list-skeleton')).toBeNull()
+  })
+
+  it('목록을 기다린 뒤 캐시된 기본 대화가 나타나면 대화 내용에 전환이 걸린다 — 안쪽 대화 자리는 로딩을 거치지 않았다 (#508)', async () => {
+    applyScenario('messages-member')
+    const app = await openInbox()
+    expect(await detail().findByRole('heading', { level: 2, name: '카테캠 3팀 봇' })).toBeVisible()
+    // 기본 대화는 캐시에 둔 채 목록만 다시 기다리게 한다
+    const gate = hold('/workspaces/ws_01/messages')
+    onTestFinished(() => gate.resolve())
+    act(() => {
+      void app.queryClient.resetQueries({ queryKey: messageInboxQueryOptions('ws_01').queryKey })
+    })
+    expect(await screen.findByTestId('message-list-skeleton')).toHaveAttribute('aria-busy', 'true')
+    act(() => gate.resolve())
+    const heading = await detail().findByRole(
+      'heading',
+      { level: 2, name: '카테캠 3팀 봇' },
+      { timeout: 3_000 },
+    )
+    // 전환은 상자가 없는 Reveal 감싸기(data-reveal-box)가 아니라 실제 대화 요소에 걸린다
+    const target = heading.closest(REVEAL_TARGETS)
+    expect(target).not.toBeNull()
+    expect(target).not.toHaveAttribute('data-reveal-box')
+    expect(detail().getByRole('region', { name: '대화 내용' }).closest(REVEAL_TARGETS)).toBe(target)
+  })
+
+  it('목록을 받는 동안의 뼈대는 역할에 맞는 틀이다 — PM 은 보내기 전 확인 · 검토 모양, 팀원은 대화 이름만 · 대화 모양 (#508)', async () => {
+    const pmGate = hold('/workspaces/ws_01/messages')
+    const pm = renderApp(paths.messages('ws_01'))
+    const pmList = await listSkeleton()
+    // 묶음 이름은 정해진 글자라 막대 대신 글자다
+    expect(pmList).toHaveTextContent('보내기 전 확인')
+    expect(pmList).toHaveTextContent('대화')
+    expect(detail().getByTestId('message-review-skeleton')).toBeInTheDocument()
+    act(() => pmGate.resolve())
+    pm.unmount()
+
+    applyScenario('messages-member')
+    const memberGate = hold('/workspaces/ws_01/messages')
+    onTestFinished(() => memberGate.resolve())
+    renderApp(paths.messages('ws_01'))
+    const memberList = await listSkeleton()
+    expect(memberList).not.toHaveTextContent('보내기 전 확인')
+    expect(memberList).toHaveTextContent('대화')
+    // 팀원의 기본 선택은 첫 대화다 — 상세 뼈대도 대화 모양이다
+    expect(detail().getByTestId('message-thread-skeleton')).toBeInTheDocument()
+    expect(detail().queryByTestId('message-review-skeleton')).toBeNull()
   })
 
   it('목록 오류는 목록 칸에서 다시 시도로 알리고, 고른 대화는 그대로 보인다', async () => {
@@ -388,6 +440,20 @@ describe('빈 상태·로딩·목록 오류·대화 오류가 서로 구분되�
     expect(current()[0]).toHaveTextContent('박민수')
     act(() => gate.resolve())
     expect(await detail().findByRole('heading', { level: 2, name: '박민수' })).toBeVisible()
+  })
+
+  it('대화 주소에서 목록과 대화를 함께 받는 동안 목록 칸과 상세 칸이 모두 스켈레톤이다 — 빈 상태도 오류도 아니다', async () => {
+    const lists = hold('/workspaces/ws_01/messages')
+    const thread = hold('/workspaces/ws_01/messages/threads/th_01')
+    onTestFinished(() => {
+      lists.resolve()
+      thread.resolve()
+    })
+    renderApp(paths.messageThread('ws_01', 'th_01'))
+    expect(await screen.findByTestId('message-list-skeleton')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByTestId('message-thread-skeleton')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.queryByText('보낼 메시지가 없어요')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it.each([
@@ -850,7 +916,7 @@ describe('PM 의 자기 대화는 목록 맨 위 구역에 따로 두고 팀원 
     // 자기 대화도 마지막이 봇 메시지라 남의 대화였다면 셋째로 셌다 — member_id 없음 테스트가 3 을 본다
     expect(within(threadList()).getByText('답장 기다리는 중 2')).toBeInTheDocument()
     // 자기 대화의 보낼 메시지도 PM 권한으로 그대로 확인한다
-    expect(rowTexts(reviewList())).toContain('김서연09/24 마감기획서')
+    expect(rowTexts(reviewList())).toContain('김서연09/24 마감기획서 진행 상황 확인')
   })
 
   it('자기 대화는 봇이 왼쪽·자기 답장이 오른쪽이고, 답장 기다림 없이 답장 칸과 예정 묶음 확인하기가 있다', async () => {

@@ -65,7 +65,7 @@ Codex 독립 리뷰가 찾은 세 결함을 고쳤다. 각각 고치기 전에 �
 ### 남은 작업과 제한 사항
 
 - 실제 BE·Discord 서버와 붙인 저장·공지는 확인하지 않았다. MSW 기준이다.
-- 카드의 `채널 바꾸기` 자리 버튼과 이 칸의 뜻이 겹친다. 정리는 제품 결정이 필요하다([결정 기록](basis-for-decision/2026-11-07-chat-channel-save-flow.md)).
+- 카드의 `채널 바꾸기` 자리 버튼과 이 칸의 뜻이 겹쳤다. 사용자 결정(2026-11-07)으로 버튼을 지웠다(#505, [결과](../../issues/505-discord-channel-button/result.md), [결정 기록](basis-for-decision/2026-11-07-chat-channel-save-flow.md)).
 - 안내 문구와 위치는 #429 의 FE 기본값이다. PM·디자인 검토는 받지 않았다.
 - 전체 Storybook play 와 전체 E2E 는 CI 에 맡겼다.
 

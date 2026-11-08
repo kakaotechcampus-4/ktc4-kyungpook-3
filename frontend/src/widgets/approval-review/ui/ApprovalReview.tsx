@@ -37,11 +37,12 @@ import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { formatMonthDayWeekday, formatSeoulDateTime, seoulDateOf } from '@/shared/lib/date'
 import { GuardedLink, useUnsavedChanges } from '@/shared/lib/unsaved-changes'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
-import { Skeleton } from '@/shared/ui/skeleton'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import {
   approvalHeading,
   approvalStatusLabel,
@@ -53,15 +54,12 @@ import {
   gapSummary,
   memberLabel,
 } from '../lib/approvalView'
+import { ApprovalSkeleton } from './ApprovalSkeleton'
+import { BACK, CARD, CARD_BODY, CARD_FOOT, EVIDENCE, ROOT } from './frame'
 
-/* 본문 폭은 리스트·보드와 같은 960 컨테이너다(본문 864, #466). 좁은 화면은 좌우 16 */
-const ROOT = 'mx-auto flex w-full max-w-[960px] flex-col gap-22 px-16 pt-40 pb-72 sm:px-48'
-const BACK =
-  'inline-flex min-h-32 items-center gap-4 self-start text-[13px] font-semibold text-sub hover:text-ink'
 const TITLE = 'text-[30px] leading-[1.3] font-bold tracking-h2 text-ink'
 const LEAD = 'text-[15px] leading-[1.6] text-sub'
 const META = 'text-meta text-dim tabular-nums'
-const CARD = 'flex flex-col overflow-hidden rounded-16 border border-line bg-surface'
 const CARD_HEAD =
   'flex flex-wrap items-center justify-between gap-x-16 gap-y-6 border-b border-divider px-20 py-14'
 const CARD_TITLE = 'flex items-center gap-10 text-[14px] font-normal text-ink'
@@ -70,9 +68,6 @@ const ATTENTION_BADGE =
 const RESOLVED_BADGE =
   'inline-flex h-22 shrink-0 items-center rounded-6 bg-control px-9 text-[12px] leading-none font-semibold text-dim'
 const HEAD_LINK = 'inline-flex items-center gap-5 text-[13px] text-sub hover:text-ink tabular-nums'
-const CARD_BODY = 'flex flex-col gap-16 p-20'
-const CARD_FOOT = 'flex flex-col gap-12 border-t border-divider px-20 py-14'
-const EVIDENCE = 'flex flex-col gap-8 rounded-12 bg-surface-sunken px-18 py-16'
 const EVIDENCE_HEAD = 'flex flex-wrap items-center justify-between gap-x-12 gap-y-4'
 const EVIDENCE_META = 'text-caption text-dim tabular-nums'
 const QUOTE = 'text-[15px] leading-[1.6] font-bold text-ink'
@@ -125,6 +120,7 @@ export function ApprovalReview({
 }: ApprovalReviewProps) {
   const approval = useQuery(approvalDetailQueryOptions(workspaceId, approvalId))
   const [fillIn] = useState(fillInOnArrival)
+  const indicator = useLoadingIndicator(approval.isPending)
 
   let body: ReactNode
   if (approval.data !== undefined)
@@ -139,12 +135,14 @@ export function ApprovalReview({
         onRetry={() => void approval.refetch()}
       />
     )
-  else
-    body = (
-      <div aria-busy="true">
-        <Skeleton lines={5} />
-      </div>
-    )
+  else body = null
+  body = indicator.pending ? (
+    <DeferredSkeleton indicator={indicator}>
+      <ApprovalSkeleton />
+    </DeferredSkeleton>
+  ) : (
+    <Reveal indicator={indicator}>{body}</Reveal>
+  )
 
   return (
     <main className={ROOT}>
@@ -152,7 +150,9 @@ export function ApprovalReview({
         <Icon name="chevron-left" size={14} />
         태스크 목록
       </GuardedLink>
-      {approval.data === undefined ? <h1 className="sr-only">확인 필요</h1> : null}
+      {approval.data === undefined || indicator.pending ? (
+        <h1 className="sr-only">확인 필요</h1>
+      ) : null}
       {body}
     </main>
   )
@@ -437,7 +437,11 @@ function TaskCreatePending({
   const overrides = useTaskCreateOverrides(approval, memberIds)
   useUnsavedChanges(overrides.dirty)
   const gaps = openGaps(overrides.attention)
-  const edits = { kind: 'task_create', values: overrides.edits } as const
+  const edits = {
+    kind: 'task_create',
+    values: overrides.edits,
+    saveAlias: overrides.saveAlias,
+  } as const
   const plan = planApprovalResolution(approval, 'approved', { memberIds, edits })
   const blockedReason =
     members === undefined ? MEMBERS_LOADING_REASON : plan.ok ? null : plan.reason
@@ -549,7 +553,8 @@ function TaskUpdatePending({
   approval: TaskUpdateApproval
   context: ReviewContext
 }) {
-  const { workspaceId, names, resolver } = context
+  const { workspaceId, members, names, resolver } = context
+  const memberIds = useMemo(() => (members ?? []).map(({ id }) => id), [members])
   const taskId = approval.relatedTaskId
   const task = useQuery({
     ...taskDetailQueryOptions(workspaceId, taskId ?? ''),
@@ -559,9 +564,15 @@ function TaskUpdatePending({
   const overrides = useTaskUpdateOverrides(approval)
   useUnsavedChanges(overrides.dirty)
   const edits = { kind: 'task_update', values: overrides.edits } as const
-  const plan = planApprovalResolution(approval, 'approved', { edits })
+  const plan = planApprovalResolution(approval, 'approved', { memberIds, edits })
   const blockedReason =
-    taskId === null ? '바꿀 태스크가 없어 승인할 수 없어요.' : plan.ok ? null : plan.reason
+    taskId === null
+      ? '바꿀 태스크가 없어 승인할 수 없어요.'
+      : approval.assigneePick !== null && members === undefined
+        ? MEMBERS_LOADING_REASON
+        : plan.ok
+          ? null
+          : plan.reason
   const current = (field: string) =>
     task.data === undefined
       ? task.isError
@@ -612,6 +623,7 @@ function TaskUpdatePending({
         />
         <TaskUpdateOverrideFields
           overrides={overrides}
+          members={members}
           disabled={resolver.pending}
           onInputChange={resolver.invalidateConfirmation}
         />
@@ -666,8 +678,9 @@ function ChangesTable({
   valueHeader: string
   current?: (field: string) => string
 }) {
-  if (isScopeChange(approval) && changes.length === 0)
-    return <p className={NOTE}>바꿀 항목 값은 없어요.</p>
+  // 담당자를 찾지 못한 답장 카드는 고르기 전까지 바꿀 값이 없다. 머리만 있는 표 대신 아무것도 그리지 않는다
+  if (changes.length === 0)
+    return isScopeChange(approval) ? <p className={NOTE}>바꿀 항목 값은 없어요.</p> : null
   return (
     <table aria-label="현재값과 제안값" className={TABLE}>
       <thead>
@@ -721,7 +734,7 @@ function ResolvedReview({
               names={context.names}
               valueHeader={approved ? '반영한 값' : '제안값'}
             />
-            {approved && !(isScopeChange(approval) && approval.changes.length === 0) ? (
+            {approved && approval.changes.length > 0 ? (
               <FieldList
                 label="원래 제안"
                 rows={approval.changes.map(({ field, value }) => ({

@@ -1441,3 +1441,36 @@ def test_create_meeting_sends_started_at():
     assert fake.calls[-1][2]["started_at"] == at.isoformat() and fake.calls[-1][2]["source"] == "chat"
     _client(fake).create_meeting("ws-1")
     assert "started_at" not in fake.calls[-1][2]
+
+
+def test_chat_channels_returns_items_with_service_token():
+    fake = FakeBe()
+    fake.chat_channels = [{"workspace_id": "ws-1", "guild_id": "900", "channel_id": "1"}]
+    client = H.BeClient("http://be.local", session=fake, service_token="svc-token")
+    assert client.chat_channels() == fake.chat_channels
+    assert fake.calls[-1] == ("GET", "/bot/chat-channels", None)
+    assert fake.headers[-1] == {"X-Service-Token": "svc-token"}
+
+
+def test_chat_channels_without_items_is_bad_response():
+    fake = FakeBe()
+    fake.chat_channels = None      # FakeBe 가 {"data": {}} 를 준다
+    client = H.BeClient("http://be.local", session=fake, service_token="svc-token")
+    with pytest.raises(H.BeError) as e:
+        client.chat_channels()
+    assert e.value.code == "BAD_RESPONSE"
+
+
+def test_chat_channels_non_dict_item_is_bad_response():
+    fake = FakeBe()
+    fake.chat_channels = ["x"]
+    client = H.BeClient("http://be.local", session=fake, service_token="svc-token")
+    with pytest.raises(H.BeError) as e:
+        client.chat_channels()
+    assert e.value.code == "BAD_RESPONSE"
+
+
+def test_chat_channels_wrong_token_is_unauthenticated():
+    with pytest.raises(H.BeError) as e:
+        H.BeClient("http://be.local", session=FakeBe(), service_token="틀린 토큰").chat_channels()
+    assert e.value.code == "UNAUTHENTICATED" and e.value.status == 401
