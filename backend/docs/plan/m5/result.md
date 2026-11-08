@@ -109,3 +109,19 @@ plan.md 가 비어 있어 완료조건이 없다. 아래는 전체 계획 M5 의
 ### 차이와 남은 작업
 
 기존 실패 회의 숨김 정책에 화자 지정 기한 만료 예외를 추가했다. 회의 메타데이터 보존을 이용하므로 원본 음성 보관이나 재처리 정책은 달라지지 않는다. 자동 실패를 만드는 BE PR #301은 현재 미병합이며 이 변경에 포함하지 않는다. 실서버 배포·AI 처리·실제 7일 경과와 PostgreSQL 변형은 미검증이다. FE 제출 UI가 없어서 만료 직후 409 처리의 실제 화면 연결도 후속 작업이다.
+
+## 2026-11-08 추가: 가져가지 않은 업로드 정리
+
+### 작업 근거와 구현
+
+이슈 #563 으로 진행했다. 이 M5 의 plan.md 는 비어 있어 이슈를 작업 근거로 삼으며 마일스톤 완료를 선언하지 않는다.
+
+- sweeper 가 `processing` 이고 AI 가 가져가지 않은 업로드를 `uploaded_at` 24시간 뒤 `failed`(`failed_stage=upload_unclaimed`)로 바꾸고 녹음 폴더를 지운다. 기존 3시간·7일·7시간 규칙은 그대로다.
+- 위 "남은 작업"의 아무도 가져가지 않은 업로드 회의 정리가 이것이다. 2026-11-03 의 "정리하지 않는다" 결정을 바꿨다([결정 기록](basis-for-decision/2026-11-08-unclaimed-upload-sweep.md)).
+- 계약: [봇 계약](../../contracts/backend-ai-contract.md) "웹 업로드 가져가기"와 [FE API 계약](../../../../frontend/docs/contracts/frontend-api-contract.md) §4.4.1 의 `failed_stage` 값.
+
+### 검증
+
+- Python 3.12 에서 `.venv/bin/python -m pytest -q tests/services/test_upload_sweeper.py`: 23 passed, 22 skipped(PostgreSQL 변형). 23시간·정확히 24시간은 남고 25시간은 정리, 가져간 업로드·화자 지정 대기·Discord 는 그대로, 후보 선택 뒤 claim 이 먼저 오면 UPDATE 가 지는지 확인했다.
+- 전체 `.venv/bin/python -m pytest -q`: 2394 passed, 1546 skipped. `ruff check .`: 통과.
+- 실서버 24시간 경과와 PostgreSQL 변형은 확인하지 않았다.
