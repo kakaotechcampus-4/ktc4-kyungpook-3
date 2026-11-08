@@ -18,12 +18,14 @@ from app.services import meeting_deletion, embedding
 
 
 @pytest.fixture
-def deleted_fixture(mdb, mseed):
+def deleted_fixture(mdb, mseed, monkeypatch):
+    monkeypatch.setenv("MEETING_DELETION_ENABLED", "true")
     meeting = Meeting(
         workspace_id=mseed["ws"],
         status="done",
         title="private-576",
         source="chat",
+        deletion_ready=True,
         duration_ms=9000,
     )
     mdb.add(meeting)
@@ -268,7 +270,7 @@ def merged_card(mdb, workspace, deleted_mid):
         gate="review",
         doc_text="private-576",
     )
-    other = Meeting(workspace_id=workspace, status="done", source="chat")
+    other = Meeting(workspace_id=workspace, status="done", source="chat", deletion_ready=True)
     mdb.add_all([old, other])
     mdb.flush()
     extraction = Extraction(meeting_id=other.meeting_id)
@@ -354,6 +356,81 @@ def test_partial_card_is_rebuilt_without_deleted_top_level_values(
     assert response.json()["error"]["code"] == "APPROVAL_CHANGED"
 
 
+@pytest.mark.parametrize("forgery", ["foreign_workspace", "wrong_meeting", "other_approval"])
+def test_manual_card_cannot_rehydrate_another_items_private_evidence(
+    mdb, mseed, deleted_fixture, forgery
+):
+    from app.models import Workspace
+
+    client, mid, _ = deleted_fixture
+    legitimate, survivor = merged_card(mdb, mseed["ws"], mid)
+    claimed_mid = json.loads(legitimate.payload)["merged_items"][0]["meeting_id"]
+    if forgery == "other_approval":
+        item = survivor
+        secret = "final surviving quote"
+        private_source = mdb.scalar(
+            select(Source).join(Evidence, Evidence.source_id == Source.source_id)
+            .where(Evidence.item_id == survivor.item_id, Source.seq == 2)
+        )
+    else:
+        workspace = mseed["ws"]
+        if forgery == "foreign_workspace":
+            other = Workspace(name="private workspace")
+            mdb.add(other)
+            mdb.flush()
+            workspace = other.workspace_id
+        private_meeting = Meeting(workspace_id=workspace, status="done", source="chat", deletion_ready=True)
+        mdb.add(private_meeting)
+        mdb.flush()
+        extraction = Extraction(meeting_id=private_meeting.meeting_id)
+        mdb.add(extraction)
+        mdb.flush()
+        item = ExtractionItem(extraction_id=extraction.extraction_id, task_title="private task", gate="review")
+        private_source = Source(meeting_id=private_meeting.meeting_id, seq=0, start_ms=0, end_ms=1,
+                                text="PRIVATE_OTHER_MEETING_QUOTE")
+        mdb.add_all([item, private_source])
+        mdb.flush()
+        mdb.add(Evidence(item_id=item.item_id, source_id=private_source.source_id, type="task"))
+        secret = private_source.text
+    mdb.commit()
+    response = client.post("/api/v1/approvals", json={
+        "workspace_id": mseed["ws"], "type": "task_create",
+        "payload": {"meeting_id": mid, "task_title": "manual review", "merged_items": [
+            {"meeting_id": claimed_mid, "extraction_item_id": item.item_id},
+        ]},
+    })
+    assert response.status_code == 201
+    card_id = response.json()["data"]["approval_id"]
+    assert client.delete(f"/api/v1/meetings/{mid}").status_code == 202
+    result = client.get(f"/api/v1/approvals/{card_id}").json()["data"]
+    assert secret not in json.dumps(result["payload"])
+    assert result["status"] == "rejected"
+    assert mdb.get(Source, private_source.source_id).text == secret
+
+
+@pytest.mark.parametrize("source_is_deleted", [False, True])
+def test_partial_card_never_uses_source_from_another_meeting(
+    mdb, mseed, deleted_fixture, source_is_deleted
+):
+    client, mid, _ = deleted_fixture
+    card, survivor = merged_card(mdb, mseed["ws"], mid)
+    other = Meeting(workspace_id=mseed["ws"], status="done", source="chat", deletion_ready=True)
+    mdb.add(other)
+    mdb.flush()
+    source = Source(meeting_id=mid if source_is_deleted else other.meeting_id,
+                    seq=100, start_ms=100, end_ms=101,
+                    text="WRONG_MEETING_SOURCE")
+    mdb.add(source)
+    mdb.flush()
+    mdb.add(Evidence(item_id=survivor.item_id, source_id=source.source_id, type="task"))
+    mdb.commit()
+    assert client.delete(f"/api/v1/meetings/{mid}").status_code == 202
+    mdb.refresh(card)
+    assert card.status == "pending"
+    assert json.loads(card.payload)["evidence_quote"] == "final surviving quote"
+    assert "WRONG_MEETING_SOURCE" not in card.payload
+
+
 @pytest.mark.parametrize("delete_primary", [True, False])
 def test_partial_card_preserves_only_surviving_fallback_evidence(
     mdb, mseed, deleted_fixture, delete_primary
@@ -430,9 +507,28 @@ def test_partial_card_does_not_borrow_fallback_from_different_meeting(
     assert client.delete(f"/api/v1/meetings/{mid}").status_code == 202
     mdb.refresh(card)
     rebuilt = json.loads(card.payload)
-    assert card.status == "pending"
-    assert rebuilt["evidence_quote"] is None
+    assert card.status == "rejected"
+    assert rebuilt == {"meeting_id": mid, "source_deleted": True}
     assert "deleted origin quote" not in card.payload
+
+
+def test_invalid_duplicate_item_does_not_hide_its_valid_contribution(
+    mdb, mseed, deleted_fixture
+):
+    client, mid, _ = deleted_fixture
+    card, survivor = merged_card(mdb, mseed["ws"], mid)
+    payload = json.loads(card.payload)
+    payload["merged_items"].insert(0, {
+        "meeting_id": mid, "extraction_item_id": survivor.item_id,
+        "evidence_quote": "forged duplicate",
+    })
+    card.payload = json.dumps(payload)
+    mdb.commit()
+    assert client.delete(f"/api/v1/meetings/{mid}").status_code == 202
+    mdb.refresh(card)
+    assert card.status == "pending"
+    assert json.loads(card.payload)["evidence_quote"] == "final surviving quote"
+    assert "forged duplicate" not in card.payload
 
 
 @pytest.mark.parametrize("bad_id", [42, [], {}, True, ""])
@@ -478,6 +574,7 @@ def test_manual_approval_accepts_reverse_lineage_order_then_deletes_safely(
         status="done",
         source="chat",
         recording_root_id=mid,
+        deletion_ready=True,
         replaces_meeting_id=mid,
     )
     mdb.add(child)
@@ -790,6 +887,7 @@ def test_postgresql_manual_card_waits_for_root_before_locking_replacement(
         status="done",
         source="chat",
         recording_root_id=mid,
+        deletion_ready=True,
         replaces_meeting_id=mid,
     )
     mdb.add(child)

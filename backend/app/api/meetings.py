@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Header, Response
 from fastapi.responses import FileResponse
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
@@ -116,12 +116,17 @@ def _processing(meeting: Meeting) -> MeetingProcessing | None:
 def create_meeting(
     payload: MeetingCreateRequest,
     db: Session = Depends(get_db),
+    x_meeting_lineage_version: str | None = Header(None),
 ) -> dict:
+    versioned = x_meeting_lineage_version == "1"
+    if payload.source == "discord" and meeting_deletion.enabled() and not versioned:
+        raise AppError(ErrorCode.MEETING_CLIENT_UPDATE_REQUIRED)
     meeting = Meeting(
         workspace_id=payload.workspace_id,
         title=payload.title,
         source=str(payload.source),
         status=str(MeetingStatus.CREATED),
+        deletion_ready=payload.source != "discord" or versioned,
     )
     if payload.replaces_meeting_id is not None:
         predecessor = meeting_deletion.require_live_meeting(db, payload.replaces_meeting_id)
@@ -228,6 +233,7 @@ def fail_meeting(
     meeting = _get_meeting(db, meeting_id)
     detail = MeetingDetailResponse(
         meeting_id=meeting.meeting_id,
+        deletion_available=meeting_deletion.deletion_available(db, meeting),
         workspace_id=meeting.workspace_id,
         title=meeting.title,
         status=meeting.status,
@@ -263,6 +269,7 @@ def get_meeting(
 
     detail = MeetingDetailResponse(
         meeting_id=meeting.meeting_id,
+        deletion_available=meeting_deletion.deletion_available(db, meeting),
         workspace_id=meeting.workspace_id,
         title=meeting.title,
         status=meeting.status,

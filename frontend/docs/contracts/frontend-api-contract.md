@@ -34,6 +34,12 @@
 - 성공 receipt를 받으면 같은 세션의 계보 상세·회의록·추출·승인 캐시와 이전 원문 요청을 제거한다. 화면을 이미 떠났으면 이동과 토스트만 생략한다. 세션이 바뀌면 이전 응답을 반영하지 않는다.
 - `pending`은 삭제 접수와 DB 원문 제거를 뜻한다. 파일 정리 완료로 안내하지 않는다. 자동 DELETE 재시도는 하지 않고 실패 시 원본 화면에서 수동 재시도를 허용한다.
 
+### 운영 활성화 경계
+
+`MEETING_DELETION_ENABLED`는 기본 비활성이다. 명시적으로 `true`일 때만 DELETE를 허용하며, 그 외에는 503 `MEETING_DELETION_UNAVAILABLE`다. 과거 Discord 계보 중 검증되지 않은 행이 있으면 409 `MEETING_LINEAGE_UNVERIFIED`로 거절한다. 이 두 경계에서도 원문과 태스크는 바꾸지 않는다. 이미 접수한 receipt 조회·파일 정리와 삭제 후 410은 gate를 꺼도 유지한다.
+
+회의 상세의 `deletion_available: boolean`은 gate 활성화, 계보 전체 준비 상태와 terminal 여부를 반영한다. FE는 해당 필드가 정확히 `true`이고 PM일 때만 삭제 CTA를 표시한다. 이전 서버가 필드를 생략하면 false로 다룬다. 과거 계보 복구와 구 봇 교체 확인은 [운영 절차](../../../deploy/README.md#회의-삭제-활성화-576)를 따른다.
+
 ### 구현과 검증 근거
 
 - 서버 경계는 [삭제 서비스](../../../backend/app/services/meeting_deletion.py), [회의 API](../../../backend/app/api/meetings.py), [Task 응답](../../../backend/app/schemas/task.py)에 있다.

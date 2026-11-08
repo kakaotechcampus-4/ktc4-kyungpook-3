@@ -286,7 +286,8 @@ class BeClient:
             body["replaces_meeting_id"] = replaces_meeting_id
         if started_at is not None:
             body["started_at"] = started_at.isoformat()
-        return self._call("POST", "/meetings", body)
+        return self._call("POST", "/meetings", body,
+                          headers={"X-Meeting-Lineage-Version": "1"})
 
     def chat_cursor(self, workspace_id: str) -> datetime | None:
         """BE 가 이미 가진 마지막 채팅 메시지 시각(chat-cursor). 채팅 회의가 없으면 None."""

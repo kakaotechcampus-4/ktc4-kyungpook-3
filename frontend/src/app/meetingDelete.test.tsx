@@ -68,6 +68,24 @@ it('팀원에게는 삭제 버튼을 표시하지 않는다', async () => {
   expect(screen.queryByRole('button', { name: '회의 삭제' })).not.toBeInTheDocument()
 })
 
+it.each([undefined, false])('서버의 삭제 허용 값이 %s이면 PM에게도 삭제 버튼을 표시하지 않는다', async (available) => {
+  const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_09')
+  if (!meeting) throw new Error('meeting fixture is missing')
+  meeting.deletion_available = available
+  await open()
+  expect(screen.queryByRole('button', { name: '회의 삭제' })).not.toBeInTheDocument()
+})
+
+it('실패한 회의도 서버의 삭제 허용 값이 false이면 삭제 버튼을 표시하지 않는다', async () => {
+  const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_09')
+  if (!meeting) throw new Error('meeting fixture is missing')
+  meeting.status = 'failed'
+  meeting.deletion_available = false
+  renderApp(paths.meetings('ws_01', meeting.meeting_id))
+  await screen.findByRole('heading', { name: '회의를 정리하지 못했어요' })
+  expect(screen.queryByRole('button', { name: '회의 삭제' })).not.toBeInTheDocument()
+})
+
 it('회의 목록에 없다는 이유로 태스크의 출처를 삭제되었다고 추정하지 않는다', async () => {
   server.use(http.get('/api/v1/workspaces/:workspaceId/meetings', () => list([])))
   renderApp(paths.tasks('ws_01', 'tk_01'))

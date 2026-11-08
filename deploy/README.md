@@ -52,3 +52,32 @@ downgrade 와 revert 배포 사이에는 새 코드가 옛 스키마에서 돈�
 ## 수동 실행
 
 Actions → deploy → Run workflow 에서 develop 을 고른다. mode 를 all 로 고르면 세 파트를 모두 다시 올린다. 수동 실행도 세 CI 를 먼저 통과해야 한다.
+
+## 회의 삭제 활성화 (#576)
+
+회의 삭제는 `MEETING_DELETION_ENABLED=false`가 기본이다. 자동 배포는 BE·FE 뒤에 AI를 반영하고 녹음 중 봇 재시작을 건너뛸 수 있다. 따라서 배포 성공만으로 삭제를 활성화하지 않는다. 새 DELETE API는 gate가 꺼져 있으면 503을 반환하며 UI도 삭제 CTA를 숨긴다.
+
+기존 회의 ID와 태스크는 유지한다. 새 Discord 회의는 `X-Meeting-Lineage-Version: 1`을 보내는 AI 클라이언트가 만든 경우에만 삭제 준비 상태를 가진다. gate 활성화 후에는 구 클라이언트의 Discord 회의 생성을 거절한다. 수동 업로드와 chat은 실패 시 새 ID로 재생성하는 Discord 계보와 구분한다.
+
+운영자가 다음 조건을 확인한 뒤 활성화한다. 아래 운영 절차는 이번 로컬 개발에서 실행하지 않았다.
+
+1. 삭제 gate를 끈 상태로 새 스키마·API·AI 코드를 배포한다. 실제로 사용하는 봇·워커·소급 저장 프로세스를 식별하고 구 버전 writer를 중지한다. 녹음 중 재시작을 건너뛴 상태를 완료로 보지 않는다.
+2. 과거 Discord 회의는 AI recordings 디렉터리의 manifest를 읽기 전용으로 연결해 `python -m app.cli.reconcile_meeting_lineages`로 대조한다. 기본 dry-run에서 DB가 바뀌지 않는지와 출력 계획을 확인한다. 실행 인자는 해당 명령의 `--help`에 있다.
+3. 모든 과거 Discord 행이 설명되고 손상·임시·ID 누락 manifest, 순환·분기·다른 공간·출처·기존 연결 충돌이 없는 경우에만 `--apply`로 계보와 삭제 준비 상태를 원자적으로 반영한다. 태스크·본문·상태·ID는 바꾸지 않는다. 반복 실행은 변경 0건이어야 한다.
+4. manifest가 부족하면 임의의 관계를 만들거나 일부 과거 회의를 준비 완료로 바꾸지 않는다. 과거 데이터 복구는 보류한다. 새 버전 클라이언트로 생성한 검증된 회의는 별도로 사용할 수 있다.
+5. 새 AI 프로세스 가동과 구 writer 중단을 확인하고 `backend/.env`의 `MEETING_DELETION_ENABLED=true`를 명시적으로 적용한다. `docker compose -f backend/docker-compose.prod.yml up -d`로 API 컨테이너를 다시 만든다. 단순 restart는 변경된 환경 파일을 반영하지 않는다.
+6. 별도 테스트 회의에서 PM 삭제, 보존 태스크, 오래된 링크410과 receipt의 pending→complete를 확인한다. 파일 정리 중에는 실제 삭제 완료로 보고하지 않는다.
+
+gate를 다시 꺼도 이미 접수한 파일 정리와 receipt 조회는 계속된다. AI purge는 다른 회의가 녹음·처리 중이면 잠금을 기다려 완료를 보류할 수 있다. 과거 공유 이름의 STT 트랙 cache는 다른 회의와 소유권이 겹칠 수 있어 삭제 때 함께 무효화될 수 있다. 세션별 새 출력과 다른 회의의 통합 전사는 유지한다.
+
+이미 스키마를 반영한 API 이미지와 실행 중인 DB가 있을 때 EC2의 `/opt/mm`에서 다음 dry-run을 사용한다. 원본 recordings mount는 읽기 전용이다.
+
+```bash
+docker compose -f backend/docker-compose.prod.yml run --rm --no-deps \
+  --entrypoint python -v /opt/mm/ai/recordings:/var/mm-recordings:ro api \
+  -m app.cli.reconcile_meeting_lineages --recordings-dir /var/mm-recordings
+```
+
+출력 계획을 확인하고 writer를 실제로 중지한 뒤에만 같은 명령에 `--apply --writers-stopped`를 추가한다. `--writers-stopped`는 운영자의 확인 표시이며 프로세스 중단을 검사하거나 실행하는 옵션이 아니다. CLI는 적용 전 manifest 목록·해시와 DB 관계를 재검증하고 하나의 트랜잭션으로 반영한다.
+
+API 형식과 오류는 [FE 계약](../frontend/docs/contracts/frontend-api-contract.md#회의-삭제와-보존-태스크-576-2026-11-09), 봇 파일 정리는 [BE·AI 계약](../backend/docs/contracts/backend-ai-contract.md#명시적-회의-삭제와-재처리-계보-576-2026-11-09)에 있다.

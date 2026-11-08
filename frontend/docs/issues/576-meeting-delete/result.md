@@ -28,7 +28,15 @@
 
 리뷰 수정 후 `meetingDelete.test.tsx`, `taskApprovalFlow.test.ts`, `passwordReset.test.tsx`의 107개가 통과했다. 늦은 성공 뒤 삭제된 회의로 돌아가도 410 안내가 나타나고 원문이 렌더링되지 않음을 확인했다. 삭제되지 않은 다른 회의의 추출 결과가 새로 로드될 수 있으므로 cache 단언은 실제 삭제 대상 `ex_01`에 맞췄다. 공개 재실행 진입점은 `src/app/meetingDelete.test.tsx`, `src/shared/mock/meetingDeletion.test.ts`, `e2e/meeting-delete.e2e.ts`다.
 
-같은 수정 상태에서 전체 단위 테스트를 다시 실행해 **283파일 3,596개 모두 통과**했다. 최종 TypeScript 검사·전체 ESLint·Vite 빌드도 통과했다. 기존 전체 실행의 실패 기록과 최종 재실행 결과를 구분한다.
+같은 수정 상태에서 전체 단위 테스트를 다시 실행해 **283파일 3,596개 모두 통과**했다. 그 단계의 TypeScript 검사·전체 ESLint·Vite 빌드도 통과했다. 기존 전체 실행의 실패 기록과 재실행 결과를 구분한다. 이 결과는 아래 서버 gate 연동 추가 전의 기록이다.
+
+### 삭제 가능 여부 gate 추가
+
+이전 서버 응답을 포함해 `deletion_available`이 없거나 false이면 삭제 CTA를 숨긴다. 완료·실패 회의의 PM에게도 같은 규칙을 적용한다. 준비된 모의 회의와 새 수동 업로드는 terminal 상태일 때만 true를 반환하며, 명시적인 false는 완료 이후에도 유지한다. 직접 MSW 삭제 요청도 검증되지 않은 회의는 409로 거절한다.
+
+이 추가의 수정 전 실패 7건을 확인했고, 최종 관련 8파일 124개와 TypeScript·대상 ESLint를 통과했다. Chromium Doctor와 삭제 E2E 2개도 통과했다. 화자 지정과 같은 기존 PM 기능은 삭제 가능 여부와 별개로 검증했다. 커밋 기준 통합 검증은 PR의 실행 기록과 구분한다.
+
+gate를 포함한 최종 전체 단위 테스트는 **283파일 3,605개 모두 통과**했다. 전체 ESLint와 Vite 빌드도 다시 통과했다. 실제 백엔드의 명시적 삭제 가능 응답과 39개 HTTPS 동작은 [BE 결과](../../../../backend/docs/plan/m3/result.md)의 별도 검증이며 MSW 결과로 대체하지 않았다.
 
 ## 제한과 남은 검증
 

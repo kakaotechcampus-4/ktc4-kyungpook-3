@@ -35,6 +35,8 @@ export const meetingHandlers = [
       return fail('MEETING_DELETE_BLOCKED', '정리 중인 회의는 삭제할 수 없습니다.', 409, {
         status: meeting.status,
       })
+    if (meeting.deletion_available !== true)
+      return fail('MEETING_LINEAGE_UNVERIFIED', '회의 삭제 준비를 확인하지 못했습니다.', 409)
     const receipt = {
       meeting_id: id,
       deleted_at: MOCK_NOW,
@@ -99,7 +101,13 @@ export const meetingHandlers = [
     // 처리 중 회의는 흐름 방식(db.meetingFlow.mode)대로 진행한다(readMeeting). Vitest 기본값 manual 은 그대로다
     const meeting = readMeeting(String(params.meetingId))
     return meeting
-      ? ok({ ...meeting, extraction_id: meeting.status === 'done' ? meeting.extraction_id : null })
+      ? ok({
+          ...meeting,
+          extraction_id: meeting.status === 'done' ? meeting.extraction_id : null,
+          deletion_available:
+            meeting.deletion_available === true &&
+            (meeting.status === 'done' || meeting.status === 'failed'),
+        })
       : fail('MEETING_NOT_FOUND', '회의가 없습니다.', 404)
   }),
   http.post('/api/v1/meetings', async ({ request }) => {
@@ -123,6 +131,7 @@ export const meetingHandlers = [
       ended_at: null,
       extraction_id: null,
       failed_stage: null,
+      deletion_available: body.source === 'manual_upload' || request.headers.get('X-Meeting-Lineage-Version') === '1',
       // 백엔드는 progress 를 항상 계산해 준다. 갓 만든 회의는 오디오도 추출도 없다
       progress: { audio_merged: false, transcribed: false, extracted: false },
     }
@@ -221,6 +230,7 @@ export const meetingHandlers = [
       ended_at: null,
       extraction_id: null,
       failed_stage: null,
+      deletion_available: true,
       progress: { audio_merged: false, transcribed: false, extracted: false },
     }
     db.meetings.push(meeting)

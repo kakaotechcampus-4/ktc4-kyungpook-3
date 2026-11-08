@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import secrets
 import shutil
 import threading
@@ -34,6 +35,20 @@ from app.services.pending_merge import merge_into_pending
 
 logger = logging.getLogger(__name__)
 LEASE_SECONDS = 120
+
+
+def enabled() -> bool:
+    return os.getenv("MEETING_DELETION_ENABLED") == "true"
+
+
+def deletion_available(db: Session, meeting: Meeting) -> bool:
+    if not enabled() or meeting.deleted_at is not None:
+        return False
+    lineage = db.scalars(select(Meeting).where(lineage_condition(meeting))).all()
+    return bool(lineage) and all(
+        row.deletion_ready and row.status in (MeetingStatus.DONE, MeetingStatus.FAILED)
+        for row in lineage
+    )
 
 
 def require_live_meeting(
@@ -83,12 +98,14 @@ def receipt(db: Session, meeting: Meeting) -> MeetingDeletionReceipt:
     )
 
 
-def _item_evidence(db: Session, item: ExtractionItem, fallback: dict) -> dict:
+def _item_evidence(db: Session, item: ExtractionItem, fallback: dict, meeting_id: str) -> dict:
     source = db.scalar(
         select(Source)
         .join(Evidence, Evidence.source_id == Source.source_id)
         .where(
-            Evidence.item_id == item.item_id, Evidence.type == str(EvidenceType.TASK)
+            Evidence.item_id == item.item_id,
+            Evidence.type == str(EvidenceType.TASK),
+            Source.meeting_id == meeting_id,
         )
         .order_by(Source.seq.desc())
         .limit(1)
@@ -139,7 +156,9 @@ def prune_meeting_from_card(contributions: list[dict], meeting_id: str) -> dict 
     return rebuilt
 
 
-def rebuild_pending_card(db: Session, payload: dict, meeting_id: str) -> dict | None:
+def rebuild_pending_card(
+    db: Session, card: ApprovalRequest, payload: dict, meeting_id: str
+) -> dict | None:
     parts = [payload, *(payload.get("merged_items") or [])]
     contributions = []
     seen = set()
@@ -149,11 +168,17 @@ def rebuild_pending_card(db: Session, payload: dict, meeting_id: str) -> dict | 
         item_id = part.get("extraction_item_id")
         if not isinstance(item_id, str) or item_id in seen:
             continue
-        seen.add(item_id)
         item = db.get(ExtractionItem, item_id)
         extraction = db.get(Extraction, item.extraction_id) if item else None
-        if item is not None and extraction is not None:
-            fallback = part if part.get("meeting_id") == extraction.meeting_id else {}
+        origin = db.get(Meeting, extraction.meeting_id) if extraction else None
+        if (
+            item is not None and extraction is not None and origin is not None
+            and part.get("meeting_id") == origin.meeting_id
+            and origin.workspace_id == card.workspace_id
+            and item.approval_id == card.approval_id
+            and origin.deleted_at is None
+        ):
+            seen.add(item_id)
             contributions.append(
                 {
                     "task_title": item.task_title,
@@ -169,7 +194,7 @@ def rebuild_pending_card(db: Session, payload: dict, meeting_id: str) -> dict | 
                     "doc_text": item.doc_text,
                     "category": item.category,
                     "created_at": item.created_at,
-                    **_item_evidence(db, item, fallback),
+                    **_item_evidence(db, item, part, origin.meeting_id),
                 }
             )
     return prune_meeting_from_card(contributions, meeting_id)
@@ -194,7 +219,7 @@ def _clean_cards(db: Session, meeting: Meeting, now: datetime) -> list[str]:
             continue
         affected.append(card.approval_id)
         rebuilt = (
-            rebuild_pending_card(db, payload, meeting.meeting_id)
+            rebuild_pending_card(db, card, payload, meeting.meeting_id)
             if card.status == ApprovalStatus.PENDING
             else None
         )
@@ -213,6 +238,8 @@ def _clean_cards(db: Session, meeting: Meeting, now: datetime) -> list[str]:
 
 
 def delete_meeting(db: Session, meeting_id: str) -> MeetingDeletionReceipt:
+    if not enabled():
+        raise AppError(ErrorCode.MEETING_DELETION_UNAVAILABLE)
     meeting = db.get(Meeting, meeting_id)
     if meeting is None:
         raise AppError(ErrorCode.MEETING_NOT_FOUND)
@@ -232,6 +259,8 @@ def delete_meeting(db: Session, meeting_id: str) -> MeetingDeletionReceipt:
     ).all()
     if meeting.deleted_at is not None:
         return receipt(db, meeting)
+    if any(not row.deletion_ready for row in lineage):
+        raise AppError(ErrorCode.MEETING_LINEAGE_UNVERIFIED)
     for row in lineage:
         if row.status not in (MeetingStatus.DONE, MeetingStatus.FAILED):
             raise AppError(

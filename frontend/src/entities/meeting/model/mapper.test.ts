@@ -1,6 +1,11 @@
 import { toMeeting, toMeetingSummary, toMeetingUploadResult, toSpeakerView } from './mapper'
 import { meetingFixtures, meetingSummaryFixtures } from '@/shared/mock/fixtures/meeting'
 
+it.each([undefined, false, true])('서버가 명시적으로 허용할 때만 삭제 가능 상태로 변환한다 (%s)', (available) => {
+  expect(toMeeting({ ...meetingFixtures[1], deletion_available: available }).deletionAvailable)
+    .toBe(available === true)
+})
+
 it('maps detail and summary independently including the required progress', () => {
   expect(toMeeting(meetingFixtures[1])).toEqual({
     id: 'mt_09',
@@ -11,6 +16,7 @@ it('maps detail and summary independently including the required progress', () =
     endedAt: '2026-09-15T05:45:30Z',
     extractionId: 'ex_01',
     failedStage: null,
+    deletionAvailable: true,
     // 백엔드가 필수로 내려주므로 픽스처에도 있다 (계약 §2.3, §4.7-1)
     progress: { audioMerged: true, transcribed: true, extracted: true },
   })

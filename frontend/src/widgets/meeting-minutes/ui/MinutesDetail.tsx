@@ -247,7 +247,7 @@ export function MinutesDetail({
           <p className={NOTICE_TEXT}>{meeting.title || '제목 없는 회의'}</p>
           <p className={META}>{formatSeoulDateTime(meeting.startedAt)}</p>
           <p className={NOTICE_TEXT}>{failure.description}</p>
-          {isPm ? (
+          {isPm && meeting.deletionAvailable ? (
             <MeetingDelete workspaceId={workspaceId} meetingId={meeting.id} onDeleted={onDeleted} />
           ) : null}
           {!failure.reupload ? null : isPm ? (
@@ -319,7 +319,7 @@ function MinutesView({
       meeting={meeting}
       minutes={body}
       action={
-        isPm ? (
+        isPm && meeting.deletionAvailable ? (
           <MeetingDelete workspaceId={workspaceId} meetingId={meeting.id} onDeleted={onDeleted} />
         ) : null
       }

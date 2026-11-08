@@ -121,6 +121,7 @@ class MeetingProcessing(BaseModel):
 
 class MeetingDetailResponse(BaseModel):
     meeting_id: str
+    deletion_available: bool = False
     workspace_id: str
     title: str | None
     status: str

@@ -422,6 +422,7 @@ class Meeting(Base):
         String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    deletion_ready: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
     recording_root_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey('meeting.meeting_id'), nullable=True, index=True
     )

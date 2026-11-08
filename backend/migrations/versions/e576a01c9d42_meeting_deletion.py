@@ -11,6 +11,10 @@ depends_on = None
 
 def upgrade():
     op.add_column(
+        "meeting", sa.Column("deletion_ready", sa.Boolean(), nullable=False, server_default=sa.false())
+    )
+    op.execute("UPDATE meeting SET deletion_ready = true WHERE source IN ('chat', 'manual_upload')")
+    op.add_column(
         "meeting", sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True)
     )
     op.create_index("ix_meeting_deleted_at", "meeting", ["deleted_at"])
@@ -65,3 +69,4 @@ def downgrade():
     op.drop_column("meeting", "recording_root_id")
     op.drop_index("ix_meeting_deleted_at", table_name="meeting")
     op.drop_column("meeting", "deleted_at")
+    op.drop_column("meeting", "deletion_ready")
