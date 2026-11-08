@@ -2,7 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode, Ref } from 'react'
 import { MESSAGE_BODY_MAX_LENGTH } from '@/entities/message'
 import type { Bundle, BundleTask } from '@/entities/message'
-import { useUnsavedChanges } from '@/shared/lib/unsaved-changes'
+import { paths } from '@/shared/config/routes'
+import { GuardedLink, useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { LockedButton } from '@/shared/ui/locked-button'
 import { taskDueLabel, taskTitle } from '../lib/format'
@@ -12,10 +13,14 @@ import type { ReviewDraft } from '../model/reviewDraft'
 /* Messages 캔버스 실측 — 근거 블록(눌린 면 · 위아래 18 · 좌우 20 · 라운드 12 · 간격 10).
    행 버튼·메모 칸·빼기 확인은 시안에 없다 — 문구 고쳐 쓰기의 칸·버튼 모양을 그대로 쓴다 */
 const TASKS = 'flex flex-col gap-10 rounded-12 bg-surface-sunken px-20 py-18'
+/* 왜 보내려 하나요 블록의 이유 문장과 근거 링크. 앱 안 이동이라 바깥 링크 아이콘은 뺀다 */
+const REASON = 'text-body leading-[1.75] wrap-anywhere text-ink'
+const EVIDENCE_LINK = 'text-caption text-dim underline underline-offset-3 hover:text-sub'
 const TEXTAREA =
   'min-h-[80px] w-full resize-y rounded-9 border border-input-border bg-surface px-12 py-10 text-[14px] leading-[1.8] text-ink focus-visible:-outline-offset-1'
 
 export interface ReviewTasksProps {
+  workspaceId: string
   bundle: Bundle
   draft: ReviewDraft
   onDraftChange: (draft: ReviewDraft) => void
@@ -33,11 +38,12 @@ export interface ReviewTasksProps {
 }
 
 /**
- * 묶은 태스크 — 행마다 `메모 고치기`·`빼기`. 메모 칸과 빼기 확인은 그 행 안에 열린다.
+ * 묶은 태스크 — 행마다 재촉 이유와 근거 링크, `메모 고치기`·`빼기`. 메모 칸과 빼기 확인은 그 행 안에 열린다.
  * 메모를 바꾸거나 태스크를 빼면 서버가 문구를 규칙으로 다시 만들고 승인을 푼다 — 그래서 열기 전에 알린다.
  * 닫으면 연 버튼으로 포커스를 돌린다. 연 동안 버튼은 잠기고(`aria-disabled`) 펼침 상태를 알린다(`aria-expanded`)
  */
 export function ReviewTasks({
+  workspaceId,
   bundle,
   draft,
   onDraftChange,
@@ -66,6 +72,7 @@ export function ReviewTasks({
           <TaskRow
             key={task.reminderId}
             task={task}
+            evidence={evidenceLink(workspaceId, bundle.threadId, task)}
             recipientName={bundle.recipientName}
             last={last}
             approved={bundle.stage === 'approved'}
@@ -84,8 +91,27 @@ export function ReviewTasks({
   )
 }
 
+/** 답장이면 그 메시지를 보이며 대화를, 태스크 변경이면 태스크 상세를 연다 */
+function evidenceLink(
+  workspaceId: string,
+  threadId: string,
+  task: BundleTask,
+): { to: string; label: string } | null {
+  const { evidence } = task
+  if (evidence === null) return null
+  if (evidence.kind === 'reply')
+    return {
+      to: paths.messageThread(workspaceId, threadId, evidence.messageId),
+      label: '답장 보기',
+    }
+  return task.taskId === null
+    ? null
+    : { to: paths.tasks(workspaceId, task.taskId), label: '변경 보기' }
+}
+
 function TaskRow({
   task,
+  evidence,
   recipientName,
   last,
   approved,
@@ -98,6 +124,7 @@ function TaskRow({
   onSaveNote,
 }: {
   task: BundleTask
+  evidence: { to: string; label: string } | null
   recipientName: string
   last: boolean
   approved: boolean
@@ -160,6 +187,20 @@ function TaskRow({
           </LockedButton>
         </div>
       </div>
+      {task.reason === null ? null : (
+        <div className="flex flex-col items-start gap-4">
+          <p className={REASON}>{task.reason}</p>
+          {evidence === null ? null : (
+            <GuardedLink
+              to={evidence.to}
+              aria-label={`'${title}' ${evidence.label}`}
+              className={EVIDENCE_LINK}
+            >
+              {evidence.label}
+            </GuardedLink>
+          )}
+        </div>
+      )}
       {editing ? (
         <NoteEditor
           title={title}
