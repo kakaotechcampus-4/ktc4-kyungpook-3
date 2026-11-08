@@ -1,10 +1,10 @@
 # 결과 — 비밀번호 재설정 마무리: 로그인 링크와 BE 명세 대조 (#451)
 
-- 기록일: 2026-11-06
+- 기록일: 2026-11-06, 2026-11-08 갱신
 - 대상: [#451](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/451)(#356 후속)
-- 기준: develop `41d81d68`. PR은 아직 만들지 않았다.
-- 상태: **이슈의 할 일 4개를 반영했다.** MSW 기준으로 검증했다. 운영 메일 설정 전이라 실서버와 실제 메일은 미검증이다.
-- 병합 조건: BE가 운영 메일 설정 완료를 #356에 알린 뒤 병합한다. 2026-11-06 기준 알림이 없다.
+- 기준: develop `41d81d68`(2026-11-06). 2026-11-08에 그 뒤의 develop을 병합했다. PR [#458](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/458).
+- 상태: **이슈의 할 일 4개를 반영했다.** FE는 MSW 기준으로 검증했다. 운영 서버의 실제 메일 흐름은 BE가 2026-11-08에 확인했다.
+- 병합 조건: BE가 운영 메일 설정 완료를 알린 뒤 병합한다. 2026-11-08 #451 댓글로 채워졌다.
 
 ## 작업 근거와 요약
 
@@ -45,12 +45,25 @@ Codex 독립 리뷰가 PR #404에서 들어온 재설정 화면의 중간 결함
 1. 늦은 변경 응답이 다른 계정의 세션을 비웠다. 계정 A의 링크로 변경을 보내고 응답을 기다리는 사이 계정 B로 로그인하면, A의 늦은 성공이 B의 세션 캐시를 비우고 `/login`으로 보내며 B의 푸시 구독까지 풀었다. 이제 [ResetPasswordForm.tsx](../../../src/features/auth/ui/ResetPasswordForm.tsx)가 제출할 때 세션 범위(`captureSessionScope`)를 잡아 confirm에 취소 신호를 넘기고, 오류 표시와 [useFinishPasswordReset.ts](../../../src/features/auth/model/useFinishPasswordReset.ts)의 정리는 같은 세션일 때만 한다. 서버에서 A의 비밀번호가 바뀌었을 수는 있다. 그래도 B의 세션·구독에는 영향이 없다.
 2. 같은 화면의 새 메일 링크를 무시했다. `/reset-password#token=A`를 연 뒤 같은 화면에서 `#token=B`로 오면 주소만 지우고 A의 토큰과 확인 결과를 계속 썼다. 무효가 된 A 대신 최신 B를 열어도 바꿀 수 없었고, A가 다른 계정의 유효한 링크면 A의 비밀번호를 바꿨다. 이제 [useResetLink.ts](../../../src/features/auth/model/useResetLink.ts)가 새 기록 항목으로 온 `#token=`을 새 링크로 보고 토큰·확인 결과·변경 거절을 바꾼다. 확인 Query의 key는 토큰 대신 링크 번호를 붙여 링크마다 나뉘고, 앞 링크의 진행 중 확인은 취소된다.
 
+## develop 병합과 BE 운영 확인 반영 (2026-11-08)
+
+- BE가 운영 서버에서 재설정 요청 200 `{}`, Gmail 수신, 메일 링크로 변경, 새 비밀번호 로그인을 확인했다([#451 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/451)). 병합 조건을 채웠다.
+- BE가 요청한 스팸함 안내는 이미 요청 완료 화면에 있다. [ForgotPasswordForm.tsx](../../../src/features/auth/ui/ForgotPasswordForm.tsx)가 #356부터 「링크는 30분 동안 쓸 수 있어요. 메일이 오지 않으면 스팸함을 확인해 주세요.」를 보이고 `passwordReset.test.tsx`가 확인한다. 문구를 바꾸지 않았다.
+- develop(#454 가입 이메일 인증·카카오 로그인, #457 로그인 429, #482 Storybook 삭제)을 병합했다. 충돌은 develop 구조를 따라 풀었다.
+  - 회원가입 MSW handler는 develop의 인증 토큰·카카오 흐름 위에 비밀번호 규칙 검사를 얹었다. 본문 검증(비밀번호 규칙, 이름)이 인증·409보다 먼저다.
+  - 통합 테스트는 develop의 `signUpVerified`를 쓰고 비밀번호만 규칙에 맞췄다.
+  - 로그인 화면 테스트는 Google 버튼이 없다는 develop 기대를 따르고, 링크 이동 검사를 남겼다.
+  - `AuthForms.stories.tsx`는 develop대로 지웠다.
+  - `frontend/README.md`에는 이 작업의 줄을 두지 않는다(develop 규칙).
+- [API 계약](../../contracts/frontend-api-contract.md): §4.1.1을 운영 확인과 스팸함 안내로 고쳤다. #554가 지적한 「BE PR #456 열림·미병합」 표기를 §1·§4.1.3·§5.1에서 병합으로 고쳤다. §4.1.3에는 재설정이 그 이메일의 막힘만 풀고 IP 막힘은 풀지 않는다는 BE 코드 사실(`login_limit.clear_email`)을 적었다. §4.1.2의 「MSW 회원가입은 비밀번호 규칙을 검사하지 않는다」는 이 PR의 사실로 바꿨다.
+- [결정](../../decision/frontend-decisions.md) D-005·D-006에 2026-11-08 갱신을 더했다.
+
 ## 완료조건 확인
 
 | 이슈 #451의 할 일 | 상태 | 근거 |
 |---|---|---|
 | 명세 대조 | 충족 | 위 표. `schemas.test.ts`(이모지), `auth.test.ts`(약한 비밀번호 + 이미 있는 이메일 → 400) |
-| 로그인 화면 링크 | 충족(MSW) | `authFlow.test.tsx`(href, 클릭, Tab 순서 이메일 → 링크 → 비밀번호, Enter), E2E `color-contrast.e2e.ts`(4.5:1 이상), Storybook `로그인_기본` play(로컬 미실행, CI가 돌린다) |
+| 로그인 화면 링크 | 충족(MSW) | `authFlow.test.tsx`(href, 클릭, Tab 순서 이메일 → 링크 → 비밀번호, Enter), E2E `color-contrast.e2e.ts`(4.5:1 이상). Storybook `로그인_기본` play는 #482로 스토리가 지워져 없다 |
 | 결정 기록·계약 | 충족 | [결정](../../decision/frontend-decisions.md) D-005·D-006, [API 계약](../../contracts/frontend-api-contract.md) §1·§4.1.1·§5.1 |
 | 검증(MSW) | 충족(MSW) | E2E `password-reset.e2e.ts` 6개, `passwordReset.test.tsx`의 서버 400 뒤 같은 토큰 재시도 |
 
@@ -73,6 +86,7 @@ Codex 독립 리뷰가 PR #404에서 들어온 재설정 화면의 중간 결함
 ## 남은 것
 
 - 리뷰 결함 2건의 브라우저 E2E는 더하지 않았다. 같은 문서에서 fragment만 바꾸는 이동과 응답 보류 중 다른 계정 로그인은 Vitest(실제 라우터·Query·MSW)로 확인했다.
-- 운영 메일 설정 뒤 실서버에서 실제 메일 링크로 바꾸고 새 비밀번호로 로그인하는 확인(D-116 최종 배포 E2E, #357).
+- FE가 배포 화면에서 실제 메일 링크로 바꾸고 새 비밀번호로 로그인하는 확인(D-116 최종 배포 E2E, #357). BE는 2026-11-08에 같은 흐름을 확인했다.
+- 로그인 429 화면의 재설정 안내는 #554에서 다룬다.
 - MSW 회원가입은 이메일 형식과 정규화(pydantic `EmailStr`)를 흉내 내지 않는다. 이번 범위는 비밀번호 규칙과 순서다.
 - 포커스 테두리는 전역 규칙(오프셋 -1px)이라 13px 글자의 「?」 끝에 조금 걸친다. 다른 글자 링크와 같은 규칙이라 따로 바꾸지 않았다.
