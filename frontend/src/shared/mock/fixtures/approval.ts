@@ -27,4 +27,7 @@ export const approvalFixtures: ApprovalDto[] = extractionFixtures[1].items
     resolved_by: null,
     created_at: ['2026-09-15T06:00:00Z', '2026-09-15T06:01:00Z', '2026-09-17T02:00:00Z'][index],
     resolved_at: null,
+    // 응답은 handler 가 추출 항목의 원문·유형과 지금 별칭으로 다시 구한다 (#523)
+    alias_candidate: false,
+    alias_text: null,
   }))
