@@ -89,6 +89,13 @@ def test_assignee_raw_is_only_a_lookupable_alias(a_type, raw, resolved, expected
     assert item["assignee_raw"] == expected
 
 
+def test_update_assignee_uses_the_resolved_name_for_thirdname():
+    # 별칭 학습은 create 승인 때뿐이다. 수정 항목은 예전처럼 고친 이름으로 찾는다
+    finding = _finding(assignee_type="thirdname", assignee_raw="화은이가", assignee_resolved="하은")
+    item = to_item(finding, _result(category="assignee"), _drafted(), _target(), TRANSCRIPT)
+    assert item["assignee_raw"] == "하은"
+
+
 # ── update ────────────────────────────────────────────────────────────────
 
 
@@ -480,6 +487,39 @@ REFUND_FRI = {"indices": [2], "summary": "결제 환불 기능 마감을 금요�
 def _run_owner(monkeypatch, findings, terra, luna):
     _install(monkeypatch, stage1={"findings": findings}, terra=terra, luna_draft=luna)
     return run(OWNER_MEETING, workspace_id="ws_1", today=date(2026, 9, 28), candidates=DedupCandidates())
+
+
+def test_new_card_merge_keeps_the_original_thirdname_mention(monkeypatch):
+    # 새 할 일 카드에 담당 발화를 합쳐도 원문 언급이 간다(create 승인 때 BE 가 별칭을 배운다)
+    who = {"indices": [1], "summary": "결제 환불 기능을 화은이가 맡기로 함", "assignee_type": "thirdname",
+           "assignee_raw": "화은이가", "assignee_resolved": "하은", "reason": "담당"}
+    out = _run_owner(
+        monkeypatch, [REFUND_NEW, who],
+        [_terra(is_new=True, matched_candidate_index=None), _terra(category="assignee")],
+        [{"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "결제 환불 기능 구현"},
+         {"task": None, "due_date": None, "doc_text": "화은이 담당"}],
+    )
+
+    (card,) = out.items
+    assert card["action"] == "create"
+    assert card["assignee_raw"] == "화은이가"
+
+
+def test_assignee_change_card_sends_the_resolved_name(monkeypatch):
+    # 기존 Task 의 담당자 변경은 별칭을 배우지 않는다 — 예전처럼 고친 이름으로 찾는다
+    due = {"indices": [0], "summary": "로그인 화면 마감을 금요일로 정함", "assignee_type": "none", "reason": "마감"}
+    who = {"indices": [1], "summary": "로그인 화면 담당을 화은이가 맡기로 함", "assignee_type": "thirdname",
+           "assignee_raw": "화은이가", "assignee_resolved": "하은", "reason": "담당"}
+    out = _run_owner(
+        monkeypatch, [due, who],
+        [_terra(category="schedule"), _terra(category="assignee")],
+        [{"task": None, "due_date": "2026-10-02", "doc_text": "마감 변경"},
+         {"task": None, "due_date": None, "doc_text": "담당 변경"}],
+    )
+
+    (card,) = out.items
+    assert card["action"] == "update"
+    assert card["assignee_raw"] == "하은"
 
 
 def test_merged_assignee_carries_the_speaker_who_took_it(monkeypatch):
