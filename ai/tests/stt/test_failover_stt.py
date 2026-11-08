@@ -472,6 +472,29 @@ def test_the_state_file_is_written_by_tick_and_a_restarted_worker_carries_on(tmp
     assert third.phase is Phase.ON_GPU                         # 다시 뜨자마자 일 없음으로 끄지 않는다
 
 
+def test_a_failing_state_write_still_moves_on_and_writes_once_the_disk_frees(tmp_path, monkeypatch, capsys):
+    """스위치는 이미 불렸다. 파일을 못 썼다고 단계를 멈추면 tick 마다 on 을 다시 보내고 알림도 끊긴다."""
+    import stt.failover as failover
+
+    fo, elice, gpu, switch, clock, notes = make(tmp_path)
+    fail_elice(fo, elice, 6)
+    fo.tick()
+    assert ticks(fo, clock, 300, until=lambda: fo.phase is Phase.STARTING)
+    write = failover._atomic_write
+
+    def disk_full(path, text):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(failover, "_atomic_write", disk_full)
+    n0 = len(notes)
+    assert ticks(fo, clock, 3 * 3600, until=lambda: fo.phase is Phase.PARKED)
+    assert switch.starts == 1 and switch.state == "off" and len(notes) > n0
+    assert "상태 파일을 쓰지 못했다" in capsys.readouterr().out
+    monkeypatch.setattr(failover, "_atomic_write", write)
+    fo.tick()
+    assert read_state_file(tmp_path)["phase"] == "parked"
+
+
 def test_a_broken_state_file_starts_normal(tmp_path, capsys):
     (tmp_path / "gpu-failover.json").write_text("{not json")
     fo, *_ = make(tmp_path)

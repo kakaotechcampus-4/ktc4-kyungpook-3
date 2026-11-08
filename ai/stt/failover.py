@@ -780,8 +780,13 @@ class FailoverStt:
                                      switch_error=switch_error, gpu_ok=gpu_ok, elice_ok=elice_ok), L)
         # 바뀌지 않아도 첫 tick 에는 쓴다. 없으면 배포 직후 status 가 워커가 돈 적이 없다고 답한다
         if new != s or not self._written:
-            _atomic_write(self.state_dir / STATE_FILE, _dump(new, self.mode, now))
-            self._written = True
+            try:
+                _atomic_write(self.state_dir / STATE_FILE, _dump(new, self.mode, now))
+                self._written = True
+            except OSError as e:
+                # 스위치는 이미 불렸으니 단계는 메모리에서 넘긴다. 못 쓴 파일은 다음 tick 이 다시 쓴다
+                self._written = False
+                print(f"[failover] 상태 파일을 쓰지 못했다: {type(e).__name__}: {e}", flush=True)
         if req is not None:
             # 확인 호출 동안(최대 30초씩) 새 요청이 같은 이름으로 들어왔을 수 있다. 읽은 그 파일만 지운다
             _unlink_if_same(req_path, seen)
