@@ -3,7 +3,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { messageInboxQueryOptions, messageThreadQueryOptions } from '@/entities/message'
 import type { Bundle, MessageInbox as Inbox, MessageThreadSummary } from '@/entities/message'
-import { paths } from '@/shared/config/routes'
+import { MESSAGE_PARAMS, paths } from '@/shared/config/routes'
 import {
   useCompactScreen,
   useHideShellChrome,
@@ -150,7 +150,7 @@ export function MessageInbox({
   const asideRef = useRef<HTMLElement>(null)
   const listTitleRef = useRef<HTMLHeadingElement>(null)
   const barTitleRef = useRef<HTMLElement | null>(null)
-  const href = location.pathname + location.search
+  const href = location.pathname + withoutShownMessage(location.search)
   const shown = useRef({ pane, href })
   useLayoutEffect(() => {
     const before = shown.current
@@ -493,6 +493,14 @@ function InboxList({
       </section>
     </>
   )
+}
+
+/** 목록 행 주소와 견줄 검색 문자열. 대화 안에서 보여 줄 메시지(`message`)는 행 주소에 없다. 묶음을 고르는 `review` 는 남긴다 */
+function withoutShownMessage(search: string): string {
+  const params = new URLSearchParams(search)
+  params.delete(MESSAGE_PARAMS.message)
+  const rest = params.toString()
+  return rest === '' ? '' : `?${rest}`
 }
 
 /*
