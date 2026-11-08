@@ -38,6 +38,7 @@ export function TaskHistory({
   names,
   isPm,
   meeting,
+  meetingDeleted,
 }: {
   workspaceId: string
   taskId: string
@@ -45,6 +46,7 @@ export function TaskHistory({
   isPm: boolean
   /** 출처 회의. 회의에서 나오지 않은 태스크는 null */
   meeting: { id: string; title: string } | null
+  meetingDeleted: boolean
 }) {
   const titleId = useId()
   const timeline = useQuery(taskHistoryQueryOptions(workspaceId, taskId))
@@ -93,7 +95,9 @@ export function TaskHistory({
         <h2 id={titleId} className={SECTION_TITLE}>
           변경 이력
         </h2>
-        {meeting === null ? null : (
+        {meetingDeleted ? (
+          <p className="text-caption text-sub">원본 회의가 삭제되어 근거를 볼 수 없음</p>
+        ) : meeting === null ? null : (
           <GuardedLink to={paths.meetings(workspaceId, meeting.id)} className={SOURCE_LINK}>
             {meeting.title}에서 나온 일
             <Icon name="link-out" size={12} />

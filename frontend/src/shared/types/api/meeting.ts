@@ -20,6 +20,7 @@ export interface MeetingDto {
   ended_at: string | null
   extraction_id: string | null
   failed_stage: string | null
+  deletion_available?: boolean
   progress?: { audio_merged: boolean; transcribed: boolean; extracted: boolean } | null
 }
 export interface MeetingCreateDto {

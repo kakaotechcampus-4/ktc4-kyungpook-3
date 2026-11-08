@@ -13,9 +13,10 @@ describe('태스크 스키마', () => {
     expect(taskSchema.parse({ ...valid, total_minutes: 3 })).toEqual(valid)
   })
 
-  it('start_date 가 빠진 옛 응답도 읽는다', () => {
+  it('start_date·meeting_deleted 가 빠진 옛 응답도 읽는다', () => {
     const legacy: Partial<typeof valid> = { ...valid }
     delete legacy.start_date
+    delete legacy.meeting_deleted
     expect(taskSchema.safeParse(legacy).success).toBe(true)
   })
 
@@ -24,6 +25,7 @@ describe('태스크 스키마', () => {
     ['소수 버전', { version: 1.5 }],
     ['문자열 버전', { version: '3' }],
     ['null 버전', { version: null }],
+    ['문자열 회의 삭제 여부', { meeting_deleted: 'true' }],
     ['필수 필드 누락', { created_at: undefined }],
   ])('%s 는 읽지 않는다', (_, patch) => {
     expect(taskSchema.safeParse({ ...valid, ...patch }).success).toBe(false)

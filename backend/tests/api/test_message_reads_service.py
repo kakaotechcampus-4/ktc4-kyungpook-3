@@ -59,6 +59,27 @@ def test_member_counts_unread_bot_messages_in_own_thread(mdb, seed):
     assert reads.unread_by_thread(mdb, seed["alice"]) == {thread.thread_id: 2}
 
 
+def test_member_reply_marks_earlier_pm_messages_read(mdb, seed):
+    thread = _thread(mdb, seed["alice"])
+    _msg(mdb, thread, MessageSender.PM, _minutes(1))
+    assert reads.unread_count(mdb, seed["alice"]) == 1
+
+    _msg(mdb, thread, MessageSender.MEMBER, _minutes(2))
+    assert reads.unread_count(mdb, seed["alice"]) == 0
+
+    _msg(mdb, thread, MessageSender.PM, _minutes(3))
+    assert reads.unread_count(mdb, seed["alice"]) == 1
+
+
+def test_pm_does_not_count_pm_messages_in_another_members_thread(mdb, seed):
+    thread = _thread(mdb, seed["alice"])
+    _msg(mdb, thread, MessageSender.PM, _minutes(1))
+    assert reads.unread_count(mdb, seed["pm"]) == 0
+
+    _msg(mdb, thread, MessageSender.MEMBER, _minutes(2))
+    assert reads.unread_count(mdb, seed["pm"]) == 1
+
+
 def test_mark_read_clears_and_new_message_counts_again(mdb, seed):
     thread = _thread(mdb, seed["alice"])
     _msg(mdb, thread, MessageSender.BOT, _minutes(1))

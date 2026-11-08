@@ -4,6 +4,7 @@
 한 트랜잭션에서 끝낸다. 시계는 scheduler 가 쓰고 여기서는 답장이 시계에 뜻하는 바(clock_effect)만 읽어 준다.
 """
 import json
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -41,8 +42,11 @@ from app.models import (
 from app.schemas.reply import ClaimedCandidate, ClaimedLine, ClaimedReply, ReplyChangeRequest, ReplyJudgmentRequest
 from app.services import matching, messages, notifications, scheduler, tasks
 
+logger = logging.getLogger(__name__)
+
 # 봇이 맡은 뒤 이만큼 결과가 없으면 다시 맡긴다. 10분보다 짧아 배포로 봇이 재시작해도 판단 실패 알림 전에 한 번 더 돈다.
 JUDGE_LEASE = timedelta(minutes=3)
+# 큐에 들어온 뒤 이 시간이 지나면 맡기지 않고 닫는다(claim 도 스케줄러 expire 와 같은 기준으로 본다). 한 차례 최대 4회(10분 / 3분 리스).
 JUDGE_WINDOW = timedelta(minutes=10)
 LINE_LIMIT = 12
 FAILURE_REASON_LIMIT = 120
@@ -96,7 +100,7 @@ class Notice:
 
 
 def open_judgment(db: Session, message: ThreadMessage, now: datetime) -> None:
-    """팀원 답장을 판단 큐에 넣는다. 후보가 없으면 리마인드와 무관한 글이라 행을 만들지 않는다."""
+    """팀원 답장을 판단 큐에 넣는다. 후보가 없으면 리마인드와 무관한 글이라 행을 만들지 않고 바로 알린다."""
     db.flush()
     thread = db.get(MessageThread, message.thread_id)
     candidates = _candidates(db, thread, messages.utc(message.created_at))
@@ -106,6 +110,8 @@ def open_judgment(db: Session, message: ThreadMessage, now: datetime) -> None:
             state=ReplyJudgmentState.PENDING, queued_at=messages.utc(now), candidates=json.dumps(candidates),
         ))
         db.flush()
+    else:
+        messages.notify_new_message(db, message, now)
 
 
 def _candidates(db: Session, thread: MessageThread, replied_at: datetime) -> list[str]:
@@ -147,13 +153,18 @@ def claim(db: Session, now: datetime) -> ClaimedReply | None:
     if not _take_claim_lock(db):
         return None
     pending = db.execute(
-        select(ReplyJudgment.message_id, ReplyJudgment.thread_id, ReplyJudgment.claimed_at)
+        select(ReplyJudgment.message_id, ReplyJudgment.thread_id, ReplyJudgment.claimed_at, ReplyJudgment.queued_at)
         .where(ReplyJudgment.state == ReplyJudgmentState.PENDING)
         .order_by(ReplyJudgment.queued_at, ReplyJudgment.message_id)
     ).all()
     seen: set[str] = set()
-    for message_id, thread_id, claimed_at in pending:
+    for message_id, thread_id, claimed_at, queued_at in pending:
         if thread_id in seen:
+            continue
+        if messages.utc(queued_at) <= now - JUDGE_WINDOW:
+            # 창이 지난 행은 맡기지 않고 닫는다. seen 에 넣지 않아 같은 대화의 다음 답장이 이어서 나온다.
+            if not _close_past_window(db, message_id, now):
+                seen.add(thread_id)
             continue
         seen.add(thread_id)
         if claimed_at is not None and messages.utc(claimed_at) > now - JUDGE_LEASE:
@@ -165,6 +176,18 @@ def claim(db: Session, now: datetime) -> ClaimedReply | None:
             db.flush()
             return _claimed(db, row)
     return None
+
+
+def _close_past_window(db: Session, message_id: str, now: datetime) -> bool:
+    """창이 지난 행을 savepoint 안에서 expire 로 닫는다. 닫았으면 True. 실패했거나 잠근 뒤 보니 닫을 행이 아니면(그 사이
+    PM 이 골라 새 창에 들어간 경우 등) False 를 돌려 그 대화를 건너뛰게 한다. 앞 답장이 남아 있는데 뒤 답장이 앞지르면 안 된다."""
+    try:
+        with db.begin_nested():
+            return expire(db, message_id, now)
+    except Exception as e:
+        # 봇이 10초마다 claim 하므로 계속 실패하는 행의 스택 트레이스를 매번 남기지 않는다. 트레이스는 스케줄러 틱이 남긴다
+        logger.warning("reply judgment expire failed in claim: %s (%s: %s)", message_id, type(e).__name__, e)
+        return False
 
 
 def _take_claim_lock(db: Session) -> bool:
@@ -226,7 +249,7 @@ def _lines(db: Session, message: ThreadMessage, task_ids: list[str]) -> list[Cla
         .limit(LINE_LIMIT - 1)
     ).all()
     return [
-        ClaimedLine(sender="pm" if m.sender == MessageSender.BOT else "member", text=m.body)
+        ClaimedLine(sender="member" if m.sender == MessageSender.MEMBER else "pm", text=m.body)
         for m in [*reversed(earlier), message]
     ]
 
@@ -374,6 +397,9 @@ def _judged(db: Session, row: ReplyJudgment, changes: list[ReplyChangeRequest], 
             db, workspace_id=row.workspace_id, kind="reply_judged", text=notice.text,
             link_type=notice.link_type, link_id=notice.link_id, now=now, dedupe_key=_notice_key(row),
         )
+    else:
+        # 바꿀 것이 없는 글도 PM 은 받아야 한다. PM 이 고른 재판단은 _notice 가 언제나 알린다.
+        messages.notify_new_message(db, message, now)
 
 
 def _lock_tasks(db: Session, task_ids: set[str]) -> dict[str, Task]:
@@ -885,14 +911,15 @@ def overdue(db: Session, now: datetime) -> list[str]:
     ).all())
 
 
-def expire(db: Session, message_id: str, now: datetime) -> None:
-    """10분 안에 결과가 없는 판단을 끝낸다. overdue 뒤 PM 이 고르거나 결과가 왔을 수 있어 잠근 뒤 다시 본다."""
+def expire(db: Session, message_id: str, now: datetime) -> bool:
+    """10분 안에 결과가 없는 판단을 끝낸다. overdue 뒤 PM 이 고르거나 결과가 왔을 수 있어 잠근 뒤 다시 본다. 끝냈으면 True."""
     now = messages.utc(now)
     row = db.get(ReplyJudgment, message_id, with_for_update=True, populate_existing=True)
     if row.state != ReplyJudgmentState.PENDING or messages.utc(row.queued_at) > now - JUDGE_WINDOW:
-        return
+        return False
     row.state = ReplyJudgmentState.TIMED_OUT
     _notify_unjudged(db, row, now)
+    return True
 
 
 def _notice_key(row: ReplyJudgment) -> str:

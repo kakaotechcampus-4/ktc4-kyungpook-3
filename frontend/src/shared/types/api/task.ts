@@ -11,6 +11,8 @@ export const taskSchema = z.object({
   task_id: z.string(),
   workspace_id: z.string(),
   meeting_id: z.string().nullable(),
+  // 원본 회의를 지웠어도 태스크는 남고 출처는 `meeting_id` 로 남는다(#576). 빠진 옛 응답은 지우지 않은 회의다
+  meeting_deleted: z.boolean().optional(),
   title: z.string(),
   assignee_member_id: z.string().nullable(),
   status: taskStatusSchema,

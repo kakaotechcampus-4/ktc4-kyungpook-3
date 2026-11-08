@@ -237,6 +237,7 @@ function TaskBody({
         names={names}
         isPm={isPm}
         meeting={meeting}
+        meetingDeleted={task.meetingDeleted}
       />
     </>
   )

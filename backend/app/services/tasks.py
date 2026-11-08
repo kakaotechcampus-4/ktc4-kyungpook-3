@@ -8,10 +8,12 @@ from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
-from app.models import ChangedField, ChangeSource, Meeting, Member, Task, TaskHistory, TaskStatus
+from app.models import ChangedField, ChangeSource, Member, Task, TaskHistory, TaskStatus
 from app.services import notion_sync
+from app.services.meeting_deletion import require_live_meeting
 
 # TaskUpdateRequest/승인 payload의 필드명 -> ChangedField 매핑
+# scope(범위 변경)는 Task 컬럼이 없어 여기에 넣지 않는다. log_scope_change 로만 남고, 되돌리기 대상에서도 빠진다.
 _FIELD_MAP: dict[str, ChangedField] = {
     "title": ChangedField.TITLE,
     "assignee_member_id": ChangedField.ASSIGNEE,
@@ -107,12 +109,7 @@ def validate_workspace_ownership(
             )
 
     if meeting_id is not None:
-        meeting = db.get(Meeting, meeting_id)
-        if meeting is None:
-            raise AppError(
-                ErrorCode.MEETING_NOT_FOUND,
-                details={"meeting_id": meeting_id},
-            )
+        meeting = require_live_meeting(db, meeting_id, lock=True)
         if meeting.workspace_id != workspace_id:
             raise AppError(
                 ErrorCode.WORKSPACE_MISMATCH,
@@ -220,6 +217,27 @@ def log_manual_edit(
             changed_by=changed_by,
         )
     )
+
+
+def log_scope_change(
+    db: Session,
+    task: Task,
+    *,
+    new_value: str | None,
+    change_source: str,
+    changed_by: str | None,
+) -> TaskHistory:
+    """범위 변경 승인을 이력 한 줄로 남긴다. task 값·version·Notion 동기화는 건드리지 않는다."""
+    entry = TaskHistory(
+        task_id=task.task_id,
+        changed_field=str(ChangedField.SCOPE),
+        old_value=None,
+        new_value=new_value,
+        change_source=str(change_source),
+        changed_by=changed_by,
+    )
+    db.add(entry)
+    return entry
 
 
 def apply_task_updates(

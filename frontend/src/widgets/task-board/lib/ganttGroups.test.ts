@@ -24,6 +24,7 @@ const task = (
   id,
   workspaceId: 'ws_01',
   meetingId: null,
+  meetingDeleted: false,
   title: id,
   assigneeMemberId,
   status: 'todo',

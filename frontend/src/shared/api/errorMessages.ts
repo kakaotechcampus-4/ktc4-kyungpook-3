@@ -82,6 +82,11 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
   MEMBER_HAS_PENDING_INVITATION: '초대를 수락한 뒤 바꾸거나 초대를 취소해 주세요.',
   PASSWORD_RESET_TOKEN_INVALID: '쓸 수 없는 링크예요. 비밀번호 재설정을 다시 요청해 주세요.',
   MAIL_UNAVAILABLE: '지금은 메일을 보낼 수 없어요. 잠시 뒤 다시 시도해 주세요.',
+  SIGNUP_CODE_RATE_LIMITED: '인증 코드를 너무 자주 요청했어요. 잠시 뒤 다시 시도해 주세요.',
+  SIGNUP_CODE_INVALID: '인증 코드가 맞지 않아요.',
+  SIGNUP_VERIFICATION_INVALID: '이메일 인증 시간이 지났어요. 이메일 인증을 다시 해 주세요.',
+  KAKAO_LINK_EXPIRED: '카카오 로그인 정보가 만료됐어요. 카카오로 다시 시작해 주세요.',
+  KAKAO_ALREADY_LINKED: '이미 다른 계정에 연결된 카카오 계정이에요.',
   TOO_MANY_LOGIN_ATTEMPTS: '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.',
 }
 

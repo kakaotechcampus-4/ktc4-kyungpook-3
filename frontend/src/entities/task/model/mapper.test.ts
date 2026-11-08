@@ -5,11 +5,20 @@ import { isNotionSynced, toTask, toTaskHistory, toTaskTimeline } from './mapper'
 
 const taskDtos: TaskDto[] = taskFixtures.map((row) => ({ ...row, auto_blocked: false }))
 
+it('원본 삭제 여부를 읽고 회의 ID를 유지한다. 빠진 옛 응답은 지우지 않은 회의다', () => {
+  expect(toTask({ ...taskDtos[0], meeting_deleted: true })).toMatchObject({
+    meetingId: 'mt_09',
+    meetingDeleted: true,
+  })
+  expect(toTask(taskDtos[0]).meetingDeleted).toBe(false)
+})
+
 it('maps snake case, version and Notion sync status while retaining date strings', () => {
   expect(toTask(taskDtos[0])).toEqual({
     id: 'tk_01',
     workspaceId: 'ws_01',
     meetingId: 'mt_09',
+    meetingDeleted: false,
     title: '로그인 API 연동',
     assigneeMemberId: 'mb_01',
     status: 'in_progress',

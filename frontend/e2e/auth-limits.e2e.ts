@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { capture, start } from './support'
+import { capture, readMailedCode, start } from './support'
 
 /* #446 가입 이름 100자, #457 로그인 시도 제한 429. 문구와 요청 유무만 본다. 규칙의 전체 경우는 Vitest 가 본다 */
 
@@ -10,9 +10,12 @@ test('101자 이름은 가입 폼에서 막히고 가입 요청을 보내지 않
       signups.push(request.url())
   })
   await start(page, 'signed-out', '/signup')
+  await page.getByLabel('이메일').fill('long-name@example.com')
+  await page.getByRole('button', { name: '인증 코드 받기' }).click()
+  await page.getByLabel('인증 코드').fill(await readMailedCode(page))
+  await page.getByRole('button', { name: '코드 확인' }).click()
   const name = page.getByLabel('이름')
   await name.fill('가'.repeat(101))
-  await page.getByLabel('이메일').fill('long-name@example.com')
   await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
   await page.getByRole('button', { name: '계정 만들기' }).click()
 
@@ -44,7 +47,10 @@ test('시도 제한에 걸린 로그인은 맞는 비밀번호여도 서버 문�
   )
   await expect(page.getByText(/\d+\s*(초|분)/)).toHaveCount(0)
   await expect(page.getByText(/잠겼|잠금/)).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '비밀번호를 잊으셨나요?' })).toBeDisabled()
+  await expect(page.getByRole('link', { name: '비밀번호를 잊으셨나요?' })).toHaveAttribute(
+    'href',
+    '/forgot-password',
+  )
   await expect(page).toHaveURL('/login')
   await capture(page, testInfo, 'login-429.png')
 })

@@ -73,10 +73,10 @@ class BeError(Exception):
 
 
 class MeetingEnded(BeError):
-    """업로드 회의가 BE 에서 이미 끝났거나(failed·done) 없다. 새 회의를 만들지 않고 이 회의의 인계를 멈춘다는 뜻이다.
+    """회의 인계를 영구 종결한다. 삭제 응답은 녹음·업로드 모두 새 회의로 우회하지 않는다.
 
     발화 저장의 409 MEETING_FAILED·404, 추출 등록의 409 MEETING_NOT_PROCESSING·404, 매니페스트의 be.status 가
-    processing·done 이 아닐 때 낸다. 디스코드 회의는 새 회의로 바꾸므로 이 예외를 내지 않는다.
+    processing·done 이 아닐 때는 업로드만 종결한다. 일반 녹음의 failed 복구는 이전 ID를 연결한 새 회의로 진행한다.
     """
 
 
@@ -154,11 +154,19 @@ class BeClient:
             payload = None
         if isinstance(payload, dict) and payload.get("error"):
             err = payload["error"]
+            if err.get("code") == "MEETING_DELETED":
+                raise MeetingEnded("MEETING_DELETED", str(err.get("message", "")), status=r.status_code)
             raise BeError(str(err.get("code", "UNKNOWN")), str(err.get("message", "")), status=r.status_code,
                           details=err.get("details") or {})
         if r.status_code >= 400 or not isinstance(payload, dict):
             raise BeError(f"HTTP_{r.status_code}", (getattr(r, "text", "") or "")[:200], status=r.status_code)
         return payload.get("data")
+
+    def claim_meeting_purge(self) -> dict | None:
+        return self._call("POST", "/bot/meeting-purges/claim", {})
+
+    def ack_meeting_purge(self, meeting_id: str, token: str) -> dict:
+        return self._call("POST", f"/bot/meeting-purges/{meeting_id}/ack", {"claim_token": token})
 
     def pending_uploads(self) -> list[dict]:
         """웹 업로드 회의 중 아직 아무도 가져가지 않은 것(GET /uploads/pending), 먼저 올라온 순서.
@@ -272,11 +280,14 @@ class BeClient:
         return items
 
     def create_meeting(self, workspace_id: str, *, title: str | None = None, source: str = "discord",
-                       started_at: datetime | None = None) -> dict:
+                       started_at: datetime | None = None, replaces_meeting_id: str | None = None) -> dict:
         body = {"workspace_id": workspace_id, "title": title, "source": source}
+        if replaces_meeting_id is not None:
+            body["replaces_meeting_id"] = replaces_meeting_id
         if started_at is not None:
             body["started_at"] = started_at.isoformat()
-        return self._call("POST", "/meetings", body)
+        return self._call("POST", "/meetings", body,
+                          headers={"X-Meeting-Lineage-Version": "1"})
 
     def chat_cursor(self, workspace_id: str) -> datetime | None:
         """BE 가 이미 가진 마지막 채팅 메시지 시각(chat-cursor). 채팅 회의가 없으면 None."""
@@ -463,11 +474,15 @@ class Handoff:
     def _fresh(self, manifest: dict, title: str | None) -> dict:
         be = manifest.setdefault("be", {})
         old = be.get("meeting_id")
-        if old:
-            be.setdefault("replaced", []).append(old)
+        ws = self.workspace(manifest)
+        # Keep the predecessor until acceptance: a lost/rejected response must retry the same lineage.
+        data = self.client.create_meeting(ws, title=title, replaces_meeting_id=old)
+        if old and old not in be.setdefault("replaced", []):
+            be["replaced"].append(old)
         for k in ("meeting_id", "extraction_id", "item_count", "failed_stage", "error", "sources"):
             be.pop(k, None)                     # 발화도 옛 회의에만 있다. 새 회의에는 다시 보내야 한다
-        return self.start(manifest, title=title)
+        be.update({"meeting_id": data["meeting_id"], "status": str(data.get("status", "created"))})
+        return be
 
     def end(self, manifest: dict, *, title: str | None = None) -> dict:
         """녹음이 끝났다. created → processing. BE 가 failed 로 닫아 둔 회의면 새로 만든다.
@@ -483,7 +498,12 @@ class Handoff:
         be = self.start(manifest, title=title)
         if be.get("status") in ("processing", "done"):
             return be
-        status = self.client.end_meeting(be["meeting_id"])
+        try:
+            status = self.client.end_meeting(be["meeting_id"])
+        except BeError as e:
+            if e.code == "MEETING_DELETED":
+                raise MeetingEnded(e.code, e.message, status=e.status, details=e.details) from e
+            raise
         if status == "failed":
             be = self._fresh(manifest, title)
             status = self.client.end_meeting(be["meeting_id"])
@@ -491,7 +511,7 @@ class Handoff:
         return be
 
     def report_stage(self, manifest: dict, stage: str) -> None:
-        """단계가 시작될 때 BE 에 알린다. 진행 표시용이라 매니페스트를 바꾸지 않고, 어떤 실패도 삼킨다.
+        """단계가 시작될 때 BE 에 알린다. 삭제 응답은 종결하고 그 밖의 진행 표시 실패는 삼킨다.
 
         BE 회의가 아직 없으면(be.meeting_id 없음) 부르지 않는다. 처리 결과를 바꾸면 안 되므로 예외는 로그만 남긴다.
         """
@@ -500,6 +520,10 @@ class Handoff:
             return
         try:
             self.client.report_stage(meeting_id, stage)
+        except BeError as e:
+            if e.code == "MEETING_DELETED":
+                raise MeetingEnded(e.code, e.message, status=e.status) from e
+            print(f"[stage] 세션 {manifest.get('session')} 단계 보고 실패({stage}): {type(e).__name__}: {e}", flush=True)
         except Exception as e:  # noqa: BLE001 - 진행 표시 실패가 전사·인계를 막으면 안 된다
             print(f"[stage] 세션 {manifest.get('session')} 단계 보고 실패({stage}): {type(e).__name__}: {e}", flush=True)
 
@@ -529,6 +553,8 @@ class Handoff:
         try:
             data = self.client.create_sources(be["meeting_id"], transcript, names)
         except BeError as e:
+            if e.code == "MEETING_DELETED":
+                raise MeetingEnded(e.code, e.message, status=e.status, details=e.details) from e
             raise _explained(e) from e
         be["sources"] = {k: data.get(k) for k in ("inserted", "skipped", "duration_ms")}
         be["sources"]["meeting_id"] = be["meeting_id"]
@@ -548,7 +574,7 @@ class Handoff:
                 data = self.client.create_sources(be["meeting_id"], {**transcript, "segments": segments}, None)
                 break
             except BeError as e:
-                if e.code == "MEETING_FAILED" or e.code == "MEETING_NOT_FOUND":
+                if e.code in ("MEETING_FAILED", "MEETING_NOT_FOUND", "MEETING_DELETED"):
                     raise MeetingEnded(e.code, e.message, status=e.status, details=e.details) from e
                 ids = e.details.get("member_ids")
                 present = {s["speaker_member_id"] for s in segments if "speaker_member_id" in s}
@@ -595,6 +621,8 @@ class Handoff:
         try:
             data = self._register(be["meeting_id"], manifest["workspace_id"], transcript_json, model_name, items)
         except BeError as e:
+            if e.code == "MEETING_DELETED":
+                raise MeetingEnded(e.code, e.message, status=e.status, details=e.details) from e
             if upload and e.code in ("MEETING_NOT_PROCESSING", "MEETING_NOT_FOUND"):
                 raise MeetingEnded(e.code, e.message, status=e.status, details=e.details) from e
             if e.code == "MEETING_NOT_PROCESSING" and e.details.get("status") == "failed":
@@ -651,6 +679,10 @@ class Handoff:
             if be["status"] == "failed":
                 be["failed_stage"] = failed_stage
         except Exception as e:  # noqa: BLE001 - 실패 통보가 실패해도 매니페스트 기록이 먼저다
+            if isinstance(e, BeError) and e.code == "MEETING_DELETED":
+                be["status"] = "deleted"
+                be.pop("error", None)
+                return
             be["error"] = f"{type(e).__name__}: {e}"
 
 

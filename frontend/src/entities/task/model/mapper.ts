@@ -34,6 +34,7 @@ export function toTask(dto: TaskDto): Task {
     id: dto.task_id,
     workspaceId: dto.workspace_id,
     meetingId: dto.meeting_id,
+    meetingDeleted: dto.meeting_deleted ?? false,
     title: dto.title,
     assigneeMemberId: dto.assignee_member_id,
     status: dto.status,

@@ -34,10 +34,18 @@ from pathlib import Path
 from capture.handoff import from_env as handoff_from_env
 from capture.judge_path import extract_path
 from capture.notify import FileOutbox, MeetingReporter, debug_from_env
-from capture.recorder import STATUS_SOURCED, Claims, backend_from_env, build_extractor, recover_pass, save_manifest
+from capture.recorder import (
+    STATUS_SOURCED,
+    Claims,
+    backend_from_env,
+    build_extractor,
+    recover_pass,
+    save_manifest,
+)
 from shared.config import RECORDINGS_DIR, TRANSCRIPTS_DIR
 from shared.schemas import now_iso
 from upload.assign import assign_one
+from upload.cleanup import cleanup_one
 from upload.intake import intake_one
 from upload.report import report_one
 
@@ -238,18 +246,29 @@ class Worker:
             try:
                 for call in (lambda: assign_one(self.recordings_dir, client=client),
                              lambda: report_one(self.recordings_dir, client=client),
-                             lambda: intake_one(self.recordings_dir, client=client, diarizer=diarizer)):
+                             lambda: intake_one(self.recordings_dir, client=client, diarizer=diarizer),
+                             lambda: cleanup_one(self.recordings_dir, self.transcripts_dir, client=client)):
                     if self._stopping:     # 앞 호출 도중 stop() 이 오면 다음 호출은 부르지 않는다
                         break
                     try:
                         progresses.append(await asyncio.to_thread(call))
-                    except Exception as e:  # noqa: BLE001 - 셋 다 예외를 내지 않는 게 약속이지만 워커는 어떤 경우에도 계속 돈다
+                    except Exception as e:  # noqa: BLE001 - 넷 다 예외를 내지 않는 게 약속이지만 워커는 어떤 경우에도 계속 돈다
                         print(f"[worker] 업로드 가져오기 오류: {type(e).__name__}: {e}", flush=True)
             finally:
                 self._current = None
         for progress in progresses:
             if progress is not None:
                 print(f"[worker] 업로드 {progress.meeting_id} {progress.event}", flush=True)
+
+    async def _purge_once(self) -> None:
+        from capture.meeting_purge import purge_one
+        handoff = self._handoff_factory()
+        if handoff is None or self._stopping:
+            return
+        try:
+            await asyncio.to_thread(purge_one, self.recordings_dir, self.transcripts_dir, client=handoff.client)
+        except Exception:  # noqa: BLE001 - a failed purge retains the backend lease for retry
+            print("[worker] meeting purge pending retry", flush=True)
 
     def _wakes(self) -> list[Path]:
         d = worker_dir(self.recordings_dir)
@@ -277,6 +296,7 @@ class Worker:
                     wake.unlink(missing_ok=True)
                     await self.run_pass(guild_id=wake.name[len("wake-"):], manual=True)
                 await self._intake_once()
+                await self._purge_once()
                 await self._nap()
         finally:
             beat.cancel()
