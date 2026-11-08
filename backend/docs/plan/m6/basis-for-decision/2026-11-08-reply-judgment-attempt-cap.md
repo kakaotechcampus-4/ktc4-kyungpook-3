@@ -50,4 +50,4 @@
 
 - `backend/app/services/replies.py` JUDGE_WINDOW·JUDGE_LEASE, claim, expire
 - 테스트: `tests/api/test_reply_judgment.py`, `ai/tests/capture/test_dm.py`
-- [BE↔AI 계약](../../contracts/backend-ai-contract.md)
+- [BE↔AI 계약](../../../contracts/backend-ai-contract.md)
