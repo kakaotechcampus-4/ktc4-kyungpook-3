@@ -49,4 +49,8 @@ BE 가 대기 중인 생성 카드에 다른 회의의 같은 일을 합친다. 
 
 ## 검증
 
-검증 결과는 아래에 채운다.
+- 바꾼 곳 테스트(파일마다 따로, `--maxWorkers=1`): `approvalMerged`·`approval.integration` 23, `approvalsMsw` 27, `approvalOverrides` 13, `approvals`·승인 단위 139 통과.
+  - 기존 테스트 기대값을 고친 것: 생성 승인 PATCH 본문에 지문이 더해진 13개. `approval.integration` 의 「카드 항목이 없으면 연결 없음」은 BE #533 처럼 이 카드를 가리키는 항목을 잇도록 고쳤다. 오류 코드 수 단언 62 → 63.
+- 전체 검사(한 번): `npm run typecheck`·`npm run lint`·`npm run format:check`·`npm run build` 통과. `npm run test -- --maxWorkers=1` 은 282 파일 3,595 중 2 실패였다. 오류 코드 수 단언(내 변경, 고침)과 `passwordReset.test.tsx` 하나다. 둘을 따로 돌리면 28 모두 통과해 `passwordReset` 은 부하로 본다.
+- 브라우저(MSW 개발 서버, Chromium, 1280·390): 로컬 스크립트 `frontend/.verify/merged-512.verify.mjs` 4 통과. 목록의 합쳐진 수·자리 → 상세 합쳐진 근거 펼치기·담당자 근거·전체 반려 안내 → 본 뒤 합쳐짐 409·바뀐 칸·PM 수정 보존 → 다시 승인(두 번째 PATCH 의 새 지문·`task_title`)·반영한 값 → 회의록 mt_07 의 항목. 가로 넘침 없음. 첫 실행은 같은 대기 조건에서 테스트마다 45~57초로 30초 한도를 넘었고, 메모리 여유가 생긴 뒤 7~16초로 통과해 부하로 본다. 증거는 `frontend/.verify/merged-512-shots/`.
+- 실서버는 확인하지 않았다. E2E 는 CI 가 돌린다.
