@@ -172,7 +172,7 @@ class Facts:
 @dataclass(frozen=True)
 class Notice:
     text: str
-    alert: bool = False                 # 사람이 움직여야 한다. 운영 역할을 멘션한다
+    alert: bool = False                 # 사람이 움직여야 한다. 비공개 운영 채널에 @everyone 을 붙인다
 
 
 def kst_day(ts: float) -> str:
@@ -651,6 +651,7 @@ class FailoverStt:
         self._tick_lock = threading.Lock()
         self._sig = Signals()
         self.state = _load(self.state_dir, clock())
+        self._written = False
 
     @property
     def phase(self) -> Phase:
@@ -765,8 +766,10 @@ class FailoverStt:
         now = self._clock()
         new, notices = step(s, Facts(now=now, mode=self.mode, signals=self.signals(), request=req, server=server,
                                      switch_error=switch_error, gpu_ok=gpu_ok, elice_ok=elice_ok), L)
-        if new != s:
+        # 바뀌지 않아도 첫 tick 에는 쓴다. 없으면 배포 직후 status 가 워커가 돈 적이 없다고 답한다
+        if new != s or not self._written:
             _atomic_write(self.state_dir / STATE_FILE, _dump(new, self.mode, now))
+            self._written = True
         if req is not None:
             # 확인 호출 동안(최대 30초씩) 새 요청이 같은 이름으로 들어왔을 수 있다. 읽은 그 파일만 지운다
             _unlink_if_same(req_path, seen)

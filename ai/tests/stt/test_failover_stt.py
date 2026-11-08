@@ -69,6 +69,14 @@ def test_it_looks_like_the_elice_backend(tmp_path):
     assert (backend, model, workers) == (fo, "elice", 6)
 
 
+def test_status_shows_the_mode_after_the_first_quiet_tick(tmp_path):
+    fo, *_ , clock, _ = make(tmp_path, mode=Mode.MANUAL)
+    fo.tick()
+    assert fo.phase is Phase.NORMAL
+    assert "돈 적이 없습니다" not in status_text(tmp_path, clock())
+    assert read_state_file(tmp_path) is not None
+
+
 def test_gpu_calls_carry_no_prompt_and_elice_calls_keep_it(tmp_path):
     """이름 프롬프트와 짧은 묶음의 문맥 프롬프트가 둘 다 Prompted 를 지나 감싸개에 온다. GPU 로는 싣지 않는다."""
     fo, elice, gpu, switch, clock, _ = make(tmp_path)
