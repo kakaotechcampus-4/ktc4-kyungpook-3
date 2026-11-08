@@ -31,9 +31,9 @@ const GUARD_LAG = 300
 
 /* widgets/meeting-minutes/model/useShownMeeting.ts 의 값. E2E 는 앱 모듈(별칭 `@`)을 가져오지 않아 옮겨 적었다 */
 /** 고른 회의의 답을 기다리며 이전 본문을 들고 있는 최대 시간 */
-const MINUTES_HOLD_MS = 250
+const MINUTES_HOLD_MS = 200
 /** 회의를 바꾸며 그린 본문 뼈대를 두는 최소 시간 */
-const MINUTES_SKELETON_MIN_MS = 300
+const MINUTES_SKELETON_MIN_MS = 400
 /** 한 프레임(60Hz). 샘플은 커밋 뒤에 적히므로 뼈대가 붙은 샘플이 커밋보다 이만큼까지 늦을 수 있다 */
 const FRAME_MS = 1000 / 60
 
@@ -758,6 +758,9 @@ test.describe('참석자 줄은 몇 명이든 칩 한 줄이고 남는 사람은
         }),
       ).observe(row)
     })
+    // 관찰을 시작한 첫 기록이 적힌 뒤에 폭을 바꾼다. 그 전에 바꾸면 첫 기록과 첫 폭 바꾸기가 한 프레임에 합쳐져 하나만 적힌다 —
+    // 화면이 막 그려진 직후(로딩 자리의 최소 표시가 끝난 커밋 바로 뒤)에는 그 사이에 프레임이 없을 수 있다 (#508)
+    await page.waitForFunction(() => (window.__rowFrames?.length ?? 0) >= 1)
 
     // 넓게 · 좁게 · 칩 수가 바뀌는 폭을 모두 지난다
     for (const width of [1024, 1440, 1920, 1200, 1024]) {

@@ -1,6 +1,7 @@
 import type { RequestHandler } from 'msw'
 import { authHandlers } from './auth'
 import { passwordResetHandlers } from './passwordReset'
+import { signupCodeHandlers } from './signupCode'
 import { memberHandlers } from './member'
 import { workspaceHandlers } from './workspace'
 import { integrationHandlers } from './integration'
@@ -19,6 +20,7 @@ import { invitationHandlers } from './invitation'
 export const handlers: RequestHandler[] = [
   ...authHandlers,
   ...passwordResetHandlers,
+  ...signupCodeHandlers,
   ...workspaceHandlers,
   ...memberHandlers,
   ...integrationHandlers,
