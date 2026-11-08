@@ -77,7 +77,7 @@ def ingest_reply(payload: BotReplyRequest, response: Response, db: Session = Dep
 
 @router.post("/replies/claim", response_model=Envelope[ReplyClaimResponse])
 def claim_reply(db: Session = Depends(get_db)) -> dict:
-    """판단할 답장 한 통을 맡긴다. 대화마다 가장 오래된 답장부터 한 통씩이고 3분 안에 결과가 없으면 다시 맡긴다."""
+    """판단할 답장 한 통을 맡긴다. 대화마다 가장 오래된 답장부터 한 통씩이고 3분 안에 결과가 없으면 다시 맡긴다. 큐에 들어온 지 10분이 지난 답장은 맡기지 않고 닫는다."""
     claimed = replies.claim(db, _now())
     db.commit()
     return success({"item": claimed and claimed.model_dump(mode="json")})
