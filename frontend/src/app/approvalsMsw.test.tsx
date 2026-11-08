@@ -19,7 +19,7 @@ vi.mock('@/shared/config/env', () => ({
 vi.setConfig({ testTimeout: 20_000 })
 
 /** 생성 승인은 본 카드의 지문을 함께 보낸다 (#547). 값 자체는 approvalMerged.test.tsx 가 본다 */
-const SEEN = expect.stringMatching(/^[0-9a-f]{16}$/)
+const SEEN: unknown = expect.stringMatching(/^[0-9a-f]{16}$/)
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })

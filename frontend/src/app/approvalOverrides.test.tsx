@@ -13,7 +13,7 @@ import { renderApp } from './test/renderApp'
 vi.setConfig({ testTimeout: 20_000 })
 
 /** 생성 승인은 본 카드의 지문을 함께 보낸다 (#547). 값 자체는 approvalMerged.test.tsx 가 본다 */
-const SEEN = expect.stringMatching(/^[0-9a-f]{16}$/)
+const SEEN: unknown = expect.stringMatching(/^[0-9a-f]{16}$/)
 afterEach(() => clearTrackedMeetings())
 
 const approve = () => screen.getByRole('button', { name: /^승인$/ })
