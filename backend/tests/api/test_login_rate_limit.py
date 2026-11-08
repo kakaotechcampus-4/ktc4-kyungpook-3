@@ -269,6 +269,27 @@ def test_password_reset_confirm_unblocks_email(mdb, sent):
     assert _login(c, password="newpass456").status_code == 200
 
 
+def test_password_reset_confirm_keeps_ip_block(mdb, sent, monkeypatch):
+    # confirm 은 그 이메일의 막힘만 푼다. 같은 공인 IP 의 막힘은 그대로라 FE 가 "재설정하면 풀린다"고 약속하면 안 된다(#549)
+    now = [1000.0]
+    monkeypatch.setattr(login_limit, "clock", lambda: now[0])
+    c = _client(client=("8.8.8.8", 50000))
+    _signup(c)
+    for i in range(50):
+        assert _fail(c, f"other{i}@example.com").status_code == 401
+    assert _login(c).status_code == 429
+    token = _reset_token(c, sent)
+
+    assert _confirm(c, token).status_code == 200
+
+    blocked = _login(c, password="newpass456")
+    assert blocked.status_code == 429
+    assert blocked.json()["error"]["code"] == "TOO_MANY_LOGIN_ATTEMPTS"
+    # 남은 막힘은 IP 뿐이다. 비밀번호는 실제로 바뀌었고 시간이 지나면 새 비밀번호로 들어간다
+    now[0] += login_limit.BLOCK_SECONDS + 1
+    assert _login(c, password="newpass456").status_code == 200
+
+
 def test_failed_confirm_keeps_block(mdb, sent):
     c = _client()
     _signup(c)
