@@ -21,7 +21,9 @@ id 순서(snowflake 라 시간순)로 다시 넘긴다. 디스코드는 봇이 �
 결과부터 보고한다.
 
 답장 판단. 판단할 답장은 BE 에 쌓여 있어(웹 답장은 봇이 보지 못한다) 맡고 보고만 한다. 봇에 남기는 것이 없다. 맡은 뒤
-죽거나 보고하지 못하면 BE 가 리스 뒤 attempt 를 올려 다시 맡기고, 앞 attempt 의 늦은 보고는 STALE 로 돌아온다.
+죽거나 보고하지 못하면 BE 가 리스(3분) 뒤 attempt 를 올려 다시 맡기고, 앞 attempt 의 늦은 보고는 STALE 로 돌아온다.
+5xx 로 결과를 넣지 못해도 봇은 다시 보내지 않고 리스에 맡긴다. BE 는 답장을 받은 뒤 10분이 지나면 claim 에서 그
+답장을 닫고 같은 대화의 다음 답장을 주며, 한 차례에 최대 4회 맡긴다.
 
 DM 글은 message_content 특권 인텐트 없이도 오고, dm_messages 는 Intents.default() 에 이미 있다.
 BE 호출은 동기 requests 라 asyncio.to_thread 로 불러 게이트웨이를 막지 않는다. 파일은 FileOutbox 처럼 tmp 에 쓰고
@@ -372,6 +374,8 @@ class DmCog(discord.Cog):
             if e.code in JUDGMENT_DROPPED:
                 return
             if e.status != 400 or body["failure_reason"] is not None:
+                # 5xx 등은 다시 보내지 않는다. 리스(3분) 뒤 BE 가 다시 맡기고, 받은 지 10분이 지나면 claim 에서 닫고
+                # 다음 답장을 준다(한 차례 최대 4회). 그래서 같은 바퀴에 이 답장이 다시 오지 않는다
                 print(f"[dm] 답장 {item['message_id']} 판단을 넣지 못했다, 리스 뒤 다시: {e}", flush=True)
                 return
             print(f"[dm] 답장 {item['message_id']} 판단을 BE 가 거절했다: {e.code}", flush=True)

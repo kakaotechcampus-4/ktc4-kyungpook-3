@@ -750,6 +750,16 @@ async def test_a_judgment_that_cannot_be_posted_is_left_to_the_lease(tmp_path, c
     assert "reply-1" in capsys.readouterr().out
 
 
+async def test_judgment_5xx_is_left_to_lease_and_next_reply_is_judged(tmp_path):
+    # a 의 결과가 5xx 여도 다시 보내지 않고 다음 claim 이 준 b 로 넘어간다. a 는 BE 가 리스·판단 창 뒤에 닫는다
+    cog, be = _cog(tmp_path, FakeBot(), judger=_judged)
+    be.reply_claims = [_claimed("a"), _claimed("b")]
+    be.fail = {"/bot/replies/a/judgment": [_err(500, "HTTP_500")]}
+    await cog.reply_round()
+    assert [mid for mid, _ in _judgments(be)] == ["a", "b"]
+    assert len(be.sent("/bot/replies/claim")) == 3
+
+
 async def test_a_judgment_be_rejects_is_reported_as_failed_with_the_same_attempt(tmp_path):
     cog, be = _cog(tmp_path, FakeBot(), judger=_judged)
     be.reply_claims = [_claimed(attempt=2)]
