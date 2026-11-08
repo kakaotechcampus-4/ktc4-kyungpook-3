@@ -14,10 +14,12 @@ export type {
   MessageSender,
   MessageThread,
   MessageThreadSummary,
+  PmMessage,
   ReminderCreateInput,
   ReminderEvidence,
   ReplyAttribution,
   TaskRef,
+  WebReply,
 } from './model/types'
 export { MESSAGE_BODY_MAX_LENGTH } from './model/types'
 export {
@@ -25,6 +27,7 @@ export {
   messageInboxQueryOptions,
   messageKeys,
   messageThreadQueryOptions,
+  openThread,
   replyAttributionsQueryOptions,
   requestMessageAction,
 } from './api/messageQueries'
