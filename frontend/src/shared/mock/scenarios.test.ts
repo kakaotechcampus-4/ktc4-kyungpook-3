@@ -1,4 +1,4 @@
-import { fetchDto, fetchSessionDto, jsonRequest } from '@/shared/test/api'
+import { fetchDto, fetchSessionDto, jsonRequest, signUpVerified } from '@/shared/test/api'
 import type { SessionDto } from '@/shared/types/api/auth'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { InvitationDto, MyInvitationDto } from '@/shared/types/api/invitation'
@@ -174,10 +174,7 @@ describe('E2E 시나리오', () => {
   it('받을 초대: 비로그인이고 jaehwan@example.com 으로 가입하면 공간 없이 초대 하나를 받는다', async () => {
     applyScenario('invitation-pending')
     await expect(fetchSessionDto()).resolves.toBeNull()
-    await fetchDto(
-      '/auth/signup',
-      jsonRequest('POST', { email: 'jaehwan@example.com', password: 'pass1234', name: '이재환' }),
-    )
+    await signUpVerified({ email: 'jaehwan@example.com', password: 'pass1234', name: '이재환' })
     await expect(listedWorkspaces()).resolves.toEqual([])
     await expect(fetchDto<ListDto<MyInvitationDto>>('/invitations/me')).resolves.toMatchObject({
       items: [
@@ -190,11 +187,9 @@ describe('E2E 시나리오', () => {
   it('시나리오끼리 독립적이다 — 앞 시나리오의 변경이 다음 적용에 남지 않는다', async () => {
     for (const first of MOCK_SCENARIOS) {
       applyScenario(first)
-      // 앞 시나리오에서 상태를 바꾼다
-      await fetchDto(
-        '/auth/signup',
-        jsonRequest('POST', { email: `${first}@example.com`, password: 'pass1234', name: first }),
-      )
+      // 앞 시나리오에서 상태를 바꾼다. 메일 미설정 시나리오에서는 가입 코드를 받을 수 없어 먼저 푼다
+      db.passwordReset.failure = 'none'
+      await signUpVerified({ email: `${first}@example.com`, password: 'pass1234', name: first })
       await fetchDto('/workspaces', jsonRequest('POST', { name: `${first} 팀` }))
       for (const next of MOCK_SCENARIOS) {
         applyScenario(next)

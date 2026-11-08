@@ -3,7 +3,7 @@ import unicodedata
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.email import NormalizedEmail
 
@@ -58,9 +58,12 @@ class LoginRequest(BaseModel):
     password: str
 
 class SignupRequest(BaseModel):
-    email: NormalizedEmail
+    """이메일은 받지 않는다. 증명 토큰이나 카카오 대기 쿠키에 든 인증된 값으로만 만든다."""
+
+    verification_token: Optional[str] = None
     password: str
     name: str
+    link_kakao: bool = False
 
     @field_validator("password")
     @classmethod
@@ -71,6 +74,30 @@ class SignupRequest(BaseModel):
     @classmethod
     def _check_name(cls, value: str) -> str:
         return validate_name(value)
+
+
+class KakaoPendingResponse(BaseModel):
+    email: Optional[str] = None
+    nickname: Optional[str] = None
+
+
+class SignupCodeRequest(BaseModel):
+    email: NormalizedEmail
+
+
+class SignupCodeResponse(BaseModel):
+    expires_in: int
+    resend_after: int
+
+
+class SignupCodeConfirmRequest(BaseModel):
+    email: NormalizedEmail
+    code: str = Field(pattern=r"^[0-9]{6}$")
+
+
+class SignupCodeConfirmResponse(BaseModel):
+    verification_token: str
+    expires_in: int
 
 
 class PasswordResetRequest(BaseModel):

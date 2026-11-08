@@ -8,6 +8,7 @@ from sqlalchemy import event
 from app.api import auth
 from app.main import app
 from app.services import login_limit, mailer
+from tests.api.conftest import signup_verified
 
 EMAIL = "limit@example.com"
 PW = "rightpass123"
@@ -30,7 +31,7 @@ def sent(monkeypatch):
     # 실제 SMTP 에 접속하지 않고 발송 내용만 모은다.
     box = []
     monkeypatch.setattr(mailer, "_executor", _InlineExecutor())
-    monkeypatch.setattr(mailer, "send_mail", lambda to, subject, text: box.append((to, subject, text)))
+    monkeypatch.setattr(mailer, "send_mail", lambda to, subject, text, html=None: box.append((to, subject, text)))
     monkeypatch.setattr(mailer, "_sleep", lambda s: None)
     monkeypatch.setenv("SMTP_HOST", "smtp.example")
     monkeypatch.setenv("SMTP_USERNAME", "user")
@@ -43,8 +44,13 @@ def _client(**kwargs):
     return TestClient(app, base_url="https://testserver", **kwargs)
 
 
+@pytest.fixture(autouse=True)
+def _secret(signup_secret):
+    pass
+
+
 def _signup(c, email=EMAIL):
-    r = c.post("/api/v1/auth/signup", json={"email": email, "password": PW, "name": "t"})
+    r = signup_verified(c, email, PW, "t")
     assert r.status_code == 201, r.text
 
 

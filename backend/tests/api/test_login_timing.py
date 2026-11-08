@@ -7,6 +7,7 @@ from sqlalchemy import update
 
 from app.main import app
 from app.models import User
+from tests.api.conftest import signup_verified
 
 EMAIL = "timing@example.com"
 PW = "rightpass123"
@@ -16,8 +17,13 @@ def _client(**kwargs):
     return TestClient(app, base_url="https://testserver", **kwargs)
 
 
+@pytest.fixture(autouse=True)
+def _secret(signup_secret):
+    pass
+
+
 def _signup(c):
-    r = c.post("/api/v1/auth/signup", json={"email": EMAIL, "password": PW, "name": "t"})
+    r = signup_verified(c, EMAIL, PW, "t")
     assert r.status_code == 201
 
 
