@@ -825,9 +825,11 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 result["status"] = STATUS_PARTIAL
                 return result
             finish(STATUS_TRANSCRIBED)
-        elif manifest.get("failed_units"):
+        elif manifest.get("failed_units") and not (manifest.get("partial")
+                                                   and manifest.get("retry_runs", 0) >= PARTIAL_RETRY_MAX):
             # 지난번에 실패한 줄만 다시 보낸다. 상한 전에는 partial 로 두고 다음 시도를 기다린다.
-            # 상한에 닿으면 빠진 구간을 둔 채 추출·인계로 간다. 구간은 매니페스트에 남는다
+            # 상한에 닿으면 빠진 구간을 둔 채 추출·인계로 간다. 구간은 매니페스트에 남는다. 그 뒤에는 다시 보내지 않는다.
+            # 보내면 바퀴마다 전사 단계가 닫혀 recovery 가 지워지고, 뒤 단계가 계속 실패해도 포기하지 않는다
             stage = STATUS_TRANSCRIBED
             ops.load_model(backend)
             begin(FAILED_STAGE[stage])

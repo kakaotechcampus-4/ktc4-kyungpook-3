@@ -454,3 +454,21 @@ def test_the_legacy_path_leaves_no_drops(tmp_path):
     manifest["extract_dropped"] = D1
     _run(rec, manifest, tmp_path, extractor=_extractor({}))
     assert "tasks" in _saved(path) and "extract_dropped" not in _saved(path)
+
+
+def test_a_meeting_closed_with_missing_lines_gives_up_instead_of_retrying_stt_forever(tmp_path, clock, limits, monkeypatch):
+    """전사 재시도 상한에 닿아 빠진 구간을 둔 채 넘어간 회의는 그 구간을 다시 전사하지 않는다. 다시 전사하면 그때마다
+    전사 단계가 닫혀 시도 횟수가 지워지고, 추출이 계속 실패하는 회의가 포기 없이 STT 와 파이프라인을 계속 부른다."""
+    monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 1)
+    fake = FakeBe()
+    ex = Runs(J.JudgeAllFailed("등록할 항목이 없고 판단하지 못한 발화 2개만 남았다."))
+    rec, path, manifest = _session(tmp_path)
+    stt = DiesOnLong()
+    assert _run(rec, manifest, tmp_path, backend=stt, extractor=ex, handoff=_handoff(fake))["status"] == "partial"
+    stt.limit_s = 0                                       # 빠진 구간은 다시 보내도 계속 죽는다
+    for _ in range(R.RECOVERY_MAX_ATTEMPTS + 2):
+        r = _again(rec, tmp_path, ex, fake, clock, backend=stt)
+        if r["gave_up"]:
+            break
+    assert r["gave_up"] is True and r["attempts"] == R.RECOVERY_MAX_ATTEMPTS and fake.meetings["m1"]["status"] == "failed"
+    assert ex.calls == R.RECOVERY_MAX_ATTEMPTS            # 복구 바퀴마다 한 번. 처음 실행은 전사가 partial 이라 추출 전에 멈춘다
