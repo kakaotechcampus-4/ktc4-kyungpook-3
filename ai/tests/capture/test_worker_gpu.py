@@ -222,6 +222,18 @@ def test_entering_gpu_wakes_servers_whose_meetings_gave_up_during_this_outage_on
     assert not any(n.alert for n in notes)              # 멘션은 켜기 시작, 켜기 실패, 상한에만 붙인다
 
 
+def test_a_server_that_also_gave_up_at_another_stage_in_this_outage_is_only_named(tmp_path):
+    """깨우기는 그 서버의 포기한 회의를 다 돌린다. 전사가 아닌 단계(BE 의 발화 저장 거절 등)의 회의까지 돌리지 않는다."""
+    since = datetime(2026, 11, 8, 3, 0, tzinfo=timezone.utc)
+    _gave_up(tmp_path, 1, "10", at=since + timedelta(minutes=20))
+    _gave_up(tmp_path, 2, "10", at=since + timedelta(minutes=30), stage="sources")
+    notes = []
+    W.wake_abandoned(tmp_path / "recordings", since.timestamp(), notes.append)
+    assert not list((tmp_path / "recordings" / ".worker").glob("wake-*"))
+    text = "\n".join(n.text for n in notes)
+    assert "서버10" in text and "--retry 10" in text and "다시 돌립니다" not in text
+
+
 def test_nothing_to_wake_says_nothing(tmp_path):
     notes = []
     W.wake_abandoned(tmp_path / "recordings", 0.0, notes.append)

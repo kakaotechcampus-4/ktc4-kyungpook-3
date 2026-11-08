@@ -9,7 +9,7 @@ gpu-request 로 받는다(python -m capture.worker --gpu, 디스코드 /gpu).
   NORMAL    Elice 로 보낸다. 실제 호출이 연속 6번 실패(SttError.cause 가 service 나 auth)하면 SUSPECT
   SUSPECT   호출을 기다리게 하고 Elice 를 60초 간격으로 확인한다. 3번 연속 실패면 STARTING, 한 번 성공이면 NORMAL
   STARTING  서버가 준비될 때까지 스위치 on 을 tick 마다 보낸다(멱등). 호출은 기다린다
-  ON_GPU    GPU 로 보낸다. 이름·문맥 프롬프트는 싣지 않는다. Elice 는 5분마다 확인한다
+  ON_GPU    GPU 로 보낸다. 이름·문맥 프롬프트는 싣지 않는다. Elice 는 5분마다 확인한다. 장애마다 처음 넘길 때 포기한 회의를 깨운다
   STOPPING  스위치 off. 이유가 idle 이고 마지막 Elice 확인이 실패였으면 호출은 기다린다
   PARKED    꺼졌는데 Elice 가 실제 묶음까지 되는지는 모른다. 첫 실제 성공에 NORMAL, 실제 실패 3번이면 바로 켠다
   HALTED    하루 상한, Lambda 누적 상한(spent), 켜기 포기. 스스로 켜지 않는다
@@ -139,6 +139,7 @@ class FailoverState:
     since: float = 0.0
     why: str = ""
     outage_since: float | None = None   # 이번 장애의 첫 실패. 포기한 회의를 깨울 기준
+    woken: float | None = None          # 포기한 회의를 깨운 장애의 outage_since. 장애 하나에 한 번만 깨운다
     hold_until: float | None = None
     next_probe_at: float | None = None  # Elice 확인
     probe_fails: int = 0                # SUSPECT 의 연속 확인 실패
@@ -367,7 +368,7 @@ def _starting(s, f, L, out, closed):
     if f.gpu_ok is True:
         out.append(Notice(f"✅ GPU 서버로 전사를 넘겼습니다. 종료 예정 {kst_clock(server.stop_at if server else None)}. "
                           "이름 힌트 없이 전사합니다."))
-        return _enter(s, Phase.ON_GPU, s.why, f, discard=None,
+        return _enter(s, Phase.ON_GPU, s.why, f, discard=None, woken=s.outage_since or f.now,
                       next_probe_at=f.now + L.back_gap_s, next_gpu_probe_at=f.now + L.gpu_probe_gap_s)
     if f.gpu_ok is False and server and server.launched_at and f.now - server.launched_at > L.boot_s:
         if s.boot_failures + 1 >= 2:
@@ -828,8 +829,8 @@ class FailoverStt:
                 self._notify(n)
             except Exception as e:  # noqa: BLE001 - 알림이 실패해도 전환은 간다
                 print(f"[failover] 알림 실패: {type(e).__name__}: {e}", flush=True)
-        if new.phase is Phase.ON_GPU and s.phase is not Phase.ON_GPU and self._on_gpu is not None:
-            self._on_gpu(new.outage_since or now)
+        if new.woken is not None and new.woken != s.woken and self._on_gpu is not None:
+            self._on_gpu(new.woken)
 
     def _check(self, backend) -> bool:
         """확인 호출. 고정 합성음을 프롬프트 없이 보내 글자가 돌아와야 성공이다. 표본에는 넣지 않는다."""

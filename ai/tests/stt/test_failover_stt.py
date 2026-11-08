@@ -614,6 +614,35 @@ def test_entering_gpu_calls_the_wake_hook_with_the_outage_start(tmp_path):
     assert seen == [t0]
 
 
+def test_the_wake_hook_runs_once_per_outage_not_per_entry_into_gpu(tmp_path):
+    """깨운 재처리가 다시 실패해 포기한 회의를 GPU 확인 한 번 실패나 3시간 넘김 때마다 다시 돌리지 않는다."""
+    seen = []
+    fo, elice, gpu, switch, clock, notes = make(tmp_path, on_gpu=seen.append)
+    t0 = clock()
+    to_gpu(fo, elice, switch, clock)
+    gpu.mode = "service"
+    assert ticks(fo, clock, 120, until=lambda: fo.phase is Phase.STARTING)
+    gpu.mode = "ok"
+    assert ticks(fo, clock, 120, until=lambda: fo.phase is Phase.ON_GPU)
+    while switch.stop_at - clock() > LIMITS.rollover_s + 60:
+        call(fo)
+        ticks(fo, clock, 60)
+    call(fo)
+    assert ticks(fo, clock, 120, until=lambda: fo.state.why == "rollover")
+    assert ticks(fo, clock, 1200, until=lambda: fo.phase is Phase.ON_GPU)
+    assert seen == [t0]
+    elice.mode = "ok"
+    for _ in range(40):
+        call(fo)
+        if ticks(fo, clock, 60, until=lambda: fo.phase is Phase.PARKED):
+            break
+    t1 = clock()
+    fail_elice(fo, elice, 3)
+    fo.tick()
+    assert ticks(fo, clock, 600, until=lambda: fo.phase is Phase.ON_GPU)
+    assert seen == [t0, t1]                        # 되돌린 뒤의 새 장애는 다시 깨운다
+
+
 def test_status_text_shows_phase_counts_and_running_cost(tmp_path):
     fo, elice, gpu, switch, clock, _ = make(tmp_path)
     switch.used_s = 126 * 60

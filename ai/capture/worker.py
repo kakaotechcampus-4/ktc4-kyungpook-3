@@ -145,10 +145,11 @@ def ops_notifier(outbox):
 
 
 def wake_abandoned(recordings_dir: Path, since: float, notify) -> None:
-    """GPU 로 넘긴 직후 부른다. 이번 장애(since 이후) 전사 단계에서 포기한 회의의 서버를 깨워 GPU 로 다시 돌린다.
+    """장애마다 처음 GPU 로 넘긴 직후 부른다. 이번 장애(since 이후) 전사 단계에서 포기한 회의의 서버를 깨워 GPU 로 다시 돌린다.
 
-    그 서버에 장애 전에 포기한 회의가 있으면 깨우지 않는다. 깨우기는 서버의 포기한 회의를 다 돌려서, 사람이 일부러
-    둔 옛 회의까지 BE 에 새 회의를 만들고 다시 과금한다(recorder._due). 그 서버는 이름만 알리고 사람이 --retry 한다.
+    그 서버에 장애 전에 포기한 회의나 장애 중 전사가 아닌 단계에서 포기한 회의가 있으면 깨우지 않는다. 깨우기는 서버의
+    포기한 회의를 다 돌려서, 사람이 일부러 둔 옛 회의나 전사와 상관없이 멈춘 회의까지 BE 에 새 회의를 만들고 다시
+    과금한다(recorder._due). 그 서버는 이름만 알리고 사람이 --retry 한다.
     업로드 회의는 포기 때 BE 가 실패로 닫아 깨워도 살릴 수 없다.
     """
     servers: dict[str, dict] = {}
@@ -167,13 +168,13 @@ def wake_abandoned(recordings_dir: Path, since: float, notify) -> None:
             at = float("-inf")                         # 자동 복구 전의 실패. 포기한 회의로 둔다(recorder._due)
         else:
             continue
-        s = servers.setdefault(str(gid), {"name": m.get("guild") or str(gid), "now": 0, "before": False})
+        s = servers.setdefault(str(gid), {"name": m.get("guild") or str(gid), "now": 0, "other": False})
         if at >= since and state.get("failed_stage") == "stt":
             s["now"] += 1
-        elif at < since:
-            s["before"] = True
-    woke = [(gid, s) for gid, s in servers.items() if s["now"] and not s["before"]]
-    held = [(gid, s) for gid, s in servers.items() if s["now"] and s["before"]]
+        else:
+            s["other"] = True
+    woke = [(gid, s) for gid, s in servers.items() if s["now"] and not s["other"]]
+    held = [(gid, s) for gid, s in servers.items() if s["now"] and s["other"]]
     for gid, _ in woke:
         request_wake(recordings_dir, gid)
     from stt.failover import Notice
@@ -181,7 +182,8 @@ def wake_abandoned(recordings_dir: Path, since: float, notify) -> None:
         notify(Notice("🔁 이번 장애 중 전사에서 멈춘 회의를 GPU 로 다시 돌립니다: "
                       + ", ".join(f"{s['name']}({s['now']}건)" for _, s in woke)))
     if held:
-        notify(Notice("⚠️ 장애 전에 멈춘 회의도 있어 자동으로 다시 돌리지 않은 서버가 있습니다. 확인 뒤 다시 돌려 주세요: "
+        notify(Notice("⚠️ 장애 전이나 전사가 아닌 단계에서 멈춘 회의도 있어 자동으로 다시 돌리지 않은 서버가 있습니다. "
+                      "확인 뒤 다시 돌려 주세요: "
                       + ", ".join(f"{s['name']} `python -m capture.worker --retry {gid}`" for gid, s in held)))
 
 
