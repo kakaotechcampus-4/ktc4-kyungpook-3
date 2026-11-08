@@ -9,7 +9,12 @@ import type {
   ThreadSummaryDto,
 } from '@/shared/types/api/message'
 import type { TaskHistoryDto } from '@/shared/types/api/task'
-import type { MockBundle, MockMessageThread, MockReminder } from './fixtures/message'
+import type {
+  MockBundle,
+  MockMessageThread,
+  MockReminder,
+  MockThreadMessage,
+} from './fixtures/message'
 import { nextId } from './utils'
 
 /*
@@ -40,7 +45,7 @@ export interface ReasonContext {
     'task_id' | 'changed_field' | 'change_source' | 'created_at'
   >[]
   threads: readonly MockMessageThread[]
-  members: readonly { member_id: string; display_name: string }[]
+  members: readonly { member_id: string; display_name: string; discord_user_id?: string | null }[]
 }
 
 const WEEKDAYS = '일월화수목금토'
@@ -226,16 +231,22 @@ function sortedMessages(thread: MockMessageThread): MessageDto[] {
     .sort((left, right) => time(left.created_at) - time(right.created_at))
 }
 
-/** 목록 한 줄. 답장 대기는 팀원의 마지막 답 뒤에 처음 나간 봇 메시지의 시각이다 */
-export function threadSummaryOf(thread: MockMessageThread): ThreadSummaryDto {
+/**
+ * 목록 한 줄 (백엔드 _summary). 답장 대기는 팀원의 마지막 답 뒤에 처음 나간 봇 메시지의 시각이다 — PM 글은 기다림을 만들지 않는다.
+ * dm_failed 는 DM 으로 나가는 마지막 글(봇·PM)을 본다. 웹 답장은 그 팀원에게 이어진 계정이 있을 때다(linkedMemberIds)
+ */
+export function threadSummaryOf(
+  thread: MockMessageThread,
+  linkedMemberIds: ReadonlySet<string>,
+): ThreadSummaryDto {
   const messages = sortedMessages(thread)
   const last = messages.at(-1) ?? null
   let awaiting: string | null = null
   for (const message of messages) {
     if (message.sender === 'member') awaiting = null
-    else awaiting ??= message.created_at
+    else if (message.sender === 'bot') awaiting ??= message.created_at
   }
-  const lastBot = messages.filter((message) => message.sender === 'bot').at(-1)
+  const lastDm = messages.filter((message) => message.dm_status !== null).at(-1)
   return {
     thread_id: thread.thread_id,
     member_id: thread.member_id,
@@ -248,9 +259,12 @@ export function threadSummaryOf(thread: MockMessageThread): ThreadSummaryDto {
             sender: last.sender,
             body: last.body,
             created_at: last.created_at,
+            author_member_id: last.author_member_id,
+            author_name: last.author_name,
           },
     awaiting_reply_since: awaiting,
-    dm_failed: lastBot?.dm_status === 'failed',
+    dm_failed: lastDm?.dm_status === 'failed',
+    web_reply_available: linkedMemberIds.has(thread.member_id),
   }
 }
 
@@ -276,7 +290,7 @@ export function inboxOf(context: BundleContext, viewer: Viewer, ownerId: string 
   return {
     threads: context.threads
       .filter((thread) => viewer === 'pm' || thread.member_id === ownerId)
-      .map(threadSummaryOf)
+      .map((thread) => threadSummaryOf(thread, context.linkedMemberIds))
       .sort(byRecent),
     bundles: viewer === 'pm' ? scheduledBundles(context) : null,
   }
@@ -288,7 +302,7 @@ export function threadDetailOf(
   viewer: Viewer,
 ): ThreadDetailDto {
   return {
-    thread: threadSummaryOf(thread),
+    thread: threadSummaryOf(thread, context.linkedMemberIds),
     messages: sortedMessages(thread),
     bundles: viewer === 'pm' ? scheduledBundles(context, thread.thread_id) : null,
   }
@@ -325,6 +339,8 @@ export interface BundleContext extends ReasonContext {
   tasks: readonly { task_id: string; title: string; due_date: string | null; created_at: string }[]
   pmName: string
   workspaceName: string
+  /** 웹 계정이 이어진 팀원 (백엔드 member.user_id) */
+  linkedMemberIds: ReadonlySet<string>
 }
 
 const ASK = '지금 어디까지 됐는지 편하게 알려 주세요!'
@@ -531,6 +547,70 @@ function threadOf(memberId: string, name: string, context: ReminderContext): Moc
   }
   context.allThreads.push(thread)
   return thread
+}
+
+/** 대화를 열지 못한 이유. 어느 쪽이든 db 는 그대로다 */
+export type ThreadOpenRefusal = 'forbidden' | 'member_not_found'
+
+/**
+ * 그 팀원과의 대화를 연다 (백엔드 open_thread). 없으면 빈 대화를 만들고, 있으면 그 대화다.
+ * PM 은 공간의 누구든(다른 PM 도), 팀원은 자기 대화만 연다. 권한을 팀원보다 먼저 본다
+ */
+export function openThread(
+  memberId: string,
+  opener: { viewer: Viewer; memberId: string | null },
+  context: ReminderContext,
+): { thread: MockMessageThread } | { refusal: ThreadOpenRefusal } {
+  if (opener.viewer !== 'pm' && memberId !== opener.memberId) return { refusal: 'forbidden' }
+  const member = context.members.find(({ member_id }) => member_id === memberId)
+  if (member === undefined) return { refusal: 'member_not_found' }
+  return { thread: threadOf(member.member_id, member.display_name, context) }
+}
+
+/**
+ * 웹에서 쓴 글 (백엔드 post_reply). 대화 주인이 쓰면 Discord 로 나가지 않는 웹 답장이다.
+ * PM 이 남의 대화에 쓰면 PM 글이고 바로 발송 대기다 — 받는 팀원의 Discord 가 없으면 못 보냄으로 닫는다 (백엔드 _dm_fields).
+ * 받는 팀원이 공간에 없으면 member_not_found 다
+ */
+export function writeMessage(
+  thread: MockMessageThread,
+  writer: { member_id: string; display_name: string },
+  body: string,
+  now: string,
+  context: ReminderContext,
+): MockThreadMessage | { refusal: 'member_not_found' } {
+  const message_id = nextId(
+    'mg',
+    context.allThreads.flatMap(({ messages }) => messages.map((item) => item.message_id)),
+  )
+  const common = { message_id, body, created_at: now, scheduled_at: null } as const
+  if (thread.member_id === writer.member_id) {
+    const message: MockThreadMessage = {
+      ...common,
+      sender: 'member',
+      reply_channel: 'web',
+      dm_status: null,
+      dm_failure_reason: null,
+      author_member_id: null,
+      author_name: null,
+    }
+    thread.messages.push(message)
+    return message
+  }
+  const recipient = context.members.find(({ member_id }) => member_id === thread.member_id)
+  if (recipient === undefined) return { refusal: 'member_not_found' }
+  const linked = Boolean(recipient.discord_user_id)
+  const message: MockThreadMessage = {
+    ...common,
+    sender: 'pm',
+    reply_channel: null,
+    dm_status: linked ? 'pending' : 'failed',
+    dm_failure_reason: linked ? null : 'discord_not_linked',
+    author_member_id: writer.member_id,
+    author_name: writer.display_name,
+  }
+  thread.messages.push(message)
+  return message
 }
 
 /**

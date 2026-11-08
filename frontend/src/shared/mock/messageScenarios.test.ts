@@ -6,6 +6,7 @@ import type {
   MessageDto,
   ReminderWithBundleDto,
   ThreadDetailDto,
+  ThreadSummaryDto,
 } from '@/shared/types/api/message'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { AttributionResponseDto, ReplyAttributionDto } from '@/shared/types/api/reply'
@@ -34,6 +35,7 @@ const MESSAGE_SCENARIOS = [
   'messages-schedule-passed',
   'messages-merge',
   'messages-long-content',
+  'messages-pm-thread',
 ] as const satisfies readonly MockScenario[]
 
 afterEach(() => sessionStorage.clear())
@@ -52,6 +54,11 @@ const replyTo = (threadId: string, body: unknown, workspaceId = 'ws_01') =>
   fetchDto<MessageDto>(
     `${base(workspaceId)}/threads/${threadId}/replies`,
     jsonRequest('POST', { body }),
+  )
+const openThreadFor = (memberId: unknown, workspaceId = 'ws_01') =>
+  fetchDto<ThreadSummaryDto>(
+    `${base(workspaceId)}/threads`,
+    jsonRequest('POST', { member_id: memberId }),
   )
 const snapshot = () => structuredClone({ bundles: db.messageBundles, threads: db.messageThreads })
 
@@ -78,9 +85,12 @@ describe('메시지 조회 handler', () => {
         sender: 'bot',
         body: 'DB 스키마가 확정됐다고 들었어요. 명세서 작업은 시작하셨나요?',
         created_at: '2026-09-16T09:00:00.000Z',
+        author_member_id: null,
+        author_name: null,
       },
       awaiting_reply_since: '2026-09-16T09:00:00.000Z',
       dm_failed: false,
+      web_reply_available: false,
     })
     expect(threads.map(({ dm_failed }) => dm_failed)).toEqual([false, false, false, true])
     expect(bundles?.map(({ bundle_id, scheduled_at }) => [bundle_id, scheduled_at])).toEqual([
@@ -435,6 +445,37 @@ describe('답장 고르기 handler — 백엔드 api/messages.py 의 attribution
   })
 })
 
+describe('대화 열기 handler — 백엔드 api/messages.py 의 open_thread', () => {
+  it('PM 은 공간의 누구든 연다. 있으면 그 대화, 없으면 빈 대화를 만들고 몇 번 열어도 하나다 — 늘 200 이다', async () => {
+    expect(await openThreadFor('mb_03')).toMatchObject({ thread_id: 'th_01', member_id: 'mb_03' })
+    const created = await openThreadFor('mb_01')
+    expect(created).toEqual({
+      thread_id: 'th_12',
+      member_id: 'mb_01',
+      name: '김서연',
+      last_message: null,
+      awaiting_reply_since: null,
+      dm_failed: false,
+      web_reply_available: true,
+    })
+    expect(await openThreadFor('mb_01')).toEqual(created)
+    expect((await inbox()).threads.map(({ thread_id }) => thread_id)).toContain('th_12')
+  })
+
+  it('팀원은 자기 대화만 연다 — 남의 대화는 403, 없는 팀원은 404 이고 db 는 그대로다', async () => {
+    applyScenario('messages-member')
+    expect(await openThreadFor('mb_01')).toMatchObject({ thread_id: 'th_06' })
+    const before = snapshot()
+    const other = await failure(openThreadFor('mb_03'))
+    expect([other.status, other.code]).toEqual([403, 'FORBIDDEN'])
+    setMockRole('pm')
+    const missing = await failure(openThreadFor('mb_99'))
+    expect([missing.status, missing.code]).toEqual([404, 'MEMBER_NOT_FOUND'])
+    expect((await failure(openThreadFor(7))).status).toBe(400)
+    expect(snapshot()).toEqual(before)
+  })
+})
+
 describe('메시지 시나리오', () => {
   it('messages-empty: ws_01 의 묶음·대화가 모두 없다', async () => {
     applyScenario('messages-empty')
@@ -496,10 +537,37 @@ describe('메시지 시나리오', () => {
     expect([other.status, other.code]).toEqual([403, 'FORBIDDEN'])
   })
 
-  it('PM 도 남의 대화에는 답장할 수 없다', async () => {
+  it('PM 이 남의 대화에 쓰면 작성자가 붙은 PM 글로 201 이고, Discord 가 없는 팀원에게는 못 보냄으로 남는다', async () => {
+    const created = await replyTo('th_01', '  재환님, 확인 부탁해요  ')
+    expect(created).toEqual({
+      message_id: 'mg_22',
+      thread_id: 'th_01',
+      sender: 'pm',
+      body: '재환님, 확인 부탁해요',
+      created_at: '2026-09-18T00:00:00.000Z',
+      reply_channel: null,
+      dm_status: 'failed',
+      dm_failure_reason: 'discord_not_linked',
+      scheduled_at: null,
+      author_member_id: 'mb_01',
+      author_name: '김서연',
+    })
+    const { thread: summary } = await thread('th_01')
+    expect(summary.last_message).toMatchObject({ sender: 'pm', author_name: '김서연' })
+    // PM 글은 답장 기다림을 끝내지도 새로 열지도 않는다
+    expect(summary.awaiting_reply_since).toBe('2026-09-16T09:00:00.000Z')
+    expect(summary.dm_failed).toBe(true)
+    await expect(replyTo('th_02', '민수님 확인했어요')).resolves.toMatchObject({
+      sender: 'pm',
+      dm_status: 'pending',
+      dm_failure_reason: null,
+    })
+  })
+
+  it('받는 팀원이 공간에 없는 대화에는 쓰지 않는다 (404 MEMBER_NOT_FOUND)', async () => {
     const before = snapshot()
-    const error = await failure(replyTo('th_01', 'PM 답장'))
-    expect([error.status, error.code]).toEqual([403, 'FORBIDDEN'])
+    const error = await failure(replyTo('th_04', '지훈님'))
+    expect([error.status, error.code]).toEqual([404, 'MEMBER_NOT_FOUND'])
     expect(snapshot()).toEqual(before)
   })
 
@@ -516,13 +584,13 @@ describe('메시지 시나리오', () => {
     expect(created).toMatchObject({ thread_id: 'th_06', sender: 'member', reply_channel: 'web' })
     expect((await thread('th_06')).messages.at(-1)?.body).toBe('PM 이 자기 대화에 남긴 답장')
 
-    const before = snapshot()
-    const other = await failure(replyTo('th_01', '남의 대화'))
-    expect([other.status, other.code]).toEqual([403, 'FORBIDDEN'])
-    expect(snapshot()).toEqual(before)
+    await expect(replyTo('th_01', '남의 대화')).resolves.toMatchObject({
+      sender: 'pm',
+      author_member_id: 'mb_01',
+    })
   })
 
-  it('새 공간을 만든 계정은 그 공간의 PM 행이 member_id 이고, 그 행의 대화에 답장된다. 다른 계정은 403 이다', async () => {
+  it('새 공간을 만든 계정은 그 공간의 PM 행이 member_id 이고, 그 행의 대화에 답장된다. 다른 팀원 계정은 403 이다', async () => {
     applyScenario('messages-pm-self')
     const created = await fetchDto<WorkspaceDto>(
       '/workspaces',
@@ -557,6 +625,8 @@ describe('메시지 시나리오', () => {
     const other = db.accounts.find(({ session }) => session.user.email === 'other@example.com')
     other!.workspaceIds.push(workspaceId)
     other!.memberIds[workspaceId] = 'mb_91'
+    // 공간 행의 역할은 계정끼리 같이 쓴다 — 다른 계정을 팀원으로 본다. PM 이면 남의 대화에도 PM 글로 쓴다
+    setMockRole('member', workspaceId)
     expect((await fetchDto<WorkspaceDto>(`/workspaces/${workspaceId}`)).member_id).toBe('mb_91')
     const before = snapshot()
     const refused = await failure(replyTo('th_90', '남의 대화', workspaceId))
@@ -606,6 +676,22 @@ describe('메시지 시나리오', () => {
     ])
       expect((await failure(request)).status).toBe(500)
     expect(snapshot()).toEqual(before)
+  })
+
+  it('messages-pm-thread: 다른 PM 의 글과 내 글이 있고, 웹 계정이 이어진 박민수만 웹 답장이 된다', async () => {
+    applyScenario('messages-pm-thread')
+    const { threads } = await inbox()
+    const byId = (id: string) => threads.find(({ thread_id }) => thread_id === id)
+    expect(byId('th_01')).toMatchObject({
+      last_message: { sender: 'pm', author_member_id: 'mb_06', author_name: '오지현' },
+      dm_failed: true,
+      web_reply_available: false,
+    })
+    expect(byId('th_02')).toMatchObject({
+      last_message: { sender: 'pm', author_member_id: 'mb_01', author_name: '김서연' },
+      dm_failed: false,
+      web_reply_available: true,
+    })
   })
 
   it('저장 버전 6 은 버린다', () => {
