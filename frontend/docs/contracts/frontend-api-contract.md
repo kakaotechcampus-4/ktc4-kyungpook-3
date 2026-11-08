@@ -639,7 +639,7 @@ BE #464 가 병합·배포한 인터페이스다(메인 이슈 #459). 「현재 
 | 보낼지 판정 | `aliasToLearn(승인, 최종 값)` 이 담당자가 있으면 `aliasCandidate` 를, 미정이면 null 을 준다. 승인 계획은 체크가 켜져 있고 이 값이 있을 때만 `save_alias: true` 를 싣는다. 아니면 키를 보내지 않는다. 반려·`task_update` 는 보내지 않는다 | [resolution.ts](../../src/entities/approval/model/resolution.ts) |
 | 화면 | 승인 상세와 태스크 목록의 생성 승인 카드에서 담당자 고르기 바로 아래 체크박스 「'{alias_text}'을(를) {담당자 이름}의 별칭에도 등록」. 기본 켜짐. 같은 판정에 담당자 이름을 아는지를 더해 보인다. 담당자 고르기 선택지는 팀원 이름과 미정뿐이다 | [AliasSaveField](../../src/features/approval-resolve/ui/AliasSaveField.tsx) |
 | 캐시 | 승인 처리 뒤 별칭 목록(`['workspace', id, 'member-aliases']`)도 다시 받는다 | [useApprovalResolve](../../src/features/approval-resolve/model/useApprovalResolve.ts) |
-| MSW | 저장값은 추출 때의 값이고, 응답마다 지금 상태로 다시 계산한다(대기 중인 생성 승인이고 공간의 누구도 그 글자를 별칭으로 갖지 않을 때만 후보). `save_alias: true` 로 담당자를 골라 승인하면 `learned` 별칭을 최종 담당자에게 더한다. 불리언이 아니면 400 `INVALID_REQUEST`. 님·조사 후보와 탈퇴한 팀원은 흉내 내지 않는다 | [승인 handler](../../src/shared/mock/handlers/approval.ts) |
+| MSW | 후보를 저장하지 않고 응답마다 BE 규칙으로 구한다. 모의 추출 항목에 담당자 표현 유형(`assignee_type`, 응답에는 싣지 않음)과 원문을 두고, 대기 중인 생성 승인이며 담당자를 못 찾은 이름 지목(`thirdname`)이면 끝 조사·님을 뗀 글자가 후보다. 1인칭이거나 공간의 누가 그 글자를 별칭으로 가지면 아니다. 막던 별칭을 지우면 다시 후보가 된다. `save_alias: true` 로 담당자를 골라 승인하면 `learned` 별칭을 최종 담당자에게 더한다. 불리언이 아니면 400 `INVALID_REQUEST`. 찾기 후보(님·조사를 뗀 여러 꼴)로 막는 것과 탈퇴한 팀원은 흉내 내지 않고 같은 글자만 본다 | [aliasLearning](../../src/shared/mock/aliasLearning.ts), [승인 handler](../../src/shared/mock/handlers/approval.ts) |
 
 ### 2.6 tasks · task history
 
