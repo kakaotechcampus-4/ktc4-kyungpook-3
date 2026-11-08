@@ -16,7 +16,7 @@ import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
-from sqlalchemy import delete, exists, func, or_, select, update
+from sqlalchemy import delete, exists, func, or_, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
@@ -84,13 +84,24 @@ def claim_next(db: Session, *, only: list[str] | None = None, now: datetime | No
     only 를 주면 그 extraction 안에서만 고른다. 빈 목록이면 아무것도 고르지 않는다. 커밋은 호출자가 한다.
     """
     now = now or datetime.now(timezone.utc)
+    lease_alive = Extraction.summary_claimed_at > now - SUMMARY_LEASE
+    # 앞 회의의 시도가 저장 없이 끝났으면 임대가 끝날 때까지 같은 워크스페이스의 뒤 회의를 주지 않는다. 포기한 앞 회의는 막지 않는다
+    earlier, earlier_meeting = aliased(Extraction), aliased(Meeting)
+    earlier_in_flight = exists().where(
+        earlier_meeting.meeting_id == earlier.meeting_id,
+        earlier_meeting.workspace_id == Meeting.workspace_id,
+        tuple_(earlier_meeting.started_at, earlier.extraction_id) < tuple_(Meeting.started_at, Extraction.extraction_id),
+        earlier.summary_requested_at.is_not(None),
+        earlier.summary_claimed_at > now - SUMMARY_LEASE,
+    )
     stmt = (
         select(Extraction)
         .join(Meeting, Meeting.meeting_id == Extraction.meeting_id)
         .where(
             Extraction.summary_requested_at.is_not(None),
             Extraction.summary_attempts < SUMMARY_MAX_ATTEMPTS,
-            or_(Extraction.summary_claimed_at.is_(None), Extraction.summary_claimed_at <= now - SUMMARY_LEASE),
+            or_(Extraction.summary_claimed_at.is_(None), ~lease_alive),
+            ~earlier_in_flight,
         )
         .order_by(Meeting.started_at, Extraction.extraction_id)
         .limit(1)

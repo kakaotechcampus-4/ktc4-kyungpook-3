@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from app.main import app
-from app.models import Decision, Extraction, ExtractionItem, Meeting, Source, Topic, TopicMeeting
+from app.models import Decision, Extraction, ExtractionItem, Meeting, Source, Topic, TopicMeeting, Workspace
 from app.schemas.project_map import SummaryWriteRequest
 from app.services import summary
 from tests.api.conftest import SERVICE_TOKEN
@@ -117,9 +117,9 @@ def test_claim_goes_by_meeting_time_not_queue_time(client, mdb, mseed):
     _, later = _meeting(mdb, mseed["ws"], started_at=T0)
     _, earlier = _meeting(mdb, mseed["ws"], started_at=T0 - timedelta(days=7))
 
-    assert [_claim(client)["extraction_id"], _claim(client)["extraction_id"]] == [
-        earlier.extraction_id, later.extraction_id,
-    ]
+    first = _claim(client)["extraction_id"]
+    _put(client, first)
+    assert [first, _claim(client)["extraction_id"]] == [earlier.extraction_id, later.extraction_id]
 
 
 def test_claim_skips_row_under_live_lease(client, mdb, mseed):
@@ -139,6 +139,33 @@ def test_expired_lease_is_claimed_again_until_attempts_run_out(mdb, mseed):
     second = summary.claim_next(mdb, now=now + summary.SUMMARY_LEASE + timedelta(seconds=1))
     assert (second.extraction_id, second.attempt) == (extraction.extraction_id, 2)
     assert summary.claim_next(mdb, now=now + summary.SUMMARY_LEASE * 5) is None
+
+
+def test_a_live_lease_on_an_earlier_meeting_holds_later_meetings_of_that_workspace(mdb, mseed):
+    """앞 회의가 저장 없이 끝난 동안 뒤 회의를 주면 뒤 회의가 앞 회의의 주제와 결정 없이 요약된다."""
+    _, earlier = _meeting(mdb, mseed["ws"], started_at=T0)
+    _, later = _meeting(mdb, mseed["ws"], started_at=T0 + timedelta(days=1))
+    other_ws = Workspace(name="B")
+    mdb.add(other_ws)
+    mdb.commit()
+    _, other = _meeting(mdb, other_ws.workspace_id, started_at=T0 + timedelta(days=2))
+    now = datetime.now(timezone.utc)
+
+    assert summary.claim_next(mdb, now=now).extraction_id == earlier.extraction_id
+    assert summary.claim_next(mdb, now=now).extraction_id == other.extraction_id
+    assert summary.claim_next(mdb, now=now) is None
+    retry = summary.claim_next(mdb, now=now + summary.SUMMARY_LEASE + timedelta(seconds=1))
+    assert (retry.extraction_id, retry.attempt) == (earlier.extraction_id, 2)
+
+
+def test_an_earlier_meeting_that_gave_up_does_not_hold_later_meetings(mdb, mseed):
+    _, earlier = _meeting(mdb, mseed["ws"], started_at=T0)
+    _, later = _meeting(mdb, mseed["ws"], started_at=T0 + timedelta(days=1))
+    now = datetime.now(timezone.utc)
+    earlier.summary_attempts, earlier.summary_claimed_at = summary.SUMMARY_MAX_ATTEMPTS, now - summary.SUMMARY_LEASE * 2
+    mdb.commit()
+
+    assert summary.claim_next(mdb, now=now).extraction_id == later.extraction_id
 
 
 def test_extraction_ids_limit_the_claim(client, mdb, mseed):
@@ -265,8 +292,12 @@ def test_service_routes_require_token(client, mdb, method, path, body):
 def test_concurrent_claims_never_share_a_row(mdb, mseed):
     if mdb.get_bind().dialect.name != "postgresql":
         pytest.skip("행 잠금은 PostgreSQL 에서만 확인한다")
-    for offset in range(2):
-        _meeting(mdb, mseed["ws"], started_at=T0 + timedelta(minutes=offset))
+    # 같은 워크스페이스는 앞 회의가 끝나야 뒤 회의를 주므로 워크스페이스 둘로 동시 claim 을 본다
+    other_ws = Workspace(name="B")
+    mdb.add(other_ws)
+    mdb.commit()
+    for offset, ws in enumerate((mseed["ws"], other_ws.workspace_id)):
+        _meeting(mdb, ws, started_at=T0 + timedelta(minutes=offset))
     Session = sessionmaker(bind=mdb.get_bind(), autoflush=False)
     barrier = threading.Barrier(4)
     claimed = []
