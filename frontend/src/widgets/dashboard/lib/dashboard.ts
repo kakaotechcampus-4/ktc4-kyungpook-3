@@ -215,17 +215,10 @@ export function durationLabel(durationMs: number | null): string | null {
   return `${Math.max(1, Math.round(durationMs / 60_000))}분`
 }
 
-/** 받침이 있으면 `을`, 없으면 `를`. 한글로 끝나지 않으면 둘 다 적는다 */
-export function objectParticle(word: string): string {
-  const last = word.trim().at(-1)
-  if (last === undefined) return '을(를)'
-  const code = last.charCodeAt(0) - 0xac00
-  if (code < 0 || code > 11171) return '을(를)'
-  return code % 28 === 0 ? '를' : '을'
-}
-
 /** 확인 필요 행 아래 한 줄 — 왜 확인해야 하는지. 회의록·태스크 목록의 문구와 같다 */
 export function approvalReason(approval: Approval): string {
+  if (approval.kind === 'task_update' && approval.assigneePick !== null)
+    return '담당자를 골라야 하는 답장이에요'
   if (isScopeChange(approval)) return '범위 변경을 확인해야 해요'
   if (approval.kind === 'task_update') return '변경 제안을 확인해야 해요'
   if (approval.kind === 'unsupported') return '지원하지 않는 종류라 상세에서 확인해 주세요'

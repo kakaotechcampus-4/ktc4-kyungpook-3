@@ -3,7 +3,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { messageInboxQueryOptions, messageThreadQueryOptions } from '@/entities/message'
 import type { Bundle, MessageInbox as Inbox, MessageThreadSummary } from '@/entities/message'
-import { paths } from '@/shared/config/routes'
+import { MESSAGE_PARAMS, paths } from '@/shared/config/routes'
 import {
   useCompactScreen,
   useHideShellChrome,
@@ -16,7 +16,7 @@ import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { PinnedToastHost } from '@/shared/ui/toast'
-import { avatarText, bundleDateLabel, bundleSummary, shortDate } from '../lib/format'
+import { avatarText, bundleDateLabel, shortDate } from '../lib/format'
 import { threadHeading } from '../model/conversation'
 import { inboxPane, nextPaneMemory, selectDetail } from '../model/selection'
 import type { DetailSelection, PaneMemory } from '../model/selection'
@@ -150,7 +150,7 @@ export function MessageInbox({
   const asideRef = useRef<HTMLElement>(null)
   const listTitleRef = useRef<HTMLHeadingElement>(null)
   const barTitleRef = useRef<HTMLElement | null>(null)
-  const href = location.pathname + location.search
+  const href = location.pathname + withoutShownMessage(location.search)
   const shown = useRef({ pane, href })
   useLayoutEffect(() => {
     const before = shown.current
@@ -495,6 +495,14 @@ function InboxList({
   )
 }
 
+/** 목록 행 주소와 견줄 검색 문자열. 대화 안에서 보여 줄 메시지(`message`)는 행 주소에 없다. 묶음을 고르는 `review` 는 남긴다 */
+function withoutShownMessage(search: string): string {
+  const params = new URLSearchParams(search)
+  params.delete(MESSAGE_PARAMS.message)
+  const rest = params.toString()
+  return rest === '' ? '' : `?${rest}`
+}
+
 /*
  * 행은 GuardedLink(NavLink)다. NavLink 는 주소가 맞으면 스스로 aria-current 를 단다 — 묶음 행은 모두 `/messages` 라
  * 검색 파라미터를 보지 않는 NavLink 에는 전부 맞는다. 그래서 `end` 로 대화 경로에서는 꺼 두고, 고른 행만 `page` 로 준다
@@ -525,7 +533,7 @@ function BundleRow({
         <span className={REVIEW_NAME}>{bundle.recipientName}</span>
         <span className={DATE}>{bundleDateLabel(bundle)}</span>
       </span>
-      <span className={REVIEW_SUMMARY}>{bundleSummary(bundle)}</span>
+      <span className={REVIEW_SUMMARY}>{bundle.summary}</span>
     </GuardedLink>
   )
 }

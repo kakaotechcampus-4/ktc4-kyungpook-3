@@ -22,6 +22,7 @@ from app.services.alias_learning import (
     learn_alias,
     learnable_alias_text,
 )
+from app.services.pending_merge import assignee_item_of
 from app.services.tasks import (
     apply_task_updates,
     create_task,
@@ -230,11 +231,8 @@ def _apply_approval(
     if approval.type == str(ApprovalType.TASK_CREATE):
         # Task를 만들기 전에 연결 대상부터 검증한다.
         extraction_item_id = payload.get("extraction_item_id")
-        ext_item = (
+        if extraction_item_id:
             _get_linkable_extraction_item(db, approval, extraction_item_id)
-            if extraction_item_id
-            else None
-        )
 
         proposal = {
             "task_title": payload.get("task_title") or payload.get("title") or "",
@@ -278,17 +276,25 @@ def _apply_approval(
             )
         approval.related_task_id = task.task_id
 
-        if ext_item is not None:
-            ext_item.task_id = task.task_id
-            # 별칭은 create_task 가 담당자(탈퇴·다른 공간)를 검증한 뒤에 저장한다. 담당자를 못 고른 항목은 건너뛴다
-            alias_text = learnable_alias_text(ext_item) if save_alias and final["assignee_member_id"] else None
+        # 합쳐진 항목(action="merge")도 같은 카드에서 나왔으므로 카드가 만든 task 를 함께 가리킨다
+        linked_items = db.execute(
+            select(ExtractionItem).where(ExtractionItem.approval_id == approval.approval_id)
+        ).scalars().all()
+        for linked in linked_items:
+            linked.task_id = task.task_id
+        # 별칭은 카드의 담당자를 정한 항목에서만 배운다. payload 의 assignee_item_id 가 이 카드의 연결 항목이
+        # 아니면(위조·다른 카드) 무시한다. create_task 가 담당자(탈퇴·다른 공간)를 검증한 뒤에 저장하고,
+        # 담당자를 못 고른 카드는 건너뛴다
+        alias_item = next((i for i in linked_items if i.item_id == assignee_item_of(payload)), None)
+        if alias_item is not None and save_alias and final["assignee_member_id"]:
+            alias_text = learnable_alias_text(alias_item)
             if alias_text is not None:
                 learn_alias(
                     db,
                     workspace_id=approval.workspace_id,
                     member_id=final["assignee_member_id"],
                     alias_text=alias_text,
-                    lookup_forms=alias_lookup_forms(ext_item.assignee_raw, alias_text),
+                    lookup_forms=alias_lookup_forms(alias_item.assignee_raw, alias_text),
                 )
 
     elif approval.type == str(ApprovalType.TASK_UPDATE):
@@ -582,7 +588,10 @@ def resolve_approval(
             details={"approval_id": approval_id, "current_status": approval.status},
         )
 
+    # 이 세션이 앞서 읽은 객체는 identity map 의 이전 payload 를 들고 있다. 조건부 UPDATE 사이에 합치기가 payload 를
+    # 바꿨어도 승인은 DB 의 최신 값으로 task 를 만들어야 한다
     approval = db.get(ApprovalRequest, approval_id)
+    db.refresh(approval)
 
     if payload.status == ApprovalStatus.APPROVED:
         try:
