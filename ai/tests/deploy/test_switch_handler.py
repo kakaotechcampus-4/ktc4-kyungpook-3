@@ -321,6 +321,27 @@ def test_a_start_the_next_lookup_does_not_see_yet_still_reads_as_starting():
     assert r["json"]["refused"] is None
 
 
+def test_a_lagging_start_has_no_launch_time_so_the_worker_counts_one_boot_once():
+    """지어 낸 켠 시각은 다음 응답의 실제 LaunchTime 과 1초만 달라도 워커가 부팅 한 번을 켜기 두 번으로 센다."""
+    from stt.failover import Facts, FailoverState, Mode, Phase, ServerView, Signals, kst_day, step
+
+    ec2 = FakeEc2(instance("i-0fallback", "stopped", launched=NOW - 10 * HOUR, stop_at=NOW - 7 * HOUR))
+    ssm = FakeSsm()
+    ec2.lagging = True
+    first = call(ec2, ssm)["json"]
+    assert first["state"] == "starting" and first["launched_at"] is None
+    ec2.lagging = False
+    inst = ec2._get("i-0fallback")
+    inst["State"]["Name"] = "pending"
+    inst["LaunchTime"] = datetime.fromtimestamp(NOW + 1, tz=timezone.utc)     # EC2 가 start 를 처리한 시각
+    second = call(ec2, ssm, now=NOW + 10)["json"]
+    s = FailoverState(phase=Phase.STARTING, why="elice_down", since=NOW, day=kst_day(NOW), hold_until=NOW + 1800)
+    for now, body in ((NOW, first), (NOW + 10, second)):
+        s, _ = step(s, Facts(now=now, mode=Mode.AUTO, signals=Signals(), server=ServerView(**body)))
+    assert [c for c in ec2.calls if c[0] == "start"] == [("start", ("i-0fallback",))]
+    assert s.day_ons == 1 and s.session[0] == NOW + 1
+
+
 def test_off_that_ec2_cannot_do_yet_reports_the_state_without_counting():
     ec2 = FakeEc2(instance("i-0fallback", "pending", launched=NOW - 20, stop_at=NOW + 3 * HOUR))
     ec2.stop_error = "IncorrectInstanceState"

@@ -31,7 +31,7 @@ REFUSED_START = {"VcpuLimitExceeded": "limit", "InsufficientInstanceCapacity": "
 class Instance:
     id: str
     state: str
-    launched_at: int
+    launched_at: int | None
     stop_at: int | None
     ready: bool
 
@@ -120,9 +120,10 @@ def _on(ec2, ssm, inst: Instance, ledger: Ledger, now: int, cap_min: int) -> dic
             raise
         return _view(inst, ledger, cap_min, REFUSED_START[_code(e)])
     fresh = _standby(ec2)
-    # 바로 다음 조회가 아직 stopped 를 돌려줄 수 있다. 그대로 내면 켜기가 조용히 실패한 것처럼 보인다
+    # 바로 다음 조회가 아직 stopped 를 돌려줄 수 있다. 그대로 내면 켜기가 조용히 실패한 것처럼 보인다.
+    # 켠 시각은 아직 모르니 비운다. 지어 내면 다음 응답의 실제 LaunchTime 과 달라 워커가 부팅 한 번을 두 번 센다
     if fresh is None or fresh.state not in ("pending", "running"):
-        fresh = Instance(inst.id, "pending", now, now + SESSION_S, inst.ready)
+        fresh = Instance(inst.id, "pending", None, now + SESSION_S, inst.ready)
     return _view(fresh, ledger, cap_min)
 
 

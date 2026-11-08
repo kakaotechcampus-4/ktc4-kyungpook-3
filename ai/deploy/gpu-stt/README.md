@@ -354,7 +354,7 @@ POST <GPU_SWITCH_URL>   Authorization: Bearer <GPU_SWITCH_TOKEN>
 
 그 밖의 코드는 함수 URL 이 돌려준다. 예약 동시성이 1이라 동시에 온 요청 하나는 거절되고(429 로 추정), 함수 안의 예외는 502 로 추정한다. 둘 다 재지 않았다. 워커는 200 이 아닌 응답과 모르는 모양을 모두 실패한 호출로 다루고 다음 확인 때 다시 부른다([`stt/gpu_switch.py`](../../stt/gpu_switch.py)).
 
-`on` 은 꺼진 서버에 `StopAt`(지금부터 3시간)을 먼저 쓰고 켠다. 켜져 있거나 켜는 중이면 아무것도 바꾸지 않는다. `refused` 는 vCPU 한도(`limit`), AWS 용량 부족(`capacity`), 누적 상한(`spent`), 첫 부팅을 마치지 못한 서버(`not_ready`), 꺼지는 중(`stopping`)이다. `off` 는 켜진 서버를 끄고, 그 서버를 켠 한 번의 사용 시간을 장부에 한 번만 더한다. 켠 한 번은 `launched_at` 으로 가린다. `used_min` 은 장부에 닫힌 시간만 센다. 지금 켜져 있는 시간은 끈 뒤에 더해진다.
+`on` 은 꺼진 서버에 `StopAt`(지금부터 3시간)을 먼저 쓰고 켠다. 켠 직후 조회가 아직 꺼짐이면 `starting` 과 `launched_at: null` 을 돌려주고, 워커는 실제 켠 시각이 보일 때 켜기를 센다. 켜져 있거나 켜는 중이면 아무것도 바꾸지 않는다. `refused` 는 vCPU 한도(`limit`), AWS 용량 부족(`capacity`), 누적 상한(`spent`), 첫 부팅을 마치지 못한 서버(`not_ready`), 꺼지는 중(`stopping`)이다. `off` 는 켜진 서버를 끄고, 그 서버를 켠 한 번의 사용 시간을 장부에 한 번만 더한다. 켠 한 번은 `launched_at` 으로 가린다. `used_min` 은 장부에 닫힌 시간만 센다. 지금 켜져 있는 시간은 끈 뒤에 더해진다.
 
 ## 한계
 
