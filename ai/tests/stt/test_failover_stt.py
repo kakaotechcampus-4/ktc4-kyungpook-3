@@ -409,6 +409,26 @@ def test_the_daily_time_cap_turns_the_server_off(tmp_path):
     assert fo.state.why == "day_cap" and switch.state == "off"
 
 
+def test_a_day_cap_hit_just_before_midnight_does_not_block_the_next_day(tmp_path):
+    """23:28 KST 에 켜 23:58 에 하루 시간 상한(줄인 값 30분)에 닿고, 꺼짐은 00:05 에 본다. 새 날의 몫은 5분뿐이다."""
+    from stt.failover import kst_day
+
+    fo, elice, gpu, switch, clock, notes = make(tmp_path, Clock(1_799_936_880.0))
+    fo._limits = LIMITS.__class__(day_on_s=1800, idle_s=4 * 3600)
+    day0 = kst_day(clock())
+    elice.mode = "service"
+    request(tmp_path, "on")
+    assert ticks(fo, clock, 600, until=lambda: fo.phase is Phase.ON_GPU)
+    assert ticks(fo, clock, 3600, until=lambda: fo.phase is Phase.STOPPING)
+    assert kst_day(clock()) == day0
+    assert ticks(fo, clock, 1200, until=lambda: fo.phase is Phase.HALTED)
+    assert kst_day(clock()) != day0
+    ticks(fo, clock, 3 * 3600)
+    request(tmp_path, "on")
+    fo.tick()
+    assert fo.phase is Phase.STARTING and switch.starts == 1
+
+
 def test_the_lambda_running_total_cap_halts(tmp_path):
     fo, elice, gpu, switch, clock, notes = make(tmp_path)
     switch.used_s = switch.cap_min * 60

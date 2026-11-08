@@ -189,8 +189,17 @@ def cost_text(minutes: float) -> str:
     return f"${usd:.2f}(₩{round(usd * KRW_PER_USD):,})"
 
 
+def _day_start(ts: float) -> float:
+    return datetime.fromtimestamp(ts, KST).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+
+
+def _today_part(session_start: float, now: float) -> float:
+    """세션 가운데 오늘(KST) 몫. 자정을 넘긴 세션의 어제 몫을 오늘 상한에 다시 세지 않는다."""
+    return max(0.0, now - max(session_start, _day_start(now)))
+
+
 def today_used_s(s: FailoverState, now: float) -> float:
-    return s.day_used_s + (max(0.0, now - s.session[0]) if s.session else 0.0)
+    return s.day_used_s + (_today_part(s.session[0], now) if s.session else 0.0)
 
 
 def _time_full(s: FailoverState, now: float, L: Limits) -> bool:
@@ -240,7 +249,7 @@ def _account(s: FailoverState, view: ServerView | None, now: float) -> tuple[Fai
     """KST 날짜를 넘기고 스위치 응답으로 세션을 열고 닫는다. 닫은 세션의 사용 초를 함께 돌려준다.
 
     사용 시간은 부팅의 launched_at 부터 꺼짐을 본 때까지다. 상태 파일에 적지 않고 서버 값에서 다시 만들어서
-    켜기와 저장 사이에 워커가 죽어도 잃지 않는다. 자정을 넘긴 세션은 다음 날에 통째로 센다.
+    켜기와 저장 사이에 워커가 죽어도 잃지 않는다. 자정을 넘긴 세션은 날마다 그날의 몫만 센다. 켜기 수는 켠 날에 센다.
     """
     if s.day != kst_day(now):
         s = replace(s, day=kst_day(now), day_ons=0, day_used_s=0.0)
@@ -249,7 +258,7 @@ def _account(s: FailoverState, view: ServerView | None, now: float) -> tuple[Fai
     closed = None
     if s.session and (view.state == "off" or (view.live and view.launched_at != s.session[0])):
         closed = max(0.0, now - s.session[0])
-        s = replace(s, day_used_s=s.day_used_s + closed, session=None)
+        s = replace(s, day_used_s=s.day_used_s + _today_part(s.session[0], now), session=None)
     if view.live and s.session is None:
         s = replace(s, session=(view.launched_at, view.stop_at), day_ons=s.day_ons + 1)
     return replace(s, server=view), closed
@@ -479,7 +488,8 @@ def _parked(s, f, L, out, closed):
 def _halted(s, f, L, out, closed):
     if f.request == "off":
         return _paused_by_hand(s, f, L, out)
-    if s.why == "day_cap" and kst_day(s.since) != kst_day(f.now):
+    # 상한에 닿은 날이 아니라 오늘의 몫으로 본다. 자정 직전에 닿고 꺼짐을 자정 뒤에 본 HALTED 도 새 날에는 풀린다
+    if s.why == "day_cap" and not (_time_full(s, f.now, L) or _ons_full(s, L)):
         out.append(Notice("ℹ️ 날짜가 바뀌어 하루 GPU 상한이 풀렸습니다."))
         return _enter(s, Phase.PARKED, "day_cap", f)
     if f.request == "on":

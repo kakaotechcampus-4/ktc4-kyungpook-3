@@ -5,9 +5,10 @@ from dataclasses import replace
 import pytest
 
 from stt.failover import (LIMITS, Facts, FailoverState, Io, Mode, Phase, Route, ServerView, Signals, kst_day, plan,
-                          route_of, step)
+                          route_of, step, today_used_s)
 
-T0 = 1_800_000_000.0          # 2027-01-15 17:20 KST
+T0 = 1_800_000_000.0          # 2027-01-15 17:00 KST
+MIDNIGHT = 1_799_938_800.0    # 2027-01-15 00:00 KST
 L = LIMITS
 LAUNCH = T0 - 600.0
 RUNNING = ServerView(state="running", launched_at=LAUNCH, stop_at=LAUNCH + 3 * 3600, refused=None, used_min=70,
@@ -210,6 +211,11 @@ ROWS = [
     # HALTED
     ("halted: 하루 상한은 날짜가 바뀌면 풀린다", st(Phase.HALTED, why="day_cap", **FULL_ONS), facts(now=T0 + 86400),
      Phase.PARKED, "day_cap", {"day_ons": 0}),
+    ("halted: 자정 직전에 걸린 하루 상한은 꺼짐을 자정 뒤에 봐도 풀린다",
+     st(Phase.HALTED, why="day_cap", since=MIDNIGHT + 300, day=kst_day(MIDNIGHT), day_used_s=300.0),
+     facts(now=MIDNIGHT + 310), Phase.PARKED, "day_cap", {}),
+    ("halted: 하루 상한은 같은 날에는 풀리지 않는다", st(Phase.HALTED, why="day_cap", **FULL_ONS), facts(),
+     Phase.HALTED, "day_cap", {}),
     ("halted: 하루 상한은 같은 날 수동 켜기를 거절한다", st(Phase.HALTED, why="day_cap", **FULL_ONS), facts(request="on"),
      Phase.HALTED, "day_cap", {}),
     *[(f"halted: {why} 뒤 수동 켜기", st(Phase.HALTED, why=why, boot_failures=2), facts(request="on"),
@@ -298,6 +304,14 @@ def test_a_session_is_counted_once_per_launch():
     assert state.day_ons == 1 and state.session == (LAUNCH, LAUNCH + 3 * 3600)
     state, _ = run(state, facts(now=T0 + 30, server=replace(STARTING_VIEW, launched_at=T0 + 25)))
     assert state.day_ons == 2 and state.day_used_s == pytest.approx(T0 + 30 - LAUNCH)
+
+
+def test_a_session_across_midnight_counts_only_its_part_of_each_kst_day():
+    yesterday = st(Phase.ON_GPU, session=(MIDNIGHT - 3600, MIDNIGHT + 7200), day=kst_day(MIDNIGHT - 1), day_ons=1)
+    assert today_used_s(yesterday, MIDNIGHT - 600) == 3000
+    state, _ = run(replace(yesterday, phase=Phase.STOPPING, why="manual"), facts(now=MIDNIGHT + 1800, server=OFF))
+    assert (state.day, state.day_used_s, state.day_ons) == (kst_day(MIDNIGHT), 1800.0, 0)
+    assert today_used_s(replace(yesterday, day=kst_day(MIDNIGHT), day_ons=0), MIDNIGHT + 1800) == 1800
 
 
 def test_the_kst_day_rolls_over_the_counters():
