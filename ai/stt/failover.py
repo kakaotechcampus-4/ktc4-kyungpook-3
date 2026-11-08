@@ -383,9 +383,7 @@ def _starting(s, f, L, out, closed):
                       next_probe_at=f.now + L.back_gap_s, next_gpu_probe_at=f.now + L.gpu_probe_gap_s)
     if f.gpu_ok is False and server and server.launched_at and f.now - server.launched_at > L.boot_s:
         if s.boot_failures + 1 >= 2:
-            out.append(Notice("⛔ 이번 장애에서 GPU 서버가 두 번째로 응답하지 않습니다. 끄고 멈춥니다. 담당자 확인이 필요합니다.",
-                              alert=True))
-            return _stopping(s, f, "boot", out, boot_failures=s.boot_failures + 1)
+            return _boot_halt(s, f, out)
         out.append(Notice(f"⚠️ GPU 서버가 부팅 뒤 {L.boot_s / 60:.0f}분이 지나도 응답하지 않아 한 번 끄고 다시 켭니다. "
                           "이번 장애에서 다시 켜기는 이 한 번입니다.", alert=True))
         s = replace(s, boot_failures=s.boot_failures + 1, discard=server.launched_at)
@@ -418,6 +416,12 @@ def _starting(s, f, L, out, closed):
     return s
 
 
+def _boot_halt(s: FailoverState, f: Facts, out: list[Notice]) -> FailoverState:
+    out.append(Notice("⛔ 이번 장애에서 GPU 서버가 두 번째로 응답하지 않습니다. 끄고 멈춥니다. 담당자 확인이 필요합니다.",
+                      alert=True))
+    return _stopping(s, f, "boot", out, boot_failures=s.boot_failures + 1)
+
+
 def _on_gpu(s, f, L, out, closed):
     sig = f.signals
     if f.request == "off":
@@ -445,8 +449,14 @@ def _on_gpu(s, f, L, out, closed):
         return _enter(s, Phase.STARTING, "rollover", f, discard=s.session[0] if s.session else None,
                       hold_until=f.now + L.hold_s)
     if f.gpu_ok is False or _gpu_fails_here(s, sig) >= L.gpu_fails:
-        out.append(Notice("⚠️ GPU 서버가 응답하지 않습니다. 다시 확인하고 필요하면 다시 켭니다. 그동안 전사는 기다립니다."))
-        return _enter(s, Phase.STARTING, "gpu_lost", f, hold_until=f.now + L.hold_s)
+        if s.boot_failures + 1 >= 2:
+            return _boot_halt(s, f, out)
+        out.append(Notice("⚠️ GPU 서버가 응답하지 않아 한 번 끄고 다시 켭니다. 그동안 전사는 기다립니다. "
+                          "이번 장애에서 다시 켜기는 이 한 번입니다."))
+        # 확인은 되고 실제 호출만 실패하는 서버가 있다. 같은 서버로 돌아가면 tick 마다 오가니 다시 켠 서버로만 넘긴다
+        lost = s.session[0] if s.session else (s.server.launched_at if s.server else None)
+        return _enter(s, Phase.STARTING, "gpu_lost", f, hold_until=f.now + L.hold_s, discard=lost,
+                      boot_failures=s.boot_failures + 1)
     if f.gpu_ok is True:
         s = replace(s, next_gpu_probe_at=f.now + L.gpu_probe_gap_s)
     last = max(sig.last_gpu_call or 0.0, s.since)

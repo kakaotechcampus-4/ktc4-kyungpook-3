@@ -255,18 +255,37 @@ def test_a_call_during_the_idle_turn_off_waits_and_the_server_comes_back(tmp_pat
     assert out["r"] == "안녕하세요" and switch.starts == 2
 
 
-def test_three_failed_gpu_calls_then_a_good_check_go_back_to_gpu_and_idle_off(tmp_path):
-    """확인 호출 성공은 실제 호출의 연속 실패를 지우지 않는다. 그래도 다시 넘긴 뒤에는 그 전의 실패로 또 끊지 않는다."""
+def test_three_failed_gpu_calls_then_a_good_check_go_back_to_gpu_only_on_a_rebooted_server(tmp_path):
+    """확인 호출 성공은 실제 호출의 연속 실패를 지우지 않는다. 같은 서버로는 돌아가지 않고 다시 켠 서버로 넘긴 뒤 일 없음으로 끈다."""
     fo, elice, gpu, switch, clock, notes = make(tmp_path)
     to_gpu(fo, elice, switch, clock)
+    first = switch.launched_at
     gpu.mode = "service"
     assert [call(fo) for _ in range(3)] == ["service"] * 3
     gpu.mode = "ok"
-    n0, phases = len(notes), []
-    assert ticks(fo, clock, 3600, until=lambda: phases.append(fo.phase) or fo.phase is Phase.PARKED)
-    assert phases.count(Phase.STARTING) == 1
-    assert switch.starts == 1 and switch.state == "off"
+    n0, launches = len(notes), []
+    assert ticks(fo, clock, 3600, until=lambda: fo.phase is Phase.ON_GPU and not launches.append(switch.launched_at))
+    assert launches[0] != first
+    assert ticks(fo, clock, 3600, until=lambda: fo.phase is Phase.PARKED)
+    assert switch.starts == 2 and switch.state == "off"
     assert len(notes) - n0 == 3                           # 응답 없음, 다시 넘김, 끔
+
+
+def test_a_gpu_that_passes_checks_but_fails_every_real_call_reboots_once_then_halts(tmp_path):
+    """확인 호출은 되고 실제 호출만 503 인 서버. tick 마다 넘김과 응답 없음을 오가며 알리지 않는다."""
+    fo, elice, gpu, switch, clock, notes = make(tmp_path)
+    to_gpu(fo, elice, switch, clock)
+    n0 = len(notes)
+    for _ in range(360):
+        if fo.phase is Phase.ON_GPU:
+            gpu.mode = "service"
+            assert [call(fo) for _ in range(3)] == ["service"] * 3
+            gpu.mode = "ok"
+        clock.advance(10)
+        fo.tick()
+    assert (fo.phase, fo.state.why) == (Phase.HALTED, "boot")
+    assert switch.starts == 2 and switch.state == "off"
+    assert sum(n.alert for n in notes[n0:]) == 1 and len(notes) - n0 <= 5
 
 
 @pytest.mark.parametrize("mode", [Mode.AUTO, Mode.MANUAL])
@@ -655,7 +674,7 @@ def test_the_wake_hook_runs_once_per_outage_not_per_entry_into_gpu(tmp_path):
     gpu.mode = "service"
     assert ticks(fo, clock, 120, until=lambda: fo.phase is Phase.STARTING)
     gpu.mode = "ok"
-    assert ticks(fo, clock, 120, until=lambda: fo.phase is Phase.ON_GPU)
+    assert ticks(fo, clock, 1200, until=lambda: fo.phase is Phase.ON_GPU)
     while switch.stop_at - clock() > LIMITS.rollover_s + 60:
         call(fo)
         ticks(fo, clock, 60)

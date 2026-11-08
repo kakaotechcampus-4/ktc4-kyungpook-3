@@ -172,10 +172,15 @@ ROWS = [
      Phase.STOPPING, "idle", {}),
     ("on_gpu: 종료 5분 전, 켜기 수 상한이면 다시 켜지 않는다", st(Phase.ON_GPU, why="elice_down", **{**ON_GPU, **FULL_ONS}),
      facts(now=LAUNCH + 3 * 3600 - 200, signals=dict(gpu_inflight=1)), Phase.STOPPING, "day_cap", {}),
-    ("on_gpu: GPU 확인 실패", st(Phase.ON_GPU, why="elice_down", **ON_GPU),
-     facts(gpu_ok=False, signals=dict(last_gpu_call=T0)), Phase.STARTING, "gpu_lost", {"hold_until": T0 + 10 + L.hold_s}),
-    ("on_gpu: GPU 실제 호출 3번 연속 실패", st(Phase.ON_GPU, why="elice_down", **ON_GPU),
-     facts(signals=dict(gpu_fails=3, gpu_streak=3, last_gpu_call=T0)), Phase.STARTING, "gpu_lost", {}),
+    ("on_gpu: GPU 확인 실패면 끄고 다시 켠다", st(Phase.ON_GPU, why="elice_down", **ON_GPU),
+     facts(gpu_ok=False, signals=dict(last_gpu_call=T0)), Phase.STARTING, "gpu_lost",
+     {"hold_until": T0 + 10 + L.hold_s, "discard": LAUNCH, "boot_failures": 1}),
+    ("on_gpu: GPU 실제 호출 3번 연속 실패면 끄고 다시 켠다", st(Phase.ON_GPU, why="elice_down", **ON_GPU),
+     facts(signals=dict(gpu_fails=3, gpu_streak=3, last_gpu_call=T0)), Phase.STARTING, "gpu_lost",
+     {"discard": LAUNCH, "boot_failures": 1}),
+    ("on_gpu: 이번 장애에서 다시 켠 뒤 또 응답이 없으면 끄고 멈춘다", st(Phase.ON_GPU, why="gpu_lost", boot_failures=1, **ON_GPU),
+     facts(signals=dict(gpu_fails=3, gpu_streak=3, last_gpu_call=T0)), Phase.STOPPING, "boot",
+     {"boot_failures": 2, "hold_until": None}),
     ("on_gpu: 단계 전의 GPU 실패는 세지 않는다", st(Phase.ON_GPU, why="gpu_lost", mark=sig(gpu_fails=3), **ON_GPU),
      facts(signals=dict(gpu_fails=3, gpu_streak=3, last_gpu_call=T0)), Phase.ON_GPU, "gpu_lost", {}),
     ("on_gpu: GPU 호출 10분 없음", st(Phase.ON_GPU, why="elice_down", **ON_GPU),
@@ -268,8 +273,9 @@ def _text(notices):
     (st(Phase.STARTING, why="elice_down", server=RUNNING), facts(now=LAUNCH + 421, server=RUNNING, gpu_ok=False)),
     (st(Phase.ON_GPU, why="elice_down", **ON_GPU), facts(now=LAUNCH + 6 * 3600, signals=dict(last_gpu_call=LAUNCH))),
     (st(Phase.PARKED, why="elice_back", **FULL_ONS), facts(signals=dict(elice_fails=3, elice_streak=3))),
+    (st(Phase.ON_GPU, why="gpu_lost", boot_failures=1, **ON_GPU), facts(gpu_ok=False, signals=dict(last_gpu_call=T0))),
 ], ids=["auto start", "would start", "manual start", "limit", "capacity", "not_ready", "spent", "boot halt",
-        "boot retry", "day cap while on", "day cap at start"])
+        "boot retry", "day cap while on", "day cap at start", "lost again halt"])
 def test_starts_failures_and_caps_are_alerts(state, f):
     _, notices = run(state, f)
     assert notices and any(n.alert for n in notices), _text(notices)
