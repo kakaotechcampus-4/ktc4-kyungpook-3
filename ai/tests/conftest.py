@@ -21,7 +21,7 @@ def _no_real_jev(monkeypatch):
 
 
 GPU_FAILOVER_ENV = ("MM_GPU_FAILOVER", "GPU_STT_BASE_URL", "GPU_STT_API_KEY", "GPU_STT_CA_BUNDLE", "GPU_SWITCH_URL",
-                    "GPU_SWITCH_TOKEN", "MM_OPS_CHANNEL_ID", "MM_OPS_ROLE_ID", "MM_GPU_OPERATORS")
+                    "GPU_SWITCH_TOKEN", "MM_OPS_CHANNEL_ID")
 
 
 @pytest.fixture(autouse=True)

@@ -1,4 +1,5 @@
-"""디스코드 /gpu on|off|status. 운영 채널에서 MM_GPU_OPERATORS 에 든 사람만 쓴다. 봇은 요청 파일만 쓰고 상태 파일을 읽는다."""
+"""디스코드 /gpu on|off|status. 비공개 운영 채널(MM_OPS_CHANNEL_ID)에서 친 명령만 받는다. 채널 ID 가 비면 아무도 못 쓴다.
+봇은 요청 파일만 쓰고 상태 파일을 읽는다."""
 
 import discord
 import pytest
@@ -8,12 +9,6 @@ from stt.failover import FailoverState, Mode, Phase, _dump
 from tests.capture.test_discord_adapter import FakeCtx, _setup
 
 OPS = 4242
-OPERATOR = 11
-
-
-class Author:
-    def __init__(self, uid):
-        self.id = uid
 
 
 class Channel:
@@ -21,10 +16,9 @@ class Channel:
         self.id = cid
 
 
-def _ctx(tmp_path, *, channel=OPS, user=OPERATOR):
+def _ctx(tmp_path, *, channel=OPS):
     cog, guild, vc, _, _ = _setup(tmp_path)
     ctx = FakeCtx(guild, vc, Channel(channel))
-    ctx.author = Author(user)
     ctx.ephemeral = []
     respond = ctx.respond
 
@@ -39,7 +33,6 @@ def _ctx(tmp_path, *, channel=OPS, user=OPERATOR):
 @pytest.fixture(autouse=True)
 def _ops(monkeypatch):
     monkeypatch.setenv("MM_OPS_CHANNEL_ID", str(OPS))
-    monkeypatch.setenv("MM_GPU_OPERATORS", f"{OPERATOR}, 12")
 
 
 def _request(tmp_path):
@@ -48,7 +41,7 @@ def _request(tmp_path):
 
 
 @pytest.mark.parametrize("verb", ["on", "off"])
-async def test_an_operator_in_the_ops_channel_leaves_a_request(tmp_path, verb):
+async def test_a_command_in_the_ops_channel_leaves_a_request(tmp_path, verb):
     cog, ctx = _ctx(tmp_path)
     await _run_gpu(cog, ctx, verb)
     assert _request(tmp_path) == verb
@@ -65,15 +58,14 @@ async def test_status_reads_the_state_file(tmp_path):
     assert "단계 on_gpu" in ctx.responses[-1] and _request(tmp_path) is None
 
 
-@pytest.mark.parametrize("channel, user", [(999, OPERATOR), (OPS, 13)], ids=["other channel", "not an operator"])
-async def test_others_are_turned_away_without_a_request(tmp_path, channel, user):
-    cog, ctx = _ctx(tmp_path, channel=channel, user=user)
+async def test_another_channel_is_turned_away_without_a_request(tmp_path):
+    cog, ctx = _ctx(tmp_path, channel=999)
     await _run_gpu(cog, ctx, "on")
     assert _request(tmp_path) is None and ctx.ephemeral[-1] is True
 
 
 async def test_without_an_ops_channel_nobody_can_use_it(tmp_path, monkeypatch):
-    monkeypatch.delenv("MM_OPS_CHANNEL_ID")
+    monkeypatch.setenv("MM_OPS_CHANNEL_ID", "")
     cog, ctx = _ctx(tmp_path)
     await _run_gpu(cog, ctx, "on")
     assert _request(tmp_path) is None and ctx.ephemeral[-1] is True

@@ -223,11 +223,9 @@ def test_nothing_to_wake_says_nothing(tmp_path):
     assert notes == []
 
 
-@pytest.mark.parametrize("alert, role, expected", [
-    (True, "555", "<@&555> ⛔ 상한"), (False, "555", "⛔ 상한"), (True, "", "⛔ 상한")])
-def test_ops_notices_go_to_the_ops_channel_and_alerts_mention_the_role(monkeypatch, alert, role, expected):
+@pytest.mark.parametrize("alert, expected", [(True, "@everyone ⛔ 상한"), (False, "⛔ 상한")])
+def test_ops_notices_go_to_the_ops_channel_and_only_alerts_ring_everyone(monkeypatch, alert, expected):
     monkeypatch.setenv("MM_OPS_CHANNEL_ID", "4242")
-    monkeypatch.setenv("MM_OPS_ROLE_ID", role)
     box = _Box()
     W.ops_notifier(box)(Notice("⛔ 상한", alert=alert))
     assert box.sent == [("4242", expected)]

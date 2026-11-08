@@ -133,14 +133,13 @@ GPU_SETTINGS = ("GPU_STT_BASE_URL", "GPU_STT_API_KEY", "GPU_SWITCH_URL", "GPU_SW
 
 
 def ops_notifier(outbox):
-    """GPU 전환 알림을 운영 채널로 보낸다. 사람이 움직여야 하는 알림(alert)에는 MM_OPS_ROLE_ID 역할을 멘션한다.
-    채널이 비어 있으면 tick 이 남긴 로그뿐이다. 회의 채널에는 쓰지 않는다."""
+    """GPU 전환 알림을 비공개 운영 채널로 보낸다. 사람이 움직여야 하는 알림(켜기 시작·켜기 실패·상한)은 @everyone 을
+    붙인다. 비공개 채널이라 그 채널 멤버에게만 울린다. 채널이 비어 있으면 tick 이 남긴 로그뿐이다. 회의 채널에는 쓰지 않는다."""
     def send(notice) -> None:
         channel = os.environ.get("MM_OPS_CHANNEL_ID", "").strip()
         if not channel:
             return
-        role = os.environ.get("MM_OPS_ROLE_ID", "").strip()
-        outbox.send(channel, f"<@&{role}> {notice.text}" if notice.alert and role else notice.text)
+        outbox.send(channel, f"@everyone {notice.text}" if notice.alert else notice.text)
     return send
 
 
