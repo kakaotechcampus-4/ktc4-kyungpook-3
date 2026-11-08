@@ -445,10 +445,12 @@ def run(
         out.items.append(item)
         if result.is_new:
             words = _title_words(item["task_title"], vocab, seen_titles) if transcript.source != "chat" else None
-            item.update(_evidence_fields(finding, drafted, item["task_title"], day, words))
-            if transcript.source != "chat" and words is None:
-                item["asr_suspects"] = asr_check.failed()
+            ev = _evidence_fields(finding, drafted, item["task_title"], day, words)
+            asr = ev.pop("asr_suspects", None)
+            item.update(ev)
             item.update(_search_fields(found))
+            if transcript.source != "chat":   # BE 로 가는 본문의 키 순서를 지킨다(asr_suspects 는 마지막)
+                item["asr_suspects"] = asr if words is not None else asr_check.failed()
             new_cards.append(item)
         else:
             edits[task_id] = (target, item)  # 여기 오는 target 은 덮어 보이지 않은 DB 원래 후보다
