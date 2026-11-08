@@ -273,7 +273,8 @@ def _start(s: FailoverState, f: Facts, L: Limits, why: str, out: list[Notice], *
 def _would_start(s: FailoverState, f: Facts, out: list[Notice]) -> FailoverState:
     out.append(Notice("⚠️ Elice 전사가 계속 실패합니다. 자동 모드였으면 GPU 서버를 켰습니다. "
                       "켜려면 운영 채널에서 `/gpu on` 을 실행해 주세요.", alert=True))
-    return _enter(s, Phase.NORMAL, "would_start", f)
+    # 장애는 끝나지 않았다. 사람이 켜면 이 장애의 처음부터 포기한 회의를 깨운다(그사이 성공 한 번이나 재시작이 있어도)
+    return _enter(s, Phase.NORMAL, "would_start", f, outage_since=s.outage_since, boot_failures=s.boot_failures)
 
 
 def _auto_start(s: FailoverState, f: Facts, L: Limits, out: list[Notice], **kw) -> FailoverState:
@@ -306,11 +307,13 @@ def _normal(s, f, L, out, closed):
         return _start(s, f, L, "manual", out)
     if s.why == "would_start" and _oks_here(s, sig) > 0:
         s = replace(s, why="")
+    if s.outage_since is not None and _oks_here(s, sig) >= L.back_oks and sig.elice_streak == 0:
+        s = replace(s, outage_since=None, boot_failures=0)      # 알린 장애가 끝났다
     if s.why != "would_start" and not _paused(s, f.now) and _fails_here(s, sig) >= L.suspect_fails:
         out.append(Notice(f"⏳ Elice 전사가 연속 {sig.elice_streak}번 실패했습니다"
                           f"{'(키·크레딧 거절 포함)' if sig.auth else ''}. 전사를 잠시 멈추고 Elice 를 확인합니다."))
         return _enter(s, Phase.SUSPECT, "elice_down", f, hold_until=f.now + L.hold_s, next_probe_at=f.now,
-                      outage_since=sig.streak_since or f.now)
+                      outage_since=s.outage_since or sig.streak_since or f.now)
     return s
 
 

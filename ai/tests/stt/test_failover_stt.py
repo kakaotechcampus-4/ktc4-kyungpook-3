@@ -428,6 +428,47 @@ def test_manual_mode_holds_briefly_says_it_would_start_and_does_not(tmp_path):
     assert sum("자동 모드였으면" in n.text for n in notes) == 1
 
 
+@pytest.mark.parametrize("between", ["one success", "restart"])
+def test_a_manual_on_after_the_would_start_alert_wakes_from_the_outage_start(tmp_path, between):
+    """manual 은 호출을 붙잡지 않아 회의가 실제로 포기된다. 알린 뒤 사람이 켜면 그 장애의 처음부터 깨워야 한다."""
+    seen = []
+    fo, elice, gpu, switch, clock, notes = make(tmp_path, mode=Mode.MANUAL, on_gpu=seen.append)
+    t0 = clock()
+    fail_elice(fo, elice, 6)
+    fo.tick()
+    ticks(fo, clock, 600)
+    assert fo.state.why == "would_start"
+    if between == "one success":
+        elice.mode = "ok"
+        call(fo)
+    else:
+        fo = FailoverStt(elice, gpu, switch=switch, mode=Mode.MANUAL, state_dir=tmp_path, notify=notes.append,
+                         on_gpu=seen.append, clock=clock, probe=(PROBE, 16_000), wait_poll_s=0.005)
+    fail_elice(fo, elice, 2)
+    ticks(fo, clock, 300)
+    request(tmp_path, "on")
+    assert ticks(fo, clock, 600, until=lambda: fo.phase is Phase.ON_GPU)
+    assert seen == [t0]
+
+
+def test_elice_succeeding_again_after_the_would_start_alert_ends_that_outage(tmp_path):
+    seen = []
+    fo, elice, gpu, switch, clock, notes = make(tmp_path, mode=Mode.MANUAL, on_gpu=seen.append)
+    t0 = clock()
+    fail_elice(fo, elice, 6)
+    fo.tick()
+    ticks(fo, clock, 600)
+    elice.mode = "ok"
+    for _ in range(LIMITS.back_oks):
+        call(fo)
+    fo.tick()
+    assert fo.state.outage_since is None
+    clock.advance(3600)
+    request(tmp_path, "on")
+    assert ticks(fo, clock, 600, until=lambda: fo.phase is Phase.ON_GPU)
+    assert seen[0] > t0 + 3600
+
+
 def test_a_manual_on_request_starts_and_a_manual_off_pauses_auto_start(tmp_path):
     fo, elice, gpu, switch, clock, notes = make(tmp_path)
     request(tmp_path, "on")
