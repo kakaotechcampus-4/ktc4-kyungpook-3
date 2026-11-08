@@ -1,5 +1,7 @@
+import functools
 import json
 import logging
+import os
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends
@@ -58,11 +60,43 @@ from app.services.matching import (
     speaker_match,
 )
 from app.services import upload_storage
-from app.services.alias_learning import learnable_alias_texts, storable_assignee_type
+from app.services.alias_learning import (
+    card_assignee_item,
+    learnable_alias_texts,
+    storable_assignee_type,
+)
 from app.services.embedding import has_unsearchable_pending, has_unsearchable_tasks
+from app.services.pending_merge import NOT_FOUND, merge_into_pending, merge_target_problem
 from app.services.tasks import create_task, delete_task
 
 logger = logging.getLogger(__name__)
+
+
+_AUTO_CREATE_ON = {"", "true", "1", "on", "yes"}
+_AUTO_CREATE_OFF = {"false", "0", "off", "no"}
+
+
+@functools.lru_cache(maxsize=32)
+def _warn_unknown_auto_create(value: str) -> None:
+    logger.warning("AUTO_CREATE_ENABLED=%r 를 알아보지 못해 자동 생성을 끈 것으로 봅니다(켜려면 true).", value)
+
+
+def auto_create_enabled() -> bool:
+    """새 항목을 PM 확인 없이 태스크로 만들어도 되는지(환경변수 AUTO_CREATE_ENABLED, 기본 켜짐).
+
+    true·1·on·yes·빈 값·없음이면 켜짐, false·0·off·no 면 auto 로 정해진 새 항목을 review 로 내린다. legacy·judge
+    모두 해당하고 hold 는 그대로다. 안전장치라 모르는 값(오타 "flase", "disabled" 등)은 꺼짐으로 보고 값마다 한 번
+    경고한다(#526 리뷰). 요청마다 읽지만 운영 컨테이너는 env_file 을 만들 때만 읽으므로 값을 바꾸면
+    `docker compose -f docker-compose.prod.yml up -d` 로 컨테이너를 다시 만든다(restart 로는 반영되지 않는다).
+    검증 실행은 AI 쪽 JEV_API_KEY 가 따로 정한다.
+    """
+    value = os.getenv("AUTO_CREATE_ENABLED", "true").strip().lower()
+    if value in _AUTO_CREATE_ON:
+        return True
+    if value not in _AUTO_CREATE_OFF:
+        _warn_unknown_auto_create(value)
+    return False
+
 
 router = APIRouter(prefix="/extractions", tags=["extractions"])
 
@@ -159,12 +193,14 @@ def create_extraction(
     # 유사 검색이 못 보는 task가 있는지(judge auto 조건). 처음 judge 새 항목에서 한 번 읽고, 이 요청이 auto로 task를
     # 만들면 그 task도 임베딩 전이라 검색에 잡히지 않으므로 True로 바꾼다. 그 밖에는 이 요청 안에서 바뀌지 않는다
     unsearched_tasks: bool | None = None
-    # 임베딩이 없어 유사 검색(include_pending)이 못 보는 승인 대기 요청이 있는지. unsearched_tasks 와 같은 자리에서 한 번만
+    # 임베딩이 없어 유사 검색(include_pending)이 못 보는 승인 대기 요청이 있는지. 처음 judge 새 항목에서 한 번만
     # 읽고 바꾸지 않는다. 이 요청의 review/hold 항목이 만드는 pending 은 보통 첫 judge 새 항목 처리 뒤에 생겨 읽은 값에 없다.
     # 단 legacy 새 항목이 judge 항목보다 앞에 오면 그 pending 이 먼저 flush 되어 첫 judge 항목의 auto 를 막는다. 막는 쪽이라
     # 그대로 둔다(결정 기록 2026-11-07-pending-approval-search.md)
     unsearched_pending: bool | None = None
     targets = _lock_update_targets(db, payload.items)
+    # task 잠금 다음에 합칠 승인 요청을 잠근다. 두 요청이 같은 카드들을 반대 순서로 합쳐도 ID 순이라 데드락이 없다
+    merge_cards = _lock_merge_targets(db, payload.items, meeting.workspace_id)
     sources_by_seq = _sources_by_seq(db, meeting.meeting_id, payload.items)
     # 멤버 ID로 화자를 정하는 데 쓸 팀원을 요청당 한 번에 읽는다(항목의 evidence_speaker_member_id와 근거 발화의 member_id)
     speaker_members = active_members_by_id(
@@ -178,6 +214,9 @@ def create_extraction(
         # 잘못된 항목 하나로 요청 전체를 실패시키면 봇이 같은 요청을 재시도하다 회의 전체가
         # 반영되지 않는다. 그런 항목은 건너뛰고 나머지를 처리한다.
         target: Task | None = None
+        # 합칠 수 있는 대상 카드. 없으면 merge 항목도 create 로 처리한다
+        merge_card: ApprovalRequest | None = None
+        item_action = raw_item.action
         if raw_item.action == ExtractionAction.UPDATE:
             target = targets.get(raw_item.target_task_id) if raw_item.target_task_id else None
             if target is None or target.is_deleted or target.workspace_id != meeting.workspace_id:
@@ -194,10 +233,35 @@ def create_extraction(
                 meeting.meeting_id, raw_item.evidence_quote,
             )
             continue
+        if raw_item.action == ExtractionAction.MERGE:
+            locked = merge_cards.get(raw_item.target_approval_id) if raw_item.target_approval_id else None
+            # task_create 가 아니거나 다른 워크스페이스 카드는 잠그지 않았다(_lock_merge_targets). 못 쓰는 이유를 남기려고 잠그지 않고 읽는다
+            seen = locked or (
+                db.get(ApprovalRequest, raw_item.target_approval_id) if raw_item.target_approval_id else None
+            )
+            problem = merge_target_problem(seen, raw_item.target_approval_id, meeting.workspace_id)
+            if problem is None and locked is not None:
+                merge_card = locked
+            else:
+                problem = problem or NOT_FOUND
+                # 대상이 사라졌거나 이미 처리됐을 수 있다. 400 으로 돌려 회의 전체를 막지 않고 새 카드로 만든다
+                item_action = ExtractionAction.CREATE
+                logger.info(
+                    "merge_target_unavailable reason=%s target_approval_id=%s meeting_id=%s",
+                    problem, raw_item.target_approval_id, meeting.meeting_id,
+                )
 
         evidence_source = _representative_source(raw_item.evidence_seqs, sources_by_seq)
         evidence = _request_evidence(raw_item, evidence_source, speaker_members)
-        if raw_item.assignee_type == "first":
+        # 합치는 항목이 담당자를 말한 항목(category=assignee)이 아니면 카드 담당자를 바꾸지 않는다. 실려 온 이름으로
+        # 별칭을 찾으면 해결 대기 별칭 목록에 쌓이고, 항목 행의 gate 가 카드(review)와 어긋난다. 그래서 담당자를 보지 않는다
+        # (합치려다 대상을 못 쓴 항목은 새 카드를 만드는 create 라 보통대로 찾는다)
+        ignore_assignee = merge_card is not None and raw_item.category != "assignee"
+        assignee_type = None if ignore_assignee else raw_item.assignee_type
+        if ignore_assignee:
+            assignee_hint = None
+            match = resolve_assignee(db, meeting.workspace_id, None)
+        elif assignee_type == "first":
             # 1인칭: 화자로 팀원을 찾는다. 화자를 모르면 누군지 모르는 것이라 not_found다.
             # assignee_raw("제가")는 별칭이 아니라 조회하지 않는다. 별칭으로 찾으면 판정 로그에 쌓이고, 이름이 오면 화자를
             # 모르는데도 그 사람으로 확정될 수 있다. 그래도 담당자를 언급한 것이라 화자가 없으면 원문을 힌트로 남겨 hold로 보낸다
@@ -229,17 +293,21 @@ def create_extraction(
             due_raw=raw_item.due_raw,
             due_confidence=raw_item.due_confidence,
         )
+        auto_held = False  # 자동 생성 스위치로 auto 를 review 로 내렸는지(아래 로그용)
         if target is not None:
             # 기존 task 수정은 유사도·LLM 판단이 틀릴 수 있어 신뢰도와 무관하게 항상 PM 승인을 거친다.
             gate = Gate.REVIEW
         else:
             # 경로는 항목마다 가린다. 추출 전체의 경로는 섞이면 None이지만 항목의 정책은 정할 수 있다.
             path = raw_item.extraction_path()
-            mentioned = mentions_assignee(raw_item.assignee_type, assignee_hint)
+            mentioned = mentions_assignee(assignee_type, assignee_hint)
             blockers = None
-            if path == ExtractionPath.JUDGE:
+            # 합쳐지는 항목은 새 일이 아니라 유사 검색 결과로 auto 를 가리지 않는다. 어차피 아래에서 review 로 내린다
+            if path == ExtractionPath.JUDGE and merge_card is None:
                 if unsearched_tasks is None:
                     unsearched_tasks = has_unsearchable_tasks(db, meeting.workspace_id)
+                # 앞의 legacy auto 항목이 unsearched_tasks 를 먼저 True 로 정해도 따로 읽어 게이트 사유에 남긴다
+                if unsearched_pending is None:
                     unsearched_pending = has_unsearchable_pending(db, meeting.workspace_id)
                 blockers = auto_blockers(
                     AutoSignals(
@@ -271,6 +339,11 @@ def create_extraction(
                     "역할 지목 항목이라 auto를 review로 내립니다. meeting_id=%s title=%s",
                     meeting.meeting_id, raw_item.task_title,
                 )
+            if (merge_card is not None or raw_item.action == ExtractionAction.MERGE) and gate == Gate.AUTO:
+                # 승인 대기 카드에 합치는 항목, 합치려다 대상을 못 쓴 항목은 PM 이 본다.
+                # 합치기는 PM 이 아직 보지 않은 카드를 고치는 일이고, 대상을 못 쓴 항목은 중복 검사를 거치지 못했다.
+                # 역할 지목 강등처럼 채팅 강등보다 먼저 둬서 아래 로그가 이 항목을 세지 않게 한다
+                gate = Gate.REVIEW
             if meeting.source == MeetingSource.CHAT and gate == Gate.AUTO:
                 # 채팅에서 나온 항목은 PM이 보지 않고 반영하지 않는다. hold는 그대로 둔다
                 gate = Gate.REVIEW
@@ -279,6 +352,11 @@ def create_extraction(
                     "chat 회의라 auto 항목을 review로 내립니다. meeting_id=%s title=%s",
                     meeting.meeting_id, raw_item.task_title,
                 )
+            if gate == Gate.AUTO and not auto_create_enabled():
+                # 자동 생성 스위치(#382 멘토 리뷰). 검증(AI 의 Jev)은 그대로 돌고 근거 상태도 저장하되, 태스크는 PM 확인
+                # 뒤에만 만든다. 아래 로그가 "켰으면 auto 였을 항목"이라, 승인·수정·반려 결과와 맞춰 보고 단계적으로 연다
+                gate = Gate.REVIEW
+                auto_held = True
             if blockers:
                 # auto 조건과 유사도 기준을 조정할 때 어떤 조건에서 많이 걸리는지 본다
                 logger.info(
@@ -288,7 +366,7 @@ def create_extraction(
 
         item = ExtractionItem(
             extraction_id=extraction.extraction_id,
-            action=str(raw_item.action),
+            action=str(item_action),
             task_title=target.title if target is not None else raw_item.task_title,
             task_confidence=raw_item.task_confidence,
             assignee_raw=raw_item.assignee_raw,
@@ -311,10 +389,42 @@ def create_extraction(
         )
         db.add(item)
         db.flush()  # item_id 확보 (approval/task 연결에 필요)
+        if auto_held:
+            # 항목 단위로 PM 결과와 맞출 수 있게 추출·항목 ID 를 남긴다(#526 리뷰)
+            logger.info(
+                "자동 생성이 꺼져 있어 auto 항목을 review로 내립니다. meeting_id=%s extraction_id=%s item_id=%s "
+                "path=%s title=%s",
+                meeting.meeting_id, extraction.extraction_id, item.item_id, raw_item.extraction_path(),
+                raw_item.task_title,
+            )
         saved_count += 1
         _add_item_evidence(db, meeting.meeting_id, item, raw_item.evidence_seqs, sources_by_seq)
 
-        if target is not None:
+        if merge_card is not None:
+            # 새 카드·task 를 만들지 않고 대상 카드 payload 에 값을 합친다. 승인 때 이 항목도 같은 task 에 연결된다
+            merged = merge_into_pending(
+                json.loads(merge_card.payload),
+                item_id=item.item_id,
+                meeting_id=meeting.meeting_id,
+                category=raw_item.category,
+                due_date=raw_item.due_date,
+                due_raw=raw_item.due_raw,
+                status=str(raw_item.status) if raw_item.status else None,
+                assignee_member_id=match.member_id,
+                assignee_raw=raw_item.assignee_raw,
+                gate=str(gate),
+                doc_text=raw_item.doc_text,
+                evidence={
+                    "evidence_quote": evidence.quote,
+                    "evidence_speaker": evidence.speaker,
+                    "evidence_speaker_member_id": evidence.speaker_member_id,
+                    "evidence_at_ms": evidence.at_ms,
+                },
+                now=datetime.now(timezone.utc),
+            )
+            merge_card.payload = json.dumps(merged, ensure_ascii=False)
+            item.approval_id = merge_card.approval_id
+        elif target is not None:
             _request_task_update(
                 db, meeting, item, raw_item, match, target, evidence, has_assignee=assignee_hint is not None
             )
@@ -511,6 +621,37 @@ def _lock_update_targets(db: Session, items: list[ExtractionItemCreate]) -> dict
         .execution_options(populate_existing=True)
     ).scalars().all()
     return {task.task_id: task for task in rows}
+
+
+def _lock_merge_targets(
+    db: Session, items: list[ExtractionItemCreate], workspace_id: str
+) -> dict[str, ApprovalRequest]:
+    """합치기 항목이 가리키는 승인 요청을 ID 순서로 한 번에 잠근다. 커밋까지 잠겨 승인·반려와 겹치지 않는다.
+
+    승인이 먼저 커밋되면 populate_existing 으로 최신 상태를 읽어 처리된 카드를 알아본다.
+    이 워크스페이스의 task_create 카드만 잠근다. 다른 워크스페이스 카드를 잠그면 그 PM 의 승인이 이 요청이 끝날 때까지
+    기다린다. task_update 카드는 합칠 수 없고, 그 승인은 카드 → task 순서로 잠그는데 이 요청은
+    task(_lock_update_targets) → 카드 순서라 함께 잠그면 서로 기다릴 수 있다.
+    """
+    approval_ids = sorted({
+        item.target_approval_id
+        for item in items
+        if item.action == ExtractionAction.MERGE and item.target_approval_id
+    })
+    if not approval_ids:
+        return {}
+    rows = db.execute(
+        select(ApprovalRequest)
+        .where(
+            ApprovalRequest.approval_id.in_(approval_ids),
+            ApprovalRequest.type == ApprovalType.TASK_CREATE,
+            ApprovalRequest.workspace_id == workspace_id,
+        )
+        .order_by(ApprovalRequest.approval_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalars().all()
+    return {card.approval_id: card for card in rows}
 
 
 def _same_instant(a: datetime, b: datetime) -> bool:
@@ -806,16 +947,17 @@ def get_extraction(
     # 지운 task는 연결하지 않은 것으로 내린다. 수정 항목이 가리키던 task가 auto 되돌리기로 지워지면, 그대로 내린 ID는
     # 조회하면 404다. 생성 항목은 되돌릴 때 task_id를 이미 비운다
     stmt = (
-        select(ExtractionItem, ApprovalRequest.status, Task.is_deleted)
+        select(ExtractionItem, ApprovalRequest.status, Task.is_deleted, ApprovalRequest.payload)
         .outerjoin(ApprovalRequest, ApprovalRequest.approval_id == ExtractionItem.approval_id)
         .outerjoin(Task, Task.task_id == ExtractionItem.task_id)
         .where(ExtractionItem.extraction_id == extraction_id)
         .order_by(ExtractionItem.created_at)
     )
     rows = db.execute(stmt).all()
-    items = [item for item, _, _ in rows]
-    approval_statuses = {item.item_id: status for item, status, _ in rows}
-    deleted_task_items = {item.item_id for item, _, task_deleted in rows if task_deleted}
+    items = [item for item, _, _, _ in rows]
+    approval_statuses = {item.item_id: status for item, status, _, _ in rows}
+    deleted_task_items = {item.item_id for item, _, task_deleted, _ in rows if task_deleted}
+    card_payloads = {item.item_id: payload for item, _, _, payload in rows}
 
     member_ids = {i.assignee_member_id for i in items if i.assignee_member_id}
     names: dict[str, str] = {}
@@ -834,7 +976,12 @@ def get_extraction(
     alias_texts = learnable_alias_texts(
         db,
         extraction.meeting.workspace_id,
-        [i for i in items if approval_statuses[i.item_id] == str(ApprovalStatus.PENDING)],
+        [
+            i for i in items
+            if approval_statuses[i.item_id] == str(ApprovalStatus.PENDING)
+            # 합쳐진 카드는 담당자를 정한 항목만 후보다(승인 때 저장하는 규칙과 같다)
+            and i.item_id == card_assignee_item(card_payloads[i.item_id])
+        ],
     )
 
     item_responses = [

@@ -4,7 +4,8 @@ import { useCompactScreen } from '@/shared/lib/compact-screen'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { BrandMark } from '@/shared/ui/brand-mark'
 import { Skeleton } from '@/shared/ui/skeleton'
-import { SHELL_TABS } from '../model/shellTabs'
+import { SHELL_TABS, tabIntentHandlers } from '../model/shellTabs'
+import type { ShellTabKey } from '../model/shellTabs'
 import { UserMenu } from './UserMenu'
 import { WorkspaceMenu } from './WorkspaceMenu'
 
@@ -29,6 +30,8 @@ const TAB =
 
 export interface AppHeaderProps {
   workspaceId: string
+  /** 탭에 다가간 순간(가리키기·포커스·터치). 셸이 그 화면의 코드와 첫 데이터를 미리 받는다 (#536) */
+  onTabIntent?: (tab: ShellTabKey) => void
 }
 
 /**
@@ -38,7 +41,7 @@ export interface AppHeaderProps {
  * 768px 을 넘나들어도(회전·창 크기) 알림·공간·계정 메뉴는 같은 부모 안에서 key 로 자리만 바꾼다 —
  * 다시 마운트되지 않아 열린 메뉴와 그 안의 포커스, 버튼의 포커스가 그대로 남는다.
  */
-export function AppHeader({ workspaceId }: AppHeaderProps) {
+export function AppHeader({ workspaceId, onTabIntent }: AppHeaderProps) {
   const compact = useCompactScreen()
 
   const bell = <NotificationBell key={`bell-${workspaceId}`} workspaceId={workspaceId} />
@@ -57,8 +60,13 @@ export function AppHeader({ workspaceId }: AppHeaderProps) {
             <BrandMark />
           </GuardedLink>
           <nav aria-label="주요 화면" className="flex items-center gap-2">
-            {SHELL_TABS.map(({ label, to }) => (
-              <GuardedLink key={label} to={to(workspaceId)} className={TAB}>
+            {SHELL_TABS.map(({ key, label, to }) => (
+              <GuardedLink
+                key={key}
+                to={to(workspaceId)}
+                className={TAB}
+                {...tabIntentHandlers(onTabIntent && (() => onTabIntent(key)))}
+              >
                 {label}
               </GuardedLink>
             ))}

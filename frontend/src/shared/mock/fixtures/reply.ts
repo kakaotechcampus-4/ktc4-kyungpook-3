@@ -47,6 +47,8 @@ function replyApproval(
     resolved_by: null,
     created_at: JUDGED_AT,
     resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
   }
 }
 

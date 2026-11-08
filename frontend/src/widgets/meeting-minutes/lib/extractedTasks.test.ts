@@ -40,6 +40,8 @@ function withEditProposal(status: EditStatus) {
     resolved_by: null,
     created_at: '2026-09-17T03:00:00Z',
     resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
   }
   return { dto, approval }
 }

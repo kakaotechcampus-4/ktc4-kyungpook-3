@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Route } from 'react-router'
 import { NotFoundPage } from '@/pages/not-found'
 import { config } from '@/shared/config/env'
+import { LandingEntry } from './LandingEntry'
 import { RouteErrorBoundary } from './errors/RouteErrorBoundary'
 import { RedirectIfAuthed } from './guards/RedirectIfAuthed'
 import { RequireAuth } from './guards/RequireAuth'
@@ -78,6 +79,17 @@ const mockOAuthRoute =
     />
   ) : null
 
+/* 모의 카카오 동의 화면. 모의 OAuth 화면과 같은 이유로 같은 조건 안에서만 등록한다. 경로는 devPaths.mockKakao 다 (#427) */
+const mockKakaoRoute =
+  import.meta.env.DEV && config.mswEnabled ? (
+    <Route
+      path="__mock/kakao"
+      element={screen(
+        lazyPage(() => import('@/shared/mock/oauth/MockKakaoPage').then((m) => m.MockKakaoPage)),
+      )}
+    />
+  ) : null
+
 /* 모의 메일함. 모의 OAuth 화면과 같은 이유로 같은 조건 안에서만 등록한다. 경로는 devPaths.mockMail 이다 (#356) */
 const mockMailRoute =
   import.meta.env.DEV && config.mswEnabled ? (
@@ -100,7 +112,10 @@ const mockMailRoute =
 export const appRoutes = (
   <Route path="/" element={<RootLayout />}>
     <Route element={<RedirectIfAuthed />}>
-      <Route index element={screen(landingPage)} />
+      {/* 써 본 브라우저가 바깥에서 `/` 로 오면 랜딩 코드를 받기 전에 로그인으로 보낸다 (#510) */}
+      <Route element={<LandingEntry />}>
+        <Route index element={screen(landingPage)} />
+      </Route>
       <Route path="login" element={screen(loginPage)} />
       <Route path="signup" element={screen(signupPage)} />
       <Route path="forgot-password" element={screen(forgotPasswordPage)} />
@@ -151,6 +166,7 @@ export const appRoutes = (
       </Route>
     </Route>
     {mockOAuthRoute}
+    {mockKakaoRoute}
     {mockMailRoute}
     <Route path="*" element={screen(<NotFoundPage />)} />
   </Route>

@@ -9,15 +9,20 @@ export interface TaskCreateFields {
   dueDate: string | null
 }
 export type TaskCreateEdits = Partial<TaskCreateFields>
-export type TaskUpdateEdits = Partial<{ status: TaskStatus; dueDate: string | null }>
+/** `assigneeMemberId` 는 담당자를 찾지 못한 답장 카드(`assigneePick`)에서만 고른다. null 은 미정이다 */
+export type TaskUpdateEdits = Partial<{
+  status: TaskStatus
+  dueDate: string | null
+  assigneeMemberId: string | null
+}>
 export type ApprovalEdits =
-  | { kind: 'task_create'; values: TaskCreateEdits }
+  | { kind: 'task_create'; values: TaskCreateEdits; saveAlias?: boolean }
   | { kind: 'task_update'; values: TaskUpdateEdits }
 export type TaskCreateIssue = 'title' | 'assignee' | 'due'
 export const TASK_TITLE_MAX_LENGTH = 300
 export type ApprovalResolution =
   | { status: 'rejected' }
-  | { status: 'approved'; kind: 'task_create'; taskOverrides?: TaskCreateEdits }
+  | { status: 'approved'; kind: 'task_create'; taskOverrides?: TaskCreateEdits; saveAlias?: true }
   | {
       status: 'approved'
       kind: 'task_update'
@@ -33,6 +38,8 @@ export interface ApprovalResolveContext {
 export type ApprovalResolutionPlan =
   | { ok: true; resolution: ApprovalResolution }
   | { ok: false; reason: string; issues: TaskCreateIssue[] }
+
+export const ASSIGNEE_PICK_REASON = '담당자를 골라 주세요.'
 
 export const APPROVAL_RESOLUTION_REASONS = {
   resolved: '이미 처리된 확인 요청이에요.',
@@ -53,10 +60,23 @@ export function taskCreateValues(
   }
 }
 
+/**
+ * 이 값으로 승인하면 담당자의 별칭으로 등록할 글자 (#523). 담당자가 미정이면 등록할 사람이 없어 null 이다.
+ * 승인 본문의 `save_alias` 와 화면의 등록 체크박스가 모두 이 판정을 쓴다
+ */
+export function aliasToLearn(
+  approval: TaskCreateApproval,
+  fields: TaskCreateFields,
+): string | null {
+  return fields.assigneeMemberId === null ? null : approval.aliasCandidate
+}
+
 export function taskUpdateChanges(approval: TaskUpdateApproval, edits: TaskUpdateEdits = {}) {
   const changes = new Map(approval.changes.map(({ field, value }) => [field, value]))
   if (edits.status !== undefined) changes.set('status', edits.status)
   if (edits.dueDate !== undefined) changes.set('due_date', edits.dueDate)
+  if (edits.assigneeMemberId !== undefined)
+    changes.set('assignee_member_id', edits.assigneeMemberId)
   return Array.from(changes, ([field, value]) => ({ field, value }))
 }
 
@@ -93,6 +113,13 @@ export function planApprovalResolution(
         !['todo', 'in_progress', 'blocked', 'done'].includes(edits.status))
     )
       return { ok: false, issues: [], reason: '상태와 마감 날짜를 올바르게 입력해 주세요.' }
+    if (approval.assigneePick !== null && edits.assigneeMemberId === undefined)
+      return { ok: false, issues: ['assignee'], reason: ASSIGNEE_PICK_REASON }
+    if (
+      typeof edits.assigneeMemberId === 'string' &&
+      !(context.memberIds ?? []).includes(edits.assigneeMemberId)
+    )
+      return { ok: false, issues: ['assignee'], reason: '담당자를 팀원 중에서 골라 주세요.' }
     const version = context.confirmTaskVersion
     return {
       ok: true,
@@ -106,11 +133,10 @@ export function planApprovalResolution(
       },
     }
   }
-  const edits = context.edits?.kind === 'task_create' ? context.edits.values : {}
-  const issues = validateTaskCreateFields(
-    taskCreateValues(approval, edits),
-    context.memberIds ?? [],
-  )
+  const createEdits = context.edits?.kind === 'task_create' ? context.edits : null
+  const edits = createEdits?.values ?? {}
+  const fields = taskCreateValues(approval, edits)
+  const issues = validateTaskCreateFields(fields, context.memberIds ?? [])
   if (issues.length)
     return {
       ok: false,
@@ -129,6 +155,9 @@ export function planApprovalResolution(
               ...(edits.taskTitle !== undefined ? { taskTitle: edits.taskTitle.trim() } : {}),
             },
           }
+        : {}),
+      ...(createEdits?.saveAlias === true && aliasToLearn(approval, fields) !== null
+        ? { saveAlias: true }
         : {}),
     },
   }

@@ -7,9 +7,11 @@ import { useReplyChangeUndo } from '@/features/reply-change-undo'
 import type { ReplyChangeUndo } from '@/features/reply-change-undo'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Button } from '@/shared/ui/button'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { REPLY_BODY_HIDDEN, historyLine, replyGroup } from '../lib/history'
 import type { ReplyGroup } from '../lib/history'
@@ -47,6 +49,7 @@ export function TaskHistory({
   const titleId = useId()
   const timeline = useQuery(taskHistoryQueryOptions(workspaceId, taskId))
   const undo = useReplyChangeUndo(workspaceId, taskId)
+  const indicator = useLoadingIndicator(timeline.isPending)
   let body: ReactNode
   if (timeline.data !== undefined)
     body =
@@ -75,12 +78,15 @@ export function TaskHistory({
         onRetry={() => void timeline.refetch()}
       />
     )
-  else
-    body = (
-      <div aria-busy="true">
-        <Skeleton lines={3} />
-      </div>
-    )
+  else body = null
+  body = indicator.pending ? (
+    <DeferredSkeleton indicator={indicator}>
+      <Skeleton lines={3} />
+    </DeferredSkeleton>
+  ) : (
+    <Reveal indicator={indicator}>{body}</Reveal>
+  )
+
   return (
     <section aria-labelledby={titleId} className="flex flex-col">
       <div className={HEAD}>

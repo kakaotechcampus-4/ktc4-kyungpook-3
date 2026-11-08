@@ -2,15 +2,16 @@ import type { ReactNode } from 'react'
 import { Navigate } from 'react-router'
 import { MeetingUploadForm, useUploadEntry } from '@/features/meeting-upload'
 import { paths } from '@/shared/config/routes'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { useRouteId } from '@/shared/lib/url'
+import { DeferredSkeleton } from '@/shared/ui/deferred-skeleton'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
-import { Skeleton } from '@/shared/ui/skeleton'
+import { COLUMN, LEAD, LEAD_TEXT, PAGE, TITLE, TITLE_TEXT } from './styles'
+import { UploadSkeleton } from './UploadSkeleton'
 
-/* Upload 캔버스 실측 — 위 48 · 아래 72, 본문 700px 한 단, 제목 30px (docs/impl-decision/2026-10-02-meeting-upload-screen.md) */
-const PAGE = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72 max-md:px-20'
-const COLUMN = 'flex w-full max-w-[700px] flex-col gap-26'
-const TITLE = 'text-[30px] leading-[1.25] font-bold tracking-h1 text-ink'
-const LEAD = 'text-body text-sub'
+/* 로딩을 거쳐 나타난 내용의 불투명도 전환 (#508). 로딩 중에도 보이던 제목 묶음(첫 자식)은 빼고 그 아래만 */
+const REVEAL_BELOW_TITLE =
+  'motion-safe:[&>:not(:first-child)]:animate-[loading-reveal_150ms_ease-out]'
 
 /**
  * 회의 올리기 (PM 전용 — 가드는 라우터의 RequirePM). 들어올 때 정리 중 회의를 먼저 본다 (U3-1).
@@ -23,15 +24,13 @@ export function MeetingUploadPage() {
   return <MeetingUpload workspaceId={workspaceId} />
 }
 
-function UploadLayout({ children }: { children: ReactNode }) {
+function UploadLayout({ reveal = false, children }: { reveal?: boolean; children: ReactNode }) {
   return (
     <main className={PAGE}>
-      <div className={COLUMN}>
+      <div className={reveal ? `${COLUMN} ${REVEAL_BELOW_TITLE}` : COLUMN}>
         <div className="flex flex-col gap-8">
-          <h1 className={TITLE}>회의를 올려 주세요</h1>
-          <p className={LEAD}>
-            정리가 끝나면 알려드릴게요. 정리하는 동안 다른 화면을 써도 괜찮아요.
-          </p>
+          <h1 className={TITLE}>{TITLE_TEXT}</h1>
+          <p className={LEAD}>{LEAD_TEXT}</p>
         </div>
         {children}
       </div>
@@ -41,21 +40,24 @@ function UploadLayout({ children }: { children: ReactNode }) {
 
 function MeetingUpload({ workspaceId }: { workspaceId: string }) {
   const entry = useUploadEntry(workspaceId)
+  const indicator = useLoadingIndicator(entry.kind === 'checking')
+  const reveal = indicator.reveal
 
+  // 정리 중 회의로 가는 것은 뼈대의 최소 표시를 기다리지 않는다 — 이 화면을 그리지 않는다
+  if (entry.kind === 'processing')
+    return <Navigate to={paths.meetingProcessing(workspaceId, entry.meetingId)} replace />
+  if (entry.kind === 'checking' || indicator.pending)
+    return (
+      <UploadLayout>
+        <DeferredSkeleton indicator={indicator}>
+          <UploadSkeleton />
+        </DeferredSkeleton>
+      </UploadLayout>
+    )
   switch (entry.kind) {
-    case 'processing':
-      return <Navigate to={paths.meetingProcessing(workspaceId, entry.meetingId)} replace />
-    case 'checking':
-      return (
-        <UploadLayout>
-          <div aria-busy="true">
-            <Skeleton lines={4} />
-          </div>
-        </UploadLayout>
-      )
     case 'error':
       return (
-        <UploadLayout>
+        <UploadLayout reveal={reveal}>
           <QueryErrorState
             error={entry.error}
             onRetry={entry.retry}
@@ -65,7 +67,7 @@ function MeetingUpload({ workspaceId }: { workspaceId: string }) {
       )
     case 'ready':
       return (
-        <UploadLayout>
+        <UploadLayout reveal={reveal}>
           <MeetingUploadForm workspaceId={workspaceId} />
         </UploadLayout>
       )

@@ -45,6 +45,7 @@ from capture.recorder import (STATUS_FAILED, STATUS_SOURCED, Claims, backend_fro
 from shared.config import RECORDINGS_DIR, TRANSCRIPTS_DIR
 from shared.schemas import now_iso
 from upload.assign import assign_one
+from upload.cleanup import cleanup_one
 from upload.intake import intake_one
 from upload.report import report_one
 
@@ -356,12 +357,13 @@ class Worker:
             try:
                 for call in (lambda: assign_one(self.recordings_dir, client=client),
                              lambda: report_one(self.recordings_dir, client=client),
-                             lambda: intake_one(self.recordings_dir, client=client, diarizer=diarizer)):
+                             lambda: intake_one(self.recordings_dir, client=client, diarizer=diarizer),
+                             lambda: cleanup_one(self.recordings_dir, self.transcripts_dir, client=client)):
                     if self._stopping:     # 앞 호출 도중 stop() 이 오면 다음 호출은 부르지 않는다
                         break
                     try:
                         progresses.append(await asyncio.to_thread(call))
-                    except Exception as e:  # noqa: BLE001 - 셋 다 예외를 내지 않는 게 약속이지만 워커는 어떤 경우에도 계속 돈다
+                    except Exception as e:  # noqa: BLE001 - 넷 다 예외를 내지 않는 게 약속이지만 워커는 어떤 경우에도 계속 돈다
                         print(f"[worker] 업로드 가져오기 오류: {type(e).__name__}: {e}", flush=True)
             finally:
                 self._current = None

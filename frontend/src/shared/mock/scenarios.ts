@@ -346,6 +346,8 @@ function conflictingUpdateApproval(state: MockDb): void {
     resolved_by: null,
     created_at: '2026-09-17T03:00:00Z',
     resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
   })
 }
 
@@ -402,6 +404,8 @@ function addScopeChanges(state: MockDb): void {
       resolved_by: null,
       created_at: createdAt,
       resolved_at: null,
+      alias_candidate: false,
+      alias_text: null,
     })
   state.taskHistory.push({
     history_id: 'hs_03',
@@ -445,6 +449,8 @@ function addEditProposal(state: MockDb): void {
     task_id: task.task_id,
     approval_id: 'ap_08',
     approval_status: 'pending',
+    alias_candidate: false,
+    alias_text: null,
   })
   state.approvals.push({
     approval_id: 'ap_08',
@@ -471,6 +477,8 @@ function addEditProposal(state: MockDb): void {
     resolved_by: null,
     created_at: '2026-09-17T04:00:00Z',
     resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
   })
 }
 
@@ -502,6 +510,8 @@ function addChatApproval(state: MockDb): void {
     resolved_by: null,
     created_at: '2026-09-12T00:03:00Z',
     resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
   })
 }
 
@@ -788,6 +798,8 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
         resolved_by: null,
         created_at: '2026-09-17T05:00:00Z',
         resolved_at: null,
+        alias_candidate: false,
+        alias_text: null,
       })
       break
     case 'dashboard-member':
@@ -809,8 +821,22 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       break
     case 'messages-default':
       // 보낼 메시지 2통(이재환 bd_01 은 마감 하루 전, 정하늘 bd_02 는 직접 정한 시각이고 AI 초안을 기다린다), 대화 4건.
-      // 이재환 th_01 은 오늘로 3일째 답장이 없고 bd_01 이 그 대화에서 승인을 기다린다. 박지훈에게 마지막으로 보낸 DM 은 가지 못했다
+      // 이재환 th_01 은 오늘로 3일째 답장이 없고 bd_01 이 그 대화에서 승인을 기다린다. 박지훈에게 마지막으로 보낸 DM 은 가지 못했다.
+      // bd_01 의 태스크 tk_04 는 9/17 에 진행 중으로 바뀌어, 재촉 이유의 근거가 그 변경이다(변경 보기)
       signInWith(state, ['ws_01'], 'ws_01')
+      state.taskHistory.push({
+        history_id: 'hs_m1',
+        task_id: 'tk_04',
+        changed_field: 'status',
+        old_value: 'todo',
+        new_value: 'in_progress',
+        change_source: 'manual',
+        changed_by: 'mb_01',
+        is_auto: false,
+        is_rolled_back: false,
+        rolled_back_at: null,
+        created_at: '2026-09-17T06:00:00Z',
+      })
       break
     case 'messages-empty':
       signInWith(state, ['ws_01'], 'ws_01')
