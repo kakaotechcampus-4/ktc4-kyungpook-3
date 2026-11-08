@@ -700,6 +700,7 @@ def claim_for_bot(db: Session, now: datetime) -> list[ClaimedMessage]:
     for message in stale:
         message.dm_status = DmStatus.FAILED
         message.dm_failure_reason = DmFailureReason.UNKNOWN
+        thread_signals.queue(db, message.thread)
 
     pending = db.scalars(
         select(ThreadMessage)
@@ -714,6 +715,7 @@ def claim_for_bot(db: Session, now: datetime) -> list[ClaimedMessage]:
             # 발송 요청을 만든 뒤 연결이 끊기거나 탈퇴했다. 이 메시지만 닫고 같은 배치의 나머지는 준다.
             message.dm_status = DmStatus.FAILED
             message.dm_failure_reason = DmFailureReason.DISCORD_NOT_LINKED
+            thread_signals.queue(db, message.thread)
             continue
         message.dm_status = DmStatus.CLAIMED
         message.claimed_at = now

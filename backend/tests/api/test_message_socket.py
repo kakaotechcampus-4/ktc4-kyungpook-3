@@ -542,3 +542,24 @@ def test_full_outbox_closes_with_1013(mdb, mseed, monkeypatch):
             _reply_as_owner(mdb, mseed)
         assert _closes_with(pm) == 1013
     assert not thread_signals._connections
+
+
+def test_claim_closing_a_message_as_failed_signals(mdb, mseed):
+    tid = _thread(mdb, mseed)
+    assert _send(client("pm"), mseed, tid).status_code == 201
+    mdb.get(Member, mseed["alice"].member_id).discord_user_id = None
+    mdb.commit()
+    with _socket(mseed, "pm") as pm:
+        assert _claim() == []
+        assert pm.receive_json() == _frame(tid)
+
+
+def test_claim_timing_out_a_stale_claim_signals(mdb, mseed):
+    tid = _thread(mdb, mseed)
+    assert _send(client("pm"), mseed, tid).status_code == 201
+    (item,) = _claim()
+    mdb.get(ThreadMessage, item["message_id"]).claimed_at = datetime.now(timezone.utc) - svc.CLAIM_TIMEOUT * 2
+    mdb.commit()
+    with _socket(mseed, "pm") as pm:
+        assert _claim() == []
+        assert pm.receive_json() == _frame(tid)
