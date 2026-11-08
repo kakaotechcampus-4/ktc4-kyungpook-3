@@ -210,6 +210,22 @@ def test_the_count_drops_after_a_reply_closes_a_watch(mdb, mseed):
     assert _sent(mdb, mseed, [second], SLOT + 3 * H).splitlines()[0] == _head("A", 2)
 
 
+def test_a_reply_waiting_for_pm_review_leaves_the_count(mdb, mseed):
+    first, second, _ = mseed["tasks"]
+    _sent(mdb, mseed, [first], SLOT)
+    _judged(
+        mdb, _reply(mdb, mseed, SLOT + H), S.NEEDS_PM,
+        (None, F.UNKNOWN, O.UNKNOWN), candidates=[first],
+    )
+    tick(mdb, SLOT + H)
+    watch = mdb.query(ReminderWatch).one()
+    assert watch.state == WatchState.WATCHING
+    assert watch.paused_at is not None
+
+    _due(mdb, mseed, [second], SLOT + 2 * H)
+    assert _claim_one(mdb, SLOT + 2 * H).body.splitlines()[0] == _head("A", 1)
+
+
 def _done(task, seed):
     task.status = "done"
 

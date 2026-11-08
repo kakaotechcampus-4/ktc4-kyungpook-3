@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useParams } from 'react-router'
 import { useMemberWorkspace } from '@/entities/workspace'
 import { parseRouteId, useRouteId } from '@/shared/lib/url'
@@ -36,11 +37,20 @@ function Meetings({
   invalidMeetingId: boolean
   isPm: boolean
 }) {
-  useDefaultMinutesSelection(workspaceId, meetingId !== null || invalidMeetingId)
+  const latestId = useDefaultMinutesSelection(workspaceId, meetingId !== null || invalidMeetingId)
+  // 목록을 이미 받아 둔 채 들어왔으면(셸의 미리 받기, 다시 방문) 주소를 바꾸기 전 첫 렌더부터 그때의 기본 회의를 그린다 — 주소가
+  // 바뀔 때까지 본문이 빈 자리로 한두 프레임 비지 않는다 (#536). 마운트 때의 기본 회의만 쓴다. 그 뒤 목록이 바뀌어 고른 다른 회의는
+  // 주소가 바뀐 뒤에 그린다 — 그 사이 다른 곳으로 떠나는 중이면 기본 선택이 주소를 바꾸지 않으므로 그 회의를 부르지 않는다
+  const [latestAtMount] = useState(latestId)
+  const shownMeetingId =
+    meetingId ??
+    (!invalidMeetingId && latestAtMount != null && latestId === latestAtMount
+      ? latestAtMount
+      : null)
   return (
     <MeetingMinutes
       workspaceId={workspaceId}
-      meetingId={meetingId}
+      meetingId={shownMeetingId}
       invalidMeetingId={invalidMeetingId}
       isPm={isPm}
     />

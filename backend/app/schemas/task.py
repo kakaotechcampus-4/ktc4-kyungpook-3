@@ -101,18 +101,23 @@ class SimilarTaskSearchRequest(BaseModel):
         DEFAULT_MIN_SIMILARITY, ge=0.0, le=1.0,
         description="이 값 미만인 후보는 뺀다. 기본값 근거는 ai/docs/basis_for_decision/ai/2026-09-22-0010-embedding-similarity-threshold.md",
     )
+    include_pending: bool = Field(
+        False, strict=True,
+        description="true 면 승인 대기 중인 task_create 요청 최대 2개를 task k개 뒤에 합쳐 돌려준다",
+    )
 
 
 class SimilarTaskCandidate(BaseModel):
     """AI의 NotionCandidate(ai/shared/schemas.py)와 필드 이름을 맞춘다."""
 
-    task_id: str
-    notion_page_id: str | None = Field(None, description="Notion 반영 전이면 null")
+    task_id: str | None = Field(None, description="승인 대기 요청 후보면 null")
+    approval_id: str | None = Field(None, description="승인 대기 요청 후보일 때만 값이 있다")
+    notion_page_id: str | None = Field(None, description="Notion 반영 전이거나 승인 대기 요청이면 null")
     title: str
     content_snippet: str = Field("", description="Task에 본문 필드가 없어 당분간 빈 문자열")
     assignee_member_id: str | None
     due_date: date | None
-    status: str
+    status: str | None = Field(..., description="승인 대기 요청 후보면 null")
     similarity: float = Field(..., description="코사인 유사도 (0.0~1.0)")
     updated_at: datetime
 

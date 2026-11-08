@@ -63,12 +63,17 @@ export function nextStage(meeting: MeetingDto): MeetingStage | null {
   return MEETING_STAGES.find((stage) => !progress[stage]) ?? null
 }
 
-/** 처리 중 회의를 한 단계 진행한다. 세 단계가 이미 끝났으면 완료한다. 진행한 뒤의 회의를 돌려준다 */
+/**
+ * 처리 중 회의를 한 단계 진행한다. 세 단계가 이미 끝났으면 완료한다. 진행한 뒤의 회의를 돌려준다.
+ * 채팅 회의는 단계를 알리지 않아 발화 저장(sources)에 서버 `_compute_progress` 가 앞 두 값을 함께 참으로 만든다 (#483)
+ */
 export function advanceMeeting(meetingId: string, state: MockDb = db): MeetingDto {
   const meeting = processingMeeting(state, meetingId)
   const stage = nextStage(meeting)
   if (stage === null) return completeMeeting(meetingId, state).meeting
   meeting.progress = { ...progressOf(meeting), [stage]: true }
+  if (stage === 'audio_merged' && isChatMeeting(meetingId, state))
+    meeting.progress.transcribed = true
   return meeting
 }
 
@@ -351,6 +356,23 @@ export function startChatMeeting(state: MockDb = db): string {
     processed_at: null,
   })
   return meetingId
+}
+
+/**
+ * 상세 조회(`GET /meetings/{id}`) 한 번. 답할 회의를 돌려준다(없으면 undefined).
+ * `staged` 는 지금 모습을 답하고 다음 조회 몫으로 한 단계 진행한다 — 첫 조회가 대기(셋 다 거짓)라 서버 순서
+ * 대기 → stt → sources → handoff → done 을 조회마다 하나씩 본다 (#483). 그 밖의 방식은 진행한 뒤에 답한다
+ */
+export function readMeeting(meetingId: string, state: MockDb = db): MeetingDto | undefined {
+  const find = () => state.meetings.find(({ meeting_id }) => meeting_id === meetingId)
+  if (state.meetingFlow.mode !== 'staged') {
+    tickMeeting(meetingId, state)
+    return find()
+  }
+  const found = find()
+  const answered = found && structuredClone(found)
+  tickMeeting(meetingId, state)
+  return answered
 }
 
 /** 상세 조회 한 번에 처리 중 회의를 흐름 방식대로 진행한다. 처리 중이 아니거나 `manual` 이면 그대로다 */

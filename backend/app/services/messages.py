@@ -696,6 +696,7 @@ def _dm_body(db: Session, message: ThreadMessage) -> str:
         .where(
             ReminderWatch.thread_id == thread.thread_id,
             ReminderWatch.state.in_(scheduler._OPEN_STATES),
+            ReminderWatch.paused_at.is_(None),
             Task.is_deleted.is_(False),
             Task.assignee_member_id == thread.member_id,
             Task.status != TaskStatus.DONE,

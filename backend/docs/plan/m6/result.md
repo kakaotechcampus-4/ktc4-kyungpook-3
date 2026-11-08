@@ -53,6 +53,35 @@ plan.md 가 비어 있어 완료조건이 없다. 아래는 이슈 #381 의 설�
 - 한 회의의 현재 단계만 저장하므로 단계별 시각 이력은 없다.
 - 마이그레이션을 실제 DB 에 적용해 확인하지 않았다.
 
+## 2026-11-07 추가: 승인 대기 새 항목 요청을 유사 검색에 넣기(#141 첫 PR)
+
+M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 정한 것은 사용자다. 근거는 이슈 #141 의 합의(BE 제안·AI 답·BE 확인)와 설계 확정 댓글(2026-11-07)이다. #141 의 BE 몫 가운데 검색·임베딩만 했고, 합치기(action=merge)는 #464 머지 뒤 다음 PR 에서 한다. M6 완료는 판정하지 않는다.
+
+| 변경 | 위치 |
+|---|---|
+| `approval_request.embedding`, `embedding_rejected_title` 컬럼과 마이그레이션 1건(백필 없음) | `backend/app/models/models.py`, `backend/migrations/versions/a7c25d91e4f3_add_approval_request_embedding.py` |
+| 임베딩 워커가 task 다음에 승인 대기 task_create 요청의 제목을 채운다 | `backend/app/services/embedding.py`(`process_missing_approval_embeddings`, `pending_title`) |
+| 승인 대기 요청 검색(최대 2개)과 검색 못 하는 요청 판정 | `backend/app/services/embedding.py`(`search_similar_pending_approvals`, `has_unsearchable_pending`) |
+| `POST /tasks/similar` 의 `include_pending`(기본 false), 후보 `approval_id` | `backend/app/api/similar_tasks.py`, `backend/app/schemas/task.py` |
+| 임베딩 없는 승인 대기 요청이 있으면 judge auto 를 막는다(`unsearched_pending_exists`) | `backend/app/services/matching.py`, `backend/app/api/extractions.py` |
+| 계약 | [BE↔AI 계약](../../contracts/backend-ai-contract.md) 유사 검색 절과 auto 조건 |
+
+| #141 합의 항목 | 상태 | 근거 |
+|---|---|---|
+| 승인 대기 task_create 제목 임베딩(task 와 같은 워커) | 구현 | `tests/services/test_embedding.py` |
+| 유사 검색에 승인 대기 요청, 후보에 approval_id, 기본 false | 구현 | `tests/api/test_similar_tasks_api.py` |
+| task 후보 k개와 따로 최대 2개 | 구현. 쿼리는 PostgreSQL 테스트로만 확인되고 로컬에서는 돌지 않았다 | `tests/services/test_embedding_search_pg.py`(CI) |
+| auto 게이트: 임베딩 없는 승인 대기 요청이 있으면 막음 | 구현 | `tests/api/test_extractions_judge_auto.py`, `tests/services/test_matching_auto_blockers.py` |
+| action=merge, 합치기 규칙, 여러 회의 항목 task_id, 행 잠금 | 다음 PR(#464 머지 뒤) | 설계 확정 댓글 |
+
+검증(2026-11-07, `backend/`):
+
+- `.venv/Scripts/python.exe -m ruff check --no-cache .`: All checks passed
+- `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`: 1798 passed, 1273 skipped, 3 warnings. skip 는 PostgreSQL 이 필요한 테스트이고, 새 승인 대기 검색 테스트 3개도 여기에 들어 CI 에서 처음 돈다.
+- 마이그레이션은 실제 DB 에 적용하지 않았다(CI migrations 잡에서 확인). 실제 임베딩 API 호출과 AI 를 붙인 종단 확인은 하지 않았다.
+
+남은 작업: 합치기 PR, AI 의 대기 후보 처리와 `include_pending` 켜기(합치기 배포 뒤), FE 답(#512).
+
 ## 2026-11-07 추가: 답장 담당자 변경 승인에서 PM 이 고른 담당자 받기
 
 M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 정한 것은 사용자다. 근거는 이슈 #460 과 설계 확정 댓글(2026-11-07)이고, BE 몫만 구현했다. FE 고르기 화면은 #344 에서 한다. M6 완료는 판정하지 않는다.
@@ -81,8 +110,114 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 
 남은 작업: FE 고르기 화면과 계약 반영(#344). BE 배포 뒤 #460 에 알린다. 회의 추출의 못 찾은 담당자 카드는 범위 밖이다.
 
+## 2026-11-07 메시지 탭 읽지 않은 수 (#480)
+
+### 작업 근거와 요약
+
+M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 정한 것은 사용자다(메시지 설정 기록이 M6 에 있다). 이슈 #480(FE 요청)과 이슈 댓글 "설계 확정"(2026-11-07)을 따랐다. M6 완료는 판정하지 않는다.
+
+메시지 탭 배지를 위해 사람·대화마다 읽은 위치를 저장하고, 읽지 않은 메시지 수를 대화 목록·상세와 새 숫자 API 로 준다. 화면이 POST 로 알릴 때만 읽음이 된다.
+
+### 실제 구현 및 관련 코드
+
+| 변경 | 위치 |
+|---|---|
+| 새 표 `message_thread_read`(`thread_id`·`member_id` 기본 키, `last_read_at`, `updated_at`). 마이그레이션이 탈퇴하지 않은 팀원의 자기 대화와 PM 의 워크스페이스 모든 대화를 마이그레이션 시각으로 채운다 | [models.py](../../../app/models/models.py) `MessageThreadRead`, [마이그레이션](../../../migrations/versions/5d2e8a41c7b3_add_message_thread_read.py) |
+| 읽지 않은 수 계산(쿼리 하나), 읽음 처리(뒤로 가지 않음, 처음 넣기 경쟁은 savepoint 와 조건부 UPDATE), 승격 때 남의 대화 읽음(자기 대화는 제외) | [message_reads.py](../../../app/services/message_reads.py) |
+| `GET /api/v1/workspaces/{ws}/messages/unread-count` → `{unread_count}`, `POST /api/v1/workspaces/{ws}/messages/threads/{thread_id}/read` → `{thread_id, unread_count: 0, total_unread_count, last_read_at}`, `ThreadSummary.unread_count`. 새 오류 코드 없음 | [messages.py](../../../app/api/messages.py), [message.py](../../../app/schemas/message.py) |
+| 팀원을 PM 으로 올리면 같은 PATCH 커밋 안에서 그 순간까지 읽음 | [members.py](../../../app/api/members.py) `update_member` |
+| 테스트 | [test_message_reads_service.py](../../../tests/api/test_message_reads_service.py), [test_message_unread_api.py](../../../tests/api/test_message_unread_api.py), [test_migration_message_thread_read.py](../../../tests/test_migration_message_thread_read.py) |
+
+### 완료조건 확인
+
+| #480 설계 항목 | 상태 | 근거 |
+|---|---|---|
+| 새 표·마이그레이션, 기존 메시지 읽음으로 채움 | 구현. DB 마이그레이션 실행은 미검증 | 마이그레이션 테스트(sqlite) 통과. `alembic upgrade`·`alembic check` 는 CI migrations 잡에서 확인 |
+| 메시지 개수, 도착 시각 `coalesce(received_at, created_at)` | 구현 | 늦게 들어온 디스코드 답장 테스트 통과 |
+| POST 로만 읽음, GET 은 쓰기 없음 | 구현 | API 테스트 통과 |
+| PM 마다 따로, PM 자기 대화 봇 메시지 포함 | 구현 | 서비스·API 테스트 통과 |
+| 팀원 답장 앞 봇 메시지는 읽음 | 구현 | 서비스 테스트 통과 |
+| 탈퇴 팀원 대화·보내기 전 묶음 제외 | 구현 | 서비스·API 테스트 통과 |
+| 승격 때 그 순간까지 남의 대화 읽음, 자기 대화의 봇 메시지는 그대로 | 구현 | API 테스트(기능 없이 실패 확인) 통과 |
+| 목록 쿼리 수가 대화 수에 비례하지 않음 | 구현 | 대화 2개·4개에서 집계 SELECT 1개 |
+| 종 알림 변경 없음 | 지킴 | `notifications` 코드를 바꾸지 않았다 |
+| FE 전달 | 이슈 #480 댓글 | PR 본문 참고 |
+
+### 검증 내역
+
+- 2026-11-07 `backend/` 에서 `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`: 2052 passed, 1425 skipped(PostgreSQL 이 필요한 테스트, `TEST_DATABASE_URL` 없음). `ruff check --no-cache .`: 통과.
+- 새 테스트는 구현 전에 실패하는 것을 확인했다. 읽음 처리가 도착 시각 대신 `created_at` 을 쓰면 실패하는 것도 확인했다.
+- 동시 첫 읽음 테스트(PostgreSQL 전용)와 PostgreSQL 에서의 시각 저장은 로컬에서 돌리지 않았다. CI 에서 확인한다.
+
+### 계획 대비 변경
+
+설계 확정과 다른 점: 팀원이 남의 대화(탈퇴한 팀원 대화 포함)에 POST 하면 404 가 아니라 403 이다. 대화 상세 GET 과 같은 순서로 권한을 먼저 본다. PM 이 탈퇴 팀원 대화에 POST 하면 설계대로 404 다.
+
+### 남은 작업과 제한 사항
+
+- FE: POST 를 부를 시점, 숫자 API 주기, FE 계약 문서 갱신. 종 알림과 묶을지는 후속.
+- POST 는 부르는 순간 그 대화의 가장 늦은 메시지까지 옮긴다. 상세를 받은 뒤 들어온 답장도 읽음이 된다.
+- 스케줄러 틱 안(생성과 커밋 사이)에 읽음 처리가 들어오면 그 봇 메시지는 세지지 않을 수 있다.
+- 동시성 테스트는 둘째 세션이 UPDATE 를 한 번 했는지는 보지만 IntegrityError 를 거쳤는지 직접 확인하지는 않는다.
+- 승격은 대화마다 쿼리가 나가고, 대화 상세도 보는 사람의 모든 대화를 집계한다.
+
+## 2026-11-07 추가: 다른 회의의 같은 새 항목을 승인 대기 카드에 합치기(#141 두 번째 PR)
+
+M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 정한 것은 사용자다. 근거는 이슈 #141 의 합의와 PR 2 설계 확정 댓글(2026-11-07)이다. M6 완료는 판정하지 않는다.
+
+| 변경 | 위치 |
+|---|---|
+| 추출 등록 항목의 `action: merge`, `target_approval_id`. 대상 카드를 ID 순으로 잠그고 합치며, 쓸 수 없으면 create(auto 아님) | `backend/app/api/extractions.py`, `backend/app/schemas/meeting.py`, `backend/app/models/models.py`(`ExtractionAction.MERGE` 값만) |
+| 합치기 규칙(마감·상태·담당자·doc_text·merged_items)과 담당 항목(`assignee_item_of`) | `backend/app/services/pending_merge.py` |
+| 승인 때 최신 카드 값을 다시 읽고 연결된 모든 항목에 task_id. 별칭은 카드의 담당 항목에서만 저장 | `backend/app/api/approvals.py`, `backend/app/services/alias_learning.py` |
+| 별칭 후보를 카드의 담당 항목으로 거름(승인 목록·상세, 추출 조회) | `backend/app/services/alias_learning.py`, `backend/app/api/extractions.py` |
+| 계약 | [BE↔AI 계약](../../contracts/backend-ai-contract.md) 추출 등록 절, [Backend README](../../../README.md) 유사 task 검색과 별칭 학습 절 |
+
+| #141 합의 항목 | 상태 | 근거 |
+|---|---|---|
+| action=merge 와 합치기 규칙, 대상을 못 쓰면 create | 구현 | `tests/services/test_pending_merge.py`, `tests/api/test_extractions_merge.py` |
+| 승인 때 최신 값, 여러 회의 항목 task_id | 구현 | `tests/api/test_approval_merged_card.py` |
+| 별칭 학습과 후보를 담당 항목으로 | 구현 | `tests/api/test_alias_learning_approval.py`, `tests/services/test_alias_learning.py` |
+| 행 잠금(합치기와 승인, 반대 순서 두 카드) | 구현. PostgreSQL 테스트로만 확인되고 로컬에서는 돌지 않았다 | `tests/api/test_pending_merge_concurrency.py`(CI) |
+
+검증(2026-11-08, `backend/`):
+
+- `.venv/Scripts/python.exe -m ruff check --no-cache .`: All checks passed
+- `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`: 2307 passed, 1485 skipped. skip 는 PostgreSQL 이 필요한 테스트이고 새 동시성 테스트 3개도 여기에 들어 CI 에서 처음 돈다.
+- 실제 AI 를 붙인 종단 확인과 배포 환경 확인은 하지 않았다. 모델 컬럼·마이그레이션 변경은 없다.
+
+남은 작업: AI 의 merge 전송과 `include_pending` 켜기(BE 배포 뒤), FE 답(#512)과 합친 카드 표시, 승인 사이에 담당 항목이 바뀐 경우의 별칭 저장(결정 기록의 장단점).
+
+## 2026-11-08 추가: 웹 답장 안내의 대기 수와 읽음 응답 통합
+
+### 작업 근거와 실제 변경
+
+사용자가 PR #454, #518, #524의 순차 백엔드 작업을 요청해 #524를 최신 `develop@033293b4`와 대조했다. M6 계획은 비어 있으므로 마일스톤 완료를 판정하지 않는다.
+
+- 대화 요약의 `web_reply_available`과 최신 `unread_count`를 함께 보존해 API·스키마 병합 충돌을 해결했다. 기존 읽음 수·명시적 읽음 API도 유지했다.
+- [메시지 서비스](../../../app/services/messages.py)의 DM 안내 집계에서 `paused_at`이 있는 시계를 제외했다. 팀원 답장이 PM 확인 대기여서 시계가 `WATCHING`으로 남아도 새 답장을 기다리는 수에 다시 넣지 않는다.
+- [BE↔AI 계약](../../contracts/backend-ai-contract.md)의 `n` 정의에 실제 제외 조건을 반영했다. API 필드나 승인 정책을 추가하지 않았으며 새 합의 완료를 선언하지 않는다.
+
+### 검증 내역
+
+2026-11-08 로컬 Windows에서 Python 3.12로 실행했다.
+
+- 새 `test_a_reply_waiting_for_pm_review_leaves_the_count`는 수정 전 안내가 1개 대신 2개를 반환해 실패했다. `WATCHING`이면서 `paused_at`이 설정된 상태를 기존 답장 판단·스케줄러 흐름으로 만들었다.
+- 수정 후 `pytest tests/api/test_reminder_dm_notice.py tests/api/test_messages_api.py tests/api/test_scheduler.py tests/api/test_reply_clock.py tests/api/test_message_unread_api.py -q --tb=short --basetemp=<격리 경로>`는 159개 통과, PostgreSQL 미설정 및 관련 조건으로 158개 건너뜀.
+- `ruff check .` 통과. `alembic heads`는 `5d2e8a41c7b3 (head)` 하나를 반환했다. 이번 변경은 마이그레이션을 추가하지 않는다.
+- `develop@033293b4` 기반 전체 백엔드 회귀는 2370개 통과, 1540개 건너뜀. PostgreSQL 전용 및 조건부 테스트는 실행되지 않았다. 실제 PostgreSQL은 CI에서 확인해야 한다.
+
+### 계획 대비 변경과 제한 사항
+
+이미 답한 태스크가 PM 확인 때문에 정지한 상태를 안내 집계가 구분하지 못해 실제 응답 대기보다 큰 수가 나왔다. 기존 시계의 `paused_at`을 조회 조건에 추가해 해결했다. 전체 회귀·PostgreSQL·실제 Discord 발송은 이번 타깃 검증의 범위 밖이다.
+
+#518은 별도 PR이며 같은 `_dm_body`에 PM 글 안내를 추가한다. 두 PR을 통합할 때 PM 글의 발신자·작성자 안내 분기를 보존하고 봇 리마인드에만 개수 안내를 적용해야 한다. 이번 작업에서 #518 코드를 미리 섞거나 AI 코드를 새로 수정하지 않았다.
+
 ## 관련 기록
 
+- [다른 회의의 같은 새 항목을 승인 대기 카드에 합친다](basis-for-decision/2026-11-07-pending-merge.md)
+- [승인 대기 새 항목 요청을 유사 검색 후보에 따로 더한다](basis-for-decision/2026-11-07-pending-approval-search.md)
 - [답장 담당자 변경 승인에서 PM 이 담당자를 고르게 한다](basis-for-decision/2026-11-07-reply-assignee-override.md)
 - [처리 단계 보고를 회의 컬럼으로 저장한다](basis-for-decision/2026-11-05-processing-stage-report.md)
+- [메시지 탭 읽지 않은 수를 대화별 읽은 위치로 센다](basis-for-decision/2026-11-07-message-unread-count.md)
 - [BE↔AI 계약](../../contracts/backend-ai-contract.md)
