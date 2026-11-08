@@ -16,6 +16,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.models import Meeting, Member, Session as SessionModel, Task, User, Workspace
+from app.services.sessions import hash_session_token
 
 SERVICE_TOKEN = "test-service-token"
 ITEMS = json.loads((Path(__file__).parent / "data" / "ai_judge_items_jev_evidence.json").read_text(encoding="utf-8"))[
@@ -50,7 +51,7 @@ def items_by_title(db, monkeypatch):
     pm_user = User(email="pm@example.com", name="pm")
     db.add(pm_user)
     db.flush()
-    db.add(SessionModel(user_id=pm_user.user_id, session_token="pm-token",
+    db.add(SessionModel(user_id=pm_user.user_id, session_token=hash_session_token("pm-token"),
                         expires_at=datetime.now(timezone.utc) + timedelta(days=1)))
     db.add_all([
         Member(workspace_id=ws.workspace_id, user_id=pm_user.user_id, display_name="PM", role="pm",
