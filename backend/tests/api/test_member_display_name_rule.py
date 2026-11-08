@@ -13,10 +13,10 @@ API = "/api/v1"
 INVALID_NAMES = [
     "",
     "   ",
-    "​ ​",
+    "\u200b \u200b",
     "김\n도윤",
-    "‮김도윤",
-    "́",
+    "\u202e김도윤",
+    "\u0301",
     "가" * 101,
 ]
 
@@ -118,7 +118,7 @@ def test_post_accepts_100_chars_after_strip(client, mseed):
     assert len(r.json()["data"]["display_name"]) == 100
 
 
-@pytest.mark.parametrize("name", ["👨‍👩‍👧", "김 도윤", "émile"])
+@pytest.mark.parametrize("name", ["👨\u200d👩\u200d👧", "김 도윤", "émile"])
 def test_post_accepts_valid_unicode_names(client, mseed, name):
     assert _post(client, mseed["ws"], name).status_code == 201
 
@@ -160,4 +160,6 @@ def test_existing_invalid_name_still_editable_and_listed(client, mdb, mseed, nam
     mid = m.member_id
     assert client.patch(f"{API}/members/{mid}", json={"notion_name": "x"}).status_code == 200
     assert client.patch(f"{API}/members/{mid}", json={"role": "member"}).status_code == 200
-    assert client.get(f"{API}/members", params={"workspace_id": mseed["ws"]}).status_code == 200
+    res = client.get(f"{API}/members", params={"workspace_id": mseed["ws"]})
+    assert res.status_code == 200
+    assert mid in {i["member_id"] for i in res.json()["data"]["items"]}
