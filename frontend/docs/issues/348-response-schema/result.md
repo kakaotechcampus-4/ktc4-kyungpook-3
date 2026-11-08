@@ -34,13 +34,23 @@
 | 태스크 `status` 모름 | `할 일` 로 보이고 그 칸에 놓임 | 목록·상세가 `응답을 읽지 못했어요` 와 `다시 시도` |
 | 목록 한 건 깨짐 | 상태는 그 건만 `할 일`, 필드 누락은 `TypeError` | 목록 전체가 `INVALID_RESPONSE` |
 | 이력 필드·출처 모름 | `제목`·`직접 변경` | `알 수 없는 항목`·`알 수 없는 출처` |
-| 답장 줄 종류·결과 모름 | `무엇을 바꿀지 정하지 못했어요`·`반영하지 않음` | `알 수 없는 변경이에요`·`알 수 없는 결과` |
+| 답장 줄 종류·결과 모름 | `무엇을 바꿀지 정하지 못했어요`·`반영하지 않음`, 서버가 허락하면 되돌리기 | `알 수 없는 변경이에요`·`알 수 없는 결과`, 되돌리기 없음 |
+| 쓰기 응답을 읽지 못함 | `상태를 바꾸지 못했어요`·`되돌리지 못했어요` 등 실패 문구 | `변경 결과를 확인하지 못했어요` 토스트와 `새로고침` |
 | 기록 칸 `kind` 모름 | 이력 칸으로 잘못 읽음 | 변경 이력 영역이 `INVALID_RESPONSE` |
 
 ### 문서
 
 - [D-184](../../decision/frontend-decisions.md): 결정과 D-134 대체. D-134 요약 줄에 대체 표시.
 - [계약](../../contracts/frontend-api-contract.md) 맨 위 「응답 검증과 새 값 배포 순서」: 배포 순서 규칙(FE 결정, BE 합의 확인 필요), task 응답이 거절하는 것과 따로 다루는 것, BE 요청 둘. §2.6 의 「모르는 값은 `title`」과 §6 의 D-134 언급을 고쳤다.
+
+## 리뷰 반영 (2026-11-09)
+
+독립 리뷰 두 건(Codex·Grok)과 관리 세션 지시를 반영했다.
+
+- **모르는 답장 줄에는 되돌리기가 없다(중간, 두 리뷰 모두).** 줄 종류(`field`)나 결과(`result`)를 모르면 서버 `undoable` 이 true 여도 mapper 가 false 로 읽는다. 아는 줄은 서버 값을 따른다. 표시용 분류는 읽기 전용이라는 정책에 맞췄다. 계약·D-184·스키마 주석의 「되돌리기는 `undoable` 만 따른다」를 고쳤다.
+- **계약 대조 표의 버전 거절 위치(낮음, Grok).** 「M6 태스크·승인 처리 경계」의 Task 매핑 줄이 mapper 가 거절한다고 적었다. 응답 스키마가 거절한다고 고쳤다.
+- **쓰기 응답을 읽지 못했을 때(사용자 결정).** 상태 변경·필드 저장·직접 추가·Notion 재시도·자동 막힘 풀기·답장 변경 되돌리기의 응답이 `INVALID_RESPONSE` 면 토스트 `변경 결과를 확인하지 못했어요` 와 `새로고침` 을 보인다. `새로고침` 은 그 공간의 태스크 목록·상세·이력을 다시 받는다(`taskKeys` 무효화). 입력 칸·버튼 옆에 실패를 보이던 세 쓰기도 이 경우만 토스트로 옮겼다. 다른 실패 문구는 그대로다. 공용 조각은 `isInvalidResponse`(`shared/api/errors.ts`), `WRITE_UNCONFIRMED_MESSAGES`(`errorMessages.ts`), `showWriteUnconfirmed`(`shared/ui/toast`), `showTaskWriteUnconfirmed`(`entities/task/lib`)다. 다음 entity PR 은 `showWriteUnconfirmed` 에 자기 데이터를 다시 받는 함수를 넘긴다.
+- 테스트는 고치기 전에 먼저 실패를 확인했다. 모르는 답장 줄 RTL 셋(종류·결과·둘 다: 버튼 없음, GET 밖의 요청 없음), mapper 셋, history 하나. 쓰기 응답 RTL 여섯(`tasks`·`taskDetailEdit`·`taskViewsCreate`·`notionSyncPolling`·`taskAutoBlock`·`taskReplyTimeline`): 새 토스트, 옛 실패 문구 없음, `새로고침` 을 누르면 GET 이 나간다.
 
 ## 검증
 
@@ -77,4 +87,4 @@ Node v24.11.0, `frontend/` 에서 실행했다(2026-11-08).
 - 다음 PR: approval(`status` 검증, Unsupported·`category` 유지) → meeting·minutes·extraction(`source` unknown 특성, `gate` 폴백) → message·notification(`ZodError`·`Error` 를 `INVALID_RESPONSE` 로) → integration·invitation·workspace·member·user. 마지막 PR 이 `enumValue` 를 지우고 이 이슈를 닫는다.
 - BE 합의 두 가지(배포 순서, `status: str` 의 enum 타입화)는 계약에 요청으로 남겼다.
 - 실제 BE 응답과의 대조는 BE enum 타입화와 `/openapi.json` 접근이 갖춰진 뒤 후속이다(#348 추가 항목 1).
-- 정할 것: 변경(`PATCH`·생성·되돌리기) 응답이 스키마에 맞지 않으면 화면은 `상태를 바꾸지 못했어요` 처럼 실패로 알린다. 서버에서는 이미 바뀌었을 수 있다. 문구를 `변경 결과를 확인하지 못했어요` 처럼 바꿀지는 제품 문구 결정이라 이 PR 에서 바꾸지 않았다. 전에도 `version` 이 정수가 아니면 같았다.
+- ~~정할 것: 변경 응답이 스키마에 맞지 않을 때의 문구.~~ 2026-11-09 사용자 결정으로 반영했다(위 「리뷰 반영」).

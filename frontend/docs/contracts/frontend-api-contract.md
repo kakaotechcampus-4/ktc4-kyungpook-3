@@ -17,6 +17,7 @@
 | `TaskHistoryResponse` 목록 | 필수 필드 누락·타입 오류. 요청한 태스크가 아닌 `task_id`(`items[n].task_id`) | 모르는 `changed_field` 는 `알 수 없는 항목`, 모르는 `change_source` 는 `알 수 없는 출처` |
 | `GET /tasks/{task_id}/timeline` | 모르는 `kind`, 필수 필드 누락·타입 오류 | 답장 줄의 모르는 `field` 는 `알 수 없는 변경이에요`, 모르는 `result` 는 `알 수 없는 결과`. 종류나 결과를 모르는 줄은 읽기 전용이라 서버 `undoable` 이 true 여도 되돌리기가 없다(표시용 분류에는 행동이 없다). 아는 줄은 서버 `undoable` 을 따른다. 모르는 `channel`·`evidence_status` 는 없음(null) |
 
+- 쓰기 응답(`PATCH`·생성·Notion 재시도·자동 막힘 풀기·답장 변경 되돌리기)이 `INVALID_RESPONSE` 면 FE 는 서버에 반영됐을 수 있다고 보고 실패라 하지 않는다. 토스트 `변경 결과를 확인하지 못했어요` 와 `새로고침`(그 공간의 태스크 목록·상세·이력을 다시 받음)을 보인다. 다른 실패는 기존 문구다(D-184).
 - 오류의 `details` 는 `{entity, path}` 다(예: `{"entity": "task", "path": "items[3].status"}`). 받은 값은 넣지 않는다. 개발 모드만 콘솔에 경로와 값을 남긴다.
 - 스키마는 FE 가 읽는 필드만 본다. BE 가 필드를 더해도 실패하지 않는다. `total` 은 읽지 않는다.
 - 남은 entity(approval, meeting·minutes·extraction, message·notification, integration·invitation·workspace·member·user)는 아직 이전 방식(타입 단언과 `enumValue` 폴백)이다.
