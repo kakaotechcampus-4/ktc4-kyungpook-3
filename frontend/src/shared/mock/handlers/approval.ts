@@ -370,7 +370,8 @@ export const approvalHandlers = [
     return requireMember(approval.workspace_id) ?? ok(approvalResponse(approval))
   }),
   /*
-   * 백엔드 resolve_approval 과 같은 순서다. 인증 → 본문 → 승인 존재 → PM(403) → 대기 중인지(409) → 반영.
+   * 백엔드 resolve_approval 과 같은 순서다. 인증 → 본문 → 승인 존재 → PM(403) → 대기 중인지(409) → 보완 값(400)
+   * → 본 뒤 바뀐 카드(409) → 반영.
    */
   http.patch('/api/v1/approvals/:approvalId', async ({ params, request }) => {
     const unauthenticated = requireAuth()
@@ -393,13 +394,13 @@ export const approvalHandlers = [
     if (!approval) return fail('APPROVAL_NOT_FOUND', '승인 요청이 없습니다.', 404)
     const pm = requirePm(approval.workspace_id)
     if (pm instanceof Response) return pm
-    const overrides = normalizeOverrides(approval, body.status, body.task_overrides)
-    if (overrides instanceof Response) return overrides
     if (approval.status !== 'pending')
       return fail('APPROVAL_ALREADY_RESOLVED', '이미 처리된 승인 요청입니다.', 409, {
         approval_id: approval.approval_id,
         current_status: approval.status,
       })
+    const overrides = normalizeOverrides(approval, body.status, body.task_overrides)
+    if (overrides instanceof Response) return overrides
     mergePendingItems(db, approval, MOCK_NOW)
     // 백엔드는 이미 처리됨·보완 값 400 다음에 본다. 보내지 않으면 비교하지 않는다
     const current = payloadVersionOf(approval)

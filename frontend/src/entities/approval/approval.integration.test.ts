@@ -65,6 +65,17 @@ it('approval creates a task once, closes the request and records the session mem
   })
 })
 
+// 백엔드 resolve_approval 은 대기 중인지를 보완 값 검증보다 먼저 본다
+it('an already resolved card answers 409 before validating task_overrides', async () => {
+  db.approvals[0].status = 'approved'
+  await expect(
+    fetchDto(
+      '/approvals/ap_01',
+      jsonRequest('PATCH', { status: 'approved', task_overrides: { task_title: '' } }),
+    ),
+  ).rejects.toMatchObject({ code: 'APPROVAL_ALREADY_RESOLVED', status: 409 })
+})
+
 it('resets approval and task data between tests and rejects without creating a task', async () => {
   expect((await fetchDto<ListDto<TaskDto>>('/tasks?workspace_id=ws_01')).total).toBe(10)
   expect(
