@@ -10,6 +10,7 @@
   - 새 항목/수정, 대상, 상태, 분류 → JudgeResult  (Terra 가 후보와 비교해 판정)
   - 제목, 마감일, 설명 문장        → DraftResult  (Luna 가 생성)
   - 근거 상태                      → judge/evidence.py 가 Jev 에게 근거 원문에 명시됐는지 다시 물음
+  - 전사 오인식 의심 단어          → 제목 명사 중 용어 목록에 없는 말을 같은 Jev 호출로 확인(judge/asr_check.py)
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from typing import Any, Protocol
 from draft.doc_draft import DraftUnavailableError, draft
 from jev import get_jev
 from judge import asr_check
-from judge.evidence import verify, worse
+from judge.evidence import verify_with_words, worse
 from judge.final_judge import JudgeUnavailableError, judge
 from judge.semantic_judge import empty_drops, extract_findings_counted
 from llm import get_llm
@@ -180,14 +181,20 @@ def _new_card_candidate(n: int, card: dict[str, Any]) -> NotionCandidate:
                            due_date=card["due_date"], status=card["status"], meeting_note=note)
 
 
-def _evidence_fields(finding: JudgeFinding, drafted: DraftResult, task: str | None, today: date) -> dict[str, Any]:
+def _evidence_fields(finding: JudgeFinding, drafted: DraftResult, task: str | None, today: date,
+                     words: dict[str, list[str]] | None = None) -> dict[str, Any]:
     """create 항목의 근거 상태 — 근거 원문에 명시됐는지 Jev 에게 다시 묻는다(호출 1회).
 
     근거는 finding.evidence 원문만 준다. 비어 있어도 LLM 요약(finding.text)으로 대신하지 않는다.
+    words(제목의 의심 단어 → 교정 후보)를 주면 같은 호출로 묻고 asr_suspects 를 싣는다. None 이면 싣지 않는다.
     """
     s = drafted.structured
-    task_status, due_status = verify(finding.evidence, task, s.due_date, s.due_raw, today, get_jev())
-    return {"task_status": task_status, "due_status": due_status, "due_raw": s.due_raw}
+    task_status, due_status, asr = verify_with_words(finding.evidence, task, s.due_date, s.due_raw, today, get_jev(),
+                                                     words or {})
+    out = {"task_status": task_status, "due_status": due_status, "due_raw": s.due_raw}
+    if words is not None:
+        out["asr_suspects"] = asr
+    return out
 
 
 def _search_fields(found: list[NotionCandidate]) -> dict[str, Any]:
@@ -254,40 +261,42 @@ def _member_words(candidates: Any, workspace_id: str) -> list[str]:
     return words
 
 
-def _annotate_asr(items: list[dict[str, Any]], transcript: Transcript, titles: set[str], members: list[str]) -> None:
-    """새 항목마다 전사 오인식 의심 단어(asr_suspects)를 붙인다. 있으면 BE 가 auto 대신 review 로 보낸다.
-
-    근거 발화는 evidence_seqs 의 발화 전부다. 같은 회의의 다른 발화에 나온 말은 분석기가 아는 말이거나 두 사람 이상이
-    쓴 말이면 의심하지 않는다(팀이 쓰는 말). 한 사람만 쓴 모르는 말은 믿지 않는다 — STT 는 한 사람의 같은 발음을 같은
-    꼴로 거듭 잘못 듣는다(#532 리뷰).
-    수정(update) 항목은 BE 가 항상 review 라 보지 않는다. 채팅은 전사를 거치지 않아 run 에서 부르지 않는다.
+def _workspace_terms(candidates: Any, workspace_id: str, team: set[str]) -> set[str]:
+    """BE 의 워크스페이스 용어 목록. PM 이 승인한 제목(pending_titles)은 여기서 명사를 뽑아 목록에 넣고, 이 회의에서 두
+    사람 이상이 말한 명사(team)도 올린다. BE 구현(BeClient)이 없거나 실패하면 빈 목록으로 두고 검사는 기본 목록으로 돈다.
     """
-    creates = [i for i in items if i["action"] == "create"]
-    if not creates:
-        return
+    fetch, push = getattr(candidates, "asr_terms", None), getattr(candidates, "add_asr_terms", None)
+    if fetch is None:
+        return set()
     try:
-        seg_nouns = {seg.seq: asr_check._nouns(seg.text) for seg in transcript.segments}
-        speakers: dict[str, set[str]] = {}
-        for seg in transcript.segments:
-            who = seg.speaker or seg.speaker_member_id
-            for w in seg_nouns[seg.seq]:
-                speakers.setdefault(w, set()).update([who] if who else [])
-        team = {w for w, who in speakers.items() if len(who) >= 2 or asr_check.is_dictionary_word(w)}
-        base = asr_check.Vocabulary.build(members=members, task_titles=titles)
-    except Exception as e:  # noqa: BLE001 - 분석기를 올리지 못하면 모든 새 항목을 보수적으로 막는다
-        for item in creates:
-            item["asr_suspects"] = asr_check.failed()
+        data = fetch(workspace_id)
+    except Exception as e:  # noqa: BLE001 - 목록을 못 받으면 의심 단어가 늘 뿐이다(Jev 가 확인한다)
+        logger.warning("워크스페이스 용어 목록을 받지 못했다: %s: %s", type(e).__name__, e)
+        return set()
+    words = {w for w in data.get("words") or [] if isinstance(w, str)}
+    pending = [p for p in data.get("pending_titles") or [] if isinstance(p, dict) and p.get("title_id")]
+    approved = set().union(*(asr_check.nouns(p.get("title") or "") for p in pending)) if pending else set()
+    new = sorted((approved | team) - words)
+    if push is not None and (new or pending):
+        try:
+            push(workspace_id, new, [p["title_id"] for p in pending])
+        except Exception as e:  # noqa: BLE001 - 올리지 못하면 다음 회의에서 다시 올린다(BE 는 중복을 건너뛴다)
+            logger.warning("워크스페이스 용어를 올리지 못했다: %s: %s", type(e).__name__, e)
+    return words | approved
+
+
+def _asr_vocab(candidates: Any, workspace_id: str, transcript: Transcript) -> set[str] | None:
+    """이 회의의 전사 오인식 검사 용어 목록. 분석기를 올리지 못하면 None — 새 항목을 모두 check_failed 로 막는다."""
+    try:
+        vocab = asr_check.base_vocab()
+        team = asr_check.team_nouns((seg.speaker or seg.speaker_member_id, seg.text) for seg in transcript.segments)
+        vocab |= team | _workspace_terms(candidates, workspace_id, team)
+    except Exception as e:  # noqa: BLE001 - 검사를 못 하면 보수적으로 막는다
         logger.warning("전사 오인식 검사를 준비하지 못했다: %s: %s", type(e).__name__, e)
-        return
-    for item in creates:
-        own = set(item.get("evidence_seqs") or [])
-        vocab = asr_check.Vocabulary(set(base.known), set(base.candidates))
-        for seq, nouns in seg_nouns.items():
-            if seq not in own:
-                vocab.known |= nouns & team
-                vocab.candidates |= nouns & team
-        lines = [seg.text for seg in transcript.segments if seg.seq in own] or [item.get("evidence_quote") or ""]
-        item["asr_suspects"] = asr_check.check_item(lines, item.get("task_title"), vocab)
+        return None
+    for name in _member_words(candidates, workspace_id):
+        vocab.update(name.split())
+    return vocab
 
 
 class CandidateSource(Protocol):
@@ -356,7 +365,9 @@ def run(
         findings = [f for f in findings if f.seq == judge_seq]
 
     out = PipelineResult(dropped=dropped)
-    seen_titles: set[str] = set()  # 유사 검색에서 본 기존 태스크 제목. 전사 오인식 검사의 팀 용어다
+    # 전사 오인식 검사의 용어 목록. 채팅은 전사를 거치지 않아 보지 않는다(asr_suspects 를 싣지 않음)
+    vocab = _asr_vocab(candidates, workspace_id, transcript) if transcript.source != "chat" else None
+    seen_titles: set[str] = set()  # 유사 검색에서 본 기존 태스크 제목. 그 명사도 팀 용어다
     new_cards: list[dict[str, Any]] = []                         # 이번 회의 새 항목 카드
     edits: dict[str, tuple[NotionCandidate, dict[str, Any]]] = {}  # task_id → (DB 원래 후보, 수정 카드)
     for finding in findings:
@@ -433,11 +444,24 @@ def run(
             continue
         out.items.append(item)
         if result.is_new:
-            item.update(_evidence_fields(finding, drafted, item["task_title"], day))
+            words = _title_words(item["task_title"], vocab, seen_titles) if transcript.source != "chat" else None
+            item.update(_evidence_fields(finding, drafted, item["task_title"], day, words))
+            if transcript.source != "chat" and words is None:
+                item["asr_suspects"] = asr_check.failed()
             item.update(_search_fields(found))
             new_cards.append(item)
         else:
             edits[task_id] = (target, item)  # 여기 오는 target 은 덮어 보이지 않은 DB 원래 후보다
-    if transcript.source != "chat":
-        _annotate_asr(out.items, transcript, seen_titles, _member_words(candidates, workspace_id))
     return out
+
+
+def _title_words(title: str | None, vocab: set[str] | None, seen_titles: set[str]) -> dict[str, list[str]] | None:
+    """제목의 의심 단어 → 교정 후보. 목록 준비나 분석이 실패했으면 None — 호출자가 check_failed 로 막는다."""
+    if vocab is None:
+        return None
+    try:
+        known = vocab | set().union(*(asr_check.nouns(t) for t in seen_titles))
+        return {w: asr_check.candidates(w, known) for w in asr_check.suspects(title, known)}
+    except Exception as e:  # noqa: BLE001 - 분석이 실패하면 이 항목만 check_failed 로 막는다
+        logger.warning("제목 의심 단어를 찾지 못했다: %s: %s", type(e).__name__, e)
+        return None

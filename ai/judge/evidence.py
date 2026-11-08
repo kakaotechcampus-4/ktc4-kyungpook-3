@@ -74,18 +74,32 @@ def _yes(answers: dict[str, Any] | None, key: str) -> bool:
 def verify(lines: list[str], task: str | None, due_date: str | None, due_raw: str | None,
            today: date, client: JevClient) -> tuple[str, str]:
     """(task_status, due_status). 마감이 없으면 마감은 묻지 않고 missing. 근거 줄이 없으면 묻지 않고 inferred."""
+    task_status, due_status, _ = verify_with_words(lines, task, due_date, due_raw, today, client, {})
+    return task_status, due_status
+
+
+def verify_with_words(lines: list[str], task: str | None, due_date: str | None, due_raw: str | None,
+                      today: date, client: JevClient,
+                      words: dict[str, list[str]]) -> tuple[str, str, list[dict[str, Any]]]:
+    """verify 에 전사 오인식 의심 단어(judge/asr_check.py) 질문을 같은 호출로 더한다. 셋째 값은 asr_suspects.
+
+    words 는 의심 단어 → 교정 후보. 근거 줄이 없으면 묻지 못하므로 의심 단어가 있으면 check_failed 다.
+    """
+    from judge import asr_check
+
     # 날짜는 없는데 원문 표현이 있으면 마감을 뽑았다가 걸러진 것이다. 마감 없음(missing)과 구분해 inferred 로 둔다
     no_due = MISSING if due_date is None and not due_raw else INFERRED
     if not lines:
-        return INFERRED, no_due
-    questions = {"task": QUESTIONS["task"]}
+        return INFERRED, no_due, asr_check.verdict(words, None)
+    questions = {"task": QUESTIONS["task"], **asr_check.questions(words)}
     if due_date is not None:
         questions["due"] = QUESTIONS["due"]
     answers = client.decide(_state(lines, task, due_date, due_raw, today), questions)
     task_status = CERTAIN if _yes(answers, "task") else INFERRED
+    asr = asr_check.verdict(words, answers)
     if due_date is None:
-        return task_status, no_due
-    return task_status, CERTAIN if _yes(answers, "due") else INFERRED
+        return task_status, no_due, asr
+    return task_status, CERTAIN if _yes(answers, "due") else INFERRED, asr
 
 
 def worse(a: str, b: str) -> str:

@@ -87,6 +87,8 @@ class FakeBe:
         self._assign_n = 0            # 지정 순번. 지정 시각 순 정렬에 쓴다
         # 봇용 팀원 이름 조회 (backend/app/api/bot_lookups.py). 워크스페이스 → [{member_id, name, discord_user_id, aliases}]
         self.members: dict[str, list[dict]] = {}
+        self.asr_terms: dict[str, set[str]] = {}        # 워크스페이스 → 전사 오인식 검사 용어
+        self.asr_titles: dict[str, list[dict]] = {}     # 워크스페이스 → 승인 뒤 아직 안 뽑은 제목
         # 채팅 커서 (backend chat-cursor). 워크스페이스 → last_message_at 문자열. 없으면 data null
         self.chat_cursors: dict[str, str] = {}
         # 채팅 채널 목록 (BE #432 모양). None 이면 items 없는 {"data": {}} 를 준다
@@ -164,6 +166,8 @@ class FakeBe:
             return _ok(200, {} if self.chat_channels is None else {"items": list(self.chat_channels)})
         if method == "GET" and path.startswith("/workspaces/") and path.endswith("/members/names"):
             return self._member_names(path.split("/")[2], headers or {})
+        if path.startswith("/workspaces/") and path.endswith("/asr-terms"):
+            return self._asr_terms(method, path.split("/")[2], body, headers or {})
         if method == "POST" and path.startswith("/workspaces/") and path.endswith("/tasks/similar"):
             return self._similar(path.split("/")[2], body, headers or {})
         if (method == "POST" and path in ("/meetings", "/extractions")) or method == "PATCH":
@@ -292,6 +296,21 @@ class FakeBe:
         if workspace_id not in self.workspaces:
             return _err(404, "WORKSPACE_NOT_FOUND", {"workspace_id": workspace_id})
         return _ok(200, {"items": list(self.members.get(workspace_id, []))})
+
+    def _asr_terms(self, method: str, workspace_id: str, body: dict, headers: dict):
+        if headers.get("X-Service-Token") != self.service_token:
+            return _err(401, "UNAUTHENTICATED")
+        if workspace_id not in self.workspaces:
+            return _err(404, "WORKSPACE_NOT_FOUND", {"workspace_id": workspace_id})
+        words = self.asr_terms.setdefault(workspace_id, set())
+        titles = self.asr_titles.setdefault(workspace_id, [])
+        if method == "GET":
+            return _ok(200, {"words": sorted(words), "pending_titles": list(titles)})
+        new = set(body.get("words") or []) - words
+        words |= new
+        gone = set(body.get("absorbed_title_ids") or [])
+        self.asr_titles[workspace_id] = [t for t in titles if t["title_id"] not in gone]
+        return _ok(200, {"added": len(new), "absorbed": len(titles) - len(self.asr_titles[workspace_id])})
 
     def _similar(self, workspace_id: str, body: dict, headers: dict):
         if headers.get("X-Service-Token") != self.service_token:

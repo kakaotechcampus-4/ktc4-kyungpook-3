@@ -1,192 +1,104 @@
-"""전사 오인식 의심 단어 검사(judge/asr_check.py). 형태소 분석기(kiwipiepy)는 로컬이라 실제로 돌린다. API 는 없다."""
+"""전사 오인식 검사(judge/asr_check.py). 형태소 분석기(kiwipiepy)는 로컬이라 실제로 돌린다. Jev 는 부르지 않는다."""
 
 import pytest
 
 from judge import asr_check as A
-from judge.asr_check import Vocabulary, check_item, edit_distance, find_suspects, jamo, jamo_distance
-
-MEMBERS = ["재환", "이자인", "지민", "하은"]
-TITLES = ["로그인 화면 시안", "스토리북 정리", "Jev 연동", "결제 API 연동"]
-
-
-@pytest.fixture(scope="module")
-def vocab():
-    return Vocabulary.build(members=MEMBERS, task_titles=TITLES, other_lines=["오늘은 배포 일정 얘기부터 할게요"])
-
-
-def words(suspects):
-    return [s["word"] for s in suspects]
 
 
 # ── 자모·거리 ──────────────────────────────────────────────────────────────
 
 
 @pytest.mark.parametrize("text, want", [
-    ("배포", "ㅂㅐㅍㅗ"), ("애포", "ㅇㅐㅍㅗ"), ("값", "ㄱㅏㅄ"), ("닭", "ㄷㅏㄺ"), ("가", "ㄱㅏ"),
-    ("API 연동", "API ㅇㅕㄴㄷㅗㅇ"), ("", ""),
+    ("배포", "ㅂㅐㅍㅗ"), ("애포", "ㅇㅐㅍㅗ"), ("값", "ㄱㅏㅄ"), ("가", "ㄱㅏ"), ("API 연동", "API ㅇㅕㄴㄷㅗㅇ"), ("", ""),
 ])
 def test_jamo_splits_syllables_and_keeps_other_characters(text, want):
-    assert jamo(text) == want
+    assert A.jamo(text) == want
 
 
-@pytest.mark.parametrize("a, b, d", [("애포", "배포", 1), ("티자인", "디자인", 1), ("기획소", "기획서", 1),
-                                     ("배포", "배포", 0), ("배포", "", 4), ("시안", "시앙", 1)])
+@pytest.mark.parametrize("a, b, d", [("애포", "배포", 1), ("티자인", "디자인", 1), ("배포", "배포", 0), ("배포", "", 4)])
 def test_jamo_distance(a, b, d):
-    assert jamo_distance(a, b)[0] == d
-
-
-def test_normalized_distance_divides_by_the_longer_jamo_string():
-    assert jamo_distance("애포", "배포") == (1, 0.25)
+    assert A.jamo_distance(a, b)[0] == d
 
 
 def test_edit_distance_is_symmetric():
-    assert edit_distance("abc", "axbc") == edit_distance("axbc", "abc") == 1
+    assert A.edit_distance("ㄱㄴㄷ", "ㄱㄷ") == A.edit_distance("ㄱㄷ", "ㄱㄴㄷ") == 1
 
 
-# ── 의심 단어 ──────────────────────────────────────────────────────────────
+# ── 1단계: 목록에 없는 제목 명사 ─────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("line, word, right", [
-    ("애포문서 정리는 재환님이 맡아주세요", "애포", "배포"),       # 조사·복합어에 붙은 비단어
-    ("티자인 시안 수정은 다음 주까지 할게요", "티자인", "디자인"),   # 아는 형태소로 잘못 쪼개짐
-    ("기획소 초안 금요일까지 올릴게요", "기획소", "기획서"),
-    ("테스뜨코드는 수요일부터 짤게요", "테스뜨", "테스트"),
-    ("티자인시안 피드백 반영할게요", "티자인", "디자인"),
-])
-def test_injected_errors_are_flagged_with_the_right_candidate(vocab, line, word, right):
-    suspects = check_item([line], None, vocab)
-    hit = next(s for s in suspects if s["word"] == word)
-    assert hit["source"] == "evidence"
-    assert right in hit["candidates"]
+def test_nouns_are_hangul_common_and_proper_nouns_only():
+    assert A.nouns("배포 문서를 API 로 금요일까지 정리해 주세요") >= {"배포", "문서", "금요일"}
+    assert "API" not in A.nouns("API 연동") and "주세요" not in A.nouns("정리해 주세요")
 
 
-@pytest.mark.parametrize("line", [
-    "배포 문서 정리는 재환님이 맡아주세요",
-    "디자인 시안 수정은 다음 주까지 할게요",
-    "기획서 초안 금요일까지 올릴게요",
-    "Jev 연동이랑 sweeper 수정 제가 할게요",           # 팀 용어·영문
-    "회원가입 폼 밸리데이션 추가할게요",                 # 업무 용어 파일의 외래어
-    "푸쉬 알림 테스트 해볼게요",                         # 흔한 변형 표기
-    "스토리북 정리는 지민님이 맡는 걸로",                # 기존 태스크 제목의 말
-    "다음주까지 마무리하고 금요일까지 공유할게요",       # 조사가 붙은 날짜("금요일까지")
-    "이자인님이 디자인 시안 맡아주세요",                 # 팀원 이름
-    "회의록 정리해서 노션에 올릴게요",
-    "API 응답 형식 README 에 적어 둘게요 v2 기준으로",   # 영문·숫자는 보지 않는다
-])
-def test_clean_sentences_are_not_flagged(vocab, line):
-    assert check_item([line], None, vocab) == []
+def test_seed_nouns_follow_the_analyzer_frequency_order():
+    # 분석기 형태소 번호가 대체로 빈도 순이라는 모델 동작에 기댄다. kiwipiepy 를 올리면 이 테스트가 먼저 알린다
+    seed = A.seed_nouns(1000)
+    assert {"시간", "대표"} <= seed and "시앙" not in seed
+    assert seed <= A.seed_nouns(5000)
 
 
-def test_word_from_another_utterance_of_the_meeting_is_known():
-    # "핀테크볼트"는 분석기가 모르는 말이지만, 같은 회의 다른 발화에 나왔으면 팀이 쓰는 말이다
-    alone = Vocabulary.build()
-    with_context = Vocabulary.build(other_lines=["핀테크볼트 연동 건은 다음에 봐요"])
-    line = "핀테크볼트 대시보드 정리할게요"
-    assert any(w.startswith("핀테크") for w in words(check_item([line], None, alone)))
-    assert check_item([line], None, with_context) == []
+def test_base_vocab_has_the_terms_file_and_common_task_nouns():
+    v = A.base_vocab()
+    assert {"배포", "문서", "정리", "구현"} <= v
 
 
-def test_member_names_never_become_candidates():
-    # "티자인"과 팀원 "이자인"은 "디자인"과 같은 거리지만 후보는 업무 단어만이다
-    v = Vocabulary.build(members=["이자인"])
-    [s] = check_item(["티자인 시안 수정"], None, v)
-    assert "디자인" in s["candidates"] and "이자인" not in s["candidates"]
+def test_suspects_are_title_nouns_off_the_list():
+    v = A.base_vocab()
+    assert A.suspects("애포 문서 정리", v) == ["애포"]
+    assert A.suspects("배포 문서 정리", v) == []
+    assert A.suspects(None, v) == []
 
 
-def test_error_only_in_evidence_is_caught_even_when_the_title_was_corrected(vocab):
-    # 초안(Luna)이 제목에서 "배포"로 고쳐 써도 근거 원문의 "애포"는 남는다
-    suspects = check_item(["금요일까지 애포 스크립트 정리해서 올릴게요"], "배포 스크립트 작성", vocab)
-    assert words(suspects) == ["애포"] and suspects[0]["source"] == "evidence"
+def test_team_nouns_need_two_different_speakers():
+    lines = [("a", "애포 일정 봐요"), ("a", "애포 다시 봐요"), ("b", "핀테크볼트 정산"), ("c", "핀테크볼트 정산")]
+    team = A.team_nouns(lines + [(None, "콜린스 문서")])
+    assert "핀테크볼트" in team and "애포" not in team and "콜린스" not in team
 
 
-def test_error_in_title_only_is_tagged_title(vocab):
-    suspects = check_item(["배포 스크립트 정리해서 올릴게요"], "애포 스크립트 작성", vocab)
-    assert [(s["word"], s["source"]) for s in suspects] == [("애포", "title")]
+def test_candidates_are_close_list_words_and_at_most_five():
+    assert A.candidates("애포", A.base_vocab()) == ["배포"]
+    many = [f"배포{i}" for i in range(10)] + ["대포", "애표", "해포", "새포", "매포", "개포"]
+    assert len(A.candidates("애포", many)) == A.MAX_CANDIDATES
 
 
-def test_same_word_in_evidence_and_title_is_reported_once(vocab):
-    assert words(check_item(["애포 스크립트 올릴게요"], "애포 스크립트 작성", vocab)) == ["애포"]
+# ── 2단계: Jev 답에서 asr_suspects ──────────────────────────────────────────
 
 
-def test_one_letter_and_english_tokens_are_ignored(vocab):
-    assert find_suspects("팝 API v2 QA", vocab, "evidence") == []
+def _answers(*ps):
+    return {f"asr{i}": {"probabilities": {"yes": p, "no": 1 - p, "unclear": 0.0}} for i, p in enumerate(ps)}
 
 
-def test_real_word_errors_are_a_known_limit(vocab):
-    # "배포"가 "대표"로 전사되면 실제 낱말이라 이 검사로는 잡지 못한다(평가의 realword 묶음)
-    assert check_item(["대표 문서 정리는 재환님이 맡아주세요"], None, vocab) == []
+def test_questions_are_keyed_in_order_and_carry_the_candidates():
+    qs = A.questions({"애포": ["배포"], "짐도": []})
+    assert list(qs) == ["asr0", "asr1"]
+    assert "'애포'" in qs["asr0"]["instructions"] and "배포" in qs["asr0"]["instructions"]
+    assert set(qs["asr1"]["criteria"]) == {"yes", "no", "unclear"}
 
 
-def test_analyzer_failure_blocks_conservatively(vocab, monkeypatch, caplog):
-    def boom(*a, **k):
-        raise RuntimeError("분석기 오류")
-    monkeypatch.setattr(A, "find_suspects", boom)
-    with caplog.at_level("WARNING"):
-        assert check_item(["배포 문서"], None, vocab) == A.failed()
-    assert A.failed() == [{"word": "", "source": "check_failed", "candidates": []}]
-    assert "auto 를 막는다" in caplog.text
+def test_verdict_keeps_words_below_the_threshold():
+    words = {"애포": ["배포"], "짐도": ["진도"]}
+    out = A.verdict(words, _answers(0.2, 0.95), threshold=0.8)
+    assert out == [{"word": "애포", "source": "title", "candidates": ["배포"]}]
+    assert A.verdict(words, _answers(0.8, 0.8), threshold=0.8) == []        # 기준값은 통과
 
 
-def test_candidates_are_at_most_five_and_closest_first(vocab):
-    [s] = check_item(["테스뜨 진행"], None, vocab)
-    assert s["candidates"][0] == "테스트" and len(s["candidates"]) <= A.MAX_CANDIDATES
+def test_verdict_missing_answer_counts_as_not_confirmed():
+    assert [s["word"] for s in A.verdict({"애포": []}, {})] == ["애포"]
+
+
+def test_verdict_failed_call_blocks_and_no_words_is_clean():
+    assert A.verdict({"애포": []}, None) == A.failed()
+    assert A.verdict({}, None) == []
+
+
+def test_verdict_cuts_long_words_for_the_be_limit():
+    # BE 는 word 100자 넘으면 요청 전체를 400 으로 거절한다(#532 리뷰)
+    [s] = A.verdict({"애포" * 60: []}, _answers(0.1))
+    assert len(s["word"]) == A.MAX_WORD_LEN
 
 
 def test_terms_file_loads_and_skips_comments():
     terms = A.load_terms()
-    assert {"배포", "디자인", "기획서", "밸리데이션"} <= terms
-    assert not any(t.startswith("#") or not t.strip() for t in terms)
-    assert "이자인" not in terms   # 팀원 이름은 파일에 두지 않는다
-
-
-def test_suspects_are_capped_for_the_be_limit(vocab, monkeypatch):
-    # BE 는 51개 이상이면 요청 전체를 400 으로 거절한다. 긴 합친 근거에서도 50개까지만 보낸다(#532 리뷰)
-    many = [{"word": f"단어{i}", "source": "evidence", "candidates": []} for i in range(80)]
-    monkeypatch.setattr(A, "find_suspects", lambda text, v, source: many if source == "evidence" else [])
-    out = check_item(["아무 줄"], "제목", vocab)
-    assert len(out) == A.MAX_SUSPECTS == 50
-    assert out[0]["word"] == "단어0"
-
-
-
-@pytest.mark.parametrize("garbage", ["애포" * 60, "티자인" * 40], ids=["애포x60", "티자인x40"])
-def test_long_repeated_garbage_still_blocks_within_be_limits(vocab, garbage):
-    # 띄어쓰기 없는 STT 반복이 100자 넘는 의심 단어 하나가 되면 BE 가 요청 전체를 400 으로 거절한다(word·후보 100자).
-    # 막는 신호는 남기고 길이만 BE 상한에 맞춘다
-    out = check_item([f"{garbage} 정리할게요"], None, vocab)
-    assert out
-    assert all(len(s["word"]) <= A.MAX_WORD_LEN == 100 for s in out)
-    assert all(len(c) <= A.MAX_WORD_LEN for s in out for c in s["candidates"])
-
-
-def test_morpheme_ids_and_unknown_marks_this_check_relies_on():
-    # 규칙 2 는 형태소 번호가 빈도 순이라는 것, 규칙 1 은 미등록어의 형태가 빈 문자열이라는 것에 기댄다.
-    # 둘 다 문서화되지 않은 모델 동작이라 kiwipiepy 를 올리면 이 테스트가 먼저 알린다(requirements 에 버전 고정)
-    kiwi = A._kiwi()
-    [rare] = kiwi.tokenize("시앙")
-    [common] = kiwi.tokenize("대표")
-    assert rare.id >= A.RARE_MORPHEME_ID > common.id
-    [unknown] = kiwi.tokenize("애포")
-    [known] = kiwi.tokenize("배포")
-    assert A._is_unknown(kiwi, unknown) and not A._is_unknown(kiwi, known)
-
-
-def test_verb_or_particle_span_is_not_a_near_miss_of_a_term(vocab):
-    # "하고"는 업무 용어 "회고"와 자모 하나 차이지만 명사 쪽 토큰이 없는 구간이라 보지 않는다
-    assert "회고" in vocab.candidates
-    assert find_suspects("그거 하고 정리해요", vocab, "evidence") == []
-
-
-def test_unreadable_morpheme_table_blocks_instead_of_silently_passing(vocab, monkeypatch):
-    # 형태소 표를 못 읽으면 규칙 1 이 조용히 꺼지지 않고 check_failed 로 막는다
-    kiwi = A._kiwi()
-
-    class NoTable:
-        def __getattr__(self, name):
-            return getattr(kiwi, name)
-
-        def morpheme(self, _id):
-            raise RuntimeError("no table")
-
-    monkeypatch.setattr(A, "_kiwi", lambda: NoTable())
-    assert check_item(["애포 문서 정리할게요"], None, vocab) == A.failed()
+    assert "배포" in terms and not any(t.startswith("#") for t in terms)
