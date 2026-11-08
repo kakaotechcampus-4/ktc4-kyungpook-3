@@ -7,7 +7,15 @@
 export const OAUTH_OUTCOMES = ['success', 'cancelled', 'failed'] as const
 export type OAuthOutcome = (typeof OAUTH_OUTCOMES)[number]
 
-export const OAUTH_RETURN_PARAMS = { provider: 'oauth', outcome: 'oauth_result' } as const
+/** 실패 사유. BE `OAUTH_REASONS` 와 같다. 주소 값이라 이 목록에 있는 것만 받고 그대로 화면에 싣지 않는다 */
+export const OAUTH_REASONS = ['email_exists'] as const
+export type OAuthReason = (typeof OAUTH_REASONS)[number]
+
+export const OAUTH_RETURN_PARAMS = {
+  provider: 'oauth',
+  outcome: 'oauth_result',
+  reason: 'oauth_reason',
+} as const
 
 /** 복귀 주소를 만들 때 쓰는 가짜 origin. 경로·검색·해시만 꺼낸다 */
 const BASE = 'http://return.invalid'
@@ -24,10 +32,16 @@ export function safeReturnPath(value: string | null | undefined): string | null 
 }
 
 /** 복귀 경로에 결과를 붙인다. 경로에 이미 있던 검색 파라미터는 남긴다 */
-export function withOAuthResult(path: string, provider: string, outcome: OAuthOutcome): string {
+export function withOAuthResult(
+  path: string,
+  provider: string,
+  outcome: OAuthOutcome,
+  reason?: OAuthReason,
+): string {
   const url = new URL(path, BASE)
   url.searchParams.set(OAUTH_RETURN_PARAMS.provider, provider)
   url.searchParams.set(OAUTH_RETURN_PARAMS.outcome, outcome)
+  if (reason !== undefined) url.searchParams.set(OAUTH_RETURN_PARAMS.reason, reason)
   return `${url.pathname}${url.search}${url.hash}`
 }
 
@@ -41,11 +55,18 @@ export function readOAuthResult(
   return { provider, outcome: outcome as OAuthOutcome }
 }
 
+/** 복귀 주소의 실패 사유. 없거나 모르는 값이면 null */
+export function readOAuthReason(params: URLSearchParams): OAuthReason | null {
+  const reason = params.get(OAUTH_RETURN_PARAMS.reason)
+  return OAUTH_REASONS.find((known) => known === reason) ?? null
+}
+
 /** 복귀 결과만 뺀 검색 문자열(`?review=1` 등 나머지는 남긴다). 남는 것이 없으면 '' */
 export function withoutOAuthResult(params: URLSearchParams): string {
   const rest = new URLSearchParams(params)
   rest.delete(OAUTH_RETURN_PARAMS.provider)
   rest.delete(OAUTH_RETURN_PARAMS.outcome)
+  rest.delete(OAUTH_RETURN_PARAMS.reason)
   const search = rest.toString()
   return search === '' ? '' : `?${search}`
 }

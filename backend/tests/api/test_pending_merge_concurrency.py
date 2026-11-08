@@ -169,8 +169,8 @@ def _run(results: dict, **targets):
     assert not any(t.is_alive() for t in threads), "threads did not finish (deadlock?)"
 
 
-def _approve(card_id: str):
-    return _client().patch(f"/api/v1/approvals/{card_id}", json={"status": "approved"})
+def _approve(card_id: str, **fields):
+    return _client().patch(f"/api/v1/approvals/{card_id}", json={"status": "approved", **fields})
 
 
 def _db_state(factory):
@@ -186,9 +186,16 @@ def _db_state(factory):
         )
 
 
-def test_approval_waits_for_merge_lock_and_creates_task_from_merged_card(pg, seed):
+def _race_approval_against_merge(pg, seed, *, send_seen_version: bool):
+    """합치기가 카드를 잠근 동안 승인을 보낸다. 승인의 조건부 UPDATE 가 그 잠금에 걸린 뒤에야 합치기를 놓는다.
+
+    send_seen_version 이면 합치기 전에 본 payload_version 을 승인 요청에 싣는다.
+    """
     engine, factory = pg
     [card_id] = _make_cards(factory, seed, ["결제 API 연동"])
+    seen_version = None
+    if send_seen_version:
+        seen_version = _client().get(f"/api/v1/approvals/{card_id}").json()["data"]["payload_version"]
     merge_holds_card, approval_is_waiting = threading.Event(), threading.Event()
     state = {"merge_locked": False}
 
@@ -214,7 +221,8 @@ def test_approval_waits_for_merge_lock_and_creates_task_from_merged_card(pg, see
     def approve():
         merge_holds_card.wait(10)
         try:
-            return _approve(card_id).status_code
+            extra = {"payload_version": seen_version} if seen_version else {}
+            return _approve(card_id, **extra).status_code
         finally:
             approval_is_waiting.set()
 
@@ -227,6 +235,11 @@ def test_approval_waits_for_merge_lock_and_creates_task_from_merged_card(pg, see
         approval_is_waiting.set()
         event.remove(engine, "before_cursor_execute", before)
         event.remove(engine, "after_cursor_execute", after)
+    return results, factory, card_id
+
+
+def test_approval_waits_for_merge_lock_and_creates_task_from_merged_card(pg, seed):
+    results, factory, card_id = _race_approval_against_merge(pg, seed, send_seen_version=False)
 
     assert results == {"merge": 201, "approve": 200}
     cards, tasks, items = _db_state(factory)
@@ -236,6 +249,20 @@ def test_approval_waits_for_merge_lock_and_creates_task_from_merged_card(pg, see
     assert task.due_date.isoformat() == "2026-10-25"
     assert len(items) == 2
     assert {i.task_id for i in items} == {task.task_id}
+    assert {i.approval_id for i in items} == {card_id}
+
+
+def test_approval_with_version_seen_before_merge_gets_409_after_waiting_for_merge_lock(pg, seed):
+    # 승인의 조건부 UPDATE 가 합치기의 잠금에 걸렸다가 커밋 뒤 카드를 다시 읽어 새 payload_version 과 비교한다(#535).
+    # refresh 를 빼거나 비교를 UPDATE 앞으로 옮기면 승인이 낡은 내용으로 통과해 이 테스트가 깨진다
+    results, factory, card_id = _race_approval_against_merge(pg, seed, send_seen_version=True)
+
+    assert results == {"merge": 201, "approve": 409}
+    cards, tasks, items = _db_state(factory)
+    assert [(c.status, c.resolved_by) for c in cards] == [("pending", None)]
+    assert tasks == []
+    assert len(items) == 2
+    assert all(i.task_id is None for i in items)
     assert {i.approval_id for i in items} == {card_id}
 
 
