@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -28,6 +30,7 @@ from app.schemas.member import (
     UnresolvedAliasResponse,
 )
 from app.api.deps import get_current_member, get_current_user, require_member, require_pm
+from app.services import message_reads
 from app.services.matching import resolved_texts
 from app.services.member_aliases import (
     add_discord_nickname_alias,
@@ -314,6 +317,10 @@ def update_member(
     # 별칭이 바뀔 수 있는 PATCH 는 팀원 행을 잠근다. 위 PM·초대 검사가 잠그는 행보다 뒤에 잠가 순서가 꼬이지 않게 한다.
     if "display_name" in updates or "discord_user_id" in updates:
         _lock_member(db, member)
+
+    # 승격은 이 PATCH 의 commit 에 함께 넣는다. 올라가기 전 대화는 PM 이 되기 전 일이라 읽지 않은 것으로 세지 않는다.
+    if updates.get("role") == MemberRole.PM and member.role != MemberRole.PM:
+        message_reads.mark_workspace_read(db, member, datetime.now(timezone.utc))
 
     old_name = member.display_name
     # 디스코드 계정이 바뀌면(풀리는 것 포함) 옛 계정의 닉네임 별칭을 지운다. 조회가 팀원 변경을 먼저 flush 해

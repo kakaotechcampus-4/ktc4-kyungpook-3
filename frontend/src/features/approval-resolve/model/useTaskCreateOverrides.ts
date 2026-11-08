@@ -1,7 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useWatch } from 'react-hook-form'
 import type { UseFormReturn } from 'react-hook-form'
-import { taskCreateValues, validateTaskCreateFields } from '@/entities/approval'
+import { aliasToLearn, taskCreateValues, validateTaskCreateFields } from '@/entities/approval'
 import type {
   TaskCreateApproval,
   TaskCreateEdits,
@@ -22,6 +22,11 @@ export interface TaskCreateOverrides {
   edits: TaskCreateEdits
   dirty: boolean
   attention: Record<TaskCreateIssue, FieldAttention>
+  /** 지금 담당자에게 별칭으로 등록할 글자. null 이면 묻지 않는다 (#523) */
+  aliasText: string | null
+  /** 별칭 등록 체크. 처음엔 켜져 있고, 미정을 골라 숨겨도 PM 이 고른 값을 기억한다 */
+  saveAlias: boolean
+  setSaveAlias: (saveAlias: boolean) => void
 }
 
 /**
@@ -42,11 +47,15 @@ export function useTaskCreateOverrides(
     ...(dirtyFields.dueDate ? { dueDate: fields.dueDate } : {}),
   }
   const issues = validateTaskCreateFields(fields, memberIds)
+  const [saveAlias, setSaveAlias] = useState(true)
   return {
     form,
     fields,
     edits,
     dirty: isDirty,
     attention: fieldAttention(approval.missing, fields, issues),
+    aliasText: aliasToLearn(approval, fields),
+    saveAlias,
+    setSaveAlias,
   }
 }

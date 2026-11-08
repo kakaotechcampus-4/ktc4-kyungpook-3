@@ -23,6 +23,9 @@ export interface ExtractionItemDto {
   approval_id: string | null
   /** 연결된 승인 요청의 지금 상태(pending | approved | rejected). 승인 요청이 없으면 null */
   approval_status: string | null
+  /** 연결된 생성 승인의 `alias_candidate`·`alias_text` 와 같은 값이다 (#523) */
+  alias_candidate: boolean
+  alias_text: string | null
 }
 /** `POST /extractions/{extraction_id}/items/{item_id}/revert` 응답. 새 생성 승인은 pending 이다 */
 export interface ExtractionItemRevertDto {

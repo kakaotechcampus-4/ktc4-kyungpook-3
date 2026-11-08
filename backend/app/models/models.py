@@ -418,6 +418,9 @@ class Meeting(Base):
     processing_stage_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # stt 단계의 전사 진행(끝낸 조각 수 / 전체 조각 수). stt 단계에서 알렸을 때만 값이 있고 그 밖에는 NULL 이다
+    processing_stt_done: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    processing_stt_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     extractions: Mapped[list["Extraction"]] = relationship(
         back_populates="meeting", cascade="all, delete-orphan"
@@ -524,6 +527,8 @@ class ExtractionAction(StrEnum):
 
     CREATE = "create"
     UPDATE = "update"
+    # 승인 대기 중인 task_create 카드에 합쳐진 항목. 새 task 도 수정도 아니다
+    MERGE = "merge"
 
 
 class ExtractionPath(StrEnum):
@@ -887,6 +892,25 @@ class ThreadMessage(Base):
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     thread: Mapped["MessageThread"] = relationship()
+
+
+class MessageThreadRead(Base):
+    """대화마다 사람(팀원·PM)이 어디까지 읽었는지 기록한다. 읽지 않은 메시지 수의 기준이 된다.
+
+    대화 하나를 PM 여럿이 볼 수 있어 읽은 위치는 (대화, 사람) 쌍마다 따로 둔다.
+    행이 없으면 아직 한 번도 열지 않은 것이다.
+    """
+
+    __tablename__ = "message_thread_read"
+
+    thread_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("message_thread.thread_id", ondelete="CASCADE"), primary_key=True
+    )
+    member_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("member.member_id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    last_read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 
 class ReplyJudgmentState(StrEnum):

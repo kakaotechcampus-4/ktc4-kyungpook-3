@@ -60,6 +60,7 @@ const createOverridesSchema = z.object({
 const updateOverridesSchema = z.object({
   status: z.enum(['todo', 'in_progress', 'blocked', 'done']).optional(),
   due_date: z.string().nullable().optional(),
+  assignee_member_id: z.string().nullable().optional(),
 })
 
 function storedCreateOverrides(value: unknown) {
@@ -83,7 +84,24 @@ function storedUpdateOverrides(value: unknown) {
   return {
     ...(parsed.status !== undefined ? { status: parsed.status } : {}),
     ...(parsed.due_date !== undefined ? { dueDate: parsed.due_date } : {}),
+    ...(parsed.assignee_member_id !== undefined
+      ? { assigneeMemberId: parsed.assignee_member_id }
+      : {}),
   }
+}
+
+/**
+ * 답장이 말한 담당자를 팀원에서 찾지 못한 카드 (BE #460). 분류는 보지 않는다 — 상태와 담당자가 섞인 카드는
+ * 분류가 첫 줄을 따라 다른 값이 된다
+ */
+function assigneePick(payload: Record<string, unknown>): { raw: string } | null {
+  const raw = text(payload.assignee_raw)
+  return text(payload.reply_message_id) !== null &&
+    !Object.hasOwn(payload, 'assignee_member_id') &&
+    raw !== null &&
+    raw.trim() !== ''
+    ? { raw }
+    : null
 }
 
 /** 근거: docs/impl-decision/2026-09-18-nullable-extraction-evidence.md */
@@ -127,6 +145,10 @@ export function toApproval(dto: ApprovalDto): Approval {
       meetingId: text(payload.meeting_id),
       extractionItemId: text(payload.extraction_item_id),
       gate,
+      aliasCandidate:
+        dto.alias_candidate === true && typeof dto.alias_text === 'string' && dto.alias_text.trim()
+          ? dto.alias_text
+          : null,
     }
   }
   // 대상 태스크 이름은 `task_title`(없으면 제안 때 본 `base_title`)이다. `title` 은 바꿀 제목이라 이름으로 쓰지 않는다
@@ -148,6 +170,7 @@ export function toApproval(dto: ApprovalDto): Approval {
       meetingId: text(payload.meeting_id),
       replyMessageId:
         payload.change_source === 'reminder_reply' ? text(payload.reply_message_id) : null,
+      assigneePick: assigneePick(payload),
     }
   return { ...base, kind: 'unsupported', type: dto.type }
 }
@@ -165,8 +188,12 @@ export function toApprovalResolveRequestDto(
       body.task_overrides = {
         ...(edits.status !== undefined ? { status: edits.status } : {}),
         ...(edits.dueDate !== undefined ? { due_date: edits.dueDate } : {}),
+        ...(edits.assigneeMemberId !== undefined
+          ? { assignee_member_id: edits.assigneeMemberId }
+          : {}),
       }
   } else {
+    if (resolution.saveAlias) body.save_alias = true
     const edits = resolution.taskOverrides
     if (edits)
       body.task_overrides = {
