@@ -322,6 +322,38 @@ def test_a_refused_start_retries_every_five_minutes_and_says_so_once(tmp_path, r
     assert ticks(fo, clock, 900, until=lambda: fo.phase is Phase.ON_GPU)
 
 
+def test_elice_succeeding_after_the_hold_while_the_server_is_still_off_stops_the_start(tmp_path):
+    """용량 부족으로 켜기가 미뤄지는 동안 기다림이 풀려 Elice 실제 호출이 성공한다. 용량이 풀려도 켜지 않는다."""
+    fo, elice, gpu, switch, clock, notes = make(tmp_path)
+    switch.refuse = "capacity"
+    fail_elice(fo, elice, 6)
+    fo.tick()
+    assert ticks(fo, clock, 300, until=lambda: fo.phase is Phase.STARTING)
+    ticks(fo, clock, LIMITS.hold_s + 60)
+    assert fo.phase is Phase.STARTING and route_of(fo.state, clock()) is Route.ELICE
+    elice.mode = "ok"
+    assert call(fo, prompt="동우님.") == "안녕하세요"
+    fo.tick()
+    assert (fo.phase, fo.state.why) == (Phase.NORMAL, "elice_ok")
+    assert "켜기를 그만둡니다" in notes[-1].text
+    switch.refuse = None
+    ticks(fo, clock, 900)
+    assert switch.starts == 0 and elice.prompts[-1] == "동우님."
+
+
+def test_elice_succeeding_after_the_hold_while_the_server_boots_keeps_the_start(tmp_path):
+    fo, elice, gpu, switch, clock, notes = make(tmp_path)
+    switch.boot_s = LIMITS.hold_s + 600                # 기다림이 풀린 뒤에도 켜는 중이다
+    fail_elice(fo, elice, 6)
+    fo.tick()
+    assert ticks(fo, clock, LIMITS.hold_s + 300, until=lambda: fo.state.hold_until is None)
+    assert switch.state == "starting"
+    elice.mode = "ok"
+    call(fo)
+    assert ticks(fo, clock, 900, until=lambda: fo.phase is Phase.ON_GPU)
+    assert switch.starts == 1
+
+
 def test_a_server_without_ready_halts(tmp_path):
     fo, elice, gpu, switch, clock, notes = make(tmp_path)
     switch.refuse = "not_ready"

@@ -8,7 +8,8 @@ gpu-request 로 받는다(python -m capture.worker --gpu, 디스코드 /gpu).
 단계
   NORMAL    Elice 로 보낸다. 실제 호출이 연속 6번 실패(SttError.cause 가 service 나 auth)하면 SUSPECT
   SUSPECT   호출을 기다리게 하고 Elice 를 60초 간격으로 확인한다. 3번 연속 실패면 STARTING, 한 번 성공이면 NORMAL
-  STARTING  서버가 준비될 때까지 스위치 on 을 tick 마다 보낸다(멱등). 호출은 기다린다
+  STARTING  서버가 준비될 때까지 스위치 on 을 tick 마다 보낸다(멱등). 호출은 기다린다. 기다림이 풀린 뒤 서버가 켜지기 전에
+            Elice 실제 호출이 성공하면 NORMAL
   ON_GPU    GPU 로 보낸다. 이름·문맥 프롬프트는 싣지 않는다. Elice 는 5분마다 확인한다. 장애마다 처음 넘길 때 포기한 회의를 깨운다
   STOPPING  스위치 off. 이유가 idle 이고 마지막 Elice 확인이 실패였으면 호출은 기다린다
   PARKED    꺼졌는데 Elice 가 실제 묶음까지 되는지는 모른다. 첫 실제 성공에 NORMAL, 실제 실패 3번이면 바로 켠다
@@ -234,6 +235,13 @@ def _gpu_fails_here(s: FailoverState, sig: Signals) -> int:
     return min(sig.gpu_streak, sig.gpu_fails - s.mark.gpu_fails)
 
 
+def _elice_back_before_on(s: FailoverState, sig: Signals) -> bool:
+    """기다림이 풀린 STARTING 에서 Elice 실제 호출이 성공했고, 마지막 스위치 응답이 꺼짐이다. 켜기를 그만둔다.
+    스위치가 응답하지 않는 동안은 보낸 on 이 서버를 켰는지 몰라 그만두지 않는다."""
+    return (s.hold_until is None and _oks_here(s, sig) > 0 and s.switch_down_since is None
+            and s.server is not None and s.server.state == "off")
+
+
 def _enter(s: FailoverState, phase: Phase, why: str, f: Facts, **kw) -> FailoverState:
     fresh = dict(phase=phase, why=why, since=f.now, mark=f.signals, probe_fails=0,
                  elice_ok=0, next_probe_at=None, next_gpu_probe_at=None, retry_at=None, refused=None,
@@ -397,8 +405,12 @@ def _starting(s, f, L, out, closed):
         s = replace(s, retry_at=f.now + L.switch_retry_s, switch_down_since=down)
     elif v is not None:
         s = replace(s, switch_down_since=None)
+    if _elice_back_before_on(s, f.signals):
+        out.append(Notice("✅ 서버가 켜지기 전에 Elice 실제 전사가 성공해 GPU 서버 켜기를 그만둡니다. 평소대로 돌아갑니다."))
+        return _enter(s, Phase.NORMAL, "elice_ok", f)
     if s.hold_until is not None and f.now >= s.hold_until:
-        out.append(Notice("⚠️ 기다림 상한이 지나 기다리던 전사를 Elice 로 보냅니다. 켜기는 계속합니다."))
+        out.append(Notice("⚠️ 기다림 상한이 지나 기다리던 전사를 Elice 로 보냅니다. 켜기는 계속하고, "
+                          "서버가 켜지기 전에 Elice 전사가 성공하면 켜기를 그만둡니다."))
         s = replace(s, hold_until=None)
     return s
 
@@ -522,7 +534,8 @@ def plan(s: FailoverState, sig: Signals, now: float, L: Limits = LIMITS) -> froz
         if s.discard is not None and server is not None and server.live and server.launched_at == s.discard:
             io.add(Io.SWITCH_OFF)
         else:
-            if (s.retry_at is None or now >= s.retry_at) and not _new_boot_blocked(s, now, L):
+            if ((s.retry_at is None or now >= s.retry_at) and not _new_boot_blocked(s, now, L)
+                    and not _elice_back_before_on(s, sig)):
                 io.add(Io.SWITCH_ON)
             if server is not None and server.state == "running":
                 io.add(Io.CHECK_GPU)
