@@ -29,7 +29,7 @@
 ## 검증
 
 - 새 테스트(`--maxWorkers=1`): `messageSignals.test.ts` 24개, `messageSocket.test.ts` 6개, `messagesSignals.test.tsx` 9개 통과. 일부러 코드를 깨면 해당 테스트가 실패하는 것도 봤다.
-- 영향받는 기존 메시지·알림·앱 테스트 묶음을 돌려 모두 통과했다. 전체 결과는 차례제로 따로 돌린다.
+- 영향받는 기존 메시지·알림·앱 테스트 묶음을 돌려 모두 통과했다. 전체 검사(`ed1aeb90`): `npm run test -- --maxWorkers=1` 284개 파일 3661개 모두 통과, `npm run build` 통과. typecheck·lint 도 통과했다.
 - 브라우저(MSW 개발 서버, Chromium 1280): 메시지 화면에 소켓 하나, 다른 계정 글을 넣고 신호를 보내자 135ms 만에 대화에 보임(polling 30초 전), 1012 뒤 다시 붙음, 4401 뒤 다시 붙지 않음, 새로고침 뒤 다시 하나, 화면을 떠나면 닫힘, 소켓 관련 콘솔 오류·경고 없음. 7개 모두 통과했다. 스크립트와 로그는 git 에서 뺀 `frontend/.verify/558/` 에 있다.
 - Vite 프록시: 가짜 백엔드를 `API_PROXY_TARGET` 으로 두고 개발 서버를 띄웠다. 소켓 경로가 업그레이드(101)됐고, 백엔드가 받은 `Host`·`Origin` 이 둘 다 개발 서버 주소였다. 일반 `/api` 요청은 `Host` 가 백엔드 주소로 바뀌었다.
 
