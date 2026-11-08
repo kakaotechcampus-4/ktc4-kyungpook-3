@@ -29,6 +29,8 @@ const forgotPasswordPage = lazyPage(() =>
 const resetPasswordPage = lazyPage(() =>
   import('@/pages/reset-password').then((m) => m.ResetPasswordPage),
 )
+const termsPage = lazyPage(() => import('@/pages/policy').then((m) => m.TermsPage))
+const privacyPage = lazyPage(() => import('@/pages/policy').then((m) => m.PrivacyPage))
 const workspaceSelectPage = lazyPage(() =>
   import('@/pages/workspace-select').then((m) => m.WorkspaceSelectPage),
 )
@@ -122,6 +124,8 @@ export const appRoutes = (
     </Route>
     {/* 메일 링크는 로그인한 브라우저에서도 열린다. RedirectIfAuthed 안이면 워크스페이스로 옮겨져 버린다 (#356) */}
     <Route path="reset-password" element={screen(resetPasswordPage)} />
+    <Route path="terms" element={screen(termsPage)} />
+    <Route path="privacy" element={screen(privacyPage)} />
     <Route element={<RequireAuth />}>
       {/* 추적기 같은 로그인 뒤 전역 동작의 칸. path 가 없어 경로에는 끼지 않는다 */}
       <Route element={<AuthenticatedLayout />}>

@@ -43,6 +43,8 @@ function withOptionalId(base: string, id: string | undefined): string {
 
 export const paths = {
   landing: () => '/',
+  terms: () => '/terms',
+  privacy: () => '/privacy',
   /** `next` 를 주면 로그인 뒤 그 경로로 돌아간다 (#411) */
   login: (next?: string) =>
     next === undefined
