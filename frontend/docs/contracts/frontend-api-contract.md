@@ -1144,14 +1144,15 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 **FE가 정한 동작.** [FE 반영 방침](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/457#issuecomment-6690117714)은 감독 세션이 사용자 대신 정한 기본값이고 사용자 확인 전이다.
 
 - 서버 문구를 그대로 폼 상단 오류로 보인다. 다른 오류 문구의 해요체와 다르다. 남은 시간은 보이지 않는다. `retry_after_seconds`와 `Retry-After`는 읽지 않는다.
-- 로그인 화면의 「비밀번호를 잊으셨나요?」는 이 작업에서 켜지 않았다. #451(PR #458)이 켠다. 429 화면의 재설정 안내는 #554에서 다룬다.
+- 로그인 화면의 「비밀번호를 잊으셨나요?」는 이 작업에서 켜지 않았다. #451(PR #458)이 켰다.
+- 429 뒤 재설정 안내([#554](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/554), BE 요청). 서버 문구 뒤에 「비밀번호가 기억나지 않으면 재설정해 주세요.」를 붙이고, 같은 오류 패널 안에 `/forgot-password`로 가는 「비밀번호 재설정하기」 링크를 둔다. 계정이 잠겼다고 말하지 않고(가입 여부 노출 방지), 재설정하면 풀린다고 약속하지 않는다(IP 막힘은 재설정으로 풀리지 않는다). 남은 시간 표시와 재설정 화면 이메일 미리 채우기는 하지 않는다. 다른 오류(401 등)에는 붙이지 않는다.
 
 **현재 구현 (2026-11-07).**
 
-- 오류 코드: `TOO_MANY_LOGIN_ATTEMPTS`를 [오류 코드 목록](../../src/shared/api/errors.ts)과 [문구](../../src/shared/api/errorMessages.ts)에 더했다. [LoginForm](../../src/features/auth/ui/LoginForm.tsx)은 바꾸지 않았다. 401처럼 비필드 오류라 기존 경로로 폼 상단에 보인다. 서버의 같은 이름·상태 코드는 §1 「오류 코드」 아래에 적었다.
+- 오류 코드: `TOO_MANY_LOGIN_ATTEMPTS`를 [오류 코드 목록](../../src/shared/api/errors.ts)과 [문구](../../src/shared/api/errorMessages.ts)에 더했다. 401처럼 비필드 오류라 [LoginForm](../../src/features/auth/ui/LoginForm.tsx)의 폼 상단에 보인다. 2026-11-09(#554)부터 LoginForm이 이 코드일 때만 재설정 안내 문장과 링크를 붙인다. 서버의 같은 이름·상태 코드는 §1 「오류 코드」 아래에 적었다.
 - 재시도: [queryClient](../../src/shared/api/queryClient.ts)는 네트워크 오류·408·5xx만 다시 보내고 mutation은 다시 보내지 않는다. 429를 다시 보내지 않는 것은 기존 테스트가 확인한다.
 - MSW: [로그인 handler](../../src/shared/mock/handlers/auth.ts)가 BE처럼 앞뒤 공백을 지우고 소문자로 바꾼 이메일별로 실패를 센다. 첫 실패부터 15분 안에 10번째 실패는 401이고, 그 뒤 15분 동안은 맞는 비밀번호도 429이며 `retry_after_seconds`와 `Retry-After`를 같은 값으로 준다. 막히기 전에 첫 실패부터 15분이 지나면 횟수를 새로 센다. 성공하면 그 이메일의 횟수를 지우고, 재설정 confirm을 마쳐도 지운다. IP 제한은 흉내 내지 않는다. BE는 공인 IP만 세고 사설·루프백 주소는 세지 않아 로컬 개발 요청은 IP 제한에 닿지 않고, 모의 요청에는 클라이언트 IP도 없다. 시나리오 `login-rate-limited`는 `pm@example.com`이 이미 막힌 상태로 시작하고 남은 시간은 900초다.
-- 검증: Vitest(MSW handler 규칙, 로그인 화면 통합)와 MSW 모드 브라우저 확인. FE는 실서버 왕복을 확인하지 않았다.
+- 검증: Vitest(MSW handler 규칙, 로그인 화면 통합)와 MSW 모드 브라우저 확인. #554 안내는 `authFlow.test.tsx`(문장, 링크 이동, 401에는 없음)와 E2E `auth-limits.e2e.ts`로 확인한다. FE는 실서버 왕복을 확인하지 않았다.
 
 #### 4.1.4 가입 이메일 인증과 카카오 로그인 (#427): 코드 구현, 실제 로그인·메일 수신 미확인
 
