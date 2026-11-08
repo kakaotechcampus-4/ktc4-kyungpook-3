@@ -1,15 +1,20 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { getResponse, http } from 'msw'
+import { messageKeys } from '@/entities/message'
 import { advanceSessionGeneration } from '@/entities/user'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { reply } from '@/shared/mock/fixtures/message'
+import { handlers } from '@/shared/mock/handlers'
 import {
   closeMessageSockets,
   openMessageSockets,
   signalThreadUpdated,
 } from '@/shared/mock/handlers/messageSocket'
+import { server } from '@/shared/mock/server'
+import { deferred } from '@/shared/test/deferred'
 import { recordRequests } from '@/shared/test/requests'
 import type { RequestLog } from '@/shared/test/requests'
 import { conversation } from './test/messageScreen'
@@ -34,10 +39,41 @@ const messageGets = (log: RequestLog) =>
     ({ method, path }) => method === 'GET' && path.startsWith('/workspaces/ws_01/messages'),
   )
 
+const INBOX_PATH = '/workspaces/ws_01/messages'
+const THREAD_PATH = '/workspaces/ws_01/messages/threads/th_01'
+const getsTo = (log: RequestLog, path: string) =>
+  messageGets(log).filter((request) => request.path === path)
+
+/**
+ * 그 경로의 다음 GET 하나를 붙잡는다. 답은 요청을 받은 순간의 서버 상태다 — 풀기 전에 새 글이 생겨도 그 글이 없는 옛 답이다
+ */
+function holdSnapshot(path: string) {
+  const gate = deferred()
+  const taken = deferred()
+  server.use(
+    http.get(
+      `/api/v1${path}`,
+      async ({ request }) => {
+        const snapshot = await getResponse(handlers, request.clone())
+        taken.resolve()
+        await gate.promise
+        return snapshot
+      },
+      { once: true },
+    ),
+  )
+  return { taken: taken.promise, release: gate.resolve }
+}
+
 function threadOf(threadId: string) {
   const found = db.messageThreads.find(({ thread_id }) => thread_id === threadId)
   if (!found) throw new Error(`mock thread ${threadId} is missing`)
   return found
+}
+
+/** 신호 없이 db 에만 답장을 넣는다. 소켓이 없던 동안 쓰인 글이다 */
+function storeReply(threadId: string, body: string) {
+  threadOf(threadId).messages.push(reply('mg_90', body, MOCK_NOW, 'web'))
 }
 
 /** 이재환이 다른 기기에서 웹으로 답장했다. 모의 서버의 세션은 이 화면의 PM 하나라 답장은 db 에 직접 쓰고 신호를 보낸다 */
@@ -146,4 +182,96 @@ it('화면이 떠 있는 채 세션이 바뀌면 이전 세션의 연결을 닫�
   expect(openMessageSockets()).toEqual([])
   expect(messageGets(log)).toEqual([])
   expect(within(conversation()).queryByText(NEW_REPLY)).toBeNull()
+})
+
+describe('신호가 받는 중인 조회와 겹칠 때', () => {
+  const showsNewReply = () =>
+    waitFor(() => expect(within(conversation()).getByText(NEW_REPLY)).toBeVisible())
+
+  it('첫 조회를 받는 중에 신호가 오면, 신호 이전의 답이 와도 새 글을 다시 받아 보여 준다', async () => {
+    const inbox = holdSnapshot(INBOX_PATH)
+    const thread = holdSnapshot(THREAD_PATH)
+    const log = recordRequests()
+    renderApp(paths.messageThread('ws_01', 'th_01'))
+    await Promise.all([inbox.taken, thread.taken])
+    await waitFor(() => expect(openMessageSockets()).toHaveLength(1))
+
+    memberReplies('th_01', NEW_REPLY)
+    await pause(100)
+    inbox.release()
+    thread.release()
+
+    await showsNewReply()
+    expect(getsTo(log, THREAD_PATH).length).toBeGreaterThan(1)
+    expect(getsTo(log, INBOX_PATH).length).toBeGreaterThan(1)
+  })
+
+  it('첫 조회를 받는 중에 소켓이 열리면, 그 조회가 끝난 뒤 한 번 더 받는다', async () => {
+    const inbox = holdSnapshot(INBOX_PATH)
+    const thread = holdSnapshot(THREAD_PATH)
+    const log = recordRequests()
+    renderApp(paths.messageThread('ws_01', 'th_01'))
+    await Promise.all([inbox.taken, thread.taken])
+    await waitFor(() => expect(openMessageSockets()).toHaveLength(1))
+    await pause(100)
+    expect(getsTo(log, THREAD_PATH)).toHaveLength(1)
+
+    storeReply('th_01', NEW_REPLY)
+    inbox.release()
+    thread.release()
+
+    await showsNewReply()
+    expect(getsTo(log, THREAD_PATH)).toHaveLength(2)
+    expect(getsTo(log, INBOX_PATH)).toHaveLength(2)
+  })
+
+  it('끊긴 동안 시작한 조회가 다시 붙은 뒤에 끝나도, 끊긴 동안의 새 글을 받는다', async () => {
+    const app = await openThread()
+    await pause(100)
+    closeMessageSockets(1012)
+    await waitFor(() => expect(openMessageSockets()).toHaveLength(0))
+
+    const thread = holdSnapshot(THREAD_PATH)
+    const log = recordRequests()
+    void app.queryClient.invalidateQueries({ queryKey: messageKeys('ws_01') })
+    await thread.taken
+    storeReply('th_01', NEW_REPLY)
+    await waitFor(() => expect(openMessageSockets()).toHaveLength(1))
+    await pause(100)
+    thread.release()
+
+    await showsNewReply()
+    expect(getsTo(log, THREAD_PATH).length).toBeGreaterThan(1)
+  })
+
+  it('받는 중인 조회가 끝나기 전에 화면을 떠나면, 끝난 뒤 메시지를 다시 받지 않는다', async () => {
+    const thread = holdSnapshot(THREAD_PATH)
+    const app = renderApp(paths.messageThread('ws_01', 'th_01'))
+    await thread.taken
+    await waitFor(() => expect(openMessageSockets()).toHaveLength(1))
+    await pause(100)
+
+    app.navigate(paths.dashboard('ws_01'))
+    await app.expectPath(paths.dashboard('ws_01'))
+    const log = recordRequests()
+    thread.release()
+    await pause(PAST_FIRST_RETRY_MS)
+
+    expect(messageGets(log)).toEqual([])
+  })
+
+  it('받는 중인 조회가 끝나기 전에 세션이 바뀌면, 끝난 뒤 메시지를 다시 받지 않는다', async () => {
+    const thread = holdSnapshot(THREAD_PATH)
+    renderApp(paths.messageThread('ws_01', 'th_01'))
+    await thread.taken
+    await waitFor(() => expect(openMessageSockets()).toHaveLength(1))
+    await pause(100)
+
+    const log = recordRequests()
+    act(() => advanceSessionGeneration())
+    thread.release()
+    await pause(PAST_FIRST_RETRY_MS)
+
+    expect(messageGets(log)).toEqual([])
+  })
 })
