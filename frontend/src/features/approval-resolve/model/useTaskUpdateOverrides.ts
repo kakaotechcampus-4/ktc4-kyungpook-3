@@ -18,10 +18,15 @@ export interface TaskUpdateOverrides {
   statusKeepsProposal: boolean
   /** PM 이 바꾼 칸만. 마감은 키가 없으면 원래 제안 유지, null 이면 미정으로 변경이다 */
   edits: TaskUpdateEdits
+  /** 담당자를 찾지 못한 답장 카드면 답장에 적힌 이름. 이때만 담당자 칸이 있다 */
+  assigneePick: TaskUpdateApproval['assigneePick']
+  /** 고른 담당자. undefined 는 아직 고르지 않음, null 은 미정이다 */
+  assignee: string | null | undefined
   dirty: boolean
   setStatus: (value: TaskStatus | '') => void
   /** '' 는 원래 제안 유지로 돌아가고, null 은 마감을 미정으로 바꾼다 */
   setDueDate: (value: string | null) => void
+  setAssignee: (value: string | null) => void
 }
 
 /** 변경 승인의 늘 열린 입력 칸 (#471). 만지지 않은 칸은 원래 제안을 그대로 둔다 */
@@ -39,6 +44,8 @@ export function useTaskUpdateOverrides(approval: TaskUpdateApproval): TaskUpdate
     proposedDue: initialDue,
     statusKeepsProposal: initialStatus === null,
     edits,
+    assigneePick: approval.assigneePick,
+    assignee: edits.assigneeMemberId,
     dirty: Object.keys(edits).length > 0,
     setStatus: (value) =>
       setEdits((previous) => {
@@ -56,5 +63,6 @@ export function useTaskUpdateOverrides(approval: TaskUpdateApproval): TaskUpdate
         return next
       })
     },
+    setAssignee: (value) => setEdits((previous) => ({ ...previous, assigneeMemberId: value })),
   }
 }

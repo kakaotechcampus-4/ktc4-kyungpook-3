@@ -8,6 +8,7 @@ import type { Task } from '@/entities/task'
 import { TASK_STATUS_LABEL, isOverdue } from '@/entities/task'
 import { FILL_IN_ARRIVAL } from '@/features/approval-resolve'
 import { paths } from '@/shared/config/routes'
+import { objectParticle } from '@/shared/lib/korean'
 import { seoulDateOf } from '@/shared/lib/date'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
@@ -22,7 +23,6 @@ import {
   dueSoonTasks,
   durationLabel,
   monthDayLabel,
-  objectParticle,
   shortDate,
   taskCounts,
   waitingApprovals,

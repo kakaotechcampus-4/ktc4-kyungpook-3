@@ -6,6 +6,7 @@ STT 가 잘못 받아 적은 "화은이가")을 그 멤버의 별칭으로 저�
 승인 응답에 후보를 채우려고 DB 를 읽는 함수(approval_alias_texts·taken_alias_texts), 승인하며
 별칭을 저장하는 함수(learn_alias)가 함께 있다. 요청 처리 흐름과 권한 확인은 API 쪽이 맡는다.
 """
+import json
 import logging
 import re
 from collections.abc import Collection, Iterable, Sequence
@@ -26,6 +27,7 @@ from app.models import (
     MemberAlias,
 )
 from app.services.matching import name_candidates
+from app.services.pending_merge import assignee_item_of
 
 logger = logging.getLogger(__name__)
 
@@ -104,12 +106,12 @@ def storable_assignee_type(value: str | None) -> str | None:
 def learnable_alias_text(item: ExtractionItem) -> str | None:
     """이 항목의 담당자 표현을 별칭으로 배울 수 있으면 저장될 글자, 아니면 None.
 
-    새 task 를 만드는 항목인데 담당자를 못 찾았고, 표현이 이름 지목일 때만 대상이다(LEARNABLE_ASSIGNEE_TYPES).
+    새 task 를 만들거나 대기 카드에 합쳐지는 항목인데 담당자를 못 찾았고, 표현이 이름 지목일 때만 대상이다(LEARNABLE_ASSIGNEE_TYPES).
     1인칭이 주어로 쓰인 꼴(_SELF_REFERENCE)로 다듬어지면 AI 오분류로 보고 대상이 아니다. 승인 상태는 보지 않는다.
     pending 인지는 호출하는 쪽이 이미 가진 승인 상태로 거른다.
     """
     if (
-        item.action != ExtractionAction.CREATE
+        item.action not in (ExtractionAction.CREATE, ExtractionAction.MERGE)
         or item.assignee_member_id is not None
         or item.assignee_type not in LEARNABLE_ASSIGNEE_TYPES
     ):
@@ -153,21 +155,39 @@ def learnable_alias_texts(
     return {item_id: text for item_id, (text, forms) in candidates.items() if not (forms & held)}
 
 
+def card_assignee_item(payload: str | None) -> str | None:
+    """카드 payload(JSON 글자)에서 담당자를 정한 항목 id. 읽을 수 없으면 None.
+
+    승인 때 저장하는 쪽(approvals._apply_approval)과 같은 규칙(assignee_item_of)이라 보이는 후보가 저장될 글자와 같다.
+    합쳐진 카드는 여러 항목이 연결되는데 별칭은 담당자를 정한 항목에서만 배우므로, 후보도 그 항목만 낸다.
+    """
+    try:
+        data = json.loads(payload) if payload else None
+    except (TypeError, ValueError):
+        return None
+    return assignee_item_of(data) if isinstance(data, dict) else None
+
+
 def approval_alias_texts(db: Session, approvals: Sequence[ApprovalRequest]) -> dict[str, str]:
     """pending 생성 승인 중 별칭을 배울 수 있는 것의 {approval_id: 저장될 글자}.
 
     승인 목록 응답에 alias_candidate 를 채우려고 쓴다. 항목은 approval_id 로 한 번에 읽어 승인마다 쿼리하지 않는다.
     """
-    workspace_of = {
-        a.approval_id: a.workspace_id
-        for a in approvals
+    pending = [
+        a for a in approvals
         if a.status == str(ApprovalStatus.PENDING) and a.type == str(ApprovalType.TASK_CREATE)
-    }
+    ]
+    workspace_of = {a.approval_id: a.workspace_id for a in pending}
     if not workspace_of:
         return {}
-    items = db.execute(
-        select(ExtractionItem).where(ExtractionItem.approval_id.in_(list(workspace_of)))
-    ).scalars().all()
+    assignee_item_of_card = {a.approval_id: card_assignee_item(a.payload) for a in pending}
+    # 합쳐진 카드에 연결된 다른 항목의 표현은 저장되지 않으므로 담당 항목만 후보로 남긴다
+    items = [
+        item for item in db.execute(
+            select(ExtractionItem).where(ExtractionItem.approval_id.in_(list(workspace_of)))
+        ).scalars()
+        if item.item_id == assignee_item_of_card[item.approval_id]
+    ]
     # 워크스페이스마다 한 번씩만 조회한다
     items_by_workspace: dict[str, list[ExtractionItem]] = {}
     for item in items:
