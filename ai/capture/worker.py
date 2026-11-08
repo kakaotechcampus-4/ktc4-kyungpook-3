@@ -34,7 +34,8 @@ from pathlib import Path
 from capture.handoff import from_env as handoff_from_env
 from capture.judge_path import extract_path
 from capture.notify import FileOutbox, MeetingReporter, debug_from_env
-from capture.recorder import STATUS_SOURCED, Claims, backend_from_env, build_extractor, recover_pass, save_manifest
+from capture.recorder import (STATUS_SOURCED, Claims, backend_from_env, build_extractor, prune_audio, recover_pass,
+                              save_manifest)
 from shared.config import RECORDINGS_DIR, TRANSCRIPTS_DIR
 from shared.schemas import now_iso
 from upload.assign import assign_one
@@ -253,6 +254,17 @@ class Worker:
             if progress is not None:
                 print(f"[worker] 업로드 {progress.meeting_id} {progress.event}", flush=True)
 
+    async def _prune_audio(self) -> None:
+        """보관 기한이 지난 회의 음성(트랙 wav)을 지운다(#561). 인계가 끝난 회의는 바로, 포기한 회의는 7일 뒤다.
+        실패해도 로그만 남기고 바퀴는 계속 돈다."""
+        try:
+            dropped = await asyncio.to_thread(prune_audio, self.recordings_dir)
+        except Exception as e:  # noqa: BLE001 - 음성 정리는 곁가지다. 다음 바퀴에 다시 한다
+            print(f"[worker] 음성 정리 오류: {type(e).__name__}: {e}", flush=True)
+            return
+        for session in dropped:
+            print(f"[worker] 세션 {session} 음성 삭제", flush=True)
+
     def _wakes(self) -> list[Path]:
         d = worker_dir(self.recordings_dir)
         return sorted(d.glob("wake-*")) if d.is_dir() else []
@@ -278,6 +290,7 @@ class Worker:
                         break
                     wake.unlink(missing_ok=True)
                     await self.run_pass(guild_id=wake.name[len("wake-"):], manual=True)
+                await self._prune_audio()
                 await self._intake_once()
                 await self._nap()
         finally:

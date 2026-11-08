@@ -178,8 +178,9 @@ async def test_the_heartbeat_stays_fresh_while_a_long_meeting_is_processed(tmp_p
 async def test_a_wake_request_runs_a_manual_pass_for_that_server_at_once(tmp_path):
     """--retry 가 깨우면 그 서버의 회의를 포기한 것까지 바로 돈다(manual)."""
     rec, gave_up, _ = _session(tmp_path, ts=500)
+    recent = R._iso(datetime.now(timezone.utc) - timedelta(hours=1))   # 7일이 지나면 음성이 지워져 다시 돌 수 없다(#561)
     _edit(gave_up, status="failed", failed_stage="stt",
-          recovery={"attempts": 5, "gave_up_at": "2026-09-26T00:00:00+00:00", "failed_stage": "stt"})
+          recovery={"attempts": 5, "gave_up_at": recent, "failed_stage": "stt"})
     worker = _worker(tmp_path)                                     # 다음 바퀴는 한 시간 뒤
     task = asyncio.create_task(worker.run())
     await asyncio.sleep(0.2)
@@ -977,3 +978,25 @@ async def test_an_upload_ended_in_be_is_dropped_by_the_pass_and_logged_without_a
     assert await w.run_pass() == ([], [])
     assert "끝난 회의" in capsys.readouterr().out
     assert not any(p.endswith("/fail") for _, p, _ in fake.calls)
+
+
+async def test_each_lap_drops_audio_of_handed_off_meetings(tmp_path):
+    """인계가 끝난 회의의 트랙 wav 는 다음 바퀴에 지운다(#561). 대본은 남는다."""
+    rec = tmp_path / "recordings"
+    (rec / "g_1").mkdir(parents=True)
+    (rec / "g_1" / "1_1.wav").write_bytes(b"RIFF")
+    (rec / "g_1" / "transcript.md").write_text("대본", encoding="utf-8")
+    R.save_manifest(R.manifest_path(rec, "g_1"), {"session": "g_1", "status": R.STATUS_HANDED_OFF, "meeting_dir": "g_1",
+                                                  "speakers": [{"user_id": "1", "file": "g_1/1_1.wav"}]})
+    w = _worker(tmp_path)
+    assert await _laps(w, 1) == 1
+    assert not (rec / "g_1" / "1_1.wav").exists()
+    assert (rec / "g_1" / "transcript.md").exists()
+
+
+async def test_audio_pruning_error_does_not_stop_the_worker(tmp_path, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("disk")
+    monkeypatch.setattr(W, "prune_audio", boom)
+    w = _worker(tmp_path, interval_s=0.05)
+    assert await _laps(w, 2) == 2

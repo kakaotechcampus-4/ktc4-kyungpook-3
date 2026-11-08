@@ -485,6 +485,61 @@ def drop_transcripts(transcripts_dir: Path, manifest: dict) -> None:
                 f.unlink(missing_ok=True)
 
 
+AUDIO_KEEP_AFTER_GIVE_UP_S = 7 * 86400   # 처리를 포기한 회의의 음성을 이만큼 두어 --retry 로 다시 돌릴 수 있게 한다(#561)
+
+
+def _track_files(recordings_dir: Path, manifest: dict) -> list[Path]:
+    """매니페스트 speakers[].file 의 트랙 경로 가운데 지금 있는 것."""
+    out = []
+    for e in manifest.get("speakers") or []:
+        if isinstance(e, dict) and e.get("file"):
+            p = recordings_dir / e["file"]
+            if p.is_file():
+                out.append(p)
+    return out
+
+
+def _audio_expired(recordings_dir: Path, path: Path, m: dict, now: datetime) -> bool:
+    """이 회의의 음성을 지울 때인가. 인계가 끝나 더 돌 일이 없으면 바로, 처리를 포기했으면 포기 7일 뒤다.
+    자동 복구가 생기기 전의 실패(recovery 없는 failed)는 포기 시각이 없어 매니페스트를 마지막으로 쓴 시각부터 센다."""
+    if m.get("status") == STATUS_HANDED_OFF:
+        return not _is_pending(recordings_dir, m)   # partial 재전사가 남은 디스코드 회의는 트랙이 더 필요하다
+    state = m.get("recovery")
+    if isinstance(state, dict) and state.get("gave_up_at"):
+        try:
+            since = _parse_time(state["gave_up_at"])
+        except (TypeError, ValueError):
+            return False
+    elif state is None and m.get("status") == STATUS_FAILED:
+        since = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+    else:
+        return False
+    return now >= since + timedelta(seconds=AUDIO_KEEP_AFTER_GIVE_UP_S)
+
+
+def prune_audio(recordings_dir: Path, *, now: datetime | None = None) -> list[str]:
+    """음성 보관 기한이 지난 회의의 트랙 wav 를 지우고 그 회의 목록을 돌려준다(#561, #360 결정).
+
+    트랙 wav(speakers[].file)만 지운다. 매니페스트·대본·처리 기록·diarization.json 은 남긴다. 잠긴 회의는 건너뛴다.
+    워커가 바퀴마다 부르므로 인계 직후 회의와 예전에 인계가 끝난 회의를 같이 쓴다. 예외는 올리지 않는다."""
+    now = now or utcnow()
+    dropped = []
+    for path in sorted(Path(recordings_dir).glob("session_*.json")):
+        try:
+            m = _load(path)
+            if not isinstance(m, dict):
+                continue
+            files = _track_files(recordings_dir, m)
+            if not files or not _audio_expired(recordings_dir, path, m, now) or is_locked(path):
+                continue
+            for f in files:
+                f.unlink(missing_ok=True)
+            dropped.append(str(m.get("session")))
+        except Exception as e:  # noqa: BLE001 - 한 회의의 정리 실패가 바퀴를 멈추지 않는다. 다음 바퀴에 다시 본다
+            print(f"[audio] {path.name} 음성 정리 실패(다음에 다시 한다): {type(e).__name__}: {e}", flush=True)
+    return dropped
+
+
 def _resume_mapped(recordings_dir: Path, meeting_id: str) -> bool:
     """지정 받기(upload.assign)가 이 업로드의 resume.state 를 mapped 로 닫았는가. 기록이 없거나 깨졌으면 False.
     resuming 인 동안 처리를 시작하면 assign 의 재시도(ended·failing)가 같은 회의의 로컬을 지울 수 있다."""

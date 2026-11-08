@@ -1,0 +1,112 @@
+"""회의 음성 보관(#561). 인계가 끝나 더 돌 일이 없는 회의의 트랙 wav 는 바로, 처리를 포기한 회의의 트랙 wav 는
+포기 7일 뒤 지운다. 매니페스트·대본·처리 기록은 남기고, 진행 중·잠긴 회의는 지우지 않는다."""
+
+import os
+from datetime import datetime, timedelta, timezone
+
+from capture import recorder as R
+
+NOW = datetime(2026, 11, 8, 3, 0, 0, tzinfo=timezone.utc)
+
+
+def _meeting(rec, session, *, status, **extra):
+    """트랙 두 개와 대본 하나가 있는 회의를 만든다. 매니페스트 경로를 돌려준다."""
+    mdir = rec / session
+    mdir.mkdir(parents=True)
+    speakers = []
+    for uid in ("1", "2"):
+        (mdir / f"{uid}_1.wav").write_bytes(b"RIFF")
+        speakers.append({"user_id": uid, "display_name": uid, "file": f"{session}/{uid}_1.wav"})
+    (mdir / "transcript.md").write_text("대본", encoding="utf-8")
+    path = R.manifest_path(rec, session)
+    R.save_manifest(path, {"session": session, "status": status, "meeting_dir": session, "speakers": speakers, **extra})
+    return path
+
+
+def _wavs(rec, session):
+    return sorted(p.name for p in (rec / session).glob("*.wav"))
+
+
+def test_handed_off_tracks_are_dropped_and_the_rest_stays(tmp_path):
+    rec = tmp_path / "recordings"
+    path = _meeting(rec, "g_1", status=R.STATUS_HANDED_OFF)
+    assert R.prune_audio(rec, now=NOW) == ["g_1"]
+    assert _wavs(rec, "g_1") == []
+    assert (rec / "g_1" / "transcript.md").exists()
+    assert path.exists()
+
+
+def test_handed_off_upload_tracks_are_dropped_right_away(tmp_path):
+    rec = tmp_path / "recordings"
+    _meeting(rec, "upload_m1", status=R.STATUS_HANDED_OFF, source="upload", be={"meeting_id": "m1", "status": "done"},
+             stages={"handed_off": R._iso(NOW)})
+    assert R.prune_audio(rec, now=NOW) == ["upload_m1"]
+    assert _wavs(rec, "upload_m1") == []
+
+
+def test_partial_meeting_with_retries_left_keeps_its_tracks(tmp_path):
+    rec = tmp_path / "recordings"
+    _meeting(rec, "g_1", status=R.STATUS_HANDED_OFF, partial=True, retry_runs=0)
+    assert R.prune_audio(rec, now=NOW) == []
+    assert len(_wavs(rec, "g_1")) == 2
+
+
+def test_meetings_in_progress_keep_their_tracks(tmp_path):
+    rec = tmp_path / "recordings"
+    for i, status in enumerate((R.STATUS_RECORDING, R.STATUS_SAVED, R.STATUS_TRANSCRIBED, R.STATUS_PARTIAL,
+                                R.STATUS_SOURCED, R.STATUS_EXTRACTED, R.STATUS_FAILED, R.STATUS_DIARIZED)):
+        _meeting(rec, f"g_{i}", status=status, recovery={"attempts": 1, "next_at": R._iso(NOW)})
+    assert R.prune_audio(rec, now=NOW) == []
+    assert all(len(_wavs(rec, f"g_{i}")) == 2 for i in range(8))
+
+
+def test_given_up_tracks_stay_seven_days(tmp_path):
+    rec = tmp_path / "recordings"
+    six = R._iso(NOW - timedelta(days=6))
+    eight = R._iso(NOW - timedelta(days=8))
+    _meeting(rec, "g_6", status=R.STATUS_FAILED, recovery={"attempts": 5, "gave_up_at": six})
+    _meeting(rec, "g_8", status=R.STATUS_FAILED, recovery={"attempts": 5, "gave_up_at": eight})
+    assert R.prune_audio(rec, now=NOW) == ["g_8"]
+    assert len(_wavs(rec, "g_6")) == 2
+    assert _wavs(rec, "g_8") == []
+    assert (rec / "g_8" / "transcript.md").exists()
+
+
+def test_old_failure_without_recovery_uses_the_manifest_time(tmp_path):
+    """자동 복구가 생기기 전의 실패(recovery 없음)는 포기 시각이 없어 매니페스트를 마지막으로 쓴 시각부터 센다."""
+    rec = tmp_path / "recordings"
+    old = _meeting(rec, "g_old", status=R.STATUS_FAILED)
+    new = _meeting(rec, "g_new", status=R.STATUS_FAILED)
+    t = (NOW - timedelta(days=8)).timestamp()
+    os.utime(old, (t, t))
+    os.utime(new, (NOW.timestamp(), NOW.timestamp()))
+    assert R.prune_audio(rec, now=NOW) == ["g_old"]
+    assert len(_wavs(rec, "g_new")) == 2
+
+
+def test_locked_meeting_is_skipped(tmp_path):
+    rec = tmp_path / "recordings"
+    path = _meeting(rec, "g_1", status=R.STATUS_HANDED_OFF)
+    lock = R.try_lock(path)
+    try:
+        assert R.prune_audio(rec, now=NOW) == []
+        assert len(_wavs(rec, "g_1")) == 2
+    finally:
+        lock.release()
+
+
+def test_already_pruned_meetings_are_not_reported_again(tmp_path):
+    rec = tmp_path / "recordings"
+    _meeting(rec, "g_1", status=R.STATUS_HANDED_OFF)
+    assert R.prune_audio(rec, now=NOW) == ["g_1"]
+    assert R.prune_audio(rec, now=NOW) == []
+
+
+def test_broken_manifest_and_bad_entries_do_not_raise(tmp_path):
+    rec = tmp_path / "recordings"
+    rec.mkdir()
+    (rec / "session_broken.json").write_text("{", encoding="utf-8")
+    R.save_manifest(R.manifest_path(rec, "odd"), {"session": "odd", "status": R.STATUS_HANDED_OFF,
+                                                  "speakers": [{"user_id": "1"}, "x"]})
+    _meeting(rec, "g_1", status=R.STATUS_HANDED_OFF)
+    assert R.prune_audio(rec, now=NOW) == ["g_1"]
