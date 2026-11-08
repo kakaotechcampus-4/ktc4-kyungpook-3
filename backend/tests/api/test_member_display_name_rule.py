@@ -118,7 +118,7 @@ def test_post_accepts_100_chars_after_strip(client, mseed):
     assert len(r.json()["data"]["display_name"]) == 100
 
 
-@pytest.mark.parametrize("name", ["👨\u200d👩\u200d👧", "김 도윤", "émile"])
+@pytest.mark.parametrize("name", ["👨\u200d👩\u200d👧", "김 도윤", "e\u0301mile"])
 def test_post_accepts_valid_unicode_names(client, mseed, name):
     assert _post(client, mseed["ws"], name).status_code == 201
 
