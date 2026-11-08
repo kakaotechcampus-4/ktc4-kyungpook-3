@@ -112,7 +112,7 @@
 ### `PATCH /meetings/{meeting_id}/fail` → 200
 
 - 요청: `{ "failed_stage": "stt" | "extract" | "handoff" … }` (서버는 문자열만 확인)
-- BE 도 같은 상태 전이로 멈춘 업로드 회의를 스스로 failed 로 바꾼다(sweeper, 아래 "웹 업로드 가져가기"). 이때 `failed_stage`는 `diarize`(처리 중에 멈춤) 또는 `speaker_assignment_expired`(화자 지정 기한 지남)다.
+- BE 도 같은 상태 전이로 멈춘 업로드 회의를 스스로 failed 로 바꾼다(sweeper, 아래 "웹 업로드 가져가기"). 이때 `failed_stage`는 `diarize`(처리 중에 멈춤), `speaker_assignment_expired`(화자 지정 기한 지남), `upload_unclaimed`(AI 가 24시간 동안 가져가지 않음) 중 하나다.
 - `data`: 회의 상세 모양 `{meeting_id, workspace_id, title, status: "failed", started_at, ended_at, extraction_id: null, failed_stage, progress, processing: null}`
 - `done`·`failed`가 아닌 회의만 조건부 UPDATE로 `failed`가 된다. 이미 끝났으면 409 `MEETING_ALREADY_ENDED`이고, 봇은 이를 "이미 처리됨"으로 넘어간다. 추출 등록이 먼저 `done`으로 바꾼 회의를 늦은 실패 요청이 덮지 않는다.
 
@@ -400,12 +400,12 @@ PM이 지정을 끝냈고(`speakers_assigned_at` 있음) 아직 다시 가져가
 
 - **녹음은 결과 보고 전에 받는다.** 추출 등록으로 `done`이 되거나 실패 보고로 `failed`가 되면 BE가 그 회의의 녹음 폴더를 바로 지운다.
 - 업로드 녹음에는 Discord uid가 없다. 화자 분리 없이 전사하면 발화의 `speaker`는 null이고, 회의록 참석자는 발화에서 만들므로 비어 보인다. 업로드 참석자는 지금 `meeting_upload.attendees` 에만 있고 회의록은 이를 읽지 않는다.
-- AI 가 없거나 처리 도중 멈추면 업로드 회의가 `processing`에 남아 그 워크스페이스의 업로드가 409 로 막힌다. AI가 가져간 회의는 BE sweeper가 정리한다(기본 5분마다, `UPLOAD_SWEEP_INTERVAL_SECONDS`가 0 이하면 sweeper가 돌지 않아 7일이 지나도 `failed`가 되지 않는다).
+- AI 가 없거나 처리 도중 멈추면 업로드 회의가 `processing`에 남아 그 워크스페이스의 업로드가 409 로 막힌다. AI가 가져간 회의와 24시간 동안 가져가지 않은 회의는 BE sweeper가 정리한다(기본 5분마다, `UPLOAD_SWEEP_INTERVAL_SECONDS`가 0 이하면 sweeper가 돌지 않아 7일이 지나도 `failed`가 되지 않는다).
   - `processing`이고 가져간 업로드: 가져간 시각·지정 시각·다시 가져간 시각·마지막 발화 저장 시각 중 가장 늦은 것에서 3시간이 지나면 `failed`(`failed_stage=diarize`). 지정 뒤에 멈춰도 같은 값이다. AI가 발화를 나눠 보내면 그때마다 3시간이 다시 시작된다.
   - `awaiting_speakers`: 라벨 보고 뒤 7일이 지나면 `failed`(`failed_stage=speaker_assignment_expired`). 3시간 규칙은 쓰지 않는다. 7일은 첫 라벨 보고가 성공한 시각(`speakers_reported_at`)부터 센다. sweeper 가 5분마다 돌아서 실제로 `failed`가 되는 때는 조금 늦을 수 있고, 서버가 멈춰 있었으면 더 늦다. 같은 내용 재전송은 이 시각을 바꾸지 않는다.
   - 정리하면 녹음 폴더를 지우고 그 워크스페이스의 업로드 막힘이 풀린다. pending으로 되돌리지 않는다(#288).
   - 정리된 뒤 AI는 `/fail`·라벨 보고·claim·resume에서 409 `MEETING_ALREADY_ENDED`(`details.status=failed`), 발화 저장에서 409 `MEETING_FAILED`, 원본 받기에서 404를 받는다. 다시 보내지 않고 로컬 파일을 지우고 끝낸다(#288).
-  - 아직 아무도 가져가지 않은 업로드는 정리하지 않는다. AI가 꺼져 있으면 그 공간의 업로드는 계속 409이고, `PATCH /meetings/{meeting_id}/fail`(서비스 토큰)로 풀 수 있다.
+  - `processing`이고 아직 아무도 가져가지 않은 업로드: 업로드 시각(`uploaded_at`)에서 24시간이 지나면 `failed`(`failed_stage=upload_unclaimed`, #563). 24시간은 잰 값이 아니라 초기값이다. 그 전에는 `PATCH /meetings/{meeting_id}/fail`(서비스 토큰)로 풀 수 있다. 후보를 고른 뒤 claim 이 먼저 오면 같은 조건을 다시 건 UPDATE 가 져서 회의는 그대로 처리된다.
   - 회의마다 조건부 UPDATE 한 번이라 AI 보고·PM 지정과 겹쳐도 한쪽만 이긴다. 다만 3시간 경계에서는 resume 200이나 발화 저장 201 직후 회의가 failed일 수 있다. resume은 회의 행을 잠그지 않고, 발화 저장 뒤 sweeper가 그 발화를 보지 못한 채 판정할 수 있어서다(resume 항목의 경합과 같다). 이어지는 발화 저장·추출 등록이 409로 막아 데이터는 깨지지 않는다.
 
 ### 업로드 회의 인계 규칙
