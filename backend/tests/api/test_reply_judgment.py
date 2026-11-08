@@ -193,6 +193,118 @@ def test_other_threads_are_not_held_back(mdb, mseed):
     assert {_claim()["message_id"], _claim()["message_id"]} == {alice.message_id, carol.message_id}
 
 
+# 판단 창
+
+def _unjudged(db):
+    return len(_notes(db, "reply_unjudged"))
+
+
+def test_claim_closes_a_reply_past_the_window_and_hands_out_the_next_in_the_same_thread(mdb, mseed, two):
+    first = _reply(mdb, mseed, AT, body="앞")
+    second = _reply(mdb, mseed, AT + MIN, body="뒤")
+    assert replies.claim(mdb, AT).message_id == first.message_id
+
+    item = replies.claim(mdb, AT + replies.JUDGE_WINDOW)
+
+    assert (item.message_id, item.attempt) == (second.message_id, 1)
+    mdb.expire_all()
+    assert mdb.get(ReplyJudgment, first.message_id).state == S.TIMED_OUT
+    assert _unjudged(mdb) == 1
+
+
+def test_repeated_unreported_judgments_are_claimed_at_most_four_times(mdb, mseed, two):
+    first = _reply(mdb, mseed, AT)
+    attempts = [replies.claim(mdb, AT + i * replies.JUDGE_LEASE).attempt for i in range(4)]
+    assert attempts == [1, 2, 3, 4]
+
+    assert replies.claim(mdb, AT + replies.JUDGE_WINDOW) is None
+    mdb.expire_all()
+    assert mdb.get(ReplyJudgment, first.message_id).state == S.TIMED_OUT
+    assert _unjudged(mdb) == 1
+
+
+def test_claim_closes_past_window_rows_without_a_scheduler_tick(mdb, mseed, two):
+    message = _reply(mdb, mseed, AT)
+
+    assert replies.claim(mdb, AT + replies.JUDGE_WINDOW + MIN) is None
+
+    mdb.expire_all()
+    row = mdb.get(ReplyJudgment, message.message_id)
+    assert (row.state, row.attempt) == (S.TIMED_OUT, 0)
+    assert _unjudged(mdb) == 1
+
+
+def test_a_picked_reply_gets_a_fresh_window_whatever_its_attempt(mdb, mseed, two):
+    a, _ = two
+    message = _reply(mdb, mseed, AT)
+    for i in range(4):
+        replies.claim(mdb, AT + i * replies.JUDGE_LEASE)
+    row = mdb.get(ReplyJudgment, message.message_id)
+    row.state = S.NEEDS_PM
+    mdb.commit()
+    later = AT + 30 * MIN
+    replies.attribute(mdb, mseed["ws"], message.message_id, a.task_id, later)
+    mdb.commit()
+
+    item = replies.claim(mdb, later + 9 * MIN)
+
+    assert (item.message_id, item.attempt) == (message.message_id, 5)
+    assert replies.claim(mdb, later + replies.JUDGE_WINDOW + MIN) is None
+    mdb.expire_all()
+    assert mdb.get(ReplyJudgment, message.message_id).state == S.TIMED_OUT
+
+
+def test_scheduler_expire_after_claim_closed_it_does_not_notify_twice(mdb, mseed, two):
+    _reply(mdb, mseed, AT)
+    now = AT + replies.JUDGE_WINDOW
+    assert replies.claim(mdb, now) is None
+    mdb.commit()
+
+    tick(mdb, now)
+
+    assert _unjudged(mdb) == 1
+
+
+def test_late_judgment_after_claim_closed_it_is_recorded_only(mdb, mseed, two):
+    a, _ = two
+    message = _reply(mdb, mseed, AT)
+    item = replies.claim(mdb, AT).model_dump(mode="json")
+    assert replies.claim(mdb, AT + replies.JUDGE_WINDOW) is None
+    mdb.commit()
+
+    _judge(item, _change(a, "status", "done", evidence="certain", claimed=item))
+
+    assert a.status == "in_progress"
+    assert _outcomes(mdb, item) == [("status", "recorded")]
+    assert _row(mdb, item).state == S.TIMED_OUT
+    assert _cards(mdb) == []
+    assert _notes(mdb) == []
+    assert _unjudged(mdb) == 1
+    assert message.message_id == item["message_id"]
+
+
+def test_a_failing_expire_does_not_stop_other_threads(mdb, mseed, monkeypatch):
+    a, b = mseed["tasks"][:2]
+    _remind(mdb, mseed, [a], SLOT)
+    _remind(mdb, mseed, [b], SLOT, who="carol")
+    alice = _reply(mdb, mseed, AT)
+    carol, _ = messages.ingest_discord_reply(
+        mdb, discord_user_id="d_carol", discord_message_id="c1", body="네", sent_at=AT + 5 * MIN, now=AT + 5 * MIN,
+    )
+    mdb.commit()
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("notify down")
+
+    monkeypatch.setattr(replies.notifications, "notify_pms", boom)
+
+    item = replies.claim(mdb, AT + replies.JUDGE_WINDOW)
+
+    assert item.message_id == carol.message_id
+    mdb.expire_all()
+    assert mdb.get(ReplyJudgment, alice.message_id).state == S.PENDING
+
+
 # 게이트
 
 def test_certain_status_change_is_applied_and_tells_pm(mdb, mseed, two):
