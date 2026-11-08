@@ -8,8 +8,11 @@ import type { Task } from '@/entities/task'
 import { TASK_STATUS_LABEL, isOverdue } from '@/entities/task'
 import { FILL_IN_ARRIVAL } from '@/features/approval-resolve'
 import { paths } from '@/shared/config/routes'
+import { objectParticle } from '@/shared/lib/korean'
 import { seoulDateOf } from '@/shared/lib/date'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { DeferredSkeleton, revealClass } from '@/shared/ui/deferred-skeleton'
 import { Icon } from '@/shared/ui/icon'
 import { Skeleton } from '@/shared/ui/skeleton'
 import {
@@ -20,7 +23,6 @@ import {
   dueSoonTasks,
   durationLabel,
   monthDayLabel,
-  objectParticle,
   shortDate,
   taskCounts,
   waitingApprovals,
@@ -40,32 +42,22 @@ import {
   SectionBody,
 } from './parts'
 import { RecentSection } from './RecentSection'
+import {
+  COLUMNS,
+  HEADER,
+  LEAD,
+  MAIN,
+  SIDE,
+  SUMMARY,
+  SUMMARY_ITEM,
+  SUMMARY_ITEM_ALERT,
+  SUMMARY_ITEM_PLAIN,
+  SUMMARY_LINK,
+  SUMMARY_VALUE,
+  TITLE,
+  TODAY,
+} from './frame'
 
-/* Main 시안 — main 패딩 48/48/72, 블록 사이 32px, 본문은 `1fr | 360px` 두 단(간격 68px).
-   폭 768px 미만은 PwaDashboard 시안(H-2) — 패딩 12/20, 블록 사이 22px, 한 단, 요약은 네 칸 카드다 */
-const MAIN =
-  'mx-auto flex w-full max-w-shell flex-1 flex-col gap-32 px-48 pt-48 pb-72 max-md:gap-22 max-md:px-20 max-md:pt-12 max-md:pb-32'
-const HEADER =
-  'flex items-end justify-between gap-24 max-md:flex-col max-md:items-start max-md:gap-6'
-const TITLE = 'text-[32px] leading-[1.4] font-bold tracking-h1 text-ink max-md:text-[24px]'
-const LEAD = 'text-body text-sub'
-const TODAY = 'text-caption text-dim tabular-nums'
-/* 휴대폰 요약 칸 수는 항목 수(PM 넷, 팀원 셋)를 따른다. 팀원 줄에 빈 칸이 남지 않는다 */
-const SUMMARY =
-  'flex flex-wrap items-baseline gap-36 pb-8 max-md:grid max-md:auto-cols-fr max-md:items-stretch max-md:grid-flow-col max-md:gap-8 max-md:pb-[0px]'
-const SUMMARY_ITEM =
-  'relative flex items-center gap-5 text-control text-sub max-md:flex-col max-md:items-start max-md:justify-between max-md:gap-2 max-md:rounded-12 max-md:px-10 max-md:pt-10 max-md:pb-12 max-md:text-[11px] max-md:leading-[1.45]'
-/* 휴대폰 칸 면. 기한 지남 칸은 지난 일이 있을 때 경고 면이다 (H-2). 두 면 클래스를 같이 붙이면 CSS 순서로 하나가 이겨 하나만 붙인다 */
-const SUMMARY_ITEM_PLAIN = 'max-md:bg-surface-sunken'
-const SUMMARY_ITEM_ALERT = 'max-md:bg-accent-badge max-md:text-accent'
-const SUMMARY_VALUE =
-  'text-[20px] leading-none font-semibold text-ink tabular-nums max-md:text-[22px] max-md:leading-[1.3] max-md:font-bold'
-/* 링크는 숫자에만 걸고 누르는 자리는 항목 전체로 넓힌다 — dt·dd 를 링크로 감쌀 수 없다.
-   밑줄은 긋지 않는다. 올리면 숫자만 옅어지고, 키보드 포커스는 전역 outline 이다 */
-const SUMMARY_LINK = 'hover:text-sub after:absolute after:inset-0'
-const COLUMNS =
-  'grid grid-cols-[minmax(0px,1fr)_360px] items-start gap-[68px] max-md:grid-cols-1 max-md:gap-22'
-const SIDE = 'flex flex-col gap-40 max-md:gap-22'
 const REVIEW_ROW = 'flex items-start gap-16 border-b border-line py-18 last:border-b-0'
 const REVIEW_TITLE = 'text-[15px] leading-[1.55] font-semibold text-ink'
 const DUE_ROW =
@@ -173,19 +165,27 @@ function headline(isPm: boolean, waiting: readonly Approval[] | null): string {
 
 /** 제목 아래 최근 처리 회의 안내 (D-063, D-065). 정보 문구라 링크가 아니다 */
 function MeetingLead({ data }: { data: DashboardData }) {
-  if (data.meetings.status === 'loading') return <Skeleton width={240} />
+  const indicator = useLoadingIndicator(data.meetings.status === 'loading')
+  if (data.meetings.status === 'loading' || indicator.pending)
+    return (
+      // 안내 줄(LEAD)과 같은 한 줄 높이 — 문구가 와도 아래 날짜·요약이 밀리지 않는다
+      <DeferredSkeleton indicator={indicator} className="flex h-lh items-center text-body">
+        <Skeleton width={240} />
+      </DeferredSkeleton>
+    )
+  const lead = [LEAD, revealClass(indicator)].filter(Boolean).join(' ')
   if (data.meetings.status === 'error')
-    return <p className={LEAD}>최근 회의 정보를 불러오지 못했어요</p>
+    return <p className={lead}>최근 회의 정보를 불러오지 못했어요</p>
   const meeting = data.recent
   if (meeting === null || meeting === undefined)
-    return <p className={LEAD}>아직 정리한 회의가 없어요</p>
+    return <p className={lead}>아직 정리한 회의가 없어요</p>
   const date = seoulDateOf(meeting.meeting.startedAt)
   const { title, source, durationMs } = meeting.meeting
   // 채팅 회의의 길이는 녹음 분량이 아니라 첫 메시지부터 마지막 메시지까지의 기간이라 쓰지 않는다 (#379)
   const duration =
     MEETING_SOURCE_TRAITS[source].timeAxis === 'recording' ? durationLabel(durationMs) : null
   return (
-    <p className={LEAD}>
+    <p className={lead}>
       {date === null ? '' : `${monthDayLabel(date)} `}
       {title}
       {objectParticle(title)} 정리했어요
@@ -267,24 +267,32 @@ function SummaryItem({
   value: number | undefined
   href: string
 }) {
+  const indicator = useLoadingIndicator(state === 'loading')
   let shown: ReactNode
-  if (state === 'error' || (state === 'ready' && value === undefined))
+  if (state === 'loading' || indicator.pending)
+    shown = (
+      <>
+        {/* 숫자 한 줄 높이 안에 앉는다 — 숫자가 와도 칸 높이가 그대로다 */}
+        <DeferredSkeleton indicator={indicator} className="flex h-lh items-center">
+          <Skeleton variant="block" width={18} height={18} />
+        </DeferredSkeleton>
+        <span className="sr-only">불러오는 중</span>
+      </>
+    )
+  else if (state === 'error' || value === undefined)
     shown = (
       <>
         <span aria-hidden="true">–</span>
         <span className="sr-only">불러오지 못했어요</span>
       </>
     )
-  else if (state === 'loading' || value === undefined)
-    shown = (
-      <>
-        <Skeleton variant="block" width={18} height={18} aria-hidden="true" />
-        <span className="sr-only">불러오는 중</span>
-      </>
-    )
   else
     shown = (
-      <GuardedLink to={href} aria-label={`${label} ${value}`} className={SUMMARY_LINK}>
+      <GuardedLink
+        to={href}
+        aria-label={`${label} ${value}`}
+        className={[SUMMARY_LINK, revealClass(indicator)].filter(Boolean).join(' ')}
+      >
         {value}
       </GuardedLink>
     )
@@ -317,7 +325,11 @@ function ReviewSection({ workspaceId, approvals, meetings, needsReviewHref }: Re
           <Icon name="chevron-right" size={13} />
         </GuardedLink>
       </div>
-      <SectionBody state={approvals} errorTitle="확인이 필요한 일을 불러오지 못했어요">
+      <SectionBody
+        state={approvals}
+        errorTitle="확인이 필요한 일을 불러오지 못했어요"
+        skeleton={{ rows: 3, kind: 'review' }}
+      >
         {(list) => {
           const shown = waitingApprovals(list).slice(0, LIST_LIMIT)
           if (shown.length === 0) return <p className={EMPTY_NOTE}>지금 확인할 일이 없어요.</p>
@@ -421,7 +433,11 @@ function DueSection({ workspaceId, tasks, members, today, dueSoonHref }: DueSect
           </GuardedLink>
         ) : null}
       </div>
-      <SectionBody state={tasks} errorTitle="태스크를 불러오지 못했어요">
+      <SectionBody
+        state={tasks}
+        errorTitle="태스크를 불러오지 못했어요"
+        skeleton={{ rows: 5, kind: 'line' }}
+      >
         {() =>
           due.length === 0 ? (
             <p className={EMPTY_NOTE}>마감이 임박한 태스크가 없습니다</p>

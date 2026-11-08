@@ -14,6 +14,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.models import Member, Session as SessionModel, User, Workspace, WorkspaceOnboardingStepState
+from app.services.sessions import hash_session_token
 
 STEPS = ["create_workspace", "connect_discord", "connect_notion", "connect_members"]
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
@@ -67,7 +68,7 @@ def _user_with_session(db, email: str, token: str) -> User:
     db.add(
         SessionModel(
             user_id=user.user_id,
-            session_token=token,
+            session_token=hash_session_token(token),
             expires_at=datetime.now(timezone.utc) + timedelta(days=1),
         )
     )

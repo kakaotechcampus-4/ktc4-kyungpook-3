@@ -8,7 +8,7 @@ topic, topic_meeting, topic_item, decision 을 만든다.
 되돌리면 네 테이블과 대기열 칸이 지워진다. Extraction.summary 에 저장된 요약 JSON 은 그대로 남는다.
 
 Revision ID: 7536c5a1a471
-Revises: b0d32ee4abcb
+Revises: d6e1b4a8c297
 Create Date: 2026-11-07 20:01:35.120106
 
 """
@@ -20,7 +20,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '7536c5a1a471'
-down_revision: Union[str, Sequence[str], None] = 'b0d32ee4abcb'
+down_revision: Union[str, Sequence[str], None] = 'd6e1b4a8c297'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -288,6 +288,8 @@ describe('팀 화면 — 일반 팀원', () => {
     const log = recordRequests()
     renderApp(TEAM)
     expect(await screen.findByRole('heading', { name: '앞으로 7일' })).toBeInTheDocument()
+    // 팀원 목록은 로딩 자리의 최소 표시가 끝난 뒤 그려진다 (#508)
+    await screen.findByRole('region', { name: '김서연' })
     for (const name of ['김서연', '박민수', '이재환', '정하늘'])
       expect(
         within(screen.getByRole('region', { name })).queryByRole('button', {

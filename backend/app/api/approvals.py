@@ -16,6 +16,13 @@ from app.schemas.approval import (
     ApprovalResponse,
 )
 from app.services import replies
+from app.services.alias_learning import (
+    alias_lookup_forms,
+    approval_alias_texts,
+    learn_alias,
+    learnable_alias_text,
+)
+from app.services.pending_merge import assignee_item_of
 from app.services.tasks import (
     apply_task_updates,
     create_task,
@@ -29,6 +36,7 @@ router = APIRouter(prefix="/approvals", tags=["approvals"])
 _TASK_UPDATE_FIELDS = {"title", "assignee_member_id", "status", "blocker", "due_date"}
 
 # 승인하면서 PM이 고칠 수 있는 필드. 승인 유형마다 다르다
+# 예외: 담당자 줄이 있는 답장 카드(task_update)는 assignee_member_id 도 고칠 수 있다(_normalize_overrides)
 _EDITABLE_FIELDS: dict[str, frozenset[str]] = {
     str(ApprovalType.TASK_CREATE): frozenset({"task_title", "assignee_member_id", "due_date"}),
     str(ApprovalType.TASK_UPDATE): frozenset({"status", "due_date"}),
@@ -111,7 +119,7 @@ def _normalize_edit(field: str, value: object) -> object:
 
 
 def _normalize_overrides(
-    approval_type: str, status: ApprovalStatus, overrides: dict[str, object] | None
+    db: Session, approval: ApprovalRequest, status: ApprovalStatus, overrides: dict[str, object] | None
 ) -> dict[str, object]:
     """승인하면서 고친 값을 검증한다. 상태를 바꾸기 전에 불러야 잘못된 요청이 아무것도 커밋하지 못한다."""
     if not overrides:
@@ -122,7 +130,15 @@ def _normalize_overrides(
             message="고친 값(task_overrides)은 승인할 때만 보낼 수 있습니다.",
             details={"status": str(status)},
         )
+    approval_type = approval.type
     allowed = _EDITABLE_FIELDS.get(approval_type, frozenset())
+    # 담당자 줄이 있는 답장 카드만 PM 이 담당자를 고를 수 있다. 키가 없으면 줄을 찾지 않는다
+    if (
+        approval_type == str(ApprovalType.TASK_UPDATE)
+        and "assignee_member_id" in overrides
+        and replies.has_assignee_line(db, approval.approval_id)
+    ):
+        allowed = allowed | {"assignee_member_id"}
     outside = sorted(set(overrides) - allowed)
     if outside:
         raise AppError(
@@ -199,6 +215,7 @@ def _apply_approval(
     *,
     overrides: dict[str, object],
     confirm_task_version: int | None = None,
+    save_alias: bool = False,
 ) -> None:
     """승인된 요청을 실제 Task 생성/수정으로 반영한다.
 
@@ -213,11 +230,8 @@ def _apply_approval(
     if approval.type == str(ApprovalType.TASK_CREATE):
         # Task를 만들기 전에 연결 대상부터 검증한다.
         extraction_item_id = payload.get("extraction_item_id")
-        ext_item = (
+        if extraction_item_id:
             _get_linkable_extraction_item(db, approval, extraction_item_id)
-            if extraction_item_id
-            else None
-        )
 
         proposal = {
             "task_title": payload.get("task_title") or payload.get("title") or "",
@@ -261,8 +275,26 @@ def _apply_approval(
             )
         approval.related_task_id = task.task_id
 
-        if ext_item is not None:
-            ext_item.task_id = task.task_id
+        # 합쳐진 항목(action="merge")도 같은 카드에서 나왔으므로 카드가 만든 task 를 함께 가리킨다
+        linked_items = db.execute(
+            select(ExtractionItem).where(ExtractionItem.approval_id == approval.approval_id)
+        ).scalars().all()
+        for linked in linked_items:
+            linked.task_id = task.task_id
+        # 별칭은 카드의 담당자를 정한 항목에서만 배운다. payload 의 assignee_item_id 가 이 카드의 연결 항목이
+        # 아니면(위조·다른 카드) 무시한다. create_task 가 담당자(탈퇴·다른 공간)를 검증한 뒤에 저장하고,
+        # 담당자를 못 고른 카드는 건너뛴다
+        alias_item = next((i for i in linked_items if i.item_id == assignee_item_of(payload)), None)
+        if alias_item is not None and save_alias and final["assignee_member_id"]:
+            alias_text = learnable_alias_text(alias_item)
+            if alias_text is not None:
+                learn_alias(
+                    db,
+                    workspace_id=approval.workspace_id,
+                    member_id=final["assignee_member_id"],
+                    alias_text=alias_text,
+                    lookup_forms=alias_lookup_forms(alias_item.assignee_raw, alias_text),
+                )
 
     elif approval.type == str(ApprovalType.TASK_UPDATE):
         if approval.related_task_id is None:
@@ -340,8 +372,11 @@ def _apply_approval(
         approval.payload = json.dumps({**payload, "task_overrides": changed}, ensure_ascii=False)
 
 
-def _to_response(row: ApprovalRequest) -> ApprovalResponse:
-    """DB 모델 → Pydantic 응답 변환. payload JSON 파싱 포함."""
+def _to_response(row: ApprovalRequest, alias_text: str | None = None) -> ApprovalResponse:
+    """DB 모델 → Pydantic 응답 변환. payload JSON 파싱 포함.
+
+    alias_text 는 approval_alias_texts 가 구한 값이다. 있으면 별칭 등록을 물어볼 승인이다.
+    """
     return ApprovalResponse(
         approval_id=row.approval_id,
         workspace_id=row.workspace_id,
@@ -353,6 +388,8 @@ def _to_response(row: ApprovalRequest) -> ApprovalResponse:
         resolved_by=row.resolved_by,
         created_at=row.created_at,
         resolved_at=row.resolved_at,
+        alias_candidate=alias_text is not None,
+        alias_text=alias_text,
     )
 
 
@@ -425,7 +462,8 @@ def create_approval(
     db.commit()
     db.refresh(approval)
 
-    return success(_to_response(approval).model_dump(mode="json"))
+    texts = approval_alias_texts(db, [approval])
+    return success(_to_response(approval, texts.get(approval.approval_id)).model_dump(mode="json"))
 
 
 @router.get("", response_model=Envelope[ApprovalListResponse])
@@ -452,9 +490,10 @@ def list_approvals(
         count_stmt = count_stmt.where(ApprovalRequest.status == str(status))
     total = db.execute(count_stmt).scalar() or 0
 
+    texts = approval_alias_texts(db, rows)
     return success(
         ApprovalListResponse(
-            items=[_to_response(r) for r in rows],
+            items=[_to_response(r, texts.get(r.approval_id)) for r in rows],
             total=total,
         ).model_dump(mode="json")
     )
@@ -474,7 +513,8 @@ def get_approval(
             details={"approval_id": approval_id},
         )
     require_member(db, user, approval.workspace_id)
-    return success(_to_response(approval).model_dump(mode="json"))
+    texts = approval_alias_texts(db, [approval])
+    return success(_to_response(approval, texts.get(approval.approval_id)).model_dump(mode="json"))
 
 
 @router.patch("/{approval_id}", response_model=Envelope[ApprovalResponse])
@@ -505,7 +545,7 @@ def resolve_approval(
             ErrorCode.APPROVAL_ALREADY_RESOLVED,
             details={"approval_id": approval_id, "current_status": target.status},
         )
-    overrides = _normalize_overrides(target.type, payload.status, payload.task_overrides)
+    overrides = _normalize_overrides(db, target, payload.status, payload.task_overrides)
 
     stmt = (
         update(ApprovalRequest)
@@ -533,11 +573,17 @@ def resolve_approval(
             details={"approval_id": approval_id, "current_status": approval.status},
         )
 
+    # 이 세션이 앞서 읽은 객체는 identity map 의 이전 payload 를 들고 있다. 조건부 UPDATE 사이에 합치기가 payload 를
+    # 바꿨어도 승인은 DB 의 최신 값으로 task 를 만들어야 한다
     approval = db.get(ApprovalRequest, approval_id)
+    db.refresh(approval)
 
     if payload.status == ApprovalStatus.APPROVED:
         try:
-            _apply_approval(db, approval, overrides=overrides, confirm_task_version=payload.confirm_task_version)
+            _apply_approval(
+                db, approval, overrides=overrides,
+                confirm_task_version=payload.confirm_task_version, save_alias=payload.save_alias,
+            )
         except AppError:
             # 반영하지 못했으면 승인 처리도 되돌려 pending으로 남긴다. 충돌을 확인한 PM이 다시 처리할 수 있다
             db.rollback()
@@ -545,4 +591,5 @@ def resolve_approval(
 
     db.commit()
     db.refresh(approval)
-    return success(_to_response(approval).model_dump(mode="json"))
+    texts = approval_alias_texts(db, [approval])
+    return success(_to_response(approval, texts.get(approval.approval_id)).model_dump(mode="json"))

@@ -124,6 +124,8 @@ describe('목록과 기본 선택 (U5-1)', () => {
     const user = userEvent.setup()
     const app = renderApp(paths.meetings('ws_01'))
     await app.expectPath(MT_09)
+    // 목록은 로딩 자리의 최소 표시가 끝난 뒤 그려진다 (#508)
+    await within(meetingList()).findByRole('list', { name: '정리된 회의' })
 
     await user.click(within(minutesList()).getByRole('link', { name: /2주차 정기회의/ }))
     await app.expectPath(MT_07)
@@ -619,8 +621,10 @@ describe('범위 밖 액션과 안내 (U5-7, U5-8, U5-9)', () => {
       const tasks = await openTab(user, /추출된 일/)
 
       expect(within(tasks).getByText(note)).toBeInTheDocument()
-      expect(note).toContain('회의록과 확실한 태스크는')
-      if (role === 'pm') expect(note).toContain('확인이 필요한 일은 승인한 뒤 반영해요')
+      // Notion 은 선택이고 올라가는 것은 태스크뿐이다 (D-182)
+      expect(note).toContain('Notion을 연결했다면 확실한 태스크는 바로')
+      expect(note).not.toContain('회의록')
+      if (role === 'pm') expect(note).toContain('확인이 필요한 태스크는 승인한 뒤')
     },
   )
 
@@ -700,7 +704,7 @@ describe('채팅 회의 (#379)', () => {
     expect(applied).toHaveTextContent('09/11 18:40')
   })
 
-  it('정리 중인 채팅 회의는 처리 화면으로 잇지 않고 상태만 보인다', async () => {
+  it('정리 중인 채팅 회의도 처리 화면으로 잇는다 — 채팅 두 단계 처리 화면이 생겼다 (#483)', async () => {
     db.meetings.push({
       ...db.meetings[3],
       meeting_id: 'mt_21',
@@ -724,8 +728,11 @@ describe('채팅 회의 (#379)', () => {
     const row = within(inProgress).getByText('채팅 2026-09-19').closest('li')!
     expect(row).toHaveTextContent('채팅')
     expect(row).toHaveTextContent('정리 중')
-    expect(within(row).queryByRole('link')).toBeNull()
-    // 녹음 회의의 정리 중 항목은 그대로 처리 화면으로 잇는다
+    expect(within(row).getByRole('link')).toHaveAttribute(
+      'href',
+      paths.meetingProcessing('ws_01', 'mt_21'),
+    )
+    // 녹음 회의의 정리 중 항목도 그대로 처리 화면으로 잇는다
     expect(within(inProgress).getByRole('link', { name: /기획 논의 녹음/ })).toHaveAttribute(
       'href',
       paths.meetingProcessing('ws_01', 'mt_10'),

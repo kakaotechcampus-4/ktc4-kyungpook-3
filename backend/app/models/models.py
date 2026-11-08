@@ -51,6 +51,7 @@ class AliasSource(StrEnum):
     MANUAL = "manual"
     DISCORD_PROFILE = "discord_profile"
     LEARNED = "learned"
+    DISPLAY_NAME = "display_name"
 
 
 class ResolutionResult(StrEnum):
@@ -220,6 +221,7 @@ class Session(Base):
     user_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("user.user_id", ondelete="CASCADE"), index=True
     )
+    # 쿠키 원문이 아니라 그 sha256 hex 가 들어간다(#437). 쓸 때 hash_session_token 으로 바꿔 넣는다.
     session_token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -416,6 +418,9 @@ class Meeting(Base):
     processing_stage_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # stt 단계의 전사 진행(끝낸 조각 수 / 전체 조각 수). stt 단계에서 알렸을 때만 값이 있고 그 밖에는 NULL 이다
+    processing_stt_done: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    processing_stt_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     extractions: Mapped[list["Extraction"]] = relationship(
         back_populates="meeting", cascade="all, delete-orphan"
@@ -527,6 +532,8 @@ class ExtractionAction(StrEnum):
 
     CREATE = "create"
     UPDATE = "update"
+    # 승인 대기 중인 task_create 카드에 합쳐진 항목. 새 task 도 수정도 아니다
+    MERGE = "merge"
 
 
 class ExtractionPath(StrEnum):
@@ -562,6 +569,9 @@ class ExtractionItem(Base):
     # 확신도는 AI가 보낸 값이다. NULL은 측정하지 않았다는 뜻이고 0.0(측정했는데 낮음)과 다르다
     task_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     assignee_raw: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # 담당자 표현의 종류(first·thirdname·thirdrole 등). 승인 때 이 표현을 별칭으로 배울지 가리는 데 쓴다(#459).
+    # 알려진 값(alias_learning.KNOWN_ASSIGNEE_TYPES)이 아니면 NULL이고, 예전 항목도 NULL이라 학습 대상이 아니다
+    assignee_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     assignee_member_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
     )
@@ -786,6 +796,15 @@ class ApprovalRequest(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # 승인 대기 중인 task_create 요청의 제목(payload 의 task_title 또는 title) 임베딩. 임베딩 워커가
+    # 채운다(app/services/embedding.py). NULL인 동안은 유사 검색에서 빠진다. 요청이 처리된 뒤에도 지우지 않는다.
+    # 벡터 1536개를 매 조회마다 읽지 않도록 필요할 때만 불러온다(deferred).
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIMENSIONS), nullable=True, deferred=True
+    )
+    # 임베딩 API가 입력 오류로 거절한 제목. 이 값이 있으면 워커가 그 요청을 다시 고르지 않는다.
+    # 빈 문자열("")은 제목이 없거나 문자열이 아니어서 API를 부르지 않고 건너뛴 요청이다.
+    embedding_rejected_title: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 class ReminderStatus(StrEnum):
     SCHEDULED = "scheduled"
@@ -878,6 +897,25 @@ class ThreadMessage(Base):
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     thread: Mapped["MessageThread"] = relationship()
+
+
+class MessageThreadRead(Base):
+    """대화마다 사람(팀원·PM)이 어디까지 읽었는지 기록한다. 읽지 않은 메시지 수의 기준이 된다.
+
+    대화 하나를 PM 여럿이 볼 수 있어 읽은 위치는 (대화, 사람) 쌍마다 따로 둔다.
+    행이 없으면 아직 한 번도 열지 않은 것이다.
+    """
+
+    __tablename__ = "message_thread_read"
+
+    thread_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("message_thread.thread_id", ondelete="CASCADE"), primary_key=True
+    )
+    member_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("member.member_id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    last_read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 
 class ReplyJudgmentState(StrEnum):

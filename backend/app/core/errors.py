@@ -89,6 +89,9 @@ class ErrorCode(StrEnum):
     TOPIC_NOT_FOUND = "TOPIC_NOT_FOUND"
     SUMMARY_NOT_FOUND = "SUMMARY_NOT_FOUND"
 
+    # 로그인 시도 제한
+    TOO_MANY_LOGIN_ATTEMPTS = "TOO_MANY_LOGIN_ATTEMPTS"
+
 
 ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.INVALID_REQUEST: 400,
@@ -162,6 +165,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.MAIL_UNAVAILABLE: 503,
     ErrorCode.TOPIC_NOT_FOUND: 404,
     ErrorCode.SUMMARY_NOT_FOUND: 404,
+    ErrorCode.TOO_MANY_LOGIN_ATTEMPTS: 429,
 }
 
 ERROR_MESSAGE: dict[ErrorCode, str] = {
@@ -236,6 +240,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.MAIL_UNAVAILABLE: "지금은 메일을 보낼 수 없습니다.",
     ErrorCode.TOPIC_NOT_FOUND: "해당 주제를 찾을 수 없습니다.",
     ErrorCode.SUMMARY_NOT_FOUND: "이 회의의 요약본이 아직 없습니다.",
+    ErrorCode.TOO_MANY_LOGIN_ATTEMPTS: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
 }
 
 
@@ -263,8 +268,10 @@ class AppError(Exception):
         code: ErrorCode,
         message: str | None = None,
         details: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.code = code
+        self.headers = headers
         self.message = message or ERROR_MESSAGE.get(code, "오류가 발생했습니다.")
         self.details = details
         self.status_code = ERROR_STATUS.get(code, 500)
