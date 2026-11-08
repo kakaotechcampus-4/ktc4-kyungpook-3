@@ -17,8 +17,8 @@ BE 에 대화 신호 웹소켓 `/api/v1/workspaces/{workspace_id}/messages/ws` �
 
 | 항목 | 값 |
 |---|---|
-| backend 전체 pytest (sqlite·PostgreSQL) | 4285 passed, 45 skipped (리뷰 반영 전) |
-| 소켓 테스트 `tests/api/test_message_socket.py` | 88 passed (리뷰 반영 뒤) |
+| backend 전체 pytest (sqlite·PostgreSQL) | 4287 passed, 45 skipped |
+| 소켓 테스트 `tests/api/test_message_socket.py` | 88 passed |
 | 실제 uvicorn, 응답 없이 멈춘 클라이언트가 닫히기까지 | 30.6초 (기본 ping 20초 간격, 20초 대기) |
 | 실제 uvicorn, 소켓이 열린 채 SIGTERM 종료 | 0.12초, 클라이언트는 1012 |
 | 열린 소켓 30개일 때 POST 응답 | 201, 0.020초 |
