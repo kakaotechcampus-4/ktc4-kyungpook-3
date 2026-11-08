@@ -3,7 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models import AliasSource, AliasType, MemberRole
-from app.schemas.name import NAME_RULE_MESSAGE, NameStr
+from app.schemas.name import NameStr
 from app.services.matching import normalize_alias_text
 
 # member.discord_user_id 컬럼 길이
@@ -49,7 +49,7 @@ class MemberUpdateRequest(BaseModel):
     def _display_name_is_not_null(cls, value: object) -> object:
         # 키를 생략하면 이 검증은 돌지 않아 이름이 유지된다. null 을 명시하면 NOT NULL 컬럼에서 500 이 나므로 막는다.
         if value is None:
-            raise ValueError(NAME_RULE_MESSAGE)
+            raise ValueError("표시명은 null 일 수 없습니다. 이름을 바꾸지 않으려면 display_name 을 빼 주세요")
         return value
 
 

@@ -56,6 +56,14 @@ def test_update_schema_rejects_explicit_null_display_name():
     assert [e["loc"] for e in exc.value.errors()] == [("display_name",)]
 
 
+def test_update_schema_null_display_name_message_names_null_not_the_length_rule():
+    with pytest.raises(ValidationError) as exc:
+        MemberUpdateRequest.model_validate({"display_name": None})
+    msg = exc.value.errors()[0]["msg"]
+    assert "null" in msg
+    assert "1~100자" not in msg
+
+
 def test_update_schema_omitted_display_name_is_unset():
     req = MemberUpdateRequest.model_validate({"notion_name": "x"})
     assert "display_name" not in req.model_dump(exclude_unset=True)
