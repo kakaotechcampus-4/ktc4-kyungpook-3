@@ -1,5 +1,5 @@
 import { ApiError } from '@/shared/api/errors'
-import { fetchDto, jsonRequest } from '@/shared/test/api'
+import { fetchDto, jsonRequest, signUpVerified } from '@/shared/test/api'
 import type {
   BundleDto,
   InboxDto,
@@ -552,10 +552,7 @@ describe('메시지 시나리오', () => {
       sender: 'member',
     })
 
-    await fetchDto(
-      '/auth/signup',
-      jsonRequest('POST', { email: 'other@example.com', password: 'pass1234', name: '다른 팀원' }),
-    )
+    await signUpVerified({ email: 'other@example.com', password: 'pass1234', name: '다른 팀원' })
     db.members.push({ ...structuredClone(creator!), member_id: 'mb_91', role: 'member' })
     const other = db.accounts.find(({ session }) => session.user.email === 'other@example.com')
     other!.workspaceIds.push(workspaceId)

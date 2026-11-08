@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { start } from './support'
+import { signUp, start } from './support'
 
 /*
  * #320 팀원 초대. 메일은 가지 않는다 — 초대받은 사람은 그 이메일로 가입하거나 로그인해 받은 초대를 본다.
@@ -11,10 +11,7 @@ test('초대받은 이메일로 가입하면 받은 초대가 보이고, 수락�
   page,
 }) => {
   await start(page, 'invitation-pending', '/signup')
-  await page.getByLabel('이름').fill('이재환')
-  await page.getByLabel('이메일').fill('jaehwan@example.com')
-  await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
-  await page.getByRole('button', { name: '계정 만들기' }).click()
+  await signUp(page, { name: '이재환', email: 'jaehwan@example.com', password: 'pass1234' })
   await expect(page).toHaveURL('/onboarding/start')
 
   const invitations = page.getByRole('region', { name: '받은 초대' })

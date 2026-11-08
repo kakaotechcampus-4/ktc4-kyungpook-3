@@ -186,7 +186,27 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 - `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`: 2307 passed, 1485 skipped. skip 는 PostgreSQL 이 필요한 테스트이고 새 동시성 테스트 3개도 여기에 들어 CI 에서 처음 돈다.
 - 실제 AI 를 붙인 종단 확인과 배포 환경 확인은 하지 않았다. 모델 컬럼·마이그레이션 변경은 없다.
 
-남은 작업: AI 의 merge 전송과 `include_pending` 켜기(BE 배포 뒤), FE 답(#512)과 합친 카드 표시, 승인 사이에 담당 항목이 바뀐 경우의 별칭 저장(결정 기록의 장단점).
+남은 작업: AI 의 merge 전송과 `include_pending` 켜기(BE 배포 뒤), FE 답(#512)과 합친 카드 표시, 승인 사이에 담당 항목이 바뀐 경우의 별칭 저장(결정 기록의 장단점, 아래 2026-11-08 절에서 #535 로 해결).
+
+## 2026-11-08 추가: 승인 카드를 본 뒤 바뀌었으면 409 로 막기(#535, #512)
+
+근거는 #535 설계 확정 댓글과 #512 FE 답이다(2026-11-08). M6 완료는 판정하지 않는다.
+
+| 변경 | 위치 |
+|---|---|
+| 승인 응답 최상위 `payload_version`(task_create 만, 카드 payload 해시) | `backend/app/api/approvals.py`, `backend/app/schemas/approval.py` |
+| `PATCH /approvals/{id}` 선택 필드 `payload_version`. 다르면 되돌리고 409 `APPROVAL_CHANGED`(승인·반려 모두) | `backend/app/api/approvals.py`, `backend/app/core/errors.py` |
+| 계약 | [Backend README](../../../README.md) 에러 코드 표, 합친 카드 승인·별칭 저장 행 |
+
+| 요구 | 상태 | 근거 |
+|---|---|---|
+| 본 뒤 바뀐 카드의 승인·반려를 409 로 막고 아무것도 남기지 않음 | 구현 | `tests/api/test_approval_payload_version.py` |
+| 보내지 않으면 지금 동작(하위 호환) | 구현 | 같은 파일 |
+| 별칭이 PM 이 본 글자로만 저장됨 | 구현 | `tests/api/test_alias_learning_approval.py` |
+
+검증은 PR 에 적는다. 모델·마이그레이션 변경은 없다.
+
+남은 작업: FE 가 `payload_version` 을 보내고 409 를 처리하는 것(#512), 그 뒤 필수로 바꿀지 판단.
 
 ## 2026-11-08 추가: 전사 진행과 단계 시작 시각을 회의 상세에 노출(#483 A안 BE 몫)
 
@@ -214,9 +234,72 @@ M6 plan.md 는 비어 있어 완료조건이 없다. #381 과 같은 M6 에 둔�
 
 남은 작업: AI 진행 보고(단위·빈도 결정 포함), FE 화면과 FE 계약 반영. BE 배포 뒤 #483 에 알린다.
 
+## 2026-11-08 추가: PM 글과 읽지 않은 수 통합
+
+### 작업 근거와 실제 변경
+
+사용자가 PR #454, #518, #524의 순차 백엔드 작업을 요청해 #518을 최신 `develop`과 대조했다. M6 계획은 비어 있으므로 마일스톤 완료를 판정하지 않는다.
+
+- `messages.py` 병합에서 대화 열기와 최신 읽음 API를 모두 유지했다. 대화 열기 응답도 현재 사용자의 `unread_count`를 대화 요약에 전달한다.
+- 자기 대화의 상대편 메시지를 기존 `MessageSender`의 `BOT`, `PM` 값으로 조회한다. 다른 팀원의 대화를 보는 PM은 기존처럼 `MEMBER`만 센다. 대화 주인의 후속 답장과 명시적 읽음 처리는 PM 글에도 적용된다.
+- `5ae76a6102a8`의 부모를 최신 기반의 `5d2e8a41c7b3`으로 연결했다. 별도 스키마 변경은 추가하지 않았다.
+- [프론트엔드 대표 계약](../../../../frontend/docs/contracts/frontend-api-contract.md#57-메시지) §5.7에 확인한 읽음 API와 PM 글 집계의 구현 사실을 기록했다. FE 연결·합의 완료는 선언하지 않았다.
+
+### 검증 내역
+
+2026-11-08 로컬 Windows에서 Python 3.12로 실행했다.
+
+- 수정 전 새 회귀에서 PM 글의 읽지 않은 수가 1 대신 0으로 나오는 실패 2건과 대화 열기의 `_summary` 인자 누락 `TypeError` 1건을 확인했다. 기존 `test_opening_a_thread_twice_gives_the_same_thread`도 같은 `TypeError`로 실패했다.
+- 수정 후 `pytest tests/api/test_member_messages.py tests/api/test_message_notifications.py tests/api/test_message_reads_service.py tests/api/test_message_unread_api.py tests/api/test_messages_api.py -q --tb=short --basetemp=<격리 경로>`는 123개 통과, PostgreSQL 미설정 및 관련 조건으로 125개 건너뜀.
+- PM 글 전송 후 팀원 배지 증가, 팀원 웹 답장 후 팀원 배지 해제·PM 배지 증가, 명시적 읽음 후 0, PM 작성 글의 다른 대화 미집계를 확인했다.
+- `ruff check .` 통과. `alembic heads`는 `5ae76a6102a8 (head)` 하나를 반환했다.
+- `develop@2ba38e96` 기반 전체 백엔드 회귀는 2318개 통과, 1561개 건너뜀. 이후 `033293b4`를 추가 병합하고 메시지·알림·읽음 및 #533 추출 합치기 관련 테스트를 함께 실행해 207개 통과, 185개 건너뜀을 확인했다. 최신 기반 전체 PostgreSQL 회귀는 CI에서 확인해야 한다.
+
+### 계획 대비 변경과 제한 사항
+
+PR 작성 뒤 #480의 읽음 수가 `develop`에 들어와 새 PM 글과 연결할 필요가 생겼다. 기존 읽음 위치와 집계 쿼리 구조를 유지하고 상대편 발신자 범위만 늘렸다. 실제 PostgreSQL 마이그레이션·동시성·Discord 송신은 이번 로컬 검증에서 실행하지 않았다.
+
+사용자의 순차 병합 요청에 따라 선행 #454의 최종 코드를 이 브랜치에 일반 병합하고, `5ae76a6102a8`의 부모를 가입 인증의 `d2f6b81c4e07`으로 연결했다. 이후 #542가 develop에 병합되어 해당 변경도 반영했다. 최종 체인은 읽음 위치 → STT 진행률 → 가입 인증 → PM 작성자 순서이며 단일 head는 `5ae76a6102a8`이다. 실제 develop 병합은 #454 다음에 진행한다. PR의 base와 기존 이력은 유지한다.
+
+최종 통합 후 PM 메시지·알림·읽음·가입·카카오 API 테스트는 131개 통과, 133개 건너뜀이다. Ruff와 단일 Alembic head 확인도 통과했다. PostgreSQL 전체 회귀와 업그레이드는 이 통합 커밋의 CI에서 확인한다.
+
+#542 추가 반영 뒤 STT 진행률·PM 메시지·읽음 API 회귀는 89개 통과, 89개 건너뜀이다. 별도 검증자는 인증 코드 가입부터 초대 수락·대화 열기·PM 글·읽음·답장·봇 인계 및 결과 보고까지 실제 HTTPS 요청 41개로 검증했다. SQLite와 로컬 메일·Discord 경계 대역을 사용하므로 실제 PostgreSQL·SMTP·Discord 검증을 대신하지 않는다.
+
+## 2026-11-08 추가: 웹 답장 안내의 대기 수와 읽음 응답 통합
+
+### 작업 근거와 실제 변경
+
+사용자가 PR #454, #518, #524의 순차 백엔드 작업을 요청해 #524를 최신 `develop@033293b4`와 대조했다. M6 계획은 비어 있으므로 마일스톤 완료를 판정하지 않는다.
+
+- 대화 요약의 `web_reply_available`과 최신 `unread_count`를 함께 보존해 API·스키마 병합 충돌을 해결했다. 기존 읽음 수·명시적 읽음 API도 유지했다.
+- [메시지 서비스](../../../app/services/messages.py)의 DM 안내 집계에서 `paused_at`이 있는 시계를 제외했다. 팀원 답장이 PM 확인 대기여서 시계가 `WATCHING`으로 남아도 새 답장을 기다리는 수에 다시 넣지 않는다.
+- [BE↔AI 계약](../../contracts/backend-ai-contract.md)의 `n` 정의에 실제 제외 조건을 반영했다. API 필드나 승인 정책을 추가하지 않았으며 새 합의 완료를 선언하지 않는다.
+
+### 검증 내역
+
+2026-11-08 로컬 Windows에서 Python 3.12로 실행했다.
+
+- 새 `test_a_reply_waiting_for_pm_review_leaves_the_count`는 수정 전 안내가 1개 대신 2개를 반환해 실패했다. `WATCHING`이면서 `paused_at`이 설정된 상태를 기존 답장 판단·스케줄러 흐름으로 만들었다.
+- 수정 후 `pytest tests/api/test_reminder_dm_notice.py tests/api/test_messages_api.py tests/api/test_scheduler.py tests/api/test_reply_clock.py tests/api/test_message_unread_api.py -q --tb=short --basetemp=<격리 경로>`는 159개 통과, PostgreSQL 미설정 및 관련 조건으로 158개 건너뜀.
+- `ruff check .` 통과. `alembic heads`는 `5d2e8a41c7b3 (head)` 하나를 반환했다. 이번 변경은 마이그레이션을 추가하지 않는다.
+- `develop@033293b4` 기반 전체 백엔드 회귀는 2370개 통과, 1540개 건너뜀. PostgreSQL 전용 및 조건부 테스트는 실행되지 않았다. 실제 PostgreSQL은 CI에서 확인해야 한다.
+
+### 계획 대비 변경과 제한 사항
+
+이미 답한 태스크가 PM 확인 때문에 정지한 상태를 안내 집계가 구분하지 못해 실제 응답 대기보다 큰 수가 나왔다. 기존 시계의 `paused_at`을 조회 조건에 추가해 해결했다. 전체 회귀·PostgreSQL·실제 Discord 발송은 이번 타깃 검증의 범위 밖이다.
+
+초기 개별 수정 뒤 사용자가 순차 병합까지 요청해 선행 #518의 최종 코드를 이 브랜치에 일반 병합했다. `_dm_body`는 기존 `MessageSender`로 PM 글을 먼저 분기하고, PM 글에는 공간·작성자 안내, 봇 리마인드에는 응답 대기 수를 붙인다. 두 경우 모두 기존 `_reply_guide`로 계정 연결 여부에 맞는 웹 안내를 만든다. 별도 PM·리마인드 헬퍼를 늘리면 같은 안내와 단일 호출자를 나누게 되어 한 함수의 작은 분기를 유지했다.
+
+- 통합 직후 PM 글이 `리마인드가 0개` 안내로 바뀌는 실패 2건을 먼저 확인했다. 수정 후 PM 작성자·본문 비노출, 계정이 없는 수신자의 초대 요청·가입 링크, 정상 리마인드 수와 정지 시계 제외를 함께 확인했다.
+- 최종 타깃 `test_member_messages.py`, `test_message_notifications.py`, `test_reminder_dm_notice.py`, `test_messages_api.py`, `test_message_unread_api.py`, `test_reply_clock.py`는 171개 통과, 170개 건너뜀이다. Ruff와 `5ae76a6102a8` 단일 head 확인도 통과했다.
+- 대화 요약은 PM 작성자, 마지막 봇·PM DM 실패, `web_reply_available`, `unread_count`를 모두 보존한다. API·문서의 옛 Discord DM 자동 저장 정책은 웹 답장 안내 정책으로 유지했다. AI 코드는 새로 수정하지 않았다.
+- 이 통합의 실제 PostgreSQL 전체 회귀와 업그레이드는 최종 CI에서 확인한다. 실제 develop 병합은 #454, #518 다음에 진행한다.
+- 선행 #518의 최신 `e4ffc0d0`을 추가 병합해 #542 STT 진행률과 가입 인증 마이그레이션 연결도 반영했다. 최종 메시지·리마인드·읽음·답장 시계·STT API 회귀는 214개 통과, 213개 건너뜀이다. 단일 head는 `5ae76a6102a8`이고 Ruff도 통과했다.
+
 ## 관련 기록
 
 - [전사 진행과 단계 시작 시각을 회의 상세에 노출한다](basis-for-decision/2026-11-08-processing-stt-progress.md)
+- [승인 카드를 본 뒤 내용이 바뀌었으면 승인·반려를 409 로 막는다](basis-for-decision/2026-11-08-approval-payload-version.md)
 - [다른 회의의 같은 새 항목을 승인 대기 카드에 합친다](basis-for-decision/2026-11-07-pending-merge.md)
 - [승인 대기 새 항목 요청을 유사 검색 후보에 따로 더한다](basis-for-decision/2026-11-07-pending-approval-search.md)
 - [답장 담당자 변경 승인에서 PM 이 담당자를 고르게 한다](basis-for-decision/2026-11-07-reply-assignee-override.md)

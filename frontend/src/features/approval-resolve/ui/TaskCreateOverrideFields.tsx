@@ -9,6 +9,7 @@ import { Select } from '@/shared/ui/select'
 import { TextField } from '@/shared/ui/text-field'
 import { OVERRIDE_FORM_MESSAGES } from '../model/overridesSchema'
 import type { TaskCreateOverrides } from '../model/useTaskCreateOverrides'
+import { AliasSaveField } from './AliasSaveField'
 
 const OVERRIDE_FIELDS_ROW =
   'grid grid-cols-1 items-start gap-12 sm:grid-cols-[minmax(0px,1.6fr)_minmax(0px,1fr)_minmax(0px,1fr)]'
@@ -118,6 +119,17 @@ export function TaskCreateOverrideFields({
                 {OVERRIDE_FORM_MESSAGES.assignee}
               </ErrorText>
             ) : null}
+            <AliasSaveField
+              aliasText={overrides.aliasText}
+              members={members}
+              assigneeMemberId={field.value === '' ? null : field.value}
+              checked={overrides.saveAlias}
+              onCheckedChange={(checked) => {
+                onInputChange()
+                overrides.setSaveAlias(checked)
+              }}
+              disabled={disabled}
+            />
           </div>
         )}
       />

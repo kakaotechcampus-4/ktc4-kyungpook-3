@@ -72,6 +72,10 @@ class ReplyCreateRequest(BaseModel):
     _strip_body = field_validator("body")(_non_blank)
 
 
+class ThreadOpenRequest(BaseModel):
+    member_id: str
+
+
 class ReminderEvidence(BaseModel):
     kind: Literal["reply", "task_change"]
     at: datetime
@@ -127,6 +131,8 @@ class MessageResponse(BaseModel):
     dm_status: str | None
     dm_failure_reason: str | None
     scheduled_at: datetime | None
+    author_member_id: str | None
+    author_name: str | None
 
 
 class LastMessage(BaseModel):
@@ -134,6 +140,8 @@ class LastMessage(BaseModel):
     sender: str
     body: str
     created_at: datetime
+    author_member_id: str | None
+    author_name: str | None
 
 
 class ThreadSummary(BaseModel):
@@ -143,6 +151,7 @@ class ThreadSummary(BaseModel):
     last_message: LastMessage | None
     awaiting_reply_since: datetime | None
     dm_failed: bool
+    web_reply_available: bool
     unread_count: int = Field(description="이 대화에서 내가 아직 읽지 않은 메시지 수. 목록과 상세 조회는 읽음 처리를 하지 않는다")
 
 
@@ -180,6 +189,7 @@ class ClaimedMessageResponse(BaseModel):
 class ClaimResponse(BaseModel):
     items: list[ClaimedMessageResponse]
     total: int
+    web_url: str | None
 
 
 class DmResultRequest(BaseModel):

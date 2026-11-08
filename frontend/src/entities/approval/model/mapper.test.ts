@@ -19,6 +19,25 @@ it('maps task-create payload and derives each missing-field combination', () => 
   ])
 })
 
+describe('별칭 후보 (#523)', () => {
+  it('서버가 후보라고 하고 글자가 있으면 그 글자를 등록할 별칭으로 읽는다', () => {
+    expect(
+      toApproval({ ...approvalFixtures[2], alias_candidate: true, alias_text: '지훈' }),
+    ).toMatchObject({ kind: 'task_create', aliasCandidate: '지훈' })
+  })
+
+  it.each([
+    ['후보가 아님', false, null],
+    ['후보가 아닌데 글자만 옴', false, '지훈'],
+    ['후보인데 글자가 없음', true, null],
+    ['후보인데 글자가 비었음', true, '  '],
+  ])('%s 이면 등록할 별칭이 없다', (_, alias_candidate, alias_text) => {
+    expect(toApproval({ ...approvalFixtures[2], alias_candidate, alias_text })).toMatchObject({
+      aliasCandidate: null,
+    })
+  })
+})
+
 it('tolerates missing payload leaves and follows the backend title fallback order', () => {
   expect(
     toApproval({ ...approvalFixtures[0], payload: { task_title: '', title: '대체 제목' } }),

@@ -39,3 +39,20 @@ it('maps aliases and falls back unknown unions without throwing', async () => {
     }),
   ).toMatchObject({ type: 'nickname', source: 'manual', verified: false })
 })
+
+it('keeps the server-only display_name source as itself', async () => {
+  const { toMemberAlias } = await import('./mapper')
+  expect(
+    toMemberAlias({
+      alias_id: 'al',
+      member_id: 'mb',
+      workspace_id: 'ws',
+      alias_text: '김서연',
+      alias_type: 'realname',
+      source: 'display_name',
+      confidence: 1,
+      verified: true,
+      created_at: '',
+    }),
+  ).toMatchObject({ type: 'realname', source: 'display_name' })
+})

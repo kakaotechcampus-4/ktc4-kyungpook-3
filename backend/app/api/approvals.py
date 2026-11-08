@@ -1,3 +1,4 @@
+import hashlib
 import json
 from datetime import date, datetime, timezone
 
@@ -372,6 +373,13 @@ def _apply_approval(
         approval.payload = json.dumps({**payload, "task_overrides": changed}, ensure_ascii=False)
 
 
+def _payload_version(row: ApprovalRequest) -> str | None:
+    """task_create 카드의 payload 지문. 합치기가 payload 를 바꾸면 값이 달라져 승인 화면의 낡은 내용을 알아챈다."""
+    if row.type != str(ApprovalType.TASK_CREATE):
+        return None
+    return hashlib.sha256(row.payload.encode("utf-8")).hexdigest()[:16]
+
+
 def _to_response(row: ApprovalRequest, alias_text: str | None = None) -> ApprovalResponse:
     """DB 모델 → Pydantic 응답 변환. payload JSON 파싱 포함.
 
@@ -388,6 +396,7 @@ def _to_response(row: ApprovalRequest, alias_text: str | None = None) -> Approva
         resolved_by=row.resolved_by,
         created_at=row.created_at,
         resolved_at=row.resolved_at,
+        payload_version=_payload_version(row),
         alias_candidate=alias_text is not None,
         alias_text=alias_text,
     )
@@ -577,6 +586,16 @@ def resolve_approval(
     # 바꿨어도 승인은 DB 의 최신 값으로 task 를 만들어야 한다
     approval = db.get(ApprovalRequest, approval_id)
     db.refresh(approval)
+
+    # 카드를 본 뒤 payload 가 바뀌었으면 승인·반려 모두 되돌리고 새 내용을 보게 한다. refresh 한 값으로 비교해야 한다
+    current_version = _payload_version(approval)
+    requested_version = payload.payload_version
+    if requested_version is not None and current_version is not None and requested_version != current_version:
+        db.rollback()
+        raise AppError(
+            ErrorCode.APPROVAL_CHANGED,
+            details={"approval_id": approval_id, "payload_version": current_version},
+        )
 
     if payload.status == ApprovalStatus.APPROVED:
         try:
