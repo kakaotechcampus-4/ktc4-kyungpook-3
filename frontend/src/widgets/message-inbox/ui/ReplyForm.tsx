@@ -43,12 +43,14 @@ function composeCopy(audience: Audience, recipientName: string) {
       form: '메시지',
       field: `${recipientName}님에게 메시지`,
       send: '메시지 보내기',
+      failure: '메시지를 보내지 못했어요',
       note: '내용은 웹 대화에 저장돼요. Discord에는 새 메시지 안내만 보내요.',
     }
   return {
     form: '답장',
     field: 'PM에게 메시지',
     send: '답장 보내기',
+    failure: null,
     note: '답장은 이 웹 대화에 남아요. 봇 DM 창에 쓴 글은 전달되지 않아요. 여기에 써 주세요.',
   }
 }
@@ -150,7 +152,7 @@ export function ReplyForm({
       {failure !== null && failureText !== null ? (
         <div role="alert" className={FAILURE}>
           <p>
-            {failure.title}. {failureText}
+            {copy.failure ?? failure.title}. {failureText}
           </p>
           <button type="button" className={RESEND} onClick={send}>
             다시 보내기

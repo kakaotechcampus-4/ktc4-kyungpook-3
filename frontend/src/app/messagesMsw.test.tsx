@@ -905,6 +905,36 @@ describe('팀원 행이 있는 PM 은 자기 대화에 답장하고, 남의 대�
     )
   })
 
+  it('남의 대화에 쓴 글을 보내지 못하면 메시지 실패로 알리고 쓰던 글을 남긴다 — 다시 보내면 대화에 남는다', async () => {
+    applyScenario('messages-pm-self')
+    db.messageFailures.actions = true
+    await openInbox(paths.messageThread('ws_01', 'th_02'))
+    const field = await detail().findByRole('textbox', { name: '박민수님에게 메시지' })
+    await userEvent.type(field, '민수님, 다시 볼게요')
+    await userEvent.click(detail().getByRole('button', { name: '메시지 보내기' }))
+    const alert = await detail().findByRole('alert')
+    expect(alert).toHaveTextContent('메시지를 보내지 못했어요')
+    expect(alert).not.toHaveTextContent('답장')
+    await waitFor(() => expect(field).toBeEnabled())
+    expect(field).toHaveValue('민수님, 다시 볼게요')
+
+    db.messageFailures.actions = false
+    await userEvent.click(within(alert).getByRole('button', { name: '다시 보내기' }))
+    expect(await within(conversation()).findByText('민수님, 다시 볼게요')).toBeVisible()
+    await waitFor(() => expect(field).toHaveValue(''))
+    expect(detail().queryByRole('alert')).toBeNull()
+  })
+
+  it('자기 대화의 답장을 보내지 못하면 답장 실패로 알린다', async () => {
+    applyScenario('messages-pm-self')
+    db.messageFailures.actions = true
+    await openInbox(paths.messageThread('ws_01', 'th_06'))
+    const field = await detail().findByRole('textbox', { name: 'PM에게 메시지' })
+    await userEvent.type(field, '자기 대화 답장')
+    await userEvent.click(detail().getByRole('button', { name: '답장 보내기' }))
+    expect(await detail().findByRole('alert')).toHaveTextContent('답장을 보내지 못했어요')
+  })
+
   // 이 칸을 넣기 전 백엔드는 member_id 를 주지 않는다. 자기 대화인지 모르면 남의 대화처럼 그린다 — PM 글 칸이다
   it.each([
     ['공간 응답에 member_id 가 없으면', {}],
