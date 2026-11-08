@@ -26,9 +26,10 @@ export const SETTINGS_PARAMS = { section: 'section' } as const
 
 /**
  * 메시지 화면의 검색 파라미터. `review` 는 보내기 전 확인에서 고른 보낼 메시지(묶음 ID)다 (paths.messageReview).
- * `new=reminder` 면 오른쪽 칸에 재촉 만들기를 연다 (paths.messageCompose)
+ * `new=reminder` 면 오른쪽 칸에 재촉 만들기를 연다 (paths.messageCompose).
+ * `message` 는 대화를 열 때 맨 아래 대신 보여 줄 메시지 ID 다 (paths.messageThread)
  */
-export const MESSAGE_PARAMS = { review: 'review', compose: 'new' } as const
+export const MESSAGE_PARAMS = { review: 'review', compose: 'new', message: 'message' } as const
 
 /**
  * 팀 화면의 검색 파라미터. `connect=members` 면 팀원 연결 창을 연다 — 설정에서 Discord 를 연결한 뒤 오는 곳이다 (D-074).
@@ -89,9 +90,13 @@ export const paths = {
   /** 재촉 만들기. PM 만 연다 */
   messageCompose: (workspaceId: string) =>
     `${workspaceBase(workspaceId)}/messages?${MESSAGE_PARAMS.compose}=reminder`,
-  /** 팀원 한 명과의 대화 */
-  messageThread: (workspaceId: string, threadId: string) =>
-    `${workspaceBase(workspaceId)}/messages/threads/${segment(threadId)}`,
+  /** 팀원 한 명과의 대화. messageId 를 주면 맨 아래 대신 그 메시지를 보이며 연다 */
+  messageThread: (workspaceId: string, threadId: string, messageId?: string) =>
+    `${workspaceBase(workspaceId)}/messages/threads/${segment(threadId)}${
+      messageId === undefined
+        ? ''
+        : `?${new URLSearchParams({ [MESSAGE_PARAMS.message]: messageId }).toString()}`
+    }`,
   members: (workspaceId: string) => `${workspaceBase(workspaceId)}/members`,
   /** 팀 화면에서 팀원 연결 창을 연 채로 (D-074, D-075) */
   membersConnect: (workspaceId: string) =>

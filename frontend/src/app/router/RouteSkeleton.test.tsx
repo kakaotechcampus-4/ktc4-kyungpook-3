@@ -40,7 +40,7 @@ function renderAt(path: string, { role }: RenderOptions = {}) {
 describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () => {
   it.each([
     ['/login', ["Manager's Manager", '이메일', '비밀번호를 잊으셨나요?', '처음이신가요?']],
-    ['/signup', ['계정 만들기', '이름', '8자 이상, 숫자 포함', '이미 계정이 있으신가요?']],
+    ['/signup', ['계정 만들기', '이메일', '또는', '이미 계정이 있으신가요?']],
     ['/forgot-password', ['비밀번호 찾기', '이메일']],
     ['/workspaces', ['워크스페이스 선택', '들어갈 워크스페이스를 골라 주세요.']],
     [
@@ -60,6 +60,12 @@ describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () =>
     const { main } = renderAt(path)
     expect(main).toHaveAttribute('aria-busy', 'true')
     for (const text of texts) expect(within(main).getAllByText(text).length).toBeGreaterThan(0)
+  })
+
+  it('가입 첫 단계의 뼈대에는 인증할 이메일만 있고 프로필 칸은 없다', () => {
+    const { main } = renderAt('/signup')
+    expect(within(main).queryByText('이름')).not.toBeInTheDocument()
+    expect(within(main).queryByText('비밀번호')).not.toBeInTheDocument()
   })
 
   it.each([
@@ -149,7 +155,7 @@ describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () =>
   it.each([
     ['/login/', '이메일'],
     ['/LOGIN', '이메일'],
-    ['/Signup/', '8자 이상, 숫자 포함'],
+    ['/Signup/', '이메일'],
     ['/Workspaces/', '워크스페이스 선택'],
     ['/Workspaces/ws_01/Dashboard/', '워크스페이스 현황'],
     ['/workspaces/ws_01/TASKS?view=board', '시작 전'],
