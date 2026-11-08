@@ -19,6 +19,61 @@ it('maps task-create payload and derives each missing-field combination', () => 
   ])
 })
 
+describe('합쳐진 카드와 payload_version (#512, #547)', () => {
+  const merged = {
+    ...approvalFixtures[2],
+    payload_version: 'a'.repeat(16),
+    payload: {
+      ...approvalFixtures[2].payload,
+      assignee_item_id: 'it_21',
+      merged_items: [
+        {
+          extraction_item_id: 'it_21',
+          meeting_id: 'mt_07',
+          evidence_quote: '배포 문서는 재환님이 맡아 주세요.',
+          evidence_speaker: '1123',
+          evidence_speaker_member_id: 'mb_01',
+          evidence_at_ms: 1_250_000,
+          doc_text: '',
+          merged_at: '2026-09-17T03:00:00Z',
+        },
+        'not an item',
+      ],
+    },
+  }
+
+  it('지문과 합쳐진 항목, 담당자를 정한 항목을 읽는다. 모양이 틀린 항목은 버린다', () => {
+    expect(toApproval(merged)).toMatchObject({
+      kind: 'task_create',
+      payloadVersion: 'a'.repeat(16),
+      extractionItemId: 'it_06',
+      assigneeItemId: 'it_21',
+      mergedItems: [
+        {
+          extractionItemId: 'it_21',
+          meetingId: 'mt_07',
+          evidence: {
+            quote: '배포 문서는 재환님이 맡아 주세요.',
+            speaker: '1123',
+            speakerMemberId: 'mb_01',
+            atMs: 1_250_000,
+          },
+          docText: null,
+          mergedAt: '2026-09-17T03:00:00Z',
+        },
+      ],
+    })
+  })
+
+  it('합치지 않은 카드는 만든 항목이 담당자 항목이고, 지문이 없으면 null 이다', () => {
+    expect(toApproval(approvalFixtures[2])).toMatchObject({
+      payloadVersion: null,
+      mergedItems: [],
+      assigneeItemId: 'it_06',
+    })
+  })
+})
+
 describe('별칭 후보 (#523)', () => {
   it('서버가 후보라고 하고 글자가 있으면 그 글자를 등록할 별칭으로 읽는다', () => {
     expect(
@@ -261,6 +316,17 @@ describe('toApprovalResolveFailure', () => {
         httpError('APPROVAL_ALREADY_RESOLVED', { approval_id: 'ap_01', current_status: 'future' }),
       ),
     ).toEqual({ kind: 'already_resolved', approvalId: 'ap_01', currentStatus: null })
+  })
+
+  it('본 뒤 바뀐 카드(APPROVAL_CHANGED)는 변경 충돌(APPROVAL_CONFLICT)과 다른 실패다', () => {
+    expect(
+      toApprovalResolveFailure(
+        httpError('APPROVAL_CHANGED', { approval_id: 'ap_01', payload_version: 'b'.repeat(16) }),
+      ),
+    ).toEqual({ kind: 'changed' })
+    expect(toApprovalResolveFailure(httpError('APPROVAL_CONFLICT', conflictDetails))?.kind).toBe(
+      'conflict',
+    )
   })
 
   it('409 가 아니거나 다른 코드·다른 오류는 null 이다', () => {

@@ -17,14 +17,23 @@ import {
   addHistory,
 } from '../task-state'
 import { aliasCandidateOf, aliasFieldsOf } from '../aliasLearning'
+import { mergePendingItems, payloadVersionOf } from '../approvalMerge'
 import { linkApprovalHistory } from '../reply-state'
 import type { ApprovalDto } from '@/shared/types/api/approval'
 
 type Failure = ReturnType<typeof fail>
 
-/** 별칭 후보는 저장값이 아니라 응답마다 지금 상태로 구한다 (#523, `aliasLearning`) */
+/** 별칭 후보(#523, `aliasLearning`)와 payload 지문(#547)은 저장값이 아니라 응답마다 지금 상태로 구한다 */
 function approvalResponse(approval: ApprovalDto): ApprovalDto {
-  return { ...approval, ...aliasFieldsOf(approval) }
+  return { ...approval, ...aliasFieldsOf(approval), payload_version: payloadVersionOf(approval) }
+}
+
+function validPayloadVersion(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    (typeof value === 'string' && value.length >= 1 && value.length <= 64)
+  )
 }
 
 /**
@@ -238,9 +247,10 @@ function prepareTaskCreate(
     }
     if (Object.keys(changed).length) approval.payload = { ...payload, task_overrides: changed }
     approval.related_task_id = task.task_id
-    // 실 백엔드와 같게 — 위에서 검증한 그 항목의 task_id 만 채우되 approval_id 는 비우지 않는다
-    // (계약 §3.1, §4.0-②-12). 화면은 task_id 를 우선으로 읽어 이 상태를 반영됨으로 다룬다.
-    if (linkedItem) linkedItem.task_id = task.task_id
+    // 실 백엔드와 같게 이 카드에 이어진 항목(합쳐진 다른 회의의 항목 포함, #533)의 task_id 를 채우되 approval_id 는
+    // 비우지 않는다 (계약 §3.1, §4.0-②-12). 화면은 task_id 를 우선으로 읽어 이 상태를 반영됨으로 다룬다.
+    for (const item of db.extractions.flatMap(({ items }) => items))
+      if (item.approval_id === approval.approval_id) item.task_id = task.task_id
   }
 }
 
@@ -375,7 +385,8 @@ export const approvalHandlers = [
         confirm === null ||
         (typeof confirm === 'number' && Number.isInteger(confirm) && confirm >= 1)
       ) ||
-      !(body.save_alias === undefined || typeof body.save_alias === 'boolean')
+      !(body.save_alias === undefined || typeof body.save_alias === 'boolean') ||
+      !validPayloadVersion(body.payload_version)
     )
       return fail('INVALID_REQUEST', '처리 상태가 올바르지 않습니다.', 400)
     const approval = db.approvals.find(({ approval_id }) => approval_id === params.approvalId)
@@ -389,6 +400,20 @@ export const approvalHandlers = [
         approval_id: approval.approval_id,
         current_status: approval.status,
       })
+    mergePendingItems(db, approval, MOCK_NOW)
+    // 백엔드는 이미 처리됨·보완 값 400 다음에 본다. 보내지 않으면 비교하지 않는다
+    const current = payloadVersionOf(approval)
+    if (
+      typeof body.payload_version === 'string' &&
+      current !== null &&
+      body.payload_version !== current
+    )
+      return fail(
+        'APPROVAL_CHANGED',
+        '보신 뒤 승인 요청 내용이 바뀌었습니다. 새 내용을 확인한 뒤 다시 처리해 주세요.',
+        409,
+        { approval_id: approval.approval_id, payload_version: current },
+      )
     // 처리하면 후보가 아니게 되므로 상태를 바꾸기 전에 읽는다. 후보가 아니면 save_alias 는 조용히 무시한다
     const learnable = aliasCandidateOf(approval)
     if (body.status === 'approved') {

@@ -36,6 +36,9 @@ function createApproval(overrides: Partial<TaskCreateApproval> = {}): TaskCreate
     extractionItemId: 'ei_04',
     gate: 'review',
     aliasCandidate: null,
+    payloadVersion: null,
+    mergedItems: [],
+    assigneeItemId: 'ei_04',
     ...overrides,
   }
 }
@@ -72,6 +75,26 @@ function body(
   const plan = planApprovalResolution(approval, decision, context)
   return plan.ok ? toApprovalResolveRequestDto(plan.resolution) : null
 }
+
+describe('본 카드의 payload_version (#547)', () => {
+  const seen = createApproval({ payloadVersion: 'c'.repeat(16) })
+
+  it('생성 승인의 승인·반려 본문에 그 카드의 지문을 싣는다', () => {
+    expect(body(seen, 'approved', { memberIds: MEMBERS })).toEqual({
+      status: 'approved',
+      payload_version: 'c'.repeat(16),
+    })
+    expect(body(seen, 'rejected', {})).toEqual({
+      status: 'rejected',
+      payload_version: 'c'.repeat(16),
+    })
+  })
+
+  it('지문이 없는 카드와 변경 승인은 보내지 않는다', () => {
+    expect(body(createApproval(), 'rejected', {})).toEqual({ status: 'rejected' })
+    expect(body(updateApproval(), 'approved', {})).toEqual({ status: 'approved' })
+  })
+})
 
 describe('생성 승인 필수값', () => {
   it('세 값이 유효하면 이슈가 없다', () => {

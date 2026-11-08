@@ -6,7 +6,11 @@ import { db } from './db'
  * 모의 추출 항목. 백엔드는 담당자 표현 유형(`assignee_type`)을 저장하고 응답에는 싣지 않는다 — 별칭 후보를 응답마다
  * 다시 구하는 데만 쓴다(services/alias_learning.py). 응답으로 낼 때는 handler 가 뺀다
  */
-export type MockExtractionItem = ExtractionItemDto & { assignee_type?: string | null }
+export type MockExtractionItem = ExtractionItemDto & {
+  assignee_type?: string | null
+  /** 아직 합치지 않았지만 처리 요청 직전에 이 승인에 합쳐질 항목 (`approvalMerge`). 응답에는 싣지 않는다 */
+  merge_into?: string
+}
 
 /* 아래는 backend services/alias_learning.py 의 규칙을 옮긴 것이다. 바꾸면 그쪽과 맞춘다 */
 
@@ -41,7 +45,8 @@ function learnableText(item: MockExtractionItem): string | null {
  */
 export function aliasCandidateOf(approval: ApprovalDto | undefined): string | null {
   if (approval?.type !== 'task_create' || approval.status !== 'pending') return null
-  const itemId = approval.payload.extraction_item_id
+  // 합친 카드는 담당자를 정한 항목만 본다 (backend pending_merge.assignee_item_of)
+  const itemId = approval.payload.assignee_item_id ?? approval.payload.extraction_item_id
   const item = db.extractions
     .flatMap(({ items }): MockExtractionItem[] => items)
     .find(({ item_id }) => item_id === itemId)

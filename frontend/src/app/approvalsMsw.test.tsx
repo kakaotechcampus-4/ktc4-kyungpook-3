@@ -18,6 +18,9 @@ vi.mock('@/shared/config/env', () => ({
 
 vi.setConfig({ testTimeout: 20_000 })
 
+/** 생성 승인은 본 카드의 지문을 함께 보낸다 (#547). 값 자체는 approvalMerged.test.tsx 가 본다 */
+const SEEN = expect.stringMatching(/^[0-9a-f]{16}$/)
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(MOCK_NOW))
@@ -148,7 +151,9 @@ describe('확인이 필요한 이유와 마감 채우기 (#471)', () => {
 
     await userEvent.click(approveButton())
     await screen.findByTestId('approval-result')
-    expect(bodies).toEqual([{ status: 'approved', task_overrides: { due_date: '2026-09-21' } }])
+    expect(bodies).toEqual([
+      { status: 'approved', payload_version: SEEN, task_overrides: { due_date: '2026-09-21' } },
+    ])
   })
 
   it('「배포 전」처럼 날짜 하나로 정해지지 않는 말은 안내만 두고 채우기가 없다', async () => {
@@ -200,7 +205,12 @@ describe('담당자를 고르며 회의에서 부른 이름을 별칭으로 등�
     await userEvent.click(approveButton())
     await screen.findByTestId('approval-result')
     expect(bodies).toEqual([
-      { status: 'approved', save_alias: true, task_overrides: { assignee_member_id: 'mb_02' } },
+      {
+        status: 'approved',
+        payload_version: SEEN,
+        save_alias: true,
+        task_overrides: { assignee_member_id: 'mb_02' },
+      },
     ])
     expect(holders('지훈')).toEqual(['mb_02'])
     expect(aliasBox()).toBeNull()
@@ -221,7 +231,11 @@ describe('담당자를 고르며 회의에서 부른 이름을 별칭으로 등�
     await userEvent.click(approveButton())
     await screen.findByTestId('approval-result')
     expect(bodies).toEqual([
-      { status: 'approved', task_overrides: { assignee_member_id: 'mb_01' } },
+      {
+        status: 'approved',
+        payload_version: SEEN,
+        task_overrides: { assignee_member_id: 'mb_01' },
+      },
     ])
     expect(holders('지훈')).toEqual([])
   })
@@ -260,7 +274,12 @@ describe('담당자를 고르며 회의에서 부른 이름을 별칭으로 등�
     await userEvent.click(within(card).getByRole('button', { name: /^승인$/ }))
     await waitFor(() => expect(bodies).toHaveLength(1))
     expect(bodies).toEqual([
-      { status: 'approved', save_alias: true, task_overrides: { assignee_member_id: 'mb_02' } },
+      {
+        status: 'approved',
+        payload_version: SEEN,
+        save_alias: true,
+        task_overrides: { assignee_member_id: 'mb_02' },
+      },
     ])
   })
 })
@@ -288,7 +307,9 @@ describe('담당자 선택 상자 (#471)', () => {
 
     await userEvent.click(approveButton())
     await screen.findByTestId('approval-result')
-    expect(bodies).toEqual([{ status: 'approved', task_overrides: { assignee_member_id: null } }])
+    expect(bodies).toEqual([
+      { status: 'approved', payload_version: SEEN, task_overrides: { assignee_member_id: null } },
+    ])
   })
 
   it('현재 공간 팀원이 아닌 담당자가 오면 그 칸이 레드 R2 이고 오류 문구가 칸에 이어지며 승인할 수 없다. 팀원을 고르면 풀린다', async () => {
@@ -365,7 +386,11 @@ describe('입력 검증 — 칸에 연결된 오류 (AC-05)', () => {
     await userEvent.click(approveButton())
     await screen.findByTestId('approval-result')
     expect(bodies).toEqual([
-      { status: 'approved', task_overrides: { task_title: '😀'.repeat(300) } },
+      {
+        status: 'approved',
+        payload_version: SEEN,
+        task_overrides: { task_title: '😀'.repeat(300) },
+      },
     ])
   })
 
@@ -436,6 +461,7 @@ describe('승인은 한 번에, 실패는 흔적 없이 (AC-05)', () => {
     expect(bodies).toEqual([
       {
         status: 'approved',
+        payload_version: SEEN,
         task_overrides: {
           task_title: '알림 문구 최종 검토',
           assignee_member_id: 'mb_02',
@@ -538,7 +564,7 @@ describe('승인은 한 번에, 실패는 흔적 없이 (AC-05)', () => {
     await userEvent.click(rejectButton())
 
     expect(await screen.findByTestId('approval-result')).toHaveTextContent('반려했어요')
-    expect(bodies).toEqual([{ status: 'rejected' }])
+    expect(bodies).toEqual([{ status: 'rejected', payload_version: SEEN }])
     expect(db.tasks).toHaveLength(before)
     expect(itemOf('it_04')).toMatchObject({ task_id: null, approval_id: 'ap_01' })
     expect(approvalOf('ap_01').payload.task_title).toBe('알림 문구 검토')
@@ -552,7 +578,7 @@ describe('승인은 한 번에, 실패는 흔적 없이 (AC-05)', () => {
     expect(approveButton()).toBeEnabled()
     await userEvent.click(approveButton())
     expect(await screen.findByTestId('approval-result')).toHaveTextContent('승인했어요')
-    expect(bodies).toEqual([{ status: 'approved' }])
+    expect(bodies).toEqual([{ status: 'approved', payload_version: SEEN }])
   })
 })
 
