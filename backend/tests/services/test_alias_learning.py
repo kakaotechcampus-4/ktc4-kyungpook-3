@@ -157,3 +157,18 @@ def test_forms_outside_the_self_reference_rule_are_not_blocked(raw):
     """규칙 밖의 꼴은 막지 않는다: 주어 표지가 아닌 부사어·구·끝말, 그리고 3인칭 "저들". 새는 경우는 PM 동의, 한 글자
     확인 필요(#463), 별칭 삭제, AI 오분류 개선이 받는다(#464 리뷰)."""
     assert alias_learning.learnable_alias_text(_item(assignee_raw=raw)) is not None
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [None, "", "{깨진", "[1, 2]", '"문자열"', "{}"],
+    ids=["none", "empty", "bad-json", "list", "string", "no-ids"],
+)
+def test_card_assignee_item_is_none_for_unusable_payload(payload):
+    # 저장 쪽도 담당 항목을 못 찾으면 배우지 않으므로 후보도 내지 않는다
+    assert alias_learning.card_assignee_item(payload) is None
+
+
+def test_card_assignee_item_prefers_assignee_item_id():
+    assert alias_learning.card_assignee_item('{"extraction_item_id": "a", "assignee_item_id": "b"}') == "b"
+    assert alias_learning.card_assignee_item('{"extraction_item_id": "a"}') == "a"

@@ -24,6 +24,7 @@
 - 전체 백엔드 `pytest -q --tb=short --basetemp=<격리 경로>`는 2427개 통과, 1627개 건너뜀. PostgreSQL 전용 및 조건부 테스트는 실행되지 않았다.
 - 프론트엔드 `npm run typecheck` 통과. 인증 관련 Vitest 44개 통과. 병합한 두 스타일 파일의 Prettier와 ESLint 통과.
 - Chromium E2E `signup-kakao.e2e.ts`, `login-splash.e2e.ts` 11개 통과. 모바일 가입과 시작 포커스를 포함하며 API는 MSW를 사용한다.
+- 전체 회귀의 기준은 `develop@2ba38e96`이다. 검증 중 #533이 머지되어 `033293b4`를 추가 병합했고, 추출 합치기·합친 승인 카드·동시성·담당자 별칭 테스트는 84개 통과, 60개 건너뜀을 확인했다. 새 기반 전체 회귀는 CI에서 다시 확인해야 한다.
 
 ## 계획 대비 변경
 
