@@ -20,6 +20,17 @@ def _no_real_jev(monkeypatch):
     monkeypatch.setattr(pipeline, "get_jev", lambda: NullJev())
 
 
+GPU_FAILOVER_ENV = ("MM_GPU_FAILOVER", "GPU_STT_BASE_URL", "GPU_STT_API_KEY", "GPU_STT_CA_BUNDLE", "GPU_SWITCH_URL",
+                    "GPU_SWITCH_TOKEN", "MM_OPS_CHANNEL_ID", "MM_OPS_ROLE_ID", "MM_GPU_OPERATORS")
+
+
+@pytest.fixture(autouse=True)
+def _no_gpu_failover(monkeypatch):
+    """.env 에 GPU 전환이 켜져 있어도 테스트의 워커는 지금처럼 돈다. 실제 스위치·GPU 서버를 부르지 않는다."""
+    for name in GPU_FAILOVER_ENV:
+        monkeypatch.delenv(name, raising=False)
+
+
 class FakeDiarizer:
     def __init__(self, segments, *, pending_fetches=0):
         self.segments = segments

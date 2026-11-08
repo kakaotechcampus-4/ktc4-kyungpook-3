@@ -84,13 +84,15 @@ class FakeStt(FakeHttps):
 
     def __init__(self, cert: Path, key: Path, *, text: str = "안녕하세요", stall_s: float = 3.0) -> None:
         self.mode = "ok"
+        self.script: list[str] = []      # 앞 요청들의 응답. 다 쓰면 mode 를 따른다
         self.text = text
         self.stall_s = stall_s
         self.lock = threading.Lock()
         super().__init__(cert, key, self._answer)
 
     def _answer(self, method, path, headers, body):
-        mode = self.mode
+        with self.lock:
+            mode = self.script.pop(0) if self.script else self.mode
         if mode == "stall":
             time.sleep(self.stall_s)
             mode = "ok"
