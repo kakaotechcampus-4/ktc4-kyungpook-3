@@ -1,0 +1,508 @@
+"""Elice 장애 때 GPU 대기 서버로 전사를 넘기고, Elice 가 돌아오면 되돌리고 끈다(#530).
+
+워커 프로세스 안에서 돈다. FailoverStt 는 SttBackend 모양의 감싸개라 recorder 의 hinted 가 Prompted 로 감싸고,
+호출마다 길(Elice, GPU, 기다림)을 고른다. 같은 프로세스의 컨트롤러 tick 이 10초마다 상태 기계를 한 번 돌리고
+recordings/.worker/gpu-failover.json 에 적는다. 그 파일은 tick 만 쓴다. 사람의 켜기·끄기는 따로 된 요청 파일
+gpu-request 로 받는다(python -m capture.worker --gpu, 디스코드 /gpu).
+
+단계
+  NORMAL    Elice 로 보낸다. 실제 호출이 연속 6번 실패(SttError.cause 가 service 나 auth)하면 SUSPECT
+  SUSPECT   호출을 기다리게 하고 Elice 를 60초 간격으로 확인한다. 3번 연속 실패면 STARTING, 한 번 성공이면 NORMAL
+  STARTING  서버가 준비될 때까지 스위치 on 을 tick 마다 보낸다(멱등). 호출은 기다린다
+  ON_GPU    GPU 로 보낸다. 이름·문맥 프롬프트는 싣지 않는다. Elice 는 5분마다 확인한다
+  STOPPING  스위치 off. 이유가 idle 이면 호출은 기다린다(Elice 가 아직 죽어 있다고 본다)
+  PARKED    꺼졌는데 Elice 가 실제 묶음까지 되는지는 모른다. 첫 실제 성공에 NORMAL, 실제 실패 3번이면 바로 켠다
+  HALTED    하루 상한, Lambda 누적 상한(spent), 켜기 포기. 스스로 켜지 않는다
+
+기다림은 SUSPECT 에 들어갈 때부터 최대 30분이다. 기다리는 호출은 실패로 끝나지 않으니 batch 의 재시도도,
+recovery.attempts 도, retry_runs 도 늘지 않는다. 30분이 지나면 길이 Elice 로 풀려 지금의 재시도·포기 규칙이 돈다.
+값과 근거는 .work/design.md 의 확정 절과 결정 기록에 있다. plan·step·route_of 는 순수 함수다.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import threading
+import time
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field, replace
+from datetime import datetime
+from enum import StrEnum
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+KST = ZoneInfo("Asia/Seoul")
+USD_PER_HOUR = 0.647      # GPU 서버 가동 단가(g 계열 한 대, 결정 0039)
+KRW_PER_USD = 1400        # 결정 0039 의 가정 환율
+COST_NOTE = "GPU 가동분만, 꺼지는 시간 포함, 고정비 제외"
+
+
+class Mode(StrEnum):
+    MANUAL = "manual"   # 사람의 켜기만 켠다. 자동이면 켰을 때 알림만 한다
+    AUTO = "auto"
+
+
+class Phase(StrEnum):
+    NORMAL = "normal"
+    SUSPECT = "suspect"
+    STARTING = "starting"
+    ON_GPU = "on_gpu"
+    STOPPING = "stopping"
+    PARKED = "parked"
+    HALTED = "halted"
+
+
+class Route(StrEnum):
+    ELICE = "elice"
+    GPU = "gpu"
+    HOLD = "hold"
+
+
+class Io(StrEnum):
+    SWITCH_ON = "switch_on"
+    SWITCH_OFF = "switch_off"
+    CHECK_GPU = "check_gpu"
+    CHECK_ELICE = "check_elice"
+
+
+@dataclass(frozen=True)
+class Limits:
+    suspect_fails: int = 6          # 실제 Elice 호출 연속 실패 수
+    probe_gap_s: float = 60.0       # SUSPECT 의 Elice 확인 간격
+    probe_fails: int = 3
+    hold_s: float = 1800.0          # 호출을 붙잡는 최대 시간
+    boot_s: float = 420.0           # 부팅 뒤 준비 기한. 측정 약 160초의 2.6배
+    back_gap_s: float = 300.0       # ON_GPU 의 Elice 확인 간격
+    back_oks: int = 3
+    parked_fails: int = 3
+    idle_s: float = 600.0
+    rollover_s: float = 300.0       # 3시간 종료 몇 초 전에 넘기나
+    busy_window_s: float = 600.0    # 이 안에 GPU 호출이 있었으면 일이 있다고 본다
+    late_boot_s: float = 900.0      # 종료가 이만큼 안 남은 부팅은 버리고 새로 켠다
+    start_give_up_s: float = 7200.0
+    refused_retry_s: float = 300.0
+    switch_retry_s: float = 60.0
+    switch_alarm_s: float = 300.0
+    stop_alarm_s: float = 1800.0
+    gpu_fails: int = 3
+    gpu_probe_gap_s: float = 60.0
+    day_on_s: float = 6 * 3600.0    # KST 하루 켠 시간
+    day_ons: int = 6                # KST 하루 켜기 수
+    pause_s: float = 86400.0        # 수동 끄기가 자동 켜기를 멈추는 시간
+
+
+LIMITS = Limits()
+
+
+@dataclass(frozen=True)
+class ServerView:
+    """스위치 응답. EC2 의 이름은 스위치(Lambda)에서 끝난다."""
+
+    state: str                      # off | starting | running | stopping
+    launched_at: float | None
+    stop_at: float | None
+    refused: str | None             # limit | capacity | spent | not_ready | stopping
+    used_min: int = 0               # Lambda 장부의 누적 사용 분
+    cap_min: int = 0
+
+    @property
+    def live(self) -> bool:
+        return self.state in ("starting", "running") and self.launched_at is not None
+
+
+@dataclass(frozen=True)
+class Signals:
+    """전사 스레드가 쌓은 것의 사본. FailoverStt 가 주인이고 컨트롤러는 읽기만 한다. 누계는 이 프로세스의 것이다."""
+
+    elice_fails: int = 0            # 장애로 센 실패 누계(service, auth)
+    elice_oks: int = 0
+    elice_streak: int = 0           # 마지막 성공 뒤 연속 실패
+    streak_since: float | None = None
+    auth: bool = False              # 연속 실패에 401·402·403 이 섞였다
+    gpu_inflight: int = 0
+    gpu_streak: int = 0
+    last_gpu_call: float | None = None
+    waiting: int = 0
+
+
+@dataclass(frozen=True)
+class FailoverState:
+    """recordings/.worker/gpu-failover.json. 컨트롤러 tick 만 쓴다."""
+
+    phase: Phase = Phase.NORMAL
+    since: float = 0.0
+    why: str = ""
+    outage_since: float | None = None   # 이번 장애의 첫 실패. 포기한 회의를 깨울 기준
+    hold_until: float | None = None
+    next_probe_at: float | None = None  # Elice 확인
+    probe_fails: int = 0                # SUSPECT 의 연속 확인 실패
+    elice_ok: int = 0                   # ON_GPU 의 연속 확인 성공
+    next_gpu_probe_at: float | None = None
+    retry_at: float | None = None       # 다음 켜기 요청(거절·불통 뒤)
+    refused: str | None = None          # 이미 알린 거절. 같은 이유는 한 번만 알린다
+    switch_down_since: float | None = None
+    boot_failures: int = 0
+    discard: float | None = None        # 버릴 부팅의 launched_at. 끄고 새로 켠다(3시간 넘김, 부팅 실패)
+    paused_until: float | None = None
+    server: ServerView | None = None
+    session: tuple[float, float | None] | None = None   # 센 부팅의 (launched_at, stop_at)
+    day: str = ""                       # KST 날짜
+    day_ons: int = 0
+    day_used_s: float = 0.0             # 오늘 닫은 세션의 사용 시간
+    mark: tuple[int, int] = (0, 0)      # 단계에 들어올 때의 (elice_fails, elice_oks). 파일에 쓰지 않는다
+
+
+@dataclass(frozen=True)
+class Facts:
+    now: float
+    mode: Mode
+    signals: Signals
+    request: str | None = None          # on | off
+    server: ServerView | None = None    # 이번 tick 의 스위치 응답
+    switch_error: bool = False
+    gpu_ok: bool | None = None          # 이번 tick 의 GPU 확인
+    elice_ok: bool | None = None        # 이번 tick 의 Elice 확인
+
+
+@dataclass(frozen=True)
+class Notice:
+    text: str
+    alert: bool = False                 # 사람이 움직여야 한다. 운영 역할을 멘션한다
+
+
+def kst_day(ts: float) -> str:
+    return datetime.fromtimestamp(ts, KST).date().isoformat()
+
+
+def kst_clock(ts: float | None) -> str:
+    return datetime.fromtimestamp(ts, KST).strftime("%H:%M") if ts else "?"
+
+
+def cost_text(minutes: float) -> str:
+    usd = minutes / 60 * USD_PER_HOUR
+    return f"${usd:.2f}(₩{round(usd * KRW_PER_USD):,})"
+
+
+def today_used_s(s: FailoverState, now: float) -> float:
+    return s.day_used_s + (max(0.0, now - s.session[0]) if s.session else 0.0)
+
+
+def _time_full(s: FailoverState, now: float, L: Limits) -> bool:
+    return today_used_s(s, now) >= L.day_on_s
+
+
+def _ons_full(s: FailoverState, L: Limits) -> bool:
+    return s.day_ons >= L.day_ons
+
+
+def _paused(s: FailoverState, now: float) -> bool:
+    return s.paused_until is not None and now < s.paused_until
+
+
+def _fails_here(s: FailoverState, sig: Signals) -> int:
+    """이 단계에 들어온 뒤의 연속 실패."""
+    return min(sig.elice_streak, sig.elice_fails - s.mark[0])
+
+
+def _oks_here(s: FailoverState, sig: Signals) -> int:
+    return sig.elice_oks - s.mark[1]
+
+
+def _enter(s: FailoverState, phase: Phase, why: str, f: Facts, **kw) -> FailoverState:
+    fresh = dict(phase=phase, why=why, since=f.now, mark=(f.signals.elice_fails, f.signals.elice_oks), probe_fails=0,
+                 elice_ok=0, next_probe_at=None, next_gpu_probe_at=None, retry_at=None, refused=None,
+                 switch_down_since=None)
+    if phase in (Phase.NORMAL, Phase.PARKED, Phase.HALTED, Phase.ON_GPU):
+        fresh["hold_until"] = None
+    if phase is Phase.NORMAL:
+        fresh["outage_since"] = None
+    return replace(s, **{**fresh, **kw})
+
+
+def _account(s: FailoverState, view: ServerView | None, now: float) -> tuple[FailoverState, float | None]:
+    """KST 날짜를 넘기고 스위치 응답으로 세션을 열고 닫는다. 닫은 세션의 사용 초를 함께 돌려준다.
+
+    사용 시간은 부팅의 launched_at 부터 꺼짐을 본 때까지다. 상태 파일에 적지 않고 서버 값에서 다시 만들어서
+    켜기와 저장 사이에 워커가 죽어도 잃지 않는다. 자정을 넘긴 세션은 다음 날에 통째로 센다.
+    """
+    if s.day != kst_day(now):
+        s = replace(s, day=kst_day(now), day_ons=0, day_used_s=0.0)
+    if view is None:
+        return s, None
+    closed = None
+    if s.session and (view.state == "off" or (view.live and view.launched_at != s.session[0])):
+        closed = max(0.0, now - s.session[0])
+        s = replace(s, day_used_s=s.day_used_s + closed, session=None)
+    if view.live and s.session is None:
+        s = replace(s, session=(view.launched_at, view.stop_at), day_ons=s.day_ons + 1)
+    return replace(s, server=view), closed
+
+
+def _start(s: FailoverState, f: Facts, L: Limits, why: str, out: list[Notice], *,
+           hold_until: float | None = None) -> FailoverState:
+    """켜기로 간다. 하루 상한에 닿았으면 HALTED. 서버가 꺼진 단계에서만 부른다."""
+    if _time_full(s, f.now, L) or _ons_full(s, L):
+        out.append(Notice(f"⛔ 오늘 GPU 상한(켠 시간 {L.day_on_s / 3600:.0f}시간, 켜기 {L.day_ons}번)에 닿아 켜지 않습니다. "
+                          "KST 날짜가 바뀌면 다시 켤 수 있습니다.", alert=True))
+        return _enter(s, Phase.HALTED, "day_cap", f)
+    outage = s.outage_since or f.signals.streak_since or f.now
+    hold = hold_until if hold_until is not None else f.now + L.hold_s
+    who = "수동 요청으로" if why == "manual" else "Elice 전사가 계속 실패해"
+    out.append(Notice(f"⚠️ {who} GPU 서버를 켭니다. 약 3분 걸리고 그동안 전사는 기다립니다"
+                      f"({kst_clock(hold)} 까지).", alert=True))
+    return _enter(s, Phase.STARTING, why, f, hold_until=hold, outage_since=outage)
+
+
+def _would_start(s: FailoverState, f: Facts, out: list[Notice]) -> FailoverState:
+    out.append(Notice("⚠️ Elice 전사가 계속 실패합니다. 자동 모드였으면 GPU 서버를 켰습니다. "
+                      "켜려면 운영 채널에서 `/gpu on` 을 실행해 주세요.", alert=True))
+    return _enter(s, Phase.NORMAL, "would_start", f)
+
+
+def _auto_start(s: FailoverState, f: Facts, L: Limits, out: list[Notice], **kw) -> FailoverState:
+    if f.mode is Mode.MANUAL:
+        return _would_start(s, f, out)
+    return _start(s, f, L, "elice_down", out, **kw)
+
+
+def _stopping(s: FailoverState, f: Facts, why: str, out: list[Notice], **kw) -> FailoverState:
+    kw.setdefault("hold_until", None)
+    return _enter(s, Phase.STOPPING, why, f, **kw)
+
+
+def _paused_by_hand(s: FailoverState, f: Facts, L: Limits, out: list[Notice]) -> FailoverState:
+    out.append(Notice(f"⏸ 수동 끄기. 자동 켜기를 {kst_clock(f.now + L.pause_s)}(내일) 까지 멈춥니다."))
+    return replace(s, paused_until=f.now + L.pause_s)
+
+
+def _normal(s, f, L, out, closed):
+    sig = f.signals
+    if f.request == "off":
+        return _paused_by_hand(s, f, L, out)
+    if f.request == "on":
+        return _start(s, f, L, "manual", out)
+    if s.why == "would_start" and _oks_here(s, sig) > 0:
+        s = replace(s, why="")
+    if s.why != "would_start" and not _paused(s, f.now) and _fails_here(s, sig) >= L.suspect_fails:
+        out.append(Notice(f"⏳ Elice 전사가 연속 {sig.elice_streak}번 실패했습니다"
+                          f"{'(키·크레딧 거절 포함)' if sig.auth else ''}. 전사를 잠시 멈추고 Elice 를 확인합니다."))
+        return _enter(s, Phase.SUSPECT, "elice_down", f, hold_until=f.now + L.hold_s, next_probe_at=f.now,
+                      outage_since=sig.streak_since or f.now)
+    return s
+
+
+def _suspect(s, f, L, out, closed):
+    if f.request == "off":
+        s = _paused_by_hand(s, f, L, out)
+        return _enter(s, Phase.NORMAL, "manual", f)
+    if f.request == "on":
+        return _start(s, f, L, "manual", out, hold_until=s.hold_until)
+    if f.elice_ok is True or _oks_here(s, f.signals) > 0:
+        out.append(Notice("✅ Elice 가 응답합니다. 전사를 이어 갑니다."))
+        return _enter(s, Phase.NORMAL, "elice_ok", f)
+    if f.elice_ok is False:
+        if s.probe_fails + 1 >= L.probe_fails:
+            return _auto_start(s, f, L, out, hold_until=s.hold_until)
+        return replace(s, probe_fails=s.probe_fails + 1, next_probe_at=f.now + L.probe_gap_s)
+    return s
+
+
+def _starting(s, f, L, out, closed):
+    v = f.server
+    if f.request == "off":
+        s = _paused_by_hand(s, f, L, out)
+        return _stopping(s, f, "manual", out)
+    if v is not None and v.refused == "spent":
+        out.append(Notice("⛔ GPU 사용 시간이 Lambda 누적 상한에 닿아 켜지 못했습니다. 관리자가 상한을 올려야 합니다.",
+                          alert=True))
+        return _stopping(s, f, "spent", out)
+    if v is not None and v.refused == "not_ready":
+        out.append(Notice("⛔ GPU 서버가 준비 표시(Ready)가 없어 켜지 못했습니다. 담당자가 setup 을 마쳐야 합니다.",
+                          alert=True))
+        return _stopping(s, f, "start_failed", out)
+    if f.now - s.since > L.start_give_up_s:
+        out.append(Notice(f"⛔ {L.start_give_up_s / 3600:.0f}시간 동안 GPU 서버를 켜지 못해 멈춥니다.", alert=True))
+        return _stopping(s, f, "start_failed", out)
+    if _time_full(s, f.now, L) or (s.session is None and _ons_full(s, L)):
+        out.append(Notice("⛔ 오늘 GPU 상한에 닿아 켜기를 멈춥니다.", alert=True))
+        return _stopping(s, f, "day_cap", out)
+    server = s.server
+    if f.gpu_ok is True:
+        out.append(Notice(f"✅ GPU 서버로 전사를 넘겼습니다. 종료 예정 {kst_clock(server.stop_at if server else None)}. "
+                          "이름 힌트 없이 전사합니다."))
+        return _enter(s, Phase.ON_GPU, s.why, f, discard=None, boot_failures=0,
+                      next_probe_at=f.now + L.back_gap_s, next_gpu_probe_at=f.now + L.gpu_probe_gap_s)
+    if f.gpu_ok is False and server and server.launched_at and f.now - server.launched_at > L.boot_s:
+        if s.boot_failures + 1 >= 2:
+            out.append(Notice("⛔ GPU 서버가 두 번 다 부팅 뒤 준비되지 않았습니다. 끄고 멈춥니다. 담당자 확인이 필요합니다.",
+                              alert=True))
+            return _stopping(s, f, "boot", out, boot_failures=s.boot_failures + 1)
+        out.append(Notice(f"⚠️ GPU 서버가 부팅 뒤 {L.boot_s / 60:.0f}분 안에 준비되지 않아 한 번 끄고 다시 켭니다.",
+                          alert=True))
+        s = replace(s, boot_failures=s.boot_failures + 1, discard=server.launched_at)
+    if s.discard is not None and server is not None and (not server.live or server.launched_at != s.discard):
+        s = replace(s, discard=None)
+    if (s.discard is None and server is not None and server.state == "running" and server.stop_at
+            and server.stop_at - f.now <= L.late_boot_s):
+        s = replace(s, discard=server.launched_at)
+    if v is not None and v.refused in ("limit", "capacity"):
+        if s.refused != v.refused:
+            what = "GPU vCPU 한도" if v.refused == "limit" else "AWS 용량 부족"
+            out.append(Notice(f"⚠️ GPU 서버를 켜지 못했습니다: {what}. {L.refused_retry_s / 60:.0f}분마다 다시 켭니다.",
+                              alert=True))
+        s = replace(s, retry_at=f.now + L.refused_retry_s, refused=v.refused)
+    if f.switch_error:
+        down = s.switch_down_since or f.now
+        if f.now - down >= L.switch_alarm_s and s.refused != "switch":
+            out.append(Notice(f"⚠️ GPU 스위치가 {int((f.now - down) // 60)}분째 응답하지 않습니다.", alert=True))
+            s = replace(s, refused="switch")
+        s = replace(s, retry_at=f.now + L.switch_retry_s, switch_down_since=down)
+    elif v is not None:
+        s = replace(s, switch_down_since=None)
+    if s.hold_until is not None and f.now >= s.hold_until:
+        out.append(Notice("⚠️ 기다림 상한이 지나 기다리던 전사를 Elice 로 보냅니다. 켜기는 계속합니다."))
+        s = replace(s, hold_until=None)
+    return s
+
+
+def _on_gpu(s, f, L, out, closed):
+    sig = f.signals
+    if f.request == "off":
+        s = _paused_by_hand(s, f, L, out)
+        return _stopping(s, f, "manual", out)
+    if _time_full(s, f.now, L):
+        out.append(Notice("⛔ 오늘 GPU 켠 시간 상한에 닿아 서버를 끕니다. 전사는 Elice 로 돌아갑니다.", alert=True))
+        return _stopping(s, f, "day_cap", out)
+    if f.elice_ok is True:
+        if s.elice_ok + 1 >= L.back_oks:
+            out.append(Notice(f"✅ Elice 가 돌아왔습니다(확인 {L.back_oks}번 연속 성공). 전사를 되돌리고 GPU 서버를 끕니다."))
+            return _stopping(s, f, "elice_back", out)
+        s = replace(s, elice_ok=s.elice_ok + 1, next_probe_at=f.now + L.back_gap_s)
+    elif f.elice_ok is False:
+        s = replace(s, elice_ok=0, next_probe_at=f.now + L.back_gap_s)
+    stop_at = s.session[1] if s.session else (s.server.stop_at if s.server else None)
+    busy = sig.gpu_inflight > 0 or (sig.last_gpu_call is not None and f.now - sig.last_gpu_call <= L.busy_window_s)
+    if stop_at is not None and stop_at - f.now <= L.rollover_s:
+        if not busy:
+            return _stopping(s, f, "idle", out, hold_until=f.now + L.hold_s)
+        if _ons_full(s, L):
+            out.append(Notice("⛔ 3시간 종료가 다가오는데 오늘 켜기 수 상한이라 다시 켜지 않습니다.", alert=True))
+            return _stopping(s, f, "day_cap", out)
+        out.append(Notice("🔁 GPU 서버의 3시간 종료가 다가와 끄고 다시 켭니다. 그동안 전사는 기다립니다."))
+        return _enter(s, Phase.STARTING, "rollover", f, discard=s.session[0] if s.session else None,
+                      hold_until=f.now + L.hold_s)
+    if f.gpu_ok is False or sig.gpu_streak >= L.gpu_fails:
+        out.append(Notice("⚠️ GPU 서버가 응답하지 않습니다. 다시 확인하고 필요하면 다시 켭니다. 그동안 전사는 기다립니다."))
+        return _enter(s, Phase.STARTING, "gpu_lost", f, hold_until=f.now + L.hold_s)
+    if f.gpu_ok is True:
+        s = replace(s, next_gpu_probe_at=f.now + L.gpu_probe_gap_s)
+    last = max(sig.last_gpu_call or 0.0, s.since)
+    if sig.gpu_inflight == 0 and f.now - last >= L.idle_s:
+        return _stopping(s, f, "idle", out, hold_until=f.now + L.hold_s)
+    return s
+
+
+STOP_REASON = {"manual": "수동 끄기", "elice_back": "Elice 복귀", "idle": "일 없음", "day_cap": "하루 상한",
+               "spent": "누적 상한", "boot": "부팅 실패", "start_failed": "켜기 실패"}
+
+
+def _stopping_step(s, f, L, out, closed):
+    if f.request == "off" and s.why != "manual":
+        s = _paused_by_hand(s, f, L, out)
+        s = replace(s, why="manual", hold_until=None)
+    if f.server is None or f.server.state != "off":
+        if f.now - s.since > L.stop_alarm_s and s.refused != "slow":
+            out.append(Notice(f"⚠️ GPU 서버가 {int((f.now - s.since) // 60)}분째 꺼지지 않습니다.", alert=True))
+            s = replace(s, refused="slow")
+        return s
+    if closed is not None:
+        v = f.server
+        out.append(Notice(f"🛑 GPU 서버를 껐습니다({STOP_REASON.get(s.why, s.why)}). 이번 {closed / 60:.0f}분 "
+                          f"{cost_text(closed / 60)}, 누적 {v.used_min / 60:.1f}/{v.cap_min / 60:.0f}시간 "
+                          f"{cost_text(v.used_min)}, 오늘 켠 횟수 {s.day_ons}/{L.day_ons}.\n{COST_NOTE}"))
+    if s.why == "manual":
+        return _enter(s, Phase.NORMAL, "manual", f)
+    if s.why == "elice_back":
+        return _enter(s, Phase.PARKED, "elice_back", f)
+    if s.why == "idle":
+        if f.signals.waiting > 0:
+            return _auto_start(s, f, L, out, hold_until=s.hold_until)
+        return _enter(s, Phase.PARKED, "idle", f)
+    return _enter(s, Phase.HALTED, s.why, f)
+
+
+def _parked(s, f, L, out, closed):
+    sig = f.signals
+    if f.request == "on":
+        return _start(s, f, L, "manual", out)
+    if f.request == "off":
+        s = _paused_by_hand(s, f, L, out)
+        return _enter(s, Phase.NORMAL, "manual", f)
+    if _oks_here(s, sig) > 0:
+        out.append(Notice("✅ Elice 실제 전사가 성공했습니다. 평소대로 돌아갑니다."))
+        return _enter(s, Phase.NORMAL, "elice_ok", f)
+    if _fails_here(s, sig) >= L.parked_fails:
+        if _paused(s, f.now):
+            return _enter(s, Phase.NORMAL, "manual", f)
+        return _auto_start(replace(s, outage_since=sig.streak_since), f, L, out)
+    return s
+
+
+def _halted(s, f, L, out, closed):
+    if f.request == "off":
+        return _paused_by_hand(s, f, L, out)
+    if s.why == "day_cap" and kst_day(s.since) != kst_day(f.now):
+        out.append(Notice("ℹ️ 날짜가 바뀌어 하루 GPU 상한이 풀렸습니다."))
+        return _enter(s, Phase.PARKED, "day_cap", f)
+    if f.request == "on":
+        if s.why == "day_cap":
+            out.append(Notice("⛔ 오늘 GPU 상한에 닿아 켜지 않습니다. KST 날짜가 바뀌면 다시 켤 수 있습니다."))
+            return s
+        return _start(replace(s, boot_failures=0), f, L, "manual", out)
+    return s
+
+
+_STEPS = {Phase.NORMAL: _normal, Phase.SUSPECT: _suspect, Phase.STARTING: _starting, Phase.ON_GPU: _on_gpu,
+          Phase.STOPPING: _stopping_step, Phase.PARKED: _parked, Phase.HALTED: _halted}
+
+
+def step(s: FailoverState, f: Facts, L: Limits = LIMITS) -> tuple[FailoverState, list[Notice]]:
+    """tick 한 번의 전이. 순수 함수다. 단계마다 위에서부터 보고 단계를 바꾸는 첫 줄에서 멈춘다."""
+    s, closed = _account(s, f.server, f.now)
+    out: list[Notice] = []
+    return _STEPS[s.phase](s, f, L, out, closed), out
+
+
+def plan(s: FailoverState, sig: Signals, now: float, L: Limits = LIMITS) -> frozenset[Io]:
+    """이번 tick 에 할 I/O. 순수 함수다. 스위치 on·off 는 멱등이라 상태 조회를 겸한다."""
+    io: set[Io] = set()
+    if s.phase is Phase.SUSPECT and (s.next_probe_at is None or now >= s.next_probe_at):
+        io.add(Io.CHECK_ELICE)
+    elif s.phase is Phase.STARTING:
+        server = s.server
+        if s.discard is not None and server is not None and server.live and server.launched_at == s.discard:
+            io.add(Io.SWITCH_OFF)
+        else:
+            if (s.retry_at is None or now >= s.retry_at) and not (s.session is None and _ons_full(s, L)):
+                io.add(Io.SWITCH_ON)
+            if server is not None and server.state == "running":
+                io.add(Io.CHECK_GPU)
+    elif s.phase is Phase.ON_GPU:
+        if s.next_gpu_probe_at is None or now >= s.next_gpu_probe_at:
+            io.add(Io.CHECK_GPU)
+        if s.next_probe_at is None or now >= s.next_probe_at:
+            io.add(Io.CHECK_ELICE)
+    elif s.phase is Phase.STOPPING and sig.gpu_inflight == 0:
+        io.add(Io.SWITCH_OFF)
+    return frozenset(io)
+
+
+def route_of(s: FailoverState, now: float) -> Route:
+    """전사 호출이 갈 곳. 기다림은 hold_until 까지다."""
+    if s.phase is Phase.ON_GPU:
+        return Route.GPU
+    holds = s.phase in (Phase.SUSPECT, Phase.STARTING) or (s.phase is Phase.STOPPING and s.why == "idle")
+    if holds and s.hold_until is not None and now < s.hold_until:
+        return Route.HOLD
+    return Route.ELICE
