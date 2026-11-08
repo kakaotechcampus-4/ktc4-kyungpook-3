@@ -534,6 +534,7 @@ def route_of(s: FailoverState, now: float) -> Route:
 STATE_FILE = "gpu-failover.json"
 REQUEST_FILE = "gpu-request"
 REQUESTS = ("on", "off")
+REQUEST_MAX_AGE_S = 600.0   # 이보다 오래 남은 요청은 버린다. 받을 워커가 없던 요청이 며칠 뒤 서버를 켜거나 자동 켜기를 멈추지 않게
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -764,6 +765,11 @@ class FailoverStt:
             req = req_path.read_text(encoding="utf-8").strip() or None
         except OSError:
             pass
+        age = time.time() - seen[1] / 1e9 if seen else 0.0   # 파일 시각은 벽시계라 주입한 시계와 견주지 않는다
+        if req is not None and age > REQUEST_MAX_AGE_S:
+            print(f"[failover] {int(age // 60)}분 지난 요청 {req} 을 버린다", flush=True)
+            _unlink_if_same(req_path, seen)
+            req = None
         if req == "on" and s.phase is Phase.STOPPING:
             req = None                  # 끄는 중의 켜기는 파일에 두고 꺼진 뒤의 단계가 읽는다
         elif req is not None and req not in REQUESTS:

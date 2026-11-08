@@ -268,8 +268,14 @@ async def test_the_worker_runs_the_controller_and_shows_it_in_the_heartbeat(tmp_
     assert hb["failover"] == "auto:normal"
 
 
+def _heartbeat(rec, **kw):
+    R.save_manifest(rec / ".worker" / "heartbeat.json",
+                    {"state": "running", "at_ts": __import__("time").time(), "interval_s": 10, **kw})
+
+
 def test_gpu_on_and_off_leave_a_request_for_the_running_worker(tmp_path, capsys):
     rec = tmp_path / "recordings"
+    _heartbeat(rec, failover="manual:normal")
     assert W.main(["--recordings", str(rec), "--gpu", "on"]) == 0
     assert (rec / ".worker" / "gpu-request").read_text() == "on"
     assert "요청" in capsys.readouterr().out
@@ -291,7 +297,25 @@ def test_gpu_status_reads_the_state_file(tmp_path, servers):
 
 def test_gpu_says_when_the_running_worker_has_failover_off(tmp_path):
     rec = tmp_path / "recordings"
-    R.save_manifest(rec / ".worker" / "heartbeat.json",
-                    {"state": "running", "at_ts": __import__("time").time(), "interval_s": 10})
+    _heartbeat(rec)
     assert "MM_GPU_FAILOVER" in W.gpu(rec, "on")
     assert "MM_GPU_FAILOVER" in W.gpu(rec, "status")
+
+
+@pytest.mark.parametrize("beat", [{}, None], ids=["failover off", "no worker"])
+@pytest.mark.parametrize("verb", ["on", "off"])
+def test_gpu_leaves_no_request_without_a_failover_worker(tmp_path, beat, verb):
+    """남은 요청은 며칠 뒤 전환을 켠 워커가 읽는다. 받을 워커가 없으면 쓰지 않는다."""
+    rec = tmp_path / "recordings"
+    if beat is not None:
+        _heartbeat(rec, **beat)
+    text = W.gpu(rec, verb)
+    assert "남기지 않았습니다" in text and "MM_GPU_FAILOVER" in text
+    assert not (rec / ".worker" / "gpu-request").exists()
+
+
+def test_gpu_leaves_a_request_for_a_stopped_failover_worker(tmp_path):
+    rec = tmp_path / "recordings"
+    _heartbeat(rec, state="stopped", failover="auto:normal")
+    assert "요청을 남겼습니다" in W.gpu(rec, "on")
+    assert (rec / ".worker" / "gpu-request").read_text() == "on"

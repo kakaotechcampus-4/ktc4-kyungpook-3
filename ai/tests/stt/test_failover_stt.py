@@ -1,5 +1,6 @@
 """FailoverStt 감싸개와 tick. 바꿀 수 있는 시계, FakeSwitch, 응답을 고르는 전사기로 장애 하나를 처음부터 끝까지 돈다."""
 
+import os
 import threading
 import time
 
@@ -557,6 +558,20 @@ def test_a_request_is_written_whole(tmp_path):
     assert not list(tmp_path.glob("*.tmp"))
     with pytest.raises(ValueError):
         request(tmp_path, "reboot")
+
+
+@pytest.mark.parametrize("age_min, starts", [(11, 0), (9, 1)])
+def test_a_request_older_than_ten_minutes_is_dropped(tmp_path, capsys, age_min, starts):
+    """전환이 꺼졌거나 멈춘 워커에 남은 요청이 며칠 뒤 서버를 켜지 않는다. 파일 시각은 벽시계다."""
+    fo, elice, gpu, switch, clock, notes = make(tmp_path)
+    path = request(tmp_path, "on")
+    old = time.time() - age_min * 60
+    os.utime(path, (old, old))
+    fo.tick()
+    fo.tick()
+    assert switch.starts == starts
+    assert path.exists() is False
+    assert ("지난 요청" in capsys.readouterr().out) is (starts == 0)
 
 
 def test_a_tick_that_breaks_is_logged_and_the_route_stays(tmp_path, capsys):

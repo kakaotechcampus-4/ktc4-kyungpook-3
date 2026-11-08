@@ -421,20 +421,23 @@ def retry(recordings_dir: Path, guild_id: str) -> str:
 
 def gpu(recordings_dir: Path, verb: str) -> str:
     """--gpu on|off|status 와 디스코드 /gpu 가 쓴다. on·off 는 요청 파일만 남기고 떠 있는 워커의 다음 tick 이 읽는다.
-    status 는 상태 파일을 읽는다. 여기서 스위치를 직접 부르지 않는다. 상태 파일의 주인은 워커 하나다."""
+    status 는 상태 파일을 읽는다. 여기서 스위치를 직접 부르지 않는다. 상태 파일의 주인은 워커 하나다.
+
+    요청은 heartbeat 에 failover 칸이 있을 때(전환을 켠 워커가 남긴 것)만 남긴다. 받을 워커가 없는 요청은 며칠 뒤 전환을
+    켠 워커가 읽어 서버를 켠다."""
     from stt.failover import request, status_text
 
     d = worker_dir(recordings_dir)
     hb = read_heartbeat(recordings_dir)
-    off = hb is not None and hb.get("state") == "running" and "failover" not in hb
-    note = "\n⚠️ 떠 있는 워커의 GPU 전환이 꺼져 있습니다(MM_GPU_FAILOVER)." if off else ""
     trouble = worker_trouble(recordings_dir)
-    if trouble:
-        note += f"\n⚠️ {trouble}."
+    note = f"\n⚠️ {trouble}." if trouble else ""
     if verb == "status":
-        return status_text(d) + note
-    request(d, verb)
+        off = hb is not None and hb.get("state") == "running" and "failover" not in hb
+        return status_text(d) + ("\n⚠️ 떠 있는 워커의 GPU 전환이 꺼져 있습니다(MM_GPU_FAILOVER)." if off else "") + note
     what = "켜기" if verb == "on" else "끄기(24시간 자동 켜기 멈춤)"
+    if hb is None or "failover" not in hb:
+        return f"GPU {what} 요청을 남기지 않았습니다. GPU 전환(MM_GPU_FAILOVER)을 켠 워커가 없습니다.{note}"
+    request(d, verb)
     return f"GPU {what} 요청을 남겼습니다. 워커가 다음 확인 때 처리하고 결과는 운영 채널에 올립니다.{note}"
 
 

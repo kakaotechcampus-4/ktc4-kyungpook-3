@@ -1,6 +1,9 @@
 """디스코드 /gpu on|off|status. 비공개 운영 채널(MM_OPS_CHANNEL_ID)에서 친 명령만 받는다. 채널 ID 가 비면 아무도 못 쓴다.
 봇은 요청 파일만 쓰고 상태 파일을 읽는다."""
 
+import json
+import time
+
 import discord
 import pytest
 
@@ -35,6 +38,12 @@ def _ops(monkeypatch):
     monkeypatch.setenv("MM_OPS_CHANNEL_ID", str(OPS))
 
 
+def _worker_beat(tmp_path, **kw):
+    d = tmp_path / "recordings" / ".worker"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "heartbeat.json").write_text(json.dumps({"state": "running", "at_ts": time.time(), "interval_s": 10, **kw}))
+
+
 def _request(tmp_path):
     p = tmp_path / "recordings" / ".worker" / "gpu-request"
     return p.read_text() if p.exists() else None
@@ -43,9 +52,18 @@ def _request(tmp_path):
 @pytest.mark.parametrize("verb", ["on", "off"])
 async def test_a_command_in_the_ops_channel_leaves_a_request(tmp_path, verb):
     cog, ctx = _ctx(tmp_path)
+    _worker_beat(tmp_path, failover="manual:normal")
     await _run_gpu(cog, ctx, verb)
     assert _request(tmp_path) == verb
     assert "요청" in ctx.responses[-1] and ctx.ephemeral[-1] is False
+
+
+async def test_a_command_for_a_worker_without_failover_leaves_no_request(tmp_path):
+    cog, ctx = _ctx(tmp_path)
+    _worker_beat(tmp_path)
+    await _run_gpu(cog, ctx, "on")
+    assert _request(tmp_path) is None
+    assert "남기지 않았습니다" in ctx.responses[-1] and "MM_GPU_FAILOVER" in ctx.responses[-1]
 
 
 async def test_status_reads_the_state_file(tmp_path):
