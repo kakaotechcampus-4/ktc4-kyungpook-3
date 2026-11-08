@@ -9,7 +9,7 @@ export interface TaskCreateFields {
   dueDate: string | null
 }
 export type TaskCreateEdits = Partial<TaskCreateFields>
-/** `assigneeMemberId` 는 담당자를 찾지 못한 답장 카드(`assigneePick`)에서만 고른다. null 은 미정이다 (BE #460 합의 대기) */
+/** `assigneeMemberId` 는 담당자를 찾지 못한 답장 카드(`assigneePick`)에서만 고른다. null 은 미정이다 */
 export type TaskUpdateEdits = Partial<{
   status: TaskStatus
   dueDate: string | null

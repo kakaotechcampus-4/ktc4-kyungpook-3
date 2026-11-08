@@ -206,7 +206,7 @@ describe('생성 승인과 부분 보완', () => {
   })
 })
 
-describe('담당자를 찾지 못한 답장 카드 (#344, BE #460 합의 대기)', () => {
+describe('담당자를 찾지 못한 답장 카드 (#344)', () => {
   const pickCard = () =>
     updateApproval({
       changes: [],

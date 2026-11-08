@@ -130,21 +130,30 @@ describe('task_update 의 범위 변경 (#205)', () => {
     })
   })
 
-  it('담당자를 팀원에서 찾지 못한 답장 카드만 담당자를 고를 카드다', () => {
-    const reply = {
-      change_source: 'reminder_reply',
-      reply_message_id: 'mg_31',
-      category: 'assignee',
-    }
-    expect(update({ ...reply, assignee_raw: '민지' })).toMatchObject({
+  it('답장이 말한 담당자를 팀원에서 찾지 못한 카드만 담당자를 고를 카드다. 분류는 보지 않는다', () => {
+    const reply = { change_source: 'reminder_reply', reply_message_id: 'mg_31' }
+    expect(update({ ...reply, category: 'assignee', assignee_raw: '민지' })).toMatchObject({
       assigneePick: { raw: '민지' },
       changes: [],
     })
-    expect(update({ ...reply, assignee_member_id: 'mb_02' })).toMatchObject({ assigneePick: null })
-    expect(update({ category: 'assignee', assignee_raw: '민지' })).toMatchObject({
+    // 상태와 담당자가 섞인 카드는 분류가 첫 줄(상태)을 따른다
+    expect(
+      update({ ...reply, category: 'status', status: 'done', assignee_raw: '민지' }),
+    ).toMatchObject({
+      assigneePick: { raw: '민지' },
+      changes: [{ field: 'status', value: 'done' }],
+    })
+    expect(
+      update({ ...reply, category: 'assignee', assignee_raw: '민지', assignee_member_id: 'mb_02' }),
+    ).toMatchObject({ assigneePick: null })
+    expect(update({ ...reply, category: 'assignee', assignee_raw: null })).toMatchObject({
       assigneePick: null,
     })
-    expect(update({ ...reply, category: 'schedule', due_date: '2026-09-26' })).toMatchObject({
+    expect(update({ ...reply, category: 'assignee', assignee_raw: '  ' })).toMatchObject({
+      assigneePick: null,
+    })
+    expect(update({ ...reply, category: 'assignee' })).toMatchObject({ assigneePick: null })
+    expect(update({ category: 'assignee', assignee_raw: '민지' })).toMatchObject({
       assigneePick: null,
     })
   })
@@ -268,14 +277,18 @@ describe('stored approval edits', () => {
         ...original,
         type: 'task_update',
         status: 'approved',
-        payload: { status: 'done', due_date: '2026-10-22', task_overrides: { due_date: null } },
+        payload: {
+          status: 'done',
+          due_date: '2026-10-22',
+          task_overrides: { due_date: null, assignee_member_id: 'mb_02' },
+        },
       }),
     ).toMatchObject({
       changes: [
         { field: 'status', value: 'done' },
         { field: 'due_date', value: '2026-10-22' },
       ],
-      storedOverrides: { dueDate: null },
+      storedOverrides: { dueDate: null, assigneeMemberId: 'mb_02' },
     })
   })
   it.each([
@@ -285,6 +298,7 @@ describe('stored approval edits', () => {
     ['task_update', { status: null }],
     ['task_update', { status: 'invalid' }],
     ['task_update', { due_date: 2 }],
+    ['task_update', { assignee_member_id: 1 }],
     ['task_create', null],
   ])('rejects malformed known stored fields for %s', (type, task_overrides) => {
     expect(() => toApproval({ ...approvalFixtures[0], type, payload: { task_overrides } })).toThrow(
