@@ -8,8 +8,9 @@ from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
-from app.models import ChangedField, ChangeSource, Meeting, Member, Task, TaskHistory, TaskStatus
+from app.models import ChangedField, ChangeSource, Member, Task, TaskHistory, TaskStatus
 from app.services import notion_sync
+from app.services.meeting_deletion import require_live_meeting
 
 # TaskUpdateRequest/승인 payload의 필드명 -> ChangedField 매핑
 _FIELD_MAP: dict[str, ChangedField] = {
@@ -107,12 +108,7 @@ def validate_workspace_ownership(
             )
 
     if meeting_id is not None:
-        meeting = db.get(Meeting, meeting_id)
-        if meeting is None:
-            raise AppError(
-                ErrorCode.MEETING_NOT_FOUND,
-                details={"meeting_id": meeting_id},
-            )
+        meeting = require_live_meeting(db, meeting_id, lock=True)
         if meeting.workspace_id != workspace_id:
             raise AppError(
                 ErrorCode.WORKSPACE_MISMATCH,

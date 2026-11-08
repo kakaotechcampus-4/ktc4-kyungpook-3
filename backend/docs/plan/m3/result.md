@@ -1,5 +1,50 @@
 # 마일스톤 구현 결과
 
+## 2026-11-09 추가: 회의 원문 삭제와 기존 태스크 보존 (#576)
+
+### 작업 근거와 구현
+
+#572에서 사용자가 확정한 회의 삭제 정책과 #576을 근거로 했다. M3 plan.md는 비어 있어 완료조건을 새로 만들거나 M3 완료를 판정하지 않는다.
+
+| 변경 | 코드 |
+|---|---|
+| PM 삭제·receipt, 원문 없는 `Meeting.deleted_at` 기록, 계보 전체 삭제, 활성 계보409·늦은 접근410 | `app/api/meetings.py`, `app/services/meeting_deletion.py` |
+| 재처리 root와 유일한 predecessor로 생성·삭제 잠금과 동일 자식 재사용 | `app/models/models.py`, `app/schemas/meeting.py`, `app/api/meetings.py` |
+| 전사·추출·근거·업로드·별칭 판정 로그·승인 payload·관련 알림의 원문 사본 제거 | `app/services/meeting_deletion.py` |
+| 혼합 pending 카드의 남은 기여 재구성, 빈 카드 종료, 이전 승인 버전·임베딩 무효화 | `app/services/meeting_deletion.py`, `app/services/embedding.py` |
+| Task의 ID·업무 필드·버전·이력·Notion job 보존, `meeting_deleted` 응답 | `app/schemas/task.py`, `app/api/tasks.py` |
+| BE 실제 파일 재시도, AI claim·hash·lease·ack와 전체 계보 완료 계산 | `app/api/meeting_purges.py`, `app/services/meeting_deletion.py` |
+| nullable 삭제·root·predecessor와 purge 테이블 | `migrations/versions/e576a01c9d42_meeting_deletion.py` |
+
+AI는 완료 manifest와 파일 사본도 정리하며 ID만 담은 삭제 표식으로 복구·intake의 재생성을 막는다. 해당 변경은 `ai/capture/meeting_purge.py`, `handoff.py`, `recorder.py`, `worker.py`와 `ai/upload/`에 있다. 웹 UI는 삭제 receipt와 명시적 Task 삭제 필드를 사용한다.
+
+새 STT 트랙 출력은 세션 ID를 파일명에 포함한다. 동일 화자·시각인 A/B 회의에서 A를 삭제한 뒤 B의 세션별 파일과 통합 전사가 그대로 남는 실제 WAV 테스트를 통과했다. 과거 공유 파일명의 트랙 cache는 소유권이 모호하므로 삭제 대상 원문을 제거할 때 다른 회의의 같은 cache도 무효화될 수 있다. 다른 회의의 통합 전사는 보존한다.
+
+### 실제 검증
+
+2026-11-09 Windows 로컬에서 수행했다. 독립 HTTPS 검증은 임시 SQLite·TLS·가짜 SMTP를 사용하고 공개 API로 가입·초대부터 실행했다. 38개 HTTP 동작에서 PM 권한, 반복 삭제, 원문410, 목록 제외, 태스크 보존, 늦은 AI 쓰기 차단을 통과했다. 삭제 전 실제 DB에서 관측한 원문 sentinel이 삭제 후 모든 텍스트 열에서 사라졌음을 읽기 전용으로 확인했다. 파일 정리 완료는 이 결과에서 추정하지 않았다.
+
+- 구현 초기 집중 테스트는 20 passed, 26 skipped이며 기존 관련 회귀는 214 passed, 145 skipped다. PostgreSQL 파라미터는 `TEST_DATABASE_URL`이 없어 건너뛰었다.
+- 전체 BE 회귀는 2,656 passed, 1,804 skipped, 45 setup errors다. 오류는 기존 WebSocket 테스트 fixture의 Windows 미지원 `signal.SIGALRM` 접근이며 assertion 실패는 없었다. 전체 성공으로 기록하지 않는다.
+- Ruff와 migration 단일 head 검사는 통과했다. PostgreSQL migration 실행과 독립 세션 경합은 로컬에서 실행하지 않았다.
+- 독립 리뷰에서 오류 안내문 인코딩, 승인 생성의 잠금 순서, 생존 카드 fallback 근거, SQLite receipt 시간대, FE 늦은 성공 응답의 cache 정리를 보완 항목으로 확인했다. 최종 수정 검증은 아래에 별도로 기록한다.
+
+리뷰 보완 후 실패 테스트 13건이 통과하는 것을 확인했다. 최종 관련 10개 파일 회귀는 328 passed, 210 skipped이고 삭제 테스트는 39 passed, 47 skipped다. fallback 근거는 항목 ID와 회의 ID가 일치할 때만 사용하며 Source가 있으면 가장 큰 seq의 task 근거를 우선한다. 잘못된 수동 승인 ID·merged 형식은 400으로 거절한다. 루트와 개별 회의를 각각 정렬해 잠근다. UTC 시간대가 붙은 receipt와 반복 요청을 단언했다. Ruff를 통과했고 수정 후 독립 HTTPS 38개 동작도 다시 통과했다. PostgreSQL 경합 테스트는 추가했지만 로컬에서는 건너뛰었다.
+
+### 차이와 남은 작업
+
+작은 단일 회의 삭제 API만으로는 오래된 실패 응답 뒤 생긴 새 ID를 막을 수 없어 재처리 계보까지 범위를 넓혔다. 처리 중 취소는 포함하지 않으며 같은 계보가 모두 done/failed일 때만 삭제한다. 기존 자동 보관 주기 변경과 외부에 이미 게시된 Notion·Discord 결과 회수는 포함하지 않는다.
+
+운영 배포와 실제 계정 검증은 수행하지 않았다. AI 워커가 꺼졌거나 파일 정리가 실패하면 pending을 유지한다. PostgreSQL CI 결과를 확인하기 전 행 잠금 안전성과 migration 실행을 검증 완료로 판단하지 않는다.
+
+### 관련 기록
+
+- [선택과 제약](basis-for-decision/2026-11-09-meeting-deletion.md)
+- [BE·AI 계약](../../contracts/backend-ai-contract.md)
+- [FE 대표 계약](../../../../frontend/docs/contracts/frontend-api-contract.md)
+- [삭제 테스트](../../../tests/api/test_meeting_deletion.py)
+- [#576](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/576)
+
 ## 작업 근거와 요약
 
 M3 plan.md 는 비어 있다. 이번 작업은 #229(추출 근거를 발화 seq 로 연결해 evidence 저장)의 BE 작업 목록을 근거로 했다. #124 에서 근거를 `evidence` 테이블로 옮긴 뒤 행을 만드는 코드가 없어, 추출 조회의 `evidence` 가 항상 null 이었다.

@@ -9,6 +9,9 @@ T = TypeVar("T")
 class ErrorCode(StrEnum):
     INVALID_REQUEST = "INVALID_REQUEST"
     MEETING_NOT_FOUND = "MEETING_NOT_FOUND"
+    MEETING_DELETED = "MEETING_DELETED"
+    MEETING_DELETE_BLOCKED = "MEETING_DELETE_BLOCKED"
+    PURGE_CLAIM_EXPIRED = "PURGE_CLAIM_EXPIRED"
     MEETING_ALREADY_ENDED = "MEETING_ALREADY_ENDED"
     MEETING_NOT_PROCESSING = "MEETING_NOT_PROCESSING"
     MEETING_FAILED = "MEETING_FAILED"
@@ -100,6 +103,9 @@ class ErrorCode(StrEnum):
 ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.INVALID_REQUEST: 400,
     ErrorCode.MEETING_NOT_FOUND: 404,
+    ErrorCode.MEETING_DELETED: 410,
+    ErrorCode.MEETING_DELETE_BLOCKED: 409,
+    ErrorCode.PURGE_CLAIM_EXPIRED: 409,
     ErrorCode.MEETING_ALREADY_ENDED: 409,
     ErrorCode.MEETING_NOT_PROCESSING: 409,
     ErrorCode.MEETING_FAILED: 409,
@@ -177,6 +183,9 @@ ERROR_STATUS: dict[ErrorCode, int] = {
 }
 
 ERROR_MESSAGE: dict[ErrorCode, str] = {
+    ErrorCode.MEETING_DELETED: "삭제된 회의입니다.",
+    ErrorCode.MEETING_DELETE_BLOCKED: "처리 중인 회의는 삭제할 수 없습니다.",
+    ErrorCode.PURGE_CLAIM_EXPIRED: "파일 정리 작업의 처리 권한이 만료되었습니다.",
     ErrorCode.INVALID_REQUEST: "요청 형식이 올바르지 않습니다.",
     ErrorCode.MEETING_NOT_FOUND: "해당 회의 세션을 찾을 수 없습니다.",
     ErrorCode.MEETING_ALREADY_ENDED: "이미 종료된 회의 세션입니다.",

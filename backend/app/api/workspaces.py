@@ -215,6 +215,7 @@ def list_workspace_meetings(
         
     meetings = db.query(Meeting).filter(
         Meeting.workspace_id == workspace_id,
+        Meeting.deleted_at.is_(None),
         or_(
             Meeting.status != MeetingStatus.FAILED,
             and_(

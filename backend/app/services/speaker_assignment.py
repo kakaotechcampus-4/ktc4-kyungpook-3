@@ -11,6 +11,7 @@ from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
+from app.services.meeting_deletion import require_live_meeting
 from app.models import Meeting, MeetingSource, MeetingStatus, MeetingUpload, Member
 from app.schemas.upload import SpeakerLabel
 from app.services import upload_storage
@@ -50,9 +51,9 @@ def normalize_speakers(speakers: list[SpeakerLabel] | list[dict]) -> list[dict]:
 
 def _read_upload_meeting(db: Session, meeting_id: str) -> tuple[Meeting, MeetingUpload]:
     """업로드 회의와 업로드 정보를 읽는다. 없거나 업로드 회의가 아니면 404."""
-    meeting = db.get(Meeting, meeting_id)
+    meeting = require_live_meeting(db, meeting_id, lock=True)
     upload = db.get(MeetingUpload, meeting_id)
-    if meeting is None or upload is None or meeting.source != str(MeetingSource.MANUAL_UPLOAD):
+    if upload is None or meeting.source != str(MeetingSource.MANUAL_UPLOAD):
         raise _not_found(meeting_id)
     return meeting, upload
 
@@ -73,6 +74,7 @@ def report_speakers(
         update(Meeting)
         .where(
             Meeting.meeting_id == meeting_id,
+            Meeting.deleted_at.is_(None),
             Meeting.source == str(MeetingSource.MANUAL_UPLOAD),
             Meeting.status == str(MeetingStatus.PROCESSING),
             exists().where(
@@ -270,6 +272,7 @@ def assign_speakers(
         update(Meeting)
         .where(
             Meeting.meeting_id == meeting_id,
+            Meeting.deleted_at.is_(None),
             Meeting.source == str(MeetingSource.MANUAL_UPLOAD),
             Meeting.status == str(MeetingStatus.AWAITING_SPEAKERS),
         )
