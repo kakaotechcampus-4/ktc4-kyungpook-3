@@ -19,37 +19,17 @@ import { PinnedToastHost } from '@/shared/ui/toast'
 import { avatarText, bundleDateLabel, bundleSummary, shortDate } from '../lib/format'
 import { threadHeading } from '../model/conversation'
 import { inboxPane, nextPaneMemory, selectDetail } from '../model/selection'
-import type { DetailSelection, InboxPane, PaneMemory } from '../model/selection'
+import type { DetailSelection, PaneMemory } from '../model/selection'
 import { SELF_SECTION_TITLE, threadPolicy } from '../model/viewer'
 import type { MessageViewer, ThreadPolicy } from '../model/viewer'
 import { ComposeDetail } from './ComposeDetail'
 import { DetailBar } from './DetailBar'
-import { InboxListSkeleton, ReviewSkeleton } from './MessageSkeletons'
+import { GROUP_LABEL } from './listStyles'
+import { ASIDE, ASIDE_TITLE, COMPOSE_LINK, DETAIL, SCREEN } from './frame'
+import { InboxListSkeleton, ReviewSkeleton, ThreadSkeleton } from './MessageSkeletons'
 import { ReviewDetail } from './ReviewDetail'
 import { ThreadDetail, ThreadUnavailable } from './ThreadDetail'
 
-/* Messages 캔버스 실측 — 왼쪽 목록 308(위 18 · 좌우 12 · 아래 24, 영역 사이 18) · 오른쪽 선, 목록 제목 17px.
-   화면 높이를 헤더 아래로 묶고 목록과 상세가 각자 세로로 스크롤한다 (D-124, 계획 C-6 6단계).
-   스크롤 칸은 relative 다 — 안의 sr-only 글자(absolute)가 칸 밖 문서 높이를 늘려 페이지가 스크롤되지 않게 한다.
-   768 미만(H-4·H-5)은 목록과 상세 중 하나만 화면 전체로 그린다. 목록은 휴대폰 헤더(56 + 위 안전 영역)와 아래 탭 막대 사이,
-   상세는 셸 헤더·탭 막대를 걷은 화면 전체다. 셸의 아래 여백(탭 막대)과 더해 바깥 페이지가 스크롤하지 않는다 */
-const SCREEN: Record<InboxPane, string> = {
-  both: 'flex h-[calc(100dvh-var(--spacing-header))] items-stretch',
-  list: 'flex h-[calc(100dvh-(56px+env(safe-area-inset-top)+var(--bottom-tab-bar)))] items-stretch',
-  detail: 'flex h-dvh items-stretch',
-}
-const ASIDE: Record<InboxPane, string> = {
-  both: 'relative flex w-aside shrink-0 flex-col gap-18 overflow-y-auto border-r border-divider px-12 pt-18 pb-24',
-  list: 'relative flex w-full flex-col gap-18 overflow-y-auto pt-8 pr-[max(12px,env(safe-area-inset-right))] pb-24 pl-[max(12px,env(safe-area-inset-left))]',
-  detail: '',
-}
-const ASIDE_TITLE: Record<InboxPane, string> = {
-  both: 'px-8 text-[17px] leading-[1.55] font-bold tracking-h2 text-ink',
-  list: 'px-8 text-[24px] leading-[1.4] font-bold tracking-h2 text-ink',
-  detail: '',
-}
-const DETAIL = 'relative flex min-w-[0px] flex-1 flex-col'
-const GROUP_LABEL = 'mono text-[10.5px] leading-[1.75] font-normal tracking-[0.1em] text-dim'
 const GROUP_NOTE = 'px-8 text-caption text-dim'
 const REVIEW_ROW =
   'group flex w-full flex-col items-start gap-7 rounded-10 px-14 py-13 text-left hover:bg-surface-sunken aria-[current=page]:bg-surface-selected'
@@ -75,8 +55,6 @@ const EMPTY_ACTION =
 /* 빈 화면의 두 번째 행동 — 아웃라인 버튼 모양(design-system §7-12) */
 const EMPTY_SECOND_ACTION =
   'inline-flex h-40 items-center justify-center rounded-9 border border-line bg-surface px-20 text-body font-semibold text-ink hover:bg-control'
-const COMPOSE_LINK =
-  'shrink-0 rounded-9 px-10 py-4 text-caption font-semibold text-sub hover:bg-surface-sunken hover:text-ink aria-[current=page]:bg-surface-selected aria-[current=page]:text-ink max-md:inline-flex max-md:min-h-44 max-md:items-center max-md:px-14 max-md:text-body'
 const BACK = 'grid size-44 place-items-center rounded-12 text-ink hover:bg-surface-sunken'
 /* 휴대폰 목록의 정리 중 토스트 — 셸 독과 같은 자리(오른쪽 24, 아래 탭 막대 위 24). 독 대신 이 자리를 잡아 셸의 아래 여백이 생기지 않는다 */
 const LIST_TOAST = 'fixed right-24 bottom-[calc(24px+var(--bottom-tab-bar))] z-10'
@@ -232,7 +210,14 @@ export function MessageInbox({
     )
 
   let detail
-  if (detailIndicator.pending) detail = <ReviewSkeleton indicator={detailIndicator} />
+  // 목록을 받아야 고를 수 있는 상세 — 묶음을 가리키거나 PM 의 기본 선택(보낼 메시지)이면 검토 모양, 팀원의 기본 선택은 대화 모양이다
+  if (detailIndicator.pending)
+    detail =
+      typeof bundleId !== 'string' && viewer.role !== 'pm' ? (
+        <ThreadSkeleton indicator={detailIndicator} />
+      ) : (
+        <ReviewSkeleton indicator={detailIndicator} />
+      )
   else if (selection.kind === 'invalid') detail = <ThreadUnavailable />
   else if (selection.kind === 'thread')
     // 대화가 바뀌면 상세를 새로 마운트한다 — 이전 대화의 스크롤 자리를 들고 있지 않는다
@@ -319,7 +304,7 @@ export function MessageInbox({
           ) : null}
         </div>
         {listIndicator.pending ? (
-          <InboxListSkeleton indicator={listIndicator} />
+          <InboxListSkeleton indicator={listIndicator} pm={viewer.role === 'pm'} />
         ) : inbox.data !== undefined ? (
           <Reveal indicator={listIndicator}>
             <InboxList

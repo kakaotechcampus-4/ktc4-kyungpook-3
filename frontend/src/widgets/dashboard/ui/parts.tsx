@@ -7,6 +7,7 @@ import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
 import type { Loadable } from '../model/useDashboardData'
 import type { DashboardRefreshFailure } from '../model/useRefreshFailure'
+import { LINE_SHAPE } from './frame'
 
 /* Main 시안의 본문 영역 공통 모양 — 머리줄(제목·오른쪽 링크) 아래 1px 선, 행 사이 1px 선 */
 export const SECTION_HEAD = 'flex items-center justify-between gap-16 border-b border-line py-15'
@@ -32,10 +33,50 @@ export function Initial({ name }: { name: string | null }) {
   )
 }
 
+/** 영역 본문 뼈대의 모양. 실제 행과 같은 틀이다 — `review` 는 확인이 필요한 일(제목 + 설명 두 줄), `line` 은 마감 임박·최근 반영(한 줄) */
+export interface SectionSkeletonShape {
+  rows: number
+  kind: 'review' | 'line'
+}
+
+/* 행 치수는 Dashboard 의 REVIEW_ROW · DUE_ROW 와 RecentSection 의 ROW 와 같다 */
+const SKELETON_ROW = {
+  review: 'flex flex-col gap-4 border-b border-line py-18 last:border-b-0',
+  line: 'flex items-center border-b border-line px-18 py-12 last:border-b-0 max-md:px-[0px]',
+}
+
+/** 영역 본문 뼈대 — 실제 목록과 같은 행 높이·구분선이다. 글자 줄 높이 안에 막대가 앉는다 */
+export function SectionSkeleton({ rows, kind }: SectionSkeletonShape) {
+  return (
+    <ul>
+      {Array.from({ length: rows }, (_row, index) => (
+        <li key={index} className={SKELETON_ROW[kind]}>
+          {kind === 'review' ? (
+            <>
+              <div className="flex h-lh items-center text-[15px] leading-[1.55]">
+                <Skeleton width={`${[48, 60, 40][index % 3]}%`} />
+              </div>
+              <div className="flex h-lh items-center text-body">
+                <Skeleton width="36%" />
+              </div>
+            </>
+          ) : (
+            <div className="flex h-[26px] w-full items-center text-control">
+              <Skeleton width={`${[64, 52, 72, 44, 58][index % 5]}%`} />
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 interface SectionBodyProps<T> {
   state: Loadable<T>
   /** 실패했을 때 제목. 기본 `정보를 불러오지 못했어요` */
   errorTitle: string
+  /** 기다리는 동안의 뼈대 모양. 기본 한 줄 행 셋 */
+  skeleton?: SectionSkeletonShape
   children: (data: T) => ReactNode
 }
 
@@ -43,12 +84,17 @@ interface SectionBodyProps<T> {
  * 영역 하나의 로딩·실패·데이터. 한 영역이 실패해도 다른 영역은 그대로 그린다 (계획 §5).
  * 로딩은 지연·최소 표시 규칙을 따른다 — 짧은 응답은 빈 자리만, 보인 뼈대는 최소 시간 둔다 (#508)
  */
-export function SectionBody<T>({ state, errorTitle, children }: SectionBodyProps<T>) {
+export function SectionBody<T>({
+  state,
+  errorTitle,
+  skeleton = LINE_SHAPE,
+  children,
+}: SectionBodyProps<T>) {
   const indicator = useLoadingIndicator(state.status === 'loading')
   if (state.status === 'loading' || indicator.pending)
     return (
-      <DeferredSkeleton indicator={indicator} className="flex flex-col gap-8 py-18">
-        <Skeleton lines={3} />
+      <DeferredSkeleton indicator={indicator}>
+        <SectionSkeleton {...skeleton} />
       </DeferredSkeleton>
     )
   const body =

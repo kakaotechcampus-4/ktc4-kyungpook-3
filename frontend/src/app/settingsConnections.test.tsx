@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { onTestFinished } from 'vitest'
+import { integrationsQueryOptions } from '@/entities/integration'
 import { paths } from '@/shared/config/routes'
 import { leaveApp } from '@/shared/lib/location'
 import { withOAuthResult } from '@/shared/lib/oauth'
@@ -13,6 +14,7 @@ import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { recordRequests } from '@/shared/test/requests'
+import { deferred } from '@/shared/test/deferred'
 import { renderApp } from './test/renderApp'
 
 /* M8-B B-1 — 설정의 Discord 연결 영역과 OAuth 복귀. 현재 탭 이동은 jsdom 이 못 해 leaveApp 만 바꿔 끼운다 */
@@ -486,5 +488,64 @@ describe('설정의 회의 채팅 채널 — PM (#429)', () => {
     expect(await area.findByText('Discord 연결은 PM이 관리해요.')).toBeInTheDocument()
     expect(area.queryByRole('combobox')).toBeNull()
     expect(requestsTo(log, 'GET', CHANNELS)).toEqual([])
+  })
+})
+
+/*
+ * #508 — 연동 상태를 받는 자리는 지연·최소 표시를 따른다. 뼈대가 보인 뒤 답이 오면, 최소 표시가 끝날 때까지 조회 결과로 생기는 것
+ * (배지 · 설명 · 연결 버튼 · 처음 조회 실패)을 그리지 않고 끝나면 한 번에 바꾼다. 한 카드가 서로 다른 때의 모습을 섞지 않는다
+ */
+describe('연결 영역의 로딩 자리 (#508)', () => {
+  const card = () => screen.getByTestId('discord-connection')
+  const skeletonShown = () => card().querySelector('[data-skeleton="shown"]') !== null
+
+  /** 연동 조회를 붙잡아 뼈대가 보이게 한 뒤 놓는다. `fails` 면 놓은 뒤 조회(다시 시도 포함)가 실패한다 */
+  async function answerAfterSkeleton(fails = false) {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get(`/api/v1/workspaces/${WS}/integrations`, async () => {
+        await gate.promise
+        // 400 은 다시 시도하지 않는다(D-135) — 답이 곧 처음 조회 실패다
+        return fails ? fail('VALIDATION_ERROR', 'bad', 400) : undefined
+      }),
+    )
+    const app = renderApp(SETTINGS)
+    await discordArea()
+    // 지연(200ms)을 넘겨 뼈대가 보인다
+    await waitFor(() => expect(skeletonShown()).toBe(true), { timeout: 2_000 })
+    gate.resolve()
+    return { app }
+  }
+
+  it('답이 뼈대가 보인 직후 오면 최소 표시 동안 배지·버튼을 그리지 않고, 끝나면 함께 그린다', async () => {
+    const { app } = await answerAfterSkeleton()
+    const key = integrationsQueryOptions(WS).queryKey
+    await waitFor(() => expect(app.queryClient.getQueryData(key)).toBeDefined())
+    // 답은 왔지만 뼈대를 붙잡는 중이다 — 같은 카드에 결과의 일부만 먼저 나오지 않는다
+    expect(skeletonShown()).toBe(true)
+    const area = within(card())
+    expect(area.queryByText('연결 안 됨')).toBeNull()
+    expect(area.queryByRole('button', { name: 'Discord 연결하기' })).toBeNull()
+
+    expect(await area.findByRole('button', { name: 'Discord 연결하기' })).toBeInTheDocument()
+    expect(area.getByText('연결 안 됨')).toBeInTheDocument()
+    expect(card().querySelector('[data-skeleton]')).toBeNull()
+  })
+
+  it('처음 조회가 뼈대가 보인 직후 실패하면 최소 표시 동안 오류를 그리지 않고, 끝나면 뼈대 대신 오류다', async () => {
+    const { app } = await answerAfterSkeleton(true)
+    const key = integrationsQueryOptions(WS).queryKey
+    await waitFor(() => expect(app.queryClient.getQueryState(key)?.error).toBeTruthy())
+    // 처음 조회가 실패했다 — 뼈대를 붙잡는 동안 오류는 아직 없다(로딩 자리와 실패가 함께 보이지 않는다)
+    expect(skeletonShown()).toBe(true)
+    const area = within(card().parentElement ?? card())
+    expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull()
+
+    expect(
+      await screen.findAllByRole('button', { name: '다시 시도' }, { timeout: 4_000 }),
+    ).not.toHaveLength(0)
+    expect(card().querySelector('[data-skeleton]')).toBeNull()
+    expect(area.queryByRole('button', { name: 'Discord 연결하기' })).toBeNull()
   })
 })
