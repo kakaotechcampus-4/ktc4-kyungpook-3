@@ -229,10 +229,14 @@ describe('합쳐진 카드의 근거 (#512)', () => {
 
   it('상세는 카드를 만든 회의의 대표 근거와 합쳐진 근거를 나누고, 담당자 근거와 전체 반려를 알린다', async () => {
     await openDeployDoc()
-    const block = within(card()).getByRole('region', { name: '대표 근거 · 카드를 만든 회의' })
-    expect(within(block).getByRole('figure', { name: '근거' })).toHaveTextContent(
+    const representative = within(card()).getByRole('region', {
+      name: '대표 근거 · 카드를 만든 회의',
+    })
+    expect(within(representative).getByRole('figure', { name: '근거' })).toHaveTextContent(
       '지훈님이 배포 문서 보완을 맡기로 했어요.',
     )
+    expect(within(representative).queryByText('담당자 근거')).toBeNull()
+    const block = within(card()).getByRole('region', { name: '합친 내용' })
     expect(block).toHaveTextContent('회의 2곳의 항목 2개를 합친 확인 요청이에요.')
     expect(screen.getByText('반려하면 합쳐진 항목 2개가 모두 반려돼요.')).toBeInTheDocument()
 
@@ -251,6 +255,28 @@ describe('합쳐진 카드의 근거 (#512)', () => {
       paths.meetings('ws_01', 'mt_07'),
     )
     expect(within(block).getAllByText('담당자 근거')).toHaveLength(1)
+  })
+
+  it('대표 근거 아래에는 합친 뒤의 원문을 두지 않고, 합친 제안의 원문이라고 밝혀 따로 보인다', async () => {
+    await openDeployDoc()
+    const representative = within(card()).getByRole('region', {
+      name: '대표 근거 · 카드를 만든 회의',
+    })
+    expect(representative).not.toHaveTextContent('원문 담당자')
+    expect(representative).not.toHaveTextContent('26일')
+    expect(within(card()).getByRole('region', { name: '합친 내용' })).toHaveTextContent(
+      '합친 제안의 원문 담당자 재환 · 원문 마감 26일',
+    )
+  })
+
+  it('목록 카드도 대표 인용 칸 밖에 합친 제안의 원문이라고 밝힌다', async () => {
+    renderApp(`${paths.tasks('ws_01')}?tab=needs_review`)
+    const list = await screen.findByRole('list', { name: '확인 필요 목록' })
+    const merged = within(list).getAllByRole('article')[2]
+    const quoteBox = within(merged).getByText('“지훈님이 배포 문서 보완을 맡기로 했어요.”')
+      .parentElement as HTMLElement
+    expect(quoteBox).not.toHaveTextContent('원문 담당자')
+    expect(merged).toHaveTextContent('합친 제안의 원문 담당자 재환 · 원문 마감 26일')
   })
 
   it('목록 카드는 합쳐진 회의·항목 수를 보이고 처음 생긴 자리에 남는다', async () => {

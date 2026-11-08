@@ -252,10 +252,10 @@ function TaskCreateCard({
         ) : (
           <p className={QUOTE}>“{approval.evidence.quote}”</p>
         )}
-        <p className={SUB_NOTE}>
-          원문 담당자 {approval.assigneeRaw ?? '없음'} · 원문 마감 {approval.dueRaw ?? '없음'}
-        </p>
+        {merged === null ? <RawLine approval={approval} /> : null}
       </div>
+      {/* 합친 카드의 원문은 담당자·마감을 정한 다른 회의의 것이라 대표 인용 칸 밖에 둔다 (#512) */}
+      {merged === null ? null : <RawLine approval={approval} />}
 
       <CardFooter
         approval={approval}
@@ -276,6 +276,15 @@ function TaskCreateCard({
         </p>
       ) : null}
     </Card>
+  )
+}
+
+function RawLine({ approval }: { approval: TaskCreateApproval }) {
+  return (
+    <p className={SUB_NOTE}>
+      {approval.mergedItems.length === 0 ? null : '합친 제안의 '}
+      원문 담당자 {approval.assigneeRaw ?? '없음'} · 원문 마감 {approval.dueRaw ?? '없음'}
+    </p>
   )
 }
 

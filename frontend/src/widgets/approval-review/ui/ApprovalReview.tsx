@@ -389,13 +389,30 @@ function EvidenceFigure({
       ) : (
         <blockquote className={QUOTE}>“{quote}”</blockquote>
       )}
-      {approval.kind === 'task_create' ? (
-        <p className={RAW}>
-          원문 담당자 <RawValue value={approval.assigneeRaw} missing={gaps.includes('assignee')} />{' '}
-          · 원문 마감 <RawValue value={approval.dueRaw} missing={gaps.includes('due')} />
-        </p>
+      {approval.kind === 'task_create' && approval.mergedItems.length === 0 ? (
+        <RawLine approval={approval} gaps={gaps} />
       ) : null}
     </figure>
+  )
+}
+
+/**
+ * 카드의 원문 담당자·마감. 합친 카드는 이 값이 담당자·마감을 정한 다른 회의의 원문이라, 대표 근거 밖에서
+ * 합친 제안의 원문이라고 밝힌다 (#512)
+ */
+function RawLine({
+  approval,
+  gaps,
+}: {
+  approval: TaskCreateApproval
+  gaps: readonly ApprovalMissing[]
+}) {
+  return (
+    <p className={RAW}>
+      {approval.mergedItems.length === 0 ? null : '합친 제안의 '}
+      원문 담당자 <RawValue value={approval.assigneeRaw} missing={gaps.includes('assignee')} /> ·
+      원문 마감 <RawValue value={approval.dueRaw} missing={gaps.includes('due')} />
+    </p>
   )
 }
 
@@ -417,7 +434,7 @@ function EvidenceBlock({
   const titleId = useId()
   const figure = <EvidenceFigure approval={approval} context={context} gaps={gaps} />
   if (approval.kind === 'task_create')
-    return <CreateEvidence approval={approval} context={context} figure={figure} />
+    return <CreateEvidence approval={approval} context={context} figure={figure} gaps={gaps} />
   const scope = isScopeChange(approval)
   if (!scope && approval.replyMessageId === null) return <div className={EVIDENCE}>{figure}</div>
   return (
@@ -438,35 +455,47 @@ function EvidenceBlock({
 }
 
 /**
- * 생성 승인의 근거 (#512). 합쳐진 카드면 카드를 만든 회의의 대표 근거와 뒤에 합쳐진 근거를 나누고,
- * 담당자를 정한 근거(`assigneeItemId`)에 표시한다. 합쳐진 근거는 펼쳐 본다
+ * 생성 승인의 근거 (#512). 합쳐진 카드면 카드를 만든 회의의 대표 근거와 합친 내용(합친 제안의 원문,
+ * 뒤에 합쳐진 근거)을 나누고, 담당자를 정한 근거(`assigneeItemId`)에 표시한다. 합쳐진 근거는 펼쳐 본다
  */
 function CreateEvidence({
   approval,
   context,
   figure,
+  gaps,
 }: {
   approval: TaskCreateApproval
   context: ReviewContext
   figure: ReactNode
+  gaps: readonly ApprovalMissing[]
 }) {
   const titleId = useId()
+  const mergedId = useId()
   const listId = useId()
   const [open, setOpen] = useState(false)
   const count = mergedCount(approval)
   if (count === null) return <div className={EVIDENCE}>{figure}</div>
   return (
-    <section aria-labelledby={titleId} className={EVIDENCE}>
-      <h3 id={titleId} className={`${BLOCK_TITLE} flex items-center gap-8`}>
-        대표 근거 · 카드를 만든 회의
-        {approval.assigneeItemId === approval.extractionItemId ? <AssigneeMark /> : null}
-      </h3>
-      {figure}
-      <div className="flex flex-col gap-12 border-t border-divider pt-12">
+    <div className={EVIDENCE}>
+      <section aria-labelledby={titleId} className="flex flex-col gap-10">
+        <h3 id={titleId} className={`${BLOCK_TITLE} flex items-center gap-8`}>
+          대표 근거 · 카드를 만든 회의
+          {approval.assigneeItemId === approval.extractionItemId ? <AssigneeMark /> : null}
+        </h3>
+        {figure}
+      </section>
+      <section
+        aria-labelledby={mergedId}
+        className="flex flex-col gap-12 border-t border-divider pt-12"
+      >
+        <h3 id={mergedId} className="sr-only">
+          합친 내용
+        </h3>
         <p className={NOTE}>
           회의 {count.meetings}곳의 항목 {count.items}개를 합친 확인 요청이에요. 제목·담당자·마감은
           합친 뒤의 값이에요.
         </p>
+        <RawLine approval={approval} gaps={gaps} />
         <button
           type="button"
           aria-expanded={open}
@@ -491,8 +520,8 @@ function CreateEvidence({
               ))
             : null}
         </ol>
-      </div>
-    </section>
+      </section>
+    </div>
   )
 }
 
