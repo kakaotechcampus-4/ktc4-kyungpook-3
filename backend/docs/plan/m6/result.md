@@ -186,7 +186,27 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 - `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`: 2307 passed, 1485 skipped. skip 는 PostgreSQL 이 필요한 테스트이고 새 동시성 테스트 3개도 여기에 들어 CI 에서 처음 돈다.
 - 실제 AI 를 붙인 종단 확인과 배포 환경 확인은 하지 않았다. 모델 컬럼·마이그레이션 변경은 없다.
 
-남은 작업: AI 의 merge 전송과 `include_pending` 켜기(BE 배포 뒤), FE 답(#512)과 합친 카드 표시, 승인 사이에 담당 항목이 바뀐 경우의 별칭 저장(결정 기록의 장단점).
+남은 작업: AI 의 merge 전송과 `include_pending` 켜기(BE 배포 뒤), FE 답(#512)과 합친 카드 표시, 승인 사이에 담당 항목이 바뀐 경우의 별칭 저장(결정 기록의 장단점, 아래 2026-11-08 절에서 #535 로 해결).
+
+## 2026-11-08 추가: 승인 카드를 본 뒤 바뀌었으면 409 로 막기(#535, #512)
+
+근거는 #535 설계 확정 댓글과 #512 FE 답이다(2026-11-08). M6 완료는 판정하지 않는다.
+
+| 변경 | 위치 |
+|---|---|
+| 승인 응답 최상위 `payload_version`(task_create 만, 카드 payload 해시) | `backend/app/api/approvals.py`, `backend/app/schemas/approval.py` |
+| `PATCH /approvals/{id}` 선택 필드 `payload_version`. 다르면 되돌리고 409 `APPROVAL_CHANGED`(승인·반려 모두) | `backend/app/api/approvals.py`, `backend/app/core/errors.py` |
+| 계약 | [Backend README](../../../README.md) 에러 코드 표, 합친 카드 승인·별칭 저장 행 |
+
+| 요구 | 상태 | 근거 |
+|---|---|---|
+| 본 뒤 바뀐 카드의 승인·반려를 409 로 막고 아무것도 남기지 않음 | 구현 | `tests/api/test_approval_payload_version.py` |
+| 보내지 않으면 지금 동작(하위 호환) | 구현 | 같은 파일 |
+| 별칭이 PM 이 본 글자로만 저장됨 | 구현 | `tests/api/test_alias_learning_approval.py` |
+
+검증은 PR 에 적는다. 모델·마이그레이션 변경은 없다.
+
+남은 작업: FE 가 `payload_version` 을 보내고 409 를 처리하는 것(#512), 그 뒤 필수로 바꿀지 판단.
 
 ## 2026-11-08 추가: 전사 진행과 단계 시작 시각을 회의 상세에 노출(#483 A안 BE 몫)
 
@@ -279,6 +299,7 @@ PR 작성 뒤 #480의 읽음 수가 `develop`에 들어와 새 PM 글과 연결�
 ## 관련 기록
 
 - [전사 진행과 단계 시작 시각을 회의 상세에 노출한다](basis-for-decision/2026-11-08-processing-stt-progress.md)
+- [승인 카드를 본 뒤 내용이 바뀌었으면 승인·반려를 409 로 막는다](basis-for-decision/2026-11-08-approval-payload-version.md)
 - [다른 회의의 같은 새 항목을 승인 대기 카드에 합친다](basis-for-decision/2026-11-07-pending-merge.md)
 - [승인 대기 새 항목 요청을 유사 검색 후보에 따로 더한다](basis-for-decision/2026-11-07-pending-approval-search.md)
 - [답장 담당자 변경 승인에서 PM 이 담당자를 고르게 한다](basis-for-decision/2026-11-07-reply-assignee-override.md)
