@@ -1340,3 +1340,34 @@ class WorkspaceMessageSettings(Base):
     updated_by: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
     )
+
+
+class WorkspaceAsrTerm(Base):
+    """워크스페이스 용어 목록(#532). AI 가 새 할 일 제목의 명사 중 여기 없는 말을 전사 오인식 의심 단어로 본다.
+
+    AI 가 회의 인계 때 두 사람 이상이 말한 명사와, 승인 제목 큐(AsrTitleQueue)에서 뽑은 명사를 올린다.
+    """
+
+    __tablename__ = "workspace_asr_term"
+
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), primary_key=True
+    )
+    word: Mapped[str] = mapped_column(String(30), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AsrTitleQueue(Base):
+    """PM 이 task_create 승인으로 만든 태스크의 최종 제목. AI 가 받아 명사를 용어 목록에 올린 뒤 지운다(#532).
+
+    BE 에는 형태소 분석기가 없어 제목을 그대로 쌓아 둔다.
+    """
+
+    __tablename__ = "asr_title_queue"
+
+    title_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

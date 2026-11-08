@@ -13,6 +13,7 @@ from app.main import app
 from app.models import (
     EMBEDDING_DIMENSIONS,
     ApprovalRequest,
+    AsrTitleQueue,
     ExtractionItem,
     Meeting,
     Member,
@@ -175,6 +176,8 @@ def test_judge_item_meeting_every_condition_is_created_automatically(client, db,
     assert item["task"]["evidence_status"] == "certain"
     assert item["due_date"]["evidence_status"] == "certain"
     assert (item["similar_count"], item["top_similarity"], item["reverted_at"]) == (0, None, None)
+    # PM 이 확인한 제목이 아니라 용어 목록 큐에 넣지 않는다(#532)
+    assert db.execute(select(AsrTitleQueue)).first() is None
 
 
 def test_judge_item_without_assignee_or_due_mention_is_auto(client, seed):

@@ -18,6 +18,8 @@ from app.models.models import (
     WatchState,
     PmAlertMethod,
     WorkspaceMessageSettings,
+    WorkspaceAsrTerm,
+    AsrTitleQueue,
     PushStatus,
     PushSubscription,
     EvidenceStatus,
@@ -90,5 +92,5 @@ __all__ = [
     "Reminder", "ReminderBundle", "ReminderKind", "ReminderOrigin", "ReminderStatus", "ReplyChannel", "ThreadMessage",
     "Notification", "PushStatus", "PushSubscription", "ReminderWatch", "SchedulerSuggestion", "WatchState",
     "ReplyChange", "ReplyChangeField", "ReplyChangeOutcome", "ReplyJudgment", "ReplyJudgmentState",
-    "PmAlertMethod", "WorkspaceMessageSettings",
+    "PmAlertMethod", "WorkspaceMessageSettings", "WorkspaceAsrTerm", "AsrTitleQueue",
 ]
