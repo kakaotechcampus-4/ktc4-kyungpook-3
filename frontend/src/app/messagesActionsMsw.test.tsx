@@ -208,7 +208,7 @@ describe('보내지 않음', () => {
     await userEvent.click(within(threadList()).getByRole('link', { name: /이재환/ }))
     await detail().findByRole('heading', { level: 2, name: '이재환' })
     expect(within(conversation()).queryByRole('link', { name: '확인하기' })).toBeNull()
-    expect(conversation()).not.toHaveTextContent('API 명세서 마감이 다음 주 목요일')
+    expect(conversation()).not.toHaveTextContent('배포 스크립트 마감이 다음 주 목요일')
   })
 })
 
@@ -260,7 +260,7 @@ describe('고쳐 쓰기', () => {
 
     await userEvent.click(button('취소'))
     expect(detail().getByRole('region', { name: '보낼 메시지 미리보기' })).toHaveTextContent(
-      '재환님, API 명세서 마감이 다음 주 목요일(9/24)이에요 🙂',
+      '재환님, 배포 스크립트 마감이 다음 주 목요일(9/24)이에요 🙂',
     )
     expect(document.activeElement).toBe(button('고쳐 쓰기'))
   })

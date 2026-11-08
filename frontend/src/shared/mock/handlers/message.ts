@@ -89,9 +89,9 @@ function attributeError(
   }
 }
 
-function reminderResponse(result: ReminderResult, status = 200) {
+function reminderResponse(result: ReminderResult, context: BundleContext, status = 200) {
   if ('refusal' in result) return REFUSAL[result.refusal]()
-  return ok(reminderWithBundleDto(result), { status })
+  return ok(reminderWithBundleDto(result, context), { status })
 }
 
 /** 시간대가 있는 ISO 시각만 받는다 (백엔드 AwareDatetime) */
@@ -117,7 +117,7 @@ function workspaceBundles(workspaceId: string) {
   return db.messageBundles.filter(({ workspace_id }) => workspace_id === workspaceId)
 }
 
-/** 문구 틀의 PM 은 가장 먼저 등록된 PM 이다 — 픽스처 리마인드에는 만든 사람(created_by)이 없다 */
+/** 문구 틀의 PM 은 가장 먼저 등록된 PM 이다. 재촉 이유의 PM 은 그 재촉을 만든 사람(created_by)이라 따로 찾는다 */
 function bundleContext(workspaceId: string): BundleContext {
   const pm = db.members
     .filter(({ workspace_id, role }) => workspace_id === workspaceId && role === 'pm')
@@ -131,6 +131,8 @@ function bundleContext(workspaceId: string): BundleContext {
     bundles: workspaceBundles(workspaceId),
     tasks: db.tasks.filter(({ workspace_id }) => workspace_id === workspaceId),
     threads: db.messageThreads.filter(({ workspace_id }) => workspace_id === workspaceId),
+    taskHistory: db.taskHistory,
+    members: db.members.filter(({ workspace_id }) => workspace_id === workspaceId),
     pmName: pm?.display_name ?? 'PM',
     workspaceName:
       db.workspaces.find(({ workspace_id }) => workspace_id === workspaceId)?.name ?? '',
@@ -141,7 +143,6 @@ function reminderContext(workspaceId: string): ReminderContext {
   return {
     ...bundleContext(workspaceId),
     workspaceId,
-    members: db.members.filter(({ workspace_id }) => workspace_id === workspaceId),
     allThreads: db.messageThreads,
     allBundles: db.messageBundles,
   }
@@ -222,14 +223,8 @@ export const messageHandlers = [
     const denied = requireMember(workspaceId)
     if (denied) return denied
     if (db.messageFailures.inbox) return serverError()
-    const threads = db.messageThreads.filter(({ workspace_id }) => workspace_id === workspaceId)
     return ok(
-      inboxOf(
-        threads,
-        workspaceBundles(workspaceId),
-        viewerOf(workspaceId),
-        sessionMemberId(workspaceId),
-      ),
+      inboxOf(bundleContext(workspaceId), viewerOf(workspaceId), sessionMemberId(workspaceId)),
     )
   }),
 
@@ -244,7 +239,7 @@ export const messageHandlers = [
     if (viewer !== 'pm' && thread.member_id !== sessionMemberId(workspaceId))
       return forbidden(thread.thread_id)
     if (db.messageFailures.threadIds.includes(thread.thread_id)) return serverError()
-    return ok(threadDetailOf(thread, workspaceBundles(workspaceId), viewer))
+    return ok(threadDetailOf(thread, bundleContext(workspaceId), viewer))
   }),
 
   /** 대화 주인만 웹에서 답한다. PM 도 남의 대화에는 쓸 수 없다. Discord 로는 나가지 않는다 */
@@ -322,9 +317,10 @@ export const messageHandlers = [
       const patch = readBundlePatch(await readJson(request))
       if (typeof patch === 'string') return invalid(patch)
       if (db.messageFailures.actions) return actionError()
-      const result = editBundle(bundle, patch, MOCK_NOW, bundleContext(workspaceId))
+      const context = bundleContext(workspaceId)
+      const result = editBundle(bundle, patch, MOCK_NOW, context)
       if ('refusal' in result) return REFUSAL[result.refusal]()
-      return ok(bundleDto(result.bundle))
+      return ok(bundleDto(result.bundle, context))
     },
   ),
 
@@ -344,7 +340,7 @@ export const messageHandlers = [
       if (db.messageFailures.actions) return actionError()
       const refusal = approveBundle(bundle, version, MOCK_NOW)
       if (refusal !== null) return REFUSAL[refusal]()
-      return ok(bundleDto(bundle))
+      return ok(bundleDto(bundle, bundleContext(workspaceId)))
     },
   ),
 
@@ -358,7 +354,7 @@ export const messageHandlers = [
     if (db.messageFailures.actions) return actionError()
     const refusal = cancelBundle(bundle, MOCK_NOW)
     if (refusal !== null) return REFUSAL[refusal]()
-    return ok(bundleDto(bundle))
+    return ok(bundleDto(bundle, bundleContext(workspaceId)))
   }),
 
   /** 재촉을 만들어 그 팀원·시각의 보낼 메시지에 넣는다. 같은 시각의 메시지가 있으면 합쳐지고 승인이 풀린다 */
@@ -369,7 +365,13 @@ export const messageHandlers = [
     const input = readReminderCreate(await readJson(request))
     if (typeof input === 'string') return invalid(input)
     if (db.messageFailures.actions) return actionError()
-    return reminderResponse(createReminder(input, MOCK_NOW, reminderContext(workspaceId)), 201)
+    const context = reminderContext(workspaceId)
+    const created_by = sessionMemberId(workspaceId)
+    return reminderResponse(
+      createReminder({ ...input, created_by }, MOCK_NOW, context),
+      context,
+      201,
+    )
   }),
 
   /** 메모를 고치거나 다른 시각으로 옮긴다. 메모가 바뀌거나 옮기면 묶음 문구를 다시 만들고 승인이 풀린다 */
@@ -384,8 +386,10 @@ export const messageHandlers = [
       const found = findReminder(workspaceId, params.reminderId)
       if (!found) return reminderNotFound(params.reminderId)
       if (db.messageFailures.actions) return actionError()
+      const context = reminderContext(workspaceId)
       return reminderResponse(
-        editReminder(found.bundle, found.reminder, patch, MOCK_NOW, reminderContext(workspaceId)),
+        editReminder(found.bundle, found.reminder, patch, MOCK_NOW, context),
+        context,
       )
     },
   ),
@@ -400,8 +404,10 @@ export const messageHandlers = [
       const found = findReminder(workspaceId, params.reminderId)
       if (!found) return reminderNotFound(params.reminderId)
       if (db.messageFailures.actions) return actionError()
+      const context = bundleContext(workspaceId)
       return reminderResponse(
-        cancelReminder(found.bundle, found.reminder, MOCK_NOW, bundleContext(workspaceId)),
+        cancelReminder(found.bundle, found.reminder, MOCK_NOW, context),
+        context,
       )
     },
   ),
