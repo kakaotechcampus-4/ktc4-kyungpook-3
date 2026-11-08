@@ -45,6 +45,9 @@ CHECK_FAILED = "check_failed"
 # BE 가 받는 asr_suspects 상한(backend schemas/meeting.py). 넘으면 요청 전체가 400 이라 그 회의 항목이 다 빠진다.
 # 게이트는 하나만 있어도 막으므로 잘라도 결과가 같다(#532 리뷰)
 MAX_SUSPECTS = 50
+# BE 가 받는 의심 단어·후보 하나의 길이 상한. 띄어쓰기 없는 STT 반복("애포애포…")은 100자 넘는 미등록어 하나가 되고,
+# 넘으면 요청 전체가 400 이다. 막는 신호는 남기고 길이만 자른다(#532 리뷰)
+MAX_WORD_LEN = 100
 
 _CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
 _JUNG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
@@ -264,7 +267,8 @@ def check_item(lines: list[str], title: str | None, vocab: Vocabulary) -> list[d
             for s in find_suspects(text, vocab, source):
                 if s["word"] not in seen:
                     seen.add(s["word"])
-                    out.append(s)
+                    out.append({**s, "word": s["word"][:MAX_WORD_LEN],
+                                "candidates": [c for c in s["candidates"] if len(c) <= MAX_WORD_LEN]})
         return out[:MAX_SUSPECTS]
     except Exception as e:  # noqa: BLE001 - 분석 실패가 항목 전체를 버리게 하지 않는다
         logger.warning("전사 오인식 검사 실패라 auto 를 막는다: %s: %s", type(e).__name__, e)

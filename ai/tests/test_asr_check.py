@@ -147,3 +147,14 @@ def test_suspects_are_capped_for_the_be_limit(vocab, monkeypatch):
     assert len(out) == A.MAX_SUSPECTS == 50
     assert out[0]["word"] == "단어0"
 
+
+
+@pytest.mark.parametrize("garbage", ["애포" * 60, "티자인" * 40], ids=["애포x60", "티자인x40"])
+def test_long_repeated_garbage_still_blocks_within_be_limits(vocab, garbage):
+    # 띄어쓰기 없는 STT 반복이 100자 넘는 의심 단어 하나가 되면 BE 가 요청 전체를 400 으로 거절한다(word·후보 100자).
+    # 막는 신호는 남기고 길이만 BE 상한에 맞춘다
+    out = check_item([f"{garbage} 정리할게요"], None, vocab)
+    assert out
+    assert all(len(s["word"]) <= A.MAX_WORD_LEN == 100 for s in out)
+    assert all(len(c) <= A.MAX_WORD_LEN for s in out for c in s["candidates"])
+
