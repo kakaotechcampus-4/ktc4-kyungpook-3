@@ -161,10 +161,34 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 - 동시성 테스트는 둘째 세션이 UPDATE 를 한 번 했는지는 보지만 IntegrityError 를 거쳤는지 직접 확인하지는 않는다.
 - 승격은 대화마다 쿼리가 나가고, 대화 상세도 보는 사람의 모든 대화를 집계한다.
 
+## 2026-11-08 추가: 범위 변경(scope) 승인을 태스크 이력에 남기기(#205)
+
+M6 plan.md 는 비어 있어 완료조건이 없다. 근거는 이슈 #205 본문의 BE 체크리스트와 설계 확정 댓글(2026-11-08)이다. FE 몫(#401)은 먼저 배포됐다. M6 완료는 판정하지 않는다.
+
+| 변경 | 위치 |
+|---|---|
+| `ChangedField.SCOPE`(컬럼·마이그레이션 없음) | `backend/app/models/models.py` |
+| 범위 이력 한 줄을 남기는 `log_scope_change`(version·Notion 동기화를 건드리지 않음) | `backend/app/services/tasks.py` |
+| task_update 승인에서 `category: scope` 면 필드 반영 뒤 범위 이력, 답장 카드는 scope 줄에 잇기 | `backend/app/api/approvals.py` |
+
+| #205 BE 항목 | 상태 | 근거 |
+|---|---|---|
+| ChangedField 에 scope, 마이그레이션 없음 | 충족 | 모델 한 줄 |
+| scope 승인이면 이력 한 줄, 필드 변경과 함께면 둘 다 | 충족 | `tests/api/test_approval_scope_history.py` |
+| 반려·충돌이면 이력 없음 | 충족 | 같은 파일 |
+| 범위만이면 version·Notion 동기화 불변 | 충족 | 같은 파일 |
+| 범위 이력 되돌리기 400 | 충족 | 같은 파일 |
+| 답장 카드(설계 확정에서 범위에 넣음) | 충족 | `tests/api/test_reply_scope_history.py` |
+
+검증(2026-11-08, `backend/`): `ruff check --no-cache .` 통과, `pytest -q -p no:cacheprovider` 2284 passed, 1527 skipped(PostgreSQL 전용 skip, CI 에서 돈다). 새 테스트는 구현 전에 실패하는 것을 확인했다. 행 잠금 경합은 sqlite 로 재현되지 않는다.
+
+남은 작업: Notion 본문에 범위 결정 쓰기, decision 항목 기록(이슈 범위 밖). 머지·배포 뒤 FE 계약 문서의 "BE 미구현" 표기는 FE 가 고친다.
+
 ## 관련 기록
 
 - [승인 대기 새 항목 요청을 유사 검색 후보에 따로 더한다](basis-for-decision/2026-11-07-pending-approval-search.md)
 - [답장 담당자 변경 승인에서 PM 이 담당자를 고르게 한다](basis-for-decision/2026-11-07-reply-assignee-override.md)
 - [처리 단계 보고를 회의 컬럼으로 저장한다](basis-for-decision/2026-11-05-processing-stage-report.md)
 - [메시지 탭 읽지 않은 수를 대화별 읽은 위치로 센다](basis-for-decision/2026-11-07-message-unread-count.md)
+- [범위 변경 승인을 태스크 이력 한 줄로 남긴다](basis-for-decision/2026-11-08-scope-change-history.md)
 - [BE↔AI 계약](../../contracts/backend-ai-contract.md)
