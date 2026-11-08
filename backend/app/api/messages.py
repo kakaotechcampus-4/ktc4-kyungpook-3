@@ -126,6 +126,7 @@ def _summary(db: Session, thread: MessageThread, unread_count: int) -> ThreadSum
         },
         awaiting_reply_since=awaiting_since and svc.utc(awaiting_since),
         dm_failed=last_dm is not None and last_dm.dm_status == DmStatus.FAILED,
+        web_reply_available=thread.member.user_id is not None,
         unread_count=unread_count,
     )
 
