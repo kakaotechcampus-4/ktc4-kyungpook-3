@@ -45,7 +45,9 @@ def db():
 def items_by_title(db, monkeypatch):
     """AI 출력을 BE 에 넣고 추출 결과 조회의 항목을 제목으로 돌려준다. 화자 uid 는 각 팀원의 디스코드 id 다."""
     monkeypatch.setenv("SERVICE_TOKEN", SERVICE_TOKEN)
-    ws = Workspace(name="A")
+    # 자동 생성 스위치(기본 켜짐)를 고정한다. 꺼진 환경에서도 auto 판정을 본다
+    monkeypatch.delenv("AUTO_CREATE_ENABLED", raising=False)
+    ws =Workspace(name="A")
     db.add(ws)
     db.flush()
     pm_user = User(email="pm@example.com", name="pm")
