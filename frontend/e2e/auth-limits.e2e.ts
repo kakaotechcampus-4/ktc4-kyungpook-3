@@ -47,7 +47,10 @@ test('시도 제한에 걸린 로그인은 맞는 비밀번호여도 서버 문�
   )
   await expect(page.getByText(/\d+\s*(초|분)/)).toHaveCount(0)
   await expect(page.getByText(/잠겼|잠금/)).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '비밀번호를 잊으셨나요?' })).toBeDisabled()
+  await expect(page.getByRole('link', { name: '비밀번호를 잊으셨나요?' })).toHaveAttribute(
+    'href',
+    '/forgot-password',
+  )
   await expect(page).toHaveURL('/login')
   await capture(page, testInfo, 'login-429.png')
 })
