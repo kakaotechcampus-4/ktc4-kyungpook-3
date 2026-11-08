@@ -342,3 +342,22 @@ def test_assignee_merge_that_sets_assignee_keeps_item_gate():
     merged = _merge(category="assignee", assignee_member_id="mem-3", assignee_raw="수아", gate="review")
 
     assert (merged["assignee_member_id"], merged["gate"]) == ("mem-3", "review")
+
+
+def test_assignee_merge_without_assignee_keeps_unresolved_hold_card():
+    # 담당자를 못 찾아 hold 인 카드(원문만 있음)에 담당자 표현이 없는 assignee 항목이 합쳐져도, 못 찾은 원문과 hold 를 지우지 않는다
+    payload = {**_base_payload(), "assignee_member_id": None, "assignee_raw": "철수", "gate": "hold"}
+
+    merged = _merge(payload, category="assignee", assignee_member_id=None, assignee_raw=None, gate="review")
+
+    assert (merged["assignee_member_id"], merged["assignee_raw"], merged["gate"]) == (None, "철수", "hold")
+    assert merged.get("assignee_item_id") is None
+
+
+def test_assignee_merge_that_names_new_assignee_replaces_unresolved_hold_card():
+    # 새 항목이 담당자를 정하면 hold 카드도 그 항목 기준으로 바뀐다
+    payload = {**_base_payload(), "assignee_member_id": None, "assignee_raw": "철수", "gate": "hold"}
+
+    merged = _merge(payload, category="assignee", assignee_member_id="mem-3", assignee_raw="수아", gate="review")
+
+    assert (merged["assignee_member_id"], merged["assignee_raw"], merged["gate"]) == ("mem-3", "수아", "review")
