@@ -595,6 +595,9 @@ def status_text(state_dir: Path, now: float | None = None, limits: Limits = LIMI
 
 
 # ─────────────────────────────────────────────────────────────── 감싸개
+# 확인 호출의 음성. 사람 목소리가 아니라 espeak-ng 1.52.0 으로 만든 합성음이다(레포가 공개다). 다시 만드는 법:
+#   espeak-ng -v ko -s 140 -w raw.wav "하나 둘 셋." && ffmpeg -i raw.wav -ac 1 -ar 16000 -sample_fmt s16 probe.wav
+# 로컬 faster-whisper large-v3 가 프롬프트 없이 " 하나 둘 셋" 으로 읽었다(2026-11-08). 1.57초, Elice 단가로 한 번 약 ₩0.16
 PROBE_WAV = Path(__file__).with_name("probe.wav")
 _OUTAGE = ("service", "auth")
 

@@ -478,3 +478,11 @@ def test_a_tick_that_breaks_is_logged_and_the_route_stays(tmp_path, capsys):
     assert "[failover] tick 실패" in capsys.readouterr().out
     assert fo.phase is Phase.STARTING
     assert (tmp_path / "gpu-request").read_text() == "off"       # 처리하지 못한 요청은 남는다
+
+
+def test_the_probe_is_a_short_generated_mono_clip():
+    from stt.failover import _probe_audio
+
+    samples, sr = _probe_audio()
+    assert sr == 16_000 and samples.ndim == 1 and 1.0 <= len(samples) / sr <= 3.0
+    assert float(abs(samples).max()) > 0.05
