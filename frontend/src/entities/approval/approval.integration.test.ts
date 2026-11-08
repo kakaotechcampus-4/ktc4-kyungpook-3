@@ -165,12 +165,14 @@ describe('task_create approval linking an extraction item', () => {
     expect(before.approval).toEqual([{ status: 'pending', related_task_id: null }])
   })
 
-  it('approves without linking when the item does not exist', async () => {
+  it('approves when the card item does not exist, linking only items that point at this card (BE #533)', async () => {
     db.approvals[0].payload = { ...db.approvals[0].payload, extraction_item_id: 'it_99' }
     const before = snapshot()
     expect(await approve()).toMatchObject({ status: 'approved', related_task_id: 'tk_90' })
     expect(db.tasks).toHaveLength(before.taskCount + 1)
-    expect(snapshot().itemTaskIds).toEqual(before.itemTaskIds)
+    expect(snapshot().itemTaskIds).toEqual(
+      before.itemTaskIds.map(([itemId, taskId]) => [itemId, itemId === 'it_04' ? 'tk_90' : taskId]),
+    )
   })
 
   it('checks the item before validating the task fields', async () => {
