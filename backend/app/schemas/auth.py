@@ -5,10 +5,7 @@ from typing import Optional
 from pydantic import BaseModel, field_validator
 
 from app.schemas.email import NormalizedEmail
-from app.schemas.name import NAME_MAX_LENGTH as NAME_MAX_LENGTH  # noqa: F401 (re-export)
-from app.schemas.name import NAME_RULE_MESSAGE as NAME_RULE_MESSAGE  # noqa: F401 (re-export)
 from app.schemas.name import NameStr
-from app.schemas.name import validate_name as validate_name  # noqa: F401 (re-export)
 
 PASSWORD_RULE_MESSAGE = "비밀번호는 8자 이상이고 숫자를 하나 이상 포함해야 합니다."
 
