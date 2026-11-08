@@ -17,16 +17,16 @@ BE 가 대기 중인 생성 카드에 다른 회의의 같은 일을 합친다. 
   - [승인 DTO](../../../src/shared/types/api/approval.ts): 응답 `payload_version?`, 요청 `payload_version?`, 409 details.
   - [승인 mapper](../../../src/entities/approval/model/mapper.ts): 생성 승인의 `payloadVersion`. 실패 종류 `changed` 를 `conflict`(APPROVAL_CONFLICT)와 따로 읽는다.
   - [resolution.ts](../../../src/entities/approval/model/resolution.ts): 승인·반려 계획이 처리할 카드의 지문을 싣는다. 값이 없거나 변경 승인이면 보내지 않는다.
-  - [useTaskCreateOverrides](../../../src/features/approval-resolve/model/useTaskCreateOverrides.ts): 폼이 맞춰진 카드(`seen`)를 둔다. 같은 승인의 지문이 다른 응답을 받으면 고치지 않은 칸만 새 값으로 바꾸고 PM 이 고친 칸은 둔다. 처음 본 카드와의 차이(`change`)를 준다.
+  - [useTaskCreateOverrides](../../../src/features/approval-resolve/model/useTaskCreateOverrides.ts): 폼이 맞춰진 카드(`seen`)를 둔다. 같은 승인의 지문이 다른 응답을 받으면 고치지 않은 칸만 새 값으로 바꾸고 PM 이 고친 칸은 둔다. 처음 본 카드와의 차이(`change`)를 준다. 별칭 후보는 payload 밖에서 구해 지문이 같아도 바뀌므로, 처리할 카드의 후보만 최신 응답을 쓴다(리뷰 반영).
   - [useApprovalResolve](../../../src/features/approval-resolve/model/useApprovalResolve.ts): 409 `APPROVAL_CHANGED` 면 승인 목록·상세를 다시 받는다. 문구는 [errorMessages](../../../src/shared/api/errorMessages.ts) 「보신 뒤에 확인 요청 내용이 바뀌었어요. 새 내용을 확인하고 다시 처리해 주세요.」
   - [ApprovalReview](../../../src/widgets/approval-review/ui/ApprovalReview.tsx): 상세는 `seen` 으로 처리한다. 바뀌었으면 「바뀐 내용」 안내(보던 값·새 제안·승인할 값, 새로 합쳐진 항목 수)와 「새 내용을 확인했어요, 승인」 버튼이다.
   - 목록 카드([ApprovalCard](../../../src/widgets/task-board/ui/ApprovalCard.tsx))는 그 카드를 그린 목록 응답의 지문을 싣고, 409 면 문구를 보이고 새 목록으로 다시 그린다.
   - `alias_text` 는 보내지 않는다(#535).
-- 합쳐진 근거(확인할 것 2): 생성 승인 모델에 `mergedItems`·`assigneeItemId`([merged.ts](../../../src/entities/approval/model/merged.ts) 의 `mergedCount`·`approvalChange`). 상세는 「대표 근거 · 카드를 만든 회의」와 「합쳐진 근거 N건 보기」(회의·발화 시각·화자·인용·`doc_text`·합친 시각·원문 듣기)를 나누고, 담당자를 정한 근거에 「담당자 근거」를 붙인다. 처리 버튼 위에 「반려하면 합쳐진 항목 N개가 모두 반려돼요.」 목록 카드는 「회의 M곳 · 항목 N개 합침」.
+- 합쳐진 근거(확인할 것 2): 생성 승인 모델에 `mergedItems`·`assigneeItemId`([merged.ts](../../../src/entities/approval/model/merged.ts) 의 `mergedCount`·`approvalChange`). 상세는 「대표 근거 · 카드를 만든 회의」와 「합쳐진 근거 N건 보기」(회의·발화 시각·화자·인용·`doc_text`·합친 시각·원문 듣기)를 나누고, 담당자를 정한 근거에 「담당자 근거」를 붙인다. 처리 버튼 위에 「반려하면 합쳐진 항목 N개가 모두 반려돼요.」 목록 카드는 「회의 M곳 · 항목 N개 합침」. 합친 카드의 원문 담당자·마감은 다른 회의의 원문일 수 있어, 상세·목록 모두 대표 인용 밖에 「합친 제안의 원문」으로 보인다(리뷰 반영).
 - 자리(3): 목록은 `created_at` 으로 정렬하고 합쳐도 `created_at` 이 그대로라 자리가 유지된다. 코드는 바꾸지 않았고 RTL 로 확인했다.
 - 회의록(4): 회의록 항목은 추출 항목 값을 쓰고 `approval_id` 로 상세에 잇는다. 코드는 바꾸지 않았고 RTL 로 확인했다.
 - MSW
-  - [approvalMerge](../../../src/shared/mock/approvalMerge.ts): 응답마다 payload 지문(16자 hex), BE 합치기 규칙을 줄인 `mergeIntoApproval`, 처리 요청 직전에 합치는 `mergePendingItems`.
+  - [approvalMerge](../../../src/shared/mock/approvalMerge.ts): 응답마다 payload 지문(16자 hex), BE `merge_into_pending` 과 같은 `mergeIntoApproval`(분류·상태·문서 글은 모의 항목에 따로 둔다, 리뷰 반영), 처리 요청 직전에 합치는 `mergePendingItems`.
   - [승인 handler](../../../src/shared/mock/handlers/approval.ts): `payload_version` 400·409, 승인하면 카드에 이어진 항목 모두의 `task_id`(BE 와 같다). [별칭 후보](../../../src/shared/mock/aliasLearning.ts)는 `assignee_item_id` 항목에서 구한다.
   - 시나리오 `approval-merged`(ap_03 에 mt_07 의 it_21 이 합쳐져 담당자 이재환·마감 9/26), `approval-merged-after-view`(같은 합치기가 첫 처리 요청 직전에 일어나 409). 모의 DB 판은 올리지 않았다(추출 항목의 `merge_into` 로 표시, 응답에는 없음).
 - 계약: [계약](../../contracts/frontend-api-contract.md) §1 오류 코드, §2.4, §2.5 「승인 때 별칭 학습」 합의 상태, §2.5 「합쳐진 카드와 본 뒤 바뀐 카드」.
