@@ -484,7 +484,11 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 다른 SMTP 로 옮길 때
 
 ## 가입 이름 규칙
 
-`POST /api/v1/auth/signup` 의 `name` 은 앞뒤 공백을 지운 값으로 저장한다. 지운 뒤 비었거나, 보이지 않는 글자(형식 문자·결합 부호)만 있거나, 제어문자·줄 구분자·짝 없는 서로게이트·글자 방향 제어 문자가 있거나, 100자를 넘으면 400 `INVALID_REQUEST` 다. 이미 있는 계정의 이름은 검사하지 않는다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-06-signup-name-rule.md), 원본은 `app/schemas/auth.py` 의 `validate_name`.
+`POST /api/v1/auth/signup` 의 `name` 은 앞뒤 공백을 지운 값으로 저장한다. 지운 뒤 비었거나, 보이지 않는 글자(형식 문자·결합 부호)만 있거나, 제어문자·줄 구분자·짝 없는 서로게이트·글자 방향 제어 문자가 있거나, 100자를 넘으면 400 `INVALID_REQUEST` 다. 이미 있는 계정의 이름은 검사하지 않는다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-06-signup-name-rule.md), 원본은 `app/schemas/name.py` 의 `validate_name`(`NameStr`). 팀원 표시명도 같은 규칙을 쓴다(아래 [팀원 표시명 규칙](#팀원-표시명-규칙)).
+
+## 팀원 표시명 규칙
+
+`POST /api/v1/members` 와 `PATCH /api/v1/members/{member_id}` 의 `display_name` 은 [가입 이름 규칙](#가입-이름-규칙)과 같은 규칙을 따른다. 앞뒤 공백을 지운 값으로 저장하고, 규칙을 어기면 400 `INVALID_REQUEST` 이며 `details.fields[].loc` 에 `display_name` 이 들어간다. PATCH 에서 `display_name` 을 빼면 이름을 바꾸지 않고, `null` 을 보내면 400 이다. 이미 저장된 표시명은 검사하지 않는다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-08-member-display-name-rule.md), 규칙 원본은 `app/schemas/name.py` 의 `validate_name`(`NameStr`).
 
 ## 권한
 
