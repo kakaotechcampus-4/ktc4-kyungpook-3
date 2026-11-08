@@ -273,8 +273,9 @@ export function blockBySilence(task: MockTask, at: string, state: MockDb = db): 
     const entry = addHistory(task.task_id, field, task[field], value, null, 'scheduler', state)
     entry.is_auto = true
     entry.created_at = at
-    task[field] = value
   }
+  task.status = 'blocked'
+  task.blocker = SILENCE_BLOCKER
   task.updated_at = at
   task.version += 1
 }

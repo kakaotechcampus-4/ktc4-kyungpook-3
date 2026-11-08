@@ -8,6 +8,7 @@ import { fail, ok } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
+import { toTaskResponse } from '@/shared/mock/task-state'
 import { deferred } from '@/shared/test/deferred'
 import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
@@ -247,7 +248,7 @@ describe('재조회 실패 안내 (#236)', () => {
     server.use(
       http.get('/api/v1/tasks/:taskId', async () => {
         await gate.promise
-        return ok(taskOf('tk_04'))
+        return ok(toTaskResponse(taskOf('tk_04')))
       }),
     )
     const before = taskGets(log, 'tk_04')

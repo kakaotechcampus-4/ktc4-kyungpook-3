@@ -2,7 +2,15 @@ import type { TaskDto, TaskHistoryDto } from '@/shared/types/api/task'
 
 export type MockTask = Omit<TaskDto, 'auto_blocked'>
 
-const seeds: [string, string, string | null, string, string | null, string | null, string][] = [
+const seeds: [
+  string,
+  string,
+  string | null,
+  TaskDto['status'],
+  string | null,
+  string | null,
+  string,
+][] = [
   ['tk_01', '로그인 API 연동', 'mb_01', 'in_progress', '2026-09-20', '2026-09-15', '2026-09-15'],
   ['tk_02', '회원가입 화면', 'mb_02', 'todo', '2026-09-16', null, '2026-09-10'],
   ['tk_03', 'DB 스키마 정리', 'mb_03', 'blocked', '2026-09-22', '2026-09-16', '2026-09-15'],

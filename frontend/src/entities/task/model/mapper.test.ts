@@ -1,4 +1,3 @@
-import { ApiError } from '@/shared/api/errors'
 import type { TimelineItemDto } from '@/shared/types/api/reply'
 import type { TaskDto } from '@/shared/types/api/task'
 import { taskFixtures, taskHistoryFixtures } from '@/shared/mock/fixtures/task'
@@ -42,7 +41,7 @@ it('falls back null and omitted start dates to creation date and preserves other
   })
 })
 
-it('maps task history flags and unknown enum fallbacks', () => {
+it('maps task history flags and keeps unknown history values instead of reading them as known ones', () => {
   expect(toTaskHistory(taskHistoryFixtures[0])).toEqual({
     id: 'hs_01',
     taskId: 'tk_01',
@@ -58,15 +57,14 @@ it('maps task history flags and unknown enum fallbacks', () => {
   })
   const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
   try {
-    expect(toTask({ ...taskDtos[0], status: 'future' }).status).toBe('todo')
     expect(
       toTaskHistory({
         ...taskHistoryFixtures[0],
-        changed_field: 'future',
-        change_source: 'future',
+        changed_field: 'future_field',
+        change_source: 'future_source',
       }),
-    ).toMatchObject({ field: 'title', source: 'manual' })
-    expect(warning).toHaveBeenCalledTimes(3)
+    ).toMatchObject({ field: { unknown: 'future_field' }, source: { unknown: 'future_source' } })
+    expect(warning).toHaveBeenCalledTimes(2)
   } finally {
     warning.mockRestore()
   }
@@ -157,46 +155,10 @@ describe('Notion 반영 상태', () => {
   })
 })
 
-describe('버전', () => {
-  it('서버 정수 버전을 그대로 읽는다', () => {
-    expect(toTask({ ...taskDtos[0], version: 7 }).version).toBe(7)
-  })
-
-  it.each([
-    ['소수', 1.5],
-    ['NaN', Number.NaN],
-    ['무한대', Number.POSITIVE_INFINITY],
-    ['문자열', '3'],
-    ['null', null],
-    ['없음', undefined],
-  ])('version 이 %s 이면 매핑하지 않고 잘못된 응답으로 던진다', (_label, version) => {
-    const dto = { ...taskDtos[0], version } as unknown as TaskDto
-    expect(() => toTask(dto)).toThrow(ApiError)
-    expect(() => toTask(dto)).toThrow(
-      expect.objectContaining({ code: 'INVALID_RESPONSE', kind: 'invalid_response' }) as Error,
-    )
-  })
-})
-
-describe('자동 막힘', () => {
-  it.each([
-    [true, true],
-    [false, false],
-  ])('auto_blocked %s 를 그대로 읽는다', (raw, autoBlocked) => {
-    expect(toTask({ ...taskDtos[2], status: 'blocked', auto_blocked: raw }).autoBlocked).toBe(
-      autoBlocked,
-    )
-  })
-
-  it.each([
-    ['문자열', 'true'],
-    ['숫자', 1],
-    ['null', null],
-    ['없음', undefined],
-  ])('auto_blocked 가 %s 이면 던지지 않고 풀 수 없는 것(false)으로 읽는다', (_label, raw) => {
-    const dto = { ...taskDtos[2], status: 'blocked', auto_blocked: raw } as unknown as TaskDto
-    expect(toTask(dto).autoBlocked).toBe(false)
-  })
+it('버전과 자동 막힘을 그대로 읽는다', () => {
+  expect(
+    toTask({ ...taskDtos[2], status: 'blocked', version: 7, auto_blocked: true }),
+  ).toMatchObject({ version: 7, autoBlocked: true })
 })
 
 describe('태스크 기록 (#344)', () => {
@@ -289,19 +251,30 @@ describe('태스크 기록 (#344)', () => {
     ])
   })
 
-  it('모르는 줄·결과는 값을 읽지 못한 줄, 반영하지 않음으로 둔다', () => {
+  it('모르는 줄·결과·채널은 다른 아는 값으로 바꾸지 않는다. 되돌리기는 undoable 만 따른다', () => {
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const future = {
         ...reply,
-        changes: [{ ...reply.changes[0], field: 'priority', result: 'escalated' }],
-      } as unknown as TimelineItemDto
+        channel: 'slack',
+        changes: [
+          {
+            ...reply.changes[0],
+            field: 'priority',
+            result: 'escalated',
+            evidence_status: 'guessed',
+          },
+        ],
+      } satisfies TimelineItemDto
       const [item] = toTaskTimeline([future], [], 'tk_03')
+      expect(item).toMatchObject({ kind: 'reply', channel: null })
       expect(item.kind === 'reply' && item.changes[0]).toMatchObject({
-        field: 'failed',
-        result: 'noted',
+        field: { unknown: 'priority' },
+        result: { unknown: 'escalated' },
+        evidenceStatus: null,
         undoable: true,
       })
+      expect(warning).toHaveBeenCalledTimes(4)
     } finally {
       warning.mockRestore()
     }

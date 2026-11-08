@@ -7,6 +7,8 @@ export type {
   TaskStatus,
   TaskTab,
   TaskHistoryEntry,
+  TaskHistoryField,
+  TaskHistorySource,
   TaskTimelineItem,
 } from './model/types'
 export { isNotionSynced, toTask, toTaskHistory, toTaskTimeline } from './model/mapper'
