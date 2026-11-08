@@ -40,6 +40,9 @@ export const memberHandlers = [
   http.delete(`${base}/members/aliases/:aliasId`, ({ params }) => {
     const index = db.aliases.findIndex(({ alias_id }) => alias_id === params.aliasId)
     if (index < 0) return fail('MEMBER_ALIAS_NOT_FOUND', '별칭이 없습니다.', 404)
+    // 백엔드는 별칭을 찾은 뒤 그 공간의 PM 인지 본다 (members.py 의 delete_alias)
+    const denied = requirePmRole(db.aliases[index].workspace_id)
+    if (denied) return denied
     db.aliases.splice(index, 1)
     return new Response(null, { status: 204 })
   }),
@@ -153,8 +156,6 @@ export const memberHandlers = [
     return ok(member)
   }),
   http.post(`${base}/members/:memberId/aliases`, async ({ params, request }) => {
-    const member = db.members.find(({ member_id }) => member_id === params.memberId)
-    if (!member) return fail('MEMBER_NOT_FOUND', '팀원이 없습니다.', 404)
     const body = (await request.json()) as {
       alias_text?: unknown
       alias_type?: unknown
@@ -166,21 +167,44 @@ export const memberHandlers = [
       body.alias_type === undefined ||
       (typeof body.alias_type === 'string' &&
         ['realname', 'nickname', 'mention', 'inferred'].includes(body.alias_type))
+    // display_name 은 서버가 이름에서 채우는 출처라 받지 않는다 (schemas/member.py)
     const validSource =
       body.source === undefined ||
       (typeof body.source === 'string' &&
         ['manual', 'discord_profile', 'learned'].includes(body.source))
-    if (typeof body.alias_text !== 'string' || !validType || !validSource)
+    // 길이는 받은 그대로 재고, 저장은 앞뒤 공백을 지우고 안쪽 공백을 한 칸으로 줄인 값이다 (matching.py normalize_alias_text)
+    const aliasText =
+      typeof body.alias_text === 'string' && body.alias_text.length <= 100
+        ? body.alias_text.trim().replace(/\s+/g, ' ')
+        : ''
+    if (aliasText === '' || !validType || !validSource)
       return fail('INVALID_REQUEST', '별칭 요청이 올바르지 않습니다.', 400)
-    // 백엔드는 같은 workspace_id + member_id + alias_text 가 있으면 기존 행을 그대로 돌려준다.
+    // 본문 검증(400) 다음에 팀원을 찾고(404) 그 공간의 PM 인지 본다 (members.py 의 _get_member(..., pm=True))
+    const member = db.members.find(({ member_id }) => member_id === params.memberId)
+    if (!member) return fail('MEMBER_NOT_FOUND', '팀원이 없습니다.', 404)
+    const denied = requirePmRole(member.workspace_id)
+    if (denied) return denied
+    const aliasType = typeof body.alias_type === 'string' ? body.alias_type : 'nickname'
+    const source = typeof body.source === 'string' ? body.source : 'manual'
+    const confidence = typeof body.confidence === 'number' ? body.confidence : 1
+    const verified = typeof body.verified === 'boolean' ? body.verified : true
+    // 백엔드는 같은 workspace_id + member_id + alias_text 가 있으면 기존 행을 돌려준다.
     const duplicate = db.aliases.find(
       (existing) =>
         existing.workspace_id === member.workspace_id &&
         existing.member_id === member.member_id &&
-        existing.alias_text === body.alias_text,
+        existing.alias_text === aliasText,
     )
-    // 라우트 선언이 status_code=201 이라 기존 행을 돌려줘도 201 이다 (members.py:215)
-    if (duplicate) return ok(duplicate, { status: 201 })
+    if (duplicate) {
+      // 자동 별칭(이름·디스코드 닉네임)을 사람이 정한 출처로 다시 넣으면 그 출처로 올린다
+      if (
+        (duplicate.source === 'display_name' || duplicate.source === 'discord_profile') &&
+        (source === 'manual' || source === 'learned')
+      )
+        Object.assign(duplicate, { alias_type: aliasType, source, confidence, verified })
+      // 라우트 선언이 status_code=201 이라 기존 행을 돌려줘도 201 이다 (members.py:215)
+      return ok(duplicate, { status: 201 })
+    }
     const alias = {
       alias_id: nextId(
         'al',
@@ -188,11 +212,11 @@ export const memberHandlers = [
       ),
       member_id: member.member_id,
       workspace_id: member.workspace_id,
-      alias_text: body.alias_text,
-      alias_type: typeof body.alias_type === 'string' ? body.alias_type : 'nickname',
-      source: typeof body.source === 'string' ? body.source : 'manual',
-      confidence: typeof body.confidence === 'number' ? body.confidence : 1,
-      verified: typeof body.verified === 'boolean' ? body.verified : true,
+      alias_text: aliasText,
+      alias_type: aliasType,
+      source,
+      confidence,
+      verified,
       created_at: MOCK_NOW,
     }
     db.aliases.push(alias)
