@@ -499,7 +499,7 @@ def _summary_problems(body: dict) -> list[str]:
     if not isinstance(body.get("key_points"), list):
         problems.append("key_points")
     for topic in body.get("topics") or []:
-        if (topic.get("topic_id") is None) == (topic.get("name") is None):
+        if topic.get("topic_id") is None and topic.get("name") is None:
             problems.append("topic_id, name")
         if len(topic.get("name") or "") > 100:
             problems.append("name")

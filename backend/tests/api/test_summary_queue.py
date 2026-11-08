@@ -265,7 +265,6 @@ def test_put_unknown_extraction_is_404(client, mdb, mseed):
     {**BODY, "overview": ""},
     {"model_name": "m", "overview": "핵심"},
     {**BODY, "topics": [{"item_ids": []}]},
-    {**BODY, "topics": [{"topic_id": "t", "name": "둘 다"}]},
 ])
 def test_put_rejects_malformed_body(client, mdb, mseed, body):
     _, extraction = _meeting(mdb, mseed["ws"])

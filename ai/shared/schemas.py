@@ -383,7 +383,10 @@ class DecisionDraft(_Base):
 
 @dataclass(frozen=True)
 class TopicDraft(_Base):
-    """기존 주제는 topic_id, 새 주제는 name. 결정이 주제 아래 있어서 주제 없는 결정이 표현되지 않는다."""
+    """기존 주제는 topic_id 와 재료의 이름, 새 주제는 name. 결정이 주제 아래 있어서 주제 없는 결정이 표현되지 않는다.
+
+    기존 주제에 이름을 같이 싣는 것은 재료를 읽은 뒤 그 주제가 지워졌을 때 BE 가 이름으로 다시 찾게 하려는 것이다.
+    """
 
     topic_id: str | None
     name: str | None
@@ -392,8 +395,8 @@ class TopicDraft(_Base):
     decisions: list[DecisionDraft]
 
     def __post_init__(self) -> None:
-        if (self.topic_id is None) == (self.name is None):
-            raise ValueError("topic_id 와 name 중 하나만 둔다")
+        if self.topic_id is None and self.name is None:
+            raise ValueError("topic_id 나 name 이 있어야 한다")
 
 
 @dataclass(frozen=True)

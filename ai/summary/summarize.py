@@ -57,7 +57,8 @@ def parse_summary(raw: dict[str, Any], summary_input: SummaryInput, *, model_nam
     topic_keys = local_keys("T", [t.topic_id for t in summary_input.topics])
     item_keys = local_keys("I", [i.item_id for i in summary_input.items])
     decision_keys = local_keys("D", [d.decision_id for d in summary_input.decisions])
-    topics = (_topic(x, topic_keys, item_keys, decision_keys) for x in _dicts(raw.get("topics")))
+    topic_names = {t.topic_id: t.name for t in summary_input.topics}
+    topics = (_topic(x, topic_keys, topic_names, item_keys, decision_keys) for x in _dicts(raw.get("topics")))
     return SummaryDraft(
         model_name=model_name,
         truncated_input=truncated_input,
@@ -76,14 +77,15 @@ def parse_summary(raw: dict[str, Any], summary_input: SummaryInput, *, model_nam
     )
 
 
-def _topic(raw: dict, topic_keys: dict[str, str], item_keys: dict[str, str],
+def _topic(raw: dict, topic_keys: dict[str, str], topic_names: dict[str, str], item_keys: dict[str, str],
            decision_keys: dict[str, str]) -> TopicDraft | None:
     """모르는 키의 주제는 그 아래 결정까지 버린다. 결정이 붙을 자리가 없다."""
     key = _text(raw.get("key"))
     item_ids = _ids(raw.get("items"), item_keys)[:TOPIC_ITEMS_MAX]
     decisions = [d for d in (_decision(x, decision_keys) for x in _dicts(raw.get("decisions"))) if d is not None]
     if key in topic_keys:
-        return TopicDraft(topic_keys[key], None, "", item_ids, decisions)
+        topic_id = topic_keys[key]
+        return TopicDraft(topic_id, topic_names[topic_id][:TOPIC_NAME_MAX], "", item_ids, decisions)
     name = _text(raw.get("name"))[:TOPIC_NAME_MAX].strip()
     if re.fullmatch(r"N\d+", key) and name:
         return TopicDraft(None, name, _text(raw.get("description")), item_ids, decisions)

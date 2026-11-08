@@ -327,6 +327,34 @@ def test_rerun_deletes_topic_no_meeting_uses_anymore(mdb, mseed):
     assert [t.name for t in _topics(mdb)] == ["남을 주제"]
 
 
+def test_topic_deleted_after_the_input_was_read_is_found_again_by_name(mdb, mseed):
+    """A 를 다시 요약하며 지운 주제를 B 의 재료가 이미 넘겨받았다. B 의 결정이 조용히 사라지면 안 된다."""
+    _, first, _ = _meeting(mdb, mseed["ws"], started_at=T0 - timedelta(days=1))
+    _save(mdb, first, [{"name": "배포"}])
+    stale = _topics(mdb)[0]
+    stale_id, stale_name = stale.topic_id, stale.name
+    _requeue(mdb, first)
+    _save(mdb, first, [{"name": "인프라"}])
+    _, later, _ = _meeting(mdb, mseed["ws"])
+
+    result = _save(mdb, later, [{"topic_id": stale_id, "name": stale_name, "decisions": [{"text": "도커로 간다"}]}])
+
+    assert (result.topic_count, result.decision_count) == (1, 1)
+    assert sorted(t.name for t in _topics(mdb)) == ["배포", "인프라"]
+    assert mdb.scalars(select(Decision.text)).all() == ["도커로 간다"]
+
+
+def test_known_topic_id_wins_over_the_name_sent_with_it(mdb, mseed):
+    _, first, _ = _meeting(mdb, mseed["ws"], started_at=T0 - timedelta(days=1))
+    _save(mdb, first, [{"name": "배포"}])
+    topic_id = _topics(mdb)[0].topic_id
+    _, later, _ = _meeting(mdb, mseed["ws"])
+
+    _save(mdb, later, [{"topic_id": topic_id, "name": "다른 이름"}])
+
+    assert [(t.topic_id, t.name) for t in _topics(mdb)] == [(topic_id, "배포")]
+
+
 def test_rerun_keeps_topic_another_meeting_still_uses(mdb, mseed):
     ws = mseed["ws"]
     other_meeting, other, _ = _meeting(mdb, ws, started_at=T0 - timedelta(days=1))
@@ -404,5 +432,5 @@ def test_golden_put_body_is_accepted_over_http(mdb, mseed):
     )
 
     assert r.status_code == 200, r.text
-    # 황금 파일의 기존 주제 ID 는 이 워크스페이스에 없으므로 그 주제와 결정은 건너뛴다
-    assert (r.json()["data"]["topic_count"], r.json()["data"]["decision_count"]) == (1, 1)
+    # 황금 파일의 기존 주제 ID 는 이 워크스페이스에 없으므로 함께 온 이름으로 주제를 찾거나 만든다
+    assert (r.json()["data"]["topic_count"], r.json()["data"]["decision_count"]) == (2, 2)

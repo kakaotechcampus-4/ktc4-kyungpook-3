@@ -419,7 +419,10 @@ def _clear_meeting(db: Session, meeting_id: str, extraction_id: str) -> None:
 def _resolve_topic(db: Session, workspace_id: str, entry: SummaryTopicIn) -> Topic | None:
     if entry.topic_id is not None:
         topic = db.get(Topic, entry.topic_id)
-        return topic if topic is not None and topic.workspace_id == workspace_id else None
+        if topic is not None and topic.workspace_id == workspace_id:
+            return topic
+        if entry.name is None:
+            return None
     key = normalize_topic_name(entry.name)
     if not key:
         return None

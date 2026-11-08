@@ -143,13 +143,14 @@ def test_a_nameless_new_topic_is_dropped_with_its_decisions():
     assert draft.topics == []
 
 
-def test_topic_reuse_sends_the_id_and_a_new_topic_sends_the_name():
+def test_topic_reuse_sends_the_id_with_the_known_name_and_a_new_topic_sends_the_name():
     draft = _parse(_raw(topics=[
         {"key": "T1", "name": "무시되는 이름", "description": "무시", "items": []},
         {"key": "N1", "name": " 새 주제 ", "description": " 설명 ", "items": []},
     ]))
     reused, new = draft.topics
-    assert (reused.topic_id, reused.name, reused.description) == (TOPIC_ID, None, "")
+    # 이름은 LLM 이 아니라 재료의 이름이다. BE 가 그 주제를 못 찾을 때 이름으로 다시 찾는다
+    assert (reused.topic_id, reused.name, reused.description) == (TOPIC_ID, "팀원 초대", "")
     assert (new.topic_id, new.name, new.description) == (None, "새 주제", "설명")
 
 

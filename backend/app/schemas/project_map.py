@@ -70,7 +70,10 @@ class SummaryDecisionIn(BaseModel):
 
 
 class SummaryTopicIn(BaseModel):
-    """기존 주제는 topic_id, 새 주제는 name. 결정을 주제 아래에 둬서 주제 없는 결정이 표현되지 않는다."""
+    """기존 주제는 topic_id 와 그 이름, 새 주제는 name. 결정을 주제 아래에 둬서 주제 없는 결정이 표현되지 않는다.
+
+    기존 주제의 이름도 받는 것은 재료를 읽은 뒤 다른 회의의 재요약이 그 주제를 지웠을 때 이름으로 다시 찾기 위해서다.
+    """
 
     topic_id: str | None = None
     name: str | None = Field(None, max_length=100)
@@ -79,9 +82,9 @@ class SummaryTopicIn(BaseModel):
     decisions: list[SummaryDecisionIn] = []
 
     @model_validator(mode="after")
-    def _one_way_to_name_a_topic(self) -> "SummaryTopicIn":
-        if (self.topic_id is None) == (self.name is None):
-            raise ValueError("topic_id 와 name 중 하나만 보냅니다.")
+    def _topic_is_named(self) -> "SummaryTopicIn":
+        if self.topic_id is None and self.name is None:
+            raise ValueError("topic_id 나 name 이 있어야 합니다.")
         return self
 
 

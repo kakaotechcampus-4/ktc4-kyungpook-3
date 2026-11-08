@@ -22,7 +22,6 @@ def test_claim_parses():
     assert SummaryClaim.from_dict({"extraction_id": "e", "meeting_id": "m", "workspace_id": "w", "attempt": 2}).attempt == 2
 
 
-@pytest.mark.parametrize("topic_id,name", [(None, None), ("t", "n")])
-def test_a_topic_cannot_carry_both_or_neither_way_of_naming_it(topic_id, name):
+def test_a_topic_needs_an_id_or_a_name():
     with pytest.raises(ValueError):
-        TopicDraft(topic_id=topic_id, name=name, description="", item_ids=[], decisions=[])
+        TopicDraft(topic_id=None, name=None, description="", item_ids=[], decisions=[])

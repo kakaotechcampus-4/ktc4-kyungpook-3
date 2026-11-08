@@ -15,7 +15,7 @@
   "topics": [
     {
       "topic_id": "00000000-0000-0000-0000-00000000aaaa",
-      "name": null,
+      "name": "팀원 초대",
       "description": "",
       "item_ids": ["00000000-0000-0000-0000-00000000bbbb"],
       "decisions": [
