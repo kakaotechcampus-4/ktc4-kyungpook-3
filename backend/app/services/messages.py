@@ -14,9 +14,11 @@ commit 은 부르는 쪽 몫이다. 시각은 UTC 로 바꿔 저장한다. sqlit
 PM 이 웹에서 쓴 글(sender=pm)은 묶음 없이 바로 발송 대기로 간다. 나가는 DM 은 dm_status 로 보고, sender=bot 은
 리마인드만 뜻한다. 그래서 PM 글은 틀을 고르거나 묶음을 다시 만드는 판정에 들어가지 않는다.
 """
+import logging
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from urllib.parse import quote
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -41,11 +43,15 @@ from app.models import (
     ReminderWatch,
     ReplyChannel,
     Task,
+    TaskStatus,
     ThreadMessage,
+    WatchState,
     Workspace,
     WorkspaceMessageSettings,
 )
 from app.services import mailer, notifications, replies, scheduler
+
+logger = logging.getLogger(__name__)
 
 # 봇이 가져간 뒤 결과 보고가 이 시간 안에 없으면 못 보냄(알 수 없음)으로 닫는다. 다시 주지 않는다(최대 한 번).
 CLAIM_TIMEOUT = timedelta(minutes=10)
@@ -673,17 +679,51 @@ class ClaimedMessage:
     body: str
 
 
-def _dm_body(db: Session, message: ThreadMessage) -> str:
-    """봇이 보낼 글자. PM 글은 답장을 웹 대화로만 받으므로 본문 없이 누가 보냈는지와 대화 링크만 보낸다."""
-    if message.sender != MessageSender.PM:
-        return message.body
-    thread = message.thread
-    workspace = db.get(Workspace, thread.workspace_id).name
-    notice = " ".join(filter(None, [workspace, message.author_name, "PM 이 메시지를 보냈어요."]))
+def _segment(value: str) -> str:
+    """프론트 라우트의 segment()(encodeURIComponent)와 같은 결과를 낸다."""
+    return quote(value, safe="!*'()")
+
+
+def _reply_guide(member: Member, thread: MessageThread) -> str:
+    """DM 첫 줄 아래의 웹 답장 안내. 계정 없는 팀원은 대화 링크가 403 이고 가입만으로는 팀원과 이어지지 않아 초대를 안내한다."""
     base = mailer.app_base_url()
     if not base:
-        return notice
-    return f"{notice}\n{base}/workspaces/{thread.workspace_id}/messages/threads/{thread.thread_id}"
+        logger.warning("APP_BASE_URL 이 비어 DM 안내에 링크를 넣지 못한다")
+    if member.user_id is None:
+        guide, path = "웹 답장을 하려면 PM 에게 초대를 요청하고, 초대받은 이메일로 가입해 주세요.", "/signup"
+    else:
+        guide = "웹에서 답장해 주세요." if base else "웹사이트에서 답장해 주세요."
+        path = f"/workspaces/{_segment(thread.workspace_id)}/messages/threads/{_segment(thread.thread_id)}"
+    return f"{guide}\n{base}{path}" if base else guide
+
+
+def _dm_body(db: Session, message: ThreadMessage) -> str:
+    """저장된 본문 대신 PM 작성자 또는 리마인드 수와 웹 답장 안내를 보낸다."""
+    db.flush()
+    thread = message.thread
+    workspace = db.get(Workspace, thread.workspace_id).name
+    if message.sender == MessageSender.PM:
+        notice = " ".join(filter(None, [workspace, message.author_name, "PM 이 메시지를 보냈어요."]))
+        return f"{notice}\n{_reply_guide(thread.member, thread)}"
+    # 막힌 시계는 태스크가 끝나거나 풀리거나 담당이 바뀌어도 닫히지 않아 시계 쪽만 거른다. 이번 묶음은 방금 나가므로 그대로 센다.
+    watched = db.scalars(
+        select(ReminderWatch.task_id)
+        .join(Task, Task.task_id == ReminderWatch.task_id)
+        .where(
+            ReminderWatch.thread_id == thread.thread_id,
+            ReminderWatch.state.in_(scheduler._OPEN_STATES),
+            ReminderWatch.paused_at.is_(None),
+            Task.is_deleted.is_(False),
+            Task.assignee_member_id == thread.member_id,
+            Task.status != TaskStatus.DONE,
+            or_(ReminderWatch.state != WatchState.BLOCKED, Task.status == TaskStatus.BLOCKED),
+        )
+    ).all()
+    bundle_id = db.scalar(select(ReminderBundle.bundle_id).where(ReminderBundle.message_id == message.message_id))
+    reminded = [r.task_id for r in bundle_reminders(db, bundle_id, status=ReminderStatus.SENT)]
+    count = len({*watched, *reminded} - {None}) + reminded.count(None)
+    head = f"{workspace}에서 답장을 기다리는 리마인드가 {count}개 있어요."
+    return f"{head}\n{_reply_guide(thread.member, thread)}"
 
 
 def claim_for_bot(db: Session, now: datetime) -> list[ClaimedMessage]:
