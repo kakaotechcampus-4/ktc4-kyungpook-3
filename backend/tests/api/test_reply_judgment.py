@@ -267,7 +267,7 @@ def test_scheduler_expire_after_claim_closed_it_does_not_notify_twice(mdb, mseed
 
 def test_late_judgment_after_claim_closed_it_is_recorded_only(mdb, mseed, two):
     a, _ = two
-    message = _reply(mdb, mseed, AT)
+    _reply(mdb, mseed, AT)
     item = replies.claim(mdb, AT).model_dump(mode="json")
     assert replies.claim(mdb, AT + replies.JUDGE_WINDOW) is None
     mdb.commit()
@@ -287,6 +287,7 @@ def test_a_failing_expire_does_not_stop_other_threads(mdb, mseed, monkeypatch):
     _remind(mdb, mseed, [a], SLOT)
     _remind(mdb, mseed, [b], SLOT, who="carol")
     alice = _reply(mdb, mseed, AT)
+    alice_next = _reply(mdb, mseed, AT + 5 * MIN, body="다음 답장")
     carol, _ = messages.ingest_discord_reply(
         mdb, discord_user_id="d_carol", discord_message_id="c1", body="네", sent_at=AT + 5 * MIN, now=AT + 5 * MIN,
     )
@@ -300,8 +301,11 @@ def test_a_failing_expire_does_not_stop_other_threads(mdb, mseed, monkeypatch):
     item = replies.claim(mdb, AT + replies.JUDGE_WINDOW)
 
     assert item.message_id == carol.message_id
+    # 닫지 못한 앞 답장을 건너뛰고 같은 대화의 뒤 답장이 먼저 나가지 않는다
+    assert replies.claim(mdb, AT + replies.JUDGE_WINDOW) is None
     mdb.expire_all()
     assert mdb.get(ReplyJudgment, alice.message_id).state == S.PENDING
+    assert mdb.get(ReplyJudgment, alice_next.message_id).attempt == 0
 
 
 # 게이트
