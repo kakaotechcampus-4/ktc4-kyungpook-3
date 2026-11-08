@@ -1,5 +1,32 @@
 # 프론트엔드 API 계약
 
+## 응답 검증과 새 값 배포 순서 (#348, 2026-11-08)
+
+근거는 [이슈 #348](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/348)의 정책 결정(2026-11-05)·추가 항목(2026-11-07)과 [D-184](../decision/frontend-decisions.md)다. FE 는 성공 응답의 `data` 를 entity 경계에서 zod 스키마로 읽는다. 스키마에 맞지 않으면 `INVALID_RESPONSE` 다. entity 묶음마다 PR 을 나눠 적용하고, 이 절은 적용한 entity 를 적는다. 실 API 호출로는 확인하지 않았다. BE 응답 스키마(`backend/app/schemas/task.py`·`reply.py`)를 읽어 대조했다.
+
+### 합의된 규약
+
+- **새 값 배포 순서.** 응답에 새 enum 값(상태·종류·출처)을 더할 때는 FE 가 먼저 그 값을 받도록 배포하고, BE 가 그 뒤에 내보낸다. FE 쪽 결정이다(#348 정책 결정 3). BE 합의 여부 확인 필요.
+- 이 순서가 지켜지면 상태 판단 필드에 모르는 값이 와서 생긴 `INVALID_RESPONSE` 는 계약 위반 신호다. 표시용 분류는 모르는 값이 와도 응답이 실패하지 않고 `알 수 없는 ○○` 로 보인다. 그래도 새 값의 문구는 FE 배포 뒤에 생긴다.
+
+### 현재 구현
+
+| 응답 | FE 가 거절하는 것 (`INVALID_RESPONSE`) | FE 가 받고 따로 다루는 것 |
+|---|---|---|
+| `TaskResponse` (조회·목록·생성·`PATCH`·Notion 재시도·자동 막힘 풀기·답장 변경 되돌리기) | `status` 가 `todo`·`in_progress`·`blocked`·`done` 밖, `version` 이 정수가 아님, 그 밖의 필수 필드 누락·타입 오류. 목록은 한 건만 틀려도 전체 | `start_date` 가 없으면 `created_at` 날짜(옛 응답). 모르는 `notion_sync_status` 는 반영 상태 없음(null). `auto_blocked` 가 불리언이 아니거나 없으면 풀 수 없음(false) |
+| `TaskHistoryResponse` 목록 | 필수 필드 누락·타입 오류. 요청한 태스크가 아닌 `task_id`(`items[n].task_id`) | 모르는 `changed_field` 는 `알 수 없는 항목`, 모르는 `change_source` 는 `알 수 없는 출처` |
+| `GET /tasks/{task_id}/timeline` | 모르는 `kind`, 필수 필드 누락·타입 오류 | 답장 줄의 모르는 `field` 는 `알 수 없는 변경이에요`, 모르는 `result` 는 `알 수 없는 결과`. 되돌리기는 `undoable` 만 따른다. 모르는 `channel`·`evidence_status` 는 없음(null) |
+
+- 오류의 `details` 는 `{entity, path}` 다(예: `{"entity": "task", "path": "items[3].status"}`). 받은 값은 넣지 않는다. 개발 모드만 콘솔에 경로와 값을 남긴다.
+- 스키마는 FE 가 읽는 필드만 본다. BE 가 필드를 더해도 실패하지 않는다. `total` 은 읽지 않는다.
+- 남은 entity(approval, meeting·minutes·extraction, message·notification, integration·invitation·workspace·member·user)는 아직 이전 방식(타입 단언과 `enumValue` 폴백)이다.
+- 근거 코드: `frontend/src/shared/api/parseResponse.ts`, `frontend/src/shared/api/unknownValue.ts`, `frontend/src/shared/types/api/task.ts`, `frontend/src/shared/types/api/reply.ts`, `frontend/src/entities/task/api/taskApi.ts`.
+
+### 합의 필요 변경
+
+- 위 배포 순서를 BE 와 합의한다(#348 정책 결정 3). 합의 여부 확인 필요.
+- BE 응답 스키마의 `status: str` 을 enum 타입으로 바꿔 OpenAPI 에 값 목록이 드러나게 해 달라(#348 정책 결정 4). `TaskFields.status`, `TaskHistoryResponse.changed_field`·`change_source`, `TimelineChange.field`·`evidence_status`, `TimelineReply.channel` 이 지금 `str` 이다. 합의 여부 확인 필요.
+
 ## Notion 선택 기능 (#507, 2026-11-07)
 
 근거는 [이슈 #507](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/507)의 사용자 결정(2026-11-07)과 [D-182](../decision/frontend-decisions.md)다. 프론트엔드는 회의 올리기·정리·회의록·태스크·승인에 Notion 연결을 요구하지 않는다. 아래 서버 동작은 정적 코드 확인이고, 실 API 호출과 실제 Notion 반영은 실행하지 않았다.
@@ -697,7 +724,7 @@ BE #464 가 병합·배포한 인터페이스다(메인 이슈 #459). 「현재 
   ~~세션이 없으므로~~ **세션은 PR #59 로 생겼지만 `tasks` · `approvals` 가 아직 쓰지 않는다.** 서버가 actor 를 유추하도록 바꿔 달라 → §4.0.
 - 되돌리기는 이미 되돌린 기록이면 409 `TASK_HISTORY_ALREADY_ROLLED_BACK`.
 - **`changed_field: "scope"` (합의됨, BE 미구현, #205).** `scope` 승인(§2.5)을 승인하면 생기는 범위 변경 이력이다. `old_value` 는 `null`, `new_value` 는 범위 변경 문장이다. 이슈는 문장의 출처를 정하지 않았고 MSW 는 payload `doc_text` 를 쓴다(합의 여부 확인 필요). 되돌릴 Task 필드가 없어 되돌리기는 400 `INVALID_REQUEST`(`되돌릴 수 없는 변경 항목입니다`)다.
-  FE 구현: 이력 매퍼가 `scope` 를 받고(모르는 값은 지금처럼 `title`), 이력 줄을 `범위 변경: <new_value>` 로 보인다. `이전 → 이후` 형식을 쓰지 않는다. FE 화면에는 이력 되돌리기 버튼이 없다.
+  FE 구현: 이력 매퍼가 `scope` 를 받고(~~모르는 값은 지금처럼 `title`~~ 2026-11-08 #348 부터 모르는 값은 `알 수 없는 항목`), 이력 줄을 `범위 변경: <new_value>` 로 보인다. `이전 → 이후` 형식을 쓰지 않는다. FE 화면에는 이력 되돌리기 버튼이 없다.
 
 **PR #55 가 바꾼 것 — 조용하지만 중요하다**
 
@@ -1953,7 +1980,7 @@ FE 연결 (#340, 2026-11-05).
 
 ## 6. 도메인 모델
 
-화면은 DTO 를 직접 참조하지 않는다. `entities` 계층에서만 DTO 를 다루고 변환한다 (D-133, D-134).
+화면은 DTO 를 직접 참조하지 않는다. `entities` 계층에서만 DTO 를 다루고 변환한다 (D-133, D-134). 2026-11-08 부터 DTO 타입은 zod 응답 스키마에서 만들고 entity 경계에서 검증한다(D-184 가 D-134 대체, 맨 위 「응답 검증과 새 값 배포 순서」).
 `pages`·`widgets`·`features` 에서 DTO 타입을 import 하지 않으며 ESLint `no-restricted-imports` 로 강제한다.
 
 | 엔티티 | 비고 |
