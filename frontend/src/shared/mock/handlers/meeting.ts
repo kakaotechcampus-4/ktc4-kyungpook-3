@@ -131,7 +131,8 @@ export const meetingHandlers = [
       ended_at: null,
       extraction_id: null,
       failed_stage: null,
-      deletion_available: body.source === 'manual_upload' || request.headers.get('X-Meeting-Lineage-Version') === '1',
+      deletion_available:
+        body.source === 'manual_upload' || request.headers.get('X-Meeting-Lineage-Version') === '1',
       // 백엔드는 progress 를 항상 계산해 준다. 갓 만든 회의는 오디오도 추출도 없다
       progress: { audio_merged: false, transcribed: false, extracted: false },
     }

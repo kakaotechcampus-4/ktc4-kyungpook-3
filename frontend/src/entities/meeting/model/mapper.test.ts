@@ -1,10 +1,14 @@
 import { toMeeting, toMeetingSummary, toMeetingUploadResult, toSpeakerView } from './mapper'
 import { meetingFixtures, meetingSummaryFixtures } from '@/shared/mock/fixtures/meeting'
 
-it.each([undefined, false, true])('서버가 명시적으로 허용할 때만 삭제 가능 상태로 변환한다 (%s)', (available) => {
-  expect(toMeeting({ ...meetingFixtures[1], deletion_available: available }).deletionAvailable)
-    .toBe(available === true)
-})
+it.each([undefined, false, true])(
+  '서버가 명시적으로 허용할 때만 삭제 가능 상태로 변환한다 (%s)',
+  (available) => {
+    expect(
+      toMeeting({ ...meetingFixtures[1], deletion_available: available }).deletionAvailable,
+    ).toBe(available === true)
+  },
+)
 
 it('maps detail and summary independently including the required progress', () => {
   expect(toMeeting(meetingFixtures[1])).toEqual({

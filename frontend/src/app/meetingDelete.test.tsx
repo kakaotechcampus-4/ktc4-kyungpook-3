@@ -68,13 +68,16 @@ it('팀원에게는 삭제 버튼을 표시하지 않는다', async () => {
   expect(screen.queryByRole('button', { name: '회의 삭제' })).not.toBeInTheDocument()
 })
 
-it.each([undefined, false])('서버의 삭제 허용 값이 %s이면 PM에게도 삭제 버튼을 표시하지 않는다', async (available) => {
-  const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_09')
-  if (!meeting) throw new Error('meeting fixture is missing')
-  meeting.deletion_available = available
-  await open()
-  expect(screen.queryByRole('button', { name: '회의 삭제' })).not.toBeInTheDocument()
-})
+it.each([undefined, false])(
+  '서버의 삭제 허용 값이 %s이면 PM에게도 삭제 버튼을 표시하지 않는다',
+  async (available) => {
+    const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_09')
+    if (!meeting) throw new Error('meeting fixture is missing')
+    meeting.deletion_available = available
+    await open()
+    expect(screen.queryByRole('button', { name: '회의 삭제' })).not.toBeInTheDocument()
+  },
+)
 
 it('실패한 회의도 서버의 삭제 허용 값이 false이면 삭제 버튼을 표시하지 않는다', async () => {
   const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_09')
@@ -256,11 +259,13 @@ it('다른 화면으로 이동한 뒤 늦은 삭제 응답은 현재 화면과 �
   })
   await app.expectPath(paths.tasks('ws_01', 'tk_01'))
   await waitFor(() =>
-    expect(app.queryClient.getQueryData(minutesQueryOptions('ws_01', 'mt_09').queryKey))
-      .toBeUndefined(),
+    expect(
+      app.queryClient.getQueryData(minutesQueryOptions('ws_01', 'mt_09').queryKey),
+    ).toBeUndefined(),
   )
-  expect(app.queryClient.getQueryData(meetingDetailQueryOptions('ws_01', 'mt_09').queryKey))
-    .toBeUndefined()
+  expect(
+    app.queryClient.getQueryData(meetingDetailQueryOptions('ws_01', 'mt_09').queryKey),
+  ).toBeUndefined()
   expect(
     screen.queryByText('회의를 삭제했어요. 남은 파일을 정리하고 있어요.'),
   ).not.toBeInTheDocument()
