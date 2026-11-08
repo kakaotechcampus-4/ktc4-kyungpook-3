@@ -27,7 +27,7 @@
 
 | 항목 | 값 |
 |---|---|
-| BE pytest (SQLite + PostgreSQL) | 4125 통과, 47 건너뜀 |
+| BE pytest (SQLite + PostgreSQL) | 4139 통과, 47 건너뜀 |
 | AI pytest | 1945 통과 |
 | alembic upgrade, downgrade, upgrade, check | 통과 |
 | ruff | 통과 |
