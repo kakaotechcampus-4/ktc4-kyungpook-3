@@ -44,7 +44,12 @@ DUE_CLEARED_REASON = "마감을 없애는 변경은 아직 보낼 수 없습니�
 
 
 def _assignee(finding: JudgeFinding, *, is_new: bool) -> tuple[str | None, str | None]:
-    """(assignee_type, assignee_raw) — BE 가 member_id 로 해소할 값. is_new: 새 할 일(create) 항목인가."""
+    """(assignee_type, assignee_raw) — BE 가 member_id 로 해소할 값. is_new: 새 할 일(create) 항목인가.
+
+    first·group·none 은 보낼 글자가 없다 — "우리" 같은 글자가 오면 BE 가 별칭으로 조회해 hold 로 돌린다.
+    """
+    if finding.assignee_type in ("first", "group", "none"):
+        return finding.assignee_type, None
     if finding.assignee_type in _NOT_ALIAS_TYPES or (finding.assignee_type == "thirdname" and not is_new):
         return finding.assignee_type, finding.assignee_resolved or (
             finding.assignee_raw if finding.assignee_type == "thirdname" else None)

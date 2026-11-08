@@ -89,6 +89,14 @@ def test_assignee_raw_is_only_a_lookupable_alias(a_type, raw, resolved, expected
     assert item["assignee_raw"] == expected
 
 
+@pytest.mark.parametrize("a_type", ["first", "group", "none"])
+def test_create_sends_no_assignee_text_for_first_group_none(a_type):
+    # 추출기가 "우리" 같은 글자를 채워도 BE 가 별칭으로 조회해 hold 로 돌리지 않게 막는다
+    finding = _finding(assignee_type=a_type, assignee_raw="우리")
+    item = to_item(finding, _result(category="decision", is_new=True, matched_task_id=None), _drafted(task="알림 설정"), None, TRANSCRIPT)
+    assert item["assignee_raw"] is None
+
+
 def test_update_assignee_uses_the_resolved_name_for_thirdname():
     # 별칭 학습은 create 승인 때뿐이다. 수정 항목은 예전처럼 고친 이름으로 찾는다
     finding = _finding(assignee_type="thirdname", assignee_raw="화은이가", assignee_resolved="하은")

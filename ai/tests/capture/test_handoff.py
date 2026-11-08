@@ -276,6 +276,13 @@ def test_thirdname_sends_the_original_mention_even_when_resolved():
     assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "환"
 
 
+def test_first_group_none_never_send_assignee_text():
+    """추출기가 "우리" 같은 글자를 채워도 BE 가 별칭으로 조회해 hold 로 돌리지 않게 None 을 보낸다."""
+    for kind in ("first", "group", "none"):
+        t = _task(assignee_type=kind, assignee_mention="우리", assignee_resolved=None)
+        assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] is None, kind
+
+
 def test_register_marks_a_partial_meeting_in_the_be_record(tmp_path):
     fake = FakeBe()
     m, tdir = _manifest(tmp_path)

@@ -373,8 +373,11 @@ def to_extraction_items(tasks: list[dict], transcript: dict) -> list[dict]:
         sentence = t.get("source_sentence") or ""
         speaker, at_ms, seq = locate_sentence(sentence, segments)
         kind = t.get("assignee_type")
-        # "네가"·"그분"·"백엔드 리더" 는 별칭이 아니라 푼 이름만 보낸다. 그 밖은 원문 언급만(resolved 무시)
-        if kind in ("second", "thirdpronoun", "thirdrole"):
+        # "네가"·"그분"·"백엔드 리더" 는 별칭이 아니라 푼 이름만 보낸다. 1인칭·그룹·없음은 보낼 글자가 없다
+        # (BE 가 "우리" 같은 글자를 별칭 조회하지 않게). 그 밖은 원문 언급만(resolved 무시)
+        if kind in ("first", "group", "none"):
+            assignee_raw = None
+        elif kind in ("second", "thirdpronoun", "thirdrole"):
             assignee_raw = t.get("assignee_resolved")
         else:
             assignee_raw = t.get("assignee_mention")
