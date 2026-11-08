@@ -727,6 +727,7 @@ class FailoverStt:
         self._sig = Signals()
         self.state = _load(self.state_dir, clock())
         self._written = False
+        self._held_on: int | None = None    # 끄는 중에 미뤄 둔 on 요청 파일의 inode
 
     @property
     def phase(self) -> Phase:
@@ -822,12 +823,17 @@ class FailoverStt:
         except OSError:
             pass
         age = time.time() - seen[1] / 1e9 if seen else 0.0   # 파일 시각은 벽시계라 주입한 시계와 견주지 않는다
-        if req is not None and age > REQUEST_MAX_AGE_S:
-            print(f"[failover] {int(age // 60)}분 지난 요청 {req} 을 버린다", flush=True)
+        held = seen is not None and seen[0] == self._held_on
+        self._held_on = None
+        dropped: list[Notice] = []
+        # 끄는 데 10분을 넘겨도 끄는 중에 미뤄 둔 켜기는 버리지 않는다. 처음 본 때 이미 오래된 요청은 그래도 버린다
+        if req is not None and age > REQUEST_MAX_AGE_S and not held:
+            dropped.append(Notice(f"ℹ️ {int(age // 60)}분 지난 요청을 버렸습니다(`{req}`). 필요하면 다시 요청해 주세요."))
             _unlink_if_same(req_path, seen)
             req = None
         if req == "on" and s.phase is Phase.STOPPING:
             req = None                  # 끄는 중의 켜기는 파일에 두고 꺼진 뒤의 단계가 읽는다
+            self._held_on = seen[0]
         elif req is not None and req not in REQUESTS:
             _unlink_if_same(req_path, seen)
             req = None
@@ -863,7 +869,7 @@ class FailoverStt:
             self._cond.notify_all()
         if new.phase is not s.phase:
             print(f"[failover] {s.phase.value} → {new.phase.value} ({new.why})", flush=True)
-        for n in notices:
+        for n in dropped + notices:
             print(f"[failover] {n.text}", flush=True)
             try:
                 self._notify(n)

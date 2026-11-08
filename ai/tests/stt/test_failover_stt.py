@@ -789,6 +789,48 @@ def test_a_request_older_than_ten_minutes_is_dropped(tmp_path, capsys, age_min, 
     assert switch.starts == starts
     assert path.exists() is False
     assert ("지난 요청" in capsys.readouterr().out) is (starts == 0)
+    dropped = [n for n in notes if "분 지난 요청을 버렸습니다" in n.text]
+    assert [("11분 지난" in n.text, n.alert) for n in dropped] == ([(True, False)] if starts == 0 else [])
+
+
+def _age_like_the_wall_clock(path, written_at, clock):
+    """파일 시각은 벽시계다. 가짜 시계로 지난 만큼 되돌린다."""
+    if path.exists():
+        old = time.time() - (clock() - written_at)
+        os.utime(path, (old, old))
+
+
+def test_an_on_request_left_during_a_slow_turn_off_is_kept_past_ten_minutes(tmp_path):
+    """꺼지는 데 10분을 넘긴 서버. 끄는 중에 친 /gpu on 은 버리지 않고 꺼진 뒤에 켠다."""
+    fo, elice, gpu, switch, clock, notes = make(tmp_path)
+    switch.stop_s = 700
+    request(tmp_path, "on")
+    assert ticks(fo, clock, 600, until=lambda: fo.phase is Phase.ON_GPU)
+    request(tmp_path, "off")
+    assert ticks(fo, clock, 60, until=lambda: fo.phase is Phase.STOPPING)
+    path, written_at, n0 = request(tmp_path, "on"), clock(), len(notes)
+    assert ticks(fo, clock, 900, until=lambda: _age_like_the_wall_clock(path, written_at, clock)
+                 or fo.phase is not Phase.STOPPING)
+    assert clock() - written_at > 600
+    assert ticks(fo, clock, 60, until=lambda: _age_like_the_wall_clock(path, written_at, clock)
+                 or switch.starts == 2)
+    assert fo.phase is Phase.STARTING and not path.exists()
+    assert not any("지난 요청" in n.text for n in notes[n0:])
+
+
+def test_a_stale_on_request_first_seen_during_a_turn_off_is_still_dropped(tmp_path):
+    """끄는 중에 처음 본 요청이 이미 10분을 넘겼으면 버린다(끄는 중에 다시 뜬 워커가 찾은 며칠 전 요청). 나이를 보지 않는 것은 끄는 중에 미뤄 둔 그 파일뿐이다."""
+    fo, elice, gpu, switch, clock, notes = make(tmp_path)
+    request(tmp_path, "on")
+    assert ticks(fo, clock, 600, until=lambda: fo.phase is Phase.ON_GPU)
+    request(tmp_path, "off")
+    assert ticks(fo, clock, 60, until=lambda: fo.phase is Phase.STOPPING)
+    path = request(tmp_path, "on")
+    old = time.time() - 11 * 60
+    os.utime(path, (old, old))
+    ticks(fo, clock, 900)
+    assert not path.exists() and switch.starts == 1 and fo.phase is Phase.NORMAL
+    assert any("11분 지난 요청을 버렸습니다" in n.text for n in notes)
 
 
 def test_a_tick_that_breaks_is_logged_and_the_route_stays(tmp_path, capsys):
