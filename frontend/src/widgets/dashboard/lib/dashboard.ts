@@ -7,6 +7,8 @@ import type { Task } from '@/entities/task'
 import { isDueSoon, isOverdue } from '@/entities/task'
 import { soonUntil } from '@/shared/lib/date'
 
+export { dateWithWeekday } from './weekday'
+
 /*
  * 대시보드 조립의 순수 판정 (M7 계획 §1~§3). 태스크·승인·회의·추출 네 엔티티를 잇는 자리라 widget 에 있다.
  * 집계는 화면에 보이는 행이 아니라 받은 전체 데이터로 한다 (D-052). 날짜는 서울 날짜 문자열로만 비교한다 (D-144).
@@ -196,14 +198,6 @@ export function hasPendingSync(
   return items.some((item) => recentSyncState(item, tasksById) === 'pending')
 }
 
-const WEEKDAYS = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'] as const
-
-/** `2026-09-18` → `2026-09-18 금요일`. 날짜 전용 값이라 UTC 로만 요일을 구한다 */
-export function dateWithWeekday(date: string): string {
-  const [year, month, day] = date.split('-').map(Number)
-  return `${date} ${WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()]}`
-}
-
 /** `2026-09-15` → `9월 15일` */
 export function monthDayLabel(date: string): string {
   const [, month, day] = date.split('-').map(Number)
@@ -221,17 +215,10 @@ export function durationLabel(durationMs: number | null): string | null {
   return `${Math.max(1, Math.round(durationMs / 60_000))}분`
 }
 
-/** 받침이 있으면 `을`, 없으면 `를`. 한글로 끝나지 않으면 둘 다 적는다 */
-export function objectParticle(word: string): string {
-  const last = word.trim().at(-1)
-  if (last === undefined) return '을(를)'
-  const code = last.charCodeAt(0) - 0xac00
-  if (code < 0 || code > 11171) return '을(를)'
-  return code % 28 === 0 ? '를' : '을'
-}
-
 /** 확인 필요 행 아래 한 줄 — 왜 확인해야 하는지. 회의록·태스크 목록의 문구와 같다 */
 export function approvalReason(approval: Approval): string {
+  if (approval.kind === 'task_update' && approval.assigneePick !== null)
+    return '담당자를 골라야 하는 답장이에요'
   if (isScopeChange(approval)) return '범위 변경을 확인해야 해요'
   if (approval.kind === 'task_update') return '변경 제안을 확인해야 해요'
   if (approval.kind === 'unsupported') return '지원하지 않는 종류라 상세에서 확인해 주세요'

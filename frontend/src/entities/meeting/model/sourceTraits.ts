@@ -9,12 +9,10 @@ export type MeetingTimeAxis = 'recording' | 'wall_clock'
 
 export interface MeetingSourceTraits {
   timeAxis: MeetingTimeAxis
-  /** 처리 화면의 단계(음성 파일 준비하기 …)가 녹음 기준이라, 이 회의의 정리 상태를 그 화면으로 보일 수 있는지 */
-  hasProcessingScreen: boolean
 }
 
 export const MEETING_SOURCE_TRAITS: Record<MeetingSource, MeetingSourceTraits> = {
-  discord: { timeAxis: 'recording', hasProcessingScreen: true },
-  manual_upload: { timeAxis: 'recording', hasProcessingScreen: true },
-  chat: { timeAxis: 'wall_clock', hasProcessingScreen: false },
+  discord: { timeAxis: 'recording' },
+  manual_upload: { timeAxis: 'recording' },
+  chat: { timeAxis: 'wall_clock' },
 }

@@ -13,7 +13,11 @@ export interface ApprovalDto {
 
 export type TaskOverridesDto =
   | Partial<{ task_title: string; assignee_member_id: string | null; due_date: string | null }>
-  | Partial<{ status: 'todo' | 'in_progress' | 'blocked' | 'done'; due_date: string | null }>
+  | Partial<{
+      status: 'todo' | 'in_progress' | 'blocked' | 'done'
+      due_date: string | null
+      assignee_member_id: string | null
+    }>
 
 export interface ApprovalResolveRequestDto {
   status: 'approved' | 'rejected'

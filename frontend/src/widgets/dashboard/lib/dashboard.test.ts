@@ -23,7 +23,6 @@ import {
   hasPendingSync,
   latestDoneMeeting,
   monthDayLabel,
-  objectParticle,
   recentAutoItems,
   recentEmptyReason,
   recentSyncState,
@@ -430,11 +429,5 @@ describe('표시 문구', () => {
     expect(durationLabel(2_730_000)).toBe('46분')
     expect(durationLabel(10_000)).toBe('1분')
     expect(durationLabel(null)).toBeNull()
-  })
-
-  it('받침에 따라 을/를을 고른다', () => {
-    expect(objectParticle('3주차 정기회의')).toBe('를')
-    expect(objectParticle('기획 논의 녹음')).toBe('을')
-    expect(objectParticle('Sprint 1')).toBe('을(를)')
   })
 })

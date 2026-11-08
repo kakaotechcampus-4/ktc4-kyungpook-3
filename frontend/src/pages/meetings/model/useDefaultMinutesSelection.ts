@@ -18,8 +18,14 @@ function withoutTrailingSlash(pathname: string): string {
  * 아직 이 공간의 회의록 목록일 때만 옮긴다. 선언형 라우터는 기록을 먼저 옮기고 화면은 transition 으로 그려서, 지연 로드 화면을
  * 기다리는 동안 이 화면은 아직 마운트돼 있다 (U4 r1 M01 과 같은 모양). 로그아웃·공간 전환도 경로가 바뀌어 같은 검사로 걸러진다.
  * 이동은 앱 안 이동의 관문(`useGuardedNavigate`)을 탄다.
+ *
+ * 기본 회의를 돌려준다(목록을 아직 모르면 undefined, 회의록이 없으면 null). 페이지가 주소를 바꾸기 전 첫 렌더부터 그 회의를
+ * 그리는 데 쓴다 (#536).
  */
-export function useDefaultMinutesSelection(workspaceId: string, requested: boolean): void {
+export function useDefaultMinutesSelection(
+  workspaceId: string,
+  requested: boolean,
+): string | null | undefined {
   const { data: latestId } = useQuery({
     ...meetingListQueryOptions(workspaceId),
     select: latestMinutesId,
@@ -32,4 +38,5 @@ export function useDefaultMinutesSelection(workspaceId: string, requested: boole
     if (withoutTrailingSlash(livePathname()) !== paths.meetings(workspaceId)) return
     navigate(paths.meetings(workspaceId, latestId), { replace: true })
   }, [requested, latestId, workspaceId, navigate, livePathname])
+  return latestId
 }
