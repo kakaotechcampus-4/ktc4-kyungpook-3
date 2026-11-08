@@ -214,6 +214,17 @@ def test_payload_change_between_check_and_update_uses_refreshed_payload(client, 
     _assert_untouched(db, seed, card_id)
 
 
+def test_empty_payload_version_is_400_not_silently_a_mismatch(client, db, seed):  # noqa: F811
+    # 값이 없으면 키를 빼는 것이 계약이다. 빈 문자열을 "보냄" 으로 받아 늘 409 로 막으면 FE 의 기본값 버그가 409 로 가려진다
+    card_id = _pending_card(client, db, seed)
+
+    r = _patch(client, card_id, {"status": "approved", "payload_version": ""})
+
+    assert r.status_code == 400, r.text
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+    _assert_untouched(db, seed, card_id)
+
+
 def test_payload_version_too_long_is_400(client, db, seed):  # noqa: F811
     card_id = _pending_card(client, db, seed)
 

@@ -31,7 +31,7 @@
 ## 선택과 이유
 
 - 승인 목록·상세와 POST·PATCH 응답 최상위에 `payload_version` 이 실린다. task_create 카드만 값이 있고(처리된 카드도 계산), 그 밖은 null 이다.
-- PATCH 요청에 `payload_version` 이 오면, 조건부 UPDATE 와 카드 다시 읽기 뒤에 비교한다. 비교는 task 반영 전에 한다. 다르면 되돌리고 409 APPROVAL_CHANGED 를 낸다. 카드는 대기로 남고 task·추출 항목 task_id·별칭은 생기지 않는다.
+- PATCH 요청에 `payload_version` 이 오면, 조건부 UPDATE 와 카드 다시 읽기 뒤에 비교한다. 비교는 task 반영 전에 한다. 다르면 되돌리고 409 APPROVAL_CHANGED 를 낸다. 카드는 대기로 남고 task·추출 항목 task_id·별칭은 생기지 않는다. 빈 문자열은 "보냄" 으로 받아 늘 409 로 막지 않고 400 으로 거절한다(값이 없으면 키를 뺀다. 리뷰 반영).
 - 이미 처리된 카드는 APPROVAL_ALREADY_RESOLVED 가 먼저다. task_overrides 검증(400)도 비교보다 먼저라, 둘 다 틀린 요청은 400 을 고쳐 다시 보내면 409 가 된다(아무것도 쓰지 않는다). task_create 가 아닌 카드에 온 값은 무시한다.
 - PostgreSQL 에서는 조건부 UPDATE 가 카드 행을 잠그고, 합치기는 같은 행을 FOR UPDATE 로 기다린다. 그래서 비교한 뒤 커밋할 때까지 payload 가 바뀌지 않는다. 잠금을 새로 더하지 않았다.
 

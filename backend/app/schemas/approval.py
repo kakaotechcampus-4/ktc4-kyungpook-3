@@ -67,9 +67,11 @@ class ApprovalResolveRequest(BaseModel):
     )
     payload_version: str | None = Field(
         None,
+        min_length=1,
         max_length=64,
         description="화면에 보여준 카드의 payload_version. 보내면 처리 시점의 값과 비교해 다르면 409 APPROVAL_CHANGED "
-        "(details.payload_version 이 지금 값)로 승인·반려를 막는다. 안 보내면 비교하지 않는다. task_create 에서만 본다",
+        "(details.payload_version 이 지금 값)로 승인·반려를 막는다. 안 보내면 비교하지 않는다. 빈 문자열은 400 이다"
+        "(값이 없으면 키를 뺀다). task_create 에서만 본다",
     )
     save_alias: bool = Field(
         False,
