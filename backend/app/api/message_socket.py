@@ -61,6 +61,9 @@ async def _until_access_ends(conn: Connection) -> int:
         access = await run_in_threadpool(_authorize, conn.session_token, conn.workspace_id)
         if isinstance(access, int):
             return access
+        if access[0] != conn.member_id:
+            # 계정이 이 공간의 다른 팀원 행으로 옮겨졌다. 소속은 맞으니 다시 붙어 새 행으로 등록하게 한다.
+            return CLOSE_TRY_AGAIN_LATER
 
 
 async def _serve(websocket: WebSocket, conn: Connection) -> int | None:

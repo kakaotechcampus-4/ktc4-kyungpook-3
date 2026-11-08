@@ -463,6 +463,17 @@ def test_leaving_the_workspace_closes_the_open_socket_with_4403(mdb, mseed, fast
         assert _closes_with(bob) == 4403
 
 
+def test_account_moved_to_another_member_row_closes_so_the_client_reconnects(mdb, mseed, fast_revalidate):
+    with _socket(mseed, "bob") as bob:
+        user_id = mseed["bob"].user_id
+        mseed["bob"].user_id = None
+        mdb.flush()
+        mseed["carol"].user_id = user_id
+        mdb.commit()
+        assert _closes_with(bob) == 1013
+    assert not thread_signals._connections
+
+
 def test_session_that_stays_valid_keeps_the_socket_open_across_checks(mdb, mseed, monkeypatch):
     tid = _thread(mdb, mseed)
     monkeypatch.setattr(message_socket, "REVALIDATE_SECONDS", 0.01)
