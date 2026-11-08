@@ -124,7 +124,7 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 | `PATCH /tasks/{task_id}` | PM 전용(`require_pm`). 변경자는 세션 팀원으로 기록하고 본문 `changed_by`는 무시한다(하위 호환 필드) |
 | `POST /tasks/{task_id}/notion-sync/retry` | PM 전용, 본문 없음. 응답은 `TaskResponse`. Notion 미설정이면 409 `INTEGRATION_NOT_CONNECTED`, 재시도할 실패 건이 없으면 400 `INVALID_REQUEST` |
 | `GET /tasks/{task_id}`, `GET /tasks/{task_id}/history` | 태스크 공간의 소속 팀원만 조회(`require_task_member`). 경로에 공간이 없고, 이력 응답에는 `workspace_id`가 없다 |
-| `PATCH /approvals/{approval_id}` 본문 | `ApprovalResolveRequest` = `status`(`approved`·`rejected`), `task_overrides?`(아래 「제안 값을 고쳐 승인」), `confirm_task_version?`(정수 ≥ 1), `resolved_by?`(하위 호환, 무시). 처리자는 세션 PM으로 정한다 |
+| `PATCH /approvals/{approval_id}` 본문 | `ApprovalResolveRequest` = `status`(`approved`·`rejected`), `task_overrides?`(아래 「제안 값을 고쳐 승인」), `confirm_task_version?`(정수 ≥ 1), `save_alias?`(불리언, 기본 false. 2026-11-08 #523, §2.5 「승인 때 별칭 학습」), `resolved_by?`(하위 호환, 무시). 처리자는 세션 PM으로 정한다 |
 | 409 `APPROVAL_CONFLICT` | `task_update` 승인에서 제안 뒤 같은 필드가 바뀌면 반영하지 않고 pending으로 되돌린다. `details = {approval_id, task_id, task_version, conflicts: [{field, base, current, proposed}]}` (`_find_conflicts`). PM이 그 `task_version`을 `confirm_task_version`으로 보내면 태스크가 그 버전 그대로일 때만 덮어쓴다. 그 사이 또 바뀌면 다시 409다 |
 | 409 `APPROVAL_ALREADY_RESOLVED` | `details = {approval_id, current_status}` |
 | 승인 목록·상세 조회 | 목록은 `get_current_member`, 상세는 `require_member`. 공간 소속만 검사하고 PM 제한은 없다 |
@@ -215,6 +215,7 @@ M7 구현에서 소비하기 시작한 서버 인터페이스다. 「현재 서�
 |---|---|
 | `ExtractionItemResponse.reverted_at` | auto로 만든 태스크를 PM이 되돌린 시각. 없으면 `null`. 되돌려도 `gate`는 `auto`로 남는다 |
 | `ExtractionItemResponse.approval_status` | 연결된 승인 요청의 지금 상태(`pending`·`approved`·`rejected`). 승인이 없으면 `null`. 항목과 한 쿼리로 읽는다(#211) |
+| `ExtractionItemResponse.alias_candidate`·`alias_text` | 2026-11-08 코드 대조(#523). 승인 응답과 같은 규칙의 별칭 학습 후보다. §2.5 「승인 때 별칭 학습」 |
 | 지운 태스크의 `task_id` | 조회 시 지운 태스크를 가리키면 `task_id`를 `null`로 내린다 |
 | `POST /extractions/{extraction_id}/items/{item_id}/revert` | 본문 없음. 추출 404 `EXTRACTION_NOT_FOUND` → 그 회의 공간의 PM(`require_pm`, 아니면 403 `FORBIDDEN`) → 항목 404 `EXTRACTION_ITEM_NOT_FOUND` 순서다. 통과하면 태스크를 지움 표시(`version` +1, Notion 동기화 요청 → 워커가 페이지 보관)하고, 같은 내용의 `TASK_CREATE` 승인(`gate: "review"`, 표시용 `reverted_task_id`)을 만들고, 항목의 `task_id`를 비우고 `approval_id`를 새 승인으로, `reverted_at`·`reverted_by`를 기록한다 |
 | 응답 | `{item_id, reverted_task_id, approval_id, reverted_at}`. 새 승인은 `pending`이다 |
@@ -385,10 +386,13 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 {"alias_text": "민수", "occurrences": 3, "last_seen_at": "2026-09-15T06:00:00Z"}
 ```
 
-- `alias_type` 은 `realname` \| `nickname` \| `mention` \| `inferred`, `source` 는 `manual` \| `discord_profile` \| `learned`.
+- `alias_type` 은 `realname` \| `nickname` \| `mention` \| `inferred`, `source` 는 `manual` \| `discord_profile` \| `learned` \| `display_name`.
+  **2026-11-08 코드 대조(#523, BE #463·#464):** `display_name` 은 서버가 팀원 이름과 성 뗀 이름으로 자동으로 넣는 별칭이다(확인됨, 1.0). 이름을 바꾸면 옛 이름에서 만든 `display_name` 별칭만 지워진다. 한글 디스코드 닉네임은 `discord_profile`(미확인, 0.8)로 들어간다. `learned` 는 PM 이 승인하며 배운 별칭이다(§2.5 「승인 때 별칭 학습」).
+- **2026-11-08 코드 대조(#523):** `POST /members/{member_id}/aliases` 와 `DELETE /members/aliases/{alias_id}` 는 PM 전용이다(아니면 403 `FORBIDDEN`). 별칭 목록 조회는 소속 팀원 누구나 한다. `POST` 는 `alias_text` 의 공백을 정리해 저장하고, 비었거나 100자를 넘으면 400 `INVALID_REQUEST` 다. `source=display_name` 도 400 `INVALID_REQUEST` 로 거절한다. 같은 팀원에게 같은 글자가 이미 있으면 그 행을 201 로 돌려준다. 그 행이 자동 별칭(`display_name`·`discord_profile`)이고 요청 `source` 가 `manual`·`learned` 면 요청 값으로 올린다. 다른 팀원이 같은 글자를 가져도 오류가 아니다. 지울 별칭이 없으면 404 `MEMBER_ALIAS_NOT_FOUND` 다. 수정 API 는 없다(지우고 다시 추가). 근거: [members.py](../../../backend/app/api/members.py) `create_alias`·`delete_alias`, [member 스키마](../../../backend/app/schemas/member.py) `MemberAliasCreateRequest`.
 - **`unresolved-aliases` 는 Discord 서버의 사용자 목록이 아니다.** 회의 전사에서 감지됐지만 매칭되지 않은 **이름 문자열**이다. `alias_resolution_log` 에서 집계한다.
-  **빠지는 조건이 「등록되면」이 아니다** — 같은 이름의 별칭이 검증 여부와 상관없이 **정확히 1개**이고 그 1개가 `verified` 일 때만 해결된 것으로 본다 (`services/matching.py` `resolved_alias_texts`).
-  미검증 별칭뿐이거나, 여러 팀원에 붙어 중의적이면(검증 1 + 미검증 1 도 후보가 둘이다) 목록에 **남는다** (§4.0-②-15).
+  **빠지는 조건이 「등록되면」이 아니다** — ~~같은 이름의 별칭이 검증 여부와 상관없이 **정확히 1개**이고 그 1개가 `verified` 일 때만 해결된 것으로 본다 (`services/matching.py` `resolved_alias_texts`).
+  미검증 별칭뿐이거나, 여러 팀원에 붙어 중의적이면(검증 1 + 미검증 1 도 후보가 둘이다) 목록에 **남는다** (§4.0-②-15).~~
+  **2026-11-08 코드 대조(#523, BE #463):** 위 취소선은 과거 판정이다. 지금은 이름에서 님·조사를 뗀 후보(`name_candidates`, 긴 것부터)로 찾고, **처음 걸린 후보**의 별칭이 1개이고 확인된(`verified`) 것이면 해결로 본다. 한 글자 별칭은 PM 이 직접 등록한(`manual`·`learned`) 것만 해결로 본다. 탈퇴한 팀원의 별칭은 세지 않는다. 승인으로 배운 별칭은 확인된 별칭이라 이 목록에서 빠진다 (`services/matching.py` `resolved_texts`, §4.0-②-15).
 - 따라서 **팀원 연결 화면의 데이터 출처가 D-026 의 전제와 다르다** → §4.5 에서 엔드포인트 하나를 요청한다.
 - Discord 사용자 식별자는 `member.discord_user_id` 에 팀원당 하나씩 붙는다.
 
@@ -610,6 +614,32 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 - `evidence_quote` · `evidence_speaker` · `evidence_at_ms` 로 근거를 보여준다. 생성·수정 승인 payload 에는 `evidence_speaker_member_id` 도 온다(BE [extractions.py](../../../backend/app/api/extractions.py)). 화자 이름은 이 값을 먼저 쓰고 `evidence_speaker` uid 로 돌아간다(2026-11-05, #256 A1, 위 §2.4).
 - `type` 마다 화면이 다르므로 **`type` 으로 분기한 뒤 payload 를 읽는다.** 공통 필드를 가정하지 않는다.
 - 목록 정렬이 `created_at` 내림차순 고정이다. **대기 오래된 순(D-050)은 클라이언트에서 뒤집는다.**
+
+#### 승인 때 별칭 학습 (2026-11-08 코드 대조, #523)
+
+BE #464 가 병합·배포한 인터페이스다(메인 이슈 #459). 「현재 서버 구현」은 [approval 스키마](../../../backend/app/schemas/approval.py)의 `ApprovalResponse`·`ApprovalResolveRequest`, [meeting 스키마](../../../backend/app/schemas/meeting.py)의 `ExtractionItemResponse`, [alias_learning.py](../../../backend/app/services/alias_learning.py)의 정적 확인이다. 실 API 호출은 하지 않았다(미검증).
+
+**합의 상태.** 필드 이름·위치(`alias_candidate`·`alias_text`·`save_alias`)는 #523 FE 답(2026-11-08)에서 그대로 받기로 했다. BE 수정은 없다. #512(카드 합치기)가 배포되면 한 카드에 추출 항목이 여럿 붙을 수 있다. 그때 두 필드가 어느 항목 기준인지는 BE 가 #512 로 다시 알리기로 했다(합의 대기).
+
+| 항목 | 서버 코드에서 확인한 사실 |
+|---|---|
+| 응답 필드 | `GET /extractions/{id}` 의 각 항목, `GET /approvals`, `GET /approvals/{id}`, `POST /approvals`, `PATCH /approvals/{id}` 응답에 `alias_candidate: boolean`(기본 false)과 `alias_text: string \| null` 이 온다 |
+| `alias_candidate=true` 조건 | 모두 만족할 때다. 새 항목(create), 추출 때 담당자를 못 찾음(못 찾음·애매함), 이름 지목(`thirdname`), 승인이 pending, 같은 공간의 탈퇴하지 않은 팀원 누구도 그 글자(님·조사를 뗀 찾기 후보 포함)를 별칭으로 갖지 않음, 1인칭이 아님. 아니면 false 이고 `alias_text` 는 `null` 이다 |
+| 값이 바뀌는 때 | 추출 때 정해진다. PM 이 카드에서 담당자를 바꿔도 그대로다. 담당자가 이미 찾아졌던 항목은 false 다. 승인·반려 뒤 응답은 항상 false 다. 누가 그 글자를 별칭으로 가지게 되면 다음 조회부터 false 다 |
+| `alias_text` | 저장될 글자다. 원문에서 끝 조사·님을 뗀 것이다(`trim_alias_text`) |
+| `PATCH` 본문 `save_alias` | 불리언, 기본 false. 승인(`approved`)하는 `task_create` 에만 쓰인다. `alias_text` 를 **최종 담당자**(`task_overrides.assignee_member_id` 로 고른 값 포함)의 별칭으로 저장한다(`source=learned`, `verified=true`, `confidence=0.9`, `alias_type=nickname`) |
+| `save_alias` 를 무시하는 경우 | 반려와 함께 올 때, `task_update`(답장 담당자 변경 포함), 담당자 미정으로 승인할 때, `alias_candidate` 가 false 일 때, 같은 글자를 이미 누가 가질 때. 모두 오류 없이 넘어가고 승인은 성공한다 |
+
+**현재 프론트 구현 (#523).** MSW 기준으로 검증했고 실서버는 미검증이다.
+
+| 항목 | 구현 | 코드 근거 |
+|---|---|---|
+| DTO | 승인·추출 항목 DTO 에 `alias_candidate`·`alias_text`(필수), 승인 요청 DTO 에 `save_alias?` | [승인 DTO](../../src/shared/types/api/approval.ts), [추출 DTO](../../src/shared/types/api/extraction.ts) |
+| 모델 | 생성 승인의 `aliasCandidate: string \| null`. `alias_candidate` 가 true 이고 `alias_text` 가 빈 글자가 아닐 때만 그 글자다. 추출 항목 모델에는 옮기지 않았다(쓰는 화면이 없다) | [승인 mapper](../../src/entities/approval/model/mapper.ts) |
+| 보낼지 판정 | `aliasToLearn(승인, 최종 값)` 이 담당자가 있으면 `aliasCandidate` 를, 미정이면 null 을 준다. 승인 계획은 체크가 켜져 있고 이 값이 있을 때만 `save_alias: true` 를 싣는다. 아니면 키를 보내지 않는다. 반려·`task_update` 는 보내지 않는다 | [resolution.ts](../../src/entities/approval/model/resolution.ts) |
+| 화면 | 승인 상세와 태스크 목록의 생성 승인 카드에서 담당자 고르기 바로 아래 체크박스 「'{alias_text}'을(를) {담당자 이름}의 별칭에도 등록」. 기본 켜짐. 같은 판정에 담당자 이름을 아는지를 더해 보인다. 담당자 고르기 선택지는 팀원 이름과 미정뿐이다 | [AliasSaveField](../../src/features/approval-resolve/ui/AliasSaveField.tsx) |
+| 캐시 | 승인 처리 뒤 별칭 목록(`['workspace', id, 'member-aliases']`)도 다시 받는다 | [useApprovalResolve](../../src/features/approval-resolve/model/useApprovalResolve.ts) |
+| MSW | 저장값은 추출 때의 값이고, 응답마다 지금 상태로 다시 계산한다(대기 중인 생성 승인이고 공간의 누구도 그 글자를 별칭으로 갖지 않을 때만 후보). `save_alias: true` 로 담당자를 골라 승인하면 `learned` 별칭을 최종 담당자에게 더한다. 불리언이 아니면 400 `INVALID_REQUEST`. 님·조사 후보와 탈퇴한 팀원은 흉내 내지 않는다 | [승인 handler](../../src/shared/mock/handlers/approval.ts) |
 
 ### 2.6 tasks · task history
 
@@ -854,7 +884,7 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 | 12 | 승인·반려 처리 | `extraction_item.approval_id` 를 **어느 쪽으로 닫혀도 비우지 않는다.** 반려는 `extraction_item` 을 아예 건드리지 않는다 | **승인이든 반려든 닫히면 `approval_id` 를 `null` 로.** 안 되면 프론트가 `GET /approvals?status=pending` 과 조인해 우회한다 (§3.1) |
 | 13 | 승인 `task_create` | ~~payload 의 `status` · `progress` 도 읽어 반영한다~~ #303 부터 둘 다 읽지 않는다. 상태는 항상 `todo` | 요청이 아니라 **기록**이다. §2.5 의 payload 설명에 빠져 있었다 |
 | 14 | `GET /workspaces/{id}/meetings` | `title` 이 nullable 인데 `items: list[dict]` 라 스키마에 안 드러난다 | 목록 `title` 의 nullable 여부를 스키마로 고정해 달라. **프론트 DTO 는 nullable 로 맞췄고 매퍼가 빈 문자열로 폴백한다** |
-| 15 | `GET /members/unresolved-aliases` | 해결 판정이 **별칭 후보 정확히 1개 + 그 1개가 `verified`** 다(`matching.py` `resolved_alias_texts`). 미검증뿐이거나 후보가 여럿(검증 1 + 미검증 1 포함)이면 목록에 남는다 | 요청이 아니라 기록이다. **MSW 도 같은 규칙으로 계산하게 맞췄다** |
+| 15 | `GET /members/unresolved-aliases` | ~~해결 판정이 **별칭 후보 정확히 1개 + 그 1개가 `verified`** 다(`matching.py` `resolved_alias_texts`). 미검증뿐이거나 후보가 여럿(검증 1 + 미검증 1 포함)이면 목록에 남는다~~ **2026-11-08(#523):** 님·조사를 뗀 후보 중 처음 걸린 후보의 별칭이 1개이고 `verified` 면 해결이다. 한 글자는 `manual`·`learned` 만, 탈퇴한 팀원의 별칭은 세지 않는다(`matching.py` `resolved_texts`, §2.2) | 요청이 아니라 기록이다. ~~**MSW 도 같은 규칙으로 계산하게 맞췄다**~~ **MSW 는 아직 옛 규칙(같은 글자 정확히 1개 + `verified`)이다.** 후보 떼기·한 글자·탈퇴 규칙이 없어 님·조사가 붙은 이름은 실서버와 결과가 다를 수 있다. #523 은 이 차이를 고치지 않았다(이슈의 「필수 아님」) |
 | 16 | `GET /workspaces/{id}/meetings` 의 `attendee_count` | `audio_segment` 의 화자에서 역산한다(`# attendee_count 로직 개선 필요`). **말하지 않은 참석자는 빠지고, 로컬 업로드는 세그먼트가 없어 늘 0** 이다 | 업로드가 받은 `attendee_member_ids` 를 저장하고 그것으로 세 달라 (②-9 와 한 쌍이다) |
 | 17 | `POST .../meetings/upload` 의 권한 | `get_current_member` 로 **소속만** 본다. 일반 팀원도 올릴 수 있다 | **업로드 PM 권한 강제.** `member.role != pm` 이면 403 `FORBIDDEN`. M5 는 업로드를 PM 전용으로 정했다(D-090 의 보류 조건 해소, impl-decision 2026-10-02-meeting-upload-policy). 프론트는 PM 가드로 화면을 막지만 가드는 UX 장치다 — API 는 열려 있다 |
 
@@ -1824,6 +1854,7 @@ FE 연결 (#340, 2026-11-05).
 | 팀원 목록·수정 | `GET /members?workspace_id=`, `PATCH /members/{id}` | **구현됨** §2.2 |
 | 미매칭 이름 붙이기 | `GET /members/unresolved-aliases`, `POST /members/{id}/aliases` | **구현됨** §2.2 |
 | 별칭 삭제 | `DELETE /members/aliases/{alias_id}` | **구현됨** §2.2 |
+| 팀원별 별칭 보기·추가·삭제 | `GET /members/aliases`, `POST /members/{id}/aliases`, `DELETE /members/aliases/{alias_id}` | **구현됨(#523, 2026-11-08).** 설정 목차의 「팀원」이 여는 팀 화면에서 팀원 줄의 「별칭 N」을 펼친다. 칩마다 출처 꼬리표(`learned` 회의에서 배움, `display_name` 이름, `discord_profile` 디스코드, `manual` 직접 추가, 미확인이면 「· 미확인」). 추가·삭제는 PM 만 보인다. 본문은 `alias_text` 만 보낸다. 실패 문구는 오류 코드별이다([aliasMessages](../../src/features/member-alias/lib/aliasMessages.ts)). 같은 글자를 다시 넣으면 서버가 기존 행을 돌려주므로 「이미 있는 별칭이에요.」 로 보인다. MSW 기준 검증, 실서버 미검증 |
 | 건너뛴 온보딩 마저 하기 | 5.3 과 같다 | |
 | 팀원 초대·취소·연결 끊기 | `GET`·`POST /workspaces/{id}/invitations`, `POST /invitations/{id}/cancel`·`revoke` | BE 구현, 프론트엔드 미연결 §5.9 |
 | 알림(메시지·알림 설정) | `GET`·`PATCH /workspaces/{id}/message-settings` | **구현됨** §5.7 (#340) |
