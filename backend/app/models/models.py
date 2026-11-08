@@ -892,6 +892,25 @@ class ThreadMessage(Base):
     thread: Mapped["MessageThread"] = relationship()
 
 
+class MessageThreadRead(Base):
+    """대화마다 사람(팀원·PM)이 어디까지 읽었는지 기록한다. 읽지 않은 메시지 수의 기준이 된다.
+
+    대화 하나를 PM 여럿이 볼 수 있어 읽은 위치는 (대화, 사람) 쌍마다 따로 둔다.
+    행이 없으면 아직 한 번도 열지 않은 것이다.
+    """
+
+    __tablename__ = "message_thread_read"
+
+    thread_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("message_thread.thread_id", ondelete="CASCADE"), primary_key=True
+    )
+    member_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("member.member_id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    last_read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
 class ReplyJudgmentState(StrEnum):
     PENDING = "pending"
     DONE = "done"
