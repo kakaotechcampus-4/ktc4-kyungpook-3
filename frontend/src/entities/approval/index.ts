@@ -24,6 +24,7 @@ export type {
 export {
   APPROVAL_RESOLUTION_REASONS,
   TASK_TITLE_MAX_LENGTH,
+  aliasToLearn,
   planApprovalResolution,
   taskCreateValues,
   taskUpdateChanges,

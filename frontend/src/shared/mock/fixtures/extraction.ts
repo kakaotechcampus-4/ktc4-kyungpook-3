@@ -47,6 +47,10 @@ const items: ExtractionItemDto[] = seeds.map(
     approval_id,
     // 조회 handler 가 지금 승인 상태로 다시 채운다. 저장값은 시작 상태다
     approval_status: approval_id === null ? null : 'pending',
+    // 추출 때의 값이다. 응답은 handler 가 지금 상태로 다시 구한다 (#523). '지훈' 은 누구의 별칭도 아니라 담당자를 고르며
+    // 별칭으로 등록할 수 있다. '민수' 는 이미 박민수의 별칭이다
+    alias_candidate: item_id === 'it_06',
+    alias_text: item_id === 'it_06' ? raw : null,
   }),
 )
 export const extractionFixtures: ExtractionDto[] = [
@@ -79,6 +83,8 @@ export const extractionFixtures: ExtractionDto[] = [
         task_id: 'tk_04',
         approval_id: null,
         approval_status: null,
+        alias_candidate: false,
+        alias_text: null,
       },
     ],
   },

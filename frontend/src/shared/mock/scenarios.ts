@@ -346,6 +346,8 @@ function conflictingUpdateApproval(state: MockDb): void {
     resolved_by: null,
     created_at: '2026-09-17T03:00:00Z',
     resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
   })
 }
 
@@ -402,6 +404,8 @@ function addScopeChanges(state: MockDb): void {
       resolved_by: null,
       created_at: createdAt,
       resolved_at: null,
+      alias_candidate: false,
+      alias_text: null,
     })
   state.taskHistory.push({
     history_id: 'hs_03',
@@ -445,6 +449,8 @@ function addEditProposal(state: MockDb): void {
     task_id: task.task_id,
     approval_id: 'ap_08',
     approval_status: 'pending',
+    alias_candidate: false,
+    alias_text: null,
   })
   state.approvals.push({
     approval_id: 'ap_08',
@@ -471,6 +477,8 @@ function addEditProposal(state: MockDb): void {
     resolved_by: null,
     created_at: '2026-09-17T04:00:00Z',
     resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
   })
 }
 
@@ -502,6 +510,8 @@ function addChatApproval(state: MockDb): void {
     resolved_by: null,
     created_at: '2026-09-12T00:03:00Z',
     resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
   })
 }
 
@@ -788,6 +798,8 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
         resolved_by: null,
         created_at: '2026-09-17T05:00:00Z',
         resolved_at: null,
+        alias_candidate: false,
+        alias_text: null,
       })
       break
     case 'dashboard-member':

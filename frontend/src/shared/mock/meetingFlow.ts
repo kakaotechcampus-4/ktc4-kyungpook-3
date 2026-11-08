@@ -219,6 +219,8 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
       task_id: null,
       approval_id: null,
       approval_status: null,
+      alias_candidate: false,
+      alias_text: null,
     }
     if (seed.gate === 'auto') {
       const task = createTask(
@@ -265,6 +267,8 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
         resolved_by: null,
         created_at: MOCK_NOW,
         resolved_at: null,
+        alias_candidate: false,
+        alias_text: null,
       }
       state.approvals.push(approval)
       item.approval_id = approval.approval_id

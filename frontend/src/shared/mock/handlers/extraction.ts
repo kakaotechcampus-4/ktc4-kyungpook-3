@@ -6,23 +6,28 @@ import { db } from '../db'
 import { fail, ok } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
 import { nextId } from '../utils'
+import { liveAliasFields } from './approval'
 
 /**
  * 백엔드 get_extraction 처럼 항목의 `approval_status` 는 저장값이 아니라 지금 승인 상태로 채운다 — 승인·반려 뒤에도
- * 저장된 항목은 그대로라 저장값은 낡는다. 예전 저장본(M6 이전 sessionStorage)에 없는 `reverted_at` 은 null 로 내린다
+ * 저장된 항목은 그대로라 저장값은 낡는다. 예전 저장본(M6 이전 sessionStorage)에 없는 `reverted_at` 은 null 로 내린다.
+ * 별칭 후보도 연결된 승인의 지금 상태로 다시 구한다 (#523)
  */
 function withLiveStatus(extraction: ExtractionDto): ExtractionDto {
   return {
     ...extraction,
-    items: extraction.items.map((item) => ({
-      ...item,
-      reverted_at: item.reverted_at ?? null,
-      approval_status:
+    items: extraction.items.map((item) => {
+      const approval =
         item.approval_id === null
-          ? null
-          : (db.approvals.find(({ approval_id }) => approval_id === item.approval_id)?.status ??
-            null),
-    })),
+          ? undefined
+          : db.approvals.find(({ approval_id }) => approval_id === item.approval_id)
+      return {
+        ...item,
+        reverted_at: item.reverted_at ?? null,
+        approval_status: approval?.status ?? null,
+        ...liveAliasFields(item, approval),
+      }
+    }),
   }
 }
 
@@ -127,6 +132,8 @@ export const extractionHandlers = [
       resolved_by: null,
       created_at: MOCK_NOW,
       resolved_at: null,
+      alias_candidate: false,
+      alias_text: null,
     }
     db.approvals.push(approval)
     item.task_id = null
