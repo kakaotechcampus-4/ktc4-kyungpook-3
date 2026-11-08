@@ -115,10 +115,53 @@ def test_recent_claim_is_left_alone(db, ws):
     assert _folder(meeting).exists()
 
 
-def test_unclaimed_upload_is_never_swept(db, ws):
+@pytest.mark.parametrize(
+    ("uploaded_ago", "failed"),
+    [(23 * HOUR, False), (24 * HOUR, False), (25 * HOUR, True)],
+    ids=["unclaimed-23h", "unclaimed-24h", "unclaimed-25h"],
+)
+def test_unclaimed_upload_fails_after_a_day(db, ws, uploaded_ago, failed):
+    """AI 가 가져가지 않은 업로드는 업로드 24시간이 지나면 정리한다(#563). 정확히 24시간은 남긴다."""
     meeting = _upload(db, ws, claimed_at=None)
-    db.execute(update(MeetingUpload).values(uploaded_at=NOW - 10 * DAY))
+    db.execute(update(MeetingUpload).values(uploaded_at=NOW - uploaded_ago))
     db.commit()
+
+    result = upload_sweeper.sweep_stalled_uploads(db, now=NOW)
+
+    assert result == ([(meeting.meeting_id, "upload_unclaimed")] if failed else [])
+    assert _state(db, meeting) == (("failed", "upload_unclaimed") if failed else ("processing", None))
+    assert _folder(meeting).exists() is not failed
+
+
+def test_unclaimed_rule_skips_claimed_and_other_states(db, ws):
+    """24시간 규칙은 가져가지 않은 processing 업로드에만 건다. 가져간 업로드는 3시간 규칙만 본다."""
+    old = NOW - 2 * DAY
+    claimed = _upload(db, ws, claimed_at=NOW - HOUR)
+    waiting = _upload(db, ws, status="awaiting_speakers", claimed_at=None)
+    discord = _upload(db, ws, source="discord", claimed_at=None)
+    db.execute(update(MeetingUpload).values(uploaded_at=old))
+    db.commit()
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == []
+
+    assert _state(db, claimed) == ("processing", None)
+    assert _state(db, waiting) == ("awaiting_speakers", None)
+    assert _state(db, discord) == ("processing", None)
+
+
+def test_claim_after_candidate_selection_is_not_overridden(db, ws, monkeypatch):
+    """후보를 고른 뒤 AI 가 먼저 가져가면, 같은 조건을 다시 건 UPDATE 가 지고 회의는 처리 중으로 남는다."""
+    meeting = _upload(db, ws, claimed_at=None)
+    db.execute(update(MeetingUpload).values(uploaded_at=NOW - 2 * DAY))
+    db.commit()
+    real = meeting_failure.fail_meeting_if
+
+    def claimed_first(db_, meeting_id, failed_stage, *extra_where, now=None):
+        db_.execute(update(MeetingUpload).where(MeetingUpload.meeting_id == meeting_id).values(claimed_at=NOW))
+        db_.commit()
+        return real(db_, meeting_id, failed_stage, *extra_where, now=now)
+
+    monkeypatch.setattr(meeting_failure, "fail_meeting_if", claimed_first)
 
     assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == []
 
