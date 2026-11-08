@@ -1792,7 +1792,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 **프론트엔드 연결** (#558, 2026-11-09). 아래는 코드와 MSW 기준 테스트·브라우저, 가짜 백엔드에 붙인 Vite 프록시 확인으로 본 사실이다. 실제 BE(로컬·배포)에 붙인 확인은 하지 않았다.
 
 - 메시지 화면(`MessageInbox`)이 떠 있는 동안 소켓 하나를 연다([messageSignals.ts](../../src/entities/message/api/messageSignals.ts), [useMessageSignals.ts](../../src/widgets/message-inbox/model/useMessageSignals.ts)). 주소는 REST 와 같은 API 기준 주소에 `/workspaces/{workspace_id}/messages/ws` 를 붙이고, 경로뿐이면 `window.location` 의 출처를 쓴다. `https:` 면 `wss:` 다. 라우터의 `useLocation()` 은 쓰지 않는다. 화면은 소켓으로 아무것도 보내지 않는다.
-- 열릴 때마다(처음과 다시 붙을 때) 그 공간의 메시지 조회(`messageKeys(workspaceId)`)를 한 번 다시 부른다. 처음 열릴 때 이미 받는 중인 조회는 끊지 않고 그 결과를 쓴다. `thread_updated` 를 받으면 받는 중인 조회를 끊고 다시 부른다. JSON 이 아니거나 모양이 다른 프레임은 버린다.
+- 열릴 때마다(처음과 다시 붙을 때) 그 공간의 메시지 조회(`messageKeys(workspaceId)`)를 한 번 다시 부른다. 열릴 때 받는 중인 조회가 있으면 끊지 않고, 그 조회가 끝난 뒤 한 번 더 부른다. 받는 중인 조회는 신호 전의 서버 상태일 수 있어서다. `thread_updated` 를 받으면 받는 중인 조회를 데이터가 없는 첫 조회까지 끊고 다시 부른다. TanStack Query 는 데이터가 없는 조회를 `cancelRefetch` 로 끊지 않고 그 결과로 무효 표시를 지우므로, 끊기(`cancelQueries`)를 먼저 한다(#558 리뷰). 화면을 떠났거나 세션이 바뀌었으면 다시 부르지 않는다. JSON 이 아니거나 모양이 다른 프레임은 버린다.
 - 닫힘 코드는 한 표로 정한다. 4401·4403 은 다시 붙지 않는다. 그 밖의 코드(1000·1011·1012·1013, 네트워크 끊김 1006, 핸드셰이크 HTTP 403)는 1·2·4·8·16·30초, 그 뒤 30초마다 다시 붙고, 열리면 간격이 처음으로 돌아간다. 끊김은 화면에 보이지 않고 polling 은 그대로다.
 - 화면을 떠나거나 공간을 바꾸면 닫고 다시 붙지 않는다. 연결을 연 세션이 끝나면(로그아웃·계정 전환) 화면이 떠 있어도 바로 닫는다. 그 뒤 이전 소켓의 이벤트는 캐시에 닿지 않는다.
 - 로컬 Vite: [vite.config.ts](../../vite.config.ts) 에 `'^/api/v1/workspaces/[^/]+/messages/ws$': { ws: true, changeOrigin: false }` 규칙을 `/api` 보다 앞에 두었다. 가짜 백엔드로 확인했을 때 업그레이드(101)가 그대로 넘어갔고, 백엔드가 받은 `Host` 와 `Origin` 이 둘 다 개발 서버 주소였다. 같은 때 일반 `/api` 요청은 지금처럼 `Host` 가 백엔드 주소로 바뀌었다. `API_PROXY_TARGET` 을 배포 서버로 두면 `Host` 가 맞지 않아 소켓은 계속 다시 붙기만 하고 polling 으로 동작한다.
