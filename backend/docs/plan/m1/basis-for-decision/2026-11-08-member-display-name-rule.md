@@ -37,6 +37,7 @@
 - 가입 이름 결정의 한계(한글 채움 문자 통과, NFC 정규화 없음)를 그대로 물려받는다.
 - 기존 빈 이름 계정이 워크스페이스를 만들면 빈 표시명의 PM 이 생길 수 있다. 운영 DB 에 그런 계정이 있는지는 조회하지 않아 모른다.
 - OpenAPI 에서 수정 요청의 `display_name` 은 nullable 로 보이지만 실제로는 `null` 을 거절한다.
+- 생성 요청 `display_name` 의 OpenAPI `minLength`/`maxLength` 가 사라진다. `AfterValidator` 는 JSON 스키마에 나타나지 않기 때문이다. FE 는 OpenAPI 로 타입을 생성하지 않아 깨지는 것은 없다.
 
 ## 영향 범위와 재검토 조건
 
