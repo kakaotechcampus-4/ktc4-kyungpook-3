@@ -484,6 +484,21 @@ def test_force_requeues_given_up_and_done_and_keeps_old_summary(client, mdb, mse
     assert done_row.summary == '{"overview": "옛 요약"}'
 
 
+def test_force_leaves_a_row_under_a_live_lease_alone(client, mdb, mseed):
+    """돌고 있는 회의를 다시 줄 세우면 같은 회의에 호출이 두 번 나가고 늦은 PUT 이 버려진다."""
+    ws = mseed["ws"]
+    meeting, row = _meeting(mdb, ws)
+    first = _claim(client)
+
+    rows = _request(client, ws, meeting_ids=[meeting.meeting_id], force=True, dry_run=False)
+
+    assert rows[meeting.meeting_id]["state"] == "queued"
+    mdb.refresh(row)
+    assert row.summary_attempts == first["attempt"] == 1
+    assert row.summary_claimed_at is not None
+    assert _claim(client) is None
+
+
 def test_summary_request_limits_to_given_meetings_in_time_order(client, mdb, mseed):
     ws = mseed["ws"]
     later, _ = _meeting(mdb, ws, started_at=T0, requested=False)

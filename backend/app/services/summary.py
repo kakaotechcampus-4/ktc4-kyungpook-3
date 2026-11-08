@@ -287,6 +287,9 @@ def _request_state(
         return "not_done"
     if not chars:
         return "no_sources"
+    leased = extraction.summary_claimed_at is not None and utc(extraction.summary_claimed_at) > utc(now) - SUMMARY_LEASE
+    if extraction.summary_requested_at is not None and leased:
+        return "queued"     # 돌고 있는 회의는 force 로도 덮지 않는다. 덮으면 같은 회의에 호출이 두 번 나간다
     if force:
         return "requested"
     if extraction.summary_requested_at is not None:
