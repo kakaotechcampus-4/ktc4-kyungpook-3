@@ -113,6 +113,18 @@ ROWS = [
     ("starting: GPU 확인 성공", st(Phase.STARTING, why="elice_down", server=RUNNING, hold_until=T0 + 1800),
      facts(server=RUNNING, gpu_ok=True), Phase.ON_GPU, "elice_down",
      {"hold_until": None, "elice_ok": 0, "next_probe_at": T0 + 10 + L.back_gap_s}),
+    ("starting: 다시 확인이 성공하면 같은 서버로 돌아간다",
+     st(Phase.STARTING, why="gpu_lost", recheck=LAUNCH, hold_until=T0 + 1800, outage_since=T0 - 900, woken=T0 - 900,
+        **ON_GPU),
+     facts(server=RUNNING, gpu_ok=True), Phase.ON_GPU, "gpu_lost",
+     {"hold_until": None, "recheck": None, "discard": None, "boot_failures": 0, "woken": T0 - 900}),
+    ("starting: 다시 확인도 실패하면 끄고 다시 켠다",
+     st(Phase.STARTING, why="gpu_lost", recheck=LAUNCH, hold_until=T0 + 1800, **ON_GPU),
+     facts(server=RUNNING, gpu_ok=False), Phase.STARTING, "gpu_lost",
+     {"discard": LAUNCH, "boot_failures": 1, "recheck": None, "hold_until": T0 + 1800}),
+    ("starting: 이번 장애에서 다시 켠 뒤 다시 확인도 실패하면 끄고 멈춘다",
+     st(Phase.STARTING, why="gpu_lost", recheck=LAUNCH, boot_failures=1, hold_until=T0 + 1800, **ON_GPU),
+     facts(server=RUNNING, gpu_ok=False), Phase.STOPPING, "boot", {"boot_failures": 2, "hold_until": None}),
     ("starting: 넘겨도 이번 장애의 부팅 실패는 남는다", st(Phase.STARTING, why="gpu_lost", server=RUNNING, boot_failures=1),
      facts(server=RUNNING, gpu_ok=True), Phase.ON_GPU, "gpu_lost", {"boot_failures": 1}),
     ("starting: 꺼지는 중, 켜기 수 상한", st(Phase.STARTING, why="gpu_lost", server=RUNNING, discard=LAUNCH,
@@ -172,9 +184,12 @@ ROWS = [
      Phase.STOPPING, "idle", {}),
     ("on_gpu: 종료 5분 전, 켜기 수 상한이면 다시 켜지 않는다", st(Phase.ON_GPU, why="elice_down", **{**ON_GPU, **FULL_ONS}),
      facts(now=LAUNCH + 3 * 3600 - 200, signals=dict(gpu_inflight=1)), Phase.STOPPING, "day_cap", {}),
-    ("on_gpu: GPU 확인 실패면 끄고 다시 켠다", st(Phase.ON_GPU, why="elice_down", **ON_GPU),
+    ("on_gpu: GPU 확인 한 번 실패면 같은 서버를 다시 확인한다", st(Phase.ON_GPU, why="elice_down", **ON_GPU),
      facts(gpu_ok=False, signals=dict(last_gpu_call=T0)), Phase.STARTING, "gpu_lost",
-     {"hold_until": T0 + 10 + L.hold_s, "discard": LAUNCH, "boot_failures": 1}),
+     {"hold_until": T0 + 10 + L.hold_s, "discard": None, "boot_failures": 0, "recheck": LAUNCH}),
+    ("on_gpu: 다시 켠 뒤의 확인 한 번 실패도 멈추지 않고 다시 확인한다",
+     st(Phase.ON_GPU, why="gpu_lost", boot_failures=1, **ON_GPU), facts(gpu_ok=False, signals=dict(last_gpu_call=T0)),
+     Phase.STARTING, "gpu_lost", {"discard": None, "boot_failures": 1, "recheck": LAUNCH}),
     ("on_gpu: GPU 실제 호출 3번 연속 실패면 끄고 다시 켠다", st(Phase.ON_GPU, why="elice_down", **ON_GPU),
      facts(signals=dict(gpu_fails=3, gpu_streak=3, last_gpu_call=T0)), Phase.STARTING, "gpu_lost",
      {"discard": LAUNCH, "boot_failures": 1}),
@@ -273,9 +288,11 @@ def _text(notices):
     (st(Phase.STARTING, why="elice_down", server=RUNNING), facts(now=LAUNCH + 421, server=RUNNING, gpu_ok=False)),
     (st(Phase.ON_GPU, why="elice_down", **ON_GPU), facts(now=LAUNCH + 6 * 3600, signals=dict(last_gpu_call=LAUNCH))),
     (st(Phase.PARKED, why="elice_back", **FULL_ONS), facts(signals=dict(elice_fails=3, elice_streak=3))),
-    (st(Phase.ON_GPU, why="gpu_lost", boot_failures=1, **ON_GPU), facts(gpu_ok=False, signals=dict(last_gpu_call=T0))),
+    (st(Phase.ON_GPU, why="gpu_lost", boot_failures=1, **ON_GPU),
+     facts(signals=dict(gpu_fails=3, gpu_streak=3, last_gpu_call=T0))),
+    (st(Phase.STARTING, why="gpu_lost", recheck=LAUNCH, boot_failures=1, **ON_GPU), facts(server=RUNNING, gpu_ok=False)),
 ], ids=["auto start", "would start", "manual start", "limit", "capacity", "not_ready", "spent", "boot halt",
-        "boot retry", "day cap while on", "day cap at start", "lost again halt"])
+        "boot retry", "day cap while on", "day cap at start", "lost again halt", "recheck again halt"])
 def test_starts_failures_and_caps_are_alerts(state, f):
     _, notices = run(state, f)
     assert notices and any(n.alert for n in notices), _text(notices)
@@ -290,6 +307,14 @@ def test_starts_failures_and_caps_are_alerts(state, f):
 def test_progress_notices_are_not_alerts(state, f):
     _, notices = run(state, f)
     assert notices and not any(n.alert for n in notices), _text(notices)
+
+
+def test_a_check_blip_and_the_return_to_the_same_server_say_nothing():
+    """확인이 띄엄띄엄 실패하는 서버에서 오갈 때마다 응답 없음과 넘김을 알리지 않는다."""
+    state, first = run(st(Phase.ON_GPU, why="elice_down", outage_since=T0 - 900, woken=T0 - 900, **ON_GPU),
+                       facts(gpu_ok=False, signals=dict(last_gpu_call=T0)))
+    state, second = run(state, facts(now=T0 + 20, server=RUNNING, gpu_ok=True))
+    assert state.phase is Phase.ON_GPU and not first and not second, _text(first + second)
 
 
 def test_the_same_refusal_is_announced_once():

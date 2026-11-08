@@ -152,6 +152,7 @@ class FailoverState:
     switch_down_since: float | None = None
     boot_failures: int = 0
     discard: float | None = None        # 버릴 부팅의 launched_at. 끄고 새로 켠다(3시간 넘김, 부팅 실패)
+    recheck: float | None = None        # 확인이 한 번 실패해 다시 확인하는 서버의 launched_at
     paused_until: float | None = None
     server: ServerView | None = None
     session: tuple[float, float | None] | None = None   # 센 부팅의 (launched_at, stop_at)
@@ -246,7 +247,7 @@ def _elice_back_before_on(s: FailoverState, sig: Signals) -> bool:
 def _enter(s: FailoverState, phase: Phase, why: str, f: Facts, **kw) -> FailoverState:
     fresh = dict(phase=phase, why=why, since=f.now, mark=f.signals, probe_fails=0,
                  elice_ok=0, next_probe_at=None, next_gpu_probe_at=None, retry_at=None, refused=None,
-                 switch_down_since=None)
+                 switch_down_since=None, recheck=None)
     if phase in (Phase.NORMAL, Phase.PARKED, Phase.HALTED, Phase.ON_GPU):
         fresh["hold_until"] = None
     if phase is Phase.NORMAL:
@@ -376,11 +377,15 @@ def _starting(s, f, L, out, closed):
         out.append(Notice("⛔ 오늘 GPU 상한에 닿아 켜기를 멈춥니다.", alert=True))
         return _stopping(s, f, "day_cap", out)
     server = s.server
+    rechecking = s.recheck is not None and server is not None and server.launched_at == s.recheck
     if f.gpu_ok is True:
-        out.append(Notice(f"✅ GPU 서버로 전사를 넘겼습니다. 종료 예정 {kst_clock(server.stop_at if server else None)}. "
-                          "이름 힌트 없이 전사합니다."))
+        if not rechecking:      # 확인이 띄엄띄엄 실패하는 서버에서 같은 서버로 돌아올 때마다 알리지 않는다
+            out.append(Notice(f"✅ GPU 서버로 전사를 넘겼습니다. 종료 예정 {kst_clock(server.stop_at if server else None)}. "
+                              "이름 힌트 없이 전사합니다."))
         return _enter(s, Phase.ON_GPU, s.why, f, discard=None, woken=s.outage_since or f.now,
                       next_probe_at=f.now + L.back_gap_s, next_gpu_probe_at=f.now + L.gpu_probe_gap_s)
+    if f.gpu_ok is False and rechecking:
+        return _lost(s, f, L, out, s.recheck)
     if f.gpu_ok is False and server and server.launched_at and f.now - server.launched_at > L.boot_s:
         if s.boot_failures + 1 >= 2:
             return _boot_halt(s, f, out)
@@ -422,6 +427,17 @@ def _boot_halt(s: FailoverState, f: Facts, out: list[Notice]) -> FailoverState:
     return _stopping(s, f, "boot", out, boot_failures=s.boot_failures + 1)
 
 
+def _lost(s: FailoverState, f: Facts, L: Limits, out: list[Notice], launched: float | None) -> FailoverState:
+    """넘긴 서버가 응답하지 않는다. 장애 하나에 한 번만 끄고 다시 켜고, 두 번째면 끄고 멈춘다."""
+    if s.boot_failures + 1 >= 2:
+        return _boot_halt(s, f, out)
+    out.append(Notice("⚠️ GPU 서버가 응답하지 않아 한 번 끄고 다시 켭니다. 그동안 전사는 기다립니다. "
+                      "이번 장애에서 다시 켜기는 이 한 번입니다."))
+    # 확인은 되고 실제 호출만 실패하는 서버가 있다. 같은 서버로 돌아가면 tick 마다 오가니 다시 켠 서버로만 넘긴다
+    return _enter(s, Phase.STARTING, "gpu_lost", f, hold_until=s.hold_until or f.now + L.hold_s, discard=launched,
+                  boot_failures=s.boot_failures + 1)
+
+
 def _on_gpu(s, f, L, out, closed):
     sig = f.signals
     if f.request == "off":
@@ -448,15 +464,12 @@ def _on_gpu(s, f, L, out, closed):
         out.append(Notice("🔁 GPU 서버의 3시간 종료가 다가와 끄고 다시 켭니다. 그동안 전사는 기다립니다."))
         return _enter(s, Phase.STARTING, "rollover", f, discard=s.session[0] if s.session else None,
                       hold_until=f.now + L.hold_s)
-    if f.gpu_ok is False or _gpu_fails_here(s, sig) >= L.gpu_fails:
-        if s.boot_failures + 1 >= 2:
-            return _boot_halt(s, f, out)
-        out.append(Notice("⚠️ GPU 서버가 응답하지 않아 한 번 끄고 다시 켭니다. 그동안 전사는 기다립니다. "
-                          "이번 장애에서 다시 켜기는 이 한 번입니다."))
-        # 확인은 되고 실제 호출만 실패하는 서버가 있다. 같은 서버로 돌아가면 tick 마다 오가니 다시 켠 서버로만 넘긴다
-        lost = s.session[0] if s.session else (s.server.launched_at if s.server else None)
-        return _enter(s, Phase.STARTING, "gpu_lost", f, hold_until=f.now + L.hold_s, discard=lost,
-                      boot_failures=s.boot_failures + 1)
+    lost = s.session[0] if s.session else (s.server.launched_at if s.server else None)
+    if _gpu_fails_here(s, sig) >= L.gpu_fails:
+        return _lost(s, f, L, out, lost)
+    if f.gpu_ok is False:
+        # 확인 한 번은 쌓인 호출 뒤에 밀리거나 네트워크가 잠깐 끊겨도 실패한다. 서버를 버리지 않고 기다리게 한 채 다시 확인한다
+        return _enter(s, Phase.STARTING, "gpu_lost", f, hold_until=f.now + L.hold_s, recheck=lost)
     if f.gpu_ok is True:
         s = replace(s, next_gpu_probe_at=f.now + L.gpu_probe_gap_s)
     last = max(sig.last_gpu_call or 0.0, s.since)

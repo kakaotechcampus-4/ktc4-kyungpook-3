@@ -288,6 +288,28 @@ def test_a_gpu_that_passes_checks_but_fails_every_real_call_reboots_once_then_ha
     assert sum(n.alert for n in notes[n0:]) == 1 and len(notes) - n0 <= 5
 
 
+def test_a_gpu_whose_checks_fail_now_and_then_keeps_the_same_server_quietly(tmp_path):
+    """실제 호출은 늘 되고 확인이 하나 걸러 한 번 실패하는 서버. 다시 켜거나 멈추지 않고, 오갈 때마다 알리지 않는다."""
+    woken = []
+    fo, elice, gpu, switch, clock, notes = make(tmp_path, on_gpu=woken.append)
+    to_gpu(fo, elice, switch, clock)
+    n0, checks, blips = len(notes), 0, 0
+    for _ in range(360):
+        if fo.phase is Phase.ON_GPU:
+            assert call(fo) == "안녕하세요"
+        clock.advance(10)
+        if fo.phase is Phase.ON_GPU and clock() >= fo.state.next_gpu_probe_at:
+            checks += 1
+            gpu.mode = "service" if checks % 2 else "ok"
+            blips += checks % 2
+        fo.tick()
+        gpu.mode = "ok"
+    assert blips >= 10
+    assert fo.phase in (Phase.ON_GPU, Phase.STARTING) and fo.state.boot_failures == 0
+    assert switch.starts == 1 and len(woken) == 1
+    assert notes[n0:] == []
+
+
 @pytest.mark.parametrize("mode", [Mode.AUTO, Mode.MANUAL])
 def test_an_idle_turn_off_while_elice_answers_sends_calls_to_elice_and_does_not_restart(tmp_path, mode):
     """리허설처럼 Elice 가 멀쩡할 때 /gpu on 한 서버가 일 없음으로 꺼진다. 그사이 온 호출로 다시 켜거나 장애라고 알리지 않는다."""
