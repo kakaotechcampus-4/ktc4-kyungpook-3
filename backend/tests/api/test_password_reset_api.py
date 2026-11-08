@@ -3,6 +3,7 @@ import logging
 import re
 
 import pytest
+from sqlalchemy import event
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -196,3 +197,102 @@ def test_unpaired_surrogate_token_is_invalid_not_500(mdb, sent, smtp_env, path, 
     assert r.status_code == 400, r.text
     assert r.json()["error"]["code"] == "PASSWORD_RESET_TOKEN_INVALID"
     assert r.json()["error"]["details"]["reason"] == "invalid"
+
+
+PUBLIC = ("8.8.8.8", 50000)
+
+
+def _public_client(host=PUBLIC):
+    return TestClient(app, base_url="https://testserver", client=host)
+
+
+def test_ip_cap_returns_same_200_and_sends_nothing(mdb, sent, smtp_env):
+    _signup(_client())
+    c = _public_client()
+    for i in range(5):
+        assert _request(c, f"nobody{i}@example.com").status_code == 200
+    r = _request(c)
+    assert r.status_code == 200
+    assert r.json()["data"] == {}
+    assert sent == []
+
+
+def test_ip_cap_counts_unknown_emails_too(mdb, sent, smtp_env):
+    _signup(_client())
+    c = _public_client()
+    for i in range(5):
+        _request(c, f"ghost{i}@example.com")
+    assert _request(c).status_code == 200
+    assert sent == []
+    # 다른 공인 IP 는 영향이 없다.
+    assert _request(_public_client(("1.1.1.1", 50000))).status_code == 200
+    assert len(sent) == 1
+
+
+def test_ip_cap_blocks_before_db(mdb, sent, smtp_env):
+    c = _public_client()
+    for i in range(5):
+        _request(c, f"ghost{i}@example.com")
+    queries = []
+
+    def record(*_a, **_k):
+        queries.append(1)
+
+    engine = mdb.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        r = _request(c)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    assert r.status_code == 200
+    assert queries == []
+
+
+def test_ip_cap_logs_reason_without_email(mdb, sent, smtp_env, caplog):
+    c = _public_client()
+    for i in range(5):
+        _request(c, f"ghost{i}@example.com")
+    with caplog.at_level(logging.WARNING):
+        _request(c, "secret-person@example.com")
+    assert "reason=ip" in caplog.text
+    assert "secret-person" not in caplog.text
+
+
+def test_private_ip_skips_ip_cap(mdb, sent, smtp_env):
+    c = _client()
+    for i in range(8):
+        assert _request(c, f"ghost{i}@example.com").status_code == 200
+    _signup(c)
+    assert _request(c).status_code == 200
+    assert len(sent) == 1
+
+
+def test_mail_unconfigured_still_503_before_ip_cap(mdb, sent, monkeypatch):
+    for k in ("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "APP_BASE_URL"):
+        monkeypatch.delenv(k, raising=False)
+    c = _public_client()
+    for _ in range(8):
+        assert _request(c).status_code == 503
+    # 503 은 IP 카운터를 늘리지 않는다.
+    monkeypatch.setenv("SMTP_HOST", "smtp.example")
+    monkeypatch.setenv("SMTP_USERNAME", "user")
+    monkeypatch.setenv("SMTP_PASSWORD", "pw")
+    monkeypatch.setenv("APP_BASE_URL", BASE + "/")
+    _signup(_client())
+    assert _request(c).status_code == 200
+    assert len(sent) == 1
+
+
+def test_global_cap_response_identical_known_unknown(mdb, sent, smtp_env):
+    c = _client()
+    for i in range(5):
+        email = f"user{i}@example.com"
+        assert c.post("/api/v1/auth/signup", json={"email": email, "password": OLD_PW, "name": "r"}).status_code == 201
+        assert _request(_client(), email).status_code == 200
+    assert len(sent) == 5
+    _signup(_client())
+    known = _request(_client())
+    unknown = _request(_client(), "nobody@example.com")
+    assert known.status_code == unknown.status_code == 200
+    assert known.json() == unknown.json()
+    assert len(sent) == 5
