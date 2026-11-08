@@ -1,6 +1,7 @@
 import { useId, useMemo, useState } from 'react'
 import {
   APPROVAL_RESOLUTION_REASONS,
+  aliasToLearn,
   isScopeChange,
   planApprovalResolution,
   validateTaskCreateFields,
@@ -16,7 +17,7 @@ import { evidenceMoment } from '@/entities/meeting'
 import type { MeetingSummary } from '@/entities/meeting'
 import { ASSIGNEE_NONE_OPTION, assigneeOptions, speakerName } from '@/entities/member'
 import type { Member } from '@/entities/member'
-import { useApprovalResolve } from '@/features/approval-resolve'
+import { AliasSaveField, useApprovalResolve } from '@/features/approval-resolve'
 import type { ApprovalResolve } from '@/features/approval-resolve'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink, useUnsavedChanges } from '@/shared/lib/unsaved-changes'
@@ -135,6 +136,7 @@ function TaskCreateCard({
   const edits = resolver.draft?.kind === 'task_create' ? resolver.draft.values : {}
   const values = taskCreateValues(approval, edits)
   const [filling, setFilling] = useState(!hold)
+  const [saveAlias, setSaveAlias] = useState(true)
   const dirty = !sameFields(values, original)
   useUnsavedChanges(dirty)
 
@@ -199,6 +201,12 @@ function TaskCreateCard({
           issues={issues}
           members={memberList}
           editable={!resolver.pending}
+          aliasText={aliasToLearn(approval, values)}
+          saveAlias={saveAlias}
+          onSaveAliasChange={(checked) => {
+            resolver.invalidateConfirmation()
+            setSaveAlias(checked)
+          }}
           onChange={(next) => {
             resolver.editCreate({
               ...(next.taskTitle !== values.taskTitle ? { taskTitle: next.taskTitle } : {}),
@@ -244,7 +252,9 @@ function TaskCreateCard({
         hold={hold && !filling}
         approveBlocked={blockedReason !== null}
         onFill={() => setFilling(true)}
-        onApprove={() => resolver.approve(approval)}
+        onApprove={() =>
+          resolver.approve(approval, { kind: 'task_create', values: edits, saveAlias })
+        }
       />
       {problem?.kind === 'error' ? (
         <FormErrorPanel message={problem.message} />
@@ -262,6 +272,10 @@ interface ApprovalFieldsProps {
   issues: readonly TaskCreateIssue[]
   members: readonly Member[]
   editable: boolean
+  /** 담당자에게 별칭으로 등록할 글자 (#523). null 이면 묻지 않는다 */
+  aliasText: string | null
+  saveAlias: boolean
+  onSaveAliasChange: (checked: boolean) => void
   onChange: (next: TaskCreateFields) => void
 }
 
@@ -269,7 +283,16 @@ interface ApprovalFieldsProps {
  * 제목·담당자·마감. 비우면 승인이 막히는 칸은 라벨에 안내를 붙이고 강조색으로 보인다.
  * 제목은 비었을 때만이 아니라 길이가 넘을 때도 오류다 — 그 오류만 문구가 붙는다
  */
-function ApprovalFields({ values, issues, members, editable, onChange }: ApprovalFieldsProps) {
+function ApprovalFields({
+  values,
+  issues,
+  members,
+  editable,
+  aliasText,
+  saveAlias,
+  onSaveAliasChange,
+  onChange,
+}: ApprovalFieldsProps) {
   const assigneeId = useId()
   const assigneeMissing = issues.includes('assignee')
   const dueMissing = issues.includes('due')
@@ -301,6 +324,14 @@ function ApprovalFields({ values, issues, members, editable, onChange }: Approva
           tone={assigneeMissing ? 'blocking' : 'normal'}
           disabled={!editable}
           aria-invalid={assigneeMissing}
+        />
+        <AliasSaveField
+          aliasText={aliasText}
+          members={members}
+          assigneeMemberId={values.assigneeMemberId}
+          checked={saveAlias}
+          onCheckedChange={onSaveAliasChange}
+          disabled={!editable}
         />
       </div>
       <TextField
