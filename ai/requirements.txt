@@ -15,7 +15,8 @@ requests>=2.31        # HTTP API (stt/elice.py 에서 쓸 예정, 아직 없음)
 # ── Phase 1~2: 임베딩 + LLM (전부 Elice MLAPI, OpenAI 호환 SDK 하나로 통일) ──
 openai>=1.0           # embedding.py + llm.py(Terra/Luna) + extract/llm.py 공용
 
-kiwipiepy>=0.24       # judge/asr_check.py 전사 오인식 검사의 형태소 분석. 처음 쓸 때 올리고 약 300MB
+kiwipiepy==0.24.1      # judge/asr_check.py 전사 오인식 검사의 형태소 분석. 처음 쓸 때 올리고 약 300MB
+kiwipiepy_model==0.24.0 # 형태소 번호(빈도 순)와 미등록어 표시에 기댄다. 올릴 때 tests/test_asr_check.py 의 번호 고정 테스트·eval_asr_check 를 다시 본다
 # ── 개발 ─────────────────────────────────────────────────────────────────────
 pytest>=8.0
 pytest-asyncio>=0.23

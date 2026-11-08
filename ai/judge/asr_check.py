@@ -140,11 +140,12 @@ def _core(kiwi, word: str, vocab: "Vocabulary") -> str:
 
 
 def _is_unknown(kiwi, token) -> bool:
-    """사전에 없는 말인가. kiwipiepy 는 미등록어를 형태가 빈 일반·고유 명사 형태소로 표시한다."""
-    try:
-        return kiwi.morpheme(token.id).form == ""
-    except Exception:  # noqa: BLE001 - 형태소 표를 못 읽으면 모르는 말로 보지 않는다(규칙 2 가 남는다)
-        return False
+    """사전에 없는 말인가. kiwipiepy 는 미등록어를 형태가 빈 일반·고유 명사 형태소로 표시한다.
+
+    문서화되지 않은 동작이라 버전을 고정했다(requirements). 형태소 표를 못 읽으면 예외를 그대로 올려 check_item 이
+    check_failed 로 막게 한다. 여기서 삼키면 규칙 1 이 조용히 꺼진다(#532 리뷰).
+    """
+    return kiwi.morpheme(token.id).form == ""
 
 
 @dataclass

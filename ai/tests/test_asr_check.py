@@ -158,3 +158,35 @@ def test_long_repeated_garbage_still_blocks_within_be_limits(vocab, garbage):
     assert all(len(s["word"]) <= A.MAX_WORD_LEN == 100 for s in out)
     assert all(len(c) <= A.MAX_WORD_LEN for s in out for c in s["candidates"])
 
+
+def test_morpheme_ids_and_unknown_marks_this_check_relies_on():
+    # 규칙 2 는 형태소 번호가 빈도 순이라는 것, 규칙 1 은 미등록어의 형태가 빈 문자열이라는 것에 기댄다.
+    # 둘 다 문서화되지 않은 모델 동작이라 kiwipiepy 를 올리면 이 테스트가 먼저 알린다(requirements 에 버전 고정)
+    kiwi = A._kiwi()
+    [rare] = kiwi.tokenize("시앙")
+    [common] = kiwi.tokenize("대표")
+    assert rare.id >= A.RARE_MORPHEME_ID > common.id
+    [unknown] = kiwi.tokenize("애포")
+    [known] = kiwi.tokenize("배포")
+    assert A._is_unknown(kiwi, unknown) and not A._is_unknown(kiwi, known)
+
+
+def test_verb_or_particle_span_is_not_a_near_miss_of_a_term(vocab):
+    # "하고"는 업무 용어 "회고"와 자모 하나 차이지만 명사 쪽 토큰이 없는 구간이라 보지 않는다
+    assert "회고" in vocab.candidates
+    assert find_suspects("그거 하고 정리해요", vocab, "evidence") == []
+
+
+def test_unreadable_morpheme_table_blocks_instead_of_silently_passing(vocab, monkeypatch):
+    # 형태소 표를 못 읽으면 규칙 1 이 조용히 꺼지지 않고 check_failed 로 막는다
+    kiwi = A._kiwi()
+
+    class NoTable:
+        def __getattr__(self, name):
+            return getattr(kiwi, name)
+
+        def morpheme(self, _id):
+            raise RuntimeError("no table")
+
+    monkeypatch.setattr(A, "_kiwi", lambda: NoTable())
+    assert check_item(["애포 문서 정리할게요"], None, vocab) == A.failed()
