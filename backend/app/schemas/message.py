@@ -151,6 +151,7 @@ class ThreadSummary(BaseModel):
     last_message: LastMessage | None
     awaiting_reply_since: datetime | None
     dm_failed: bool
+    web_reply_available: bool
     unread_count: int = Field(description="이 대화에서 내가 아직 읽지 않은 메시지 수. 목록과 상세 조회는 읽음 처리를 하지 않는다")
 
 
@@ -188,6 +189,7 @@ class ClaimedMessageResponse(BaseModel):
 class ClaimResponse(BaseModel):
     items: list[ClaimedMessageResponse]
     total: int
+    web_url: str | None
 
 
 class DmResultRequest(BaseModel):

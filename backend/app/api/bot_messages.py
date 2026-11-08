@@ -15,6 +15,7 @@ from app.schemas.message import (
     DraftWriteRequest,
 )
 from app.schemas.reply import ReplyClaimResponse, ReplyJudgmentRequest
+from app.services import mailer
 from app.services import messages as svc
 from app.services import replies
 
@@ -41,7 +42,7 @@ def claim_messages(db: Session = Depends(get_db)) -> dict:
         }
         for c in claimed
     ]
-    return success({"items": items, "total": len(items)})
+    return success({"items": items, "total": len(items), "web_url": mailer.app_base_url() or None})
 
 
 @router.post("/messages/{message_id}/result", response_model=Envelope[None])
