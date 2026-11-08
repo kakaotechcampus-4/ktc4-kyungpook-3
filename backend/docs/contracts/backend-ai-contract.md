@@ -30,7 +30,7 @@
 
 ## 인증
 
-- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·단계 보고·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회, 채팅 수집 대상 목록, 리마인드 DM 다섯 경로)와 웹 업로드 가져가기 여섯 경로에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
+- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·단계 보고·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회, 워크스페이스 용어 목록 조회·추가, 채팅 수집 대상 목록, 리마인드 DM 다섯 경로)와 웹 업로드 가져가기 여섯 경로에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
 - 합의 근거: 이슈 #179(BE)와 #193(AI). 회의 생성·종료·실패와 추출 등록이 리버스 프록시 설정에만 기대던 것을 서비스 토큰으로 막는다.
 - 현재 구현
   - BE(#179): 회의 생성·종료·실패와 추출 등록에 `require_service_token`을 건다. #179 전에는 발화 저장, 유사 검색, 서버로 워크스페이스 찾기에만 걸었다.
@@ -439,7 +439,7 @@ AI 구현이 정한 처리(BE 동작은 그대로):
 
 ## 전사 힌트 조회
 
-봇이 전사(STT)에 이름 힌트를 걸 때 쓰는 읽기 경로다. 팀원 이름만 돌려주고 회의 발화나 추출 내용은 돌려주지 않는다.
+봇이 전사(STT)에 이름 힌트를 걸 때 쓰는 읽기 경로와, 전사 오인식 의심 단어를 가릴 때 쓰는 워크스페이스 용어 목록이다. 팀원 이름과 용어만 돌려주고 회의 발화나 추출 내용은 돌려주지 않는다.
 
 | 항목 | 동작 |
 |---|---|
@@ -463,6 +463,45 @@ AI 구현이 정한 처리(BE 동작은 그대로):
 
 - 합의 근거: AI 담당이 STT 이름 힌트용으로 제안했다(2026-10-13). #273 에서 AI·BE가 합의했고 #278 리뷰로 확인했다. 목록 키는 다른 BE 목록 응답처럼 `items`다. task 제목도 용어 힌트로 재 봤지만 전사가 나아지지 않아 경로를 만들지 않는다([AI 결정 기록 0025](../../../ai/docs/basis_for_decision/member/2026-10-13-0025-title-hint-not-now.md)).
 - 현재 구현: BE에 이 경로가 있다. 봇은 아직 부르지 않는다. 봇이 디스코드 표시 이름 대신 이 값을 힌트로 쓰는 작업은 AI 후속이다.
+
+### 워크스페이스 용어 목록 (#532)
+
+AI 는 새 할 일 제목의 명사 중 이 목록에 없는 말을 전사 오인식 의심 단어로 보고 Jev 로 확인한다(추출 등록의 `asr_suspects`). 목록에 들어가는 길은 둘이다.
+
+1. AI 가 회의 인계 때 두 사람 이상이 말한 명사를 `POST`로 올린다.
+2. PM 이 task_create 승인으로 태스크를 만들면 BE 가 그 **최종 제목**(PM 이 승인하면서 고쳤으면 고친 제목, `task_overrides.task_title`)을 승인과 같은 트랜잭션에서 제목 큐(`asr_title_queue`)에 한 줄 넣는다. BE 에는 형태소 분석기가 없으므로 AI 가 `GET`의 `pending_titles`로 받아 명사를 뽑고, `POST`의 `words`로 올리면서 `absorbed_title_ids`로 큐에서 지운다.
+   - 넣지 않는 경우: 반려, 승인 처리 실패(검증 오류·`APPROVAL_CONFLICT`·`APPROVAL_CHANGED` 등으로 승인이 되돌려짐), task_update 승인, 추출 등록의 auto 생성(PM 이 확인한 제목이 아니다).
+
+#### `GET /workspaces/{workspace_id}/asr-terms` → 200
+
+```jsonc
+// 응답 data
+{
+  "words": ["API", "결제", "정산"],            // 사전순(코드 포인트 순, 한글은 가나다순)
+  "pending_titles": [                          // 오래된 순(created_at, 같으면 title_id), 최대 200개
+    { "title_id": "3f0c…", "title": "결제 API 연동" }
+  ]
+}
+```
+
+#### `POST /workspaces/{workspace_id}/asr-terms` → 200
+
+```jsonc
+// 요청. 두 키 모두 선택, 없으면 빈 목록
+{ "words": ["결제", "정산"], "absorbed_title_ids": ["3f0c…"] }
+// 응답 data
+{ "added": 1, "absorbed": 1 }
+```
+
+| 항목 | 동작 |
+|---|---|
+| `words` | 0~2000개. 각 단어는 앞뒤 공백을 지운 뒤 1~30자. 이미 있는 단어와 요청 안의 중복은 조용히 건너뛰고(`ON CONFLICT DO NOTHING`), 같은 요청을 다시 보내거나 동시에 보내도 오류가 없다. `added`는 새로 넣은 수 |
+| `absorbed_title_ids` | 0~200개(각 36자 이하). 이 워크스페이스의 그 큐 행을 지운다. 다른 워크스페이스의 id 와 없는 id 는 무시한다. `absorbed`는 지운 수 |
+| 검증 | 개수·길이·모양이 틀리면 400 `INVALID_REQUEST`이고 아무것도 바꾸지 않는다 |
+| 대소문자·형태 | BE 는 앞뒤 공백 말고는 정규화하지 않는다. `API`와 `api`는 다른 단어다 |
+
+- 합의 상태: #532 작업 지시의 모양대로 BE 가 구현했다(2026-11-08). AI 쪽 호출은 같은 PR 의 AI 변경 범위이고, 리뷰에서 합의를 확인한다.
+- 현재 구현: `app/api/bot_lookups.py`의 `get_asr_terms`·`add_asr_terms`, 큐 적재는 `app/api/approvals.py`의 `_apply_approval`, 모델은 `WorkspaceAsrTerm`·`AsrTitleQueue`(마이그레이션 `9e4b2c7a1f53`).
 
 ## 리마인드 DM
 
@@ -664,7 +703,7 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 |---|---|---|---|
 | `UNAUTHENTICATED` | 401 | 봇 경로 전부 | 실패 (stage 는 로그만 남기고 계속) |
 | `MEETING_NOT_FOUND` | 404 | end, stage, fail, sources, extractions, uploads claim·file·speakers·resume | 실패 (stage 는 로그만 남기고 계속) |
-| `WORKSPACE_NOT_FOUND` | 404 | tasks/similar, members/names | 실패 |
+| `WORKSPACE_NOT_FOUND` | 404 | tasks/similar, members/names, asr-terms | 실패 |
 | `WORKSPACE_MISMATCH` | 400 | extractions | 실패 |
 | `MEETING_ALREADY_ENDED` | 409 | end, fail, uploads claim·speakers·resume | 지금 상태로 보고 계속 (claim이면 다음 회의로) |
 | `MEETING_PROCESSING_IN_PROGRESS` | 409 | uploads claim | 이미 가져갔으니 다음 회의로. 내 재시도라면 이어서 처리 |
@@ -684,5 +723,5 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 
 ## 코드 근거
 
-- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`(`chat-cursor` 포함), `app/api/integrations.py`의 `list_bot_chat_channels`, `app/services/chat_channel.py`, `app/schemas/integration.py`, `app/api/approvals.py`(채팅 이력 출처), `app/api/workspaces.py`(업로드 가드), `app/api/uploads.py`, `app/services/speaker_assignment.py`, `app/services/meeting_stage.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`, `app/api/bot_messages.py`, `app/services/messages.py`, `app/schemas/message.py`
+- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`(`chat-cursor`·`asr-terms` 포함), `app/api/integrations.py`의 `list_bot_chat_channels`, `app/services/chat_channel.py`, `app/schemas/integration.py`, `app/api/approvals.py`(채팅 이력 출처), `app/api/workspaces.py`(업로드 가드), `app/api/uploads.py`, `app/services/speaker_assignment.py`, `app/services/meeting_stage.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`, `app/api/bot_messages.py`, `app/services/messages.py`, `app/schemas/message.py`
 - AI: `ai/capture/handoff.py`의 `BeClient`(`report_stage`, `STAGE_TIMEOUT_S`), `Handoff`(`report_stage`), `from_env`, `ai/capture/recorder.py`의 `process_session`(`begin`), `ai/draft/reminder_draft.py`의 `draft_reminder`, `ai/capture/dm.py`의 `DmCog`
