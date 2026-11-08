@@ -161,6 +161,33 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 - 동시성 테스트는 둘째 세션이 UPDATE 를 한 번 했는지는 보지만 IntegrityError 를 거쳤는지 직접 확인하지는 않는다.
 - 승격은 대화마다 쿼리가 나가고, 대화 상세도 보는 사람의 모든 대화를 집계한다.
 
+## 2026-11-07 추가: 다른 회의의 같은 새 항목을 승인 대기 카드에 합치기(#141 두 번째 PR)
+
+M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 정한 것은 사용자다. 근거는 이슈 #141 의 합의와 PR 2 설계 확정 댓글(2026-11-07)이다. M6 완료는 판정하지 않는다.
+
+| 변경 | 위치 |
+|---|---|
+| 추출 등록 항목의 `action: merge`, `target_approval_id`. 대상 카드를 ID 순으로 잠그고 합치며, 쓸 수 없으면 create(auto 아님) | `backend/app/api/extractions.py`, `backend/app/schemas/meeting.py`, `backend/app/models/models.py`(`ExtractionAction.MERGE` 값만) |
+| 합치기 규칙(마감·상태·담당자·doc_text·merged_items)과 담당 항목(`assignee_item_of`) | `backend/app/services/pending_merge.py` |
+| 승인 때 최신 카드 값을 다시 읽고 연결된 모든 항목에 task_id. 별칭은 카드의 담당 항목에서만 저장 | `backend/app/api/approvals.py`, `backend/app/services/alias_learning.py` |
+| 별칭 후보를 카드의 담당 항목으로 거름(승인 목록·상세, 추출 조회) | `backend/app/services/alias_learning.py`, `backend/app/api/extractions.py` |
+| 계약 | [BE↔AI 계약](../../contracts/backend-ai-contract.md) 추출 등록 절, [Backend README](../../../README.md) 유사 task 검색과 별칭 학습 절 |
+
+| #141 합의 항목 | 상태 | 근거 |
+|---|---|---|
+| action=merge 와 합치기 규칙, 대상을 못 쓰면 create | 구현 | `tests/services/test_pending_merge.py`, `tests/api/test_extractions_merge.py` |
+| 승인 때 최신 값, 여러 회의 항목 task_id | 구현 | `tests/api/test_approval_merged_card.py` |
+| 별칭 학습과 후보를 담당 항목으로 | 구현 | `tests/api/test_alias_learning_approval.py`, `tests/services/test_alias_learning.py` |
+| 행 잠금(합치기와 승인, 반대 순서 두 카드) | 구현. PostgreSQL 테스트로만 확인되고 로컬에서는 돌지 않았다 | `tests/api/test_pending_merge_concurrency.py`(CI) |
+
+검증(2026-11-08, `backend/`):
+
+- `.venv/Scripts/python.exe -m ruff check --no-cache .`: All checks passed
+- `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`: 2307 passed, 1485 skipped. skip 는 PostgreSQL 이 필요한 테스트이고 새 동시성 테스트 3개도 여기에 들어 CI 에서 처음 돈다.
+- 실제 AI 를 붙인 종단 확인과 배포 환경 확인은 하지 않았다. 모델 컬럼·마이그레이션 변경은 없다.
+
+남은 작업: AI 의 merge 전송과 `include_pending` 켜기(BE 배포 뒤), FE 답(#512)과 합친 카드 표시, 승인 사이에 담당 항목이 바뀐 경우의 별칭 저장(결정 기록의 장단점).
+
 ## 2026-11-08 추가: 전사 진행과 단계 시작 시각을 회의 상세에 노출(#483 A안 BE 몫)
 
 M6 plan.md 는 비어 있어 완료조건이 없다. #381 과 같은 M6 에 둔다. 근거는 이슈 #483 과 설계 확정 댓글(2026-11-08)이고, AI·BE·FE 공동 이슈 중 BE 몫만 구현했다. M6 완료는 판정하지 않는다.
@@ -190,6 +217,7 @@ M6 plan.md 는 비어 있어 완료조건이 없다. #381 과 같은 M6 에 둔�
 ## 관련 기록
 
 - [전사 진행과 단계 시작 시각을 회의 상세에 노출한다](basis-for-decision/2026-11-08-processing-stt-progress.md)
+- [다른 회의의 같은 새 항목을 승인 대기 카드에 합친다](basis-for-decision/2026-11-07-pending-merge.md)
 - [승인 대기 새 항목 요청을 유사 검색 후보에 따로 더한다](basis-for-decision/2026-11-07-pending-approval-search.md)
 - [답장 담당자 변경 승인에서 PM 이 담당자를 고르게 한다](basis-for-decision/2026-11-07-reply-assignee-override.md)
 - [처리 단계 보고를 회의 컬럼으로 저장한다](basis-for-decision/2026-11-05-processing-stage-report.md)

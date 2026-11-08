@@ -527,6 +527,8 @@ class ExtractionAction(StrEnum):
 
     CREATE = "create"
     UPDATE = "update"
+    # 승인 대기 중인 task_create 카드에 합쳐진 항목. 새 task 도 수정도 아니다
+    MERGE = "merge"
 
 
 class ExtractionPath(StrEnum):
