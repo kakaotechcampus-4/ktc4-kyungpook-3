@@ -49,7 +49,7 @@ from app.models import (
     Workspace,
     WorkspaceMessageSettings,
 )
-from app.services import mailer, notifications, replies, scheduler
+from app.services import mailer, notifications, replies, scheduler, thread_signals
 
 logger = logging.getLogger(__name__)
 
@@ -560,6 +560,7 @@ def dispatch_due(db: Session, now: datetime) -> list[ThreadMessage]:
         )
         db.add(message)
         db.flush()
+        thread_signals.queue(db, bundle.thread)
         for reminder in bundle_reminders(db, bundle.bundle_id):
             _transition(reminder, "send")
             reminder.updated_at = now
@@ -739,6 +740,7 @@ def claim_for_bot(db: Session, now: datetime) -> list[ClaimedMessage]:
     for message in stale:
         message.dm_status = DmStatus.FAILED
         message.dm_failure_reason = DmFailureReason.UNKNOWN
+        thread_signals.queue(db, message.thread)
 
     pending = db.scalars(
         select(ThreadMessage)
@@ -753,6 +755,7 @@ def claim_for_bot(db: Session, now: datetime) -> list[ClaimedMessage]:
             # 발송 요청을 만든 뒤 연결이 끊기거나 탈퇴했다. 이 메시지만 닫고 같은 배치의 나머지는 준다.
             message.dm_status = DmStatus.FAILED
             message.dm_failure_reason = DmFailureReason.DISCORD_NOT_LINKED
+            thread_signals.queue(db, message.thread)
             continue
         message.dm_status = DmStatus.CLAIMED
         message.claimed_at = now
@@ -807,6 +810,8 @@ def report_result(
         # PM 조작과 같이 대화를 잠근 뒤 본다. 겹친 보고나 PM 조작이 첫 DM 판정을 엇갈려 보지 않는다.
         _lock_thread(db, message.thread_id)
         first_delivery = not _has_delivered_dm(db, message.thread_id)
+    if (message.dm_status, message.dm_failure_reason) != (status, reason):
+        thread_signals.queue(db, message.thread)
     message.dm_status = status
     message.dm_failure_reason = reason
     message.dm_reported_at = now
@@ -881,6 +886,7 @@ def ingest_discord_reply(
     except IntegrityError:
         # 같은 id 가 동시에 들어와 다른 요청이 먼저 저장했다.
         return _message_by_discord_id(db, discord_message_id), False
+    thread_signals.queue(db, thread)
     replies.open_judgment(db, message, now)
     return message, True
 
@@ -989,6 +995,7 @@ def add_web_reply(db: Session, thread: MessageThread, *, body: str, now: datetim
     )
     db.add(message)
     db.flush()
+    thread_signals.queue(db, thread)
     replies.open_judgment(db, message, now)
     return message
 
@@ -1026,5 +1033,6 @@ def add_pm_message(db: Session, thread: MessageThread, *, author: Member, body: 
     )
     db.add(message)
     db.flush()
+    thread_signals.queue(db, thread)
     notify_new_message(db, message, now)
     return message
