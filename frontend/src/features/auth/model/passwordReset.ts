@@ -17,9 +17,9 @@ export const RESET_LINK_MESSAGES: Record<ResetLinkProblem, string> = {
 /** 서버는 60초 안의 재요청에 메일을 보내지 않고 같은 200 을 준다. 화면이 같은 시간 동안 다시 보내기를 막는다 */
 export const RESEND_COOLDOWN_MS = 60_000
 
-/** 보낸 시각부터 다시 보낼 수 있을 때까지 남은 초. 올림이라 1초 미만이 남아도 1이다 */
-export function resendSecondsLeft(sentAt: number, at: number): number {
-  return Math.max(0, Math.ceil((sentAt + RESEND_COOLDOWN_MS - at) / 1000))
+/** 다시 보낼 수 있는 시각까지 남은 초. 올림이라 1초 미만이 남아도 1이다 */
+export function resendSecondsLeft(resendAt: number, at: number): number {
+  return Math.max(0, Math.ceil((resendAt - at) / 1000))
 }
 
 /** 비밀번호를 바꾸고 로그인으로 보낼 때의 이동 state. 로그인 화면이 안내를 띄운다 */

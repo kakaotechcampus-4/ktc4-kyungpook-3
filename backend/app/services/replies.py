@@ -96,7 +96,7 @@ class Notice:
 
 
 def open_judgment(db: Session, message: ThreadMessage, now: datetime) -> None:
-    """팀원 답장을 판단 큐에 넣는다. 후보가 없으면 리마인드와 무관한 글이라 행을 만들지 않는다."""
+    """팀원 답장을 판단 큐에 넣는다. 후보가 없으면 리마인드와 무관한 글이라 행을 만들지 않고 바로 알린다."""
     db.flush()
     thread = db.get(MessageThread, message.thread_id)
     candidates = _candidates(db, thread, messages.utc(message.created_at))
@@ -106,6 +106,8 @@ def open_judgment(db: Session, message: ThreadMessage, now: datetime) -> None:
             state=ReplyJudgmentState.PENDING, queued_at=messages.utc(now), candidates=json.dumps(candidates),
         ))
         db.flush()
+    else:
+        messages.notify_new_message(db, message, now)
 
 
 def _candidates(db: Session, thread: MessageThread, replied_at: datetime) -> list[str]:
@@ -226,7 +228,7 @@ def _lines(db: Session, message: ThreadMessage, task_ids: list[str]) -> list[Cla
         .limit(LINE_LIMIT - 1)
     ).all()
     return [
-        ClaimedLine(sender="pm" if m.sender == MessageSender.BOT else "member", text=m.body)
+        ClaimedLine(sender="member" if m.sender == MessageSender.MEMBER else "pm", text=m.body)
         for m in [*reversed(earlier), message]
     ]
 
@@ -374,6 +376,9 @@ def _judged(db: Session, row: ReplyJudgment, changes: list[ReplyChangeRequest], 
             db, workspace_id=row.workspace_id, kind="reply_judged", text=notice.text,
             link_type=notice.link_type, link_id=notice.link_id, now=now, dedupe_key=_notice_key(row),
         )
+    else:
+        # 바꿀 것이 없는 글도 PM 은 받아야 한다. PM 이 고른 재판단은 _notice 가 언제나 알린다.
+        messages.notify_new_message(db, message, now)
 
 
 def _lock_tasks(db: Session, task_ids: set[str]) -> dict[str, Task]:

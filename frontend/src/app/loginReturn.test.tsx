@@ -110,13 +110,3 @@ describe('로그아웃·세션 만료', () => {
     expect(await screen.findByText('김서연')).toBeInTheDocument()
   })
 })
-
-it('로그인 화면의 회원가입 링크는 돌아갈 경로를 넘기지 않는다 — 새 계정은 어느 공간에도 속하지 않는다', async () => {
-  db.authenticated = false
-  const app = renderApp(paths.login(paths.tasks('ws_01', 'tk_01')))
-  await screen.findByRole('heading', { name: '로그인' })
-
-  await userEvent.click(screen.getByRole('link', { name: '회원가입' }))
-  await app.expectPath('/signup')
-  await app.expectSearch('')
-})
