@@ -8,28 +8,35 @@ from app.core.errors import AppError, ErrorCode
 from app.models import Task, User, Member, MemberRole
 from app.services.sessions import find_session
 
-def get_current_user(
-    request: Request,
-    db: Session = Depends(get_db)
-) -> User:
-    session_token = request.cookies.get("session_token")
+def authenticate(db: Session, session_token: str | None) -> tuple[User, datetime] | None:
+    """쿠키 토큰이 살아 있는 세션이면 사용자와 만료 시각(UTC)을 돌려준다. HTTP 의존성과 소켓이 같이 쓴다."""
     if not session_token:
-        raise AppError(ErrorCode.UNAUTHENTICATED)
+        return None
 
     session_record = find_session(db, session_token)
     if not session_record:
-        raise AppError(ErrorCode.UNAUTHENTICATED)
+        return None
 
     expires_at = session_record.expires_at
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if expires_at < datetime.now(timezone.utc):
-        raise AppError(ErrorCode.UNAUTHENTICATED)
+        return None
 
     user = session_record.user
     if not user:
+        return None
+    return user, expires_at
+
+
+def get_current_user(
+    request: Request,
+    db: Session = Depends(get_db)
+) -> User:
+    session = authenticate(db, request.cookies.get("session_token"))
+    if session is None:
         raise AppError(ErrorCode.UNAUTHENTICATED)
-    return user
+    return session[0]
 
 def require_member(db: Session, user: User, workspace_id: str) -> Member:
     """workspace_id가 경로·쿼리에 없고 리소스나 요청 바디에서 나오는 경로용 멤버십 확인."""

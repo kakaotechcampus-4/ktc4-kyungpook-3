@@ -30,12 +30,12 @@ def unread_by_thread(db: Session, viewer: Member) -> dict[str, int]:
     arrival = _arrival(ThreadMessage)
     baseline = func.coalesce(MessageThreadRead.last_read_at, utc(viewer.created_at))
 
-    # 자기 대화에서는 봇 메시지, 남의 대화에서는 대화 주인의 메시지가 상대편이다.
+    # 자기 대화에서는 봇·PM 메시지, 남의 대화에서는 대화 주인의 메시지가 상대편이다.
     counterpart = or_(
-        and_(own_thread, ThreadMessage.sender == MessageSender.BOT),
+        and_(own_thread, ThreadMessage.sender.in_((MessageSender.BOT, MessageSender.PM))),
         and_(~own_thread, ThreadMessage.sender == MessageSender.MEMBER),
     )
-    # 자기 대화에서 봇 메시지 뒤에 내가 답장했다면 그 봇 메시지는 이미 본 것으로 친다.
+    # 자기 대화에서 상대편 메시지 뒤에 내가 답장했다면 그 메시지는 이미 본 것으로 친다.
     # "뒤"는 보낸 시각(created_at)으로 가른다. 도착 시각으로 보면 봇 DM 전에 보낸 글이 늦게 저장됐을 때 그 DM 에
     # 답한 것으로 빠지는데, 같은 화면의 awaiting_reply_since 는 created_at 기준이라 여전히 답 대기라서 어긋난다.
     # 읽은 위치보다 늦게 들어왔는지(arrival > baseline)만 도착 시각을 쓴다.
@@ -133,7 +133,7 @@ def mark_read(db: Session, viewer: Member, thread: MessageThread) -> datetime | 
 
 def mark_workspace_read(db: Session, member: Member, at: datetime) -> None:
     """member 의 워크스페이스 남의 대화를 at 까지 읽은 것으로 한다. PM 으로 올라간 사람이 그 전 답장을
-    한꺼번에 읽지 않은 것으로 보지 않게 한다. 자기 대화는 뺀다. 거기서 세는 것은 봇 리마인드라 승격 전에도
+    한꺼번에 읽지 않은 것으로 보지 않게 한다. 자기 대화는 뺀다. 거기서 세는 것은 봇·PM 메시지라 승격 전에도
     세던 것이고, 올라간다고 읽은 것이 되지 않는다."""
     thread_ids = db.scalars(
         select(MessageThread.thread_id).where(

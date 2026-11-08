@@ -177,6 +177,8 @@ class Gate(StrEnum):
 
 class User(Base):
     __tablename__ = "user"
+    # 비어 있는 provider_id 끼리는 겹치지 않는다(PostgreSQL·SQLite 모두 NULL 은 서로 다른 값으로 본다).
+    __table_args__ = (UniqueConstraint("provider", "provider_id", name="uq_user_provider_provider_id"),)
 
     user_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
@@ -213,6 +215,20 @@ class PasswordResetToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SignupEmailCode(Base):
+    """가입 이메일 인증 코드. 이메일마다 한 행이고, 코드가 맞으면 지운다. 원문은 두지 않고 HMAC 만 둔다(#427)."""
+
+    __tablename__ = "signup_email_code"
+
+    email: Mapped[str] = mapped_column(String(255), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    window_count: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class Session(Base):
@@ -819,8 +835,9 @@ class ReminderOrigin(StrEnum):
 
 
 class MessageSender(StrEnum):
-    BOT = "bot"
-    MEMBER = "member"
+    BOT = "bot"  # 리마인드 묶음이 나간 글만 뜻한다. 나가는 DM 전부는 dm_status 로 본다
+    PM = "pm"  # PM 이 웹에서 남의 대화에 쓴 글. 봇 계정으로 나간다
+    MEMBER = "member"  # 대화 주인이 쓴 글. PM 이 자기 대화에 쓴 글도 여기다
 
 
 class ReplyChannel(StrEnum):
@@ -862,10 +879,10 @@ class MessageThread(Base):
 
 
 class ThreadMessage(Base):
-    """대화에 들어간 메시지 한 통. 봇이 보낸 DM(발송된 묶음)이거나 팀원의 답장이다.
+    """대화에 들어간 메시지 한 통. 발송된 묶음이거나 PM 이 쓴 글(둘 다 봇 DM 으로 나간다)이거나 팀원의 답장이다.
 
     created_at 은 대화에 들어온 시각이다. 팀원 메시지의 reply_channel·discord_message_id·received_at 과
-    봇 메시지의 dm_*·claimed_at·scheduled_at 은 보낸 쪽에 따라 한쪽만 채운다.
+    나가는 메시지의 dm_*·claimed_at 은 보낸 쪽에 따라 한쪽만 채운다. scheduled_at 은 묶음에만 있다.
     """
 
     __tablename__ = "thread_message"
@@ -891,8 +908,16 @@ class ThreadMessage(Base):
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     dm_reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    author_member_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
+    )
 
     thread: Mapped["MessageThread"] = relationship()
+    author: Mapped["Member | None"] = relationship()
+
+    @property
+    def author_name(self) -> str | None:
+        return self.author.display_name if self.author else None
 
 
 class MessageThreadRead(Base):
