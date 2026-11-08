@@ -4,6 +4,8 @@
 
 2026-11-09, [#575](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/575)의 확정 정책을 구현하기 위한 첫 준비 단위다. 다른 구성원이 남은 공동 기록은 보존하면서 탈퇴자의 이름·개인 연결을 지워야 한다. 이 기록은 계정 탈퇴 API나 개인정보 전체 정리가 완료됐다는 뜻이 아니다.
 
+이 문서는 초기 선택의 근거를 보존한다. 이어서 구현한 계정 트랜잭션·정리 영수증·실패 대응의 선택은 [전체 정리 프로토콜 결정](2026-11-09-withdrawal-cleanup-protocol.md)에 있다.
+
 기존 Member는 권한·프로필·작성자 참조를 함께 맡는다. User만 지우면 Member 프로필이 남고, Member를 물리 삭제하면 MessageThread의 CASCADE로 공동 대화가 사라진다. 기존 is_deleted는 명단 비활성화이며 이름·Discord ID를 이력용으로 남긴다.
 
 ## 검토한 두 선택지

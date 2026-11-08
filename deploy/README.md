@@ -81,3 +81,15 @@ docker compose -f backend/docker-compose.prod.yml run --rm --no-deps \
 출력 계획을 확인하고 writer를 실제로 중지한 뒤에만 같은 명령에 `--apply --writers-stopped`를 추가한다. `--writers-stopped`는 운영자의 확인 표시이며 프로세스 중단을 검사하거나 실행하는 옵션이 아니다. CLI는 적용 전 manifest 목록·해시와 DB 관계를 재검증하고 하나의 트랜잭션으로 반영한다.
 
 API 형식과 오류는 [FE 계약](../frontend/docs/contracts/frontend-api-contract.md#회의-삭제와-보존-태스크-576-2026-11-09), 봇 파일 정리는 [BE·AI 계약](../backend/docs/contracts/backend-ai-contract.md#명시적-회의-삭제와-재처리-계보-576-2026-11-09)에 있다.
+
+## 계정 탈퇴와 정리 작업 (#575)
+
+계정 탈퇴는 계정·세션 삭제와 파일·AI 정리 확인을 분리한다. AI가 중단돼 있으면 계정 이용은 종료되지만 화면은 `개인정보 정리 중`이다. backend와 AI가 모두 확인한 뒤 `탈퇴 완료`가 된다. 재가입은 정리 대기 중에도 새 계정으로 허용하며 이전 역할·초대를 복원하지 않는다.
+
+`MEETING_DELETION_ENABLED`는 일반 회의 삭제의 gate이며 계정 탈퇴의 조건이 아니다. 계정 탈퇴에는 별도 기본 off 플래그를 추가하지 않았다. BE와 AI를 같은 개인정보 정리 계약으로 배포하고, 녹음 중 재시작을 건너뛴 경우에는 새 AI 워커가 실제 가동했는지 확인한다. 이전 AI는 세대가 바뀐 공간에 쓸 수 없고, 새 정리 워커가 없으면 AI 완료가 대기한다.
+
+backend 파일 재시도는 `MEETING_PURGE_INTERVAL_SECONDS`의 기존 워커가 수행한다. 기본값은 10초이며 0 이하는 정지다. AI는 `/bot/privacy-cleanups`의 120초 임대로 실제 파일·캐시를 정리한 뒤 ack한다. 상태 확인 때 `privacy_cleanup`의 backend_done_at·ai_done_at·attempts·lease_until·last_error_code와 AI 워커 로그를 함께 본다. backend 저장소 오류는 다음 주기에 재시도하며, AI 소유 관계가 불명확한 legacy 자료는 추정 삭제하거나 완료로 바꾸지 않는다. 다른 활성 manifest writer 때문에 AI 정리가 대기할 수도 있다.
+
+처리 중·완료 작업에서 원문 토큰·이름·개인 Discord ID를 운영 로그나 정리 큐에 추가하지 않는다. guild ID는 과거 녹음 탐색용 공동 리소스 selector이며 AI 확인 후 제거한다. 원격 호스팅 diarizer 보관·삭제와 이미 게시된 Notion·Discord 결과 처리는 별도 확인 범위다.
+
+탈퇴로 지운 계정과 단독 공간 데이터는 스키마 downgrade로 복구되지 않는다. 최초 탈퇴 이후에는 개인정보 세대·삭제 표식을 무시하는 옛 BE·AI writer로 되돌리지 않는다. 되돌림이 필요하면 같은 정리 계약과 표식을 이해하는 호환 버전을 사용하고 대기 작업을 유지한다. 이 절의 운영 배포·되돌림·실제 계정 삭제는 이번 로컬 검증에서 실행하지 않았다.

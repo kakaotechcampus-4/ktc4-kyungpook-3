@@ -9,7 +9,7 @@
 - [문서 안내](docs/README.md): 문서 구조와 기존 문서 배치.
 - 계약: [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md), 웹 화면용은 [프론트엔드 대표 계약](../frontend/docs/contracts/frontend-api-contract.md).
 - 계획: [전체 계획](docs/plan/backend-plan.md), [M0~M7 안내](docs/plan/README.md). 마일스톤별 plan.md는 아직 비어 있다. 진행 상태는 전체 계획의 마일스톤 개요(2026-10-02 기준)를 따른다.
-- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M1](docs/plan/m1/result.md)(가입 인증·카카오 로그인 PR 최신 기반 검증, 영구 탈퇴 익명 주체와 PM 이전 준비 #575), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M3](docs/plan/m3/result.md)(추출 근거·담당자 별칭 #459, 회의 원문 삭제와 태스크 보존 #576), [M5](docs/plan/m5/result.md)(녹음 업로드 저장과 AI 가져가기 API, AI 경로 미구현), [M6](docs/plan/m6/result.md)(AI 처리 단계 보고와 진행 표시 #381, 답장 담당자 변경 승인 #460, 승인 대기 요청 유사 검색과 합치기 #141, 메시지 탭 읽지 않은 수 #480, 범위 변경 승인 이력 #205), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서). 모두 마일스톤 완료를 판정하지 않았다.
+- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M1](docs/plan/m1/result.md)(가입 인증·카카오 로그인 PR 최신 기반 검증, 계정 탈퇴·공동 기록 익명화·파일 정리 #575), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M3](docs/plan/m3/result.md)(추출 근거·담당자 별칭 #459, 회의 원문 삭제와 태스크 보존 #576), [M5](docs/plan/m5/result.md)(녹음 업로드 저장과 AI 가져가기 API, AI 경로 미구현), [M6](docs/plan/m6/result.md)(AI 처리 단계 보고와 진행 표시 #381, 답장 담당자 변경 승인 #460, 승인 대기 요청 유사 검색과 합치기 #141, 메시지 탭 읽지 않은 수 #480, 범위 변경 승인 이력 #205), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서). 모두 마일스톤 완료를 판정하지 않았다.
 - 배포: [배포 안내](../deploy/README.md). 요청: [녹음 시작 때 배포 재시작 잠금 확인](docs/requests/bot-restart-lock.md)(AI).
 
 ## 실행
@@ -123,6 +123,8 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `TASK_HISTORY_ALREADY_ROLLED_BACK` | 409 | 이미 되돌린 변경을 다시 되돌리려 함 |
 | `AUTO_TASK_NOT_REVERTIBLE` | 409 | auto로 만든 태스크를 되돌릴 수 없음. `details.reason`: `already_reverted`(이미 되돌림) · `not_auto_created`(auto로 만든 항목이 아님) · `task_missing`(태스크가 없음) · `task_changed`(만든 뒤 바뀜, `details.task_version`) · `pending_approval`(그 태스크의 처리 대기 승인 요청이 있음, `details.approval_id`). 태스크를 직접 고친다 |
 | `LAST_PM_REQUIRED` | 409 | 워크스페이스의 마지막 PM(로그인 계정이 있는 PM)을 member로 내리려 함. 다른 팀원을 먼저 PM으로 지정해야 함 |
+| `WITHDRAWAL_ACCOUNT_CHANGED` | 409 | 탈퇴 요청이 가리킨 계정과 현재 쿠키 계정이 다름. 어느 계정도 삭제하지 않음 |
+| `PRIVACY_VERSION_CHANGED` | 409 | 서비스 쓰기의 명단 세대가 현재 공간과 다름. 이전 계산 결과를 새 세대로 바꿔 재전송하지 않음 |
 | `REMINDER_NOT_EDITABLE` | 409 | 예정 상태가 아닌 리마인드·묶음을 고치거나 승인하거나 취소하려 함. `details`에 `reminder_id` 또는 `bundle_id`와 `status` |
 | `REMINDER_SCHEDULED_AT_PASSED` | 409 | 지난 시각으로 만들거나 고치거나, 시각이 지난 묶음을 승인하려 함 |
 | `BUNDLE_CHANGED` | 409 | PM 이 본 뒤 묶음 문구나 구성이 바뀌어 승인하지 않음. `details.bundle_id`, `details.draft_version`(지금 판) |

@@ -1,5 +1,44 @@
 # 프론트엔드 API 계약
 
+## 계정 탈퇴와 정리 상태 (#575, 2026-11-09)
+
+### 합의 상태
+
+사용자는 계정·세션과 개인 연결·프로필·별칭을 삭제하고, 다른 구성원이 남은 공동 기록은 `탈퇴한 사용자`로 보존하도록 확정했다. 마지막 PM은 권한 이전이 필요하며 유일한 활성 멤버인 공간은 기록과 함께 삭제한다. 같은 이메일·카카오로 즉시 새 계정을 만들 수 있지만 새 초대가 필요하다. AI 정리 지연 중에는 `개인정보 정리 중`, 실제 정리 확인 후에는 `탈퇴 완료`를 표시한다. 취소 유예기간은 없다.
+
+아래 HTTP 형식은 생산자·소비자를 함께 구현한 현재 규약이다. 코드·격리 검증과 운영 배포를 구분하며, 별도 파트 합의나 법률 검토를 추정하지 않는다.
+
+### 요청과 응답
+
+경로는 `/api/v1` 기준이며 기존 `{data, error}` 봉투를 사용한다.
+
+| 요청 | 권한·헤더와 동작 |
+|---|---|
+| `GET /auth/withdrawal-plan` | 본인 세션. `workspaces[{workspace_id,workspace_name,disposition}]`, `blocked_workspace_ids` 반환. disposition은 preserve, delete, transfer_pm |
+| `DELETE /auth/me` | 최초 요청은 본인 세션과 `X-Withdrawal-Key`, `X-Withdrawal-Account-ID` 필요. 실제 쿠키 계정과 expected ID를 비교하고 모든 공간 조건을 잠금 안에서 다시 검사. 성공 202 |
+| `GET /auth/withdrawals/{withdrawal_id}` | 같은 `X-Withdrawal-Key`의 소지로 자기 영수증을 200 조회. 삭제된 세션을 요구하지 않음 |
+
+DELETE와 영수증의 `data`는 `{withdrawal_id,account_deleted_at,cleanup_status}`다. account_deleted_at는 UTC 시각이며 cleanup_status는 pending 또는 complete다. User·세션·푸시·프로필 정리는 계정 트랜잭션에서 끝내고, backend와 AI 파일 정리의 실제 확인은 영수증 상태로 구분한다.
+
+FE는 crypto.getRandomValues로 만든 256비트 키를 sessionStorage에 보관한다. API는 영문·숫자·밑줄·하이픈 32~128자 형식을 받으며 원문 대신 SHA-256만 저장한다. 같은 키의 성공 재시도는 같은 영수증을 반환한다. 이전 영수증을 새 계정 로그인 뒤 다시 조회하거나 DELETE로 재요청해도 새 계정이나 그 쿠키는 지우지 않는다.
+
+| 오류 | 의미 |
+|---|---|
+| 400 `INVALID_REQUEST` | 키 누락·형식 오류 또는 최초 요청의 expected 계정 ID 누락 |
+| 401 `UNAUTHENTICATED` | 최초 요청의 세션이 없거나 만료됨. 영수증 ID·키가 맞지 않음 |
+| 409 `WITHDRAWAL_ACCOUNT_CHANGED` | 최초 요청의 쿠키 계정과 expected 계정 ID가 다름. 어느 계정도 변경하지 않음 |
+| 409 `LAST_PM_REQUIRED` | 다른 로그인 가능한 PM이 없는 공유 공간이 있음. `details.workspace_ids` 반환. 어느 공간도 부분 처리하지 않음 |
+
+계정이 없는 활성 Discord 팀원도 단독 멤버 판정에 포함한다. 계획은 예약·승인 토큰이 아니며 실제 명령이 재검사한다. FE는 `/account/withdrawal`에서 계획·PM 이전 링크·삭제 범위 확인·명령·응답 유실 재시도·정리 영수증을 표시한다. 성공 전에 브라우저 푸시 구독을 먼저 해제하지 않는다. 서버 성공 후 이전 사용자 캐시와 해당 브라우저 구독을 정리하며 다른 로그인 세대로 바뀌었으면 새 계정의 상태를 바꾸지 않는다.
+
+### 익명 기록과 범위
+
+`GET /members?workspace_id=...`의 기본 목록은 활성 팀원이다. `include_withdrawn=true`를 명시하면 영구 탈퇴의 비식별 Member도 포함한다. 기존 명단 비활성화만 된 Member는 이 옵션으로 복원하지 않는다. FE는 별도 기록용 query를 태스크·이력·승인·화자 표시에서만 사용하며 새 담당자 선택·팀 카드·초대·재촉에는 활성 목록을 사용한다.
+
+영구 탈퇴자의 대화는 PM 목록·상세·읽음에 남는다. 팀원 발신 이름은 thread.name, PM 발신 이름은 author_name의 기존 규약으로 익명 표시한다. 기존 is_deleted만 있는 명단 비활성화의 상세 200·unread 0·읽음 POST 404는 유지한다. 새 발송·프로필 수정·초대와 늦은 봇 결과로 영구 탈퇴 주체를 되살리지 않는다.
+
+정확한 소유 관계로 확인되는 구조화 이름·별칭·외부 ID와 로컬 AI 사본을 정리한다. 공동 음성·본문 전체를 임의로 익명화하거나 이미 게시된 Notion·Discord 결과를 회수했다는 뜻은 아니다. 과거 AI 자료의 소유 근거가 없어 안전하게 정리할 수 없으면 pending으로 남기며 완료를 먼저 표시하지 않는다. 파일·AI 작업 계약은 [BE 대표 계약](../../../backend/docs/contracts/backend-ai-contract.md)에 있다.
+
 ## 회의 삭제와 보존 태스크 (#576, 2026-11-09)
 
 ### 합의 상태
@@ -433,9 +472,9 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 {"alias_text": "민수", "occurrences": 3, "last_seen_at": "2026-09-15T06:00:00Z"}
 ```
 
-2026-11-09 현재 작업 트리의 #575 준비 구현은 `MemberResponse.has_login_account: boolean`을 추가한다. 활성 팀원에 로그인 계정이 연결됐는지 나타내며 User ID는 반환하지 않는다. FE는 `hasLoginAccount`로 옮기고, PM에게 로그인 연결된 일반 팀원의 `PM 권한 부여`를 제공한다. 기존 `PATCH /members/{id}`의 `{role:"pm"}`를 사용하며 기존 PM의 권한은 유지한다. 대기 초대의 `MEMBER_HAS_PENDING_INVITATION` 등 서버 오류는 그대로 따른다. 생산자·소비자 코드를 함께 변경한 현재 구현이며, 별도 파트 합의·병합·배포 완료 기록은 아니다.
+2026-11-09 #575 구현은 `MemberResponse.has_login_account: boolean`을 추가한다. 활성 팀원에 로그인 계정이 연결됐는지 나타내며 User ID는 반환하지 않는다. FE는 `hasLoginAccount`로 옮기고, PM에게 로그인 연결된 일반 팀원의 `PM 권한 부여`를 제공한다. 기존 `PATCH /members/{id}`의 `{role:"pm"}`를 사용하며 기존 PM의 권한은 유지한다. 대기 초대의 `MEMBER_HAS_PENDING_INVITATION` 등 서버 오류는 그대로 따른다. 생산자·소비자 코드를 함께 변경한 현재 구현이며, 별도 파트 합의·병합·배포 완료 기록은 아니다.
 
-같은 준비 구현은 계정 영구 탈퇴용 익명 기록 주체를 기존 명단 비활성화와 구분한다. 영구 탈퇴자의 대화는 PM 목록·상세·읽음에 남고 표시명은 `탈퇴한 사용자`, `web_reply_available`은 false다. 프로필 수정·별칭 추가·초대·새 발송과 늦은 봇 결과는 거절한다. 기존 `is_deleted`만 있는 명단 비활성화의 unread 0·읽음 POST 404는 유지한다. [새 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-09-withdrawn-record-actor.md)에 범위를 기록했다. 이 준비 단위에는 본인 탈퇴 API나 계정 삭제 화면이 없으며, 개인정보 전체 정리·재가입 검증이 완료됐다는 뜻은 아니다. 로컬 API 회귀와 MSW Chromium PM 승격·새로고침 여정을 확인했고 PostgreSQL 경합·실제 외부 연동은 미검증이다.
+계정 영구 탈퇴용 익명 기록 주체는 기존 명단 비활성화와 구분한다. 영구 탈퇴자의 대화는 PM 목록·상세·읽음에 남고 표시명은 `탈퇴한 사용자`, `web_reply_available`은 false다. 프로필 수정·별칭 추가·초대·새 발송과 늦은 봇 결과는 거절한다. 기존 `is_deleted`만 있는 명단 비활성화의 unread 0·읽음 POST 404는 유지한다. [익명 주체 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-09-withdrawn-record-actor.md)에 첫 구현의 범위를 기록했고, 본인 탈퇴 API·화면과 기록용 목록은 위 [계정 탈퇴 규약](#계정-탈퇴와-정리-상태-575-2026-11-09)을 따른다. 실제 외부 제공자·운영 계정의 삭제를 확인한 기록은 아니다.
 
 - `alias_type` 은 `realname` \| `nickname` \| `mention` \| `inferred`, `source` 는 `manual` \| `discord_profile` \| `learned` \| `display_name`.
   **2026-11-08 코드 대조(#523, BE #463·#464):** `display_name` 은 서버가 팀원 이름과 성 뗀 이름으로 자동으로 넣는 별칭이다(확인됨, 1.0). 이름을 바꾸면 옛 이름에서 만든 `display_name` 별칭만 지워진다. 한글 디스코드 닉네임은 `discord_profile`(미확인, 0.8)로 들어간다. `learned` 는 PM 이 승인하며 배운 별칭이다(§2.5 「승인 때 별칭 학습」).
