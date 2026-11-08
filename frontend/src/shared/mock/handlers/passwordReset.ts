@@ -1,7 +1,7 @@
 import { http } from 'msw'
 import { z } from 'zod'
 import { paths } from '@/shared/config/routes'
-import { db } from '../db'
+import { db, loginLimitKey } from '../db'
 import type { MockResetToken } from '../db'
 import { fail, ok } from '../envelope'
 
@@ -143,6 +143,8 @@ export const passwordResetHandlers = [
     row.status = 'used'
     const account = db.accounts.find(({ session }) => session.user.email === row.email)
     if (account) account.password = newPassword
+    // BE login_limit.clear_email. 재설정을 마치면 그 이메일의 로그인 막힘이 풀린다 (#457)
+    delete db.loginLimit[loginLimitKey(row.email)]
     // 서버가 그 계정의 세션을 모두 끊는다. 다른 계정으로 로그인한 세션은 그대로다
     if (db.authenticated && db.session.user.email === row.email) db.authenticated = false
     return ok({})

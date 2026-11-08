@@ -12,11 +12,7 @@ import type { RecordedRequest, RequestLog } from '@/shared/test/requests'
 import { integrationsQueryOptions } from '@/entities/integration'
 import { deferred } from '@/shared/test/deferred'
 import { expireSession } from './expireSession'
-import { seenDashboardIntro } from './test/firstVisitIntro'
 import { renderApp } from './test/renderApp'
-
-// 온보딩을 마치면 첫 대시보드에 인트로가 뜬다(#430). 이 파일은 그 뒤 대시보드를 본다
-beforeEach(() => seenDashboardIntro())
 
 /* U3-3·U3-4·U3-5. 현재 탭 이동은 jsdom 이 못 하므로 leaveApp 만 바꿔 끼워 주소를 본다 */
 vi.mock('@/shared/lib/location', () => ({ leaveApp: vi.fn() }))
@@ -201,6 +197,18 @@ describe('Discord·Notion 연결 (U3-3)', () => {
     const url = new URL(vi.mocked(leaveApp).mock.calls[0][0], location.origin)
     expect(url.pathname).toBe('/api/v1/workspaces/ws_03/integrations/notion/start')
     expect(url.searchParams.get('state')).toBe('/onboarding/ws_03/connect_notion')
+  })
+
+  it('Notion 단계는 선택임을 알리고 건너뛸 수 있다 (D-182)', async () => {
+    atNotion('completed')
+    renderApp('/onboarding/ws_03/connect_notion')
+    expect(
+      await screen.findByText(
+        '노션은 꼭 연결하지 않아도 돼요. 연결하면 승인한 태스크가 노션에도 올라가요.',
+      ),
+    ).toBeInTheDocument()
+    const card = await screen.findByRole('region', { name: '노션 연동' })
+    expect(await within(card).findByRole('button', { name: '건너뛰기' })).toBeEnabled()
   })
 
   it('Notion 복귀 확인에서 준비 중(connecting)이면 기다렸다가, connected 가 되면 팀원 연결 단계로 간다 (#204)', async () => {
@@ -462,7 +470,12 @@ describe('복귀 확인이 늦게 끝날 때', () => {
     const pm = db.members.find(({ workspace_id }) => workspace_id === 'ws_03')!
     db.members.push({ ...pm, member_id: 'mb_91', workspace_id: 'ws_04' })
     db.integrations.ws_04 = {
-      discord: { status: 'not_connected', display_name: null, connected_at: null },
+      discord: {
+        status: 'not_connected',
+        display_name: null,
+        connected_at: null,
+        chat_channel: null,
+      },
       notion: { status: 'not_connected', display_name: null, connected_at: null },
     }
     db.accounts[0].workspaceIds.push('ws_04')

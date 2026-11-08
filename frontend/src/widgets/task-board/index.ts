@@ -1,5 +1,4 @@
 export { TaskBoard } from './ui/TaskBoard'
-export type { TaskBoardProps } from './ui/TaskBoard'
 export {
   BOARD_PARAMS,
   DUE_CONDITIONS,
@@ -18,13 +17,7 @@ export type {
   DueCondition,
   TaskBoard as TaskBoardModel,
 } from './lib/taskBoard'
-export {
-  DEFAULT_VIEW_QUERY,
-  TASK_VIEWS,
-  VIEW_PARAMS,
-  readViewQuery,
-  viewSearch,
-} from './lib/taskViews'
+export { TASK_VIEWS, VIEW_PARAMS, readViewQuery, viewSearch } from './lib/taskViews'
 export type { BoardPeriod, TaskView, ViewQuery } from './lib/taskViews'
 export { TASK_SORTS, sortTasks } from './lib/taskSort'
 export type { TaskSort } from './lib/taskSort'

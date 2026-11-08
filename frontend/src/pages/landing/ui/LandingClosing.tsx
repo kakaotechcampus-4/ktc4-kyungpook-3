@@ -1,5 +1,3 @@
-import { paths } from '@/shared/config/routes'
-import { StartLink } from './StartLink'
 import { BrandMark } from '@/shared/ui/brand-mark'
 import { Button } from '@/shared/ui/button'
 import {
@@ -10,6 +8,7 @@ import {
   SECTION_TITLE,
   TEXT_WIDTH,
 } from './styles'
+import { StartLink } from './StartLink'
 
 /** 마지막 CTA. `시작하기` → 로그인 (D-003). `문의하기` 는 창구가 아직 없어 비활성이다 */
 export function FinalCta() {
@@ -21,9 +20,7 @@ export function FinalCta() {
         돼요.
       </p>
       <div className="flex items-center gap-10 pt-8">
-        <StartLink to={paths.login()} className={`${LINK_PRIMARY} ${HERO_SIZE}`}>
-          시작하기
-        </StartLink>
+        <StartLink className={`${LINK_PRIMARY} ${HERO_SIZE}`}>시작하기</StartLink>
         <Button size="landing-hero" aria-disabled="true">
           문의하기
         </Button>

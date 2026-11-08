@@ -42,12 +42,12 @@ describe('업로드 실패 분류 (U3-8, U3-10)', () => {
     })
   })
 
-  it.each([
-    ['INTEGRATION_NOT_CONNECTED', 'not_connected'],
-    ['INTEGRATION_REVOKED', 'revoked'],
-  ])('%s 는 차단 흐름(%s)이다', (code, reason) => {
-    expect(classifyUploadError(http(code, 409))).toEqual({ kind: 'blocked', reason })
-  })
+  it.each(['INTEGRATION_NOT_CONNECTED', 'INTEGRATION_REVOKED'])(
+    '%s 는 차단 흐름이 아니라 폼 오류다 — 업로드는 Notion 을 요구하지 않는다 (D-182)',
+    (code) => {
+      expect(classifyUploadError(http(code, 409))).toMatchObject({ kind: 'form' })
+    },
+  )
 
   it('413 은 파일 칸에 화면 한도와 같은 문구로 알린다', () => {
     expect(classifyUploadError(http('AUDIO_TOO_LARGE', 413))).toEqual({

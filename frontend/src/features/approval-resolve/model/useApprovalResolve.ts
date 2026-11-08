@@ -75,7 +75,8 @@ export interface ApprovalResolve {
   editCreate: (edits: TaskCreateEdits) => void
   editUpdate: (edits: TaskUpdateEdits) => void
   invalidateConfirmation: () => void
-  approve: (approval: Approval) => void
+  /** `edits` 를 주면 그 값을 보낸다 — 화면이 고친 값을 직접 쥐는 경우(확인 필요 상세). 없으면 `draft` 다 */
+  approve: (approval: Approval, edits?: ApprovalEdits | null) => void
   reapprove: (approval: Approval) => void
   reject: (approval: Approval) => void
   pending: boolean
@@ -157,7 +158,11 @@ export function useApprovalResolve(
   )
 
   const resolve = useCallback(
-    (approval: Approval, decision: ApprovalDecision, confirm = false) => {
+    (
+      approval: Approval,
+      decision: ApprovalDecision,
+      { confirm = false, given }: { confirm?: boolean; given?: ApprovalEdits | null } = {},
+    ) => {
       if (
         queryClient.isMutating({
           mutationKey: approvalResolveMutationKey(workspaceId, approvalId),
@@ -167,7 +172,11 @@ export function useApprovalResolve(
       const problem = toApprovalResolveProblem(error)
       if (confirm && (problem?.kind !== 'conflict' || variables?.revision !== revision.current))
         return
-      const edits = confirm ? (variables?.edits ?? null) : draftRef.current
+      const edits = confirm
+        ? (variables?.edits ?? null)
+        : given === undefined
+          ? draftRef.current
+          : given
       mutate({
         approval,
         decision,
@@ -192,8 +201,8 @@ export function useApprovalResolve(
     editCreate: (edits) => edit({ kind: 'task_create', values: edits }),
     editUpdate: (edits) => edit({ kind: 'task_update', values: edits }),
     invalidateConfirmation,
-    approve: (approval) => resolve(approval, 'approved'),
-    reapprove: (approval) => resolve(approval, 'approved', true),
+    approve: (approval, edits) => resolve(approval, 'approved', { given: edits }),
+    reapprove: (approval) => resolve(approval, 'approved', { confirm: true }),
     reject: (approval) => resolve(approval, 'rejected'),
     pending: isPending || inFlight,
     pendingDecision: isPending ? (variables?.decision ?? null) : null,

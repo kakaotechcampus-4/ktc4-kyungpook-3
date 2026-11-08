@@ -9,6 +9,7 @@ import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
 import { businessRequests, recordRequests } from '@/shared/test/requests'
+import { onTestFinished } from 'vitest'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -180,6 +181,30 @@ describe('팀 화면 — PM', () => {
     expect(dialog.getByLabelText('@jihun_dev의 팀원 이름')).toHaveValue('최지훈')
   })
 
+  it('팀원을 받는 동안 제목과 기다림 표시를 그리고 팀원 영역은 아직 없다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get('/api/v1/members', async () => {
+        await gate.promise
+        return undefined
+      }),
+    )
+    renderApp(TEAM)
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(screen.getByRole('main').querySelector('[aria-busy="true"]')).not.toBeNull()
+    expect(screen.queryByRole('region', { name: '김서연' })).toBeNull()
+  })
+
+  it('팀원 조회가 실패하면 본문에 다시 시도를 보이고 연결되지 않은 계정 영역은 그리지 않는다', async () => {
+    server.use(
+      http.get('/api/v1/members', () => fail('FORBIDDEN', 'Forbidden: member check failed', 403)),
+    )
+    renderApp(TEAM)
+    expect(await screen.findByRole('button', { name: '다시 시도' })).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: '연결되지 않은 계정' })).toBeNull()
+  })
+
   it('팀원 조회가 실패하면 창도 뼈대에 머물지 않고 오류·다시 시도·닫기를 보인다', async () => {
     const user = userEvent.setup()
     server.use(
@@ -221,6 +246,23 @@ describe('팀 화면 — Discord 를 건너뛴 공간', () => {
   })
 })
 
+describe('팀 화면 — Discord 를 연결하지 않은 공간의 일반 팀원', () => {
+  beforeEach(() => {
+    applyScenario('settings-member')
+  })
+
+  it('연결되지 않은 계정 영역은 Discord 미연결만 알리고 설정으로 가는 링크가 없다. `팀원 관리` 도 없다', async () => {
+    renderApp(TEAM)
+    expect(await screen.findByRole('region', { name: '김서연' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '팀원 관리' })).toBeNull()
+    const area = await unlinkedArea()
+    expect(
+      await area.findByText('Discord를 연결하지 않아 서버의 계정을 불러올 수 없어요.'),
+    ).toBeInTheDocument()
+    expect(area.queryByRole('link')).toBeNull()
+  })
+})
+
 describe('팀 화면 — 일반 팀원', () => {
   beforeEach(() => {
     applyScenario('settings-member')
@@ -228,6 +270,7 @@ describe('팀 화면 — 일반 팀원', () => {
       status: 'connected',
       display_name: '카테캠 3팀 서버',
       connected_at: '2026-09-01T00:00:00Z',
+      chat_channel: null,
     }
   })
 
@@ -245,6 +288,8 @@ describe('팀 화면 — 일반 팀원', () => {
     const log = recordRequests()
     renderApp(TEAM)
     expect(await screen.findByRole('heading', { name: '앞으로 7일' })).toBeInTheDocument()
+    // 팀원 목록은 로딩 자리의 최소 표시가 끝난 뒤 그려진다 (#508)
+    await screen.findByRole('region', { name: '김서연' })
     for (const name of ['김서연', '박민수', '이재환', '정하늘'])
       expect(
         within(screen.getByRole('region', { name })).queryByRole('button', {
@@ -253,6 +298,23 @@ describe('팀 화면 — 일반 팀원', () => {
         name,
       ).toBeNull()
     expect(log.started.filter(({ path }) => path.includes('/invitations'))).toEqual([])
+  })
+})
+
+describe('팀 화면 — 서울 오늘에 기대는 카드', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(MOCK_NOW))
+    applyScenario('settings-unmapped')
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('PM 은 `먼저 챙길 것` 카드를 보고, 앞으로 7일은 오늘 칸에 `오늘` 을 적는다', async () => {
+    renderApp(TEAM)
+    expect(await screen.findByRole('region', { name: '먼저 챙길 것' })).toBeInTheDocument()
+    const week = screen.getByRole('region', { name: '앞으로 7일' })
+    const todayCell = within(week).getByText('오늘').closest('li')
+    expect(todayCell?.querySelector('time')).toHaveAttribute('dateTime', '2026-09-18')
   })
 })
 

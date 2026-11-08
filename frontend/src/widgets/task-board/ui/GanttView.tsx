@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { TaskCreateApproval } from '@/entities/approval'
 import type { Member } from '@/entities/member'
 import type { Task } from '@/entities/task'
@@ -13,23 +13,19 @@ import {
   daysBetween,
   ganttDays,
   ganttTitle,
-  weekOfMonth,
   shortDate,
   taskTone,
 } from '../lib/taskViews'
 import type { TaskTone } from '../lib/taskViews'
 import { groupRows } from '../lib/ganttGroups'
 import type { Group } from '../lib/ganttGroups'
-import { Avatar, HorizontalScroll, LegendItem, RangeHeader } from './viewParts'
+import { GANTT_GRID, GANTT_LABEL_WIDTH, GANTT_TABLE_MIN_WIDTH, weekLabel } from './ganttLayout'
+import { Avatar, GanttLegend, HorizontalScroll, RangeHeader } from './viewParts'
 
-const LABEL_WIDTH = 252
-/* 날짜 칸은 시안 셸 폭(본문 1264px)에서의 칸 폭 48px 아래로 줄이지 않는다. 1024px 에서 균등 분할(32px)은 막대 라벨 잘림을
-   3건으로 늘렸다(1440px·1920px 1건, tasks-default 실측). 그보다 좁은 영역에서는 표 영역 안에서 가로로 민다 (D-124) */
-const DAY_MIN_WIDTH = 48
-const TABLE_MIN_WIDTH = LABEL_WIDTH + GANTT_DAYS * DAY_MIN_WIDTH + 2
-const GRID: CSSProperties = {
-  gridTemplateColumns: `repeat(${GANTT_DAYS}, minmax(${DAY_MIN_WIDTH}px, 1fr))`,
-}
+/* 표 틀(이름 칸 · 날짜 칸 최소 폭 · 표 최소 폭)은 뼈대와 같이 쓴다 (ganttLayout) */
+const LABEL_WIDTH = GANTT_LABEL_WIDTH
+const TABLE_MIN_WIDTH = GANTT_TABLE_MIN_WIDTH
+const GRID = GANTT_GRID
 /* 표의 열은 왼쪽 `담당자 · 태스크` 하나와 주 셋이다. 줄마다 왼쪽은 줄 머리, 오른쪽 날짜 칸은 주 셋에 걸친 칸 하나다 */
 const WEEK_COLUMNS = GANTT_DAYS / 7
 const BAR_BASE =
@@ -94,14 +90,7 @@ export function GanttView({
         nextLabel="다음 3주"
         onPrev={() => onFromChange(addDays(from, -GANTT_DAYS))}
         onNext={() => onFromChange(addDays(from, GANTT_DAYS))}
-        legend={
-          <>
-            <LegendItem swatch="bg-ink">진행 중</LegendItem>
-            <LegendItem swatch="border border-line-strong bg-surface">시작 전</LegendItem>
-            <LegendItem swatch="bg-surface-sunken">완료</LegendItem>
-            <LegendItem swatch="border-2 border-dashed bg-surface">확인 필요</LegendItem>
-          </>
-        }
+        legend={<GanttLegend />}
       />
       {emptyWindow ? (
         <p className="text-caption text-dim">
@@ -117,8 +106,8 @@ export function GanttView({
           className="relative overflow-hidden rounded-16 border border-line bg-surface"
           style={{ minWidth: TABLE_MIN_WIDTH }}
         >
-          {/* 주말 음영·오늘 선. `inset-0`·`top-0` 은 쓰지 않는다 — tokens.css 가 동적 간격 스케일을 꺼서 `*-0` 유틸이
-              생성되지 않아, 이 층이 높이 0 으로 접혀 보이지 않았다 (Modal 과 같은 까닭, m4 결정 2026-09-29-modal-inset-zero) */}
+          {/* 주말 음영·오늘 선. `inset-[0px]`·`top-[0px]` 은 `*-0` 유틸이 생성되지 않던 때(#497 전)의 값이다.
+              그때 이 층이 높이 0 으로 접혀 보이지 않았다 (Modal 과 같은 까닭, m4 결정 2026-09-29-modal-inset-zero) */}
           <div aria-hidden="true" className="absolute inset-[0px] z-0 flex">
             <div style={{ flex: `0 0 ${LABEL_WIDTH}px` }} />
             <div className="relative grid flex-1" style={GRID}>
@@ -230,9 +219,6 @@ export function GanttView({
 }
 
 /** `9월 2주` — 그 주 월요일이 든 달의 몇째 주 */
-function weekLabel(monday: string): string {
-  return `${Number(monday.slice(5, 7))}월 ${weekOfMonth(monday)}주`
-}
 
 function GroupRows({
   workspaceId,

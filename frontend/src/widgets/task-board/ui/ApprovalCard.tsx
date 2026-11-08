@@ -14,7 +14,7 @@ import type {
 } from '@/entities/approval'
 import { evidenceMoment } from '@/entities/meeting'
 import type { MeetingSummary } from '@/entities/meeting'
-import { speakerName } from '@/entities/member'
+import { ASSIGNEE_NONE_OPTION, assigneeOptions, speakerName } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { useApprovalResolve } from '@/features/approval-resolve'
 import type { ApprovalResolve } from '@/features/approval-resolve'
@@ -25,6 +25,7 @@ import { Card } from '@/shared/ui/card'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { Icon } from '@/shared/ui/icon'
 import { Label } from '@/shared/ui/label'
+import { Select } from '@/shared/ui/select'
 import { TextField } from '@/shared/ui/text-field'
 
 /* 시안의 `지금 봐야 하는 카드` 그림자 — 0 8px 24px rgba(23,23,23,.2). 토큰에 그림자가 없어 값을 그대로 쓴다 */
@@ -40,8 +41,6 @@ const MEETING_LINK =
   'inline-flex shrink-0 items-center gap-6 text-[12px] text-dim hover:text-ink tabular-nums'
 const REASON = 'text-body text-sub'
 const FIELDS = 'grid grid-cols-[minmax(0px,1.6fr)_minmax(0px,1fr)_minmax(0px,1fr)] gap-12'
-const SELECT =
-  'h-[42px] w-full appearance-none rounded-9 border bg-surface pr-36 pl-13 text-body disabled:border-line disabled:bg-surface-sunken disabled:text-faint'
 const EVIDENCE = 'flex flex-col gap-7 rounded-12 bg-surface-sunken px-20 py-18'
 const EVIDENCE_HEAD = 'flex items-center justify-between gap-12'
 const EVIDENCE_META = 'text-[11px] text-dim tabular-nums'
@@ -294,30 +293,18 @@ function ApprovalFields({ values, issues, members, editable, onChange }: Approva
         <Label htmlFor={assigneeId} blocking={assigneeMissing} className="mb-6">
           {assigneeMissing ? '담당자 — 골라 주세요' : '담당자'}
         </Label>
-        <div className="relative">
-          <select
-            id={assigneeId}
-            className={`${SELECT} ${assigneeMissing ? 'border-accent text-accent-solid focus-visible:outline-accent-point' : 'border-input-border text-ink'}`}
-            aria-invalid={assigneeMissing ? true : undefined}
-            disabled={!editable}
-            value={values.assigneeMemberId ?? ''}
-            onChange={(event) =>
-              onChange({ ...values, assigneeMemberId: event.target.value || null })
-            }
-          >
-            <option value="">미정</option>
-            {members.map(({ id, displayName }) => (
-              <option key={id} value={id}>
-                {displayName}
-              </option>
-            ))}
-          </select>
-          <Icon
-            name="chevron-down"
-            size={14}
-            className="pointer-events-none absolute top-1/2 right-12 -translate-y-1/2 text-dim"
-          />
-        </div>
+        <Select
+          id={assigneeId}
+          label="담당자"
+          value={values.assigneeMemberId}
+          onValueChange={(assigneeMemberId) => onChange({ ...values, assigneeMemberId })}
+          options={assigneeOptions(members, values.assigneeMemberId)}
+          noneOption={ASSIGNEE_NONE_OPTION}
+          placeholder={assigneeMissing ? '담당자 고르기' : undefined}
+          tone={assigneeMissing ? 'blocking' : 'normal'}
+          disabled={!editable}
+          aria-invalid={assigneeMissing}
+        />
       </div>
       <TextField
         label={dueMissing && !dueInvalid ? '마감 — 날짜를 정해 주세요' : '마감'}

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { db } from '@/shared/mock/db'
@@ -79,7 +79,7 @@ it('새로 접속: 로그인 확인을 덮고, 대시보드가 그려지면 카�
   session.resolve()
   expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
   await waitFor(() => expect(status()).toBe('준비됐어요'))
-  await advance(1000)
+  await advance(1700)
 
   expect(overlay()).toBeNull()
   expect(app.container).not.toHaveAttribute('inert')
@@ -114,7 +114,65 @@ it('로그인 직후: 공간 확인부터 덮고, 도착 화면이 그려지면 
   workspaces.resolve()
   expect(await screen.findByRole('heading', { name: '워크스페이스 선택' })).toBeInTheDocument()
   await waitFor(() => expect(status()).toBe('준비됐어요'))
-  await advance(1000)
+  await advance(1700)
   expect(overlay()).toBeNull()
   expect(app.container).not.toHaveAttribute('inert')
+})
+
+/** 로그인 폼의 숨은 제목 — 인증 틀이 표시한 화면 시작점이다. 입력에 두면 다른 곳을 누를 때 빈 칸 검증이 떠 링크가 밀린다 */
+const formStart = () => screen.getByRole('heading', { level: 2, name: '로그인' })
+
+// 2.5초를 20ms 씩 렌더하며 넘긴다. 앱 전체를 띄우는 흐름이라 기본 5초 한도가 빠듯하다
+
+describe('랜딩 `시작하기` 스플래시의 포커스와 안내 (#510)', { timeout: 15_000 }, () => {
+  const HINT = '로그인 화면을 준비하고 있어요. Enter 나 Esc 를 누르면 건너뛰어요.'
+
+  async function pressStartWithEnter() {
+    db.authenticated = false
+    const app = renderApp('/')
+    render(<SplashHost appRoot={app.container} />)
+    const link = within(await screen.findByRole('banner')).getByRole('link', { name: '시작하기' })
+    const user = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) })
+    link.focus()
+    await user.keyboard('{Enter}')
+    return { app, user }
+  }
+
+  it('링크를 Enter 로 누르면 판이 포커스를 받아 건너뛰는 법을 알리고, 걷히기 시작하면 로그인 폼 제목으로 포커스가 간다', async () => {
+    const { app } = await pressStartWithEnter()
+
+    const dialog = screen.getByRole('dialog', { name: "Manager's Manager" })
+    expect(dialog).toHaveFocus()
+    expect(dialog).toHaveAccessibleDescription(HINT)
+    expect(app.container).toHaveAttribute('inert')
+    await app.expectPath('/login')
+
+    // 0.8초 한쪽 보기 + 1.1초 눈웃음 동안 포커스는 판에 있다. 실제 시간도 흘러 사라짐 시작(1.9초)보다 넉넉히 앞에서 본다
+    await advance(1200)
+    expect(dialog).toHaveFocus()
+    expect(app.container).toHaveAttribute('inert')
+
+    // 사라짐(0.6초)이 시작되는 순간 앱을 풀고 포커스를 넘긴다. 실제 시간도 흐르므로 사라짐 도중인지 끝났는지는 보지 않는다
+    await advance(700)
+    await waitFor(() => expect(app.container).not.toHaveAttribute('inert'))
+    expect(formStart()).toHaveFocus()
+
+    await advance(600)
+    expect(overlay()).toBeNull()
+    expect(formStart()).toHaveFocus()
+  })
+
+  it.each(['{Enter}', '{Escape}'])(
+    '%s 로 건너뛰면 바로 걷히고 로그인 폼 제목으로 포커스가 간다',
+    async (key) => {
+      const { app, user } = await pressStartWithEnter()
+      expect(screen.getByRole('dialog', { name: "Manager's Manager" })).toHaveFocus()
+
+      await advance(300)
+      await user.keyboard(key)
+      expect(overlay()).toBeNull()
+      expect(app.container).not.toHaveAttribute('inert')
+      await waitFor(() => expect(formStart()).toHaveFocus())
+    },
+  )
 })

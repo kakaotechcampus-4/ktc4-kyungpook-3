@@ -2,9 +2,16 @@ export {
   getSplashHoldCount,
   holdSplash,
   onSplashShow,
-  setSplashCovering,
   showSplash,
+  showStartSplash,
   subscribeSplashHolds,
-  useSplashCovering,
   useSplashHold,
 } from './splashSignal'
+export type { SplashShowKind } from './splashSignal'
+export {
+  SPLASH_INTERVAL_MS,
+  SPLASH_RECORD_KEY,
+  hasSplashRecord,
+  isSplashDue,
+  markSplashShown,
+} from './splashRecord'

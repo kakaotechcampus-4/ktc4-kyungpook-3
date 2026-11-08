@@ -27,12 +27,14 @@ export type ToastViewportProps = ComponentPropsWithoutRef<typeof ToastPrimitive.
    §7-9 는 전부 제안값이다 — 캔버스 25장에 토스트가 한 개도 없다.
    docs/impl-decision/2026-09-16-toast-has-no-canvas.md */
 
-const VIEWPORT = 'fixed right-24 bottom-24 z-100 flex flex-col gap-8'
+/* 자리(오른쪽 아래 고정)는 GlobalToaster 의 독이 정한다 — 고정 토스트와 한 줄로 쌓으려고 여기서는 쌓기만 한다 */
+const VIEWPORT = 'flex flex-col gap-8'
 
 /* 그림자가 없다. 흰 면 위의 흰 토스트를 1px 헤어라인 하나로 띄운다 —
    눈으로 확인하는 것은 M4 다. 반경 12 는 칸반 카드 단으로, 카드 16 보다 한 단 작다. */
+/* 독은 누름을 통과시킨다(GlobalToaster). 토스트 면만 누름을 받는다 */
 const ROOT =
-  'flex min-w-[280px] max-w-[380px] flex-col rounded-12 border border-line bg-surface px-16 py-14'
+  'pointer-events-auto flex min-w-[280px] max-w-[380px] flex-col rounded-12 border border-line bg-surface px-16 py-14'
 
 const TITLE = 'text-body font-semibold text-ink'
 
@@ -55,7 +57,7 @@ export function ToastProvider(props: ToastProviderProps) {
   return <ToastPrimitive.Provider {...props} />
 }
 
-/** 우측 하단에 쌓이는 자리. Provider 안에 한 번만 올린다 */
+/** 토스트가 쌓이는 목록. Provider 안에 한 번만 올린다 */
 export function ToastViewport({ className, ...rest }: ToastViewportProps) {
   return (
     <ToastPrimitive.Viewport

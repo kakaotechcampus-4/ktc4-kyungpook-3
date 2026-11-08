@@ -7,6 +7,8 @@ import type { Task } from '@/entities/task'
 import { isDueSoon, isOverdue } from '@/entities/task'
 import { soonUntil } from '@/shared/lib/date'
 
+export { dateWithWeekday } from './weekday'
+
 /*
  * 대시보드 조립의 순수 판정 (M7 계획 §1~§3). 태스크·승인·회의·추출 네 엔티티를 잇는 자리라 widget 에 있다.
  * 집계는 화면에 보이는 행이 아니라 받은 전체 데이터로 한다 (D-052). 날짜는 서울 날짜 문자열로만 비교한다 (D-144).
@@ -194,14 +196,6 @@ export function hasPendingSync(
   if (tasks === undefined) return false
   const tasksById = new Map(tasks.map((task) => [task.id, task]))
   return items.some((item) => recentSyncState(item, tasksById) === 'pending')
-}
-
-const WEEKDAYS = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'] as const
-
-/** `2026-09-18` → `2026-09-18 금요일`. 날짜 전용 값이라 UTC 로만 요일을 구한다 */
-export function dateWithWeekday(date: string): string {
-  const [year, month, day] = date.split('-').map(Number)
-  return `${date} ${WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()]}`
 }
 
 /** `2026-09-15` → `9월 15일` */

@@ -13,9 +13,9 @@ describe('errorMessage', () => {
     )
   })
 
-  it('서버 코드 54개(backend core/errors.py 중 PM·웹 경로 52개와 #356 합의 코드 2개)가 모두 전용 문구를 가진다', () => {
+  it('서버 코드 57개(backend core/errors.py 중 PM·웹 경로 54개, #356 합의 코드 2개, #457 BE PR #456 코드 1개)가 모두 전용 문구를 가진다', () => {
     const codes = Object.values(ERROR_CODES)
-    expect(codes).toHaveLength(54)
+    expect(codes).toHaveLength(57)
     for (const code of codes) {
       expect(errorMessage(serverError(code))).not.toBe(COMMON_MESSAGES.fallback)
     }

@@ -9,7 +9,7 @@
 - [문서 안내](docs/README.md): 문서 구조와 기존 문서 배치.
 - 계약: [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md), 웹 화면용은 [프론트엔드 대표 계약](../frontend/docs/contracts/frontend-api-contract.md).
 - 계획: [전체 계획](docs/plan/backend-plan.md), [M0~M7 안내](docs/plan/README.md). 마일스톤별 plan.md는 아직 비어 있다. 진행 상태는 전체 계획의 마일스톤 개요(2026-10-02 기준)를 따른다.
-- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M3](docs/plan/m3/result.md)(추출 근거를 발화 seq로 저장), [M5](docs/plan/m5/result.md)(녹음 업로드 저장과 AI 가져가기 API, AI 경로 미구현), [M6](docs/plan/m6/result.md)(AI 처리 단계 보고와 진행 표시, #381), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서). 모두 마일스톤 완료를 판정하지 않았다.
+- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M3](docs/plan/m3/result.md)(추출 근거를 발화 seq로 저장, 담당자 별칭 자동 채우기와 승인 때 별칭 학습 #459), [M5](docs/plan/m5/result.md)(녹음 업로드 저장과 AI 가져가기 API, AI 경로 미구현), [M6](docs/plan/m6/result.md)(AI 처리 단계 보고와 진행 표시 #381, 답장 담당자 변경 승인 #460, 승인 대기 요청 유사 검색 #141, 메시지 탭 읽지 않은 수 #480), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서). 모두 마일스톤 완료를 판정하지 않았다.
 - 배포: [배포 안내](../deploy/README.md). 요청: [녹음 시작 때 배포 재시작 잠금 확인](docs/requests/bot-restart-lock.md)(AI).
 
 ## 실행
@@ -62,7 +62,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 항목 | 동작 |
 |---|---|
 | 기동 순서 | db가 healthy가 된 뒤 api가 뜬다. api는 `alembic upgrade head` 후 uvicorn을 띄운다 |
-| 프로세스 | uvicorn `--workers 1`, `--reload` 없음. Notion/임베딩/업로드 sweeper/리마인드 스케줄러 워커가 프로세스마다 뜨므로 워커를 늘리지 않는다 |
+| 프로세스 | uvicorn `--workers 1`, `--reload` 없음. Notion/임베딩/업로드 sweeper/세션 sweeper/리마인드 스케줄러 워커가 프로세스마다 뜨므로 워커를 늘리지 않는다 |
 | 포트 | api는 `127.0.0.1:8000`에만 열린다. 외부 공개는 같은 서버의 리버스 프록시(HTTPS)가 맡는다. db는 호스트에 열지 않는다 |
 | DB 접속 | api의 `DATABASE_URL`은 `.env`의 `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`로 다시 만든다(`db:5432`) |
 | 나머지 환경변수 | `NOTION_*`·`DISCORD_*`·`EMBEDDING_*`·`SERVICE_TOKEN` 등은 `.env`를 그대로 넘긴다 |
@@ -70,6 +70,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 데이터 | DB는 `mm-prod_pgdata` 볼륨에 남는다. 로컬 개발용 볼륨(`mm-pgdata`)과 따로다 |
 | 업로드 녹음 | `mm-prod_uploads` 볼륨(컨테이너의 `/data/uploads`)에 둔다. 회의가 done·failed가 되면 그 회의 폴더를 지운다 |
 | 업로드 sweeper | 서버 안의 워커가 `UPLOAD_SWEEP_INTERVAL_SECONDS`(기본 300, 0 이하면 끔)마다 멈춘 업로드 회의를 failed 로 바꾸고 녹음 폴더를 지운다. AI 가 가져간 뒤 진행이 3시간 없으면 `failed_stage=diarize`, 화자 지정을 7일 기다리면 `speaker_assignment_expired`. 기준은 [봇 계약](docs/contracts/backend-ai-contract.md)의 "웹 업로드 가져가기" |
+| 세션 sweeper | 서버 안의 워커가 `SESSION_SWEEP_INTERVAL_SECONDS`(기본 3600, 0 이하면 끔)마다 만료된(`expires_at` 이 지난) 세션 행을 지운다. 만료 세션은 워커가 돌기 전에도 조회 때 401 이다 |
 | 리마인드 스케줄러 | 서버 안의 워커가 `REMINDER_SCHEDULER_INTERVAL_SECONDS`(기본 60, 0 이하면 끔)마다 재촉 제안, 발송 직전 확인, 72시간 무응답 막힘, 푸시 발송을 돈다. 브라우저 푸시는 `VAPID_PRIVATE_KEY`·`VAPID_PUBLIC_KEY`·`VAPID_SUBJECT` 가 모두 있어야 나가고, 하나라도 없으면 웹 안 알림만 쌓인다 |
 | 자동 막힘 표시 | 태스크 응답의 `auto_blocked` 는 `POST /tasks/{task_id}/auto-block/undo` 가 지금 성공하는 상태와 같다. 이력의 `change_source` 로 가리지 않는다. 막힌 뒤 사유를 PM 이 바꾸면 false 다 |
 | 로그 | 컨테이너당 10MB × 3개까지만 남긴다(디스크 50GB 고정) |
@@ -133,6 +134,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 함. `details.member_id` |
 | `PASSWORD_RESET_TOKEN_INVALID` | 400 | 비밀번호 재설정 링크를 쓸 수 없음(없는·무효화된·이미 쓴·만료된 토큰). `details.reason` 은 `invalid`·`used`·`expired` |
 | `MAIL_UNAVAILABLE` | 503 | 메일을 보낼 수 없음(SMTP 설정이 없음). 발송 실패는 응답에 드러나지 않는다 |
+| `TOO_MANY_LOGIN_ATTEMPTS` | 429 | 같은 이메일 10회·같은 공인 IP 50회 실패가 15분 안에 쌓여 로그인이 막힘(맞는 비밀번호도 막음). `Retry-After` 헤더와 `details.retry_after_seconds` 는 같은 정수 초 |
 | `MESSAGE_RESULT_CONFLICT` | 409 | 이미 다른 결과가 보고됐거나 아직 가져가지 않은 메시지에 결과를 보고함. `details.message_id` |
 | `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST` |
 | `UPLOAD_NOT_CLAIMED` | 409 | AI가 아직 가져가지(claim) 않은 업로드에 화자를 보고하려 함. `details.status`(그 시점의 회의 상태) |
@@ -358,10 +360,11 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 | 임베딩 저장 | task 제목의 임베딩을 `task.embedding`(pgvector, 1536차원)에 둔다. 생성·제목 변경 시 NULL로 비우고, 서버 안의 워커(`EMBEDDING_SYNC_INTERVAL_SECONDS`마다)가 채운다. 요청 안에서는 임베딩 API를 부르지 않는다 |
 | 워커 실패 | 제목이 비었거나 공백뿐인 task는 보내지 않는다. 입력 오류(400·413·422)면 하나씩 다시 보내 거절된 task만 건너뛴다. 그 외 실패(연결·타임아웃·5xx·429)는 연속 실패할수록 대기 간격을 두 배씩 늘리고(최대 5분, `Retry-After`가 있으면 우선), 성공하면 원래 간격으로 돌아간다. 401·403은 바로 5분 간격으로 늘리고 error 로그를 남긴다 |
 | 검색 대상 | 같은 워크스페이스에서 status가 todo·in_progress·blocked·done이고 임베딩이 있는, 지우지 않은 task. 코사인 유사도 상위 `k`(기본 3)개 중 `min_similarity`(기본 0.4, ai/docs/basis_for_decision/ai/2026-09-22-0010-embedding-similarity-threshold.md) 이상만 |
+| 승인 대기 요청 포함 | 요청에 `include_pending: true`(기본 false, 불리언만)를 보내면 임베딩이 있는 승인 대기 task_create 요청을 최대 2개 더 합친다. task `k`개 뒤에 더해 유사도 내림차순(같으면 task가 앞)으로 돌려주고 `min_similarity`는 똑같이 쓴다. pending 후보는 `task_id`·`status`·`notion_page_id`가 null이고 `approval_id`가 있으며, 제목·마감·담당자는 payload에서 읽고(형식이 틀리면 마감·담당자는 null) `updated_at`은 요청 생성 시각이다. task 후보의 `approval_id`는 null. AI는 합치기(action=merge) 배포 뒤에 켠다(#141) |
 | 검색 인증 | 봇이 세션 없이 부르므로 `X-Service-Token` 헤더를 `SERVICE_TOKEN`과 비교한다. 없거나 다르면 401 |
 | 검색 실패 | 임베딩 호출이 실패하면 빈 목록 대신 `EMBEDDING_UNAVAILABLE`(502). 빈 목록이면 호출한 쪽이 중복 task를 만들 수 있다 |
-| `action` 없음 / `create` | 게이트가 auto면 task 생성, 아니면 task_create 승인 요청. 게이트는 `decide_create_gate`가 정한다. 먼저 BE가 계산한 담당자 확신도를 본다. 담당자를 언급했는데 찾지 못했으면(중의적·없음) `hold`다. `assignee_raw` 없이 `second`·`thirdpronoun`·`thirdrole`만 오거나 1인칭인데 화자가 없으면, 사람을 지목했지만 누군지 모르는 것이라 `hold`다(`mentions_assignee`). 1인칭 화자는 `evidence_speaker_member_id`(탈퇴하지 않은 팀원이 아니면 화자를 못 찾은 것이고 아래로 넘어가지 않는다), `evidence_speaker`(uid), 결론 발화의 `member_id`(활성 팀원일 때, 아니면 그 발화의 uid) 순으로 정한다. 틀린 `evidence_speaker_member_id`는 새 항목이 경로와 무관하게 `hold`이고, 화자도 `assignee_raw`도 없는 1인칭은 judge·경로 불명이 `hold`, legacy는 확신도로 정해 `review`가 될 수 있다. update 항목은 항상 `review`다(#265). judge 항목은 그다음 아래 auto 조건을 모두 만족하면 `auto`, 아니면 `review`다. 경로를 가릴 수 없고 확신도도 없는 항목은 `review`, legacy는 확신도로 정한다(#201) |
-| judge auto 조건 | 숫자 점수가 아니라 조건을 모두 만족할 때만 `auto`다(`matching.auto_blockers`, #232). ① 새 항목 ② `task_status`가 certain ③ 담당자를 언급했으면 한 명으로 찾았고(검증된 별칭이나 화자) 확신도 0.8 이상 ④ `assignee_type`이 `second`·`thirdpronoun`·`thirdrole`이 아님(AI가 대명사·역할을 문맥으로 푼 이름) ⑤ `due_status`가 certain이거나 missing이고 `due_date` 유무와 맞음 ⑥ `similar_count`가 0이고, 워크스페이스에 임베딩이 없는 활성 task가 없음(`embedding.has_unsearchable_tasks`). 그런 task는 AI의 유사 검색에 잡히지 않아 0을 믿을 수 없다. 같은 회의에서 앞 항목이 auto로 만든 task도 여기 걸려, 한 회의에서 auto는 보통 첫 항목뿐이다. 임베딩 API가 지금 제목을 거절한 task도 포함한다. 워커가 다시 시도하지 않을 뿐 검색에서 빠진 것은 같아서, 제목이 바뀌어 임베딩이 채워지거나 지워질 때까지 auto를 막는다. 지운 task와 제목이 비었거나 공백뿐인 task는 뺀다. `task_status`·`due_status`·`similar_count` 중 하나라도 보내지 않으면 `review`다. 할 일 근거 상태는 LLM의 자기 표시라 걸러 내는 힘이 약해서, 중복 생성은 임베딩으로 계산한 유사 검색 결과로 막는다. `top_similarity`는 판단에 쓰지 않고 기록만 한다(유사도 기준값을 정할 근거). 못 맞춘 조건은 info 로그(`reasons=`)로 남긴다 |
+| `action` 없음 / `create` | 게이트가 auto면 task 생성, 아니면 task_create 승인 요청. 게이트는 `decide_create_gate`가 정한다. 먼저 BE가 계산한 담당자 확신도를 본다. 담당자를 언급했는데 찾지 못했으면(중의적·없음) `hold`다. `assignee_raw` 없이 `second`·`thirdpronoun`·`thirdrole`만 오거나 1인칭인데 화자가 없으면, 사람을 지목했지만 누군지 모르는 것이라 `hold`다(`mentions_assignee`). 1인칭 화자는 `evidence_speaker_member_id`(탈퇴하지 않은 팀원이 아니면 화자를 못 찾은 것이고 아래로 넘어가지 않는다), `evidence_speaker`(uid), 결론 발화의 `member_id`(활성 팀원일 때, 아니면 그 발화의 uid) 순으로 정한다. 틀린 `evidence_speaker_member_id`는 새 항목이 경로와 무관하게 `hold`이고, 화자도 `assignee_raw`도 없는 1인칭은 judge·경로 불명이 `hold`, legacy는 확신도로 정해 `review`가 될 수 있다. update 항목은 항상 `review`다(#265). judge 항목은 그다음 아래 auto 조건을 모두 만족하면 `auto`, 아니면 `review`다. 경로를 가릴 수 없고 확신도도 없는 항목은 `review`, legacy는 확신도로 정한다(#201). 경로와 상관없이 `assignee_type`이 `thirdrole`(역할로 지목)인 새 항목은 `auto`가 나와도 `review`로 내린다. 역할은 맡은 사람이 바뀔 수 있어 PM이 본다(#459) |
+| judge auto 조건 | 숫자 점수가 아니라 조건을 모두 만족할 때만 `auto`다(`matching.auto_blockers`, #232). ① 새 항목 ② `task_status`가 certain ③ 담당자를 언급했으면 한 명으로 찾았고(검증된 별칭이나 화자) 확신도 0.8 이상 ④ `assignee_type`이 `second`·`thirdpronoun`·`thirdrole`이 아님(AI가 대명사·역할을 문맥으로 푼 이름) ⑤ `due_status`가 certain이거나 missing이고 `due_date` 유무와 맞음 ⑥ `similar_count`가 0이고, 워크스페이스에 임베딩이 없는 활성 task가 없음(`embedding.has_unsearchable_tasks`). 그런 task는 AI의 유사 검색에 잡히지 않아 0을 믿을 수 없다. 같은 회의에서 앞 항목이 auto로 만든 task도 여기 걸려, 한 회의에서 auto는 보통 첫 항목뿐이다. 임베딩 API가 지금 제목을 거절한 task도 포함한다. 워커가 다시 시도하지 않을 뿐 검색에서 빠진 것은 같아서, 제목이 바뀌어 임베딩이 채워지거나 지워질 때까지 auto를 막는다. 지운 task와 제목이 비었거나 공백뿐인 task는 뺀다. 승인 대기 중인 task_create 요청 가운데 임베딩이 없는 것(`embedding.has_unsearchable_pending`)이 있어도 막는다(`unsearched_pending_exists`). 유사 검색에 합치는 승인 대기 후보에 잡히지 않기 때문이고, 빈 제목으로 건너뛴 요청은 뺀다. 이 요청 안에서 앞 항목이 만든 pending은 보지 않는다. `task_status`·`due_status`·`similar_count` 중 하나라도 보내지 않으면 `review`다. 할 일 근거 상태는 LLM의 자기 표시라 걸러 내는 힘이 약해서, 중복 생성은 임베딩으로 계산한 유사 검색 결과로 막는다. `top_similarity`는 판단에 쓰지 않고 기록만 한다(유사도 기준값을 정할 근거). 못 맞춘 조건은 info 로그(`reasons=`)로 남긴다 |
 | auto 되돌리기 | `POST /api/v1/extractions/{extraction_id}/items/{item_id}/revert`(PM). auto로 만든 태스크를 지우고(`task.is_deleted`) 같은 내용의 task_create 승인 요청(`gate: review`, 표시용 `reverted_task_id`)을 만들어 항목에 잇는다. 항목의 `task_id`는 비우고 `reverted_at`·`reverted_by`를 남기며 `gate`는 처음 판단대로 `auto`다. 승인하면 새 태스크가 생겨 항목에 이어지고, 반려하면 태스크 없이 끝난다. 값 하나가 틀린 것은 태스크를 직접 고치면 되지만 중복·오판은 고칠 값이 없어서 PM이 승인·반려를 다시 고르게 한다. 만든 뒤 태스크가 바뀌었거나(`version`이 1이 아님) 그 태스크의 처리 대기 승인 요청이 있으면 409 `AUTO_TASK_NOT_REVERTIBLE`이다. 바뀐 값이 승인 요청에 담기지 않고 사라지기 때문이다. 근거는 저장된 근거 발화(`evidence`, #229) 중 seq가 가장 큰 발화로 승인 요청에 담긴다. AI가 `evidence_seqs`를 보내지 않았거나 하나도 찾지 못했으면 비어 있다 |
 | 지운 task | 지금은 auto 되돌리기만 task를 지운다. 행은 남기고(Notion 페이지 보관, 추출 항목·이력 연결 유지) task 목록·조회·수정·이력·유사 검색·임베딩·승인 요청 대상에서 뺀다. 지운 task를 가리키는 조회는 404 `TASK_NOT_FOUND`, update 추출 항목은 건너뛰고, 추출 조회는 그 task를 가리키던 항목의 `task_id`를 null로 내린다. Notion 재시도(`POST /tasks/{id}/notion-sync/retry`)만 지운 task도 받는다(페이지 보관 재시도). task를 바꾸는 경로(`PATCH /tasks/{id}`, 이력 되돌리기, 승인 요청 생성, 추출 update 대상)는 task 행을 커밋까지 잠그고 다시 읽어, 되돌리기와 겹쳐도 지운 task에 쓰지 않는다 |
 | 추출 경로 | AI가 경로를 보내지 않으므로 항목이 보낸 키로 가린다. `action`·`category`·`doc_text`를 보냈으면 judge, 확신도를 보냈으면 legacy다(`ExtractionItemCreate.extraction_path`). 모든 항목이 같을 때만 `extraction.extraction_path`에 남기고 아니면 NULL. 확신도를 보내지 않으면 0.0이 아니라 NULL(측정 안 함)로 저장한다 |
@@ -374,13 +377,41 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 | 추출 조회의 반영 여부 | `GET /api/v1/extractions/{extraction_id}` 항목의 `task_id`는 연결된 task다. create는 task가 생긴 뒤에 채워지지만, update는 수정 대상이라 승인 전에도 있다. 그래서 반영 여부는 `approval_status`(연결된 승인 요청의 `status`: pending·approved·rejected, 승인 요청이 없으면 null)로 본다. approved는 task 반영과 같은 트랜잭션에서 커밋되고, 충돌로 반영하지 못하면 pending으로 남는다. 상태는 항목 조회에 승인 요청을 붙여 한 쿼리로 읽는다. 따로 읽으면 그 사이 승인이 커밋되어 `task_id`는 승인 전, `approval_status`는 승인 뒤 값으로 어긋날 수 있다(#211) |
 | 잘못된 항목 | update의 `target_task_id`가 없거나 다른 워크스페이스 task면, create의 `task_title`이 비어 있으면 그 항목만 건너뛰고 나머지는 처리한다(응답 `item_count`는 저장된 항목 수) |
 
+## 담당자 별칭
+
+담당자는 별칭 표(`member_alias`)로 찾는다(#459). 별칭은 PM이 직접 넣는 것 말고도 아래처럼 자동으로 생긴다.
+
+| 항목 | 동작 |
+|---|---|
+| 찾기 | `resolve_assignee`가 `assignee_raw`에서 "님"·조사를 뗀 후보를 만들어 긴 것부터 찾는다("하은이가" → 하은이가, 하은이, 하은). 처음 걸린 후보에 팀원이 1명이면 매칭, 2명 이상이면 애매함, 아무 후보도 안 걸리면 못 찾음이다. 탈퇴한 팀원의 별칭은 보지 않는다. 한 글자 별칭으로 찾으면 담당자는 채우되 확인 필요로 둬서 auto 가 되지 않는다(조사를 떼면 "하은" → "하"처럼 한 글자 후보가 생겨, 팀에 없는 사람이 엉뚱한 팀원에게 자동 배정될 수 있다). 후보 규칙(`matching.name_candidates`)은 AI 채점 코드 `_name_candidates`(`ai/extract/eval_golden_set.py`)와 같고, 세 가지만 다르다. 공백을 한 칸으로 줄이고 후보마다 앞뒤 공백을 지운다(띄어 쓴 님: "환 님이" → 환). 조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보다("하은이는" → 하은이는, 하은이, 하은). "님"처럼 "씨"도 떼고("민수 씨", "민수씨가" → 민수), 호칭을 뗀 뒤에도 "이"를 한 번 더 뗀다("하은이님이", "하은이 씨는" → 하은) |
+| 미매칭 목록 | `GET /members/unresolved-aliases`도 같은 후보 규칙으로 판정한다. 처음 걸린 후보의 별칭이 1개이고 확인된(`verified`) 것이면 해결로 보고 목록에서 뺀다. 한 글자 별칭은 PM 이 직접 등록한(`manual`·`learned`) 것만 해결로 본다. 이름에서 자동으로 만든 한 글자 별칭("김환" → "환")은 목록에 남는다. 담당자 찾기는 한 글자면 계속 확인 필요다 |
+| 팀원 이름 | 팀원을 만들 때(`POST /members`, 워크스페이스를 만들 때의 PM)와 이름을 바꿀 때 이름과 성 뗀 이름을 `source=display_name` 별칭으로 넣는다(확인됨, 확신도 1.0). 한글 2글자 이상만 넣고, 4글자는 앞 두 글자, 그 외는 첫 글자를 성으로 본다("김동우" → 김동우, 동우). 규칙은 AI 전사 힌트 `member_forms`(`ai/stt/backend.py`)와 같다. 이름을 바꾸면 옛 이름에서 만든 `display_name` 별칭만 지우고, PM이 넣은 별칭과 닉네임 별칭은 남긴다. `display_name` 은 서버만 쓰는 값이라 별칭 등록 API(`POST /members/{id}/aliases`)에 보내면 400 `INVALID_REQUEST` 다. 이 API 는 `alias_text` 의 공백을 후보와 같은 규칙으로 정리해 저장하고(한 칸으로 줄이고 앞뒤를 지움), 공백뿐이면 400 이다. 같은 글자의 자동 별칭이 이미 있으면 요청의 `source` 가 `manual`·`learned` 일 때만 그 행을 요청 값으로 올린다. 기존 팀원은 마이그레이션 `1032faab5855`가 채웠다 |
+| 디스코드 닉네임 | 팀원에 `discord_user_id`를 붙이면 팀원을 저장한 뒤 봇 토큰으로 Discord `GET /guilds/{guild_id}/members/{user_id}`를 부른다(제한 3초, 호출 동안 DB 트랜잭션을 열지 않는다). 서버 닉네임, 계정 표시 이름(`global_name`) 순서로 한글로만 된 첫 값을 `source=discord_profile` 별칭으로 넣는다(미확인, 확신도 0.8. 이 별칭으로 찾으면 담당자는 채워지지만 PM 검토로 간다). 토큰·연동이 없거나 호출이 실패해도 경고 로그만 남기고 응답은 그대로다. `discord_user_id`가 바뀌거나 풀리면 그 팀원의 `discord_profile` 별칭을 지우고 새 계정이면 다시 넣는다. 이미 연결돼 있던 팀원의 닉네임은 채우지 않았다 |
+| 겹칠 때 | 자동 별칭은 같은 팀원이 이미 같은 글자를 가졌거나, 탈퇴하지 않은 다른 팀원이 PM이 넣은(`manual`·`learned`) 같은 글자를 가졌으면 넣지 않는다. 자동 별칭끼리 겹치면(김민수·이민수 → "민수") 둘 다 넣어 애매함이 된다 |
+
+## 승인 때 별칭 학습
+
+추출 때 담당자를 별칭으로 찾지 못한 항목을 PM이 담당자를 골라 승인할 때, 회의에서 부른 말을 그 팀원의 별칭으로 저장한다(#459). 별칭 테이블은 PM이 수동으로 등록하지 않으면 비어 있어서, 승인할 때 채워 다음 회의부터 찾히게 하려는 것이다. 이름 규칙으로 찾지 못하는 이름 표현(STT 오인식 "화은", 애칭, 영어 이름)이 대상이다. 규칙과 함수는 `app/services/alias_learning.py`에 있다.
+
+| 항목 | 동작 |
+|---|---|
+| 담당자 종류 저장 | `POST /extractions` 항목의 `assignee_type`을 `extraction_item.assignee_type`에 저장한다. 알려진 7개(first·second·thirdname·thirdpronoun·thirdrole·group·none)가 아니면 NULL로 저장하고 경고 로그를 남긴다. 요청은 거절하지 않고, 게이트 판단에는 보낸 값을 그대로 쓴다. 이 기능 전에 저장된 항목은 NULL이다 |
+| 저장할 글자 | `assignee_raw`를 다듬은 것이다. 앞뒤 공백 제거 → 끝 조사 한 번(께서·한테·에게·이가·가·이·는·을·를·께, 긴 것부터, "은"은 떼지 않음) → 끝 "님" → 연속 공백을 하나로. 비면 저장하지 않는다. 예: "하은이가" → "하은", "지민님이" → "지민", "환 님이" → "환" |
+| 물어볼 항목 (`alias_candidate`) | 모두 만족하면 `true`이고 `alias_text`에 저장할 글자가 실린다. ① 새 항목(create) ② 추출 때 담당자가 비어 있었음(못 찾음·애매함) ③ `assignee_type`이 `thirdname`(역할 `thirdrole`은 아래 역할 행) ④ 다듬은 글자가 비지 않음 ⑤ 연결된 승인 요청이 pending ⑥ 같은 워크스페이스에서 탈퇴하지 않은 팀원 누구도 저장할 글자와 찾기 후보(`name_candidates(assignee_raw)`)를 별칭으로 갖고 있지 않음(후보 중 하나라도 있으면 이미 찾히거나 애매한 표현이다. 예: "하은은"은 후보 [하은은, 하은]이고 "하은"을 두 팀원이 가졌으면, "하은은"을 저장하면 이후 항상 그 팀원으로 확정된다. 탈퇴 팀원의 별칭은 담당자를 찾을 때도 보지 않으므로 세지 않고, 지우지도 않는다. PM이 `DELETE /members/aliases/{id}`로 지울 수 있다). 아니면 `false`·`null`이다. 응답을 만들 때 계산하고 저장하지 않는다 |
+| 싣는 응답 | `GET /extractions/{id}`의 항목, `GET /approvals`, `GET /approvals/{id}`, `POST /approvals`, `PATCH /approvals/{id}`(처리 뒤라 항상 `false`). 수동으로 만든 승인 요청은 추출 항목이 없어 `false`다 |
+| 저장 (`save_alias`) | `PATCH /approvals/{id}`에 `{"status": "approved", "save_alias": true}`를 보내고, 위 ①~④·⑥을 만족하고, 최종 담당자(`task_overrides`로 고른 값 포함)가 있으면 그 팀원에게 `member_alias`(`source=learned`, `verified=true`, `confidence=0.9`, `alias_type=nickname`)를 하나 만든다. 확인된 별칭이라 다음 회의에서 바로 확정 매칭된다. 단 한 글자 별칭("환", "민")은 찾을 때 확정 근거로 쓰지 않아(`matching._is_one_letter`) 담당자만 채우고 PM 확인(`review`)으로 간다. 미매칭 목록에서는 PM이 직접 등록한(`manual`·`learned`) 별칭이라 해결로 보고 뺀다(`resolved_texts`). 띄어 쓴 님("화은 님이")과 연속 공백도 같은 후보 규칙으로 찾는다. 이름 끝 글자가 조사와 같으면("민이" → "민", "수가" → "수") 깎여 한 글자가 되고, 저장 글자를 승인에서 고칠 수는 없다. 잘못 저장된 별칭은 `DELETE /members/aliases/{id}`로 지우고 필요하면 다시 등록한다(수정 API 없음) |
+| 저장하지 않는 경우 | `save_alias`가 없거나 false, 반려(같이 와도 오류 없이 무시), task_update 승인, 추출 때 담당자를 찾았던 항목(PM이 다른 사람으로 바꿔도), 1·2인칭·대명사·그룹·없음, `assignee_type`이 NULL인 옛 항목, 담당자를 미정으로 승인, 다듬은 글자가 1인칭이 주어로 쓰인 꼴(AI가 1인칭을 `thirdname`으로 잘못 분류한 경우. 범위는 아래 1인칭 거르기 행), 그 글자를 탈퇴하지 않은 누군가가 이미 가짐, `thirdrole`(아래 역할 행). 모두 승인은 그대로 성공한다 |
+| 1인칭 거르기의 범위 | 1인칭이 할 일의 **주어로 쓰인 꼴**만 막는다. 규칙은 어간(제·저·나·내 / 저희·우리 / 본인) × 복수 "들"(저희·우리·본인에만) × 주어 표지다. 이·가·는·를 같은 격조사는 다듬기가 먼저 떼고, 도·만과 받침 있는 말 뒤의 은("본인은", "저희들은")은 이 규칙이 처리한다. 막는 예: 제가·저는·저도·저만·저희들이·저희들은·본인은. **막지 않는 것**: 주어 표지가 아닌 부사어·구·끝말(우리끼리·우리까지·저희 모두·제가요), 3인칭 "저들". 통째로 일치할 때만 막으므로 "제인"·"나연"·"나은"은 배우지만, 조사 "이"를 떼면 "제"·"나"가 되는 "제이"·"나이"는 배우지 않으니 PM이 직접 등록한다. 규칙 밖에서 새는 경우는 PM 동의, 한 글자 확인 필요, 별칭 삭제, AI 오분류 개선이 받는다. 새 꼴이 거론되면 "이 규칙이 만드는 조합인가"로 판단해, 안이면 고치고 밖이면 문서에 남긴다 |
+| 동시 승인 | 저장 전에 같은 글자가 있는지 보고, 같은 팀원·글자 유니크 제약(`uq_alias_per_member`)에 걸리면 그 저장만 savepoint로 되돌린다. 승인과 태스크 생성은 커밋된다 |
+| 역할 | `thirdrole` 새 항목은 학습한 별칭으로 확신도가 높아져도 `auto`로 보내지 않는다(위 create 행). 역할은 지금 학습하지 않는다. AI는 `thirdrole`이면 역할 원문("BE 리더가")을 빼고, 문맥으로 추측한 이름이 있으면 그 이름을 `assignee_raw`로 보낸다(`ai/capture/handoff.py`, `ai/judge/pipeline.py`). BE는 원문과 추측을 구분할 수 없어, 배우면 추측한 이름이 확인된 별칭이 될 수 있다. AI가 역할 원문을 보내고 추측 이름은 보내지 않게 되면 학습 대상(`LEARNABLE_ASSIGNEE_TYPES`)에 다시 넣는다 |
+
 ## 전사 힌트 조회
 
 녹음 봇용. 사용자 세션 대신 서비스 토큰(`X-Service-Token`)으로 막는다. 봇이 전사(STT)에 거는 이름 힌트를 받는다. 팀원 이름만 돌려주고 회의 내용은 돌려주지 않는다.
 
 | 경로 | 응답 `data` |
 |---|---|
-| `GET /api/v1/workspaces/{workspace_id}/members/names` | `{items: [{member_id, name, discord_user_id, aliases}]}`. `name`은 PM이 온보딩에서 정한 `display_name`이다. 탈퇴한 팀원은 빼고 만든 순서다. `aliases`는 별칭 문자열 전부이고 확인한(`verified`) 별칭이 앞이다 |
+| `GET /api/v1/workspaces/{workspace_id}/members/names` | `{items: [{member_id, name, discord_user_id, aliases}]}`. `name`은 PM이 온보딩에서 정한 `display_name`이다. 탈퇴한 팀원은 빼고 만든 순서다. `aliases`는 별칭 문자열 전부이고 확인한(`verified`) 별칭이 앞이다. 자동으로 넣은 이름·닉네임 별칭(위 "담당자 별칭")도 들어간다 |
 
 | 항목 | 동작 |
 |---|---|
@@ -395,6 +426,35 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 - 같은 이메일로 동시에 가입하면 하나만 만들어지고 나머지는 409 `EMAIL_ALREADY_EXISTS` 를 받는다.
 - 기존 계정은 마이그레이션 `537911f267dc` 가 소문자로 바꾼다. 소문자로 같아지는 계정이 있으면 아무것도 바꾸지 않고 멈춘다. 되돌릴 수 없고 배포 전 확인 방법은 그 파일 설명에 있다.
 - 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-06-email-normalization.md).
+
+## 세션 토큰
+
+세션 토큰은 sha256 해시로 저장하고 쿠키 값을 해시해 찾는다. 만료된 세션은 워커가 지운다. 쿠키 이름(`session_token`)·값·속성·7일 만료·401 `UNAUTHENTICATED` 는 그대로다. 코드는 `app/services/sessions.py`.
+
+- `session.session_token`(String(255), 유일 인덱스 `ix_session_session_token`)에는 쿠키 원문이 아니라 그 sha256 hex 만 남고 원문은 DB 에 없다. 컬럼 이름은 [마이그레이션 호환 원칙](../deploy/README.md)(이름 변경은 두 배포로 나눈다) 때문에 그대로 두었다. 쓸 때는 `hash_session_token` 을 직접 불러 넣는다. 원문은 로그인 응답의 쿠키로만 나간다.
+- 로그아웃은 그 쿠키의 세션 한 행만 지운다. 비밀번호 재설정 confirm 은 그 계정의 세션을 모두 지운다.
+- 기존 세션은 마이그레이션 `3c9a1f7d2b64` 가 값만 해시로 바꾼다(스키마 변경 없음). 이미 로그인한 사용자는 그대로 로그인되어 있다. 되돌리면(downgrade) 해시에서 원문을 알 수 없어 모든 세션이 지워지고, 코드만 되돌리면 옛 코드가 쿠키 원문을 해시와 비교해 401 이 되어 모두 다시 로그인한다(500 은 아니다). 배포 전 확인은 그 파일 설명에 있다.
+- 만료 세션 정리 주기는 `SESSION_SWEEP_INTERVAL_SECONDS`([운영 실행](#운영-실행-docker)의 세션 sweeper). 로그인 시에는 정리하지 않는다.
+- 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-06-session-token-hash.md).
+
+## 로그인 제한
+
+`POST /api/v1/auth/login` 은 실패가 쌓이면 429 `TOO_MANY_LOGIN_ATTEMPTS` 로 막는다. 원본은 `app/services/login_limit.py`, 적용은 `app/api/auth.py` 의 `login`.
+
+| 기준 | 한도 | 막는 시간 |
+|---|---|---|
+| 같은 이메일 | 15분 안에 10번 실패(첫 실패부터 창 시작) | 10번째 실패 직후부터 15분 동안 막는다(11번째 시도부터 429) |
+| 같은 공인 IP | 15분 안에 50번 실패(첫 실패부터 창 시작) | 50번째 실패 직후부터 15분 동안 막는다(51번째 시도부터 429) |
+
+- 막힌 동안에는 비밀번호가 맞아도 해시 계산 없이 429 를 준다. 막힌 동안 시도해도 시간이 늘지 않는다. 점증 잠금은 없다.
+- 응답은 이메일 막힘과 IP 막힘이 같고, 있는 이메일과 없는 이메일도 같다. `Retry-After` 헤더와 `details.retry_after_seconds` 는 같은 정수 초(올림, 최소 1)다.
+- 해제: 시간이 지나면 풀린다. 로그인에 성공하면 그 이메일의 횟수를 지운다. 비밀번호 재설정 confirm 이 commit 된 뒤에도 그 이메일의 막힘을 푼다. 이미 로그인한 세션은 영향이 없다.
+- 시도는 사용자 조회와 해시 계산 전에 잠금 안에서 먼저 센다(예약). 틀린 비밀번호는 센다. 500 같은 예기치 못한 오류나 401 이외의 `AppError` 는 예약을 되돌린다.
+- IP 판단: `request.client.host` 만 읽고 `X-Forwarded-For` 를 직접 읽지 않는다(uvicorn 이 `--proxy-headers` 로 해석한 값). IPv6 는 /64 로 묶는다. 사설 주소·해석할 수 없는 값(테스트 기본값 `testclient` 포함)은 IP 제한을 건너뛰고 이메일 제한만 적용한다. 로그인 성공 때 IP 쪽은 이번 예약만 되돌린다. IP 전체를 지우면 자기 계정으로 로그인해 초기화할 수 있어서다.
+- 같은 공인 IP(교육장 등)에서 실패가 50번 쌓이면 그 IP 전체가 막힌다. 급히 풀어야 할 때는 API 를 재시작한다.
+- 저장은 프로세스 메모리다. 서버를 재시작하면 모두 풀린다. 항목은 5만 개까지이고 넘치면 만료된 것을 먼저, 그다음 오래된 것부터 지운다.
+- 서버가 단일 프로세스(`--workers 1`)라는 전제다. `--workers` 를 늘리거나 서버를 2대 이상 두면 프로세스마다 횟수가 따로 쌓이므로 저장소부터 다시 설계한다.
+- 같은 이메일로 막을 수 있어 남이 내 계정을 15분 막을 수 있다. 결정 근거와 남은 노출은 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-06-login-rate-limit.md).
 
 ## 비밀번호 재설정
 
@@ -460,3 +520,20 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 다른 SMTP 로 옮길 때
 - 설정을 바꿔도 이미 만든 제안·묶음은 그대로다.
 - `pm_alert_method` 와 `minutes_summary` 는 저장만 한다.
 - 계약은 [FE 계약](../frontend/docs/contracts/frontend-api-contract.md), 결정 근거는 [결정 기록](docs/plan/m6/basis-for-decision/2026-11-04-message-settings.md).
+
+## 메시지 탭 읽지 않은 수
+
+사람·대화마다 읽은 위치(`message_thread_read.last_read_at`) 하나를 저장하고, 그 뒤에 들어온 상대편 메시지를 센다(#480).
+
+| 요청 | 누가 | 하는 일 |
+|---|---|---|
+| `GET /api/v1/workspaces/{workspace_id}/messages/unread-count` | 소속 팀원 | `{unread_count}`. 쓰기 없음 |
+| `POST /api/v1/workspaces/{workspace_id}/messages/threads/{thread_id}/read` | PM 또는 대화 주인 | 그 대화의 가장 늦은 메시지까지 읽음으로 옮긴다(뒤로 가지 않음). `{thread_id, unread_count: 0, total_unread_count, last_read_at}`. 다시 불러도 200, 메시지 없는 대화는 `last_read_at` null. 없음·다른 워크스페이스·(PM 이 보낸) 탈퇴 팀원 대화는 404 `MESSAGE_THREAD_NOT_FOUND`, 팀원이 남의 대화면 403 `FORBIDDEN` |
+
+- 대화 목록(`GET .../messages`)의 `threads[]` 와 대화 상세(`GET .../threads/{id}`)의 `thread` 에 `unread_count` 가 있다. 조회는 읽음을 바꾸지 않는다.
+- 도착 시각은 `coalesce(received_at, created_at)` 다. 늦게 들어온 디스코드 답장도 센다. 단 봇 메시지에 답했는지는 보낸 시각(`created_at`)으로 가른다. `awaiting_reply_since` 와 같은 기준이다.
+- 상대편: 자기 대화면 봇 메시지, 남의 대화(PM)면 대화 주인의 답장. 자기 대화에서 봇 메시지 뒤에 내가 답했으면 그 봇 메시지는 세지 않는다.
+- PM 마다 따로 센다. PM 자기 대화의 봇 메시지도 센다. 탈퇴한 팀원 대화와 보내기 전 묶음은 세지 않는다.
+- 읽은 위치가 없으면 그 사람이 들어온 시각이 기준이다. 배포 때 있던 메시지는 마이그레이션이 모두 읽음으로 채웠다.
+- 팀원을 PM 으로 올리면 그 순간까지 남의 대화가 읽음이 된다. 자기 대화의 봇 메시지는 그대로 센다.
+- 종 알림(`notifications`)과는 별개다. 결정 근거는 [결정 기록](docs/plan/m6/basis-for-decision/2026-11-07-message-unread-count.md).

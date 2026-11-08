@@ -18,6 +18,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models import Meeting, MeetingUpload, Member, Session as SessionModel, User, Workspace
 from app.services import upload_storage
+from app.services.sessions import hash_session_token
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 # 형식 검사는 파일 첫 부분만 본다. 머리만 진짜 모양이고 나머지는 아무 바이트다
@@ -74,7 +75,7 @@ def seed(db):
     db.add(user)
     db.flush()
     db.add(SessionModel(
-        user_id=user.user_id, session_token="pm-token",
+        user_id=user.user_id, session_token=hash_session_token("pm-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     ws, other_ws = Workspace(name="A"), Workspace(name="B")
@@ -424,7 +425,7 @@ def test_concurrent_uploads_to_one_workspace_accept_only_one(monkeypatch):
     seed_session.add(user)
     seed_session.flush()
     seed_session.add(SessionModel(
-        user_id=user.user_id, session_token="pm-token",
+        user_id=user.user_id, session_token=hash_session_token("pm-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     ws = Workspace(name="A")

@@ -32,5 +32,6 @@ export {
 } from './model/resolution'
 export { ApprovalNotResolvableError, resolveApproval } from './api/resolveApproval'
 export { sortByWaiting } from './lib/sortByWaiting'
+export { dueFillSuggestion } from './lib/dueFill'
 export { approvalDetailQueryOptions } from './api/approvalDetail'
 export { approvalIds, pendingApprovalListQueryOptions } from './api/pendingApprovals'

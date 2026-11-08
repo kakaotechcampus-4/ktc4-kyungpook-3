@@ -1,20 +1,18 @@
 import { useId } from 'react'
 import type { ReactNode } from 'react'
-import {
-  NUDGE_DAYS_BEFORE,
-  nudgeDayLabel,
-  nudgeHourLabel,
-  nudgeRuleLabel,
-} from '@/entities/message-settings'
+import { NUDGE_DAYS_BEFORE, nudgeHourLabel, nudgeRuleLabel } from '@/entities/message-settings'
 import type {
   MessageSettings,
   MessageSettingsChange,
-  NudgeDaysBefore,
   PmAlertMethod,
 } from '@/entities/message-settings'
 import { BrowserPushControl } from '@/features/browser-push'
 import { useMessageSettings } from '@/features/message-settings'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { Select } from '@/shared/ui/select'
+import type { SelectOption } from '@/shared/ui/select'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { existingSuggestionNote, pmWebOnlyNotice } from '../lib/notificationCopy'
 import { OPTION_CARD, OPTION_DESCRIPTION, OPTION_TITLE } from './settingsStyles'
@@ -26,25 +24,32 @@ type SwitchKey = 'dueReminder' | 'reminderAutoApprove' | 'minutesSummary' | 'sil
 
 interface SwitchCopy {
   key: SwitchKey
-  title: ReactNode
+  /** 설정을 받기 전(뼈대)에는 설정에 따라 달라지는 문구가 null 이다 */
+  title: ReactNode | null
   description: string
-  offEffect: string
+  offEffect: string | null
   /** 저장만 되고 아직 동작하지 않는 항목의 안내 */
   note?: string
 }
 
 const NOT_YET = '아직 준비 중이라 설정만 저장돼요'
 
-/* 문구는 D-174 설정 알림 항목이다. 캔버스 파일은 고치지 않는다. 재촉 제목은 저장된 재촉 규칙을 따른다 */
-function switchCopies(settings: MessageSettings): SwitchCopy[] {
+/*
+ * 문구는 D-174 설정 알림 항목이다. 캔버스 파일은 고치지 않는다. 재촉 제목은 저장된 재촉 규칙을 따른다.
+ * 설정을 받기 전(null)에는 설정에 따라 달라지는 문구만 null 이다 — 뼈대가 나머지 정해진 글자를 그대로 그린다 (#508)
+ */
+function switchCopies(settings: MessageSettings | null): SwitchCopy[] {
   return [
     {
       key: 'dueReminder',
-      title: `${nudgeRuleLabel(settings.nudgeRule)}에 담당자에게 DM`,
+      title: settings === null ? null : `${nudgeRuleLabel(settings.nudgeRule)}에 담당자에게 DM`,
       description: '자동 승인을 켜지 않으면 보내기 전에 문구를 확인합니다',
-      offEffect: settings.reminderAutoApprove
-        ? '끄면 재촉 제안을 만들지 않고, 이미 만든 제안도 자동으로 보내지 않습니다. 태스크 안내 DM은 그대로 보냅니다'
-        : '끄면 재촉 제안을 만들지 않습니다. 태스크 안내 DM은 그대로 보냅니다',
+      offEffect:
+        settings === null
+          ? null
+          : settings.reminderAutoApprove
+            ? '끄면 재촉 제안을 만들지 않고, 이미 만든 제안도 자동으로 보내지 않습니다. 태스크 안내 DM은 그대로 보냅니다'
+            : '끄면 재촉 제안을 만들지 않습니다. 태스크 안내 DM은 그대로 보냅니다',
     },
     {
       key: 'reminderAutoApprove',
@@ -72,6 +77,8 @@ function switchCopies(settings: MessageSettings): SwitchCopy[] {
   ]
 }
 
+const METHOD_NOTE = '지금은 웹으로만 알려요. Discord DM은 준비 중이라 고른 방식은 저장만 돼요.'
+
 const METHODS: readonly RadioCardOption<PmAlertMethod>[] = [
   { value: 'web', title: '웹', description: 'Discord DM 없이 웹에만 표시합니다' },
   { value: 'discord_dm', title: 'Discord DM', description: 'Discord DM으로만 보냅니다' },
@@ -88,8 +95,6 @@ const KNOB = 'h-[17px] w-[17px] rounded-999 bg-surface'
 /* 꺼진 손잡이의 실선 테두리는 점선 색이다. `border-dashed` 는 모양까지 점선으로 바꿔 쓰지 않는다
    (docs/impl-decision/2026-09-16-border-dashed-name-collision.md) */
 const KNOB_OFF = 'border border-(--color-dashed)'
-const SELECT =
-  'h-32 rounded-9 border border-input-border bg-surface px-8 text-caption text-ink disabled:cursor-default disabled:text-sub'
 const CAPTION = 'text-caption text-sub'
 
 export interface NotificationSectionProps {
@@ -104,6 +109,7 @@ export interface NotificationSectionProps {
  */
 export function NotificationSection({ workspaceId, canManage }: NotificationSectionProps) {
   const { settings, error, retry, change } = useMessageSettings(workspaceId)
+  const indicator = useLoadingIndicator(settings === undefined && !error)
   return (
     <SettingsSection
       id="settings-notifications"
@@ -111,16 +117,84 @@ export function NotificationSection({ workspaceId, canManage }: NotificationSect
       description={settings === undefined ? undefined : existingSuggestionNote(settings)}
     >
       <BrowserPushControl className={`${OPTION_CARD} ${ROW}`} />
-      {settings !== undefined ? (
-        <NotificationControls settings={settings} canManage={canManage} onChange={change} />
-      ) : error ? (
-        <QueryErrorState error={error} onRetry={retry} />
+      {indicator.pending ? (
+        <DeferredSkeleton indicator={indicator} className="flex flex-col gap-14">
+          <NotificationSkeleton />
+        </DeferredSkeleton>
       ) : (
-        <div aria-busy="true">
-          <Skeleton width={220} />
-        </div>
+        <Reveal indicator={indicator}>
+          {settings !== undefined ? (
+            <NotificationControls settings={settings} canManage={canManage} onChange={change} />
+          ) : (
+            <QueryErrorState error={error} onRetry={retry} />
+          )}
+        </Reveal>
       )}
     </SettingsSection>
+  )
+}
+
+/**
+ * 알림 설정을 받는 동안의 뼈대 (#508). NotificationControls 와 같은 틀이다 — 알림 칸 넷(재촉 칸에는 날짜·시각 입력),
+ * PM 알림 방식 제목 · 안내와 라디오 칸 셋. 정해진 글자는 같은 문구(switchCopies · METHODS · METHOD_NOTE)를 글자로 그리고,
+ * 설정에 따라 달라지는 문구 · 값만 막대다. 자리표시라 스크린리더에서 뺀다
+ */
+function NotificationSkeleton() {
+  return (
+    <>
+      {switchCopies(null).map(({ key, title, description, offEffect, note }) => (
+        <div key={key} aria-hidden="true" className={`${OPTION_CARD} ${ROW} border-line`}>
+          <div className="flex-1">
+            {title === null ? (
+              <span className={`${OPTION_TITLE} flex h-lh items-center`}>
+                <Skeleton width="44%" />
+              </span>
+            ) : (
+              <span className={`${OPTION_TITLE} text-sub`}>{title}</span>
+            )}
+            <span className={`${OPTION_DESCRIPTION} text-dim`}>{description}</span>
+            {offEffect === null ? (
+              <span className={`${OPTION_DESCRIPTION} flex h-lh items-center`}>
+                <Skeleton width="72%" />
+              </span>
+            ) : (
+              <span className={`${OPTION_DESCRIPTION} text-dim`}>{offEffect}</span>
+            )}
+            {note === undefined ? null : (
+              <span className={`${OPTION_DESCRIPTION} text-sub`}>{note}</span>
+            )}
+            {key === 'dueReminder' ? (
+              <div className="mt-8 flex flex-wrap items-center gap-8 text-body text-ink">
+                <span>마감</span>
+                <Skeleton variant="block" width={96} height={36} className="rounded-9" />
+                <Skeleton variant="block" width={92} height={36} className="rounded-9" />
+                <span>에 보내요</span>
+              </div>
+            ) : null}
+          </div>
+          <span className="h-[23px] w-40 shrink-0 rounded-999 bg-control" />
+        </div>
+      ))}
+      <p aria-hidden="true" className={OPTION_TITLE}>
+        PM 알림 방식
+      </p>
+      <p aria-hidden="true" className={CAPTION}>
+        {METHOD_NOTE}
+      </p>
+      {METHODS.map((option) => (
+        <div
+          key={option.value}
+          aria-hidden="true"
+          className={`${OPTION_CARD} flex items-start gap-13 border-line px-18 py-16`}
+        >
+          <span className="mt-3 h-[17px] w-[17px] shrink-0 rounded-999 border border-input-border" />
+          <span className="flex-1">
+            <span className={`${OPTION_TITLE} text-ink`}>{option.title}</span>
+            <span className={`${OPTION_DESCRIPTION} text-dim`}>{option.description}</span>
+          </span>
+        </div>
+      ))}
+    </>
   )
 }
 
@@ -187,7 +261,7 @@ function NotificationControls({
         PM 알림 방식
       </p>
       <p id={methodNoteId} className={CAPTION}>
-        지금은 웹으로만 알려요. Discord DM은 준비 중이라 고른 방식은 저장만 돼요.
+        {METHOD_NOTE}
       </p>
       {webOnly === null ? null : (
         <p id={noticeId} className={CAPTION}>
@@ -206,6 +280,17 @@ function NotificationControls({
   )
 }
 
+/* 문장 「마감 [1일 전] [09:00]에 보내요」 안의 칸이라 「마감」 을 앞 글자로 빼고 줄인다 (시안 select-design.html 4) */
+const DAY_OPTIONS: readonly SelectOption<string>[] = NUDGE_DAYS_BEFORE.map((days) => ({
+  value: String(days),
+  label: days === 0 ? '당일' : `${String(days)}일 전`,
+}))
+
+const HOUR_OPTIONS: readonly SelectOption<string>[] = HOURS.map((hour) => ({
+  value: String(hour),
+  label: nudgeHourLabel(hour),
+}))
+
 /** 재촉 규칙 — 마감 며칠 전(0~3) · 몇 시(0~23시 정시, 한국 시간). 바꾸면 규칙 전체를 보낸다 */
 function NudgeRuleFields({
   settings,
@@ -216,47 +301,39 @@ function NudgeRuleFields({
   canManage: boolean
   onChange: (change: MessageSettingsChange) => void
 }) {
-  const daysId = useId()
-  const hourId = useId()
   const rule = settings.nudgeRule
   return (
-    <div className="mt-8 flex flex-wrap items-center gap-8">
-      <label htmlFor={daysId} className="sr-only">
-        재촉 며칠 전
-      </label>
-      <select
-        id={daysId}
-        className={SELECT}
-        value={rule.daysBefore}
-        disabled={!canManage}
-        onChange={(event) =>
-          onChange({
-            nudgeRule: { ...rule, daysBefore: Number(event.target.value) as NudgeDaysBefore },
-          })
-        }
-      >
-        {NUDGE_DAYS_BEFORE.map((days) => (
-          <option key={days} value={days}>
-            {nudgeDayLabel(days)}
-          </option>
-        ))}
-      </select>
-      <label htmlFor={hourId} className="sr-only">
-        재촉 보낼 시각
-      </label>
-      <select
-        id={hourId}
-        className={SELECT}
-        value={rule.hour}
-        disabled={!canManage}
-        onChange={(event) => onChange({ nudgeRule: { ...rule, hour: Number(event.target.value) } })}
-      >
-        {HOURS.map((hour) => (
-          <option key={hour} value={hour}>
-            {nudgeHourLabel(hour)}
-          </option>
-        ))}
-      </select>
+    <div className="mt-8 flex flex-wrap items-center gap-8 text-body text-ink">
+      <span>마감</span>
+      <div className="w-[96px]">
+        <Select
+          size="sm"
+          label="재촉 며칠 전"
+          aria-label="재촉 며칠 전"
+          value={String(rule.daysBefore)}
+          options={DAY_OPTIONS}
+          disabled={!canManage}
+          onValueChange={(value) => {
+            const daysBefore = NUDGE_DAYS_BEFORE.find((days) => String(days) === value)
+            if (daysBefore !== undefined) onChange({ nudgeRule: { ...rule, daysBefore } })
+          }}
+        />
+      </div>
+      <div className="w-[92px]">
+        <Select
+          size="sm"
+          label="재촉 보낼 시각"
+          aria-label="재촉 보낼 시각"
+          value={String(rule.hour)}
+          options={HOUR_OPTIONS}
+          disabled={!canManage}
+          onValueChange={(value) => {
+            const hour = HOURS.find((each) => String(each) === value)
+            if (hour !== undefined) onChange({ nudgeRule: { ...rule, hour } })
+          }}
+        />
+      </div>
+      <span>에 보내요</span>
     </div>
   )
 }

@@ -58,7 +58,8 @@ from app.services.matching import (
     speaker_match,
 )
 from app.services import upload_storage
-from app.services.embedding import has_unsearchable_tasks
+from app.services.alias_learning import learnable_alias_texts, storable_assignee_type
+from app.services.embedding import has_unsearchable_pending, has_unsearchable_tasks
 from app.services.tasks import create_task, delete_task
 
 logger = logging.getLogger(__name__)
@@ -158,6 +159,11 @@ def create_extraction(
     # 유사 검색이 못 보는 task가 있는지(judge auto 조건). 처음 judge 새 항목에서 한 번 읽고, 이 요청이 auto로 task를
     # 만들면 그 task도 임베딩 전이라 검색에 잡히지 않으므로 True로 바꾼다. 그 밖에는 이 요청 안에서 바뀌지 않는다
     unsearched_tasks: bool | None = None
+    # 임베딩이 없어 유사 검색(include_pending)이 못 보는 승인 대기 요청이 있는지. unsearched_tasks 와 같은 자리에서 한 번만
+    # 읽고 바꾸지 않는다. 이 요청의 review/hold 항목이 만드는 pending 은 보통 첫 judge 새 항목 처리 뒤에 생겨 읽은 값에 없다.
+    # 단 legacy 새 항목이 judge 항목보다 앞에 오면 그 pending 이 먼저 flush 되어 첫 judge 항목의 auto 를 막는다. 막는 쪽이라
+    # 그대로 둔다(결정 기록 2026-11-07-pending-approval-search.md)
+    unsearched_pending: bool | None = None
     targets = _lock_update_targets(db, payload.items)
     sources_by_seq = _sources_by_seq(db, meeting.meeting_id, payload.items)
     # 멤버 ID로 화자를 정하는 데 쓸 팀원을 요청당 한 번에 읽는다(항목의 evidence_speaker_member_id와 근거 발화의 member_id)
@@ -234,12 +240,14 @@ def create_extraction(
             if path == ExtractionPath.JUDGE:
                 if unsearched_tasks is None:
                     unsearched_tasks = has_unsearchable_tasks(db, meeting.workspace_id)
+                    unsearched_pending = has_unsearchable_pending(db, meeting.workspace_id)
                 blockers = auto_blockers(
                     AutoSignals(
                         task_status=raw_item.task_status,
                         due_status=raw_item.due_status,
                         similar_count=raw_item.similar_count,
                         unsearched_tasks_exist=unsearched_tasks,
+                        unsearched_pending_exist=bool(unsearched_pending),
                     ),
                     assignee_type=raw_item.assignee_type,
                     assignee=match if mentioned else None,
@@ -253,6 +261,16 @@ def create_extraction(
                 assignee_confidence=match.confidence if mentioned else None,
                 blockers=blockers,
             )
+            if raw_item.assignee_type == "thirdrole" and gate == Gate.AUTO:
+                # 역할 지목은 AI가 역할 원문 대신 문맥으로 추측한 이름을 assignee_raw로 보낼 수 있다. 그 이름이 별칭에
+                # 걸려 legacy 확신도가 높아져도 추측이라 PM이 본다(#459).
+                # 판단 경로(judge)는 auto_blockers가 이미 막으므로 사실상 legacy에 걸리지만, 경로와 무관하게 막는다.
+                # 채팅 강등보다 먼저 둔다. 아래 로그가 "채팅이 아니었으면 auto였을 항목"만 세게 하려는 것이다
+                gate = Gate.REVIEW
+                logger.info(
+                    "역할 지목 항목이라 auto를 review로 내립니다. meeting_id=%s title=%s",
+                    meeting.meeting_id, raw_item.task_title,
+                )
             if meeting.source == MeetingSource.CHAT and gate == Gate.AUTO:
                 # 채팅에서 나온 항목은 PM이 보지 않고 반영하지 않는다. hold는 그대로 둔다
                 gate = Gate.REVIEW
@@ -274,6 +292,7 @@ def create_extraction(
             task_title=target.title if target is not None else raw_item.task_title,
             task_confidence=raw_item.task_confidence,
             assignee_raw=raw_item.assignee_raw,
+            assignee_type=storable_assignee_type(raw_item.assignee_type),
             assignee_member_id=match.member_id,
             assignee_confidence=match.confidence,
             assignee_needs_check=match.needs_check,
@@ -810,6 +829,14 @@ def get_extraction(
 
     evidence_by_item = _representative_evidence(db, [i.item_id for i in items])
 
+    # 별칭 등록을 물어볼 항목은 승인 요청이 pending 인 것뿐이다. 위에서 읽은 승인 상태로 거르므로 쿼리가 늘지 않는다.
+    # 이미 찾히는 표현(찾기 후보를 누군가 가진 것)은 묻지 않는다. 후보 글자를 모아 한 번에 조회한다
+    alias_texts = learnable_alias_texts(
+        db,
+        extraction.meeting.workspace_id,
+        [i for i in items if approval_statuses[i.item_id] == str(ApprovalStatus.PENDING)],
+    )
+
     item_responses = [
         ExtractionItemResponse(
             item_id=i.item_id,
@@ -842,6 +869,8 @@ def get_extraction(
             task_id=None if i.item_id in deleted_task_items else i.task_id,
             approval_id=i.approval_id,
             approval_status=approval_statuses[i.item_id],
+            alias_candidate=alias_texts.get(i.item_id) is not None,
+            alias_text=alias_texts.get(i.item_id),
         )
         for i in items
     ]

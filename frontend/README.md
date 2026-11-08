@@ -24,15 +24,7 @@ npm run build
 
 포맷을 맞출 때는 `npm run format`, 린트 자동 수정은 `npm run lint:fix`.
 
-## Storybook
-
-```bash
-npm run storybook        # http://localhost:6006
-npm run build-storybook  # storybook-static/
-npm run test:storybook   # 빌드 뒤 정적으로 띄워 스토리 handler 회귀를 본다 (포트 6211)
-```
-
-스토리는 앱과 같은 MSW handler 로 데이터를 받는다. 스토리마다 `parameters.scenario` 로 시작 상태를 고르고, `parameters.msw` 는 기본 handler 위에 얹는다 (`.storybook/preview.tsx`).
+화면 단위 검사는 `npm run test`(Vitest + React Testing Library, 앱과 같은 MSW handler)로, 사용자 흐름은 아래 E2E 로 본다. Storybook 은 쓰지 않는다(#482).
 
 ## E2E
 
@@ -48,7 +40,7 @@ E2E 는 매번 자기 개발 서버를 새로 띄운다 — 이미 떠 있는 �
 
 ## 개발 모드의 모의 데이터
 
-모의 데이터는 `VITE_ENABLE_MSW=true`를 명시했을 때만 쓴다. E2E·Storybook·Vitest는 이 설정과 상관없이 MSW를 쓴다. 실제 API 호출이 실패해도 모의 응답으로 자동 전환하지 않는다.
+모의 데이터는 `VITE_ENABLE_MSW=true`를 명시했을 때만 쓴다. E2E·Vitest는 이 설정과 상관없이 MSW를 쓴다. 실제 API 호출이 실패해도 모의 응답으로 자동 전환하지 않는다.
 
 `VITE_ENABLE_MSW=true` 면 브라우저는 **비로그인**으로 시작하고, 가입·워크스페이스·온보딩 진행이 같은 탭의 sessionStorage 에 남는다(새로고침·OAuth 왕복).
 픽스처 계정은 `pm@example.com` / `mock-password` 다. 시작 상태를 고르려면 주소에 `?msw-scenario=` 를 붙인다 —
@@ -89,42 +81,10 @@ API_PROXY_TARGET=https://managers-manager.duckdns.org npm run dev
 
 ## 문서
 
-- 메시지 화면 실제 API 연결(#315, 2026-11-04): 계약 §5.7 의 메시지 API 로 응답 타입·매퍼·요청·MSW 를 옮기고 준비 중 안내를 지워 production 에서도 연다. 서버에 없는 답장 판정·`지금 바로`·채널 대화 등은 뺐다. MSW 기준 검증이며 실서버 연동은 미검증이다. [M8-C 결과](docs/plan/m8/result-c.md#2026-11-04-실제-메시지-api-연결-315) · [API 계약 §5.7](docs/contracts/frontend-api-contract.md).
-- 메시지·알림 설정 연결(#340, 2026-11-05): 설정의 알림 절이 `GET`·`PATCH /workspaces/{id}/message-settings` 로 값을 읽고 PM 이 바꾼 키만 저장한다. 일반 팀원은 읽기만 하고, 실패하면 값을 되돌리고 알린다. 재촉 규칙(마감 0~3일 전, 0~23시 정시)이 토글 제목과 메시지 화면의 마감 기준 보낼 시각을 정한다. `웹으로만` 안내는 `pms[].discord_linked` 로 정하고, 이미 만든 제안 안내와 저장만 되는 두 항목의 준비 중 문구를 더했다. 모의 DB 버전이 10이 되었다. MSW 기준 검증이며 실서버 연동은 미검증이다. [M8-B 결과](docs/plan/m8/result-b.md#2026-11-05-알림-절의-설정-저장-api-연결-340) · [API 계약 §5.7](docs/contracts/frontend-api-contract.md)
-- 메시지 묶음 합치기 뒤 선택 옮기기(#368, 2026-11-05): 보낼 시각을 옮겨 같은 팀원의 예정 메시지와 합쳐지면 화면이 합친 메시지로 옮겨 가고, 승인이 풀렸으니 다시 확인하고 승인하라고 알린다. MSW 도 BE 처럼 합치며 시나리오 `messages-merge` 로 재현한다. MSW 기준 검증이며 실서버 연동은 미검증이다. [M8-C 결과](docs/plan/m8/result-c.md#2026-11-05-합친-묶음으로-선택-옮기기-368)
-- 재촉 직접 만들기와 태스크 빼기·메모 고치기(#370, 2026-11-05): PM 이 태스크 상세의 `재촉` 과 메시지 화면의 `새 재촉` 에서 재촉을 만들고, 보내기 전 확인에서 묶은 태스크 하나를 빼거나 메모를 고친다. 마지막 태스크를 빼면 그 메시지를 보내지 않는다고 먼저 묻는다. 담당자 없는 태스크와 완료한 태스크는 만들 수 없고, Discord 미연결 팀원은 알리기만 한다. 보낼 시각 고르기를 `entities/message-settings/ui` 로 옮겼고 모의 DB 버전이 11이 되었다. MSW 기준 검증이며 실서버 연동은 미검증이다. [M8-C 결과](docs/plan/m8/result-c.md#2026-11-05-재촉-직접-만들기와-묶음에서-태스크-빼기메모-고치기-370) · [API 계약 §5.7](docs/contracts/frontend-api-contract.md) · [결정 기록](docs/plan/m8/basis-for-decision/2026-11-05-reminder-create-entry-rules.md)
-- PM 자기 대화 답장(#367, 2026-11-06): 워크스페이스 응답의 `member_id` 를 받아 대화의 `member_id` 와 같으면 PM 에게도 답장 칸을 보인다. 남의 대화와 `member_id` 가 없거나 `null` 인 응답은 지금처럼 안내 바다. 답장 기다림 표시 등 PM 화면 정책은 그대로다. 시나리오 `messages-pm-self`. MSW 에서 공간을 만든 계정이 새 PM 행과 이어지고 모의 DB 버전이 12 가 되었다. MSW 기준 검증이며 실서버 연동은 미검증이다. [M8-C 결과](docs/plan/m8/result-c.md#2026-11-06-pm-자기-대화-답장-367) · [API 계약 §4.2.1·§5.7](docs/contracts/frontend-api-contract.md)
-
-- 메시지 갱신과 메시지 E2E(#371, 2026-11-06): 메시지 목록·대화는 AI 초안을 기다리는 묶음이 있을 때만 10초마다 다시 받고 탭이 가려지면 멈춘다. 알림 목록에 메시지 알림이 새로 오면 메시지 쿼리를 무효화한다. 상시 polling 은 없다. E2E 에 승인 → 예정, 409 `BUNDLE_CHANGED`, 팀원 답장, 초안 도착을 더했다. D-117·D-136 보류를 풀었다. MSW 기준 검증이며 실서버는 미검증이다. [M8-C 결과](docs/plan/m8/result-c.md#2026-11-06-메시지-갱신과-메시지-e2e-371) · [결정](docs/plan/m8/basis-for-decision/2026-11-06-message-sync-and-e2e.md) · [API 계약 §5.7](docs/contracts/frontend-api-contract.md)
-
-- 리마인드 답장 판단 결과(#344, 2026-11-06): AI 가 태스크를 정하지 못한 답장을 PM 이 대화에서 고르고(`정하기`, 해당 없음 포함), 태스크 상세의 변경 이력이 답장과 그 답장이 바꾼 값을 한 칸으로 보이며, PM 이 자동 반영을 `되돌리기`로 되돌린다. 팀원에게는 답장 글 대신 안내가 보인다. 답장에서 온 승인은 회의 대신 답장을 근거로 보이고, 알림 `reply_judged`·`reply_unjudged` 에 제목이 생겼다. D-179 를 확정했다. 시나리오 `reply-judgment`·`reply-judgment-member`, 모의 DB 버전 14. MSW 기준 검증이며 실서버는 미검증이다. [M8-C 결과](docs/plan/m8/result-c.md#2026-11-06-리마인드-답장-판단-결과-연결-344) · [API 계약 §5.7](docs/contracts/frontend-api-contract.md)
-
-- 온보딩·가드 테스트 4건 재검증(2026-11-04): 기본 테스트 브라우저의 모션 선호를 고정하고 실제 마스코트의 모션 감소 분기를 사용한다. 기존 모션 허용·변경·API 누락 검증을 보존했으며 관련 104개와 전체 단위 176개 파일·2,141개 테스트가 통과했다. [M4 추가 결과](docs/plan/m4/result.md#2026-11-04-추가-결과-온보딩가드-테스트의-모션-환경)에 재현과 검증을 기록한다.
-
-- 수동 업로드 실패 안내·만료 이력(#256, 2026-11-04): 알려진 실패 사유를 구분하고 화자 지정 만료 이력을 목록·상세에 남긴다. BE 목록 필터와 실패 사유 필드를 함께 보완했다. [M5 추가 결과](docs/plan/m5/result.md)에 검증과 제출 UI 후속 작업을 기록한다. 자동 만료 PR #301과 실서버 연동은 별도다.
-- 화자 지정 화면(#256·#342, 2026-11-05): 업로드 회의가 화자 지정 대기가 되면 PM을 처리 화면·토스트·회의록 목록의 `화자 지정 필요` 행에서 `/meetings/:id/speakers`로 안내한다. 샘플 구간을 들어 보고 모든 화자를 팀원·외부 참석자로 지정해 제출하면 처리가 이어진다. 409 만료 안내와 근거 화자 이름의 팀원 ID 조회(A1)를 함께 넣었다. 모의 DB 버전이 8이 되었다. MSW 기준이며 실서버와 m4a 재생 시각은 미검증이다. [M5 추가 결과](docs/plan/m5/result.md#2026-11-05-추가-결과-화자-지정-화면과-샘플-구간-256-342)
-- 탭 패널 초점·회의 날짜 Tab 순서(#337, 2026-11-04): 회의록·태스크 목록 탭 패널은 안에 누를 것이 없을 때만 Tab으로 닿는다. 회의 날짜의 갇힘은 Chromium 153·Chrome 156에서 재현되지 않아 기본 날짜 입력을 유지한다. [M5 추가 결과](docs/plan/m5/result.md#2026-11-04-추가-결과-탭-패널-초점과-회의-날짜-tab-순서-337)에 재현 기록과 검증을 남긴다.
-
-- 로그인 후 시작 방식 선택 추가·디자인 통일(2026-11-03): 소속이 없는 계정은 팀원 작업과 PM 생성을 먼저 고른다. 기존 온보딩 프레임·매스 말풍선·카드를 재사용한다. 타입·린트·빌드·포맷과 Chromium E2E 12개가 통과했다. 전체 단위 묶음은 시간 초과가 남았으며, [M4 추가 결과](docs/plan/m4/result.md)에 원본 검사와 단독 재검사 근거를 기록한다. 초대·가입 API와 실제 외부 연동은 미검증이다.
 - [문서 안내](docs/README.md): 대표 경로, 기존 문서 대응과 유지한 자료.
 - [API 계약](docs/contracts/frontend-api-contract.md): 기존 백엔드 요청과 현재 코드 차이를 한 문서에서 관리.
 - [전체 계획](docs/plan/frontend-plan.md) · [마일스톤 상태·기록](docs/plan/README.md): M0~M8. M0~M5는 기존 계획 원문을 각 `plan.md`로 이동했다. M6·M7은 계획과 결과([M6](docs/plan/m6/result.md), [M7](docs/plan/m7/result.md))가 있고 M8은 0바이트 초기화 파일이다.
-- 캘린더 상태 색 외 구분(#338, 2026-11-05): 캘린더 칩·범례에 `마감 임박`·`확인 필요` 아이콘을 더하고, 아이콘이 없는 진행 중·할 일·완료를 포함해 모든 칩 링크 이름을 상태부터 읽게 했다. 팀 화면의 기한 지난 마감에도 같은 아이콘을 붙였다. 표식 모양은 디자인 합의 전 기본값이다. [M8-A 추가 결과](docs/plan/m8/result-a.md#2026-11-05-추가-결과-캘린더-상태를-색-외-표식으로도-구분-338) · [결정](docs/plan/m8/basis-for-decision/2026-11-05-calendar-status-marks.md)
-- M6 후속 #311: 태스크 진행률을 현재 모델·화면에서 제거하고, 생성·수정 승인 보완값을 실 API 요청과 MSW에 연결했다. 충돌 재확인·완료값 표시는 [M6 후속 결과](docs/plan/m6/result.md)와 [API 계약](docs/contracts/frontend-api-contract.md)에 기록한다. 실 백엔드 연동은 BE PR #307 배포 환경에서 확인해야 한다.
-- 마일스톤 밖 수정: 태스크 상세 재조회 실패가 화면에 안 보이고 polling이 조용히 멈추던 문제(#236) — 판정 함수 `queryView`를 `shared/lib/query-view`로 옮겨 상세 화면과 Notion polling이 함께 쓰고, 갱신 실패 시 본문 유지·안내·`다시 시도`를 두고 Storybook 스토리를 추가했다. [계획](docs/plan/refactor/plan-task-detail-refetch-error.md) · [결과](docs/plan/refactor/result-task-detail-refetch-error.md) · [M6 결과](docs/plan/m6/result.md). Node v24.11.0에서 typecheck·lint·format·vitest·build·관련 E2E·Storybook 통과(스토리 추가 후 105건), 독립 검증 완료, MSW 기준이며 실서버 미검증.
-- 마일스톤 밖 수정: 온보딩에서 기존 PM을 체크해 Discord 중복 멤버 생성 방지(#228) — [계획](docs/plan/refactor/plan-onboarding-pm-discord-link.md) · [결과](docs/plan/refactor/result-onboarding-pm-discord-link.md). MSW 기준 검증, 실서버 미검증.
-- 마일스톤 밖 수정: 강조색·흐린 글자의 명도 대비(#336, 2026-11-04) — `accent`를 `#c43636`, `accent-soft`를 `#cf4545`로 바꾸고 읽어야 하는 `faint` 글자는 `dim`으로 옮겼다. 색 값은 디자인 합의 전 기본값이다. [결정](docs/plan/m2/basis-for-decision/2026-11-04-accent-faint-contrast.md). 마일스톤이 문서로 정해지지 않아 result.md는 만들지 않았다.
-- 마일스톤 밖 수정: 대시보드 최신 완료 회의 선택에서 전체 목록 복사·정렬을 없앴다(#350, 2026-11-05). 완료 회의만 한 번 훑어 고르며 선택 결과·동률·날짜 누락 처리는 같다. 호출 1회 30건 약 50µs → 3~4µs, 1만 건 약 61ms → 1.5ms(Node 측정, 체감 개선은 주장하지 않음). [계획](docs/plan/refactor/plan-latest-done-meeting.md) · [결과](docs/plan/refactor/result-latest-done-meeting.md)
-- 마일스톤 밖 수정: 간트 보기의 담당자별 묶음(`widgets/task-board/lib/ganttGroups.ts`)을 항목을 한 번 훑어 만든다(#353, 2026-11-05). 묶음 순서·문구는 이전과 같다. [계획](docs/plan/refactor/plan-gantt-group-rows.md) · [결과](docs/plan/refactor/result-gantt-group-rows.md)
-- 마일스톤 밖 수정: 폰트 preload 재측정(#352, 2026-11-05). production 빌드·Slow 4G 에서 Bold preload 를 빼 LCP 를 0.5~1.0초 줄였다. 굵은 글씨는 첫 화면 뒤 약 1.5초 동안 기본 폰트로 보인다. unicode-range 분할은 LCP 가 늘어 적용하지 않았다. 운영 Caddy 설정과 실제 API 왕복은 반영하지 않은 측정이다. [측정·재현](docs/performance/2026-11-05-font-loading-remeasure.md)
-- 마일스톤 밖 수정: 비밀번호 재설정 화면(#356, 2026-11-05). `/forgot-password`에서 메일을 요청하고 60초 동안 다시 보내기를 막는다. 메일 링크의 `/reset-password#token=`은 토큰을 주소에서 지운 뒤 확인하고, 바꿀 계정을 가린 이메일로 보이며, 만료·재사용·무효 링크를 나눠 안내한다. 바꾼 뒤에는 세션 상태를 비우고 로그인 화면에 안내를 띄운다. BE는 PR #398로 열려 있고 병합 전이다. 로그인 화면의 링크는 비활성으로 두었고 BE 배포와 운영 메일 설정 뒤 켠다. 시나리오는 `password-reset`·`-expired`·`-used`·`-invalid`·`-cooldown`·`-server-error`·`-mail-unavailable`이고 MSW 모드의 `/__mock/mail`에서 보낸 링크를 연다. 모의 DB 버전이 9가 되었다. MSW 기준이며 실서버와 실제 메일은 미검증이다. 마일스톤이 정해지지 않아 result.md는 만들지 않았다. [API 계약](docs/contracts/frontend-api-contract.md) §4.1.1
-- 마일스톤 밖 기록: TaskBoard 파생 연산 측정(#351, 2026-11-05). 보기에 필요 없는 파생값과 탭 개수 반복은 태스크 2,000건에서 한 번에 5.3~8.7ms(Chromium 153, 프로덕션 모양 번들)이고, 개발 빌드 화면에서 동작 CPU 시간의 최대 약 5%라 코드 변경을 보류했다. 프로덕션 화면 효과는 미검증이다. URL 변경마다 `board`가 다시 도는 memo 무효화는 #391로 남겼다. [측정](docs/performance/2026-11-05-taskboard-derived.md) · [계획](docs/plan/refactor/plan-taskboard-derived.md) · [결과](docs/plan/refactor/result-taskboard-derived.md)
-- 마일스톤 밖 수정: 채팅 출처 회의 표시(#379, 2026-11-05). 회의록 목록은 채팅 회의에 `채팅` 배지를 달고 길이를 뺀다. 회의록 머리는 서울 시각 범위, 전사문과 근거는 실제 작성 시각(`MM/DD HH:mm`)으로 보인다. 녹음 회의 표시는 그대로다. 승인 카드의 근거 시각은 #397로 남겼다. MSW 기준 검증이며 실서버는 미검증이다. [결과](docs/issues/379-chat-meeting/result.md)
-- 마일스톤 밖 수정: 채팅 회의 승인의 근거 시각(#397, 2026-11-05). 대시보드 확인 필요 목록, 승인 검토(범위 변경 포함), 태스크 보드 승인 카드가 승인의 회의를 회의 목록에서 찾아, 채팅 회의는 실제 작성 시각(`MM/DD HH:mm`)으로, 녹음 회의는 그대로 `mm:ss`로 보인다. 회의를 찾지 못하면 시각을 숨기거나 `알 수 없음`으로 둔다. BE 계약은 그대로다. 시나리오 `approval-chat`. MSW 기준 검증이며 실서버는 미검증이다. [결과](docs/issues/397-chat-approval-evidence-time/result.md)
-- 마일스톤 밖 수정: 받아 둔 회의 상세 뒤 403·404(#405, 2026-11-06). 처리 화면, 화자 지정 화면, 회의록 본문이 상세·회의록·화자 목록을 받아 둔 뒤 403·404를 받으면 처음부터 볼 수 없는 회의와 같은 「이 회의를 볼 수 없어요」로 바뀐다. 처리 화면이 추적이 멈춘 채 「정리하고 있어요」에 남던 것을 고치기 전 테스트로 재현했다. 대시보드 최근 반영은 404면 회의 목록을 다시 받아 다음 완료 회의를 보이고, 403이면 오류 카드다. 판정(`isAccessLost`·`isMeetingUnavailable`)을 회의 엔티티로 옮겼다. MSW 기준 검증이며 실서버는 미검증이다. [결과](docs/issues/405-meeting-unavailable/result.md) · [결정](docs/plan/m5/basis-for-decision/2026-11-06-meeting-unavailable-after-cached-detail.md)
-- 마일스톤 밖 수정: 로그인 뒤 돌아가기와 기기 알림 안내(#411, 2026-11-06). 로그인이 풀린 채 보호 주소(푸시로 연 대화·태스크 포함)를 열면 `/login?next=`로 가고 로그인 뒤 그 주소로 돌아간다. `next`는 앱 안 보호 경로만 받고, 직접 로그아웃한 화면에는 붙이지 않는다. 팀원이 리마인드 대화를 열면 대화 머리 아래에 기기 알림을 켜자는 띠가 보이고, 권한은 [알림 켜기]를 누를 때만 묻는다. 닫거나 켜거나 거절하면 이 기기·계정에서 다시 보이지 않는다. MSW 기준 검증이며 실서버와 실기기 푸시는 미검증이다. [결과](docs/issues/411-login-return-push-prompt/result.md)
-- 마일스톤 밖 수정: 강조색 레드 다섯 값(#423, 2026-11-06). 벽돌색 `#c43636` 하나를 `accent`(`#c62828`, 작은 글자·경계), `accent-point`(`#e62e2d`, 점·포커스 선), `accent-solid`(`#d32f2f`, 흰 글자 면·플레이스홀더), `accent-badge`(`#fbe9e7`, 글자 있는 배지 면), `accent-chip`(`#f4d9d7`, 캘린더 칩·안내 띠)으로 나누고 자리마다 필요한 대비로 골랐다. `accent-soft`는 지웠다. 설정 알림 절 문구를 「켜면 새 알림이 올 때 이 기기로 바로 알려 드려요.」로 고쳤다. 디자인 문서 색 표는 #395에서 맞춘다. MSW 기준 검증이다. [결과](docs/issues/423-accent-red/result.md) · [결정](docs/plan/m2/basis-for-decision/2026-11-06-accent-red-r2.md)
-- 마일스톤 밖 수정: 로딩 스플래시·설치한 앱 시작 화면·첫 방문 인트로(#430, 2026-11-06). `index.html` 의 먹 마스코트가 JS 보다 먼저 그려지고 React 가 같은 자리에서 둘러보기·눈웃음·사라짐을 이어 한다. 라우트 뼈대가 그려진 동안 덮고 대시보드 카드 데이터는 기다리지 않는다. 로그인 직후에도 덮고, 랜딩은 React 가 뜨면 바로 걷는다. 마스코트에 눈웃음·속도 옵션을 더했다. iOS 시작 이미지 29장을 `npm run startup-images` 로 만든다. 매스 인트로는 랜딩 `시작하기` 를 이 기기에서 처음 누를 때, 그리고 온보딩을 마친 계정의 첫 대시보드에 한 번 보인다. MSW·프로덕션 번들 기준 검증이며 실제 iOS 기기는 미검증이다. [결과](docs/issues/430-splash/result.md) · [결정](docs/plan/m2/basis-for-decision/2026-11-06-splash-direction-a-smile.md)
+- 마일스톤 밖 수정: 이슈마다 [docs/issues/](docs/issues/) 아래 `<번호>-<이름>/result.md` 에 결과를 둔다. 이 README 에는 줄을 더하지 않는다. 2026-11-07 까지의 목록은 [docs/issues/README.md](docs/issues/README.md) 에 있다.
 - [공통 작업 규칙](../docs/agent-rules.md) · [문서 양식](../docs/README.md).
 - `docs/requests/`: 실제 독립 요청 발생 시 기록. 기존 백엔드 요청은 API 계약 §4에 유지.
 - [제품·기술 결정](docs/decision/frontend-decisions.md) · [구현 결정 안내](docs/plan/basis-for-decision-guide.md): 구현 결정 원문은 해당 마일스톤의 `basis-for-decision/`에 있다.

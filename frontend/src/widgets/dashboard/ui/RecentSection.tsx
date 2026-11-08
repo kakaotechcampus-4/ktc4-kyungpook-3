@@ -20,7 +20,7 @@ import type { RecentEmptyReason, RecentSyncState } from '../lib/dashboard'
 import type { DashboardData, Loadable } from '../model/useDashboardData'
 import { BADGE, EMPTY_NOTE, HEAD_LINK, SECTION_HEAD, SECTION_TITLE, SectionBody } from './parts'
 
-const ROW = 'flex flex-col gap-6 border-b border-line px-18 py-12 last:border-b-0'
+const ROW = 'flex flex-col gap-6 border-b border-line px-18 py-12 last:border-b-0 max-md:px-[0px]'
 const ROW_MAIN = 'flex items-center gap-10'
 const ROW_TEXT = 'min-w-[0px] flex-1 text-caption text-sub'
 /** 행 동작(되돌리기 버튼, 확인 필요 이동 링크)의 아이콘 자리. 둘이 같은 자리·크기에 번갈아 온다 */
@@ -33,7 +33,7 @@ const EMPTY_TITLE = 'text-body font-semibold text-ink'
 const EMPTY_LINK =
   'inline-flex h-32 items-center justify-center rounded-9 bg-control px-12 text-control font-semibold text-ink hover:bg-line-strong'
 /** `외 N건` 줄. 높이가 RECENT_MORE_LINE_PX 다 */
-const MORE_LINE = 'flex h-32 items-center px-18'
+const MORE_LINE = 'flex h-32 items-center px-18 max-md:px-[0px]'
 
 /** 행 상태 문구. `synced` 만 반영 완료다. 되돌림이 가장 먼저다 (계획 §3) */
 const SYNC_LABEL: Record<RecentSyncState, string> = {

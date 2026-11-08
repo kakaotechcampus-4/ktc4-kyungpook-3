@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { Browser, Page } from '@playwright/test'
-import { start } from './support'
+import { expectNoHorizontalOverflow, start } from './support'
 
 /*
  * UX1 — 회의록의 로딩 자리 (docs/impl-decision/2026-10-06-minutes-skeleton-and-selection.md). 1440px.
@@ -31,9 +31,9 @@ const GUARD_LAG = 300
 
 /* widgets/meeting-minutes/model/useShownMeeting.ts 의 값. E2E 는 앱 모듈(별칭 `@`)을 가져오지 않아 옮겨 적었다 */
 /** 고른 회의의 답을 기다리며 이전 본문을 들고 있는 최대 시간 */
-const MINUTES_HOLD_MS = 250
+const MINUTES_HOLD_MS = 200
 /** 회의를 바꾸며 그린 본문 뼈대를 두는 최소 시간 */
-const MINUTES_SKELETON_MIN_MS = 300
+const MINUTES_SKELETON_MIN_MS = 400
 /** 한 프레임(60Hz). 샘플은 커밋 뒤에 적히므로 뼈대가 붙은 샘플이 커밋보다 이만큼까지 늦을 수 있다 */
 const FRAME_MS = 1000 / 60
 
@@ -83,6 +83,7 @@ declare global {
     __selection?: SelectionSample[]
     __clickedAt?: number
     __rowFrames?: RowFrame[]
+    __shownCounts?: { counts: number[]; done: boolean }
     __detailSkeletonSeen?: boolean
     __stopSampling?: boolean
   }
@@ -626,11 +627,22 @@ test.describe('참석자 줄은 몇 명이든 칩 한 줄이고 남는 사람은
         await page.setViewportSize({ width, height: 900 })
         const at = `${count}명 · ${width}px`
         // 줄 폭이 바뀌면 ResizeObserver 가 다시 잰다 — 정한 프레임 수가 아니라 보이는 칩 · `+N` 이 새 폭에 맞을 때까지 기다린다.
-        // 끝내 맞지 않으면 그 까닭과 함께 실패한다
+        // 맞는 상태를 한 번 읽은 바로 뒤에 한 사람이 모자란 상태가 100ms 안쪽으로 보였다가 돌아오는 때가 있다(develop 에서도 10번 중 2번).
+        // 창이 1280px 경계를 처음 넘을 때 Chromium 이 @font-face 를 다시 등록하고, 개발 서버에서는 글꼴을 다시 받는 약 50ms 동안
+        // 페이지 전체가 대체 글꼴로 그려져 칩이 넓어진다. 줄은 그 폭을 맞게 따라간다. 운영 빌드에서는 0회였다 (#490).
+        // 잇따른 두 읽기가 같을 때만 자리 잡은 것으로 보고 그 상태로 아래를 본다. 끝내 맞지 않으면 그 까닭과 함께 실패한다
+        let state = await readAttendeeRow(page)
         await expect
-          .poll(async () => fitProblem(await readAttendeeRow(page), count), { message: at })
+          .poll(
+            async () => {
+              const next = await readAttendeeRow(page)
+              const settled = JSON.stringify(next) === JSON.stringify(state)
+              state = next
+              return settled ? fitProblem(next, count) : '줄이 아직 바뀌는 중'
+            },
+            { message: at },
+          )
           .toBeNull()
-        const state = await readAttendeeRow(page)
 
         // 한 줄 높이 — 칩 높이 그대로다. 보이는 칩은 모두 그 줄 위에 있다
         expect(state.row.height, at).toBe(22)
@@ -643,12 +655,64 @@ test.describe('참석자 줄은 몇 명이든 칩 한 줄이고 남는 사람은
         // 한두 명은 늘 다 보이고, 20명은 어느 폭에서도 줄어든다. 1024px 의 10명은 이름 칩이 두 줄로 접히던 데이터다
         if (count <= 4) expect(state.more, at).toBeNull()
         if (count === 20 || (width === 1024 && count === 10)) expect(state.more, at).not.toBeNull()
+        // 이름 칩을 모두 늘어놓는 숨은 재는 칸은 줄 안에 잘린다 — 인원이 많아도 페이지가 가로로 스크롤되지 않는다
+        await expectNoHorizontalOverflow(page)
         tabsByWidth.set(width, [...(tabsByWidth.get(width) ?? []), state.tabsTop])
       }
       await context.close()
     }
     // 같은 폭에서는 인원이 몇이든 탭 줄이 같은 자리다
     for (const tabs of tabsByWidth.values()) for (const top of tabs) near(top, tabs[0])
+  })
+
+  test('1440px · 20명 직접 진입 — 참석자 줄이 처음 그려진 뒤 1초 동안 보이는 칩 수가 한 번도 바뀌지 않는다 (#490)', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+    const page = await context.newPage()
+    await seedStoredDb(page, withAttendees(stored, 20))
+    // 앱 코드보다 먼저 지켜본다 — 프레임마다, 그리고 칩의 class 가 바뀔 때마다(한 프레임 안에서 되돌아간 커밋까지) 보이는 칩 수를 적는다
+    await page.addInitScript(() => {
+      const record = { counts: [] as number[], done: false }
+      window.__shownCounts = record
+      let since: number | null = null
+      let list: Element | null = null
+      const read = () => {
+        if (list === null) return
+        record.counts.push(
+          [...list.children].filter((item) => !item.classList.contains('sr-only')).length,
+        )
+      }
+      const changes = new MutationObserver(read)
+      const frame = () => {
+        if (list === null) {
+          list = document.querySelector('section[aria-label="회의록 본문"] ul[aria-label="참석자"]')
+          if (list !== null) {
+            since = performance.now()
+            changes.observe(list, { attributes: true, attributeFilter: ['class'], subtree: true })
+          }
+        }
+        read()
+        if (since !== null && performance.now() - since >= 1000) {
+          changes.disconnect()
+          record.done = true
+          return
+        }
+        requestAnimationFrame(frame)
+      }
+      requestAnimationFrame(frame)
+    })
+    await page.goto('/workspaces/ws_01/meetings/mt_09')
+    await minutesComplete(page, '3주차 정기회의')
+    await page.waitForFunction(() => window.__shownCounts?.done === true)
+    const { counts } = await page.evaluate(() => window.__shownCounts!)
+
+    // 빈 검사가 아니다 — 1초 동안의 프레임이 적혔고, 줄어든 줄(`+N`)이다
+    expect(counts.length).toBeGreaterThanOrEqual(30)
+    expect(counts[0]).toBeLessThan(20)
+    expect(new Set(counts)).toEqual(new Set([counts[0]]))
+    expect(fitProblem(await readAttendeeRow(page), 20)).toBeNull()
+    await context.close()
   })
 
   test('창 크기를 바꾸는 동안 그려지는 모든 프레임에서 잘린 칩 · 낡은 `+N` 이 없다 — 20명 (UX1-N02)', async ({
@@ -694,6 +758,9 @@ test.describe('참석자 줄은 몇 명이든 칩 한 줄이고 남는 사람은
         }),
       ).observe(row)
     })
+    // 관찰을 시작한 첫 기록이 적힌 뒤에 폭을 바꾼다. 그 전에 바꾸면 첫 기록과 첫 폭 바꾸기가 한 프레임에 합쳐져 하나만 적힌다 —
+    // 화면이 막 그려진 직후(로딩 자리의 최소 표시가 끝난 커밋 바로 뒤)에는 그 사이에 프레임이 없을 수 있다 (#508)
+    await page.waitForFunction(() => (window.__rowFrames?.length ?? 0) >= 1)
 
     // 넓게 · 좁게 · 칩 수가 바뀌는 폭을 모두 지난다
     for (const width of [1024, 1440, 1920, 1200, 1024]) {
