@@ -12,7 +12,7 @@ import { messageHandlers } from '@/shared/mock/handlers/message'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { isMemberOf, setMockRole } from '@/shared/mock/sessions'
-import { recordRequests } from '@/shared/test/requests'
+import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import { REVEAL_TARGETS } from '@/shared/ui/deferred-skeleton'
 import { SELF_SECTION_TITLE } from '@/widgets/message-inbox'
 import { onTestFinished } from 'vitest'
@@ -1119,5 +1119,113 @@ describe('웹 계정이 없는 팀원은 PM 목록과 대화에 웹 답장 불�
     expect(await detail().findByRole('textbox', { name: '이재환님에게 메시지' })).toBeVisible()
     expect(screen.queryByText('웹 답장 불가')).toBeNull()
     expect(detail().queryByRole('link', { name: '팀원 초대하기' })).toBeNull()
+  })
+})
+
+describe('재촉 없이도 대화를 시작한다 (#519)', () => {
+  const THREADS = '/workspaces/ws_01/messages/threads'
+
+  it('PM 은 목록 머리의 새 대화에서 팀원을 고르면 그 대화로 가고 목록에 대화가 생긴다 — 자기 자신은 고를 수 없다', async () => {
+    const app = await openInbox()
+    await userEvent.click(list().getByRole('link', { name: '새 대화' }))
+    await app.expectSearch('?new=thread')
+    expect(await detail().findByRole('heading', { level: 2, name: '새 대화' })).toBeVisible()
+    expect(detail().getByText('대화할 팀원을 골라 주세요.')).toBeVisible()
+    expect(list().getByRole('link', { name: '새 대화' })).toHaveAttribute('aria-current', 'page')
+    const members = await detail().findByRole('list', { name: '팀원' })
+    expect(within(members).getAllByRole('button').map(readable)).toEqual([
+      '박민수',
+      '이재환',
+      '정하늘',
+    ])
+
+    // 대화가 이미 있는 팀원이면 새로 만들지 않고 그 대화로 간다. 새로 만드는 경우는 아래에서 본다
+    const bodies = recordRequestBodies('POST', THREADS)
+    await userEvent.click(within(members).getByRole('button', { name: '이재환' }))
+    await app.expectPath(paths.messageThread('ws_01', 'th_01'))
+    expect(bodies).toEqual([{ member_id: 'mb_03' }])
+    expect(app.visitedActions().at(-1)).toBe('REPLACE')
+    expect(await detail().findByRole('textbox', { name: '이재환님에게 메시지' })).toBeVisible()
+  })
+
+  it('대화가 없던 팀원을 고르면 빈 대화가 생기고 목록이 그 대화를 보인다', async () => {
+    db.messageThreads = db.messageThreads.filter(({ member_id }) => member_id !== 'mb_04')
+    const app = await openInbox(paths.messageStartThread('ws_01'))
+    const members = await detail().findByRole('list', { name: '팀원' })
+    await userEvent.click(within(members).getByRole('button', { name: '정하늘' }))
+    await app.expectPath(paths.messageThread('ws_01', 'th_12'))
+    expect(await detail().findByText('아직 주고받은 메시지가 없어요.')).toBeVisible()
+    await waitFor(() =>
+      expect(within(threadList()).getByRole('link', { name: /정하늘/ })).toHaveAttribute(
+        'aria-current',
+        'page',
+      ),
+    )
+  })
+
+  it('여는 동안 팀원 행이 잠겨 두 번 눌러도 한 번만 묻고, 실패하면 알리고 다시 누르면 다시 연다', async () => {
+    const app = await openInbox(paths.messageStartThread('ws_01'))
+    const members = await detail().findByRole('list', { name: '팀원' })
+    const request = hold(THREADS, 'post')
+    const row = within(members).getByRole('button', { name: '박민수' })
+    await userEvent.click(row)
+    await waitFor(() => expect(row).toBeDisabled())
+    await userEvent.click(within(members).getByRole('button', { name: '정하늘' }))
+    expect(request.calls()).toBe(1)
+    db.messageFailures.actions = true
+    act(() => request.resolve())
+    expect(await detail().findByRole('alert')).toHaveTextContent('대화를 열지 못했어요.')
+    await waitFor(() => expect(row).toBeEnabled())
+    await app.expectSearch('?new=thread')
+
+    db.messageFailures.actions = false
+    await userEvent.click(row)
+    await app.expectPath(paths.messageThread('ws_01', 'th_02'))
+  })
+
+  it('팀원 목록을 받지 못하면 다시 시도를 둔다', async () => {
+    server.use(
+      http.get('/api/v1/members', () => fail('INTERNAL_ERROR', '팀원을 불러오지 못했습니다.', 500)),
+    )
+    await openInbox(paths.messageStartThread('ws_01'))
+    expect(await detail().findByText('팀원 목록을 불러오지 못했어요')).toBeVisible()
+    expect(detail().getByRole('button', { name: '다시 시도' })).toBeVisible()
+  })
+
+  it('PM 의 빈 화면에도 새 대화가 있고, 새 대화 칸은 빈 화면이 가로채지 않는다', async () => {
+    emptyWorkspace('ws_01')
+    renderApp(paths.messages('ws_01'))
+    await userEvent.click(await screen.findByRole('link', { name: '새 대화' }))
+    expect(await detail().findByRole('heading', { level: 2, name: '새 대화' })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: '보낼 메시지가 없어요' })).toBeNull()
+  })
+
+  it('팀원은 빈 화면의 PM에게 메시지 보내기로 자기 대화를 열고, 새 대화 주소는 무시한다', async () => {
+    applyScenario('messages-member')
+    db.messageThreads = db.messageThreads.filter(({ member_id }) => member_id !== 'mb_01')
+    const bodies = recordRequestBodies('POST', THREADS)
+    const app = renderApp(paths.messageStartThread('ws_01'))
+    await userEvent.click(await screen.findByRole('button', { name: 'PM에게 메시지 보내기' }))
+    expect(screen.queryByRole('heading', { name: '새 대화' })).toBeNull()
+    await app.expectPath(paths.messageThread('ws_01', 'th_12'))
+    expect(bodies).toEqual([{ member_id: 'mb_01' }])
+    expect(await detail().findByRole('textbox', { name: 'PM에게 메시지' })).toBeVisible()
+  })
+
+  it('팀원 행을 모르면 PM에게 메시지 보내기를 두지 않는다 — 다른 ID 로 짐작하지 않는다', async () => {
+    applyScenario('messages-member')
+    db.messageThreads = db.messageThreads.filter(({ member_id }) => member_id !== 'mb_01')
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        listResponse(
+          db.workspaces
+            .filter(({ workspace_id }) => isMemberOf(workspace_id))
+            .map((workspace) => ({ ...workspace, member_id: null })),
+        ),
+      ),
+    )
+    renderApp(paths.messages('ws_01'))
+    expect(await screen.findByRole('heading', { name: '받은 메시지가 없어요' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'PM에게 메시지 보내기' })).toBeNull()
   })
 })

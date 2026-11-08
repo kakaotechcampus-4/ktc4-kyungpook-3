@@ -233,3 +233,21 @@ it('가상 키보드가 보이는 영역을 줄이면 화면 전체 상세를 �
   act(() => listeners.forEach((listener) => listener()))
   expect(main.style.position).toBe('')
 })
+
+it('휴대폰 목록의 새 대화는 상세를 화면 전체로 열고, 머리 제목이 새 대화다 (#519)', async () => {
+  stubViewportWidth(390)
+  const app = renderApp(paths.messages('ws_01'))
+  const list = await screen.findByRole('complementary', { name: '메시지 목록' })
+  await userEvent.click(within(list).getByRole('link', { name: '새 대화' }))
+  await app.expectSearch('?new=thread')
+  expect(inboxList()).toBeNull()
+  expect(tabBar()).toBeNull()
+  expect(within(detailArea()!).getByText('새 대화', { selector: 'p' })).toBeVisible()
+  expect(
+    await within(detailArea()!).findByRole('heading', { level: 2, name: '새 대화' }),
+  ).toBeVisible()
+
+  await userEvent.click(backLink())
+  await app.expectPath(paths.messages('ws_01'))
+  expect(await screen.findByRole('complementary', { name: '메시지 목록' })).toBeVisible()
+})
