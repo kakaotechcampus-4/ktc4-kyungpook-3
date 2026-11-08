@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { finishOAuth, start } from './support'
+import { finishOAuth, signUp, start } from './support'
 
 /* 시나리오 ① 가입 → 온보딩 전 단계(모의 OAuth 포함) → 새 공간 대시보드 (U5-2) */
 
@@ -14,11 +14,7 @@ test('가입 → 워크스페이스 만들기 → Discord·Notion 모의 OAuth �
   await page.getByRole('link', { name: '회원가입' }).click()
   await expect(page).toHaveURL('/signup')
 
-  // 키보드로 채우고 제출한다
-  await page.getByLabel('이름').fill('새 사용자')
-  await page.getByLabel('이메일').fill('e2e@example.com')
-  await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
-  await page.getByLabel('비밀번호', { exact: true }).press('Enter')
+  await signUp(page, { name: '새 사용자', email: 'e2e@example.com', password: 'pass1234' })
 
   await expect(page).toHaveURL('/onboarding/start')
   await page.getByRole('link', { name: /PM으로 팀 만들기/ }).click()

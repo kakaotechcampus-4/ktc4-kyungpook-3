@@ -707,3 +707,195 @@ def test_learned_alias_is_found_in_the_next_meeting(client, pm_client, db, seed,
     found = _item(db, "다음 회의 일")
     assert found.assignee_member_id == seed["leader"].member_id
     assert found.assignee_needs_check is False
+
+
+# --- 합쳐진 카드(#141 PR 2): 별칭은 카드의 담당 항목에서만 배운다 ---
+
+
+def _merge(card_id: str, **fields) -> dict:
+    """담당자를 말한 merge 항목(judge 경로)."""
+    return {
+        "action": "merge", "target_approval_id": card_id, "category": "assignee", "task_title": "결제 환불",
+        "doc_text": "담당자 정정", "assignee_type": "thirdname", "assignee_raw": "하은", "due_date": None,
+        "evidence_quote": "담당은 하은", "evidence_speaker": "uid-pm", "task_status": "certain",
+        "due_status": "missing", "similar_count": 0, "top_similarity": None, **fields,
+    }
+
+
+def _post_in_new_meeting(client, db, seed, items: list[dict]):
+    """같은 회의에는 추출이 한 번만 들어가므로 합치는 항목은 새 회의로 보낸다."""
+    meeting = Meeting(workspace_id=seed["ws"].workspace_id, status="processing")
+    db.add(meeting)
+    db.commit()
+    return client.post("/api/v1/extractions", json={
+        "meeting_id": meeting.meeting_id, "workspace_id": seed["ws"].workspace_id, "items": items,
+    }, headers=SERVICE_HEADERS)
+
+
+def _learned(db) -> list[tuple[str, str]]:
+    return [(a.member_id, a.alias_text) for a in _aliases(db) if a.source == "learned"]
+
+
+def test_save_alias_ignores_creator_item_when_merged_item_took_over_assignee(client, pm_client, db, seed):
+    """A(담당자 못 찾음)가 만든 카드에 B(담당자를 찾음)가 합쳐져 담당자가 B 가 되면 A 의 표현은 배우지 않는다."""
+    _hold_item(client, seed)
+    card = _approvals(db, "task_create")[0]
+    r = _post_in_new_meeting(client, db, seed, [_merge(card.approval_id)])
+    assert r.status_code == 201, r.text
+    db.expire_all()
+    assert json.loads(db.get(ApprovalRequest, card.approval_id).payload)["assignee_member_id"] == (
+        seed["haeun"].member_id
+    )
+
+    resp = pm_client.patch(f"/api/v1/approvals/{card.approval_id}", json={"status": "approved", "save_alias": True})
+
+    _assert_approved_with_task(db, resp)
+    assert _learned(db) == []
+
+
+def test_save_alias_learns_from_merged_assignee_item(client, pm_client, db, seed):
+    """A(담당자를 찾음)가 만든 카드에 B(이름 지목인데 못 찾음)가 합쳐져 담당자 항목이 되면 B 의 표현을 배운다."""
+    _hold_item(client, seed, raw="하은")
+    card = _approvals(db, "task_create")[0]
+    r = _post_in_new_meeting(client, db, seed, [_merge(card.approval_id, assignee_raw="화은이가")])
+    assert r.status_code == 201, r.text
+
+    resp = pm_client.patch(f"/api/v1/approvals/{card.approval_id}", json={
+        "status": "approved", "save_alias": True,
+        "task_overrides": {"assignee_member_id": seed["leader"].member_id},
+    })
+
+    _assert_approved_with_task(db, resp)
+    assert _learned(db) == [(seed["leader"].member_id, "화은")]
+
+
+def _detail_of(pm_client, card_id: str) -> dict:
+    r = pm_client.get(f"/api/v1/approvals/{card_id}")
+    assert r.status_code == 200, r.text
+    return r.json()["data"]
+
+
+def test_assignee_merge_then_stale_version_save_alias_is_409_without_alias(client, pm_client, db, seed):
+    """카드를 본 뒤 담당자 항목이 합쳐지면, 옛 버전으로 별칭 저장을 눌러도 막히고 별칭이 남지 않는다."""
+    _hold_item(client, seed, raw="하은")
+    card = _approvals(db, "task_create")[0]
+    stale = _detail_of(pm_client, card.approval_id)["payload_version"]
+    r = _post_in_new_meeting(client, db, seed, [_merge(card.approval_id, assignee_raw="화은이가")])
+    assert r.status_code == 201, r.text
+    current = _detail_of(pm_client, card.approval_id)["payload_version"]
+    assert current != stale
+    before = len(_aliases(db))
+
+    resp = pm_client.patch(f"/api/v1/approvals/{card.approval_id}", json={
+        "status": "approved", "save_alias": True, "payload_version": stale,
+        "task_overrides": {"assignee_member_id": seed["leader"].member_id},
+    })
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["error"]["code"] == "APPROVAL_CHANGED"
+    assert resp.json()["error"]["details"] == {"approval_id": card.approval_id, "payload_version": current}
+    db.expire_all()
+    assert len(_aliases(db)) == before
+    assert _learned(db) == []
+    assert db.get(ApprovalRequest, card.approval_id).status == "pending"
+
+
+def test_current_version_save_alias_saves_shown_alias_text(client, pm_client, db, seed):
+    """새 버전으로 별칭 저장을 누르면, 그 버전 상세가 보여 준 alias_text 가 그대로 저장된다."""
+    _hold_item(client, seed, raw="하은")
+    card = _approvals(db, "task_create")[0]
+    r = _post_in_new_meeting(client, db, seed, [_merge(card.approval_id, assignee_raw="화은이가")])
+    assert r.status_code == 201, r.text
+    shown = _detail_of(pm_client, card.approval_id)
+    assert shown["alias_text"] == "화은"
+
+    resp = pm_client.patch(f"/api/v1/approvals/{card.approval_id}", json={
+        "status": "approved", "save_alias": True, "payload_version": shown["payload_version"],
+        "task_overrides": {"assignee_member_id": seed["leader"].member_id},
+    })
+
+    _assert_approved_with_task(db, resp)
+    assert _learned(db) == [(seed["leader"].member_id, shown["alias_text"])]
+
+
+def test_save_alias_ignores_forged_assignee_item_id(client, pm_client, db, seed):
+    """payload 의 assignee_item_id 가 다른 카드의 항목을 가리켜도 그 카드의 연결 항목이 아니면 무시한다."""
+    _hold_item(client, seed, title="다른 카드 일")
+    other_item = _item(db, "다른 카드 일")
+    second = Meeting(workspace_id=seed["ws"].workspace_id, status="processing")
+    db.add(second)
+    db.commit()
+    r = client.post("/api/v1/extractions", json={
+        "meeting_id": second.meeting_id, "workspace_id": seed["ws"].workspace_id,
+        "items": [_legacy("내 카드 일", 0.6)],
+    }, headers=SERVICE_HEADERS)
+    assert r.status_code == 201, r.text
+    mine = next(a for a in _approvals(db, "task_create") if a.approval_id != other_item.approval_id)
+    payload = json.loads(mine.payload)
+    payload["assignee_item_id"] = other_item.item_id
+    db.execute(
+        ApprovalRequest.__table__.update()
+        .where(ApprovalRequest.__table__.c.approval_id == mine.approval_id)
+        .values(payload=json.dumps(payload, ensure_ascii=False))
+    )
+    db.commit()
+    db.expire_all()
+
+    resp = pm_client.patch(f"/api/v1/approvals/{mine.approval_id}", json={
+        "status": "approved", "save_alias": True,
+        "task_overrides": {"assignee_member_id": seed["leader"].member_id},
+    })
+
+    assert resp.status_code == 200, resp.text
+    assert _learned(db) == []
+    assert db.get(ExtractionItem, other_item.item_id).task_id is None
+
+
+# --- 합쳐진 카드: 별칭 후보도 카드의 담당 항목에서만 나온다(저장 규칙과 같다) ---
+
+
+def _candidates(pm_client, db, seed, card_id: str, *extraction_ids: str) -> dict:
+    """같은 카드의 후보를 승인 목록·상세·추출 조회에서 모아 본다."""
+    listed = pm_client.get(
+        "/api/v1/approvals", params={"workspace_id": seed["ws"].workspace_id}
+    ).json()["data"]["items"]
+    detail = pm_client.get(f"/api/v1/approvals/{card_id}").json()["data"]
+    return {
+        "list": [(a["alias_candidate"], a["alias_text"]) for a in listed if a["approval_id"] == card_id],
+        "detail": (detail["alias_candidate"], detail["alias_text"]),
+        "extractions": [
+            [(i["alias_candidate"], i["alias_text"]) for i in
+             pm_client.get(f"/api/v1/extractions/{eid}").json()["data"]["items"]]
+            for eid in extraction_ids
+        ],
+    }
+
+
+def test_alias_candidate_follows_merged_assignee_item(client, pm_client, db, seed):
+    """A(화은이가)가 만든 카드에 B(회은이가)가 담당자로 합쳐지면 후보는 B 글자뿐이고 A 행에는 없다."""
+    a_extraction = _hold_item(client, seed)
+    card = _approvals(db, "task_create")[0]
+    r = _post_in_new_meeting(client, db, seed, [_merge(card.approval_id, assignee_raw="회은이가")])
+    assert r.status_code == 201, r.text
+
+    got = _candidates(pm_client, db, seed, card.approval_id, a_extraction, r.json()["data"]["extraction_id"])
+
+    assert got["list"] == [(True, "회은")]
+    assert got["detail"] == (True, "회은")
+    assert got["extractions"] == [[(False, None)], [(True, "회은")]]
+
+
+def test_alias_candidate_stays_on_creator_when_merged_item_is_not_assignee(client, pm_client, db, seed):
+    """담당자를 말하지 않은 merge 항목(category 가 assignee 가 아님)은 이름 지목이어도 후보가 아니다."""
+    a_extraction = _hold_item(client, seed)
+    card = _approvals(db, "task_create")[0]
+    r = _post_in_new_meeting(client, db, seed, [
+        _merge(card.approval_id, category="other", assignee_raw="회은이가")
+    ])
+    assert r.status_code == 201, r.text
+
+    got = _candidates(pm_client, db, seed, card.approval_id, a_extraction, r.json()["data"]["extraction_id"])
+
+    assert got["list"] == [(True, "화은")]
+    assert got["detail"] == (True, "화은")
+    assert got["extractions"] == [[(True, "화은")], [(False, None)]]

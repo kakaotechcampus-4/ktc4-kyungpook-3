@@ -29,7 +29,6 @@ import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
-import { Skeleton } from '@/shared/ui/skeleton'
 import { tabKeyTarget } from '../lib/tabKeys'
 import { boardTabs, buildTaskBoard, parseDue, withPendingStatus } from '../lib/taskBoard'
 import type { BoardItem, BoardQuery } from '../lib/taskBoard'
@@ -42,7 +41,7 @@ import {
   shortDate,
   VIEW_LABEL,
 } from '../lib/taskViews'
-import type { TaskView, ViewQuery } from '../lib/taskViews'
+import type { ViewQuery } from '../lib/taskViews'
 import { ApprovalCard } from './ApprovalCard'
 import {
   AssigneeFilter,
@@ -53,6 +52,20 @@ import {
   ViewSwitch,
 } from './ViewControls'
 import { Avatar } from './viewParts'
+import { TaskViewSkeleton } from './ViewSkeletons'
+import {
+  COLUMN,
+  DESCRIPTION,
+  DESCRIPTIONS,
+  HEADER,
+  PAGE,
+  TAB,
+  TAB_LABEL,
+  TAB_LIST,
+  TITLE,
+  TOOLBAR,
+} from './frame'
+import type { TaskViewKind } from './ViewSkeletons'
 
 /* 보드·캘린더·간트는 그 보기를 고를 때 코드를 받는다 (M8 AC-A-02). 리스트로 들어오면 셋 다 내려받지 않는다 */
 const BoardView = lazy(() =>
@@ -65,31 +78,6 @@ const GanttView = lazy(() =>
   import('./GanttView').then(({ GanttView }) => ({ default: GanttView })),
 )
 
-/* Tasks 시안 — main 패딩 48/48/72, 블록 사이 28px.
- * 리스트·보드는 상세·확인 필요 상세와 같이 960px 이하로 가운데에 둔다. 둘을 오갈 때 제목·탭·도구줄이 움직이지 않는다 (#466).
- * 캘린더·간트는 날짜 칸이 넓어야 해서 시안 셸 폭을 유지한다.
- * 폭 768px 미만은 대시보드(H-2)와 같은 패딩 12/20/32 다 (D-180) */
-const PAGE_BASE =
-  'mx-auto flex w-full flex-1 justify-center px-48 pt-48 pb-72 max-md:px-20 max-md:pt-12 max-md:pb-32'
-const PAGE: Record<TaskView, string> = {
-  list: `${PAGE_BASE} max-w-[960px]`,
-  board: `${PAGE_BASE} max-w-[960px]`,
-  calendar: `${PAGE_BASE} max-w-shell`,
-  gantt: `${PAGE_BASE} max-w-shell`,
-}
-/* 블록 사이 — 리스트 28px, 보드 22px(TasksBoard), 캘린더·간트 20px(TasksCalendar·TasksGantt) */
-const COLUMN: Record<TaskView, string> = {
-  list: 'flex w-full flex-col gap-28',
-  board: 'flex w-full flex-col gap-22',
-  calendar: 'flex w-full flex-col gap-20',
-  gantt: 'flex w-full flex-col gap-20',
-}
-const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink max-md:text-[24px]'
-const DESCRIPTION = 'text-body text-sub'
-const TOOLBAR = 'flex flex-wrap items-center justify-between gap-16'
-const TAB_LIST = 'inline-flex gap-[17px]'
-const TAB =
-  'inline-flex h-32 items-center gap-7 border-b-2 border-transparent px-3 text-control font-semibold text-sub hover:text-ink aria-selected:border-ink aria-selected:text-ink'
 const COUNT = 'text-meta font-normal text-dim tabular-nums'
 const ATTENTION_COUNT =
   'inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-999 bg-ink px-5 text-[10.5px] font-normal leading-none text-surface tabular-nums'
@@ -109,21 +97,6 @@ const ASSIGNEE_NAME = 'max-md:truncate'
 const DUE = 'shrink-0 text-caption text-dim tabular-nums'
 const EMPTY_UPLOAD =
   'inline-flex h-40 items-center justify-center rounded-9 bg-ink px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
-
-const TAB_LABEL: Record<TaskTab, string> = {
-  all: '전체',
-  needs_review: '확인 필요',
-  in_progress: '진행 중',
-  done: '완료',
-}
-
-const DESCRIPTIONS: Record<ViewQuery['view'], (isPm: boolean) => string> = {
-  list: (isPm) =>
-    isPm ? '담당자별로 걸러 보고, 준비된 태스크를 확인하세요.' : '팀의 태스크를 확인하세요.',
-  board: () => '승인이 끝난 일만 올라옵니다 — Notion 보드와 같은 상태예요.',
-  calendar: () => '마감일 기준입니다. 날짜가 없는 일은 아래 칸에 모아 뒀어요.',
-  gantt: () => '간트차트로 일정을 한 눈에 볼 수 있어요.',
-}
 
 /** 보기가 쓰는 조회 하나. 받지 못했을 때 알리는 이름과 다시 부를 조회다 */
 interface ViewSource {
@@ -222,6 +195,9 @@ export function TaskBoard({
   )
 
   const isList = view.view === 'list'
+  // 캘린더·간트가 보는 기간. 보기와 그 뼈대가 같은 값을 쓴다
+  const viewMonth = view.month ?? monthOf(today)
+  const viewFrom = view.from ?? mondayOf(today)
   const memberList = members.data ?? []
   // 보기의 줄·칩은 memo 다. 부모가 다시 그려도 같은 배열을 넘겨야 바뀌지 않은 줄을 건너뛴다 (AC-A-04)
   const createList = useMemo(() => createApprovals(approvalList ?? []), [approvalList])
@@ -339,7 +315,7 @@ export function TaskBoard({
         meetings={calendarMeetings}
         names={names}
         today={today}
-        month={view.month ?? monthOf(today)}
+        month={viewMonth}
         onMonthChange={(month) => onViewChange({ ...view, month })}
         compact={compact}
       />
@@ -354,7 +330,7 @@ export function TaskBoard({
         approvals={createList}
         approvalsMissing={approvalsMissing}
         today={today}
-        from={view.from ?? mondayOf(today)}
+        from={viewFrom}
         onFromChange={(from) => onViewChange({ ...view, from })}
       />
     )
@@ -378,18 +354,37 @@ export function TaskBoard({
   const indicator = useLoadingIndicator(loading)
   if (indicator.pending)
     body = isList ? (
-      <DeferredSkeleton indicator={indicator} className="flex flex-col gap-8">
-        <Skeleton lines={4} />
+      <DeferredSkeleton indicator={indicator}>
+        <TaskViewSkeleton
+          month={viewMonth}
+          from={viewFrom}
+          view="list"
+          listCards={
+            !isPm
+              ? 'none'
+              : query.tab === 'all'
+                ? 'mixed'
+                : query.tab === 'needs_review'
+                  ? 'only'
+                  : 'none'
+          }
+        />
       </DeferredSkeleton>
     ) : (
-      <ViewLoading label="태스크를 불러오는 중" indicator={indicator} />
+      <ViewLoading
+        label="태스크를 불러오는 중"
+        view={view.view}
+        month={viewMonth}
+        from={viewFrom}
+        indicator={indicator}
+      />
     )
   else body = <Reveal indicator={indicator}>{body}</Reveal>
 
   return (
     <main className={PAGE[view.view]}>
       <div className={COLUMN[view.view]}>
-        <header className="flex items-end justify-between gap-24 max-md:flex-col max-md:items-start max-md:gap-16">
+        <header className={HEADER}>
           <div className="flex flex-col gap-5">
             <h1 className={TITLE}>태스크</h1>
             <p className={DESCRIPTION}>{DESCRIPTIONS[view.view](isPm)}</p>
@@ -450,7 +445,14 @@ export function TaskBoard({
               {/* 보기마다 새 경계다 — 보기 전환(transition)에도 이전 보기를 붙잡지 않고 이 자리에 대기를 그린다 */}
               <Suspense
                 key={view.view}
-                fallback={<ViewLoading label={`${VIEW_LABEL[view.view]} 화면을 불러오는 중`} />}
+                fallback={
+                  <ViewLoading
+                    label={`${VIEW_LABEL[view.view]} 화면을 불러오는 중`}
+                    view={view.view}
+                    month={viewMonth}
+                    from={viewFrom}
+                  />
+                }
               >
                 {body}
               </Suspense>
@@ -471,19 +473,21 @@ const CODE_WAIT = { skeletonVisible: true }
  */
 function ViewLoading({
   label,
+  view,
+  month,
+  from,
   indicator = CODE_WAIT,
 }: {
   label: string
+  /** 그 보기와 같은 틀의 뼈대를 그린다 (#508) */
+  view: TaskViewKind
+  month: string
+  from: string
   indicator?: { skeletonVisible: boolean }
 }) {
   return (
-    <DeferredSkeleton
-      indicator={indicator}
-      role="status"
-      aria-label={label}
-      className="flex flex-col gap-8"
-    >
-      <Skeleton lines={4} />
+    <DeferredSkeleton indicator={indicator} role="status" aria-label={label}>
+      <TaskViewSkeleton view={view} month={month} from={from} />
     </DeferredSkeleton>
   )
 }

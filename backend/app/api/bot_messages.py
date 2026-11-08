@@ -15,6 +15,7 @@ from app.schemas.message import (
     DraftWriteRequest,
 )
 from app.schemas.reply import ReplyClaimResponse, ReplyJudgmentRequest
+from app.services import mailer
 from app.services import messages as svc
 from app.services import replies
 
@@ -36,12 +37,12 @@ def claim_messages(db: Session = Depends(get_db)) -> dict:
             "workspace_id": c.workspace_id,
             "member_id": c.member_id,
             "discord_user_id": c.discord_user_id,
-            "body": c.message.body,
+            "body": c.body,
             "scheduled_at": c.message.scheduled_at and svc.utc(c.message.scheduled_at),
         }
         for c in claimed
     ]
-    return success({"items": items, "total": len(items)})
+    return success({"items": items, "total": len(items), "web_url": mailer.app_base_url() or None})
 
 
 @router.post("/messages/{message_id}/result", response_model=Envelope[None])

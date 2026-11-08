@@ -16,4 +16,9 @@ export { speakerName } from './lib/speakerName'
 export { memberListQueryOptions } from './api/memberList'
 export { discordUsersQueryOptions } from './api/discordUsers'
 export { createMember, updateMember } from './api/memberMutations'
+export {
+  createMemberAlias,
+  deleteMemberAlias,
+  memberAliasesQueryOptions,
+} from './api/memberAliases'
 export { ASSIGNEE_NONE_OPTION, assigneeOptions } from './ui/assigneeOptions'

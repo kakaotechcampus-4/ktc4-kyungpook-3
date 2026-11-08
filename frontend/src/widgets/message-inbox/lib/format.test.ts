@@ -3,7 +3,6 @@ import {
   avatarText,
   awaitingDays,
   bundleDateLabel,
-  bundleSummary,
   clockTime,
   dayLabel,
   earliestDue,
@@ -70,6 +69,8 @@ const task = (dueDate: string | null, title: string | null = '태스크'): Bundl
   title,
   dueDate,
   note: null,
+  reason: null,
+  evidence: null,
 })
 
 it('가장 이른 마감은 마감 없는 태스크를 건너뛰고, 모두 없으면 null 이다', () => {
@@ -89,8 +90,6 @@ it('보내기 전 확인 행은 승인했으면 발송 예정, 아니면 가장 
   expect(
     bundleDateLabel({ ...bundle, stage: 'approved', approvedAt: '2026-09-18T00:00:00Z' }),
   ).toBe('09/23 발송 예정')
-  expect(bundleSummary(bundle)).toBe('발표 자료 외 1건')
-  expect(bundleSummary({ ...bundle, tasks: [task(null, null)] })).toBe('지워진 태스크')
 })
 
 it('답장이 없는 날은 보낸 날을 1일째로 센다', () => {
