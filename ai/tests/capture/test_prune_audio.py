@@ -52,6 +52,22 @@ def test_partial_meeting_with_retries_left_keeps_its_tracks(tmp_path):
     assert len(_wavs(rec, "g_1")) == 2
 
 
+def test_partial_meeting_without_retries_left_drops_its_tracks(tmp_path):
+    rec = tmp_path / "recordings"
+    _meeting(rec, "g_1", status=R.STATUS_HANDED_OFF, partial=True, retry_runs=R.PARTIAL_RETRY_MAX, stages=HANDED)
+    assert R.prune_audio(rec, now=NOW) == ["g_1"]
+    assert _wavs(rec, "g_1") == []
+
+
+def test_given_up_partial_meeting_keeps_tracks_seven_days(tmp_path):
+    rec = tmp_path / "recordings"
+    for days in (6, 8):
+        _meeting(rec, f"g_{days}", status=R.STATUS_PARTIAL,
+                 recovery={"attempts": 5, "gave_up_at": R._iso(NOW - timedelta(days=days))})
+    assert R.prune_audio(rec, now=NOW) == ["g_8"]
+    assert len(_wavs(rec, "g_6")) == 2
+
+
 def test_meetings_in_progress_keep_their_tracks(tmp_path):
     rec = tmp_path / "recordings"
     for i, status in enumerate((R.STATUS_RECORDING, R.STATUS_SAVED, R.STATUS_TRANSCRIBED, R.STATUS_PARTIAL,
