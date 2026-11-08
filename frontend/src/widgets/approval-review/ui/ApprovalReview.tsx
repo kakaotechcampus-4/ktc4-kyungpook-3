@@ -549,7 +549,8 @@ function TaskUpdatePending({
   approval: TaskUpdateApproval
   context: ReviewContext
 }) {
-  const { workspaceId, names, resolver } = context
+  const { workspaceId, members, names, resolver } = context
+  const memberIds = useMemo(() => (members ?? []).map(({ id }) => id), [members])
   const taskId = approval.relatedTaskId
   const task = useQuery({
     ...taskDetailQueryOptions(workspaceId, taskId ?? ''),
@@ -559,9 +560,15 @@ function TaskUpdatePending({
   const overrides = useTaskUpdateOverrides(approval)
   useUnsavedChanges(overrides.dirty)
   const edits = { kind: 'task_update', values: overrides.edits } as const
-  const plan = planApprovalResolution(approval, 'approved', { edits })
+  const plan = planApprovalResolution(approval, 'approved', { memberIds, edits })
   const blockedReason =
-    taskId === null ? '바꿀 태스크가 없어 승인할 수 없어요.' : plan.ok ? null : plan.reason
+    taskId === null
+      ? '바꿀 태스크가 없어 승인할 수 없어요.'
+      : approval.assigneePick !== null && members === undefined
+        ? MEMBERS_LOADING_REASON
+        : plan.ok
+          ? null
+          : plan.reason
   const current = (field: string) =>
     task.data === undefined
       ? task.isError
@@ -612,6 +619,7 @@ function TaskUpdatePending({
         />
         <TaskUpdateOverrideFields
           overrides={overrides}
+          members={members}
           disabled={resolver.pending}
           onInputChange={resolver.invalidateConfirmation}
         />
@@ -666,8 +674,9 @@ function ChangesTable({
   valueHeader: string
   current?: (field: string) => string
 }) {
-  if (isScopeChange(approval) && changes.length === 0)
-    return <p className={NOTE}>바꿀 항목 값은 없어요.</p>
+  // 담당자를 찾지 못한 답장 카드는 고르기 전까지 바꿀 값이 없다. 머리만 있는 표 대신 아무것도 그리지 않는다
+  if (changes.length === 0)
+    return isScopeChange(approval) ? <p className={NOTE}>바꿀 항목 값은 없어요.</p> : null
   return (
     <table aria-label="현재값과 제안값" className={TABLE}>
       <thead>
@@ -721,7 +730,7 @@ function ResolvedReview({
               names={context.names}
               valueHeader={approved ? '반영한 값' : '제안값'}
             />
-            {approved && !(isScopeChange(approval) && approval.changes.length === 0) ? (
+            {approved && approval.changes.length > 0 ? (
               <FieldList
                 label="원래 제안"
                 rows={approval.changes.map(({ field, value }) => ({
