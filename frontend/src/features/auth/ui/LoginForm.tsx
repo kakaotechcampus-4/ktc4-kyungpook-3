@@ -17,9 +17,7 @@ import { AlternativeAuth } from './AlternativeAuth'
 
 const FORM = 'flex flex-col gap-16'
 
-/* 재설정 화면(/forgot-password, /reset-password)은 있지만 BE 배포 전이라 링크는 비활성이다. 배포 뒤에 켠다 (#356).
-   그 전에는 누를 수도, 포커스를 받을 수도 없다. 준비 중 문구·배지를 달지 않는다 (D-005, D-006) */
-const FORGOT = 'text-[13px] text-dim'
+const FORGOT = 'text-[13px] text-dim hover:text-sub'
 
 const NOTICE = 'text-body text-ink'
 
@@ -78,9 +76,9 @@ export function LoginForm() {
           showLabel="비밀번호 보기"
           hideLabel="비밀번호 숨기기"
           labelEnd={
-            <button type="button" disabled className={FORGOT}>
+            <GuardedLink to={paths.forgotPassword()} className={FORGOT}>
               비밀번호를 잊으셨나요?
-            </button>
+            </GuardedLink>
           }
           error={errors.password?.message}
           {...register('password')}
