@@ -182,8 +182,9 @@ def _close_past_window(db: Session, message_id: str, now: datetime) -> bool:
     try:
         with db.begin_nested():
             return expire(db, message_id, now)
-    except Exception:
-        logger.exception("reply judgment expire failed in claim: %s", message_id)
+    except Exception as e:
+        # 봇이 10초마다 claim 하므로 계속 실패하는 행의 스택 트레이스를 매번 남기지 않는다. 트레이스는 스케줄러 틱이 남긴다
+        logger.warning("reply judgment expire failed in claim: %s (%s: %s)", message_id, type(e).__name__, e)
         return False
 
 

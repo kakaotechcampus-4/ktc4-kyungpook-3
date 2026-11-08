@@ -308,6 +308,28 @@ def test_a_failing_expire_does_not_stop_other_threads(mdb, mseed, monkeypatch):
     assert mdb.get(ReplyJudgment, alice_next.message_id).attempt == 0
 
 
+def test_a_failing_expire_in_claim_logs_one_warning_line_without_a_traceback(mdb, mseed, monkeypatch, caplog):
+    # 봇이 10초마다 claim 하므로 계속 실패하는 행의 스택 트레이스를 매번 남기지 않는다. 트레이스는 스케줄러 틱이 남긴다
+    a = mseed["tasks"][0]
+    _remind(mdb, mseed, [a], SLOT)
+    first = _reply(mdb, mseed, AT)
+    mdb.commit()
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("notify down")
+
+    monkeypatch.setattr(replies.notifications, "notify_pms", boom)
+
+    with caplog.at_level("WARNING", logger=replies.logger.name):
+        assert replies.claim(mdb, AT + replies.JUDGE_WINDOW) is None
+
+    [record] = [r for r in caplog.records if r.name == replies.logger.name]
+    assert record.levelname == "WARNING"
+    assert record.exc_info is None
+    text = record.getMessage()
+    assert first.message_id in text and "RuntimeError" in text and "notify down" in text
+
+
 def test_claim_keeps_thread_order_when_expire_finds_the_row_no_longer_past_the_window(mdb, mseed, monkeypatch):
     # claim 의 스냅샷 뒤 PM 이 고르는 바람에 새 창에 들어간 앞 답장은 닫히지 않는다. 그 대화의 뒤 답장이 앞질러 나가면 안 된다
     a = mseed["tasks"][0]
