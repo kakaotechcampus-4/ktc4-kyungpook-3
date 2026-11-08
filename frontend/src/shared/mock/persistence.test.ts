@@ -1,8 +1,9 @@
 import { fetchDto, jsonRequest, signUpVerified } from '@/shared/test/api'
-import type { SessionDto } from '@/shared/types/api/auth'
+import type { SessionDto, SignupCodeConfirmedDto } from '@/shared/types/api/auth'
+import type { ApprovalDto } from '@/shared/types/api/approval'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { IntegrationsDto } from '@/shared/types/api/integration'
-import type { MemberDto } from '@/shared/types/api/member'
+import type { MemberAliasDto, MemberDto } from '@/shared/types/api/member'
 import type { TaskDto } from '@/shared/types/api/task'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { db, initialDb, resetDb } from './db'
@@ -99,6 +100,56 @@ describe('sessionStorage 영속', () => {
     expect(restoreDb(sessionStorage)).toBe(false)
     expect(db.authenticated).toBe(true)
     expect(sessionStorage.getItem(MOCK_DB_STORAGE_KEY)).toBeNull()
+  })
+
+  it.each([
+    { name: '가입 인증만 있는 17', omitted: ['alias_candidate', 'alias_text'] },
+    { name: '별칭 관리만 있는 17', omitted: ['signupVerification', 'kakao'] },
+  ])('서로 다른 스키마가 같은 버전을 쓴 저장본은 복원하지 않는다: $name', ({ omitted }) => {
+    sessionStorage.setItem(
+      MOCK_DB_STORAGE_KEY,
+      JSON.stringify({ version: 17, db: initialDb() }, (key, value: unknown) =>
+        omitted.includes(key) ? undefined : value,
+      ),
+    )
+
+    expect(restoreDb(sessionStorage)).toBe(false)
+    expect(sessionStorage.getItem(MOCK_DB_STORAGE_KEY)).toBeNull()
+    expect(db).toEqual(initialDb())
+  })
+
+  it('가입 증명·카카오 신원과 별칭·별칭 후보를 함께 저장하고 복원한다', async () => {
+    await fetchDto('/members/mb_02/aliases', jsonRequest('POST', { alias_text: '복원 별칭' }))
+    const email = 'pending-restore@example.com'
+    await fetchDto('/auth/signup/code', jsonRequest('POST', { email }))
+    const mail = db.signupVerification.outbox.at(-1)
+    if (mail === undefined) throw new Error('가입 코드 메일이 없다')
+    const { verification_token } = await fetchDto<SignupCodeConfirmedDto>(
+      '/auth/signup/code/confirm',
+      jsonRequest('POST', { email, code: mail.code }),
+    )
+    db.accounts[0].kakaoId = 'linked-kakao'
+    db.kakao.pending = { kakaoId: 'pending-kakao', email, nickname: '가입 대기' }
+    saveDb(sessionStorage)
+
+    resetDb()
+    expect(restoreDb(sessionStorage)).toBe(true)
+
+    expect(db.signupVerification.proofs[verification_token]).toMatchObject({ email })
+    expect(db.signupVerification.outbox).toContainEqual(mail)
+    expect(db.accounts[0].kakaoId).toBe('linked-kakao')
+    await expect(fetchDto('/auth/kakao/pending')).resolves.toEqual({
+      email,
+      nickname: '가입 대기',
+    })
+    const aliases = await fetchDto<ListDto<MemberAliasDto>>('/members/aliases?workspace_id=ws_01')
+    expect(aliases.items).toContainEqual(
+      expect.objectContaining({ member_id: 'mb_02', alias_text: '복원 별칭', verified: true }),
+    )
+    await expect(fetchDto<ApprovalDto>('/approvals/ap_03')).resolves.toMatchObject({
+      alias_candidate: true,
+      alias_text: '지훈',
+    })
   })
 
   it.each([

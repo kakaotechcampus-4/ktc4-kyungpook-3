@@ -79,12 +79,24 @@
 봇이 처리 단계를 시작할 때 알린다. 웹 화면의 진행 표시(`progress`)를 데이터가 생기기 전에 앞당기는 데 쓴다. 진행 표시일 뿐이라 처리 결과를 바꾸지 않는다.
 
 - 합의 상태: 구현됨(#381, PR #383). 호출하는 쪽(`ai/capture/handoff.py`, `ai/capture/recorder.py`)도 같은 PR 에서 구현했고 AI 파트 리뷰를 받았다. 보고 여부는 매니페스트의 `be.meeting_id`로만 정한다. 그래서 디스코드 회의와 수동 업로드 회의(#289, #326, #343 으로 develop 에 들어옴)가 같은 `process_session`을 지나며 보고한다. 업로드 회의의 `progress`도 디스코드 회의처럼 앞당겨진다(#383 리뷰 후속에서 정함). 채팅 회의는 보고하지 않는다.
-- 요청: `{ "stage": "stt" | "sources" | "extract" | "handoff" }`. 이 네 값은 AI의 `failed_stage` 이름과 같다. 다른 값이나 빠진 값은 400 `INVALID_REQUEST`.
-- `data`: `{meeting_id, status, processing_stage, applied}`. `processing_stage`는 이 요청을 처리한 뒤 저장된 값이고 아직 보고가 없으면 `null`이다.
+- 요청: `{ "stage": "stt" | "sources" | "extract" | "handoff", "stt"?: {"done": int, "total": int} }`. 네 단계 값은 AI의 `failed_stage` 이름과 같다. 다른 값이나 빠진 값은 400 `INVALID_REQUEST`.
+  - `stt`(선택, #483): 전사 진행. `stage`가 `stt`일 때만 보낼 수 있고, 다른 단계에 실으면 400 `INVALID_REQUEST`다. `total`은 1 이상 2147483647 이하, `done`은 0 이상 `total` 이하의 정수다(bool·문자열은 400). 무엇을 세는지(끝낸 트랙인지 호출인지)는 AI 가 정하고, BE 는 두 숫자를 그대로 저장해 보여 준다.
+  - 합의 상태: BE 구현됨(#483 A안). AI 호출은 아직 없다. `stt`를 보내지 않는 지금의 요청은 이전과 똑같이 동작한다.
+- `data`: `{meeting_id, status, processing_stage, stt, applied}`. `processing_stage`는 이 요청을 처리한 뒤 저장된 값이고 아직 보고가 없으면 `null`이다. `stt`는 저장된 전사 진행이고 `stt` 단계가 아니거나 진행을 받지 않았으면 `null`이다. 회의 상태와 관계없이 저장값을 그대로 보이므로, `applied=false`인 늦은 보고에도 남아 있는 값이 올 수 있다(상세 `processing`은 처리 중일 때만 보인다).
 - 순서는 `stt` < `sources` < `extract` < `handoff`이고 단계는 앞으로만 간다. 건너뛰어도 된다(`extract`부터 재개하면 `extract`, `handoff`만 온다).
 - 다음은 오류가 아니라 200 `applied=false`이고 저장값을 바꾸지 않는다: 회의가 `processing`이 아닐 때(`created`·`awaiting_speakers`·`done`·`failed`), 같은 단계를 다시 보낼 때, 이미 보고한 단계보다 앞선 단계일 때. 반영할 때만 `applied=true`이고 단계와 갱신 시각을 함께 저장한다. 판정과 쓰기는 조건부 UPDATE 한 문장이라 늦게 도착한 보고가 앞선 단계를 덮지 않는다.
+- 전사 진행 규칙(#483):
+  - 단계가 앞으로 바뀔 때 진행도 요청 값으로 덮는다. 요청에 `stt`가 없으면 진행은 비워진다. 그래서 `sources` 이후에는 진행이 늘 `null`이다.
+  - 같은 `stt` 단계를 `stt`와 함께 다시 보내면 진행만 바꾸고 단계 시작 시각(`processing_stage_at`)은 그대로 둔다. 진행 값이 저장값과 다를 때만 `applied=true`이고, 같으면 `applied=false`다.
+  - 같은 `stt` 단계를 `stt` 없이 다시 보내면 지금처럼 `applied=false`이고 저장된 진행을 지우지 않는다.
+  - `done`이 줄어도 그대로 덮어쓴다. 재전사나 재시작 때 0부터 다시 오는 경우를 막지 않기 위해서다. 그래서 봇은 진행을 한 번에 하나씩 순서대로 보내야 한다(앞 요청의 응답을 받은 뒤 다음 요청).
+  - 중간 값을 건너뛰어도 된다. 진행은 마지막에 저장된 값만 보이므로, 봇이 최신 값만 한 스레드로 순서대로 보내도 된다(보낸 값마다 응답을 받은 뒤 다음 값).
+  - 같은 회의에서 `stt` 단계를 다시 시작하면 `{"stage": "stt"}`만 보내서는 이전 진행이 새 진행이 올 때까지 남는다(위 규칙대로 지우지 않는다). 다시 시작할 때는 `{done: 0, total: N}`을 먼저 보내기를 권한다. `total`이 0이면 `stt`를 싣지 않는다(`total`은 1 이상).
+  - 진행 보고도 판정과 쓰기를 조건부 UPDATE 한 문장으로 한다. `stt` 다음 단계로 넘어간 회의나 `processing`이 아닌 회의에는 반영하지 않는다.
+  - 진행 보고는 업로드 3시간 만료 시계와 관계없다.
+  - 호출 빈도: 전사 호출이 끝날 때마다 보내면 회의 하나에 요청이 수백 번 갈 수 있다. 트랙이 끝날 때나 몇 초 간격으로 줄이기를 권한다(AI 결정).
 - 없는 회의는 404 `MEETING_NOT_FOUND`. 새 오류 코드는 없다.
-- 회의 상세 응답에는 `processing_stage`를 싣지 않는다. 대신 `progress`가 이 값을 반영한다. 보고가 없으면 지금처럼 데이터만으로 판정한다. 아래 단계는 "그 단계가 시작됐다"는 뜻이다.
+- 회의 상세 응답(`GET /meetings/{meeting_id}`)과 `/fail` 응답에는 `processing`이 있다(#483). 회의가 `processing`일 때만 `{stage, stage_at, stt}` 객체이고, 그 밖의 상태(`created`·`awaiting_speakers`·`done`·`failed`)에서는 `null`이다. `stage`·`stage_at`은 저장된 단계와 그 단계가 시작된 시각이고 보고 전이면 `null`, `stt`는 `stage`가 `stt`이고 진행을 받았을 때만 `{done, total}`이다. 그래서 `/fail` 응답의 `processing`은 늘 `null`이다. 목록 API 에는 없다. 이 필드와 별개로 `progress`도 단계 값을 반영한다. 보고가 없으면 지금처럼 데이터만으로 판정한다. 아래 단계는 "그 단계가 시작됐다"는 뜻이다.
 
   | progress 키 | true가 되는 때 |
   |---|---|
@@ -92,16 +104,16 @@
   | `transcribed` | `sources` 이후이거나 발화가 있을 때 |
   | `extracted` | `handoff` 이후이거나 항목이 있는 추출이 있을 때 |
 
-  회의 상세 `GET /meetings/{meeting_id}`와 `PATCH /meetings/{meeting_id}/fail`의 응답 `progress`가 같은 식을 쓴다. 트랙별 진행률은 보내지 않는다.
+  회의 상세 `GET /meetings/{meeting_id}`와 `PATCH /meetings/{meeting_id}/fail`의 응답 `progress`가 같은 식을 쓴다. 전사 진행은 `progress`에 섞지 않고 `processing.stt`로만 보인다.
 - 봇 동작(`Handoff.report_stage`): `be.meeting_id`가 없으면 부르지 않고, 타임아웃 3초(`STAGE_TIMEOUT_S`, requests 에 숫자 하나로 주므로 연결과 읽기에 각각 3초)로 한 번만 보낸다. 오류는 모두 로그만 남기고 삼키며 매니페스트에 쓰지 않는다. 호출은 `process_session`의 단계 시작(`begin`)에서 진행 표시 뒤, AI 쪽 단계 시간 기록(ops) 단계를 열기 전에 하므로 보고 시간은 ops 단계 시간에 들어가지 않는다. BE 장애 때 단계 시작이 늦어질 수 있다. 3초는 연결과 읽기에 각각 걸리는 값이고 합계 상한은 보장하지 않는다(응답이 조금씩 오면 읽기 대기가 이어지고, 주소가 여러 개면 연결도 주소마다 걸리며, DNS 조회 시간은 타임아웃에 들어가지 않는다). 디스코드 회의에서 처리 도중 BE 회의가 새 회의로 바뀌면(BE 가 failed 로 닫은 회의에 `end`를 다시 부를 때 봇이 새 회의를 만들고 옛 ID 를 `be.replaced`에 남기는 경우. 업로드 회의는 `end`가 새 회의를 만들지 않아 바뀌지 않는다) 그 단계 보고는 옛 회의로 가 `applied=false`가 되고 새 회의는 그 단계를 받지 못한다. 이때 `progress`는 데이터 판정으로 돌아가 표시만 조금 늦어진다.
 - 배포 순서: BE를 먼저 배포한다. 어느 쪽이 먼저 나가도 깨지지 않는다. BE가 먼저면 봇이 아직 보고하지 않아 `progress`는 지금처럼 데이터로 판정한다. 봇이 먼저면 이 경로가 없는 BE는 오류를 돌려주고 봇은 그 오류를 삼켜 처리를 계속한다. 이때 BE 쪽 진행 표시만 앞당겨지지 않는다.
-- DB: `meeting.processing_stage`(문자열 16자)와 `processing_stage_at`(시각)을 nullable로 추가했다(마이그레이션 `a3d7f91c5e28`). 기존 회의는 `null`이다.
+- DB: `meeting.processing_stage`(문자열 16자)와 `processing_stage_at`(시각)을 nullable로 추가했다(마이그레이션 `a3d7f91c5e28`). 전사 진행은 `processing_stt_done`·`processing_stt_total`(정수, nullable, 마이그레이션 `d6e1b4a8c297`, #483)이다. 기존 회의는 `null`이다.
 
 ### `PATCH /meetings/{meeting_id}/fail` → 200
 
 - 요청: `{ "failed_stage": "stt" | "extract" | "handoff" … }` (서버는 문자열만 확인)
 - BE 도 같은 상태 전이로 멈춘 업로드 회의를 스스로 failed 로 바꾼다(sweeper, 아래 "웹 업로드 가져가기"). 이때 `failed_stage`는 `diarize`(처리 중에 멈춤) 또는 `speaker_assignment_expired`(화자 지정 기한 지남)다.
-- `data`: 회의 상세 모양 `{meeting_id, workspace_id, title, status: "failed", started_at, ended_at, extraction_id: null, failed_stage, progress}`
+- `data`: 회의 상세 모양 `{meeting_id, workspace_id, title, status: "failed", started_at, ended_at, extraction_id: null, failed_stage, progress, processing: null}`
 - `done`·`failed`가 아닌 회의만 조건부 UPDATE로 `failed`가 된다. 이미 끝났으면 409 `MEETING_ALREADY_ENDED`이고, 봇은 이를 "이미 처리됨"으로 넘어간다. 추출 등록이 먼저 `done`으로 바꾼 회의를 늦은 실패 요청이 덮지 않는다.
 
 ## 발화 저장 `POST /meetings/{meeting_id}/sources` → 201
@@ -207,7 +219,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | `target_snapshot.title` | 유사 검색 응답의 `title`을 그대로 보낸다. 제목을 바꾸는 값이 아니라 승인 때 대상 task가 그대로인지 확인하는 기준이다. 없거나 null이면 등록 시점의 제목을 쓴다. 필드 모양은 #185에서 AI·BE가 정했다 |
 | 확신도 | `task_confidence`·`due_confidence`를 보내지 않으면 null(측정 안 함)로 저장하고 0.0(측정했는데 낮음)과 구분한다. 할 일 확신도가 null이면 항목 확신도도 null이다 |
 | 추출 경로 | AI가 경로를 따로 보내지 않으므로 BE가 항목이 보낸 키로 가린다. `action`·`category`·`doc_text` 중 하나라도 보냈으면 judge, 아니고 `task_confidence`·`due_confidence`를 보냈으면 legacy, 둘 다 아니면 판별 불가다. 모든 항목이 같은 경로일 때만 추출의 `extraction_path`에 기록하고, 항목이 없거나 섞였거나 판별 불가 항목이 있으면 null이다(#201) |
-| create 게이트 | 담당자를 언급했는데 BE가 한 명으로 찾지 못했으면 `hold`다. 이름으로 풀지 못해 `assignee_raw` 없이 `second`·`thirdpronoun`·`thirdrole`만 보낸 항목과 화자가 없는 1인칭 항목(틀린 `evidence_speaker_member_id` 포함)도 언급했는데 찾지 못한 것으로 본다. 단 화자도 `assignee_raw`도 없는 legacy 1인칭은 `hint`가 없어 확신도 계산에서 담당자가 빠지므로 아래 legacy 기준(확신도)대로 `hold`가 아니라 `review`가 될 수 있다. 멤버 ID로 정한 화자는 확신도 1.0이라 다른 조건을 만족하면 `auto`가 될 수 있다. judge 항목은 그다음 아래 auto 조건을 모두 만족하면 `auto`, 아니면 `review`다. 경로를 가릴 수 없고 확신도도 없는 항목은 `review`, legacy는 확신도로 정한다(0.8 이상이고 담당자 확인 불필요면 `auto`, 0.5 이상 `review`, 그 아래 `hold`). 경로와 상관없이 `thirdrole` 새 항목은 `auto`가 나와도 `review`로 내린다(#459, 역할은 맡은 사람이 바뀔 수 있음). update는 지금처럼 항상 `review`다 |
+| create 게이트 | 담당자를 언급했는데 BE가 한 명으로 찾지 못했으면 `hold`다. 이름으로 풀지 못해 `assignee_raw` 없이 `second`·`thirdpronoun`·`thirdrole`만 보낸 항목과 화자가 없는 1인칭 항목(틀린 `evidence_speaker_member_id` 포함)도 언급했는데 찾지 못한 것으로 본다. 단 화자도 `assignee_raw`도 없는 legacy 1인칭은 `hint`가 없어 확신도 계산에서 담당자가 빠지므로 아래 legacy 기준(확신도)대로 `hold`가 아니라 `review`가 될 수 있다. 멤버 ID로 정한 화자는 확신도 1.0이라 다른 조건을 만족하면 `auto`가 될 수 있다. judge 항목은 그다음 아래 auto 조건을 모두 만족하면 `auto`, 아니면 `review`다. 경로를 가릴 수 없고 확신도도 없는 항목은 `review`, legacy는 확신도로 정한다(0.8 이상이고 담당자 확인 불필요면 `auto`, 0.5 이상 `review`, 그 아래 `hold`). 경로와 상관없이 `thirdrole` 새 항목은 `auto`가 나와도 `review`로 내린다(#459, 역할은 맡은 사람이 바뀔 수 있음). BE 환경변수 `AUTO_CREATE_ENABLED`가 꺼져 있으면(`false`·`0`·`off`·`no`, 모르는 값도 꺼짐, 기본 켜짐) 경로와 상관없이 `auto`를 `review`로 내린다. AI 요청과 응답은 그대로이고 근거 상태도 저장한다. 검증 실행(AI 의 `JEV_API_KEY`)과 자동 생성(이 값)을 따로 켜고 끈다(#382 멘토 리뷰). update는 지금처럼 항상 `review`다 |
 | judge auto 조건 | `task_status`가 certain, 담당자를 언급했으면 BE가 한 명으로 확정(검증된 별칭·화자, 확신도 0.8 이상), `assignee_type`이 `second`·`thirdpronoun`·`thirdrole`이 아님, `due_status`가 certain이거나 missing이고 `due_date` 유무와 맞음(missing인데 날짜가 있거나 certain인데 날짜가 없으면 탈락), `similar_count`가 0이고 워크스페이스에 임베딩이 없는 활성 task가 없음(그런 task는 유사 검색에 잡히지 않는다. 같은 요청에서 앞 항목이 auto로 만든 task와 임베딩 API가 제목을 거절한 task도 해당)이며, 승인 대기 중인 task_create 요청 가운데 임베딩이 없는 것이 없음(`unsearched_pending_exists`. `include_pending`을 켜도 검색이 못 보는 요청이다. 빈 제목으로 건너뛴 요청은 뺀다. 같은 요청에서 앞 항목이 review로 만든 pending은 보지 않는다). `task_status`·`due_status`·`similar_count` 중 하나라도 null이면 `review`라, 이 키를 보내지 않는 AI에서는 지금 동작이 그대로다. 상태 값이 셋 중 하나가 아니면 400 `INVALID_REQUEST`, `similar_count`가 음수거나 `top_similarity`가 0~1 밖이어도 400이다(#232) |
 | 근거 상태·유사 검색 값 | `similar_count`는 그 finding을 판단할 때 유사 검색 응답의 후보 수다(BE가 이미 `min_similarity` 미만을 뺀 결과). 같은 회의 앞부분 카드(pending)는 세지 않는다. `include_pending`을 켜면 BE가 준 승인 대기 후보도 센다. update 항목은 보내지 않아도 되고 보내도 게이트에 쓰지 않는다. 값은 추출 항목에 저장되고 추출 조회에 실린다 |
 

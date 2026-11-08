@@ -127,6 +127,7 @@ export function ReviewDetail({
         />
 
         <ReviewTasks
+          workspaceId={workspaceId}
           bundle={bundle}
           draft={draft}
           onDraftChange={setDraft}

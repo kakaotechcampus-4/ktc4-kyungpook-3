@@ -188,6 +188,32 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 
 남은 작업: AI 의 merge 전송과 `include_pending` 켜기(BE 배포 뒤), FE 답(#512)과 합친 카드 표시, 승인 사이에 담당 항목이 바뀐 경우의 별칭 저장(결정 기록의 장단점).
 
+## 2026-11-08 추가: 전사 진행과 단계 시작 시각을 회의 상세에 노출(#483 A안 BE 몫)
+
+M6 plan.md 는 비어 있어 완료조건이 없다. #381 과 같은 M6 에 둔다. 근거는 이슈 #483 과 설계 확정 댓글(2026-11-08)이고, AI·BE·FE 공동 이슈 중 BE 몫만 구현했다. M6 완료는 판정하지 않는다.
+
+| 변경 | 위치 |
+|---|---|
+| 회의에 전사 진행 컬럼 2개 | `backend/app/models/models.py`, 마이그레이션 `d6e1b4a8c297` |
+| stage 보고가 `stt: {done, total}` 을 받고 같은 stt 단계에서는 진행만 고친다 | `backend/app/services/meeting_stage.py`, `backend/app/schemas/meeting.py` |
+| 상세·`/fail` 응답 `processing`, stage 응답 `stt` | `backend/app/api/meetings.py` |
+
+| 이슈 요구(BE) | 상태 | 근거 |
+|---|---|---|
+| stage 보고로 전사 진행을 받는다, 같은 단계 재전송은 진행만 갱신 | 충족 | `test_stt_progress_is_stored_and_exposed`, `test_stt_progress_update_keeps_stage_at`, `test_same_stt_progress_is_ignored`, `test_stt_resend_without_progress_keeps_progress`, `test_stt_progress_decrease_overwrites` |
+| 단계가 넘어가거나 늦은 보고는 진행을 바꾸지 않는다 | 충족 | `test_moving_past_stt_clears_progress`, `test_late_stt_progress_after_handoff_is_ignored`, `test_late_stt_progress_does_not_change_stored_value_after_handoff` |
+| 잘못된 진행 값은 400 | 충족 | `test_stt_progress_invalid_400` |
+| `GET /meetings/{id}` 에 `processing: {stage, stage_at, stt}`, `progress` 유지 | 충족. processing 이 아닌 회의는 `null`(설계 확정에서 정함) | `test_stt_progress_ignored_on_non_processing`, `test_processing_without_report_has_empty_fields`, `test_fail_response_processing_is_null`, 기존 `progress` 테스트 |
+| AI 진행 보고, FE 화면·모의 서버·FE 계약 | 미충족(BE 몫 아님) | #483 댓글로 전달 |
+
+검증(2026-11-08, `backend/`):
+
+- `.venv/Scripts/python.exe -m ruff check --no-cache .`: All checks passed
+- `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`: 2260 passed, 1501 skipped. skip 은 PostgreSQL 이 필요한 테스트이고 CI 에서 돈다.
+- 마이그레이션은 실제 DB 에 적용하지 않았다(CI migrations 잡에서 확인). 조건부 UPDATE 의 실제 경합은 sqlite 로 재현되지 않는다. AI·FE 와 붙인 종단 확인은 하지 않았다.
+
+남은 작업: AI 진행 보고(단위·빈도 결정 포함), FE 화면과 FE 계약 반영. BE 배포 뒤 #483 에 알린다.
+
 ## 2026-11-08 추가: PM 글과 읽지 않은 수 통합
 
 ### 작업 근거와 실제 변경
@@ -213,12 +239,15 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 
 PR 작성 뒤 #480의 읽음 수가 `develop`에 들어와 새 PM 글과 연결할 필요가 생겼다. 기존 읽음 위치와 집계 쿼리 구조를 유지하고 상대편 발신자 범위만 늘렸다. 실제 PostgreSQL 마이그레이션·동시성·Discord 송신은 이번 로컬 검증에서 실행하지 않았다.
 
-사용자의 순차 병합 요청에 따라 선행 #454의 최종 코드를 이 브랜치에 일반 병합하고, `5ae76a6102a8`의 부모를 가입 인증의 `d2f6b81c4e07`으로 연결했다. 최종 체인은 읽음 위치 → 가입 인증 → PM 작성자 순서이며 단일 head는 `5ae76a6102a8`이다. 실제 develop 병합은 #454 다음에 진행한다. PR의 base와 기존 이력은 유지한다.
+사용자의 순차 병합 요청에 따라 선행 #454의 최종 코드를 이 브랜치에 일반 병합하고, `5ae76a6102a8`의 부모를 가입 인증의 `d2f6b81c4e07`으로 연결했다. 이후 #542가 develop에 병합되어 해당 변경도 반영했다. 최종 체인은 읽음 위치 → STT 진행률 → 가입 인증 → PM 작성자 순서이며 단일 head는 `5ae76a6102a8`이다. 실제 develop 병합은 #454 다음에 진행한다. PR의 base와 기존 이력은 유지한다.
 
 최종 통합 후 PM 메시지·알림·읽음·가입·카카오 API 테스트는 131개 통과, 133개 건너뜀이다. Ruff와 단일 Alembic head 확인도 통과했다. PostgreSQL 전체 회귀와 업그레이드는 이 통합 커밋의 CI에서 확인한다.
 
+#542 추가 반영 뒤 STT 진행률·PM 메시지·읽음 API 회귀는 89개 통과, 89개 건너뜀이다. 별도 검증자는 인증 코드 가입부터 초대 수락·대화 열기·PM 글·읽음·답장·봇 인계 및 결과 보고까지 실제 HTTPS 요청 41개로 검증했다. SQLite와 로컬 메일·Discord 경계 대역을 사용하므로 실제 PostgreSQL·SMTP·Discord 검증을 대신하지 않는다.
+
 ## 관련 기록
 
+- [전사 진행과 단계 시작 시각을 회의 상세에 노출한다](basis-for-decision/2026-11-08-processing-stt-progress.md)
 - [다른 회의의 같은 새 항목을 승인 대기 카드에 합친다](basis-for-decision/2026-11-07-pending-merge.md)
 - [승인 대기 새 항목 요청을 유사 검색 후보에 따로 더한다](basis-for-decision/2026-11-07-pending-approval-search.md)
 - [답장 담당자 변경 승인에서 PM 이 담당자를 고르게 한다](basis-for-decision/2026-11-07-reply-assignee-override.md)
