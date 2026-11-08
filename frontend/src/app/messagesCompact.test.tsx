@@ -189,6 +189,24 @@ it('목록에서 상세로 들어가면 상세 머리 제목에, 돌아오면 �
   expect(document.activeElement).toBe(again)
 })
 
+it('답장 근거로 연 대화에서 목록으로 돌아오면 그 대화 행에 포커스가 간다', async () => {
+  stubViewportWidth(390)
+  applyScenario('messages-merge')
+  const app = renderApp(paths.messageReview('ws_01', 'bd_07'))
+  await userEvent.click(await screen.findByRole('link', { name: "'ERD 정리' 답장 보기" }))
+  await app.expectSearch('?message=mg_02')
+  await screen.findByRole('region', { name: '대화 내용' })
+
+  await userEvent.click(backLink())
+  await app.expectPath(paths.messages('ws_01'))
+  const list = await screen.findByRole('complementary', { name: '메시지 목록' })
+  const row = within(within(list).getByRole('region', { name: '대화' }))
+    .getAllByRole('link')
+    .find((link) => link.getAttribute('href') === paths.messageThread('ws_01', 'th_01'))
+  expect(row).toBeDefined()
+  expect(document.activeElement).toBe(row)
+})
+
 it('가상 키보드가 보이는 영역을 줄이면 화면 전체 상세를 그 영역에 맞춘다', async () => {
   stubViewportWidth(390)
   const listeners = new Set<() => void>()
