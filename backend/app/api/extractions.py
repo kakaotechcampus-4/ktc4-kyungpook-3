@@ -353,7 +353,8 @@ def create_extraction(
                 "gate": str(gate),
                 "doc_text": raw_item.doc_text,
                 # 확인 카드가 "'애포'는 '배포'일 수 있어요"를 보여 줄 수 있게 싣는다(FE 표시는 후속)
-                "asr_suspects": [s.model_dump() for s in raw_item.asr_suspects] if raw_item.asr_suspects else None,
+                # [] (검사했고 없음)와 None (옛 AI) 을 구별해 받은 그대로 싣는다(계약)
+                "asr_suspects": None if raw_item.asr_suspects is None else [s.model_dump() for s in raw_item.asr_suspects],
                 "category": raw_item.category,
             }
             if raw_item.status:

@@ -728,3 +728,12 @@ def test_pending_created_earlier_in_the_same_request_does_not_block_auto(client,
     # 첫 항목이 실제로 pending task_create 를 만들었는데도 두 번째 항목은 auto 다
     pending = [r for r in _approvals(db) if r.type == "task_create" and r.status == "pending"]
     assert len(pending) == 1
+
+
+@pytest.mark.parametrize("sent, stored", [("empty", []), ("missing", None)])
+def test_approval_keeps_empty_suspects_apart_from_an_old_ai(client, db, seed, sent, stored):
+    # [] 는 "검사했고 없음", 필드 없음은 "옛 AI". 막힌 쪽·안 막힌 쪽을 나눠 볼 때 둘을 구별해야 한다(#532 리뷰)
+    fields = {"asr_suspects": []} if sent == "empty" else {}
+    assert _gate(client, seed, task_status="inferred", **fields) == "review"
+    [approval] = _approvals(db)
+    assert json.loads(approval.payload)["asr_suspects"] == stored
