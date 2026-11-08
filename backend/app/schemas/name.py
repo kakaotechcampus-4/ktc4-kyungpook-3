@@ -5,7 +5,7 @@ from pydantic import AfterValidator
 
 NAME_MAX_LENGTH = 100
 # 글자 방향 제어 문자(Cf). 이름 뒤의 문장을 거꾸로 보이게 할 수 있어 어디에 있어도 거절한다. ZWJ·ZWNJ 는 허용한다.
-_BIDI_CONTROLS = frozenset("‪‫‬‭‮⁦⁧⁨⁩")
+_BIDI_CONTROLS = frozenset("\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
 NAME_RULE_MESSAGE = "이름은 앞뒤 공백을 뺀 1~100자이고 제어문자를 포함할 수 없습니다."
 
 
