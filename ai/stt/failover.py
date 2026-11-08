@@ -10,7 +10,8 @@ gpu-request 로 받는다(python -m capture.worker --gpu, 디스코드 /gpu).
   SUSPECT   호출을 기다리게 하고 Elice 를 60초 간격으로 확인한다. 3번 연속 실패면 STARTING, 한 번 성공이면 NORMAL
   STARTING  서버가 준비될 때까지 스위치 on 을 tick 마다 보낸다(멱등). 호출은 기다린다. 기다림이 풀린 뒤 서버가 켜지기 전에
             Elice 실제 호출이 성공하면 NORMAL
-  ON_GPU    GPU 로 보낸다. 이름·문맥 프롬프트는 싣지 않는다. Elice 는 5분마다 확인한다. 장애마다 처음 넘길 때 포기한 회의를 깨운다
+  ON_GPU    GPU 로 보낸다. 이름·문맥 프롬프트는 싣지 않는다. Elice 는 5분마다 확인한다. 장애마다 처음 넘길 때 포기한 회의를 깨운다.
+            사람이 HALTED 나 STARTING 에서 켜면 다음에 넘길 때 한 번 더 깨운다
   STOPPING  스위치 off. 이유가 idle 이고 마지막 Elice 확인이 실패였으면 호출은 기다린다
   PARKED    꺼졌는데 Elice 가 실제 묶음까지 되는지는 모른다. 첫 실제 성공에 NORMAL, 실제 실패 3번이면 바로 켠다
   HALTED    하루 상한, Lambda 누적 상한(spent), 켜기 포기. 스스로 켜지 않는다
@@ -140,7 +141,7 @@ class FailoverState:
     since: float = 0.0
     why: str = ""
     outage_since: float | None = None   # 이번 장애의 첫 실패. 포기한 회의를 깨울 기준
-    woken: float | None = None          # 포기한 회의를 깨운 장애의 outage_since. 장애 하나에 한 번만 깨운다
+    woken: float | None = None          # 포기한 회의를 깨운 장애의 outage_since. 같은 장애는 사람이 켤 때만 다시 깨운다
     hold_until: float | None = None
     next_probe_at: float | None = None  # Elice 확인
     probe_fails: int = 0                # SUSPECT 의 연속 확인 실패
@@ -358,6 +359,8 @@ def _starting(s, f, L, out, closed):
     if f.request == "off":
         s = _paused_by_hand(s, f, L, out)
         return _stopping(s, f, "manual", out)
+    if f.request == "on":
+        s = replace(s, woken=None)      # 기다림이 풀린 사이 포기한 회의가 있을 수 있다. 사람이 켜면 넘길 때 다시 깨운다
     if v is not None and v.refused == "spent":
         out.append(Notice("⛔ GPU 사용 시간이 Lambda 누적 상한에 닿아 켜지 못했습니다. 관리자가 상한을 올려야 합니다.",
                           alert=True))
@@ -509,7 +512,8 @@ def _halted(s, f, L, out, closed):
         if s.why == "day_cap":
             out.append(Notice("⛔ 오늘 GPU 상한에 닿아 켜지 않습니다. KST 날짜가 바뀌면 다시 켤 수 있습니다."))
             return s
-        return _start(replace(s, boot_failures=0), f, L, "manual", out)
+        # 멈춘 동안 Elice 로 간 전사가 포기됐을 수 있다. 넘길 때 이번 장애를 다시 깨운다
+        return _start(replace(s, boot_failures=0, woken=None), f, L, "manual", out)
     return s
 
 

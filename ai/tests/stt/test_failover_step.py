@@ -100,7 +100,9 @@ ROWS = [
     # STARTING
     ("starting: 수동 끄기", st(Phase.STARTING, why="elice_down", hold_until=T0 + 1800), facts(request="off"),
      Phase.STOPPING, "manual", {"paused_until": T0 + 10 + L.pause_s, "hold_until": None}),
-    ("starting: spent 거절", st(Phase.STARTING, why="elice_down"), facts(server=replace(OFF, refused="spent")),
+    ("starting: 수동 켜기는 이번 장애를 다시 깨우게 한다", st(Phase.STARTING, why="rollover", woken=T0 - 900),
+     facts(request="on"), Phase.STARTING, "rollover", {"woken": None}),
+    ("starting: spent 거절",st(Phase.STARTING, why="elice_down"), facts(server=replace(OFF, refused="spent")),
      Phase.STOPPING, "spent", {}),
     ("starting: not_ready 거절", st(Phase.STARTING, why="elice_down"), facts(server=replace(OFF, refused="not_ready")),
      Phase.STOPPING, "start_failed", {}),
@@ -230,8 +232,10 @@ ROWS = [
      Phase.HALTED, "day_cap", {}),
     ("halted: 하루 상한은 같은 날 수동 켜기를 거절한다", st(Phase.HALTED, why="day_cap", **FULL_ONS), facts(request="on"),
      Phase.HALTED, "day_cap", {}),
-    *[(f"halted: {why} 뒤 수동 켜기", st(Phase.HALTED, why=why, boot_failures=2), facts(request="on"),
-       Phase.STARTING, "manual", {"boot_failures": 0}) for why in ("boot", "start_failed", "spent")],
+    *[(f"halted: {why} 뒤 수동 켜기", st(Phase.HALTED, why=why, boot_failures=2, outage_since=T0 - 900,
+                                       woken=T0 - 900), facts(request="on"),
+       Phase.STARTING, "manual", {"boot_failures": 0, "woken": None, "outage_since": T0 - 900})
+      for why in ("boot", "start_failed", "spent")],
     ("halted: 부팅 실패는 날짜로 풀리지 않는다", st(Phase.HALTED, why="boot"), facts(now=T0 + 86400),
      Phase.HALTED, "boot", {}),
     ("halted: 수동 끄기", st(Phase.HALTED, why="boot"), facts(request="off"), Phase.HALTED, "boot",

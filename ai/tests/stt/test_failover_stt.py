@@ -675,6 +675,44 @@ def test_the_wake_hook_runs_once_per_outage_not_per_entry_into_gpu(tmp_path):
     assert seen == [t0, t1]                        # 되돌린 뒤의 새 장애는 다시 깨운다
 
 
+def test_a_manual_on_after_halting_wakes_the_same_outage_again(tmp_path):
+    """HALTED 동안 Elice 로 간 전사가 포기된다. 사람이 켜서 다시 넘기면 그 회의도 깨워야 한다."""
+    seen = []
+    fo, elice, gpu, switch, clock, _ = make(tmp_path, on_gpu=seen.append)
+    t0 = clock()
+    to_gpu(fo, elice, switch, clock)
+    gpu.mode = "service"
+    assert ticks(fo, clock, 3600, until=lambda: fo.phase is Phase.HALTED)
+    assert fo.state.why == "boot" and seen == [t0]
+    gpu.mode = "ok"
+    request(tmp_path, "on")
+    assert ticks(fo, clock, 900, until=lambda: fo.phase is Phase.ON_GPU)
+    assert seen == [t0, t0]
+
+
+@pytest.mark.parametrize("manual_on, wakes", [(False, 1), (True, 2)])
+def test_a_hold_that_runs_out_during_a_rollover_wakes_again_only_on_a_manual_on(tmp_path, manual_on, wakes):
+    """3시간 넘김의 다시 켜기가 용량 부족으로 30분을 넘기면 전사가 Elice 로 가 포기될 수 있다. 사람이 켤 때만 다시 깨운다."""
+    seen = []
+    fo, elice, gpu, switch, clock, _ = make(tmp_path, on_gpu=seen.append)
+    t0 = clock()
+    to_gpu(fo, elice, switch, clock)
+    while switch.stop_at - clock() > LIMITS.rollover_s + 60:
+        call(fo)
+        ticks(fo, clock, 60)
+    call(fo)
+    assert ticks(fo, clock, 120, until=lambda: fo.state.why == "rollover")
+    switch.refuse = "capacity"
+    assert ticks(fo, clock, LIMITS.hold_s + 120, until=lambda: fo.state.hold_until is None)
+    assert fo.phase is Phase.STARTING and switch.state == "off"
+    if manual_on:
+        request(tmp_path, "on")
+        fo.tick()
+    switch.refuse = None
+    assert ticks(fo, clock, 900, until=lambda: fo.phase is Phase.ON_GPU)
+    assert seen == [t0] * wakes
+
+
 def test_status_text_shows_phase_counts_and_running_cost(tmp_path):
     fo, elice, gpu, switch, clock, _ = make(tmp_path)
     switch.used_s = 126 * 60
