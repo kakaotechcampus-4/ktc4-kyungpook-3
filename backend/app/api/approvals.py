@@ -429,6 +429,32 @@ def create_approval(
     아니라 로그인한 팀원으로 기록한다. 바디 값을 믿으면 다른 팀원 이름으로 요청을 올릴 수 있다.
     """
     member = require_member(db, user, payload.workspace_id)
+    from app.services.meeting_deletion import require_live_meeting
+    merged = payload.payload.get("merged_items")
+    if merged is not None and (
+        not isinstance(merged, list) or any(not isinstance(part, dict) for part in merged)
+    ):
+        raise AppError(ErrorCode.INVALID_REQUEST, details={"field": "merged_items"})
+    parts = [payload.payload, *(merged or [])]
+    meeting_ids = set()
+    for part in parts:
+        meeting_id = part.get("meeting_id")
+        if meeting_id is None:
+            continue
+        if not isinstance(meeting_id, str) or not meeting_id:
+            raise AppError(ErrorCode.INVALID_REQUEST, details={"field": "meeting_id"})
+        meeting_ids.add(meeting_id)
+    roots = set()
+    for meeting_id in sorted(meeting_ids):
+        meeting = require_live_meeting(db, meeting_id)
+        if meeting.workspace_id != payload.workspace_id:
+            raise AppError(ErrorCode.WORKSPACE_MISMATCH)
+        roots.add(meeting.recording_root_id or meeting.meeting_id)
+    # 삭제도 root부터 잠근다. payload 순서는 같은 녹음 계보의 잠금 순서를 바꿀 수 없다.
+    for root_id in sorted(roots):
+        require_live_meeting(db, root_id, lock=True)
+    for meeting_id in sorted(meeting_ids):
+        require_live_meeting(db, meeting_id, lock=True)
     # 리마인드는 묶음 승인(POST /messages/bundles/{id}/approve)으로 옮겼다. 남은 행의 조회·처리만 두고 새로 만들지 않는다(#335)
     if payload.type == ApprovalType.REMINDER_DM:
         raise AppError(
@@ -563,6 +589,21 @@ def resolve_approval(
             details={"approval_id": approval_id},
         )
     member = require_pm(db, user, target.workspace_id)
+    source_payload = target.payload
+    source_parts = json.loads(source_payload)
+    source_parts = [source_parts, *(source_parts.get('merged_items') or [])]
+    source_ids = {part.get('meeting_id') for part in source_parts if isinstance(part, dict) and part.get('meeting_id')}
+    roots = set()
+    for source_id in source_ids:
+        source_meeting = db.get(Meeting, source_id)
+        if source_meeting is not None:
+            roots.add(source_meeting.recording_root_id or source_meeting.meeting_id)
+    if roots:
+        db.scalars(select(Meeting).where(Meeting.meeting_id.in_(roots)).order_by(Meeting.meeting_id)
+                   .with_for_update().execution_options(populate_existing=True)).all()
+        db.refresh(target)
+        if target.payload != source_payload:
+            raise AppError(ErrorCode.APPROVAL_CHANGED)
     # 이미 처리한 카드에는 고친 값이 틀렸다는 안내보다 처리됐다는 안내가 맞다. 경합은 아래 조건부 UPDATE 가 막는다
     if target.status != str(ApprovalStatus.PENDING):
         raise AppError(

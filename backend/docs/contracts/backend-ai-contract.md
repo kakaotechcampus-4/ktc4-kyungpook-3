@@ -7,6 +7,33 @@
 - 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로, 추출 등록의 auto 판단 키는 2026-10-16 #232 변경 코드로 다시 대조했다. 웹 업로드 가져가기는 2026-10-14 #219 브랜치 코드로, 화자 지정 경로(speakers·assigned·resume)는 2026-11-02 #266 브랜치 코드로, 처리 단계 보고(`PATCH /meetings/{meeting_id}/stage`)는 2026-11-05 #381 브랜치 코드로 대조했다. 라벨 보고 재전송과 지정 대기 만료는 2026-11-06 #438 에서 develop 코드로 다시 대조했다
 - 합의 근거: 인계 방식은 [AI 결정 0009](../../../ai/decision_log/0009-bot-hands-off-to-be-api.md), 발화 저장은 [AI 결정 0017](../../../ai/decision_log/0017-transcript-sources-stage.md)에 AI 쪽 기록이 있다. 이 문서는 그 이후의 필드·오류 세부를 코드에서 읽은 것이며, 별도 합의 문서가 없는 항목은 구현 사실로만 적는다.
 
+## 명시적 회의 삭제와 재처리 계보 (#576, 2026-11-09)
+
+사용자는 회의 원문·회의록·추출·근거 삭제와 기존 태스크 보존을 확정했다. 혼합 승인 대기 카드는 남은 회의 기여로 재구성한다. 웹 삭제 API는 [FE 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md#회의-삭제와-보존-태스크-576-2026-11-09)에만 정의한다. 이 절의 추가 HTTP 형식은 현재 구현이며 운영 배포를 검증한 기록은 아니다.
+
+`POST /meetings`는 선택 필드 `replaces_meeting_id: string`을 받는다. 실패한 회의를 재처리할 때 이전 ID를 보낸다. 서버는 같은 workspace·source인지 확인하고 원본 root를 잠근다. `manual_upload`의 이 생성 경로는 허용하지 않는다. 같은 이전 ID의 요청을 반복하면 이미 만든 동일 자식 회의를 반환한다. 이전 ID 또는 root가 삭제되었으면 410 `MEETING_DELETED`다. AI는 네트워크 오류나 거절 뒤 이전 ID를 지우고 연결 없는 새 회의로 우회하지 않는다.
+
+새 AI는 회의 생성에 `X-Meeting-Lineage-Version: 1`을 보낸다. 서버 삭제 gate가 켜져 있을 때 이 버전이 없는 Discord 생성은 409 `MEETING_CLIENT_UPDATE_REQUIRED`다. gate가 꺼진 준비 배포에서도 구 클라이언트가 만든 Discord 회의는 검증되지 않은 계보로 남는다. 과거 매니페스트의 `be.replaced`는 DB migration만으로 복구되지 않으며 [운영 활성화 절차](../../../deploy/README.md#회의-삭제-활성화-576)를 따른다.
+
+서버는 `recording_root_id`, 유일한 `replaces_meeting_id`로 계보를 보관한다. 삭제도 같은 root를 잠근다. 재처리가 먼저 시작되어 활성 자식이 있으면 삭제는 409이며, 삭제가 먼저면 새 자식 생성은 410이다. 삭제된 회의의 source·추출·종료·단계·실패·업로드 claim/file/speakers/resume 요청도 410으로 종결한다. 봉투 없는 404는 삭제 신호가 아니므로 로컬 데이터를 지우지 않는다.
+
+봇 파일 정리는 `X-Service-Token`으로 인증한다.
+
+| 요청 | 입력 | `data` |
+|---|---|---|
+| `POST /bot/meeting-purges/claim` | 빈 객체 | 작업이 없으면 `null`, 있으면 `{meeting_id, claim_token, lease_until}` |
+| `POST /bot/meeting-purges/{meeting_id}/ack` | `{claim_token}` | 웹 삭제 API와 같은 receipt. `deleted_meeting_ids`는 계보 전체이고 `cleanup_status`도 계보 전체의 BE·AI 완료를 계산 |
+
+- claim lease는 120초다. 서버에는 토큰 hash만 저장한다. 만료되거나 새 claim으로 교체된 ack는 409 `PURGE_CLAIM_EXPIRED`다. 토큰을 로그에 남기지 않는다.
+- AI는 완료된 `handed_off` manifest도 찾아 녹음·업로드 사본·전사 출력·임시 manifest를 정리한다. `.deleted`에는 ID만 남겨 intake·복구·재시작의 재생성을 막는다.
+- 업로드 writer와 manifest 처리 lock을 함께 사용한다. 다른 작업이 파일을 쓰고 있거나 unlink가 실패하면 ack하지 않는다. 파일 부재와 쓰기 종결을 확인한 뒤 ack한다.
+- purge는 restart·upload writer 잠금과 발견한 모든 manifest 잠금을 먼저 확보하고 다시 읽은 뒤 ID로 대상을 고른다. 새 서버 ID가 아직 저장되지 않은 active writer도 완료를 보류한다. 다른 회의가 처리 중이어도 정리가 늦어질 수 있다.
+- 새 STT 트랙 출력은 세션별 이름을 사용한다. 과거 공유 이름의 cache는 소유권을 구분할 수 없어 삭제 대상 원문 제거 때 다른 회의의 같은 cache도 무효화될 수 있다. 다른 회의의 통합 전사와 새 세션별 출력은 보존한다.
+- BE 파일 정리 실패도 pending으로 유지하고 재시도한다. `MEETING_PURGE_INTERVAL_SECONDS` 기본값은 10초이고 0 이하이면 BE 주기 작업을 끈다. AI 워커 중단 중에도 DB 원문은 숨기지만 receipt는 complete가 되지 않는다.
+- 이미 외부에 전송한 Notion·Discord 결과와 사용자에게 전달된 바이트의 회수는 이 규약의 범위가 아니다. 기존 자동 보관 주기 변경과도 별개다.
+
+코드 근거는 [BE 삭제 서비스](../../app/services/meeting_deletion.py), [purge API](../../app/api/meeting_purges.py), [AI purge](../../../ai/capture/meeting_purge.py), [AI handoff](../../../ai/capture/handoff.py)다. 검증 결과와 PostgreSQL 실행 한계는 [M3 결과](../plan/m3/result.md)에 기록한다.
+
 ## 공통
 
 - 경로 prefix는 `/api/v1`이고 응답은 백엔드 공통 봉투 `{data, error}`다 ([Backend README 응답 형식](../../README.md#응답-형식)).

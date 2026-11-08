@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, Response
 from fastapi.responses import FileResponse
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
@@ -24,6 +24,8 @@ from app.schemas.meeting import (
 )
 from app.schemas.upload import SpeakerAssignRequest, SpeakerAssignResponse, SpeakerViewResponse
 from app.services import meeting_failure, meeting_stage, speaker_assignment
+from app.services import meeting_deletion
+from app.schemas.meeting_deletion import MeetingDeletionReceipt
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
@@ -36,12 +38,29 @@ _ENDED_STATUSES = {
 
 
 def _get_meeting(db: Session, meeting_id: str) -> Meeting:
+    return meeting_deletion.require_live_meeting(db, meeting_id, lock=True)
+
+
+@router.delete('/{meeting_id}', response_model=Envelope[MeetingDeletionReceipt])
+def delete_meeting(meeting_id: str, response: Response, user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)) -> dict:
     meeting = db.get(Meeting, meeting_id)
     if meeting is None:
-        raise AppError(
-            ErrorCode.MEETING_NOT_FOUND, details={"meeting_id": meeting_id}
-        )
-    return meeting
+        raise AppError(ErrorCode.MEETING_NOT_FOUND)
+    require_pm(db, user, meeting.workspace_id)
+    result = meeting_deletion.delete_meeting(db, meeting_id)
+    response.status_code = 200 if result.cleanup_status == 'complete' else 202
+    return success(result.model_dump(mode='json'))
+
+
+@router.get('/{meeting_id}/deletion', response_model=Envelope[MeetingDeletionReceipt])
+def get_deletion(meeting_id: str, user: User = Depends(get_current_user),
+                 db: Session = Depends(get_db)) -> dict:
+    meeting = db.get(Meeting, meeting_id)
+    if meeting is None:
+        raise AppError(ErrorCode.MEETING_NOT_FOUND)
+    require_pm(db, user, meeting.workspace_id)
+    return success(meeting_deletion.receipt(db, meeting).model_dump(mode='json'))
 
 
 def _compute_progress(db: Session, meeting: Meeting) -> MeetingProgress:
@@ -97,13 +116,33 @@ def _processing(meeting: Meeting) -> MeetingProcessing | None:
 def create_meeting(
     payload: MeetingCreateRequest,
     db: Session = Depends(get_db),
+    x_meeting_lineage_version: str | None = Header(None),
 ) -> dict:
+    versioned = x_meeting_lineage_version == "1"
+    if payload.source == "discord" and meeting_deletion.enabled() and not versioned:
+        raise AppError(ErrorCode.MEETING_CLIENT_UPDATE_REQUIRED)
     meeting = Meeting(
         workspace_id=payload.workspace_id,
         title=payload.title,
         source=str(payload.source),
         status=str(MeetingStatus.CREATED),
+        deletion_ready=payload.source != "discord" or versioned,
     )
+    if payload.replaces_meeting_id is not None:
+        predecessor = meeting_deletion.require_live_meeting(db, payload.replaces_meeting_id)
+        root_id = predecessor.recording_root_id or predecessor.meeting_id
+        meeting_deletion.require_live_meeting(db, root_id, lock=True)
+        db.refresh(predecessor)
+        meeting_deletion.assert_live(predecessor)
+        if predecessor.workspace_id != payload.workspace_id:
+            raise AppError(ErrorCode.WORKSPACE_MISMATCH)
+        if predecessor.source != str(payload.source) or predecessor.source == 'manual_upload' or predecessor.status != 'failed':
+            raise AppError(ErrorCode.INVALID_REQUEST, message='failed 상태의 같은 출처 회의만 교체할 수 있습니다.')
+        existing = db.scalar(select(Meeting).where(Meeting.replaces_meeting_id == predecessor.meeting_id))
+        if existing is not None:
+            return success(MeetingCreateResponse.model_validate(existing).model_dump(mode='json'))
+        meeting.recording_root_id = root_id
+        meeting.replaces_meeting_id = predecessor.meeting_id
     if payload.started_at is not None:
         # 미래 시각이 done 이 되면 chat-cursor 가 그 뒤를 가리켜 채팅 수집이 멈춘다
         if payload.started_at > datetime.now(timezone.utc):
@@ -194,6 +233,7 @@ def fail_meeting(
     meeting = _get_meeting(db, meeting_id)
     detail = MeetingDetailResponse(
         meeting_id=meeting.meeting_id,
+        deletion_available=meeting_deletion.deletion_available(db, meeting),
         workspace_id=meeting.workspace_id,
         title=meeting.title,
         status=meeting.status,
@@ -229,6 +269,7 @@ def get_meeting(
 
     detail = MeetingDetailResponse(
         meeting_id=meeting.meeting_id,
+        deletion_available=meeting_deletion.deletion_available(db, meeting),
         workspace_id=meeting.workspace_id,
         title=meeting.title,
         status=meeting.status,

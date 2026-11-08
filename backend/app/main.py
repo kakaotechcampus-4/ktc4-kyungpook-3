@@ -12,7 +12,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import approvals, bot_lookups, bot_messages, extractions, invitations, messages, meetings, members, similar_tasks, sources, tasks, uploads, workspaces, auth, integrations
 from app.api import message_settings, message_socket, notifications
-from app.services import scheduler
+from app.services import scheduler, meeting_deletion
+from app.api import meeting_purges
 from app.core.errors import AppError, Envelope, ErrorCode, failure, success
 from app.services import embedding, notion_sync, sessions, upload_sweeper
 
@@ -46,6 +47,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         workers.append(upload_sweeper.start_worker(UPLOAD_SWEEP_INTERVAL_SECONDS))
     if SESSION_SWEEP_INTERVAL_SECONDS > 0:
         workers.append(sessions.start_worker(SESSION_SWEEP_INTERVAL_SECONDS))
+    purge_interval = float(os.getenv("MEETING_PURGE_INTERVAL_SECONDS", "10"))
+    if purge_interval > 0:
+        workers.append(meeting_deletion.start_worker(purge_interval))
     try:
         yield
     finally:
@@ -85,6 +89,7 @@ app.include_router(notifications.router, prefix=API_PREFIX)
 app.include_router(notifications.push_router, prefix=API_PREFIX)
 app.include_router(message_settings.router, prefix=API_PREFIX)
 app.include_router(bot_lookups.router, prefix=API_PREFIX)
+app.include_router(meeting_purges.router, prefix=API_PREFIX)
 
 
 @app.exception_handler(AppError)

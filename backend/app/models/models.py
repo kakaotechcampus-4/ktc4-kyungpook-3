@@ -421,6 +421,14 @@ class Meeting(Base):
     workspace_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    deletion_ready: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    recording_root_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey('meeting.meeting_id'), nullable=True, index=True
+    )
+    replaces_meeting_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey('meeting.meeting_id'), nullable=True, unique=True
+    )
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default=MeetingSource.DISCORD)
     status: Mapped[str] = mapped_column(String(32), default=MeetingStatus.CREATED, index=True)
@@ -445,6 +453,18 @@ class Meeting(Base):
     sources: Mapped[list["Source"]] = relationship(
         back_populates="meeting", cascade="all, delete-orphan"
     )
+
+
+class MeetingPurge(Base):
+    __tablename__ = "meeting_purge"
+
+    meeting_id: Mapped[str] = mapped_column(String(36), ForeignKey("meeting.meeting_id", ondelete="CASCADE"), primary_key=True)
+    backend_done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ai_done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    claim_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class MeetingUpload(Base):

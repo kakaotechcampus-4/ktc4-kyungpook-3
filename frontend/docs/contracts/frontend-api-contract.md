@@ -1,5 +1,51 @@
 # 프론트엔드 API 계약
 
+## 회의 삭제와 보존 태스크 (#576, 2026-11-09)
+
+### 합의 상태
+
+사용자가 #572 정책 확인에서 회의 원문·회의록·추출·근거 삭제와 기존 태스크 보존을 확정했다. 여러 회의가 합쳐진 승인 대기 카드는 삭제한 회의의 기여만 제거하고 남은 회의로 재구성한다. 아래 HTTP 형식과 done/failed 제한은 이번 구현의 기술 경계이며, 운영 배포 완료를 뜻하지 않는다.
+
+### 현재 구현
+
+경로는 `/api/v1` 기준이며 응답은 기존 `{data, error}` 봉투를 사용한다.
+
+| 요청 | 권한과 응답 |
+|---|---|
+| `DELETE /meetings/{meeting_id}` | 해당 공간 PM. 본문 없음. 원문 제거 후 파일 정리가 남으면 202, 계보 전체 정리가 끝나면 200 |
+| `GET /meetings/{meeting_id}/deletion` | 해당 공간 PM. 현재 삭제 접수 결과를 200으로 반환 |
+
+두 응답의 `data`는 다음 형식이다.
+
+```json
+{
+  "meeting_id": "요청한 회의 ID",
+  "deleted_meeting_ids": ["같은 녹음의 원본과 재처리 회의 ID"],
+  "deleted_at": "2026-11-09T00:00:00Z",
+  "cleanup_status": "pending"
+}
+```
+
+- `deleted_meeting_ids`는 정렬된 비어 있지 않은 목록이며 요청 ID를 포함한다. `deleted_at`은 시간대를 포함하고 반복 요청에서도 같다. `cleanup_status`는 `pending` 또는 `complete`다.
+- 같은 원본의 재처리 계보 중 `created`, `processing`, `awaiting_speakers`가 하나라도 있으면 409 `MEETING_DELETE_BLOCKED`다. `error.details.status`에 해당 상태를 반환하며 원문은 바꾸지 않는다.
+- 삭제된 회의의 상세·회의록·화자·오디오는 410 `MEETING_DELETED`다. 실제 없는 ID는 404 `MEETING_NOT_FOUND`다. 권한 없는 사용자는 기존 403을 따른다.
+- 태스크 목록·상세는 `meeting_id`를 유지하고 `meeting_deleted: boolean`을 추가한다. 태스크 ID·업무 필드·버전·이력·Notion 작업은 보존한다.
+- FE는 `meeting_deleted=true`일 때 **원본 회의가 삭제되어 근거를 볼 수 없음**을 표시한다. 회의 목록에 없다는 이유로 삭제를 추정하지 않는다.
+- 성공 receipt를 받으면 같은 세션의 이전 원문 요청을 취소한다. 계보 상세·회의록·추출·승인의 비활성 캐시는 제거하고, 활성 화면은 원문 데이터를 비운 뒤 다시 조회한다. 화면을 이미 떠났으면 이동과 토스트만 생략한다. 세션이 바뀌면 이전 응답을 반영하지 않는다.
+- `pending`은 삭제 접수와 DB 원문 제거를 뜻한다. 파일 정리 완료로 안내하지 않는다. 자동 DELETE 재시도는 하지 않고 실패 시 원본 화면에서 수동 재시도를 허용한다.
+
+### 운영 활성화 경계
+
+`MEETING_DELETION_ENABLED`는 기본 비활성이다. 명시적으로 `true`일 때만 DELETE를 허용하며, 그 외에는 503 `MEETING_DELETION_UNAVAILABLE`다. 과거 Discord 계보 중 검증되지 않은 행이 있으면 409 `MEETING_LINEAGE_UNVERIFIED`로 거절한다. 이 두 경계에서도 원문과 태스크는 바꾸지 않는다. 이미 접수한 receipt 조회·파일 정리와 삭제 후 410은 gate를 꺼도 유지한다.
+
+회의 상세의 `deletion_available: boolean`은 gate 활성화, 계보 전체 준비 상태와 terminal 여부를 반영한다. FE는 해당 필드가 정확히 `true`이고 PM일 때만 삭제 CTA를 표시한다. 이전 서버가 필드를 생략하면 false로 다룬다. 과거 계보 복구와 구 봇 교체 확인은 [운영 절차](../../../deploy/README.md#회의-삭제-활성화-576)를 따른다.
+
+### 구현과 검증 근거
+
+- 서버 경계는 [삭제 서비스](../../../backend/app/services/meeting_deletion.py), [회의 API](../../../backend/app/api/meetings.py), [Task 응답](../../../backend/app/schemas/task.py)에 있다.
+- FE는 [삭제 기능](../../src/features/meeting-delete/ui/MeetingDelete.tsx), [Task 변환](../../src/entities/task/model/mapper.ts), [라우팅 테스트](../../src/app/meetingDelete.test.tsx), [Chromium E2E](../../e2e/meeting-delete.e2e.ts)로 검증한다.
+- 실제 실행 결과와 남은 환경 검증은 [#576 FE 결과](../issues/576-meeting-delete/result.md)와 [BE M3 결과](../../../backend/docs/plan/m3/result.md)에 기록한다. 봇 파일 정리 규약은 [BE·AI 대표 계약](../../../backend/docs/contracts/backend-ai-contract.md)에 둔다.
+
 ## Notion 선택 기능 (#507, 2026-11-07)
 
 근거는 [이슈 #507](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/507)의 사용자 결정(2026-11-07)과 [D-182](../decision/frontend-decisions.md)다. 프론트엔드는 회의 올리기·정리·회의록·태스크·승인에 Notion 연결을 요구하지 않는다. 아래 서버 동작은 정적 코드 확인이고, 실 API 호출과 실제 Notion 반영은 실행하지 않았다.

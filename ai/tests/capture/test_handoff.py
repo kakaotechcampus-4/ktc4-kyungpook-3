@@ -435,7 +435,10 @@ def test_every_be_call_carries_the_service_token():
     assert [c[:2] for c in fake.calls] == [("POST", "/meetings"), ("PATCH", f"/meetings/{mid}/end"),
                                            ("POST", "/extractions"), ("POST", "/meetings"),
                                            ("PATCH", f"/meetings/{other}/fail")]
-    assert all(h == {"X-Service-Token": "svc-token"} for h in fake.headers)
+    assert all(headers["X-Service-Token"] == "svc-token" for headers in fake.headers)
+    for (_, path, _), headers in zip(fake.calls, fake.headers):
+        if path == "/meetings":
+            assert headers["X-Meeting-Lineage-Version"] == "1"
 
 
 def test_the_be_refuses_meeting_calls_without_the_token():

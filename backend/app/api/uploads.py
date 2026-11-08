@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_service_token
 from app.core.database import get_db
+from app.services.meeting_deletion import require_live_meeting
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Meeting, MeetingSource, MeetingStatus, MeetingUpload
 from app.schemas.upload import (
@@ -97,9 +98,9 @@ def claim_upload(meeting_id: str, db: Session = Depends(get_db)) -> dict:
         )
 
     db.rollback()
-    meeting = db.get(Meeting, meeting_id)
+    meeting = require_live_meeting(db, meeting_id, lock=True)
     upload = db.get(MeetingUpload, meeting_id)
-    if meeting is None or upload is None:
+    if upload is None:
         raise _not_found(meeting_id)
     if meeting.status != MeetingStatus.PROCESSING:
         raise AppError(
@@ -158,6 +159,7 @@ def resume_upload(meeting_id: str, db: Session = Depends(get_db)) -> dict:
 )
 def download_upload(meeting_id: str, db: Session = Depends(get_db)) -> FileResponse:
     """업로드한 녹음 원본. 상태는 보지 않는다(가져가기 전후 모두 받을 수 있다)."""
+    require_live_meeting(db, meeting_id, lock=True)
     upload = db.get(MeetingUpload, meeting_id)
     if upload is None:
         raise _not_found(meeting_id)

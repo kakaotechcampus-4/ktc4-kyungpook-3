@@ -6,11 +6,23 @@ import { isNotionSynced, toTask, toTaskHistory, toTaskTimeline } from './mapper'
 
 const taskDtos: TaskDto[] = taskFixtures.map((row) => ({ ...row, auto_blocked: false }))
 
+it('원본 삭제 여부는 명시적 boolean만 받으며 회의 ID를 유지한다', () => {
+  expect(toTask({ ...taskDtos[0], meeting_deleted: true })).toMatchObject({
+    meetingId: 'mt_09',
+    meetingDeleted: true,
+  })
+  expect(toTask(taskDtos[0]).meetingDeleted).toBe(false)
+  const invalid = structuredClone(taskDtos[0])
+  Reflect.set(invalid, 'meeting_deleted', 'true')
+  expect(() => toTask(invalid)).toThrow(ApiError)
+})
+
 it('maps snake case, version and Notion sync status while retaining date strings', () => {
   expect(toTask(taskDtos[0])).toEqual({
     id: 'tk_01',
     workspaceId: 'ws_01',
     meetingId: 'mt_09',
+    meetingDeleted: false,
     title: '로그인 API 연동',
     assigneeMemberId: 'mb_01',
     status: 'in_progress',

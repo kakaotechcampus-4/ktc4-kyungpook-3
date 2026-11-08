@@ -1,3 +1,4 @@
+import type { MockMeetingDeletion } from './meetingDeletion'
 import type { SessionDto } from '@/shared/types/api/auth'
 import type { SpeakerViewDto } from '@/shared/types/api/meeting'
 import type { MemberAliasDto, MemberDto } from '@/shared/types/api/member'
@@ -208,6 +209,7 @@ export interface MockDb {
   integrations: typeof integrationFixtures
   /** #428 모의 Discord 서버의 텍스트 채널. 팀원 목록(`discordUsers`)처럼 서버가 하나라 어느 공간이든 연결하면 이 목록이다 */
   discordChannels: MockDiscordChannel[]
+  meetingDeletions: MockMeetingDeletion[]
   meetings: typeof meetingFixtures
   meetingSummaries: typeof meetingSummaryFixtures
   minutes: typeof minutesFixtures
@@ -257,6 +259,7 @@ export function initialDb(): MockDb {
     discordUsers: structuredClone(discordUserFixtures),
     integrations: structuredClone(integrationFixtures),
     discordChannels: structuredClone(discordChannelFixtures),
+    meetingDeletions: [],
     meetings: structuredClone(meetingFixtures),
     meetingSummaries: structuredClone(meetingSummaryFixtures),
     minutes: structuredClone(minutesFixtures),

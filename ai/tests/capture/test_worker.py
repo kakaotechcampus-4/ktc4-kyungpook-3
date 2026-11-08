@@ -973,7 +973,7 @@ async def test_an_upload_ended_in_be_is_dropped_by_the_pass_and_logged_without_a
                 handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     results, _ = await w.run_pass()
     assert [r["ended"] is not None for r in results] == [True]
-    assert not upath.exists() and not upath.with_suffix(".lock").exists() and not (rec / m["session"]).exists()
+    assert not upath.exists() and not R.is_locked(upath) and not (rec / m["session"]).exists()
     assert await w.run_pass() == ([], [])
     assert "끝난 회의" in capsys.readouterr().out
     assert not any(p.endswith("/fail") for _, p, _ in fake.calls)

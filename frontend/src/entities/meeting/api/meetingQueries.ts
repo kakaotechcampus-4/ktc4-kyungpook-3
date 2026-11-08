@@ -63,12 +63,14 @@ export function meetingDetailQueryOptions(workspaceId: string, meetingId: string
 
 /** 접근 권한을 잃었거나(403) 회의가 없다(404). 다시 물어도 같다 — 일시적 실패가 아니다 */
 export function isAccessLost(error: unknown): boolean {
-  return error instanceof ApiError && error.kind === 'http' && [403, 404].includes(error.status)
+  return (
+    error instanceof ApiError && error.kind === 'http' && [403, 404, 410].includes(error.status)
+  )
 }
 
 /** 회의가 지워졌다(404) */
 export function isMeetingGone(error: unknown): boolean {
-  return error instanceof ApiError && error.kind === 'http' && error.status === 404
+  return error instanceof ApiError && error.kind === 'http' && [404, 410].includes(error.status)
 }
 
 export function isMeetingUnavailable(error: unknown): boolean {
