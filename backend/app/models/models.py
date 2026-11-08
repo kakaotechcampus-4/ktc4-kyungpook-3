@@ -214,6 +214,21 @@ class PasswordResetToken(Base):
     invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class UserConsent(Base):
+    """이용약관·개인정보처리방침 동의 기록(#564). 문서 버전마다 한 행이고, 새 버전에 동의하면 행이 하나 더 생긴다."""
+
+    __tablename__ = "user_consent"
+    __table_args__ = (UniqueConstraint("user_id", "kind", "version", name="uq_user_consent_user_kind_version"),)
+
+    consent_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("user.user_id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16))  # terms | privacy
+    version: Mapped[str] = mapped_column(String(32))
+    agreed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class Session(Base):
     __tablename__ = "session"
 
