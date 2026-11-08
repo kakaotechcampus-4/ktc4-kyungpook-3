@@ -24,7 +24,9 @@
 | `bffe908d` | develop 합치기. 승인 상세는 develop 구조를 따르고 Storybook 스토리 변경은 버렸다(#482) |
 | `2156c10a` | MSW 가 BE 처럼 담당자 줄이 있는 답장 카드만 담당자를 받는다. 미정 승인의 타임라인 값 |
 | `59cb0a30` | BE 판별, 공용 `Select` 조립, 팀원 ID 를 승인 계획에 넘김, 처리된 카드 표시 |
-| 이 커밋 | 계약(보완값 표·`task_overrides` 서버 동작 표·§5.7), 이 결과 |
+| `835a2f99` | 계약(보완값 표·`task_overrides` 서버 동작 표·§5.7), 이 결과 |
+| `489f0a2b` | 독립 리뷰 반영. MSW 타임라인 결과를 BE `_result` 와 같은 조건으로 |
+| 이 커밋 | 리뷰 반영의 결과 기록 |
 
 ### 바꾼 데이터 모양
 
@@ -44,10 +46,11 @@
 
 - `assignee_member_id` 는 답장 판단 기록에 담당자 줄이 있는 `task_update` 만 받는다. 그 밖의 `task_update` 는 400 `INVALID_REQUEST` 다. 문자열이 아니면 400, 빈 문자열·없는 팀원은 404 `MEMBER_NOT_FOUND`, 다른 공간 팀원은 400 `WORKSPACE_MISMATCH` 다. 충돌은 값 검증보다 먼저 본다. 모두 기존 경로를 그대로 쓰고 픽스처와 모의 DB 버전은 바꾸지 않았다.
 - 미정을 골라 승인하면 타임라인 줄의 `new_value` 가 답장 속 이름이 아니라 이력의 `null` 이다. 전에는 `??` 로 이름이 보였다.
+- 타임라인 결과의 `noted` 는 BE `_result` 처럼 이력이 없고 원래 payload 에 `assignee_member_id` 키가 없을 때만이다. Codex 독립 리뷰가 찾은 낮음 1건으로, 전에는 담당자를 찾은 카드를 지금 담당자로 덮어써도 `noted` 였다(`489f0a2b`).
 
 ### 검증
 
-2026-11-08, Node v24.11.0, `59cb0a30` 코드 기준이다.
+2026-11-08, Node v24.11.0, `59cb0a30` 코드 기준이다. 리뷰 반영(`489f0a2b`) 뒤 다시 돌린 전체 테스트는 3,397개 중 무관한 3파일(`meetingProcessing`·`meetingUpload`·`tasks`) 4개가 시간 초과로 실패했고, 그 3파일만 다시 돌려 117개가 통과했다. 바꾼 곳 3파일 29개는 통과했다.
 
 | 명령 | 종료 코드 | 결과 |
 |---|---:|---|
@@ -58,7 +61,7 @@
 | `npm run test -- --maxWorkers=1` | 0 | 271파일 3,396개 통과 |
 
 - 화면: [replyApprovals](../../../src/app/replyApprovals.test.tsx). 고르기 전 막힘·반려 가능·안내 설명 연결, 팀원을 고르면 `{assignee_member_id:'mb_02'}` 를 보내고 태스크 담당자와 처리된 카드의 `반영한 값` 이 바뀜, 미정이면 `null`, 찾은 카드·상태만 카드에는 칸이 없음, 섞인 카드도 막힘, 400·404 뒤 카드가 남고 문구가 보임.
-- MSW: [replyTimeline](../../../src/shared/mock/replyTimeline.test.ts). 미정 승인 `approved`·`null`, 지금 담당자를 고르면 `noted`, 찾은 카드도 받음, 받지 않는 카드·문자열 아님 400, 빈 문자열·없는 팀원 404, 다른 공간 400, 충돌이 404 보다 먼저.
+- MSW: [replyTimeline](../../../src/shared/mock/replyTimeline.test.ts). 미정 승인 `approved`·`null`, 못 찾은 카드에서 지금 담당자를 고르면 `noted`, 찾은 카드도 받고 지금 담당자로 덮어쓰면 `approved`, 받지 않는 카드·문자열 아님 400, 빈 문자열·없는 팀원 404, 다른 공간 400, 충돌이 404 보다 먼저.
 - 모델: [mapper](../../../src/entities/approval/model/mapper.test.ts) 판별(분류 무관, 이름 없음·키 있음·답장 아님은 null), 저장된 보완값.
 - 브라우저: MSW 모드 개발 서버의 Chromium 에서 1280·390 폭으로 `reply-judgment` 시나리오의 `ap_32` 를 열어 고르기 전 막힘, 박민수를 골라 승인, 요청 본문, 태스크 상세의 담당자·기록 `승인함` 을 확인했다. 390 폭에서 미정을 골라 `null` 이 나가는 것도 확인했다. 가로 넘침은 없었다. 증거는 `frontend/.verify/e2e-344/`(git 제외).
 
