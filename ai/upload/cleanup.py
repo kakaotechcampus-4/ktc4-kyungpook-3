@@ -4,7 +4,7 @@
   checking  BE 에 다시 물어보는 중이다. 일시 실패는 attempts, next_at 만 바꾼다(포기 한도 없음: 지우지 않으니 해로울 것이 없다)
   expired   BE 가 이미 끝낸 회의다(409 MEETING_ALREADY_ENDED·오류 봉투의 404). 매니페스트·트랙·잠금·전사본을 지웠다(끝)
   tracks_dropped  인계가 끝나 KEEP_S 가 지나 트랙 wav 만 지웠다(회의 폴더의 대본·기록, 매니페스트·전사본 유지, 다시 보지 않는다).
-                  트랙은 recorder.prune_audio 가 인계 직후 이미 지우므로(0053) 보통은 표시만 남긴다
+                  트랙은 recorder.prune_audio 가 인계 직후 이미 지우므로(0055) 보통은 표시만 남긴다
   dropped         처리를 포기한 지 KEEP_S 가 지나 매니페스트·트랙·전사본을 지웠다
 끝난 기록 폴더(.uploads/<id>/)는 열린 상태가 없고 이 회의의 매니페스트가 없을 때 intake.json 수정 시각 + KEEP_S 뒤 통째로 지운다. 깨진 intake.json 은 지우지 않고 한 번만 경고한다.
 

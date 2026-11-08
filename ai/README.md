@@ -51,7 +51,7 @@ recordings/         녹음 산출물 (git 제외)
   "transcript", "tasks" 또는 "items", "be", "speakers": [{"user_id", "display_name", "file", "duration_sec"}]}`. `status` 는
   recording → saved → transcribed → extracted → handed_off (실패 시 failed 와 `failed_stage`) 이고, 워커가
   마지막으로 끝난 단계 다음부터 마저 처리합니다. 실패 5회로 자동 재시도를 멈춘 회의는 서버에서
-  `python -m capture.worker --retry <서버ID>` 로 다시 돌립니다. 상대 날짜("내일")의 기준일은 처리하는 날이 아니라
+  `python -m capture.worker --retry <서버ID>` 로 다시 돌립니다. 포기 7일 뒤에는 음성이 지워져 다시 돌릴 수 없습니다. 상대 날짜("내일")의 기준일은 처리하는 날이 아니라
   `started_at` 을 `timezone` 으로 바꾼 회의 날짜입니다.
 - 수동 업로드(`upload/`): 회의를 녹음하지 못했을 때 오디오 파일 하나를 `python -m upload.prepare <오디오> --started-at <ISO>`
   (pyannoteAI 를 실제로 부르므로 `PYANNOTEAI_API_KEY` 가 필요하고 과금됩니다)로 화자 분리해 화자 라벨마다 원본 길이의 가상 트랙
@@ -117,7 +117,7 @@ recordings/         녹음 산출물 (git 제외)
   - 400 `details.member_ids` 를 받으면 그 ID 를 null 로 바꿔 다시 보내고(서로 다른 ID 수만큼만), 버린 ID 는 `be.sources.dropped_member_ids` 와 로그에 남깁니다.
   - 발화 저장의 409 `MEETING_FAILED`·404, 추출 등록의 409 `MEETING_NOT_PROCESSING`·404 는 BE 가 이미 끝낸 회의라는 뜻입니다. 새 회의를 만들지 않고 실패 횟수·`/fail` 도 없이
     잠금을 놓은 뒤 로컬 매니페스트·잠금·트랙 폴더를 지웁니다.
-  - 로컬 정리(`upload/cleanup.py`): 워커가 바퀴 끝에 `cleanup_one` 을 한 번 더 부릅니다. 지정 기한이 지난 업로드는 BE 가 끝났다고 답할 때만 로컬을 지우고, 포기한 업로드와 끝난 가져오기 기록은 7일 보관 뒤 지웁니다. 인계가 끝난 회의의 트랙 wav 는 업로드든 디스코드든 워커가 바퀴마다 바로 지웁니다(`recorder.prune_audio`, 결정 기록 0053). 포기한 회의와 인계까지 못 가고 멈춘 디스코드 회의는 마지막 진행 7일 뒤 지웁니다. 정책 시행(2026-11-09) 전 회의는 검증용이라 남깁니다.
+  - 로컬 정리(`upload/cleanup.py`): 워커가 바퀴 끝에 `cleanup_one` 을 한 번 더 부릅니다. 지정 기한이 지난 업로드는 BE 가 끝났다고 답할 때만 로컬을 지우고, 포기한 업로드와 끝난 가져오기 기록은 7일 보관 뒤 지웁니다. 인계가 끝난 회의의 트랙 wav 는 업로드든 디스코드든 워커가 바퀴마다 바로 지웁니다(`recorder.prune_audio`, 결정 기록 0055). 포기한 회의와 인계까지 못 가고 멈춘 디스코드 회의는 마지막 진행 7일 뒤 지웁니다. 정책 시행(2026-11-09) 전 회의는 검증용이라 남깁니다.
 
 ## 설치 (이 디렉토리, `ai/` 안에서)
 

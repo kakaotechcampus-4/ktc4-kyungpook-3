@@ -487,7 +487,7 @@ def drop_transcripts(transcripts_dir: Path, manifest: dict) -> None:
 
 AUDIO_KEEP_AFTER_GIVE_UP_S = 7 * 86400   # 포기한 회의는 이만큼 두어 --retry 로 다시 돌릴 수 있게 하고, 멈춘 회의도 마지막 진행 뒤 이만큼 둔다(#561)
 # 음성 삭제는 이 시각 뒤에 인계되거나 포기한 회의에만 쓴다. 그 전 회의는 팀원 동의를 받은 E2E·검증용이라 남기고,
-# 지우려면 사람이 직접 지운다(#568, 결정 기록 0053)
+# 지우려면 사람이 직접 지운다(#568, 결정 기록 0055)
 AUDIO_PRUNE_SINCE = datetime(2026, 11, 9, tzinfo=ZoneInfo("Asia/Seoul"))
 
 
