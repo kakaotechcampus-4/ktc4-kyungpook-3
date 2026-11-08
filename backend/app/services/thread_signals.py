@@ -74,7 +74,10 @@ def publish(thread_id: str, member_ids: Iterable[str]) -> None:
 
 
 def queue(db: Session, thread: MessageThread) -> None:
-    """이 트랜잭션이 커밋되면 대화 주인과 지금의 PM 전원에게 알린다. 쓴 사람도 다른 탭이 있어 받는다."""
+    """이 트랜잭션이 커밋되면 대화 주인과 지금의 PM 전원에게 알린다. 쓴 사람도 다른 탭이 있어 받는다.
+
+    SAVEPOINT(begin_nested) 안에서 부르지 않는다. 그 SAVEPOINT 만 롤백돼도 등록은 남아 바깥 커밋 때 나간다.
+    """
     pms = db.scalars(
         select(Member.member_id).where(
             Member.workspace_id == thread.workspace_id,
