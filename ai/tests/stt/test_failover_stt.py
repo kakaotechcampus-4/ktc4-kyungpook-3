@@ -268,6 +268,20 @@ def test_three_failed_gpu_calls_then_a_good_check_go_back_to_gpu_and_idle_off(tm
     assert len(notes) - n0 == 3                           # 응답 없음, 다시 넘김, 끔
 
 
+@pytest.mark.parametrize("mode", [Mode.AUTO, Mode.MANUAL])
+def test_an_idle_turn_off_while_elice_answers_sends_calls_to_elice_and_does_not_restart(tmp_path, mode):
+    """리허설처럼 Elice 가 멀쩡할 때 /gpu on 한 서버가 일 없음으로 꺼진다. 그사이 온 호출로 다시 켜거나 장애라고 알리지 않는다."""
+    fo, elice, gpu, switch, clock, notes = make(tmp_path, mode=mode)
+    request(tmp_path, "on")
+    assert ticks(fo, clock, 600, until=lambda: fo.phase is Phase.ON_GPU)
+    assert ticks(fo, clock, LIMITS.idle_s + 30, until=lambda: fo.phase is Phase.STOPPING)
+    assert route_of(fo.state, clock()) is Route.ELICE
+    assert call(fo) == "안녕하세요"
+    assert ticks(fo, clock, 1200, until=lambda: fo.phase is Phase.PARKED)
+    assert switch.starts == 1
+    assert not any("계속 실패" in n.text for n in notes)
+
+
 def test_near_the_three_hour_end_with_work_it_turns_off_and_on_again(tmp_path):
     fo, elice, gpu, switch, clock, _ = make(tmp_path)
     to_gpu(fo, elice, switch, clock)

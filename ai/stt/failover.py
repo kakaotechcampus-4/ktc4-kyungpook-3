@@ -10,7 +10,7 @@ gpu-request 로 받는다(python -m capture.worker --gpu, 디스코드 /gpu).
   SUSPECT   호출을 기다리게 하고 Elice 를 60초 간격으로 확인한다. 3번 연속 실패면 STARTING, 한 번 성공이면 NORMAL
   STARTING  서버가 준비될 때까지 스위치 on 을 tick 마다 보낸다(멱등). 호출은 기다린다
   ON_GPU    GPU 로 보낸다. 이름·문맥 프롬프트는 싣지 않는다. Elice 는 5분마다 확인한다
-  STOPPING  스위치 off. 이유가 idle 이면 호출은 기다린다(Elice 가 아직 죽어 있다고 본다)
+  STOPPING  스위치 off. 이유가 idle 이고 마지막 Elice 확인이 실패였으면 호출은 기다린다
   PARKED    꺼졌는데 Elice 가 실제 묶음까지 되는지는 모른다. 첫 실제 성공에 NORMAL, 실제 실패 3번이면 바로 켠다
   HALTED    하루 상한, Lambda 누적 상한(spent), 켜기 포기. 스스로 켜지 않는다
 
@@ -287,6 +287,12 @@ def _stopping(s: FailoverState, f: Facts, why: str, out: list[Notice], **kw) -> 
     return _enter(s, Phase.STOPPING, why, f, **kw)
 
 
+def _idle_stop(s: FailoverState, f: Facts, L: Limits, out: list[Notice]) -> FailoverState:
+    """일 없음 끄기. 마지막 Elice 확인이 실패였을 때만 꺼지는 동안 호출을 기다리게 하고, 다 꺼졌을 때 기다리는 호출이 있으면
+    다시 켠다. 확인이 성공이었으면 호출은 Elice 로 가고 꺼진 뒤 PARKED 가 실제 결과로 정한다."""
+    return _stopping(s, f, "idle", out, hold_until=f.now + L.hold_s if s.elice_ok == 0 else None)
+
+
 def _paused_by_hand(s: FailoverState, f: Facts, L: Limits, out: list[Notice]) -> FailoverState:
     out.append(Notice(f"⏸ 수동 끄기. 자동 켜기를 {kst_clock(f.now + L.pause_s)}(내일) 까지 멈춥니다."))
     return replace(s, paused_until=f.now + L.pause_s)
@@ -401,7 +407,7 @@ def _on_gpu(s, f, L, out, closed):
     busy = sig.gpu_inflight > 0 or (sig.last_gpu_call is not None and f.now - sig.last_gpu_call <= L.busy_window_s)
     if stop_at is not None and stop_at - f.now <= L.rollover_s:
         if not busy:
-            return _stopping(s, f, "idle", out, hold_until=f.now + L.hold_s)
+            return _idle_stop(s, f, L, out)
         if _ons_full(s, L):
             out.append(Notice("⛔ 3시간 종료가 다가오는데 오늘 켜기 수 상한이라 다시 켜지 않습니다.", alert=True))
             return _stopping(s, f, "day_cap", out)
@@ -415,7 +421,7 @@ def _on_gpu(s, f, L, out, closed):
         s = replace(s, next_gpu_probe_at=f.now + L.gpu_probe_gap_s)
     last = max(sig.last_gpu_call or 0.0, s.since)
     if sig.gpu_inflight == 0 and f.now - last >= L.idle_s:
-        return _stopping(s, f, "idle", out, hold_until=f.now + L.hold_s)
+        return _idle_stop(s, f, L, out)
     return s
 
 
