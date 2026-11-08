@@ -41,8 +41,8 @@ const CASES: ScreenCase[] = [
     scenario: 'signed-out',
     path: '/signup',
     against: 'loaded',
-    anchors: ['이름', '8자 이상, 숫자 포함', '로그인'],
-    widths: [1280],
+    anchors: ['계정 만들기', '이메일', '또는', '로그인'],
+    widths: [1280, 390],
   },
   {
     name: '공간 선택',

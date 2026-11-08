@@ -1,12 +1,11 @@
 import type { ReactNode } from 'react'
 import { Label } from '@/shared/ui/label'
 import { Skeleton } from '@/shared/ui/skeleton'
-import { PASSWORD_HINT } from '../model/schemas'
 
 /*
  * 인증 폼의 라우트 뼈대 (#510). 인증 틀이 세로 가운데 정렬이라 폼 칸 높이가 같아야 제목이 움직이지 않는다.
  * 그래서 폼과 같은 칸·간격으로 그린다 — 칸 이름·정해진 문구는 글자(Label 그대로), 입력·버튼은 같은 높이의 뼈대.
- * 치수는 LoginForm · SignupForm · ForgotPasswordForm 과 TextField(auth) · Button(auth) · AlternativeAuth 와 같다.
+ * 치수는 LoginForm · SignupEmailStep · ForgotPasswordForm 과 TextField(auth) · Button(auth) · AlternativeAuth 와 같다.
  * 그쪽 틀이 바뀌면 여기도 맞춘다 — e2e/route-skeleton.e2e.ts 가 제목 자리를 잰다
  */
 
@@ -19,16 +18,8 @@ const DIVIDER = 'self-center text-[13px] text-dim'
 const INPUT = 'h-48 rounded-12'
 const BUTTON = 'h-48 rounded-999'
 
-/** 칸 하나 — 라벨(오른쪽 끝 글자가 있으면 한 줄에) · 입력 · 아래 안내 */
-function FieldSkeleton({
-  label,
-  end,
-  description,
-}: {
-  label: string
-  end?: string
-  description?: string
-}) {
+/** 라벨과 입력 칸. 오른쪽 끝 글자는 라벨과 한 줄에 둔다. */
+function FieldSkeleton({ label, end }: { label: string; end?: string }) {
   return (
     <div className="flex flex-col">
       {end === undefined ? (
@@ -42,9 +33,6 @@ function FieldSkeleton({
         </div>
       )}
       <Skeleton variant="block" className={INPUT} />
-      {description === undefined ? null : (
-        <p className="mt-6 text-[12px] font-normal text-dim">{description}</p>
-      )}
     </div>
   )
 }
@@ -54,12 +42,12 @@ function SubmitSkeleton() {
   return <Skeleton variant="block" className={`mt-8 ${BUTTON}`} />
 }
 
-/** `또는` 과 Google 버튼(AlternativeAuth) */
+/** `또는` 과 카카오 버튼(AlternativeAuth) */
 function AlternativeSkeleton() {
   return (
     <>
       <span className={DIVIDER}>또는</span>
-      <Skeleton variant="block" className={BUTTON} />
+      <Skeleton variant="block" className={INPUT} />
     </>
   )
 }
@@ -90,9 +78,7 @@ export function SignupFormSkeleton() {
   return (
     <>
       <div className={FORM}>
-        <FieldSkeleton label="이름" />
         <FieldSkeleton label="이메일" />
-        <FieldSkeleton label="비밀번호" description={PASSWORD_HINT} />
         <SubmitSkeleton />
       </div>
       <AlternativeSkeleton />
