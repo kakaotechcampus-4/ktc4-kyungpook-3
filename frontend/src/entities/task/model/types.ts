@@ -81,7 +81,7 @@ export interface ReplyChangeLine {
   summary: string | null
   evidenceQuote: string | null
   result: ReplyChangeResult | UnknownValue
-  /** 되돌리기는 이 값만 따른다. 줄 종류·결과를 몰라도 바뀌지 않는다 */
+  /** 서버 `undoable` 이다. 줄 종류나 결과를 모르면 false 다 */
   undoable: boolean
 }
 

@@ -1,8 +1,12 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { getResponse, http, HttpResponse } from 'msw'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
+import { handlers } from '@/shared/mock/handlers'
 import { applyScenario } from '@/shared/mock/scenarios'
+import { server } from '@/shared/mock/server'
+import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -106,4 +110,46 @@ describe('태스크 상세의 답장 기록 (#344)', () => {
     expect(within(changeRow(history, '상태: 완료')).getByText('자동 반영')).toBeVisible()
     expect(screen.queryByRole('button', { name: '되돌리기' })).toBeNull()
   })
+})
+
+describe('모르는 답장 줄 (#348)', () => {
+  /** 서버 기록 응답에서 자동 반영 줄(rc_02, undoable)만 바꾼다 */
+  function patchAutoChange(patch: Record<string, string>) {
+    server.use(
+      http.get('/api/v1/tasks/:taskId/timeline', async ({ request }) => {
+        const response = await getResponse(handlers, request)
+        const body = (await response!.json()) as {
+          data: { items: { kind: string; changes?: { change_id: string }[] }[] }
+        }
+        for (const item of body.data.items)
+          item.changes = item.changes?.map((change) =>
+            change.change_id === 'rc_02' ? { ...change, ...patch } : change,
+          )
+        return HttpResponse.json(body)
+      }),
+    )
+  }
+
+  it.each([
+    ['종류', { field: 'priority' }, '알 수 없는 변경이에요', '자동 반영'],
+    ['결과', { result: 'escalated' }, '상태: 완료', '알 수 없는 결과'],
+    [
+      '종류와 결과',
+      { field: 'priority', result: 'escalated' },
+      '알 수 없는 변경이에요',
+      '알 수 없는 결과',
+    ],
+  ])(
+    '%s를 모르는 줄은 서버가 되돌릴 수 있다고 해도 PM 에게 되돌리기가 없고 쓰기 요청이 나가지 않는다',
+    async (_, patch, change, result) => {
+      applyScenario('reply-judgment')
+      patchAutoChange(patch)
+      const requests = recordRequests()
+      const history = await openTk03()
+      const row = changeRow(history, change)
+      expect(within(row).getByText(result)).toBeVisible()
+      expect(within(replyRow(history)).queryByRole('button', { name: '되돌리기' })).toBeNull()
+      expect(requests.started.filter(({ method }) => method !== 'GET')).toEqual([])
+    },
+  )
 })

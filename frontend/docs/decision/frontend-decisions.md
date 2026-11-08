@@ -2304,7 +2304,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 | 필드 종류 | 규칙 | 예 |
 |---|---|---|
 | 상태 판단·쓰기 기준 | 응답 전체가 `INVALID_RESPONSE` 다. 다른 정상 값으로 바꾸지 않는다 | task `status`·`version`, approval `status`, meeting `status`, integration·invitation `status`, onboarding `step`·`status`, message `sender`·`dm_status` |
-| 표시용 분류 | 받은 값을 보존하고(`UnknownValue`) `알 수 없는 ○○` 또는 기본 문구로 보인다. 행동은 없다 | history `changed_field`·`change_source`, approval `type`·`category`, notification `kind`·`link.type`, meeting·minutes `source` |
+| 표시용 분류 | 받은 값을 보존하고(`UnknownValue`) `알 수 없는 ○○` 또는 기본 문구로 보인다. 행동은 없다. 서버가 행동을 허락해도(예: 답장 줄 `undoable`) 그 줄에는 두지 않는다 | history `changed_field`·`change_source`, approval `type`·`category`, notification `kind`·`link.type`, meeting·minutes `source` |
 | 보수 폴백 | 권한·행동이 줄고 화면이 사실과 다르게 말하지 않는 값으로 내린다 | `role` → `member`, extraction `gate` → `hold`, `notion_sync_status` → 없음, task `auto_blocked` 가 불리언이 아니면 풀 수 없음(false), 답장 `channel`·`evidence_status` → 없음 |
 
 - **목록은 한 건만 깨져도 전체가 실패한다.** 깨진 항목을 몰래 빼지 않는다.

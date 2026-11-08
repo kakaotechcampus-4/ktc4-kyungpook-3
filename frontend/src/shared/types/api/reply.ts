@@ -46,7 +46,7 @@ export type TimelineChangeResult =
 /*
  * 태스크 기록(`GET /tasks/{task_id}/timeline`) 응답 스키마. FE 가 읽는 필드만 본다 (#348).
  * 칸 종류(`kind`)를 모르면 그릴 수 없어 응답 전체가 `INVALID_RESPONSE` 다. 줄의 `field`·`result` 와 `channel`·`evidence_status` 는
- * 표시용이라 문자열로 받고 mapper 가 정한다. 되돌리기는 `undoable` 만 따른다
+ * 표시용이라 문자열로 받고 mapper 가 정한다. 종류나 결과를 모르는 줄은 `undoable` 이 true 여도 되돌릴 수 없는 줄로 읽는다
  */
 export const timelineChangeSchema = z.object({
   change_id: z.string(),

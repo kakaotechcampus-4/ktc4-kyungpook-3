@@ -251,7 +251,7 @@ describe('태스크 기록 (#344)', () => {
     ])
   })
 
-  it('모르는 줄·결과·채널은 다른 아는 값으로 바꾸지 않는다. 되돌리기는 undoable 만 따른다', () => {
+  it('모르는 줄·결과·채널은 다른 아는 값으로 바꾸지 않는다', () => {
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const future = {
@@ -272,9 +272,23 @@ describe('태스크 기록 (#344)', () => {
         field: { unknown: 'priority' },
         result: { unknown: 'escalated' },
         evidenceStatus: null,
-        undoable: true,
       })
       expect(warning).toHaveBeenCalledTimes(4)
+    } finally {
+      warning.mockRestore()
+    }
+  })
+
+  it.each([
+    ['종류', { field: 'priority' }],
+    ['결과', { result: 'escalated' }],
+    ['종류와 결과', { field: 'priority', result: 'escalated' }],
+  ])('%s를 모르는 줄은 서버가 되돌릴 수 있다고 해도 되돌릴 수 없는 줄이다 (#348)', (_, patch) => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const future = { ...reply, changes: [{ ...reply.changes[0], ...patch, undoable: true }] }
+      const [item] = toTaskTimeline([future], [], 'tk_03')
+      expect(item.kind === 'reply' && item.changes[0].undoable).toBe(false)
     } finally {
       warning.mockRestore()
     }

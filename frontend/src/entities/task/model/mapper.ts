@@ -1,4 +1,4 @@
-import { displayValue, fallbackValue } from '@/shared/api/unknownValue'
+import { displayValue, fallbackValue, isKnownValue } from '@/shared/api/unknownValue'
 import type { TimelineChangeDto, TimelineItemDto } from '@/shared/types/api/reply'
 import type { TaskDto, TaskHistoryDto } from '@/shared/types/api/task'
 import { TASK_HISTORY_FIELDS, TASK_HISTORY_SOURCES } from './types'
@@ -96,16 +96,19 @@ const evidenceStatuses: readonly NonNullable<ReplyChangeLine['evidenceStatus']>[
 
 const channels = ['discord', 'web'] as const
 
+/** 무엇을 바꿨는지·결과가 무엇인지 모르는 줄은 읽기 전용이다. 서버가 되돌릴 수 있다고 해도 되돌리기를 두지 않는다 (#348) */
 function toReplyChangeLine(dto: TimelineChangeDto): ReplyChangeLine {
+  const field = displayValue(dto.field, replyChangeFields, 'reply change field')
+  const result = displayValue(dto.result, replyChangeResults, 'reply change result')
   return {
     id: dto.change_id,
-    field: displayValue(dto.field, replyChangeFields, 'reply change field'),
+    field,
     newValue: dto.new_value,
     evidenceStatus: orNull(dto.evidence_status, evidenceStatuses, 'reply evidence status'),
     summary: dto.summary,
     evidenceQuote: dto.evidence_quote,
-    result: displayValue(dto.result, replyChangeResults, 'reply change result'),
-    undoable: dto.undoable,
+    result,
+    undoable: dto.undoable && isKnownValue(field) && isKnownValue(result),
   }
 }
 
