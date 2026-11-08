@@ -244,6 +244,94 @@ describe('다시 보내기', () => {
     return screen.getByRole('button', { name: /^다시 보내기/ })
   }
 
+  it('코드 확인 응답을 기다리는 동안 이메일 변경과 재발송을 막는다', async () => {
+    const gate = deferred()
+    server.use(
+      http.post('/api/v1/auth/signup/code/confirm', async () => {
+        await gate.promise
+      }),
+    )
+    const resend = await reachCodeWithCountdown()
+    vi.setSystemTime(Date.now() + 60_000)
+    await waitFor(() => expect(resend).toBeEnabled(), { timeout: 2000 })
+
+    try {
+      await enterMailedCode()
+      await waitFor(() => expect(screen.getByRole('button', { name: '코드 확인' })).toBeDisabled())
+      const changeEmail = screen.getByRole('button', { name: '이메일 바꾸기' })
+      expect(changeEmail).toBeDisabled()
+      expect(resend).toBeDisabled()
+      await userEvent.click(changeEmail)
+      expect(screen.getByLabelText('인증 코드')).toBeInTheDocument()
+    } finally {
+      gate.resolve()
+    }
+
+    expect(await screen.findByLabelText('이름')).toBeInTheDocument()
+    expect(screen.getByLabelText('이메일')).toHaveValue(NEW_USER.email)
+  })
+
+  it('재발송 응답을 기다리는 동안 확인과 이메일 변경을 막고 폼 제출도 무시한다', async () => {
+    const resend = await reachCodeWithCountdown()
+    vi.setSystemTime(Date.now() + 60_000)
+    await waitFor(() => expect(resend).toBeEnabled(), { timeout: 2000 })
+    const gate = deferred()
+    server.use(
+      http.post('/api/v1/auth/signup/code', async () => {
+        await gate.promise
+      }),
+    )
+    const log = recordRequests()
+    const code = screen.getByLabelText('인증 코드')
+    await userEvent.type(code, '123456')
+
+    try {
+      await userEvent.click(resend)
+      await waitFor(() => expect(resend).toBeDisabled())
+      const confirm = screen.getByRole('button', { name: '코드 확인' })
+      expect(confirm).toBeDisabled()
+      expect(screen.getByRole('button', { name: '이메일 바꾸기' })).toBeDisabled()
+      const form = confirm.closest('form')
+      if (form === null) throw new Error('code confirmation form is missing')
+      await act(async () => {
+        fireEvent.submit(form)
+        await Promise.resolve()
+      })
+      expect(posts(log, '/auth/signup/code/confirm')).toHaveLength(0)
+    } finally {
+      gate.resolve()
+    }
+
+    await waitFor(() => expect(code).toHaveValue(''))
+    expect(screen.getByRole('button', { name: '코드 확인' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '이메일 바꾸기' })).toBeEnabled()
+  })
+
+  it('코드 확인이 실패하면 이메일 변경과 재발송을 다시 허용한다', async () => {
+    const resend = await reachCodeWithCountdown()
+    vi.setSystemTime(Date.now() + 60_000)
+    await waitFor(() => expect(resend).toBeEnabled(), { timeout: 2000 })
+    const gate = deferred()
+    server.use(
+      http.post('/api/v1/auth/signup/code/confirm', async () => {
+        await gate.promise
+        return fail('INTERNAL_ERROR', 'x', 500)
+      }),
+    )
+
+    try {
+      await enterMailedCode()
+      await waitFor(() => expect(screen.getByRole('button', { name: '코드 확인' })).toBeDisabled())
+      expect(screen.getByRole('button', { name: '이메일 바꾸기' })).toBeDisabled()
+    } finally {
+      gate.resolve()
+    }
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('서버에 문제가 생겼어요.')
+    expect(resend).toBeEnabled()
+    expect(screen.getByRole('button', { name: '이메일 바꾸기' })).toBeEnabled()
+  })
+
   it('60초를 세고 지나면 누를 수 있다. 새 코드를 보내고 입력을 비운 뒤 다시 센다', async () => {
     const resend = await reachCodeWithCountdown()
     expect(resend).toBeDisabled()

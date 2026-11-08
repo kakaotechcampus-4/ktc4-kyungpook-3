@@ -71,7 +71,10 @@ export function SignupCodeStep({
     },
   })
 
+  const busy = isSubmitting || resend.isPending
+
   const onSubmit = submit(async ({ code }) => {
+    if (resend.isPending) return
     setFormError(null)
     try {
       onConfirmed(await confirmSignupCode({ email, code }))
@@ -107,7 +110,14 @@ export function SignupCodeStep({
           error={errors.code?.message}
           {...register('code')}
         />
-        <Button type="submit" variant="primary" size="auth" loading={isSubmitting} className="mt-8">
+        <Button
+          type="submit"
+          variant="primary"
+          size="auth"
+          loading={isSubmitting}
+          disabled={resend.isPending}
+          className="mt-8"
+        >
           코드 확인
         </Button>
       </form>
@@ -116,10 +126,10 @@ export function SignupCodeStep({
           key={resendAt}
           variant="outline"
           resendAt={resendAt}
-          pending={resend.isPending}
+          pending={busy}
           onResend={() => resend.mutate()}
         />
-        <Button variant="text" size="auth" onClick={onChangeEmail}>
+        <Button variant="text" size="auth" disabled={busy} onClick={onChangeEmail}>
           이메일 바꾸기
         </Button>
       </div>
