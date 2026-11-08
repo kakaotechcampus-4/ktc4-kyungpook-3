@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_member, require_pm, require_service_token
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Extraction, Meeting, MeetingStatus, Member, Source, User
+from app.models import Extraction, Meeting, MeetingProcessingStage, MeetingStatus, Member, Source, User
 from app.schemas.meeting import (
     MeetingCreateRequest,
     MeetingCreateResponse,
@@ -16,9 +16,11 @@ from app.schemas.meeting import (
     MeetingEndResponse,
     MeetingFailRequest,
     MeetingMinutesResponse,
+    MeetingProcessing,
     MeetingProgress,
     MeetingStageRequest,
     MeetingStageResponse,
+    MeetingSttProgress,
 )
 from app.schemas.upload import SpeakerAssignRequest, SpeakerAssignResponse, SpeakerViewResponse
 from app.services import meeting_failure, meeting_stage, speaker_assignment
@@ -59,6 +61,29 @@ def _compute_progress(db: Session, meeting: Meeting) -> MeetingProgress:
     extracted = rank >= 4 or bool(extraction and extraction.items)
     return MeetingProgress(
         audio_merged=audio_merged, transcribed=transcribed, extracted=extracted
+    )
+
+
+def _stt_progress(meeting: Meeting) -> MeetingSttProgress | None:
+    """stt 단계이고 두 값이 모두 있을 때만 전사 진행을 돌려준다."""
+    if (
+        meeting.processing_stage == MeetingProcessingStage.STT
+        and meeting.processing_stt_done is not None
+        and meeting.processing_stt_total is not None
+    ):
+        return MeetingSttProgress(
+            done=meeting.processing_stt_done, total=meeting.processing_stt_total
+        )
+    return None
+
+
+def _processing(meeting: Meeting) -> MeetingProcessing | None:
+    if meeting.status != MeetingStatus.PROCESSING:
+        return None
+    return MeetingProcessing(
+        stage=meeting.processing_stage,
+        stage_at=meeting.processing_stage_at,
+        stt=_stt_progress(meeting),
     )
 
 
@@ -134,7 +159,7 @@ def report_meeting_stage(
 ) -> dict:
     """봇이 처리 단계를 시작할 때 알린다. 같은 단계·역행·processing 이 아닌 회의는 오류 없이 applied=false 다."""
     _get_meeting(db, meeting_id)
-    applied = meeting_stage.report_stage(db, meeting_id, payload.stage)
+    applied = meeting_stage.report_stage(db, meeting_id, payload.stage, payload.stt)
     meeting = _get_meeting(db, meeting_id)
     db.refresh(meeting)
     return success(
@@ -142,6 +167,7 @@ def report_meeting_stage(
             meeting_id=meeting.meeting_id,
             status=meeting.status,
             processing_stage=meeting.processing_stage,
+            stt=_stt_progress(meeting),
             applied=applied,
         ).model_dump(mode="json")
     )
@@ -176,6 +202,7 @@ def fail_meeting(
         extraction_id=None,
         failed_stage=meeting.failed_stage,
         progress=_compute_progress(db, meeting),
+        processing=_processing(meeting),
     )
     return success(detail.model_dump(mode="json"))
 
@@ -210,6 +237,7 @@ def get_meeting(
         extraction_id=extraction_id,
         failed_stage=meeting.failed_stage,
         progress=_compute_progress(db, meeting),
+        processing=_processing(meeting),
     )
     return success(detail.model_dump(mode="json"))
 

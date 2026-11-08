@@ -79,12 +79,24 @@
 봇이 처리 단계를 시작할 때 알린다. 웹 화면의 진행 표시(`progress`)를 데이터가 생기기 전에 앞당기는 데 쓴다. 진행 표시일 뿐이라 처리 결과를 바꾸지 않는다.
 
 - 합의 상태: 구현됨(#381, PR #383). 호출하는 쪽(`ai/capture/handoff.py`, `ai/capture/recorder.py`)도 같은 PR 에서 구현했고 AI 파트 리뷰를 받았다. 보고 여부는 매니페스트의 `be.meeting_id`로만 정한다. 그래서 디스코드 회의와 수동 업로드 회의(#289, #326, #343 으로 develop 에 들어옴)가 같은 `process_session`을 지나며 보고한다. 업로드 회의의 `progress`도 디스코드 회의처럼 앞당겨진다(#383 리뷰 후속에서 정함). 채팅 회의는 보고하지 않는다.
-- 요청: `{ "stage": "stt" | "sources" | "extract" | "handoff" }`. 이 네 값은 AI의 `failed_stage` 이름과 같다. 다른 값이나 빠진 값은 400 `INVALID_REQUEST`.
-- `data`: `{meeting_id, status, processing_stage, applied}`. `processing_stage`는 이 요청을 처리한 뒤 저장된 값이고 아직 보고가 없으면 `null`이다.
+- 요청: `{ "stage": "stt" | "sources" | "extract" | "handoff", "stt"?: {"done": int, "total": int} }`. 네 단계 값은 AI의 `failed_stage` 이름과 같다. 다른 값이나 빠진 값은 400 `INVALID_REQUEST`.
+  - `stt`(선택, #483): 전사 진행. `stage`가 `stt`일 때만 보낼 수 있고, 다른 단계에 실으면 400 `INVALID_REQUEST`다. `total`은 1 이상 2147483647 이하, `done`은 0 이상 `total` 이하의 정수다(bool·문자열은 400). 무엇을 세는지(끝낸 트랙인지 호출인지)는 AI 가 정하고, BE 는 두 숫자를 그대로 저장해 보여 준다.
+  - 합의 상태: BE 구현됨(#483 A안). AI 호출은 아직 없다. `stt`를 보내지 않는 지금의 요청은 이전과 똑같이 동작한다.
+- `data`: `{meeting_id, status, processing_stage, stt, applied}`. `processing_stage`는 이 요청을 처리한 뒤 저장된 값이고 아직 보고가 없으면 `null`이다. `stt`는 저장된 전사 진행이고 `stt` 단계가 아니거나 진행을 받지 않았으면 `null`이다. 회의 상태와 관계없이 저장값을 그대로 보이므로, `applied=false`인 늦은 보고에도 남아 있는 값이 올 수 있다(상세 `processing`은 처리 중일 때만 보인다).
 - 순서는 `stt` < `sources` < `extract` < `handoff`이고 단계는 앞으로만 간다. 건너뛰어도 된다(`extract`부터 재개하면 `extract`, `handoff`만 온다).
 - 다음은 오류가 아니라 200 `applied=false`이고 저장값을 바꾸지 않는다: 회의가 `processing`이 아닐 때(`created`·`awaiting_speakers`·`done`·`failed`), 같은 단계를 다시 보낼 때, 이미 보고한 단계보다 앞선 단계일 때. 반영할 때만 `applied=true`이고 단계와 갱신 시각을 함께 저장한다. 판정과 쓰기는 조건부 UPDATE 한 문장이라 늦게 도착한 보고가 앞선 단계를 덮지 않는다.
+- 전사 진행 규칙(#483):
+  - 단계가 앞으로 바뀔 때 진행도 요청 값으로 덮는다. 요청에 `stt`가 없으면 진행은 비워진다. 그래서 `sources` 이후에는 진행이 늘 `null`이다.
+  - 같은 `stt` 단계를 `stt`와 함께 다시 보내면 진행만 바꾸고 단계 시작 시각(`processing_stage_at`)은 그대로 둔다. 진행 값이 저장값과 다를 때만 `applied=true`이고, 같으면 `applied=false`다.
+  - 같은 `stt` 단계를 `stt` 없이 다시 보내면 지금처럼 `applied=false`이고 저장된 진행을 지우지 않는다.
+  - `done`이 줄어도 그대로 덮어쓴다. 재전사나 재시작 때 0부터 다시 오는 경우를 막지 않기 위해서다. 그래서 봇은 진행을 한 번에 하나씩 순서대로 보내야 한다(앞 요청의 응답을 받은 뒤 다음 요청).
+  - 중간 값을 건너뛰어도 된다. 진행은 마지막에 저장된 값만 보이므로, 봇이 최신 값만 한 스레드로 순서대로 보내도 된다(보낸 값마다 응답을 받은 뒤 다음 값).
+  - 같은 회의에서 `stt` 단계를 다시 시작하면 `{"stage": "stt"}`만 보내서는 이전 진행이 새 진행이 올 때까지 남는다(위 규칙대로 지우지 않는다). 다시 시작할 때는 `{done: 0, total: N}`을 먼저 보내기를 권한다. `total`이 0이면 `stt`를 싣지 않는다(`total`은 1 이상).
+  - 진행 보고도 판정과 쓰기를 조건부 UPDATE 한 문장으로 한다. `stt` 다음 단계로 넘어간 회의나 `processing`이 아닌 회의에는 반영하지 않는다.
+  - 진행 보고는 업로드 3시간 만료 시계와 관계없다.
+  - 호출 빈도: 전사 호출이 끝날 때마다 보내면 회의 하나에 요청이 수백 번 갈 수 있다. 트랙이 끝날 때나 몇 초 간격으로 줄이기를 권한다(AI 결정).
 - 없는 회의는 404 `MEETING_NOT_FOUND`. 새 오류 코드는 없다.
-- 회의 상세 응답에는 `processing_stage`를 싣지 않는다. 대신 `progress`가 이 값을 반영한다. 보고가 없으면 지금처럼 데이터만으로 판정한다. 아래 단계는 "그 단계가 시작됐다"는 뜻이다.
+- 회의 상세 응답(`GET /meetings/{meeting_id}`)과 `/fail` 응답에는 `processing`이 있다(#483). 회의가 `processing`일 때만 `{stage, stage_at, stt}` 객체이고, 그 밖의 상태(`created`·`awaiting_speakers`·`done`·`failed`)에서는 `null`이다. `stage`·`stage_at`은 저장된 단계와 그 단계가 시작된 시각이고 보고 전이면 `null`, `stt`는 `stage`가 `stt`이고 진행을 받았을 때만 `{done, total}`이다. 그래서 `/fail` 응답의 `processing`은 늘 `null`이다. 목록 API 에는 없다. 이 필드와 별개로 `progress`도 단계 값을 반영한다. 보고가 없으면 지금처럼 데이터만으로 판정한다. 아래 단계는 "그 단계가 시작됐다"는 뜻이다.
 
   | progress 키 | true가 되는 때 |
   |---|---|
@@ -92,16 +104,16 @@
   | `transcribed` | `sources` 이후이거나 발화가 있을 때 |
   | `extracted` | `handoff` 이후이거나 항목이 있는 추출이 있을 때 |
 
-  회의 상세 `GET /meetings/{meeting_id}`와 `PATCH /meetings/{meeting_id}/fail`의 응답 `progress`가 같은 식을 쓴다. 트랙별 진행률은 보내지 않는다.
+  회의 상세 `GET /meetings/{meeting_id}`와 `PATCH /meetings/{meeting_id}/fail`의 응답 `progress`가 같은 식을 쓴다. 전사 진행은 `progress`에 섞지 않고 `processing.stt`로만 보인다.
 - 봇 동작(`Handoff.report_stage`): `be.meeting_id`가 없으면 부르지 않고, 타임아웃 3초(`STAGE_TIMEOUT_S`, requests 에 숫자 하나로 주므로 연결과 읽기에 각각 3초)로 한 번만 보낸다. 오류는 모두 로그만 남기고 삼키며 매니페스트에 쓰지 않는다. 호출은 `process_session`의 단계 시작(`begin`)에서 진행 표시 뒤, AI 쪽 단계 시간 기록(ops) 단계를 열기 전에 하므로 보고 시간은 ops 단계 시간에 들어가지 않는다. BE 장애 때 단계 시작이 늦어질 수 있다. 3초는 연결과 읽기에 각각 걸리는 값이고 합계 상한은 보장하지 않는다(응답이 조금씩 오면 읽기 대기가 이어지고, 주소가 여러 개면 연결도 주소마다 걸리며, DNS 조회 시간은 타임아웃에 들어가지 않는다). 디스코드 회의에서 처리 도중 BE 회의가 새 회의로 바뀌면(BE 가 failed 로 닫은 회의에 `end`를 다시 부를 때 봇이 새 회의를 만들고 옛 ID 를 `be.replaced`에 남기는 경우. 업로드 회의는 `end`가 새 회의를 만들지 않아 바뀌지 않는다) 그 단계 보고는 옛 회의로 가 `applied=false`가 되고 새 회의는 그 단계를 받지 못한다. 이때 `progress`는 데이터 판정으로 돌아가 표시만 조금 늦어진다.
 - 배포 순서: BE를 먼저 배포한다. 어느 쪽이 먼저 나가도 깨지지 않는다. BE가 먼저면 봇이 아직 보고하지 않아 `progress`는 지금처럼 데이터로 판정한다. 봇이 먼저면 이 경로가 없는 BE는 오류를 돌려주고 봇은 그 오류를 삼켜 처리를 계속한다. 이때 BE 쪽 진행 표시만 앞당겨지지 않는다.
-- DB: `meeting.processing_stage`(문자열 16자)와 `processing_stage_at`(시각)을 nullable로 추가했다(마이그레이션 `a3d7f91c5e28`). 기존 회의는 `null`이다.
+- DB: `meeting.processing_stage`(문자열 16자)와 `processing_stage_at`(시각)을 nullable로 추가했다(마이그레이션 `a3d7f91c5e28`). 전사 진행은 `processing_stt_done`·`processing_stt_total`(정수, nullable, 마이그레이션 `d6e1b4a8c297`, #483)이다. 기존 회의는 `null`이다.
 
 ### `PATCH /meetings/{meeting_id}/fail` → 200
 
 - 요청: `{ "failed_stage": "stt" | "extract" | "handoff" … }` (서버는 문자열만 확인)
 - BE 도 같은 상태 전이로 멈춘 업로드 회의를 스스로 failed 로 바꾼다(sweeper, 아래 "웹 업로드 가져가기"). 이때 `failed_stage`는 `diarize`(처리 중에 멈춤) 또는 `speaker_assignment_expired`(화자 지정 기한 지남)다.
-- `data`: 회의 상세 모양 `{meeting_id, workspace_id, title, status: "failed", started_at, ended_at, extraction_id: null, failed_stage, progress}`
+- `data`: 회의 상세 모양 `{meeting_id, workspace_id, title, status: "failed", started_at, ended_at, extraction_id: null, failed_stage, progress, processing: null}`
 - `done`·`failed`가 아닌 회의만 조건부 UPDATE로 `failed`가 된다. 이미 끝났으면 409 `MEETING_ALREADY_ENDED`이고, 봇은 이를 "이미 처리됨"으로 넘어간다. 추출 등록이 먼저 `done`으로 바꾼 회의를 늦은 실패 요청이 덮지 않는다.
 
 ## 발화 저장 `POST /meetings/{meeting_id}/sources` → 201
