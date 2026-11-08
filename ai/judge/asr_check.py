@@ -38,9 +38,9 @@ MAX_SUSPECTS = 50
 MAX_WORD_LEN = 100
 # 초반 기본 목록: 분석기 형태소 번호(대체로 빈도 순) 상위 N 개 중 명사. AI Hub 측정(2026-11-08)에서 N 이 작을수록 더 잡고
 # Jev 로 더 많이 보낸다. Jev 는 근거 판정과 같은 호출이라 호출 수는 늘지 않는다
-SEED_NOUNS = int(os.environ.get("MM_ASR_SEED_NOUNS", "1000"))
+SEED_NOUNS = int(os.environ.get("MM_ASR_SEED_NOUNS") or "1000")
 # 근거 판정(judge/evidence.py YES_THRESHOLD)과 같은 0.8 에서 시작한 잠정값. AI Hub 에서 명사 오류 43%·정상 16% 를 막았다
-YES_THRESHOLD = float(os.environ.get("MM_ASR_YES_THRESHOLD", "0.8"))
+YES_THRESHOLD = float(os.environ.get("MM_ASR_YES_THRESHOLD") or "0.8")
 
 _CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
 _JUNG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
