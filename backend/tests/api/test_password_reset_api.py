@@ -7,7 +7,7 @@ from sqlalchemy import event
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services import mailer, password_reset
+from app.services import mailer, password_reset, password_reset_limit
 from tests.api.conftest import signup_verified
 
 pytestmark = pytest.mark.usefixtures("signup_secret")
@@ -288,14 +288,28 @@ def test_mail_unconfigured_still_503_before_ip_cap(mdb, sent, monkeypatch):
 
 def test_global_cap_response_identical_known_unknown(mdb, sent, smtp_env):
     c = _client()
-    for i in range(5):
+    for i in range(password_reset.GLOBAL_HOURLY_LIMIT):
         email = f"user{i}@example.com"
         assert signup_verified(c, email, OLD_PW, "r").status_code == 201
         assert _request(_client(), email).status_code == 200
-    assert len(sent) == 5
+    assert len(sent) == password_reset.GLOBAL_HOURLY_LIMIT
     _signup(_client())
     known = _request(_client())
     unknown = _request(_client(), "nobody@example.com")
     assert known.status_code == unknown.status_code == 200
     assert known.json() == unknown.json()
-    assert len(sent) == 5
+    assert len(sent) == password_reset.GLOBAL_HOURLY_LIMIT
+
+
+def test_one_public_ip_cannot_use_up_the_global_budget(mdb, sent, smtp_env):
+    # 전체 상한이 IP 상한보다 커야 공인 IP 하나로 다른 사람의 재설정 메일을 막지 못한다(#550 리뷰)
+    assert password_reset.GLOBAL_HOURLY_LIMIT > password_reset_limit.IP_HOURLY_LIMIT
+    attacker = _public_client()
+    for i in range(password_reset_limit.IP_HOURLY_LIMIT):
+        email = f"victim{i}@example.com"
+        assert signup_verified(_client(), email, OLD_PW, "r").status_code == 201
+        assert _request(attacker, email).status_code == 200
+    assert len(sent) == password_reset_limit.IP_HOURLY_LIMIT
+    _signup(_client())
+    assert _request(_public_client(("1.1.1.1", 50000))).status_code == 200
+    assert len(sent) == password_reset_limit.IP_HOURLY_LIMIT + 1

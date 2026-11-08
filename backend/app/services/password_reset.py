@@ -16,7 +16,8 @@ from app.services.passwords import hash_password
 TOKEN_TTL = timedelta(minutes=30)
 COOLDOWN = timedelta(seconds=60)
 HOURLY_LIMIT = 5
-GLOBAL_HOURLY_LIMIT = 5
+# IP 상한(5)보다 커야 공인 IP 하나로 전체 예산을 다 쓰지 못한다(#550 리뷰).
+GLOBAL_HOURLY_LIMIT = 10
 RETENTION = timedelta(days=7)
 
 logger = logging.getLogger(__name__)
