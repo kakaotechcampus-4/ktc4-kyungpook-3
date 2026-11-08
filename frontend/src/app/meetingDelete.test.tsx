@@ -1,11 +1,13 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http } from 'msw'
+import { getResponse, http } from 'msw'
 import { paths } from '@/shared/config/routes'
+import { approvalDetailQueryOptions } from '@/entities/approval'
 import { minutesQueryOptions } from '@/entities/minutes'
 import { meetingDetailQueryOptions } from '@/entities/meeting'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import { db } from '@/shared/mock/db'
+import { handlers } from '@/shared/mock/handlers'
 import { fail, list, ok } from '@/shared/mock/envelope'
 import { purgeMeeting } from '@/shared/mock/meetingDeletion'
 import { server } from '@/shared/mock/server'
@@ -44,6 +46,11 @@ it('회의를 지워도 태스크와 이력을 보존하며 삭제된 원본 링
   await waitFor(() =>
     expect(db.meetings.some(({ meeting_id }) => meeting_id === 'mt_09')).toBe(false),
   )
+  expect(
+    await screen.findByText('회의를 삭제했어요. 남은 파일을 정리하고 있어요.'),
+  ).toBeInTheDocument()
+  await screen.findByRole('heading', { name: '채팅 2026-09-11', level: 2 })
+  await app.expectPath(paths.meetings('ws_01', 'mt_08'))
   expect(db.tasks.find(({ task_id }) => task_id === 'tk_01')).toEqual(before)
   expect(db.taskHistory).toEqual(history)
   await act(async () => {
@@ -275,6 +282,78 @@ it('다른 화면으로 이동한 뒤 늦은 삭제 응답은 현재 화면과 �
   })
   expect(await screen.findByRole('heading', { name: '삭제된 회의예요' })).toBeInTheDocument()
   expect(screen.queryByTestId('minutes-body')).not.toBeInTheDocument()
+})
+
+it('늦은 삭제 응답은 현재 승인 화면의 원문을 즉시 지우고 404를 다시 조회한다', async () => {
+  const deletionGate = deferred()
+  const approvalGate = deferred()
+  const log = recordRequests()
+  let deletionStarted = false
+  let deleted = false
+  let approvalRefetchStarted = false
+  server.use(
+    http.delete('/api/v1/meetings/:meetingId', async () => {
+      deletionStarted = true
+      await deletionGate.promise
+      const receipt = {
+        meeting_id: 'mt_09',
+        deleted_meeting_ids: ['mt_09'],
+        deleted_at: '2026-11-08T15:00:00Z',
+        cleanup_status: 'pending' as const,
+      }
+      db.meetingDeletions.push({ ...receipt, workspace_id: 'ws_01' })
+      purgeMeeting('mt_09')
+      deleted = true
+      return ok(receipt, { status: 202 })
+    }),
+    http.get('/api/v1/approvals/ap_01', async ({ request }) => {
+      if (!deleted) return getResponse(handlers, request)
+      approvalRefetchStarted = true
+      await approvalGate.promise
+      return fail('APPROVAL_NOT_FOUND', '삭제된 확인 요청', 404)
+    }),
+  )
+  const app = await open()
+  await userEvent.click(screen.getByRole('button', { name: '회의 삭제' }))
+  await userEvent.click(
+    within(screen.getByRole('dialog')).getByRole('button', { name: '삭제하기' }),
+  )
+  await waitFor(() => expect(deletionStarted).toBe(true))
+  await act(async () => {
+    app.navigate(paths.approval('ws_01', 'ap_01'))
+    await Promise.resolve()
+  })
+  const raw = '민수님이 알림 문구 검토을 맡기로 했어요.'
+  expect(await screen.findByText(raw, { exact: false })).toBeInTheDocument()
+  try {
+    await act(async () => {
+      deletionGate.resolve()
+      await deletionGate.promise
+    })
+    await waitFor(() => expect(deleted).toBe(true))
+    await waitFor(() => expect(screen.queryByText(raw, { exact: false })).not.toBeInTheDocument())
+    await waitFor(() => expect(approvalRefetchStarted).toBe(true))
+    expect(
+      app.queryClient.getQueryData(approvalDetailQueryOptions('ws_01', 'ap_01').queryKey),
+    ).toBeUndefined()
+  } finally {
+    await act(async () => {
+      approvalGate.resolve()
+      await approvalGate.promise
+    })
+  }
+  expect(
+    await screen.findByRole('heading', { name: '확인 요청을 찾을 수 없어요' }),
+  ).toBeInTheDocument()
+  await waitFor(() => expect(app.queryClient.isMutating()).toBe(0))
+  await app.expectPath(paths.approval('ws_01', 'ap_01'))
+  expect(
+    log.started.filter(({ method, path }) => method === 'GET' && path === '/approvals/ap_01'),
+  ).toHaveLength(2)
+  expect(screen.queryByText(raw, { exact: false })).not.toBeInTheDocument()
+  expect(
+    screen.queryByText('회의를 삭제했어요. 남은 파일을 정리하고 있어요.'),
+  ).not.toBeInTheDocument()
 })
 
 it('이미 받은 회의록도 서버가 410을 반환하면 숨긴다', async () => {

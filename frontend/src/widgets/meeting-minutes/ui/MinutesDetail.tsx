@@ -85,11 +85,13 @@ function Head({
   title,
   meta,
   source,
+  action,
   children,
 }: {
   title: string
   meta: string
   source: MeetingSummary['source']
+  action?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -98,6 +100,9 @@ function Head({
       <div className={META_ROW}>
         {meta === '' ? null : <span className={`min-w-[0px] truncate ${META}`}>{meta}</span>}
         <span className={CHIP}>{SOURCE_LABEL[source]}</span>
+        {action == null ? null : (
+          <div className="ml-auto flex h-22 shrink-0 items-center">{action}</div>
+        )}
       </div>
       {children}
     </header>
@@ -403,6 +408,7 @@ function MinutesContent({
           title={title}
           meta={detailMeta(minutes.source, minutes.startedAt, minutes.durationMs)}
           source={minutes.source}
+          action={action}
         >
           {minutes.attendees.length === 0 ? (
             <NoAttendees />
@@ -412,7 +418,6 @@ function MinutesContent({
         </Head>
       )}
       {/* 들고 있는 이전 본문을 묶는 칸. 늘 같은 자리에 둔다 — 감싸기를 넣고 빼면 탭이 다시 마운트되고 그것이 깜빡임이다 */}
-      {held === null ? <div className="flex justify-end px-36">{action}</div> : null}
       <div
         data-testid="minutes-body"
         aria-busy={held !== null || undefined}

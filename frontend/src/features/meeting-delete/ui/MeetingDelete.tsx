@@ -70,20 +70,32 @@ export function MeetingDelete({
       if (!attempt.session.isCurrent()) return
       await client.cancelQueries({ queryKey: workspaceKey(workspaceId) })
       if (!attempt.session.isCurrent()) return
-      for (const deletedId of receipt.deleted_meeting_ids)
-        client.removeQueries({
-          queryKey: workspaceKey(workspaceId, 'meetings', 'detail', deletedId),
-        })
-      for (const part of ['minutes', 'extractions', 'approvals', 'dashboard'])
-        client.removeQueries({ queryKey: workspaceKey(workspaceId, part) })
+      // Resetting the current detail can unmount this control. Check the route before that reset.
+      const isCurrent = attempt.isCurrent()
+      const rawQueryKeys = [
+        ...receipt.deleted_meeting_ids.map((deletedId) =>
+          workspaceKey(workspaceId, 'meetings', 'detail', deletedId),
+        ),
+        ...['minutes', 'extractions', 'approvals', 'dashboard'].map((part) =>
+          workspaceKey(workspaceId, part),
+        ),
+      ]
+      const refreshes = rawQueryKeys.map((queryKey) => {
+        client.removeQueries({ queryKey, type: 'inactive' })
+        // Active observers must be notified: removal alone leaves their old raw data visible.
+        return client.resetQueries({ queryKey, type: 'active' })
+      })
       // Lists carry title/source quotes too. Remove the deleted row before the next response.
       client.setQueryData(
         workspaceKey(workspaceId, 'meetings', 'list'),
         (meetings: { id: string }[] | undefined) =>
           meetings?.filter(({ id }) => !receipt.deleted_meeting_ids.includes(id)),
       )
-      void client.invalidateQueries({ queryKey: workspaceKey(workspaceId) })
-      if (!attempt.isCurrent()) return
+      void Promise.allSettled([
+        ...refreshes,
+        client.invalidateQueries({ queryKey: workspaceKey(workspaceId) }),
+      ])
+      if (!isCurrent) return
       onDeleted(meetingId)
       toast.show({
         title:
