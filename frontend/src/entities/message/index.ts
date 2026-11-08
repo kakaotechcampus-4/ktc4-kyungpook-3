@@ -15,6 +15,7 @@ export type {
   MessageThread,
   MessageThreadSummary,
   ReminderCreateInput,
+  ReminderEvidence,
   ReplyAttribution,
   TaskRef,
 } from './model/types'

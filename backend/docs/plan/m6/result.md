@@ -188,6 +188,32 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 
 남은 작업: AI 의 merge 전송과 `include_pending` 켜기(BE 배포 뒤), FE 답(#512)과 합친 카드 표시, 승인 사이에 담당 항목이 바뀐 경우의 별칭 저장(결정 기록의 장단점).
 
+## 2026-11-08 추가: 전사 진행과 단계 시작 시각을 회의 상세에 노출(#483 A안 BE 몫)
+
+M6 plan.md 는 비어 있어 완료조건이 없다. #381 과 같은 M6 에 둔다. 근거는 이슈 #483 과 설계 확정 댓글(2026-11-08)이고, AI·BE·FE 공동 이슈 중 BE 몫만 구현했다. M6 완료는 판정하지 않는다.
+
+| 변경 | 위치 |
+|---|---|
+| 회의에 전사 진행 컬럼 2개 | `backend/app/models/models.py`, 마이그레이션 `d6e1b4a8c297` |
+| stage 보고가 `stt: {done, total}` 을 받고 같은 stt 단계에서는 진행만 고친다 | `backend/app/services/meeting_stage.py`, `backend/app/schemas/meeting.py` |
+| 상세·`/fail` 응답 `processing`, stage 응답 `stt` | `backend/app/api/meetings.py` |
+
+| 이슈 요구(BE) | 상태 | 근거 |
+|---|---|---|
+| stage 보고로 전사 진행을 받는다, 같은 단계 재전송은 진행만 갱신 | 충족 | `test_stt_progress_is_stored_and_exposed`, `test_stt_progress_update_keeps_stage_at`, `test_same_stt_progress_is_ignored`, `test_stt_resend_without_progress_keeps_progress`, `test_stt_progress_decrease_overwrites` |
+| 단계가 넘어가거나 늦은 보고는 진행을 바꾸지 않는다 | 충족 | `test_moving_past_stt_clears_progress`, `test_late_stt_progress_after_handoff_is_ignored`, `test_late_stt_progress_does_not_change_stored_value_after_handoff` |
+| 잘못된 진행 값은 400 | 충족 | `test_stt_progress_invalid_400` |
+| `GET /meetings/{id}` 에 `processing: {stage, stage_at, stt}`, `progress` 유지 | 충족. processing 이 아닌 회의는 `null`(설계 확정에서 정함) | `test_stt_progress_ignored_on_non_processing`, `test_processing_without_report_has_empty_fields`, `test_fail_response_processing_is_null`, 기존 `progress` 테스트 |
+| AI 진행 보고, FE 화면·모의 서버·FE 계약 | 미충족(BE 몫 아님) | #483 댓글로 전달 |
+
+검증(2026-11-08, `backend/`):
+
+- `.venv/Scripts/python.exe -m ruff check --no-cache .`: All checks passed
+- `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`: 2260 passed, 1501 skipped. skip 은 PostgreSQL 이 필요한 테스트이고 CI 에서 돈다.
+- 마이그레이션은 실제 DB 에 적용하지 않았다(CI migrations 잡에서 확인). 조건부 UPDATE 의 실제 경합은 sqlite 로 재현되지 않는다. AI·FE 와 붙인 종단 확인은 하지 않았다.
+
+남은 작업: AI 진행 보고(단위·빈도 결정 포함), FE 화면과 FE 계약 반영. BE 배포 뒤 #483 에 알린다.
+
 ## 2026-11-08 추가: 답장 판단 claim 이 판단 창을 직접 보기(#548)
 
 근거는 #548 설계 확정 댓글(2026-11-08)이고, PR #382 멘토 리뷰(답장 판단 재시도 상한)의 후속이다. M6 완료는 판정하지 않는다.
@@ -211,6 +237,7 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 
 ## 관련 기록
 
+- [전사 진행과 단계 시작 시각을 회의 상세에 노출한다](basis-for-decision/2026-11-08-processing-stt-progress.md)
 - [답장 판단 재시도 상한을 숫자 대신 판단 창으로 지킨다](basis-for-decision/2026-11-08-reply-judgment-attempt-cap.md)
 - [다른 회의의 같은 새 항목을 승인 대기 카드에 합친다](basis-for-decision/2026-11-07-pending-merge.md)
 - [승인 대기 새 항목 요청을 유사 검색 후보에 따로 더한다](basis-for-decision/2026-11-07-pending-approval-search.md)
