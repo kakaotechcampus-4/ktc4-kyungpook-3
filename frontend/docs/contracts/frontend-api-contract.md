@@ -1706,7 +1706,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 고르면 그 태스크만 후보로 다시 판단한다. 해당 없음이면 닫는다. 지운 태스크는 후보에 나오지 않는다. 후보 밖이거나 지운 태스크는 400 `INVALID_REQUEST`, 판단 기록이 없거나 다른 워크스페이스면 404 `REPLY_JUDGMENT_NOT_FOUND`, 고를 차례가 아니거나 이미 골랐으면 409 `REPLY_ATTRIBUTION_NOT_NEEDED` 다.
 - 타임라인에서 답장에 이어진 이력은 답장 아래에만 나오고 `history` 줄이 되지 않는다. 승인은 줄이 아니라 `result` 로 읽는다. 승인하면서 PM 이 고친 값도 같은 줄에 묶이고 `new_value` 는 고친 값이다. `GET /tasks/{id}/history` 는 그대로다.
 - `due_clear`·`failed` 는 그 태스크를 말했지만 값을 정하지 못한 줄이다. 값이 없고 `result` 는 `noted` 다.
-- 담당자를 찾지 못한 카드를 담당자를 고르지 않고 승인하거나 지금 담당자와 같은 사람을 고르면 `noted` 다. 다른 팀원이나 미정을 고르면 `approved` 이고 `new_value` 는 고른 값(미정이면 `null`)이다. `approved` 는 값이 실제로 바뀐 승인이다. 같은 사람을 고른 경우에도 `payload.task_overrides` 에는 고른 값이 남는다.
+- 담당자를 찾지 못한 카드를 담당자를 고르지 않고 승인하거나 지금 담당자와 같은 사람을 고르면 `noted` 다. 다른 팀원이나 미정을 고르면 `approved` 이고 `new_value` 는 고른 값(미정이면 `null`)이다. `approved` 는 값이 실제로 바뀐 승인이다. 같은 사람을 고른 경우에도 `payload.task_overrides` 에는 고른 값이 남는다. 담당자를 찾은 카드(payload 에 `assignee_member_id` 가 있음)는 이력이 없어도 `noted` 로 바꾸지 않아, 지금 담당자로 덮어써도 `approved` 다(BE `services/replies.py` 의 `_result`).
 - 답장 글(`body`, `summary`, `evidence_quote`)은 대화 주인과 PM 에게만 내려간다. 그 밖의 팀원에게는 null 이다. 답장이 막힘을 뜻해 채운 `Task.blocker` 는 예외다. 원문이 아니라 AI 해석(`summary`)이나 `팀원이 막혔다고 답했어요` 이고 모든 팀원에게 보인다.
 - 되돌리기는 `undoable: true` 인 변경만 받는다. 이어진 이력 중 하나라도 그 뒤 바뀌었으면 하나도 되돌리지 않고 409 `REPLY_CHANGE_NOT_UNDOABLE` 이다. 되돌린 이력은 새 `history` 줄로 남고 닫힌 시계는 다시 열리지 않는다. 무응답 자동 막힘을 넘어온 변경을 되돌리면 막힘이 아니라 막기 전 상태와 사유로 돌아가고, 그 값도 `history` 줄로 남는다.
 - 알림 `kind` 는 둘이 더해진다.

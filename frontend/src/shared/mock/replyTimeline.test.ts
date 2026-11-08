@@ -121,6 +121,16 @@ describe('답장 카드의 담당자 고르기 (PATCH /approvals/{id}, BE #460)'
     expect(ap32().payload.task_overrides).toEqual({ assignee_member_id: 'mb_03' })
   })
 
+  it('담당자를 찾은 답장 카드에서 지금 담당자로 덮어쓰면 이력은 없어도 rc_04 는 승인함이다 (BE _result)', async () => {
+    ap32().payload.assignee_member_id = 'mb_04'
+    const line = db.replies.changes.find(({ change_id }) => change_id === 'rc_04')!
+    line.new_value = 'mb_04'
+    await pick('ap_32', 'mb_03')
+    expect(ap32().payload.task_overrides).toEqual({ assignee_member_id: 'mb_03' })
+    expect((await fetchDto<TaskDto>('/tasks/tk_08')).assignee_member_id).toBe('mb_03')
+    expect(change(await timeline('tk_08'), 'rc_04')).toMatchObject({ result: 'approved' })
+  })
+
   it('담당자를 찾은 답장 카드도 다른 팀원으로 고칠 수 있다', async () => {
     ap32().payload.assignee_member_id = 'mb_04'
     await pick('ap_32', 'mb_02')
