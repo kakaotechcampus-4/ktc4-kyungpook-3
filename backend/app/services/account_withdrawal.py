@@ -113,27 +113,37 @@ def find_receipt(db: Session, proof: str, withdrawal_id: str | None = None) -> W
     )
 
 
+_JSON_IDENTITY_OWNERS = {
+    "discord_user_id": ("member_id", "speaker_member_id"),
+    "speaker_discord_user_id": ("speaker_member_id", "member_id"),
+    "evidence_speaker": ("evidence_speaker_member_id",),
+    "notion_name": ("member_id", "speaker_member_id"),
+}
+_JSON_NAME_OWNERS = {
+    "display_name": ("member_id", "speaker_member_id"),
+    "name": ("member_id", "speaker_member_id"),
+    "speaker_name": ("speaker_member_id", "member_id"),
+    "assignee_raw": ("assignee_member_id",),
+    "aliases": ("member_id", "speaker_member_id"),
+}
+
+
 def _scrub_json(value, member_ids: set[str], discord_ids: set[str]):
     if isinstance(value, list):
         return [_scrub_json(item, member_ids, discord_ids) for item in value]
     if not isinstance(value, dict):
         return value
-    owned = any(value.get(key) in member_ids for key in (
-        "member_id", "assignee_member_id", "speaker_member_id", "evidence_speaker_member_id",
-    ))
     cleaned = {}
     for key, item in value.items():
-        identity_member_key = {
-            "discord_user_id": "member_id", "speaker_discord_user_id": "speaker_member_id",
-            "evidence_speaker": "evidence_speaker_member_id",
-        }.get(key)
-        if identity_member_key and isinstance(item, str) and item in discord_ids and (
-            value.get(identity_member_key) is None or value.get(identity_member_key) in member_ids
-        ):
+        owner_keys = _JSON_IDENTITY_OWNERS.get(key, _JSON_NAME_OWNERS.get(key, ()))
+        owner = next((value[owner_key] for owner_key in owner_keys if value.get(owner_key) is not None), None)
+        if key in _JSON_IDENTITY_OWNERS and (owner in member_ids or (
+            owner is None and key != "notion_name" and isinstance(item, str) and item in discord_ids
+        )):
             cleaned[key] = None
-        elif owned and key in ("display_name", "name", "speaker_name", "assignee_raw", "notion_name"):
+        elif key in _JSON_NAME_OWNERS and owner in member_ids and key != "aliases":
             cleaned[key] = "탈퇴한 사용자" if item is not None else None
-        elif owned and key in ("aliases",):
+        elif key == "aliases" and owner in member_ids:
             cleaned[key] = []
         else:
             cleaned[key] = _scrub_json(item, member_ids, discord_ids)
@@ -192,8 +202,33 @@ def _scrub_shared(db: Session, workspace_id: str, members: list[Member], now: da
     ))
     db.execute(update(ReminderWatch).where(ReminderWatch.thread_id.in_(thread_ids)).values(state=str(WatchState.STOPPED), closed_at=now, paused_at=None))
     db.execute(delete(Notification).where(Notification.member_id.in_(member_ids)))
-    # 알림은 사용자 본문이 아니라 이벤트 미리보기다. 소유 대화의 이름 사본을 남기지 않는다.
-    db.execute(update(Notification).where(Notification.workspace_id == workspace_id, Notification.link_id.in_(affected_thread_ids)).values(text="대화 기록이 업데이트되었습니다."))
+    # 생성된 알림의 수신자 이름은 thread 외에도 bundle·task 링크로 복사된다.
+    bundle_ids = select(ReminderBundle.bundle_id).where(
+        ReminderBundle.workspace_id == workspace_id, ReminderBundle.thread_id.in_(thread_ids),
+    )
+    notification_links = {
+        "thread": (affected_thread_ids, "대화 기록이 업데이트되었습니다."),
+        "bundle": (bundle_ids, "재촉 알림이 업데이트되었습니다."),
+    }
+    for link_type, (link_ids, text) in notification_links.items():
+        db.execute(update(Notification).where(
+            Notification.workspace_id == workspace_id, Notification.link_type == link_type,
+            Notification.link_id.in_(link_ids),
+        ).values(text=text))
+    watch_keys = select("silence:" + ReminderWatch.watch_id + ":" + Notification.member_id).where(
+        ReminderWatch.thread_id.in_(thread_ids),
+    ).correlate(Notification)
+    reply_keys = select("reply:" + ReplyJudgment.message_id + ":" + Notification.member_id).where(
+        ReplyJudgment.thread_id.in_(thread_ids),
+    ).correlate(Notification).union(
+        select("reply:" + ReplyJudgment.message_id + ":picked:" + Notification.member_id).where(
+            ReplyJudgment.thread_id.in_(thread_ids),
+        ).correlate(Notification),
+    )
+    db.execute(update(Notification).where(
+        Notification.workspace_id == workspace_id, Notification.link_type == "task",
+        or_(Notification.dedupe_key.in_(watch_keys), Notification.dedupe_key.in_(reply_keys)),
+    ).values(text="업무 알림이 업데이트되었습니다."))
     for member in members:
         member.erase_profile(now)
     db.flush()

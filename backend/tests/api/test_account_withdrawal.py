@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.models import (
     AliasResolutionLog, AliasReview, ApprovalRequest, Extraction, ExtractionItem,
-    Invitation, Meeting, MeetingUpload, Member, Notification, PrivacyCleanup, PushSubscription, Session as LoginSession,
+    Invitation, Meeting, MeetingUpload, Member, MemberAlias, Notification, PrivacyCleanup, PushSubscription, Session as LoginSession,
     Source, Task, User, WithdrawalReceipt, Workspace,
 )
 from app.services import account_withdrawal, messages, notifications
@@ -27,6 +27,119 @@ def _headers(seed, who="alice", key=None):
 
 def _withdraw(seed, who="alice", key=None):
     return client(who).delete(f"{P}/auth/me", headers=_headers(seed, who, key))
+
+
+def test_scheduler_bundle_notice_erases_only_withdrawn_recipient_name(mdb, mseed):
+    from app.models import ReminderBundle
+    from app.services import scheduler
+
+    now = datetime.now(timezone.utc)
+    mseed["bob"].display_name = mseed["alice"].display_name
+    for task, who in zip(mseed["tasks"], ("alice", "bob")):
+        task.assignee_member_id = mseed[who].member_id
+        task.due_date = (now + timedelta(days=2)).date()
+    mdb.commit()
+    scheduler.suggest(mdb, now)
+    mdb.commit()
+    bundle_ids = {
+        bundle.thread.member_id: bundle.bundle_id for bundle in mdb.scalars(select(ReminderBundle))
+    }
+    owned = mdb.scalar(select(Notification).where(Notification.link_id == bundle_ids[mseed["alice"].member_id]))
+    other = mdb.scalar(select(Notification).where(Notification.link_id == bundle_ids[mseed["bob"].member_id]))
+    assert owned.kind == other.kind == "nudge_suggested"
+    assert "앨리스" in owned.text and "앨리스" in other.text
+    owned_id, other_id, other_text = owned.notification_id, other.notification_id, other.text
+    assert _withdraw(mseed).status_code == 202
+    notes = client("pm").get(f"{P}/workspaces/{mseed['ws']}/notifications").json()["data"]["items"]
+    by_id = {note["notification_id"]: note for note in notes}
+    assert "앨리스" not in by_id[owned_id]["text"]
+    assert by_id[other_id]["text"] == other_text
+
+
+def test_scheduler_task_notice_erases_withdrawn_watch_recipient_name(mdb, mseed):
+    from tests.api.test_scheduler import _silence_blocked
+
+    task = _silence_blocked(mdb, mseed)
+    note = mdb.scalar(select(Notification).where(Notification.kind == "silence_blocked"))
+    assert note.link_type == "task" and note.link_id == task.task_id and "앨리스" in note.text
+    note_id, title = note.notification_id, task.title
+    assert _withdraw(mseed).status_code == 202
+    mdb.expire_all()
+    assert "앨리스" not in mdb.get(Notification, note_id).text
+    assert mdb.get(Task, task.task_id).title == title
+
+
+@pytest.mark.parametrize("picked", [False, True])
+def test_reply_task_notice_keeps_other_same_named_author_on_same_task(mdb, mseed, picked):
+    from tests.api.test_replies import _remind, _reply
+    from tests.api.test_reply_judgment import _change, _claim, _judge
+    from tests.api.test_scheduler import H, SLOT
+
+    task = mseed["tasks"][0]
+    task.status = "in_progress"
+    _remind(mdb, mseed, [task], SLOT)
+    _reply(mdb, mseed, SLOT + H, body="완료했어요")
+    item = _claim()
+    if picked:
+        _judge(item, _change(None, "unknown"))
+        response = client("pm").post(
+            f"{P}/workspaces/{mseed['ws']}/messages/replies/{item['message_id']}/attribution",
+            json={"task_id": task.task_id},
+        )
+        assert response.status_code == 200, response.text
+        item = _claim()
+    _judge(item, _change(task, "status", "done", evidence="certain", claimed=item))
+    owned = mdb.scalar(select(Notification).where(Notification.link_type == "task"))
+    assert "앨리스" in owned.text
+    owned_id = owned.notification_id
+
+    mseed["bob"].display_name, mseed["bob"].discord_user_id = "앨리스", "d_bob"
+    task.status = "in_progress"
+    _remind(mdb, mseed, [task], SLOT + 2 * H, who="bob")
+    _reply(mdb, mseed, SLOT + 3 * H, who="bob", body="다른 사람도 완료했어요")
+    other_item = _claim()
+    _judge(other_item, _change(task, "status", "done", evidence="certain", claimed=other_item))
+    other = mdb.scalar(select(Notification).where(Notification.dedupe_key.like(f"reply:{other_item['message_id']}:%")))
+    assert other.link_type == "task" and other.link_id == task.task_id
+    other_id, other_text = other.notification_id, other.text
+
+    assert _withdraw(mseed).status_code == 202
+    mdb.expire_all()
+    assert "앨리스" not in mdb.get(Notification, owned_id).text
+    assert mdb.get(Notification, other_id).text == other_text
+
+
+@pytest.mark.parametrize("departing_role", ["assignee", "evidence"])
+def test_approval_assignee_and_evidence_metadata_have_independent_owners(mdb, mseed, departing_role):
+    alice, bob = mseed["alice"], mseed["bob"]
+    bob.display_name, bob.discord_user_id = alice.display_name, "d_bob"
+    assignee, evidence = (alice, bob) if departing_role == "assignee" else (bob, alice)
+    alias = "개인 담당 별칭" if departing_role == "assignee" else "동명이인 담당 별칭"
+    mdb.add(MemberAlias(workspace_id=mseed["ws"], member_id=assignee.member_id, alias_text=alias,
+                        alias_type="nickname", source="manual", confidence=1, verified=True))
+    meeting = Meeting(workspace_id=mseed["ws"], status="processing")
+    mdb.add(meeting)
+    mdb.commit()
+    response = client(service=True).post(f"{P}/extractions", json={
+        "workspace_id": mseed["ws"], "meeting_id": meeting.meeting_id,
+        "items": [{"task_title": "공동 작업", "task_confidence": 0.6, "assignee_type": "thirdname",
+                   "assignee_raw": alias, "evidence_speaker": evidence.discord_user_id,
+                   "evidence_speaker_member_id": evidence.member_id}],
+    })
+    assert response.status_code == 201, response.text
+    card = mdb.scalar(select(ApprovalRequest))
+    before = json.loads(card.payload)
+    assert before["assignee_member_id"] == assignee.member_id
+    assert before["evidence_speaker_member_id"] == evidence.member_id
+    assert _withdraw(mseed).status_code == 202
+    mdb.refresh(card)
+    after = json.loads(card.payload)
+    if departing_role == "assignee":
+        assert after["assignee_raw"] == "탈퇴한 사용자"
+        assert after["evidence_speaker"] == before["evidence_speaker"]
+    else:
+        assert after["assignee_raw"] == before["assignee_raw"]
+        assert after["evidence_speaker"] is None
 
 
 def test_shared_withdrawal_erases_account_sessions_profile_and_preserves_records(mdb, mseed):

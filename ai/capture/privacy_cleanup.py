@@ -125,6 +125,9 @@ def _scrub(value, members: set[str], identities: dict[str, str], paths: dict[str
     foreign_member = referenced_member and not owned
     speaker_id = value.get('speaker_id') or value.get('user_id')
     owned = owned or (not referenced_member and isinstance(speaker_id, str) and speaker_id in identities)
+    evidence = value.get('evidence_speaker')
+    unmapped_evidence = (value.get('evidence_speaker_member_id') is None
+                         and isinstance(evidence, str) and evidence in identities)
     out = {}
     for key, item in value.items():
         new_key = identities.get(key, key)
@@ -134,7 +137,9 @@ def _scrub(value, members: set[str], identities: dict[str, str], paths: dict[str
                         or (key == 'speaker' and 'speaker_id' in value)))
                 or (key == 'assignee_raw' and value.get('assignee_member_id') in members)
                 or (key == 'evidence_speaker' and value.get('evidence_speaker_member_id') in members)):
-            out[new_key] = ANONYMOUS
+            out[new_key] = None if key == 'evidence_speaker' and item is None else ANONYMOUS
+        elif key == 'evidence_speaker' and unmapped_evidence:
+            out[new_key] = None
         elif owned and key in ('discord_user_id', 'notion_name', 'aliases'):
             out[new_key] = [] if key == 'aliases' else None
         elif field in ('speakers', 'speaker_names') and key in identities:
@@ -143,6 +148,8 @@ def _scrub(value, members: set[str], identities: dict[str, str], paths: dict[str
             out[new_key] = item
         else:
             out[new_key] = _scrub(item, members, identities, paths, field=key)
+    if unmapped_evidence:
+        out['evidence_speaker_member_id'] = identities[evidence]
     return out
 
 

@@ -381,6 +381,26 @@ def test_assignee_and_evidence_owner_are_scrubbed_independently(tmp_path):
     assert cleaned[1]['assignee_raw'] == '탈퇴한 사용자' and cleaned[1]['evidence_speaker'] == 'same name'
 
 
+@pytest.mark.parametrize('evidence_hint', [{}, {'evidence_speaker_member_id': None}])
+def test_discord_judge_output_erases_raw_evidence_speaker_and_retains_anonymous_provenance(tmp_path, evidence_hint):
+    from capture.judge_path import JudgeOutput, _restore
+    from capture.recorder import _keep_judge_output
+
+    recordings, transcripts, path, data = fixture(tmp_path)
+    items = _restore([{**evidence_hint, 'evidence_speaker': 'same name', 'assignee_member_id': 'member-b',
+                       'assignee_raw': 'other alias'}], {'111': 'same name'}, {'111': 'same name'}, {'111'})
+    output = _keep_judge_output(transcripts, data, JudgeOutput(items=items))
+    save_manifest(path, data)
+    assert json.loads(output.read_text(encoding='utf-8'))[0]['evidence_speaker'] == '111'
+    assert apply_cleanup(recordings, transcripts, claim(), runs=tmp_path / 'runs')
+    cleaned = json.loads(output.read_text(encoding='utf-8'))[0]
+    assert cleaned['evidence_speaker'] is None
+    assert cleaned['evidence_speaker_member_id'] == 'member-a'
+    assert cleaned['assignee_member_id'] == 'member-b' and cleaned['assignee_raw'] == 'other alias'
+    assert apply_cleanup(recordings, transcripts, claim(), runs=tmp_path / 'runs')
+    assert json.loads(output.read_text(encoding='utf-8'))[0] == cleaned
+
+
 def test_chat_snapshot_epoch_reaches_separately_constructed_ai_tool_client(tmp_path, monkeypatch):
     from capture.handoff import BeClient
     from capture.privacy_cleanup import chat_writer
