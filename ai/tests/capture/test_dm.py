@@ -750,8 +750,9 @@ async def test_a_judgment_that_cannot_be_posted_is_left_to_the_lease(tmp_path, c
     assert "reply-1" in capsys.readouterr().out
 
 
-async def test_judgment_5xx_is_left_to_lease_and_next_reply_is_judged(tmp_path):
-    # a 의 결과가 5xx 여도 다시 보내지 않고 다음 claim 이 준 b 로 넘어간다. a 는 BE 가 리스·판단 창 뒤에 닫는다
+async def test_judgment_5xx_is_not_resent_and_the_round_goes_on(tmp_path):
+    # a 의 결과가 5xx 여도 다시 보내지 않고 다음 claim 이 준 답장(b)으로 넘어간다. 실제 BE 는 리스 안의 a 와 같은 대화의
+    # 답장은 주지 않으니 b 는 다른 대화의 답장으로 읽는다(FakeBot 이 순서를 꾸민 것). a 는 BE 가 리스·판단 창 뒤에 닫는다
     cog, be = _cog(tmp_path, FakeBot(), judger=_judged)
     be.reply_claims = [_claimed("a"), _claimed("b")]
     be.fail = {"/bot/replies/a/judgment": [_err(500, "HTTP_500")]}
