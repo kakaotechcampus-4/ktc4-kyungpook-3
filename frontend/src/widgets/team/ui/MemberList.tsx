@@ -1,21 +1,20 @@
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Member } from '@/entities/member'
 import type { Task } from '@/entities/task'
-import { isOverdue } from '@/entities/task'
-import { TASK_STATUS_LABEL } from '@/features/task-status'
+import { TASK_STATUS_LABEL, isOverdue } from '@/entities/task'
 import { monthDayOf, seoulDateOf } from '@/shared/lib/date'
 import { Icon } from '@/shared/ui/icon'
 import { avatarText, memberRisk } from '../lib/team'
 import type { MemberRisk } from '../lib/team'
-import { BADGE, BADGE_DOT } from './teamStyles'
+import { BADGE, BADGE_DOT, HEAD, ROW, SMALL_BUTTON } from './teamStyles'
 
-const HEAD = 'flex items-center gap-12 border-b border-line py-14'
 const AVATAR =
   'inline-flex h-30 w-30 shrink-0 items-center justify-center rounded-999 bg-divider text-meta leading-none font-semibold text-ink'
-const NAME = 'text-[14.5px] leading-[1.75] font-semibold text-ink'
+/* 휴대폰 한 열은 이름·태스크명 칸이 좁다. 공백 없는 긴 글자도 그 칸 안에서 접어 옆 칸(마감·상태·배지)을 덮지 않는다 */
+const NAME = 'text-[14.5px] leading-[1.75] font-semibold text-ink max-md:wrap-anywhere'
 const ROLE = 'text-[12px] text-dim'
-const ROW = 'flex items-center gap-16 border-b border-line py-13 last:border-b-0'
-const TASK_TITLE = 'text-[13px] leading-[1.75] text-ink'
+const TASK_TITLE = 'text-[13px] leading-[1.75] text-ink max-md:wrap-anywhere'
 const TASK_META = 'text-[11px] tabular-nums'
 const DUE = 'inline-flex w-56 shrink-0 items-center justify-end gap-3 text-caption tabular-nums'
 const STATUS =
@@ -71,12 +70,24 @@ export interface MemberSectionProps {
   inactive: boolean
   /** 역할 줄 아래의 초대 상태·조작. 이름 칸 안이라 길면 줄을 바꾸고 줄 폭을 늘리지 않는다 */
   invite?: ReactNode
+  /** 머리 줄의 `별칭` 단추가 펼치는 칸과 단추에 적을 개수(받기 전에는 null). 없으면 단추도 없다 */
+  aliases?: { count: number | null; panel: ReactNode }
 }
 
 /** 팀원 한 명 — 이름·역할·상태 배지와 맡은 일 (Team 캔버스). 상태는 색만이 아니라 글자로도 구분한다 (D-128) */
-export function MemberSection({ member, tasks, today, inactive, invite }: MemberSectionProps) {
+export function MemberSection({
+  member,
+  tasks,
+  today,
+  inactive,
+  invite,
+  aliases,
+}: MemberSectionProps) {
   const risk = memberRisk(tasks, today)
   const headingId = `team-member-${member.id}`
+  const aliasesId = `${headingId}-aliases`
+  // 접어 둔 채 시작한다. 접으면 칸을 그리지 않는다 — 이름 별칭(김서연)이 숨은 채 남아 팀원 이름과 같은 글자가 둘이 되지 않는다
+  const [aliasesOpen, setAliasesOpen] = useState(false)
   return (
     <section aria-labelledby={headingId}>
       <div className={HEAD}>
@@ -93,11 +104,24 @@ export function MemberSection({ member, tasks, today, inactive, invite }: Member
           </div>
           {invite}
         </div>
+        {aliases === undefined ? null : (
+          <button
+            type="button"
+            className={`${SMALL_BUTTON} gap-4`}
+            aria-expanded={aliasesOpen}
+            aria-controls={aliasesOpen ? aliasesId : undefined}
+            onClick={() => setAliasesOpen((open) => !open)}
+          >
+            {aliases.count === null ? '별칭' : `별칭 ${aliases.count}`}
+            <Icon name={aliasesOpen ? 'chevron-up' : 'chevron-down'} size={12} />
+          </button>
+        )}
         <span className={`${BADGE} ${RISK_CLASS[risk]}`}>
           {risk === 'normal' ? null : <span aria-hidden="true" className={BADGE_DOT} />}
           {RISK_LABEL[risk]}
         </span>
       </div>
+      {aliases !== undefined && aliasesOpen ? <div id={aliasesId}>{aliases.panel}</div> : null}
       {tasks.length === 0 ? (
         <p className="py-13 text-[13px] text-dim">맡은 일이 없어요.</p>
       ) : (

@@ -1,4 +1,5 @@
 import { unwrap } from '@/shared/api/envelope'
+import { signUpVerified } from '@/shared/test/api'
 import { toSession } from './model/mapper'
 import type { Envelope } from '@/shared/types/api/envelope'
 import type { SessionDto } from '@/shared/types/api/auth'
@@ -18,10 +19,10 @@ it('logs in with the documented mock credentials and returns a mapped session', 
 })
 
 it('covers signup conflict, invalid login, session lookup, and logout', async () => {
-  const signup = await fetch('http://localhost:3000/api/v1/auth/signup', {
+  const signup = await fetch('http://localhost:3000/api/v1/auth/signup/code', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'pm@example.com', password: 'mock-password1', name: '최진호' }),
+    body: JSON.stringify({ email: 'pm@example.com' }),
   })
   const signupBody = (await signup.json()) as Envelope<SessionDto>
   expect(() => unwrap(signupBody, signup.status)).toThrow('이미 가입된 이메일입니다.')
@@ -48,17 +49,12 @@ it('keeps existing accounts after signup and accepts the new account password', 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-  const signup = await send('signup', {
+  const session = await signUpVerified({
     email: 'new@example.com',
     password: 'new-password1',
     name: '새 팀원',
   })
-  expect(
-    toSession(unwrap((await signup.json()) as Envelope<SessionDto>, signup.status)),
-  ).toMatchObject({ workspaceCount: 0, lastWorkspaceId: null })
-  expect(
-    (await send('signup', { email: 'pm@example.com', password: 'pass1234', name: '중복' })).status,
-  ).toBe(409)
+  expect(toSession(session)).toMatchObject({ workspaceCount: 0, lastWorkspaceId: null })
   expect(
     (await send('login', { email: 'new@example.com', password: 'new-password1' })).status,
   ).toBe(200)

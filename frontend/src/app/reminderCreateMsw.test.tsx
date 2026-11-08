@@ -9,7 +9,7 @@ import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { recordRequestBodies } from '@/shared/test/requests'
-import { current, detail, list, reviewList, rowTexts } from './test/messageScreen'
+import { current, detail, list, rowTexts } from './test/messageScreen'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -38,12 +38,20 @@ async function openCompose() {
   return app
 }
 
-async function chooseTask(memberName: string, taskLabel: string) {
-  await userEvent.selectOptions(
-    await form().findByRole('combobox', { name: '받는 사람' }),
-    memberName,
-  )
-  await userEvent.selectOptions(form().getByRole('combobox', { name: '태스크' }), taskLabel)
+/** 줄 이름은 이름과 둘째 줄이 이어진 글자다 — 이름으로 시작하는 줄을 찾는다 */
+const startsWith = (prefix: string) => (name: string) => name.startsWith(prefix)
+const field = (name: string) => form().getByRole('combobox', { name })
+
+async function choose(fieldName: string, optionName: string) {
+  await waitFor(() => expect(field(fieldName)).toBeEnabled())
+  await userEvent.click(field(fieldName))
+  await userEvent.click(await screen.findByRole('option', { name: startsWith(optionName) }))
+}
+
+async function chooseTask(memberName: string, taskTitle: string) {
+  await form().findByRole('combobox', { name: '받는 사람' })
+  await choose('받는 사람', memberName)
+  await choose('태스크', taskTitle)
 }
 
 describe('메시지 화면의 새 재촉', () => {
@@ -55,7 +63,7 @@ describe('메시지 화면의 새 재촉', () => {
     expect(form().getByText('받을 팀원을 골라 주세요.')).toBeVisible()
     expect(submit()).toHaveAttribute('aria-disabled', 'true')
 
-    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
+    await chooseTask('이재환', 'DB 스키마 정리')
     expect(
       await form().findByRole('radio', { name: '마감 하루 전09/21 09:00', checked: true }),
     ).toBeInTheDocument()
@@ -83,7 +91,8 @@ describe('메시지 화면의 새 재촉', () => {
     expect(
       await detail().findByRole('heading', { level: 2, name: '이 메시지, 보낼까요?' }),
     ).toBeVisible()
-    expect(rowTexts(reviewList())).toHaveLength(3)
+    // 목록 칸은 상세와 따로 기다린다(#508 최소 표시) — 목록이 그려진 뒤 행을 센다
+    expect(rowTexts(await list().findByRole('region', { name: /^보내기 전 확인/ }))).toHaveLength(3)
     expect(current()[0]).toHaveTextContent('이재환')
     expect(bodies).toEqual([
       {
@@ -101,7 +110,7 @@ describe('메시지 화면의 새 재촉', () => {
       approved_at: '2026-09-17T10:00:00+09:00',
     })
     const app = await openCompose()
-    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
+    await chooseTask('이재환', 'DB 스키마 정리')
     await userEvent.click(await form().findByRole('radio', { name: /직접 정하기/ }))
     fireEvent.change(form().getByLabelText('보낼 날짜와 시각'), {
       target: { value: '2026-09-23T09:00' },
@@ -119,23 +128,95 @@ describe('메시지 화면의 새 재촉', () => {
     ).toBeInTheDocument()
     await app.expectSearch('?review=bd_01')
     expect(await detail().findByText('묶은 태스크 2')).toBeVisible()
-    expect(rowTexts(reviewList())).toHaveLength(2)
+    // 목록 칸은 상세와 따로 기다린다 — 목록이 오래 걸려 뼈대를 보였으면 상세가 먼저 그려지고 목록은 최소 표시(#508)가 끝난 뒤 온다
+    const review = await list().findByRole('region', { name: /^보내기 전 확인/ })
+    expect(rowTexts(review)).toHaveLength(2)
   })
 
   it('팀원을 바꾸면 태스크를 비우고, 맡은 진행 중인 태스크가 없으면 그렇게 알린다', async () => {
     db.tasks.find(({ task_id }) => task_id === 'tk_06')!.status = 'done'
     await openCompose()
-    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
-    await userEvent.selectOptions(form().getByRole('combobox', { name: '받는 사람' }), '정하늘')
-    expect(form().getByRole('combobox', { name: '태스크' })).toHaveValue('')
+    await chooseTask('이재환', 'DB 스키마 정리')
+    await choose('받는 사람', '정하늘')
+    expect(field('태스크')).toHaveTextContent('태스크 고르기')
+    expect(field('태스크')).toBeDisabled()
     expect(form().getByText('정하늘님이 맡은 진행 중인 태스크가 없어요.')).toBeVisible()
     expect(form().getByText('재촉할 태스크를 골라 주세요.')).toBeVisible()
     expect(form().queryByRole('group', { name: '언제 보낼까요?' })).toBeNull()
   })
 
+  it('받는 사람 줄의 둘째 줄은 진행 중인 태스크 수이고, Discord 가 없으면 빨간 글씨로 알린다', async () => {
+    await openCompose()
+    await waitFor(() => expect(field('받는 사람')).toBeEnabled())
+    await userEvent.click(field('받는 사람'))
+    const members = within(await screen.findByRole('listbox'))
+    await waitFor(() =>
+      expect(members.getByRole('option', { name: startsWith('김서연') })).toHaveTextContent(
+        '진행 중 2개',
+      ),
+    )
+    expect(members.getByRole('option', { name: '김서연' })).toHaveAccessibleDescription(
+      '진행 중 2개',
+    )
+    const unlinked = members.getByText('Discord 미연결 · DM 이 나가지 않아요')
+    expect(unlinked).toHaveClass('text-accent')
+    expect(members.getByRole('option', { name: '이재환' })).toHaveAccessibleDescription(
+      'Discord 미연결 · DM 이 나가지 않아요',
+    )
+    // 고를 수는 있다 — 보낼 때 DM 이 실패로 남는다
+    expect(members.getByRole('option', { name: startsWith('이재환') })).not.toHaveAttribute(
+      'aria-disabled',
+    )
+  })
+
+  it('태스크 줄은 마감·상태를 보이고, 기한이 지났으면 빨간 글씨, 완료한 태스크는 고를 수 없다', async () => {
+    await openCompose()
+    await form().findByRole('combobox', { name: '받는 사람' })
+    await choose('받는 사람', '박민수')
+    await waitFor(() => expect(field('태스크')).toBeEnabled())
+    await userEvent.click(field('태스크'))
+    const rows = within(await screen.findByRole('listbox')).getAllByRole('option')
+    expect(rows.map((row) => row.textContent)).toEqual([
+      '회원가입 화면09/16 마감 · 기한 지남',
+      '회의록 요약 검수마감 없음 · 할 일',
+      '토큰 정리완료한 태스크는 재촉할 수 없어요',
+    ])
+    expect(within(rows[0]).getByText('09/16 마감 · 기한 지남')).toHaveClass('text-accent')
+    expect(rows[0]).toHaveAccessibleName('회원가입 화면')
+    expect(rows[0]).toHaveAccessibleDescription('09/16 마감 · 기한 지남')
+    expect(rows[1]).toHaveAccessibleDescription('마감 없음 · 할 일')
+    expect(rows[2]).toHaveAccessibleDescription('완료한 태스크는 재촉할 수 없어요')
+    expect(rows[2]).toHaveAttribute('aria-disabled', 'true')
+    await userEvent.click(rows[2])
+    expect(screen.getByRole('listbox')).toBeInTheDocument()
+  })
+
+  it('태스크가 8개를 넘으면 찾기 칸으로 거르고 골라 만든다', async () => {
+    const base = db.tasks.find(({ task_id }) => task_id === 'tk_06')!
+    for (let index = 1; index <= 8; index += 1)
+      db.tasks.push({
+        ...base,
+        task_id: `tk_9${String(index)}`,
+        title: `측정 보고 ${String(index)}`,
+      })
+    await openCompose()
+    await form().findByRole('combobox', { name: '받는 사람' })
+    await choose('받는 사람', '정하늘')
+    await waitFor(() => expect(field('태스크')).toBeEnabled())
+    await userEvent.click(field('태스크'))
+    const search = await screen.findByRole('combobox', { name: '태스크 찾기' })
+    await waitFor(() => expect(search).toHaveFocus())
+    expect(within(screen.getByRole('listbox')).getAllByRole('option')).toHaveLength(9)
+    await userEvent.keyboard('STT')
+    expect(within(screen.getByRole('listbox')).getAllByRole('option')).toHaveLength(1)
+    await userEvent.keyboard('{Enter}')
+    expect(field('태스크')).toHaveTextContent('STT 정확도 측정')
+    expect(await form().findByRole('group', { name: '언제 보낼까요?' })).toBeVisible()
+  })
+
   it('마감이 지난 태스크는 시각을 직접 골라야 만들 수 있다', async () => {
     await openCompose()
-    await chooseTask('박민수', '회원가입 화면 · 09/16 마감')
+    await chooseTask('박민수', '회원가입 화면')
     expect(await form().findByRole('radio', { name: /마감 하루 전.*지남/ })).toBeDisabled()
     expect(form().getByText('보낼 시각을 골라 주세요.')).toBeVisible()
     expect(submit()).toHaveAttribute('aria-disabled', 'true')
@@ -148,7 +229,7 @@ describe('메시지 화면의 새 재촉', () => {
       ),
     )
     const app = await openCompose()
-    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
+    await chooseTask('이재환', 'DB 스키마 정리')
     await form().findByRole('radio', { name: /마감 하루 전/, checked: true })
     await userEvent.click(submit())
 
@@ -167,13 +248,13 @@ describe('메시지 화면의 새 재촉', () => {
     )
     await openCompose()
     const bodies = recordRequestBodies('POST', REMINDERS_PATH)
-    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
+    await chooseTask('이재환', 'DB 스키마 정리')
     await form().findByRole('radio', { name: /마감 하루 전/, checked: true })
     await userEvent.click(submit())
     const alert = await form().findByRole('alert')
     expect(within(alert).getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
 
-    await chooseTask('김서연', '로그인 API 연동 · 09/20 마감')
+    await chooseTask('김서연', '로그인 API 연동')
     // 남은 다시 시도는 화면과 다른 사람·태스크로 만든다 — 입력을 바꾸면 지운다
     expect(form().queryByRole('alert')).toBeNull()
     await form().findByRole('radio', { name: /마감 하루 전/, checked: true })
@@ -194,7 +275,7 @@ describe('메시지 화면의 새 재촉', () => {
     )
     await openCompose()
     const bodies = recordRequestBodies('POST', REMINDERS_PATH)
-    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
+    await chooseTask('이재환', 'DB 스키마 정리')
     await form().findByRole('radio', { name: /마감 하루 전/, checked: true })
     await userEvent.click(submit())
     await form().findByRole('alert')
@@ -224,7 +305,7 @@ describe('메시지 화면의 새 재촉', () => {
 
     await waitFor(() => expect(form().getByRole('combobox', { name: '받는 사람' })).toBeEnabled())
     expect(form().queryByRole('alert')).toBeNull()
-    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
+    await chooseTask('이재환', 'DB 스키마 정리')
   })
 
   it('취소하면 목록으로 돌아간다', async () => {
@@ -246,8 +327,8 @@ describe('메시지 화면의 새 재촉', () => {
 describe('태스크 상세의 재촉', () => {
   async function openTask(taskId: string, title: string) {
     renderApp(paths.tasks('ws_01', taskId))
-    await screen.findByRole('heading', { level: 2, name: title })
-    return within(await screen.findByRole('region', { name: '재촉' }))
+    await screen.findByRole('heading', { level: 1, name: title })
+    return within(await screen.findByRole('region', { name: /진행 상황을 물어볼까요\?$/ }))
   }
 
   it('담당자에게 보낼 재촉을 만들면 폼을 접고 그 자리에 결과와 메시지 화면 링크를 알린다', async () => {
@@ -279,6 +360,17 @@ describe('태스크 상세의 재촉', () => {
         note: null,
       },
     ])
+  })
+
+  it('Discord 가 연결된 담당자에게는 미연결 안내 없이 마감 기준 시각을 골라 두고 바로 만들 수 있다', async () => {
+    const section = await openTask('tk_01', '로그인 API 연동')
+    await userEvent.click(section.getByRole('button', { name: '재촉 만들기' }))
+    expect(form().getByText('김서연')).toBeVisible()
+    expect(
+      await form().findByRole('radio', { name: '마감 하루 전09/19 09:00', checked: true }),
+    ).toBeInTheDocument()
+    expect(form().queryByText(/Discord가 연결되지 않아/)).toBeNull()
+    expect(submit()).not.toHaveAttribute('aria-disabled')
   })
 
   it('취소하면 폼을 접고 재촉 만들기로 포커스가 돌아간다', async () => {
@@ -315,9 +407,9 @@ describe('팀원에게는 진입점이 없다', () => {
   it('태스크 상세에 재촉 영역이 없다', async () => {
     setMockRole('member')
     renderApp(paths.tasks('ws_01', 'tk_03'))
-    await screen.findByRole('heading', { level: 2, name: 'DB 스키마 정리' })
+    await screen.findByRole('heading', { level: 1, name: 'DB 스키마 정리' })
     await screen.findByRole('region', { name: '변경 이력' })
-    expect(screen.queryByRole('region', { name: '재촉' })).toBeNull()
+    expect(screen.queryByRole('region', { name: /진행 상황을 물어볼까요\?$/ })).toBeNull()
     expect(screen.queryByRole('button', { name: '재촉 만들기' })).toBeNull()
   })
 })

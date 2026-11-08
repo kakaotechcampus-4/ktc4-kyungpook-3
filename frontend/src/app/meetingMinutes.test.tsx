@@ -7,12 +7,14 @@ import { paths } from '@/shared/config/routes'
 import { db, replaceDb } from '@/shared/mock/db'
 import { fail, list, ok } from '@/shared/mock/envelope'
 import { meetingSummaryFixtures } from '@/shared/mock/fixtures/meeting'
-import { completeMeeting, failMeeting } from '@/shared/mock/meetingFlow'
+import { completeMeeting, failMeeting, startChatMeeting } from '@/shared/mock/meetingFlow'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { AWAITING_MEETING_ID, createSpeakerScenarioDb } from '@/shared/mock/speakerScenarios'
+import { deferred } from '@/shared/test/deferred'
 import { recordRequests } from '@/shared/test/requests'
 import { NOTION_NOTE_FOR_MEMBER, NOTION_NOTE_FOR_PM } from '@/widgets/meeting-minutes'
+import { onTestFinished } from 'vitest'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -122,6 +124,8 @@ describe('목록과 기본 선택 (U5-1)', () => {
     const user = userEvent.setup()
     const app = renderApp(paths.meetings('ws_01'))
     await app.expectPath(MT_09)
+    // 목록은 로딩 자리의 최소 표시가 끝난 뒤 그려진다 (#508)
+    await within(meetingList()).findByRole('list', { name: '정리된 회의' })
 
     await user.click(within(minutesList()).getByRole('link', { name: /2주차 정기회의/ }))
     await app.expectPath(MT_07)
@@ -162,6 +166,20 @@ describe('상태 항목과 빈 상태 (U5-2)', () => {
     )
     expect(minutesRequests(log)).toEqual([])
     expect(extractionRequests(log)).toEqual([])
+  })
+
+  it('멈춘 채팅 회의(chat_stalled)를 직접 열면 다시 올리라고 하지 않는다 (#450)', async () => {
+    const chatId = startChatMeeting()
+    failMeeting(chatId, { failedStage: 'chat_stalled' })
+    renderApp(paths.meetings('ws_01', chatId))
+    expect(
+      await screen.findByRole('heading', { name: '채팅 대화를 정리하지 못했어요' }),
+    ).toBeInTheDocument()
+    expect(
+      within(detail()).getByText('채팅 대화를 정리하다 멈췄어요. 다음 수집 때 다시 정리해요.'),
+    ).toBeInTheDocument()
+    expect(within(detail()).queryByRole('link', { name: '다시 업로드' })).toBeNull()
+    expect(within(detail()).queryByText(/재업로드|다시 올려/)).toBeNull()
   })
 
   it('정리 중 회의는 진행 중 항목으로 처리 화면에 잇고, 정리된 회의에는 없다', async () => {
@@ -286,6 +304,26 @@ describe('회의록 상세 (U5-3)', () => {
     const tasks = await openTab(user, /추출된 일/)
     expect(await within(tasks).findByRole('link', { name: '로그인 API 연동' })).toBeInTheDocument()
     expect(within(tasks).getByText('담당 김서연 · 마감 9/20')).toBeInTheDocument()
+  })
+
+  it('직접 들어온 회의의 상세가 늦으면 목록은 보이고, 본문 자리는 스켈레톤이며 회의 제목이 없다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get('/api/v1/meetings/mt_09', async () => {
+        await gate.promise
+        return undefined
+      }),
+    )
+    renderApp(MT_09)
+
+    expect(await screen.findByTestId('minutes-detail-skeleton')).toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+    expect(await screen.findByRole('link', { name: /2주차 정기회의/ })).toBeInTheDocument()
+    expect(within(meetingList()).getByRole('link', { name: /2주차 정기회의/ })).toBeVisible()
+    expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
   })
 
   it('요약 null · 빈 전사문 · 참석자 없음 · 추출 결과 없음은 각각 빈 상태다 — 추출 요청을 보내지 않는다', async () => {
@@ -583,8 +621,10 @@ describe('범위 밖 액션과 안내 (U5-7, U5-8, U5-9)', () => {
       const tasks = await openTab(user, /추출된 일/)
 
       expect(within(tasks).getByText(note)).toBeInTheDocument()
-      expect(note).toContain('회의록과 확실한 태스크는')
-      if (role === 'pm') expect(note).toContain('확인이 필요한 일은 승인한 뒤 반영해요')
+      // Notion 은 선택이고 올라가는 것은 태스크뿐이다 (D-182)
+      expect(note).toContain('Notion을 연결했다면 확실한 태스크는 바로')
+      expect(note).not.toContain('회의록')
+      if (role === 'pm') expect(note).toContain('확인이 필요한 태스크는 승인한 뒤')
     },
   )
 
@@ -664,7 +704,7 @@ describe('채팅 회의 (#379)', () => {
     expect(applied).toHaveTextContent('09/11 18:40')
   })
 
-  it('정리 중인 채팅 회의는 처리 화면으로 잇지 않고 상태만 보인다', async () => {
+  it('정리 중인 채팅 회의도 처리 화면으로 잇는다 — 채팅 두 단계 처리 화면이 생겼다 (#483)', async () => {
     db.meetings.push({
       ...db.meetings[3],
       meeting_id: 'mt_21',
@@ -688,8 +728,11 @@ describe('채팅 회의 (#379)', () => {
     const row = within(inProgress).getByText('채팅 2026-09-19').closest('li')!
     expect(row).toHaveTextContent('채팅')
     expect(row).toHaveTextContent('정리 중')
-    expect(within(row).queryByRole('link')).toBeNull()
-    // 녹음 회의의 정리 중 항목은 그대로 처리 화면으로 잇는다
+    expect(within(row).getByRole('link')).toHaveAttribute(
+      'href',
+      paths.meetingProcessing('ws_01', 'mt_21'),
+    )
+    // 녹음 회의의 정리 중 항목도 그대로 처리 화면으로 잇는다
     expect(within(inProgress).getByRole('link', { name: /기획 논의 녹음/ })).toHaveAttribute(
       'href',
       paths.meetingProcessing('ws_01', 'mt_10'),

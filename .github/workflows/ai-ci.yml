@@ -22,7 +22,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libopus0
       - uses: astral-sh/setup-uv@v3
         with:
-          python-version: "3.12"
+          version: "0.13.7"
       - run: uv venv --python 3.12 .venv
       - run: uv pip install --python .venv/bin/python -r requirements.txt
       - run: .venv/bin/python -m pytest

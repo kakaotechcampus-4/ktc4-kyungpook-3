@@ -15,6 +15,7 @@ import type {
   TaskCreateEdits,
   TaskUpdateEdits,
 } from '@/entities/approval'
+import { memberAliasesQueryOptions } from '@/entities/member'
 import { taskDetailQueryOptions, taskHistoryQueryOptions, taskKeys } from '@/entities/task'
 import { captureSession } from '@/entities/user'
 import { errorMessage } from '@/shared/api/errorMessages'
@@ -59,13 +60,15 @@ export function toApprovalResolveProblem(error: unknown): ApprovalResolveProblem
 /**
  * 승인 뒤 서버와 맞출 캐시 (계획 §4-6). 승인 목록·상세, 태스크 목록·상세·이력, 그 공간의 추출.
  * 추출 key 는 `entities/extraction` 의 `['workspace', id, 'extractions', extractionId]` 다 — 승인에는 추출 ID 가 없어 공간 전체를 본다.
- * 회의록의 `확인 필요` 는 열린 승인 목록과 조인하므로 `approval_id` 가 남은 항목도 다시 받은 목록에서 빠진다
+ * 회의록의 `확인 필요` 는 열린 승인 목록과 조인하므로 `approval_id` 가 남은 항목도 다시 받은 목록에서 빠진다.
+ * 생성 승인은 `save_alias` 로 담당자의 별칭을 더할 수 있어 팀 화면의 별칭 목록도 다시 받는다 (#523)
  */
 function syncAfterResolve(queryClient: QueryClient, workspaceId: string): void {
   for (const queryKey of [
     workspaceKey(workspaceId, 'approvals'),
     taskKeys(workspaceId),
     workspaceKey(workspaceId, 'extractions'),
+    memberAliasesQueryOptions(workspaceId).queryKey,
   ])
     void queryClient.invalidateQueries({ queryKey })
 }
@@ -75,7 +78,8 @@ export interface ApprovalResolve {
   editCreate: (edits: TaskCreateEdits) => void
   editUpdate: (edits: TaskUpdateEdits) => void
   invalidateConfirmation: () => void
-  approve: (approval: Approval) => void
+  /** `edits` 를 주면 그 값을 보낸다 — 화면이 고친 값을 직접 쥐는 경우(확인 필요 상세). 없으면 `draft` 다 */
+  approve: (approval: Approval, edits?: ApprovalEdits | null) => void
   reapprove: (approval: Approval) => void
   reject: (approval: Approval) => void
   pending: boolean
@@ -157,7 +161,11 @@ export function useApprovalResolve(
   )
 
   const resolve = useCallback(
-    (approval: Approval, decision: ApprovalDecision, confirm = false) => {
+    (
+      approval: Approval,
+      decision: ApprovalDecision,
+      { confirm = false, given }: { confirm?: boolean; given?: ApprovalEdits | null } = {},
+    ) => {
       if (
         queryClient.isMutating({
           mutationKey: approvalResolveMutationKey(workspaceId, approvalId),
@@ -167,7 +175,11 @@ export function useApprovalResolve(
       const problem = toApprovalResolveProblem(error)
       if (confirm && (problem?.kind !== 'conflict' || variables?.revision !== revision.current))
         return
-      const edits = confirm ? (variables?.edits ?? null) : draftRef.current
+      const edits = confirm
+        ? (variables?.edits ?? null)
+        : given === undefined
+          ? draftRef.current
+          : given
       mutate({
         approval,
         decision,
@@ -192,8 +204,8 @@ export function useApprovalResolve(
     editCreate: (edits) => edit({ kind: 'task_create', values: edits }),
     editUpdate: (edits) => edit({ kind: 'task_update', values: edits }),
     invalidateConfirmation,
-    approve: (approval) => resolve(approval, 'approved'),
-    reapprove: (approval) => resolve(approval, 'approved', true),
+    approve: (approval, edits) => resolve(approval, 'approved', { given: edits }),
+    reapprove: (approval) => resolve(approval, 'approved', { confirm: true }),
     reject: (approval) => resolve(approval, 'rejected'),
     pending: isPending || inFlight,
     pendingDecision: isPending ? (variables?.decision ?? null) : null,

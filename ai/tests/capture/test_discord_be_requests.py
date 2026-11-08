@@ -27,7 +27,7 @@ LEGACY = [
     ('POST', '/meetings/m1/sources',
      '{"source": "meeting", "segments": [{"speaker": "1", "start": 0.0, "end": 2.0, "text": "w0.25 w0.75 w1.25 w1.75 w2.25", "seq": 1}, {"speaker": "2", "start": 5.0, "end": 8.0, "text": "w0.25 w0.75 w1.25 w1.75 w2.25 w2.75 w3.25", "seq": 2}, {"speaker": "1", "start": 10.0, "end": 12.0, "text": "w2.75 w3.25 w3.75 w4.25", "seq": 3}], "speaker_names": {"1": "민수", "2": "서연"}}'),
     ('POST', '/extractions',
-     '{"meeting_id": "m1", "workspace_id": "ws-1", "transcript_path": "<tmp>/transcripts/session_77_500.transcript.json", "model_name": "echo", "items": [{"task_title": "와이어프레임 그리기", "task_confidence": 0.0, "assignee_raw": null, "assignee_type": "first", "due_date": "2026-09-18", "due_raw": "내일", "due_confidence": 1.0, "evidence_quote": "w0.25 w0.75 w1.25 w1.75 w2.25", "evidence_speaker": "1", "evidence_at_ms": 0}]}'),
+     '{"meeting_id": "m1", "workspace_id": "ws-1", "transcript_path": "<tmp>/transcripts/session_77_500.transcript.json", "model_name": "echo", "items": [{"task_title": "와이어프레임 그리기", "task_confidence": 0.0, "assignee_raw": null, "assignee_type": "first", "due_date": "2026-09-18", "due_raw": "내일", "due_confidence": 1.0, "evidence_quote": "w0.25 w0.75 w1.25 w1.75 w2.25", "evidence_speaker": "1", "evidence_at_ms": 0, "evidence_seqs": [1]}]}'),
 ]
 JUDGE = [
     ('POST', '/meetings',
@@ -42,7 +42,7 @@ JUDGE = [
     ('POST', '/workspaces/ws-1/tasks/similar',
      '{"text": "로그인 화면 마감을 다음 주 화요일로 연기하기로 함"}'),
     ('POST', '/extractions',
-     '{"meeting_id": "m1", "workspace_id": "ws-1", "transcript_path": "<tmp>/transcripts/session_77_500.transcript.json", "model_name": "echo", "items": [{"action": "create", "target_task_id": null, "category": "decision", "task_title": "결제 환불 기능 구현", "due_date": "2026-10-11", "status": null, "assignee_type": "first", "assignee_raw": null, "doc_text": "결제 환불 기능 구현을 재환이 10/11까지 하기로 함", "evidence_quote": "네, 제가 맡을게요.", "evidence_speaker": "103", "evidence_at_ms": 7000, "task_status": "inferred", "due_status": "inferred", "due_raw": null, "similar_count": 0, "top_similarity": null}, {"action": "update", "target_task_id": "task_search", "category": "decision", "task_title": "검색 기능 성능 개선", "due_date": null, "status": "done", "assignee_type": null, "assignee_raw": null, "doc_text": "검색 기능 성능 개선 완료 (진행 중 → 완료)", "evidence_quote": "검색 성능 개선 어제 다 끝냈어요.", "evidence_speaker": "105", "evidence_at_ms": 12000, "target_snapshot": {"updated_at": "2026-09-27T01:00:00Z", "due_date": null, "status": "in_progress", "assignee_member_id": null, "title": "검색 기능 성능 개선"}}, {"action": "update", "target_task_id": "task_login", "category": "schedule", "task_title": "로그인 화면 시안 마무리", "due_date": "2026-10-06", "status": null, "assignee_type": null, "assignee_raw": null, "doc_text": "로그인 화면 시안 마무리 마감을 9/28에서 10/6으로 연기", "evidence_quote": "네, 알겠습니다.", "evidence_speaker": "105", "evidence_at_ms": 24000, "target_snapshot": {"updated_at": "2026-09-27T01:00:00Z", "due_date": "2026-09-28", "status": "in_progress", "assignee_member_id": null, "title": "로그인 화면 시안 마무리"}}]}'),
+     '{"meeting_id": "m1", "workspace_id": "ws-1", "transcript_path": "<tmp>/transcripts/session_77_500.transcript.json", "model_name": "echo", "items": [{"action": "create", "target_task_id": null, "category": "decision", "task_title": "결제 환불 기능 구현", "due_date": "2026-10-11", "status": null, "assignee_type": "first", "assignee_raw": null, "doc_text": "결제 환불 기능 구현을 재환이 10/11까지 하기로 함", "evidence_quote": "네, 제가 맡을게요.", "evidence_speaker": "103", "evidence_at_ms": 7000, "evidence_seqs": [1, 2], "task_status": "inferred", "due_status": "inferred", "due_raw": null, "similar_count": 0, "top_similarity": null}, {"action": "update", "target_task_id": "task_search", "category": "decision", "task_title": "검색 기능 성능 개선", "due_date": null, "status": "done", "assignee_type": null, "assignee_raw": null, "doc_text": "검색 기능 성능 개선 완료 (진행 중 → 완료)", "evidence_quote": "검색 성능 개선 어제 다 끝냈어요.", "evidence_speaker": "105", "evidence_at_ms": 12000, "evidence_seqs": [3], "target_snapshot": {"updated_at": "2026-09-27T01:00:00Z", "due_date": null, "status": "in_progress", "assignee_member_id": null, "title": "검색 기능 성능 개선"}}, {"action": "update", "target_task_id": "task_login", "category": "schedule", "task_title": "로그인 화면 시안 마무리", "due_date": "2026-10-06", "status": null, "assignee_type": null, "assignee_raw": null, "doc_text": "로그인 화면 시안 마무리 마감을 9/28에서 10/6으로 연기", "evidence_quote": "네, 알겠습니다.", "evidence_speaker": "105", "evidence_at_ms": 24000, "evidence_seqs": [4, 5], "target_snapshot": {"updated_at": "2026-09-27T01:00:00Z", "due_date": "2026-09-28", "status": "in_progress", "assignee_member_id": null, "title": "로그인 화면 시안 마무리"}}]}'),
 ]
 
 REPLACED = [
@@ -51,7 +51,7 @@ REPLACED = [
     ('PATCH', '/meetings/m1/end',
      None),
     ('POST', '/extractions',
-     '{"meeting_id": "m1", "workspace_id": "ws-1", "transcript_path": "<tmp>/transcripts/session_500.transcript.json", "model_name": "x", "items": [{"task_title": "와이어프레임 그리기", "task_confidence": 1.0, "assignee_raw": null, "assignee_type": "first", "due_date": "2026-09-25", "due_raw": "금요일까지", "due_confidence": 1.0, "evidence_quote": "제가 할게요.", "evidence_speaker": "103", "evidence_at_ms": 12000}]}'),
+     '{"meeting_id": "m1", "workspace_id": "ws-1", "transcript_path": "<tmp>/transcripts/session_500.transcript.json", "model_name": "x", "items": [{"task_title": "와이어프레임 그리기", "task_confidence": 1.0, "assignee_raw": null, "assignee_type": "first", "due_date": "2026-09-25", "due_raw": "금요일까지", "due_confidence": 1.0, "evidence_quote": "제가 할게요.", "evidence_speaker": "103", "evidence_at_ms": 12000, "evidence_seqs": [2]}]}'),
     ('POST', '/meetings',
      '{"workspace_id": "ws-1", "title": null, "source": "discord"}'),
     ('PATCH', '/meetings/m2/end',
@@ -59,7 +59,7 @@ REPLACED = [
     ('POST', '/meetings/m2/sources',
      '{"source": "meeting", "segments": [{"speaker": "101", "start": 3.0, "end": 5.0, "text": "와이어프레임은 누가 하죠?", "seq": 1}, {"speaker": "103", "start": 12.0, "end": 14.5, "text": "제가 할게요. 금요일까지요", "seq": 2}, {"speaker": "101", "start": 20.0, "end": 21.0, "text": "네", "seq": 3}, {"speaker": "103", "start": 25.0, "end": 26.0, "text": "네", "seq": 4}], "speaker_names": {"101": "민수", "103": "재환"}}'),
     ('POST', '/extractions',
-     '{"meeting_id": "m2", "workspace_id": "ws-1", "transcript_path": "<tmp>/transcripts/session_500.transcript.json", "model_name": "x", "items": [{"task_title": "와이어프레임 그리기", "task_confidence": 1.0, "assignee_raw": null, "assignee_type": "first", "due_date": "2026-09-25", "due_raw": "금요일까지", "due_confidence": 1.0, "evidence_quote": "제가 할게요.", "evidence_speaker": "103", "evidence_at_ms": 12000}]}'),
+     '{"meeting_id": "m2", "workspace_id": "ws-1", "transcript_path": "<tmp>/transcripts/session_500.transcript.json", "model_name": "x", "items": [{"task_title": "와이어프레임 그리기", "task_confidence": 1.0, "assignee_raw": null, "assignee_type": "first", "due_date": "2026-09-25", "due_raw": "금요일까지", "due_confidence": 1.0, "evidence_quote": "제가 할게요.", "evidence_speaker": "103", "evidence_at_ms": 12000, "evidence_seqs": [2]}]}'),
 ]
 
 

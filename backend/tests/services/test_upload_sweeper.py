@@ -236,6 +236,20 @@ def test_exactly_at_the_limit_is_not_swept_yet(db, ws):
     assert _state(db, waiting) == ("awaiting_speakers", None)
 
 
+def test_chat_meeting_is_swept_only_after_seven_hours(db, ws):
+    """채팅 회의는 /end 뒤 정확히 7시간까지 남기고, 넘기면 chat_stalled 로 정리한다(#449). 업로드 한도와 같은 now 주입으로 본다."""
+    meeting = Meeting(workspace_id=ws.workspace_id, source="chat", status="processing", ended_at=NOW - 7 * HOUR)
+    db.add(meeting)
+    db.commit()
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == []
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW + timedelta(seconds=1)) == [
+        (meeting.meeting_id, "chat_stalled")
+    ]
+    assert _state(db, meeting) == ("failed", "chat_stalled")
+
+
 def test_discord_and_ended_meetings_are_untouched(db, ws):
     old = NOW - 20 * DAY
     discord = _upload(db, ws, source="discord", row=False)

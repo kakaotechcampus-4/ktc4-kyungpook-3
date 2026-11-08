@@ -37,6 +37,9 @@ from shared.schemas import (
 # 문맥으로 풀린 이름(assignee_resolved)이 없으면 보내지 않는다 (capture/handoff.py 와 같은 규칙).
 _NOT_ALIAS_TYPES = {"second", "thirdpronoun", "thirdrole"}
 
+# 답장 판단(judge/reply.py)이 이 값으로 마감 지움을 알아본다
+DUE_CLEARED_REASON = "마감을 없애는 변경은 아직 보낼 수 없습니다(BE 는 null 을 '바꾸지 않음'으로 받음)."
+
 
 def _assignee(finding: JudgeFinding) -> tuple[str | None, str | None]:
     """(assignee_type, assignee_raw) — BE 가 member_id 로 해소할 값."""
@@ -59,6 +62,14 @@ def _evidence(finding: JudgeFinding, transcript: Transcript) -> dict[str, Any]:
         "evidence_speaker": finding.speaker,
         "evidence_at_ms": _evidence_at_ms(finding, transcript),
     }
+
+
+_MAX_EVIDENCE_SEQS = 100  # BE MAX_EVIDENCE_SEQS(schemas/meeting.py)와 같은 값. 넘으면 요청 전체가 400 이다
+
+
+def _evidence_seqs(seqs: list[int]) -> list[int]:
+    """BE 로 보낼 근거 발화 seq. 한 발화의 여러 문장은 seq 하나다. 넘치면 결론에 가까운 뒤쪽을 남긴다."""
+    return sorted(set(seqs))[-_MAX_EVIDENCE_SEQS:]
 
 
 def to_item(
@@ -93,6 +104,7 @@ def to_item(
         "assignee_raw": assignee_raw,
         "doc_text": drafted.doc_text,
         **_evidence(finding, transcript),
+        "evidence_seqs": _evidence_seqs(finding.seqs),
     }
     if result.is_new:
         return item
@@ -208,6 +220,10 @@ def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult
     if result.category == "assignee":
         card["assignee_type"], card["assignee_raw"] = _assignee(finding)
         card.update(_evidence(finding, transcript))
+    # 인계 때 화자가 비면(업로드의 외부 참석자 포함) BE 는 1인칭 담당자를 가장 큰 seq 의 화자로 찾는다. 담당과 상관없는 뒤 발화를
+    # 더하면 그 사람이 담당자가 된다. 여기서는 인계 때 화자가 남을지 몰라 1인칭 카드에는 더하지 않는다
+    if not (card["assignee_type"] == "first" and result.category != "assignee"):
+        card["evidence_seqs"] = _evidence_seqs(card["evidence_seqs"] + finding.seqs)
     # 합친 설명은 자르지 않는다 — DOC_TEXT_MAX 는 Luna 한 문장의 상한이고(BE doc_text 는 길이 제한 없음), 자르면
     # 맨 뒤에 붙은 최신 결정부터 잘린다(PR #206 리뷰)
     card["doc_text"] = f"{card['doc_text']} / {drafted.doc_text}"
@@ -231,6 +247,7 @@ class PipelineFailure:
     stage: str  # similar | judge | target | draft — 어느 단계에서 실패했나
     finding_text: str
     reason: str
+    task_id: str | None = None  # 대상을 고른 뒤 실패했으면 그 Task. 답장 판단이 줄을 그 태스크에 단다
 
 
 @dataclass
@@ -259,6 +276,7 @@ def run(
     workspace_id: str,
     today: date,
     candidates: CandidateSource,
+    judge_seq: int | None = None,
     context: Transcript | None = None,
     dates: dict[int, date] | None = None,
 ) -> PipelineResult:
@@ -271,16 +289,19 @@ def run(
 
     같은 회의에서 앞서 만든 카드는 다음 finding 의 후보로 보여 주고, Terra 가 고르면 새 카드 대신 합친다(#140).
     그래서 finding 은 회의 순서(seq)대로 판단한다 — 뒤에 말한 것이 앞을 덮어써야 한다.
+
+    judge_seq 를 주면 근거 마지막 줄이 그 seq 인 finding 만 판단한다. 앞 줄은 1단계의 문맥으로만 쓴다.
     """
     _check_llm_keys()
     # 실패하면 그대로 올린다 — finding 자체가 없다
     findings, dropped = extract_findings_counted(transcript, context=context)
     findings = sorted(findings, key=lambda f: float("inf") if f.seq is None else f.seq)
+    if judge_seq is not None:
+        findings = [f for f in findings if f.seq == judge_seq]
 
     out = PipelineResult(dropped=dropped)
     new_cards: list[dict[str, Any]] = []                         # 이번 회의 새 항목 카드
     edits: dict[str, tuple[NotionCandidate, dict[str, Any]]] = {}  # task_id → (DB 원래 후보, 수정 카드)
-    scoped: set[str] = set()  # 수정 카드에 범위 결정이 합쳐진 task_id — 필드가 다 되돌려져도 결정은 남는다
     for finding in findings:
         try:
             found = candidates.similar_tasks(workspace_id, finding.text)
@@ -321,7 +342,8 @@ def run(
         try:
             drafted = draft(finding, result, candidate=target, today=day)
         except DraftUnavailableError as e:
-            out.failures.append(PipelineFailure("draft", finding.text, str(e)))
+            failed_id = target.task_id if target is not None and not target.task_id.startswith(_PENDING) else None
+            out.failures.append(PipelineFailure("draft", finding.text, str(e), failed_id))
             continue
 
         task_id = target.task_id if target is not None else None
@@ -330,8 +352,7 @@ def run(
         if drafted.structured.due_cleared and (
                 task_id in edits and edits[task_id][0].due_date is not None
                 or task_id not in edits and not (task_id or "").startswith(_PENDING)):
-            out.failures.append(PipelineFailure(
-                "draft", finding.text, "마감을 없애는 변경은 아직 보낼 수 없습니다(BE 는 null 을 '바꾸지 않음'으로 받음)."))
+            out.failures.append(PipelineFailure("draft", finding.text, DUE_CLEARED_REASON, task_id))
             continue
         if task_id is not None and task_id.startswith(_PENDING):  # 이번 회의 새 항목 카드에 합친다
             _merge_into(new_cards[int(task_id[len(_PENDING):])], finding, result, drafted, base=None, today=day, found=found,
@@ -341,14 +362,12 @@ def run(
             base, card = edits[task_id]
             _merge_into(card, finding, result, drafted, base=base, today=day, found=found, transcript=transcript)
             if result.category == "scope":
-                scoped.add(task_id)
-            if not _has_change(card):
-                if card["category"] == "scope" or task_id in scoped:
-                    # 필드는 다 되돌려졌어도 범위 결정이 남았다 — scope 로 보내야 BE 가 필드 없는 결정으로 받는다
-                    card["category"] = "scope"
-                else:  # 되돌려서 바꿀 게 없다
-                    out.items = [i for i in out.items if i is not card]
-                    del edits[task_id]
+                # 합치는 순서와 상관없이 범위 결정이 남는다. 필드가 다 되돌려져도 BE 가 필드 없는 결정으로 받고,
+                # 답장 판단(judge/reply.py)은 run 이 주는 합친 카드에서 이 값으로만 범위 결정을 알아본다
+                card["category"] = "scope"
+            if not _has_change(card) and card["category"] != "scope":  # 되돌려서 바꿀 게 없다
+                out.items = [i for i in out.items if i is not card]
+                del edits[task_id]
             continue
 
         item = to_item(finding, result, drafted, target, transcript)

@@ -21,9 +21,14 @@ export const MOCK_DB_STORAGE_KEY = 'msw-db'
  * 11: 리마인드에 취소 시각(`cancelled_at`) 칸 추가 (#370). 마지막 태스크를 빼 닫힌 묶음이 함께 취소된 것만 돌려준다.
  * 12: 계정에 공간별 팀원 행(`memberIds`) 칸 추가 (#367). 공간을 만든 계정이 새 PM 행과 이어진다.
  * 13: 되돌릴 자동 막힘(`autoBlocks`) 칸 추가 (#365). 응답의 `auto_blocked` 를 이력이 아니라 이 기록으로 판정한다.
+ * 14: 리마인드 답장 판단(`replies`) 칸 추가 (#344). 태스크 고르기·태스크 기록·되돌리기가 이 기록을 읽는다.
+ * 15: Discord 연동에 회의 채팅 채널(`chat_channel`)과 모의 서버의 텍스트 채널(`discordChannels`) 칸 추가 (#429).
+ * 16: 로그인 시도 제한(`loginLimit`) 칸 추가 (#457).
+ * 17: 가입 인증·카카오 대기(#427)와 별칭 후보(#523)가 각 브랜치에서 같은 버전 번호를 사용했다.
+ * 18: 가입 인증·카카오 대기와 별칭 후보를 함께 저장한다. 서로 다른 17 저장본은 복원하지 않는다.
  * 올리면 e2e/restore.e2e.ts 와 src/shared/mock/taskScenarios.test.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
  */
-export const MOCK_DB_VERSION = 13
+export const MOCK_DB_VERSION = 18
 
 interface StoredDb {
   version: number
@@ -73,6 +78,16 @@ function isPasswordReset(value: unknown): boolean {
   )
 }
 
+function isSignupVerification(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isRecord(value.codes) &&
+    isRecord(value.proofs) &&
+    Array.isArray(value.outbox) &&
+    value.outbox.every((mail) => hasStrings(mail, ['to', 'code', 'sentAt']))
+  )
+}
+
 /**
  * 모양만 본다. 칸마다 시작 상태와 같은 종류(배열·객체·불리언)인지, 화면 흐름이 기대는 칸은
  * 필드까지 맞는지 확인한다. 하나라도 어긋나면 손상으로 본다.
@@ -106,10 +121,25 @@ function isMockDb(value: unknown): value is MockDb {
     state.members.every((member) => hasStrings(member, ['member_id', 'workspace_id'])) &&
     Object.values(state.integrations).every(
       (integration) =>
-        hasStrings(integration.discord, ['status']) && hasStrings(integration.notion, ['status']),
+        hasStrings(integration.discord, ['status']) &&
+        (integration.discord.chat_channel === null ||
+          hasStrings(integration.discord.chat_channel, ['channel_id', 'name'])) &&
+        hasStrings(integration.notion, ['status']),
+    ) &&
+    state.discordChannels.every((channel) =>
+      hasStrings(channel, ['channel_id', 'name', 'access']),
     ) &&
     isMeetingFlow(state.meetingFlow) &&
-    isPasswordReset(state.passwordReset)
+    isPasswordReset(state.passwordReset) &&
+    isSignupVerification(state.signupVerification) &&
+    (state.kakao.pending === null || hasStrings(state.kakao.pending, ['kakaoId'])) &&
+    Object.values(state.loginLimit).every(
+      (entry) =>
+        isRecord(entry) &&
+        typeof entry.failures === 'number' &&
+        typeof entry.windowStartedAt === 'number' &&
+        (entry.blockedUntil === null || typeof entry.blockedUntil === 'number'),
+    )
   )
 }
 

@@ -14,6 +14,8 @@ interface IconShape {
 const ICONS = {
   /** Main 팀 버튼 · 드롭다운 열기 */
   'chevron-down': { strokeWidth: 1.9, paths: <path d="m6 9 6 6 6-6" /> },
+  /** 접힌 정리 알약의 펼치기 (#424). chevron-down 을 뒤집었다 */
+  'chevron-up': { strokeWidth: 1.9, paths: <path d="m6 15 6-6 6 6" /> },
   /** Main · Landing 의 `확인하기` · `전부 보기` */
   'chevron-right': { strokeWidth: 2, paths: <path d="m9 6 6 6-6 6" /> },
   /** 온보딩 `이전 단계`. 캔버스에 없어 chevron-right 를 뒤집었다 */
@@ -54,17 +56,6 @@ const ICONS = {
         <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
         <circle cx="12" cy="12" r="3" />
         <path d="M4 4l16 16" />
-      </>
-    ),
-  },
-  /** Login·Signup 의 Google 버튼 */
-  globe: {
-    strokeWidth: 1.7,
-    paths: (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18Z" />
-        <path d="M3.5 9h17M3.5 15h17" />
       </>
     ),
   },
@@ -187,6 +178,29 @@ const ICONS = {
       <>
         <circle cx="12" cy="12" r="9" />
         <path d="M12 8v5M12 16h.01" />
+      </>
+    ),
+  },
+  /** 휴대폰 아래 탭 막대(PwaDashboard)의 다섯 탭 — 홈 · 회의록 · 태스크 · 메시지 · 팀 */
+  home: { strokeWidth: 1.7, paths: <path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z" /> },
+  minutes: {
+    strokeWidth: 1.7,
+    paths: (
+      <>
+        <rect x="5" y="3" width="14" height="18" rx="2" />
+        <path d="M9 8h6M9 12h6M9 16h3" />
+      </>
+    ),
+  },
+  tasks: { strokeWidth: 1.7, paths: <path d="M4 6h3M4 12h3M4 18h3M10 6h10M10 12h10M10 18h10" /> },
+  message: { strokeWidth: 1.7, paths: <path d="M4 5h16v11H9l-5 4z" /> },
+  team: {
+    strokeWidth: 1.7,
+    paths: (
+      <>
+        <circle cx="9" cy="9" r="3.5" />
+        <path d="M3 20c.8-3.4 3.2-5 6-5s5.2 1.6 6 5" />
+        <path d="M16 5.5a3 3 0 0 1 0 6M18 15c1.6.6 2.6 2.1 3 5" />
       </>
     ),
   },

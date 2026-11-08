@@ -1,5 +1,17 @@
-import type { BundleDto, MessageDto, ThreadSummaryDto } from '@/shared/types/api/message'
-import { toBundle, toCreatedReminder, toMessage, toMessageInbox, toMessageThread } from './mapper'
+import type {
+  BundleDto,
+  MessageDto,
+  ReminderDto,
+  ThreadSummaryDto,
+} from '@/shared/types/api/message'
+import {
+  toBundle,
+  toCreatedReminder,
+  toMessage,
+  toMessageInbox,
+  toMessageThread,
+  toReplyAttribution,
+} from './mapper'
 
 const botDto = (patch: Partial<MessageDto> = {}): MessageDto => ({
   message_id: 'mg_01',
@@ -25,6 +37,20 @@ const memberDto = (patch: Partial<MessageDto> = {}): MessageDto => ({
   ...patch,
 })
 
+const reminderDto = (patch: Partial<ReminderDto> = {}): ReminderDto => ({
+  reminder_id: 'rm_01',
+  bundle_id: 'bd_01',
+  task_id: 'tk_01',
+  task_title: 'API 명세서',
+  due_date: '2026-09-24',
+  note: null,
+  status: 'scheduled',
+  kind: 'nudge',
+  origin: 'scheduler',
+  created_at: '2026-09-15T00:00:00Z',
+  ...patch,
+})
+
 const bundleDto = (patch: Partial<BundleDto> = {}): BundleDto => ({
   bundle_id: 'bd_01',
   thread_id: 'th_01',
@@ -38,19 +64,12 @@ const bundleDto = (patch: Partial<BundleDto> = {}): BundleDto => ({
   body_source: 'ai',
   draft_status: 'done',
   draft_version: 2,
+  summary: 'API 명세서 진행 상황 확인',
   reminders: [
-    {
-      reminder_id: 'rm_01',
-      bundle_id: 'bd_01',
-      task_id: 'tk_01',
-      task_title: 'API 명세서',
-      due_date: '2026-09-24',
-      note: null,
-      status: 'scheduled',
-      kind: 'nudge',
-      origin: 'scheduler',
-      created_at: '2026-09-15T00:00:00Z',
-    },
+    reminderDto({
+      reason: "'API 명세서' 마감이 9/24(목)인데, 9/16(수) 이후로 진행 소식이 없어요.",
+      evidence: { kind: 'reply', at: '2026-09-16T06:00:00Z', message_id: 'mg_02' },
+    }),
   ],
   ...patch,
 })
@@ -105,6 +124,7 @@ it('묶음의 단계는 status·approved 에서, 초안 대기는 draft_status �
     bodySource: 'ai',
     drafting: false,
     draftVersion: 2,
+    summary: 'API 명세서 진행 상황 확인',
     tasks: [
       {
         reminderId: 'rm_01',
@@ -112,6 +132,8 @@ it('묶음의 단계는 status·approved 에서, 초안 대기는 draft_status �
         title: 'API 명세서',
         dueDate: '2026-09-24',
         note: null,
+        reason: "'API 명세서' 마감이 9/24(목)인데, 9/16(수) 이후로 진행 소식이 없어요.",
+        evidence: { kind: 'reply', at: '2026-09-16T06:00:00Z', messageId: 'mg_02' },
       },
     ],
   })
@@ -127,6 +149,60 @@ it('묶음의 단계는 status·approved 에서, 초안 대기는 draft_status �
     bundles: [],
     threads: [],
   })
+})
+
+it('재촉 이유의 근거는 답장이면 메시지 ID 를, 태스크 변경이면 시각만 갖는다. 없거나 지운 태스크면 null 이다', () => {
+  const tasksOf = (reminders: ReminderDto[]) => toBundle(bundleDto({ reminders }))?.tasks
+  expect(
+    tasksOf([
+      reminderDto({
+        reason: '9/16(수)에 태스크를 만든 뒤로 진행 소식이 없어요.',
+        evidence: { kind: 'task_change', at: '2026-09-17T01:00:00Z', message_id: null },
+      }),
+      reminderDto({ reason: '9/16(수)에 태스크를 만든 뒤로 진행 소식이 없어요.', evidence: null }),
+      reminderDto({
+        task_id: null,
+        task_title: null,
+        due_date: null,
+        reason: null,
+        evidence: null,
+      }),
+    ]),
+  ).toMatchObject([
+    {
+      reason: '9/16(수)에 태스크를 만든 뒤로 진행 소식이 없어요.',
+      evidence: { kind: 'taskChange', at: '2026-09-17T01:00:00Z' },
+    },
+    { reason: '9/16(수)에 태스크를 만든 뒤로 진행 소식이 없어요.', evidence: null },
+    { title: null, reason: null, evidence: null },
+  ])
+  // 메시지 ID 없는 답장 근거는 이동할 곳이 없다 — 이유 문장만 남기고 근거를 뺀다
+  expect(
+    tasksOf([
+      reminderDto({
+        reason: '9/5(토) 이후로 진행 소식이 없어요.',
+        evidence: { kind: 'reply', at: '2026-09-05T01:00:00Z', message_id: null },
+      }),
+    ]),
+  ).toMatchObject([{ reason: '9/5(토) 이후로 진행 소식이 없어요.', evidence: null }])
+})
+
+it('#418 이전 서버처럼 요약·이유·근거 칸이 없으면 요약은 태스크 제목으로 줄이고 이유·근거는 null 이다', () => {
+  const legacy = (reminders: ReminderDto[]) => {
+    const dto = bundleDto({ reminders })
+    delete dto.summary
+    return toBundle(dto)
+  }
+  expect(legacy([reminderDto()])).toMatchObject({
+    summary: 'API 명세서',
+    tasks: [{ reason: null, evidence: null }],
+  })
+  expect(
+    legacy([
+      reminderDto({ task_id: null, task_title: null, due_date: null }),
+      reminderDto({ reminder_id: 'rm_02', task_title: '발표 자료' }),
+    ])?.summary,
+  ).toBe('지워진 태스크 외 1건')
 })
 
 it('승인한 묶음에 승인 시각이 없으면 던진다', () => {
@@ -179,9 +255,44 @@ it('대화는 요약·메시지·예정 묶음이다 — 팀원의 bundles null 
 it('만든 재촉은 리마인드 ID 와 그것이 든 예정 묶음이고, 묶음이 예정이 아니면 계약 위반으로 던진다', () => {
   const dto = bundleDto()
   const created = toCreatedReminder({ reminder: dto.reminders[0], bundle: dto })
+  expect(created.bundle.summary).toBe('API 명세서 진행 상황 확인')
   expect(created.reminderId).toBe('rm_01')
   expect(created.bundle).toMatchObject({ id: 'bd_01', stage: 'awaitingApproval', draftVersion: 2 })
   expect(() =>
     toCreatedReminder({ reminder: dto.reminders[0], bundle: bundleDto({ status: 'cancelled' }) }),
   ).toThrow('bd_01')
+})
+
+describe('toReplyAttribution', () => {
+  it('PM 이 고를 답장은 후보를, 고른 답장은 고른 태스크를 쓴다. 해당 없음은 null 이다', () => {
+    expect(
+      toReplyAttribution({
+        message_id: 'mg_05',
+        status: 'needs_pm',
+        candidates: [
+          { task_id: 'tk_02', title: '회원가입 화면' },
+          { task_id: 'tk_05', title: '회의록 요약 검수' },
+        ],
+        task: null,
+      }),
+    ).toEqual({
+      messageId: 'mg_05',
+      kind: 'needsPick',
+      candidates: [
+        { id: 'tk_02', title: '회원가입 화면' },
+        { id: 'tk_05', title: '회의록 요약 검수' },
+      ],
+    })
+    expect(
+      toReplyAttribution({
+        message_id: 'mg_05',
+        status: 'resolved',
+        candidates: null,
+        task: { task_id: 'tk_02', title: '회원가입 화면' },
+      }),
+    ).toEqual({ messageId: 'mg_05', kind: 'picked', task: { id: 'tk_02', title: '회원가입 화면' } })
+    expect(
+      toReplyAttribution({ message_id: 'mg_05', status: 'resolved', candidates: null, task: null }),
+    ).toEqual({ messageId: 'mg_05', kind: 'picked', task: null })
+  })
 })

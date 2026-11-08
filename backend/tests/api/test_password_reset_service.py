@@ -9,6 +9,7 @@ from app.core.errors import AppError, ErrorCode
 from app.models import PasswordResetToken, Session as SessionModel, User
 from app.services import messages, password_reset as svc
 from app.services.passwords import hash_password, verify_password
+from app.services.sessions import hash_session_token
 
 NOW = datetime(2026, 11, 5, 0, 0, tzinfo=timezone.utc)
 BASE = "https://mm.example"
@@ -126,7 +127,7 @@ def test_verify_reasons(mdb):
 def test_confirm_changes_password_and_deletes_sessions(mdb):
     user = _user(mdb)
     for i in range(2):
-        mdb.add(SessionModel(user_id=user.user_id, session_token=f"tok{i}", expires_at=NOW + timedelta(days=1)))
+        mdb.add(SessionModel(user_id=user.user_id, session_token=hash_session_token(f"tok{i}"), expires_at=NOW + timedelta(days=1)))
     mdb.commit()
     raw = _raw(_request(mdb))
     svc.confirm_reset(mdb, raw, "new-pass-1", now=NOW + timedelta(minutes=1))

@@ -72,6 +72,28 @@ def test_sentence_said_by_two_speakers_leaves_the_speaker_empty():
     assert H.to_extraction_items([_task(source_sentence="")], TRANSCRIPT)[0]["evidence_speaker"] is None
 
 
+def test_legacy_item_carries_the_seq_of_the_located_sentence():
+    transcript = {"segments": [
+        {"speaker": "a", "start": 1.0, "end": 2.0, "text": "환불 기능 만들어요.", "seq": 7},
+        {"speaker": "b", "start": 3.0, "end": 4.0, "text": "네 좋아요.", "seq": 8},
+    ]}
+
+    [item] = H.to_extraction_items([{"task": "환불", "source_sentence": "환불 기능 만들어요."}], transcript)
+
+    assert item["evidence_seqs"] == [7]
+
+
+def test_legacy_item_has_no_seq_when_the_speaker_is_unknown():
+    transcript = {"segments": [
+        {"speaker": "a", "start": 1.0, "end": 2.0, "text": "네 좋아요.", "seq": 7},
+        {"speaker": "b", "start": 3.0, "end": 4.0, "text": "네 좋아요.", "seq": 8},
+    ]}
+
+    [item] = H.to_extraction_items([{"task": "환불", "source_sentence": "네 좋아요."}], transcript)
+
+    assert item["evidence_seqs"] == []
+
+
 def test_register_calls_create_end_extraction_in_order(tmp_path):
     fake = FakeBe()
     m, tdir = _manifest(tmp_path)
@@ -1408,3 +1430,36 @@ def test_create_meeting_sends_started_at():
     assert fake.calls[-1][2]["started_at"] == at.isoformat() and fake.calls[-1][2]["source"] == "chat"
     _client(fake).create_meeting("ws-1")
     assert "started_at" not in fake.calls[-1][2]
+
+
+def test_chat_channels_returns_items_with_service_token():
+    fake = FakeBe()
+    fake.chat_channels = [{"workspace_id": "ws-1", "guild_id": "900", "channel_id": "1"}]
+    client = H.BeClient("http://be.local", session=fake, service_token="svc-token")
+    assert client.chat_channels() == fake.chat_channels
+    assert fake.calls[-1] == ("GET", "/bot/chat-channels", None)
+    assert fake.headers[-1] == {"X-Service-Token": "svc-token"}
+
+
+def test_chat_channels_without_items_is_bad_response():
+    fake = FakeBe()
+    fake.chat_channels = None      # FakeBe 가 {"data": {}} 를 준다
+    client = H.BeClient("http://be.local", session=fake, service_token="svc-token")
+    with pytest.raises(H.BeError) as e:
+        client.chat_channels()
+    assert e.value.code == "BAD_RESPONSE"
+
+
+def test_chat_channels_non_dict_item_is_bad_response():
+    fake = FakeBe()
+    fake.chat_channels = ["x"]
+    client = H.BeClient("http://be.local", session=fake, service_token="svc-token")
+    with pytest.raises(H.BeError) as e:
+        client.chat_channels()
+    assert e.value.code == "BAD_RESPONSE"
+
+
+def test_chat_channels_wrong_token_is_unauthenticated():
+    with pytest.raises(H.BeError) as e:
+        H.BeClient("http://be.local", session=FakeBe(), service_token="틀린 토큰").chat_channels()
+    assert e.value.code == "UNAUTHENTICATED" and e.value.status == 401

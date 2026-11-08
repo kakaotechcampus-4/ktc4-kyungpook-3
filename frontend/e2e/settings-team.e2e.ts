@@ -1,13 +1,13 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
-import { expectNoHorizontalOverflow, finishOAuth, start } from './support'
+import { capture, expectNoHorizontalOverflow, finishOAuth, start } from './support'
 
 /*
  * M8-B — 설정에서 온보딩 때 건너뛴 Discord 를 연결한다 (D-011). 모의 OAuth 는 현재 탭 이동이다 (D-158).
  * 연결이 확인되면 팀 화면의 팀원 연결 창으로 간다 (D-074).
  * settings-discord-skipped 는 ws_03 이 온보딩을 마쳤고 Discord·팀원 연결을 건너뛰었다. Notion 만 연결돼 있다.
  * 브라우저에서만 볼 수 있는 것만 둔다 — 현재 탭 OAuth 왕복과 새로고침 뒤 상태, 너비·키보드.
- * 취소·실패·재조회 불일치·조회 오류·일반 팀원은 app/settingsConnections.test.tsx 와 Discord 영역 스토리가 본다
+ * 취소·실패·재조회 불일치·조회 오류·일반 팀원은 app/settingsConnections.test.tsx 가 본다
  */
 
 const SETTINGS = '/workspaces/ws_03/settings'
@@ -17,6 +17,13 @@ const TEAM = '/workspaces/ws_03/members'
 const FIRST_PAINT = { timeout: 15_000 }
 
 const discordArea = (page: Page) => page.getByTestId('discord-connection')
+
+/** 회의 채팅 채널 상자를 키보드로 열고 줄을 고른다. 목록은 포털이라 카드 밖에 뜬다 */
+async function pick(page: Page, label: string) {
+  await discordArea(page).getByLabel('회의 채팅 채널').press('Enter')
+  await page.getByRole('listbox').getByRole('option', { name: label }).click()
+  await expect(page.getByRole('listbox')).toHaveCount(0)
+}
 
 /** 온보딩 단계 저장(`PATCH .../onboarding`)을 센다. 설정의 연결은 단계를 저장하지 않는다 (D-173) */
 function countOnboardingSaves(page: Page): () => number {
@@ -60,6 +67,44 @@ test('PM 이 설정에서 Discord 를 연결하면 팀원 연결 창으로 가�
   await expect(discordArea(page).getByText('연결됨', { exact: true })).toBeVisible(FIRST_PAINT)
   await expect(page.getByText('Discord가 연결되지 않아 웹으로만 알려요')).toBeVisible()
   expect(onboardingSaves()).toBe(0)
+})
+
+test('PM 이 회의 채팅 채널을 고르면 저장 전에 안내를 보고, 봇이 못 읽는 채널은 고칠 방법을 알리며, 저장한 채널은 새로고침 뒤에도 남는다 (#429)', async ({
+  page,
+}, testInfo) => {
+  await start(page, 'single-workspace', '/workspaces/ws_01/settings')
+  const area = discordArea(page)
+  const field = area.getByLabel('회의 채팅 채널')
+  await expect(field).toBeEnabled(FIRST_PAINT)
+  await expect(field).toHaveText('사용 안 함')
+
+  await pick(page, '#운영-비공개')
+  await expect(
+    area.getByText('이 채널 대화는 매일 09:00에 읽혀 task 제안에 쓰여요.', { exact: false }),
+  ).toBeVisible()
+  await area.getByRole('button', { name: '저장' }).click()
+  await expect(
+    area.getByText('봇이 이 채널을 읽을 수 없어요. Discord 채널 설정의 권한에 봇을 추가해 주세요.'),
+  ).toBeVisible()
+  await capture(page, testInfo, 'chat-channel-need-read.png')
+
+  await pick(page, '#일반')
+  await expect(area.getByText('봇이 이 채널을 읽을 수 없어요.', { exact: false })).toHaveCount(0)
+  await area.getByRole('button', { name: '저장' }).click()
+  await expect(
+    page.getByTestId('toast-dock').getByText('회의 채팅 채널을 저장했어요.'),
+  ).toBeVisible()
+  await expect(area.getByRole('button', { name: '저장' })).toHaveCount(0)
+  await capture(page, testInfo, 'chat-channel-saved.png')
+
+  await page.reload()
+  await expect(discordArea(page).getByLabel('회의 채팅 채널')).toHaveText('#일반', FIRST_PAINT)
+  await discordArea(page).getByRole('button', { name: '연결 끊기' }).click()
+  const confirm = page.getByRole('dialog', { name: 'Discord 연결을 끊을까요?' })
+  await expect(
+    confirm.getByText('회의 채팅 채널(#일반) 수집도 함께 꺼져요.', { exact: false }),
+  ).toBeVisible()
+  await capture(page, testInfo, 'chat-channel-disconnect-confirm.png')
 })
 
 for (const width of [1024, 1440, 1920]) {

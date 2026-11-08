@@ -246,6 +246,7 @@ def test_llm_path_uses_summary_as_text_and_keeps_raw_sentence_as_evidence():
             indices=[1],
             source="meeting",
             seq=6,
+            seqs=[6],
             speaker="mem_jimin",
             reason="일정 변경 합의",
             method="llm",

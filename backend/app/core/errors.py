@@ -22,6 +22,7 @@ class ErrorCode(StrEnum):
     APPROVAL_NOT_FOUND = "APPROVAL_NOT_FOUND"
     APPROVAL_ALREADY_RESOLVED = "APPROVAL_ALREADY_RESOLVED"
     APPROVAL_CONFLICT = "APPROVAL_CONFLICT"
+    APPROVAL_CHANGED = "APPROVAL_CHANGED"
     NOTION_WRITE_FAILED = "NOTION_WRITE_FAILED"
     WORKSPACE_NOT_FOUND = "WORKSPACE_NOT_FOUND"
     WORKSPACE_MISMATCH = "WORKSPACE_MISMATCH"
@@ -77,9 +78,23 @@ class ErrorCode(StrEnum):
     PM_MEMBER_NOT_INVITABLE = "PM_MEMBER_NOT_INVITABLE"
     MEMBER_HAS_PENDING_INVITATION = "MEMBER_HAS_PENDING_INVITATION"
 
+    # 리마인드 답장 판단
+    REPLY_JUDGMENT_NOT_FOUND = "REPLY_JUDGMENT_NOT_FOUND"
+    REPLY_JUDGMENT_STALE = "REPLY_JUDGMENT_STALE"
+    REPLY_ATTRIBUTION_NOT_NEEDED = "REPLY_ATTRIBUTION_NOT_NEEDED"
+    REPLY_CHANGE_NOT_UNDOABLE = "REPLY_CHANGE_NOT_UNDOABLE"
     # 비밀번호 재설정
     PASSWORD_RESET_TOKEN_INVALID = "PASSWORD_RESET_TOKEN_INVALID"
     MAIL_UNAVAILABLE = "MAIL_UNAVAILABLE"
+
+    # 가입 이메일 인증·카카오 로그인
+    SIGNUP_CODE_RATE_LIMITED = "SIGNUP_CODE_RATE_LIMITED"
+    SIGNUP_CODE_INVALID = "SIGNUP_CODE_INVALID"
+    SIGNUP_VERIFICATION_INVALID = "SIGNUP_VERIFICATION_INVALID"
+    KAKAO_LINK_EXPIRED = "KAKAO_LINK_EXPIRED"
+    KAKAO_ALREADY_LINKED = "KAKAO_ALREADY_LINKED"
+    # 로그인 시도 제한
+    TOO_MANY_LOGIN_ATTEMPTS = "TOO_MANY_LOGIN_ATTEMPTS"
 
 
 ERROR_STATUS: dict[ErrorCode, int] = {
@@ -98,6 +113,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.APPROVAL_NOT_FOUND: 404,
     ErrorCode.APPROVAL_ALREADY_RESOLVED: 409,
     ErrorCode.APPROVAL_CONFLICT: 409,
+    ErrorCode.APPROVAL_CHANGED: 409,
     ErrorCode.NOTION_WRITE_FAILED: 502,
     ErrorCode.WORKSPACE_NOT_FOUND: 404,
     ErrorCode.WORKSPACE_MISMATCH: 400,
@@ -146,8 +162,18 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.EMAIL_ALREADY_INVITED: 409,
     ErrorCode.PM_MEMBER_NOT_INVITABLE: 409,
     ErrorCode.MEMBER_HAS_PENDING_INVITATION: 409,
+    ErrorCode.REPLY_JUDGMENT_NOT_FOUND: 404,
+    ErrorCode.REPLY_JUDGMENT_STALE: 409,
+    ErrorCode.REPLY_ATTRIBUTION_NOT_NEEDED: 409,
+    ErrorCode.REPLY_CHANGE_NOT_UNDOABLE: 409,
     ErrorCode.PASSWORD_RESET_TOKEN_INVALID: 400,
     ErrorCode.MAIL_UNAVAILABLE: 503,
+    ErrorCode.SIGNUP_CODE_RATE_LIMITED: 429,
+    ErrorCode.SIGNUP_CODE_INVALID: 400,
+    ErrorCode.SIGNUP_VERIFICATION_INVALID: 400,
+    ErrorCode.KAKAO_LINK_EXPIRED: 400,
+    ErrorCode.KAKAO_ALREADY_LINKED: 409,
+    ErrorCode.TOO_MANY_LOGIN_ATTEMPTS: 429,
 }
 
 ERROR_MESSAGE: dict[ErrorCode, str] = {
@@ -166,6 +192,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.APPROVAL_NOT_FOUND: "해당 승인 요청을 찾을 수 없습니다.",
     ErrorCode.APPROVAL_ALREADY_RESOLVED: "이미 처리된 승인 요청입니다.",
     ErrorCode.APPROVAL_CONFLICT: "제안 이후 task가 바뀌었습니다. 지금 값을 확인한 뒤 다시 승인해 주세요.",
+    ErrorCode.APPROVAL_CHANGED: "보신 뒤 승인 요청 내용이 바뀌었습니다. 새 내용을 확인한 뒤 다시 처리해 주세요.",
     ErrorCode.NOTION_WRITE_FAILED: "Notion 반영에 실패했습니다.",
     ErrorCode.WORKSPACE_NOT_FOUND: "해당 워크스페이스를 찾을 수 없습니다.",
     ErrorCode.WORKSPACE_MISMATCH: "요청한 워크스페이스가 대상 리소스의 워크스페이스와 다릅니다.",
@@ -214,8 +241,18 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.EMAIL_ALREADY_INVITED: "이 이메일로 다른 팀원에게 보낸 초대가 대기 중입니다.",
     ErrorCode.PM_MEMBER_NOT_INVITABLE: "PM 인 팀원은 초대할 수 없습니다. 팀원으로 바꿔 초대하고, 수락한 뒤 PM 으로 바꿔 주세요.",
     ErrorCode.MEMBER_HAS_PENDING_INVITATION: "대기 중인 초대가 있어 PM 으로 바꿀 수 없습니다. 초대를 수락한 뒤 바꾸거나 초대를 취소해 주세요.",
+    ErrorCode.REPLY_JUDGMENT_NOT_FOUND: "해당 답장의 판단 기록을 찾을 수 없습니다.",
+    ErrorCode.REPLY_JUDGMENT_STALE: "이미 끝났거나 다시 맡긴 판단입니다.",
+    ErrorCode.REPLY_ATTRIBUTION_NOT_NEEDED: "태스크를 고를 필요가 없는 답장입니다.",
+    ErrorCode.REPLY_CHANGE_NOT_UNDOABLE: "되돌릴 수 없는 답장 변경입니다.",
     ErrorCode.PASSWORD_RESET_TOKEN_INVALID: "쓸 수 없는 재설정 링크입니다.",
     ErrorCode.MAIL_UNAVAILABLE: "지금은 메일을 보낼 수 없습니다.",
+    ErrorCode.SIGNUP_CODE_RATE_LIMITED: "인증 코드를 너무 자주 요청했습니다. 잠시 후 다시 시도해 주세요.",
+    ErrorCode.SIGNUP_CODE_INVALID: "인증 코드가 맞지 않습니다.",
+    ErrorCode.SIGNUP_VERIFICATION_INVALID: "이메일 인증이 필요합니다. 인증을 다시 진행해 주세요.",
+    ErrorCode.KAKAO_LINK_EXPIRED: "카카오 로그인 정보가 만료됐습니다. 카카오로 다시 시작해 주세요.",
+    ErrorCode.KAKAO_ALREADY_LINKED: "이미 다른 계정에 연결된 카카오 계정입니다.",
+    ErrorCode.TOO_MANY_LOGIN_ATTEMPTS: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
 }
 
 
@@ -243,8 +280,10 @@ class AppError(Exception):
         code: ErrorCode,
         message: str | None = None,
         details: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.code = code
+        self.headers = headers
         self.message = message or ERROR_MESSAGE.get(code, "오류가 발생했습니다.")
         self.details = details
         self.status_code = ERROR_STATUS.get(code, 500)

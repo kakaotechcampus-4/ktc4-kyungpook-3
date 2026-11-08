@@ -2,7 +2,7 @@ import { http } from 'msw'
 import { db } from '../db'
 import { ok, list, fail } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
-import { readJson } from '../utils'
+import { nextId, readJson } from '../utils'
 import { requireAuth, requireMember, requirePm } from '../auth-guard'
 import {
   createTask,
@@ -16,9 +16,42 @@ import {
   validDate,
   addHistory,
 } from '../task-state'
+import { aliasCandidateOf, aliasFieldsOf } from '../aliasLearning'
+import { linkApprovalHistory } from '../reply-state'
 import type { ApprovalDto } from '@/shared/types/api/approval'
 
 type Failure = ReturnType<typeof fail>
+
+/** 별칭 후보는 저장값이 아니라 응답마다 지금 상태로 구한다 (#523, `aliasLearning`) */
+function approvalResponse(approval: ApprovalDto): ApprovalDto {
+  return { ...approval, ...aliasFieldsOf(approval) }
+}
+
+/**
+ * 승인으로 만든 태스크의 담당자(보완 값 포함)에게 별칭을 단다. 값은 백엔드가 배운 별칭과 같다.
+ * 미정이거나 그 팀원이 이미 가졌으면 넘어간다
+ */
+function learnAlias(approval: ApprovalDto, text: string): void {
+  const memberId = db.tasks.find(
+    ({ task_id }) => task_id === approval.related_task_id,
+  )?.assignee_member_id
+  if (!memberId) return
+  if (db.aliases.some((alias) => alias.member_id === memberId && alias.alias_text === text)) return
+  db.aliases.push({
+    alias_id: nextId(
+      'al',
+      db.aliases.map(({ alias_id }) => alias_id),
+    ),
+    member_id: memberId,
+    workspace_id: approval.workspace_id,
+    alias_text: text,
+    alias_type: 'nickname',
+    source: 'learned',
+    confidence: 0.9,
+    verified: true,
+    created_at: MOCK_NOW,
+  })
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -33,11 +66,22 @@ function historyText(value: unknown): string | null {
   return typeof value === 'string' ? value : (JSON.stringify(value) ?? null)
 }
 
+/** 담당자 줄이 있는 답장 카드만 담당자를 받는다. 담당자를 찾은 카드도 받는다 (BE #460) */
+function takesAssignee(approval: ApprovalDto): boolean {
+  return (
+    approval.type === 'task_update' &&
+    db.replies.changes.some(
+      ({ approval_id, field }) => approval_id === approval.approval_id && field === 'assignee',
+    )
+  )
+}
+
 function normalizeOverrides(
-  type: string,
+  approval: ApprovalDto,
   status: unknown,
   value: unknown,
 ): Record<string, unknown> | Failure {
+  const type = approval.type
   if (value === undefined || value === null) return {}
   if (!isRecord(value)) return fail('INVALID_REQUEST', '보완 값이 올바르지 않습니다.', 400)
   if (Object.keys(value).length === 0) return {}
@@ -45,7 +89,7 @@ function normalizeOverrides(
     type === 'task_create'
       ? ['task_title', 'assignee_member_id', 'due_date']
       : type === 'task_update'
-        ? ['status', 'due_date']
+        ? ['status', 'due_date', ...(takesAssignee(approval) ? ['assignee_member_id'] : [])]
         : []
   if (status !== 'approved' || Object.keys(value).some((field) => !allowed.includes(field)))
     return fail('INVALID_REQUEST', '이 요청에서 고칠 수 없는 필드입니다.', 400)
@@ -304,7 +348,8 @@ export const approvalHandlers = [
             approval.workspace_id === workspaceId &&
             (status === null || approval.status === status),
         )
-        .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)),
+        .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+        .map(approvalResponse),
     )
   }),
   http.get('/api/v1/approvals/:approvalId', ({ params }) => {
@@ -312,7 +357,7 @@ export const approvalHandlers = [
     if (unauthenticated) return unauthenticated
     const approval = db.approvals.find(({ approval_id }) => approval_id === params.approvalId)
     if (!approval) return fail('APPROVAL_NOT_FOUND', '승인 요청이 없습니다.', 404)
-    return requireMember(approval.workspace_id) ?? ok(approval)
+    return requireMember(approval.workspace_id) ?? ok(approvalResponse(approval))
   }),
   /*
    * 백엔드 resolve_approval 과 같은 순서다. 인증 → 본문 → 승인 존재 → PM(403) → 대기 중인지(409) → 반영.
@@ -329,20 +374,23 @@ export const approvalHandlers = [
         confirm === undefined ||
         confirm === null ||
         (typeof confirm === 'number' && Number.isInteger(confirm) && confirm >= 1)
-      )
+      ) ||
+      !(body.save_alias === undefined || typeof body.save_alias === 'boolean')
     )
       return fail('INVALID_REQUEST', '처리 상태가 올바르지 않습니다.', 400)
     const approval = db.approvals.find(({ approval_id }) => approval_id === params.approvalId)
     if (!approval) return fail('APPROVAL_NOT_FOUND', '승인 요청이 없습니다.', 404)
     const pm = requirePm(approval.workspace_id)
     if (pm instanceof Response) return pm
-    const overrides = normalizeOverrides(approval.type, body.status, body.task_overrides)
+    const overrides = normalizeOverrides(approval, body.status, body.task_overrides)
     if (overrides instanceof Response) return overrides
     if (approval.status !== 'pending')
       return fail('APPROVAL_ALREADY_RESOLVED', '이미 처리된 승인 요청입니다.', 409, {
         approval_id: approval.approval_id,
         current_status: approval.status,
       })
+    // 처리하면 후보가 아니게 되므로 상태를 바꾸기 전에 읽는다. 후보가 아니면 save_alias 는 조용히 무시한다
+    const learnable = aliasCandidateOf(approval)
     if (body.status === 'approved') {
       const prepared =
         approval.type === 'task_create'
@@ -352,11 +400,15 @@ export const approvalHandlers = [
             : // 그 밖의 종류(reminder_dm 등)는 태스크에 반영할 내용이 없다 — 백엔드와 같다
               () => {}
       if (prepared instanceof Response) return prepared
+      const since = db.taskHistory.length
       prepared(pm.memberId)
+      // 답장이 보낸 카드면 승인이 남긴 이력을 그 답장 줄에 잇는다 (BE link_history)
+      linkApprovalHistory(approval.approval_id, since)
+      if (body.save_alias === true && learnable !== null) learnAlias(approval, learnable)
     }
     approval.status = body.status
     approval.resolved_by = pm.memberId
     approval.resolved_at = MOCK_NOW
-    return ok(approval)
+    return ok(approvalResponse(approval))
   }),
 ]

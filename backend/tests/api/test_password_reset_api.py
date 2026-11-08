@@ -7,6 +7,9 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services import mailer, password_reset
+from tests.api.conftest import signup_verified
+
+pytestmark = pytest.mark.usefixtures("signup_secret")
 
 EMAIL = "reset@example.com"
 OLD_PW = "oldpass123"
@@ -29,7 +32,7 @@ def inline_mail(monkeypatch):
 @pytest.fixture
 def sent(monkeypatch):
     box = []
-    monkeypatch.setattr(mailer, "send_mail", lambda to, subject, text: box.append((to, subject, text)))
+    monkeypatch.setattr(mailer, "send_mail", lambda to, subject, text, html=None: box.append((to, subject, text)))
     monkeypatch.setattr(mailer, "_sleep", lambda s: None)
     return box
 
@@ -47,7 +50,7 @@ def _client():
 
 
 def _signup(c):
-    r = c.post("/api/v1/auth/signup", json={"email": EMAIL, "password": OLD_PW, "name": "r"})
+    r = signup_verified(c, EMAIL, OLD_PW, "r")
     assert r.status_code == 201
 
 
@@ -80,6 +83,15 @@ def test_request_unknown_email_returns_200_and_sends_nothing(mdb, sent, smtp_env
     assert sent == []
 
 
+def test_request_with_uppercase_email_sends_to_stored_address(mdb, sent, smtp_env):
+    c = _client()
+    _signup(c)
+    r = _request(c, EMAIL.upper())
+    assert r.status_code == 200
+    assert len(sent) == 1
+    assert sent[0][0] == EMAIL
+
+
 def test_request_known_email_sends_link(mdb, sent, smtp_env):
     c = _client()
     _signup(c)
@@ -100,7 +112,7 @@ def test_request_invalid_email_returns_400(mdb, sent, smtp_env):
 def test_request_send_failure_still_200_and_no_token_in_logs(mdb, smtp_env, monkeypatch, caplog):
     attempts = []
 
-    def boom(to, subject, text):
+    def boom(to, subject, text, html=None):
         attempts.append(1)
         raise RuntimeError("smtp down")
 

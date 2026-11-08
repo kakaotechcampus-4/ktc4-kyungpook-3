@@ -25,6 +25,11 @@ export interface TaskCreateApproval extends ApprovalBase {
   meetingId: string | null
   extractionItemId: string | null
   gate: 'review' | 'hold' | null
+  /**
+   * 승인하며 고른 담당자의 별칭으로 등록할 수 있는 글자 (#523). 서버가 후보라고 하고 글자가 있을 때만 있다.
+   * 후보 여부와 글자를 한 칸에 둬 「후보인데 글자가 없다」를 만들 수 없게 한다
+   */
+  aliasCandidate: string | null
 }
 /** AI 판정 분류 (ai/shared/schemas.py JudgeCategory) */
 export type TaskUpdateCategory = 'schedule' | 'assignee' | 'status' | 'scope' | 'decision' | 'none'
@@ -38,6 +43,13 @@ export interface TaskUpdateApproval extends ApprovalBase {
   docText: string | null
   evidence: ExtractionEvidence
   meetingId: string | null
+  /** 리마인드 답장에서 온 제안이면 그 답장. 이때 meetingId 는 null 이고 근거는 답장 글이다 */
+  replyMessageId: string | null
+  /**
+   * 답장이 말한 담당자를 팀원에서 찾지 못한 카드. 제안에 담당자 값이 없어 PM 이 카드에서 고른다(미정 포함).
+   * `raw` 는 답장에 적힌 이름이다. 그 밖의 카드는 null 이다
+   */
+  assigneePick: { raw: string } | null
 }
 export interface UnsupportedApproval extends ApprovalBase {
   kind: 'unsupported'

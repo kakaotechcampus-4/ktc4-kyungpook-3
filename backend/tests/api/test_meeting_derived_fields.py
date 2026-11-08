@@ -18,6 +18,7 @@ from app.models import (
     User,
     Workspace,
 )
+from app.services.sessions import hash_session_token
 
 
 @pytest.fixture
@@ -47,7 +48,7 @@ def seed(db):
     db.add(
         SessionModel(
             user_id=user.user_id,
-            session_token="pm-token",
+            session_token=hash_session_token("pm-token"),
             expires_at=datetime.now(timezone.utc) + timedelta(days=1),
         )
     )

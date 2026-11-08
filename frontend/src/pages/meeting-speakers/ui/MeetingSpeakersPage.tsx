@@ -15,15 +15,17 @@ import { SpeakerAssignmentForm, useSpeakerSubmit } from '@/features/speaker-assi
 import type { SubmitRejection } from '@/features/speaker-assignment'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf } from '@/shared/lib/date'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { useRouteId } from '@/shared/lib/url'
 import { Button } from '@/shared/ui/button'
+import { DeferredSkeleton } from '@/shared/ui/deferred-skeleton'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
+import { ASSIGN_TITLE, COLUMN, PAGE, TITLE } from './styles'
 
-const PAGE = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72'
-const COLUMN = 'flex w-full max-w-[700px] flex-col gap-26'
-const TITLE = 'text-[30px] leading-[1.25] font-bold tracking-h1 text-ink'
+/* 로딩을 거쳐 나타난 내용의 불투명도 전환 (#508). 로딩 중에도 보이던 제목(h1)은 빼고 그 아래만 */
+const REVEAL_BELOW_TITLE = 'motion-safe:[&>:not(h1)]:animate-[loading-reveal_150ms_ease-out]'
 const LEAD = 'text-body text-sub'
 const META = 'text-caption text-dim tabular-nums'
 const LINK =
@@ -111,19 +113,21 @@ function MeetingSpeakers({ workspaceId, meetingId }: { workspaceId: string; meet
     enabled: screen.kind === 'assigning',
   })
   const isPm = useMemberWorkspace(workspaceId)?.role === 'pm'
+  const indicator = useLoadingIndicator(screen.kind === 'loading')
+  const reveal = indicator.reveal
 
+  if (screen.kind === 'loading' || indicator.pending)
+    return (
+      <Layout title={ASSIGN_TITLE}>
+        <DeferredSkeleton indicator={indicator}>
+          <Skeleton lines={4} />
+        </DeferredSkeleton>
+      </Layout>
+    )
   switch (screen.kind) {
-    case 'loading':
-      return (
-        <Layout title="누가 말했는지 골라 주세요">
-          <div aria-busy="true">
-            <Skeleton lines={4} />
-          </div>
-        </Layout>
-      )
     case 'unavailable':
       return (
-        <Layout title="이 회의를 볼 수 없어요">
+        <Layout reveal={reveal} title="이 회의를 볼 수 없어요">
           <p className={LEAD}>회의가 없거나 볼 수 있는 권한이 없어요.</p>
           <GuardedLink to={paths.meetings(workspaceId)} className={LINK}>
             회의록으로 가기
@@ -132,7 +136,7 @@ function MeetingSpeakers({ workspaceId, meetingId }: { workspaceId: string; meet
       )
     case 'error':
       return (
-        <Layout title="누가 말했는지 골라 주세요">
+        <Layout reveal={reveal} title={ASSIGN_TITLE}>
           <QueryErrorState
             error={screen.error}
             onRetry={screen.retry}
@@ -142,7 +146,7 @@ function MeetingSpeakers({ workspaceId, meetingId }: { workspaceId: string; meet
       )
     case 'member':
       return (
-        <Layout title="PM이 화자를 지정하고 있어요">
+        <Layout reveal={reveal} title="PM이 화자를 지정하고 있어요">
           <p className={LEAD}>
             PM이 녹음의 화자를 모두 지정하면 회의 정리가 이어져요. 끝나면 회의록에서 볼 수 있어요.
           </p>
@@ -152,10 +156,10 @@ function MeetingSpeakers({ workspaceId, meetingId }: { workspaceId: string; meet
         </Layout>
       )
     case 'notAwaiting':
-      return <NotAwaiting workspaceId={workspaceId} isPm={isPm} {...screen} />
+      return <NotAwaiting workspaceId={workspaceId} isPm={isPm} reveal={reveal} {...screen} />
     case 'noLabels':
       return (
-        <Layout title="아직 화자를 나누는 중이에요">
+        <Layout reveal={reveal} title="아직 화자를 나누는 중이에요">
           <p className={LEAD}>녹음에서 화자를 나누면 이 화면에서 지정할 수 있어요.</p>
           <Button className="self-start" onClick={screen.retry}>
             다시 확인
@@ -168,7 +172,7 @@ function MeetingSpeakers({ workspaceId, meetingId }: { workspaceId: string; meet
         .filter((part) => part !== null && part !== '')
         .join(' · ')
       return (
-        <Layout title="누가 말했는지 골라 주세요">
+        <Layout reveal={reveal} title={ASSIGN_TITLE}>
           <div className="flex flex-col gap-8">
             <p className={META}>{meta}</p>
             <p className={LEAD}>
@@ -188,10 +192,19 @@ function MeetingSpeakers({ workspaceId, meetingId }: { workspaceId: string; meet
   }
 }
 
-function Layout({ title, children }: { title: string; children: ReactNode }) {
+function Layout({
+  title,
+  reveal = false,
+  children,
+}: {
+  title: string
+  /** 로딩을 거쳐 나타났다 — 제목 아래 내용에 불투명도 전환을 건다 */
+  reveal?: boolean
+  children: ReactNode
+}) {
   return (
     <main className={PAGE}>
-      <div className={COLUMN}>
+      <div className={reveal ? `${COLUMN} ${REVEAL_BELOW_TITLE}` : COLUMN}>
         <h1 className={TITLE}>{title}</h1>
         {children}
       </div>
@@ -205,18 +218,20 @@ function NotAwaiting({
   meeting,
   status,
   movedElsewhere,
+  reveal,
 }: {
   workspaceId: string
   isPm: boolean
   meeting: Meeting
   status: MeetingStatus
   movedElsewhere: boolean
+  reveal: boolean
 }) {
   const moved = movedElsewhere ? <p className={LEAD}>다른 곳에서 이미 화자를 지정했어요.</p> : null
   switch (status) {
     case 'processing':
       return (
-        <Layout title="회의를 정리하고 있어요">
+        <Layout reveal={reveal} title="회의를 정리하고 있어요">
           {moved}
           <p className={LEAD}>화자 지정이 끝나 회의 정리를 이어 가고 있어요.</p>
           <GuardedLink to={paths.meetingProcessing(workspaceId, meeting.id)} className={LINK}>
@@ -226,7 +241,7 @@ function NotAwaiting({
       )
     case 'done':
       return (
-        <Layout title="정리가 끝났어요">
+        <Layout reveal={reveal} title="정리가 끝났어요">
           {moved}
           <GuardedLink to={paths.meetings(workspaceId, meeting.id)} className={LINK}>
             회의록 보기
@@ -236,9 +251,9 @@ function NotAwaiting({
     case 'failed': {
       const failure = meetingFailure(meeting.failedStage)
       return (
-        <Layout title={failure.title}>
+        <Layout reveal={reveal} title={failure.title}>
           <p className={LEAD}>{failure.description}</p>
-          {isPm ? (
+          {!failure.reupload ? null : isPm ? (
             <GuardedLink to={paths.meetingUpload(workspaceId)} className={LINK}>
               다시 업로드
             </GuardedLink>
@@ -250,7 +265,7 @@ function NotAwaiting({
     }
     default:
       return (
-        <Layout title="화자를 지정할 회의가 아니에요">
+        <Layout reveal={reveal} title="화자를 지정할 회의가 아니에요">
           <p className={LEAD}>업로드한 회의만 화자를 지정해요.</p>
           <GuardedLink to={paths.meetings(workspaceId)} className={LINK}>
             회의록으로 가기

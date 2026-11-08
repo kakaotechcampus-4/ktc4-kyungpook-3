@@ -1,7 +1,7 @@
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
-import { messageThreadQueryOptions } from '@/entities/message'
+import { messageInboxQueryOptions, messageThreadQueryOptions } from '@/entities/message'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
@@ -12,12 +12,16 @@ import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { isMemberOf, setMockRole } from '@/shared/mock/sessions'
 import { recordRequests } from '@/shared/test/requests'
+import { REVEAL_TARGETS } from '@/shared/ui/deferred-skeleton'
+import { SELF_SECTION_TITLE } from '@/widgets/message-inbox'
+import { onTestFinished } from 'vitest'
 import {
   conversation,
   current,
   detail,
   hold,
   list,
+  listSkeleton,
   readable,
   reviewList,
   rowTexts,
@@ -46,6 +50,13 @@ async function openInbox(path = paths.messages('ws_01')) {
   return app
 }
 
+const isReply = (request: { path: string }) => request.path.includes('/replies')
+/** 요청이 나가지 않았음을 보기 전에, 나갔다면 시작했을 만큼 기다린다 — React Query 는 다음 틱에 알린다 */
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 20)))
+/** 말풍선이 놓인 세로 칸. 왼쪽이면 items-start, 오른쪽이면 items-end 다 */
+const columnOf = (text: string) =>
+  within(conversation()).getByText(text).closest('p')?.parentElement
+
 describe('준비 중 안내 없이 메시지 화면이 열린다', () => {
   it.each([
     paths.messages('ws_01'),
@@ -66,8 +77,8 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
     )
     // 승인 전 묶음은 가장 이른 마감일과 묶은 태스크를 쓴다
     expect(rowTexts(reviewList())).toEqual([
-      '이재환09/24 마감API 명세서',
-      '정하늘09/30 마감퍼블리싱 외 1건',
+      '이재환09/24 마감배포 스크립트 진행 상황 확인',
+      '정하늘09/30 마감퍼블리싱 외 1건 진행 상황 확인',
     ])
     expect(rowTexts(threadList())).toEqual([
       '이재환나: DB 스키마가 확정됐다고 들었어요. 명세서 작업은 시작하셨나요?09/16답장 기다리는 중',
@@ -79,7 +90,7 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
     expect(current()[0]).toHaveTextContent('이재환')
     expect(detail().getByRole('heading', { level: 2, name: '이 메시지, 보낼까요?' })).toBeVisible()
     expect(detail().getByRole('region', { name: '보낼 메시지 미리보기' })).toHaveTextContent(
-      '재환님, API 명세서 마감이 다음 주 목요일(9/24)이에요 🙂',
+      '재환님, 배포 스크립트 마감이 다음 주 목요일(9/24)이에요 🙂',
     )
   })
 
@@ -102,14 +113,16 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
     expect(within(preview).getByText(/하늘님, 최진호예요/)).toHaveClass('whitespace-pre-line')
     expect(readable(detail().getByRole('region', { name: '묶은 태스크 2' }))).toBe(
       '묶은 태스크 2퍼블리싱마감 없음메모: 시안 2차 반영분까지메모 고치기빼기' +
-        '발표 자료09/30 마감메모 고치기빼기',
+        '9/15(화)에 태스크를 만든 뒤로 진행 소식이 없어요.' +
+        '발표 자료09/30 마감메모 고치기빼기' +
+        '김서연님이 직접 만든 재촉이에요. 9/15(화)에 태스크를 만든 뒤로 진행 소식이 없어요.',
     )
     // 서버가 정한 시각이 마감 하루 전(9/29 09:00)이 아니라 직접 정한 시각이다
     expect(detail().getByRole('radio', { name: '마감 하루 전09/29 09:00' })).not.toBeChecked()
     expect(detail().getByRole('radio', { name: '직접 정하기09/25 14:00' })).toBeChecked()
   })
 
-  it('보내기 전 확인은 미리보기·묶은 태스크·보낼 시각 두 가지·행동·안내를 갖는다 — 지금 바로와 재촉 이유는 없다', async () => {
+  it('보내기 전 확인은 미리보기·묶은 태스크·보낼 시각 두 가지·행동·안내를 갖는다 — 지금 바로와 따로 선 「왜 보내려 하나요」 블록은 없다(이유는 태스크 행마다 있다)', async () => {
     await openInbox(paths.messageReview('ws_01', 'bd_01'))
     const preview = detail().getByRole('region', { name: '보낼 메시지 미리보기' })
     expect(within(preview).getByText('Discord 개인 메시지 · 카테캠 3팀 봇')).toBeInTheDocument()
@@ -243,7 +256,7 @@ describe('대화는 날짜 구분·보낸 쪽·시각·답장 대기·예정 묶
       '이재환: 네 확인했습니다. DB 스키마 확정되면 바로 붙일게요.09:31',
       '봇: DB 스키마가 확정됐다고 들었어요. 명세서 작업은 시작하셨나요?18:00',
       '여기서부터 답장이 없습니다 — 오늘로 3일째예요',
-      '봇(승인 대기): 재환님, API 명세서 마감이 다음 주 목요일(9/24)이에요 🙂\n혹시 막히는 부분 있으면 알려주세요. 필요하면 마감을 옮겨도 괜찮아요!09/23 09:00 발송 예정확인하기',
+      '봇(승인 대기): 재환님, 배포 스크립트 마감이 다음 주 목요일(9/24)이에요 🙂\n혹시 막히는 부분 있으면 알려주세요. 필요하면 마감을 옮겨도 괜찮아요!09/23 09:00 발송 예정확인하기',
     ])
     expect(within(conversation()).getByRole('link', { name: '확인하기' })).toHaveAttribute(
       'href',
@@ -336,14 +349,61 @@ describe('빈 상태·로딩·목록 오류·대화 오류가 서로 구분되�
   it('목록을 받는 동안 목록 칸과 상세 칸은 스켈레톤이다 — 빈 상태도 오류도 아니다', async () => {
     const gate = hold('/workspaces/ws_01/messages')
     renderApp(paths.messages('ws_01'))
-    const skeleton = await screen.findByTestId('message-list-skeleton')
+    const skeleton = await listSkeleton()
     expect(skeleton).toHaveAttribute('aria-busy', 'true')
-    expect(screen.getByTestId('message-review-skeleton')).toBeInTheDocument()
+    expect(detail().getByTestId('message-review-skeleton')).toBeInTheDocument()
     expect(screen.queryByText('보낼 메시지가 없어요')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
     act(() => gate.resolve())
     expect(await detail().findByRole('heading', { name: '이 메시지, 보낼까요?' })).toBeVisible()
     expect(screen.queryByTestId('message-list-skeleton')).toBeNull()
+  })
+
+  it('목록을 기다린 뒤 캐시된 기본 대화가 나타나면 대화 내용에 전환이 걸린다 — 안쪽 대화 자리는 로딩을 거치지 않았다 (#508)', async () => {
+    applyScenario('messages-member')
+    const app = await openInbox()
+    expect(await detail().findByRole('heading', { level: 2, name: '카테캠 3팀 봇' })).toBeVisible()
+    // 기본 대화는 캐시에 둔 채 목록만 다시 기다리게 한다
+    const gate = hold('/workspaces/ws_01/messages')
+    onTestFinished(() => gate.resolve())
+    act(() => {
+      void app.queryClient.resetQueries({ queryKey: messageInboxQueryOptions('ws_01').queryKey })
+    })
+    expect(await screen.findByTestId('message-list-skeleton')).toHaveAttribute('aria-busy', 'true')
+    act(() => gate.resolve())
+    const heading = await detail().findByRole(
+      'heading',
+      { level: 2, name: '카테캠 3팀 봇' },
+      { timeout: 3_000 },
+    )
+    // 전환은 상자가 없는 Reveal 감싸기(data-reveal-box)가 아니라 실제 대화 요소에 걸린다
+    const target = heading.closest(REVEAL_TARGETS)
+    expect(target).not.toBeNull()
+    expect(target).not.toHaveAttribute('data-reveal-box')
+    expect(detail().getByRole('region', { name: '대화 내용' }).closest(REVEAL_TARGETS)).toBe(target)
+  })
+
+  it('목록을 받는 동안의 뼈대는 역할에 맞는 틀이다 — PM 은 보내기 전 확인 · 검토 모양, 팀원은 대화 이름만 · 대화 모양 (#508)', async () => {
+    const pmGate = hold('/workspaces/ws_01/messages')
+    const pm = renderApp(paths.messages('ws_01'))
+    const pmList = await listSkeleton()
+    // 묶음 이름은 정해진 글자라 막대 대신 글자다
+    expect(pmList).toHaveTextContent('보내기 전 확인')
+    expect(pmList).toHaveTextContent('대화')
+    expect(detail().getByTestId('message-review-skeleton')).toBeInTheDocument()
+    act(() => pmGate.resolve())
+    pm.unmount()
+
+    applyScenario('messages-member')
+    const memberGate = hold('/workspaces/ws_01/messages')
+    onTestFinished(() => memberGate.resolve())
+    renderApp(paths.messages('ws_01'))
+    const memberList = await listSkeleton()
+    expect(memberList).not.toHaveTextContent('보내기 전 확인')
+    expect(memberList).toHaveTextContent('대화')
+    // 팀원의 기본 선택은 첫 대화다 — 상세 뼈대도 대화 모양이다
+    expect(detail().getByTestId('message-thread-skeleton')).toBeInTheDocument()
+    expect(detail().queryByTestId('message-review-skeleton')).toBeNull()
   })
 
   it('목록 오류는 목록 칸에서 다시 시도로 알리고, 고른 대화는 그대로 보인다', async () => {
@@ -380,6 +440,20 @@ describe('빈 상태·로딩·목록 오류·대화 오류가 서로 구분되�
     expect(current()[0]).toHaveTextContent('박민수')
     act(() => gate.resolve())
     expect(await detail().findByRole('heading', { level: 2, name: '박민수' })).toBeVisible()
+  })
+
+  it('대화 주소에서 목록과 대화를 함께 받는 동안 목록 칸과 상세 칸이 모두 스켈레톤이다 — 빈 상태도 오류도 아니다', async () => {
+    const lists = hold('/workspaces/ws_01/messages')
+    const thread = hold('/workspaces/ws_01/messages/threads/th_01')
+    onTestFinished(() => {
+      lists.resolve()
+      thread.resolve()
+    })
+    renderApp(paths.messageThread('ws_01', 'th_01'))
+    expect(await screen.findByTestId('message-list-skeleton')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByTestId('message-thread-skeleton')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.queryByText('보낼 메시지가 없어요')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it.each([
@@ -469,7 +543,8 @@ describe('대화 행을 가리키거나 포커스하면 그 대화를 미리 받
     expect(detail().getByRole('heading', { level: 2, name: '박민수' })).toBeVisible()
     await settle()
     expect(skeletonSeen()).toBe(false)
-    expect(messageRequests(log)).toEqual([TH_02])
+    // 연 대화에서 PM 은 답장 고르기만 새로 받는다 (#344)
+    expect(messageRequests(log)).toEqual([TH_02, `${TH_02}/attributions`])
   })
 
   it('같은 행을 다시 가리켜도 staleTime(앱 기본 30초) 안에는 다시 받지 않고, 지나면 다시 받는다', async () => {
@@ -616,9 +691,6 @@ describe('목록 라벨·보낼 시각 포커스 선·버튼 크기가 디자인
 })
 
 describe('팀원은 자기 대화만 보고 웹에서 답장한다', () => {
-  const columnOf = (text: string) =>
-    within(conversation()).getByText(text).closest('p')?.parentElement
-
   it('받은 대화가 없으면 답장 안내만 있다', async () => {
     applyScenario('messages-member')
     db.messageThreads = db.messageThreads.filter(({ member_id }) => member_id !== 'mb_01')
@@ -651,27 +723,95 @@ describe('팀원은 자기 대화만 보고 웹에서 답장한다', () => {
     expect(detail().getByText(/봇 DM 창에 쓴 글은 모두 PM 대화에 보여요/)).toBeVisible()
   })
 
-  it('빈 답장은 보내지 않고, 적은 답장은 웹에서 답장으로 대화에 남고 칸은 비운다', async () => {
+  it('빈 칸·공백뿐인 칸에서는 답장 보내기가 꺼져 있고, 적은 답장은 웹에서 답장으로 대화에 남고 칸은 비운다', async () => {
+    applyScenario('messages-member')
+    await openInbox()
+    const field = await detail().findByRole('textbox', { name: '답장' })
+    const send = detail().getByRole('button', { name: '답장 보내기' })
+    expect(field).toHaveAccessibleDescription(/봇 DM 창에 쓴 글은 모두 PM 대화에 보여요/)
+    const log = recordRequests()
+    expect(send).toBeDisabled()
+    await userEvent.type(field, '   {Enter}')
+    await settle()
+    expect(send).toBeDisabled()
+    expect(log.started.some(isReply)).toBe(false)
+    expect(detail().queryByRole('alert')).toBeNull()
+
+    await userEvent.clear(field)
+    await userEvent.type(field, '웹에서 한 줄 더')
+    expect(send).toBeEnabled()
+    const threadBody = conversation()
+    threadBody.scrollTop = 0
+    Object.defineProperty(threadBody, 'scrollHeight', { configurable: true, get: () => 480 })
+    await userEvent.click(send)
+    expect(await within(conversation()).findByText('웹에서 한 줄 더')).toBeVisible()
+    expect(within(conversation()).getByText('09:00 · 웹에서 답장')).toBeVisible()
+    expect(conversation().scrollTop).toBe(480)
+    await waitFor(() => expect(field).toHaveValue(''))
+    expect(send).toBeDisabled()
+  })
+
+  it('Enter 로 보내고 Shift+Enter 는 줄을 바꾼다 — 보내는 동안 칸과 버튼이 잠기고, 보낸 뒤에도 칸에 포커스가 있다', async () => {
     applyScenario('messages-member')
     await openInbox()
     const field = await detail().findByRole('textbox', { name: '답장' })
     const log = recordRequests()
-    await userEvent.click(detail().getByRole('button', { name: '답장 보내기' }))
-    expect(detail().getByText('답장을 입력해 주세요.')).toBeVisible()
-    expect(log.started.some((request) => request.path.includes('/replies'))).toBe(false)
+    const request = hold('/workspaces/ws_01/messages/threads/:threadId/replies', 'post')
+    await userEvent.type(field, '첫 줄{Shift>}{Enter}{/Shift}둘째 줄')
+    await settle()
+    expect(field).toHaveValue('첫 줄\n둘째 줄')
+    expect(log.started.some(isReply)).toBe(false)
 
-    await userEvent.type(field, '웹에서 한 줄 더')
-    const threadBody = conversation()
-    threadBody.scrollTop = 0
-    Object.defineProperty(threadBody, 'scrollHeight', { configurable: true, get: () => 480 })
-    await userEvent.click(detail().getByRole('button', { name: '답장 보내기' }))
-    expect(await within(conversation()).findByText('웹에서 한 줄 더')).toBeVisible()
-    expect(within(conversation()).getByText('09:00 · 웹에서 답장')).toBeVisible()
-    expect(conversation().scrollTop).toBe(480)
+    await userEvent.keyboard('{Enter}')
+    const send = detail().getByRole('button', { name: '답장 보내기' })
+    await waitFor(() => expect(request.calls()).toBe(1))
+    expect(send).toHaveAttribute('aria-busy', 'true')
+    expect(send).toBeDisabled()
+    expect(field).toBeDisabled()
+
+    request.resolve()
+    expect(await within(conversation()).findByText('첫 줄 둘째 줄')).toBeVisible()
+    await waitFor(() => expect(field).toBeEnabled())
     expect(field).toHaveValue('')
+    expect(field).toHaveFocus()
   })
 
-  it('답장을 보내지 못하면 쓰던 글을 남긴다', async () => {
+  it('한글 조합 중 Enter 는 보내지 않는다', async () => {
+    applyScenario('messages-member')
+    await openInbox()
+    const field = await detail().findByRole('textbox', { name: '답장' })
+    await userEvent.type(field, '안녕')
+    const log = recordRequests()
+    fireEvent.keyDown(field, { key: 'Enter', keyCode: 229 })
+    fireEvent.keyDown(field, { key: 'Enter', isComposing: true })
+    await settle()
+    expect(log.started.some(isReply)).toBe(false)
+    expect(field).toHaveValue('안녕')
+
+    fireEvent.keyDown(field, { key: 'Enter' })
+    expect(await within(conversation()).findByText('안녕')).toBeVisible()
+  })
+
+  it('1,800자를 넘으면 키 안내 자리에 글자 수를 보이고, 2,000자에 닿으면 강조색이다', async () => {
+    applyScenario('messages-member')
+    await openInbox()
+    const field = await detail().findByRole('textbox', { name: '답장' })
+    const keyHint = 'Enter 보내기 · Shift+Enter 줄 바꿈'
+    expect(detail().getByText(keyHint)).toBeInTheDocument()
+
+    fireEvent.change(field, { target: { value: '가'.repeat(1800) } })
+    expect(detail().getByText(keyHint)).toBeInTheDocument()
+    expect(detail().queryByText(/ \/ 2,000$/)).toBeNull()
+
+    fireEvent.change(field, { target: { value: '가'.repeat(1801) } })
+    expect(detail().queryByText(keyHint)).toBeNull()
+    expect(detail().getByText('1,801 / 2,000')).not.toHaveClass('text-accent')
+
+    fireEvent.change(field, { target: { value: '가'.repeat(2000) } })
+    expect(detail().getByText('2,000 / 2,000')).toHaveClass('text-accent')
+  })
+
+  it('답장을 보내지 못하면 칸 위에 알리고 쓰던 글을 남긴다 — 다시 보내기는 지금 칸의 글을 보낸다', async () => {
     applyScenario('messages-member')
     db.messageFailures.actions = true
     await openInbox()
@@ -680,7 +820,16 @@ describe('팀원은 자기 대화만 보고 웹에서 답장한다', () => {
     await userEvent.click(detail().getByRole('button', { name: '답장 보내기' }))
     const alert = await detail().findByRole('alert')
     expect(alert).toHaveTextContent('답장을 보내지 못했어요')
+    expect(alert.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await waitFor(() => expect(field).toBeEnabled())
     expect(field).toHaveValue('남겨 둘 답장')
+
+    db.messageFailures.actions = false
+    await userEvent.type(field, ' 더')
+    await userEvent.click(within(alert).getByRole('button', { name: '다시 보내기' }))
+    expect(await within(conversation()).findByText('남겨 둘 답장 더')).toBeVisible()
+    await waitFor(() => expect(field).toHaveValue(''))
+    expect(detail().queryByRole('alert')).toBeNull()
   })
 
   it('남의 대화 주소는 찾을 수 없다고 알린다 (서버는 403)', async () => {
@@ -701,12 +850,12 @@ describe('팀원 행이 있는 PM 은 자기 대화에서만 웹으로 답장한
     const field = await detail().findByRole('textbox', { name: '답장' })
     expect(detail().getByText('Discord 개인 메시지 · 웹에서도 답장할 수 있어요')).toBeVisible()
     expect(detail().queryByText(/메시지는 항상/)).toBeNull()
+    expect(detail().getByRole('button', { name: '답장 보내기' })).toBeDisabled()
 
-    await userEvent.type(field, 'PM 이 웹에서 남긴 답장')
-    await userEvent.click(detail().getByRole('button', { name: '답장 보내기' }))
+    await userEvent.type(field, 'PM 이 웹에서 남긴 답장{Enter}')
     expect(await within(conversation()).findByText('PM 이 웹에서 남긴 답장')).toBeVisible()
     expect(within(conversation()).getByText('09:00 · 웹에서 답장')).toBeVisible()
-    expect(field).toHaveValue('')
+    await waitFor(() => expect(field).toHaveValue(''))
   })
 
   it('남의 대화에는 답장 칸 대신 봇 안내가 있다', async () => {
@@ -721,7 +870,7 @@ describe('팀원 행이 있는 PM 은 자기 대화에서만 웹으로 답장한
   it.each([
     ['공간 응답에 member_id 가 없으면', {}],
     ['공간 응답의 member_id 가 null 이면', { member_id: null }],
-  ])('%s 자기 대화에도 답장 칸이 없다', async (_, field) => {
+  ])('%s 자기 대화도 남의 대화처럼 대화 목록에 있고 답장 칸이 없다', async (_, field) => {
     applyScenario('messages-pm-self')
     server.use(
       http.get('/api/v1/workspaces', () =>
@@ -736,5 +885,87 @@ describe('팀원 행이 있는 PM 은 자기 대화에서만 웹으로 답장한
     expect(await detail().findByRole('heading', { level: 2, name: '김서연' })).toBeVisible()
     expect(footNote()).toBeVisible()
     expect(replyForm()).toBeNull()
+    expect(list().queryByRole('region', { name: SELF_SECTION_TITLE })).toBeNull()
+    expect(rowTexts(threadList())).toContain(
+      '김서연DM 못 보냄나: 서연님, 오늘 남은 확인만 부탁드려요.09/17답장 기다리는 중',
+    )
+    expect(within(threadList()).getByText('답장 기다리는 중 3')).toBeInTheDocument()
+  })
+})
+
+describe('PM 의 자기 대화는 목록 맨 위 구역에 따로 두고 팀원 화면 규칙으로 그린다 (#417)', () => {
+  const selfList = () => list().getByRole('region', { name: SELF_SECTION_TITLE })
+  const sectionTitles = () =>
+    list()
+      .getAllByRole('region')
+      .map((region) => region.querySelector('h2')?.textContent)
+
+  it('자기 대화는 보내기 전 확인 위 구역에만 있고, 대화와 답장 기다리는 중 N 에서 빠진다', async () => {
+    applyScenario('messages-pm-self')
+    await openInbox()
+    expect(sectionTitles()).toEqual([SELF_SECTION_TITLE, '보내기 전 확인 3', '대화'])
+    expect(rowTexts(selfList())).toEqual([
+      '카테캠 3팀 봇DM 못 보냄서연님, 오늘 남은 확인만 부탁드려요.09/17',
+    ])
+    expect(rowTexts(threadList()).map((row) => row.slice(0, 3))).toEqual([
+      '이재환',
+      '박민수',
+      '정하늘',
+      '박지훈',
+    ])
+    // 자기 대화도 마지막이 봇 메시지라 남의 대화였다면 셋째로 셌다 — member_id 없음 테스트가 3 을 본다
+    expect(within(threadList()).getByText('답장 기다리는 중 2')).toBeInTheDocument()
+    // 자기 대화의 보낼 메시지도 PM 권한으로 그대로 확인한다
+    expect(rowTexts(reviewList())).toContain('김서연09/24 마감기획서 진행 상황 확인')
+  })
+
+  it('자기 대화는 봇이 왼쪽·자기 답장이 오른쪽이고, 답장 기다림 없이 답장 칸과 예정 묶음 확인하기가 있다', async () => {
+    applyScenario('messages-pm-self')
+    await openInbox(paths.messageThread('ws_01', 'th_06'))
+    expect(await detail().findByRole('heading', { level: 2, name: '카테캠 3팀 봇' })).toBeVisible()
+    expect(detail().queryByText(/답장 \d+일째 없음/)).toBeNull()
+    expect(within(conversation()).queryByText(/여기서부터 답장이 없습니다/)).toBeNull()
+    expect(columnOf('서연님, 이번 주 할 일을 정리해 뒀어요.')).toHaveClass('items-start')
+    expect(columnOf('디스코드에서 답했어요')).toHaveClass('items-end')
+    expect(detail().getByRole('textbox', { name: '답장' })).toBeVisible()
+    expect(within(conversation()).getByRole('link', { name: '확인하기' })).toHaveAttribute(
+      'href',
+      paths.messageReview('ws_01', 'bd_05'),
+    )
+  })
+
+  it('리마인드 알림을 누르면 자기 대화로 가고 맨 위 구역의 행이 골라진다', async () => {
+    applyScenario('messages-pm-self')
+    db.notifications = [
+      {
+        notification_id: 'nt_11',
+        workspace_id: 'ws_01',
+        member_id: 'mb_01',
+        kind: 'reminder_sent',
+        text: '기획서 진행 상황을 물어봤어요.',
+        link: { type: 'thread', id: 'th_06' },
+        read_at: null,
+        created_at: '2026-09-17T18:00:00+09:00',
+      },
+    ]
+    const app = await openInbox()
+    await userEvent.click(await screen.findByRole('button', { name: '알림, 읽지 않은 알림 1개' }))
+    const bell = await screen.findByRole('dialog', { name: '알림 목록' })
+    await userEvent.click(within(bell).getByRole('button', { name: /기획서 진행 상황을/ }))
+
+    await app.expectPath(paths.messageThread('ws_01', 'th_06'))
+    await waitFor(() => expect(current()).toHaveLength(1))
+    expect(selfList()).toContainElement(current()[0] ?? null)
+    expect(
+      within(threadList())
+        .getAllByRole('link')
+        .filter((link) => link.getAttribute('aria-current') === 'page'),
+    ).toEqual([])
+  })
+
+  it('자기 대화가 없는 PM 에게는 그 구역이 없다', async () => {
+    await openInbox()
+    expect(list().queryByRole('region', { name: SELF_SECTION_TITLE })).toBeNull()
+    expect(sectionTitles()).toEqual(['보내기 전 확인 2', '대화'])
   })
 })

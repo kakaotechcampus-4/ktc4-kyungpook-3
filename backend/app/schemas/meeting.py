@@ -1,7 +1,15 @@
 from datetime import date, datetime
 from typing import Annotated
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
 from app.models import (
     ApprovalStatus,
@@ -60,16 +68,41 @@ class MeetingFailRequest(BaseModel):
     failed_stage: str = Field(..., description="어느 단계에서 실패했는지 (e.g., STT, LLM)")
 
 
+# 컬럼이 PostgreSQL INTEGER(4바이트)라 그보다 큰 값은 DB 에서 500 이 되기 전에 400 으로 막는다
+_INT4_MAX = 2_147_483_647
+
+
+class MeetingSttProgress(BaseModel):
+    done: StrictInt = Field(..., ge=0, description="전사를 끝낸 조각 수")
+    total: StrictInt = Field(..., ge=1, le=_INT4_MAX, description="전사할 전체 조각 수")
+
+    @model_validator(mode="after")
+    def _done_within_total(self) -> "MeetingSttProgress":
+        if self.done > self.total:
+            raise ValueError("done 은 total 이하여야 합니다")
+        return self
+
+
 class MeetingStageRequest(BaseModel):
     stage: MeetingProcessingStage = Field(
         ..., description="AI 가 지금 시작한 처리 단계"
     )
+    stt: MeetingSttProgress | None = Field(
+        None, description="stt 단계의 전사 진행. stage 가 stt 일 때만 보낸다"
+    )
+
+    @model_validator(mode="after")
+    def _stt_only_on_stt_stage(self) -> "MeetingStageRequest":
+        if self.stt is not None and self.stage != MeetingProcessingStage.STT:
+            raise ValueError("stt 진행은 stage 가 stt 일 때만 보낼 수 있습니다")
+        return self
 
 
 class MeetingStageResponse(BaseModel):
     meeting_id: str
     status: str
     processing_stage: str | None
+    stt: MeetingSttProgress | None = Field(None, description="저장된 전사 진행. stt 단계가 아니면 null")
     applied: bool = Field(..., description="이 보고가 반영됐는지(같은 단계·역행·처리 중이 아님은 False)")
 
 
@@ -77,6 +110,12 @@ class MeetingProgress(BaseModel):
     audio_merged: bool
     transcribed: bool
     extracted: bool
+
+
+class MeetingProcessing(BaseModel):
+    stage: str | None = Field(..., description="AI 가 알린 현재 단계. 아직 알리지 않았으면 null")
+    stage_at: datetime | None = Field(..., description="현재 단계가 시작된 시각")
+    stt: MeetingSttProgress | None = Field(..., description="전사 진행. stt 단계에서 알렸을 때만")
 
 
 class MeetingDetailResponse(BaseModel):
@@ -89,6 +128,9 @@ class MeetingDetailResponse(BaseModel):
     extraction_id: str | None = None
     failed_stage: str | None = None
     progress: MeetingProgress
+    processing: MeetingProcessing | None = Field(
+        None, description="status 가 processing 일 때만 객체, 그 밖에는 null"
+    )
 
 
 class MeetingListResponse(BaseModel):
@@ -187,6 +229,14 @@ class ExtractionItemResponse(BaseModel):
             "approved는 태스크 반영과 승인 처리가 함께 커밋된 상태다"
         ),
     )
+    alias_candidate: bool = Field(
+        False,
+        description="담당자를 못 찾은 이름 지목(thirdname) 항목의 pending 생성 승인이고, 그 항목이 카드의 담당 항목(payload assignee_item_id, 없으면 extraction_item_id)이며(다른 회의 항목을 합친 카드는 담당 항목에만 나온다), 같은 워크스페이스에서 탈퇴하지 않은 팀원 누구도 그 글자(님·조사를 뗀 찾기 후보 포함)를 별칭으로 갖고 있지 않으면 true. PM 이 담당자를 골라 save_alias=true 로 승인하면 alias_text 를 그 팀원의 별칭으로 저장한다. 탈퇴하지 않은 누군가가 이미 갖고 있으면 false 이고 저장하지 않는다(탈퇴한 팀원의 별칭은 세지 않는다)",
+    )
+    alias_text: str | None = Field(
+        None,
+        description="저장될 별칭 글자(원문에서 끝 조사·님을 뗀 것). alias_candidate 가 false 면 null",
+    )
 
 
 class ExtractionDetailResponse(BaseModel):
@@ -224,8 +274,15 @@ class TargetSnapshot(BaseModel):
 class ExtractionItemCreate(BaseModel):
     action: ExtractionAction = Field(
         ExtractionAction.CREATE,
-        description="create: 새 task(없으면 create) / update: target_task_id의 기존 task 수정. "
+        description="create: 새 task(없으면 create) / update: target_task_id의 기존 task 수정 / "
+        "merge: target_approval_id의 승인 대기 task_create 카드에 합침. "
         "AI Terra 2단계의 JudgeResult.is_new에서 온다.",
+    )
+    target_approval_id: str | None = Field(
+        None,
+        max_length=36,
+        description="action이 merge일 때 합칠 승인 대기 카드 ID. merge일 때만 읽는다. "
+        "없거나 이 워크스페이스의 대기 중 task_create 카드가 아니면 create로 처리한다(auto 아님).",
     )
     target_task_id: str | None = Field(
         None,
@@ -234,7 +291,7 @@ class ExtractionItemCreate(BaseModel):
     )
     task_title: str | None = Field(
         None,
-        description="action이 create면 필수(비어 있으면 그 항목만 건너뛴다). "
+        description="action이 create·merge면 필수(비어 있으면 그 항목만 건너뛴다). "
         "update면 보내지 않아도 되고, 보내도 제목은 바꾸지 않는다.",
     )
     task_confidence: float | None = Field(
@@ -246,7 +303,8 @@ class ExtractionItemCreate(BaseModel):
     )
     assignee_type: str | None = Field(
         None,
-        description="'first'(1인칭), 'second', 'thirdname', 'group', 'none' 등. "
+        description="담당자 표현의 종류. 'first'(1인칭), 'second', 'thirdname', 'thirdpronoun', 'thirdrole', "
+        "'group', 'none' 중 하나다. BE가 추출 항목에 저장하며(승인 때 별칭 학습에 쓴다) 모르는 값은 NULL로 저장한다. "
         "first이면 assignee_raw 대신 화자로 팀원을 찾는다. 화자는 다음 순서로 정한다. "
         "(1) evidence_speaker_member_id가 있으면 그 팀원이다. 이 워크스페이스의 탈퇴하지 않은 팀원이 아니면 "
         "화자를 못 찾은 것이고 (2)(3)으로 넘어가지 않는다. "

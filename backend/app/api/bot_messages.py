@@ -14,7 +14,10 @@ from app.schemas.message import (
     DraftClaimResponse,
     DraftWriteRequest,
 )
+from app.schemas.reply import ReplyClaimResponse, ReplyJudgmentRequest
+from app.services import mailer
 from app.services import messages as svc
+from app.services import replies
 
 router = APIRouter(prefix="/bot", tags=["bot-messages"], dependencies=[Depends(require_service_token)])
 
@@ -34,12 +37,12 @@ def claim_messages(db: Session = Depends(get_db)) -> dict:
             "workspace_id": c.workspace_id,
             "member_id": c.member_id,
             "discord_user_id": c.discord_user_id,
-            "body": c.message.body,
+            "body": c.body,
             "scheduled_at": c.message.scheduled_at and svc.utc(c.message.scheduled_at),
         }
         for c in claimed
     ]
-    return success({"items": items, "total": len(items)})
+    return success({"items": items, "total": len(items), "web_url": mailer.app_base_url() or None})
 
 
 @router.post("/messages/{message_id}/result", response_model=Envelope[None])
@@ -71,6 +74,22 @@ def ingest_reply(payload: BotReplyRequest, response: Response, db: Session = Dep
         "message_id": message.message_id, "thread_id": thread.thread_id,
         "workspace_id": thread.workspace_id, "member_id": thread.member_id,
     })
+
+
+@router.post("/replies/claim", response_model=Envelope[ReplyClaimResponse])
+def claim_reply(db: Session = Depends(get_db)) -> dict:
+    """판단할 답장 한 통을 맡긴다. 대화마다 가장 오래된 답장부터 한 통씩이고 3분 안에 결과가 없으면 다시 맡긴다."""
+    claimed = replies.claim(db, _now())
+    db.commit()
+    return success({"item": claimed and claimed.model_dump(mode="json")})
+
+
+@router.post("/replies/{message_id}/judgment", response_model=Envelope[None])
+def submit_judgment(message_id: str, payload: ReplyJudgmentRequest, db: Session = Depends(get_db)) -> dict:
+    """판단 결과. 게이트·반영·승인 요청·기록·알림이 한 트랜잭션이다. 같은 attempt 재전송은 200, 다른 attempt 는 409."""
+    replies.submit(db, message_id, payload, _now())
+    db.commit()
+    return success(None)
 
 
 @router.post("/drafts/claim", response_model=Envelope[DraftClaimResponse])

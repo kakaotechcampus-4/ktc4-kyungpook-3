@@ -26,14 +26,17 @@ import { ReviewTasks } from './ReviewTasks'
    열은 내용 높이를 따르고(`self-start`) 넘치면 PAGE 가 스크롤한다 — 칸 높이로 늘어나면(stretch) 세로 flex 가 자식을 줄이고,
    overflow-hidden 인 미리보기 카드는 최소 높이가 0 이라 본문이 잘린다.
    이름·태스크·본문은 띄어 쓰지 않은 긴 글자(주소, 전역 `keep-all` 의 긴 한글)도 칸 안에서 줄을 바꾼다(`wrap-anywhere`) */
-const PAGE = 'flex flex-1 justify-center overflow-y-auto px-36 pt-44 pb-56'
+const PAGE =
+  'flex flex-1 justify-center overflow-y-auto px-36 pt-44 pb-56 max-md:px-20 max-md:pt-24 max-md:pb-32'
 const COLUMN = 'flex w-full max-w-[604px] flex-col gap-24 self-start'
-const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink'
+const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink max-md:text-[24px]'
 
 export interface ReviewDetailProps {
   workspaceId: string
   botName: string
   bundle: Bundle
+  /** 스크롤 끝에 둘 여백(px). `보내지 않음`·`이대로 발송` 을 정리 중 토스트 위로 꺼낼 수 있게 한다. 토스트가 없으면 0 */
+  toastClearance: number
   /** 승인하거나 보내지 않거나 마지막 태스크를 빼거나 다른 묶음과 합쳐져 이 항목이 바뀐다 — 누른 버튼도 사라지므로 포커스를 맡길 자리로 옮긴다 */
   onSettled: () => void
 }
@@ -46,7 +49,13 @@ export interface ReviewDetailProps {
  * 열린 것은 한 번에 하나다(ReviewDraft).
  * 잠금은 `aria-disabled` 라 누른 버튼에서 포커스가 빠지지 않는다. 시각 저장만으로 잠긴 동안은 버튼 모양을 그대로 둔다
  */
-export function ReviewDetail({ workspaceId, botName, bundle, onSettled }: ReviewDetailProps) {
+export function ReviewDetail({
+  workspaceId,
+  botName,
+  bundle,
+  toastClearance,
+  onSettled,
+}: ReviewDetailProps) {
   const headingId = useId()
   const lockHintId = useId()
   const tasksHeadingRef = useRef<HTMLHeadingElement>(null)
@@ -81,7 +90,10 @@ export function ReviewDetail({ workspaceId, botName, bundle, onSettled }: Review
   }
 
   return (
-    <div className={PAGE}>
+    <div
+      className={PAGE}
+      style={toastClearance > 56 ? { paddingBottom: toastClearance } : undefined}
+    >
       <article aria-labelledby={headingId} className={COLUMN}>
         <div className="flex flex-col gap-8">
           <h2 id={headingId} className={TITLE}>
@@ -115,6 +127,7 @@ export function ReviewDetail({ workspaceId, botName, bundle, onSettled }: Review
         />
 
         <ReviewTasks
+          workspaceId={workspaceId}
           bundle={bundle}
           draft={draft}
           onDraftChange={setDraft}

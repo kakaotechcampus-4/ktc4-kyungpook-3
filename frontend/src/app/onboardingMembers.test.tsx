@@ -12,6 +12,7 @@ import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import type { RecordedRequest } from '@/shared/test/requests'
+import { REVEAL_TARGETS } from '@/shared/ui/deferred-skeleton'
 import { renderApp } from './test/renderApp'
 
 /* U3-7·U3-8·U3-9·U3-10. ws_03 을 팀원 연결 단계로 둔다. 팀원은 생성자 PM(mb_90 최진호) 하나다.
@@ -116,6 +117,11 @@ describe('팀원 연결 목록 (U3-8)', () => {
     expect(screen.getByText(/디스코드에서 팀원 3명을 찾았어요/)).toBeInTheDocument()
     expect(screen.getByText(/2명은 누구인지 모르겠어요/)).toBeInTheDocument()
     expect(screen.getByText('노션 연동 완료')).toBeInTheDocument()
+    // 두 목록을 기다린 뒤 나타난 카드 본문과 버튼에는 불투명도 전환이 걸린다 (#508)
+    expect(nameInput('jihun_dev').closest(REVEAL_TARGETS)).not.toBeNull()
+    expect(
+      screen.getByRole('button', { name: '나중에 하기' }).closest(REVEAL_TARGETS),
+    ).not.toBeNull()
   })
 
   it('같은 이름을 두 줄에 쓰면 저장 요청 없이 막는다 (1:1)', async () => {
@@ -607,6 +613,9 @@ describe('Discord 없이 온 팀원 연결 (D-073 개정)', () => {
     expect(await screen.findByText(NOT_CONNECTED)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
     expect(screen.queryAllByRole('textbox')).toEqual([])
+    // 기다린 뒤 나타난 안내와 버튼에는 불투명도 전환이 걸린다 (#508)
+    expect(screen.getByText(NOT_CONNECTED).closest(REVEAL_TARGETS)).not.toBeNull()
+    expect(screen.getByRole('button', { name: '건너뛰기' }).closest(REVEAL_TARGETS)).not.toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: '건너뛰기' }))
     expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()

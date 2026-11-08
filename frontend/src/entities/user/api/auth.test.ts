@@ -5,6 +5,7 @@ import { server } from '@/shared/mock/server'
 import { recordRequestBodies } from '@/shared/test/requests'
 import { fetchSession } from './session'
 import { login, logout, signup } from './auth'
+import { confirmSignupCode, requestSignupCode } from './signupCode'
 
 describe('login', () => {
   it('픽스처 계정으로 로그인하면 Session 을 돌려준다', async () => {
@@ -35,11 +36,18 @@ describe('login', () => {
 })
 
 describe('signup', () => {
+  async function verifiedToken(email: string): Promise<string> {
+    await requestSignupCode(email)
+    const code = db.signupVerification.outbox.at(-1)?.code ?? ''
+    return confirmSignupCode({ email, code })
+  }
+
+  const profile = { name: '새 사용자', password: 'pass1234', linkKakao: false }
+
   it('가입하면 공간 0개의 Session 으로 로그인된다', async () => {
     const session = await signup({
-      name: '새 사용자',
-      email: 'new@example.com',
-      password: 'pass1234',
+      ...profile,
+      verificationToken: await verifiedToken('new@example.com'),
     })
     expect(session).toMatchObject({
       user: { email: 'new@example.com', name: '새 사용자' },
@@ -49,26 +57,98 @@ describe('signup', () => {
     await expect(fetchSession()).resolves.toMatchObject({ user: { email: 'new@example.com' } })
   })
 
-  it('SignupRequest 모양 { email, password, name } 으로 보낸다', async () => {
+  it('SignupRequest 모양 { verification_token, password, name, link_kakao } 으로 보낸다. 이메일은 없다', async () => {
+    const verificationToken = await verifiedToken('new@example.com')
     const bodies = recordRequestBodies('POST', '/auth/signup')
-    await signup({ name: '새 사용자', email: 'new@example.com', password: 'pass1234' })
+    await signup({ ...profile, verificationToken })
     await vi.waitFor(() =>
       expect(bodies).toEqual([
-        { email: 'new@example.com', password: 'pass1234', name: '새 사용자' },
+        {
+          verification_token: verificationToken,
+          password: 'pass1234',
+          name: '새 사용자',
+          link_kakao: false,
+        },
       ]),
     )
   })
 
-  it('이미 있는 이메일은 409 EMAIL_ALREADY_EXISTS 로 던진다', async () => {
-    await expect(
-      signup({ name: '중복', email: 'pm@example.com', password: 'pass1234' }),
-    ).rejects.toMatchObject({ status: 409, code: 'EMAIL_ALREADY_EXISTS' })
+  it('증명 없이는 400 SIGNUP_VERIFICATION_INVALID 다', async () => {
+    await expect(signup({ ...profile, verificationToken: 'forged' })).rejects.toMatchObject({
+      status: 400,
+      code: 'SIGNUP_VERIFICATION_INVALID',
+    })
+  })
+
+  it('만료된 증명은 400 SIGNUP_VERIFICATION_INVALID 다', async () => {
+    const verificationToken = await verifiedToken('new@example.com')
+    db.signupVerification.proofs[verificationToken].expiresAt = 0
+    await expect(signup({ ...profile, verificationToken })).rejects.toMatchObject({
+      code: 'SIGNUP_VERIFICATION_INVALID',
+    })
+  })
+
+  it('증명을 받은 뒤 같은 이메일이 가입되면 409 EMAIL_ALREADY_EXISTS 다', async () => {
+    const verificationToken = await verifiedToken('new@example.com')
+    await signup({ ...profile, verificationToken })
+    await expect(signup({ ...profile, verificationToken })).rejects.toMatchObject({
+      status: 409,
+      code: 'EMAIL_ALREADY_EXISTS',
+    })
+  })
+
+  describe('카카오 연결', () => {
+    const pending = { kakaoId: 'kakao-1', email: 'kakao@example.com', nickname: '카카오' }
+    const kakaoProfile = { ...profile, verificationToken: null, linkKakao: true }
+
+    it('대기의 인증된 이메일로 만들고 계정에 잇는다. 토큰을 보내지 않는다', async () => {
+      db.kakao.pending = pending
+      const bodies = recordRequestBodies('POST', '/auth/signup')
+      await expect(signup(kakaoProfile)).resolves.toMatchObject({
+        user: { email: 'kakao@example.com' },
+      })
+      await vi.waitFor(() =>
+        expect(bodies).toEqual([{ password: 'pass1234', name: '새 사용자', link_kakao: true }]),
+      )
+      expect(db.accounts.at(-1)?.kakaoId).toBe('kakao-1')
+      expect(db.kakao.pending).toBeNull()
+    })
+
+    it('대기가 없으면 400 KAKAO_LINK_EXPIRED 다', async () => {
+      await expect(signup(kakaoProfile)).rejects.toMatchObject({
+        status: 400,
+        code: 'KAKAO_LINK_EXPIRED',
+      })
+    })
+
+    it('대기에 이메일이 없으면 코드 증명이 있어야 한다', async () => {
+      db.kakao.pending = { ...pending, email: null }
+      await expect(signup(kakaoProfile)).rejects.toMatchObject({
+        code: 'SIGNUP_VERIFICATION_INVALID',
+      })
+      const verificationToken = await verifiedToken('new@example.com')
+      await expect(signup({ ...kakaoProfile, verificationToken })).resolves.toMatchObject({
+        user: { email: 'new@example.com' },
+      })
+      expect(db.accounts.at(-1)?.kakaoId).toBe('kakao-1')
+    })
+
+    it('같은 카카오가 이미 이어져 있으면 409 KAKAO_ALREADY_LINKED 다', async () => {
+      db.accounts[0].kakaoId = 'kakao-1'
+      db.kakao.pending = pending
+      await expect(signup(kakaoProfile)).rejects.toMatchObject({
+        status: 409,
+        code: 'KAKAO_ALREADY_LINKED',
+      })
+    })
   })
 
   it('비밀번호가 규칙에 어긋나면 이미 있는 이메일이어도 409 가 아니라 400 INVALID_REQUEST 다', async () => {
-    await expect(
-      signup({ name: '중복', email: 'pm@example.com', password: 'abcdefgh' }),
-    ).rejects.toMatchObject({
+    const existing = { ...profile, verificationToken: null, linkKakao: true }
+    db.kakao.pending = { kakaoId: 'kakao-1', email: 'pm@example.com', nickname: null }
+    await expect(signup(existing)).rejects.toMatchObject({ code: 'EMAIL_ALREADY_EXISTS' })
+
+    await expect(signup({ ...existing, password: 'abcdefgh' })).rejects.toMatchObject({
       status: 400,
       code: 'INVALID_REQUEST',
       details: {

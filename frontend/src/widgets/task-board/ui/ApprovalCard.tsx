@@ -1,6 +1,7 @@
 import { useId, useMemo, useState } from 'react'
 import {
   APPROVAL_RESOLUTION_REASONS,
+  aliasToLearn,
   isScopeChange,
   planApprovalResolution,
   validateTaskCreateFields,
@@ -14,9 +15,9 @@ import type {
 } from '@/entities/approval'
 import { evidenceMoment } from '@/entities/meeting'
 import type { MeetingSummary } from '@/entities/meeting'
-import { speakerName } from '@/entities/member'
+import { ASSIGNEE_NONE_OPTION, assigneeOptions, speakerName } from '@/entities/member'
 import type { Member } from '@/entities/member'
-import { useApprovalResolve } from '@/features/approval-resolve'
+import { AliasSaveField, useApprovalResolve } from '@/features/approval-resolve'
 import type { ApprovalResolve } from '@/features/approval-resolve'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink, useUnsavedChanges } from '@/shared/lib/unsaved-changes'
@@ -25,6 +26,7 @@ import { Card } from '@/shared/ui/card'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { Icon } from '@/shared/ui/icon'
 import { Label } from '@/shared/ui/label'
+import { Select } from '@/shared/ui/select'
 import { TextField } from '@/shared/ui/text-field'
 
 /* 시안의 `지금 봐야 하는 카드` 그림자 — 0 8px 24px rgba(23,23,23,.2). 토큰에 그림자가 없어 값을 그대로 쓴다 */
@@ -40,8 +42,6 @@ const MEETING_LINK =
   'inline-flex shrink-0 items-center gap-6 text-[12px] text-dim hover:text-ink tabular-nums'
 const REASON = 'text-body text-sub'
 const FIELDS = 'grid grid-cols-[minmax(0px,1.6fr)_minmax(0px,1fr)_minmax(0px,1fr)] gap-12'
-const SELECT =
-  'h-[42px] w-full appearance-none rounded-9 border bg-surface pr-36 pl-13 text-body disabled:border-line disabled:bg-surface-sunken disabled:text-faint'
 const EVIDENCE = 'flex flex-col gap-7 rounded-12 bg-surface-sunken px-20 py-18'
 const EVIDENCE_HEAD = 'flex items-center justify-between gap-12'
 const EVIDENCE_META = 'text-[11px] text-dim tabular-nums'
@@ -87,11 +87,14 @@ export function ApprovalCard(props: ApprovalCardProps) {
 function SummaryCard({ workspaceId, approval }: { workspaceId: string; approval: Approval }) {
   const title =
     approval.kind === 'unsupported' ? approval.type : (approval.title ?? '제목 없는 확인 요청')
-  const reason = isScopeChange(approval)
-    ? '범위 변경을 확인해야 해요'
-    : approval.kind === 'task_update'
-      ? '변경 제안을 확인해야 해요'
-      : '지원하지 않는 종류라 여기서 처리할 수 없어요'
+  const reason =
+    approval.kind === 'task_update' && approval.assigneePick !== null
+      ? '담당자를 골라야 하는 답장이에요'
+      : isScopeChange(approval)
+        ? '범위 변경을 확인해야 해요'
+        : approval.kind === 'task_update'
+          ? '변경 제안을 확인해야 해요'
+          : '지원하지 않는 종류라 여기서 처리할 수 없어요'
   return (
     <Card
       as="article"
@@ -136,6 +139,7 @@ function TaskCreateCard({
   const edits = resolver.draft?.kind === 'task_create' ? resolver.draft.values : {}
   const values = taskCreateValues(approval, edits)
   const [filling, setFilling] = useState(!hold)
+  const [saveAlias, setSaveAlias] = useState(true)
   const dirty = !sameFields(values, original)
   useUnsavedChanges(dirty)
 
@@ -200,6 +204,12 @@ function TaskCreateCard({
           issues={issues}
           members={memberList}
           editable={!resolver.pending}
+          aliasText={aliasToLearn(approval, values)}
+          saveAlias={saveAlias}
+          onSaveAliasChange={(checked) => {
+            resolver.invalidateConfirmation()
+            setSaveAlias(checked)
+          }}
           onChange={(next) => {
             resolver.editCreate({
               ...(next.taskTitle !== values.taskTitle ? { taskTitle: next.taskTitle } : {}),
@@ -245,7 +255,9 @@ function TaskCreateCard({
         hold={hold && !filling}
         approveBlocked={blockedReason !== null}
         onFill={() => setFilling(true)}
-        onApprove={() => resolver.approve(approval)}
+        onApprove={() =>
+          resolver.approve(approval, { kind: 'task_create', values: edits, saveAlias })
+        }
       />
       {problem?.kind === 'error' ? (
         <FormErrorPanel message={problem.message} />
@@ -263,6 +275,10 @@ interface ApprovalFieldsProps {
   issues: readonly TaskCreateIssue[]
   members: readonly Member[]
   editable: boolean
+  /** 담당자에게 별칭으로 등록할 글자 (#523). null 이면 묻지 않는다 */
+  aliasText: string | null
+  saveAlias: boolean
+  onSaveAliasChange: (checked: boolean) => void
   onChange: (next: TaskCreateFields) => void
 }
 
@@ -270,7 +286,16 @@ interface ApprovalFieldsProps {
  * 제목·담당자·마감. 비우면 승인이 막히는 칸은 라벨에 안내를 붙이고 강조색으로 보인다.
  * 제목은 비었을 때만이 아니라 길이가 넘을 때도 오류다 — 그 오류만 문구가 붙는다
  */
-function ApprovalFields({ values, issues, members, editable, onChange }: ApprovalFieldsProps) {
+function ApprovalFields({
+  values,
+  issues,
+  members,
+  editable,
+  aliasText,
+  saveAlias,
+  onSaveAliasChange,
+  onChange,
+}: ApprovalFieldsProps) {
   const assigneeId = useId()
   const assigneeMissing = issues.includes('assignee')
   const dueMissing = issues.includes('due')
@@ -291,30 +316,26 @@ function ApprovalFields({ values, issues, members, editable, onChange }: Approva
         <Label htmlFor={assigneeId} blocking={assigneeMissing} className="mb-6">
           {assigneeMissing ? '담당자 — 골라 주세요' : '담당자'}
         </Label>
-        <div className="relative">
-          <select
-            id={assigneeId}
-            className={`${SELECT} ${assigneeMissing ? 'border-accent text-accent-solid focus-visible:outline-accent-point' : 'border-input-border text-ink'}`}
-            aria-invalid={assigneeMissing ? true : undefined}
-            disabled={!editable}
-            value={values.assigneeMemberId ?? ''}
-            onChange={(event) =>
-              onChange({ ...values, assigneeMemberId: event.target.value || null })
-            }
-          >
-            <option value="">미정</option>
-            {members.map(({ id, displayName }) => (
-              <option key={id} value={id}>
-                {displayName}
-              </option>
-            ))}
-          </select>
-          <Icon
-            name="chevron-down"
-            size={14}
-            className="pointer-events-none absolute top-1/2 right-12 -translate-y-1/2 text-dim"
-          />
-        </div>
+        <Select
+          id={assigneeId}
+          label="담당자"
+          value={values.assigneeMemberId}
+          onValueChange={(assigneeMemberId) => onChange({ ...values, assigneeMemberId })}
+          options={assigneeOptions(members, values.assigneeMemberId)}
+          noneOption={ASSIGNEE_NONE_OPTION}
+          placeholder={assigneeMissing ? '담당자 고르기' : undefined}
+          tone={assigneeMissing ? 'blocking' : 'normal'}
+          disabled={!editable}
+          aria-invalid={assigneeMissing}
+        />
+        <AliasSaveField
+          aliasText={aliasText}
+          members={members}
+          assigneeMemberId={values.assigneeMemberId}
+          checked={saveAlias}
+          onCheckedChange={onSaveAliasChange}
+          disabled={!editable}
+        />
       </div>
       <TextField
         label={dueMissing && !dueInvalid ? '마감 — 날짜를 정해 주세요' : '마감'}

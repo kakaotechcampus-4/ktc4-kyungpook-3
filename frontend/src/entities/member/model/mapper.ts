@@ -13,7 +13,7 @@ import type {
   UnresolvedAlias,
 } from './types'
 const aliasTypes: AliasType[] = ['realname', 'nickname', 'mention', 'inferred']
-const sources: AliasSource[] = ['manual', 'discord_profile', 'learned']
+const sources: AliasSource[] = ['manual', 'discord_profile', 'learned', 'display_name']
 function warnUnknown(field: string, value: string): void {
   if (import.meta.env.DEV) console.warn(`Unknown ${field}: ${value}`)
 }

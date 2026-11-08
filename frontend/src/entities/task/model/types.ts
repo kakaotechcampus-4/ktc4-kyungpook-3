@@ -38,3 +38,38 @@ export interface TaskHistoryEntry {
   rolledBackAt: string | null
   createdAt: string
 }
+
+/** 답장 판단이 낸 줄의 종류. `unknown`·`due_clear`·`failed`·`none` 은 값이 없는 줄이다 (계약 §5.7) */
+export type ReplyChangeField =
+  'status' | 'due_date' | 'assignee' | 'scope' | 'unknown' | 'due_clear' | 'failed' | 'none'
+
+/** 승인은 따로 줄이 되지 않고 이 결과로 읽는다 */
+export type ReplyChangeResult =
+  'applied' | 'undone' | 'pending' | 'approved' | 'rejected' | 'noted' | 'recorded'
+
+export interface ReplyChangeLine {
+  id: string
+  field: ReplyChangeField
+  newValue: string | null
+  evidenceStatus: 'certain' | 'inferred' | null
+  /** AI 해석. 대화 주인과 PM 이 아니면 null 이다 */
+  summary: string | null
+  evidenceQuote: string | null
+  result: ReplyChangeResult
+  undoable: boolean
+}
+
+/** 태스크 기록 한 칸. 답장에 이어진 이력은 답장 아래에만 있고 `history` 칸이 되지 않는다 */
+export type TaskTimelineItem =
+  | {
+      kind: 'reply'
+      /** 답장 메시지 ID */
+      id: string
+      at: string
+      memberName: string
+      channel: 'discord' | 'web' | null
+      /** 대화 주인과 PM 이 아니면 null 이다 */
+      body: string | null
+      changes: ReplyChangeLine[]
+    }
+  | { kind: 'history'; entry: TaskHistoryEntry }

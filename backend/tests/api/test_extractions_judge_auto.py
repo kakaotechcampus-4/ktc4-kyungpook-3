@@ -24,6 +24,7 @@ from app.models import (
     User,
     Workspace,
 )
+from app.services.sessions import hash_session_token
 
 # 임베딩 워커가 이미 채운 task. 임베딩이 없는 task가 있으면 auto로 보내지 않으므로 시드 task에 넣는다
 EMBEDDED = [0.1] * EMBEDDING_DIMENSIONS
@@ -70,8 +71,8 @@ def seed(db):
     db.add_all([pm_user, member_user])
     db.flush()
     db.add_all([
-        SessionModel(user_id=pm_user.user_id, session_token="pm-token", expires_at=expires),
-        SessionModel(user_id=member_user.user_id, session_token="member-token", expires_at=expires),
+        SessionModel(user_id=pm_user.user_id, session_token=hash_session_token("pm-token"), expires_at=expires),
+        SessionModel(user_id=member_user.user_id, session_token=hash_session_token("member-token"), expires_at=expires),
     ])
     pm = Member(workspace_id=ws.workspace_id, user_id=pm_user.user_id, display_name="PM", role="pm")
     jimin = Member(
@@ -554,6 +555,18 @@ def test_chat_meeting_create_never_auto(client, db, seed, caplog):
     assert db.execute(select(Task).where(Task.title == "결제 API 연동")).scalar_one_or_none() is None
 
 
+def test_chat_downgrade_log_skips_unusable_merge_item(client, db, seed, caplog):
+    # 대상을 못 쓴 merge 항목은 채팅이 아니어도 review 라 "채팅이 아니었으면 auto" 로그에 세지 않는다
+    _make_chat(db, seed)
+
+    with caplog.at_level("INFO", logger="app.api.extractions"):
+        item = _only_item(client, _extract(client, seed, [_judge(action="merge", target_approval_id=None)]))
+
+    assert item["gate"] == "review"
+    assert "merge_target_unavailable" in caplog.text
+    assert "chat 회의라 auto 항목을 review로 내립니다" not in caplog.text
+
+
 def test_chat_meeting_hold_stays_hold(client, db, seed):
     _make_chat(db, seed)
 
@@ -593,3 +606,184 @@ def test_approve_meeting_create_still_records_meeting_source(client, db, seed):
     task = db.execute(select(Task).where(Task.title == "결제 API 연동")).scalar_one()
     [history] = db.execute(select(TaskHistory).where(TaskHistory.task_id == task.task_id)).scalars().all()
     assert history.change_source == "meeting"
+
+
+# ── 자동 생성 스위치 (AUTO_CREATE_ENABLED, #382 멘토 리뷰) ─────────────────────────
+
+
+def _legacy_auto() -> dict:
+    """legacy 경로에서 확신도로 auto 가 되는 새 항목."""
+    return {
+        "task_title": "결제 환불 기능 구현", "task_confidence": 0.95, "assignee_raw": "지민님",
+        "due_date": "2026-10-20", "due_confidence": 0.95,
+        "evidence_quote": "지민님이 20일까지 결제 환불 붙여 주세요", "evidence_speaker": "uid-pm",
+    }
+
+
+@pytest.mark.parametrize("value", ["false", "0", "off", "no", " False "])
+def test_auto_create_off_turns_judge_auto_into_review(client, db, seed, monkeypatch, caplog, value):
+    # 검증(Jev)은 그대로 돌아 근거 상태가 저장되고, 태스크만 PM 확인 뒤에 생긴다
+    monkeypatch.setenv("AUTO_CREATE_ENABLED", value)
+    with caplog.at_level("INFO", logger="app.api.extractions"):
+        item = _only_item(client, _extract(client, seed, [_judge()]))
+
+    assert item["gate"] == "review"
+    assert item["task_id"] is None and item["approval_id"] is not None
+    assert item["task"]["evidence_status"] == "certain"
+    assert item["due_date"]["evidence_status"] == "certain"
+    assert db.execute(select(Task).where(Task.title == "결제 API 연동")).scalar_one_or_none() is None
+    [line] = [m for m in caplog.messages if "자동 생성이 꺼져 있어 auto 항목을 review로 내립니다" in m]
+    # 항목 단위로 PM 결과와 맞출 수 있게 추출·항목 ID 를 싣는다(#526 리뷰)
+    assert f"item_id={item['item_id']}" in line and "extraction_id=" in line and "path=judge" in line
+
+
+def test_auto_create_off_also_stops_legacy_auto(client, db, seed, monkeypatch):
+    monkeypatch.setenv("AUTO_CREATE_ENABLED", "false")
+    item = _only_item(client, _extract(client, seed, [_legacy_auto()]))
+
+    assert item["gate"] == "review"
+    assert db.execute(select(Task).where(Task.title == "결제 환불 기능 구현")).scalar_one_or_none() is None
+
+
+def test_auto_create_off_keeps_hold(client, seed, monkeypatch):
+    # 끄는 것은 auto 만 review 로 내린다. PM 이 채워야 하는 hold 는 그대로다
+    monkeypatch.setenv("AUTO_CREATE_ENABLED", "false")
+    assert _gate(client, seed, assignee_raw="모르는사람") == "hold"
+
+
+@pytest.mark.parametrize("value", [None, "", "true", "1", "on", "yes", " TRUE "])
+def test_auto_create_on_or_unset_keeps_auto(client, db, seed, monkeypatch, value):
+    if value is None:
+        monkeypatch.delenv("AUTO_CREATE_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("AUTO_CREATE_ENABLED", value)
+    item = _only_item(client, _extract(client, seed, [_judge()]))
+
+    assert item["gate"] == "auto"
+    assert db.get(Task, item["task_id"]).title == "결제 API 연동"
+
+
+@pytest.mark.parametrize("value", ["flase", "disabled", "n", "끔"])
+def test_unknown_switch_values_count_as_off_and_warn_once(client, db, seed, monkeypatch, caplog, value):
+    # 안전장치라 오타·모르는 값은 꺼짐으로 본다. 껐다고 믿었는데 auto 가 열려 있으면 안 된다(#526 리뷰)
+    from app.api import extractions
+    extractions._warn_unknown_auto_create.cache_clear()
+    monkeypatch.setenv("AUTO_CREATE_ENABLED", value)
+    with caplog.at_level("WARNING", logger="app.api.extractions"):
+        assert _gate(client, seed) == "review"
+        # 경고 횟수는 스위치를 직접 두 번 읽어 본다. 두 번째 등록은 앞 등록이 만든 임베딩 없는 승인 대기에
+        # 먼저 막혀(unsearched_pending_exists) 스위치를 읽지 않을 수 있다(#526 리뷰)
+        assert extractions.auto_create_enabled() is False
+        assert extractions.auto_create_enabled() is False
+    warnings = [m for m in caplog.messages if "AUTO_CREATE_ENABLED" in m]
+    assert len(warnings) == 1   # 요청마다 읽지만 같은 값은 한 번만 경고한다
+
+
+def test_legacy_auto_item_is_auto_when_switch_is_on(client, db, seed, monkeypatch):
+    # 끔 테스트가 스위치 덕분에 review 인지 확인하려면, 같은 입력이 켜짐에서는 auto 여야 한다(#526 리뷰)
+    monkeypatch.delenv("AUTO_CREATE_ENABLED", raising=False)
+    item = _only_item(client, _extract(client, seed, [_legacy_auto()]))
+    assert item["gate"] == "auto"
+
+
+# ── 승인 대기 요청(pending) 이 유사 검색에 잡히는지 ────────────────────────────
+
+
+def _pending_create(db, seed, *, embedding=None, rejected_title=None, title="결제 API 붙이기") -> ApprovalRequest:
+    """다른 회의에서 만든 승인 대기 task_create 요청."""
+    approval = ApprovalRequest(
+        workspace_id=seed["ws"].workspace_id,
+        type="task_create",
+        payload=json.dumps({"task_title": title}, ensure_ascii=False),
+        status="pending",
+        embedding=embedding,
+        embedding_rejected_title=rejected_title,
+    )
+    db.add(approval)
+    db.commit()
+    return approval
+
+
+def test_unembedded_pending_from_another_meeting_blocks_auto(client, db, seed):
+    # 임베딩이 채워지기 전의 pending 은 AI 의 유사 검색에 잡히지 않아 similar_count=0 을 믿을 수 없다
+    _pending_create(db, seed)
+
+    item = _only_item(client, _extract(client, seed, [_judge()]))
+
+    assert item["gate"] == "review"
+    assert item["task_id"] is None
+
+
+def test_embedded_pending_does_not_block_auto(client, db, seed):
+    _pending_create(db, seed, embedding=EMBEDDED)
+
+    assert _gate(client, seed) == "auto"
+
+
+def test_pending_with_blank_title_does_not_block_auto(client, db, seed):
+    # 제목이 없어 같은 할 일일 수 없는 요청이라 워커가 "" 로 표시해 둔다
+    _pending_create(db, seed, rejected_title="")
+
+    assert _gate(client, seed) == "auto"
+
+
+def test_pending_rejected_by_embedding_api_blocks_auto(client, db, seed):
+    _pending_create(db, seed, rejected_title="결제 API 붙이기")
+
+    assert _gate(client, seed) == "review"
+
+
+def test_pending_created_earlier_in_the_same_request_does_not_block_auto(client, db, seed):
+    # 앞 항목이 review 로 pending 을 만들어도, 신호는 처음 읽은 값을 쓰므로 뒤 항목을 막지 않는다
+    extraction_id = _extract(client, seed, [
+        _judge(task_title="로그인 개선", similar_count=1, top_similarity=0.5),
+        _judge(),
+    ])
+
+    items = client.get(f"/api/v1/extractions/{extraction_id}").json()["data"]["items"]
+    assert [i["gate"] for i in items] == ["review", "auto"]
+    # 첫 항목이 실제로 pending task_create 를 만들었는데도 두 번째 항목은 auto 다
+    pending = [r for r in _approvals(db) if r.type == "task_create" and r.status == "pending"]
+    assert len(pending) == 1
+
+
+def test_pending_signal_is_read_even_after_a_legacy_auto_item(client, db, seed, caplog):
+    # 앞의 legacy auto 항목이 unsearched_tasks 를 먼저 True 로 정해도 pending 신호는 따로 읽어 사유에 남긴다
+    _pending_create(db, seed)
+    legacy = {
+        "task_title": "로그인 화면 시안", "assignee_raw": "지민님", "due_date": "2026-10-20",
+        "evidence_quote": "지민님이 시안 맡아 주세요", "evidence_speaker": "uid-pm",
+        "task_confidence": 0.99, "due_confidence": 0.99,
+    }
+
+    with caplog.at_level("INFO", logger="app.api.extractions"):
+        extraction_id = _extract(client, seed, [legacy, _judge()])
+
+    items = client.get(f"/api/v1/extractions/{extraction_id}").json()["data"]["items"]
+    assert [i["gate"] for i in items] == ["auto", "review"]
+    [reasons] = [
+        r.getMessage().split("reasons=")[1] for r in caplog.records
+        if "auto로 보내지 않습니다" in r.getMessage()
+    ]
+    assert set(reasons.split(",")) == {"unsearched_task_exists", "unsearched_pending_exists"}
+
+
+@pytest.mark.parametrize("case", ["other_workspace", "approved", "rejected", "task_update"])
+def test_unembedded_request_outside_the_search_does_not_block_auto(client, db, seed, case):
+    # 유사 검색(include_pending)이 보는 것은 같은 워크스페이스의 승인 대기 task_create 뿐이다.
+    # 그 밖의 요청은 임베딩이 없어도 검색이 놓친 후보가 아니므로 auto 를 막지 않는다
+    workspace_id = seed["ws"].workspace_id
+    if case == "other_workspace":
+        other = Workspace(name="다른 팀")
+        db.add(other)
+        db.flush()
+        workspace_id = other.workspace_id
+    db.add(ApprovalRequest(
+        workspace_id=workspace_id,
+        type="task_update" if case == "task_update" else "task_create",
+        payload=json.dumps({"task_title": "결제 API 붙이기"}, ensure_ascii=False),
+        status=case if case in ("approved", "rejected") else "pending",
+    ))
+    db.commit()
+
+    assert _gate(client, seed) == "auto"
