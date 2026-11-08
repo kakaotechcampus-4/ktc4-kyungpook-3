@@ -18,7 +18,7 @@ STARTING_VIEW = replace(RUNNING, state="starting")
 
 def sig(**kw) -> Signals:
     return Signals(**{**dict(elice_fails=0, elice_oks=0, elice_streak=0, streak_since=None, auth=False,
-                             gpu_inflight=0, gpu_streak=0, last_gpu_call=None, waiting=0), **kw})
+                             gpu_inflight=0, gpu_fails=0, gpu_streak=0, last_gpu_call=None, waiting=0), **kw})
 
 
 def st(phase: Phase, **kw) -> FailoverState:
@@ -49,7 +49,7 @@ ROWS = [
     ("normal: 연속 실패 6번이면 hold", st(Phase.NORMAL),
      facts(signals=dict(elice_fails=6, elice_streak=6, streak_since=T0 - 50)),
      Phase.SUSPECT, "elice_down", {"hold_until": T0 + 10 + L.hold_s, "outage_since": T0 - 50, "next_probe_at": T0 + 10}),
-    ("normal: 단계 전의 실패는 세지 않는다", st(Phase.NORMAL, mark=(4, 0)),
+    ("normal: 단계 전의 실패는 세지 않는다", st(Phase.NORMAL, mark=sig(elice_fails=4)),
      facts(signals=dict(elice_fails=8, elice_streak=8)), Phase.NORMAL, "", {}),
     ("normal: 멈춤이면 hold 하지 않는다", st(Phase.NORMAL, paused_until=T0 + 100),
      facts(signals=dict(elice_fails=6, elice_streak=6)), Phase.NORMAL, "", {}),
@@ -142,7 +142,9 @@ ROWS = [
     ("on_gpu: GPU 확인 실패", st(Phase.ON_GPU, why="elice_down", **ON_GPU),
      facts(gpu_ok=False, signals=dict(last_gpu_call=T0)), Phase.STARTING, "gpu_lost", {"hold_until": T0 + 10 + L.hold_s}),
     ("on_gpu: GPU 실제 호출 3번 연속 실패", st(Phase.ON_GPU, why="elice_down", **ON_GPU),
-     facts(signals=dict(gpu_streak=3, last_gpu_call=T0)), Phase.STARTING, "gpu_lost", {}),
+     facts(signals=dict(gpu_fails=3, gpu_streak=3, last_gpu_call=T0)), Phase.STARTING, "gpu_lost", {}),
+    ("on_gpu: 단계 전의 GPU 실패는 세지 않는다", st(Phase.ON_GPU, why="gpu_lost", mark=sig(gpu_fails=3), **ON_GPU),
+     facts(signals=dict(gpu_fails=3, gpu_streak=3, last_gpu_call=T0)), Phase.ON_GPU, "gpu_lost", {}),
     ("on_gpu: GPU 호출 10분 없음", st(Phase.ON_GPU, why="elice_down", **ON_GPU),
      facts(now=T0 + 700, signals=dict(last_gpu_call=T0 + 50)), Phase.STOPPING, "idle", {"hold_until": T0 + 700 + L.hold_s}),
     ("on_gpu: 진행 중인 호출이 있으면 일 없음이 아니다", st(Phase.ON_GPU, why="elice_down", **ON_GPU),

@@ -254,6 +254,20 @@ def test_a_call_during_the_idle_turn_off_waits_and_the_server_comes_back(tmp_pat
     assert out["r"] == "안녕하세요" and switch.starts == 2
 
 
+def test_three_failed_gpu_calls_then_a_good_check_go_back_to_gpu_and_idle_off(tmp_path):
+    """확인 호출 성공은 실제 호출의 연속 실패를 지우지 않는다. 그래도 다시 넘긴 뒤에는 그 전의 실패로 또 끊지 않는다."""
+    fo, elice, gpu, switch, clock, notes = make(tmp_path)
+    to_gpu(fo, elice, switch, clock)
+    gpu.mode = "service"
+    assert [call(fo) for _ in range(3)] == ["service"] * 3
+    gpu.mode = "ok"
+    n0, phases = len(notes), []
+    assert ticks(fo, clock, 3600, until=lambda: phases.append(fo.phase) or fo.phase is Phase.PARKED)
+    assert phases.count(Phase.STARTING) == 1
+    assert switch.starts == 1 and switch.state == "off"
+    assert len(notes) - n0 == 3                           # 응답 없음, 다시 넘김, 끔
+
+
 def test_near_the_three_hour_end_with_work_it_turns_off_and_on_again(tmp_path):
     fo, elice, gpu, switch, clock, _ = make(tmp_path)
     to_gpu(fo, elice, switch, clock)

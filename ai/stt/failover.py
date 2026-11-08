@@ -125,6 +125,7 @@ class Signals:
     streak_since: float | None = None
     auth: bool = False              # 연속 실패에 401·402·403 이 섞였다
     gpu_inflight: int = 0
+    gpu_fails: int = 0              # GPU 실제 호출을 장애로 센 실패 누계
     gpu_streak: int = 0
     last_gpu_call: float | None = None
     waiting: int = 0
@@ -154,7 +155,7 @@ class FailoverState:
     day: str = ""                       # KST 날짜
     day_ons: int = 0
     day_used_s: float = 0.0             # 오늘 닫은 세션의 사용 시간
-    mark: tuple[int, int] = (0, 0)      # 단계에 들어올 때의 (elice_fails, elice_oks). 파일에 쓰지 않는다
+    mark: Signals = Signals()           # 단계에 들어올 때의 표본. 누계와 견줘 이 단계의 일만 센다. 파일에 쓰지 않는다
 
 
 @dataclass(frozen=True)
@@ -206,15 +207,19 @@ def _paused(s: FailoverState, now: float) -> bool:
 
 def _fails_here(s: FailoverState, sig: Signals) -> int:
     """이 단계에 들어온 뒤의 연속 실패."""
-    return min(sig.elice_streak, sig.elice_fails - s.mark[0])
+    return min(sig.elice_streak, sig.elice_fails - s.mark.elice_fails)
 
 
 def _oks_here(s: FailoverState, sig: Signals) -> int:
-    return sig.elice_oks - s.mark[1]
+    return sig.elice_oks - s.mark.elice_oks
+
+
+def _gpu_fails_here(s: FailoverState, sig: Signals) -> int:
+    return min(sig.gpu_streak, sig.gpu_fails - s.mark.gpu_fails)
 
 
 def _enter(s: FailoverState, phase: Phase, why: str, f: Facts, **kw) -> FailoverState:
-    fresh = dict(phase=phase, why=why, since=f.now, mark=(f.signals.elice_fails, f.signals.elice_oks), probe_fails=0,
+    fresh = dict(phase=phase, why=why, since=f.now, mark=f.signals, probe_fails=0,
                  elice_ok=0, next_probe_at=None, next_gpu_probe_at=None, retry_at=None, refused=None,
                  switch_down_since=None)
     if phase in (Phase.NORMAL, Phase.PARKED, Phase.HALTED, Phase.ON_GPU):
@@ -396,7 +401,7 @@ def _on_gpu(s, f, L, out, closed):
         out.append(Notice("🔁 GPU 서버의 3시간 종료가 다가와 끄고 다시 켭니다. 그동안 전사는 기다립니다."))
         return _enter(s, Phase.STARTING, "rollover", f, discard=s.session[0] if s.session else None,
                       hold_until=f.now + L.hold_s)
-    if f.gpu_ok is False or sig.gpu_streak >= L.gpu_fails:
+    if f.gpu_ok is False or _gpu_fails_here(s, sig) >= L.gpu_fails:
         out.append(Notice("⚠️ GPU 서버가 응답하지 않습니다. 다시 확인하고 필요하면 다시 켭니다. 그동안 전사는 기다립니다."))
         return _enter(s, Phase.STARTING, "gpu_lost", f, hold_until=f.now + L.hold_s)
     if f.gpu_ok is True:
@@ -708,7 +713,7 @@ class FailoverStt:
                 sig = self._sig
                 streak = {True: 0, False: sig.gpu_streak + 1, None: sig.gpu_streak}[ok]
                 self._sig = replace(sig, gpu_inflight=sig.gpu_inflight - 1, last_gpu_call=self._clock(),
-                                    gpu_streak=streak)
+                                    gpu_fails=sig.gpu_fails + (ok is False), gpu_streak=streak)
 
     def _elice_call(self, samples, sample_rate, prompt):
         try:
