@@ -9,7 +9,7 @@ export interface Member {
   createdAt: string
 }
 export type AliasType = 'realname' | 'nickname' | 'mention' | 'inferred'
-export type AliasSource = 'manual' | 'discord_profile' | 'learned'
+export type AliasSource = 'manual' | 'discord_profile' | 'learned' | 'display_name'
 export interface MemberAlias {
   id: string
   memberId: string

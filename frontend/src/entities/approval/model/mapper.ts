@@ -145,6 +145,10 @@ export function toApproval(dto: ApprovalDto): Approval {
       meetingId: text(payload.meeting_id),
       extractionItemId: text(payload.extraction_item_id),
       gate,
+      aliasCandidate:
+        dto.alias_candidate === true && typeof dto.alias_text === 'string' && dto.alias_text.trim()
+          ? dto.alias_text
+          : null,
     }
   }
   // 대상 태스크 이름은 `task_title`(없으면 제안 때 본 `base_title`)이다. `title` 은 바꿀 제목이라 이름으로 쓰지 않는다
@@ -189,6 +193,7 @@ export function toApprovalResolveRequestDto(
           : {}),
       }
   } else {
+    if (resolution.saveAlias) body.save_alias = true
     const edits = resolution.taskOverrides
     if (edits)
       body.task_overrides = {
