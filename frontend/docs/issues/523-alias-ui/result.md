@@ -75,6 +75,8 @@ Codex 리뷰(중간 3, 낮음 1)를 모두 고쳤다. 건마다 고치기 전에
 | 낮음 4 삭제 뒤 포커스를 잃음 | 같은 자리(없으면 앞) 지우기 단추로, 남은 별칭이 없으면 새 별칭 칸으로 | `teamAliases.test.tsx` 「지우면 포커스가 옆 지우기 단추로…」 |
 
 - 바꾼 곳 테스트: 23 파일 303 통과(`--maxWorkers=1`).
+- 전체: `npm run typecheck`·`npm run build`·`npx eslint . --ignore-pattern '.verify/**'`·`npx prettier --check src docs e2e` 통과. `npm run test -- --maxWorkers=1` 273 파일 3448 통과, 실패 0.
+- 브라우저(MSW, Chromium, 1280·390) 3 통과. 키보드(포커스 + Enter)로 별칭을 지운 뒤 포커스가 같은 팀원의 다른 지우기 단추에 있다.
 
 ## 남은 것
 
