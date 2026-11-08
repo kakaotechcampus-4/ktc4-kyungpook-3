@@ -21,6 +21,7 @@ from tests.api.test_reply_clock import DEADLINE
 from tests.api.test_scheduler import SLOT, H, tick
 
 RULE = "'할일0' 진행 상황 한번 여쭤봐요.\n지금 어디까지 됐는지 편하게 알려 주세요!"
+WEB_GUIDE = "\n웹사이트에서 답장해 주세요."
 
 
 def _thread(db, seed, who="alice"):
@@ -71,7 +72,7 @@ def test_pm_message_reaches_the_bot_as_a_notice_and_the_web_keeps_what_was_writt
 
     (item,) = _claim()
     assert item["message_id"] == written["message_id"]
-    assert item["body"] == "A PM PM 이 메시지를 보냈어요."
+    assert item["body"] == "A PM PM 이 메시지를 보냈어요." + WEB_GUIDE
     assert item["discord_user_id"] == "d_alice" and item["scheduled_at"] is None
     assert _claim() == []
 
@@ -103,7 +104,7 @@ def test_each_pm_signs_their_own_message_in_one_thread(mdb, mseed):
     _send(client("pm"), mseed, tid, "하나")
     _send(client("bob"), mseed, tid, "둘")
 
-    assert [i["body"] for i in _claim()] == ["A PM PM 이 메시지를 보냈어요.", "A 밥 PM 이 메시지를 보냈어요."]
+    assert [i["body"] for i in _claim()] == ["A PM PM 이 메시지를 보냈어요." + WEB_GUIDE, "A 밥 PM 이 메시지를 보냈어요." + WEB_GUIDE]
 
 
 def test_member_lines_stay_authorless(mdb, mseed):
@@ -129,7 +130,28 @@ def test_pm_message_notice_links_to_the_conversation(mdb, mseed, monkeypatch):
 
     body = _claim()[0]["body"]
 
-    assert body == f"A PM PM 이 메시지를 보냈어요.\nhttps://mm.example/workspaces/{mseed['ws']}/messages/threads/{tid}"
+    assert body == f"A PM PM 이 메시지를 보냈어요.\n웹에서 답장해 주세요.\nhttps://mm.example/workspaces/{mseed['ws']}/messages/threads/{tid}"
+    assert "본문은 DM 에 나가지 않는다" not in body
+    assert "리마인드가 0개" not in body
+
+
+def test_pm_message_to_a_member_without_an_account_asks_for_an_invitation(mdb, mseed, monkeypatch):
+    monkeypatch.setenv("APP_BASE_URL", "https://mm.example/")
+    tid = _thread(mdb, mseed, "carol")
+    written = _send(client("pm"), mseed, tid, "웹에서만 볼 비공개 본문")
+    assert written.status_code == 201, written.text
+
+    (item,) = _claim()
+
+    assert item["discord_user_id"] == "d_carol"
+    assert item["body"] == "\n".join([
+        "A PM PM 이 메시지를 보냈어요.",
+        "웹 답장을 하려면 PM 에게 초대를 요청하고, 초대받은 이메일로 가입해 주세요.",
+        "https://mm.example/signup",
+    ])
+    assert "웹에서만 볼 비공개 본문" not in item["body"]
+    assert "/messages/threads/" not in item["body"]
+    assert "리마인드가 0개" not in item["body"]
 
 
 # 묶음 문구
@@ -151,7 +173,7 @@ def test_plain_message_before_any_reminder_keeps_the_bundle_and_the_first_remind
     assert _approve(pm, mseed, bundle["bundle_id"], bundle["draft_version"]).status_code == 200
     _due(mdb, bundle["bundle_id"])
     (reminder,) = _claim()
-    assert reminder["body"] == _first(RULE)
+    assert reminder["body"] == "A에서 답장을 기다리는 리마인드가 1개 있어요." + WEB_GUIDE
 
 
 def test_the_first_reminder_after_a_plain_message_still_reframes_waiting_bundles(mdb, mseed):
@@ -260,7 +282,7 @@ def test_reply_to_a_pm_dm_lands_in_that_workspace(mdb, mseed):
     _report(reminder, "dm_a")
     _send_in(other_ws, other_thread)
     (plain,) = _claim()
-    assert plain["body"] == "B 비 PM 이 메시지를 보냈어요."
+    assert plain["body"] == "B 비 PM 이 메시지를 보냈어요.\n웹 답장을 하려면 PM 에게 초대를 요청하고, 초대받은 이메일로 가입해 주세요."
     _report(plain, "dm_b")
 
     later = datetime.now(timezone.utc) + timedelta(minutes=5)
@@ -300,7 +322,7 @@ def test_pm_message_notice_drops_the_name_when_the_author_is_gone(mdb, mseed):
     mdb.query(ThreadMessage).filter(ThreadMessage.sender == "pm").update({"author_member_id": None})
     mdb.commit()
 
-    assert [i["body"] for i in _claim()] == ["A PM 이 메시지를 보냈어요."]
+    assert [i["body"] for i in _claim()] == ["A PM 이 메시지를 보냈어요." + WEB_GUIDE]
 
 
 def test_reply_to_the_only_pm_notice_reaches_that_workspace(mdb, mseed):
@@ -446,7 +468,7 @@ def test_pm_opens_a_thread_in_a_workspace_with_no_reminders_and_it_reaches_the_b
     assert detail["messages"] == []
 
     assert _send(pm, mseed, thread["thread_id"], "안녕하세요").status_code == 201
-    assert [i["body"] for i in _claim()] == ["A PM PM 이 메시지를 보냈어요."]
+    assert [i["body"] for i in _claim()] == ["A PM PM 이 메시지를 보냈어요." + WEB_GUIDE]
 
 
 def test_opening_a_thread_twice_gives_the_same_thread(mdb, mseed):
