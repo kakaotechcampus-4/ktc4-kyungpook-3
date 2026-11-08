@@ -8,7 +8,8 @@ import {
   reply,
   schedulePassedBundle,
 } from './fixtures/message'
-import type { MockBundle, MockMessageThread } from './fixtures/message'
+import type { MockBundle, MockMessageThread, MockThreadMessage } from './fixtures/message'
+import type { MockNotification } from './fixtures/notification'
 import { memberFixtures } from './fixtures/member'
 import {
   approveBundle,
@@ -18,6 +19,7 @@ import {
   createReminder,
   editBundle,
   editReminder,
+  notifyNewMessage,
   openThread,
   rebuildBundle,
   reminderWithBundleDto,
@@ -812,6 +814,32 @@ describe('writeMessage', () => {
       dm_status: 'failed',
       dm_failure_reason: 'discord_not_linked',
     })
+  })
+
+  it('PM 글의 알림은 대화·5분 구간마다 하나다. 구간이 바뀌면 다시 알리고, 대화 주인의 답장은 알리지 않는다', () => {
+    const space = workspace()
+    const minsu = space.allThreads[1]
+    const notifications: MockNotification[] = []
+    const write = (writer: typeof SEOYEON, at: string) =>
+      notifyNewMessage(
+        notifications,
+        minsu,
+        writeMessage(minsu, writer, '확인했어요', at, space) as MockThreadMessage,
+        at,
+      )
+    const later = (seconds: number) => new Date(Date.parse(MOCK_NOW) + seconds * 1000).toISOString()
+
+    write(SEOYEON, MOCK_NOW)
+    write(SEOYEON, later(299))
+    write({ member_id: 'mb_02', display_name: '박민수' }, later(300))
+    expect(notifications).toHaveLength(1)
+    write(SEOYEON, later(300))
+    expect(
+      notifications.map(({ member_id, text, created_at }) => [member_id, text, created_at]),
+    ).toEqual([
+      ['mb_02', '김서연: 확인했어요', '2026-09-18T00:00:00.000Z'],
+      ['mb_02', '김서연: 확인했어요', '2026-09-18T00:05:00.000Z'],
+    ])
   })
 
   it('받는 팀원이 공간에 없으면 쓰지 않는다', () => {

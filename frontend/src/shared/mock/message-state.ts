@@ -15,6 +15,7 @@ import type {
   MockReminder,
   MockThreadMessage,
 } from './fixtures/message'
+import type { MockNotification } from './fixtures/notification'
 import { nextId } from './utils'
 
 /*
@@ -611,6 +612,51 @@ export function writeMessage(
   }
   thread.messages.push(message)
   return message
+}
+
+/** 새 글 알림을 한 번만 내는 구간 (백엔드 MESSAGE_NOTICE_SECONDS) */
+const MESSAGE_NOTICE_SECONDS = 300
+const PREVIEW_LENGTH = 60
+// 파이썬 str.splitlines 가 나누는 줄 끝. \x1c-\x1e 도 그 안에 든다
+// eslint-disable-next-line no-control-regex
+const LINE_BREAK = /\r\n|[\n\r\v\f\x1c-\x1e\x85\p{Zl}\p{Zp}]/u
+
+/** 알림 본문의 미리보기 (백엔드 scheduler._preview). 길이는 파이썬처럼 코드 포인트로 센다 */
+function preview(body: string): string {
+  const line = Array.from(body.trim().split(LINE_BREAK)[0])
+  return line.length <= PREVIEW_LENGTH
+    ? line.join('')
+    : `${line.slice(0, PREVIEW_LENGTH - 1).join('')}…`
+}
+
+/**
+ * PM 글을 대화 주인에게 알린다 (백엔드 notify_new_message 의 PM 가지). 같은 대화·5분 구간에 이미 알렸으면 더 만들지 않는다.
+ * 팀원 글은 백엔드가 답장 판단을 거쳐 PM 들에게 알리므로 흉내 내지 않는다
+ */
+export function notifyNewMessage(
+  notifications: MockNotification[],
+  thread: MockMessageThread,
+  message: MockThreadMessage,
+  now: string,
+): void {
+  if (message.sender !== 'pm') return
+  const bucket = Math.floor(time(now) / 1000 / MESSAGE_NOTICE_SECONDS)
+  const dedupe_key = `message:${thread.thread_id}:${message.sender}:${bucket}`
+  if (notifications.some((notification) => notification.dedupe_key === dedupe_key)) return
+  notifications.push({
+    notification_id: nextId(
+      'nt',
+      notifications.map(({ notification_id }) => notification_id),
+    ),
+    workspace_id: thread.workspace_id,
+    member_id: thread.member_id,
+    kind: 'message_received',
+    text: `${message.author_name ?? ''}: ${preview(message.body)}`,
+    link: { type: 'thread', id: thread.thread_id },
+    read_at: null,
+    created_at: utc(now),
+    dedupe_key,
+  })
 }
 
 /**

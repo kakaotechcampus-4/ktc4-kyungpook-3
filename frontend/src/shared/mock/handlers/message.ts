@@ -13,6 +13,7 @@ import {
   editBundle,
   editReminder,
   inboxOf,
+  notifyNewMessage,
   openThread,
   reminderWithBundleDto,
   threadDetailOf,
@@ -303,6 +304,7 @@ export const messageHandlers = [
       if (db.messageFailures.actions) return actionError()
       const message = writeMessage(thread, writer, body, MOCK_NOW, reminderContext(workspaceId))
       if ('refusal' in message) return memberNotFound(thread.member_id)
+      notifyNewMessage(db.notifications, thread, message, MOCK_NOW)
       return ok(
         { ...message, thread_id: thread.thread_id, created_at: utc(message.created_at) },
         { status: 201 },

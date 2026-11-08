@@ -694,6 +694,24 @@ describe('메시지 시나리오', () => {
     })
   })
 
+  it('messages-pm-thread: PM 이 박민수 대화에 쓰면 박민수에게 새 메시지 알림이 한 번 가고, 5분 안의 다음 글은 알림을 더 만들지 않는다', async () => {
+    applyScenario('messages-pm-thread')
+    const firstLine = '가'.repeat(70)
+    await replyTo('th_02', `${firstLine}\n둘째 줄`)
+    await replyTo('th_02', '하나 더')
+
+    expect(db.notifications).toHaveLength(1)
+    expect(db.notifications[0]).toMatchObject({
+      workspace_id: 'ws_01',
+      member_id: 'mb_02',
+      kind: 'message_received',
+      text: `김서연: ${'가'.repeat(59)}…`,
+      link: { type: 'thread', id: 'th_02' },
+      read_at: null,
+      created_at: '2026-09-18T00:00:00.000Z',
+    })
+  })
+
   it('저장 버전 6 은 버린다', () => {
     sessionStorage.setItem(MOCK_DB_STORAGE_KEY, JSON.stringify({ version: 6, db: initialDb() }))
     expect(restoreDb(sessionStorage)).toBe(false)
