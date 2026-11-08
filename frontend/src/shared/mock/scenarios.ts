@@ -365,8 +365,9 @@ function mergeIntoDeployDoc(state: MockDb, afterView: boolean): void {
   const extraction = state.extractions.find(({ meeting_id }) => meeting_id === 'mt_07')
   if (!extraction) throw new Error('mock extraction for mt_07 is missing')
   extraction.items.push(item)
-  if (afterView) item.merge_into = 'ap_03'
-  else mergeIntoApproval(approvalOf(state, 'ap_03'), 'mt_07', item, '2026-09-17T03:00:00Z')
+  const facts = { category: 'assignee', status: null, docText: null }
+  if (afterView) item.merge_into = { approval_id: 'ap_03', ...facts }
+  else mergeIntoApproval(approvalOf(state, 'ap_03'), 'mt_07', item, facts, '2026-09-17T03:00:00Z')
 }
 
 function conflictingUpdateApproval(state: MockDb): void {

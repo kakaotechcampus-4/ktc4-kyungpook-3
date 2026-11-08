@@ -8,8 +8,18 @@ import { db } from './db'
  */
 export type MockExtractionItem = ExtractionItemDto & {
   assignee_type?: string | null
-  /** 아직 합치지 않았지만 처리 요청 직전에 이 승인에 합쳐질 항목 (`approvalMerge`). 응답에는 싣지 않는다 */
-  merge_into?: string
+  /**
+   * 아직 합치지 않았지만 처리 요청 직전에 이 승인에 합쳐질 항목 (`approvalMerge`). 합칠 때 BE 가 AI 항목에서 읽는
+   * 분류·상태·문서 글을 함께 둔다. 응답에는 싣지 않는다
+   */
+  merge_into?: { approval_id: string } & MergeFacts
+}
+
+/** BE `merge_into_pending` 이 추출 응답에 없는 AI 항목 값에서 읽는 것 */
+export interface MergeFacts {
+  category: string | null
+  status: string | null
+  docText: string | null
 }
 
 /* 아래는 backend services/alias_learning.py 의 규칙을 옮긴 것이다. 바꾸면 그쪽과 맞춘다 */
