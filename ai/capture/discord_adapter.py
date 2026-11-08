@@ -12,6 +12,7 @@
   /stop     녹음 종료. 트랙을 닫고 저장한 뒤 워커를 찌른다. 처리 진행은 워커가 이 채널에 알린다
   /leave    음성 채널 퇴장 (녹음 중에는 거절)
   /end      자기 녹음의 저장까지 끝나면 퇴장. 그 사이 새 녹음이 시작됐으면 남는다
+  /gpu      GPU 전사 서버 켜기·끄기 요청과 상태(#530). 운영 채널(MM_OPS_CHANNEL_ID)에서 MM_GPU_OPERATORS 만 쓴다
 
 녹음은 StreamingSink + TrackWriter 다. 패킷을 받는 즉시 16kHz 모노로 바꿔 화자별 wav 에 흘리고
 (메모리가 회의 길이와 무관), 트랙 안의 위치는 녹음 시작부터 흐른 monotonic 시간이다. 그래서
@@ -42,6 +43,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -56,6 +58,7 @@ from capture.recorder import (RECOVERY_INTERVAL_S, STATUS_RECORDING, STATUS_SAVE
 from capture.streaming_sink import StreamingSink
 from capture.track_writer import TrackPool
 from capture.voice_client import SafeVoiceClient
+from capture.worker import gpu as worker_gpu
 from capture.worker import request_nudge, worker_trouble
 from shared.config import RECORDINGS_DIR, settings
 from shared.schemas import now_iso
@@ -305,6 +308,21 @@ class RecordingCog(discord.Cog):
             await ctx.respond("음성채널에서 나가는 중...")
         await vc.disconnect(force=True)
         await self._notify(ctx.channel, "음성채널에서 나갔습니다.")
+
+    @discord.slash_command(name="gpu", description="GPU 전사 서버를 켜고 끄거나 상태를 봅니다(운영 채널, 운영자만)")
+    @discord.option("action", str, description="on 켜기, off 끄기(24시간 자동 켜기 멈춤), status 상태",
+                    choices=["on", "off", "status"])
+    async def gpu(self, ctx: discord.ApplicationContext, action: str) -> None:
+        """요청 파일만 쓰고 상태 파일만 읽는다. 스위치를 부르고 상태를 바꾸는 것은 워커 하나다."""
+        ops = os.environ.get("MM_OPS_CHANNEL_ID", "").strip()
+        if not ops or str(getattr(ctx.channel, "id", "")) != ops:
+            await ctx.respond("운영 채널에서만 쓸 수 있습니다.", ephemeral=True)
+            return
+        allowed = {x.strip() for x in os.environ.get("MM_GPU_OPERATORS", "").split(",") if x.strip()}
+        if str(getattr(ctx.author, "id", "")) not in allowed:
+            await ctx.respond("GPU 운영자로 등록된 사람만 쓸 수 있습니다.", ephemeral=True)
+            return
+        await ctx.respond(await asyncio.to_thread(worker_gpu, self.recordings_dir, action))
 
     # ------------------------------------------------------------------ 이벤트
     @discord.Cog.listener()
