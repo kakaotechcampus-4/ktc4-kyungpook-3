@@ -128,6 +128,7 @@ class ChangedField(StrEnum):
     STATUS = "status"
     TITLE = "title"
     BLOCKER = "blocker"
+    SCOPE = "scope"
 
 
 class ChangeSource(StrEnum):
