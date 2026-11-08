@@ -1,11 +1,12 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from sqlalchemy import case, func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import (
     AliasResolutionLog,
+    AliasSource,
     EvidenceStatus,
     ExtractionPath,
     Gate,
@@ -30,6 +31,73 @@ class MatchResult:
     candidate_count: int
 
 
+# 담당자 이름 뒤에 붙는 조사. AI 의 _PARTICLES(ai/extract/eval_golden_set.py)와 순서까지 같게 둔다
+_PARTICLES = ("께서", "한테", "에게", "이가", "이", "가", "은", "는", "을", "를", "께")
+# 이름 뒤에 붙는 호칭. "님"은 AI 규칙에도 있고 "씨"는 BE 에서 더했다(#463 리뷰, AI 쪽도 같이 맞춘다)
+_HONORIFICS = ("님", "씨")
+
+
+def normalize_alias_text(text: str) -> str:
+    """별칭 표기의 공백을 한 칸으로 줄이고 앞뒤를 지운다. 후보를 만들 때와 별칭을 저장할 때 같이 쓴다.
+
+    저장하는 쪽도 같은 규칙이어야 공백이 든 별칭(" 환", "환  님")이 어떤 입력으로도 못 찾히는 일이 없다.
+    """
+    return " ".join(text.split())
+
+
+def name_candidates(text: str | None) -> list[str]:
+    """담당자 표기에서 님·조사를 뗀 후보들을 긴 것부터 돌려준다. 빈 표기는 빈 리스트다.
+
+    AI 의 _name_candidates(ai/extract/eval_golden_set.py)와 같은 규칙이다. 바꾸면 둘 다 바꾼다.
+    조사가 붙었는지 겉보기로 알 수 없다("하은"의 "은"은 이름, "환은"의 "은"은 조사). 그래서 조사를 뗀 것까지
+    후보를 모두 만들고, 긴 후보(원문에 가까운 것)부터 찾는다. 예: "하은이가" → 하은이가, 하은이, 하은.
+    AI 규칙과 다른 점(AI 쪽도 같이 맞춘다, #463 리뷰): ① 공백을 한 칸으로 줄이고 후보마다 앞뒤 공백을 지운다.
+    그래야 띄어 쓴 님("환 님이" → "환")도 찾는다. ② 조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보다.
+    "하은이는" → 하은이는, 하은이, 하은. ③ "님"처럼 "씨"도 뗀다. "민수 씨", "민수씨가" → 민수. 호칭을 뗀 뒤에도
+    ②의 "이" 떼기를 적용한다. "하은이님이", "하은이 씨는" → 하은.
+    """
+    if not text:
+        return []
+    base = normalize_alias_text(text)
+    out = {base}
+
+    def add_remainder(form: str) -> None:
+        # 호칭이나 조사를 떼고 남은 꼴을 후보로 둔다. 띄어 쓴 호칭("하은이 님")은 뗀 뒤 끝 공백을 지운다. "이"로
+        # 끝나면 "이"를 한 번 더 뗀 것도 둔다. "하은이는"·"하은이 님"은 "하은이"에서 멈췄다. "세이"처럼 이름이
+        # "이"로 끝나도 긴 후보부터 찾아 지킨다.
+        form = form.strip()
+        if not form:
+            return
+        out.add(form)
+        if form.endswith("이") and len(form) > 1:
+            out.add(form[:-1].strip())
+
+    def without_honorific(form: str) -> str:
+        # 호칭(님·씨)으로 끝나면 뗀 꼴(앞뒤 공백 정리), 아니면 빈 문자열
+        return form[:-1].strip() if form.endswith(_HONORIFICS) else ""
+
+    # 조사를 떼는 대상은 원문과 원문에서 호칭을 뗀 꼴뿐이다. 떼고 남은 꼴("이"를 더 뗀 것 포함)에서 다시 떼지 않는다
+    sources = [base]
+    bare = without_honorific(base)
+    if bare:
+        sources.append(bare)
+        add_remainder(bare)
+    for form in sources:
+        for particle in _PARTICLES:
+            if form.endswith(particle) and len(form) > len(particle):
+                stripped = form[: -len(particle)].strip()
+                add_remainder(stripped)
+                bare = without_honorific(stripped)
+                if bare:
+                    add_remainder(bare)
+    return sorted((x for x in out if x), key=lambda s: (-len(s), s))
+
+
+def _is_one_letter(text: str) -> bool:
+    """한 글자 별칭인가. 한 글자 별칭은 확정 근거로 쓰지 않는다(resolve_assignee 참고)."""
+    return len(text) == 1
+
+
 def resolve_assignee(
     db: Session,
     workspace_id: str,
@@ -37,9 +105,13 @@ def resolve_assignee(
 ) -> MatchResult:
     """추출된 이름 문자열로 실제 팀원을 찾는다.
 
-    1건 매칭 → 확정 / 2건 이상 → ambiguous / 0건 → not_found
+    님·조사를 뗀 후보(name_candidates)를 긴 것부터 보고, 별칭이 처음 걸린 후보의 행만으로 판정한다.
+    1건 매칭 → 확정 / 2건 이상 → ambiguous / 걸린 후보 없음 → not_found. 탈퇴한 팀원의 별칭은 보지 않는다.
+    한 글자 별칭으로 찾으면 담당자는 채우되 확인 필요로 둔다. 조사를 떼면 "하은" → "하"처럼 한 글자 후보가
+    생겨, 팀에 없는 사람이 한 글자 별칭을 가진 팀원에게 자동 배정될 수 있어서다(#463 리뷰).
     """
-    if not alias_text:
+    candidates = name_candidates(alias_text)
+    if not candidates:
         return MatchResult(None, None, 0.0, ResolutionResult.NOT_FOUND, True, 0)
 
     stmt = (
@@ -47,11 +119,17 @@ def resolve_assignee(
         .join(Member, Member.member_id == MemberAlias.member_id)
         .where(
             MemberAlias.workspace_id == workspace_id,
-            MemberAlias.alias_text == alias_text,
+            MemberAlias.alias_text.in_(candidates),
+            Member.is_deleted.is_(False),
         )
         .order_by(MemberAlias.verified.desc(), MemberAlias.confidence.desc())
     )
-    rows = db.execute(stmt).all()
+    hits = db.execute(stmt).all()
+    # 후보는 긴 순서다. 처음 걸린 후보의 행만 남긴다
+    rows = next(
+        (matched for c in candidates if (matched := [h for h in hits if h[0].alias_text == c])),
+        [],
+    )
 
     if len(rows) == 1:
         alias, member = rows[0]
@@ -60,7 +138,7 @@ def resolve_assignee(
             display_name=member.display_name,
             confidence=alias.confidence,
             result=ResolutionResult.MATCHED,
-            needs_check=not alias.verified,
+            needs_check=not alias.verified or _is_one_letter(alias.alias_text),
             candidate_count=1,
         )
 
@@ -148,23 +226,36 @@ def active_members_by_id(
     return {m.member_id: m for m in members}
 
 
-def resolved_alias_texts(db: Session, workspace_id: str) -> set[str]:
-    """resolve_assignee가 확정 매칭(MATCHED, needs_check=False)으로 판정할 별칭 목록.
+def resolved_texts(db: Session, workspace_id: str, texts: Iterable[str]) -> set[str]:
+    """texts 중 resolve_assignee 가 확정 매칭(MATCHED, needs_check=False)으로 판정할 것.
 
-    검증 여부와 상관없이 전체 후보가 정확히 1명이고, 그 1명이 검증된 경우만 해결된 것으로 본다.
-    검증 1명 + 미검증 1명처럼 후보가 여럿이면 매칭은 ambiguous이므로 해결 대기로 남는다.
+    각 text 의 첫 히트 후보(name_candidates 순서)에 걸린 별칭이 정확히 1개이고 그 별칭이 검증된 경우만
+    해결된 것으로 본다. 검증 1명 + 미검증 1명처럼 여럿이면 ambiguous 이므로 해결 대기로 남는다.
+    탈퇴한 팀원의 별칭은 세지 않는다.
+
+    한 글자 별칭은 PM 이 직접 등록한(manual·learned) 것만 해결로 본다. 이름에서 자동으로 만든 한 글자
+    별칭("김환" → "환")은 PM 이 연결한 것이 아니라 계속 남긴다. 이 목록은 "팀원과 연결됐나"를 묻고
+    resolve_assignee 는 "자동 반영해도 되나"를 묻는다. 그래서 한 글자는 여기서 해결이어도 찾으면 확인 필요다(#463 리뷰).
     """
-    stmt = (
-        select(MemberAlias.alias_text)
+    rows = db.execute(
+        select(MemberAlias.alias_text, MemberAlias.verified, MemberAlias.source)
         .join(Member, Member.member_id == MemberAlias.member_id)
-        .where(MemberAlias.workspace_id == workspace_id)
-        .group_by(MemberAlias.alias_text)
-        .having(
-            func.count() == 1,
-            func.sum(case((MemberAlias.verified.is_(True), 1), else_=0)) == 1,
-        )
-    )
-    return set(db.execute(stmt).scalars())
+        .where(MemberAlias.workspace_id == workspace_id, Member.is_deleted.is_(False))
+    ).all()
+    aliases_by_text: dict[str, list[tuple[bool, str]]] = {}
+    for alias_text, verified, source in rows:
+        aliases_by_text.setdefault(alias_text, []).append((verified, source))
+
+    human_sources = (str(AliasSource.MANUAL), str(AliasSource.LEARNED))
+    resolved: set[str] = set()
+    for text in texts:
+        for candidate in name_candidates(text):
+            hit = aliases_by_text.get(candidate)
+            if hit:
+                if len(hit) == 1 and hit[0][0] and (not _is_one_letter(candidate) or hit[0][1] in human_sources):
+                    resolved.add(text)
+                break
+    return resolved
 
 
 def log_resolution(
@@ -238,6 +329,8 @@ class AutoSignals:
     similar_count: int | None
     # BE가 등록 시점에 본 값. 임베딩이 없는 task(기다리는 중이거나 임베딩 API가 거절한)는 AI의 유사 검색에 잡히지 않았다
     unsearched_tasks_exist: bool = False
+    # 승인 대기 중인 task_create 요청 가운데 임베딩이 없어 유사 검색(include_pending)에 잡히지 않은 것이 있는지
+    unsearched_pending_exist: bool = False
 
 
 def auto_blockers(
@@ -274,9 +367,13 @@ def auto_blockers(
         reasons.append("due_mismatch")
     if signals.similar_count > 0:
         reasons.append("similar_task_found")
-    elif signals.unsearched_tasks_exist:
-        # 검색이 못 본 task가 있어 similar_count=0을 믿을 수 없다. 같은 회의에서 앞서 auto로 만든 task도 여기 걸린다
-        reasons.append("unsearched_task_exists")
+    else:
+        # 검색이 못 본 후보가 있어 similar_count=0을 믿을 수 없다. 두 사유는 서로 독립이다
+        if signals.unsearched_tasks_exist:
+            # 같은 회의에서 앞서 auto로 만든 task도 여기 걸린다
+            reasons.append("unsearched_task_exists")
+        if signals.unsearched_pending_exist:
+            reasons.append("unsearched_pending_exists")
     return reasons
 
 

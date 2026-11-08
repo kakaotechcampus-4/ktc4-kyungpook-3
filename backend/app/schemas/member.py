@@ -3,6 +3,8 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models import AliasSource, AliasType, MemberRole
+from app.schemas.name import NameStr
+from app.services.matching import normalize_alias_text
 
 # member.discord_user_id 컬럼 길이
 DISCORD_USER_ID_MAX_LENGTH = 64
@@ -18,7 +20,7 @@ def _normalize_discord_user_id(value: object) -> object:
 
 class MemberCreateRequest(BaseModel):
     workspace_id: str = Field(..., description="소속 워크스페이스 ID")
-    display_name: str = Field(..., min_length=1, max_length=100)
+    display_name: NameStr
     discord_user_id: str | None = Field(None, max_length=DISCORD_USER_ID_MAX_LENGTH)
     notion_name: str | None = None
     role: MemberRole = MemberRole.MEMBER
@@ -30,7 +32,7 @@ class MemberCreateRequest(BaseModel):
 
 
 class MemberUpdateRequest(BaseModel):
-    display_name: str | None = None
+    display_name: NameStr | None = None
     discord_user_id: str | None = Field(
         None, max_length=DISCORD_USER_ID_MAX_LENGTH, description="빈 값이나 null이면 연결을 해제한다"
     )
@@ -41,6 +43,14 @@ class MemberUpdateRequest(BaseModel):
     @classmethod
     def _blank_discord_user_id_is_none(cls, value: object) -> object:
         return _normalize_discord_user_id(value)
+
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def _display_name_is_not_null(cls, value: object) -> object:
+        # 키를 생략하면 이 검증은 돌지 않아 이름이 유지된다. null 을 명시하면 NOT NULL 컬럼에서 500 이 나므로 막는다.
+        if value is None:
+            raise ValueError("표시명은 null 일 수 없습니다. 이름을 바꾸지 않으려면 display_name 을 빼 주세요")
+        return value
 
 
 class MemberResponse(BaseModel):
@@ -66,6 +76,23 @@ class MemberAliasCreateRequest(BaseModel):
     source: AliasSource = AliasSource.MANUAL
     confidence: float = Field(1.0, ge=0.0, le=1.0)
     verified: bool = True
+
+    @field_validator("alias_text")
+    @classmethod
+    def _normalize_alias_text(cls, value: str) -> str:
+        # 후보를 만들 때와 같은 규칙으로 공백을 정리해 저장한다. 공백뿐인 표기는 어떤 입력으로도 걸리지 않으니 막는다.
+        normalized = normalize_alias_text(value)
+        if not normalized:
+            raise ValueError("별칭은 공백만으로 이루어질 수 없습니다")
+        return normalized
+
+    @field_validator("source")
+    @classmethod
+    def _reject_server_only_source(cls, value: AliasSource) -> AliasSource:
+        # display_name 은 이름에서 자동으로 만든 별칭 표시라 서버만 쓴다. 받으면 이름을 바꿀 때 조용히 지워진다.
+        if value == AliasSource.DISPLAY_NAME:
+            raise ValueError("display_name 별칭은 직접 등록할 수 없습니다")
+        return value
 
 
 class MemberAliasResponse(BaseModel):

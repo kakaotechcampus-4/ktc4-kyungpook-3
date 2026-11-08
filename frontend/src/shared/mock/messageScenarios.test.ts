@@ -1,5 +1,5 @@
 import { ApiError } from '@/shared/api/errors'
-import { fetchDto, jsonRequest } from '@/shared/test/api'
+import { fetchDto, jsonRequest, signUpVerified } from '@/shared/test/api'
 import type {
   BundleDto,
   InboxDto,
@@ -33,6 +33,7 @@ const MESSAGE_SCENARIOS = [
   'messages-pm-self',
   'messages-schedule-passed',
   'messages-merge',
+  'messages-long-content',
 ] as const satisfies readonly MockScenario[]
 
 afterEach(() => sessionStorage.clear())
@@ -207,6 +208,81 @@ const NEW_REMINDER = {
   task_id: 'tk_02',
   scheduled_at: '2026-09-21T09:00:00+09:00',
 }
+
+describe('묶음 응답의 요약·재촉 이유·근거 — 백엔드 reminder_reason', () => {
+  const reasons = (bundle: BundleDto) =>
+    bundle.reminders.map(({ reminder_id, reason, evidence }) => ({ reminder_id, reason, evidence }))
+
+  it('목록과 대화의 묶음마다 요약을, 태스크마다 이유와 마지막 진행 소식을 싣는다. PM 이 만든 재촉은 만든 PM 의 이름이다', async () => {
+    applyScenario('messages-default')
+    const { bundles } = await inbox()
+    expect(bundles?.map(({ summary }) => summary)).toEqual([
+      '배포 스크립트 진행 상황 확인',
+      '퍼블리싱 외 1건 진행 상황 확인',
+    ])
+    const expected = [
+      [
+        {
+          reminder_id: 'rm_01',
+          reason: "'배포 스크립트' 마감이 9/24(목)인데, 9/17(목) 이후로 진행 소식이 없어요.",
+          evidence: { kind: 'task_change', at: '2026-09-17T06:00:00.000Z', message_id: null },
+        },
+      ],
+      [
+        {
+          reminder_id: 'rm_02',
+          reason: '9/15(화)에 태스크를 만든 뒤로 진행 소식이 없어요.',
+          evidence: null,
+        },
+        {
+          reminder_id: 'rm_03',
+          reason:
+            '김서연님이 직접 만든 재촉이에요. 9/15(화)에 태스크를 만든 뒤로 진행 소식이 없어요.',
+          evidence: null,
+        },
+      ],
+    ]
+    expect(bundles?.map(reasons)).toEqual(expected)
+    expect((await thread('th_03')).bundles?.map(reasons)).toEqual([expected[1]])
+  })
+
+  it('messages-merge 의 bd_07 은 대화의 팀원 답장이 근거다', async () => {
+    applyScenario('messages-merge')
+    const merging = (await inbox()).bundles?.find(({ bundle_id }) => bundle_id === 'bd_07')
+    expect(merging && reasons(merging)).toEqual([
+      {
+        reminder_id: 'rm_07',
+        reason: "'ERD 정리' 마감이 9/24(목)인데, 9/15(화) 이후로 진행 소식이 없어요.",
+        evidence: { kind: 'reply', at: '2026-09-15T00:31:00.000Z', message_id: 'mg_02' },
+      },
+    ])
+  })
+
+  it('태스크의 제목·마감을 고치면 다음 조회의 제목·마감·요약·이유가 지금 태스크를 따른다', async () => {
+    applyScenario('messages-default')
+    const task = db.tasks.find(({ task_id }) => task_id === 'tk_04')!
+    task.title = '배포 스크립트 정리'
+    task.due_date = '2026-11-14'
+    const bundle = (await inbox()).bundles?.find(({ bundle_id }) => bundle_id === 'bd_01')
+    expect(bundle?.summary).toBe('배포 스크립트 정리 진행 상황 확인')
+    expect(bundle?.reminders[0]).toMatchObject({
+      task_title: '배포 스크립트 정리',
+      due_date: '2026-11-14',
+      reason: "'배포 스크립트 정리' 마감이 11/14(토)인데, 9/17(목) 이후로 진행 소식이 없어요.",
+    })
+  })
+
+  it('재촉 만들기 응답은 리마인드와 묶음 모두 이유를 싣고, 만든 사람은 요청한 PM 이다', async () => {
+    const created = await createReminder(NEW_REMINDER)
+    const reason =
+      '김서연님이 직접 만든 재촉이에요. 9/10(목)에 태스크를 만든 뒤로 진행 소식이 없어요.'
+    expect(created.reminder).toMatchObject({ reason, evidence: null })
+    expect(created.bundle).toMatchObject({
+      summary: '회원가입 화면 진행 상황 확인',
+      reminders: [{ reason, evidence: null }],
+    })
+  })
+})
 
 describe('리마인드 handler — 백엔드 api/messages.py 의 reminders 경로', () => {
   it('만들기: 201 로 리마인드와 그것이 든 예정 묶음을 주고, 목록에 새 묶음이 보인다', async () => {
@@ -476,10 +552,7 @@ describe('메시지 시나리오', () => {
       sender: 'member',
     })
 
-    await fetchDto(
-      '/auth/signup',
-      jsonRequest('POST', { email: 'other@example.com', password: 'pass1234', name: '다른 팀원' }),
-    )
+    await signUpVerified({ email: 'other@example.com', password: 'pass1234', name: '다른 팀원' })
     db.members.push({ ...structuredClone(creator!), member_id: 'mb_91', role: 'member' })
     const other = db.accounts.find(({ session }) => session.user.email === 'other@example.com')
     other!.workspaceIds.push(workspaceId)

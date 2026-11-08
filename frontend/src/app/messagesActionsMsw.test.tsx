@@ -208,7 +208,7 @@ describe('보내지 않음', () => {
     await userEvent.click(within(threadList()).getByRole('link', { name: /이재환/ }))
     await detail().findByRole('heading', { level: 2, name: '이재환' })
     expect(within(conversation()).queryByRole('link', { name: '확인하기' })).toBeNull()
-    expect(conversation()).not.toHaveTextContent('API 명세서 마감이 다음 주 목요일')
+    expect(conversation()).not.toHaveTextContent('배포 스크립트 마감이 다음 주 목요일')
   })
 })
 
@@ -260,7 +260,7 @@ describe('고쳐 쓰기', () => {
 
     await userEvent.click(button('취소'))
     expect(detail().getByRole('region', { name: '보낼 메시지 미리보기' })).toHaveTextContent(
-      '재환님, API 명세서 마감이 다음 주 목요일(9/24)이에요 🙂',
+      '재환님, 배포 스크립트 마감이 다음 주 목요일(9/24)이에요 🙂',
     )
     expect(document.activeElement).toBe(button('고쳐 쓰기'))
   })
@@ -280,17 +280,21 @@ describe('고쳐 쓰기', () => {
 })
 
 describe('언제 보낼까요? — 고른 카드는 서버가 저장한 시각에서 정한다', () => {
-  it('마감 하루 전을 누르면 응답 전에는 그대로이고, 저장되면 그 카드가 골라진다', async () => {
+  it('마감 하루 전을 누르면 응답 전에는 그대로이고 이대로 발송을 눌러도 보내지 않는다. 저장되면 그 카드가 골라진다', async () => {
     await openBundle('bd_02')
     const request = hold('/workspaces/ws_01/messages/bundles/bd_02', 'patch')
+    const approve = hold('/workspaces/ws_01/messages/bundles/bd_02/approve', 'post')
     await userEvent.click(radio(/마감 하루 전/))
     await waitFor(() => expectLocked(radio(/마감 하루 전/)))
     expect(radio(/직접 정하기/)).toBeChecked()
     expectLocked(button('이대로 발송'))
     expect(document.activeElement).toBe(radio(/마감 하루 전/))
+    await userEvent.click(button('이대로 발송'))
+    expect(approve.calls()).toBe(0)
 
     act(() => request.resolve())
     await waitFor(() => expect(radio(/마감 하루 전/)).toBeChecked())
+    expect(approve.calls()).toBe(0)
     expectUnlocked(radio(/마감 하루 전/))
     expect(detail().getByText('09/29 09:00 예정')).toBeInTheDocument()
     expect(radio('직접 정하기날짜 · 시각')).not.toBeChecked()

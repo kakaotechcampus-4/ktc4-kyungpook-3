@@ -63,9 +63,9 @@ def notify(
 
 def notify_pms(
     db: Session, *, workspace_id: str, kind: str, text: str, link_type: str, link_id: str, now: datetime,
-    dedupe_key: str | None = None,
+    dedupe_key: str | None = None, exclude: str | None = None,
 ) -> list[Notification]:
-    """워크스페이스의 PM 모두에게 알린다. dedupe_key 는 PM 마다 따로 붙는다."""
+    """워크스페이스의 PM 모두에게 알린다. exclude 는 뺄 팀원이다. dedupe_key 는 PM 마다 따로 붙는다."""
     pms = db.scalars(
         select(Member).where(
             Member.workspace_id == workspace_id, Member.role == MemberRole.PM, Member.is_deleted.is_(False)
@@ -76,7 +76,7 @@ def notify_pms(
             db, member_id=pm.member_id, kind=kind, text=text, link_type=link_type, link_id=link_id, now=now,
             dedupe_key=None if dedupe_key is None else f"{dedupe_key}:{pm.member_id}",
         )
-        for pm in pms
+        for pm in pms if pm.member_id != exclude
     ]
 
 

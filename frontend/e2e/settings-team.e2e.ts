@@ -7,7 +7,7 @@ import { capture, expectNoHorizontalOverflow, finishOAuth, start } from './suppo
  * 연결이 확인되면 팀 화면의 팀원 연결 창으로 간다 (D-074).
  * settings-discord-skipped 는 ws_03 이 온보딩을 마쳤고 Discord·팀원 연결을 건너뛰었다. Notion 만 연결돼 있다.
  * 브라우저에서만 볼 수 있는 것만 둔다 — 현재 탭 OAuth 왕복과 새로고침 뒤 상태, 너비·키보드.
- * 취소·실패·재조회 불일치·조회 오류·일반 팀원은 app/settingsConnections.test.tsx 와 Discord 영역 스토리가 본다
+ * 취소·실패·재조회 불일치·조회 오류·일반 팀원은 app/settingsConnections.test.tsx 가 본다
  */
 
 const SETTINGS = '/workspaces/ws_03/settings'

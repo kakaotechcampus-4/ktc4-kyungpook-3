@@ -166,6 +166,26 @@
       href="/src/shared/styles/fonts/NanumSquare-Regular.woff2"
     />
     <!--
+      스플래시 빈도 (#510). 첫 페인트 전에 마지막으로 전체 스플래시를 보인 시각을 읽는다. 12시간 안이면 <html> 에 표시를 붙인다.
+      skip: 아래 정적 판을 그리지 않는다. 가드 대기는 화면 뼈대가 보인다.
+      quick: 설치한 앱. OS 시작 이미지에서 툭 바뀌지 않게 판을 그리되 준비되면 끝맺음 없이 0.2초에 사라진다.
+      키·간격은 src/shared/lib/splash/splashRecord.ts 와 같다(src/app/splash/staticSplash.test.tsx 가 본다). 저장소를 못 쓰면 표시 없이 매번 보인다.
+    -->
+    <script>
+      try {
+        var shownAt = Number(localStorage.getItem('splash-last-shown:v1'))
+        var age = Date.now() - shownAt
+        if (shownAt > 0 && age >= 0 && age < 43200000) {
+          document.documentElement.setAttribute(
+            'data-splash',
+            matchMedia('(display-mode: standalone)').matches ? 'quick' : 'skip',
+          )
+        }
+      } catch (error) {
+        // 읽지 못하면 지금처럼 전체 스플래시를 보인다
+      }
+    </script>
+    <!--
       로딩 스플래시 (#430). JS 보다 먼저 그려야 해서 여기에 둔다. React 는 같은 클래스로 같은 자리를 이어받는다(src/app/splash).
       등장 지연(300ms·600ms)은 splashMachine.ts 의 REVEAL_MS 와 짝이다.
       설치한 앱(standalone)은 시작 이미지가 같은 그림이라 등장 없이 처음부터 보인다.
@@ -187,9 +207,21 @@
         background: #ffffff;
         color: #171717;
       }
+      /* 시작하기 스플래시는 포커스를 받는 화면 전체 판이다. 테두리를 그리면 창 가장자리만 그어진다 (#510) */
+      .splash:focus {
+        outline: none;
+      }
+      html[data-splash='skip'] #boot-splash {
+        display: none;
+      }
+      /* 사라짐 시간은 splashMachine.ts 의 FADE_MS 와 같다(staticSplash.test.tsx 가 본다) */
       .splash[data-phase='leave'] {
         pointer-events: none;
-        animation: splash-out 0.4s ease forwards;
+        animation: splash-out 0.6s ease forwards;
+      }
+      /* 12시간 안에 다시 연 설치한 앱의 사라짐. splashMachine.ts 의 QUICK_FADE_MS 와 같다 (#510) */
+      .splash[data-phase='leave'][data-fade='quick'] {
+        animation-duration: 0.2s;
       }
       .splash__group {
         display: flex;
@@ -259,6 +291,11 @@
         .splash__word {
           animation: none;
         }
+      }
+      /* 랜딩 시작하기 스플래시는 누른 순간 정적 판과 같은 정면으로 보인다 (#510) */
+      .splash[data-instant] .splash__mascot,
+      .splash[data-instant] .splash__word {
+        animation: none;
       }
       @media (prefers-reduced-motion: reduce) {
         .splash__mascot,

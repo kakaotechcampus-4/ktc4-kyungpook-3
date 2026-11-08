@@ -4,6 +4,7 @@
 한 트랜잭션에서 끝낸다. 시계는 scheduler 가 쓰고 여기서는 답장이 시계에 뜻하는 바(clock_effect)만 읽어 준다.
 """
 import json
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -41,8 +42,11 @@ from app.models import (
 from app.schemas.reply import ClaimedCandidate, ClaimedLine, ClaimedReply, ReplyChangeRequest, ReplyJudgmentRequest
 from app.services import matching, messages, notifications, scheduler, tasks
 
+logger = logging.getLogger(__name__)
+
 # 봇이 맡은 뒤 이만큼 결과가 없으면 다시 맡긴다. 10분보다 짧아 배포로 봇이 재시작해도 판단 실패 알림 전에 한 번 더 돈다.
 JUDGE_LEASE = timedelta(minutes=3)
+# 큐에 들어온 뒤 이 시간이 지나면 맡기지 않고 닫는다(claim 도 스케줄러 expire 와 같은 기준으로 본다). 한 차례 최대 4회(10분 / 3분 리스).
 JUDGE_WINDOW = timedelta(minutes=10)
 LINE_LIMIT = 12
 FAILURE_REASON_LIMIT = 120
@@ -96,7 +100,7 @@ class Notice:
 
 
 def open_judgment(db: Session, message: ThreadMessage, now: datetime) -> None:
-    """팀원 답장을 판단 큐에 넣는다. 후보가 없으면 리마인드와 무관한 글이라 행을 만들지 않는다."""
+    """팀원 답장을 판단 큐에 넣는다. 후보가 없으면 리마인드와 무관한 글이라 행을 만들지 않고 바로 알린다."""
     db.flush()
     thread = db.get(MessageThread, message.thread_id)
     candidates = _candidates(db, thread, messages.utc(message.created_at))
@@ -106,6 +110,8 @@ def open_judgment(db: Session, message: ThreadMessage, now: datetime) -> None:
             state=ReplyJudgmentState.PENDING, queued_at=messages.utc(now), candidates=json.dumps(candidates),
         ))
         db.flush()
+    else:
+        messages.notify_new_message(db, message, now)
 
 
 def _candidates(db: Session, thread: MessageThread, replied_at: datetime) -> list[str]:
@@ -147,13 +153,18 @@ def claim(db: Session, now: datetime) -> ClaimedReply | None:
     if not _take_claim_lock(db):
         return None
     pending = db.execute(
-        select(ReplyJudgment.message_id, ReplyJudgment.thread_id, ReplyJudgment.claimed_at)
+        select(ReplyJudgment.message_id, ReplyJudgment.thread_id, ReplyJudgment.claimed_at, ReplyJudgment.queued_at)
         .where(ReplyJudgment.state == ReplyJudgmentState.PENDING)
         .order_by(ReplyJudgment.queued_at, ReplyJudgment.message_id)
     ).all()
     seen: set[str] = set()
-    for message_id, thread_id, claimed_at in pending:
+    for message_id, thread_id, claimed_at, queued_at in pending:
         if thread_id in seen:
+            continue
+        if messages.utc(queued_at) <= now - JUDGE_WINDOW:
+            # 창이 지난 행은 맡기지 않고 닫는다. seen 에 넣지 않아 같은 대화의 다음 답장이 이어서 나온다.
+            if not _close_past_window(db, message_id, now):
+                seen.add(thread_id)
             continue
         seen.add(thread_id)
         if claimed_at is not None and messages.utc(claimed_at) > now - JUDGE_LEASE:
@@ -165,6 +176,18 @@ def claim(db: Session, now: datetime) -> ClaimedReply | None:
             db.flush()
             return _claimed(db, row)
     return None
+
+
+def _close_past_window(db: Session, message_id: str, now: datetime) -> bool:
+    """창이 지난 행을 savepoint 안에서 expire 로 닫는다. 닫았으면 True. 실패했거나 잠근 뒤 보니 닫을 행이 아니면(그 사이
+    PM 이 골라 새 창에 들어간 경우 등) False 를 돌려 그 대화를 건너뛰게 한다. 앞 답장이 남아 있는데 뒤 답장이 앞지르면 안 된다."""
+    try:
+        with db.begin_nested():
+            return expire(db, message_id, now)
+    except Exception as e:
+        # 봇이 10초마다 claim 하므로 계속 실패하는 행의 스택 트레이스를 매번 남기지 않는다. 트레이스는 스케줄러 틱이 남긴다
+        logger.warning("reply judgment expire failed in claim: %s (%s: %s)", message_id, type(e).__name__, e)
+        return False
 
 
 def _take_claim_lock(db: Session) -> bool:
@@ -226,7 +249,7 @@ def _lines(db: Session, message: ThreadMessage, task_ids: list[str]) -> list[Cla
         .limit(LINE_LIMIT - 1)
     ).all()
     return [
-        ClaimedLine(sender="pm" if m.sender == MessageSender.BOT else "member", text=m.body)
+        ClaimedLine(sender="member" if m.sender == MessageSender.MEMBER else "pm", text=m.body)
         for m in [*reversed(earlier), message]
     ]
 
@@ -346,8 +369,15 @@ def _judged(db: Session, row: ReplyJudgment, changes: list[ReplyChangeRequest], 
             _apply(db, task, line, now)
         elif outcome == ReplyChangeOutcome.PROPOSED:
             proposed[task.task_id].append((line, change, match))
+    repeated: list[ReplyChange] = []
     for task_id, group in proposed.items():
-        _propose(db, row, locked[task_id], group, owner_id)
+        waiting = _waiting_cards(db, task_id, group)
+        if waiting is None:
+            _propose(db, row, locked[task_id], group, owner_id)
+            continue
+        for (line, *_), approval_id in zip(group, waiting):
+            line.approval_id = approval_id
+            repeated.append(line)
     unknown = any(line.outcome == ReplyChangeOutcome.UNKNOWN for line in lines)
     if not unknown and not any(line.task_id for line in lines):
         for task_id in _unrecorded(db, row):
@@ -357,15 +387,19 @@ def _judged(db: Session, row: ReplyJudgment, changes: list[ReplyChangeRequest], 
             ))
     row.state = ReplyJudgmentState.NEEDS_PM if unknown else ReplyJudgmentState.DONE
     message = row.message
+    picked = row.picked_task_id is not None
     notice = _notice(
-        message.thread.member.display_name, scheduler._preview(message.body), lines, locked, row.thread_id,
-        picked=row.picked_task_id is not None,
+        message.thread.member.display_name, scheduler._preview(message.body),
+        lines if picked else [line for line in lines if line not in repeated], locked, row.thread_id, picked=picked,
     )
     if notice is not None:
         notifications.notify_pms(
             db, workspace_id=row.workspace_id, kind="reply_judged", text=notice.text,
             link_type=notice.link_type, link_id=notice.link_id, now=now, dedupe_key=_notice_key(row),
         )
+    else:
+        # 바꿀 것이 없는 글도 PM 은 받아야 한다. PM 이 고른 재판단은 _notice 가 언제나 알린다.
+        messages.notify_new_message(db, message, now)
 
 
 def _lock_tasks(db: Session, task_ids: set[str]) -> dict[str, Task]:
@@ -472,6 +506,31 @@ def _apply(db: Session, task: Task, line: ReplyChange, now: datetime) -> None:
         entry.created_at = now
 
 
+def _waiting_cards(db: Session, task_id: str, group: list[tuple]) -> list[str] | None:
+    """줄마다 같은 값을 이미 낸 대기 카드. 하나라도 없으면 None 이다. 범위 줄과 못 찾은 담당자는 값이 없어 찾지 못한다.
+
+    출처를 가리지 않아 회의 추출 카드도 친다. 답장 판단은 대기 카드를 보지 못해 앞 제안을 그대로 또 낼 수 있다.
+    """
+    cards = db.scalars(
+        select(ApprovalRequest).where(
+            ApprovalRequest.related_task_id == task_id,
+            ApprovalRequest.status == ApprovalStatus.PENDING,
+            ApprovalRequest.type == str(ApprovalType.TASK_UPDATE),
+        ).order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.approval_id.desc())
+    ).all()
+    # 같은 값의 카드가 여럿이면 가장 먼저 나온 카드가 남는다.
+    waiting = {}
+    for card in cards:
+        payload = json.loads(card.payload)
+        # 수동 생성(POST /approvals)은 payload 값을 검사하지 않는다. 줄의 값은 문자열이라 문자열만 견준다.
+        waiting.update({
+            (key, payload[key]): card.approval_id
+            for key in _PAYLOAD_KEY.values() if isinstance(payload.get(key), str) and payload[key]
+        })
+    found = [waiting.get((_PAYLOAD_KEY.get(line.field), line.new_value)) for line, *_ in group]
+    return None if None in found else found
+
+
 def _propose(
     db: Session, row: ReplyJudgment, task: Task,
     group: list[tuple[ReplyChange, ReplyChangeRequest, matching.MatchResult | None]], owner_id: str,
@@ -483,9 +542,11 @@ def _propose(
     for line, change, line_match in group:
         match = line_match or match
         key = _PAYLOAD_KEY.get(line.field)
-        # 담당자를 못 찾았으면 원문만 보여 준다. 원문은 팀원 ID 가 아니라 값으로 싣지 않으므로 승인해도 담당자는 그대로다.
-        if key and not (line_match and line_match.member_id is None):
-            values[key] = line.new_value
+        # 담당자를 못 찾았으면 원문만 보여 준다. 원문은 팀원 ID 가 아니라 값으로 싣지 않는다.
+        # 기준값은 남겨 PM 이 고를 때 그사이 바뀐 담당자를 알린다.
+        if key:
+            if not (line_match and line_match.member_id is None):
+                values[key] = line.new_value
             if line.field == ReplyChangeField.STATUS:
                 base_values[key] = _claimed_status(row, task)
             else:
@@ -673,11 +734,25 @@ def undo_change(db: Session, task: Task, change_id: str, *, changed_by: str) -> 
     return task
 
 
+def has_assignee_line(db: Session, approval_id: str) -> bool:
+    """이 카드에 담당자 줄이 있는지. 답장 카드에서만 PM 이 담당자를 고를 수 있다."""
+    return db.scalar(
+        select(ReplyChange.change_id)
+        .where(ReplyChange.approval_id == approval_id, ReplyChange.field == ReplyChangeField.ASSIGNEE)
+        .limit(1)
+    ) is not None
+
+
 def link_history(db: Session, approval_id: str, entries: list[TaskHistory]) -> None:
-    """승인이 남긴 이력을 제안한 줄에 잇는다. PM 이 고쳐 승인한 줄도 같은 필드라 같이 이어진다."""
+    """승인이 남긴 이력을 제안한 줄에 잇는다. PM 이 고쳐 승인한 줄도 같은 필드라 같이 이어진다.
+
+    같은 카드에 이어진 줄이 여럿이면 처음 제안한 줄에 잇는다.
+    """
     db.flush()
     change_ids = dict(db.execute(
-        select(ReplyChange.field, ReplyChange.change_id).where(ReplyChange.approval_id == approval_id)
+        select(ReplyChange.field, ReplyChange.change_id)
+        .where(ReplyChange.approval_id == approval_id)
+        .order_by(ReplyChange.created_at.desc(), ReplyChange.change_id.desc())
     ).all())
     for entry in entries:
         entry.reply_change_id = change_ids.get(entry.changed_field)
@@ -699,10 +774,17 @@ def timeline(db: Session, task: Task, viewer: Member) -> list[dict]:
         .where(ReplyChange.task_id == task.task_id)
         .order_by(ReplyChange.created_at, ReplyChange.change_id)
     ).all()
-    approvals = dict(db.execute(
-        select(ApprovalRequest.approval_id, ApprovalRequest.status)
-        .where(ApprovalRequest.approval_id.in_({line.approval_id for line in lines} - {None}))
-    ).all())
+    # 같은 카드의 뒷 줄은 이력이 처음 줄에만 이어져 있어 처음 줄의 이력을 같이 읽는다.
+    first: dict[tuple[str, str], str] = {}
+    for line in lines:
+        if line.approval_id:
+            linked[line.change_id] = linked[first.setdefault((line.approval_id, line.field), line.change_id)]
+    approvals = {
+        card.approval_id: card
+        for card in db.scalars(
+            select(ApprovalRequest).where(ApprovalRequest.approval_id.in_({line.approval_id for line in lines} - {None}))
+        )
+    }
     by_message = defaultdict(list)
     for line in lines:
         by_message[line.message_id].append(line)
@@ -721,7 +803,7 @@ def timeline(db: Session, task: Task, viewer: Member) -> list[dict]:
 
 def _reply_item(
     db: Session, message_id: str, group: list[ReplyChange], linked: dict[str, list[TaskHistory]],
-    approvals: dict[str, str], viewer: Member,
+    approvals: dict[str, ApprovalRequest], viewer: Member,
 ) -> dict:
     message = db.get(ThreadMessage, message_id)
     owner = message.thread.member
@@ -747,12 +829,16 @@ def _reply_item(
     }
 
 
-def _result(line: ReplyChange, approvals: dict[str, str], entries: list[TaskHistory]) -> str:
+def _result(line: ReplyChange, approvals: dict[str, ApprovalRequest], entries: list[TaskHistory]) -> str:
     if line.outcome == ReplyChangeOutcome.PROPOSED:
-        status = approvals[line.approval_id]
-        # 담당자를 못 찾은 카드는 승인해도 바뀌는 값이 없다.
-        unchanged = status == ApprovalStatus.APPROVED and line.field == ReplyChangeField.ASSIGNEE and not entries
-        return "noted" if unchanged else status
+        card = approvals[line.approval_id]
+        # 담당자를 못 찾은 카드를 고르지 않고 승인했거나 지금 담당자를 고르면 바뀌는 값이 없다. 회의 카드의 이력은
+        # 줄에 잇지 않아 카드의 값으로 가른다(고른 값은 payload.task_overrides 에 있어 이 키와 섞이지 않는다).
+        unchanged = (
+            card.status == ApprovalStatus.APPROVED and line.field == ReplyChangeField.ASSIGNEE and not entries
+            and _PAYLOAD_KEY[ReplyChangeField.ASSIGNEE] not in json.loads(card.payload)
+        )
+        return "noted" if unchanged else card.status
     if line.outcome in (ReplyChangeOutcome.APPLIED, ReplyChangeOutcome.RECORDED):
         return line.outcome
     return "noted"
@@ -825,14 +911,15 @@ def overdue(db: Session, now: datetime) -> list[str]:
     ).all())
 
 
-def expire(db: Session, message_id: str, now: datetime) -> None:
-    """10분 안에 결과가 없는 판단을 끝낸다. overdue 뒤 PM 이 고르거나 결과가 왔을 수 있어 잠근 뒤 다시 본다."""
+def expire(db: Session, message_id: str, now: datetime) -> bool:
+    """10분 안에 결과가 없는 판단을 끝낸다. overdue 뒤 PM 이 고르거나 결과가 왔을 수 있어 잠근 뒤 다시 본다. 끝냈으면 True."""
     now = messages.utc(now)
     row = db.get(ReplyJudgment, message_id, with_for_update=True, populate_existing=True)
     if row.state != ReplyJudgmentState.PENDING or messages.utc(row.queued_at) > now - JUDGE_WINDOW:
-        return
+        return False
     row.state = ReplyJudgmentState.TIMED_OUT
     _notify_unjudged(db, row, now)
+    return True
 
 
 def _notice_key(row: ReplyJudgment) -> str:

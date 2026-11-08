@@ -89,6 +89,8 @@ class FakeBe:
         self.members: dict[str, list[dict]] = {}
         # 채팅 커서 (backend chat-cursor). 워크스페이스 → last_message_at 문자열. 없으면 data null
         self.chat_cursors: dict[str, str] = {}
+        # 채팅 채널 목록 (BE #432 모양). None 이면 items 없는 {"data": {}} 를 준다
+        self.chat_channels: list[dict] | None = []
         self._n = 0
 
     def add_upload(self, meeting_id: str, *, workspace_id: str = "ws-1", audio: bytes | None = b"RIFFfake-audio",
@@ -115,6 +117,12 @@ class FakeBe:
         u["speakers"] = normalize_speakers([{"label": l, "total_sec": 1, "samples": []} for l in labels])
         u["reported"] = True
         self.meetings[meeting_id]["status"] = "awaiting_speakers"
+
+    def expire(self, meeting_id: str) -> None:
+        """테스트 준비용: BE 의 업로드 sweeper 가 기한이 지난 회의를 닫은 것을 흉내 낸다(awaiting_speakers·processing -> failed)."""
+        m = self.meetings[meeting_id]
+        assert m["status"] in ("awaiting_speakers", "processing"), f"기한으로 닫히는 것은 지정을 기다리거나 처리 중인 회의다(지금 {m['status']})"
+        m["status"] = "failed"
 
     def assign(self, meeting_id: str, mapping: dict) -> None:
         """PM 이 화자 지정을 끝낸 것을 흉내 낸다(assign_speakers). 엄격하다: awaiting_speakers 이고 지정 키 집합이
@@ -150,6 +158,10 @@ class FakeBe:
             ws = path.split("/")[2]
             at = self.chat_cursors.get(ws)
             return _ok(200, {"meeting_id": "m-prev", "last_message_at": at} if at else None)
+        if method == "GET" and path == "/bot/chat-channels":
+            if (headers or {}).get("X-Service-Token") != self.service_token:
+                return _err(401, "UNAUTHENTICATED")
+            return _ok(200, {} if self.chat_channels is None else {"items": list(self.chat_channels)})
         if method == "GET" and path.startswith("/workspaces/") and path.endswith("/members/names"):
             return self._member_names(path.split("/")[2], headers or {})
         if method == "POST" and path.startswith("/workspaces/") and path.endswith("/tasks/similar"):

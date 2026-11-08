@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { resolve } from 'node:path'
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
-import { showSplash } from '@/shared/lib/splash'
+import { SPLASH_RECORD_KEY, showSplash, showStartSplash } from '@/shared/lib/splash'
 import { RouteSkeleton } from '../router/RouteSkeleton'
 import { SplashHost } from './SplashHost'
 
@@ -52,8 +53,15 @@ function stubMotion({ reduced = false, standalone = false }: Motion = {}) {
   }
 }
 
+/* 라우트 뼈대는 캐시의 소속 목록으로 역할을 읽는다 (#510). 비어 있는 캐시면 된다 */
+const queryClient = new QueryClient()
+
 function Screen({ loading }: { loading: boolean }) {
-  return <MemoryRouter>{loading ? <RouteSkeleton /> : <h1>첫 화면</h1>}</MemoryRouter>
+  return (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>{loading ? <RouteSkeleton /> : <h1>첫 화면</h1>}</MemoryRouter>
+    </QueryClientProvider>
+  )
 }
 
 interface BootOptions {
@@ -132,7 +140,11 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   window.history.replaceState(null, '', '/')
+  document.documentElement.removeAttribute('data-splash')
 })
+
+/** 전체 스플래시를 마지막으로 보인 기록 (#510). 실제 시각(Date)이다 — 가짜 시계는 performance 만 돌린다 */
+const record = () => window.localStorage.getItem(SPLASH_RECORD_KEY)
 
 describe('새로 접속', () => {
   it('늦게 준비되면 모자를 누르고 둘러보다가, 준비되면 눈웃음 → 사라짐 → 걷힘이다', () => {
@@ -162,9 +174,12 @@ describe('새로 접속', () => {
     finishLoading()
     advance(100)
     expect(status()).toBe('준비됐어요')
-    advance(500)
+    // 눈웃음이 지어지는 0.5초와 다 지은 얼굴로 머무는 0.6초 동안 사라지지 않는다 (#506)
+    for (let ms = 0; ms < 1000; ms += 100) {
+      advance(100)
+      expect(overlay()).not.toHaveAttribute('data-phase')
+    }
     expect(smiling()).toBe(true)
-    expect(overlay()).not.toHaveAttribute('data-phase')
     expect(appRoot).toHaveAttribute('inert')
 
     advance(100)
@@ -172,7 +187,7 @@ describe('새로 접속', () => {
     expect(appRoot).not.toHaveAttribute('inert')
     expect(screen.getByRole('heading', { name: '첫 화면' })).toBeInTheDocument()
 
-    advance(399)
+    advance(599)
     expect(overlay()).toBeInTheDocument()
     advance(1)
     expect(overlay()).toBeNull()
@@ -192,7 +207,7 @@ describe('새로 접속', () => {
     }
     expect(status()).toBe('준비됐어요')
 
-    for (let ms = 0; ms < 600; ms += 100) {
+    for (let ms = 0; ms < 1100; ms += 100) {
       advance(100)
       seen.push(status())
     }
@@ -200,7 +215,7 @@ describe('새로 접속', () => {
     expect(smiling()).toBe(true)
     expect(overlay()).toHaveAttribute('data-phase', 'leave')
 
-    advance(400)
+    advance(600)
     expect(overlay()).toBeNull()
     expect(appRoot).not.toHaveAttribute('inert')
   })
@@ -253,10 +268,10 @@ describe('새로 접속', () => {
     nextSkeleton.rerender(<Screen loading={false} />)
     advance(100)
     expect(status()).toBe('준비됐어요')
-    advance(600)
+    advance(1100)
     expect(smiling()).toBe(true)
     expect(overlay()).toHaveAttribute('data-phase', 'leave')
-    advance(400)
+    advance(600)
     expect(overlay()).toBeNull()
   })
 
@@ -344,7 +359,7 @@ describe('움직임 줄이기', () => {
 
   it.each([
     ['눈웃음', 300],
-    ['사라짐', 700],
+    ['사라짐', 1300],
   ])('%s 중에 켜면 바로 걷힌다', (_phase, afterReady) => {
     const motion = stubMotion()
     const { appRoot, finishLoading } = boot()
@@ -368,9 +383,9 @@ describe('설치한 앱', () => {
     finishLoading()
     advance(100)
     expect(status()).toBe('준비됐어요')
-    advance(600)
+    advance(1100)
     expect(overlay()).toHaveAttribute('data-phase', 'leave')
-    advance(400)
+    advance(600)
     expect(overlay()).toBeNull()
   })
 })
@@ -384,7 +399,7 @@ describe('랜딩', () => {
     expect(appRoot).not.toHaveAttribute('inert')
     expect(screen.getByRole('heading', { name: '첫 화면' })).toBeInTheDocument()
     expect(status()).toBe('')
-    advance(400)
+    advance(600)
     expect(overlay()).toBeNull()
     expect(smiling()).toBe(false)
   })
@@ -398,23 +413,30 @@ describe('랜딩', () => {
 })
 
 describe('로그인 직후', () => {
-  it('띄우기 신호를 받으면 0.3초 뒤부터 덮고, 놓고 도착 화면 뼈대가 사라지면 걷힌다', () => {
-    stubMotion()
+  function mountAfterLogin() {
     const appRoot = document.body.appendChild(document.createElement('div'))
     const app = render(<Screen loading={false} />, { container: appRoot })
     render(<SplashHost appRoot={appRoot} />)
+    return { appRoot, app }
+  }
+
+  it('띄우기 신호를 받는 순간 0.3초 대기 없이 덮고, 놓고 도착 화면 뼈대가 사라지면 걷힌다 (#539)', () => {
+    stubMotion()
+    const { appRoot, app } = mountAfterLogin()
     expect(overlay()).toBeNull()
 
     let release = () => {}
     act(() => {
       release = showSplash()
     })
-    advance(299)
-    expect(overlay()).toBeNull()
-    expect(appRoot).not.toHaveAttribute('inert')
-    advance(1)
-    expect(shift()).toBe('300ms')
+    // 누른 동작이라 번쩍임 방지 대기(hidden)가 없다. 그 사이 도착 화면 뼈대가 보이지 않는다
+    expect(overlay()).toBeInTheDocument()
+    expect(overlay()).not.toHaveAttribute('data-settling')
+    expect(mascotShown()).toBe(true)
+    expect(shift()).toBe('0ms')
     expect(appRoot).toHaveAttribute('inert')
+    // 보인 순간이라 12시간 기록이 바로 남는다 (#510)
+    expect(record()).not.toBeNull()
 
     act(() => {
       release()
@@ -426,16 +448,14 @@ describe('로그인 직후', () => {
     app.rerender(<Screen loading={false} />)
     advance(100)
     expect(status()).toBe('준비됐어요')
-    advance(1000)
+    advance(1700)
     expect(overlay()).toBeNull()
     expect(appRoot).not.toHaveAttribute('inert')
   })
 
-  it('0.3초 안에 끝나면 띄우지 않는다', () => {
+  it('0.3초 안에 끝나도 띄운 채로 눈웃음 → 사라짐으로 끝난다 — 보이지 않은 채 걷히지 않는다 (#539)', () => {
     stubMotion()
-    const appRoot = document.body.appendChild(document.createElement('div'))
-    render(<Screen loading={false} />, { container: appRoot })
-    render(<SplashHost appRoot={appRoot} />)
+    const { appRoot } = mountAfterLogin()
 
     let release = () => {}
     act(() => {
@@ -445,60 +465,306 @@ describe('로그인 직후', () => {
     act(() => {
       release()
     })
-    for (let ms = 0; ms < 3000; ms += 50) {
-      advance(50)
-      expect(overlay()).toBeNull()
+    for (let ms = 150; ms < 300; ms += 10) {
+      advance(10)
+      expect(overlay()).toBeInTheDocument()
+      expect(mascotShown()).toBe(true)
     }
+    expect(status()).toBe('준비됐어요')
+    expect(smiling()).toBe(true)
+    expect(appRoot).toHaveAttribute('inert')
+
+    advance(1050)
+    expect(overlay()).toHaveAttribute('data-phase', 'leave')
+    advance(600)
+    expect(overlay()).toBeNull()
+    expect(appRoot).not.toHaveAttribute('inert')
+  })
+})
+
+describe('12시간 안에 다시 옴 (#510)', () => {
+  it('정적 판을 그리지 않았으면(skip) React 도 덮지 않는다 — 가드 대기는 뼈대가 보이고 준비되면 바로 화면이다', () => {
+    stubMotion()
+    document.documentElement.setAttribute('data-splash', 'skip')
+    const { appRoot, staticSplash, finishLoading } = boot()
+
+    expect(staticSplash).not.toBeInTheDocument()
+    expect(overlay()).toBeNull()
+    expect(appRoot).not.toHaveAttribute('inert')
+    advance(2000)
+    expect(overlay()).toBeNull()
+    finishLoading()
+    expect(screen.getByRole('heading', { name: '첫 화면' })).toBeInTheDocument()
+    expect(record()).toBeNull()
   })
 
-  it('0.3초 직전에 놓으면 준비 확인이 0.3초를 넘겨도 띄우지 않는다', () => {
+  it('설치한 앱(quick)은 정적 판을 이어받되, 준비되면 둘러보기·눈웃음 없이 0.2초에 사라진다', () => {
+    stubMotion({ standalone: true })
+    document.documentElement.setAttribute('data-splash', 'quick')
+    const { appRoot, finishLoading } = boot()
+
+    expect(overlay()).toBeInTheDocument()
+    expect(appRoot).toHaveAttribute('inert')
+    advance(3000)
+    expect(status()).toBe('')
+    expect(capPressed()).toBe(false)
+
+    finishLoading()
+    advance(100)
+    expect(overlay()).toHaveAttribute('data-phase', 'leave')
+    expect(overlay()).toHaveAttribute('data-fade', 'quick')
+    expect(smiling()).toBe(false)
+    expect(appRoot).not.toHaveAttribute('inert')
+    advance(199)
+    expect(overlay()).toBeInTheDocument()
+    advance(1)
+    expect(overlay()).toBeNull()
+    // 전체 스플래시가 아니라 기록하지 않는다 — 12시간이 지나면 다시 전체를 보인다
+    expect(record()).toBeNull()
+  })
+
+  it('설치한 앱이 움직임 줄이기면 준비되는 순간 걷힌다', () => {
+    stubMotion({ standalone: true, reduced: true })
+    document.documentElement.setAttribute('data-splash', 'quick')
+    const { finishLoading } = boot()
+
+    finishLoading()
+    advance(99)
+    expect(overlay()).toBeInTheDocument()
+    advance(1)
+    expect(overlay()).toBeNull()
+  })
+})
+
+describe('기록 시점 (#510)', () => {
+  it('전체 스플래시가 보이면 그때 기록한다', () => {
     stubMotion()
+    const before = Date.now()
+    boot()
+
+    advance(290)
+    expect(record()).toBeNull()
+    advance(10)
+    expect(Number(record())).toBeGreaterThanOrEqual(before)
+  })
+
+  it('0.3초 안에 준비돼 보이지 않은 채 끝나면 기록하지 않는다', () => {
+    stubMotion()
+    const { finishLoading } = boot({ mountAt: 50 })
+
+    finishLoading()
+    advance(1000)
+    expect(overlay()).toBeNull()
+    expect(record()).toBeNull()
+  })
+
+  it('랜딩의 바로 걷힘은 전체 스플래시가 아니라 기록하지 않는다', () => {
+    stubMotion()
+    boot({ path: '/', mountAt: 500, loading: false })
+
+    expect(overlay()).toHaveAttribute('data-phase', 'leave')
+    advance(600)
+    expect(record()).toBeNull()
+  })
+
+  it('기록이 있는 사람이 12시간 뒤 `/` 로 오면 랜딩 바로 걷힘이 아니라 전체 스플래시다 — 로그인으로 가는 길이다', () => {
+    stubMotion()
+    window.localStorage.setItem(SPLASH_RECORD_KEY, '1')
+    boot({ path: '/', mountAt: 500 })
+
+    expect(overlay()).not.toHaveAttribute('data-phase')
+    advance(1000)
+    expect(status()).toBe('로그인 확인 중')
+  })
+
+  it('로그인 직후 스플래시는 12시간 기록과 상관없이 띄우는 순간 보이고 기록한다 — 0.3초 안에 끝나도 (#539)', () => {
+    stubMotion()
+    window.localStorage.setItem(SPLASH_RECORD_KEY, '1')
     const appRoot = document.body.appendChild(document.createElement('div'))
     render(<Screen loading={false} />, { container: appRoot })
     render(<SplashHost appRoot={appRoot} />)
+    const before = Date.now()
 
     let release = () => {}
     act(() => {
       release = showSplash()
     })
-    advance(250)
+    expect(overlay()).toBeInTheDocument()
+    expect(Number(record())).toBeGreaterThanOrEqual(before)
+    advance(150)
     act(() => {
       release()
     })
-    for (let ms = 250; ms < 3000; ms += 10) {
-      advance(10)
-      expect(overlay()).toBeNull()
-      expect(appRoot).not.toHaveAttribute('inert')
+    advance(2000)
+    expect(overlay()).toBeNull()
+    expect(Number(record())).toBeGreaterThanOrEqual(before)
+  })
+})
+
+describe('랜딩 `시작하기` (#510)', () => {
+  function mountForStart({ loading = false }: { loading?: boolean } = {}) {
+    const appRoot = document.body.appendChild(document.createElement('div'))
+    const app = render(<Screen loading={loading} />, { container: appRoot })
+    render(<SplashHost appRoot={appRoot} />)
+    act(() => {
+      showStartSplash()
+    })
+    return {
+      appRoot,
+      startLoading: () => {
+        app.rerender(<Screen loading />)
+      },
+      finishLoading: () => {
+        app.rerender(<Screen loading={false} />)
+      },
     }
+  }
+
+  it('한쪽 보기 중에 준비됐다가 다시 잡히면 미뤄 둔 준비를 버리고, 새로 풀린 뒤의 준비로 끝난다', () => {
+    stubMotion()
+    const { appRoot, startLoading, finishLoading } = mountForStart()
+
+    // 0.1초에 준비 확인이 끝나 미뤄 둔다. 0.3초에 로그인 화면 뼈대가 다시 잡는다
+    advance(300)
+    startLoading()
+    advance(500)
+    // 한쪽 보기가 끝나도 눈웃음이 아니라 둘러보며 기다린다
+    expect(status()).toBe('로그인 확인 중')
+    expect(smiling()).toBe(false)
+    advance(1000)
+    expect(status()).toBe('로그인 확인 중')
+    expect(appRoot).toHaveAttribute('inert')
+
+    finishLoading()
+    advance(90)
+    expect(status()).toBe('로그인 확인 중')
+    advance(10)
+    expect(status()).toBe('준비됐어요')
+    advance(1100)
+    expect(overlay()).toHaveAttribute('data-phase', 'leave')
+    advance(600)
+    expect(overlay()).toBeNull()
   })
 
-  it('0.3초 직전에 놓았다가 도착 화면이 다시 잡으면 그때부터 덮고 눈웃음 → 사라짐으로 끝난다', () => {
-    stubMotion()
-    const appRoot = document.body.appendChild(document.createElement('div'))
-    const app = render(<Screen loading={false} />, { container: appRoot })
-    render(<SplashHost appRoot={appRoot} />)
+  it('움직임 줄이기에서도 다시 잡히면 한쪽 보기 시간에 걷히지 않고, 새로 풀린 뒤의 준비에 걷힌다', () => {
+    stubMotion({ reduced: true })
+    const { appRoot, startLoading, finishLoading } = mountForStart()
 
-    let release = () => {}
-    act(() => {
-      release = showSplash()
-    })
-    advance(250)
-    act(() => {
-      release()
-    })
-    advance(50)
-    app.rerender(<Screen loading />)
-    advance(10)
+    advance(300)
+    startLoading()
+    advance(500)
+    expect(overlay()).toBeInTheDocument()
+    advance(1000)
     expect(overlay()).toBeInTheDocument()
     expect(appRoot).toHaveAttribute('inert')
 
-    advance(290)
-    app.rerender(<Screen loading={false} />)
+    finishLoading()
+    advance(90)
+    expect(overlay()).toBeInTheDocument()
+    advance(10)
+    expect(overlay()).toBeNull()
+    expect(appRoot).not.toHaveAttribute('inert')
+  })
+
+  it('누른 순간 정면으로 보이고, 한쪽을 한 번 본 뒤 눈웃음 → 사라짐으로 약 2.5초에 끝난다', () => {
+    stubMotion()
+    const before = Date.now()
+    const { appRoot } = mountForStart()
+
+    // 등장 없이 정적 판과 같은 정면이다
+    expect(overlay()).toBeInTheDocument()
+    expect(overlay()).toHaveAttribute('data-instant')
+    expect(shift()).toBe('0ms')
+    expect(appRoot).toHaveAttribute('inert')
+    expect(Number(record())).toBeGreaterThanOrEqual(before)
+    const front = leftEyeX()
+    expect(capPressed()).toBe(false)
+
+    advance(90)
+    expect(capPressed()).toBe(false)
+    advance(110)
+    expect(capPressed()).toBe(true)
+    advance(590)
+    expect(leftEyeX()).toBeLessThan(front - 10)
+    expect(smiling()).toBe(false)
+    expect(status()).toBe('')
+
+    advance(10)
+    expect(status()).toBe('준비됐어요')
+    advance(1090)
+    expect(overlay()).not.toHaveAttribute('data-phase')
+    advance(10)
+    expect(smiling()).toBe(true)
+    expect(overlay()).toHaveAttribute('data-phase', 'leave')
+    expect(appRoot).not.toHaveAttribute('inert')
+    advance(590)
+    expect(overlay()).toBeInTheDocument()
+    advance(10)
+    expect(overlay()).toBeNull()
+  })
+
+  it.each([
+    ['누르기', () => fireEvent.pointerDown(document.body)],
+    ['Enter', () => fireEvent.keyDown(document, { key: 'Enter' })],
+    ['Esc', () => fireEvent.keyDown(document, { key: 'Escape' })],
+  ])('%s 로 건너뛰면 바로 걷힌다', (_name, press) => {
+    stubMotion()
+    const { appRoot } = mountForStart()
+
+    advance(400)
+    act(() => {
+      press()
+    })
+    expect(overlay()).toBeNull()
+    expect(appRoot).not.toHaveAttribute('inert')
+  })
+
+  it('다른 키로는 건너뛰지 않는다', () => {
+    stubMotion()
+    mountForStart()
+
+    advance(400)
+    act(() => {
+      fireEvent.keyDown(document, { key: 'Tab' })
+    })
+    expect(overlay()).toBeInTheDocument()
+  })
+
+  it('로그인 화면 코드가 늦으면 한쪽 보기 뒤 둘러보며 기다리고, 준비되면 눈웃음 → 사라짐이다', () => {
+    stubMotion()
+    const { finishLoading } = mountForStart({ loading: true })
+
+    advance(1500)
+    expect(status()).toBe('로그인 확인 중')
+    finishLoading()
     advance(100)
     expect(status()).toBe('준비됐어요')
-    advance(600)
-    expect(overlay()).toHaveAttribute('data-phase', 'leave')
-    advance(400)
+    advance(1700)
     expect(overlay()).toBeNull()
+  })
+
+  it('움직임 줄이기면 정면 그대로 한쪽 보기 시간(0.8초)만 머물고 눈웃음·사라짐 없이 걷힌다', () => {
+    stubMotion({ reduced: true })
+    mountForStart()
+    const front = leftEyeX()
+
+    advance(790)
+    expect(overlay()).toBeInTheDocument()
+    expect(leftEyeX()).toBe(front)
+    advance(10)
+    expect(overlay()).toBeNull()
+    expect(smiling()).toBe(false)
+  })
+
+  it('랜딩의 사라짐이 남아 있어도 이어받는다', () => {
+    stubMotion()
+    boot({ path: '/', mountAt: 500, loading: false })
+    expect(overlay()).toHaveAttribute('data-phase', 'leave')
+
+    act(() => {
+      showStartSplash()
+    })
+    expect(overlay()).not.toHaveAttribute('data-phase')
+    expect(overlay()).toHaveAttribute('data-instant')
   })
 })

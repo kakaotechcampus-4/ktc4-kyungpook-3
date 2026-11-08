@@ -240,7 +240,8 @@ describe('요약·제목·회의 안내 (AC-01 · AC-05)', () => {
     useScenario('dashboard-no-meeting')
     renderApp(DASHBOARD)
     await screen.findByRole('heading', { name: '대시보드' })
-    expect(await screen.findAllByText('아직 정리한 회의가 없어요')).toHaveLength(2)
+    // 제목 아래 안내와 최근 반영 영역 — 두 자리는 로딩 자리의 최소 표시가 따로 끝난다 (#508)
+    await waitFor(() => expect(screen.getAllByText('아직 정리한 회의가 없어요')).toHaveLength(2))
   })
 })
 
@@ -446,6 +447,31 @@ describe('마감 임박 (AC-02)', () => {
       '7일 이내 마감 4',
       '막힌 일 1',
     ])
+  })
+
+  it('태스크와 승인을 함께 받는 중이면 PM 제목은 `워크스페이스 현황` 이고 요약 넷이 모두 불러오는 중이다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    for (const path of ['/api/v1/tasks', '/api/v1/approvals'])
+      server.use(
+        http.get(path, async () => {
+          await gate.promise
+          return undefined
+        }),
+      )
+    renderApp(DASHBOARD)
+    await waitFor(() =>
+      expect(summary()).toEqual({
+        '확인 대기': '불러오는 중',
+        '기한 지남': '불러오는 중',
+        '7일 이내 마감': '불러오는 중',
+        '막힌 일': '불러오는 중',
+      }),
+    )
+    expect(headline()).toBe('워크스페이스 현황')
+    expect(summaryLinks()).toEqual([])
+    expect(screen.queryByRole('list', { name: '확인이 필요한 일 목록' })).toBeNull()
+    expect(screen.queryByRole('list', { name: '마감 임박 목록' })).toBeNull()
   })
 
   it('승인을 받는 중이거나 받지 못하면 확인 대기는 링크가 아니다', async () => {
@@ -987,7 +1013,8 @@ describe('부분 오류·공간 전환 (AC-05)', () => {
     await waitFor(() => expect(screen.getByText('마감이 임박한 태스크가 없습니다')).toBeVisible())
     expect(screen.queryByText('로그인 API 연동')).not.toBeInTheDocument()
     expect(reviewTitles()).toEqual([])
-    expect(await screen.findAllByText('아직 정리한 회의가 없어요')).toHaveLength(2)
+    // 제목 아래 안내와 최근 반영 영역 — 두 자리는 로딩 자리의 최소 표시가 따로 끝난다 (#508)
+    await waitFor(() => expect(screen.getAllByText('아직 정리한 회의가 없어요')).toHaveLength(2))
     expect(log.started.map(({ path }) => path)).toContain('/tasks?workspace_id=ws_04')
   })
 })

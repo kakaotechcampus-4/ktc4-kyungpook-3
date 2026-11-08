@@ -117,7 +117,7 @@ def verify_token(db: DbSession, raw: str, *, now: datetime) -> tuple[datetime, s
     return messages.utc(row.expires_at), mask_email(user.email)
 
 
-def confirm_reset(db: DbSession, raw: str, new_password: str, *, now: datetime) -> None:
+def confirm_reset(db: DbSession, raw: str, new_password: str, *, now: datetime) -> str:
     # request_reset 과 같은 순서(사용자 행 잠금 -> 토큰 행 UPDATE)로 잡아 PG 교착을 피한다.
     token_row = _row(db, raw)
     if token_row is None:
@@ -143,3 +143,4 @@ def confirm_reset(db: DbSession, raw: str, new_password: str, *, now: datetime) 
     user.password_hash = hash_password(new_password)
     db.execute(delete(SessionModel).where(SessionModel.user_id == user.user_id))
     db.flush()
+    return user.email

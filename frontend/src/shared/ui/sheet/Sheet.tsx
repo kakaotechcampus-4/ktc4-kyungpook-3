@@ -11,7 +11,8 @@ import type { PointerEvent, ReactElement, ReactNode } from 'react'
 /* 손잡이를 이보다 길게 끌어 내리면 닫는다. 줄 하나(52px)보다 길게 잡아, 손잡이를 짚다 조금 밀린 것은 닫지 않고 제자리로 돌린다 */
 const CLOSE_DRAG_PX = 80
 
-/* `inset-0` 은 쓰지 않는다 — tokens.css 가 간격 스케일을 꺼서 생기지 않는다 (Modal 과 같다) */
+/* `inset-[0px]`·`bottom-[0px]` 은 tokens.css 에 `--spacing-0` 이 없어 `inset-0` 이 생성되지 않던 때의 우회다 (Modal 과 같다).
+   #497 부터는 `inset-0` 도 같은 값이다 */
 const SCRIM = 'fixed inset-[0px] z-100 bg-ink/32'
 const PANEL =
   'fixed inset-x-[0px] bottom-[0px] z-100 flex max-h-[85dvh] flex-col rounded-t-[20px] bg-surface px-16 pb-[calc(30px+env(safe-area-inset-bottom))] text-ink outline-none'

@@ -154,6 +154,31 @@ def _snowflake_order(value: object) -> int:
     return int(value) if isinstance(value, str) and value.isdigit() else 0
 
 
+def get_guild_member(
+    bot_token: str,
+    guild_id: str,
+    user_id: str,
+    *,
+    transport: httpx.BaseTransport | None = None,
+    timeout: float = 3.0,
+) -> dict:
+    """서버 사용자 한 명의 정보(서버 별명 nick 과 user)를 돌려준다. 실패하면 `DiscordApiError`를 던진다.
+
+    팀원 등록 요청 안에서 부르므로 timeout 을 짧게 둔다(#459).
+    """
+    url = f"{DISCORD_API_BASE}/guilds/{quote(guild_id, safe='')}/members/{quote(user_id, safe='')}"
+    with _client(bot_token, transport, timeout=timeout) as client:
+        response = _send(client, "GET", url)
+    _raise_for_status(response)
+    try:
+        member = response.json()
+    except ValueError:
+        raise DiscordApiError("응답이 JSON이 아닙니다", status_code=response.status_code) from None
+    if not isinstance(member, dict):
+        raise DiscordApiError("응답이 객체가 아닙니다", status_code=response.status_code)
+    return member
+
+
 def list_text_channels(
     bot_token: str, guild_id: str, *, transport: httpx.BaseTransport | None = None
 ) -> list[dict]:

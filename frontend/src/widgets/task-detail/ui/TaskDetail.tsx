@@ -12,21 +12,20 @@ import { paths } from '@/shared/config/routes'
 import { monthDayOf } from '@/shared/lib/date'
 import { queryView } from '@/shared/lib/query-view'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Button } from '@/shared/ui/button'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
-import { Skeleton } from '@/shared/ui/skeleton'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { assigneeLabel } from '../lib/history'
+import { TaskDetailSkeleton } from './TaskDetailSkeleton'
+import { BACK, ROOT } from './frame'
 import { TaskHistory } from './TaskHistory'
 import { TaskInfoPanel } from './TaskInfoPanel'
 import { TaskReminder } from './TaskReminder'
 
 /* 태스크 목록·보드와 같은 960 컨테이너 — 본문 864px */
-const ROOT = 'mx-auto flex w-full max-w-[960px] flex-col gap-22 px-16 pt-40 pb-72 sm:px-48'
-/* 대시보드 「전체 보기」와 같은 선 꺾쇠 */
-const BACK =
-  'inline-flex min-h-32 items-center gap-4 self-start text-[13px] font-semibold text-sub hover:text-ink'
 const HEADER = 'flex flex-wrap items-end justify-between gap-x-24 gap-y-16'
 const TITLE = 'text-[30px] leading-[1.3] font-bold tracking-h2 text-ink wrap-anywhere'
 const SUBLINE = 'flex flex-wrap items-center gap-8 text-[15px] text-sub'
@@ -68,6 +67,7 @@ export function TaskDetail({ workspaceId, taskId, isPm, today }: TaskDetailProps
   const retryRefresh = () => void task.refetch({ cancelRefetch: false })
 
   const view = queryView(task)
+  const indicator = useLoadingIndicator(view === 'loading')
 
   let body: ReactNode
   if (task.data !== undefined)
@@ -89,12 +89,14 @@ export function TaskDetail({ workspaceId, taskId, isPm, today }: TaskDetailProps
         onRetry={() => void task.refetch()}
       />
     )
-  else
-    body = (
-      <div aria-busy="true">
-        <Skeleton lines={5} />
-      </div>
-    )
+  else body = null
+  body = indicator.pending ? (
+    <DeferredSkeleton indicator={indicator}>
+      <TaskDetailSkeleton />
+    </DeferredSkeleton>
+  ) : (
+    <Reveal indicator={indicator}>{body}</Reveal>
+  )
 
   return (
     <main className={ROOT}>

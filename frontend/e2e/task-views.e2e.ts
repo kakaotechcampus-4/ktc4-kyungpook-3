@@ -4,8 +4,8 @@ import { expectNoHorizontalOverflow, start } from './support'
 
 /*
  * M8 A — 태스크 보기(보드·캘린더·간트)의 너비별 배치 (AC-A-03). 실제 브라우저에서만 잴 수 있는 페이지·영역 폭과 가로 스크롤만 본다.
- * 코드 나누기(AC-A-02)·조회 상태(AC-A-05)·역할·상세 링크·공간 격리(AC-A-06)는 Vitest(src/app/taskViews*.test.tsx)와
- * Storybook(M8 태스크/보기)이 본다. 상태는 MSW 시나리오(shared/mock/scenarios.ts)로만 만든다.
+ * 코드 나누기(AC-A-02)·조회 상태(AC-A-05)·역할·상세 링크·공간 격리(AC-A-06)는 Vitest(src/app/taskViews*.test.tsx)가,
+ * 시안 값은 task-views-design.e2e.ts 가 본다. 상태는 MSW 시나리오(shared/mock/scenarios.ts)로만 만든다.
  * 브라우저 시계는 실제 날짜라 캘린더의 달과 간트 창은 주소로 픽스처의 달(2026-09)에 고정한다.
  *
  * - tasks-long-content: ws_01 의 PM. 픽스처에 긴 제목·줄바꿈할 곳이 없는 제목 3건(9/18~9/19)과 긴 담당자 이름(mb_03)을 더한다
@@ -110,6 +110,16 @@ for (const width of [1024, 1440, 1920] as const) {
         })
       })
     }
+
+    test('간트 — 긴 제목·줄바꿈할 곳이 없는 제목·긴 담당자 이름이 있어도 왼쪽 칸은 252px 이다', async ({
+      page,
+    }) => {
+      await start(page, 'tasks-long-content', viewPath('gantt'))
+      const row = page.getByRole('row', { name: /^ABCDEFGHIJ/ })
+      await expect(row).toBeVisible(FIRST_PAINT)
+      const firstCell = row.locator('xpath=*[1]')
+      expect(await firstCell.evaluate((element) => element.getBoundingClientRect().width)).toBe(252)
+    })
   })
 }
 
