@@ -188,8 +188,30 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 
 남은 작업: AI 의 merge 전송과 `include_pending` 켜기(BE 배포 뒤), FE 답(#512)과 합친 카드 표시, 승인 사이에 담당 항목이 바뀐 경우의 별칭 저장(결정 기록의 장단점).
 
+## 2026-11-08 추가: 답장 판단 claim 이 판단 창을 직접 보기(#548)
+
+근거는 #548 설계 확정 댓글(2026-11-08)이고, PR #382 멘토 리뷰(답장 판단 재시도 상한)의 후속이다. M6 완료는 판정하지 않는다.
+
+| 변경 | 위치 |
+|---|---|
+| claim 이 10분 판단 창이 지난 답장을 내주지 않고 `timed_out` 으로 닫은 뒤 같은 대화의 다음 답장을 준다. 닫기는 대화마다 savepoint 로 감싼다 | `backend/app/services/replies.py`, `backend/app/api/bot_messages.py` |
+| 봇 설명과 5xx 를 리스에 맡기는 동작 고정 테스트(AI, 이 PR 에서 함께 수정) | `ai/capture/dm.py`, `ai/tests/capture/test_dm.py` |
+| 계약·문서 | [BE↔AI 계약](../../contracts/backend-ai-contract.md) 답장 claim·판단 절, [Backend README](../../../README.md) 답장 판단 재시도와 판단 창 |
+
+| 요구 | 상태 | 근거 |
+|---|---|---|
+| 같은 답장을 끝없이 다시 맡기지 않는다(한 차례 최대 4회) | 구현 | `tests/api/test_reply_judgment.py` |
+| 같은 대화의 다음 답장이 같은 claim 에서 풀린다 | 구현 | 같은 파일 |
+| PM 이 알 수 있다(기존 `reply_unjudged`, 한 번) | 구현 | 같은 파일 |
+| 스케줄러 없이도 상한 | 구현 | 같은 파일 |
+
+검증은 PR 에 적는다. 모델·마이그레이션·API 모양 변경은 없다. savepoint 는 sqlite 로만 돌려 봤고 PostgreSQL 에서는 CI 에서 처음 돈다.
+
+남은 작업: AI 담당 승인(이 PR 은 ai/ 파일을 함께 고쳤다).
+
 ## 관련 기록
 
+- [답장 판단 재시도 상한을 숫자 대신 판단 창으로 지킨다](basis-for-decision/2026-11-08-reply-judgment-attempt-cap.md)
 - [다른 회의의 같은 새 항목을 승인 대기 카드에 합친다](basis-for-decision/2026-11-07-pending-merge.md)
 - [승인 대기 새 항목 요청을 유사 검색 후보에 따로 더한다](basis-for-decision/2026-11-07-pending-approval-search.md)
 - [답장 담당자 변경 승인에서 PM 이 담당자를 고르게 한다](basis-for-decision/2026-11-07-reply-assignee-override.md)
