@@ -113,14 +113,16 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
     expect(within(preview).getByText(/하늘님, 최진호예요/)).toHaveClass('whitespace-pre-line')
     expect(readable(detail().getByRole('region', { name: '묶은 태스크 2' }))).toBe(
       '묶은 태스크 2퍼블리싱마감 없음메모: 시안 2차 반영분까지메모 고치기빼기' +
-        '발표 자료09/30 마감메모 고치기빼기',
+        '9/16(수)에 태스크를 만든 뒤로 진행 소식이 없어요.' +
+        '발표 자료09/30 마감메모 고치기빼기' +
+        '김서연님이 직접 만든 재촉이에요. 9/15(화)에 태스크를 만든 뒤로 진행 소식이 없어요.',
     )
     // 서버가 정한 시각이 마감 하루 전(9/29 09:00)이 아니라 직접 정한 시각이다
     expect(detail().getByRole('radio', { name: '마감 하루 전09/29 09:00' })).not.toBeChecked()
     expect(detail().getByRole('radio', { name: '직접 정하기09/25 14:00' })).toBeChecked()
   })
 
-  it('보내기 전 확인은 미리보기·묶은 태스크·보낼 시각 두 가지·행동·안내를 갖는다 — 지금 바로와 재촉 이유는 없다', async () => {
+  it('보내기 전 확인은 미리보기·묶은 태스크·보낼 시각 두 가지·행동·안내를 갖는다 — 지금 바로와 따로 선 「왜 보내려 하나요」 블록은 없다(이유는 태스크 행마다 있다)', async () => {
     await openInbox(paths.messageReview('ws_01', 'bd_01'))
     const preview = detail().getByRole('region', { name: '보낼 메시지 미리보기' })
     expect(within(preview).getByText('Discord 개인 메시지 · 카테캠 3팀 봇')).toBeInTheDocument()

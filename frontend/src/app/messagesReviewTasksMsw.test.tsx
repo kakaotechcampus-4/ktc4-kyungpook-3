@@ -3,14 +3,16 @@ import userEvent from '@testing-library/user-event'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
+import { mergeSourceBundle } from '@/shared/mock/fixtures/message'
 import { recordRequestBodies } from '@/shared/test/requests'
-import { current, detail, hold, reviewList, rowTexts } from './test/messageScreen'
+import { conversation, current, detail, hold, reviewList, rowTexts } from './test/messageScreen'
 import { renderApp } from './test/renderApp'
 
 /*
  * #370 보내기 전 확인의 묶은 태스크 — 하나를 빼거나 메모를 고친다 (계약 §5.7 리마인드 경로).
  * 서버(MSW)가 성공한 뒤에만 화면이 바뀐다. 빼거나 메모를 바꾸면 서버가 문구를 다시 만들고 승인을 푼다.
- * 마지막 태스크를 빼면 묶음이 닫혀 보내지 않음처럼 목록의 다음 항목으로 떠난다
+ * 마지막 태스크를 빼면 묶음이 닫혀 보내지 않음처럼 목록의 다음 항목으로 떠난다.
+ * #394 행마다 서버가 만든 재촉 이유와 그 근거(답장·태스크 변경) 링크가 있다
  */
 
 vi.setConfig({ testTimeout: 15_000 })
@@ -202,5 +204,69 @@ describe('메모 고치기', () => {
     ).toBeInTheDocument()
     await waitFor(() => expect(within(tasks()).getAllByRole('listitem')).toHaveLength(1))
     expect(detail().queryByRole('textbox')).toBeNull()
+  })
+})
+
+describe('재촉 이유와 근거', () => {
+  const rows = () => within(tasks()).getAllByRole('listitem')
+
+  it('태스크 하나인 묶음은 이유 아래에 근거 링크를 둔다 — 태스크 변경이면 그 태스크 상세로 간다', async () => {
+    const app = await openBundle('bd_01')
+    const [row] = rows()
+    expect(
+      within(row).getByText(
+        "'API 명세서' 마감이 9/24(목)인데, 9/16(수) 이후로 진행 소식이 없어요.",
+      ),
+    ).toBeVisible()
+    const link = within(row).getByRole('link', { name: "'API 명세서' 변경 보기" })
+    expect(link).toHaveTextContent('변경 보기')
+
+    await userEvent.click(link)
+    await app.expectPath(paths.tasks('ws_01', 'tk_01'))
+    expect(await screen.findByLabelText('태스크 정보')).toBeVisible()
+  })
+
+  it('여러 태스크 묶음은 행마다 제 이유를 보이고, 진행 소식이 없던 행에는 근거 링크가 없다', async () => {
+    await openBundle('bd_02')
+    const [publishing, slides] = rows()
+    expect(
+      within(publishing).getByText('9/16(수)에 태스크를 만든 뒤로 진행 소식이 없어요.'),
+    ).toBeVisible()
+    expect(
+      within(slides).getByText(
+        '김서연님이 직접 만든 재촉이에요. 9/15(화)에 태스크를 만든 뒤로 진행 소식이 없어요.',
+      ),
+    ).toBeVisible()
+    expect(within(tasks()).queryByRole('link')).toBeNull()
+  })
+
+  it('지운 태스크의 행에는 이유 줄이 없다', async () => {
+    Object.assign(reminderOf('bd_02', 'rm_03'), { task_id: null, task_title: null, due_date: null })
+    await openBundle('bd_02')
+    const [publishing, deleted] = rows()
+    expect(within(deleted).getByText('지워진 태스크')).toBeVisible()
+    expect(within(deleted).queryByText(/진행 소식이 없어요/)).toBeNull()
+    expect(within(publishing).getByText(/진행 소식이 없어요/)).toBeVisible()
+  })
+
+  it('답장 보기는 그 대화를 열고 맨 아래 대신 그 답장을 보인다', async () => {
+    db.messageBundles.push(structuredClone(mergeSourceBundle))
+    const scrolled = vi.spyOn(Element.prototype, 'scrollIntoView')
+    onTestFinished(() => scrolled.mockRestore())
+    const app = await openBundle('bd_07')
+    const link = within(rows()[0]).getByRole('link', { name: "'ERD 정리' 답장 보기" })
+    expect(within(rows()[0]).getByText(/9\/15\(화\) 이후로 진행 소식이 없어요\./)).toBeVisible()
+
+    await userEvent.click(link)
+    await app.expectPath(paths.messageThread('ws_01', 'th_01'))
+    await app.expectSearch('?message=mg_02')
+    expect(await detail().findByRole('heading', { level: 2, name: '이재환' })).toBeVisible()
+    const reply = within(conversation()).getByText(/네 확인했습니다\./)
+    const shown = scrolled.mock.contexts.filter(
+      (element): element is Element => element instanceof Element && element.contains(reply),
+    )
+    expect(shown).toHaveLength(1)
+    expect(shown[0]).not.toHaveTextContent('명세서 작업은 시작하셨나요?')
+    expect(scrolled).toHaveBeenCalledWith({ block: 'center' })
   })
 })
