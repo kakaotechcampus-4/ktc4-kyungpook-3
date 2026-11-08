@@ -437,7 +437,11 @@ function TaskCreatePending({
   const overrides = useTaskCreateOverrides(approval, memberIds)
   useUnsavedChanges(overrides.dirty)
   const gaps = openGaps(overrides.attention)
-  const edits = { kind: 'task_create', values: overrides.edits } as const
+  const edits = {
+    kind: 'task_create',
+    values: overrides.edits,
+    saveAlias: overrides.saveAlias,
+  } as const
   const plan = planApprovalResolution(approval, 'approved', { memberIds, edits })
   const blockedReason =
     members === undefined ? MEMBERS_LOADING_REASON : plan.ok ? null : plan.reason
