@@ -36,7 +36,7 @@
 | 항목 | 규약과 FE 처리 |
 |---|---|
 | 생성 승인 | `task_title`, `assignee_member_id`, `due_date`만 수정한다. 상태는 선택하지 않으며 항상 `todo`로 생성한다 |
-| 수정 승인 | `status`, `due_date`만 수정한다. 원래 제안의 다른 변경 필드와 근거는 보존한다. 예외로 담당자를 찾지 못한 답장 카드(§5.7)는 `assignee_member_id`(팀원 또는 미정 `null`)를 보낸다. FE·MSW 구현이고 BE 는 아직 받지 않는다(#460 합의 대기) |
+| 수정 승인 | `status`, `due_date`만 수정한다. 원래 제안의 다른 변경 필드와 근거는 보존한다. 예외로 담당자 줄이 있는 답장 카드는 `assignee_member_id`(팀원 또는 미정 `null`)도 받는다(BE #460, PR #503). FE 는 담당자를 찾지 못한 답장 카드(§5.7)에서만 보낸다 |
 | 키 생략 | 해당 필드는 원래 제안을 유지한다. 편집하지 않은 현재 태스크 값을 보완값으로 채워 보내지 않는다 |
 | 명시적 `null` | 담당자·마감을 미정으로 확정한다. `task_title`·`status`는 `null`을 허용하지 않는다 |
 | 최종 생성값 검증 | 제목은 trim 후 1~300 코드 포인트, 지정된 담당자는 현재 공간 팀원, 지정된 마감은 유효한 `YYYY-MM-DD`다. 담당자·마감 미정만으로 승인을 막지 않는다 |
@@ -152,12 +152,12 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 |---|---|
 | 받는 때 | `status: "approved"` 일 때만. 반려와 같이 보내거나 `reminder_dm` 에 보내면 400 `INVALID_REQUEST` 이고 승인 상태도 바뀌지 않는다 |
 | `task_create` 키 | `task_title`, `assignee_member_id`, `due_date`. 상태는 고를 수 없고 항상 `todo` |
-| `task_update` 키 | `status`, `due_date` |
+| `task_update` 키 | `status`, `due_date`. 담당자 줄이 있는 답장 카드(답장 판단의 변경 줄에 담당자가 있는 카드)는 `assignee_member_id` 도 받는다(`null` 이면 미정, #460). 상태·마감만 있는 답장 카드, 회의 추출 카드, 수동 생성 카드에 보내면 400 `INVALID_REQUEST` 다. 카드는 payload 가 아니라 답장 판단 기록으로 고른다 |
 | 키가 없을 때 | 그 필드는 제안 그대로 |
 | `null` | `assignee_member_id`·`due_date` 는 "미정"(담당자 없음, 마감 없음). `task_title`·`status` 의 `null` 은 400 |
 | 그 밖의 키, 잘못된 날짜·상태 | 400 `INVALID_REQUEST`. 새 태스크 승인에 `title` 키를 보내도 400(`task_title` 을 쓴다). 승인은 pending 으로 남는다 |
 | 다른 공간 담당자, 없는 팀원 | 400 `WORKSPACE_MISMATCH`, 없거나 탈퇴한 팀원 id 는 404 `MEMBER_NOT_FOUND`. 승인은 pending 으로 남는다. 제안의 담당자가 그사이 탈퇴했어도 같고, `task_overrides` 로 다른 담당자나 미정을 고르면 승인된다. `PATCH /tasks` 와 이력 되돌리기도 탈퇴한 팀원을 담당자로 새로 넣지 못한다(지금 담당자를 그대로 보내는 것은 된다) |
-| 충돌 검사 | 고친 값을 반영한 최종 값으로 기존 `APPROVAL_CONFLICT` 검사를 한다. 제안에 없던 필드를 PM 이 고치면 `base_values` 가 없어 이 검사를 하지 않는다. PM 이 지금 값을 보고 고른 값으로 보고 그대로 덮어쓴다 |
+| 충돌 검사 | 고친 값을 반영한 최종 값으로 기존 `APPROVAL_CONFLICT` 검사를 한다. 제안에 없던 필드를 PM 이 고치면 `base_values` 가 없어 이 검사를 하지 않는다. PM 이 지금 값을 보고 고른 값으로 보고 그대로 덮어쓴다. 예외로 담당자를 찾지 못한 답장 카드는 제안에 담당자가 없어도 `base_values.assignee_member_id`(제안 시점 담당자)로 검사한다. #460 배포 전에 만들어진 카드는 이 기준값이 없어 검사하지 않는다. 충돌을 값 검증보다 먼저 보므로, 그사이 담당자가 바뀐 카드에 탈퇴자를 고르면 먼저 409 이고 다시 승인할 때 404 다 |
 | 이력 | 고친 필드는 `change_source: "manual"`, `changed_by` 는 승인한 PM. 수정 제안은 지금 값에서 PM 값으로, 새 태스크는 생성 줄 다음에 제안 값에서 PM 값으로. 고치지 않은 필드는 승인 요청의 출처(payload `change_source`). 없으면 수정 제안은 `meeting`, 새 태스크는 `meeting_id` 가 있으면 `meeting` 없으면 `manual` |
 | 승인 기록 | payload 의 원래 제안과 근거는 그대로 두고, 제안과 다른 값만 `payload.task_overrides` 에 남는다. 조회 응답에서 볼 수 있다 |
 | `POST /approvals` | payload 에 `task_overrides` 키가 있거나 `change_source` 가 정해진 값(`meeting`·`chat`·`checkin`·`notion`·`reminder_reply`·`manual`)이 아니면 400. `change_source` 는 PM 만 보낼 수 있고 일반 팀원이 보내면 400 |
@@ -1706,7 +1706,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 고르면 그 태스크만 후보로 다시 판단한다. 해당 없음이면 닫는다. 지운 태스크는 후보에 나오지 않는다. 후보 밖이거나 지운 태스크는 400 `INVALID_REQUEST`, 판단 기록이 없거나 다른 워크스페이스면 404 `REPLY_JUDGMENT_NOT_FOUND`, 고를 차례가 아니거나 이미 골랐으면 409 `REPLY_ATTRIBUTION_NOT_NEEDED` 다.
 - 타임라인에서 답장에 이어진 이력은 답장 아래에만 나오고 `history` 줄이 되지 않는다. 승인은 줄이 아니라 `result` 로 읽는다. 승인하면서 PM 이 고친 값도 같은 줄에 묶이고 `new_value` 는 고친 값이다. `GET /tasks/{id}/history` 는 그대로다.
 - `due_clear`·`failed` 는 그 태스크를 말했지만 값을 정하지 못한 줄이다. 값이 없고 `result` 는 `noted` 다.
-- 담당자를 찾지 못한 카드는 승인해도 담당자가 바뀌지 않고 `result` 는 `noted` 다. `approved` 는 값이 실제로 바뀐 승인이다.
+- 담당자를 찾지 못한 카드를 담당자를 고르지 않고 승인하거나 지금 담당자와 같은 사람을 고르면 `noted` 다. 다른 팀원이나 미정을 고르면 `approved` 이고 `new_value` 는 고른 값(미정이면 `null`)이다. `approved` 는 값이 실제로 바뀐 승인이다. 같은 사람을 고른 경우에도 `payload.task_overrides` 에는 고른 값이 남는다.
 - 답장 글(`body`, `summary`, `evidence_quote`)은 대화 주인과 PM 에게만 내려간다. 그 밖의 팀원에게는 null 이다. 답장이 막힘을 뜻해 채운 `Task.blocker` 는 예외다. 원문이 아니라 AI 해석(`summary`)이나 `팀원이 막혔다고 답했어요` 이고 모든 팀원에게 보인다.
 - 되돌리기는 `undoable: true` 인 변경만 받는다. 이어진 이력 중 하나라도 그 뒤 바뀌었으면 하나도 되돌리지 않고 409 `REPLY_CHANGE_NOT_UNDOABLE` 이다. 되돌린 이력은 새 `history` 줄로 남고 닫힌 시계는 다시 열리지 않는다. 무응답 자동 막힘을 넘어온 변경을 되돌리면 막힘이 아니라 막기 전 상태와 사유로 돌아가고, 그 값도 `history` 줄로 남는다.
 - 알림 `kind` 는 둘이 더해진다.
@@ -1723,14 +1723,14 @@ FE 연결 (#344, 2026-11-06). 응답 타입은 [reply.ts](../../src/shared/types
 - 태스크 고르기. PM 이 대화를 열면 `…/attributions` 를 받는다(쿼리 키 `['workspace', id, 'messages', 'threads', thread_id, 'attributions']`, 메시지 행동이 무효화하는 `messages` 접두어 안). 팀원은 부르지 않는다. `needs_pm` 답장 아래에 후보와 `해당 없음` 라디오, `정하기` 가 있고(라디오만 옮겨서는 보내지 않는다), `resolved` 답장 아래에는 `태스크: {제목}` 또는 `해당 없음으로 정했어요` 가 붙는다([ThreadDetail](../../src/widgets/message-inbox/ui/ThreadDetail.tsx)·[AttributionPicker](../../src/widgets/message-inbox/ui/AttributionPicker.tsx)). 고르기는 메시지 쓰기 행동 `attribute` 다. 다른 쓰기처럼 세션을 잡아 끝난 세션이면 보내지 않고, 한 공간에서 한 번에 하나만 나간다. 404 `REPLY_JUDGMENT_NOT_FOUND`·409 `REPLY_ATTRIBUTION_NOT_NEEDED` 는 `이미 처리된 답장이에요. 대화를 다시 불러올게요.` 토스트 뒤 다시 받는다. 고르기를 받지 못해도 대화는 보이고 위에 다시 시도가 붙는다. 대화 목록의 `답장 확인 필요` 표시는 두지 않았다. 목록 응답에 칸이 없고 대화마다 부르면 요청이 대화 수만큼 늘어난다. PM 은 `reply_judged` 알림(`어느 태스크인지 골라 주세요`)으로 그 대화에 온다.
 - 태스크 기록. 태스크 상세의 `변경 이력` 이 `/history` 와 `/timeline` 을 함께 받아 `/timeline` 순서대로 그린다. 타임라인의 `history` 칸에는 변경자·되돌림이 없어서 같은 `history_id` 의 `/history` 행으로 채운다. 두 응답은 기존 이력 쿼리 키 `['workspace', id, 'tasks', 'history', task_id]` 하나에 둔다. 상태 변경·승인 처리가 이 키를 정확히 무효화하기 때문이다([taskApi](../../src/entities/task/api/taskApi.ts)). 답장 칸은 `{이름} 답장 · Discord|웹 · 시각`, 답장 글, 바뀐 값 줄(값과 결과 표시 `자동 반영`·`되돌림`·`승인 대기`·`승인함`·`반려함`·`반영하지 않음`·`기록함`, AI 해석)이다. `body` 가 null 이면 `답장 내용은 PM과 답장한 팀원만 볼 수 있어요.` 다. 모르는 `field` 는 `failed`, 모르는 `result` 는 `noted` 로 읽는다.
 - 되돌리기. `undoable` 이 true 인 줄에 PM 에게만 `되돌리기` 가 있다([useReplyChangeUndo](../../src/features/reply-change-undo/model/useReplyChangeUndo.ts)). 누를 때 세션을 잡고, 성공하면 응답 태스크를 상세·목록 캐시에 쓰고 `tasks` 접두어 전체(상세·목록·이력)를 무효화한다. 409 `REPLY_CHANGE_NOT_UNDOABLE` 이면 같은 무효화 뒤 `되돌리지 못했어요` 토스트다. 404 `TASK_NOT_FOUND`(보는 사이 지워짐)면 상세를 비우고 다시 받아 `이 태스크를 볼 수 없어요` 로 바꾸고, 이력을 지우고 목록을 다시 받는다.
-- 승인. 답장에서 온 `task_update` 는 `replyMessageId` 로 읽는다(`change_source` 가 `reminder_reply` 일 때만). 승인 상세는 `팀원 답장` 칸에 AI 해석(`doc_text`)과 근거 인용, `리마인드 답장 · {이름}` 을 보이고 회의 링크·회의 시각을 만들지 않는다. 담당자를 찾지 못한 카드는 아래 「담당자를 찾지 못한 답장 카드」를 본다.
-
-**담당자를 찾지 못한 답장 카드** (#344 사용자 결정, BE #460 합의 대기). `change_source: "reminder_reply"`, `category: "assignee"` 이고 payload 에 `assignee_member_id` 가 없는 `task_update` 다(답장이 말한 이름은 `assignee_raw`).
-
-- 합의된 화면: 승인 상세에 `답장에서 말한 담당자 {assignee_raw}를 팀원에서 찾지 못했어요. 담당자를 골라 주세요.`(을/를은 이름 받침을 따른다)와 담당자 고르기(미정 포함)가 있다. 고르기 전에는 승인이 막히고 `담당자를 골라 주세요.` 가 붙는다. 반려는 언제나 된다. 대시보드·태스크 보드의 요약 줄은 `담당자를 골라야 하는 답장이에요` 다.
-- 요청: `PATCH /approvals/{id}` 에 `{"status":"approved","task_overrides":{"assignee_member_id":"<팀원>" | null}}` 를 보낸다.
-- 합의 필요(#460): 지금 BE `_EDITABLE_FIELDS` 는 `task_update` 에 `status`·`due_date` 만 받아 이 요청은 400 이다. MSW 만 이 카드에 한해 받고, 고른 값을 `manual` 이력으로 남겨 답장 줄(`rc`)에 잇는다. 타임라인의 그 줄은 `approved` 와 고른 팀원이 된다. 담당자 없이 승인하면 예전처럼 담당자는 그대로이고 `noted` 다.
-- 병합 순서: 이 부분은 #460 배포 뒤 병합한다. 앞선 FE 범위만 먼저 병합하면 이 카드는 바꿀 값 표가 빈 채 승인되고 담당자는 바뀌지 않는다.
+- 승인. 답장에서 온 `task_update` 는 `replyMessageId` 로 읽는다(`change_source` 가 `reminder_reply` 일 때만). 승인 상세는 `팀원 답장` 칸에 AI 해석(`doc_text`)과 근거 인용, `리마인드 답장 · {이름}` 을 보이고 회의 링크·회의 시각을 만들지 않는다.
+- 담당자를 찾지 못한 답장 카드(#344 사용자 결정 2026-11-06, BE #460·PR #503 구현).
+  - 판별: payload 에 `reply_message_id` 가 있고, `assignee_member_id` 키가 없고, `assignee_raw` 가 비지 않은 문자열이면 이 카드다([mapper](../../src/entities/approval/model/mapper.ts)의 `assigneePick`). `category` 로 판별하지 않는다. 상태와 담당자가 섞인 카드는 `category` 가 첫 줄 기준이라 다른 값이 오기 때문이다.
+  - 화면: 승인 상세에 `답장에서 말한 담당자 {assignee_raw}를 팀원에서 찾지 못했어요. 담당자를 골라 주세요.`(을/를은 이름 받침을 따른다)와 담당자 고르기(미정 포함)가 있다. 고르기는 승인 확인(E-6)의 담당자 칸과 같은 공용 `Select` 조립이다. 고르기 전과 팀원 목록을 받기 전에는 승인이 막히고, 반려는 언제나 된다. 상태와 섞인 카드도 같다(#460 확인할 것 1번, 2026-11-08 결정). 대시보드·태스크 보드의 요약 줄은 `담당자를 골라야 하는 답장이에요` 다.
+  - 요청: `PATCH /approvals/{id}` 에 `{"status":"approved","task_overrides":{"assignee_member_id":"<팀원>" | null}}` 를 보낸다. 같은 승인 처리 mutation 이라 세션 경계(끝난 세션의 응답 뒷처리를 버림)도 다른 승인과 같다.
+  - 실패: 400 `INVALID_REQUEST`(받지 않는 카드·문자열이 아닌 값), 400 `WORKSPACE_MISMATCH`, 404 `MEMBER_NOT_FOUND`(빈 문자열·없는 팀원·탈퇴자)는 공통 오류 문구로 알리고 카드는 pending 으로 남아 다시 고를 수 있다. 409 `APPROVAL_CONFLICT` 는 기존 충돌 재승인 흐름이다.
+  - 범위 밖: 담당자를 찾은 카드에서 다른 사람으로 고치기. BE 는 받지만 화면은 아직 없다.
+  - MSW: 답장 판단의 변경 줄에 담당자가 있는 카드만 `assignee_member_id` 를 받고, 그 밖의 `task_update` 는 400 이다. 고른 값은 `manual` 이력으로 남고 답장 줄(`rc`)에 이어진다.
 - 알림. `reply_judged` 제목은 `팀원 답장을 판단했어요`, `reply_unjudged` 는 `답장을 자동으로 판단하지 못했어요` 다. 종이 처음 보면 그 공간의 캐시를 다시 받는다. `reply_judged` 는 메시지·태스크(상세·목록·기록)·승인을, `reply_unjudged` 는 메시지·태스크를 받는다. BE 는 태스크를 바꾸고 승인 요청을 만든 뒤 알리고, 판단하지 못한 답장도 막힘을 풀 수 있다. 같은 이유로 `silence_blocked` 는 태스크를 받는다([display.ts](../../src/entities/notification/model/display.ts)의 종류 표). 링크는 기존 `task`·`thread` 경로다.
 - 검증. MSW 기준 단위·화면 테스트와 E2E `reply-judgment.e2e.ts` 3개. 실제 서버와 봇의 다시 판단은 확인하지 않았다.
 
