@@ -29,6 +29,7 @@ export {
 } from './api/taskApi'
 export type { TaskCreateInput, TaskFieldsPatch } from './api/taskApi'
 export { filterByTab } from './lib/taskFilter'
+export { showTaskWriteUnconfirmed } from './lib/writeUnconfirmed'
 export { isOverdue, isDueSoon } from './lib/taskDate'
 export { withAssigneeName } from './lib/assignee'
 export type { TaskWithAssignee } from './lib/assignee'

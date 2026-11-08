@@ -1,4 +1,5 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { onTestFinished } from 'vitest'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { clearTrackedMeetings } from '@/entities/meeting'
@@ -143,6 +144,34 @@ describe('반영 중 polling (AC-07)', () => {
     await pause(150)
     expect(taskGets(log, 'tk_04')).toBe(afterRetry + 2)
     expect(retries(log, 'tk_04')).toBe(1)
+  })
+
+  it('재시도 응답을 읽지 못하면 버튼 가까이에 실패라 하지 않고 결과를 확인하지 못했다고 알린다. 새로고침은 태스크를 다시 받는다 (#348)', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    onTestFinished(() => warning.mockRestore())
+    taskOf('tk_04').notion_sync_status = 'failed'
+    server.use(
+      http.post('/api/v1/tasks/:taskId/notion-sync/retry', () =>
+        ok({
+          ...toTaskResponse(db.tasks.find(({ task_id }) => task_id === 'tk_04')!),
+          status: 'archived',
+        }),
+      ),
+    )
+    const { log } = await openTask('tk_04', '배포 스크립트')
+    const retry = screen.getByRole('button', { name: '다시 반영하기' })
+    await userEvent.click(retry)
+    const notice = (
+      await screen.findByText('변경 결과를 확인하지 못했어요', {}, { timeout: 5_000 })
+    ).closest('li') as HTMLElement
+    expect(within(notice).getByText(/서버에는 반영됐을 수 있어요/)).toBeInTheDocument()
+    expect(retry).not.toHaveAccessibleDescription(/응답을 읽지 못했어요/)
+    await act(() => new Promise((resolve) => setTimeout(resolve, 300)))
+    const before = log.started.length
+    fireEvent.click(within(notice).getByRole('button', { name: '새로고침' }))
+    await until(() =>
+      expect(log.started.slice(before)).toContainEqual({ method: 'GET', path: '/tasks/tk_04' }),
+    )
   })
 
   it('재시도가 실패하면 그 이유를 버튼 가까이에 보이고 상태는 반영 실패 그대로다', async () => {

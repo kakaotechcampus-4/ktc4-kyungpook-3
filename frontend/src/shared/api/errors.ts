@@ -144,6 +144,11 @@ export function isWorkspaceMismatch(error: unknown): boolean {
   )
 }
 
+/** 성공 응답을 읽지 못했다. 쓰기 요청이면 서버에는 이미 반영됐을 수 있다 (#348) */
+export function isInvalidResponse(error: unknown): boolean {
+  return error instanceof ApiError && error.code === CLIENT_ERROR_CODES.INVALID_RESPONSE
+}
+
 /** 우리 클라이언트의 취소와 TanStack Query 의 취소를 모두 취소로 본다 */
 export function isCanceledError(error: unknown): boolean {
   return isCancelledError(error) || (error instanceof ApiError && error.kind === 'canceled')

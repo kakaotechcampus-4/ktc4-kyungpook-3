@@ -9,6 +9,13 @@ export const COMMON_MESSAGES = {
   fallback: '문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
 } as const
 
+/** 쓰기 요청의 응답을 읽지 못했을 때. 서버에는 반영됐을 수 있어 실패라고 하지 않는다 (#348) */
+export const WRITE_UNCONFIRMED_MESSAGES = {
+  title: '변경 결과를 확인하지 못했어요',
+  description: '서버에는 반영됐을 수 있어요. 새로고침해서 지금 상태를 확인해 주세요.',
+  refresh: '새로고침',
+} as const
+
 /* 서버 코드 전부 (backend core/errors.py). AI 경로에서만 오는 코드는 뺐다(계약 §2.3.1). 비밀번호 재설정의 두 코드는 합의만 됐고 BE 에 아직 없다(계약 §4.1.1).
    로그인 시도 제한은 BE PR #456 이 병합 전이고, 서버 문장을 그대로 쓴다 — 남은 시간도 잠금도 말하지 않는다 (#457) */
 const SERVER_MESSAGES: Record<ErrorCode, string> = {

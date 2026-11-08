@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
 import {
+  showTaskWriteUnconfirmed,
   taskDetailQueryOptions,
   taskHistoryQueryOptions,
   taskListQueryOptions,
@@ -9,7 +10,7 @@ import {
 } from '@/entities/task'
 import type { Task, TaskFieldsPatch } from '@/entities/task'
 import { failureNotice } from '@/shared/api/errorMessages'
-import { CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
+import { CLIENT_ERROR_CODES, createClientError, isInvalidResponse } from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
 import { toTaskFieldsPatch } from './draft'
@@ -61,7 +62,8 @@ export function useTaskFieldsSave(workspaceId: string, taskId: string): TaskFiel
     },
     onError: (error, { session }) => {
       if (!session.isCurrent()) return
-      setErrorMessage(failureNotice(error))
+      if (isInvalidResponse(error)) showTaskWriteUnconfirmed(queryClient, workspaceId)
+      else setErrorMessage(failureNotice(error))
     },
   })
 

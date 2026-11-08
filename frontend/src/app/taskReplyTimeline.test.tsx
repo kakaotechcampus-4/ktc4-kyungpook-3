@@ -1,11 +1,14 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { onTestFinished } from 'vitest'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { getResponse, http, HttpResponse } from 'msw'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
+import { ok } from '@/shared/mock/envelope'
 import { handlers } from '@/shared/mock/handlers'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
+import { toTaskResponse } from '@/shared/mock/task-state'
 import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
@@ -109,6 +112,39 @@ describe('태스크 상세의 답장 기록 (#344)', () => {
     expect(within(reply).queryByText('DB 스키마 정리를 끝냈대요')).toBeNull()
     expect(within(changeRow(history, '상태: 완료')).getByText('자동 반영')).toBeVisible()
     expect(screen.queryByRole('button', { name: '되돌리기' })).toBeNull()
+  })
+})
+
+describe('쓰기 응답을 읽지 못함 (#348)', () => {
+  it('답장 변경 되돌리기 응답을 읽지 못하면 결과를 확인하지 못했다고 알리고, 새로고침은 태스크를 다시 받는다', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    onTestFinished(() => warning.mockRestore())
+    applyScenario('reply-judgment')
+    server.use(
+      http.post('/api/v1/tasks/:taskId/reply-changes/:changeId/undo', () =>
+        ok({
+          ...toTaskResponse(db.tasks.find(({ task_id }) => task_id === 'tk_03')!),
+          status: 'archived',
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    const log = recordRequests()
+    const history = await openTk03()
+    await user.click(
+      within(changeRow(history, '상태: 완료')).getByRole('button', { name: '되돌리기' }),
+    )
+    const notice = (
+      await screen.findByText('변경 결과를 확인하지 못했어요', {}, { timeout: 5_000 })
+    ).closest('li') as HTMLElement
+    expect(within(notice).getByText(/서버에는 반영됐을 수 있어요/)).toBeInTheDocument()
+    expect(screen.queryByText('되돌리지 못했어요')).toBeNull()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 300)))
+    const before = log.started.length
+    fireEvent.click(within(notice).getByRole('button', { name: '새로고침' }))
+    await waitFor(() =>
+      expect(log.started.slice(before)).toContainEqual({ method: 'GET', path: '/tasks/tk_03' }),
+    )
   })
 })
 
