@@ -52,6 +52,15 @@
 - **쓰기 응답을 읽지 못했을 때(사용자 결정).** 상태 변경·필드 저장·직접 추가·Notion 재시도·자동 막힘 풀기·답장 변경 되돌리기의 응답이 `INVALID_RESPONSE` 면 토스트 `변경 결과를 확인하지 못했어요` 와 `새로고침` 을 보인다. `새로고침` 은 그 공간의 태스크 목록·상세·이력을 다시 받는다(`taskKeys` 무효화). 입력 칸·버튼 옆에 실패를 보이던 세 쓰기도 이 경우만 토스트로 옮겼다. 다른 실패 문구는 그대로다. 공용 조각은 `isInvalidResponse`(`shared/api/errors.ts`), `WRITE_UNCONFIRMED_MESSAGES`(`errorMessages.ts`), `showWriteUnconfirmed`(`shared/ui/toast`), `showTaskWriteUnconfirmed`(`entities/task/lib`)다. 다음 entity PR 은 `showWriteUnconfirmed` 에 자기 데이터를 다시 받는 함수를 넘긴다.
 - 테스트는 고치기 전에 먼저 실패를 확인했다. 모르는 답장 줄 RTL 셋(종류·결과·둘 다: 버튼 없음, GET 밖의 요청 없음), mapper 셋, history 하나. 쓰기 응답 RTL 여섯(`tasks`·`taskDetailEdit`·`taskViewsCreate`·`notionSyncPolling`·`taskAutoBlock`·`taskReplyTimeline`): 새 토스트, 옛 실패 문구 없음, `새로고침` 을 누르면 GET 이 나간다.
 
+## develop 병합 (2026-11-09)
+
+`origin/develop`(`33b071ac`, #582 회의 삭제·#458·#583 등)을 merge 로 들였다. 충돌은 셋이었다.
+
+- `shared/types/api/task.ts`: develop 이 손으로 쓴 `TaskDto` 에 `meeting_deleted?: boolean` 을 더했다. 스키마에 `meeting_deleted: z.boolean().optional()` 로 옮겼다. BE `TaskResponse.meeting_deleted: bool = False` 와 같고, 빠진 옛 응답은 지우지 않은 회의(false)다. 불리언이 아니면 `INVALID_RESPONSE` 다(develop 의 mapper 검사와 같은 동작).
+- `entities/task/model/mapper.ts`: develop 의 `version`·`meeting_deleted` 수동 검사는 스키마가 맡아 뺐다. `meetingDeleted: dto.meeting_deleted ?? false` 는 남겼다. 비불리언 거절 테스트는 mapper.test 에서 `shared/types/api/task.test.ts` 로 옮겼고, 빠진 옛 응답 허용도 더했다.
+- 계약: develop 의 「회의 삭제와 보존 태스크 (#576)」 절과 이 PR 의 맨 위 절을 모두 남겼다. 이 PR 의 task 표에 `meeting_deleted` 를 더했다.
+- BE `backend/app/schemas/task.py`·`reply.py` 최신과 다시 대조했다. 그 사이 바뀐 것은 `meeting_deleted` 하나이고, 스키마는 BE 가 정상으로 내는 응답을 거절하지 않는다. task 응답을 직접 읽는 곳이 `entities/task` 밖에 새로 생기지 않았다.
+
 ## 검증
 
 Node v24.11.0, `frontend/` 에서 실행했다. 아래 숫자는 리뷰 반영 뒤 마지막 실행(2026-11-09)이다.
@@ -62,7 +71,7 @@ Node v24.11.0, `frontend/` 에서 실행했다. 아래 숫자는 리뷰 반영 �
 | `npm run lint` | 통과 |
 | `npm run format:check` | 통과 |
 | `npm run build` | 통과 |
-| `npm run test -- --maxWorkers=1` | 277 파일·3505 건 통과 |
+| `npm run test -- --maxWorkers=1` | 리뷰 반영 뒤 277 파일·3505 건 통과. develop 병합 뒤 287 파일·3654 건 통과 |
 
 - 첫 전체 실행에서는 `notionSyncPolling.test.tsx` 한 건이 실패했다. 갱신 응답을 `auto_blocked` 없는 mock 행 그대로 돌려줬기 때문이다. 테스트가 `toTaskResponse` 로 실제 응답 모양을 돌려주게 고쳤고, `auto_blocked` 보수 폴백도 되살렸다(위). 두 번째 실행에서 통과했다. 두 번째 실행은 부하로 `client.test.ts` 의 워커가 뜨지 못해 그 파일만 따로 돌렸다(21 건 통과). 리뷰 반영 뒤 실행은 다른 워커와 겹치지 않게 차례를 받아 한 번에 돌렸다.
 - 새·바꾼 테스트:
@@ -74,12 +83,16 @@ Node v24.11.0, `frontend/` 에서 실행했다. 아래 숫자는 리뷰 반영 �
   - 기존 version 충돌·정상 태스크 흐름(`tasks.test.tsx`, `approvals*.test.tsx`, `taskDetailEdit.test.tsx` 등)은 전체 실행에서 통과했다.
 - 초기 chunk(`index.html` 의 script·modulepreload·CSS 28 개)는 develop `0c9affbd` 와 같은 방식으로 빌드해 비교했다.
 
+  병합 전 기준(develop `0c9affbd`):
+
   | | develop | 이 변경 | 차이 |
   |---|---|---|---|
   | 원본 | 922,593 B | 928,418 B | +5,825 B (+0.63%) |
   | gzip | 289,614 B | 291,085 B | +1,471 B (+0.51%) |
 
   늘어난 곳은 `task` chunk(+1.7 KB, 스키마)와 zod 가 든 공용 chunk(+3.7 KB)다. 공용 chunk 에 zod 의 `ZodDiscriminatedUnion`·`ZodLiteral` 이 새로 들어왔다(기록 `kind` 판별). 다른 초기 chunk 는 ±5 B 안이다. 리뷰 반영(쓰기 응답 토스트·답장 줄 되돌리기 판정)으로 원본 +452 B, gzip +40 B 가 더해졌다.
+
+  병합 뒤 기준(develop `33b071ac` 를 같은 방식으로 빌드, 초기 파일 31 개): 원본 933,610 → 939,330 B(+5,720 B, +0.61%), gzip 293,326 → 294,828 B(+1,502 B, +0.51%).
 - 브라우저(ego lite, MSW 모드 `single-workspace`): 태스크 목록 13 건이 그려졌다. 앱 안 이동으로 `tk_01`·`tk_03` 상세를 열었다. 콘솔 경고·오류와 `role=alert` 가 없었다. 스크린샷은 ego lite 창 문제로 찍지 못했다.
 
 ## 남은 일
