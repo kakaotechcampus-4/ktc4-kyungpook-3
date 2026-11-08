@@ -1,13 +1,14 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http } from 'msw'
+import { getResponse, http } from 'msw'
 import { messageInboxQueryOptions, messageThreadQueryOptions } from '@/entities/message'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
-import { fail, list as listResponse } from '@/shared/mock/envelope'
+import { fail, list as listResponse, ok } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
-import { botMessage } from '@/shared/mock/fixtures/message'
+import { botMessage, pmMessage } from '@/shared/mock/fixtures/message'
+import { messageHandlers } from '@/shared/mock/handlers/message'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { isMemberOf, setMockRole } from '@/shared/mock/sessions'
@@ -81,10 +82,11 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
       '정하늘09/30 마감퍼블리싱 외 1건 진행 상황 확인',
     ])
     expect(rowTexts(threadList())).toEqual([
-      '이재환나: DB 스키마가 확정됐다고 들었어요. 명세서 작업은 시작하셨나요?09/16답장 기다리는 중',
-      '박민수거의 다 됐어요. 내일 오전에 올릴게요09/09',
-      '정하늘발표 순서 정리해서 올릴게요09/04',
-      '박지훈DM 못 보냄나: 지훈님, 회의록 템플릿 검토는 끝나셨나요?09/02답장 기다리는 중',
+      // 픽스처 팀원은 아무도 웹 계정이 이어지지 않았다
+      '이재환웹 답장 불가나: DB 스키마가 확정됐다고 들었어요. 명세서 작업은 시작하셨나요?09/16답장 기다리는 중',
+      '박민수웹 답장 불가거의 다 됐어요. 내일 오전에 올릴게요09/09',
+      '정하늘웹 답장 불가발표 순서 정리해서 올릴게요09/04',
+      '박지훈DM 못 보냄웹 답장 불가나: 지훈님, 회의록 템플릿 검토는 끝나셨나요?09/02답장 기다리는 중',
     ])
     expect(current()).toHaveLength(1)
     expect(current()[0]).toHaveTextContent('이재환')
@@ -242,7 +244,6 @@ describe('대화는 날짜 구분·보낸 쪽·시각·답장 대기·예정 묶
       .getAllByRole('heading', { level: 3 })
       .map((heading) => heading.textContent)
   const messages = () => within(conversation()).getAllByRole('listitem').map(readable)
-  const footNote = () => detail().getByText(/메시지는 항상/)
 
   it('답장이 없는 대화는 머리 배지·답장 없음 줄을 보이고, 예정 묶음은 나갈 날짜에 점선으로 섞인다', async () => {
     await openInbox(paths.messageThread('ws_01', 'th_01'))
@@ -262,11 +263,11 @@ describe('대화는 날짜 구분·보낸 쪽·시각·답장 대기·예정 묶
       'href',
       paths.messageReview('ws_01', 'bd_01'),
     )
-    expect(footNote()).toHaveTextContent(
-      '메시지는 항상 카테캠 3팀 봇이 보냅니다. 승인·고쳐 쓰기·보내지 않음은 보내기 전 확인에서 해요.',
-    )
-    // 답장은 대화 주인만 한다 — PM 이 남의 대화를 보면 답장 칸이 없다
-    expect(detail().queryByRole('textbox')).toBeNull()
+    // PM 은 남의 대화에도 쓴다 — 안내 바 대신 그 팀원에게 쓰는 칸이다
+    expect(detail().queryByText(/메시지는 항상/)).toBeNull()
+    expect(
+      detail().getByRole('textbox', { name: '이재환님에게 메시지' }),
+    ).toHaveAccessibleDescription('내용은 웹 대화에 저장돼요. Discord에는 새 메시지 안내만 보내요.')
   })
 
   it('AI 초안을 기다리는 예정 묶음은 대화에서도 문구 다듬는 중이다', async () => {
@@ -488,7 +489,9 @@ describe('워크스페이스를 바꾸면 이전 공간의 메시지가 보이�
     expect(screen.queryByText('이재환')).toBeNull()
 
     act(() => gate.resolve())
-    await waitFor(() => expect(rowTexts(threadList())).toEqual(['한결랜딩 시안 공유드려요09/16']))
+    await waitFor(() =>
+      expect(rowTexts(threadList())).toEqual(['한결웹 답장 불가랜딩 시안 공유드려요09/16']),
+    )
     expect(screen.queryByText(/이재환|박민수|정하늘/)).toBeNull()
   })
 
@@ -720,15 +723,25 @@ describe('팀원은 자기 대화만 보고 웹에서 답장한다', () => {
     expect(detail().queryByText(/답장 \d+일째 없음/)).toBeNull()
     expect(detail().queryByRole('link', { name: '확인하기' })).toBeNull()
     expect(screen.queryByText('서연님, 이 재촉은 보내기 전 확인에만 있어요.')).toBeNull()
-    expect(detail().getByText(/봇 DM 창에 쓴 글은 모두 PM 대화에 보여요/)).toBeVisible()
+    expect(
+      detail().getByText(
+        '답장은 이 웹 대화에 남아요. 봇 DM 창에 쓴 글은 전달되지 않아요. 여기에 써 주세요.',
+      ),
+    ).toBeVisible()
+    expect(detail().getByRole('textbox', { name: 'PM에게 메시지' })).toHaveAttribute(
+      'placeholder',
+      'PM에게 메시지',
+    )
+    // 팀원 화면에는 웹 답장 불가 표시가 없다 — 자기 자신의 일이다
+    expect(screen.queryByText('웹 답장 불가')).toBeNull()
   })
 
   it('빈 칸·공백뿐인 칸에서는 답장 보내기가 꺼져 있고, 적은 답장은 웹에서 답장으로 대화에 남고 칸은 비운다', async () => {
     applyScenario('messages-member')
     await openInbox()
-    const field = await detail().findByRole('textbox', { name: '답장' })
+    const field = await detail().findByRole('textbox', { name: 'PM에게 메시지' })
     const send = detail().getByRole('button', { name: '답장 보내기' })
-    expect(field).toHaveAccessibleDescription(/봇 DM 창에 쓴 글은 모두 PM 대화에 보여요/)
+    expect(field).toHaveAccessibleDescription(/봇 DM 창에 쓴 글은 전달되지 않아요/)
     const log = recordRequests()
     expect(send).toBeDisabled()
     await userEvent.type(field, '   {Enter}')
@@ -754,7 +767,7 @@ describe('팀원은 자기 대화만 보고 웹에서 답장한다', () => {
   it('Enter 로 보내고 Shift+Enter 는 줄을 바꾼다 — 보내는 동안 칸과 버튼이 잠기고, 보낸 뒤에도 칸에 포커스가 있다', async () => {
     applyScenario('messages-member')
     await openInbox()
-    const field = await detail().findByRole('textbox', { name: '답장' })
+    const field = await detail().findByRole('textbox', { name: 'PM에게 메시지' })
     const log = recordRequests()
     const request = hold('/workspaces/ws_01/messages/threads/:threadId/replies', 'post')
     await userEvent.type(field, '첫 줄{Shift>}{Enter}{/Shift}둘째 줄')
@@ -779,7 +792,7 @@ describe('팀원은 자기 대화만 보고 웹에서 답장한다', () => {
   it('한글 조합 중 Enter 는 보내지 않는다', async () => {
     applyScenario('messages-member')
     await openInbox()
-    const field = await detail().findByRole('textbox', { name: '답장' })
+    const field = await detail().findByRole('textbox', { name: 'PM에게 메시지' })
     await userEvent.type(field, '안녕')
     const log = recordRequests()
     fireEvent.keyDown(field, { key: 'Enter', keyCode: 229 })
@@ -795,7 +808,7 @@ describe('팀원은 자기 대화만 보고 웹에서 답장한다', () => {
   it('1,800자를 넘으면 키 안내 자리에 글자 수를 보이고, 2,000자에 닿으면 강조색이다', async () => {
     applyScenario('messages-member')
     await openInbox()
-    const field = await detail().findByRole('textbox', { name: '답장' })
+    const field = await detail().findByRole('textbox', { name: 'PM에게 메시지' })
     const keyHint = 'Enter 보내기 · Shift+Enter 줄 바꿈'
     expect(detail().getByText(keyHint)).toBeInTheDocument()
 
@@ -815,7 +828,7 @@ describe('팀원은 자기 대화만 보고 웹에서 답장한다', () => {
     applyScenario('messages-member')
     db.messageFailures.actions = true
     await openInbox()
-    const field = await detail().findByRole('textbox', { name: '답장' })
+    const field = await detail().findByRole('textbox', { name: 'PM에게 메시지' })
     await userEvent.type(field, '남겨 둘 답장')
     await userEvent.click(detail().getByRole('button', { name: '답장 보내기' }))
     const alert = await detail().findByRole('alert')
@@ -840,14 +853,13 @@ describe('팀원은 자기 대화만 보고 웹에서 답장한다', () => {
   })
 })
 
-describe('팀원 행이 있는 PM 은 자기 대화에서만 웹으로 답장한다 (#367)', () => {
+describe('팀원 행이 있는 PM 은 자기 대화에 답장하고, 남의 대화에는 PM 글을 쓴다 (#367·#519)', () => {
   const replyForm = () => detail().queryByRole('form', { name: '답장' })
-  const footNote = () => detail().getByText(/메시지는 항상/)
 
   it('자기 대화에는 답장 칸이 있고, 보낸 답장은 웹에서 답장으로 대화에 남는다', async () => {
     applyScenario('messages-pm-self')
     await openInbox(paths.messageThread('ws_01', 'th_06'))
-    const field = await detail().findByRole('textbox', { name: '답장' })
+    const field = await detail().findByRole('textbox', { name: 'PM에게 메시지' })
     expect(detail().getByText('Discord 개인 메시지 · 웹에서도 답장할 수 있어요')).toBeVisible()
     expect(detail().queryByText(/메시지는 항상/)).toBeNull()
     expect(detail().getByRole('button', { name: '답장 보내기' })).toBeDisabled()
@@ -858,19 +870,46 @@ describe('팀원 행이 있는 PM 은 자기 대화에서만 웹으로 답장한
     await waitFor(() => expect(field).toHaveValue(''))
   })
 
-  it('남의 대화에는 답장 칸 대신 봇 안내가 있다', async () => {
+  it('남의 대화에는 안내 바 없이 그 팀원에게 쓰고, 쓴 글은 오른쪽의 내 글이다', async () => {
     applyScenario('messages-pm-self')
-    await openInbox(paths.messageThread('ws_01', 'th_01'))
-    expect(await detail().findByRole('heading', { level: 2, name: '이재환' })).toBeVisible()
-    expect(footNote()).toBeVisible()
+    await openInbox(paths.messageThread('ws_01', 'th_02'))
+    const field = await detail().findByRole('textbox', { name: '박민수님에게 메시지' })
+    expect(detail().queryByText(/메시지는 항상/)).toBeNull()
     expect(replyForm()).toBeNull()
+    const form = detail().getByRole('form', { name: '메시지' })
+    const send = within(form).getByRole('button', { name: '메시지 보내기' })
+    expect(send).toBeDisabled()
+    const log = recordRequests()
+
+    await userEvent.type(field, '민수님, 화면 확인했어요{Enter}')
+    expect(await within(conversation()).findByText('민수님, 화면 확인했어요')).toBeVisible()
+    expect(log.started.filter(isReply).map(({ method, path }) => `${method} ${path}`)).toEqual([
+      'POST /workspaces/ws_01/messages/threads/th_02/replies',
+    ])
+    expect(
+      db.messageThreads.find(({ thread_id }) => thread_id === 'th_02')?.messages.at(-1),
+    ).toMatchObject({
+      sender: 'pm',
+      author_member_id: 'mb_01',
+    })
+    expect(columnOf('민수님, 화면 확인했어요')).toHaveClass('items-end')
+    expect(
+      readable(within(conversation()).getByText('민수님, 화면 확인했어요').closest('li')!),
+    ).toBe('나: 민수님, 화면 확인했어요09:00')
+    await waitFor(() => expect(field).toHaveValue(''))
+    // 목록의 마지막 글도 내 PM 글이라 나: 다
+    await waitFor(() =>
+      expect(within(threadList()).getByRole('link', { name: /박민수/ })).toHaveTextContent(
+        '나: 민수님, 화면 확인했어요',
+      ),
+    )
   })
 
-  // 이 칸을 넣기 전 백엔드는 member_id 를 주지 않는다. 자기 대화인지 모르면 서버가 403 으로 막을 답장 칸을 두지 않는다
+  // 이 칸을 넣기 전 백엔드는 member_id 를 주지 않는다. 자기 대화인지 모르면 남의 대화처럼 그린다 — PM 글 칸이다
   it.each([
     ['공간 응답에 member_id 가 없으면', {}],
     ['공간 응답의 member_id 가 null 이면', { member_id: null }],
-  ])('%s 자기 대화도 남의 대화처럼 대화 목록에 있고 답장 칸이 없다', async (_, field) => {
+  ])('%s 자기 대화도 남의 대화처럼 대화 목록에 있고 PM 글 칸이다', async (_, field) => {
     applyScenario('messages-pm-self')
     server.use(
       http.get('/api/v1/workspaces', () =>
@@ -883,7 +922,7 @@ describe('팀원 행이 있는 PM 은 자기 대화에서만 웹으로 답장한
     )
     await openInbox(paths.messageThread('ws_01', 'th_06'))
     expect(await detail().findByRole('heading', { level: 2, name: '김서연' })).toBeVisible()
-    expect(footNote()).toBeVisible()
+    expect(detail().getByRole('textbox', { name: '김서연님에게 메시지' })).toBeVisible()
     expect(replyForm()).toBeNull()
     expect(list().queryByRole('region', { name: SELF_SECTION_TITLE })).toBeNull()
     expect(rowTexts(threadList())).toContain(
@@ -927,7 +966,7 @@ describe('PM 의 자기 대화는 목록 맨 위 구역에 따로 두고 팀원 
     expect(within(conversation()).queryByText(/여기서부터 답장이 없습니다/)).toBeNull()
     expect(columnOf('서연님, 이번 주 할 일을 정리해 뒀어요.')).toHaveClass('items-start')
     expect(columnOf('디스코드에서 답했어요')).toHaveClass('items-end')
-    expect(detail().getByRole('textbox', { name: '답장' })).toBeVisible()
+    expect(detail().getByRole('textbox', { name: 'PM에게 메시지' })).toBeVisible()
     expect(within(conversation()).getByRole('link', { name: '확인하기' })).toHaveAttribute(
       'href',
       paths.messageReview('ws_01', 'bd_05'),
@@ -967,5 +1006,118 @@ describe('PM 의 자기 대화는 목록 맨 위 구역에 따로 두고 팀원 
     await openInbox()
     expect(list().queryByRole('region', { name: SELF_SECTION_TITLE })).toBeNull()
     expect(sectionTitles()).toEqual(['보내기 전 확인 2', '대화'])
+  })
+})
+
+describe('PM 이 웹에서 쓴 글은 작성자로 내 글과 다른 PM 의 글을 가른다 (#519)', () => {
+  it('다른 PM 의 글은 왼쪽에 작성자 이름과 DM 실패를 보이고, 목록에는 나: 가 없다', async () => {
+    applyScenario('messages-pm-thread')
+    await openInbox(paths.messageThread('ws_01', 'th_01'))
+    const text = '재환님, 명세서 초안만 먼저 올려 주셔도 괜찮아요.'
+    expect(await within(conversation()).findByText(text)).toBeVisible()
+    expect(columnOf(text)).toHaveClass('items-start')
+    expect(within(columnOf(text)!).getByText('오지현')).toBeVisible()
+    expect(
+      within(columnOf(text)!).getByText('DM 못 보냄 · Discord 계정이 연결되지 않았어요'),
+    ).toBeVisible()
+    expect(within(threadList()).getByRole('link', { name: /이재환/ })).toHaveTextContent(text)
+    expect(within(threadList()).getByRole('link', { name: /이재환/ })).not.toHaveTextContent('나:')
+  })
+
+  it('내가 쓴 PM 글은 오른쪽 나 이고, 목록의 마지막 글에도 나: 가 붙는다', async () => {
+    applyScenario('messages-pm-thread')
+    await openInbox(paths.messageThread('ws_01', 'th_02'))
+    const text = '민수님, 올려 주신 화면 확인했어요. 고마워요!'
+    expect(await within(conversation()).findByText(text)).toBeVisible()
+    expect(columnOf(text)).toHaveClass('items-end')
+    expect(readable(within(conversation()).getByText(text).closest('li')!)).toBe(`나: ${text}15:00`)
+    expect(within(threadList()).getByRole('link', { name: /박민수/ })).toHaveTextContent(
+      `나: ${text}`,
+    )
+  })
+
+  it('팀원 화면에서 PM 글은 왼쪽에 쓴 PM 의 이름을 보인다', async () => {
+    applyScenario('messages-member')
+    db.messageThreads
+      .find(({ thread_id }) => thread_id === 'th_06')
+      ?.messages.push(
+        pmMessage('mg_40', '서연님, 회의 전에 한 번 봐 주세요', '2026-09-17T19:00:00+09:00', {
+          member_id: 'mb_06',
+          display_name: '오지현',
+        }),
+      )
+    await openInbox()
+    const text = '서연님, 회의 전에 한 번 봐 주세요'
+    expect(await detail().findByText(text)).toBeVisible()
+    expect(columnOf(text)).toHaveClass('items-start')
+    expect(within(columnOf(text)!).getByText('오지현')).toBeVisible()
+  })
+})
+
+/** 대화 요약의 웹 답장 칸. 나머지 칸은 그대로 넘긴다 */
+interface WebReplyField {
+  web_reply_available?: boolean
+}
+
+/** 기본 메시지 handler 가 낼 응답의 본문 */
+async function mockedData<T>(request: Request): Promise<{ data: T }> {
+  const response = await getResponse(messageHandlers, request)
+  if (response === undefined) throw new Error(`no message handler for ${request.url}`)
+  return (await response.json()) as { data: T }
+}
+
+describe('웹 계정이 없는 팀원은 PM 목록과 대화에 웹 답장 불가를 알린다 (#525)', () => {
+  it('목록 행에 웹 답장 불가를 붙이고, 대화에는 초대 안내와 함께 PM 글 칸을 그대로 둔다', async () => {
+    applyScenario('messages-pm-thread')
+    await openInbox(paths.messageThread('ws_01', 'th_01'))
+    const row = within(threadList()).getByRole('link', { name: /이재환/ })
+    expect(within(row).getByText('웹 답장 불가')).not.toHaveClass('text-accent')
+    expect(within(row).getByText('DM 못 보냄')).toHaveClass('text-accent')
+    expect(
+      await detail().findByText(
+        '웹 계정이 연결되지 않아 이 팀원은 웹에서 답장할 수 없어요. 팀원을 초대하고 초대를 수락하도록 안내해 주세요.',
+      ),
+    ).toBeVisible()
+    expect(detail().getByRole('link', { name: '팀원 초대하기' })).toHaveAttribute(
+      'href',
+      paths.members('ws_01'),
+    )
+    expect(detail().getByRole('textbox', { name: '이재환님에게 메시지' })).toBeEnabled()
+  })
+
+  it('웹 계정이 이어진 팀원은 아무것도 붙이지 않는다 — 웹 답장 가능이라고 쓰지도 않는다', async () => {
+    applyScenario('messages-pm-thread')
+    await openInbox(paths.messageThread('ws_01', 'th_02'))
+    expect(await detail().findByRole('textbox', { name: '박민수님에게 메시지' })).toBeVisible()
+    expect(within(threadList()).getByRole('link', { name: /박민수/ })).not.toHaveTextContent(
+      '웹 답장',
+    )
+    expect(detail().queryByRole('link', { name: '팀원 초대하기' })).toBeNull()
+    expect(screen.queryByText(/웹 답장 가능/)).toBeNull()
+  })
+
+  it('응답에 웹 답장 칸이 없으면(옛 서버) 웹 답장 불가로 단정하지 않는다', async () => {
+    const strip = (summary: WebReplyField) => {
+      const copy = { ...summary }
+      delete copy.web_reply_available
+      return copy
+    }
+    server.use(
+      http.get('/api/v1/workspaces/:workspaceId/messages', async ({ request }) => {
+        const { data } = await mockedData<{ threads: WebReplyField[] }>(request)
+        return ok({ ...data, threads: data.threads.map(strip) })
+      }),
+      http.get(
+        '/api/v1/workspaces/:workspaceId/messages/threads/:threadId',
+        async ({ request }) => {
+          const { data } = await mockedData<{ thread: WebReplyField }>(request)
+          return ok({ ...data, thread: strip(data.thread) })
+        },
+      ),
+    )
+    await openInbox(paths.messageThread('ws_01', 'th_01'))
+    expect(await detail().findByRole('textbox', { name: '이재환님에게 메시지' })).toBeVisible()
+    expect(screen.queryByText('웹 답장 불가')).toBeNull()
+    expect(detail().queryByRole('link', { name: '팀원 초대하기' })).toBeNull()
   })
 })

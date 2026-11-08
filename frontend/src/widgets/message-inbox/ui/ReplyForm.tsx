@@ -5,6 +5,7 @@ import { actionTarget, useMessageAction } from '@/features/message-action'
 import { failureNotice } from '@/shared/api/errorMessages'
 import { useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Icon } from '@/shared/ui/icon'
+import type { Audience } from '../model/viewer'
 
 const FIELD_MAX_HEIGHT = 92
 const COUNTER_FROM = 1800
@@ -33,22 +34,46 @@ const RESEND = 'font-bold text-ink underline'
 const UNDER = 'flex justify-between gap-12 text-[12px] text-dim *:leading-[1.6]'
 
 /**
- * 대화 주인의 웹 답장 — 팀원, 그리고 팀원 행이 그 대화의 주인인 PM. 채팅 입력처럼 한 줄 칸과 보내기 버튼이 나란하다.
+ * 보는 사람마다의 입력 문구. 대화 주인(팀원·PM 의 자기 대화)은 PM 에게 답하고, PM 이 남의 대화에 쓰면 그 팀원에게 간다.
+ * 어느 쪽인지는 서버가 쓴 사람으로 정한다
+ */
+function composeCopy(audience: Audience, recipientName: string) {
+  if (audience === 'pm')
+    return {
+      form: '메시지',
+      field: `${recipientName}님에게 메시지`,
+      send: '메시지 보내기',
+      note: '내용은 웹 대화에 저장돼요. Discord에는 새 메시지 안내만 보내요.',
+    }
+  return {
+    form: '답장',
+    field: 'PM에게 메시지',
+    send: '답장 보내기',
+    note: '답장은 이 웹 대화에 남아요. 봇 DM 창에 쓴 글은 전달되지 않아요. 여기에 써 주세요.',
+  }
+}
+
+/**
+ * 대화에 웹으로 쓰는 칸 — 대화 주인의 답장과 PM 이 남의 대화에 쓰는 글. 채팅 입력처럼 한 줄 칸과 보내기 버튼이 나란하다.
  * Enter 로 보내고 Shift+Enter 로 줄을 바꾼다. 칸은 세 줄까지 자라고 그 뒤로는 칸 안에서 스크롤한다.
  * 빈 글은 보내기 버튼이 꺼져 있어 보낼 수 없다. 성공하면 칸을 비우고, 실패하면 쓰던 글을 두고 칸 위에 알린다
  */
 export function ReplyForm({
   workspaceId,
   threadId,
-  botName,
+  audience,
+  recipientName,
   onSent,
 }: {
   workspaceId: string
   threadId: string
-  botName: string
-  /** 서버가 답장을 받은 뒤. 그 대화를 최근 메시지로 내리는 데 쓴다 */
+  audience: Audience
+  /** 대화 주인. PM 이 남의 대화에 쓸 때 칸 이름에 쓴다 */
+  recipientName: string
+  /** 서버가 글을 받은 뒤. 그 대화를 최근 메시지로 내리는 데 쓴다 */
   onSent?: () => void
 }) {
+  const copy = composeCopy(audience, recipientName)
   const noteId = useId()
   const formRef = useRef<HTMLFormElement>(null)
   const fieldRef = useRef<HTMLTextAreaElement>(null)
@@ -121,7 +146,7 @@ export function ReplyForm({
   }
 
   return (
-    <form ref={formRef} aria-label="답장" onSubmit={submit} className={FORM}>
+    <form ref={formRef} aria-label={copy.form} onSubmit={submit} className={FORM}>
       {failure !== null && failureText !== null ? (
         <div role="alert" className={FAILURE}>
           <p>
@@ -136,19 +161,19 @@ export function ReplyForm({
         <textarea
           ref={fieldRef}
           rows={1}
-          aria-label="답장"
+          aria-label={copy.field}
           aria-describedby={noteId}
           className={FIELD}
           value={draft}
           maxLength={MESSAGE_BODY_MAX_LENGTH}
-          placeholder={`${botName} 봇에게 답장`}
+          placeholder={copy.field}
           disabled={saving}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={sendOnEnter}
         />
         <button
           type="submit"
-          aria-label="답장 보내기"
+          aria-label={copy.send}
           aria-busy={saving || undefined}
           disabled={!canSend}
           className={`${SEND} ${SEND_FACE[face]}`}
@@ -157,10 +182,7 @@ export function ReplyForm({
         </button>
       </div>
       <div className={UNDER}>
-        <p id={noteId}>
-          웹 답장은 Discord로 보내지 않고 이 대화에만 남아요. 봇 DM 창에 쓴 글은 모두 PM 대화에
-          보여요.
-        </p>
+        <p id={noteId}>{copy.note}</p>
         {draft.length > COUNTER_FROM ? (
           <span
             className={`shrink-0 ${draft.length >= MESSAGE_BODY_MAX_LENGTH ? 'font-bold text-accent' : ''}`}

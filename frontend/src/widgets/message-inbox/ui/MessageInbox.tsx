@@ -20,7 +20,7 @@ import { avatarText, bundleDateLabel, shortDate } from '../lib/format'
 import { threadHeading } from '../model/conversation'
 import { inboxPane, nextPaneMemory, selectDetail } from '../model/selection'
 import type { DetailSelection, PaneMemory } from '../model/selection'
-import { SELF_SECTION_TITLE, threadPolicy } from '../model/viewer'
+import { SELF_SECTION_TITLE, isOwnMessage, threadPolicy } from '../model/viewer'
 import type { MessageViewer, ThreadPolicy } from '../model/viewer'
 import { ComposeDetail } from './ComposeDetail'
 import { DetailBar } from './DetailBar'
@@ -44,6 +44,9 @@ const THREAD_ROW =
 /* DM 못 보냄. 대화 머리의 답장 대기 배지와 같은 연한 레드 면 */
 const DM_FAILED_CHIP =
   'inline-flex h-22 shrink-0 items-center rounded-6 bg-accent-badge px-9 text-meta leading-none font-semibold text-accent'
+/* 웹 답장 불가. DM 못 보냄의 레드와 구분되는 중립 면 */
+const WEB_REPLY_CHIP =
+  'inline-flex h-22 shrink-0 items-center rounded-6 bg-divider px-9 text-meta leading-none font-semibold text-sub'
 const AVATAR =
   'inline-flex shrink-0 items-center justify-center rounded-999 bg-divider font-semibold text-ink'
 const DATE = 'mono text-[11px] text-dim'
@@ -584,10 +587,13 @@ function ThreadRow({
             {title}
           </span>
           {thread.dmFailed ? <span className={DM_FAILED_CHIP}>DM 못 보냄</span> : null}
+          {policy.audience === 'pm' && thread.webReply === 'unavailable' ? (
+            <span className={WEB_REPLY_CHIP}>웹 답장 불가</span>
+          ) : null}
         </span>
         {last === null ? null : (
           <span className="truncate text-meta leading-[1.5] text-dim">
-            {last.sender === policy.ownSender ? `나: ${last.body}` : last.body}
+            {isOwnMessage(policy, last) ? `나: ${last.body}` : last.body}
           </span>
         )}
       </span>
