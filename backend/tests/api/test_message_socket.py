@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.websockets import WebSocket
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 from starlette.websockets import WebSocketDisconnect
 
@@ -461,6 +462,25 @@ def test_leaving_the_workspace_closes_the_open_socket_with_4403(mdb, mseed, fast
         mseed["bob"].is_deleted = True
         mdb.commit()
         assert _closes_with(bob) == 4403
+
+
+def test_db_error_during_a_check_keeps_the_socket_and_checks_again(mdb, mseed, fast_revalidate, monkeypatch, caplog):
+    real = message_socket._authorize
+    calls = []
+
+    def flaky(token, workspace_id):
+        calls.append(1)
+        if len(calls) == 2:
+            raise OperationalError("SELECT 1", {}, Exception("db gone"))
+        return real(token, workspace_id)
+
+    monkeypatch.setattr(message_socket, "_authorize", flaky)
+    with _socket(mseed, "pm") as pm:
+        while len(calls) < 3:
+            time.sleep(0.05)
+        bob_thread = _reply_as_owner(mdb, mseed, "bob").thread_id
+        assert pm.receive_json() == _frame(bob_thread)
+    assert "재확인" in caplog.text
 
 
 def test_account_moved_to_another_member_row_closes_so_the_client_reconnects(mdb, mseed, fast_revalidate):

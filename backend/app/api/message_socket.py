@@ -1,5 +1,6 @@
 """대화 신호 웹소켓. 본문은 보내지 않고, FE 는 신호를 받으면 기존 조회를 다시 부른다(권한 검사를 조회 한 곳에 둔다)."""
 import asyncio
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, WebSocket
@@ -15,6 +16,8 @@ from app.services.thread_signals import CLOSE_TRY_AGAIN_LATER, Connection
 CLOSE_UNAUTHENTICATED = 4401
 CLOSE_FORBIDDEN = 4403
 REVALIDATE_SECONDS = 30
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/messages", tags=["messages"])
 
@@ -58,7 +61,12 @@ async def _until_outbox_overflows(conn: Connection) -> int:
 async def _until_access_ends(conn: Connection) -> int:
     while True:
         await asyncio.sleep(REVALIDATE_SECONDS)
-        access = await run_in_threadpool(_authorize, conn.session_token, conn.workspace_id)
+        try:
+            access = await run_in_threadpool(_authorize, conn.session_token, conn.workspace_id)
+        except Exception:
+            # DB 가 잠깐 끊겼다고 열린 소켓을 모두 끊지 않는다. 다음 주기에 다시 본다.
+            logger.warning("소켓 재확인 실패, 다음 주기에 다시 본다", exc_info=True)
+            continue
         if isinstance(access, int):
             return access
         if access[0] != conn.member_id:
