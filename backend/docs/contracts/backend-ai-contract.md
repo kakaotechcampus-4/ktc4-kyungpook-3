@@ -405,7 +405,7 @@ PM이 지정을 끝냈고(`speakers_assigned_at` 있음) 아직 다시 가져가
   - `awaiting_speakers`: 라벨 보고 뒤 7일이 지나면 `failed`(`failed_stage=speaker_assignment_expired`). 3시간 규칙은 쓰지 않는다. 7일은 첫 라벨 보고가 성공한 시각(`speakers_reported_at`)부터 센다. sweeper 가 5분마다 돌아서 실제로 `failed`가 되는 때는 조금 늦을 수 있고, 서버가 멈춰 있었으면 더 늦다. 같은 내용 재전송은 이 시각을 바꾸지 않는다.
   - 정리하면 녹음 폴더를 지우고 그 워크스페이스의 업로드 막힘이 풀린다. pending으로 되돌리지 않는다(#288).
   - 정리된 뒤 AI는 `/fail`·라벨 보고·claim·resume에서 409 `MEETING_ALREADY_ENDED`(`details.status=failed`), 발화 저장에서 409 `MEETING_FAILED`, 원본 받기에서 404를 받는다. 다시 보내지 않고 로컬 파일을 지우고 끝낸다(#288).
-  - `processing`이고 아직 아무도 가져가지 않은 업로드: 업로드 시각(`uploaded_at`)에서 24시간이 지나면 `failed`(`failed_stage=upload_unclaimed`, #563). 24시간은 잰 값이 아니라 초기값이다. 그 전에는 `PATCH /meetings/{meeting_id}/fail`(서비스 토큰)로 풀 수 있다. 후보를 고른 뒤 claim 이 먼저 오면 같은 조건을 다시 건 UPDATE 가 져서 회의는 그대로 처리된다.
+  - `processing`이고 아직 아무도 가져가지 않은 업로드: 업로드 시각(`uploaded_at`)에서 24시간이 지나면 `failed`(`failed_stage=upload_unclaimed`, #563). 24시간은 잰 값이 아니라 초기값이다. 그 전에는 `PATCH /meetings/{meeting_id}/fail`(서비스 토큰)로 풀 수 있다. claim 이 sweeper 의 UPDATE 보다 먼저 커밋되면 같은 조건을 다시 건 UPDATE 가 져서 회의는 그대로 처리된다. 두 쓰기는 서로 다른 행을 바꿔 잠금이 겹치지 않으므로, 정확히 동시에 돌면 둘 다 성공할 수 있다(회의는 `failed`, claim 은 200). 이때 AI 는 원본 받기 404 나 보고 409 를 받고 그 회의를 끝낸다.
   - 회의마다 조건부 UPDATE 한 번이라 AI 보고·PM 지정과 겹쳐도 한쪽만 이긴다. 다만 3시간 경계에서는 resume 200이나 발화 저장 201 직후 회의가 failed일 수 있다. resume은 회의 행을 잠그지 않고, 발화 저장 뒤 sweeper가 그 발화를 보지 못한 채 판정할 수 있어서다(resume 항목의 경합과 같다). 이어지는 발화 저장·추출 등록이 409로 막아 데이터는 깨지지 않는다.
 
 ### 업로드 회의 인계 규칙
