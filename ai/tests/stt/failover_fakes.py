@@ -82,11 +82,14 @@ class FakeBackend:
         self.mode = "ok"
         self.prompts: list[str | None] = []
         self.gate: threading.Event | None = None    # 있으면 호출이 이것을 기다린다(진행 중 호출)
+        self.on_call = None                         # 있으면 호출마다 부른다(호출 도중의 일을 흉내 낸다)
         self._lock = threading.Lock()
 
     def transcribe(self, samples, sample_rate, prompt=None) -> SttResult:
         with self._lock:
             self.prompts.append(prompt)
+        if self.on_call is not None:
+            self.on_call()
         if self.gate is not None:
             self.gate.wait(5)
         if self.mode == "ok":

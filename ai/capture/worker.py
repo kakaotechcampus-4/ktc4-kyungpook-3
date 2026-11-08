@@ -181,8 +181,7 @@ def wake_abandoned(recordings_dir: Path, since: float, notify) -> None:
                       + ", ".join(f"{s['name']}({s['now']}건)" for _, s in woke)))
     if held:
         notify(Notice("⚠️ 장애 전에 멈춘 회의도 있어 자동으로 다시 돌리지 않은 서버가 있습니다. 확인 뒤 다시 돌려 주세요: "
-                      + ", ".join(f"{s['name']} `python -m capture.worker --retry {gid}`" for gid, s in held),
-                      alert=True))
+                      + ", ".join(f"{s['name']} `python -m capture.worker --retry {gid}`" for gid, s in held)))
 
 
 def failover_from_env(recordings_dir: Path, *, notifier):
@@ -206,13 +205,21 @@ def failover_from_env(recordings_dir: Path, *, notifier):
     if env["GPU_STT_BASE_URL"].rstrip("/") == os.environ.get("ELICE_STT_BASE_URL", "").strip().rstrip("/"):
         print("[worker] GPU_STT_BASE_URL 이 ELICE_STT_BASE_URL 과 같아 GPU 전환을 끈다", flush=True)
         return None
+    ca = os.environ.get("GPU_STT_CA_BUNDLE", "").strip() or None
+    # 설정이 틀리면 GPU 확인이 늘 실패해 서버를 두 번 켰다 끄고 멈춘다. 돈이 드는 그 길로 가기 전에 여기서 끈다
+    bad = [k for k in ("GPU_STT_BASE_URL", "GPU_SWITCH_URL") if not env[k].startswith("https://")]
+    if ca and not os.path.exists(ca):
+        bad.append("GPU_STT_CA_BUNDLE")
+    if bad:
+        print(f"[worker] 설정이 틀려 GPU 전환을 끈다(https 주소, 있는 인증서 파일이어야 한다): {', '.join(bad)}",
+              flush=True)
+        return None
     from stt.elice import EliceStt, SttEndpoint
     from stt.failover import FailoverStt, Mode
     from stt.gpu_switch import GpuSwitch
 
     elice, _, _ = backend_from_env()
-    gpu = EliceStt(endpoint=SttEndpoint(env["GPU_STT_BASE_URL"], env["GPU_STT_API_KEY"],
-                                        os.environ.get("GPU_STT_CA_BUNDLE", "").strip() or None))
+    gpu = EliceStt(endpoint=SttEndpoint(env["GPU_STT_BASE_URL"], env["GPU_STT_API_KEY"], ca))
     d = worker_dir(recordings_dir)
     notify = ops_notifier(notifier)
     return FailoverStt(elice, gpu, switch=GpuSwitch(env["GPU_SWITCH_URL"], env["GPU_SWITCH_TOKEN"]), mode=Mode(raw),

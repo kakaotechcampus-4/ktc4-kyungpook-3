@@ -110,6 +110,9 @@ def test_an_injected_stt_factory_never_builds_failover_from_the_environment(tmp_
     ({"GPU_STT_API_KEY": ""}, "GPU_STT_API_KEY"),
     ({"GPU_SWITCH_TOKEN": ""}, "GPU_SWITCH_TOKEN"),
     ({"GPU_STT_BASE_URL": "https://elice.example/x/"}, "GPU_STT_BASE_URL"),
+    ({"GPU_STT_BASE_URL": "http://gpu.example"}, "GPU_STT_BASE_URL"),
+    ({"GPU_SWITCH_URL": "http://switch.example"}, "GPU_SWITCH_URL"),
+    ({"GPU_STT_CA_BUNDLE": "/no/such/gpu-ca.pem"}, "GPU_STT_CA_BUNDLE"),
 ])
 def test_a_bad_setting_turns_failover_off_and_names_only_the_setting(tmp_path, monkeypatch, capsys, change, missing):
     for k, v in {**GPU_ENV, **change}.items():
@@ -121,11 +124,13 @@ def test_a_bad_setting_turns_failover_off_and_names_only_the_setting(tmp_path, m
 
 @pytest.mark.parametrize("mode", ["manual", "auto", "AUTO "])
 def test_the_flag_builds_failover_with_explicit_gpu_settings(tmp_path, monkeypatch, mode):
-    for k, v in {**GPU_ENV, "MM_GPU_FAILOVER": mode, "GPU_STT_CA_BUNDLE": "/etc/mm/gpu-ca.pem"}.items():
+    ca = tmp_path / "gpu-ca.pem"
+    ca.write_text("x")
+    for k, v in {**GPU_ENV, "MM_GPU_FAILOVER": mode, "GPU_STT_CA_BUNDLE": str(ca)}.items():
         monkeypatch.setenv(k, v)
     fo = W.failover_from_env(tmp_path, notifier=_Box())
     assert fo.mode is Mode(mode.strip().lower())
-    assert fo._gpu.endpoint == SttEndpoint("https://gpu.example", "g", "/etc/mm/gpu-ca.pem")
+    assert fo._gpu.endpoint == SttEndpoint("https://gpu.example", "g", str(ca))
     assert fo._elice.endpoint is None                    # Elice 는 지금처럼 환경 변수를 읽는다
     assert fo.state_dir == tmp_path / ".worker"
 
@@ -214,7 +219,7 @@ def test_entering_gpu_wakes_servers_whose_meetings_gave_up_during_this_outage_on
     assert wakes == ["wake-10"]
     text = "\n".join(n.text for n in notes)
     assert "서버10" in text and "서버20" in text and "--retry 20" in text
-    assert any(n.alert for n in notes if "서버20" in n.text)
+    assert not any(n.alert for n in notes)              # 멘션은 켜기 시작, 켜기 실패, 상한에만 붙인다
 
 
 def test_nothing_to_wake_says_nothing(tmp_path):

@@ -16,7 +16,7 @@ gpu-request 로 받는다(python -m capture.worker --gpu, 디스코드 /gpu).
 
 기다림은 SUSPECT 에 들어갈 때부터 최대 30분이다. 기다리는 호출은 실패로 끝나지 않으니 batch 의 재시도도,
 recovery.attempts 도, retry_runs 도 늘지 않는다. 30분이 지나면 길이 Elice 로 풀려 지금의 재시도·포기 규칙이 돈다.
-값과 근거는 .work/design.md 의 확정 절과 결정 기록에 있다. plan·step·route_of 는 순수 함수다.
+값과 근거는 이슈 #530 과 deploy/gpu-stt/README.md 에 있다. plan·step·route_of 는 순수 함수다.
 """
 
 from __future__ import annotations
@@ -417,7 +417,7 @@ def _stopping_step(s, f, L, out, closed):
         s = replace(s, why="manual", hold_until=None)
     if f.server is None or f.server.state != "off":
         if f.now - s.since > L.stop_alarm_s and s.refused != "slow":
-            out.append(Notice(f"⚠️ GPU 서버가 {int((f.now - s.since) // 60)}분째 꺼지지 않습니다.", alert=True))
+            out.append(Notice(f"⚠️ GPU 서버가 {int((f.now - s.since) // 60)}분째 꺼지지 않습니다."))
             s = replace(s, refused="slow")
         return s
     if closed is not None:
@@ -532,6 +532,19 @@ def request(state_dir: Path, verb: str) -> Path:
     path = Path(state_dir) / REQUEST_FILE
     _atomic_write(path, verb)
     return path
+
+
+def _identity(path: Path) -> tuple[int, int]:
+    st = path.stat()
+    return st.st_ino, st.st_mtime_ns
+
+
+def _unlink_if_same(path: Path, seen: tuple[int, int] | None) -> None:
+    try:
+        if seen is not None and _identity(path) == seen:
+            path.unlink()
+    except OSError:
+        pass
 
 
 def read_state_file(state_dir: Path) -> dict | None:
@@ -726,15 +739,16 @@ class FailoverStt:
         L = self._limits
         s = self.state
         req_path = self.state_dir / REQUEST_FILE
-        req = None
+        req, seen = None, None
         try:
+            seen = _identity(req_path)
             req = req_path.read_text(encoding="utf-8").strip() or None
         except OSError:
             pass
         if req == "on" and s.phase is Phase.STOPPING:
             req = None                  # 끄는 중의 켜기는 파일에 두고 꺼진 뒤의 단계가 읽는다
         elif req is not None and req not in REQUESTS:
-            req_path.unlink(missing_ok=True)
+            _unlink_if_same(req_path, seen)
             req = None
         ios = plan(s, self.signals(), self._clock(), L)
         server, switch_error = None, False
@@ -754,7 +768,8 @@ class FailoverStt:
         if new != s:
             _atomic_write(self.state_dir / STATE_FILE, _dump(new, self.mode, now))
         if req is not None:
-            req_path.unlink(missing_ok=True)
+            # 확인 호출 동안(최대 30초씩) 새 요청이 같은 이름으로 들어왔을 수 있다. 읽은 그 파일만 지운다
+            _unlink_if_same(req_path, seen)
         with self._cond:
             self.state = new
             self._cond.notify_all()

@@ -486,3 +486,17 @@ def test_the_probe_is_a_short_generated_mono_clip():
     samples, sr = _probe_audio()
     assert sr == 16_000 and samples.ndim == 1 and 1.0 <= len(samples) / sr <= 3.0
     assert float(abs(samples).max()) > 0.05
+
+
+def test_a_request_written_while_a_tick_runs_is_not_lost(tmp_path):
+    """tick 은 요청을 읽고 확인 호출(최대 30초씩)을 한 뒤에 지운다. 그 사이에 온 요청을 지우면 안 된다."""
+    fo, elice, gpu, switch, clock, _ = make(tmp_path)
+    to_gpu(fo, elice, switch, clock)
+    request(tmp_path, "on")                            # ON_GPU 에서는 할 일이 없는 요청
+    clock.advance(LIMITS.gpu_probe_gap_s)
+    gpu.on_call = lambda: request(tmp_path, "off")
+    fo.tick()
+    gpu.on_call = None
+    assert (tmp_path / "gpu-request").read_text() == "off"
+    fo.tick()
+    assert (fo.phase, fo.state.why) == (Phase.STOPPING, "manual")

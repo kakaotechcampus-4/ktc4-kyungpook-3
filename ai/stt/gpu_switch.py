@@ -4,8 +4,8 @@
   요청 {"action": "on" | "off" | "status"}
   200  {"state", "launched_at", "stop_at", "refused", "used_min", "cap_min"}   401 토큰 틀림
 
-운영 서버에는 이 URL 과 토큰만 둔다. 개인 AWS 키를 두지 않는다. 계약은 .work/design.md 의 확정 절과
-deploy/gpu-stt/ 의 Lambda 가 같이 따른다. 응답은 ServerView 로 바꾸고 모르는 모양은 SwitchError 다.
+운영 서버에는 이 URL 과 토큰만 둔다. 개인 AWS 키를 두지 않는다. 같은 계약을 deploy/gpu-stt/ 의 Lambda 가
+따른다(#530). 응답은 ServerView 로 바꾸고 모르는 모양은 SwitchError 다.
 """
 
 from __future__ import annotations
