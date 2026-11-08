@@ -160,6 +160,18 @@ def test_scope_with_due_date_logs_both(client, db, seed):
     assert _task(db, seed).version == 2
 
 
+def test_scope_with_pm_override_keeps_scope_source_from_proposal(client, db, seed):
+    approval_id = _approval(client, seed, _scope_payload(seed, due_date="2026-10-20"))
+
+    r = _resolve(client, approval_id, task_overrides={"due_date": "2026-10-25"})
+
+    assert r.status_code == 200, r.text
+    by_field = {h.changed_field: h for h in _history(db, seed)}
+    assert by_field["due_date"].new_value == "2026-10-25"
+    assert by_field["due_date"].change_source == "manual"
+    assert by_field["scope"].change_source == "meeting"
+
+
 def test_scope_on_chat_meeting_uses_chat_source(client, db, seed):
     payload = _scope_payload(seed, meeting_id=seed["chat_meeting"].meeting_id)
     approval_id = _approval(client, seed, payload)

@@ -1,7 +1,6 @@
 """범위 변경 답장 카드를 승인하면 남는 범위 이력이 답장의 scope 줄에 이어진다."""
 from app.models import TaskHistory
-# ruff: noqa: F401, F811
-from tests.api.test_messages_api import P, client
+from tests.api.test_messages_api import P, client  # noqa: F401
 from tests.api.test_reply_judgment import (
     AT,
     _cards,
@@ -10,7 +9,7 @@ from tests.api.test_reply_judgment import (
     _judge,
     _lines,
     _resolve,
-    two,
+    two,  # noqa: F401
 )
 from tests.api.test_replies import _reply
 
@@ -28,7 +27,7 @@ def _scope_card(db, seed, a, *extra):
     return item, card
 
 
-def test_scope_reply_card_approval_links_history(mdb, mseed, two):
+def test_scope_reply_card_approval_links_history(mdb, mseed, two):  # noqa: F811
     a, _ = two
     item, card = _scope_card(mdb, mseed, a)
     _resolve(card)
@@ -40,7 +39,7 @@ def test_scope_reply_card_approval_links_history(mdb, mseed, two):
     assert entry.reply_change_id == line.change_id
 
 
-def test_scope_reply_timeline_shows_sentence_once(mdb, mseed, two):
+def test_scope_reply_timeline_shows_sentence_once(mdb, mseed, two):  # noqa: F811
     a, _ = two
     _, card = _scope_card(mdb, mseed, a)
     _resolve(card)
@@ -52,7 +51,7 @@ def test_scope_reply_timeline_shows_sentence_once(mdb, mseed, two):
     assert [i for i in items if i["kind"] == "history" and i["changed_field"] == "scope"] == []
 
 
-def test_mixed_status_scope_reply_card_links_each(mdb, mseed, two):
+def test_mixed_status_scope_reply_card_links_each(mdb, mseed, two):  # noqa: F811
     a, _ = two
     _reply(mdb, mseed, AT)
     item = _claim()
