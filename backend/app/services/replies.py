@@ -177,14 +177,14 @@ def claim(db: Session, now: datetime) -> ClaimedReply | None:
 
 
 def _close_past_window(db: Session, message_id: str, now: datetime) -> bool:
-    """창이 지난 행을 savepoint 안에서 expire 로 닫는다. 실패하면 그 행만 되돌리고 False 를 돌려 그 대화를 건너뛰게 한다."""
+    """창이 지난 행을 savepoint 안에서 expire 로 닫는다. 닫았으면 True. 실패했거나 잠근 뒤 보니 닫을 행이 아니면(그 사이
+    PM 이 골라 새 창에 들어간 경우 등) False 를 돌려 그 대화를 건너뛰게 한다. 앞 답장이 남아 있는데 뒤 답장이 앞지르면 안 된다."""
     try:
         with db.begin_nested():
-            expire(db, message_id, now)
+            return expire(db, message_id, now)
     except Exception:
         logger.exception("reply judgment expire failed in claim: %s", message_id)
         return False
-    return True
 
 
 def _take_claim_lock(db: Session) -> bool:
@@ -905,14 +905,15 @@ def overdue(db: Session, now: datetime) -> list[str]:
     ).all())
 
 
-def expire(db: Session, message_id: str, now: datetime) -> None:
-    """10분 안에 결과가 없는 판단을 끝낸다. overdue 뒤 PM 이 고르거나 결과가 왔을 수 있어 잠근 뒤 다시 본다."""
+def expire(db: Session, message_id: str, now: datetime) -> bool:
+    """10분 안에 결과가 없는 판단을 끝낸다. overdue 뒤 PM 이 고르거나 결과가 왔을 수 있어 잠근 뒤 다시 본다. 끝냈으면 True."""
     now = messages.utc(now)
     row = db.get(ReplyJudgment, message_id, with_for_update=True, populate_existing=True)
     if row.state != ReplyJudgmentState.PENDING or messages.utc(row.queued_at) > now - JUDGE_WINDOW:
-        return
+        return False
     row.state = ReplyJudgmentState.TIMED_OUT
     _notify_unjudged(db, row, now)
+    return True
 
 
 def _notice_key(row: ReplyJudgment) -> str:

@@ -308,6 +308,29 @@ def test_a_failing_expire_does_not_stop_other_threads(mdb, mseed, monkeypatch):
     assert mdb.get(ReplyJudgment, alice_next.message_id).attempt == 0
 
 
+def test_claim_keeps_thread_order_when_expire_finds_the_row_no_longer_past_the_window(mdb, mseed, monkeypatch):
+    # claim 의 스냅샷 뒤 PM 이 고르는 바람에 새 창에 들어간 앞 답장은 닫히지 않는다. 그 대화의 뒤 답장이 앞질러 나가면 안 된다
+    a = mseed["tasks"][0]
+    _remind(mdb, mseed, [a], SLOT)
+    first = _reply(mdb, mseed, AT)
+    later = _reply(mdb, mseed, AT + 5 * MIN, body="다음 답장")
+    mdb.commit()
+    real_expire = replies.expire
+
+    def racing(db, message_id, now):
+        db.get(ReplyJudgment, message_id).queued_at = now
+        db.flush()
+        return real_expire(db, message_id, now)
+
+    monkeypatch.setattr(replies, "expire", racing)
+
+    assert replies.claim(mdb, AT + replies.JUDGE_WINDOW) is None
+
+    mdb.expire_all()
+    assert mdb.get(ReplyJudgment, first.message_id).state == S.PENDING
+    assert mdb.get(ReplyJudgment, later.message_id).attempt == 0
+
+
 # 게이트
 
 def test_certain_status_change_is_applied_and_tells_pm(mdb, mseed, two):
