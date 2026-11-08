@@ -83,6 +83,19 @@ def test_pm_message_reaches_the_bot_as_a_notice_and_the_web_keeps_what_was_writt
     assert (last["sender"], last["author_member_id"], last["author_name"]) == ("pm", mseed["pm"].member_id, "PM")
 
 
+def test_pm_message_is_unread_for_recipient_until_their_web_reply(mdb, mseed):
+    tid = _thread(mdb, mseed)
+    pm, alice = client("pm"), client("alice")
+
+    assert _send(pm, mseed, tid).status_code == 201
+    assert _inbox_row(alice, mseed, tid)["unread_count"] == 1
+    assert _inbox_row(pm, mseed, tid)["unread_count"] == 0
+
+    assert _send(alice, mseed, tid, "자료 준비할게요").status_code == 201
+    assert _inbox_row(alice, mseed, tid)["unread_count"] == 0
+    assert _inbox_row(pm, mseed, tid)["unread_count"] == 1
+
+
 def test_each_pm_signs_their_own_message_in_one_thread(mdb, mseed):
     mseed["bob"].role = "pm"
     mdb.commit()

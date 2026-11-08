@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
-import { messageThreadQueryOptions } from '@/entities/message'
+import { messageInboxQueryOptions, messageThreadQueryOptions } from '@/entities/message'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
@@ -12,6 +12,7 @@ import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { isMemberOf, setMockRole } from '@/shared/mock/sessions'
 import { recordRequests } from '@/shared/test/requests'
+import { REVEAL_TARGETS } from '@/shared/ui/deferred-skeleton'
 import { SELF_SECTION_TITLE } from '@/widgets/message-inbox'
 import { onTestFinished } from 'vitest'
 import {
@@ -20,6 +21,7 @@ import {
   detail,
   hold,
   list,
+  listSkeleton,
   readable,
   reviewList,
   rowTexts,
@@ -345,14 +347,61 @@ describe('빈 상태·로딩·목록 오류·대화 오류가 서로 구분되�
   it('목록을 받는 동안 목록 칸과 상세 칸은 스켈레톤이다 — 빈 상태도 오류도 아니다', async () => {
     const gate = hold('/workspaces/ws_01/messages')
     renderApp(paths.messages('ws_01'))
-    const skeleton = await screen.findByTestId('message-list-skeleton')
+    const skeleton = await listSkeleton()
     expect(skeleton).toHaveAttribute('aria-busy', 'true')
-    expect(screen.getByTestId('message-review-skeleton')).toBeInTheDocument()
+    expect(detail().getByTestId('message-review-skeleton')).toBeInTheDocument()
     expect(screen.queryByText('보낼 메시지가 없어요')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
     act(() => gate.resolve())
     expect(await detail().findByRole('heading', { name: '이 메시지, 보낼까요?' })).toBeVisible()
     expect(screen.queryByTestId('message-list-skeleton')).toBeNull()
+  })
+
+  it('목록을 기다린 뒤 캐시된 기본 대화가 나타나면 대화 내용에 전환이 걸린다 — 안쪽 대화 자리는 로딩을 거치지 않았다 (#508)', async () => {
+    applyScenario('messages-member')
+    const app = await openInbox()
+    expect(await detail().findByRole('heading', { level: 2, name: '카테캠 3팀 봇' })).toBeVisible()
+    // 기본 대화는 캐시에 둔 채 목록만 다시 기다리게 한다
+    const gate = hold('/workspaces/ws_01/messages')
+    onTestFinished(() => gate.resolve())
+    act(() => {
+      void app.queryClient.resetQueries({ queryKey: messageInboxQueryOptions('ws_01').queryKey })
+    })
+    expect(await screen.findByTestId('message-list-skeleton')).toHaveAttribute('aria-busy', 'true')
+    act(() => gate.resolve())
+    const heading = await detail().findByRole(
+      'heading',
+      { level: 2, name: '카테캠 3팀 봇' },
+      { timeout: 3_000 },
+    )
+    // 전환은 상자가 없는 Reveal 감싸기(data-reveal-box)가 아니라 실제 대화 요소에 걸린다
+    const target = heading.closest(REVEAL_TARGETS)
+    expect(target).not.toBeNull()
+    expect(target).not.toHaveAttribute('data-reveal-box')
+    expect(detail().getByRole('region', { name: '대화 내용' }).closest(REVEAL_TARGETS)).toBe(target)
+  })
+
+  it('목록을 받는 동안의 뼈대는 역할에 맞는 틀이다 — PM 은 보내기 전 확인 · 검토 모양, 팀원은 대화 이름만 · 대화 모양 (#508)', async () => {
+    const pmGate = hold('/workspaces/ws_01/messages')
+    const pm = renderApp(paths.messages('ws_01'))
+    const pmList = await listSkeleton()
+    // 묶음 이름은 정해진 글자라 막대 대신 글자다
+    expect(pmList).toHaveTextContent('보내기 전 확인')
+    expect(pmList).toHaveTextContent('대화')
+    expect(detail().getByTestId('message-review-skeleton')).toBeInTheDocument()
+    act(() => pmGate.resolve())
+    pm.unmount()
+
+    applyScenario('messages-member')
+    const memberGate = hold('/workspaces/ws_01/messages')
+    onTestFinished(() => memberGate.resolve())
+    renderApp(paths.messages('ws_01'))
+    const memberList = await listSkeleton()
+    expect(memberList).not.toHaveTextContent('보내기 전 확인')
+    expect(memberList).toHaveTextContent('대화')
+    // 팀원의 기본 선택은 첫 대화다 — 상세 뼈대도 대화 모양이다
+    expect(detail().getByTestId('message-thread-skeleton')).toBeInTheDocument()
+    expect(detail().queryByTestId('message-review-skeleton')).toBeNull()
   })
 
   it('목록 오류는 목록 칸에서 다시 시도로 알리고, 고른 대화는 그대로 보인다', async () => {

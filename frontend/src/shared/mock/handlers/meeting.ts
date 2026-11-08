@@ -5,7 +5,7 @@ import { ok, list, fail } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
 import { requireMember } from '../auth-guard'
 import { readJson, nextId } from '../utils'
-import { isChatMeeting, tickMeeting } from '../meetingFlow'
+import { isChatMeeting, readMeeting } from '../meetingFlow'
 import { registerSpeakerUpload } from '../speakerFlow'
 
 export const meetingHandlers = [
@@ -44,9 +44,8 @@ export const meetingHandlers = [
     )
   }),
   http.get('/api/v1/meetings/:meetingId', ({ params }) => {
-    // 처리 중 회의는 흐름 방식(db.meetingFlow.mode)대로 진행한 뒤 답한다. Vitest 기본값 manual 은 그대로다
-    tickMeeting(String(params.meetingId))
-    const meeting = db.meetings.find(({ meeting_id }) => meeting_id === params.meetingId)
+    // 처리 중 회의는 흐름 방식(db.meetingFlow.mode)대로 진행한다(readMeeting). Vitest 기본값 manual 은 그대로다
+    const meeting = readMeeting(String(params.meetingId))
     return meeting
       ? ok({ ...meeting, extraction_id: meeting.status === 'done' ? meeting.extraction_id : null })
       : fail('MEETING_NOT_FOUND', '회의가 없습니다.', 404)
@@ -155,13 +154,7 @@ export const meetingHandlers = [
       return fail('MEETING_PROCESSING_IN_PROGRESS', '처리 중인 회의가 있습니다.', 409, {
         meeting_id: processing.meeting_id,
       })
-    const notion = db.integrations[workspaceId]?.notion.status
-    if (notion !== 'connected')
-      return fail(
-        notion === 'revoked' ? 'INTEGRATION_REVOKED' : 'INTEGRATION_NOT_CONNECTED',
-        'Notion 연결을 확인해주세요.',
-        409,
-      )
+    // Notion 연결은 보지 않는다 — 백엔드 업로드도 묻지 않는다 (D-182)
     const meeting: MeetingDto = {
       meeting_id: nextId(
         'mt',

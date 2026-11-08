@@ -5,8 +5,10 @@ import { useStartNewWorkspace } from '@/features/onboarding'
 import { useEnterWorkspace } from '@/features/workspace-switch'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Button } from '@/shared/ui/button'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { DeferredSkeleton, Reveal, revealClass } from '@/shared/ui/deferred-skeleton'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { MyInvitations } from './MyInvitations'
 import { DashedIcon, WorkspaceRowContent } from './WorkspaceBadge'
@@ -28,6 +30,7 @@ export function WorkspaceChoiceList({
   variant?: 'default' | 'onboarding'
 }) {
   const workspaces = useQuery(workspaceListQueryOptions())
+  const indicator = useLoadingIndicator(workspaces.isPending)
   const enter = useEnterWorkspace()
   const startNew = useStartNewWorkspace()
   const queryClient = useQueryClient()
@@ -39,18 +42,25 @@ export function WorkspaceChoiceList({
     void queryClient.refetchQueries({ queryKey: invitationsKey })
   }
 
-  if (workspaces.data === undefined) {
-    return workspaces.isError ? (
-      <QueryErrorState error={workspaces.error} onRetry={() => void workspaces.refetch()} />
-    ) : (
-      <div aria-busy="true">
+  if (workspaces.isPending || indicator.pending)
+    return (
+      <DeferredSkeleton indicator={indicator}>
         <Skeleton lines={3} />
-      </div>
+      </DeferredSkeleton>
     )
-  }
+  if (workspaces.data === undefined)
+    return (
+      <Reveal indicator={indicator}>
+        <QueryErrorState error={workspaces.error} onRetry={() => void workspaces.refetch()} />
+      </Reveal>
+    )
 
   return (
-    <div className={variant === 'onboarding' ? 'flex flex-col gap-1' : LIST}>
+    <div
+      className={[variant === 'onboarding' ? 'flex flex-col gap-1' : LIST, revealClass(indicator)]
+        .filter(Boolean)
+        .join(' ')}
+    >
       <MyInvitations />
       {workspaces.data.length === 0 ? (
         <div className="flex flex-col items-start gap-12 px-10 py-9">

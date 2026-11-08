@@ -15,7 +15,7 @@ import {
   taskTone,
 } from '../lib/taskViews'
 import type { TaskTone } from '../lib/taskViews'
-import { HorizontalScroll, LegendItem, RangeHeader } from './viewParts'
+import { CalendarLegend, HorizontalScroll, RangeHeader } from './viewParts'
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'] as const
 const DAYS_PER_WEEK = WEEKDAYS.length
@@ -241,18 +241,7 @@ export function CalendarView({
         nextLabel="다음 달"
         onPrev={() => onMonthChange(addMonths(month, -1))}
         onNext={() => onMonthChange(addMonths(month, 1))}
-        legend={
-          <>
-            <LegendItem swatch="bg-ink text-surface" icon={MARK.review.icon}>
-              {MARK.review.label}
-            </LegendItem>
-            <LegendItem swatch="bg-accent-chip text-ink" icon={MARK.urgent.icon}>
-              {MARK.urgent.label}
-            </LegendItem>
-            <LegendItem swatch="bg-surface-selected">진행 중</LegendItem>
-            <LegendItem swatch="border-2 border-dashed bg-surface">회의</LegendItem>
-          </>
-        }
+        legend={<CalendarLegend />}
       />
       {emptyMonth ? (
         <p className="text-caption text-dim">

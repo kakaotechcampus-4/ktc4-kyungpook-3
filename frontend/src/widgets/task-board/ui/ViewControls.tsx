@@ -14,6 +14,7 @@ import { TASK_SORTS, sortLabel } from '../lib/taskSort'
 import type { TaskSort } from '../lib/taskSort'
 import { TASK_VIEWS, VIEW_LABEL } from '../lib/taskViews'
 import type { BoardPeriod, TaskView } from '../lib/taskViews'
+import { DUE_LABEL, PERIOD_LABEL, TRIGGER, TRIGGER_BORDER, dueFilterLabel } from './frame'
 
 /** 화면 오른쪽 위 보기 전환 — 리스트·보드·캘린더·간트 */
 export function ViewSwitch({
@@ -40,12 +41,6 @@ export function ViewSwitch({
     </Segmented>
   )
 }
-
-/* 리스트 시안은 테두리가 투명이고(`1px solid transparent`), 보드 시안만 `#E8E8E8` 테두리가 있다.
-   높이는 두 시안 모두 `height 32; min-height 36` 이라 36px 로 그려진다 */
-const TRIGGER =
-  'inline-flex h-32 min-h-36 items-center gap-7 rounded-9 border bg-surface px-12 text-caption font-semibold text-ink hover:bg-surface-sunken'
-const TRIGGER_BORDER = { none: 'border-transparent', line: 'border-line' } as const
 
 interface FilterSelectProps {
   /** 닫혀 있을 때 보이는 현재 값 */
@@ -144,12 +139,6 @@ export function AssigneeFilter({
 /** 마감 조건 필터의 이름. 묶음·버튼·빈 상태가 같은 이름을 쓴다 */
 export const DUE_FILTER_NAME = '마감 조건'
 
-const DUE_LABEL: Record<DueCondition, string> = {
-  overdue: '기한 지남',
-  soon: '7일 안에 마감',
-  blocked: '막힘',
-}
-
 /** 마감 조건 — 여러 개를 고를 수 있다. 고른 조건이 없으면 `마감 전체` 다 */
 export function DueFilter({
   value,
@@ -163,12 +152,7 @@ export function DueFilter({
   last: string
   onChange: (due: DueCondition[]) => void
 }) {
-  const label =
-    value.length === 0
-      ? '마감 전체'
-      : DUE_CONDITIONS.filter((condition) => value.includes(condition))
-          .map((condition) => DUE_LABEL[condition])
-          .join(' · ')
+  const label = dueFilterLabel(value)
   const toggle = (condition: DueCondition) =>
     onChange(
       value.includes(condition)
@@ -195,8 +179,6 @@ export function DueFilter({
     </FilterSelect>
   )
 }
-
-const PERIOD_LABEL: Record<BoardPeriod, string> = { all: '전체 기간', month: '이번 달' }
 
 export function PeriodFilter({
   value,
