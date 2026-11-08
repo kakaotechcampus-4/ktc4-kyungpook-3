@@ -201,6 +201,12 @@ def _ons_full(s: FailoverState, L: Limits) -> bool:
     return s.day_ons >= L.day_ons
 
 
+def _new_boot_blocked(s: FailoverState, now: float, L: Limits) -> bool:
+    """서버가 켜져 있지 않으면 on 은 새 부팅이다. 하루 상한에 닿았으면 보내지 않는다. 켜진 서버의 on 은 상태 조회라 막지 않는다."""
+    live = s.server is not None and s.server.live
+    return not live and (_time_full(s, now, L) or _ons_full(s, L))
+
+
 def _paused(s: FailoverState, now: float) -> bool:
     return s.paused_until is not None and now < s.paused_until
 
@@ -226,6 +232,7 @@ def _enter(s: FailoverState, phase: Phase, why: str, f: Facts, **kw) -> Failover
         fresh["hold_until"] = None
     if phase is Phase.NORMAL:
         fresh["outage_since"] = None
+        fresh["boot_failures"] = 0          # 다시 켜기는 장애 하나에 한 번이다
     return replace(s, **{**fresh, **kw})
 
 
@@ -333,22 +340,22 @@ def _starting(s, f, L, out, closed):
     if f.now - s.since > L.start_give_up_s:
         out.append(Notice(f"⛔ {L.start_give_up_s / 3600:.0f}시간 동안 GPU 서버를 켜지 못해 멈춥니다.", alert=True))
         return _stopping(s, f, "start_failed", out)
-    if _time_full(s, f.now, L) or (s.session is None and _ons_full(s, L)):
+    if _time_full(s, f.now, L) or _new_boot_blocked(s, f.now, L):
         out.append(Notice("⛔ 오늘 GPU 상한에 닿아 켜기를 멈춥니다.", alert=True))
         return _stopping(s, f, "day_cap", out)
     server = s.server
     if f.gpu_ok is True:
         out.append(Notice(f"✅ GPU 서버로 전사를 넘겼습니다. 종료 예정 {kst_clock(server.stop_at if server else None)}. "
                           "이름 힌트 없이 전사합니다."))
-        return _enter(s, Phase.ON_GPU, s.why, f, discard=None, boot_failures=0,
+        return _enter(s, Phase.ON_GPU, s.why, f, discard=None,
                       next_probe_at=f.now + L.back_gap_s, next_gpu_probe_at=f.now + L.gpu_probe_gap_s)
     if f.gpu_ok is False and server and server.launched_at and f.now - server.launched_at > L.boot_s:
         if s.boot_failures + 1 >= 2:
-            out.append(Notice("⛔ GPU 서버가 두 번 다 부팅 뒤 준비되지 않았습니다. 끄고 멈춥니다. 담당자 확인이 필요합니다.",
+            out.append(Notice("⛔ 이번 장애에서 GPU 서버가 두 번째로 응답하지 않습니다. 끄고 멈춥니다. 담당자 확인이 필요합니다.",
                               alert=True))
             return _stopping(s, f, "boot", out, boot_failures=s.boot_failures + 1)
-        out.append(Notice(f"⚠️ GPU 서버가 부팅 뒤 {L.boot_s / 60:.0f}분 안에 준비되지 않아 한 번 끄고 다시 켭니다.",
-                          alert=True))
+        out.append(Notice(f"⚠️ GPU 서버가 부팅 뒤 {L.boot_s / 60:.0f}분이 지나도 응답하지 않아 한 번 끄고 다시 켭니다. "
+                          "이번 장애에서 다시 켜기는 이 한 번입니다.", alert=True))
         s = replace(s, boot_failures=s.boot_failures + 1, discard=server.launched_at)
     if s.discard is not None and server is not None and (not server.live or server.launched_at != s.discard):
         s = replace(s, discard=None)
@@ -454,7 +461,7 @@ def _parked(s, f, L, out, closed):
     if _fails_here(s, sig) >= L.parked_fails:
         if _paused(s, f.now):
             return _enter(s, Phase.NORMAL, "manual", f)
-        return _auto_start(replace(s, outage_since=sig.streak_since), f, L, out)
+        return _auto_start(replace(s, outage_since=sig.streak_since, boot_failures=0), f, L, out)
     return s
 
 
@@ -493,7 +500,7 @@ def plan(s: FailoverState, sig: Signals, now: float, L: Limits = LIMITS) -> froz
         if s.discard is not None and server is not None and server.live and server.launched_at == s.discard:
             io.add(Io.SWITCH_OFF)
         else:
-            if (s.retry_at is None or now >= s.retry_at) and not (s.session is None and _ons_full(s, L)):
+            if (s.retry_at is None or now >= s.retry_at) and not _new_boot_blocked(s, now, L):
                 io.add(Io.SWITCH_ON)
             if server is not None and server.state == "running":
                 io.add(Io.CHECK_GPU)

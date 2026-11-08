@@ -352,6 +352,38 @@ def test_the_daily_on_count_cap_halts_until_the_kst_day_changes(tmp_path):
     assert fo.phase is Phase.PARKED
 
 
+@pytest.mark.parametrize("variant", ["gpu_lost", "boot"])
+def test_a_reboot_on_the_sixth_session_is_not_a_seventh_start(tmp_path, variant):
+    fo, elice, gpu, switch, clock, notes = make(tmp_path)
+    for _ in range(LIMITS.day_ons - 1):
+        request(tmp_path, "on")
+        assert ticks(fo, clock, 600, until=lambda: fo.phase is Phase.ON_GPU)
+        request(tmp_path, "off")
+        assert ticks(fo, clock, 900, until=lambda: fo.phase is Phase.NORMAL)
+    if variant == "boot":
+        gpu.mode = "service"                       # 여섯 번째 부팅이 준비되지 않는다
+    request(tmp_path, "on")
+    if variant == "gpu_lost":
+        assert ticks(fo, clock, 600, until=lambda: fo.phase is Phase.ON_GPU)
+        gpu.mode = "service"                       # 넘긴 뒤 응답을 멈춘다
+    assert ticks(fo, clock, 3600, until=lambda: fo.phase is Phase.HALTED)
+    assert (fo.state.why, switch.starts) == ("day_cap", LIMITS.day_ons)
+
+
+def test_a_server_that_keeps_dying_after_boot_is_rebooted_once_per_outage(tmp_path):
+    """부팅 뒤 8분만 답하는 서버. 넘긴 뒤의 응답 없음도 부팅 실패로 쌓여 다시 켜기는 장애 하나에 한 번이다."""
+    fo, elice, gpu, switch, clock, notes = make(tmp_path)
+
+    def flaky():
+        gpu.mode = "ok" if switch.launched_at is not None and clock() - switch.launched_at < 480 else "service"
+
+    gpu.on_call = flaky
+    fail_elice(fo, elice, 6)
+    fo.tick()
+    assert ticks(fo, clock, 6 * 3600, until=lambda: fo.phase is Phase.HALTED)
+    assert (fo.state.why, switch.starts) == ("boot", 2)
+
+
 def test_the_daily_time_cap_turns_the_server_off(tmp_path):
     fo, elice, gpu, switch, clock, notes = make(tmp_path)
     fo._limits = LIMITS.__class__(day_on_s=1800, idle_s=4 * 3600)
