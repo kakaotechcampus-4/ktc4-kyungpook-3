@@ -486,6 +486,9 @@ def drop_transcripts(transcripts_dir: Path, manifest: dict) -> None:
 
 
 AUDIO_KEEP_AFTER_GIVE_UP_S = 7 * 86400   # 처리를 포기한 회의의 음성을 이만큼 두어 --retry 로 다시 돌릴 수 있게 한다(#561)
+# 음성 삭제는 이 시각 뒤에 인계되거나 포기한 회의에만 쓴다. 그 전 회의는 팀원 동의를 받은 E2E·검증용이라 남기고,
+# 지우려면 사람이 직접 지운다(#568, 결정 기록 0053)
+AUDIO_PRUNE_SINCE = datetime(2026, 11, 9, tzinfo=ZoneInfo("Asia/Seoul"))
 
 
 def _track_files(recordings_dir: Path, manifest: dict) -> list[Path]:
@@ -499,29 +502,37 @@ def _track_files(recordings_dir: Path, manifest: dict) -> list[Path]:
     return out
 
 
-def _audio_expired(recordings_dir: Path, path: Path, m: dict, now: datetime) -> bool:
+def _since(raw) -> datetime | None:
+    """매니페스트의 시각 문자열. 없거나 읽을 수 없으면 None."""
+    try:
+        return _parse_time(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _audio_expired(recordings_dir: Path, m: dict, now: datetime) -> bool:
     """이 회의의 음성을 지울 때인가. 인계가 끝나 더 돌 일이 없으면 바로, 처리를 포기했으면 포기 7일 뒤다.
-    자동 복구가 생기기 전의 실패(recovery 없는 failed)는 포기 시각이 없어 매니페스트를 마지막으로 쓴 시각부터 센다."""
+    인계 시각(stages.handed_off)·포기 시각(recovery.gave_up_at)이 AUDIO_PRUNE_SINCE 뒤일 때만 지운다. 시각이 없거나
+    읽을 수 없는 회의와 자동 복구 전의 실패(recovery 없는 failed)는 정책 시행 전 회의로 보고 지우지 않는다."""
     if m.get("status") == STATUS_HANDED_OFF:
+        stages = m.get("stages")
+        at = _since(stages.get("handed_off")) if isinstance(stages, dict) else None
+        if at is None or at < AUDIO_PRUNE_SINCE:
+            return False
         return not _is_pending(recordings_dir, m)   # partial 재전사가 남은 디스코드 회의는 트랙이 더 필요하다
     state = m.get("recovery")
-    if isinstance(state, dict) and state.get("gave_up_at"):
-        try:
-            since = _parse_time(state["gave_up_at"])
-        except (TypeError, ValueError):
-            return False
-    elif state is None and m.get("status") == STATUS_FAILED:
-        since = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
-    else:
+    at = _since(state.get("gave_up_at")) if isinstance(state, dict) else None
+    if at is None or at < AUDIO_PRUNE_SINCE:
         return False
-    return now >= since + timedelta(seconds=AUDIO_KEEP_AFTER_GIVE_UP_S)
+    return now >= at + timedelta(seconds=AUDIO_KEEP_AFTER_GIVE_UP_S)
 
 
 def prune_audio(recordings_dir: Path, *, now: datetime | None = None) -> list[str]:
     """음성 보관 기한이 지난 회의의 트랙 wav 를 지우고 그 회의 목록을 돌려준다(#561, #360 결정).
 
     트랙 wav(speakers[].file)만 지운다. 매니페스트·대본·처리 기록·diarization.json 은 남긴다. 잠긴 회의는 건너뛴다.
-    워커가 바퀴마다 부르므로 인계 직후 회의와 예전에 인계가 끝난 회의를 같이 쓴다. 예외는 올리지 않는다."""
+    AUDIO_PRUNE_SINCE 전에 인계되거나 포기한 회의(팀원 동의를 받은 검증용)는 남긴다.
+    워커가 바퀴마다 부른다. 예외는 올리지 않는다."""
     now = now or utcnow()
     dropped = []
     for path in sorted(Path(recordings_dir).glob("session_*.json")):
@@ -530,7 +541,7 @@ def prune_audio(recordings_dir: Path, *, now: datetime | None = None) -> list[st
             if not isinstance(m, dict):
                 continue
             files = _track_files(recordings_dir, m)
-            if not files or not _audio_expired(recordings_dir, path, m, now) or is_locked(path):
+            if not files or not _audio_expired(recordings_dir, m, now) or is_locked(path):
                 continue
             for f in files:
                 f.unlink(missing_ok=True)

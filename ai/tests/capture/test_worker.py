@@ -178,9 +178,8 @@ async def test_the_heartbeat_stays_fresh_while_a_long_meeting_is_processed(tmp_p
 async def test_a_wake_request_runs_a_manual_pass_for_that_server_at_once(tmp_path):
     """--retry 가 깨우면 그 서버의 회의를 포기한 것까지 바로 돈다(manual)."""
     rec, gave_up, _ = _session(tmp_path, ts=500)
-    recent = R._iso(datetime.now(timezone.utc) - timedelta(hours=1))   # 7일이 지나면 음성이 지워져 다시 돌 수 없다(#561)
     _edit(gave_up, status="failed", failed_stage="stt",
-          recovery={"attempts": 5, "gave_up_at": recent, "failed_stage": "stt"})
+          recovery={"attempts": 5, "gave_up_at": "2026-09-26T00:00:00+00:00", "failed_stage": "stt"})
     worker = _worker(tmp_path)                                     # 다음 바퀴는 한 시간 뒤
     task = asyncio.create_task(worker.run())
     await asyncio.sleep(0.2)
@@ -987,6 +986,7 @@ async def test_each_lap_drops_audio_of_handed_off_meetings(tmp_path):
     (rec / "g_1" / "1_1.wav").write_bytes(b"RIFF")
     (rec / "g_1" / "transcript.md").write_text("대본", encoding="utf-8")
     R.save_manifest(R.manifest_path(rec, "g_1"), {"session": "g_1", "status": R.STATUS_HANDED_OFF, "meeting_dir": "g_1",
+                                                  "stages": {"handed_off": R._iso(R.AUDIO_PRUNE_SINCE)},
                                                   "speakers": [{"user_id": "1", "file": "g_1/1_1.wav"}]})
     w = _worker(tmp_path)
     assert await _laps(w, 1) == 1
