@@ -309,7 +309,9 @@ def _normal(s, f, L, out, closed):
         s = replace(s, why="")
     if s.outage_since is not None and _oks_here(s, sig) >= L.back_oks and sig.elice_streak == 0:
         s = replace(s, outage_since=None, boot_failures=0)      # 알린 장애가 끝났다
-    if s.why != "would_start" and not _paused(s, f.now) and _fails_here(s, sig) >= L.suspect_fails:
+    # 알린 뒤 다시 붙잡지 않는 것은 manual 의 규칙이다. 장애 중 auto 로 바꿔 다시 띄운 워커는 상태 파일에 그 표시가 남아 있다
+    announced = s.why == "would_start" and f.mode is Mode.MANUAL
+    if not announced and not _paused(s, f.now) and _fails_here(s, sig) >= L.suspect_fails:
         out.append(Notice(f"⏳ Elice 전사가 연속 {sig.elice_streak}번 실패했습니다"
                           f"{'(키·크레딧 거절 포함)' if sig.auth else ''}. 전사를 잠시 멈추고 Elice 를 확인합니다."))
         return _enter(s, Phase.SUSPECT, "elice_down", f, hold_until=f.now + L.hold_s, next_probe_at=f.now,

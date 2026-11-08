@@ -451,6 +451,22 @@ def test_a_manual_on_after_the_would_start_alert_wakes_from_the_outage_start(tmp
     assert seen == [t0]
 
 
+def test_switching_manual_to_auto_during_an_outage_starts_the_gpu(tmp_path):
+    """README 의 auto 로 바꾸기를 장애 중에 하면 상태 파일의 would_start 가 남는다. 그 막음은 manual 의 것이다."""
+    seen = []
+    fo, elice, gpu, switch, clock, notes = make(tmp_path, mode=Mode.MANUAL)
+    t0 = clock()
+    fail_elice(fo, elice, 6)
+    fo.tick()
+    ticks(fo, clock, 600)
+    assert fo.state.why == "would_start"
+    auto = FailoverStt(elice, gpu, switch=switch, mode=Mode.AUTO, state_dir=tmp_path, notify=notes.append,
+                       on_gpu=seen.append, clock=clock, probe=(PROBE, 16_000), wait_poll_s=0.005)
+    fail_elice(auto, elice, 10)
+    assert ticks(auto, clock, 600, until=lambda: auto.phase is Phase.ON_GPU)
+    assert switch.starts == 1 and seen == [t0]
+
+
 def test_elice_succeeding_again_after_the_would_start_alert_ends_that_outage(tmp_path):
     seen = []
     fo, elice, gpu, switch, clock, notes = make(tmp_path, mode=Mode.MANUAL, on_gpu=seen.append)

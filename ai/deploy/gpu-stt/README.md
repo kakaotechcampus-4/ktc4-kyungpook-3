@@ -257,7 +257,7 @@ sudo sh -c '. /etc/mm/gpu-stt.env; printf "Authorization: Bearer %s\n" "$GPU_STT
 
 ### 4. auto 로 바꾸기
 
-리허설이 끝나면 drop-in 의 `MM_GPU_FAILOVER` 만 `auto` 로 바꾸고 워커를 다시 시작한다. heartbeat 줄이 `"failover": "auto:..."` 로 바뀌었는지 본다.
+리허설이 끝나면 drop-in 의 `MM_GPU_FAILOVER` 만 `auto` 로 바꾸고 워커를 다시 시작한다. heartbeat 줄이 `"failover": "auto:..."` 로 바뀌었는지 본다. 장애 중에 바꿔도 `manual` 의 알림 뒤 막음은 이어지지 않아, 다시 뜬 워커가 실제 호출 연속 6번 실패에서 켜기를 시작한다.
 
 ```bash
 sudo sed -i 's/^Environment=MM_GPU_FAILOVER=.*/Environment=MM_GPU_FAILOVER=auto/' \

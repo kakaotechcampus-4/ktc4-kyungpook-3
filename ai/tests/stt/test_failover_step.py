@@ -57,6 +57,8 @@ ROWS = [
      facts(mode=Mode.MANUAL, signals=dict(elice_fails=6, elice_streak=6)), Phase.SUSPECT, "elice_down", {}),
     ("normal: 켰을 것을 알린 뒤에는 다시 확인하지 않는다", st(Phase.NORMAL, why="would_start"),
      facts(mode=Mode.MANUAL, signals=dict(elice_fails=6, elice_streak=6)), Phase.NORMAL, "would_start", {}),
+    ("normal: auto 는 manual 이 알린 뒤에도 다시 의심한다", st(Phase.NORMAL, why="would_start"),
+     facts(signals=dict(elice_fails=6, elice_streak=6)), Phase.SUSPECT, "elice_down", {}),
     ("normal: 알린 뒤 Elice 가 성공하면 다시 센다", st(Phase.NORMAL, why="would_start"),
      facts(mode=Mode.MANUAL, signals=dict(elice_oks=1)), Phase.NORMAL, "", {}),
     ("normal: 알린 장애는 Elice 성공 한 번으로 끝나지 않는다", st(Phase.NORMAL, why="would_start", outage_since=T0 - 50),
