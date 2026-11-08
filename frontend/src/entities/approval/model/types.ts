@@ -25,6 +25,11 @@ export interface TaskCreateApproval extends ApprovalBase {
   meetingId: string | null
   extractionItemId: string | null
   gate: 'review' | 'hold' | null
+  /**
+   * 승인하며 고른 담당자의 별칭으로 등록할 수 있는 글자 (#523). 서버가 후보라고 하고 글자가 있을 때만 있다.
+   * 후보 여부와 글자를 한 칸에 둬 「후보인데 글자가 없다」를 만들 수 없게 한다
+   */
+  aliasCandidate: string | null
 }
 /** AI 판정 분류 (ai/shared/schemas.py JudgeCategory) */
 export type TaskUpdateCategory = 'schedule' | 'assignee' | 'status' | 'scope' | 'decision' | 'none'

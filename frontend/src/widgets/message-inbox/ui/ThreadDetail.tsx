@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { BrowserPushPrompt } from '@/features/browser-push'
 import { messageThreadQueryOptions, replyAttributionsQueryOptions } from '@/entities/message'
 import type { MessageThread, ReplyAttribution } from '@/entities/message'
 import { ApiError } from '@/shared/api/errors'
-import { paths } from '@/shared/config/routes'
+import { MESSAGE_PARAMS, paths } from '@/shared/config/routes'
 import { now as clockNow, todayInSeoul } from '@/shared/lib/date'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
@@ -152,11 +153,25 @@ function ThreadView({
   const [replyTick, setReplyTick] = useState(0)
   const [now] = useState(clockNow)
   const atBottom = useRef(true)
-  // 대화를 열면 가장 최근 메시지부터 보인다. 대화가 바뀌면 화면이 새로 마운트된다 (MessageInbox 의 key)
+  const [searchParams] = useSearchParams()
+  const shownMessageId = searchParams.get(MESSAGE_PARAMS.message)
+  // 대화를 열면 가장 최근 메시지부터 보인다. 대화가 바뀌면 화면이 새로 마운트된다 (MessageInbox 의 key).
+  // 주소가 메시지를 가리키면 그 메시지를 가운데에 둔다. 맨 아래를 보지 않는 것으로 두어 아래에 붙이는 효과들이 다시 끌어내리지 않게 한다.
+  // 같은 대화 안에서 주소의 메시지가 바뀌거나 빠져도(다른 근거 링크, 목록 행, 뒤로 가기) 다시 맞춘다
   useLayoutEffect(() => {
     const body = bodyRef.current
-    if (body !== null) body.scrollTop = body.scrollHeight
-  }, [])
+    if (body === null) return
+    const shown = Array.from(body.querySelectorAll<HTMLElement>('[data-message-id]')).find(
+      (element) => element.dataset.messageId === shownMessageId,
+    )
+    if (shown === undefined) {
+      atBottom.current = true
+      body.scrollTop = body.scrollHeight
+      return
+    }
+    atBottom.current = false
+    shown.scrollIntoView({ block: 'center' })
+  }, [shownMessageId])
   useLayoutEffect(() => {
     const anchor = replyAnchor.current
     const body = bodyRef.current
@@ -257,7 +272,10 @@ function ThreadView({
                     </p>
                   </li>
                 ) : (
-                  <li key={item.id}>
+                  <li
+                    key={item.id}
+                    data-message-id={item.look === 'upcoming' ? undefined : item.id}
+                  >
                     <Bubble
                       workspaceId={workspaceId}
                       item={item}
