@@ -301,11 +301,13 @@ def create_reminder(
     origin: ReminderOrigin = ReminderOrigin.PM,
 ) -> Reminder:
     """리마인드를 만들어 그 대화·시각의 묶음에 넣는다."""
+    from app.services import lifecycle
+    lifecycle.workspace(db, workspace_id, check_epoch=False)
     now, scheduled_at = utc(now), utc(scheduled_at)
     task = db.get(Task, task_id)
     if task is None or task.workspace_id != workspace_id or task.is_deleted:
         raise AppError(ErrorCode.TASK_NOT_FOUND, details={"task_id": task_id})
-    member = db.get(Member, member_id)
+    member = db.get(Member, member_id, populate_existing=True)
     if member is None or member.workspace_id != workspace_id or member.is_deleted:
         raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
     _require_future(scheduled_at, now)
@@ -643,12 +645,17 @@ def write_draft(
 
     맡긴 뒤 구성이 바뀌었거나(판이 다름), 이미 승인·발송됐거나, PM 이 문구를 직접 쓴 묶음에는 넣지 않는다.
     """
+    from app.services import lifecycle
+    workspace_id = db.scalar(select(ReminderBundle.workspace_id).where(ReminderBundle.bundle_id == bundle_id))
+    if workspace_id is not None:
+        lifecycle.workspace(db, workspace_id)
     now = utc(now)
     bundle = db.get(ReminderBundle, bundle_id, with_for_update=True)
     if bundle is None:
         raise AppError(ErrorCode.REMINDER_BUNDLE_NOT_FOUND, details={"bundle_id": bundle_id})
     if (
-        bundle.draft_version != draft_version
+        bundle.thread.member.withdrawn_at is not None
+        or bundle.draft_version != draft_version
         or bundle.status != ReminderStatus.SCHEDULED
         or bundle.approved_at is not None
         or bundle.body_source == BodySource.PM
@@ -729,6 +736,13 @@ def _dm_body(db: Session, message: ThreadMessage) -> str:
 
 def claim_for_bot(db: Session, now: datetime) -> list[ClaimedMessage]:
     """봇이 보낼 메시지를 가져간다. 한 번 가져간 메시지는 다시 주지 않는다."""
+    from app.services import lifecycle
+    lifecycle.worker_gate(db)
+    owners = db.scalars(select(MessageThread.workspace_id).join(
+        ThreadMessage, ThreadMessage.thread_id == MessageThread.thread_id,
+    ).where(ThreadMessage.dm_status.in_((DmStatus.PENDING, DmStatus.CLAIMED))).distinct()).all()
+    for workspace_id in sorted(owners):
+        lifecycle.workspace(db, workspace_id, check_epoch=False)
     now = utc(now)
     dispatch_due(db, now)
 
@@ -780,10 +794,18 @@ def report_result(
     discord_message_ids 는 실제로 나간 DM 들의 id 다. 답장의 워크스페이스를 찾는 데 쓴다.
     그 대화에 처음 나간 리마인드면, 첫 DM 틀로 만들어 둔 승인 전 규칙·AI 묶음을 두 번째 틀로 다시 만든다.
     """
+    from app.services import lifecycle
+    workspace_id = db.scalar(select(MessageThread.workspace_id).join(
+        ThreadMessage, ThreadMessage.thread_id == MessageThread.thread_id,
+    ).where(ThreadMessage.message_id == message_id))
+    if workspace_id is not None:
+        lifecycle.workspace(db, workspace_id, check_epoch=False)
     now = utc(now)
     message = db.get(ThreadMessage, message_id, with_for_update=True)
     if message is None or message.dm_status is None:
         raise AppError(ErrorCode.MESSAGE_NOT_FOUND, details={"message_id": message_id})
+    if message.thread.member.withdrawn_at is not None:
+        raise AppError(ErrorCode.MESSAGE_RESULT_CONFLICT, details={"message_id": message_id})
     if not delivered and failure_reason in (None, DmFailureReason.DISCORD_NOT_LINKED):
         raise AppError(ErrorCode.INVALID_REQUEST, message="실패 사유는 dm_blocked 또는 unknown 이어야 합니다.")
 

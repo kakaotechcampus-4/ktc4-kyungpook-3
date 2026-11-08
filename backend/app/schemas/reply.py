@@ -22,6 +22,7 @@ class ClaimedReply(BaseModel):
     message_id: str
     attempt: int
     workspace_id: str
+    identity_epoch: int = 0
     member_name: str
     reply_date: date = Field(description="보낸 날 KST")
     lines: list[ClaimedLine] = Field(description="시간순. 마지막이 이번 답장이고 최대 12줄이다")

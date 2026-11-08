@@ -172,6 +172,7 @@ function addCreatedWorkspace(state: MockDb, workspace: WorkspaceDto): void {
     discord_user_id: null,
     notion_name: null,
     role: 'pm',
+    has_login_account: false,
     created_at: MOCK_NOW,
   })
   state.integrations[workspace.workspace_id] = {

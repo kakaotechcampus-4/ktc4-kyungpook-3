@@ -201,6 +201,16 @@ export interface MockDb {
   session: SessionDto
   authenticated: boolean
   accounts: MockAccount[]
+  withdrawals: {
+    keyHash: string
+    receipt: {
+      withdrawal_id: string
+      account_deleted_at: string
+      cleanup_status: 'pending' | 'complete'
+    }
+    checks: number
+  }[]
+  withdrawnMemberIds: string[]
   workspaces: WorkspaceDto[]
   members: MemberDto[]
   aliases: MemberAliasDto[]
@@ -244,6 +254,8 @@ export function initialDb(): MockDb {
   return {
     session: structuredClone(sessionFixture),
     authenticated: true,
+    withdrawals: [],
+    withdrawnMemberIds: [],
     accounts: [
       {
         session: structuredClone(sessionFixture),

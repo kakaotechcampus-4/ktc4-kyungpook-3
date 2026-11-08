@@ -18,7 +18,7 @@ from app.api.deps import require_service_token
 from app.core.database import get_db
 from app.services.meeting_deletion import require_live_meeting
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Meeting, MeetingSource, MeetingStatus, MeetingUpload
+from app.models import Meeting, MeetingSource, MeetingStatus, MeetingUpload, Workspace
 from app.schemas.upload import (
     AssignedUpload,
     AssignedUploadListResponse,
@@ -61,6 +61,7 @@ def list_pending_uploads(db: Session = Depends(get_db)) -> dict:
         PendingUpload(
             meeting_id=meeting.meeting_id,
             workspace_id=meeting.workspace_id,
+            identity_epoch=db.get(Workspace, meeting.workspace_id).identity_epoch,
             title=meeting.title,
             started_at=meeting.started_at,
             attendees=json.loads(upload.attendees),
@@ -79,6 +80,7 @@ def list_pending_uploads(db: Session = Depends(get_db)) -> dict:
 def claim_upload(meeting_id: str, db: Session = Depends(get_db)) -> dict:
     """처리 중인 업로드 회의를 가져간다(`claimed_at` 기록). 두 번 불러도 한 번만 성공한다."""
     # 읽고 나서 쓰면 동시에 부른 둘이 모두 가져갈 수 있다. 판정과 쓰기를 한 문장으로 묶는다
+    require_live_meeting(db, meeting_id, lock=True)
     result = db.execute(
         update(MeetingUpload)
         .where(
@@ -129,6 +131,7 @@ def list_assigned_uploads(db: Session = Depends(get_db)) -> dict:
         AssignedUpload(
             meeting_id=meeting.meeting_id,
             workspace_id=meeting.workspace_id,
+            identity_epoch=db.get(Workspace, meeting.workspace_id).identity_epoch,
             title=meeting.title,
             started_at=meeting.started_at,
             mapping=json.loads(upload.speaker_mapping or "{}"),
@@ -147,6 +150,7 @@ def resume_upload(meeting_id: str, db: Session = Depends(get_db)) -> dict:
         ResumeResponse(
             meeting_id=meeting_id,
             status=meeting.status,
+            identity_epoch=db.get(Workspace, meeting.workspace_id).identity_epoch,
             mapping=json.loads(upload.speaker_mapping or "{}"),
         ).model_dump()
     )

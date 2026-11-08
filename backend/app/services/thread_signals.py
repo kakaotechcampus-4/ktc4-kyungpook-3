@@ -33,6 +33,7 @@ class Connection:
     loop: asyncio.AbstractEventLoop
     outbox: asyncio.Queue[str] = field(default_factory=lambda: asyncio.Queue(OUTBOX_SIZE))
     overflowed: asyncio.Event = field(default_factory=asyncio.Event)
+    revoked: asyncio.Event = field(default_factory=asyncio.Event)
 
     def enqueue(self, thread_id: str) -> None:
         try:
@@ -56,6 +57,16 @@ def unregister(conn: Connection) -> None:
         held.discard(conn)
         if not held:
             _connections.pop(conn.member_id, None)
+
+
+def revoke(member_ids: Iterable[str]) -> None:
+    with _lock:
+        targets = [conn for member_id in member_ids for conn in _connections.get(member_id, ())]
+    for conn in targets:
+        try:
+            conn.loop.call_soon_threadsafe(conn.revoked.set)
+        except RuntimeError:
+            unregister(conn)
 
 
 def publish(thread_id: str, member_ids: Iterable[str]) -> None:

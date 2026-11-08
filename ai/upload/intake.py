@@ -158,6 +158,8 @@ def intake_one(recordings_dir: Path, *, client, diarizer: Diarizer, now: Callabl
 
 def _advance(recordings_dir, d: Path, rec: dict, *, client, diarizer, now, timezone, fresh: bool) -> Progress:
     mid = rec["meeting_id"]
+    if hasattr(client, 'meeting_epochs'):
+        client.meeting_epochs[mid] = int((rec.get('item') or {}).get('identity_epoch') or 0)
     if rec.get("fail_pending"):
         return _report_fail(d, rec, client, now())
     if manifest_path(recordings_dir, f"upload_{mid}").exists():   # 매니페스트가 이미 있다: 분리하지 않고 정리만
@@ -274,6 +276,7 @@ def _step(recordings_dir, d, rec, *, client, diarizer, now, timezone, fresh) -> 
             audio, total, segments, recordings_dir, source_name=str(item.get("original_filename") or ""),
             started_at=item["started_at"], timezone=timezone, session=f"upload_{mid}",
             meta={"be": {"meeting_id": mid, "status": "processing"}, "workspace_id": item.get("workspace_id"),
+                  "identity_epoch": item.get("identity_epoch", 0),
                   "title": item.get("title"), "attendees": item.get("attendees") or [],
                   "upload": {k: item.get(k) for k in ("original_filename", "stored_filename", "content_type",
                                                       "size_bytes", "uploaded_at")}})

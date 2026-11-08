@@ -62,6 +62,7 @@ class MemberResponse(BaseModel):
     discord_user_id: str | None
     notion_name: str | None
     role: str
+    has_login_account: bool
     created_at: datetime
 
 
@@ -136,3 +137,4 @@ class MemberNameResponse(BaseModel):
 
 class MemberNameListResponse(BaseModel):
     items: list[MemberNameResponse]
+    identity_epoch: int = 0

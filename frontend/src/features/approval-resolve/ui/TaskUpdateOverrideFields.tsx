@@ -16,6 +16,7 @@ export interface TaskUpdateOverrideFieldsProps {
   overrides: TaskUpdateOverrides
   /** 지금 공간의 팀원. 받기 전에는 담당자를 고를 수 없다 */
   members: readonly Member[] | undefined
+  retainedNames?: ReadonlyMap<string, string>
   onInputChange: () => void
   disabled: boolean
 }
@@ -28,6 +29,7 @@ export interface TaskUpdateOverrideFieldsProps {
 export function TaskUpdateOverrideFields({
   overrides,
   members,
+  retainedNames,
   onInputChange,
   disabled,
 }: TaskUpdateOverrideFieldsProps) {
@@ -58,7 +60,7 @@ export function TaskUpdateOverrideFields({
               onInputChange()
               overrides.setAssignee(value)
             }}
-            options={assigneeOptions(members, assignee ?? null)}
+            options={assigneeOptions(members, assignee ?? null, retainedNames)}
             noneOption={ASSIGNEE_NONE_OPTION}
             placeholder={unpicked ? '담당자 고르기' : undefined}
             tone={unpicked ? 'blocking' : 'normal'}

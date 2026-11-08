@@ -30,9 +30,12 @@ Discord 이름은 여기 없다. 매니페스트 dict 와 파일 경로만 다�
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import re
+from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -43,6 +46,28 @@ import requests
 from shared.schemas import NotionCandidate, Transcript
 
 log = logging.getLogger(__name__)
+_privacy_epoch = ContextVar('privacy_epoch', default=None)
+
+
+def session_privacy(function):
+    @functools.wraps(function)
+    def scoped(recordings_dir, manifest, *args, **kwargs):
+        token = _privacy_epoch.set(int(manifest.get('identity_epoch') or 0) if manifest.get('workspace_id') else None)
+        try:
+            return function(recordings_dir, manifest, *args, **kwargs)
+        finally:
+            _privacy_epoch.reset(token)
+    return scoped
+
+
+def _manifest_privacy(function):
+    @functools.wraps(function)
+    def scoped(self, manifest, *args, **kwargs):
+        scope = getattr(self.client, 'privacy_scope', None)
+        context = scope(int(manifest.get('identity_epoch') or 0)) if scope and manifest.get('workspace_id') else nullcontext()
+        with context:
+            return function(self, manifest, *args, **kwargs)
+    return scoped
 
 API_PREFIX = "/api/v1"
 TIMEOUT_S = 10.0
@@ -133,9 +158,27 @@ class BeClient:
         self._session = session or requests.Session()
         self.timeout = timeout
         self.service_token = service_token
+        self.workspace_epochs: dict[str, int] = {}
+        self.meeting_epochs: dict[str, int] = {}
+
+    @contextmanager
+    def privacy_scope(self, epoch: int):
+        token = _privacy_epoch.set(epoch)
+        try:
+            yield
+        finally:
+            _privacy_epoch.reset(token)
 
     def _call(self, method: str, path: str, body: dict | None = None, *, headers: dict | None = None,
               timeout: float | None = None) -> Any:
+        epoch = _privacy_epoch.get()
+        if epoch is None and body and body.get('workspace_id'):
+            epoch = self.workspace_epochs.get(body['workspace_id'], 0)
+        match = re.match(r'/(?:meetings|uploads)/([^/]+)', path)
+        if epoch is None and match:
+            epoch = self.meeting_epochs.get(match[1], 0)
+        if method != 'GET' and epoch is not None and epoch > 0:
+            headers = {**(headers or {}), 'X-Privacy-Epoch': str(epoch)}
         if self.service_token:
             headers = {**(headers or {}), "X-Service-Token": self.service_token}
         extra = {"headers": headers} if headers else {}
@@ -143,7 +186,18 @@ class BeClient:
             r = self._session.request(method, self.api + path, json=body, timeout=timeout or self.timeout, **extra)
         except requests.RequestException as e:
             raise BeError("NETWORK", f"{type(e).__name__}: {e}") from e
-        return self._unwrap(r)
+        data = self._unwrap(r)
+        if isinstance(data, dict):
+            if data.get('workspace_id') and 'identity_epoch' in data:
+                self.workspace_epochs[data['workspace_id']] = int(data['identity_epoch'])
+            if data.get('meeting_id') and epoch is not None:
+                self.meeting_epochs[data['meeting_id']] = epoch
+            for item in data.get('items') if isinstance(data.get('items'), list) else []:
+                if isinstance(item, dict) and item.get('meeting_id'):
+                    self.meeting_epochs[item['meeting_id']] = int(item.get('identity_epoch') or 0)
+                if isinstance(item, dict) and item.get('workspace_id'):
+                    self.workspace_epochs[item['workspace_id']] = int(item.get('identity_epoch') or 0)
+        return data
 
     @staticmethod
     def _unwrap(r) -> Any:
@@ -167,6 +221,12 @@ class BeClient:
 
     def ack_meeting_purge(self, meeting_id: str, token: str) -> dict:
         return self._call("POST", f"/bot/meeting-purges/{meeting_id}/ack", {"claim_token": token})
+
+    def claim_privacy_cleanup(self) -> dict:
+        return self._call('POST', '/bot/privacy-cleanups/claim', {})
+
+    def ack_privacy_cleanup(self, cleanup_id: str, token: str) -> dict:
+        return self._call('POST', f'/bot/privacy-cleanups/{cleanup_id}/ack', {'claim_token': token})
 
     def pending_uploads(self) -> list[dict]:
         """웹 업로드 회의 중 아직 아무도 가져가지 않은 것(GET /uploads/pending), 먼저 올라온 순서.
@@ -266,6 +326,8 @@ class BeClient:
         [{"member_id", "name", "discord_user_id", "aliases"}]. 탈퇴한 팀원은 BE 가 빼고 준다.
         """
         data = self._call("GET", f"/workspaces/{workspace_id}/members/names")
+        if isinstance(data, dict) and 'identity_epoch' in data:
+            self.workspace_epochs[workspace_id] = int(data['identity_epoch'])
         items = data.get("items") if isinstance(data, dict) else None
         if not isinstance(items, list):
             raise BeError("BAD_RESPONSE", "팀원 이름 응답에 items 목록이 없다")
@@ -456,8 +518,10 @@ class Handoff:
                 return None
             raise
         manifest["workspace_id"] = ws
+        manifest['identity_epoch'] = getattr(self.client, 'workspace_epochs', {}).get(ws, 0)
         return ws
 
+    @_manifest_privacy
     def start(self, manifest: dict, *, title: str | None = None) -> dict:
         """BE 회의를 만든다. 이미 있으면 그대로. /record 직후와 인계 단계가 같이 부른다."""
         be = manifest.setdefault("be", {})
@@ -484,6 +548,7 @@ class Handoff:
         be.update({"meeting_id": data["meeting_id"], "status": str(data.get("status", "created"))})
         return be
 
+    @_manifest_privacy
     def end(self, manifest: dict, *, title: str | None = None) -> dict:
         """녹음이 끝났다. created → processing. BE 가 failed 로 닫아 둔 회의면 새로 만든다.
 
@@ -510,6 +575,7 @@ class Handoff:
         be["status"] = status
         return be
 
+    @_manifest_privacy
     def report_stage(self, manifest: dict, stage: str) -> None:
         """단계가 시작될 때 BE 에 알린다. 삭제 응답은 종결하고 그 밖의 진행 표시 실패는 삼킨다.
 
@@ -527,6 +593,7 @@ class Handoff:
         except Exception as e:  # noqa: BLE001 - 진행 표시 실패가 전사·인계를 막으면 안 된다
             print(f"[stage] 세션 {manifest.get('session')} 단계 보고 실패({stage}): {type(e).__name__}: {e}", flush=True)
 
+    @_manifest_privacy
     def save_sources(self, manifest: dict, *, transcripts_dir: Path, title: str | None = None) -> dict:
         """전사 발화를 BE 에 저장한다. processing 이나 done 회의에 보낸다. end 로 회의를 확보하고, BE 가 failed 로 닫아
         두었으면 end 가 새 회의로 바꾼다. be["sources"] 에 보낸 회의 ID 를 남겨, 회의가 뒤에 바뀌면 다시 보낼 수 있게 한다.
@@ -591,6 +658,7 @@ class Handoff:
             log.warning("BE 가 팀원이 아니라고 한 멤버 ID 를 비우고 보냈다: %s (회의 %s)", dropped, be["meeting_id"])
         return be
 
+    @_manifest_privacy
     def register(self, manifest: dict, *, transcripts_dir: Path, model_name: str | None,
                  title: str | None = None) -> dict:
         """추출 결과를 BE 에 등록한다. 회의는 done 이 된다. 다시 불러도 BE 가 기존 것을 돌려준다.
@@ -666,6 +734,7 @@ class Handoff:
         return self.client.create_extraction(meeting_id, workspace_id, transcript_path=str(transcript_json),
                                              model_name=model_name, items=items)
 
+    @_manifest_privacy
     def fail(self, manifest: dict, failed_stage: str) -> None:
         """단계가 실패했다고 알린다. BE 회의가 없거나 BE 도 안 되면 조용히 넘어간다. 인계 자체는 복구가 다시 한다."""
         be = manifest.get("be") or {}

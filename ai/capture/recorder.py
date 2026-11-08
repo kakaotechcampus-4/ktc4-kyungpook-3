@@ -71,7 +71,7 @@ from zoneinfo import ZoneInfo
 import soundfile as sf
 
 from capture import judge_path, ops_record
-from capture.handoff import MeetingEnded, speaker_names
+from capture.handoff import MeetingEnded, session_privacy, speaker_names
 from capture.judge_path import JudgeOutput
 from shared.config import TRANSCRIPTS_DIR, settings
 from shared.config import today as config_today
@@ -138,6 +138,8 @@ def manifest_path(recordings_dir: Path, session) -> Path:
 
 def save_manifest(path: Path, manifest: dict) -> None:
     """임시 파일에 쓴 뒤 바꿔 끼운다. 쓰는 도중 죽어도 반쯤 쓰인 JSON 이 남지 않는다."""
+    from capture.privacy_cleanup import guard_manifest
+    guard_manifest(path, manifest)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -565,6 +567,7 @@ class Claims:
         잠금을 먼저 잡고 매니페스트를 읽는다. process_session 은 이 dict 를 통째로 저장하므로 표시가 같이 남는다.
         다 쓰면 release 로 놓는다.
         """
+        from capture.privacy_cleanup import PrivacyPending
         lock = try_lock(path)
         if lock is None:
             return None
@@ -577,7 +580,14 @@ class Claims:
             self._dead[str(m.get("session"))] = str(m["claimed_by"])
         m["claimed_by"] = self.owner
         m["claimed_at"] = _iso(utcnow())
-        save_manifest(path, m)
+        try:
+            save_manifest(path, m)
+        except PrivacyPending:
+            lock.release()
+            return None
+        except Exception:
+            lock.release()
+            raise
         self._locks[str(m.get("session"))] = lock
         return m
 
@@ -650,6 +660,7 @@ def sources_saved(manifest: dict) -> bool:
         (be.get("sources") or {}).get("meeting_id") == be.get("meeting_id")
 
 
+@session_privacy
 def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name: str, workers: int,
                     gate=None, transcripts_dir: Path | None = None, extractor=None, handoff=None,
                     name_of=None, progress=None, wait_for_workspace: bool = False) -> dict:
@@ -805,7 +816,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             out = transcribe_session(recordings_dir, manifest, backend=backend, model_name=model_name,
                                      workers=workers, gate=gate, transcripts_dir=tdir, progress=counted_by)
             ops.end()                                  # partial 이면 실패를 세며 BE 에 fail 을 보낼 수 있다. 전사 시간에 넣지 않는다
-            manifest["transcript"] = str(Path(out["markdown"]).relative_to(recordings_dir))
+            manifest["transcript"] = Path(out["markdown"]).relative_to(recordings_dir).as_posix()
             manifest["transcript_json"] = str(out["transcript_json"]) if out["transcript_json"] else None
             result["transcribe"] = {"markdown": out["markdown"], "failed": out["failed"],
                                     "summary": out["summary"], "lines": len(out["lines"])}

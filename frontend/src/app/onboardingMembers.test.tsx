@@ -67,6 +67,7 @@ const createMemberButLoseResponse = () =>
         discord_user_id: body.discord_user_id,
         notion_name: null,
         role: 'member',
+        has_login_account: false,
         created_at: MOCK_NOW,
       })
       return HttpResponse.error()
@@ -107,6 +108,7 @@ describe('팀원 연결 목록 (U3-8)', () => {
       discord_user_id: '1125',
       notion_name: null,
       role: 'member',
+      has_login_account: false,
       created_at: MOCK_NOW,
     })
     await openMembers()
@@ -208,6 +210,7 @@ describe('팀원 저장 규칙 (U3-9)', () => {
       discord_user_id: '1125',
       notion_name: null,
       role: 'member',
+      has_login_account: false,
       created_at: MOCK_NOW,
     })
     const bodies = recordRequestBodies('PATCH', '/members/mb_91')
@@ -360,6 +363,7 @@ describe('매핑 옮기기와 나중에 하기 (U3-r1 #5·#6)', () => {
       discord_user_id: '1125',
       notion_name: null,
       role: 'member',
+      has_login_account: false,
       created_at: MOCK_NOW,
     })
     const bodies = recordRequestBodies('PATCH', '/members/mb_91')
@@ -389,6 +393,7 @@ describe('매핑 옮기기와 나중에 하기 (U3-r1 #5·#6)', () => {
         discord_user_id: '1123',
         notion_name: null,
         role: 'member',
+        has_login_account: false,
         created_at: MOCK_NOW,
       },
       {
@@ -398,6 +403,7 @@ describe('매핑 옮기기와 나중에 하기 (U3-r1 #5·#6)', () => {
         discord_user_id: '1124',
         notion_name: null,
         role: 'member',
+        has_login_account: false,
         created_at: MOCK_NOW,
       },
     )
@@ -776,6 +782,7 @@ describe('PM 을 체크해 잇기 (#228)', () => {
       discord_user_id: '1123',
       notion_name: null,
       role: 'member',
+      has_login_account: false,
       created_at: MOCK_NOW,
     })
     server.use(

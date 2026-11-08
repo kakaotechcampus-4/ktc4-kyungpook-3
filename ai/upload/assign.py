@@ -95,6 +95,8 @@ def assign_one(recordings_dir: Path, *, client, now: Callable[[], datetime] = ut
 
 def _advance(recordings_dir: Path, d: Path, rec: dict, *, client, now) -> Progress:
     mid, r = rec["meeting_id"], rec["resume"]
+    if hasattr(client, 'meeting_epochs'):
+        client.meeting_epochs[mid] = int((rec.get('item') or {}).get('identity_epoch') or 0)
     if r["state"] == "failing":
         return _report_fail(recordings_dir, d, rec, client, now())
     try:

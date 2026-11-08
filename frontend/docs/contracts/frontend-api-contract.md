@@ -418,7 +418,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 // MemberResponse
 {"member_id": "mb_01", "workspace_id": "ws_01", "display_name": "김서연",
  "discord_user_id": "1123...", "notion_name": null,
- "role": "member", "created_at": "2026-09-15T04:10:00Z"}
+ "role": "member", "has_login_account": true, "created_at": "2026-09-15T04:10:00Z"}
 // POST 요청: {workspace_id, display_name, discord_user_id?, notion_name?, role?}
 // PATCH 요청: 위 4개 모두 선택
 
@@ -431,6 +431,10 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 // UnresolvedAliasResponse — 회의에서 나왔지만 아직 팀원과 연결되지 않은 이름
 {"alias_text": "민수", "occurrences": 3, "last_seen_at": "2026-09-15T06:00:00Z"}
 ```
+
+2026-11-09 현재 작업 트리의 #575 준비 구현은 `MemberResponse.has_login_account: boolean`을 추가한다. 활성 팀원에 로그인 계정이 연결됐는지 나타내며 User ID는 반환하지 않는다. FE는 `hasLoginAccount`로 옮기고, PM에게 로그인 연결된 일반 팀원의 `PM 권한 부여`를 제공한다. 기존 `PATCH /members/{id}`의 `{role:"pm"}`를 사용하며 기존 PM의 권한은 유지한다. 대기 초대의 `MEMBER_HAS_PENDING_INVITATION` 등 서버 오류는 그대로 따른다. 생산자·소비자 코드를 함께 변경한 현재 구현이며, 별도 파트 합의·병합·배포 완료 기록은 아니다.
+
+같은 준비 구현은 계정 영구 탈퇴용 익명 기록 주체를 기존 명단 비활성화와 구분한다. 영구 탈퇴자의 대화는 PM 목록·상세·읽음에 남고 표시명은 `탈퇴한 사용자`, `web_reply_available`은 false다. 프로필 수정·별칭 추가·초대·새 발송과 늦은 봇 결과는 거절한다. 기존 `is_deleted`만 있는 명단 비활성화의 unread 0·읽음 POST 404는 유지한다. [새 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-09-withdrawn-record-actor.md)에 범위를 기록했다. 이 준비 단위에는 본인 탈퇴 API나 계정 삭제 화면이 없으며, 개인정보 전체 정리·재가입 검증이 완료됐다는 뜻은 아니다. 로컬 API 회귀와 MSW Chromium PM 승격·새로고침 여정을 확인했고 PostgreSQL 경합·실제 외부 연동은 미검증이다.
 
 - `alias_type` 은 `realname` \| `nickname` \| `mention` \| `inferred`, `source` 는 `manual` \| `discord_profile` \| `learned` \| `display_name`.
   **2026-11-08 코드 대조(#523, BE #463·#464):** `display_name` 은 서버가 팀원 이름과 성 뗀 이름으로 자동으로 넣는 별칭이다(확인됨, 1.0). 이름을 바꾸면 옛 이름에서 만든 `display_name` 별칭만 지워진다. 한글 디스코드 닉네임은 `discord_profile`(미확인, 0.8)로 들어간다. `learned` 는 PM 이 승인하며 배운 별칭이다(§2.5 「승인 때 별칭 학습」).
