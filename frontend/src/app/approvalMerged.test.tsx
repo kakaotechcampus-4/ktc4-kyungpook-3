@@ -89,6 +89,50 @@ describe('본 시점의 payload_version 을 승인·반려에 싣는다 (#547)',
   })
 })
 
+describe('지문 밖에서 정해지는 별칭 후보는 최신 응답을 따른다 (#512 리뷰)', () => {
+  it('같은 지문으로 다시 받은 카드가 별칭 후보가 되면, 켜진 등록 체크대로 save_alias 를 보낸다', async () => {
+    db.aliases.push({
+      alias_id: 'al_taken',
+      member_id: 'mb_03',
+      workspace_id: 'ws_01',
+      alias_text: '지훈',
+      alias_type: 'nickname',
+      source: 'manual',
+      confidence: 1,
+      verified: true,
+      created_at: MOCK_NOW,
+    })
+    const bodies = recordRequestBodies('PATCH', '/approvals/ap_03')
+    const seen = versionOf('ap_03')
+    const app = await openDeployDoc()
+    assigneeSelect().focus()
+    await userEvent.keyboard('{Enter}')
+    await userEvent.click(await screen.findByRole('option', { name: '박민수' }))
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())
+    expect(screen.queryByRole('checkbox')).toBeNull()
+
+    db.aliases = db.aliases.filter(({ alias_id }) => alias_id !== 'al_taken')
+    await act(() => app.queryClient.invalidateQueries({ queryKey: ['workspace', 'ws_01'] }))
+    const register = await screen.findByRole('checkbox', {
+      name: "'지훈'을 박민수의 별칭에도 등록",
+    })
+    expect(register).toBeChecked()
+    expect(versionOf('ap_03')).toBe(seen)
+    expect(screen.queryByRole('alert', { name: '바뀐 내용' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: '승인' }))
+    await screen.findByTestId('approval-result')
+    expect(bodies).toEqual([
+      {
+        status: 'approved',
+        payload_version: seen,
+        save_alias: true,
+        task_overrides: { assignee_member_id: 'mb_02' },
+      },
+    ])
+  })
+})
+
 describe('본 뒤 합쳐진 카드는 바뀐 칸을 보이고 다시 확인하게 한다 (#512)', () => {
   beforeEach(() => replaceDb(createScenarioDb('approval-merged-after-view')))
 

@@ -33,7 +33,10 @@ export interface TaskCreateOverrides {
   /** 별칭 등록 체크. 처음엔 켜져 있고, 미정을 골라 숨겨도 PM 이 고른 값을 기억한다 */
   saveAlias: boolean
   setSaveAlias: (saveAlias: boolean) => void
-  /** 지금 폼이 맞춰진 카드. 승인·반려는 PM 이 화면에서 본 이 카드의 `payloadVersion` 을 싣는다 (#547) */
+  /**
+   * 지금 폼이 맞춰진 카드. 승인·반려는 PM 이 화면에서 본 이 카드의 `payloadVersion` 을 싣는다 (#547).
+   * 별칭 후보는 payload 밖에서 지금 별칭으로 구하므로 지문이 같아도 바뀐다. 그 값만 최신 응답을 쓴다
+   */
   seen: TaskCreateApproval
   /** 폼을 연 뒤 카드가 바뀌었으면 처음 본 카드와 지금 카드의 차이. 바뀐 적 없으면 null */
   change: { before: TaskCreateApproval; diff: ApprovalChange } | null
@@ -84,7 +87,7 @@ export function useTaskCreateOverrides(
     aliasText: aliasToLearn(approval, fields),
     saveAlias,
     setSaveAlias,
-    seen,
+    seen: { ...seen, aliasCandidate: approval.aliasCandidate },
     change:
       firstSeen === null ? null : { before: firstSeen, diff: approvalChange(firstSeen, seen) },
   }
