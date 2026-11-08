@@ -555,6 +555,18 @@ def test_chat_meeting_create_never_auto(client, db, seed, caplog):
     assert db.execute(select(Task).where(Task.title == "결제 API 연동")).scalar_one_or_none() is None
 
 
+def test_chat_downgrade_log_skips_unusable_merge_item(client, db, seed, caplog):
+    # 대상을 못 쓴 merge 항목은 채팅이 아니어도 review 라 "채팅이 아니었으면 auto" 로그에 세지 않는다
+    _make_chat(db, seed)
+
+    with caplog.at_level("INFO", logger="app.api.extractions"):
+        item = _only_item(client, _extract(client, seed, [_judge(action="merge", target_approval_id=None)]))
+
+    assert item["gate"] == "review"
+    assert "merge_target_unavailable" in caplog.text
+    assert "chat 회의라 auto 항목을 review로 내립니다" not in caplog.text
+
+
 def test_chat_meeting_hold_stays_hold(client, db, seed):
     _make_chat(db, seed)
 
@@ -655,3 +667,45 @@ def test_pending_created_earlier_in_the_same_request_does_not_block_auto(client,
     # 첫 항목이 실제로 pending task_create 를 만들었는데도 두 번째 항목은 auto 다
     pending = [r for r in _approvals(db) if r.type == "task_create" and r.status == "pending"]
     assert len(pending) == 1
+
+
+def test_pending_signal_is_read_even_after_a_legacy_auto_item(client, db, seed, caplog):
+    # 앞의 legacy auto 항목이 unsearched_tasks 를 먼저 True 로 정해도 pending 신호는 따로 읽어 사유에 남긴다
+    _pending_create(db, seed)
+    legacy = {
+        "task_title": "로그인 화면 시안", "assignee_raw": "지민님", "due_date": "2026-10-20",
+        "evidence_quote": "지민님이 시안 맡아 주세요", "evidence_speaker": "uid-pm",
+        "task_confidence": 0.99, "due_confidence": 0.99,
+    }
+
+    with caplog.at_level("INFO", logger="app.api.extractions"):
+        extraction_id = _extract(client, seed, [legacy, _judge()])
+
+    items = client.get(f"/api/v1/extractions/{extraction_id}").json()["data"]["items"]
+    assert [i["gate"] for i in items] == ["auto", "review"]
+    [reasons] = [
+        r.getMessage().split("reasons=")[1] for r in caplog.records
+        if "auto로 보내지 않습니다" in r.getMessage()
+    ]
+    assert set(reasons.split(",")) == {"unsearched_task_exists", "unsearched_pending_exists"}
+
+
+@pytest.mark.parametrize("case", ["other_workspace", "approved", "rejected", "task_update"])
+def test_unembedded_request_outside_the_search_does_not_block_auto(client, db, seed, case):
+    # 유사 검색(include_pending)이 보는 것은 같은 워크스페이스의 승인 대기 task_create 뿐이다.
+    # 그 밖의 요청은 임베딩이 없어도 검색이 놓친 후보가 아니므로 auto 를 막지 않는다
+    workspace_id = seed["ws"].workspace_id
+    if case == "other_workspace":
+        other = Workspace(name="다른 팀")
+        db.add(other)
+        db.flush()
+        workspace_id = other.workspace_id
+    db.add(ApprovalRequest(
+        workspace_id=workspace_id,
+        type="task_update" if case == "task_update" else "task_create",
+        payload=json.dumps({"task_title": "결제 API 붙이기"}, ensure_ascii=False),
+        status=case if case in ("approved", "rejected") else "pending",
+    ))
+    db.commit()
+
+    assert _gate(client, seed) == "auto"
