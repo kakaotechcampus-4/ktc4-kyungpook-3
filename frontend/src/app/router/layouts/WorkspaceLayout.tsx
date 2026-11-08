@@ -1,11 +1,13 @@
 import { Fragment } from 'react'
 import type { ReactNode } from 'react'
 import { Outlet } from 'react-router'
+import { useMemberWorkspace } from '@/entities/workspace'
 import { ProcessingToast, useProcessingDiscovery } from '@/features/meeting-processing'
 import { useCompactScreen, useShellChromeHidden } from '@/shared/lib/compact-screen'
 import { useRouteId } from '@/shared/lib/url'
 import { usePinnedToastReserve } from '@/shared/ui/toast'
 import { AppHeader, AppHeaderSkeleton, BottomTabBar } from '@/widgets/app-shell'
+import { useShellPrefetch } from '../shellPrefetch'
 
 /** 앱 셸 틀 — 헤더 아래에 화면이 세로로 이어진다. 가드 대기 뼈대(WorkspaceShellSkeleton)도 같은 틀이다 */
 const SHELL = 'flex min-h-dvh flex-col bg-surface'
@@ -16,6 +18,9 @@ const SHELL = 'flex min-h-dvh flex-col bg-surface'
  *
  * M5 부터 지금 공간의 회의 목록을 한 번 받아 정리 중 회의를 처리 추적에 등록한다 (U4-1, U4-2).
  * 그 추적 상태는 오른쪽 아래 진행 토스트가 지금 공간 것만 그린다 (#424, D-088).
+ *
+ * 다섯 탭의 화면 코드와 첫 화면 데이터를 미리 받는다 — 탭에 다가간 순간 그 탭을, 셸이 뜬 뒤 한가할 때 다섯 탭 모두를 (#536).
+ * 처음 옮기는 탭도 빈 자리·뼈대 없이 바로 그려진다.
  */
 export function WorkspaceLayout() {
   const workspaceId = useRouteId('workspaceId')
@@ -31,16 +36,21 @@ function WorkspaceShell({ workspaceId }: { workspaceId: string }) {
   const compact = useCompactScreen()
   // 휴대폰의 메시지 상세처럼 화면 전체를 쓰는 화면은 헤더와 탭 막대를 걷는다(PwaThreadMember). 막대가 없으면 `--bottom-tab-bar` 도 0 이다
   const chromeHidden = useShellChromeHidden()
+  // 역할은 소속 목록의 role 이다. 소속은 RequireTeamMember 가 이미 확인했다
+  const isPm = useMemberWorkspace(workspaceId)?.role === 'pm'
+  const prefetchTab = useShellPrefetch({ workspaceId, isPm, compact })
 
   return (
     <div className={SHELL} style={{ paddingBottom: `calc(${reserve}px + var(--bottom-tab-bar))` }}>
-      {chromeHidden ? null : <AppHeader workspaceId={workspaceId} />}
+      {chromeHidden ? null : <AppHeader workspaceId={workspaceId} onTabIntent={prefetchTab} />}
       {/* 공간이 바뀌면 화면을 새로 마운트한다. 이전 공간의 화면 상태가 새 공간으로 넘어가지 않는다 */}
       <Fragment key={workspaceId}>
         <Outlet />
       </Fragment>
       <ProcessingToast workspaceId={workspaceId} />
-      {compact && !chromeHidden ? <BottomTabBar workspaceId={workspaceId} /> : null}
+      {compact && !chromeHidden ? (
+        <BottomTabBar workspaceId={workspaceId} onTabIntent={prefetchTab} />
+      ) : null}
     </div>
   )
 }

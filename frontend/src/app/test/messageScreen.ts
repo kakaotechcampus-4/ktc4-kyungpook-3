@@ -42,3 +42,12 @@ export function hold(path: string, method: Method = 'get') {
   )
   return { resolve: () => gate.resolve(), calls: () => calls }
 }
+
+/**
+ * 화면의 목록 칸 안에서 그 뼈대를 찾는다. 라우트 뼈대(#510)도 같은 뼈대 컴포넌트를 그리지만 랜드마크가 없다(aria-hidden) —
+ * 화면이 그려진 뒤의 목록 칸으로 좁혀 화면 안 뼈대만 본다
+ */
+export async function listSkeleton(): Promise<HTMLElement> {
+  const aside = await screen.findByRole('complementary', { name: '메시지 목록' })
+  return within(aside).getByTestId('message-list-skeleton')
+}

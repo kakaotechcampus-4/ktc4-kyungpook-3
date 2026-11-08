@@ -4,9 +4,10 @@ import { useLocation } from 'react-router'
 import {
   dismissSettled,
   meetingDetailQueryOptions,
+  useMeetingSources,
   useMeetingTrackerStore,
 } from '@/entities/meeting'
-import type { Meeting, SettledMeeting, TrackedMeeting } from '@/entities/meeting'
+import type { Meeting, MeetingSource, SettledMeeting, TrackedMeeting } from '@/entities/meeting'
 import { captureSession } from '@/entities/user'
 import { useMemberWorkspace } from '@/entities/workspace'
 import { paths } from '@/shared/config/routes'
@@ -30,16 +31,23 @@ function settledSubject(record: SettledMeeting): ProcessingSubject {
  * 추적 중 회의의 지금 모습. 완료는 추적기가 결과를 적기 전 한 번의 그리기에서도 완료로 보여 카드가 다시 마운트되지 않는다.
  * 실패는 끊김 판정(재연결 모달이면 토스트 없음)을 기다려야 해서 추적기가 결과를 적을 때까지 그리지 않는다
  */
-function trackedSubject(detail: Meeting | undefined): ProcessingSubject | null {
+function trackedSubject(
+  detail: Meeting | undefined,
+  source: MeetingSource | null,
+): ProcessingSubject | null {
   switch (detail?.status) {
     case 'processing':
     case 'awaiting_speakers':
-      return { phase: detail.status, title: detail.title, progress: detail.progress }
+      return { phase: detail.status, title: detail.title, progress: detail.progress, source }
     case 'done':
       return { phase: 'done', title: detail.title }
     default:
       return null
   }
+}
+
+function isWatched(detail: Meeting | undefined): boolean {
+  return detail?.status === 'processing' || detail?.status === 'awaiting_speakers'
 }
 
 /**
@@ -72,6 +80,15 @@ export function ProcessingToast({ workspaceId }: { workspaceId: string }) {
     })),
   })
 
+  // 단계 목록은 회의 출처마다 다르다(#483). 출처는 상세에 없어 발견과 같은 목록 캐시에서 읽고, 정리 중 회의가 목록에 없으면
+  // 한 번 새로 받는다. 모르는 동안 카드는 단계 수 없이 보인다
+  const sourceOf = useMeetingSources(
+    workspaceId,
+    trackedHere
+      .filter((_, index) => isWatched(details[index]?.data))
+      .map(({ meetingId }) => meetingId),
+  )
+
   if (role === undefined) return null
   const items: { meeting: TrackedMeeting; signal: ProcessingSignal }[] = []
   const add = (meeting: TrackedMeeting, subject: ProcessingSubject | null) => {
@@ -82,7 +99,9 @@ export function ProcessingToast({ workspaceId }: { workspaceId: string }) {
     if (signal !== null) items.push({ meeting, signal })
   }
   settledHere.forEach((record) => add(record, settledSubject(record)))
-  trackedHere.forEach((meeting, index) => add(meeting, trackedSubject(details[index]?.data)))
+  trackedHere.forEach((meeting, index) =>
+    add(meeting, trackedSubject(details[index]?.data, sourceOf(meeting.meetingId))),
+  )
   if (items.length === 0) return null
 
   return (

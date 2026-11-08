@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Mascot } from '@/shared/ui/mascot'
-import { FADE_MS } from './splashMachine'
+import { SPLASH_INTERVAL_MS, SPLASH_RECORD_KEY, isSplashDue } from '@/shared/lib/splash'
+import { FADE_MS, QUICK_FADE_MS } from './splashMachine'
 import { SPLASH_SIZE } from './splashSize'
 
 /*
@@ -90,7 +91,109 @@ describe('index.html 정적 스플래시', () => {
     expect(Number(fade[1]) * 1000).toBe(FADE_MS)
   })
 
+  it('설치한 앱의 짧은 사라짐(data-fade=quick)이 QUICK_FADE_MS 와 같은 길이다 (#510)', () => {
+    const style = parse(html).querySelector('style')?.textContent ?? ''
+    const fade =
+      /\.splash\[data-phase='leave'\]\[data-fade='quick'\]\s*\{[^}]*animation-duration:\s*([\d.]+)s/.exec(
+        style,
+      )
+    if (fade === null) throw new Error('quick 사라짐이 없다')
+    expect(Number(fade[1]) * 1000).toBe(QUICK_FADE_MS)
+  })
+
   it('탭 제목이 서비스 이름이다', () => {
     expect(parse(html).title).toBe("Manager's Manager")
+  })
+})
+
+/*
+ * <head> 인라인 스크립트 (#510). 첫 페인트 전에 localStorage 를 동기로 읽어 12시간 안이면 <html> 에 표시를 붙인다.
+ * JS 번들보다 먼저 돌아야 해서 splashRecord.ts 를 쓰지 못하고 같은 판정을 옮겨 둔 사본이다. 둘이 같은지 여기서 본다
+ */
+describe('index.html 스플래시 빈도 판정', () => {
+  const NOW = Date.UTC(2026, 10, 8, 3, 0, 0)
+  const HOUR = 60 * 60 * 1000
+  const headScript = [...parse(html).head.querySelectorAll('script:not([src])')]
+    .map((script) => script.textContent)
+    .join('\n')
+
+  function runHeadScript({ standalone = false }: { standalone?: boolean } = {}) {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(display-mode: standalone)' && standalone,
+      media: query,
+    }))
+    document.documentElement.removeAttribute('data-splash')
+    // index.html 의 스크립트를 그대로 돌려 본다
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const run = new Function(headScript) as () => void
+    run()
+    return document.documentElement.getAttribute('data-splash')
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'], now: NOW })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    document.documentElement.removeAttribute('data-splash')
+  })
+
+  it('키가 splashRecord.ts 와 같다', () => {
+    expect(headScript).toContain(`'${SPLASH_RECORD_KEY}'`)
+  })
+
+  it.each([
+    ['기록 없음', null],
+    ['11시간 전', NOW - 11 * HOUR],
+    ['12시간 직전', NOW - SPLASH_INTERVAL_MS + 1],
+    ['딱 12시간', NOW - SPLASH_INTERVAL_MS],
+    ['13시간 전', NOW - 13 * HOUR],
+    ['앞날', NOW + HOUR],
+    ['방금', NOW],
+  ])('%s: 건너뛰기 판정이 isSplashDue 와 같다', (_name, shownAt) => {
+    if (shownAt !== null) window.localStorage.setItem(SPLASH_RECORD_KEY, String(shownAt))
+    expect(runHeadScript() === 'skip').toBe(!isSplashDue(NOW))
+  })
+
+  it('12시간 안이면 skip, 설치한 앱이면 quick 이다', () => {
+    window.localStorage.setItem(SPLASH_RECORD_KEY, String(NOW - 11 * HOUR))
+    expect(runHeadScript()).toBe('skip')
+    expect(runHeadScript({ standalone: true })).toBe('quick')
+  })
+
+  it('13시간이 지났으면 표시가 없다 — 전체 스플래시다', () => {
+    window.localStorage.setItem(SPLASH_RECORD_KEY, String(NOW - 13 * HOUR))
+    expect(runHeadScript()).toBeNull()
+    expect(runHeadScript({ standalone: true })).toBeNull()
+  })
+
+  it('저장소를 읽지 못하면 표시 없이 지나간다 — 매번 보인다', () => {
+    window.localStorage.setItem(SPLASH_RECORD_KEY, String(NOW - HOUR))
+    const blocked = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('막힘', 'SecurityError')
+    })
+    try {
+      expect(runHeadScript()).toBeNull()
+    } finally {
+      blocked.mockRestore()
+    }
+  })
+
+  it('skip 이면 CSS 가 정적 판을 그리지 않는다', () => {
+    const style = document.createElement('style')
+    style.textContent = parse(html).querySelector('style')?.textContent ?? ''
+    document.head.append(style)
+    document.body.innerHTML = parse(html).body.innerHTML
+    const splash = document.getElementById('boot-splash')
+    if (splash === null) throw new Error('정적 판이 없다')
+
+    expect(getComputedStyle(splash).display).not.toBe('none')
+    document.documentElement.setAttribute('data-splash', 'skip')
+    expect(getComputedStyle(splash).display).toBe('none')
+    document.documentElement.setAttribute('data-splash', 'quick')
+    expect(getComputedStyle(splash).display).not.toBe('none')
+    style.remove()
+    document.body.innerHTML = ''
   })
 })

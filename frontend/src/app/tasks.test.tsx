@@ -96,7 +96,8 @@ function rowStatus(title: string): string {
 }
 async function openList(path = paths.tasks('ws_01')) {
   const app = renderApp(path)
-  await waitFor(() => expect(rows().length).toBeGreaterThan(0))
+  // 목록은 로딩 자리의 최소 표시(400ms, #508)가 끝난 뒤 그려진다 — 기본 1초는 부하에서 빠듯하다
+  await waitFor(() => expect(rows().length).toBeGreaterThan(0), { timeout: 3000 })
   return app
 }
 
