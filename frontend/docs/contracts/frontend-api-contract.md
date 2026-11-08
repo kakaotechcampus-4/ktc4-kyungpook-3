@@ -1764,7 +1764,8 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 웹 답장 불가: PM 이 남의 대화를 볼 때 `web_reply_available === false` 면 목록 행에 회색 `웹 답장 불가`(빨간 `DM 못 보냄` 과 다른 표시), 대화 안 입력칸 위에 `웹 계정이 연결되지 않아 이 팀원은 웹에서 답장할 수 없어요. 팀원을 초대하고 초대를 수락하도록 안내해 주세요.` 와 팀 화면(팀원별 초대 조작) 링크 `팀원 초대하기` 를 보인다. PM 입력칸은 그대로다. `true` 와 칸 없음은 아무것도 보이지 않는다. 답장 가능으로 확정해 표시하지 않는다. 이미 저장된 Discord 답장은 그대로 보인다.
 - 기기 알림 띠(#411)는 팀원 화면과 PM 자기 대화에서 봇 또는 `pm` 글이 있으면 보인다. PM 이 남의 대화를 보는 화면에는 없다.
 - 알림: [display.ts](../../src/entities/notification/model/display.ts) 의 `message_received` 는 제목 `새 메시지가 왔어요` 이고 메시지 조회를 다시 부른다.
-- 남은 차이: PM 글 전송이 실패하면 알림 제목은 기존 행동 표([actionMessages.ts](../../src/features/message-action/lib/actionMessages.ts))의 답장 제목을 그대로 쓴다. MSW 는 `message_received` 알림을 만들지 않는다.
+- 실패 안내: PM 이 남의 대화에 쓴 글을 보내지 못하면 입력칸 위 제목은 `메시지를 보내지 못했어요` 다. 팀원·PM 자기 대화는 행동 표([actionMessages.ts](../../src/features/message-action/lib/actionMessages.ts))의 `답장을 보내지 못했어요` 를 그대로 쓴다.
+- MSW: PM 글을 저장하면 BE `notify_new_message` 처럼 대화 주인에게 `message_received` 를 만든다. 본문은 `{작성자}: {첫 줄 60자}`, 링크는 그 대화이고, 같은 대화·5분 구간에는 하나만 만든다. 팀원 글의 알림은 BE 가 답장 판단을 거쳐 내므로 MSW 는 만들지 않는다.
 
 **대화 신호 웹소켓** (#520 에서 BE 구현, 프론트엔드 미연결, 합의 여부 확인 필요). 대화에 새 줄이 생겼음을 열린 화면에 바로 알린다. 소켓은 신호만 보내고 본문은 보내지 않는다. 화면은 신호를 받으면 기존 조회를 다시 부르므로 권한 검사는 조회 한 곳에 있다. 30초 polling 은 그대로 돈다.
 
