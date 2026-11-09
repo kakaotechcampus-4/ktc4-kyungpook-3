@@ -324,8 +324,8 @@ def mentions_assignee(assignee_type: str | None, assignee_hint: str | None) -> b
     return assignee_type is not None and assignee_type not in _NO_PERSON_ASSIGNEE_TYPES
 
 
-# AI가 대명사·역할("그분", "너", "디자이너분")을 문맥으로 풀어 이름을 보낸 담당자 종류. 이름이 한 명으로 찾아져도
-# LLM의 추측이라 auto로 보내지 않는다. legacy도 이 종류는 inferred로 본다(ai/extract/llm.py _assignee_status)
+# 대명사("그분", "너")는 AI가 문맥으로 풀어 이름을 보내고, 역할("디자이너분")은 맡은 사람이 바뀔 수 있다.
+# 이름이 한 명으로 찾아져도 추측이거나 바뀔 수 있어 auto로 보내지 않는다. legacy도 이 종류는 inferred로 본다(ai/extract/llm.py _assignee_status)
 _INFERRED_ASSIGNEE_TYPES = frozenset({"second", "thirdpronoun", "thirdrole"})
 
 
