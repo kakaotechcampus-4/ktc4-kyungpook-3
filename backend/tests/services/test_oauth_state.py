@@ -103,15 +103,10 @@ def test_mac_depends_on_purpose_text_and_secret(monkeypatch):
     assert oauth_state.mac("signup_code", "a@b.c:123456") != base
 
 
-def test_return_url_carries_a_known_reason():
-    url = oauth_state.frontend_return_url("kakao", "/login?oauth_reason=old", "failed", "email_exists")
+def test_return_url_drops_a_stale_reason():
+    url = oauth_state.frontend_return_url("kakao", "/login?oauth_reason=old", "failed")
 
-    assert url == "/login?oauth=kakao&oauth_result=failed&oauth_reason=email_exists"
-
-
-def test_return_url_rejects_an_unknown_reason():
-    with pytest.raises(ValueError):
-        oauth_state.frontend_return_url("kakao", "/login", "failed", "secret_detail")
+    assert url == "/login?oauth=kakao&oauth_result=failed"
 
 
 @pytest.mark.parametrize("token", ["a.\ud800", "\ud800.a"])

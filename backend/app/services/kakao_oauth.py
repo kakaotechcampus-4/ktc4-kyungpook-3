@@ -147,9 +147,9 @@ def _auth_screen(path: str, return_path: str) -> str:
     return wrapped if len(wrapped) <= oauth_state.MAX_RETURN_PATH_LENGTH else path
 
 
-def frontend_return_url(return_path: str, result: str, reason: str | None = None) -> str:
+def frontend_return_url(return_path: str, result: str) -> str:
     """로그인 화면 주소. 프론트가 `?oauth=kakao&oauth_result=...`를 읽고 `next`로 이어 간다."""
-    return oauth_state.frontend_return_url(PROVIDER, _auth_screen("/login", return_path), result, reason)
+    return oauth_state.frontend_return_url(PROVIDER, _auth_screen("/login", return_path), result)
 
 
 def signup_url(return_path: str) -> str:

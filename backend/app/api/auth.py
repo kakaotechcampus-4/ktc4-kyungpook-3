@@ -251,8 +251,8 @@ def get_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)
 # 페이지 이동으로 들어오므로 start·callback 은 항상 302 다. 계정을 만드는 곳은 signup 하나뿐이다.
 
 
-def _kakao_redirect(return_path: str, result: str, reason: str | None = None) -> RedirectResponse:
-    return RedirectResponse(kakao_oauth.frontend_return_url(return_path, result, reason), status_code=302)
+def _kakao_redirect(return_path: str, result: str) -> RedirectResponse:
+    return RedirectResponse(kakao_oauth.frontend_return_url(return_path, result), status_code=302)
 
 
 def _kakao_session_user_stmt(provider_id: str):

@@ -179,7 +179,7 @@ def test_other_kinds_are_not_a_pending_token():
 
 
 def test_return_url_keeps_next_on_the_login_screen():
-    url = kakao_oauth.frontend_return_url("/workspaces/1?tab=a", "failed", "email_exists")
+    url = kakao_oauth.frontend_return_url("/workspaces/1?tab=a", "failed")
 
     parts = urlsplit(url)
     assert parts.path == "/login"
@@ -187,7 +187,6 @@ def test_return_url_keeps_next_on_the_login_screen():
         "next": ["/workspaces/1?tab=a"],
         "oauth": ["kakao"],
         "oauth_result": ["failed"],
-        "oauth_reason": ["email_exists"],
     }
 
 
