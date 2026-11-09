@@ -165,9 +165,13 @@ export const invitationHandlers = [
     const workspaceId = String(params.workspaceId)
     const denied = requirePmRole(workspaceId)
     if (denied) return denied
+    // 백엔드는 초대받은 계정과 inner join 이라 계정 없는 줄만 빠지고 목록은 실패하지 않는다
     return list(
       db.invitations
-        .filter(({ workspace_id }) => workspace_id === workspaceId)
+        .filter(
+          ({ workspace_id, invited_user_id }) =>
+            workspace_id === workspaceId && accountOf(invited_user_id) !== undefined,
+        )
         .sort(newestFirst)
         .map(toDto),
     )

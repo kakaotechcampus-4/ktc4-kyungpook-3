@@ -8,7 +8,7 @@ import {
 } from '@/entities/invitation'
 import type { Invitee } from '@/entities/invitation'
 import { errorMessage, failureNotice } from '@/shared/api/errorMessages'
-import { CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
+import { ApiError, CLIENT_ERROR_CODES, ERROR_CODES, createClientError } from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
 import { toast } from '@/shared/ui/toast'
@@ -18,8 +18,11 @@ interface Tracked {
 }
 
 export interface MemberInviteActions {
-  /** 성공하면 알림을 띄우고 `onSuccess` 를 부른다. 실패 문구는 `inviteError` 로 남는다 — 창 안에 보인다 */
-  invite: (invitee: Invitee, onSuccess: () => void) => void
+  /**
+   * 성공하면 알림을 띄우고 `onSuccess` 를 부른다. 실패 문구는 `inviteError` 로 남는다 — 창 안에 보인다.
+   * 찾은 사람이 그사이 없어졌으면(404 `USER_NOT_FOUND`) `onUserGone` 도 부른다
+   */
+  invite: (invitee: Invitee, onSuccess: () => void, onUserGone: () => void) => void
   inviteError: string | null
   inviting: boolean
   /** 창을 새로 열 때 지난 초대 요청의 상태를 비운다 */
@@ -44,7 +47,11 @@ export function useMemberInviteActions(workspaceId: string, memberId: string): M
       queryKey: latestInvitationsQueryOptions(workspaceId).queryKey,
     })
 
-  const create = useMutation<void, Error, Tracked & { invitee: Invitee; onSuccess: () => void }>({
+  const create = useMutation<
+    void,
+    Error,
+    Tracked & { invitee: Invitee; onSuccess: () => void; onUserGone: () => void }
+  >({
     retry: false,
     mutationFn: ({ invitee, session }) => {
       if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
@@ -57,6 +64,14 @@ export function useMemberInviteActions(workspaceId: string, memberId: string): M
         description: `알림은 가지 않아요. ${invitee.name}에게 ${invitee.username} 계정으로 로그인해 받은 초대를 수락하라고 알려 주세요.`,
       })
       onSuccess()
+    },
+    onError: (error, { onUserGone, session }) => {
+      if (
+        session.isCurrent() &&
+        error instanceof ApiError &&
+        error.code === ERROR_CODES.USER_NOT_FOUND
+      )
+        onUserGone()
     },
     // 끝난 세션의 쓰기는 보내지 않았다. 다음 세션의 목록을 다시 받지 않는다
     onSettled: (_data, _error, { session }) => {
@@ -92,9 +107,9 @@ export function useMemberInviteActions(workspaceId: string, memberId: string): M
   })
 
   return {
-    invite: (invitee, onSuccess) => {
+    invite: (invitee, onSuccess, onUserGone) => {
       if (create.isPending) return
-      create.mutate({ invitee, onSuccess, session: captureSessionScope() })
+      create.mutate({ invitee, onSuccess, onUserGone, session: captureSessionScope() })
     },
     inviteError: create.error && create.error !== hiddenError ? failureNotice(create.error) : null,
     inviting: create.isPending,

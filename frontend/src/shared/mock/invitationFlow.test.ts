@@ -147,6 +147,16 @@ describe('초대 만들기', () => {
       })
     await expect(pmInvitations()).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 })
   })
+
+  it('초대받은 계정이 없는 초대는 목록에서 빠지고 나머지는 그대로 온다', async () => {
+    applyScenario('team-invitations')
+    db.accounts = db.accounts.filter(({ session }) => session.user.user_id !== 'us_05')
+
+    const listed = (await pmInvitations()).map(({ invitation_id }) => invitation_id)
+
+    expect(listed).not.toContain('iv_00')
+    expect(listed).toEqual(expect.arrayContaining(['iv_01', 'iv_02', 'iv_03']))
+  })
 })
 
 describe('취소와 연결 끊기', () => {

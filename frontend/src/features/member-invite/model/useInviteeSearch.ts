@@ -24,6 +24,8 @@ export interface InviteeSearchControl {
   search: InviteeSearch
   /** 지금 입력으로 찾는다 */
   run: () => void
+  /** 찾은 그 사람이 초대 사이에 없어졌다(404 `USER_NOT_FOUND`). 결과를 버려 다시 찾게 한다 */
+  forget: (userId: string) => void
 }
 
 /**
@@ -34,8 +36,12 @@ export function useInviteeSearch(workspaceId: string, input: string): InviteeSea
   const [result, setResult] = useState<InviteeSearch>(IDLE)
   const pending = useRef<{ username: string; controller: AbortController } | null>(null)
   const username = normalizeUsername(input)
-  // 같은 아이디로 되돌려도 지난 결과를 다시 쓰지 않는다. 그사이 탈퇴했을 수 있어 다시 찾게 한다 (#632)
-  if (result.status !== 'idle' && result.username !== username) setResult(IDLE)
+  // 같은 아이디로 되돌려도 지난 결과를 다시 쓰지 않는다. 그사이 탈퇴했을 수 있어 다시 찾게 한다 (#632).
+  // 소문자로 바꿔야 같아지는 규칙 밖 글자(켈빈 기호 등)도 바꾼 입력이다 — 숨기기만 하면 되돌릴 때 다시 붙는다
+  const stale =
+    result.status !== 'idle' &&
+    (result.username !== username || (result.status === 'found' && !isUsernameAllowed(input)))
+  if (stale) setResult(IDLE)
 
   useEffect(() => {
     if (pending.current !== null && pending.current.username !== username) {
@@ -90,10 +96,9 @@ export function useInviteeSearch(workspaceId: string, input: string): InviteeSea
     )
   }, [input, username, workspaceId])
 
-  // 정규화 값만 비교하면 소문자로 바꿔야 같아지는 규칙 밖 글자(켈빈 기호 등)가 앞 결과를 물려받는다
-  const reusable =
-    result.status !== 'idle' &&
-    result.username === username &&
-    (result.status !== 'found' || isUsernameAllowed(input))
-  return { search: reusable ? result : IDLE, run }
+  const forget = useCallback((userId: string) => {
+    setResult((last) => (last.status === 'found' && last.invitee.userId === userId ? IDLE : last))
+  }, [])
+
+  return { search: stale ? IDLE : result, run, forget }
 }

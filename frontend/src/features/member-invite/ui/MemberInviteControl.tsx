@@ -86,7 +86,9 @@ export function MemberInviteControl({ workspaceId, member }: MemberInviteControl
         pendingInvitee={latest?.status === 'pending' ? latest.invitedUser : null}
         pending={actions.inviting}
         serverError={actions.inviteError}
-        onSubmit={(invitee) => actions.invite(invitee, () => setInviteOpen(false))}
+        onSubmit={(invitee, onUserGone) =>
+          actions.invite(invitee, () => setInviteOpen(false), onUserGone)
+        }
         onEdit={actions.clearInviteError}
       />
       {close?.kind === 'revoke' ? (

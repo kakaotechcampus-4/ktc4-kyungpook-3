@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import type { Invitee } from '@/entities/invitation'
 import { USERNAME_HINT, USERNAME_MESSAGES } from '@/entities/user'
@@ -37,7 +37,8 @@ export interface InviteDialogProps {
   pending: boolean
   /** 서버가 거절한 이유 */
   serverError: string | null
-  onSubmit: (invitee: Invitee) => void
+  /** `onUserGone` 은 찾은 사람이 그사이 없어졌을 때(404) 부른다. 찾은 결과를 버린다 */
+  onSubmit: (invitee: Invitee, onUserGone: () => void) => void
   /** 입력이 바뀌었다. 지난 서버 오류를 지운다 */
   onEdit: () => void
 }
@@ -73,14 +74,21 @@ function InviteForm({
   onClose,
 }: Omit<InviteDialogProps, 'open' | 'onOpenChange' | 'displayName'> & { onClose: () => void }) {
   const [input, setInput] = useState('')
-  const { search, run } = useInviteeSearch(workspaceId, input)
+  const { search, run, forget } = useInviteeSearch(workspaceId, input)
   const searching = search.status === 'searching'
   const found = search.status === 'found' ? search.invitee : null
+  const problem = problemOf(search)
+  const field = useRef<HTMLInputElement>(null)
+
+  // 실패 문구는 칸의 설명으로 이어져 있다. 찾기 버튼에 남은 포커스를 칸으로 옮겨 읽게 한다
+  useEffect(() => {
+    if (problem !== undefined) field.current?.focus()
+  }, [problem])
 
   const proceed = () => {
     if (pending || searching) return
     if (found === null) run()
-    else onSubmit(found)
+    else onSubmit(found, () => forget(found.userId))
   }
 
   return (
@@ -99,6 +107,7 @@ function InviteForm({
         </p>
       )}
       <TextField
+        ref={field}
         label="아이디"
         autoComplete="off"
         autoCapitalize="none"
@@ -116,7 +125,7 @@ function InviteForm({
           event.preventDefault()
           proceed()
         }}
-        error={problemOf(search) ?? serverError ?? undefined}
+        error={problem ?? serverError ?? undefined}
         endAdornment={
           <Button
             type="button"

@@ -12,6 +12,7 @@ afterEach(() => {
 })
 
 const invitee = { userId: 'us_05', username: 'doyun', name: '한도윤' }
+const noop = () => {}
 
 function setup() {
   const client = createQueryClient()
@@ -27,7 +28,7 @@ it.each([
   [
     '초대 만들기',
     'POST /workspaces/ws_01/invitations',
-    (a: ReturnType<typeof useMemberInviteActions>) => a.invite(invitee, () => {}),
+    (a: ReturnType<typeof useMemberInviteActions>) => a.invite(invitee, noop, noop),
   ],
   [
     '초대 취소',
@@ -62,7 +63,7 @@ it('같은 세션이면 다시 연결될 때 초대를 보낸다', async () => {
   const { client, actions } = setup()
   const log = recordRequests()
   onlineManager.setOnline(false)
-  act(() => actions().invite(invitee, () => {}))
+  act(() => actions().invite(invitee, noop, noop))
   await waitFor(() => expect(client.getMutationCache().getAll().at(-1)?.state.isPaused).toBe(true))
 
   onlineManager.setOnline(true)
@@ -72,7 +73,7 @@ it('같은 세션이면 다시 연결될 때 초대를 보낸다', async () => {
 
 // #594 리뷰 — 보내지 않은 쓰기는 실패 문구를 남기지 않고, 다음 세션의 초대 목록을 다시 받지 않는다
 it.each([
-  ['초대 만들기', (a: ReturnType<typeof useMemberInviteActions>) => a.invite(invitee, () => {})],
+  ['초대 만들기', (a: ReturnType<typeof useMemberInviteActions>) => a.invite(invitee, noop, noop)],
   ['초대 취소', (a: ReturnType<typeof useMemberInviteActions>) => a.cancel('iv_01')],
 ])('세션이 바뀌어 보내지 않으면 %s 의 실패 문구도 목록 다시 받기도 없다', async (_, start) => {
   const client = createQueryClient()

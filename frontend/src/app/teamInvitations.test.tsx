@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { paths } from '@/shared/config/routes'
@@ -365,18 +365,65 @@ describe('팀 화면 — 팀원 초대', () => {
     expect(db.invitations).toEqual(before)
   })
 
-  it('찾은 뒤 그 사람이 탈퇴했으면 다시 찾으라고 알린다', async () => {
+  it('찾은 뒤 그 사람이 탈퇴했으면 찾은 사람을 버리고 같은 아이디로 다시 찾게 한다', async () => {
     renderApp(TEAM)
     const opened = await openInvite('정하늘')
+    const { user, dialog } = opened
     await find(opened, 'doyun')
-    await opened.dialog.findByText('한도윤')
+    await dialog.findByText('한도윤')
     db.accounts = db.accounts.filter(({ session }) => session.user.user_id !== 'us_05')
+    db.invitations = db.invitations.filter(({ invited_user_id }) => invited_user_id !== 'us_05')
+    const log = recordRequests()
 
-    await opened.user.click(opened.dialog.getByRole('button', { name: '초대하기' }))
+    await user.click(dialog.getByRole('button', { name: '초대하기' }))
 
     expect(
-      await opened.dialog.findByText('가입한 사용자를 찾을 수 없어요. 아이디를 다시 찾아 주세요.'),
+      await dialog.findByText('가입한 사용자를 찾을 수 없어요. 아이디를 다시 찾아 주세요.'),
     ).toBeInTheDocument()
+    expect(dialog.queryByText('한도윤')).toBeNull()
+    expect(dialog.getByRole('button', { name: '초대하기' })).toBeDisabled()
+    await waitFor(() => expect(log.timeline).toContain('answer GET /workspaces/ws_01/invitations'))
+    expect(screen.queryByText('초대 상태를 불러오지 못했어요.')).toBeNull()
+
+    expect(dialog.getByRole('button', { name: '찾기' })).toBeEnabled()
+    await user.click(dialog.getByLabelText('아이디'))
+    await user.keyboard('{Enter}')
+    expect(await dialog.findByText(NOT_FOUND)).toBeInTheDocument()
+    expect(searches(log)).toHaveLength(1)
+    expect(creates(log)).toHaveLength(1)
+  })
+
+  it('규칙 밖 글자로 바꿨다가 되돌려도 찾은 사람이 다시 붙지 않는다', async () => {
+    server.use(
+      http.get(SEARCH, () =>
+        ok({ items: [{ user_id: 'us_09', username: 'kyle1', name: '카일' }] }),
+      ),
+    )
+    renderApp(TEAM)
+    const opened = await openInvite('정하늘')
+    const { dialog } = opened
+    await find(opened, 'kyle1')
+    expect(await dialog.findByText('카일')).toBeInTheDocument()
+    const field = dialog.getByLabelText('아이디')
+
+    fireEvent.change(field, { target: { value: 'Kyle1' } })
+    expect(dialog.queryByText('카일')).toBeNull()
+    fireEvent.change(field, { target: { value: 'kyle1' } })
+
+    expect(dialog.queryByText('카일')).toBeNull()
+    expect(dialog.getByRole('button', { name: '초대하기' })).toBeDisabled()
+    expect(dialog.getByRole('button', { name: '찾기' })).toBeEnabled()
+  })
+
+  it('찾기에 실패하면 아이디 칸으로 돌아가 칸에 이어진 실패 문구를 읽게 한다', async () => {
+    renderApp(TEAM)
+    const opened = await openInvite('정하늘')
+    await find(opened, 'nobody99')
+
+    const field = opened.dialog.getByLabelText('아이디')
+    expect(await opened.dialog.findByText(NOT_FOUND)).toBeInTheDocument()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field).toHaveAccessibleDescription(expect.stringContaining(NOT_FOUND))
   })
 
   it('이미 계정이 연결된 팀원이라는 거절도 창 안에 보인다', async () => {
