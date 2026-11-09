@@ -110,7 +110,7 @@ backend 파일 재시도는 `MEETING_PURGE_INTERVAL_SECONDS`의 기존 워커가
 
 디스코드 채팅은 실시간으로 받지 않는다. `mm-chat-poll.timer` 가 매일 09:00 KST 에 `mm-chat-poll.service` 를 한 번 띄워, 연결된 채널(`GET /bot/chat-channels`)마다 새 메시지를 읽어 채팅 회의로 넘긴다. 유닛 파일은 [ai/deploy/systemd](../ai/deploy/systemd/)에 있다.
 
-배포 스크립트는 첫 설치를 하지 않는다. 이미 `/etc/systemd/system/mm-chat-poll.timer` 가 있는 서버에서 두 유닛 파일이 바뀐 배포(또는 mode=all)일 때만 저장소 판으로 덮어쓰고 `daemon-reload` 한다. 타이머가 켜져 있으면 다시 걸고, 꺼져 있으면 켜지 않는다. 실행 중인 폴링은 끊지 않는다. 설치되지 않은 서버에서는 Actions 화면에 경고만 띄우고 배포는 정상 완료로 처리한다.
+배포 스크립트는 첫 설치를 하지 않는다. 이미 `/etc/systemd/system/mm-chat-poll.timer` 가 있는 서버에서 두 유닛 파일이 바뀐 배포(또는 mode=all)일 때만 저장소 판으로 덮어쓰고 `daemon-reload` 한다. 타이머가 켜져 있으면 다시 걸고, 꺼져 있으면 켜지 않는다. 실행 중인 폴링은 끊지 않는다. 이 일은 AI 파트가 바뀐 배포에서만 한다(유닛 파일도 `ai/` 아래라 여기에 든다). 그 배포에서 타이머가 설치되지 않은 서버를 만나면 Actions 화면에 경고만 띄우고 배포는 정상 완료로 처리한다. backend 나 frontend 만 바뀐 배포에서는 이 확인을 하지 않아 경고도 뜨지 않는다.
 
 저장소 유닛은 `User=mm` 이지만 운영의 봇·워커는 다른 계정으로 돈다. 폴러는 `ai/.env` 를 읽고 `ai/runs` 에 쓰므로 워커와 같은 계정이어야 한다. 그래서 계정은 drop-in `mm-chat-poll.service.d/10-user.conf` 로 덮는다. 배포는 이 파일이 없을 때만 `mm-worker` 의 계정으로 만들고, 있으면 그대로 둔다.
 
@@ -140,6 +140,7 @@ journalctl -u mm-chat-poll.service -n 80 --no-pager
 채팅 회의가 아직 없는 워크스페이스는 최근 24시간(`CHAT_POLL_INITIAL_HOURS`)만 읽는다. 그보다 오래된 대화를 한 번만 더 읽으려면 그 워크스페이스만 따로 돌린다. 이미 채팅 회의가 있으면 그 시각부터 이어 읽으므로 이 값은 소용없다.
 
 ```bash
+U=$(systemctl show -p User --value mm-chat-poll.service)   # 이 서비스가 도는 계정
 sudo -u "$U" sh -c 'cd /opt/mm/ai && CHAT_POLL_INITIAL_HOURS=48 /usr/bin/flock -n /run/lock/mm-chat-poll.lock .venv/bin/python -m capture.chat_poll --workspace <워크스페이스 ID>'
 ```
 
