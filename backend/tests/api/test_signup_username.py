@@ -138,3 +138,11 @@ def test_signup_losing_a_username_race_whose_winner_moved_on_is_username_taken(m
     monkeypatch.setattr(auth, "_signup_conflict", lambda db, user: None)
 
     assert _error(_signup(_client(), "b@example.com", "dongwoo")) == (409, "USERNAME_TAKEN")
+
+
+def test_email_lost_at_the_db_stays_email_taken_even_if_the_email_reads_like_username(mdb, monkeypatch):
+    """PostgreSQL 의 위반 문구에는 입력한 이메일이 그대로 들어가므로 문구가 아니라 제약으로 고른다."""
+    assert _signup(_client(), "username@example.com", "first01").status_code == 201
+    monkeypatch.setattr(auth, "_signup_conflict", lambda db, user: None)
+
+    assert _error(_signup(_client(), "username@example.com", "second02")) == (409, "EMAIL_ALREADY_EXISTS")
