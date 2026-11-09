@@ -18,7 +18,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      # uv 를 GitHub 에서 내려받다가 가끔 504 가 난다. 한 번 더 시도한다
+      - id: uv
+        uses: astral-sh/setup-uv@v3
+        continue-on-error: true
+        with:
+          version: "0.13.7"
+      - if: steps.uv.outcome == 'failure'
+        run: sleep 20
+      - if: steps.uv.outcome == 'failure'
+        uses: astral-sh/setup-uv@v3
         with:
           version: "0.13.7"
       - run: uv venv --python 3.12 .venv
@@ -48,7 +57,16 @@ jobs:
       TEST_DATABASE_URL: postgresql+psycopg://mm:mm@localhost:5432/mm_test
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      # uv 를 GitHub 에서 내려받다가 가끔 504 가 난다. 한 번 더 시도한다
+      - id: uv
+        uses: astral-sh/setup-uv@v3
+        continue-on-error: true
+        with:
+          version: "0.13.7"
+      - if: steps.uv.outcome == 'failure'
+        run: sleep 20
+      - if: steps.uv.outcome == 'failure'
+        uses: astral-sh/setup-uv@v3
         with:
           version: "0.13.7"
       - run: uv venv --python 3.12 .venv
@@ -79,7 +97,16 @@ jobs:
       DATABASE_URL: postgresql+psycopg://mm:mm@localhost:5432/mm_migrate
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      # uv 를 GitHub 에서 내려받다가 가끔 504 가 난다. 한 번 더 시도한다
+      - id: uv
+        uses: astral-sh/setup-uv@v3
+        continue-on-error: true
+        with:
+          version: "0.13.7"
+      - if: steps.uv.outcome == 'failure'
+        run: sleep 20
+      - if: steps.uv.outcome == 'failure'
+        uses: astral-sh/setup-uv@v3
         with:
           version: "0.13.7"
       - run: uv venv --python 3.12 .venv
