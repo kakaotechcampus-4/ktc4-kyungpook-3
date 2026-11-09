@@ -22,11 +22,13 @@ from shared.schemas import (
 )
 from summary.prompt import CHAT, COMPACT, FULL, build_prompt, local_keys
 
-SUMMARY_TIMEOUT_S = 300.0           # 측정 뒤 확정. BE 임대 15분보다 짧아야 같은 회의에 돈이 두 번 들지 않는다
-REASONING_EFFORT = "low"            # 측정 뒤 확정
-# 추론 토큰이 들어간다. 게이트웨이는 스트리밍이 아닌 답을 2,000 에서 끊고 그보다 큰 값은 400 으로 거절한다(2026-11-10).
-# 30줄 회의의 첫 시도가 이 상한에 잘리면 워커의 두 번째 시도(COMPACT)가 받는다
-MAX_OUTPUT_TOKENS = 2000
+# 호출 전체의 상한이다(llm.generate_json_once). BE 임대 15분보다 짧아야 같은 회의에 돈이 두 번 들지 않는다
+SUMMARY_TIMEOUT_S = 300.0
+# none 은 30줄 회의에서 Terra 를 24초에서 10초로 줄였지만 두 번만 쟀고 앞선 품질 측정이 모두 low 라 두었다(2026-11-10)
+REASONING_EFFORT = "low"
+# 추론 토큰이 들어간다. 스트리밍이라 게이트웨이의 2,000 상한에 묶이지 않는다. 가장 큰 출력이 34분 크기 합성 입력의
+# 3,508 이었고(2026-11-10) 그 두 배 넘게 둔다. 섹션 상한이 보이는 글을 묶어서 입력이 세 배가 돼도 출력은 거의 같았다
+MAX_OUTPUT_TOKENS = 8000
 TOPIC_NAME_MAX = 100
 TOPIC_ITEMS_MAX = 500
 
