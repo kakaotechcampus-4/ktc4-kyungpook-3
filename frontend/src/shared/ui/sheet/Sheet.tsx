@@ -26,8 +26,8 @@ export interface SheetProps {
   onOpenChange: (open: boolean) => void
   /** 시트를 연 칸의 이름. 대화상자의 이름이 된다 */
   title: string
-  /** 여닫는 단추. 닫히면 포커스가 여기로 돌아온다 */
-  trigger: ReactElement
+  /** 여닫는 단추. 닫히면 포커스가 여기로 돌아온다. 없으면 화면이 `open` 으로 열고, 닫히면 열기 전 포커스로 돌아간다 */
+  trigger?: ReactElement
   children: ReactNode
 }
 
@@ -42,7 +42,7 @@ export function Sheet({ open, onOpenChange, title, trigger, children }: SheetPro
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Trigger asChild>{trigger}</Dialog.Trigger>
+      {trigger === undefined ? null : <Dialog.Trigger asChild>{trigger}</Dialog.Trigger>}
       <Dialog.Portal>
         <Dialog.Overlay className={SCRIM} />
         <Dialog.Content

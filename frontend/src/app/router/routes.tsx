@@ -67,6 +67,7 @@ const approvalDetailPage = lazyPage(() =>
   import('@/pages/approval-detail').then((m) => m.ApprovalDetailPage),
 )
 const messagesPage = lazyPage(() => import('@/pages/messages').then((m) => m.MessagesPage))
+const projectMapPage = lazyPage(() => import('@/pages/project-map').then((m) => m.ProjectMapPage))
 const membersPage = lazyPage(() => import('@/pages/members').then((m) => m.MembersPage))
 const settingsPage = lazyPage(() => import('@/pages/settings').then((m) => m.SettingsPage))
 
@@ -168,6 +169,7 @@ export const appRoutes = (
                   <Route index element={screen(approvalDetailPage)} />
                 </Route>
                 <Route path="messages/*" element={screen(messagesPage)} />
+                <Route path="project-map" element={screen(projectMapPage)} />
                 <Route path="members" element={screen(membersPage)} />
                 <Route path="settings" element={screen(settingsPage)} />
               </Route>

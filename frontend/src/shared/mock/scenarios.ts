@@ -18,6 +18,7 @@ import {
 } from './fixtures/message'
 import { completeMeeting, failMeeting, setMeetingFlowMode, startChatMeeting } from './meetingFlow'
 import { notificationFixtures } from './fixtures/notification'
+import { largeProjectMap } from './fixtures/projectMap'
 import { addReplyJudgments } from './fixtures/reply'
 import { setMockRole } from './sessions'
 import {
@@ -128,6 +129,11 @@ export const MOCK_SCENARIOS = [
   // #320 팀원 초대. team-invitations 는 ws_01 PM 이 보는 초대 상태, invitation-pending 은 초대받은 사람의 가입 전이다
   'team-invitations',
   'invitation-pending',
+  // #551 프로젝트 맵. ws_01 PM 이다. no-topics 는 요약 전이라 주제·결정이 없고 태스크끼리의 선만 있다.
+  // empty 는 태스크도 주제도 없다. large 는 픽스처에 주제 36 · 태스크 500 · 선 1,173 을 더한다(브라우저 성능 확인용)
+  'project-map-no-topics',
+  'project-map-empty',
+  'project-map-large',
   // #356 비밀번호 재설정. 모두 비로그인이다
   ...PASSWORD_RESET_SCENARIOS,
 ] as const
@@ -1046,6 +1052,25 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       signInWith(state, ['ws_01'], 'ws_01')
       addTeamInvitations(state)
       break
+    case 'project-map-no-topics':
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.projectMap.topics = []
+      state.projectMap.decisions = []
+      break
+    case 'project-map-empty':
+      signInWith(state, ['ws_01'], 'ws_01')
+      clearTasks(state)
+      state.projectMap = { topics: [], decisions: [], taskLinks: [] }
+      break
+    case 'project-map-large': {
+      signInWith(state, ['ws_01'], 'ws_01')
+      // 픽스처 태스크·주제는 승인·회의록이 가리키므로 남기고 그 위에 더한다
+      const large = largeProjectMap()
+      state.tasks.push(...large.tasks)
+      state.projectMap.topics.push(...large.projectMap.topics)
+      state.projectMap.taskLinks.push(...large.projectMap.taskLinks)
+      break
+    }
     case 'invitation-pending':
       // 비로그인. jaehwan@example.com 으로 가입하면 iv_02 가 내 초대에 보인다
       state.authenticated = false

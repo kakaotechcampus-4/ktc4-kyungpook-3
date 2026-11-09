@@ -18,6 +18,7 @@ import { messageSettingsHandlers } from './messageSettings'
 import { notificationHandlers } from './notification'
 import { invitationHandlers } from './invitation'
 import { withdrawalHandlers } from './withdrawal'
+import { projectMapHandlers } from './projectMap'
 
 /** Entity handler modules are accumulated here for the common browser and test server. */
 export const handlers: RequestHandler[] = [
@@ -40,4 +41,5 @@ export const handlers: RequestHandler[] = [
   ...messageSettingsHandlers,
   ...notificationHandlers,
   ...invitationHandlers,
+  ...projectMapHandlers,
 ]
