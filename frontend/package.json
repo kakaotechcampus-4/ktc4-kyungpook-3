@@ -10,6 +10,8 @@
     "last 2 Chrome versions"
   ],
   "scripts": {
+    "policy:docs": "node scripts/policy-docs.mjs",
+    "policy:check": "node scripts/policy-docs.mjs --check",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",

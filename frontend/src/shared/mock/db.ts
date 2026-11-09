@@ -6,6 +6,7 @@ import type { MessageSettingsDto } from '@/shared/types/api/messageSettings'
 import type { TaskDto } from '@/shared/types/api/task'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { sessionFixture } from './fixtures/auth'
+import { POLICY_VERSION } from '@/shared/config/publishedPolicies'
 import {
   aliasFixtures,
   discordUserFixtures,
@@ -33,6 +34,7 @@ import type { MockReplies } from './reply-state'
  *   채팅은 대기 → 앞 두 값(발화 저장) → `extracted` → `done` 이다 (#483). 브라우저 데모용
  * - `instant`: 첫 조회에 바로 `done`. 인위적 지연이 없다 — E2E 용
  * - `fail`: 첫 조회에 `failed`
+ * - `fail-unclaimed`: 첫 조회에 `failed`(`upload_unclaimed`)다. 24시간 동안 AI 가 가져가지 않은 업로드를 BE sweeper 가 끝낸 것을 흉내 낸다 (#598)
  * - `fail-chat-stalled`: 채팅 회의만 첫 조회에 `failed`(`chat_stalled`)다. 업로드 회의는 `manual` 처럼 그대로다 (#450)
  * - `speakers`: 업로드 회의가 첫 조회에 화자 지정 대기가 된다. PM 이 지정을 내면 조회마다 한 단계씩(`staged`) 끝난다 (#256)
  */
@@ -43,6 +45,7 @@ export type MeetingFlowMode =
   | 'fail'
   | 'fail-diarize'
   | 'fail-expired'
+  | 'fail-unclaimed'
   | 'fail-chat-stalled'
   | 'speakers'
 
@@ -53,6 +56,7 @@ export const MEETING_FLOW_MODES = [
   'fail',
   'fail-diarize',
   'fail-expired',
+  'fail-unclaimed',
   'fail-chat-stalled',
   'speakers',
 ] as const satisfies readonly MeetingFlowMode[]
@@ -262,8 +266,13 @@ export function initialDb(): MockDb {
   return {
     session: structuredClone(sessionFixture),
     authenticated: true,
-    consents: [],
-    consentVersions: { terms: '2026-11-08', privacy: '2026-11-08' },
+    consents: (['terms', 'privacy'] as const).map((kind) => ({
+      user_id: sessionFixture.user.user_id,
+      kind,
+      version: POLICY_VERSION,
+      agreed_at: '2026-11-10T00:00:00Z',
+    })),
+    consentVersions: { terms: POLICY_VERSION, privacy: POLICY_VERSION },
     consentFailure: 'none',
     withdrawals: [],
     withdrawnMemberIds: [],

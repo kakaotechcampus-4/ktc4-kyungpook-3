@@ -41,7 +41,7 @@ describe('팀 화면 — PM', () => {
 
   it('제목에 인원수가 없고, 팀원마다 역할·상태 배지와 맡은 일이 있다', async () => {
     renderApp(TEAM)
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     const pm = within(await screen.findByRole('region', { name: '김서연' }))
     expect(pm.getByText('PM')).toBeInTheDocument()
     expect(pm.getByText(/^(위험|주의|정상)$/)).toBeInTheDocument()
@@ -191,7 +191,7 @@ describe('팀 화면 — PM', () => {
       }),
     )
     renderApp(TEAM)
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     expect(screen.getByRole('main').querySelector('[aria-busy="true"]')).not.toBeNull()
     expect(screen.queryByRole('region', { name: '김서연' })).toBeNull()
   })

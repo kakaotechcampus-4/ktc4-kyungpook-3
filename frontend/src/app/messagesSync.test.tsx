@@ -268,6 +268,11 @@ describe('처음 보는 메시지 알림이 오면 메시지를 다시 받는다
       workspace_count: 1,
       last_workspace_id: 'ws_01',
     }
+    db.consents.push(
+      ...db.consents
+        .filter(({ user_id }) => user_id === pmSession.user.user_id)
+        .map((consent) => ({ ...consent, user_id: minsuSession.user.user_id })),
+    )
     db.session = minsuSession
     const log = recordRequests()
     renderApp(paths.messages('ws_01'))

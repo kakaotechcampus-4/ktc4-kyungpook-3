@@ -144,7 +144,6 @@ class ChangeSource(StrEnum):
 class ApprovalType(StrEnum):
     TASK_CREATE = "task_create"
     TASK_UPDATE = "task_update"
-    REMINDER_DM = "reminder_dm"
 
 
 class ApprovalStatus(StrEnum):

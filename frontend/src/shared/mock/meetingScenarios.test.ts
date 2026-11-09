@@ -97,6 +97,20 @@ describe('회의 시나리오 (U2-4)', () => {
     await expect(detail(meeting_id)).resolves.toMatchObject({ status: 'done' })
   })
 
+  it('meeting-fail-unclaimed: 첫 조회에 upload_unclaimed 로 끝나고 목록에 이력으로 남는다 (#598)', async () => {
+    applyScenario('meeting-fail-unclaimed')
+    const { meeting_id } = await upload()
+    await expect(detail(meeting_id)).resolves.toMatchObject({
+      status: 'failed',
+      failed_stage: 'upload_unclaimed',
+    })
+    const { items } = await fetchDto<ListDto<MeetingSummaryDto>>('/workspaces/ws_01/meetings')
+    expect(items.find(({ meeting_id: id }) => id === meeting_id)).toMatchObject({
+      status: 'failed',
+      failed_stage: 'upload_unclaimed',
+    })
+  })
+
   it('meeting-chat-processing: 정리 중인 채팅 회의가 있어도 업로드는 202 이고 채팅 회의는 저절로 끝나지 않는다 (#450)', async () => {
     applyScenario('meeting-chat-processing')
     await expect(detail('mt_11')).resolves.toMatchObject({
