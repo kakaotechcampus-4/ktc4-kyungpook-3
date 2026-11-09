@@ -12,6 +12,7 @@
 - `user.email` 을 비울 수 있게 했다
 - `POST /auth/signup` 이 아이디를 받는다. 카카오 가입은 아이디와 이름만 받고 이메일·비밀번호를 두지 않는다
 - 카카오 callback 에서 기존 이메일 계정에 잇는 경로와 연결 알림 메일을 지웠다
+- 카카오 이메일을 더는 읽지 않는다. 대기 쿠키에는 카카오 id 와 닉네임만 담고 `GET /auth/kakao/pending` 은 `{nickname}` 만 준다. 배포 전에 받은 쿠키에 이메일이 있어도 읽는 데 문제가 없다
 - `GET /auth/username-availability` 와 `PATCH /users/me` 를 더했다
 - 이메일 없는 계정도 `/auth/me`, 초대 목록 조회, 탈퇴가 된다. 가입·탈퇴 잠금 키를 이메일이 없으면 카카오 id 로 잡는다
 - 가입이 아이디 경합에서 지면, 이긴 계정이 재검사 전에 아이디를 바꾼 경우 409 `EMAIL_ALREADY_EXISTS` 를 받았다. 재검사가 비면 위반된 제약 이름(PostgreSQL `ix_user_username`, SQLite `user.username`)으로 `USERNAME_TAKEN` 을 고른다. PostgreSQL 의 위반 문구에는 입력한 이메일이 들어가서 문구로는 고르지 않는다
