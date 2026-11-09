@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from datetime import date
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from draft.doc_draft import DraftUnavailableError, draft
 from jev import get_jev
@@ -260,11 +260,35 @@ class PipelineFailure:
 
 
 @dataclass
+class FindingOutcome:
+    """판단 결과 하나. 다시 돌린 실행끼리 근거 문장 번호로 같은 얘기를 짝짓는 데 쓴다(#217).
+
+    나간 카드와 실패마다 정확히 하나다. 앞 카드에 합쳐진 finding 은 따로 남지 않고 그 카드의 indices 에 더해진다.
+    카드가 되돌려져 사라지면 skip 이 된다. skip 은 의미 없음이거나 바뀌는 것 없는 수정이다.
+    """
+
+    indices: list[int]
+    kind: Literal["item", "skip", "failure"]
+    item: dict[str, Any] | None = None           # items 안의 그 카드
+    failure: PipelineFailure | None = None       # failures 안의 그 실패
+
+
+@dataclass
 class PipelineResult:
     items: list[dict[str, Any]] = field(default_factory=list)  # POST /extractions 로 보낼 item
     failures: list[PipelineFailure] = field(default_factory=list)
+    outcomes: list[FindingOutcome] = field(default_factory=list)
     # 1단계에서 검증에 탈락한 항목 기록(semantic_judge.empty_drops). 회의 기록에 남겨 어느 회의에서 왜 버려졌는지 본다(#186)
     dropped: dict[str, Any] = field(default_factory=empty_drops)
+
+
+def _fail(out: PipelineResult, finding: JudgeFinding, failure: PipelineFailure) -> None:
+    out.failures.append(failure)
+    out.outcomes.append(FindingOutcome(list(finding.indices), "failure", failure=failure))
+
+
+def _outcome_of(out: PipelineResult, card: dict[str, Any]) -> FindingOutcome:
+    return next(o for o in out.outcomes if o.item is card)
 
 
 class PipelineUnavailableError(RuntimeError):
@@ -315,7 +339,7 @@ def run(
         try:
             found = candidates.similar_tasks(workspace_id, finding.text)
         except Exception as e:  # 검색 구현(HTTP 등)의 어떤 실패든 이 finding 만의 실패로 본다
-            out.failures.append(PipelineFailure("similar", finding.text, f"{type(e).__name__}: {e}"))
+            _fail(out, finding, PipelineFailure("similar", finding.text, f"{type(e).__name__}: {e}"))
             continue
 
         shown = [_with_edit(*edits[c.task_id]) if c.task_id in edits else c for c in found]
@@ -329,11 +353,12 @@ def run(
         try:
             result = judge(judge_input)
         except JudgeUnavailableError as e:
-            out.failures.append(PipelineFailure("judge", finding.text, str(e)))
+            _fail(out, finding, PipelineFailure("judge", finding.text, str(e)))
             continue
 
-        if not result.is_meaningful:
-            continue  # 이미 반영됐거나 바꿀 게 없다 — 실패가 아니다
+        if not result.is_meaningful:  # 이미 반영됐거나 바꿀 게 없다 — 실패가 아니다
+            out.outcomes.append(FindingOutcome(list(finding.indices), "skip"))
+            continue
 
         target = None
         if not result.is_new:
@@ -344,7 +369,7 @@ def run(
             )  # matched_task_id 가 None 이면 None == None 으로 task_id 없는 후보가 잡히므로 먼저 거른다
             if target is None:
                 # task_id 없는(Notion 에만 있는) 후보를 고른 경우 — 수정할 Task 가 없다
-                out.failures.append(PipelineFailure("target", finding.text, "수정 대상 후보를 찾지 못했습니다."))
+                _fail(out, finding, PipelineFailure("target", finding.text, "수정 대상 후보를 찾지 못했습니다."))
                 continue
 
         day = (dates or {}).get(finding.seq, today)
@@ -352,7 +377,7 @@ def run(
             drafted = draft(finding, result, candidate=target, today=day)
         except DraftUnavailableError as e:
             failed_id = target.task_id if target is not None and not target.task_id.startswith(_PENDING) else None
-            out.failures.append(PipelineFailure("draft", finding.text, str(e), failed_id))
+            _fail(out, finding, PipelineFailure("draft", finding.text, str(e), failed_id))
             continue
 
         task_id = target.task_id if target is not None else None
@@ -361,28 +386,34 @@ def run(
         if drafted.structured.due_cleared and (
                 task_id in edits and edits[task_id][0].due_date is not None
                 or task_id not in edits and not (task_id or "").startswith(_PENDING)):
-            out.failures.append(PipelineFailure("draft", finding.text, DUE_CLEARED_REASON, task_id))
+            _fail(out, finding, PipelineFailure("draft", finding.text, DUE_CLEARED_REASON, task_id))
             continue
         if task_id is not None and task_id.startswith(_PENDING):  # 이번 회의 새 항목 카드에 합친다
-            _merge_into(new_cards[int(task_id[len(_PENDING):])], finding, result, drafted, base=None, today=day, found=found,
-                        transcript=transcript)
+            card = new_cards[int(task_id[len(_PENDING):])]
+            _merge_into(card, finding, result, drafted, base=None, today=day, found=found, transcript=transcript)
+            _outcome_of(out, card).indices += finding.indices
             continue
         if task_id in edits:  # 같은 Task 수정 카드에 합친다 — 번복 · 재변경
             base, card = edits[task_id]
             _merge_into(card, finding, result, drafted, base=base, today=day, found=found, transcript=transcript)
+            outcome = _outcome_of(out, card)
+            outcome.indices += finding.indices
             if result.category == "scope":
                 # 합치는 순서와 상관없이 범위 결정이 남는다. 필드가 다 되돌려져도 BE 가 필드 없는 결정으로 받고,
                 # 답장 판단(judge/reply.py)은 run 이 주는 합친 카드에서 이 값으로만 범위 결정을 알아본다
                 card["category"] = "scope"
             if not _has_change(card) and card["category"] != "scope":  # 되돌려서 바꿀 게 없다
                 out.items = [i for i in out.items if i is not card]
+                outcome.kind, outcome.item = "skip", None
                 del edits[task_id]
             continue
 
         item = to_item(finding, result, drafted, target, transcript)
         if item is None:  # 바뀌는 게 없는 update — 실패가 아니다
+            out.outcomes.append(FindingOutcome(list(finding.indices), "skip"))
             continue
         out.items.append(item)
+        out.outcomes.append(FindingOutcome(list(finding.indices), "item", item=item))
         if result.is_new:
             item.update(_evidence_fields(finding, drafted, item["task_title"], day))
             item.update(_search_fields(found))
