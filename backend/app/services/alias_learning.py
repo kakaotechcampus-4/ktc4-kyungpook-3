@@ -38,11 +38,11 @@ KNOWN_ASSIGNEE_TYPES = frozenset(
 
 # 별칭으로 배울 유형은 이름처럼 그 사람을 가리키는 표현뿐이다. "나"·"너"·"그"·"우리"
 # 같은 말은 말하는 사람과 문맥에 따라 가리키는 대상이 달라서 저장하면 엉뚱한 사람에 붙는다.
-# 역할 지목(thirdrole)은 #459 에서 배우기로 했지만 지금은 뺀다. AI 가 역할 원문("BE 리더가")은 빼고 문맥으로
-# 추측한 이름("환")이 있으면 그것을 assignee_raw 로 보내는데(ai/capture/handoff.py, ai/judge/pipeline.py),
-# BE 는 원문과 추측을 구분할 수 없어 추측한 이름이 확인된 별칭이 될 수 있다(#464 리뷰). AI 가 역할 원문을
-# 보내고 추측 이름을 보내지 않게 되면 다시 넣는다.
-LEARNABLE_ASSIGNEE_TYPES = frozenset({"thirdname"})
+# 역할 지목(thirdrole)도 배운다(#459, #522). AI 가 새 할 일(create·merge) 항목에 역할 원문("BE 리더가")을 assignee_raw 로
+# 보내고 추측한 이름은 보내지 않는다. 역할은 맡은 사람이 바뀔 수 있어 새 항목은 auto 가 아니라 PM 검토로 내린다
+# (api/extractions.py). 이 배포 전에 저장된 옛 thirdrole 대기 카드는 raw 가 추측한 이름일 수 있지만 따로 거르지 않는다
+# (사용자 결정). 저장할 글자는 승인 전에 PM 에게 보이고, 잘못 저장된 별칭은 PM 이 지울 수 있다.
+LEARNABLE_ASSIGNEE_TYPES = frozenset({"thirdname", "thirdrole"})
 
 # AI 가 1인칭을 thirdname 으로 잘못 분류한 기록이 있다(#502). "제가"→"제", "우리가"→"우리"처럼 다듬은 글자가
 # 확인된 별칭이 되면 오분류된 말이 그 팀원으로 채워진다. 그래서 1인칭이 할 일의 주어로 쓰인 꼴을 규칙 하나로 막는다.

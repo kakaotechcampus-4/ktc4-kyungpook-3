@@ -36,7 +36,7 @@ def test_trim_alias_text(raw, expected):
 
 def test_learning_constants():
     assert alias_learning.LEARNED_CONFIDENCE == 0.9
-    assert alias_learning.LEARNABLE_ASSIGNEE_TYPES == frozenset({"thirdname"})
+    assert alias_learning.LEARNABLE_ASSIGNEE_TYPES == frozenset({"thirdname", "thirdrole"})
     assert alias_learning.KNOWN_ASSIGNEE_TYPES == frozenset(
         {"first", "second", "thirdname", "thirdpronoun", "thirdrole", "group", "none"}
     )
@@ -60,9 +60,6 @@ def test_learnable_alias_text_for_unmatched_name():
         {"assignee_type": "first"},
         {"assignee_type": "second"},
         {"assignee_type": "thirdpronoun"},
-        # 역할 지목은 AI 가 원문 대신 추측한 이름을 보낼 수 있어, 원문을 보낼 때까지 배우지 않는다(#464 리뷰)
-        {"assignee_type": "thirdrole", "assignee_raw": "BE 리더가"},
-        {"assignee_type": "thirdrole", "assignee_raw": "환"},
         {"assignee_type": "group"},
         {"assignee_type": "none"},
         {"assignee_type": None},
@@ -92,6 +89,12 @@ def test_learnable_alias_text_for_unmatched_name():
 )
 def test_learnable_alias_text_is_none_when_not_learnable(fields):
     assert alias_learning.learnable_alias_text(_item(**fields)) is None
+
+
+@pytest.mark.parametrize("raw, expected", [("BE 리더가", "BE 리더"), ("환", "환")])
+def test_learnable_alias_text_for_thirdrole(raw, expected):
+    """역할 지목은 AI 가 역할 원문을 assignee_raw 로 보내므로(#522) 이름처럼 배운다. 원문은 다듬은 글자로 저장한다."""
+    assert alias_learning.learnable_alias_text(_item(assignee_type="thirdrole", assignee_raw=raw)) == expected
 
 
 def test_learnable_alias_text_keeps_names_that_only_contain_self_reference_letters():

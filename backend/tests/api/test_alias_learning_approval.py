@@ -325,18 +325,25 @@ def test_save_alias_creates_learned_alias(client, pm_client, db, seed):
     assert r.json()["data"]["alias_candidate"] is False
 
 
-def test_thirdrole_item_is_not_alias_candidate_and_not_saved(client, pm_client, db, seed):
-    """역할 지목은 AI 가 원문 대신 문맥으로 추측한 이름("환")을 assignee_raw 로 보낼 수 있다. BE 는 둘을 구분할 수 없어
-    AI 가 역할 원문을 보낼 때까지 묻지도 배우지도 않는다(#464 리뷰)."""
-    extraction_id = _hold_item(client, seed, title="백엔드 배포", raw="환", type_="thirdrole")
+def test_thirdrole_item_is_alias_candidate_and_saved(client, pm_client, db, seed):
+    """역할 지목은 AI 가 역할 원문을 assignee_raw 로 보내므로(#522) 이름처럼 묻고 배운다.
+
+    seed 의 지민은 "BE 리더" 별칭이 있어 "BE 리더가"는 찾혀서 대상이 아니다. 못 찾는 역할 원문("서버 리더가")을 쓴다."""
+    extraction_id = _hold_item(client, seed, title="백엔드 배포", raw="서버 리더가", type_="thirdrole")
     item = _extraction_item(pm_client, extraction_id)
     before = len(_aliases(db))
 
-    r = _approve(pm_client, db, assignee=seed["haeun"].member_id)
+    r = _approve(pm_client, db, assignee=seed["leader"].member_id)
 
-    assert (item["alias_candidate"], item["alias_text"]) == (False, None)
+    assert (item["alias_candidate"], item["alias_text"]) == (True, "서버 리더")
     _assert_approved_with_task(db, r, "백엔드 배포")
-    assert len(_aliases(db)) == before
+    learned = [a for a in _aliases(db) if a.source == "learned"]
+    assert len(_aliases(db)) == before + 1
+    assert len(learned) == 1
+    assert learned[0].member_id == seed["leader"].member_id
+    assert learned[0].alias_text == "서버 리더"
+    assert learned[0].verified is True
+    assert r.json()["data"]["alias_candidate"] is False
 
 
 @pytest.mark.parametrize("save_alias", [None, False])
