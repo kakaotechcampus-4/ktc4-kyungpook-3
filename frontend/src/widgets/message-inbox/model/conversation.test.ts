@@ -100,6 +100,10 @@ it('DM 을 보내지 못한 봇 메시지는 이유와 함께 알린다', () => 
       }),
       bot('mg_03', '2026-09-15T11:00:00+09:00', { status: 'failed', reason: 'unknown' }),
       bot('mg_04', '2026-09-15T12:00:00+09:00', { status: 'claimed' }),
+      bot('mg_05', '2026-09-15T13:00:00+09:00', {
+        status: 'failed',
+        reason: { unknown: 'rate_limited' },
+      }),
     ]),
     { policy: pmPolicy, botName: '카테캠 3팀', today, now },
   )
@@ -108,6 +112,7 @@ it('DM 을 보내지 못한 봇 메시지는 이유와 함께 알린다', () => 
     'DM 못 보냄 · Discord 계정이 연결되지 않았어요',
     'DM 못 보냄 · 이유를 알 수 없어요',
     null,
+    'DM 못 보냄 · 이유를 알 수 없어요',
   ])
 })
 
