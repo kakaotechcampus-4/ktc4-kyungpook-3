@@ -2,6 +2,12 @@
 
 프로젝트 문서, 기획서, 아키텍처를 관리하는 디렉터리입니다.
 
+## 최종 제출 문서 (문서 포털)
+
+[포털 첫 화면](index.md)에서 시작한다. `mkdocs.yml`이 목차다. 원자료(이 문서 아래의 계획·결과·결정 기록·계약)를 요약하고 링크한다.
+
+- [사용자 가이드](user/getting-started.md) · [개발자 가이드](dev/local-setup.md) · [테크스펙](techspec/index.md) · [AI 판단 심화](ai-logic/index.md) · [협업 문서](collab/index.md) · [API 문서](api/index.md)
+
 ## 에이전트 공통 관리
 
 - [공통 작업 규칙](agent-rules.md): 작업 시작 절차, 문서 수정 권한, 기록 의무와 스킬 사용 시점.
