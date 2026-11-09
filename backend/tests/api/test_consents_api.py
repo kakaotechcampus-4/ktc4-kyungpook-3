@@ -1,6 +1,7 @@
 """이용약관·개인정보처리방침 동의 기록(#564)."""
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from datetime import datetime
 import secrets
 from threading import Barrier, Event
 import time
@@ -224,6 +225,12 @@ def test_concurrent_posts_preserve_one_row_and_first_agreement_time(mdb):
     rows = list(mdb.scalars(select(UserConsent)))
     assert sorted(row.kind for row in rows) == ["privacy", "terms"]
     assert len({row.agreed_at for row in rows}) == 1
+    persisted = {row.kind: row.agreed_at for row in rows}
+    for response in results:
+        assert {
+            doc["kind"]: datetime.fromisoformat(doc["agreed_at"].replace("Z", "+00:00"))
+            for doc in response.json()["data"]["documents"]
+        } == persisted
 
 
 def _wait_for_blocker(engine, waiting_pid, blocker_pid):

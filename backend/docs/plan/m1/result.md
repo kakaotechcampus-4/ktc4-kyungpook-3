@@ -149,4 +149,6 @@ AI 정리 지연 중의 완료 표시 기준도 확정하지 않았다. 별도 �
 
 검증은 격리 SQLite와 PostgreSQL에서 `pytest tests/api/test_consents_api.py tests/api/test_account_withdrawal.py tests/api/test_withdrawal_concurrency.py -q`로 **62 통과·SQLite 변형 8 건너뜀**이다. 미로그인, 타인 ID 주입, 한쪽 판본 불일치의 전체 무저장, 과거 판본·최초 시각 보존, 동시 POST, 탈퇴·늦은 POST, 같은 이메일 실제 재가입의 초기화를 포함한다. 별도 PostgreSQL `mm572_migrations`에서 빈 DB upgrade head, alembic check, downgrade -1, 재upgrade가 모두 종료 코드 0이며 단일 head `f7f0dc53a63a`다. backend 전체 Ruff도 통과했다. Linux 전체 CI와 독립 HTTPS 검증은 이 로컬 기록과 구분한다.
 
-[FE 대표 계약](../../../../frontend/docs/contracts/frontend-api-contract.md#414-이용약관개인정보처리방침-동의-564-be-제안-fe-합의-전)에 현재 코드·합의 상태·초안 판본을 구분했고 [후속 결정](basis-for-decision/2026-11-09-consent-transaction-boundary.md)에 저장·응답 경계와 공개 전 제약을 기록했다. 이 단위는 로그인 사용자용 기록 API다. 가입 강제·최종 정책 본문 공개·법률 검토 완료는 포함하지 않으며, 최종 공개 시 새 검토 완료 판본으로 문서·BE·FE를 함께 맞춰야 한다.
+[FE 대표 계약](../../../../frontend/docs/contracts/frontend-api-contract.md#415-이용약관개인정보처리방침-동의-564-be-제안-fe-합의-전)에 현재 코드·합의 상태·초안 판본을 구분했고 [후속 결정](basis-for-decision/2026-11-09-consent-transaction-boundary.md)에 저장·응답 경계와 공개 전 제약을 기록했다. 이 단위는 로그인 사용자용 기록 API다. 가입 강제·최종 정책 본문 공개·법률 검토 완료는 포함하지 않으며, 최종 공개 시 새 검토 완료 판본으로 문서·BE·FE를 함께 맞춰야 한다.
+
+리뷰 후 동시 POST의 두 HTTP 응답에 담긴 동의 시각을 최종 DB 값과 비교하도록 회귀를 보강했다. 시각을 덮어쓰는 DO UPDATE 변형은 기존 검사에서 통과했으나, 보강한 검사의 실제 시각 비교에서 실패했다. 정상 구현의 동의·탈퇴·경합 검사는 다시 62 통과·8 건너뜀이었다. 초기 보강본의 import 누락 실패는 이 반례로 세지 않았다. 섹션 번호 정정과 함께 대표 계약의 앵커 참조도 맞췄다.
