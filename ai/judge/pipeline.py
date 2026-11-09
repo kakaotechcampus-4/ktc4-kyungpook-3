@@ -37,17 +37,26 @@ from shared.schemas import (
 )
 
 # 별칭 텍스트가 아닌 호칭 — "네가", "그분", "백엔드 리더" 를 BE 가 별칭으로 조회하면 영원히 안 맞는다.
-# 문맥으로 풀린 이름(assignee_resolved)이 없으면 보내지 않는다 (capture/handoff.py 와 같은 규칙).
+# 문맥으로 풀린 이름(assignee_resolved)만 보낸다. 새 할 일(create)의 thirdname 은 원문만 보낸다 — 추측한 이름이
+# BE 별칭으로 학습되지 않게 (capture/handoff.py 와 같은 규칙). BE 는 create 승인 때만 별칭을 배우므로
+# 수정·담당자 변경 카드는 예전처럼 고친 이름을 보낸다.
 _NOT_ALIAS_TYPES = {"second", "thirdpronoun", "thirdrole"}
 
 # 답장 판단(judge/reply.py)이 이 값으로 마감 지움을 알아본다
 DUE_CLEARED_REASON = "마감을 없애는 변경은 아직 보낼 수 없습니다(BE 는 null 을 '바꾸지 않음'으로 받음)."
 
 
-def _assignee(finding: JudgeFinding) -> tuple[str | None, str | None]:
-    """(assignee_type, assignee_raw) — BE 가 member_id 로 해소할 값."""
-    mention = None if finding.assignee_type in _NOT_ALIAS_TYPES else finding.assignee_raw
-    return finding.assignee_type, finding.assignee_resolved or mention
+def _assignee(finding: JudgeFinding, *, is_new: bool) -> tuple[str | None, str | None]:
+    """(assignee_type, assignee_raw) — BE 가 member_id 로 해소할 값. is_new: 새 할 일(create) 항목인가.
+
+    first·group·none 은 보낼 글자가 없다 — "우리" 같은 글자가 오면 BE 가 별칭으로 조회해 hold 로 돌린다.
+    """
+    if finding.assignee_type in ("first", "group", "none"):
+        return finding.assignee_type, None
+    if finding.assignee_type in _NOT_ALIAS_TYPES or (finding.assignee_type == "thirdname" and not is_new):
+        return finding.assignee_type, finding.assignee_resolved or (
+            finding.assignee_raw if finding.assignee_type == "thirdname" else None)
+    return finding.assignee_type, finding.assignee_raw
 
 
 def _evidence_at_ms(finding: JudgeFinding, transcript: Transcript) -> int | None:
@@ -95,7 +104,7 @@ def to_item(
     if not result.is_new and target is None:
         raise ValueError("기존 항목 수정인데 수정 대상 후보가 없다.")
 
-    assignee_type, assignee_raw = _assignee(finding)
+    assignee_type, assignee_raw = _assignee(finding, is_new=result.is_new)
     item: dict[str, Any] = {
         "action": "create" if result.is_new else "update",
         "target_task_id": None if result.is_new else target.task_id,
@@ -229,7 +238,7 @@ def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult
     if result.status is not None:
         card["status"] = result.status
     if result.category == "assignee":
-        card["assignee_type"], card["assignee_raw"] = _assignee(finding)
+        card["assignee_type"], card["assignee_raw"] = _assignee(finding, is_new=card["action"] == "create")
         card.update(_evidence(finding, transcript))
     # 인계 때 화자가 비면(업로드의 외부 참석자 포함) BE 는 1인칭 담당자를 가장 큰 seq 의 화자로 찾는다. 담당과 상관없는 뒤 발화를
     # 더하면 그 사람이 담당자가 된다. 여기서는 인계 때 화자가 남을지 몰라 1인칭 카드에는 더하지 않는다

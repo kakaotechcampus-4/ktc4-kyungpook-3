@@ -280,8 +280,11 @@ def delete_meeting(db: Session, meeting_id: str) -> MeetingDeletionReceipt:
 
 
 def _delete_content(db: Session, meeting: Meeting, now: datetime) -> None:
+    from app.services import summary
+
     meeting_id = meeting.meeting_id
     cards = _clean_cards(db, meeting, now)
+    summary.remove_meeting_summary(db, meeting)
     source_ids = select(Source.source_id).where(Source.meeting_id == meeting_id)
     extraction_ids = select(Extraction.extraction_id).where(
         Extraction.meeting_id == meeting_id

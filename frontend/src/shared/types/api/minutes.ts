@@ -21,7 +21,6 @@ export const minutesSchema = z.object({
   source: z.string(),
   attendees: z.array(z.object({ member_id: z.string(), display_name: z.string() })),
   // 서버가 저장된 JSON 을 그대로 내리고 깨진 요약은 없는 것으로 본다. 모양이 틀린 요약도 같게 없는 것으로 보고 전사문은 보인다.
-  // 지금 실 API 에서는 채우는 쪽이 없어 늘 null 이다 (계약 §4.0-②-11)
   summary: minutesSummarySchema.nullable().catch(({ input }) => {
     if (import.meta.env.DEV) console.warn('Invalid minutes summary:', input)
     return null

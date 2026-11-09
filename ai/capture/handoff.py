@@ -15,6 +15,13 @@ extractions.py). 봇이 이 전이를 순서대로 부른다.
 
   추출 도중          POST  /api/v1/workspaces/{id}/tasks/similar   X-Service-Token
 
+회의 요약은 처리 단계와 별개다. 워커가 바퀴 끝에 대기열에서 한 건씩 맡는다(capture/summary_sweep.py).
+
+  맡기               POST  /api/v1/summaries/claim
+  재료 읽기          GET   /api/v1/extractions/{id}/summary-input
+  저장               PUT   /api/v1/extractions/{id}/summary
+  재처리 표시        POST  /api/v1/workspaces/{id}/summary-requests
+
 POST /extractions 는 같은 회의에 두 번 보내도 한 번만 만든다. BE 가 processing → done 을 조건부
 UPDATE 로 선점하고, 이미 done 이면 기존 것을 돌려준다. 그래서 복구 경로가 다시 보내도 중복이 없다.
 fail 은 끝 상태라 되돌리는 전이가 없다. 실패했던 회의를 나중에 복구해 넘길 때는 새 회의를 만들고
@@ -43,7 +50,7 @@ from typing import Any
 
 import requests
 
-from shared.schemas import NotionCandidate, Transcript
+from shared.schemas import NotionCandidate, SummaryClaim, SummaryInput, Transcript
 
 log = logging.getLogger(__name__)
 _privacy_epoch = ContextVar('privacy_epoch', default=None)
@@ -78,6 +85,8 @@ DOWNLOAD_TIMEOUT_S = 60.0
 DOWNLOAD_CHUNK = 1 << 20
 # 단계 보고는 진행 표시일 뿐이다. BE 가 느려도 처리를 붙들지 않게 짧게 끊는다
 STAGE_TIMEOUT_S = 3.0
+# 요약 재료는 회의 전문을 싣고, 저장은 한 트랜잭션에 주제와 결정을 쓴다. 저장이 끊기면 LLM 비용을 다시 낸다
+SUMMARY_BE_TIMEOUT_S = 60.0
 
 # 서버(길드)에 연결된 워크스페이스가 없을 때 BE 가 주는 코드(backend/app/api/integrations.py, #180)
 NOT_CONNECTED = "INTEGRATION_NOT_CONNECTED"
@@ -177,7 +186,7 @@ class BeClient:
         match = re.match(r'/(?:meetings|uploads)/([^/]+)', path)
         if epoch is None and match:
             epoch = self.meeting_epochs.get(match[1], 0)
-        if method != 'GET' and epoch is not None and epoch > 0:
+        if method != 'GET' and epoch is not None and epoch > 0 and 'X-Privacy-Epoch' not in (headers or {}):
             headers = {**(headers or {}), 'X-Privacy-Epoch': str(epoch)}
         if self.service_token:
             headers = {**(headers or {}), "X-Service-Token": self.service_token}
@@ -429,6 +438,35 @@ class BeClient:
 
 
 # ─────────────────────────────────────────────────────────── 추출 결과 → BE 항목
+
+    def claim_summary(self, only: list[str] | None = None) -> SummaryClaim | None:
+        """요약할 회의 하나를 맡는다. 없으면 None. only 가 None 이면 본문 없이 범위 없이 맡고, 빈 목록이면 아무것도 맡지 않는다."""
+        data = self._call("POST", "/summaries/claim", None if only is None else {"extraction_ids": only})
+        return SummaryClaim.from_dict(data) if data else None
+
+    def summary_input(self, extraction_id: str, *, identity_epoch: int | None = None) -> SummaryInput:
+        """요약 재료를 읽는다. BE 상태를 바꾸지 않는다."""
+        headers = {"X-Privacy-Epoch": str(identity_epoch)} if identity_epoch is not None else None
+        return SummaryInput.from_dict(self._call("GET", f"/extractions/{extraction_id}/summary-input",
+                                                 headers=headers, timeout=SUMMARY_BE_TIMEOUT_S))
+
+    def submit_summary(self, extraction_id: str, body: dict, *, claim_token: str, identity_epoch: int) -> dict:
+        """요약을 저장한다. 돌려주는 것은 {extraction_id, meeting_id, applied, topic_count, decision_count}.
+        applied=false 는 먼저 끝난 쪽이 있다는 200 이다. 다시 보내지 않는다."""
+        return self._call("PUT", f"/extractions/{extraction_id}/summary", {**body, "claim_token": claim_token},
+                          headers={"X-Privacy-Epoch": str(identity_epoch)}, timeout=SUMMARY_BE_TIMEOUT_S)
+
+    def request_summaries(self, workspace_id: str, *, meeting_ids: list[str] | None = None, include_all: bool = False,
+                          force: bool = False, dry_run: bool) -> list[dict]:
+        """옛 회의를 줄 세운다. meeting_ids 와 include_all 중 하나만 준다. dry_run 이면 쓰지 않고 대상만 돌려준다."""
+        self.member_names(workspace_id)
+        data = self._call("POST", f"/workspaces/{workspace_id}/summary-requests",
+                          {"meeting_ids": meeting_ids, "include_all": include_all, "force": force, "dry_run": dry_run},
+                          headers={"X-Privacy-Epoch": str(self.workspace_epochs.get(workspace_id, 0))},
+                          timeout=SUMMARY_BE_TIMEOUT_S)
+        return data["items"]
+
+
 def _squash(text: str) -> str:
     """공백과 문장 부호를 뺀다. 추출기가 돌려준 근거 문장은 전사본과 띄어쓰기가 다를 수 있다."""
     return re.sub(r"[\W_]+", "", text or "")
@@ -452,8 +490,9 @@ def locate_sentence(sentence: str, segments: list[dict]) -> tuple[str | None, in
 def to_extraction_items(tasks: list[dict], transcript: dict) -> list[dict]:
     """ExtractedTask.to_dict() 목록을 BE 의 ExtractionItemCreate 목록으로.
 
-    assignee_raw 는 별칭 텍스트다. 2인칭·대명사는 추출기가 문맥으로 푼 이름(assignee_resolved)이 있으면
-    그것을 보낸다. first, group, none 은 추출기가 언급을 비우므로 None 이 간다.
+    assignee_raw 는 별칭 텍스트다. 2인칭·대명사·역할은 추출기가 문맥으로 푼 이름(assignee_resolved)이 있으면
+    그것을 보낸다. thirdname 은 원문 언급만 보낸다 — 추출기가 고친 이름이 틀리면 BE 가 그 글자를 별칭으로
+    배우기 때문이다. first, group, none 은 None 이 간다.
     """
     segments = transcript.get("segments", [])
     items = []
@@ -461,13 +500,19 @@ def to_extraction_items(tasks: list[dict], transcript: dict) -> list[dict]:
         sentence = t.get("source_sentence") or ""
         speaker, at_ms, seq = locate_sentence(sentence, segments)
         kind = t.get("assignee_type")
-        # "네가"·"그분"·"백엔드 리더" 는 별칭이 아니다. 이름으로 풀리지 않았으면 BE 에 조회를 시키지 않는다
-        mention = None if kind in ("second", "thirdpronoun", "thirdrole") else t.get("assignee_mention")
+        # "네가"·"그분"·"백엔드 리더" 는 별칭이 아니라 푼 이름만 보낸다. 1인칭·그룹·없음은 보낼 글자가 없다
+        # (BE 가 "우리" 같은 글자를 별칭 조회하지 않게). 그 밖은 원문 언급만(resolved 무시)
+        if kind in ("first", "group", "none"):
+            assignee_raw = None
+        elif kind in ("second", "thirdpronoun", "thirdrole"):
+            assignee_raw = t.get("assignee_resolved")
+        else:
+            assignee_raw = t.get("assignee_mention")
         items.append({
             "task_title": t.get("task", ""),
             # BE(item_confidence)가 필드별 숫자의 최솟값을 직접 내므로 할일 자체의 상태만 보낸다
             "task_confidence": STATUS_CONFIDENCE.get(t.get("task_status"), 0.0),
-            "assignee_raw": t.get("assignee_resolved") or mention,
+            "assignee_raw": assignee_raw,
             "assignee_type": t.get("assignee_type"),
             "due_date": t.get("due_date"),
             "due_raw": t.get("due_raw"),

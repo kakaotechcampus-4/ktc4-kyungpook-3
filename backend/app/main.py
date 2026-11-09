@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import approvals, bot_lookups, bot_messages, extractions, invitations, messages, meetings, members, similar_tasks, sources, tasks, uploads, workspaces, auth, integrations
-from app.api import consents, message_settings, message_socket, notifications
+from app.api import bot_summaries, consents, message_settings, message_socket, notifications, project_map
 from app.services import scheduler, meeting_deletion
 from app.api import meeting_purges
 from app.api import withdrawal
@@ -90,6 +90,8 @@ app.include_router(notifications.router, prefix=API_PREFIX)
 app.include_router(notifications.push_router, prefix=API_PREFIX)
 app.include_router(message_settings.router, prefix=API_PREFIX)
 app.include_router(bot_lookups.router, prefix=API_PREFIX)
+app.include_router(bot_summaries.router, prefix=API_PREFIX)
+app.include_router(project_map.router, prefix=API_PREFIX)
 app.include_router(consents.router, prefix=API_PREFIX)
 app.include_router(meeting_purges.router, prefix=API_PREFIX)
 app.include_router(withdrawal.router, prefix=API_PREFIX)
