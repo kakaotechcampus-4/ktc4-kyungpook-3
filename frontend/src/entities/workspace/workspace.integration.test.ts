@@ -1,4 +1,5 @@
 import { unwrap } from '@/shared/api/envelope'
+import { signUpVerified } from '@/shared/test/api'
 import type { Envelope } from '@/shared/types/api/envelope'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { IntegrationsDto } from '@/shared/types/api/integration'
@@ -65,12 +66,7 @@ it('creates a workspace and rejects duplicate names or unknown workspace request
 })
 
 it('allows different accounts to use the same workspace name', async () => {
-  const signup = await fetch('http://localhost:3000/api/v1/auth/signup', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'new@example.com', password: 'secret', name: '새 사용자' }),
-  })
-  expect(signup.status).toBe(201)
+  await signUpVerified({ email: 'new@example.com', password: 'secret12', name: '새 사용자' })
 
   const created = await fetch('http://localhost:3000/api/v1/workspaces', {
     method: 'POST',
@@ -153,12 +149,7 @@ it('advances onboarding steps in a workspace the user owns', async () => {
 // DTO 의 role 은 여전히 Optional 이라 null → member 폴백은 mapper 단위 테스트가 지킨다
 it('refuses the detail of a workspace the signed-in user does not belong to', async () => {
   const base = `${location.origin}/api/v1`
-  const signup = await fetch(`${base}/auth/signup`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'outsider@example.com', password: 'secret', name: '외부인' }),
-  })
-  expect(signup.status).toBe(201)
+  await signUpVerified({ email: 'outsider@example.com', password: 'secret12', name: '외부인' })
 
   const detail = await fetch(`${base}/workspaces/ws_01`)
   expect(detail.status).toBe(403)

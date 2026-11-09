@@ -26,6 +26,7 @@ export function toMember(dto: MemberDto): Member {
     discordUserId: dto.discord_user_id,
     notionName: dto.notion_name,
     role: dto.role === 'pm' ? 'pm' : 'member',
+    hasLoginAccount: dto.has_login_account === true,
     createdAt: dto.created_at,
   }
 }

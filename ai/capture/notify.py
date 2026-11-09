@@ -63,13 +63,33 @@ class FileOutbox:
         self.dir = Path(recordings_dir) / ".worker" / "outbox"
         self._n = 0
 
-    def send(self, channel_id: str, text: str, file: Path | None = None) -> bool:
+    def send(self, channel_id: str, text: str, file: Path | None = None, *, workspace_id: str | None = None,
+             session: str | None = None, identity_epoch: int = 0) -> bool:
+        from capture.privacy_cleanup import PrivacyPending, guard_workspace
+        from capture.recorder import try_lock
+        lock = try_lock(self.dir.parents[1] / '.privacy-outbox-writer.json')
+        if lock is None:
+            return False
+        try:
+            if workspace_id:
+                guard_workspace(self.dir.parents[1], workspace_id, identity_epoch)
+            return self._write(channel_id, text, file, workspace_id=workspace_id, session=session,
+                               identity_epoch=identity_epoch)
+        except PrivacyPending:
+            return False
+        finally:
+            lock.release()
+
+    def _write(self, channel_id: str, text: str, file: Path | None, *, workspace_id: str | None,
+               session: str | None, identity_epoch: int) -> bool:
         self.dir.mkdir(parents=True, exist_ok=True)
         self._n += 1
         name = f"{time.time_ns():020d}-{os.getpid()}-{self._n:06d}"
         tmp = self.dir / f".{name}.tmp"
         tmp.write_text(json.dumps({"channel_id": str(channel_id), "text": text[:MESSAGE_MAX],
-                                   "file": str(file) if file else None, "at": time.time()}, ensure_ascii=False),
+                                   "file": str(file) if file else None, "at": time.time(),
+                                   'workspace_id': workspace_id, 'session': session,
+                                   'identity_epoch': identity_epoch}, ensure_ascii=False),
                        encoding="utf-8")
         tmp.replace(self.dir / f"{name}.json")      # 다 쓴 파일만 보이게 이름을 바꾼다
         return True
@@ -91,13 +111,19 @@ class MeetingReporter:
         self._first = manifest.get("status") in (STATUS_SAVED, None) and not manifest.get("stages") \
             and not self._waiting and self._session not in self._announced
         self._guild = manifest.get("guild_id")
+        self._workspace = manifest.get('workspace_id')
+        self._identity_epoch = int(manifest.get('identity_epoch') or 0)
         self.debug = debug
 
     def _send(self, text: str, file: Path | None = None) -> None:
         if self._notifier is None or not self._channel:
             return
         try:
-            self._notifier.send(str(self._channel), text, file=file)
+            if isinstance(self._notifier, FileOutbox):
+                self._notifier.send(str(self._channel), text, file=file, workspace_id=self._workspace,
+                                    session=self._session, identity_epoch=self._identity_epoch)
+            else:
+                self._notifier.send(str(self._channel), text, file=file)
         except Exception as e:  # noqa: BLE001 - 알림이 실패해도 처리는 그대로 간다
             print(f"[notify] 알림 실패: {type(e).__name__}: {e} :: {text[:60]}", flush=True)
 

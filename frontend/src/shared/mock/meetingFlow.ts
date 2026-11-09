@@ -347,6 +347,7 @@ export function startChatMeeting(state: MockDb = db): string {
     ended_at: '2026-09-18T09:40:00Z',
     extraction_id: null,
     failed_stage: null,
+    deletion_available: true,
     progress: { audio_merged: false, transcribed: false, extracted: false },
   })
   state.meetingSummaries.push({

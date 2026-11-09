@@ -1,15 +1,18 @@
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { onTestFinished } from 'vitest'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { getResponse, http } from 'msw'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
-import { fail } from '@/shared/mock/envelope'
+import { fail, ok } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { handlers } from '@/shared/mock/handlers'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
+import { toTaskResponse } from '@/shared/mock/task-state'
 import { fetchDto, jsonRequest } from '@/shared/test/api'
 import { deferred } from '@/shared/test/deferred'
+import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -150,6 +153,41 @@ describe('보드 직접 추가', () => {
       await within(column('시작 전')).findByRole('link', { name: '회의실 예약' }, FIRST_PAINT),
     ).toBeVisible()
     expect(within(column('시작 전')).queryByRole('alert')).toBeNull()
+  })
+
+  it('추가 응답을 읽지 못하면 입력 칸에 실패라 하지 않고 결과를 확인하지 못했다고 알린다. 새로고침은 목록을 다시 받는다 (#348)', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    onTestFinished(() => warning.mockRestore())
+    server.use(
+      http.post(
+        '/api/v1/tasks',
+        () =>
+          ok({
+            ...toTaskResponse(db.tasks.find(({ task_id }) => task_id === 'tk_01')!),
+            status: 'archived',
+          }),
+        { once: true },
+      ),
+    )
+    const user = userEvent.setup()
+    const log = recordRequests()
+    await openBoard()
+    await user.click(addButton('시작 전'))
+    await user.type(titleInput('시작 전'), '회의실 예약{Enter}')
+    const notice = (
+      await screen.findByText('변경 결과를 확인하지 못했어요', {}, { timeout: 5_000 })
+    ).closest('li') as HTMLElement
+    expect(within(notice).getByText(/서버에는 반영됐을 수 있어요/)).toBeInTheDocument()
+    expect(within(column('시작 전')).queryByRole('alert')).toBeNull()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 300)))
+    const before = log.started.length
+    fireEvent.click(within(notice).getByRole('button', { name: '새로고침' }))
+    await waitFor(() =>
+      expect(log.started.slice(before)).toContainEqual({
+        method: 'GET',
+        path: '/tasks?workspace_id=ws_01',
+      }),
+    )
   })
 
   it('Esc·취소는 보내지 않고 닫는다', async () => {

@@ -65,6 +65,17 @@ it('approval creates a task once, closes the request and records the session mem
   })
 })
 
+// 백엔드 resolve_approval 은 대기 중인지를 보완 값 검증보다 먼저 본다
+it('an already resolved card answers 409 before validating task_overrides', async () => {
+  db.approvals[0].status = 'approved'
+  await expect(
+    fetchDto(
+      '/approvals/ap_01',
+      jsonRequest('PATCH', { status: 'approved', task_overrides: { task_title: '' } }),
+    ),
+  ).rejects.toMatchObject({ code: 'APPROVAL_ALREADY_RESOLVED', status: 409 })
+})
+
 it('resets approval and task data between tests and rejects without creating a task', async () => {
   expect((await fetchDto<ListDto<TaskDto>>('/tasks?workspace_id=ws_01')).total).toBe(10)
   expect(
@@ -165,12 +176,14 @@ describe('task_create approval linking an extraction item', () => {
     expect(before.approval).toEqual([{ status: 'pending', related_task_id: null }])
   })
 
-  it('approves without linking when the item does not exist', async () => {
+  it('approves when the card item does not exist, linking only items that point at this card (BE #533)', async () => {
     db.approvals[0].payload = { ...db.approvals[0].payload, extraction_item_id: 'it_99' }
     const before = snapshot()
     expect(await approve()).toMatchObject({ status: 'approved', related_task_id: 'tk_90' })
     expect(db.tasks).toHaveLength(before.taskCount + 1)
-    expect(snapshot().itemTaskIds).toEqual(before.itemTaskIds)
+    expect(snapshot().itemTaskIds).toEqual(
+      before.itemTaskIds.map(([itemId, taskId]) => [itemId, itemId === 'it_04' ? 'tk_90' : taskId]),
+    )
   })
 
   it('checks the item before validating the task fields', async () => {

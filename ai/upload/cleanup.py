@@ -26,7 +26,16 @@ from pathlib import Path
 from typing import Callable
 
 from capture.handoff import BeError
-from capture.recorder import _iso, backoff_s, drop_local, drop_transcripts, is_locked, manifest_path, utcnow
+from capture.meeting_purge import mark_deleted, upload_writer
+from capture.recorder import (
+    _iso,
+    backoff_s,
+    drop_local,
+    drop_transcripts,
+    is_locked,
+    manifest_path,
+    utcnow,
+)
 from upload.assign import _is_gone
 from upload.intake import Progress, _due, _load, _save
 
@@ -61,6 +70,7 @@ def _candidate(rec: dict, now: datetime) -> bool:
     return _due(ex, now) if ex else True
 
 
+@upload_writer
 def cleanup_one(recordings_dir: Path, transcripts_dir: Path, *, client,
                 now: Callable[[], datetime] = utcnow) -> Progress | None:
     """한 건을 한 번 진전시킨다. 할 일이 없으면 None. 예외는 올리지 않는다.
@@ -207,6 +217,11 @@ def _probe(recordings_dir: Path, transcripts_dir: Path, d: Path, rec: dict, clie
     try:
         client.report_speakers(mid, rec["report"]["speakers"])
     except BeError as e:
+        if e.code == "MEETING_DELETED":
+            mark_deleted(recordings_dir, {mid})
+            ex.update(state="expired", next_at=None, error=e.code)
+            _try_save(d, rec)
+            return Progress(mid, "expired")
         if e.code == "MEETING_ALREADY_ENDED" or _is_gone(e):
             return _expire(recordings_dir, transcripts_dir, d, rec, f"{e.code}: {e}", t)
         return _later(d, rec, t, f"{type(e).__name__}: {e}")

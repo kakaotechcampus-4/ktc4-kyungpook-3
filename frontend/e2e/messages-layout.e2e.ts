@@ -79,7 +79,7 @@ test('긴 문구의 대화는 말풍선·대화 칸·아래 안내·목록 칸 �
   await expect(bubbles).toHaveCount(2, FIRST_PAINT)
   for (const bubble of await bubbles.all()) await expectNoHorizontalOverflow(bubble)
   await expectNoHorizontalOverflow(conversation)
-  await expectNoHorizontalOverflow(detail.getByText(/메시지는 항상/))
+  await expectNoHorizontalOverflow(detail.getByText(/^웹 계정이 연결되지 않아/))
   await expectNoHorizontalOverflow(page.getByRole('complementary', { name: '메시지 목록' }))
 })
 

@@ -29,6 +29,11 @@ const forgotPasswordPage = lazyPage(() =>
 const resetPasswordPage = lazyPage(() =>
   import('@/pages/reset-password').then((m) => m.ResetPasswordPage),
 )
+const termsPage = lazyPage(() => import('@/pages/policy').then((m) => m.TermsPage))
+const privacyPage = lazyPage(() => import('@/pages/policy').then((m) => m.PrivacyPage))
+const accountWithdrawalPage = lazyPage(() =>
+  import('@/pages/account-withdrawal').then((m) => m.AccountWithdrawalPage),
+)
 const workspaceSelectPage = lazyPage(() =>
   import('@/pages/workspace-select').then((m) => m.WorkspaceSelectPage),
 )
@@ -79,6 +84,17 @@ const mockOAuthRoute =
     />
   ) : null
 
+/* 모의 카카오 동의 화면. 모의 OAuth 화면과 같은 이유로 같은 조건 안에서만 등록한다. 경로는 devPaths.mockKakao 다 (#427) */
+const mockKakaoRoute =
+  import.meta.env.DEV && config.mswEnabled ? (
+    <Route
+      path="__mock/kakao"
+      element={screen(
+        lazyPage(() => import('@/shared/mock/oauth/MockKakaoPage').then((m) => m.MockKakaoPage)),
+      )}
+    />
+  ) : null
+
 /* 모의 메일함. 모의 OAuth 화면과 같은 이유로 같은 조건 안에서만 등록한다. 경로는 devPaths.mockMail 이다 (#356) */
 const mockMailRoute =
   import.meta.env.DEV && config.mswEnabled ? (
@@ -111,6 +127,9 @@ export const appRoutes = (
     </Route>
     {/* 메일 링크는 로그인한 브라우저에서도 열린다. RedirectIfAuthed 안이면 워크스페이스로 옮겨져 버린다 (#356) */}
     <Route path="reset-password" element={screen(resetPasswordPage)} />
+    <Route path="terms" element={screen(termsPage)} />
+    <Route path="privacy" element={screen(privacyPage)} />
+    <Route path="account/withdrawal" element={screen(accountWithdrawalPage)} />
     <Route element={<RequireAuth />}>
       {/* 추적기 같은 로그인 뒤 전역 동작의 칸. path 가 없어 경로에는 끼지 않는다 */}
       <Route element={<AuthenticatedLayout />}>
@@ -155,6 +174,7 @@ export const appRoutes = (
       </Route>
     </Route>
     {mockOAuthRoute}
+    {mockKakaoRoute}
     {mockMailRoute}
     <Route path="*" element={screen(<NotFoundPage />)} />
   </Route>

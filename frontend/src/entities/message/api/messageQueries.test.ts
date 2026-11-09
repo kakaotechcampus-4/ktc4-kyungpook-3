@@ -12,6 +12,7 @@ import {
   createReminder,
   messageInboxQueryOptions,
   messageThreadQueryOptions,
+  openThread,
   replyAttributionsQueryOptions,
   requestMessageAction,
 } from './messageQueries'
@@ -122,6 +123,29 @@ describe('메모 고치기', () => {
     expect(received).toEqual([
       { method: 'PATCH', path: `${BASE}/reminders/rm_02`, body: { note: '시안 3차까지' } },
       { method: 'PATCH', path: `${BASE}/reminders/rm_02`, body: { note: null } },
+    ])
+  })
+})
+
+describe('대화 열기', () => {
+  it('대화 경로로 팀원 ID 만 보내고, 돌려받은 요약을 대화로 읽는다', async () => {
+    const received = answer('post', 'threads', {
+      thread_id: 'th_07',
+      member_id: 'mb_02',
+      name: '박민수',
+      last_message: null,
+      awaiting_reply_since: null,
+      dm_failed: false,
+      web_reply_available: false,
+    })
+    await expect(openThread('ws_01', 'mb_02')).resolves.toMatchObject({
+      id: 'th_07',
+      memberId: 'mb_02',
+      lastMessage: null,
+      webReply: 'unavailable',
+    })
+    expect(received).toEqual([
+      { method: 'POST', path: `${BASE}/threads`, body: { member_id: 'mb_02' } },
     ])
   })
 })

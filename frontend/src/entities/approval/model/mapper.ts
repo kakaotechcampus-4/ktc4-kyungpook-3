@@ -10,6 +10,7 @@ import type {
   ApprovalMissing,
   ApprovalResolveFailure,
   ApprovalStatus,
+  MergedApprovalItem,
   TaskUpdateCategory,
 } from './types'
 
@@ -27,6 +28,18 @@ function evidence(payload: Record<string, unknown>): ExtractionEvidence {
         ? payload.evidence_at_ms
         : null,
   }
+}
+
+/** 합쳐진 항목 하나는 근거 키를 payload 와 같은 이름으로 담는다 (backend services/pending_merge.py) */
+function mergedItems(value: unknown): MergedApprovalItem[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(isRecord).map((item) => ({
+    extractionItemId: text(item.extraction_item_id),
+    meetingId: text(item.meeting_id),
+    evidence: evidence(item),
+    docText: text(item.doc_text) || null,
+    mergedAt: text(item.merged_at),
+  }))
 }
 
 const taskUpdateCategories: readonly TaskUpdateCategory[] = [
@@ -149,6 +162,9 @@ export function toApproval(dto: ApprovalDto): Approval {
         dto.alias_candidate === true && typeof dto.alias_text === 'string' && dto.alias_text.trim()
           ? dto.alias_text
           : null,
+      payloadVersion: text(dto.payload_version) || null,
+      mergedItems: mergedItems(payload.merged_items),
+      assigneeItemId: text(payload.assignee_item_id) || text(payload.extraction_item_id),
     }
   }
   // 대상 태스크 이름은 `task_title`(없으면 제안 때 본 `base_title`)이다. `title` 은 바꿀 제목이라 이름으로 쓰지 않는다
@@ -178,8 +194,13 @@ export function toApproval(dto: ApprovalDto): Approval {
 export function toApprovalResolveRequestDto(
   resolution: ApprovalResolution,
 ): ApprovalResolveRequestDto {
-  if (resolution.status === 'rejected') return { status: 'rejected' }
-  const body: ApprovalResolveRequestDto = { status: 'approved' }
+  const seen =
+    resolution.status === 'rejected' || resolution.kind === 'task_create'
+      ? resolution.payloadVersion
+      : undefined
+  const version = seen === undefined ? {} : { payload_version: seen }
+  if (resolution.status === 'rejected') return { status: 'rejected', ...version }
+  const body: ApprovalResolveRequestDto = { status: 'approved', ...version }
   if (resolution.kind === 'task_update') {
     if (resolution.confirmTaskVersion !== undefined)
       body.confirm_task_version = resolution.confirmTaskVersion
@@ -223,6 +244,7 @@ function toConflict(value: unknown): ApprovalConflict | null {
  * 승인 처리 실패 중 화면이 따로 다룰 두 가지를 읽는다. 나머지(권한·검증·네트워크)는 null 이다.
  * - 409 APPROVAL_CONFLICT: `details.task_version` 과 `details.conflicts[]`(field·base·current·proposed).
  *   모양이 틀리면 재승인 기준이 없으므로 null 이다
+ * - 409 APPROVAL_CHANGED: 본 뒤 카드가 바뀌었다. 어느 칸인지는 서버가 주지 않아 화면이 새 카드와 비교한다
  * - 409 APPROVAL_ALREADY_RESOLVED: `details.current_status`. 모르는 값이면 null 로 둔다
  */
 export function toApprovalResolveFailure(error: unknown): ApprovalResolveFailure | null {
@@ -249,6 +271,7 @@ export function toApprovalResolveFailure(error: unknown): ApprovalResolveFailure
       conflicts: conflicts as ApprovalConflict[],
     }
   }
+  if (error.code === ERROR_CODES.APPROVAL_CHANGED) return { kind: 'changed' }
   if (error.code === 'APPROVAL_ALREADY_RESOLVED') {
     const statuses: readonly ApprovalStatus[] = ['pending', 'approved', 'rejected']
     const current = isRecord(details) ? details.current_status : undefined

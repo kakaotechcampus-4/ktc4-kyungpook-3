@@ -14,6 +14,7 @@ import {
 import type { Meeting, MeetingSummary } from '@/entities/meeting'
 import { minutesQueryOptions } from '@/entities/minutes'
 import type { Minutes } from '@/entities/minutes'
+import { MeetingDelete } from '@/features/meeting-delete'
 import { SPEAKERS_NEEDED_ACTION, SPEAKERS_NEEDED_TITLE } from '@/features/meeting-processing'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
@@ -56,6 +57,7 @@ export interface MinutesDetailProps {
   meetingId: string
   /** 소속 목록의 역할이 PM 이다 */
   isPm: boolean
+  onDeleted: (meetingId: string) => void
   /**
    * 고른 회의(URL)의 목록 요약. 목록에 없으면 null. 본문을 기다리는 동안 머리(제목·메타·출처·참석자 수)를 이것으로 먼저 그린다 —
    * 주소·목록 선택 표시와 본문 머리가 같은 회의를 가리킨다 (UX1-M02)
@@ -83,11 +85,13 @@ function Head({
   title,
   meta,
   source,
+  action,
   children,
 }: {
   title: string
   meta: string
   source: MeetingSummary['source']
+  action?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -96,6 +100,9 @@ function Head({
       <div className={META_ROW}>
         {meta === '' ? null : <span className={`min-w-[0px] truncate ${META}`}>{meta}</span>}
         <span className={CHIP}>{SOURCE_LABEL[source]}</span>
+        {action == null ? null : (
+          <div className="ml-auto flex h-22 shrink-0 items-center">{action}</div>
+        )}
       </div>
       {children}
     </header>
@@ -159,6 +166,7 @@ export function MinutesDetail({
   holding = false,
   keepSkeleton = false,
   waiting,
+  onDeleted,
 }: MinutesDetailProps) {
   const detail = useQuery(meetingDetailQueryOptions(workspaceId, meetingId))
   const meeting = viewableMeeting(detail)
@@ -179,6 +187,7 @@ export function MinutesDetail({
   // 들고 있을 수 있는 것은 이전 회의의 회의록 본문뿐이다. 이전 회의의 안내·오류를 고른 회의의 머리 아래 남기지 않는다
   if (held !== null && meeting?.status !== 'done') return loading
   if (meeting === null) {
+    if (detail.error instanceof ApiError && detail.error.status === 410) return <DeletedMeeting />
     if (isMeetingUnavailable(detail.error)) return <UnavailableMeeting />
     if (detail.error !== null)
       return (
@@ -202,6 +211,7 @@ export function MinutesDetail({
           isPm={isPm}
           held={held}
           loading={loading}
+          onDeleted={onDeleted}
         />
       )
     case 'processing':
@@ -242,6 +252,9 @@ export function MinutesDetail({
           <p className={NOTICE_TEXT}>{meeting.title || '제목 없는 회의'}</p>
           <p className={META}>{formatSeoulDateTime(meeting.startedAt)}</p>
           <p className={NOTICE_TEXT}>{failure.description}</p>
+          {isPm && meeting.deletionAvailable ? (
+            <MeetingDelete workspaceId={workspaceId} meetingId={meeting.id} onDeleted={onDeleted} />
+          ) : null}
           {!failure.reupload ? null : isPm ? (
             <GuardedLink to={paths.meetingUpload(workspaceId)} className={LINK}>
               다시 업로드
@@ -276,12 +289,14 @@ function MinutesView({
   isPm,
   held,
   loading,
+  onDeleted,
 }: {
   workspaceId: string
   meeting: Meeting
   isPm: boolean
   held: MeetingSummary | null
   loading: ReactNode
+  onDeleted: (meetingId: string) => void
 }) {
   const minutes = useQuery(minutesQueryOptions(workspaceId, meeting.id))
   // 받아 둔 본문도 403·404 뒤에는 쓰지 않는다 — 실패해도 이전 data 가 남는다 (#405)
@@ -289,6 +304,7 @@ function MinutesView({
 
   if (body === undefined) {
     if (held !== null) return loading
+    if (minutes.error instanceof ApiError && minutes.error.status === 410) return <DeletedMeeting />
     if (isAccessLost(minutes.error)) return <UnavailableMeeting />
     if (minutes.error !== null)
       return (
@@ -307,6 +323,11 @@ function MinutesView({
       workspaceId={workspaceId}
       meeting={meeting}
       minutes={body}
+      action={
+        isPm && meeting.deletionAvailable ? (
+          <MeetingDelete workspaceId={workspaceId} meetingId={meeting.id} onDeleted={onDeleted} />
+        ) : null
+      }
       held={held}
       // 역할(소속 목록)과 서버가 이 회의록에 준 권한을 함께 본다. 둘 중 하나라도 아니면 확인 필요를 부르지도 그리지도 않는다 (U5-6)
       canReview={isPm && body.canReview}
@@ -320,6 +341,7 @@ function MinutesContent({
   minutes,
   held,
   canReview,
+  action,
 }: {
   workspaceId: string
   meeting: Meeting
@@ -327,6 +349,7 @@ function MinutesContent({
   /** 들고 있는 동안 고른 회의의 목록 요약 — 머리는 이것으로 그리고, 이 회의록 본문은 흐리게 묶는다 */
   held: MeetingSummary | null
   canReview: boolean
+  action: ReactNode
 }) {
   const [tab, setTab] = useState<TabId>('summary')
   const extractionId = meeting.extractionId
@@ -385,6 +408,7 @@ function MinutesContent({
           title={title}
           meta={detailMeta(minutes.source, minutes.startedAt, minutes.durationMs)}
           source={minutes.source}
+          action={action}
         >
           {minutes.attendees.length === 0 ? (
             <NoAttendees />
@@ -429,5 +453,13 @@ function MinutesContent({
         />
       </div>
     </article>
+  )
+}
+
+export function DeletedMeeting() {
+  return (
+    <Notice title="삭제된 회의예요">
+      <p className={NOTICE_TEXT}>원본 회의가 삭제되어 근거를 볼 수 없음</p>
+    </Notice>
   )
 }

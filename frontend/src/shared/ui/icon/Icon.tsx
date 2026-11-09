@@ -59,17 +59,6 @@ const ICONS = {
       </>
     ),
   },
-  /** Login·Signup 의 Google 버튼 */
-  globe: {
-    strokeWidth: 1.7,
-    paths: (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18Z" />
-        <path d="M3.5 9h17M3.5 15h17" />
-      </>
-    ),
-  },
   /** 회의록 목록의 검색 */
   search: {
     strokeWidth: 1.8,

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { login } from '@/entities/user'
+import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { useAppForm } from '@/shared/lib/form'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
@@ -10,21 +11,36 @@ import { PasswordField } from '@/shared/ui/password-field'
 import { TextField } from '@/shared/ui/text-field'
 import { applyServerError } from '../lib/serverError'
 import { loginSchema } from '../model/schemas'
+import { useAuthNext } from '../model/useAuthNext'
 import { useEnterSession } from '../model/useEnterSession'
 import { useLoginNotice } from '../model/useLoginNotice'
 import { AlternativeAuth } from './AlternativeAuth'
 
 const FORM = 'flex flex-col gap-16'
 
-/* 재설정 화면(/forgot-password, /reset-password)은 있지만 BE 배포 전이라 링크는 비활성이다. 배포 뒤에 켠다 (#356).
-   그 전에는 누를 수도, 포커스를 받을 수도 없다. 준비 중 문구·배지를 달지 않는다 (D-005, D-006) */
-const FORGOT = 'text-[13px] text-dim'
+const FORGOT = 'text-[13px] text-dim hover:text-sub'
 
 const NOTICE = 'text-body text-ink'
 
 const FOOTNOTE = 'text-center text-[14px] text-dim'
 
 const FOOTNOTE_LINK = 'font-semibold text-ink underline underline-offset-3'
+
+/**
+ * 429 뒤의 재설정 안내 (#554). 있는 이메일과 없는 이메일의 응답이 같아 계정이 잠겼다고 말하지 않는다.
+ * 재설정은 그 이메일의 막힘만 풀고 IP 막힘은 못 풀어 풀린다고 약속하지 않는다
+ */
+const RESET_HINT = '비밀번호가 기억나지 않으면 재설정해 주세요.'
+
+interface LoginFailure {
+  message: string
+  offerReset: boolean
+}
+
+function loginFailure(error: unknown, message: string): LoginFailure {
+  const offerReset = error instanceof ApiError && error.code === ERROR_CODES.TOO_MANY_LOGIN_ATTEMPTS
+  return { message: offerReset ? `${message} ${RESET_HINT}` : message, offerReset }
+}
 
 /**
  * 이메일·비밀번호 로그인. 이메일 형식과 비밀번호 빈 값만 검사한다.
@@ -39,28 +55,41 @@ export function LoginForm() {
     formState: { errors, isSubmitting },
   } = form
   const enterSession = useEnterSession()
-  const [formError, setFormError] = useState<string | null>(null)
-  // 비밀번호를 바꾸고 온 경우의 안내. 한 번 읽고 기록에서 지운다 — 새로고침·뒤로가기에 다시 뜨지 않는다
+  // 비밀번호를 바꾸고 온 경우와 카카오에서 돌아온 경우의 안내. 한 번 읽고 기록에서 지운다 — 새로고침·뒤로가기에 다시 뜨지 않는다
   const notice = useLoginNotice()
+  const [failure, setFailure] = useState<LoginFailure | null>(
+    notice.error === null ? null : { message: notice.error, offerReset: false },
+  )
+  const next = useAuthNext()
 
   const onSubmit = submit(async (values) => {
-    setFormError(null)
+    setFailure(null)
     try {
       await enterSession(await login(values))
     } catch (error) {
-      setFormError(applyServerError(error, setError, {}))
+      const message = applyServerError(error, setError, {})
+      setFailure(message === null ? null : loginFailure(error, message))
     }
   })
 
   return (
     <>
       <form noValidate className={FORM} onSubmit={(event) => void onSubmit(event)}>
-        {notice === null ? null : (
+        {notice.status === null ? null : (
           <Panel role="status">
-            <p className={NOTICE}>{notice}</p>
+            <p className={NOTICE}>{notice.status}</p>
           </Panel>
         )}
-        <FormErrorPanel message={formError} />
+        <FormErrorPanel
+          message={failure?.message}
+          action={
+            failure?.offerReset ? (
+              <GuardedLink to={paths.forgotPassword()} className={FOOTNOTE_LINK}>
+                비밀번호 재설정하기
+              </GuardedLink>
+            ) : undefined
+          }
+        />
         <TextField
           tone="auth"
           type="email"
@@ -76,9 +105,9 @@ export function LoginForm() {
           showLabel="비밀번호 보기"
           hideLabel="비밀번호 숨기기"
           labelEnd={
-            <button type="button" disabled className={FORGOT}>
+            <GuardedLink to={paths.forgotPassword()} className={FORGOT}>
               비밀번호를 잊으셨나요?
-            </button>
+            </GuardedLink>
           }
           error={errors.password?.message}
           {...register('password')}
@@ -87,10 +116,10 @@ export function LoginForm() {
           로그인
         </Button>
       </form>
-      <AlternativeAuth googleLabel="Google 계정으로 로그인" />
+      <AlternativeAuth />
       <p className={FOOTNOTE}>
         처음이신가요?{' '}
-        <GuardedLink to={paths.signup()} className={FOOTNOTE_LINK}>
+        <GuardedLink to={paths.signup({ next })} className={FOOTNOTE_LINK}>
           회원가입
         </GuardedLink>
       </p>

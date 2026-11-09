@@ -25,6 +25,8 @@ export type UploadProgressListener = (progress: UploadProgress) => void
 
 export interface RequestOptions {
   method?: HttpMethod
+  headers?: Record<string, string>
+  notifyUnauthorized?: boolean
   /** null·undefined 값은 보내지 않는다 */
   params?: Record<string, QueryParamValue>
   /** 객체는 JSON, FormData 는 multipart 로 나간다 */
@@ -77,6 +79,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       method: options.method ?? 'GET',
       params: options.params,
       data: options.body,
+      headers: options.headers,
       signal: options.signal,
       onUploadProgress: toAxiosProgressListener(options.onUploadProgress),
     })
@@ -90,6 +93,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       error instanceof ApiError &&
       error.kind === 'http' &&
       error.status === 401 &&
+      options.notifyUnauthorized !== false &&
       session.isCurrent()
     ) {
       for (const listener of unauthorizedListeners) listener(error)

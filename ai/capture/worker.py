@@ -34,8 +34,15 @@ from pathlib import Path
 from capture.handoff import from_env as handoff_from_env
 from capture.judge_path import extract_path
 from capture.notify import FileOutbox, MeetingReporter, debug_from_env
-from capture.recorder import (STATUS_SOURCED, Claims, backend_from_env, build_extractor, prune_audio, recover_pass,
-                              save_manifest)
+from capture.recorder import (
+    STATUS_SOURCED,
+    Claims,
+    backend_from_env,
+    build_extractor,
+    prune_audio,
+    recover_pass,
+    save_manifest,
+)
 from shared.config import RECORDINGS_DIR, TRANSCRIPTS_DIR
 from shared.schemas import now_iso
 from upload.assign import assign_one
@@ -265,6 +272,18 @@ class Worker:
         for session in dropped:
             print(f"[worker] 세션 {session} 음성 삭제", flush=True)
 
+    async def _purge_once(self) -> None:
+        from capture.meeting_purge import purge_one
+        from capture.privacy_cleanup import cleanup_one as privacy_cleanup_one
+        handoff = self._handoff_factory()
+        if handoff is None or self._stopping:
+            return
+        for cleanup in (privacy_cleanup_one, purge_one):
+            try:
+                await asyncio.to_thread(cleanup, self.recordings_dir, self.transcripts_dir, client=handoff.client)
+            except Exception:  # noqa: BLE001 - a failed purge retains the backend lease for retry
+                print("[worker] artifact cleanup pending retry", flush=True)
+
     def _wakes(self) -> list[Path]:
         d = worker_dir(self.recordings_dir)
         return sorted(d.glob("wake-*")) if d.is_dir() else []
@@ -290,8 +309,9 @@ class Worker:
                         break
                     wake.unlink(missing_ok=True)
                     await self.run_pass(guild_id=wake.name[len("wake-"):], manual=True)
-                await self._prune_audio()
                 await self._intake_once()
+                await self._purge_once()
+                await self._prune_audio()
                 await self._nap()
         finally:
             beat.cancel()

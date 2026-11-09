@@ -9,6 +9,7 @@ const member = (id: string, displayName: string, discordUserId: string | null): 
   discordUserId,
   notionName: null,
   role: 'member',
+  hasLoginAccount: false,
   createdAt: '2026-09-28T00:00:00Z',
 })
 

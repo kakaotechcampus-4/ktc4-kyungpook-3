@@ -284,7 +284,20 @@ def _process(
     transport: httpx.BaseTransport | None,
     now: datetime,
 ) -> None:
-    job = db.get(NotionSyncJob, job_id)
+    from app.services import lifecycle
+    from app.core.errors import AppError
+    db.info["read_only_request"] = False
+    workspace_id = db.scalar(select(Task.workspace_id).join(NotionSyncJob, NotionSyncJob.task_id == Task.task_id).where(NotionSyncJob.job_id == job_id))
+    if workspace_id is None:
+        return
+    try:
+        lifecycle.workspace(db, workspace_id, check_epoch=False)
+    except AppError:
+        db.rollback()
+        return
+    job = db.get(NotionSyncJob, job_id, populate_existing=True)
+    if job is None:
+        return
     task = db.get(Task, job.task_id)
     if task is None:
         _finish(job, NotionSyncJobStatus.SKIPPED, now, "Task가 삭제됐습니다.")
@@ -352,6 +365,15 @@ def _process(
             # POST 전에 먼저 커밋해 둬야, 응답을 못 받은 채 워커가 죽어도 흔적이 남는다.
             _update_task_sync(db, task_id, notion_create_attempted_at=now)
             db.commit()
+            try:
+                lifecycle.workspace(db, workspace_id, check_epoch=False)
+            except AppError:
+                db.rollback()
+                return
+            task = db.get(Task, task_id, populate_existing=True)
+            if task is None:
+                db.rollback()
+                return
             # 커밋하면 Task를 다시 읽는다. 처음 읽은 뒤 지워졌으면(auto 되돌리기) 만들지 않는다. 그대로 만들면 지운 뒤의
             # 버전까지 반영된 것으로 기록되어, 보관할 요청이 건너뛰어지고 페이지가 남는다
             if task.is_deleted:

@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { SESSION_QUERY_KEY } from '@/entities/user'
@@ -12,6 +12,7 @@ import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
 import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
+import { walkSignup } from './test/walkSignup'
 
 /* U2-2~U2-6, U2-8. 제품과 같은 배선(renderApp)에 MSW + 실제 request 경로다 */
 
@@ -34,156 +35,35 @@ async function fillLogin(email: string, password: string) {
   await userEvent.type(screen.getByLabelText('비밀번호'), password)
 }
 
-async function fillSignup(values: { name: string; email: string; password: string }) {
-  await userEvent.type(screen.getByLabelText('이름'), values.name)
-  await userEvent.type(screen.getByLabelText('이메일'), values.email)
-  await userEvent.type(screen.getByLabelText('비밀번호'), values.password)
-}
-
 const posts = (log: ReturnType<typeof recordRequests>, path: string) =>
   log.started.filter((request) => request.method === 'POST' && request.path === path)
 
-describe('회원가입 화면 (U2-3·U2-4)', () => {
-  it('이름·이메일·비밀번호와 보기 토글이 있고 강도 표시·약관 동의는 없다', async () => {
-    await openSignup()
-    expect(screen.getByLabelText('이름')).toBeInTheDocument()
-    expect(screen.getByLabelText('이메일')).toHaveAttribute('type', 'email')
-    const password = screen.getByLabelText('비밀번호')
-    expect(password).toHaveAttribute('type', 'password')
-    await userEvent.click(screen.getByRole('button', { name: '비밀번호 보기' }))
-    expect(password).toHaveAttribute('type', 'text')
-
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(screen.queryByText(/이용약관|개인정보 처리방침/)).not.toBeInTheDocument()
-    expect(screen.queryByRole('img', { name: /비밀번호 강도/ })).not.toBeInTheDocument()
-    // 규칙 안내 한 줄은 남는다. 입력의 설명으로 이어져 있다
-    expect(password).toHaveAccessibleDescription('8자 이상, 숫자 포함')
-  })
-
-  it('필드 오류는 입력 아래에 있고 aria-invalid · aria-describedby 로 이어진다', async () => {
-    await openSignup()
-    await userEvent.click(screen.getByRole('button', { name: '계정 만들기' }))
-
-    const name = screen.getByLabelText('이름')
-    await waitFor(() => expect(name).toHaveAttribute('aria-invalid', 'true'))
-    expect(name).toHaveAccessibleDescription(AUTH_MESSAGES.nameRequired)
-    expect(screen.getByLabelText('이메일')).toHaveAccessibleDescription(AUTH_MESSAGES.emailRequired)
-    expect(screen.getByLabelText('비밀번호')).toHaveAccessibleDescription(
-      `8자 이상, 숫자 포함 ${AUTH_MESSAGES.passwordRequired}`,
-    )
-    // 첫 오류 칸으로 포커스가 간다 (shouldFocusError)
-    expect(name).toHaveFocus()
-    // 비필드 오류가 아니다 — 폼 상단 패널(alert)은 없다. 필드 오류도 alert 가 아니다 — 입력의 설명으로 한 번만 읽힌다
-    expect(screen.queryByRole('alert')).toBeNull()
-  })
-
-  it('비밀번호가 8자 미만이거나 숫자가 없으면 입력 아래에 규칙을 알린다', async () => {
-    await openSignup()
-    const password = screen.getByLabelText('비밀번호')
-    await userEvent.type(password, 'abcdefgh')
-    await userEvent.tab()
-    await waitFor(() => expect(password).toHaveAttribute('aria-invalid', 'true'))
-    expect(password).toHaveAccessibleDescription(
-      `8자 이상, 숫자 포함 ${AUTH_MESSAGES.passwordRule}`,
-    )
-    // 한 번 만진 칸은 고치는 즉시 다시 검사한다
-    await userEvent.type(password, '1')
-    await waitFor(() => expect(password).not.toHaveAttribute('aria-invalid'))
-  })
-})
-
-describe('회원가입 제출 (U2-6·U2-8)', () => {
-  it('가입 성공: 공간 0개라 시작 작업 선택으로 간다', async () => {
-    const log = recordRequests()
-    const app = await openSignup()
-    await fillSignup({ name: '새 사용자', email: 'new@example.com', password: 'pass1234' })
-    await userEvent.click(screen.getByRole('button', { name: '계정 만들기' }))
-
-    expect(await screen.findByRole('heading', { name: '어떻게 시작할까요?' })).toBeInTheDocument()
-    await app.expectPath('/onboarding/start')
-    expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toMatchObject({
-      user: { email: 'new@example.com', name: '새 사용자' },
-      workspaceCount: 0,
-    })
-    // 목록을 확보한 뒤에 옮긴다
-    const signupAt = log.timeline.indexOf('answer POST /auth/signup')
-    expect(log.timeline.indexOf('start GET /workspaces', signupAt)).toBeGreaterThan(signupAt)
-  })
-
-  it('중복 이메일: 이메일 입력 아래에 서버 오류를 두고 그 칸으로 포커스를 옮긴다 (setError)', async () => {
-    const app = await openSignup()
-    await fillSignup({ name: '중복', email: 'pm@example.com', password: 'pass1234' })
-    await userEvent.click(screen.getByRole('button', { name: '계정 만들기' }))
-
-    const email = screen.getByLabelText('이메일')
-    await waitFor(() => expect(email).toHaveAttribute('aria-invalid', 'true'))
-    expect(email).toHaveAccessibleDescription('이미 가입된 이메일이에요.')
-    expect(email).toHaveFocus()
-    // 입력값은 그대로다
-    expect(screen.getByLabelText('이름')).toHaveValue('중복')
-    await app.expectPath('/signup')
-
-    // 이메일을 고치면 서버 오류가 풀린다
-    await userEvent.clear(email)
-    await userEvent.type(email, 'other@example.com')
-    await waitFor(() => expect(email).not.toHaveAttribute('aria-invalid'))
-  })
-
-  it('이름이 100자를 넘으면 이름 입력 아래에 알리고 가입 요청을 보내지 않는다 (#446)', async () => {
-    const log = recordRequests()
-    await openSignup()
-    const name = screen.getByLabelText('이름')
-    await userEvent.click(name)
-    await userEvent.paste('가'.repeat(101))
-    await userEvent.type(screen.getByLabelText('이메일'), 'new@example.com')
-    await userEvent.type(screen.getByLabelText('비밀번호'), 'pass1234')
-    await userEvent.click(screen.getByRole('button', { name: '계정 만들기' }))
-
-    await waitFor(() => expect(name).toHaveAttribute('aria-invalid', 'true'))
-    expect(name).toHaveAccessibleDescription(AUTH_MESSAGES.nameTooLong)
-    expect(name).toHaveFocus()
-    expect(posts(log, '/auth/signup')).toEqual([])
-  })
-
-  it('중복 제출 방지: 응답 전의 연속 제출은 가입 요청 하나다', async () => {
-    const gate = deferred()
-    server.use(
-      http.post('/api/v1/auth/signup', async () => {
-        await gate.promise
-      }),
-    )
-    const log = recordRequests()
-    await openSignup()
-    await fillSignup({ name: '새 사용자', email: 'new@example.com', password: 'pass1234' })
-
-    const submitButton = screen.getByRole('button', { name: '계정 만들기' })
-    const form = submitButton.closest('form')!
-    fireEvent.submit(form)
-    fireEvent.submit(form)
-    await waitFor(() => expect(submitButton).toBeDisabled())
-    await userEvent.click(submitButton)
-    await userEvent.type(screen.getByLabelText('비밀번호'), '{Enter}')
-    expect(submitButton).toHaveAttribute('aria-busy', 'true')
-
-    gate.resolve()
-    expect(await screen.findByRole('heading', { name: '어떻게 시작할까요?' })).toBeInTheDocument()
-    expect(posts(log, '/auth/signup')).toHaveLength(1)
-  })
-})
-
 describe('로그인 화면 (U2-3·U2-5)', () => {
-  it('Google 로그인과 `비밀번호를 잊으셨나요?` 는 비활성이다', async () => {
-    await openLogin()
-    expect(screen.getByRole('button', { name: 'Google 계정으로 로그인' })).toBeDisabled()
-    const forgot = screen.getByRole('button', { name: '비밀번호를 잊으셨나요?' })
-    expect(forgot).toBeDisabled()
+  it('Google 버튼은 없고 `비밀번호를 잊으셨나요?` 는 재설정 요청 화면으로 가는 링크다', async () => {
+    const app = await openLogin()
+    expect(screen.queryByRole('button', { name: /Google/ })).not.toBeInTheDocument()
     // 준비 중 문구·배지를 달지 않는다 (D-006)
     expect(screen.queryByText(/준비 중/)).not.toBeInTheDocument()
+
+    const forgot = screen.getByRole('link', { name: '비밀번호를 잊으셨나요?' })
+    expect(forgot).toHaveAttribute('href', '/forgot-password')
+    await userEvent.click(forgot)
+    expect(await screen.findByRole('heading', { name: '비밀번호 재설정 요청' })).toBeInTheDocument()
+    await app.expectPath('/forgot-password')
   })
 
-  it('회원가입의 Google 버튼도 비활성이다', async () => {
-    await openSignup()
-    expect(screen.getByRole('button', { name: 'Google 계정으로 가입하기' })).toBeDisabled()
+  it('`비밀번호를 잊으셨나요?` 는 이메일 다음 Tab 으로 닿고 Enter 로 이동한다', async () => {
+    const app = await openLogin()
+    await userEvent.click(screen.getByLabelText('이메일'))
+    await userEvent.tab()
+    expect(screen.getByRole('link', { name: '비밀번호를 잊으셨나요?' })).toHaveFocus()
+    await userEvent.tab()
+    expect(screen.getByLabelText('비밀번호')).toHaveFocus()
+
+    await userEvent.tab({ shift: true })
+    await userEvent.keyboard('{Enter}')
+    expect(await screen.findByRole('heading', { name: '비밀번호 재설정 요청' })).toBeInTheDocument()
+    await app.expectPath('/forgot-password')
   })
 
   it('로그인은 이메일 형식과 비밀번호 빈 값만 검사한다', async () => {
@@ -215,18 +95,34 @@ describe('로그인 제출 (U2-4·U2-6·U2-8)', () => {
     expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull()
   })
 
-  it('시도가 너무 많으면 맞는 비밀번호여도 서버 문장을 그대로 알리고 남은 시간은 말하지 않는다 (#457)', async () => {
+  it('시도가 너무 많으면 맞는 비밀번호여도 서버 문장에 재설정 안내와 링크를 붙이고 남은 시간은 말하지 않는다 (#457·#554)', async () => {
     applyScenario('login-rate-limited')
     const app = await openLogin()
     await fillLogin('pm@example.com', 'mock-password')
     await userEvent.click(screen.getByRole('button', { name: '로그인' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      /^로그인 시도가 너무 많습니다\. 잠시 후 다시 시도해 주세요\.$/,
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(
+      /^로그인 시도가 너무 많습니다\. 잠시 후 다시 시도해 주세요\. 비밀번호가 기억나지 않으면 재설정해 주세요\.비밀번호 재설정하기$/,
     )
     expect(screen.queryByText(/\d+\s*(초|분)/)).toBeNull()
+    // 가입 여부를 드러내지 않고, 재설정이 막힘을 푼다고 약속하지 않는다 (#554)
+    expect(alert).not.toHaveTextContent(/잠겼|잠금|풀려|풀립/)
     await app.expectPath('/login')
     expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull()
+
+    await userEvent.click(within(alert).getByRole('link', { name: '비밀번호 재설정하기' }))
+    expect(await screen.findByRole('heading', { name: '비밀번호 재설정 요청' })).toBeInTheDocument()
+    await app.expectPath('/forgot-password')
+  })
+
+  it('틀린 비밀번호(401)에는 재설정 안내를 붙이지 않는다', async () => {
+    await openLogin()
+    await fillLogin('pm@example.com', 'wrong-password')
+    await userEvent.click(screen.getByRole('button', { name: '로그인' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/^이메일 또는 비밀번호가 올바르지 않아요\.$/)
+    expect(within(alert).queryByRole('link')).toBeNull()
   })
 
   it('서버 오류도 비필드 오류다. 다시 제출하면 패널이 사라지고 이어 간다', async () => {
@@ -378,8 +274,7 @@ describe('로그인 제출 (U2-4·U2-6·U2-8)', () => {
     )
     const log = recordRequests()
     const app = await openSignup()
-    await fillSignup({ name: '새 사용자', email: 'new@example.com', password: 'pass1234' })
-    await userEvent.click(screen.getByRole('button', { name: '계정 만들기' }))
+    await walkSignup({ name: '새 사용자', email: 'new@example.com', password: 'pass1234' })
     const retry = await screen.findByRole('button', { name: '다시 시도' }, { timeout: 6000 })
 
     failing = false

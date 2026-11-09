@@ -1,8 +1,15 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { onTestFinished } from 'vitest'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { getResponse, http, HttpResponse } from 'msw'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
+import { ok } from '@/shared/mock/envelope'
+import { handlers } from '@/shared/mock/handlers'
 import { applyScenario } from '@/shared/mock/scenarios'
+import { server } from '@/shared/mock/server'
+import { toTaskResponse } from '@/shared/mock/task-state'
+import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -106,4 +113,79 @@ describe('태스크 상세의 답장 기록 (#344)', () => {
     expect(within(changeRow(history, '상태: 완료')).getByText('자동 반영')).toBeVisible()
     expect(screen.queryByRole('button', { name: '되돌리기' })).toBeNull()
   })
+})
+
+describe('쓰기 응답을 읽지 못함 (#348)', () => {
+  it('답장 변경 되돌리기 응답을 읽지 못하면 결과를 확인하지 못했다고 알리고, 새로고침은 태스크를 다시 받는다', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    onTestFinished(() => warning.mockRestore())
+    applyScenario('reply-judgment')
+    server.use(
+      http.post('/api/v1/tasks/:taskId/reply-changes/:changeId/undo', () =>
+        ok({
+          ...toTaskResponse(db.tasks.find(({ task_id }) => task_id === 'tk_03')!),
+          status: 'archived',
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    const log = recordRequests()
+    const history = await openTk03()
+    await user.click(
+      within(changeRow(history, '상태: 완료')).getByRole('button', { name: '되돌리기' }),
+    )
+    const notice = (
+      await screen.findByText('변경 결과를 확인하지 못했어요', {}, { timeout: 5_000 })
+    ).closest('li') as HTMLElement
+    expect(within(notice).getByText(/서버에는 반영됐을 수 있어요/)).toBeInTheDocument()
+    expect(screen.queryByText('되돌리지 못했어요')).toBeNull()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 300)))
+    const before = log.started.length
+    fireEvent.click(within(notice).getByRole('button', { name: '새로고침' }))
+    await waitFor(() =>
+      expect(log.started.slice(before)).toContainEqual({ method: 'GET', path: '/tasks/tk_03' }),
+    )
+  })
+})
+
+describe('모르는 답장 줄 (#348)', () => {
+  /** 서버 기록 응답에서 자동 반영 줄(rc_02, undoable)만 바꾼다 */
+  function patchAutoChange(patch: Record<string, string>) {
+    server.use(
+      http.get('/api/v1/tasks/:taskId/timeline', async ({ request }) => {
+        const response = await getResponse(handlers, request)
+        const body = (await response!.json()) as {
+          data: { items: { kind: string; changes?: { change_id: string }[] }[] }
+        }
+        for (const item of body.data.items)
+          item.changes = item.changes?.map((change) =>
+            change.change_id === 'rc_02' ? { ...change, ...patch } : change,
+          )
+        return HttpResponse.json(body)
+      }),
+    )
+  }
+
+  it.each([
+    ['종류', { field: 'priority' }, '알 수 없는 변경이에요', '자동 반영'],
+    ['결과', { result: 'escalated' }, '상태: 완료', '알 수 없는 결과'],
+    [
+      '종류와 결과',
+      { field: 'priority', result: 'escalated' },
+      '알 수 없는 변경이에요',
+      '알 수 없는 결과',
+    ],
+  ])(
+    '%s를 모르는 줄은 서버가 되돌릴 수 있다고 해도 PM 에게 되돌리기가 없고 쓰기 요청이 나가지 않는다',
+    async (_, patch, change, result) => {
+      applyScenario('reply-judgment')
+      patchAutoChange(patch)
+      const requests = recordRequests()
+      const history = await openTk03()
+      const row = changeRow(history, change)
+      expect(within(row).getByText(result)).toBeVisible()
+      expect(within(replyRow(history)).queryByRole('button', { name: '되돌리기' })).toBeNull()
+      expect(requests.started.filter(({ method }) => method !== 'GET')).toEqual([])
+    },
+  )
 })

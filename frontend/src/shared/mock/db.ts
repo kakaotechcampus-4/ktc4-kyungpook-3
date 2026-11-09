@@ -1,7 +1,9 @@
+import type { MockMeetingDeletion } from './meetingDeletion'
 import type { SessionDto } from '@/shared/types/api/auth'
 import type { SpeakerViewDto } from '@/shared/types/api/meeting'
 import type { MemberAliasDto, MemberDto } from '@/shared/types/api/member'
 import type { MessageSettingsDto } from '@/shared/types/api/messageSettings'
+import type { TaskDto } from '@/shared/types/api/task'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { sessionFixture } from './fixtures/auth'
 import {
@@ -148,8 +150,40 @@ export const loginLimitKey = (email: string) => email.trim().toLowerCase()
 
 /** 백엔드에서 막힘을 직접 건(applied) 열린 무응답 감시 기록에 대응한다. 막기 전 상태·사유를 든다 */
 export interface MockAutoBlock {
-  prev_status: string
+  prev_status: TaskDto['status']
   prev_blocker: string | null
+}
+
+/** #427 이메일별 가입 코드. 실 API 는 해시만 저장하지만 모의 메일함이 코드를 보여야 해서 원문을 둔다. 시각은 ms 다 */
+export interface MockSignupCode {
+  code: string
+  attempts: number
+  expiresAt: number
+  sentAt: number
+  windowStartedAt: number
+  windowCount: number
+}
+
+/** 보낸 가입 인증 메일 */
+export interface MockSignupMail {
+  to: string
+  code: string
+  sentAt: string
+}
+
+export interface MockSignupVerification {
+  /** 정규화한 이메일이 키다 */
+  codes: Record<string, MockSignupCode>
+  outbox: MockSignupMail[]
+  /** 코드 확인이 준 증명 토큰이 키다. 값은 그 이메일과 만료 시각(ms)이다 */
+  proofs: Record<string, { email: string; expiresAt: number }>
+}
+
+/** 가입을 기다리는 카카오 신원. 실 API 의 HttpOnly 대기 쿠키 자리다. 이메일은 카카오가 인증했을 때만 있다 */
+export interface MockKakaoPending {
+  kakaoId: string
+  email: string | null
+  nickname: string | null
 }
 
 /** 저장한 메시지·알림 설정 행. 응답의 `saved`·`pms` 는 handler 가 붙인다 */
@@ -161,11 +195,23 @@ interface MockAccount {
   workspaceIds: string[]
   /** 공간별로 이 계정이 연결된 팀원 행. 백엔드 Member.user_id 의 대응이다. 초대로 이어진 행은 수락한 초대가 대응이라 여기 두지 않는다 */
   memberIds: Record<string, string>
+  /** 이어진 카카오 계정. 백엔드 User.provider_id 의 대응이다 (#427) */
+  kakaoId?: string
 }
 export interface MockDb {
   session: SessionDto
   authenticated: boolean
   accounts: MockAccount[]
+  withdrawals: {
+    keyHash: string
+    receipt: {
+      withdrawal_id: string
+      account_deleted_at: string
+      cleanup_status: 'pending' | 'complete'
+    }
+    checks: number
+  }[]
+  withdrawnMemberIds: string[]
   workspaces: WorkspaceDto[]
   members: MemberDto[]
   aliases: MemberAliasDto[]
@@ -174,6 +220,7 @@ export interface MockDb {
   integrations: typeof integrationFixtures
   /** #428 모의 Discord 서버의 텍스트 채널. 팀원 목록(`discordUsers`)처럼 서버가 하나라 어느 공간이든 연결하면 이 목록이다 */
   discordChannels: MockDiscordChannel[]
+  meetingDeletions: MockMeetingDeletion[]
   meetings: typeof meetingFixtures
   meetingSummaries: typeof meetingSummaryFixtures
   minutes: typeof minutesFixtures
@@ -198,6 +245,8 @@ export interface MockDb {
   push: { publicKey: string | null; subscriptions: MockPushSubscription[] }
   invitations: MockInvitation[]
   passwordReset: MockPasswordReset
+  signupVerification: MockSignupVerification
+  kakao: { pending: MockKakaoPending | null }
   /** loginLimitKey 로 정규화한 이메일이 키다 */
   loginLimit: Record<string, MockLoginLimit>
 }
@@ -206,6 +255,8 @@ export function initialDb(): MockDb {
   return {
     session: structuredClone(sessionFixture),
     authenticated: true,
+    withdrawals: [],
+    withdrawnMemberIds: [],
     accounts: [
       {
         session: structuredClone(sessionFixture),
@@ -221,6 +272,7 @@ export function initialDb(): MockDb {
     discordUsers: structuredClone(discordUserFixtures),
     integrations: structuredClone(integrationFixtures),
     discordChannels: structuredClone(discordChannelFixtures),
+    meetingDeletions: [],
     meetings: structuredClone(meetingFixtures),
     meetingSummaries: structuredClone(meetingSummaryFixtures),
     minutes: structuredClone(minutesFixtures),
@@ -239,6 +291,8 @@ export function initialDb(): MockDb {
     push: { publicKey: null, subscriptions: [] },
     invitations: [],
     passwordReset: { tokens: [], nextMailAt: {}, outbox: [], failure: 'none' },
+    signupVerification: { codes: {}, outbox: [], proofs: {} },
+    kakao: { pending: null },
     loginLimit: {},
   }
 }

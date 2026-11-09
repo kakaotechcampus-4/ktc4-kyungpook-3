@@ -30,6 +30,11 @@ class ApprovalResponse(BaseModel):
     resolved_by: str | None
     created_at: datetime
     resolved_at: datetime | None
+    payload_version: str | None = Field(
+        None,
+        description="task_create 카드의 payload 지문(16자 hex). 카드를 본 뒤 다른 회의 항목이 합쳐지면 값이 바뀐다. "
+        "PATCH 에 그대로 보내면 바뀐 카드를 모르고 처리하는 일을 막는다. task_update 는 null",
+    )
     alias_candidate: bool = Field(
         False,
         description="담당자를 못 찾은 이름 지목(thirdname) 항목의 pending 생성 승인이고, 그 항목이 카드의 담당 항목(payload assignee_item_id, 없으면 extraction_item_id)이며(다른 회의 항목을 합친 카드는 담당 항목에만 나온다), 같은 워크스페이스에서 탈퇴하지 않은 팀원 누구도 그 글자(님·조사를 뗀 찾기 후보 포함)를 별칭으로 갖고 있지 않으면 true. PM 이 담당자를 골라 save_alias=true 로 승인하면 alias_text 를 그 팀원의 별칭으로 저장한다. 탈퇴하지 않은 누군가가 이미 갖고 있으면 false 이고 저장하지 않는다(탈퇴한 팀원의 별칭은 세지 않는다)",
@@ -59,6 +64,14 @@ class ApprovalResolveRequest(BaseModel):
         "null 이면 미정(due_date, assignee_member_id 만 가능)이다. "
         "task_create 는 task_title, assignee_member_id, due_date, task_update 는 status, due_date 를 고칠 수 있다. "
         "담당자 줄이 있는 답장 카드는 assignee_member_id 도(null 이면 미정)",
+    )
+    payload_version: str | None = Field(
+        None,
+        min_length=1,
+        max_length=64,
+        description="화면에 보여준 카드의 payload_version. 보내면 처리 시점의 값과 비교해 다르면 409 APPROVAL_CHANGED "
+        "(details.payload_version 이 지금 값)로 승인·반려를 막는다. 안 보내면 비교하지 않는다. 빈 문자열은 400 이다"
+        "(값이 없으면 키를 뺀다). task_create 에서만 본다",
     )
     save_alias: bool = Field(
         False,

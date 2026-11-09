@@ -10,10 +10,17 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.models import Member, Session as SessionModel, Task, User, Workspace
+from app.schemas.email import normalize_email
+from app.services import oauth_state, signup_codes
 from app.services.sessions import hash_session_token
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 SERVICE_TOKEN = "test-service-token"
+
+
+@pytest.fixture
+def sqlite_message_url():
+    return "sqlite:///:memory:"
 
 
 @pytest.fixture(
@@ -25,17 +32,19 @@ SERVICE_TOKEN = "test-service-token"
         ),
     ]
 )
-def mdb(request, monkeypatch):
+def mdb(request, monkeypatch, sqlite_message_url):
     monkeypatch.setenv("SERVICE_TOKEN", SERVICE_TOKEN)
     if request.param == "postgresql":
         engine = create_engine(TEST_DATABASE_URL)
         with engine.begin() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         Base.metadata.drop_all(engine)
-    else:
+    elif sqlite_message_url == "sqlite:///:memory:":
         engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
+            sqlite_message_url, connect_args={"check_same_thread": False}, poolclass=StaticPool
         )
+    else:
+        engine = create_engine(sqlite_message_url, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     # 앱 세션(SessionLocal)과 같이 autoflush 를 끈다. 서비스가 조회 전에 flush 를 빠뜨리면 여기서 드러난다.
     session = sessionmaker(bind=engine, autoflush=False)()
@@ -51,6 +60,20 @@ def mdb(request, monkeypatch):
         session.close()
         Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+@pytest.fixture
+def signup_secret(monkeypatch):
+    """`signup_verified` 가 증명을 서명할 키. 키 없는 경우를 재는 Notion·Discord 테스트 때문에 전역으로 두지 않는다."""
+    monkeypatch.setenv("OAUTH_STATE_SECRET", "k" * 40)
+
+
+def signup_verified(client, email: str, password: str = "pw-123456", name: str = "테스터"):
+    """코드 메일을 거치지 않고 인증을 마친 상태로 가입한다. 코드 흐름은 test_signup_api.py 가 잰다."""
+    proof = oauth_state.seal(signup_codes.PROOF_KIND, 60, {"m": normalize_email(email)})
+    return client.post(
+        "/api/v1/auth/signup", json={"verification_token": proof, "password": password, "name": name}
+    )
 
 
 def _user(db, name: str) -> User:
