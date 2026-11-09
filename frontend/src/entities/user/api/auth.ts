@@ -1,5 +1,7 @@
 import { request } from '@/shared/api/client'
-import type { LoginDto, SessionDto, SignupDto } from '@/shared/types/api/auth'
+import { parseResponse } from '@/shared/api/parseResponse'
+import { sessionSchema } from '@/shared/types/api/auth'
+import type { LoginDto, SignupDto } from '@/shared/types/api/auth'
 import { toSession } from '../model/mapper'
 import type { LoginInput, Session, SignupInput } from '../model/types'
 
@@ -10,7 +12,13 @@ import type { LoginInput, Session, SignupInput } from '../model/types'
 
 export async function login(input: LoginInput): Promise<Session> {
   const body: LoginDto = { email: input.email, password: input.password }
-  return toSession(await request<SessionDto>('/auth/login', { method: 'POST', body }))
+  return toSession(
+    parseResponse(
+      sessionSchema,
+      await request<unknown>('/auth/login', { method: 'POST', body }),
+      'user',
+    ),
+  )
 }
 
 /**
@@ -24,7 +32,13 @@ export async function signup(input: SignupInput): Promise<Session> {
     link_kakao: input.linkKakao,
     ...(input.verificationToken === null ? {} : { verification_token: input.verificationToken }),
   }
-  return toSession(await request<SessionDto>('/auth/signup', { method: 'POST', body }))
+  return toSession(
+    parseResponse(
+      sessionSchema,
+      await request<unknown>('/auth/signup', { method: 'POST', body }),
+      'user',
+    ),
+  )
 }
 
 /** 서버 세션을 지운다. 이미 세션이 없으면 401 이다 */

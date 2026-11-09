@@ -2349,7 +2349,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 
 ### D-184. API 응답을 zod 스키마로 검증하고 모르는 값을 종류별로 다룬다 (D-134 대체)
 
-- 결정일: 2026-11-05 (정책, #348), 2026-11-07 (테스트 보완), 2026-11-09 (쓰기 응답 문구, approval 의 오류 details, 모르는 회의 출처의 특성, message 의 칸 맞춤 검사, 읽지 못한 조회의 자동 재조회)
+- 결정일: 2026-11-05 (정책, #348), 2026-11-07 (테스트 보완), 2026-11-09 (쓰기 응답 문구, approval 의 오류 details, 모르는 회의 출처의 특성, message 의 칸 맞춤 검사, 읽지 못한 조회의 자동 재조회), 2026-11-10 (마지막 묶음의 인증·복구가 있는 쓰기)
 - 상태: 확정
 
 팀 결정(#348)으로 D-134 를 대체한다. D-134 는 일반 API 응답을 OpenAPI 생성 타입과 MSW 통합 테스트로 검증하고 zod 로 중복 검증하지 않기로 했다. 그 전제인 생성 타입이 아직 없다. 응답은 손으로 쓴 DTO 타입으로 단언했고, 모르는 상태는 정상 값으로 바뀌었다.
@@ -2360,9 +2360,9 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 
 | 필드 종류 | 규칙 | 예 |
 |---|---|---|
-| 상태 판단·쓰기 기준 | 응답 전체가 `INVALID_RESPONSE` 다. 다른 정상 값으로 바꾸지 않는다 | task `status`·`version`, approval `status`, meeting `status`, integration·invitation `status`, onboarding `step`·`status`, message `sender`·`dm_status`, 보낼 메시지(묶음) `status`, 답장 고르기 `status` |
-| 표시용 분류 | 받은 값을 보존하고(`UnknownValue`) `알 수 없는 ○○` 또는 기본 문구로 보인다. 행동은 없다. 서버가 행동을 허락해도(예: 답장 줄 `undoable`) 그 줄에는 두지 않는다 | history `changed_field`·`change_source`, approval `type`·`category`, notification `kind`·`link.type`, meeting·minutes `source`, 묶음 `body_source`(`출처를 알 수 없는 문구`), `dm_failure_reason`(받은 값을 남기고 서버의 `unknown` 과 같은 `이유를 알 수 없어요`) |
-| 보수 폴백 | 권한·행동이 줄고 화면이 사실과 다르게 말하지 않는 값으로 내린다 | `role` → `member`, extraction `gate` → `hold`, extraction `approval_status` → 없음, `notion_sync_status` → 없음, task `auto_blocked` 가 불리언이 아니면 풀 수 없음(false), 답장 `channel`·`evidence_status` → 없음, 회의록 `summary` 모양이 틀리면 없음(BE 가 깨진 요약을 다루는 방식과 같다), 묶음 `draft_status` → 작성 중, 팀원 메시지 `reply_channel` → 웹 답장 표시 없음, 재촉 근거 `kind` → 근거 없음 |
+| 상태 판단·쓰기 기준 | 응답 전체가 `INVALID_RESPONSE` 다. 다른 정상 값으로 바꾸지 않는다 | task `status`·`version`, approval `status`, meeting `status`, integration·invitation `status`, onboarding `step`·`status`, message `sender`·`dm_status`, 보낼 메시지(묶음) `status`, 답장 고르기 `status`, 메시지 설정 `pm_alert_method`(PM 이 바꿔 저장하는 값이다) |
+| 표시용 분류 | 받은 값을 보존하고(`UnknownValue`) `알 수 없는 ○○` 또는 기본 문구로 보인다. 행동은 없다. 서버가 행동을 허락해도(예: 답장 줄 `undoable`) 그 줄에는 두지 않는다 | history `changed_field`·`change_source`, approval `type`·`category`, notification `kind`·`link.type`, meeting·minutes `source`, 묶음 `body_source`(`출처를 알 수 없는 문구`), `dm_failure_reason`(받은 값을 남기고 서버의 `unknown` 과 같은 `이유를 알 수 없어요`), 별칭 `source`(`알 수 없는 출처`) |
+| 보수 폴백 | 권한·행동이 줄고 화면이 사실과 다르게 말하지 않는 값으로 내린다 | 워크스페이스·팀원 `role` → `member`, extraction `gate` → `hold`, extraction `approval_status` → 없음, `notion_sync_status` → 없음, task `auto_blocked` 가 불리언이 아니면 풀 수 없음(false), 답장 `channel`·`evidence_status` → 없음, 회의록 `summary` 모양이 틀리면 없음(BE 가 깨진 요약을 다루는 방식과 같다), 묶음 `draft_status` → 작성 중, 팀원 메시지 `reply_channel` → 웹 답장 표시 없음, 재촉 근거 `kind` → 근거 없음 |
 
 - **목록은 한 건만 깨져도 전체가 실패한다.** 깨진 항목을 몰래 빼지 않는다.
 - **모르는 회의 출처는 시각 축이 없다.** 출처는 회의 안 시각(`at_ms`)과 길이를 녹음 위치로 읽을지 채팅 시각으로 읽을지 정한다(`meetingSourceTraits`). 모르는 출처는 둘 다 짐작하지 않는다. 길이와 전사문·근거 시각을 보이지 않고 머리 메타는 시작 시각만이다. 정리 단계 수도 출처마다 달라 단계를 그리지 않는다. 배지는 없고 출처 칩은 `알 수 없는 출처` 다.
@@ -2371,7 +2371,8 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 - **칸 종류도 상태 판단처럼 다룬다.** 태스크 기록(`/timeline`)의 `kind` 처럼 무엇을 그릴지 정하는 판별 값을 모르면 응답 전체가 `INVALID_RESPONSE` 다. 그 칸의 필드를 몰라 그릴 수 없기 때문이다.
 - **화면.** 기존 `INVALID_RESPONSE` 처리 그대로다. `응답을 읽지 못했어요. 잠시 후 다시 시도해 주세요.` 와 `다시 시도`를 보이고 Query 는 재시도하지 않는다. 받아 둔 데이터는 지우지 않아 갱신 실패 때 본문이 남는다(#236). 처리 중 회의를 지켜보는 상세는 예외다. 받아 둔 단계를 지금 상태처럼 두지 않고 처리 화면에 안내와 `다시 시도`만 보인다. 정리 실패·완료로 바꾸지 않고 추적은 남아, 다시 시도가 성공하면 다시 지켜본다.
 - **읽지 못한 조회는 스스로 다시 묻지 않는다.** 다시 물어도 같은 답이다. 마지막 조회가 `INVALID_RESPONSE` 인 동안 앱의 QueryClient(`createQueryClient`)가 모든 조회의 간격(`refetchInterval`)·창 포커스·연결 복귀 재조회를 멈춘다. 조회가 정한 값(`always`·함수 간격 포함)은 읽을 수 있는 동안만 쓴다. 조회마다 옵션을 적으면 빠뜨린다. PR 3 의 회의 상세와 PR 4 의 메시지·알림이 같은 리뷰 지적을 받았다. 소켓 신호·새 알림·회의 정리 완료처럼 스스로 다시 받게 하는 무효화는 `hasReadableResponse` 로 그 조회를 거른다. 사용자의 `다시 시도`와 쓰기 토스트의 `새로고침`은 거르지 않는다. 다시 시도가 성공하면 오류가 지워져 간격이 다시 돈다. 화면에 들어와 새로 붙는 조회는 지금처럼 다시 받는다(사용자가 고른 이동이다). 리뷰 반영(2026-11-09).
-- **쓰기 응답.** 쓰기 요청(상태 변경·필드 저장·생성·되돌리기 등)의 응답이 `INVALID_RESPONSE` 면 서버에는 이미 반영됐을 수 있다. 그래서 실패라고 하지 않고 토스트 `변경 결과를 확인하지 못했어요` · `서버에는 반영됐을 수 있어요. 새로고침해서 지금 상태를 확인해 주세요.` 와 `새로고침` 버튼을 보인다. `새로고침` 은 페이지 전체가 아니라 그 entity 의 데이터를 다시 받는다(task 는 그 공간의 목록·상세·이력, approval 승인·반려는 승인 처리 뒤 맞추는 승인·태스크·추출·별칭, 추출 항목 되돌리기는 태스크·승인·추출, 메시지 쓰기(보낼 시각 옮기기·태스크 빼기·재촉 만들기·대화 열기)는 그 공간의 메시지 목록·대화). 회의 업로드는 이미 응답을 잃었을 때의 복구가 있어 토스트 대신 그 복구를 탄다. 목록을 다시 받아 올리기 전에 없던 같은 제목·회의 시각의 직접 올린 회의가 하나 있으면 상태와 상관없이 그 처리 화면으로 가고, 목록을 받지 못했거나 하나로 정하지 못하면 다시 올리라고 하지 않고 회의록 목록에서 확인하게 한다(다시 올리면 회의가 둘 생길 수 있다). 입력 칸·버튼 옆에 실패를 보이던 쓰기(필드 저장·직접 추가·Notion 재시도)도 이 경우만 토스트로 알린다. 다른 실패 문구는 그대로다. 사용자 결정(2026-11-09).
+- **쓰기 응답.** 쓰기 요청(상태 변경·필드 저장·생성·되돌리기 등)의 응답이 `INVALID_RESPONSE` 면 서버에는 이미 반영됐을 수 있다. 그래서 실패라고 하지 않고 토스트 `변경 결과를 확인하지 못했어요` · `서버에는 반영됐을 수 있어요. 새로고침해서 지금 상태를 확인해 주세요.` 와 `새로고침` 버튼을 보인다. `새로고침` 은 페이지 전체가 아니라 그 entity 의 데이터를 다시 받는다(task 는 그 공간의 목록·상세·이력, approval 승인·반려는 승인 처리 뒤 맞추는 승인·태스크·추출·별칭, 추출 항목 되돌리기는 태스크·승인·추출, 메시지 쓰기(보낼 시각 옮기기·태스크 빼기·재촉 만들기·대화 열기)는 그 공간의 메시지 목록·대화, 회의 채팅 채널 정하기·끄기는 연동 상태, 별칭 더하기는 별칭 목록, PM 권한 주기는 팀원 목록, 메시지·알림 설정 바꾸기는 설정). 회의 업로드는 이미 응답을 잃었을 때의 복구가 있어 토스트 대신 그 복구를 탄다. 목록을 다시 받아 올리기 전에 없던 같은 제목·회의 시각의 직접 올린 회의가 하나 있으면 상태와 상관없이 그 처리 화면으로 가고, 목록을 받지 못했거나 하나로 정하지 못하면 다시 올리라고 하지 않고 회의록 목록에서 확인하게 한다(다시 올리면 회의가 둘 생길 수 있다). 입력 칸·버튼 옆에 실패를 보이던 쓰기(필드 저장·직접 추가·Notion 재시도)도 이 경우만 토스트로 알린다. 다른 실패 문구는 그대로다. 사용자 결정(2026-11-09).
+- **복구 경로가 있는 쓰기는 그 경로를 탄다.** 토스트는 「반영됐는지 모른다」를 알리는 기본값이다. 이미 결과를 모를 때의 경로가 있는 쓰기는 `INVALID_RESPONSE` 도 그 경로로 보낸다. 온보딩 팀원 저장은 응답을 잃었을 때처럼 팀원 목록을 다시 읽고 남은 저장만 잇는다. 워크스페이스 만들기는 공간 목록을 다시 받아, 보내기 전에 없던 같은 이름의 내가 PM 인 공간이 하나면 그 공간의 온보딩으로 잇고, 아니면 토스트와 함께 공간 선택으로 보낸다. 만들기는 다시 보내지 않는다(리뷰 반영 2026-11-10). 계정 탈퇴는 결과를 모르는 요청으로 보고 같은 요청으로 다시 확인한다. 로그인·가입은 폼에 `INVALID_RESPONSE` 문구를 보인다. 로그인은 다시 해도 되고, 가입은 이미 만든 계정이라 다시 보내면 계정 충돌 안내가 로그인으로 보낸다. 토스트의 `새로고침` 은 데이터만 다시 받아 이 화면들의 다음 걸음을 정하지 못한다. 2026-11-10 마지막 묶음.
 - **오류 응답의 `details` 는 `INVALID_RESPONSE` 로 만들지 않는다.** 409 `details`(예: `APPROVAL_CONFLICT`)도 스키마로 읽지만, 모양이 틀리면 그 실패를 화면이 따로 다루지 않을 뿐이고 일반 실패 문구를 보인다. 요청은 이미 실패했고, 재처리 기준(충돌한 태스크 버전 등)이 없어 다시 보내지 않는다.
 - **기록.** 개발 모드는 실패한 필드 경로와 받은 값을 `console.warn` 으로 남긴다. 오류의 `details` 에는 entity 이름과 필드 경로만 둔다. production 수집(#358)은 미뤘다. 도입하면 코드·entity·필드 경로·앱 버전·라우트만 보내고 받은 값은 보내지 않는다(D-140).
 - **배포 순서.** 새 값은 FE 가 먼저 받을 수 있게 배포하고 BE 가 그 뒤에 내보낸다(계약 맨 위 「응답 검증과 새 값 배포 순서」). BE DB enum 은 닫혀 있어, 이 순서가 지켜지면 상태 판단 필드의 `INVALID_RESPONSE` 는 계약 위반 신호가 된다.
@@ -2387,7 +2388,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 영향:
 
 - D-134 를 대체한다. D-121 의 「API 응답은 `unknown` 으로 받고 스키마 검증 후 사용」을 따른다. D-134 본문은 그 시점의 결정으로 남긴다.
-- entity 묶음마다 PR 을 나눠 적용한다. 첫 PR 은 `shared/api` 의 `parseResponse`·`displayValue`·`fallbackValue` 와 task 다. 두 번째 PR 은 approval, 세 번째 PR 은 meeting·minutes·extraction, 네 번째 PR 은 message·notification 이다. 남은 entity 는 옛 `enumValue`(`shared/lib/enum.ts`)를 쓰고, 마지막 PR 이 지운다.
+- entity 묶음마다 PR 을 나눠 적용한다. 첫 PR 은 `shared/api` 의 `parseResponse`·`displayValue`·`fallbackValue` 와 task 다. 두 번째 PR 은 approval, 세 번째 PR 은 meeting·minutes·extraction, 네 번째 PR 은 message·notification, 다섯 번째(마지막) PR 은 integration·invitation·workspace·member·user·메시지 설정이다. 마지막 PR 이 옛 `enumValue`(`shared/lib/enum.ts`)를 지웠다.
 - BE 요청 두 가지(배포 순서 합의, 응답 스키마의 `status: str` 을 enum 타입으로)는 계약 맨 위 「응답 검증과 새 값 배포 순서」의 「합의 필요 변경」에 둔다.
 - 근거: [#348](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/348), [결과](../issues/348-response-schema/result.md).
 

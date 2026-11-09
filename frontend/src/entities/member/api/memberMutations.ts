@@ -1,5 +1,7 @@
 import { request } from '@/shared/api/client'
-import type { MemberCreateDto, MemberDto, MemberUpdateDto } from '@/shared/types/api/member'
+import { parseResponse } from '@/shared/api/parseResponse'
+import { memberSchema } from '@/shared/types/api/member'
+import type { MemberCreateDto, MemberUpdateDto } from '@/shared/types/api/member'
 import { toMember } from '../model/mapper'
 import type { CreateMemberInput, Member, UpdateMemberInput } from '../model/types'
 
@@ -13,7 +15,13 @@ export async function createMember(input: CreateMemberInput): Promise<Member> {
   if (input.discordUserId !== undefined) body.discord_user_id = input.discordUserId
   if (input.notionName !== undefined) body.notion_name = input.notionName
   if (input.role !== undefined) body.role = input.role
-  return toMember(await request<MemberDto>('/members', { method: 'POST', body }))
+  return toMember(
+    parseResponse(
+      memberSchema,
+      await request<unknown>('/members', { method: 'POST', body }),
+      'member',
+    ),
+  )
 }
 
 /** 넣지 않은 필드는 본문에 싣지 않는다 — 백엔드는 보낸 키만 바꾼다 */
@@ -28,10 +36,14 @@ export async function updateMember(
   if (input.notionName !== undefined) body.notion_name = input.notionName
   if (input.role !== undefined) body.role = input.role
   return toMember(
-    await request<MemberDto>(`/members/${encodeURIComponent(memberId)}`, {
-      method: 'PATCH',
-      body,
-      signal,
-    }),
+    parseResponse(
+      memberSchema,
+      await request<unknown>(`/members/${encodeURIComponent(memberId)}`, {
+        method: 'PATCH',
+        body,
+        signal,
+      }),
+      'member',
+    ),
   )
 }

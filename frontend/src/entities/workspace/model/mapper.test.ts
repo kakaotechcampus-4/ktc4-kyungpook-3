@@ -17,8 +17,10 @@ it('maps workspace onboarding and safe defaults unknown values', () => {
   ).toMatchObject({ id: 'ws_02', onboarding: { currentStep: 'connect_notion' } })
 })
 
-it('uses safe defaults for unrecognized role, step, and status', async () => {
+// 모르는 단계·단계 상태는 스키마가 거절한다(shared/types/api/workspace.test.ts). 역할만 보수 폴백이다 (#348)
+it('falls back to member for an unrecognized role with a development warning', async () => {
   const { toWorkspace } = await import('./mapper')
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
   expect(
     toWorkspace({
       workspace_id: 'ws',
@@ -27,14 +29,16 @@ it('uses safe defaults for unrecognized role, step, and status', async () => {
       created_at: '',
       onboarding: {
         completed: false,
-        current_step: 'future_step',
-        steps: [{ step: 'future_step', status: 'future' }],
+        current_step: '',
+        steps: [{ step: 'create_workspace', status: 'completed' }],
       },
     }),
   ).toMatchObject({
     role: 'member',
-    onboarding: { currentStep: null, steps: [{ step: 'create_workspace', status: 'pending' }] },
+    onboarding: { currentStep: null, steps: [{ step: 'create_workspace', status: 'completed' }] },
   })
+  expect(warn).toHaveBeenCalledWith('Unknown workspace role: owner')
+  warn.mockRestore()
 })
 
 // WorkspaceResponse.role 은 Optional 이다. null 은 경고 없이 member 로 내린다 (계약 §6).

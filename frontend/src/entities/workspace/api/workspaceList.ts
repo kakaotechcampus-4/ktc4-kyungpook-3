@@ -1,9 +1,9 @@
 import { queryOptions, useQuery } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
+import { parseResponse } from '@/shared/api/parseResponse'
 import { STALE_TIME } from '@/shared/api/queryClient'
-import type { ListDto } from '@/shared/types/api/envelope'
-import type { WorkspaceDto } from '@/shared/types/api/workspace'
+import { workspaceListSchema } from '@/shared/types/api/workspace'
 import { findMemberWorkspace } from '../lib/membership'
 import { toWorkspace } from '../model/mapper'
 import type { Workspace } from '../model/types'
@@ -13,7 +13,11 @@ export const WORKSPACE_LIST_QUERY_KEY = ['workspace-list'] as const
 
 /** 목록에 role 과 onboarding 이 함께 온다 — 상세를 다시 부르지 않는다 (계약 §2.1, D-070) */
 export async function fetchWorkspaces(signal?: AbortSignal): Promise<Workspace[]> {
-  const { items } = await request<ListDto<WorkspaceDto>>('/workspaces', { signal })
+  const { items } = parseResponse(
+    workspaceListSchema,
+    await request<unknown>('/workspaces', { signal }),
+    'workspace',
+  )
   return items.map(toWorkspace)
 }
 

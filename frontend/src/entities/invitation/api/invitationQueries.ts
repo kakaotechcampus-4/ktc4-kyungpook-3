@@ -1,9 +1,9 @@
 import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
+import { parseResponse } from '@/shared/api/parseResponse'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { workspaceKey } from '@/shared/api/queryKeys'
-import type { ListDto } from '@/shared/types/api/envelope'
-import type { InvitationDto, MyInvitationDto } from '@/shared/types/api/invitation'
+import { invitationListSchema, myInvitationListSchema } from '@/shared/types/api/invitation'
 import { latestByMember } from '../lib/latestByMember'
 import { toInvitation, toMyInvitation } from '../model/mapper'
 
@@ -12,9 +12,12 @@ export function latestInvitationsQueryOptions(workspaceId: string) {
   return queryOptions({
     queryKey: workspaceKey(workspaceId, 'invitations'),
     queryFn: async ({ signal }) => {
-      const { items } = await request<ListDto<InvitationDto>>(
-        `/workspaces/${encodeURIComponent(workspaceId)}/invitations`,
-        { signal },
+      const { items } = parseResponse(
+        invitationListSchema,
+        await request<unknown>(`/workspaces/${encodeURIComponent(workspaceId)}/invitations`, {
+          signal,
+        }),
+        'invitation',
       )
       return latestByMember(items.map(toInvitation))
     },
@@ -27,7 +30,11 @@ export function myInvitationsQueryOptions() {
   return queryOptions({
     queryKey: ['my-invitations'] as const,
     queryFn: async ({ signal }) => {
-      const { items } = await request<ListDto<MyInvitationDto>>('/invitations/me', { signal })
+      const { items } = parseResponse(
+        myInvitationListSchema,
+        await request<unknown>('/invitations/me', { signal }),
+        'invitation',
+      )
       return items.map(toMyInvitation)
     },
   })
