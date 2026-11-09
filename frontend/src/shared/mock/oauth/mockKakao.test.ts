@@ -71,6 +71,31 @@ it.each(['cancelled', 'failed'] as const)('%s 는 next 를 들고 로그인으�
   )
 })
 
+it.each([
+  ['returning', 'success'],
+  ['collision', 'failed&oauth_reason=email_exists'],
+] as const)(
+  '%s 복귀는 앞서 멈춘 가입 대기를 지운다 (BE 대기 쿠키 삭제)',
+  async (choice, result) => {
+    finish('new')
+    expect(finish(choice, null)).toBe(`/login?oauth=kakao&oauth_result=${result}`)
+    expect(db.kakao.pending).toBeNull()
+    await expect(fetchDto('/auth/kakao/pending')).rejects.toMatchObject({
+      code: 'KAKAO_LINK_EXPIRED',
+    })
+    const stored = JSON.parse(sessionStorage.getItem(MOCK_DB_STORAGE_KEY) ?? 'null') as {
+      db: typeof db
+    }
+    expect(stored.db.kakao.pending).toBeNull()
+  },
+)
+
+it.each(['cancelled', 'failed'] as const)('%s 는 가입 대기를 그대로 둔다', (choice) => {
+  finish('new')
+  finish(choice, null)
+  expect(db.kakao.pending).toMatchObject({ kakaoId: 'kakao-new' })
+})
+
 it('앱 밖 next 는 버린다', () => {
   expect(finish('cancelled', 'https://evil.example')).toBe(
     '/login?oauth=kakao&oauth_result=cancelled',

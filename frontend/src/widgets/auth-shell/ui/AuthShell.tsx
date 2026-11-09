@@ -13,6 +13,7 @@ import {
   ASIDE_TEXT,
   ASIDE_TITLE,
   COLUMN,
+  FORM_SLOT,
   HEADING,
   HEADING_ROW,
   PHONE_BRAND,
@@ -21,6 +22,7 @@ import {
   PHONE_HEADING,
   PHONE_INTRO,
   PHONE_MASCOT_SIZE,
+  PHONE_ROW,
   PHONE_SCREEN,
   ROW,
   SCREEN,
@@ -64,47 +66,47 @@ function LandingLink({ children }: { children: ReactNode }) {
   )
 }
 
-/** 로그인·회원가입의 두 칸 틀. 왼쪽이 제목과 폼, 오른쪽이 매스와 안내 카드다 */
+/**
+ * 로그인·회원가입의 두 칸 틀. 왼쪽이 제목과 폼, 오른쪽이 매스와 안내 카드다.
+ * 휴대폰 로그인(H-1)은 같은 요소에 클래스와 제목 묶음만 바꾼다. 폼(children)의 부모 종류와 자리가 같아야
+ * 폭이 768px 를 넘나들어도 폼이 다시 마운트되지 않고 입력값·오류·한 번 읽은 카카오 안내가 남는다
+ */
 export function AuthShell({ title, formLabel, aside, phoneIntro, children }: AuthShellProps) {
   const formHeadingId = useId()
-  const compact = useCompactScreen()
-  if (compact && phoneIntro !== undefined)
-    return (
-      <main className={PHONE_SCREEN}>
-        <section aria-labelledby={formHeadingId} className={PHONE_COLUMN}>
-          <div className={PHONE_BRAND}>
-            <LandingLink>
-              <Mascot pose={aside.pose} size={PHONE_MASCOT_SIZE} />
-            </LandingLink>
-            <h1 className={PHONE_HEADING}>{title}</h1>
-            <p className={PHONE_INTRO}>{phoneIntro}</p>
-          </div>
-          <HiddenFormHeading id={formHeadingId} label={formLabel} />
-          <div className={PHONE_FORM}>{children}</div>
-        </section>
-      </main>
-    )
+  const phone = useCompactScreen() && phoneIntro !== undefined
   return (
-    <main className={SCREEN}>
-      <div className={ROW}>
-        <section aria-labelledby={formHeadingId} className={COLUMN}>
-          <div className={HEADING_ROW}>
-            <LandingLink>
-              <BrandMark size="lg" />
-            </LandingLink>
-            <h1 className={HEADING}>{title}</h1>
-          </div>
+    <main className={phone ? PHONE_SCREEN : SCREEN}>
+      <div className={phone ? PHONE_ROW : ROW}>
+        <section aria-labelledby={formHeadingId} className={phone ? PHONE_COLUMN : COLUMN}>
+          {phone ? (
+            <div className={PHONE_BRAND}>
+              <LandingLink>
+                <Mascot pose={aside.pose} size={PHONE_MASCOT_SIZE} />
+              </LandingLink>
+              <h1 className={PHONE_HEADING}>{title}</h1>
+              <p className={PHONE_INTRO}>{phoneIntro}</p>
+            </div>
+          ) : (
+            <div className={HEADING_ROW}>
+              <LandingLink>
+                <BrandMark size="lg" />
+              </LandingLink>
+              <h1 className={HEADING}>{title}</h1>
+            </div>
+          )}
           <HiddenFormHeading id={formHeadingId} label={formLabel} />
-          {children}
+          <div className={phone ? PHONE_FORM : FORM_SLOT}>{children}</div>
         </section>
-        <aside className={ASIDE}>
-          <Mascot pose={aside.pose} size={148} label="매스" />
-          <div className={ASIDE_TEXT}>
-            <p className={ASIDE_TITLE}>{aside.title}</p>
-            <p className={ASIDE_DESCRIPTION}>{aside.description}</p>
-          </div>
-          <span className={ASIDE_CAPTION}>{aside.caption}</span>
-        </aside>
+        {phone ? null : (
+          <aside className={ASIDE}>
+            <Mascot pose={aside.pose} size={148} label="매스" />
+            <div className={ASIDE_TEXT}>
+              <p className={ASIDE_TITLE}>{aside.title}</p>
+              <p className={ASIDE_DESCRIPTION}>{aside.description}</p>
+            </div>
+            <span className={ASIDE_CAPTION}>{aside.caption}</span>
+          </aside>
+        )}
       </div>
     </main>
   )

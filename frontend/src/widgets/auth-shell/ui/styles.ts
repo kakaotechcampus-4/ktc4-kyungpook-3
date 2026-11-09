@@ -32,6 +32,8 @@ export const ASIDE_CAPTION = 'text-[12px] text-dim tabular-nums'
 export const PHONE_SCREEN =
   'flex min-h-dvh flex-col bg-surface pt-[max(24px,env(safe-area-inset-top))] pr-[max(24px,env(safe-area-inset-right))] pb-[max(24px,env(safe-area-inset-bottom))] pl-[max(24px,env(safe-area-inset-left))] text-ink'
 
+export const PHONE_ROW = 'flex flex-1 flex-col'
+
 export const PHONE_COLUMN = 'flex flex-1 flex-col'
 
 export const PHONE_BRAND =
@@ -44,3 +46,6 @@ export const PHONE_INTRO = 'text-[14px] leading-[22px] text-sub'
 export const PHONE_MASCOT_SIZE = 88
 
 export const PHONE_FORM = 'flex flex-col gap-12'
+
+/* 넓은 화면의 폼 자리. 상자를 만들지 않아 폼 요소가 COLUMN 의 간격을 그대로 받는다 */
+export const FORM_SLOT = 'contents'

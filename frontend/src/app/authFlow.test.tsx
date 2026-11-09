@@ -373,3 +373,52 @@ describe('휴대폰 로그인은 시안 H-1 배치다 (#538)', () => {
     )
   })
 })
+
+describe('로그인 화면은 768px 경계를 넘나들어도 폼을 다시 만들지 않는다 (#538 리뷰)', () => {
+  const DIRECTIONS = [
+    ['휴대폰 → 넓은 화면', true],
+    ['넓은 화면 → 휴대폰', false],
+  ] as const
+
+  it.each(DIRECTIONS)('%s: 입력값을 지킨다', async (_, startsPhone) => {
+    const viewport = stubViewport(startsPhone, COMPACT_QUERY)
+    await openLogin()
+    await fillLogin('pm@example.com', 'mock-password')
+    const email = screen.getByLabelText('이메일')
+
+    viewport.resize(!startsPhone)
+    expect(screen.queryByText('회의가 끝나면 할 일은 매스가 챙겨요') === null).toBe(startsPhone)
+    expect(screen.getByLabelText('이메일')).toBe(email)
+    expect(email).toHaveValue('pm@example.com')
+    expect(screen.getByLabelText('비밀번호')).toHaveValue('mock-password')
+  })
+
+  it.each(DIRECTIONS)('%s: 429 안내와 재설정 링크가 남는다', async (_, startsPhone) => {
+    const viewport = stubViewport(startsPhone, COMPACT_QUERY)
+    applyScenario('login-rate-limited')
+    await openLogin()
+    await fillLogin('pm@example.com', 'mock-password')
+    await userEvent.click(screen.getByRole('button', { name: '로그인' }))
+    await screen.findByRole('alert')
+
+    viewport.resize(!startsPhone)
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('비밀번호가 기억나지 않으면 재설정해 주세요.')
+    expect(within(alert).getByRole('link', { name: '비밀번호 재설정하기' })).toBeInTheDocument()
+  })
+
+  it.each(DIRECTIONS)('%s: 주소에서 지운 카카오 실패 안내가 남는다', async (_, startsPhone) => {
+    const viewport = stubViewport(startsPhone, COMPACT_QUERY)
+    db.authenticated = false
+    const app = renderApp('/login?oauth=kakao&oauth_result=failed')
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '카카오 로그인에 실패했어요. 다시 시도해 주세요.',
+    )
+    await app.expectSearch('')
+
+    viewport.resize(!startsPhone)
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '카카오 로그인에 실패했어요. 다시 시도해 주세요.',
+    )
+  })
+})
