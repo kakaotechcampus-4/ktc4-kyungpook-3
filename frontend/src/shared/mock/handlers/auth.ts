@@ -4,6 +4,7 @@ import { fail, ok } from '../envelope'
 import { requireAuth } from '../auth-guard'
 import { accountWithEmail, workspaceCountOf } from '../sessions'
 import { readJson } from '../utils'
+import { invalidBody, passwordField, stringField } from '../validation'
 import { readSignupProof } from './signupCode'
 
 const base = '/api/v1/auth'
@@ -50,9 +51,11 @@ const authResponse = () => ({
 export const authHandlers = [
   http.post(`${base}/signup`, async ({ request }) => {
     const body = (await readJson(request)) ?? {}
-    if (typeof body.password !== 'string' || typeof body.name !== 'string')
-      return fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400)
-    const name = checkedName(body.name)
+    // BE 는 본문 검증(pydantic)이 인증·중복 이메일 확인보다 먼저다. 규칙 위반이면 이미 있는 이메일이어도 400 이다
+    const bodyError = invalidBody(passwordField(body, 'password'), stringField(body, 'name'))
+    if (bodyError) return bodyError
+    const { password } = body as { password: string }
+    const name = checkedName(body.name as string)
     if (name === null)
       return fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400, {
         fields: [
@@ -73,7 +76,7 @@ export const authHandlers = [
       return fail('KAKAO_ALREADY_LINKED', '이미 다른 계정에 연결된 카카오 계정입니다.', 409)
     db.session = {
       user: {
-        user_id: `us_${String(db.accounts.length + 1).padStart(2, '0')}`,
+        user_id: `us_${String(db.accounts.length + db.withdrawals.length + 1).padStart(2, '0')}`,
         email,
         name,
         avatar_url: null,
@@ -83,7 +86,7 @@ export const authHandlers = [
     }
     db.accounts.push({
       session: structuredClone(db.session),
-      password: body.password,
+      password,
       workspaceIds: [],
       memberIds: {},
       ...(kakao === null ? {} : { kakaoId: kakao.kakaoId }),

@@ -74,6 +74,7 @@ describe('회원가입 프로필 단계', () => {
   it.each([
     ['abc123', '8자 미만'],
     ['abcdefgh', '숫자 없음'],
+    ['😀😀😀😀1', '이모지 4개 + 숫자는 UTF-16 으로 9칸이지만 BE 는 5자로 센다'],
   ])('비밀번호 %j 는 거절한다 (%s)', (password) => {
     expect(issues(signupProfileSchema.safeParse({ ...valid, password }))[0]).toEqual([
       'password',
@@ -84,6 +85,9 @@ describe('회원가입 프로필 단계', () => {
   it('비밀번호는 8자 이상이고 숫자가 있으면 된다 — 강도는 보지 않는다', () => {
     expect(signupProfileSchema.safeParse({ ...valid, password: '1aaaaaaa' }).success).toBe(true)
     expect(signupProfileSchema.safeParse({ ...valid, password: '12345678' }).success).toBe(true)
+    expect(signupProfileSchema.safeParse({ ...valid, password: '😀😀😀😀😀😀😀1' }).success).toBe(
+      true,
+    )
   })
 
   it('약관 동의 칸이 없다', () => {
@@ -118,6 +122,7 @@ describe('비밀번호 재설정 검증 (#356)', () => {
     ['', AUTH_MESSAGES.passwordRequired],
     ['abc123', AUTH_MESSAGES.passwordRule],
     ['abcdefgh', AUTH_MESSAGES.passwordRule],
+    ['😀😀😀😀1', AUTH_MESSAGES.passwordRule],
   ])('새 비밀번호 %j 는 가입과 같은 규칙으로 거절한다', (newPassword, message) => {
     expect(issues(resetPasswordSchema.safeParse({ newPassword }))[0]).toEqual([
       'newPassword',

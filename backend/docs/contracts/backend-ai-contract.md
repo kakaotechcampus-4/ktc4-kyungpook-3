@@ -7,6 +7,56 @@
 - 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로, 추출 등록의 auto 판단 키는 2026-10-16 #232 변경 코드로 다시 대조했다. 웹 업로드 가져가기는 2026-10-14 #219 브랜치 코드로, 화자 지정 경로(speakers·assigned·resume)는 2026-11-02 #266 브랜치 코드로, 처리 단계 보고(`PATCH /meetings/{meeting_id}/stage`)는 2026-11-05 #381 브랜치 코드로 대조했다. 라벨 보고 재전송과 지정 대기 만료는 2026-11-06 #438 에서 develop 코드로 다시 대조했다
 - 합의 근거: 인계 방식은 [AI 결정 0009](../../../ai/decision_log/0009-bot-hands-off-to-be-api.md), 발화 저장은 [AI 결정 0017](../../../ai/decision_log/0017-transcript-sources-stage.md)에 AI 쪽 기록이 있다. 이 문서는 그 이후의 필드·오류 세부를 코드에서 읽은 것이며, 별도 합의 문서가 없는 항목은 구현 사실로만 적는다.
 
+## 계정 탈퇴의 개인정보 정리 (#575, 2026-11-09)
+
+계정 탈퇴의 웹 API는 [FE 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md#계정-탈퇴와-정리-상태-575-2026-11-09)에 있다. 이 절은 현재 BE·AI 생산자와 소비자 코드의 규약이며 운영 배포 완료나 공급사의 원격 삭제 확인을 뜻하지 않는다.
+
+| 요청 | 입력과 `data` |
+|---|---|
+| `POST /bot/privacy-cleanups/claim` | X-Service-Token, 빈 본문. `{item:null}` 또는 `{item:{cleanup_id,workspace_id,identity_epoch,member_ids,meeting_ids,message_ids,guild_ids,delete_workspace,claim_token,lease_until}}` |
+| `POST /bot/privacy-cleanups/{cleanup_id}/ack` | X-Service-Token, `{claim_token}`. `{cleanup_id,complete}` |
+
+claim은 SHA-256으로 저장한 토큰과 120초 임대를 사용한다. 만료 후 새 claim은 이전 토큰을 무효화한다. 같은 완료 토큰의 ack 재시도는 수렴하며 토큰 불일치·만료는 409 PURGE_CLAIM_EXPIRED다. claim_token은 정리 작업의 확인 용도이고 개인정보를 조회하는 키가 아니다.
+
+정리 행은 User·Workspace의 생존에 의존하지 않는다. selector에는 익명 Member·회의·메시지 UUID를 사용한다. guild_ids는 개인 Discord 사용자 ID가 아니라 과거 녹음 탐색에 필요한 공동 공간 리소스 ID이며 AI 확인 뒤 지운다. 개인 이름·이메일·개인 Discord ID·토큰을 정리 큐에 복사하지 않는다.
+
+공동 공간은 정확히 연결된 Member의 프로필·구조화 화자·별칭·파일명·캐시 사본을 정리하고 음성 바이트·공동 본문·다른 사람의 메타데이터는 보존한다. 단독 공간은 진행 중 회의와 BE ID 없는 로컬 capture까지 포함해 해당 공간의 파일을 정리한다. 옛 session의 재생성 금지 표식은 같은 guild에 새로 만든 Workspace의 capture를 막지 않는다.
+
+AI는 writer·manifest·outbox·chat·DM 잠금과 처리 세대를 확인하고 실제 로컬 정리가 성공한 뒤에만 ack한다. 실패·살아 있는 writer·소유 근거가 없는 공유 legacy 자료·구조화 화자 자료가 없는 과거 markdown은 완료 ack하지 않는다. backend는 기존 기본 10초 회의 정리 워커에서 저장소 삭제를 재시도하므로 AI가 중단돼도 backend 파일 재시도는 계속된다. backend와 AI가 모두 끝났는지는 웹 영수증 cleanup_status가 최종 기준이다.
+
+Workspace.identity_epoch는 탈퇴 시 증가한다. 서비스 쓰기는 현재 명단·claim의 세대를 X-Privacy-Epoch로 전달한다. 탈퇴가 없던 초기 세대 0은 기존 클라이언트의 무헤더 요청을 허용하지만, 세대가 증가한 공간의 누락·불일치는 409 PRIVACY_VERSION_CHANGED와 details.identity_epoch를 반환한다. 사용자 세션 쓰기는 이 헤더 대신 현재 권한과 공간 상태를 검사한다.
+
+guild/workspace 조회, 전사 명단 조회, 업로드·DM·초안·답장 판단 claim은 해당 snapshot의 identity_epoch를 제공한다. AI는 작업 시작 시 세대를 고정하며 최신 조회를 했다는 이유로 이미 계산한 옛 payload에 새 세대만 붙이지 않는다. in-flight 판단·업로드 결과의 저장도 고정된 세대로 판정한다. 단독 삭제 공간과 삭제 회의의 쓰기 거절은 기존 리소스 오류 규약을 따른다.
+
+임의 본문·음성 익명화, 이미 외부 게시된 결과 회수와 호스팅 diarizer 공급사의 데이터 보관·삭제는 이 로컬 정리 프로토콜의 완료 범위로 추정하지 않는다.
+
+## 명시적 회의 삭제와 재처리 계보 (#576, 2026-11-09)
+
+사용자는 회의 원문·회의록·추출·근거 삭제와 기존 태스크 보존을 확정했다. 혼합 승인 대기 카드는 남은 회의 기여로 재구성한다. 웹 삭제 API는 [FE 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md#회의-삭제와-보존-태스크-576-2026-11-09)에만 정의한다. 이 절의 추가 HTTP 형식은 현재 구현이며 운영 배포를 검증한 기록은 아니다.
+
+`POST /meetings`는 선택 필드 `replaces_meeting_id: string`을 받는다. 실패한 회의를 재처리할 때 이전 ID를 보낸다. 서버는 같은 workspace·source인지 확인하고 원본 root를 잠근다. `manual_upload`의 이 생성 경로는 허용하지 않는다. 같은 이전 ID의 요청을 반복하면 이미 만든 동일 자식 회의를 반환한다. 이전 ID 또는 root가 삭제되었으면 410 `MEETING_DELETED`다. AI는 네트워크 오류나 거절 뒤 이전 ID를 지우고 연결 없는 새 회의로 우회하지 않는다.
+
+새 AI는 회의 생성에 `X-Meeting-Lineage-Version: 1`을 보낸다. 서버 삭제 gate가 켜져 있을 때 이 버전이 없는 Discord 생성은 409 `MEETING_CLIENT_UPDATE_REQUIRED`다. gate가 꺼진 준비 배포에서도 구 클라이언트가 만든 Discord 회의는 검증되지 않은 계보로 남는다. 과거 매니페스트의 `be.replaced`는 DB migration만으로 복구되지 않으며 [운영 활성화 절차](../../../deploy/README.md#회의-삭제-활성화-576)를 따른다.
+
+서버는 `recording_root_id`, 유일한 `replaces_meeting_id`로 계보를 보관한다. 삭제도 같은 root를 잠근다. 재처리가 먼저 시작되어 활성 자식이 있으면 삭제는 409이며, 삭제가 먼저면 새 자식 생성은 410이다. 삭제된 회의의 source·추출·종료·단계·실패·업로드 claim/file/speakers/resume 요청도 410으로 종결한다. 봉투 없는 404는 삭제 신호가 아니므로 로컬 데이터를 지우지 않는다.
+
+봇 파일 정리는 `X-Service-Token`으로 인증한다.
+
+| 요청 | 입력 | `data` |
+|---|---|---|
+| `POST /bot/meeting-purges/claim` | 빈 객체 | 작업이 없으면 `null`, 있으면 `{meeting_id, claim_token, lease_until}` |
+| `POST /bot/meeting-purges/{meeting_id}/ack` | `{claim_token}` | 웹 삭제 API와 같은 receipt. `deleted_meeting_ids`는 계보 전체이고 `cleanup_status`도 계보 전체의 BE·AI 완료를 계산 |
+
+- claim lease는 120초다. 서버에는 토큰 hash만 저장한다. 만료되거나 새 claim으로 교체된 ack는 409 `PURGE_CLAIM_EXPIRED`다. 토큰을 로그에 남기지 않는다.
+- AI는 완료된 `handed_off` manifest도 찾아 녹음·업로드 사본·전사 출력·임시 manifest를 정리한다. `.deleted`에는 ID만 남겨 intake·복구·재시작의 재생성을 막는다.
+- 업로드 writer와 manifest 처리 lock을 함께 사용한다. 다른 작업이 파일을 쓰고 있거나 unlink가 실패하면 ack하지 않는다. 파일 부재와 쓰기 종결을 확인한 뒤 ack한다.
+- purge는 restart·upload writer 잠금과 발견한 모든 manifest 잠금을 먼저 확보하고 다시 읽은 뒤 ID로 대상을 고른다. 새 서버 ID가 아직 저장되지 않은 active writer도 완료를 보류한다. 다른 회의가 처리 중이어도 정리가 늦어질 수 있다.
+- 새 STT 트랙 출력은 세션별 이름을 사용한다. 과거 공유 이름의 cache는 소유권을 구분할 수 없어 삭제 대상 원문 제거 때 다른 회의의 같은 cache도 무효화될 수 있다. 다른 회의의 통합 전사와 새 세션별 출력은 보존한다.
+- BE 파일 정리 실패도 pending으로 유지하고 재시도한다. `MEETING_PURGE_INTERVAL_SECONDS` 기본값은 10초이고 0 이하이면 BE 주기 작업을 끈다. AI 워커 중단 중에도 DB 원문은 숨기지만 receipt는 complete가 되지 않는다.
+- 이미 외부에 전송한 Notion·Discord 결과와 사용자에게 전달된 바이트의 회수는 이 규약의 범위가 아니다. 기존 자동 보관 주기 변경과도 별개다.
+
+코드 근거는 [BE 삭제 서비스](../../app/services/meeting_deletion.py), [purge API](../../app/api/meeting_purges.py), [AI purge](../../../ai/capture/meeting_purge.py), [AI handoff](../../../ai/capture/handoff.py)다. 검증 결과와 PostgreSQL 실행 한계는 [M3 결과](../plan/m3/result.md)에 기록한다.
+
 ## 공통
 
 - 경로 prefix는 `/api/v1`이고 응답은 백엔드 공통 봉투 `{data, error}`다 ([Backend README 응답 형식](../../README.md#응답-형식)).
@@ -634,7 +684,7 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 
 ### `POST /bot/replies/claim` → 200
 
-맡길 답장 한 통을 준다. 없으면 `item` 이 null 이다. 3분 안에 결과가 없으면 `attempt` 를 올려 다시 맡긴다.
+맡길 답장 한 통을 준다. 없으면 `item` 이 null 이다. 3분 안에 결과가 없으면 `attempt` 를 올려 다시 맡긴다. 답장을 받은 뒤(PM 이 고르면 고른 뒤) 10분이 지난 답장은 더 맡기지 않고 그 자리에서 판단을 끝낸 뒤(`timed_out`, PM 알림 한 번) 같은 대화의 다음 답장을 준다. 그래서 한 차례에 같은 답장을 맡기는 것은 최대 4회(0·3·6·9분)다. 창은 받은 시각 기준이라 같은 대화의 앞 답장이 밀리면 더 적을 수 있다. 스케줄러가 돌지 않아도 claim 이 이 상한을 지킨다(#548). 한 대화의 판단 끝내기가 실패해도 다른 대화의 답장은 그대로 준다.
 
 ```jsonc
 // data
@@ -685,7 +735,7 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 
 - `status=blocked` 는 자동 반영이든 기록만이든 사유가 비었거나 무응답 문구일 때만 사유를 쓴다. 사유는 `summary` 이고 비어 있으면 `팀원이 막혔다고 답했어요` 다. 태스크 사유는 모든 팀원에게 보이므로 답장 원문(`evidence_quote`)을 쓰지 않는다. PM 이 쓴 사유는 둔다.
 - 같은 `attempt` 재전송은 200 이고 아무것도 다시 하지 않는다. `attempt` 가 다르면 409 다.
-- 답장을 받은 뒤(PM 이 고르면 고른 뒤) 10분 안에 결과가 없으면 BE 가 판단을 끝내고 PM 에게 한 번 알린다. 그 뒤 온 결과는 200 으로 받아 기록만 하고 반영·승인·알림은 없다.
+- 답장을 받은 뒤(PM 이 고르면 고른 뒤) 10분 안에 결과가 없으면 BE 가 판단을 끝내고 PM 에게 한 번 알린다. 스케줄러와 claim 중 먼저 본 쪽이 끝내고 알림은 한 번만 간다. 그 뒤 온 결과는 200 으로 받아 기록만 하고 반영·승인·알림은 없다. 결과 전송이 5xx 면 봇은 다시 보내지 않고 리스에 맡긴다(#548).
 - PM 이 태스크를 고른 뒤의 재판단은 `unknown` 을 버린다. 이미 적은 태스크·필드는 다시 반영하지 않는다.
 - PM 이 태스크를 고른 재판단은 대기 카드에 이미 있는 값이어도 줄을 알림에 넣는다. 고른 PM 이 결과를 기다린다.
 - 재판단은 더 새 답장이 그 태스크를 말한 줄(`applied`·`proposed`·`skipped`·`noted`, 말하지 않은 후보에 붙는 `field=none` 은 제외)을 남겼으면 자동 반영하지 않고 PM 승인 요청으로 보낸다.

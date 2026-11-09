@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_member, require_pm, require_service_token
 from app.core.database import get_db
+from app.services.meeting_deletion import require_live_meeting
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import (
     ApprovalRequest,
@@ -124,11 +125,7 @@ def create_extraction(
     db: Session = Depends(get_db),
 ) -> dict:
     """AI 분석 결과를 저장한다. 담당자 매칭·게이트 판정이 함께 수행된다."""
-    meeting = db.get(Meeting, payload.meeting_id)
-    if meeting is None:
-        raise AppError(
-            ErrorCode.MEETING_NOT_FOUND, details={"meeting_id": payload.meeting_id}
-        )
+    meeting = require_live_meeting(db, payload.meeting_id, lock=True)
     if meeting.workspace_id != payload.workspace_id:
         raise AppError(
             ErrorCode.WORKSPACE_MISMATCH,
@@ -154,7 +151,7 @@ def create_extraction(
     if result.rowcount == 0:
         # 선점 실패 — 이미 다른 요청이 처리했거나, processing 상태가 아님
         db.rollback()
-        meeting = db.get(Meeting, payload.meeting_id)
+        meeting = require_live_meeting(db, payload.meeting_id, lock=True)
         if meeting.status == str(MeetingStatus.DONE):
             # 멱등성: 이미 만들어진 Extraction을 돌려준다
             existing = _find_existing_extraction(db, payload.meeting_id)

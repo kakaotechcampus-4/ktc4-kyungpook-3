@@ -30,7 +30,7 @@ test('101자 이름은 가입 폼에서 막히고 가입 요청을 보내지 않
   expect(signups).toEqual([])
 })
 
-test('시도 제한에 걸린 로그인은 맞는 비밀번호여도 서버 문구를 보이고 남은 시간은 보이지 않는다', async ({
+test('시도 제한에 걸린 로그인은 맞는 비밀번호여도 서버 문구와 재설정 안내를 보이고 남은 시간은 보이지 않는다', async ({
   page,
 }, testInfo) => {
   await start(page, 'login-rate-limited', '/login')
@@ -42,12 +42,16 @@ test('시도 제한에 걸린 로그인은 맞는 비밀번호여도 서버 문�
   const answered = await response
   expect(answered.status()).toBe(429)
   expect(answered.headers()['retry-after']).toBe('900')
-  await expect(page.getByRole('alert')).toHaveText(
-    '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.',
+  const alert = page.getByRole('alert')
+  await expect(alert).toContainText(
+    '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요. 비밀번호가 기억나지 않으면 재설정해 주세요.',
   )
   await expect(page.getByText(/\d+\s*(초|분)/)).toHaveCount(0)
   await expect(page.getByText(/잠겼|잠금/)).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '비밀번호를 잊으셨나요?' })).toBeDisabled()
   await expect(page).toHaveURL('/login')
   await capture(page, testInfo, 'login-429.png')
+
+  await alert.getByRole('link', { name: '비밀번호 재설정하기' }).click()
+  await expect(page).toHaveURL('/forgot-password')
+  await expect(page.getByRole('heading', { name: '비밀번호 재설정 요청' })).toBeVisible()
 })

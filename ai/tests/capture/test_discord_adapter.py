@@ -297,7 +297,8 @@ async def test_record_creates_the_be_meeting_and_the_worker_hands_the_tasks_off(
     assert rec.be["meeting_id"] == "m1" and _manifest(tmp_path, rec)["be"]["meeting_id"] == "m1"
     assert rec.workspace_id == "ws-1" and _manifest(tmp_path, rec)["workspace_id"] == "ws-1"
     assert fake.calls[0][:2] == ("GET", f"/integrations/discord/guilds/{GUILD_ID}/workspace")
-    assert fake.calls[1][2]["title"].startswith("회의방 ") and fake.calls[1][2]["workspace_id"] == "ws-1"
+    assert fake.calls[1][:2] == ('GET', '/workspaces/ws-1/members/names')
+    assert fake.calls[2][2]["title"].startswith("회의방 ") and fake.calls[2][2]["workspace_id"] == "ws-1"
     rec.sink.on_samples(1, _tone(2000), 0)
     rec.sink.on_samples(2, _tone(3000), 5000)
     await _run(A.RecordingCog.stop, cog, ctx)
@@ -306,8 +307,8 @@ async def test_record_creates_the_be_meeting_and_the_worker_hands_the_tasks_off(
     m = _manifest(tmp_path, rec)
     assert m["status"] == "handed_off" and set(m["stages"]) == {"transcribed", "sourced", "extracted", "handed_off"}
     calls = without_stage(fake.calls)                  # 단계 보고(진행 표시)는 흐름 단정에서 뺀다
-    assert [c[1] for c in calls] == [f"/integrations/discord/guilds/{GUILD_ID}/workspace", "/meetings",
-                                     "/meetings/m1/end", "/workspaces/ws-1/members/names",
+    assert [c[1] for c in calls] == [f"/integrations/discord/guilds/{GUILD_ID}/workspace", "/workspaces/ws-1/members/names", "/meetings",
+                                     "/meetings/m1/end",
                                      "/meetings/m1/sources", "/extractions"]
     sent = calls[5][2]["items"][0]
     assert sent["evidence_speaker"] == "1" and sent["assignee_type"] == "first" and sent["assignee_raw"] is None
@@ -315,23 +316,36 @@ async def test_record_creates_the_be_meeting_and_the_worker_hands_the_tasks_off(
     assert [t.split(" ", 1)[0] for t, _ in channel.sent][-5:] == ["⏳", "📝", "🗂", "📋", "📨"]
 
 
-async def test_be_being_down_at_record_does_not_stop_the_recording(tmp_path):
+async def test_record_refuses_before_audio_when_workspace_identity_cannot_be_pinned(tmp_path):
     fake = FakeBe()
     fake.guilds = {str(GUILD_ID): "ws-1"}           # 이 서버는 웹에서 ws-1 에 연결돼 있다
     fake.down = True
     handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
     cog, guild, vc, channel, ctx = _setup(tmp_path, handoff=handoff)
     await _run(A.RecordingCog.record, cog, ctx)
+    assert GUILD_ID not in cog._active and vc.started is None
+    assert not list((tmp_path / 'recordings').glob('session_*.json'))
+    assert any('확인하지 못해 녹음을 시작하지 않았습니다' in text for text in ctx.responses)
+
+
+async def test_deleted_workspace_privacy_marker_stops_active_recording_and_cleanup_retries(tmp_path):
+    from capture.privacy_cleanup import apply_cleanup
+    fake = FakeBe()
+    fake.guilds = {str(GUILD_ID): 'ws-1'}
+    handoff = H.Handoff(H.BeClient('http://be', session=fake, service_token='svc-token'))
+    cog, guild, vc, channel, ctx = _setup(tmp_path, handoff=handoff)
+    await _run(A.RecordingCog.record, cog, ctx)
     rec = cog._active[GUILD_ID]
-    assert "meeting_id" not in rec.be and "NETWORK" in rec.be["error"] and vc.started is not None
-    rec.sink.on_samples(1, _tone(2000), 0)
-    await _run(A.RecordingCog.stop, cog, ctx)
-    await asyncio.wait_for(rec.done.wait(), 20)
-    fake.down = False                                           # 워커가 처리할 때는 BE 가 살아났다
-    await _worker(tmp_path, extractor=first_person_extractor, handoff=handoff).run_pass()
-    m = _manifest(tmp_path, rec)
-    assert m["status"] == "handed_off" and m["be"]["meeting_id"] == "m1"     # 인계 단계가 회의를 만들었다
-    assert m["workspace_id"] == "ws-1"                                       # 처리할 때 다시 물어 찾았다
+    rec.sink.on_samples(1, _tone(1000), 0)
+    cleanup = {'cleanup_id': 'cleanup-stop', 'workspace_id': 'ws-1', 'member_ids': ['member-a'],
+               'meeting_ids': [rec.be['meeting_id']], 'guild_ids': [str(GUILD_ID)],
+               'delete_workspace': True, 'identity_epoch': 1}
+    assert not apply_cleanup(tmp_path / 'recordings', tmp_path / 'transcripts', cleanup, runs=tmp_path / 'runs')
+    await asyncio.wait_for(rec.done.wait(), 5)
+    assert vc.started is None and GUILD_ID not in cog._active
+    assert apply_cleanup(tmp_path / 'recordings', tmp_path / 'transcripts', cleanup, runs=tmp_path / 'runs')
+    assert not (tmp_path / 'recordings' / rec.meeting_id).exists()
+    assert not R.manifest_path(tmp_path / 'recordings', rec.meeting_id).exists()
 
 
 def test_the_unconnected_notices_say_who_connects_it_and_where():

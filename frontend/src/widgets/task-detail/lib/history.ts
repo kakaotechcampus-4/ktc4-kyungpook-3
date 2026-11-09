@@ -3,13 +3,16 @@ import type {
   ReplyChangeLine,
   ReplyChangeResult,
   TaskHistoryEntry,
+  TaskHistoryField,
+  TaskHistorySource,
   TaskTimelineItem,
 } from '@/entities/task'
 import { TASK_STATUSES, TASK_STATUS_LABEL } from '@/entities/task'
+import { isKnownValue } from '@/shared/api/unknownValue'
 import { formatSeoulDateTime } from '@/shared/lib/date'
 import { parseEnumParam } from '@/shared/lib/url'
 
-const FIELD_LABEL: Record<TaskHistoryEntry['field'], string> = {
+const FIELD_LABEL: Record<TaskHistoryField, string> = {
   assignee: '담당자',
   start_date: '시작일',
   due_date: '마감',
@@ -21,9 +24,9 @@ const FIELD_LABEL: Record<TaskHistoryEntry['field'], string> = {
 }
 
 /** 이전 값이 없는 결정이라 `이전 → 이후` 대신 새 값만 보인다 (#205) */
-const STATEMENT_FIELDS: ReadonlySet<TaskHistoryEntry['field']> = new Set(['scope'])
+const STATEMENT_FIELDS: ReadonlySet<TaskHistoryField> = new Set(['scope'])
 
-const SOURCE_LABEL: Record<TaskHistoryEntry['source'], string> = {
+const SOURCE_LABEL: Record<TaskHistorySource, string> = {
   meeting: '회의',
   chat: '대화',
   checkin: '체크인',
@@ -32,6 +35,12 @@ const SOURCE_LABEL: Record<TaskHistoryEntry['source'], string> = {
   manual: '직접 변경',
   scheduler: '스케줄러',
 }
+
+/* 서버가 새 값을 먼저 보냈다(배포 순서 어긋남). 다른 아는 값으로 읽지 않고 모른다고 말한다 (#348) */
+export const UNKNOWN_FIELD_LABEL = '알 수 없는 항목'
+export const UNKNOWN_SOURCE_LABEL = '알 수 없는 출처'
+export const UNKNOWN_CHANGE_TEXT = '알 수 없는 변경이에요'
+export const UNKNOWN_RESULT_LABEL = '알 수 없는 결과'
 
 /** 담당자 이름. 없으면 `담당자 없음`, 이름을 모르면 `알 수 없는 담당자` */
 export function assigneeLabel(memberId: string | null, names: ReadonlyMap<string, string>): string {
@@ -74,13 +83,20 @@ export function historyLine(
         ? '자동'
         : '알 수 없음'
       : (names.get(entry.changedBy) ?? '알 수 없는 팀원')
-  const after = valueLabel(entry.field, entry.newValue, names)
+  const { field, source } = entry
+  const label = isKnownValue(field) ? FIELD_LABEL[field] : UNKNOWN_FIELD_LABEL
+  const after = valueLabel(field, entry.newValue, names)
   return {
     id: entry.id,
-    change: STATEMENT_FIELDS.has(entry.field)
-      ? `${FIELD_LABEL[entry.field]}: ${after}`
-      : `${FIELD_LABEL[entry.field]}: ${valueLabel(entry.field, entry.oldValue, names)} → ${after}`,
-    meta: [who, SOURCE_LABEL[entry.source], formatSeoulDateTime(entry.createdAt)]
+    change:
+      isKnownValue(field) && STATEMENT_FIELDS.has(field)
+        ? `${label}: ${after}`
+        : `${label}: ${valueLabel(field, entry.oldValue, names)} → ${after}`,
+    meta: [
+      who,
+      isKnownValue(source) ? SOURCE_LABEL[source] : UNKNOWN_SOURCE_LABEL,
+      formatSeoulDateTime(entry.createdAt),
+    ]
       .filter(Boolean)
       .join(' · '),
     rolledBack: entry.isRolledBack,
@@ -142,8 +158,10 @@ export interface ReplyGroup {
 function replyChange(line: ReplyChangeLine, names: ReadonlyMap<string, string>): ReplyChangeView {
   return {
     id: line.id,
-    change: CHANGE_TEXT[line.field](line.newValue, names),
-    result: RESULT_LABEL[line.result],
+    change: isKnownValue(line.field)
+      ? CHANGE_TEXT[line.field](line.newValue, names)
+      : UNKNOWN_CHANGE_TEXT,
+    result: isKnownValue(line.result) ? RESULT_LABEL[line.result] : UNKNOWN_RESULT_LABEL,
     summary: line.summary,
     undoable: line.undoable,
   }

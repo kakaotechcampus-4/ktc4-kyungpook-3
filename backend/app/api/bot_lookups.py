@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_service_token
 from app.core.database import get_db
-from app.core.errors import AppError, Envelope, ErrorCode, success
+from app.core.errors import Envelope, success
 from app.models import (
     AsrTitleQueue,
     Meeting,
@@ -29,13 +29,13 @@ from app.models import (
 from app.schemas.meeting import ChatCursorResponse
 from app.schemas.member import MemberNameListResponse, MemberNameResponse
 from app.schemas.workspace import AsrPendingTitle, AsrTermsAddRequest, AsrTermsAddResponse, AsrTermsResponse
+from app.services import lifecycle
 
 router = APIRouter(prefix="/workspaces", dependencies=[Depends(require_service_token)])
 
 
 def _require_workspace(db: Session, workspace_id: str) -> None:
-    if db.get(Workspace, workspace_id) is None:
-        raise AppError(ErrorCode.WORKSPACE_NOT_FOUND, details={"workspace_id": workspace_id})
+    lifecycle.workspace(db, workspace_id, check_epoch=False)
 
 
 @router.get(
@@ -75,7 +75,7 @@ def list_member_names(workspace_id: str, db: Session = Depends(get_db)) -> dict:
         )
         for member in members
     ]
-    return success(MemberNameListResponse(items=items).model_dump(mode="json"))
+    return success(MemberNameListResponse(items=items, identity_epoch=db.get(Workspace, workspace_id).identity_epoch).model_dump(mode="json"))
 
 
 PENDING_TITLE_LIMIT = 200

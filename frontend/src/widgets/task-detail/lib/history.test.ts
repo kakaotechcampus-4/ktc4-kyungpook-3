@@ -1,3 +1,4 @@
+import { toTaskTimeline } from '@/entities/task'
 import type { ReplyChangeLine, TaskHistoryEntry, TaskTimelineItem } from '@/entities/task'
 import { historyLine, replyGroup } from './history'
 
@@ -47,6 +48,22 @@ describe('변경 이력 한 줄', () => {
       historyLine(entry({ field: 'due_date', oldValue: null, newValue: '2026-09-20' }), names)
         .change,
     ).toBe('마감: 없음 → 2026-09-20')
+  })
+})
+
+describe('모르는 값 (#348)', () => {
+  it('모르는 필드·출처는 다른 필드·출처로 읽지 않고 알 수 없다고 보인다. 받은 값은 그대로 둔다', () => {
+    const line = historyLine(
+      entry({
+        field: { unknown: 'priority' },
+        oldValue: 'low',
+        newValue: 'high',
+        source: { unknown: 'slack' },
+      }),
+      names,
+    )
+    expect(line.change).toBe('알 수 없는 항목: low → high')
+    expect(line.meta).toBe('김서연 · 알 수 없는 출처 · 2026-09-16 15:00')
   })
 })
 
@@ -124,6 +141,41 @@ describe('답장 한 칸 (#344)', () => {
     expect(replyGroup(reply({ changes: [line({ result })] }), replyNames).changes[0].result).toBe(
       tag,
     )
+  })
+
+  it('모르는 줄 종류·결과는 다른 줄·결과로 읽지 않고 알 수 없다고 보이며 되돌리기가 없다 (#348)', () => {
+    const [item] = toTaskTimeline(
+      [
+        {
+          kind: 'reply',
+          at: '2026-09-17T01:00:00Z',
+          message_id: 'mg_31',
+          member_name: '이재환',
+          channel: 'discord',
+          body: null,
+          changes: [
+            {
+              change_id: 'rc_02',
+              field: 'priority',
+              new_value: 'high',
+              evidence_status: null,
+              summary: null,
+              evidence_quote: null,
+              result: 'escalated',
+              undoable: true,
+            },
+          ],
+        },
+      ],
+      [],
+      'tk_03',
+    )
+    if (item.kind !== 'reply') throw new Error('reply expected')
+    expect(replyGroup(item, replyNames).changes[0]).toMatchObject({
+      change: '알 수 없는 변경이에요',
+      result: '알 수 없는 결과',
+      undoable: false,
+    })
   })
 
   it('AI 해석과 되돌릴 수 있는지를 줄마다 넘긴다', () => {

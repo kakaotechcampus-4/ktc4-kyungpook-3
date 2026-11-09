@@ -40,6 +40,7 @@ def report_stage(
         update(Meeting)
         .where(
             Meeting.meeting_id == meeting_id,
+            Meeting.deleted_at.is_(None),
             Meeting.status == str(MeetingStatus.PROCESSING),
             or_(
                 Meeting.processing_stage.is_(None),
@@ -61,6 +62,7 @@ def report_stage(
             update(Meeting)
             .where(
                 Meeting.meeting_id == meeting_id,
+            Meeting.deleted_at.is_(None),
                 Meeting.status == str(MeetingStatus.PROCESSING),
                 Meeting.processing_stage == stage.value,
                 or_(

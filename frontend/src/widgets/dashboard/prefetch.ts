@@ -3,7 +3,7 @@ import { pendingApprovalListQueryOptions } from '@/entities/approval'
 import { extractionQueryOptions } from '@/entities/extraction'
 import { integrationsQueryOptions } from '@/entities/integration'
 import { meetingDetailQueryOptions, meetingListQueryOptions } from '@/entities/meeting'
-import { memberListQueryOptions } from '@/entities/member'
+import { memberListQueryOptions, recordMemberListQueryOptions } from '@/entities/member'
 import { taskListQueryOptions } from '@/entities/task'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import { latestDoneMeeting } from './lib/dashboard'
@@ -27,6 +27,7 @@ export async function prefetchDashboard(
   const lists = Promise.all([
     queryClient.prefetchQuery(taskListQueryOptions(workspaceId)),
     isPm ? queryClient.prefetchQuery(pendingApprovalListQueryOptions(workspaceId)) : null,
+    queryClient.prefetchQuery(recordMemberListQueryOptions(workspaceId)),
     queryClient.prefetchQuery(memberListQueryOptions(workspaceId)),
     queryClient.prefetchQuery(integrationsQueryOptions(workspaceId)),
   ])

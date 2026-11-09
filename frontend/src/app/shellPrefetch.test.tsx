@@ -197,7 +197,7 @@ describe('셸이 뜬 뒤 한가할 때 다섯 탭을 한 번 받는다', () => {
     ])
   })
 
-  it('받은 탭으로 처음 옮기면 화면의 조회가 다시 묻지 않는다', async () => {
+  it('받은 탭으로 처음 옮기면 화면의 조회가 다시 묻지 않는다 — 메시지는 신호 소켓이 열린 뒤 목록을 한 번 맞춘다', async () => {
     const idle = captureIdle()
     const { queryClient } = await openSettings()
     idle.run()
@@ -209,7 +209,10 @@ describe('셸이 뜬 뒤 한가할 때 다섯 탭을 한 번 받는다', () => {
     await userEvent.click(tab('메시지'))
     expect(await screen.findByRole('heading', { level: 1, name: '메시지' })).toBeInTheDocument()
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
-    expect(businessRequests(requests.started)).toEqual([])
+    // 서버는 소켓이 열리기 전의 신호를 다시 보내지 않아, 미리 받은 목록도 열린 뒤 한 번 다시 받는다 (#558)
+    expect(businessRequests(requests.started)).toEqual([
+      { method: 'GET', path: `/workspaces/${WS}/messages` },
+    ])
   })
 
   it('requestIdleCallback 이 없는 브라우저는 짧은 타이머 뒤에 받는다', async () => {

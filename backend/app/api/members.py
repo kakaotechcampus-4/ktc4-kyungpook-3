@@ -43,9 +43,12 @@ router = APIRouter(prefix="/members", tags=["members"])
 def _get_member(db: Session, member_id: str, user: User, *, pm: bool = False) -> Member:
     """팀원을 찾고 요청자가 그 워크스페이스 소속인지(pm이면 PM인지) 확인한다."""
     member = db.get(Member, member_id)
-    if member is None:
+    if member is None or member.withdrawn_at is not None:
         raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
     (require_pm if pm else require_member)(db, user, member.workspace_id)
+    db.refresh(member)
+    if member.withdrawn_at is not None:
+        raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
     return member
 
 
@@ -189,18 +192,20 @@ def create_member(
 @router.get("", response_model=Envelope[MemberListResponse])
 def list_members(
     workspace_id: str = Query(..., description="워크스페이스 ID"),
+    include_withdrawn: bool = Query(False, description="공동 기록의 익명 작성자를 읽기용으로 포함"),
     _member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
+    visible = or_(Member.is_deleted.is_(False), Member.withdrawn_at.is_not(None)) if include_withdrawn else Member.is_deleted.is_(False)
     stmt = (
         select(Member)
-        .where(Member.workspace_id == workspace_id, Member.is_deleted.is_(False))
+        .where(Member.workspace_id == workspace_id, visible)
         .order_by(Member.created_at)
     )
     rows = db.execute(stmt).scalars().all()
 
     count_stmt = select(func.count()).select_from(Member).where(
-        Member.workspace_id == workspace_id, Member.is_deleted.is_(False)
+        Member.workspace_id == workspace_id, visible
     )
     total = db.execute(count_stmt).scalar() or 0
 

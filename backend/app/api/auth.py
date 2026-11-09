@@ -32,6 +32,7 @@ from app.schemas.auth import (
 from app.services import kakao_oauth, login_limit, mailer, oauth_state, password_reset, sessions, signup_codes
 from app.services.kakao_oauth import KakaoIdentity, KakaoOAuthError
 from app.services.passwords import DUMMY_PASSWORD_HASH, hash_password, verify_password
+from app.services import lifecycle
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,7 @@ def signup(payload: SignupRequest, request: Request, response: Response, db: Ses
     if email is None:
         raise AppError(ErrorCode.SIGNUP_VERIFICATION_INVALID)
 
+    lifecycle.identity_lock(db, email)
     conflict = _signup_conflict(db, email, kakao)
     if conflict is not None:
         raise AppError(conflict)
