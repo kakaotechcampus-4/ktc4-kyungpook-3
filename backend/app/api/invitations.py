@@ -34,7 +34,7 @@ def _invitation_pm(
     user: User = Depends(get_current_user), db: Session = Depends(get_db),
 ) -> Member:
     from app.services import lifecycle
-    lifecycle.identity_lock(db, payload.email)
+    lifecycle.identity_lock(db, lifecycle.email_identity(payload.email))
     return require_pm(db, user, workspace_id)
 
 # 옮겨 갈 상태 → (옮길 수 있는 상태, 그 상태가 아닐 때의 오류)
@@ -150,7 +150,7 @@ def _my_pending_invitation(db: Session, invitation_id: str, user: User, to: Invi
     if invitation is None or invitation.email != user.email:
         raise AppError(ErrorCode.INVITATION_NOT_FOUND, details={"invitation_id": invitation_id})
     from app.services import lifecycle
-    lifecycle.identity_lock(db, user.email)
+    lifecycle.identity_lock(db, lifecycle.email_identity(user.email))
     lifecycle.workspace(db, invitation.workspace_id)
     db.refresh(invitation)
     _check_can_move(invitation, to)

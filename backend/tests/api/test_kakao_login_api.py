@@ -1,22 +1,18 @@
 """카카오 로그인 API(#427). 카카오에는 접속하지 않고 fetch_identity 를 가짜로 바꾼다."""
 import logging
-import threading
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import sessionmaker
 
 from app.api import auth
-from app.core.database import get_db
 from app.main import app
 from app.models import Session as SessionModel, User
 from app.services import kakao_oauth, oauth_state, signup_codes
 from app.services.kakao_oauth import KakaoIdentity, KakaoOAuthError
 from app.services.passwords import hash_password
-from tests.api.conftest import TEST_DATABASE_URL
 from tests.usernames import username_for
 
 START = "/api/v1/auth/kakao/start"
@@ -287,43 +283,21 @@ def test_returning_kakao_user_gets_a_session_on_the_302(mdb, client, kakao):
     assert me.json()["data"]["user"]["user_id"] == user.user_id
 
 
-def test_verified_email_links_the_existing_account_and_logs_in(mdb, client, kakao):
-    user = _user(mdb)
-
-    res = _login(client, VERIFIED, kakao)
-
-    assert _query(res)["oauth_result"] == ["success"]
-    assert client.get("/api/v1/auth/me").json()["data"]["user"]["user_id"] == user.user_id
-    row = _row(mdb)
-    assert (row.provider, row.provider_id) == ("kakao", "77")
-    assert row.password_hash
-
-
-def test_account_bound_to_another_kakao_is_not_overwritten(mdb, client, kakao):
+@pytest.mark.parametrize("identity", [VERIFIED, UNVERIFIED], ids=["verified", "unverified"])
+@pytest.mark.parametrize("bound", [None, "other"], ids=["unlinked", "linked_to_other_kakao"])
+def test_kakao_email_of_an_existing_account_goes_to_signup_without_merging(mdb, client, kakao, identity, bound):
     _user(mdb)
-    mdb.execute(User.__table__.update().values(provider="kakao", provider_id="other"))
-    mdb.commit()
+    if bound:
+        mdb.execute(User.__table__.update().values(provider="kakao", provider_id=bound))
+        mdb.commit()
 
-    res = _login(client, VERIFIED, kakao)
+    res = _login(client, identity, kakao)
 
-    assert _path(res) == "/login"
-    assert _query(res)["oauth_result"] == ["failed"]
-    assert _query(res)["oauth_reason"] == ["email_exists"]
-    assert _row(mdb).provider_id == "other"
+    assert _path(res) == "/signup"
+    assert _cookie(res, kakao_oauth.PENDING_COOKIE) is not None
     assert _cookie(res, "session_token") is None
     assert _session_count(mdb) == 0
-
-
-def test_unverified_email_on_a_registered_account_points_to_login(mdb, client, kakao):
-    _user(mdb)
-
-    res = _login(client, UNVERIFIED, kakao)
-
-    assert _path(res) == "/login"
-    assert _query(res)["oauth_reason"] == ["email_exists"]
-    assert _row(mdb).provider_id is None
-    assert _clears_pending(res)
-    assert _session_count(mdb) == 0
+    assert _row(mdb).provider_id == bound
 
 
 @pytest.mark.parametrize("identity", [VERIFIED, UNVERIFIED, NO_EMAIL], ids=["verified", "unverified", "no_email"])
@@ -385,27 +359,16 @@ def test_pending_without_a_cookie_is_expired(mdb, client):
 
 
 def _signup_body(**body):
-    return {"name": "새사람", "password": PW, "link_kakao": True, "username": "newperson", **body}
+    return {"name": "새사람", "link_kakao": True, "username": "newperson", **body}
 
 
-def _proof(email):
-    return oauth_state.seal(signup_codes.PROOF_KIND, 60, {"m": email})
-
-
-@pytest.mark.parametrize("identity,token", [(VERIFIED, None), (NO_EMAIL, EMAIL)], ids=["kakao_email", "code_email"])
-def test_one_account_works_with_both_logins(mdb, kakao, identity, token):
+@pytest.mark.parametrize("identity", [VERIFIED, NO_EMAIL], ids=["kakao_email", "no_email"])
+def test_kakao_signup_then_kakao_login_reaches_the_same_account(mdb, kakao, identity):
     first = TestClient(app, base_url="https://testserver", follow_redirects=False)
     _login(first, identity, kakao)
-    body = _signup_body(verification_token=_proof(token)) if token else _signup_body()
-    signed_up = first.post("/api/v1/auth/signup", json=body)
+    signed_up = first.post("/api/v1/auth/signup", json=_signup_body())
     assert signed_up.status_code == 201, signed_up.text
     user_id = signed_up.json()["data"]["user"]["user_id"]
-
-    by_password = TestClient(app, base_url="https://testserver").post(
-        "/api/v1/auth/login", json={"email": EMAIL, "password": PW}
-    )
-    assert by_password.status_code == 200
-    assert by_password.json()["data"]["user"]["user_id"] == user_id
 
     second = TestClient(app, base_url="https://testserver", follow_redirects=False)
     res = _login(second, identity, kakao)
@@ -414,15 +377,16 @@ def test_one_account_works_with_both_logins(mdb, kakao, identity, token):
     assert len(mdb.scalars(select(User)).all()) == 1
 
 
-def test_linked_existing_account_keeps_its_password_login(mdb, client, kakao):
-    user = _user(mdb)
+def test_kakao_only_account_has_no_password_login(mdb, client, kakao):
     _login(client, VERIFIED, kakao)
+    assert client.post("/api/v1/auth/signup", json=_signup_body()).status_code == 201
 
     res = TestClient(app, base_url="https://testserver").post(
         "/api/v1/auth/login", json={"email": EMAIL, "password": PW}
     )
 
-    assert res.json()["data"]["user"]["user_id"] == user.user_id
+    assert res.status_code == 401
+    assert res.json()["error"]["code"] == "INVALID_CREDENTIALS"
 
 
 def test_kakao_login_reads_the_user_row_with_a_share_lock():
@@ -430,79 +394,6 @@ def test_kakao_login_reads_the_user_row_with_a_share_lock():
     sql = str(auth._kakao_session_user_stmt("77").compile(dialect=postgresql.dialect()))
 
     assert "FOR SHARE" in sql
-
-
-def test_kakao_bound_elsewhere_in_the_gap_logs_into_that_account(mdb, client, kakao, monkeypatch):
-    """unique 위반을 다시 조회로 푼다. PostgreSQL 은 되돌리지 않으면 다시 읽지 못한다."""
-    _user(mdb)
-    state = _state(client)
-    make = sessionmaker(bind=mdb.get_bind(), autoflush=False)
-    real = auth._login_user_stmt
-
-    def bound_first(email):
-        with make() as other:
-            other.add(User(username=username_for("b@example.com"), email="b@example.com", name="b", provider="kakao", provider_id="77"))
-            other.commit()
-        return real(email)
-
-    monkeypatch.setattr(auth, "_login_user_stmt", bound_first)
-
-    res = _callback(client, code="c", state=state)
-
-    assert _query(res)["oauth_result"] == ["success"]
-    assert client.get("/api/v1/auth/me").json()["data"]["user"]["email"] == "b@example.com"
-    assert _row(mdb).provider_id is None
-
-
-def test_account_claimed_in_the_gap_is_not_overwritten(mdb, client, kakao, monkeypatch):
-    user_id = _user(mdb).user_id
-    state = _state(client)
-    real = auth._link_kakao
-
-    def claimed_first(db, owner, provider_id):
-        with sessionmaker(bind=mdb.get_bind(), autoflush=False)() as other:
-            other.get(User, user_id).provider_id = "other"
-            other.commit()
-        return real(db, owner, provider_id)
-
-    monkeypatch.setattr(auth, "_link_kakao", claimed_first)
-
-    res = _callback(client, code="c", state=state)
-
-    assert _query(res)["oauth_reason"] == ["email_exists"]
-    assert _row(mdb).provider_id == "other"
-    assert _session_count(mdb) == 0
-
-
-@pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL(PostgreSQL)이 없습니다.")
-@pytest.mark.parametrize("mdb", ["postgresql"], indirect=True)
-def test_parallel_callbacks_link_once_and_both_log_in(mdb, kakao):
-    _user(mdb)
-    make = sessionmaker(bind=mdb.get_bind(), autoflush=False)
-
-    def per_request():
-        with make() as db:
-            yield db
-
-    app.dependency_overrides[get_db] = per_request
-    clients = [TestClient(app, base_url="https://testserver", follow_redirects=False) for _ in range(4)]
-    states = [_state(c) for c in clients]
-    start = threading.Barrier(len(clients))
-    results = [None] * len(clients)
-
-    def run(i):
-        start.wait()
-        results[i] = _callback(clients[i], code="c", state=states[i])
-
-    threads = [threading.Thread(target=run, args=(i,)) for i in range(len(clients))]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-
-    mdb.rollback()
-    assert [_query(r)["oauth_result"] for r in results] == [["success"]] * len(clients)
-    assert _row(mdb).provider_id == "77"
 
 
 def test_callback_never_logs_the_code_or_state(mdb, client, kakao, caplog):
@@ -530,69 +421,3 @@ def test_login_clears_a_pending_kakao_left_in_the_browser(mdb, client, kakao):
     mdb.commit()
 
     assert _clears_pending(_login(client, VERIFIED, kakao))
-
-
-def test_email_exists_clears_a_pending_kakao_left_in_the_browser(mdb, client, kakao):
-    _user(mdb)
-    mdb.execute(User.__table__.update().values(provider="kakao", provider_id="other"))
-    mdb.commit()
-
-    res = _login(client, VERIFIED, kakao)
-
-    assert _query(res)["oauth_reason"] == ["email_exists"]
-    assert _clears_pending(res)
-
-
-@pytest.fixture
-def notices(monkeypatch):
-    box = []
-    monkeypatch.setenv("APP_BASE_URL", "https://app.example.com/")
-    monkeypatch.setattr(auth.mailer, "is_configured", lambda: True)
-    monkeypatch.setattr(
-        auth.mailer, "send_in_background", lambda to, subject, text, *, log_label: box.append((to, subject, text))
-    )
-    return box
-
-
-def test_new_link_tells_the_account_mailbox_how_to_recover(mdb, client, kakao, notices):
-    _user(mdb)
-
-    res = _login(client, VERIFIED, kakao)
-
-    assert _query(res)["oauth_result"] == ["success"]
-    [(to, subject, text)] = notices
-    assert to == EMAIL
-    assert subject == "[Manager's Manager] 카카오 계정이 연결되었습니다"
-    assert "https://app.example.com/forgot-password" in text
-
-
-def test_returning_kakao_login_sends_no_link_notice(mdb, client, kakao, notices):
-    _user(mdb)
-    mdb.execute(User.__table__.update().values(provider="kakao", provider_id="77"))
-    mdb.commit()
-
-    _login(client, VERIFIED, kakao)
-
-    assert notices == []
-
-
-def test_refused_link_sends_no_link_notice(mdb, client, kakao, notices):
-    _user(mdb)
-    mdb.execute(User.__table__.update().values(provider="kakao", provider_id="other"))
-    mdb.commit()
-
-    _login(client, VERIFIED, kakao)
-
-    assert notices == []
-
-
-def test_link_still_logs_in_when_mail_is_not_configured(mdb, client, kakao, monkeypatch, caplog):
-    _user(mdb)
-    monkeypatch.setattr(auth.mailer, "is_configured", lambda: False)
-
-    with caplog.at_level(logging.WARNING, logger="app.api.auth"):
-        res = _login(client, VERIFIED, kakao)
-
-    assert _query(res)["oauth_result"] == ["success"]
-    assert _row(mdb).provider_id == "77"
-    assert "reason=mail_unconfigured" in caplog.text

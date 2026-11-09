@@ -125,18 +125,6 @@ def fetch_identity(code: str, *, transport: httpx.BaseTransport | None = None) -
     return _parse_identity(_json(user, "사용자 정보 조회"))
 
 
-def link_notice(base_url: str) -> tuple[str, str]:
-    """기존 계정에 카카오를 이었을 때 그 계정 이메일로 보낼 (제목, 본문)."""
-    text = (
-        "이 계정에 카카오 로그인이 연결되었습니다.\n"
-        "직접 하신 일이라면 아무것도 하지 않으셔도 됩니다.\n\n"
-        "만든 적 없는 계정이거나 모르는 비밀번호가 있다면 비밀번호를 재설정해 주세요.\n"
-        f"{base_url}/forgot-password\n\n"
-        "재설정하면 다른 기기의 로그인도 끊어집니다."
-    )
-    return "[Manager's Manager] 카카오 계정이 연결되었습니다", text
-
-
 def seal_pending(identity: KakaoIdentity, *, now: float | None = None) -> str:
     """가입을 마칠 때까지 쿠키에 둘 토큰. 인증되지 않은 이메일은 담지 않아 가입에 쓰일 길이 없다."""
     email = identity.email if identity.email_verified else None
