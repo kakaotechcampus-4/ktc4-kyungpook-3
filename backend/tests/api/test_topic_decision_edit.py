@@ -1,10 +1,12 @@
 """주제와 결정 고치기 경로(#605). 권한, 워크스페이스 경계, 고친 것이 재요약 뒤에도 화면이 읽는 길에 남는지를 본다."""
+from datetime import datetime, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.main import app
-from app.models import ExtractionItem, Task, Topic, Workspace
+from app.models import Decision, ExtractionItem, Task, Topic, Workspace
 from app.services import embedding
 from tests.api.test_project_map import T0, _extraction, _meeting, _save
 
@@ -80,8 +82,13 @@ def _routes(ws, topic_id, task_id):
     ]
 
 
+def _decision_id(db, text):
+    return db.scalar(select(Decision.decision_id).where(Decision.text == text))
+
+
 def test_edits_need_a_session_and_membership(mdb, mseed):
-    for method, url, body in _routes(mseed["ws"], "tp", "tk"):
+    decision = ("PATCH", f"{P}/{mseed['ws']}/decisions/dc", {"state": "invalid"})
+    for method, url, body in [*_routes(mseed["ws"], "tp", "tk"), decision]:
         assert _client().request(method, url, json=body).status_code == 401, url
         assert _client("outsider-token").request(method, url, json=body).status_code == 403, url
 
@@ -217,3 +224,65 @@ def test_detached_task_stays_hidden_after_resummaries(client, mdb, mseed):
 
     assert _topic_ids(mdb, ws)["배포"] == topic_id
     _assert_hidden(client, ws, topic_id, task)
+
+
+def _decided(db, ws, *texts, title="인증 설계"):
+    meeting = _meeting(db, ws, title=title)
+    _save(db, meeting, [{"name": "초대", "decisions": [{"text": text} for text in texts]}])
+    return meeting
+
+
+def test_decision_edit_returns_the_marked_decision(client, mdb, mseed):
+    ws = mseed["ws"]
+    meeting = _decided(mdb, ws, "이메일로만")
+    decision_id = _decision_id(mdb, "이메일로만")
+
+    r = client.patch(f"{P}/{ws}/decisions/{decision_id}", json={"text": "이메일 초대만", "state": "invalid"})
+
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert {k: data[k] for k in ("decision_id", "text", "meeting_id", "meeting_title", "state", "edited")} == {
+        "decision_id": decision_id, "text": "이메일 초대만", "meeting_id": meeting.meeting_id,
+        "meeting_title": "인증 설계", "state": "invalid", "edited": True,
+    }
+
+
+def test_decision_of_another_workspace_unknown_or_of_a_deleted_meeting_is_404(client, mdb, mseed):
+    ws = mseed["ws"]
+    other = Workspace(name="B")
+    mdb.add(other)
+    mdb.flush()
+    _decided(mdb, other.workspace_id, "남의 결정")
+    deleted = _decided(mdb, ws, "지운 회의 결정")
+    deleted.deleted_at = datetime.now(timezone.utc)
+    mdb.commit()
+
+    for decision_id in (_decision_id(mdb, "남의 결정"), _decision_id(mdb, "지운 회의 결정"), "nope"):
+        r = client.patch(f"{P}/{ws}/decisions/{decision_id}", json={"state": "removed"})
+        assert _error(r) == (404, "DECISION_NOT_FOUND"), decision_id
+
+
+@pytest.mark.parametrize("body", [{}, {"state": "gone"}, {"text": ""}, {"text": "가" * 1001}])
+def test_decision_edit_without_a_change_or_outside_the_limits_is_400(client, mdb, mseed, body):
+    ws = mseed["ws"]
+    _decided(mdb, ws, "이메일로만")
+
+    r = client.patch(f"{P}/{ws}/decisions/{_decision_id(mdb, '이메일로만')}", json=body)
+
+    assert _error(r) == (400, "INVALID_REQUEST")
+
+
+def test_topic_detail_drops_removed_decisions_and_bundle_lists_only_valid_ones(client, mdb, mseed):
+    ws = mseed["ws"]
+    _decided(mdb, ws, "남는 결정", "틀린 결정", "지운 결정")
+    client.patch(f"{P}/{ws}/decisions/{_decision_id(mdb, '틀린 결정')}", json={"state": "invalid"})
+    client.patch(f"{P}/{ws}/decisions/{_decision_id(mdb, '지운 결정')}", json={"state": "removed"})
+
+    detail = _detail(client, ws, _topic_ids(mdb, ws)["초대"])
+    head = _bundle(client, ws).split("## 막힌 일")[0].split("## 지금 유효한 결정")[1]
+
+    assert [(d["text"], d["state"], d["edited"]) for d in detail["decisions"]] == [
+        ("남는 결정", "valid", False), ("틀린 결정", "invalid", True),
+    ]
+    assert "남는 결정" in head
+    assert "틀린 결정" not in head and "지운 결정" not in head

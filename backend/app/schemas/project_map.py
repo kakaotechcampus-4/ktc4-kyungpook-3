@@ -231,6 +231,9 @@ class TopicDecision(BaseModel):
     meeting_title: str | None
     decided_at: datetime
     replaced_by: str | None
+    # valid, invalid(유효하지 않다고 표시), removed(지움, 고친 응답에만 나온다). edited 는 팀원이 고쳤는가(#605)
+    state: str = "valid"
+    edited: bool = False
 
 
 class TopicTask(BaseModel):

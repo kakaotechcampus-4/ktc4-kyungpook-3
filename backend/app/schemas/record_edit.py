@@ -65,3 +65,16 @@ class TaskDetachResponse(BaseModel):
     topic_id: str
     task_id: str
     detached: Literal[True] = True
+
+
+class DecisionEditRequest(_Storable):
+    """보낸 칸만 바꾼다. state 를 valid 로 보내면 지우기나 유효하지 않음 표시를 되돌린다."""
+
+    text: Annotated[str, StringConstraints(min_length=1, max_length=1000)] | None = None
+    state: Literal["valid", "invalid", "removed"] | None = None
+
+    @model_validator(mode="after")
+    def _something_changes(self) -> "DecisionEditRequest":
+        if self.text is None and self.state is None:
+            raise ValueError("text 나 state 가 있어야 합니다.")
+        return self

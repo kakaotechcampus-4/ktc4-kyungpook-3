@@ -28,6 +28,7 @@ from app.core.errors import AppError, ErrorCode
 from app.models import (
     ApprovalRequest,
     Decision,
+    DecisionState,
     Extraction,
     ExtractionAction,
     ExtractionItem,
@@ -320,6 +321,7 @@ def _input_decisions(db: Session, meeting: Meeting) -> list[SummaryInputDecision
             Decision.workspace_id == meeting.workspace_id,
             Meeting.deleted_at.is_(None),
             Meeting.started_at < meeting.started_at,
+            Decision.state == DecisionState.VALID,
             or_(Decision.replaced_by.is_(None), replacement_meeting.started_at >= meeting.started_at),
         )
         .order_by(Meeting.started_at.desc(), Meeting.meeting_id, Decision.position)
@@ -531,7 +533,7 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     previous_topics = set(
         db.scalars(select(TopicMeeting.topic_id).where(TopicMeeting.meeting_id == meeting.meeting_id))
     )
-    _clear_meeting(db, meeting.meeting_id, extraction_id, keep_human=True)
+    frozen = _clear_meeting(db, meeting.meeting_id, extraction_id, keep_human=True)
     kept_topics = set(
         db.scalars(select(TopicMeeting.topic_id).where(TopicMeeting.meeting_id == meeting.meeting_id))
     )
@@ -539,7 +541,8 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     item_ids = set(db.scalars(select(ExtractionItem.item_id).where(ExtractionItem.extraction_id == extraction_id)))
     topics: dict[str, str] = {}
     links: set[tuple[str, str]] = set()
-    details: list[dict] = []
+    # 결정을 고정한 회의는 AI 의 결정을 버리고 앞 요약의 결정 기록을 그대로 옮긴다. 행의 위치와 ID 가 그대로라 맞는다
+    details: list[dict] = list((_stored(extraction) or {}).get("decision_details", [])) if frozen else []
     for entry in payload.topics:
         topic = _resolve_topic(db, meeting.workspace_id, entry)
         if topic is None:
@@ -550,7 +553,7 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
             continue
         topics.setdefault(topic.topic_id, topic.name)
         links.update((topic.topic_id, item_id) for item_id in entry.item_ids if item_id in item_ids)
-        for decision in entry.decisions:
+        for decision in [] if frozen else entry.decisions:
             row = Decision(
                 workspace_id=meeting.workspace_id,
                 meeting_id=meeting.meeting_id,
@@ -588,20 +591,32 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     )
 
 
-def _clear_meeting(db: Session, meeting_id: str, extraction_id: str | None, *, keep_human: bool) -> None:
-    """keep_human 이면(재요약) 팀원이 고친 주제의 회의 연결을 둔다. 아니면(회의 삭제) 전부 지운다."""
-    decision_ids = select(Decision.decision_id).where(Decision.meeting_id == meeting_id)
-    # 이 회의가 뒤집었던 옛 결정을 유효로 되돌린다. 새 요약이 다시 뒤집으면 다시 걸린다
-    db.execute(update(Decision).where(Decision.replaced_by.in_(decision_ids)).values(replaced_by=None))
-    db.execute(delete(Decision).where(Decision.meeting_id == meeting_id))
+def _clear_meeting(db: Session, meeting_id: str, extraction_id: str | None, *, keep_human: bool) -> bool:
+    """재요약(keep_human)이면 팀원이 고친 결정이 하나라도 있는 회의의 결정 전부와 그 뒤집기 연결을 두고 True 를 돌려준다.
+
+    결정이 남는 주제(상태와 무관)와 팀원이 고친 주제는 회의 연결도 둔다. Decision.topic_id 가 CASCADE 라 주제가 고아로 지워지면
+    지운 결정 표시까지 사라져 다음 재요약에서 그 결정이 되살아나기 때문이다. 회의 삭제(keep_human 아님)는 전부 지운다.
+    """
+    frozen = keep_human and bool(
+        db.scalar(select(exists().where(Decision.meeting_id == meeting_id, Decision.edited_at.is_not(None))))
+    )
+    if not frozen:
+        decision_ids = select(Decision.decision_id).where(Decision.meeting_id == meeting_id)
+        # 이 회의가 뒤집었던 옛 결정을 유효로 되돌린다. 새 요약이 다시 뒤집으면 다시 걸린다
+        db.execute(update(Decision).where(Decision.replaced_by.in_(decision_ids)).values(replaced_by=None))
+        db.execute(delete(Decision).where(Decision.meeting_id == meeting_id))
     extractions = select(Extraction.extraction_id).where(Extraction.meeting_id == meeting_id)
     item_ids = select(ExtractionItem.item_id).where(
         ExtractionItem.extraction_id == extraction_id if extraction_id is not None
         else ExtractionItem.extraction_id.in_(extractions)
     )
     db.execute(delete(TopicItem).where(TopicItem.item_id.in_(item_ids)))
-    kept = [TopicMeeting.topic_id.not_in(select(Topic.topic_id).where(Topic.edited_at.is_not(None)))] if keep_human else []
+    kept = [
+        TopicMeeting.topic_id.not_in(select(Decision.topic_id).where(Decision.meeting_id == meeting_id)),
+        TopicMeeting.topic_id.not_in(select(Topic.topic_id).where(Topic.edited_at.is_not(None))),
+    ] if keep_human else []
     db.execute(delete(TopicMeeting).where(TopicMeeting.meeting_id == meeting_id, *kept))
+    return frozen
 
 
 def remove_meeting_summary(db: Session, meeting: Meeting) -> None:
@@ -767,6 +782,48 @@ def merge_topics(db: Session, workspace_id: str, topic_id: str, into_topic_id: s
     into.edited_at = datetime.now(timezone.utc)
     db.flush()
     return into
+
+
+def edit_decision(
+    db: Session, workspace_id: str, decision_id: str, *, text: str | None, state: DecisionState | None
+) -> Decision:
+    """문장 고치기와 상태 바꾸기. 고치면 그 회의의 결정은 재요약에서 고정된다. 커밋은 호출자가 한다.
+
+    호출자가 worker_gate 를 먼저 잡는다. 회의 행을 잠가 회의 삭제와 줄을 선다. 지우면(removed) 이 결정이 뒤집은 옛 결정이 다시
+    유효해지고, 지운 것을 되돌리면 요약 기록의 replaces 로 다시 뒤집는다. 유효하지 않음(invalid)은 연결을 그대로 둔다.
+    """
+    meeting_id = db.scalar(
+        select(Decision.meeting_id).where(Decision.decision_id == decision_id, Decision.workspace_id == workspace_id)
+    )
+    meeting = None if meeting_id is None else db.scalar(
+        select(Meeting).where(Meeting.meeting_id == meeting_id).with_for_update().execution_options(populate_existing=True)
+    )
+    if meeting is None or meeting.deleted_at is not None:
+        raise AppError(ErrorCode.DECISION_NOT_FOUND, details={"decision_id": decision_id})
+    decision = db.get(Decision, decision_id, populate_existing=True)
+    if text is not None:
+        decision.text = text
+    if state is not None and state != decision.state:
+        if state == DecisionState.REMOVED:
+            db.execute(update(Decision).where(Decision.replaced_by == decision_id).values(replaced_by=None))
+        elif decision.state == DecisionState.REMOVED:
+            _replace_decisions(db, decision, meeting, _replaced_ids(db, meeting_id, decision_id))
+        decision.state = state
+    decision.edited_at = datetime.now(timezone.utc)
+    db.flush()
+    return decision
+
+
+def _replaced_ids(db: Session, meeting_id: str, decision_id: str) -> list[str]:
+    """요약 기록에 남은, 이 결정이 뒤집은 옛 결정 ID."""
+    extraction = db.scalars(
+        select(Extraction).where(Extraction.meeting_id == meeting_id, Extraction.summary.is_not(None))
+        .order_by(Extraction.created_at.desc()).limit(1)
+    ).first()
+    for detail in (_stored(extraction) or {}).get("decision_details", []):
+        if isinstance(detail, dict) and detail.get("decision_id") == decision_id:
+            return [copy["decision_id"] for copy in detail.get("replaces", []) if isinstance(copy, dict) and copy.get("decision_id")]
+    return []
 
 
 def detach_task(db: Session, workspace_id: str, topic_id: str, task_id: str) -> None:

@@ -484,6 +484,86 @@ def test_edited_topic_the_rerun_drops_is_kept_on_its_meeting(mdb, mseed):
     assert edited.topic_id in _topic_meetings(mdb, meeting)
 
 
+def _edit_decision(db, ws, current, **change):
+    edited = summary.edit_decision(db, ws, _decision(db, current).decision_id, text=change.get("text"),
+                                   state=change.get("state"))
+    db.commit()
+    return edited.decision_id
+
+
+def test_edited_decision_freezes_the_meetings_decisions_on_a_rerun(mdb, mseed):
+    ws = mseed["ws"]
+    _, extraction, _ = _meeting(mdb, ws)
+    _save(mdb, extraction, [{"name": "초대", "decisions": [{"text": "이메일로만", "rejected": ["코드"]}, {"text": "코드 없이"}]}])
+    before = [d.decision_id for d in mdb.scalars(select(Decision).order_by(Decision.position))]
+    _edit_decision(mdb, ws, "이메일로만", text="이메일 초대만")
+    _requeue(mdb, extraction)
+
+    result = _save(mdb, extraction, [{"name": "초대", "decisions": [{"text": "이메일로만"}, {"text": "새 결정"}]}])
+
+    rows = mdb.scalars(select(Decision).order_by(Decision.position).execution_options(populate_existing=True)).all()
+    assert [(d.decision_id, d.text) for d in rows] == list(zip(before, ["이메일 초대만", "코드 없이"]))
+    document = _document(mdb, extraction)
+    assert [d["decision_id"] for d in document["decision_details"]] == before
+    assert document["decision_details"][0]["rejected"] == ["코드"]
+    assert result.decision_count == 2
+
+
+def test_removed_decision_stays_gone_after_reruns_that_drop_its_topic(mdb, mseed):
+    if mdb.get_bind().dialect.name == "sqlite":
+        # 주제가 지워지면 결정이 FK 로 따라 지워지는 것을 운영 DB 처럼 본다
+        mdb.connection().exec_driver_sql("PRAGMA foreign_keys=ON")
+    ws = mseed["ws"]
+    meeting, extraction, _ = _meeting(mdb, ws)
+    _save(mdb, extraction, [{"name": "초대", "decisions": [{"text": "코드로 합류"}]}])
+    topic_id = _topics(mdb)[0].topic_id
+    removed = _edit_decision(mdb, ws, "코드로 합류", state="removed")
+
+    for _ in range(2):
+        _requeue(mdb, extraction)
+        _save(mdb, extraction, [{"name": "다른 주제"}])
+        assert topic_id in _topic_meetings(mdb, meeting)
+    _requeue(mdb, extraction)
+    _save(mdb, extraction, [{"name": "초대", "decisions": [{"text": "코드로 합류"}]}])
+
+    assert [(d.decision_id, d.topic_id, d.state)
+            for d in mdb.scalars(select(Decision).execution_options(populate_existing=True))] == [
+        (removed, topic_id, "removed"),
+    ]
+
+
+def _replaced_pair(db, ws):
+    _, old, _ = _meeting(db, ws, started_at=T0 - timedelta(days=9))
+    _, new, _ = _meeting(db, ws)
+    _save(db, old, [{"name": "초대", "decisions": [{"text": "코드로 합류"}]}])
+    _save(db, new, [{"name": "초대", "decisions": [
+        {"text": "이메일로만", "replaces": [_decision(db, "코드로 합류").decision_id]},
+    ]}])
+    return new
+
+
+def test_removing_a_replacing_decision_makes_the_old_one_valid_and_valid_undoes_it(mdb, mseed):
+    ws = mseed["ws"]
+    _replaced_pair(mdb, ws)
+
+    _edit_decision(mdb, ws, "이메일로만", state="removed")
+    assert _decision(mdb, "코드로 합류").replaced_by is None
+
+    _edit_decision(mdb, ws, "이메일로만", state="valid")
+    assert _decision(mdb, "코드로 합류").replaced_by == _decision(mdb, "이메일로만").decision_id
+    assert _decision(mdb, "이메일로만").state == "valid"
+
+
+def test_invalid_decision_keeps_its_link_and_leaves_the_summary_input(mdb, mseed):
+    ws = mseed["ws"]
+    _replaced_pair(mdb, ws)
+    _, later, _ = _meeting(mdb, ws, started_at=T0 + timedelta(days=1))
+    _edit_decision(mdb, ws, "이메일로만", state="invalid")
+
+    assert _decision(mdb, "코드로 합류").replaced_by == _decision(mdb, "이메일로만").decision_id
+    assert summary.summary_input(mdb, later.extraction_id).decisions == []
+
+
 def test_golden_put_body_round_trips_through_the_schema():
     golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
 

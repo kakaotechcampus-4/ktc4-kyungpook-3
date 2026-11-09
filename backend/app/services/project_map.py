@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError, ErrorCode
 from app.models import (
     Decision,
+    DecisionState,
     Extraction,
     Meeting,
     MeetingSource,
@@ -164,15 +165,29 @@ def build_graph(db: Session, workspace_id: str) -> GraphResponse:
     )
 
 
+def topic_decision(decision: Decision, meeting: Meeting) -> TopicDecision:
+    return TopicDecision(
+        decision_id=decision.decision_id,
+        text=decision.text,
+        reason=decision.reason,
+        meeting_id=meeting.meeting_id,
+        meeting_title=meeting.title,
+        decided_at=meeting.started_at,
+        replaced_by=decision.replaced_by,
+        state=decision.state,
+        edited=decision.edited_at is not None,
+    )
+
+
 def topic_detail(db: Session, workspace_id: str, topic_id: str) -> TopicDetailResponse:
-    """바뀐 결정도 replaced_by 와 함께 준다."""
+    """바뀐 결정도 replaced_by 와 함께 준다. 팀원이 지운 결정은 빼고 유효하지 않다고 한 결정은 state 로 알린다."""
     topic = db.get(Topic, topic_id)
     if topic is None or topic.workspace_id != workspace_id:
         raise AppError(ErrorCode.TOPIC_NOT_FOUND, details={"topic_id": topic_id})
     decisions = db.execute(
         select(Decision, Meeting)
         .join(Meeting, Meeting.meeting_id == Decision.meeting_id)
-        .where(Decision.topic_id == topic_id, Meeting.deleted_at.is_(None))
+        .where(Decision.topic_id == topic_id, Meeting.deleted_at.is_(None), Decision.state != DecisionState.REMOVED)
         .order_by(Meeting.started_at, Meeting.meeting_id, Decision.position)
     ).all()
     task_ids = select(_visible_links(workspace_id).where(TopicItem.topic_id == topic_id).subquery().c.task_id)
@@ -193,18 +208,7 @@ def topic_detail(db: Session, workspace_id: str, topic_id: str) -> TopicDetailRe
         name=topic.name,
         description=topic.description,
         edited=topic.edited_at is not None,
-        decisions=[
-            TopicDecision(
-                decision_id=decision.decision_id,
-                text=decision.text,
-                reason=decision.reason,
-                meeting_id=meeting.meeting_id,
-                meeting_title=meeting.title,
-                decided_at=meeting.started_at,
-                replaced_by=decision.replaced_by,
-            )
-            for decision, meeting in decisions
-        ],
+        decisions=[topic_decision(decision, meeting) for decision, meeting in decisions],
         tasks=[
             TopicTask(
                 task_id=task.task_id,
@@ -326,7 +330,8 @@ def _valid_decisions(db: Session, workspace_id: str) -> list[BundleDecision]:
         select(Topic.name, Decision.text, Meeting.started_at)
         .join(Topic, Topic.topic_id == Decision.topic_id)
         .join(Meeting, Meeting.meeting_id == Decision.meeting_id)
-        .where(Decision.workspace_id == workspace_id, Decision.replaced_by.is_(None), Meeting.deleted_at.is_(None))
+        .where(Decision.workspace_id == workspace_id, Decision.replaced_by.is_(None), Meeting.deleted_at.is_(None),
+               Decision.state == DecisionState.VALID)
         .order_by(Topic.name, Meeting.started_at, Decision.position)
     ).all()
     return [
