@@ -9,6 +9,7 @@ from sqlalchemy import func, select, update
 from app.cli import seed_demo
 from app.cli.demo_seed import load_seed_data
 from app.main import app
+from tests.usernames import username_for
 from app.models import ApprovalRequest, EMBEDDING_DIMENSIONS, Meeting, Task, User
 from tests.api.conftest import SERVICE_TOKEN
 
@@ -60,7 +61,7 @@ def test_dry_run_changes_nothing(mdb, monkeypatch, capsys):
 def test_dry_run_reports_reuse_and_foreign_rows(mdb, monkeypatch, capsys):
     _env(monkeypatch, token=False)
     monkeypatch.setattr(seed_demo, "SessionLocal", lambda: mdb)
-    mdb.add(User(email="demo+1@example.com", name="실제PM", password_hash="x"))
+    mdb.add(User(email="demo+1@example.com", username=username_for("demo+1@example.com"), name="실제PM", password_hash="x"))
     mdb.commit()
 
     assert seed_demo.main(_args("--dry-run")) == 2
@@ -76,7 +77,7 @@ def test_dry_run_reports_reuse_and_foreign_rows(mdb, monkeypatch, capsys):
 def test_conflict_exits_2_writing_nothing(mdb, monkeypatch, capsys):
     _env(monkeypatch)
     _inject(monkeypatch, mdb)
-    mdb.add(User(email="demo+1@example.com", name="실제PM", password_hash="x"))
+    mdb.add(User(email="demo+1@example.com", username=username_for("demo+1@example.com"), name="실제PM", password_hash="x"))
     mdb.commit()
 
     assert seed_demo.main(_args()) == 2

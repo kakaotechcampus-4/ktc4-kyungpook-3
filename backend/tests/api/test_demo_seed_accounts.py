@@ -14,7 +14,9 @@ from app.cli.seed_demo import (
     inspect_existing,
     seed_accounts,
 )
+from app.cli.seed_demo import username_for as seed_username_for
 from app.main import app
+from tests.usernames import username_for
 from app.models import (
     Meeting,
     Member,
@@ -25,6 +27,7 @@ from app.models import (
     Workspace,
     WorkspaceOnboardingStepState,
 )
+from app.schemas.username import validate_username
 from app.services.passwords import hash_password
 
 PM_PW = "demo-pm-1234"
@@ -104,8 +107,8 @@ def test_seed_accounts_is_idempotent(mdb):
 
 
 def test_existing_user_is_reused_without_password_change(mdb):
-    mdb.add(User(email=EMAILS[2], name="기존", password_hash=hash_password("existing-pw-1")))
-    mdb.add(User(email=EMAILS[0], name="기존PM", password_hash=hash_password("old-pm-pw-1")))
+    mdb.add(User(email=EMAILS[2], username=username_for(EMAILS[2]), name="기존", password_hash=hash_password("existing-pw-1")))
+    mdb.add(User(email=EMAILS[0], username=username_for(EMAILS[0]), name="기존PM", password_hash=hash_password("old-pm-pw-1")))
     mdb.commit()
 
     _seed(mdb, allow_existing=True)
@@ -120,7 +123,7 @@ def test_existing_user_is_reused_without_password_change(mdb):
 
 
 def test_reset_passwords_ends_existing_sessions(mdb):
-    mdb.add(User(email=EMAILS[0], name="기존PM", password_hash=hash_password("old-pm-pw-1")))
+    mdb.add(User(email=EMAILS[0], username=username_for(EMAILS[0]), name="기존PM", password_hash=hash_password("old-pm-pw-1")))
     mdb.commit()
     old_client, res = _login(EMAILS[0], "old-pm-pw-1")
     assert res.status_code == 200
@@ -153,7 +156,7 @@ def test_member2_password_invalid_writes_nothing(mdb):
 
 
 def test_existing_pm_seat_with_other_name_is_reused(mdb):
-    pm = User(email=EMAILS[0], name="다른이름", password_hash=hash_password(PM_PW))
+    pm = User(email=EMAILS[0], username=username_for(EMAILS[0]), name="다른이름", password_hash=hash_password(PM_PW))
     mdb.add(pm)
     mdb.flush()
     workspace = Workspace(name=NAME)
@@ -225,7 +228,7 @@ def _snapshot(db):
 
 
 def test_existing_user_with_other_name_stops_without_writing(mdb):
-    mdb.add(User(email=EMAILS[0], name="실제PM", password_hash=hash_password("real-pm-pw-1")))
+    mdb.add(User(email=EMAILS[0], username=username_for(EMAILS[0]), name="실제PM", password_hash=hash_password("real-pm-pw-1")))
     mdb.commit()
     before = _snapshot(mdb)
 
@@ -239,7 +242,7 @@ def test_existing_user_with_other_name_stops_without_writing(mdb):
 
 def test_foreign_seat_in_found_workspace_stops_without_writing(mdb):
     seeded = _seed(mdb)
-    outsider = User(email="real@example.com", name="실제팀원", password_hash=hash_password("real-pw-1"))
+    outsider = User(email="real@example.com", username=username_for("real@example.com"), name="실제팀원", password_hash=hash_password("real-pw-1"))
     mdb.add(outsider)
     mdb.flush()
     mdb.add(Member(workspace_id=seeded.workspace_id, user_id=outsider.user_id, display_name="실제팀원", role="member"))
@@ -261,7 +264,7 @@ def test_foreign_seat_in_found_workspace_stops_without_writing(mdb):
 def test_seat_with_seed_name_linked_to_outsider_stops(mdb):
     data = load_seed_data()
     seeded = _seed(mdb)
-    outsider = User(email="real@example.com", name="실제팀원", password_hash=hash_password("real-pw-1"))
+    outsider = User(email="real@example.com", username=username_for("real@example.com"), name="실제팀원", password_hash=hash_password("real-pw-1"))
     mdb.add(outsider)
     mdb.flush()
     p3 = mdb.get(Member, seeded.member_ids["p3"])
@@ -277,7 +280,7 @@ def test_seat_with_seed_name_linked_to_outsider_stops(mdb):
 
 def test_member2_seat_linked_after_invite_is_still_seed(mdb):
     seeded = _seed(mdb)
-    joined = User(email="m2-real@example.com", name="합류한팀원", password_hash=hash_password("m2-real-pw-1"))
+    joined = User(email="m2-real@example.com", username=username_for("m2-real@example.com"), name="합류한팀원", password_hash=hash_password("m2-real-pw-1"))
     mdb.add(joined)
     mdb.flush()
     mdb.get(Member, seeded.member_ids["p2"]).user_id = joined.user_id
@@ -307,3 +310,25 @@ def test_inspect_existing_reports_reuse(mdb):
     assert len(state.reused_emails) == 6
     assert state.seats == 6
     assert state.problems() == []
+
+
+def test_seeded_accounts_get_rule_following_unique_usernames(mdb):
+    seeded = _seed(mdb)
+
+    users = [mdb.get(User, seeded.user_ids[f"p{n}"]) for n in range(1, 7)]
+    for n, user in enumerate(users, start=1):
+        assert user.username == seed_username_for(n, EMAILS[n - 1])
+        assert validate_username(user.username) == user.username
+    pm, _ = _login(EMAILS[0], PM_PW)
+    assert pm.get("/api/v1/auth/me").json()["data"]["user"]["username"] == users[0].username
+
+
+def test_seed_username_taken_by_other_account_stops(mdb):
+    taken = seed_username_for(1, EMAILS[0])
+    mdb.add(User(email="other@example.com", username=taken, name="다른사람", password_hash=hash_password("other-pw-1")))
+    mdb.commit()
+
+    with pytest.raises(SeedError, match=taken):
+        _seed(mdb)
+
+    assert mdb.scalar(select(func.count()).select_from(User)) == 1

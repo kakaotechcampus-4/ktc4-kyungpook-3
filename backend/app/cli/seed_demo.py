@@ -6,6 +6,7 @@
 import argparse
 import copy
 import getpass
+import hashlib
 import json
 import os
 import secrets
@@ -167,6 +168,12 @@ def _find_workspace(db: Session, pm_user_id: str, workspace_name: str) -> Worksp
     ).first()
 
 
+def username_for(index: int, email: str) -> str:
+    """시드 계정의 아이디(#610). 몇 번째 인물인지 보이게 demo<n> 으로 시작하고, 이메일 해시를 붙여 패턴을 바꿔
+    다시 시드해도 앞선 시드 계정과 겹치지 않게 한다. 아이디 규칙(영문 소문자·숫자 4~20자) 안이다."""
+    return f"demo{index}" + hashlib.sha256(email.encode()).hexdigest()[:10]
+
+
 def seed_accounts(
     db: Session,
     data: SeedData,
@@ -206,12 +213,17 @@ def seed_accounts(
                     "이메일 패턴·공간 이름을 확인하고, 그래도 재사용하려면 --allow-existing 을 붙이세요"
                 )
         users: dict[str, User] = {}
-        for person, email in zip(data.people, emails):
+        for index, (person, email) in enumerate(zip(data.people, emails), start=1):
             email = normalize_email(email)
             user = db.scalars(select(User).where(User.email == email)).first()
             if user is None:
+                username = username_for(index, email)
+                if db.scalar(select(User.user_id).where(User.username == username)) is not None:
+                    raise SeedError(f"시드 아이디 {username} 를 다른 계정이 쓰고 있습니다. 이메일 패턴을 바꾸세요")
                 password = fixed.get(person.key) or secrets.token_urlsafe(18) + "1"
-                user = User(email=email, name=person.name, password_hash=hash_password(password))
+                user = User(
+                    email=email, username=username, name=person.name, password_hash=hash_password(password)
+                )
                 db.add(user)
             elif reset_passwords and person.key in fixed:
                 user.password_hash = hash_password(fixed[person.key])
