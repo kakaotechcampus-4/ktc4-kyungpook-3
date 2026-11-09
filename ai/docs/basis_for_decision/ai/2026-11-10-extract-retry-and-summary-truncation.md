@@ -54,10 +54,12 @@
 | 항목 | 값 |
 |---|---|
 | 바꾼 프롬프트로 같은 발화 | 3/3 `due_date: "none"`(바꾸기 전 3/3 null) |
+| 이 브랜치 코드로 같은 회의 판단 한 번(서버, 저장된 전사본, BE 는 유사 검색만) | 항목 9개, 판단 못 한 발화 0개. 원준 발화는 update `due_cleared: true`. 100.7초, LLM 호출 23회 모두 `stop`, 최대 출력 1634 토큰 |
+| 바꾸기 전 같은 회의 | 실행 3회와 대기 3분, 화자 지정 뒤 인계까지 8분 16초, 그 발화는 빠짐 |
 | 스트리밍으로 받은 최대 출력 | 3711 토큰, `stop` |
 | AI 테스트 | `.venv/bin/python -m pytest -q` 전부 통과 |
 | BE 테스트 | `.venv/bin/python -m pytest -q` 3124 passed, 2191 skipped(PostgreSQL 변형, 로컬 DB 없음). `ruff check .` 통과 |
-| 조사·확인 비용 | 약 550원(장부 `investigation-2026-11-09-luna-truncation.jsonl`, `fix-624-llm-stream-due-clear.jsonl`) |
+| 조사·확인 비용 | 약 750원(장부 `investigation-2026-11-09-luna-truncation.jsonl`, `fix-624-llm-stream-due-clear.jsonl`. Terra 단가 상한으로 센 추정) |
 
 새 테스트:
 
@@ -69,7 +71,7 @@
   - 같은 회의에서 미루기 → 해제, 해제 → 다시 날짜 순서로 말했을 때
 - `backend/tests/api/test_extractions_judge.py`: 변경안에 `due_date: null` 이 실리는지, 마감 없는 Task 는 승인이 없는지, 승인하면 마감이 비는지
 
-배포 전이라 실제 업로드 회의로 다시 재지 않았다.
+새로 올린 업로드로 업로드부터 인계·요약까지 전체를 재는 것은 배포 뒤에 한다. 요약을 스트리밍으로 부른 실측도 아직 안 했다.
 
 ## 다음
 
