@@ -125,3 +125,27 @@ plan.md 가 비어 있어 완료조건이 없다. 아래는 전체 계획 M5 의
 - Python 3.12 에서 `.venv/bin/python -m pytest -q tests/services/test_upload_sweeper.py`: 23 passed, 22 skipped(PostgreSQL 변형). 23시간·정확히 24시간은 남고 25시간은 정리, 가져간 업로드·화자 지정 대기·Discord 는 그대로, 후보 선택 뒤 claim 이 먼저 오면 UPDATE 가 지는지 확인했다.
 - 전체 `.venv/bin/python -m pytest -q`: 2394 passed, 1546 skipped. `ruff check .`: 통과.
 - 실서버 24시간 경과와 PostgreSQL 변형은 확인하지 않았다.
+
+## 2026-11-09 추가: 만료 경합과 실패 파일 정리 재시도
+
+### 작업 근거와 구현
+
+사용자는 #572 후속 작업 중 PR #567 검토와 처리 가능한 코드·문서 보완을 요청했다. M5 plan.md는 비어 있어 이 지시와 기존 #563 구현을 작업 근거로 삼으며 마일스톤 완료를 판정하지 않는다.
+
+- `meeting_failure.fail_meeting_if`는 기존 공간→회의 잠금을 얻고, 그 뒤 새 조건부 UPDATE로 상태·시각을 판단한다. 앞서 claim·resume·발화 저장이 끝났다면 해당 진행을 읽는다. 기존 24시간·3시간·7일·7시간 정책은 유지한다.
+- sweeper 시작 시 live failed/manual_upload와 MeetingUpload가 있는 회의의 남은 폴더를 재시도한다. DB 커밋 뒤 파일 제거 오류나 프로세스 종료가 있어도 다음 바퀴에 복구한다. 새 실패 전환 목록과 bool은 파일 삭제 완료 영수증이 아니다.
+- 삭제된 회의·공간의 파일 정리는 기존 MeetingPurge·PrivacyCleanup이 맡는다. 재시도 pass가 해당 영수증을 완료로 바꾸지 않는다. 별도 컬럼·파일명 상태 표식·전역 워커 잠금은 추가하지 않았다.
+- [결정 기록](basis-for-decision/2026-11-09-failed-upload-cleanup-fence.md)에 기존 상태에서 재시도를 찾는 안과 별도 작업 상태 안의 비교·선택을 기록했다. [봇 계약](../../contracts/backend-ai-contract.md)과 Backend README의 운영 의미도 갱신했다.
+
+### 검증
+
+- 수정 전 실제 HTTP claim과 독립 PostgreSQL sweep 세션의 대기를 `pg_blocking_pids`로 고정했다. claim 200 뒤 failed와 음성 삭제가 발생했다. 파일 제거 1회 오류·기존 failed 잔존 파일의 재시도 부재까지 합쳐 새 회귀 **5 failed**를 확인한 뒤 구현을 수정했다.
+- 수정 후 `python -B -m pytest tests/services/test_upload_sweeper_concurrency.py tests/services/test_upload_sweeper.py tests/api/test_upload_sweeper_api.py -q --basetemp=<소유 임시 경로>`: **82 passed**. SQLite·PostgreSQL 변형, 실제 claim 선행·만료 선행, done·deleted 변경 선행, 다른 공간의 독립 진행, 제거 오류 후 다음 바퀴 복구·반복 실행, 실제 회의 삭제·탈퇴 purge 인계를 확인했다.
+- 공통 파일 제거 소비자까지 확대한 `test_uploads_api.py`, `test_meeting_upload.py`, `test_meeting_deletion.py`, `test_meeting_deletion_rollout.py`, `test_account_withdrawal.py`, `test_withdrawal_concurrency.py`: **374 passed, 8 skipped, 3 failed**. 세 실패는 PostgreSQL 연결의 `TimeZone=Asia/Seoul`이 출력한 `+09:00` 시각을 기존 테스트가 UTC 문자열로 기대한 경우다. 연결을 읽기 전용으로 비교해 기본 Asia/Seoul과 명시 UTC를 확인했으며 서버 설정·제품 코드는 바꾸지 않았다.
+- 추가 HTTP resume·발화 저장 선행 회귀 2개를 포함해 위 9개 파일을 `TEST_DATABASE_URL` 전용 DB와 검증 프로세스의 `PGOPTIONS='-c timezone=UTC'`로 명시해 재실행했다. **461 passed, 8 skipped**(400.06초). 8개 skip은 PostgreSQL 잠금 검증을 수행할 수 없는 SQLite 변형이며, PostgreSQL 변형은 실행했다. 앞선 UTC 문자열 실패 3개도 통과했다. 원본 실제 claim 반례는 별도의 DB와 새 실행에서 claim 200·sweep 제외·processing·음성 보존을 독립 확인했다. `ruff check .`와 `git diff --check`는 통과했다.
+
+### 차이와 남은 작업
+
+이전 구현의 조건부 UPDATE만으로 claim 경합을 막는다는 가정을 실제 PG 반례에 따라 변경했다. 상태 전환에 앞서 같은 생명주기 잠금을 얻도록 했다. 과거 failed 업로드도 파일 정리 대상에 포함되므로 기존 삭제 오류로 남은 음성이 삭제될 수 있다. 이는 처리 종료 후 음성을 삭제하는 기존 정책의 복구이며 보존 기간 변경은 아니다.
+
+매 바퀴 과거 failed 메타데이터도 조회·잠금·제거 시도한다. 이 비용은 측정하지 않았다. done·DB 미등록 폴더는 실패 업로드 재시도 대상이 아니다. 전체 백엔드 테스트·Linux CI·실서버·공급사 처리·운영 파일 삭제는 이 로컬 검증 결과에 포함하지 않는다.

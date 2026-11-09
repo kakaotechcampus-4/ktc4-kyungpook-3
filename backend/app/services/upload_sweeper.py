@@ -12,8 +12,8 @@ AI 가 업로드를 가져간 뒤 죽거나 PM 이 화자 지정을 하지 않�
 - 채팅 회의가 /end 뒤 CHAT_STALL_SECONDS 가 지나도록 processing: failed_stage=chat_stalled
 - Discord 회의와 끝난 회의는 대상이 아니다
 
-회의마다 조건부 UPDATE 한 번으로 바꾼다. 후보를 고른 뒤 AI 의 보고나 PM 의 제출이 먼저 반영되면 UPDATE 가
-져서 건너뛴다(같은 시각 조건을 UPDATE 에도 다시 건다).
+회의마다 공간→회의 잠금을 얻은 뒤 새 조건부 UPDATE로 판정한다. 후보를 고른 뒤 AI 의 보고나 PM 의 제출이
+먼저 반영되면 건너뛴다. failed 업로드의 남은 파일은 매 바퀴 다시 지운다. 처리 실패와 파일 정리는 별개다.
 """
 import logging
 import threading
@@ -23,8 +23,8 @@ from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
-from app.models import Meeting, MeetingSource, MeetingStatus, MeetingUpload, Source
-from app.services import meeting_failure
+from app.models import Meeting, MeetingSource, MeetingStatus, MeetingUpload, Source, Workspace
+from app.services import meeting_deletion, meeting_failure, upload_storage
 
 logger = logging.getLogger(__name__)
 
@@ -104,9 +104,31 @@ def _chat_stalled_condition(cutoff: datetime):
     )
 
 
+def _retry_failed_upload_cleanup(db: Session) -> None:
+    """처리 실패 뒤 파일 제거 오류·프로세스 종료로 남은 녹음을 재시도한다. 삭제 회의는 전용 purge가 맡는다."""
+    meeting_ids = db.scalars(
+        select(Meeting.meeting_id)
+        .join(Workspace, Workspace.workspace_id == Meeting.workspace_id)
+        .where(
+            _is_upload(), Meeting.status == str(MeetingStatus.FAILED),
+            Meeting.deleted_at.is_(None), Workspace.deleted_at.is_(None),
+        )
+    ).all()
+    for meeting_id in meeting_ids:
+        try:
+            meeting = meeting_deletion.require_live_meeting(db, meeting_id, lock=True)
+            if meeting.status == MeetingStatus.FAILED and meeting.source == MeetingSource.MANUAL_UPLOAD:
+                upload_storage.remove_upload(meeting_id)
+        except Exception:
+            logger.exception("실패한 업로드 파일 정리 재시도 오류 meeting_id=%s", meeting_id)
+        finally:
+            db.rollback()
+
+
 def sweep_stalled_uploads(db: Session, now: datetime | None = None) -> list[tuple[str, str]]:
-    """멈춘 업로드 회의를 failed 로 바꾸고 (meeting_id, failed_stage) 목록을 돌려준다."""
+    """남은 실패 파일을 재시도하고 새로 failed로 바꾼 목록을 돌려준다. 반환값은 파일 삭제 영수증이 아니다."""
     now = now or datetime.now(timezone.utc)
+    _retry_failed_upload_cleanup(db)
     rules = [
         (_stalled_condition, now - timedelta(seconds=CLAIM_STALL_SECONDS), FAILED_STAGE_STALLED),
         (_expired_condition, now - timedelta(seconds=SPEAKER_ASSIGNMENT_TTL_SECONDS), FAILED_STAGE_EXPIRED),

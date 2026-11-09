@@ -115,7 +115,11 @@ def audio_path(meeting_id: str, stored_filename: str) -> Path:
 
 
 def remove_upload(meeting_id: str) -> None:
-    """회의 폴더를 지운다. 없으면 그냥 넘어가고, 못 지우면 로그만 남긴다. 남은 폴더는 지금은 직접 지워야 한다."""
+    """회의 폴더 제거를 시도한다. 없으면 멱등 성공, OSError는 로그로 남긴다. 반환은 삭제 완료를 보장하지 않는다.
+
+    live failed 업로드는 sweeper가 다음 바퀴에 재시도한다. 회의·공간 삭제는 각 전용 purge가 맡는다.
+    저장 실패·DB 미등록 폴더처럼 소유 행이 없는 경우에는 이 재시도 대상이 없다.
+    """
     try:
         shutil.rmtree(meeting_dir(meeting_id))
     except FileNotFoundError:

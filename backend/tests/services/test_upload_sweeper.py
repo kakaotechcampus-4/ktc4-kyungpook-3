@@ -8,13 +8,13 @@ import threading
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import create_engine, text, update
+from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
-from app.models import Meeting, MeetingUpload, Source, Workspace
-from app.services import meeting_failure, upload_storage, upload_sweeper
+from app.models import Meeting, MeetingPurge, MeetingUpload, Member, PrivacyCleanup, Source, User, Workspace
+from app.services import account_withdrawal, meeting_deletion, meeting_failure, upload_storage, upload_sweeper
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 NOW = datetime(2026, 11, 3, 12, 0, tzinfo=timezone.utc)
@@ -169,6 +169,112 @@ def test_claim_after_candidate_selection_is_not_overridden(db, ws, monkeypatch):
     assert _folder(meeting).exists()
 
 
+def test_failed_upload_file_removal_is_retried_on_the_next_sweep(db, ws, monkeypatch):
+    meeting = _upload(db, ws, uploaded_at=NOW - 25 * HOUR)
+    real = upload_storage.shutil.rmtree
+    attempts = []
+
+    def unavailable_once(path):
+        attempts.append(path)
+        if len(attempts) == 1:
+            raise PermissionError("temporary file lock")
+        return real(path)
+
+    monkeypatch.setattr(upload_storage.shutil, "rmtree", unavailable_once)
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == [(meeting.meeting_id, "upload_unclaimed")]
+    assert _state(db, meeting) == ("failed", "upload_unclaimed")
+    assert _folder(meeting).exists()
+    assert len(attempts) == 1
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW + HOUR) == []
+    assert not _folder(meeting).exists()
+    assert len(attempts) == 2
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW + 2 * HOUR) == []
+    assert _state(db, meeting) == ("failed", "upload_unclaimed")
+
+
+def test_previously_failed_upload_file_is_cleaned_after_restart(db, ws):
+    meeting = _upload(db, ws, status="failed")
+    unrelated = _upload(db, ws, status="failed", source="discord")
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == []
+
+    assert not _folder(meeting).exists()
+    assert _folder(unrelated).exists()
+    assert _state(db, meeting) == ("failed", None)
+
+
+def test_deleted_meeting_file_retry_is_owned_by_meeting_purge(db, ws, monkeypatch):
+    monkeypatch.setenv("MEETING_DELETION_ENABLED", "true")
+    meeting = _upload(db, ws, status="failed")
+    meeting.deletion_ready = True
+    db.commit()
+    real = upload_storage.shutil.rmtree
+    unavailable, attempts = True, []
+
+    def remove(path):
+        attempts.append(path)
+        if unavailable:
+            raise PermissionError("temporary file lock")
+        return real(path)
+
+    monkeypatch.setattr(upload_storage.shutil, "rmtree", remove)
+    receipt = meeting_deletion.delete_meeting(db, meeting.meeting_id)
+    purge = db.get(MeetingPurge, meeting.meeting_id)
+    assert receipt.cleanup_status == "pending"
+    assert purge.backend_done_at is None and purge.last_error_code == "BACKEND_STORAGE_DELETE_FAILED"
+    assert db.get(MeetingUpload, meeting.meeting_id) is None
+    assert _folder(meeting).exists()
+    count = len(attempts)
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == []
+    assert len(attempts) == count
+    assert _folder(meeting).exists()
+
+    unavailable = False
+    meeting_deletion.purge_backend_files(db, meeting_id=meeting.meeting_id)
+    assert not _folder(meeting).exists()
+    assert purge.backend_done_at is not None and purge.last_error_code is None
+    assert purge.ai_done_at is None
+
+
+def test_withdrawn_workspace_file_retry_is_owned_by_privacy_cleanup(db, ws, monkeypatch):
+    meeting = _upload(db, ws, status="failed")
+    user = User(email="sole-retention@example.com", name="sole")
+    db.add(user)
+    db.flush()
+    db.add(Member(workspace_id=ws.workspace_id, user_id=user.user_id, display_name="sole", role="pm"))
+    db.commit()
+    real = upload_storage.shutil.rmtree
+    unavailable, attempts = True, []
+
+    def remove(path):
+        attempts.append(path)
+        if unavailable:
+            raise PermissionError("temporary file lock")
+        return real(path)
+
+    monkeypatch.setattr(upload_storage.shutil, "rmtree", remove)
+    account_withdrawal.withdraw(db, user.user_id, "owned-retention-withdrawal-proof")
+    cleanup = db.scalar(select(PrivacyCleanup).where(PrivacyCleanup.workspace_id == ws.workspace_id))
+    assert cleanup.backend_done_at is None and cleanup.last_error_code == "BACKEND_STORAGE_DELETE_FAILED"
+    assert db.get(Workspace, ws.workspace_id).deleted_at is not None
+    assert db.get(MeetingUpload, meeting.meeting_id) is None
+    assert _folder(meeting).exists()
+    count = len(attempts)
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == []
+    assert len(attempts) == count
+    assert _folder(meeting).exists()
+
+    unavailable = False
+    account_withdrawal.purge_backend(db)
+    assert not _folder(meeting).exists()
+    assert cleanup.backend_done_at is not None and cleanup.last_error_code is None
+    assert cleanup.ai_done_at is None
+
+
 def test_awaiting_speakers_expires_after_seven_days(db, ws):
     expired = _upload(
         db, ws, status="awaiting_speakers", claimed_at=NOW - 8 * DAY,
@@ -293,7 +399,7 @@ def test_chat_meeting_is_swept_only_after_seven_hours(db, ws):
     assert _state(db, meeting) == ("failed", "chat_stalled")
 
 
-def test_discord_and_ended_meetings_are_untouched(db, ws):
+def test_unrelated_states_are_preserved_and_only_failed_upload_files_are_retried(db, ws):
     old = NOW - 20 * DAY
     discord = _upload(db, ws, source="discord", row=False)
     discord_with_row = _upload(db, ws, source="discord", claimed_at=old)
@@ -310,7 +416,8 @@ def test_discord_and_ended_meetings_are_untouched(db, ws):
     assert _state(db, rowless) == ("processing", None)
     assert _state(db, done) == ("done", None)
     assert _state(db, failed) == ("failed", "STT")
-    assert _folder(failed).exists() and _folder(done).exists()
+    assert not _folder(failed).exists()
+    assert _folder(done).exists()
 
 
 def test_second_sweep_returns_nothing_and_changes_nothing(db, ws):
