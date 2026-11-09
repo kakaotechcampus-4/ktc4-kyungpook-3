@@ -36,11 +36,13 @@ from shared.schemas import (
     Transcript,
 )
 
-# 별칭 텍스트가 아닌 호칭 — "네가", "그분", "백엔드 리더" 를 BE 가 별칭으로 조회하면 영원히 안 맞는다.
-# 문맥으로 풀린 이름(assignee_resolved)만 보낸다. 새 할 일(create)의 thirdname 은 원문만 보낸다 — 추측한 이름이
-# BE 별칭으로 학습되지 않게 (capture/handoff.py 와 같은 규칙). BE 는 create 승인 때만 별칭을 배우므로
-# 수정·담당자 변경 카드는 예전처럼 고친 이름을 보낸다.
-_NOT_ALIAS_TYPES = {"second", "thirdpronoun", "thirdrole"}
+# 별칭 텍스트가 아닌 호칭 — "네가", "그분" 을 BE 가 별칭으로 조회하면 영원히 안 맞는다.
+# 문맥으로 풀린 이름(assignee_resolved)만 보낸다.
+_NOT_ALIAS_TYPES = {"second", "thirdpronoun"}
+# 원문을 별칭 조회 키로 보내는 타입. 새 할 일(create·merge)은 원문만 보낸다 — 추측한 이름이 BE 별칭으로
+# 학습되지 않게 (capture/handoff.py 와 같은 규칙, #501·#522). BE 는 create 승인 때만 별칭을 배우므로
+# 수정·담당자 변경 카드(update)는 예전처럼 고친 이름이 있으면 그것을, 없으면 원문을 보낸다.
+_ORIGINAL_MENTION_TYPES = {"thirdname", "thirdrole"}
 
 # 답장 판단(judge/reply.py)이 이 값으로 마감 지움을 알아본다
 DUE_CLEARED_REASON = "마감을 없애는 변경은 아직 보낼 수 없습니다(BE 는 null 을 '바꾸지 않음'으로 받음)."
@@ -53,9 +55,10 @@ def _assignee(finding: JudgeFinding, *, is_new: bool) -> tuple[str | None, str |
     """
     if finding.assignee_type in ("first", "group", "none"):
         return finding.assignee_type, None
-    if finding.assignee_type in _NOT_ALIAS_TYPES or (finding.assignee_type == "thirdname" and not is_new):
-        return finding.assignee_type, finding.assignee_resolved or (
-            finding.assignee_raw if finding.assignee_type == "thirdname" else None)
+    if finding.assignee_type in _NOT_ALIAS_TYPES:
+        return finding.assignee_type, finding.assignee_resolved
+    if finding.assignee_type in _ORIGINAL_MENTION_TYPES and not is_new:
+        return finding.assignee_type, finding.assignee_resolved or finding.assignee_raw
     return finding.assignee_type, finding.assignee_raw
 
 

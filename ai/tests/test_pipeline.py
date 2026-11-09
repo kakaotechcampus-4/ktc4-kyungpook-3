@@ -75,11 +75,11 @@ def test_create_item_carries_all_three_stages():
     ("thirdpronoun", "그분", "환", "환"),       # 문맥으로 푼 이름을 보낸다
     ("thirdpronoun", "그분", None, None),       # 못 풀었으면 "그분"을 별칭으로 조회시키지 않는다
     ("second", "너", None, None),
-    ("thirdrole", "백엔드 리더", None, None),
+    ("thirdrole", "백엔드 리더", None, "백엔드 리더"),
     ("first", None, None, None),                # 1인칭은 BE 가 evidence_speaker 로 푼다
     ("thirdname", "화은님", "하은", "화은님"),  # 이름 지목은 원문만 — 추측한 이름이 별칭으로 학습되지 않게
     ("first", None, "민수", None),              # first 에 섞여 온 resolved 도 보내지 않는다
-    ("thirdrole", "백엔드 리더", "환", "환"),   # 역할 지목은 지금처럼 푼 이름(별도 이슈)
+    ("thirdrole", "백엔드 리더", "환", "백엔드 리더"),  # 역할 지목도 원문만(#522)
 ])
 def test_assignee_raw_is_only_a_lookupable_alias(a_type, raw, resolved, expected):
     finding = _finding(assignee_type=a_type, assignee_raw=raw, assignee_resolved=resolved)
@@ -102,6 +102,15 @@ def test_update_assignee_uses_the_resolved_name_for_thirdname():
     finding = _finding(assignee_type="thirdname", assignee_raw="화은이가", assignee_resolved="하은")
     item = to_item(finding, _result(category="assignee"), _drafted(), _target(), TRANSCRIPT)
     assert item["assignee_raw"] == "하은"
+
+
+def test_update_assignee_for_thirdrole_prefers_resolved_then_original():
+    finding = _finding(assignee_type="thirdrole", assignee_raw="백엔드 리더가", assignee_resolved="환")
+    item = to_item(finding, _result(category="assignee"), _drafted(), _target(), TRANSCRIPT)
+    assert item["assignee_raw"] == "환"
+    finding = _finding(assignee_type="thirdrole", assignee_raw="백엔드 리더가", assignee_resolved=None)
+    item = to_item(finding, _result(category="assignee"), _drafted(), _target(), TRANSCRIPT)
+    assert item["assignee_raw"] == "백엔드 리더가"
 
 
 # ── update ────────────────────────────────────────────────────────────────
@@ -525,6 +534,22 @@ def test_new_card_merge_keeps_the_original_thirdname_mention(monkeypatch):
     (card,) = out.items
     assert card["action"] == "create"
     assert card["assignee_raw"] == "화은이가"
+
+
+def test_new_card_merge_keeps_the_original_thirdrole_mention(monkeypatch):
+    # 역할 지목도 새 할 일 카드에서는 원문이 간다(#522)
+    who = {"indices": [1], "summary": "결제 환불 기능을 백엔드 리더가 맡기로 함", "assignee_type": "thirdrole",
+           "assignee_raw": "백엔드 리더가", "assignee_resolved": "환", "reason": "담당"}
+    out = _run_owner(
+        monkeypatch, [REFUND_NEW, who],
+        [_terra(is_new=True, matched_candidate_index=None), _terra(category="assignee")],
+        [{"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "결제 환불 기능 구현"},
+         {"task": None, "due_date": None, "doc_text": "백엔드 리더 담당"}],
+    )
+
+    (card,) = out.items
+    assert card["action"] == "create"
+    assert card["assignee_raw"] == "백엔드 리더가"
 
 
 def test_assignee_change_card_sends_the_resolved_name(monkeypatch):
