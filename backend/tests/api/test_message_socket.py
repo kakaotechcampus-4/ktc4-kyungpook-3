@@ -1,8 +1,8 @@
 """대화 신호 웹소켓(#520). 실제 경로로 소켓을 열고 실제 글 경로로 신호를 낸다.
 
 받지 말아야 할 사람은 기다리지 않는다. 뒤이어 그 사람이 받을 신호를 내고, 그것이 첫 프레임인지 본다.
-sqlite 는 StaticPool 이라 소켓 세션과 mdb 가 연결 하나를 나눠 쓰고, 소켓 세션을 닫으면 그 연결이 롤백된다. 그래서 소켓을
-열기 전과 검사가 도는 동안에는 mdb 를 커밋해 둔다.
+소켓 인증과 HTTP 쓰기는 서로 다른 세션·연결을 쓴다. sqlite 도 파일 DB로 연결을 분리해
+한 세션의 롤백이 다른 세션의 트랜잭션에 영향을 주지 않게 한다.
 """
 import asyncio
 import re
@@ -26,6 +26,11 @@ from tests.api.test_messages_api import P, _bundles_url, _claim, _create, _sent_
 
 ORIGIN = {"origin": "https://testserver"}
 BOT_DRAFT = "규칙 말고 AI 가 쓴 초안"
+
+
+@pytest.fixture
+def sqlite_message_url(tmp_path):
+    return f"sqlite:///{(tmp_path / 'message-socket.sqlite').as_posix()}"
 
 
 @pytest.fixture(autouse=True)
