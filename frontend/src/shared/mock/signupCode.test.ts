@@ -9,7 +9,10 @@ import { applyScenario } from './scenarios'
 const EMAIL = 'new@example.com'
 
 const requestCode = (email: string = EMAIL) =>
-  fetchDto<{ expires_in: number; resend_after: number }>('/auth/signup/code', jsonRequest('POST', { email }))
+  fetchDto<{ expires_in: number; resend_after: number }>(
+    '/auth/signup/code',
+    jsonRequest('POST', { email }),
+  )
 const confirmCode = (code: string, email: string = EMAIL) =>
   fetchDto<SignupCodeConfirmedDto>(
     '/auth/signup/code/confirm',

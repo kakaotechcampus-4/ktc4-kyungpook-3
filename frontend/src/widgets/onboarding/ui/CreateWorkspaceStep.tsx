@@ -6,7 +6,7 @@ import { WORKSPACE_LIST_QUERY_KEY, workspaceListQueryOptions } from '@/entities/
 import type { Workspace } from '@/entities/workspace'
 import { useCreateWorkspace, useOnboardingSave } from '@/features/onboarding'
 import { errorMessage } from '@/shared/api/errorMessages'
-import { ApiError } from '@/shared/api/errors'
+import { ApiError, isInvalidResponse } from '@/shared/api/errors'
 import { useAppForm } from '@/shared/lib/form'
 import { useGuardedNavigate, useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { WORKSPACE_NAME_MAX_LENGTH, checkWorkspaceName } from '@/shared/lib/validation'
@@ -14,6 +14,7 @@ import type { WorkspaceNameIssue } from '@/shared/lib/validation'
 import { Button } from '@/shared/ui/button'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { TextField } from '@/shared/ui/text-field'
+import { showWriteUnconfirmed } from '@/shared/ui/toast'
 import { ExitLink } from './ExitLink'
 import { OnboardingCard } from './OnboardingCard'
 import { OnboardingLayout } from './OnboardingLayout'
@@ -95,6 +96,13 @@ export function CreateWorkspaceStep() {
     } catch (error) {
       if (error instanceof ApiError && error.code === 'WORKSPACE_NAME_DUPLICATED') {
         setError('name', { type: 'server', message: errorMessage(error) }, { shouldFocus: true })
+        return
+      }
+      // 만들기 응답을 읽지 못했다. 공간이 생겼을 수 있어 실패로 보이지 않는다. 다시 만들면 이름이 겹친다 (D-184)
+      if (isInvalidResponse(error) && flow.created === null) {
+        showWriteUnconfirmed(
+          () => void queryClient.invalidateQueries({ queryKey: WORKSPACE_LIST_QUERY_KEY }),
+        )
         return
       }
       setFormError(errorMessage(error))

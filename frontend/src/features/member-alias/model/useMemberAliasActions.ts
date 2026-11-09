@@ -7,10 +7,16 @@ import {
   memberListQueryOptions,
 } from '@/entities/member'
 import type { MemberAlias } from '@/entities/member'
-import { ApiError, CLIENT_ERROR_CODES, ERROR_CODES, createClientError } from '@/shared/api/errors'
+import {
+  ApiError,
+  CLIENT_ERROR_CODES,
+  ERROR_CODES,
+  createClientError,
+  isInvalidResponse,
+} from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
-import { toast } from '@/shared/ui/toast'
+import { showWriteUnconfirmed, toast } from '@/shared/ui/toast'
 import {
   aliasFailure,
   aliasInputFailure,
@@ -77,6 +83,11 @@ export function useMemberAliasActions(workspaceId: string, memberId: string): Me
     onError: (error, { session }) => {
       if (!session.isCurrent()) return
       void refreshAliases()
+      // 응답을 읽지 못했다. 더해졌을 수 있어 실패로 보이지 않는다 (D-184)
+      if (isInvalidResponse(error)) {
+        showWriteUnconfirmed(() => void refreshAliases())
+        return
+      }
       if (error instanceof ApiError && error.code === ERROR_CODES.MEMBER_NOT_FOUND)
         void queryClient.invalidateQueries({
           queryKey: memberListQueryOptions(workspaceId).queryKey,
