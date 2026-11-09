@@ -3,6 +3,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.models import DecisionState
+
 SummaryRequestState = Literal[
     "requested", "done", "queued", "gave_up", "no_sources", "awaiting_approval", "no_approved_items", "not_done"
 ]
@@ -231,8 +233,8 @@ class TopicDecision(BaseModel):
     meeting_title: str | None
     decided_at: datetime
     replaced_by: str | None
-    # valid, invalid(유효하지 않다고 표시), removed(지움, 고친 응답에만 나온다). edited 는 팀원이 고쳤는가(#605)
-    state: str = "valid"
+    # removed(지움)는 고친 응답에만 나온다. edited 는 팀원이 고쳤는가(#605)
+    state: DecisionState = DecisionState.VALID
     edited: bool = False
 
 

@@ -3,6 +3,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
+from app.models import DecisionState
 from app.schemas.project_map import _has_unstorable
 
 
@@ -71,7 +72,7 @@ class DecisionEditRequest(_Storable):
     """보낸 칸만 바꾼다. state 를 valid 로 보내면 지우기나 유효하지 않음 표시를 되돌린다."""
 
     text: Annotated[str, StringConstraints(min_length=1, max_length=1000)] | None = None
-    state: Literal["valid", "invalid", "removed"] | None = None
+    state: DecisionState | None = None
 
     @model_validator(mode="after")
     def _something_changes(self) -> "DecisionEditRequest":
