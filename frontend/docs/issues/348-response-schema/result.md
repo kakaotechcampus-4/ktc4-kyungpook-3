@@ -195,7 +195,7 @@ develop `5462ebff`(PR 2 #592, #591·#569·#589 병합 뒤)에서 `feature/348-me
 | `npm run format:check` | 추적 파일 통과(git 제외 `.verify/reports/issue.md` 만 경고) |
 | `npm run build` | 통과 |
 | 바꾼 곳 테스트 | 81 파일·1301 건 중 2 건 실패 뒤 고침(dashboard E-04 기대, 이름을 바꾸던 중 돈 스키마 테스트). 고친 뒤 22 파일·329 건 통과 |
-| `npm run test -- --maxWorkers=1` | FULL_TEST |
+| `npm run test -- --maxWorkers=1` | 302 파일·3913 건 모두 통과(2,147 초) |
 
 - 새·바꾼 테스트:
   - `shared/types/api/meeting.test.ts`·`minutes.test.ts`·`extraction.test.ts`: 거절(모르는·null 상태, 타입 오류, 필수 필드 누락, 화자 지정의 숫자 팀원 ID, 문자열 권한, 깨진 추출 항목은 경로 `items[0]` 까지)과 허용(모르는 출처·판단·승인 상태, 옛 응답, null 확신도). 회의록 요약 세 경우는 null 과 경고. MSW 픽스처와 스물네 상태(기본·`meeting-*` 열여섯·`minutes-edit-pending`·`dashboard-*` 셋·`approval-merged`·`approval-chat`·`reply-judgment`)에서 handler 가 내는 회의 목록·상세·회의록·추출·화자 지정, 되돌리기 응답과 409 details 를 스키마로 `parse`.
