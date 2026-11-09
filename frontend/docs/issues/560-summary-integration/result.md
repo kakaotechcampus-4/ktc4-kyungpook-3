@@ -9,7 +9,7 @@
 - 8개 충돌을 해소했다. AI 워커는 일반 처리·업로드 뒤 개인정보/회의 정리와 음성 정리를 유지하며 요약 한 건을 별도 작업으로 예약한다. 진행 중 요약이 끝나기 전에 다음 일반 바퀴가 돌고, 종료 때 요약을 마친 뒤 stopped를 기록한다.
 - [요약 서비스](../../../../backend/app/services/summary.py)는 발급 당시 identity_epoch를 결합한 claim token과 15분 임대, 공간·회의 생존 여부를 검사한다. 만료·교체·중복·세대 변경 결과는 applied=false다. 최신 세대 헤더를 붙여도 이전 토큰을 재사용할 수 없다. 두 번 시도와 ready/pending/none 규약을 유지한다.
 - [회의 삭제](../../../../backend/app/services/meeting_deletion.py)는 Topic·Decision 연결과 다른 요약의 삭제 원문 사본을 지운다. 프로젝트 맵·합본·다운로드는 삭제 회의를 제외하고 Task 업무를 보존한다.
-- 미배포 migration 7536c5a1a471의 부모를 develop head f7f0dc53a63a로 연결했다. 임대 토큰 hash와 요청된 행의 부분 인덱스를 포함한다. 기존 AI 결정 번호 충돌은 0056·0057로 정리하고 0053·0055와 원문 판단을 보존했다.
+- 미배포 migration 7536c5a1a471의 부모를 develop head f7f0dc53a63a로 연결했다. 임대 토큰 hash와 요청된 행의 부분 인덱스를 포함한다. 기존 AI 결정 번호 충돌은 0058·0059로 정리하고 0053·0055와 원문 판단을 보존했다.
 - `summary_from_env`의 기본 OFF를 유지하고 성공 시 비밀 없는 runner ready 로그를 남긴다. 실제 운영 Luna ON은 배포 설정과 실행 환경에서 별도로 검증한다.
 - [배포 helper](../../../../deploy/enable-summary.py)는 기존 active 워커에 고정 Luna drop-in을 설치하고 재시작한다. 실제 실행 환경과 PID·시작시각에 연결된 준비 로그로 ON을 판정한다. 미활성·실패 시 성공 배포 SHA를 유지한다.
 
