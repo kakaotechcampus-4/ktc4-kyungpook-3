@@ -211,7 +211,7 @@ def _input_lines(db: Session, meeting_id: str) -> list[SummaryInputLine]:
             seq=src.seq,
             at_ms=src.start_ms,
             speaker=display_name or src.speaker_name or src.speaker_discord_user_id or "Unknown",
-            text=src.text,
+            text=src.shown_text,
         )
         for src, display_name in rows
     ]

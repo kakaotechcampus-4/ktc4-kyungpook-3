@@ -236,8 +236,10 @@ def _attendees(db: Session, meeting_ids: list[str]) -> dict[str, list[str]]:
 def _head(meeting: Meeting, document: dict, attendees: list[str]) -> SummaryHead:
     chat = meeting.source == MeetingSource.CHAT
     start = utc(meeting.started_at).astimezone(WORKSPACE_TZ)
+    # 채팅 회의는 수집이 붙인 "채팅 <날짜>" 대신 일일 요약이라 부르고, 팀원이 고친 제목이 있으면 그것을 쓴다
+    title = (meeting.title if meeting.title_edited_at is not None else "일일 요약") if chat else meeting.title or "회의"
     return SummaryHead(
-        title="일일 요약" if chat else meeting.title or "회의",
+        title=title,
         date=summary.meeting_date(meeting.started_at),
         attendees=attendees,
         source_url=f"{mailer.app_base_url()}/workspaces/{meeting.workspace_id}/meetings/{meeting.meeting_id}",

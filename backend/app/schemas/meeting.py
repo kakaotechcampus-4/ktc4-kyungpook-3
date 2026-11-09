@@ -143,6 +143,9 @@ class MeetingListResponse(BaseModel):
 class MeetingMinutesResponse(BaseModel):
     meeting_id: str
     title: str | None
+    # 팀원이 제목을 고쳤는가와 처음 제목(#605). 처음 제목은 고친 적 없으면 null 이다
+    title_edited: bool = False
+    title_original: str | None = None
     started_at: datetime
     duration_ms: int
     source: str
