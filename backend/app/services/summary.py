@@ -431,8 +431,11 @@ def _queue_alive(extraction: Extraction, now: datetime) -> bool:
 
 
 def documents(db: Session, rows: list[tuple[Meeting, Extraction | None]]) -> dict[str, dict]:
-    """화면, summary.md, 합본이 읽는 유일한 요약. meeting_id -> 보여 줄 문서.
+    """화면, summary.md, 합본이 읽는 유일한 요약. meeting_id -> 보여 줄 문서. 회의 수와 무관하게 쿼리는 많아야 다섯 번이다.
 
+    JSON 은 AI 의 기록이고 결정 문장·상태와 주제 이름은 행이 정본이라 여기서 합친다. 결정은 지우지 않은 행을 회의 안 순서로 두고
+    문자열 목록(decisions)에는 유효한 것만 둔다. 버린 대안과 뒤집은 결정 사본은 같은 decision_id 의 JSON 에서 가져오고, 사본은
+    지운 결정을 빼고 회의 제목을 지금 값으로 바꾼다. 주제는 회의에 이어진 주제의 지금 이름을 저장된 순서대로 둔다.
     할 일 변화는 항목이 지금 반영된 것만 보인다. 항목 키가 없는 옛 요약의 할 일 변화와 요약 뒤 되돌린 항목은 숨는다.
     """
     stored = {
@@ -440,16 +443,68 @@ def documents(db: Session, rows: list[tuple[Meeting, Extraction | None]]) -> dic
         for meeting, extraction in rows
         if (document := _stored(extraction)) is not None
     }
+    if not stored:
+        return {}
     final = item_fate.final_items().where(
         ExtractionItem.extraction_id.in_({extraction_id for extraction_id, _ in stored.values()})
     ).subquery()
-    shown = set(db.execute(select(final.c.extraction_id, final.c.item_id)).all()) if stored else set()
+    shown = set(db.execute(select(final.c.extraction_id, final.c.item_id)).all())
     for extraction_id, document in stored.values():
         if isinstance(document.get("task_changes"), list):
             document["task_changes"] = [
                 change for change in document["task_changes"]
                 if isinstance(change, dict) and (extraction_id, change.get("item_id")) in shown
             ]
+    decisions: dict[str, list[tuple[Decision, str]]] = {}
+    for row, topic_name in db.execute(
+        select(Decision, Topic.name).join(Topic, Topic.topic_id == Decision.topic_id)
+        .where(Decision.meeting_id.in_(stored), Decision.state != DecisionState.REMOVED)
+        .order_by(Decision.meeting_id, Decision.position)
+    ):
+        decisions.setdefault(row.meeting_id, []).append((row, topic_name))
+    topics: dict[str, list[tuple[str, str]]] = {}
+    for meeting_id, topic_id, name in db.execute(
+        select(TopicMeeting.meeting_id, Topic.topic_id, Topic.name).join(Topic, Topic.topic_id == TopicMeeting.topic_id)
+        .where(TopicMeeting.meeting_id.in_(stored)).order_by(Topic.created_at, Topic.topic_id)
+    ):
+        topics.setdefault(meeting_id, []).append((topic_id, name))
+    records = {
+        meeting_id: {detail.get("decision_id"): detail for detail in document.get("decision_details", [])
+                     if isinstance(detail, dict)}
+        for meeting_id, (_, document) in stored.items()
+    }
+    copies = [copy for details in records.values() for detail in details.values()
+              for copy in detail.get("replaces", []) if isinstance(copy, dict)]
+    removed = set(db.scalars(select(Decision.decision_id).where(
+        Decision.decision_id.in_({copy.get("decision_id") for copy in copies}), Decision.state == DecisionState.REMOVED,
+    ))) if copies else set()
+    titles = dict(db.execute(select(Meeting.meeting_id, Meeting.title).where(
+        Meeting.meeting_id.in_({copy.get("meeting_id") for copy in copies}),
+    )).all()) if copies else {}
+    for meeting_id, (_, document) in stored.items():
+        details = []
+        for row, topic_name in decisions.get(meeting_id, []):
+            record = records[meeting_id].get(row.decision_id, {})
+            details.append({
+                "decision_id": row.decision_id,
+                "text": row.text,
+                "reason": row.reason,
+                "rejected": record.get("rejected", []),
+                "topic": topic_name,
+                "replaces": [
+                    {**copy, "meeting_title": titles.get(copy.get("meeting_id"), copy.get("meeting_title"))}
+                    for copy in record.get("replaces", [])
+                    if isinstance(copy, dict) and copy.get("decision_id") not in removed
+                ],
+                "state": row.state,
+                "edited": row.edited_at is not None,
+            })
+        document["decision_details"] = details
+        document["decisions"] = [detail["text"] for detail in details if detail["state"] == DecisionState.VALID]
+        order = {topic_id: i for i, topic_id in enumerate(document.get("topic_ids") or [])}
+        linked = sorted(topics.get(meeting_id, []), key=lambda topic: order.get(topic[0], len(order)))
+        document["topics"] = [name for _, name in linked]
+        document["topic_ids"] = [topic_id for topic_id, _ in linked]
     return {meeting_id: document for meeting_id, (_, document) in stored.items()}
 
 

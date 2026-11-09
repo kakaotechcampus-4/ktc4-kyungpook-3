@@ -1,5 +1,5 @@
 """주제와 결정 고치기 경로(#605). 권한, 워크스페이스 경계, 고친 것이 재요약 뒤에도 화면이 읽는 길에 남는지를 본다."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -286,3 +286,55 @@ def test_topic_detail_drops_removed_decisions_and_bundle_lists_only_valid_ones(c
     ]
     assert "남는 결정" in head
     assert "틀린 결정" not in head and "지운 결정" not in head
+
+
+def _replacing(client, mdb, ws):
+    """앞 회의의 결정을 뒤집은 결정과 유효하지 않은 결정, 지운 결정이 있는 회의."""
+    old = _meeting(mdb, ws, started_at=T0 - timedelta(days=9), title="범위 재조정")
+    _save(mdb, old, [{"name": "초대", "decisions": [{"text": "코드로 합류"}]}])
+    meeting = _meeting(mdb, ws, title="인증 설계")
+    _save(mdb, meeting, [{"name": "초대", "decisions": [
+        {"text": "이메일로만", "reason": "유출", "rejected": ["코드"], "replaces": [_decision_id(mdb, "코드로 합류")]},
+        {"text": "틀린 결정"}, {"text": "지운 결정"},
+    ]}])
+    for text, body in (("이메일로만", {"text": "이메일 초대만"}), ("틀린 결정", {"state": "invalid"}),
+                       ("지운 결정", {"state": "removed"})):
+        assert client.patch(f"{P}/{ws}/decisions/{_decision_id(mdb, text)}", json=body).status_code == 200
+    return old, meeting
+
+
+def _shown(client, meeting):
+    summary = client.get(f"/api/v1/meetings/{meeting.meeting_id}/minutes").json()["data"]["summary"]
+    return summary, client.get(f"/api/v1/meetings/{meeting.meeting_id}/summary.md").text
+
+
+def test_minutes_and_summary_show_edited_decisions_renamed_topic_and_live_titles(client, mdb, mseed):
+    ws = mseed["ws"]
+    old, meeting = _replacing(client, mdb, ws)
+    client.patch(f"{P}/{ws}/topics/{_topic_ids(mdb, ws)['초대']}", json={"name": "합류 방식"})
+    client.patch(f"/api/v1/meetings/{old.meeting_id}/title", json={"title": "범위 다시 잡기"})
+
+    summary, markdown = _shown(client, meeting)
+
+    assert summary["decisions"] == ["이메일 초대만"]
+    assert [(d["text"], d["state"], d["edited"], d["topic"]) for d in summary["decision_details"]] == [
+        ("이메일 초대만", "valid", True, "합류 방식"), ("틀린 결정", "invalid", True, "합류 방식"),
+    ]
+    first = summary["decision_details"][0]
+    assert (first["reason"], first["rejected"]) == ("유출", ["코드"])
+    assert [(c["text"], c["meeting_title"]) for c in first["replaces"]] == [("코드로 합류", "범위 다시 잡기")]
+    assert summary["topics"] == ["합류 방식"]
+    assert "- 이메일 초대만\n" in markdown and "- 틀린 결정 (유효하지 않음)\n" in markdown
+    assert "지운 결정" not in markdown
+    assert '주제: ["합류 방식"]' in markdown and "범위 다시 잡기" in markdown
+
+
+def test_copy_of_a_removed_old_decision_is_hidden(client, mdb, mseed):
+    ws = mseed["ws"]
+    _, meeting = _replacing(client, mdb, ws)
+
+    client.patch(f"{P}/{ws}/decisions/{_decision_id(mdb, '코드로 합류')}", json={"state": "removed"})
+
+    summary, markdown = _shown(client, meeting)
+    assert summary["decision_details"][0]["replaces"] == []
+    assert "코드로 합류" not in markdown
