@@ -5,6 +5,8 @@ on:
     branches: [develop]
     paths:
       - 'ai/**'
+      # ai/tests/deploy 가 배포 스크립트를 돌려 본다
+      - 'deploy/ec2-deploy.sh'
       - '.github/workflows/ai-ci.yml'
   # deploy.yml 이 배포 전에 같은 커밋으로 부른다
   workflow_call:
