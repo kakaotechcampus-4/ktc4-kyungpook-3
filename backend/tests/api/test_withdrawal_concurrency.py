@@ -11,10 +11,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.api import invitations
 from app.core.database import get_db
 from app.core.errors import AppError
 from app.main import app
 from app.models import Invitation, Meeting, Member, PrivacyCleanup, User, WithdrawalReceipt, Workspace
+from app.schemas.invitation import InvitationCreateRequest
 from app.services import account_withdrawal, kakao_oauth, lifecycle
 
 
@@ -90,48 +92,6 @@ def test_two_pms_withdrawing_cannot_leave_shared_workspace_without_pm(mdb, mseed
     assert len(pms) == 1 and pms[0].user_id is not None
 
 
-def test_unrelated_workspace_invitation_cannot_escape_email_cleanup(mdb, mseed):
-    other = Workspace(name="다른 팀")
-    mdb.add(other)
-    mdb.flush()
-    member = Member(workspace_id=other.workspace_id, display_name="초대 대상", role="member")
-    mdb.add(member)
-    mdb.commit()
-    engine = _pg(mdb)
-    inviter_uid, uid = mseed["pm"].user_id, mseed["alice"].user_id
-    wid, mid = other.workspace_id, member.member_id
-    mdb.commit()
-    held, release, attempted = Event(), Event(), Event()
-
-    def create_invite():
-        with Session(engine) as db:
-            _timeout(db)
-            lifecycle.user(db, inviter_uid)
-            lifecycle.identity_lock(db, "alice@example.com")
-            lifecycle.workspace(db, wid)
-            db.add(Invitation(workspace_id=wid, member_id=mid, email="alice@example.com", invited_by_user_id=inviter_uid))
-            db.flush()
-            held.set()
-            assert release.wait(3)
-            db.commit()
-
-    def withdraw():
-        assert held.wait(3)
-        with Session(engine) as db:
-            _timeout(db)
-            attempted.set()
-            return account_withdrawal.withdraw(db, uid, secrets.token_urlsafe(32))
-
-    with ThreadPoolExecutor(2) as pool:
-        invitation = pool.submit(create_invite)
-        withdrawal = pool.submit(withdraw)
-        assert attempted.wait(3)
-        release.set()
-        invitation.result(5)
-        withdrawal.result(5)
-    assert mdb.scalars(select(Invitation).where(Invitation.email == "alice@example.com")).all() == []
-
-
 def _pid(db) -> int:
     return db.scalar(text("SELECT pg_backend_pid()"))
 
@@ -146,6 +106,85 @@ def wait_blocked(engine, pids: dict, waiter: str, holder: str) -> None:
         ):
             assert time.monotonic() < deadline, f"{waiter} 가 {holder} 의 잠금을 기다리지 않았습니다."
             poll.wait(0.01)
+
+
+def test_invitation_made_while_the_invitee_withdraws_is_deleted_with_the_account(mdb, mseed):
+    other = Workspace(name="다른 팀")
+    mdb.add(other)
+    mdb.flush()
+    member = Member(workspace_id=other.workspace_id, display_name="초대 대상", role="member")
+    mdb.add_all([member, Member(workspace_id=other.workspace_id, user_id=mseed["pm"].user_id, display_name="PM", role="pm")])
+    mdb.commit()
+    engine = _pg(mdb)
+    inviter_uid, uid = mseed["pm"].user_id, mseed["alice"].user_id
+    wid, mid = other.workspace_id, member.member_id
+    mdb.commit()
+    pids, held, release = {}, Event(), Event()
+
+    def create_invite():
+        with Session(engine) as db:
+            _timeout(db)
+            pids["invite"] = _pid(db)
+            payload = InvitationCreateRequest(member_id=mid, user_id=uid)
+            pm = invitations._invitation_pm(wid, payload, db.get(User, inviter_uid), db)
+            held.set()
+            assert release.wait(3)
+            return invitations.create_invitation(wid, payload, pm, db)
+
+    def withdraw():
+        assert held.wait(3)
+        with Session(engine) as db:
+            _timeout(db)
+            pids["withdraw"] = _pid(db)
+            return account_withdrawal.withdraw(db, uid, secrets.token_urlsafe(32))
+
+    with ThreadPoolExecutor(2) as pool:
+        invitation = pool.submit(create_invite)
+        withdrawal = pool.submit(withdraw)
+        assert held.wait(3)
+        wait_blocked(engine, pids, "withdraw", "invite")
+        release.set()
+        created = invitation.result(5)
+        withdrawal.result(5)
+    assert created["data"]["invited_user"]["user_id"] == uid
+    mdb.expire_all()
+    assert mdb.scalars(select(Invitation).where(Invitation.workspace_id == wid)).all() == []
+    assert mdb.get(User, uid) is None
+
+
+def test_invite_for_a_user_who_is_withdrawing_waits_and_is_not_found(mdb, mseed):
+    engine = _pg(mdb)
+    inviter_uid, uid, wid, carol = mseed["pm"].user_id, mseed["alice"].user_id, mseed["ws"], mseed["carol"].member_id
+    mdb.commit()
+    pids, held, release = {}, Event(), Event()
+
+    def withdraw():
+        with Session(engine) as db:
+            _timeout(db)
+            pids["withdraw"] = _pid(db)
+            event.listen(db, "before_commit", lambda _: (held.set(), release.wait(3)), once=True)
+            return account_withdrawal.withdraw(db, uid, secrets.token_urlsafe(32))
+
+    def create_invite():
+        assert held.wait(3)
+        with Session(engine) as db:
+            _timeout(db)
+            pids["invite"] = _pid(db)
+            payload = InvitationCreateRequest(member_id=carol, user_id=uid)
+            try:
+                invitations._invitation_pm(wid, payload, db.get(User, inviter_uid), db)
+            except AppError as exc:
+                return exc.code.value
+            return "invited"
+
+    with ThreadPoolExecutor(2) as pool:
+        withdrawal = pool.submit(withdraw)
+        invitation = pool.submit(create_invite)
+        assert held.wait(3)
+        wait_blocked(engine, pids, "invite", "withdraw")
+        release.set()
+        withdrawal.result(5)
+        assert invitation.result(5) == "USER_NOT_FOUND"
 
 
 def test_kakao_signup_waits_for_an_old_email_and_kakao_account_to_finish_withdrawing(mdb, mseed, signup_secret):
