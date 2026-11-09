@@ -1,13 +1,13 @@
 import { config } from '@/shared/config/env'
 import { devPaths } from '@/shared/config/routes'
 import { request } from '@/shared/api/client'
-import type {
-  KakaoPendingDto,
-  SignupCodeConfirmDto,
-  SignupCodeConfirmedDto,
-  SignupCodeRequestDto,
-  SignupCodeSentDto,
+import { parseResponse } from '@/shared/api/parseResponse'
+import {
+  kakaoPendingSchema,
+  signupCodeConfirmedSchema,
+  signupCodeSentSchema,
 } from '@/shared/types/api/auth'
+import type { SignupCodeConfirmDto, SignupCodeRequestDto } from '@/shared/types/api/auth'
 import type { KakaoPending } from '../model/types'
 
 /*
@@ -18,23 +18,32 @@ import type { KakaoPending } from '../model/types'
 /** 메일을 보낸다. 다시 보낼 수 있을 때까지 남은 초를 돌려준다 */
 export async function requestSignupCode(email: string): Promise<{ resendAfter: number }> {
   const body: SignupCodeRequestDto = { email }
-  const data = await request<SignupCodeSentDto>('/auth/signup/code', { method: 'POST', body })
+  const data = parseResponse(
+    signupCodeSentSchema,
+    await request<unknown>('/auth/signup/code', { method: 'POST', body }),
+    'user',
+  )
   return { resendAfter: data.resend_after }
 }
 
 /** 맞으면 가입에 쓸 증명 토큰을 돌려준다. 코드가 틀리면 400 `SIGNUP_CODE_INVALID` (signupCodeProblem) */
 export async function confirmSignupCode(input: { email: string; code: string }): Promise<string> {
   const body: SignupCodeConfirmDto = input
-  const data = await request<SignupCodeConfirmedDto>('/auth/signup/code/confirm', {
-    method: 'POST',
-    body,
-  })
+  const data = parseResponse(
+    signupCodeConfirmedSchema,
+    await request<unknown>('/auth/signup/code/confirm', { method: 'POST', body }),
+    'user',
+  )
   return data.verification_token
 }
 
 /** 카카오 동의를 마치고 가입을 기다리는 신원. 쿠키가 없거나 만료면 400 `KAKAO_LINK_EXPIRED` */
 export async function fetchKakaoPending(): Promise<KakaoPending> {
-  return request<KakaoPendingDto>('/auth/kakao/pending')
+  return parseResponse(
+    kakaoPendingSchema,
+    await request<unknown>('/auth/kakao/pending'),
+    'user',
+  )
 }
 
 /** 카카오 로그인을 시작하는 주소. 현재 탭을 옮긴다. `next` 는 로그인 뒤 돌아갈 앱 안 경로다 */

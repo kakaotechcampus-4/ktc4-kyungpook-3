@@ -1,38 +1,18 @@
-import type { OnboardingDto, WorkspaceDto, WorkspaceSummaryDto } from '@/shared/types/api/workspace'
+import { fallbackValue } from '@/shared/api/unknownValue'
+import type { OnboardingDto, WorkspaceDto } from '@/shared/types/api/workspace'
 import type { Role } from '@/shared/types/common'
-import { readOnboardingStep } from './onboardingSteps'
-import type {
-  OnboardingProgress,
-  OnboardingStep,
-  OnboardingStepStatus,
-  Workspace,
-  WorkspaceSummary,
-} from './types'
-const statuses: OnboardingStepStatus[] = ['pending', 'completed', 'skipped']
-function warnUnknown(field: string, value: string): void {
-  if (import.meta.env.DEV) console.warn(`Unknown ${field}: ${value}`)
+import type { OnboardingProgress, Workspace, WorkspaceSummary } from './types'
+
+/** 모르는 역할은 팀원으로 내린다(보수 폴백). null 은 서버가 허용하는 값이라(팀원 행이 없을 때) 경고하지 않는다 */
+function toRole(value: string | null): Role {
+  return value === null ? 'member' : fallbackValue(value, ['pm', 'member'], 'member', 'workspace role')
 }
-function safeRole(value: string | null): Role {
-  if (value === 'pm' || value === 'member') return value
-  // null 은 스키마가 허용하는 값이다(Optional, 멤버 행이 없을 때). 경고하지 않는다
-  if (value !== null) warnUnknown('workspace role', value)
-  return 'member'
-}
-function safeStep(value: string): OnboardingStep | null {
-  const step = readOnboardingStep(value)
-  if (step === null) warnUnknown('onboarding step', value)
-  return step
-}
-function safeStatus(value: string): OnboardingStepStatus {
-  if (statuses.includes(value as OnboardingStepStatus)) return value as OnboardingStepStatus
-  warnUnknown('onboarding status', value)
-  return 'pending'
-}
-export function toWorkspaceSummary(dto: WorkspaceSummaryDto): WorkspaceSummary {
+
+export function toWorkspaceSummary(dto: WorkspaceDto): WorkspaceSummary {
   return {
     id: dto.workspace_id,
     name: dto.name,
-    role: safeRole(dto.role),
+    role: toRole(dto.role),
     memberId: dto.member_id ?? null,
     createdAt: dto.created_at,
   }
@@ -41,11 +21,8 @@ export function toOnboarding(dto: OnboardingDto): OnboardingProgress {
   return {
     completed: dto.completed,
     // 백엔드는 온보딩 완료 시 null 이 아니라 빈 문자열을 준다 (계약 §4.0-②-4). 둘을 같게 다룬다
-    currentStep: dto.current_step ? safeStep(dto.current_step) : null,
-    steps: dto.steps.map(({ step, status }) => ({
-      step: safeStep(step) ?? 'create_workspace',
-      status: safeStatus(status),
-    })),
+    currentStep: dto.current_step || null,
+    steps: dto.steps,
   }
 }
 export function toWorkspace(dto: WorkspaceDto): Workspace {

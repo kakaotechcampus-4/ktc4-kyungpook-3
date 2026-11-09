@@ -1,9 +1,11 @@
 import { queryOptions } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
+import { parseResponse } from '@/shared/api/parseResponse'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { workspaceKey } from '@/shared/api/queryKeys'
-import type { WorkspaceCreateDto, WorkspaceDto } from '@/shared/types/api/workspace'
+import { workspaceSchema } from '@/shared/types/api/workspace'
+import type { WorkspaceCreateDto } from '@/shared/types/api/workspace'
 import { toWorkspace } from '../model/mapper'
 import type { CreateWorkspaceInput, Workspace } from '../model/types'
 import { WORKSPACE_LIST_QUERY_KEY } from './workspaceList'
@@ -17,7 +19,11 @@ export async function fetchWorkspace(
   signal?: AbortSignal,
 ): Promise<Workspace> {
   return toWorkspace(
-    await request<WorkspaceDto>(`/workspaces/${encodeURIComponent(workspaceId)}`, { signal }),
+    parseResponse(
+      workspaceSchema,
+      await request<unknown>(`/workspaces/${encodeURIComponent(workspaceId)}`, { signal }),
+      'workspace',
+    ),
   )
 }
 
@@ -32,7 +38,13 @@ export function workspaceDetailQueryOptions(workspaceId: string) {
 /** 201. 생성자가 PM 팀원으로 함께 저장된다. 같은 계정 안의 같은 이름은 409 `WORKSPACE_NAME_DUPLICATED` */
 export async function createWorkspace(input: CreateWorkspaceInput): Promise<Workspace> {
   const body: WorkspaceCreateDto = { name: input.name }
-  return toWorkspace(await request<WorkspaceDto>('/workspaces', { method: 'POST', body }))
+  return toWorkspace(
+    parseResponse(
+      workspaceSchema,
+      await request<unknown>('/workspaces', { method: 'POST', body }),
+      'workspace',
+    ),
+  )
 }
 
 /**

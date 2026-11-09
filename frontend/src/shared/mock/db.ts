@@ -1,7 +1,8 @@
 import type { MockMeetingDeletion } from './meetingDeletion'
 import type { SessionDto } from '@/shared/types/api/auth'
 import type { SpeakerViewDto } from '@/shared/types/api/meeting'
-import type { MemberAliasDto, MemberDto } from '@/shared/types/api/member'
+import type { MemberDto } from '@/shared/types/api/member'
+import type { MockMemberAlias } from './fixtures/member'
 import type { MessageSettingsDto } from '@/shared/types/api/messageSettings'
 import type { TaskDto } from '@/shared/types/api/task'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
@@ -186,8 +187,11 @@ export interface MockKakaoPending {
   nickname: string | null
 }
 
-/** 저장한 메시지·알림 설정 행. 응답의 `saved`·`pms` 는 handler 가 붙인다 */
-export type MockMessageSettings = Omit<MessageSettingsDto, 'saved' | 'pms'>
+/** 저장한 메시지·알림 설정 행. 응답의 `saved`·`pms` 는 handler 가 붙인다. 화면이 읽지 않는 `updated_*` 도 낸다 */
+export type MockMessageSettings = Omit<MessageSettingsDto, 'saved' | 'pms'> & {
+  updated_at: string | null
+  updated_by: string | null
+}
 
 interface MockAccount {
   session: SessionDto
@@ -217,7 +221,7 @@ export interface MockDb {
   withdrawnMemberIds: string[]
   workspaces: WorkspaceDto[]
   members: MemberDto[]
-  aliases: MemberAliasDto[]
+  aliases: MockMemberAlias[]
   unresolvedAliases: typeof unresolvedAliasFixtures
   discordUsers: typeof discordUserFixtures
   integrations: typeof integrationFixtures

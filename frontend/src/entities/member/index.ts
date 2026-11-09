@@ -1,14 +1,12 @@
 export type {
   AliasSource,
-  AliasType,
   CreateMemberInput,
   DiscordUser,
   Member,
   MemberAlias,
-  UnresolvedAlias,
   UpdateMemberInput,
 } from './model/types'
-export { toDiscordUser, toMember, toMemberAlias, toUnresolvedAlias } from './model/mapper'
+export { toDiscordUser, toMember, toMemberAlias } from './model/mapper'
 export type { MemberLink, MemberLinkKind } from './lib/linkDiscordUsers'
 export { linkDiscordUsers } from './lib/linkDiscordUsers'
 export { pmsOf } from './lib/pmsOf'
