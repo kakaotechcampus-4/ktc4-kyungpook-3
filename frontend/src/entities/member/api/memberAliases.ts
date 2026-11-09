@@ -1,8 +1,8 @@
 import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
+import { parseResponse } from '@/shared/api/parseResponse'
 import { workspaceKey } from '@/shared/api/queryKeys'
-import type { ListDto } from '@/shared/types/api/envelope'
-import type { MemberAliasDto } from '@/shared/types/api/member'
+import { memberAliasListSchema, memberAliasSchema } from '@/shared/types/api/member'
 import { toMemberAlias } from '../model/mapper'
 import type { MemberAlias } from '../model/types'
 
@@ -11,10 +11,14 @@ export function memberAliasesQueryOptions(workspaceId: string) {
   return queryOptions({
     queryKey: workspaceKey(workspaceId, 'member-aliases'),
     queryFn: async ({ signal }) => {
-      const { items } = await request<ListDto<MemberAliasDto>>('/members/aliases', {
-        params: { workspace_id: workspaceId },
-        signal,
-      })
+      const { items } = parseResponse(
+        memberAliasListSchema,
+        await request<unknown>('/members/aliases', {
+          params: { workspace_id: workspaceId },
+          signal,
+        }),
+        'member',
+      )
       return items.map(toMemberAlias)
     },
   })
@@ -32,11 +36,15 @@ export async function createMemberAlias(
   signal?: AbortSignal,
 ): Promise<MemberAlias> {
   return toMemberAlias(
-    await request<MemberAliasDto>(`/members/${encodeURIComponent(memberId)}/aliases`, {
-      method: 'POST',
-      body: { alias_text: aliasText },
-      signal,
-    }),
+    parseResponse(
+      memberAliasSchema,
+      await request<unknown>(`/members/${encodeURIComponent(memberId)}/aliases`, {
+        method: 'POST',
+        body: { alias_text: aliasText },
+        signal,
+      }),
+      'member',
+    ),
   )
 }
 

@@ -1,6 +1,7 @@
 import { request } from '@/shared/api/client'
-import { createInvalidResponseError } from '@/shared/api/parseResponse'
-import type { MemberCreateDto, MemberDto, MemberUpdateDto } from '@/shared/types/api/member'
+import { parseResponse } from '@/shared/api/parseResponse'
+import { memberSchema } from '@/shared/types/api/member'
+import type { MemberCreateDto, MemberUpdateDto } from '@/shared/types/api/member'
 import { toMember } from '../model/mapper'
 import type { CreateMemberInput, Member, UpdateMemberInput } from '../model/types'
 
@@ -17,13 +18,13 @@ export async function createMember(
   if (input.discordUserId !== undefined) body.discord_user_id = input.discordUserId
   if (input.notionName !== undefined) body.notion_name = input.notionName
   if (input.role !== undefined) body.role = input.role
-  const dto = await request<MemberDto>('/members', { method: 'POST', body, signal })
-  try {
-    return toMember(dto)
-  } catch {
-    // 2xx 라 서버는 이미 만들었을 수 있다. 일반 실패로 보이면 호출자가 같은 이름을 다시 만든다
-    throw createInvalidResponseError('member', '')
-  }
+  return toMember(
+    parseResponse(
+      memberSchema,
+      await request<unknown>('/members', { method: 'POST', body, signal }),
+      'member',
+    ),
+  )
 }
 
 /** 넣지 않은 필드는 본문에 싣지 않는다 — 백엔드는 보낸 키만 바꾼다 */
@@ -38,10 +39,14 @@ export async function updateMember(
   if (input.notionName !== undefined) body.notion_name = input.notionName
   if (input.role !== undefined) body.role = input.role
   return toMember(
-    await request<MemberDto>(`/members/${encodeURIComponent(memberId)}`, {
-      method: 'PATCH',
-      body,
-      signal,
-    }),
+    parseResponse(
+      memberSchema,
+      await request<unknown>(`/members/${encodeURIComponent(memberId)}`, {
+        method: 'PATCH',
+        body,
+        signal,
+      }),
+      'member',
+    ),
   )
 }

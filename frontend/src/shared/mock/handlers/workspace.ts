@@ -1,4 +1,5 @@
 import { http } from 'msw'
+import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { db } from '../db'
 import { fail, list, ok } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
@@ -49,7 +50,7 @@ export const workspaceHandlers = [
       )
     )
       return fail('WORKSPACE_NAME_DUPLICATED', '이미 존재하는 이름입니다.', 409)
-    const workspace = {
+    const workspace: WorkspaceDto = {
       workspace_id: `ws_${String(db.workspaces.length + 1).padStart(2, '0')}`,
       name: normalizedName,
       role: 'pm',

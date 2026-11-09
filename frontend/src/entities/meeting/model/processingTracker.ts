@@ -25,6 +25,7 @@ interface MeetingTrackerState {
   prompted: readonly string[]
   /** 끝난 결과를 보이는 회의. 같은 회의는 하나뿐이다 */
   settled: readonly SettledMeeting[]
+  dismissed: readonly string[]
 }
 
 /*
@@ -41,6 +42,7 @@ export const useMeetingTrackerStore = create<MeetingTrackerState>()(() => ({
   finished: [],
   prompted: [],
   settled: [],
+  dismissed: [],
 }))
 
 function isSame(a: TrackedMeeting, b: TrackedMeeting): boolean {
@@ -114,7 +116,22 @@ export function dismissSettled(meeting: TrackedMeeting): void {
   )
 }
 
+export function dismissProcessingToast(meeting: TrackedMeeting): void {
+  useMeetingTrackerStore.setState((state) =>
+    !state.meetings.some((item) => isSame(item, meeting)) ||
+    state.dismissed.includes(keyOf(meeting))
+      ? state
+      : { dismissed: [...state.dismissed, keyOf(meeting)] },
+  )
+}
+
 /** 로그아웃·세션 만료 때 모두 비운다 */
 export function clearTrackedMeetings(): void {
-  useMeetingTrackerStore.setState({ meetings: [], finished: [], prompted: [], settled: [] })
+  useMeetingTrackerStore.setState({
+    meetings: [],
+    finished: [],
+    prompted: [],
+    settled: [],
+    dismissed: [],
+  })
 }

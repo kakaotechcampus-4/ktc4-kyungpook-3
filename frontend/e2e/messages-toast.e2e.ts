@@ -22,12 +22,15 @@ async function box(locator: Locator) {
 }
 
 const detail = (page: Page) => page.getByRole('region', { name: '메시지 내용' })
-const pill = (page: Page) => page.getByRole('button', { name: /펼치기/ })
+const pill = (page: Page) => page.getByRole('group', { name: /정리 알림$/ })
 const card = (page: Page) => page.getByRole('region', { name: /정리 중$/ })
 const toast = (page: Page, fold: Fold) => (fold === 'collapsed' ? pill(page) : card(page))
 
 async function fold(page: Page, next: Fold): Promise<void> {
-  if (next === 'expanded') await pill(page).click()
+  if (next === 'expanded')
+    await pill(page)
+      .getByRole('button', { name: /펼치기/ })
+      .click()
   else await page.getByRole('button', { name: '접기' }).click()
   await expect(toast(page, next)).toBeVisible()
 }

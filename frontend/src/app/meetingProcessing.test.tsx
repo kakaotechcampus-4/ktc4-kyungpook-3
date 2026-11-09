@@ -91,9 +91,9 @@ function addCompletedWorkspace() {
     onboarding: {
       completed: true,
       current_step: null,
-      steps: ['create_workspace', 'connect_discord', 'connect_notion', 'connect_members'].map(
-        (step) => ({ step, status: 'completed' }),
-      ),
+      steps: (
+        ['create_workspace', 'connect_discord', 'connect_notion', 'connect_members'] as const
+      ).map((step) => ({ step, status: 'completed' as const })),
     },
   })
   db.accounts[0].workspaceIds.push('ws_04')
@@ -403,6 +403,7 @@ describe('polling (U4-3)', () => {
       finished: [],
       prompted: [],
       settled: [],
+      dismissed: [],
     })
 
     // 다음 polling 시점이 지나도 이전 사용자의 회의를 묻지 않는다
@@ -427,6 +428,7 @@ describe('polling (U4-3)', () => {
       finished: [],
       prompted: [],
       settled: [],
+      dismissed: [],
     })
   })
 })

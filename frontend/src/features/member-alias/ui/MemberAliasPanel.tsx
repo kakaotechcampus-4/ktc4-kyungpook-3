@@ -8,7 +8,7 @@ import {
   ALIAS_EMPTY,
   ALIAS_EXISTS,
   ALIAS_LOAD_FAILED,
-  ALIAS_SOURCE_LABEL,
+  aliasSourceLabel,
   ALIAS_UNVERIFIED,
 } from '../lib/aliasMessages'
 import { useMemberAliasActions } from '../model/useMemberAliasActions'
@@ -88,7 +88,7 @@ export function MemberAliasPanel({ workspaceId, member, state, canManage }: Memb
             <li key={alias.id} className={CHIP}>
               <span className={CHIP_TEXT}>{alias.text}</span>
               <span className={CHIP_TAG}>
-                {ALIAS_SOURCE_LABEL[alias.source]}
+                {aliasSourceLabel(alias.source)}
                 {alias.verified ? null : ` · ${ALIAS_UNVERIFIED}`}
               </span>
               {canManage ? (

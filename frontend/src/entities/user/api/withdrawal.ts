@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { request } from '@/shared/api/client'
+import { parseResponse } from '@/shared/api/parseResponse'
 
 const workspaceSchema = z.object({
   workspace_id: z.string(),
@@ -20,7 +21,11 @@ export type WithdrawalPlan = z.infer<typeof planSchema>
 export type WithdrawalReceipt = z.infer<typeof receiptSchema>
 
 export async function fetchWithdrawalPlan(signal?: AbortSignal): Promise<WithdrawalPlan> {
-  return planSchema.parse(await request<unknown>('/auth/withdrawal-plan', { signal }))
+  return parseResponse(
+    planSchema,
+    await request<unknown>('/auth/withdrawal-plan', { signal }),
+    'user',
+  )
 }
 
 export async function withdrawAccount(
@@ -28,12 +33,14 @@ export async function withdrawAccount(
   accountId: string,
   signal?: AbortSignal,
 ): Promise<WithdrawalReceipt> {
-  return receiptSchema.parse(
+  return parseResponse(
+    receiptSchema,
     await request<unknown>('/auth/me', {
       method: 'DELETE',
       headers: { 'X-Withdrawal-Key': key, 'X-Withdrawal-Account-ID': accountId },
       signal,
     }),
+    'user',
   )
 }
 
@@ -42,11 +49,13 @@ export async function fetchWithdrawalReceipt(
   key: string,
   signal?: AbortSignal,
 ): Promise<WithdrawalReceipt> {
-  return receiptSchema.parse(
+  return parseResponse(
+    receiptSchema,
     await request<unknown>(`/auth/withdrawals/${encodeURIComponent(id)}`, {
       signal,
       notifyUnauthorized: false,
       headers: { 'X-Withdrawal-Key': key },
     }),
+    'user',
   )
 }
