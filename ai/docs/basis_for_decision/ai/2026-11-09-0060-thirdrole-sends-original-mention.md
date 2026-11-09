@@ -30,10 +30,17 @@ A 를 고른다(사용자와 2026-11-09 확정, #522 댓글). judge 는 `_NOT_AL
 - 학습한 별칭이 전사 힌트(`GET .../members/names` 의 `aliases` → `stt/backend.py` 의 `member_forms`)에 들어가 오인식 철자("화은")를 굳힐 수 있다. PM 이 확인한 별칭이라 담당자 매칭 해는 적고, 비용은 회의록 표기와 힌트 길이다. 이번에는 막지 않는다.
 - legacy 경로의 1인칭 오분류율은 측정 도구만 넣었다(`extract/eval_golden_set.py` 의 `--set speaker|all`, `--runs`, `--out`). 실제 측정(최대 약 186회 LLM 호출)은 하지 않았다.
 
+PR #607 리뷰에서 더 정한 것(2026-11-09):
+
+- 프롬프트가 thirdrole 의 resolved 를 비워 두므로 update 카드에는 사실상 원문이 간다. 그래서 예전에는 `_has_change` 에서 버려지던 역할 담당 변경 발화가 update 카드로 올라온다. update 는 늘 PM 검토이고 BE 가 역할 별칭으로 못 찾으면 PM 이 담당자를 고르므로 의도한 동작으로 둔다.
+- 역할어는 받침으로 끝나는 말이 많아("팀장은") 저장할 때 "은"을 떼지 않으면 다음 회의의 "팀장이"로 찾지 못한다. BE 는 thirdrole 을 저장할 때만 "은"과 호칭 "분"을 더 떼고, 찾기 후보 규칙(BE `name_candidates`·AI `_name_candidates`)은 "분"을 님·씨와 같은 호칭으로 본다. 이름에서는 "하은"·"옥분"이 깨지므로 떼지 않는다.
+- 역할 별칭은 이름 별칭과 같은 종류(`nickname`, source `learned`)로 저장한다. 별칭 글자("BE 리더", "팀장")로 PM 이 역할임을 알아볼 수 있어 종류를 새로 두지 않았다(FE·계약 변경을 피함).
+
 회의록 초안(`draft/doc_draft.py`), 알림(`capture/notify.py`), legacy 흔들림 판정(`extract/llm.py`)은 resolved 를 그대로 쓴다. BE 로 가는 `assignee_raw` 만 바뀐다.
 
 ## 다시 볼 조건
 
 - thirdrole 카드에서 PM 직접 지정이 많은데 역할 별칭이 쌓이지 않으면 C 안을 BE 와 다시 논의한다.
 - 학습 별칭이 쌓이면 [0024](../member/2026-10-13-0024-member-name-hint.md) 의 다시 볼 조건대로 전사 힌트가 이름 자리를 더 고치는지, 오인식 철자를 굳히는지 잰다. 출처로 거르려면 BE 응답 변경이 필요하다.
+- 역할 별칭의 삭제·정정이 관측되거나, 역할어가 thirdname 으로 분류돼 학습한 역할 별칭으로 옛 담당자에게 auto 가 되면 역할 별칭을 따로 표시하는 종류(예: `alias_type=role`)를 두고 그 별칭으로 찾은 담당자는 확인 필요로 둘지 검토한다(#607 리뷰).
 - legacy 1인칭 오분류 측정 결과가 judge(#502, 약 1%)보다 크게 나쁘면 legacy 프롬프트나 BE 1인칭 거르기를 다시 본다.

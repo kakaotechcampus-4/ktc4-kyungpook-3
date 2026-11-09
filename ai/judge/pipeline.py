@@ -42,6 +42,8 @@ _NOT_ALIAS_TYPES = {"second", "thirdpronoun"}
 # 원문을 별칭 조회 키로 보내는 타입. 새 할 일(create·merge)은 원문만 보낸다 — 추측한 이름이 BE 별칭으로
 # 학습되지 않게 (capture/handoff.py 와 같은 규칙, #501·#522). BE 는 create 승인 때만 별칭을 배우므로
 # 수정·담당자 변경 카드(update)는 예전처럼 고친 이름이 있으면 그것을, 없으면 원문을 보낸다.
+# 프롬프트가 thirdrole 의 resolved 를 비워 두므로 역할 담당 변경은 사실상 원문이 가고, 예전에 버려지던
+# "BE 리더가 맡아 주세요" 같은 담당 변경도 update 카드가 된다. update 는 늘 PM 검토라 의도한 동작이다(0060).
 _ORIGINAL_MENTION_TYPES = {"thirdname", "thirdrole"}
 
 # 답장 판단(judge/reply.py)이 이 값으로 마감 지움을 알아본다
