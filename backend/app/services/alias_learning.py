@@ -68,23 +68,33 @@ LEARNED_CONFIDENCE = 0.9
 # 같아서 떼면 이름이 깨지므로 목록에 두지 않는다.
 _TRAILING_PARTICLES = ("께서", "한테", "에게", "이가", "가", "이", "는", "을", "를", "께")
 _HONORIFIC = "님"
+# 역할어("팀장은", "디자이너분이")는 이름이 아니라 "은"을 떼도 깨지지 않는다. 그래서 역할(thirdrole)은 "은"도 떼고,
+# 호칭 "분"도 뗀다(#607 리뷰). 이름에서 "분"을 떼면 "옥분이가"가 "옥"이 되므로 역할에만 쓴다.
+# 뗀 글자는 찾기 후보(matching.name_candidates)에 들어 있어야 다음 회의에서 찾힌다("분"은 후보 규칙의 호칭이다).
+_ROLE_TRAILING_PARTICLES = (*_TRAILING_PARTICLES, "은")
+_ROLE_HONORIFICS = ("님", "분")
 
 
-def trim_alias_text(raw: str | None) -> str | None:
+def trim_alias_text(raw: str | None, *, role: bool = False) -> str | None:
     """발화에 적힌 담당자 표현에서 끝 조사와 "님"을 떼어 별칭으로 저장할 글자를 만든다.
 
-    순서는 앞뒤 공백, 끝 조사 한 번, 끝 "님" 한 번, 연속 공백 정리다. 남는 글자가 없으면 None.
+    순서는 앞뒤 공백, 끝 조사 한 번, 끝 호칭 한 번, 연속 공백 정리다. 남는 글자가 없으면 None.
+    role=True(역할 지목)이면 조사에 "은"을, 호칭에 "분"을 더한다. "팀장은" → "팀장", "디자이너분이" → "디자이너".
     """
     if raw is None:
         return None
+    particles = _ROLE_TRAILING_PARTICLES if role else _TRAILING_PARTICLES
+    honorifics = _ROLE_HONORIFICS if role else (_HONORIFIC,)
     text = raw.strip()
-    for particle in _TRAILING_PARTICLES:
+    for particle in particles:
         if text.endswith(particle):
             text = text[: -len(particle)]
             break
     text = text.strip()
-    if text.endswith(_HONORIFIC):
-        text = text[: -len(_HONORIFIC)]
+    for honorific in honorifics:
+        if text.endswith(honorific):
+            text = text[: -len(honorific)]
+            break
     text = " ".join(text.split())
     return text or None
 
@@ -116,7 +126,7 @@ def learnable_alias_text(item: ExtractionItem) -> str | None:
         or item.assignee_type not in LEARNABLE_ASSIGNEE_TYPES
     ):
         return None
-    text = trim_alias_text(item.assignee_raw)
+    text = trim_alias_text(item.assignee_raw, role=item.assignee_type == "thirdrole")
     if text is None or _is_self_reference(text):
         return None
     return text

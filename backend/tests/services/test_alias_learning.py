@@ -91,10 +91,38 @@ def test_learnable_alias_text_is_none_when_not_learnable(fields):
     assert alias_learning.learnable_alias_text(_item(**fields)) is None
 
 
-@pytest.mark.parametrize("raw, expected", [("BE 리더가", "BE 리더"), ("환", "환")])
+@pytest.mark.parametrize(
+    "raw, expected",
+    [("BE 리더가", "BE 리더"), ("환", "환"), ("팀장은", "팀장"), ("디자이너분이", "디자이너"), ("팀장님은", "팀장"),
+     ("백엔드 담당은", "백엔드 담당")],
+)
 def test_learnable_alias_text_for_thirdrole(raw, expected):
-    """역할 지목은 AI 가 역할 원문을 assignee_raw 로 보내므로(#522) 이름처럼 배운다. 원문은 다듬은 글자로 저장한다."""
+    """역할 지목은 AI 가 역할 원문을 assignee_raw 로 보내므로(#522) 이름처럼 배운다. 원문은 다듬은 글자로 저장한다.
+
+    역할어는 "은"·"분"도 뗀다(#607 리뷰). "팀장은"이 그대로 저장되면 다음 회의의 "팀장이"로 찾지 못한다."""
     assert alias_learning.learnable_alias_text(_item(assignee_type="thirdrole", assignee_raw=raw)) == expected
+
+
+@pytest.mark.parametrize("raw, expected", [("하은은", "하은은"), ("옥분이가", "옥분"), ("지민분이", "지민분")])
+def test_names_keep_eun_and_bun_when_trimmed(raw, expected):
+    """이름(thirdname)은 "은"·"분"을 떼지 않는다. "하은"·"옥분"처럼 이름 끝 글자일 수 있다."""
+    assert alias_learning.learnable_alias_text(_item(assignee_type="thirdname", assignee_raw=raw)) == expected
+
+
+@pytest.mark.parametrize("raw", ["팀장은", "디자이너분이", "팀장님은", "디자이너분은", "BE  리더가", "백엔드 담당은"])
+def test_role_trimmed_text_is_always_one_of_the_matching_candidates(raw):
+    """역할로 다듬은 글자도 담당자 찾기 후보 안에 있어야 다음 회의의 같은 말로 찾힌다."""
+    from app.services.matching import name_candidates
+
+    assert alias_learning.trim_alias_text(raw, role=True) in name_candidates(raw)
+
+
+@pytest.mark.parametrize("later", ["팀장이", "팀장님", "팀장은", "팀장께서"])
+def test_role_alias_learned_from_eun_form_is_found_by_other_forms(later):
+    """"팀장은"으로 배운 별칭 "팀장"은 다음 회의의 다른 꼴로도 찾힌다."""
+    from app.services.matching import name_candidates
+
+    assert alias_learning.trim_alias_text("팀장은", role=True) in name_candidates(later)
 
 
 def test_learnable_alias_text_keeps_names_that_only_contain_self_reference_letters():
