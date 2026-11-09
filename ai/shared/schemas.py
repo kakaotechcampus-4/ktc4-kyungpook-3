@@ -368,6 +368,7 @@ class TaskChange(_Base):
     due: str
     purpose: str
     precondition: str
+    item_id: str | None = None      # 재료의 항목. BE 는 반영된 항목의 줄만 보인다
 
 
 @dataclass(frozen=True)

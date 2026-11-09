@@ -95,9 +95,9 @@ def test_document_always_has_the_three_screen_keys_and_decisions_as_strings(mdb,
     _save(mdb, extraction)
 
     assert _document(mdb, extraction) == {
-        "overview": "핵심", "key_points": ["하나"], "decisions": [], "schema_version": 1, "discussion": [],
+        "overview": "핵심", "key_points": ["하나"], "decisions": [], "schema_version": 2, "discussion": [],
         "decision_details": [], "facts": [], "task_changes": [], "schedule": [], "open_items": [], "topics": [],
-        "meta": {"model": "m", "truncated_input": False},
+        "topic_ids": [], "meta": {"model": "m", "truncated_input": False},
     }
 
 
@@ -113,11 +113,26 @@ def test_document_derives_decisions_and_topics(mdb, mseed):
     assert document["decisions"] == ["이메일만", "카카오 먼저"]
     assert document["topics"] == ["초대", "로그인"]
     assert document["meta"]["truncated_input"] is True
+    rows = mdb.scalars(select(Decision).order_by(Decision.position)).all()
     assert document["decision_details"][0] == {
-        "text": "이메일만", "reason": "유출", "rejected": ["코드"], "topic": "초대", "replaces": [],
+        "decision_id": rows[0].decision_id, "text": "이메일만", "reason": "유출", "rejected": ["코드"], "topic": "초대",
+        "replaces": [],
     }
+    assert [d["decision_id"] for d in document["decision_details"]] == [d.decision_id for d in rows]
+    topic_ids = {t.name: t.topic_id for t in _topics(mdb)}
+    assert document["topic_ids"] == [topic_ids["초대"], topic_ids["로그인"]]
     assert (result.topic_count, result.decision_count) == (2, 2)
-    assert [d.position for d in mdb.scalars(select(Decision).order_by(Decision.position))] == [0, 1]
+    assert [d.position for d in rows] == [0, 1]
+
+
+def test_document_keeps_the_item_key_of_each_task_change(mdb, mseed):
+    _, extraction, [item] = _meeting(mdb, mseed["ws"], items=1)
+
+    _save(mdb, extraction, task_changes=[{"task": "배포", "item_id": item.item_id}, {"task": "키 없음"}])
+
+    assert [(c["task"], c["item_id"]) for c in _document(mdb, extraction)["task_changes"]] == [
+        ("배포", item.item_id), ("키 없음", None),
+    ]
 
 
 def test_korean_is_stored_unescaped(mdb, mseed):

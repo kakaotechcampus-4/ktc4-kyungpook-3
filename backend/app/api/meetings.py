@@ -339,7 +339,7 @@ def get_meeting_minutes(
         duration_ms=meeting.duration_ms or 0,
         source=meeting.source,
         attendees=attendees,
-        summary=summary.load_document(extraction),
+        summary=summary.documents(db, [(meeting, extraction)]).get(meeting.meeting_id),
         summary_status=state.status,
         summary_waiting_count=state.waiting_cards if state.status == "awaiting_approval" and member.role == "pm" else None,
         transcript=transcript,

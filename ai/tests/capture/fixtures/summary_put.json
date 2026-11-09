@@ -24,7 +24,8 @@
       "assignee": "민수",
       "due": "11월 14일",
       "purpose": "코드 없이 합류한다",
-      "precondition": "메일 도메인 인증"
+      "precondition": "메일 도메인 인증",
+      "item_id": null
     }
   ],
   "schedule": [

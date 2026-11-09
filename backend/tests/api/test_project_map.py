@@ -548,6 +548,49 @@ def test_summary_markdown_download(client, mdb, mseed, monkeypatch):
     assert "## 핵심 요약" in text
 
 
+def _auto_item(client, db, seed, meeting):
+    db.add(MemberAlias(member_id=seed["alice"].member_id, workspace_id=seed["ws"], alias_text="앨리스님",
+                       alias_type="nickname", source="manual", confidence=1.0, verified=True))
+    db.commit()
+    extraction_id = _extract(client, meeting, [{"task_title": "자동 태스크", "task_confidence": 0.99,
+                                                "assignee_raw": "앨리스님", "assignee_type": "thirdname"},
+                                               {"task_title": "검토 태스크", "task_confidence": 0.6, "due_confidence": 0.0}])
+    db.expire_all()
+    auto, pending = db.scalars(select(ExtractionItem).where(ExtractionItem.extraction_id == extraction_id)
+                               .order_by(ExtractionItem.gate)).all()
+    assert (auto.gate, pending.gate) == ("auto", "review")
+    return db.get(Extraction, extraction_id), auto, pending
+
+
+def _task_changes_shown(client, meeting):
+    minutes = [c["task"] for c in _status(client, meeting)["summary"]["task_changes"]]
+    text = client.get(f"/api/v1/meetings/{meeting.meeting_id}/summary.md").text
+    return minutes, [task for task in ("반영된 일", "키 없는 일", "대기 중인 일") if task in text]
+
+
+def test_task_changes_show_only_items_that_are_final_now(client, mdb, mseed):
+    meeting = _meeting(mdb, mseed["ws"], status="processing")
+    extraction, auto, pending = _auto_item(client, mdb, mseed, meeting)
+    _save(mdb, meeting, extraction=extraction, task_changes=[
+        {"task": "반영된 일", "item_id": auto.item_id}, {"task": "키 없는 일"},
+        {"task": "대기 중인 일", "item_id": pending.item_id},
+    ])
+
+    assert _task_changes_shown(client, meeting) == (["반영된 일"], ["반영된 일"])
+
+
+def test_task_change_whose_item_is_reverted_after_the_summary_is_hidden(client, mdb, mseed):
+    meeting = _meeting(mdb, mseed["ws"], status="processing")
+    extraction, auto, _ = _auto_item(client, mdb, mseed, meeting)
+    _save(mdb, meeting, extraction=extraction, task_changes=[{"task": "반영된 일", "item_id": auto.item_id}])
+    assert _task_changes_shown(client, meeting) == (["반영된 일"], ["반영된 일"])
+
+    r = client.post(f"/api/v1/extractions/{extraction.extraction_id}/items/{auto.item_id}/revert")
+    assert r.status_code == 200, r.text
+
+    assert _task_changes_shown(client, meeting) == ([], [])
+
+
 def test_summary_markdown_date_is_the_workspace_date(client, mdb, mseed):
     meeting = _meeting(mdb, mseed["ws"], started_at=datetime(2026, 10, 31, 15, 30, tzinfo=timezone.utc))
     _save(mdb, meeting)

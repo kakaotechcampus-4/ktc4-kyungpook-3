@@ -248,7 +248,7 @@ def summary_markdown(db: Session, meeting: Meeting) -> MarkdownFile:
         .order_by(Extraction.created_at.desc())
         .limit(1)
     ).first()
-    document = summary.load_document(extraction)
+    document = summary.documents(db, [(meeting, extraction)]).get(meeting.meeting_id)
     if document is None:
         raise AppError(ErrorCode.SUMMARY_NOT_FOUND, details={"meeting_id": meeting.meeting_id})
     head = _head(meeting, document, _attendees(db, [meeting.meeting_id])[meeting.meeting_id])
@@ -350,11 +350,8 @@ def _period_summaries(
         stmt = stmt.where(Meeting.started_at < _day_start(end + timedelta(days=1)))
     # 시각 오름차순으로 덮어 회의마다 최신 추출만 남긴다
     latest = {meeting.meeting_id: (meeting, extraction) for meeting, extraction in db.execute(stmt)}
-    documents = [
-        (meeting, document)
-        for meeting, extraction in latest.values()
-        if (document := summary.load_document(extraction)) is not None
-    ]
+    shown = summary.documents(db, list(latest.values()))
+    documents = [(meeting, shown[meeting.meeting_id]) for meeting, _ in latest.values() if meeting.meeting_id in shown]
     attendees = _attendees(db, [meeting.meeting_id for meeting, _ in documents])
     return [(document, _head(meeting, document, attendees[meeting.meeting_id])) for meeting, document in documents]
 

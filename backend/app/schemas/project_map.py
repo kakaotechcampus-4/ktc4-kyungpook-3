@@ -107,6 +107,8 @@ class TaskChangeEntry(BaseModel):
     due: str = ""
     purpose: str = ""
     precondition: str = ""
+    # 이 회의의 추출 항목. 읽을 때 반영된 항목의 줄만 보인다
+    item_id: str | None = None
 
 
 class ScheduleEntry(BaseModel):

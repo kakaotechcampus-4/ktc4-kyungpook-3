@@ -67,7 +67,7 @@ SUMMARY_LEASE = timedelta(minutes=15)
 SUMMARY_PENDING_WINDOW = timedelta(hours=1)
 JOB_TOPIC_LIMIT = 100
 JOB_DECISION_LIMIT = 50
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def meeting_date(started_at: datetime) -> date:
@@ -355,7 +355,7 @@ def _request_state(
         return waits or "requested"
     if extraction.summary_requested_at is not None:
         return (waits or "queued") if _queue_alive(extraction, now) else "gave_up"
-    return "done" if load_document(extraction) is not None else waits or "requested"
+    return "done" if _stored(extraction) is not None else waits or "requested"
 
 
 def _queue_alive(extraction: Extraction, now: datetime) -> bool:
@@ -368,8 +368,35 @@ def _queue_alive(extraction: Extraction, now: datetime) -> bool:
     return claimed_at is not None and utc(claimed_at) > utc(now) - SUMMARY_LEASE
 
 
-def load_document(extraction: Extraction | None) -> dict | None:
-    """저장된 요약. 없거나, 깨졌거나, 객체가 아니면 None."""
+def documents(db: Session, rows: list[tuple[Meeting, Extraction | None]]) -> dict[str, dict]:
+    """화면, summary.md, 합본이 읽는 유일한 요약. meeting_id -> 보여 줄 문서.
+
+    할 일 변화는 항목이 지금 반영된 것만 보인다. 항목 키가 없는 옛 요약의 할 일 변화와 요약 뒤 되돌린 항목은 숨는다.
+    """
+    stored = {
+        meeting.meeting_id: (extraction.extraction_id, document)
+        for meeting, extraction in rows
+        if (document := _stored(extraction)) is not None
+    }
+    final = item_fate.final_items().where(
+        ExtractionItem.extraction_id.in_({extraction_id for extraction_id, _ in stored.values()})
+    ).subquery()
+    shown = set(db.execute(select(final.c.extraction_id, final.c.item_id)).all()) if stored else set()
+    for extraction_id, document in stored.values():
+        if isinstance(document.get("task_changes"), list):
+            document["task_changes"] = [
+                change for change in document["task_changes"]
+                if isinstance(change, dict) and (extraction_id, change.get("item_id")) in shown
+            ]
+    return {meeting_id: document for meeting_id, (_, document) in stored.items()}
+
+
+def has_document(extraction: Extraction | None) -> bool:
+    return _stored(extraction) is not None
+
+
+def _stored(extraction: Extraction | None) -> dict | None:
+    """저장된 요약. 없거나, 깨졌거나, 객체가 아니면 None. 모듈 밖에서는 documents() 와 has_document() 를 쓴다."""
     if extraction is None or not extraction.summary:
         return None
     try:
@@ -395,7 +422,7 @@ def summary_state(
     db: Session, meeting: Meeting, extraction: Extraction | None, *, now: datetime | None = None
 ) -> SummaryState:
     readiness = _NO_EXTRACTION if extraction is None else item_fate.readiness(db, extraction, meeting.source)
-    return _state(extraction, load_document(extraction) is not None, readiness, now or datetime.now(timezone.utc))
+    return _state(extraction, has_document(extraction), readiness, now or datetime.now(timezone.utc))
 
 
 def _state(extraction: Extraction | None, has_doc: bool, r: item_fate.Readiness, now: datetime) -> SummaryState:
@@ -472,6 +499,7 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
             db.add(row)
             db.flush()
             details.append({
+                "decision_id": row.decision_id,
                 "text": decision.text,
                 "reason": decision.reason,
                 "rejected": decision.rejected,
@@ -481,7 +509,7 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
 
     db.add_all(TopicMeeting(topic_id=topic_id, meeting_id=meeting.meeting_id) for topic_id in topics)
     db.add_all(TopicItem(topic_id=topic_id, item_id=item_id) for topic_id, item_id in links)
-    extraction.summary = json.dumps(_document(payload, list(topics.values()), details), ensure_ascii=False)
+    extraction.summary = json.dumps(_document(payload, topics, details), ensure_ascii=False)
     extraction.summary_requested_at = None
     extraction.summary_attempts = 0
     extraction.summary_claimed_at = None
@@ -519,7 +547,7 @@ def remove_meeting_summary(db: Session, meeting: Meeting) -> None:
         Extraction.summary.is_not(None),
     ))
     for extraction in rows:
-        document = load_document(extraction)
+        document = _stored(extraction)
         if document is None:
             continue
         changed = False
@@ -601,8 +629,11 @@ def _delete_orphan_topics(db: Session, topic_ids: set[str]) -> None:
         )
 
 
-def _document(payload: SummaryWriteRequest, topic_names: list[str], details: list[dict]) -> dict:
-    """저장할 JSON 을 만드는 유일한 곳. 화면이 읽는 overview, key_points, decisions(문자열 목록)가 항상 있다."""
+def _document(payload: SummaryWriteRequest, topics: dict[str, str], details: list[dict]) -> dict:
+    """저장할 JSON 을 만드는 유일한 곳. 화면이 읽는 overview, key_points, decisions(문자열 목록)가 항상 있다.
+
+    topic_ids 는 topics 와 같은 순서이고 decision_details 의 decision_id 는 Decision 행이다. 사람이 고친 행과 다시 맞출 때 쓴다.
+    """
     return {
         "overview": payload.overview,
         "key_points": payload.key_points,
@@ -614,6 +645,7 @@ def _document(payload: SummaryWriteRequest, topic_names: list[str], details: lis
         "task_changes": [entry.model_dump() for entry in payload.task_changes],
         "schedule": [entry.model_dump() for entry in payload.schedule],
         "open_items": payload.open_items,
-        "topics": topic_names,
+        "topics": list(topics.values()),
+        "topic_ids": list(topics),
         "meta": {"model": payload.model_name, "truncated_input": payload.truncated_input},
     }
