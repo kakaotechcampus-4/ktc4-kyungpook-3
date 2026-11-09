@@ -26,7 +26,9 @@ from app.schemas.auth import (
     SignupCodeResponse,
     SignupRequest,
     UserResponse,
+    UsernameAvailabilityResponse,
 )
+from app.schemas.username import validate_username
 from app.services import kakao_oauth, login_limit, mailer, oauth_state, password_reset, password_reset_limit, sessions, signup_codes
 from app.services.kakao_oauth import KakaoOAuthError
 from app.services.passwords import DUMMY_PASSWORD_HASH, hash_password, verify_password
@@ -48,6 +50,16 @@ def _create_session(db: Session, user: User, response: Response):
         secure=True
     )
 
+def user_response(user: User) -> UserResponse:
+    return UserResponse(
+        user_id=user.user_id,
+        username=user.username,
+        email=user.email,
+        name=user.name,
+        avatar_url=user.profile_image_url
+    )
+
+
 def _build_auth_response(db: Session, user: User) -> AuthResponse:
     workspace_count = db.query(Member).filter(Member.user_id == user.user_id, Member.is_deleted.is_(False)).count()
     # 초대로 들어온 팀원 행은 PM 이 예전에 만든 것이라 수락 시각을 들어온 시각으로 본다.
@@ -68,16 +80,22 @@ def _build_auth_response(db: Session, user: User) -> AuthResponse:
     )
 
     return AuthResponse(
-        user=UserResponse(
-            user_id=user.user_id,
-            username=user.username,
-            email=user.email,
-            name=user.name,
-            avatar_url=user.profile_image_url
-        ),
+        user=user_response(user),
         workspace_count=workspace_count,
         last_workspace_id=last_workspace.workspace_id if last_workspace else None
     )
+
+@router.get("/username-availability", response_model=Envelope[UsernameAvailabilityResponse])
+def username_availability(username: str = Query(...), db: Session = Depends(get_db)):
+    # 규칙 밖의 값도 400 이 아니라 결과로 알려 준다. 가입 화면이 입력하는 동안 묻는다.
+    try:
+        username = validate_username(username)
+    except ValueError:
+        return success(UsernameAvailabilityResponse(available=False, reason="invalid").model_dump(mode="json"))
+    taken = db.scalar(select(User.user_id).where(User.username == username)) is not None
+    result = UsernameAvailabilityResponse(available=not taken, reason="taken" if taken else None)
+    return success(result.model_dump(mode="json"))
+
 
 @router.post("/signup/code", response_model=Envelope[SignupCodeResponse])
 def request_signup_code(payload: SignupCodeRequest, db: Session = Depends(get_db)):

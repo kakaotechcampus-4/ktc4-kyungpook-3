@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -24,6 +24,15 @@ class UserResponse(BaseModel):
     email: Optional[str] = None
     name: str
     avatar_url: Optional[str] = None
+
+class UsernameUpdateRequest(BaseModel):
+    username: UsernameStr
+
+
+class UsernameAvailabilityResponse(BaseModel):
+    available: bool
+    reason: Optional[Literal["taken", "invalid"]] = None
+
 
 class AuthResponse(BaseModel):
     user: UserResponse
