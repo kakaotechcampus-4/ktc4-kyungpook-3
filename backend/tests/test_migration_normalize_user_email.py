@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base
 from app.models import User
 from app.schemas.email import normalize_email
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 VERSIONS = Path(__file__).resolve().parents[1] / "migrations" / "versions"
@@ -57,7 +58,7 @@ def _insert(engine, *emails) -> list[str]:
         for i, email in enumerate(emails):
             user_id = f"user-{i}"
             conn.execute(
-                User.__table__.insert().values(user_id=user_id, email=email, name=f"n{i}")
+                User.__table__.insert().values(username=username_for(email), user_id=user_id, email=email, name=f"n{i}")
             )
             ids.append(user_id)
     return ids

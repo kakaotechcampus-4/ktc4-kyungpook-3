@@ -17,6 +17,7 @@ from app.services import kakao_oauth, oauth_state, signup_codes
 from app.services.kakao_oauth import KakaoIdentity, KakaoOAuthError
 from app.services.passwords import hash_password
 from tests.api.conftest import TEST_DATABASE_URL
+from tests.usernames import username_for
 
 START = "/api/v1/auth/kakao/start"
 CALLBACK = "/api/v1/auth/kakao/callback"
@@ -96,7 +97,7 @@ def _cookie(res, name):
 
 
 def _user(db, email=EMAIL, **kw):
-    user = User(email=email, name="기존", password_hash=hash_password(PW), provider="local", **kw)
+    user = User(username=username_for(email), email=email, name="기존", password_hash=hash_password(PW), provider="local", **kw)
     db.add(user)
     db.commit()
     return user
@@ -384,7 +385,7 @@ def test_pending_without_a_cookie_is_expired(mdb, client):
 
 
 def _signup_body(**body):
-    return {"name": "새사람", "password": PW, "link_kakao": True, **body}
+    return {"name": "새사람", "password": PW, "link_kakao": True, "username": "newperson", **body}
 
 
 def _proof(email):
@@ -440,7 +441,7 @@ def test_kakao_bound_elsewhere_in_the_gap_logs_into_that_account(mdb, client, ka
 
     def bound_first(email):
         with make() as other:
-            other.add(User(email="b@example.com", name="b", provider="kakao", provider_id="77"))
+            other.add(User(username=username_for("b@example.com"), email="b@example.com", name="b", provider="kakao", provider_id="77"))
             other.commit()
         return real(email)
 

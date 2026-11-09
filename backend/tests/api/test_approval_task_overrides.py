@@ -24,6 +24,7 @@ from app.models import (
     Workspace,
 )
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
@@ -75,7 +76,7 @@ def seed(db):
     db.add(ws)
     db.flush()
 
-    pm_user = User(email="pm@example.com", name="pm")
+    pm_user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     db.add(pm_user)
     db.flush()
     db.add(SessionModel(
@@ -878,7 +879,7 @@ def test_resolved_approval_with_bad_override_is_409_not_400(client, db, seed):
 
 @pytest.fixture
 def member_client(db, seed):
-    user = User(email="jimin@example.com", name="지민")
+    user = User(username=username_for("jimin@example.com"), email="jimin@example.com", name="지민")
     db.add(user)
     db.flush()
     db.add(SessionModel(

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.email import NormalizedEmail
 from app.schemas.name import NameStr
+from app.schemas.username import UsernameStr
 
 PASSWORD_RULE_MESSAGE = "비밀번호는 8자 이상이고 숫자를 하나 이상 포함해야 합니다."
 
@@ -19,7 +20,8 @@ def validate_password(value: str) -> str:
 
 class UserResponse(BaseModel):
     user_id: str
-    email: str
+    username: str
+    email: Optional[str] = None
     name: str
     avatar_url: Optional[str] = None
 
@@ -38,6 +40,7 @@ class SignupRequest(BaseModel):
     verification_token: Optional[str] = None
     password: str
     name: NameStr
+    username: UsernameStr
     link_kakao: bool = False
 
     @field_validator("password")

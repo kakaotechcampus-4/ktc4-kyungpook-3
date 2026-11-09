@@ -26,6 +26,7 @@ from app.models import (
     Workspace,
 )
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
@@ -72,7 +73,7 @@ def db(request):
 
 
 def _user(db, name: str, token: str) -> User:
-    user = User(email=f"{name}@example.com", name=name)
+    user = User(username=username_for(f"{name}@example.com"), email=f"{name}@example.com", name=name)
     db.add(user)
     db.flush()
     db.add(SessionModel(

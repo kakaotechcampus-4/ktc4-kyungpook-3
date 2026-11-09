@@ -12,6 +12,7 @@ from app.services import password_reset
 from app.services.passwords import hash_password
 from app.services.sessions import hash_session_token
 from tests.api.conftest import signup_verified
+from tests.usernames import username_for
 
 PW = "password123"
 
@@ -88,7 +89,7 @@ def test_password_reset_confirm_invalidates_all_sessions(mdb):
 
 
 def test_expired_session_is_401(mdb):
-    user = User(email="e@example.com", name="e", password_hash=hash_password(PW))
+    user = User(username=username_for("e@example.com"), email="e@example.com", name="e", password_hash=hash_password(PW))
     mdb.add(user)
     mdb.flush()
     mdb.add(SessionModel(

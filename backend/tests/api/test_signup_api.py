@@ -15,6 +15,7 @@ from app.services import kakao_oauth, mailer, oauth_state, signup_codes
 from app.services.kakao_oauth import KakaoIdentity
 from app.services.passwords import verify_password
 from tests.api.conftest import TEST_DATABASE_URL
+from tests.usernames import username_for
 
 EMAIL = "new@example.com"
 PW = "pw-123456"
@@ -45,7 +46,7 @@ def _set_pending(client, identity):
 
 
 def _signup(client, **body):
-    return client.post(SIGNUP, json={"name": "새사람", "password": PW, **body})
+    return client.post(SIGNUP, json={"name": "새사람", "password": PW, "username": "newperson", **body})
 
 
 def _users(db):
@@ -82,7 +83,7 @@ def test_full_flow_from_code_to_account(mdb, client, monkeypatch):
 
 
 def test_signup_without_a_code_is_refused(mdb, client):
-    res = client.post(SIGNUP, json={"email": EMAIL, "name": "x", "password": PW})
+    res = client.post(SIGNUP, json={"email": EMAIL, "name": "x", "password": PW, "username": "newperson"})
 
     assert _error(res) == (400, "SIGNUP_VERIFICATION_INVALID")
     assert _users(mdb) == []
@@ -113,7 +114,7 @@ def test_unusable_token_is_refused(mdb, client, make):
 
 
 def test_registered_email_is_409_even_in_another_case(mdb, client):
-    mdb.add(User(email="New@example.com", name="old", provider="local"))
+    mdb.add(User(username=username_for("New@example.com"), email="New@example.com", name="old", provider="local"))
     mdb.commit()
 
     assert _error(_signup(client, verification_token=_proof())) == (409, "EMAIL_ALREADY_EXISTS")
@@ -214,7 +215,7 @@ def test_success_clears_the_pending_cookie_on_its_own_path(mdb, client, link):
 
 
 def test_kakao_email_taken_since_the_cookie_was_set_is_409(mdb, client):
-    mdb.add(User(email="kim@example.com", name="old", provider="local"))
+    mdb.add(User(username=username_for("kim@example.com"), email="kim@example.com", name="old", provider="local"))
     mdb.commit()
     _set_pending(client, VERIFIED)
 
@@ -222,7 +223,7 @@ def test_kakao_email_taken_since_the_cookie_was_set_is_409(mdb, client):
 
 
 def test_kakao_id_bound_to_another_account_is_409(mdb, client):
-    mdb.add(User(email="first@example.com", name="old", provider="kakao", provider_id="77"))
+    mdb.add(User(username=username_for("first@example.com"), email="first@example.com", name="old", provider="kakao", provider_id="77"))
     mdb.commit()
     _set_pending(client, NO_EMAIL)
 
@@ -258,7 +259,7 @@ def _race(mdb, bodies, cookie=None):
         if cookie:
             client.cookies.set(kakao_oauth.PENDING_COOKIE, cookie)
         start.wait()
-        results[i] = client.post(SIGNUP, json={"name": "새사람", "password": PW, **body})
+        results[i] = client.post(SIGNUP, json={"name": "새사람", "password": PW, "username": f"racer{i}", **body})
 
     threads = [threading.Thread(target=run, args=(i, b)) for i, b in enumerate(bodies)]
     for t in threads:

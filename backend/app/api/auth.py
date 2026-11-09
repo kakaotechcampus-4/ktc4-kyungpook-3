@@ -72,6 +72,7 @@ def _build_auth_response(db: Session, user: User) -> AuthResponse:
     return AuthResponse(
         user=UserResponse(
             user_id=user.user_id,
+            username=user.username,
             email=user.email,
             name=user.name,
             avatar_url=user.profile_image_url
@@ -115,11 +116,13 @@ def _clear_pending(response: Response) -> None:
     )
 
 
-def _signup_conflict(db: Session, email: str, kakao: KakaoIdentity | None) -> ErrorCode | None:
+def _signup_conflict(db: Session, email: str, kakao: KakaoIdentity | None, username: str) -> ErrorCode | None:
     if db.scalars(_login_user_stmt(email)).first() is not None:
         return ErrorCode.EMAIL_ALREADY_EXISTS
     if kakao is not None and db.scalars(_kakao_user_stmt(kakao.provider_id)).first() is not None:
         return ErrorCode.KAKAO_ALREADY_LINKED
+    if db.scalar(select(User.user_id).where(User.username == username)) is not None:
+        return ErrorCode.USERNAME_TAKEN
     return None
 
 
@@ -135,12 +138,13 @@ def signup(payload: SignupRequest, request: Request, response: Response, db: Ses
         raise AppError(ErrorCode.SIGNUP_VERIFICATION_INVALID)
 
     lifecycle.identity_lock(db, email)
-    conflict = _signup_conflict(db, email, kakao)
+    conflict = _signup_conflict(db, email, kakao, payload.username)
     if conflict is not None:
         raise AppError(conflict)
 
     user = User(
         email=email,
+        username=payload.username,
         password_hash=hash_password(payload.password),
         name=payload.name,
         provider=kakao_oauth.PROVIDER if kakao else "local",
@@ -152,7 +156,7 @@ def signup(payload: SignupRequest, request: Request, response: Response, db: Ses
     except IntegrityError:
         # PostgreSQL 은 실패한 트랜잭션에서 다시 읽지 못하므로 되돌린 뒤 어느 쪽과 겹쳤는지 찾는다.
         db.rollback()
-        raise AppError(_signup_conflict(db, email, kakao) or ErrorCode.EMAIL_ALREADY_EXISTS) from None
+        raise AppError(_signup_conflict(db, email, kakao, payload.username) or ErrorCode.EMAIL_ALREADY_EXISTS) from None
     db.refresh(user)
 
     _create_session(db, user, response)

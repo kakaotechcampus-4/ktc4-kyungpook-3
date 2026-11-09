@@ -181,7 +181,9 @@ class User(Base):
     __table_args__ = (UniqueConstraint("provider", "provider_id", name="uq_user_provider_provider_id"),)
 
     user_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    # 카카오만으로 가입한 계정은 이메일이 없다(#610). NULL 끼리는 겹치지 않는다.
+    email: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)
+    username: Mapped[str] = mapped_column(String(20), unique=True, index=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     name: Mapped[str] = mapped_column(String(100))
     provider: Mapped[str] = mapped_column(String(20), default="local")
@@ -197,9 +199,14 @@ class User(Base):
     )
 
     @validates("email")
-    def _normalize_email(self, _key: str, value: str) -> str:
+    def _normalize_email(self, _key: str, value: str | None) -> str | None:
         # 요청 스키마를 거치지 않는 쓰기 경로도 같은 규칙으로 저장한다(#434). SQL 직접 실행과 update() 는 지나지 않는다.
-        return normalize_email(value)
+        return None if value is None else normalize_email(value)
+
+    @validates("username")
+    def _lower_username(self, _key: str, value: str) -> str:
+        # 대소문자만 다른 아이디가 unique 인덱스를 지나지 않게 저장 전에 소문자로 맞춘다.
+        return value.lower()
 
 
 class PasswordResetToken(Base):

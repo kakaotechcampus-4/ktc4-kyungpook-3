@@ -8,6 +8,7 @@ from app.main import app
 from app.models import User
 from app.schemas.invitation import InvitationCreateRequest
 from tests.api.conftest import signup_verified
+from tests.usernames import username_for
 
 PW = "password123"
 
@@ -73,7 +74,7 @@ def test_invitation_schema_still_normalizes():
 
 def test_user_model_normalizes_email_on_create(mdb):
     """요청 스키마를 거치지 않는 경로(#427 카카오 등)도 정규화된 값을 저장한다."""
-    user = User(email="  Kim@Example.COM ", name="김", provider="kakao")
+    user = User(username=username_for("  Kim@Example.COM "), email="  Kim@Example.COM ", name="김", provider="kakao")
     mdb.add(user)
     mdb.commit()
     mdb.refresh(user)
@@ -82,7 +83,7 @@ def test_user_model_normalizes_email_on_create(mdb):
 
 
 def test_user_model_normalizes_email_on_assignment(mdb):
-    user = User(email="kim@example.com", name="김")
+    user = User(username=username_for("kim@example.com"), email="kim@example.com", name="김")
     mdb.add(user)
     mdb.commit()
 
