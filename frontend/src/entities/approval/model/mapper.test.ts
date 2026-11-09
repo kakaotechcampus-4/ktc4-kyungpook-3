@@ -243,10 +243,10 @@ describe('task_update 의 범위 변경 (#205)', () => {
   })
 })
 
-it('알림·모르는 종류는 지원하지 않는 요청으로 읽는다. 모르는 상태는 스키마가 거절한다 (#348)', () => {
-  expect(toApproval({ ...approvalFixtures[0], type: 'reminder_dm' })).toMatchObject({
+it('모르는 종류는 지원하지 않는 요청으로 읽는다. 모르는 상태는 스키마가 거절한다 (#348)', () => {
+  expect(toApproval({ ...approvalFixtures[0], type: 'future_kind' })).toMatchObject({
     kind: 'unsupported',
-    type: 'reminder_dm',
+    type: 'future_kind',
   })
   expect(toApproval({ ...approvalFixtures[0], type: 'future' })).toMatchObject({
     kind: 'unsupported',

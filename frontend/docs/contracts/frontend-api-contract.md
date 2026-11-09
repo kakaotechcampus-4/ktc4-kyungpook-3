@@ -301,7 +301,7 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 
 | 항목 | 서버 동작 |
 |---|---|
-| 받는 때 | `status: "approved"` 일 때만. 반려와 같이 보내거나 `reminder_dm` 에 보내면 400 `INVALID_REQUEST` 이고 승인 상태도 바뀌지 않는다 |
+| 받는 때 | `status: "approved"` 일 때만. 반려와 같이 보내면 400 `INVALID_REQUEST` 이고 승인 상태도 바뀌지 않는다. 승인 종류는 `task_create`·`task_update` 둘이다(`reminder_dm` 은 #616 에서 지웠다) |
 | `task_create` 키 | `task_title`, `assignee_member_id`, `due_date`. 상태는 고를 수 없고 항상 `todo` |
 | `task_update` 키 | `status`, `due_date`. 담당자 줄이 있는 답장 카드(답장 판단의 변경 줄에 담당자가 있는 카드)는 `assignee_member_id` 도 받는다(`null` 이면 미정, #460). 상태·마감만 있는 답장 카드, 회의 추출 카드, 수동 생성 카드에 보내면 400 `INVALID_REQUEST` 다. 카드는 payload 가 아니라 답장 판단 기록으로 고른다 |
 | 키가 없을 때 | 그 필드는 제안 그대로 |
@@ -764,7 +764,6 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
   - 현재 BE 구현: 회의에서 만드는 `task_update` payload 에는 반영 키 말고도 표시용 `task_title`·`base_title`·`doc_text`·`category`(`schedule`·`assignee`·`status`·`scope`·`decision`·`none`)·`evidence_quote`·`evidence_speaker`·`evidence_speaker_member_id`·`evidence_at_ms`·`meeting_id` 가 온다. `category` 가 `scope`(범위 결정)면 바뀌는 필드가 없어도 승인 요청을 만든다([extractions.py](../../../backend/app/api/extractions.py)). 승인해도 반영 키가 없으면 태스크·이력에 아무것도 남지 않는다.
   - 합의됨, BE 미구현(#205): `category` 가 `scope` 인 승인을 승인하면 필드 반영과 별개로 `changed_field: "scope"` 이력 한 줄을 남긴다. 바뀌는 필드가 함께 있으면 필드 이력과 범위 이력을 둘 다 남긴다. 범위 이력만 남는 승인은 Task `version` 과 Notion 동기화를 건드리지 않는다. 반려하면 이력을 남기지 않는다. FE 가 먼저 배포된 뒤 BE 를 배포한다.
   - FE 구현(#205): 승인 매퍼가 `doc_text`·`category`·근거 발화·`meeting_id` 를 읽는다. 모르는 `category` 는 `null` 이다. 승인 상세는 `scope` 면 「범위 변경」 절에 `doc_text` 와 근거를 보이고, 바뀌는 필드가 있을 때만 변경 표를 보인다. 대시보드 확인 필요 목록과 보드 승인 카드는 `범위 변경을 확인해야 해요` 로 보인다. MSW 는 합의대로 승인 때 범위 이력을 남긴다(시나리오 `approval-scope`).
-- `reminder_dm` → 태스크에 반영하지 않는다. 발송은 Discord 봇의 책임이다
 
 **프론트엔드가 지킬 규칙**
 

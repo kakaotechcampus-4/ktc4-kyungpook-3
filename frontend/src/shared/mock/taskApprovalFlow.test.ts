@@ -669,7 +669,7 @@ describe('PR307 partial edits and history', () => {
     ['task_create', { title: '잘못된 키' }],
     ['task_update', { assignee_member_id: null }],
     ['task_update', { progress: 90 }],
-    ['reminder_dm', { due_date: null }],
+    ['future_kind', { due_date: null }],
     ['task_update', { status: null }],
   ])('rejects illegal %s edits atomically', async (type, edits) => {
     Object.assign(approval('ap_01'), {
