@@ -5,6 +5,7 @@
 한 세션의 롤백이 다른 세션의 트랜잭션에 영향을 주지 않게 한다.
 """
 import asyncio
+from contextlib import contextmanager
 import re
 import signal
 import threading
@@ -36,7 +37,29 @@ def sqlite_message_url(tmp_path):
 @pytest.fixture(autouse=True)
 def _socket_sessions(mdb, monkeypatch):
     # 소켓은 mdb 를 빌리지 않고 자기 세션을 연다. 운영의 SessionLocal 과 같다.
-    monkeypatch.setattr(message_socket, "SessionLocal", sessionmaker(bind=mdb.get_bind(), autoflush=False))
+    factory = sessionmaker(bind=mdb.get_bind(), autoflush=False)
+    finished = threading.Condition()
+    active = 0
+
+    @contextmanager
+    def socket_session():
+        nonlocal active
+        with finished:
+            active += 1
+        try:
+            with factory() as db:
+                yield db
+        finally:
+            with finished:
+                active -= 1
+                finished.notify_all()
+
+    monkeypatch.setattr(message_socket, "SessionLocal", socket_session)
+    yield
+    mdb.close()
+    # 취소된 소켓 task의 인증 SQL은 worker thread에서 끝난다. DB를 지우기 전에 세션 종료를 기다린다.
+    with finished:
+        assert finished.wait_for(lambda: active == 0, timeout=20), "소켓 인증 세션이 종료되지 않았다"
 
 
 @pytest.fixture(autouse=True)
