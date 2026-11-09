@@ -7,7 +7,9 @@ import { db } from '@/shared/mock/db'
 import { ok } from '@/shared/mock/envelope'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
+import { deferred } from '@/shared/test/deferred'
 import { recordRequests } from '@/shared/test/requests'
+import { expireSession } from './expireSession'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -148,5 +150,94 @@ describe('팀 화면', () => {
 
     await waitFor(() => expect(toastWith(UNCONFIRMED)).not.toBeNull())
     expect(row.queryByText(INVALID)).toBeNull()
+  })
+})
+
+it('저장한 채팅 채널의 이름이 비어 있어도 연동 응답을 거절하지 않고 이름 없는 채널로 보인다 (#634 리뷰)', async () => {
+  applyScenario('settings-unmapped')
+  db.integrations.ws_01.discord = {
+    status: 'connected',
+    display_name: 'Discord 연결됨',
+    connected_at: '2026-09-01T00:00:00Z',
+    chat_channel: { channel_id: 'ch_77', name: null },
+  }
+  renderApp(paths.settings('ws_01'))
+  const area = within(await screen.findByTestId('discord-connection', {}, { timeout: 5_000 }))
+  expect(await area.findByText('이름 없는 채널(ch_77)')).toBeInTheDocument()
+  expect(screen.queryByText(INVALID)).toBeNull()
+})
+
+describe('워크스페이스 만들기 응답을 읽지 못함 (#634 리뷰)', () => {
+  const POST_WORKSPACES = (requests: { method: string; path: string }[]) =>
+    requests.filter(({ method, path }) => method === 'POST' && path === '/workspaces').length
+
+  async function submitCreate(name: string) {
+    const app = renderApp('/onboarding/create_workspace')
+    await screen.findByRole('heading', { name: '워크스페이스 만들기' }, { timeout: 5_000 })
+    await userEvent.type(screen.getByLabelText('팀 이름'), name)
+    await userEvent.click(screen.getByRole('button', { name: '만들기' }))
+    return app
+  }
+
+  it('서버가 만들었으면 다시 받은 목록에서 그 공간을 찾아 다음 단계로 이어 가고 다시 만들지 않는다', async () => {
+    // 실제 handler 가 만들게 두고 응답만 깨뜨린다. 안쪽 요청은 원래 handler 로 넘어간다
+    let inner = false
+    server.use(
+      http.post('/api/v1/workspaces', async ({ request }) => {
+        if (inner) return undefined
+        inner = true
+        const real = await fetch(request.url, {
+          method: 'POST',
+          headers: request.headers,
+          body: await request.text(),
+        })
+        inner = false
+        const { data } = (await real.json()) as { data: Record<string, unknown> }
+        return ok({ ...data, created_at: 123 }, { status: 201 })
+      }),
+    )
+    const app = await submitCreate('복구 팀')
+
+    expect(
+      await screen.findByRole('heading', { name: 'Discord 연결' }, { timeout: 5_000 }),
+    ).toBeInTheDocument()
+    const created = db.workspaces.find(({ name }) => name === '복구 팀')
+    await app.expectPath(`/onboarding/${created?.workspace_id}/connect_discord`)
+    expect(toastWith(UNCONFIRMED)).toBeNull()
+    // 기록에는 이 테스트가 넘긴 안쪽 요청도 들어간다. 서버에 그 이름의 공간이 하나뿐인지로 다시 만들지 않았음을 본다
+    expect(db.workspaces.filter(({ name }) => name === '복구 팀')).toHaveLength(1)
+  })
+
+  it('그 공간을 하나로 찾지 못하면 다시 만들지 않고 결과를 확인하지 못했다고 알린 뒤 공간 선택으로 보낸다', async () => {
+    server.use(
+      http.post('/api/v1/workspaces', () => ok({ workspace_id: 'ws_99' }, { status: 201 })),
+    )
+    const log = recordRequests()
+    const app = await submitCreate('없는 팀')
+
+    await waitFor(() => expect(toastWith(UNCONFIRMED)).not.toBeNull())
+    await app.expectPath('/workspaces')
+    expect(POST_WORKSPACES(log.started)).toBe(1)
+  })
+
+  it('만드는 사이 세션이 끝나면 늦은 응답이 결과 확인 알림을 다시 띄우지 않는다 (#594 규칙)', async () => {
+    const gate = deferred()
+    server.use(
+      http.post('/api/v1/workspaces', async () => {
+        await gate.promise
+        return ok({ workspace_id: 'ws_99' }, { status: 201 })
+      }),
+    )
+    const app = await submitCreate('늦은 팀')
+    // 만들기 POST 가 나간 뒤다
+    await waitFor(() => expect(screen.getByRole('button', { name: '만들기' })).toBeDisabled())
+
+    act(() => {
+      expireSession(app.queryClient)
+    })
+    gate.resolve()
+    await screen.findByRole('heading', { name: '로그인' }, { timeout: 5_000 })
+    await act(() => new Promise((resolve) => setTimeout(resolve, 300)))
+    expect(toastWith(UNCONFIRMED)).toBeNull()
   })
 })

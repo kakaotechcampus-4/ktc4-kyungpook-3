@@ -36,12 +36,15 @@ export function workspaceDetailQueryOptions(workspaceId: string) {
 }
 
 /** 201. 생성자가 PM 팀원으로 함께 저장된다. 같은 계정 안의 같은 이름은 409 `WORKSPACE_NAME_DUPLICATED` */
-export async function createWorkspace(input: CreateWorkspaceInput): Promise<Workspace> {
+export async function createWorkspace(
+  input: CreateWorkspaceInput,
+  signal?: AbortSignal,
+): Promise<Workspace> {
   const body: WorkspaceCreateDto = { name: input.name }
   return toWorkspace(
     parseResponse(
       workspaceSchema,
-      await request<unknown>('/workspaces', { method: 'POST', body }),
+      await request<unknown>('/workspaces', { method: 'POST', body, signal }),
       'workspace',
     ),
   )

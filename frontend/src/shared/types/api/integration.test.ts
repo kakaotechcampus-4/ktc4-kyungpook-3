@@ -30,6 +30,11 @@ describe('연동 스키마', () => {
     expect(integrationsSchema.safeParse({ ...valid, ...patch }).success).toBe(false)
   })
 
+  it('저장한 채팅 채널의 이름이 없어도 읽는다. 이름 칸은 서버에서 nullable 이다 (#634 리뷰)', () => {
+    const discord = { ...valid.discord, chat_channel: { channel_id: 'ch_77', name: null } }
+    expect(integrationsSchema.safeParse({ ...valid, discord }).success).toBe(true)
+  })
+
   it('끔 안내 여부가 불리언이 아니면 읽지 않는다', () => {
     expect(chatChannelClearSchema.safeParse({ off_notice_sent: 'yes' }).success).toBe(false)
   })

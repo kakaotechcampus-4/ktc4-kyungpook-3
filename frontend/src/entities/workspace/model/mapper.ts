@@ -5,7 +5,9 @@ import type { OnboardingProgress, Workspace, WorkspaceSummary } from './types'
 
 /** 모르는 역할은 팀원으로 내린다(보수 폴백). null 은 서버가 허용하는 값이라(팀원 행이 없을 때) 경고하지 않는다 */
 function toRole(value: string | null): Role {
-  return value === null ? 'member' : fallbackValue(value, ['pm', 'member'], 'member', 'workspace role')
+  return value === null
+    ? 'member'
+    : fallbackValue(value, ['pm', 'member'], 'member', 'workspace role')
 }
 
 export function toWorkspaceSummary(dto: WorkspaceDto): WorkspaceSummary {

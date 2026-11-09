@@ -350,6 +350,17 @@ Codex·Grok 독립 리뷰의 중간 2 건, 낮음 1 건을 고쳤다.
 - 초기 chunk(`index.html` 의 script·modulepreload·CSS, `b6d72a8c` 와 같은 방식): 원본 978,974 → 980,048 B(+1,074 B, +0.11%), gzip 306,459 → 306,420 B(−39 B). 늘어난 곳은 workspace chunk +278 B, user chunk +427 B, 가장 큰 공용 chunk(`url`) +574 B, `index` +692 B 다. 파일 37 → 34 개는 `enum`·`parseResponse`·`unknownValue` 의 작은 chunk(합 660 B)가 다른 chunk 로 합쳐진 것이고, 그래서 approval·meeting·notification·task chunk 는 40~79 B 줄었다.
 - 브라우저 확인은 하지 않았다. 정상 응답의 사용자 경로는 그대로이고, 잘못된 응답 화면은 RTL 이 MSW 로 본다.
 
+### 리뷰 반영 (2026-11-10)
+
+Codex·Grok 독립 리뷰(PR #634)의 중간 2 건, 낮음 1 건과 CI `format:check` 실패를 고쳤다. origin/develop(#623·#617 병합 뒤)은 리뷰 전에 merge 했다.
+
+- **워크스페이스 만들기의 확인 불가 경로가 세션을 보지 않았다(중간, 둘 다, Codex 재현).** 세션이 끝난 뒤 늦은 생성 응답이 비운 토스트를 다시 띄웠다. 이제 누를 때 세션 범위를 잡고 `createWorkspace` 에 `signal` 을 달며, 알림·목록 캐시·이동은 그 세션일 때만 한다(#594 규칙). 진행 저장 실패는 전처럼 폼의 실패와 `다시 시도` 다.
+- **확인 불가 뒤 새로고침으로 공간이 보여도 폼은 생성 전 상태였다(중간, Codex 재현).** 다시 만들기는 이름 겹침에 막혔다. 이제 만들기 응답을 읽지 못하면 공간 목록을 다시 받아(`fetchFreshWorkspaces`), 보내기 전에 없던 같은 이름의 내가 PM 인 공간이 하나면 그 공간으로 생성 단계를 저장하고 다음 단계로 잇는다(`findCreatedWorkspace`, 업로드 복구 `findAcceptedUpload` 와 같은 꼴). 하나로 정하지 못하면 토스트와 함께 공간 선택으로 보낸다. 만들기 POST 는 다시 보내지 않는다. D-184 「복구 경로가 있는 쓰기」로 옮겼다.
+- **저장한 채팅 채널 이름이 null 이면 연동 응답 전체를 거절했다(낮음, Grok).** BE `chat_channel_name` 은 nullable 이다. `name` 을 null 로 받고 화면은 `이름 없는 채널(ID)` 로 보인다(`chatChannelLabel`).
+- **CI `format:check`.** prettier 를 적용하지 않은 파일 열을 고쳤다(`appShell`·`meetingMinutesRaces`·`meetingProcessing`·`processingToast` 테스트, `signupCode.ts`, 워크스페이스 mapper, 모의 워크스페이스 픽스처·연동 handler, `invitation.ts`). 로컬 `.verify/`(git 제외)를 뺀 `prettier --check` 가 통과한다.
+- 새 테스트: `app/workspaceInvalidResponse.test.tsx` 에 이름 없는 채팅 채널, 만들기 응답을 읽지 못했을 때 그 공간으로 잇기(서버에 그 이름의 공간이 하나), 찾지 못하면 토스트·공간 선택, 만드는 사이 세션이 끝나면 알림 없음. `shared/types/api/integration.test.ts` 에 null 이름 허용. `features/onboarding/model/createdWorkspace.test.ts`(모호한 다섯 경우). 화면 넷과 스키마 하나는 고치기 전 코드(`e9e31e3d`)로 먼저 실패를 봤다.
+- 검사: typecheck(직접 0 건)·lint·build 통과, `.verify/` 를 뺀 `prettier --check` 통과, 바꾼 곳 80 파일·1,265 건 통과. 전체 테스트는 CI 로 대신한다(t15 지시).
+
 ## 남은 일
 
 - 이 이슈의 entity 묶음은 PR 5 로 끝난다. PR 5 가 `Closes #348` 이다.
