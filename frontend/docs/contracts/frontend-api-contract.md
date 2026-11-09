@@ -2344,7 +2344,7 @@ FE 연결 (#340, 2026-11-05).
 | `POST /invitations/{invitation_id}/accept` | 받는 사람 | 수락. `{workspace_id, member_id}` 를 돌려준다 |
 | `POST /invitations/{invitation_id}/decline` | 받는 사람 | 거절. `{invitation_id, status: "declined"}` |
 
-- 검색은 아이디가 대소문자와 앞뒤 공백만 빼고 같아야 찾는다. 앞부분이나 이름으로는 찾지 않는다. 결과는 0명 또는 1명이고 이메일은 없다. 이 워크스페이스의 활성 팀원은 빠진다. 아이디 규칙(영문·숫자 4~20자)에 맞지 않는 `q` 는 오류 대신 빈 목록이다. PM 이 아니면 403 `FORBIDDEN` 이다. 이름을 보여 맞는 사람인지 확인하게 한다.
+- 검색은 아이디가 대소문자와 앞뒤 공백만 빼고 같아야 찾는다. 앞부분이나 이름으로는 찾지 않는다. 결과는 0명 또는 1명이고 이메일은 없다. 이 워크스페이스의 활성 팀원은 빠진다. 아이디 규칙(영문·숫자 4 ~ 20자)에 맞지 않는 `q` 는 오류 대신 빈 목록이다. PM 이 아니면 403 `FORBIDDEN` 이다. 이름을 보여 맞는 사람인지 확인하게 한다.
 - PM 쪽 응답(만들기·목록 한 줄·취소·연결 끊기)은 `{invitation_id, member_id, member_display_name, invited_user, status, invited_by_name, accepted_user, created_at, responded_at}` 이다.
   - `invited_user` 는 초대받은 계정 `{user_id, username, name}` 이다. 이메일은 없다.
   - `accepted_user` 는 수락한 계정 `{user_id, name, email}` 이고 수락 전에는 null 이다. 연결을 끊은 뒤에도 남아 누가 들어왔었는지 보인다. PM 은 이 이름·이메일을 보고 엉뚱한 계정이면 연결을 끊는다.
