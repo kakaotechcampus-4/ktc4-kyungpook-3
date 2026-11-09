@@ -48,6 +48,7 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
   DISCORD_USER_ALREADY_MAPPED: '이미 다른 팀원과 연결된 Discord 계정이에요.',
   MEETING_FAILED: '실패한 회의예요. 새 회의로 다시 시작해 주세요.',
   APPROVAL_CONFLICT: '제안 뒤에 태스크가 바뀌었어요. 지금 값을 확인한 뒤 다시 승인해 주세요.',
+  APPROVAL_CHANGED: '보신 뒤에 확인 요청 내용이 바뀌었어요. 새 내용을 확인하고 다시 처리해 주세요.',
   LAST_PM_REQUIRED:
     '워크스페이스에 PM이 한 명은 있어야 해요. 다른 팀원을 먼저 PM으로 지정해 주세요.',
   EMBEDDING_UNAVAILABLE: '비슷한 태스크를 찾지 못했어요. 잠시 후 다시 시도해 주세요.',

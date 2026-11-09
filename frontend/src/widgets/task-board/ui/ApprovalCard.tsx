@@ -3,6 +3,7 @@ import {
   APPROVAL_RESOLUTION_REASONS,
   aliasToLearn,
   isScopeChange,
+  mergedCount,
   planApprovalResolution,
   validateTaskCreateFields,
   taskCreateValues,
@@ -156,6 +157,7 @@ function TaskCreateCard({
   const atClock = evidenceMoment(meeting, approval.evidence.atMs)
   const hint = hold && !filling ? '내용을 확인하고 미정인 채로도 승인할 수 있어요' : blockedReason
   const problem = resolver.problem
+  const merged = mergedCount(approval)
 
   return (
     <Card
@@ -196,7 +198,14 @@ function TaskCreateCard({
         )}
       </div>
 
-      <p className={REASON}>{reasonLine(approval)}</p>
+      <p className={REASON}>
+        {reasonLine(approval)}
+        {merged === null ? null : (
+          <span className={`${SUB_NOTE} ml-8 tabular-nums`}>
+            회의 {merged.meetings}곳 · 항목 {merged.items}개 합침
+          </span>
+        )}
+      </p>
 
       {filling ? (
         <ApprovalFields
@@ -243,10 +252,10 @@ function TaskCreateCard({
         ) : (
           <p className={QUOTE}>“{approval.evidence.quote}”</p>
         )}
-        <p className={SUB_NOTE}>
-          원문 담당자 {approval.assigneeRaw ?? '없음'} · 원문 마감 {approval.dueRaw ?? '없음'}
-        </p>
+        {merged === null ? <RawLine approval={approval} /> : null}
       </div>
+      {/* 합친 카드의 원문은 담당자·마감을 정한 다른 회의의 것이라 대표 인용 칸 밖에 둔다 (#512) */}
+      {merged === null ? null : <RawLine approval={approval} />}
 
       <CardFooter
         approval={approval}
@@ -259,7 +268,7 @@ function TaskCreateCard({
           resolver.approve(approval, { kind: 'task_create', values: edits, saveAlias })
         }
       />
-      {problem?.kind === 'error' ? (
+      {problem?.kind === 'error' || problem?.kind === 'changed' ? (
         <FormErrorPanel message={problem.message} />
       ) : problem?.kind === 'already_resolved' ? (
         <p role="status" className={SUB_NOTE}>
@@ -267,6 +276,15 @@ function TaskCreateCard({
         </p>
       ) : null}
     </Card>
+  )
+}
+
+function RawLine({ approval }: { approval: TaskCreateApproval }) {
+  return (
+    <p className={SUB_NOTE}>
+      {approval.mergedItems.length === 0 ? null : '합친 제안의 '}
+      원문 담당자 {approval.assigneeRaw ?? '없음'} · 원문 마감 {approval.dueRaw ?? '없음'}
+    </p>
   )
 }
 

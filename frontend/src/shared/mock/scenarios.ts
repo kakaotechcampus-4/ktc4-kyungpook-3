@@ -27,6 +27,8 @@ import {
 } from './passwordResetScenarios'
 import { SPEAKER_SCENARIOS, createSpeakerScenarioDb, isSpeakerScenario } from './speakerScenarios'
 import { blockBySilence, createTask } from './task-state'
+import type { MockExtractionItem } from './aliasLearning'
+import { mergeIntoApproval } from './approvalMerge'
 
 /*
  * 브라우저·E2E 용 시작 상태. 모두 픽스처 계정 pm@example.com / mock-password 로 로그인한다.
@@ -68,6 +70,10 @@ export const MOCK_SCENARIOS = [
   'approval-scope',
   // #397 채팅 회의(mt_08)에서 나온 생성 승인 ap_07. 근거 시각이 실제 작성 시각이다
   'approval-chat',
+  // #512 ap_03(배포 문서 보완)에 2주차 정기회의(mt_07)의 항목 it_21 이 합쳐져 담당자·마감이 바뀌었다
+  'approval-merged',
+  // #512 같은 합치기가 PM 이 카드를 연 뒤에 일어난다. 첫 승인·반려가 409 APPROVAL_CHANGED 다
+  'approval-merged-after-view',
   // #419 회의록 mt_09 의 수정 제안 it_08(tk_04 마감 변경). 승인 전에도 task_id 가 tk_04 다
   'minutes-edit-pending',
   'notion-sync-pending',
@@ -327,6 +333,45 @@ function resolvedCreateApproval(state: MockDb): void {
     .flatMap(({ items }) => items)
     .find(({ item_id }) => item_id === approval.payload.extraction_item_id)
   if (item) item.task_id = task.task_id
+}
+
+/**
+ * 2주차 정기회의(mt_07) 항목 it_21. 같은 일(배포 문서)을 이재환에게 26일까지 맡긴다. ap_03 에 합쳐지면
+ * 담당자를 정한 항목(`assignee_item_id`)이 된다. `afterView` 면 합치지 않고 처리 요청 직전에 합쳐지게 둔다
+ */
+function mergeIntoDeployDoc(state: MockDb, afterView: boolean): void {
+  const item: MockExtractionItem = {
+    item_id: 'it_21',
+    task: { title: '배포 문서 마무리', confidence: 0.9 },
+    assignee: {
+      raw: '재환',
+      member_id: 'mb_03',
+      display_name: '이재환',
+      confidence: 0.9,
+      needs_check: false,
+    },
+    due_date: { value: '2026-09-26', raw: '26일', confidence: 0.9 },
+    confidence: 0.85,
+    gate: 'review',
+    evidence: {
+      quote: '배포 문서는 재환님이 26일까지 마무리해 주세요.',
+      speaker: '1123',
+      speaker_member_id: 'mb_01',
+      at_ms: 1_250_000,
+    },
+    reverted_at: null,
+    task_id: null,
+    approval_id: null,
+    approval_status: null,
+    alias_candidate: false,
+    alias_text: null,
+  }
+  const extraction = state.extractions.find(({ meeting_id }) => meeting_id === 'mt_07')
+  if (!extraction) throw new Error('mock extraction for mt_07 is missing')
+  extraction.items.push(item)
+  const facts = { category: 'assignee', status: null, docText: null }
+  if (afterView) item.merge_into = { approval_id: 'ap_03', ...facts }
+  else mergeIntoApproval(approvalOf(state, 'ap_03'), 'mt_07', item, facts, '2026-09-17T03:00:00Z')
 }
 
 function conflictingUpdateApproval(state: MockDb): void {
@@ -720,6 +765,11 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'approval-chat':
       signInWith(state, ['ws_01'], 'ws_01')
       addChatApproval(state)
+      break
+    case 'approval-merged':
+    case 'approval-merged-after-view':
+      signInWith(state, ['ws_01'], 'ws_01')
+      mergeIntoDeployDoc(state, scenario === 'approval-merged-after-view')
       break
     case 'minutes-edit-pending':
       signInWith(state, ['ws_01'], 'ws_01')

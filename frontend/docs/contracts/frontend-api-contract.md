@@ -371,6 +371,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 - `WORKSPACE_MISMATCH` 는 **400** 이다. 이전 판이 409 로 적은 것은 오류였다.
 - 비밀번호 재설정(BE PR #398, 2026-11-06 병합)이 `PASSWORD_RESET_TOKEN_INVALID(400)`·`MAIL_UNAVAILABLE(503)` 을 더했다. 위 31개에는 넣지 않았고 쓰임새는 §4.1.1 에 있다. 프론트 [오류 코드 목록](../../src/shared/api/errors.ts)과 [문구](../../src/shared/api/errorMessages.ts)에도 있다.
 - 회의 채팅 채널(#428)이 `DISCORD_CHANNEL_NOT_FOUND(404)`·`DISCORD_CHANNEL_NOT_ACCESSIBLE(409)` 를 더했다. 위 목록의 개수는 이 절을 처음 쓴 때 기준이며 전체 목록은 `core/errors.py` 가 원천이다 → §4.3.1.
+- 본 뒤 바뀐 승인 카드 `APPROVAL_CHANGED(409)` 는 BE #547 이 더했다 → §2.5.
 - 로그인 시도 제한(BE PR #456, 2026-11-07 병합)이 `TOO_MANY_LOGIN_ATTEMPTS(429)` 를 더했다. 위 목록에는 넣지 않았고 쓰임새는 §4.1.3 에 있다.
 - 아래 3개는 **정의만 되고 아직 아무도 던지지 않는다.** 화면은 처리 경로를 갖되 실제로 오는지는 기대하지 않는다 → §4.0.
   `ONBOARDING_INCOMPLETE` · `INTEGRATION_REVOKED` · `AUDIO_TOO_LARGE`
@@ -593,6 +594,7 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 - **2026-11-06 코드 대조(#419):** 수정 항목(`action: update`)은 생성 시점부터 `task_id` 가 수정 대상 태스크이고, 바꿀 값이 있으면 `TASK_UPDATE` 승인의 `approval_id` 도 함께 있다. 승인 전에도 `task_id` 가 있으므로 `task_id` 만으로는 반영 여부를 알 수 없다. 서버 스키마 설명은 "반영 여부는 `approval_status` 로 본다" 이다([BE 스키마](../../../backend/app/schemas/meeting.py)의 `ExtractionItemResponse.task_id`).
   화면은 `task_id` 가 있고, `approval_id` 가 없거나 `approval_status` 가 `approved` 일 때만 `반영됨` 으로 다룬다. `approval_id` 가 있는데 `approval_status` 가 `null`(모르는 값)이면 반영으로 보지 않는다. 구현: [extractionView.ts](../../src/entities/extraction/lib/extractionView.ts). MSW 기준 검증, 실서버 미검증.
 - **2026-11-05 코드 대조(#256 A1):** `evidence` 에 `speaker_member_id: string | null` 이 더 온다([BE 스키마](../../../backend/app/schemas/meeting.py)의 `EvidenceInfo`). 업로드 회의는 Discord uid(`speaker`)가 `null` 이고 이 값만 온다. FE 는 근거 화자 이름을 이 팀원 ID 로 먼저 찾고, 없거나 팀원 목록에 없으면 `speaker` uid 로 찾는다. 둘 다 못 찾으면 `알 수 없음` 이다. 구현: [speakerName.ts](../../src/entities/member/lib/speakerName.ts). MSW 기준 검증, 실서버 미검증.
+- **2026-11-08 코드 대조(#512·#533):** 다른 회의의 항목이 대기 중인 생성 카드에 합쳐지면 그 항목의 `approval_id` 는 합친 카드다. 한 승인에 여러 회의의 항목이 이어질 수 있다. 회의록은 항목 자신의 제목·마감·gate·근거를 그대로 쓰고 같은 `approval_id` 로 승인 상세에 잇는다. 이 응답에는 `payload_version` 이 없다 → §2.5 「합쳐진 카드와 본 뒤 바뀐 카드」.
 - **2026-10-17 코드 대조:** 항목에 `reverted_at`·`approval_status` 가 더 온다. auto 항목을 되돌리면 `gate` 는 `auto` 그대로, `task_id` 는 `null`, `approval_id` 는 새 생성 승인이다 — 생성 시점 배타성의 예외다. 되돌리기는 `POST /extractions/{extraction_id}/items/{item_id}/revert` 다 (위 「M7 대시보드·항목 되돌리기 경계」).
 
 ### 2.5 approvals — `확인 필요` 의 데이터 출처
@@ -666,7 +668,7 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 
 BE #464 가 병합·배포한 인터페이스다(메인 이슈 #459). 「현재 서버 구현」은 [approval 스키마](../../../backend/app/schemas/approval.py)의 `ApprovalResponse`·`ApprovalResolveRequest`, [meeting 스키마](../../../backend/app/schemas/meeting.py)의 `ExtractionItemResponse`, [alias_learning.py](../../../backend/app/services/alias_learning.py)의 정적 확인이다. 실 API 호출은 하지 않았다(미검증).
 
-**합의 상태.** 필드 이름·위치(`alias_candidate`·`alias_text`·`save_alias`)는 #523 FE 답(2026-11-08)에서 그대로 받기로 했다. BE 수정은 없다. #512(카드 합치기)가 배포되면 한 카드에 추출 항목이 여럿 붙을 수 있다. 그때 두 필드가 어느 항목 기준인지는 BE 가 #512 로 다시 알리기로 했다(합의 대기).
+**합의 상태.** 필드 이름·위치(`alias_candidate`·`alias_text`·`save_alias`)는 #523 FE 답(2026-11-08)에서 그대로 받기로 했다. BE 수정은 없다. #512(카드 합치기)가 배포되면 한 카드에 추출 항목이 여럿 붙을 수 있다. 그때 두 필드가 어느 항목 기준인지는 BE 가 #512 로 다시 알리기로 했다(합의 대기). 2026-11-08 BE 스키마 설명은 담당자를 정한 항목(`assignee_item_id`, 없으면 `extraction_item_id`)에만 후보가 나온다고 적는다 → 아래 「합쳐진 카드와 본 뒤 바뀐 카드」.
 
 | 항목 | 서버 코드에서 확인한 사실 |
 |---|---|
@@ -687,6 +689,42 @@ BE #464 가 병합·배포한 인터페이스다(메인 이슈 #459). 「현재 
 | 화면 | 승인 상세와 태스크 목록의 생성 승인 카드에서 담당자 고르기 바로 아래 체크박스 「'{alias_text}'을(를) {담당자 이름}의 별칭에도 등록」. 기본 켜짐. 같은 판정에 담당자 이름을 아는지를 더해 보인다. 담당자 고르기 선택지는 팀원 이름과 미정뿐이다 | [AliasSaveField](../../src/features/approval-resolve/ui/AliasSaveField.tsx) |
 | 캐시 | 승인 처리 뒤 별칭 목록(`['workspace', id, 'member-aliases']`)도 다시 받는다 | [useApprovalResolve](../../src/features/approval-resolve/model/useApprovalResolve.ts) |
 | MSW | 후보를 저장하지 않고 응답마다 BE 규칙으로 구한다. 모의 추출 항목에 담당자 표현 유형(`assignee_type`, 응답에는 싣지 않음)과 원문을 두고, 대기 중인 생성 승인이며 담당자를 못 찾은 이름 지목(`thirdname`)이면 끝 조사·님을 뗀 글자가 후보다. 1인칭이거나 공간의 누가 그 글자를 별칭으로 가지면 아니다. 막던 별칭을 지우면 다시 후보가 된다. `save_alias: true` 로 담당자를 골라 승인하면 `learned` 별칭을 최종 담당자에게 더한다. 불리언이 아니면 400 `INVALID_REQUEST`. 찾기 후보(님·조사를 뗀 여러 꼴)로 막는 것과 탈퇴한 팀원은 흉내 내지 않고 같은 글자만 본다 | [aliasLearning](../../src/shared/mock/aliasLearning.ts), [승인 handler](../../src/shared/mock/handlers/approval.ts) |
+
+#### 합쳐진 카드와 본 뒤 바뀐 카드 (2026-11-08 코드 대조, #512·#533·#547)
+
+근거는 [#512](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/512) 의 BE 답(2026-11-08)과 FE 확정 댓글(2026-11-08)이다. 「서버 코드에서 확인한 사실」은 develop `fad77196` 의 [approval 스키마](../../../backend/app/schemas/approval.py), [approvals.py](../../../backend/app/api/approvals.py) `resolve_approval`·`_payload_version`, [pending_merge.py](../../../backend/app/services/pending_merge.py) 의 정적 확인이다. 실 API 호출은 하지 않았다(미검증). BE 답에 따르면 실제 합치기는 AI 가 켠 뒤부터 일어난다.
+
+**합의된 규약.**
+
+- 1번(본 뒤 바뀐 카드): PM 이 본 카드의 `payload_version` 을 `PATCH` 에 싣고, 서버가 처리할 때 비교해 다르면 409 `APPROVAL_CHANGED` 로 막는다. FE 는 상세를 다시 받아 바뀐 칸을 보이고, PM 이 고친 값을 보존한 채 다시 처리하게 한다 (BE 답·FE 확정).
+- 2번: 목록 카드에 합쳐진 회의·항목 수를 간단히 보이고, 상세에서 `merged_items` 의 근거를 펼쳐 본다. 카드를 만든 회의의 대표 근거와 뒤에 합쳐진 근거를 나누고, 담당자 근거는 `assignee_item_id` 로 표시한다. 반려하면 합쳐진 항목이 모두 반려된다는 안내를 둔다 (FE 확정).
+- 3번: 합쳐져도 목록의 자리를 유지한다. 위치 이동 대신 병합 표시로 알린다 (FE 확정).
+- 4번: 회의록 항목은 그 항목 자신의 제목·마감·gate·근거, 승인 상세는 합친 뒤의 값이다. 같은 `approval_id` 로 잇는다 (FE 확정).
+- `save_alias` 는 이 검사로 PM 이 본 글자만 저장되므로 `alias_text` 를 따로 보내지 않는다(#535 는 #547 로 닫힘).
+- 보내지 않으면 지금과 같다. FE 반영이 배포되면 필수로 바꿀지는 BE 가 따로 본다(합의 대기).
+
+| 항목 | 서버 코드에서 확인한 사실 |
+|---|---|
+| 응답 `payload_version` | `GET /approvals`, `GET /approvals/{id}`, `POST /approvals`, `PATCH /approvals/{id}` 응답의 각 승인 최상위. `task_create` 만 저장된 payload 문자열의 sha256 앞 16자 hex, 그 밖은 `null`. 화면은 같은지만 비교하고 형식에 기대지 않는다 |
+| 요청 `payload_version` | `PATCH` 본문의 선택 필드, 1~64자. 빈 문자열은 400 이고 값이 없으면 키를 뺀다. `task_create` 에서만 비교한다 |
+| 409 `APPROVAL_CHANGED` | 처리 시점 값과 다르면 승인·반려 모두 되돌린다. `details = {approval_id, payload_version(지금 값)}`, 메시지 「보신 뒤 승인 요청 내용이 바뀌었습니다. 새 내용을 확인한 뒤 다시 처리해 주세요.」 카드는 대기로 남고 태스크·별칭은 생기지 않는다. 어느 칸이 바뀌었는지는 주지 않는다 |
+| 검사 순서 | 없는 승인 404 → PM 403 → 이미 처리됨 409 `APPROVAL_ALREADY_RESOLVED` → `task_overrides` 검증 400 → 조건부 UPDATE 뒤 최신 payload 로 비교해 409 `APPROVAL_CHANGED` → 반영(`task_update` 충돌은 409 `APPROVAL_CONFLICT`) |
+| 추출 조회 | `GET /extractions/{id}` 에는 `payload_version` 이 없다. 회의록에서 처리하려면 승인 상세에서 받는다 |
+| 합친 payload | 대기 중인 `task_create` 카드에 다른 회의의 항목을 합치면 제목·대표 근거(`evidence_*`)·`meeting_id`·`extraction_item_id`·`category` 는 그대로다. 마감은 새 값이 있을 때만, 상태는 값이 있을 때만 덮는다. 담당자는 그 항목이 담당자를 말한 항목(`category=assignee`)일 때만 바꾸고 `assignee_item_id` 를 그 항목으로 둔다. `doc_text` 는 ` / ` 로 잇는다. `merged_items[]` 에 `extraction_item_id`·`meeting_id`·`evidence_quote`·`evidence_speaker`·`evidence_speaker_member_id`·`evidence_at_ms`·`doc_text`·`merged_at` 을 합친 차례대로 더한다 |
+| 합친 항목의 연결 | 합쳐진 추출 항목의 `approval_id` 는 그 카드다([extractions.py](../../../backend/app/api/extractions.py)). 승인하면 같은 태스크로 이어지고 반려하면 함께 반려된다 |
+| 별칭 후보 | 합친 카드의 `alias_candidate` 는 담당자를 정한 항목(`assignee_item_id`, 없으면 `extraction_item_id`)에서만 구한다 |
+
+**현재 프론트 구현 (#512).** MSW 기준으로 검증했고 실서버는 미검증이다.
+
+| 항목 | 구현 | 코드 근거 |
+|---|---|---|
+| DTO | 승인 DTO 에 `payload_version?: string \| null`(#547 이전 서버는 없다), 요청 DTO 에 `payload_version?`, 409 details DTO | [승인 DTO](../../src/shared/types/api/approval.ts) |
+| 모델 | 생성 승인에 `payloadVersion`, `mergedItems[]`(회의·근거·`docText`·`mergedAt`), `assigneeItemId`(`assignee_item_id`, 없으면 `extraction_item_id`). 모양이 틀린 `merged_items` 항목은 버린다. 실패 종류에 `changed` 를 더해 `APPROVAL_CONFLICT` 와 나눈다 | [승인 mapper](../../src/entities/approval/model/mapper.ts), [merged.ts](../../src/entities/approval/model/merged.ts) |
+| 보낼 값 | 승인 계획이 처리할 카드의 `payloadVersion` 을 승인·반려 본문에 싣는다. 값이 없거나 `task_update` 면 보내지 않는다. 상세는 폼이 맞춰진 카드(`seen`)를, 목록 카드는 그 카드를 그린 목록 응답을 보낸다. 별칭 후보는 payload 밖에서 구하므로 지문이 같아도 바뀐다. 상세의 `save_alias` 판단은 최신 응답의 후보를 쓴다 | [resolution.ts](../../src/entities/approval/model/resolution.ts) |
+| 409 뒤 | 승인 목록·상세를 다시 받는다. 상세 폼은 같은 승인의 `payloadVersion` 이 달라진 응답을 받으면 고치지 않은 칸만 새 값으로 바꾸고 PM 이 고친 칸은 둔다(`reset(…, {keepDirtyValues, keepDirty})`). 409 없이 다시 받은 응답이 새 카드여도 같다. 「바뀐 내용」 안내에 처음 본 값·새 제안·승인할 값과 새로 합쳐진 항목 수를 보이고, 승인 버튼은 「새 내용을 확인했어요, 승인」이다. 목록 카드는 문구만 보이고 새 목록으로 다시 그린다 | [useTaskCreateOverrides](../../src/features/approval-resolve/model/useTaskCreateOverrides.ts), [ApprovalReview](../../src/widgets/approval-review/ui/ApprovalReview.tsx) |
+| 근거 표시 | 상세는 합쳐진 카드면 「대표 근거 · 카드를 만든 회의」와 「합쳐진 근거 N건 보기」(펼치기)를 나누고, 담당자를 정한 근거에 「담당자 근거」를 붙인다. 처리 버튼 위에 「반려하면 합쳐진 항목 N개가 모두 반려돼요.」 목록 카드는 「회의 M곳 · 항목 N개 합침」. 합친 카드의 `assignee_raw`·`due_raw` 는 담당자·마감을 정한 다른 회의의 원문일 수 있어, 대표 근거(인용) 아래가 아니라 그 밖에 「합친 제안의 원문 담당자 … · 원문 마감 …」으로 보인다. 카드를 만든 항목의 원래 원문은 합친 payload 에 남지 않는다 | [ApprovalReview](../../src/widgets/approval-review/ui/ApprovalReview.tsx), [ApprovalCard](../../src/widgets/task-board/ui/ApprovalCard.tsx) |
+| 자리·회의록 | 목록은 `created_at` 으로 정렬해 합쳐도 자리가 그대로다. 회의록 항목은 추출 항목 값을 쓰고 `approval_id` 로 상세에 잇는다(바꾸지 않았다) | [sortByWaiting](../../src/entities/approval/lib/sortByWaiting.ts), [extractedTasks](../../src/widgets/meeting-minutes/lib/extractedTasks.ts) |
+| MSW | 응답마다 payload 지문(16자 hex, 같은 성질만 흉내)을 구한다. `PATCH` 는 `payload_version` 이 문자열 1~64자가 아니면 400, 다르면 409 `APPROVAL_CHANGED` 다. 합치기는 BE `merge_into_pending` 과 같다(분류가 `assignee` 일 때만 담당자 변경, 못 찾은 원문만 있는 hold 카드 보존, 찾아 둔 담당자를 지우면 hold·`assignee_item_id` 갱신, 마감·상태·`doc_text` 규칙). 분류·상태·문서 글은 추출 응답에 없어 모의 항목에 따로 둔다. 이미 처리됨 409 를 보완 값 400 보다 먼저 본다(BE 순서). 승인하면 카드에 이어진 항목 모두의 `task_id` 를 채운다(BE 와 같다). 시나리오 `approval-merged`(ap_03 에 mt_07 의 it_21 이 합쳐짐), `approval-merged-after-view`(같은 합치기가 첫 처리 요청 직전에 일어나 409) | [approvalMerge](../../src/shared/mock/approvalMerge.ts), [승인 handler](../../src/shared/mock/handlers/approval.ts) |
 
 ### 2.6 tasks · task history
 
