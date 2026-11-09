@@ -10,7 +10,7 @@ import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { MinutesDetailSkeleton, MinutesListSkeleton } from '@/shared/ui/page-skeleton'
-import { listMeta, SOURCE_BADGE } from '../lib/format'
+import { listMeta, sourceBadge } from '../lib/format'
 import { prefetchMinutes } from '../lib/prefetchMinutes'
 import { useShownMeeting } from '../model/useShownMeeting'
 import { DeletedMeeting, MinutesDetail, UnavailableMeeting } from './MinutesDetail'
@@ -280,7 +280,7 @@ function MeetingList({
 }
 
 function SourceBadge({ meeting }: { meeting: MeetingSummary }) {
-  const badge = SOURCE_BADGE[meeting.source]
+  const badge = sourceBadge(meeting.source)
   return badge === null ? null : <span className={STATUS_BADGE}>{badge}</span>
 }
 

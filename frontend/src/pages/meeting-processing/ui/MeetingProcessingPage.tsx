@@ -13,7 +13,7 @@ import {
 } from '@/entities/meeting'
 import type { Meeting, MeetingSource, ProcessingStep } from '@/entities/meeting'
 import { useMemberWorkspace } from '@/entities/workspace'
-import { ApiError } from '@/shared/api/errors'
+import { ApiError, isInvalidResponse } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf } from '@/shared/lib/date'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
@@ -116,23 +116,25 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
   // 정리 상태를 받는 자리의 지연·최소 표시 (#508)
   const indicator = useLoadingIndicator(meeting === null && detail.error === null)
   const reveal = indicator.reveal
+  const loadError = (
+    <Layout status="정리 상태를 불러오지 못했어요" reveal={reveal}>
+      <QueryErrorState
+        error={detail.error}
+        onRetry={() => void detail.refetch()}
+        title="정리 상태를 불러오지 못했어요"
+      />
+    </Layout>
+  )
 
   if (meeting === null || indicator.pending) {
     if (indicator.pending) return <Loading indicator={indicator} />
     if (isMeetingUnavailable(detail.error))
       return <Unavailable workspaceId={workspaceId} reveal={reveal} />
-    if (detail.error !== null)
-      return (
-        <Layout status="정리 상태를 불러오지 못했어요" reveal={reveal}>
-          <QueryErrorState
-            error={detail.error}
-            onRetry={() => void detail.refetch()}
-            title="정리 상태를 불러오지 못했어요"
-          />
-        </Layout>
-      )
+    if (detail.error !== null) return loadError
     return <Loading indicator={indicator} />
   }
+  // 상세를 읽지 못했다. 추적기도 다시 묻지 않으니 받아 둔 단계를 지금 상태처럼 두지 않고 안내와 다시 시도만 보인다 (#348)
+  if (isInvalidResponse(detail.error)) return loadError
 
   const attendeeCount = summary.data?.attendeeCount ?? null
   const source = sourceOf(meetingId)

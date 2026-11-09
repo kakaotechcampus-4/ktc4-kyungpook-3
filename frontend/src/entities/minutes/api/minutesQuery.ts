@@ -1,8 +1,9 @@
 import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
+import { parseResponse } from '@/shared/api/parseResponse'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { workspaceKey } from '@/shared/api/queryKeys'
-import type { MinutesDto } from '@/shared/types/api/minutes'
+import { minutesSchema } from '@/shared/types/api/minutes'
 import { toMinutes } from '../model/mapper'
 
 /**
@@ -14,9 +15,11 @@ export function minutesQueryOptions(workspaceId: string, meetingId: string) {
     queryKey: workspaceKey(workspaceId, 'minutes', meetingId),
     queryFn: async ({ signal }) =>
       toMinutes(
-        await request<MinutesDto>(`/meetings/${encodeURIComponent(meetingId)}/minutes`, {
-          signal,
-        }),
+        parseResponse(
+          minutesSchema,
+          await request<unknown>(`/meetings/${encodeURIComponent(meetingId)}/minutes`, { signal }),
+          'minutes',
+        ),
       ),
     staleTime: STALE_TIME.long,
   })

@@ -1,7 +1,7 @@
 import { formatSeoulMonthDayTime } from '@/shared/lib/date'
-import { MEETING_SOURCE_TRAITS } from '../model/sourceTraits'
+import { meetingSourceTraits } from '../model/sourceTraits'
 import type { MeetingTimeAxis } from '../model/sourceTraits'
-import type { MeetingSource, MeetingSummary } from '../model/types'
+import type { MeetingSourceValue, MeetingSummary } from '../model/types'
 
 /** 회의 안 시각·길이. 1시간 미만은 `mm:ss`, 넘으면 `h:mm:ss` — Meetings 캔버스의 `12:40` · `52:14` 모양이다 */
 export function formatClock(ms: number): string {
@@ -25,11 +25,15 @@ const MOMENT: Record<MeetingTimeAxis, (startedAt: string, atMs: number) => strin
     const instant = offsetInstant(startedAt, atMs)
     return instant === null ? '' : formatSeoulMonthDayTime(instant)
   },
+  unknown: () => '',
 }
 
-/** 전사문 줄·근거의 시각. 녹음 회의는 녹음 안 위치 `12:40`, 채팅 회의는 메시지를 쓴 서울 시각 `09/15 18:40` 이다 */
-export function formatMoment(source: MeetingSource, startedAt: string, atMs: number): string {
-  return MOMENT[MEETING_SOURCE_TRAITS[source].timeAxis](startedAt, atMs)
+/**
+ * 전사문 줄·근거의 시각. 녹음 회의는 녹음 안 위치 `12:40`, 채팅 회의는 메시지를 쓴 서울 시각 `09/15 18:40` 이다.
+ * 모르는 출처는 빈 글자다
+ */
+export function formatMoment(source: MeetingSourceValue, startedAt: string, atMs: number): string {
+  return MOMENT[meetingSourceTraits(source).timeAxis](startedAt, atMs)
 }
 
 /**

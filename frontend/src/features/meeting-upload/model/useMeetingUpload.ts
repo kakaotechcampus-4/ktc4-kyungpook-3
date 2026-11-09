@@ -1,17 +1,22 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
+  findAcceptedUpload,
   findUploadBlockingMeeting,
   meetingListQueryOptions,
   trackMeeting,
   uploadMeeting,
 } from '@/entities/meeting'
-import type { UploadMeetingInput } from '@/entities/meeting'
+import type { MeetingSummary, UploadMeetingInput } from '@/entities/meeting'
 import { captureSession } from '@/entities/user'
 import type { UploadProgress } from '@/shared/api/client'
 import { fetchFresh } from '@/shared/api/fetchFresh'
 import { useLivePathname } from '@/shared/lib/live-pathname'
-import { classifyUploadError, UPLOAD_LOST_MESSAGE } from './uploadOutcome'
+import {
+  classifyUploadError,
+  UPLOAD_LOST_MESSAGE,
+  UPLOAD_UNCONFIRMED_MESSAGE,
+} from './uploadOutcome'
 import { toUploadPhase } from './uploadPhase'
 import type { UploadPhase } from './uploadPhase'
 
@@ -22,6 +27,10 @@ type UploadFields = Omit<UploadMeetingInput, 'file'>
 interface UploadScope {
   stillHere: () => boolean
   isCurrentSession: () => boolean
+  /** 보낸 업로드의 제목·회의 시각. 응답을 잃었을 때 목록에서 이 업로드를 찾는다 */
+  sent: { title: string; startedAt: string }
+  /** 보내기 전 목록에 있던 회의. 같은 제목·시각의 예전 회의를 이 업로드로 보지 않는다 */
+  knownBefore: ReadonlySet<string>
 }
 
 export interface MeetingUploadHandlers {
@@ -31,9 +40,11 @@ export interface MeetingUploadHandlers {
   onProcessing: (meetingId: string) => void
 }
 
-/** 폼에 보일 실패. 파일 칸 아래(`file`) 또는 폼 상단(`form`) */
+/**
+ * 폼에 보일 실패. 파일 칸 아래(`file`) 또는 폼 상단(`form`). `unconfirmed` 는 폼 상단에 보이고 회의록 목록으로 가는 길을 함께 둔다
+ */
 export interface UploadFormFailure {
-  kind: 'file' | 'form'
+  kind: 'file' | 'form' | 'unconfirmed'
   message: string
 }
 
@@ -60,8 +71,10 @@ export interface MeetingUpload {
  * 보내는 동안 세션이 끝났으면(로그아웃·만료) 응답의 뒷처리를 모두 버린다 — 추적 등록·캐시 무효화·이동·안내.
  * 다음 사용자의 추적기가 이전 사용자의 회의를 묻지 않는다 (U4 r1 M02 와 같은 경합).
  *
- * 응답을 잃으면(네트워크 오류) 서버가 받았는지 모른다. 목록을 새로 받아 정리 중 회의가 있으면 그 처리 화면으로,
- * 없으면 다시 올리라고 안내한다. 같은 파일을 자동으로 다시 보내지 않는다.
+ * 응답을 잃거나 읽지 못하면 서버가 받았는지 모른다. 목록을 새로 받아 이 업로드(올리기 전에 없던, 제목·회의 시각이 같은
+ * 직접 올린 회의)가 있으면 상태와 상관없이 그 처리 화면으로 간다. 없으면 정리 중인 다른 회의가 있을 때 그 처리 화면으로,
+ * 그것도 없으면 다시 올리라고 안내한다. 목록을 받지 못했거나 이 업로드를 하나로 정하지 못하면 다시 올리라고 하지 않고
+ * 회의록 목록에서 확인하게 한다. 같은 파일을 자동으로 다시 보내지 않는다.
  *
  * 원본 파일은 mutation 변수에 넣지 않는다. 변수는 끝난 뒤에도 MutationCache 에 `gcTime`(기본 5분) 동안 남는다 —
  * 최대 200 MiB 를 처리 화면까지 붙들게 된다 (U3-9). 파일은 보낼 때 한 번 꺼내 그 요청만 쥐고, 요청이 끝나면 놓인다.
@@ -116,30 +129,42 @@ export function useMeetingUpload(
     },
   })
 
-  /** 응답을 잃었다. 목록에서 정리 중 회의를 찾는다 — 방금 보낸 것이 받아졌거나 다른 정리가 먼저였다 */
+  /** 응답을 잃었다. 목록에서 이 업로드를, 없으면 정리 중 회의를 찾는다 — 방금 보낸 것이 받아졌거나 다른 정리가 먼저였다 */
   const recover = useCallback(
-    async ({ stillHere, isCurrentSession }: UploadScope) => {
+    async ({ stillHere, isCurrentSession, sent, knownBefore }: UploadScope) => {
       setRecovering(true)
+      let latest: MeetingSummary[] | null = null
       try {
         // 응답을 잃은 **뒤의** 목록으로 판정한다 (fetchFresh). 잃기 전에 출발한 공유 목록 조회의 답(정리 중 없음)은 쓰지 않고
         // (U4 r3 M05), 마지막 구독(업로드 화면·공간의 발견)이 내려가 취소된 채 돌아온 들어올 때의 목록은 답으로 치지 않고
         // 다시 묻는다 (U4 r2 M03 과 같은 함정). 목록 캐시에 쓰는 것은 그 공유 Query 하나다 (U4 r4 M06).
         // 세션이 끝났으면 취소로 끝난다(아래 catch)
-        const latest = await fetchFresh(queryClient, meetingListQueryOptions(workspaceId))
-        if (!isCurrentSession()) return
-        const processing = findUploadBlockingMeeting(latest)
-        if (processing !== null) {
-          trackMeeting({ workspaceId, meetingId: processing.id })
-          if (stillHere()) handlersRef.current.onProcessing(processing.id)
-          return
-        }
+        latest = await fetchFresh(queryClient, meetingListQueryOptions(workspaceId))
       } catch {
-        // 목록도 받지 못했다 — 아래 안내로 간다
+        // 목록도 받지 못했다 — 받아졌는지 모른다
       } finally {
         if (mounted.current) setRecovering(false)
       }
-      if (mounted.current && isCurrentSession())
-        setFailure({ kind: 'form', message: UPLOAD_LOST_MESSAGE })
+      if (!isCurrentSession()) return
+      const accepted = latest === null ? null : findAcceptedUpload(latest, sent, knownBefore)
+      if (accepted?.kind === 'found') {
+        trackMeeting({ workspaceId, meetingId: accepted.meeting.id })
+        if (stillHere()) handlersRef.current.onAccepted(accepted.meeting.id)
+        return
+      }
+      const processing =
+        latest !== null && accepted?.kind === 'none' ? findUploadBlockingMeeting(latest) : null
+      if (processing !== null) {
+        trackMeeting({ workspaceId, meetingId: processing.id })
+        if (stillHere()) handlersRef.current.onProcessing(processing.id)
+        return
+      }
+      if (!mounted.current) return
+      setFailure(
+        accepted?.kind === 'none'
+          ? { kind: 'form', message: UPLOAD_LOST_MESSAGE }
+          : { kind: 'unconfirmed', message: UPLOAD_UNCONFIRMED_MESSAGE },
+      )
     },
     [queryClient, workspaceId],
   )
@@ -154,6 +179,11 @@ export function useMeetingUpload(
       const isCurrentSession = captureSession()
       const startedAt = livePathname()
       const stillHere = () => mounted.current && isCurrentSession() && livePathname() === startedAt
+      const knownBefore = new Set(
+        (queryClient.getQueryData(meetingListQueryOptions(workspaceId).queryKey) ?? []).map(
+          ({ id }) => id,
+        ),
+      )
       let meetingId: string
       try {
         meetingId = (await mutateAsync(fields)).id
@@ -172,7 +202,12 @@ export function useMeetingUpload(
             setFailure({ kind: outcome.kind, message: outcome.message })
             return
           case 'lost':
-            await recover({ stillHere, isCurrentSession })
+            await recover({
+              stillHere,
+              isCurrentSession,
+              sent: { title: fields.title, startedAt: fields.startedAt },
+              knownBefore,
+            })
             return
           default:
             return
@@ -180,7 +215,7 @@ export function useMeetingUpload(
       }
       if (stillHere()) handlersRef.current.onAccepted(meetingId)
     },
-    [livePathname, mutateAsync, recover, workspaceId],
+    [livePathname, mutateAsync, queryClient, recover, workspaceId],
   )
 
   return {
