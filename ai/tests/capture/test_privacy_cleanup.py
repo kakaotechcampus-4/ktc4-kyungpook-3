@@ -389,7 +389,8 @@ def test_discord_judge_output_erases_raw_evidence_speaker_and_retains_anonymous_
     recordings, transcripts, path, data = fixture(tmp_path)
     items = _restore([{**evidence_hint, 'evidence_speaker': 'same name', 'assignee_member_id': 'member-b',
                        'assignee_raw': 'other alias'}], {'111': 'same name'}, {'111': 'same name'}, {'111'})
-    output = _keep_judge_output(transcripts, data, JudgeOutput(items=items))
+    output = _keep_judge_output(transcripts, data, JudgeOutput(outcomes=[
+        {'indices': [k], 'kind': 'item', 'item': item, 'failure': None} for k, item in enumerate(items)]))
     save_manifest(path, data)
     assert json.loads(output.read_text(encoding='utf-8'))[0]['evidence_speaker'] == '111'
     assert apply_cleanup(recordings, transcripts, claim(), runs=tmp_path / 'runs')
@@ -397,6 +398,9 @@ def test_discord_judge_output_erases_raw_evidence_speaker_and_retains_anonymous_
     assert cleaned['evidence_speaker'] is None
     assert cleaned['evidence_speaker_member_id'] == 'member-a'
     assert cleaned['assignee_member_id'] == 'member-b' and cleaned['assignee_raw'] == 'other alias'
+    # 다시 돌릴 때 합치려고 쌓은 실행 기록(#217)에도 같은 항목이 있다. 거기서도 원래 화자가 지워진다
+    kept = json.loads((transcripts / f"session_{data['session']}.judge_runs.json").read_text(encoding='utf-8'))[0]['outcomes'][0]['item']
+    assert kept['evidence_speaker'] is None and kept['evidence_speaker_member_id'] == 'member-a'
     assert apply_cleanup(recordings, transcripts, claim(), runs=tmp_path / 'runs')
     assert json.loads(output.read_text(encoding='utf-8'))[0] == cleaned
 
