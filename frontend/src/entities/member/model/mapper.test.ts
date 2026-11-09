@@ -9,9 +9,10 @@ it('maps member and discord null leaves', () => {
       discord_user_id: null,
       notion_name: null,
       role: 'pm',
+      has_login_account: true,
       created_at: '2026-09-01T00:00:00Z',
     }),
-  ).toMatchObject({ id: 'mb_01', discordUserId: null })
+  ).toMatchObject({ id: 'mb_01', discordUserId: null, hasLoginAccount: true })
   expect(
     toDiscordUser({
       discord_user_id: '1125',

@@ -51,7 +51,7 @@ describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () =>
     ['/workspaces/ws_01/tasks?view=board', ['태스크', '시작 전', '진행 중', '완료']],
     ['/workspaces/ws_01/tasks/tk_01', ['태스크 목록', '태스크 정보', '변경 이력']],
     ['/workspaces/ws_01/approvals/ap_01', ['태스크 목록']],
-    ['/workspaces/ws_01/messages', ['메시지', '새 재촉', '보내기 전 확인', '대화']],
+    ['/workspaces/ws_01/messages', ['메시지', '새 재촉', '새 대화', '보내기 전 확인', '대화']],
     ['/workspaces/ws_01/members', ['팀', '팀원 관리', '연결되지 않은 계정']],
     ['/workspaces/ws_01/settings', ['설정', '일반', '워크스페이스 이름', 'Discord', 'Notion']],
     ['/workspaces/ws_01/meetings/upload', ['회의를 올려 주세요', '회의 제목', '참석자']],
@@ -114,6 +114,7 @@ describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () =>
     ['/workspaces/ws_01/tasks', '확인 필요'],
     ['/workspaces/ws_01/members', '팀원 관리'],
     ['/workspaces/ws_01/messages', '새 재촉'],
+    ['/workspaces/ws_01/messages', '새 대화'],
     ['/workspaces/ws_01/messages', '보내기 전 확인'],
   ])('팀원의 %s 에는 PM 의 「%s」 가 없다', (path, pmOnly) => {
     renderAt(path, { role: 'member' })

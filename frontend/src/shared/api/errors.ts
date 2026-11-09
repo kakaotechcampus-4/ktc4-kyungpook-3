@@ -63,6 +63,7 @@ export const ERROR_CODES = {
   DISCORD_USER_ALREADY_MAPPED: 'DISCORD_USER_ALREADY_MAPPED',
   MEETING_FAILED: 'MEETING_FAILED',
   APPROVAL_CONFLICT: 'APPROVAL_CONFLICT',
+  APPROVAL_CHANGED: 'APPROVAL_CHANGED',
   LAST_PM_REQUIRED: 'LAST_PM_REQUIRED',
   EMBEDDING_UNAVAILABLE: 'EMBEDDING_UNAVAILABLE',
   DISCORD_API_FAILED: 'DISCORD_API_FAILED',
@@ -147,6 +148,11 @@ export function isWorkspaceMismatch(error: unknown): boolean {
     error.kind === 'invalid_response' &&
     error.code === ERROR_CODES.WORKSPACE_MISMATCH
   )
+}
+
+/** 성공 응답을 읽지 못했다. 쓰기 요청이면 서버에는 이미 반영됐을 수 있다 (#348) */
+export function isInvalidResponse(error: unknown): boolean {
+  return error instanceof ApiError && error.code === CLIENT_ERROR_CODES.INVALID_RESPONSE
 }
 
 /** 우리 클라이언트의 취소와 TanStack Query 의 취소를 모두 취소로 본다 */

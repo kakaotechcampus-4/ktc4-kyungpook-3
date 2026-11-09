@@ -41,15 +41,21 @@ def _authorize(token: str | None, workspace_id: str) -> tuple[str, datetime] | i
             return CLOSE_FORBIDDEN
 
 
-async def _until_disconnect(websocket: WebSocket) -> None:
+async def _until_disconnect(websocket: WebSocket, conn: Connection) -> int | None:
     """receive 를 늘 걸어 두어야 끊김과 ping 시간 초과가 여기로 드러난다. 클라이언트가 보낸 글은 버린다."""
     while (await websocket.receive())["type"] != "websocket.disconnect":
-        pass
+        access = await run_in_threadpool(_authorize, conn.session_token, conn.workspace_id)
+        if isinstance(access, int):
+            return access
 
 
-async def _send_signals(websocket: WebSocket, conn: Connection) -> None:
+async def _send_signals(websocket: WebSocket, conn: Connection) -> int:
     while True:
         thread_id = await conn.outbox.get()
+        access = await run_in_threadpool(_authorize, conn.session_token, conn.workspace_id)
+        if isinstance(access, int):
+            conn.revoked.set()
+            return access
         await websocket.send_json({"type": "thread_updated", "thread_id": thread_id})
 
 
@@ -60,7 +66,11 @@ async def _until_outbox_overflows(conn: Connection) -> int:
 
 async def _until_access_ends(conn: Connection) -> int:
     while True:
-        await asyncio.sleep(REVALIDATE_SECONDS)
+        try:
+            await asyncio.wait_for(conn.revoked.wait(), timeout=REVALIDATE_SECONDS)
+            return CLOSE_UNAUTHENTICATED
+        except TimeoutError:
+            pass
         try:
             access = await run_in_threadpool(_authorize, conn.session_token, conn.workspace_id)
         except Exception:
@@ -77,7 +87,7 @@ async def _until_access_ends(conn: Connection) -> int:
 async def _serve(websocket: WebSocket, conn: Connection) -> int | None:
     """연결이 끝날 때까지 돈다. 서버가 닫을 때는 코드를, 상대가 먼저 끊었으면 None 을 돌려준다."""
     tasks = [
-        asyncio.create_task(_until_disconnect(websocket)),
+        asyncio.create_task(_until_disconnect(websocket, conn)),
         asyncio.create_task(_send_signals(websocket, conn)),
         asyncio.create_task(_until_outbox_overflows(conn)),
         asyncio.create_task(_until_access_ends(conn)),

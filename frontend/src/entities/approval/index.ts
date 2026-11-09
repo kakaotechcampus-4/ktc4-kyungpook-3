@@ -4,12 +4,15 @@ export type {
   ApprovalResolveFailure,
   ApprovalStatus,
   ApprovalMissing,
+  MergedApprovalItem,
   TaskCreateApproval,
   TaskUpdateApproval,
   TaskUpdateCategory,
   UnsupportedApproval,
 } from './model/types'
 export { isScopeChange, toApproval, toApprovalResolveFailure } from './model/mapper'
+export { approvalChange, mergedCount } from './model/merged'
+export type { ApprovalChange } from './model/merged'
 export type {
   ApprovalDecision,
   ApprovalResolution,

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_member, get_current_user, require_member, require_pm, require_task_member
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import ChangeSource, Member, Task, TaskHistory, TaskStatus, User, Workspace
+from app.models import ChangeSource, Meeting, Member, Task, TaskHistory, TaskStatus, User, Workspace
 from app.schemas.reply import TaskTimelineResponse
 from app.schemas.task import (
     TaskCreateRequest,
@@ -50,8 +50,11 @@ def _get_task(db: Session, task_id: str, *, lock: bool = False, include_deleted:
 def _task_responses(db: Session, tasks: Sequence[Task]) -> list[TaskResponse]:
     """auto_blocked 는 감시 기록을 봐야 알 수 있어 목록 전체를 한 번에 판정한다."""
     blocked = scheduler.auto_blocked_ids(db, tasks)
+    deleted = set(db.scalars(select(Meeting.meeting_id).where(
+        Meeting.meeting_id.in_([t.meeting_id for t in tasks if t.meeting_id]), Meeting.deleted_at.is_not(None))))
     return [
-        TaskResponse(**TaskFields.model_validate(t).model_dump(), auto_blocked=t.task_id in blocked)
+        TaskResponse(**TaskFields.model_validate(t).model_dump(), auto_blocked=t.task_id in blocked,
+                     meeting_deleted=t.meeting_id in deleted)
         for t in tasks
     ]
 

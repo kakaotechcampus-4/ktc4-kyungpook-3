@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { SESSION_QUERY_KEY } from '@/entities/user'
@@ -39,13 +39,31 @@ const posts = (log: ReturnType<typeof recordRequests>, path: string) =>
   log.started.filter((request) => request.method === 'POST' && request.path === path)
 
 describe('로그인 화면 (U2-3·U2-5)', () => {
-  it('`비밀번호를 잊으셨나요?` 는 비활성이다. Google 버튼은 없다', async () => {
-    await openLogin()
+  it('Google 버튼은 없고 `비밀번호를 잊으셨나요?` 는 재설정 요청 화면으로 가는 링크다', async () => {
+    const app = await openLogin()
     expect(screen.queryByRole('button', { name: /Google/ })).not.toBeInTheDocument()
-    const forgot = screen.getByRole('button', { name: '비밀번호를 잊으셨나요?' })
-    expect(forgot).toBeDisabled()
     // 준비 중 문구·배지를 달지 않는다 (D-006)
     expect(screen.queryByText(/준비 중/)).not.toBeInTheDocument()
+
+    const forgot = screen.getByRole('link', { name: '비밀번호를 잊으셨나요?' })
+    expect(forgot).toHaveAttribute('href', '/forgot-password')
+    await userEvent.click(forgot)
+    expect(await screen.findByRole('heading', { name: '비밀번호 재설정 요청' })).toBeInTheDocument()
+    await app.expectPath('/forgot-password')
+  })
+
+  it('`비밀번호를 잊으셨나요?` 는 이메일 다음 Tab 으로 닿고 Enter 로 이동한다', async () => {
+    const app = await openLogin()
+    await userEvent.click(screen.getByLabelText('이메일'))
+    await userEvent.tab()
+    expect(screen.getByRole('link', { name: '비밀번호를 잊으셨나요?' })).toHaveFocus()
+    await userEvent.tab()
+    expect(screen.getByLabelText('비밀번호')).toHaveFocus()
+
+    await userEvent.tab({ shift: true })
+    await userEvent.keyboard('{Enter}')
+    expect(await screen.findByRole('heading', { name: '비밀번호 재설정 요청' })).toBeInTheDocument()
+    await app.expectPath('/forgot-password')
   })
 
   it('로그인은 이메일 형식과 비밀번호 빈 값만 검사한다', async () => {
@@ -77,18 +95,34 @@ describe('로그인 제출 (U2-4·U2-6·U2-8)', () => {
     expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull()
   })
 
-  it('시도가 너무 많으면 맞는 비밀번호여도 서버 문장을 그대로 알리고 남은 시간은 말하지 않는다 (#457)', async () => {
+  it('시도가 너무 많으면 맞는 비밀번호여도 서버 문장에 재설정 안내와 링크를 붙이고 남은 시간은 말하지 않는다 (#457·#554)', async () => {
     applyScenario('login-rate-limited')
     const app = await openLogin()
     await fillLogin('pm@example.com', 'mock-password')
     await userEvent.click(screen.getByRole('button', { name: '로그인' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      /^로그인 시도가 너무 많습니다\. 잠시 후 다시 시도해 주세요\.$/,
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(
+      /^로그인 시도가 너무 많습니다\. 잠시 후 다시 시도해 주세요\. 비밀번호가 기억나지 않으면 재설정해 주세요\.비밀번호 재설정하기$/,
     )
     expect(screen.queryByText(/\d+\s*(초|분)/)).toBeNull()
+    // 가입 여부를 드러내지 않고, 재설정이 막힘을 푼다고 약속하지 않는다 (#554)
+    expect(alert).not.toHaveTextContent(/잠겼|잠금|풀려|풀립/)
     await app.expectPath('/login')
     expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull()
+
+    await userEvent.click(within(alert).getByRole('link', { name: '비밀번호 재설정하기' }))
+    expect(await screen.findByRole('heading', { name: '비밀번호 재설정 요청' })).toBeInTheDocument()
+    await app.expectPath('/forgot-password')
+  })
+
+  it('틀린 비밀번호(401)에는 재설정 안내를 붙이지 않는다', async () => {
+    await openLogin()
+    await fillLogin('pm@example.com', 'wrong-password')
+    await userEvent.click(screen.getByRole('button', { name: '로그인' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/^이메일 또는 비밀번호가 올바르지 않아요\.$/)
+    expect(within(alert).queryByRole('link')).toBeNull()
   })
 
   it('서버 오류도 비필드 오류다. 다시 제출하면 패널이 사라지고 이어 간다', async () => {

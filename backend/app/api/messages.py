@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_member, get_current_pm
@@ -154,7 +154,10 @@ def get_inbox(
     stmt = (
         select(MessageThread)
         .join(Member, Member.member_id == MessageThread.member_id)
-        .where(MessageThread.workspace_id == workspace_id, Member.is_deleted.is_(False))
+        .where(
+            MessageThread.workspace_id == workspace_id,
+            or_(Member.is_deleted.is_(False), Member.withdrawn_at.is_not(None)),
+        )
     )
     if not is_pm:
         stmt = stmt.where(MessageThread.member_id == member.member_id)
@@ -212,8 +215,8 @@ def read_thread(
     """대화를 열었을 때 화면이 부른다. 조회 API 는 읽음 처리를 하지 않으므로 명시적으로 옮긴다."""
     thread = _get_thread(db, workspace_id, thread_id)
     _check_thread_access(thread, member)
-    # 탈퇴한 팀원의 대화는 목록과 숫자에서 빠지므로 읽음 처리 대상도 아니다.
-    if thread.member.is_deleted:
+    # 명단 이탈자는 기존대로 숨긴다. 계정 탈퇴의 익명 주체는 공동 대화 기록으로 남는다.
+    if thread.member.is_deleted and thread.member.withdrawn_at is None:
         raise AppError(ErrorCode.MESSAGE_THREAD_NOT_FOUND, details={"thread_id": thread_id})
     last_read_at = reads.mark_read(db, member, thread)
     db.commit()

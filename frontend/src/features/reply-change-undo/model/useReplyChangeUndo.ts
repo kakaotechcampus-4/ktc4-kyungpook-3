@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 import {
+  showTaskWriteUnconfirmed,
   taskDetailQueryOptions,
   taskHistoryQueryOptions,
   taskKeys,
@@ -10,7 +11,13 @@ import {
 } from '@/entities/task'
 import type { Task } from '@/entities/task'
 import { errorMessage } from '@/shared/api/errorMessages'
-import { ApiError, CLIENT_ERROR_CODES, ERROR_CODES, createClientError } from '@/shared/api/errors'
+import {
+  ApiError,
+  CLIENT_ERROR_CODES,
+  ERROR_CODES,
+  createClientError,
+  isInvalidResponse,
+} from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
 import { toast } from '@/shared/ui/toast'
@@ -76,7 +83,8 @@ export function useReplyChangeUndo(workspaceId: string, taskId: string): ReplyCh
           exact: true,
         })
       }
-      toast.show({ title: REPLY_CHANGE_UNDO_FAILED, description: errorMessage(error) })
+      if (isInvalidResponse(error)) showTaskWriteUnconfirmed(queryClient, workspaceId)
+      else toast.show({ title: REPLY_CHANGE_UNDO_FAILED, description: errorMessage(error) })
     },
   })
   const undo = useCallback(

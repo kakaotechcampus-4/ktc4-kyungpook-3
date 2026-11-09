@@ -13,6 +13,7 @@ import type {
   Bundle,
   BundleStage,
   CreatedReminder,
+  DmDelivery,
   Message,
   MessageInbox,
   MessageThread,
@@ -20,6 +21,7 @@ import type {
   ReminderEvidence,
   ReplyAttribution,
   TaskRef,
+  WebReply,
 } from './types'
 
 /** 보낸 쪽과 칸이 맞지 않으면 던진다 — 조회 오류로 보인다 */
@@ -27,28 +29,36 @@ function invalidMessage(dto: MessageDto): never {
   throw new Error(`메시지 응답이 보낸 쪽과 맞지 않습니다: ${dto.message_id}`)
 }
 
-export function toMessage(dto: MessageDto): Message {
-  if (dto.sender === 'member') {
-    if (dto.reply_channel === null) invalidMessage(dto)
-    return {
-      sender: 'member',
-      id: dto.message_id,
-      body: dto.body,
-      createdAt: dto.created_at,
-      replyChannel: dto.reply_channel,
-    }
-  }
+function toDm(dto: MessageDto): DmDelivery {
   if (dto.dm_status === null) invalidMessage(dto)
-  return {
-    sender: 'bot',
-    id: dto.message_id,
-    body: dto.body,
-    createdAt: dto.created_at,
-    dm:
-      dto.dm_status === 'failed'
-        ? { status: 'failed', reason: dto.dm_failure_reason ?? 'unknown' }
-        : { status: dto.dm_status },
+  return dto.dm_status === 'failed'
+    ? { status: 'failed', reason: dto.dm_failure_reason ?? 'unknown' }
+    : { status: dto.dm_status }
+}
+
+export function toMessage(dto: MessageDto): Message {
+  const base = { id: dto.message_id, body: dto.body, createdAt: dto.created_at }
+  switch (dto.sender) {
+    case 'member':
+      if (dto.reply_channel === null) invalidMessage(dto)
+      return { ...base, sender: 'member', replyChannel: dto.reply_channel }
+    case 'bot':
+      return { ...base, sender: 'bot', dm: toDm(dto) }
+    // 작성자 칸은 곁가지다. 비어 와도 메시지 하나로 대화 전체를 막지 않는다
+    case 'pm':
+      return {
+        ...base,
+        sender: 'pm',
+        dm: toDm(dto),
+        authorMemberId: dto.author_member_id,
+        authorName: dto.author_name,
+      }
   }
+}
+
+function toWebReply(available: boolean | undefined): WebReply {
+  if (available === undefined) return 'unknown'
+  return available ? 'available' : 'unavailable'
 }
 
 function stageOf(dto: BundleDto): BundleStage | null {
@@ -106,7 +116,7 @@ function toBundles(dtos: readonly BundleDto[]): Bundle[] {
   return dtos.flatMap((dto) => toBundle(dto) ?? [])
 }
 
-function toSummary(dto: ThreadSummaryDto): MessageThreadSummary {
+export function toThreadSummary(dto: ThreadSummaryDto): MessageThreadSummary {
   return {
     id: dto.thread_id,
     memberId: dto.member_id,
@@ -119,21 +129,24 @@ function toSummary(dto: ThreadSummaryDto): MessageThreadSummary {
             sender: dto.last_message.sender,
             body: dto.last_message.body,
             createdAt: dto.last_message.created_at,
+            authorMemberId: dto.last_message.author_member_id,
+            authorName: dto.last_message.author_name,
           },
     awaitingReplySince: dto.awaiting_reply_since,
     dmFailed: dto.dm_failed,
+    webReply: toWebReply(dto.web_reply_available),
   }
 }
 
 export function toMessageInbox(dto: InboxDto): MessageInbox {
-  const threads = dto.threads.map(toSummary)
+  const threads = dto.threads.map(toThreadSummary)
   if (dto.bundles === null) return { viewer: 'member', threads }
   return { viewer: 'pm', bundles: toBundles(dto.bundles), threads }
 }
 
 export function toMessageThread(dto: ThreadDetailDto): MessageThread {
   return {
-    ...toSummary(dto.thread),
+    ...toThreadSummary(dto.thread),
     messages: dto.messages.map(toMessage),
     upcoming: dto.bundles === null ? [] : toBundles(dto.bundles),
   }

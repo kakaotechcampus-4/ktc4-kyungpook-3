@@ -5,7 +5,7 @@ import { onTestFinished } from 'vitest'
 import { SESSION_QUERY_KEY } from '@/entities/user'
 import { RESET_LINK_MESSAGES } from '@/features/auth'
 import { db } from '@/shared/mock/db'
-import { fail } from '@/shared/mock/envelope'
+import { fail, ok } from '@/shared/mock/envelope'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
@@ -172,7 +172,7 @@ describe('메일 링크의 토큰', () => {
           .map(({ state }) => state.variables),
       ])
     expect(
-      app.queryClient.getQueryCache().find({ queryKey: ['password-reset-link'] }),
+      app.queryClient.getQueryCache().find({ queryKey: ['password-reset-link'], exact: false }),
     ).toBeDefined()
     expect(cached()).not.toContain(TOKEN)
 
@@ -180,7 +180,7 @@ describe('메일 링크의 토큰', () => {
     await app.expectPath('/login')
     await waitFor(() =>
       expect(
-        app.queryClient.getQueryCache().find({ queryKey: ['password-reset-link'] }),
+        app.queryClient.getQueryCache().find({ queryKey: ['password-reset-link'], exact: false }),
       ).toBeUndefined(),
     )
     expect(cached()).not.toContain(TOKEN)
@@ -265,21 +265,35 @@ describe('새 비밀번호', () => {
     expect(bodies).toEqual([])
   })
 
-  it('서버의 INVALID_REQUEST 는 새 비밀번호 칸의 오류다', async () => {
+  it('서버의 INVALID_REQUEST 는 새 비밀번호 칸의 오류이고, 고쳐 보내면 같은 링크로 바뀐다', async () => {
+    // 클라이언트 규칙이 BE 와 같아 실제 handler 로는 400 까지 가지 않는다. 한 번만 400 을 돌려준다
     server.use(
-      http.post('/api/v1/auth/password-reset/confirm', () =>
-        fail('INVALID_REQUEST', 'bad', 400, {
-          fields: [{ loc: ['body', 'new_password'], msg: 'Value error' }],
-        }),
+      http.post(
+        '/api/v1/auth/password-reset/confirm',
+        () =>
+          fail('INVALID_REQUEST', 'bad', 400, {
+            fields: [{ loc: ['body', 'new_password'], msg: 'Value error' }],
+          }),
+        { once: true },
       ),
     )
-    renderApp(RESET_LINK)
+    const bodies = recordRequestBodies('POST', '/auth/password-reset/confirm')
+    const app = renderApp(RESET_LINK)
     await changePassword('newpass123')
 
     const field = screen.getByLabelText('새 비밀번호')
     await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'))
     expect(field).toHaveAccessibleDescription('8자 이상, 숫자 포함 요청 내용을 다시 확인해 주세요.')
     expect(field).toHaveFocus()
+
+    await userEvent.clear(field)
+    await changePassword('newpass456')
+    expect(await screen.findByRole('status')).toHaveTextContent(PASSWORD_CHANGED)
+    await app.expectPath('/login')
+    expect(bodies).toEqual([
+      { token: TOKEN, new_password: 'newpass123' },
+      { token: TOKEN, new_password: 'newpass456' },
+    ])
   })
 
   it('바꾸면 로그인으로 가서 안내를 띄우고, 새 비밀번호로 로그인된다', async () => {
@@ -310,6 +324,7 @@ describe('새 비밀번호', () => {
     await app.expectPath('/login')
     expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull()
     expect(db.authenticated).toBe(false)
+    await waitFor(() => expect(app.visited().at(-1)!.state).toBeNull())
     // RedirectIfAuthed 가 워크스페이스로 돌려보내지 않았다. 마지막 /login 은 안내 state 를 지운 replace 다
     expect(app.visited().map(({ pathname }) => pathname)).toEqual([
       '/reset-password',
@@ -348,5 +363,142 @@ describe('새 비밀번호', () => {
     // 그 401 이 세션 만료 처리로 다른 곳에 보내지 않았다
     await app.expectPath('/login')
     expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull()
+  })
+})
+
+const CONFIRM = '/auth/password-reset/confirm'
+
+const OTHER_TOKEN = 'mock-reset-minsu'
+
+/** 두 번째 계정과 그 계정의 쓸 수 있는 재설정 링크 */
+function addOtherAccount(): void {
+  db.accounts.push({
+    session: {
+      user: { user_id: 'us_02', email: 'minsu@example.com', name: '박민수', avatar_url: null },
+      workspace_count: 0,
+      last_workspace_id: null,
+    },
+    password: 'mock-password',
+    workspaceIds: [],
+    memberIds: {},
+  })
+  db.passwordReset.tokens.push({
+    token: OTHER_TOKEN,
+    email: 'minsu@example.com',
+    expiresAt: '2099-12-31T00:00:00.000Z',
+    status: 'active',
+  })
+}
+
+function gate(): { held: Promise<void>; release: () => void } {
+  let release!: () => void
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  return { held, release }
+}
+
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+
+describe('같은 화면에 새 메일 링크', () => {
+  it('쓸 수 없던 링크 뒤 새 링크를 열면 새 토큰으로 다시 확인하고 그 링크로 바꾼다', async () => {
+    applyScenario('password-reset-invalid')
+    const verifies = recordRequestBodies('POST', VERIFY)
+    const confirms = recordRequestBodies('POST', CONFIRM)
+    const app = renderApp('/reset-password#token=mock-reset-revoked')
+    expect(await screen.findByRole('alert')).toHaveTextContent(RESET_LINK_MESSAGES.invalid)
+
+    act(() => app.navigate('/reset-password#token=mock-reset-newer'))
+    await changePassword('newpass123')
+
+    expect(await screen.findByRole('status')).toHaveTextContent(PASSWORD_CHANGED)
+    expect(verifies).toEqual([{ token: 'mock-reset-revoked' }, { token: 'mock-reset-newer' }])
+    expect(confirms).toEqual([{ token: 'mock-reset-newer', new_password: 'newpass123' }])
+    const hashes = app.visited().map(({ hash }) => hash)
+    expect(hashes.slice(hashes.indexOf('#token=mock-reset-newer'))[1]).toBe('')
+  })
+
+  it('다른 계정의 링크를 열면 그 계정을 보이고 그 계정의 비밀번호만 바꾼다', async () => {
+    applyScenario('password-reset')
+    addOtherAccount()
+    const confirms = recordRequestBodies('POST', CONFIRM)
+    const app = renderApp(RESET_LINK)
+    expect(await screen.findByText('p***@example.com')).toBeInTheDocument()
+
+    act(() => app.navigate(`/reset-password#token=${OTHER_TOKEN}`))
+    expect(await screen.findByText('mi***@example.com')).toBeInTheDocument()
+    expect(screen.queryByText('p***@example.com')).toBeNull()
+    await changePassword('newpass123')
+
+    expect(await screen.findByRole('status')).toHaveTextContent(PASSWORD_CHANGED)
+    expect(confirms).toEqual([{ token: OTHER_TOKEN, new_password: 'newpass123' }])
+    const password = (email: string) =>
+      db.accounts.find(({ session }) => session.user.email === email)!.password
+    expect(password('pm@example.com')).toBe('mock-password')
+    expect(password('minsu@example.com')).toBe('newpass123')
+  })
+
+  it('앞 링크를 확인하는 중에 새 링크를 열면 앞 확인을 취소하고 그 결과를 쓰지 않는다', async () => {
+    applyScenario('password-reset')
+    addOtherAccount()
+    const { held, release } = gate()
+    // MSW 의 XHR 가로채기는 요청의 signal 을 잇지 않는다. 취소는 XHR 의 abort 로 본다 (pushApi.test.ts 와 같다)
+    const abort = vi.spyOn(XMLHttpRequest.prototype, 'abort')
+    onTestFinished(() => abort.mockRestore())
+    server.use(
+      http.post(`/api/v1${VERIFY}`, async ({ request }) => {
+        const { token } = (await request.clone().json()) as { token: string }
+        if (token === TOKEN) await held
+        return undefined
+      }),
+    )
+    const app = renderApp(RESET_LINK)
+    expect(await screen.findByText('링크를 확인하고 있어요.')).toBeInTheDocument()
+
+    act(() => app.navigate(`/reset-password#token=${OTHER_TOKEN}`))
+    expect(await screen.findByText('mi***@example.com')).toBeInTheDocument()
+    expect(abort).toHaveBeenCalledTimes(1)
+    release()
+    await settle()
+
+    expect(screen.getByText('mi***@example.com')).toBeInTheDocument()
+    expect(screen.queryByText('p***@example.com')).toBeNull()
+  })
+})
+
+describe('세션 경계', () => {
+  it('변경 응답을 기다리는 사이 다른 계정으로 로그인하면 늦은 응답이 그 세션·화면·푸시 구독을 건드리지 않는다', async () => {
+    applyScenario('password-reset')
+    addOtherAccount()
+    db.push.subscriptions = [{ endpoint: ENDPOINT, keys: KEYS, user_id: 'us_02' }]
+    const browser = installPushBrowser({ permission: 'granted', subscribed: true })
+    const { held, release } = gate()
+    server.use(
+      http.post(`/api/v1${CONFIRM}`, async () => {
+        await held
+        return ok({})
+      }),
+    )
+    const log = recordRequests()
+    const app = renderApp(RESET_LINK)
+    await changePassword('newpass123')
+
+    await userEvent.click(screen.getByRole('link', { name: '로그인' }))
+    await userEvent.type(await screen.findByLabelText('이메일'), 'minsu@example.com')
+    await userEvent.type(screen.getByLabelText('비밀번호'), 'mock-password')
+    await userEvent.click(screen.getByRole('button', { name: '로그인' }))
+    await waitFor(() => expect(app.visited().at(-1)!.pathname).not.toBe('/login'))
+    const signedIn = app.queryClient.getQueryData(SESSION_QUERY_KEY)
+    expect(JSON.stringify(signedIn)).toContain('minsu@example.com')
+    const pathAfterLogin = app.visited().at(-1)!.pathname
+
+    release()
+    await settle()
+
+    expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toEqual(signedIn)
+    expect(app.visited().at(-1)!.pathname).toBe(pathAfterLogin)
+    expect(screen.queryByText(PASSWORD_CHANGED)).toBeNull()
+    expect(browser.subscription.unsubscribe).not.toHaveBeenCalled()
+    expect(log.started.filter(({ method }) => method === 'DELETE')).toEqual([])
   })
 })

@@ -31,6 +31,7 @@ export function toMeeting(dto: MeetingDto): Meeting {
     endedAt: dto.ended_at,
     extractionId: dto.extraction_id,
     failedStage: dto.failed_stage,
+    deletionAvailable: dto.deletion_available === true,
     progress: dto.progress
       ? {
           audioMerged: dto.progress.audio_merged,

@@ -95,6 +95,13 @@ export function UserMenu({ workspaceId }: UserMenuProps) {
             <Icon name="logout" size={15} className={ITEM_ICON} />
             <span className={ITEM_TEXT}>로그아웃</span>
           </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => {
+              leftRef.current = navigate(paths.withdrawal())
+            }}
+          >
+            <span className={ITEM_TEXT}>계정 탈퇴</span>
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </span>

@@ -213,14 +213,19 @@ describe('RequirePM', () => {
     ).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /^태스크명/ })).toHaveValue(title)
 
-    // M6 S4 부터 상세가 담당자 이름·보완 판정에 쓰는 팀원 목록을 함께 받는다. 승인 상세와 팀원 목록 말고는 아무것도 없다
+    // 상세는 새 담당자 선택용 활성 팀원과 익명 작성자 표시용 기록 팀원을 각각 한 번 읽는다.
     await waitFor(() =>
       expect(businessRequests(log.started)).toEqual([
         { method: 'GET', path: '/approvals/ap_01' },
         { method: 'GET', path: '/members?workspace_id=ws_01' },
+        { method: 'GET', path: '/members?workspace_id=ws_01&include_withdrawn=true' },
       ]),
     )
-    for (const request of ['start GET /approvals/ap_01', 'start GET /members?workspace_id=ws_01']) {
+    for (const request of [
+      'start GET /approvals/ap_01',
+      'start GET /members?workspace_id=ws_01',
+      'start GET /members?workspace_id=ws_01&include_withdrawn=true',
+    ]) {
       const started = log.timeline.indexOf(request)
       expect(started).toBeGreaterThan(log.timeline.indexOf('answer GET /auth/me'))
       expect(started).toBeGreaterThan(log.timeline.indexOf('answer GET /workspaces'))
@@ -245,6 +250,7 @@ describe('RequirePM', () => {
     const listOnly = [
       { method: 'GET', path: '/tasks?workspace_id=ws_01' },
       { method: 'GET', path: '/members?workspace_id=ws_01' },
+      { method: 'GET', path: '/members?workspace_id=ws_01&include_withdrawn=true' },
     ]
     await waitFor(() => expect(businessRequests(log.started)).toEqual(listOnly))
     expect(log.started.filter(({ path }) => path.startsWith('/approvals'))).toEqual([])

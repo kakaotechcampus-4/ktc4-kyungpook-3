@@ -31,6 +31,9 @@ const resetPasswordPage = lazyPage(() =>
 )
 const termsPage = lazyPage(() => import('@/pages/policy').then((m) => m.TermsPage))
 const privacyPage = lazyPage(() => import('@/pages/policy').then((m) => m.PrivacyPage))
+const accountWithdrawalPage = lazyPage(() =>
+  import('@/pages/account-withdrawal').then((m) => m.AccountWithdrawalPage),
+)
 const workspaceSelectPage = lazyPage(() =>
   import('@/pages/workspace-select').then((m) => m.WorkspaceSelectPage),
 )
@@ -126,6 +129,7 @@ export const appRoutes = (
     <Route path="reset-password" element={screen(resetPasswordPage)} />
     <Route path="terms" element={screen(termsPage)} />
     <Route path="privacy" element={screen(privacyPage)} />
+    <Route path="account/withdrawal" element={screen(accountWithdrawalPage)} />
     <Route element={<RequireAuth />}>
       {/* 추적기 같은 로그인 뒤 전역 동작의 칸. path 가 없어 경로에는 끼지 않는다 */}
       <Route element={<AuthenticatedLayout />}>
