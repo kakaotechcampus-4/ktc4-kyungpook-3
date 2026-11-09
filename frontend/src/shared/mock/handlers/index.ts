@@ -9,6 +9,7 @@ import { integrationHandlers } from './integration'
 import { meetingHandlers } from './meeting'
 import { speakerHandlers } from './speaker'
 import { minutesHandlers } from './minutes'
+import { markdownFileHandlers } from './markdownFiles'
 import { extractionHandlers } from './extraction'
 import { taskHandlers } from './task'
 import { approvalHandlers } from './approval'
@@ -31,6 +32,7 @@ export const handlers: RequestHandler[] = [
   ...meetingHandlers,
   ...speakerHandlers,
   ...minutesHandlers,
+  ...markdownFileHandlers,
   ...extractionHandlers,
   ...taskHandlers,
   ...approvalHandlers,

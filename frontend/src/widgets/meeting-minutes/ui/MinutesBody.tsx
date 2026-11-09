@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { ExtractionItem } from '@/entities/extraction'
-import type { MinutesSummary, TranscriptLine } from '@/entities/minutes'
+import type { Minutes, MinutesSummary, TranscriptLine } from '@/entities/minutes'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
@@ -75,18 +75,29 @@ function Section({
   )
 }
 
-/** 요약 탭. 실 API 는 아직 요약을 채우지 않아 늘 null 이다 (계약 §4.7-4) — 빈 상태가 기본이다 */
-export function SummaryPanel({ summary }: { summary: MinutesSummary | null }) {
+/**
+ * 요약 탭. 요약이 있으면 상태와 무관하게 보인다 (계약 §4.4.2).
+ * 없을 때 `none` 은 나중에 생길 수도 있어 "요약 없이 끝났다" 고 말하지 않는다. 모르는 상태도 같은 중립 문구다
+ */
+export function SummaryPanel({
+  summary,
+  status,
+}: {
+  summary: MinutesSummary | null
+  status: Minutes['summaryStatus']
+}) {
   const overview = summary?.overview.trim() ?? ''
   if (
     summary === null ||
     (overview === '' && summary.keyPoints.length === 0 && summary.decisions.length === 0)
   )
-    return (
+    return status === 'pending' ? (
       <SectionEmpty
-        title="요약이 아직 없어요"
-        description="이 회의는 요약 없이 정리됐어요. 발언은 전사문에서 볼 수 있어요."
+        title="요약을 만드는 중이에요"
+        description="요약이 만들어지면 여기에 보여요. 발언은 전사문에서 볼 수 있어요."
       />
+    ) : (
+      <SectionEmpty title="요약이 없어요" description="발언은 전사문에서 볼 수 있어요." />
     )
   return (
     <>

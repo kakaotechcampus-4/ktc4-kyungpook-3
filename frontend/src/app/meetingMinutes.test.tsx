@@ -329,6 +329,7 @@ describe('회의록 상세 (U5-3)', () => {
   it('요약 null · 빈 전사문 · 참석자 없음 · 추출 결과 없음은 각각 빈 상태다 — 추출 요청을 보내지 않는다', async () => {
     const minutes = db.minutes.find(({ meeting_id }) => meeting_id === 'mt_07')!
     minutes.summary = null
+    minutes.summary_status = 'none'
     minutes.transcript = []
     minutes.attendees = []
     db.meetings.find(({ meeting_id }) => meeting_id === 'mt_07')!.extraction_id = null
@@ -337,7 +338,7 @@ describe('회의록 상세 (U5-3)', () => {
     await openMinutes(MT_07, '2주차 정기회의')
 
     expect(within(detail()).getByText('참석자 정보가 없어요')).toBeInTheDocument()
-    expect(within(screen.getByRole('tabpanel')).getByText('요약이 아직 없어요')).toBeInTheDocument()
+    expect(within(screen.getByRole('tabpanel')).getByText('요약이 없어요')).toBeInTheDocument()
     expect(within(await openTab(user, /전사문/)).getByText('전사문이 없어요')).toBeInTheDocument()
     expect(within(detail()).queryByRole('list', { name: '전사문' })).toBeNull()
     const tasks = await openTab(user, /추출된 일/)

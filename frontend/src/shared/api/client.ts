@@ -4,6 +4,7 @@ import type { Envelope } from '@/shared/types/api/envelope'
 import { config } from '@/shared/config/env'
 import { parseEnvelope, unwrap } from './envelope'
 import { ApiError, CLIENT_ERROR_CODES, createClientError } from './errors'
+import { filenameFromContentDisposition } from './contentDisposition'
 import { captureSessionScope } from './sessionScope'
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -69,7 +70,61 @@ export function onUnauthorized(listener: UnauthorizedListener): () => void {
  * 공통 요청. 봉투를 풀어 `data` 를 돌려주고 실패는 모두 `ApiError` 로 던진다.
  * 204 는 본문을 읽지 않고 `undefined` 다. 재시도하지 않는다 — 재시도는 Query 정책이 정한다.
  */
-export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return send(path, options, (response) => readResponse<T>(response.status, response.data))
+}
+
+/** 내려받은 Markdown 파일. `filename` 은 서버가 정한 이름이고, 없으면 호출자가 준 이름이다 */
+export interface MarkdownFile {
+  text: string
+  filename: string
+}
+
+export interface MarkdownFileOptions {
+  params?: Record<string, QueryParamValue>
+  signal?: AbortSignal
+  /** `Content-Disposition` 에서 이름을 읽지 못했을 때 쓴다 */
+  fallbackFilename: string
+}
+
+/**
+ * 봉투 없이 Markdown 본문을 주는 내려받기. 실패 응답은 보통 봉투라 `request` 와 같은 `ApiError` 를 던진다.
+ * 2xx 인데 Markdown 이 아니면(SPA 폴백이 돌려준 index.html 등) 잘못된 응답이다.
+ */
+export function requestMarkdownFile(
+  path: string,
+  options: MarkdownFileOptions,
+): Promise<MarkdownFile> {
+  return send(
+    path,
+    {
+      params: options.params,
+      signal: options.signal,
+      headers: { Accept: 'text/markdown, application/json' },
+    },
+    (response) => {
+      if (!isSuccess(response.status)) throw readFailure(response.status, response.data)
+      if (
+        typeof response.data !== 'string' ||
+        !headerText(response, 'content-type').toLowerCase().startsWith('text/markdown')
+      ) {
+        throw createClientError(CLIENT_ERROR_CODES.INVALID_RESPONSE, response.status)
+      }
+      return {
+        text: response.data,
+        filename:
+          filenameFromContentDisposition(headerText(response, 'content-disposition')) ??
+          options.fallbackFilename,
+      }
+    },
+  )
+}
+
+async function send<T>(
+  path: string,
+  options: RequestOptions,
+  read: (response: AxiosResponse<unknown>) => T,
+): Promise<T> {
   // 출발한 세션. 로그아웃·재로그인 뒤에 늦게 온 401 이 새 세션을 끝내지 않게 알림 전에 본다
   const session = captureSessionScope()
   let response: AxiosResponse<unknown>
@@ -87,7 +142,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     throw toTransportError(error)
   }
   try {
-    return readResponse<T>(response.status, response.data)
+    return read(response)
   } catch (error) {
     if (
       error instanceof ApiError &&
@@ -100,6 +155,11 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     }
     throw error
   }
+}
+
+function headerText(response: AxiosResponse<unknown>, name: string): string {
+  const value: unknown = response.headers[name]
+  return typeof value === 'string' ? value : ''
 }
 
 /**
@@ -131,18 +191,22 @@ function toTransportError(error: unknown): unknown {
   return error
 }
 
+function isSuccess(status: number): boolean {
+  return status >= 200 && status < 300
+}
+
 function readResponse<T>(status: number, body: unknown): T {
   if (status === 204) return undefined as T
-  const succeeded = status >= 200 && status < 300
+  if (!isSuccess(status)) throw readFailure(status, body)
   const envelope = parseEnvelope(body)
-  if (envelope === null) {
-    throw createClientError(
-      succeeded ? CLIENT_ERROR_CODES.INVALID_RESPONSE : CLIENT_ERROR_CODES.UNKNOWN_ERROR,
-      status,
-    )
-  }
-  if (!succeeded && envelope.error === null) {
-    throw createClientError(CLIENT_ERROR_CODES.UNKNOWN_ERROR, status)
-  }
+  if (envelope === null) throw createClientError(CLIENT_ERROR_CODES.INVALID_RESPONSE, status)
   return unwrap(envelope as Envelope<T>, status)
+}
+
+/** 2xx 가 아닌 응답. 봉투의 오류가 없으면 상태 코드만 가진 `UNKNOWN_ERROR` 다 */
+function readFailure(status: number, body: unknown): ApiError {
+  const error = parseEnvelope(body)?.error ?? null
+  return error === null
+    ? createClientError(CLIENT_ERROR_CODES.UNKNOWN_ERROR, status)
+    : new ApiError(error, status)
 }
