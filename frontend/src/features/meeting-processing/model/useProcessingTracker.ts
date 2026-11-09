@@ -139,10 +139,10 @@ export function useProcessingTracker(): void {
     (meeting: TrackedMeeting, detail: Meeting) => {
       const { workspaceId, meetingId } = meeting
       const { failedStage } = detail
-      const failure = meetingFailure(failedStage)
-      // 만료 이력은 유지하고, 나머지 실패는 기존 정책대로 목록에서 뺀다.
+      // 만료 이력(화자 지정·정리 시작)은 유지하고, 나머지 실패는 기존 정책대로 목록에서 뺀다.
+      const expired = meetingFailure(failedStage).expiredLabel !== null
       queryClient.setQueryData(meetingListQueryOptions(workspaceId).queryKey, (list) =>
-        failure.kind === 'expired'
+        expired
           ? list?.map((item) =>
               item.id === meetingId ? { ...item, status: 'failed' as const, failedStage } : item,
             )
@@ -150,10 +150,7 @@ export function useProcessingTracker(): void {
       )
       invalidateMeetings(queryClient, meeting)
       settleMeeting({ ...meeting, title: detail.title, outcome: 'failed', failedStage })
-      leaveProcessingScreen(
-        meeting,
-        paths.meetings(workspaceId, failure.kind === 'expired' ? meetingId : undefined),
-      )
+      leaveProcessingScreen(meeting, paths.meetings(workspaceId, expired ? meetingId : undefined))
     },
     [leaveProcessingScreen, queryClient],
   )

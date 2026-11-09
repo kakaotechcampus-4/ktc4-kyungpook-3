@@ -20,6 +20,7 @@ export type Scenario =
   | 'meeting-fail'
   | 'meeting-fail-diarize'
   | 'meeting-fail-expired'
+  | 'meeting-fail-unclaimed'
   | 'meeting-expired-member'
   | 'meeting-notion-not-connected'
   | 'meeting-member'
