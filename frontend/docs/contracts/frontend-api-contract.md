@@ -1318,7 +1318,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 
 **확인하지 않은 것.** 실제 카카오 로그인, 실제 메일 수신, 실서버 왕복은 하지 않았다. BE 코드는 읽어서 대조만 했다. `Secure` 쿠키와 카카오 redirect URI, 비즈 앱 이메일 동의 설정은 배포 환경에서 확인해야 한다. 배포 순서상 BE의 새 signup이 먼저 나가면 지금 배포된 FE의 가입이 400이 되므로 FE와 함께 내보낸다.
 
-#### 4.1.4 이용약관·개인정보처리방침 동의 (#564): BE 제안, FE 합의 전
+#### 4.1.5 이용약관·개인정보처리방침 동의 (#564): BE 제안, FE 합의 전
 
 제공자는 BE, 소비자는 FE 가입·로그인 뒤 동의 화면이다. 근거는 [#564](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/564)와 FE 요청 [#566](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/566)이다. 아래는 2026-11-09 최신 develop을 통합한 #569의 `backend/app/api/consents.py`, `services/consents.py` 기준 구현 규약이다. FE 화면 연결과 최종 공개 정책의 승인은 아직 별도이며, 이 API 구현을 FE 합의·법률 검토·배포 완료로 표현하지 않는다.
 
