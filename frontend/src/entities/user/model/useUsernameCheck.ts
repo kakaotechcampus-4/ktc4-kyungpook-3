@@ -81,6 +81,11 @@ export function useUsernameCheck(input: string, current?: string): UsernameCheck
 
   // 저장해 지금 내 아이디가 된 값의 `available` 은 지난 확인이다. 다시 저장할 것이 없다
   const settled = result.status === 'available' && result.username === current
-  const check = result.status !== 'idle' && result.username === username && !settled ? result : IDLE
+  // 정규화 값만 비교하면 소문자로 바꿔야 같아지는 규칙 밖 글자(켈빈 기호 등)가 앞 확인을 물려받는다
+  const reusable =
+    result.status !== 'idle' &&
+    result.username === username &&
+    (result.status !== 'available' || isUsernameAllowed(input))
+  const check = reusable && !settled ? result : IDLE
   return { check, confirmed: check.status === 'available', run, reject }
 }

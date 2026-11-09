@@ -616,6 +616,22 @@ describe('아이디 중복 확인 (#627)', () => {
     expect(createButton()).toBeEnabled()
   })
 
+  it('소문자로 바꾸면 확인한 아이디와 같아지는 규칙 밖 글자(켈빈 기호)는 앞 확인을 쓰지 않는다', async () => {
+    const bodies = recordRequestBodies('POST', '/auth/signup')
+    await openProfile()
+    await confirmUsername('kaka1')
+    expect(createButton()).toBeEnabled()
+
+    const field = screen.getByLabelText('아이디')
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Kaka1')
+    expect(createButton()).toBeDisabled()
+    expect(screen.queryByText('사용할 수 있는 아이디예요.')).not.toBeInTheDocument()
+    fireEvent.submit(createButton().closest('form')!)
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(bodies).toEqual([])
+  })
+
   it('이미 있는 아이디는 칸 아래에 알리고 가입할 수 없다', async () => {
     await openProfile()
     const field = screen.getByLabelText('아이디')
