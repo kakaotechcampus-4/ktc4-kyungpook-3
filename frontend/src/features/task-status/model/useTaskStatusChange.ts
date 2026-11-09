@@ -10,10 +10,11 @@ import {
   writeServerTask,
 } from '@/entities/task'
 import type { TaskStatus } from '@/entities/task'
-import { captureSession } from '@/entities/user'
 import { findMemberWorkspace, workspaceListQueryOptions } from '@/entities/workspace'
 import { failureNotice } from '@/shared/api/errorMessages'
-import { isInvalidResponse } from '@/shared/api/errors'
+import { CLIENT_ERROR_CODES, createClientError, isInvalidResponse } from '@/shared/api/errors'
+import { captureSessionScope } from '@/shared/api/sessionScope'
+import type { SessionScope } from '@/shared/api/sessionScope'
 import { paths } from '@/shared/config/routes'
 import { useLivePathname } from '@/shared/lib/live-pathname'
 import { toast } from '@/shared/ui/toast'
@@ -35,7 +36,7 @@ interface StatusVariables {
   taskId: string
   status: TaskStatus
   /** 요청을 시작한 세션이 아직 이어지는지. 끝났으면 화면·캐시·알림에 아무것도 남기지 않는다 */
-  isCurrentSession: () => boolean
+  session: SessionScope
 }
 
 /**
@@ -55,7 +56,7 @@ export function useTaskStatusOverlay(workspaceId: string): ReadonlyMap<string, T
     () =>
       new Map(
         pending.flatMap((variables) =>
-          variables !== undefined && variables.isCurrentSession()
+          variables !== undefined && variables.session.isCurrent()
             ? [[variables.taskId, variables.status] as const]
             : [],
         ),
@@ -107,15 +108,17 @@ export function useTaskStatusChange(workspaceId: string, taskId: string): TaskSt
 
   const { mutate } = useMutation({
     mutationKey,
-    mutationFn: (variables: StatusVariables) =>
-      updateTaskStatus(workspaceId, variables.taskId, variables.status),
-    onSuccess: (task, { isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    mutationFn: ({ taskId: id, status, session }: StatusVariables) => {
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
+      return updateTaskStatus(workspaceId, id, status, session.signal)
+    },
+    onSuccess: (task, { session }) => {
+      if (!session.isCurrent()) return
       writeServerTask(queryClient, workspaceId, task)
       syncTask(queryClient, workspaceId, taskId)
     },
-    onError: (error, { isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    onError: (error, { session }) => {
+      if (!session.isCurrent()) return
       const notice = failureNotice(error)
       // 알림은 아직 이 공간의 태스크 화면에 있을 때만 — 다른 공간·다른 화면에 이전 화면의 실패를 띄우지 않는다
       const here = livePathname()
@@ -138,7 +141,7 @@ export function useTaskStatusChange(workspaceId: string, taskId: string): TaskSt
       // 같은 틱의 두 번째 입력도 막는다. mutation 은 시작하는 순간 캐시에서 진행 중이다
       if (queryClient.isMutating({ mutationKey: taskStatusMutationKey(workspaceId, taskId) }) > 0)
         return
-      mutate({ taskId, status, isCurrentSession: captureSession() })
+      mutate({ taskId, status, session: captureSessionScope() })
     },
     [queryClient, mutate, workspaceId, taskId],
   )

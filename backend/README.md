@@ -154,7 +154,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `SPEAKERS_ALREADY_REPORTED` | 409 | 이미 화자 목록을 받은 업로드에 저장된 것과 다른 목록을 보고하려 함(같은 목록의 재전송은 200). `details.status` |
 | `MEETING_NOT_AWAITING_SPEAKERS` | 409 | 회의가 화자 지정 대기(`awaiting_speakers`) 상태가 아닌데 화자를 지정하려 함. `details.status` |
 | `SPEAKERS_NOT_ASSIGNED` | 409 | PM이 화자 지정을 끝내지 않은 업로드의 처리를 AI가 이어 가려 함. `details.status` |
-| `AUDIO_TOO_LARGE` | 413 | 업로드한 녹음이 한도(기본 100MiB, `UPLOAD_MAX_BYTES`)를 넘음. `details.size_bytes`·`max_bytes` |
+| `AUDIO_TOO_LARGE` | 413 | 업로드한 녹음이 한도(기본 200MiB, `UPLOAD_MAX_BYTES`)를 넘음. `details.size_bytes`·`max_bytes` |
 | `AUDIO_UPLOAD_FAILED` | 422 | 오디오 저장·병합 실패 |
 | `AUDIO_FORMAT_UNSUPPORTED` | 422 | 지원하지 않는 오디오 형식. `details.filename`·`supported` |
 | `TRANSCRIPTION_FAILED` | 502 | 음성 전사 실패 *(아직 미구현 경로)* |
@@ -382,7 +382,7 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 | 지운 task | 지금은 auto 되돌리기만 task를 지운다. 행은 남기고(Notion 페이지 보관, 추출 항목·이력 연결 유지) task 목록·조회·수정·이력·유사 검색·임베딩·승인 요청 대상에서 뺀다. 지운 task를 가리키는 조회는 404 `TASK_NOT_FOUND`, update 추출 항목은 건너뛰고, 추출 조회는 그 task를 가리키던 항목의 `task_id`를 null로 내린다. Notion 재시도(`POST /tasks/{id}/notion-sync/retry`)만 지운 task도 받는다(페이지 보관 재시도). task를 바꾸는 경로(`PATCH /tasks/{id}`, 이력 되돌리기, 승인 요청 생성, 추출 update 대상)는 task 행을 커밋까지 잠그고 다시 읽어, 되돌리기와 겹쳐도 지운 task에 쓰지 않는다 |
 | 추출 경로 | AI가 경로를 보내지 않으므로 항목이 보낸 키로 가린다. `action`·`category`·`doc_text`를 보냈으면 judge, 확신도를 보냈으면 legacy다(`ExtractionItemCreate.extraction_path`). 모든 항목이 같을 때만 `extraction.extraction_path`에 남기고 아니면 NULL. 확신도를 보내지 않으면 0.0이 아니라 NULL(측정 안 함)로 저장한다 |
 | `action: update` | `target_task_id`의 task_update 승인 요청을 만든다(신뢰도와 무관하게 항상 PM 승인 대상). `task_title`은 없어도 되고, 와도 제목은 바꾸지 않는다 |
-| update 변경안 | 들어온 값 중 지금 task와 다른 `due_date`·`status`·`assignee_member_id`만 담는다. 담당자는 지금 task와 다를 때만 넣고 같으면 뺀다 |
+| update 변경안 | 들어온 값 중 지금 task와 다른 `due_date`·`status`·`assignee_member_id`만 담는다. 담당자는 지금 task와 다를 때만 넣고 같으면 뺀다. `due_cleared`가 true이고 `due_date`가 없으면, 지금 task에 마감이 있을 때만 `due_date: null`과 `base_values.due_date`를 담는다(마감 해제, #624) |
 | update 충돌 기준값 | 변경 필드마다 `base_values`를 남겨 승인 시 그 뒤 수정과 충돌을 확인한다. 기준값은 AI가 유사 검색에서 본 값(`target_snapshot`의 `due_date`·`status`·`assignee_member_id`)이다. 보내지 않은 필드나 `target_snapshot`이 없는 요청은 등록 시점의 값을 쓴다. 검색과 등록 사이에 PM이 고친 값을 승인이 덮지 않게 하려는 것이다 |
 | update 대상 확인 | AI가 task를 고를 때 본 제목(`target_snapshot.title`, 없거나 null이면 등록 시점 제목)을 payload의 `base_title`에 남긴다. 승인할 때 지금 제목과 다르면 다른 필드가 그대로여도 `APPROVAL_CONFLICT`의 `title` 항목으로 알린다. 제목은 바꾸지 않는다. 앞뒤 공백만 다르면 같은 제목으로 본다. `base_title`이 없는 요청(이 기능 전에 만든 요청, `base_title`을 보내지 않은 수동 생성)은 제목을 확인하지 않는다. 수동 생성(`POST /approvals`)은 payload를 그대로 저장해서 `base_title`·`base_values`를 넣으면 확인한다(#185) |
 | update 승인 요청 생성 여부 | 담당자를 하나로 못 찾았으면(중의적이거나 없음) 다른 변경이 없어도 PM이 보도록 승인 요청을 만든다. `category: scope`(대응하는 task 필드가 없는 범위 결정)도 다른 변경이 없어도 승인 요청을 만든다. 그 외에 담당자까지 같거나 언급이 없고 다른 변경도 없으면 승인 요청 자체를 만들지 않는다(단 `doc_text`·근거는 ExtractionItem에 남는다) |

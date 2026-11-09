@@ -1,4 +1,6 @@
 import type { Bundle, BundleTask, DmFailureReason } from '@/entities/message'
+import { isKnownValue } from '@/shared/api/unknownValue'
+import type { UnknownValue } from '@/shared/api/unknownValue'
 import { formatSeoulDateTime, seoulDateOf } from '@/shared/lib/date'
 
 /* 시각은 모두 한국 시간이다 (D-144). formatSeoulDateTime 은 `YYYY-MM-DD HH:mm` 이다 */
@@ -56,11 +58,15 @@ export function taskDueLabel(task: BundleTask): string {
   return task.dueDate === null ? '마감 없음' : `${dueLabel(task.dueDate)} 마감`
 }
 
-/** DM 을 보내지 못한 이유 (계약 §5.7) */
-export const DM_FAILURE_TEXT: Record<DmFailureReason, string> = {
+const DM_FAILURE_TEXT: Record<DmFailureReason, string> = {
   dm_blocked: '서버 DM이 막혀 있어요',
   discord_not_linked: 'Discord 계정이 연결되지 않았어요',
   unknown: '이유를 알 수 없어요',
+}
+
+/** DM 을 보내지 못한 이유 (계약 §5.7). 모르는 이유는 서버의 `unknown` 과 같은 문구다 (#348) */
+export function dmFailureText(reason: DmFailureReason | UnknownValue): string {
+  return DM_FAILURE_TEXT[isKnownValue(reason) ? reason : 'unknown']
 }
 
 /** 답장이 없는 지 며칠째인가. 보낸 날이 1일째다 — 9/16 에 보냈으면 9/18 은 3일째 (MessagesThread 시안 `답장 3일째 없음`) */

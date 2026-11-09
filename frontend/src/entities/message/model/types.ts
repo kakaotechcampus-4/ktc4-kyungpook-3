@@ -1,3 +1,5 @@
+import type { UnknownValue } from '@/shared/api/unknownValue'
+
 /* 메시지 화면의 도메인 모델 (계약 §5.7). 화면은 DTO 대신 이 타입만 쓴다 */
 
 export type MessageSender = 'bot' | 'pm' | 'member'
@@ -8,7 +10,8 @@ export type DmFailureReason = 'dm_blocked' | 'discord_not_linked' | 'unknown'
 
 /** 봇·PM 메시지가 Discord DM 으로 나갔는가. 실패해도 웹 대화에는 남는다 */
 export type DmDelivery =
-  { status: 'pending' | 'claimed' | 'delivered' } | { status: 'failed'; reason: DmFailureReason }
+  | { status: 'pending' | 'claimed' | 'delivered' }
+  | { status: 'failed'; reason: DmFailureReason | UnknownValue }
 
 export interface BotMessage {
   sender: 'bot'
@@ -57,7 +60,8 @@ export interface BundleTask {
   evidence: ReminderEvidence | null
 }
 
-export type BodySource = 'pm' | 'ai' | 'rule'
+export const BODY_SOURCES = ['pm', 'ai', 'rule'] as const
+export type BodySource = (typeof BODY_SOURCES)[number]
 
 /**
  * 화면이 다루는 묶음의 단계. 응답의 status·approved 조합에서 매퍼가 한 번만 정한다.
@@ -73,7 +77,8 @@ export type Bundle = BundleStage & {
   recipientName: string
   scheduledAt: string
   body: string
-  bodySource: BodySource
+  /** 표시용 분류. 모르는 값은 받은 글자를 남긴다 (#348) */
+  bodySource: BodySource | UnknownValue
   /** AI 초안이 아직 오는 중이라 문구가 바뀔 수 있다 */
   drafting: boolean
   /** 승인할 때 그대로 돌려보내는 문구의 판 */

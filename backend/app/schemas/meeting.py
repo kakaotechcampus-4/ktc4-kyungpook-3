@@ -337,6 +337,11 @@ class ExtractionItemCreate(BaseModel):
         "없거나 탈퇴한 팀원이면 그 발화의 화자 uid. 그 발화를 찾지 못하면 화자가 없다.",
     )
     due_date: date | None = None
+    due_cleared: bool = Field(
+        False,
+        description="update에서 대상 task의 마감을 없애자는 결정이면 true. due_date=null은 '바꾸지 않음'이라 따로 둔다. "
+        "due_date가 함께 오면 due_date를 따른다. 대상 task에 마감이 없으면 바뀌는 것이 없다.",
+    )
     due_raw: str | None = None
     due_confidence: float | None = Field(
         None, description="마감 확신도(0~1). legacy 경로만 보낸다. 보내지 않으면 null(측정 안 함)."

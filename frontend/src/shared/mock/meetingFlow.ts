@@ -165,6 +165,7 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
       key_points: ['지난주 작업을 공유했다.', '남은 일의 담당자를 정했다.'],
       decisions: ['확실한 항목은 바로 반영하고 나머지는 PM이 확인한다.'],
     },
+    summary_status: 'ready',
     transcript: TRANSCRIPT_LINES.map((text, index) => {
       const member = speaker(index)
       return {
@@ -303,7 +304,7 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
 
 /**
  * 처리 중 회의를 실패로 끝낸다. 회의록·추출·태스크·승인을 만들지 않는다 — 실패 결과를 남기지 않는다 (D-091).
- * 일반 실패는 목록에서 빼고, 수동 업로드의 화자 지정 기한 만료만 이력으로 남긴다 (#256).
+ * 일반 실패는 목록에서 빼고, 수동 업로드의 두 만료 사유만 이력으로 남긴다 (#256, #598). 목록 조건은 handlers/meeting.ts 다.
  */
 export function failMeeting(
   meetingId: string,
@@ -402,6 +403,9 @@ export function tickMeeting(meetingId: string, state: MockDb = db): void {
       return
     case 'fail-expired':
       failMeeting(meetingId, { failedStage: 'speaker_assignment_expired' }, state)
+      return
+    case 'fail-unclaimed':
+      failMeeting(meetingId, { failedStage: 'upload_unclaimed' }, state)
       return
     case 'fail-chat-stalled':
       if (isChatMeeting(meetingId, state))

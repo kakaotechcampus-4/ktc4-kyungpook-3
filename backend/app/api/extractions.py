@@ -727,6 +727,10 @@ def _request_task_update(
     if raw_item.due_date is not None and raw_item.due_date != target.due_date:
         changes["due_date"] = raw_item.due_date.isoformat()
         base_values["due_date"] = base("due_date", target.due_date)
+    elif raw_item.due_cleared and raw_item.due_date is None and target.due_date is not None:
+        # 마감을 없애는 변경안. 승인하면 null 이 그대로 반영된다(#624)
+        changes["due_date"] = None
+        base_values["due_date"] = base("due_date", target.due_date)
     if raw_item.status is not None and str(raw_item.status) != target.status:
         changes["status"] = str(raw_item.status)
         base_values["status"] = base("status", target.status)

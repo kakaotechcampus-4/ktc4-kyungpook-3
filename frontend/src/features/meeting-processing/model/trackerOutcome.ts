@@ -58,11 +58,3 @@ const POLL_INTERVALS: Record<TrackerOutcome, number | false> = {
 export function pollInterval(data: Meeting | undefined, error: unknown): number | false {
   return POLL_INTERVALS[trackerOutcome(data, error)]
 }
-
-/**
- * 창 포커스·연결 복귀 때 다시 물을까. 끊긴 사이에 끝났을 수 있어 평소에는 최신 시간과 상관없이 묻는다(`always`).
- * 응답을 읽지 못한 상세는 다시 물어도 같아 묻지 않는다 — 사용자의 다시 시도만 기다린다 (#348)
- */
-export function refetchOnReturn({ state }: { state: { error: unknown } }): boolean | 'always' {
-  return isInvalidResponse(state.error) ? false : 'always'
-}

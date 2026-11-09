@@ -16,20 +16,22 @@ const NOTICE =
   '회의록을 만들기 위해 음성과 전사 내용을 외부 서비스(Elice, pyannoteAI)로 보내요. 참석자에게 알린 뒤 올려 주세요.'
 
 for (const { path, title } of DOCUMENTS) {
-  test(`랜딩 하단의 ${title}을 열고 새로고침해도 같은 문서 준비 화면이다`, async ({
+  test(`랜딩 하단의 ${title}을 열고 새로고침해도 게시한 같은 판본을 읽는다`, async ({
     page,
   }, testInfo) => {
     await start(page, 'signed-out')
     await page.getByRole('contentinfo').getByRole('link', { name: title }).click()
     await expect(page).toHaveURL(path)
     await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible()
-    await expect(page.getByText('문서를 준비하고 있어요.')).toBeVisible()
+    await expect(page.getByText('문서를 준비하고 있어요.')).toHaveCount(0)
+    await expect(page.getByText('판본 2026-11-10 · 시행일 2026-11-10')).toBeVisible()
 
     await page.reload()
     await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible({
       timeout: 15_000,
     })
     await expect(page).toHaveURL(path)
+    await expect(page.getByText('판본 2026-11-10 · 시행일 2026-11-10')).toBeVisible()
     await expect(page.locator('.splash')).toHaveCount(0)
     await capture(page, testInfo, 'policy-from-footer.png')
   })

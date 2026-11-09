@@ -17,13 +17,21 @@ export async function createMember(input: CreateMemberInput): Promise<Member> {
 }
 
 /** 넣지 않은 필드는 본문에 싣지 않는다 — 백엔드는 보낸 키만 바꾼다 */
-export async function updateMember(memberId: string, input: UpdateMemberInput): Promise<Member> {
+export async function updateMember(
+  memberId: string,
+  input: UpdateMemberInput,
+  signal?: AbortSignal,
+): Promise<Member> {
   const body: MemberUpdateDto = {}
   if (input.displayName !== undefined) body.display_name = input.displayName
   if (input.discordUserId !== undefined) body.discord_user_id = input.discordUserId
   if (input.notionName !== undefined) body.notion_name = input.notionName
   if (input.role !== undefined) body.role = input.role
   return toMember(
-    await request<MemberDto>(`/members/${encodeURIComponent(memberId)}`, { method: 'PATCH', body }),
+    await request<MemberDto>(`/members/${encodeURIComponent(memberId)}`, {
+      method: 'PATCH',
+      body,
+      signal,
+    }),
   )
 }

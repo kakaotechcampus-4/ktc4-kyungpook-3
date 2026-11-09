@@ -42,10 +42,6 @@ from shared.schemas import (
 # 수정·담당자 변경 카드는 예전처럼 고친 이름을 보낸다.
 _NOT_ALIAS_TYPES = {"second", "thirdpronoun", "thirdrole"}
 
-# 답장 판단(judge/reply.py)이 이 값으로 마감 지움을 알아본다
-DUE_CLEARED_REASON = "마감을 없애는 변경은 아직 보낼 수 없습니다(BE 는 null 을 '바꾸지 않음'으로 받음)."
-
-
 def _assignee(finding: JudgeFinding, *, is_new: bool) -> tuple[str | None, str | None]:
     """(assignee_type, assignee_raw) — BE 가 member_id 로 해소할 값. is_new: 새 할 일(create) 항목인가.
 
@@ -138,6 +134,10 @@ def to_item(
     # ── update: 현재 값과 달라지는 필드만 남긴다
     if item["due_date"] == target.due_date:
         item["due_date"] = None
+    # BE 는 due_date=null 을 "바꾸지 않음"으로 받는다. 마감을 없애는 결정은 따로 보낸다(0062). 원래 마감이 없으면
+    # BE 가 등록 시점 값으로 보고 승인 요청을 만들지 않는다. 답장 판단은 이 값으로 PM 에게 알린다
+    if drafted.structured.due_cleared:
+        item["due_cleared"] = True
     if item["status"] == target.status:
         item["status"] = None
     if result.category != "assignee":
@@ -154,7 +154,8 @@ def to_item(
 
 def _has_change(item: dict[str, Any]) -> bool:
     """update item 에 바꿀 필드가 남아 있는지."""
-    return bool(item["due_date"] or item["status"] or item["assignee_raw"] or item["assignee_type"] == "first")
+    return bool(item["due_date"] or item.get("due_cleared") or item["status"] or item["assignee_raw"]
+                or item["assignee_type"] == "first")
 
 
 # ── 같은 회의 안 중복 · 번복 (#140) ─────────────────────────────────────────
@@ -169,6 +170,8 @@ def _with_edit(base: NotionCandidate, card: dict[str, Any]) -> NotionCandidate:
     changes = []
     if card["due_date"] is not None:
         changes.append(f"마감을 {base.due_date or '없음'} → {card['due_date']}")
+    if card.get("due_cleared") and base.due_date is not None:
+        changes.append(f"마감을 {base.due_date} → 없음")
     if card["status"] is not None:
         changes.append(f"상태를 {base.status} → {card['status']}")
     if card["assignee_raw"] or card["assignee_type"] == "first":
@@ -176,7 +179,7 @@ def _with_edit(base: NotionCandidate, card: dict[str, Any]) -> NotionCandidate:
     what = ", ".join(changes) + " 바꾸자고 함" if changes else "이 항목을 다룸"
     return replace(
         base,
-        due_date=card["due_date"] if card["due_date"] is not None else base.due_date,
+        due_date=None if card.get("due_cleared") else card["due_date"] if card["due_date"] is not None else base.due_date,
         status=card["status"] if card["status"] is not None else base.status,
         meeting_note=f"이번 회의 앞부분에서 {what}. 아직 승인 전",
     )
@@ -218,12 +221,16 @@ def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult
     마감 · 상태 · 담당은 뒤 발화가 덮어쓴다 — 나중에 말한 것이 최신 결정이다. 제목 · 스냅샷은 앞 카드 그대로다.
     근거는 담당을 정한 발화를 따른다. 그래야 "제가 맡을게요" 를 BE 가 그 말을 한 사람으로 찾는다.
     base 는 수정 카드의 DB 원래 후보다. 합친 값이 원래 값과 같아지면(되돌림) 그 필드를 지운다.
-    마감을 없애자는 결정(due_cleared)은 앞 카드의 마감 제안을 지운다. 원래 마감이 없던 업무면 되돌림이 된다.
+    마감을 없애자는 결정(due_cleared)은 앞 카드의 마감 제안을 지운다. 원래 마감이 없던 업무면 되돌림이 되고,
+    원래 마감이 있는 Task 의 수정 카드면 그 마감을 없애는 카드(due_cleared)가 된다(#624).
     """
     if drafted.structured.due_cleared:
         card["due_date"] = None
+        if card["action"] == "update" and base is not None and base.due_date is not None:
+            card["due_cleared"] = True
     elif drafted.structured.due_date is not None:
         card["due_date"] = drafted.structured.due_date
+        card.pop("due_cleared", None)
     if card["action"] == "create":
         ev = _evidence_fields(finding, drafted, card["task_title"], today)
         card["task_status"] = worse(card["task_status"], ev["task_status"])
@@ -450,13 +457,6 @@ def run(
             continue
 
         task_id = target.task_id if target is not None else None
-        # 원래 마감이 있는 Task 의 마감을 없애자는 결정은 보낼 칸이 없다. BE 는 due_date=null 을 "바꾸지 않음"으로
-        # 받는다. 앞 카드에 합쳐 마감 제안을 지우는 것(원래 마감이 없던 업무의 되돌림)만 표현할 수 있다
-        if drafted.structured.due_cleared and (
-                task_id in edits and edits[task_id][0].due_date is not None
-                or task_id not in edits and not (task_id or "").startswith(_PENDING)):
-            _fail(out, finding, PipelineFailure("draft", finding.text, DUE_CLEARED_REASON, task_id))
-            continue
         if task_id is not None and task_id.startswith(_PENDING):  # 이번 회의 새 항목 카드에 합친다
             card = new_cards[int(task_id[len(_PENDING):])]
             _merge_into(card, finding, result, drafted, base=None, today=day, found=found, transcript=transcript)

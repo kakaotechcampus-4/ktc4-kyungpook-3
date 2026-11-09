@@ -14,13 +14,21 @@ import re
 import sys
 import threading
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
 from shared.config import settings
 
 Which = Literal["terra", "luna"]
 ALLOWED_MODELS = ("gpt-5.6-terra", "gpt-5.6-luna")
+CALL_ATTEMPTS = 2  # 판단·초안이 실패한 호출을 그 자리에서 다시 하는 횟수까지 센 시도 수(#624)
+# generate_json 한 번의 전체 시간 상한. 재시도까지 이 안에서 한다. 4분 회의 1단계가 약 20초, 스트리밍은 초당 100토큰 남짓.
+# 상한 직전에 받은 조각 뒤로 게이트웨이가 멈추면 READ_IDLE_S 만큼 더 걸린다. 판단·초안은 실패하면 CALL_ATTEMPTS 번까지
+# 부르므로 finding 하나의 최악은 (이 값 + READ_IDLE_S) 의 네 배다(0061)
+GENERATE_TIMEOUT_S = 300.0
+# 조각 사이 대기 상한. 타이머의 close 는 이미 막힌 읽기를 풀지 못해 이 값이 지나야 돌아온다. 실측한 조각 사이 최대
+# 공백은 8.6초(출력 3711 토큰), 첫 조각 전 추론 시간은 1단계가 약 20초라 넉넉히 둔다
+READ_IDLE_S = 60.0
 
 
 @dataclass(frozen=True)
@@ -41,8 +49,7 @@ class LLMClient(Protocol):
 
     def generate_json(self, prompt: str, *, reasoning_effort: str = "medium") -> dict[str, Any] | None: ...
 
-    def generate_json_once(self, prompt: str, *, timeout_s: float, max_completion_tokens: int,
-                           reasoning_effort: str = "medium") -> LLMReply: ...
+    def generate_json_once(self, prompt: str, *, timeout_s: float, reasoning_effort: str = "medium") -> LLMReply: ...
 
 
 class NullLLM:
@@ -54,8 +61,7 @@ class NullLLM:
     def generate_json(self, prompt: str, *, reasoning_effort: str = "medium") -> dict[str, Any] | None:
         return None
 
-    def generate_json_once(self, prompt: str, *, timeout_s: float, max_completion_tokens: int,
-                           reasoning_effort: str = "medium") -> LLMReply:
+    def generate_json_once(self, prompt: str, *, timeout_s: float, reasoning_effort: str = "medium") -> LLMReply:
         return LLMReply(None)
 
 
@@ -75,13 +81,27 @@ class FakeLLM:
             return None
         return self.responses.pop(0)
 
-    def generate_json_once(self, prompt: str, *, timeout_s: float, max_completion_tokens: int,
-                           reasoning_effort: str = "medium") -> LLMReply:
+    def generate_json_once(self, prompt: str, *, timeout_s: float, reasoning_effort: str = "medium") -> LLMReply:
         self.prompts.append(prompt)
         reply = self.responses.pop(0) if self.responses else None
         if reply is None:
             return LLMReply(None)
         return reply if isinstance(reply, LLMReply) else LLMReply(reply, finish_reason="stop")
+
+
+def _transient(e: Exception) -> bool:
+    """다시 해 볼 만한 실패. SDK 재시도를 끄므로 SDK 가 다시 하던 것(연결 오류, 408·409·429·5xx)을 여기서 본다.
+
+    스트리밍이면 SDK 는 헤더를 받을 때까지만 다시 하므로 본문을 읽다 끊긴 연결도 여기서 다시 한다.
+    """
+    names = {c.__name__ for c in type(e).__mro__}
+    if names & {"APIConnectionError", "APITimeoutError"}:
+        return True
+    status = getattr(e, "status_code", None)
+    if isinstance(status, int):
+        return status in (408, 409, 429) or status >= 500
+    msg = str(e)
+    return "429" in msg or "rate_limit" in msg.lower() or "503" in msg or "overloaded" in msg.lower()
 
 
 def _extract_json(text: str) -> dict[str, Any] | None:
@@ -116,84 +136,95 @@ class MLAPIClient:
         self.max_retries = max_retries
         self.calls = 0
 
+    def _stream(self, prompt: str, *, reasoning_effort: str, timeout_s: float) -> LLMReply:
+        """스트리밍으로 받은 응답 하나. 게이트웨이는 스트리밍이 아닌 응답을 2000 토큰(추론 포함)에서 자른다(0061).
+
+        SDK 의 timeout 은 조각 사이 대기에만 걸린다. 게이트웨이가 keepalive 만 보내면 끝나지 않으므로, 시작부터
+        timeout_s 가 지나면 타이머가 스트림을 닫고 TimeoutError 를 낸다. 이미 막힌 읽기는 close 로 풀리지 않아
+        조각 사이 대기(READ_IDLE_S)가 끝나야 돌아온다. 그래서 상한 뒤 최대 READ_IDLE_S 가 더 걸린다. SDK 재시도는 끈다.
+        """
+        import httpx  # openai 가 쓰는 HTTP 클라이언트. 지연 import 는 openai 와 같은 이유
+
+        started = time.monotonic()
+        deadline = started + timeout_s
+        timeout = httpx.Timeout(timeout_s, read=min(timeout_s, READ_IDLE_S))
+        stream = self._client.with_options(timeout=timeout, max_retries=0).chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            reasoning_effort=reasoning_effort,
+            response_format={"type": "json_object"},
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+        timer = threading.Timer(max(0.0, deadline - time.monotonic()), stream.close)
+        timer.daemon = True
+        timer.start()
+        parts: list[str] = []
+        finish, usage = None, None
+        try:
+            with stream:
+                for chunk in stream:
+                    if time.monotonic() > deadline:
+                        break
+                    if chunk.choices:
+                        choice = chunk.choices[0]
+                        if choice.delta is not None and choice.delta.content:
+                            parts.append(choice.delta.content)
+                        finish = choice.finish_reason or finish
+                    if chunk.usage is not None:
+                        usage = chunk.usage
+        except Exception:
+            if time.monotonic() <= deadline:
+                raise
+        finally:
+            timer.cancel()
+        if time.monotonic() > deadline:  # 타이머가 닫아 조용히 끝났거나, 닫힌 뒤 읽다 실패했다
+            raise TimeoutError(f"{timeout_s:.0f}초 안에 응답이 끝나지 않았다")
+        if finish != "stop":
+            print(f"[llm] {self.model} 응답이 끝까지 오지 않았다: finish_reason={finish} "
+                  f"출력 {getattr(usage, 'completion_tokens', None)}", file=sys.stderr)
+        return LLMReply(
+            _extract_json("".join(parts)),
+            finish_reason=finish,
+            prompt_tokens=getattr(usage, "prompt_tokens", None),
+            completion_tokens=getattr(usage, "completion_tokens", None),
+            reasoning_tokens=getattr(getattr(usage, "completion_tokens_details", None), "reasoning_tokens", None),
+            elapsed_s=time.monotonic() - started,
+        )
+
     def generate_json(self, prompt: str, *, reasoning_effort: str = "medium") -> dict[str, Any] | None:
         """reasoning_effort: none | low | medium | high. 이 모델은 temperature 커스텀을 지원하지 않는다
-        (기본값 1 고정) — 결정성/속도는 reasoning_effort 로 조절한다."""
+        (기본값 1 고정) — 결정성/속도는 reasoning_effort 로 조절한다. 잘린 응답(finish_reason=length)은 None.
+        재시도까지 GENERATE_TIMEOUT_S 안에서 한다."""
+        deadline = time.monotonic() + GENERATE_TIMEOUT_S
         delay = 2.0
         for attempt in range(self.max_retries + 1):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
             try:
                 self.calls += 1
-                resp = self._client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "user", "content": prompt}],
-                    reasoning_effort=reasoning_effort,
-                    response_format={"type": "json_object"},
-                )
-                return _extract_json(resp.choices[0].message.content or "")
-            except Exception as e:  # 429(속도 제한) 등 일시적 오류는 잠깐 쉬고 재시도
-                msg = str(e)
-                transient = "429" in msg or "rate_limit" in msg.lower() or "503" in msg or "overloaded" in msg.lower()
-                if attempt < self.max_retries and transient:
+                reply = self._stream(prompt, reasoning_effort=reasoning_effort, timeout_s=remaining)
+                return None if reply.finish_reason == "length" else reply.data
+            except Exception as e:  # 429(속도 제한)·끊긴 연결 등 일시적 오류는 잠깐 쉬고 재시도
+                if attempt < self.max_retries and _transient(e):
                     time.sleep(delay)
                     delay *= 2
                     continue
-                print(f"[llm] {self.model} 호출 실패 → 규칙 기반 폴백: {msg[:120]}", file=sys.stderr)
+                print(f"[llm] {self.model} 호출 실패 → 규칙 기반 폴백: {str(e)[:120]}", file=sys.stderr)
                 return None
+        print(f"[llm] {self.model} {GENERATE_TIMEOUT_S:.0f}초 안에 끝내지 못해 그만둔다", file=sys.stderr)
         return None
 
-    def generate_json_once(self, prompt: str, *, timeout_s: float, max_completion_tokens: int,
-                           reasoning_effort: str = "medium") -> LLMReply:
-        """재시도 없는 호출 한 번. 예외를 내지 않는다. 시간 상한, 출력 상한, 재시도를 호출자가 정할 때 쓴다.
-        스트리밍으로 받는다. Elice 게이트웨이는 스트리밍이 아닌 답의 출력 상한(추론 포함)을 2,000 까지만 받는다.
-        timeout_s 는 호출 전체의 상한이다. SDK 의 시간 상한은 읽기 한 번마다 걸리고, 게이트웨이는 추론이 끝나야 첫 바이트를
-        보낸다. 그래서 받기는 따로 돌리고 상한이 지나면 기다리지 않고 data 없는 답을 돌려준다. 받던 쪽은 다음 조각에서
-        멈추고 스트림을 닫는다."""
+    def generate_json_once(self, prompt: str, *, timeout_s: float, reasoning_effort: str = "medium") -> LLMReply:
+        """재시도 없는 호출 한 번. 예외를 내지 않는다. 시간 상한과 재시도를 호출자가 정할 때 쓴다."""
         started = time.monotonic()
         self.calls += 1
-        received: list[LLMReply] = []
-        stop = threading.Event()
-        receiver = threading.Thread(target=lambda: received.append(
-            self._receive(prompt, timeout_s, max_completion_tokens, reasoning_effort, stop)), daemon=True)
-        receiver.start()
-        receiver.join(timeout_s)
-        stop.set()
-        if not received:
-            print(f"[llm] {self.model} 호출이 {timeout_s:.0f}초 안에 끝나지 않아 끊음", file=sys.stderr)
-            return LLMReply(None, elapsed_s=time.monotonic() - started)
-        return replace(received[0], elapsed_s=time.monotonic() - started)
-
-    def _receive(self, prompt: str, timeout_s: float, max_completion_tokens: int, reasoning_effort: str,
-                 stop: threading.Event) -> LLMReply:
         try:
-            stream = self._client.with_options(timeout=timeout_s, max_retries=0).chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                reasoning_effort=reasoning_effort,
-                response_format={"type": "json_object"},
-                max_completion_tokens=max_completion_tokens,
-                stream=True,
-                stream_options={"include_usage": True},
-            )
-            parts: list[str] = []
-            finish_reason = usage = None
-            with stream:
-                for chunk in stream:
-                    if stop.is_set():
-                        return LLMReply(None)
-                    if chunk.choices:   # include_usage 의 마지막 조각은 choices 가 비어 있고 usage 만 있다
-                        parts.append(chunk.choices[0].delta.content or "")
-                        finish_reason = chunk.choices[0].finish_reason or finish_reason
-                    usage = chunk.usage or usage
-            return LLMReply(
-                _extract_json("".join(parts)),
-                finish_reason=finish_reason,
-                prompt_tokens=getattr(usage, "prompt_tokens", None),
-                completion_tokens=getattr(usage, "completion_tokens", None),
-                reasoning_tokens=getattr(getattr(usage, "completion_tokens_details", None), "reasoning_tokens", None),
-            )
+            return self._stream(prompt, reasoning_effort=reasoning_effort, timeout_s=timeout_s)
         except Exception as e:  # noqa: BLE001 - 어떤 실패든 호출자에게는 data 가 없는 답이다
             print(f"[llm] {self.model} 호출 실패: {str(e)[:120]}", file=sys.stderr)
-            return LLMReply(None)
+            return LLMReply(None, elapsed_s=time.monotonic() - started)
 
 
 _cached: dict[str, LLMClient] = {}
