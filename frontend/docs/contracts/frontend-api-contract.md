@@ -1318,6 +1318,26 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 
 **확인하지 않은 것.** 실제 카카오 로그인, 실제 메일 수신, 실서버 왕복은 하지 않았다. BE 코드는 읽어서 대조만 했다. `Secure` 쿠키와 카카오 redirect URI, 비즈 앱 이메일 동의 설정은 배포 환경에서 확인해야 한다. 배포 순서상 BE의 새 signup이 먼저 나가면 지금 배포된 FE의 가입이 400이 되므로 FE와 함께 내보낸다.
 
+#### 4.1.5 이용약관·개인정보처리방침 동의 (#564): BE 제안, FE 합의 전
+
+제공자는 BE, 소비자는 FE 가입·로그인 뒤 동의 화면이다. 근거는 [#564](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/564)와 FE 요청 [#566](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/566)이다. 아래는 2026-11-09 최신 develop을 통합한 #569의 `backend/app/api/consents.py`, `services/consents.py` 기준 구현 규약이다. FE 화면 연결과 최종 공개 정책의 승인은 아직 별도이며, 이 API 구현을 FE 합의·법률 검토·배포 완료로 표현하지 않는다.
+
+| 메서드 | 경로 | 요청 | 응답 `data` |
+|---|---|---|---|
+| GET | `/api/v1/consents/me` | 없음 | `{required, documents: [{kind, current_version, agreed_version, agreed_at}]}` |
+| POST | `/api/v1/consents` | `{terms_version, privacy_version}` | GET 과 같은 모양 |
+
+- 둘 다 로그인 세션이 필요하다. 없으면 401 `UNAUTHENTICATED`.
+- `kind` 는 `terms`(이용약관)와 `privacy`(개인정보처리방침) 둘이다. 지금 버전은 둘 다 `2026-11-08` 이다.
+- `required` 는 한 문서라도 지금 버전에 동의하지 않았으면 true 다. 가입 직후, 카카오 첫 로그인, 기존 사용자, 문서 버전이 오른 경우가 모두 true 다.
+- `agreed_version`·`agreed_at` 은 가장 최근에 동의한 버전과 그 시각이다. 동의한 적이 없으면 null 이다.
+- POST 는 두 문서를 함께 받는다. 하나라도 지금 버전이 아니면 아무것도 저장하지 않고 400 `CONSENT_VERSION_MISMATCH` 이며 `details` 는 `{current_versions, received}` 다. 이미 동의한 버전을 다시 보내면 행을 더하지 않고 200 이다.
+- 동시 POST도 `(user_id, kind, version)` 유일키의 충돌만 무시한다. 처음 저장한 시각과 과거 판본을 보존하며, 다른 저장 실패를 성공으로 처리하지 않는다. 응답은 해당 요청이 commit한 동의 상태다.
+- 본문에 사용자 ID를 받지 않는다. 인증된 사용자만 기록하며 탈퇴와 같은 User 잠금 경계를 사용한다. 탈퇴가 먼저 끝나면 옛 세션의 POST는 401이고, 동의가 먼저 끝나도 뒤이은 탈퇴가 FK CASCADE로 동의 행을 지운다. 같은 이메일로 재가입한 새 User는 이전 동의를 이어받지 않는다.
+- 가입 요청(`POST /auth/signup`) 모양은 바꾸지 않았다. 가입 직후 동의 기록이 없더라도 다른 API를 일괄 차단하지 않는 현재 동작을 유지한다. 공개용 FE 강제 흐름과 가입 시 원자적 동의 수집 여부는 #566의 후속 통합·공개 검토 사항이다.
+- 문서 내용을 바꾸면 FE 문서 화면의 버전과 BE `CURRENT_VERSIONS` 를 같이 올린다.
+- `2026-11-08`은 정책 초안·BE 제안의 판본이다. 최종 공개 시 검토 완료한 새 판본으로 문서·BE·FE를 함께 맞춰 초안 판본의 동의 행을 유효 동의로 재사용하지 않는다. `required=false`는 서버 설정 판본의 두 기록이 있다는 뜻이며 법률 검토 완료·정책 공개 승인·다른 API의 접근 권한 판정을 뜻하지 않는다.
+
 ### 4.2 워크스페이스의 사용자 스코프 · 역할 · 온보딩
 
 ~~`GET /workspaces` 가 **전체 워크스페이스**를 반환한다.~~ **세 가지 모두 PR #59 가 넣었다.** 온보딩만 스텁이다.

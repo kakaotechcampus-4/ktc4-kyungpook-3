@@ -104,6 +104,9 @@ class ErrorCode(StrEnum):
     # 로그인 시도 제한
     TOO_MANY_LOGIN_ATTEMPTS = "TOO_MANY_LOGIN_ATTEMPTS"
 
+    # 약관·개인정보처리방침 동의
+    CONSENT_VERSION_MISMATCH = "CONSENT_VERSION_MISMATCH"
+
 
 ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.INVALID_REQUEST: 400,
@@ -190,6 +193,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.KAKAO_LINK_EXPIRED: 400,
     ErrorCode.KAKAO_ALREADY_LINKED: 409,
     ErrorCode.TOO_MANY_LOGIN_ATTEMPTS: 429,
+    ErrorCode.CONSENT_VERSION_MISMATCH: 400,
 }
 
 ERROR_MESSAGE: dict[ErrorCode, str] = {
@@ -275,6 +279,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.KAKAO_LINK_EXPIRED: "카카오 로그인 정보가 만료됐습니다. 카카오로 다시 시작해 주세요.",
     ErrorCode.KAKAO_ALREADY_LINKED: "이미 다른 계정에 연결된 카카오 계정입니다.",
     ErrorCode.TOO_MANY_LOGIN_ATTEMPTS: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+    ErrorCode.CONSENT_VERSION_MISMATCH: "지금 문서 버전이 아닙니다. 문서를 다시 확인해 주세요.",
 }
 
 
