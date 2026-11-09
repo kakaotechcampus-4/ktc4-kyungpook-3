@@ -234,7 +234,9 @@ def test_create_reminder_dm_is_400_and_creates_nothing(client, db, seed):
     r = _request(client, seed, "reminder_dm", {"text": "마감 알림"})
 
     assert r.status_code == 400
-    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+    error = r.json()["error"]
+    assert error["code"] == "INVALID_REQUEST"
+    assert [f["loc"] for f in error["details"]["fields"]] == [["body", "type"]]
     assert _approval_count(db) == 0
 
 
