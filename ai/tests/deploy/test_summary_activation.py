@@ -195,6 +195,83 @@ def test_other_service_command_is_not_mistaken_for_worker(tmp_path):
     assert not runtime.drop_in.exists()
 
 
+@pytest.mark.parametrize("arguments", [
+    ["-u", "-m", "capture.worker"],
+    ["-m", "capture.worker", "--interval", "5"],
+    ["-u", "-m", "capture.worker", "--recordings", SECRET, "--transcripts=" + SECRET, "--interval=5.5"],
+])
+def test_supported_worker_arguments_keep_actual_activation_checks(tmp_path, capsys, arguments):
+    runtime = FixtureRuntime(tmp_path)
+    original = runtime.create_process
+
+    def create_process(pid, selector):
+        original(pid, selector)
+        (runtime.proc / str(pid) / "cmdline").write_bytes(
+            "\0".join([sys.executable, *arguments, ""]).encode()
+        )
+
+    runtime.create_process = create_process
+    create_process(100, "")
+    assert activation.activate(runtime) == 0
+    assert runtime.process(101).python == sys.executable
+    assert runtime.process(101).uid == 123
+    assert any("_PID=101" in event for event in runtime.events)
+    output = capsys.readouterr().out
+    assert "status=on selector=luna pid=101" in output
+    assert SECRET not in output
+
+
+@pytest.mark.parametrize("arguments", [
+    ["-u", "-m", "capture.run_recorder"],
+    ["-u", "-u", "-m", "capture.worker"],
+    ["-m", "capture.worker", "--retry", SECRET],
+    ["-m", "capture.worker", "--interval", SECRET],
+    ["-m", "capture.worker", "--interval=" + SECRET],
+    ["-m", "capture.worker", "--recordings"],
+    ["-m", "capture.worker", "--unknown=" + SECRET],
+    ["-m", "capture.worker", "--help"],
+])
+def test_unsupported_worker_arguments_do_not_log_values_or_activate(tmp_path, capsys, arguments):
+    runtime = FixtureRuntime(tmp_path)
+    interpreter = tmp_path / SECRET / "python"
+    (runtime.proc / "100" / "cmdline").write_bytes(
+        "\0".join([str(interpreter), *arguments, ""]).encode()
+    )
+    with pytest.raises(activation.ActivationError, match="worker-command-unsupported"):
+        activation.activate(runtime)
+    output = capsys.readouterr()
+    assert "worker_command_shape=" in output.out
+    assert SECRET not in output.out + output.err
+    assert str(interpreter) not in output.out + output.err
+    assert "status=on" not in output.out
+    assert not runtime.drop_in.exists()
+
+
+def test_launcher_is_diagnosed_without_executing_or_logging_its_arguments(tmp_path, capsys):
+    runtime = FixtureRuntime(tmp_path)
+    command = [str(tmp_path / SECRET / "uv"), "run", sys.executable, "-u", "-m", "capture.worker", SECRET]
+    (runtime.proc / "100" / "cmdline").write_bytes("\0".join([*command, ""]).encode())
+    with pytest.raises(activation.ActivationError, match="worker-command-unsupported"):
+        activation.activate(runtime)
+    output = capsys.readouterr()
+    assert '"executable": "uv"' in output.out
+    assert '"unknown_arguments": 1' in output.out
+    assert SECRET not in output.out + output.err
+    assert sys.executable not in output.out + output.err
+    assert not runtime.drop_in.exists()
+
+
+def test_relative_interpreter_does_not_activate_worker(tmp_path, capsys):
+    runtime = FixtureRuntime(tmp_path)
+    (runtime.proc / "100" / "cmdline").write_bytes(b"python\0-u\0-m\0capture.worker\0")
+    with pytest.raises(activation.ActivationError, match="worker-command-unsupported"):
+        activation.activate(runtime)
+    output = capsys.readouterr().out
+    assert '"argv0_absolute": false' in output
+    assert "status=on" not in output
+    assert not runtime.drop_in.exists()
+
+
 @pytest.mark.parametrize("timestamp", ["1", "100999999", "", "invalid", -1, True, [], {}])
 def test_old_or_invalid_marker_does_not_prove_current_worker_ready(tmp_path, capsys, timestamp):
     runtime = FixtureRuntime(tmp_path)
