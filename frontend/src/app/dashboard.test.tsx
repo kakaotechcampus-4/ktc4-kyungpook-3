@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
+import type { ApprovalStatus } from '@/entities/approval'
 import { clearTrackedMeetings, meetingDetailQueryOptions } from '@/entities/meeting'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
@@ -899,7 +900,7 @@ describe('되돌린 뒤 승인·반려 (E-03)', () => {
   it('일반 팀원은 승인된 행에 반영 상태 배지만, 반려·대기 행에 되돌림 배지만 본다 — 승인 문구가 없다', async () => {
     // it_01 승인돼 다시 만듦(tk_90 반영 완료), it_02 반려, it_03 승인 대기 — 모두 되돌린 뒤의 서버 상태다
     const items = db.extractions[1].items
-    const approval = (id: string, status: string) => ({
+    const approval = (id: string, status: ApprovalStatus) => ({
       ...structuredClone(db.approvals[0]),
       approval_id: id,
       status,

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { login } from '@/entities/user'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
+import { useCompactScreen } from '@/shared/lib/compact-screen'
 import { useAppForm } from '@/shared/lib/form'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
@@ -17,6 +18,15 @@ import { useLoginNotice } from '../model/useLoginNotice'
 import { AlternativeAuth } from './AlternativeAuth'
 
 const FORM = 'flex flex-col gap-16'
+
+/* 휴대폰 로그인(H-1): 칸 사이 12px, 맨 아래 한 줄에 재설정(왼쪽)·가입(오른쪽). 글자 링크는 위아래 12px 로 누를 자리를 넓힌다 */
+const PHONE_FORM = 'flex flex-col gap-12'
+
+const PHONE_LINKS = 'flex justify-between pt-4'
+
+const PHONE_FORGOT = 'py-12 text-[14px] text-sub hover:text-ink'
+
+const PHONE_SIGNUP = 'py-12 text-[14px] font-bold text-ink'
 
 const FORGOT = 'text-[13px] text-dim hover:text-sub'
 
@@ -61,6 +71,8 @@ export function LoginForm() {
     notice.error === null ? null : { message: notice.error, offerReset: false },
   )
   const next = useAuthNext()
+  // 휴대폰 폭은 시안 H-1 배치다. 넓은 화면(Login 캔버스)은 그대로 둔다
+  const phone = useCompactScreen()
 
   const onSubmit = submit(async (values) => {
     setFailure(null)
@@ -74,7 +86,11 @@ export function LoginForm() {
 
   return (
     <>
-      <form noValidate className={FORM} onSubmit={(event) => void onSubmit(event)}>
+      <form
+        noValidate
+        className={phone ? PHONE_FORM : FORM}
+        onSubmit={(event) => void onSubmit(event)}
+      >
         {notice.status === null ? null : (
           <Panel role="status">
             <p className={NOTICE}>{notice.status}</p>
@@ -91,38 +107,59 @@ export function LoginForm() {
           }
         />
         <TextField
-          tone="auth"
+          tone={phone ? 'auth-phone' : 'auth'}
           type="email"
           label="이메일"
+          placeholder={phone ? '이메일' : undefined}
           autoComplete="email"
           error={errors.email?.message}
           {...register('email')}
         />
         <PasswordField
-          tone="auth"
+          tone={phone ? 'auth-phone' : 'auth'}
           label="비밀번호"
+          placeholder={phone ? '비밀번호' : undefined}
           autoComplete="current-password"
           showLabel="비밀번호 보기"
           hideLabel="비밀번호 숨기기"
           labelEnd={
-            <GuardedLink to={paths.forgotPassword()} className={FORGOT}>
-              비밀번호를 잊으셨나요?
-            </GuardedLink>
+            phone ? undefined : (
+              <GuardedLink to={paths.forgotPassword()} className={FORGOT}>
+                비밀번호를 잊으셨나요?
+              </GuardedLink>
+            )
           }
           error={errors.password?.message}
           {...register('password')}
         />
-        <Button type="submit" variant="primary" size="auth" loading={isSubmitting} className="mt-8">
+        <Button
+          type="submit"
+          variant="primary"
+          size={phone ? 'auth-phone' : 'auth'}
+          loading={isSubmitting}
+          className={phone ? undefined : 'mt-8'}
+        >
           로그인
         </Button>
       </form>
-      <AlternativeAuth />
-      <p className={FOOTNOTE}>
-        처음이신가요?{' '}
-        <GuardedLink to={paths.signup({ next })} className={FOOTNOTE_LINK}>
-          회원가입
-        </GuardedLink>
-      </p>
+      <AlternativeAuth phone={phone} />
+      {phone ? (
+        <div className={PHONE_LINKS}>
+          <GuardedLink to={paths.forgotPassword()} className={PHONE_FORGOT}>
+            비밀번호를 잊으셨나요?
+          </GuardedLink>
+          <GuardedLink to={paths.signup({ next })} className={PHONE_SIGNUP}>
+            가입하기
+          </GuardedLink>
+        </div>
+      ) : (
+        <p className={FOOTNOTE}>
+          처음이신가요?{' '}
+          <GuardedLink to={paths.signup({ next })} className={FOOTNOTE_LINK}>
+            회원가입
+          </GuardedLink>
+        </p>
+      )}
     </>
   )
 }
