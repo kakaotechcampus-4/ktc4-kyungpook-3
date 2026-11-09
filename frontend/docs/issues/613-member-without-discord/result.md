@@ -70,7 +70,11 @@
 
 ### 전체 검사
 
-(전체 테스트 차례를 기다린다.)
+develop(#623·#617) 을 병합한 뒤에 돌렸다.
+
+- `npm run test -- --maxWorkers=1`: 326파일 4,163개 중 1개가 실패했다. `onboardingIntegrations.test.tsx` 가 바뀌기 전 온보딩 미연결 안내 문구를 찾고 있었다. 부하가 아니라 실제 실패다. 문구를 고친 뒤 그 파일만 다시 돌려 25개가 모두 통과했다. 나머지 325파일 4,162개는 통과했다.
+- `npm run typecheck` 와 `npm run build` 는 통과했다.
+- `npm run lint`·`npm run format:check` 는 Git 제외 경로 `.verify/613/` 의 로컬 여정 스크립트만 걸렸다. 그 경로를 빼고 돌린 `npx eslint . --ignore-pattern '.verify/**'` 와 `prettier --check` 는 통과했다.
 
 ## 제한과 남은 검증
 
