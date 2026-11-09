@@ -136,7 +136,6 @@ def test_run_returns_first_person_summary_without_llm():
     assert result["first_person"]["by_type"] == {"first": 1, "thirdname": 1}
     assert len(result["first_person"]["mistakes"]) == 1
     assert result["overall"]["tp"] == 3 and result["overall"]["fn"] == 1
-    assert set(result["overall"]) == {"tp", "fp", "fn", "tn", "type_correct", "type_total"}
 
 
 def test_run_without_errors_reports_zero_errors():
@@ -160,7 +159,10 @@ def test_speaker_set_case_feeds_only_first_person_tally():
 
     result = run("stub", extract_fn, cases=[legacy, speaker])
     # 합계에는 legacy 케이스(tp 1)만 들어간다. speaker 의 tp 1·fp 1 은 더하지 않는다
-    assert result["overall"] == {"tp": 1, "fp": 0, "fn": 0, "tn": 0, "type_correct": 1, "type_total": 1}
+    keys = ("tp", "fp", "fn", "tn", "type_correct", "type_total")
+    assert {k: result["overall"][k] for k in keys} == {"tp": 1, "fp": 0, "fn": 0, "tn": 0, "type_correct": 1, "type_total": 1}
+    # 시나리오별 합계에도 speaker 케이스(tp 1·fp 1)는 더하지 않는다. 두 케이스는 시나리오가 같다
+    assert (result["by_scenario"][legacy.scenario]["tp"], result["by_scenario"][legacy.scenario]["fp"]) == (1, 0)
     # 1인칭 집계에는 두 세트 모두 들어간다
     assert result["first_person"]["total"] == 2
     assert result["first_person"]["by_type"] == {"first": 1, "thirdname": 1}
@@ -182,3 +184,16 @@ def test_speaker_set_case_prints_no_per_case_scores_or_mismatches(capsys):
     assert "speaker_dev/c1" not in out.split("-- 1인칭")[0]  # 케이스별 줄·불일치 출력이 없다
     assert "[필드]" not in out
     assert "'제가'" in out  # 1인칭 오분류 목록에는 나온다
+
+
+def test_run_result_keeps_every_count_and_per_scenario_counts():
+    """--out JSON 만으로 담당자·마감·키워드 정확도와 시나리오별 수치를 다시 계산할 수 있어야 한다(#607 리뷰)."""
+    case, preds = _first_person_case()
+
+    result = run("stub", lambda c: preds, cases=[case])
+
+    counts = {"tp", "fp", "fn", "tn", "type_correct", "type_total", "assignee_correct", "assignee_total",
+              "due_correct", "due_total", "keyword_correct", "keyword_total"}
+    assert set(result["overall"]) == counts
+    assert set(result["by_scenario"]) == {case.scenario}
+    assert result["by_scenario"][case.scenario] == result["overall"]

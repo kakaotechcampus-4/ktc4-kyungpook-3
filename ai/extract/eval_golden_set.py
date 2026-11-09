@@ -345,6 +345,10 @@ def tally_first_person(gold: GoldCase, predictions: list[ExtractedTask]) -> Firs
     return tally
 
 
+def _counts(s: ScoreResult) -> dict[str, int]:
+    return {f: getattr(s, f) for f in s.__dataclass_fields__}
+
+
 def _fmt(x: float) -> str:
     return "  -" if x != x else f"{x * 100:3.0f}%"
 
@@ -432,7 +436,9 @@ def run(
         print(f"  호출 실패로 건너뛴 케이스 {errors}개")
 
     return {
-        "overall": {k: getattr(overall, k) for k in ("tp", "fp", "fn", "tn", "type_correct", "type_total")},
+        # 콘솔의 정확도를 파일만으로 다시 계산할 수 있게 셈을 모두 남긴다(#607 리뷰)
+        "overall": _counts(overall),
+        "by_scenario": {scenario: _counts(s) for scenario, s in sorted(by_scenario.items())},
         "first_person": {
             "total": first_person.total,
             "by_type": dict(first_person.by_type),
