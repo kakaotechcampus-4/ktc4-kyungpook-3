@@ -1,4 +1,5 @@
 import { act, fireEvent, screen, within } from '@testing-library/react'
+import { focusManager, onlineManager } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { paths } from '@/shared/config/routes'
@@ -187,22 +188,38 @@ describe('프로젝트 맵 화면 (#551)', () => {
     expect(within(loose).getAllByRole('button')).toHaveLength(10)
   })
 
-  it('모르는 노드 종류가 오면 맵 전체를 읽지 못했다고 알린다', async () => {
+  it('모르는 노드 종류가 오면 맵 전체를 읽지 못했다고 알리고 창 포커스·연결 복귀에도 다시 묻지 않는다', async () => {
+    let requests = 0
     server.use(
-      http.get('/api/v1/workspaces/:workspaceId/project-map', () =>
-        ok({
+      http.get('/api/v1/workspaces/:workspaceId/project-map', () => {
+        requests += 1
+        return ok({
           meetings: [],
           nodes: [
             { id: 'x', kind: 'decision', label: '결정', appeared_at: '2026-09-01T00:00:00Z' },
           ],
           edges: [],
-        }),
-      ),
+        })
+      }),
     )
     renderApp(paths.projectMap(WS))
     const alert = await screen.findByRole('alert', {}, FIRST_PAINT)
     expect(alert).toHaveTextContent('응답을 읽지 못했어요. 잠시 후 다시 시도해 주세요.')
     expect(within(alert).getByRole('button', { name: '다시 시도' })).toBeVisible()
+    const before = requests
+    try {
+      act(() => {
+        focusManager.setFocused(false)
+        focusManager.setFocused(true)
+        onlineManager.setOnline(false)
+        onlineManager.setOnline(true)
+      })
+      await act(() => new Promise((resolve) => setTimeout(resolve, 300)))
+      expect(requests).toBe(before)
+    } finally {
+      focusManager.setFocused(undefined)
+      onlineManager.setOnline(true)
+    }
   })
 
   it('지워진 주제를 열면 패널에 그 안내만 보인다', async () => {
