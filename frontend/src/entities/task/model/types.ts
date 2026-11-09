@@ -1,3 +1,4 @@
+import type { UnknownValue } from '@/shared/api/unknownValue'
 import type { TaskStatus } from '@/shared/types/common'
 export type { TaskStatus } from '@/shared/types/common'
 /** 서버 NotionSyncStatus. 미연동이면 Task 의 값이 null 이다. `synced` 만 반영 완료다 */
@@ -24,15 +25,38 @@ export interface Task {
   updatedAt: string
 }
 export type TaskTab = 'all' | 'needs_review' | 'in_progress' | 'done'
+/** 서버 ChangedField (계약 §2.6). scope 는 범위 변경 승인이 남긴다 */
+export const TASK_HISTORY_FIELDS = [
+  'assignee',
+  'start_date',
+  'due_date',
+  'status',
+  'title',
+  'progress',
+  'blocker',
+  'scope',
+] as const
+export type TaskHistoryField = (typeof TASK_HISTORY_FIELDS)[number]
+
+export const TASK_HISTORY_SOURCES = [
+  'meeting',
+  'chat',
+  'checkin',
+  'notion',
+  'reminder_reply',
+  'manual',
+  'scheduler',
+] as const
+export type TaskHistorySource = (typeof TASK_HISTORY_SOURCES)[number]
+
 export interface TaskHistoryEntry {
   id: string
   taskId: string
-  // 서버 ChangedField (계약 §2.6). scope 는 범위 변경 승인이 남긴다
-  field:
-    'assignee' | 'start_date' | 'due_date' | 'status' | 'title' | 'progress' | 'blocker' | 'scope'
+  /** 모르는 값은 받은 문자열 그대로 남는다. 화면은 `알 수 없는 항목` 으로 읽는다 */
+  field: TaskHistoryField | UnknownValue
   oldValue: string | null
   newValue: string | null
-  source: 'meeting' | 'chat' | 'checkin' | 'notion' | 'reminder_reply' | 'manual' | 'scheduler'
+  source: TaskHistorySource | UnknownValue
   changedBy: string | null
   isAuto: boolean
   isRolledBack: boolean
@@ -50,13 +74,15 @@ export type ReplyChangeResult =
 
 export interface ReplyChangeLine {
   id: string
-  field: ReplyChangeField
+  /** 모르는 값은 받은 문자열 그대로 남는다 */
+  field: ReplyChangeField | UnknownValue
   newValue: string | null
   evidenceStatus: 'certain' | 'inferred' | null
   /** AI 해석. 대화 주인과 PM 이 아니면 null 이다 */
   summary: string | null
   evidenceQuote: string | null
-  result: ReplyChangeResult
+  result: ReplyChangeResult | UnknownValue
+  /** 서버 `undoable` 이다. 줄 종류나 결과를 모르면 false 다 */
   undoable: boolean
 }
 
