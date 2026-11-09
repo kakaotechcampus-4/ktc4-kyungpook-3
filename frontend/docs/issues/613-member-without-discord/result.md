@@ -35,7 +35,7 @@
 
 ### 쓰기 규칙
 
-#594 규칙을 따랐다. 누를 때 세션 범위를 잡고, `mutationFn` 첫 줄에서 세션을 확인하고, 요청에 그 세션의 `signal` 을 싣는다. 끝난 세션의 결과는 캐시·문구에 남기지 않고 취소는 안내하지 않는다. 응답을 읽지 못하면(`INVALID_RESPONSE`) 실패 문구 대신 `변경 결과를 확인하지 못했어요` 토스트를 보이고, `새로고침` 은 팀원 목록을 다시 받는다(D-184). member 응답은 아직 `parseResponse` 로 읽지 않는다. 그 전환은 #348 의 마지막 묶음(PR #634)이 한다. 지금은 공통 `request` 가 JSON 이 아닌 성공 응답을 던질 때와 `createMember` 가 받은 본문을 팀원으로 바꾸지 못할 때 이 안내가 나온다.
+#594 규칙을 따랐다. 누를 때 세션 범위를 잡고, `mutationFn` 첫 줄에서 세션을 확인하고, 요청에 그 세션의 `signal` 을 싣는다. 끝난 세션의 결과는 캐시·문구에 남기지 않고 취소는 안내하지 않는다. 응답을 읽지 못하면(`INVALID_RESPONSE`) 실패 문구 대신 `변경 결과를 확인하지 못했어요` 토스트를 보이고, `새로고침` 은 팀원 목록을 다시 받는다(D-184). member 응답은 #348 의 마지막 묶음(PR #634)부터 `parseResponse(memberSchema)` 로 읽는다. `createMember` 는 그 위에 취소 신호만 더했다. 201 인데 본문이 팀원이 아니면(예: `data: null`) `parseResponse` 가 `INVALID_RESPONSE` 를 던져 이 안내가 나온다. #634 전에는 `toMember` 실패를 같은 오류로 바꾸는 처리를 두었고, 병합하며 지웠다.
 
 ### Autocomplete
 
@@ -78,6 +78,10 @@ develop(#623·#617) 을 병합한 뒤에 돌렸다.
 - `npm run test -- --maxWorkers=1`: 326파일 4,163개 중 1개가 실패했다. `onboardingIntegrations.test.tsx` 가 바뀌기 전 온보딩 미연결 안내 문구를 찾고 있었다. 부하가 아니라 실제 실패다. 문구를 고친 뒤 그 파일만 다시 돌려 25개가 모두 통과했다. 나머지 325파일 4,162개는 통과했다.
 - `npm run typecheck` 와 `npm run build` 는 통과했다.
 - `npm run lint`·`npm run format:check` 는 Git 제외 경로 `.verify/` 의 로컬 파일만 걸렸다. `npx eslint . --ignore-pattern '.verify/**'` 는 통과했다. `npx prettier --check .` 가 알린 파일은 추적하지 않는 `.verify/` 파일뿐이다. 처음 기록에 쓴 `--ignore-path .verify/.prettierignore` 검사는 그 파일의 `*` 가 모든 파일을 빼서 아무것도 보지 않았다. 리뷰 반영 회차에서 이를 알고 다시 확인했다.
+
+### #634 병합 (2026-11-10)
+
+develop 에 들어온 #634(cd886291)를 병합했다. 충돌은 `memberMutations.ts` 하나였다. #634 의 스키마·`parseResponse` 를 살리고 `createMember` 의 `signal` 인자만 더했다. 그 뒤 typecheck, `npx eslint . --ignore-pattern '.verify/**'`, `npx prettier --check src e2e` 가 통과했다. 바꾼 곳과 member·onboarding·team 테스트 25파일 305개도 통과했다. 여기에는 201 `{data:null}` 이 결과 미확인 토스트와 재조회로 이어지는 테스트가 들어 있다. 전체 테스트는 CI 로 대신한다.
 
 ### 리뷰 반영 (2026-11-10, PR #635)
 
