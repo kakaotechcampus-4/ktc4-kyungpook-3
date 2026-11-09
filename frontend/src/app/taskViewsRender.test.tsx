@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { taskListQueryOptions } from '@/entities/task'
 import { taskStatusMutationKey } from '@/features/task-status'
+import { captureSessionScope } from '@/shared/api/sessionScope'
 import { paths } from '@/shared/config/routes'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { recordRequests } from '@/shared/test/requests'
@@ -44,7 +45,7 @@ function holdStatusChange(app: App, workspaceId: string, taskId: string) {
     mutationKey: taskStatusMutationKey(workspaceId, taskId),
     mutationFn: () => new Promise(() => {}),
   })
-  void mutation.execute({ taskId, status: 'done', isCurrentSession: () => true })
+  void mutation.execute({ taskId, status: 'done', session: captureSessionScope() })
 }
 
 const VIEWS = {

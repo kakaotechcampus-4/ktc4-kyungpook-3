@@ -5,6 +5,7 @@ import { NOTIFICATION_LIST_LIMIT, notificationRefreshes } from '@/entities/notif
 import type { Notification, NotificationRefresh } from '@/entities/notification'
 import { taskKeys } from '@/entities/task'
 import { captureSession } from '@/entities/user'
+import { hasReadableResponse } from '@/shared/api/queryClient'
 import { workspaceKey } from '@/shared/api/queryKeys'
 
 interface SessionBaseline {
@@ -26,7 +27,8 @@ const REFRESH_KEY: Record<NotificationRefresh, (workspaceId: string) => readonly
 /**
  * 알림 목록에 처음 보는 알림이 오면 그 종류가 바꾼 캐시(메시지·태스크·승인)를 그 공간에서 다시 받는다 (D-136, #344).
  * 목록은 최신 `NOTIFICATION_LIST_LIMIT` 개뿐이다. 꽉 찬 새 목록이 지난 목록과 하나도 겹치지 않으면 그 사이에
- * 잘려 보이지 않은 알림이 있을 수 있어 모두 한 번 다시 받는다. 첫 목록과 세션이 바뀐 뒤 첫 목록은 기준으로만 쓴다
+ * 잘려 보이지 않은 알림이 있을 수 있어 모두 한 번 다시 받는다. 첫 목록과 세션이 바뀐 뒤 첫 목록은 기준으로만 쓴다.
+ * 응답을 읽지 못한 조회는 다시 받지 않는다 — 사용자의 다시 시도를 기다린다 (D-184)
  */
 export function useRefreshOnNotification(
   workspaceId: string,
@@ -57,6 +59,9 @@ export function useRefreshOnNotification(
       gap ? ALL_REFRESHES : unseen.flatMap(({ kind }) => notificationRefreshes(kind)),
     )
     for (const scope of scopes)
-      void queryClient.invalidateQueries({ queryKey: REFRESH_KEY[scope](workspaceId) })
+      void queryClient.invalidateQueries({
+        queryKey: REFRESH_KEY[scope](workspaceId),
+        predicate: hasReadableResponse,
+      })
   }, [notifications, queryClient, workspaceId])
 }

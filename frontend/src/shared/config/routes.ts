@@ -31,6 +31,9 @@ export const SETTINGS_PARAMS = { section: 'section' } as const
  */
 export const MESSAGE_PARAMS = { review: 'review', compose: 'new', message: 'message' } as const
 
+/** 프로젝트 맵의 검색 파라미터. `view` 는 `graph`·`list` 다. 없으면 폭에 따라 정한다 — 휴대폰은 목록, 넓은 화면은 그래프다 */
+export const PROJECT_MAP_PARAMS = { view: 'view' } as const
+
 /**
  * 팀 화면의 검색 파라미터. `connect=members` 면 팀원 연결 창을 연다 — 설정에서 Discord 를 연결한 뒤 오는 곳이다 (D-074).
  * 창을 닫으면 지운다
@@ -103,6 +106,8 @@ export const paths = {
         ? ''
         : `?${new URLSearchParams({ [MESSAGE_PARAMS.message]: messageId }).toString()}`
     }`,
+  /** 주제·결정·태스크의 지도. 팀원 모두 본다 (#551) */
+  projectMap: (workspaceId: string) => `${workspaceBase(workspaceId)}/project-map`,
   members: (workspaceId: string) => `${workspaceBase(workspaceId)}/members`,
   /** 팀 화면에서 팀원 연결 창을 연 채로 (D-074, D-075) */
   membersConnect: (workspaceId: string) =>

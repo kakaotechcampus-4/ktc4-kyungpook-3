@@ -35,6 +35,14 @@ describe('회의록 스키마', () => {
     expect(parsed.transcript).toEqual(valid.transcript)
     expect(warning).toHaveBeenCalledWith('Invalid minutes summary:', summary)
   })
+
+  it('요약 상태는 모르는 글자를 남기고, 없거나 글자가 아니면 none 이다', () => {
+    expect(
+      minutesSchema.parse({ ...valid, summary_status: 'awaiting_approval' }).summary_status,
+    ).toBe('awaiting_approval')
+    expect(minutesSchema.parse({ ...valid, summary_status: undefined }).summary_status).toBe('none')
+    expect(minutesSchema.parse({ ...valid, summary_status: 3 }).summary_status).toBe('none')
+  })
 })
 
 it('MSW 회의록 픽스처가 같은 스키마를 따른다', () => {

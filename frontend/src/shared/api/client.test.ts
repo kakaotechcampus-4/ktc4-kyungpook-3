@@ -4,7 +4,7 @@ import { onTestFinished } from 'vitest'
 import { fail, ok } from '@/shared/mock/envelope'
 import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
-import { onUnauthorized, request, toUploadProgress } from './client'
+import { onUnauthorized, request, requestMarkdownFile, toUploadProgress } from './client'
 import type { UploadProgress } from './client'
 import { ApiError } from './errors'
 import { endSessionScope } from './sessionScope'
@@ -205,5 +205,71 @@ describe('업로드 진행', () => {
     for (const progress of seen) {
       expect(Object.keys(progress).sort()).toEqual(['loaded', 'total'])
     }
+  })
+})
+
+describe('requestMarkdownFile', () => {
+  const markdownHeaders = {
+    'Content-Type': 'text/markdown; charset=utf-8',
+    'Content-Disposition': `attachment; filename="summary.md"; filename*=UTF-8''${encodeURIComponent('3주차 회의.md')}`,
+  }
+
+  it('본문과 filename* 의 한글 이름을 돌려주고 Markdown 을 먼저 달라고 한다', async () => {
+    let accept: string | null = null
+    let search = ''
+    server.use(
+      http.get(probe, ({ request: incoming }) => {
+        accept = incoming.headers.get('Accept')
+        search = new URL(incoming.url).search
+        return new HttpResponse('# 요약', { headers: markdownHeaders })
+      }),
+    )
+    await expect(
+      requestMarkdownFile('/probe', {
+        params: { from: '2026-09-01', to: undefined },
+        fallbackFilename: 'x.md',
+      }),
+    ).resolves.toEqual({ text: '# 요약', filename: '3주차 회의.md' })
+    expect(accept).toBe('text/markdown, application/json')
+    expect(search).toBe('?from=2026-09-01')
+  })
+
+  it('이름을 주지 않으면 호출자가 준 이름이다', async () => {
+    server.use(
+      http.get(
+        probe,
+        () => new HttpResponse('# 요약', { headers: { 'Content-Type': 'text/markdown' } }),
+      ),
+    )
+    await expect(
+      requestMarkdownFile('/probe', { fallbackFilename: 'summary.md' }),
+    ).resolves.toEqual({ text: '# 요약', filename: 'summary.md' })
+  })
+
+  it('실패 봉투는 request 와 같은 ApiError 다', async () => {
+    server.use(http.get(probe, () => fail('SUMMARY_NOT_FOUND', '요약본이 없습니다.', 404)))
+    await expect(
+      requestMarkdownFile('/probe', { fallbackFilename: 'summary.md' }),
+    ).rejects.toMatchObject({ kind: 'http', code: 'SUMMARY_NOT_FOUND', status: 404 })
+  })
+
+  it('401 이면 구독자에게 알린다', async () => {
+    const listener = vi.fn()
+    onTestFinished(onUnauthorized(listener))
+    server.use(http.get(probe, () => fail('UNAUTHENTICATED', '로그인이 필요합니다.', 401)))
+    await requestMarkdownFile('/probe', { fallbackFilename: 'summary.md' }).catch(() => undefined)
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('2xx 인데 Markdown 이 아니면 invalid_response 다 — 앱 껍데기 HTML 을 파일로 저장하지 않는다', async () => {
+    server.use(
+      http.get(
+        probe,
+        () => new HttpResponse('<!doctype html>', { headers: { 'Content-Type': 'text/html' } }),
+      ),
+    )
+    await expect(
+      requestMarkdownFile('/probe', { fallbackFilename: 'summary.md' }),
+    ).rejects.toMatchObject({ kind: 'invalid_response', code: 'INVALID_RESPONSE', status: 200 })
   })
 })

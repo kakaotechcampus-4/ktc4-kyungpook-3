@@ -9,6 +9,12 @@ import { readJson, nextId } from '../utils'
 import { isChatMeeting, readMeeting } from '../meetingFlow'
 import { registerSpeakerUpload } from '../speakerFlow'
 
+/** PM 이 다시 올려야 하는 업로드 실패. BE `list_workspace_meetings` 가 수동 업로드일 때만 목록에 남긴다 */
+const LISTED_UPLOAD_FAILURES: readonly (string | null)[] = [
+  'speaker_assignment_expired',
+  'upload_unclaimed',
+]
+
 export const meetingHandlers = [
   http.delete('/api/v1/meetings/:meetingId', ({ params }) => {
     const unauthenticated = requireAuth()
@@ -71,7 +77,7 @@ export const meetingHandlers = [
       (meeting) =>
         meeting.workspace_id === params.workspaceId &&
         (meeting.status !== 'failed' ||
-          (meeting.failed_stage === 'speaker_assignment_expired' &&
+          (LISTED_UPLOAD_FAILURES.includes(meeting.failed_stage) &&
             db.meetingSummaries.some(
               (summary) =>
                 summary.meeting_id === meeting.meeting_id && summary.source === 'manual_upload',

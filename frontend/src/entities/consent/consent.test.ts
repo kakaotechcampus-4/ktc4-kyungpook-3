@@ -11,7 +11,11 @@ import { deferred } from '@/shared/test/deferred'
 import { http } from 'msw'
 import { waitFor } from '@testing-library/react'
 
-const scope = { userId: 'us_01', termsVersion: '2026-11-08', privacyVersion: '2026-11-08' }
+const scope = { userId: 'us_01', termsVersion: '2026-11-10', privacyVersion: '2026-11-10' }
+
+beforeEach(() => {
+  db.consents = []
+})
 describe('동의 계약과 계정 경계', () => {
   it.each([
     { required: false, agreedVersion: null, agreedAt: null },

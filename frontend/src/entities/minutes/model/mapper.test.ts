@@ -27,11 +27,25 @@ it('maps attendees, summary, permissions and speaker fallback without interpreti
   expect(minutes.summary?.keyPoints).toHaveLength(2)
 })
 
-// 백엔드 MeetingMinutesResponse 는 summary·title 이 nullable 이고, 실 API 는 요약을 채우는
-// 경로가 없어 항상 null 을 준다 (계약 §4.0-②-11). 화면이 "요약 없음" 을 정상 상태로 다뤄야 한다
+// 백엔드 MeetingMinutesResponse 는 summary·title 이 nullable 이다. 쓸 수 있는 요약이 없으면 summary 는 null 이고
+// 이유는 summary_status 가 말한다 (계약 §4.4.2). 화면이 "요약 없음" 을 정상 상태로 다뤄야 한다
 it('keeps a null summary and an absent title as normal values', () => {
-  const dto = { ...structuredClone(minutesFixtures[0]), summary: null, title: null }
-  expect(toMinutes(dto)).toMatchObject({ title: '', summary: null })
+  const dto = {
+    ...structuredClone(minutesFixtures[0]),
+    summary: null,
+    summary_status: 'pending',
+    title: null,
+  }
+  expect(toMinutes(dto)).toMatchObject({ title: '', summary: null, summaryStatus: 'pending' })
+})
+
+it('keeps an unknown summary_status as the received text', () => {
+  const dto = {
+    ...structuredClone(minutesFixtures[0]),
+    summary: null,
+    summary_status: 'awaiting_approval',
+  }
+  expect(toMinutes(dto).summaryStatus).toEqual({ unknown: 'awaiting_approval' })
 })
 
 it('preserves false permissions and does not treat an empty display name as null', () => {
