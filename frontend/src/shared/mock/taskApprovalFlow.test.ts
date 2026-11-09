@@ -70,6 +70,7 @@ describe('버전과 Notion 반영 상태 (services/tasks.py, notion_sync.enqueue
     expect(await patchTask('tk_09', { status: 'done', blocker: null })).toEqual({
       ...before,
       auto_blocked: false,
+      meeting_deleted: false,
     })
     expect(db.taskHistory).toHaveLength(historyCount)
   })
@@ -555,6 +556,7 @@ describe('Notion 반영 재시도 (POST /tasks/{id}/notion-sync/retry)', () => {
       ...before,
       notion_sync_status: 'pending',
       auto_blocked: false,
+      meeting_deleted: false,
     })
     expect(historyOf('tk_04')).toEqual([])
   })

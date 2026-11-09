@@ -20,6 +20,7 @@ function withLiveStatus(extraction: ExtractionDto): ExtractionDto {
     items: extraction.items.map((stored: MockExtractionItem) => {
       const item = { ...stored }
       delete item.assignee_type
+      delete item.merge_into
       const approval =
         item.approval_id === null
           ? undefined

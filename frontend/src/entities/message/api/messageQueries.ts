@@ -12,6 +12,8 @@ import type {
   ReminderWithBundleDto,
   ReplyCreateRequestDto,
   ThreadDetailDto,
+  ThreadOpenRequestDto,
+  ThreadSummaryDto,
 } from '@/shared/types/api/message'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { AttributionRequestDto, ReplyAttributionDto } from '@/shared/types/api/reply'
@@ -21,12 +23,14 @@ import {
   toMessageInbox,
   toMessageThread,
   toReplyAttribution,
+  toThreadSummary,
 } from '../model/mapper'
 import type {
   Bundle,
   CreatedReminder,
   MessageAction,
   MessageActionOutcome,
+  MessageThreadSummary,
   ReminderCreateInput,
 } from '../model/types'
 
@@ -242,6 +246,26 @@ export async function createReminder(
   }
   return toCreatedReminder(
     await request<ReminderWithBundleDto>(`${messagesPath(workspaceId)}/reminders`, {
+      method: 'POST',
+      body,
+      signal,
+    }),
+  )
+}
+
+/**
+ * 그 팀원과의 대화를 연다. 대상 대화가 아직 없을 수 있어 메시지 행동(MessageAction)이 아니다.
+ * 서버는 있으면 그 대화를, 없으면 빈 대화를 만들어 돌려준다 — 몇 번 불러도 대화는 하나다.
+ * PM 은 공간의 누구든, 팀원은 자기 대화만 연다
+ */
+export async function openThread(
+  workspaceId: string,
+  memberId: string,
+  signal?: AbortSignal,
+): Promise<MessageThreadSummary> {
+  const body: ThreadOpenRequestDto = { member_id: memberId }
+  return toThreadSummary(
+    await request<ThreadSummaryDto>(`${messagesPath(workspaceId)}/threads`, {
       method: 'POST',
       body,
       signal,

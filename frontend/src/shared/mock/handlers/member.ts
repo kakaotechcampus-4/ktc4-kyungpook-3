@@ -4,6 +4,7 @@ import { fail, list, ok } from '../envelope'
 import { requireMember, requirePmRole } from '../auth-guard'
 import { MOCK_NOW } from '../fixtures/constants'
 import { nextId } from '../utils'
+import { linkedUserIdOf } from '../sessions'
 const base = '/api/v1'
 export const memberHandlers = [
   http.get(`${base}/members/aliases`, ({ request }) => {
@@ -11,7 +12,10 @@ export const memberHandlers = [
     return workspaceId
       ? list(
           db.aliases
-            .filter(({ workspace_id }) => workspace_id === workspaceId)
+            .filter(
+              ({ workspace_id, member_id }) =>
+                workspace_id === workspaceId && !db.withdrawnMemberIds.includes(member_id),
+            )
             .sort((a, b) => b.created_at.localeCompare(a.created_at)),
         )
       : fail('INVALID_REQUEST', 'workspace_id가 필요합니다.', 400)
@@ -59,9 +63,22 @@ export const memberHandlers = [
       : fail('INTEGRATION_NOT_CONNECTED', 'Discord 연결이 필요합니다.', 409)
   }),
   http.get(`${base}/members`, ({ request }) => {
-    const workspaceId = new URL(request.url).searchParams.get('workspace_id')
+    const params = new URL(request.url).searchParams
+    const workspaceId = params.get('workspace_id')
+    const includeWithdrawn = params.get('include_withdrawn') === 'true'
     return workspaceId
-      ? list(db.members.filter(({ workspace_id }) => workspace_id === workspaceId))
+      ? list(
+          db.members
+            .filter(
+              ({ workspace_id, member_id }) =>
+                workspace_id === workspaceId &&
+                (includeWithdrawn || !db.withdrawnMemberIds.includes(member_id)),
+            )
+            .map((member) => ({
+              ...member,
+              has_login_account: linkedUserIdOf(member.member_id) !== null,
+            })),
+        )
       : fail('INVALID_REQUEST', 'workspace_id가 필요합니다.', 400)
   }),
   http.post(`${base}/members`, async ({ request }) => {
@@ -101,17 +118,26 @@ export const memberHandlers = [
       discord_user_id: typeof body.discord_user_id === 'string' ? body.discord_user_id : null,
       notion_name: typeof body.notion_name === 'string' ? body.notion_name : null,
       role: body.role === 'pm' ? 'pm' : 'member',
+      has_login_account: false,
       created_at: MOCK_NOW,
     }
     db.members.push(member)
     return ok(member, { status: 201 })
   }),
   http.get(`${base}/members/:memberId`, ({ params }) => {
-    const member = db.members.find(({ member_id }) => member_id === params.memberId)
-    return member ? ok(member) : fail('MEMBER_NOT_FOUND', '팀원이 없습니다.', 404)
+    const member = db.members.find(
+      ({ member_id }) =>
+        member_id === params.memberId && !db.withdrawnMemberIds.includes(member_id),
+    )
+    return member
+      ? ok({ ...member, has_login_account: linkedUserIdOf(member.member_id) !== null })
+      : fail('MEMBER_NOT_FOUND', '팀원이 없습니다.', 404)
   }),
   http.patch(`${base}/members/:memberId`, async ({ params, request }) => {
-    const member = db.members.find(({ member_id }) => member_id === params.memberId)
+    const member = db.members.find(
+      ({ member_id }) =>
+        member_id === params.memberId && !db.withdrawnMemberIds.includes(member_id),
+    )
     if (!member) return fail('MEMBER_NOT_FOUND', '팀원이 없습니다.', 404)
     // 백엔드는 팀원을 찾은 뒤 그 공간의 PM 인지 본다 (members.py 의 _get_member(..., pm=True))
     const denied = requirePmRole(member.workspace_id)
@@ -153,7 +179,7 @@ export const memberHandlers = [
     )
       member.notion_name = body.notion_name
     if (body.role === 'pm' || body.role === 'member') member.role = body.role
-    return ok(member)
+    return ok({ ...member, has_login_account: linkedUserIdOf(member.member_id) !== null })
   }),
   http.post(`${base}/members/:memberId/aliases`, async ({ params, request }) => {
     const body = (await request.json()) as {
@@ -180,7 +206,10 @@ export const memberHandlers = [
     if (aliasText === '' || !validType || !validSource)
       return fail('INVALID_REQUEST', '별칭 요청이 올바르지 않습니다.', 400)
     // 본문 검증(400) 다음에 팀원을 찾고(404) 그 공간의 PM 인지 본다 (members.py 의 _get_member(..., pm=True))
-    const member = db.members.find(({ member_id }) => member_id === params.memberId)
+    const member = db.members.find(
+      ({ member_id }) =>
+        member_id === params.memberId && !db.withdrawnMemberIds.includes(member_id),
+    )
     if (!member) return fail('MEMBER_NOT_FOUND', '팀원이 없습니다.', 404)
     const denied = requirePmRole(member.workspace_id)
     if (denied) return denied

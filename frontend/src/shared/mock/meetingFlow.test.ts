@@ -51,6 +51,7 @@ describe('정리 완료 — 회의록·추출·태스크·승인이 같은 ID �
     const { extraction } = completeMeeting(id)
     await expect(detail(id)).resolves.toMatchObject({
       status: 'done',
+      deletion_available: true,
       extraction_id: extraction.extraction_id,
       failed_stage: null,
       progress: { audio_merged: true, transcribed: true, extracted: true },
@@ -197,6 +198,7 @@ describe('진행 단계 (U2-2)', () => {
     failMeeting(id)
     await expect(detail(id)).resolves.toMatchObject({
       status: 'failed',
+      deletion_available: true,
       extraction_id: null,
       progress: { audio_merged: true, transcribed: false, extracted: false },
     })
@@ -217,6 +219,17 @@ describe('진행 단계 (U2-2)', () => {
 })
 
 describe('Vitest 기본 계약은 상태를 명시적으로 제어한다 (U2-3)', () => {
+  it('명시적으로 준비되지 않은 회의는 완료해도 삭제를 허용하지 않는다', async () => {
+    const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_10')
+    if (!meeting) throw new Error('meeting fixture is missing')
+    meeting.deletion_available = false
+    completeMeeting(meeting.meeting_id)
+    await expect(detail(meeting.meeting_id)).resolves.toMatchObject({
+      status: 'done',
+      deletion_available: false,
+    })
+  })
+
   it('기본 흐름은 manual 이다 — 몇 번을 조회해도 처리 중 회의가 저절로 바뀌지 않는다', async () => {
     expect(db.meetingFlow.mode).toBe('manual')
     for (let poll = 0; poll < 5; poll += 1) await detail('mt_10')

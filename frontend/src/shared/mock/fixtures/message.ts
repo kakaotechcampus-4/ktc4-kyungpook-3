@@ -63,6 +63,30 @@ export function botMessage(
     dm_status: dm.status,
     dm_failure_reason: dm.status === 'failed' ? dm.reason : null,
     scheduled_at: created_at,
+    author_member_id: null,
+    author_name: null,
+  }
+}
+
+/** PM 이 웹에서 쓴 글. 예약 없이 바로 발송 대기로 간다 (백엔드 add_pm_message) */
+export function pmMessage(
+  message_id: string,
+  body: string,
+  created_at: string,
+  author: { member_id: string; display_name: string },
+  dm: DmResult = DELIVERED,
+): MockThreadMessage {
+  return {
+    message_id,
+    sender: 'pm',
+    body,
+    created_at,
+    reply_channel: null,
+    dm_status: dm.status,
+    dm_failure_reason: dm.status === 'failed' ? dm.reason : null,
+    scheduled_at: null,
+    author_member_id: author.member_id,
+    author_name: author.display_name,
   }
 }
 
@@ -81,6 +105,8 @@ export function reply(
     dm_status: null,
     dm_failure_reason: null,
     scheduled_at: null,
+    author_member_id: null,
+    author_name: null,
   }
 }
 
@@ -300,6 +326,36 @@ export const messagesMemberThread: MockMessageThread = {
     }),
   ],
 }
+
+/** `messages-pm-thread` 의 두 번째 PM. Discord 가 연결돼 있다 */
+export const SECOND_PM = { member_id: 'mb_06', display_name: '오지현', discord_user_id: '1127' }
+
+/**
+ * 기본 목록에 넣지 않는다. `messages-pm-thread` 만 더한다. PM 이 웹에서 쓴 글이다.
+ * 이재환(th_01)에게는 두 번째 PM(오지현)이 썼고 Discord 가 연결되지 않아 DM 으로 가지 못했다.
+ * 박민수(th_02)에게는 픽스처 계정의 PM(김서연, mb_01)이 썼다
+ */
+export const pmThreadMessages: { thread_id: string; message: MockThreadMessage }[] = [
+  {
+    thread_id: 'th_01',
+    message: pmMessage(
+      'mg_31',
+      '재환님, 명세서 초안만 먼저 올려 주셔도 괜찮아요.',
+      '2026-09-17T11:00:00+09:00',
+      SECOND_PM,
+      { status: 'failed', reason: 'discord_not_linked' },
+    ),
+  },
+  {
+    thread_id: 'th_02',
+    message: pmMessage(
+      'mg_32',
+      '민수님, 올려 주신 화면 확인했어요. 고마워요!',
+      '2026-09-17T15:00:00+09:00',
+      { member_id: 'mb_01', display_name: '김서연' },
+    ),
+  },
+]
 
 /** th_06 에 매달린 보낼 메시지. 팀원에게는 오지 않는다 */
 export const messagesMemberBundle: MockBundle = {

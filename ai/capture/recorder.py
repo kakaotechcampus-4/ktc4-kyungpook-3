@@ -71,8 +71,8 @@ from zoneinfo import ZoneInfo
 import soundfile as sf
 
 from capture import judge_path, ops_record
+from capture.handoff import MeetingEnded, session_privacy, speaker_names
 from capture.judge_path import JudgeOutput
-from capture.handoff import MeetingEnded, speaker_names
 from shared.config import TRANSCRIPTS_DIR, settings
 from shared.config import today as config_today
 from shared.schemas import now_iso
@@ -138,6 +138,8 @@ def manifest_path(recordings_dir: Path, session) -> Path:
 
 def save_manifest(path: Path, manifest: dict) -> None:
     """임시 파일에 쓴 뒤 바꿔 끼운다. 쓰는 도중 죽어도 반쯤 쓰인 JSON 이 남지 않는다."""
+    from capture.privacy_cleanup import guard_manifest
+    guard_manifest(path, manifest)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -473,7 +475,8 @@ def drop_local(recordings_dir: Path, session: str) -> None:
 
 def drop_transcripts(transcripts_dir: Path, manifest: dict) -> None:
     """이 회의의 전사 산출물을 지운다: session_<회의>.* (계약 파일·줄 목록·추출 결과)와 session_<회의>__*(세션 통계),
-    트랙마다 쓴 <트랙 이름>__<모델>.* (파일당 전사). BE 가 끝낸 업로드를 정리할 때 drop_local 과 같이 쓴다(#288, #389 리뷰)."""
+    새 파일당 전사는 세션 접두사에 포함되고, 이전 <트랙 이름>__<모델>.* 캐시도 지운다.
+    BE 가 끝낸 업로드를 정리할 때 drop_local 과 같이 쓴다(#288, #389 리뷰)."""
     if not transcripts_dir.exists():
         return
     session = str(manifest["session"])
@@ -564,6 +567,7 @@ class Claims:
         잠금을 먼저 잡고 매니페스트를 읽는다. process_session 은 이 dict 를 통째로 저장하므로 표시가 같이 남는다.
         다 쓰면 release 로 놓는다.
         """
+        from capture.privacy_cleanup import PrivacyPending
         lock = try_lock(path)
         if lock is None:
             return None
@@ -576,7 +580,14 @@ class Claims:
             self._dead[str(m.get("session"))] = str(m["claimed_by"])
         m["claimed_by"] = self.owner
         m["claimed_at"] = _iso(utcnow())
-        save_manifest(path, m)
+        try:
+            save_manifest(path, m)
+        except PrivacyPending:
+            lock.release()
+            return None
+        except Exception:
+            lock.release()
+            raise
         self._locks[str(m.get("session"))] = lock
         return m
 
@@ -584,11 +595,11 @@ class Claims:
         """방금 잡은 회의를 전에 쥐었다가 처리 도중 죽은 쪽. 없으면 None. 한 번만 돌려준다."""
         return self._dead.pop(str(manifest.get("session")), None)
 
-    def release(self, path: Path, manifest: dict) -> None:
+    def release(self, path: Path, manifest: dict, *, save: bool = True) -> None:
         """놓는다. manifest 는 acquire 가 준 dict 다. 마지막 상태에서 표시만 지우고 저장한 뒤 잠금을 푼다."""
         lock = self._locks.pop(str(manifest.get("session")), None)
         try:
-            if manifest.get("claimed_by") == self.owner:
+            if save and manifest.get("claimed_by") == self.owner:
                 manifest.pop("claimed_by", None)
                 manifest.pop("claimed_at", None)
                 save_manifest(path, manifest)
@@ -649,6 +660,7 @@ def sources_saved(manifest: dict) -> bool:
         (be.get("sources") or {}).get("meeting_id") == be.get("meeting_id")
 
 
+@session_privacy
 def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name: str, workers: int,
                     gate=None, transcripts_dir: Path | None = None, extractor=None, handoff=None,
                     name_of=None, progress=None, wait_for_workspace: bool = False) -> dict:
@@ -804,7 +816,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             out = transcribe_session(recordings_dir, manifest, backend=backend, model_name=model_name,
                                      workers=workers, gate=gate, transcripts_dir=tdir, progress=counted_by)
             ops.end()                                  # partial 이면 실패를 세며 BE 에 fail 을 보낼 수 있다. 전사 시간에 넣지 않는다
-            manifest["transcript"] = str(Path(out["markdown"]).relative_to(recordings_dir))
+            manifest["transcript"] = Path(out["markdown"]).relative_to(recordings_dir).as_posix()
             manifest["transcript_json"] = str(out["transcript_json"]) if out["transcript_json"] else None
             result["transcribe"] = {"markdown": out["markdown"], "failed": out["failed"],
                                     "summary": out["summary"], "lines": len(out["lines"])}
@@ -926,6 +938,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
         # 로컬 정리는 잠금을 놓은 뒤 recover_one 이 한다. 여기서 지우면 Claims.release·_keep_ops 가 매니페스트를 다시 쓴다
         ops.end()
         result["ended"] = f"{e.code}: {e}"
+        result["deleted"] = e.code == "MEETING_DELETED"
     except Exception as e:  # noqa: BLE001 - 어느 단계가 죽어도 매니페스트에 남기고 돌아온다
         ops.end()                                      # 단계 시간은 예외까지다. 실패 세기와 포기 알림은 넣지 않는다
         manifest["status"] = STATUS_FAILED
@@ -1038,7 +1051,7 @@ def _due(manifest: dict, now: datetime) -> bool:
     state = manifest.get("recovery") or {}
     if state.get("gave_up_at"):
         be = manifest.get("be") or {}
-        return bool(be.get("meeting_id")) and be.get("status") not in ("failed", "done")
+        return bool(be.get("meeting_id")) and be.get("status") not in ("failed", "done", "deleted")
     nxt = state.get("next_at")
     return not nxt or now >= _parse_time(nxt)
 
@@ -1079,7 +1092,19 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
         who = claims.holder(path, cur) if cur is not None else None
         return {"session": cur.get("session"), "busy": True, **who} if who is not None else None
     ended = False
+    removed = False
     try:
+        from capture.meeting_purge import (
+            deleted,
+            mark_deleted,
+            meeting_ids,
+            purge_files,
+        )
+        mid = (m.get("be") or {}).get("meeting_id")
+        if any(deleted(recordings_dir, identity) for identity in meeting_ids(m)):
+            ended = True
+            removed = True
+            return {"session": m.get("session"), "ended": True}
         dead = claims.died_before(m)
         if dead is not None and _is_pending(recordings_dir, m):
             _count_dead_run(m, handoff, dead)
@@ -1095,12 +1120,20 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
                                  transcripts_dir=transcripts_dir, extractor=extractor, handoff=handoff, name_of=name_of,
                                  wait_for_workspace=wait_for_workspace, progress=progress)
         ended = bool(result.get("ended"))
+        removed = bool(result.get("deleted"))
         return result
     finally:
-        claims.release(path, m)
-        if ended:
-            drop_local(recordings_dir, str(m["session"]))   # 잠금을 놓은 뒤에 지운다. 놓기 전에 지우면 release 가 매니페스트를 다시 쓴다
-            drop_transcripts(transcripts_dir or TRANSCRIPTS_DIR, m)
+        try:
+            if removed:
+                mark_deleted(recordings_dir, meeting_ids(m))
+            elif ended:
+                path.unlink(missing_ok=True)
+                shutil.rmtree(recordings_dir / str(m['session']), ignore_errors=True)
+                drop_transcripts(transcripts_dir or TRANSCRIPTS_DIR, m)
+        finally:
+            claims.release(path, m, save=not ended)
+        if removed and mid:
+            purge_files(recordings_dir, transcripts_dir or TRANSCRIPTS_DIR, mid)
 
 
 def queue_ahead(recordings_dir: Path, session, *, exclude=None) -> int:
@@ -1191,6 +1224,7 @@ def build_extractor():
         return judge_path.build_extractor()
     try:
         from openai import OpenAI
+
         from extract.llm import extract_tasks
         from shared.config import settings
     except ImportError:

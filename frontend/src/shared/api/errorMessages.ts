@@ -9,6 +9,13 @@ export const COMMON_MESSAGES = {
   fallback: '문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
 } as const
 
+/** 쓰기 요청의 응답을 읽지 못했을 때. 서버에는 반영됐을 수 있어 실패라고 하지 않는다 (#348) */
+export const WRITE_UNCONFIRMED_MESSAGES = {
+  title: '변경 결과를 확인하지 못했어요',
+  description: '서버에는 반영됐을 수 있어요. 새로고침해서 지금 상태를 확인해 주세요.',
+  refresh: '새로고침',
+} as const
+
 /* 서버 코드 전부 (backend core/errors.py). AI 경로에서만 오는 코드는 뺐다(계약 §2.3.1). 비밀번호 재설정의 두 코드는 합의만 됐고 BE 에 아직 없다(계약 §4.1.1).
    로그인 시도 제한은 BE PR #456 이 병합 전이고, 서버 문장을 그대로 쓴다 — 남은 시간도 잠금도 말하지 않는다 (#457) */
 const SERVER_MESSAGES: Record<ErrorCode, string> = {
@@ -48,6 +55,7 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
   DISCORD_USER_ALREADY_MAPPED: '이미 다른 팀원과 연결된 Discord 계정이에요.',
   MEETING_FAILED: '실패한 회의예요. 새 회의로 다시 시작해 주세요.',
   APPROVAL_CONFLICT: '제안 뒤에 태스크가 바뀌었어요. 지금 값을 확인한 뒤 다시 승인해 주세요.',
+  APPROVAL_CHANGED: '보신 뒤에 확인 요청 내용이 바뀌었어요. 새 내용을 확인하고 다시 처리해 주세요.',
   LAST_PM_REQUIRED:
     '워크스페이스에 PM이 한 명은 있어야 해요. 다른 팀원을 먼저 PM으로 지정해 주세요.',
   EMBEDDING_UNAVAILABLE: '비슷한 태스크를 찾지 못했어요. 잠시 후 다시 시도해 주세요.',

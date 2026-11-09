@@ -619,8 +619,8 @@ def test_bot_chat_channels_lists_enabled_only(client, seed, db):
 
     assert response.status_code == 200
     assert response.json()["data"] == {"items": [
-        {"workspace_id": first, "guild_id": "g1", "channel_id": "c1"},
-        {"workspace_id": "ws-zzz", "guild_id": "g3", "channel_id": "c3"},
+        {"workspace_id": first, "guild_id": "g1", "channel_id": "c1", "identity_epoch": 0},
+        {"workspace_id": "ws-zzz", "guild_id": "g3", "channel_id": "c3", "identity_epoch": 0},
     ]}
 
 

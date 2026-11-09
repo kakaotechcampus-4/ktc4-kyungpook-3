@@ -96,11 +96,11 @@ test('F-4 팀원 대화: 토스트는 답장 줄 위 16px · 오른쪽 24px 이�
   await expectPlaced(page, 'collapsed', footer)
 })
 
-test('F-3 PM 이 남의 대화를 보면 토스트는 안내 줄 위 16px 이고, 끝까지 내리면 확인하기가 토스트 위로 올라온다', async ({
+test('F-3 PM 이 남의 대화를 보면 토스트는 글 쓰는 줄(웹 답장 불가 안내 포함) 위 16px 이고, 끝까지 내리면 확인하기가 토스트 위로 올라온다', async ({
   page,
 }) => {
   await start(page, 'messages-pm-self', '/workspaces/ws_01/messages/threads/th_01')
-  const footer = page.getByText(/^메시지는 항상/).locator('../..')
+  const footer = page.getByRole('form', { name: '메시지' }).locator('..')
   const body = page.getByRole('region', { name: '대화 내용' })
   await expect(pill(page)).toBeVisible()
   for (const state of FOLDS) {

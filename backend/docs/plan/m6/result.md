@@ -146,7 +146,7 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 ### 검증 내역
 
 - 2026-11-07 `backend/` 에서 `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`: 2052 passed, 1425 skipped(PostgreSQL 이 필요한 테스트, `TEST_DATABASE_URL` 없음). `ruff check --no-cache .`: 통과.
-- 새 테스트는 구현 전에 실패하는 것을 확인했다. 읽음 처리가 도착 시각 대신 `created_at` 을 쓰면 실패하는 것도 확인했다.
+- 회의 카드 테스트(`test_approval_scope_history.py`)는 구현 전에 실패하는 것을 확인했다. 답장 테스트(`test_reply_scope_history.py`)는 앞 단계 구현 뒤에 써서 처음부터 통과했고, `approvals.py` 의 `link_history` 호출을 임시로 막아 실패하는 것을 확인했다. 읽음 처리가 도착 시각 대신 `created_at` 을 쓰면 실패하는 것도 확인했다.
 - 동시 첫 읽음 테스트(PostgreSQL 전용)와 PostgreSQL 에서의 시각 저장은 로컬에서 돌리지 않았다. CI 에서 확인한다.
 
 ### 계획 대비 변경
@@ -186,7 +186,27 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 - `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`: 2307 passed, 1485 skipped. skip 는 PostgreSQL 이 필요한 테스트이고 새 동시성 테스트 3개도 여기에 들어 CI 에서 처음 돈다.
 - 실제 AI 를 붙인 종단 확인과 배포 환경 확인은 하지 않았다. 모델 컬럼·마이그레이션 변경은 없다.
 
-남은 작업: AI 의 merge 전송과 `include_pending` 켜기(BE 배포 뒤), FE 답(#512)과 합친 카드 표시, 승인 사이에 담당 항목이 바뀐 경우의 별칭 저장(결정 기록의 장단점).
+남은 작업: AI 의 merge 전송과 `include_pending` 켜기(BE 배포 뒤), FE 답(#512)과 합친 카드 표시, 승인 사이에 담당 항목이 바뀐 경우의 별칭 저장(결정 기록의 장단점, 아래 2026-11-08 절에서 #535 로 해결).
+
+## 2026-11-08 추가: 승인 카드를 본 뒤 바뀌었으면 409 로 막기(#535, #512)
+
+근거는 #535 설계 확정 댓글과 #512 FE 답이다(2026-11-08). M6 완료는 판정하지 않는다.
+
+| 변경 | 위치 |
+|---|---|
+| 승인 응답 최상위 `payload_version`(task_create 만, 카드 payload 해시) | `backend/app/api/approvals.py`, `backend/app/schemas/approval.py` |
+| `PATCH /approvals/{id}` 선택 필드 `payload_version`. 다르면 되돌리고 409 `APPROVAL_CHANGED`(승인·반려 모두) | `backend/app/api/approvals.py`, `backend/app/core/errors.py` |
+| 계약 | [Backend README](../../../README.md) 에러 코드 표, 합친 카드 승인·별칭 저장 행 |
+
+| 요구 | 상태 | 근거 |
+|---|---|---|
+| 본 뒤 바뀐 카드의 승인·반려를 409 로 막고 아무것도 남기지 않음 | 구현 | `tests/api/test_approval_payload_version.py` |
+| 보내지 않으면 지금 동작(하위 호환) | 구현 | 같은 파일 |
+| 별칭이 PM 이 본 글자로만 저장됨 | 구현 | `tests/api/test_alias_learning_approval.py` |
+
+검증은 PR 에 적는다. 모델·마이그레이션 변경은 없다.
+
+남은 작업: FE 가 `payload_version` 을 보내고 409 를 처리하는 것(#512), 그 뒤 필수로 바꿀지 판단.
 
 ## 2026-11-08 추가: 전사 진행과 단계 시작 시각을 회의 상세에 노출(#483 A안 BE 몫)
 
@@ -276,12 +296,59 @@ PR 작성 뒤 #480의 읽음 수가 `develop`에 들어와 새 PM 글과 연결�
 - 이 통합의 실제 PostgreSQL 전체 회귀와 업그레이드는 최종 CI에서 확인한다. 실제 develop 병합은 #454, #518 다음에 진행한다.
 - 선행 #518의 최신 `e4ffc0d0`을 추가 병합해 #542 STT 진행률과 가입 인증 마이그레이션 연결도 반영했다. 최종 메시지·리마인드·읽음·답장 시계·STT API 회귀는 214개 통과, 213개 건너뜀이다. 단일 head는 `5ae76a6102a8`이고 Ruff도 통과했다.
 
+## 2026-11-08 추가: 범위 변경(scope) 승인을 태스크 이력에 남기기(#205)
+
+M6 plan.md 는 비어 있어 완료조건이 없다. 근거는 이슈 #205 본문의 BE 체크리스트와 설계 확정 댓글(2026-11-08)이다. FE 몫(#401)은 먼저 배포됐다. M6 완료는 판정하지 않는다.
+
+| 변경 | 위치 |
+|---|---|
+| `ChangedField.SCOPE`(컬럼·마이그레이션 없음) | `backend/app/models/models.py` |
+| 범위 이력 한 줄을 남기는 `log_scope_change`(version·Notion 동기화를 건드리지 않음) | `backend/app/services/tasks.py` |
+| task_update 승인에서 `category: scope` 면 필드 반영 뒤 범위 이력, 답장 카드는 scope 줄에 잇기 | `backend/app/api/approvals.py` |
+
+| #205 BE 항목 | 상태 | 근거 |
+|---|---|---|
+| ChangedField 에 scope, 마이그레이션 없음 | 충족 | 모델 한 줄 |
+| scope 승인이면 이력 한 줄, 필드 변경과 함께면 둘 다 | 충족 | `tests/api/test_approval_scope_history.py` |
+| 반려·충돌이면 이력 없음 | 충족 | 같은 파일 |
+| 범위만이면 version·Notion 동기화 불변 | 충족 | 같은 파일 |
+| 범위 이력 되돌리기 400 | 충족 | 같은 파일 |
+| 답장 카드(설계 확정에서 범위에 넣음) | 충족 | `tests/api/test_reply_scope_history.py` |
+
+검증(2026-11-08, `backend/`): `ruff check --no-cache .` 통과, `pytest -q -p no:cacheprovider` 2285 passed, 1528 skipped(PostgreSQL 전용 skip, CI 에서 돈다). 회의 카드 테스트(`test_approval_scope_history.py`)는 구현 전에 실패하는 것을 확인했다. 답장 테스트(`test_reply_scope_history.py`)는 앞 단계 구현 뒤에 써서 처음부터 통과했고, `approvals.py` 의 `link_history` 호출을 임시로 막아 실패하는 것을 확인했다. 행 잠금 경합은 sqlite 로 재현되지 않는다.
+
+남은 작업: Notion 본문에 범위 결정 쓰기, decision 항목 기록(이슈 범위 밖). 머지·배포 뒤 FE 계약 문서의 "BE 미구현" 표기는 FE 가 고친다.
+
+## 2026-11-08 추가: 답장 판단 claim 이 판단 창을 직접 보기(#548)
+
+근거는 #548 설계 확정 댓글(2026-11-08)이고, PR #382 멘토 리뷰(답장 판단 재시도 상한)의 후속이다. M6 완료는 판정하지 않는다.
+
+| 변경 | 위치 |
+|---|---|
+| claim 이 10분 판단 창이 지난 답장을 내주지 않고 `timed_out` 으로 닫은 뒤 같은 대화의 다음 답장을 준다. 닫기는 대화마다 savepoint 로 감싼다 | `backend/app/services/replies.py`, `backend/app/api/bot_messages.py` |
+| 봇 설명과 5xx 를 리스에 맡기는 동작 고정 테스트(AI, 이 PR 에서 함께 수정) | `ai/capture/dm.py`, `ai/tests/capture/test_dm.py` |
+| 계약·문서 | [BE↔AI 계약](../../contracts/backend-ai-contract.md) 답장 claim·판단 절, [Backend README](../../../README.md) 답장 판단 재시도와 판단 창 |
+
+| 요구 | 상태 | 근거 |
+|---|---|---|
+| 같은 답장을 끝없이 다시 맡기지 않는다(한 차례 최대 4회) | 구현 | `tests/api/test_reply_judgment.py` |
+| 같은 대화의 다음 답장이 같은 claim 에서 풀린다 | 구현 | 같은 파일 |
+| PM 이 알 수 있다(기존 `reply_unjudged`, 한 번) | 구현 | 같은 파일 |
+| 스케줄러 없이도 상한 | 구현 | 같은 파일 |
+
+검증은 PR 에 적는다. 모델·마이그레이션·API 모양 변경은 없다. savepoint 는 sqlite 로만 돌려 봤고 PostgreSQL 에서는 CI 에서 처음 돈다.
+
+남은 작업: AI 담당 승인(이 PR 은 ai/ 파일을 함께 고쳤다).
+
 ## 관련 기록
 
 - [전사 진행과 단계 시작 시각을 회의 상세에 노출한다](basis-for-decision/2026-11-08-processing-stt-progress.md)
+- [승인 카드를 본 뒤 내용이 바뀌었으면 승인·반려를 409 로 막는다](basis-for-decision/2026-11-08-approval-payload-version.md)
+- [답장 판단 재시도 상한을 숫자 대신 판단 창으로 지킨다](basis-for-decision/2026-11-08-reply-judgment-attempt-cap.md)
 - [다른 회의의 같은 새 항목을 승인 대기 카드에 합친다](basis-for-decision/2026-11-07-pending-merge.md)
 - [승인 대기 새 항목 요청을 유사 검색 후보에 따로 더한다](basis-for-decision/2026-11-07-pending-approval-search.md)
 - [답장 담당자 변경 승인에서 PM 이 담당자를 고르게 한다](basis-for-decision/2026-11-07-reply-assignee-override.md)
 - [처리 단계 보고를 회의 컬럼으로 저장한다](basis-for-decision/2026-11-05-processing-stage-report.md)
 - [메시지 탭 읽지 않은 수를 대화별 읽은 위치로 센다](basis-for-decision/2026-11-07-message-unread-count.md)
+- [범위 변경 승인을 태스크 이력 한 줄로 남긴다](basis-for-decision/2026-11-08-scope-change-history.md)
 - [BE↔AI 계약](../../contracts/backend-ai-contract.md)

@@ -1,12 +1,13 @@
 import { delay, http } from 'msw'
 import { setupWorker } from 'msw/browser'
 import { handlers } from './handlers'
+import { messageSocketHandler } from './handlers/messageSocket'
 import { prepareBrowserDb } from './browserDb'
 import { saveDb } from './persistence'
 import { fixClock } from '@/shared/lib/date'
 import { MOCK_NOW } from './fixtures/constants'
 
-export const worker = setupWorker(...handlers)
+export const worker = setupWorker(...handlers, messageSocketHandler)
 
 /**
  * 로그인 확인(세션·공간 목록) 답을 늦추는 검색 파라미터(ms). 예: `/dashboard?msw-auth-delay=4000`.
