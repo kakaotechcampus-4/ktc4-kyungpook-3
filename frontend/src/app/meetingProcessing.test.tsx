@@ -403,6 +403,7 @@ describe('polling (U4-3)', () => {
       finished: [],
       prompted: [],
       settled: [],
+      dismissed: [],
     })
 
     // 다음 polling 시점이 지나도 이전 사용자의 회의를 묻지 않는다
@@ -427,6 +428,7 @@ describe('polling (U4-3)', () => {
       finished: [],
       prompted: [],
       settled: [],
+      dismissed: [],
     })
   })
 })
