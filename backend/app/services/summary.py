@@ -16,7 +16,7 @@ import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
-from sqlalchemy import delete, exists, func, or_, select, tuple_, update
+from sqlalchemy import delete, exists, func, or_, select, text, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
@@ -65,6 +65,16 @@ JOB_DECISION_LIMIT = 50
 SCHEMA_VERSION = 1
 
 
+# 요약 claim 과 저장은 이 열쇠 하나로 줄을 선다. 워커와 측정 명령이 동시에 부르면, 커밋 전인 앞 claim 을 못 보고 뒤 회의를 주거나
+# 커밋 전인 다른 회의의 주제 연결을 못 보고 주제를 지울 수 있다. 호출이 드물어 하나로 묶어도 기다림이 짧다
+SUMMARY_GATE = 462_20261109
+
+
+def _summary_gate(db: Session) -> None:
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": SUMMARY_GATE})
+
+
 def meeting_date(started_at: datetime) -> date:
     """회의가 열린 날. 워크스페이스 시간대 기준이다."""
     return utc(started_at).astimezone(WORKSPACE_TZ).date()
@@ -83,6 +93,7 @@ def claim_next(db: Session, *, only: list[str] | None = None, now: datetime | No
 
     only 를 주면 그 extraction 안에서만 고른다. 빈 목록이면 아무것도 고르지 않는다. 커밋은 호출자가 한다.
     """
+    _summary_gate(db)
     now = now or datetime.now(timezone.utc)
     lease_alive = Extraction.summary_claimed_at > now - SUMMARY_LEASE
     # 앞 회의의 시도가 저장 없이 끝났으면 임대가 끝날 때까지 같은 워크스페이스의 뒤 회의를 주지 않는다. 포기한 앞 회의는 막지 않는다
@@ -342,6 +353,7 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     행을 잠그고 표시가 비어 있으면 쓰지 않는다(늦은 중복). 이 회의의 연결과 결정은 지우고 다시 쓰므로 재실행해도 한 벌이다.
     다른 extraction 의 항목, 다른 워크스페이스의 주제와 결정, 이 회의보다 늦은 결정은 건너뛴다.
     """
+    _summary_gate(db)
     extraction = db.get(Extraction, extraction_id, with_for_update=True, populate_existing=True)
     if extraction is None:
         raise AppError(ErrorCode.EXTRACTION_NOT_FOUND, details={"extraction_id": extraction_id})

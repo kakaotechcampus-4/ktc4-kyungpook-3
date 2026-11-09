@@ -1,6 +1,7 @@
 """요약 대기열. 표시된 회의만 시간순으로 돌고, 임대가 지나면 한 번 더 돌고, 먼저 끝난 쪽만 저장된다."""
 import json
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -325,6 +326,35 @@ def test_concurrent_claims_never_share_a_row(mdb, mseed):
     assert not any(t.is_alive() for t in threads)
     taken = [job.extraction_id for job in claimed if job is not None]
     assert len(taken) == len(set(taken)) == 2
+
+
+def test_concurrent_claims_in_one_workspace_hand_out_only_the_earliest(mdb, mseed):
+    """앞 회의를 맡는 트랜잭션이 커밋되기 전에 다른 claim 이 오면 뒤 회의를 주면 안 된다."""
+    if mdb.get_bind().dialect.name != "postgresql":
+        pytest.skip("행 잠금은 PostgreSQL 에서만 확인한다")
+    for offset in range(3):
+        _meeting(mdb, mseed["ws"], started_at=T0 + timedelta(minutes=offset))
+    Session = sessionmaker(bind=mdb.get_bind(), autoflush=False)
+    barrier = threading.Barrier(4)
+    claimed = []
+
+    def worker():
+        db = Session()
+        barrier.wait(5)
+        job = summary.claim_next(db)
+        time.sleep(0.2)         # 커밋 전 창을 넓힌다
+        db.commit()
+        db.close()
+        claimed.append(job)
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(20)
+
+    assert not any(t.is_alive() for t in threads)
+    assert len([job for job in claimed if job is not None]) == 1
 
 
 def test_summary_input_changes_nothing_and_carries_stored_rows(client, mdb, mseed):
