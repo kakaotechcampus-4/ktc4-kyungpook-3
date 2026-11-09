@@ -455,7 +455,9 @@ describe('보이는 자리', () => {
       onboarding: {
         completed: true,
         current_step: null,
-        steps: (['create_workspace', 'connect_discord', 'connect_notion', 'connect_members'] as const).map((step) => ({ step, status: 'completed' as const })),
+        steps: (
+          ['create_workspace', 'connect_discord', 'connect_notion', 'connect_members'] as const
+        ).map((step) => ({ step, status: 'completed' as const })),
       },
     })
     db.accounts[0].workspaceIds.push('ws_04')

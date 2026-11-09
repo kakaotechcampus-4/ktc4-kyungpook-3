@@ -8,7 +8,13 @@ import { z } from 'zod'
  * 초대 상태. 팀 화면의 연결 표시와 초대·취소·연결 끊기 버튼을 정해 모르는 값이면 응답 전체가 `INVALID_RESPONSE` 다.
  * 전에는 닫힌 초대(취소)로 읽어 다시 초대하라고 했다
  */
-export const invitationStatusSchema = z.enum(['pending', 'accepted', 'declined', 'canceled', 'revoked'])
+export const invitationStatusSchema = z.enum([
+  'pending',
+  'accepted',
+  'declined',
+  'canceled',
+  'revoked',
+])
 
 /** PM 이 보는 초대 한 건. accepted_user 는 연결을 끊은 뒤에도 남고, 계정이 지워지면 null 이다 */
 export const invitationSchema = z.object({
@@ -16,9 +22,7 @@ export const invitationSchema = z.object({
   member_id: z.string(),
   email: z.string(),
   status: invitationStatusSchema,
-  accepted_user: z
-    .object({ user_id: z.string(), name: z.string(), email: z.string() })
-    .nullable(),
+  accepted_user: z.object({ user_id: z.string(), name: z.string(), email: z.string() }).nullable(),
   created_at: z.string(),
 })
 export type InvitationDto = z.infer<typeof invitationSchema>

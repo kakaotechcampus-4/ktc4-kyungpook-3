@@ -39,11 +39,7 @@ export async function confirmSignupCode(input: { email: string; code: string }):
 
 /** 카카오 동의를 마치고 가입을 기다리는 신원. 쿠키가 없거나 만료면 400 `KAKAO_LINK_EXPIRED` */
 export async function fetchKakaoPending(): Promise<KakaoPending> {
-  return parseResponse(
-    kakaoPendingSchema,
-    await request<unknown>('/auth/kakao/pending'),
-    'user',
-  )
+  return parseResponse(kakaoPendingSchema, await request<unknown>('/auth/kakao/pending'), 'user')
 }
 
 /** 카카오 로그인을 시작하는 주소. 현재 탭을 옮긴다. `next` 는 로그인 뒤 돌아갈 앱 안 경로다 */
