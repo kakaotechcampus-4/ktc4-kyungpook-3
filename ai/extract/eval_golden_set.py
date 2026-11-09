@@ -8,7 +8,7 @@
 
 --set 은 golden(기본, extract 골든셋) / speaker(judge/golden_set/speaker_dev·speaker_test 를 이 추출기로) / all.
 어느 세트든 "-- 1인칭 (정답 first) --" 에 정답이 first 인 문장이 다른 타입으로 분류된 수를 따로 센다.
-speaker 세트는 이 1인칭 집계에만 넣고 P/R·타입·담당자·마감 합계(시나리오별·전체)에는 넣지 않는다.
+speaker 세트는 이 1인칭 집계에만 넣는다. 케이스별 줄·-v 불일치도 찍지 않고 P/R·타입·담당자·마감 합계(시나리오별·전체)에도 넣지 않는다.
 speaker 정답엔 담당자 언급·마감이 없고 should_flag 는 legacy is_task 와 뜻이 달라 합치면 수치가 틀린다.
 speaker 세트엔 기준일이 없어 SPEAKER_REFERENCE_DATE 로 고정한다.
 
@@ -397,11 +397,14 @@ def run(
             print(f"  {case.case_id:<22}{case.scenario:<18} ERROR: {e!r}")
             errors += 1
             continue
-        s = score_case(case, preds)
         first_person = first_person + tally_first_person(case, preds)
-        if not case.from_speaker_set:  # speaker 세트는 1인칭 집계에만 넣는다
-            overall = overall + s
-            by_scenario[case.scenario] = by_scenario.get(case.scenario, ScoreResult()) + s
+        if case.from_speaker_set:
+            # speaker 세트는 1인칭 집계에만 넣는다. 정답에 담당자 언급·마감이 없어 케이스별 P/R 과 불일치 출력은
+            # 가짜 숫자라 찍지도 않는다(#607 리뷰)
+            continue
+        s = score_case(case, preds)
+        overall = overall + s
+        by_scenario[case.scenario] = by_scenario.get(case.scenario, ScoreResult()) + s
         print(
             f"  {case.case_id:<22}{case.scenario:<18}{_fmt(s.precision):>5}{_fmt(s.recall):>5}"
             f"{_fmt(s.f1):>5}{_fmt(s.type_accuracy):>7}{_fmt(s.assignee_accuracy):>7}{_fmt(s.due_accuracy):>7}"

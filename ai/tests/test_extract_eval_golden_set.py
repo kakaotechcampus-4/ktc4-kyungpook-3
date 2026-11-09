@@ -163,3 +163,16 @@ def test_speaker_set_case_feeds_only_first_person_tally():
 def test_load_speaker_cases_marks_speaker_set():
     cases = load_speaker_cases()
     assert cases and all(c.from_speaker_set for c in cases)
+
+
+def test_speaker_set_case_prints_no_per_case_scores_or_mismatches(capsys):
+    """speaker 세트는 담당자 언급·마감 정답이 없어 케이스별 P/R 과 -v 불일치가 가짜다. 1인칭 줄만 남긴다(#607 리뷰)."""
+    speaker = _gold([GoldSentence("배포는 제가 할게요.", True, "first")], case_id="speaker_dev/c1")
+    speaker.from_speaker_set = True
+
+    run("stub", lambda c: [_pred("배포는 제가 할게요.", "thirdname", "제가")], cases=[speaker], verbose=True)
+
+    out = capsys.readouterr().out
+    assert "speaker_dev/c1" not in out.split("-- 1인칭")[0]  # 케이스별 줄·불일치 출력이 없다
+    assert "[필드]" not in out
+    assert "'제가'" in out  # 1인칭 오분류 목록에는 나온다
