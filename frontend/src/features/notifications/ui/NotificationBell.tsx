@@ -9,7 +9,7 @@ import {
 } from '@/entities/notification'
 import type { Notification } from '@/entities/notification'
 import { errorMessage } from '@/shared/api/errorMessages'
-import { CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
+import { CLIENT_ERROR_CODES, createClientError, isCanceledError } from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
 import { formatSeoulMonthDayTime } from '@/shared/lib/date/format'
@@ -101,7 +101,7 @@ export function NotificationBell({ workspaceId }: { workspaceId: string }) {
         {notifications.data?.items.length === 0 ? (
           <p className="text-caption text-dim">아직 알림이 없어요.</p>
         ) : null}
-        {read.isError ? (
+        {read.isError && !isCanceledError(read.error) ? (
           <p role="alert" className="text-caption text-ink">
             {errorMessage(read.error)}
           </p>

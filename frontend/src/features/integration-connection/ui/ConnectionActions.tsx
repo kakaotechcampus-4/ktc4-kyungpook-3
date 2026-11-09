@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { IntegrationProvider } from '@/entities/integration'
-import { errorMessage } from '@/shared/api/errorMessages'
+import { failureNotice } from '@/shared/api/errorMessages'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import { Button } from '@/shared/ui/button'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
@@ -98,7 +98,7 @@ export function ConnectionActions({
           </>
         }
       >
-        <FormErrorPanel message={disconnect.isError ? errorMessage(disconnect.error) : null} />
+        <FormErrorPanel message={disconnect.isError ? failureNotice(disconnect.error) : null} />
       </Modal>
     </>
   )

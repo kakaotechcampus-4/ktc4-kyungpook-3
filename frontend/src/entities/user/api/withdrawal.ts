@@ -28,12 +28,17 @@ export async function fetchWithdrawalPlan(signal?: AbortSignal): Promise<Withdra
   )
 }
 
-export async function withdrawAccount(key: string, accountId: string): Promise<WithdrawalReceipt> {
+export async function withdrawAccount(
+  key: string,
+  accountId: string,
+  signal?: AbortSignal,
+): Promise<WithdrawalReceipt> {
   return parseResponse(
     receiptSchema,
     await request<unknown>('/auth/me', {
       method: 'DELETE',
       headers: { 'X-Withdrawal-Key': key, 'X-Withdrawal-Account-ID': accountId },
+      signal,
     }),
     'user',
   )
