@@ -76,6 +76,48 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 자동 막힘 표시 | 태스크 응답의 `auto_blocked` 는 `POST /tasks/{task_id}/auto-block/undo` 가 지금 성공하는 상태와 같다. 이력의 `change_source` 로 가리지 않는다. 막힌 뒤 사유를 PM 이 바꾸면 false 다 |
 | 로그 | 컨테이너당 10MB × 3개까지만 남긴다(디스크 50GB 고정) |
 
+## 심사용 시드
+
+심사 시연용으로 계정 6개, 공간 하나, 팀원 자리, 온보딩 단계, 지난 회의를 채우는 명령이다(#606). 계정·공간·자리는 DB 에 직접 만들고, 지난 회의는 AI 봇과 같은 서비스 토큰 API 로 재생한다(회의 데이터를 DB 에 직접 넣지 않는다). 같은 명령을 다시 실행해도 같은 결과이고, 멈춘 지점부터 이어 간다. 시드 데이터는 `app/cli/demo_seed/meetings.json` 이다.
+
+전제는 세 가지다. API 서버에 `EMBEDDING_API_KEY` 가 있어야 하고(없으면 임베딩이 안 채워져 회의 사이에서 멈춘다), `AUTO_CREATE_ENABLED` 가 켜져 있어야 하고, 명령을 돌리는 환경에 `SERVICE_TOKEN` 이 있어야 한다.
+
+운영(이메일은 자리표시자다. 실제 주소를 문서나 셸 기록에 남기지 않는다).
+
+```bash
+docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBER_PASSWORD api   python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com'
+```
+
+로컬 리허설은 API 를 띄운 뒤 같은 명령을 `python -m app.cli.seed_demo --email-pattern 'demo+{n}@example.com'` 로 돌린다. `--dry-run` 은 만들 계정 수와 회의 제목만 출력하고 DB·HTTP 를 건드리지 않는다(`SERVICE_TOKEN` 도 필요 없다).
+
+| 옵션·환경변수 | 뜻 |
+|---|---|
+| `--email-pattern` | 필수. `{n}` 이 1~6 으로 바뀐다. 1번이 PM, 2번이 팀원2 |
+| `--base-url` | API 호스트 루트(기본 `http://localhost:8000`). 경로 앞에 `/api/v1` 은 명령이 붙인다 |
+| `--workspace-name` | 공간 이름. 기본은 시드 데이터 값 |
+| `--embed-timeout` | 회의마다 임베딩을 기다리는 초(기본 120) |
+| `--reset-passwords` | 이미 있는 계정의 비밀번호도 다시 정한다 |
+| `DEMO_PM_PASSWORD`, `DEMO_MEMBER_PASSWORD` | PM·팀원2 비밀번호. 없으면 터미널일 때만 입력을 받고, 아니면 종료 코드 2 로 아무것도 쓰지 않고 끝난다 |
+| `SERVICE_TOKEN` | 서비스 토큰 API 호출용. 없으면 종료 코드 2 |
+
+출력은 stdout 에 JSON 한 줄이다: `workspace_id`, `done`(끝난 회의 수), `gates`(auto·review·hold 별 항목 수), `processing`, `unembedded`, `summaries_written`, `summaries_skipped`.
+
+| 종료 코드 | 뜻 |
+|---|---|
+| 0 | 성공 |
+| 1 | 시드 실패(데이터·API·임베딩 대기 오류). 한 줄이 stderr 에 나온다. 같은 명령을 다시 실행하면 이어 간다 |
+| 2 | 입력·환경 부족(비밀번호, `SERVICE_TOKEN`, 옵션). 아무것도 쓰지 않았다 |
+| 3 | 데이터는 다 썼지만 gate 분포에 auto·review·hold 중 0 건이 있다. JSON 은 그대로 나오고 stderr 에 경고가 나온다 |
+
+알아 둘 점:
+
+- 임베딩 대기 시간 초과는 `EMBEDDING_API_KEY` 미설정일 수도 있고, 임베딩 API 가 제목을 거절한 행(`embedding_rejected_title`)일 수도 있다.
+- 운영 요약 워커(AI mm-worker, `MM_SUMMARY_LLM`)가 시드와 동시에 돌면 워커가 먼저 잡은 회의의 요약은 `summaries_skipped` 에 들어가고, 그 임대 15분 동안 같은 공간의 뒤 회의들도 건너뛸 수 있다. 시드 중에는 워커를 잠시 멈추거나, `summaries_skipped` 가 나오면 15분 뒤 같은 명령을 다시 실행한다. 요약만 채운다.
+- 운영의 gate 분포는 실제 임베딩 유사 검색 때문에 테스트 값과 다를 수 있다. 출력 JSON 의 `gates` 를 확인한다.
+- 회의의 처리 완료 시각(`ended_at`)은 시드를 실행한 시각으로 남는다. 시작 시각만 며칠 전으로 합성한다.
+- 팀원2 자리는 초대·수락 시연용으로 비워 둔다. 동의 기록은 넣지 않아 첫 로그인 때 동의 화면이 뜬다.
+- 다시 시드하려면 새 `--workspace-name` 과 새 이메일을 쓴다. 지우는 기능은 없다.
+
 ## 응답 형식
 
 모든 엔드포인트는 아래 봉투(envelope)로 감싸서 응답한다 (`app/core/errors.py`의 `Envelope`).
