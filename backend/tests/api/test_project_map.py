@@ -260,10 +260,13 @@ def test_row_4_rejected_create_stays_unlinked(client, mdb, mseed):
     assert case.linked_task_ids() == []
 
 
-def test_row_5_pending_update_links_at_once(client, mdb, mseed):
+def test_row_5_pending_update_links_after_approval(client, mdb, mseed):
     case = LinkCase(client, mdb, mseed, _update_value(mseed))
-
     assert case.refresh().approval_id is not None
+    assert case.linked_task_ids() == []
+
+    case.resolve("approved")
+
     assert case.linked_task_ids() == [mseed["tasks"][0].task_id]
 
 

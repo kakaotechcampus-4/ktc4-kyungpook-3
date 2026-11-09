@@ -1,21 +1,18 @@
 """프로젝트 맵 읽기. 주제와 태스크의 연결은 저장하지 않고 _visible_links 한 쿼리로 푼다.
 
-승인 코드에 훅이 없다. 회의 시점에는 대부분 Task 가 없어 주제를 추출 항목에 달아 두고, 승인·반려·되돌리기가 항목에 남긴
-task_id 와 승인 상태로 읽을 때 연결을 정한다.
+승인 코드에 훅이 없다. 회의 시점에는 대부분 Task 가 없어 주제를 추출 항목에 달아 두고, 읽을 때 item_fate 가 반영됐다고
+보는 항목만 잇는다.
 """
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
 from app.models import (
-    ApprovalRequest,
-    ApprovalStatus,
     Decision,
     Extraction,
-    ExtractionItem,
     Meeting,
     Member,
     MemberAlias,
@@ -38,7 +35,7 @@ from app.schemas.project_map import (
     TopicNode,
     TopicTask,
 )
-from app.services import embedding, mailer, summary
+from app.services import embedding, item_fate, mailer, summary
 from app.services.scheduler import WORKSPACE_TZ
 from app.services.summary_markdown import (
     BlockedTask,
@@ -65,29 +62,20 @@ class MarkdownFile:
 
 
 def _visible_links(workspace_id: str) -> Select:
-    """주제와 태스크 연결의 유일한 정의. (topic_id, task_id, meeting_id).
-
-    반려된 항목만 숨긴다. 대기 중인 수정 항목은 task_id 가 이미 있어 바로 보이고, 승인 전 새 항목과 되돌린 항목은 task_id 가 없어
-    안 보인다. reverted_at 은 보지 않는다.
-    """
+    """주제와 태스크 연결의 유일한 정의. (topic_id, task_id, meeting_id). 대기 중인 수정 항목은 승인 뒤에 잇는다."""
+    final = item_fate.final_items().subquery()
     return (
         select(TopicItem.topic_id, Task.task_id, Extraction.meeting_id)
         .distinct()
         .join(Topic, Topic.topic_id == TopicItem.topic_id)
-        .join(ExtractionItem, ExtractionItem.item_id == TopicItem.item_id)
-        .join(Extraction, Extraction.extraction_id == ExtractionItem.extraction_id)
+        .join(final, final.c.item_id == TopicItem.item_id)
+        .join(Extraction, Extraction.extraction_id == final.c.extraction_id)
         .join(Meeting, Meeting.meeting_id == Extraction.meeting_id)
-        .join(Task, Task.task_id == ExtractionItem.task_id)
-        .outerjoin(ApprovalRequest, ApprovalRequest.approval_id == ExtractionItem.approval_id)
+        .join(Task, Task.task_id == final.c.task_id)
         .where(
             Topic.workspace_id == workspace_id,
             Task.workspace_id == workspace_id,
-            Task.is_deleted.is_(False),
             Meeting.deleted_at.is_(None),
-            or_(
-                ApprovalRequest.approval_id.is_(None),
-                ApprovalRequest.status != str(ApprovalStatus.REJECTED),
-            ),
         )
     )
 
