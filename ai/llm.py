@@ -20,6 +20,7 @@ from shared.config import settings
 
 Which = Literal["terra", "luna"]
 ALLOWED_MODELS = ("gpt-5.6-terra", "gpt-5.6-luna")
+GENERATE_TIMEOUT_S = 300.0  # generate_json 한 번의 전체 시간 상한. 4분 회의 1단계가 약 20초, 스트리밍은 초당 100토큰 남짓
 
 
 @dataclass(frozen=True)
@@ -112,20 +113,56 @@ class MLAPIClient:
         self.max_retries = max_retries
         self.calls = 0
 
+    def _stream(self, prompt: str, *, reasoning_effort: str, timeout_s: float, sdk_retries: bool) -> LLMReply:
+        """스트리밍으로 받은 응답 하나. 게이트웨이는 스트리밍이 아닌 응답을 2000 토큰(추론 포함)에서 자른다.
+
+        SDK 의 timeout 은 조각 사이 대기에만 걸리므로, 시작부터 timeout_s 가 지나면 직접 끊는다(TimeoutError).
+        """
+        started = time.monotonic()
+        deadline = started + timeout_s
+        options = {"timeout": timeout_s} if sdk_retries else {"timeout": timeout_s, "max_retries": 0}
+        stream = self._client.with_options(**options).chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            reasoning_effort=reasoning_effort,
+            response_format={"type": "json_object"},
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+        parts: list[str] = []
+        finish, usage = None, None
+        for chunk in stream:
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"{timeout_s:.0f}초 안에 응답이 끝나지 않았다")
+            if chunk.choices:
+                choice = chunk.choices[0]
+                if choice.delta is not None and choice.delta.content:
+                    parts.append(choice.delta.content)
+                finish = choice.finish_reason or finish
+            if chunk.usage is not None:
+                usage = chunk.usage
+        if finish != "stop":
+            print(f"[llm] {self.model} 응답이 끝까지 오지 않았다: finish_reason={finish} "
+                  f"출력 {getattr(usage, 'completion_tokens', None)}", file=sys.stderr)
+        return LLMReply(
+            _extract_json("".join(parts)),
+            finish_reason=finish,
+            prompt_tokens=getattr(usage, "prompt_tokens", None),
+            completion_tokens=getattr(usage, "completion_tokens", None),
+            reasoning_tokens=getattr(getattr(usage, "completion_tokens_details", None), "reasoning_tokens", None),
+            elapsed_s=time.monotonic() - started,
+        )
+
     def generate_json(self, prompt: str, *, reasoning_effort: str = "medium") -> dict[str, Any] | None:
         """reasoning_effort: none | low | medium | high. 이 모델은 temperature 커스텀을 지원하지 않는다
-        (기본값 1 고정) — 결정성/속도는 reasoning_effort 로 조절한다."""
+        (기본값 1 고정) — 결정성/속도는 reasoning_effort 로 조절한다. 잘린 응답(finish_reason=length)은 None."""
         delay = 2.0
         for attempt in range(self.max_retries + 1):
             try:
                 self.calls += 1
-                resp = self._client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "user", "content": prompt}],
-                    reasoning_effort=reasoning_effort,
-                    response_format={"type": "json_object"},
-                )
-                return _extract_json(resp.choices[0].message.content or "")
+                reply = self._stream(prompt, reasoning_effort=reasoning_effort, timeout_s=GENERATE_TIMEOUT_S,
+                                     sdk_retries=True)
+                return None if reply.finish_reason == "length" else reply.data
             except Exception as e:  # 429(속도 제한) 등 일시적 오류는 잠깐 쉬고 재시도
                 msg = str(e)
                 transient = "429" in msg or "rate_limit" in msg.lower() or "503" in msg or "overloaded" in msg.lower()
@@ -142,21 +179,7 @@ class MLAPIClient:
         started = time.monotonic()
         self.calls += 1
         try:
-            resp = self._client.with_options(timeout=timeout_s, max_retries=0).chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                reasoning_effort=reasoning_effort,
-                response_format={"type": "json_object"},
-            )
-            choice, usage = resp.choices[0], resp.usage
-            return LLMReply(
-                _extract_json(choice.message.content or ""),
-                finish_reason=choice.finish_reason,
-                prompt_tokens=getattr(usage, "prompt_tokens", None),
-                completion_tokens=getattr(usage, "completion_tokens", None),
-                reasoning_tokens=getattr(getattr(usage, "completion_tokens_details", None), "reasoning_tokens", None),
-                elapsed_s=time.monotonic() - started,
-            )
+            return self._stream(prompt, reasoning_effort=reasoning_effort, timeout_s=timeout_s, sdk_retries=False)
         except Exception as e:  # noqa: BLE001 - 어떤 실패든 호출자에게는 data 가 없는 답이다
             print(f"[llm] {self.model} 호출 실패: {str(e)[:120]}", file=sys.stderr)
             return LLMReply(None, elapsed_s=time.monotonic() - started)
