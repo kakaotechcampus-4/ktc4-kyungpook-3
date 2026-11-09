@@ -511,7 +511,8 @@ def main(argv: list[str] | None = None) -> int:
     if missing:
         print(
             f"경고: gate 가 0 건인 분류가 있습니다({', '.join(missing)}). 심사 시연에 세 분류가 모두 필요하면 "
-            "임베딩 유사 검색 결과를 확인하세요",
+            "API 서버의 AUTO_CREATE_ENABLED 가 켜져 있는지, 회의를 재생할 때 임베딩이 아직 없는 task·승인 대기 "
+            "카드가 남아 있지 않았는지(서버 로그의 unsearched_task_exists·unsearched_pending_exists) 확인하세요",
             file=sys.stderr,
         )
         return EXIT_GATE_WARNING

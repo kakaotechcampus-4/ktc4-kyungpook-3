@@ -114,7 +114,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 
 - 임베딩 대기 시간 초과는 `EMBEDDING_API_KEY` 미설정일 수도 있고, 임베딩 API 가 제목을 거절한 행(`embedding_rejected_title`)일 수도 있다.
 - 운영 요약 워커(AI mm-worker, `MM_SUMMARY_LLM`)가 시드와 동시에 돌면 워커가 먼저 잡은 회의의 요약은 `summaries_skipped` 에 들어가고, 그 임대 15분 동안 같은 공간의 뒤 회의들도 건너뛸 수 있다. 시드 중에는 워커를 잠시 멈추거나, `summaries_skipped` 가 나오면 15분 뒤 같은 명령을 다시 실행한다. 요약만 채운다.
-- 운영의 gate 분포는 실제 임베딩 유사 검색 때문에 테스트 값과 다를 수 있다. 출력 JSON 의 `gates` 를 확인한다.
+- 시드 항목의 `similar_count` 는 모두 0 이라 gate 분포는 유사 검색 결과로 바뀌지 않는다. 출력 JSON 의 `gates` 에서 auto 가 0 건이면 API 서버의 `AUTO_CREATE_ENABLED` 가 꺼져 있거나(auto 가 review 로 내려간다), 재생 중 임베딩이 아직 없는 task·승인 대기 카드가 남아 있던 경우(서버 로그의 `unsearched_task_exists`·`unsearched_pending_exists`)다.
 - 회의의 처리 완료 시각(`ended_at`)은 시드를 실행한 시각으로 남는다. 시작 시각만 며칠 전으로 합성한다.
 - 팀원2 자리는 초대·수락 시연용으로 비워 둔다. 동의 기록은 넣지 않아 첫 로그인 때 동의 화면이 뜬다.
 - 다시 시드하려면 새 `--workspace-name` 과 새 이메일을 쓴다. 지우는 기능은 없다.
