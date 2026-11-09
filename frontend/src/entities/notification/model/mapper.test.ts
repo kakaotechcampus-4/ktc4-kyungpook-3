@@ -37,10 +37,6 @@ it('모르는 알림 종류도 본문을 보존하며 모르는 링크는 이동
   })
 })
 
-it('잘못된 날짜는 유효한 알림으로 취급하지 않는다', () => {
-  expect(() => toNotification({ ...notification, created_at: 'invalid' }, 'ws_01')).toThrow()
-})
-
 it('푸시 내용은 공간과 링크를 담고, 모양이 다르면 버린다', () => {
   expect(
     toPushNotification({

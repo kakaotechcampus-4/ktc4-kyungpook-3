@@ -2,9 +2,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
 import { createReminder, messageKeys } from '@/entities/message'
 import type { CreatedReminder, ReminderCreateInput } from '@/entities/message'
-import { CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
+import { CLIENT_ERROR_CODES, createClientError, isInvalidResponse } from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
+import { showWriteUnconfirmed } from '@/shared/ui/toast'
 import { knownCreateFailure } from '../lib/createMessages'
 
 export interface CreateReminderFailure {
@@ -33,7 +34,8 @@ interface Variables {
 /**
  * 재촉 만들기 (계약 §5.7 `POST …/messages/reminders`). 메시지 쓰기(useMessageAction)와 같은 규칙이다.
  * - 서버 성공 뒤에만 반영한다. 메시지 캐시를 다시 받은 뒤에 끝난다 — 만든 묶음으로 옮겨 가도 목록에 이미 있다
- * - 실패하면 남기고 자동 재시도는 없다. 다시 시도는 부른 쪽이 지금 입력으로 다시 `create` 한다
+ * - 실패하면 남기고 자동 재시도는 없다. 다시 시도는 부른 쪽이 지금 입력으로 다시 `create` 한다.
+ *   응답을 읽지 못했으면 만들어졌을 수 있어 실패로 남기지 않고 토스트와 `새로고침`으로 알린다 — 다시 만들면 둘이 될 수 있다 (#348)
  * - 요청 중이나 보내기 전에 세션이 끝났으면 보내지 않고, 늦은 응답은 캐시에도 결과에도 남기지 않는다
  */
 export function useCreateReminder(workspaceId: string): CreateReminderControl {
@@ -58,6 +60,12 @@ export function useCreateReminder(workspaceId: string): CreateReminderControl {
     },
     onError: (error, { session }) => {
       if (!session.isCurrent()) return
+      if (isInvalidResponse(error)) {
+        showWriteUnconfirmed(
+          () => void queryClient.invalidateQueries({ queryKey: messageKeys(workspaceId) }),
+        )
+        return
+      }
       setFailure({ error, known: knownCreateFailure(error) })
     },
   })

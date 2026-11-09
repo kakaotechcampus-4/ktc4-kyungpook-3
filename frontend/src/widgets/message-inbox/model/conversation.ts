@@ -1,10 +1,10 @@
 import type { Bundle, Message, MessageThread } from '@/entities/message'
 import {
-  DM_FAILURE_TEXT,
   avatarText,
   awaitingDays,
   clockTime,
   dayLabel,
+  dmFailureText,
   groupByDay,
   shortDateTime,
 } from '../lib/format'
@@ -85,7 +85,7 @@ function messageBubble(
       author: null,
     }
   const dmFailure =
-    message.dm.status === 'failed' ? `DM 못 보냄 · ${DM_FAILURE_TEXT[message.dm.reason]}` : null
+    message.dm.status === 'failed' ? `DM 못 보냄 · ${dmFailureText(message.dm.reason)}` : null
   if (message.sender === 'pm') {
     const author = message.authorName ?? 'PM'
     return {

@@ -14,11 +14,12 @@ import {
 } from '@/entities/meeting'
 import type { Meeting, TrackedMeeting } from '@/entities/meeting'
 import { findMemberWorkspace, workspaceListQueryOptions } from '@/entities/workspace'
+import { hasReadableResponse } from '@/shared/api/queryClient'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
 import { useLivePathname } from '@/shared/lib/live-pathname'
 import { hasPendingLeave, useGuardedNavigate } from '@/shared/lib/unsaved-changes'
-import { pollInterval, refetchOnReturn, trackerOutcome } from './trackerOutcome'
+import { pollInterval, trackerOutcome } from './trackerOutcome'
 
 /**
  * 끝난 회의 때문에 낡은 회의 캐시(목록·다른 회의 상세). 끝난 회의 자신의 상세는 방금 받은 끝 상태라 다시 받지 않는다 —
@@ -28,10 +29,11 @@ function invalidateMeetings(queryClient: QueryClient, { workspaceId, meetingId }
   const finishedKey = meetingDetailQueryOptions(workspaceId, meetingId).queryKey
   void queryClient.invalidateQueries({
     queryKey: meetingKeys(workspaceId),
-    predicate: ({ queryKey }) =>
+    predicate: (query) =>
+      hasReadableResponse(query) &&
       !(
-        queryKey.length === finishedKey.length &&
-        queryKey.every((part, index) => part === finishedKey[index])
+        query.queryKey.length === finishedKey.length &&
+        query.queryKey.every((part, index) => part === finishedKey[index])
       ),
   })
 }
@@ -40,7 +42,10 @@ function invalidateMeetings(queryClient: QueryClient, { workspaceId, meetingId }
 function invalidateFinished(queryClient: QueryClient, meeting: TrackedMeeting): void {
   invalidateMeetings(queryClient, meeting)
   for (const scope of ['minutes', 'extractions', 'tasks', 'approvals'] as const)
-    void queryClient.invalidateQueries({ queryKey: workspaceKey(meeting.workspaceId, scope) })
+    void queryClient.invalidateQueries({
+      queryKey: workspaceKey(meeting.workspaceId, scope),
+      predicate: hasReadableResponse,
+    })
 }
 
 /**
@@ -86,9 +91,10 @@ export function useProcessingTracker(): void {
       ...meetingDetailQueryOptions(meeting.workspaceId, meeting.meetingId),
       refetchInterval: ({ state }: { state: { data?: Meeting; error: unknown } }) =>
         pollInterval(state.data, state.error),
-      // 30초 최신 시간과 무관하게 돌아오면 바로 다시 묻는다 — 끊긴 사이에 끝났을 수 있다. 읽지 못한 응답은 묻지 않는다
-      refetchOnWindowFocus: refetchOnReturn,
-      refetchOnReconnect: refetchOnReturn,
+      // 30초 최신 시간과 무관하게 돌아오면 바로 다시 묻는다 — 끊긴 사이에 끝났을 수 있다. 읽지 못한 응답은 앱의
+      // QueryClient 가 묻지 않는다 (D-184)
+      refetchOnWindowFocus: 'always' as const,
+      refetchOnReconnect: 'always' as const,
     })),
   })
 

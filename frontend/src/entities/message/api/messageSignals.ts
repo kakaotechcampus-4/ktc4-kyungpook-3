@@ -1,4 +1,5 @@
 import { config } from '@/shared/config/env'
+import { threadUpdatedSignalSchema } from '@/shared/types/api/message'
 
 /*
  * 대화 신호 웹소켓 (계약 §5.7 「대화 신호 웹소켓」). 서버는 대화에 새 줄이 생겼다는 신호만 보내고 본문은 보내지 않는다.
@@ -44,6 +45,7 @@ export function messageSignalsUrl(workspaceId: string, origin = window.location.
   return url.href
 }
 
+/** 신호 프레임인가. 응답이 아니라 모르는 프레임·깨진 JSON 은 실패로 보지 않고 버린다 */
 function isThreadUpdated(data: unknown): boolean {
   if (typeof data !== 'string') return false
   let frame: unknown
@@ -52,14 +54,7 @@ function isThreadUpdated(data: unknown): boolean {
   } catch {
     return false
   }
-  return (
-    typeof frame === 'object' &&
-    frame !== null &&
-    'type' in frame &&
-    frame.type === 'thread_updated' &&
-    'thread_id' in frame &&
-    typeof frame.thread_id === 'string'
-  )
+  return threadUpdatedSignalSchema.safeParse(frame).success
 }
 
 /**

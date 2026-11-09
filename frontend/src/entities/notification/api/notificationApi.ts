@@ -1,7 +1,8 @@
 import { queryOptions } from '@tanstack/react-query'
-import { z } from 'zod'
 import { request } from '@/shared/api/client'
+import { parseResponse } from '@/shared/api/parseResponse'
 import { workspaceKey } from '@/shared/api/queryKeys'
+import { notificationListSchema } from '@/shared/types/api/notification'
 import { toNotification } from '../model/mapper'
 import type { NotificationList } from '../model/types'
 
@@ -11,11 +12,6 @@ const NOTIFICATION_POLL_MS = 30_000
 /** 한 번에 받는 최신 알림 수. 서버 기본값과 같지만 목록이 잘리는 경계를 FE 가 알도록 직접 보낸다 */
 export const NOTIFICATION_LIST_LIMIT = 50
 
-const listSchema = z.object({
-  items: z.array(z.unknown()),
-  unread_count: z.number().int().nonnegative(),
-})
-
 export function notificationKeys(workspaceId: string) {
   return workspaceKey(workspaceId, 'notifications')
 }
@@ -24,11 +20,13 @@ export async function fetchNotifications(
   workspaceId: string,
   signal?: AbortSignal,
 ): Promise<NotificationList> {
-  const response = listSchema.parse(
+  const response = parseResponse(
+    notificationListSchema,
     await request<unknown>(`/workspaces/${encodeURIComponent(workspaceId)}/notifications`, {
       params: { limit: NOTIFICATION_LIST_LIMIT },
       signal,
     }),
+    'notification',
   )
   return {
     items: response.items.map((item) => toNotification(item, workspaceId)),

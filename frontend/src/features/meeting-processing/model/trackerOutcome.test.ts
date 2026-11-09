@@ -6,7 +6,6 @@ import {
   AWAITING_SPEAKERS_POLL_INTERVAL_MS,
   pollInterval,
   PROCESSING_POLL_INTERVAL_MS,
-  refetchOnReturn,
   trackerOutcome,
 } from './trackerOutcome'
 
@@ -105,8 +104,5 @@ describe('읽지 못한 상세 응답 (#348)', () => {
   it('polling 과 포커스·연결 복귀 재조회를 모두 멈춘다', () => {
     expect(pollInterval(undefined, invalid)).toBe(false)
     expect(pollInterval(meeting(), invalid)).toBe(false)
-    expect(refetchOnReturn({ state: { error: invalid } })).toBe(false)
-    expect(refetchOnReturn({ state: { error: createClientError('NETWORK_ERROR') } })).toBe('always')
-    expect(refetchOnReturn({ state: { error: null } })).toBe('always')
   })
 })

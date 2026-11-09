@@ -2,9 +2,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
 import { messageKeys, openThread } from '@/entities/message'
 import type { MessageThreadSummary } from '@/entities/message'
-import { CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
+import { CLIENT_ERROR_CODES, createClientError, isInvalidResponse } from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
+import { showWriteUnconfirmed } from '@/shared/ui/toast'
 
 export interface OpenThreadControl {
   /** 그 팀원과의 대화를 연다. 진행 중인 열기가 있으면 아무것도 하지 않는다 — 중복 요청을 막는다 */
@@ -25,7 +26,8 @@ interface Variables {
 /**
  * 대화 열기 (계약 §5.7 `POST …/messages/threads`). 재촉 만들기(useCreateReminder)와 같은 규칙이다.
  * 서버가 있으면 그 대화를, 없으면 빈 대화를 돌려준다. 메시지 캐시를 다시 받은 뒤에 끝난다 — 옮겨 가면 목록에 그 대화가 있다.
- * 실패는 남기고 자동 재시도는 없다. 다시 누르면 다시 연다
+ * 실패는 남기고 자동 재시도는 없다. 다시 누르면 다시 연다. 응답을 읽지 못했으면 대화가 생겼을 수 있어 실패로 남기지 않고
+ * 토스트와 `새로고침`(메시지 목록 다시 받기)으로 알린다 (#348)
  */
 export function useOpenThread(workspaceId: string): OpenThreadControl {
   const queryClient = useQueryClient()
@@ -46,7 +48,12 @@ export function useOpenThread(workspaceId: string): OpenThreadControl {
       await queryClient.invalidateQueries({ queryKey })
     },
     onError: (error, { session }) => {
-      if (session.isCurrent()) setFailure(error)
+      if (!session.isCurrent()) return
+      if (isInvalidResponse(error))
+        showWriteUnconfirmed(
+          () => void queryClient.invalidateQueries({ queryKey: messageKeys(workspaceId) }),
+        )
+      else setFailure(error)
     },
   })
 
