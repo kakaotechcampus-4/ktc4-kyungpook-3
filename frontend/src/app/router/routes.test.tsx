@@ -46,7 +46,7 @@ describe('경로 표', () => {
 
   /* 기대값을 바꿨다 — 대기 화면은 경로에 맞는 뼈대를 고르는 RouteSkeleton 이다(온보딩은 가운데 열 뼈대).
      고르는 규칙은 RouteSkeleton.test.tsx 가 본다 */
-  it('주요 화면 22개는 지연 로드하고 Suspense 에 RouteSkeleton 을 쓴다', () => {
+  it('주요 화면 24개는 지연 로드하고 Suspense 에 RouteSkeleton 을 쓴다', () => {
     const lazyScreens = leaves(tree)
       .map(lazyScreen)
       .filter((element) => element !== null)
@@ -54,7 +54,7 @@ describe('경로 표', () => {
     // M5 U4 가 처리 화면 자리표시자를 지연 로드 화면(pages/meeting-processing)으로 바꿔 14 → 15
     // M6 S3 가 태스크 목록·상세를 한 자리표시자(`tasks/:taskId?`)에서 두 지연 로드 화면(pages/tasks, pages/task-detail)으로 나눠 15 → 16
     // #356 이 비밀번호 재설정 요청·변경 화면을 더해 19 → 21
-    expect(lazyScreens).toHaveLength(22)
+    expect(lazyScreens).toHaveLength(24)
     for (const { props } of lazyScreens) {
       expect(isValidElement(props.fallback) && props.fallback.type === RouteSkeleton).toBe(true)
     }
