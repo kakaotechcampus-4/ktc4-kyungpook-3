@@ -1,12 +1,22 @@
 """심사용 시드의 계정·공간·팀원·온보딩 단계(#606)."""
+import dataclasses
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
-from app.cli.demo_seed import load_seed_data
+from app.cli.demo_seed import SeedPerson, load_seed_data
 from app.cli.seed_demo import SeedError, emails_from_pattern, seed_accounts
 from app.main import app
-from app.models import Member, MemberAlias, User, Workspace
+from app.models import (
+    Member,
+    MemberAlias,
+    OnboardingStep,
+    OnboardingStepStatus,
+    User,
+    Workspace,
+    WorkspaceOnboardingStepState,
+)
 from app.services.passwords import hash_password
 
 PM_PW = "demo-pm-1234"
@@ -112,3 +122,77 @@ def test_email_pattern_requires_placeholder():
     with pytest.raises(SeedError):
         emails_from_pattern("demo@x.com")
     assert emails_from_pattern("a+{n}@x.com") == [f"a+{n}@x.com" for n in range(1, 7)]
+
+
+def test_member2_password_invalid_writes_nothing(mdb):
+    with pytest.raises(SeedError):
+        _seed(mdb, member2_password="short")
+
+    assert mdb.scalar(select(func.count()).select_from(User)) == 0
+
+
+def test_existing_pm_seat_with_other_name_is_reused(mdb):
+    pm = User(email=EMAILS[0], name="다른이름", password_hash=hash_password(PM_PW))
+    mdb.add(pm)
+    mdb.flush()
+    workspace = Workspace(name=NAME)
+    mdb.add(workspace)
+    mdb.flush()
+    mdb.add(Member(workspace_id=workspace.workspace_id, user_id=pm.user_id, display_name="다른이름", role="pm"))
+    mdb.commit()
+
+    _seed(mdb)
+    members_after_first = mdb.scalar(select(func.count()).select_from(Member))
+    _seed(mdb)
+
+    seats = mdb.scalars(select(Member).where(Member.user_id == pm.user_id, Member.is_deleted.is_(False))).all()
+    assert len(seats) == 1
+    assert mdb.scalar(select(func.count()).select_from(Member)) == members_after_first == 6
+
+
+def test_pending_onboarding_rows_become_skipped(mdb):
+    seeded = _seed(mdb)
+    for state in mdb.scalars(select(WorkspaceOnboardingStepState)).all():
+        if state.step != OnboardingStep.CREATE_WORKSPACE:
+            state.status = OnboardingStepStatus.PENDING
+    mdb.get(Workspace, seeded.workspace_id).onboarding_completed = False
+    mdb.commit()
+
+    _seed(mdb)
+
+    pm, _ = _login(EMAILS[0], PM_PW)
+    data = pm.get("/api/v1/workspaces").json()["data"]
+    items = data["items"] if isinstance(data, dict) else data
+    assert next(w for w in items if w["workspace_id"] == seeded.workspace_id)["onboarding"]["completed"] is True
+
+
+def test_reused_seat_gets_name_aliases_without_duplicates(mdb):
+    seeded = _seed(mdb)
+    p3 = seeded.member_ids["p3"]
+
+    def count():
+        return mdb.scalar(select(func.count()).select_from(MemberAlias).where(MemberAlias.member_id == p3))
+
+    first = count()
+    assert first > 0
+    for alias in mdb.scalars(select(MemberAlias).where(MemberAlias.member_id == p3)).all():
+        mdb.delete(alias)
+    mdb.commit()
+    assert count() == 0
+
+    _seed(mdb)
+    assert count() == first
+    _seed(mdb)
+    assert count() == first
+
+
+def test_invalid_person_name_writes_nothing(mdb):
+    data = load_seed_data()
+    bad = dataclasses.replace(data, people=[SeedPerson(key="p1", name="  "), *data.people[1:]])
+
+    with pytest.raises(SeedError):
+        seed_accounts(
+            mdb, bad, emails=EMAILS, workspace_name=NAME, pm_password=PM_PW, member2_password=M2_PW
+        )
+
+    assert mdb.scalar(select(func.count()).select_from(User)) == 0

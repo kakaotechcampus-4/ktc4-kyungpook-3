@@ -18,6 +18,7 @@ from app.models import (
 )
 from app.schemas.auth import validate_password
 from app.schemas.email import normalize_email
+from app.schemas.name import validate_name
 from app.services.member_aliases import sync_name_aliases
 from app.services.passwords import hash_password
 
@@ -64,6 +65,12 @@ def seed_accounts(
             validate_password(password)
         except ValueError as error:
             raise SeedError(str(error)) from error
+    for person in data.people:
+        try:
+            if validate_name(person.name) != person.name:
+                raise ValueError("앞뒤 공백이 있습니다")
+        except ValueError as error:
+            raise SeedError(f"시드 인물 이름이 규칙에 맞지 않습니다: {person.name!r}") from error
     people = {person.key: person for person in data.people}
     if "p1" not in people or "p2" not in people:
         raise SeedError("시드 인물에 p1·p2 가 있어야 합니다")
@@ -101,13 +108,24 @@ def seed_accounts(
 
         member_ids: dict[str, str] = {}
         for person in data.people:
-            member = db.scalars(
-                select(Member).where(
-                    Member.workspace_id == workspace.workspace_id,
-                    Member.display_name == person.name,
-                    Member.is_deleted.is_(False),
-                )
-            ).first()
+            member = None
+            if person.key != "p2":
+                # 이름이 달라도 같은 계정의 활성 자리(create_workspace 로 만든 PM 자리 등)를 먼저 쓴다.
+                member = db.scalars(
+                    select(Member).where(
+                        Member.workspace_id == workspace.workspace_id,
+                        Member.user_id == users[person.key].user_id,
+                        Member.is_deleted.is_(False),
+                    )
+                ).first()
+            if member is None:
+                member = db.scalars(
+                    select(Member).where(
+                        Member.workspace_id == workspace.workspace_id,
+                        Member.display_name == person.name,
+                        Member.is_deleted.is_(False),
+                    )
+                ).first()
             if member is None:
                 member = Member(
                     workspace_id=workspace.workspace_id,
@@ -117,12 +135,14 @@ def seed_accounts(
                 )
                 db.add(member)
                 db.flush()
-                sync_name_aliases(db, member)
+            sync_name_aliases(db, member)
             member_ids[person.key] = member.member_id
 
-        saved = {state.step for state in workspace.onboarding_steps}
+        saved = {state.step: state for state in workspace.onboarding_steps}
         for step in OnboardingStep:
             if step.value in saved:
+                if saved[step.value].status == OnboardingStepStatus.PENDING:
+                    saved[step.value].status = OnboardingStepStatus.SKIPPED
                 continue
             status = (
                 OnboardingStepStatus.COMPLETED
