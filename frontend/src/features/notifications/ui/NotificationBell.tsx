@@ -8,8 +8,10 @@ import {
   readNotification,
 } from '@/entities/notification'
 import type { Notification } from '@/entities/notification'
-import { captureSession } from '@/entities/user'
 import { errorMessage } from '@/shared/api/errorMessages'
+import { CLIENT_ERROR_CODES, createClientError, isCanceledError } from '@/shared/api/errors'
+import { captureSessionScope } from '@/shared/api/sessionScope'
+import type { SessionScope } from '@/shared/api/sessionScope'
 import { formatSeoulMonthDayTime } from '@/shared/lib/date/format'
 import { useGuardedNavigate } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
@@ -25,7 +27,7 @@ const ITEM =
 
 interface ReadVariables {
   notification: Notification
-  isCurrentSession: () => boolean
+  session: SessionScope
 }
 
 function triggerLabel(unreadCount: number): string {
@@ -40,9 +42,12 @@ export function NotificationBell({ workspaceId }: { workspaceId: string }) {
   const queryClient = useQueryClient()
   const navigate = useGuardedNavigate()
   const read = useMutation({
-    mutationFn: ({ notification }: ReadVariables) => readNotification(workspaceId, notification.id),
-    onSuccess: (_, { notification, isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    mutationFn: ({ notification, session }: ReadVariables) => {
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
+      return readNotification(workspaceId, notification.id, session.signal)
+    },
+    onSuccess: (_, { notification, session }) => {
+      if (!session.isCurrent()) return
       void queryClient.invalidateQueries({ queryKey: notificationKeys(workspaceId) })
       const path = notificationPath(workspaceId, notification.link)
       if (path === null) return
@@ -96,7 +101,7 @@ export function NotificationBell({ workspaceId }: { workspaceId: string }) {
         {notifications.data?.items.length === 0 ? (
           <p className="text-caption text-dim">아직 알림이 없어요.</p>
         ) : null}
-        {read.isError ? (
+        {read.isError && !isCanceledError(read.error) ? (
           <p role="alert" className="text-caption text-ink">
             {errorMessage(read.error)}
           </p>
@@ -108,7 +113,7 @@ export function NotificationBell({ workspaceId }: { workspaceId: string }) {
                 <button
                   type="button"
                   disabled={read.isPending}
-                  onClick={() => read.mutate({ notification, isCurrentSession: captureSession() })}
+                  onClick={() => read.mutate({ notification, session: captureSessionScope() })}
                   className={ITEM}
                 >
                   <span className="flex items-center gap-6 text-caption font-semibold text-ink">

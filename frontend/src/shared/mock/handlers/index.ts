@@ -9,6 +9,7 @@ import { integrationHandlers } from './integration'
 import { meetingHandlers } from './meeting'
 import { speakerHandlers } from './speaker'
 import { minutesHandlers } from './minutes'
+import { markdownFileHandlers } from './markdownFiles'
 import { extractionHandlers } from './extraction'
 import { taskHandlers } from './task'
 import { approvalHandlers } from './approval'
@@ -17,6 +18,7 @@ import { messageSettingsHandlers } from './messageSettings'
 import { notificationHandlers } from './notification'
 import { invitationHandlers } from './invitation'
 import { withdrawalHandlers } from './withdrawal'
+import { projectMapHandlers } from './projectMap'
 
 /** Entity handler modules are accumulated here for the common browser and test server. */
 export const handlers: RequestHandler[] = [
@@ -31,6 +33,7 @@ export const handlers: RequestHandler[] = [
   ...meetingHandlers,
   ...speakerHandlers,
   ...minutesHandlers,
+  ...markdownFileHandlers,
   ...extractionHandlers,
   ...taskHandlers,
   ...approvalHandlers,
@@ -38,4 +41,5 @@ export const handlers: RequestHandler[] = [
   ...messageSettingsHandlers,
   ...notificationHandlers,
   ...invitationHandlers,
+  ...projectMapHandlers,
 ]

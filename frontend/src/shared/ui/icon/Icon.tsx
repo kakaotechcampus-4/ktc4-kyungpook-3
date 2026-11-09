@@ -204,6 +204,19 @@ const ICONS = {
       </>
     ),
   },
+  /** 프로젝트 맵 (#551). 캔버스에 없어 주제 하나에 태스크 셋이 이어진 모양으로 그렸다 */
+  graph: {
+    strokeWidth: 1.7,
+    paths: (
+      <>
+        <circle cx="12" cy="12" r="3" />
+        <circle cx="5" cy="5" r="2" />
+        <circle cx="19" cy="6" r="2" />
+        <circle cx="6" cy="19" r="2" />
+        <path d="M6.5 6.5 9.8 9.8M17.4 7.2l-3.2 3M8.2 16.9l1.7-2.8" />
+      </>
+    ),
+  },
   calendar: {
     strokeWidth: 1.7,
     paths: (

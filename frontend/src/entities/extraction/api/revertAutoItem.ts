@@ -15,12 +15,13 @@ import type { AutoItemRevert, AutoItemRevertReason, AutoItemRevertRejection } fr
 export async function revertAutoItem(
   extractionId: string,
   itemId: string,
+  signal?: AbortSignal,
 ): Promise<AutoItemRevert> {
   const dto = parseResponse(
     extractionItemRevertSchema,
     await request<unknown>(
       `/extractions/${encodeURIComponent(extractionId)}/items/${encodeURIComponent(itemId)}/revert`,
-      { method: 'POST' },
+      { method: 'POST', signal },
     ),
     'extraction',
   )

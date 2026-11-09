@@ -9,24 +9,33 @@ import type { InvitationCreateDto } from '@/shared/types/api/invitation'
 export async function createInvitation(
   workspaceId: string,
   input: { memberId: string; email: string },
+  signal?: AbortSignal,
 ): Promise<void> {
   const body: InvitationCreateDto = { member_id: input.memberId, email: input.email }
   await request(`/workspaces/${encodeURIComponent(workspaceId)}/invitations`, {
     method: 'POST',
     body,
+    signal,
   })
 }
 
-async function invitationAction(invitationId: string, action: string): Promise<void> {
-  await request(`/invitations/${encodeURIComponent(invitationId)}/${action}`, { method: 'POST' })
+async function invitationAction(
+  invitationId: string,
+  action: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await request(`/invitations/${encodeURIComponent(invitationId)}/${action}`, {
+    method: 'POST',
+    signal,
+  })
 }
 
-export function cancelInvitation(invitationId: string): Promise<void> {
-  return invitationAction(invitationId, 'cancel')
+export function cancelInvitation(invitationId: string, signal?: AbortSignal): Promise<void> {
+  return invitationAction(invitationId, 'cancel', signal)
 }
 
-export function revokeInvitation(invitationId: string): Promise<void> {
-  return invitationAction(invitationId, 'revoke')
+export function revokeInvitation(invitationId: string, signal?: AbortSignal): Promise<void> {
+  return invitationAction(invitationId, 'revoke', signal)
 }
 
 export function acceptInvitation(invitationId: string): Promise<void> {
