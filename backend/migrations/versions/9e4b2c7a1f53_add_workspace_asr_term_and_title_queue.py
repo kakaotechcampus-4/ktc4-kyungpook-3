@@ -7,7 +7,7 @@ PM 이 task_create 승인으로 만든 태스크의 최종 제목을 큐에 쌓�
 되돌리면 두 테이블과 쌓인 용어·제목이 지워진다.
 
 Revision ID: 9e4b2c7a1f53
-Revises: 5ae76a6102a8
+Revises: e575b02d8a31
 Create Date: 2026-11-08 12:00:00.000000
 
 """
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '9e4b2c7a1f53'
-down_revision: Union[str, Sequence[str], None] = '5ae76a6102a8'
+down_revision: Union[str, Sequence[str], None] = 'e575b02d8a31'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
