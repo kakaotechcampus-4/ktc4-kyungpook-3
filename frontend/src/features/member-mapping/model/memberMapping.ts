@@ -3,6 +3,7 @@ import {
   createMember,
   linkDiscordUsers,
   memberListQueryOptions,
+  memberNameKey,
   updateMember,
 } from '@/entities/member'
 import type { DiscordUser, Member } from '@/entities/member'
@@ -49,7 +50,7 @@ export type MappingIssue = 'duplicated' | 'taken' | 'pmDuplicated' | 'pmClaimed'
  * - taken: 이 화면에 없는 Discord 사용자(서버를 떠난 사람)와 이미 연결된 팀원 이름이다
  * - pmDuplicated: 두 줄에서 같은 PM 을 골랐다
  * - pmClaimed: 다른 줄에서 고른 PM 의 이름을 적었다 — 이름으로 그 PM 을 가져가지 못하게 막는다 (#228)
- * PM 을 고른 줄은 이름을 보지 않는다. 이름은 앞뒤 공백을 지우고 대소문자를 그대로 비교한다. 결과는 줄 번호 → 사유다.
+ * PM 을 고른 줄은 이름을 보지 않는다. 이름은 `memberNameKey` 로 비교한다. 결과는 줄 번호 → 사유다.
  */
 export function findMappingIssues(
   rows: readonly MappingRow[],
@@ -60,31 +61,31 @@ export function findMappingIssues(
   const counts = new Map<string, number>()
   const picks = new Map<string, number>()
   for (const row of rows) {
-    const name = row.name.trim()
+    const key = memberNameKey(row.name)
     if (row.pmMemberId) picks.set(row.pmMemberId, (picks.get(row.pmMemberId) ?? 0) + 1)
-    else if (name) counts.set(name, (counts.get(name) ?? 0) + 1)
+    else if (key) counts.set(key, (counts.get(key) ?? 0) + 1)
   }
   const pickedNames = new Set(
-    members.filter(({ id }) => picks.has(id)).map(({ displayName }) => displayName),
+    members.filter(({ id }) => picks.has(id)).map(({ displayName }) => memberNameKey(displayName)),
   )
   rows.forEach((row, index) => {
     if (row.pmMemberId) {
       if ((picks.get(row.pmMemberId) ?? 0) > 1) issues.set(index, 'pmDuplicated')
       return
     }
-    const name = row.name.trim()
-    if (!name) return
-    if (pickedNames.has(name)) {
+    const key = memberNameKey(row.name)
+    if (!key) return
+    if (pickedNames.has(key)) {
       issues.set(index, 'pmClaimed')
       return
     }
-    if ((counts.get(name) ?? 0) > 1) {
+    if ((counts.get(key) ?? 0) > 1) {
       issues.set(index, 'duplicated')
       return
     }
     const holder = members.find(
       (member) =>
-        member.displayName === name &&
+        memberNameKey(member.displayName) === key &&
         member.discordUserId !== null &&
         member.discordUserId !== row.discordUserId &&
         !shown.has(member.discordUserId),
@@ -118,8 +119,10 @@ function reusableMember(
   rows: readonly MappingRow[],
   except?: Member,
 ): Member | undefined {
+  const key = memberNameKey(name)
   const others = members.filter(
-    (member) => member !== except && member.displayName === name && !isPicked(member, rows),
+    (member) =>
+      member !== except && memberNameKey(member.displayName) === key && !isPicked(member, rows),
   )
   return (
     others.find(({ discordUserId }) => discordUserId === null) ??
@@ -127,7 +130,7 @@ function reusableMember(
       rows.some(
         (other) =>
           other.discordUserId === discordUserId &&
-          (Boolean(other.pmMemberId) || other.name.trim() === ''),
+          (Boolean(other.pmMemberId) || memberNameKey(other.name) === ''),
       ),
     )
   )
@@ -170,11 +173,11 @@ export function planRow(
 ): MappingOperation | null {
   if (row.pmMemberId) return planPmRow(row.pmMemberId, row, members)
   const name = row.name.trim()
-  if (!name) return null
+  if (memberNameKey(name) === '') return null
   const linked = members.find(({ discordUserId }) => discordUserId === row.discordUserId)
   if (linked) {
     if (isPicked(linked, rows)) return { kind: 'unlink', memberId: linked.id }
-    if (linked.displayName === name) return null
+    if (memberNameKey(linked.displayName) === memberNameKey(name)) return null
     return reusableMember(name, members, rows, linked)
       ? { kind: 'unlink', memberId: linked.id }
       : { kind: 'rename', memberId: linked.id, displayName: name }
