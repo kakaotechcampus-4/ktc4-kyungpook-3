@@ -18,6 +18,11 @@ TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 SERVICE_TOKEN = "test-service-token"
 
 
+@pytest.fixture
+def sqlite_message_url():
+    return "sqlite:///:memory:"
+
+
 @pytest.fixture(
     params=[
         "sqlite",
@@ -27,17 +32,19 @@ SERVICE_TOKEN = "test-service-token"
         ),
     ]
 )
-def mdb(request, monkeypatch):
+def mdb(request, monkeypatch, sqlite_message_url):
     monkeypatch.setenv("SERVICE_TOKEN", SERVICE_TOKEN)
     if request.param == "postgresql":
         engine = create_engine(TEST_DATABASE_URL)
         with engine.begin() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         Base.metadata.drop_all(engine)
-    else:
+    elif sqlite_message_url == "sqlite:///:memory:":
         engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
+            sqlite_message_url, connect_args={"check_same_thread": False}, poolclass=StaticPool
         )
+    else:
+        engine = create_engine(sqlite_message_url, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     # 앱 세션(SessionLocal)과 같이 autoflush 를 끈다. 서비스가 조회 전에 flush 를 빠뜨리면 여기서 드러난다.
     session = sessionmaker(bind=engine, autoflush=False)()

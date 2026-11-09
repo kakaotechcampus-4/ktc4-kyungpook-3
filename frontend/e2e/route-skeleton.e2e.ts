@@ -116,8 +116,14 @@ const CASES: ScreenCase[] = [
     scenario: 'meeting-demo',
     path: `${W}/meetings/upload`,
     against: 'screen',
-    anchors: ['회의를 올려 주세요', '회의 제목', '참석자'],
-    widths: [1280],
+    anchors: [
+      '회의를 올려 주세요',
+      '회의 제목',
+      '참석자',
+      '회의록을 만들기 위해 음성과 전사 내용을 외부 서비스(Elice, pyannoteAI)로 보내요. 참석자에게 알린 뒤 올려 주세요.',
+      'Notion을 연결했다면 태스크도 Notion에 올라가요. 확인이 필요한 태스크는 승인한 뒤에 올라가요.',
+    ],
+    widths: [1280, 360],
   },
 ]
 
