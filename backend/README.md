@@ -82,14 +82,14 @@ docker compose -f docker-compose.prod.yml logs -f api
 
 전제는 세 가지다. API 서버에 `EMBEDDING_API_KEY` 가 있어야 하고(없으면 임베딩이 안 채워져 회의 사이에서 멈춘다), `AUTO_CREATE_ENABLED` 가 켜져 있어야 하고, 명령을 돌리는 환경에 `SERVICE_TOKEN` 이 있어야 한다.
 
-운영(이메일은 자리표시자다. 실제 주소를 문서나 셸 기록에 남기지 않는다).
+운영(이메일은 자리표시자다. 실제 주소를 문서나 셸 기록에 남기지 않는다). 비밀번호는 셸 기록에 남지 않게 `read -rs DEMO_PM_PASSWORD && export DEMO_PM_PASSWORD` 처럼 입력해 둔다(`DEMO_MEMBER_PASSWORD` 도 같다).
 
 ```bash
 docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBER_PASSWORD api \
   python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com'
 ```
 
-로컬 리허설은 API 를 띄운 뒤 같은 명령을 `python -m app.cli.seed_demo --email-pattern 'demo+{n}@example.com'` 로 돌린다. `--dry-run` 은 만들 계정 수와 회의 제목만 출력하고 DB·HTTP 를 건드리지 않는다(`SERVICE_TOKEN` 은 필요 없지만 비밀번호 검사는 하므로 비밀번호 환경변수는 필요하다). 비밀번호를 환경변수로 넘기지 않고 입력받으려면 터미널(TTY)이 필요하다(SSH 는 `-t`). 컨테이너에는 `SERVICE_TOKEN` 이 `env_file` 로 이미 들어 있다.
+로컬 리허설은 API 를 띄운 뒤 같은 명령을 `python -m app.cli.seed_demo --email-pattern 'demo+{n}@example.com'` 로 돌린다. `--dry-run` 은 만들 계정 수와 회의 제목만 출력하고 DB·HTTP 를 건드리지 않는다(`SERVICE_TOKEN` 은 필요 없지만 비밀번호 검사는 하므로 비밀번호 환경변수는 필요하다). 비밀번호를 환경변수로 넘기지 않고 입력받으려면 터미널(TTY)이 필요하다(`docker compose exec` 는 기본으로 붙고, 원격에서 명령 한 줄로 돌릴 때는 `ssh -t`). 컨테이너에는 `SERVICE_TOKEN` 이 `env_file` 로 이미 들어 있다.
 
 | 옵션·환경변수 | 뜻 |
 |---|---|
