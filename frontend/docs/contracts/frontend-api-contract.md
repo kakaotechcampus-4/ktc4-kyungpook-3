@@ -1313,9 +1313,9 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 
 2026-11-09 (#538): 그 브랜치가 PR #454로 develop에 병합됐다. develop `69869392`의 [auth.py](../../../backend/app/api/auth.py)를 다시 읽었고 아래 표와 복귀 주소가 그대로다. 대조하며 더 확인한 사실은 이렇다.
 
-- 성공 복귀와 `email_exists` 복귀는 남아 있던 대기 쿠키를 지운다. 앞서 다른 카카오로 가입하다 멈춘 대기가 다음 가입에 이어지지 않는다.
+- 성공 복귀와 `email_exists` 복귀는 남아 있던 대기 쿠키를 지운다. 앞서 다른 카카오로 가입하다 멈춘 대기가 다음 가입에 이어지지 않는다. `email_exists` 복귀는 #627 에서 없어졌다.
 - callback 의 예외는 두 갈래다. 카카오 설정 오류(`OAuthConfigError`)는 돌아갈 곳을 버리고 `/login?next=%2F&oauth=kakao&oauth_result=failed`로 보낸다. FE는 `next=/`를 버리고 일반 실패 문구를 보인다. 그 밖의 예외는 전역 처리기가 HTTP 500 `INTERNAL_ERROR` 봉투로 답한다. 브라우저가 callback 주소에서 JSON을 보게 되고 앱 화면으로 돌아오지 않는다. 이 경우를 FE가 처리할 방법은 없다.
-- 같은 계정에 동시에 잇는 요청이 겹치면 먼저 이은 쪽을 따른다. 다른 카카오가 먼저 이었으면 `email_exists`다.
+- 같은 계정에 동시에 잇는 요청이 겹치면 먼저 이은 쪽을 따른다. 다른 카카오가 먼저 이었으면 `email_exists`다. #627 에서 기존 계정에 잇는 경로가 없어져 이 경우도 없다.
 
 **규약 (같은 브랜치 BE 코드 기준).** 모두 로그인이 필요 없다. 응답은 기존 봉투다. `POST /auth/signup`·`GET /auth/kakao/pending`·카카오 callback 은 #627 에서 바뀐다. 아래 「#627 변경」을 본다.
 
@@ -1354,14 +1354,14 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - `wrong`은 남은 횟수를 보인다. `expired`와 `too_many`는 코드 단계에 남아 다시 보내기로 이어 간다. `SIGNUP_VERIFICATION_INVALID`는 이메일 단계로 돌아간다.
 - `kakao=1`이면 pending을 읽는다. 이메일이 있으면 프로필부터 시작하고 이메일은 고칠 수 없다. 이름은 닉네임으로 채우고 고칠 수 있다. 이메일이 없으면 코드 인증을 거치고 이름만 채운다. 이 모드의 가입은 모두 `link_kakao: true`다. `카카오 없이 가입`은 URL에서 모드를 지운다.
 - 이 모드의 코드 요청 409는 이메일 칸에 다른 이메일을 입력하라고 알린다. 프로필의 409는 어느 모드든 로그인 경로를 보인다. `KAKAO_LINK_EXPIRED`는 카카오로 다시 시작하는 버튼을 보인다.
-- 로그인 화면은 카카오 결과를 한 번 읽고 주소에서 지운다. `next`는 남긴다. `oauth_reason`은 허용 목록으로만 읽고 URL 값을 화면에 싣지 않는다.
+- 로그인 화면은 카카오 결과를 한 번 읽고 주소에서 지운다. `next`는 남긴다. `oauth_reason`은 허용 목록으로만 읽고 URL 값을 화면에 싣지 않는다. #627 뒤로는 `oauth_reason`을 읽지 않는다(아래 「FE 동작 (#627)」).
 - 성공 복귀는 새 문서라 `useEnterSession`을 거치지 않는다. 가드가 복귀 표시를 보고 이메일 로그인과 같은 공간 개수 분기로 보낸다(D-010). 카카오 버튼은 떠나기 전에 복귀 공간을 지운다.
 
 **현재 구현 (2026-11-06).** FE는 위 규약대로 만들었고 MSW로만 확인했다.
 
 - 요청: [DTO](../../src/shared/types/api/auth.ts), [가입 요청](../../src/entities/user/api/auth.ts), [코드·카카오 요청](../../src/entities/user/api/signupCode.ts), [details 해석](../../src/entities/user/model/signupCode.ts).
 - 화면: [가입 폼](../../src/features/auth/ui/SignupForm.tsx), [단계 전이](../../src/features/auth/ui/SignupSteps.tsx), [대기 상태](../../src/features/auth/model/useKakaoLink.ts), [로그인 안내](../../src/features/auth/model/useLoginNotice.ts), [복귀 문구](../../src/features/auth/model/kakaoLogin.ts), [가드](../../src/app/router/guards/RedirectIfAuthed.tsx).
-- MSW: [가입 코드 handler](../../src/shared/mock/handlers/signupCode.ts), [가입 handler](../../src/shared/mock/handlers/auth.ts), [모의 카카오](../../src/shared/mock/oauth/mockKakao.ts). 개발·MSW 모드에서만 `/__mock/kakao`가 새 사용자, 이어진 계정, 이메일 없음, 이메일 충돌, 취소, 실패를 고르게 하고 `/__mock/mail`이 코드를 보인다.
+- MSW: [가입 코드 handler](../../src/shared/mock/handlers/signupCode.ts), [가입 handler](../../src/shared/mock/handlers/auth.ts), [모의 카카오](../../src/shared/mock/oauth/mockKakao.ts). 개발·MSW 모드에서만 `/__mock/kakao`가 결과를 고르게 하고 `/__mock/mail`이 코드를 보인다. 이때는 새 사용자, 이어진 계정, 이메일 없음, 이메일 충돌, 취소, 실패를 골랐다. #627 에서 이메일 없음·이메일 충돌을 지웠고 지금 선택지는 아래 #627 구현 문단에 있다.
 - 검증: Vitest 단위·통합, 실제 Chromium E2E [signup-kakao.e2e.ts](../../e2e/signup-kakao.e2e.ts).
 
 **돌아갈 경로.** 로그인 화면의 회원가입 링크와 `/signup`은 `next`를 들고 있어 로그인으로 옮겨도 이어진다. 가입을 마친 새 계정은 `next`를 쓰지 않고 시작 화면으로 간다(#411, D-182).
@@ -1394,7 +1394,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - 요청: [DTO·zod 스키마](../../src/shared/types/api/auth.ts), [가입 요청](../../src/entities/user/api/auth.ts).
 - 화면: [가입 폼](../../src/features/auth/ui/SignupForm.tsx), [이메일 가입 단계](../../src/features/auth/ui/SignupSteps.tsx), [프로필 단계](../../src/features/auth/ui/SignupProfileStep.tsx), [복귀 문구](../../src/features/auth/model/kakaoLogin.ts).
 - MSW: [가입 handler](../../src/shared/mock/handlers/auth.ts), [모의 카카오](../../src/shared/mock/oauth/mockKakao.ts). 모의 카카오는 새 사용자, 이어진 계정(픽스처 계정에 이어진 `kakao-pm`), 닉네임 없는 새 사용자, 취소, 실패를 고른다.
-- 검증: Vitest [가입 흐름](../../src/app/signupFlow.test.tsx), [가입 요청](../../src/entities/user/api/auth.test.ts), [카카오 복귀](../../src/app/kakaoLogin.test.tsx). E2E [signup-kakao.e2e.ts](../../e2e/signup-kakao.e2e.ts) 기대값을 새 흐름으로 고쳤고 로컬에서는 돌리지 않았다.
+- 검증: Vitest [가입 흐름](../../src/app/signupFlow.test.tsx), [가입 요청](../../src/entities/user/api/auth.test.ts), [카카오 복귀](../../src/app/kakaoLogin.test.tsx). E2E [signup-kakao.e2e.ts](../../e2e/signup-kakao.e2e.ts) 기대값을 새 흐름으로 고쳤다. 바탕 develop 병합 전 코드로 로컬 Chromium 6/6 통과를 확인했고, 병합 뒤(가입 동의 체크 추가)는 CI 가 돈다.
 
 #### 4.1.5 이용약관·개인정보처리방침 동의 (#564): BE 제안, FE 합의 전
 
@@ -1541,7 +1541,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - `display_name` 이 `"Discord 연결됨"` 같은 **생성 문자열**이다 (§4.0-②-7). 화면에 그대로 쓸 수 없다.
   연동 카드는 provider 이름을 프론트엔드가 쓰고, `display_name` 은 실제 값이 올 때까지 표시하지 않는다.
 - 연결 요청은 본문 없는 페이지 이동이다. 현재 Notion start·callback과 연결 뒤 DB 준비 경로가 있다. FE는 데이터베이스 선택 화면을 만들지 않고(D-154) 연결 상태를 조회한다.
-- 복귀 주소의 결과 이름 `oauth`, `oauth_result`는 카카오 로그인(§4.1.4)도 같다. 그쪽에만 `oauth_reason`이 더 있고, 연동 화면은 이 값을 읽지 않는다. [복귀 주소 코드](../../src/shared/lib/oauth/returnParams.ts)가 한 곳에서 다룬다.
+- 복귀 주소의 결과 이름 `oauth`, `oauth_result`는 카카오 로그인(§4.1.4)도 같다. 카카오에 있던 `oauth_reason`(`email_exists`)은 #627 에서 없어졌다. 연동 화면도 실패 사유를 읽지 않는다. [복귀 주소 코드](../../src/shared/lib/oauth/returnParams.ts)가 한 곳에서 다룬다.
 
 #### 4.3.1 회의 채팅 채널 (#428·#429, 2026-11-07)
 
