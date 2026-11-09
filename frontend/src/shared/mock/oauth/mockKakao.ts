@@ -86,11 +86,7 @@ export function finishMockKakao(
     else if (outcome === 'email-exists')
       url = withOAuthResult(login, PROVIDER, 'failed', 'email_exists')
     else {
-      db.kakao.pending = {
-        kakaoId: identity.id,
-        email: identity.emailVerified ? identity.email : null,
-        nickname: identity.nickname,
-      }
+      db.kakao.pending = { kakaoId: identity.id, nickname: identity.nickname }
       url = paths.signup({ kakao: true, next: returnPath })
     }
   }

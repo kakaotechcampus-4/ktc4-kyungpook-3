@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
-import { capture, readMailedCode, start } from './support'
+import { capture, confirmUsername, readMailedCode, start } from './support'
 
 /*
  * #427·#538 가입 이메일 인증과 카카오 로그인, 휴대폰 로그인(H-1). 세부 문구와 오류 갈래는 app/signupFlow.test.tsx·kakaoLogin.test.tsx 가 본다.
@@ -39,6 +39,7 @@ test('이메일 가입: 코드를 틀려도 남은 횟수를 보이고, 맞는 �
   await page.getByLabel('인증 코드').fill(code)
   await page.getByRole('button', { name: '코드 확인' }).click()
   await expect(page.getByLabel('이메일')).toHaveValue('new@example.com')
+  await confirmUsername(page, 'newuser1')
   await page.getByLabel('이름').fill('새 사용자')
   await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
   await page.getByLabel('비밀번호', { exact: true }).press('Enter')

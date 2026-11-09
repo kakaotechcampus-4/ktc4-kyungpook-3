@@ -229,7 +229,7 @@ describe('계정 탈퇴', () => {
     await withdrawAccount('f'.repeat(64), db.session.user.user_id)
     const remaining = db.accounts[0]
     if (!remaining) throw new Error('remaining PM missing')
-    await login({ email: remaining.session.user.email ?? '', password: remaining.password })
+    await login({ email: remaining.session.user.email ?? '', password: remaining.password ?? '' })
     const members = z
       .object({ items: z.array(z.object({ member_id: z.string() })) })
       .parse(await request<unknown>('/members', { params: { workspace_id: 'ws_01' } }))

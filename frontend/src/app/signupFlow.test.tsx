@@ -13,17 +13,22 @@ import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
-import { enterMailedCode, walkSignup } from './test/walkSignup'
+import { confirmUsername, enterMailedCode, walkSignup } from './test/walkSignup'
 
-/* #427 이메일 → 코드 → 프로필 가입과 카카오 연결 가입. 제품과 같은 배선(renderApp)에 MSW + 실제 request 경로다 */
+/* #427 이메일 → 코드 → 프로필 가입과 #627 아이디·카카오 가입. 제품과 같은 배선(renderApp)에 MSW + 실제 request 경로다 */
 
 vi.mock('@/shared/lib/location', () => ({ leaveApp: vi.fn() }))
 
 const NEXT = paths.tasks('ws_01', 'tk_01')
 
-const NEW_USER = { name: '새 사용자', email: 'new@example.com', password: 'pass1234' }
+const NEW_USER = {
+  name: '새 사용자',
+  email: 'new@example.com',
+  password: 'pass1234',
+  username: 'newuser1',
+}
 
-const KAKAO = { kakaoId: 'kakao-1', email: 'kakao@example.com', nickname: '카카오 닉네임' }
+const KAKAO = { kakaoId: 'kakao-1', nickname: '카카오 닉네임' }
 
 const click = (name: string | RegExp) => userEvent.click(screen.getByRole('button', { name }))
 
@@ -51,6 +56,15 @@ async function reachProfile(email: string = NEW_USER.email) {
   await enterMailedCode()
   await screen.findByLabelText('이름')
 }
+
+/** 아이디 확인을 마치고 이름·비밀번호를 넣는다. `계정 만들기` 는 누르지 않는다 */
+async function fillProfile() {
+  await confirmUsername(NEW_USER.username)
+  await userEvent.type(screen.getByLabelText('이름'), NEW_USER.name)
+  await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+}
+
+const createButton = () => screen.getByRole('button', { name: '계정 만들기' })
 
 function wrongCode(): string {
   return db.signupVerification.outbox.at(-1)?.code === '000000' ? '000001' : '000000'
@@ -388,16 +402,27 @@ describe('다시 보내기', () => {
 })
 
 describe('프로필 단계', () => {
-  it('가입 성공: 이메일 없이 증명 토큰으로 보내고 시작 작업 선택으로 간다', async () => {
+  it('코드를 확인한 뒤 아이디·이름·비밀번호를 받고, 첫 포커스는 아이디다', async () => {
+    await openSignup()
+    await reachProfile()
+    const username = screen.getByLabelText('아이디')
+    await waitFor(() => expect(username).toHaveFocus())
+    expect(username).toHaveAccessibleDescription('영문·숫자 4~20자')
+    expect(screen.getByRole('button', { name: '중복 확인' })).toBeEnabled()
+    expect(screen.getByLabelText('이름')).toHaveValue('')
+    expect(screen.getByLabelText('비밀번호')).toBeInTheDocument()
+  })
+
+  it('가입 성공: 이메일 없이 증명 토큰과 확인한 아이디로 보내고 시작 작업 선택으로 간다', async () => {
     const bodies = recordRequestBodies('POST', '/auth/signup')
     const log = recordRequests()
     const app = await openSignup()
-    await walkSignup(NEW_USER)
+    await walkSignup({ ...NEW_USER, username: 'NewUser1' })
 
     expect(await screen.findByRole('heading', { name: '어떻게 시작할까요?' })).toBeInTheDocument()
     await app.expectPath('/onboarding/start')
     expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toMatchObject({
-      user: { email: NEW_USER.email, name: NEW_USER.name },
+      user: { email: NEW_USER.email, name: NEW_USER.name, username: NEW_USER.username },
       workspaceCount: 0,
     })
     expect(bodies).toEqual([
@@ -405,7 +430,7 @@ describe('프로필 단계', () => {
         verification_token: Object.keys(db.signupVerification.proofs)[0],
         password: NEW_USER.password,
         name: NEW_USER.name,
-        link_kakao: false,
+        username: NEW_USER.username,
       },
     ])
     // 목록을 확보한 뒤에 옮긴다
@@ -418,7 +443,6 @@ describe('프로필 단계', () => {
     await reachProfile()
     expect(screen.getByLabelText('이메일')).toHaveValue(NEW_USER.email)
     expect(screen.getByLabelText('이메일')).toHaveAttribute('readonly')
-    await waitFor(() => expect(screen.getByLabelText('이름')).toHaveFocus())
 
     await click('이메일 바꾸기')
     expect(await screen.findByRole('button', { name: '인증 코드 받기' })).toBeInTheDocument()
@@ -427,6 +451,7 @@ describe('프로필 단계', () => {
   it('이름·비밀번호 규칙을 입력 아래에 알린다. 보기 토글과 규칙 안내가 있다', async () => {
     await openSignup()
     await reachProfile()
+    await confirmUsername(NEW_USER.username)
     await click('계정 만들기')
 
     const name = screen.getByLabelText('이름')
@@ -452,6 +477,7 @@ describe('프로필 단계', () => {
     const bodies = recordRequestBodies('POST', '/auth/signup')
     await openSignup()
     await reachProfile()
+    await confirmUsername(NEW_USER.username)
     const name = screen.getByLabelText('이름')
     await userEvent.click(name)
     await userEvent.paste('가'.repeat(101))
@@ -467,8 +493,7 @@ describe('프로필 단계', () => {
     await openSignup()
     await reachProfile()
     for (const proof of Object.values(db.signupVerification.proofs)) proof.expiresAt = 0
-    await userEvent.type(screen.getByLabelText('이름'), NEW_USER.name)
-    await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+    await fillProfile()
     await click('계정 만들기')
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -481,8 +506,7 @@ describe('프로필 단계', () => {
     await openSignup()
     await reachProfile()
     for (const proof of Object.values(db.signupVerification.proofs)) proof.expiresAt = 0
-    await userEvent.type(screen.getByLabelText('이름'), NEW_USER.name)
-    await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+    await fillProfile()
     await click('계정 만들기')
     await screen.findByRole('alert')
 
@@ -502,8 +526,7 @@ describe('프로필 단계', () => {
         once: true,
       }),
     )
-    await userEvent.type(screen.getByLabelText('이름'), NEW_USER.name)
-    await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+    await fillProfile()
     await click('계정 만들기')
 
     expect(await screen.findByRole('alert')).toHaveTextContent('이미 가입된 이메일이에요.')
@@ -522,10 +545,9 @@ describe('프로필 단계', () => {
     const log = recordRequests()
     await openSignup()
     await reachProfile()
-    await userEvent.type(screen.getByLabelText('이름'), NEW_USER.name)
-    await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+    await fillProfile()
 
-    const submitButton = screen.getByRole('button', { name: '계정 만들기' })
+    const submitButton = createButton()
     const form = submitButton.closest('form')!
     fireEvent.submit(form)
     fireEvent.submit(form)
@@ -543,6 +565,154 @@ describe('프로필 단계', () => {
     const app = await openSignup(paths.signup({ next: paths.workspaceSelect() }))
     await walkSignup(NEW_USER)
     await app.expectPath('/onboarding/start')
+  })
+})
+
+describe('아이디 중복 확인 (#627)', () => {
+  const availabilityGets = (log: ReturnType<typeof recordRequests>) =>
+    log.started.filter(({ path }) => path.startsWith('/auth/username-availability'))
+
+  async function openProfile() {
+    await openSignup()
+    await reachProfile()
+    await userEvent.type(screen.getByLabelText('이름'), NEW_USER.name)
+    await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+  }
+
+  it('중복 확인 전에는 가입할 수 없다', async () => {
+    const bodies = recordRequestBodies('POST', '/auth/signup')
+    await openProfile()
+    await userEvent.type(screen.getByLabelText('아이디'), NEW_USER.username)
+    expect(createButton()).toBeDisabled()
+    fireEvent.submit(createButton().closest('form')!)
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(bodies).toEqual([])
+    expect(screen.getByRole('heading', { name: '회원가입' })).toBeInTheDocument()
+  })
+
+  it('확인 뒤 아이디를 바꾸면 다시 확인해야 가입할 수 있다. 같은 값으로 되돌리면 다시 쓸 수 있다', async () => {
+    await openProfile()
+    await confirmUsername(NEW_USER.username)
+    expect(createButton()).toBeEnabled()
+
+    const field = screen.getByLabelText('아이디')
+    await userEvent.type(field, '2')
+    expect(createButton()).toBeDisabled()
+    expect(screen.queryByText('사용할 수 있는 아이디예요.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '중복 확인' })).toBeEnabled()
+
+    await userEvent.type(field, '{Backspace}')
+    expect(createButton()).toBeEnabled()
+    // 대소문자와 앞뒤 공백은 같은 아이디다
+    await userEvent.clear(field)
+    await userEvent.type(field, ` ${NEW_USER.username.toUpperCase()} `)
+    expect(createButton()).toBeEnabled()
+  })
+
+  it('이미 있는 아이디는 칸 아래에 알리고 가입할 수 없다', async () => {
+    await openProfile()
+    const field = screen.getByLabelText('아이디')
+    await userEvent.type(field, 'UserPM')
+    await click('중복 확인')
+
+    await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'))
+    expect(field).toHaveAccessibleDescription('영문·숫자 4~20자 이미 사용 중인 아이디예요.')
+    expect(createButton()).toBeDisabled()
+  })
+
+  it('규칙 밖 아이디는 묻지 않고 바로 알린다', async () => {
+    const log = recordRequests()
+    await openProfile()
+    const field = screen.getByLabelText('아이디')
+    await userEvent.type(field, 'ab_c')
+    await click('중복 확인')
+
+    await waitFor(() =>
+      expect(field).toHaveAccessibleDescription(
+        '영문·숫자 4~20자 아이디는 영문과 숫자로 된 4~20자로 입력해 주세요.',
+      ),
+    )
+    expect(availabilityGets(log)).toHaveLength(0)
+    expect(createButton()).toBeDisabled()
+  })
+
+  it('확인 중 아이디를 바꾸면 앞 확인을 끊고 그 결과로 가입을 켜지 않는다', async () => {
+    const gate = deferred()
+    server.use(
+      http.get('/api/v1/auth/username-availability', async () => {
+        await gate.promise
+      }),
+    )
+    await openProfile()
+    const field = screen.getByLabelText('아이디')
+    await userEvent.type(field, NEW_USER.username)
+    await click('중복 확인')
+    expect(await screen.findByText('아이디를 확인하고 있어요.')).toBeInTheDocument()
+
+    await userEvent.type(field, '2')
+    gate.resolve()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    await userEvent.type(field, '{Backspace}')
+    expect(screen.queryByText('아이디를 확인하고 있어요.')).not.toBeInTheDocument()
+    expect(screen.queryByText('사용할 수 있는 아이디예요.')).not.toBeInTheDocument()
+    expect(createButton()).toBeDisabled()
+    expect(screen.getByRole('button', { name: '중복 확인' })).toBeEnabled()
+  })
+
+  it('확인 뒤 남이 가져가 가입이 409 USERNAME_TAKEN 이면 아이디 칸 오류가 되고 버튼이 꺼진다', async () => {
+    db.usernameRace = [NEW_USER.username]
+    await openProfile()
+    await confirmUsername(NEW_USER.username)
+    await click('계정 만들기')
+
+    const field = screen.getByLabelText('아이디')
+    await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'))
+    expect(field).toHaveAccessibleDescription('영문·숫자 4~20자 이미 사용 중인 아이디예요.')
+    expect(field).toHaveFocus()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(createButton()).toBeDisabled()
+  })
+
+  it('가입이 400 의 username 칸 오류면 규칙 안내를 아이디 칸에 보인다', async () => {
+    server.use(
+      http.post(
+        '/api/v1/auth/signup',
+        () =>
+          fail('INVALID_REQUEST', 'x', 400, {
+            fields: [{ loc: ['body', 'username'], msg: 'Value error' }],
+          }),
+        { once: true },
+      ),
+    )
+    await openProfile()
+    await confirmUsername(NEW_USER.username)
+    await click('계정 만들기')
+
+    const field = screen.getByLabelText('아이디')
+    await waitFor(() =>
+      expect(field).toHaveAccessibleDescription(
+        '영문·숫자 4~20자 아이디는 영문과 숫자로 된 4~20자로 입력해 주세요.',
+      ),
+    )
+    expect(createButton()).toBeDisabled()
+  })
+
+  it('확인 요청이 실패하면 칸 아래에 알리고 다시 확인할 수 있다', async () => {
+    server.use(
+      http.get('/api/v1/auth/username-availability', () => fail('INTERNAL_ERROR', 'x', 500), {
+        once: true,
+      }),
+    )
+    await openProfile()
+    const field = screen.getByLabelText('아이디')
+    await userEvent.type(field, NEW_USER.username)
+    await click('중복 확인')
+    await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'))
+    expect(createButton()).toBeDisabled()
+
+    await click('중복 확인')
+    expect(await screen.findByText('사용할 수 있는 아이디예요.')).toBeInTheDocument()
+    expect(createButton()).toBeEnabled()
   })
 })
 
@@ -564,7 +734,7 @@ describe('카카오 버튼', () => {
   })
 })
 
-describe('카카오 연결 가입: 인증된 이메일이 있다', () => {
+describe('카카오 가입 (#627)', () => {
   const kakaoPath = paths.signup({ kakao: true, next: paths.workspaceSelect() })
 
   beforeEach(() => {
@@ -577,13 +747,14 @@ describe('카카오 연결 가입: 인증된 이메일이 있다', () => {
     return app
   }
 
-  it('코드 없이 프로필부터다. 이메일은 잠겨 있고 이름은 닉네임으로 채워 고칠 수 있다', async () => {
+  it('이메일 단계 없이 아이디와 이름만 받고, 이름 칸에 닉네임이 미리 들어 있다', async () => {
     await openKakaoProfile()
-    expect(screen.getByText('가입을 마치면 카카오 계정이 연결돼요.')).toBeInTheDocument()
-    const email = screen.getByLabelText('이메일')
-    expect(email).toHaveValue(KAKAO.email)
-    expect(email).toHaveAttribute('readonly')
-    expect(screen.queryByRole('button', { name: '이메일 바꾸기' })).not.toBeInTheDocument()
+    expect(screen.getByText('카카오 계정으로 가입해요.')).toBeInTheDocument()
+    expect(screen.getByText(/카카오로만 로그인해요/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('이메일')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('비밀번호')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('인증 코드')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByLabelText('아이디')).toHaveFocus())
 
     const name = screen.getByLabelText('이름')
     expect(name).toHaveValue(KAKAO.nickname)
@@ -591,6 +762,7 @@ describe('카카오 연결 가입: 인증된 이메일이 있다', () => {
     await userEvent.type(name, '고친 이름')
     expect(name).toHaveValue('고친 이름')
     expect(screen.queryByRole('button', { name: '카카오 로그인' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '로그인' })).toBeInTheDocument()
   })
 
   it('닉네임이 없으면 이름은 비어 있다', async () => {
@@ -599,20 +771,20 @@ describe('카카오 연결 가입: 인증된 이메일이 있다', () => {
     expect(screen.getByLabelText('이름')).toHaveValue('')
   })
 
-  it('link_kakao 로 가입해 카카오가 이어지고, 다시 대기를 묻지 않으며 만료 안내도 스치지 않는다', async () => {
+  it('link_kakao·이름·아이디만 보내 이메일 없는 계정을 만들고, 다시 대기를 묻지 않으며 만료 안내도 스치지 않는다', async () => {
     const bodies = recordRequestBodies('POST', '/auth/signup')
     const log = recordRequests()
     const app = await openKakaoProfile()
-    await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+    expect(createButton()).toBeDisabled()
+    await confirmUsername('KakaoUser')
     await click('계정 만들기')
 
     await app.expectPath('/onboarding/start')
-    expect(bodies).toEqual([
-      { password: NEW_USER.password, name: KAKAO.nickname, link_kakao: true },
-    ])
+    expect(bodies).toEqual([{ link_kakao: true, name: KAKAO.nickname, username: 'kakaouser' }])
     expect(db.accounts.at(-1)).toMatchObject({
       kakaoId: KAKAO.kakaoId,
-      session: { user: { email: KAKAO.email } },
+      password: null,
+      session: { user: { email: null, username: 'kakaouser' } },
     })
     expect(log.started.filter(({ path }) => path === '/auth/kakao/pending')).toHaveLength(1)
     expect(screen.queryByText(/카카오 로그인 정보가 만료/)).not.toBeInTheDocument()
@@ -620,8 +792,8 @@ describe('카카오 연결 가입: 인증된 이메일이 있다', () => {
 
   it('제출 직전 대기가 만료되면 안내와 카카오 다시 시작을 보인다', async () => {
     await openKakaoProfile()
+    await confirmUsername('kakaouser')
     db.kakao.pending = null
-    await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
     await click('계정 만들기')
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -631,19 +803,32 @@ describe('카카오 연결 가입: 인증된 이메일이 있다', () => {
     expect(leaveApp).toHaveBeenCalledExactlyOnceWith('/api/v1/auth/kakao/start?next=%2Fworkspaces')
   })
 
-  it.each([
-    ['EMAIL_ALREADY_EXISTS', '이미 가입된 이메일이에요.'],
-    ['KAKAO_ALREADY_LINKED', '이미 다른 계정에 연결된 카카오 계정이에요.'],
-  ])('409 %s 는 로그인 경로를 보인다', async (code, message) => {
-    server.use(http.post('/api/v1/auth/signup', () => fail(code, 'x', 409), { once: true }))
+  it('409 KAKAO_ALREADY_LINKED 는 로그인 경로를 보인다', async () => {
+    db.accounts[0].kakaoId = KAKAO.kakaoId
     const app = await openKakaoProfile()
-    await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+    await confirmUsername('kakaouser')
     await click('계정 만들기')
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '이미 다른 계정에 연결된 카카오 계정이에요.',
+    )
     await click('로그인')
     await app.expectPath('/login')
     await app.expectSearch('?next=%2Fworkspaces')
+  })
+
+  it('가입 응답이 아이디 중복이면 아이디 칸에 오류가 뜬다', async () => {
+    db.usernameRace = ['kakaouser']
+    await openKakaoProfile()
+    await confirmUsername('kakaouser')
+    await click('계정 만들기')
+
+    const field = screen.getByLabelText('아이디')
+    await waitFor(() =>
+      expect(field).toHaveAccessibleDescription('영문·숫자 4~20자 이미 사용 중인 아이디예요.'),
+    )
+    expect(createButton()).toBeDisabled()
+    expect(db.accounts.some(({ kakaoId }) => kakaoId === KAKAO.kakaoId)).toBe(false)
   })
 
   it('카카오 없이 가입: 모드를 지우고 next 를 두고 이메일 단계부터 다시 한다', async () => {
@@ -653,7 +838,7 @@ describe('카카오 연결 가입: 인증된 이메일이 있다', () => {
 
     expect(await screen.findByRole('button', { name: '인증 코드 받기' })).toBeInTheDocument()
     await app.expectSearch('?next=%2Fworkspaces')
-    expect(screen.queryByText('가입을 마치면 카카오 계정이 연결돼요.')).not.toBeInTheDocument()
+    expect(screen.queryByText('카카오 계정으로 가입해요.')).not.toBeInTheDocument()
 
     await walkSignup(NEW_USER)
     await app.expectPath('/onboarding/start')
@@ -662,55 +847,10 @@ describe('카카오 연결 가입: 인증된 이메일이 있다', () => {
         verification_token: Object.keys(db.signupVerification.proofs)[0],
         password: NEW_USER.password,
         name: NEW_USER.name,
-        link_kakao: false,
+        username: NEW_USER.username,
       },
     ])
     expect(db.accounts.at(-1)?.kakaoId).toBeUndefined()
-  })
-})
-
-describe('카카오 연결 가입: 이메일이 없다', () => {
-  beforeEach(() => {
-    db.kakao.pending = { ...KAKAO, email: null }
-  })
-
-  it('이메일 → 코드 → 프로필을 밟고 이름은 닉네임으로 채운다. 코드 증명과 link_kakao 로 가입한다', async () => {
-    const bodies = recordRequestBodies('POST', '/auth/signup')
-    const app = await openSignup(paths.signup({ kakao: true, next: paths.workspaceSelect() }))
-    await screen.findByText('가입을 마치면 카카오 계정이 연결돼요.')
-    await reachProfile()
-    expect(screen.getByLabelText('이름')).toHaveValue(KAKAO.nickname)
-    await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
-    await click('계정 만들기')
-
-    await app.expectPath('/onboarding/start')
-    expect(bodies).toEqual([
-      {
-        verification_token: Object.keys(db.signupVerification.proofs)[0],
-        password: NEW_USER.password,
-        name: KAKAO.nickname,
-        link_kakao: true,
-      },
-    ])
-    expect(db.accounts.at(-1)).toMatchObject({
-      kakaoId: KAKAO.kakaoId,
-      session: { user: { email: NEW_USER.email } },
-    })
-  })
-
-  it('이미 가입된 이메일은 그 계정에 잇지 않고 다른 이메일을 받는다', async () => {
-    await openSignup(paths.signup({ kakao: true }))
-    await screen.findByText('가입을 마치면 카카오 계정이 연결돼요.')
-    await submitEmail('pm@example.com')
-
-    const email = screen.getByLabelText('이메일')
-    await waitFor(() =>
-      expect(email).toHaveAccessibleDescription(
-        '이미 가입된 이메일이에요. 다른 이메일을 입력해 주세요.',
-      ),
-    )
-    expect(email).toHaveFocus()
-    expect(db.accounts[0].kakaoId).toBeUndefined()
   })
 })
 

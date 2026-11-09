@@ -13,7 +13,12 @@ const signup = (name: string, email = 'new@example.com') => {
   db.signupVerification.proofs.proof = { email, expiresAt: Date.now() + 60_000 }
   return fetchDto<SessionDto>(
     '/auth/signup',
-    jsonRequest('POST', { name, verification_token: 'proof', password: 'pass1234' }),
+    jsonRequest('POST', {
+      name,
+      username: 'newuser1',
+      verification_token: 'proof',
+      password: 'pass1234',
+    }),
   )
 }
 const login = (password: string, email = EMAIL) =>

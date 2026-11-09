@@ -129,7 +129,7 @@ describe('sessionStorage 영속', () => {
       jsonRequest('POST', { email, code: mail.code }),
     )
     db.accounts[0].kakaoId = 'linked-kakao'
-    db.kakao.pending = { kakaoId: 'pending-kakao', email, nickname: '가입 대기' }
+    db.kakao.pending = { kakaoId: 'pending-kakao', nickname: '가입 대기' }
     saveDb(sessionStorage)
 
     resetDb()
@@ -138,10 +138,7 @@ describe('sessionStorage 영속', () => {
     expect(db.signupVerification.proofs[verification_token]).toMatchObject({ email })
     expect(db.signupVerification.outbox).toContainEqual(mail)
     expect(db.accounts[0].kakaoId).toBe('linked-kakao')
-    await expect(fetchDto('/auth/kakao/pending')).resolves.toEqual({
-      email,
-      nickname: '가입 대기',
-    })
+    await expect(fetchDto('/auth/kakao/pending')).resolves.toEqual({ nickname: '가입 대기' })
     const aliases = await fetchDto<ListDto<MemberAliasDto>>('/members/aliases?workspace_id=ws_01')
     expect(aliases.items).toContainEqual(
       expect.objectContaining({ member_id: 'mb_02', alias_text: '복원 별칭', verified: true }),

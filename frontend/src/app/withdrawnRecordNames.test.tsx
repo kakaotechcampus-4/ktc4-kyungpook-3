@@ -14,7 +14,7 @@ async function leaveAndSignInAsRemainingPm() {
   await withdrawAccount('9'.repeat(64), db.session.user.user_id)
   const account = db.accounts[0]
   if (!account) throw new Error('remaining PM account missing')
-  await login({ email: account.session.user.email ?? '', password: account.password })
+  await login({ email: account.session.user.email ?? '', password: account.password ?? '' })
 }
 
 describe('탈퇴한 작성자의 공동 기록 표시', () => {

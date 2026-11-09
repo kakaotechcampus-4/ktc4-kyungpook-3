@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
-import { readMailedCode, start } from './support'
+import { confirmUsername, readMailedCode, start } from './support'
 
 const gate = (page: Page) => page.getByRole('heading', { name: '서비스 이용 동의' })
 async function accept(page: Page) {
@@ -91,6 +91,7 @@ test('이메일 가입은 체크 전 계정을 만들지 않고 가입 뒤 정�
   await page.getByRole('button', { name: '인증 코드 받기' }).click()
   await page.getByLabel('인증 코드').fill(await readMailedCode(page))
   await page.getByRole('button', { name: '코드 확인' }).click()
+  await confirmUsername(page, 'consentnew')
   await page.getByLabel('이름').fill('동의 사용자')
   await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
   await expect(page.getByRole('button', { name: '계정 만들기' })).toBeDisabled()

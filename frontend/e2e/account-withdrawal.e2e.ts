@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { z } from 'zod'
-import { readMailedCode, start } from './support'
+import { confirmUsername, readMailedCode, start } from './support'
 
 const storedStateSchema = z.object({
   db: z.object({
@@ -104,6 +104,7 @@ test('마지막 PM 이전부터 탈퇴·정리 상태 복원·같은 이메일 �
   await page.getByRole('button', { name: '인증 코드 받기' }).click()
   await page.getByLabel('인증 코드').fill(await readMailedCode(page))
   await page.getByRole('button', { name: '코드 확인' }).click()
+  await confirmUsername(page, 'newaccount1')
   await page.getByLabel('이름').fill('새 계정')
   await page.getByLabel('비밀번호', { exact: true }).fill('new-password123')
   await page.getByRole('button', { name: '계정 만들기' }).click()

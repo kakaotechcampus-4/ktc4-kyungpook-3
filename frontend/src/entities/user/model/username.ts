@@ -1,3 +1,6 @@
+import { z } from 'zod'
+import { ApiError, ERROR_CODES } from '@/shared/api/errors'
+
 /*
  * 아이디 규칙 (#627, BE schemas/username.py). 가입·아이디 변경·중복 확인이 함께 쓴다.
  * 앞뒤 공백을 지우고 영문·숫자 4~20자인지 본 뒤 소문자로 바꾼다. 대소문자를 가리지 않고 유일하다.
@@ -39,3 +42,21 @@ export type UsernameCheck =
   | { status: 'failed'; username: string; error: unknown }
 
 export type UsernameUnavailableReason = 'taken' | 'invalid' | 'current'
+
+const fieldErrorsSchema = z.object({
+  fields: z.array(z.object({ loc: z.array(z.union([z.string(), z.number()])) })),
+})
+
+/**
+ * 가입·아이디 변경 응답이 아이디를 거절했는가. 409 `USERNAME_TAKEN` 은 확인 뒤 남이 가져간 것이고,
+ * 400 `INVALID_REQUEST` 중 username 칸 오류는 규칙 밖이다. 그 밖의 실패는 null 이다
+ */
+export function usernameRejection(error: unknown): 'taken' | 'invalid' | null {
+  if (!(error instanceof ApiError)) return null
+  if (error.code === ERROR_CODES.USERNAME_TAKEN) return 'taken'
+  if (error.code !== ERROR_CODES.INVALID_REQUEST) return null
+  const parsed = fieldErrorsSchema.safeParse(error.details)
+  return parsed.success && parsed.data.fields.some(({ loc }) => loc.at(-1) === 'username')
+    ? 'invalid'
+    : null
+}

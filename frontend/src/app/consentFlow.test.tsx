@@ -2,7 +2,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { db } from '@/shared/mock/db'
 import { renderApp } from './test/renderApp'
-import { enterMailedCode } from './test/walkSignup'
+import { confirmUsername, enterMailedCode } from './test/walkSignup'
 
 vi.mock(
   '@/shared/config/policyPublication',
@@ -17,7 +17,8 @@ async function signup() {
   await userEvent.type(await screen.findByLabelText('이메일'), 'consent-new@example.com')
   await userEvent.click(screen.getByRole('button', { name: '인증 코드 받기' }))
   await enterMailedCode()
-  await userEvent.type(await screen.findByLabelText('이름'), '새 사용자')
+  await confirmUsername('consentnew')
+  await userEvent.type(screen.getByLabelText('이름'), '새 사용자')
   await userEvent.type(screen.getByLabelText('비밀번호'), 'pass1234')
   expect(screen.getByRole('button', { name: '계정 만들기' })).toBeDisabled()
   await checks()

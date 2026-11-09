@@ -26,6 +26,7 @@ export {
   USERNAME_MESSAGES,
   isUsernameAllowed,
   normalizeUsername,
+  usernameRejection,
 } from './model/username'
 export type { UsernameCheck, UsernameUnavailableReason } from './model/username'
 export { useUsernameCheck } from './model/useUsernameCheck'

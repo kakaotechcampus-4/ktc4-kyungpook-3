@@ -2,12 +2,7 @@ import { http } from 'msw'
 import { db, loginLimitKey, type MockLoginLimit } from '../db'
 import { fail, ok } from '../envelope'
 import { requireAuth } from '../auth-guard'
-import {
-  accountWithEmail,
-  accountWithUsername,
-  usernameFromEmail,
-  workspaceCountOf,
-} from '../sessions'
+import { accountWithEmail, accountWithUsername, workspaceCountOf } from '../sessions'
 import { readJson } from '../utils'
 import {
   PYTHON_STRIP,
@@ -15,7 +10,9 @@ import {
   invalidBody,
   passwordField,
   stringField,
+  usernameField,
 } from '../validation'
+import type { FieldError } from '../validation'
 import { readSignupProof } from './signupCode'
 
 const base = '/api/v1/auth'
@@ -33,6 +30,29 @@ function checkedName(value: string): string | null {
   const name = value.replace(PYTHON_STRIP, '')
   if (!name || [...name].length > NAME_MAX_LENGTH) return null
   return NAME_FORBIDDEN.test(name) || !NAME_VISIBLE.test(name) ? null : name
+}
+
+function nameField(body: Record<string, unknown>): FieldError | null {
+  const typeError = stringField(body, 'name')
+  if (typeError) return typeError
+  return checkedName(body.name as string) === null
+    ? {
+        loc: ['body', 'name'],
+        msg: 'Value error, 이름은 앞뒤 공백을 뺀 1~100자이고 제어문자를 포함할 수 없습니다.',
+      }
+    : null
+}
+
+/** BE SignupRequest._check_signup_kind. 칸 검증을 모두 통과한 뒤에만 본다 */
+function signupKindError(kakao: boolean, password: boolean, verificationToken: boolean) {
+  const msg = kakao
+    ? password || verificationToken
+      ? 'Value error, 카카오 가입은 비밀번호와 이메일 인증 토큰을 받지 않습니다.'
+      : null
+    : password
+      ? null
+      : 'Value error, 이메일 가입은 비밀번호가 필요합니다.'
+  return msg === null ? null : invalidBody({ loc: ['body'], msg })
 }
 
 const LOGIN_FAILURE_LIMIT = 10
@@ -57,33 +77,34 @@ const authResponse = () => ({
 export const authHandlers = [
   http.post(`${base}/signup`, async ({ request }) => {
     const body = (await readJson(request)) ?? {}
-    // BE 는 본문 검증(pydantic)이 인증·중복 이메일 확인보다 먼저다. 규칙 위반이면 이미 있는 이메일이어도 400 이다
-    const bodyError = invalidBody(passwordField(body, 'password'), stringField(body, 'name'))
+    // BE 는 본문 검증(pydantic)이 인증·중복 확인보다 먼저다. 규칙 위반이면 이미 있는 이메일·아이디여도 400 이다
+    const has = (key: string) => body[key] !== undefined && body[key] !== null
+    const bodyError =
+      invalidBody(
+        has('password') ? passwordField(body, 'password') : null,
+        nameField(body),
+        usernameField(body, 'username'),
+      ) ?? signupKindError(body.link_kakao === true, has('password'), has('verification_token'))
     if (bodyError) return bodyError
-    const { password } = body as { password: string }
-    const name = checkedName(body.name as string)
-    if (name === null)
-      return fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400, {
-        fields: [
-          {
-            loc: ['body', 'name'],
-            msg: 'Value error, 이름은 앞뒤 공백을 뺀 1~100자이고 제어문자를 포함할 수 없습니다.',
-          },
-        ],
-      })
+    const name = checkedName(body.name as string) as string
+    const username = checkedUsername(body.username as string) as string
     const kakao = body.link_kakao === true ? db.kakao.pending : null
     if (body.link_kakao === true && kakao === null)
       return fail('KAKAO_LINK_EXPIRED', '카카오 로그인 정보가 만료됐습니다.', 400)
-    const email = kakao?.email ?? readSignupProof(body.verification_token)
-    if (email === null) return fail('SIGNUP_VERIFICATION_INVALID', '이메일 인증이 필요합니다.', 400)
-    if (accountWithEmail(email))
+    const email = kakao === null ? readSignupProof(body.verification_token) : null
+    if (kakao === null && email === null)
+      return fail('SIGNUP_VERIFICATION_INVALID', '이메일 인증이 필요합니다.', 400)
+    // BE _signup_conflict 의 순서: 이메일 → 카카오 → 아이디
+    if (email !== null && accountWithEmail(email))
       return fail('EMAIL_ALREADY_EXISTS', '이미 가입된 이메일입니다.', 409)
     if (kakao !== null && db.accounts.some(({ kakaoId }) => kakaoId === kakao.kakaoId))
       return fail('KAKAO_ALREADY_LINKED', '이미 다른 계정에 연결된 카카오 계정입니다.', 409)
+    if (accountWithUsername(username) || db.usernameRace.includes(username))
+      return fail('USERNAME_TAKEN', '이미 사용 중인 아이디입니다.', 409)
     db.session = {
       user: {
         user_id: `us_${String(db.accounts.length + db.withdrawals.length + 1).padStart(2, '0')}`,
-        username: usernameFromEmail(email),
+        username,
         email,
         name,
         avatar_url: null,
@@ -93,7 +114,7 @@ export const authHandlers = [
     }
     db.accounts.push({
       session: structuredClone(db.session),
-      password,
+      password: kakao === null ? (body.password as string) : null,
       workspaceIds: [],
       memberIds: {},
       ...(kakao === null ? {} : { kakaoId: kakao.kakaoId }),
@@ -159,7 +180,7 @@ export const authHandlers = [
   http.get(`${base}/kakao/pending`, () =>
     db.kakao.pending === null
       ? fail('KAKAO_LINK_EXPIRED', '카카오 로그인 정보가 만료됐습니다.', 400)
-      : ok({ email: db.kakao.pending.email, nickname: db.kakao.pending.nickname }),
+      : ok({ nickname: db.kakao.pending.nickname }),
   ),
   http.get(`${base}/me`, () =>
     db.authenticated ? ok(authResponse()) : fail('UNAUTHENTICATED', '로그인이 필요합니다.', 401),

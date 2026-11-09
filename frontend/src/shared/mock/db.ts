@@ -180,10 +180,9 @@ export interface MockSignupVerification {
   proofs: Record<string, { email: string; expiresAt: number }>
 }
 
-/** 가입을 기다리는 카카오 신원. 실 API 의 HttpOnly 대기 쿠키 자리다. 이메일은 카카오가 인증했을 때만 있다 */
+/** 가입을 기다리는 카카오 신원. 실 API 의 HttpOnly 대기 쿠키 자리다. 카카오 이메일은 담지 않는다 (#627) */
 export interface MockKakaoPending {
   kakaoId: string
-  email: string | null
   nickname: string | null
 }
 
@@ -195,7 +194,8 @@ export type MockMessageSettings = Omit<MessageSettingsDto, 'saved' | 'pms'> & {
 
 interface MockAccount {
   session: SessionDto
-  password: string
+  /** 카카오로 가입한 계정은 비밀번호가 없다 (#627) */
+  password: string | null
   workspaceIds: string[]
   /** 공간별로 이 계정이 연결된 팀원 행. 백엔드 Member.user_id 의 대응이다. 초대로 이어진 행은 수락한 초대가 대응이라 여기 두지 않는다 */
   memberIds: Record<string, string>
@@ -254,6 +254,11 @@ export interface MockDb {
   passwordReset: MockPasswordReset
   signupVerification: MockSignupVerification
   kakao: { pending: MockKakaoPending | null }
+  /**
+   * 중복 확인 뒤 남이 가져간 아이디(#627). 중복 확인은 쓸 수 있다고 답하지만 가입·변경은 409 `USERNAME_TAKEN` 이다.
+   * 확인과 쓰기 사이에 다른 계정이 먼저 가입한 경우를 재현한다
+   */
+  usernameRace: string[]
   /** loginLimitKey 로 정규화한 이메일이 키다 */
   loginLimit: Record<string, MockLoginLimit>
 }
@@ -303,6 +308,7 @@ export function initialDb(): MockDb {
     passwordReset: { tokens: [], nextMailAt: {}, outbox: [], failure: 'none' },
     signupVerification: { codes: {}, outbox: [], proofs: {} },
     kakao: { pending: null },
+    usernameRace: [],
     loginLimit: {},
   }
 }
