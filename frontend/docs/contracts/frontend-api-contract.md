@@ -144,7 +144,7 @@ FE는 crypto.getRandomValues로 만든 256비트 키를 sessionStorage에 보관
 | 쪽 | 확인한 사실 |
 |---|---|
 | BE 업로드 | `POST /workspaces/{id}/meetings/upload`(`api/workspaces.upload_meeting`)는 정리 중 회의(409 `MEETING_PROCESSING_IN_PROGRESS`)·참석자·형식·크기만 검사한다. Notion 연결 검사가 없다 |
-| BE 정리 실패 | `failed_stage` 는 AI 의 `PATCH /meetings/{id}/fail`(`stt`·`sources`·`extract`·`handoff`·`diarize`)과 멈춤 정리(`diarize`·`speaker_assignment_expired`·`chat_stalled`)에서만 온다. Notion 때문에 실패하는 경로가 없다 |
+| BE 정리 실패 | `failed_stage` 는 AI 의 `PATCH /meetings/{id}/fail`(`stt`·`sources`·`extract`·`handoff`·`diarize`)과 멈춤 정리(`diarize`·`speaker_assignment_expired`·`upload_unclaimed`·`chat_stalled`)에서만 온다. Notion 때문에 실패하는 경로가 없다 |
 | BE 태스크 | 미연동 공간의 태스크는 `notion_sync_status = null` 이다(`enqueue_task_sync`). 반영 잡은 「Notion 연동이 없습니다」로 SKIPPED 된다 |
 | FE 회의 올리기 | 진입 판정은 회의 목록만 본다. `GET /integrations` 를 부르지 않고 차단 모달이 없다. 업로드 응답 409 `INTEGRATION_NOT_CONNECTED`·`INTEGRATION_REVOKED` 는 특별 처리하지 않고 폼 오류로 보인다(서버가 내지 않는다) |
 | FE 정리 실패 | 알 수 없는 `failed_stage` 도 일반 실패 안내(D-092)다. 연동 상태를 다시 묻지 않고 재연결 모달(D-100)이 없다 |
@@ -1534,8 +1534,9 @@ POST .../meetings/upload            multipart/form-data
 | `diarize` | 음성 화자 분리 단계 실패. 음성 처리를 완료하지 못했다는 안내와 재업로드 안내를 표시한다. 이 값만으로 3시간 초과라고 단정하지 않는다. |
 | `speaker_assignment_expired` | 화자 지정 대기가 7일을 넘어 종료됐다. 사유와 원본 파일 재업로드 안내를 표시한다. |
 | `chat_stalled` | 채팅 회의가 `/end` 뒤 7시간 넘게 `processing` 이라 BE sweeper 가 실패로 바꿨다([BE·AI 계약](../../../backend/docs/contracts/backend-ai-contract.md) 「회의」). 재업로드를 권하지 않고 「채팅 대화를 정리하다 멈췄어요. 다음 수집 때 다시 정리해요.」를 표시한다. 다음 수집 시각은 계약에 없어 말하지 않는다. Notion 끊김 재조회를 하지 않는다. FE 구현(#450, 2026-11-07). 문구는 [이슈 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/450#issuecomment-6690118831)의 감독 기본값이며 사용자 확인 전이다. |
+| `upload_unclaimed` | AI 가 업로드를 24시간 동안 가져가지 않아 BE sweeper 가 실패로 바꿨다(#563, BE 구현 2026-11-08). 녹음 파일 삭제를 시도하며 실패하면 후속 sweep에서 재시도한다. PM 이 다시 올려야 하므로 BE 목록은 이 회의를 남긴다. FE 는 아직 이 값을 따로 구분하지 않아 일반 실패 안내(D-092)로 보이고, 목록 필터(`minutesList.ts`)도 아직 `speaker_assignment_expired` 만 남긴다. |
 
-- 목록은 `source=manual_upload`, `status=failed`, `failed_stage=speaker_assignment_expired`인 회의를 보존한다. 나머지 실패 회의는 기존처럼 제외한다. 상세는 `GET /meetings/{meeting_id}`로 읽으며 만료된 회의의 회의록·추출은 조회하지 않는다. 멤버십 제한은 유지한다.
+- 목록은 `source=manual_upload`, `status=failed`이고 `failed_stage`가 `speaker_assignment_expired` 또는 `upload_unclaimed`(BE 구현 2026-11-08, #563)인 회의를 보존한다. 나머지 실패 회의는 기존처럼 제외한다. 상세는 `GET /meetings/{meeting_id}`로 읽으며 만료된 회의의 회의록·추출은 조회하지 않는다. 멤버십 제한은 유지한다.
 - FE 합의 근거는 [이슈 결정 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256#issuecomment-6609243822)과 D-091~D-093의 2026-11-04 보완이다. BE 목록 변경은 이 작업의 구현 제안이며 파트 간 리뷰·합의와 실서버 배포 확인은 별도다.
 - 현재 구현 근거: [BE 목록](../../../backend/app/api/workspaces.py), [FE DTO](../../src/shared/types/api/meeting.ts), [매퍼](../../src/entities/meeting/model/mapper.ts), [실패 안내](../../src/entities/meeting/lib/meetingFailure.ts), [목록 구분](../../src/entities/meeting/lib/minutesList.ts), [추적기](../../src/features/meeting-processing/model/useProcessingTracker.ts).
 - 자동 실패 전환은 미병합 [BE PR #301](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/301)의 동작이다. 이 작업은 sweeper나 화자 지정 기능을 구현하지 않는다.
