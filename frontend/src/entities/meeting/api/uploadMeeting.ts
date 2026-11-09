@@ -1,6 +1,7 @@
 import { request } from '@/shared/api/client'
 import type { UploadProgressListener } from '@/shared/api/client'
-import type { MeetingUploadDto } from '@/shared/types/api/meeting'
+import { parseResponse } from '@/shared/api/parseResponse'
+import { meetingUploadResponseSchema } from '@/shared/types/api/meeting'
 import { toMeetingUploadResult } from '../model/mapper'
 import type { MeetingUploadResult, UploadMeetingInput } from '../model/types'
 
@@ -35,14 +36,15 @@ export async function uploadMeeting(
   options: UploadMeetingOptions = {},
 ): Promise<MeetingUploadResult> {
   return toMeetingUploadResult(
-    await request<MeetingUploadDto>(
-      `/workspaces/${encodeURIComponent(workspaceId)}/meetings/upload`,
-      {
+    parseResponse(
+      meetingUploadResponseSchema,
+      await request<unknown>(`/workspaces/${encodeURIComponent(workspaceId)}/meetings/upload`, {
         method: 'POST',
         body: toUploadForm(input),
         signal: options.signal,
         onUploadProgress: options.onProgress,
-      },
+      }),
+      'meeting',
     ),
   )
 }

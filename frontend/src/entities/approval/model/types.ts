@@ -30,6 +30,19 @@ export interface TaskCreateApproval extends ApprovalBase {
    * 후보 여부와 글자를 한 칸에 둬 「후보인데 글자가 없다」를 만들 수 없게 한다
    */
   aliasCandidate: string | null
+  /** 카드 내용의 지문 (#547). 승인·반려에 PM 이 본 값을 실어 그 뒤에 바뀐 카드를 막는다. 없으면 보내지 않는다 */
+  payloadVersion: string | null
+  /** 이 카드에 합쳐진 다른 회의의 항목 (#533). 합쳐진 차례대로다. 카드를 만든 항목(대표 근거)은 들어 있지 않다 */
+  mergedItems: MergedApprovalItem[]
+  /** 담당자를 정한 항목. 합치며 담당자가 바뀌었으면 그 항목이고, 아니면 카드를 만든 항목이다 */
+  assigneeItemId: string | null
+}
+export interface MergedApprovalItem {
+  extractionItemId: string | null
+  meetingId: string | null
+  evidence: ExtractionEvidence
+  docText: string | null
+  mergedAt: string | null
 }
 /** AI 판정 분류 (ai/shared/schemas.py JudgeCategory) */
 export type TaskUpdateCategory = 'schedule' | 'assignee' | 'status' | 'scope' | 'decision' | 'none'
@@ -69,6 +82,7 @@ export interface ApprovalConflict {
  * 승인 처리에서 화면이 따로 다루는 실패.
  * - `conflict`: task_update 제안 뒤 같은 필드가 바뀌었다. PM 이 확인하고 다시 승인하면 `taskVersion` 을 보낸다
  * - `already_resolved`: 다른 처리가 먼저 끝났다. 재처리하지 않고 현재 상태를 보여 준다
+ * - `changed`: PM 이 본 뒤 카드 내용이 바뀌었다 (409 APPROVAL_CHANGED). 새 카드를 받아 확인한 뒤 다시 처리한다
  */
 export type ApprovalResolveFailure =
   | {
@@ -79,3 +93,4 @@ export type ApprovalResolveFailure =
       conflicts: ApprovalConflict[]
     }
   | { kind: 'already_resolved'; approvalId: string | null; currentStatus: ApprovalStatus | null }
+  | { kind: 'changed' }

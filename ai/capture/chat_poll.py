@@ -33,9 +33,11 @@ import json
 import sys
 import time
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
+from capture.privacy_cleanup import chat_writer
 from shared.config import RUNS_DIR, settings
 from shared.schemas import Transcript, TranscriptSegment
 
@@ -193,6 +195,7 @@ def _end_attempt(workspace_id: str) -> None:
     _attempt_path(workspace_id).unlink(missing_ok=True)
 
 
+@chat_writer
 def poll(reader: ChannelReader, client, extract, *, workspace_id: str, now: datetime, cfg, dry_run: bool = False,
          channel_id: str | None = None) -> int:
     """한 번 돈다. 종료 코드를 돌려준다(0 정상·읽을 것 없음, 1 실패)."""
@@ -248,6 +251,10 @@ def poll(reader: ChannelReader, client, extract, *, workspace_id: str, now: date
         print(f"[items {len(out.items)}건]")
         for i in out.items:
             print(f"  {str(i.get('action')):<6} title={i.get('task_title')!r} due={i.get('due_date')}")
+        from capture.privacy_cleanup import state
+        from shared.config import RECORDINGS_DIR
+        if state(Path(RECORDINGS_DIR), ws):
+            return 0
         RUNS_DIR.mkdir(parents=True, exist_ok=True)
         path = RUNS_DIR / f"chat_poll_{ws}_{datetime.now():%Y%m%d_%H%M%S}.json"
         path.write_text(json.dumps({"workspace_id": ws, "transcript": transcript.to_dict(), "speaker_names": all_names,

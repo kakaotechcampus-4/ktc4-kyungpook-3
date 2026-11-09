@@ -105,6 +105,7 @@ export function TaskInfoPanel({
         selectId={assigneeId}
         workspaceId={workspaceId}
         value={draft.assigneeMemberId}
+        names={names}
         disabled={saving.pending}
         inputRef={(node) => {
           inputs.current.assignee = node
@@ -277,6 +278,7 @@ function AssigneeInput({
   selectId,
   workspaceId,
   value,
+  names,
   disabled,
   inputRef,
   onChange,
@@ -284,6 +286,7 @@ function AssigneeInput({
   selectId: string
   workspaceId: string
   value: string | null
+  names: ReadonlyMap<string, string>
   disabled: boolean
   inputRef: (node: HTMLButtonElement | null) => void
   onChange: (memberId: string | null) => void
@@ -296,7 +299,7 @@ function AssigneeInput({
       label="담당자"
       value={value}
       onValueChange={onChange}
-      options={assigneeOptions(members.data, value)}
+      options={assigneeOptions(members.data, value, names)}
       noneOption={ASSIGNEE_NONE_OPTION}
       disabled={disabled}
     />

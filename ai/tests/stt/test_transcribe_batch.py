@@ -74,3 +74,24 @@ def test_batch_session_merges_into_time_ordered_transcript(tmp_path):
     from shared.schemas import Transcript
     tr = Transcript.from_dict(d)                                 # 추출기(Transcript.segments)가 그대로 읽는다
     assert [seg.seq for seg in sorted(tr.segments, key=lambda x: x.start)] == [1, 2, 3]
+
+
+def test_retry_legacy_session_lines_writes_namespaced_outputs_with_same_sequence(tmp_path):
+    wavs = _session(tmp_path)
+    out = tmp_path / 'out'
+    run = T.run_session(wavs, {}, EchoStt(), model_name='echo', out_dir=out, session_id='upload-A')
+    lines = run['lines']
+    expected = [line.seq for line in lines]
+    lines[0].error = 'previous transient failure'
+    lines[0].text = ''
+    T.lines_to_json(lines, out / 'session_upload-A.lines.json')
+    for path in out.glob('session_upload-A__*__echo.*'):
+        path.rename(out / path.name.removeprefix('session_upload-A__'))
+    result = T.retry_failed_lines(wavs, {}, EchoStt(), model_name='echo', mode='chunk',
+                                 out_dir=out, session='upload-A')
+    assert result['retried'] == 1 and result['still_failed'] == 0
+    assert [line.seq for line in result['lines']] == expected
+    assert all(not line.error and line.text for line in result['lines'])
+    assert result['transcript_json'] == out / 'session_upload-A.transcript.json'
+    assert (out / 'session_upload-A__1_500__echo.json').exists()
+    assert T.build_session_transcript(out, 'upload-A', 'echo') == result['transcript_json']

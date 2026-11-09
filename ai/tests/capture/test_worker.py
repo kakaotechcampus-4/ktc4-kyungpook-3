@@ -48,6 +48,12 @@ def _no_report(monkeypatch):
     monkeypatch.setattr(W, "report_one", lambda *a, **k: None, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _no_cleanup(monkeypatch):
+    """기본은 로컬 정리 없음(가짜 client 문자열로 BE 를 부르지 않는다). 쓰는 테스트가 W.cleanup_one 을 다시 끼운다."""
+    monkeypatch.setattr(W, "cleanup_one", lambda *a, **k: None)
+
+
 def _status(path):
     return json.loads(path.read_text(encoding="utf-8"))["status"]
 
@@ -827,6 +833,58 @@ async def test_a_report_crash_is_logged_and_intake_still_runs(tmp_path, monkeypa
     assert rec.calls == 1 and w._current is None
 
 
+class _Cleanup:
+    def __init__(self, worker, order=None, effect=None, events=()):
+        self.worker, self.order, self.effect, self.events = worker, order, effect, list(events)
+        self.calls, self.locked, self.args = 0, [], []
+
+    def __call__(self, recordings_dir, transcripts_dir, *, client, **kw):
+        self.calls += 1
+        self.locked.append(self.worker._sem.locked())
+        self.args.append((recordings_dir, transcripts_dir, client))
+        if self.order is not None:
+            self.order.append("cleanup")
+        if self.effect:
+            self.effect()
+        return self.events.pop(0) if self.events else None
+
+
+async def test_upload_wheel_runs_cleanup_after_intake(tmp_path, monkeypatch, capsys):
+    w = _worker(tmp_path, intake=("the-client", "diarizer"))
+    order = []
+    monkeypatch.setattr(W, "assign_one", _Assign(w, order=order))
+    monkeypatch.setattr(W, "report_one", _Report(w, order=order))
+    monkeypatch.setattr(W, "intake_one", _Intake(w, after=lambda n: order.append("intake")))
+    cl = _Cleanup(w, order=order, events=[SimpleNamespace(meeting_id="m9", event="cleaned")])
+    monkeypatch.setattr(W, "cleanup_one", cl)
+    await w._intake_once()
+    assert order == ["assign", "report", "intake", "cleanup"]
+    assert cl.locked == [True] and w._current is None
+    assert cl.args == [(w.recordings_dir, w.transcripts_dir, "the-client")]
+    assert "[worker] 업로드 m9 cleaned" in capsys.readouterr().out
+
+
+async def test_stop_during_intake_skips_cleanup(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=("c", "d"))
+    cl = _Cleanup(w)
+    monkeypatch.setattr(W, "intake_one", lambda *a, **k: w.stop())
+    monkeypatch.setattr(W, "cleanup_one", cl)
+    await w._intake_once()
+    assert cl.calls == 0 and w._current is None
+
+
+async def test_a_cleanup_crash_is_logged_and_the_worker_goes_on(tmp_path, monkeypatch, capsys):
+    w = _worker(tmp_path, intake=("c", "d"))
+
+    def boom(*a, **k):
+        raise RuntimeError("정리 터짐")
+
+    monkeypatch.setattr(W, "cleanup_one", boom)
+    await w._intake_once()
+    assert "[worker] 업로드 가져오기 오류: RuntimeError: 정리 터짐" in capsys.readouterr().out
+    assert w._current is None
+
+
 async def test_an_upload_goes_from_intake_to_handed_off_through_the_worker_laps(tmp_path, monkeypatch):
     """업로드가 진짜 report_one·assign_one·intake_one 과 처리 바퀴로 끝까지 간다: 가져오기 → 라벨 보고 → 지정 받기(mapped)
     → 처리 바퀴(전사·발화 저장·추출·인계) → handed_off. 서버(guild_id)가 없어도 바퀴가 집고 새 BE 회의는 만들지 않는다."""
@@ -835,6 +893,7 @@ async def test_an_upload_goes_from_intake_to_handed_off_through_the_worker_laps(
     import soundfile as sf
     from tests.conftest import SEGS, FakeDiarizer
     from upload import assign as A
+    from upload import cleanup as CL
     from upload import report as RP
 
     t = np.arange(12 * 16000) / 16000
@@ -847,6 +906,7 @@ async def test_an_upload_goes_from_intake_to_handed_off_through_the_worker_laps(
     w = _worker(tmp_path, intake=(client, FakeDiarizer(SEGS)), handoff=H.Handoff(client), extractor=_extractor({}))
     monkeypatch.setattr(W, "assign_one", A.assign_one)
     monkeypatch.setattr(W, "report_one", RP.report_one)   # 보고도 진짜로: 워커 바퀴가 intake → report 로 이어진다
+    monkeypatch.setattr(W, "cleanup_one", CL.cleanup_one)  # 정리도 진짜로: 가져오기·지정·인계된 업로드를 건드리지 않아야 한다
     for _ in range(8):
         await w._intake_once()
     path = R.manifest_path(w.recordings_dir, "upload_m1")
@@ -864,6 +924,9 @@ async def test_an_upload_goes_from_intake_to_handed_off_through_the_worker_laps(
     assert not any(p == "/meetings" or p.endswith("/end") for _, p, _ in fake.calls)
     assert fake.meetings["m1"]["status"] == "done" and "m1" in fake.extractions
     assert {s["member_id"] for s in fake.sources["m1"].values() if s.get("member_id")} == {"u1"}
+    await w._intake_once()                                  # 인계 직후 정리 바퀴: 보관 기간 안이라 아무것도 지우지 않는다
+    assert path.exists() and (w.recordings_dir / "upload_m1").is_dir() and (w.recordings_dir / ".uploads" / "m1" / "intake.json").exists()
+    assert sum(1 for m, p, _ in fake.calls if m == "POST" and p.endswith("/speakers")) == 1   # 정리 때문에 재전송 없음
 
 
 async def test_a_pass_processes_a_mapped_upload_before_discord_meetings(tmp_path):
@@ -911,7 +974,7 @@ async def test_an_upload_ended_in_be_is_dropped_by_the_pass_and_logged_without_a
                 handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     results, _ = await w.run_pass()
     assert [r["ended"] is not None for r in results] == [True]
-    assert not upath.exists() and not upath.with_suffix(".lock").exists() and not (rec / m["session"]).exists()
+    assert not upath.exists() and not R.is_locked(upath) and not (rec / m["session"]).exists()
     assert await w.run_pass() == ([], [])
     assert "끝난 회의" in capsys.readouterr().out
     assert not any(p.endswith("/fail") for _, p, _ in fake.calls)
@@ -998,3 +1061,25 @@ def test_an_unknown_summary_model_stops_the_worker_at_start(tmp_path, monkeypatc
     monkeypatch.setenv("MM_SUMMARY_LLM", "gpt4")
     with pytest.raises(ValueError):
         W.Worker(tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts", notifier=object(), debug=False)
+
+async def test_each_lap_drops_audio_of_handed_off_meetings(tmp_path):
+    """인계가 끝난 회의의 트랙 wav 는 다음 바퀴에 지운다(#561). 대본은 남는다."""
+    rec = tmp_path / "recordings"
+    (rec / "g_1").mkdir(parents=True)
+    (rec / "g_1" / "1_1.wav").write_bytes(b"RIFF")
+    (rec / "g_1" / "transcript.md").write_text("대본", encoding="utf-8")
+    R.save_manifest(R.manifest_path(rec, "g_1"), {"session": "g_1", "status": R.STATUS_HANDED_OFF, "meeting_dir": "g_1",
+                                                  "stages": {"handed_off": R._iso(R.AUDIO_PRUNE_SINCE)},
+                                                  "speakers": [{"user_id": "1", "file": "g_1/1_1.wav"}]})
+    w = _worker(tmp_path)
+    assert await _laps(w, 1) == 1
+    assert not (rec / "g_1" / "1_1.wav").exists()
+    assert (rec / "g_1" / "transcript.md").exists()
+
+
+async def test_audio_pruning_error_does_not_stop_the_worker(tmp_path, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("disk")
+    monkeypatch.setattr(W, "prune_audio", boom)
+    w = _worker(tmp_path, interval_s=0.05)
+    assert await _laps(w, 2) == 2

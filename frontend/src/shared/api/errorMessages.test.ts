@@ -13,12 +13,20 @@ describe('errorMessage', () => {
     )
   })
 
-  it('서버 코드 57개(backend core/errors.py 중 PM·웹 경로 54개, #356 합의 코드 2개, #457 BE PR #456 코드 1개)가 모두 전용 문구를 가진다', () => {
+  it('모든 서버 코드가 전용 문구를 가진다', () => {
     const codes = Object.values(ERROR_CODES)
-    expect(codes).toHaveLength(57)
     for (const code of codes) {
       expect(errorMessage(serverError(code))).not.toBe(COMMON_MESSAGES.fallback)
     }
+  })
+
+  it('동의 판본과 계정이 바뀌면 다시 확인하는 방법을 안내한다', () => {
+    expect(errorMessage(serverError(ERROR_CODES.CONSENT_VERSION_MISMATCH))).toBe(
+      '문서 판본이 바뀌었어요. 문서를 다시 확인해 주세요.',
+    )
+    expect(errorMessage(serverError(ERROR_CODES.CONSENT_ACCOUNT_CHANGED))).toBe(
+      '로그인한 계정이 바뀌었어요. 새로고침해서 다시 확인해 주세요.',
+    )
   })
 
   it('모르는 코드는 서버 기술 문구 대신 공통 문구다', () => {

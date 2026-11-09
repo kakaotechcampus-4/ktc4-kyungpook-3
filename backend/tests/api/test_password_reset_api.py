@@ -3,10 +3,14 @@ import logging
 import re
 
 import pytest
+from sqlalchemy import event
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services import mailer, password_reset
+from app.services import mailer, password_reset, password_reset_limit
+from tests.api.conftest import signup_verified
+
+pytestmark = pytest.mark.usefixtures("signup_secret")
 
 EMAIL = "reset@example.com"
 OLD_PW = "oldpass123"
@@ -29,7 +33,7 @@ def inline_mail(monkeypatch):
 @pytest.fixture
 def sent(monkeypatch):
     box = []
-    monkeypatch.setattr(mailer, "send_mail", lambda to, subject, text: box.append((to, subject, text)))
+    monkeypatch.setattr(mailer, "send_mail", lambda to, subject, text, html=None: box.append((to, subject, text)))
     monkeypatch.setattr(mailer, "_sleep", lambda s: None)
     return box
 
@@ -47,7 +51,7 @@ def _client():
 
 
 def _signup(c):
-    r = c.post("/api/v1/auth/signup", json={"email": EMAIL, "password": OLD_PW, "name": "r"})
+    r = signup_verified(c, EMAIL, OLD_PW, "r")
     assert r.status_code == 201
 
 
@@ -109,7 +113,7 @@ def test_request_invalid_email_returns_400(mdb, sent, smtp_env):
 def test_request_send_failure_still_200_and_no_token_in_logs(mdb, smtp_env, monkeypatch, caplog):
     attempts = []
 
-    def boom(to, subject, text):
+    def boom(to, subject, text, html=None):
         attempts.append(1)
         raise RuntimeError("smtp down")
 
@@ -196,3 +200,116 @@ def test_unpaired_surrogate_token_is_invalid_not_500(mdb, sent, smtp_env, path, 
     assert r.status_code == 400, r.text
     assert r.json()["error"]["code"] == "PASSWORD_RESET_TOKEN_INVALID"
     assert r.json()["error"]["details"]["reason"] == "invalid"
+
+
+PUBLIC = ("8.8.8.8", 50000)
+
+
+def _public_client(host=PUBLIC):
+    return TestClient(app, base_url="https://testserver", client=host)
+
+
+def test_ip_cap_returns_same_200_and_sends_nothing(mdb, sent, smtp_env):
+    _signup(_client())
+    c = _public_client()
+    for i in range(5):
+        assert _request(c, f"nobody{i}@example.com").status_code == 200
+    r = _request(c)
+    assert r.status_code == 200
+    assert r.json()["data"] == {}
+    assert sent == []
+
+
+def test_ip_cap_counts_unknown_emails_too(mdb, sent, smtp_env):
+    _signup(_client())
+    c = _public_client()
+    for i in range(5):
+        _request(c, f"ghost{i}@example.com")
+    assert _request(c).status_code == 200
+    assert sent == []
+    # 다른 공인 IP 는 영향이 없다.
+    assert _request(_public_client(("1.1.1.1", 50000))).status_code == 200
+    assert len(sent) == 1
+
+
+def test_ip_cap_blocks_before_db(mdb, sent, smtp_env):
+    c = _public_client()
+    for i in range(5):
+        _request(c, f"ghost{i}@example.com")
+    queries = []
+
+    def record(*_a, **_k):
+        queries.append(1)
+
+    engine = mdb.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        r = _request(c)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    assert r.status_code == 200
+    assert queries == []
+
+
+def test_ip_cap_logs_reason_without_email(mdb, sent, smtp_env, caplog):
+    c = _public_client()
+    for i in range(5):
+        _request(c, f"ghost{i}@example.com")
+    with caplog.at_level(logging.WARNING):
+        _request(c, "secret-person@example.com")
+    assert "reason=ip" in caplog.text
+    assert "secret-person" not in caplog.text
+
+
+def test_private_ip_skips_ip_cap(mdb, sent, smtp_env):
+    c = _client()
+    for i in range(8):
+        assert _request(c, f"ghost{i}@example.com").status_code == 200
+    _signup(c)
+    assert _request(c).status_code == 200
+    assert len(sent) == 1
+
+
+def test_mail_unconfigured_still_503_before_ip_cap(mdb, sent, monkeypatch):
+    for k in ("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "APP_BASE_URL"):
+        monkeypatch.delenv(k, raising=False)
+    c = _public_client()
+    for _ in range(8):
+        assert _request(c).status_code == 503
+    # 503 은 IP 카운터를 늘리지 않는다.
+    monkeypatch.setenv("SMTP_HOST", "smtp.example")
+    monkeypatch.setenv("SMTP_USERNAME", "user")
+    monkeypatch.setenv("SMTP_PASSWORD", "pw")
+    monkeypatch.setenv("APP_BASE_URL", BASE + "/")
+    _signup(_client())
+    assert _request(c).status_code == 200
+    assert len(sent) == 1
+
+
+def test_global_cap_response_identical_known_unknown(mdb, sent, smtp_env):
+    c = _client()
+    for i in range(password_reset.GLOBAL_HOURLY_LIMIT):
+        email = f"user{i}@example.com"
+        assert signup_verified(c, email, OLD_PW, "r").status_code == 201
+        assert _request(_client(), email).status_code == 200
+    assert len(sent) == password_reset.GLOBAL_HOURLY_LIMIT
+    _signup(_client())
+    known = _request(_client())
+    unknown = _request(_client(), "nobody@example.com")
+    assert known.status_code == unknown.status_code == 200
+    assert known.json() == unknown.json()
+    assert len(sent) == password_reset.GLOBAL_HOURLY_LIMIT
+
+
+def test_one_public_ip_cannot_use_up_the_global_budget(mdb, sent, smtp_env):
+    # 전체 상한이 IP 상한보다 커야 공인 IP 하나로 다른 사람의 재설정 메일을 막지 못한다(#550 리뷰)
+    assert password_reset.GLOBAL_HOURLY_LIMIT > password_reset_limit.IP_HOURLY_LIMIT
+    attacker = _public_client()
+    for i in range(password_reset_limit.IP_HOURLY_LIMIT):
+        email = f"victim{i}@example.com"
+        assert signup_verified(_client(), email, OLD_PW, "r").status_code == 201
+        assert _request(attacker, email).status_code == 200
+    assert len(sent) == password_reset_limit.IP_HOURLY_LIMIT
+    _signup(_client())
+    assert _request(_public_client(("1.1.1.1", 50000))).status_code == 200
+    assert len(sent) == password_reset_limit.IP_HOURLY_LIMIT + 1

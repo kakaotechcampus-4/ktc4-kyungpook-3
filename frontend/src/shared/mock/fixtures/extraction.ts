@@ -1,5 +1,4 @@
-import type { ExtractionDto } from '@/shared/types/api/extraction'
-import type { MockExtractionItem } from '../aliasLearning'
+import type { MockExtraction, MockExtractionItem } from '../aliasLearning'
 
 const seeds: [
   string,
@@ -55,7 +54,7 @@ const items: MockExtractionItem[] = seeds.map(
     alias_text: null,
   }),
 )
-export const extractionFixtures: ExtractionDto[] = [
+export const extractionFixtures: MockExtraction[] = [
   { extraction_id: 'ex_00', meeting_id: 'mt_07', items: [] },
   { extraction_id: 'ex_01', meeting_id: 'mt_09', items },
   {

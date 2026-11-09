@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Callable
 
 from capture.handoff import BeError
+from capture.meeting_purge import mark_deleted, upload_writer
 from capture.recorder import _iso, backoff_s, drop_local, manifest_path, utcnow
 from upload.intake import FAILED_STAGE, Progress, _cleanup, _dir, _due, _load, _save
 from upload.mapping import MappingBusy, apply_mapping
@@ -38,9 +39,9 @@ _list_failing = False            # assigned 목록 조회가 실패하는 중이
 
 
 def _is_gone(e: Exception) -> bool:
-    """BE 가 "그 회의가 없다"고 답했다. 오류 봉투의 MEETING_NOT_FOUND 만 그렇게 본다.
+    """BE 오류 봉투가 회의 없음 또는 삭제 완료를 명시했다.
     봉투 없는 404(잘못된 경로, 프록시, BE 배포 중)는 회의가 사라진 것이 아니라 일시 실패이고, 로컬 파일은 되돌릴 수 없다."""
-    return isinstance(e, BeError) and e.code == "MEETING_NOT_FOUND"
+    return isinstance(e, BeError) and e.code in ("MEETING_NOT_FOUND", "MEETING_DELETED")
 
 
 def _pending(recordings_dir: Path, t: datetime):
@@ -53,6 +54,7 @@ def _pending(recordings_dir: Path, t: datetime):
     return None
 
 
+@upload_writer
 def assign_one(recordings_dir: Path, *, client, now: Callable[[], datetime] = utcnow) -> Progress | None:
     """한 건을 한 번 진전시킨다. 할 일이 없으면 None. 예외는 올리지 않는다(실패는 기록하고 Progress.event 로 알린다).
 
@@ -93,11 +95,16 @@ def assign_one(recordings_dir: Path, *, client, now: Callable[[], datetime] = ut
 
 def _advance(recordings_dir: Path, d: Path, rec: dict, *, client, now) -> Progress:
     mid, r = rec["meeting_id"], rec["resume"]
+    if hasattr(client, 'meeting_epochs'):
+        client.meeting_epochs[mid] = int((rec.get('item') or {}).get('identity_epoch') or 0)
     if r["state"] == "failing":
         return _report_fail(recordings_dir, d, rec, client, now())
     try:
         data = client.resume_upload(mid)
     except BeError as e:
+        if e.code == "MEETING_DELETED":
+            mark_deleted(recordings_dir, {mid})
+            return _finish(d, rec, "ended", e.code)
         if e.code == "SPEAKERS_NOT_ASSIGNED":   # 지정이 아직이다: 매니페스트 그대로 두고 다음에
             return _later(d, rec, now(), f"{e.code}: {e}", "waiting")
         if e.code == "MEETING_ALREADY_ENDED" or _is_gone(e):

@@ -1,7 +1,7 @@
 import type { ApprovalDto } from '@/shared/types/api/approval'
-import type { ExtractionDto, ExtractionItemDto } from '@/shared/types/api/extraction'
 import type { MeetingDto } from '@/shared/types/api/meeting'
 import type { MinutesDto } from '@/shared/types/api/minutes'
+import type { MockExtraction, MockExtractionItem } from './aliasLearning'
 import { db } from './db'
 import type { MeetingFlowMode, MockDb } from './db'
 import { MOCK_NOW } from './fixtures/constants'
@@ -34,7 +34,7 @@ const GENERATED_DURATION_MS = 30 * 60_000
 export interface CompletedMeeting {
   meeting: MeetingDto
   minutes: MinutesDto
-  extraction: ExtractionDto
+  extraction: MockExtraction
   /** 확실한 항목이 바로 만든 태스크 (gate `auto`) */
   taskIds: string[]
   /** 확인 필요 항목이 만든 대기 승인 (gate `review`·`hold`) */
@@ -187,12 +187,12 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
   const itemIds = state.extractions.flatMap(({ items }) => items.map(({ item_id }) => item_id))
   const taskIds: string[] = []
   const approvalIds: string[] = []
-  const items: ExtractionItemDto[] = ITEM_SEEDS.map((seed, index) => {
+  const items: MockExtractionItem[] = ITEM_SEEDS.map((seed, index) => {
     const itemId = nextId('it', itemIds, GENERATED_ID_MINIMUM)
     itemIds.push(itemId)
     const member = seed.assigneeIndex === null ? undefined : speaker(seed.assigneeIndex)
     const assigneeRaw = member?.display_name ?? seed.assigneeRaw
-    const item: ExtractionItemDto = {
+    const item: MockExtractionItem = {
       item_id: itemId,
       task: { title: seed.title, confidence: 0.95 },
       assignee: {
@@ -277,7 +277,7 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
     }
     return item
   })
-  const extraction: ExtractionDto = {
+  const extraction: MockExtraction = {
     extraction_id: extractionId,
     meeting_id: meeting.meeting_id,
     items,
@@ -347,6 +347,7 @@ export function startChatMeeting(state: MockDb = db): string {
     ended_at: '2026-09-18T09:40:00Z',
     extraction_id: null,
     failed_stage: null,
+    deletion_available: true,
     progress: { audio_merged: false, transcribed: false, extracted: false },
   })
   state.meetingSummaries.push({

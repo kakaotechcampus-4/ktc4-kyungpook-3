@@ -1,10 +1,9 @@
-"""리마인드 DM (py-cord Cog). PM 이 승인한 메시지를 팀원에게 디스코드 DM 으로 보내고, 팀원이 봇에게 쓴 DM 을 BE 에 넘긴다.
+"""리마인드 DM (py-cord Cog). BE 가 만든 웹 답장 안내를 팀원에게 디스코드 DM 으로 보낸다. 답장은 웹에서만 받는다.
 
 계약은 backend/docs/contracts/backend-ai-contract.md 의 "리마인드 DM" 이다.
 
   DM_POLL_S 마다     POST /bot/messages/claim           보낼 메시지. 한 메시지는 한 곳에 한 번만 나온다
   보낸 뒤            POST /bot/messages/{id}/result     delivered + 나간 id 들, 또는 failed(dm_blocked|unknown)
-  DM 을 받으면       POST /bot/replies                  같은 discord_message_id 는 BE 가 한 번만 저장한다
   DRAFT_POLL_S 마다  POST /bot/drafts/claim → draft_reminder → POST /bot/drafts/{bundle_id}
   REPLY_POLL_S 마다  POST /bot/replies/claim → judge_reply → POST /bot/replies/{message_id}/judgment
 
@@ -13,15 +12,15 @@ outcome 없이 쓰고, 조각이 나갈 때마다 나간 id 를 더해 다시 �
 남은 기록은 보내다 죽은 것이라 다시 보내지 않고, 조각이 다 나갔으면 delivered, 아니면 나간 id 만 실어 unknown 으로
 보고한다. 보고하지 못한 결과는 기록에 남아 다음 바퀴에 다시 보고한다(늦은 보고는 BE 가 받는다).
 
-답장. DM 은 받는 즉시 큐(replies/<discord_message_id>.json)에 쓰고 넘긴다. 넘기지 못한 것은 다음 바퀴에 디스코드
-id 순서(snowflake 라 시간순)로 다시 넘긴다. 디스코드는 봇이 끊긴 동안의 DM 을 다시 주지 않으므로, on_ready 마다
-최근 BACKFILL_DAYS 안에 봇이 DM 을 보낸 사람(recipients.json)의 DM 기록을 표시(after_id) 뒤부터 끝까지 읽어 넘긴다.
-표시는 기록을 끝까지 읽었을 때만 옮긴다. 발송이나 실시간 DM 이 옮기면 읽지 않은 구간을 건너뛰어 그 답장이 영영 빠진다.
-겹쳐 읽은 글은 BE 가 한 번만 저장한다. BE 가 답장이 어느 DM 에 달렸는지 결과 보고로 알기 때문에 메우기 전에 남은
-결과부터 보고한다.
+DM 창. 봇에게 온 글은 저장하지도 BE 에 넘기지도 않고 웹 안내를 돌려준다. 같은 사람에게 NOTICE_EVERY_S 에 한 번이다.
+횟수는 web_notice.json 한 파일에 적고, 보내기 전에 await 없이 읽고 써서 빠른 두 글에도 안내는 한 통이다. 주소는 claim
+응답의 web_url 을 쓰므로 봇 환경 변수가 늘지 않는다. 근거는 결정 0048 이다.
 
 답장 판단. 판단할 답장은 BE 에 쌓여 있어(웹 답장은 봇이 보지 못한다) 맡고 보고만 한다. 봇에 남기는 것이 없다. 맡은 뒤
-죽거나 보고하지 못하면 BE 가 리스 뒤 attempt 를 올려 다시 맡기고, 앞 attempt 의 늦은 보고는 STALE 로 돌아온다.
+죽거나 보고하지 못하면 BE 가 리스(3분) 뒤 attempt 를 올려 다시 맡기고, 앞 attempt 의 늦은 보고는 STALE 로 돌아온다.
+5xx 로 결과를 넣지 못해도 봇은 다시 보내지 않고 리스에 맡긴다. 리스 안에는 그 답장도 같은 대화의 뒤 답장도 오지 않고
+다른 대화의 답장이 온다. BE 는 답장을 받은 뒤 10분이 지나면 claim 에서 그 답장을 닫고 같은 대화의 다음 답장을 주며,
+한 차례에 최대 4회 맡긴다.
 
 DM 글은 message_content 특권 인텐트 없이도 오고, dm_messages 는 Intents.default() 에 이미 있다.
 BE 호출은 동기 requests 라 asyncio.to_thread 로 불러 게이트웨이를 막지 않는다. 파일은 FileOutbox 처럼 tmp 에 쓰고
@@ -31,9 +30,12 @@ BE 호출은 동기 requests 라 asyncio.to_thread 로 불러 게이트웨이를
 from __future__ import annotations
 
 import asyncio
+import functools
 import hashlib
+import hmac
 import json
-from datetime import datetime, timedelta, timezone
+import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import discord
@@ -42,18 +44,18 @@ from capture.handoff import BeClient, BeError
 from capture.notify import MESSAGE_MAX
 from draft.reminder_draft import draft_reminder
 from shared.config import RECORDINGS_DIR
-from shared.schemas import now_iso
 
 DM_POLL_S = 5.0
 DRAFT_POLL_S = 30.0
 REPLY_POLL_S = 10.0
-BACKFILL_DAYS = 7
+NOTICE_EVERY_S = 3600.0
 
 # 다시 보내도 같은 답이라 기록을 지운다. 그 밖(NETWORK, 5xx, 401)은 남겨 다음 바퀴에 다시
 RESULT_SETTLED = {"MESSAGE_RESULT_CONFLICT", "MESSAGE_NOT_FOUND", "INVALID_REQUEST"}
-REPLY_DROPPED = {"MEMBER_NOT_FOUND", "INVALID_REQUEST"}
-DRAFT_DROPPED = {"DRAFT_STALE", "REMINDER_BUNDLE_NOT_FOUND"}
-JUDGMENT_DROPPED = {"REPLY_JUDGMENT_STALE", "REPLY_JUDGMENT_NOT_FOUND"}
+DRAFT_DROPPED = {"DRAFT_STALE", "REMINDER_BUNDLE_NOT_FOUND", 'PRIVACY_VERSION_CHANGED'}
+JUDGMENT_DROPPED = {"REPLY_JUDGMENT_STALE", "REPLY_JUDGMENT_NOT_FOUND", 'PRIVACY_VERSION_CHANGED'}
+
+_now = time.time
 
 
 def split_body(body: str, limit: int = MESSAGE_MAX) -> list[str]:
@@ -96,9 +98,39 @@ def _result_body(rec: dict) -> dict:
     return {**rec["outcome"], "discord_message_ids": rec["parts_sent"]}
 
 
+def _recover_outcome(rec: dict) -> None:
+    if rec.get('outcome') is None:
+        done = rec['parts_sent'] and len(rec['parts_sent']) == rec.get('parts_total')
+        rec['outcome'] = {'status': 'delivered'} if done else {'status': 'failed', 'failure_reason': 'unknown'}
+
+
 def _is_final(e: BeError, codes: set[str]) -> bool:
     """BE 의 영구 거절인지. 없는 경로의 404 도 INVALID_REQUEST 라서, 그 코드는 400 일 때만 거절로 읽는다."""
     return e.code in codes and (e.code != "INVALID_REQUEST" or e.status == 400)
+
+
+def _claimed_privacy(lock_name):
+    def decorate(function):
+        @functools.wraps(function)
+        async def guarded(self, item, *args, **kwargs):
+            from capture.privacy_cleanup import PrivacyPending, guard_workspace
+            from capture.recorder import try_lock
+            lock = try_lock(self.dir.parents[1] / lock_name)
+            if lock is None:
+                return None
+            try:
+                epoch = int(item.get('identity_epoch') or 0)
+                if item.get('workspace_id'):
+                    guard_workspace(self.dir.parents[1], item['workspace_id'], epoch)
+                scope = getattr(self.be, 'privacy_scope', None)
+                with scope(epoch) if scope else nullcontext():
+                    return await function(self, item, *args, **kwargs)
+            except PrivacyPending:
+                return None
+            finally:
+                lock.release()
+        return guarded
+    return decorate
 
 
 class DmCog(discord.Cog):
@@ -113,6 +145,7 @@ class DmCog(discord.Cog):
         self.dir = Path(recordings_dir) / ".bot" / "dm"
         self._drafter = drafter or draft_reminder
         self._judger = judger
+        self._web_url: str | None = None
         self._send_task: asyncio.Task | None = None
         self._draft_task: asyncio.Task | None = None
         self._reply_task: asyncio.Task | None = None
@@ -126,10 +159,7 @@ class DmCog(discord.Cog):
     # ------------------------------------------------------------------ 루프
     @discord.Cog.listener()
     async def on_ready(self) -> None:
-        first = not self._started                       # 첫 번은 발송 루프가 startup 으로 메운다
         self.start_loops()
-        if not first:
-            await self._catch_up()
 
     def start_loops(self) -> None:
         """발송, 초안, 답장 판단 루프. on_ready 가 재연결로 다시 와도 하나씩만 돈다."""
@@ -177,33 +207,51 @@ class DmCog(discord.Cog):
             await asyncio.sleep(REPLY_POLL_S)
 
     async def startup(self) -> None:
-        """프로세스에 한 번. 보내다 죽은 기록의 결과를 정하고 끊긴 동안 온 답장을 메운다."""
-        for path in sorted((self.dir / "sent").glob("*.json")):
-            rec = _read_json(path, None)
-            if rec is None or rec.get("outcome") is not None:
-                continue
-            done = rec["parts_sent"] and len(rec["parts_sent"]) == rec.get("parts_total")
-            rec["outcome"] = {"status": "delivered"} if done else {"status": "failed", "failure_reason": "unknown"}
-            _write_json(path, rec)
-        await self._catch_up()
-
-    async def _catch_up(self) -> None:
-        for path in sorted((self.dir / "sent").glob("*.json")):
-            await self._report(path)
-        await self._backfill()
+        """프로세스에 한 번. 보내다 죽은 기록의 결과를 정한다. 보고는 이어지는 첫 바퀴가 한다."""
+        from capture.recorder import try_lock
+        lock = try_lock(self.dir.parents[1] / '.privacy-dm-writer.json')
+        if lock is None:
+            return
+        try:
+            for path in sorted((self.dir / 'sent').glob('*.json')):
+                rec = _read_json(path, None)
+                if rec is None or rec.get('outcome') is not None:
+                    continue
+                _recover_outcome(rec)
+                rec.pop('discord_user_id', None)
+                _write_json(path, rec)
+        finally:
+            lock.release()
 
     async def run_round(self) -> None:
-        """남은 결과 보고 → 남은 답장 넘기기 → claim 한 메시지 보내고 보고."""
+        """남은 결과 보고 → claim 한 메시지 보내고 보고."""
+        from capture.recorder import try_lock
+        lock = try_lock(self.dir.parents[1] / '.privacy-dm-writer.json')
+        if lock is None:
+            return
+        try:
+            await self._run_round_locked()
+        finally:
+            lock.release()
+
+    async def _run_round_locked(self) -> None:
         for path in sorted((self.dir / "sent").glob("*.json")):
             await self._report(path)
-        await self._flush_replies()
         try:
             data = await self._call("POST", "/bot/messages/claim")
         except BeError as e:
             print(f"[dm] 보낼 메시지를 가져오지 못했다: {e}", flush=True)
             return
+        self._web_url = data.get("web_url")
         for item in data.get("items") or []:
-            await self._report(*await self._deliver(item))
+            result = await self._deliver(item)
+            if result is not None:
+                await self._report(*result)
+            else:
+                await self._report(self.dir / 'sent' / f"{item['message_id']}.json", {
+                    'message_id': item['message_id'], 'parts_sent': [],
+                    'outcome': {'status': 'failed', 'failure_reason': 'unknown'},
+                })
 
     # ------------------------------------------------------------------ 발송
     async def _call(self, method: str, path: str, body: dict | None = None):
@@ -216,23 +264,30 @@ class DmCog(discord.Cog):
         except OSError as e:
             print(f"[dm] {rec['message_id']} 발송 기록을 쓰지 못했다: {e}", flush=True)
 
-    async def _deliver(self, item: dict) -> tuple[Path, dict]:
+    async def _deliver(self, item: dict) -> tuple[Path, dict] | None:
+        from capture.privacy_cleanup import PrivacyPending, guard_workspace
+        epoch = int(item.get('identity_epoch') or 0)
+        try:
+            if item.get('workspace_id'):
+                guard_workspace(self.dir.parents[1], item['workspace_id'], epoch)
+        except PrivacyPending:
+            return None
         uid = str(item["discord_user_id"])
         parts = split_body(item["body"])
         path = self.dir / "sent" / f"{item['message_id']}.json"
-        rec = {"message_id": item["message_id"], "discord_user_id": uid, "parts_total": len(parts),
+        rec = {"message_id": item["message_id"], 'workspace_id': item.get('workspace_id'),
+               'member_id': item.get('member_id'), 'identity_epoch': int(item.get('identity_epoch') or 0),
+               "parts_total": len(parts),
                "parts_sent": [], "outcome": None}
         try:
             _write_json(path, rec)
             user = self.bot.get_user(int(uid)) or await self.bot.fetch_user(int(uid))
             for i, chunk in enumerate(parts):
+                if item.get('workspace_id'):
+                    guard_workspace(self.dir.parents[1], item['workspace_id'], epoch)
                 sent = await user.send(chunk, nonce=_nonce(item["message_id"], i), enforce_nonce=True)
                 rec["parts_sent"].append(str(sent.id))
                 self._save(path, rec)
-                try:
-                    self._note_dm(uid, sent.id)
-                except OSError as e:
-                    print(f"[dm] {uid} 메우기 대상을 쓰지 못했다: {e}", flush=True)
             rec["outcome"] = {"status": "delivered"}
         except discord.Forbidden:
             rec["outcome"] = {"status": "failed", "failure_reason": "dm_blocked"}
@@ -245,8 +300,9 @@ class DmCog(discord.Cog):
     async def _report(self, path: Path, rec: dict | None = None) -> None:
         """rec 을 주지 않으면 파일에서 읽는다. 방금 보낸 것은 파일을 못 썼어도 메모리의 결과로 보고한다."""
         rec = rec or _read_json(path, None)
-        if rec is None or rec.get("outcome") is None:
+        if rec is None:
             return
+        _recover_outcome(rec)
         try:
             await self._call("POST", f"/bot/messages/{rec['message_id']}/result", _result_body(rec))
         except BeError as e:
@@ -257,70 +313,62 @@ class DmCog(discord.Cog):
                 print(f"[dm] {rec['message_id']} 결과를 BE 가 받지 않아 버린다: {e}", flush=True)
         path.unlink(missing_ok=True)
 
-    # ------------------------------------------------------------------ 답장
+    # ------------------------------------------------------------------ DM 창
     @discord.Cog.listener()
     async def on_message(self, message) -> None:
         if message.guild is not None or message.author.bot:
             return
-        self._queue_reply(message)
-        await self._flush_replies()
+        from capture.recorder import try_lock
+        lock = try_lock(self.dir.parents[1] / '.privacy-notice-writer.json')
+        if lock is None:
+            return
+        try:
+            await self._notice(message)
+        finally:
+            lock.release()
 
-    def _queue_reply(self, message) -> None:
-        ref = getattr(message, "reference", None)
-        _write_json(self.dir / "replies" / f"{message.id}.json", {
-            "discord_user_id": str(message.author.id), "discord_message_id": str(message.id), "body": message.content or "",
-            "sent_at": message.created_at.isoformat(),
-            "reply_to_discord_message_id": str(ref.message_id) if ref and ref.message_id else None,
-        })
+    async def _notice(self, message) -> None:
+        uid = str(message.author.id)
+        if not self._notice_due(uid):
+            return
+        try:
+            await message.channel.send(self._web_notice())
+        except Exception as e:  # noqa: BLE001 - 리스너 밖으로 내보내지 않는다
+            print(f"[dm] {uid} 에게 웹 안내를 보내지 못했다: {type(e).__name__}: {e}", flush=True)
+            self._forget_notice(uid)
 
-    async def _flush_replies(self) -> None:
-        for path in sorted((self.dir / "replies").glob("*.json"), key=lambda p: int(p.stem)):
-            body = _read_json(path, None)
-            if body is None:
-                path.unlink(missing_ok=True)
-                continue
-            try:
-                await self._call("POST", "/bot/replies", body)
-            except BeError as e:
-                if not _is_final(e, REPLY_DROPPED):
-                    print(f"[dm] 답장 {path.stem} 넘기기 실패, 다음 바퀴에 다시: {e}", flush=True)
-                    return
-                print(f"[dm] 답장 {path.stem} 을 BE 가 받지 않아 버린다: {e}", flush=True)
-            path.unlink(missing_ok=True)
+    def _notice_due(self, uid: str) -> bool:
+        """안내를 보낼 차례면 지금 시각을 적고 True. 파일을 못 써도 안내는 보낸다(디스크가 찬 경우)."""
+        path = self.dir / "web_notice.json"
+        now = _now()
+        recent = {(u if len(u) == 64 else self._notice_key(u)): at
+                  for u, at in _read_json(path, {}).items() if now - at < NOTICE_EVERY_S}
+        key = self._notice_key(uid)
+        if key in recent:
+            return False
+        try:
+            _write_json(path, {**recent, key: now})
+        except OSError as e:
+            print(f"[dm] {uid} 안내 시각을 쓰지 못했다: {e}", flush=True)
+        return True
 
-    def _note_dm(self, uid: str, message_id) -> None:
-        """메우기 대상에 올린다. 표시의 시작값은 그 사람에게 처음 보낸 DM 이다."""
-        path = self.dir / "recipients.json"
-        recipients = _read_json(path, {})
-        entry = recipients.setdefault(uid, {"after_id": str(message_id)})
-        entry["last_dm_at"] = now_iso()
-        _write_json(path, recipients)
+    def _notice_key(self, uid: str) -> str:
+        return hmac.new(self.be.service_token.encode(), uid.encode(), hashlib.sha256).hexdigest()
 
-    def _read_up_to(self, uid: str, message_id) -> None:
-        path = self.dir / "recipients.json"
-        recipients = _read_json(path, {})
-        recipients[uid]["after_id"] = str(max(int(recipients[uid]["after_id"]), int(message_id)))
-        _write_json(path, recipients)
+    def _forget_notice(self, uid: str) -> None:
+        """나가지 못한 안내는 세지 않는다. 안내는 DM 창 글에 돌아가는 유일한 응답이라 다음 글에 다시 보낸다."""
+        path = self.dir / "web_notice.json"
+        marks = _read_json(path, {})
+        marks.pop(self._notice_key(uid), None)
+        try:
+            _write_json(path, marks)
+        except OSError as e:
+            print(f"[dm] {uid} 안내 시각을 지우지 못했다: {e}", flush=True)
 
-    async def _backfill(self) -> None:
-        since = datetime.now(timezone.utc) - timedelta(days=BACKFILL_DAYS)
-        for uid, entry in _read_json(self.dir / "recipients.json", {}).items():
-            if datetime.fromisoformat(entry["last_dm_at"]) < since:
-                continue
-            try:
-                user = self.bot.get_user(int(uid)) or await self.bot.fetch_user(int(uid))
-                channel = user.dm_channel or await user.create_dm()
-                last = None
-                async for m in channel.history(after=discord.Object(int(entry["after_id"])), oldest_first=True,
-                                               limit=None):
-                    if not m.author.bot:
-                        self._queue_reply(m)
-                    last = m.id
-                if last is not None:
-                    self._read_up_to(uid, last)
-            except Exception as e:  # noqa: BLE001 - 한 사람의 실패가 다른 사람의 메우기를 막지 않는다
-                print(f"[dm] {uid} DM 기록을 읽지 못했다: {type(e).__name__}: {e}", flush=True)
-        await self._flush_replies()
+    def _web_notice(self) -> str:
+        if self._web_url:
+            return f"여기로 보낸 글은 전달되지 않아요.\n웹에서 답장해 주세요.\n{self._web_url}"
+        return "여기로 보낸 글은 전달되지 않아요.\n웹사이트에서 답장해 주세요."
 
     # ------------------------------------------------------------------ 초안
     async def draft_round(self) -> None:
@@ -331,17 +379,21 @@ class DmCog(discord.Cog):
             print(f"[dm] 초안 묶음을 가져오지 못했다: {e}", flush=True)
             return
         for item in data.get("items") or []:
-            try:
-                body = await asyncio.to_thread(self._drafter, item)
-            except Exception as e:  # noqa: BLE001 - 다시 가져가 다시 부르지 않게 규칙 문구로 끝낸다
-                print(f"[dm] 묶음 {item['bundle_id']} 초안 예외: {type(e).__name__}: {e}", flush=True)
-                body = None
-            try:
-                await self._call("POST", f"/bot/drafts/{item['bundle_id']}",
-                                 {"draft_version": item["draft_version"], "body": body})
-            except BeError as e:
-                if e.code not in DRAFT_DROPPED:
-                    print(f"[dm] 묶음 {item['bundle_id']} 초안을 넣지 못했다: {e}", flush=True)
+            await self._draft_item(item)
+
+    @_claimed_privacy('.privacy-draft-writer.json')
+    async def _draft_item(self, item: dict) -> None:
+        try:
+            body = await asyncio.to_thread(self._drafter, item)
+        except Exception as e:  # noqa: BLE001 - 초안 실패는 규칙 문구로 돌아간다
+            print(f"[dm] 묶음 {item['bundle_id']} 초안 예외: {type(e).__name__}: {e}", flush=True)
+            body = None
+        try:
+            await self._call('POST', f"/bot/drafts/{item['bundle_id']}",
+                             {'draft_version': item['draft_version'], 'body': body})
+        except BeError as e:
+            if e.code not in DRAFT_DROPPED:
+                print(f"[dm] 묶음 {item['bundle_id']} 초안을 넣지 못했다: {e}", flush=True)
 
     # ------------------------------------------------------------------ 답장 판단
     async def reply_round(self) -> None:
@@ -354,13 +406,19 @@ class DmCog(discord.Cog):
                 return
             if item is None:
                 return
-            try:
-                body = await asyncio.to_thread(self._judger, item)
-            except Exception as e:  # noqa: BLE001 - 어떤 실패든 PM 에게 알려야 한다. 종류만 남겨 답장 글이 나가지 않게 한다
-                print(f"[dm] 답장 {item['message_id']} 판단 실패: {type(e).__name__}", flush=True)
-                body = {"attempt": item["attempt"], "failure_reason": type(e).__name__, "model_name": None,
-                        "changes": []}
-            await self._report_judgment(item, body)
+            if not await self._judge_item(item):
+                return
+
+    @_claimed_privacy('.privacy-judgment-writer.json')
+    async def _judge_item(self, item: dict) -> bool:
+        try:
+            body = await asyncio.to_thread(self._judger, item)
+        except Exception as e:  # noqa: BLE001 - 실패 종류만 전달하고 답장 본문은 기록하지 않는다
+            print(f"[dm] 답장 {item['message_id']} 판단 실패: {type(e).__name__}", flush=True)
+            body = {'attempt': item['attempt'], 'failure_reason': type(e).__name__, 'model_name': None,
+                    'changes': []}
+        await self._report_judgment(item, body)
+        return True
 
     async def _report_judgment(self, item: dict, body: dict) -> None:
         """BE 가 본문을 거절하면(400) 같은 판단을 다시 해도 같은 본문이 나온다. 실패로 보고해 PM 에게 바로 알린다."""
@@ -372,6 +430,8 @@ class DmCog(discord.Cog):
             if e.code in JUDGMENT_DROPPED:
                 return
             if e.status != 400 or body["failure_reason"] is not None:
+                # 5xx 등은 다시 보내지 않는다. 리스(3분) 뒤 BE 가 다시 맡기고, 받은 지 10분이 지나면 claim 에서 닫고
+                # 다음 답장을 준다(한 차례 최대 4회). 그래서 같은 바퀴에 이 답장이 다시 오지 않는다
                 print(f"[dm] 답장 {item['message_id']} 판단을 넣지 못했다, 리스 뒤 다시: {e}", flush=True)
                 return
             print(f"[dm] 답장 {item['message_id']} 판단을 BE 가 거절했다: {e.code}", flush=True)

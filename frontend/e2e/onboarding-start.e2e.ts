@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { expectNoHorizontalOverflow, start } from './support'
+import { expectNoHorizontalOverflow, signUp, start } from './support'
 
 test('일반 회원 가입 뒤 팀원 선택은 내 팀만 확인하고 reload·뒤로가기 후에도 생성하지 않는다', async ({
   page,
@@ -15,10 +15,7 @@ test('일반 회원 가입 뒤 팀원 선택은 내 팀만 확인하고 reload·
   })
   await page.setViewportSize({ width: 1024, height: 900 })
   await start(page, 'signed-out', '/signup')
-  await page.getByLabel('이름').fill('일반 팀원')
-  await page.getByLabel('이메일').fill('member-start@example.com')
-  await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
-  await page.getByRole('button', { name: '계정 만들기' }).click()
+  await signUp(page, { name: '일반 팀원', email: 'member-start@example.com', password: 'pass1234' })
   await expect(page).toHaveURL('/onboarding/start')
   await expect(page.getByRole('link', { name: /PM으로 팀 만들기/ })).toBeVisible()
   await expectNoHorizontalOverflow(page)

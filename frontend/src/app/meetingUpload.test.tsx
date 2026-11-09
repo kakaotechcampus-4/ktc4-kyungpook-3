@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { File as NodeFile } from 'node:buffer'
 import { HttpResponse, http } from 'msw'
+import { onTestFinished } from 'vitest'
 import { clearTrackedMeetings, useMeetingTrackerStore } from '@/entities/meeting'
 import { readAudioDuration } from '@/features/meeting-upload'
 import { paths } from '@/shared/config/routes'
@@ -193,14 +194,17 @@ describe('일반 팀원 (U3-11)', () => {
     await screen.findByRole('heading', { name: '태스크' })
     await app.expectPath(paths.tasks('ws_01'))
     // U4 의 추적기는 업로드와 무관하게 모든 워크스페이스 화면에서 지금 공간의 회의 목록과 정리 중 회의 상세를 받는다.
-    // 그 두 모양만 빼고 본다 — 업로드·연동·팀원 요청은 여전히 0회다. 추적기 요청은 meetingProcessing.test.tsx 가 단언한다
-    // M6 S3 부터 도착한 태스크 목록이 담당자 이름을 위해 팀원 목록을 한 번 받는다. 그 한 모양 말고 업로드·연동·팀원 요청은 0회다
+    // 그 두 모양만 빼고 본다. 도착한 목록의 팀원 조회 외에 업로드·연동 요청은 0회다.
+    // 도착한 태스크 목록은 편집 대상인 활성 팀원과 익명 작성자 표시용 기록 팀원을 각각 한 번 읽는다.
     const related = () =>
       log.started
         .filter((request) => !isTrackerRequest(request))
         .filter(({ path }) => /\/meetings|\/integrations|\/members/.test(path))
     await waitFor(() =>
-      expect(related()).toEqual([{ method: 'GET', path: '/members?workspace_id=ws_01' }]),
+      expect(related()).toEqual([
+        { method: 'GET', path: '/members?workspace_id=ws_01' },
+        { method: 'GET', path: '/members?workspace_id=ws_01&include_withdrawn=true' },
+      ]),
     )
   })
 })
@@ -629,4 +633,96 @@ it('업로드 응답 handler 는 202 와 처리 중 회의를 준다 — 화면�
   await fillValid(user)
   await user.click(screen.getByRole('button', { name: '정리 시작하기' }))
   await app.expectPath(paths.meetingProcessing('ws_01', 'mt_77'))
+})
+
+describe('응답을 읽지 못한 업로드 (#348 리뷰)', () => {
+  /** 서버는 이 업로드를 그 상태로 저장했지만 202 본문은 스키마에 맞지 않는다(모르는 상태) */
+  function storeButUnreadable(status: 'processing' | 'awaiting_speakers' | 'done') {
+    server.use(
+      http.post(UPLOAD, async ({ request }) => {
+        const form = await request.formData()
+        const title = form.get('title') as string
+        const startedAt = form.get('started_at') as string
+        db.meetings.push({
+          meeting_id: 'mt_30',
+          workspace_id: 'ws_01',
+          title,
+          status,
+          started_at: startedAt,
+          ended_at: null,
+          extraction_id: null,
+          failed_stage: null,
+          deletion_available: false,
+          progress: { audio_merged: false, transcribed: false, extracted: false },
+        })
+        db.meetingSummaries.push({
+          meeting_id: 'mt_30',
+          title,
+          status,
+          source: 'manual_upload',
+          started_at: startedAt,
+          duration_ms: null,
+          attendee_count: 1,
+          processed_at: null,
+        })
+        return ok({ meeting_id: 'mt_30', status: 'queued' }, { status: 202 })
+      }),
+    )
+  }
+
+  it.each(['processing', 'awaiting_speakers', 'done'] as const)(
+    '서버가 받아 이미 %s 인 업로드를 목록에서 찾아 그 처리 화면으로 간다 — 다시 올리라고 하지 않는다',
+    async (status) => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      onTestFinished(() => {
+        vi.restoreAllMocks()
+      })
+      storeButUnreadable(status)
+      const log = recordRequests()
+      const { user, app } = await openUpload()
+      await fillValid(user)
+      await user.click(screen.getByRole('button', { name: '정리 시작하기' }))
+
+      await waitFor(() =>
+        expect(app.visited().map(({ pathname }) => pathname)).toContain(
+          paths.meetingProcessing('ws_01', 'mt_30'),
+        ),
+      )
+      expect(uploadsIn(log)).toHaveLength(1)
+      expect(screen.queryByText(/다시 올려 주세요/)).toBeNull()
+    },
+  )
+
+  it('목록도 받지 못하면 다시 올리라고 하지 않고 회의록 목록에서 확인하게 한다 — 자동 재전송 없음', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    onTestFinished(() => {
+      vi.restoreAllMocks()
+    })
+    let sent = false
+    server.use(
+      http.post(UPLOAD, () => {
+        sent = true
+        return ok({ meeting_id: 'mt_30', status: 'queued' }, { status: 202 })
+      }),
+      http.get('/api/v1/workspaces/:workspaceId/meetings', () =>
+        sent ? fail('INTERNAL_ERROR', '오류', 500) : undefined,
+      ),
+    )
+    const log = recordRequests()
+    const { user, app } = await openUpload()
+    await fillValid(user)
+    await user.click(screen.getByRole('button', { name: '정리 시작하기' }))
+
+    const alert = await screen.findByRole('alert', {}, { timeout: 5_000 })
+    expect(alert).toHaveTextContent(
+      '올린 결과를 확인하지 못했어요. 다시 올리기 전에 회의록 목록에서 이 회의가 올라갔는지 확인해 주세요.',
+    )
+    expect(alert).not.toHaveTextContent('다시 올려 주세요')
+    expect(within(alert).getByRole('link', { name: '회의록 목록 보기' })).toHaveAttribute(
+      'href',
+      paths.meetings('ws_01'),
+    )
+    await app.expectPath(UPLOAD_PATH)
+    expect(uploadsIn(log)).toHaveLength(1)
+  })
 })

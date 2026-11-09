@@ -56,6 +56,7 @@ class TaskFields(BaseModel):
 
 
 class TaskResponse(TaskFields):
+    meeting_deleted: bool = False
     auto_blocked: bool = Field(
         ...,
         description="지금 POST /tasks/{task_id}/auto-block/undo 가 성공하는 상태면 true. "

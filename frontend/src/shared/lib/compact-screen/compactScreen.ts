@@ -1,7 +1,7 @@
 import { useLayoutEffect, useState, useSyncExternalStore } from 'react'
 
 /* Tailwind `md`(768px) 아래와 같은 경계다 (D-180) */
-const COMPACT_QUERY = '(max-width: 767.98px)'
+export const COMPACT_QUERY = '(max-width: 767.98px)'
 
 function subscribeCompact(onChange: () => void): () => void {
   const query = window.matchMedia(COMPACT_QUERY)

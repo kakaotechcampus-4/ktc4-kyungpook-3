@@ -36,11 +36,20 @@ from pathlib import Path
 from capture.handoff import from_env as handoff_from_env
 from capture.judge_path import extract_path
 from capture.notify import FileOutbox, MeetingReporter, debug_from_env
-from capture.recorder import STATUS_SOURCED, Claims, backend_from_env, build_extractor, recover_pass, save_manifest
+from capture.recorder import (
+    STATUS_SOURCED,
+    Claims,
+    backend_from_env,
+    build_extractor,
+    prune_audio,
+    recover_pass,
+    save_manifest,
+)
 from capture.summary_sweep import summary_from_env
 from shared.config import RECORDINGS_DIR, TRANSCRIPTS_DIR
 from shared.schemas import now_iso
 from upload.assign import assign_one
+from upload.cleanup import cleanup_one
 from upload.intake import intake_one
 from upload.report import report_one
 
@@ -244,12 +253,13 @@ class Worker:
             try:
                 for call in (lambda: assign_one(self.recordings_dir, client=client),
                              lambda: report_one(self.recordings_dir, client=client),
-                             lambda: intake_one(self.recordings_dir, client=client, diarizer=diarizer)):
+                             lambda: intake_one(self.recordings_dir, client=client, diarizer=diarizer),
+                             lambda: cleanup_one(self.recordings_dir, self.transcripts_dir, client=client)):
                     if self._stopping:     # 앞 호출 도중 stop() 이 오면 다음 호출은 부르지 않는다
                         break
                     try:
                         progresses.append(await asyncio.to_thread(call))
-                    except Exception as e:  # noqa: BLE001 - 셋 다 예외를 내지 않는 게 약속이지만 워커는 어떤 경우에도 계속 돈다
+                    except Exception as e:  # noqa: BLE001 - 넷 다 예외를 내지 않는 게 약속이지만 워커는 어떤 경우에도 계속 돈다
                         print(f"[worker] 업로드 가져오기 오류: {type(e).__name__}: {e}", flush=True)
             finally:
                 self._current = None
@@ -271,6 +281,29 @@ class Worker:
                 print(f"[worker] 요약 오류: {type(e).__name__}: {e}", flush=True)
             finally:
                 self._current = None
+
+    async def _prune_audio(self) -> None:
+        """보관 기한이 지난 회의 음성(트랙 wav)을 지운다(#561). 인계가 끝난 회의는 바로, 포기한 회의는 7일 뒤다.
+        실패해도 로그만 남기고 바퀴는 계속 돈다."""
+        try:
+            dropped = await asyncio.to_thread(prune_audio, self.recordings_dir)
+        except Exception as e:  # noqa: BLE001 - 음성 정리는 곁가지다. 다음 바퀴에 다시 한다
+            print(f"[worker] 음성 정리 오류: {type(e).__name__}: {e}", flush=True)
+            return
+        for session in dropped:
+            print(f"[worker] 세션 {session} 음성 삭제", flush=True)
+
+    async def _purge_once(self) -> None:
+        from capture.meeting_purge import purge_one
+        from capture.privacy_cleanup import cleanup_one as privacy_cleanup_one
+        handoff = self._handoff_factory()
+        if handoff is None or self._stopping:
+            return
+        for cleanup in (privacy_cleanup_one, purge_one):
+            try:
+                await asyncio.to_thread(cleanup, self.recordings_dir, self.transcripts_dir, client=handoff.client)
+            except Exception:  # noqa: BLE001 - a failed purge retains the backend lease for retry
+                print("[worker] artifact cleanup pending retry", flush=True)
 
     def _wakes(self) -> list[Path]:
         d = worker_dir(self.recordings_dir)
@@ -299,6 +332,8 @@ class Worker:
                     await self.run_pass(guild_id=wake.name[len("wake-"):], manual=True)
                 await self._intake_once()
                 await self._summary_once()
+                await self._purge_once()
+                await self._prune_audio()
                 await self._nap()
         finally:
             beat.cancel()

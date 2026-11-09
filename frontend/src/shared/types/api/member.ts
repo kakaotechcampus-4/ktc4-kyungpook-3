@@ -5,6 +5,7 @@ export interface MemberDto {
   discord_user_id: string | null
   notion_name: string | null
   role: string
+  has_login_account: boolean
   created_at: string
 }
 export interface MemberAliasDto {

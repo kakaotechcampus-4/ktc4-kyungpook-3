@@ -10,6 +10,7 @@ export type ButtonSize =
   | 'lg-onboarding'
   | 'xl'
   | 'auth'
+  | 'auth-phone'
   | 'landing-hero'
   | 'landing-nav'
   | 'message-edit'
@@ -67,6 +68,8 @@ const SIZE: Record<ButtonSize, string> = {
   // 14.5px · 38px · 15px 는 토큰 스케일 밖이다 — docs/impl-decision/2026-09-16-values-outside-token-scale.md
   xl: 'h-44 gap-6 rounded-9 px-22 text-[14.5px]',
   auth: 'h-48 w-full gap-6 rounded-999 text-[15px]',
+  // 휴대폰 로그인(H-1) 52px·모서리 12·16px. 52px 는 토큰 스케일 밖이다
+  'auth-phone': 'h-[52px] w-full gap-6 rounded-12 text-[16px]',
   'landing-hero': 'h-44 gap-6 rounded-999 px-24 text-landing',
   'landing-nav': 'h-[38px] gap-6 rounded-999 px-18 text-[15px]',
   /* 메시지(M8) — Messages·MessagesThread 캔버스 실측. 제품 최소 높이 36(design-system §7-6)을 지킨다.
@@ -101,7 +104,10 @@ export function Button({
   ...rest
 }: ButtonProps) {
   // 굵기는 한 곳에서만 고른다 — font-semibold 와 font-bold 를 같이 붙이면 CSS 순서가 이긴다
-  const weight = size === 'lg-onboarding' && variant === 'primary' ? 'font-bold' : 'font-semibold'
+  const weight =
+    (size === 'lg-onboarding' && variant === 'primary') || size === 'auth-phone'
+      ? 'font-bold'
+      : 'font-semibold'
 
   const classes = [
     BASE,

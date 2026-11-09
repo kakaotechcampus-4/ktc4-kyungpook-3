@@ -174,6 +174,12 @@ def add_discord_nickname_alias(
     if nickname is None:
         return
     # Discord 를 기다리는 동안 다른 요청이 계정을 바꾸거나 팀원을 지웠을 수 있다. 지금도 그 계정이면 넣는다.
+    from app.services import lifecycle
+    from app.core.errors import AppError
+    try:
+        lifecycle.workspace(db, workspace_id, check_epoch=False)
+    except AppError:
+        return
     still_linked = db.execute(
         select(Member.member_id).where(
             Member.member_id == member_id,

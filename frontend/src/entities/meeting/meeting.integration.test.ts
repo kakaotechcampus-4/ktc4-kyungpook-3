@@ -1,13 +1,7 @@
 import type { RequestOptions } from '@/shared/api/client'
 import { fetchDto, jsonRequest } from '@/shared/test/api'
 import type { ListDto } from '@/shared/types/api/envelope'
-import type {
-  MeetingDto,
-  MeetingSummaryDto,
-  MeetingCreateDto,
-  MeetingEndDto,
-  MeetingUploadDto,
-} from '@/shared/types/api/meeting'
+import type { MeetingDto, MeetingSummaryDto, MeetingUploadDto } from '@/shared/types/api/meeting'
 import { db } from '@/shared/mock/db'
 import { toMeeting, toMeetingSummary } from './model/mapper'
 import { File as NodeFile } from 'node:buffer'
@@ -45,13 +39,14 @@ it('scopes and sorts summaries, excludes failed meetings and maps detail', async
 })
 
 it('creates and ends a bot meeting once', async () => {
-  const created = await fetchDto<MeetingCreateDto>(
+  // 봇 경로라 FE 스키마가 없다. 이 검사가 읽는 필드만 적는다
+  const created = await fetchDto<{ meeting_id: string; workspace_id: string; status: string }>(
     '/meetings',
     jsonRequest('POST', { workspace_id: 'ws_01' }),
   )
   expect(created).toMatchObject({ status: 'created', workspace_id: 'ws_01' })
   expect(toMeeting(await fetchDto<MeetingDto>(`/meetings/${created.meeting_id}`)).title).toBe('')
-  const ended = await fetchDto<MeetingEndDto>(`/meetings/${created.meeting_id}/end`, {
+  const ended = await fetchDto<{ status: string }>(`/meetings/${created.meeting_id}/end`, {
     method: 'PATCH',
   })
   expect(ended).toMatchObject({ status: 'processing' })

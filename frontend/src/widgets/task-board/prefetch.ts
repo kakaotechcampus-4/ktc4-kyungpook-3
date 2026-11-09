@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { pendingApprovalListQueryOptions } from '@/entities/approval'
 import { meetingListQueryOptions } from '@/entities/meeting'
-import { memberListQueryOptions } from '@/entities/member'
+import { memberListQueryOptions, recordMemberListQueryOptions } from '@/entities/member'
 import { taskListQueryOptions } from '@/entities/task'
 
 /**
@@ -19,6 +19,7 @@ export async function prefetchTaskBoard(
     queryClient.prefetchQuery(taskListQueryOptions(workspaceId)),
     isPm ? queryClient.prefetchQuery(pendingApprovalListQueryOptions(workspaceId)) : null,
     queryClient.prefetchQuery(memberListQueryOptions(workspaceId)),
+    queryClient.prefetchQuery(recordMemberListQueryOptions(workspaceId)),
     isPm ? queryClient.prefetchQuery(meetingListQueryOptions(workspaceId)) : null,
   ])
 }

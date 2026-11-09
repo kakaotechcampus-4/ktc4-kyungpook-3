@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 import type { Approval } from '@/entities/approval'
-import { evidenceMoment, MEETING_SOURCE_TRAITS } from '@/entities/meeting'
+import { evidenceMoment, meetingSourceTraits } from '@/entities/meeting'
 import type { MeetingSummary } from '@/entities/meeting'
 import type { Member } from '@/entities/member'
 import type { Task } from '@/entities/task'
@@ -183,7 +183,7 @@ function MeetingLead({ data }: { data: DashboardData }) {
   const { title, source, durationMs } = meeting.meeting
   // 채팅 회의의 길이는 녹음 분량이 아니라 첫 메시지부터 마지막 메시지까지의 기간이라 쓰지 않는다 (#379)
   const duration =
-    MEETING_SOURCE_TRAITS[source].timeAxis === 'recording' ? durationLabel(durationMs) : null
+    meetingSourceTraits(source).timeAxis === 'recording' ? durationLabel(durationMs) : null
   return (
     <p className={lead}>
       {date === null ? '' : `${monthDayLabel(date)} `}

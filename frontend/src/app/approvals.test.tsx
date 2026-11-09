@@ -19,6 +19,9 @@ import { renderApp } from './test/renderApp'
 
 vi.setConfig({ testTimeout: 20_000 })
 
+/** 생성 승인은 본 카드의 지문을 함께 보낸다 (#547). 값 자체는 approvalMerged.test.tsx 가 본다 */
+const SEEN: unknown = expect.stringMatching(/^[0-9a-f]{16}$/)
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(MOCK_NOW))
@@ -167,7 +170,7 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
     )
   })
 
-  it('미정인 담당자·마감은 승인을 막지 않으며 반려는 status만 보낸다', async () => {
+  it('미정인 담당자·마감은 승인을 막지 않으며 반려는 status 와 본 카드의 지문만 보낸다', async () => {
     const bodies = recordRequestBodies('PATCH', '/approvals/ap_01')
     const before = db.tasks.length
     await openApproval('ap_01')
@@ -175,7 +178,7 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
     expect(rejectButton()).toBeEnabled()
     await userEvent.click(rejectButton())
     expect(await screen.findByTestId('approval-result')).toHaveTextContent('반려했어요')
-    expect(bodies).toEqual([{ status: 'rejected' }])
+    expect(bodies).toEqual([{ status: 'rejected', payload_version: SEEN }])
     expect(db.tasks).toHaveLength(before)
     expect(itemOf('it_04').task_id).toBeNull()
     expect(screen.queryByRole('button', { name: '승인' })).toBeNull()
@@ -196,7 +199,7 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
 
     await userEvent.click(approveButton())
     expect(await screen.findByTestId('approval-result')).toHaveTextContent('승인했어요')
-    expect(bodies).toEqual([{ status: 'approved' }])
+    expect(bodies).toEqual([{ status: 'approved', payload_version: SEEN }])
     const created = approvalOf('ap_02').related_task_id
     expect(created).toBe('tk_90')
     const link = await within(screen.getByLabelText('처리된 태스크')).findByRole('link', {

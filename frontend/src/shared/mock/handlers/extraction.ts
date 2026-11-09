@@ -1,25 +1,26 @@
 import { http } from 'msw'
 import type { ApprovalDto } from '@/shared/types/api/approval'
-import type { ExtractionDto, ExtractionItemDto } from '@/shared/types/api/extraction'
+import type { ExtractionItemDto } from '@/shared/types/api/extraction'
 import { requireAuth, requirePm } from '../auth-guard'
 import { db } from '../db'
 import { fail, ok } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
 import { nextId } from '../utils'
 import { aliasFieldsOf } from '../aliasLearning'
-import type { MockExtractionItem } from '../aliasLearning'
+import type { MockExtraction, MockExtractionItem } from '../aliasLearning'
 
 /**
  * 백엔드 get_extraction 처럼 항목의 `approval_status` 는 저장값이 아니라 지금 승인 상태로 채운다 — 승인·반려 뒤에도
  * 저장된 항목은 그대로라 저장값은 낡는다. 예전 저장본(M6 이전 sessionStorage)에 없는 `reverted_at` 은 null 로 내린다.
  * 별칭 후보도 연결된 승인과 항목의 원문·유형으로 다시 구한다 (#523). 저장만 하는 `assignee_type` 은 내지 않는다
  */
-function withLiveStatus(extraction: ExtractionDto): ExtractionDto {
+function withLiveStatus(extraction: MockExtraction): MockExtraction {
   return {
     ...extraction,
     items: extraction.items.map((stored: MockExtractionItem) => {
       const item = { ...stored }
       delete item.assignee_type
+      delete item.merge_into
       const approval =
         item.approval_id === null
           ? undefined

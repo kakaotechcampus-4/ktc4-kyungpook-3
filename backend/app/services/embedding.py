@@ -332,6 +332,7 @@ def process_missing_approval_embeddings(
     if not raw:
         return 0
 
+    original_payloads = dict(raw)
     rows = []
     unusable = []
     for approval_id, payload in raw:
@@ -361,6 +362,7 @@ def process_missing_approval_embeddings(
             update(ApprovalRequest)
             .where(
                 ApprovalRequest.approval_id == approval_id,
+                ApprovalRequest.payload == original_payloads[approval_id],
                 ApprovalRequest.status == ApprovalStatus.PENDING,
             )
             .values(embedding_rejected_title="")
@@ -370,6 +372,7 @@ def process_missing_approval_embeddings(
             update(ApprovalRequest)
             .where(
                 ApprovalRequest.approval_id == approval_id,
+                ApprovalRequest.payload == original_payloads[approval_id],
                 ApprovalRequest.status == ApprovalStatus.PENDING,
             )
             .values(embedding_rejected_title=title)
@@ -382,6 +385,7 @@ def process_missing_approval_embeddings(
             update(ApprovalRequest)
             .where(
                 ApprovalRequest.approval_id == approval_id,
+                ApprovalRequest.payload == original_payloads[approval_id],
                 ApprovalRequest.status == ApprovalStatus.PENDING,
                 ApprovalRequest.embedding.is_(None),
             )

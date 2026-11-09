@@ -11,8 +11,9 @@ import type { AutoItemRevert, AutoItemRevertReason } from '@/entities/extraction
 import { taskKeys } from '@/entities/task'
 import { captureSession } from '@/entities/user'
 import { errorMessage } from '@/shared/api/errorMessages'
+import { isInvalidResponse } from '@/shared/api/errors'
 import { workspaceKey } from '@/shared/api/queryKeys'
-import { toast } from '@/shared/ui/toast'
+import { showWriteUnconfirmed, toast } from '@/shared/ui/toast'
 import { REVERT_SUCCESS, revertRejectionMessage } from '../lib/revertMessage'
 
 /** 되돌리기 mutation 의 key. 한 공간에서 되돌리기는 한 번에 하나다 */
@@ -66,7 +67,8 @@ export interface AutoItemRevertControl {
  * PM 의 auto 태스크 되돌리기 (계획 §4, D-036·D-037·D-137).
  * - 서버 성공 뒤에만 반영한다. 낙관적 업데이트는 없다. 성공 응답을 그 추출 캐시의 항목에 쓰고 관련 캐시를 무효화한다.
  *   결과 알림(토스트)도 그때 한 번 띄운다 (D-037)
- * - 거절(409)은 사유별 안내로, 그 밖의 실패(403·404·네트워크)는 공통 오류 문구로 남긴다. 둘 다 최신 상태를 다시 받는다
+ * - 거절(409)은 사유별 안내로, 그 밖의 실패(403·404·네트워크)는 공통 오류 문구로 남긴다. 둘 다 최신 상태를 다시 받는다.
+ *   응답을 읽지 못했으면 되돌려졌을 수 있어 실패로 남기지 않고 토스트와 `새로고침`으로 알린다 (#348)
  * - 자동 재시도는 없다. 같은 틱의 두 번째 누름도 막는다
  * - 요청 중 세션이 끝났으면 늦은 응답은 캐시에도 결과에도 남기지 않는다
  */
@@ -117,6 +119,10 @@ export function useAutoItemRevert(workspaceId: string): AutoItemRevertControl {
     },
     onError: (error, { itemId, isCurrentSession }) => {
       if (!isCurrentSession()) return
+      if (isInvalidResponse(error)) {
+        showWriteUnconfirmed(() => syncAfterRevert(queryClient, workspaceId))
+        return
+      }
       const rejection = toAutoItemRevertRejection(error)
       record(
         itemId,
