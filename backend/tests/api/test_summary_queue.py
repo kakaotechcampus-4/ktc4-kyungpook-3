@@ -527,11 +527,12 @@ def test_summary_input_changes_nothing_and_carries_stored_rows(client, mdb, msee
         Source(meeting_id=meeting.meeting_id, seq=3, start_ms=3, end_ms=4, text="없음"),
     ])
     deploy, doc = mseed["tasks"][:2]
-    deploy.title, deploy.assignee_member_id, deploy.due_date = "배포", alice.member_id, T0.date()
+    deploy.title = "배포"
     doc.title = "문서"
     mdb.add_all([
         ExtractionItem(extraction_id=extraction.extraction_id, action="create", task_title="배포",
-                       assignee_raw="앨리스님", task_id=deploy.task_id),
+                       assignee_raw="앨리스님", assignee_member_id=alice.member_id, due_date=T0.date(),
+                       task_id=deploy.task_id),
         ExtractionItem(extraction_id=extraction.extraction_id, action="update", task_title="문서", assignee_raw="누군가",
                        task_id=doc.task_id),
     ])
@@ -585,6 +586,32 @@ def test_summary_input_items_are_the_approved_final_values(client, mdb, mseed):
         ("PM 제목", "밥", "2026-12-09"), ("새 일", None, None), ("할일2", None, None),
     ]
     assert len({i["item_id"] for i in items}) == 3
+
+
+def test_summary_input_values_are_the_ones_approved_for_that_meeting(client, mdb, mseed):
+    ws, bob = mseed["ws"], mseed["bob"]
+    first_id, [card] = _handed_off(client, mdb, ws, [{**REVIEW, "due_date": "2026-12-01"}],
+                                   started_at=T0 - timedelta(days=1))
+    r = client.patch(f"/api/v1/approvals/{card}", json={"status": "approved", "task_overrides": {
+        "task_title": "PM 제목", "assignee_member_id": bob.member_id}})
+    assert r.status_code == 200, r.text
+    task_id = r.json()["data"]["related_task_id"]
+    second_id, [update] = _handed_off(client, mdb, ws, [
+        {"action": "update", "target_task_id": task_id, "due_date": "2026-12-08", "status": "done"}])
+    r = client.patch(f"/api/v1/approvals/{update}", json={"status": "approved", "task_overrides": {
+        "due_date": "2026-12-10"}})
+    assert r.status_code == 200, r.text
+    r = client.patch(f"/api/v1/tasks/{task_id}", json={"title": "나중에 바꾼 제목", "assignee_member_id": None})
+    assert r.status_code == 200, r.text
+    mdb.expire_all()
+
+    first = _input(client, mdb.get(Extraction, first_id))["items"]
+    second = _input(client, mdb.get(Extraction, second_id))["items"]
+
+    assert [(i["action"], i["title"], i["assignee"], i["due_date"], i["status"]) for i in first] == [
+        ("create", "PM 제목", "밥", "2026-12-01", None)]
+    assert [(i["action"], i["title"], i["assignee"], i["due_date"], i["status"]) for i in second] == [
+        ("update", "PM 제목", None, "2026-12-10", "done")]
 
 
 def test_summary_input_gives_source_members_and_terms(client, mdb, mseed):

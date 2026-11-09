@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from shared.config import settings
-from shared.schemas import SummaryInput, SummaryLine
+from shared.schemas import SummaryInput, SummaryItem, SummaryLine
 
 MAX_TRANSCRIPT_CHARS = 100_000      # 켜 둔 채 잊은 녹음을 막는 값이다. 측정 뒤 확정
 # 결론과 할 일 정리가 끝에 몰려서 뒤도 남긴다
@@ -56,7 +56,8 @@ _DAILY_HEAD = """너는 팀 채팅을 일일 채팅 요약 JSON 으로 바꾼다
 """
 
 _RULES = """- 담당자를 모르면 "미정".
-- 추출 항목은 PM 이 승인한 최종 값이다. 전사와 항목이 다르면 항목을 따른다.
+- 추출 항목은 PM 이 이 회의 항목을 승인한 값이다. 전사와 항목이 다르면 항목을 따른다.
+- update 항목은 이 회의에서 바꾼 값만 보인다. task_changes 에서 바꾸지 않은 담당과 마감 칸은 비운다.
 - 할 일, 담당, 마감은 추출 항목에 있는 것만 할 일로 쓴다. task_changes 에는 추출 항목의 할 일만 넣고 item 에 그 I 키를 쓴다.
 - decisions 는 합의가 끝난 것만 쓴다. 제안과 의견은 open_items 다.
 - 결정은 그 결정이 속한 주제의 decisions 에 둔다. 주제 밖에 두지 않는다.
@@ -158,10 +159,23 @@ def render_transcript(lines: list[SummaryLine], limit: int = MAX_TRANSCRIPT_CHAR
     return f"{head}\n[중간 {omitted}줄 생략]\n{tail}", True
 
 
+_STATUS = {"todo": "할 일", "in_progress": "진행 중", "blocked": "막힘", "done": "완료"}
+
+
+def _item_values(item: SummaryItem) -> str:
+    """update 는 그 회의가 바꾼 값만 있다. 비어 있는 칸을 "미정" 으로 쓰면 담당이 없어진 것처럼 읽힌다."""
+    if item.action != "update":
+        return f"담당 {item.assignee or '미정'}, 마감 {item.due_date or '없음'}"
+    changed = [f"{label} {value}" for label, value in (
+        ("담당", item.assignee), ("마감", item.due_date), ("상태", _STATUS.get(item.status or "", item.status)),
+    ) if value]
+    return f"바꾼 값: {', '.join(changed)}" if changed else "바꾼 값 없음"
+
+
 def build_prompt(summary_input: SummaryInput, limits: SectionLimits) -> tuple[str, bool]:
     """프롬프트와 입력이 잘렸는지."""
     item_lines = [
-        f"{key} [{item.action}] {item.title} (담당 {item.assignee or '미정'}, 마감 {item.due_date or '없음'})"
+        f"{key} [{item.action}] {item.title} ({_item_values(item)})"
         for key, item in zip(local_keys("I", [i.item_id for i in summary_input.items]), summary_input.items)
     ]
     topic_lines = [

@@ -20,7 +20,7 @@ def _input(*, lines=None, started_at="2026-11-05T05:00:00Z", title="3주차 정�
     return SummaryInput(
         extraction_id="e1", meeting_id="m1", workspace_id="w1", identity_epoch=0, title=title, started_at=started_at,
         lines=lines if lines is not None else [SummaryLine(1, 125000, "민수", "초대는 이메일로만 하죠")],
-        items=[SummaryItem(ITEM_ID, "create", "초대 메일 보내기", "민수", "2026-11-14")],
+        items=over.pop("items", [SummaryItem(ITEM_ID, "create", "초대 메일 보내기", "민수", "2026-11-14")]),
         topics=[SummaryTopic(TOPIC_ID, "팀원 초대", "초대 방식")],
         decisions=[SummaryPriorDecision(DECISION_ID, "초대 코드로 합류한다", "팀원 초대", "2026-10-20")],
         **over,
@@ -249,6 +249,18 @@ def test_the_prompt_lists_member_names_and_terms_and_says_items_win():
     assert "민수, 지현" in prompt and "젠킨스, 배포" in prompt
     assert "항목을 따른다" in prompt and '"item": "I1"' in prompt
     assert '"discussion"' in prompt
+
+
+def test_an_update_item_shows_only_what_that_meeting_changed():
+    items = [SummaryItem(ITEM_ID, "create", "초대 메일 보내기", "민수", "2026-11-14"),
+             SummaryItem("i2", "update", "로그인 화면", None, None, "done"),
+             SummaryItem("i3", "update", "알림 API", "지현", "2026-10-27"),
+             SummaryItem("i4", "update", "검색", None, None)]
+    prompt, _ = build_prompt(_input(items=items), FULL)
+    assert "I1 [create] 초대 메일 보내기 (담당 민수, 마감 2026-11-14)" in prompt
+    assert "I2 [update] 로그인 화면 (바꾼 값: 상태 완료)" in prompt
+    assert "I3 [update] 알림 API (바꾼 값: 담당 지현, 마감 2026-10-27)" in prompt
+    assert "I4 [update] 검색 (바꾼 값 없음)" in prompt
 
 
 def test_the_daily_chat_prompt_has_no_discussion_and_shows_wall_clock_times():

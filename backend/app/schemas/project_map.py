@@ -36,6 +36,8 @@ class SummaryInputItem(BaseModel):
     title: str
     assignee: str | None
     due_date: date | None
+    # 수정 항목이 바꾼 상태. 새 항목과 상태를 바꾸지 않은 수정은 None
+    status: str | None = None
 
 
 class SummaryInputTopic(BaseModel):
@@ -63,7 +65,7 @@ class SummaryInputResponse(BaseModel):
     members: list[str]
     asr_terms: list[str]
     lines: list[SummaryInputLine]
-    # 반영된 항목만이고 값은 Task 의 지금 값이다
+    # 반영된 항목만이고 값은 그 회의 항목이 정한 값에 PM 이 승인하며 고친 값을 덮은 것이다. 수정 항목은 바꾼 값만 있다
     items: list[SummaryInputItem]
     topics: list[SummaryInputTopic]
     decisions: list[SummaryInputDecision]

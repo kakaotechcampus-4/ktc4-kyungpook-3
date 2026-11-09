@@ -26,14 +26,15 @@ from sqlalchemy.orm import Session, aliased
 
 from app.core.errors import AppError, ErrorCode
 from app.models import (
+    ApprovalRequest,
     Decision,
     Extraction,
+    ExtractionAction,
     ExtractionItem,
     Meeting,
     MeetingStatus,
     Member,
     Source,
-    Task,
     Topic,
     TopicItem,
     TopicMeeting,
@@ -216,21 +217,48 @@ def _input_lines(db: Session, meeting_id: str) -> list[SummaryInputLine]:
 
 
 def _input_items(db: Session, extraction_id: str) -> list[SummaryInputItem]:
-    """반영된 항목만, 값은 Task 의 지금 값이다(PM 이 승인하며 고친 값). 같은 Task 에 합쳐진 항목은 먼저 나온 하나만 둔다."""
+    """반영된 항목만. 값은 그 회의 항목이 정한 값에 PM 이 승인하며 고친 값을 덮은 것이다. 뒤 회의나 직접 수정이
+    바꾼 Task 의 지금 값은 쓰지 않는다. 같은 Task 에 합쳐진 항목은 먼저 나온 하나만 둔다."""
     final = item_fate.final_items().where(ExtractionItem.extraction_id == extraction_id).subquery()
     rows = db.execute(
-        select(final.c.item_id, ExtractionItem.action, Task, Member.display_name)
-        .join(ExtractionItem, ExtractionItem.item_id == final.c.item_id)
-        .join(Task, Task.task_id == final.c.task_id)
-        .outerjoin(Member, Member.member_id == Task.assignee_member_id)
+        select(ExtractionItem, ApprovalRequest.payload)
+        .join(final, final.c.item_id == ExtractionItem.item_id)
+        .outerjoin(ApprovalRequest, ApprovalRequest.approval_id == ExtractionItem.approval_id)
         .order_by(final.c.created_at, final.c.item_id)
     ).all()
-    items: dict[str, SummaryInputItem] = {}
-    for item_id, action, task, display_name in rows:
-        items.setdefault(task.task_id, SummaryInputItem(
-            item_id=item_id, action=action, title=task.title, assignee=display_name, due_date=task.due_date,
-        ))
-    return list(items.values())
+    approved: dict[str, tuple[ExtractionItem, dict]] = {}
+    for item, payload in rows:
+        approved.setdefault(item.task_id, (item, _approved_values(item, json.loads(payload) if payload else {})))
+    names = _member_names(db, {values["assignee_member_id"] for _, values in approved.values()})
+    return [
+        SummaryInputItem(
+            item_id=item.item_id, action=item.action, title=values["task_title"],
+            assignee=names.get(values["assignee_member_id"]), due_date=values["due_date"], status=values["status"],
+        )
+        for item, values in approved.values()
+    ]
+
+
+# 수정 항목이 바꿀 수 있는 값. 카드 payload 의 같은 이름 키가 그 수정이 바꾼 값이다
+_UPDATE_FIELDS = ("assignee_member_id", "due_date", "status")
+
+
+def _approved_values(item: ExtractionItem, payload: dict) -> dict:
+    """새 항목은 항목 값, 수정 항목은 그 수정이 바꾼 값(바꾸지 않은 것은 None)에 PM 이 고친 값(task_overrides)을 덮는다.
+    PM 이 담당이나 마감을 비운 것도 고친 값이라 키가 있으면 None 이어도 쓴다."""
+    if item.action == str(ExtractionAction.UPDATE):
+        own = {"task_title": item.task_title, **{field: payload.get(field) for field in _UPDATE_FIELDS}}
+    else:
+        own = {"task_title": item.task_title, "assignee_member_id": item.assignee_member_id,
+               "due_date": item.due_date, "status": None}
+    return {**own, **(payload.get("task_overrides") or {})}
+
+
+def _member_names(db: Session, member_ids: set[str | None]) -> dict[str, str]:
+    ids = member_ids - {None}
+    if not ids:
+        return {}
+    return dict(db.execute(select(Member.member_id, Member.display_name).where(Member.member_id.in_(ids))).all())
 
 
 def _input_topics(db: Session, workspace_id: str) -> list[SummaryInputTopic]:
