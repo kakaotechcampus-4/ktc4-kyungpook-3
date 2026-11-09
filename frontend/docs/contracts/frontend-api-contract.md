@@ -1692,7 +1692,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 
 **현재 구현 (#315, 2026-11-04).** 프론트엔드는 아래 백엔드 메시지 API 를 production 을 포함한 모든 모드에서 부른다. `준비 중` 안내와 MSW 모드 분기는 지웠다([M8-C 결과](../plan/m8/result-c.md#2026-11-04-실제-메시지-api-연결-315)).
 
-- 쓰는 경로: `GET /messages`, `GET /messages/threads/{thread_id}`, `PATCH /messages/bundles/{bundle_id}`(`body` 또는 `scheduled_at` 하나), `POST /messages/bundles/{bundle_id}/approve`(`{draft_version}`), `POST /messages/bundles/{bundle_id}/cancel`, `POST /messages/threads/{thread_id}/replies`, 그리고 #370 에서 더한 `POST /messages/reminders`, `PATCH /messages/reminders/{reminder_id}`(`note` 만), `POST /messages/reminders/{reminder_id}/cancel`. 리마인드의 시각만 옮기는 `PATCH …/reminders/{id}`(`scheduled_at`)는 부르지 않는다. 시각은 묶음 단위로 옮긴다.
+- 쓰는 경로: `GET /messages`, `GET /messages/threads/{thread_id}`, `PATCH /messages/bundles/{bundle_id}`(`body` 또는 `scheduled_at` 하나), `POST /messages/bundles/{bundle_id}/approve`(`{draft_version}`), `POST /messages/bundles/{bundle_id}/cancel`, `POST /messages/threads/{thread_id}/replies`, #519 에서 더한 `POST /messages/threads`(`{member_id}`), 그리고 #370 에서 더한 `POST /messages/reminders`, `PATCH /messages/reminders/{reminder_id}`(`note` 만), `POST /messages/reminders/{reminder_id}/cancel`. 리마인드의 시각만 옮기는 `PATCH …/reminders/{id}`(`scheduled_at`)는 부르지 않는다. 시각은 묶음 단위로 옮긴다.
 - 응답 타입은 [message.ts](../../src/shared/types/api/message.ts)가 `schemas/message.py` 와 칸을 1:1 로 맞춘다. 매퍼는 목록을 `bundles` 가 `null` 인지로 PM·팀원 두 모양으로 나누고, 묶음의 화면 단계(승인 대기·승인함·초안 대기)를 `status`·`approved`·`draft_status` 에서 한 번 정한다. `scheduled` 가 아닌 묶음은 그리지 않는다.
 - 보낼 시각은 마감 기준 시각과 `직접 정한 시각` 둘이고, 화면이 시각을 계산해 `scheduled_at` 으로 보낸다. 마감 기준 시각은 묶은 태스크 중 가장 이른 `due_date` 에 공간의 재촉 규칙(아래 **메시지·알림 설정** 의 `nudge_rule`)을 적용한 KST 시각이다. 카드 제목도 규칙을 따른다(`마감 당일`·`마감 하루 전`·`마감 2일 전`·`마감 3일 전`). 기본 규칙이면 전날 09:00 이다(#340, 2026-11-05). 재촉 규칙을 불러오는 중이거나 불러오지 못했을 때, 마감이 없거나 그 시각이 지났을 때는 이 카드를 고를 수 없다. 시안의 `지금 바로` 는 대응 경로가 없어 지웠다.
 - 재촉 만들기와 태스크 빼기·메모 고치기(#370, 2026-11-05). 모두 PM 에게만 보인다. 팀원 화면에는 진입점이 없고 `?new=reminder` 주소도 무시한다.
@@ -1713,8 +1713,8 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 
 - 화면 표시: `draft_status` 가 `needed`·`claimed` 면 `문구 다듬는 중`, `body` 는 줄바꿈 그대로(`whitespace-pre-line`), `body_source` 는 미리보기 밑단의 작은 글자(`직접 고친 문구`·`AI 초안`·`기본 문구`)다. 봇 메시지 `dm_status: failed` 는 말풍선 아래 `DM 못 보냄 · {이유}`(`dm_blocked` 서버 DM 이 막혀 있어요, `discord_not_linked` Discord 계정이 연결되지 않았어요, `unknown` 이유를 알 수 없어요), 목록 행의 `dm_failed` 는 `DM 못 보냄` 표시다. 팀원 메시지 `reply_channel: web` 은 `웹에서 답장` 을 붙인다.
 - 대화 화면은 메시지와(PM 에게만) 예정 묶음을 나갈 시각 순으로 섞는다. 취소·만료된 재촉 줄은 응답에 없어 그리지 않는다.
-- 팀원 화면: 자기 대화를 보고 웹 답장을 쓴다. 답장 칸 아래에 봇 DM 창에 쓴 글은 전달되지 않는다는 안내를 보인다(#515). 지금 화면의 `봇 DM 창에 쓴 글은 모두 PM 대화에 보여요.` 는 FE 요청으로 고친다.
-- 대화 주인 판정(#367, 2026-11-05): 화면은 워크스페이스 응답의 `member_id`(§4.2.1)를 대화의 `member_id` 와 비교한다. 같으면 PM 이어도 자기 대화라 답장 칸을 보인다. BE 답장 API 는 대화 주인과 PM 의 글을 201 로 받는다. 일반 팀원이 남의 대화에 쓰면 403 이다([api/messages.py](../../../backend/app/api/messages.py)의 답장 경로). PM 이 남의 대화를 열면 지금처럼 답장 칸 대신 안내 바를 보인다. 워크스페이스 응답에 `member_id` 가 없거나 `null` 이면 PM 에게는 답장 칸을 숨긴다. 팀원은 자기 대화만 받으므로 이 값과 상관없이 답장 칸을 보인다.
+- 팀원 화면: 자기 대화를 보고 웹 답장을 쓴다. 답장 칸 아래에 봇 DM 창에 쓴 글은 전달되지 않는다는 안내를 보인다(#515). 문구는 #525 에서 바꿨다(아래 **PM·팀원 메시지** 의 프론트엔드 연결).
+- 대화 주인 판정(#367, 2026-11-05): 화면은 워크스페이스 응답의 `member_id`(§4.2.1)를 대화의 `member_id` 와 비교한다. 같으면 PM 이어도 자기 대화라 답장 칸을 보인다. BE 답장 API 는 대화 주인과 PM 의 글을 201 로 받는다. 일반 팀원이 남의 대화에 쓰면 403 이다([api/messages.py](../../../backend/app/api/messages.py)의 답장 경로). ~~PM 이 남의 대화를 열면 지금처럼 답장 칸 대신 안내 바를 보인다. 워크스페이스 응답에 `member_id` 가 없거나 `null` 이면 PM 에게는 답장 칸을 숨긴다.~~ #519(2026-11-09)부터 PM 은 남의 대화에도 입력칸을 본다. `member_id` 가 없거나 `null` 이면 PM 에게는 모든 대화가 남의 대화이고 입력칸이 있다. 서버가 쓴 사람으로 `pm`·`member` 를 정한다. 팀원은 자기 대화만 받으므로 이 값과 상관없이 답장 칸을 보인다.
 - PM 자기 대화의 표시(#417, 2026-11-07): 위 판정으로 PM 의 자기 대화로 가려진 대화는 메시지 목록 맨 위의 별도 구역 `내 리마인드`(이름은 사용자 결정, 2026-11-07)에 두고, 그 아래 `보내기 전 확인`·`대화` 는 그대로다. `대화` 목록과 `답장 기다리는 중 N` 에서는 뺀다. 상세는 팀원 화면 규칙이다. 봇 말풍선이 왼쪽, 자기 답장이 오른쪽이고, 답장 기다림 배지·목록 점·`여기서부터 답장이 없습니다` 가 없으며, #411 기기 알림 띠를 보인다. 예정 묶음과 `확인하기`, 답장의 태스크 고르기 같은 PM 권한 기능은 그대로다. 워크스페이스 응답에 `member_id` 가 없거나 `null` 이면 구역을 만들지 않고 전처럼 `대화` 에 PM 화면 규칙으로 둔다. 표시 규칙은 (역할, 대화 주인)으로 고르는 표 하나([viewer.ts](../../src/widgets/message-inbox/model/viewer.ts)의 `threadPolicy`)가 정하고 답장 칸도 그 표의 값이다. 새 경로·필드는 없다. **FE 화면 규칙이며 BE 합의가 필요한 변경은 없다.**
 - 다시 받기(#371, 2026-11-06, D-136): 화면 재진입·탭 복귀·행동 성공 뒤 다시 받기는 그대로다. 받은 `GET /messages` 나 `GET /messages/threads/{thread_id}` 응답에 `draft_status` 가 `needed`·`claimed` 인 묶음이 있으면 그 조회만 10초마다 다시 부르고, 없으면 멈춘다. 탭이 백그라운드면 부르지 않는다. 알림 목록(30초 polling)에 메시지 알림(`reminder_sent`·`nudge_suggested`·`nudge_reapprove`·`reminder_auto_cancelled`)이 새로 들어오면 그 공간의 메시지 조회를 다시 부른다. 알림 목록은 `limit=50` 으로 부르고, 꽉 찬 목록이 지난 목록과 하나도 겹치지 않으면 놓친 알림이 있을 수 있어 메시지 조회를 한 번 다시 부른다. 메시지 조회는 시작한 세션이 끝나면 보내지 않는다. 새 경로·필드는 없고 BE 가 받는 요청 수만 는다. 구현: [messageQueries.ts](../../src/entities/message/api/messageQueries.ts), [알림 종류](../../src/entities/notification/model/display.ts).
 - 재촉 이유·근거·목록 요약(#394, 2026-11-08). BE 가 #418 에서 묶음 응답에 `summary` 와 리마인드마다 `reason`·`evidence` 를 더했다(아래 묶음 응답 줄). 화면 규칙은 사용자 결정(#394, 2026-11-05·2026-11-08)이다.
@@ -1773,12 +1773,12 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 대화 메시지(`messages[]`)는 `{message_id, thread_id, sender: "bot"|"pm"|"member", body, created_at, reply_channel: "discord"|"web"|null, dm_status, dm_failure_reason, scheduled_at, author_member_id, author_name}` 이다. `bot` 은 리마인드 묶음이 나간 글, `pm` 은 PM 이 남의 대화에 쓴 글, `member` 는 대화 주인이 쓴 글이다. `author_member_id`·`author_name` 은 `pm` 글에만 있고 나머지는 `null` 이다. `pm` 글의 `reply_channel`·`scheduled_at` 은 `null` 이다.
   - 팀원 메시지의 `reply_channel` 이 `web` 이면 `웹에서 답장` 표시를 붙인다.
   - 봇 DM 으로 나가는 글(`bot`·`pm`)의 `dm_status` 는 `pending`·`claimed`(봇이 보내는 중)·`delivered`·`failed` 다. `failed` 면 `dm_failure_reason` 이 `dm_blocked`(팀원이 서버 DM 을 막음)·`discord_not_linked`(디스코드 미연결)·`unknown` 중 하나이고, 화면은 `DM 못 보냄` 을 보인다. 웹 대화에는 들어갔으므로 상태는 `sent` 다.
-- 대화 목록 한 줄은 `{thread_id, member_id, name, last_message, awaiting_reply_since, dm_failed, web_reply_available, unread_count}` 다. 대화 상세의 `thread` 도 같다. `last_message` 는 `{message_id, sender, body, created_at, author_member_id, author_name}` 이다. `dm_failed` 는 그 팀원에게 마지막으로 나간 봇 DM(`bot`·`pm`)이 `failed` 인지다. `awaiting_reply_since` 는 리마인드(`bot`)만 센다. `web_reply_available` 은 그 팀원에게 계정이 연결됐는지(`member.user_id`)를 읽는 시점에 판정한 값이다. `false` 면 그 팀원은 PM 초대를 수락하기 전까지 웹 답장을 할 수 없다. 화면 연결은 아직 안 했다(#515). 최근 메시지 순이고, 메시지가 없는 대화는 아래에 둔다.
+- 대화 목록 한 줄은 `{thread_id, member_id, name, last_message, awaiting_reply_since, dm_failed, web_reply_available, unread_count}` 다. 대화 상세의 `thread` 도 같다. `last_message` 는 `{message_id, sender, body, created_at, author_member_id, author_name}` 이다. `dm_failed` 는 그 팀원에게 마지막으로 나간 봇 DM(`bot`·`pm`)이 `failed` 인지다. `awaiting_reply_since` 는 리마인드(`bot`)만 센다. `web_reply_available` 은 그 팀원에게 계정이 연결됐는지(`member.user_id`)를 읽는 시점에 판정한 값이다. `false` 면 그 팀원은 PM 초대를 수락하기 전까지 웹 답장을 할 수 없다. 화면 표시는 아래 **PM·팀원 메시지** 의 프론트엔드 연결(#525)에 있다. 최근 메시지 순이고, 메시지가 없는 대화는 아래에 둔다.
 - 팀원이 봇 DM 창에 쓴 글은 저장하지 않고 PM 에게도 보이지 않는다. 봇이 웹 답장 안내를 돌려준다(같은 사람에게 1시간에 한 번, #515). 이미 저장된 디스코드 답장은 대화에 남는다.
 - 팀원 권한은 로그인 계정이 연결된 팀원(`member.user_id`) 기준이다. 계정이 연결되지 않은 팀원은 웹 답장을 할 수 없다. 대화 주인은 팀원 행으로 판단하므로, 탈퇴했다가 새 팀원 행으로 돌아온 계정은 예전 행의 대화를 열 수 없다.
 - 아직 없는 것: ~~웹의 답장 판정 입력(`답장 확인 필요`)과 판정 결과 표시~~(#344 에서 연결, 아래 「리마인드 답장 판단」의 FE 연결), 태스크 안내 DM·#회의록 요약, `지금 바로` 5분 합치기, AI 초안 워커, 시안의 `지금 바로`(`send_timing: now`)에 대응하는 BE 경로. 프론트엔드는 #315 에서 MSW 임시 경로 `reviews/{id}/send|dismiss` 를 `bundles/{id}/approve|cancel` 로 옮겼다.
 
-**PM·팀원 메시지** (#470 에서 BE 구현, 프론트엔드 미연결, 합의 여부 확인 필요). 리마인드 없이 PM 과 팀원이 글을 주고받는다. PM 글은 예약·승인 없이 쓰는 즉시 봇 DM 대기로 가고, 팀원은 웹에서 먼저 쓸 수 있다. 범위는 PM 과 팀원 사이이고 팀원끼리는 대화가 없다. 봇 쪽은 [backend-ai 계약](../../../backend/docs/contracts/backend-ai-contract.md)의 「리마인드 DM」에 있다.
+**PM·팀원 메시지** (#470 에서 BE 구현, #519·#525 에서 프론트엔드 연결, FE 화면 규칙은 사용자 확정·BE 와의 합의 여부 확인 필요). 리마인드 없이 PM 과 팀원이 글을 주고받는다. PM 글은 예약·승인 없이 쓰는 즉시 봇 DM 대기로 가고, 팀원은 웹에서 먼저 쓸 수 있다. 범위는 PM 과 팀원 사이이고 팀원끼리는 대화가 없다. 봇 쪽은 [backend-ai 계약](../../../backend/docs/contracts/backend-ai-contract.md)의 「리마인드 DM」에 있다.
 
 | 쓰는 사람 | 대화 | `POST …/replies` 결과 |
 |---|---|---|
@@ -1796,12 +1796,25 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 알림은 표의 `message_received` 다. PM 글은 대화 주인에게, 팀원 글(웹·디스코드)은 쓴 사람을 뺀 PM 전원에게 간다. `text` 는 `{이름}: {미리보기}` 다. 미리보기는 첫 줄 60자다. 글 하나에 알림 하나다. 판단 행이 생기지 않은 글은 바로 알리고, 판단을 타는 글은 결과가 `reply_judged` 면 그것만, 바꿀 것이 없으면 그때 `message_received` 를, 판단 실패·시간 초과면 `reply_unjudged` 만 낸다. 대화·방향마다 5분 구간에 한 번이라 이어 쓴 글은 첫 글의 미리보기만 보인다.
 - 실시간 신호는 없다. 화면은 기존 조회와 알림 목록 polling 으로 새 글을 받는다.
 
-프론트엔드는 아직 이 경로를 쓰지 않는다. 지금 화면에서 달라 보이는 점과 할 일은 아래와 같다. BE 를 먼저 배포해도 조회가 깨지지 않는다는 것은 mapper.ts 코드를 읽어 판단한 것이고 실행으로 확인하지는 않았다.
+**프론트엔드 연결** (#519·#525, 2026-11-09). 위 BE 동작에 화면을 이었다. 화면 규칙은 #519·#525 의 FE 안(2026-11-08)이고 사용자가 같은 날 확정했다(#525 마지막 댓글). 아래는 코드와 MSW 기준 테스트·브라우저로 확인한 사실이다. 실제 서버(배포 BE)에 붙인 확인은 하지 않았다.
 
-- [mapper.ts](../../src/entities/message/model/mapper.ts) 는 `member` 가 아니면 봇 가지로 보내므로 `pm` 글은 `봇` 말풍선으로 보인다. `author_name` 표시와 `Message` 유니온의 `pm` 가지가 필요하다.
-- 목록의 `나:` 표시는 `last.sender === policy.ownSender` 비교라 `pm` 글에는 붙지 않는다([MessageInbox.tsx](../../src/widgets/message-inbox/ui/MessageInbox.tsx)). 푸시 안내 조건 `sender === 'bot'`([ThreadDetail.tsx](../../src/widgets/message-inbox/ui/ThreadDetail.tsx))은 FE 가 `pm` 가지를 더하면 PM 글만 있는 대화에서 사라진다.
-- `message_received` 는 [display.ts](../../src/entities/notification/model/display.ts) 의 `KINDS` 에 없어 제목이 `새 알림` 이고 메시지 조회를 다시 부르지 않는다. `refreshes: ['messages']` 로 넣어야 한다.
-- 팀원을 고르는 흐름, 빈 화면에서 먼저 쓰기, PM 답장 칸(지금 안내 바), D-174 정책 4 갱신은 FE 요청 이슈로 넘긴다.
+- 타입: [message.ts](../../src/shared/types/api/message.ts) 의 `sender` 에 `pm`, 메시지와 `last_message` 에 `author_member_id`·`author_name`, 대화 요약에 `web_reply_available?`(옛 응답에 없을 수 있어 선택 칸)을 더했다. [mapper.ts](../../src/entities/message/model/mapper.ts) 는 `pm` 글을 따로 읽고 `dm_status` 가 없으면 조회 오류로 본다. 작성자가 `null` 이면 이름을 `PM` 으로 보인다. `web_reply_available` 은 `available`·`unavailable`·`unknown`(칸 없음) 셋으로 읽는다. `unread_count` 는 아직 읽지 않는다.
+- 대화 열기: `POST /messages/threads` `{member_id}` 를 부르고([messageQueries.ts](../../src/entities/message/api/messageQueries.ts) `openThread`), 메시지 캐시를 다시 받은 뒤 돌려받은 대화로 간다. 자동 재시도는 없고 진행 중에는 다시 누를 수 없다.
+  - PM: 목록 머리의 `새 대화`, 그리고 빈 메시지 화면의 `새 대화` 가 오른쪽 칸 `?new=thread` 를 연다. 칸은 자기 팀원 행을 뺀 공간 팀원 목록이고, 한 번 누르면 그 대화로 주소를 바꿔 끼운다. 다른 PM 도 고를 수 있다.
+  - 팀원: 대화가 없는 빈 화면의 `PM에게 메시지 보내기` 가 자기 `member_id` 로 연다. 워크스페이스 응답에 `member_id` 가 없거나 `null` 이면 버튼을 그리지 않는다. 팀원은 `?new=thread` 를 무시한다.
+- 말풍선 자리: 한 표([viewer.ts](../../src/widgets/message-inbox/model/viewer.ts) `OWN_SIDE`)가 말풍선 자리와 목록의 `나:` 를 함께 정한다.
+  - PM 이 남의 대화를 볼 때: 봇 재촉과 예정 묶음은 지금처럼 오른쪽이다. `pm` 글은 `author_member_id` 가 내 `member_id` 면 오른쪽(`나`), 아니면 왼쪽에 작성자 이름을 붙인다. 팀원 글은 왼쪽이다.
+  - 팀원 화면과 PM 자기 대화: 자기 글이 오른쪽이고 봇·`pm` 글은 왼쪽이다. `pm` 글 위에는 `author_name` 을 보인다.
+  - `pm` 글의 `dm_status: failed` 는 봇 글처럼 `DM 못 보냄 · {이유}` 다.
+- 입력칸: 모든 대화에 있다. PM 이 남의 대화를 열 때 나오던 안내 바는 지웠다.
+  - 팀원·PM 자기 대화: `PM에게 메시지`, 아래 `답장은 이 웹 대화에 남아요. 봇 DM 창에 쓴 글은 전달되지 않아요. 여기에 써 주세요.`
+  - PM 이 남의 대화: `{팀원 이름}님에게 메시지`, 아래 `내용은 웹 대화에 저장돼요. Discord에는 새 메시지 안내만 보내요.` 보내기 버튼은 `메시지 보내기` 다.
+  - 전송 중 입력칸·버튼 잠금, mutation 재시도 끔, 실패 시 글 보존과 `다시 보내기` 는 그대로다. 서버가 같은 글 두 번을 막지 않으므로 이 잠금에 기댄다.
+- 웹 답장 불가: PM 이 남의 대화를 볼 때 `web_reply_available === false` 면 목록 행에 회색 `웹 답장 불가`(빨간 `DM 못 보냄` 과 다른 표시), 대화 안 입력칸 위에 `웹 계정이 연결되지 않아 이 팀원은 웹에서 답장할 수 없어요. 팀원을 초대하고 초대를 수락하도록 안내해 주세요.` 와 팀 화면(팀원별 초대 조작) 링크 `팀원 초대하기` 를 보인다. PM 입력칸은 그대로다. `true` 와 칸 없음은 아무것도 보이지 않는다. 답장 가능으로 확정해 표시하지 않는다. 이미 저장된 Discord 답장은 그대로 보인다.
+- 기기 알림 띠(#411)는 팀원 화면과 PM 자기 대화에서 봇 또는 `pm` 글이 있으면 보인다. PM 이 남의 대화를 보는 화면에는 없다.
+- 알림: [display.ts](../../src/entities/notification/model/display.ts) 의 `message_received` 는 제목 `새 메시지가 왔어요` 이고 메시지 조회를 다시 부른다.
+- 실패 안내: PM 이 남의 대화에 쓴 글을 보내지 못하면 입력칸 위 제목은 `메시지를 보내지 못했어요` 다. 팀원·PM 자기 대화는 행동 표([actionMessages.ts](../../src/features/message-action/lib/actionMessages.ts))의 `답장을 보내지 못했어요` 를 그대로 쓴다.
+- MSW: PM 글을 저장하면 BE `notify_new_message` 처럼 대화 주인에게 `message_received` 를 만든다. 본문은 `{작성자}: {첫 줄 60자}`, 링크는 그 대화이고, 같은 대화·5분 구간에는 하나만 만든다. 팀원 글의 알림은 BE 가 답장 판단을 거쳐 내므로 MSW 는 만들지 않는다.
 
 **대화 신호 웹소켓** (#520 에서 BE 구현, 프론트엔드 미연결, 합의 여부 확인 필요). 대화에 새 줄이 생겼음을 열린 화면에 바로 알린다. 소켓은 신호만 보내고 본문은 보내지 않는다. 화면은 신호를 받으면 기존 조회를 다시 부르므로 권한 검사는 조회 한 곳에 있다. 30초 polling 은 그대로 돈다.
 
@@ -1869,7 +1882,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 | `nudge_reapprove` | PM 전원 | `bundle` | 보내기 전 확인 | |
 | `reminder_auto_cancelled` | PM 전원 | `bundle` · `thread` | 남은 묶음이 있으면 보내기 전 확인, 없으면 대화 | |
 | `silence_blocked` | PM 전원 | `task` | 태스크 상세 | `silenceAlert`(`silence_alert`) |
-| `message_received` | PM 글은 대화 주인, 팀원 글은 쓴 사람을 뺀 PM 전원 | `thread` | 그 대화. BE 구현(#470), 프론트엔드 미연결. 위 **PM·팀원 메시지** 참조 | |
+| `message_received` | PM 글은 대화 주인, 팀원 글은 쓴 사람을 뺀 PM 전원 | `thread` | 그 대화. BE 구현(#470), 프론트엔드 연결(#519, 제목 `새 메시지가 왔어요`, 메시지 조회 다시 받기). 위 **PM·팀원 메시지** 참조 | |
 
 - `link.type` 은 `thread`·`bundle`·`task` 중 하나다. 모르는 `kind` 가 와도 `text` 와 `link` 로 표시한다. 답장 판정 결과처럼 뒤에 종류가 더해진다.
 - 설정 저장 API 는 §5.7 의 **메시지·알림 설정** 항목에 있다. `silence_blocked` 는 `silence_alert` 를 끄면 PM 에게 나가지 않는다. `reminder_sent` 는 설정과 무관하게 나간다. 재촉 제안 토글(`due_reminder`)은 스케줄러의 제안만 막고, PM 이 만든 재촉이 나갈 때의 `reminder_sent` 에는 영향이 없다.

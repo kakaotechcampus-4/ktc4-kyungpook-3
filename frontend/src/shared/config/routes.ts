@@ -26,7 +26,7 @@ export const SETTINGS_PARAMS = { section: 'section' } as const
 
 /**
  * 메시지 화면의 검색 파라미터. `review` 는 보내기 전 확인에서 고른 보낼 메시지(묶음 ID)다 (paths.messageReview).
- * `new=reminder` 면 오른쪽 칸에 재촉 만들기를 연다 (paths.messageCompose).
+ * `new=reminder` 면 오른쪽 칸에 재촉 만들기를, `new=thread` 면 대화 시작을 연다 (paths.messageCompose·messageStartThread).
  * `message` 는 대화를 열 때 맨 아래 대신 보여 줄 메시지 ID 다 (paths.messageThread)
  */
 export const MESSAGE_PARAMS = { review: 'review', compose: 'new', message: 'message' } as const
@@ -90,6 +90,9 @@ export const paths = {
   /** 재촉 만들기. PM 만 연다 */
   messageCompose: (workspaceId: string) =>
     `${workspaceBase(workspaceId)}/messages?${MESSAGE_PARAMS.compose}=reminder`,
+  /** 팀원을 골라 대화를 연다. PM 만 연다 */
+  messageStartThread: (workspaceId: string) =>
+    `${workspaceBase(workspaceId)}/messages?${MESSAGE_PARAMS.compose}=thread`,
   /** 팀원 한 명과의 대화. messageId 를 주면 맨 아래 대신 그 메시지를 보이며 연다 */
   messageThread: (workspaceId: string, threadId: string, messageId?: string) =>
     `${workspaceBase(workspaceId)}/messages/threads/${segment(threadId)}${

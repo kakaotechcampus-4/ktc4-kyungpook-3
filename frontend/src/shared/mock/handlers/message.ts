@@ -3,8 +3,7 @@ import { db } from '../db'
 import { ok, fail, list } from '../envelope'
 import { requireMember, requirePmRole } from '../auth-guard'
 import { MOCK_NOW } from '../fixtures/constants'
-import { reply } from '../fixtures/message'
-import { roleIn, sessionMemberId } from '../sessions'
+import { linkedUserIdOf, roleIn, sessionMemberId } from '../sessions'
 import {
   approveBundle,
   bundleDto,
@@ -14,9 +13,13 @@ import {
   editBundle,
   editReminder,
   inboxOf,
+  notifyNewMessage,
+  openThread,
   reminderWithBundleDto,
   threadDetailOf,
+  threadSummaryOf,
   utc,
+  writeMessage,
 } from '../message-state'
 import { attributeReply, replyAttributions } from '../reply-state'
 import type { AttributeError } from '../reply-state'
@@ -28,7 +31,7 @@ import type {
   ReminderResult,
   Viewer,
 } from '../message-state'
-import { nextId, readJson } from '../utils'
+import { readJson } from '../utils'
 
 /*
  * 메시지 (계약 §5.7). 경로·응답·오류 코드는 백엔드 api/messages.py 와 같다.
@@ -68,6 +71,9 @@ const REFUSAL: Record<BundleRefusal | ReminderRefusal, () => ReturnType<typeof f
   task_not_found: () => fail('TASK_NOT_FOUND', '해당 태스크를 찾을 수 없습니다.', 404),
   member_not_found: () => fail('MEMBER_NOT_FOUND', '해당 팀원을 찾을 수 없습니다.', 404),
 }
+
+const memberNotFound = (memberId: string) =>
+  fail('MEMBER_NOT_FOUND', '해당 팀원을 찾을 수 없습니다.', 404, { member_id: memberId })
 
 function attributeError(
   error: AttributeError,
@@ -127,15 +133,21 @@ function bundleContext(workspaceId: string): BundleContext {
         left.member_id.localeCompare(right.member_id),
     )
     .at(0)
+  const members = db.members.filter(({ workspace_id }) => workspace_id === workspaceId)
   return {
     bundles: workspaceBundles(workspaceId),
     tasks: db.tasks.filter(({ workspace_id }) => workspace_id === workspaceId),
     threads: db.messageThreads.filter(({ workspace_id }) => workspace_id === workspaceId),
     taskHistory: db.taskHistory,
-    members: db.members.filter(({ workspace_id }) => workspace_id === workspaceId),
+    members,
     pmName: pm?.display_name ?? 'PM',
     workspaceName:
       db.workspaces.find(({ workspace_id }) => workspace_id === workspaceId)?.name ?? '',
+    linkedMemberIds: new Set(
+      members
+        .filter(({ member_id }) => linkedUserIdOf(member_id) !== null)
+        .map(({ member_id }) => member_id),
+    ),
   }
 }
 
@@ -242,7 +254,35 @@ export const messageHandlers = [
     return ok(threadDetailOf(thread, bundleContext(workspaceId), viewer))
   }),
 
-  /** 대화 주인만 웹에서 답한다. PM 도 남의 대화에는 쓸 수 없다. Discord 로는 나가지 않는다 */
+  /**
+   * 그 팀원과의 대화를 연다. 있으면 그 대화, 없으면 빈 대화를 만든다 — 늘 200 이다.
+   * PM 은 공간의 누구든, 팀원은 자기 대화만 연다. 권한(403)을 팀원 찾기(404)보다 먼저 본다
+   */
+  http.post('/api/v1/workspaces/:workspaceId/messages/threads', async ({ params, request }) => {
+    const workspaceId = String(params.workspaceId)
+    const denied = requireMember(workspaceId)
+    if (denied) return denied
+    const input = await readJson(request)
+    const memberId = input?.member_id
+    if (typeof memberId !== 'string') return invalid('member_id 가 필요합니다.')
+    if (db.messageFailures.actions) return actionError()
+    const context = reminderContext(workspaceId)
+    const result = openThread(
+      memberId,
+      { viewer: viewerOf(workspaceId), memberId: sessionMemberId(workspaceId) },
+      context,
+    )
+    if ('refusal' in result)
+      return result.refusal === 'forbidden'
+        ? fail('FORBIDDEN', '권한이 없습니다.', 403, { member_id: memberId })
+        : memberNotFound(memberId)
+    return ok(threadSummaryOf(result.thread, context.linkedMemberIds))
+  }),
+
+  /**
+   * 대화 주인의 글은 Discord 로 나가지 않는 웹 답장이다. PM 이 남의 대화에 쓰면 PM 글로 바로 발송 대기다.
+   * 팀원은 남의 대화를 볼 수 없어 403 이다
+   */
   http.post(
     '/api/v1/workspaces/:workspaceId/messages/threads/:threadId/replies',
     async ({ params, request }) => {
@@ -251,17 +291,20 @@ export const messageHandlers = [
       if (denied) return denied
       const thread = findThread(workspaceId, params.threadId)
       if (!thread) return threadNotFound(params.threadId)
-      if (thread.member_id !== sessionMemberId(workspaceId)) return forbidden(thread.thread_id)
+      const writerId = sessionMemberId(workspaceId)
+      const writer = db.members.find(({ member_id }) => member_id === writerId)
+      if (
+        writer === undefined ||
+        (viewerOf(workspaceId) !== 'pm' && thread.member_id !== writer.member_id)
+      )
+        return forbidden(thread.thread_id)
       const input = await readJson(request)
       const body = typeof input?.body === 'string' ? input.body.trim() : ''
       if (body === '') return invalid('내용이 비어 있습니다.')
       if (db.messageFailures.actions) return actionError()
-      const messageId = nextId(
-        'mg',
-        db.messageThreads.flatMap((item) => item.messages.map(({ message_id }) => message_id)),
-      )
-      const message = reply(messageId, body, MOCK_NOW, 'web')
-      thread.messages.push(message)
+      const message = writeMessage(thread, writer, body, MOCK_NOW, reminderContext(workspaceId))
+      if ('refusal' in message) return memberNotFound(thread.member_id)
+      notifyNewMessage(db.notifications, thread, message, MOCK_NOW)
       return ok(
         { ...message, thread_id: thread.thread_id, created_at: utc(message.created_at) },
         { status: 201 },

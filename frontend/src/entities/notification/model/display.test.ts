@@ -9,6 +9,7 @@ it('종류별 제목을 쓰고, 모르는 종류는 기본 제목이다', () => 
   expect(notificationTitle('silence_blocked')).toBe('응답이 없어 태스크가 막혔어요')
   expect(notificationTitle('reply_judged')).toBe('팀원 답장을 판단했어요')
   expect(notificationTitle('reply_unjudged')).toBe('답장을 자동으로 판단하지 못했어요')
+  expect(notificationTitle('message_received')).toBe('새 메시지가 왔어요')
   expect(notificationTitle('reply_attributed')).toBe(DEFAULT_NOTIFICATION_TITLE)
   expect(notificationTitle('toString')).toBe(DEFAULT_NOTIFICATION_TITLE)
 })
@@ -19,6 +20,7 @@ it('종류마다 다시 받을 캐시가 정해져 있고, 모르는 종류는 �
     'nudge_suggested',
     'nudge_reapprove',
     'reminder_auto_cancelled',
+    'message_received',
   ])
     expect(notificationRefreshes(kind)).toEqual(['messages'])
   expect(notificationRefreshes('silence_blocked')).toEqual(['tasks'])

@@ -8,6 +8,8 @@ import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { notificationFixtures } from '@/shared/mock/fixtures/notification'
 import type { MockNotification } from '@/shared/mock/fixtures/notification'
+import { applyScenario } from '@/shared/mock/scenarios'
+import { fetchDto, jsonRequest } from '@/shared/test/api'
 import { isNotificationListRequest, recordRequests } from '@/shared/test/requests'
 import type { RecordedRequest } from '@/shared/test/requests'
 import { conversation, detail, reviewList, rowTexts } from './test/messageScreen'
@@ -248,5 +250,45 @@ describe('처음 보는 메시지 알림이 오면 메시지를 다시 받는다
     await pause(150)
     expect(inboxGets(log)).toBe(1)
     expect(rowTexts(reviewList())).toHaveLength(2)
+  })
+
+  it('PM 이 내 대화에 쓰면 새 메시지 알림이 오고, 처음 보는 그 알림으로 대화를 다시 받아 PM 글이 보인다 (#519)', async () => {
+    applyScenario('messages-pm-thread')
+    const pmSession = db.session
+    // 박민수(mb_02)는 초대를 수락한 us_02 로 이어져 있다
+    const minsuSession = {
+      user: { user_id: 'us_02', email: 'minsu@example.com', name: '박민수', avatar_url: null },
+      workspace_count: 1,
+      last_workspace_id: 'ws_01',
+    }
+    db.session = minsuSession
+    const log = recordRequests()
+    renderApp(paths.messages('ws_01'))
+    await until(() =>
+      expect(
+        within(conversation()).getByText('민수님, 올려 주신 화면 확인했어요. 고마워요!'),
+      ).toBeVisible(),
+    )
+    await until(() => expect(notificationGets(log)).toBe(1))
+    await pause(150)
+    const threadGetsBefore = gets(log, '/workspaces/ws_01/messages/threads/th_02')
+
+    const body = '민수님, 발표 자료도 같이 봐 주세요.'
+    db.session = pmSession
+    await fetchDto(
+      '/workspaces/ws_01/messages/threads/th_02/replies',
+      jsonRequest('POST', { body }),
+    )
+    db.session = minsuSession
+    expect(within(conversation()).queryByText(body)).toBeNull()
+
+    await advance(30_000)
+    expect(await within(conversation()).findByText(body)).toBeVisible()
+    expect(gets(log, '/workspaces/ws_01/messages/threads/th_02')).toBeGreaterThan(threadGetsBefore)
+
+    await userEvent.click(screen.getByRole('button', { name: '알림, 읽지 않은 알림 1개' }))
+    const bell = await screen.findByRole('dialog', { name: '알림 목록' })
+    expect(within(bell).getByRole('listitem')).toHaveTextContent('새 메시지가 왔어요')
+    expect(within(bell).getByRole('listitem')).toHaveTextContent(`김서연: ${body}`)
   })
 })

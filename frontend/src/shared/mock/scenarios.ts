@@ -11,8 +11,10 @@ import {
   mergeSourceBundle,
   messagesMemberBundle,
   messagesMemberThread,
+  pmThreadMessages,
   reply,
   schedulePassedBundle,
+  SECOND_PM,
 } from './fixtures/message'
 import { completeMeeting, failMeeting, setMeetingFlowMode, startChatMeeting } from './meetingFlow'
 import { notificationFixtures } from './fixtures/notification'
@@ -99,6 +101,8 @@ export const MOCK_SCENARIOS = [
   'messages-schedule-passed',
   'messages-merge',
   'messages-long-content',
+  // #519·#525 PM 이 웹에서 쓴 글. 다른 PM 의 글과 내 글, 웹 계정이 이어진 팀원(박민수)과 아닌 팀원(이재환)
+  'messages-pm-thread',
   // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
   'settings-discord-skipped',
   'settings-unmapped',
@@ -891,6 +895,26 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
           : bundle,
       )
       state.messageBundles.push(structuredClone(mergeSourceBundle))
+      break
+    case 'messages-pm-thread':
+      // 두 번째 PM 오지현(mb_06)이 이재환(th_01)에게 쓴 글은 Discord 가 없어 가지 못했다. 김서연(mb_01)은 박민수(th_02)에게 썼다.
+      // 박민수만 초대를 수락해 웹 계정이 이어졌다 — 이재환은 웹 답장 불가다
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.members.push({
+        ...SECOND_PM,
+        workspace_id: 'ws_01',
+        notion_name: null,
+        role: 'pm',
+        created_at: '2026-09-02T00:00:00Z',
+      })
+      for (const { thread_id, message } of pmThreadMessages)
+        state.messageThreads
+          .find((thread) => thread.thread_id === thread_id)
+          ?.messages.push(structuredClone(message))
+      state.invitations.push({
+        ...invitation('iv_01', 'mb_02', 'minsu@example.com', 'accepted', '2026-09-15T09:00:00Z'),
+        accepted_user_id: 'us_02',
+      })
       break
     case 'messages-long-content':
       // messages-default 에 긴 문구를 더한다. 공간(봇) 이름과 이재환(bd_01·th_01)의 이름이 띄어 쓰지 않은 긴 이름이고,

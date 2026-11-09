@@ -19,8 +19,9 @@ import { PinnedToastHost } from '@/shared/ui/toast'
 import { avatarText, bundleDateLabel, shortDate } from '../lib/format'
 import { threadHeading } from '../model/conversation'
 import { inboxPane, nextPaneMemory, selectDetail } from '../model/selection'
-import type { DetailSelection, PaneMemory } from '../model/selection'
-import { SELF_SECTION_TITLE, threadPolicy } from '../model/viewer'
+import type { ComposeKind, DetailSelection, PaneMemory } from '../model/selection'
+import { useOpenThread } from '../model/useOpenThread'
+import { SELF_SECTION_TITLE, isOwnMessage, threadPolicy } from '../model/viewer'
 import type { MessageViewer, ThreadPolicy } from '../model/viewer'
 import { ComposeDetail } from './ComposeDetail'
 import { DetailBar } from './DetailBar'
@@ -28,6 +29,7 @@ import { GROUP_LABEL } from './listStyles'
 import { ASIDE, ASIDE_TITLE, COMPOSE_LINK, DETAIL, SCREEN } from './frame'
 import { InboxListSkeleton, ReviewSkeleton, ThreadSkeleton } from './MessageSkeletons'
 import { ReviewDetail } from './ReviewDetail'
+import { OpenThreadFailure, StartThreadDetail } from './StartThreadDetail'
 import { ThreadDetail, ThreadUnavailable } from './ThreadDetail'
 
 const GROUP_NOTE = 'px-8 text-caption text-dim'
@@ -44,6 +46,9 @@ const THREAD_ROW =
 /* DM 못 보냄. 대화 머리의 답장 대기 배지와 같은 연한 레드 면 */
 const DM_FAILED_CHIP =
   'inline-flex h-22 shrink-0 items-center rounded-6 bg-accent-badge px-9 text-meta leading-none font-semibold text-accent'
+/* 웹 답장 불가. DM 못 보냄의 레드와 구분되는 중립 면 */
+const WEB_REPLY_CHIP =
+  'inline-flex h-22 shrink-0 items-center rounded-6 bg-divider px-9 text-meta leading-none font-semibold text-sub'
 const AVATAR =
   'inline-flex shrink-0 items-center justify-center rounded-999 bg-divider font-semibold text-ink'
 const DATE = 'mono text-[11px] text-dim'
@@ -62,6 +67,12 @@ const LIST_TOAST = 'fixed right-24 bottom-[calc(24px+var(--bottom-tab-bar))] z-1
 /** 휴대폰 목록 화면에서 연 상세라는 표식. 있으면 뒤로 가기가 브라우저 뒤로 가기와 같다 — 기록 한 칸 뒤가 그 목록이다.
     넓은 화면의 두 단에서 고른 항목에는 붙이지 않는다 — 그 한 칸 뒤는 목록이 아니라 이전 상세다 */
 const FROM_LIST = { messagesList: true } as const
+
+/** 오른쪽 칸에서 새로 시작하는 것. 이름은 목록 머리의 링크와 휴대폰 상세 머리가 같이 쓴다 */
+const COMPOSE: Record<ComposeKind, { title: string; path: (workspaceId: string) => string }> = {
+  reminder: { title: '새 재촉', path: paths.messageCompose },
+  thread: { title: '새 대화', path: paths.messageStartThread },
+}
 
 function openedFromList(state: unknown): boolean {
   return typeof state === 'object' && state !== null && 'messagesList' in state
@@ -82,8 +93,8 @@ export interface MessageInboxProps {
   bundleId: string | null | undefined
   /** 없는 하위 경로이거나 대화 ID 모양이 틀리다 */
   invalidPath?: boolean
-  /** 검색 파라미터가 재촉 만들기를 연다. 만들 수 없는 사람(팀원)이면 무시한다 */
-  composing?: boolean
+  /** 검색 파라미터가 여는 재촉 만들기·대화 시작. PM 만 연다 — 팀원이면 무시한다 */
+  compose?: ComposeKind | null
 }
 
 /**
@@ -98,19 +109,19 @@ export function MessageInbox({
   threadId,
   bundleId,
   invalidPath = false,
-  composing = false,
+  compose = null,
 }: MessageInboxProps) {
   const inbox = useQuery(messageInboxQueryOptions(workspaceId))
   const detailRef = useRef<HTMLElement>(null)
   const navigate = useNavigate()
   const location = useLocation()
-  const canCompose = composing && viewer.role === 'pm'
+  const allowedCompose = viewer.role === 'pm' ? compose : null
   const selection = selectDetail({
     inbox: inbox.data,
     threadId,
     bundleId,
     invalidPath,
-    composing: canCompose,
+    compose: allowedCompose,
   })
   // 목록과, 목록을 받아야 고를 수 있는 상세의 로딩 자리 (#508). 상세는 목록을 받은 뒤 고른 항목이 제 조회를 한다
   const listIndicator = useLoadingIndicator(inbox.data === undefined && inbox.error === null)
@@ -120,10 +131,10 @@ export function MessageInbox({
     threadId,
     bundleId,
     invalidPath,
-    composing: canCompose,
+    compose: allowedCompose,
   })
   // 볼 것이 없다 — EmptyMessages 캔버스 한 장. 팀원은 받은 대화가 없을 때, PM 은 보낼 메시지와 대화가 모두 없을 때.
-  // 재촉을 만드는 중이면 가로채지 않는다 — 빈 화면에서 `새 재촉 만들기` 로 온 곳이다
+  // 재촉 만들기·대화 시작 중이면 가로채지 않는다 — 빈 화면의 `새 재촉 만들기`·`새 대화` 로 온 곳이다
   const nothing =
     threadId === null &&
     !invalidPath &&
@@ -197,6 +208,12 @@ export function MessageInbox({
                 <GuardedLink to={paths.messageCompose(workspaceId)} className={EMPTY_SECOND_ACTION}>
                   새 재촉 만들기
                 </GuardedLink>
+                <GuardedLink
+                  to={paths.messageStartThread(workspaceId)}
+                  className={EMPTY_SECOND_ACTION}
+                >
+                  새 대화
+                </GuardedLink>
               </div>
             }
           />
@@ -204,6 +221,16 @@ export function MessageInbox({
           <EmptyState
             title="받은 메시지가 없어요"
             description={`${botName} 봇이 메시지를 보내면 여기에서 보고 답장할 수 있어요.`}
+            action={
+              // 자기 팀원 행을 모르면 어느 대화를 열지 짐작하지 않는다
+              viewer.memberId === null ? undefined : (
+                <StartOwnThread
+                  workspaceId={workspaceId}
+                  memberId={viewer.memberId}
+                  onOpened={(openedId) => void navigate(paths.messageThread(workspaceId, openedId))}
+                />
+              )
+            }
           />
         )}
       </main>
@@ -242,6 +269,20 @@ export function MessageInbox({
         bundle={selection.bundle}
         toastClearance={toastClearance}
         onSettled={() => detailRef.current?.focus()}
+      />
+    )
+  else if (selection.kind === 'compose' && selection.compose === 'thread')
+    detail = (
+      <StartThreadDetail
+        key={`start-thread:${epoch}`}
+        workspaceId={workspaceId}
+        viewerMemberId={viewer.memberId}
+        toastClearance={toastClearance}
+        onOpened={(openedId) => {
+          // 연 대화를 고른다. 뒤로 가기로 대화 시작 칸에 돌아가지 않게 주소를 바꿔 끼운다
+          detailRef.current?.focus()
+          void navigate(paths.messageThread(workspaceId, openedId), { replace: true })
+        }}
       />
     )
   else if (selection.kind === 'compose')
@@ -292,15 +333,24 @@ export function MessageInbox({
             메시지
           </h1>
           {viewer.role === 'pm' ? (
-            <GuardedLink
-              to={paths.messageCompose(workspaceId)}
-              state={pane === 'list' ? FROM_LIST : undefined}
-              end
-              aria-current={highlighted?.kind === 'compose' ? 'page' : 'false'}
-              className={COMPOSE_LINK}
-            >
-              새 재촉
-            </GuardedLink>
+            <div className="flex items-center gap-4">
+              {(['reminder', 'thread'] as const).map((kind) => (
+                <GuardedLink
+                  key={kind}
+                  to={COMPOSE[kind].path(workspaceId)}
+                  state={pane === 'list' ? FROM_LIST : undefined}
+                  end
+                  aria-current={
+                    highlighted?.kind === 'compose' && highlighted.compose === kind
+                      ? 'page'
+                      : 'false'
+                  }
+                  className={COMPOSE_LINK}
+                >
+                  {COMPOSE[kind].title}
+                </GuardedLink>
+              ))}
+            </div>
           ) : null}
         </div>
         {listIndicator.pending ? (
@@ -396,8 +446,36 @@ function detailHeading(
   }
   if (selection.kind === 'bundle')
     return { title: selection.bundle.recipientName, subtitle: '보내기 전 확인' }
-  if (selection.kind === 'compose') return { title: '새 재촉', subtitle: null }
+  if (selection.kind === 'compose')
+    return { title: COMPOSE[selection.compose].title, subtitle: null }
   return { title: '메시지', subtitle: null }
+}
+
+/** 팀원의 빈 화면에서 PM 과의 자기 대화를 연다 */
+function StartOwnThread({
+  workspaceId,
+  memberId,
+  onOpened,
+}: {
+  workspaceId: string
+  memberId: string
+  onOpened: (threadId: string) => void
+}) {
+  const opening = useOpenThread(workspaceId)
+  return (
+    <div className="flex flex-col items-center gap-10">
+      <button
+        type="button"
+        className={`${EMPTY_ACTION} disabled:opacity-45`}
+        disabled={opening.pending}
+        aria-busy={opening.pending || undefined}
+        onClick={() => opening.open(memberId, (thread) => onOpened(thread.id))}
+      >
+        PM에게 메시지 보내기
+      </button>
+      <OpenThreadFailure failure={opening.failure} />
+    </div>
+  )
 }
 
 function InboxList({
@@ -584,10 +662,13 @@ function ThreadRow({
             {title}
           </span>
           {thread.dmFailed ? <span className={DM_FAILED_CHIP}>DM 못 보냄</span> : null}
+          {policy.audience === 'pm' && thread.webReply === 'unavailable' ? (
+            <span className={WEB_REPLY_CHIP}>웹 답장 불가</span>
+          ) : null}
         </span>
         {last === null ? null : (
           <span className="truncate text-meta leading-[1.5] text-dim">
-            {last.sender === policy.ownSender ? `나: ${last.body}` : last.body}
+            {isOwnMessage(policy, last) ? `나: ${last.body}` : last.body}
           </span>
         )}
       </span>
