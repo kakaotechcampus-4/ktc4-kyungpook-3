@@ -13,7 +13,7 @@ interface ChangeVariables {
 }
 
 /**
- * `PATCH /users/me` 로 아이디를 바꾼다 (#627). 성공하면 세션 캐시의 user 를 응답으로 바꾼다 — 다시 묻지 않는다.
+ * `PATCH /users/me` 로 아이디를 바꾼다 (#627). 성공하면 세션 캐시의 user 를 응답으로 바꾸고 다시 묻지 않는다.
  * 응답을 읽지 못하면 바뀌었을 수 있어 실패라고 하지 않고 쓰기 토스트를 띄운다. `새로고침` 은 세션을 다시 받는다 (D-184)
  */
 export function useUsernameChange() {

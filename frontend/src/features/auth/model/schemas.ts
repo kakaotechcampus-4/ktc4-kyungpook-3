@@ -57,7 +57,7 @@ export const signupCodeSchema = z.object({
 export type SignupCodeValues = z.infer<typeof signupCodeSchema>
 
 /**
- * 이메일 가입의 마지막 단계. 아이디는 여기서 검사하지 않는다 — 중복 확인(`useUsernameCheck`)이 지금 입력과 맞아야
+ * 이메일 가입의 마지막 단계. 아이디는 여기서 검사하지 않는다. 중복 확인(`useUsernameCheck`)이 지금 입력과 맞아야
  * `계정 만들기` 가 켜지고, 보낼 값도 그 확인의 정규화한 아이디다 (#627)
  */
 export const signupProfileSchema = z.object({
