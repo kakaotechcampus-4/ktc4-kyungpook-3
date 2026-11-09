@@ -37,6 +37,19 @@ const CASES: ScreenCase[] = [
     widths: [1280],
   },
   {
+    name: '로그인 휴대폰(H-1)',
+    scenario: 'signed-out',
+    path: '/login',
+    against: 'loaded',
+    anchors: [
+      "Manager's Manager",
+      '회의가 끝나면 할 일은 매스가 챙겨요',
+      '비밀번호를 잊으셨나요?',
+      '가입하기',
+    ],
+    widths: [390],
+  },
+  {
     name: '회원가입',
     scenario: 'signed-out',
     path: '/signup',

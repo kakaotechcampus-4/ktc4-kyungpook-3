@@ -11,6 +11,8 @@ import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
 import { recordRequests } from '@/shared/test/requests'
+import { stubViewport } from '@/shared/test/viewport'
+import { COMPACT_QUERY } from '@/shared/lib/compact-screen'
 import { renderApp } from './test/renderApp'
 import { walkSignup } from './test/walkSignup'
 
@@ -326,5 +328,48 @@ describe('인증 화면 재방문 (U2-6·U2-8)', () => {
     const app = renderApp('/login')
     expect(await screen.findByRole('heading', { name: '어떻게 시작할까요?' })).toBeInTheDocument()
     await app.expectPath('/onboarding/start')
+  })
+})
+
+describe('휴대폰 로그인은 시안 H-1 배치다 (#538)', () => {
+  beforeEach(() => {
+    stubViewport(true, COMPACT_QUERY)
+  })
+
+  it('매스와 한 줄 소개, 라벨 대신 placeholder 를 보이고 칸 이름은 남긴다', async () => {
+    await openLogin()
+    expect(screen.getByRole('heading', { level: 1, name: "Manager's Manager" })).toBeInTheDocument()
+    expect(screen.getByText('회의가 끝나면 할 일은 매스가 챙겨요')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: "Manager's Manager" })).toHaveAttribute('href', '/')
+    expect(screen.getByLabelText('이메일')).toHaveAttribute('placeholder', '이메일')
+    expect(screen.getByLabelText('비밀번호')).toHaveAttribute('placeholder', '비밀번호')
+    expect(screen.getByText('이메일', { selector: 'label' })).toHaveClass('sr-only')
+    expect(screen.queryByText('또는')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '카카오 로그인' })).toBeInTheDocument()
+  })
+
+  it('맨 아래 한 줄의 재설정·가입 링크는 넓은 화면과 같은 곳으로 간다', async () => {
+    const app = await openLogin()
+    const forgot = screen.getByRole('link', { name: '비밀번호를 잊으셨나요?' })
+    const signup = screen.getByRole('link', { name: '가입하기' })
+    expect(forgot.parentElement).toBe(signup.parentElement)
+    expect(signup).toHaveAttribute('href', '/signup')
+    expect(screen.queryByRole('link', { name: '회원가입' })).not.toBeInTheDocument()
+
+    await userEvent.click(forgot)
+    expect(await screen.findByRole('heading', { name: '비밀번호 재설정 요청' })).toBeInTheDocument()
+    await app.expectPath('/forgot-password')
+  })
+
+  it('이메일 로그인과 429 재설정 안내가 그대로 된다', async () => {
+    applyScenario('login-rate-limited')
+    await openLogin()
+    await fillLogin('pm@example.com', 'mock-password')
+    await userEvent.click(screen.getByRole('button', { name: '로그인' }))
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByRole('link', { name: '비밀번호 재설정하기' })).toHaveAttribute(
+      'href',
+      '/forgot-password',
+    )
   })
 })

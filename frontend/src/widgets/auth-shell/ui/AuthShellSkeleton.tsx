@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useCompactScreen } from '@/shared/lib/compact-screen'
 import { BrandMark } from '@/shared/ui/brand-mark'
 import { Mascot } from '@/shared/ui/mascot'
 import type { AuthShellProps } from './AuthShell'
@@ -11,11 +12,21 @@ import {
   COLUMN,
   HEADING,
   HEADING_ROW,
+  PHONE_BRAND,
+  PHONE_COLUMN,
+  PHONE_FORM,
+  PHONE_HEADING,
+  PHONE_INTRO,
+  PHONE_MASCOT_SIZE,
+  PHONE_SCREEN,
   ROW,
   SCREEN,
 } from './styles'
 
-export interface AuthShellSkeletonProps extends Pick<AuthShellProps, 'title' | 'aside'> {
+export interface AuthShellSkeletonProps extends Pick<
+  AuthShellProps,
+  'title' | 'aside' | 'phoneIntro'
+> {
   /** 폼 자리의 뼈대 */
   children: ReactNode
 }
@@ -25,7 +36,23 @@ export interface AuthShellSkeletonProps extends Pick<AuthShellProps, 'title' | '
  * 틀이 가운데 정렬이라 폼 칸의 높이도 같아야 한다. 폼 뼈대(features/auth 의 *FormSkeleton)가 그 높이를 맞춘다.
  * 정해진 글자도 자리표시라 스크린리더에서 뺀다. 기다림은 바깥 main 의 aria-busy 가 알린다
  */
-export function AuthShellSkeleton({ title, aside, children }: AuthShellSkeletonProps) {
+export function AuthShellSkeleton({ title, aside, phoneIntro, children }: AuthShellSkeletonProps) {
+  const compact = useCompactScreen()
+  if (compact && phoneIntro !== undefined)
+    return (
+      <main aria-busy="true" className={PHONE_SCREEN}>
+        <div aria-hidden="true" className={PHONE_COLUMN}>
+          <div className={PHONE_BRAND}>
+            <span className="inline-flex">
+              <Mascot pose={aside.pose} size={PHONE_MASCOT_SIZE} />
+            </span>
+            <p className={PHONE_HEADING}>{title}</p>
+            <p className={PHONE_INTRO}>{phoneIntro}</p>
+          </div>
+          <div className={PHONE_FORM}>{children}</div>
+        </div>
+      </main>
+    )
   return (
     <main aria-busy="true" className={SCREEN}>
       <div aria-hidden="true" className={ROW}>
