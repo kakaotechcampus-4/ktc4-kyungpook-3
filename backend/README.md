@@ -85,10 +85,11 @@ docker compose -f docker-compose.prod.yml logs -f api
 운영(이메일은 자리표시자다. 실제 주소를 문서나 셸 기록에 남기지 않는다).
 
 ```bash
-docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBER_PASSWORD api   python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com'
+docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBER_PASSWORD api \
+  python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com'
 ```
 
-로컬 리허설은 API 를 띄운 뒤 같은 명령을 `python -m app.cli.seed_demo --email-pattern 'demo+{n}@example.com'` 로 돌린다. `--dry-run` 은 만들 계정 수와 회의 제목만 출력하고 DB·HTTP 를 건드리지 않는다(`SERVICE_TOKEN` 도 필요 없다).
+로컬 리허설은 API 를 띄운 뒤 같은 명령을 `python -m app.cli.seed_demo --email-pattern 'demo+{n}@example.com'` 로 돌린다. `--dry-run` 은 만들 계정 수와 회의 제목만 출력하고 DB·HTTP 를 건드리지 않는다(`SERVICE_TOKEN` 은 필요 없지만 비밀번호 검사는 하므로 비밀번호 환경변수는 필요하다). 비밀번호를 환경변수로 넘기지 않고 입력받으려면 터미널(TTY)이 필요하다(SSH 는 `-t`). 컨테이너에는 `SERVICE_TOKEN` 이 `env_file` 로 이미 들어 있다.
 
 | 옵션·환경변수 | 뜻 |
 |---|---|
@@ -106,7 +107,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 |---|---|
 | 0 | 성공 |
 | 1 | 시드 실패(데이터·API·임베딩 대기 오류). 한 줄이 stderr 에 나온다. 같은 명령을 다시 실행하면 이어 간다 |
-| 2 | 입력·환경 부족(비밀번호, `SERVICE_TOKEN`, 옵션). 아무것도 쓰지 않았다 |
+| 2 | 입력·환경 부족(비밀번호, 이메일 패턴, `SERVICE_TOKEN`, 옵션). 아무것도 쓰지 않았다 |
 | 3 | 데이터는 다 썼지만 gate 분포에 auto·review·hold 중 0 건이 있다. JSON 은 그대로 나오고 stderr 에 경고가 나온다 |
 
 알아 둘 점:
