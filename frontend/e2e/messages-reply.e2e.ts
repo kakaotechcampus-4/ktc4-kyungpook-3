@@ -3,7 +3,7 @@ import type { Locator } from '@playwright/test'
 import { start } from './support'
 
 /*
- * #367 — 팀원 행에도 연결된 PM 은 자기 대화(th_06, mb_01)에서 웹 답장을 쓰고, 남의 대화(th_01)에는 답장 칸이 없다.
+ * #367 — 팀원 행에도 연결된 PM 은 자기 대화(th_06, mb_01)에서 웹 답장을 쓴다. #519 — 남의 대화(th_01)에는 그 팀원에게 쓰는 칸이 있다.
  * #417 — 그 자기 대화는 목록 맨 위 `내 리마인드` 구역에 있고 팀원 화면 규칙(기다림 표시 없음)으로 그린다.
  * #371 — 일반 팀원(mb_01)도 메시지 화면에서 자기 대화에 웹 답장을 쓴다.
  * #474 — 답장 칸은 보내기 버튼과 한 줄이다. 한 줄 44px 에서 92px 까지 자라고 그 뒤로는 칸 안에서 스크롤한다.
@@ -21,7 +21,7 @@ test('PM 은 자기 대화에서 웹 답장을 보내고 새로고침 뒤에도 
   await start(page, 'messages-pm-self', '/workspaces/ws_01/messages/threads/th_06')
   const reply = page.getByRole('form', { name: '답장' })
   await expect(reply).toBeVisible()
-  const field = reply.getByRole('textbox', { name: '답장' })
+  const field = reply.getByRole('textbox', { name: 'PM에게 메시지' })
   const send = reply.getByRole('button', { name: '답장 보내기' })
   await expect(send).toBeDisabled()
 
@@ -63,10 +63,14 @@ test('PM 의 자기 대화는 목록 맨 위 내 리마인드 구역에 있고, 
   await expect(detail.getByRole('link', { name: '확인하기' })).toBeVisible()
 })
 
-test('PM 이 남의 대화를 열면 답장 칸 대신 안내 바가 보인다', async ({ page }) => {
+test('PM 이 남의 대화를 열면 안내 바 없이 그 팀원에게 쓰는 칸이 보인다 (#519)', async ({
+  page,
+}) => {
   await start(page, 'messages-pm-self', '/workspaces/ws_01/messages/threads/th_01')
   await expect(page.getByRole('region', { name: '대화 내용' })).toBeVisible()
-  await expect(page.getByText(/^메시지는 항상/)).toBeVisible()
+  const form = page.getByRole('form', { name: '메시지' })
+  await expect(form.getByRole('textbox', { name: '이재환님에게 메시지' })).toBeVisible()
+  await expect(form.getByRole('button', { name: '메시지 보내기' })).toBeDisabled()
   await expect(page.getByRole('form', { name: '답장' })).toHaveCount(0)
 })
 
@@ -76,7 +80,7 @@ test('팀원은 메시지 화면에서 자기 대화에 Enter 로 웹 답장을 
   await start(page, 'messages-member', '/workspaces/ws_01/messages')
   const reply = page.getByRole('form', { name: '답장' })
   await expect(reply).toBeVisible()
-  const field = reply.getByRole('textbox', { name: '답장' })
+  const field = reply.getByRole('textbox', { name: 'PM에게 메시지' })
   await expect(reply.getByRole('button', { name: '답장 보내기' })).toBeDisabled()
 
   await field.fill('팀원이 웹에서 남긴 답장이에요')
@@ -99,7 +103,7 @@ test('답장 칸은 한 줄 44px 에서 92px 까지 자라고 그 뒤로는 칸 
 }) => {
   await start(page, 'messages-member', '/workspaces/ws_01/messages')
   const reply = page.getByRole('form', { name: '답장' })
-  const field = reply.getByRole('textbox', { name: '답장' })
+  const field = reply.getByRole('textbox', { name: 'PM에게 메시지' })
   const send = reply.getByRole('button', { name: '답장 보내기' })
   await expect(field).toBeVisible()
 

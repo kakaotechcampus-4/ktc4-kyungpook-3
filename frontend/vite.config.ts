@@ -30,6 +30,13 @@ export default defineConfig(({ mode }) => ({
   server: {
     port: 5173,
     proxy: {
+      // 대화 신호 웹소켓. 서버는 Origin 의 host:port 가 Host 와 다르면 거절해서 Host 를 바꾸지 않는다.
+      // Vite 는 키 순서대로 맞춰 보므로 /api 보다 앞에 둔다
+      '^/api/v1/workspaces/[^/]+/messages/ws$': {
+        target: proxyTarget(mode),
+        ws: true,
+        changeOrigin: false,
+      },
       // 백엔드에 CORS 가 없다. 이 프록시가 로컬 연동의 유일한 경로다.
       // 경로는 그대로 넘긴다(/api/v1/...). 세션 쿠키는 Domain 없이 오므로 localhost 에 저장된다
       '/api': { target: proxyTarget(mode), changeOrigin: true },

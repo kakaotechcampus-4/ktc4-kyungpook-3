@@ -65,7 +65,7 @@ it('목록에서 대화를 누르면 상세가 화면 전체로 열리고, 뒤�
   await userEvent.click(row)
   await app.expectPath(row.getAttribute('href')!)
   expect(inboxList()).toBeNull()
-  expect(await screen.findByRole('textbox', { name: '답장' })).toBeVisible()
+  expect(await screen.findByRole('textbox', { name: 'PM에게 메시지' })).toBeVisible()
   // 시안(PwaThreadMember)처럼 셸 헤더와 아래 탭 막대 대신 뒤로 가기·제목 머리다
   expect(tabBar()).toBeNull()
   expect(screen.queryByRole('banner')).toBeNull()
@@ -82,7 +82,7 @@ it('주소로 바로 연 대화의 뒤로 가기는 목록으로 바꿔 끼운�
   stubViewportWidth(360)
   applyScenario('messages-member')
   const app = renderApp(paths.messageThread('ws_01', 'th_06'))
-  await screen.findByRole('textbox', { name: '답장' })
+  await screen.findByRole('textbox', { name: 'PM에게 메시지' })
   await userEvent.click(backLink())
   await app.expectPath(paths.messages('ws_01'))
   expect(app.visitedActions().at(-1)).toBe('REPLACE')
@@ -108,18 +108,18 @@ it('768 경계를 넘나들어도 고른 대화와 쓰던 답장이 남는다', 
   const resize = stubViewportWidth(390)
   applyScenario('messages-pm-self')
   renderApp(paths.messageThread('ws_01', 'th_06'))
-  const field = await screen.findByRole('textbox', { name: '답장' })
+  const field = await screen.findByRole('textbox', { name: 'PM에게 메시지' })
   await userEvent.type(field, '쓰던 답장')
 
   resize(1024)
   expect(screen.getByRole('complementary', { name: '메시지 목록' })).toBeVisible()
-  expect(screen.getByRole('textbox', { name: '답장' })).toBe(field)
+  expect(screen.getByRole('textbox', { name: 'PM에게 메시지' })).toBe(field)
   expect(field).toHaveValue('쓰던 답장')
   expect(tabBar()).not.toBeNull()
 
   resize(390)
   expect(inboxList()).toBeNull()
-  expect(screen.getByRole('textbox', { name: '답장' })).toBe(field)
+  expect(screen.getByRole('textbox', { name: 'PM에게 메시지' })).toBe(field)
   expect(field).toHaveValue('쓰던 답장')
   expect(backLink()).toBeVisible()
 })
@@ -129,13 +129,13 @@ it('휴대폰 목록의 기본 대화에서 쓰던 답장을 이탈 확인에서
   applyScenario('messages-member')
   // 팀원의 첫 대화는 넓은 화면이 목록 주소에서 대신 고르는 대화다 — 목록으로 돌아가도 같은 상세가 숨어 남던 곳이다
   const app = renderApp(paths.messageThread('ws_01', 'th_06'))
-  await userEvent.type(await screen.findByRole('textbox', { name: '답장' }), '버릴 답장')
+  await userEvent.type(await screen.findByRole('textbox', { name: 'PM에게 메시지' }), '버릴 답장')
 
   await userEvent.click(backLink())
   const prompt = await screen.findByRole('dialog')
   await userEvent.click(within(prompt).getByRole('button', { name: '변경 내용 버리고 나가기' }))
   await app.expectPath(paths.messages('ws_01'))
-  expect(screen.queryByRole('textbox', { name: '답장', hidden: true })).toBeNull()
+  expect(screen.queryByRole('textbox', { name: 'PM에게 메시지', hidden: true })).toBeNull()
 
   const threads = await within(
     await screen.findByRole('complementary', { name: '메시지 목록' }),
@@ -143,7 +143,7 @@ it('휴대폰 목록의 기본 대화에서 쓰던 답장을 이탈 확인에서
   await userEvent.click(within(threads).getAllByRole('link')[0])
   await app.expectPath(paths.messageThread('ws_01', 'th_06'))
   expect(screen.queryByRole('dialog')).toBeNull()
-  expect(await screen.findByRole('textbox', { name: '답장' })).toHaveValue('')
+  expect(await screen.findByRole('textbox', { name: 'PM에게 메시지' })).toHaveValue('')
 })
 
 it('넓은 화면 두 단에서 고른 대화는 휴대폰 폭에서 뒤로 가기가 이전 상세가 아니라 목록으로 간다', async () => {
@@ -219,7 +219,7 @@ it('가상 키보드가 보이는 영역을 줄이면 화면 전체 상세를 �
   vi.stubGlobal('visualViewport', viewport)
   applyScenario('messages-member')
   renderApp(paths.messageThread('ws_01', 'th_06'))
-  await screen.findByRole('textbox', { name: '답장' })
+  await screen.findByRole('textbox', { name: 'PM에게 메시지' })
   const main = screen.getByRole('region', { name: '메시지 내용' }).closest('main')!
   expect(main.style.position).toBe('')
 
@@ -232,4 +232,22 @@ it('가상 키보드가 보이는 영역을 줄이면 화면 전체 상세를 �
   viewport.offsetTop = 0
   act(() => listeners.forEach((listener) => listener()))
   expect(main.style.position).toBe('')
+})
+
+it('휴대폰 목록의 새 대화는 상세를 화면 전체로 열고, 머리 제목이 새 대화다 (#519)', async () => {
+  stubViewportWidth(390)
+  const app = renderApp(paths.messages('ws_01'))
+  const list = await screen.findByRole('complementary', { name: '메시지 목록' })
+  await userEvent.click(within(list).getByRole('link', { name: '새 대화' }))
+  await app.expectSearch('?new=thread')
+  expect(inboxList()).toBeNull()
+  expect(tabBar()).toBeNull()
+  expect(within(detailArea()!).getByText('새 대화', { selector: 'p' })).toBeVisible()
+  expect(
+    await within(detailArea()!).findByRole('heading', { level: 2, name: '새 대화' }),
+  ).toBeVisible()
+
+  await userEvent.click(backLink())
+  await app.expectPath(paths.messages('ws_01'))
+  expect(await screen.findByRole('complementary', { name: '메시지 목록' })).toBeVisible()
 })

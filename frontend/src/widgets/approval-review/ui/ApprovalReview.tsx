@@ -6,6 +6,7 @@ import {
   approvalDetailQueryOptions,
   dueFillSuggestion,
   isScopeChange,
+  mergedCount,
   planApprovalResolution,
   taskCreateValues,
   taskUpdateChanges,
@@ -13,7 +14,9 @@ import {
 import type {
   Approval,
   ApprovalMissing,
+  MergedApprovalItem,
   TaskCreateApproval,
+  TaskCreateFields,
   TaskUpdateApproval,
   UnsupportedApproval,
 } from '@/entities/approval'
@@ -35,7 +38,11 @@ import {
   useTaskCreateOverrides,
   useTaskUpdateOverrides,
 } from '@/features/approval-resolve'
-import type { ApprovalResolve, ApprovalResolveProblem } from '@/features/approval-resolve'
+import type {
+  ApprovalResolve,
+  ApprovalResolveProblem,
+  TaskCreateOverrides,
+} from '@/features/approval-resolve'
 import { TaskNotionSyncStatus } from '@/features/task-notion-sync'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
@@ -91,6 +98,11 @@ const TD = 'border-b border-line py-10 pr-16 tabular-nums'
 const LINK = 'text-body font-semibold text-ink underline underline-offset-4 hover:text-sub'
 const ALERT = 'flex flex-col gap-12 rounded-16 border border-line-strong px-20 py-18'
 const SECTION_TITLE = 'text-[17px] leading-[1.55] font-bold tracking-h2 text-ink'
+const ASSIGNEE_MARK =
+  'inline-flex h-20 shrink-0 items-center rounded-6 bg-control px-7 text-[11px] leading-none font-semibold text-sub'
+const TOGGLE =
+  'self-start text-caption font-semibold text-sub underline-offset-2 hover:text-ink hover:underline'
+const MERGED_QUOTE = 'text-body leading-[1.6] font-semibold text-ink'
 
 const MEMBERS_LOADING_REASON = '팀원 목록을 불러온 뒤 승인할 수 있어요.'
 
@@ -193,6 +205,8 @@ interface ReviewContext {
   recordMembers: readonly Member[] | undefined
   names: ReadonlyMap<string, string>
   meeting: MeetingSummary | undefined
+  /** 합쳐진 근거의 회의를 찾는다. 아직 모르면 undefined */
+  meetings: readonly MeetingSummary[] | undefined
   resolver: ApprovalResolve
 }
 
@@ -218,6 +232,7 @@ function ApprovalBody({
     recordMembers: recordMembers.data ?? members.data,
     names,
     meeting: meetings.data?.find(({ id }) => id === meetingId),
+    meetings: meetings.data,
     resolver,
   }
 
@@ -245,7 +260,7 @@ function ApprovalBody({
 
 /** 처리 실패 중 칸·충돌이 아닌 것. 이미 처리됨은 결과 영역이 알린다 */
 function problemMessage(problem: ApprovalResolveProblem | null): string | null {
-  return problem?.kind === 'error' ? problem.message : null
+  return problem?.kind === 'error' || problem?.kind === 'changed' ? problem.message : null
 }
 
 type ReviewedApproval = TaskCreateApproval | TaskUpdateApproval
@@ -392,13 +407,30 @@ function EvidenceFigure({
       ) : (
         <blockquote className={QUOTE}>“{quote}”</blockquote>
       )}
-      {approval.kind === 'task_create' ? (
-        <p className={RAW}>
-          원문 담당자 <RawValue value={approval.assigneeRaw} missing={gaps.includes('assignee')} />{' '}
-          · 원문 마감 <RawValue value={approval.dueRaw} missing={gaps.includes('due')} />
-        </p>
+      {approval.kind === 'task_create' && approval.mergedItems.length === 0 ? (
+        <RawLine approval={approval} gaps={gaps} />
       ) : null}
     </figure>
+  )
+}
+
+/**
+ * 카드의 원문 담당자·마감. 합친 카드는 이 값이 담당자·마감을 정한 다른 회의의 원문이라, 대표 근거 밖에서
+ * 합친 제안의 원문이라고 밝힌다 (#512)
+ */
+function RawLine({
+  approval,
+  gaps,
+}: {
+  approval: TaskCreateApproval
+  gaps: readonly ApprovalMissing[]
+}) {
+  return (
+    <p className={RAW}>
+      {approval.mergedItems.length === 0 ? null : '합친 제안의 '}
+      원문 담당자 <RawValue value={approval.assigneeRaw} missing={gaps.includes('assignee')} /> ·
+      원문 마감 <RawValue value={approval.dueRaw} missing={gaps.includes('due')} />
+    </p>
   )
 }
 
@@ -419,7 +451,8 @@ function EvidenceBlock({
 }) {
   const titleId = useId()
   const figure = <EvidenceFigure approval={approval} context={context} gaps={gaps} />
-  if (approval.kind === 'task_create') return <div className={EVIDENCE}>{figure}</div>
+  if (approval.kind === 'task_create')
+    return <CreateEvidence approval={approval} context={context} figure={figure} gaps={gaps} />
   const scope = isScopeChange(approval)
   if (!scope && approval.replyMessageId === null) return <div className={EVIDENCE}>{figure}</div>
   return (
@@ -439,6 +472,193 @@ function EvidenceBlock({
   )
 }
 
+/**
+ * 생성 승인의 근거 (#512). 합쳐진 카드면 카드를 만든 회의의 대표 근거와 합친 내용(합친 제안의 원문,
+ * 뒤에 합쳐진 근거)을 나누고, 담당자를 정한 근거(`assigneeItemId`)에 표시한다. 합쳐진 근거는 펼쳐 본다
+ */
+function CreateEvidence({
+  approval,
+  context,
+  figure,
+  gaps,
+}: {
+  approval: TaskCreateApproval
+  context: ReviewContext
+  figure: ReactNode
+  gaps: readonly ApprovalMissing[]
+}) {
+  const titleId = useId()
+  const mergedId = useId()
+  const listId = useId()
+  const [open, setOpen] = useState(false)
+  const count = mergedCount(approval)
+  if (count === null) return <div className={EVIDENCE}>{figure}</div>
+  return (
+    <div className={EVIDENCE}>
+      <section aria-labelledby={titleId} className="flex flex-col gap-10">
+        <h3 id={titleId} className={`${BLOCK_TITLE} flex items-center gap-8`}>
+          대표 근거 · 카드를 만든 회의
+          {approval.assigneeItemId === approval.extractionItemId ? <AssigneeMark /> : null}
+        </h3>
+        {figure}
+      </section>
+      <section
+        aria-labelledby={mergedId}
+        className="flex flex-col gap-12 border-t border-divider pt-12"
+      >
+        <h3 id={mergedId} className="sr-only">
+          합친 내용
+        </h3>
+        <p className={NOTE}>
+          회의 {count.meetings}곳의 항목 {count.items}개를 합친 확인 요청이에요. 제목·담당자·마감은
+          합친 뒤의 값이에요.
+        </p>
+        <RawLine approval={approval} gaps={gaps} />
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={listId}
+          className={TOGGLE}
+          onClick={() => setOpen((value) => !value)}
+        >
+          {`합쳐진 근거 ${approval.mergedItems.length}건 ${open ? '접기' : '보기'}`}
+        </button>
+        <ol id={listId} hidden={!open} aria-label="합쳐진 근거" className="flex flex-col gap-14">
+          {open
+            ? approval.mergedItems.map((item, index) => (
+                <MergedEvidence
+                  key={item.extractionItemId ?? index}
+                  item={item}
+                  context={context}
+                  decidesAssignee={
+                    item.extractionItemId !== null &&
+                    item.extractionItemId === approval.assigneeItemId
+                  }
+                />
+              ))
+            : null}
+        </ol>
+      </section>
+    </div>
+  )
+}
+
+function AssigneeMark() {
+  return <span className={ASSIGNEE_MARK}>담당자 근거</span>
+}
+
+function MergedEvidence({
+  item,
+  context,
+  decidesAssignee,
+}: {
+  item: MergedApprovalItem
+  context: ReviewContext
+  decidesAssignee: boolean
+}) {
+  const meeting = context.meetings?.find(({ id }) => id === item.meetingId)
+  const speaker = speakerName(context.members, item.evidence) ?? '알 수 없음'
+  return (
+    <li className="flex flex-col gap-6">
+      <div className={EVIDENCE_HEAD}>
+        <span className={`${EVIDENCE_META} flex flex-wrap items-center gap-x-8 gap-y-4`}>
+          <span>
+            {item.meetingId === null ? '회의 알 수 없음' : (meeting?.title ?? '연결된 회의')} ·
+            전사문 {evidenceMoment(meeting, item.evidence.atMs) ?? '시각 알 수 없음'} · {speaker}
+          </span>
+          {decidesAssignee ? <AssigneeMark /> : null}
+        </span>
+        {item.meetingId === null ? null : (
+          <GuardedLink
+            to={paths.meetings(context.workspaceId, item.meetingId)}
+            className={HEAD_LINK}
+          >
+            원문 듣기
+            <Icon name="external" size={12} />
+          </GuardedLink>
+        )}
+      </div>
+      {item.evidence.quote === null ? (
+        <p className={NOTE}>근거 문장이 없어요.</p>
+      ) : (
+        <blockquote className={MERGED_QUOTE}>“{item.evidence.quote}”</blockquote>
+      )}
+      {item.docText === null ? null : <p className={RAW}>{item.docText}</p>}
+      {item.mergedAt === null ? null : (
+        <p className={EVIDENCE_META}>합친 시각 {formatSeoulDateTime(item.mergedAt)}</p>
+      )}
+    </li>
+  )
+}
+
+const CREATE_FIELD_LABEL: Record<keyof TaskCreateFields, string> = {
+  taskTitle: '제목',
+  assigneeMemberId: '담당자',
+  dueDate: '마감',
+}
+
+function createFieldValue(
+  field: keyof TaskCreateFields,
+  fields: TaskCreateFields,
+  names: ReadonlyMap<string, string>,
+): string {
+  const value = fields[field]
+  if (value === null || value.trim() === '') return '미정'
+  return field === 'assigneeMemberId' ? memberLabel(value, names) : value
+}
+
+/**
+ * 본 뒤 바뀐 카드 (#547 APPROVAL_CHANGED). 처음 본 값·새 제안·승인할 값을 나란히 보인다. 고치지 않은 칸은
+ * 새 제안을 따르고 PM 이 고친 칸은 그대로라, 승인할 값 열에 무엇이 남았는지 드러난다
+ */
+function ChangedNotice({
+  change,
+  overrides,
+  names,
+}: {
+  change: NonNullable<TaskCreateOverrides['change']>
+  overrides: TaskCreateOverrides
+  names: ReadonlyMap<string, string>
+}) {
+  const was = taskCreateValues(change.before)
+  const proposed = taskCreateValues(overrides.seen)
+  const added = change.diff.addedItems.length
+  return (
+    <section role="alert" aria-label="바뀐 내용" className={ALERT}>
+      <h3 className={SECTION_TITLE}>보신 뒤에 내용이 바뀌었어요</h3>
+      <p className={NOTE}>
+        {added > 0 ? `다른 회의의 항목 ${added}개가 합쳐졌어요. ` : null}
+        고치지 않은 칸은 새 값으로 바꾸고 직접 고친 칸은 그대로 뒀어요. 확인한 뒤 다시 처리해
+        주세요.
+      </p>
+      {change.diff.fields.length === 0 ? null : (
+        <table aria-label="바뀐 칸" className={TABLE}>
+          <thead>
+            <tr>
+              <th className={TH}>항목</th>
+              <th className={TH}>보던 값</th>
+              <th className={TH}>새 제안</th>
+              <th className={TH}>승인할 값</th>
+            </tr>
+          </thead>
+          <tbody>
+            {change.diff.fields.map((field) => (
+              <tr key={field}>
+                <th scope="row" className={`${TD} font-semibold`}>
+                  {CREATE_FIELD_LABEL[field]}
+                </th>
+                <td className={TD}>{createFieldValue(field, was, names)}</td>
+                <td className={TD}>{createFieldValue(field, proposed, names)}</td>
+                <td className={TD}>{createFieldValue(field, overrides.fields, names)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  )
+}
+
 const DUE_NOTE = '마감을 비워 두면 미정으로 올라가요'
 
 function TaskCreatePending({
@@ -454,38 +674,54 @@ function TaskCreatePending({
   const memberIds = useMemo(() => (members ?? []).map(({ id }) => id), [members])
   const overrides = useTaskCreateOverrides(approval, memberIds)
   useUnsavedChanges(overrides.dirty)
+  // 처리는 폼이 맞춰진 카드로 한다. 그 카드의 지문이어야 PM 이 본 뒤 바뀐 카드를 서버가 막는다 (#547)
+  const { seen, change } = overrides
   const gaps = openGaps(overrides.attention)
   const edits = {
     kind: 'task_create',
     values: overrides.edits,
     saveAlias: overrides.saveAlias,
   } as const
-  const plan = planApprovalResolution(approval, 'approved', { memberIds, edits })
+  const plan = planApprovalResolution(seen, 'approved', { memberIds, edits })
   const blockedReason =
     members === undefined ? MEMBERS_LOADING_REASON : plan.ok ? null : plan.reason
   const meetingDate = meeting === undefined ? null : seoulDateOf(meeting.startedAt)
+  const count = mergedCount(seen)
 
   return (
     <>
-      <ReviewHeader approval={approval} context={context} summary={gapSummary(gaps)} />
+      <ReviewHeader approval={seen} context={context} summary={gapSummary(gaps)} />
       <ReviewCard
-        approval={approval}
+        approval={seen}
         context={context}
         title="Notion 에 올라갈 태스크"
         footer={
           <>
-            <FormErrorPanel message={problemMessage(resolver.problem)} />
+            <FormErrorPanel
+              message={
+                change !== null && resolver.problem?.kind === 'changed'
+                  ? null
+                  : problemMessage(resolver.problem)
+              }
+            />
+            {count === null ? null : (
+              <p className={NOTE}>반려하면 합쳐진 항목 {count.items}개가 모두 반려돼요.</p>
+            )}
             <ApprovalActions
               approveBlockedReason={blockedReason}
               note={DUE_NOTE}
+              approveLabel={change === null ? '승인' : '새 내용을 확인했어요, 승인'}
               pending={resolver.pending}
               pendingDecision={resolver.pendingDecision}
-              onApprove={() => resolver.approve(approval, edits)}
-              onReject={() => resolver.reject(approval)}
+              onApprove={() => resolver.approve(seen, edits)}
+              onReject={() => resolver.reject(seen)}
             />
           </>
         }
       >
+        {change === null ? null : (
+          <ChangedNotice change={change} overrides={overrides} names={context.names} />
+        )}
         <TaskCreateOverrideFields
           overrides={overrides}
           members={members}
@@ -494,13 +730,13 @@ function TaskCreatePending({
           autoFocusFirstEmpty={fillIn}
           onInputChange={resolver.invalidateConfirmation}
         />
-        <EvidenceBlock approval={approval} context={context} gaps={gaps} />
+        <EvidenceBlock approval={seen} context={context} gaps={gaps} />
       </ReviewCard>
       {gaps.length === 0 ? null : (
         <GapReasons
-          approval={approval}
+          approval={seen}
           gaps={gaps}
-          dueFill={dueFillSuggestion(approval, meetingDate)}
+          dueFill={dueFillSuggestion(seen, meetingDate)}
           disabled={resolver.pending}
           onFillDue={(date) => {
             resolver.invalidateConfirmation()

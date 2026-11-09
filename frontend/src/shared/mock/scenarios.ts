@@ -11,8 +11,10 @@ import {
   mergeSourceBundle,
   messagesMemberBundle,
   messagesMemberThread,
+  pmThreadMessages,
   reply,
   schedulePassedBundle,
+  SECOND_PM,
 } from './fixtures/message'
 import { completeMeeting, failMeeting, setMeetingFlowMode, startChatMeeting } from './meetingFlow'
 import { notificationFixtures } from './fixtures/notification'
@@ -25,6 +27,8 @@ import {
 } from './passwordResetScenarios'
 import { SPEAKER_SCENARIOS, createSpeakerScenarioDb, isSpeakerScenario } from './speakerScenarios'
 import { blockBySilence, createTask } from './task-state'
+import type { MockExtractionItem } from './aliasLearning'
+import { mergeIntoApproval } from './approvalMerge'
 
 /*
  * 브라우저·E2E 용 시작 상태. 모두 픽스처 계정 pm@example.com / mock-password 로 로그인한다.
@@ -66,6 +70,10 @@ export const MOCK_SCENARIOS = [
   'approval-scope',
   // #397 채팅 회의(mt_08)에서 나온 생성 승인 ap_07. 근거 시각이 실제 작성 시각이다
   'approval-chat',
+  // #512 ap_03(배포 문서 보완)에 2주차 정기회의(mt_07)의 항목 it_21 이 합쳐져 담당자·마감이 바뀌었다
+  'approval-merged',
+  // #512 같은 합치기가 PM 이 카드를 연 뒤에 일어난다. 첫 승인·반려가 409 APPROVAL_CHANGED 다
+  'approval-merged-after-view',
   // #419 회의록 mt_09 의 수정 제안 it_08(tk_04 마감 변경). 승인 전에도 task_id 가 tk_04 다
   'minutes-edit-pending',
   'notion-sync-pending',
@@ -99,6 +107,8 @@ export const MOCK_SCENARIOS = [
   'messages-schedule-passed',
   'messages-merge',
   'messages-long-content',
+  // #519·#525 PM 이 웹에서 쓴 글. 다른 PM 의 글과 내 글, 웹 계정이 이어진 팀원(박민수)과 아닌 팀원(이재환)
+  'messages-pm-thread',
   // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
   'settings-discord-skipped',
   'settings-unmapped',
@@ -324,6 +334,45 @@ function resolvedCreateApproval(state: MockDb): void {
     .flatMap(({ items }) => items)
     .find(({ item_id }) => item_id === approval.payload.extraction_item_id)
   if (item) item.task_id = task.task_id
+}
+
+/**
+ * 2주차 정기회의(mt_07) 항목 it_21. 같은 일(배포 문서)을 이재환에게 26일까지 맡긴다. ap_03 에 합쳐지면
+ * 담당자를 정한 항목(`assignee_item_id`)이 된다. `afterView` 면 합치지 않고 처리 요청 직전에 합쳐지게 둔다
+ */
+function mergeIntoDeployDoc(state: MockDb, afterView: boolean): void {
+  const item: MockExtractionItem = {
+    item_id: 'it_21',
+    task: { title: '배포 문서 마무리', confidence: 0.9 },
+    assignee: {
+      raw: '재환',
+      member_id: 'mb_03',
+      display_name: '이재환',
+      confidence: 0.9,
+      needs_check: false,
+    },
+    due_date: { value: '2026-09-26', raw: '26일', confidence: 0.9 },
+    confidence: 0.85,
+    gate: 'review',
+    evidence: {
+      quote: '배포 문서는 재환님이 26일까지 마무리해 주세요.',
+      speaker: '1123',
+      speaker_member_id: 'mb_01',
+      at_ms: 1_250_000,
+    },
+    reverted_at: null,
+    task_id: null,
+    approval_id: null,
+    approval_status: null,
+    alias_candidate: false,
+    alias_text: null,
+  }
+  const extraction = state.extractions.find(({ meeting_id }) => meeting_id === 'mt_07')
+  if (!extraction) throw new Error('mock extraction for mt_07 is missing')
+  extraction.items.push(item)
+  const facts = { category: 'assignee', status: null, docText: null }
+  if (afterView) item.merge_into = { approval_id: 'ap_03', ...facts }
+  else mergeIntoApproval(approvalOf(state, 'ap_03'), 'mt_07', item, facts, '2026-09-17T03:00:00Z')
 }
 
 function conflictingUpdateApproval(state: MockDb): void {
@@ -718,6 +767,11 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       signInWith(state, ['ws_01'], 'ws_01')
       addChatApproval(state)
       break
+    case 'approval-merged':
+    case 'approval-merged-after-view':
+      signInWith(state, ['ws_01'], 'ws_01')
+      mergeIntoDeployDoc(state, scenario === 'approval-merged-after-view')
+      break
     case 'minutes-edit-pending':
       signInWith(state, ['ws_01'], 'ws_01')
       addEditProposal(state)
@@ -892,6 +946,26 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
           : bundle,
       )
       state.messageBundles.push(structuredClone(mergeSourceBundle))
+      break
+    case 'messages-pm-thread':
+      // 두 번째 PM 오지현(mb_06)이 이재환(th_01)에게 쓴 글은 Discord 가 없어 가지 못했다. 김서연(mb_01)은 박민수(th_02)에게 썼다.
+      // 박민수만 초대를 수락해 웹 계정이 이어졌다 — 이재환은 웹 답장 불가다
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.members.push({
+        ...SECOND_PM,
+        workspace_id: 'ws_01',
+        notion_name: null,
+        role: 'pm',
+        created_at: '2026-09-02T00:00:00Z',
+      })
+      for (const { thread_id, message } of pmThreadMessages)
+        state.messageThreads
+          .find((thread) => thread.thread_id === thread_id)
+          ?.messages.push(structuredClone(message))
+      state.invitations.push({
+        ...invitation('iv_01', 'mb_02', 'minsu@example.com', 'accepted', '2026-09-15T09:00:00Z'),
+        accepted_user_id: 'us_02',
+      })
       break
     case 'messages-long-content':
       // messages-default 에 긴 문구를 더한다. 공간(봇) 이름과 이재환(bd_01·th_01)의 이름이 띄어 쓰지 않은 긴 이름이고,
