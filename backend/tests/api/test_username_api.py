@@ -111,10 +111,11 @@ def test_change_needs_a_login(mdb):
     assert _error(_client().patch(ME, json={"username": "dongwoo"})) == (401, "UNAUTHENTICATED")
 
 
-@pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL(PostgreSQL)이 없습니다.")
-@pytest.mark.parametrize("mdb", ["postgresql"], indirect=True)
-def test_two_accounts_racing_for_one_username_leave_one_owner(mdb):
-    clients = [_signed_up("a@example.com"), _signed_up("b@example.com")]
+pg_only = pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL(PostgreSQL)이 없습니다.")
+
+
+def _race(mdb, clients, username="dongwoo"):
+    """요청마다 세션을 새로 열어 PATCH 를 겹친다."""
     make = sessionmaker(bind=mdb.get_bind(), autoflush=False)
 
     def per_request():
@@ -127,7 +128,7 @@ def test_two_accounts_racing_for_one_username_leave_one_owner(mdb):
 
     def run(i):
         start.wait()
-        results[i] = clients[i].patch(ME, json={"username": "dongwoo"})
+        results[i] = clients[i].patch(ME, json={"username": username})
 
     threads = [threading.Thread(target=run, args=(i,)) for i in range(len(clients))]
     for t in threads:
@@ -135,7 +136,25 @@ def test_two_accounts_racing_for_one_username_leave_one_owner(mdb):
     for t in threads:
         t.join()
     mdb.rollback()
+    return results
+
+
+@pg_only
+@pytest.mark.parametrize("mdb", ["postgresql"], indirect=True)
+def test_two_accounts_racing_for_one_username_leave_one_owner(mdb):
+    results = _race(mdb, [_signed_up("a@example.com"), _signed_up("b@example.com")])
 
     assert sorted(r.status_code for r in results) == [200, 409]
     assert {r.json()["error"]["code"] for r in results if r.status_code == 409} == {"USERNAME_TAKEN"}
     assert mdb.scalars(select(User.username).where(User.username == "dongwoo")).all() == ["dongwoo"]
+
+
+@pg_only
+@pytest.mark.parametrize("mdb", ["postgresql"], indirect=True)
+def test_double_submitted_change_succeeds_once_without_a_deadlock(mdb):
+    client = _signed_up("a@example.com")
+
+    results = _race(mdb, [client, client])
+
+    assert [r.status_code for r in results] == [200, 200]
+    assert {r.json()["data"]["username"] for r in results} == {"dongwoo"}

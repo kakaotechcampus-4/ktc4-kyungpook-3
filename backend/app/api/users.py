@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.auth import user_response
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user_for_update
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import User
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.patch("/me", response_model=Envelope[UserResponse])
-def update_me(payload: UsernameUpdateRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def update_me(payload: UsernameUpdateRequest, user: User = Depends(get_current_user_for_update), db: Session = Depends(get_db)):
     if payload.username != user.username:
         if db.scalar(select(User.user_id).where(User.username == payload.username)) is not None:
             raise AppError(ErrorCode.USERNAME_TAKEN)
