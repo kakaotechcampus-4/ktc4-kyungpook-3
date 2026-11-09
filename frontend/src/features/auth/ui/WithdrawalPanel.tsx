@@ -10,7 +10,14 @@ import {
   withdrawAccount,
 } from '@/entities/user'
 import { findPushSubscription } from '@/entities/notification'
-import { ApiError } from '@/shared/api/errors'
+import {
+  ApiError,
+  CLIENT_ERROR_CODES,
+  createClientError,
+  isCanceledError,
+} from '@/shared/api/errors'
+import { captureSessionScope } from '@/shared/api/sessionScope'
+import type { SessionScope } from '@/shared/api/sessionScope'
 import { paths } from '@/shared/config/routes'
 import { Button } from '@/shared/ui/button'
 import { Checkbox } from '@/shared/ui/checkbox'
@@ -49,12 +56,21 @@ export function WithdrawalPanel() {
       query.state.data?.cleanup_status === 'complete' || query.state.error ? false : 3000,
   })
   const command = useMutation({
-    mutationFn: async ({ key, accountId }: { key: string; accountId: string }) => {
-      const isCurrent = captureSession()
+    mutationFn: async ({
+      key,
+      accountId,
+      session,
+    }: {
+      key: string
+      accountId: string
+      session: SessionScope
+    }) => {
+      // 오프라인으로 기다리는 사이 로그아웃·다시 로그인했을 수 있다. 같은 계정이면 서버의 계정 ID 검사로도 막히지 않는다 (#594)
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
       saveWithdrawalProof({ kind: 'request', key, accountId })
-      return { receipt: await withdrawAccount(key, accountId), isCurrent }
+      return withdrawAccount(key, accountId, session.signal)
     },
-    onSuccess: async ({ receipt: result, isCurrent }, { key }) => {
+    onSuccess: async (result, { key, session: { isCurrent } }) => {
       const next: WithdrawalProof = { kind: 'receipt', key, id: result.withdrawal_id }
       // 계정은 이미 삭제됐다. 영수증 저장 실패로 이전 계정 화면을 다시 표시하지 않는다.
       try {
@@ -73,7 +89,8 @@ export function WithdrawalPanel() {
       queryClient.setQueryData(['withdrawal-receipt', result.withdrawal_id], result)
       setProof(next)
     },
-    onError: (error, { key, accountId }) => {
+    onError: (error, { key, accountId, session: started }) => {
+      if (!started.isCurrent()) return
       if (error instanceof ApiError && error.code === 'LAST_PM_REQUIRED') {
         clearWithdrawalProof()
         setProof(null)
@@ -177,7 +194,13 @@ export function WithdrawalPanel() {
           variant="primary"
           disabled={otherAccount || session.isPending || session.isError}
           loading={command.isPending}
-          onClick={() => command.mutate(proof)}
+          onClick={() =>
+            command.mutate({
+              key: proof.key,
+              accountId: proof.accountId,
+              session: captureSessionScope(),
+            })
+          }
         >
           처리 결과 다시 확인
         </Button>
@@ -256,7 +279,7 @@ export function WithdrawalPanel() {
           삭제 범위와 새 초대가 필요함을 확인했어요.
         </Checkbox>
       )}
-      {command.isError ? (
+      {command.isError && !isCanceledError(command.error) ? (
         <p role="alert" className={COPY}>
           {command.error instanceof ApiError && command.error.code === 'LAST_PM_REQUIRED'
             ? 'PM 조건이 바뀌었어요. 권한 이전 후 다시 시도해 주세요.'
@@ -282,7 +305,11 @@ export function WithdrawalPanel() {
         loading={command.isPending}
         onClick={() => {
           if (session.data)
-            command.mutate({ key: createWithdrawalKey(), accountId: session.data.user.id })
+            command.mutate({
+              key: createWithdrawalKey(),
+              accountId: session.data.user.id,
+              session: captureSessionScope(),
+            })
         }}
       >
         계정 탈퇴하기

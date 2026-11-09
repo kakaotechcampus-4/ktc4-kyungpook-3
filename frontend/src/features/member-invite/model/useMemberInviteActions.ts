@@ -6,7 +6,7 @@ import {
   latestInvitationsQueryOptions,
   revokeInvitation,
 } from '@/entities/invitation'
-import { errorMessage } from '@/shared/api/errorMessages'
+import { errorMessage, failureNotice } from '@/shared/api/errorMessages'
 import { CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
@@ -60,7 +60,10 @@ export function useMemberInviteActions(
       })
       onSuccess()
     },
-    onSettled: refresh,
+    // 끝난 세션의 쓰기는 보내지 않았다. 다음 세션의 목록을 다시 받지 않는다
+    onSettled: (_data, _error, { session }) => {
+      if (session.isCurrent()) refresh()
+    },
   })
 
   // reset() 은 보내는 중인 요청도 끝난 것처럼 보이게 해 중복 전송을 연다 — 입력 중에는 문구만 숨긴다
@@ -84,7 +87,10 @@ export function useMemberInviteActions(
       if (!session.isCurrent()) return
       toast.show({ title: errorMessage(error) })
     },
-    onSettled: refresh,
+    // 끝난 세션의 쓰기는 보내지 않았다. 다음 세션의 목록을 다시 받지 않는다
+    onSettled: (_data, _error, { session }) => {
+      if (session.isCurrent()) refresh()
+    },
   })
 
   return {
@@ -92,7 +98,7 @@ export function useMemberInviteActions(
       if (create.isPending) return
       create.mutate({ email, onSuccess, session: captureSessionScope() })
     },
-    inviteError: create.error && create.error !== hiddenError ? errorMessage(create.error) : null,
+    inviteError: create.error && create.error !== hiddenError ? failureNotice(create.error) : null,
     inviting: create.isPending,
     resetInvite: create.reset,
     clearInviteError: () => setHiddenError(create.error),

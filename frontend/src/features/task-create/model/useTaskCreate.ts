@@ -2,7 +2,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 import { createTask, showTaskWriteUnconfirmed, taskListQueryOptions } from '@/entities/task'
 import type { Task, TaskCreateInput } from '@/entities/task'
-import { CLIENT_ERROR_CODES, createClientError, isInvalidResponse } from '@/shared/api/errors'
+import {
+  CLIENT_ERROR_CODES,
+  createClientError,
+  isCanceledError,
+  isInvalidResponse,
+} from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
 
@@ -70,5 +75,10 @@ export function useTaskCreate(workspaceId: string, status: Task['status']): Task
   )
 
   // 응답을 읽지 못한 실패는 토스트가 알린다. 만들어졌을 수 있어 입력 칸의 실패로 보이지 않는다
-  return { create, pending: isPending, error: isInvalidResponse(error) ? null : error, reset }
+  return {
+    create,
+    pending: isPending,
+    error: isInvalidResponse(error) || isCanceledError(error) ? null : error,
+    reset,
+  }
 }

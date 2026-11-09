@@ -22,10 +22,19 @@ TanStack Query mutation 의 기본 `networkMode: 'online'` 은 오프라인이�
   - 알림 읽음 `NotificationBell` → `readNotification` 에 `signal`
   - 회의 업로드 `useMeetingUpload`: 세션을 `onMutate` 대신 변수로 넘기고 `uploadMeeting` 의 `signal` 에 단다.
   - 연동 끊기 `useDisconnectIntegration`: 전에는 세션을 보지 않았다. 누를 때의 세션을 변수로 받고(`ConnectionActions`), 세션이 바뀌었으면 보내지 않고 카드·캐시도 바꾸지 않는다.
+  - 계정 탈퇴 `WithdrawalPanel` → `withdrawAccount` 에 `signal`(리뷰 반영). 전에는 `mutationFn` 안에서 세션을 잡아 재개된 그 순간의 세션을 자기 세션으로 봤다. 서버는 계정 ID 만 비교하므로 로그아웃 뒤 같은 계정으로 다시 로그인한 세션에서 멈춘 탈퇴가 계정을 지웠다. 이제 누를 때 잡는다. `처리 결과 다시 확인` 처럼 사용자가 다시 누르는 재시도는 그때의 세션을 새로 잡는다.
 - 고치지 않은 것
   - 로그아웃·비밀번호 재설정 요청·가입 코드 다시 받기: 세션 밖이거나 세션을 끝내는 요청이다.
   - 온보딩 저장(`useOnboardingSave`·`useCreateWorkspace`·팀원 단계): 세션 검사가 없고 여러 요청을 잇는 흐름이라 같은 모양 한 줄로 끝나지 않는다. 후속으로 남긴다.
   - 세대는 탭 하나의 것이다. 다른 탭에서 다른 계정으로 로그인해 쿠키가 바뀐 경우는 이 검사로 알 수 없다.
+
+## 리뷰 반영 (2026-11-10)
+
+Codex·Grok 독립 리뷰의 중간 1 건, 낮음 2 건을 고쳤다.
+
+- **멈춘 계정 탈퇴가 같은 계정의 새 세션에서 나갔다(중간, Codex 재현·Grok).** 위 「고친 쓰기」의 계정 탈퇴다. 처음 목록과 제외 목록 어디에도 없었다.
+- **보내지 않은 쓰기가 `요청을 취소했어요` 로 보였다(낮음, 둘 다).** 세션이 바뀌어 `REQUEST_CANCELED` 로 끝난 쓰기는 실패가 아니다. 연동 끊기 창(`failureNotice`), 초대 만들기(`inviteError`), PM 권한 창, 알림 읽음, Notion 다시 넣기, 태스크 만들기, 계정 탈퇴가 취소 오류를 보이지 않는다. 승인·태스크 상태·업로드는 이미 걸렀다.
+- **보내지 않은 초대 쓰기가 다음 세션의 초대 목록을 다시 받았다(낮음, 둘 다).** 초대 만들기와 취소·연결 끊기의 `onSettled` 가 누를 때의 세션일 때만 목록을 무효화한다.
 
 ## 검증
 
@@ -34,13 +43,14 @@ TanStack Query mutation 의 기본 `networkMode: 'online'` 은 오프라인이�
 | `npm run typecheck` | 통과(직접 돌려 0 건 확인) |
 | `npm run lint` | 통과 |
 | `npm run build` | 통과 |
-| 바꾼 곳 테스트 | 바꾼 조각·API 와 승인·태스크·초대·팀·알림·업로드·연결 설정 화면 55 파일·651 건. 업로드 변수 모양 단언 1 건이 실패해 고친 뒤 그 파일 43 건 통과 |
-| `npm run test -- --maxWorkers=1` | 312 파일·4049 건 모두 통과(2,222 초) |
+| 바꾼 곳 테스트 | 바꾼 조각·API 와 승인·태스크·초대·팀·알림·업로드·연결 설정 화면 55 파일·651 건. 업로드 변수 모양 단언 1 건이 실패해 고친 뒤 그 파일 43 건 통과. 리뷰 반영 뒤 탈퇴·인증·연결 설정·초대·PM 권한·알림·태스크 만들기·Notion 조각과 그 화면 41 파일·427 건 통과 |
+| `npm run test -- --maxWorkers=1` | 312 파일·4049 건 모두 통과(2,222 초). 리뷰 반영 뒤 차례를 기다린다 |
 
 - 새 테스트
   - `app/staleSessionWrites.test.tsx`: 승인 반려·태스크 상태·태스크 만들기·Notion 다시 넣기·자동 반영 되돌리기마다 오프라인으로 멈춘 쓰기 → 세션 세대 올림 → 다시 연결에서 요청이 나가지 않는다. 같은 세션이면 다시 연결될 때 나간다(대조).
   - `features/member-invite/model/useMemberInviteActions.test.tsx`: 초대 만들기·취소·계정 연결 끊기 같은 검사와 대조.
   - `features/integration-connection/model/useDisconnectIntegration.test.tsx`: 연동 끊기가 나가지 않고 `onDisconnected` 도 부르지 않는다. 대조는 끊는다.
   - 「나가지 않는다」 아홉 경우는 고치기 전 코드로 먼저 실패를 봤고, 대조 일곱은 그때도 통과했다.
-- PM 권한 주기·알림 읽음·회의 업로드는 따로 테스트를 더하지 않았다. 같은 두 줄을 넣었고 기존 화면 테스트가 정상 경로를 본다.
+  - 리뷰 반영: `app/accountWithdrawal.test.tsx` 의 멈춘 탈퇴 → 세대 두 번 올림(로그아웃·같은 계정 다시 로그인) → 다시 연결에서 `DELETE /auth/me` 가 나가지 않고 계정·인증이 남는다. `features/integration-connection/ui/ConnectionActions.test.tsx` 의 끊기 창에 실패 문구가 없다. `useMemberInviteActions.test.tsx` 의 초대 만들기·취소에 실패 문구와 초대 목록 다시 받기가 없다. 이 넷은 고치기 전 코드로 먼저 실패를 봤다.
+- PM 권한 주기·알림 읽음·회의 업로드는 따로 테스트를 더하지 않았다. 같은 두 줄을 넣었고 기존 화면 테스트가 정상 경로를 본다. 취소 오류 거르기도 PM 권한·알림 읽음·Notion 다시 넣기·태스크 만들기는 같은 도우미(`isCanceledError`)라 따로 보지 않았다.
 - `app/taskViewsRender.test.tsx` 는 상태 변경 mutation 을 직접 만드는 곳의 변수 이름만 바꿨다. `app/meetingUpload.test.tsx` 의 「원본 파일 참조가 남지 않는다」는 변수가 `{ fields, session }` 이 되어 `fields` 를 비교한다. 파일이 캐시에 없는지 보는 검사는 그대로다.

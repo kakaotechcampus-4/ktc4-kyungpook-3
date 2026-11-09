@@ -7,7 +7,12 @@ import {
   taskListQueryOptions,
 } from '@/entities/task'
 import type { Task } from '@/entities/task'
-import { CLIENT_ERROR_CODES, createClientError, isInvalidResponse } from '@/shared/api/errors'
+import {
+  CLIENT_ERROR_CODES,
+  createClientError,
+  isCanceledError,
+  isInvalidResponse,
+} from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
 import { queryView } from '@/shared/lib/query-view'
@@ -91,6 +96,6 @@ export function useTaskNotionSync(workspaceId: string, taskId: string): TaskNoti
   }, [queryClient, mutate, workspaceId, taskId])
 
   // 응답을 읽지 못한 실패는 토스트가 알린다. 다시 넣었을 수 있어 버튼 옆의 실패로 보이지 않는다
-  const retryError = isInvalidResponse(error) ? null : error
+  const retryError = isInvalidResponse(error) || isCanceledError(error) ? null : error
   return { task: detail.data, retry, retryPending: isPending, retried: data, retryError }
 }

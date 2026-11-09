@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { memberListQueryOptions, updateMember } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { errorMessage } from '@/shared/api/errorMessages'
-import { CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
+import { CLIENT_ERROR_CODES, createClientError, isCanceledError } from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
 import { Button } from '@/shared/ui/button'
@@ -78,7 +78,7 @@ export function MemberRoleControl({ workspaceId, member }: MemberRoleControlProp
           </>
         }
       >
-        {mutation.error ? (
+        {mutation.error && !isCanceledError(mutation.error) ? (
           <p role="alert" className="text-caption text-accent">
             {errorMessage(mutation.error)}
           </p>

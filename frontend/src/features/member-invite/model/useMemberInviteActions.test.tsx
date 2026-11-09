@@ -1,6 +1,7 @@
-import { QueryClientProvider, onlineManager } from '@tanstack/react-query'
+import { QueryClientProvider, onlineManager, useQuery } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
+import { latestInvitationsQueryOptions } from '@/entities/invitation'
 import { advanceSessionGeneration } from '@/entities/user'
 import { createQueryClient } from '@/shared/api/queryClient'
 import { recordRequests } from '@/shared/test/requests'
@@ -68,4 +69,38 @@ it('같은 세션이면 다시 연결될 때 초대를 보낸다', async () => {
   onlineManager.setOnline(true)
 
   await waitFor(() => expect(log.timeline).toContain('start POST /workspaces/ws_01/invitations'))
+})
+
+// #594 리뷰 — 보내지 않은 쓰기는 실패 문구를 남기지 않고, 다음 세션의 초대 목록을 다시 받지 않는다
+it.each([
+  [
+    '초대 만들기',
+    (a: ReturnType<typeof useMemberInviteActions>) => a.invite('new@example.com', () => {}),
+  ],
+  ['초대 취소', (a: ReturnType<typeof useMemberInviteActions>) => a.cancel('iv_01')],
+])('세션이 바뀌어 보내지 않으면 %s 의 실패 문구도 목록 다시 받기도 없다', async (_, start) => {
+  const client = createQueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  )
+  const { result } = renderHook(
+    () => {
+      const invitations = useQuery(latestInvitationsQueryOptions('ws_01'))
+      const actions = useMemberInviteActions('ws_01', { id: 'mb_02', displayName: '이서연' })
+      return { invitations, actions }
+    },
+    { wrapper },
+  )
+  await waitFor(() => expect(result.current.invitations.isSuccess).toBe(true))
+  const log = recordRequests()
+  onlineManager.setOnline(false)
+  act(() => start(result.current.actions))
+  await waitFor(() => expect(client.getMutationCache().getAll().at(-1)?.state.isPaused).toBe(true))
+
+  act(() => advanceSessionGeneration())
+  onlineManager.setOnline(true)
+
+  await waitFor(() => expect(client.isMutating()).toBe(0))
+  expect(result.current.actions.inviteError).toBeNull()
+  expect(log.timeline).not.toContain('start GET /workspaces/ws_01/invitations')
 })
