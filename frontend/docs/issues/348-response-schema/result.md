@@ -2,7 +2,7 @@
 
 - 기록일: 2026-11-08
 - 대상: [#348](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/348)
-- 상태: **PR 1(초안 5절의 1+2) 반영.** 공용 경계(`shared/api`)와 task 응답만 검증한다. approval → meeting·minutes·extraction → message·notification → integration·invitation·workspace·member·user 는 다음 PR 이 이 파일에 이어 쓴다. 검사는 MSW 기준이고 실제 BE 와는 붙여 보지 않았다.
+- 상태: **PR 1(초안 5절의 1+2, #588 병합)과 PR 2(approval) 반영.** 공용 경계(`shared/api`)와 task·approval 응답을 검증한다. meeting·minutes·extraction → message·notification → integration·invitation·workspace·member·user 는 다음 PR 이 이 파일에 이어 쓴다. 검사는 MSW 기준이고 실제 BE 와는 붙여 보지 않았다.
 
 ## 작업 근거와 요약
 
@@ -95,9 +95,59 @@ Node v24.11.0, `frontend/` 에서 실행했다. 아래 숫자는 리뷰 반영 �
   병합 뒤 기준(develop `33b071ac` 를 같은 방식으로 빌드, 초기 파일 31 개): 원본 933,610 → 939,330 B(+5,720 B, +0.61%), gzip 293,326 → 294,828 B(+1,502 B, +0.51%).
 - 브라우저(ego lite, MSW 모드 `single-workspace`): 태스크 목록 13 건이 그려졌다. 앱 안 이동으로 `tk_01`·`tk_03` 상세를 열었다. 콘솔 경고·오류와 `role=alert` 가 없었다. 스크린샷은 ego lite 창 문제로 찍지 못했다.
 
+## PR 2: approval (2026-11-09)
+
+develop `a6e9ea68`(PR 1 #588, #512 합친 카드 #586 병합 뒤)에서 `feature/348-approval-schema` 로 땄다.
+
+### 실제 변경
+
+- `shared/types/api/approval.ts`: 손으로 쓴 `ApprovalDto` 를 `approvalSchema`·`approvalListSchema` 와 `z.infer` 로 바꿨다. `status` 는 세 값 enum 이다. `type` 은 문자열로 받아 지원하지 않는 종류는 지금처럼 `unsupported` 다. `payload` 는 자유 dict(`looseObject`)로 두고, 모양이 화면 동작을 정하는 세 키만 본다. `task_overrides`(저장된 보완 값, mapper 의 `safeParse` 를 옮김), `merged_items`(#586, 배열이고 항목이 객체), `assignee_item_id`(#586, 문자열). 제안 값·근거와 합쳐진 항목의 키는 mapper 가 글자일 때만 읽는다(정책의 「payload `text()` 읽기 유지」). `payload_version`(#547)·`alias_candidate`·`alias_text`(#523)는 빠진 옛 응답을 받는다.
+- 409 `details` 스키마 셋(`APPROVAL_CONFLICT`·`APPROVAL_CHANGED`·`APPROVAL_ALREADY_RESOLVED`). 손으로 쓴 details 타입은 아무 데서도 쓰지 않았다. `toApprovalResolveFailure` 가 충돌·이미 처리됨을 이 스키마의 `safeParse` 로 읽는다. 모양이 틀리면 지금처럼 일반 실패이고 `INVALID_RESPONSE` 로 바꾸지 않는다(요청은 이미 실패했다, D-184 에 더함). `APPROVAL_CHANGED` 의 details 는 화면이 읽지 않고, 스키마는 MSW 409 를 검사하는 데 쓴다.
+- `entities/approval/api`: 상세·대기 목록·`PATCH` 승인·반려가 `request<unknown>` → `parseResponse(…, 'approval')` 다.
+- `entities/approval/model/mapper.ts`: `enumValue`(모르는 상태 → `pending`), 보완 값 `safeParse`, `merged_items` 배열·객체 걸러내기, 409 수동 검사를 뺐다. `category`·`gate` 의 모르는 값 → null 은 그대로다.
+- `features/approval-resolve`: 승인·반려 응답이 `INVALID_RESPONSE` 면 카드의 실패 문구 대신 `변경 결과를 확인하지 못했어요` 토스트와 `새로고침` 을 보인다. `새로고침` 은 성공 뒤 맞추는 것과 같은 승인·태스크·추출·별칭을 다시 받는다(`syncAfterResolve`).
+- 저장된 보완 값은 생성·수정 카드의 키를 한 모양으로 본다. 생성 카드에 `status` 가 들어 있으면 전에는 버렸고 이제는 값이 틀리면 거절한다. 서버는 종류에 맞지 않는 키를 400 으로 막아 저장하지 않으므로(계약 「제안 값을 고쳐 승인」) BE 보다 엄격하지 않다.
+
+### 바뀐 동작
+
+| 응답 | 전 | 후 |
+|---|---|---|
+| 승인 `status` 모름 | `승인 대기` 로 보이고 승인·반려 버튼, 확인 필요 목록에 들어감 | 상세는 `확인 요청을 불러오지 못했어요` 와 `응답을 읽지 못했어요`, `다시 시도`. 승인·반려 버튼 없음 |
+| 대기 목록 한 건 깨짐 | 그 건만 `승인 대기` | 목록 전체가 `INVALID_RESPONSE`. PM 의 태스크 목록은 `태스크 목록을 불러오지 못했어요` |
+| `merged_items` 가 배열이 아니거나 항목이 객체가 아님 | 조용히 빈 목록·그 항목 버림 | `INVALID_RESPONSE` |
+| 승인·반려 응답을 읽지 못함 | 카드에 `응답을 읽지 못했어요` 실패 | `변경 결과를 확인하지 못했어요` 토스트와 `새로고침` |
+
+- 받아 둔 승인 상세는 갱신이 실패해도 카드가 남는다. 태스크 상세와 달리 승인 화면에는 「최신 상태를 받지 못했어요」 안내가 원래 없고, 이 PR 에서 더하지 않았다. 바뀐 카드 처리는 서버의 `payload_version` 409 가 막는다.
+
+### 검증
+
+| 검사 | 결과 |
+|---|---|
+| `npm run typecheck` | 통과 |
+| `npm run lint` | 통과 |
+| `npm run format:check` | 추적 파일 통과(git 제외 `.verify/reports` 두 파일만 경고) |
+| `npm run build` | 통과 |
+| 바꾼 곳 테스트 | 50 파일·866 건 통과(approval·reply·dashboard·extraction·mock·schema), 마지막 수정 뒤 14 파일·196 건 다시 통과 |
+| `npm run test -- --maxWorkers=1` | 294 파일 중 293·3802 건 중 3801 통과(2,561 초). 실패 1 건은 `app/splash.test.tsx` 의 포커스 단언(#510, 이 PR 이 건드리지 않은 랜딩 스플래시)이다. 그 파일만 두 번 다시 돌려 모두 5 건 통과해 부하 타이밍으로 본다 |
+
+- 새·바꾼 테스트:
+  - `shared/types/api/approval.test.ts`: 거절(모르는·null 상태, 비불리언 `alias_candidate`, 숫자 지문, 배열 payload, 필수 필드 누락, 보완 값 일곱 경우는 경로 `payload.task_overrides` 까지, `merged_items`·`assignee_item_id` 모양), 허용(옛 응답, 모르는 종류, payload 의 모르는 키 보존, `merged_items` null). MSW 픽스처와 아홉 상태(기본·`approval-*` 일곱·`reply-judgment`)의 목록·상세, 승인·반려 응답, handler 의 409 셋 details 를 스키마로 `parse`.
+  - `entities/approval/api/*.test.ts`: 상세의 모르는 상태가 `pending` 이 되지 않고 캐시에 들어가지 않으며 다시 요청하지 않음, 경고에 경로·값. 보완 값 경로 `payload.task_overrides.status`. `PATCH` 응답. 목록 `items[1].status` 면 전체 실패.
+  - `entities/approval/model/mapper.test.ts`: 「모르는 상태 → `pending`」 기대를 지우고 스키마 테스트로 옮겼다. 저장된 보완 값 거절 여덟 경우도 스키마 테스트로 옮겼다.
+  - `app/approvalInvalidResponse.test.tsx`(RTL, MSW `server.use`): 상세·PM 태스크 목록의 안내와 `다시 시도`, 1.3 초 기다려도 요청 1 번, 다시 시도로 복구. 갱신 실패 때 카드가 남음. 반려 응답을 읽지 못하면 토스트와 `새로고침`(누르면 `GET /approvals/ap_01`). 마지막 경우는 고치기 전에 실패를 먼저 확인했다.
+- 초기 chunk(`index.html` 의 script·modulepreload·CSS)를 develop `a6e9ea68` 과 같은 방식으로 빌드해 비교했다.
+
+  | | develop | 이 변경 | 차이 |
+  |---|---|---|---|
+  | 원본 | 943,158 B (31 개) | 943,362 B (32 개) | +204 B (+0.02%) |
+  | gzip | 296,014 B | 296,330 B | +316 B (+0.11%) |
+
+  처음에는 `merged_items` 항목을 `z.record` 로 써서 zod 의 `ZodRecord` 가 공용 chunk 에 새로 들어왔다(원본 +4.8 KB). 같은 뜻인 `z.looseObject({})` 로 바꿔 새 zod 클래스가 없다. 파일이 하나 는 것은 task 스키마 모듈을 approval 도 쓰게 되어(`taskStatusSchema`) 1,184 B 짜리 chunk 로 갈라졌기 때문이다. 합친 크기는 +183 B 다. gzip 이 원본보다 더 는 것은 파일이 나뉜 몫이다.
+- 브라우저 확인은 하지 않았다. 사용자 경로가 바뀌지 않고, 잘못된 응답 화면은 RTL 이 MSW 로 본다.
+
 ## 남은 일
 
-- 다음 PR: approval(`status` 검증, Unsupported·`category` 유지) → meeting·minutes·extraction(`source` unknown 특성, `gate` 폴백) → message·notification(`ZodError`·`Error` 를 `INVALID_RESPONSE` 로) → integration·invitation·workspace·member·user. 마지막 PR 이 `enumValue` 를 지우고 이 이슈를 닫는다.
+- 다음 PR: meeting·minutes·extraction(`source` unknown 특성, `gate` 폴백) → message·notification(`ZodError`·`Error` 를 `INVALID_RESPONSE` 로) → integration·invitation·workspace·member·user. 마지막 PR 이 `enumValue` 를 지우고 이 이슈를 닫는다.
 - BE 합의 두 가지(배포 순서, `status: str` 의 enum 타입화)는 계약에 요청으로 남겼다.
 - 실제 BE 응답과의 대조는 BE enum 타입화와 `/openapi.json` 접근이 갖춰진 뒤 후속이다(#348 추가 항목 1).
 - ~~정할 것: 변경 응답이 스키마에 맞지 않을 때의 문구.~~ 2026-11-09 사용자 결정으로 반영했다(위 「리뷰 반영」).
