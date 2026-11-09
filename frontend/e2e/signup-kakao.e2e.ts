@@ -41,6 +41,7 @@ test('이메일 가입: 코드를 틀려도 남은 횟수를 보이고, 맞는 �
   await expect(page.getByLabel('이메일')).toHaveValue('new@example.com')
   await page.getByLabel('이름').fill('새 사용자')
   await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
+  await agreeToPolicies(page)
   await page.getByLabel('비밀번호', { exact: true }).press('Enter')
   await expect(page).toHaveURL('/onboarding/start')
 })

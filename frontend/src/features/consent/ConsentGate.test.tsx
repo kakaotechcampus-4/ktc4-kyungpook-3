@@ -25,6 +25,7 @@ function open() {
       <ConsentGate
         userId="us_01"
         documents={currentPolicyPublication.documents}
+        pendingFallback={<p role="status">동의 기록 확인 중</p>}
         onLogout={logout}
         logoutPending={false}
         logoutError={null}
