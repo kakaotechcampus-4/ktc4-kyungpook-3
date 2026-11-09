@@ -213,7 +213,7 @@ def test_kakao_signup_waits_for_an_old_email_and_kakao_account_to_finish_withdra
     def signup():
         assert held.wait(3)
         client = TestClient(app, base_url="https://testserver")
-        identity = kakao_oauth.KakaoIdentity("555", None, False, "새 앨리스")
+        identity = kakao_oauth.KakaoIdentity("555", "새 앨리스")
         client.cookies.set(kakao_oauth.PENDING_COOKIE, kakao_oauth.seal_pending(identity))
         return client.post("/api/v1/auth/signup", json={"name": "새 앨리스", "username": "newalice", "link_kakao": True})
 
