@@ -69,7 +69,7 @@
 | 스트리밍으로 받은 최대 출력 | 3711 토큰, `stop` |
 | AI 테스트 | `.venv/bin/python -m pytest -q` 전부 통과 |
 | BE 테스트 | `.venv/bin/python -m pytest -q` 3124 passed, 2191 skipped(PostgreSQL 변형, 로컬 DB 없음). `ruff check .` 통과 |
-| 조사·확인 비용 | 약 750원(장부 `investigation-2026-11-09-luna-truncation.jsonl`, `fix-624-llm-stream-due-clear.jsonl`. Terra 단가 상한으로 센 추정) |
+| 조사·확인 비용 | 약 1,130원(장부 `investigation-2026-11-09-luna-truncation.jsonl`, `fix-624-llm-stream-due-clear.jsonl`. Terra 단가 상한으로 센 추정) |
 
 새 테스트:
 
@@ -81,7 +81,18 @@
   - 같은 회의에서 미루기 → 해제, 해제 → 다시 날짜 순서로 말했을 때
 - `backend/tests/api/test_extractions_judge.py`: 변경안에 `due_date: null` 이 실리는지, 마감 없는 Task 는 승인이 없는지, 승인하면 마감이 비는지
 
-새로 올린 업로드로 업로드부터 인계·요약까지 전체를 재는 것은 배포 뒤에 한다. 요약을 스트리밍으로 부른 실측도 아직 안 했다.
+같은 녹음(BE 업로드 폴더의 11/8 원본)을 이 브랜치 코드와 #625 코드로 서버에서 업로드 처리 순서대로 다시 돌렸다(BE 에는 쓰지 않음. 유사 검색과 요약 재료만 읽음).
+
+| 단계 | 결과 |
+|---|---|
+| 화자 분리(`minSpeakers=4`) | 13.1초, 라벨 4개 |
+| 전사(Elice) | 9.0초 |
+| 판단 | 134.7초, 항목 10개, 판단 못 한 발화 0개. 원준 님 발화는 `due_cleared` 카드 |
+| 요약 `681e66ca` | 저장 가능, 출력 2134 토큰(추론 499), 17.2초. 비스트리밍이었으면 2000 에서 잘렸을 길이 |
+| 요약 `12be7454`(운영에서 두 번 잘려 요약이 없는 회의) | 저장 가능, 출력 1869 토큰(추론 512), 19.0초 |
+| LLM 호출 | 29회 모두 `stop` |
+
+요약은 결과를 BE 에 저장하지 않았다. 배포 뒤 인계까지 이어진 전체 시간은 아직 재지 않았다.
 
 ## 다음
 
