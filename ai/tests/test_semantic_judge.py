@@ -611,6 +611,23 @@ def test_first_failure_is_logged_with_drop_counts_only(monkeypatch, caplog):
     assert "비밀 회의 내용" not in logged and "내일까지" not in logged
 
 
+def test_second_failure_is_logged_with_drop_counts_too(monkeypatch, caplog):
+    # 배포 뒤 두 번째 실패의 원인도 보이게 건수를 남긴다(PR #580 리뷰)
+    import judge.semantic_judge as sj
+
+    fake = FakeLLM(responses=[None, {"findings": [{"indices": [9], "summary": "비밀 회의 내용"}]}])
+    monkeypatch.setattr(sj, "get_llm", lambda which: fake)
+    t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="내일까지 끝낼게요.", seq=0))
+
+    with caplog.at_level("WARNING", logger="judge.semantic_judge"), pytest.raises(FindingExtractionUnavailableError):
+        extract_findings_counted(t)
+
+    messages = [r.getMessage() for r in caplog.records if "1단계" in r.getMessage()]
+    assert len(messages) == 2
+    assert "no_valid_indices=1" in messages[1]
+    assert all("비밀 회의 내용" not in m for m in messages)
+
+
 def test_chat_message_stays_one_line_but_meeting_splits_into_sentences():
     text = "https://github.com/x/y.git 보고 v1.2 올릴게요. 금요일까지요."
     seg = TranscriptSegment(speaker="u1", start=0.0, end=0.0, text=text, seq=1)

@@ -349,12 +349,19 @@ def extract_findings_counted(
     result, dropped = _extract_findings_llm(transcript, client, context)
     if result is None:
         # 1단계는 BE 에 쓰기 전이라 다시 불러도 중복이 없다. 회의를 실패로 세고 재시도 대기(60초)를 하는 대신
-        # 바로 한 번 더 부른다(#579). 기록에는 건수만 남긴다. 원문을 남기면 회의 내용이 로그에 들어간다
-        logger.warning(
-            "1단계 응답을 쓰지 못해 한 번 더 부른다 not_dict=%d no_valid_indices=%d bad_indices_total=%d lines=%d",
-            dropped["not_dict"], dropped["no_valid_indices"], dropped["bad_indices_total"], dropped["lines"],
-        )
+        # 바로 한 번 더 부른다(#579)
+        _log_unusable("1단계 응답을 쓰지 못해 한 번 더 부른다", dropped)
         result, dropped = _extract_findings_llm(transcript, client, context)
+        if result is None:
+            _log_unusable("1단계 응답을 다시 불러도 쓰지 못했다", dropped)
     if result is None:
         raise FindingExtractionUnavailableError("Luna 응답을 파싱하지 못했습니다.")
     return result, dropped
+
+
+def _log_unusable(what: str, dropped: dict[str, Any]) -> None:
+    """건수만 남긴다. 원문이나 요약을 남기면 회의 내용이 로그에 들어간다."""
+    logger.warning(
+        "%s not_dict=%d no_valid_indices=%d bad_indices_total=%d lines=%d",
+        what, dropped["not_dict"], dropped["no_valid_indices"], dropped["bad_indices_total"], dropped["lines"],
+    )
