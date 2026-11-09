@@ -20,9 +20,8 @@ CALLBACK = "/api/v1/auth/kakao/callback"
 PENDING = "/api/v1/auth/kakao/pending"
 EMAIL = "kim@example.com"
 PW = "pw-123456"
-VERIFIED = KakaoIdentity("77", EMAIL, True, "동우")
-UNVERIFIED = KakaoIdentity("77", EMAIL, False, "동우")
-NO_EMAIL = KakaoIdentity("77", None, False, None)
+KAKAO = KakaoIdentity("77", "동우")
+BARE = KakaoIdentity("77", None)
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +42,7 @@ def kakao(monkeypatch):
     """fetch_identity 가 돌려줄 값을 고른다. 호출된 code 는 calls 에 남는다."""
 
     class Fake:
-        identity = VERIFIED
+        identity = KAKAO
         calls: list = []
 
     Fake.calls = []
@@ -181,7 +180,7 @@ def test_other_kakao_error_is_failed(mdb, client, kakao):
         lambda: "",
         lambda: oauth_state.sign_state("notion", "ws", "u", "/")[0],
         lambda: oauth_state.seal(signup_codes.PROOF_KIND, 60, {"m": EMAIL, "p": "/", "n": "x"}),
-        lambda: kakao_oauth.seal_pending(VERIFIED),
+        lambda: kakao_oauth.seal_pending(KAKAO),
     ],
     ids=["forged", "empty", "notion_state", "signup_proof", "pending_token"],
 )
@@ -247,15 +246,14 @@ def test_nonce_cookie_is_deleted_on_every_branch(mdb, client, kakao):
     assert_deleted(_callback(client, code="c", state="forged.state"))
     kakao.identity = KakaoOAuthError("x")
     assert_deleted(_login(client))
-    kakao.identity = NO_EMAIL
+    kakao.identity = BARE
     assert_deleted(_login(client))
     _user(mdb)
-    assert_deleted(_login(client, UNVERIFIED, kakao))
-    assert_deleted(_login(client, VERIFIED, kakao))
+    assert_deleted(_login(client, KAKAO, kakao))
 
 
 def test_a_state_cannot_be_replayed(mdb, client, kakao):
-    kakao.identity = NO_EMAIL
+    kakao.identity = BARE
     state = _state(client)
     first = _callback(client, code="c", state=state)
     assert _path(first) == "/signup"
@@ -271,7 +269,7 @@ def test_returning_kakao_user_gets_a_session_on_the_302(mdb, client, kakao):
     mdb.execute(User.__table__.update().values(provider="kakao", provider_id="77"))
     mdb.commit()
 
-    res = _login(client, VERIFIED, kakao)
+    res = _login(client, KAKAO, kakao)
 
     assert res.status_code == 302
     assert _path(res) == "/login"
@@ -283,15 +281,14 @@ def test_returning_kakao_user_gets_a_session_on_the_302(mdb, client, kakao):
     assert me.json()["data"]["user"]["user_id"] == user.user_id
 
 
-@pytest.mark.parametrize("identity", [VERIFIED, UNVERIFIED], ids=["verified", "unverified"])
 @pytest.mark.parametrize("bound", [None, "other"], ids=["unlinked", "linked_to_other_kakao"])
-def test_kakao_email_of_an_existing_account_goes_to_signup_without_merging(mdb, client, kakao, identity, bound):
+def test_kakao_email_of_an_existing_account_goes_to_signup_without_merging(mdb, client, kakao, bound):
     _user(mdb)
     if bound:
         mdb.execute(User.__table__.update().values(provider="kakao", provider_id=bound))
         mdb.commit()
 
-    res = _login(client, identity, kakao)
+    res = _login(client, KAKAO, kakao)
 
     assert _path(res) == "/signup"
     assert _cookie(res, kakao_oauth.PENDING_COOKIE) is not None
@@ -300,7 +297,7 @@ def test_kakao_email_of_an_existing_account_goes_to_signup_without_merging(mdb, 
     assert _row(mdb).provider_id == bound
 
 
-@pytest.mark.parametrize("identity", [VERIFIED, UNVERIFIED, NO_EMAIL], ids=["verified", "unverified", "no_email"])
+@pytest.mark.parametrize("identity", [KAKAO, BARE], ids=["nickname", "bare"])
 def test_unknown_user_goes_to_signup_and_no_account_is_made(mdb, client, kakao, identity):
     res = _login(client, identity, kakao)
 
@@ -312,7 +309,7 @@ def test_unknown_user_goes_to_signup_and_no_account_is_made(mdb, client, kakao, 
 
 
 def test_pending_cookie_attributes(mdb, client, kakao):
-    res = _login(client, VERIFIED, kakao)
+    res = _login(client, KAKAO, kakao)
 
     cookie = _cookie(res, kakao_oauth.PENDING_COOKIE)
     for attribute in ("HttpOnly", "Secure", "SameSite=lax", "Max-Age=1800", "Path=/api/v1/auth"):
@@ -320,35 +317,28 @@ def test_pending_cookie_attributes(mdb, client, kakao):
 
 
 def test_pending_identity_is_never_in_a_url(mdb, client, kakao):
-    res = _login(client, KakaoIdentity("7777777", EMAIL, True, "동우닉네임"), kakao)
+    res = _login(client, KakaoIdentity("7777777", "동우닉네임"), kakao)
 
     location = res.headers["location"]
-    token = kakao_oauth.seal_pending(KakaoIdentity("7777777", EMAIL, True, "동우닉네임"))
+    token = kakao_oauth.seal_pending(KakaoIdentity("7777777", "동우닉네임"))
     assert "7777777" not in location
-    assert "kim" not in location
     assert "%EB%8F%99" not in location
     assert token not in location
 
 
-def test_pending_shows_the_verified_email_and_nickname(mdb, client, kakao):
-    _login(client, VERIFIED, kakao)
+def test_pending_shows_only_the_nickname(mdb, client, kakao):
+    _login(client, KAKAO, kakao)
 
     res = client.get(PENDING)
 
     assert res.status_code == 200
-    assert res.json()["data"] == {"email": EMAIL, "nickname": "동우"}
-
-
-def test_pending_hides_an_unverified_email(mdb, client, kakao):
-    _login(client, UNVERIFIED, kakao)
-
-    assert client.get(PENDING).json()["data"] == {"email": None, "nickname": "동우"}
+    assert res.json()["data"] == {"nickname": "동우"}
 
 
 def test_pending_with_no_details(mdb, client, kakao):
-    _login(client, NO_EMAIL, kakao)
+    _login(client, BARE, kakao)
 
-    assert client.get(PENDING).json()["data"] == {"email": None, "nickname": None}
+    assert client.get(PENDING).json()["data"] == {"nickname": None}
 
 
 def test_pending_without_a_cookie_is_expired(mdb, client):
@@ -362,7 +352,7 @@ def _signup_body(**body):
     return {"name": "새사람", "link_kakao": True, "username": "newperson", **body}
 
 
-@pytest.mark.parametrize("identity", [VERIFIED, NO_EMAIL], ids=["kakao_email", "no_email"])
+@pytest.mark.parametrize("identity", [KAKAO, BARE], ids=["nickname", "bare"])
 def test_kakao_signup_then_kakao_login_reaches_the_same_account(mdb, kakao, identity):
     first = TestClient(app, base_url="https://testserver", follow_redirects=False)
     _login(first, identity, kakao)
@@ -378,7 +368,7 @@ def test_kakao_signup_then_kakao_login_reaches_the_same_account(mdb, kakao, iden
 
 
 def test_kakao_only_account_has_no_password_login(mdb, client, kakao):
-    _login(client, VERIFIED, kakao)
+    _login(client, KAKAO, kakao)
     assert client.post("/api/v1/auth/signup", json=_signup_body()).status_code == 201
 
     res = TestClient(app, base_url="https://testserver").post(
@@ -420,4 +410,4 @@ def test_login_clears_a_pending_kakao_left_in_the_browser(mdb, client, kakao):
     mdb.execute(User.__table__.update().values(provider="kakao", provider_id="77"))
     mdb.commit()
 
-    assert _clears_pending(_login(client, VERIFIED, kakao))
+    assert _clears_pending(_login(client, KAKAO, kakao))

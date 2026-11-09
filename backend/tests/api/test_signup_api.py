@@ -59,9 +59,7 @@ def _error(res):
     return res.status_code, res.json()["error"]["code"]
 
 
-VERIFIED = KakaoIdentity("77", "kim@example.com", True, "동우")
-UNVERIFIED = KakaoIdentity("77", "kim@example.com", False, "동우")
-NO_EMAIL = KakaoIdentity("77", None, False, "동우")
+KAKAO = KakaoIdentity("77", "동우")
 
 
 def test_full_flow_from_code_to_account(mdb, client, monkeypatch):
@@ -106,7 +104,7 @@ def test_email_in_the_body_is_never_read(mdb, client):
         lambda: "",
         lambda: oauth_state.seal(signup_codes.PROOF_KIND, -1, {"m": EMAIL}),
         lambda: oauth_state.seal("kakao_login", 60, {"m": EMAIL, "p": "/", "n": "x"}),
-        lambda: kakao_oauth.seal_pending(VERIFIED),
+        lambda: kakao_oauth.seal_pending(KAKAO),
     ],
     ids=["garbage", "empty", "expired", "login_state", "pending_token"],
 )
@@ -142,7 +140,7 @@ def test_link_without_a_cookie_is_refused_rather_than_creating_an_unlinked_accou
 
 
 def test_link_with_an_expired_cookie_is_refused(mdb, client):
-    client.cookies.set(kakao_oauth.PENDING_COOKIE, kakao_oauth.seal_pending(NO_EMAIL, now=time.time() - 1800))
+    client.cookies.set(kakao_oauth.PENDING_COOKIE, kakao_oauth.seal_pending(KAKAO, now=time.time() - 1800))
 
     assert _error(_kakao_signup(client)) == (400, "KAKAO_LINK_EXPIRED")
 
@@ -153,9 +151,8 @@ def test_link_with_a_proof_in_the_cookie_slot_is_refused(mdb, client):
     assert _error(_kakao_signup(client)) == (400, "KAKAO_LINK_EXPIRED")
 
 
-@pytest.mark.parametrize("identity", [VERIFIED, UNVERIFIED, NO_EMAIL], ids=["verified", "unverified", "no_email"])
-def test_kakao_signup_needs_only_username_and_name_and_stores_no_email_or_password(mdb, client, identity):
-    _set_pending(client, identity)
+def test_kakao_signup_needs_only_username_and_name_and_stores_no_email_or_password(mdb, client):
+    _set_pending(client, KAKAO)
 
     res = _kakao_signup(client)
 
@@ -173,7 +170,7 @@ def test_kakao_signup_needs_only_username_and_name_and_stores_no_email_or_passwo
 @pytest.mark.parametrize("fields", [("password",), ("verification_token",), ("password", "verification_token")])
 def test_kakao_signup_refuses_a_password_or_email_proof(mdb, client, fields):
     """프론트에 남은 옛 필드를 조용히 버리지 않고 바로 드러낸다."""
-    _set_pending(client, VERIFIED)
+    _set_pending(client, KAKAO)
     extra = {"password": PW, "verification_token": _proof()}
 
     assert _error(_kakao_signup(client, **{f: extra[f] for f in fields})) == (400, "INVALID_REQUEST")
@@ -189,7 +186,7 @@ def test_email_signup_still_needs_a_password(mdb, client):
 
 def test_link_false_never_binds_even_with_a_cookie(mdb, client):
     """다른 사람이 같은 브라우저로 가입해도 앞 사람의 카카오가 그 계정에 묶이면 안 된다."""
-    _set_pending(client, VERIFIED)
+    _set_pending(client, KAKAO)
 
     res = _signup(client, verification_token=_proof())
 
@@ -198,8 +195,8 @@ def test_link_false_never_binds_even_with_a_cookie(mdb, client):
     assert (user.email, user.provider, user.provider_id) == (EMAIL, "local", None)
 
 
-def test_link_false_does_not_borrow_the_cookie_email(mdb, client):
-    _set_pending(client, VERIFIED)
+def test_link_false_needs_an_email_proof_even_with_a_cookie(mdb, client):
+    _set_pending(client, KAKAO)
 
     assert _error(_signup(client)) == (400, "SIGNUP_VERIFICATION_INVALID")
     assert _users(mdb) == []
@@ -207,7 +204,7 @@ def test_link_false_does_not_borrow_the_cookie_email(mdb, client):
 
 @pytest.mark.parametrize("link", [True, False])
 def test_success_clears_the_pending_cookie_on_its_own_path(mdb, client, link):
-    _set_pending(client, NO_EMAIL)
+    _set_pending(client, KAKAO)
 
     res = _kakao_signup(client) if link else _signup(client, verification_token=_proof())
 
@@ -224,7 +221,7 @@ def test_kakao_email_of_an_existing_account_makes_a_separate_account(mdb, client
     """카카오 이메일이 기존 계정과 같아도 병합하지 않는다. 새 계정은 이메일을 갖지 않는다."""
     mdb.add(User(username="olduser", email="kim@example.com", name="old", provider="local"))
     mdb.commit()
-    _set_pending(client, VERIFIED)
+    _set_pending(client, KAKAO)
 
     res = _kakao_signup(client)
 
@@ -237,7 +234,7 @@ def test_kakao_email_of_an_existing_account_makes_a_separate_account(mdb, client
 def test_kakao_id_bound_to_another_account_is_409(mdb, client):
     mdb.add(User(username="first", email="first@example.com", name="old", provider="kakao", provider_id="77"))
     mdb.commit()
-    _set_pending(client, NO_EMAIL)
+    _set_pending(client, KAKAO)
 
     assert _error(_kakao_signup(client)) == (409, "KAKAO_ALREADY_LINKED")
 
@@ -246,7 +243,7 @@ def test_kakao_id_lost_at_the_db_is_kakao_already_linked(mdb, client, monkeypatc
     """사전 검사와 재검사가 모두 놓친 카카오 충돌. 카카오 가입은 이메일을 넣지 않으니 이메일 중복이 아니다."""
     mdb.add(User(username="first", email="first@example.com", name="old", provider="kakao", provider_id="77"))
     mdb.commit()
-    _set_pending(client, NO_EMAIL)
+    _set_pending(client, KAKAO)
     monkeypatch.setattr(auth, "_signup_conflict", lambda db, user: None)
 
     assert _error(_kakao_signup(client)) == (409, "KAKAO_ALREADY_LINKED")
@@ -255,7 +252,7 @@ def test_kakao_id_lost_at_the_db_is_kakao_already_linked(mdb, client, monkeypatc
 def test_kakao_signup_with_a_taken_username_is_409(mdb, client):
     mdb.add(User(username="NewPerson", email="first@example.com", name="old", provider="local"))
     mdb.commit()
-    _set_pending(client, NO_EMAIL)
+    _set_pending(client, KAKAO)
 
     assert _error(_kakao_signup(client)) == (409, "USERNAME_TAKEN")
 
@@ -263,7 +260,7 @@ def test_kakao_signup_with_a_taken_username_is_409(mdb, client):
 def test_failed_signup_keeps_the_pending_cookie_and_makes_no_session(mdb, client):
     mdb.add(User(username="newperson", email="first@example.com", name="old", provider="local"))
     mdb.commit()
-    _set_pending(client, NO_EMAIL)
+    _set_pending(client, KAKAO)
 
     res = _kakao_signup(client)
 
@@ -320,7 +317,7 @@ def test_double_submit_makes_one_account(mdb):
 def test_one_kakao_cannot_bind_two_new_accounts(mdb):
     bodies = [{"link_kakao": True}] * 2
 
-    codes, results = _race(mdb, bodies, kakao_oauth.seal_pending(NO_EMAIL))
+    codes, results = _race(mdb, bodies, kakao_oauth.seal_pending(KAKAO))
 
     assert codes == [201, 409]
     assert {r.json()["error"]["code"] for r in results if r.status_code == 409} == {"KAKAO_ALREADY_LINKED"}

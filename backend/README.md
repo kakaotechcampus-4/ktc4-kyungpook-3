@@ -488,7 +488,7 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 | `PATCH /api/v1/users/me` | 로그인, `{username}` | 200 바뀐 사용자 정보. 지금과 같은 값이면 그대로 200, 남의 아이디면 409 `USERNAME_TAKEN`, 규칙 밖이면 400 `INVALID_REQUEST` |
 | `GET /api/v1/auth/kakao/start?next=` | 앱 안 경로 | 302 카카오 동의 화면. 설정 오류면 302 `/login?oauth=kakao&oauth_result=failed` |
 | `GET /api/v1/auth/kakao/callback` | 카카오가 부른다 | 항상 302 |
-| `GET /api/v1/auth/kakao/pending` | 대기 쿠키 | 200 `{email, nickname}`(없으면 null). 400 `KAKAO_LINK_EXPIRED` |
+| `GET /api/v1/auth/kakao/pending` | 대기 쿠키 | 200 `{nickname}`(없으면 null). 400 `KAKAO_LINK_EXPIRED` |
 
 **가입할 신원**
 
@@ -512,7 +512,7 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 | 나머지 | 대기 쿠키를 심고 `/signup?kakao=1&next=`. 같은 이메일의 계정이 있어도 잇지 않는다. callback 은 사용자를 만들지 않는다 |
 
 - 코드: 6자리, 유효 10분, 코드당 5회, 재발송 60초, 시간당 5회. 전체 주소 합계는 시간당 20통이고 넘으면 429 `global` 이다. DB 에는 HMAC 만 두고 맞으면 코드만 만료시킨다. 행은 재발송 제한과 전체 상한 집계에 남고, 하루 지나면 다음 코드 요청이 지운다.
-- 대기 쿠키 `kakao_pending`: 서명, HttpOnly, Secure, SameSite=Lax, Path `/api/v1/auth`, 30분. 카카오 id, 인증된 이메일, 닉네임을 담고 주소에는 싣지 않는다. 서명이지 암호화가 아니므로 비밀 값을 넣지 않는다.
+- 대기 쿠키 `kakao_pending`: 서명, HttpOnly, Secure, SameSite=Lax, Path `/api/v1/auth`, 30분. 카카오 id 와 닉네임만 담고 주소에는 싣지 않는다. 서명이지 암호화가 아니므로 카카오가 이메일을 줘도 읽지 않고 담지 않는다.
 - 메일: 제목에 코드를 넣지 않고 재설정 메일과 같은 메일 전용 스레드로 보낸다. 보내는 이름은 `SMTP_FROM` 으로 정한다(`Manager's Manager <주소>`).
 
 **환경변수** (`.env.example` 참고)

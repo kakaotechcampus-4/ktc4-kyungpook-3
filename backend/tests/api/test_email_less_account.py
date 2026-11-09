@@ -26,7 +26,7 @@ def _client():
 def _kakao_only(provider_id="77", username="kakaouser"):
     """카카오 이메일이 있어도 저장되지 않는 새 카카오 가입. 로그인된 클라이언트와 user_id 를 돌려준다."""
     client = _client()
-    identity = KakaoIdentity(provider_id, "kim@example.com", True, "동우")
+    identity = KakaoIdentity(provider_id, "동우")
     client.cookies.set(kakao_oauth.PENDING_COOKIE, kakao_oauth.seal_pending(identity))
     res = client.post(f"{P}/auth/signup", json={"name": "동우", "username": username, "link_kakao": True})
     assert res.status_code == 201, res.text

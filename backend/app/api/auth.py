@@ -353,7 +353,7 @@ def kakao_pending(request: Request):
     kakao = kakao_oauth.read_pending(request.cookies.get(kakao_oauth.PENDING_COOKIE, ""))
     if kakao is None:
         raise AppError(ErrorCode.KAKAO_LINK_EXPIRED)
-    return success(KakaoPendingResponse(email=kakao.email, nickname=kakao.nickname).model_dump(mode="json"))
+    return success(KakaoPendingResponse(nickname=kakao.nickname).model_dump(mode="json"))
 
 
 @router.post("/password-reset/request", response_model=Envelope[dict])

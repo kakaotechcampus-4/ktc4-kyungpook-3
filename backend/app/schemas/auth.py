@@ -69,7 +69,6 @@ class SignupRequest(BaseModel):
 
 
 class KakaoPendingResponse(BaseModel):
-    email: Optional[str] = None
     nickname: Optional[str] = None
 
 
