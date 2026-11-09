@@ -4,6 +4,10 @@ import type { FormEvent } from 'react'
 import { useController } from 'react-hook-form'
 import { useNavigate } from 'react-router'
 import { memberListQueryOptions } from '@/entities/member'
+import {
+  UPLOAD_EXTERNAL_PROCESSING_NOTICE,
+  UPLOAD_NOTION_NOTICE,
+} from '@/shared/config/meetingUpload'
 import { paths } from '@/shared/config/routes'
 import { useAppForm } from '@/shared/lib/form'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
@@ -194,10 +198,10 @@ export function MeetingUploadForm({ workspaceId }: MeetingUploadFormProps) {
       <UploadStatus phase={upload.phase} recovering={upload.recovering} />
 
       <div className={FOOTER}>
-        <p className={NOTE}>
-          Notion을 연결했다면 태스크도 Notion에 올라가요. 확인이 필요한 태스크는 승인한 뒤에
-          올라가요.
-        </p>
+        <div className="flex min-w-0 flex-1 flex-col gap-10 max-md:basis-full">
+          <p className={NOTE}>{UPLOAD_EXTERNAL_PROCESSING_NOTICE}</p>
+          <p className={NOTE}>{UPLOAD_NOTION_NOTICE}</p>
+        </div>
         <Button
           type="submit"
           variant="primary"
