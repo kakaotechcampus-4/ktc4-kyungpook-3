@@ -114,11 +114,13 @@ def build_graph(db: Session, workspace_id: str) -> GraphResponse:
             .order_by(Meeting.started_at, Meeting.meeting_id)
         )
     }
+    links = [link for link in links if link.meeting_id in meetings]
     topic_meetings = db.execute(
         select(TopicMeeting.topic_id, TopicMeeting.meeting_id)
         .join(Topic, Topic.topic_id == TopicMeeting.topic_id)
         .join(Meeting, Meeting.meeting_id == TopicMeeting.meeting_id)
-        .where(Topic.workspace_id == workspace_id, Meeting.deleted_at.is_(None))
+        .where(Topic.workspace_id == workspace_id, Meeting.deleted_at.is_(None),
+               TopicMeeting.meeting_id.in_(meetings))
     ).all()
 
     task_meetings: dict[str, set[str]] = {task.task_id: set() for task, _ in tasks}

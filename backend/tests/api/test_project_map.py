@@ -5,7 +5,8 @@ from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import event, select
+from sqlalchemy.orm import Session
 
 from app.main import app
 from app.models import (
@@ -18,10 +19,12 @@ from app.models import (
     Source,
     Task,
     Topic,
+    TopicItem,
+    TopicMeeting,
     Workspace,
 )
 from app.schemas.project_map import SummaryWriteRequest
-from app.services import embedding, project_map, summary
+from app.services import embedding, lifecycle, meeting_deletion, project_map, summary
 from tests.api.conftest import SERVICE_TOKEN
 
 H = {"X-Service-Token": SERVICE_TOKEN}
@@ -68,6 +71,84 @@ def _save(db, meeting, topics=(), *, extraction=None, **fields):
     summary.save_summary(db, row.extraction_id, SummaryWriteRequest(**body))
     db.commit()
     return row
+
+
+def test_graph_remains_readable_when_a_meeting_is_added_between_its_queries(mdb, mseed):
+    if mdb.bind.dialect.name != "postgresql":
+        pytest.skip("Independent PostgreSQL transactions")
+    topic = Topic(workspace_id=mseed["ws"], name="shared", name_key="shared", description="")
+    mdb.add(topic)
+    mdb.commit()
+    topic_id = topic.topic_id
+    inserted_meeting_ids = []
+
+    def add_new_meeting(conn, cursor, statement, parameters, context, many):
+        if (inserted_meeting_ids or not statement.lstrip().startswith("SELECT")
+                or "FROM topic_meeting JOIN topic " not in statement):
+            return
+        with Session(mdb.bind) as writer:
+            meeting = Meeting(workspace_id=mseed["ws"], source="discord", status="done", started_at=T0)
+            writer.add(meeting)
+            writer.flush()
+            inserted_meeting_ids.append(meeting.meeting_id)
+            writer.add(TopicMeeting(topic_id=topic_id, meeting_id=meeting.meeting_id))
+            writer.commit()
+
+    event.listen(mdb.bind, "before_cursor_execute", add_new_meeting)
+    try:
+        graph = project_map.build_graph(mdb, mseed["ws"])
+        assert inserted_meeting_ids
+        assert graph.meetings == []
+        assert topic_id in {node.id for node in graph.nodes}
+        assert {ref.meeting_id for ref in project_map.build_graph(mdb, mseed["ws"]).meetings} == set(inserted_meeting_ids)
+    finally:
+        event.remove(mdb.bind, "before_cursor_execute", add_new_meeting)
+        mdb.rollback()
+
+
+def test_graph_remains_readable_when_a_linked_meeting_is_deleted_between_its_queries(mdb, mseed, monkeypatch):
+    if mdb.bind.dialect.name != "postgresql":
+        pytest.skip("Independent PostgreSQL transactions")
+    monkeypatch.setenv("MEETING_DELETION_ENABLED", "true")
+    meeting = _meeting(mdb, mseed["ws"])
+    extraction = _extraction(mdb, meeting, summary_requested_at=T0)
+    meeting.deletion_ready = True
+    task = Task(workspace_id=mseed["ws"], meeting_id=meeting.meeting_id, title="retained task", status="todo")
+    mdb.add(task)
+    mdb.flush()
+    item = ExtractionItem(extraction_id=extraction.extraction_id, task_title=task.title, task_id=task.task_id)
+    mdb.add(item)
+    mdb.flush()
+    topic = Topic(workspace_id=mseed["ws"], name="shared", name_key="shared", description="")
+    mdb.add(topic)
+    mdb.flush()
+    mdb.add_all([TopicMeeting(topic_id=topic.topic_id, meeting_id=meeting.meeting_id),
+                 TopicItem(topic_id=topic.topic_id, item_id=item.item_id)])
+    mdb.commit()
+    meeting_id, task_id = meeting.meeting_id, task.task_id
+    deleted = False
+
+    def remove_linked_meeting(conn, cursor, statement, parameters, context, many):
+        nonlocal deleted
+        if (deleted or not statement.lstrip().startswith("SELECT")
+                or "FROM task LEFT OUTER JOIN member " not in statement):
+            return
+        deleted = True
+        with Session(mdb.bind, autoflush=False) as writer:
+            lifecycle.workspace(writer, mseed["ws"])
+            meeting_deletion.delete_meeting(writer, meeting_id)
+
+    event.listen(mdb.bind, "before_cursor_execute", remove_linked_meeting)
+    try:
+        graph = project_map.build_graph(mdb, mseed["ws"])
+        assert deleted
+        assert graph.meetings == []
+        retained_task = next(node for node in graph.nodes if node.id == task_id)
+        assert retained_task.kind == "task"
+        assert retained_task.meeting_ids == []
+    finally:
+        event.remove(mdb.bind, "before_cursor_execute", remove_linked_meeting)
+        mdb.rollback()
 
 
 def _extract(client, meeting, items):
