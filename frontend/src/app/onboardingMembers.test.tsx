@@ -678,7 +678,7 @@ describe('Discord 없이 온 팀원 연결 (D-073 개정)', () => {
     expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
   })
 
-  it('이름만 적어 팀원을 추가하면 Discord 사용자 없이 만들고 목록에 보인다. 건너뛰기는 그대로다 (#613)', async () => {
+  it('이름만 적어 팀원을 추가하면 Discord 사용자 없이 만들고 목록에 보인다. `건너뛰기` 는 `다음` 이 된다 (#613)', async () => {
     const bodies = recordRequestBodies('POST', '/members')
     const user = userEvent.setup()
     renderApp('/onboarding/ws_03/connect_members')
@@ -698,7 +698,24 @@ describe('Discord 없이 온 팀원 연결 (D-073 개정)', () => {
         discord_user_id: null,
       }),
     )
-    expect(screen.getByRole('button', { name: '건너뛰기' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '다음' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: '건너뛰기' })).toBeNull()
+  })
+
+  it('팀원을 추가한 뒤 `다음` 을 누르면 팀원 연결을 완료로 저장해 대시보드로 간다 (#613)', async () => {
+    const bodies = recordRequestBodies('PATCH', '/workspaces/ws_03/onboarding')
+    const user = userEvent.setup()
+    const app = renderApp('/onboarding/ws_03/connect_members')
+    const name = await screen.findByRole('textbox', { name: '팀원 이름' })
+    expect(screen.getByRole('button', { name: '건너뛰기' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '다음' })).toBeNull()
+    await user.type(name, '김서연')
+    await user.click(screen.getByRole('button', { name: '추가' }))
+
+    await user.click(await screen.findByRole('button', { name: '다음' }))
+    expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
+    await app.expectPath('/workspaces/ws_03/dashboard')
+    expect(bodies).toEqual([{ step: 'connect_members', action: 'complete' }])
   })
 
   it('팀원 목록을 받는 동안은 `추가` 만 잠그고 오류는 보이지 않는다 (#613)', async () => {

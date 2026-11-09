@@ -192,19 +192,22 @@ interface DiscordNotConnectedProps {
 /**
  * Discord 를 연결하지 않은 채 온 팀원 연결 (D-073 개정, 2026-09-29). 불러올 Discord 사용자가 없다 —
  * 오류 대신 까닭을 알리고, 이름만으로 팀원을 추가하게 한다 (#613). 추가한 팀원은 Discord 를 연결한 뒤 매칭 폼에서 잇는다.
- * 단계는 `건너뛰기` 로만 넘어간다. 저장은 `나중에 하기` 와 같다. `‹` 로 Notion·Discord 둘러보기에 가서 연결할 수 있다.
+ * PM 이 아닌 팀원이 있으면 `다음` 으로 단계 완료를, 없으면 `건너뛰기` 로 건너뜀을 저장한다. 하단 `›` 도 같다.
+ * `‹` 로 Notion·Discord 둘러보기에 가서 연결할 수 있다.
  */
 function DiscordNotConnected({ workspaceId, notice, previous, reveal }: DiscordNotConnectedProps) {
   const onboarding = useOnboardingSave(workspaceId)
+  const members = useQuery(memberListQueryOptions(workspaceId))
+  const added = members.data?.some(({ role }) => role !== 'pm') ?? false
   const [formError, setFormError] = useState<string | null>(null)
-  // 카드 버튼과 `›` 가 겹쳐 눌려도 건너뛰기 요청은 하나다
+  // 카드 버튼과 `›` 가 겹쳐 눌려도 저장 요청은 하나다
   const lock = useRef(false)
-  const skip = () => {
+  const next = () => {
     if (lock.current) return
     lock.current = true
     setFormError(null)
     void onboarding
-      .save({ step: 'connect_members', action: 'skip' })
+      .save({ step: 'connect_members', action: added ? 'complete' : 'skip' })
       .catch((error: unknown) => setFormError(errorMessage(error)))
       .finally(() => {
         lock.current = false
@@ -219,15 +222,15 @@ function DiscordNotConnected({ workspaceId, notice, previous, reveal }: DiscordN
       exit={<ExitLink />}
       notice={notice}
       messages={['마지막이에요. 디스코드를 연결하면 팀원 이름을 이어 둘 수 있어요.']}
-      nav={{ previous, onNext: skip, disabled: busy }}
+      nav={{ previous, onNext: next, disabled: busy }}
     >
       <OnboardingCard
         title={CARD.title}
         description={CARD.description}
         actions={
           <Reveal indicator={{ reveal }}>
-            <Button variant="primary" size="lg-onboarding" loading={busy} onClick={skip}>
-              건너뛰기
+            <Button variant="primary" size="lg-onboarding" loading={busy} onClick={next}>
+              {added ? '다음' : '건너뛰기'}
             </Button>
           </Reveal>
         }
