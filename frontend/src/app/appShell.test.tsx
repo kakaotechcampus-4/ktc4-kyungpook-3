@@ -26,7 +26,9 @@ function addCompletedWorkspace() {
     onboarding: {
       completed: true,
       current_step: null,
-      steps: (['create_workspace', 'connect_discord', 'connect_notion', 'connect_members'] as const).map((step) => ({ step, status: 'completed' as const })),
+      steps: (
+        ['create_workspace', 'connect_discord', 'connect_notion', 'connect_members'] as const
+      ).map((step) => ({ step, status: 'completed' as const })),
     },
   })
   db.accounts[0].workspaceIds.push('ws_04')
@@ -341,6 +343,17 @@ describe('메뉴 키보드 (U4-3)', () => {
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
     expect(trigger).toHaveFocus()
+  })
+})
+
+describe('이메일 없는 계정 (#627)', () => {
+  it('카카오로 가입해 이메일이 없으면 이름 아래에 아이디를 보인다', async () => {
+    for (const user of [db.session.user, db.accounts[0].session.user]) user.email = null
+    renderApp('/workspaces/ws_01/dashboard')
+    const menu = await openUserMenu()
+    expect(within(menu).getByText('최진호')).toBeInTheDocument()
+    expect(within(menu).getByText('userpm')).toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: '로그아웃' })).toBeInTheDocument()
   })
 })
 

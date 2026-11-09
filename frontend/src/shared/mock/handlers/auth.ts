@@ -2,19 +2,25 @@ import { http } from 'msw'
 import { db, loginLimitKey, type MockLoginLimit } from '../db'
 import { fail, ok } from '../envelope'
 import { requireAuth } from '../auth-guard'
-import { accountWithEmail, workspaceCountOf } from '../sessions'
+import {
+  accountWithEmail,
+  accountWithUsername,
+  usernameFromEmail,
+  workspaceCountOf,
+} from '../sessions'
 import { readJson } from '../utils'
-import { invalidBody, passwordField, stringField } from '../validation'
+import {
+  PYTHON_STRIP,
+  checkedUsername,
+  invalidBody,
+  passwordField,
+  stringField,
+} from '../validation'
 import { readSignupProof } from './signupCode'
 
 const base = '/api/v1/auth'
 
 const NAME_MAX_LENGTH = 100
-
-/** Python `str.strip()` 의 공백. JS `trim()` 과 달리 \x1c-\x1f·\x85 를 지우고 \ufeff 는 남긴다 */
-const PYTHON_STRIP =
-  // eslint-disable-next-line no-control-regex
-  /^[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/g
 
 /** 제어·서로게이트·줄/문단 구분자와 글자 방향 제어. ZWJ·ZWNJ 는 허용한다 */
 const NAME_FORBIDDEN = /[\p{Cc}\p{Cs}\p{Zl}\p{Zp}\u202a-\u202e\u2066-\u2069]/u
@@ -77,6 +83,7 @@ export const authHandlers = [
     db.session = {
       user: {
         user_id: `us_${String(db.accounts.length + db.withdrawals.length + 1).padStart(2, '0')}`,
+        username: usernameFromEmail(email),
         email,
         name,
         avatar_url: null,
@@ -138,6 +145,16 @@ export const authHandlers = [
     if (denied) return denied
     db.authenticated = false
     return ok({})
+  }),
+  http.get(`${base}/username-availability`, ({ request }) => {
+    const value = new URL(request.url).searchParams.get('username')
+    if (value === null)
+      return fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400, {
+        fields: [{ loc: ['query', 'username'], msg: 'Field required' }],
+      })
+    const username = checkedUsername(value)
+    const reason = username === null ? 'invalid' : accountWithUsername(username) ? 'taken' : null
+    return ok({ available: reason === null, reason })
   }),
   http.get(`${base}/kakao/pending`, () =>
     db.kakao.pending === null

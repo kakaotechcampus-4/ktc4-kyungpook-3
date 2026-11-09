@@ -1,6 +1,9 @@
 export interface User {
   id: string
-  email: string
+  /** 소문자로 저장한 아이디. 모든 계정에 있다 (#627) */
+  username: string
+  /** 카카오로 가입한 계정은 없다 */
+  email: string | null
   name: string
   avatarUrl: string | null
 }

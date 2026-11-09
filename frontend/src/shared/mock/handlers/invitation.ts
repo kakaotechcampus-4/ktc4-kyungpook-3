@@ -14,7 +14,7 @@ import type { MockInvitation } from '../db'
 import { fail, list, ok } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
 import { requireAuth, requirePmRole } from '../auth-guard'
-import { isMemberOf, linkedUserIdOf, normalizeEmail } from '../sessions'
+import { isMemberOf, linkedUserIdOf, normalizeEmail, sessionEmail } from '../sessions'
 import { nextId, readJson } from '../utils'
 
 /*
@@ -98,7 +98,7 @@ function pmInvitation(invitationId: string) {
 /** 내 이메일로 온 초대가 아니면 있는지도 알리지 않는다(404). 팀원이 지워졌으면 닫힌 초대다 */
 function myPendingInvitation(invitationId: string) {
   const invitation = db.invitations.find(({ invitation_id }) => invitation_id === invitationId)
-  if (!invitation || invitation.email !== normalizeEmail(db.session.user.email))
+  if (!invitation || invitation.email !== sessionEmail(db.session.user))
     return notFound(invitationId)
   if (invitation.status !== 'pending' || !memberOf(invitation)) return notPending(invitationId)
   return invitation
@@ -130,8 +130,7 @@ export const invitationHandlers = [
     if (
       db.accounts.some(
         ({ session }) =>
-          normalizeEmail(session.user.email) === email &&
-          isMemberOf(workspaceId, session.user.user_id),
+          sessionEmail(session.user) === email && isMemberOf(workspaceId, session.user.user_id),
       )
     )
       return fail('ALREADY_WORKSPACE_MEMBER', '이미 워크스페이스 팀원입니다.', 409, { email })
@@ -222,7 +221,7 @@ export const invitationHandlers = [
   http.get('/api/v1/invitations/me', () => {
     const denied = requireAuth()
     if (denied) return denied
-    const email = normalizeEmail(db.session.user.email)
+    const email = sessionEmail(db.session.user)
     return list(
       db.invitations
         .filter(

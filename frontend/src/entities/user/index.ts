@@ -20,3 +20,14 @@ export type { SignupCodeProblem } from './model/signupCode'
 export { resetLinkProblem } from './model/passwordReset'
 export type { ResetLinkProblem } from './model/passwordReset'
 export { advanceSessionGeneration, captureSession } from './model/sessionGeneration'
+export { fetchUsernameAvailability, updateUsername } from './api/username'
+export {
+  USERNAME_HINT,
+  USERNAME_MESSAGES,
+  isUsernameAllowed,
+  normalizeUsername,
+} from './model/username'
+export type { UsernameCheck, UsernameUnavailableReason } from './model/username'
+export { useUsernameCheck } from './model/useUsernameCheck'
+export type { UsernameCheckControl } from './model/useUsernameCheck'
+export { UsernameField } from './ui/UsernameField'

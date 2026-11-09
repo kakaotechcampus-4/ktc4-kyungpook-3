@@ -264,7 +264,13 @@ describe('처음 보는 메시지 알림이 오면 메시지를 다시 받는다
     const pmSession = db.session
     // 박민수(mb_02)는 초대를 수락한 us_02 로 이어져 있다
     const minsuSession = {
-      user: { user_id: 'us_02', email: 'minsu@example.com', name: '박민수', avatar_url: null },
+      user: {
+        user_id: 'us_02',
+        username: 'minsu',
+        email: 'minsu@example.com',
+        name: '박민수',
+        avatar_url: null,
+      },
       workspace_count: 1,
       last_workspace_id: 'ws_01',
     }
