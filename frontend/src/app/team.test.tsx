@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http } from 'msw'
+import { HttpResponse, http } from 'msw'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { fail } from '@/shared/mock/envelope'
@@ -8,7 +8,7 @@ import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
-import { businessRequests, recordRequests } from '@/shared/test/requests'
+import { businessRequests, recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import { onTestFinished } from 'vitest'
 import { renderApp } from './test/renderApp'
 
@@ -243,6 +243,53 @@ describe('팀 화면 — Discord 를 건너뛴 공간', () => {
     const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
     expect(dialog.getByText(/Discord를 연결하지 않아 팀원을 불러올 수 없어요/)).toBeInTheDocument()
     expect(dialog.queryByRole('button', { name: '저장' })).toBeNull()
+  })
+
+  it('팀원 연결 창에서 이름만 적어 팀원을 추가한다. 설정 링크는 그 아래에 있다 (#613)', async () => {
+    const bodies = recordRequestBodies('POST', '/members')
+    const user = userEvent.setup()
+    renderApp(paths.members('ws_03'))
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const name = await dialog.findByRole('textbox', { name: '팀원 이름' })
+    const link = dialog.getByRole('link', { name: '설정에서 Discord 연결하기' })
+    expect(name.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    await user.type(name, '박민수')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+    expect(
+      await within(dialog.getByRole('list', { name: '추가한 팀원' })).findByText('박민수'),
+    ).toBeInTheDocument()
+    expect(bodies).toEqual([{ workspace_id: 'ws_03', display_name: '박민수' }])
+
+    await user.type(name, ' 박민수')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+    expect(await dialog.findByText('이미 같은 이름의 팀원이 있어요.')).toBeInTheDocument()
+    expect(bodies).toHaveLength(1)
+
+    await user.click(dialog.getByRole('button', { name: '닫기' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    const added = within(await screen.findByRole('region', { name: '박민수' }))
+    expect(await added.findByRole('button', { name: '초대' })).toBeInTheDocument()
+  })
+
+  it('추가 응답을 읽지 못하면 실패라고 하지 않고 결과를 확인하지 못했다고 알린다 (#613)', async () => {
+    server.use(
+      http.post('/api/v1/members', () => new HttpResponse('<html></html>', { status: 201 }), {
+        once: true,
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp(paths.members('ws_03'))
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const name = await dialog.findByRole('textbox', { name: '팀원 이름' })
+    await user.type(name, '박민수')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+
+    expect(await screen.findByText('변경 결과를 확인하지 못했어요')).toBeInTheDocument()
+    expect(name).not.toHaveAccessibleDescription()
+    expect(name).toHaveValue('박민수')
   })
 })
 

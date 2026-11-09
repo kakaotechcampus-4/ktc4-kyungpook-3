@@ -5,6 +5,7 @@ import {
   memberListQueryOptions,
   memberNameKey,
   updateMember,
+  upsertMember,
 } from '@/entities/member'
 import type { DiscordUser, Member } from '@/entities/member'
 import { messageSettingsQueryOptions } from '@/entities/message-settings'
@@ -218,13 +219,6 @@ export class MappingSaveError extends Error {
     this.rowIndex = rowIndex
     this.cause = cause
   }
-}
-
-function upsertMember(members: readonly Member[] | undefined, member: Member): Member[] {
-  const list = members ?? []
-  return list.some(({ id }) => id === member.id)
-    ? list.map((item) => (item.id === member.id ? member : item))
-    : [...list, member]
 }
 
 /**

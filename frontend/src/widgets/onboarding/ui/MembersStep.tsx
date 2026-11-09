@@ -4,6 +4,7 @@ import type { FormEvent } from 'react'
 import { integrationsQueryOptions } from '@/entities/integration'
 import { discordUsersQueryOptions, memberListQueryOptions, pmsOf } from '@/entities/member'
 import type { Member } from '@/entities/member'
+import { MemberAddForm } from '@/features/member-add'
 import {
   MemberMappingFields,
   buildMappingRows,
@@ -31,7 +32,7 @@ const CARD = {
 } as const
 
 const NOT_CONNECTED =
-  '디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이전 단계에서 연결하거나 건너뛸 수 있어요.'
+  '디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이름으로 팀원을 추가하거나, 이전 단계에서 연결하거나, 건너뛸 수 있어요.'
 
 function messagesFor(rows: readonly MappingRow[]): string[] {
   const unknown = rows.filter(({ name }) => !name.trim()).length
@@ -190,7 +191,8 @@ interface DiscordNotConnectedProps {
 
 /**
  * Discord 를 연결하지 않은 채 온 팀원 연결 (D-073 개정, 2026-09-29). 불러올 Discord 사용자가 없다 —
- * 오류 대신 까닭을 알리고 `건너뛰기` 만 둔다. 저장은 `나중에 하기` 와 같다. `‹` 로 Notion·Discord 둘러보기에 가서 연결할 수 있다.
+ * 오류 대신 까닭을 알리고, 이름만으로 팀원을 추가하게 한다 (#613). 추가한 팀원은 Discord 를 연결한 뒤 매칭 폼에서 잇는다.
+ * 단계는 `건너뛰기` 로만 넘어간다. 저장은 `나중에 하기` 와 같다. `‹` 로 Notion·Discord 둘러보기에 가서 연결할 수 있다.
  */
 function DiscordNotConnected({ workspaceId, notice, previous, reveal }: DiscordNotConnectedProps) {
   const onboarding = useOnboardingSave(workspaceId)
@@ -233,6 +235,9 @@ function DiscordNotConnected({ workspaceId, notice, previous, reveal }: DiscordN
         <Reveal indicator={{ reveal }}>
           <FormErrorPanel message={formError} className="mt-6" />
           <p className="pt-6 text-body text-dim">{NOT_CONNECTED}</p>
+          <div className="pt-14">
+            <MemberAddForm workspaceId={workspaceId} tone="onboarding" />
+          </div>
         </Reveal>
       </OnboardingCard>
     </OnboardingLayout>
