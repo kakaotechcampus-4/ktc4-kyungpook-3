@@ -230,7 +230,7 @@ FE 변경과 실제 검증은 [M6 후속 결과](../plan/m6/result.md)에 기록
 | `GET /workspaces/{id}/integrations`, `DELETE /workspaces/{id}/integrations/{provider}` | Discord·Notion 상태. 해제는 204 무본문. Discord 의 `chat_channel` 과 채팅 채널 목록·저장·해제는 §4.3.1 | [연동 API](../../src/entities/integration/api/integrations.ts), [연동 DTO](../../src/shared/types/api/integration.ts) |
 | `POST /workspaces/{id}/meetings/upload` | multipart `title`, ISO `started_at`, 참석자별 반복 `attendee_member_ids`, `file`. 202 data `{meeting_id,status}` | [업로드](../../src/entities/meeting/api/uploadMeeting.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
 | `GET /workspaces/{id}/meetings`, `GET /meetings/{id}` | 목록은 `{items,total}`, nullable title. 상세는 workspace_id·status·progress·extraction_id·failed_stage | [회의 조회](../../src/entities/meeting/api/meetingQueries.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
-| `GET /meetings/{id}/minutes` | nullable summary·title, summary_status(FE 미사용, §4.4.2), 참석자 배열, 전사 배열, permissions `{can_review,can_undo}` | [회의록 조회](../../src/entities/minutes/api/minutesQuery.ts), [회의록 DTO](../../src/shared/types/api/minutes.ts) |
+| `GET /meetings/{id}/minutes` | nullable summary·title, summary_status·summary_waiting_count(FE 미사용, §4.4.2), 참석자 배열, 전사 배열, permissions `{can_review,can_undo}` | [회의록 조회](../../src/entities/minutes/api/minutesQuery.ts), [회의록 DTO](../../src/shared/types/api/minutes.ts) |
 | 회의 추출·대기 승인 조회 | 반영 항목과 확인 필요 항목을 조합. 일반 팀원은 대기 승인 조회·확인 필요 영역 제외 | [추출 조회](../../src/entities/extraction/api/extractionQuery.ts), [승인 조회](../../src/entities/approval/api/pendingApprovals.ts), [회의록 화면](../../src/pages/meetings) |
 
 업로드 화면의 형식·한도는 [uploadPolicy](../../src/entities/meeting/model/uploadPolicy.ts)의 MP3·WAV·M4A·OGG·WebM, 200 MiB·2시간이다. 브라우저 검증이 서버의 동일 검증을 보장하지 않는다. 전송 진행률 100%와 서버의 처리 완료는 다르며, 409 `MEETING_PROCESSING_IN_PROGRESS`는 `details.meeting_id`로 기존 처리 화면에 연결한다. 처리 상세는 3초 간격으로 추적하며 완료·실패·접근 상실 시 중단한다.
@@ -1539,7 +1539,7 @@ POST .../meetings/upload            multipart/form-data
   `extraction` 이 없으면 빈 배열이다. 필드 **이름과 형태는 계약대로**이므로 mapper 는 그대로 쓸 수 있고, 값만 비어 있다.
 - `attendees`는 같은 Source에서 `member_id`가 있는 팀원을 처음 발화한 순서로 중복 제거해 구성한다. 말하지 않았거나 팀원에 연결되지 않은 참석자는 포함하지 않는다. 업로드 때 선택한 전체 참석자 목록을 그대로 반환하는 것은 아니다.
 - `summary`는 최신 Extraction.summary JSON을 읽고 유효한 객체일 때 반환한다. 값이 없거나 잘못된 JSON·객체가 아닌 값이면 null이다. 생성 파이프라인의 실제 저장 성공 여부는 별도 검증한다.
-- `summary_status` 는 `ready` · `pending` · `none` 이다. 뜻은 §4.4.2.
+- `summary_status` 는 `ready` · `pending` · `awaiting_approval` · `none` 이다. 뜻과 `summary_waiting_count` 는 §4.4.2.
 - 비소속 사용자는 403 `FORBIDDEN` 이다. `MEETING_NOT_FOUND` 가 아니라 존재는 드러난다.
 
 #### 4.4.1 수동 업로드 실패 사유와 만료 이력 (#256, 2026-11-04)
@@ -1578,10 +1578,15 @@ POST .../meetings/upload            multipart/form-data
 | 값 | 뜻 |
 |---|---|
 | `ready` | 읽을 수 있는 요약이 있다. `summary` 가 `null` 이 아닌 것과 같다. 다시 요약하는 중에도 기존 요약이 있으면 `ready` 다 |
-| `pending` | 요약 대기 중이거나 만드는 중이다. 곧 나올 수 있다. 줄 세운 지 1시간 안에만 이 값이다 |
-| `none` | 요약이 없다. 두 번 실패, 줄 세운 지 1시간이 지난 회의, 채팅 회의, 표시되지 않은 옛 회의, 처리 중인 회의가 여기 든다. 1시간이 지난 회의도 일감은 남아 있어 나중에 `ready` 가 될 수 있다. 재시도 안내는 두지 않는다(사용자 결정 2026-11-06) |
+| `pending` | 요약 대기 중이거나 만드는 중이다. 곧 나올 수 있다. 줄 세운 때와 마지막 승인이나 반려 가운데 늦은 쪽에서 1시간 안에만 이 값이다 |
+| `awaiting_approval` | 그 회의 항목의 승인 요청(보류 포함)이 남아 있어 아직 만들지 않는다. 모두 처리되면 `pending` 이 된다. 시간 제한이 없다(#605) |
+| `none` | 요약이 없다. 두 번 실패, 1시간이 지난 회의, 승인된 항목이 없는 채팅 회의, 표시되지 않은 옛 회의, 처리 중인 회의가 여기 든다. 1시간이 지난 회의도 일감은 남아 있어 나중에 `ready` 가 될 수 있다. 재시도 안내는 두지 않는다(사용자 결정 2026-11-06) |
 
-**`summary` 의 더한 키.** `overview`, `key_points`, `decisions`(문자열 목록)는 그대로 항상 있다. AI 가 저장한 요약에는 `schema_version`, `discussion`, `decision_details`, `facts`, `task_changes`, `schedule`, `open_items`, `topics`(이름 목록), `meta` 가 더 있다.
+`summary_waiting_count` 는 `awaiting_approval` 일 때 남은 승인 요청 수다. PM 에게만 숫자이고 일반 팀원과 다른 상태에서는 `null` 이다(D-104). 여러 회의 항목이 합쳐진 카드는 한 장으로 센다(#605).
+
+채팅 회의(`source: "chat"`)도 승인된 항목이 하나 이상 있으면 요약되어 `ready` 가 된다. 이 요약에는 `discussion` 이 없다.
+
+**`summary` 의 더한 키.** `overview`, `key_points`, `decisions`(문자열 목록)는 그대로 항상 있다. AI 가 저장한 요약에는 `schema_version`, `discussion`, `decision_details`, `facts`, `task_changes`, `schedule`, `open_items`, `topics`(이름 목록), `meta` 가 더 있다. `schema_version` 2(#605)부터 `decision_details[].decision_id`, `topics` 와 같은 순서의 `topic_ids`, `task_changes[].item_id` 가 있다. `task_changes` 는 지금 반영된 항목의 줄만 온다. 항목 키 없이 저장된 옛 요약은 `task_changes` 가 빈 목록이다(사용자 결정 2026-11-09).
 
 `GET /workspaces/{workspace_id}/project-map`
 
@@ -1601,7 +1606,7 @@ POST .../meetings/upload            multipart/form-data
 
 - `nodes` 는 주제 전부와 지워지지 않은 태스크 전부다. 주제 없는 태스크도 들어가고 주제를 추정해 붙이지 않는다.
 - `edges` 에 종류 칸이 없다. 주제와 태스크의 선, 임베딩 유사도로 찾은 태스크끼리의 선이 섞여 있다.
-- 주제와 태스크의 선: 추출 항목에 달린 주제를 따라간다. 승인 전 수정 항목은 바로 이어지고, 승인 전 새 항목은 태스크가 생길 때 이어지고, 반려된 항목은 이어지지 않는다.
+- 주제와 태스크의 선: 추출 항목에 달린 주제를 따라간다. 승인 전 수정 항목과 새 항목은 승인 뒤에 이어지고, 반려된 항목은 이어지지 않는다(#605).
 - `meeting_ids`는 그 태스크가 나온 회의와 주제로 이어진 살아 있는 회의다. 삭제된 회의의 태스크는 남지만 원문 링크는 제외한다. 시간순이다. `meetings` 는 노드가 가리키는 회의다.
 - `appeared_at` 은 주제면 처음 나온 회의 시각, 태스크면 만든 시각과 이어진 회의 시각 중 가장 이른 값이다.
 - 임베딩 유사도 기준(`EDGE_TOP_K`, `EDGE_MIN_SIMILARITY`)은 측정 전의 자리값이다.
@@ -1628,9 +1633,10 @@ POST .../meetings/upload            multipart/form-data
 
 - 응답은 봉투 없는 Markdown 이다. `text/markdown; charset=utf-8`, `Content-Disposition: attachment; filename="summary.md"; filename*=UTF-8''<percent 인코딩 이름>`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store`. 오류는 평소 JSON 봉투다. 합본의 ASCII 이름은 `project-bundle.md` 다.
 - `summary.md` 는 요약이 없으면 404 `SUMMARY_NOT_FOUND` 다. 머리에 날짜, 참석자, 원문 링크, 주제가 있고 빈 섹션은 빠진다.
+- 채팅 회의의 요약본은 제목과 파일 이름이 `일일 요약`(`<날짜> 일일 요약.md`)이다. 머리의 `종류` 가 `일일 요약` 이고, `기간` 에 첫 메시지와 마지막 메시지의 한국 시간이 있다. 합본에서는 날짜 자리에 기간을 쓴다(#605).
 - `project-bundle.md` 의 머리말(팀원, 구조, 유효한 결정, 막힌 일)은 기간과 무관하게 지금 값이다. 본문의 회의 요약본만 기간으로 자른다. `from`·`to` 는 한국 시간 날짜이고 둘 다 포함한다. 없으면 그쪽 끝이 없고 둘 다 없으면 전체다(사용자 결정 2026-11-06). `from` 이 `to` 보다 늦으면 400 `INVALID_REQUEST` 다.
 - 합본은 워크스페이스 팀원 전체가 받는다. 다운로드 버튼 옆에 팀원 발언이 포함된다는 안내를 둔다(사용자 결정 2026-11-06).
-- 요약의 `할 일 변화` 에는 승인 전이나 반려된 일이 글로 들어갈 수 있다(사용자 결정 2026-11-06).
+- 요약의 `할 일 변화` 에는 지금 반영된 항목의 줄만 보인다(#605, 2026-11-06 결정을 바꿨다). 개요와 핵심 같은 요약 문장은 회의 기록이라 반려된 일을 논의했다는 내용이 남을 수 있다.
 
 구현 근거: [project_map 라우터](../../../backend/app/api/project_map.py), [서비스](../../../backend/app/services/project_map.py), [렌더러](../../../backend/app/services/summary_markdown.py), [스키마](../../../backend/app/schemas/project_map.py). 검증은 `backend/tests/api/test_project_map.py`, `backend/tests/services/test_summary_markdown.py` 로 SQLite 와 PostgreSQL 에서 했다. 응답 크기와 실서버 동작은 재지 않았다.
 
