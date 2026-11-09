@@ -61,7 +61,11 @@ def parse_wav_stem(stem: str) -> tuple[str, str]:
 
 
 def parse_transcript_stem(stem: str) -> tuple[str, str, str]:
-    """'{user_id}_{ts}__{model}' → (user_id, ts, model)"""
+    """세션별 또는 이전 파일명에서 (user_id, session, model)을 읽는다."""
+    if stem.startswith('session_') and stem.count('__') >= 2:
+        session, base, model = stem.split('__', 2)
+        user_id, _ = parse_wav_stem(base)
+        return user_id, session.removeprefix('session_'), model or '?'
     base, _, model = stem.partition("__")
     user_id, ts = parse_wav_stem(base)
     return user_id, ts, model or "?"
@@ -142,7 +146,13 @@ def build_session_transcript(out_dir: Path, session: str, model_name: str,
     """
     segs: list[dict] = []
     speakers: dict[str, str] = {}
-    found = sorted(files) if files is not None else sorted(out_dir.glob(f"*_{session}__{model_name}.json"))
+    if files is not None:
+        found = sorted(files)
+    else:
+        found = sorted(out_dir.glob(f"session_{session}__*__{model_name}.json"))
+        if not found:
+            found = sorted(p for p in out_dir.glob(f"*_{session}__{model_name}.json")
+                           if not p.name.startswith('session_'))
     for jp in found:
         if not jp.exists():
             continue
@@ -247,7 +257,7 @@ def save_session_outputs(lines: list, *, results: dict[Path, dict], summary: dic
     out_dir.mkdir(parents=True, exist_ok=True)
     files = []
     for w, result in results.items():
-        stem = out_dir / f"{w.stem}__{model_name}"
+        stem = out_dir / f"session_{session}__{w.stem}__{model_name}"
         _save(result, stem)
         files.append(stem.with_suffix(".json"))
     (out_dir / f"session_{session}__{model_name}.batch.json").write_text(
@@ -414,7 +424,7 @@ def main() -> int:
         print(f"\n=== {backend.name} · mode={args.mode} · workers={workers} · gate={'off' if gate is None else 'on'} ===")
 
         for ts, session_wavs in sorted(by_session.items()):
-            stems = {w: out_dir / f"{w.stem}__{model_name}" for w in session_wavs}
+            stems = {w: out_dir / f"session_{ts}__{w.stem}__{model_name}" for w in session_wavs}
             done = all(s.with_suffix(".json").exists() for s in stems.values())
             if done and not args.overwrite:
                 for w, stem in stems.items():

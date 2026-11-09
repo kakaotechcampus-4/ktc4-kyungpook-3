@@ -197,6 +197,14 @@ http://localhost:5173/workspaces/ws_01/members?msw-scenario=settings-unmapped
 
 로컬 브라우저는 `warn`으로 경고하고 실제 네트워크로 보낸다. 의도한 mock에서 경고가 나면 handler 누락을 먼저 확인한다. OAuth `start`·`callback` 같은 302 네비게이션, AI→BE 전용 생성 경로는 M1 mock 범위 밖이다. 메시지는 계약 §5.7 의 화면용 경로(조회 `/workspaces/{id}/messages`, `/workspaces/{id}/messages/threads/{id}`, 행동 `PATCH …/messages/bundles/{id}`, `POST …/bundles/{id}/approve`, `POST …/bundles/{id}/cancel`, `POST …/messages/threads/{id}/replies`, #370 의 재촉 만들기 `POST …/messages/reminders`, 리마인드 고치기 `PATCH …/messages/reminders/{id}`, 빼기 `POST …/messages/reminders/{id}/cancel`)만 둔다. 봇 경로는 화면이 부르지 않아 두지 않았다(`messages-*` 시나리오).
 
+## 알림과 자동 막힘 시나리오 (#364)
+
+MSW를 켠 개발 서버에서 `/workspaces/ws_01/tasks/tk_06?msw-scenario=notifications-default`로 들어간다. 이 시나리오는 ws_01의 PM으로 시작하며 읽지 않은 알림 4건과 읽은 알림 1건을 준비한다. 읽지 않은 항목에는 알 수 없는 종류 1건이 포함된다. `tk_06`은 무응답으로 자동 막힌 태스크다.
+
+알림 종 배지·목록, 알림 이동과 태스크 상세의 **막힘 풀기**를 확인할 때 사용한다. 같은 여정의 새로고침에는 시나리오 파라미터를 다시 붙이지 않는다. 다시 붙이면 저장한 상태 대신 초기 시나리오를 준비한다.
+
+시나리오는 `src/shared/mock/scenarios.ts`에 있고 `src/app/taskAutoBlock.test.tsx`에서 사용한다. 현재 `e2e/support.ts`의 `Scenario` 타입에는 없으므로 새 E2E에서 `start`로 사용하려면 해당 타입도 확장해야 한다. 이 모의 데이터는 실제 VAPID 설정·브라우저 푸시 수신·iOS PWA·로그아웃 후 구독 해제의 검증 근거가 아니다. 실서버 검증은 #364에 별도로 기록한다.
+
 ## 실 백엔드와 다른 점
 
 `VITE_ENABLE_MSW=false`로 붙일 때 어긋나는 것들이다. 전체 현황은 [계약 §4.0](contracts/frontend-api-contract.md)에 있다.

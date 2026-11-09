@@ -13,6 +13,7 @@ class PendingUpload(BaseModel):
 
     meeting_id: str
     workspace_id: str
+    identity_epoch: int = 0
     title: str | None
     started_at: datetime
     attendees: list[UploadAttendee] = Field(..., description="업로드 때 PM이 고른 참석자")
@@ -80,6 +81,7 @@ class AssignedUpload(BaseModel):
 
     meeting_id: str
     workspace_id: str
+    identity_epoch: int = 0
     title: str | None
     started_at: datetime
     mapping: dict[str, str | None] = Field(..., description="라벨 -> member_id(없으면 null)")
@@ -93,6 +95,7 @@ class AssignedUploadListResponse(BaseModel):
 class ResumeResponse(BaseModel):
     meeting_id: str
     status: str
+    identity_epoch: int = 0
     mapping: dict[str, str | None]
 
 

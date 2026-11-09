@@ -12,6 +12,7 @@ from app.api import auth
 from app.main import app
 from app.models import Session as SessionModel, User
 from app.services.passwords import hash_password
+from tests.api.conftest import signup_verified
 
 EMAIL = "lock@example.com"
 PW = "oldpass123"
@@ -37,10 +38,10 @@ def test_login_rechecks_the_hash_with_a_share_lock():
     assert "FOR UPDATE" not in sql
 
 
-def test_login_rejects_when_password_changed_during_the_check(mdb, monkeypatch):
+def test_login_rejects_when_password_changed_during_the_check(mdb, monkeypatch, signup_secret):
     """검사하는 사이 재설정으로 비밀번호가 바뀌었으면 옛 비밀번호 세션을 만들지 않는다."""
     c = TestClient(app, base_url="https://testserver")
-    assert c.post("/api/v1/auth/signup", json={"email": EMAIL, "password": PW, "name": "l"}).status_code == 201
+    assert signup_verified(c, EMAIL, PW, "l").status_code == 201
     user_id = mdb.scalar(select(User.user_id).where(User.email == EMAIL))
     sessions_before = mdb.query(SessionModel).filter(SessionModel.user_id == user_id).count()
     real_verify = auth.verify_password

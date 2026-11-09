@@ -20,3 +20,17 @@ export function memberListQueryOptions(workspaceId: string) {
     staleTime: STALE_TIME.long,
   })
 }
+
+export function recordMemberListQueryOptions(workspaceId: string) {
+  return queryOptions({
+    queryKey: workspaceKey(workspaceId, 'members', 'records'),
+    queryFn: async ({ signal }) => {
+      const { items } = await request<ListDto<MemberDto>>('/members', {
+        params: { workspace_id: workspaceId, include_withdrawn: true },
+        signal,
+      })
+      return items.map(toMember)
+    },
+    staleTime: STALE_TIME.long,
+  })
+}

@@ -40,6 +40,7 @@ interface ResolveVariables {
 export type ApprovalResolveProblem =
   | { kind: 'conflict'; taskId: string; taskVersion: number; conflicts: ApprovalConflict[] }
   | { kind: 'already_resolved' }
+  | { kind: 'changed'; message: string }
   | { kind: 'error'; message: string }
 
 export function toApprovalResolveProblem(error: unknown): ApprovalResolveProblem | null {
@@ -54,6 +55,7 @@ export function toApprovalResolveProblem(error: unknown): ApprovalResolveProblem
       conflicts: failure.conflicts,
     }
   if (failure?.kind === 'already_resolved') return { kind: 'already_resolved' }
+  if (failure?.kind === 'changed') return { kind: 'changed', message: errorMessage(error) }
   return { kind: 'error', message: errorMessage(error) }
 }
 
@@ -120,6 +122,9 @@ export function useApprovalResolve(
       if (!isCurrentSession()) return
       const problem = toApprovalResolveProblem(failure)
       if (problem?.kind === 'already_resolved') syncAfterResolve(queryClient, workspaceId)
+      // 본 뒤 바뀐 카드는 새로 받아야 화면이 비교할 수 있다. 목록 카드와 상세가 모두 이 key 아래다
+      if (problem?.kind === 'changed')
+        void queryClient.invalidateQueries({ queryKey: workspaceKey(workspaceId, 'approvals') })
       if (problem?.kind === 'conflict')
         for (const { queryKey } of [
           taskDetailQueryOptions(workspaceId, problem.taskId),

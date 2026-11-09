@@ -6,7 +6,7 @@
 export type ReminderStatusDto = 'scheduled' | 'sent' | 'cancelled' | 'expired'
 export type BodySourceDto = 'pm' | 'ai' | 'rule'
 export type DraftStatusDto = 'needed' | 'claimed' | 'done'
-export type MessageSenderDto = 'bot' | 'member'
+export type MessageSenderDto = 'bot' | 'pm' | 'member'
 export type ReplyChannelDto = 'discord' | 'web'
 export type DmStatusDto = 'pending' | 'claimed' | 'delivered' | 'failed'
 export type DmFailureReasonDto = 'dm_blocked' | 'discord_not_linked' | 'unknown'
@@ -56,7 +56,10 @@ export interface BundleDto {
   reminders: ReminderDto[]
 }
 
-/** `MessageResponse`. reply_channel 은 팀원 메시지만, dm_* 는 봇 메시지만 갖는다 */
+/**
+ * `MessageResponse`. reply_channel 은 팀원 메시지만, dm_* 는 봇·PM 메시지만 갖는다.
+ * author_* 는 PM 이 웹에서 쓴 메시지(pm)만 갖는다
+ */
 export interface MessageDto {
   message_id: string
   thread_id: string
@@ -67,6 +70,8 @@ export interface MessageDto {
   dm_status: DmStatusDto | null
   dm_failure_reason: DmFailureReasonDto | null
   scheduled_at: string | null
+  author_member_id: string | null
+  author_name: string | null
 }
 
 /** `LastMessage` */
@@ -75,9 +80,11 @@ export interface LastMessageDto {
   sender: MessageSenderDto
   body: string
   created_at: string
+  author_member_id: string | null
+  author_name: string | null
 }
 
-/** `ThreadSummary` */
+/** `ThreadSummary`. unread_count 는 아직 읽지 않는다 */
 export interface ThreadSummaryDto {
   thread_id: string
   member_id: string
@@ -85,6 +92,8 @@ export interface ThreadSummaryDto {
   last_message: LastMessageDto | null
   awaiting_reply_since: string | null
   dm_failed: boolean
+  /** 그 팀원에게 연결된 웹 계정이 있다. 이 칸이 생기기 전 서버는 보내지 않는다 */
+  web_reply_available?: boolean
 }
 
 /** `GET /workspaces/{workspace_id}/messages` — `InboxResponse`. 팀원에게는 bundles 가 null 이다 */
@@ -109,6 +118,11 @@ export interface BundleUpdateRequestDto {
 /** `POST …/messages/bundles/{bundle_id}/approve` — `BundleApproveRequest` */
 export interface BundleApproveRequestDto {
   draft_version: number
+}
+
+/** `POST …/messages/threads` — `ThreadOpenRequest`. 그 팀원과의 대화가 없으면 만들고, 있으면 그 대화다 */
+export interface ThreadOpenRequestDto {
+  member_id: string
 }
 
 /** `POST …/messages/threads/{thread_id}/replies` — `ReplyCreateRequest` */

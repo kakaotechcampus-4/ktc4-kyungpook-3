@@ -28,6 +28,7 @@ export interface Meeting {
   endedAt: string | null
   extractionId: string | null
   failedStage: string | null
+  deletionAvailable: boolean
   progress: MeetingProgress | null
 }
 /** 업로드 요청. 회의 시각은 ISO 문자열이다 — 날짜를 고치지 않았으면 파일의 원래 시각이다 (D-079, D-164) */

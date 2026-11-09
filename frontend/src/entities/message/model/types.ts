@@ -1,12 +1,12 @@
 /* 메시지 화면의 도메인 모델 (계약 §5.7). 화면은 DTO 대신 이 타입만 쓴다 */
 
-export type MessageSender = 'bot' | 'member'
+export type MessageSender = 'bot' | 'pm' | 'member'
 
 export type ReplyChannel = 'discord' | 'web'
 
 export type DmFailureReason = 'dm_blocked' | 'discord_not_linked' | 'unknown'
 
-/** 봇 메시지가 Discord DM 으로 나갔는가. 실패해도 웹 대화에는 남는다 */
+/** 봇·PM 메시지가 Discord DM 으로 나갔는가. 실패해도 웹 대화에는 남는다 */
 export type DmDelivery =
   { status: 'pending' | 'claimed' | 'delivered' } | { status: 'failed'; reason: DmFailureReason }
 
@@ -18,6 +18,17 @@ export interface BotMessage {
   dm: DmDelivery
 }
 
+/** PM 이 웹에서 쓴 메시지. 작성자 칸이 비어 와도 메시지는 그린다 — 이름은 `PM` 으로 대신한다 */
+export interface PmMessage {
+  sender: 'pm'
+  id: string
+  body: string
+  createdAt: string
+  dm: DmDelivery
+  authorMemberId: string | null
+  authorName: string | null
+}
+
 export interface MemberMessage {
   sender: 'member'
   id: string
@@ -26,7 +37,7 @@ export interface MemberMessage {
   replyChannel: ReplyChannel
 }
 
-export type Message = BotMessage | MemberMessage
+export type Message = BotMessage | PmMessage | MemberMessage
 
 /** 재촉 이유의 근거 — 그 태스크의 마지막 진행 소식. 답장이면 그 메시지가, 태스크 변경이면 그 태스크가 근거다 */
 export type ReminderEvidence =
@@ -77,7 +88,13 @@ export interface LastMessage {
   sender: MessageSender
   body: string
   createdAt: string
+  /** PM 메시지만 갖는다 */
+  authorMemberId: string | null
+  authorName: string | null
 }
+
+/** 그 팀원이 웹에서 답할 수 있는가. 서버가 칸을 보내지 않으면 unknown 이다 — 어느 쪽으로도 단정하지 않는다 */
+export type WebReply = 'available' | 'unavailable' | 'unknown'
 
 export interface MessageThreadSummary {
   id: string
@@ -86,8 +103,9 @@ export interface MessageThreadSummary {
   lastMessage: LastMessage | null
   /** 답장을 기다리기 시작한 때. 서버가 정한다 — 기다리지 않으면 null */
   awaitingReplySince: string | null
-  /** 그 팀원에게 마지막으로 나간 봇 메시지가 DM 으로 가지 못했다 */
+  /** 그 팀원에게 마지막으로 나간 봇·PM 메시지가 DM 으로 가지 못했다 */
   dmFailed: boolean
+  webReply: WebReply
 }
 
 /** 목록은 보는 사람으로 갈린다. 팀원은 보낼 메시지를 받지 않는다 */

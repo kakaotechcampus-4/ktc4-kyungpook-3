@@ -95,7 +95,7 @@ def test_returns_the_workspace_connected_to_the_guild(seed):
     r = TestClient(app).get(_url(GUILD), headers=HEADERS)
 
     assert r.status_code == 200, r.text
-    assert r.json() == {"data": {"guild_id": GUILD, "workspace_id": seed["a"]}, "error": None}
+    assert r.json() == {"data": {"guild_id": GUILD, "workspace_id": seed["a"], "identity_epoch": 0}, "error": None}
 
 
 @pytest.mark.parametrize("guild_id", [OTHER_GUILD, "unknown"], ids=["other-provider", "never-connected"])

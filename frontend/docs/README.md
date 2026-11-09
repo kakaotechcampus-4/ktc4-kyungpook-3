@@ -39,7 +39,7 @@ frontend/docs/
 | `impl-decision/`의 인증·온보딩·앱 셸·검증 도구 기록 10개 | [M4 결정](plan/m4/basis-for-decision) | M4 사용자 흐름·검증 도구 구현 근거 |
 | `impl-decision/`의 업로드·처리·회의록 기록 7개 | [M5 결정](plan/m5/basis-for-decision) | M5 구현 단위·후속 UX 기록 |
 
-M0~M5의 기존 계획을 빈 초기화 파일 자리로 옮겼다. M6~M8의 계획은 여전히 0바이트다. 결과 문서를 새로 만들거나 과거 선택·검증을 소급 작성하지 않았다. 보호 계획의 이동 전 인라인 경로 표기는 [마일스톤 안내](plan/README.md)에서 해석한다.
+M0~M5의 기존 계획은 해당 마일스톤으로 옮겼다. M6~M8도 현재는 계획·결과가 작성돼 있다. [M6 결과](plan/m6/result.md), [M7 결과](plan/m7/result.md), [M8 A](plan/m8/result-a.md)·[B](plan/m8/result-b.md)·[C](plan/m8/result-c.md)의 기록일·검증 환경·잔여 사항을 함께 확인한다. 결과 원문의 과거 상태를 현재 운영 검증으로 바꾸지 않는다. 보호 계획의 이동 전 인라인 경로 표기는 [마일스톤 안내](plan/README.md)에서 해석한다.
 
 ## 유지한 고유·공유 영역
 

@@ -3,6 +3,7 @@ import { useCallback } from 'react'
 import { useNavigate } from 'react-router'
 import { removePushSubscription } from '@/entities/notification'
 import { SESSION_QUERY_KEY } from '@/entities/user'
+import type { SessionScope } from '@/shared/api/sessionScope'
 import { paths } from '@/shared/config/routes'
 import { clearUserScope } from '../lib/userScope'
 import { PASSWORD_CHANGED_STATE } from './passwordReset'
@@ -15,16 +16,21 @@ import { PASSWORD_CHANGED_STATE } from './passwordReset'
  * 이 브라우저의 푸시 구독도 푼다. 서버 세션이 이미 없어 구독 DELETE 는 401 이 될 수 있지만 브라우저 `unsubscribe` 는
  * 그와 상관없이 한다(removePushSubscription) — 공유 기기에 앞 계정의 알림이 뜨지 않게 한다.
  * 세션을 먼저 null 로 두므로 그 401 이 세션 만료 처리를 다시 부르지 않는다.
+ * 변경을 보낸 뒤 이 브라우저에서 다른 계정으로 로그인했으면 아무것도 하지 않는다 — 늦은 성공이 그 계정의 세션·구독을 지우면 안 된다.
  */
-export function useFinishPasswordReset(): () => Promise<void> {
+export function useFinishPasswordReset(): (submittedIn: SessionScope) => Promise<void> {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  return useCallback(async () => {
-    queryClient.setQueryData(SESSION_QUERY_KEY, null)
-    void navigate(paths.login(), { replace: true, state: PASSWORD_CHANGED_STATE })
-    await Promise.all([
-      clearUserScope(queryClient),
-      removePushSubscription().catch(() => undefined),
-    ])
-  }, [navigate, queryClient])
+  return useCallback(
+    async (submittedIn: SessionScope) => {
+      if (!submittedIn.isCurrent()) return
+      queryClient.setQueryData(SESSION_QUERY_KEY, null)
+      void navigate(paths.login(), { replace: true, state: PASSWORD_CHANGED_STATE })
+      await Promise.all([
+        clearUserScope(queryClient),
+        removePushSubscription().catch(() => undefined),
+      ])
+    },
+    [navigate, queryClient],
+  )
 }

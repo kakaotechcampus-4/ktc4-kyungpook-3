@@ -5,6 +5,7 @@ import { onTestFinished } from 'vitest'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { fail } from '@/shared/mock/envelope'
+import { pmMessage, reply } from '@/shared/mock/fixtures/message'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
@@ -207,6 +208,25 @@ describe('리마인드 대화 위 알림 띠 (#411)', () => {
     expect(
       prompt.getByRole('heading', { name: '다음 리마인드를 기기 알림으로 받을까요?' }),
     ).toBeVisible()
+  })
+
+  it('봇 메시지 없이 PM 글만 있는 자기 대화에도 띠가 보이고, 팀원 글만 있으면 없다 (#519)', async () => {
+    db.push.publicKey = 'AQID'
+    installPushBrowser()
+    const thread = db.messageThreads.find(({ thread_id }) => thread_id === 'th_06')!
+    thread.messages = [
+      pmMessage('mg_40', '서연님, 회의 전에 봐 주세요', '2026-09-17T11:00:00+09:00', {
+        member_id: 'mb_06',
+        display_name: '오지현',
+      }),
+    ]
+    const first = await openThread()
+    expect(await findBand()).toBeTruthy()
+    first.unmount()
+
+    thread.messages = [reply('mg_41', '웹에서 먼저 남겨요', '2026-09-17T11:00:00+09:00', 'web')]
+    await openThread()
+    expect(band()).toBeNull()
   })
 
   it('PM 이 보는 팀원 대화에는 띠가 없다', async () => {

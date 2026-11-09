@@ -1,11 +1,13 @@
 """디스코드 회의가 BE 에 보내는 요청을 바이트까지 고정한다(#286).
 
 업로드 회의를 같은 인계 코드로 보내려고 TranscriptSegment 와 handoff 를 고치는 동안, 디스코드 회의의
-요청(메서드, 경로, json.dumps 한 본문)은 한 글자도 달라지면 안 된다. legacy 경로와 judge 경로를 모두 본다.
+요청(메서드, 경로, json.dumps 한 본문)을 고정한다. 재처리 생성은 #576 계약의 이전 회의 ID를 포함한다.
+legacy 경로와 judge 경로를 모두 본다.
 LLM 은 FakeLLM, BE 는 FakeBe 다.
 """
 
 import json
+from pathlib import Path
 
 from tests.capture import test_judge_wiring as W
 from tests.capture import test_recorder as T
@@ -15,8 +17,13 @@ from tests.capture.fake_be import FakeBe, without_stage
 def _wire(fake: FakeBe, tmp_path) -> list[tuple[str, str, str | None]]:
     """부른 순서 그대로 (메서드, 경로, 본문 바이트). 본문은 ensure_ascii=False 로 직렬화한 문자열이고,
     임시 폴더 경로(transcript_path 안)만 <tmp> 로 바꾼다. 처리 단계 보고(#381)는 진행 표시용이라 뺀다."""
-    return [(m, p, None if body is None else json.dumps(body, ensure_ascii=False).replace(str(tmp_path) + "/", "<tmp>/"))
-            for m, p, body in without_stage(fake.calls)]
+    wire = []
+    for method, path, body in without_stage(fake.calls):
+        if body is not None and body.get("transcript_path"):
+            relative = Path(body["transcript_path"]).relative_to(tmp_path)
+            body = {**body, "transcript_path": f"<tmp>/{relative.as_posix()}"}
+        wire.append((method, path, None if body is None else json.dumps(body, ensure_ascii=False)))
+    return wire
 
 
 LEGACY = [
@@ -53,7 +60,7 @@ REPLACED = [
     ('POST', '/extractions',
      '{"meeting_id": "m1", "workspace_id": "ws-1", "transcript_path": "<tmp>/transcripts/session_500.transcript.json", "model_name": "x", "items": [{"task_title": "와이어프레임 그리기", "task_confidence": 1.0, "assignee_raw": null, "assignee_type": "first", "due_date": "2026-09-25", "due_raw": "금요일까지", "due_confidence": 1.0, "evidence_quote": "제가 할게요.", "evidence_speaker": "103", "evidence_at_ms": 12000, "evidence_seqs": [2]}]}'),
     ('POST', '/meetings',
-     '{"workspace_id": "ws-1", "title": null, "source": "discord"}'),
+     '{"workspace_id": "ws-1", "title": null, "source": "discord", "replaces_meeting_id": "m1"}'),
     ('PATCH', '/meetings/m2/end',
      None),
     ('POST', '/meetings/m2/sources',
@@ -84,7 +91,7 @@ def test_a_discord_meeting_on_the_judge_path_sends_the_same_bytes(tmp_path, monk
 
 def test_a_discord_register_409_failed_replaces_the_meeting_and_resends_sources_with_the_same_bytes(tmp_path):
     """BE 가 회의를 failed 로 닫아 둔 상태에서 추출 등록이 409 MEETING_NOT_PROCESSING 을 받으면 새 회의를 만들고
-    발화와 추출을 새 회의에 다시 보낸다. 그 요청도 업로드 인계를 넣기 전과 같은 바이트여야 한다."""
+    이전 회의 ID를 연결해 발화와 추출을 새 회의에 다시 보낸다."""
     from tests.capture import test_handoff as HT
     fake = FakeBe()
     h = HT._handoff(fake)

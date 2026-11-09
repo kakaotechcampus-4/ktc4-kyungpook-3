@@ -22,6 +22,8 @@ def hash_session_token(raw: str) -> str:
 
 def create_session(db: Session, user_id: str, *, now: datetime | None = None) -> str:
     """세션 행을 추가하고 쿠키에 줄 원문을 돌려준다. commit 은 호출자가 한다."""
+    from app.services import lifecycle
+    lifecycle.user(db, user_id)
     raw = secrets.token_urlsafe(32)
     now = now or datetime.now(timezone.utc)
     db.add(SessionModel(user_id=user_id, session_token=hash_session_token(raw), expires_at=now + SESSION_TTL))

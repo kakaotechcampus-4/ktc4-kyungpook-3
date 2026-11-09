@@ -18,6 +18,7 @@ export interface TaskCreateOverrideFieldsProps {
   overrides: TaskCreateOverrides
   /** 지금 공간의 팀원. 받기 전에는 담당자를 고를 수 없다 */
   members: readonly Member[] | undefined
+  retainedNames?: ReadonlyMap<string, string>
   /** 값이 바뀌면 부른다 — 앞서 받은 충돌 확인을 지운다 */
   onInputChange: () => void
   /** 승인·반려 요청 중이면 잠근다 */
@@ -38,6 +39,7 @@ function labelOf(name: string, missing: boolean): string {
 export function TaskCreateOverrideFields({
   overrides,
   members,
+  retainedNames,
   onInputChange,
   disabled,
   autoFocusFirstEmpty,
@@ -104,7 +106,11 @@ export function TaskCreateOverrideFields({
                 onInputChange()
                 field.onChange(value ?? '')
               }}
-              options={assigneeOptions(members, field.value === '' ? null : field.value)}
+              options={assigneeOptions(
+                members,
+                field.value === '' ? null : field.value,
+                retainedNames,
+              )}
               noneOption={ASSIGNEE_NONE_OPTION}
               label="담당자"
               placeholder={assigneeMissing ? '담당자 고르기' : undefined}

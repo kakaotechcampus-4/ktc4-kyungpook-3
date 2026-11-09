@@ -689,6 +689,7 @@ def test_resume_records_once_and_returns_the_same_mapping_again(db, ws):
     assert r.status_code == 200, r.text
     assert r.json()["data"] == {
         "meeting_id": meeting.meeting_id, "status": "processing",
+        "identity_epoch": 0,
         "mapping": {"SPEAKER_00": "m1", "SPEAKER_01": None},
     }
     status, upload = _state(db, meeting)

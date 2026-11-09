@@ -215,6 +215,7 @@ def list_workspace_meetings(
         
     meetings = db.query(Meeting).filter(
         Meeting.workspace_id == workspace_id,
+        Meeting.deleted_at.is_(None),
         or_(
             Meeting.status != MeetingStatus.FAILED,
             and_(
@@ -322,6 +323,7 @@ def upload_meeting(
         workspace_id=workspace_id,
         title=title,
         source=str(MeetingSource.MANUAL_UPLOAD),
+        deletion_ready=True,
         status=str(MeetingStatus.PROCESSING),
         # UTC로 맞춰 저장한다. 시간대를 못 담는 DB(SQLite)에서도 같은 순간이 같은 값으로 남는다
         started_at=started_at.astimezone(timezone.utc) if started_at else now,

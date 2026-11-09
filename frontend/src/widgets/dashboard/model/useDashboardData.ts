@@ -15,7 +15,7 @@ import {
   viewableMeeting,
 } from '@/entities/meeting'
 import type { Meeting, MeetingSummary } from '@/entities/meeting'
-import { memberListQueryOptions } from '@/entities/member'
+import { memberListQueryOptions, recordMemberListQueryOptions } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { taskListQueryOptions } from '@/entities/task'
 import type { Task } from '@/entities/task'
@@ -118,7 +118,12 @@ export interface DashboardData {
  */
 export function useDashboardData(workspaceId: string, isPm: boolean): DashboardData {
   const approvals = useQuery({ ...pendingApprovalListQueryOptions(workspaceId), enabled: isPm })
-  const members = useQuery(memberListQueryOptions(workspaceId))
+  const activeMembers = useQuery(memberListQueryOptions(workspaceId))
+  const recordMembers = useQuery(recordMemberListQueryOptions(workspaceId))
+  const members =
+    recordMembers.data === undefined && activeMembers.data !== undefined
+      ? activeMembers
+      : recordMembers
   const integrations = useQuery(integrationsQueryOptions(workspaceId))
   const meetings = useQuery(meetingListQueryOptions(workspaceId))
   const queryClient = useQueryClient()
