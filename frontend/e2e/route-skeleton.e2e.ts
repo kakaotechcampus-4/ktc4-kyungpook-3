@@ -37,6 +37,19 @@ const CASES: ScreenCase[] = [
     widths: [1280],
   },
   {
+    name: '로그인 휴대폰(H-1)',
+    scenario: 'signed-out',
+    path: '/login',
+    against: 'loaded',
+    anchors: [
+      "Manager's Manager",
+      '회의가 끝나면 할 일은 매스가 챙겨요',
+      '비밀번호를 잊으셨나요?',
+      '가입하기',
+    ],
+    widths: [390],
+  },
+  {
     name: '회원가입',
     scenario: 'signed-out',
     path: '/signup',
@@ -116,8 +129,14 @@ const CASES: ScreenCase[] = [
     scenario: 'meeting-demo',
     path: `${W}/meetings/upload`,
     against: 'screen',
-    anchors: ['회의를 올려 주세요', '회의 제목', '참석자'],
-    widths: [1280],
+    anchors: [
+      '회의를 올려 주세요',
+      '회의 제목',
+      '참석자',
+      '회의록을 만들기 위해 음성과 전사 내용을 외부 서비스(Elice, pyannoteAI)로 보내요. 참석자에게 알린 뒤 올려 주세요.',
+      'Notion을 연결했다면 태스크도 Notion에 올라가요. 확인이 필요한 태스크는 승인한 뒤에 올라가요.',
+    ],
+    widths: [1280, 360],
   },
 ]
 

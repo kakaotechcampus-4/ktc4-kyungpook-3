@@ -175,6 +175,7 @@ def test_member_names_use_display_name_and_aliases_in_creation_order(seed):
     assert r.status_code == 200, r.text
     assert r.json() == {
         "data": {
+            "identity_epoch": 0,
             "items": [
                 {"member_id": "m2", "name": "유재환", "discord_user_id": None, "aliases": []},
                 {
@@ -200,7 +201,7 @@ def test_member_names_do_not_leak_other_workspaces(seed):
 
     b = client.get(_names_url("wsb")).json()["data"]["items"]
     assert b == [{"member_id": "m9", "name": "다른팀원", "discord_user_id": "900", "aliases": ["남의별칭"]}]
-    assert client.get(_names_url("wsc")).json() == {"data": {"items": []}, "error": None}
+    assert client.get(_names_url("wsc")).json() == {"data": {"items": [], "identity_epoch": 0}, "error": None}
 
 
 # ---------- 채팅 커서 ----------

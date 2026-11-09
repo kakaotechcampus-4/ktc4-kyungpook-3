@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_member, require_pm, require_service_token
 from app.core.database import get_db
+from app.services.meeting_deletion import require_live_meeting
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import (
     ApprovalRequest,
@@ -59,7 +60,7 @@ from app.services.matching import (
     resolve_speaker,
     speaker_match,
 )
-from app.services import upload_storage
+from app.services import summary, upload_storage
 from app.services.alias_learning import (
     card_assignee_item,
     learnable_alias_texts,
@@ -124,11 +125,7 @@ def create_extraction(
     db: Session = Depends(get_db),
 ) -> dict:
     """AI 분석 결과를 저장한다. 담당자 매칭·게이트 판정이 함께 수행된다."""
-    meeting = db.get(Meeting, payload.meeting_id)
-    if meeting is None:
-        raise AppError(
-            ErrorCode.MEETING_NOT_FOUND, details={"meeting_id": payload.meeting_id}
-        )
+    meeting = require_live_meeting(db, payload.meeting_id, lock=True)
     if meeting.workspace_id != payload.workspace_id:
         raise AppError(
             ErrorCode.WORKSPACE_MISMATCH,
@@ -154,7 +151,7 @@ def create_extraction(
     if result.rowcount == 0:
         # 선점 실패 — 이미 다른 요청이 처리했거나, processing 상태가 아님
         db.rollback()
-        meeting = db.get(Meeting, payload.meeting_id)
+        meeting = require_live_meeting(db, payload.meeting_id, lock=True)
         if meeting.status == str(MeetingStatus.DONE):
             # 멱등성: 이미 만들어진 Extraction을 돌려준다
             existing = _find_existing_extraction(db, payload.meeting_id)
@@ -316,6 +313,8 @@ def create_extraction(
                         similar_count=raw_item.similar_count,
                         unsearched_tasks_exist=unsearched_tasks,
                         unsearched_pending_exist=bool(unsearched_pending),
+                        asr_suspect_count=sum(1 for s in raw_item.asr_suspects or [] if s.source != "check_failed"),
+                        asr_check_failed=any(s.source == "check_failed" for s in raw_item.asr_suspects or []),
                     ),
                     assignee_type=raw_item.assignee_type,
                     assignee=match if mentioned else None,
@@ -460,6 +459,9 @@ def create_extraction(
                 "meeting_id": meeting.meeting_id,
                 "gate": str(gate),
                 "doc_text": raw_item.doc_text,
+                # 확인 카드가 "'애포'는 '배포'일 수 있어요"를 보여 줄 수 있게 싣는다(FE 표시는 후속)
+                # [] (검사했고 없음)와 None (옛 AI) 을 구별해 받은 그대로 싣는다(계약)
+                "asr_suspects": None if raw_item.asr_suspects is None else [s.model_dump() for s in raw_item.asr_suspects],
                 "category": raw_item.category,
             }
             if raw_item.status:
@@ -475,6 +477,7 @@ def create_extraction(
             db.flush()
             item.approval_id = approval.approval_id
 
+    summary.mark_requested(db, meeting, extraction)
     db.commit()
     db.refresh(extraction)
     # 결과를 저장했으니 업로드 녹음은 더 필요 없다(처리 중에만 보관). 커밋이 성공한 뒤에 지운다

@@ -28,6 +28,15 @@ from app.schemas.invitation import (
 
 router = APIRouter(tags=["invitations"])
 
+
+def _invitation_pm(
+    workspace_id: str, payload: InvitationCreateRequest,
+    user: User = Depends(get_current_user), db: Session = Depends(get_db),
+) -> Member:
+    from app.services import lifecycle
+    lifecycle.identity_lock(db, payload.email)
+    return require_pm(db, user, workspace_id)
+
 # 옮겨 갈 상태 → (옮길 수 있는 상태, 그 상태가 아닐 때의 오류)
 _TRANSITIONS: dict[InvitationStatus, tuple[InvitationStatus, ErrorCode]] = {
     InvitationStatus.ACCEPTED: (InvitationStatus.PENDING, ErrorCode.INVITATION_NOT_PENDING),
@@ -140,6 +149,10 @@ def _my_pending_invitation(db: Session, invitation_id: str, user: User, to: Invi
     invitation = db.get(Invitation, invitation_id)
     if invitation is None or invitation.email != user.email:
         raise AppError(ErrorCode.INVITATION_NOT_FOUND, details={"invitation_id": invitation_id})
+    from app.services import lifecycle
+    lifecycle.identity_lock(db, user.email)
+    lifecycle.workspace(db, invitation.workspace_id)
+    db.refresh(invitation)
     _check_can_move(invitation, to)
     member = db.get(Member, invitation.member_id)
     if member.is_deleted:
@@ -153,7 +166,7 @@ def _my_pending_invitation(db: Session, invitation_id: str, user: User, to: Invi
 def create_invitation(
     workspace_id: str,
     payload: InvitationCreateRequest,
-    pm: Member = Depends(get_current_pm),
+    pm: Member = Depends(_invitation_pm),
     db: Session = Depends(get_db),
 ) -> dict:
     """같은 팀원에게 열린 초대가 있으면 취소하고 새로 만든다. 이메일 오타는 다시 초대해서 고친다."""
@@ -228,6 +241,8 @@ def revoke_invitation(
     invitation = _pm_invitation(db, invitation_id, user)
     _check_can_move(invitation, InvitationStatus.REVOKED)
     member = db.get(Member, invitation.member_id)
+    if member.withdrawn_at is not None:
+        raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member.member_id})
     # PM 행과 이 팀원 행을 member_id 순으로 잠그므로 팀원 행을 고치기 전에 부른다. PM 이 아닌 팀원이면 요청한 PM 이 남아 늘 통과한다.
     _ensure_other_pm(db, member)
     # 계정이 지워져 accepted_user_id 가 비었으면 그사이 다시 이어진 다른 계정을 끊지 않는다.

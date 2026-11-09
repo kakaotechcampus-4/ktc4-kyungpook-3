@@ -160,7 +160,7 @@ describe('팀원은 답장의 태스크를 고르지 않는다', () => {
     applyScenario('messages-member')
     const log = recordRequests()
     await openInbox(paths.messages('ws_01'))
-    expect(await detail().findByRole('textbox', { name: '답장' })).toBeVisible()
+    expect(await detail().findByRole('textbox', { name: 'PM에게 메시지' })).toBeVisible()
     expect(log.started.some(({ path }) => path.endsWith('/attributions'))).toBe(false)
     expect(within(conversation()).queryByRole('group')).toBeNull()
   })

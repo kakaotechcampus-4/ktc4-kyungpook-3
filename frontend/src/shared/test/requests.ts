@@ -141,7 +141,7 @@ export interface DashboardRequestScope {
 }
 
 /**
- * M7 대시보드 화면 자신의 조회인가 (widgets/dashboard useDashboardData). 태스크 목록·대기 승인·팀원·연동과 최신 완료 회의의 추출이다.
+ * M7 대시보드 화면 자신의 조회인가 (widgets/dashboard useDashboardData). 태스크 목록·대기 승인·활성 팀원·기록용 팀원·연동과 최신 완료 회의의 추출이다.
  * 회의 목록·회의 상세는 추적기 요청과 같은 모양이라 `businessRequests` 가 이미 뺀다.
  * 대시보드로 착지하는 가드·부팅 테스트가 「그 밖의 업무 요청은 없다」를 단언할 때 쓴다
  */
@@ -155,6 +155,7 @@ export function isDashboardRequest(
     `/tasks?workspace_id=${id}`,
     `/approvals?workspace_id=${id}&status=pending`,
     `/members?workspace_id=${id}`,
+    `/members?workspace_id=${id}&include_withdrawn=true`,
     `/workspaces/${id}/integrations`,
     ...(extractionId === null ? [] : [`/extractions/${encodeURIComponent(extractionId)}`]),
   ].includes(path)

@@ -29,13 +29,15 @@ from app.schemas.auth import (
     SignupRequest,
     UserResponse,
 )
-from app.services import kakao_oauth, login_limit, mailer, oauth_state, password_reset, sessions, signup_codes
+from app.services import kakao_oauth, login_limit, mailer, oauth_state, password_reset, password_reset_limit, sessions, signup_codes
 from app.services.kakao_oauth import KakaoIdentity, KakaoOAuthError
 from app.services.passwords import DUMMY_PASSWORD_HASH, hash_password, verify_password
+from app.services import lifecycle
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 def _create_session(db: Session, user: User, response: Response):
     token = sessions.create_session(db, user.user_id)
@@ -132,6 +134,7 @@ def signup(payload: SignupRequest, request: Request, response: Response, db: Ses
     if email is None:
         raise AppError(ErrorCode.SIGNUP_VERIFICATION_INVALID)
 
+    lifecycle.identity_lock(db, email)
     conflict = _signup_conflict(db, email, kakao)
     if conflict is not None:
         raise AppError(conflict)
@@ -366,9 +369,14 @@ def kakao_pending(request: Request):
 
 
 @router.post("/password-reset/request", response_model=Envelope[dict])
-def request_password_reset(payload: PasswordResetRequest, db: Session = Depends(get_db)):
+def request_password_reset(request: Request, payload: PasswordResetRequest, db: Session = Depends(get_db)):
     if not mailer.is_configured():
         raise AppError(ErrorCode.MAIL_UNAVAILABLE)
+    # 첫 DB 쿼리 전에 막는다. 가입 여부가 드러나지 않게 막혀도 같은 응답을 준다.
+    ip_key = login_limit.client_ip_key(request.client.host if request.client else None)
+    if not password_reset_limit.allow(ip_key, login_limit.clock()):
+        logger.warning("password reset request blocked: reason=ip key=%s", ip_key)
+        return success({})
     mail = password_reset.request_reset(
         db, payload.email, now=datetime.now(timezone.utc), base_url=mailer.app_base_url()
     )

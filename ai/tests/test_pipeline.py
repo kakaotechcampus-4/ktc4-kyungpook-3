@@ -77,6 +77,9 @@ def test_create_item_carries_all_three_stages():
     ("second", "너", None, None),
     ("thirdrole", "백엔드 리더", None, None),
     ("first", None, None, None),                # 1인칭은 BE 가 evidence_speaker 로 푼다
+    ("thirdname", "화은님", "하은", "화은님"),  # 이름 지목은 원문만 — 추측한 이름이 별칭으로 학습되지 않게
+    ("first", None, "민수", None),              # first 에 섞여 온 resolved 도 보내지 않는다
+    ("thirdrole", "백엔드 리더", "환", "환"),   # 역할 지목은 지금처럼 푼 이름(별도 이슈)
 ])
 def test_assignee_raw_is_only_a_lookupable_alias(a_type, raw, resolved, expected):
     finding = _finding(assignee_type=a_type, assignee_raw=raw, assignee_resolved=resolved)
@@ -84,6 +87,21 @@ def test_assignee_raw_is_only_a_lookupable_alias(a_type, raw, resolved, expected
     item = to_item(finding, result, _drafted(task="알림 설정 페이지 개발"), None, TRANSCRIPT)
     assert item["assignee_type"] == a_type
     assert item["assignee_raw"] == expected
+
+
+@pytest.mark.parametrize("a_type", ["first", "group", "none"])
+def test_create_sends_no_assignee_text_for_first_group_none(a_type):
+    # 추출기가 "우리" 같은 글자를 채워도 BE 가 별칭으로 조회해 hold 로 돌리지 않게 막는다
+    finding = _finding(assignee_type=a_type, assignee_raw="우리")
+    item = to_item(finding, _result(category="decision", is_new=True, matched_task_id=None), _drafted(task="알림 설정"), None, TRANSCRIPT)
+    assert item["assignee_raw"] is None
+
+
+def test_update_assignee_uses_the_resolved_name_for_thirdname():
+    # 별칭 학습은 create 승인 때뿐이다. 수정 항목은 예전처럼 고친 이름으로 찾는다
+    finding = _finding(assignee_type="thirdname", assignee_raw="화은이가", assignee_resolved="하은")
+    item = to_item(finding, _result(category="assignee"), _drafted(), _target(), TRANSCRIPT)
+    assert item["assignee_raw"] == "하은"
 
 
 # ── update ────────────────────────────────────────────────────────────────
@@ -194,13 +212,27 @@ from dataclasses import replace  # noqa: E402
 from datetime import date  # noqa: E402
 
 import draft.doc_draft as doc_draft  # noqa: E402
+import judge.asr_check as asr_check  # noqa: E402
 import judge.final_judge as final_judge  # noqa: E402
 import judge.pipeline as pipeline  # noqa: E402
 import judge.semantic_judge as semantic_judge  # noqa: E402
-from judge.pipeline import PipelineUnavailableError, run  # noqa: E402
+from judge.pipeline import PipelineUnavailableError  # noqa: E402
+from judge.pipeline import run as run_pipeline  # noqa: E402
 from judge.semantic_judge import FindingExtractionUnavailableError  # noqa: E402
 from jev import FakeJev  # noqa: E402
 from llm import FakeLLM, NullLLM  # noqa: E402
+
+
+def run(*args, **kwargs):
+    """이 파일의 모든 회의에서 outcomes 가 나간 카드와 실패를 순서대로 정확히 한 번씩 가리키는지 본다(#217).
+    채팅 경로는 outcomes 로 만든 항목을 그대로 BE 에 보내므로 어긋나면 카드가 사라지거나 두 번 나간다."""
+    out = run_pipeline(*args, **kwargs)
+    cards = [o.item for o in out.outcomes if o.kind == "item"]
+    failures = [o.failure for o in out.outcomes if o.kind == "failure"]
+    assert [id(c) for c in cards] == [id(i) for i in out.items]
+    assert [id(f) for f in failures] == [id(f) for f in out.failures]
+    return out
+
 
 MEETING = Transcript(segments=[
     TranscriptSegment(speaker="uid_pm", start=1.0, end=4.0, text="결제 환불 기능은 지민님이 다음 주까지 만들어 주세요.", seq=1),
@@ -477,6 +509,39 @@ REFUND_FRI = {"indices": [2], "summary": "결제 환불 기능 마감을 금요�
 def _run_owner(monkeypatch, findings, terra, luna):
     _install(monkeypatch, stage1={"findings": findings}, terra=terra, luna_draft=luna)
     return run(OWNER_MEETING, workspace_id="ws_1", today=date(2026, 9, 28), candidates=DedupCandidates())
+
+
+def test_new_card_merge_keeps_the_original_thirdname_mention(monkeypatch):
+    # 새 할 일 카드에 담당 발화를 합쳐도 원문 언급이 간다(create 승인 때 BE 가 별칭을 배운다)
+    who = {"indices": [1], "summary": "결제 환불 기능을 화은이가 맡기로 함", "assignee_type": "thirdname",
+           "assignee_raw": "화은이가", "assignee_resolved": "하은", "reason": "담당"}
+    out = _run_owner(
+        monkeypatch, [REFUND_NEW, who],
+        [_terra(is_new=True, matched_candidate_index=None), _terra(category="assignee")],
+        [{"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "결제 환불 기능 구현"},
+         {"task": None, "due_date": None, "doc_text": "화은이 담당"}],
+    )
+
+    (card,) = out.items
+    assert card["action"] == "create"
+    assert card["assignee_raw"] == "화은이가"
+
+
+def test_assignee_change_card_sends_the_resolved_name(monkeypatch):
+    # 기존 Task 의 담당자 변경은 별칭을 배우지 않는다 — 예전처럼 고친 이름으로 찾는다
+    due = {"indices": [0], "summary": "로그인 화면 마감을 금요일로 정함", "assignee_type": "none", "reason": "마감"}
+    who = {"indices": [1], "summary": "로그인 화면 담당을 화은이가 맡기로 함", "assignee_type": "thirdname",
+           "assignee_raw": "화은이가", "assignee_resolved": "하은", "reason": "담당"}
+    out = _run_owner(
+        monkeypatch, [due, who],
+        [_terra(category="schedule"), _terra(category="assignee")],
+        [{"task": None, "due_date": "2026-10-02", "doc_text": "마감 변경"},
+         {"task": None, "due_date": None, "doc_text": "담당 변경"}],
+    )
+
+    (card,) = out.items
+    assert card["action"] == "update"
+    assert card["assignee_raw"] == "하은"
 
 
 def test_merged_assignee_carries_the_speaker_who_took_it(monkeypatch):
@@ -1067,3 +1132,194 @@ def test_run_passes_context_to_stage1(monkeypatch):
     ctx = Transcript(segments=[], source="chat")
     run(MEETING, workspace_id="ws_1", today=date(2026, 11, 5), candidates=FakeCandidates(), context=ctx)
     assert seen["context"] is ctx
+
+
+# ── 전사 오인식 의심 단어 (asr_suspects, judge/asr_check.py) ──────────────────────
+# 제목 명사 중 용어 목록에 없는 말을 근거 판정과 같은 Jev 호출로 "맞게 적힌 말인가?" 묻는다(결정 기록 0051)
+
+
+def _asr_answers(task_yes=0.95, **words):
+    """근거 판정 답에 asr0, asr1 … 답을 더한다. words 는 순서대로 yes 확률."""
+    out = _jev(task_yes)
+    for i, p in enumerate(words.values()):
+        out[f"asr{i}"] = {"choice": "yes", "probabilities": {"yes": p, "no": 1 - p, "unclear": 0.0}}
+    return out
+
+
+def _asr_run(monkeypatch, lines, task, *, jev=None, candidates=None, source="meeting", speakers=None):
+    segs = _one_line_meeting(*lines).segments
+    if speakers:
+        segs = [replace(s, speaker=who) for s, who in zip(segs, speakers)]
+    meeting = Transcript(source=source, segments=segs)
+    fakes = _install(monkeypatch, stage1={"findings": [_stage1(0)]}, terra=[NEW],
+                     luna_draft=[{"task": task, "due_date": None, "due_raw": None, "doc_text": task}],
+                     jev=[_jev(0.95)] if jev is None else jev)
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28), candidates=candidates or ListCandidates([]))
+    return out, fakes["jev"]
+
+
+def test_run_asks_jev_about_a_title_word_off_the_list_in_the_same_call(monkeypatch):
+    out, jev = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요."], "애포 문서 정리",
+                        jev=[_asr_answers(애포=0.2)])
+    [(state, questions)] = jev.calls          # 근거 판정과 한 호출이다
+    assert set(questions) == {"task", "asr0"} and "'애포'" in questions["asr0"]["instructions"]
+    [s] = out.items[0]["asr_suspects"]
+    assert (s["word"], s["source"]) == ("애포", "title") and "배포" in s["candidates"]
+    assert out.items[0]["task_status"] == "certain"   # 근거 판정의 뜻은 그대로다
+
+
+def test_run_passes_a_title_word_jev_says_is_right(monkeypatch):
+    out, _ = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요."], "애포 문서 정리", jev=[_asr_answers(애포=0.95)])
+    assert out.items[0]["asr_suspects"] == []
+
+
+def test_run_does_not_ask_when_every_title_noun_is_on_the_list(monkeypatch):
+    out, jev = _asr_run(monkeypatch, ["배포 문서 정리는 제가 맡을게요."], "배포 문서 정리")
+    [(_, questions)] = jev.calls
+    assert set(questions) == {"task"}
+    assert out.items[0]["asr_suspects"] == []
+
+
+def test_run_jev_failure_blocks_only_items_with_suspects(monkeypatch):
+    out, _ = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요."], "애포 문서 정리", jev=[None])
+    assert out.items[0]["asr_suspects"] == asr_check.failed()
+    clean, _ = _asr_run(monkeypatch, ["배포 문서 정리는 제가 맡을게요."], "배포 문서 정리", jev=[None])
+    assert clean.items[0]["asr_suspects"] == []
+
+
+def test_run_evidence_words_are_not_checked_only_the_title(monkeypatch):
+    # 초안이 제목을 고쳤으면 근거 원문의 오인식은 결과물에 남지 않는다
+    out, jev = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요."], "배포 문서 정리")
+    assert set(jev.calls[0][1]) == {"task"} and out.items[0]["asr_suspects"] == []
+
+
+class _Terms(ListCandidates):
+    def __init__(self, words=(), pending=(), fail=False):
+        super().__init__([])
+        self.words, self.pending, self.fail, self.pushed = list(words), list(pending), fail, []
+
+    def asr_terms(self, workspace_id):
+        if self.fail:
+            raise ConnectionError("BE 연결 실패")
+        return {"words": self.words, "pending_titles": self.pending}
+
+    def add_asr_terms(self, workspace_id, words, absorbed_title_ids):
+        self.pushed.append((words, absorbed_title_ids))
+
+
+def test_run_workspace_terms_and_approved_titles_count_as_known(monkeypatch):
+    be = _Terms(words=["핀테크볼트"], pending=[{"title_id": "t1", "title": "애포 대시보드 정리"}])
+    out, jev = _asr_run(monkeypatch, ["핀테크볼트 애포 정리는 제가 맡을게요."], "핀테크볼트 애포 정리", candidates=be)
+    assert set(jev.calls[0][1]) == {"task"} and out.items[0]["asr_suspects"] == []
+    # 승인 제목의 명사를 뽑아 올리고 그 제목을 큐에서 지운다. 이미 있는 말은 다시 올리지 않는다
+    [(words, ids)] = be.pushed
+    assert "애포" in words and "핀테크볼트" not in words and ids == ["t1"]
+
+
+def test_run_nouns_said_by_two_speakers_are_known_and_pushed(monkeypatch):
+    be = _Terms()
+    out, jev = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요.", "애포 일정은 금요일이에요."], "애포 문서 정리",
+                        candidates=be, speakers=["uid_a", "uid_b"])
+    assert set(jev.calls[0][1]) == {"task"} and out.items[0]["asr_suspects"] == []
+    assert "애포" in be.pushed[0][0]
+
+
+def test_run_a_word_one_speaker_repeats_is_still_asked(monkeypatch):
+    # STT 는 한 사람의 같은 발음을 같은 꼴로 거듭 잘못 듣는다(#532 리뷰)
+    be = _Terms()
+    _, jev = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요.", "애포 일정은 금요일이에요."], "애포 문서 정리",
+                      candidates=be, speakers=["uid_a", "uid_a"])
+    assert "asr0" in jev.calls[0][1]
+    assert not be.pushed or "애포" not in be.pushed[0][0]
+
+
+def test_run_term_lookup_failure_falls_back_to_the_base_list(monkeypatch):
+    out, jev = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요."], "애포 문서 정리",
+                        candidates=_Terms(fail=True), jev=[_asr_answers(애포=0.1)])
+    assert [s["word"] for s in out.items[0]["asr_suspects"]] == ["애포"]
+
+
+def test_run_member_names_and_search_titles_count_as_known(monkeypatch):
+    class WithNames(ListCandidates):
+        def member_names(self, workspace_id):
+            return [{"member_id": "m1", "name": "콜린스", "discord_user_id": "u1", "aliases": ["콜린"]}]
+
+    _, jev = _asr_run(monkeypatch, ["콜린스 문서 정리는 제가 맡을게요."], "콜린스 문서 정리", candidates=WithNames([]))
+    assert set(jev.calls[0][1]) == {"task"}
+    titled = ListCandidates([replace(SEARCH, title="핀테크볼트 정산 연동", similarity=0.5)])
+    _, jev = _asr_run(monkeypatch, ["핀테크볼트 정산 정리는 제가 맡을게요."], "핀테크볼트 정산 정리", candidates=titled)
+    assert set(jev.calls[0][1]) == {"task"}
+
+
+def test_run_marks_every_create_item_when_the_analyzer_cannot_start(monkeypatch):
+    def boom(n=None):
+        raise OSError("모델 파일 없음")
+    monkeypatch.setattr(asr_check, "seed_nouns", boom)
+    out, _ = _asr_run(monkeypatch, ["배포 문서 정리는 제가 맡을게요."], "배포 문서 정리")
+    assert out.items[0]["asr_suspects"] == asr_check.failed()
+
+
+def test_run_update_items_are_not_checked(monkeypatch):
+    _install(monkeypatch, stage1={"findings": FINDINGS}, terra=TERRA_OK, luna_draft=LUNA_DRAFT_OK)
+    create, update = _run().items
+    assert "asr_suspects" in create and "asr_suspects" not in update
+
+
+def test_run_chat_items_are_not_checked(monkeypatch):
+    # 채팅은 전사를 거치지 않고 auto 로도 가지 않는다(BE 가 review 로 내림). 분석기를 올리지 않는다
+    monkeypatch.setattr(asr_check, "_kiwi", lambda: (_ for _ in ()).throw(AssertionError("분석기를 올리면 안 된다")))
+    out, _ = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요."], "애포 문서 정리", source="chat")
+    assert "asr_suspects" not in out.items[0]
+
+
+def _ends(out):
+    return [(o.indices, o.kind) for o in out.outcomes]
+
+
+def test_each_finding_ends_as_an_item_or_a_skip_with_its_sentences(monkeypatch):
+    _install(monkeypatch, stage1={"findings": FINDINGS}, terra=TERRA_OK, luna_draft=LUNA_DRAFT_OK)
+
+    assert _ends(_run()) == [([0], "item"), ([1, 2, 3], "item"), ([4], "skip"), ([5], "skip")]
+
+
+def test_a_failed_finding_keeps_its_sentences(monkeypatch):
+    _install(monkeypatch, stage1={"findings": FINDINGS[:2]}, terra=TERRA_OK[:1], luna_draft=LUNA_DRAFT_OK[:1])
+
+    out = _run(FakeCandidates(fail_on="로그인"))
+
+    assert _ends(out) == [([0], "item"), ([1, 2, 3], "failure")]
+
+
+def test_findings_merged_into_a_new_card_share_its_outcome(monkeypatch):
+    """합친 카드의 근거 문장을 전부 들고 있어야 다른 실행이 뒷부분만 항목으로 낼 때 같은 얘기로 묶인다."""
+    _install(monkeypatch, stage1={"findings": [REFUND_OWNER, REFUND_DUE]},
+             terra=[_terra(is_new=True, matched_candidate_index=None), _terra(category="schedule")],
+             luna_draft=[{"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "지민님이 맡기로 함"},
+                         {"task": None, "due_date": "2026-10-09", "doc_text": "마감을 10/9로 정함"}])
+
+    assert _ends(_run_dedup()) == [([0, 1], "item")]
+
+
+def test_findings_merged_into_a_change_share_its_outcome(monkeypatch):
+    _install(monkeypatch, stage1={"findings": [LOGIN_DELAY, LOGIN_KEEP]},
+             terra=[_terra(category="schedule"), _terra(category="schedule")],
+             luna_draft=[{"task": None, "due_date": "2026-10-06", "doc_text": "마감을 10/6으로 연기"},
+                         {"task": None, "due_date": "2026-10-09", "doc_text": "마감을 10/9로 다시 연기"}])
+
+    assert _ends(_run_dedup()) == [([2, 3, 4], "item")]
+
+
+def test_a_card_reverted_in_the_meeting_ends_as_one_skip(monkeypatch):
+    """되돌려 카드가 사라졌다. 뒤에 만든 카드를 가리키는 결과는 그대로여야 한다."""
+    noti = NOTI_NEW | {"indices": [3]}
+    delay = LOGIN_DELAY | {"indices": [2]}
+    _install(monkeypatch, stage1={"findings": [delay, noti, LOGIN_KEEP]},
+             terra=[_terra(category="schedule"), _terra(is_new=True, matched_candidate_index=None), _terra(category="schedule")],
+             luna_draft=[{"task": None, "due_date": "2026-10-06", "doc_text": "마감을 10/6으로 연기"},
+                         {"task": "알림 설정 페이지", "due_date": None, "doc_text": "알림 설정 페이지를 만들기로 함"},
+                         {"task": None, "due_date": "2026-10-02", "doc_text": "마감을 10/2로 되돌림"}])
+
+    out = _run_dedup()
+
+    assert sorted(_ends(out)) == [([2, 4], "skip"), ([3], "item")]
+    assert out.outcomes[1].item is out.items[0] and out.items[0]["task_title"] == "알림 설정 페이지"

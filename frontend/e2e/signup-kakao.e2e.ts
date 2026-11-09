@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
-import { readMailedCode, start } from './support'
+import { capture, readMailedCode, start } from './support'
 
 /*
- * #427 가입 이메일 인증과 카카오 로그인. 세부 문구와 오류 갈래는 app/signupFlow.test.tsx·kakaoLogin.test.tsx 가 본다.
+ * #427·#538 가입 이메일 인증과 카카오 로그인, 휴대폰 로그인(H-1). 세부 문구와 오류 갈래는 app/signupFlow.test.tsx·kakaoLogin.test.tsx 가 본다.
  * 여기는 실제 브라우저의 전체 이동(모의 카카오 왕복, 새 문서 복귀)과 저장된 모의 db 로 이어지는지 본다
  */
 
@@ -154,9 +154,102 @@ test('취소: 조용한 안내를 보이고 로그인 화면에 머문다', asyn
   await expect(page).toHaveURL('/login')
 })
 
-test('이어진 계정의 카카오 로그인은 이메일 로그인과 같은 곳으로 간다', async ({ page }) => {
+test('실패: 로그인 화면이 오류로 알리고 이메일 로그인은 그대로 쓸 수 있다', async ({ page }) => {
+  await startKakaoLogin(page, '실패 재현')
+  await expect(page.getByRole('alert')).toHaveText(
+    '카카오 로그인에 실패했어요. 다시 시도해 주세요.',
+    { timeout: 15_000 },
+  )
+  await expect(page).toHaveURL('/login')
+  await page.getByLabel('이메일').fill('pm@example.com')
+  await page.getByLabel('비밀번호', { exact: true }).fill('mock-password')
+  await page.getByRole('button', { name: '로그인', exact: true }).click()
+  await expect(page).toHaveURL('/workspaces')
+})
+
+test('가입 대기가 없으면 만료 안내를 보이고, 카카오로 다시 시작하면 가입이 이어진다', async ({
+  page,
+}) => {
+  await start(page, 'signed-out', '/signup?kakao=1')
+  await expect(page.getByRole('alert')).toContainText(
+    '카카오 로그인 정보가 만료됐어요. 카카오로 다시 시작해 주세요.',
+    { timeout: 15_000 },
+  )
+  await page.getByRole('button', { name: '카카오로 다시 시작' }).click()
+  await chooseOnMockKakao(page, '새 사용자 (이메일 있음)')
+  await expect(page).toHaveURL('/signup?kakao=1')
+  await expect(page.getByLabel('이메일')).toHaveValue(NEW_EMAIL, { timeout: 15_000 })
+  await expect(page.getByRole('alert')).toHaveCount(0)
+})
+
+test('인증된 이메일이 같은 기존 계정에 카카오를 잇고, 다음에는 이어진 카카오로 바로 로그인한다', async ({
+  page,
+}) => {
   await startKakaoLogin(page, '이어진 계정으로 로그인')
   await expect(page).toHaveURL('/workspaces', { timeout: 15_000 })
+  const store = await page.evaluate(() => sessionStorage.getItem('msw-db'))
+  const accounts = (
+    JSON.parse(store ?? '{}') as {
+      db: { accounts: { kakaoId?: string; session: { user: { email: string } } }[] }
+    }
+  ).db.accounts
+  expect(accounts.find(({ session }) => session.user.email === 'pm@example.com')?.kakaoId).toBe(
+    'kakao-pm',
+  )
+
+  await logOutToLogin(page)
+  await page.getByRole('button', { name: '카카오 로그인' }).click()
+  await chooseOnMockKakao(page, '이어진 계정으로 로그인')
+  await expect(page).toHaveURL('/workspaces', { timeout: 15_000 })
+})
+
+for (const width of [360, 390, 1280]) {
+  test(`${width}px 로그인·가입 화면에 Google 문구가 없고 카카오 버튼이 넘치지 않는다`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 })
+    await start(page, 'signed-out', '/login')
+    for (const path of ['/login', '/signup']) {
+      if (path !== '/login') await page.goto(path)
+      const kakao = page.getByRole('button', { name: '카카오 로그인' })
+      await expect(kakao).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByText(/Google|구글/)).toHaveCount(0)
+      const box = await kakao.boundingBox()
+      expect(box && box.x >= 0 && box.x + box.width <= width, path).toBe(true)
+      await capture(page, testInfo, `${width}${path.replace('/', '-')}.png`)
+    }
+  })
+}
+
+test('휴대폰 로그인은 시안 H-1 배치이고 넓은 화면은 그대로다 (#538)', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await start(page, 'signed-out', '/login')
+  const email = page.getByLabel('이메일')
+  await expect(email).toHaveAttribute('placeholder', '이메일', { timeout: 15_000 })
+  // 라벨은 화면에서만 숨긴다. 칸 이름(getByLabel)은 남는다
+  expect(
+    (await page.locator('label', { hasText: /^이메일$/ }).boundingBox())?.width,
+  ).toBeLessThanOrEqual(1)
+  await expect(page.getByText('회의가 끝나면 할 일은 매스가 챙겨요')).toBeVisible()
+  await expect(page.getByText('또는', { exact: true })).toHaveCount(0)
+  for (const control of [email, page.getByRole('button', { name: '로그인', exact: true })])
+    expect((await control.boundingBox())?.height).toBe(52)
+  const forgot = page.getByRole('link', { name: '비밀번호를 잊으셨나요?' })
+  const signup = page.getByRole('link', { name: '가입하기' })
+  const [forgotBox, signupBox, kakaoBox] = await Promise.all([
+    forgot.boundingBox(),
+    signup.boundingBox(),
+    page.getByRole('button', { name: '카카오 로그인' }).boundingBox(),
+  ])
+  expect(forgotBox!.y).toBeGreaterThan(kakaoBox!.y)
+  expect(Math.abs(forgotBox!.y - signupBox!.y)).toBeLessThanOrEqual(1)
+  expect(forgotBox!.x).toBeLessThan(signupBox!.x)
+
+  await page.setViewportSize({ width: 1280, height: 844 })
+  await expect(page.getByText('또는', { exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: '회원가입' })).toBeVisible()
+  await expect(page.getByLabel('이메일')).not.toHaveAttribute('placeholder')
+  await expect(page.getByText('회의가 끝나면 할 일은 매스가 챙겨요')).toHaveCount(0)
 })
 
 test('휴대폰 폭에서도 인증 화면을 끝까지 쓸 수 있다', async ({ page }) => {

@@ -11,6 +11,7 @@ it('links users, preserves inactive members, and excludes bots', () => {
       discordUserId: '1',
       notionName: null,
       role: 'pm' as const,
+      hasLoginAccount: false,
       createdAt: '',
     },
     {
@@ -20,6 +21,7 @@ it('links users, preserves inactive members, and excludes bots', () => {
       discordUserId: '2',
       notionName: null,
       role: 'member' as const,
+      hasLoginAccount: false,
       createdAt: '',
     },
   ]

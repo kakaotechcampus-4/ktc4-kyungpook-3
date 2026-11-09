@@ -1,5 +1,6 @@
+import { displayValue } from '@/shared/api/unknownValue'
 import type { MinutesDto } from '@/shared/types/api/minutes'
-import { enumValue } from '@/shared/lib/enum'
+import { MEETING_SOURCES } from '@/shared/types/common'
 import type { Minutes } from './types'
 
 export function toMinutes(dto: MinutesDto): Minutes {
@@ -8,12 +9,7 @@ export function toMinutes(dto: MinutesDto): Minutes {
     title: dto.title ?? '',
     startedAt: dto.started_at,
     durationMs: dto.duration_ms,
-    source: enumValue(
-      dto.source,
-      ['discord', 'manual_upload', 'chat'] as const,
-      'discord',
-      'minutes source',
-    ),
+    source: displayValue(dto.source, MEETING_SOURCES, 'minutes source'),
     attendees: dto.attendees.map((attendee) => ({
       memberId: attendee.member_id,
       displayName: attendee.display_name,

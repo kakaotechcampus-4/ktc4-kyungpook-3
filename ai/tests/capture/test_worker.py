@@ -32,7 +32,8 @@ def _worker(tmp_path, *, handoff=None, extractor=None, interval_s=3600.0, poll_s
                     stt_factory=lambda: (EchoStt(), "echo", 1), gate_factory=lambda: None,
                     extractor_factory=lambda: extractor, handoff_factory=lambda: handoff,
                     interval_s=interval_s, poll_s=poll_s, notifier=notifier, debug=debug,
-                    intake_factory=lambda: intake)      # 기본은 intake 없음: 환경 변수에 기대지 않는다
+                    intake_factory=lambda: intake,      # 기본은 intake 없음: 환경 변수에 기대지 않는다
+                    summary_factory=lambda: None)
 
 
 @pytest.fixture(autouse=True)
@@ -381,12 +382,12 @@ def test_an_unknown_extract_path_fails_at_start(tmp_path, monkeypatch):
 
 async def test_a_worker_pass_hands_judge_items_to_be(tmp_path):
     """워커 모드에서도 같은 추출기가 돈다. 판단 항목이 그대로 BE 로 간다."""
-    from capture.judge_path import JudgeOutput
+    from tests.capture.test_judge_stage import _out
 
     rec, path, _ = _session(tmp_path, ts=500)
     item = T._judge_item("결제 환불 기능 구현")
     fake = FakeBe()
-    worker = _worker(tmp_path, extractor=lambda transcript, names, today, workspace_id=None: JudgeOutput(items=[item]),
+    worker = _worker(tmp_path, extractor=lambda transcript, names, today, workspace_id=None: _out([item]),
                      handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     results, busy = await worker.run_pass()
     assert _status(path) == "handed_off" and results[0]["items"] == [item] and busy == []
@@ -395,14 +396,14 @@ async def test_a_worker_pass_hands_judge_items_to_be(tmp_path):
 
 async def test_the_worker_log_says_why_a_meeting_failed_and_what_was_left_unjudged(tmp_path, monkeypatch, capsys):
     """워커 모드는 채널에 결과를 올리지 않는다. 판단하지 못한 finding 과 실패 이유가 로그에도 없으면 매니페스트를 열어야 안다."""
-    from capture.judge_path import JudgeOutput
+    from tests.capture.test_judge_stage import _out
 
     monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 1)
     rec, path, _ = _session(tmp_path, ts=500)
     item = T._judge_item("결제 환불 기능 구현")
     unjudged = [{"stage": "judge", "text": "로그인 마감을 미루기로 함", "reason": "Terra 응답을 파싱하지 못했습니다."}]
     fake = FakeBe()
-    worker = _worker(tmp_path, extractor=lambda transcript, names, today, workspace_id=None: JudgeOutput(items=[item], failures=unjudged),
+    worker = _worker(tmp_path, extractor=lambda transcript, names, today, workspace_id=None: _out([item], unjudged),
                      handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     await worker.run_pass()
     first = capsys.readouterr().out
@@ -973,7 +974,114 @@ async def test_an_upload_ended_in_be_is_dropped_by_the_pass_and_logged_without_a
                 handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     results, _ = await w.run_pass()
     assert [r["ended"] is not None for r in results] == [True]
-    assert not upath.exists() and not upath.with_suffix(".lock").exists() and not (rec / m["session"]).exists()
+    assert not upath.exists() and not R.is_locked(upath) and not (rec / m["session"]).exists()
     assert await w.run_pass() == ([], [])
     assert "끝난 회의" in capsys.readouterr().out
     assert not any(p.endswith("/fail") for _, p, _ in fake.calls)
+
+
+class _Summary:
+    """SummaryRunner 자리. 부를 때 한 회의 자리가 잠겨 있는지 남긴다."""
+
+    def __init__(self, worker=None, *, error=None, on_call=None):
+        self.worker = worker
+        self.error = error
+        self.on_call = on_call
+        self.calls = 0
+        self.locked = []
+        self.current = []
+
+    def run_once(self):
+        self.calls += 1
+        if self.worker is not None:
+            self.locked.append(self.worker._sem.locked())
+            self.current.append(self.worker._current)
+        if self.on_call:
+            self.on_call()
+        if self.error:
+            raise self.error
+
+
+async def test_each_lap_summarizes_once_after_intake_purge_and_audio_pruning(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=("client", "diarizer"), interval_s=0.05)
+    order = []
+    monkeypatch.setattr(W, "intake_one", lambda *a, **k: order.append("intake"))
+    async def purge():
+        order.append("purge")
+
+    async def prune():
+        order.append("prune")
+
+    monkeypatch.setattr(w, "_purge_once", purge)
+    monkeypatch.setattr(w, "_prune_audio", prune)
+    summary = _Summary(on_call=lambda: order.append("summary"))
+    w._summary = summary
+    assert await _laps(w, 3) == 3
+    assert order == ["intake", "purge", "prune", "summary"] * 2 + ["purge", "prune"]
+
+
+async def test_summary_leaves_the_main_meeting_seat_and_current_session_alone(tmp_path):
+    w = _worker(tmp_path)
+    summary = _Summary(w)
+    w._summary = summary
+    await w._summary_once()
+    assert summary.locked == [False] and summary.current == [None]
+    assert w._current is None and not w._sem.locked()
+
+
+async def test_no_summary_claim_after_the_stop_signal(tmp_path):
+    w = _worker(tmp_path)
+    w._summary = summary = _Summary()
+    w.stop()
+    await w._summary_once()
+    assert summary.calls == 0
+
+
+async def test_summary_does_not_wait_for_the_main_meeting_seat(tmp_path):
+    w = _worker(tmp_path)
+    w._summary = summary = _Summary()
+    await w._sem.acquire()
+    await asyncio.wait_for(w._summary_once(), 5)
+    w._sem.release()
+    assert summary.calls == 1
+
+
+async def test_no_runner_means_no_summary_work(tmp_path):
+    w = _worker(tmp_path)
+    assert w._summary is None
+    await w._summary_once()
+
+
+async def test_a_summary_crash_is_logged_and_the_worker_keeps_going(tmp_path, capsys):
+    w = _worker(tmp_path)
+    w._summary = _Summary(error=RuntimeError("boom"))
+    await w._summary_once()
+    assert "요약 오류: RuntimeError: boom" in capsys.readouterr().out
+    assert w._current is None and not w._sem.locked()
+
+
+def test_an_unknown_summary_model_stops_the_worker_at_start(tmp_path, monkeypatch):
+    monkeypatch.setenv("MM_SUMMARY_LLM", "gpt4")
+    with pytest.raises(ValueError):
+        W.Worker(tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts", notifier=object(), debug=False)
+async def test_each_lap_drops_audio_of_handed_off_meetings(tmp_path):
+    """인계가 끝난 회의의 트랙 wav 는 다음 바퀴에 지운다(#561). 대본은 남는다."""
+    rec = tmp_path / "recordings"
+    (rec / "g_1").mkdir(parents=True)
+    (rec / "g_1" / "1_1.wav").write_bytes(b"RIFF")
+    (rec / "g_1" / "transcript.md").write_text("대본", encoding="utf-8")
+    R.save_manifest(R.manifest_path(rec, "g_1"), {"session": "g_1", "status": R.STATUS_HANDED_OFF, "meeting_dir": "g_1",
+                                                  "stages": {"handed_off": R._iso(R.AUDIO_PRUNE_SINCE)},
+                                                  "speakers": [{"user_id": "1", "file": "g_1/1_1.wav"}]})
+    w = _worker(tmp_path)
+    assert await _laps(w, 1) == 1
+    assert not (rec / "g_1" / "1_1.wav").exists()
+    assert (rec / "g_1" / "transcript.md").exists()
+
+
+async def test_audio_pruning_error_does_not_stop_the_worker(tmp_path, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("disk")
+    monkeypatch.setattr(W, "prune_audio", boom)
+    w = _worker(tmp_path, interval_s=0.05)
+    assert await _laps(w, 2) == 2

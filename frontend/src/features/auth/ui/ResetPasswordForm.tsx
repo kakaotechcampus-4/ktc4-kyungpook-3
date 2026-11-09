@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router'
 import { confirmPasswordReset, resetLinkProblem } from '@/entities/user'
 import type { ResetLinkProblem } from '@/entities/user'
 import { COMMON_MESSAGES, errorMessage } from '@/shared/api/errorMessages'
+import { captureSessionScope } from '@/shared/api/sessionScope'
 import { paths } from '@/shared/config/routes'
 import { useAppForm } from '@/shared/lib/form'
 import { Button } from '@/shared/ui/button'
@@ -98,15 +99,17 @@ function NewPasswordForm({ token, emailMasked, onRejected }: NewPasswordFormProp
 
   const onSubmit = submit(async ({ newPassword }) => {
     setFormError(null)
+    const session = captureSessionScope()
     try {
-      await confirmPasswordReset({ token, newPassword })
+      await confirmPasswordReset({ token, newPassword }, session.signal)
     } catch (error) {
+      if (!session.isCurrent()) return
       const problem = resetLinkProblem(error)
       if (problem !== null) onRejected(problem)
       else setFormError(applyServerError(error, setError, FIELD_BY_CODE))
       return
     }
-    await finish()
+    await finish(session)
   })
 
   return (

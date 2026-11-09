@@ -4,6 +4,7 @@ import type { AuthShellProps } from '@/widgets/auth-shell'
 export const LOGIN_SHELL = {
   title: "Manager's Manager",
   formLabel: '로그인',
+  phoneIntro: '회의가 끝나면 할 일은 매스가 챙겨요',
   aside: {
     pose: 'idle',
     title: (

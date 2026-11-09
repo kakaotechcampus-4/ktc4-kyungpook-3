@@ -24,9 +24,9 @@ import { ReplyForm } from './ReplyForm'
 /* MessagesThread 캔버스 실측 — 머리 76(좌우 28, 아래 선), 대화 칸 눌린 면(위 24 · 좌우 28 · 아래 18, 간격 16),
    봇 말풍선 먹 면 최대 438 · 상대 말풍선 흰 면 선 최대 410, 둘 다 라운드 15 에 꼬리 쪽만 4,
    아직 나가지 않은 말풍선은 흰 면 점선(`border-dashed` 한 이름이 모양과 색을 낸다). 본문은 줄바꿈을 그대로 보인다(`whitespace-pre-line`).
-   아래 안내 바(위 선 · 위 14 · 좌우 28 · 아래 20, 안쪽 카드 라운드 14).
+   아래 답장 줄(위 선 · 위 14 · 좌우 28 · 아래 16).
    대화 칸은 relative 다 — 말풍선의 sr-only 보낸 쪽 글자가 칸 밖으로 새어 페이지를 늘리지 않게 한다.
-   말풍선·안내 바의 글자는 띄어 쓰지 않은 긴 글자(주소, 전역 `keep-all` 의 긴 한글)도 줄을 바꾼다(`wrap-anywhere`) —
+   말풍선의 글자는 띄어 쓰지 않은 긴 글자(주소, 전역 `keep-all` 의 긴 한글)도 줄을 바꾼다(`wrap-anywhere`) —
    최대 폭을 넘어 대화 칸이 가로로 스크롤되지 않게 한다. 머리의 이름·부제는 높이가 정해진 한 줄이라 말줄임 그대로다.
    768 미만(PwaThreadMember)은 머리를 화면의 DetailBar 가 맡고, 대화 칸 좌우 16, 답장 줄 좌우 12 · 아래는 홈 표시줄만큼 비운다 */
 const HEAD =
@@ -53,8 +53,12 @@ const WAITING_NOTE =
   'inline-flex items-center gap-7 self-center rounded-999 bg-divider px-13 py-7 text-meta text-sub'
 const FOOT =
   'shrink-0 border-t border-divider px-28 pt-14 pb-16 max-md:px-12 max-md:pt-10 max-md:pb-[max(10px,env(safe-area-inset-bottom))]'
-const FOOT_CARD =
-  'flex items-center gap-12 rounded-[14px] border border-line bg-surface px-14 py-12 text-dim'
+const FOOT_STACK = 'flex flex-col gap-10'
+/* 웹 답장 불가 안내 — 답장 칸 위의 흰 카드. DM 못 보냄의 강조색과 구분해 중립 글자색이다 */
+const NOTICE_CARD =
+  'flex flex-wrap items-center gap-x-12 gap-y-4 rounded-[14px] border border-line bg-surface px-14 py-10 text-sub'
+/* 왼쪽 PM 글의 작성자. 상대 말풍선 머리에 붙는다 */
+const AUTHOR = 'text-meta font-semibold text-sub'
 const FOOT_LINK =
   'inline-flex h-32 shrink-0 items-center gap-3 px-4 text-caption font-semibold text-ink hover:text-sub'
 
@@ -211,7 +215,6 @@ function ThreadView({
     const body = bodyRef.current
     if (body !== null && atBottom.current) body.scrollTop = body.scrollHeight
   }, [attributionsQuery.data])
-  const replyable = policy.reply
   const view = buildConversation(thread, { policy, botName, today, now })
   const waitingDays = view.waitingDays
 
@@ -235,7 +238,8 @@ function ThreadView({
           )}
         </div>
       </div>
-      {policy.pushPrompt && thread.messages.some(({ sender }) => sender === 'bot') ? (
+      {policy.pushPrompt &&
+      thread.messages.some(({ sender }) => sender === 'bot' || sender === 'pm') ? (
         <BrowserPushPrompt />
       ) : null}
       {attributionsQuery.error === null ? null : (
@@ -288,21 +292,21 @@ function ThreadView({
           </div>
         ))}
       </section>
-      {replyable ? (
-        <div ref={floorRef} className={FOOT}>
-          <ReplyForm
-            workspaceId={workspaceId}
-            threadId={thread.id}
-            botName={botName}
-            onSent={() => {
-              replyAnchor.current = thread.messages.length
-              setReplyTick((tick) => tick + 1)
-            }}
-          />
-        </div>
-      ) : (
-        <ThreadNotice botName={botName} floorRef={floorRef} />
-      )}
+      <div ref={floorRef} className={`${FOOT} ${FOOT_STACK}`}>
+        {policy.audience === 'pm' && thread.webReply === 'unavailable' ? (
+          <WebReplyNotice workspaceId={workspaceId} />
+        ) : null}
+        <ReplyForm
+          workspaceId={workspaceId}
+          threadId={thread.id}
+          audience={policy.audience}
+          recipientName={thread.name}
+          onSent={() => {
+            replyAnchor.current = thread.messages.length
+            setReplyTick((tick) => tick + 1)
+          }}
+        />
+      </div>
     </div>
   )
 }
@@ -341,8 +345,10 @@ function Bubble({
         item.side === 'own' ? 'flex flex-col items-end gap-8' : 'flex flex-col items-start gap-5'
       }
     >
+      {/* 작성자가 보이면 그 줄이 보낸 쪽을 읽는다 */}
+      {item.author === null ? null : <p className={AUTHOR}>{item.author}</p>}
       <p className={BUBBLE_CLASS[item.look]}>
-        <span className="sr-only">{item.speaker}: </span>
+        {item.author === null ? <span className="sr-only">{item.speaker}: </span> : null}
         {item.body}
       </p>
       {item.dmFailure === null ? null : <p className={DM_FAILED}>{item.dmFailure}</p>}
@@ -386,23 +392,18 @@ function Bubble({
   )
 }
 
-/** 메시지는 봇만 보낸다. 승인·고쳐 쓰기·보내지 않음은 보내기 전 확인에서 한다 */
-function ThreadNotice({
-  botName,
-  floorRef,
-}: {
-  botName: string
-  floorRef: (element: HTMLElement | null) => void
-}) {
+/** 웹 계정이 없는 팀원은 웹 대화를 볼 수 없다. PM 글은 그대로 쓸 수 있고, 답을 받으려면 초대를 수락해야 한다 */
+function WebReplyNotice({ workspaceId }: { workspaceId: string }) {
   return (
-    <div ref={floorRef} className={FOOT}>
-      <div className={FOOT_CARD}>
-        <Icon name="info" size={16} />
-        <p className="flex-1 text-caption leading-[1.6] wrap-anywhere text-sub">
-          메시지는 항상 <strong className="font-semibold text-ink">{botName} 봇</strong>이 보냅니다.
-          승인·고쳐 쓰기·보내지 않음은 보내기 전 확인에서 해요.
-        </p>
-      </div>
+    <div className={NOTICE_CARD}>
+      <Icon name="info" size={16} />
+      <p className="min-w-[0px] flex-1 text-caption leading-[1.6] wrap-anywhere">
+        웹 계정이 연결되지 않아 이 팀원은 웹에서 답장할 수 없어요. 팀원을 초대하고 초대를 수락하도록
+        안내해 주세요.
+      </p>
+      <GuardedLink to={paths.members(workspaceId)} className={FOOT_LINK}>
+        팀원 초대하기
+      </GuardedLink>
     </div>
   )
 }

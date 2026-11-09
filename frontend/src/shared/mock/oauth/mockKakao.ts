@@ -80,6 +80,8 @@ export function finishMockKakao(
   } else {
     const { identity } = MOCK_KAKAO_CHOICES[choice]
     const outcome = settle(identity)
+    // BE 는 이 두 복귀에서 대기 쿠키를 지운다. 앞서 멈춘 가입 대기가 다음 가입에 이어지지 않는다(계약 §4.1.4)
+    if (outcome !== 'needs-signup') db.kakao.pending = null
     if (outcome === 'signed-in') url = withOAuthResult(login, PROVIDER, 'success')
     else if (outcome === 'email-exists')
       url = withOAuthResult(login, PROVIDER, 'failed', 'email_exists')

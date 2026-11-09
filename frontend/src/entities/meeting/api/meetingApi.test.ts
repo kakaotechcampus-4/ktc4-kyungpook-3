@@ -1,3 +1,4 @@
+import type { MockInstance } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
 import { File as NodeFile } from 'node:buffer'
 import { http } from 'msw'
@@ -12,6 +13,7 @@ import { STALE_TIME } from '@/shared/api/queryClient'
 import { db } from '@/shared/mock/db'
 import { fail, ok } from '@/shared/mock/envelope'
 import { server } from '@/shared/mock/server'
+import { recordRequests } from '@/shared/test/requests'
 import type { UploadMeetingInput } from '../model/types'
 import {
   meetingDetailQueryOptions,
@@ -19,6 +21,7 @@ import {
   meetingListQueryOptions,
   viewableMeeting,
 } from './meetingQueries'
+import { speakerViewQueryOptions } from './speakers'
 import { toUploadForm, uploadMeeting } from './uploadMeeting'
 
 // 화면이 넘기는 File 은 브라우저(jsdom) File 이다. 전역을 바꾸기 전에 잡아 둔다
@@ -245,5 +248,90 @@ describe('uploadMeeting', () => {
       code: 'AUDIO_TOO_LARGE',
       status: 413,
     })
+  })
+})
+
+describe('응답 검증 (#348)', () => {
+  const summary = () => structuredClone(db.meetingSummaries[0])
+  const detail = () =>
+    structuredClone(db.meetings.find(({ meeting_id }) => meeting_id === 'mt_09')!)
+  let warning: MockInstance<typeof console.warn>
+  beforeEach(() => {
+    warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterEach(() => warning.mockRestore())
+
+  it('상세의 모르는 상태는 만든 회의로 바꾸지 않고 잘못된 응답이다. 캐시에 넣지 않고 다시 요청하지 않는다', async () => {
+    server.use(
+      http.get('/api/v1/meetings/:meetingId', () => ok({ ...detail(), status: 'archived' })),
+    )
+    const requests = recordRequests()
+    const client = new QueryClient()
+    const options = meetingDetailQueryOptions('ws_01', 'mt_09')
+    await expect(client.fetchQuery(options)).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+      kind: 'invalid_response',
+      details: { entity: 'meeting', path: 'status' },
+    })
+    expect(client.getQueryData(options.queryKey)).toBeUndefined()
+    expect(requests.started).toHaveLength(1)
+    expect(warning).toHaveBeenCalledWith('Invalid meeting response', [
+      expect.objectContaining({ path: 'status', value: 'archived' }),
+    ])
+  })
+
+  it('목록에 모르는 상태가 한 건이라도 있으면 목록 전체가 잘못된 응답이다', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/:workspaceId/meetings', () =>
+        ok({
+          items: [summary(), { ...summary(), meeting_id: 'mt_98', status: 'queued' }],
+          total: 2,
+        }),
+      ),
+    )
+    await expect(
+      new QueryClient().fetchQuery(meetingListQueryOptions('ws_01')),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE', details: { path: 'items[1].status' } })
+  })
+
+  it('목록의 모르는 출처는 discord 로 바꾸지 않고 받은 글자를 남기며 경고한다', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/:workspaceId/meetings', () =>
+        ok({ items: [{ ...summary(), source: 'zoom' }], total: 1 }),
+      ),
+    )
+    const [meeting] = await new QueryClient().fetchQuery(meetingListQueryOptions('ws_01'))
+    expect(meeting.source).toEqual({ unknown: 'zoom' })
+    expect(warning).toHaveBeenCalledWith('Unknown meeting source: zoom')
+  })
+
+  it('업로드 응답의 모르는 상태는 잘못된 응답이다', async () => {
+    server.use(
+      http.post('/api/v1/workspaces/:workspaceId/meetings/upload', () =>
+        ok({ meeting_id: 'mt_20', status: 'queued' }),
+      ),
+    )
+    await expect(uploadMeeting('ws_01', input())).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+      details: { entity: 'meeting', path: 'status' },
+    })
+  })
+
+  it('화자 지정의 팀원 ID 가 글자가 아니면 그 경로로 잘못된 응답이다', async () => {
+    server.use(
+      http.get('/api/v1/meetings/:meetingId/speakers', () =>
+        ok({
+          meeting_id: 'mt_20',
+          status: 'awaiting_speakers',
+          speakers: [],
+          candidates: [],
+          mapping: { SPEAKER_00: 1 },
+          audio: null,
+        }),
+      ),
+    )
+    await expect(
+      new QueryClient().fetchQuery(speakerViewQueryOptions('ws_01', 'mt_20')),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE', details: { path: 'mapping' } })
   })
 })

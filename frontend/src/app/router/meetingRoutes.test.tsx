@@ -76,6 +76,7 @@ describe('회의 올리기 — PM 전용', () => {
       expect(businessRequests(log.started)).toEqual([
         { method: 'GET', path: '/tasks?workspace_id=ws_01' },
         { method: 'GET', path: '/members?workspace_id=ws_01' },
+        { method: 'GET', path: '/members?workspace_id=ws_01&include_withdrawn=true' },
       ]),
     )
     expect(screen.queryByRole('heading', { name: '회의를 올려 주세요' })).toBeNull()

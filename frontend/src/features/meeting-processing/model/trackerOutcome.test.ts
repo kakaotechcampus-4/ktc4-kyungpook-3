@@ -1,10 +1,12 @@
 import { isAccessLost } from '@/entities/meeting'
 import type { Meeting } from '@/entities/meeting'
 import { ApiError, createClientError, createWorkspaceMismatchError } from '@/shared/api/errors'
+import { createInvalidResponseError } from '@/shared/api/parseResponse'
 import {
   AWAITING_SPEAKERS_POLL_INTERVAL_MS,
   pollInterval,
   PROCESSING_POLL_INTERVAL_MS,
+  refetchOnReturn,
   trackerOutcome,
 } from './trackerOutcome'
 
@@ -18,6 +20,7 @@ function meeting(overrides: Partial<Meeting> = {}): Meeting {
     endedAt: null,
     extractionId: null,
     failedStage: null,
+    deletionAvailable: false,
     progress: { audioMerged: true, transcribed: false, extracted: false },
     ...overrides,
   }
@@ -87,5 +90,23 @@ describe('pollInterval', () => {
   it('화자 지정 대기는 멈추지 않고 30초마다 묻는다', () => {
     expect(AWAITING_SPEAKERS_POLL_INTERVAL_MS).toBe(30_000)
     expect(pollInterval(meeting({ status: 'awaiting_speakers' }), null)).toBe(30_000)
+  })
+})
+
+describe('읽지 못한 상세 응답 (#348)', () => {
+  const invalid = createInvalidResponseError('meeting', 'status')
+
+  it('받아 둔 상세가 있든 없든 invalid 다. 정리 중으로 보지 않고 끝내지도 않는다', () => {
+    expect(trackerOutcome(undefined, invalid)).toBe('invalid')
+    expect(trackerOutcome(meeting(), invalid)).toBe('invalid')
+    expect(trackerOutcome(meeting({ status: 'awaiting_speakers' }), invalid)).toBe('invalid')
+  })
+
+  it('polling 과 포커스·연결 복귀 재조회를 모두 멈춘다', () => {
+    expect(pollInterval(undefined, invalid)).toBe(false)
+    expect(pollInterval(meeting(), invalid)).toBe(false)
+    expect(refetchOnReturn({ state: { error: invalid } })).toBe(false)
+    expect(refetchOnReturn({ state: { error: createClientError('NETWORK_ERROR') } })).toBe('always')
+    expect(refetchOnReturn({ state: { error: null } })).toBe('always')
   })
 })

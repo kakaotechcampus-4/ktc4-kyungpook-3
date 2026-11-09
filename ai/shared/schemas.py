@@ -279,3 +279,140 @@ class DraftResult(_Base):
             doc_text=data["doc_text"],
             method=data.get("method", "llm"),
         )
+
+
+# ─────────────────────────────────────────────────────────── 회의 요약
+# BE 와 주고받는 모양. 정본은 backend/app/schemas/project_map.py 다
+
+
+@dataclass(frozen=True)
+class SummaryClaim(_Base):
+    """POST /summaries/claim 이 맡긴 일감. 재료는 따로 읽는다."""
+
+    extraction_id: str
+    meeting_id: str
+    workspace_id: str
+    attempt: int
+    claim_token: str
+    identity_epoch: int
+
+
+@dataclass(frozen=True)
+class SummaryLine(_Base):
+    seq: int
+    at_ms: int
+    speaker: str
+    text: str
+
+
+@dataclass(frozen=True)
+class SummaryItem(_Base):
+    item_id: str
+    action: str
+    title: str
+    assignee: str | None
+    due_date: str | None
+
+
+@dataclass(frozen=True)
+class SummaryTopic(_Base):
+    topic_id: str
+    name: str
+    description: str
+
+
+@dataclass(frozen=True)
+class SummaryPriorDecision(_Base):
+    decision_id: str
+    text: str
+    topic: str
+    decided_on: str
+
+
+@dataclass(frozen=True)
+class SummaryInput(_Base):
+    """GET /extractions/{id}/summary-input."""
+
+    extraction_id: str
+    meeting_id: str
+    workspace_id: str
+    title: str | None
+    started_at: str
+    lines: list[SummaryLine]
+    items: list[SummaryItem]
+    topics: list[SummaryTopic]
+    decisions: list[SummaryPriorDecision]
+    identity_epoch: int
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SummaryInput":
+        return super().from_dict({
+            **data,
+            "lines": [SummaryLine.from_dict(x) for x in data["lines"]],
+            "items": [SummaryItem.from_dict(x) for x in data["items"]],
+            "topics": [SummaryTopic.from_dict(x) for x in data["topics"]],
+            "decisions": [SummaryPriorDecision.from_dict(x) for x in data["decisions"]],
+        })
+
+
+@dataclass(frozen=True)
+class DiscussionBlock(_Base):
+    title: str
+    points: list[str]
+
+
+@dataclass(frozen=True)
+class TaskChange(_Base):
+    task: str
+    assignee: str
+    due: str
+    purpose: str
+    precondition: str
+
+
+@dataclass(frozen=True)
+class ScheduleEntry(_Base):
+    when: str
+    what: str
+
+
+@dataclass(frozen=True)
+class DecisionDraft(_Base):
+    text: str
+    reason: str | None
+    rejected: list[str]
+    replaces: list[str]             # decision_id
+
+
+@dataclass(frozen=True)
+class TopicDraft(_Base):
+    """기존 주제는 topic_id 와 재료의 이름, 새 주제는 name. 결정이 주제 아래 있어서 주제 없는 결정이 표현되지 않는다.
+
+    기존 주제에 이름을 같이 싣는 것은 재료를 읽은 뒤 그 주제가 지워졌을 때 BE 가 이름으로 다시 찾게 하려는 것이다.
+    """
+
+    topic_id: str | None
+    name: str | None
+    description: str
+    item_ids: list[str]
+    decisions: list[DecisionDraft]
+
+    def __post_init__(self) -> None:
+        if self.topic_id is None and self.name is None:
+            raise ValueError("topic_id 나 name 이 있어야 한다")
+
+
+@dataclass(frozen=True)
+class SummaryDraft(_Base):
+    """to_dict() 가 PUT /extractions/{id}/summary 본문이다."""
+
+    model_name: str
+    truncated_input: bool
+    overview: str
+    key_points: list[str]
+    discussion: list[DiscussionBlock]
+    facts: list[str]
+    task_changes: list[TaskChange]
+    schedule: list[ScheduleEntry]
+    open_items: list[str]
+    topics: list[TopicDraft]

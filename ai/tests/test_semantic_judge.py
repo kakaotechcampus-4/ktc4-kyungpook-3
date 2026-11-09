@@ -565,6 +565,69 @@ def test_dispatcher_raises_when_llm_call_fails(monkeypatch):
         extract_findings(t)
 
 
+@pytest.mark.parametrize("first", [None, {}, {"findings": [{"indices": [9]}]}],
+                         ids=["call_or_json", "no_findings_key", "all_dropped"])
+def test_retries_once_right_away_when_first_answer_unusable(monkeypatch, first):
+    # 1단계는 BE 에 쓰기 전이라 다시 불러도 중복이 없다. 회의를 실패로 세고 60초 기다리는 대신 바로 한 번 더 부른다(#579)
+    import judge.semantic_judge as sj
+
+    fake = FakeLLM(responses=[first, {"findings": [{"indices": [0], "reason": "테스트"}]}])
+    monkeypatch.setattr(sj, "get_llm", lambda which: fake)
+    t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="내일까지 끝낼게요.", seq=0))
+
+    findings, dropped = extract_findings_counted(t)
+
+    assert len(fake.prompts) == 2
+    assert fake.prompts[0] == fake.prompts[1]
+    assert [f.seq for f in findings] == [0]
+    assert dropped["no_valid_indices"] == 0  # 성공한 응답의 기록이다
+
+
+def test_raises_after_second_failure_without_third_call(monkeypatch):
+    import judge.semantic_judge as sj
+
+    fake = FakeLLM(responses=[None, None, {"findings": [{"indices": [0]}]}])
+    monkeypatch.setattr(sj, "get_llm", lambda which: fake)
+    t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="내일까지 끝낼게요.", seq=0))
+
+    with pytest.raises(FindingExtractionUnavailableError):
+        extract_findings_counted(t)
+    assert len(fake.prompts) == 2
+
+
+def test_first_failure_is_logged_with_drop_counts_only(monkeypatch, caplog):
+    import judge.semantic_judge as sj
+
+    fake = FakeLLM(responses=[{"findings": [{"indices": [9], "summary": "비밀 회의 내용"}]},
+                              {"findings": []}])
+    monkeypatch.setattr(sj, "get_llm", lambda which: fake)
+    t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="내일까지 끝낼게요.", seq=0))
+
+    with caplog.at_level("WARNING", logger="judge.semantic_judge"):
+        extract_findings_counted(t)
+
+    logged = "\n".join(r.getMessage() for r in caplog.records)
+    assert "한 번 더" in logged and "no_valid_indices=1" in logged
+    assert "비밀 회의 내용" not in logged and "내일까지" not in logged
+
+
+def test_second_failure_is_logged_with_drop_counts_too(monkeypatch, caplog):
+    # 배포 뒤 두 번째 실패의 원인도 보이게 건수를 남긴다(PR #580 리뷰)
+    import judge.semantic_judge as sj
+
+    fake = FakeLLM(responses=[None, {"findings": [{"indices": [9], "summary": "비밀 회의 내용"}]}])
+    monkeypatch.setattr(sj, "get_llm", lambda which: fake)
+    t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="내일까지 끝낼게요.", seq=0))
+
+    with caplog.at_level("WARNING", logger="judge.semantic_judge"), pytest.raises(FindingExtractionUnavailableError):
+        extract_findings_counted(t)
+
+    messages = [r.getMessage() for r in caplog.records if "1단계" in r.getMessage()]
+    assert len(messages) == 2
+    assert "no_valid_indices=1" in messages[1]
+    assert all("비밀 회의 내용" not in m for m in messages)
+
+
 def test_chat_message_stays_one_line_but_meeting_splits_into_sentences():
     text = "https://github.com/x/y.git 보고 v1.2 올릴게요. 금요일까지요."
     seg = TranscriptSegment(speaker="u1", start=0.0, end=0.0, text=text, seq=1)

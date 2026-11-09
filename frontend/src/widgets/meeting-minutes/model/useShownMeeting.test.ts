@@ -34,6 +34,19 @@ function advance(ms: number) {
 }
 
 describe('useSelectionTimeline — 들고 있기 (UX1)', () => {
+  it('삭제를 확인한 회의는 다음 회의를 기다릴 때 들고 있지 않는다', () => {
+    const initialProps: { meetingId: string; unavailableId: string | null } = {
+      meetingId: 'mt_09',
+      unavailableId: null,
+    }
+    const { result, rerender } = renderHook(
+      ({ meetingId, unavailableId }: { meetingId: string; unavailableId: string | null }) =>
+        useSelectionTimeline(meetingId, meetingId === 'mt_09', true, unavailableId),
+      { initialProps },
+    )
+    rerender({ meetingId: 'mt_08', unavailableId: 'mt_09' })
+    expect(result.current).toMatchObject({ shownId: 'mt_08', holding: false })
+  })
   it('첫 진입은 들고 있지 않고 뼈대를 붙잡지도 않는다', () => {
     const { result } = setup({ meetingId: 'mt_09', settled: false, canHold: true })
     expect(result.current).toEqual({

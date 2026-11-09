@@ -51,13 +51,13 @@ it('keeps existing accounts after signup and accepts the new account password', 
     })
   const session = await signUpVerified({
     email: 'new@example.com',
-    password: 'new-password',
+    password: 'new-password1',
     name: '새 팀원',
   })
   expect(toSession(session)).toMatchObject({ workspaceCount: 0, lastWorkspaceId: null })
-  expect((await send('login', { email: 'new@example.com', password: 'new-password' })).status).toBe(
-    200,
-  )
+  expect(
+    (await send('login', { email: 'new@example.com', password: 'new-password1' })).status,
+  ).toBe(200)
   expect((await send('login', { email: 'pm@example.com', password: 'mock-password' })).status).toBe(
     200,
   )

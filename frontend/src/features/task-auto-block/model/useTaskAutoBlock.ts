@@ -1,9 +1,20 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
-import { taskKeys, undoTaskAutoBlock, writeServerTask } from '@/entities/task'
+import {
+  showTaskWriteUnconfirmed,
+  taskKeys,
+  undoTaskAutoBlock,
+  writeServerTask,
+} from '@/entities/task'
 import type { Task } from '@/entities/task'
 import { errorMessage } from '@/shared/api/errorMessages'
-import { ApiError, CLIENT_ERROR_CODES, ERROR_CODES, createClientError } from '@/shared/api/errors'
+import {
+  ApiError,
+  CLIENT_ERROR_CODES,
+  ERROR_CODES,
+  createClientError,
+  isInvalidResponse,
+} from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
 import { toast } from '@/shared/ui/toast'
@@ -46,7 +57,8 @@ export function useTaskAutoBlock(workspaceId: string, task: Task): TaskAutoBlock
       if (!session.isCurrent()) return
       // 목록은 스케줄러와 잠금 없이 읽어서 보여 준 값이 낡았을 수 있다
       if (isStale(error)) void queryClient.invalidateQueries({ queryKey: taskKeys(workspaceId) })
-      toast.show({ title: AUTO_BLOCK_UNDO_FAILED, description: errorMessage(error) })
+      if (isInvalidResponse(error)) showTaskWriteUnconfirmed(queryClient, workspaceId)
+      else toast.show({ title: AUTO_BLOCK_UNDO_FAILED, description: errorMessage(error) })
     },
   })
   const undo = useCallback(() => {

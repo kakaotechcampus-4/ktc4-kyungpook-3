@@ -28,6 +28,7 @@ export function TaskReminder({
   task,
   status,
   assigneeName,
+  recipientAvailable = true,
   overdue,
 }: {
   workspaceId: string
@@ -36,6 +37,7 @@ export function TaskReminder({
   status: TaskStatus
   /** 담당자 이름. 담당자가 없으면 null */
   assigneeName: string | null
+  recipientAvailable?: boolean
   overdue: boolean
 }) {
   const titleId = useId()
@@ -55,6 +57,10 @@ export function TaskReminder({
   if (task.assigneeMemberId === null)
     body = (
       <p className={NOTE}>담당자가 없어 재촉을 만들 수 없어요. 담당자를 정하면 만들 수 있어요.</p>
+    )
+  else if (!recipientAvailable)
+    body = (
+      <p className={NOTE}>탈퇴한 담당자에게는 재촉을 보낼 수 없어요. 새 담당자를 정해 주세요.</p>
     )
   else if (status === 'done') body = <p className={NOTE}>완료한 태스크라 재촉을 만들지 않아요.</p>
   else
@@ -106,7 +112,9 @@ export function TaskReminder({
       <div className={HEAD}>
         <h2 id={titleId} className={TITLE}>
           <Mascot size={22} className="shrink-0" />
-          {assigneeName ?? '담당자'}에게 진행 상황을 물어볼까요?
+          {recipientAvailable
+            ? `${assigneeName ?? '담당자'}에게 진행 상황을 물어볼까요?`
+            : '공동 기록으로 남은 태스크예요'}
         </h2>
         <span className={CHANNEL}>Discord 개인 메시지</span>
       </div>

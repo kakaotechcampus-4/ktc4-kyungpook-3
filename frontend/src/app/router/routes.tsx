@@ -6,6 +6,7 @@ import { LandingEntry } from './LandingEntry'
 import { RouteErrorBoundary } from './errors/RouteErrorBoundary'
 import { RedirectIfAuthed } from './guards/RedirectIfAuthed'
 import { RequireAuth } from './guards/RequireAuth'
+import { RequireConsent } from './guards/RequireConsent'
 import { RequireOnboardingComplete } from './guards/RequireOnboardingComplete'
 import { RequirePM } from './guards/RequirePM'
 import { RequireTeamMember } from './guards/RequireTeamMember'
@@ -28,6 +29,11 @@ const forgotPasswordPage = lazyPage(() =>
 )
 const resetPasswordPage = lazyPage(() =>
   import('@/pages/reset-password').then((m) => m.ResetPasswordPage),
+)
+const termsPage = lazyPage(() => import('@/pages/policy').then((m) => m.TermsPage))
+const privacyPage = lazyPage(() => import('@/pages/policy').then((m) => m.PrivacyPage))
+const accountWithdrawalPage = lazyPage(() =>
+  import('@/pages/account-withdrawal').then((m) => m.AccountWithdrawalPage),
 )
 const workspaceSelectPage = lazyPage(() =>
   import('@/pages/workspace-select').then((m) => m.WorkspaceSelectPage),
@@ -122,44 +128,49 @@ export const appRoutes = (
     </Route>
     {/* 메일 링크는 로그인한 브라우저에서도 열린다. RedirectIfAuthed 안이면 워크스페이스로 옮겨져 버린다 (#356) */}
     <Route path="reset-password" element={screen(resetPasswordPage)} />
+    <Route path="terms" element={screen(termsPage)} />
+    <Route path="privacy" element={screen(privacyPage)} />
+    <Route path="account/withdrawal" element={screen(accountWithdrawalPage)} />
     <Route element={<RequireAuth />}>
-      {/* 추적기 같은 로그인 뒤 전역 동작의 칸. path 가 없어 경로에는 끼지 않는다 */}
-      <Route element={<AuthenticatedLayout />}>
-        <Route path="workspaces" element={screen(workspaceSelectPage)} />
-        <Route path="onboarding/start" element={screen(onboardingStartPage)} />
-        <Route path="onboarding/member" element={screen(onboardingMemberPage)} />
-        <Route path="onboarding/create_workspace" element={screen(onboardingCreatePage)} />
-        <Route path="onboarding/:workspaceId" element={<RequireTeamMember />}>
-          <Route index element={screen(<NotFoundPage />)} />
-          <Route path=":step" element={<RequireValidOnboardingStep />}>
-            <Route index element={screen(onboardingStepPage)} />
+      <Route element={<RequireConsent />}>
+        {/* 추적기 같은 로그인 뒤 전역 동작의 칸. path 가 없어 경로에는 끼지 않는다 */}
+        <Route element={<AuthenticatedLayout />}>
+          <Route path="workspaces" element={screen(workspaceSelectPage)} />
+          <Route path="onboarding/start" element={screen(onboardingStartPage)} />
+          <Route path="onboarding/member" element={screen(onboardingMemberPage)} />
+          <Route path="onboarding/create_workspace" element={screen(onboardingCreatePage)} />
+          <Route path="onboarding/:workspaceId" element={<RequireTeamMember />}>
+            <Route index element={screen(<NotFoundPage />)} />
+            <Route path=":step" element={<RequireValidOnboardingStep />}>
+              <Route index element={screen(onboardingStepPage)} />
+            </Route>
           </Route>
-        </Route>
-        <Route path="workspaces/:workspaceId" element={<RequireTeamMember />}>
-          <Route element={<RequireOnboardingComplete />}>
-            <Route element={<WorkspaceLayout />}>
-              <Route index element={screen(<NotFoundPage />)} />
-              <Route path="dashboard" element={screen(dashboardPage)} />
-              {/* `upload` 가 회의 ID 로 읽히지 않게 정적 경로로 따로 둔다. 정적 조각이 동적 조각보다 우선한다.
+          <Route path="workspaces/:workspaceId" element={<RequireTeamMember />}>
+            <Route element={<RequireOnboardingComplete />}>
+              <Route element={<WorkspaceLayout />}>
+                <Route index element={screen(<NotFoundPage />)} />
+                <Route path="dashboard" element={screen(dashboardPage)} />
+                {/* `upload` 가 회의 ID 로 읽히지 않게 정적 경로로 따로 둔다. 정적 조각이 동적 조각보다 우선한다.
                   업로드는 PM 전용, 처리 화면은 팀원 모두 — docs/impl-decision/2026-10-02-meeting-upload-policy.md */}
-              <Route path="meetings/upload" element={<RequirePM />}>
-                <Route index element={screen(meetingUploadPage)} />
+                <Route path="meetings/upload" element={<RequirePM />}>
+                  <Route index element={screen(meetingUploadPage)} />
+                </Route>
+                <Route
+                  path="meetings/:meetingId/processing"
+                  element={screen(meetingProcessingPage)}
+                />
+                <Route path="meetings/:meetingId/speakers" element={screen(meetingSpeakersPage)} />
+                <Route path="meetings/:meetingId?" element={screen(meetingsPage)} />
+                {/* 목록과 상세는 다른 화면이다. URL 은 M3 그대로 `/tasks` · `/tasks/:taskId` 다 (M6 §3-1) */}
+                <Route path="tasks" element={screen(tasksPage)} />
+                <Route path="tasks/:taskId" element={screen(taskDetailPage)} />
+                <Route path="approvals/:approvalId" element={<RequirePM />}>
+                  <Route index element={screen(approvalDetailPage)} />
+                </Route>
+                <Route path="messages/*" element={screen(messagesPage)} />
+                <Route path="members" element={screen(membersPage)} />
+                <Route path="settings" element={screen(settingsPage)} />
               </Route>
-              <Route
-                path="meetings/:meetingId/processing"
-                element={screen(meetingProcessingPage)}
-              />
-              <Route path="meetings/:meetingId/speakers" element={screen(meetingSpeakersPage)} />
-              <Route path="meetings/:meetingId?" element={screen(meetingsPage)} />
-              {/* 목록과 상세는 다른 화면이다. URL 은 M3 그대로 `/tasks` · `/tasks/:taskId` 다 (M6 §3-1) */}
-              <Route path="tasks" element={screen(tasksPage)} />
-              <Route path="tasks/:taskId" element={screen(taskDetailPage)} />
-              <Route path="approvals/:approvalId" element={<RequirePM />}>
-                <Route index element={screen(approvalDetailPage)} />
-              </Route>
-              <Route path="messages/*" element={screen(messagesPage)} />
-              <Route path="members" element={screen(membersPage)} />
-              <Route path="settings" element={screen(settingsPage)} />
             </Route>
           </Route>
         </Route>

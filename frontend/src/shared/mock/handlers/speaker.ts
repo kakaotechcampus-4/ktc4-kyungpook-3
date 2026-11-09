@@ -1,5 +1,6 @@
 import { HttpResponse, http } from 'msw'
 import { db } from '../db'
+import { deletedMeetingResponse } from '../meetingDeletion'
 import { fail, ok } from '../envelope'
 import { requirePmRole } from '../auth-guard'
 import { SPEAKER_AUDIO_SECONDS } from '../fixtures/speaker'
@@ -17,6 +18,8 @@ function notFound(meetingId: string) {
 }
 
 function uploadFor(meetingId: string) {
+  const deleted = deletedMeetingResponse(meetingId)
+  if (deleted) return deleted
   const meeting = db.meetings.find(({ meeting_id }) => meeting_id === meetingId)
   if (!meeting) return notFound(meetingId)
   const denied = requirePmRole(meeting.workspace_id)

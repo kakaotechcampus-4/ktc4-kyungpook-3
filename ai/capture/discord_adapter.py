@@ -65,7 +65,8 @@ from shared.schemas import now_iso
 
 SessionSavedHook = Callable[[dict, Path], Awaitable[None]]
 
-NOTICE = "🔴 녹음·전사 중입니다. 이 음성 채널의 말은 화자별로 녹음되고 `/stop` 뒤 회의록이 여기 올라옵니다."
+NOTICE = ("🔴 녹음·전사 중입니다. 이 음성 채널의 말은 화자별로 녹음되고 `/stop` 뒤 회의록이 여기 올라옵니다. "
+          "전사와 정리를 위해 음성을 외부 서비스(Elice)로 보냅니다. 녹음을 원하지 않으면 음성 채널에서 나가 주세요.")
 # 봇은 서버에 있는데 웹에서 이 서버를 워크스페이스에 연결하지 않았다(#199). /record 는 녹음하지 않고 이렇게 답한다
 NOT_CONNECTED_REFUSED = ("⚠️ 이 디스코드 서버가 웹 워크스페이스에 연결돼 있지 않아 녹음을 시작하지 않았습니다. "
                          "PM 이 웹 온보딩의 디스코드 연결 단계에서 이 서버를 연결한 뒤 다시 `/record` 해 주세요.")
@@ -120,6 +121,8 @@ class _Recording:
     done: asyncio.Event = field(default_factory=asyncio.Event)
     lock: object | None = None                      # 회의 잠금(recorder.MeetingLock). 녹음하는 동안 쥔다
     hint_names: list[str] = field(default_factory=list)   # 전사 이름 힌트(#195). 서버 멤버 표시 이름
+    hint_members: list[dict] | None = None
+    identity_epoch: int = 0
 
 
 def _member_names(guild) -> list[str]:
@@ -205,6 +208,16 @@ class RecordingCog(discord.Cog):
             except Exception as e:  # noqa: BLE001
                 meta["be"]["error"] = f"{type(e).__name__}: {e}"
                 print(f"[be] 워크스페이스 조회 실패: {meta['be']['error']}", flush=True)
+                await ctx.respond('워크스페이스 정보를 확인하지 못해 녹음을 시작하지 않았습니다. 잠시 뒤 다시 시도해 주세요.')
+                return
+            names = getattr(getattr(handoff, 'client', None), 'member_names', None)
+            if names is not None:
+                try:
+                    meta['hint_members'] = await asyncio.to_thread(names, meta['workspace_id'])
+                    meta['identity_epoch'] = getattr(handoff.client, 'workspace_epochs', {}).get(meta['workspace_id'], 0)
+                except Exception:
+                    await ctx.respond('팀원 정보를 확인하지 못해 녹음을 시작하지 않았습니다. 잠시 뒤 다시 시도해 주세요.')
+                    return
             # 묻는 사이 같은 서버의 다른 /record 가 먼저 시작했거나 봇이 채널을 떠났을 수 있다
             if (why := self._record_blocked(ctx)) is not None:
                 await ctx.respond(why, ephemeral=True)
@@ -217,13 +230,19 @@ class RecordingCog(discord.Cog):
             await ctx.respond(DEPLOYING_NOTICE, ephemeral=True)
             return
         try:
+            from capture.privacy_cleanup import PrivacyPending, guard_workspace, session_fence_path
+            try:
+                guard_workspace(self.recordings_dir, meta.get('workspace_id'), int(meta.get('identity_epoch') or 0))
+            except PrivacyPending:
+                await ctx.respond('워크스페이스 정보가 변경되어 녹음을 시작하지 않았습니다. 잠시 뒤 다시 시도해 주세요.')
+                return
             # 회의 잠금을 먼저 잡고 recording 매니페스트를 쓴다. 워커는 봇 메모리를 못 보니 이 잠금으로 녹음 중인 회의를
             # 건너뛰고, 잠금 없는 recording 은 봇이 녹음 중에 죽은 회의로 읽는다
             ts = int(time.time())
             while True:
                 path = manifest_path(self.recordings_dir, f"{ctx.guild.id}_{ts}")
                 lock = try_lock(path)
-                if lock is not None and not path.exists():
+                if lock is not None and not path.exists() and not session_fence_path(self.recordings_dir, f'{ctx.guild.id}_{ts}').exists():
                     break
                 if lock is not None:
                     lock.release()
@@ -232,19 +251,31 @@ class RecordingCog(discord.Cog):
             out_dir = self.recordings_dir / meeting_id
             out_dir.mkdir(parents=True, exist_ok=True)
             pool = TrackPool(out_dir, ts)
-            sink = StreamingSink(NullSession(), on_samples=pool.submit)
+            capture_started = time.monotonic()
+            sink = StreamingSink(NullSession(), on_samples=pool.submit,
+                                 now_ms=lambda: int((time.monotonic() - capture_started) * 1000))
             cfg = settings()
             rec = _Recording(meeting_id=meeting_id, ts=ts, out_dir=out_dir, sink=sink, pool=pool,
                              text_channel=ctx.channel, guild_id=ctx.guild.id, voice_channel_id=vc.channel.id,
                              voice_channel_name=getattr(vc.channel, "name", None),
                              guild_name=ctx.guild.name if ctx.guild else None, started_at=now_iso(),
                              text_channel_id=getattr(ctx.channel, "id", None),
-                             timezone=cfg.meeting_timezone, lock=lock, hint_names=_member_names(ctx.guild),
-                             workspace_id=meta.get("workspace_id"), be=meta["be"])
+                             timezone=cfg.meeting_timezone, lock=lock,
+                             hint_names=[] if meta.get('hint_members') is not None else _member_names(ctx.guild),
+                             workspace_id=meta.get("workspace_id"), be=meta["be"],
+                             hint_members=meta.get('hint_members'), identity_epoch=int(meta.get('identity_epoch') or 0))
+            # 시작 시점에 매니페스트를 먼저 쓴다. 봇이 죽어도 이 회의가 있었다는 기록과 트랙이 남는다
+            try:
+                _, manifest = self._write_status(rec, STATUS_RECORDING, [])
+            except Exception:
+                await asyncio.to_thread(pool.close)
+                lock.release()
+                if not any(out_dir.iterdir()):
+                    out_dir.rmdir()
+                raise
+            capture_started = time.monotonic()
             vc.start_recording(sink, self._on_recording_done, ctx)
             self._active[ctx.guild.id] = rec
-            # 시작 시점에 매니페스트를 먼저 쓴다. 봇이 죽어도 이 회의가 있었다는 기록과 트랙이 남는다
-            _, manifest = self._write_status(rec, STATUS_RECORDING, [])
         finally:
             restart.release()
         rec.flush_task = asyncio.create_task(self._flush_loop(rec))
@@ -394,6 +425,15 @@ class RecordingCog(discord.Cog):
             await asyncio.sleep(OUTBOX_POLL_S)
 
     async def _drain_outbox(self) -> None:
+        lock = try_lock(self.recordings_dir / '.privacy-outbox-writer.json')
+        if lock is None:
+            return
+        try:
+            await self._drain_outbox_locked()
+        finally:
+            lock.release()
+
+    async def _drain_outbox_locked(self) -> None:
         """워커가 우편함에 쓴 알림을 그 채널에 이름 순서대로 올리고 지운다(capture.notify.FileOutbox).
 
         올리지 못하면 그 채널의 뒤 알림은 이번 바퀴에 건너뛰고 다음 바퀴에 다시 올린다. 같은 채널의 순서를 지키려는
@@ -411,6 +451,13 @@ class RecordingCog(discord.Cog):
             except (OSError, json.JSONDecodeError):
                 path.unlink(missing_ok=True)
                 continue
+            if note.get('workspace_id'):
+                from capture.privacy_cleanup import PrivacyPending, guard_workspace
+                try:
+                    guard_workspace(self.recordings_dir, note['workspace_id'], int(note.get('identity_epoch') or 0))
+                except PrivacyPending:
+                    path.unlink(missing_ok=True)
+                    continue
             if time.time() - float(note.get("at") or 0) > OUTBOX_MAX_AGE_S:
                 print(f"[outbox] 오래된 알림을 버린다: {str(note.get('text'))[:60]}", flush=True)
                 path.unlink(missing_ok=True)
@@ -495,6 +542,15 @@ class RecordingCog(discord.Cog):
         try:
             while True:
                 await asyncio.sleep(FLUSH_EVERY_S)
+                from capture.privacy_cleanup import workspace_deleted
+                if workspace_deleted(self.recordings_dir, rec.workspace_id, guild_id=str(rec.guild_id)):
+                    guild = self.bot.get_guild(rec.guild_id)
+                    voice = getattr(guild, 'voice_client', None)
+                    if voice is not None and is_recording(voice):
+                        voice.stop_recording()
+                    rec.flush_task = None
+                    await self._finish(rec.guild_id)
+                    return
                 rec.sink.flush_idle()
         except asyncio.CancelledError:
             pass
@@ -506,7 +562,8 @@ class RecordingCog(discord.Cog):
                             extra={"timezone": rec.timezone, "be": rec.be, "guild_id": str(rec.guild_id),
                                    "voice_channel_id": str(rec.voice_channel_id),
                                    "text_channel_id": str(rec.text_channel_id) if rec.text_channel_id else None,
-                                   "workspace_id": rec.workspace_id, "hint_names": rec.hint_names})
+                                   "workspace_id": rec.workspace_id, "hint_names": rec.hint_names,
+                                   "hint_members": rec.hint_members, 'identity_epoch': rec.identity_epoch})
 
     async def _notify(self, channel, text: str, file=None) -> bool:
         """채널에 올린다. 디스코드 쪽 실패는 로그로만 남긴다. 파일과 상태 처리가 알림에 막히지 않는다."""

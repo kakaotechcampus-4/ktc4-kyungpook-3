@@ -180,6 +180,7 @@ class ThreadDetailResponse(BaseModel):
 class ClaimedMessageResponse(BaseModel):
     message_id: str
     workspace_id: str
+    identity_epoch: int = 0
     member_id: str
     discord_user_id: str
     body: str
@@ -233,6 +234,7 @@ class DraftClaimItem(BaseModel):
     bundle_id: str
     draft_version: int
     workspace_id: str
+    identity_epoch: int = 0
     recipient_name: str
     scheduled_at: datetime
     tasks: list[DraftTask]

@@ -20,6 +20,8 @@
 recordings/.worker/nudge 를 만들어(request_nudge) 다음 바퀴를 주기까지 기다리지 않게 한다.
 SIGTERM·SIGINT 를 받으면 새 회의를 집지 않고 하던 회의를 마친 뒤 끝난다.
 
+바퀴 끝에 회의 요약을 한 건 맡는다(capture/summary_sweep.py). 처리 단계와 별개라 실패해도 회의 상태는 그대로다.
+
 GPU 전환(#530). MM_GPU_FAILOVER 가 manual 이나 auto 면 전사 백엔드가 stt.failover.FailoverStt 이고, 회의 바퀴와 따로 도는
 태스크가 주기마다 그 tick 을 부른다. Elice 가 계속 실패하면 GPU 대기 서버를 켜서 넘기고 돌아오면 되돌리고 끈다. 알림은
 운영 채널(MM_OPS_CHANNEL_ID)로 우편함에 쓴다. 비어 있거나 off 면 지금과 똑같다.
@@ -40,8 +42,17 @@ from pathlib import Path
 from capture.handoff import from_env as handoff_from_env
 from capture.judge_path import extract_path
 from capture.notify import FileOutbox, MeetingReporter, debug_from_env
-from capture.recorder import (STATUS_FAILED, STATUS_SOURCED, Claims, backend_from_env, build_extractor, recover_pass,
-                              save_manifest)
+from capture.recorder import (
+    STATUS_FAILED,
+    STATUS_SOURCED,
+    Claims,
+    backend_from_env,
+    build_extractor,
+    prune_audio,
+    recover_pass,
+    save_manifest,
+)
+from capture.summary_sweep import summary_from_env
 from shared.config import RECORDINGS_DIR, TRANSCRIPTS_DIR
 from shared.schemas import now_iso
 from upload.assign import assign_one
@@ -233,14 +244,16 @@ def failover_from_env(recordings_dir: Path, *, notifier):
 class Worker:
     def __init__(self, recordings_dir: Path = RECORDINGS_DIR, *, transcripts_dir: Path = TRANSCRIPTS_DIR,
                  stt_factory=None, gate_factory=None, extractor_factory=None, handoff_factory=None, intake_factory=None,
-                 interval_s: float | None = None, poll_s: float = 1.0, notifier=None, debug: bool | None = None,
-                 failover=None) -> None:
+                 summary_factory=None, interval_s: float | None = None, poll_s: float = 1.0, notifier=None,
+                 debug: bool | None = None, failover=None) -> None:
         """팩토리 기본은 환경 변수다. poll_s 는 깨우기와 종료 신호를 확인하는 간격이다.
 
         notifier 는 채널 알림을 받는다(send). 기본은 봇이 읽는 우편함이다. debug 기본은 MM_DEBUG_REPORT 다.
         failover 는 GPU 전환(stt.failover.FailoverStt)이다. stt_factory 를 주지 않았을 때만 환경 변수로 만든다.
         """
         extract_path()      # MM_EXTRACT_PATH 가 모르는 값이면 시작할 때 멈춘다. 추출은 워커만 한다
+        # MM_SUMMARY_LLM 도 시작할 때 본다. 가져오기와 달리 설정 오타를 지나치지 않는다
+        self._summary = (summary_factory if summary_factory is not None else summary_from_env)()
         self.recordings_dir = recordings_dir
         self.transcripts_dir = transcripts_dir
         self._notifier = notifier if notifier is not None else FileOutbox(recordings_dir)
@@ -262,6 +275,7 @@ class Worker:
         self._sem = asyncio.Semaphore(1)                  # 한 번에 한 회의
         self._stopping = False
         self._current: str | None = None
+        self._summary_task: asyncio.Task[None] | None = None
         self._started_at = now_iso()
 
     def stop(self) -> None:
@@ -271,7 +285,8 @@ class Worker:
     def _beat(self, state: str = "running") -> None:
         beat = {"state": state, "pid": os.getpid(), "host": socket.gethostname(), "at": now_iso(),
                 "at_ts": time.time(), "interval_s": self.interval_s, "current": self._current,
-                "started_at": self._started_at}
+                "started_at": self._started_at,
+                "summary_running": self._summary_task is not None and not self._summary_task.done()}
         if self._failover is not None:
             beat["failover"] = f"{self._failover.mode}:{self._failover.phase}"
         save_manifest(worker_dir(self.recordings_dir) / "heartbeat.json", beat)
@@ -373,6 +388,44 @@ class Worker:
             if progress is not None:
                 print(f"[worker] 업로드 {progress.meeting_id} {progress.event}", flush=True)
 
+    async def _summary_once(self) -> None:
+        """BE 요약 한 건. 로컬 회의 처리와 파일을 공유하지 않고, 정지 신호 뒤에는 새로 맡지 않는다."""
+        if self._stopping or self._summary is None:
+            return
+        try:
+            await asyncio.to_thread(self._summary.run_once)
+        except Exception as e:  # noqa: BLE001 - 요약 실패가 일반 회의 처리를 멈추면 안 된다
+            print(f"[worker] 요약 오류: {type(e).__name__}: {e}", flush=True)
+
+    def _schedule_summary(self) -> None:
+        if self._stopping or self._summary is None:
+            return
+        if self._summary_task is None or self._summary_task.done():
+            self._summary_task = asyncio.create_task(self._summary_once())
+
+    async def _prune_audio(self) -> None:
+        """보관 기한이 지난 회의 음성(트랙 wav)을 지운다(#561). 인계가 끝난 회의는 바로, 포기한 회의는 7일 뒤다.
+        실패해도 로그만 남기고 바퀴는 계속 돈다."""
+        try:
+            dropped = await asyncio.to_thread(prune_audio, self.recordings_dir)
+        except Exception as e:  # noqa: BLE001 - 음성 정리는 곁가지다. 다음 바퀴에 다시 한다
+            print(f"[worker] 음성 정리 오류: {type(e).__name__}: {e}", flush=True)
+            return
+        for session in dropped:
+            print(f"[worker] 세션 {session} 음성 삭제", flush=True)
+
+    async def _purge_once(self) -> None:
+        from capture.meeting_purge import purge_one
+        from capture.privacy_cleanup import cleanup_one as privacy_cleanup_one
+        handoff = self._handoff_factory()
+        if handoff is None or self._stopping:
+            return
+        for cleanup in (privacy_cleanup_one, purge_one):
+            try:
+                await asyncio.to_thread(cleanup, self.recordings_dir, self.transcripts_dir, client=handoff.client)
+            except Exception:  # noqa: BLE001 - a failed purge retains the backend lease for retry
+                print("[worker] artifact cleanup pending retry", flush=True)
+
     def _wakes(self) -> list[Path]:
         d = worker_dir(self.recordings_dir)
         return sorted(d.glob("wake-*")) if d.is_dir() else []
@@ -400,12 +453,20 @@ class Worker:
                     wake.unlink(missing_ok=True)
                     await self.run_pass(guild_id=wake.name[len("wake-"):], manual=True)
                 await self._intake_once()
+                await self._purge_once()
+                await self._prune_audio()
+                self._schedule_summary()
                 await self._nap()
         finally:
-            beat.cancel()
-            if control is not None:
-                control.cancel()
-            self._beat("stopped")
+            try:
+                if self._summary_task is not None:
+                    await self._summary_task
+            finally:
+                beat.cancel()
+                if control is not None:
+                    control.cancel()
+                await asyncio.gather(beat, *([control] if control is not None else []), return_exceptions=True)
+                self._beat("stopped")
 
 
 def retry(recordings_dir: Path, guild_id: str) -> str:
