@@ -87,7 +87,7 @@ export function mergeIntoApproval(
  */
 export function mergePendingItems(state: MockDb, approval: ApprovalDto, mergedAt: string): void {
   for (const extraction of state.extractions)
-    for (const item of extraction.items as MockExtractionItem[])
+    for (const item of extraction.items)
       if (item.merge_into?.approval_id === approval.approval_id)
         mergeIntoApproval(approval, extraction.meeting_id, item, item.merge_into, mergedAt)
 }

@@ -24,7 +24,7 @@ import { QueryErrorState } from '@/shared/ui/query-error-state'
 import type { LoadingIndicator } from '@/shared/lib/loading-indicator'
 import { MinutesDetailSkeleton } from '@/shared/ui/page-skeleton'
 import { extractedTasks } from '../lib/extractedTasks'
-import { detailMeta, SOURCE_LABEL } from '../lib/format'
+import { detailMeta, sourceLabel } from '../lib/format'
 import { MINUTES_DIM_DELAY_MS } from '../model/useShownMeeting'
 import { SummaryPanel, TasksPanel, TranscriptPanel } from './MinutesBody'
 import type { ReviewState, TasksState } from './MinutesBody'
@@ -99,7 +99,7 @@ function Head({
       <MinutesTitle title={title === '' ? '제목 없는 회의' : title} />
       <div className={META_ROW}>
         {meta === '' ? null : <span className={`min-w-[0px] truncate ${META}`}>{meta}</span>}
-        <span className={CHIP}>{SOURCE_LABEL[source]}</span>
+        <span className={CHIP}>{sourceLabel(source)}</span>
         {action == null ? null : (
           <div className="ml-auto flex h-22 shrink-0 items-center">{action}</div>
         )}

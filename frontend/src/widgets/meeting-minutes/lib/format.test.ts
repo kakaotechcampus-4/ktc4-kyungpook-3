@@ -1,5 +1,12 @@
 import type { MeetingSummary } from '@/entities/meeting'
-import { detailMeta, formatDue, formatMinutesLength, listMeta, SOURCE_LABEL } from './format'
+import {
+  detailMeta,
+  formatDue,
+  formatMinutesLength,
+  listMeta,
+  sourceBadge,
+  sourceLabel,
+} from './format'
 
 const summary: MeetingSummary = {
   id: 'mt_09',
@@ -56,7 +63,33 @@ describe('회의록 표시 형식', () => {
     })
 
     it('출처 칩은 Discord 채팅이다', () => {
-      expect(SOURCE_LABEL.chat).toBe('Discord 채팅')
+      expect(sourceLabel('chat')).toBe('Discord 채팅')
+    })
+  })
+
+  describe('모르는 출처 (#348)', () => {
+    const unknown = { unknown: 'zoom' }
+    const meeting: MeetingSummary = {
+      id: 'mt_09',
+      title: '외부 회의',
+      status: 'done',
+      source: unknown,
+      startedAt: '2026-09-15T05:00:00Z',
+      durationMs: 2_760_000,
+      attendeeCount: 3,
+      processedAt: '2026-09-15T06:00:00Z',
+      failedStage: null,
+    }
+
+    it('길이를 녹음 길이로도 기간으로도 읽지 않고 시작 시각만 쓴다', () => {
+      expect(listMeta(meeting)).toBe('09/15 14:00 · 3명')
+      expect(detailMeta(unknown, meeting.startedAt, 2_760_000)).toBe('2026-09-15 14:00')
+    })
+
+    it('출처 칩은 알 수 없는 출처이고 배지는 없다', () => {
+      expect(sourceLabel(unknown)).toBe('알 수 없는 출처')
+      expect(sourceBadge(unknown)).toBeNull()
+      expect(sourceBadge('chat')).toBe('채팅')
     })
   })
 

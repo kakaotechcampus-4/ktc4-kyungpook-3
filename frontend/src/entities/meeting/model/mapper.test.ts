@@ -54,13 +54,13 @@ it('treats a missing progress as null instead of throwing', () => {
   expect(toMeeting(dto).progress).toBeNull()
 })
 
-it('falls back unknown status and source without throwing', () => {
+it('모르는 출처는 discord 로 바꾸지 않고 받은 글자를 남긴다. 모르는 상태는 스키마가 거절한다 (#348)', () => {
   const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
   try {
-    expect(
-      toMeetingSummary({ ...meetingSummaryFixtures[0], status: 'future', source: 'future' }),
-    ).toMatchObject({ status: 'created', source: 'discord' })
-    expect(warning).toHaveBeenCalledTimes(2)
+    expect(toMeetingSummary({ ...meetingSummaryFixtures[0], source: 'zoom' }).source).toEqual({
+      unknown: 'zoom',
+    })
+    expect(warning).toHaveBeenCalledTimes(1)
   } finally {
     warning.mockRestore()
   }

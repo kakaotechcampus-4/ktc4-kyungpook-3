@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
+import { isKnownValue } from '@/shared/api/unknownValue'
 import type { MeetingSource } from '../model/types'
 import { meetingListQueryOptions } from './meetingQueries'
 
@@ -8,7 +9,7 @@ import { meetingListQueryOptions } from './meetingQueries'
  *
  * 찾는 회의가 받아 둔 목록에 없으면(목록을 받은 뒤 생긴 회의, 오래된 목록) 그 회의마다 한 번 목록을 새로 받는다 —
  * 목록 Query 는 30초 동안 새로 묻지 않아 기다리기만 하면 끝까지 모를 수 있다.
- * 모르는 동안(목록 대기, 새로 받는 중, 조회 실패, 새로 받아도 없음)은 null 이다. 단계 표시는 단계 수를 정하지 않는다 —
+ * 모르는 동안(목록 대기, 새로 받는 중, 조회 실패, 새로 받아도 없음)과 모르는 출처 값(#348)은 null 이다. 단계 표시는 단계 수를 정하지 않는다 —
  * 녹음 단계로 짐작하면 채팅 회의가 세 단계로 보였다가 두 단계로 바뀐다
  */
 export function useMeetingSources(
@@ -31,5 +32,8 @@ export function useMeetingSources(
     void refetch()
   }, [data, isFetching, refetch, wanted, workspaceId])
 
-  return (meetingId) => data?.find(({ id }) => id === meetingId)?.source ?? null
+  return (meetingId) => {
+    const source = data?.find(({ id }) => id === meetingId)?.source
+    return source !== undefined && isKnownValue(source) ? source : null
+  }
 }

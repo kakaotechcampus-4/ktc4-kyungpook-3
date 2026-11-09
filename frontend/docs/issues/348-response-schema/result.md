@@ -2,7 +2,7 @@
 
 - 기록일: 2026-11-08
 - 대상: [#348](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/348)
-- 상태: **PR 1(초안 5절의 1+2, #588 병합)과 PR 2(approval) 반영.** 공용 경계(`shared/api`)와 task·approval 응답을 검증한다. meeting·minutes·extraction → message·notification → integration·invitation·workspace·member·user 는 다음 PR 이 이 파일에 이어 쓴다. 검사는 MSW 기준이고 실제 BE 와는 붙여 보지 않았다.
+- 상태: **PR 1(초안 5절의 1+2, #588 병합), PR 2(approval, #592 병합), PR 3(meeting·minutes·extraction) 반영.** 공용 경계(`shared/api`)와 task·approval·meeting·minutes·extraction 응답을 검증한다. message·notification → integration·invitation·workspace·member·user 는 다음 PR 이 이 파일에 이어 쓴다. 검사는 MSW 기준이고 실제 BE 와는 붙여 보지 않았다.
 
 ## 작업 근거와 요약
 
@@ -145,9 +145,99 @@ develop `a6e9ea68`(PR 1 #588, #512 합친 카드 #586 병합 뒤)에서 `feature
   처음에는 `merged_items` 항목을 `z.record` 로 써서 zod 의 `ZodRecord` 가 공용 chunk 에 새로 들어왔다(원본 +4.8 KB). 같은 뜻인 `z.looseObject({})` 로 바꿔 새 zod 클래스가 없다. 파일이 하나 는 것은 task 스키마 모듈을 approval 도 쓰게 되어(`taskStatusSchema`) 1,184 B 짜리 chunk 로 갈라졌기 때문이다. 합친 크기는 +183 B 다. gzip 이 원본보다 더 는 것은 파일이 나뉜 몫이다.
 - 브라우저 확인은 하지 않았다. 사용자 경로가 바뀌지 않고, 잘못된 응답 화면은 RTL 이 MSW 로 본다.
 
+## PR 3: meeting·minutes·extraction (2026-11-09)
+
+develop `5462ebff`(PR 2 #592, #591·#569·#589 병합 뒤)에서 `feature/348-meeting-schema` 로 땄다.
+
+### 실제 변경
+
+- `shared/types/api/meeting.ts`·`minutes.ts`·`extraction.ts`: 손으로 쓴 DTO 를 zod 스키마와 `z.infer` 로 바꿨다.
+  - 회의 `status` 는 여섯 값 enum 이다(목록·상세·업로드 202·화자 지정). 처리 추적·회의록 목록·업로드 차단을 정하는 상태 판단 필드다.
+  - 회의·회의록 `source` 는 문자열로 받아 mapper 가 `displayValue` 로 읽는다. 모르는 값은 `{unknown}` 으로 남는다.
+  - 회의 상세의 `deletion_available`(#576)·`progress` 는 빠진 옛 응답을 받는다.
+  - 화자 지정의 `mapping` 은 `z.record` 대신 같은 검사를 `z.custom` 으로 쓴다(`ZodRecord` 가 초기 chunk 에 들어오지 않게, PR 2 와 같은 이유).
+  - 회의록 `summary` 는 모양이 틀리면 null 이다. BE 도 저장된 요약 JSON 이 깨졌거나 객체가 아니면 null 로 내린다(`get_meeting_minutes`). 전사문까지 잃지 않게 응답 전체를 거절하지 않는다. `permissions` 는 권한이라 틀리면 거절한다.
+  - 추출 항목은 화면이 읽는 필드만 본다. 확신도 넷·`needs_check`·`alias_candidate`·`alias_text`·`extraction_path` 는 보지 않는다. BE 의 `confidence` 는 `float | None` 인데 FE 타입은 `number` 였고 화면은 읽지 않았다. 도메인 `ExtractionItem.confidence` 도 지웠다.
+  - 되돌리기 응답 스키마와 409 `AUTO_TASK_NOT_REVERTIBLE` `details` 스키마. `toAutoItemRevertRejection` 이 손으로 쓴 `isRecord` 검사 대신 `safeParse` 로 읽는다. 틀리면 지금처럼 `unknown` 사유다.
+- `entities/meeting`·`minutes`·`extraction` 의 api 가 `request<unknown>` → `parseResponse(…, 'meeting' | 'minutes' | 'extraction')` 다. 화자 지정 `PUT` 은 응답을 읽지 않아 검증하지 않는다.
+- mapper 에서 `enumValue` 를 뺐다. 모르는 회의 상태 → `created`·`processing`, 모르는 출처 → `discord` 가 없어졌다. 추출 `gate` → `hold`, `approval_status` → null 은 `fallbackValue` 로 그대로다.
+- 모르는 출처의 특성(`entities/meeting/model/sourceTraits.ts`): `MEETING_SOURCE_TRAITS` 표를 직접 읽던 곳을 `meetingSourceTraits(source)` 로 바꿨다. 모르는 출처는 시각 축 `unknown` 이다.
+  - 회의 안 시각(`formatMoment`)은 빈 글자, 근거 시각(`evidenceMoment`)은 null 이라 `시각 알 수 없음` 이다.
+  - 목록 메타·대시보드 최근 회의는 길이를 빼고, 회의록 머리 메타는 시작 시각만 보인다.
+  - 출처 칩은 `알 수 없는 출처`(`sourceLabel`), 목록 배지는 없음(`sourceBadge`).
+  - `useMeetingSources` 는 모르는 출처를 「모름」(null)으로 돌려줘 처리 화면·토스트가 단계를 그리지 않는다.
+  - 업로드 차단(`findUploadBlockingMeeting`)은 채팅이 아닌 정리 중 회의로 본다. 업로드를 덜 허락하는 쪽이다.
+- 쓰기 응답(D-184)
+  - 되돌리기(`features/auto-item-revert`): 응답이 `INVALID_RESPONSE` 면 항목에 실패를 남기지 않고 `변경 결과를 확인하지 못했어요` 토스트와 `새로고침`(태스크·승인·추출 다시 받기)을 보인다.
+  - 업로드(`features/meeting-upload`): `INVALID_RESPONSE` 를 응답을 잃은 것(`lost`)으로 분류한다. 이미 있는 복구가 목록을 다시 받아 정리 중 회의가 있으면 처리 화면으로 가고, 없으면 `올린 결과를 확인하지 못했어요` 를 보인다. 서버가 받았을 수 있는 업로드를 실패라고 하지 않는 같은 뜻이고, 토스트보다 다음 행동이 분명하다. 복구가 이 업로드를 상태와 상관없이 찾게 한 것은 아래 「리뷰 반영」이다.
+- 모의 서버: 추출 항목의 BE 전용 필드(확신도·`needs_check`·별칭 후보)는 `MockExtractionItem` 타입으로 옮겨 handler 가 BE 와 같은 모양을 계속 낸다.
+
+### 바뀐 동작
+
+| 응답 | 전 | 후 |
+|---|---|---|
+| 회의 `status` 모름 | 상세는 `created`, 업로드 응답은 `processing` 으로 보임 | 회의 목록 `회의 목록을 불러오지 못했어요`·상세·처리 화면이 `응답을 읽지 못했어요` 와 `다시 시도` |
+| 회의 목록 한 건 깨짐 | 그 건만 `created` | 목록 전체가 `INVALID_RESPONSE` |
+| 회의·회의록 `source` 모름 | `Discord 자동 수집` 으로 보이고 녹음 시간으로 읽음 | `알 수 없는 출처`, 길이·회의 안 시각·배지·처리 단계 없음 |
+| 회의록 `summary` 모양이 틀림 | 그리다 `TypeError` | 요약 없음, 전사문은 보임 |
+| 추출 항목 한 건 깨짐 | 그 필드만 `undefined` 로 그려짐 | `추출된 일을 불러오지 못했어요`. 회의록 본문은 남음 |
+| 되돌리기 응답을 읽지 못함(예: `approval_id` 가 null) | `approval_id` 없이 성공으로 그림 | 토스트와 `새로고침`, 되돌리기 버튼이 남고 포커스가 그 버튼으로 |
+| 업로드 응답을 읽지 못함 | 모르는 상태를 `processing` 으로 보고 처리 화면으로 | 목록에서 이 업로드(정리 중·화자 지정 대기·완료)나 정리 중인 다른 회의를 찾아 처리 화면으로. 목록에 없으면 다시 올리라고, 목록을 받지 못하면 회의록 목록에서 확인하라고 안내 |
+| 처리 중 회의의 상세를 읽지 못함 | (전에는 모르는 상태가 `created` 라 추적이 끝남) | 처리 화면에 안내와 `다시 시도`만. 추적은 남고 polling·포커스 재조회는 멈춤 |
+
+- `app/dashboard.test.tsx` 의 「성공 응답에 승인 ID 가 없어 링크가 없으면 포커스가 그 행으로 간다」는 `approval_id: null` 성공 응답을 전제했다. BE `ExtractionItemRevertResponse.approval_id` 는 `str` 이고 FE 타입도 `string` 이었다. 이 응답은 이제 읽지 못한 응답이라 기대를 「되돌리기 버튼이 남고 포커스가 그 버튼으로」로 바꿨다. 링크가 없을 때 행으로 옮기는 `RecentSection` 의 분기는 남았지만 이 테스트로는 더 닿지 않는다.
+
+### 검증
+
+| 검사 | 결과 |
+|---|---|
+| `npm run typecheck` | 통과 |
+| `npm run lint` | 통과 |
+| `npm run format:check` | 추적 파일 통과(git 제외 `.verify/reports/issue.md` 만 경고) |
+| `npm run build` | 통과 |
+| 바꾼 곳 테스트 | 81 파일·1301 건 중 2 건 실패 뒤 고침(dashboard E-04 기대, 이름을 바꾸던 중 돈 스키마 테스트). 고친 뒤 22 파일·329 건 통과 |
+| `npm run test -- --maxWorkers=1` | 302 파일·3913 건 모두 통과(2,147 초) |
+
+- 새·바꾼 테스트:
+  - `shared/types/api/meeting.test.ts`·`minutes.test.ts`·`extraction.test.ts`: 거절(모르는·null 상태, 타입 오류, 필수 필드 누락, 화자 지정의 숫자 팀원 ID, 문자열 권한, 깨진 추출 항목은 경로 `items[0]` 까지)과 허용(모르는 출처·판단·승인 상태, 옛 응답, null 확신도). 회의록 요약 세 경우는 null 과 경고. MSW 픽스처와 스물네 상태(기본·`meeting-*` 열여섯·`minutes-edit-pending`·`dashboard-*` 셋·`approval-merged`·`approval-chat`·`reply-judgment`)에서 handler 가 내는 회의 목록·상세·회의록·추출·화자 지정, 되돌리기 응답과 409 details 를 스키마로 `parse`.
+  - `entities/*/api/*.test.ts`: 상세의 모르는 상태가 캐시에 들어가지 않고 다시 요청하지 않음과 경고. 목록 `items[1].status`, 업로드 `status`, 화자 지정 `mapping`, 회의록 `permissions.can_review`, 추출 `items[2].task_id` 경로. 모르는 출처의 `{unknown}`, 모르는 판단·승인 상태의 폴백과 경고.
+  - `entities/meeting/model/mapper.test.ts`: 「모르는 상태·출처 → `created`·`discord`」 기대를 「출처는 받은 글자를 남기고 상태는 스키마가 거절」로 바꿨다. `widgets/meeting-minutes/lib/format.test.ts`: 모르는 출처의 메타·칩·배지. `features/meeting-upload/model/uploadModel.test.ts`: `INVALID_RESPONSE` → `lost`.
+  - `app/meetingInvalidResponse.test.tsx`(RTL, MSW `server.use`): 회의 목록 안내와 `다시 시도`, 안내 뒤 1.3 초 동안 재요청 없음, 다시 시도로 복구. 모르는 출처의 목록 줄·칩·머리 메타·전사문 시각. 출처를 모르는 정리 중 회의의 처리 화면에 단계 없음. 깨진 추출 항목의 안내와 남은 본문. 되돌리기 응답을 읽지 못하면 토스트와 `새로고침`(누르면 `GET /extractions/ex_01`). 다섯 경우 모두 develop 코드로 먼저 실패를 확인했다.
+  - 회의 목록은 회의록 본문이 같은 목록 Query 를 늦게 구독해 처음에 한 번 더 받을 수 있다. TanStack 의 mount 때 다시 받기이고 오류 종류와 상관없다. 그래서 「재시도 없음」은 안내가 뜬 뒤 요청 수가 그대로인지로 본다.
+- 초기 chunk(`index.html` 의 script·modulepreload·CSS)를 develop `5462ebff` 와 같은 방식으로 빌드해 비교했다.
+
+  | | develop | 이 변경 | 차이 |
+  |---|---|---|---|
+  | 원본 | 960,071 B (33 개) | 962,690 B (35 개) | +2,619 B (+0.27%) |
+  | gzip | 301,792 B | 302,902 B | +1,110 B (+0.37%) |
+
+  늘어난 것은 세 entity 의 스키마와 출처 특성 코드다(회의 chunk +1,037 B, index chunk +1,275 B). zod 클래스는 새로 들어오지 않았다(`z.custom` 의 `ZodCustom` 은 develop 초기 chunk 에 이미 있다). 파일이 둘 는 것은 `parseResponse` 가 592 B chunk 로 갈라지고, `enumValue` 를 덜 쓰게 되어 이름이 `enum` 이던 8 KB chunk 가 `useQuery` chunk 와 60 B `enum` chunk 로 나뉘었기 때문이다.
+- 브라우저 확인은 하지 않았다. 정상 응답의 사용자 경로는 그대로이고, 잘못된 응답과 모르는 출처 화면은 RTL 이 MSW 로 본다.
+
+### 리뷰 반영 (2026-11-09)
+
+Codex·Grok 독립 리뷰의 중간 2 건, 낮음 1 건을 고쳤다.
+
+- **처리 추적기가 읽지 못한 상세를 계속 물었다(중간, 두 리뷰, Codex 재현).** `trackerOutcome` 은 모르는 오류를 정리 중으로 보고 3초(화자 지정 대기 30초) polling 과 포커스 재조회(`always`)를 이어 갔다. 받아 둔 상세가 있으면 마지막 단계가 안내 없이 남았다.
+  - 판정에 `invalid` 를 더했다. `INVALID_RESPONSE` 면 polling 간격이 없고(`pollInterval` false), 추적기의 포커스·연결 복귀 재조회도 끈다(`refetchOnReturn`). 정리 실패·완료로 끝내지 않아 추적은 남는다.
+  - `meetingDetailQueryOptions` 도 같은 오류에서 포커스·복귀 재조회를 끈다. 처리 화면이 같은 상세를 구독해, 추적기만 끄면 화면의 기본 포커스 재조회가 남았다.
+  - 처리 화면은 받아 둔 상세가 있어도 `INVALID_RESPONSE` 면 단계 대신 `정리 상태를 불러오지 못했어요`·`응답을 읽지 못했어요` 와 `다시 시도`만 보인다. 다시 시도가 성공하면 다시 polling 한다.
+- **업로드 응답을 읽지 못하면 이미 받아진 업로드를 놓쳤다(중간, Codex 재현).** 복구가 업로드 차단 검색(정리 중만)을 그대로 써서, 확인 전에 화자 지정 대기·완료로 넘어간 같은 업로드를 찾지 못하고 다시 올리라고 했다. BE 중복 차단도 정리 중만 막아 두 번째 회의가 생길 수 있었다.
+  - 받아진 업로드 확인(`findAcceptedUpload`)을 차단 검색과 나눴다. 올리기 전 목록 캐시에 없던, 제목과 회의 시각(`Date.parse` 로 비교)이 같은 직접 올린 회의 하나를 상태와 상관없이 이 업로드로 보고 그 처리 화면으로 간다.
+  - 없으면 전처럼 정리 중인 다른 회의의 처리 화면으로, 그것도 없으면 다시 올리라고 한다(서버가 받지 않았다).
+  - 목록을 받지 못했거나 같아 보이는 새 회의가 여럿이면 `다시 올리기 전에 회의록 목록에서 이 회의가 올라갔는지 확인해 주세요` 와 `회의록 목록 보기` 링크를 보인다. 네트워크로 응답을 잃은 경우도 같은 길이다.
+- **스키마 순회 테스트가 모든 HTTP 오류를 건너뛰었다(낮음).** `readMeetings` 는 상세의 403·404 만 건너뛰고 나머지는 다시 던진다. 목록 길이 대신 실제로 읽은 상세·회의록·추출·화자 지정 수를 돌려주고, 상태마다 상세가 하나 이상, 모든 상태를 합쳐 회의록·추출·화자 지정이 각각 하나 이상인지 본다. 상세 500 이면 실패하는 테스트를 더했다.
+- 리뷰 범위 밖에서 찾은 것: 첫 커밋(`59257608`)의 테스트 두 줄 `onTestFinished(() => vi.restoreAllMocks())`·`onTestFinished(() => vi.useRealTimers())` 가 `VitestUtils` 를 돌려줘 `npm run typecheck` 가 실패했다. 마지막 typecheck 를 그 두 줄을 넣기 전에 돌려 놓쳤고, 보고의 「typecheck 통과」는 그 커밋에 맞지 않았다. 중괄호 본문으로 고쳤다.
+- 새 테스트
+  - `app/meetingInvalidResponse.test.tsx`: 처리 추적 중인 회의의 상세가 처음부터·받아 둔 뒤에 읽지 못한 응답이면 안내와 `다시 시도`만 보이고, 3.5 초와 창 포커스·연결 복귀 뒤에도 상세 요청이 늘지 않으며 추적이 남는다. 다시 시도가 성공하면 다시 polling 한다.
+  - `app/meetingUpload.test.tsx`: 202 본문을 읽지 못하고 서버에는 정리 중·화자 지정 대기·완료로 저장된 업로드를 찾아 그 처리 화면으로 가고 업로드는 한 번이다. 복구 목록도 실패하면 확인 안내와 회의록 목록 링크, 업로드 한 번.
+  - `trackerOutcome.test.ts`(`invalid` 판정·멈춤), `uploadBlockingMeeting.test.ts`(이전 회의·다른 제목·다른 시각·채팅 제외, 여럿이면 `ambiguous`).
+  - 추적기 두 경우와 업로드의 화자 지정 대기·완료·목록 실패 세 경우는 고치기 전 코드로 먼저 실패를 봤다. 업로드 정리 중 경우는 고치기 전에도 통과한다(차단 검색이 찾는다).
+- 검사: typecheck·lint·build 통과, 바꾼 곳 30 파일·537 건 통과, `npm run test -- --maxWorkers=1` 302 파일·3926 건 모두 통과(2,236 초). 초기 chunk 는 다시 재지 않았다.
+
 ## 남은 일
 
-- 다음 PR: meeting·minutes·extraction(`source` unknown 특성, `gate` 폴백) → message·notification(`ZodError`·`Error` 를 `INVALID_RESPONSE` 로) → integration·invitation·workspace·member·user. 마지막 PR 이 `enumValue` 를 지우고 이 이슈를 닫는다.
+- 다음 PR: message·notification(`ZodError`·`Error` 를 `INVALID_RESPONSE` 로) → integration·invitation·workspace·member·user. 마지막 PR 이 `enumValue` 를 지우고 이 이슈를 닫는다.
 - BE 합의 두 가지(배포 순서, `status: str` 의 enum 타입화)는 계약에 요청으로 남겼다.
 - 실제 BE 응답과의 대조는 BE enum 타입화와 `/openapi.json` 접근이 갖춰진 뒤 후속이다(#348 추가 항목 1).
 - ~~정할 것: 변경 응답이 스키마에 맞지 않을 때의 문구.~~ 2026-11-09 사용자 결정으로 반영했다(위 「리뷰 반영」).

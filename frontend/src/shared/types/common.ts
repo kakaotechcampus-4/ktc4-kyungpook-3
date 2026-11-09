@@ -1,6 +1,8 @@
 export type TaskStatus = 'todo' | 'in_progress' | 'blocked' | 'done'
 export type Role = 'pm' | 'member'
-export type MeetingSource = 'discord' | 'manual_upload' | 'chat'
+/** 서버 MeetingSource. 표시용 분류라 모르는 값은 응답을 거절하지 않고 `알 수 없는 출처` 로 남긴다 (#348) */
+export const MEETING_SOURCES = ['discord', 'manual_upload', 'chat'] as const
+export type MeetingSource = (typeof MEETING_SOURCES)[number]
 
 export interface ExtractionEvidence {
   quote: string | null

@@ -1,0 +1,43 @@
+import type { MockInstance } from 'vitest'
+import { minutesFixtures } from '@/shared/mock/fixtures/minutes'
+import { minutesSchema } from './minutes'
+
+const valid = minutesFixtures[0]
+
+let warning: MockInstance<typeof console.warn>
+beforeEach(() => {
+  warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+})
+afterEach(() => warning.mockRestore())
+
+describe('회의록 스키마', () => {
+  it('모르는 출처는 거절하지 않는다. 화면이 알 수 없는 출처로 읽는다', () => {
+    expect(minutesSchema.safeParse({ ...valid, source: 'zoom' }).success).toBe(true)
+  })
+
+  it.each([
+    ['문자열 권한', { permissions: { can_review: 'true', can_undo: false } }],
+    ['권한 누락', { permissions: undefined }],
+    ['숫자가 아닌 길이', { duration_ms: null }],
+    ['시각이 없는 전사문 줄', { transcript: [{ ...valid.transcript[0], at_ms: null }] }],
+    ['이름이 없는 참석자', { attendees: [{ member_id: 'mb_01' }] }],
+  ])('%s 는 읽지 않는다', (_, patch) => {
+    expect(minutesSchema.safeParse({ ...valid, ...patch }).success).toBe(false)
+  })
+
+  it.each([
+    ['문자열', '회의 요약'],
+    ['개요가 없는 객체', { key_points: [], decisions: [] }],
+    ['글자가 아닌 결정', { overview: '개요', key_points: [], decisions: [1] }],
+  ])('요약이 %s 면 서버처럼 요약이 없는 것으로 보고 전사문은 읽는다', (_, summary) => {
+    const parsed = minutesSchema.parse({ ...valid, summary })
+    expect(parsed.summary).toBeNull()
+    expect(parsed.transcript).toEqual(valid.transcript)
+    expect(warning).toHaveBeenCalledWith('Invalid minutes summary:', summary)
+  })
+})
+
+it('MSW 회의록 픽스처가 같은 스키마를 따른다', () => {
+  for (const minutes of minutesFixtures) expect(minutesSchema.parse(minutes)).toEqual(minutes)
+  expect(warning).not.toHaveBeenCalled()
+})

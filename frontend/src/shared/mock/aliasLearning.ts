@@ -1,19 +1,32 @@
 import type { ApprovalDto } from '@/shared/types/api/approval'
-import type { ExtractionItemDto } from '@/shared/types/api/extraction'
+import type { ExtractionDto, ExtractionItemDto } from '@/shared/types/api/extraction'
 import { db } from './db'
+
+/** 백엔드 응답에는 있지만 화면이 읽지 않아 스키마가 보지 않는 값. 모의 서버는 백엔드와 같은 모양으로 낸다 (#348) */
+interface UnreadItemFields {
+  task: { confidence: number | null }
+  assignee: { confidence: number; needs_check: boolean }
+  due_date: { confidence: number | null }
+  confidence: number | null
+  alias_candidate: boolean
+  alias_text: string | null
+}
 
 /**
  * 모의 추출 항목. 백엔드는 담당자 표현 유형(`assignee_type`)을 저장하고 응답에는 싣지 않는다 — 별칭 후보를 응답마다
  * 다시 구하는 데만 쓴다(services/alias_learning.py). 응답으로 낼 때는 handler 가 뺀다
  */
-export type MockExtractionItem = ExtractionItemDto & {
-  assignee_type?: string | null
-  /**
-   * 아직 합치지 않았지만 처리 요청 직전에 이 승인에 합쳐질 항목 (`approvalMerge`). 합칠 때 BE 가 AI 항목에서 읽는
-   * 분류·상태·문서 글을 함께 둔다. 응답에는 싣지 않는다
-   */
-  merge_into?: { approval_id: string } & MergeFacts
-}
+export type MockExtractionItem = ExtractionItemDto &
+  UnreadItemFields & {
+    assignee_type?: string | null
+    /**
+     * 아직 합치지 않았지만 처리 요청 직전에 이 승인에 합쳐질 항목 (`approvalMerge`). 합칠 때 BE 가 AI 항목에서 읽는
+     * 분류·상태·문서 글을 함께 둔다. 응답에는 싣지 않는다
+     */
+    merge_into?: { approval_id: string } & MergeFacts
+  }
+
+export type MockExtraction = Omit<ExtractionDto, 'items'> & { items: MockExtractionItem[] }
 
 /** BE `merge_into_pending` 이 추출 응답에 없는 AI 항목 값에서 읽는 것 */
 export interface MergeFacts {

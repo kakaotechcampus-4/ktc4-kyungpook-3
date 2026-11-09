@@ -1,5 +1,8 @@
+import type { UnknownValue } from '@/shared/api/unknownValue'
 import type { MeetingSource } from '@/shared/types/common'
 export type { MeetingSource } from '@/shared/types/common'
+/** 응답에서 읽은 출처. 모르는 값은 받은 글자를 남긴다 — 시각 축·처리 단계·배지가 없다 (`meetingSourceTraits`, #348) */
+export type MeetingSourceValue = MeetingSource | UnknownValue
 /** `awaiting_speakers` 는 웹 업로드 회의만 거친다 — PM 이 화자를 지정하면 `processing` 으로 돌아간다 (계약 §2.3.1) */
 export type MeetingStatus =
   'created' | 'recording' | 'processing' | 'awaiting_speakers' | 'done' | 'failed'
@@ -7,7 +10,7 @@ export interface MeetingSummary {
   id: string
   title: string
   status: MeetingStatus
-  source: MeetingSource
+  source: MeetingSourceValue
   startedAt: string
   durationMs: number | null
   attendeeCount: number
