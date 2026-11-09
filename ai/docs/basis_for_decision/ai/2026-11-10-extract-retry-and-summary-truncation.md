@@ -32,7 +32,7 @@
 
 ## 한 일
 
-- `llm.py`: `MLAPIClient._stream` 을 새로 둬 `generate_json`·`generate_json_once` 가 스트리밍으로 받는다. 시작부터 정한 시간이 지나면 타이머가 스트림을 닫고, `finish_reason` 이 `stop` 이 아니면 로그에 남긴다. `generate_json` 은 잘린 응답을 버리고, 재시도까지 한 상한 안에서 하며, 본문을 읽다 끊긴 연결도 다시 한다. `CALL_ATTEMPTS = 2`
+- `llm.py`: `MLAPIClient._stream` 을 새로 둬 `generate_json`·`generate_json_once` 가 스트리밍으로 받는다. 시작부터 정한 시간이 지나면 타이머가 스트림을 닫고(막힌 읽기는 조각 사이 대기 60초 안에 풀린다), `finish_reason` 이 `stop` 이 아니면 로그에 남긴다. `generate_json` 은 잘린 응답을 버리고, 재시도까지 한 상한 안에서 하며, 본문을 읽다 끊긴 연결과 408·409·429·5xx 를 다시 한다. `CALL_ATTEMPTS = 2`
 - `judge/final_judge.judge`, `draft/doc_draft.draft`: 실패한 호출을 그 자리에서 한 번 더 한다
 - `draft/doc_draft.py` 프롬프트: `none` 에 "마감을 아직 못 정했다·미정이라고 하거나" 를 더했다
 - `judge/pipeline.py`
@@ -52,6 +52,8 @@
 - 시도마다 상한을 새로 잡아 재시도가 겹치면 상한의 세 배까지 가던 것
 - 본문을 읽다 끊긴 연결을 다시 하지 않던 것(비스트리밍일 때는 SDK 가 했다)
 - 답장 판단에서 마감 없는 태스크의 "마감이 없어졌어요" 알림이 후보가 하나일 때만 사라지던 것
+- 타이머가 닫아도 이미 막힌 읽기는 전체 상한만큼 더 기다리던 것(상한 2초에 3.8초). 조각 사이 대기를 60초로 따로 둔다
+- SDK 재시도를 끄면서 헤더 전의 500·502·504 를 다시 하지 않던 것. 1단계면 회의 추출 전체가 실패해 60초 뒤 복구 재실행이 됐다
 
 ## 왜
 
