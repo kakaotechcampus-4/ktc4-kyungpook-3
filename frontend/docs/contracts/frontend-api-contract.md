@@ -1644,11 +1644,11 @@ POST .../meetings/upload            multipart/form-data
 
 | 경로 | FE 가 읽는 것 | FE 가 거절하는 것 (`INVALID_RESPONSE`) | 받고 따로 다루는 것 |
 |---|---|---|---|
-| `GET .../project-map` | 노드의 `kind`·`label`·`appeared_at`, 태스크 노드의 `status`·`due_date`·`assignee_name`·`blocker`·`meeting_ids`, `edges`, `meetings` | 모르는 노드 `kind`(판별 값), 태스크 `status` 가 네 값 밖(D-184), 그 밖의 필수 필드 누락·타입 오류 | 끝이 `nodes` 에 없는 선은 그리지 않는다. 주제와 태스크를 잇는 선으로 목록 보기의 주제별 묶음을 만들고, 주제 선이 없는 태스크는 `주제 없는 태스크` 다 |
+| `GET .../project-map` | 노드의 `kind`·`label`·`appeared_at`, 태스크 노드의 `status`·`due_date`·`assignee_name`·`blocker`·`meeting_ids`, `edges`, `meetings` | 모르는 노드 `kind`(판별 값), 태스크 `status` 가 네 값 밖(D-184), 그 밖의 필수 필드 누락·타입 오류 | 끝이 `nodes` 에 없는 선은 그리지 않는다. 주제와 태스크를 잇는 선으로 목록 보기의 주제별 묶음을 만들고, 주제 선이 없는 태스크는 `주제 없는 태스크` 다. 태스크끼리의 선은 태스크 패널의 `이어진 태스크` 단추다(목록·키보드로도 같은 연결을 따라간다) |
 | `GET .../topics/{topic_id}` | 이름·설명·결정(`replaced_by` 가 있으면 흐리게 `뒤집힘`)·태스크·회의 | 태스크 `status` 가 네 값 밖, 필수 필드 누락·타입 오류 | 404 `TOPIC_NOT_FOUND` 는 패널 안 안내 `주제를 찾을 수 없어요. 지워졌을 수 있어요.` |
 | `GET /meetings/{id}/summary.md` | 본문과 `Content-Disposition` 의 `filename*`(없으면 `filename`, 둘 다 없으면 `summary.md`) | 2xx 인데 `Content-Type` 이 `text/markdown` 이 아님 | 404 `SUMMARY_NOT_FOUND` 는 토스트. 단추는 `summary` 가 null 이 아닐 때만 보인다(팀원 포함) |
 | `GET .../project-bundle.md` | 위와 같다. 대체 이름은 `project-bundle.md` | 위와 같다 | `from`·`to` 는 적은 쪽만 보낸다. 둘 다 비면 전체 기간이다. `from > to` 는 보내지 않고 `시작일이 종료일보다 늦어요.`, 서버 400 `INVALID_REQUEST` 도 같은 문구다. 단추 옆 안내 `팀원 발언 요약이 들어 있어요. 외부 AI 에 첨부할 때 주의해 주세요.` |
-| `GET /meetings/{id}/minutes` 의 `summary_status` | 요약이 없을 때의 문구. `pending` 은 `요약을 만드는 중이에요`, `none` 은 `요약이 없어요` | 거절하지 않는다 | 표시용이라 모르는 값은 받은 글자를 보존하고 `none` 과 같은 중립 문구를 보인다(D-184 표시용). 키가 없거나 문자열이 아니면 `none` 이다. `summary` 가 있으면 상태와 무관하게 보인다. 재시도 단추는 없다 |
+| `GET /meetings/{id}/minutes` 의 `summary_status` | 요약이 없을 때의 표시. `pending` 은 `요약을 만드는 중이에요`, `none` 은 요약 칸을 비운다(이슈 원문) | 거절하지 않는다 | 표시용이라 모르는 값은 받은 글자를 보존하고 중립 문구 `요약이 없어요` 를 보인다(D-184 표시용). 키가 없거나 문자열이 아니면 `none` 이다. `summary` 가 있으면 상태와 무관하게 보인다. 재시도 단추는 없다 |
 
 - 두 `.md` 요청은 `Accept: text/markdown, application/json` 을 보내고, 실패 응답은 다른 API 와 같은 봉투로 읽는다(401 알림 포함).
 - 구현: [응답 스키마](../../src/shared/types/api/projectMap.ts), [맵 조회](../../src/entities/project-map/api/projectMapQuery.ts), [맵 화면](../../src/widgets/project-map), [파일 요청](../../src/shared/api/client.ts), [합본](../../src/features/project-bundle-download), [요약본](../../src/features/summary-download), [회의록 스키마](../../src/shared/types/api/minutes.ts). 화면 배치는 D-186 이다.
