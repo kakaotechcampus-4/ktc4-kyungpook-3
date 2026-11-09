@@ -31,9 +31,17 @@ interface AddVariables {
   session: SessionScope
 }
 
+/**
+ * 팀원 목록 조회. 받기 전에는 같은 이름을 확인할 수 없어 추가를 막는다.
+ * 받은 목록이 있으면 다시 받다 실패해도 `ready` 다 — 입력을 막지 않는다
+ */
+export type MemberListState =
+  | { status: 'loading' }
+  | { status: 'error'; error: unknown; retry: () => void }
+  | { status: 'ready' }
+
 export interface MemberAdd {
-  /** 팀원 목록을 받았다. 받기 전에는 같은 이름을 확인할 수 없어 추가를 막는다 */
-  ready: boolean
+  list: MemberListState
   /** 받은 팀원 목록. 받기 전에는 비어 있다 */
   members: Member[]
   adding: boolean
@@ -44,9 +52,10 @@ export interface MemberAdd {
   add: (text: string, onAdded: () => void) => void
 }
 
-/** 요청은 나갔는데 서버가 반영했는지 모른다. 4xx 는 서버가 거절한 것이라 반영된 게 없다 */
+/** 요청은 나갔는데 서버가 반영했는지 모른다. 4xx 는 서버가 거절한 것이라 반영된 게 없다. 모르는 실패는 반영됐을 수 있다고 본다 */
 function mayHaveBeenApplied(error: unknown): boolean {
-  return error instanceof ApiError && (error.kind === 'network' || error.status >= 500)
+  if (!(error instanceof ApiError)) return true
+  return error.kind === 'network' || error.status >= 500
 }
 
 /**
@@ -57,7 +66,7 @@ function mayHaveBeenApplied(error: unknown): boolean {
  */
 export function useMemberAdd(workspaceId: string): MemberAdd {
   const queryClient = useQueryClient()
-  const list = useQuery(memberListQueryOptions(workspaceId))
+  const memberList = useQuery(memberListQueryOptions(workspaceId))
   const [feedback, setFeedback] = useState<string | null>(null)
   const { queryKey } = memberListQueryOptions(workspaceId)
   const mutationKey = ['member-add', workspaceId] as const
@@ -102,8 +111,13 @@ export function useMemberAdd(workspaceId: string): MemberAdd {
   })
 
   return {
-    ready: list.data !== undefined,
-    members: list.data ?? [],
+    list:
+      memberList.data !== undefined
+        ? { status: 'ready' }
+        : memberList.isError
+          ? { status: 'error', error: memberList.error, retry: () => void memberList.refetch() }
+          : { status: 'loading' },
+    members: memberList.data ?? [],
     adding: create.isPending,
     feedback,
     clearFeedback: () => setFeedback(null),

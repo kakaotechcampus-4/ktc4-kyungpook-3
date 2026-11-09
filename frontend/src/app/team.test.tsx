@@ -326,6 +326,73 @@ describe('팀 화면 — Discord 를 건너뛴 공간', () => {
     expect(name).not.toHaveAccessibleDescription()
     expect(name).toHaveValue('박민수')
   })
+
+  it('추가가 201 인데 팀원을 읽지 못하면 결과를 확인하지 못했다고 알리고, 다시 눌러도 같은 이름을 또 만들지 않는다 (#613)', async () => {
+    server.use(
+      http.post(
+        '/api/v1/members',
+        async ({ request }) => {
+          const body = (await request.json()) as { workspace_id: string; display_name: string }
+          db.members.push({
+            member_id: 'mb_88',
+            workspace_id: body.workspace_id,
+            display_name: body.display_name,
+            discord_user_id: null,
+            notion_name: null,
+            role: 'member',
+            has_login_account: false,
+            created_at: MOCK_NOW,
+          })
+          return HttpResponse.json({ data: null, error: null }, { status: 201 })
+        },
+        { once: true },
+      ),
+    )
+    const log = recordRequests()
+    const user = userEvent.setup()
+    renderApp(paths.members('ws_03'))
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const name = await dialog.findByRole('textbox', { name: '팀원 이름' })
+    await user.type(name, '박민수')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+
+    expect(await screen.findByText('변경 결과를 확인하지 못했어요')).toBeInTheDocument()
+    expect(name).not.toHaveAccessibleDescription()
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+    expect(await dialog.findByText('이미 같은 이름의 팀원이 있어요.')).toBeInTheDocument()
+    expect(
+      log.started.filter(({ method, path }) => method === 'POST' && path === '/members'),
+    ).toHaveLength(1)
+    expect(
+      db.members.filter(
+        ({ workspace_id, display_name }) => workspace_id === 'ws_03' && display_name === '박민수',
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('팀원 목록을 받지 못하면 팀원 연결 창의 추가 칸에도 오류와 `다시 시도` 를 보이고, 다시 받으면 추가할 수 있다 (#613)', async () => {
+    let failing = true
+    server.use(
+      http.get('/api/v1/members', () => (failing ? fail('FORBIDDEN', 'x', 403) : undefined)),
+    )
+    const user = userEvent.setup()
+    renderApp(paths.members('ws_03'))
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const name = await dialog.findByRole('textbox', { name: '팀원 이름' })
+    const retry = await dialog.findByRole('button', { name: '다시 시도' })
+    await user.type(name, '박민수')
+    expect(dialog.getByRole('button', { name: '추가' })).toBeDisabled()
+
+    failing = false
+    await user.click(retry)
+    await waitFor(() => expect(dialog.queryByRole('button', { name: '다시 시도' })).toBeNull())
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+    expect(
+      await within(dialog.getByRole('list', { name: '추가한 팀원' })).findByText('박민수'),
+    ).toBeInTheDocument()
+  })
 })
 
 describe('팀 화면 — Discord 를 연결하지 않은 공간의 일반 팀원', () => {

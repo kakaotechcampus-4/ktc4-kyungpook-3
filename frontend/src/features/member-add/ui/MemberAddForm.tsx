@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import { Button } from '@/shared/ui/button'
 import { Label } from '@/shared/ui/label'
+import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { TextField } from '@/shared/ui/text-field'
 import { useMemberAdd } from '../model/useMemberAdd'
 
@@ -12,7 +13,9 @@ const LABEL_GAP = { product: 'mb-6', onboarding: 'mb-7' } as const
 
 const ADDED = 'flex flex-col pt-10'
 
-const ADDED_ROW = 'border-b border-surface-selected py-8 text-body text-ink last:border-b-0'
+/* 띄어 쓰지 않은 긴 이름도 줄 안에서 접는다 — 좁은 카드·창에서 가로로 넘치지 않는다 */
+const ADDED_ROW =
+  'border-b border-surface-selected py-8 text-body wrap-anywhere text-ink last:border-b-0'
 
 export interface MemberAddFormProps {
   workspaceId: string
@@ -25,7 +28,7 @@ export interface MemberAddFormProps {
  * 라벨을 칸 밖에 두어 칸과 `추가` 버튼이 한 줄에서 같은 높이로 선다
  */
 export function MemberAddForm({ workspaceId, tone = 'product' }: MemberAddFormProps) {
-  const { ready, members, adding, feedback, clearFeedback, add } = useMemberAdd(workspaceId)
+  const { list, members, adding, feedback, clearFeedback, add } = useMemberAdd(workspaceId)
   const [text, setText] = useState('')
   const fieldId = useId()
   const added = members.filter(({ role }) => role !== 'pm')
@@ -53,6 +56,11 @@ export function MemberAddForm({ workspaceId, tone = 'product' }: MemberAddFormPr
             // 보내는 동안 고친 글자를 성공 뒤 비우기가 지우지 않게, 포커스는 두되 고칠 수 없게 한다
             readOnly={adding}
             value={text}
+            onKeyDown={(event) => {
+              // 한글 조합을 확정하는 Enter 는 입력기 몫이다. Safari 는 그 Enter 를 keyCode 229 로만 보낸다
+              if (event.key === 'Enter' && (event.nativeEvent.isComposing || event.keyCode === 229))
+                event.preventDefault()
+            }}
             onChange={(event) => {
               setText(event.target.value)
               clearFeedback()
@@ -64,13 +72,19 @@ export function MemberAddForm({ workspaceId, tone = 'product' }: MemberAddFormPr
             type="submit"
             size={tone === 'onboarding' ? 'lg-onboarding' : 'lg'}
             className="min-h-[42px] shrink-0"
-            disabled={!ready || text.trim() === ''}
+            disabled={list.status !== 'ready' || text.trim() === ''}
             loading={adding}
           >
             추가
           </Button>
         </div>
       </form>
+      {/* 폼 밖에 둔다 — 폼 안의 버튼은 제출이다 */}
+      {list.status === 'error' ? (
+        <div className="pt-10">
+          <QueryErrorState error={list.error} onRetry={list.retry} />
+        </div>
+      ) : null}
       {added.length > 0 ? (
         <ul aria-label="추가한 팀원" className={ADDED}>
           {added.map((member) => (

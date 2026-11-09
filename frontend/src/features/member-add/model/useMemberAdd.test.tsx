@@ -28,7 +28,7 @@ describe('useMemberAdd', () => {
   it('누른 뒤 보내기 전에 세션이 끝나면 다시 연결돼도 보내지 않는다', async () => {
     const client = createQueryClient()
     const { result } = renderAdd(client)
-    await waitFor(() => expect(result.current.ready).toBe(true))
+    await waitFor(() => expect(result.current.list.status).toBe('ready'))
     const log = recordRequests()
     const onAdded = vi.fn()
 
@@ -55,7 +55,7 @@ describe('useMemberAdd', () => {
   it('목록을 믿을 수 없으면 다시 받아 같은 이름을 확인하고, 있으면 보내지 않는다', async () => {
     const client = createQueryClient()
     const { result } = renderAdd(client)
-    await waitFor(() => expect(result.current.ready).toBe(true))
+    await waitFor(() => expect(result.current.list.status).toBe('ready'))
     db.members.push({
       member_id: 'mb_77',
       workspace_id: 'ws_01',

@@ -13,6 +13,7 @@ import { deferred } from '@/shared/test/deferred'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import type { RecordedRequest } from '@/shared/test/requests'
 import { REVEAL_TARGETS } from '@/shared/ui/deferred-skeleton'
+import { onTestFinished } from 'vitest'
 import { renderApp } from './test/renderApp'
 
 /* U3-7·U3-8·U3-9·U3-10. ws_03 을 팀원 연결 단계로 둔다. 팀원은 생성자 PM(mb_90 최진호) 하나다.
@@ -686,9 +687,8 @@ describe('Discord 없이 온 팀원 연결 (D-073 개정)', () => {
     await user.type(name, '  김서연 ')
     await user.click(screen.getByRole('button', { name: '추가' }))
 
-    expect(
-      await within(await screen.findByRole('list', { name: '추가한 팀원' })).findByText('김서연'),
-    ).toBeInTheDocument()
+    const list = await screen.findByRole('list', { name: '추가한 팀원' })
+    expect(await within(list).findByText('김서연')).toHaveClass('wrap-anywhere')
     expect(name).toHaveValue('')
     expect(bodies).toEqual([{ workspace_id: 'ws_03', display_name: '김서연' }])
     expect(db.members).toContainEqual(
@@ -699,6 +699,73 @@ describe('Discord 없이 온 팀원 연결 (D-073 개정)', () => {
       }),
     )
     expect(screen.getByRole('button', { name: '건너뛰기' })).toBeEnabled()
+  })
+
+  it('팀원 목록을 받는 동안은 `추가` 만 잠그고 오류는 보이지 않는다 (#613)', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get(
+        '/api/v1/members',
+        async () => {
+          await gate.promise
+          return undefined
+        },
+        { once: true },
+      ),
+    )
+    const user = userEvent.setup()
+    renderApp('/onboarding/ws_03/connect_members')
+    const name = await screen.findByRole('textbox', { name: '팀원 이름' })
+    await user.type(name, '김서연')
+    expect(screen.getByRole('button', { name: '추가' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull()
+
+    gate.resolve()
+    await waitFor(() => expect(screen.getByRole('button', { name: '추가' })).toBeEnabled())
+  })
+
+  it('팀원 목록을 받지 못하면 추가 칸 아래에 오류와 `다시 시도` 를 보이고, 다시 받으면 추가할 수 있다 (#613)', async () => {
+    let failing = true
+    server.use(
+      http.get('/api/v1/members', () => (failing ? fail('FORBIDDEN', 'x', 403) : undefined)),
+    )
+    const user = userEvent.setup()
+    renderApp('/onboarding/ws_03/connect_members')
+    const name = await screen.findByRole('textbox', { name: '팀원 이름' })
+    const retry = await screen.findByRole('button', { name: '다시 시도' })
+    expect(screen.getByText('정보를 불러오지 못했어요')).toBeInTheDocument()
+    await user.type(name, '김서연')
+    expect(screen.getByRole('button', { name: '추가' })).toBeDisabled()
+
+    failing = false
+    await user.click(retry)
+    await waitFor(() => expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull())
+    await user.click(screen.getByRole('button', { name: '추가' }))
+    expect(
+      await within(await screen.findByRole('list', { name: '추가한 팀원' })).findByText('김서연'),
+    ).toBeInTheDocument()
+  })
+
+  it('한글 조합을 확정하는 Enter 는 제출을 막고, 조합이 끝난 Enter 로 추가한다 (#613)', async () => {
+    const log = recordRequests()
+    const user = userEvent.setup()
+    renderApp('/onboarding/ws_03/connect_members')
+    const name = await screen.findByRole('textbox', { name: '팀원 이름' })
+    await user.type(name, '김서연')
+    await waitFor(() => expect(screen.getByRole('button', { name: '추가' })).toBeEnabled())
+    const memberPosts = () =>
+      log.started.filter(({ method, path }) => method === 'POST' && path === '/members')
+
+    expect(fireEvent.keyDown(name, { key: 'Enter', isComposing: true })).toBe(false)
+    expect(fireEvent.keyDown(name, { key: 'Enter', keyCode: 229 })).toBe(false)
+    expect(fireEvent.keyDown(name, { key: 'Enter' })).toBe(true)
+
+    await user.keyboard('{Enter}')
+    expect(
+      await within(await screen.findByRole('list', { name: '추가한 팀원' })).findByText('김서연'),
+    ).toBeInTheDocument()
+    expect(memberPosts()).toHaveLength(1)
   })
 
   it('같은 이름은 두 번 추가하지 못한다 — 앞뒤 공백만 달라도 막고, 대소문자가 다르면 다른 이름이다 (#613)', async () => {
