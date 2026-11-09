@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { meetingListQueryOptions, toMinutesList } from '@/entities/meeting'
+import { meetingFailure, meetingListQueryOptions, toMinutesList } from '@/entities/meeting'
 import type { MeetingSummary, MinutesList } from '@/entities/meeting'
 import { paths } from '@/shared/config/routes'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
@@ -133,7 +133,7 @@ export function MeetingMinutes({
           titleAs="h2"
           title={
             list.data.expired.length > 0
-              ? '화자 지정 기한이 지난 회의가 있어요'
+              ? '기한이 지나 정리가 종료된 회의가 있어요'
               : '아직 정리가 끝난 회의가 없어요'
           }
           description={
@@ -260,14 +260,16 @@ function MeetingList({
       {list.expired.length === 0 ? null : (
         <div className="flex flex-col gap-4">
           <p id="meetings-expired" className={GROUP_LABEL}>
-            화자 지정 기한 만료
+            기한 만료
           </p>
           <ul aria-labelledby="meetings-expired" className={LIST}>
             {list.expired.map((meeting) => (
               <li key={meeting.id}>
                 <GuardedLink to={paths.meetings(workspaceId, meeting.id)} className={ROW}>
                   <RowTitle meeting={meeting} />
-                  <span className={STATUS_BADGE}>화자 지정 기한 만료</span>
+                  <span className={STATUS_BADGE}>
+                    {meetingFailure(meeting.failedStage).expiredLabel}
+                  </span>
                   <span className={ROW_META}>{listMeta(meeting)}</span>
                 </GuardedLink>
               </li>

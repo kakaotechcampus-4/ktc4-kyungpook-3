@@ -8,7 +8,7 @@ from app.models import ApprovalStatus, ApprovalType
 
 class ApprovalCreateRequest(BaseModel):
     workspace_id: str = Field(..., description="소속 워크스페이스 ID")
-    type: ApprovalType = Field(..., description="task_create | task_update. reminder_dm 은 400 (#335)")
+    type: ApprovalType = Field(..., description="task_create | task_update")
     payload: dict[str, Any] = Field(..., description="변경 내용 (JSON)")
     related_task_id: str | None = Field(None, description="연관 태스크 ID")
     requested_by: str | None = Field(

@@ -7,6 +7,7 @@ import { SHELL_TABS } from '@/widgets/app-shell'
 import type { ShellTabKey } from '@/widgets/app-shell'
 import { prefetchDashboard } from '@/widgets/dashboard/prefetch'
 import { prefetchMessageInbox } from '@/widgets/message-inbox/prefetch'
+import { prefetchProjectMap } from '@/widgets/project-map/prefetch'
 import { prefetchTaskBoard } from '@/widgets/task-board/prefetch'
 import { prefetchTeamOverview } from '@/widgets/team/prefetch'
 
@@ -27,6 +28,7 @@ const prefetchData: Record<
   meetings: prefetchMeetings,
   tasks: prefetchTaskBoard,
   messages: prefetchMessageInbox,
+  projectMap: prefetchProjectMap,
   members: prefetchTeamOverview,
 }
 
@@ -59,7 +61,7 @@ const IDLE_TIMEOUT_MS = 2000
 /**
  * 셸의 미리 받기 (#536). 두 갈래다.
  * 1. 탭에 다가간 순간(가리키기·포커스·터치) 그 탭 하나를 받는다 — 돌려주는 함수를 헤더 탭과 아래 탭 막대에 건다.
- * 2. 셸이 뜬 뒤 브라우저가 한가할 때 다섯 탭을 모두 한 번 받는다. 데이터 절약 모드면 이 갈래만 건너뛴다.
+ * 2. 셸이 뜬 뒤 브라우저가 한가할 때 모든 셸 탭을 한 번 받는다. 데이터 절약 모드면 이 갈래만 건너뛴다.
  * 공간·역할이 바뀌면 그 공간 기준으로 다시 한 번 받는다. 화면 폭이 바뀌는 것만으로는 다시 받지 않는다.
  */
 export function useShellPrefetch(context: ShellPrefetchContext): (tab: ShellTabKey) => void {

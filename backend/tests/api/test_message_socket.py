@@ -72,6 +72,11 @@ def _hub_is_clean():
 @pytest.fixture(autouse=True)
 def _no_hang():
     """프레임이 안 오면 receive 가 끝나지 않는다. 신호가 빠지는 회귀가 CI 를 멈추지 않고 실패하게 한다."""
+    if not hasattr(signal, "SIGALRM"):
+        # Windows 에는 SIGALRM 이 없다. 테스트는 그대로 돌리고 시간 제한만 빠진다(CI 는 Linux 라 제한이 걸린다)
+        yield
+        return
+
     def fail(*_):
         raise TimeoutError("소켓을 기다리다 시간이 지났다")
 

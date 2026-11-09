@@ -16,6 +16,7 @@ const minutes: MinutesDto = {
     key_points: ['로그인 API를 연동한다.', 'Notion 권한을 확인한다.'],
     decisions: ['담당자와 마감이 확정된 항목부터 반영한다.'],
   },
+  summary_status: 'ready',
   transcript: [
     {
       at_ms: 0,
@@ -75,6 +76,7 @@ export const minutesFixtures: MinutesDto[] = [
       display_name: member.display_name,
     })),
     summary: null,
+    summary_status: 'none',
     // 메시지 하나가 한 줄이다. at_ms 는 첫 메시지 기준 오프셋이라 실제 작성 시각은 started_at + at_ms 다
     transcript: [
       {

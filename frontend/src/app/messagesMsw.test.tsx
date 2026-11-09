@@ -1224,9 +1224,12 @@ describe('재촉 없이도 대화를 시작한다 (#519)', () => {
 
   it('PM 의 빈 화면에도 새 대화가 있고, 새 대화 칸은 빈 화면이 가로채지 않는다', async () => {
     emptyWorkspace('ws_01')
-    renderApp(paths.messages('ws_01'))
-    await userEvent.click(await screen.findByRole('link', { name: '새 대화' }))
-    expect(await detail().findByRole('heading', { level: 2, name: '새 대화' })).toBeVisible()
+    const app = renderApp(paths.messages('ws_01'))
+    await screen.findByRole('heading', { level: 1, name: '보낼 메시지가 없어요' })
+    await userEvent.click(screen.getByRole('link', { name: '새 대화' }))
+    await app.expectSearch('?new=thread')
+    const content = within(await screen.findByRole('region', { name: '메시지 내용' }))
+    expect(await content.findByRole('heading', { level: 2, name: '새 대화' })).toBeVisible()
     expect(screen.queryByRole('heading', { name: '보낼 메시지가 없어요' })).toBeNull()
   })
 
