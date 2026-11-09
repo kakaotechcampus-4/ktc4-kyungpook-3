@@ -13,7 +13,7 @@ Terra 없이는 후보 비교라는 이 단계의 핵심을 대신할 방법이 
 
 from __future__ import annotations
 
-from llm import LLMClient, get_llm
+from llm import CALL_ATTEMPTS, LLMClient, get_llm
 from shared.schemas import JUDGE_CATEGORIES, TASK_STATUSES, JudgeInput, JudgeResult
 
 
@@ -133,7 +133,9 @@ def judge(judge_input: JudgeInput) -> JudgeResult:
     client = get_llm("terra")
     if client.name == "off":
         raise JudgeUnavailableError("Terra API 키가 없어 2단계 판단을 할 수 없습니다.")
-    result = judge_llm(judge_input, client)
-    if result is None:
-        raise JudgeUnavailableError("Terra 응답을 파싱하지 못했습니다.")
-    return result
+    # 실패한 호출만 그 자리에서 한 번 더 한다. 회의 전체를 다시 돌리면 앞 발화의 판단을 다 다시 사야 한다(#624)
+    for _ in range(CALL_ATTEMPTS):
+        result = judge_llm(judge_input, client)
+        if result is not None:
+            return result
+    raise JudgeUnavailableError("Terra 응답을 파싱하지 못했습니다.")

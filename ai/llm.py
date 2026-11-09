@@ -20,6 +20,7 @@ from shared.config import settings
 
 Which = Literal["terra", "luna"]
 ALLOWED_MODELS = ("gpt-5.6-terra", "gpt-5.6-luna")
+CALL_ATTEMPTS = 2  # 판단·초안이 실패한 호출을 그 자리에서 다시 하는 횟수까지 센 시도 수(#624)
 GENERATE_TIMEOUT_S = 300.0  # generate_json 한 번의 전체 시간 상한. 4분 회의 1단계가 약 20초, 스트리밍은 초당 100토큰 남짓
 
 
