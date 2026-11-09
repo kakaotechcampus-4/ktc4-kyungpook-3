@@ -255,6 +255,15 @@ def test_an_item_stays_when_another_run_skips_the_same_story():
     assert J.merge_runs([first, second]) == ([A1], [])
 
 
+def test_a_failure_stays_when_part_of_it_was_judged_in_no_run():
+    """1단계가 이어진 발화를 묶어 실행끼리 번호 하나만 겹치는 일은 흔하다. 다른 실행이 실패 없이 끝났어도, 실패의 문장 가운데
+    어느 실행에서도 판단되지 않은 것이 있으면 실패로 남겨 다시 돌리고 일부 실패로 알린다."""
+    first = [_o("item", A1, at=[1, 2]), _o("failure", FB, at=[2, 3])]
+    second = [_o("skip", at=[2])]
+    assert J.merge_runs([first, second]) == ([A1], [FB])
+    assert J.merge_runs([[_o("failure", FB, at=[2, 3])], second]) == ([], [FB])
+
+
 def test_a_run_that_found_nothing_changes_nothing():
     """1단계가 응답을 이상하게 줘 finding 을 하나도 못 고른 실행. 가진 결과를 지우지 않는다."""
     first = [_o("item", A1, at=[3]), _o("failure", FB, at=[9])]
