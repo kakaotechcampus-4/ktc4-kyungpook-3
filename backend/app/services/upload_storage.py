@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # 실행 위치와 상관없이 backend/uploads다(git이 무시한다). 운영 이미지는 UPLOAD_DIR=/data/uploads다
 DEFAULT_UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads"
-DEFAULT_MAX_BYTES = 100 * 1024 * 1024
+DEFAULT_MAX_BYTES = 200 * 1024 * 1024
 CHUNK_BYTES = 1024 * 1024
 # 원래 파일명에서 확장자만 가져다 쓴다. 이 모양이 아니면 `bin`으로 저장한다(경로 조작 방지).
 _EXTENSION = re.compile(r"[a-z0-9]{1,10}")

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { capture, confirmUsername, readMailedCode, start } from './support'
+import { agreeToPolicies, capture, confirmUsername, readMailedCode, start } from './support'
 
 /* #446 가입 이름 100자, #457 로그인 시도 제한 429. 문구와 요청 유무만 본다. 규칙의 전체 경우는 Vitest 가 본다 */
 
@@ -18,6 +18,7 @@ test('101자 이름은 가입 폼에서 막히고 가입 요청을 보내지 않
   const name = page.getByLabel('이름')
   await name.fill('가'.repeat(101))
   await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
+  await agreeToPolicies(page)
   await page.getByRole('button', { name: '계정 만들기' }).click()
 
   await expect(name).toHaveAttribute('aria-invalid', 'true')

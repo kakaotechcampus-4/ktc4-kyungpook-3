@@ -5,6 +5,8 @@ on:
     branches: [develop]
     paths:
       - 'frontend/**'
+      - 'docs/policy/**'
+      - 'backend/app/services/consents.py'
       - '.github/workflows/frontend-ci.yml'
   # deploy.yml 이 배포 전에 같은 커밋으로 부른다
   workflow_call:
@@ -24,6 +26,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm run policy:check
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check

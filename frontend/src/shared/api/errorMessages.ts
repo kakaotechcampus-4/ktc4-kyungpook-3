@@ -43,6 +43,8 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
   TASK_NOT_FOUND: '태스크를 찾을 수 없어요.',
   TASK_HISTORY_NOT_FOUND: '변경 기록을 찾을 수 없어요.',
   TASK_HISTORY_ALREADY_ROLLED_BACK: '이미 되돌린 변경이에요.',
+  TOPIC_NOT_FOUND: '주제를 찾을 수 없어요. 지워졌을 수 있어요.',
+  SUMMARY_NOT_FOUND: '이 회의의 요약본이 아직 없어요.',
   INTERNAL_ERROR: '서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
   UNAUTHENTICATED: '로그인이 필요해요.',
   FORBIDDEN: '접근 권한이 없어요.',

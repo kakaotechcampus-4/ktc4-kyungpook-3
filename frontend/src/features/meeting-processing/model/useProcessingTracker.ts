@@ -59,7 +59,7 @@ function invalidateFinished(queryClient: QueryClient, meeting: TrackedMeeting): 
  * - 알림은 진행 토스트(ProcessingToast)가 그린다. 추적기는 끝난 결과(`settleMeeting`)만 적고, 정리 중·대기는 토스트가
  *   같은 상세 캐시를 읽는다 — 같은 회의의 신호는 토스트 하나다 (#424).
  * - 완료: 관련 캐시를 무효화하고 완료 결과를 적는다(`회의 정리가 끝났어요` + `회의록 보기`, D-095).
- * - 실패: 화자 지정 만료는 목록에 남기고 상세로 잇는다. 그 외 실패는 목록에서 뺀다.
+ * - 실패: 목록 배지가 있는 두 만료(화자 지정·정리 시작, `expiredLabel`)는 목록에 남기고 상세로 잇는다. 그 외 실패는 목록에서 뺀다.
  *   실패 결과는 failed_stage 그대로 적는다 — 알 수 없는 값도 일반 실패(D-092)다. Notion 연결 상태는 묻지 않는다.
  *   서버의 정리 실패는 AI 단계와 멈춤 정리에서만 오고 Notion 때문에 실패하지 않는다 (D-182). 팀원에게 실패를 보이지
  *   않는 것은 토스트가 정한다. 실패 회의의 결과·원본을 다시 쓰는 길은 없다 — 다시 올리기만 안내한다 (D-091).
@@ -145,10 +145,10 @@ export function useProcessingTracker(): void {
     (meeting: TrackedMeeting, detail: Meeting) => {
       const { workspaceId, meetingId } = meeting
       const { failedStage } = detail
-      const failure = meetingFailure(failedStage)
-      // 만료 이력은 유지하고, 나머지 실패는 기존 정책대로 목록에서 뺀다.
+      // 만료 이력(화자 지정·정리 시작)은 유지하고, 나머지 실패는 기존 정책대로 목록에서 뺀다.
+      const expired = meetingFailure(failedStage).expiredLabel !== null
       queryClient.setQueryData(meetingListQueryOptions(workspaceId).queryKey, (list) =>
-        failure.kind === 'expired'
+        expired
           ? list?.map((item) =>
               item.id === meetingId ? { ...item, status: 'failed' as const, failedStage } : item,
             )
@@ -156,10 +156,7 @@ export function useProcessingTracker(): void {
       )
       invalidateMeetings(queryClient, meeting)
       settleMeeting({ ...meeting, title: detail.title, outcome: 'failed', failedStage })
-      leaveProcessingScreen(
-        meeting,
-        paths.meetings(workspaceId, failure.kind === 'expired' ? meetingId : undefined),
-      )
+      leaveProcessingScreen(meeting, paths.meetings(workspaceId, expired ? meetingId : undefined))
     },
     [leaveProcessingScreen, queryClient],
   )

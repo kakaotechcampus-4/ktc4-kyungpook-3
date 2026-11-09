@@ -3,6 +3,14 @@ import userEvent from '@testing-library/user-event'
 import { db } from '@/shared/mock/db'
 import { usernameFromEmail } from '@/shared/mock/sessions'
 
+export async function agreeToPolicies(): Promise<void> {
+  for (const name of ['[필수] 이용약관 동의', '[필수] 개인정보처리방침 동의']) {
+    const checkbox = await screen.findByRole('checkbox', { name })
+    if (!(checkbox instanceof HTMLInputElement)) throw new Error('consent must be an input')
+    if (!checkbox.checked) await userEvent.click(checkbox)
+  }
+}
+
 /** 모의 메일함의 마지막 코드를 넣는다 */
 export async function enterMailedCode(): Promise<void> {
   const input = await screen.findByLabelText('인증 코드')
@@ -37,5 +45,6 @@ export async function walkSignup(values: {
   await confirmUsername(values.username ?? usernameFromEmail(values.email))
   await userEvent.type(screen.getByLabelText('이름'), values.name)
   await userEvent.type(screen.getByLabelText('비밀번호'), values.password)
+  await agreeToPolicies()
   await userEvent.click(screen.getByRole('button', { name: '계정 만들기' }))
 }

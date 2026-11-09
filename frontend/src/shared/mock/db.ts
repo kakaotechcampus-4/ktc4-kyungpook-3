@@ -7,6 +7,7 @@ import type { MessageSettingsDto } from '@/shared/types/api/messageSettings'
 import type { TaskDto } from '@/shared/types/api/task'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { sessionFixture } from './fixtures/auth'
+import { POLICY_VERSION } from '@/shared/config/publishedPolicies'
 import {
   aliasFixtures,
   discordUserFixtures,
@@ -22,6 +23,8 @@ import { extractionFixtures } from './fixtures/extraction'
 import { taskFixtures, taskHistoryFixtures } from './fixtures/task'
 import { approvalFixtures } from './fixtures/approval'
 import { messageBundleFixtures, messageThreadFixtures } from './fixtures/message'
+import { projectMapFixture } from './fixtures/projectMap'
+import type { MockProjectMap } from './fixtures/projectMap'
 import type { MockNotification, MockPushSubscription } from './fixtures/notification'
 import type { MockReplies } from './reply-state'
 
@@ -32,6 +35,7 @@ import type { MockReplies } from './reply-state'
  *   채팅은 대기 → 앞 두 값(발화 저장) → `extracted` → `done` 이다 (#483). 브라우저 데모용
  * - `instant`: 첫 조회에 바로 `done`. 인위적 지연이 없다 — E2E 용
  * - `fail`: 첫 조회에 `failed`
+ * - `fail-unclaimed`: 첫 조회에 `failed`(`upload_unclaimed`)다. 24시간 동안 AI 가 가져가지 않은 업로드를 BE sweeper 가 끝낸 것을 흉내 낸다 (#598)
  * - `fail-chat-stalled`: 채팅 회의만 첫 조회에 `failed`(`chat_stalled`)다. 업로드 회의는 `manual` 처럼 그대로다 (#450)
  * - `speakers`: 업로드 회의가 첫 조회에 화자 지정 대기가 된다. PM 이 지정을 내면 조회마다 한 단계씩(`staged`) 끝난다 (#256)
  */
@@ -42,6 +46,7 @@ export type MeetingFlowMode =
   | 'fail'
   | 'fail-diarize'
   | 'fail-expired'
+  | 'fail-unclaimed'
   | 'fail-chat-stalled'
   | 'speakers'
 
@@ -52,6 +57,7 @@ export const MEETING_FLOW_MODES = [
   'fail',
   'fail-diarize',
   'fail-expired',
+  'fail-unclaimed',
   'fail-chat-stalled',
   'speakers',
 ] as const satisfies readonly MeetingFlowMode[]
@@ -238,6 +244,8 @@ export interface MockDb {
   /** #344 리마인드 답장 판단 결과. 판단은 시나리오가 넣는다 (reply-state.ts) */
   replies: MockReplies
   approvals: typeof approvalFixtures
+  /** #551 프로젝트 맵의 주제·결정·태스크 선. 태스크와 회의는 위의 tasks·meetings 다 */
+  projectMap: MockProjectMap
   /** 회의 정리 흐름. 원본 파일은 담지 않는다 — 생성 결과는 위의 meetings·minutes·extractions·tasks·approvals 에 들어간다 */
   meetingFlow: MeetingFlowState
   /** M8 메시지 (계약 §5.7). 보낼 메시지(묶음)와 대화는 공간별이다 */
@@ -267,8 +275,13 @@ export function initialDb(): MockDb {
   return {
     session: structuredClone(sessionFixture),
     authenticated: true,
-    consents: [],
-    consentVersions: { terms: '2026-11-08', privacy: '2026-11-08' },
+    consents: (['terms', 'privacy'] as const).map((kind) => ({
+      user_id: sessionFixture.user.user_id,
+      kind,
+      version: POLICY_VERSION,
+      agreed_at: '2026-11-10T00:00:00Z',
+    })),
+    consentVersions: { terms: POLICY_VERSION, privacy: POLICY_VERSION },
     consentFailure: 'none',
     withdrawals: [],
     withdrawnMemberIds: [],
@@ -299,6 +312,7 @@ export function initialDb(): MockDb {
     autoBlocks: {},
     replies: { judgments: [], changes: [], historyLinks: {} },
     approvals: structuredClone(approvalFixtures),
+    projectMap: structuredClone(projectMapFixture),
     meetingFlow: { mode: 'manual', attendees: {}, speakers: {} },
     messageBundles: structuredClone(messageBundleFixtures),
     messageThreads: structuredClone(messageThreadFixtures),

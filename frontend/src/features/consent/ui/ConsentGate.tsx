@@ -20,6 +20,7 @@ export function ConsentGate({
   userId,
   documents,
   children,
+  pendingFallback,
   onLogout,
   logoutPending,
   logoutError,
@@ -27,6 +28,7 @@ export function ConsentGate({
   userId: string
   documents: PublishedPolicies
   children: ReactNode
+  pendingFallback: ReactNode
   onLogout: () => void
   logoutPending: boolean
   logoutError: unknown
@@ -44,6 +46,7 @@ export function ConsentGate({
   const mismatch = query.data !== undefined && !matchesPublication(query.data, versions)
   if (!changedAccount && !query.isError && !mismatch && query.data?.required === false)
     return children
+  if (query.isPending) return pendingFallback
 
   const submit = async () => {
     if (!selection.terms || !selection.privacy || saving) return
@@ -66,7 +69,6 @@ export function ConsentGate({
     }
   }
 
-  const pending = query.isPending
   const problem = failure ?? query.error
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[680px] flex-col justify-center gap-24 px-24 py-48 text-ink">
@@ -83,8 +85,6 @@ export function ConsentGate({
           <p role="alert">공개된 문서와 서버의 판본이 달라요. 새로고침한 뒤 다시 확인해 주세요.</p>
           <Button onClick={() => window.location.reload()}>새로고침</Button>
         </>
-      ) : pending ? (
-        <p role="status">동의 기록을 확인하고 있어요.</p>
       ) : query.isError ? (
         <>
           <p role="alert">동의 기록을 확인하지 못했어요. {errorMessage(query.error)}</p>

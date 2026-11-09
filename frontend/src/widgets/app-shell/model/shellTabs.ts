@@ -2,10 +2,15 @@ import { paths } from '@/shared/config/routes'
 import type { IconName } from '@/shared/ui/icon'
 
 /** 셸 탭의 이름. 셸이 탭에 다가간 순간(가리키기·포커스·터치) 그 탭을 미리 받을 때 쓴다 (#536) */
-export type ShellTabKey = 'dashboard' | 'meetings' | 'tasks' | 'messages' | 'members'
+export type ShellTabKey = 'dashboard' | 'meetings' | 'tasks' | 'messages' | 'projectMap' | 'members'
 
 /**
- * 셸의 다섯 탭. 768px 이상은 헤더의 글자 탭(`label`), 아래는 아래 탭 막대의 아이콘 탭(`barLabel`)이다 (D-180).
+ * 768px 미만에서 탭이 가는 곳. 아래 탭 막대는 D-180 의 다섯 칸 그대로이고, 나머지는 계정 메뉴의 항목이 된다 (#551)
+ */
+export type CompactPlace = 'bar' | 'menu'
+
+/**
+ * 셸의 여섯 탭. 768px 이상은 헤더의 글자 탭(`label`)이다. 아래는 `compact` 가 정한 곳에 `barLabel` 과 아이콘으로 둔다 (D-180).
  * 탭 뒤의 개수 배지는 집계 API 가 없어 두지 않는다. 메시지의 읽지 않은 수는 #480 이 생기면 두 곳에 같이 붙인다
  */
 export const SHELL_TABS: readonly {
@@ -13,19 +18,50 @@ export const SHELL_TABS: readonly {
   label: string
   barLabel: string
   icon: IconName
+  compact: CompactPlace
   to: (workspaceId: string) => string
 }[] = [
-  { key: 'dashboard', label: '대시보드', barLabel: '홈', icon: 'home', to: paths.dashboard },
+  {
+    key: 'dashboard',
+    label: '대시보드',
+    barLabel: '홈',
+    icon: 'home',
+    compact: 'bar',
+    to: paths.dashboard,
+  },
   {
     key: 'meetings',
     label: '회의록',
     barLabel: '회의록',
     icon: 'minutes',
+    compact: 'bar',
     to: (id) => paths.meetings(id),
   },
-  { key: 'tasks', label: '태스크', barLabel: '태스크', icon: 'tasks', to: (id) => paths.tasks(id) },
-  { key: 'messages', label: '메시지', barLabel: '메시지', icon: 'message', to: paths.messages },
-  { key: 'members', label: '팀', barLabel: '팀', icon: 'team', to: paths.members },
+  {
+    key: 'tasks',
+    label: '태스크',
+    barLabel: '태스크',
+    icon: 'tasks',
+    compact: 'bar',
+    to: (id) => paths.tasks(id),
+  },
+  {
+    key: 'messages',
+    label: '메시지',
+    barLabel: '메시지',
+    icon: 'message',
+    compact: 'bar',
+    to: paths.messages,
+  },
+  {
+    key: 'projectMap',
+    label: '프로젝트 맵',
+    barLabel: '프로젝트 맵',
+    icon: 'graph',
+    compact: 'menu',
+    to: paths.projectMap,
+  },
+  { key: 'members', label: '팀', barLabel: '팀', icon: 'team', compact: 'bar', to: paths.members },
 ]
 
 /**

@@ -27,6 +27,7 @@ async function signup() {
 
 beforeEach(() => {
   db.authenticated = false
+  db.consents = []
   db.consentVersions = { terms: 'test-terms-v1', privacy: 'test-privacy-v1' }
 })
 

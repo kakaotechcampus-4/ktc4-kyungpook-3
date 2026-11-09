@@ -66,7 +66,7 @@ describe('latestMinutesId (D-106)', () => {
   })
 })
 
-it('화자 지정 기한이 지난 수동 업로드만 만료 이력으로 남기고 완료 회의와 구분한다', () => {
+it('기한이 지난 수동 업로드(화자 지정·정리 시작)만 만료 이력으로 남기고 완료 회의와 구분한다', () => {
   const expired = {
     ...meeting('mt_expired', '2026-09-30T00:00:00Z', 'failed'),
     source: 'manual_upload' as const,
@@ -74,13 +74,21 @@ it('화자 지정 기한이 지난 수동 업로드만 만료 이력으로 남�
   }
   const list = toMinutesList([
     expired,
+    {
+      ...expired,
+      id: 'mt_unclaimed',
+      startedAt: '2026-09-20T00:00:00Z',
+      failedStage: 'upload_unclaimed',
+    },
     { ...expired, id: 'mt_discord', source: 'discord' },
+    { ...expired, id: 'mt_chat', source: 'chat', failedStage: 'upload_unclaimed' },
+    { ...expired, id: 'mt_stt', failedStage: 'STT' },
     { ...expired, id: 'mt_diarize', failedStage: 'diarize' },
     { ...expired, id: 'mt_future', failedStage: 'future_stage' },
     { ...expired, id: 'mt_null', failedStage: null },
     { ...expired, id: 'mt_old', startedAt: '2026-09-01T00:00:00Z' },
   ])
-  expect(list.expired.map(({ id }) => id)).toEqual(['mt_expired', 'mt_old'])
+  expect(list.expired.map(({ id }) => id)).toEqual(['mt_expired', 'mt_unclaimed', 'mt_old'])
   expect(list.minutes).toEqual([])
   expect(list.inProgress).toEqual([])
   expect(latestMinutesId([expired])).toBeNull()
