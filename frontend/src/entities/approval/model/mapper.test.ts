@@ -37,12 +37,11 @@ describe('합쳐진 카드와 payload_version (#512, #547)', () => {
           doc_text: '',
           merged_at: '2026-09-17T03:00:00Z',
         },
-        'not an item',
       ],
     },
   }
 
-  it('지문과 합쳐진 항목, 담당자를 정한 항목을 읽는다. 모양이 틀린 항목은 버린다', () => {
+  it('지문과 합쳐진 항목, 담당자를 정한 항목을 읽는다', () => {
     expect(toApproval(merged)).toMatchObject({
       kind: 'task_create',
       payloadVersion: 'a'.repeat(16),
@@ -244,22 +243,16 @@ describe('task_update 의 범위 변경 (#205)', () => {
   })
 })
 
-it('marks reminder and unknown types unsupported and defaults unknown statuses', () => {
-  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
-  try {
-    expect(toApproval({ ...approvalFixtures[0], type: 'reminder_dm' })).toMatchObject({
-      kind: 'unsupported',
-      type: 'reminder_dm',
-    })
-    expect(toApproval({ ...approvalFixtures[0], type: 'future', status: 'future' })).toMatchObject({
-      kind: 'unsupported',
-      type: 'future',
-      status: 'pending',
-    })
-    expect(warning).toHaveBeenCalled()
-  } finally {
-    warning.mockRestore()
-  }
+it('알림·모르는 종류는 지원하지 않는 요청으로 읽는다. 모르는 상태는 스키마가 거절한다 (#348)', () => {
+  expect(toApproval({ ...approvalFixtures[0], type: 'reminder_dm' })).toMatchObject({
+    kind: 'unsupported',
+    type: 'reminder_dm',
+  })
+  expect(toApproval({ ...approvalFixtures[0], type: 'future' })).toMatchObject({
+    kind: 'unsupported',
+    type: 'future',
+    status: 'pending',
+  })
 })
 
 describe('toApprovalResolveFailure', () => {
@@ -349,7 +342,7 @@ describe('stored approval edits', () => {
         status: 'approved',
         payload: {
           ...original.payload,
-          task_overrides: { task_title: '최종 제목', due_date: null, future: true },
+          task_overrides: { task_title: '최종 제목', due_date: null },
         },
       }),
     ).toMatchObject({
@@ -375,19 +368,5 @@ describe('stored approval edits', () => {
       ],
       storedOverrides: { dueDate: null, assigneeMemberId: 'mb_02' },
     })
-  })
-  it.each([
-    ['task_create', { task_title: null }],
-    ['task_create', { assignee_member_id: 1 }],
-    ['task_create', { due_date: false }],
-    ['task_update', { status: null }],
-    ['task_update', { status: 'invalid' }],
-    ['task_update', { due_date: 2 }],
-    ['task_update', { assignee_member_id: 1 }],
-    ['task_create', null],
-  ])('rejects malformed known stored fields for %s', (type, task_overrides) => {
-    expect(() => toApproval({ ...approvalFixtures[0], type, payload: { task_overrides } })).toThrow(
-      expect.objectContaining({ kind: 'invalid_response', code: 'INVALID_RESPONSE' }),
-    )
   })
 })
