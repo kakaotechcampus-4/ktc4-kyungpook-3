@@ -57,6 +57,7 @@ export const MOCK_SCENARIOS = [
   'meeting-fail',
   'meeting-fail-diarize',
   'meeting-fail-expired',
+  'meeting-fail-unclaimed',
   'meeting-expired-member',
   // Notion 을 연결하지 않은 공간. 회의 올리기·정리·회의록·태스크를 그대로 쓴다 (D-182)
   'meeting-notion-not-connected',
@@ -730,6 +731,9 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       break
     case 'meeting-fail-expired':
       readyToUpload(state, 'fail-expired')
+      break
+    case 'meeting-fail-unclaimed':
+      readyToUpload(state, 'fail-unclaimed')
       break
     case 'meeting-expired-member':
       signInWith(state, ['ws_01'], 'ws_01')

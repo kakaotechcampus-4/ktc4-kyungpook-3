@@ -1,8 +1,9 @@
 import type { MeetingSummary } from '../model/types'
+import { meetingFailure } from './meetingFailure'
 
 /**
- * 완료·진행 중·화자 지정 기한 만료 이력을 회의 날짜 최신순으로 나눈다.
- * 일반 실패는 기존 D-093대로 숨기고, 수동 업로드의 화자 지정 만료만 남긴다 (#256).
+ * 완료·진행 중·기한 만료 이력을 회의 날짜 최신순으로 나눈다.
+ * 일반 실패는 기존 D-093대로 숨기고, 수동 업로드의 화자 지정 만료(#256)·정리 시작 만료(#598)만 남긴다.
  */
 export interface MinutesList {
   minutes: MeetingSummary[]
@@ -30,7 +31,7 @@ export function toMinutesList(meetings: readonly MeetingSummary[]): MinutesList 
       ({ status, source, failedStage }) =>
         status === 'failed' &&
         source === 'manual_upload' &&
-        failedStage === 'speaker_assignment_expired',
+        meetingFailure(failedStage).expiredLabel !== null,
     ),
   }
 }
