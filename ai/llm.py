@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -21,7 +22,9 @@ from shared.config import settings
 Which = Literal["terra", "luna"]
 ALLOWED_MODELS = ("gpt-5.6-terra", "gpt-5.6-luna")
 CALL_ATTEMPTS = 2  # 판단·초안이 실패한 호출을 그 자리에서 다시 하는 횟수까지 센 시도 수(#624)
-GENERATE_TIMEOUT_S = 300.0  # generate_json 한 번의 전체 시간 상한. 4분 회의 1단계가 약 20초, 스트리밍은 초당 100토큰 남짓
+# generate_json 한 번의 전체 시간 상한. 재시도까지 이 안에서 한다. 4분 회의 1단계가 약 20초, 스트리밍은 초당 100토큰 남짓.
+# 판단·초안은 실패하면 CALL_ATTEMPTS 번까지 부르므로 finding 하나의 최악은 이 값의 네 배다(0061)
+GENERATE_TIMEOUT_S = 300.0
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,17 @@ class FakeLLM:
         return reply if isinstance(reply, LLMReply) else LLMReply(reply, finish_reason="stop")
 
 
+def _transient(e: Exception) -> bool:
+    """다시 해 볼 만한 실패. 속도 제한·과부하와, 스트림을 읽다 끊긴 연결·읽기 시간 초과다.
+
+    스트리밍이면 SDK 는 헤더를 받을 때까지만 다시 하므로 본문을 읽다 끊긴 것은 여기서 다시 한다.
+    """
+    msg = str(e)
+    names = {c.__name__ for c in type(e).__mro__}
+    return (bool(names & {"APIConnectionError", "APITimeoutError"})
+            or "429" in msg or "rate_limit" in msg.lower() or "503" in msg or "overloaded" in msg.lower())
+
+
 def _extract_json(text: str) -> dict[str, Any] | None:
     text = text.strip()
     if text.startswith("```"):
@@ -114,15 +128,15 @@ class MLAPIClient:
         self.max_retries = max_retries
         self.calls = 0
 
-    def _stream(self, prompt: str, *, reasoning_effort: str, timeout_s: float, sdk_retries: bool) -> LLMReply:
-        """스트리밍으로 받은 응답 하나. 게이트웨이는 스트리밍이 아닌 응답을 2000 토큰(추론 포함)에서 자른다.
+    def _stream(self, prompt: str, *, reasoning_effort: str, timeout_s: float) -> LLMReply:
+        """스트리밍으로 받은 응답 하나. 게이트웨이는 스트리밍이 아닌 응답을 2000 토큰(추론 포함)에서 자른다(0061).
 
-        SDK 의 timeout 은 조각 사이 대기에만 걸리므로, 시작부터 timeout_s 가 지나면 직접 끊는다(TimeoutError).
+        SDK 의 timeout 은 조각 사이 대기에만 걸린다. 게이트웨이가 멈추거나 keepalive 만 보내면 끝나지 않으므로,
+        시작부터 timeout_s 가 지나면 타이머가 스트림을 닫고 TimeoutError 를 낸다. SDK 재시도는 쓰지 않는다.
         """
         started = time.monotonic()
         deadline = started + timeout_s
-        options = {"timeout": timeout_s} if sdk_retries else {"timeout": timeout_s, "max_retries": 0}
-        stream = self._client.with_options(**options).chat.completions.create(
+        stream = self._client.with_options(timeout=timeout_s, max_retries=0).chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
             reasoning_effort=reasoning_effort,
@@ -130,18 +144,30 @@ class MLAPIClient:
             stream=True,
             stream_options={"include_usage": True},
         )
+        timer = threading.Timer(max(0.0, deadline - time.monotonic()), stream.close)
+        timer.daemon = True
+        timer.start()
         parts: list[str] = []
         finish, usage = None, None
-        for chunk in stream:
-            if time.monotonic() > deadline:
-                raise TimeoutError(f"{timeout_s:.0f}초 안에 응답이 끝나지 않았다")
-            if chunk.choices:
-                choice = chunk.choices[0]
-                if choice.delta is not None and choice.delta.content:
-                    parts.append(choice.delta.content)
-                finish = choice.finish_reason or finish
-            if chunk.usage is not None:
-                usage = chunk.usage
+        try:
+            with stream:
+                for chunk in stream:
+                    if time.monotonic() > deadline:
+                        break
+                    if chunk.choices:
+                        choice = chunk.choices[0]
+                        if choice.delta is not None and choice.delta.content:
+                            parts.append(choice.delta.content)
+                        finish = choice.finish_reason or finish
+                    if chunk.usage is not None:
+                        usage = chunk.usage
+        except Exception:
+            if time.monotonic() <= deadline:
+                raise
+        finally:
+            timer.cancel()
+        if time.monotonic() > deadline:  # 타이머가 닫아 조용히 끝났거나, 닫힌 뒤 읽다 실패했다
+            raise TimeoutError(f"{timeout_s:.0f}초 안에 응답이 끝나지 않았다")
         if finish != "stop":
             print(f"[llm] {self.model} 응답이 끝까지 오지 않았다: finish_reason={finish} "
                   f"출력 {getattr(usage, 'completion_tokens', None)}", file=sys.stderr)
@@ -156,23 +182,26 @@ class MLAPIClient:
 
     def generate_json(self, prompt: str, *, reasoning_effort: str = "medium") -> dict[str, Any] | None:
         """reasoning_effort: none | low | medium | high. 이 모델은 temperature 커스텀을 지원하지 않는다
-        (기본값 1 고정) — 결정성/속도는 reasoning_effort 로 조절한다. 잘린 응답(finish_reason=length)은 None."""
+        (기본값 1 고정) — 결정성/속도는 reasoning_effort 로 조절한다. 잘린 응답(finish_reason=length)은 None.
+        재시도까지 GENERATE_TIMEOUT_S 안에서 한다."""
+        deadline = time.monotonic() + GENERATE_TIMEOUT_S
         delay = 2.0
         for attempt in range(self.max_retries + 1):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
             try:
                 self.calls += 1
-                reply = self._stream(prompt, reasoning_effort=reasoning_effort, timeout_s=GENERATE_TIMEOUT_S,
-                                     sdk_retries=True)
+                reply = self._stream(prompt, reasoning_effort=reasoning_effort, timeout_s=remaining)
                 return None if reply.finish_reason == "length" else reply.data
-            except Exception as e:  # 429(속도 제한) 등 일시적 오류는 잠깐 쉬고 재시도
-                msg = str(e)
-                transient = "429" in msg or "rate_limit" in msg.lower() or "503" in msg or "overloaded" in msg.lower()
-                if attempt < self.max_retries and transient:
+            except Exception as e:  # 429(속도 제한)·끊긴 연결 등 일시적 오류는 잠깐 쉬고 재시도
+                if attempt < self.max_retries and _transient(e):
                     time.sleep(delay)
                     delay *= 2
                     continue
-                print(f"[llm] {self.model} 호출 실패 → 규칙 기반 폴백: {msg[:120]}", file=sys.stderr)
+                print(f"[llm] {self.model} 호출 실패 → 규칙 기반 폴백: {str(e)[:120]}", file=sys.stderr)
                 return None
+        print(f"[llm] {self.model} {GENERATE_TIMEOUT_S:.0f}초 안에 끝내지 못해 그만둔다", file=sys.stderr)
         return None
 
     def generate_json_once(self, prompt: str, *, timeout_s: float, reasoning_effort: str = "medium") -> LLMReply:
@@ -180,7 +209,7 @@ class MLAPIClient:
         started = time.monotonic()
         self.calls += 1
         try:
-            return self._stream(prompt, reasoning_effort=reasoning_effort, timeout_s=timeout_s, sdk_retries=False)
+            return self._stream(prompt, reasoning_effort=reasoning_effort, timeout_s=timeout_s)
         except Exception as e:  # noqa: BLE001 - 어떤 실패든 호출자에게는 data 가 없는 답이다
             print(f"[llm] {self.model} 호출 실패: {str(e)[:120]}", file=sys.stderr)
             return LLMReply(None, elapsed_s=time.monotonic() - started)

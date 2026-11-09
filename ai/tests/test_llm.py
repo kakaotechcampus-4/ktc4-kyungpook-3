@@ -3,6 +3,8 @@
 Elice 게이트웨이는 스트리밍이 아닌 응답을 2000 토큰(추론 포함)에서 자른다. 그래서 모든 호출을 스트리밍으로 받는다.
 """
 
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -10,12 +12,56 @@ import pytest
 from llm import FakeLLM, LLMReply, MLAPIClient, NullLLM
 
 
-class _Sdk:
-    """OpenAI SDK 자리. with_options 로 받은 값과 create 인자를 남긴다."""
+class APIConnectionError(Exception):
+    """openai.APIConnectionError 자리. 스트림을 읽다 연결이 끊기면 SDK 가 이 이름으로 낸다."""
 
-    def __init__(self, response=None, error=None):
+
+class _Stream:
+    """openai Stream 자리. 조각을 차례로 내고, close 와 with 를 받는다. 조각 자리에 예외를 두면 그때 낸다."""
+
+    def __init__(self, chunks):
+        self.chunks = chunks
+        self.closed = False
+
+    def __iter__(self):
+        for chunk in self.chunks:
+            if isinstance(chunk, Exception):
+                raise chunk
+            yield chunk
+
+    def close(self):
+        self.closed = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+class _Stalled(_Stream):
+    """조각 하나를 내고 닫힐 때까지 멈춘다. 게이트웨이가 멈추거나 keepalive 만 보내는 경우다."""
+
+    def __init__(self, chunks):
+        super().__init__(chunks)
+        self._closed = threading.Event()
+
+    def __iter__(self):
+        yield self.chunks[0]
+        self._closed.wait(10)
+
+    def close(self):
+        super().close()
+        self._closed.set()
+
+
+class _Sdk:
+    """OpenAI SDK 자리. with_options 로 받은 값과 create 인자를 남긴다. response 가 list 의 list 면 호출마다 차례로 준다."""
+
+    def __init__(self, response=None, error=None, streams=None):
         self.response = response
         self.error = error
+        self.streams = list(streams or [])
         self.options = []
         self.creates = []
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
@@ -28,7 +74,7 @@ class _Sdk:
         self.creates.append(kw)
         if self.error is not None:
             raise self.error
-        return iter(self.response)
+        return self.streams.pop(0) if self.streams else _Stream(self.response)
 
 
 def _client(sdk):
@@ -124,3 +170,32 @@ def test_fake_llm_hands_out_dicts_and_replies_in_order_and_records_the_prompt():
     assert fake.generate_json_once("three", timeout_s=1.0) == LLMReply(None)
     assert fake.generate_json_once("four", timeout_s=1.0) == LLMReply(None)
     assert fake.prompts == ["one", "two", "three", "four"]
+
+
+def test_a_stalled_stream_is_closed_at_the_deadline():
+    # 조각이 더 오지 않으면 조각마다 보는 상한은 걸리지 않는다. 타이머가 스트림을 닫아 끝낸다(#624 리뷰)
+    stalled = _Stalled(_response('{"a": 1}'))
+    started = time.monotonic()
+    reply = _client(_Sdk(streams=[stalled])).generate_json_once("p", timeout_s=0.3)
+    assert reply.data is None and stalled.closed
+    assert time.monotonic() - started < 3
+
+
+def test_a_connection_dropped_mid_stream_is_retried(monkeypatch):
+    # 스트리밍이면 SDK 는 헤더까지만 다시 한다. 본문을 읽다 끊기면 여기서 다시 한다
+    monkeypatch.setattr("llm.time.sleep", lambda s: None)
+    dropped = _Stream([APIConnectionError("Connection error.")])
+    sdk = _Sdk(streams=[dropped, _Stream(_response('{"a": 1}'))])
+    assert _client(sdk).generate_json("p") == {"a": 1}
+    assert len(sdk.creates) == 2 and all(o["max_retries"] == 0 for o in sdk.options)
+
+
+def test_generate_json_retries_share_one_deadline(monkeypatch):
+    # 시도마다 상한을 새로 잡으면 재시도가 겹쳐 상한의 몇 배가 된다. 남은 시간이 없으면 더 하지 않는다
+    monkeypatch.setattr("llm.time.sleep", lambda s: None)
+    monkeypatch.setattr("llm.GENERATE_TIMEOUT_S", 300.0)
+    ticks = iter([0.0, 0.0, 0.0, 400.0])
+    monkeypatch.setattr("llm.time.monotonic", lambda: next(ticks, 400.0))
+    sdk = _Sdk(error=RuntimeError("429 rate_limit"))
+    assert _client(sdk).generate_json("p") is None
+    assert len(sdk.creates) == 1
