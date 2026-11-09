@@ -2,7 +2,8 @@
 
 대기열 상태는 Extraction의 요청·시도·임대에서 나오고 claim token hash가 같은 임대의 저장만 허용한다.
 
-- 대상 아님: summary_requested_at 이 NULL. 옛 회의와 채팅 회의가 여기 있어 표시 없이는 돌지 않는다.
+- 대상 아님: summary_requested_at 이 NULL. 옛 회의가 여기 있어 표시 없이는 돌지 않는다.
+- 승인 대기: 표시가 있어도 item_fate.ready 가 아니면 claim 이 건너뛴다. 승인이 끝나면 훅 없이 다음 claim 이 집는다.
 - 대기: 표시가 있고 attempts 가 상한 아래이며 임대가 없거나 지났다.
 - 처리 중: 임대가 살아 있다.
 - 포기: attempts 가 상한에 닿았고 임대가 지났다. 재처리(force)로만 살아난다.
@@ -52,12 +53,11 @@ from app.schemas.project_map import (
     SummaryWriteRequest,
 )
 from app.services.messages import utc
-from app.services import lifecycle, meeting_deletion
+from app.services import item_fate, lifecycle, meeting_deletion
 from app.services.scheduler import WORKSPACE_TZ
 
 logger = logging.getLogger(__name__)
 
-SUMMARIZED_SOURCES = (str(MeetingSource.DISCORD), str(MeetingSource.MANUAL_UPLOAD))
 SUMMARY_MAX_ATTEMPTS = 2
 SUMMARY_LEASE = timedelta(minutes=15)
 # 표시한 지 이만큼 지나면 화면에 요약 중이라 하지 않는다. 스위치가 꺼졌거나 워커가 멈추면 끝없이 요약 중으로 보이기 때문이다.
@@ -74,9 +74,7 @@ def meeting_date(started_at: datetime) -> date:
 
 
 def mark_requested(db: Session, meeting: Meeting, extraction: Extraction) -> None:
-    """요약 대상이면 줄 세운다. 커밋은 호출자가 한다."""
-    if meeting.source not in SUMMARIZED_SOURCES:
-        return
+    """발화가 있으면 줄 세운다. 승인을 기다리는지는 claim 이 본다. 커밋은 호출자가 한다."""
     if db.scalar(select(exists().where(Source.meeting_id == meeting.meeting_id))):
         extraction.summary_requested_at = datetime.now(timezone.utc)
 
@@ -108,11 +106,11 @@ def claim_next(db: Session, *, only: list[str] | None = None, now: datetime | No
             Workspace.deleted_at.is_(None),
             Meeting.deleted_at.is_(None),
             Meeting.status == MeetingStatus.DONE,
-            Meeting.source.in_(SUMMARIZED_SOURCES),
             Extraction.summary_requested_at.is_not(None),
             Extraction.summary_attempts < SUMMARY_MAX_ATTEMPTS,
             or_(Extraction.summary_claimed_at.is_(None), ~lease_alive),
             ~earlier_in_flight,
+            item_fate.ready(Extraction.extraction_id, Meeting.source),
         )
         .order_by(Meeting.started_at, Extraction.extraction_id)
         .limit(1)
@@ -126,13 +124,15 @@ def claim_next(db: Session, *, only: list[str] | None = None, now: datetime | No
     workspace = lifecycle.workspace(db, extraction.meeting.workspace_id, check_epoch=False)
     meeting = db.scalar(select(Meeting).where(Meeting.meeting_id == extraction.meeting_id)
                         .with_for_update().execution_options(populate_existing=True))
-    if (meeting is None or meeting.deleted_at is not None or meeting.status != MeetingStatus.DONE
-            or meeting.source not in SUMMARIZED_SOURCES):
+    if meeting is None or meeting.deleted_at is not None or meeting.status != MeetingStatus.DONE:
         return None
     extraction = db.get(Extraction, extraction.extraction_id, with_for_update=True, populate_existing=True)
     if extraction is None or extraction.summary_requested_at is None or extraction.summary_attempts >= SUMMARY_MAX_ATTEMPTS:
         return None
     if extraction.summary_claimed_at is not None and utc(extraction.summary_claimed_at) > utc(now) - SUMMARY_LEASE:
+        return None
+    # 고른 뒤 잠그기 전에 되돌리기나 합치기가 대기 카드를 붙였을 수 있다
+    if not item_fate.readiness(db, extraction, meeting.source).ready:
         return None
     token = secrets.token_urlsafe(32)
     extraction.summary_attempts += 1
@@ -327,7 +327,7 @@ def request_summaries(
 def _request_state(
     meeting: Meeting, extraction: Extraction | None, chars: int, *, force: bool, now: datetime
 ) -> SummaryRequestState:
-    if meeting.source not in SUMMARIZED_SOURCES:
+    if meeting.source == MeetingSource.CHAT:
         return "not_summarized_source"
     if meeting.status != MeetingStatus.DONE or extraction is None:
         return "not_done"

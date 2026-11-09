@@ -6,11 +6,22 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import event, select, update
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.main import app
-from app.models import Decision, Extraction, ExtractionItem, Meeting, Source, Topic, TopicMeeting, Workspace
+from app.models import (
+    ApprovalRequest,
+    Decision,
+    Extraction,
+    ExtractionItem,
+    Meeting,
+    MemberAlias,
+    Source,
+    Topic,
+    TopicMeeting,
+    Workspace,
+)
 from app.schemas.project_map import SummaryWriteRequest
 from app.services import summary
 from tests.api.conftest import SERVICE_TOKEN
@@ -22,7 +33,9 @@ BODY = {"claim_token": "not-claimed", "model_name": "gpt-5.6-luna", "overview": 
 
 @pytest.fixture
 def client(mdb):
-    return TestClient(app, base_url="https://testserver")
+    c = TestClient(app, base_url="https://testserver")
+    c.cookies.set("session_token", "pm-token")
+    return c
 
 
 def _meeting(db, ws, *, started_at=T0, source="discord", status="done", spoken=True, extraction=True, requested=True):
@@ -39,12 +52,39 @@ def _meeting(db, ws, *, started_at=T0, source="discord", status="done", spoken=T
     return meeting, row
 
 
-def _extract(client, meeting):
+def _extract(client, meeting, items=()):
     r = client.post("/api/v1/extractions", json={
-        "meeting_id": meeting.meeting_id, "workspace_id": meeting.workspace_id, "items": [],
+        "meeting_id": meeting.meeting_id, "workspace_id": meeting.workspace_id, "items": list(items),
     }, headers=H)
     assert r.status_code == 201, r.text
     return r.json()["data"]
+
+
+REVIEW = {"task_title": "검토 태스크", "task_confidence": 0.6, "due_confidence": 0.0}
+HOLD = {"task_title": "누가 할지 모름", "task_confidence": 0.99, "assignee_raw": "모르는사람"}
+
+
+def _handed_off(client, db, ws, items, *, started_at=T0, source="discord"):
+    meeting, _ = _meeting(db, ws, started_at=started_at, source=source, status="processing", extraction=False)
+    extraction_id = _extract(client, meeting, items)["extraction_id"]
+    db.expire_all()
+    cards = list(dict.fromkeys(db.scalars(
+        select(ExtractionItem.approval_id)
+        .where(ExtractionItem.extraction_id == extraction_id, ExtractionItem.approval_id.is_not(None))
+        .order_by(ExtractionItem.created_at)
+    )))
+    return extraction_id, cards
+
+
+def _resolve(client, approval_id, status):
+    r = client.patch(f"/api/v1/approvals/{approval_id}", json={"status": status})
+    assert r.status_code == 200, r.text
+
+
+def _claimable(db, extraction_id):
+    claim = summary.claim_next(db, only=[extraction_id])
+    db.rollback()
+    return claim is not None
 
 
 def _claim(client, **body):
@@ -75,13 +115,122 @@ def test_handoff_marks_spoken_voice_and_upload_meetings(client, mdb, mseed, sour
     assert mdb.get(Extraction, data["extraction_id"]).summary_requested_at is not None
 
 
-def test_handoff_does_not_mark_chat_meeting(client, mdb, mseed):
+def test_handoff_marks_chat_meeting_but_claims_it_only_with_an_approved_item(client, mdb, mseed):
     meeting, _ = _meeting(mdb, mseed["ws"], source="chat", status="processing", extraction=False)
 
     data = _extract(client, meeting)
 
-    assert mdb.get(Extraction, data["extraction_id"]).summary_requested_at is None
+    assert mdb.get(Extraction, data["extraction_id"]).summary_requested_at is not None
     assert _claim(client) is None
+
+
+@pytest.mark.parametrize("item", [REVIEW, HOLD], ids=["review", "hold"])
+def test_meeting_with_a_pending_card_is_not_claimed(client, mdb, mseed, item):
+    extraction_id, cards = _handed_off(client, mdb, mseed["ws"], [item])
+
+    assert len(cards) == 1
+    assert _claim(client) is None
+    assert mdb.get(Extraction, extraction_id).summary_requested_at is not None
+
+
+def test_the_last_approve_or_reject_makes_the_meeting_claimable(client, mdb, mseed):
+    extraction_id, cards = _handed_off(client, mdb, mseed["ws"], [REVIEW, {**REVIEW, "task_title": "다른 일"}])
+    assert len(cards) == 2
+
+    _resolve(client, cards[0], "approved")
+    assert _claim(client) is None
+    _resolve(client, cards[1], "rejected")
+
+    assert _claim(client)["extraction_id"] == extraction_id
+
+
+def test_one_resolve_of_a_merged_card_unblocks_every_meeting_on_it(client, mdb, mseed):
+    first_id, [card] = _handed_off(client, mdb, mseed["ws"], [REVIEW])
+    merged_id, merged_cards = _handed_off(client, mdb, mseed["ws"], [{
+        "action": "merge", "target_approval_id": card, "task_title": "검토 태스크", "category": "due",
+        "due_date": "2026-12-03",
+    }], started_at=T0 + timedelta(hours=1))
+    assert merged_cards == [card]
+    assert (_claimable(mdb, first_id), _claimable(mdb, merged_id)) == (False, False)
+
+    _resolve(client, card, "approved")
+
+    assert (_claimable(mdb, first_id), _claimable(mdb, merged_id)) == (True, True)
+
+
+def test_a_revert_before_the_claim_holds_the_meeting_again(client, mdb, mseed):
+    mdb.add(MemberAlias(member_id=mseed["alice"].member_id, workspace_id=mseed["ws"], alias_text="앨리스님",
+                        alias_type="nickname", source="manual", confidence=1.0, verified=True))
+    mdb.commit()
+    extraction_id, cards = _handed_off(client, mdb, mseed["ws"], [{
+        "task_title": "자동 태스크", "task_confidence": 0.99, "assignee_raw": "앨리스님", "assignee_type": "thirdname",
+    }])
+    assert cards == [] and _claimable(mdb, extraction_id)
+    item_id = mdb.scalars(select(ExtractionItem.item_id).where(ExtractionItem.extraction_id == extraction_id)).one()
+
+    r = client.post(f"/api/v1/extractions/{extraction_id}/items/{item_id}/revert")
+    assert r.status_code == 200, r.text
+
+    assert _claim(client) is None
+
+
+def test_a_later_ready_meeting_is_claimed_while_an_earlier_one_waits(client, mdb, mseed):
+    waiting_id, _ = _handed_off(client, mdb, mseed["ws"], [REVIEW], started_at=T0)
+    ready_id, _ = _handed_off(client, mdb, mseed["ws"], [], started_at=T0 + timedelta(days=1))
+
+    assert _claim(client)["extraction_id"] == ready_id
+    assert waiting_id != ready_id
+
+
+def test_chat_meeting_is_claimed_once_an_item_is_approved(client, mdb, mseed):
+    extraction_id, [card] = _handed_off(client, mdb, mseed["ws"], [REVIEW], source="chat")
+    assert _claim(client) is None
+
+    _resolve(client, card, "approved")
+
+    assert _claim(client)["extraction_id"] == extraction_id
+
+
+def test_chat_meeting_with_only_rejected_items_is_never_claimed(client, mdb, mseed):
+    _, [card] = _handed_off(client, mdb, mseed["ws"], [REVIEW], source="chat")
+
+    _resolve(client, card, "rejected")
+
+    assert _claim(client) is None
+
+
+def test_a_pending_card_attached_between_select_and_lock_is_not_claimed(mdb, mseed):
+    """되돌리기와 합치기는 claim 이 고른 뒤 잠그기 전에도 카드를 붙일 수 있다. 잠근 뒤 다시 본다."""
+    if mdb.get_bind().dialect.name != "postgresql":
+        pytest.skip("독립 트랜잭션은 PostgreSQL 에서만 확인한다")
+    meeting, extraction = _meeting(mdb, mseed["ws"])
+    task = mseed["tasks"][0]
+    item = ExtractionItem(extraction_id=extraction.extraction_id, action="update", task_title=task.title,
+                          task_id=task.task_id)
+    card = ApprovalRequest(workspace_id=mseed["ws"], type="task_update", payload="{}")
+    mdb.add_all([item, card])
+    mdb.commit()
+    item_id, card_id = item.item_id, card.approval_id
+    attached = []
+
+    def attach_card(conn, cursor, statement, parameters, context, many):
+        if (attached or not statement.lstrip().startswith("SELECT") or "FROM meeting" not in statement
+                or "FOR UPDATE" not in statement):
+            return
+        attached.append(True)
+        with Session(mdb.get_bind()) as writer:
+            writer.execute(update(ExtractionItem).where(ExtractionItem.item_id == item_id).values(approval_id=card_id))
+            writer.commit()
+
+    event.listen(mdb.get_bind(), "before_cursor_execute", attach_card)
+    try:
+        claim = summary.claim_next(mdb)
+    finally:
+        event.remove(mdb.get_bind(), "before_cursor_execute", attach_card)
+    mdb.rollback()
+
+    assert attached
+    assert claim is None
 
 
 def test_handoff_does_not_mark_meeting_without_sources(client, mdb, mseed):

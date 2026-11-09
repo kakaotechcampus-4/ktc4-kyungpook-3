@@ -63,11 +63,22 @@ def _extraction(db, meeting, **fields):
     return row
 
 
+def _forged_claim(db, extraction):
+    """승인 게이트와 무관하게 연결을 보려고 claim 이 쓰는 임대를 직접 쓴다. 게이트는 test_summary_queue.py 가 잰다."""
+    token = "forged-claim-token"
+    workspace = db.get(Workspace, extraction.meeting.workspace_id)
+    extraction.summary_requested_at = extraction.summary_requested_at or T0
+    extraction.summary_attempts += 1
+    extraction.summary_claimed_at = datetime.now(timezone.utc)
+    extraction.summary_claim_token_hash = summary._token_hash(token, workspace.identity_epoch)
+    db.commit()
+    return token
+
+
 def _save(db, meeting, topics=(), *, extraction=None, **fields):
     row = extraction or _extraction(db, meeting, summary_requested_at=T0)
     body = {"model_name": "m", "overview": "핵심", "key_points": ["하나"], "topics": list(topics), **fields}
-    claim = summary.claim_next(db, only=[row.extraction_id])
-    body["claim_token"] = claim.claim_token
+    body["claim_token"] = _forged_claim(db, row)
     summary.save_summary(db, row.extraction_id, SummaryWriteRequest(**body))
     db.commit()
     return row
