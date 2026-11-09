@@ -281,11 +281,28 @@ develop `92f511bb`(PR 3 #597 병합 뒤)에서 `feature/348-message-schema` 로 
   - `entities/message/api/messageQueries.test.ts`·`entities/notification/api/notificationApi.test.ts`: 목록의 모르는 보낸 쪽이 캐시에 들어가지 않고 한 번만 요청, 답장 고르기·시각 옮기기·재촉 만들기·알림 목록·푸시 공개키의 경로.
   - `features/message-action/model/useMessageAction.test.tsx`: 태스크 빼기 응답을 읽지 못하면 실패 없이 토스트, `새로고침` 이 메시지 key 를 무효화.
   - `app/messageInvalidResponse.test.tsx`(RTL): 대화·목록의 안내와 다시 시도, 안내 뒤 재요청 없음, 다시 시도로 복구. 모르는 문구 출처 표시. 알림 종의 안내.
-  - 메시지 화면은 대화 신호 소켓이 열리면 목록·대화를 한 번 다시 받는다(`opened`). 그래서 「재시도 없음」은 그 받기가 끝난 뒤 요청 수가 그대로인지로 본다.
+  - 처음에는 대화 신호 소켓이 열릴 때(`opened`)의 받기를 허용하고 그 뒤 요청 수만 봤다. 리뷰 반영에서 그 받기도 막고 요청 한 번인지 본다(아래).
   - 새 동작을 보는 일곱 경우(RTL 넷, 훅 하나, 알림 api 둘)는 develop 코드로 먼저 실패를 봤다.
   - 알림 mapper 의 「잘못된 날짜」 테스트는 스키마 테스트로 옮겼다.
 - 초기 chunk(develop `92f511bb` 와 같은 방식): 원본 975,603 → 978,206 B(+2,603 B, +0.27%), gzip 306,320 → 307,311 B(+991 B, +0.32%). 메시지·알림 스키마 코드다(index chunk +2,266 B, task chunk +232 B). zod 핵심 chunk 크기는 같아 새 zod 클래스는 없다(판별 유니온은 PR 1 의 기록 칸이 이미 쓴다). 파일 35 → 36 개는 `unknownValue` 가 162 B chunk 로 갈라진 것이다.
 - 브라우저 확인은 하지 않았다. 정상 응답의 사용자 경로는 그대로이고, 잘못된 응답 화면은 RTL 이 MSW 로 본다.
+
+### 리뷰 반영 (2026-11-09)
+
+Codex·Grok 독립 리뷰의 중간 2 건, 낮음 1 건을 고쳤다.
+
+- **읽지 못한 메시지·알림 조회를 스스로 다시 물었다(중간 둘, 두 리뷰, Codex 재현).** 알림 30초 polling, 받아 둔 목록·대화의 초안 10초 polling(마지막 성공 데이터만 봤다), 목록·대화·답장 고르기의 창 포커스·연결 복귀 재조회, 대화 신호 소켓의 `opened`·`thread_updated` 무효화가 `INVALID_RESPONSE` 뒤에도 같은 요청을 보냈다. PR 3 의 회의 상세에 이은 같은 실수라 조회마다 막지 않고 공용으로 막았다(D-184 「읽지 못한 조회는 스스로 다시 묻지 않는다」).
+  - `createQueryClient` 가 모든 조회의 기본 옵션을 만들 때(`defaultQueryOptions`) 간격·창 포커스·연결 복귀 값을 감싼다. 마지막 조회가 `INVALID_RESPONSE` 면 `false`, 아니면 조회가 정한 값(숫자·함수·`always`) 그대로다. TanStack 기본값 자리(`defaultOptions`)는 조회가 자기 값을 정하면 덮여, 조회가 정한 간격까지 막으려고 이 자리를 골랐다.
+  - 자동 무효화는 `hasReadableResponse` 로 읽지 못한 조회를 거른다. 대화 신호 소켓(`useMessageSignals`, 받는 중인 다시 시도도 끊지 않는다), 새 알림의 다시 받기(`useRefreshOnNotification`), 회의 정리 완료 뒤 다시 받기(`useProcessingTracker`). 다시 시도·쓰기 토스트의 `새로고침`은 거르지 않는다.
+  - PR 3 의 개별 처리를 공용으로 옮겼다. `meetingDetailQueryOptions` 의 포커스·복귀 함수와 추적기의 `refetchOnReturn` 을 지웠고 추적기는 `always` 만 정한다. 추적 판정의 `invalid`(polling 간격 없음·화면 안내)는 화면 상태라 그대로다.
+- **표시용 DM 실패 이유의 모르는 원문을 잃었다(낮음, Codex).** `dm_failure_reason` 을 `displayValue` 로 읽어 모르는 값은 `UnknownValue` 로 남는다. 화면만 서버의 `unknown` 과 같은 `이유를 알 수 없어요` 로 읽는다(`dmFailureText`). 이유가 null 인 실패는 서버의 `unknown` 이다.
+- 새·바꾼 테스트
+  - `app/messageInvalidResponse.test.tsx`: 대화(처음부터)·목록(처음부터, 받아 둔 초안 목록 뒤)·답장 고르기·알림 종에서 31초 넘게 가짜 간격 시계를 돌리고 창 포커스·연결 복귀와 그 공간 모든 대화의 `thread_updated` 신호를 지나도 그 조회의 요청 수가 그대로다(소켓 `opened` 뒤 받기도 없다). 목록과 알림은 다시 시도가 성공하면 10초·30초 간격이 다시 돈다. 답장 고르기 경우는 같은 신호로 읽을 수 있는 대화는 다시 받는지도 본다.
+  - `shared/api/queryClient.test.ts`: 조회가 정한 숫자 간격·`always` 포커스·연결 복귀를 받아 둔 데이터가 있어도 멈추고 다시 시도 성공 뒤 간격이 다시 돈다, 처음부터 읽지 못하면 함수 간격도 돌지 않는다, 다른 오류(404)는 그대로 다시 묻는다, `hasReadableResponse` 가 읽지 못한 조회를 거른다.
+  - `entities/message/model/mapper.test.ts`: 모르는 이유는 `{ unknown: 'rate_limited' }` 와 개발 경고, 서버의 `unknown`·null 은 `unknown`. `widgets/message-inbox/model/conversation.test.ts`: 모르는 이유의 말풍선 문구.
+  - `trackerOutcome.test.ts`: 지운 `refetchOnReturn` 단언을 뺐다. 회의 상세·추적기의 요청 수 테스트(`app/meetingInvalidResponse.test.tsx`·`app/meetingProcessing.test.tsx`)는 그대로 통과한다.
+  - RTL 다섯과 mapper·conversation 둘, 모두 일곱 경우는 고치기 전 코드로 먼저 실패를 봤다.
+- 검사: typecheck(직접 돌려 0 건)·lint·build 통과, 바꾼 곳 62 파일·811 건 통과, `npm run test -- --maxWorkers=1` FULL_TEST_604.
 
 ## 남은 일
 

@@ -49,11 +49,10 @@ function toDm(dto: MessageDto): DmDelivery {
   return dto.dm_status === 'failed'
     ? {
         status: 'failed',
-        // 모르는 이유는 서버의 「알 수 없음」과 같게 읽는다. 실패했다는 사실은 그대로 보인다
-        reason: fallbackValue(
+        // 모르는 이유는 받은 글자를 남긴다. 화면은 서버의 「알 수 없음」과 같은 문구로 읽고 실패했다는 사실은 그대로 보인다
+        reason: displayValue(
           dto.dm_failure_reason ?? 'unknown',
           DM_FAILURE_REASONS,
-          'unknown',
           'dm failure reason',
         ),
       }

@@ -378,10 +378,17 @@ describe('모르는 값 (#348)', () => {
     expect(console.warn).toHaveBeenCalledWith('Unknown bundle draft status: queued')
   })
 
-  it('DM 실패 이유를 모르면 이유를 알 수 없음이고, 실패라는 사실은 남는다', () => {
+  it('DM 실패 이유를 모르면 받은 글자를 남기고 서버의 알 수 없음과 구분한다. 실패라는 사실은 남는다', () => {
     expect(
       toMessage(botDto({ dm_status: 'failed', dm_failure_reason: 'rate_limited' })),
-    ).toMatchObject({ dm: { status: 'failed', reason: 'unknown' } })
+    ).toMatchObject({ dm: { status: 'failed', reason: { unknown: 'rate_limited' } } })
+    expect(console.warn).toHaveBeenCalledWith('Unknown dm failure reason: rate_limited')
+    expect(toMessage(botDto({ dm_status: 'failed', dm_failure_reason: 'unknown' }))).toMatchObject({
+      dm: { status: 'failed', reason: 'unknown' },
+    })
+    expect(toMessage(botDto({ dm_status: 'failed', dm_failure_reason: null }))).toMatchObject({
+      dm: { status: 'failed', reason: 'unknown' },
+    })
   })
 
   it('답장 경로를 모르면 웹에서 답했다고 하지 않는다', () => {

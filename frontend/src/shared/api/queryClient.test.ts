@@ -1,4 +1,11 @@
-import { CancelledError, MutationObserver } from '@tanstack/react-query'
+import {
+  CancelledError,
+  MutationObserver,
+  QueryObserver,
+  focusManager,
+  onlineManager,
+} from '@tanstack/react-query'
+import type { QueryClient } from '@tanstack/react-query'
 import { HttpResponse, delay, http } from 'msw'
 import { fail, ok } from '@/shared/mock/envelope'
 import { server } from '@/shared/mock/server'
@@ -9,6 +16,7 @@ import {
   RETRY_DELAY_MS,
   STALE_TIME,
   createQueryClient,
+  hasReadableResponse,
   isRetryableError,
   shouldRetryQuery,
 } from './queryClient'
@@ -140,5 +148,123 @@ describe('createQueryClient', () => {
     await expect(pending).rejects.toSatisfy(isCanceledError)
     await delay(RETRY_DELAY_MS + 100)
     expect(calls).toBe(1)
+  })
+})
+
+describe('읽지 못한 응답은 스스로 다시 묻지 않는다 (D-184)', () => {
+  const invalid = () => createClientError(CLIENT_ERROR_CODES.INVALID_RESPONSE, 200)
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    mounted?.unmount()
+    mounted = undefined
+    focusManager.setFocused(undefined)
+    onlineManager.setOnline(true)
+  })
+
+  let mounted: QueryClient | undefined
+  /** 창 포커스·연결 복귀를 듣는 앱의 QueryClient (QueryClientProvider 가 mount 한다) */
+  function appClient(): QueryClient {
+    mounted = createQueryClient()
+    mounted.mount()
+    return mounted
+  }
+
+  /** 차례대로 답한다. 마지막 답은 그 뒤로도 같다 */
+  function scripted(...answers: (Error | 'ok')[]) {
+    let calls = 0
+    const queryFn = () => {
+      const answer = answers[Math.min(calls, answers.length - 1)]
+      calls += 1
+      return answer === 'ok' ? Promise.resolve(calls) : Promise.reject(answer)
+    }
+    return { queryFn, calls: () => calls }
+  }
+
+  async function returnToApp() {
+    focusManager.setFocused(false)
+    focusManager.setFocused(true)
+    onlineManager.setOnline(false)
+    onlineManager.setOnline(true)
+    await delay(50)
+  }
+
+  it('조회가 정한 간격·창 포커스(always)·연결 복귀를 멈추고, 다시 시도가 성공하면 간격이 다시 돈다', async () => {
+    const probe = scripted('ok', invalid(), 'ok')
+    const observer = new QueryObserver(appClient(), {
+      queryKey: ['probe'],
+      queryFn: probe.queryFn,
+      refetchInterval: 10_000,
+      refetchOnWindowFocus: 'always',
+      refetchOnReconnect: 'always',
+    })
+    const unsubscribe = observer.subscribe(() => {})
+    await vi.waitFor(() => expect(observer.getCurrentResult().data).toBe(1))
+    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.waitFor(() => expect(observer.getCurrentResult().error).not.toBeNull())
+    // 받아 둔 데이터가 있어도 멈춘다
+    expect(observer.getCurrentResult().data).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    await returnToApp()
+    expect(probe.calls()).toBe(2)
+
+    await observer.refetch()
+    expect(probe.calls()).toBe(3)
+    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.waitFor(() => expect(probe.calls()).toBe(4))
+    unsubscribe()
+  })
+
+  it('처음부터 읽지 못하면 함수로 정한 간격도 돌지 않는다', async () => {
+    const probe = scripted(invalid())
+    const observer = new QueryObserver(appClient(), {
+      queryKey: ['probe'],
+      queryFn: probe.queryFn,
+      refetchInterval: () => 10_000,
+      staleTime: 0,
+    })
+    const unsubscribe = observer.subscribe(() => {})
+    await vi.waitFor(() => expect(observer.getCurrentResult().error).not.toBeNull())
+    await vi.advanceTimersByTimeAsync(30_000)
+    await returnToApp()
+    expect(probe.calls()).toBe(1)
+    unsubscribe()
+  })
+
+  it('다른 오류는 그대로 간격과 창 포커스로 다시 묻는다', async () => {
+    const probe = scripted(httpError(404))
+    const observer = new QueryObserver(appClient(), {
+      queryKey: ['probe'],
+      queryFn: probe.queryFn,
+      refetchInterval: 10_000,
+      staleTime: 0,
+    })
+    const unsubscribe = observer.subscribe(() => {})
+    await vi.waitFor(() => expect(probe.calls()).toBe(1))
+    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.waitFor(() => expect(observer.getCurrentResult().isFetching).toBe(false))
+    expect(probe.calls()).toBe(2)
+    await returnToApp()
+    await vi.waitFor(() => expect(probe.calls()).toBe(3))
+    unsubscribe()
+  })
+
+  it('자동 무효화는 읽지 못한 조회를 거를 수 있다', async () => {
+    const client = createQueryClient()
+    const broken = scripted(invalid())
+    const fine = scripted('ok')
+    await client.prefetchQuery({ queryKey: ['scope', 'broken'], queryFn: broken.queryFn })
+    await client.prefetchQuery({ queryKey: ['scope', 'fine'], queryFn: fine.queryFn })
+    await client.invalidateQueries(
+      { queryKey: ['scope'], predicate: hasReadableResponse },
+      { throwOnError: false },
+    )
+    await client.refetchQueries({ queryKey: ['scope'], predicate: hasReadableResponse })
+    expect(broken.calls()).toBe(1)
+    expect(fine.calls()).toBe(2)
   })
 })
