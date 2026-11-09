@@ -1,10 +1,11 @@
 """대화 신호 웹소켓(#520). 실제 경로로 소켓을 열고 실제 글 경로로 신호를 낸다.
 
 받지 말아야 할 사람은 기다리지 않는다. 뒤이어 그 사람이 받을 신호를 내고, 그것이 첫 프레임인지 본다.
-sqlite 는 StaticPool 이라 소켓 세션과 mdb 가 연결 하나를 나눠 쓰고, 소켓 세션을 닫으면 그 연결이 롤백된다. 그래서 소켓을
-열기 전과 검사가 도는 동안에는 mdb 를 커밋해 둔다.
+소켓 인증과 HTTP 쓰기는 서로 다른 세션·연결을 쓴다. sqlite 도 파일 DB로 연결을 분리해
+한 세션의 롤백이 다른 세션의 트랜잭션에 영향을 주지 않게 한다.
 """
 import asyncio
+from contextlib import contextmanager
 import re
 import signal
 import threading
@@ -28,10 +29,37 @@ ORIGIN = {"origin": "https://testserver"}
 BOT_DRAFT = "규칙 말고 AI 가 쓴 초안"
 
 
+@pytest.fixture
+def sqlite_message_url(tmp_path):
+    return f"sqlite:///{(tmp_path / 'message-socket.sqlite').as_posix()}"
+
+
 @pytest.fixture(autouse=True)
 def _socket_sessions(mdb, monkeypatch):
     # 소켓은 mdb 를 빌리지 않고 자기 세션을 연다. 운영의 SessionLocal 과 같다.
-    monkeypatch.setattr(message_socket, "SessionLocal", sessionmaker(bind=mdb.get_bind(), autoflush=False))
+    factory = sessionmaker(bind=mdb.get_bind(), autoflush=False)
+    finished = threading.Condition()
+    active = 0
+
+    @contextmanager
+    def socket_session():
+        nonlocal active
+        with finished:
+            active += 1
+        try:
+            with factory() as db:
+                yield db
+        finally:
+            with finished:
+                active -= 1
+                finished.notify_all()
+
+    monkeypatch.setattr(message_socket, "SessionLocal", socket_session)
+    yield
+    mdb.close()
+    # 취소된 소켓 task의 인증 SQL은 worker thread에서 끝난다. DB를 지우기 전에 세션 종료를 기다린다.
+    with finished:
+        assert finished.wait_for(lambda: active == 0, timeout=20), "소켓 인증 세션이 종료되지 않았다"
 
 
 @pytest.fixture(autouse=True)
