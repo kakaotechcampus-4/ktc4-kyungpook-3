@@ -14,6 +14,7 @@ from app.models import (
     Decision,
     Extraction,
     Meeting,
+    MeetingSource,
     Member,
     MemberAlias,
     MemberRole,
@@ -36,6 +37,7 @@ from app.schemas.project_map import (
     TopicTask,
 )
 from app.services import embedding, item_fate, mailer, summary
+from app.services.messages import utc
 from app.services.scheduler import WORKSPACE_TZ
 from app.services.summary_markdown import (
     BlockedTask,
@@ -232,12 +234,17 @@ def _attendees(db: Session, meeting_ids: list[str]) -> dict[str, list[str]]:
 
 
 def _head(meeting: Meeting, document: dict, attendees: list[str]) -> SummaryHead:
+    chat = meeting.source == MeetingSource.CHAT
+    start = utc(meeting.started_at).astimezone(WORKSPACE_TZ)
     return SummaryHead(
-        title=meeting.title or "회의",
+        title="일일 요약" if chat else meeting.title or "회의",
         date=summary.meeting_date(meeting.started_at),
         attendees=attendees,
         source_url=f"{mailer.app_base_url()}/workspaces/{meeting.workspace_id}/meetings/{meeting.meeting_id}",
         topics=document.get("topics", []),
+        kind="일일 요약" if chat else "회의",
+        # ended_at 은 인계 시각이라 기간의 끝은 마지막 메시지 위치(duration_ms)로 잡는다
+        period=(start, start + timedelta(milliseconds=meeting.duration_ms or 0)) if chat else None,
     )
 
 

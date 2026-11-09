@@ -591,6 +591,22 @@ def test_task_change_whose_item_is_reverted_after_the_summary_is_hidden(client, 
     assert _task_changes_shown(client, meeting) == ([], [])
 
 
+def test_daily_chat_summary_markdown_is_named_and_headed_as_a_daily_summary(client, mdb, mseed):
+    meeting = _meeting(mdb, mseed["ws"], source="chat", title="채팅 2026-11-05")
+    meeting.duration_ms = 26 * 3600 * 1000
+    mdb.commit()
+    _save(mdb, meeting)
+
+    r = client.get(f"/api/v1/meetings/{meeting.meeting_id}/summary.md")
+
+    name = quote("2026-11-05 일일 요약.md", safe="")
+    assert r.headers["content-disposition"] == f"attachment; filename=\"summary.md\"; filename*=UTF-8''{name}"
+    assert '종류: "일일 요약"' in r.text and '기간: "2026-11-05 14:00 ~ 2026-11-06 16:00"' in r.text
+    assert "# 일일 요약\n" in r.text
+    bundle = client.get(f"/api/v1/workspaces/{mseed['ws']}/project-bundle.md").text
+    assert "### 일일 요약\n\n2026-11-05 14:00 ~ 2026-11-06 16:00, 원문: " in bundle
+
+
 def test_summary_markdown_date_is_the_workspace_date(client, mdb, mseed):
     meeting = _meeting(mdb, mseed["ws"], started_at=datetime(2026, 10, 31, 15, 30, tzinfo=timezone.utc))
     _save(mdb, meeting)
