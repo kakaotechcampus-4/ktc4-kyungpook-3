@@ -264,13 +264,20 @@ def test_an_update_item_shows_only_what_that_meeting_changed():
 
 
 @pytest.mark.parametrize("source", ["discord", "chat"])
-def test_the_prompt_lists_rejected_tasks_and_forbids_writing_them_as_decided(source):
+def test_the_prompt_lists_rejected_tasks_only_as_things_not_to_state_as_decided(source):
     rejected = ["발표 자료 작성", "검색 기능 개발 (반려된 변경: 담당 윤지민)"]
     prompt, _ = build_prompt(_input(source=source, rejected_items=rejected), FULL)
-    assert "반려된 할 일\n발표 자료 작성\n검색 기능 개발 (반려된 변경: 담당 윤지민)\n" in prompt
-    assert "반려된 할 일은 정해진 일, 맡은 일, 예정된 일로 쓰지 않는다" in prompt
+    assert "정해진 일로 쓰지 않을 할 일\n발표 자료 작성\n검색 기능 개발 (반려된 변경: 담당 윤지민)\n" in prompt
+    assert "정해진 일로 쓰지 않을 할 일은 정해진 일, 맡은 일, 예정된 일로 쓰지 않는다" in prompt
     assert "schedule 의 할 일은 추출 항목에서만 가져온다" in prompt
-    assert "반려된 할 일\n없음\n" in build_prompt(_input(source=source), FULL)[0]
+    assert "정해진 일로 쓰지 않을 할 일\n없음\n" in build_prompt(_input(source=source), FULL)[0]
+
+
+@pytest.mark.parametrize("source", ["discord", "chat"])
+def test_the_prompt_forbids_reporting_handling_that_happened_after_the_meeting(source):
+    prompt, _ = build_prompt(_input(source=source, rejected_items=["발표 자료 작성"]), FULL)
+    assert "회의 뒤의 처리(승인, 반려, 보류)는 회의 기록이 아니므로 쓰지 않는다" in prompt
+    assert "논의했다는 것만 쓸 수 있다" not in prompt
 
 
 def test_the_daily_chat_prompt_has_no_discussion_and_shows_wall_clock_times():
