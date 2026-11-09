@@ -93,36 +93,48 @@ def test_learnable_alias_text_is_none_when_not_learnable(fields):
 
 @pytest.mark.parametrize(
     "raw, expected",
-    [("BE 리더가", "BE 리더"), ("환", "환"), ("팀장은", "팀장"), ("디자이너분이", "디자이너"), ("팀장님은", "팀장"),
-     ("백엔드 담당은", "백엔드 담당")],
+    [("BE 리더가", "BE 리더"), ("환", "환"), ("팀장이", "팀장"), ("팀장은", "팀장은"), ("디자이너분이", "디자이너분")],
 )
 def test_learnable_alias_text_for_thirdrole(raw, expected):
-    """역할 지목은 AI 가 역할 원문을 assignee_raw 로 보내므로(#522) 이름처럼 배운다. 원문은 다듬은 글자로 저장한다.
+    """역할 지목은 AI 가 역할 원문을 assignee_raw 로 보내므로(#522) 이름처럼 배운다. 다듬기는 이름과 같다.
 
-    역할어는 "은"·"분"도 뗀다(#607 리뷰). "팀장은"이 그대로 저장되면 다음 회의의 "팀장이"로 찾지 못한다."""
+    "은"·"분"은 떼지 않는다(저장은 좁게, #607 리뷰). "팀장은"은 다음에 "팀장이"로 오면 "팀장"을 한 번 더 배워 메워진다."""
     assert alias_learning.learnable_alias_text(_item(assignee_type="thirdrole", assignee_raw=raw)) == expected
 
 
-@pytest.mark.parametrize("raw, expected", [("하은은", "하은은"), ("옥분이가", "옥분"), ("지민분이", "지민분")])
-def test_names_keep_eun_and_bun_when_trimmed(raw, expected):
-    """이름(thirdname)은 "은"·"분"을 떼지 않는다. "하은"·"옥분"처럼 이름 끝 글자일 수 있다."""
-    assert alias_learning.learnable_alias_text(_item(assignee_type="thirdname", assignee_raw=raw)) == expected
+@pytest.mark.parametrize("raw", ["화은", "하은", "옥분", "김하은", "지은이가"])
+def test_thirdrole_trims_like_names_so_misclassified_names_are_not_cut(raw):
+    """역할로 잘못 분류된 이름(또는 배포 전 옛 카드의 추측 이름)도 이름처럼 다듬는다. "화은" → "화" 처럼 자르지 않는다."""
+    as_role = alias_learning.learnable_alias_text(_item(assignee_type="thirdrole", assignee_raw=raw))
+    as_name = alias_learning.learnable_alias_text(_item(assignee_type="thirdname", assignee_raw=raw))
+    assert as_role == as_name
+    assert as_role is not None and len(as_role) > 1
 
 
-@pytest.mark.parametrize("raw", ["팀장은", "디자이너분이", "팀장님은", "디자이너분은", "BE  리더가", "백엔드 담당은"])
-def test_role_trimmed_text_is_always_one_of_the_matching_candidates(raw):
-    """역할로 다듬은 글자도 담당자 찾기 후보 안에 있어야 다음 회의의 같은 말로 찾힌다."""
+def test_role_learned_in_eun_form_is_completed_by_the_next_form():
+    """"팀장은"으로 배운 뒤 "팀장이"로 오면 못 찾지만, 그 표현은 다시 학습 후보가 되어 "팀장"을 배운다.
+
+    "팀장이"의 찾기 후보에 "팀장은"이 없어 이미 찾히는 표현이 아니기 때문이다(alias_lookup_forms)."""
     from app.services.matching import name_candidates
 
-    assert alias_learning.trim_alias_text(raw, role=True) in name_candidates(raw)
+    learned = alias_learning.learnable_alias_text(_item(assignee_type="thirdrole", assignee_raw="팀장은"))
+    assert learned == "팀장은"
+    assert learned not in name_candidates("팀장이")
+    assert learned not in alias_learning.alias_lookup_forms("팀장이", "팀장")
+    assert alias_learning.learnable_alias_text(_item(assignee_type="thirdrole", assignee_raw="팀장이")) == "팀장"
+    # 둘 다 배운 뒤에는 어느 꼴로 와도 찾힌다
+    for later in ["팀장은", "팀장이", "팀장님", "팀장께서"]:
+        assert {"팀장은", "팀장"} & set(name_candidates(later))
 
 
-@pytest.mark.parametrize("later", ["팀장이", "팀장님", "팀장은", "팀장께서"])
-def test_role_alias_learned_from_eun_form_is_found_by_other_forms(later):
-    """"팀장은"으로 배운 별칭 "팀장"은 다음 회의의 다른 꼴로도 찾힌다."""
+@pytest.mark.parametrize("later", ["디자이너분이", "디자이너분", "디자이너님이", "디자이너가"])
+def test_role_alias_is_found_with_bun_honorific(later):
+    """"디자이너가"에서 배운 "디자이너"는 "분"을 붙인 꼴로도 찾힌다. "분"은 찾기 후보의 호칭이다(찾기는 넓게)."""
     from app.services.matching import name_candidates
 
-    assert alias_learning.trim_alias_text("팀장은", role=True) in name_candidates(later)
+    learned = alias_learning.learnable_alias_text(_item(assignee_type="thirdrole", assignee_raw="디자이너가"))
+    assert learned == "디자이너"
+    assert learned in name_candidates(later)
 
 
 def test_learnable_alias_text_keeps_names_that_only_contain_self_reference_letters():
