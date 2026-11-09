@@ -74,6 +74,8 @@ FLUSH_EVERY_S = 0.2   # 재정렬 창에 갇힌 마지막 패킷을 이 주기�
 RESUME_NOTICE = ("⚠️ 봇이 다시 시작되어 끊긴 회의의 녹음된 부분을 처리합니다. "
                  "이어서 기록하려면 `/join` 뒤 `/record` 를 실행해 주세요.")
 OUTBOX_POLL_S = 2.0        # 워커가 우편함에 쓴 알림을 채널에 올리는 주기
+# 운영 채널 글은 워커가 붙인 @everyone 만 울린다. 글에 섞인 사람·역할 멘션이 엉뚱한 사람을 부르지 않게
+OPS_MENTIONS = discord.AllowedMentions(everyone=True, roles=False, users=False, replied_user=False)
 OUTBOX_MAX_AGE_S = 1800.0  # 이보다 오래 올리지 못한 알림은 버린다. 봇이 오래 꺼져 있었으면 지난 진행은 의미가 없다
 
 
@@ -402,6 +404,7 @@ class RecordingCog(discord.Cog):
         if not box.is_dir():
             return
         held: set[str] = set()                      # 이번 바퀴에 실패해 뒤 알림을 미루는 채널
+        ops = os.environ.get("MM_OPS_CHANNEL_ID", "").strip()
         for path in sorted(box.glob("*.json")):
             try:
                 note = json.loads(path.read_text(encoding="utf-8"))
@@ -417,12 +420,14 @@ class RecordingCog(discord.Cog):
                 continue
             channel = self._channel_for({"text_channel_id": cid})
             if channel is not None:                 # 볼 수 없는 채널이면 다시 해도 같아서 버린다
-                if await self._post_note(channel, note.get("text") or "", note.get("file")) == "retry":
+                mentions = OPS_MENTIONS if ops and cid == ops else None
+                if await self._post_note(channel, note.get("text") or "", note.get("file"), mentions) == "retry":
                     held.add(cid)
                     continue
             path.unlink(missing_ok=True)
 
-    async def _post_note(self, channel, text: str, file: str | None) -> str:
+    async def _post_note(self, channel, text: str, file: str | None,
+                         mentions: discord.AllowedMentions | None = None) -> str:
         """우편함 알림 하나를 올린다. sent, drop(다시 해도 같은 거절), retry 중 하나. 첨부를 열지 못하면 글만 올린다."""
         attachment = None
         if file:
@@ -430,11 +435,12 @@ class RecordingCog(discord.Cog):
                 attachment = discord.File(file)
             except OSError as e:
                 print(f"[outbox] 첨부를 열지 못해 글만 올린다: {type(e).__name__}: {e}", flush=True)
+        kw = {"allowed_mentions": mentions} if mentions is not None else {}
         try:
             if attachment is not None:
-                await channel.send(text, file=attachment)
+                await channel.send(text, file=attachment, **kw)
             else:
-                await channel.send(text)
+                await channel.send(text, **kw)
             return "sent"
         except discord.HTTPException as e:
             if 400 <= e.status < 500 and e.status != 429:

@@ -108,3 +108,28 @@ async def test_the_command_is_registered_with_three_choices(tmp_path):
 
 async def _run_gpu(cog, ctx, verb):
     return await A.RecordingCog.gpu.callback(cog, ctx, verb)
+
+
+class SendingChannel:
+    def __init__(self, cid):
+        self.id = cid
+        self.sent = []
+
+    async def send(self, text, **kw):
+        self.sent.append((text, kw))
+
+
+async def test_ops_notes_ring_everyone_but_no_user_or_role_and_meeting_notes_stay_as_they_were(tmp_path):
+    from capture.notify import FileOutbox
+
+    cog, _ = _ctx(tmp_path)
+    ops, meeting = SendingChannel(OPS), SendingChannel(901)
+    cog.bot._channels.update({OPS: ops, 901: meeting})
+    box = FileOutbox(tmp_path / "recordings")
+    box.send(str(OPS), "@everyone ⚠️ GPU 서버를 켭니다. <@&77> <@88>")
+    box.send("901", "<@88> 회의 알림")
+    await cog._drain_outbox()
+    (text, kw), = ops.sent
+    m = kw["allowed_mentions"]
+    assert (m.everyone, m.roles, m.users, m.replied_user) == (True, False, False, False)
+    assert meeting.sent == [("<@88> 회의 알림", {})]
