@@ -589,6 +589,7 @@ def resolve_approval(
             details={"approval_id": approval_id},
         )
     member = require_pm(db, user, target.workspace_id)
+    db.refresh(target)
     source_payload = target.payload
     source_parts = json.loads(source_payload)
     source_parts = [source_parts, *(source_parts.get('merged_items') or [])]

@@ -3,6 +3,7 @@ import type { SessionDto } from '@/shared/types/api/auth'
 import type { SpeakerViewDto } from '@/shared/types/api/meeting'
 import type { MemberAliasDto, MemberDto } from '@/shared/types/api/member'
 import type { MessageSettingsDto } from '@/shared/types/api/messageSettings'
+import type { TaskDto } from '@/shared/types/api/task'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { sessionFixture } from './fixtures/auth'
 import {
@@ -149,7 +150,7 @@ export const loginLimitKey = (email: string) => email.trim().toLowerCase()
 
 /** 백엔드에서 막힘을 직접 건(applied) 열린 무응답 감시 기록에 대응한다. 막기 전 상태·사유를 든다 */
 export interface MockAutoBlock {
-  prev_status: string
+  prev_status: TaskDto['status']
   prev_blocker: string | null
 }
 
@@ -201,6 +202,16 @@ export interface MockDb {
   session: SessionDto
   authenticated: boolean
   accounts: MockAccount[]
+  withdrawals: {
+    keyHash: string
+    receipt: {
+      withdrawal_id: string
+      account_deleted_at: string
+      cleanup_status: 'pending' | 'complete'
+    }
+    checks: number
+  }[]
+  withdrawnMemberIds: string[]
   workspaces: WorkspaceDto[]
   members: MemberDto[]
   aliases: MemberAliasDto[]
@@ -244,6 +255,8 @@ export function initialDb(): MockDb {
   return {
     session: structuredClone(sessionFixture),
     authenticated: true,
+    withdrawals: [],
+    withdrawnMemberIds: [],
     accounts: [
       {
         session: structuredClone(sessionFixture),

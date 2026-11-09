@@ -76,7 +76,7 @@ export const authHandlers = [
       return fail('KAKAO_ALREADY_LINKED', '이미 다른 계정에 연결된 카카오 계정입니다.', 409)
     db.session = {
       user: {
-        user_id: `us_${String(db.accounts.length + 1).padStart(2, '0')}`,
+        user_id: `us_${String(db.accounts.length + db.withdrawals.length + 1).padStart(2, '0')}`,
         email,
         name,
         avatar_url: null,

@@ -1,8 +1,12 @@
 """봇 경로로 답장을 맡기고 판단 결과를 넣는다. 게이트·반영·승인·알림·재시도."""
 import json
+import threading
+import time
 from datetime import date, timedelta
 
 import pytest
+from sqlalchemy import event, text
+from sqlalchemy.orm import sessionmaker
 
 from app.models import (
     ApprovalRequest,
@@ -14,7 +18,7 @@ from app.models import (
     ReplyJudgmentState as S,
     TaskHistory,
 )
-from app.services import messages, replies
+from app.services import lifecycle, messages, replies
 from tests.api.test_messages_api import P, client
 from tests.api.test_replies import _remind, _reply
 from tests.api.test_reply_clock import DEADLINE, _auto_blocked
@@ -862,6 +866,66 @@ def test_submit_racing_expire_ends_one_way(mdb, mseed, two):
     [line] = mdb.query(ReplyChange).all()
     assert (state, line.outcome) in {(S.DONE, "applied"), (S.TIMED_OUT, "recorded")}
     assert mdb.query(Notification).filter(Notification.kind == "reply_unjudged").count() == (state == S.TIMED_OUT)
+
+
+def test_expire_waiting_for_submit_workspace_does_not_lock_its_judgment(mdb, mseed, two):
+    _postgres_only(mdb)
+    a, _ = two
+    message = _reply(mdb, mseed, AT)
+    item = replies.claim(mdb, AT).model_dump(mode="json")
+    body = replies.ReplyJudgmentRequest(
+        attempt=item["attempt"], changes=[_change(a, "status", "done", evidence="certain", claimed=item)],
+    )
+    message_id, task_id, workspace_id = message.message_id, a.task_id, mseed["ws"]
+    mdb.commit()
+    engine = mdb.get_bind()
+    factory = sessionmaker(bind=engine, autoflush=False)
+    expiry_ready, judgment_locked = threading.Event(), threading.Event()
+    expiry_pid, errors = [], []
+
+    def after(conn, cursor, statement, params, context, executemany):
+        if threading.current_thread() is expiry and "FROM reply_judgment" in statement and "FOR UPDATE" in statement:
+            judgment_locked.set()
+
+    def expire():
+        with factory() as db:
+            try:
+                expiry_pid.append(db.scalar(text("SELECT pg_backend_pid()")))
+                expiry_ready.set()
+                replies.expire(db, message_id, AT + replies.JUDGE_WINDOW)
+                db.commit()
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+                db.rollback()
+
+    expiry = threading.Thread(target=expire, daemon=True)
+    event.listen(engine, "after_cursor_execute", after)
+    try:
+        with factory() as submitting:
+            lifecycle.workspace(submitting, workspace_id)
+            submitting_pid = submitting.scalar(text("SELECT pg_backend_pid()"))
+            expiry.start()
+            assert expiry_ready.wait(10), "expiry did not start"
+            deadline = time.monotonic() + 10
+            with engine.connect() as observer:
+                while not judgment_locked.is_set():
+                    blockers = observer.scalar(text("SELECT pg_blocking_pids(:pid)"), {"pid": expiry_pid[0]})
+                    if submitting_pid in blockers:
+                        break
+                    assert time.monotonic() < deadline, "expiry did not reach its lock"
+                    judgment_locked.wait(0.01)
+            replies.submit(submitting, message_id, body, AT + replies.JUDGE_WINDOW)
+            submitting.commit()
+    finally:
+        expiry.join(20)
+        event.remove(engine, "after_cursor_execute", after)
+    assert not expiry.is_alive(), "expiry did not finish"
+    assert errors == []
+    mdb.expire_all()
+    assert mdb.get(ReplyJudgment, message_id).state == S.DONE
+    [line] = mdb.query(ReplyChange).all()
+    assert (line.task_id, line.outcome) == (task_id, "applied")
+    assert mdb.query(Notification).filter(Notification.kind == "reply_unjudged").count() == 0
 
 
 def test_a_card_with_status_and_scope_is_a_scope_card(mdb, mseed, two):

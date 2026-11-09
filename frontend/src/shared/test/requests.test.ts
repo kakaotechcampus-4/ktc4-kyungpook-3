@@ -33,9 +33,26 @@ it('공간 기본값은 ws_01 이고, 다른 공간의 목록 조회는 그 공�
   for (const path of [
     '/approvals?workspace_id=ws_01&status=pending',
     '/members?workspace_id=ws_01',
+    '/members?workspace_id=ws_01&include_withdrawn=true',
     '/workspaces/ws_01/integrations',
   ])
     expect(isDashboardRequest(get(path))).toBe(true)
+})
+
+it('기록용 팀원 조회도 지정 공간의 정확한 GET만 대시보드 요청으로 인정한다', () => {
+  const recordMembers = get('/members?workspace_id=ws_01&include_withdrawn=true')
+  expect(businessRequests([recordMembers])).toEqual([recordMembers])
+  expect(isDashboardRequest(get('/members?workspace_id=ws_04&include_withdrawn=true'))).toBe(false)
+  expect(
+    isDashboardRequest(get('/members?workspace_id=ws_04&include_withdrawn=true'), {
+      workspaceId: 'ws_04',
+    }),
+  ).toBe(true)
+  expect(isDashboardRequest({ ...recordMembers, method: 'POST' })).toBe(false)
+  expect(isDashboardRequest(get('/members?workspace_id=ws_01&include_withdrawn=false'))).toBe(false)
+  expect(
+    isDashboardRequest(get('/members?workspace_id=ws_01&include_withdrawn=true&extra=1')),
+  ).toBe(false)
 })
 
 it('알림 종 조회는 지금 URL 공간의 것만 업무 요청에서 뺀다 — 다른 공간의 알림 조회는 남는다', () => {

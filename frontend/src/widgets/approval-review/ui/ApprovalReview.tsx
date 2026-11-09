@@ -22,7 +22,11 @@ import type {
 } from '@/entities/approval'
 import { evidenceMoment, meetingListQueryOptions } from '@/entities/meeting'
 import type { MeetingSummary } from '@/entities/meeting'
-import { memberListQueryOptions, speakerName } from '@/entities/member'
+import {
+  memberListQueryOptions,
+  recordMemberListQueryOptions,
+  speakerName,
+} from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { taskDetailQueryOptions } from '@/entities/task'
 import {
@@ -198,6 +202,7 @@ function useMemberNames(members: readonly Member[] | undefined): ReadonlyMap<str
 interface ReviewContext {
   workspaceId: string
   members: readonly Member[] | undefined
+  recordMembers: readonly Member[] | undefined
   names: ReadonlyMap<string, string>
   meeting: MeetingSummary | undefined
   /** 합쳐진 근거의 회의를 찾는다. 아직 모르면 undefined */
@@ -215,14 +220,16 @@ function ApprovalBody({
   fillIn: boolean
 }) {
   const members = useQuery(memberListQueryOptions(workspaceId))
+  const recordMembers = useQuery(recordMemberListQueryOptions(workspaceId))
   const meetings = useQuery(meetingListQueryOptions(workspaceId))
   const memberIds = useMemo(() => (members.data ?? []).map(({ id }) => id), [members.data])
-  const names = useMemberNames(members.data)
+  const names = useMemberNames(recordMembers.data ?? members.data)
   const resolver = useApprovalResolve(workspaceId, approval.id, memberIds)
   const meetingId = approval.kind === 'unsupported' ? null : approval.meetingId
   const context: ReviewContext = {
     workspaceId,
     members: members.data,
+    recordMembers: recordMembers.data ?? members.data,
     names,
     meeting: meetings.data?.find(({ id }) => id === meetingId),
     meetings: meetings.data,
@@ -275,10 +282,21 @@ function ReviewHeader({
   const meetingTitle = meetingTitleOf(approval, context.meeting)
   const what = approval.kind === 'task_create' ? '일' : '변경'
   const replied = approval.kind === 'task_update' && approval.replyMessageId !== null
-  const sender = speakerName(context.members, approval.evidence)
+  const sender = speakerName(context.recordMembers, approval.evidence)
   return (
     <div className="flex flex-col gap-10">
       <h1 className={TITLE}>{approvalHeading(approval)}</h1>
+      {approval.requestedBy === null && approval.resolvedBy === null ? null : (
+        <p className={META}>
+          {approval.requestedBy === null
+            ? null
+            : `요청한 사람 ${context.names.get(approval.requestedBy) ?? '알 수 없는 팀원'}`}
+          {approval.requestedBy !== null && approval.resolvedBy !== null ? ' · ' : null}
+          {approval.resolvedBy === null
+            ? null
+            : `처리한 사람 ${context.names.get(approval.resolvedBy) ?? '알 수 없는 팀원'}`}
+        </p>
+      )}
       {approval.status === 'pending' ? (
         <p className={LEAD}>
           {replied ? (
@@ -361,7 +379,7 @@ function EvidenceFigure({
   gaps: readonly ApprovalMissing[]
 }) {
   const { quote, atMs } = approval.evidence
-  const speaker = speakerName(context.members, approval.evidence) ?? '알 수 없음'
+  const speaker = speakerName(context.recordMembers, approval.evidence) ?? '알 수 없음'
   const replied = approval.kind === 'task_update' && approval.replyMessageId !== null
   return (
     <figure aria-label="근거" className="flex flex-col gap-8">
@@ -707,6 +725,7 @@ function TaskCreatePending({
         <TaskCreateOverrideFields
           overrides={overrides}
           members={members}
+          retainedNames={context.names}
           disabled={resolver.pending}
           autoFocusFirstEmpty={fillIn}
           onInputChange={resolver.invalidateConfirmation}
@@ -860,6 +879,7 @@ function TaskUpdatePending({
         <TaskUpdateOverrideFields
           overrides={overrides}
           members={members}
+          retainedNames={context.names}
           disabled={resolver.pending}
           onInputChange={resolver.invalidateConfirmation}
         />

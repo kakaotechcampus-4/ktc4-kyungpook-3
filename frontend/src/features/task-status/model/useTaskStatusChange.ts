@@ -2,6 +2,7 @@ import { useIsMutating, useMutation, useMutationState, useQueryClient } from '@t
 import type { QueryClient } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
 import {
+  showTaskWriteUnconfirmed,
   taskDetailQueryOptions,
   taskHistoryQueryOptions,
   taskListQueryOptions,
@@ -12,6 +13,7 @@ import type { TaskStatus } from '@/entities/task'
 import { captureSession } from '@/entities/user'
 import { findMemberWorkspace, workspaceListQueryOptions } from '@/entities/workspace'
 import { failureNotice } from '@/shared/api/errorMessages'
+import { isInvalidResponse } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { useLivePathname } from '@/shared/lib/live-pathname'
 import { toast } from '@/shared/ui/toast'
@@ -118,12 +120,15 @@ export function useTaskStatusChange(workspaceId: string, taskId: string): TaskSt
       // 알림은 아직 이 공간의 태스크 화면에 있을 때만 — 다른 공간·다른 화면에 이전 화면의 실패를 띄우지 않는다
       const here = livePathname()
       const stillHere = here === tasksPath || here.startsWith(`${tasksPath}/`)
-      if (notice !== null && stillHere && isPmNow(queryClient, workspaceId))
-        toast.show({
-          key: `task-status-${taskId}`,
-          title: TASK_STATUS_FAILED_TITLE,
-          description: notice,
-        })
+      if (notice !== null && stillHere && isPmNow(queryClient, workspaceId)) {
+        if (isInvalidResponse(error)) showTaskWriteUnconfirmed(queryClient, workspaceId)
+        else
+          toast.show({
+            key: `task-status-${taskId}`,
+            title: TASK_STATUS_FAILED_TITLE,
+            description: notice,
+          })
+      }
       syncTask(queryClient, workspaceId, taskId)
     },
   })

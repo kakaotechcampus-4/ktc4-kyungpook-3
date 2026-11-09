@@ -18,6 +18,7 @@ export const memberFixtures: MemberDto[] = memberSeeds.map(
     discord_user_id,
     notion_name: null,
     role,
+    has_login_account: member_id === 'mb_01',
     created_at: '2026-09-01T00:00:00Z',
   }),
 )

@@ -106,14 +106,15 @@ describe.each(VIEWS)('%s 보기의 조회 상태 (AC-A-05)', (view) => {
     await waitFor(() => expect(notice()).toBeNull())
   })
 
-  it('팀원을 받지 못하면 담당자를 `담당자 없음` 이 아니라 `알 수 없는 담당자` 로 그리고 알린다', async () => {
+  it('활성·기록 팀원을 모두 받지 못하면 담당자를 `알 수 없는 담당자` 로 그리고 알린다', async () => {
     const user = userEvent.setup()
-    server.use(http.get('/api/v1/members', () => fail('INVALID_REQUEST', 'x', 400), { once: true }))
+    server.use(http.get('/api/v1/members', () => fail('INVALID_REQUEST', 'x', 400)))
     await openView(view)
-    expect(notice()).toHaveTextContent('팀원 정보를 불러오지 못했어요')
+    expect(notice()).toHaveTextContent('팀원·공동 기록 작성자 정보를 불러오지 못했어요')
     expect(screen.getAllByText(/알 수 없는 담당자/).length).toBeGreaterThan(0)
     expect(screen.queryByText(/김서연/)).toBeNull()
 
+    server.resetHandlers()
     await user.click(within(notice()!).getByRole('button', { name: '다시 시도' }))
     await waitFor(() => expect(notice()).toBeNull())
     expect(screen.getAllByText(/김서연/).length).toBeGreaterThan(0)

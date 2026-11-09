@@ -311,6 +311,7 @@ describe('설정 화면 — PM', () => {
       discord_user_id: null,
       notion_name: null,
       role: 'pm',
+      has_login_account: false,
       created_at: '2026-09-02T00:00:00Z',
     })
     renderApp(SETTINGS)

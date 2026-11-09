@@ -1,4 +1,5 @@
 import { useId, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   APPROVAL_RESOLUTION_REASONS,
   aliasToLearn,
@@ -16,7 +17,12 @@ import type {
 } from '@/entities/approval'
 import { evidenceMoment } from '@/entities/meeting'
 import type { MeetingSummary } from '@/entities/meeting'
-import { ASSIGNEE_NONE_OPTION, assigneeOptions, speakerName } from '@/entities/member'
+import {
+  ASSIGNEE_NONE_OPTION,
+  assigneeOptions,
+  recordMemberListQueryOptions,
+  speakerName,
+} from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { AliasSaveField, useApprovalResolve } from '@/features/approval-resolve'
 import type { ApprovalResolve } from '@/features/approval-resolve'
@@ -131,6 +137,14 @@ function TaskCreateCard({
   members,
   meetings,
 }: ApprovalCardProps & { approval: TaskCreateApproval }) {
+  const recordMembers = useQuery(recordMemberListQueryOptions(workspaceId))
+  const retainedNames = useMemo(
+    () =>
+      new Map(
+        (recordMembers.data ?? members ?? []).map(({ id, displayName }) => [id, displayName]),
+      ),
+    [recordMembers.data, members],
+  )
   const hold = approval.gate === 'hold'
   const memberList = useMemo(() => members ?? [], [members])
   const memberIds = useMemo(() => memberList.map(({ id }) => id), [memberList])
@@ -212,6 +226,7 @@ function TaskCreateCard({
           values={values}
           issues={issues}
           members={memberList}
+          retainedNames={retainedNames}
           editable={!resolver.pending}
           aliasText={aliasToLearn(approval, values)}
           saveAlias={saveAlias}
@@ -235,7 +250,7 @@ function TaskCreateCard({
         <div className={EVIDENCE_HEAD}>
           <span className={EVIDENCE_META}>
             전사문{atClock === null ? '' : ` ${atClock}`} ·{' '}
-            {speakerName(members, approval.evidence) ?? '알 수 없음'}
+            {speakerName(recordMembers.data ?? members, approval.evidence) ?? '알 수 없음'}
           </span>
           {approval.meetingId === null ? null : (
             <GuardedLink
@@ -292,6 +307,7 @@ interface ApprovalFieldsProps {
   values: TaskCreateFields
   issues: readonly TaskCreateIssue[]
   members: readonly Member[]
+  retainedNames: ReadonlyMap<string, string>
   editable: boolean
   /** 담당자에게 별칭으로 등록할 글자 (#523). null 이면 묻지 않는다 */
   aliasText: string | null
@@ -308,6 +324,7 @@ function ApprovalFields({
   values,
   issues,
   members,
+  retainedNames,
   editable,
   aliasText,
   saveAlias,
@@ -339,7 +356,7 @@ function ApprovalFields({
           label="담당자"
           value={values.assigneeMemberId}
           onValueChange={(assigneeMemberId) => onChange({ ...values, assigneeMemberId })}
-          options={assigneeOptions(members, values.assigneeMemberId)}
+          options={assigneeOptions(members, values.assigneeMemberId, retainedNames)}
           noneOption={ASSIGNEE_NONE_OPTION}
           placeholder={assigneeMissing ? '담당자 고르기' : undefined}
           tone={assigneeMissing ? 'blocking' : 'normal'}

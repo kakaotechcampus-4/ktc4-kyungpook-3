@@ -182,6 +182,7 @@ function addCreatedWorkspace(state: MockDb, workspace: WorkspaceDto): void {
     discord_user_id: null,
     notion_name: null,
     role: 'pm',
+    has_login_account: false,
     created_at: MOCK_NOW,
   })
   state.integrations[workspace.workspace_id] = {
@@ -955,6 +956,7 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
         workspace_id: 'ws_01',
         notion_name: null,
         role: 'pm',
+        has_login_account: true,
         created_at: '2026-09-02T00:00:00Z',
       })
       for (const { thread_id, message } of pmThreadMessages)

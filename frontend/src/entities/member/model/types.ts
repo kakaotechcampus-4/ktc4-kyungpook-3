@@ -6,6 +6,7 @@ export interface Member {
   discordUserId: string | null
   notionName: string | null
   role: Role
+  hasLoginAccount: boolean
   createdAt: string
 }
 export type AliasType = 'realname' | 'nickname' | 'mention' | 'inferred'

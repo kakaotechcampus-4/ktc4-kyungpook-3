@@ -14,14 +14,14 @@ PR #454가 카카오 버튼, `useStartKakao`·`useKakaoLink`·`kakaoLogin`, 가�
 | 이슈가 든 확인 항목 | develop 에서 본 것 | 이번에 한 일 |
 |---|---|---|
 | Google 문구 | 화면 코드에는 없다. 문서 몇 곳에 남아 있었다 | MSW 안내·디자인 시스템 버튼 표·계약 화면 표를 고쳤다. E2E 가 360·390·1280px 에서 로그인·가입 화면에 Google 문구가 없음을 본다 |
-| H-1 시안과 다른 곳 | 휴대폰 로그인이 넓은 화면 배치를 줄여 쓰고 있었다 | 사용자 결정으로 768px 미만 로그인을 H-1 배치로 바꿨다(D-184). 아래 절 |
+| H-1 시안과 다른 곳 | 휴대폰 로그인이 넓은 화면 배치를 줄여 쓰고 있었다 | 사용자 결정으로 768px 미만 로그인을 H-1 배치로 바꿨다(D-185). 아래 절 |
 | 360px 폭 | 가로 넘침은 없었다 | 360·390·1280px 캡처와 카카오 버튼 넘침 검사를 더했다 |
 | #510·#451·#554 정합 | 로고 → 랜딩(#510), 재설정 링크(#451), 429 안내(#554)가 넓은 화면에 있다 | 휴대폰 배치에서도 매스가 랜딩 링크이고, 재설정 링크는 대상·동작 그대로 자리만 옮겼고, 429 안내와 링크가 그대로 뜬다 |
 | 다섯 결과·취소·실패·대기 E2E | 새 사용자 두 갈래, 충돌, 취소, 이어진 계정 로그인이 있었다 | 실패 복귀, 대기 없는 `kakao=1` 에서 카카오로 다시 시작, 기존 계정 연결과 그 뒤 바로 로그인을 더했다 |
 | D-007 Google 부분을 대체하는 결정 | D-182(2026-11-06)가 이미 대체했고 D-007 상태가 `개정(D-182)`이다 | 새 결정을 두지 않고 D-182 에 갱신 줄을 남겼다 |
 | 계약 카카오 절 | §4.1.4 가 #427 브랜치 기준으로 적혀 있었다 | develop BE 코드와 다시 대조하고 상태·사실을 고쳤다 |
 
-## 휴대폰 로그인 H-1 (D-184)
+## 휴대폰 로그인 H-1 (D-185)
 
 사용자 결정: 휴대폰 로그인을 H-1 시안(PwaLogin, 390×844)대로 전부 바꾼다. 지킬 것은 네 가지다. 카카오 문구 유지, 숨긴 라벨의 접근성 이름 유지, 데스크톱 배치 유지, #451 재설정 링크의 대상·동작 유지.
 
@@ -42,7 +42,7 @@ PR #454가 카카오 버튼, `useStartKakao`·`useKakaoLink`·`kakaoLogin`, 가�
 - 화면 분기: [AuthShell](../../../src/widgets/auth-shell/ui/AuthShell.tsx)이 `phoneIntro` 가 있고 폭이 768px 미만(`useCompactScreen`)이면 H-1 틀을 그린다. 로그인만 [shell.tsx](../../../src/pages/login/ui/shell.tsx)에서 이 값을 준다. [LoginForm](../../../src/features/auth/ui/LoginForm.tsx)이 같은 분기로 칸·버튼·링크 줄을 바꾼다.
 - 공용 컴포넌트: [TextField](../../../src/shared/ui/text-field/TextField.tsx)에 `auth-phone` 화면군, [Button](../../../src/shared/ui/button/Button.tsx)에 `auth-phone` 크기, [AlternativeAuth](../../../src/features/auth/ui/AlternativeAuth.tsx)에 `phone`.
 - 뼈대: [AuthShellSkeleton](../../../src/widgets/auth-shell/ui/AuthShellSkeleton.tsx), [AuthFormSkeletons](../../../src/features/auth/ui/AuthFormSkeletons.tsx).
-- 결정: [D-184, D-182 갱신](../../decision/frontend-decisions.md). 계약: [§4.1.4](../../contracts/frontend-api-contract.md).
+- 결정: [D-185, D-182 갱신](../../decision/frontend-decisions.md). 계약: [§4.1.4](../../contracts/frontend-api-contract.md).
 
 ## 설계 결정
 

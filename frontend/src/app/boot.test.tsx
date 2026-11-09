@@ -43,6 +43,12 @@ describe('앱 부팅', () => {
 
     expect(log.started.filter(({ path }) => path === '/auth/me')).toHaveLength(1)
     expect(log.started.filter(({ path }) => path === '/workspaces')).toHaveLength(1)
+    expect(
+      log.started.filter(
+        ({ method, path }) =>
+          method === 'GET' && path === '/members?workspace_id=ws_01&include_withdrawn=true',
+      ),
+    ).toHaveLength(1)
     // M7 부터 대시보드는 자기 조회(태스크·승인·팀원·연동·추출)를 한다. 그 밖의 업무 요청은 없다
     expect(
       businessRequests(log.started).filter(

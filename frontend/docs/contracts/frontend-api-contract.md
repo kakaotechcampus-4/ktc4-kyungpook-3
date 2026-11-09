@@ -1,5 +1,72 @@
 # 프론트엔드 API 계약
 
+## 계정 탈퇴와 정리 상태 (#575, 2026-11-09)
+
+### 합의 상태
+
+사용자는 계정·세션과 개인 연결·프로필·별칭을 삭제하고, 다른 구성원이 남은 공동 기록은 `탈퇴한 사용자`로 보존하도록 확정했다. 마지막 PM은 권한 이전이 필요하며 유일한 활성 멤버인 공간은 기록과 함께 삭제한다. 같은 이메일·카카오로 즉시 새 계정을 만들 수 있지만 새 초대가 필요하다. AI 정리 지연 중에는 `개인정보 정리 중`, 실제 정리 확인 후에는 `탈퇴 완료`를 표시한다. 취소 유예기간은 없다.
+
+아래 HTTP 형식은 생산자·소비자를 함께 구현한 현재 규약이다. 코드·격리 검증과 운영 배포를 구분하며, 별도 파트 합의나 법률 검토를 추정하지 않는다.
+
+### 요청과 응답
+
+경로는 `/api/v1` 기준이며 기존 `{data, error}` 봉투를 사용한다.
+
+| 요청 | 권한·헤더와 동작 |
+|---|---|
+| `GET /auth/withdrawal-plan` | 본인 세션. `workspaces[{workspace_id,workspace_name,disposition}]`, `blocked_workspace_ids` 반환. disposition은 preserve, delete, transfer_pm |
+| `DELETE /auth/me` | 최초 요청은 본인 세션과 `X-Withdrawal-Key`, `X-Withdrawal-Account-ID` 필요. 실제 쿠키 계정과 expected ID를 비교하고 모든 공간 조건을 잠금 안에서 다시 검사. 성공 202 |
+| `GET /auth/withdrawals/{withdrawal_id}` | 같은 `X-Withdrawal-Key`의 소지로 자기 영수증을 200 조회. 삭제된 세션을 요구하지 않음 |
+
+DELETE와 영수증의 `data`는 `{withdrawal_id,account_deleted_at,cleanup_status}`다. account_deleted_at는 UTC 시각이며 cleanup_status는 pending 또는 complete다. User·세션·푸시·프로필 정리는 계정 트랜잭션에서 끝내고, backend와 AI 파일 정리의 실제 확인은 영수증 상태로 구분한다.
+
+FE는 crypto.getRandomValues로 만든 256비트 키를 sessionStorage에 보관한다. API는 영문·숫자·밑줄·하이픈 32~128자 형식을 받으며 원문 대신 SHA-256만 저장한다. 같은 키의 성공 재시도는 같은 영수증을 반환한다. 이전 영수증을 새 계정 로그인 뒤 다시 조회하거나 DELETE로 재요청해도 새 계정이나 그 쿠키는 지우지 않는다.
+
+| 오류 | 의미 |
+|---|---|
+| 400 `INVALID_REQUEST` | 키 누락·형식 오류 또는 최초 요청의 expected 계정 ID 누락 |
+| 401 `UNAUTHENTICATED` | 최초 요청의 세션이 없거나 만료됨. 영수증 ID·키가 맞지 않음 |
+| 409 `WITHDRAWAL_ACCOUNT_CHANGED` | 최초 요청의 쿠키 계정과 expected 계정 ID가 다름. 어느 계정도 변경하지 않음 |
+| 409 `LAST_PM_REQUIRED` | 다른 로그인 가능한 PM이 없는 공유 공간이 있음. `details.workspace_ids` 반환. 어느 공간도 부분 처리하지 않음 |
+
+계정이 없는 활성 Discord 팀원도 단독 멤버 판정에 포함한다. 계획은 예약·승인 토큰이 아니며 실제 명령이 재검사한다. FE는 `/account/withdrawal`에서 계획·PM 이전 링크·삭제 범위 확인·명령·응답 유실 재시도·정리 영수증을 표시한다. 성공 전에 브라우저 푸시 구독을 먼저 해제하지 않는다. 서버 성공 후 이전 사용자 캐시와 해당 브라우저 구독을 정리하며 다른 로그인 세대로 바뀌었으면 새 계정의 상태를 바꾸지 않는다.
+
+### 익명 기록과 범위
+
+`GET /members?workspace_id=...`의 기본 목록은 활성 팀원이다. `include_withdrawn=true`를 명시하면 영구 탈퇴의 비식별 Member도 포함한다. 기존 명단 비활성화만 된 Member는 이 옵션으로 복원하지 않는다. FE는 별도 기록용 query를 태스크·이력·승인·화자 표시에서만 사용하며 새 담당자 선택·팀 카드·초대·재촉에는 활성 목록을 사용한다.
+
+영구 탈퇴자의 대화는 PM 목록·상세·읽음에 남는다. 팀원 발신 이름은 thread.name, PM 발신 이름은 author_name의 기존 규약으로 익명 표시한다. 기존 is_deleted만 있는 명단 비활성화의 상세 200·unread 0·읽음 POST 404는 유지한다. 새 발송·프로필 수정·초대와 늦은 봇 결과로 영구 탈퇴 주체를 되살리지 않는다.
+
+정확한 소유 관계로 확인되는 구조화 이름·별칭·외부 ID와 로컬 AI 사본을 정리한다. 공동 음성·본문 전체를 임의로 익명화하거나 이미 게시된 Notion·Discord 결과를 회수했다는 뜻은 아니다. 과거 AI 자료의 소유 근거가 없어 안전하게 정리할 수 없으면 pending으로 남기며 완료를 먼저 표시하지 않는다. 파일·AI 작업 계약은 [BE 대표 계약](../../../backend/docs/contracts/backend-ai-contract.md)에 있다.
+
+## 응답 검증과 새 값 배포 순서 (#348, 2026-11-08)
+
+근거는 [이슈 #348](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/348)의 정책 결정(2026-11-05)·추가 항목(2026-11-07)과 [D-184](../decision/frontend-decisions.md)다. FE 는 성공 응답의 `data` 를 entity 경계에서 zod 스키마로 읽는다. 스키마에 맞지 않으면 `INVALID_RESPONSE` 다. entity 묶음마다 PR 을 나눠 적용하고, 이 절은 적용한 entity 를 적는다. 실 API 호출로는 확인하지 않았다. BE 응답 스키마(`backend/app/schemas/task.py`·`reply.py`)를 읽어 대조했다.
+
+### 합의된 규약
+
+- **새 값 배포 순서.** 응답에 새 enum 값(상태·종류·출처)을 더할 때는 FE 가 먼저 그 값을 받도록 배포하고, BE 가 그 뒤에 내보낸다. FE 쪽 결정이다(#348 정책 결정 3). BE 합의 여부 확인 필요.
+- 이 순서가 지켜지면 상태 판단 필드에 모르는 값이 와서 생긴 `INVALID_RESPONSE` 는 계약 위반 신호다. 표시용 분류는 모르는 값이 와도 응답이 실패하지 않고 `알 수 없는 ○○` 로 보인다. 그래도 새 값의 문구는 FE 배포 뒤에 생긴다.
+
+### 현재 구현
+
+| 응답 | FE 가 거절하는 것 (`INVALID_RESPONSE`) | FE 가 받고 따로 다루는 것 |
+|---|---|---|
+| `TaskResponse` (조회·목록·생성·`PATCH`·Notion 재시도·자동 막힘 풀기·답장 변경 되돌리기) | `status` 가 `todo`·`in_progress`·`blocked`·`done` 밖, `version` 이 정수가 아님, `meeting_deleted` 가 불리언이 아님, 그 밖의 필수 필드 누락·타입 오류. 목록은 한 건만 틀려도 전체 | `start_date` 가 없으면 `created_at` 날짜(옛 응답). `meeting_deleted` 가 없으면 지우지 않은 회의(false, #576 전 BE). 모르는 `notion_sync_status` 는 반영 상태 없음(null). `auto_blocked` 가 불리언이 아니거나 없으면 풀 수 없음(false) |
+| `TaskHistoryResponse` 목록 | 필수 필드 누락·타입 오류. 요청한 태스크가 아닌 `task_id`(`items[n].task_id`) | 모르는 `changed_field` 는 `알 수 없는 항목`, 모르는 `change_source` 는 `알 수 없는 출처` |
+| `GET /tasks/{task_id}/timeline` | 모르는 `kind`, 필수 필드 누락·타입 오류 | 답장 줄의 모르는 `field` 는 `알 수 없는 변경이에요`, 모르는 `result` 는 `알 수 없는 결과`. 종류나 결과를 모르는 줄은 읽기 전용이라 서버 `undoable` 이 true 여도 되돌리기가 없다(표시용 분류에는 행동이 없다). 아는 줄은 서버 `undoable` 을 따른다. 모르는 `channel`·`evidence_status` 는 없음(null) |
+
+- 쓰기 응답(`PATCH`·생성·Notion 재시도·자동 막힘 풀기·답장 변경 되돌리기)이 `INVALID_RESPONSE` 면 FE 는 서버에 반영됐을 수 있다고 보고 실패라 하지 않는다. 토스트 `변경 결과를 확인하지 못했어요` 와 `새로고침`(그 공간의 태스크 목록·상세·이력을 다시 받음)을 보인다. 다른 실패는 기존 문구다(D-184).
+- 오류의 `details` 는 `{entity, path}` 다(예: `{"entity": "task", "path": "items[3].status"}`). 받은 값은 넣지 않는다. 개발 모드만 콘솔에 경로와 값을 남긴다.
+- 스키마는 FE 가 읽는 필드만 본다. BE 가 필드를 더해도 실패하지 않는다. `total` 은 읽지 않는다.
+- 남은 entity(approval, meeting·minutes·extraction, message·notification, integration·invitation·workspace·member·user)는 아직 이전 방식(타입 단언과 `enumValue` 폴백)이다.
+- 근거 코드: `frontend/src/shared/api/parseResponse.ts`, `frontend/src/shared/api/unknownValue.ts`, `frontend/src/shared/types/api/task.ts`, `frontend/src/shared/types/api/reply.ts`, `frontend/src/entities/task/api/taskApi.ts`.
+
+### 합의 필요 변경
+
+- 위 배포 순서를 BE 와 합의한다(#348 정책 결정 3). 합의 여부 확인 필요.
+- BE 응답 스키마의 `status: str` 을 enum 타입으로 바꿔 OpenAPI 에 값 목록이 드러나게 해 달라(#348 정책 결정 4). `TaskFields.status`, `TaskHistoryResponse.changed_field`·`change_source`, `TimelineChange.field`·`evidence_status`, `TimelineReply.channel` 이 지금 `str` 이다. 합의 여부 확인 필요.
+
 ## 회의 삭제와 보존 태스크 (#576, 2026-11-09)
 
 ### 합의 상태
@@ -185,7 +252,7 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 | 태스크 Query | 목록 `['workspace', id, 'tasks', 'list']`, 상세 `[…, 'detail', taskId]`, 이력 `[…, 'history', taskId]`. 접두어 `taskKeys(workspaceId)`를 공유한다 | [taskApi](../../src/entities/task/api/taskApi.ts) |
 | 공간 확인 | 목록·상세·상태 변경·재시도 응답의 `workspace_id`가 요청 공간과 다르면 `WORKSPACE_MISMATCH`(kind `invalid_response`)로 던져 캐시에 성공 데이터로 넣지 않는다. 이력은 같은 태스크 상세(캐시 재사용)로 공간을 확인하고, 항목의 `task_id`가 다르면 `INVALID_RESPONSE`다 | [taskApi](../../src/entities/task/api/taskApi.ts) |
 | 상태 변경·재시도 본문 | 상태 변경은 `{status}`만, 재시도는 본문 없음. `changed_by`를 보내지 않는다 | [taskApi](../../src/entities/task/api/taskApi.ts) |
-| Task 매핑 | `version`이 정수가 아니면 `INVALID_RESPONSE`로 매핑 실패. `notionSyncStatus`는 세 값과 `null`만, 모르는 문자열은 `null`. 반영 완료 판단은 `isNotionSynced` = `synced`뿐이며 `notion_page_id` 존재로 판단하지 않는다 (§4.8-1을 대체) | [Task mapper](../../src/entities/task/model/mapper.ts), [Task DTO](../../src/shared/types/api/task.ts) |
+| Task 매핑 | `version`이 정수가 아니거나 `status`가 네 값 밖이면 응답 스키마가 거절해 `INVALID_RESPONSE`다. mapper 까지 오지 않는다(2026-11-08 #348, 맨 위 「응답 검증과 새 값 배포 순서」). `notionSyncStatus`는 세 값과 `null`만, 모르는 문자열은 `null`. 반영 완료 판단은 `isNotionSynced` = `synced`뿐이며 `notion_page_id` 존재로 판단하지 않는다 (§4.8-1을 대체) | [Task mapper](../../src/entities/task/model/mapper.ts), [Task DTO](../../src/shared/types/api/task.ts) |
 | 승인 처리 본문 | `resolveApproval`이 `planApprovalResolution` 판정을 통과한 본문만 보낸다. `resolved_by`를 보내지 않는다. `confirm_task_version`은 `task_update` 승인에서 호출자가 서버 버전(정수 ≥ 1)을 줄 때만 싣는다 | [resolveApproval](../../src/entities/approval/api/resolveApproval.ts), [판정](../../src/entities/approval/model/resolution.ts), [승인 DTO](../../src/shared/types/api/approval.ts) |
 | 409 해석 | `toApprovalResolveFailure`가 `conflict`(`taskVersion`, `conflicts[]`)와 `already_resolved`(`currentStatus`)를 구분한다. details 모양이 틀리면 null(일반 오류) | [승인 mapper](../../src/entities/approval/model/mapper.ts) |
 | 생성 승인 판정 | 제목 trim 후 1~300자(코드 포인트), 담당자는 호출자가 넘긴 현재 공간 팀원 ID 목록에 포함, 마감은 유효한 `YYYY-MM-DD`. 하나라도 아니면 승인 본문을 만들지 않고 이유 문자열을 돌려준다. 반려 본문은 `{status: "rejected"}`로 항상 만들 수 있다. 지원하지 않는 종류와 pending이 아닌 승인은 승인·반려 모두 만들지 않는다 | [판정](../../src/entities/approval/model/resolution.ts) |
@@ -420,7 +487,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 // MemberResponse
 {"member_id": "mb_01", "workspace_id": "ws_01", "display_name": "김서연",
  "discord_user_id": "1123...", "notion_name": null,
- "role": "member", "created_at": "2026-09-15T04:10:00Z"}
+ "role": "member", "has_login_account": true, "created_at": "2026-09-15T04:10:00Z"}
 // POST 요청: {workspace_id, display_name, discord_user_id?, notion_name?, role?}
 // PATCH 요청: 위 4개 모두 선택
 
@@ -433,6 +500,10 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 // UnresolvedAliasResponse — 회의에서 나왔지만 아직 팀원과 연결되지 않은 이름
 {"alias_text": "민수", "occurrences": 3, "last_seen_at": "2026-09-15T06:00:00Z"}
 ```
+
+2026-11-09 #575 구현은 `MemberResponse.has_login_account: boolean`을 추가한다. 활성 팀원에 로그인 계정이 연결됐는지 나타내며 User ID는 반환하지 않는다. FE는 `hasLoginAccount`로 옮기고, PM에게 로그인 연결된 일반 팀원의 `PM 권한 부여`를 제공한다. 기존 `PATCH /members/{id}`의 `{role:"pm"}`를 사용하며 기존 PM의 권한은 유지한다. 대기 초대의 `MEMBER_HAS_PENDING_INVITATION` 등 서버 오류는 그대로 따른다. 생산자·소비자 코드를 함께 변경한 현재 구현이며, 별도 파트 합의·병합·배포 완료 기록은 아니다.
+
+계정 영구 탈퇴용 익명 기록 주체는 기존 명단 비활성화와 구분한다. 영구 탈퇴자의 대화는 PM 목록·상세·읽음에 남고 표시명은 `탈퇴한 사용자`, `web_reply_available`은 false다. 프로필 수정·별칭 추가·초대·새 발송과 늦은 봇 결과는 거절한다. 기존 `is_deleted`만 있는 명단 비활성화의 unread 0·읽음 POST 404는 유지한다. [익명 주체 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-09-withdrawn-record-actor.md)에 첫 구현의 범위를 기록했고, 본인 탈퇴 API·화면과 기록용 목록은 위 [계정 탈퇴 규약](#계정-탈퇴와-정리-상태-575-2026-11-09)을 따른다. 실제 외부 제공자·운영 계정의 삭제를 확인한 기록은 아니다.
 
 - `alias_type` 은 `realname` \| `nickname` \| `mention` \| `inferred`, `source` 는 `manual` \| `discord_profile` \| `learned` \| `display_name`.
   **2026-11-08 코드 대조(#523, BE #463·#464):** `display_name` 은 서버가 팀원 이름과 성 뗀 이름으로 자동으로 넣는 별칭이다(확인됨, 1.0). 이름을 바꾸면 옛 이름에서 만든 `display_name` 별칭만 지워진다. 한글 디스코드 닉네임은 `discord_profile`(미확인, 0.8)로 들어간다. `learned` 는 PM 이 승인하며 배운 별칭이다(§2.5 「승인 때 별칭 학습」).
@@ -782,7 +853,7 @@ BE #464 가 병합·배포한 인터페이스다(메인 이슈 #459). 「현재 
   ~~세션이 없으므로~~ **세션은 PR #59 로 생겼지만 `tasks` · `approvals` 가 아직 쓰지 않는다.** 서버가 actor 를 유추하도록 바꿔 달라 → §4.0.
 - 되돌리기는 이미 되돌린 기록이면 409 `TASK_HISTORY_ALREADY_ROLLED_BACK`.
 - **`changed_field: "scope"` (합의됨, BE 미구현, #205).** `scope` 승인(§2.5)을 승인하면 생기는 범위 변경 이력이다. `old_value` 는 `null`, `new_value` 는 범위 변경 문장이다. 이슈는 문장의 출처를 정하지 않았고 MSW 는 payload `doc_text` 를 쓴다(합의 여부 확인 필요). 되돌릴 Task 필드가 없어 되돌리기는 400 `INVALID_REQUEST`(`되돌릴 수 없는 변경 항목입니다`)다.
-  FE 구현: 이력 매퍼가 `scope` 를 받고(모르는 값은 지금처럼 `title`), 이력 줄을 `범위 변경: <new_value>` 로 보인다. `이전 → 이후` 형식을 쓰지 않는다. FE 화면에는 이력 되돌리기 버튼이 없다.
+  FE 구현: 이력 매퍼가 `scope` 를 받고(~~모르는 값은 지금처럼 `title`~~ 2026-11-08 #348 부터 모르는 값은 `알 수 없는 항목`), 이력 줄을 `범위 변경: <new_value>` 로 보인다. `이전 → 이후` 형식을 쓰지 않는다. FE 화면에는 이력 되돌리기 버튼이 없다.
 
 **PR #55 가 바꾼 것 — 조용하지만 중요하다**
 
@@ -1251,7 +1322,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 
 **돌아갈 경로.** 로그인 화면의 회원가입 링크와 `/signup`은 `next`를 들고 있어 로그인으로 옮겨도 이어진다. 가입을 마친 새 계정은 `next`를 쓰지 않고 시작 화면으로 간다(#411, D-182).
 
-**#538 보완 (2026-11-09).** API 형태는 바꾸지 않았다. FE는 휴대폰 로그인 화면을 시안 H-1 배치로 바꿨다(D-184). 카카오 버튼 문구는 `카카오 로그인`이다(D-182). E2E에 실패 복귀, 대기 없는 `kakao=1`에서 카카오로 다시 시작, 기존 계정 연결 뒤 이어진 카카오 로그인, 360·390·1280px 화면 확인을 더했다([결과](../issues/538-kakao-login-finish/result.md)).
+**#538 보완 (2026-11-09).** API 형태는 바꾸지 않았다. FE는 휴대폰 로그인 화면을 시안 H-1 배치로 바꿨다(D-185). 카카오 버튼 문구는 `카카오 로그인`이다(D-182). E2E에 실패 복귀, 대기 없는 `kakao=1`에서 카카오로 다시 시작, 기존 계정 연결 뒤 이어진 카카오 로그인, 360·390·1280px 화면 확인을 더했다([결과](../issues/538-kakao-login-finish/result.md)).
 
 **확인하지 않은 것.** 실제 카카오 로그인, 실제 메일 수신, 실서버 왕복은 하지 않았다. BE 코드는 읽어서 대조만 했다. `Secure` 쿠키와 카카오 redirect URI, 비즈 앱 이메일 동의 설정은 배포 환경에서 확인해야 한다. 배포 순서상 BE의 새 signup이 먼저 나가면 지금 배포된 FE의 가입이 400이 되므로 FE와 함께 내보낸다.
 
@@ -1993,7 +2064,7 @@ FE 연결 (#344, 2026-11-06). 응답 타입은 [reply.ts](../../src/shared/types
 
 - 태스크 고르기. PM 이 대화를 열면 `…/attributions` 를 받는다(쿼리 키 `['workspace', id, 'messages', 'threads', thread_id, 'attributions']`, 메시지 행동이 무효화하는 `messages` 접두어 안). 팀원은 부르지 않는다. `needs_pm` 답장 아래에 후보와 `해당 없음` 라디오, `정하기` 가 있고(라디오만 옮겨서는 보내지 않는다), `resolved` 답장 아래에는 `태스크: {제목}` 또는 `해당 없음으로 정했어요` 가 붙는다([ThreadDetail](../../src/widgets/message-inbox/ui/ThreadDetail.tsx)·[AttributionPicker](../../src/widgets/message-inbox/ui/AttributionPicker.tsx)). 고르기는 메시지 쓰기 행동 `attribute` 다. 다른 쓰기처럼 세션을 잡아 끝난 세션이면 보내지 않고, 한 공간에서 한 번에 하나만 나간다. 404 `REPLY_JUDGMENT_NOT_FOUND`·409 `REPLY_ATTRIBUTION_NOT_NEEDED` 는 `이미 처리된 답장이에요. 대화를 다시 불러올게요.` 토스트 뒤 다시 받는다. 고르기를 받지 못해도 대화는 보이고 위에 다시 시도가 붙는다. 대화 목록의 `답장 확인 필요` 표시는 두지 않았다. 목록 응답에 칸이 없고 대화마다 부르면 요청이 대화 수만큼 늘어난다. PM 은 `reply_judged` 알림(`어느 태스크인지 골라 주세요`)으로 그 대화에 온다.
 - 태스크 기록. 태스크 상세의 `변경 이력` 이 `/history` 와 `/timeline` 을 함께 받아 `/timeline` 순서대로 그린다. 타임라인의 `history` 칸에는 변경자·되돌림이 없어서 같은 `history_id` 의 `/history` 행으로 채운다. 두 응답은 기존 이력 쿼리 키 `['workspace', id, 'tasks', 'history', task_id]` 하나에 둔다. 상태 변경·승인 처리가 이 키를 정확히 무효화하기 때문이다([taskApi](../../src/entities/task/api/taskApi.ts)). 답장 칸은 `{이름} 답장 · Discord|웹 · 시각`, 답장 글, 바뀐 값 줄(값과 결과 표시 `자동 반영`·`되돌림`·`승인 대기`·`승인함`·`반려함`·`반영하지 않음`·`기록함`, AI 해석)이다. `body` 가 null 이면 `답장 내용은 PM과 답장한 팀원만 볼 수 있어요.` 다. 모르는 `field` 는 `failed`, 모르는 `result` 는 `noted` 로 읽는다.
-- 되돌리기. `undoable` 이 true 인 줄에 PM 에게만 `되돌리기` 가 있다([useReplyChangeUndo](../../src/features/reply-change-undo/model/useReplyChangeUndo.ts)). 누를 때 세션을 잡고, 성공하면 응답 태스크를 상세·목록 캐시에 쓰고 `tasks` 접두어 전체(상세·목록·이력)를 무효화한다. 409 `REPLY_CHANGE_NOT_UNDOABLE` 이면 같은 무효화 뒤 `되돌리지 못했어요` 토스트다. 404 `TASK_NOT_FOUND`(보는 사이 지워짐)면 상세를 비우고 다시 받아 `이 태스크를 볼 수 없어요` 로 바꾸고, 이력을 지우고 목록을 다시 받는다.
+- 되돌리기. `undoable` 이 true 인 줄에 PM 에게만 `되돌리기` 가 있다. 줄 종류(`field`)나 결과(`result`)를 FE 가 모르면 `undoable` 과 상관없이 없다(#348)([useReplyChangeUndo](../../src/features/reply-change-undo/model/useReplyChangeUndo.ts)). 누를 때 세션을 잡고, 성공하면 응답 태스크를 상세·목록 캐시에 쓰고 `tasks` 접두어 전체(상세·목록·이력)를 무효화한다. 409 `REPLY_CHANGE_NOT_UNDOABLE` 이면 같은 무효화 뒤 `되돌리지 못했어요` 토스트다. 404 `TASK_NOT_FOUND`(보는 사이 지워짐)면 상세를 비우고 다시 받아 `이 태스크를 볼 수 없어요` 로 바꾸고, 이력을 지우고 목록을 다시 받는다.
 - 승인. 답장에서 온 `task_update` 는 `replyMessageId` 로 읽는다(`change_source` 가 `reminder_reply` 일 때만). 승인 상세는 `팀원 답장` 칸에 AI 해석(`doc_text`)과 근거 인용, `리마인드 답장 · {이름}` 을 보이고 회의 링크·회의 시각을 만들지 않는다.
 - 담당자를 찾지 못한 답장 카드(#344 사용자 결정 2026-11-06, BE #460·PR #503 구현).
   - 판별: payload 에 `reply_message_id` 가 있고, `assignee_member_id` 키가 없고, `assignee_raw` 가 비지 않은 문자열이면 이 카드다([mapper](../../src/entities/approval/model/mapper.ts)의 `assigneePick`). `category` 로 판별하지 않는다. 상태와 담당자가 섞인 카드는 `category` 가 첫 줄 기준이라 다른 값이 오기 때문이다.
@@ -2184,7 +2255,7 @@ FE 연결 (#340, 2026-11-05).
 
 ## 6. 도메인 모델
 
-화면은 DTO 를 직접 참조하지 않는다. `entities` 계층에서만 DTO 를 다루고 변환한다 (D-133, D-134).
+화면은 DTO 를 직접 참조하지 않는다. `entities` 계층에서만 DTO 를 다루고 변환한다 (D-133, D-134). 2026-11-08 부터 DTO 타입은 zod 응답 스키마에서 만들고 entity 경계에서 검증한다(D-184 가 D-134 대체, 맨 위 「응답 검증과 새 값 배포 순서」).
 `pages`·`widgets`·`features` 에서 DTO 타입을 import 하지 않으며 ESLint `no-restricted-imports` 로 강제한다.
 
 | 엔티티 | 비고 |
