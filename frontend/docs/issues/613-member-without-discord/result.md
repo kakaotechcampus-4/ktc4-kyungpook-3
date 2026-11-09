@@ -12,11 +12,13 @@
 |---|---|
 | 이름 비교 규칙 하나. 앞뒤 공백을 지우고 대소문자는 그대로다. 매칭 폼의 `reusableMember`·`findMappingIssues`·`planRow` 도 이 함수로 비교한다 | `src/entities/member/lib/memberName.ts`, `src/features/member-mapping/model/memberMapping.ts` |
 | 이름 추가 칸과 추가한 팀원 목록. 목록을 받기 전에는 `추가` 가 잠긴다. 같은 이름이면 보내지 않고 `이미 같은 이름의 팀원이 있어요.` 를 보인다 | `src/features/member-add/` |
-| 온보딩 4단계 미연결 화면에 추가 칸. `건너뛰기` 는 그대로다 | `src/widgets/onboarding/ui/MembersStep.tsx` |
+| 온보딩 4단계 미연결 화면에 추가 칸. PM 이 아닌 팀원이 있으면 버튼이 `다음`(단계 완료 저장), 없으면 `건너뛰기`(건너뜀 저장)다. 하단 `›` 도 같다 | `src/widgets/onboarding/ui/MembersStep.tsx` |
+| 팀원 목록을 받는 중에는 `추가` 만 잠근다. 받지 못하면 칸 아래에 공용 오류(`정보를 불러오지 못했어요`)와 `다시 시도` 를 보이고 추가를 잠근다. 받은 목록이 있으면 다시 받다 실패해도 막지 않는다 | `src/features/member-add/model/useMemberAdd.ts`, `ui/MemberAddForm.tsx` |
+| 추가한 팀원 이름은 띄어 쓰지 않은 긴 이름도 줄 안에서 접힌다. 추가 칸에서 한글 조합을 확정하는 Enter 는 제출하지 않는다 | `src/features/member-add/ui/MemberAddForm.tsx` |
 | 팀원 연결 창 미연결 화면 맨 위에 추가 칸. 안내와 `설정에서 Discord 연결하기` 는 그 아래다. 추가한 팀원은 팀 화면 목록에 나타나고 PM 에게 기존 `초대` 버튼이 보인다 | `src/widgets/team/ui/MemberConnectDialog.tsx` |
 | 자유 입력에 제안 목록을 붙이는 공용 칸 | `src/shared/ui/select/Autocomplete.tsx` |
 | 매칭 폼 이름 칸이 연결 안 된 일반 팀원 이름을 제안한다. PM 과 다른 줄에 적은 이름은 빠진다 | `src/features/member-mapping/model/memberMapping.ts` `suggestedMemberNames`, `ui/MemberMappingFields.tsx` |
-| `createMember` 가 취소 신호를 받는다 | `src/entities/member/api/memberMutations.ts` |
+| `createMember` 가 취소 신호를 받는다. 성공 응답을 팀원으로 바꾸지 못하면 `INVALID_RESPONSE` 로 던진다 | `src/entities/member/api/memberMutations.ts` |
 
 목록 캐시에 팀원 하나를 넣는 함수 `upsertMember` 는 매칭 저장과 이름 추가가 함께 쓰도록 `src/entities/member/lib/upsertMember.ts` 로 옮겼다.
 
@@ -27,13 +29,13 @@
 - 목록을 받기 전: `추가` 를 잠근다. 비교할 목록이 없다.
 - 막 만든 팀원이 아직 목록에 없을 때: 응답을 받자마자 목록 캐시에 넣고, 그 뒤 목록을 다시 받는다.
 - 같은 틱의 두 번 누름: mutation key 로 진행 중인 추가를 묻고 두 번째를 버린다. 추가는 한 번에 하나다.
-- 응답을 잃은 실패(네트워크·5xx·읽지 못한 응답) 뒤: 목록을 무효로 하고, 다음 추가는 보내기 전에 목록을 다시 받아 같은 이름을 다시 본다.
+- 응답을 잃은 실패(네트워크·5xx·읽지 못한 응답·알 수 없는 실패) 뒤: 목록을 무효로 하고, 다음 추가는 보내기 전에 목록을 다시 받아 같은 이름을 다시 본다. 201 인데 본문이 팀원이 아니면(예: `data: null`) 서버는 이미 만들었을 수 있다. 그래서 `createMember` 가 이것을 `INVALID_RESPONSE` 로 바꿔 이 경로를 타게 한다(리뷰 반영, 2026-11-10).
 
 다른 브라우저에서 같은 순간에 같은 이름을 추가하면 둘 다 만들어질 수 있다. 서버 제약이 없어서다.
 
 ### 쓰기 규칙
 
-#594 규칙을 따랐다. 누를 때 세션 범위를 잡고, `mutationFn` 첫 줄에서 세션을 확인하고, 요청에 그 세션의 `signal` 을 싣는다. 끝난 세션의 결과는 캐시·문구에 남기지 않고 취소는 안내하지 않는다. 응답을 읽지 못하면(`INVALID_RESPONSE`) 실패 문구 대신 `변경 결과를 확인하지 못했어요` 토스트를 보이고, `새로고침` 은 팀원 목록을 다시 받는다(D-184). member 응답은 아직 `parseResponse` 로 읽지 않는다. 그 전환은 #348 의 마지막 묶음이 한다. 지금은 공통 `request` 가 JSON 이 아닌 성공 응답을 `INVALID_RESPONSE` 로 던지는 경우에 이 안내가 나온다.
+#594 규칙을 따랐다. 누를 때 세션 범위를 잡고, `mutationFn` 첫 줄에서 세션을 확인하고, 요청에 그 세션의 `signal` 을 싣는다. 끝난 세션의 결과는 캐시·문구에 남기지 않고 취소는 안내하지 않는다. 응답을 읽지 못하면(`INVALID_RESPONSE`) 실패 문구 대신 `변경 결과를 확인하지 못했어요` 토스트를 보이고, `새로고침` 은 팀원 목록을 다시 받는다(D-184). member 응답은 아직 `parseResponse` 로 읽지 않는다. 그 전환은 #348 의 마지막 묶음(PR #634)이 한다. 지금은 공통 `request` 가 JSON 이 아닌 성공 응답을 던질 때와 `createMember` 가 받은 본문을 팀원으로 바꾸지 못할 때 이 안내가 나온다.
 
 ### Autocomplete
 
@@ -50,6 +52,7 @@
 | 자리 | 문구 |
 |---|---|
 | 추가 칸 라벨·placeholder·버튼 | 팀원 이름 · 이름 · 추가 |
+| 온보딩 4단계 미연결 버튼 | 다음(팀원이 있을 때) · 건너뛰기(없을 때) |
 | 같은 이름 | 이미 같은 이름의 팀원이 있어요. |
 | 온보딩 미연결 안내 | 디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이름으로 팀원을 추가하거나, 이전 단계에서 연결하거나, 건너뛸 수 있어요. |
 | 목록 이름(화면 낭독기) | 추가한 팀원 · 미리 추가한 팀원 |
@@ -74,11 +77,25 @@ develop(#623·#617) 을 병합한 뒤에 돌렸다.
 
 - `npm run test -- --maxWorkers=1`: 326파일 4,163개 중 1개가 실패했다. `onboardingIntegrations.test.tsx` 가 바뀌기 전 온보딩 미연결 안내 문구를 찾고 있었다. 부하가 아니라 실제 실패다. 문구를 고친 뒤 그 파일만 다시 돌려 25개가 모두 통과했다. 나머지 325파일 4,162개는 통과했다.
 - `npm run typecheck` 와 `npm run build` 는 통과했다.
-- `npm run lint`·`npm run format:check` 는 Git 제외 경로 `.verify/613/` 의 로컬 여정 스크립트만 걸렸다. 그 경로를 빼고 돌린 `npx eslint . --ignore-pattern '.verify/**'` 와 `prettier --check` 는 통과했다.
+- `npm run lint`·`npm run format:check` 는 Git 제외 경로 `.verify/` 의 로컬 파일만 걸렸다. `npx eslint . --ignore-pattern '.verify/**'` 는 통과했다. `npx prettier --check .` 가 알린 파일은 추적하지 않는 `.verify/` 파일뿐이다. 처음 기록에 쓴 `--ignore-path .verify/.prettierignore` 검사는 그 파일의 `*` 가 모든 파일을 빼서 아무것도 보지 않았다. 리뷰 반영 회차에서 이를 알고 다시 확인했다.
+
+### 리뷰 반영 (2026-11-10, PR #635)
+
+Codex·Grok 리뷰의 중간 2건과 낮음 2건, 사용자 결정 1건을 고쳤다.
+
+- 목록 첫 조회 실패: 온보딩 미연결과 팀 창 각각에서 오류와 `다시 시도` 가 보이고 다시 받으면 추가된다. 받는 중에는 `추가` 만 잠긴다(RTL).
+- 읽지 못한 201: MSW 가 팀원을 저장한 뒤 201 `{data:null,error:null}` 을 돌려주게 했다. `변경 결과를 확인하지 못했어요` 가 보이고, 같은 이름을 다시 누르면 POST 없이 `이미 같은 이름의 팀원이 있어요.` 가 보인다. POST 1회, DB 행 1개다(RTL).
+- 긴 이름: 목록 줄에 `wrap-anywhere` 를 두었다. 390 브라우저에서 띄어 쓰지 않은 86자 이름이 목록 폭 안에서 접히고 가로 넘침이 없었다.
+- 한글 조합 Enter: 조합 중 Enter 와 keyCode 229 Enter 는 제출하지 않고, 보통 Enter 는 추가한다(RTL, 실제 Safari 는 확인하지 않음).
+- 온보딩 버튼: 추가하면 `다음` 이 되고 누르면 `{step:'connect_members', action:'complete'}` 가 저장된다(RTL, 브라우저 1280·390).
+- `createMember` 정규화와 조합 가드를 하나씩 되돌리면 해당 테스트가 실패하는 것을 확인했다.
+- 바꾼 곳 테스트 `npx vitest run src/app/onboardingMembers.test.tsx src/app/team.test.tsx src/features/member-add/model/useMemberAdd.test.tsx src/app/onboardingFlow.test.tsx src/app/onboardingIntegrations.test.tsx --maxWorkers=1` 5파일 92개, `memberMapping.test.ts` 22개가 통과했다. typecheck·eslint 를 통과했다.
+- 이 회차의 전체 테스트·build 결과는 아래에 더한다.
 
 ## 제한과 남은 검증
 
 - MSW 기준이다. 실서버의 `POST /members` 는 확인하지 않았다.
 - 같은 이름 검사는 FE 만 한다. 동시에 두 곳에서 같은 이름을 추가하면 둘 다 생길 수 있다.
-- 미리 추가한 팀원을 지우는 기능은 없다. 이름을 추가해도 온보딩 버튼은 `건너뛰기` 다(#613 물어볼 것 1·2, 이번 범위 밖).
+- 미리 추가한 팀원을 지우는 기능은 없다. 팀원 삭제 BE API 가 없어 후속 #637 로 나눴다(#613 물어볼 것 2).
+- 서버가 이 경로에서 계속 실패할 때만 목록 오류가 보인다. 한 번만 실패하면 Query 가 다시 받아 오류 없이 풀린다.
 - 추가 칸에 적다 만 글자는 이탈 확인 대상이 아니다.
