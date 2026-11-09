@@ -288,7 +288,8 @@ def withdraw(db: Session, user_id: str, proof: str) -> WithdrawalResponse:
             return prior
         raise AppError(ErrorCode.UNAUTHENTICATED)
     email = user.email
-    lifecycle.identity_lock(db, lifecycle.user_identity(user))
+    for identity in lifecycle.user_identities(user):
+        lifecycle.identity_lock(db, identity)
     lifecycle.worker_gate(db)
     historical = select(Invitation.member_id).where(Invitation.accepted_user_id == user_id)
     owned = db.scalars(select(Member).where(or_(

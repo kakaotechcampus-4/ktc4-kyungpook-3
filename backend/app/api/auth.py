@@ -164,7 +164,8 @@ def _new_user(payload: SignupRequest, request: Request) -> User:
 @router.post("/signup", status_code=201, response_model=Envelope[AuthResponse])
 def signup(payload: SignupRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     user = _new_user(payload, request)
-    lifecycle.identity_lock(db, lifecycle.user_identity(user))
+    for identity in lifecycle.user_identities(user):
+        lifecycle.identity_lock(db, identity)
     conflict = _signup_conflict(db, user)
     if conflict is not None:
         raise AppError(conflict)
