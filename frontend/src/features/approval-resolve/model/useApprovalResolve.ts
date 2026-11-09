@@ -19,8 +19,9 @@ import { memberAliasesQueryOptions } from '@/entities/member'
 import { taskDetailQueryOptions, taskHistoryQueryOptions, taskKeys } from '@/entities/task'
 import { captureSession } from '@/entities/user'
 import { errorMessage } from '@/shared/api/errorMessages'
-import { isCanceledError } from '@/shared/api/errors'
+import { isCanceledError, isInvalidResponse } from '@/shared/api/errors'
 import { workspaceKey } from '@/shared/api/queryKeys'
+import { showWriteUnconfirmed } from '@/shared/ui/toast'
 
 /** 승인 처리 mutation 의 key. 셋째 칸이 승인이라 같은 승인의 진행 중 요청을 따로 센다 */
 export function approvalResolveMutationKey(workspaceId: string, approvalId: string) {
@@ -44,7 +45,9 @@ export type ApprovalResolveProblem =
   | { kind: 'error'; message: string }
 
 export function toApprovalResolveProblem(error: unknown): ApprovalResolveProblem | null {
-  if (error === null || error === undefined || isCanceledError(error)) return null
+  // 응답을 읽지 못한 실패는 토스트가 알린다. 처리됐을 수 있어 카드에 실패로 보이지 않는다 (#348)
+  if (error === null || error === undefined || isCanceledError(error) || isInvalidResponse(error))
+    return null
   if (error instanceof ApprovalNotResolvableError) return { kind: 'error', message: error.reason }
   const failure = toApprovalResolveFailure(error)
   if (failure?.kind === 'conflict')
@@ -120,6 +123,10 @@ export function useApprovalResolve(
     },
     onError: (failure, { isCurrentSession }) => {
       if (!isCurrentSession()) return
+      if (isInvalidResponse(failure)) {
+        showWriteUnconfirmed(() => syncAfterResolve(queryClient, workspaceId))
+        return
+      }
       const problem = toApprovalResolveProblem(failure)
       if (problem?.kind === 'already_resolved') syncAfterResolve(queryClient, workspaceId)
       // 본 뒤 바뀐 카드는 새로 받아야 화면이 비교할 수 있다. 목록 카드와 상세가 모두 이 key 아래다

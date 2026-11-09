@@ -1,9 +1,9 @@
 import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
+import { parseResponse } from '@/shared/api/parseResponse'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { workspaceKey } from '@/shared/api/queryKeys'
-import type { ApprovalDto } from '@/shared/types/api/approval'
-import type { ListDto } from '@/shared/types/api/envelope'
+import { approvalListSchema } from '@/shared/types/api/approval'
 import { toApproval } from '../model/mapper'
 
 /**
@@ -15,10 +15,14 @@ export function pendingApprovalListQueryOptions(workspaceId: string) {
   return queryOptions({
     queryKey: workspaceKey(workspaceId, 'approvals', { status: 'pending' }),
     queryFn: async ({ signal }) => {
-      const { items } = await request<ListDto<ApprovalDto>>('/approvals', {
-        params: { workspace_id: workspaceId, status: 'pending' },
-        signal,
-      })
+      const { items } = parseResponse(
+        approvalListSchema,
+        await request<unknown>('/approvals', {
+          params: { workspace_id: workspaceId, status: 'pending' },
+          signal,
+        }),
+        'approval',
+      )
       return items.map(toApproval)
     },
     staleTime: STALE_TIME.default,
