@@ -126,6 +126,7 @@ export const withdrawalHandlers = [
     )
     for (const invitation of db.invitations)
       if (invitation.invited_by_user_id === userId) invitation.invited_by_user_id = null
+    db.consents = db.consents.filter((consent) => consent.user_id !== userId)
     db.accounts = db.accounts.filter((account) => account.session.user.user_id !== userId)
     db.passwordReset.tokens = db.passwordReset.tokens.filter((token) => token.email !== email)
     db.passwordReset.outbox = db.passwordReset.outbox.filter((mail) => mail.to !== email)

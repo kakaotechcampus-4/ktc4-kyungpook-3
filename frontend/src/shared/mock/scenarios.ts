@@ -37,6 +37,13 @@ import { mergeIntoApproval } from './approvalMerge'
  */
 
 export const MOCK_SCENARIOS = [
+  'consent-required',
+  'consent-signup',
+  'consent-agreed',
+  'consent-mismatch',
+  'consent-read-error',
+  'consent-write-error',
+  'consent-response-lost',
   'signed-out',
   // #457 비로그인이고 pm@example.com 이 로그인 시도 제한에 걸려 있다. 맞는 비밀번호도 429 다
   'login-rate-limited',
@@ -660,6 +667,28 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
   if (isPasswordResetScenario(scenario)) return createPasswordResetScenarioDb(scenario)
   const state = initialDb()
   switch (scenario) {
+    case 'consent-required':
+    case 'consent-signup':
+    case 'consent-agreed':
+    case 'consent-mismatch':
+    case 'consent-read-error':
+    case 'consent-write-error':
+    case 'consent-response-lost':
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.consentVersions = { terms: 'test-terms-v1', privacy: 'test-privacy-v1' }
+      if (scenario === 'consent-signup') state.authenticated = false
+      if (scenario === 'consent-mismatch') state.consentVersions.terms = 'server-new-terms'
+      if (scenario === 'consent-read-error') state.consentFailure = 'read'
+      if (scenario === 'consent-write-error') state.consentFailure = 'write'
+      if (scenario === 'consent-response-lost') state.consentFailure = 'response-lost'
+      if (scenario === 'consent-agreed')
+        state.consents = (['terms', 'privacy'] as const).map((kind) => ({
+          user_id: state.session.user.user_id,
+          kind,
+          version: state.consentVersions[kind],
+          agreed_at: MOCK_NOW,
+        }))
+      break
     case 'signed-out':
       state.authenticated = false
       break

@@ -77,7 +77,7 @@ export function LoginForm() {
   const onSubmit = submit(async (values) => {
     setFailure(null)
     try {
-      await enterSession(await login(values))
+      await enterSession({ session: await login(values), acceptance: null })
     } catch (error) {
       const message = applyServerError(error, setError, {})
       setFailure(message === null ? null : loginFailure(error, message))
