@@ -20,7 +20,7 @@
   - [합본](../../../src/features/project-bundle-download): 맵 아래에 시작일·종료일과 `프로젝트 합본 내려받기`, 안내 `팀원 발언 요약이 들어 있어요. 외부 AI 에 첨부할 때 주의해 주세요.` 기본은 전체 기간이다. 시작일이 늦으면 보내지 않고 서버 400 도 같은 문구다. 형식이 틀린 날짜도 보내지 않는다.
 - **회의록 `summary_status`.** 요약이 있으면 상태와 무관하게 보인다. 없으면 `pending` 은 `요약을 만드는 중이에요`, `none` 은 `요약이 없어요` 다. 재시도 단추는 없다. [타입](../../../src/entities/minutes/model/types.ts)의 「실 API 에서는 항상 null」 주석과 [매퍼 테스트](../../../src/entities/minutes/model/mapper.test.ts) 설명을 바꿨다.
 - **모르는 `summary_status`.** 받은 글자를 보존하고(`UnknownValue`) `none` 과 같은 중립 문구를 보인다. 이 값은 빈 요약 칸의 문구만 고르는 표시용이라 응답을 거절하면 전사문까지 못 보게 된다. 중립 문구는 「만드는 중」 도 「없이 끝났다」 도 단정하지 않는다. #605 의 승인 대기 값이 먼저 오더라도 화면이 깨지지 않는다. 키가 없으면 `none` 이다.
-- **잘못된 응답의 재요청.** `INVALID_RESPONSE` 는 이미 공용 Query 재시도에서 빠진다(`isRetryableError` 는 네트워크·408·5xx 만). 개별 차단은 넣지 않았다. #604 와 겹치지 않는다.
+- **잘못된 응답의 재요청.** `INVALID_RESPONSE` 는 공용 Query 재시도에서 빠진다(`isRetryableError` 는 네트워크·408·5xx 만). 창 포커스·연결 복귀·간격 재조회는 #604 가 `createQueryClient` 에서 공용으로 막는다. develop 을 병합해 맵·주제·회의록 조회가 그대로 그 차단을 쓴다. 조회마다 막은 곳은 없다. 맵 화면 테스트가 모르는 노드 종류 뒤 창 포커스·연결 복귀에 다시 묻지 않는 것을 본다(공용 차단을 빼면 실패하는 것을 확인했다).
 - **MSW.** [주제·결정·선 픽스처](../../../src/shared/mock/fixtures/projectMap.ts), [맵 핸들러](../../../src/shared/mock/handlers/projectMap.ts), [Markdown 핸들러](../../../src/shared/mock/handlers/markdownFiles.ts). 시나리오 `project-map-empty`·`project-map-no-topics`·`project-map-large`(주제 40·태스크 510·선 약 1,184). 모의 db 판은 22 다.
 
 ## 요청 조건 확인
@@ -48,7 +48,12 @@
 
 ### 전체 검사
 
-(전체 검사 뒤 채운다)
+2026-11-09 커밋 `4bc441f3` 기준, 감독 세션의 차례에 맞춰 돌렸다.
+
+- `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm run build`: 통과.
+- `npm run test -- --maxWorkers=1`: 313개 파일 중 312 통과, 테스트 4,027개 중 4,026 통과, 1 실패(2,217초). 실패는 `src/app/meetingProcessing.test.tsx` 의 헤더 탭 이름 기대값(다섯 개)이다. 부하가 아니라 탭이 여섯 개가 된 실제 차이라 기대값을 고쳤고 그 파일만 다시 돌려 40개 통과했다.
+- 같은 이유로 E2E 의 헤더 탭 기대값(`e2e/layout.e2e.ts`, `e2e/select-switch.e2e.ts`)도 고쳤다. 헤더 한 줄 검사를 768·1024·1280·1440px 에서, 키보드 순서 검사를 돌려 모두 통과했다. 768px 에서도 여섯 탭과 두 메뉴가 한 줄이다.
+- 2026-11-10 origin/develop(#604 포함)을 병합했다. 충돌은 없었다. 병합 뒤 typecheck·lint·format:check·build 가 통과했고, 바꾼 곳의 테스트 59개 파일 939개가 통과했다. 전체 테스트는 병합 뒤 다시 돌리지 않았다.
 
 ## 남은 일
 
