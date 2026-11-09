@@ -29,12 +29,23 @@ git() {
       esac ;;
   esac
 }
+# 실제 서버처럼 동작한다: 없는 디렉터리에는 tee·install 이 실패한다. FAIL_SUDO 는 "install -m" 처럼 앞 두 낱말이 같은 호출을 실패시킨다
 sudo() {
   echo "sudo $*" >> "$CALLS"
-  if [ "$1" = tee ]; then
-    mkdir -p "$(dirname "$2")"
-    cat > "$2"
+  if [ -n "$FAIL_SUDO" ] && [ "$1 $2" = "$FAIL_SUDO" ]; then
+    echo "sudo: $FAIL_SUDO 실패" >&2
+    return 1
   fi
+  case "$1" in
+    mkdir) shift; mkdir "$@" ;;
+    install)
+      dest="${@: -1}"
+      [ -d "$dest" ] || { echo "install: $dest: 디렉터리가 아니다" >&2; return 1; }
+      cp "${@:4:$#-4}" "$dest" ;;
+    tee)
+      [ -d "$(dirname "$2")" ] || { echo "tee: $2: 디렉터리가 없다" >&2; return 1; }
+      cat > "$2" ;;
+  esac
   return 0
 }
 systemctl() {
@@ -61,13 +72,20 @@ def _bash() -> str | None:
     return shutil.which("bash")
 
 
-def _run(tmp_path: Path, *, installed: bool, units_changed: bool, timer_active: bool = True, mode: str = "changed"):
+def _run(
+    tmp_path: Path, *, installed: bool, units_changed: bool, timer_active: bool = True, mode: str = "changed",
+    fail_sudo: str = "",
+):
     bash = _bash()
     if not bash:
         pytest.skip("bash 가 있어야 배포 스크립트를 돌린다")
     repo = tmp_path / "repo"
     (repo / ".git").mkdir(parents=True)
     (repo / ".git" / "mm-deployed-sha").write_text("old-success\n")
+    units = repo / "ai" / "deploy" / "systemd"
+    units.mkdir(parents=True)
+    (units / "mm-chat-poll.service").write_text("new service\n")
+    (units / "mm-chat-poll.timer").write_text("new timer\n")
     systemd = tmp_path / "systemd"
     systemd.mkdir(exist_ok=True)
     if installed:
@@ -89,6 +107,7 @@ def _run(tmp_path: Path, *, installed: bool, units_changed: bool, timer_active: 
     env.update(
         BASH_ENV=fixture.as_posix(), CALLS=calls.as_posix(),
         UNITS_CHANGED="1" if units_changed else "0", TIMER_ACTIVE="1" if timer_active else "0",
+        FAIL_SUDO=fail_sudo,
     )
     done = subprocess.run(
         [bash, str(script), "old-checkout", mode], env=env,
@@ -101,7 +120,15 @@ def test_installed_and_units_changed_updates_units_and_rearms_timer(tmp_path):
     done, calls, systemd, repo = _run(tmp_path, installed=True, units_changed=True)
 
     assert done.returncode == 0, done.stderr
-    assert "sudo install -m 0644 ai/deploy/systemd/mm-chat-poll.service ai/deploy/systemd/mm-chat-poll.timer" in calls
+    assert (
+        "sudo install -m 0644 ai/deploy/systemd/mm-chat-poll.service ai/deploy/systemd/mm-chat-poll.timer "
+        f"{systemd.as_posix()}/"
+    ) in calls
+    # 유닛이 목적지에 실제로 놓였다
+    assert (systemd / "mm-chat-poll.service").read_text().strip() == "new service"
+    assert (systemd / "mm-chat-poll.timer").read_text().strip() == "new timer"
+    # drop-in 디렉터리는 스크립트가 만들어야 한다. 스텁의 tee 는 없는 디렉터리에서 실패한다
+    assert f"sudo mkdir -p {systemd.as_posix()}/mm-chat-poll.service.d" in calls
     assert f"sudo tee {systemd.as_posix()}/mm-chat-poll.service.d/10-user.conf" in calls
     drop_in = systemd / "mm-chat-poll.service.d" / "10-user.conf"
     assert drop_in.read_text() == "[Service]\nUser=ubuntu\n"
@@ -161,3 +188,13 @@ def test_mode_all_updates_units_even_when_unchanged(tmp_path):
     assert "sudo install -m 0644 ai/deploy/systemd/mm-chat-poll.service ai/deploy/systemd/mm-chat-poll.timer" in calls
     assert "sudo systemctl daemon-reload" in calls
     assert "sudo systemctl restart mm-chat-poll.timer" in calls
+
+
+@pytest.mark.parametrize("failing", ["install -m", "systemctl daemon-reload", "systemctl restart"])
+def test_failed_unit_update_fails_deploy_and_keeps_base_commit(tmp_path, failing):
+    done, calls, _, repo = _run(tmp_path, installed=True, units_changed=True, fail_sudo=failing)
+
+    assert done.returncode != 0
+    assert f"sudo {failing}" in calls
+    # 기준 커밋을 올리지 않아 다음 배포가 같은 구간을 다시 비교한다
+    assert (repo / ".git" / "mm-deployed-sha").read_text().strip() == "old-success"
