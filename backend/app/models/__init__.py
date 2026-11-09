@@ -80,9 +80,12 @@ from app.models.models import (
     ReplyJudgmentState,
     ThreadMessage,
     Decision,
+    DecisionState,
     Topic,
+    TopicAlias,
     TopicItem,
     TopicMeeting,
+    TopicTaskDetach,
 )
 
 __all__ = [
@@ -100,6 +103,6 @@ __all__ = [
     "Reminder", "ReminderBundle", "ReminderKind", "ReminderOrigin", "ReminderStatus", "ReplyChannel", "ThreadMessage",
     "Notification", "PushStatus", "PushSubscription", "ReminderWatch", "SchedulerSuggestion", "WatchState",
     "ReplyChange", "ReplyChangeField", "ReplyChangeOutcome", "ReplyJudgment", "ReplyJudgmentState",
-    "Decision", "Topic", "TopicItem", "TopicMeeting",
+    "Decision", "DecisionState", "Topic", "TopicAlias", "TopicItem", "TopicMeeting", "TopicTaskDetach",
     "PmAlertMethod", "WorkspaceMessageSettings", "WorkspaceAsrTerm", "AsrTitleQueue",
 ]

@@ -497,6 +497,9 @@ class Meeting(Base):
         String(36), ForeignKey('meeting.meeting_id'), nullable=True, unique=True
     )
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # 팀원이 처음 고치기 전의 제목과 고친 시각. 제목 없던 회의를 고친 것도 가리려고 시각을 따로 둔다
+    title_original: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    title_edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default=MeetingSource.DISCORD)
     status: Mapped[str] = mapped_column(String(32), default=MeetingStatus.CREATED, index=True)
 
@@ -576,7 +579,11 @@ class MeetingUpload(Base):
 
 
 class Source(Base):
-    """STT 전사의 발화 한 줄. AI의 TranscriptSegment 하나가 한 행이다."""
+    """STT 전사의 발화 한 줄. AI의 TranscriptSegment 하나가 한 행이다.
+
+    text 는 원문이라 사람이 고치지 않고 승인 근거 인용이 읽는다. 팀원이 고친 문장은 text_edit 에 두고 회의록과 요약 재료는
+    shown_text 로 읽는다. 제목처럼 그 자리에서 고치지 않는 것은 근거 인용 때문이다.
+    """
 
     __tablename__ = "source"
     __table_args__ = (
@@ -599,9 +606,14 @@ class Source(Base):
     start_ms: Mapped[int] = mapped_column(Integer)
     end_ms: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text)
+    text_edit: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     meeting: Mapped["Meeting"] = relationship(back_populates="sources")
+
+    @property
+    def shown_text(self) -> str:
+        return self.text_edit if self.text_edit is not None else self.text
     evidences: Mapped[list["Evidence"]] = relationship(
         back_populates="source", cascade="all, delete-orphan"
     )
@@ -1482,11 +1494,43 @@ class Topic(Base):
     workspace_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
     )
-    # 처음 만든 표기를 유지한다
+    # AI 는 처음 만든 표기를 유지하고 바꾸지 않는다. 바꾸는 것은 팀원뿐이다
     name: Mapped[str] = mapped_column(String(100))
     name_key: Mapped[str] = mapped_column(String(100))
     description: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # 팀원이 고친 시각. 있으면 재요약이 이 주제를 지우지 않고 회의 연결도 둔다
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TopicAlias(Base):
+    """이름을 바꾸거나 합쳐서 사라진 주제 키. 재요약이 옛 이름을 내도 지금 주제로 간다."""
+
+    __tablename__ = "topic_alias"
+
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), primary_key=True
+    )
+    name_key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    topic_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("topic.topic_id", ondelete="CASCADE"), index=True
+    )
+
+
+class TopicTaskDetach(Base):
+    """팀원이 주제에서 뗀 태스크. 항목 연결(TopicItem)은 그대로 두고 읽을 때 가려서 재요약이 다시 이어도 보이지 않는다."""
+
+    __tablename__ = "topic_task_detach"
+
+    topic_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("topic.topic_id", ondelete="CASCADE"), primary_key=True
+    )
+    task_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("task.task_id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
 
 
 class TopicMeeting(Base):
@@ -1515,8 +1559,14 @@ class TopicItem(Base):
     )
 
 
+class DecisionState(StrEnum):
+    VALID = "valid"
+    INVALID = "invalid"     # 유효하지 않다고 표시했다. 요약본에 표시와 함께 남는다
+    REMOVED = "removed"     # 지웠다. 재요약이 되살리지 않게 행은 남긴다
+
+
 class Decision(Base):
-    """회의의 결정 한 줄. 요약 JSON 의 사본이 그 회의의 기록이고 이 행은 유효한 결정을 찾는 색인이다."""
+    """회의의 결정 한 줄. JSON 은 AI 의 기록이고, 결정 문장·상태와 주제 이름은 행이 정본이다. 보여 줄 때 documents() 가 합친다."""
 
     __tablename__ = "decision"
 
@@ -1539,3 +1589,6 @@ class Decision(Base):
         String(36), ForeignKey("decision.decision_id", ondelete="SET NULL"), nullable=True, index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    state: Mapped[str] = mapped_column(String(16), default=DecisionState.VALID, server_default=DecisionState.VALID)
+    # 팀원이 고친 시각. 회의에 하나라도 있으면 재요약이 그 회의의 결정을 모두 그대로 둔다
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
