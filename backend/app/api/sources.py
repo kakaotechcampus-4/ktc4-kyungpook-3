@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_service_token
 from app.core.database import get_db
+from app.services.meeting_deletion import require_live_meeting
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Meeting, MeetingSource, MeetingStatus, Source
+from app.models import MeetingSource, MeetingStatus, Source
 from app.schemas.source import TranscriptCreateRequest, TranscriptCreateResponse
 from app.services.matching import active_members_by_id, resolve_speaker
 
@@ -76,14 +77,7 @@ def create_sources(
     """
     # 회의 행을 커밋까지 잠근다. 같은 회의로 동시에 온 요청은 차례로 처리되어 duration_ms를 서로
     # 덮어쓰지 않고, 상태를 확인한 뒤 PATCH /fail이 끼어들어 failed 회의에 발화가 저장되지도 않는다.
-    meeting = db.execute(
-        select(Meeting)
-        .where(Meeting.meeting_id == meeting_id)
-        .with_for_update()
-        .execution_options(populate_existing=True)
-    ).scalar_one_or_none()
-    if meeting is None:
-        raise AppError(ErrorCode.MEETING_NOT_FOUND, details={"meeting_id": meeting_id})
+    meeting = require_live_meeting(db, meeting_id, lock=True)
     if payload.source == "chat" and meeting.source != MeetingSource.CHAT:
         # 24시간 상한은 초·ms 를 잘못 보낸 버그를 막는 장치다. 요청 필드 하나로 우회하지 못하게 한다
         raise AppError(
@@ -130,6 +124,12 @@ def create_sources(
         }
         for seg in sorted(payload.segments, key=lambda s: s.seq)
     ]
+    from app.services import lifecycle
+    if lifecycle.workspace(db, meeting.workspace_id).identity_epoch:
+        for row in rows:
+            if row["member_id"] is None:
+                row["speaker_discord_user_id"] = None
+                row["speaker_name"] = None
     inserted = _insert_skipping_existing(db, rows) if rows else 0
     # 이번 요청이 아니라 저장된 발화 전체로 센다. 나눠 보내도 맞고, 재전송으로 줄어들지 않는다.
     # 마지막 seq가 아니라 최댓값인 이유는 겹쳐 말하면 앞 발화가 더 늦게 끝날 수 있어서다.

@@ -180,6 +180,7 @@ def test_workspace_meeting_list_reads_source_once(client, db, seed):
     ("source", "stage", "visible"),
     [
         ("manual_upload", "speaker_assignment_expired", True),
+        ("manual_upload", "upload_unclaimed", True),
         ("manual_upload", "diarize", False),
         ("manual_upload", "STT", False),
         ("manual_upload", None, False),
@@ -187,7 +188,7 @@ def test_workspace_meeting_list_reads_source_once(client, db, seed):
         ("discord", "speaker_assignment_expired", False),
     ],
 )
-def test_list_keeps_only_expired_manual_upload_failures(client, db, seed, source, stage, visible):
+def test_list_keeps_only_reupload_manual_upload_failures(client, db, seed, source, stage, visible):
     meeting = Meeting(
         workspace_id=seed["ws"], title="기한이 지난 업로드",
         source=source, status="failed", failed_stage=stage,

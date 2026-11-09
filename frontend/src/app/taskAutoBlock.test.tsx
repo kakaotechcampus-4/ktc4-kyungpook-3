@@ -1,14 +1,20 @@
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { getResponse, http } from 'msw'
 import { onTestFinished } from 'vitest'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
+import { ok } from '@/shared/mock/envelope'
 import { handlers } from '@/shared/mock/handlers'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
-import { SILENCE_BLOCKER, blockBySilence, updateTask } from '@/shared/mock/task-state'
+import {
+  SILENCE_BLOCKER,
+  blockBySilence,
+  toTaskResponse,
+  updateTask,
+} from '@/shared/mock/task-state'
 import { deferred } from '@/shared/test/deferred'
 import { recordRequests } from '@/shared/test/requests'
 import type { RecordedRequest } from '@/shared/test/requests'
@@ -109,6 +115,36 @@ describe('태스크 상세의 자동 막힘 (#330, #365)', () => {
     await waitFor(() => expect(field('막힌 사유')).toHaveTextContent('카톡으로 들었어요'))
     expect(screen.getByTestId('task-status')).toHaveTextContent('막힘')
     expect(screen.queryByText(AUTO_NOTICE)).toBeNull()
+  })
+})
+
+describe('쓰기 응답을 읽지 못함 (#348)', () => {
+  it('막힘 풀기 응답을 읽지 못하면 결과를 확인하지 못했다고 알리고, 새로고침은 태스크를 다시 받는다', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    onTestFinished(() => warning.mockRestore())
+    server.use(
+      http.post('/api/v1/tasks/:taskId/auto-block/undo', () =>
+        ok({
+          ...toTaskResponse(db.tasks.find(({ task_id }) => task_id === 'tk_06')!),
+          status: 'archived',
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    const log = recordRequests()
+    renderApp(paths.tasks('ws_01', 'tk_06'))
+    await user.click(await screen.findByRole('button', { name: '막힘 풀기' }, { timeout: 5_000 }))
+    const notice = (
+      await screen.findByText('변경 결과를 확인하지 못했어요', {}, { timeout: 5_000 })
+    ).closest('li') as HTMLElement
+    expect(within(notice).getByText(/서버에는 반영됐을 수 있어요/)).toBeInTheDocument()
+    expect(screen.queryByText('막힘을 풀지 못했어요')).toBeNull()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 300)))
+    const before = log.started.length
+    fireEvent.click(within(notice).getByRole('button', { name: '새로고침' }))
+    await waitFor(() =>
+      expect(log.started.slice(before)).toContainEqual({ method: 'GET', path: '/tasks/tk_06' }),
+    )
   })
 })
 

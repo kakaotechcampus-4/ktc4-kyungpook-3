@@ -25,7 +25,7 @@ import os
 import threading
 
 import httpx
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
@@ -332,6 +332,7 @@ def process_missing_approval_embeddings(
     if not raw:
         return 0
 
+    original_payloads = dict(raw)
     rows = []
     unusable = []
     for approval_id, payload in raw:
@@ -361,6 +362,7 @@ def process_missing_approval_embeddings(
             update(ApprovalRequest)
             .where(
                 ApprovalRequest.approval_id == approval_id,
+                ApprovalRequest.payload == original_payloads[approval_id],
                 ApprovalRequest.status == ApprovalStatus.PENDING,
             )
             .values(embedding_rejected_title="")
@@ -370,6 +372,7 @@ def process_missing_approval_embeddings(
             update(ApprovalRequest)
             .where(
                 ApprovalRequest.approval_id == approval_id,
+                ApprovalRequest.payload == original_payloads[approval_id],
                 ApprovalRequest.status == ApprovalStatus.PENDING,
             )
             .values(embedding_rejected_title=title)
@@ -382,6 +385,7 @@ def process_missing_approval_embeddings(
             update(ApprovalRequest)
             .where(
                 ApprovalRequest.approval_id == approval_id,
+                ApprovalRequest.payload == original_payloads[approval_id],
                 ApprovalRequest.status == ApprovalStatus.PENDING,
                 ApprovalRequest.embedding.is_(None),
             )
@@ -497,6 +501,29 @@ def search_similar_pending_approvals(
         .limit(limit)
     ).all()
     return [(request, 1 - float(dist)) for request, dist in rows]
+
+
+def related_task_pairs(db: Session, workspace_id: str, *, k: int, min_similarity: float) -> list[tuple[str, str]]:
+    """태스크마다 가까운 k개를 찾아 (작은 ID, 큰 ID) 쌍으로 돌려준다. 임베딩이 없는 태스크는 빠진다. PostgreSQL 전용이다."""
+    rows = db.execute(
+        text(
+            """
+            SELECT a.task_id, n.task_id
+            FROM task a CROSS JOIN LATERAL (
+                SELECT b.task_id, 1 - (a.embedding <=> b.embedding) AS similarity
+                FROM task b
+                WHERE b.workspace_id = a.workspace_id AND b.task_id <> a.task_id
+                  AND b.embedding IS NOT NULL AND NOT b.is_deleted
+                ORDER BY a.embedding <=> b.embedding
+                LIMIT :k
+            ) n
+            WHERE a.workspace_id = :workspace_id AND a.embedding IS NOT NULL AND NOT a.is_deleted
+              AND n.similarity >= :min_similarity
+            """
+        ),
+        {"workspace_id": workspace_id, "k": k, "min_similarity": min_similarity},
+    ).all()
+    return sorted({(min(a, b), max(a, b)) for a, b in rows})
 
 
 def run_worker(stop_event: threading.Event, interval: float) -> None:

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { meetingListQueryOptions, toMinutesList } from '@/entities/meeting'
 import type { MeetingSummary, MinutesList } from '@/entities/meeting'
@@ -9,10 +10,10 @@ import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { MinutesDetailSkeleton, MinutesListSkeleton } from '@/shared/ui/page-skeleton'
-import { listMeta, SOURCE_BADGE } from '../lib/format'
+import { listMeta, sourceBadge } from '../lib/format'
 import { prefetchMinutes } from '../lib/prefetchMinutes'
 import { useShownMeeting } from '../model/useShownMeeting'
-import { MinutesDetail, UnavailableMeeting } from './MinutesDetail'
+import { DeletedMeeting, MinutesDetail, UnavailableMeeting } from './MinutesDetail'
 
 /* Meetings 캔버스 실측 — 왼쪽 목록 308 · 오른쪽 선, 목록 제목 17px, 행 위아래 13 · 좌우 14 · 라운드 10 · 간격 4 */
 /* 폭 768 미만은 목록 위 · 본문 아래 한 열이다(D-180). 목록 아래 선이 본문과 가른다 */
@@ -60,6 +61,7 @@ export function MeetingMinutes({
   invalidMeetingId = false,
   isPm,
 }: MeetingMinutesProps) {
+  const [deletedId, setDeletedId] = useState<string | null>(null)
   const list = useQuery({ ...meetingListQueryOptions(workspaceId), select: toMinutesList })
   // 고른 회의의 목록 요약 — 본문을 기다리는 동안 머리를 이것으로 먼저 바꾼다. 없으면 이전 회의를 들고 있지 않는다 (UX1-M02)
   const selectedSummary =
@@ -70,6 +72,7 @@ export function MeetingMinutes({
     workspaceId,
     invalidMeetingId ? null : meetingId,
     selectedSummary !== null,
+    deletedId,
   )
   const selected = meetingId !== null || invalidMeetingId
   // 로딩 자리의 지연·최소 표시 (#508). 본문은 첫 진입(목록 → 기본 회의 → 회의록)을 한 자리로 잰다 — 단계마다 다시 지연하면
@@ -103,6 +106,7 @@ export function MeetingMinutes({
 
   let detail
   if (invalidMeetingId) detail = <UnavailableMeeting />
+  else if (meetingId !== null && meetingId === deletedId) detail = <DeletedMeeting />
   else if (meetingId !== null && shown.shownId !== null)
     detail = (
       // 새 회의록을 기다리는 잠깐 동안 이전 회의록 본문을 들고 있다 — 머리는 고른 회의, 본문은 흐리게 묶는다 (useShownMeeting).
@@ -112,6 +116,7 @@ export function MeetingMinutes({
         workspaceId={workspaceId}
         meetingId={shown.shownId}
         isPm={isPm}
+        onDeleted={setDeletedId}
         // 머리를 요약으로 먼저 바꾸는 것은 회의를 바꿀 때뿐이다 — 첫 진입은 머리 뼈대 그대로 (useShownMeeting)
         selected={shown.holding || shown.switched ? selectedSummary : null}
         holding={shown.holding}
@@ -275,7 +280,7 @@ function MeetingList({
 }
 
 function SourceBadge({ meeting }: { meeting: MeetingSummary }) {
-  const badge = SOURCE_BADGE[meeting.source]
+  const badge = sourceBadge(meeting.source)
   return badge === null ? null : <span className={STATUS_BADGE}>{badge}</span>
 }
 

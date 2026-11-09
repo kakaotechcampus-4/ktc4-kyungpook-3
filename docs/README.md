@@ -8,6 +8,7 @@
 - [Codex 진입점](../AGENTS.md) · [Claude Code 진입점](../CLAUDE.md): 공통 규칙을 먼저 읽도록 안내.
 - [팀 스킬 사용 안내](../.agents/README.md): 일곱 스킬의 역할, 호출 방법과 수정 방법.
 - [파트별 전체 흐름](파트별%20전체%20흐름.md): 현재 코드로 확인한 프론트엔드 중심 처리 순서와 파트 경계.
+- [프로젝트 상세 설명](프로젝트%20상세%20설명.md): 프로젝트 전체(목표, 팀, 구조, 파트별 상세, 수치, 타임라인, 현재 상태, 남은 일)를 2026-11-07 기준으로 정리한 원자료. 최종 문서화·테크스펙·발표 자료의 바탕.
 
 ```text
 프로젝트/
@@ -24,7 +25,9 @@
 
 - [Frontend](../frontend/README.md)
 - [Backend](../backend/README.md)
-- [AI](../ai/README.md)
+- [AI](../ai/README.md) · [AI 문서 안내](../ai/docs/README.md)
+
+현재 구현·검증 기록은 [FE 마일스톤 안내](../frontend/docs/plan/README.md), [FE 이슈 결과](../frontend/docs/issues/), [BE 마일스톤 안내](../backend/docs/plan/README.md), [AI 작성 기록](../ai/docs/basis_for_decision/ai/)·[팀원 작성 기록](../ai/docs/basis_for_decision/member/)에서 찾는다. 계획, 결과의 기록일과 검증 환경, 현재 배포 상태를 구분한다. 코드 병합이나 MSW 통과만으로 실서버·외부 공급사·iOS 검증 완료를 표시하지 않는다.
 
 Frontend는 [문서 안내](../frontend/docs/README.md), [대표 계약](../frontend/docs/contracts/frontend-api-contract.md), [전체 계획](../frontend/docs/plan/frontend-plan.md), [M0~M8 안내](../frontend/docs/plan/README.md)로 구조화했습니다. 기존 M0~M5 계획 원문과 완료 조건·인수인계·구현 결정 기록은 해당 마일스톤 폴더로 옮겼습니다. 이전 경로의 파일과 이동 안내는 삭제했습니다. 디자인·마스코트·성능 등 파트 고유 자료와 공유 기록은 유지합니다.
 
@@ -32,7 +35,7 @@ Backend는 [문서 안내](../backend/docs/README.md), [AI 계약](../backend/do
 
 ## 공통 문서 역할과 양식
 
-아래 경로는 초기 구조화 시 사용할 공통 규약입니다. 기존 문서 중 역할이 대응되는 부분만 정리하며, 다른 폴더의 존재는 오류가 아닙니다. `<part>`는 실제 파트 경로입니다.
+아래 경로는 계획·구현·검증 근거를 찾는 공통 규약입니다. 기존 문서 중 역할이 대응되는 부분만 정리하며, 다른 폴더의 존재는 오류가 아닙니다. `<part>`는 실제 파트 경로입니다.
 
 | 경로 | 작성 주체·시점 | 주요 내용 |
 |---|---|---|

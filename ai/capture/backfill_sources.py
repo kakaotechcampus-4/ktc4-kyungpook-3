@@ -14,7 +14,9 @@ import sys
 from pathlib import Path
 
 from capture import recorder as R
+from capture.handoff import MeetingEnded
 from capture.handoff import from_env as handoff_from_env
+from capture.meeting_purge import deleted, mark_deleted, meeting_ids, purge_files
 from shared.config import RECORDINGS_DIR, TRANSCRIPTS_DIR
 from shared.schemas import now_iso
 
@@ -30,7 +32,7 @@ def targets(recordings_dir: Path) -> list[tuple[Path, dict]]:
     found = []
     for p in sorted(recordings_dir.glob("session_*.json")):
         m = R._load(p)
-        if _needs_sources(m):
+        if _needs_sources(m) and not any(deleted(recordings_dir, mid) for mid in meeting_ids(m)):
             found.append((p, m))
     return found
 
@@ -49,17 +51,31 @@ def backfill(recordings_dir: Path, *, transcripts_dir: Path, handoff, dry_run: b
         if held is None:
             row["busy"] = True                  # 봇이나 워커가 처리 중이다. 다음에 다시 돌리면 된다
             continue
+        removed = False
         try:
+            if any(deleted(recordings_dir, mid) for mid in meeting_ids(held)):
+                row["ended"] = True
+                removed = True
+                continue
             if not _needs_sources(held):        # 잡는 사이 남이 보냈다
                 row["already"] = True
                 continue
             be = handoff.save_sources(held, transcripts_dir=transcripts_dir, title=R.meeting_title(held))
             held.setdefault("stages", {})[R.STATUS_SOURCED] = now_iso()
             row.update(sent=True, sources=dict(be["sources"]))
+        except MeetingEnded as e:
+            if e.code != "MEETING_DELETED":
+                row["error"] = f"{type(e).__name__}: {e}"
+            else:
+                mark_deleted(recordings_dir, meeting_ids(held))
+                row["ended"] = True
+                removed = True
         except Exception as e:  # noqa: BLE001 - 한 회의의 실패로 나머지를 멈추지 않는다
             row["error"] = f"{type(e).__name__}: {e}"
         finally:
-            claims.release(path, held)          # 표시를 지우며 매니페스트를 저장한다
+            claims.release(path, held, save=not removed)
+            if removed:
+                purge_files(recordings_dir, transcripts_dir, held['be']['meeting_id'])
     return rows
 
 

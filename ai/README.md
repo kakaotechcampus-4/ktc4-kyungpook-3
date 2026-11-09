@@ -1,6 +1,6 @@
 # PM 에이전트 — AI 파트
 
-`../implementation_plan_1.md` 의 AI 파트 구현. **현재 캡처(Phase 0 일부)까지 구현됨.**
+Discord 녹음과 웹 업로드를 전사·추출·BE 인계로 처리하는 AI 파트다. 현재 [워커](capture/worker.py), [전사](stt/), [판단](judge/), [업로드](upload/) 코드가 있다. 코드 존재가 외부 공급사·운영 검증 완료를 뜻하지 않는다. 문서·결정 기록은 [문서 안내](docs/README.md)에서 찾는다.
 
 모노레포 구조상 이 저장소는 `ai/` `backend/` `frontend/` 가 각자 독립된 하위 프로젝트입니다(각자 자기
 venv·의존성·테스트를 따로 가짐). **이 디렉토리(`ai/`) 자체가 AI 파트의 프로젝트 루트**이고, 아래 명령은
@@ -51,7 +51,7 @@ recordings/         녹음 산출물 (git 제외)
   "transcript", "tasks" 또는 "items", "be", "speakers": [{"user_id", "display_name", "file", "duration_sec"}]}`. `status` 는
   recording → saved → transcribed → extracted → handed_off (실패 시 failed 와 `failed_stage`) 이고, 워커가
   마지막으로 끝난 단계 다음부터 마저 처리합니다. 실패 5회로 자동 재시도를 멈춘 회의는 서버에서
-  `python -m capture.worker --retry <서버ID>` 로 다시 돌립니다. 상대 날짜("내일")의 기준일은 처리하는 날이 아니라
+  `python -m capture.worker --retry <서버ID>` 로 다시 돌립니다. 포기 7일 뒤에는 음성이 지워져 다시 돌릴 수 없습니다. 상대 날짜("내일")의 기준일은 처리하는 날이 아니라
   `started_at` 을 `timezone` 으로 바꾼 회의 날짜입니다.
 - 수동 업로드(`upload/`): 회의를 녹음하지 못했을 때 오디오 파일 하나를 `python -m upload.prepare <오디오> --started-at <ISO>`
   (pyannoteAI 를 실제로 부르므로 `PYANNOTEAI_API_KEY` 가 필요하고 과금됩니다)로 화자 분리해 화자 라벨마다 원본 길이의 가상 트랙
@@ -117,7 +117,19 @@ recordings/         녹음 산출물 (git 제외)
   - 400 `details.member_ids` 를 받으면 그 ID 를 null 로 바꿔 다시 보내고(서로 다른 ID 수만큼만), 버린 ID 는 `be.sources.dropped_member_ids` 와 로그에 남깁니다.
   - 발화 저장의 409 `MEETING_FAILED`·404, 추출 등록의 409 `MEETING_NOT_PROCESSING`·404 는 BE 가 이미 끝낸 회의라는 뜻입니다. 새 회의를 만들지 않고 실패 횟수·`/fail` 도 없이
     잠금을 놓은 뒤 로컬 매니페스트·잠금·트랙 폴더를 지웁니다.
-  - 로컬 정리(`upload/cleanup.py`): 워커가 바퀴 끝에 `cleanup_one` 을 한 번 더 부릅니다. 지정 기한이 지난 업로드는 BE 가 끝났다고 답할 때만 로컬을 지우고, 포기·인계 완료된 업로드와 끝난 가져오기 기록은 7일 보관 뒤 지웁니다.
+  - 로컬 정리(`upload/cleanup.py`): 워커가 바퀴 끝에 `cleanup_one` 을 한 번 더 부릅니다. 지정 기한이 지난 업로드는 BE 가 끝났다고 답할 때만 로컬을 지우고, 포기한 업로드와 끝난 가져오기 기록은 7일 보관 뒤 지웁니다. 인계가 끝난 회의의 트랙 wav 는 업로드든 디스코드든 워커가 바퀴마다 바로 지웁니다(`recorder.prune_audio`, [결정 기록 0055](docs/basis_for_decision/ai/2026-11-08-0055-meeting-audio-retention.md)). 포기한 회의는 포기 7일 뒤, 인계까지 못 가고 멈춘 디스코드 회의는 마지막 진행 7일 뒤 지웁니다.
+  - 음성 정리 기준 `AUDIO_PRUNE_SINCE` 는 2026-11-09 00:00 KST이며 별도 활성화 설정은 없습니다. 배포 후 첫 워커 바퀴부터 기준에 맞는 트랙을 지웁니다. 기준과 비교하는 값은 회의 생성일이 아니라 인계·포기·마지막 진행 시각입니다. 오래된 녹음도 그 진행 시각이 기준 이후면 대상입니다. 기준 이전 진행 기록과 시간대가 없거나 해석할 수 없는 시각은 보존하며, 운영 기록 대조가 필요합니다. 기존 검증용 회의의 보존 여부도 이 조건으로 확인해야 합니다.
+  - `prune_audio` 는 매니페스트의 세션 잠금을 잡고 상태를 다시 읽은 뒤, 그 세션 폴더의 `speakers[].file` 에 등록된 실제 wav만 지웁니다. 경로가 다른 세션·폴더 밖·링크를 가리키면 해당 매니페스트의 정리를 보류합니다. 일부 파일 삭제가 실패하면 매니페스트를 남겨 다음 바퀴에서 남은 파일을 다시 지웁니다. 미등록 wav는 소유를 추정해 지우지 않습니다. 업로드 원본과 변환 wav는 트랙 생성 뒤 `upload/intake.py` 가 별도로 정리합니다.
+
+## 회의 요약
+
+`capture/summary_sweep.py`는 BE 요약 큐에서 한 건을 claim하고 재료를 읽어 요약한 뒤 저장합니다. claim의 토큰과 `identity_epoch`를 입력 조회·저장까지 고정합니다. 탈퇴나 회의 삭제로 바뀐 입력에 옛 결과를 저장하지 않습니다. 순수 요약 생성은 `summary/`가 맡고 Discord나 로컬 녹음 파일을 읽지 않습니다. 계약은 [BE 요약 API](../backend/docs/contracts/backend-ai-contract.md#회의-요약)에 있습니다.
+
+워커는 일반 처리·업로드·개인정보 정리·회의 삭제 정리·음성 정리 뒤에 요약 작업 하나를 예약합니다. 진행 중인 요약이 있으면 추가 작업을 만들지 않습니다. 요약은 일반 회의의 처리 자리를 점유하지 않으므로 다음 바퀴가 계속 돌고, 종료할 때 진행 중 요약이 끝난 뒤 stopped 하트비트를 남깁니다. 하트비트의 `summary_running`이 병행 요약 상태입니다.
+
+로컬 기본 `MM_SUMMARY_LLM`은 빈 값이며 OFF입니다. `luna` 또는 `terra`를 설정하면 대응 모델·BE 설정이 필요하고 과금됩니다. 운영은 실제 mm-worker 환경에 `MM_SUMMARY_LLM=luna`를 적용하고 재시작해야 합니다. 예제 파일 수정만으로 켜지지 않습니다. 초기화 성공 로그는 `[summary] runner ready model=luna`이며 API 인증·요약 품질 검증과는 별개입니다.
+
+BE는 스위치 OFF 중에도 대상 회의를 표시합니다. ON하면 기존 pending도 회의 시각 순서로 처리합니다. 회의당 15분 임대와 최대 두 번 시도를 유지하며, 화면의 pending은 1시간 뒤 감춰도 큐에는 남습니다. 표시되지 않은 옛 회의는 자동으로 등록하지 않습니다. 재처리 명령은 `python -m capture.backfill_summaries --workspace ID --all --dry-run`이고 유료 실행은 `--meeting`으로 범위를 지정합니다.
 
 ## 설치 (이 디렉토리, `ai/` 안에서)
 
@@ -151,6 +163,6 @@ python -m capture.worker --retry <서버ID>   # 자동 재시도를 멈춘 회�
 pytest          # py-cord 없이 실행 가능 (스텁 데이터 사용)
 ```
 
-## 다음 단계
+## 구현과 검증 기록
 
-STT 전사(`stt/`)를 붙여서 `recordings/` 결과를 텍스트로 바꾸는 작업.
+녹음 뒤 전사·추출·인계와 웹 업로드 처리는 위 실행·경계 설명에 연결돼 있다. [AI 작성 기록](docs/basis_for_decision/ai/)과 [팀원 작성 기록](docs/basis_for_decision/member/)은 각 기록일의 실행 결과·제약·남은 작업을 보존한다. 실제 Discord·STT·화자 분리 공급사 호출과 운영 배포의 성공 여부는 해당 실행 증거를 별도로 확인한다.

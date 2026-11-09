@@ -1,3 +1,5 @@
+import { Link } from 'react-router'
+import { policyDocuments } from '@/shared/config/policy'
 import { BrandMark } from '@/shared/ui/brand-mark'
 import { Button } from '@/shared/ui/button'
 import {
@@ -29,14 +31,12 @@ export function FinalCta() {
   )
 }
 
-/* 푸터 항목은 이동할 곳이 아직 없다(안내·약관 화면은 1차 범위 밖, D-001). 링크가 아닌 글자로 둔다.
-   라이트/다크 전환은 다크 테마가 없어 뺐다 — docs/impl-decision/2026-09-28-landing-scope.md */
 const FOOTER_GROUPS = [
   // 요금제 절을 뺐으니 푸터에서도 뺀다. 캔버스의 `[상태 페이지]` 자리표시도 두지 않는다
   { title: '제품', items: ['기능', '연동', '변경 기록'] },
   { title: '쓰는 법', items: ['시작 가이드', '회의 올리기', '승인 워크벤치'] },
   { title: '회사', items: ['소개', '블로그', '문의하기'] },
-  { title: '약관', items: ['이용약관', '개인정보처리방침', '보안'] },
+  { title: '약관', items: [policyDocuments.terms, policyDocuments.privacy, '보안'] },
 ] as const
 
 export function LandingFooter() {
@@ -61,8 +61,20 @@ export function LandingFooter() {
                 <span className="text-[13px] font-semibold text-ink">{title}</span>
                 <ul className="flex flex-col gap-12">
                   {items.map((item) => (
-                    <li key={item} className="text-body text-dim">
-                      {item}
+                    <li
+                      key={typeof item === 'string' ? item : item.to}
+                      className="text-body text-dim"
+                    >
+                      {typeof item === 'string' ? (
+                        item
+                      ) : (
+                        <Link
+                          to={item.to}
+                          className="hover:text-ink hover:underline underline-offset-3"
+                        >
+                          {item.title}
+                        </Link>
+                      )}
                     </li>
                   ))}
                 </ul>

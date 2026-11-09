@@ -177,11 +177,16 @@ def test_an_empty_rerun_does_not_replace_the_kept_result(tmp_path, clock, limits
     assert fake.extractions["m1"]["items"] == [A, B_] and _saved(path)["be"]["missing_findings"] == 1
 
 
+def _transcript(tmp_path, text):
+    seg = {"seq": 0, "start": 0.0, "end": 1.0, "text": text, "speaker": "111"}
+    (tmp_path / "session_s.transcript.json").write_text(json.dumps({"segments": [seg]}, ensure_ascii=False), encoding="utf-8")
+
+
 def _held(tmp_path, items=(A,), failures=(F1,)):
     """옛 규칙으로 돌던 회의. 항목 파일과 실패 표시는 있고 실행 기록은 없다."""
     path = tmp_path / "session_s.items.json"
     path.write_text(json.dumps(list(items), ensure_ascii=False), encoding="utf-8")
-    (tmp_path / "session_s.transcript.json").write_text("전사", encoding="utf-8")
+    _transcript(tmp_path, "전사")
     return {"session": "s", "items": str(path), "extract_failures": list(failures), "extract_runs": 1}
 
 
@@ -206,19 +211,32 @@ def test_a_meeting_held_across_the_deploy_starts_merging_from_a_better_rerun(tmp
 def test_runs_on_another_transcript_are_not_merged(tmp_path, clock, limits):
     """전사가 바뀐 표시가 지워지지 못하고 남아도(되살린 줄이 있어도 일찍 돌아가거나, 매니페스트를 쓰기 전에 죽은 경우)
     번호가 다른 문장을 가리키는 실행을 합치면 안 된다."""
-    (tmp_path / "session_s.transcript.json").write_text("옛 전사", encoding="utf-8")
+    _transcript(tmp_path, "옛 전사")
     manifest = {"session": "s"}
     with pytest.raises(R.ExtractIncomplete):
         R._keep_judge_output(tmp_path, manifest, _out([A], [F1]))
-    (tmp_path / "session_s.transcript.json").write_text("새 전사", encoding="utf-8")
+    _transcript(tmp_path, "새 전사")
     R._keep_judge_output(tmp_path, manifest, _out([C]))
     assert json.loads(Path(manifest["items"]).read_text(encoding="utf-8")) == [C]
     assert "extract_failures" not in manifest
 
 
+def test_runs_survive_a_transcript_whose_speakers_were_rewritten(tmp_path, clock, limits):
+    """개인정보 정리는 전사의 화자 값만 바꾸고 문장은 그대로 둔다. 근거 문장 번호가 가리키는 문장이 같으니 앞선 실행을 버리지 않는다."""
+    src = tmp_path / "session_s.transcript.json"
+    seg = {"seq": 0, "start": 0.0, "end": 1.0, "text": "제가 할게요.", "speaker": "111"}
+    src.write_text(json.dumps({"segments": [seg]}), encoding="utf-8")
+    manifest = {"session": "s"}
+    with pytest.raises(R.ExtractIncomplete):
+        R._keep_judge_output(tmp_path, manifest, _out([A], [F1]))
+    src.write_text(json.dumps({"segments": [{**seg, "speaker": "member-a"}]}), encoding="utf-8")
+    R._keep_judge_output(tmp_path, manifest, J.JudgeOutput(outcomes=[_o("skip", at=[AT[F1["text"]]])]))
+    assert json.loads(Path(manifest["items"]).read_text(encoding="utf-8")) == [A]
+
+
 def test_a_write_cut_short_leaves_the_kept_runs_readable(tmp_path, clock, limits, monkeypatch):
     """실행 기록을 쓰다 죽어도 앞선 실행을 읽을 수 있어야 한다. 잘린 파일은 회의 전체를 실패로 닫는다."""
-    (tmp_path / "session_s.transcript.json").write_text("전사", encoding="utf-8")
+    _transcript(tmp_path, "전사")
     manifest = {"session": "s"}
     with pytest.raises(R.ExtractIncomplete):
         R._keep_judge_output(tmp_path, manifest, _out([A], [F1]))

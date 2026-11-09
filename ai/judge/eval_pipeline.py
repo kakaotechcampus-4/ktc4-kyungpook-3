@@ -9,7 +9,7 @@ BE 와 같은 규칙(코사인 유사도 상위 3개 중 0.4 이상)으로 후�
 fixture 의 expected 는 "이런 item 이 있어야 한다"는 최소 조건만 적는다. 1단계가 finding 을
 어떻게 나눌지는 실행마다 다를 수 있어서 finding 단위가 아니라 최종 item 단위로 본다.
 
-실행 (ai/ 디렉토리 안에서 — TERRA/LUNA/EMBEDDING API 키 필요):
+실행 (ai/ 디렉토리 안에서 — TERRA/LUNA/EMBEDDING/JEV API 키 필요. JEV 가 없으면 근거 상태가 전부 inferred 라 그 기대가 실패한다):
     .venv/bin/python -m judge.eval_pipeline
 
 결과는 runs/pipeline_eval_<fixture>.json 에도 남는다 (.gitignore 대상 — 커밋 안 됨).
@@ -62,7 +62,8 @@ def _matches(exp: dict, item: dict) -> bool:
     return True
 
 
-_CHECKED_FIELDS = ("due_date", "status", "assignee_raw", "category")
+# task_status·due_status 는 Jev 가 정한 근거 상태다(judge/evidence.py). BE 의 auto 게이트가 이 값을 본다
+_CHECKED_FIELDS = ("due_date", "status", "assignee_raw", "category", "task_status", "due_status")
 
 
 def _check(fixture: dict, items: list[dict]) -> tuple[int, int, list[dict]]:

@@ -4,6 +4,8 @@ import type { NotificationDto, PushSubscriptionDto } from '@/shared/types/api/no
 export interface MockNotification extends NotificationDto {
   workspace_id: string
   member_id: string
+  /** 같은 일을 두 번 알리지 않는 열쇠 (백엔드 notify 의 dedupe_key). 목이 만든 알림에만 있다 */
+  dedupe_key?: string
 }
 
 /** 푸시 구독은 로그인 계정 단위다 */

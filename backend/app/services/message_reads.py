@@ -48,7 +48,7 @@ def unread_by_thread(db: Session, viewer: Member) -> dict[str, int]:
         ),
     )
 
-    visible = [owner.is_deleted.is_(False)]
+    visible = [or_(owner.is_deleted.is_(False), owner.withdrawn_at.is_not(None))]
     if viewer.role == MemberRole.PM:
         visible.append(MessageThread.workspace_id == viewer.workspace_id)
     else:

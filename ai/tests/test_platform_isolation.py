@@ -1,6 +1,6 @@
 """플랫폼 격리 구조 테스트 — Discord 는 capture/ 안에만 있다 (CLAUDE.md "깨면 안 되는 규칙" 1).
 
-판단 로직(stt, extract, judge, draft, shared, llm, embedding)이 discord 를 import 하면 다른 플랫폼으로
+판단 로직(stt, extract, judge, draft, summary, shared, llm, embedding)이 discord 를 import 하면 다른 플랫폼으로
 옮길 수 없다. 주석과 설정 이름(DISCORD_BOT_TOKEN 등)은 막지 않고 import 문만 본다.
 """
 
@@ -10,7 +10,7 @@ import ast
 from pathlib import Path
 
 AI_ROOT = Path(__file__).resolve().parents[1]
-GUARDED = ["stt", "extract", "judge", "draft", "shared", "llm.py", "embedding.py", "upload"]
+GUARDED = ["stt", "extract", "judge", "draft", "summary", "shared", "llm.py", "embedding.py", "upload"]
 PLATFORM_MODULES = {"discord"}
 
 REMEDIATION = (

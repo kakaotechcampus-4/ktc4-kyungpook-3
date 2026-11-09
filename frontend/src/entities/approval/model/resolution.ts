@@ -20,9 +20,16 @@ export type ApprovalEdits =
   | { kind: 'task_update'; values: TaskUpdateEdits }
 export type TaskCreateIssue = 'title' | 'assignee' | 'due'
 export const TASK_TITLE_MAX_LENGTH = 300
+/** `payloadVersion` 은 처리할 카드의 지문이다 (#547). 생성 승인이고 서버가 값을 줬을 때만 있다 */
 export type ApprovalResolution =
-  | { status: 'rejected' }
-  | { status: 'approved'; kind: 'task_create'; taskOverrides?: TaskCreateEdits; saveAlias?: true }
+  | { status: 'rejected'; payloadVersion?: string }
+  | {
+      status: 'approved'
+      kind: 'task_create'
+      taskOverrides?: TaskCreateEdits
+      saveAlias?: true
+      payloadVersion?: string
+    }
   | {
       status: 'approved'
       kind: 'task_update'
@@ -102,7 +109,11 @@ export function planApprovalResolution(
     return { ok: false, issues: [], reason: APPROVAL_RESOLUTION_REASONS.resolved }
   if (approval.kind === 'unsupported')
     return { ok: false, issues: [], reason: APPROVAL_RESOLUTION_REASONS.unsupported }
-  if (decision === 'rejected') return { ok: true, resolution: { status: 'rejected' } }
+  const version =
+    approval.kind === 'task_create' && approval.payloadVersion !== null
+      ? { payloadVersion: approval.payloadVersion }
+      : {}
+  if (decision === 'rejected') return { ok: true, resolution: { status: 'rejected', ...version } }
   if (context.edits && context.edits.kind !== approval.kind)
     return { ok: false, issues: [], reason: '확인 요청 종류와 보완 값이 달라요.' }
   if (approval.kind === 'task_update') {
@@ -159,6 +170,7 @@ export function planApprovalResolution(
       ...(createEdits?.saveAlias === true && aliasToLearn(approval, fields) !== null
         ? { saveAlias: true }
         : {}),
+      ...version,
     },
   }
 }

@@ -382,8 +382,9 @@ def test_draft_claim_item_shape(mdb, mseed):
     data = _draft_claim()
     (item,) = [i for i in data["items"] if i["bundle_id"] == bundle["bundle_id"]]
     assert data["total"] == len(data["items"])
-    assert set(item) == {"bundle_id", "draft_version", "workspace_id", "recipient_name", "scheduled_at",
+    assert set(item) == {"bundle_id", "draft_version", "workspace_id", "identity_epoch", "recipient_name", "scheduled_at",
                          "tasks", "style_examples", "fallback_body"}
+    assert item["identity_epoch"] == 0
     assert item["workspace_id"] == mseed["ws"] and item["recipient_name"] == "앨리스"
     assert datetime.fromisoformat(item["scheduled_at"]) == at
     assert item["tasks"] == [

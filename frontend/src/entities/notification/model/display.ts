@@ -23,6 +23,8 @@ const KINDS: Readonly<
   },
   // 판단하지 못한 답장도 응답이라 BE 가 막힘을 풀 수 있다
   reply_unjudged: { title: '답장을 자동으로 판단하지 못했어요', refreshes: ['messages', 'tasks'] },
+  // PM 글은 대화 주인에게, 팀원 글은 PM 들에게 온다
+  message_received: { title: '새 메시지가 왔어요', refreshes: ['messages'] },
 }
 
 const NO_REFRESH: readonly NotificationRefresh[] = []

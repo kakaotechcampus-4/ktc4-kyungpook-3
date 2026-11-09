@@ -1,6 +1,15 @@
 import { toMeeting, toMeetingSummary, toMeetingUploadResult, toSpeakerView } from './mapper'
 import { meetingFixtures, meetingSummaryFixtures } from '@/shared/mock/fixtures/meeting'
 
+it.each([undefined, false, true])(
+  '서버가 명시적으로 허용할 때만 삭제 가능 상태로 변환한다 (%s)',
+  (available) => {
+    expect(
+      toMeeting({ ...meetingFixtures[1], deletion_available: available }).deletionAvailable,
+    ).toBe(available === true)
+  },
+)
+
 it('maps detail and summary independently including the required progress', () => {
   expect(toMeeting(meetingFixtures[1])).toEqual({
     id: 'mt_09',
@@ -11,6 +20,7 @@ it('maps detail and summary independently including the required progress', () =
     endedAt: '2026-09-15T05:45:30Z',
     extractionId: 'ex_01',
     failedStage: null,
+    deletionAvailable: true,
     // 백엔드가 필수로 내려주므로 픽스처에도 있다 (계약 §2.3, §4.7-1)
     progress: { audioMerged: true, transcribed: true, extracted: true },
   })
@@ -44,13 +54,13 @@ it('treats a missing progress as null instead of throwing', () => {
   expect(toMeeting(dto).progress).toBeNull()
 })
 
-it('falls back unknown status and source without throwing', () => {
+it('모르는 출처는 discord 로 바꾸지 않고 받은 글자를 남긴다. 모르는 상태는 스키마가 거절한다 (#348)', () => {
   const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
   try {
-    expect(
-      toMeetingSummary({ ...meetingSummaryFixtures[0], status: 'future', source: 'future' }),
-    ).toMatchObject({ status: 'created', source: 'discord' })
-    expect(warning).toHaveBeenCalledTimes(2)
+    expect(toMeetingSummary({ ...meetingSummaryFixtures[0], source: 'zoom' }).source).toEqual({
+      unknown: 'zoom',
+    })
+    expect(warning).toHaveBeenCalledTimes(1)
   } finally {
     warning.mockRestore()
   }

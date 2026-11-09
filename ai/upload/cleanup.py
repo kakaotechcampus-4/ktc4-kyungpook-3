@@ -3,7 +3,8 @@
 기록은 recordings/.uploads/<meeting_id>/intake.json 의 `expire` 키다. intake·report·resume 의 상태 기계는 건드리지 않는다.
   checking  BE 에 다시 물어보는 중이다. 일시 실패는 attempts, next_at 만 바꾼다(포기 한도 없음: 지우지 않으니 해로울 것이 없다)
   expired   BE 가 이미 끝낸 회의다(409 MEETING_ALREADY_ENDED·오류 봉투의 404). 매니페스트·트랙·잠금·전사본을 지웠다(끝)
-  tracks_dropped  인계가 끝나 KEEP_S 가 지나 트랙 wav 만 지웠다(회의 폴더의 대본·기록, 매니페스트·전사본 유지, 다시 보지 않는다)
+  tracks_dropped  인계가 끝나 KEEP_S 가 지나 트랙 wav 만 지웠다(회의 폴더의 대본·기록, 매니페스트·전사본 유지, 다시 보지 않는다).
+                  트랙은 recorder.prune_audio 가 인계 직후 이미 지우므로(0055) 보통은 표시만 남긴다
   dropped         처리를 포기한 지 KEEP_S 가 지나 매니페스트·트랙·전사본을 지웠다
 끝난 기록 폴더(.uploads/<id>/)는 열린 상태가 없고 이 회의의 매니페스트가 없을 때 intake.json 수정 시각 + KEEP_S 뒤 통째로 지운다. 깨진 intake.json 은 지우지 않고 한 번만 경고한다.
 
@@ -25,7 +26,16 @@ from pathlib import Path
 from typing import Callable
 
 from capture.handoff import BeError
-from capture.recorder import _iso, backoff_s, drop_local, drop_transcripts, is_locked, manifest_path, utcnow
+from capture.meeting_purge import mark_deleted, upload_writer
+from capture.recorder import (
+    _iso,
+    backoff_s,
+    drop_local,
+    drop_transcripts,
+    is_locked,
+    manifest_path,
+    utcnow,
+)
 from upload.assign import _is_gone
 from upload.intake import Progress, _due, _load, _save
 
@@ -60,6 +70,7 @@ def _candidate(rec: dict, now: datetime) -> bool:
     return _due(ex, now) if ex else True
 
 
+@upload_writer
 def cleanup_one(recordings_dir: Path, transcripts_dir: Path, *, client,
                 now: Callable[[], datetime] = utcnow) -> Progress | None:
     """한 건을 한 번 진전시킨다. 할 일이 없으면 None. 예외는 올리지 않는다.
@@ -206,6 +217,11 @@ def _probe(recordings_dir: Path, transcripts_dir: Path, d: Path, rec: dict, clie
     try:
         client.report_speakers(mid, rec["report"]["speakers"])
     except BeError as e:
+        if e.code == "MEETING_DELETED":
+            mark_deleted(recordings_dir, {mid})
+            ex.update(state="expired", next_at=None, error=e.code)
+            _try_save(d, rec)
+            return Progress(mid, "expired")
         if e.code == "MEETING_ALREADY_ENDED" or _is_gone(e):
             return _expire(recordings_dir, transcripts_dir, d, rec, f"{e.code}: {e}", t)
         return _later(d, rec, t, f"{type(e).__name__}: {e}")

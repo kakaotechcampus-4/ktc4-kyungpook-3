@@ -1,0 +1,85 @@
+{
+  "description": "Jev 근거 상태 — 명시 약속과 명시 마감(certain), 흐린 마감(inferred), 마감 없음(missing), 조건부 약속(추출 안 됨)",
+  "meeting_date": "2026-11-09",
+  "workspace_id": "ws_eval",
+  "tasks": [],
+  "transcript": {
+    "source": "meeting",
+    "segments": [
+      {
+        "speaker": "uid_pm",
+        "start": 0.0,
+        "end": 3.0,
+        "text": "이번 주 회의 시작할게요.",
+        "seq": 1
+      },
+      {
+        "speaker": "uid_pm",
+        "start": 3.5,
+        "end": 9.0,
+        "text": "하은님, 로그인 API 연동을 이번 주 금요일까지 마무리해 주세요.",
+        "seq": 2
+      },
+      {
+        "speaker": "uid_haeun",
+        "start": 9.5,
+        "end": 12.0,
+        "text": "네, 금요일까지 로그인 API 연동 끝낼게요.",
+        "seq": 3
+      },
+      {
+        "speaker": "uid_minsu",
+        "start": 13.0,
+        "end": 18.0,
+        "text": "검색 성능 개선은 제가 이번 주 안에 한번 볼게요.",
+        "seq": 4
+      },
+      {
+        "speaker": "uid_pm",
+        "start": 19.0,
+        "end": 24.0,
+        "text": "알림 설정 페이지는 제가 맡아서 만들게요.",
+        "seq": 5
+      },
+      {
+        "speaker": "uid_haeun",
+        "start": 25.0,
+        "end": 30.0,
+        "text": "시간 되면 다크 모드도 한번 볼까 생각 중이에요.",
+        "seq": 6
+      },
+      {
+        "speaker": "uid_pm",
+        "start": 31.0,
+        "end": 33.0,
+        "text": "좋아요, 오늘은 여기까지 할게요.",
+        "seq": 7
+      }
+    ]
+  },
+  "expected": [
+    {
+      "note": "명시 약속 + 금요일 마감 → 둘 다 certain",
+      "action": "create",
+      "title_contains": "로그인 API",
+      "due_date": "2026-11-13",
+      "task_status": "certain",
+      "due_status": "certain"
+    },
+    {
+      "note": "'이번 주 안에' 는 날짜 하나로 정해지지 않음 → 마감 inferred",
+      "action": "create",
+      "title_contains": "검색 성능",
+      "task_status": "certain",
+      "due_status": "inferred"
+    },
+    {
+      "note": "마감을 말하지 않음 → 마감 missing",
+      "action": "create",
+      "title_contains": "알림 설정",
+      "due_date": null,
+      "task_status": "certain",
+      "due_status": "missing"
+    }
+  ]
+}

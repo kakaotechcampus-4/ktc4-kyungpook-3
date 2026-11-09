@@ -27,7 +27,7 @@ export async function prefetchMessageInbox(
       threadId: null,
       bundleId: undefined,
       invalidPath: false,
-      composing: false,
+      compose: null,
     })
     if (first.kind === 'thread')
       await queryClient.prefetchQuery(messageThreadQueryOptions(workspaceId, first.threadId))

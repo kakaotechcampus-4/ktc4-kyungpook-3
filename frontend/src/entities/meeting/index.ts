@@ -4,6 +4,7 @@ export type {
   MeetingProgress,
   MeetingStatus,
   MeetingSource,
+  MeetingSourceValue,
   MeetingUploadResult,
   SpeakerCandidate,
   SpeakerLabel,
@@ -14,7 +15,7 @@ export type {
 export { toMeeting, toMeetingSummary, toMeetingUploadResult, toSpeakerView } from './model/mapper'
 export { MEETING_UPLOAD_POLICY } from './model/uploadPolicy'
 export type { MeetingSourceTraits, MeetingTimeAxis } from './model/sourceTraits'
-export { MEETING_SOURCE_TRAITS } from './model/sourceTraits'
+export { meetingSourceTraits } from './model/sourceTraits'
 export { evidenceMoment, formatClock, formatMoment, offsetInstant } from './lib/moment'
 export {
   fetchMeetingList,
@@ -31,7 +32,8 @@ export { assignSpeakers, meetingAudioUrl, speakerViewQueryOptions } from './api/
 export { speakerTitle, speakingTime } from './lib/speakers'
 export type { UploadMeetingOptions } from './api/uploadMeeting'
 export { toUploadForm, uploadMeeting } from './api/uploadMeeting'
-export { findUploadBlockingMeeting } from './lib/uploadBlockingMeeting'
+export type { AcceptedUpload } from './lib/uploadBlockingMeeting'
+export { findAcceptedUpload, findUploadBlockingMeeting } from './lib/uploadBlockingMeeting'
 export type { MinutesList } from './lib/minutesList'
 export { latestMinutesId, toMinutesList } from './lib/minutesList'
 export { meetingFailure } from './lib/meetingFailure'

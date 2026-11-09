@@ -1,8 +1,9 @@
 import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
+import { parseResponse } from '@/shared/api/parseResponse'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { workspaceKey } from '@/shared/api/queryKeys'
-import type { ExtractionDto } from '@/shared/types/api/extraction'
+import { extractionSchema } from '@/shared/types/api/extraction'
 import { toExtraction } from '../model/mapper'
 
 /** 추출 캐시 전체의 접두어. 되돌리기 뒤에 이 key 로 그 공간의 추출 결과를 함께 무효화한다 */
@@ -20,9 +21,11 @@ export function extractionQueryOptions(workspaceId: string, extractionId: string
     queryKey: workspaceKey(workspaceId, 'extractions', extractionId),
     queryFn: async ({ signal }) =>
       toExtraction(
-        await request<ExtractionDto>(`/extractions/${encodeURIComponent(extractionId)}`, {
-          signal,
-        }),
+        parseResponse(
+          extractionSchema,
+          await request<unknown>(`/extractions/${encodeURIComponent(extractionId)}`, { signal }),
+          'extraction',
+        ),
       ),
     staleTime: STALE_TIME.default,
   })

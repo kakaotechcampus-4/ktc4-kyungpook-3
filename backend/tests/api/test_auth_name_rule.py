@@ -168,11 +168,19 @@ def test_signup_rejects_bidi_control_characters(mdb, mark, shape):
 
 def test_too_long_name_is_rejected_before_scanning_characters(monkeypatch):
     """아주 긴 이름은 글자 범주를 구하기 전에 길이로 거절한다(PR #445 리뷰)."""
-    from app.schemas import auth
+    from app.schemas import name as name_rule
 
     def _must_not_run(_ch):
         raise AssertionError("길이를 먼저 검사해야 한다")
 
-    monkeypatch.setattr(auth.unicodedata, "category", _must_not_run)
+    monkeypatch.setattr(name_rule.unicodedata, "category", _must_not_run)
     with pytest.raises(ValueError):
-        auth.validate_name("가" * 100_000)
+        name_rule.validate_name("가" * 100_000)
+
+
+def test_name_str_strips_surrounding_whitespace():
+    from pydantic import TypeAdapter
+
+    from app.schemas.name import NameStr
+
+    assert TypeAdapter(NameStr).validate_python("  홍길동 ") == "홍길동"

@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import (
     AwareDatetime,
@@ -27,6 +27,7 @@ MAX_EVIDENCE_SEQS = 100
 
 
 class MeetingCreateRequest(BaseModel):
+    replaces_meeting_id: str | None = None
     workspace_id: str = Field(..., description="소속 워크스페이스 ID")
     title: str | None = Field(None, description="회의 제목 (optional)")
     source: MeetingSource = Field(
@@ -120,6 +121,7 @@ class MeetingProcessing(BaseModel):
 
 class MeetingDetailResponse(BaseModel):
     meeting_id: str
+    deletion_available: bool = False
     workspace_id: str
     title: str | None
     status: str
@@ -146,6 +148,8 @@ class MeetingMinutesResponse(BaseModel):
     source: str
     attendees: list[dict]
     summary: dict | None
+    # ready: 요약이 있다. pending: 곧 나온다. none: 없다(대상 아님, 실패)
+    summary_status: Literal["ready", "pending", "none"]
     transcript: list[dict]
     permissions: dict
 

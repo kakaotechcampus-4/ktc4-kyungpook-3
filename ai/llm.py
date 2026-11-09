@@ -13,6 +13,7 @@ import json
 import re
 import sys
 import time
+from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
 from shared.config import settings
@@ -21,27 +22,47 @@ Which = Literal["terra", "luna"]
 ALLOWED_MODELS = ("gpt-5.6-terra", "gpt-5.6-luna")
 
 
+@dataclass(frozen=True)
+class LLMReply:
+    """호출 한 번의 결과. 호출이나 파싱이 실패하면 data 가 None 이다. 파싱만 실패했으면 토큰은 남는다."""
+
+    data: dict[str, Any] | None
+    finish_reason: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    elapsed_s: float = 0.0
+
+
 class LLMClient(Protocol):
     name: str
+    model: str
 
     def generate_json(self, prompt: str, *, reasoning_effort: str = "medium") -> dict[str, Any] | None: ...
+
+    def generate_json_once(self, prompt: str, *, timeout_s: float, reasoning_effort: str = "medium") -> LLMReply: ...
 
 
 class NullLLM:
     """LLM 을 쓰지 않는 모드. 항상 None → 호출자가 규칙 기반으로 처리."""
 
     name = "off"
+    model = "off"
 
     def generate_json(self, prompt: str, *, reasoning_effort: str = "medium") -> dict[str, Any] | None:
         return None
+
+    def generate_json_once(self, prompt: str, *, timeout_s: float, reasoning_effort: str = "medium") -> LLMReply:
+        return LLMReply(None)
 
 
 class FakeLLM:
     """테스트용. 미리 정해둔 응답을 순서대로 돌려주고 프롬프트를 기록."""
 
     name = "fake"
+    model = "fake"
 
-    def __init__(self, responses: list[dict[str, Any] | None] | None = None):
+    def __init__(self, responses: list[dict[str, Any] | LLMReply | None] | None = None):
         self.responses = list(responses or [])
         self.prompts: list[str] = []
 
@@ -50,6 +71,13 @@ class FakeLLM:
         if not self.responses:
             return None
         return self.responses.pop(0)
+
+    def generate_json_once(self, prompt: str, *, timeout_s: float, reasoning_effort: str = "medium") -> LLMReply:
+        self.prompts.append(prompt)
+        reply = self.responses.pop(0) if self.responses else None
+        if reply is None:
+            return LLMReply(None)
+        return reply if isinstance(reply, LLMReply) else LLMReply(reply, finish_reason="stop")
 
 
 def _extract_json(text: str) -> dict[str, Any] | None:
@@ -108,6 +136,30 @@ class MLAPIClient:
                 print(f"[llm] {self.model} 호출 실패 → 규칙 기반 폴백: {msg[:120]}", file=sys.stderr)
                 return None
         return None
+
+    def generate_json_once(self, prompt: str, *, timeout_s: float, reasoning_effort: str = "medium") -> LLMReply:
+        """재시도 없는 호출 한 번. 예외를 내지 않는다. 시간 상한과 재시도를 호출자가 정할 때 쓴다."""
+        started = time.monotonic()
+        self.calls += 1
+        try:
+            resp = self._client.with_options(timeout=timeout_s, max_retries=0).chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                reasoning_effort=reasoning_effort,
+                response_format={"type": "json_object"},
+            )
+            choice, usage = resp.choices[0], resp.usage
+            return LLMReply(
+                _extract_json(choice.message.content or ""),
+                finish_reason=choice.finish_reason,
+                prompt_tokens=getattr(usage, "prompt_tokens", None),
+                completion_tokens=getattr(usage, "completion_tokens", None),
+                reasoning_tokens=getattr(getattr(usage, "completion_tokens_details", None), "reasoning_tokens", None),
+                elapsed_s=time.monotonic() - started,
+            )
+        except Exception as e:  # noqa: BLE001 - 어떤 실패든 호출자에게는 data 가 없는 답이다
+            print(f"[llm] {self.model} 호출 실패: {str(e)[:120]}", file=sys.stderr)
+            return LLMReply(None, elapsed_s=time.monotonic() - started)
 
 
 _cached: dict[str, LLMClient] = {}

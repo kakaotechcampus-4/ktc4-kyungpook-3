@@ -3,6 +3,13 @@ import type { Page, TestInfo } from '@playwright/test'
 
 /** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 + M6 태스크·승인 + M7 대시보드 + M8 태스크 보기·설정 + #320 팀원 초대 + #256 화자 지정 + #370 재촉 만들기 + #371 메시지 + #411 알림 띠 + #419 수정 제안 + #482 메시지 긴 문구 + #457 로그인 시도 제한 */
 export type Scenario =
+  | 'consent-required'
+  | 'consent-signup'
+  | 'consent-agreed'
+  | 'consent-mismatch'
+  | 'consent-read-error'
+  | 'consent-write-error'
+  | 'consent-response-lost'
   | 'signed-out'
   | 'no-workspace'
   | 'single-workspace'

@@ -1,8 +1,9 @@
 import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
+import { parseResponse } from '@/shared/api/parseResponse'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import { config } from '@/shared/config/env'
-import type { SpeakerAssignDto, SpeakerViewDto } from '@/shared/types/api/meeting'
+import { speakerViewSchema } from '@/shared/types/api/meeting'
 import { toSpeakerView } from '../model/mapper'
 
 /**
@@ -14,19 +15,24 @@ export function speakerViewQueryOptions(workspaceId: string, meetingId: string) 
     queryKey: workspaceKey(workspaceId, 'meetings', 'speakers', meetingId),
     queryFn: async ({ signal }) =>
       toSpeakerView(
-        await request<SpeakerViewDto>(`/meetings/${encodeURIComponent(meetingId)}/speakers`, {
-          signal,
-        }),
+        parseResponse(
+          speakerViewSchema,
+          await request<unknown>(`/meetings/${encodeURIComponent(meetingId)}/speakers`, { signal }),
+          'meeting',
+        ),
       ),
   })
 }
 
-/** 라벨마다 팀원(외부 참석자는 null)을 낸다. 키는 조회한 라벨과 정확히 같아야 한다. 같은 지정을 다시 내도 200 이다 */
+/**
+ * 라벨마다 팀원(외부 참석자는 null)을 낸다. 키는 조회한 라벨과 정확히 같아야 한다. 같은 지정을 다시 내도 200 이다.
+ * 응답 본문은 읽지 않는다
+ */
 export async function assignSpeakers(
   meetingId: string,
   mapping: Record<string, string | null>,
 ): Promise<void> {
-  await request<SpeakerAssignDto>(`/meetings/${encodeURIComponent(meetingId)}/speakers`, {
+  await request<unknown>(`/meetings/${encodeURIComponent(meetingId)}/speakers`, {
     method: 'PUT',
     body: { mapping },
   })

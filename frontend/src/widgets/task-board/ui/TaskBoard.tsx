@@ -6,7 +6,7 @@ import { pendingApprovalListQueryOptions } from '@/entities/approval'
 import type { Approval } from '@/entities/approval'
 import { meetingListQueryOptions } from '@/entities/meeting'
 import type { MeetingSummary } from '@/entities/meeting'
-import { memberListQueryOptions } from '@/entities/member'
+import { memberListQueryOptions, recordMemberListQueryOptions } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import {
   TASK_STATUS_LABEL,
@@ -151,6 +151,7 @@ export function TaskBoard({
   const tasks = useQuery(taskListQueryOptions(workspaceId))
   const approvals = useQuery({ ...pendingApprovalListQueryOptions(workspaceId), enabled: isPm })
   const members = useQuery(memberListQueryOptions(workspaceId))
+  const recordMembers = useQuery(recordMemberListQueryOptions(workspaceId))
   // 카드의 회의 링크 이름·근거 시각과 캘린더의 회의 칩에만 쓴다. 못 받아도 화면은 그린다
   const meetings = useQuery({
     ...meetingListQueryOptions(workspaceId),
@@ -158,7 +159,10 @@ export function TaskBoard({
   })
   const pending = useTaskStatusOverlay(workspaceId)
 
-  const names = useMemo(() => memberNames(members.data), [members.data])
+  const names = useMemo(
+    () => memberNames(recordMembers.data ?? members.data),
+    [recordMembers.data, members.data],
+  )
   const meetingById = useMemo(
     () => new Map((meetings.data ?? []).map((meeting) => [meeting.id, meeting])),
     [meetings.data],
@@ -218,6 +222,7 @@ export function TaskBoard({
     { name: '태스크', query: tasks },
     ...(isPm ? [{ name: '확인 필요', query: approvals }] : []),
     { name: '팀원', query: members },
+    { name: '공동 기록 작성자', query: recordMembers },
     ...(view.view === 'calendar' ? [{ name: '회의', query: meetings }] : []),
   ]
   const missing =
@@ -324,7 +329,7 @@ export function TaskBoard({
     body = (
       <GanttView
         workspaceId={workspaceId}
-        members={memberList}
+        members={recordMembers.data ?? memberList}
         names={names}
         tasks={overlaid}
         approvals={createList}

@@ -11,6 +11,7 @@ import { taskListQueryOptions } from '@/entities/task'
 import { MemberAliasPanel } from '@/features/member-alias'
 import type { MemberAliasesState } from '@/features/member-alias'
 import { MemberInviteControl } from '@/features/member-invite'
+import { MemberRoleControl } from '@/features/member-role'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Button } from '@/shared/ui/button'
@@ -180,7 +181,10 @@ export function TeamOverview({
                     inactive={inactive.has(member.id)}
                     invite={
                       isPm ? (
-                        <MemberInviteControl workspaceId={workspaceId} member={member} />
+                        <>
+                          <MemberInviteControl workspaceId={workspaceId} member={member} />
+                          <MemberRoleControl workspaceId={workspaceId} member={member} />
+                        </>
                       ) : null
                     }
                     aliases={{

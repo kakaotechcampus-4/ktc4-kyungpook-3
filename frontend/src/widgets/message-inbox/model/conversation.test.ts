@@ -14,6 +14,7 @@ function thread(messages: Message[], upcoming: Bundle[] = []): MessageThread {
     lastMessage: null,
     awaitingReplySince: '2026-09-16T18:00:00+09:00',
     dmFailed: false,
+    webReply: 'unknown',
     messages,
     upcoming,
   }
@@ -21,6 +22,24 @@ function thread(messages: Message[], upcoming: Bundle[] = []): MessageThread {
 
 const bot = (id: string, createdAt: string, dm: Extract<Message, { sender: 'bot' }>['dm']) =>
   ({ sender: 'bot', id, body: `${id} 본문`, createdAt, dm }) as const satisfies Message
+
+const pm = (
+  id: string,
+  author: { id: string; name: string } | null,
+  dm: Extract<Message, { sender: 'pm' }>['dm'] = { status: 'delivered' },
+) =>
+  ({
+    sender: 'pm',
+    id,
+    body: `${id} 본문`,
+    createdAt: '2026-09-17T11:00:00+09:00',
+    dm,
+    authorMemberId: author?.id ?? null,
+    authorName: author?.name ?? null,
+  }) as const satisfies Message
+
+const SEOYEON = { id: 'mb_01', name: '김서연' }
+const JIHYUN = { id: 'mb_06', name: '오지현' }
 
 const webReply: Message = {
   sender: 'member',
@@ -149,4 +168,70 @@ it('PM 이 자기 대화를 보면 봇은 왼쪽, 자기 답장은 오른쪽이�
     ['mg_web', 'own', 'own'],
     ['bd_01', 'other', 'upcoming'],
   ])
+})
+
+const pmBubbles = (messages: Message[], policy: typeof pmPolicy) =>
+  bubbles(
+    buildConversation(thread(messages), { policy, botName: '카테캠 3팀', today, now }).days.flatMap(
+      (day) => day.items,
+    ),
+  ).map(({ id, side, look, speaker, author, avatar }) => ({
+    id,
+    side,
+    look,
+    speaker,
+    author,
+    avatar,
+  }))
+
+it('PM 이 남의 대화를 보면 자기 PM 글은 오른쪽 나이고, 다른 PM 의 글은 왼쪽에 작성자 이름을 보인다', () => {
+  expect(
+    pmBubbles(
+      [
+        bot('mg_01', '2026-09-16T18:00:00+09:00', { status: 'delivered' }),
+        pm('mg_02', SEOYEON),
+        pm('mg_03', JIHYUN),
+        pm('mg_04', null),
+      ],
+      pmPolicy,
+    ),
+  ).toEqual([
+    { id: 'mg_01', side: 'own', look: 'own', speaker: '봇', author: null, avatar: null },
+    { id: 'mg_02', side: 'own', look: 'own', speaker: '나', author: null, avatar: null },
+    {
+      id: 'mg_03',
+      side: 'other',
+      look: 'other',
+      speaker: '오지현',
+      author: '오지현',
+      avatar: '오',
+    },
+    // 작성자 칸이 비어 오면 PM 으로 대신한다
+    { id: 'mg_04', side: 'other', look: 'other', speaker: 'PM', author: 'PM', avatar: 'P' },
+  ])
+})
+
+it('팀원 화면과 PM 의 자기 대화에서 PM 글은 왼쪽에 작성자 이름을 보인다', () => {
+  for (const policy of [memberPolicy, pmSelfPolicy])
+    expect(pmBubbles([pm('mg_02', SEOYEON), webReply], policy)).toEqual([
+      {
+        id: 'mg_02',
+        side: 'other',
+        look: 'other',
+        speaker: '김서연',
+        author: '김서연',
+        avatar: '김',
+      },
+      { id: 'mg_web', side: 'own', look: 'own', speaker: '나', author: null, avatar: null },
+    ])
+})
+
+it('DM 을 보내지 못한 PM 글도 이유와 함께 알린다', () => {
+  const view = buildConversation(
+    thread([pm('mg_02', SEOYEON, { status: 'failed', reason: 'discord_not_linked' })]),
+    { policy: pmPolicy, botName: '카테캠 3팀', today, now },
+  )
+  expect(bubbles(view.days.flatMap((day) => day.items))[0].dmFailure).toBe(
+    'DM 못 보냄 · Discord 계정이 연결되지 않았어요',
+  )
 })

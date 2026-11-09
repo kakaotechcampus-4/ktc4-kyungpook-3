@@ -1,5 +1,11 @@
-import { formatClock, MEETING_SOURCE_TRAITS, offsetInstant } from '@/entities/meeting'
-import type { MeetingSource, MeetingSummary, MeetingTimeAxis } from '@/entities/meeting'
+import { formatClock, meetingSourceTraits, offsetInstant } from '@/entities/meeting'
+import type {
+  MeetingSource,
+  MeetingSourceValue,
+  MeetingSummary,
+  MeetingTimeAxis,
+} from '@/entities/meeting'
+import { isKnownValue } from '@/shared/api/unknownValue'
 import {
   formatSeoulDateTime,
   formatSeoulMonthDayTime,
@@ -20,7 +26,7 @@ export function formatMinutesLength(ms: number | null): string | null {
 export function listMeta(meeting: MeetingSummary): string {
   const shortDateTime = formatSeoulMonthDayTime(meeting.startedAt)
   const length =
-    MEETING_SOURCE_TRAITS[meeting.source].timeAxis === 'recording'
+    meetingSourceTraits(meeting.source).timeAxis === 'recording'
       ? formatMinutesLength(meeting.durationMs)
       : null
   return [
@@ -48,11 +54,18 @@ const DETAIL_META: Record<MeetingTimeAxis, (startedAt: string, durationMs: numbe
       .filter((part) => part !== null && part !== '')
       .join(' · '),
   wall_clock: chatRange,
+  unknown: (startedAt) => formatSeoulDateTime(startedAt),
 }
 
-/** 회의록 머리의 메타 — 녹음 회의는 `2026-09-15 14:00 · 45:30`, 채팅 회의는 서울 시각 범위다. 길이를 모르면 시작 시각만이다 */
-export function detailMeta(source: MeetingSource, startedAt: string, durationMs: number): string {
-  return DETAIL_META[MEETING_SOURCE_TRAITS[source].timeAxis](startedAt, durationMs)
+/**
+ * 회의록 머리의 메타 — 녹음 회의는 `2026-09-15 14:00 · 45:30`, 채팅 회의는 서울 시각 범위다. 길이나 출처를 모르면 시작 시각만이다
+ */
+export function detailMeta(
+  source: MeetingSourceValue,
+  startedAt: string,
+  durationMs: number,
+): string {
+  return DETAIL_META[meetingSourceTraits(source).timeAxis](startedAt, durationMs)
 }
 
 /** 마감일 — `9/20`. 날짜 전용 값이라 시간대를 바꾸지 않는다 (D-144). 형식이 틀리면 null */
@@ -63,16 +76,24 @@ export function formatDue(date: string | null): string | null {
   return `${Number(month)}/${Number(day)}`
 }
 
-/** 출처 표시. Discord 회의는 봇이 모은 것이고 업로드 관련 행동이 없다 (U5-9, D-157) */
-export const SOURCE_LABEL: Record<MeetingSource, string> = {
+const SOURCE_LABEL: Record<MeetingSource, string> = {
   discord: 'Discord 자동 수집',
   manual_upload: '직접 올린 녹음',
   chat: 'Discord 채팅',
 }
 
-/** 목록 행 제목 옆 배지. 채팅 회의는 음성 회의와 같은 목록에 섞이므로 구분해 보인다 (#379) */
-export const SOURCE_BADGE: Record<MeetingSource, string | null> = {
+/** 출처 표시. Discord 회의는 봇이 모은 것이고 업로드 관련 행동이 없다 (U5-9, D-157). 모르는 출처는 그렇다고 쓴다 (#348) */
+export function sourceLabel(source: MeetingSourceValue): string {
+  return isKnownValue(source) ? SOURCE_LABEL[source] : '알 수 없는 출처'
+}
+
+const SOURCE_BADGE: Record<MeetingSource, string | null> = {
   discord: null,
   manual_upload: null,
   chat: '채팅',
+}
+
+/** 목록 행 제목 옆 배지. 채팅 회의는 음성 회의와 같은 목록에 섞이므로 구분해 보인다 (#379). 모르는 출처는 배지가 없다 */
+export function sourceBadge(source: MeetingSourceValue): string | null {
+  return isKnownValue(source) ? SOURCE_BADGE[source] : null
 }

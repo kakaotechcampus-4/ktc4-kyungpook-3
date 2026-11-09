@@ -1,5 +1,6 @@
 """비밀번호 재설정 토큰 발급·확인·변경(#356). 메일은 보내지 않고 보낼 내용을 돌려주며, commit 은 호출자가 한다."""
 import hashlib
+import logging
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -15,7 +16,11 @@ from app.services.passwords import hash_password
 TOKEN_TTL = timedelta(minutes=30)
 COOLDOWN = timedelta(seconds=60)
 HOURLY_LIMIT = 5
+# IP 상한(5)보다 커야 공인 IP 하나로 전체 예산을 다 쓰지 못한다(#550 리뷰).
+GLOBAL_HOURLY_LIMIT = 10
 RETENTION = timedelta(days=7)
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -49,6 +54,13 @@ def _reason(row: PasswordResetToken | None, now: datetime) -> str | None:
 
 
 def request_reset(db: DbSession, email: str, *, now: datetime, base_url: str) -> ResetMail | None:
+    # 사용자 조회 전에 전체 발급량을 본다(있는/없는 이메일이 같은 경로). 무효·사용된 행도 센다. 이전 링크는 건드리지 않는다.
+    issued = db.scalar(
+        select(func.count()).select_from(PasswordResetToken).where(PasswordResetToken.created_at > now - timedelta(hours=1))
+    )
+    if issued >= GLOBAL_HOURLY_LIMIT:
+        logger.warning("password reset request blocked: reason=global")
+        return None
     user = db.scalars(select(User).where(User.email == email).with_for_update()).first()
     if user is None:
         return None

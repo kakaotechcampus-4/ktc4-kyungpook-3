@@ -5,7 +5,6 @@ export type ExtractionApprovalStatus = 'pending' | 'approved' | 'rejected'
 export interface ExtractionItem {
   id: string
   title: string
-  confidence: number
   gate: ExtractionGate
   assigneeMemberId: string | null
   assigneeLabel: string

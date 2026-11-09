@@ -1,0 +1,343 @@
+{
+ "description": "PR #261 때 만든 28개(조건부·질문·부정·근사·계산 오류와 PR 리뷰가 짚은 입력)",
+ "meeting_date": "2026-11-02",
+ "cases": [
+  {
+   "name": "약속+이번 주 요일",
+   "category": "기존",
+   "lines": [
+    "그건 제가 이번 주 금요일까지 할게요."
+   ],
+   "task": "API 에러 코드 목록 정리",
+   "due_date": "2026-11-06",
+   "due_raw": "이번 주 금요일까지",
+   "expect_task": true,
+   "expect_due": true
+  },
+  {
+   "name": "지시+일만 있는 날짜",
+   "category": "기존",
+   "lines": [
+    "로그인 화면 시안은 지민님이 14일까지 맡아주세요."
+   ],
+   "task": "로그인 화면 시안",
+   "due_date": "2026-11-14",
+   "due_raw": "14일까지",
+   "expect_task": true,
+   "expect_due": true
+  },
+  {
+   "name": "지시+내일",
+   "category": "기존",
+   "lines": [
+    "배포 스크립트는 내일까지 올려 주세요."
+   ],
+   "task": "배포 스크립트 작성",
+   "due_date": "2026-11-03",
+   "due_raw": "내일까지",
+   "expect_task": true,
+   "expect_due": true
+  },
+  {
+   "name": "결정+다음 주 요일",
+   "category": "기존",
+   "lines": [
+    "회원가입 API 는 다음 주 수요일까지 하기로 했습니다."
+   ],
+   "task": "회원가입 API 구현",
+   "due_date": "2026-11-11",
+   "due_raw": "다음 주 수요일까지",
+   "expect_task": true,
+   "expect_due": true
+  },
+  {
+   "name": "약속+M월 D일",
+   "category": "기존",
+   "lines": [
+    "결제 모듈 테스트는 11월 20일까지 제가 맡을게요."
+   ],
+   "task": "결제 모듈 테스트",
+   "due_date": "2026-11-20",
+   "due_raw": "11월 20일까지",
+   "expect_task": true,
+   "expect_due": true
+  },
+  {
+   "name": "두 줄에 걸친 지시",
+   "category": "기존",
+   "lines": [
+    "API 명세서 작성 담당이 필요합니다.",
+    "이건 지민님이 다음 주 월요일까지 맡아주세요."
+   ],
+   "task": "API 명세서 작성",
+   "due_date": "2026-11-09",
+   "due_raw": "다음 주 월요일까지",
+   "expect_task": true,
+   "expect_due": true
+  },
+  {
+   "name": "약속+마감 없음",
+   "category": "기존",
+   "lines": [
+    "알림 설정 페이지는 제가 할게요."
+   ],
+   "task": "알림 설정 페이지 개발",
+   "due_date": null,
+   "due_raw": null,
+   "expect_task": true,
+   "expect_due": null
+  },
+  {
+   "name": "조건부: 시간 되면",
+   "category": "기존",
+   "lines": [
+    "시간 되면 접근성 점검도 해볼게요."
+   ],
+   "task": "접근성 점검",
+   "due_date": null,
+   "due_raw": null,
+   "expect_task": false,
+   "expect_due": null
+  },
+  {
+   "name": "조건부: 여유 되면",
+   "category": "기존",
+   "lines": [
+    "여유 되면 문서도 정리해둘게요."
+   ],
+   "task": "문서 정리",
+   "due_date": null,
+   "due_raw": null,
+   "expect_task": false,
+   "expect_due": null
+  },
+  {
+   "name": "질문",
+   "category": "기존",
+   "lines": [
+    "지민님이 API 문서 정리해 주실 수 있을까요?"
+   ],
+   "task": "API 문서 정리",
+   "due_date": null,
+   "due_raw": null,
+   "expect_task": false,
+   "expect_due": null
+  },
+  {
+   "name": "제안",
+   "category": "기존",
+   "lines": [
+    "캐시를 적용하면 좋을 것 같아요."
+   ],
+   "task": "캐시 적용",
+   "due_date": null,
+   "due_raw": null,
+   "expect_task": false,
+   "expect_due": null
+  },
+  {
+   "name": "부정",
+   "category": "기존",
+   "lines": [
+    "다크모드는 이번엔 안 하기로 했습니다."
+   ],
+   "task": "다크모드 구현",
+   "due_date": null,
+   "due_raw": null,
+   "expect_task": false,
+   "expect_due": null
+  },
+  {
+   "name": "지난 얘기",
+   "category": "기존",
+   "lines": [
+    "로그 수집 얘기는 지난 회의에서 했었죠."
+   ],
+   "task": "로그 수집 개선",
+   "due_date": null,
+   "due_raw": null,
+   "expect_task": false,
+   "expect_due": null
+  },
+  {
+   "name": "근사: 쯤",
+   "category": "기존",
+   "lines": [
+    "API 문서는 제가 다음 주쯤 정리할게요."
+   ],
+   "task": "API 문서 정리",
+   "due_date": "2026-11-13",
+   "due_raw": "다음 주쯤",
+   "expect_task": true,
+   "expect_due": false
+  },
+  {
+   "name": "기간: 안에",
+   "category": "기존",
+   "lines": [
+    "디자인 시안은 이번 주 안에 드릴게요."
+   ],
+   "task": "디자인 시안",
+   "due_date": "2026-11-08",
+   "due_raw": "이번 주 안에",
+   "expect_task": true,
+   "expect_due": false
+  },
+  {
+   "name": "다른 업무의 날짜",
+   "category": "기존",
+   "lines": [
+    "로그인은 금요일까지, 회원가입은 다음 주 화요일까지 할게요."
+   ],
+   "task": "회원가입 구현",
+   "due_date": "2026-11-06",
+   "due_raw": "금요일까지",
+   "expect_task": true,
+   "expect_due": false
+  },
+  {
+   "name": "번복된 날짜",
+   "category": "기존",
+   "lines": [
+    "배포는 목요일까지 하기로 했다가 다음 주 월요일로 미뤘어요."
+   ],
+   "task": "배포",
+   "due_date": "2026-11-05",
+   "due_raw": "목요일까지",
+   "expect_task": true,
+   "expect_due": false
+  },
+  {
+   "name": "다다음 주",
+   "category": "기존",
+   "lines": [
+    "제가 다다음 주 화요일까지 할게요."
+   ],
+   "task": "환불 기능 구현",
+   "due_date": "2026-11-10",
+   "due_raw": "다음 주 화요일",
+   "expect_task": true,
+   "expect_due": false
+  },
+  {
+   "name": "계산 오류",
+   "category": "기존",
+   "lines": [
+    "리뷰는 제가 금요일까지 할게요."
+   ],
+   "task": "코드 리뷰",
+   "due_date": "2026-11-07",
+   "due_raw": "금요일까지",
+   "expect_task": true,
+   "expect_due": false
+  },
+  {
+   "name": "리뷰1: 못 하겠습니다",
+   "category": "기존",
+   "lines": [
+    "그건 이번 스프린트에서 못 하겠습니다."
+   ],
+   "task": "검색 필터 개선",
+   "due_date": null,
+   "due_raw": null,
+   "expect_task": false,
+   "expect_due": null
+  },
+  {
+   "name": "리뷰1: 안 하기로",
+   "category": "기존",
+   "lines": [
+    "결제 연동은 이번엔 안 하기로 했어요."
+   ],
+   "task": "결제 연동",
+   "due_date": null,
+   "due_raw": null,
+   "expect_task": false,
+   "expect_due": null
+  },
+  {
+   "name": "리뷰1: 안 할게요",
+   "category": "기존",
+   "lines": [
+    "저는 안 할게요."
+   ],
+   "task": "온보딩 문서 작성",
+   "due_date": null,
+   "due_raw": null,
+   "expect_task": false,
+   "expect_due": null
+  },
+  {
+   "name": "리뷰1: 지난 회의 얘기",
+   "category": "기존",
+   "lines": [
+    "지난 회의에서 그 얘기 했습니다."
+   ],
+   "task": "알림 정책 정리",
+   "due_date": null,
+   "due_raw": null,
+   "expect_task": false,
+   "expect_due": null
+  },
+  {
+   "name": "리뷰1: 확인했습니다",
+   "category": "기존",
+   "lines": [
+    "확인했습니다."
+   ],
+   "task": "QA 시나리오 확인",
+   "due_date": null,
+   "due_raw": null,
+   "expect_task": false,
+   "expect_due": null
+  },
+  {
+   "name": "리뷰3: 다음 주인데 이번 주 날짜",
+   "category": "기존",
+   "lines": [
+    "다음 주 금요일까지 할게요."
+   ],
+   "task": "통계 API 구현",
+   "due_date": "2026-11-06",
+   "due_raw": "금요일까지",
+   "expect_task": true,
+   "expect_due": false
+  },
+  {
+   "name": "리뷰3: 11/5 와 1/15",
+   "category": "기존",
+   "lines": [
+    "11/5까지 할게요."
+   ],
+   "task": "관리자 페이지 수정",
+   "due_date": "2027-01-15",
+   "due_raw": "1/15",
+   "expect_task": true,
+   "expect_due": false
+  },
+  {
+   "name": "리뷰6: 물음표 없는 질문",
+   "category": "기존",
+   "lines": [
+    "지민님이 그거 해 주실 수 있어요"
+   ],
+   "task": "배너 이미지 교체",
+   "due_date": null,
+   "due_raw": null,
+   "expect_task": false,
+   "expect_due": null
+  },
+  {
+   "name": "리뷰6: 하실래요",
+   "category": "기존",
+   "lines": [
+    "태윤님이 로그 정리 하실래요"
+   ],
+   "task": "로그 정리",
+   "due_date": null,
+   "due_raw": null,
+   "expect_task": false,
+   "expect_due": null
+  }
+ ]
+}
