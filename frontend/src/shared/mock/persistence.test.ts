@@ -8,6 +8,7 @@ import type { TaskDto } from '@/shared/types/api/task'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { db, initialDb, resetDb } from './db'
 import { settleMockOAuth } from './oauth/mockOAuth'
+import { applyScenario } from './scenarios'
 import {
   MOCK_DB_STORAGE_KEY,
   MOCK_DB_VERSION,
@@ -84,6 +85,17 @@ describe('sessionStorage 영속', () => {
       version: number
     }
     expect(stored.version).toBe(MOCK_DB_VERSION)
+  })
+
+  it('이메일·비밀번호 없는 카카오 계정으로 로그인한 상태도 새로고침 뒤 복원된다 (#627)', () => {
+    applyScenario('kakao-account')
+    const saved = structuredClone(db)
+    saveDb(sessionStorage)
+    resetDb()
+    expect(restoreDb(sessionStorage)).toBe(true)
+    expect(db.authenticated).toBe(true)
+    expect(db.session.user).toEqual(saved.session.user)
+    expect(db.accounts[0]).toMatchObject({ password: null, session: { user: { email: null } } })
   })
 
   it('저장값이 없으면 복원하지 않고 db 를 건드리지 않는다', () => {

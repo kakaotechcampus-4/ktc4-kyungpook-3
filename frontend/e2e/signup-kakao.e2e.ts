@@ -12,7 +12,7 @@ async function chooseOnMockKakao(page: Page, choice: string): Promise<void> {
   await expect(page.getByRole('heading', { name: '모의 카카오 로그인' })).toBeVisible({
     timeout: 15_000,
   })
-  await page.getByRole('button', { name: choice }).click()
+  await page.getByRole('button', { name: choice, exact: true }).click()
 }
 
 async function startKakaoLogin(page: Page, choice: string): Promise<void> {
