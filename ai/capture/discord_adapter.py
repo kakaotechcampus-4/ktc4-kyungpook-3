@@ -319,7 +319,9 @@ class RecordingCog(discord.Cog):
         if not ops or str(getattr(ctx.channel, "id", "")) != ops:
             await ctx.respond("운영 채널에서만 쓸 수 있습니다.", ephemeral=True)
             return
-        await ctx.respond(await asyncio.to_thread(worker_gpu, self.recordings_dir, action))
+        answer = await asyncio.to_thread(worker_gpu, self.recordings_dir, action)
+        # 켜기·끄기는 돈과 전사를 바꾼다. 채널 기록에 누가 쳤는지 남긴다
+        await ctx.respond(f"{ctx.author.display_name} 님 요청: {answer}")
 
     # ------------------------------------------------------------------ 이벤트
     @discord.Cog.listener()

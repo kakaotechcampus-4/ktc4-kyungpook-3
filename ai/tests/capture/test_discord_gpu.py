@@ -3,6 +3,7 @@
 
 import json
 import time
+from types import SimpleNamespace
 
 import discord
 import pytest
@@ -22,6 +23,7 @@ class Channel:
 def _ctx(tmp_path, *, channel=OPS):
     cog, guild, vc, _, _ = _setup(tmp_path)
     ctx = FakeCtx(guild, vc, Channel(channel))
+    ctx.author = SimpleNamespace(display_name="민수")
     ctx.ephemeral = []
     respond = ctx.respond
 
@@ -56,6 +58,14 @@ async def test_a_command_in_the_ops_channel_leaves_a_request(tmp_path, verb):
     await _run_gpu(cog, ctx, verb)
     assert _request(tmp_path) == verb
     assert "요청" in ctx.responses[-1] and ctx.ephemeral[-1] is False
+
+
+@pytest.mark.parametrize("verb", ["on", "off", "status"])
+async def test_the_answer_names_who_asked(tmp_path, verb):
+    cog, ctx = _ctx(tmp_path)
+    _worker_beat(tmp_path, failover="manual:normal")
+    await _run_gpu(cog, ctx, verb)
+    assert ctx.responses[-1].startswith("민수 님 요청: ")
 
 
 async def test_a_command_for_a_worker_without_failover_leaves_no_request(tmp_path):
