@@ -35,5 +35,5 @@
 ## 영향 범위와 재검토 조건
 
 - 새 표 하나, 새 API 두 개, 새 오류 코드 하나. 기존 API 와 가입 요청 모양은 바뀌지 않는다.
-- FE 와 경로·필드를 합의하면 [FE 계약](../../../../../frontend/docs/contracts/frontend-api-contract.md) §4.1.4 의 상태를 고친다.
+- FE 와 경로·필드를 합의하면 [FE 계약](../../../../../frontend/docs/contracts/frontend-api-contract.md) §4.1.5 의 상태를 고친다.
 - 탈퇴(#565)를 만들면 동의 기록은 `ON DELETE CASCADE` 로 함께 지워진다. 동의 기록을 탈퇴 뒤에도 보관해야 한다는 검토가 나오면 다시 본다.
