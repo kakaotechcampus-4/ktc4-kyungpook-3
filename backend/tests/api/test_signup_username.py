@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
+from app.api import auth
 from app.core.database import get_db
 from app.main import app
 from app.models import User
@@ -90,8 +91,18 @@ def test_username_at_the_rule_edges_is_accepted(mdb, username):
 
 @pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL(PostgreSQL)이 없습니다.")
 @pytest.mark.parametrize("mdb", ["postgresql"], indirect=True)
-def test_two_signups_racing_for_one_username_make_one_account(mdb):
-    """이메일이 달라 잠금이 갈리므로 사전 조회를 둘 다 지나 unique 인덱스에서 부딪힌다."""
+def test_two_signups_racing_for_one_username_make_one_account(mdb, monkeypatch):
+    """이메일이 달라 잠금이 갈린다. 두 요청이 사전 조회를 모두 지난 뒤에 넣게 맞춰 unique 인덱스에서 부딪히게 한다."""
+    real, both_checked, seen = auth._signup_conflict, threading.Barrier(2), threading.local()
+
+    def check_then_wait(db, user):
+        result = real(db, user)
+        if not getattr(seen, "first", False):
+            seen.first = True
+            both_checked.wait(timeout=10)
+        return result
+
+    monkeypatch.setattr(auth, "_signup_conflict", check_then_wait)
     make = sessionmaker(bind=mdb.get_bind(), autoflush=False)
 
     def per_request():
