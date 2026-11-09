@@ -22,6 +22,8 @@ import { extractionFixtures } from './fixtures/extraction'
 import { taskFixtures, taskHistoryFixtures } from './fixtures/task'
 import { approvalFixtures } from './fixtures/approval'
 import { messageBundleFixtures, messageThreadFixtures } from './fixtures/message'
+import { projectMapFixture } from './fixtures/projectMap'
+import type { MockProjectMap } from './fixtures/projectMap'
 import type { MockNotification, MockPushSubscription } from './fixtures/notification'
 import type { MockReplies } from './reply-state'
 
@@ -238,6 +240,8 @@ export interface MockDb {
   /** #344 리마인드 답장 판단 결과. 판단은 시나리오가 넣는다 (reply-state.ts) */
   replies: MockReplies
   approvals: typeof approvalFixtures
+  /** #551 프로젝트 맵의 주제·결정·태스크 선. 태스크와 회의는 위의 tasks·meetings 다 */
+  projectMap: MockProjectMap
   /** 회의 정리 흐름. 원본 파일은 담지 않는다 — 생성 결과는 위의 meetings·minutes·extractions·tasks·approvals 에 들어간다 */
   meetingFlow: MeetingFlowState
   /** M8 메시지 (계약 §5.7). 보낼 메시지(묶음)와 대화는 공간별이다 */
@@ -297,6 +301,7 @@ export function initialDb(): MockDb {
     autoBlocks: {},
     replies: { judgments: [], changes: [], historyLinks: {} },
     approvals: structuredClone(approvalFixtures),
+    projectMap: structuredClone(projectMapFixture),
     meetingFlow: { mode: 'manual', attendees: {}, speakers: {} },
     messageBundles: structuredClone(messageBundleFixtures),
     messageThreads: structuredClone(messageThreadFixtures),

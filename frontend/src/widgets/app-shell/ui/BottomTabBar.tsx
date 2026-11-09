@@ -12,8 +12,11 @@ const BAR =
 const TAB =
   'flex flex-col items-center justify-center gap-3 text-[11px] leading-none text-dim aria-[current=page]:font-bold aria-[current=page]:text-ink aria-[current=page]:[&_svg]:stroke-[1.9]'
 
+const BAR_TABS = SHELL_TABS.filter(({ compact }) => compact === 'bar')
+
 /**
- * 768px 미만의 주요 화면 이동 (D-180). 헤더 탭과 같은 다섯 곳으로 가고, 지금 화면은 `aria-current` 로 표시한다.
+ * 768px 미만의 주요 화면 이동 (D-180). 헤더 탭 중 막대 자리(`compact: 'bar'`)인 다섯 곳으로 가고, 지금 화면은 `aria-current` 로 표시한다.
+ * 프로젝트 맵은 계정 메뉴에 있다 (#551).
  * 탭을 누르기 시작하면(터치·포커스) `onTabIntent` 로 알린다 — 셸이 그 화면을 미리 받는다 (#536)
  */
 export function BottomTabBar({
@@ -25,7 +28,7 @@ export function BottomTabBar({
 }) {
   return (
     <nav aria-label="주요 화면" data-bottom-tab-bar="" className={BAR}>
-      {SHELL_TABS.map(({ key, barLabel, icon, to }) => (
+      {BAR_TABS.map(({ key, barLabel, icon, to }) => (
         <GuardedLink
           key={key}
           to={to(workspaceId)}
