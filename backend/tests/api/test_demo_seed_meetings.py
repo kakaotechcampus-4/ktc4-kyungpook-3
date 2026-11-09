@@ -1,6 +1,7 @@
 """심사용 시드의 지난 회의 재생(#606). AI 봇과 같은 서비스 토큰 API 로 회의를 만들고 끝까지 처리한다."""
 from datetime import datetime, timezone
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select, update
@@ -226,3 +227,111 @@ def test_upload_precheck_passes_after_seed(mdb):
         )
     )
     assert stuck == 0
+
+
+def _bot_start(data, seeded, index=0):
+    """봇이 회의를 만들고 끝낸 데까지 해 둔다."""
+    from app.cli.seed_demo import _segments
+
+    client = _client()
+    meeting = data.meetings[index]
+    created = client.post(
+        "/api/v1/meetings",
+        json={"workspace_id": seeded.workspace_id, "title": meeting.title, "source": "discord"},
+        headers={**SERVICE, "X-Meeting-Lineage-Version": "1"},
+    )
+    assert created.status_code == 201, created.text
+    meeting_id = created.json()["data"]["meeting_id"]
+    assert client.patch(f"/api/v1/meetings/{meeting_id}/end", headers=SERVICE).status_code == 202
+    return client, meeting_id, _segments(meeting, seeded.member_ids)
+
+
+def test_resume_from_partial_sources(mdb):
+    data, seeded = _setup(mdb)
+    client, meeting_id, segments = _bot_start(data, seeded)
+    sent = client.post(
+        f"/api/v1/meetings/{meeting_id}/sources", json={"segments": segments[:3]}, headers=SERVICE
+    )
+    assert sent.status_code == 201, sent.text
+
+    report = _replay(mdb, data, seeded)
+
+    assert report.done == len(data.meetings)
+    assert _count(mdb, Meeting) == len(data.meetings)
+    mdb.expire_all()
+    assert mdb.get(Meeting, meeting_id).status == "done"
+    stored = mdb.scalar(select(func.count()).select_from(Source).where(Source.meeting_id == meeting_id))
+    assert stored == len(data.meetings[0].turns)
+
+
+def test_resume_writes_missing_summary(mdb):
+    from app.cli.seed_demo import _items
+
+    data, seeded = _setup(mdb)
+    client, meeting_id, segments = _bot_start(data, seeded)
+    assert client.post(
+        f"/api/v1/meetings/{meeting_id}/sources", json={"segments": segments}, headers=SERVICE
+    ).status_code == 201
+    extracted = client.post("/api/v1/extractions", json={
+        "meeting_id": meeting_id, "workspace_id": seeded.workspace_id,
+        "items": _items(data.meetings[0], seeded.member_ids, datetime.now(timezone.utc).date()),
+    }, headers=SERVICE)
+    assert extracted.status_code == 201, extracted.text
+    _fill_embeddings(mdb)(seeded.workspace_id)
+
+    report = _replay(mdb, data, seeded)
+
+    assert report.summaries_written == len(data.meetings)
+    assert _count(mdb, Extraction) == len(data.meetings)
+    pm = _client()
+    assert pm.post("/api/v1/auth/login", json={"email": EMAILS[0], "password": PM_PW}).status_code == 200
+    minutes = pm.get(f"/api/v1/meetings/{meeting_id}/minutes")
+    assert minutes.json()["data"]["summary_status"] == "ready"
+
+
+def test_same_title_upload_meeting_is_left_alone(mdb):
+    data, seeded = _setup(mdb)
+    upload = Meeting(
+        workspace_id=seeded.workspace_id, title=data.meetings[0].title, source="manual_upload", status="processing"
+    )
+    mdb.add(upload)
+    mdb.commit()
+    upload_id = upload.meeting_id
+
+    report = _replay(mdb, data, seeded)
+
+    assert report.done == len(data.meetings)
+    assert report.processing == 0
+    assert _count(mdb, Meeting) == len(data.meetings) + 1
+    mdb.expire_all()
+    assert mdb.get(Meeting, upload_id).status == "processing"
+    assert mdb.scalar(select(func.count()).select_from(Source).where(Source.meeting_id == upload_id)) == 0
+
+
+class _Refusing:
+    def request(self, method, url, **kwargs):
+        raise httpx.ConnectError("connection refused")
+
+
+class _NotJson:
+    def request(self, method, url, **kwargs):
+        return httpx.Response(200, text="<html>proxy</html>")
+
+
+@pytest.mark.parametrize("http", [_Refusing(), _NotJson()], ids=["transport", "not-json"])
+def test_transport_and_body_errors_become_seed_error(mdb, http):
+    data, seeded = _setup(mdb)
+    with pytest.raises(SeedError) as error:
+        _replay(mdb, data, seeded, http=http)
+    assert "/meetings" in str(error.value)
+
+
+def test_embedding_timeout_mentions_rejected_titles(mdb):
+    data, seeded = _setup(mdb)
+    mdb.add(Task(workspace_id=seeded.workspace_id, title="임베딩 대기", status="todo"))
+    mdb.commit()
+    factory = sessionmaker(bind=mdb.get_bind())
+    with pytest.raises(SeedError) as error:
+        poll_embeddings(factory, timeout_s=0.05, interval_s=0.01)(seeded.workspace_id)
+    assert "EMBEDDING_API_KEY" in str(error.value)
+    assert "embedding_rejected_title" in str(error.value)

@@ -45,6 +45,7 @@ MEETING_HOUR_KST = 10
 SECONDS_PER_CHAR = 0.2
 GAP_SECONDS = 0.5
 SUMMARY_MODEL_NAME = "demo-seed"
+SEED_SOURCE = "discord"
 
 
 class SeedError(RuntimeError):
@@ -200,10 +201,19 @@ class ReplayReport:
 
 def _call(http: httpx.Client, method: str, path: str, *, service_token: str, **kwargs) -> dict | None:
     headers = {"X-Service-Token": service_token, **kwargs.pop("headers", {})}
-    res = http.request(method, API + path, headers=headers, **kwargs)
+    try:
+        res = http.request(method, API + path, headers=headers, **kwargs)
+    except httpx.TransportError as error:
+        raise SeedError(f"{method} {path} 를 보내지 못했습니다(API 서버 주소·실행 여부 확인): {error!r}") from error
     if not 200 <= res.status_code < 300:
         raise SeedError(f"{method} {path} 가 {res.status_code} 로 실패했습니다: {res.text[:300]}")
-    return res.json().get("data")
+    try:
+        body = res.json()
+    except ValueError as error:
+        raise SeedError(f"{method} {path} 응답이 JSON 이 아닙니다: {res.text[:300]}") from error
+    if not isinstance(body, dict):
+        raise SeedError(f"{method} {path} 응답이 Envelope 모양이 아닙니다: {res.text[:300]}")
+    return body.get("data")
 
 
 def _started_at(meeting: SeedMeeting, now: datetime) -> datetime:
@@ -240,7 +250,13 @@ def _find_meeting(db: Session, workspace_id: str, title: str) -> tuple[str, str,
     # 엔티티 대신 열만 읽는다. CLI 세션의 식별 맵이 API 가 바꾼 상태를 가리지 않게 하려는 것이다
     row = db.execute(
         select(Meeting.meeting_id, Meeting.status, Meeting.started_at)
-        .where(Meeting.workspace_id == workspace_id, Meeting.title == title, Meeting.deleted_at.is_(None))
+        .where(
+            Meeting.workspace_id == workspace_id,
+            Meeting.title == title,
+            # 같은 제목의 업로드·채팅 회의는 시드가 만든 회의가 아니다
+            Meeting.source == SEED_SOURCE,
+            Meeting.deleted_at.is_(None),
+        )
         .order_by(Meeting.started_at.desc(), Meeting.meeting_id)
         .limit(1)
     ).first()
@@ -289,12 +305,14 @@ def replay_meetings(
     written, skipped = 0, []
     for meeting in data.meetings:
         found = _find_meeting(db, workspace_id, meeting.title)
+        # CLI 세션이 HTTP 호출·임베딩 대기 동안 읽기 트랜잭션을 열어 두지 않게 바로 닫는다
+        db.rollback()
         if found is None:
             created = _call(
                 http, "POST", "/meetings", service_token=service_token,
                 headers={"X-Meeting-Lineage-Version": "1"},
                 json={
-                    "workspace_id": workspace_id, "title": meeting.title, "source": "discord",
+                    "workspace_id": workspace_id, "title": meeting.title, "source": SEED_SOURCE,
                     "started_at": _started_at(meeting, now).isoformat(),
                 },
             )
@@ -322,6 +340,7 @@ def replay_meetings(
             summary_target = extraction["extraction_id"]
         else:
             latest = _latest_extraction(db, meeting_id)
+            db.rollback()
             summary_target = latest[0] if latest is not None and latest[1] is None else None
         if summary_target is not None:
             if _write_summary(http, summary_target, meeting, service_token):
@@ -341,6 +360,7 @@ def _report(db: Session, workspace_id: str, data: SeedData, written: int, skippe
     seeded_meetings = (
         Meeting.workspace_id == workspace_id,
         Meeting.title.in_([m.title for m in data.meetings]),
+        Meeting.source == SEED_SOURCE,
         Meeting.deleted_at.is_(None),
     )
     statuses = Counter(db.scalars(select(Meeting.status).where(*seeded_meetings)))
@@ -355,6 +375,7 @@ def _report(db: Session, workspace_id: str, data: SeedData, written: int, skippe
             Task.workspace_id == workspace_id, Task.is_deleted.is_(False), Task.embedding.is_(None)
         )
     )
+    db.rollback()
     return ReplayReport(
         done=statuses.get("done", 0),
         gates={str(gate): count for gate, count in gates.items() if gate is not None},
@@ -383,7 +404,9 @@ def poll_embeddings(
             if remaining <= 0:
                 raise SeedError(
                     f"{timeout_s:g}초 안에 임베딩이 채워지지 않았습니다. API 서버의 EMBEDDING_API_KEY 와 "
-                    "임베딩 워커를 확인하세요(채워지기 전에는 다음 회의 항목이 auto 로 가지 않습니다)"
+                    "임베딩 워커를 확인하세요(채워지기 전에는 다음 회의 항목이 auto 로 가지 않습니다). "
+                    "키가 맞다면 임베딩 API 가 제목을 거절한 task·승인 카드(embedding_rejected_title 에 제목이 "
+                    "있는 행)일 수 있습니다. 그 행은 다시 시도하지 않아 제목을 고치거나 지울 때까지 기다림이 끝나지 않습니다"
                 )
             time.sleep(min(interval_s, remaining))
 
