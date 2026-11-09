@@ -1,6 +1,6 @@
 # PM 에이전트 — AI 파트
 
-`../implementation_plan_1.md` 의 AI 파트 구현. **현재 캡처(Phase 0 일부)까지 구현됨.**
+Discord 녹음과 웹 업로드를 전사·추출·BE 인계로 처리하는 AI 파트다. 현재 [워커](capture/worker.py), [전사](stt/), [판단](judge/), [업로드](upload/) 코드가 있다. 코드 존재가 외부 공급사·운영 검증 완료를 뜻하지 않는다. 문서·결정 기록은 [문서 안내](docs/README.md)에서 찾는다.
 
 모노레포 구조상 이 저장소는 `ai/` `backend/` `frontend/` 가 각자 독립된 하위 프로젝트입니다(각자 자기
 venv·의존성·테스트를 따로 가짐). **이 디렉토리(`ai/`) 자체가 AI 파트의 프로젝트 루트**이고, 아래 명령은
@@ -151,6 +151,6 @@ python -m capture.worker --retry <서버ID>   # 자동 재시도를 멈춘 회�
 pytest          # py-cord 없이 실행 가능 (스텁 데이터 사용)
 ```
 
-## 다음 단계
+## 구현과 검증 기록
 
-STT 전사(`stt/`)를 붙여서 `recordings/` 결과를 텍스트로 바꾸는 작업.
+녹음 뒤 전사·추출·인계와 웹 업로드 처리는 위 실행·경계 설명에 연결돼 있다. [AI 작성 기록](docs/basis_for_decision/ai/)과 [팀원 작성 기록](docs/basis_for_decision/member/)은 각 기록일의 실행 결과·제약·남은 작업을 보존한다. 실제 Discord·STT·화자 분리 공급사 호출과 운영 배포의 성공 여부는 해당 실행 증거를 별도로 확인한다.

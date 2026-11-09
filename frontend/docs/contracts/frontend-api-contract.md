@@ -1,5 +1,20 @@
 # 프론트엔드 API 계약
 
+## 후속 구현 상태 대조 (2026-11-09, #362)
+
+제공자 BE와 소비자 FE를 develop `70534a85`의 소스에서 다시 대조했다. 아래 표는 과거 §4.0(2026-09-21), §4.7의 초기 요청 상태와 「착수 가능 여부」보다 최신인 구현 사실이다. 기존 합의·제품 결정은 해당 절에 보존한다. 이번 작업에서 API 호출·OAuth·메일·실제 AI 처리·운영 배포를 실행 검증하지 않았다.
+
+| 경계 | 현재 구현과 소비 코드 | 확인을 남긴 범위 |
+|---|---|---|
+| 가입·카카오 로그인 | [BE 인증](../../../backend/app/api/auth.py)에 이메일 코드 발급·확인·증명 기반 가입과 카카오 start·callback·pending이 있다. [FE 인증](../../src/entities/user/api/auth.ts), [코드·카카오 API](../../src/entities/user/api/signupCode.ts), [가입 화면](../../src/features/auth/ui/SignupSteps.tsx)이 소비한다. Google 로그인은 이번 범위에서 제외됐다. | 실제 카카오 앱 설정·redirect URI·메일·운영 성공은 별도. 판본별 동의 API와 최종 정책 공개는 이 확인에 포함하지 않음 |
+| 온보딩 | [BE workspaces](../../../backend/app/api/workspaces.py)의 `update_onboarding`이 PM 권한·행 잠금 안에서 단계별 상태를 저장한다. [FE onboarding](../../src/entities/workspace/api/onboarding.ts)은 PATCH 뒤 상세를 새로 읽는다. | API가 존재한다는 사실과 실제 계정의 단계 재개 검증을 구분 |
+| Discord·Notion 연결 | [BE integrations](../../../backend/app/api/integrations.py)에 두 provider의 start와 `/integrations/{provider}/callback`이 있다. [FE OAuth 주소](../../src/entities/integration/api/oauth.ts)와 [연결 기능](../../src/features/integration-connection/model/useIntegrationConnection.ts)이 소비한다. Notion 상태는 not_connected·connecting·connected·revoked를 다룬다. | 실제 공급사 권한·토큰·DB 준비와 운영 성공은 별도 |
+| 팀원 초대 | [BE invitations](../../../backend/app/api/invitations.py)와 [FE 조회](../../src/entities/invitation/api/invitationQueries.ts)·[명령](../../src/entities/invitation/api/invitationMutations.ts)이 연결돼 있다. [내 초대](../../src/widgets/app-shell/ui/MyInvitations.tsx)는 수락·거절, [PM 초대 기능](../../src/features/member-invite/ui/MemberInviteControl.tsx)은 생성·취소·연결 끊기를 소비한다. | FE 미연결이라는 초기 설명을 현재 상태로 쓰지 않는다. 화면 합의·실제 초대 왕복의 신규 완료 판정은 하지 않음 |
+| 업로드·회의록 | [BE 업로드](../../../backend/app/api/workspaces.py)는 반복 `attendee_member_ids`를 `list[str]`로 받고 파일·참석자를 저장한다. [회의록](../../../backend/app/api/meetings.py)은 Source를 전사·참석자로 구성하고 Extraction.summary JSON을 읽는다. [FE 업로드](../../src/entities/meeting/api/uploadMeeting.ts)·[회의록 조회](../../src/entities/minutes/api/minutesQuery.ts)가 소비한다. [AI 워커](../../../ai/capture/worker.py)·[업로드 가져오기](../../../ai/upload/intake.py) 코드도 있다. | summary는 저장된 유효 객체가 없으면 null이다. 전체 처리의 성공을 코드 존재로 단정하지 않음 |
+| 메시지 | [FE 메시지 API](../../src/entities/message/api/messageQueries.ts)의 목록·대화·쓰기와 [웹소켓 신호](../../src/widgets/message-inbox/model/useMessageSignals.ts)가 [BE messages](../../../backend/app/api/messages.py)·[소켓](../../../backend/app/api/message_socket.py)을 소비한다. 세부 동작은 §5.7이다. | 실서버 DM·서로 다른 계정·재접속·푸시 검증은 별도 |
+
+`frontend/docs/requests/`에는 별도 요청 본문이 없으므로 대표 요청·합의 기록은 이 문서 §4에 유지한다. 과거 검증 기록을 이번 정적 대조의 실행 결과로 바꾸지 않는다.
+
 ## 계정 탈퇴와 정리 상태 (#575, 2026-11-09)
 
 ### 합의 상태
@@ -200,7 +215,7 @@ FE 변경과 실제 검증은 [M6 후속 결과](../plan/m6/result.md)에 기록
 
 | API (`/api/v1` 아래) | 입력·출력 | 소비 코드 |
 |---|---|---|
-| `POST /auth/signup`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | 가입 `{email,password,name}`, 로그인 `{email,password}`. 세션 DTO를 도메인 세션으로 변환, 토큰을 화면에 전달하지 않음 | [인증](../../src/entities/user/api/auth.ts), [세션](../../src/entities/user/api/session.ts), [인증 DTO](../../src/shared/types/api/auth.ts) |
+| `POST /auth/signup`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | 가입 `{verification_token?,password,name,link_kakao}`, 로그인 `{email,password}`. 이메일 증명·카카오 대기 조건은 §4.1.4다. 세션 DTO를 도메인 세션으로 변환, 토큰을 화면에 전달하지 않음 | [인증](../../src/entities/user/api/auth.ts), [세션](../../src/entities/user/api/session.ts), [인증 DTO](../../src/shared/types/api/auth.ts) |
 | `/workspaces` 목록·생성·상세, `PATCH /workspaces/{id}/onboarding` | 공간·역할·단계 상태를 사용. 단계 갱신 후 상세 재조회 | [공간 API](../../src/entities/workspace/api), [공간 DTO](../../src/shared/types/api/workspace.ts) |
 | `GET /workspaces/{id}/integrations`, `DELETE /workspaces/{id}/integrations/{provider}` | Discord·Notion 상태. 해제는 204 무본문. Discord 의 `chat_channel` 과 채팅 채널 목록·저장·해제는 §4.3.1 | [연동 API](../../src/entities/integration/api/integrations.ts), [연동 DTO](../../src/shared/types/api/integration.ts) |
 | `POST /workspaces/{id}/meetings/upload` | multipart `title`, ISO `started_at`, 참석자별 반복 `attendee_member_ids`, `file`. 202 data `{meeting_id,status}` | [업로드](../../src/entities/meeting/api/uploadMeeting.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
@@ -215,12 +230,12 @@ FE 변경과 실제 검증은 [M6 후속 결과](../plan/m6/result.md)에 기록
 | 기존 문서의 상태·요청 | 현재 코드에서 확인한 사실 | 남은 제약·합의 상태 |
 |---|---|---|
 | §4.2 온보딩 저장 스텁 | [workspaces.py](../../../backend/app/api/workspaces.py)의 `update_onboarding`은 PM 검사·행 잠금·단계 저장·완료 상태 갱신을 수행 | 실 API 재개 흐름은 이번 작업에서 실행 검증하지 않음 |
-| §4.3 OAuth start·callback 없음 | [integrations.py](../../../backend/app/api/integrations.py)에 Notion start와 `/integrations/notion/callback` 구현. [main.py](../../../backend/app/main.py)에 callback router 등록 | Google·Discord OAuth 경로는 해당 라우터에 없음. Notion의 실제 설정·외부 인증 성공은 미검증 |
+| §4.3 OAuth start·callback 없음 | [integrations.py](../../../backend/app/api/integrations.py)에 Notion·Discord start와 `/integrations/{provider}/callback` 구현. [main.py](../../../backend/app/main.py)에 callback router 등록 | Google 로그인은 제외. Discord·Notion의 실제 설정·외부 인증 성공은 이번 작업에서 미검증 |
 | §4.0-②-17 업로드 PM 권한 강제 요청 | [workspaces.py](../../../backend/app/api/workspaces.py)의 업로드 의존성이 `get_current_pm` | 기존 요청은 과거 기록으로 보존. 서버 권한 동작은 실행 검증하지 않음 |
-| §4.4 반복 참석자 multipart 필드 | 프론트는 참석자마다 필드를 반복. 서버 업로드 시그니처는 `attendee_member_ids: str = Form(...)`이며 값을 저장하지 않음 | 다중 참석자 해석·저장 차이 남음. 새 형식 합의 없음 |
+| §4.4 반복 참석자 multipart 필드 | 프론트는 참석자마다 필드를 반복. 서버는 `attendee_member_ids: list[str] = Form(...)`로 받고 중복 제거·소속 검사 후 `MeetingUpload`에 저장 | 과거 형식 차이는 현재 코드에 없음. 실제 파일 처리 성공은 별도 검증 |
 | §4.4 파일 저장 | 업로드는 processing 회의 행을 만들고 녹음 파일과 참석자(`meeting_upload`)를 저장한다. 화자 지정은 §2.3.1 | 실제 업로드부터 처리 완료까지 성공을 선언하지 않음 |
 | §4.0-②-11 회의록 본문 하드코딩·summary 미생성 | [meetings.py](../../../backend/app/api/meetings.py)는 Source에서 전사·참석자를 구성하고 Extraction.summary JSON을 읽음 | summary 저장 여부·실제 파이프라인 성공은 이 정적 확인만으로 검증하지 않음 |
-| §4.5 Discord 사용자 목록 스텁 | 연동 존재를 검사한 뒤 고정 사용자 2명을 반환 | 실제 Discord API 조회 없음 |
+| §4.5 Discord 사용자 목록 스텁 | 연동과 봇 토큰을 확인한 뒤 `discord.list_guild_members`로 외부 목록을 조회 | 토큰·봇 권한·실제 서버 응답은 별도 검증 |
 
 이번 문서 구조화로 요청·합의 상태를 변경하지 않는다. 신규 확인은 정적 코드 대조이고, 실 연동 검증 결과와 담당 파트 합의는 별도 근거가 필요하다. 백엔드 요청 목록은 계속 이 문서 §4를 사용하며 [request 디렉터리](../requests)에 복제하지 않는다.
 
@@ -985,6 +1000,8 @@ BE #464 가 병합·배포한 인터페이스다(메인 이슈 #459). 「현재 
 
 ### 4.0 구현 현황 (2026-09-21)
 
+이 절은 초기 구현과 요청의 기록이다. 뒤에 붙인 날짜별 정정은 유지하며, OAuth·온보딩·업로드·회의록·초대의 현재 상태는 문서 앞 「후속 구현 상태 대조」를 먼저 본다.
+
 PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** — 이제 대부분은 「만들어 달라」가 아니라
 「만들어진 것이 계약과 다르다」다. 세 갈래로 나눈다.
 
@@ -1340,13 +1357,13 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 
 ### 4.2 워크스페이스의 사용자 스코프 · 역할 · 온보딩
 
-~~`GET /workspaces` 가 **전체 워크스페이스**를 반환한다.~~ **세 가지 모두 PR #59 가 넣었다.** 온보딩만 스텁이다.
+~~`GET /workspaces` 가 **전체 워크스페이스**를 반환한다.~~ **세 가지 모두 PR #59 가 넣었다.** 초기 온보딩 스텁은 후속 구현에서 단계별 저장으로 바뀌었다(2026-11-09 소스 대조).
 
 | 필요한 것 | 형태 | 구현 |
 |---|---|---|
 | 로그인 사용자의 소속만 반환 | `GET /workspaces` 의 동작 변경 | ✅ |
 | 워크스페이스별 내 역할 | `WorkspaceResponse` 에 `"role": "pm" 또는 "member"` | ✅ 단 `Optional` |
-| 온보딩 진행 상태 | 아래 | ⚠️ **스텁** (§4.0-②-3) |
+| 온보딩 진행 상태 | 아래 | 단계별 상태 저장·조회 구현. 초기 스텁 기록은 §4.0-②-3 |
 
 **`role` 과 `onboarding` 은 목록에도 들어온다.** 요청은 상세에만 했는데 `GET /workspaces` 의 각 항목에도 있다.
 프론트엔드에는 이득이라 그대로 쓴다 — 선택 화면이 워크스페이스마다 상세를 다시 부르지 않아도 된다.
@@ -1368,8 +1385,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 
 - `step` 은 `create_workspace`, `connect_discord`, `connect_notion`, `connect_members` 순서 고정 (D-008). → ✅ 이름과 순서 그대로
 - `status` 는 `pending`, `completed`, `skipped`. 건너뛴 단계는 재개 대상에서 제외한다 (D-012).
-  → ⚠️ **`skipped` 가 절대 오지 않는다.** `steps` 가 `onboarding_completed` 불리언 하나로 생성되고, `PATCH` 는 `connect_members` + `complete` 조합만 반응한다.
-  `skip` 액션은 받아들이고 아무 일도 하지 않는다. **단계별 상태가 저장되지 않는다** (§4.0-②-3).
+  초기 구현은 단계별 상태를 저장하지 않았다(§4.0-②-3). 현재 `WorkspaceOnboardingStepState`가 각 단계를 저장한다. pending 단계의 `skip`은 skipped로 바꾸고, 이미 완료한 단계는 skip으로 되돌리지 않는다. `create_workspace`의 skip은 400 `INVALID_REQUEST`다.
 - `current_step` 은 완료 시 `null` 을 기대했는데 **빈 문자열** `""` 이 온다 (§4.0-②-4).
   프론트엔드 mapper 는 `''` 를 `null` 과 같게 다룬다 (§6).
 - **이름 중복 검증이 없다.** → ⚠️ **409 는 생겼지만 비교 방식이 다르다.** 완전일치 + **전역** 비교다.
@@ -1390,18 +1406,17 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 
 ### 4.3 integrations
 
-~~Discord·Notion 연결 상태를 다루는 API 가 없다.~~ **조회와 해제는 생겼고 연결은 없다.**
+~~Discord·Notion 연결 상태를 다루는 API 가 없다.~~ **현재는 조회·해제와 Discord·Notion 연결 start·callback이 모두 있다.**
 `integration` 테이블이 `UniqueConstraint(workspace_id, provider)` 로 워크스페이스당 provider 하나를 보장한다.
 
 | Method | Path | 구현 |
 |---|---|---|
-| GET | `/api/v1/workspaces/{workspace_id}/integrations` | ⚠️ `revoked` 안 옴 |
-| GET | `/api/v1/workspaces/{workspace_id}/integrations/{provider}/start?state=` (**302**) | ❌ |
-| GET | `/api/v1/workspaces/{workspace_id}/integrations/{provider}/callback` (**302**) | ❌ |
+| GET | `/api/v1/workspaces/{workspace_id}/integrations` | 구현. Notion은 connecting·revoked도 반환 |
+| GET | `/api/v1/workspaces/{workspace_id}/integrations/{provider}/start?state=` (**302**) | Discord·Notion 구현 |
+| GET | `/api/v1/integrations/{provider}/callback` (**302**) | Discord·Notion 구현. workspace 경로가 아님 |
 | DELETE | `/api/v1/workspaces/{workspace_id}/integrations/{provider}` | ⚠️ 204, 본문 없음 |
 
-**`start` · `callback` 이 없어서 API 로는 연결을 만들 수 없다.** 온보딩 2·3단계(Discord·Notion 연결)가
-M4 에서 실 API 로 완결되지 않는다. 그때까지 MSW 로 진행한다.
+초기 기록에서는 start·callback이 없어 연결을 MSW로만 진행했다. 현재 FE는 production에서 start 주소로 이동하고 복귀 뒤 연결 상태를 다시 조회한다. 개발·MSW 모드는 모의 OAuth 경로를 사용한다. 이 코드 연결을 실제 공급사 인증 성공으로 해석하지 않는다.
 
 ```jsonc
 {"discord": {"status": "connected", "display_name": "카테캠 3팀 서버",
@@ -1409,14 +1424,13 @@ M4 에서 실 API 로 완결되지 않는다. 그때까지 MSW 로 진행한다.
  "notion":  {"status": "not_connected", "display_name": null, "connected_at": null}}
 ```
 
-- `status` 는 `not_connected`, `connected`, `revoked` 3가지다.
+- FE의 `status`는 `not_connected`, `connecting`, `connected`, `revoked`를 구분한다. Notion은 DB 연결 준비와 토큰 상태에 따라 네 상태를 반환하고 Discord는 현재 조회에서 연결 행 유무로 connected·not_connected를 반환한다.
   **`not_connected` 와 `revoked` 를 구분해 달라.** 미연결은 `Notion 연결이 필요해요`(D-097), 끊김은 `Notion 연결이 끊어졌어요`(D-100) 로 다른 모달을 띄운다.
   **2026-11-07(#507):** 두 모달을 없앴다. 프론트엔드는 이 값을 설정 카드 표시에만 쓴다 (D-182).
-  → ⚠️ 구현은 `integration` 행의 **존재 여부만** 본다. 행이 있으면 `connected`, 없으면 `not_connected` 다.
-  **`revoked` 를 표현할 컬럼이 없다.** 끊김 모달(D-100)은 실 API 로 뜨지 않는다. 프론트엔드는 세 값을 계속 다룬다.
+  초기 구현은 연결 행의 존재 여부만 봤다. 현재 Notion의 `_notion_status`는 토큰·DB 식별자·준비 시간을 읽어 connecting·revoked도 반환한다. 연결 상태 조회와 재시도는 [현재 API 소비 코드](../../src/entities/integration/api/integrations.ts)에 있다.
 - `display_name` 이 `"Discord 연결됨"` 같은 **생성 문자열**이다 (§4.0-②-7). 화면에 그대로 쓸 수 없다.
   연동 카드는 provider 이름을 프론트엔드가 쓰고, `display_name` 은 실제 값이 올 때까지 표시하지 않는다.
-- 연결 요청에 본문이 없다. Notion 은 OAuth 만 수행하고 데이터베이스 선택 화면을 만들지 않는다 (D-154). → 연결 경로 자체가 아직 없다.
+- 연결 요청은 본문 없는 페이지 이동이다. 현재 Notion start·callback과 연결 뒤 DB 준비 경로가 있다. FE는 데이터베이스 선택 화면을 만들지 않고(D-154) 연결 상태를 조회한다.
 - 복귀 주소의 결과 이름 `oauth`, `oauth_result`는 카카오 로그인(§4.1.4)도 같다. 그쪽에만 `oauth_reason`이 더 있고, 연동 화면은 이 값을 읽지 않는다. [복귀 주소 코드](../../src/shared/lib/oauth/returnParams.ts)가 한 곳에서 다룬다.
 
 #### 4.3.1 회의 채팅 채널 (#428·#429, 2026-11-07)
@@ -1469,12 +1483,10 @@ POST .../meetings/upload            multipart/form-data
 
 - 409 `MEETING_PROCESSING_IN_PROGRESS` 와 `details.meeting_id` — 워크스페이스에 처리 중인 회의가 있다 (D-088, D-089). → ✅ 그대로
 - 409 `INTEGRATION_NOT_CONNECTED` — Notion 미연결 (D-096, D-097). → ❌ 검사가 없다. **2026-11-07(#507):** 요청 철회. 업로드는 Notion 을 요구하지 않는다 (D-182)
-- 413 `AUDIO_TOO_LARGE` → ❌ 검사가 없다. 코드만 있다
-- ⚠️ **`attendee_member_ids` 를 받고 버린다.** `Form(...)` 으로 필수로 받지만 저장하지 않는다.
-  D-085·D-086 의 「로컬 업로드는 참석자 1명 이상」이 서버에서 보장되지 않는다. 프론트엔드가 폼에서 강제한다.
-- ⚠️ **PM 여부를 보지 않는다.** 소속(`get_current_member`)만 확인해 일반 팀원도 올릴 수 있다. M5 는 업로드를 PM 전용으로 정했다 → §4.0-②-17.
-- ⚠️ **파일도 저장하지 않는다** (`# TODO: 파일 저장 및 큐 전송`). 업로드는 `processing` 회의 행만 만든다.
-  회의는 영원히 `processing` 에 머무르며, 이 상태가 **다음 업로드를 409 로 막는다(채팅 회의 제외).**
+- 413 `AUDIO_TOO_LARGE`는 서버가 파일 크기와 `UPLOAD_MAX_BYTES` 설정을 비교해 반환한다. `details`는 `{size_bytes,max_bytes}`다. 형식은 파일 확장자·내용 검사로 검증하고 지원하지 않으면 `AUDIO_FORMAT_UNSUPPORTED`다.
+- `attendee_member_ids`는 반복 multipart 필드를 `list[str]`로 받는다. 중복을 제거하고 같은 공간의 활성 팀원인지 검사한 뒤 `MeetingUpload.attendees`에 ID·표시 이름을 저장한다. FE는 1명 이상을 선택하게 한다. 이번 문서 작업은 빈 목록의 별도 HTTP 요청을 실행하지 않았다.
+- 업로드 의존성은 `get_current_pm`이다. 초기 일반 팀원 허용 상태(§4.0-②-17)와 달리 현재는 PM 권한을 요구한다.
+- 업로드는 파일과 `processing` 회의·업로드 정보를 저장한다. [AI 가져오기](../../../ai/upload/intake.py)·[워커](../../../ai/capture/worker.py)·[BE sweeper](../../../backend/app/services/upload_sweeper.py)가 후속 처리와 멈춘 작업을 다룬다. 초기 무저장·영구 processing 설명은 현재 구현에 해당하지 않는다. 외부 공급사까지 포함한 전체 성공을 이번 정적 대조로 선언하지 않는다.
 - `source` 가 `"manual_upload"` 로 고정된다. `MeetingSource` = `discord` \| `manual_upload` \| `chat`이다 (D-157). `chat`은 디스코드 채팅 자동 수집이 만들고(구현됨, BE 담당 리뷰 대기) 웹 업로드는 계속 `manual_upload`다. `chat` 회의가 `processing`이어도 업로드는 막히지 않는다.
 - FE 구현(#450, 2026-11-07): 업로드 진입 판정과 응답을 잃은 업로드의 복구도 `processing` 인 `chat` 회의를 세지 않는다. 채팅 회의만 정리 중이면 업로드 화면에 머물고, 응답을 잃으면 채팅 회의를 방금 올린 회의로 보지 않는다. 정리 중 토스트는 채팅 회의도 그대로 따라간다. 구현: [업로드를 막는 회의](../../src/entities/meeting/lib/uploadBlockingMeeting.ts), [진입 판정](../../src/features/meeting-upload/model/useUploadEntry.ts), [업로드](../../src/features/meeting-upload/model/useMeetingUpload.ts). MSW 기준 검증이며 실서버는 미검증이다.
 - `started_at` 을 보내지 않으면 서버 시각이 된다. 프론트엔드는 **항상 보낸다** (D-079, D-164).
@@ -1495,10 +1507,10 @@ POST .../meetings/upload            multipart/form-data
 - `speaker_display_name` 이 `null` 이면 `speaker_fallback` 으로 표시한다 (D-028). → 필드 이름 3개 그대로 구현됐다
 - 일반 팀원에게 `확인 필요` 영역을 숨긴다. **개수와 존재 여부도 노출하지 않는다** (D-104). 프론트엔드가 `approval_id` 가 있는 항목을 걸러 낸다.
 - `permissions` 는 `member.role == 'pm'` 을 `can_review` · `can_undo` 두 값에 그대로 넣는다. 둘이 항상 같다.
-- ⚠️ **`transcript` 가 하드코딩 1줄이다** (§4.0-②-11). `at_ms: 0`, 화자 없음, 안내 문구 한 줄.
+- `transcript`는 해당 회의의 Source를 seq 순서로 읽어 시각·화자·문장을 구성한다. Source가 없으면 빈 배열이다. 초기 하드코딩 상태는 §4.0-②-11의 과거 기록이다.
   `extraction` 이 없으면 빈 배열이다. 필드 **이름과 형태는 계약대로**이므로 mapper 는 그대로 쓸 수 있고, 값만 비어 있다.
-- ⚠️ `attendees` 를 `audio_segment` 의 화자에서 역산한다. 말하지 않은 참석자가 빠지고, 로컬 업로드는 세그먼트가 없어 **빈 배열**이 된다.
-- ⚠️ `summary` 는 `Extraction.summary` 컬럼(TEXT)을 `json.loads` 한다. **채우는 쪽이 아직 없어 항상 `null`** 이다 (§4.7-4).
+- `attendees`는 같은 Source에서 `member_id`가 있는 팀원을 처음 발화한 순서로 중복 제거해 구성한다. 말하지 않았거나 팀원에 연결되지 않은 참석자는 포함하지 않는다. 업로드 때 선택한 전체 참석자 목록을 그대로 반환하는 것은 아니다.
+- `summary`는 최신 Extraction.summary JSON을 읽고 유효한 객체일 때 반환한다. 값이 없거나 잘못된 JSON·객체가 아닌 값이면 null이다. 생성 파이프라인의 실제 저장 성공 여부는 별도 검증한다.
 - 비소속 사용자는 403 `FORBIDDEN` 이다. `MEETING_NOT_FOUND` 가 아니라 존재는 드러난다.
 
 #### 4.4.1 수동 업로드 실패 사유와 만료 이력 (#256, 2026-11-04)
@@ -1522,11 +1534,11 @@ POST .../meetings/upload            multipart/form-data
 
 ### 4.5 Discord 서버 사용자 목록
 
-~~팀원 연결 화면(온보딩 4단계)의 데이터 출처가 없다.~~ **엔드포인트는 생겼고 내용이 스텁이다.**
+초기에는 고정 사용자 두 명을 반환했다. 현재는 연결된 Discord 서버의 실제 사용자 목록 조회 코드가 있으며 FE 팀원 연결 화면이 소비한다(2026-11-09 소스 대조).
 
 | Method | Path | 구현 |
 |---|---|---|
-| GET | `/api/v1/workspaces/{workspace_id}/discord/members` | ⚠️ 하드코딩 2명 |
+| GET | `/api/v1/workspaces/{workspace_id}/discord/members` | 연동·봇 토큰 확인 후 Discord 목록 조회 |
 
 ```jsonc
 {"items": [{"discord_user_id": "1123...",
@@ -1538,8 +1550,7 @@ POST .../meetings/upload            multipart/form-data
 ```
 
 - 연결된 Discord 서버의 현재 사용자 목록이다. 봇은 `is_bot: true` 로 표시해 프론트엔드가 거른다.
-  → ⚠️ 구현은 `disc_01` · `disc_02` 두 명을 **상수로 반환한다** (`# 향후 Discord API 연동 시 실제 멤버 목록으로 교체`).
-  필드 5개는 계약대로다. 온보딩 4단계를 실 API 로 검증할 수는 없다.
+  서버의 `discord.list_guild_members`가 외부 목록을 조회한다. 봇 토큰 누락·공급사 오류는 `DISCORD_API_FAILED`로 안내한다. 실제 토큰·봇 권한과 서버 응답은 이번 문서 작업에서 확인하지 않았다.
 - Discord 미연결이면 409 `INTEGRATION_NOT_CONNECTED`. → ✅ `details.provider` 까지 온다
 
 **매핑은 새 엔드포인트가 필요 없다.** 기존 것을 그대로 쓴다.
@@ -1585,6 +1596,8 @@ POST .../meetings/upload            multipart/form-data
 데이터가 커져 페이지네이션이 도입되면 이 판단을 다시 한다(§8).
 
 ### 4.7 기존 구현에 대한 증분 요청 — 6건
+
+아래 표는 초기 요청과 PR #59 당시 반영 상태를 보존한 기록이다. 전사 하드코딩·요약 읽기 등 후속 구현은 문서 앞 「후속 구현 상태 대조」와 §5.5가 우선한다.
 
 **6건 중 3건이 반영됐다** (PR #59). 1 · 2 · 6 이 끝났고 4 는 절반, 3 · 5 는 그대로다.
 
@@ -1674,7 +1687,7 @@ MSW 픽스처의 단위이자 M1-C 의 작업 단위이기도 하다.
 | 로그인 | `POST /auth/login` | **구현됨** §4.1 — 429 시도 제한 §4.1.3(BE PR #456 병합) |
 | 회원가입 | `POST /auth/signup` | **구현됨** §4.1 — 201, 이름 규칙 §4.1.2, 이메일 인증 §4.1.4 |
 | 비밀번호 재설정 요청·변경 | `POST /auth/password-reset/request` · `verify` · `confirm` | **구현됨** §4.1.1 — BE PR #398 병합. BE 가 2026-11-08 운영 서버에서 메일 수신까지 확인 |
-| Google 로그인 | `GET /auth/google/start?state=` 로 **페이지 이동** | ❌ **없다** §4.1 — M4 에서 버튼 비활성 |
+| 카카오 로그인 | `GET /auth/kakao/start`로 페이지 이동, callback 뒤 필요하면 pending 조회 | FE·BE 구현 §4.1.4. Google 버튼은 제거. 실제 카카오 설정·인증 성공은 별도 |
 | 앱 부팅 | `GET /auth/me` | **구현됨** §4.1 |
 
 - 랜딩은 데모 기능을 넣지 않으므로 호출이 없다 (D-002).
@@ -1686,9 +1699,9 @@ MSW 픽스처의 단위이자 M1-C 의 작업 단위이기도 하다.
 |---|---|---|
 | 워크스페이스 선택 | `GET /workspaces` | **구현됨** §4.2 — 사용자 스코프·`role`·`onboarding` 다 온다 |
 | 워크스페이스 만들기 | `POST /workspaces` `{name}` | **구현됨** §2.1 |
-| 온보딩 진행 상태 | `GET /workspaces/{id}` 의 `onboarding` | ⚠️ **스텁** §4.2 |
-| 단계 건너뛰기·완료 | `PATCH /workspaces/{id}/onboarding` | ⚠️ **스텁** §4.2 — `skip` 이 동작하지 않는다 |
-| 내 초대·수락·거절 | `GET /invitations/me`, `POST /invitations/{id}/accept`·`decline` | BE 구현, 프론트엔드 미연결 §5.9 |
+| 온보딩 진행 상태 | `GET /workspaces/{id}`의 `onboarding` | 단계별 저장 상태 조회 구현 §4.2 |
+| 단계 건너뛰기·완료 | `PATCH /workspaces/{id}/onboarding` | PM 권한으로 저장 후 상세 재조회. 생성 단계 skip은 400 §4.2 |
+| 내 초대·수락·거절 | `GET /invitations/me`, `POST /invitations/{id}/accept`·`decline` | FE·BE 구현. 소비 코드와 미검증 범위는 §5.9 |
 
 - 생성은 이름 하나만 보낸다. **이미 그렇게 구현돼 있다** (D-014, D-153).
 - 미완료 워크스페이스는 목록에서 표시를 달리하고 대시보드 접근을 막는다 (D-070, D-071).
@@ -1697,10 +1710,10 @@ MSW 픽스처의 단위이자 M1-C 의 작업 단위이기도 하다.
 
 | 화면 | 호출 | 상태 |
 |---|---|---|
-| 연결 상태 표시 | `GET /workspaces/{id}/integrations` | **구현됨** §4.3 — `revoked` 는 안 온다 |
-| Discord·Notion 연결 | `GET .../integrations/{provider}/start?state=` 로 **페이지 이동** | ❌ **없다** §4.3 |
+| 연결 상태 표시 | `GET /workspaces/{id}/integrations` | FE·BE 구현. Notion은 connecting·revoked도 구분 §4.3 |
+| Discord·Notion 연결 | `GET .../integrations/{provider}/start?state=`로 페이지 이동 | FE·BE 구현 §4.3. 실 OAuth 성공은 별도 |
 | 연결 해제 | `DELETE .../integrations/{provider}` | **구현됨** §4.3 — 204, 봉투 아님 |
-| 팀원 연결 — 목록 | `GET /workspaces/{id}/discord/members` + `GET /members?workspace_id=` | ⚠️ **스텁** §4.5 / **구현됨** §2.2 |
+| 팀원 연결 — 목록 | `GET /workspaces/{id}/discord/members` + `GET /members?workspace_id=` | Discord 외부 목록 조회·회원 목록 소비 구현. 실 봇 권한·공급사 호출은 별도 |
 | 팀원 연결 — 매핑 | `POST /members` 또는 `PATCH /members/{id}` | **구현됨** §2.2 |
 
 **팀원 연결 화면의 조립** — 두 목록을 `discord_user_id` 로 조인한다.
@@ -1779,7 +1792,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 | 정리 중 — 폴링 | `GET /meetings/{meeting_id}` | **구현됨** §2.3 — `progress` 포함 |
 | 화자 지정(`awaiting_speakers`) | `GET`·`PUT /meetings/{id}/speakers`, `GET /meetings/{id}/audio` | BE 구현됨, **FE 구현**(MSW 기준, 실서버 미검증) §2.3.1 |
 | 회의록 목록 | `GET /workspaces/{id}/meetings` | **구현됨** §4.4 |
-| 회의록 본문 | `GET /meetings/{meeting_id}/minutes` | ⚠️ **스텁** §4.4 — `transcript` 가 안내 문구 1줄, `summary` 는 항상 `null` |
+| 회의록 본문 | `GET /meetings/{meeting_id}/minutes` | 저장된 Source의 전사·참석자와 Extraction.summary 객체를 읽음. 유효 요약이 없으면 null |
 | 회의록의 태스크 영역 | `GET /extractions/{extraction_id}` | **구현됨** §2.4 |
 
 - ~~Notion 미연결이면 업로드 화면으로 보내지 않고 차단 모달을 띄운다 (D-097).~~ **2026-11-07(#507):** Notion 연결과 상관없이 업로드 화면을 연다 (D-182).
@@ -2186,7 +2199,7 @@ FE 연결 (#340, 2026-11-05).
 | 별칭 삭제 | `DELETE /members/aliases/{alias_id}` | **구현됨** §2.2 |
 | 팀원별 별칭 보기·추가·삭제 | `GET /members/aliases`, `POST /members/{id}/aliases`, `DELETE /members/aliases/{alias_id}` | **구현됨(#523, 2026-11-08).** 설정 목차의 「팀원」이 여는 팀 화면에서 팀원 줄의 「별칭 N」을 펼친다. 칩마다 출처 꼬리표(`learned` 회의에서 배움, `display_name` 이름, `discord_profile` 디스코드, `manual` 직접 추가, 미확인이면 「· 미확인」). 추가·삭제는 PM 만 보인다. 본문은 `alias_text` 만 보낸다. 실패 문구는 오류 코드별이다([aliasMessages](../../src/features/member-alias/lib/aliasMessages.ts)). 같은 글자를 다시 넣으면 서버가 기존 행을 돌려주므로 「이미 있는 별칭이에요.」 로 보인다. MSW 기준 검증, 실서버 미검증 |
 | 건너뛴 온보딩 마저 하기 | 5.3 과 같다 | |
-| 팀원 초대·취소·연결 끊기 | `GET`·`POST /workspaces/{id}/invitations`, `POST /invitations/{id}/cancel`·`revoke` | BE 구현, 프론트엔드 미연결 §5.9 |
+| 팀원 초대·취소·연결 끊기 | `GET`·`POST /workspaces/{id}/invitations`, `POST /invitations/{id}/cancel`·`revoke` | FE·BE 구현. 소비 코드와 미검증 범위는 §5.9 |
 | 알림(메시지·알림 설정) | `GET`·`PATCH /workspaces/{id}/message-settings` | **구현됨** §5.7 (#340) |
 | 회의 채팅 채널(PM) | `GET /workspaces/{id}/discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel` | **구현됨** §4.3.1 (#428, #429) |
 
@@ -2195,7 +2208,9 @@ FE 연결 (#340, 2026-11-05).
 
 ### 5.9 팀원 초대
 
-**백엔드 초대 API** (#319 에서 BE 구현, 프론트엔드 미연결, 화면 쪽 합의 여부 확인 필요). 결정 근거는 [결정 0036](../../../ai/docs/basis_for_decision/ai/2026-11-04-0036-member-invite-by-email.md). FE 요청 이슈는 #320, 제품 흐름은 #302.
+**현재 초대 API·FE 연결** (2026-11-09 소스 대조). #319에서 BE를 구현했고 현재 FE도 아래 API를 소비한다. 화면 쪽 합의 여부와 실제 계정 검증은 코드 연결과 구분한다. 결정 근거는 [결정 0036](../../../ai/docs/basis_for_decision/ai/2026-11-04-0036-member-invite-by-email.md). FE 요청 이슈는 #320, 제품 흐름은 #302.
+
+현재 소비 근거는 [초대 Query](../../src/entities/invitation/api/invitationQueries.ts), [초대 명령](../../src/entities/invitation/api/invitationMutations.ts), [PM 제어](../../src/features/member-invite/ui/MemberInviteControl.tsx), [내 초대](../../src/widgets/app-shell/ui/MyInvitations.tsx), [수락·거절 처리](../../src/features/invitation-respond/model/useInvitationResponse.ts)다. PM 목록은 팀원별 최신 초대를 고르고 생성·취소·연결 끊기 뒤 목록을 다시 받는다. 내 초대는 수락 뒤 공간 목록을 새로 받아 이동한다. 코드와 [화면 회귀](../../src/app/invitationRespond.test.tsx)를 대조했으며 이번 문서 작업에서 이를 다시 실행하거나 실서버 성공으로 판정하지 않았다.
 
 온보딩에서 디스코드 명단으로 만든 팀원은 로그인 계정과 이어져 있지 않다(`member.user_id` 가 null). PM 이 그 팀원에게 가입 이메일로 초대를 만들고, 그 이메일로 로그인한 사람이 내 초대에서 수락하면 팀원과 계정이 이어져 워크스페이스 목록에 나타난다. 수락 전에는 그 워크스페이스의 API 가 모두 403 이다. 초대 메일은 보내지 않는다. PM 이 디스코드 등으로 알리고, 팀원은 로그인하면 내 초대에서 본다.
 
@@ -2248,6 +2263,8 @@ FE 연결 (#340, 2026-11-05).
 - 팀원이 온보딩(워크스페이스 만들기)을 건너뛰고 초대를 기다리는 데 새 백엔드 API 는 필요 없다. 초대를 기다리는 사용자는 `GET /auth/me` 의 `workspace_count` 가 0 이고 `GET /workspaces` 가 빈 목록 `{"items": [], "total": 0}` 이다.
 
 ### 착수 가능 여부 요약
+
+아래는 M1 착수 당시의 판단 기록이다. 로그인·연결·온보딩·회의·메시지의 현재 구현 여부는 문서 앞 「후속 구현 상태 대조」와 각 §5의 갱신된 표를 기준으로 확인한다.
 
 | 영역 | M1 착수 | 막는 것 |
 |---|---|---|
