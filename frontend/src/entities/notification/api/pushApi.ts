@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { request } from '@/shared/api/client'
+import { parseResponse } from '@/shared/api/parseResponse'
 import type { SessionScope } from '@/shared/api/sessionScope'
+import { pushPublicKeySchema } from '@/shared/types/api/notification'
 
 /** 로그아웃을 오래 붙잡지 않는다. 구독 해제 전체가 이 시간을 넘으면 기다리지 않고 로그아웃을 이어 간다 */
 const UNSUBSCRIBE_TIMEOUT_MS = 3000
@@ -12,9 +14,11 @@ const subscriptionSchema = z.object({
 
 /** 서버의 VAPID 공개키. 서버에 키가 없으면 null 이고, 그때는 구독하지 않는다 */
 export async function fetchPushPublicKey(): Promise<string | null> {
-  return z
-    .object({ public_key: z.string().nullable() })
-    .parse(await request<unknown>('/push/vapid-public-key')).public_key
+  return parseResponse(
+    pushPublicKeySchema,
+    await request<unknown>('/push/vapid-public-key'),
+    'notification',
+  ).public_key
 }
 
 /**

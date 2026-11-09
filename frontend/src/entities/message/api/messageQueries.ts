@@ -1,22 +1,29 @@
 import { queryOptions } from '@tanstack/react-query'
+import type { z } from 'zod'
 import { request } from '@/shared/api/client'
+import { parseResponse } from '@/shared/api/parseResponse'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import { workspaceKey } from '@/shared/api/queryKeys'
+import {
+  bundleSchema,
+  createdReminderSchema,
+  inboxSchema,
+  reminderWithBundleSchema,
+  threadDetailSchema,
+  threadSummarySchema,
+} from '@/shared/types/api/message'
 import type {
   BundleApproveRequestDto,
   BundleDto,
   BundleUpdateRequestDto,
-  InboxDto,
   ReminderCreateRequestDto,
   ReminderUpdateRequestDto,
   ReminderWithBundleDto,
   ReplyCreateRequestDto,
-  ThreadDetailDto,
   ThreadOpenRequestDto,
-  ThreadSummaryDto,
 } from '@/shared/types/api/message'
-import type { ListDto } from '@/shared/types/api/envelope'
-import type { AttributionRequestDto, ReplyAttributionDto } from '@/shared/types/api/reply'
+import { replyAttributionListSchema } from '@/shared/types/api/reply'
+import type { AttributionRequestDto } from '@/shared/types/api/reply'
 import {
   toBundle,
   toCreatedReminder,
@@ -70,7 +77,11 @@ export function messageInboxQueryOptions(workspaceId: string) {
     queryKey: workspaceKey(workspaceId, 'messages', 'inbox'),
     queryFn: async ({ signal }) =>
       toMessageInbox(
-        await request<InboxDto>(messagesPath(workspaceId), { signal: session.signal(signal) }),
+        parseResponse(
+          inboxSchema,
+          await request<unknown>(messagesPath(workspaceId), { signal: session.signal(signal) }),
+          'message',
+        ),
       ),
     refetchInterval: ({ state: { data } }) =>
       session.pollWhileDrafting(data?.viewer === 'pm' ? data.bundles : undefined),
@@ -85,9 +96,13 @@ export function messageThreadQueryOptions(workspaceId: string, threadId: string)
     queryKey: workspaceKey(workspaceId, 'messages', 'threads', threadId),
     queryFn: async ({ signal }) =>
       toMessageThread(
-        await request<ThreadDetailDto>(
-          `${messagesPath(workspaceId)}/threads/${encodeURIComponent(threadId)}`,
-          { signal: session.signal(signal) },
+        parseResponse(
+          threadDetailSchema,
+          await request<unknown>(
+            `${messagesPath(workspaceId)}/threads/${encodeURIComponent(threadId)}`,
+            { signal: session.signal(signal) },
+          ),
+          'message',
         ),
       ),
     refetchInterval: ({ state: { data } }) => session.pollWhileDrafting(data?.upcoming),
@@ -104,9 +119,13 @@ export function replyAttributionsQueryOptions(workspaceId: string, threadId: str
   return queryOptions({
     queryKey: workspaceKey(workspaceId, 'messages', 'threads', threadId, 'attributions'),
     queryFn: async ({ signal }) => {
-      const { items } = await request<ListDto<ReplyAttributionDto>>(
-        `${messagesPath(workspaceId)}/threads/${encodeURIComponent(threadId)}/attributions`,
-        { signal: session.signal(signal) },
+      const { items } = parseResponse(
+        replyAttributionListSchema,
+        await request<unknown>(
+          `${messagesPath(workspaceId)}/threads/${encodeURIComponent(threadId)}/attributions`,
+          { signal: session.signal(signal) },
+        ),
+        'message',
       )
       return items.map(toReplyAttribution)
     },
@@ -128,11 +147,12 @@ interface Route {
   read?: (data: unknown) => MessageActionOutcome
 }
 
-/** 응답 본문을 그 경로의 DTO 로 읽는다. request<T> 처럼 모양은 계약을 믿는다 */
-function reads<T>(
-  toOutcome: (dto: T) => MessageActionOutcome,
+/** 응답 본문을 그 경로의 스키마로 읽는다. 맞지 않으면 `INVALID_RESPONSE` 다 — 쓰기는 반영됐을 수 있다 */
+function reads<S extends z.ZodType>(
+  schema: S,
+  toOutcome: (dto: z.output<S>) => MessageActionOutcome,
 ): (data: unknown) => MessageActionOutcome {
-  return (data) => toOutcome(data as T)
+  return (data) => toOutcome(parseResponse(schema, data, 'message'))
 }
 
 /** 옮긴 시각에 같은 사람의 예정 묶음이 있으면 서버가 그쪽으로 합치고 합친 묶음을 돌려준다 — ID 가 달라진다 */
@@ -163,7 +183,7 @@ const ROUTE: {
     method: 'PATCH',
     path: `bundles/${enc(action.bundleId)}`,
     body: { scheduled_at: action.scheduledAt } satisfies BundleUpdateRequestDto,
-    read: reads<BundleDto>((dto) => scheduleOutcome(action.bundleId, dto)),
+    read: reads(bundleSchema, (dto: BundleDto) => scheduleOutcome(action.bundleId, dto)),
   }),
   reply: (action) => ({
     method: 'POST',
@@ -174,7 +194,7 @@ const ROUTE: {
   removeTask: (action) => ({
     method: 'POST',
     path: `reminders/${enc(action.reminderId)}/cancel`,
-    read: reads<ReminderWithBundleDto>((dto) =>
+    read: reads(reminderWithBundleSchema, (dto: ReminderWithBundleDto) =>
       dto.bundle.status === 'cancelled' ? CLOSED : DONE,
     ),
   }),
@@ -245,11 +265,15 @@ export async function createReminder(
     note: input.note,
   }
   return toCreatedReminder(
-    await request<ReminderWithBundleDto>(`${messagesPath(workspaceId)}/reminders`, {
-      method: 'POST',
-      body,
-      signal,
-    }),
+    parseResponse(
+      createdReminderSchema,
+      await request<unknown>(`${messagesPath(workspaceId)}/reminders`, {
+        method: 'POST',
+        body,
+        signal,
+      }),
+      'message',
+    ),
   )
 }
 
@@ -265,10 +289,14 @@ export async function openThread(
 ): Promise<MessageThreadSummary> {
   const body: ThreadOpenRequestDto = { member_id: memberId }
   return toThreadSummary(
-    await request<ThreadSummaryDto>(`${messagesPath(workspaceId)}/threads`, {
-      method: 'POST',
-      body,
-      signal,
-    }),
+    parseResponse(
+      threadSummarySchema,
+      await request<unknown>(`${messagesPath(workspaceId)}/threads`, {
+        method: 'POST',
+        body,
+        signal,
+      }),
+      'message',
+    ),
   )
 }

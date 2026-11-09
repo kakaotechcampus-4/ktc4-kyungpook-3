@@ -2,10 +2,15 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useState, useSyncExternalStore } from 'react'
 import { messageKeys, requestMessageAction } from '@/entities/message'
 import type { MessageAction, MessageActionOutcome } from '@/entities/message'
-import { ApiError, CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
+import {
+  ApiError,
+  CLIENT_ERROR_CODES,
+  createClientError,
+  isInvalidResponse,
+} from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
-import { toast } from '@/shared/ui/toast'
+import { showWriteUnconfirmed, toast } from '@/shared/ui/toast'
 import { ACTION_FAILURE_TITLE, KNOWN_FAILURES, mergeNotice } from '../lib/actionMessages'
 import type { KnownFailure } from '../lib/actionMessages'
 
@@ -111,6 +116,7 @@ function knownFailureOf(error: unknown): KnownFailure | null {
  * - 서버 성공 뒤에만 반영한다. 낙관적 업데이트는 없다 — 메시지 캐시를 무효화해 서버 상태로 다시 그린다 (D-137, 계획 C-5)
  * - 다시 받기까지 끝나야 mutation 이 끝난다. 그래서 성공 뒤 이동이 처리 전 목록을 잠깐 보이지 않는다
  * - 실패하면 화면은 그대로이고 실패를 남긴다. 자동 재시도는 없고 `retry` 로 다시 보낸다. `run` 은 이전 실패를 지운다
+ * - 응답을 읽지 못했으면 반영됐을 수 있어 실패로 남기지 않고 토스트와 `새로고침`(메시지 목록·대화 다시 받기)으로 알린다 (#348)
  * - 화면이 따로 다루는 거절은 KNOWN_FAILURES 표대로 알리고 다시 받거나 승인을 잠근다
  * - 요청 중이나 보내기 전에 세션이 끝났으면 보내지 않고, 늦은 응답은 캐시에도 결과에도 남기지 않는다
  * - 한 공간에서는 한 번에 하나의 쓰기만 나간다
@@ -144,6 +150,10 @@ export function useMessageAction(workspaceId: string): MessageActionControl {
     onSuccess: (_result, { session }) => (session.isCurrent() ? syncMessages() : undefined),
     onError: (error, { action, session }) => {
       if (!session.isCurrent()) return
+      if (isInvalidResponse(error)) {
+        showWriteUnconfirmed(() => void syncMessages())
+        return
+      }
       const known = knownFailureOf(error)
       // 서버가 지난 시각으로 거절한 승인만 잠근다. 시계는 보지 않고, 그 묶음의 시각 저장이 성공해야 풀린다
       if (known?.then === 'lockApproval' && action.kind === 'approve')
