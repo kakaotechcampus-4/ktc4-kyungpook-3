@@ -1270,7 +1270,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 2026-11-09 (#538): 그 브랜치가 PR #454로 develop에 병합됐다. develop `69869392`의 [auth.py](../../../backend/app/api/auth.py)를 다시 읽었고 아래 표와 복귀 주소가 그대로다. 대조하며 더 확인한 사실은 이렇다.
 
 - 성공 복귀와 `email_exists` 복귀는 남아 있던 대기 쿠키를 지운다. 앞서 다른 카카오로 가입하다 멈춘 대기가 다음 가입에 이어지지 않는다.
-- callback 처리 중 예상하지 못한 예외는 `next` 없이 `/login?oauth=kakao&oauth_result=failed`로 보낸다. 화면은 일반 실패 문구를 보인다.
+- callback 의 예외는 두 갈래다. 카카오 설정 오류(`OAuthConfigError`)는 돌아갈 곳을 버리고 `/login?next=%2F&oauth=kakao&oauth_result=failed`로 보낸다. FE는 `next=/`를 버리고 일반 실패 문구를 보인다. 그 밖의 예외는 전역 처리기가 HTTP 500 `INTERNAL_ERROR` 봉투로 답한다. 브라우저가 callback 주소에서 JSON을 보게 되고 앱 화면으로 돌아오지 않는다. 이 경우를 FE가 처리할 방법은 없다.
 - 같은 계정에 동시에 잇는 요청이 겹치면 먼저 이은 쪽을 따른다. 다른 카카오가 먼저 이었으면 `email_exists`다.
 
 **규약 (같은 브랜치 BE 코드 기준).** 모두 로그인이 필요 없다. 응답은 기존 봉투다.

@@ -59,3 +59,18 @@ PR #454가 카카오 버튼, `useStartKakao`·`useKakaoLink`·`kakaoLogin`, 가�
 - Vitest: `authFlow.test.tsx` 의 휴대폰 묶음(매스·소개·랜딩 링크, placeholder 와 숨은 라벨, `또는` 없음, 링크 줄과 이동, 429 안내). `Button.test.tsx` 의 `auth-phone` 크기.
 - E2E(MSW): `signup-kakao.e2e.ts` 실패·대기 만료 뒤 다시 시작·기존 계정 연결, 360·390·1280px 화면, H-1 배치 측정. `route-skeleton.e2e.ts` 의 390px 로그인 뼈대.
 - 실제 카카오 로그인은 확인하지 않았다. 앱 키·redirect URI 등록이 필요하다.
+
+## 리뷰 반영 (2026-11-09)
+
+독립 리뷰(Codex, Grok)의 지적 세 건을 고쳤다.
+
+| 지적 | 원인 | 고친 것 |
+|---|---|---|
+| 높음: 768px 경계를 넘으면 입력값·칸 오류·429 안내·카카오 복귀 안내가 사라진다 | `AuthShell` 이 휴대폰과 넓은 화면에서 다른 모양의 트리를 그려, 폭이 바뀌면 React 가 `LoginForm` 을 지우고 새로 만들었다. 카카오 안내는 처음 마운트할 때 한 번 읽고 주소에서 지워 되살릴 수 없다 | 두 폭이 같은 요소(`main > div > section > div`)를 쓰고 클래스와 제목 묶음·안내 카드만 바꾼다. 넓은 화면의 폼 자리는 `display: contents` 라 배치가 그대로다 |
+| 중간: 모의 카카오가 성공·`email_exists` 복귀에서 가입 대기를 남긴다 | BE 는 두 복귀에서 대기 쿠키를 지우는데 MSW 는 그대로 뒀다 | `finishMockKakao` 가 두 경우에 `db.kakao.pending` 을 비운다. 취소·실패는 BE 처럼 둔다 |
+| 낮음: 계약의 callback 예외 문장이 BE 와 다르다 | 모든 예외가 실패 복귀한다고 적었다 | `OAuthConfigError` 만 `/login?next=%2F&oauth=kakao&oauth_result=failed` 로 가고, 그 밖은 전역 500 이라고 고쳤다 |
+
+검증:
+
+- `authFlow.test.tsx` 에 폭 전환 검사 6개를 더했다. 입력값, 429 안내와 링크, 주소에서 지운 카카오 실패 안내가 휴대폰 → 넓은 화면, 넓은 화면 → 휴대폰 두 방향에서 남는지 본다. 고치기 전 `AuthShell` 로 돌리면 6개 모두 실패한다.
+- `mockKakao.test.ts` 에 성공·충돌 복귀가 대기를 지우는 경우(저장본 포함)와 취소·실패가 두는 경우를 더했다.
