@@ -115,6 +115,15 @@ def test_dry_run_prints_targets_and_a_labelled_estimate_without_paying_or_writin
     assert "추정" in out and "미확정" in out
 
 
+def test_a_meeting_waiting_for_approval_is_queued_and_counted_in_the_estimate(fake, capsys):
+    fake.add_summary("m1", requested=False, blocked="awaiting_approval", chars=24000)
+    fake.add_summary("m2", requested=False, blocked="no_approved_items", chars=24000)
+    assert B.main(_ws("--all", "--dry-run")) == 0
+    assert f"예상 약 {B.estimate_won(24000)}원" in capsys.readouterr().out
+    assert B.main(_ws("--all")) == 0
+    assert fake.summaries["m1"]["requested"] is True and fake.summaries["m2"]["requested"] is False
+
+
 def test_without_a_mode_it_only_queues_and_never_claims(fake, llm, capsys):
     fake.add_summary("m1", requested=False)
     assert B.main(_ws("--all")) == 0

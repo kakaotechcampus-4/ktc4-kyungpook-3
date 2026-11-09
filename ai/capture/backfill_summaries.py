@@ -179,7 +179,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"재처리 표시 실패: {e}", file=sys.stderr)
         return 1
 
-    targets = RUNNABLE if a.run else READABLE if a.preview else ("requested",)
+    # 승인 대기 회의도 지금 표시되고 승인이 끝나면 워커가 돈다
+    targets = RUNNABLE if a.run else READABLE if a.preview else ("requested", "awaiting_approval")
     expected = sum(estimate_won(row["chars"]) for row in rows if row["state"] in targets)
     print(f"대상 {len(rows)}건, 예상 약 {expected}원 ({UNCONFIRMED})")
     if a.run:

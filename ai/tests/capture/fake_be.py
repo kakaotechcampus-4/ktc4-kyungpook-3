@@ -120,13 +120,14 @@ class FakeBe:
     def add_summary(self, meeting_id: str, *, extraction_id: str | None = None, workspace_id: str = "ws-1",
                     requested: bool = True, attempts: int = 0, leased: bool = False, saved: dict | None = None,
                     blocked: str | None = None, chars: int = 100) -> None:
-        """blocked 는 요약 대상이 아닌 이유(no_sources, not_summarized_source, not_done)다. 대기열 칸은 Extraction 칸과 같다."""
+        """blocked 는 지금 돌지 않는 이유(no_sources, awaiting_approval, no_approved_items, not_done)다. 대기열 칸은 Extraction 칸과 같다."""
         extraction_id = None if blocked == "not_done" else extraction_id or f"e-{meeting_id}"
         self.summaries[meeting_id] = {
             "meeting_id": meeting_id, "extraction_id": extraction_id, "workspace_id": workspace_id,
             "identity_epoch": 0, "claim_token": None,
             "requested": requested, "attempts": attempts, "leased": leased, "saved": saved, "blocked": blocked,
             "chars": chars, "title": f"{meeting_id} 회의", "started_at": "2026-11-05T05:00:00Z",
+            "source": "discord", "members": ["민수"], "asr_terms": [],
             "lines": [{"seq": 1, "at_ms": 125000, "speaker": "민수", "text": "초대는 이메일로만 하죠"}],
             "items": [{"item_id": "item-1", "action": "create", "title": "초대 메일 보내기", "assignee": "민수",
                        "due_date": "2026-11-14"}],
@@ -378,8 +379,8 @@ class FakeBe:
             return _err(404, "EXTRACTION_NOT_FOUND", {"extraction_id": extraction_id})
         if "X-Privacy-Epoch" in headers and headers["X-Privacy-Epoch"] != str(row["identity_epoch"]):
             return _err(409, "PRIVACY_VERSION_CHANGED")
-        keys = ("extraction_id", "meeting_id", "workspace_id", "title", "started_at", "lines", "items", "topics",
-                "decisions", "identity_epoch")
+        keys = ("extraction_id", "meeting_id", "workspace_id", "title", "started_at", "source", "members", "asr_terms",
+                "lines", "items", "topics", "decisions", "identity_epoch")
         return _ok(200, {k: row[k] for k in keys})
 
     def _put_summary(self, extraction_id: str, body: dict, headers: dict):
@@ -415,7 +416,8 @@ class FakeBe:
         items = []
         for row in rows:
             state = self._summary_state(row, bool(body.get("force")))
-            if state == "requested" and not body.get("dry_run", True):
+            marks = state == "requested" or (state == "awaiting_approval" and not row["requested"])
+            if marks and not body.get("dry_run", True):
                 row.update(requested=True, attempts=0, leased=False)
             items.append({"meeting_id": row["meeting_id"], "extraction_id": row["extraction_id"], "title": row["title"],
                           "started_at": row["started_at"], "state": state, "chars": row["chars"]})

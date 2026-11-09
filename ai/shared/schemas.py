@@ -343,6 +343,9 @@ class SummaryInput(_Base):
     topics: list[SummaryTopic]
     decisions: list[SummaryPriorDecision]
     identity_epoch: int
+    source: str = ""                # "chat" 이면 일일 채팅 요약 틀을 쓴다
+    members: list[str] = field(default_factory=list)       # 오인식된 이름을 고칠 팀원 이름
+    asr_terms: list[str] = field(default_factory=list)     # 오인식된 용어를 고칠 워크스페이스 용어
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "SummaryInput":
