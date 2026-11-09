@@ -172,11 +172,14 @@ def signup(payload: SignupRequest, request: Request, response: Response, db: Ses
     db.add(user)
     try:
         db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         # PostgreSQL 은 실패한 트랜잭션에서 다시 읽지 못하므로 되돌린 뒤 어느 쪽과 겹쳤는지 찾는다.
         # 되돌리면 user 는 세션에서 빠지지만 넣으려던 값은 그대로 남는다.
+        # 다시 찾아도 없으면 이긴 쪽이 그 사이 아이디를 바꾼 것이다. 아이디는 identity_lock 밖이라 이 경합만 여기까지 온다.
         db.rollback()
-        raise AppError(_signup_conflict(db, user) or ErrorCode.EMAIL_ALREADY_EXISTS) from None
+        username_lost = "username" in str(exc.orig)
+        fallback = ErrorCode.USERNAME_TAKEN if username_lost else ErrorCode.EMAIL_ALREADY_EXISTS
+        raise AppError(_signup_conflict(db, user) or fallback) from None
     db.refresh(user)
 
     _create_session(db, user, response)

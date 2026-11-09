@@ -129,3 +129,12 @@ def test_two_signups_racing_for_one_username_make_one_account(mdb, monkeypatch):
     assert sorted(r.status_code for r in results) == [201, 409]
     assert {r.json()["error"]["code"] for r in results if r.status_code == 409} == {"USERNAME_TAKEN"}
     assert len(mdb.scalars(select(User)).all()) == 1
+
+
+def test_signup_losing_a_username_race_whose_winner_moved_on_is_username_taken(mdb, monkeypatch):
+    """사전 검사 뒤 INSERT 가 아이디 인덱스에서 막히고, 재검사 전에 이긴 계정이 아이디를 바꾼 경우다.
+    두 검사가 모두 비어 보이게 해 그 순서를 만든다."""
+    assert _signup(_client(), "a@example.com", "dongwoo").status_code == 201
+    monkeypatch.setattr(auth, "_signup_conflict", lambda db, user: None)
+
+    assert _error(_signup(_client(), "b@example.com", "dongwoo")) == (409, "USERNAME_TAKEN")

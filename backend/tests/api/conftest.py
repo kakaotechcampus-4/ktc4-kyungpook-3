@@ -69,10 +69,10 @@ def signup_secret(monkeypatch):
     monkeypatch.setenv("OAUTH_STATE_SECRET", "k" * 40)
 
 
-def signup_verified(client, email: str, password: str = "pw-123456", name: str = "테스터"):
+def signup_verified(client, email: str, password: str = "pw-123456", name: str = "테스터", username: str | None = None):
     """코드 메일을 거치지 않고 인증을 마친 상태로 가입한다. 코드 흐름은 test_signup_api.py 가 잰다."""
     proof = oauth_state.seal(signup_codes.PROOF_KIND, 60, {"m": normalize_email(email)})
-    body = {"verification_token": proof, "password": password, "name": name, "username": username_for(email)}
+    body = {"verification_token": proof, "password": password, "name": name, "username": username or username_for(email)}
     return client.post("/api/v1/auth/signup", json=body)
 
 

@@ -61,7 +61,7 @@ def test_signup_race_lost_at_the_db_is_409_not_500(mdb, monkeypatch):
     assert _signup(_client(), "victim@gmail.com").status_code == 201
     monkeypatch.setattr(auth, "_signup_conflict", lambda *_: None)
 
-    res = _signup(_client(), "victim@gmail.com")
+    res = signup_verified(_client(), "victim@gmail.com", PW, "v", username="someoneelse")
 
     assert res.status_code == 409
     assert res.json()["error"]["code"] == "EMAIL_ALREADY_EXISTS"
