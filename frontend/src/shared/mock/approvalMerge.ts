@@ -64,7 +64,7 @@ export function mergeIntoApproval(
   }
 
   payload.merged_items = [
-    ...(Array.isArray(payload.merged_items) ? (payload.merged_items as unknown[]) : []),
+    ...(payload.merged_items ?? []),
     {
       extraction_item_id: item.item_id,
       meeting_id: meetingId,

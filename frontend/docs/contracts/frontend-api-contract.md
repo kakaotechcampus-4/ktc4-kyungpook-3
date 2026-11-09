@@ -56,7 +56,7 @@ FE는 crypto.getRandomValues로 만든 256비트 키를 sessionStorage에 보관
 
 ## 응답 검증과 새 값 배포 순서 (#348, 2026-11-08)
 
-근거는 [이슈 #348](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/348)의 정책 결정(2026-11-05)·추가 항목(2026-11-07)과 [D-184](../decision/frontend-decisions.md)다. FE 는 성공 응답의 `data` 를 entity 경계에서 zod 스키마로 읽는다. 스키마에 맞지 않으면 `INVALID_RESPONSE` 다. entity 묶음마다 PR 을 나눠 적용하고, 이 절은 적용한 entity 를 적는다. 실 API 호출로는 확인하지 않았다. BE 응답 스키마(`backend/app/schemas/task.py`·`reply.py`)를 읽어 대조했다.
+근거는 [이슈 #348](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/348)의 정책 결정(2026-11-05)·추가 항목(2026-11-07)과 [D-184](../decision/frontend-decisions.md)다. FE 는 성공 응답의 `data` 를 entity 경계에서 zod 스키마로 읽는다. 스키마에 맞지 않으면 `INVALID_RESPONSE` 다. entity 묶음마다 PR 을 나눠 적용하고, 이 절은 적용한 entity 를 적는다. 실 API 호출로는 확인하지 않았다. BE 응답 스키마(`backend/app/schemas/task.py`·`reply.py`·`approval.py`)와 approval `payload` 를 쓰는 서비스(`backend/app/services/pending_merge.py`, `backend/app/api/approvals.py`)를 읽어 대조했다.
 
 ### 합의된 규약
 
@@ -69,18 +69,20 @@ FE는 crypto.getRandomValues로 만든 256비트 키를 sessionStorage에 보관
 |---|---|---|
 | `TaskResponse` (조회·목록·생성·`PATCH`·Notion 재시도·자동 막힘 풀기·답장 변경 되돌리기) | `status` 가 `todo`·`in_progress`·`blocked`·`done` 밖, `version` 이 정수가 아님, `meeting_deleted` 가 불리언이 아님, 그 밖의 필수 필드 누락·타입 오류. 목록은 한 건만 틀려도 전체 | `start_date` 가 없으면 `created_at` 날짜(옛 응답). `meeting_deleted` 가 없으면 지우지 않은 회의(false, #576 전 BE). 모르는 `notion_sync_status` 는 반영 상태 없음(null). `auto_blocked` 가 불리언이 아니거나 없으면 풀 수 없음(false) |
 | `TaskHistoryResponse` 목록 | 필수 필드 누락·타입 오류. 요청한 태스크가 아닌 `task_id`(`items[n].task_id`) | 모르는 `changed_field` 는 `알 수 없는 항목`, 모르는 `change_source` 는 `알 수 없는 출처` |
+| `ApprovalResponse` (상세·대기 목록·`PATCH` 승인·반려) | `status` 가 `pending`·`approved`·`rejected` 밖, `payload` 가 객체가 아님. `payload.task_overrides` 가 객체가 아니거나 `task_title` 이 문자열이 아님, `assignee_member_id`·`due_date` 가 문자열·null 이 아님, `status` 가 태스크 네 값 밖. `payload.merged_items` 가 배열이 아니거나 항목이 객체가 아님, `payload.assignee_item_id` 가 문자열이 아님. `payload_version`·`alias_text` 가 문자열이 아님, `alias_candidate` 가 불리언이 아님, 그 밖의 필수 필드 누락·타입 오류. 목록은 한 건만 틀려도 전체 | 모르는 `type` 은 지원하지 않는 요청(읽기 전용, 승인·반려 없음). 모르는 `payload.category` 는 분류 없음(null), 모르는 `payload.gate` 는 없음(null). `payload` 의 제안 값·근거와 `merged_items` 항목의 키는 문자열일 때만 읽는다. `payload_version` 이 없으면 지문 없이 처리한다(#547 전 BE). `alias_candidate` 가 없으면 별칭 후보가 아니다(#523 전 BE). `merged_items` 가 없거나 null 이면 합쳐지지 않은 카드다. `assignee_item_id` 가 없으면 카드를 만든 항목(`extraction_item_id`)이 담당 항목이다 |
+| 승인 처리 409 `details` | 거절하지 않는다. 오류 응답이라 `INVALID_RESPONSE` 로 바꾸지 않는다 | `APPROVAL_CONFLICT` 는 `approval_id`·`task_id`·`task_version`(정수 ≥ 1)·`conflicts[]`(`field` 문자열, `base`·`current`·`proposed` 키가 모두 있음)이 맞아야 재승인할 수 있는 충돌로 읽고, 틀리면 일반 실패다. `APPROVAL_CHANGED` 의 `details` 는 읽지 않고 승인 목록·상세를 다시 받는다. `APPROVAL_ALREADY_RESOLVED` 의 모르는 `current_status`·빠진 `approval_id` 는 없음(null) |
 | `GET /tasks/{task_id}/timeline` | 모르는 `kind`, 필수 필드 누락·타입 오류 | 답장 줄의 모르는 `field` 는 `알 수 없는 변경이에요`, 모르는 `result` 는 `알 수 없는 결과`. 종류나 결과를 모르는 줄은 읽기 전용이라 서버 `undoable` 이 true 여도 되돌리기가 없다(표시용 분류에는 행동이 없다). 아는 줄은 서버 `undoable` 을 따른다. 모르는 `channel`·`evidence_status` 는 없음(null) |
 
-- 쓰기 응답(`PATCH`·생성·Notion 재시도·자동 막힘 풀기·답장 변경 되돌리기)이 `INVALID_RESPONSE` 면 FE 는 서버에 반영됐을 수 있다고 보고 실패라 하지 않는다. 토스트 `변경 결과를 확인하지 못했어요` 와 `새로고침`(그 공간의 태스크 목록·상세·이력을 다시 받음)을 보인다. 다른 실패는 기존 문구다(D-184).
+- 쓰기 응답(태스크 `PATCH`·생성·Notion 재시도·자동 막힘 풀기·답장 변경 되돌리기, 승인 `PATCH`)이 `INVALID_RESPONSE` 면 FE 는 서버에 반영됐을 수 있다고 보고 실패라 하지 않는다. 토스트 `변경 결과를 확인하지 못했어요` 와 `새로고침` 을 보인다. `새로고침` 은 태스크 쓰기면 그 공간의 태스크 목록·상세·이력을, 승인 처리면 승인 목록·상세와 태스크·추출·별칭을 다시 받는다. 다른 실패는 기존 문구다(D-184).
 - 오류의 `details` 는 `{entity, path}` 다(예: `{"entity": "task", "path": "items[3].status"}`). 받은 값은 넣지 않는다. 개발 모드만 콘솔에 경로와 값을 남긴다.
 - 스키마는 FE 가 읽는 필드만 본다. BE 가 필드를 더해도 실패하지 않는다. `total` 은 읽지 않는다.
-- 남은 entity(approval, meeting·minutes·extraction, message·notification, integration·invitation·workspace·member·user)는 아직 이전 방식(타입 단언과 `enumValue` 폴백)이다.
-- 근거 코드: `frontend/src/shared/api/parseResponse.ts`, `frontend/src/shared/api/unknownValue.ts`, `frontend/src/shared/types/api/task.ts`, `frontend/src/shared/types/api/reply.ts`, `frontend/src/entities/task/api/taskApi.ts`.
+- 남은 entity(meeting·minutes·extraction, message·notification, integration·invitation·workspace·member·user)는 아직 이전 방식(타입 단언과 `enumValue` 폴백)이다.
+- 근거 코드: `frontend/src/shared/api/parseResponse.ts`, `frontend/src/shared/api/unknownValue.ts`, `frontend/src/shared/types/api/task.ts`, `frontend/src/shared/types/api/reply.ts`, `frontend/src/shared/types/api/approval.ts`, `frontend/src/entities/task/api/taskApi.ts`, `frontend/src/entities/approval/api/`.
 
 ### 합의 필요 변경
 
 - 위 배포 순서를 BE 와 합의한다(#348 정책 결정 3). 합의 여부 확인 필요.
-- BE 응답 스키마의 `status: str` 을 enum 타입으로 바꿔 OpenAPI 에 값 목록이 드러나게 해 달라(#348 정책 결정 4). `TaskFields.status`, `TaskHistoryResponse.changed_field`·`change_source`, `TimelineChange.field`·`evidence_status`, `TimelineReply.channel` 이 지금 `str` 이다. 합의 여부 확인 필요.
+- BE 응답 스키마의 `status: str` 을 enum 타입으로 바꿔 OpenAPI 에 값 목록이 드러나게 해 달라(#348 정책 결정 4). `TaskFields.status`, `TaskHistoryResponse.changed_field`·`change_source`, `TimelineChange.field`·`evidence_status`, `TimelineReply.channel`, `ApprovalResponse.status`·`type` 이 지금 `str` 이다. 합의 여부 확인 필요.
 
 ## 회의 삭제와 보존 태스크 (#576, 2026-11-09)
 
@@ -269,7 +271,7 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 | 상태 변경·재시도 본문 | 상태 변경은 `{status}`만, 재시도는 본문 없음. `changed_by`를 보내지 않는다 | [taskApi](../../src/entities/task/api/taskApi.ts) |
 | Task 매핑 | `version`이 정수가 아니거나 `status`가 네 값 밖이면 응답 스키마가 거절해 `INVALID_RESPONSE`다. mapper 까지 오지 않는다(2026-11-08 #348, 맨 위 「응답 검증과 새 값 배포 순서」). `notionSyncStatus`는 세 값과 `null`만, 모르는 문자열은 `null`. 반영 완료 판단은 `isNotionSynced` = `synced`뿐이며 `notion_page_id` 존재로 판단하지 않는다 (§4.8-1을 대체) | [Task mapper](../../src/entities/task/model/mapper.ts), [Task DTO](../../src/shared/types/api/task.ts) |
 | 승인 처리 본문 | `resolveApproval`이 `planApprovalResolution` 판정을 통과한 본문만 보낸다. `resolved_by`를 보내지 않는다. `confirm_task_version`은 `task_update` 승인에서 호출자가 서버 버전(정수 ≥ 1)을 줄 때만 싣는다 | [resolveApproval](../../src/entities/approval/api/resolveApproval.ts), [판정](../../src/entities/approval/model/resolution.ts), [승인 DTO](../../src/shared/types/api/approval.ts) |
-| 409 해석 | `toApprovalResolveFailure`가 `conflict`(`taskVersion`, `conflicts[]`)와 `already_resolved`(`currentStatus`)를 구분한다. details 모양이 틀리면 null(일반 오류) | [승인 mapper](../../src/entities/approval/model/mapper.ts) |
+| 409 해석 | `toApprovalResolveFailure`가 `conflict`(`taskVersion`, `conflicts[]`), `changed`(`APPROVAL_CHANGED`), `already_resolved`(`currentStatus`)를 구분한다. `details` 는 승인 DTO 의 스키마로 읽고, 충돌 details 모양이 틀리면 null(일반 오류)이다(2026-11-09 #348) | [승인 mapper](../../src/entities/approval/model/mapper.ts) |
 | 생성 승인 판정 | 제목 trim 후 1~300자(코드 포인트), 담당자는 호출자가 넘긴 현재 공간 팀원 ID 목록에 포함, 마감은 유효한 `YYYY-MM-DD`. 하나라도 아니면 승인 본문을 만들지 않고 이유 문자열을 돌려준다. 반려 본문은 `{status: "rejected"}`로 항상 만들 수 있다. 지원하지 않는 종류와 pending이 아닌 승인은 승인·반려 모두 만들지 않는다 | [판정](../../src/entities/approval/model/resolution.ts) |
 
 #### 제안 값을 고쳐 승인 `task_overrides` (#303 에서 서버 구현)
@@ -1280,9 +1282,15 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - MSW: [로그인 handler](../../src/shared/mock/handlers/auth.ts)가 BE처럼 앞뒤 공백을 지우고 소문자로 바꾼 이메일별로 실패를 센다. 첫 실패부터 15분 안에 10번째 실패는 401이고, 그 뒤 15분 동안은 맞는 비밀번호도 429이며 `retry_after_seconds`와 `Retry-After`를 같은 값으로 준다. 막히기 전에 첫 실패부터 15분이 지나면 횟수를 새로 센다. 성공하면 그 이메일의 횟수를 지우고, 재설정 confirm을 마쳐도 지운다. IP 제한은 흉내 내지 않는다. BE는 공인 IP만 세고 사설·루프백 주소는 세지 않아 로컬 개발 요청은 IP 제한에 닿지 않고, 모의 요청에는 클라이언트 IP도 없다. 시나리오 `login-rate-limited`는 `pm@example.com`이 이미 막힌 상태로 시작하고 남은 시간은 900초다.
 - 검증: Vitest(MSW handler 규칙, 로그인 화면 통합)와 MSW 모드 브라우저 확인. #554 안내는 `authFlow.test.tsx`(문장, 링크 이동, 401에는 없음)와 E2E `auth-limits.e2e.ts`로 확인한다. FE는 실서버 왕복을 확인하지 않았다.
 
-#### 4.1.4 가입 이메일 인증과 카카오 로그인 (#427): 코드 구현, 실제 로그인·메일 수신 미확인
+#### 4.1.4 가입 이메일 인증과 카카오 로그인 (#427·#538): BE PR #454 병합, 실제 카카오 로그인 미확인
 
 제공자는 BE, 소비자는 FE `/signup`과 `/login`이다. 아래 규약은 이슈 #427 명세(2026-11-06 사용자 결정)와 같은 브랜치 `feature/427-kakao-login-signup`의 `backend/app/api/auth.py`, `schemas/auth.py`, `services/signup_codes.py`, `services/kakao_oauth.py`, `core/errors.py`를 읽고 대조했다. 팀 합의를 마쳤다.
+
+2026-11-09 (#538): 그 브랜치가 PR #454로 develop에 병합됐다. develop `69869392`의 [auth.py](../../../backend/app/api/auth.py)를 다시 읽었고 아래 표와 복귀 주소가 그대로다. 대조하며 더 확인한 사실은 이렇다.
+
+- 성공 복귀와 `email_exists` 복귀는 남아 있던 대기 쿠키를 지운다. 앞서 다른 카카오로 가입하다 멈춘 대기가 다음 가입에 이어지지 않는다.
+- callback 의 예외는 두 갈래다. 카카오 설정 오류(`OAuthConfigError`)는 돌아갈 곳을 버리고 `/login?next=%2F&oauth=kakao&oauth_result=failed`로 보낸다. FE는 `next=/`를 버리고 일반 실패 문구를 보인다. 그 밖의 예외는 전역 처리기가 HTTP 500 `INTERNAL_ERROR` 봉투로 답한다. 브라우저가 callback 주소에서 JSON을 보게 되고 앱 화면으로 돌아오지 않는다. 이 경우를 FE가 처리할 방법은 없다.
+- 같은 계정에 동시에 잇는 요청이 겹치면 먼저 이은 쪽을 따른다. 다른 카카오가 먼저 이었으면 `email_exists`다.
 
 **규약 (같은 브랜치 BE 코드 기준).** 모두 로그인이 필요 없다. 응답은 기존 봉투다.
 
@@ -1332,6 +1340,8 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - 검증: Vitest 단위·통합, 실제 Chromium E2E [signup-kakao.e2e.ts](../../e2e/signup-kakao.e2e.ts).
 
 **돌아갈 경로.** 로그인 화면의 회원가입 링크와 `/signup`은 `next`를 들고 있어 로그인으로 옮겨도 이어진다. 가입을 마친 새 계정은 `next`를 쓰지 않고 시작 화면으로 간다(#411, D-182).
+
+**#538 보완 (2026-11-09).** API 형태는 바꾸지 않았다. FE는 휴대폰 로그인 화면을 시안 H-1 배치로 바꿨다(D-185). 카카오 버튼 문구는 `카카오 로그인`이다(D-182). E2E에 실패 복귀, 대기 없는 `kakao=1`에서 카카오로 다시 시작, 기존 계정 연결 뒤 이어진 카카오 로그인, 360·390·1280px 화면 확인을 더했다([결과](../issues/538-kakao-login-finish/result.md)).
 
 **확인하지 않은 것.** 실제 카카오 로그인, 실제 메일 수신, 실서버 왕복은 하지 않았다. BE 코드는 읽어서 대조만 했다. `Secure` 쿠키와 카카오 redirect URI, 비즈 앱 이메일 동의 설정은 배포 환경에서 확인해야 한다. 배포 순서상 BE의 새 signup이 먼저 나가면 지금 배포된 FE의 가입이 400이 되므로 FE와 함께 내보낸다.
 
@@ -1687,7 +1697,7 @@ MSW 픽스처의 단위이자 M1-C 의 작업 단위이기도 하다.
 | 로그인 | `POST /auth/login` | **구현됨** §4.1 — 429 시도 제한 §4.1.3(BE PR #456 병합) |
 | 회원가입 | `POST /auth/signup` | **구현됨** §4.1 — 201, 이름 규칙 §4.1.2, 이메일 인증 §4.1.4 |
 | 비밀번호 재설정 요청·변경 | `POST /auth/password-reset/request` · `verify` · `confirm` | **구현됨** §4.1.1 — BE PR #398 병합. BE 가 2026-11-08 운영 서버에서 메일 수신까지 확인 |
-| 카카오 로그인 | `GET /auth/kakao/start`로 페이지 이동, callback 뒤 필요하면 pending 조회 | FE·BE 구현 §4.1.4. Google 버튼은 제거. 실제 카카오 설정·인증 성공은 별도 |
+| 카카오 로그인 | `GET /auth/kakao/start?next=` 로 페이지 이동, callback 뒤 필요하면 가입 대기 `GET /auth/kakao/pending` | FE·BE 구현 §4.1.4(BE PR #454 병합). Google 버튼은 제거(D-182). 실제 카카오 설정·인증 성공은 별도 |
 | 앱 부팅 | `GET /auth/me` | **구현됨** §4.1 |
 
 - 랜딩은 데모 기능을 넣지 않으므로 호출이 없다 (D-002).

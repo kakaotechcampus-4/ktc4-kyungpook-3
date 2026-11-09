@@ -3,7 +3,8 @@ import type { ComponentPropsWithRef, ReactNode } from 'react'
 import { Label } from '../label/Label'
 import { ErrorText } from '../error-text/ErrorText'
 
-export type FieldTone = 'product' | 'onboarding' | 'auth'
+/** `auth-phone` 은 휴대폰 로그인(H-1)이다. 라벨은 화면에서만 숨기고 이름으로 남는다 */
+export type FieldTone = 'product' | 'onboarding' | 'auth' | 'auth-phone'
 
 /* ref 는 input 으로 간다 — React Hook Form 의 register 가 포커스 이동에 쓴다 (D-142).
    React 19 는 ref 를 일반 prop 으로 넘겨서 forwardRef 가 필요 없다. */
@@ -34,18 +35,22 @@ const TONE_SHAPE: Record<FieldTone, string> = {
   product: 'rounded-9 px-13',
   onboarding: 'rounded-8 px-13',
   auth: 'rounded-12 px-16',
+  'auth-phone': 'rounded-12 px-16',
 }
 
 const TONE_HEIGHT: Record<FieldTone, string> = {
   product: 'h-[42px]',
   onboarding: 'h-[42px]',
   auth: 'h-48',
+  'auth-phone': 'h-[52px]',
 }
 
 const TONE_TEXT: Record<FieldTone, string> = {
   product: 'text-body',
   onboarding: 'text-body',
   auth: 'text-[15px]',
+  // 16px 아래면 iOS Safari 가 입력할 때 화면을 확대한다
+  'auth-phone': 'text-[16px]',
 }
 
 /** 제품만 입력 경계(선 중 가장 진한 단)를 쓴다. 온보딩·인증은 강조 테두리이고 반경도 다르다. */
@@ -53,6 +58,7 @@ const TONE_BORDER: Record<FieldTone, string> = {
   product: 'border-input-border',
   onboarding: 'border-line-strong',
   auth: 'border-line-strong',
+  'auth-phone': 'border-input-border',
 }
 
 /** 라벨과 입력 사이 간격 실측 — 6 / 7 / 8px */
@@ -60,6 +66,7 @@ const TONE_LABEL_GAP: Record<FieldTone, string> = {
   product: 'mb-6',
   onboarding: 'mb-7',
   auth: 'mb-8',
+  'auth-phone': 'sr-only',
 }
 
 const INPUT_BASE = 'w-full border bg-surface font-normal text-ink'
@@ -119,6 +126,7 @@ export function TextField({
   const errorId = `${fieldId}-error`
 
   const blocking = labelTone === 'required-blocking'
+  const labelFamily = tone === 'auth-phone' ? 'auth' : tone
 
   // 경계색·플레이스홀더색·포커스 선 색은 한 곳에서만 고른다 — 두 클래스를 같이 붙이면 CSS 순서가 이긴다
   const accent = Boolean(error) || blocking
@@ -146,13 +154,18 @@ export function TextField({
     <div className={['flex flex-col', className].filter(Boolean).join(' ')}>
       {label && labelEnd ? (
         <div className={['flex items-baseline justify-between', TONE_LABEL_GAP[tone]].join(' ')}>
-          <Label htmlFor={fieldId} tone={tone} blocking={blocking}>
+          <Label htmlFor={fieldId} tone={labelFamily} blocking={blocking}>
             {label}
           </Label>
           {labelEnd}
         </div>
       ) : label ? (
-        <Label htmlFor={fieldId} tone={tone} blocking={blocking} className={TONE_LABEL_GAP[tone]}>
+        <Label
+          htmlFor={fieldId}
+          tone={labelFamily}
+          blocking={blocking}
+          className={TONE_LABEL_GAP[tone]}
+        >
           {label}
         </Label>
       ) : null}

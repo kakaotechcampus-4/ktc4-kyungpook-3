@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useCompactScreen } from '@/shared/lib/compact-screen'
 import { Label } from '@/shared/ui/label'
 import { Skeleton } from '@/shared/ui/skeleton'
 
@@ -60,7 +61,30 @@ function Footnote({ lead, link }: { lead: string; link: ReactNode }) {
   )
 }
 
+/* 휴대폰 로그인(H-1): 숨은 라벨, 52px 입력·버튼, `또는` 없음, 아래 링크 줄(위아래 12px 를 띄운 14px 글자) */
+const PHONE_BOX = 'h-[52px] rounded-12'
+const PHONE_LINKS = 'flex justify-between pt-4 text-[14px]'
+
+function PhoneLoginFormSkeleton() {
+  return (
+    <>
+      <div className="flex flex-col gap-12">
+        <Skeleton variant="block" className={PHONE_BOX} />
+        <Skeleton variant="block" className={PHONE_BOX} />
+        <Skeleton variant="block" className={PHONE_BOX} />
+      </div>
+      <Skeleton variant="block" className={PHONE_BOX} />
+      <div className={PHONE_LINKS}>
+        <span className="py-12 text-sub">비밀번호를 잊으셨나요?</span>
+        <span className="py-12 font-bold text-ink">가입하기</span>
+      </div>
+    </>
+  )
+}
+
 export function LoginFormSkeleton() {
+  const compact = useCompactScreen()
+  if (compact) return <PhoneLoginFormSkeleton />
   return (
     <>
       <div className={FORM}>

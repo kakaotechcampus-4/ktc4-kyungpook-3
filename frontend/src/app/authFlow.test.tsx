@@ -11,6 +11,8 @@ import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
 import { recordRequests } from '@/shared/test/requests'
+import { stubViewport } from '@/shared/test/viewport'
+import { COMPACT_QUERY } from '@/shared/lib/compact-screen'
 import { renderApp } from './test/renderApp'
 import { walkSignup } from './test/walkSignup'
 
@@ -326,5 +328,97 @@ describe('인증 화면 재방문 (U2-6·U2-8)', () => {
     const app = renderApp('/login')
     expect(await screen.findByRole('heading', { name: '어떻게 시작할까요?' })).toBeInTheDocument()
     await app.expectPath('/onboarding/start')
+  })
+})
+
+describe('휴대폰 로그인은 시안 H-1 배치다 (#538)', () => {
+  beforeEach(() => {
+    stubViewport(true, COMPACT_QUERY)
+  })
+
+  it('매스와 한 줄 소개, 라벨 대신 placeholder 를 보이고 칸 이름은 남긴다', async () => {
+    await openLogin()
+    expect(screen.getByRole('heading', { level: 1, name: "Manager's Manager" })).toBeInTheDocument()
+    expect(screen.getByText('회의가 끝나면 할 일은 매스가 챙겨요')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: "Manager's Manager" })).toHaveAttribute('href', '/')
+    expect(screen.getByLabelText('이메일')).toHaveAttribute('placeholder', '이메일')
+    expect(screen.getByLabelText('비밀번호')).toHaveAttribute('placeholder', '비밀번호')
+    expect(screen.getByText('이메일', { selector: 'label' })).toHaveClass('sr-only')
+    expect(screen.queryByText('또는')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '카카오 로그인' })).toBeInTheDocument()
+  })
+
+  it('맨 아래 한 줄의 재설정·가입 링크는 넓은 화면과 같은 곳으로 간다', async () => {
+    const app = await openLogin()
+    const forgot = screen.getByRole('link', { name: '비밀번호를 잊으셨나요?' })
+    const signup = screen.getByRole('link', { name: '가입하기' })
+    expect(forgot.parentElement).toBe(signup.parentElement)
+    expect(signup).toHaveAttribute('href', '/signup')
+    expect(screen.queryByRole('link', { name: '회원가입' })).not.toBeInTheDocument()
+
+    await userEvent.click(forgot)
+    expect(await screen.findByRole('heading', { name: '비밀번호 재설정 요청' })).toBeInTheDocument()
+    await app.expectPath('/forgot-password')
+  })
+
+  it('이메일 로그인과 429 재설정 안내가 그대로 된다', async () => {
+    applyScenario('login-rate-limited')
+    await openLogin()
+    await fillLogin('pm@example.com', 'mock-password')
+    await userEvent.click(screen.getByRole('button', { name: '로그인' }))
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByRole('link', { name: '비밀번호 재설정하기' })).toHaveAttribute(
+      'href',
+      '/forgot-password',
+    )
+  })
+})
+
+describe('로그인 화면은 768px 경계를 넘나들어도 폼을 다시 만들지 않는다 (#538 리뷰)', () => {
+  const DIRECTIONS = [
+    ['휴대폰 → 넓은 화면', true],
+    ['넓은 화면 → 휴대폰', false],
+  ] as const
+
+  it.each(DIRECTIONS)('%s: 입력값을 지킨다', async (_, startsPhone) => {
+    const viewport = stubViewport(startsPhone, COMPACT_QUERY)
+    await openLogin()
+    await fillLogin('pm@example.com', 'mock-password')
+    const email = screen.getByLabelText('이메일')
+
+    viewport.resize(!startsPhone)
+    expect(screen.queryByText('회의가 끝나면 할 일은 매스가 챙겨요') === null).toBe(startsPhone)
+    expect(screen.getByLabelText('이메일')).toBe(email)
+    expect(email).toHaveValue('pm@example.com')
+    expect(screen.getByLabelText('비밀번호')).toHaveValue('mock-password')
+  })
+
+  it.each(DIRECTIONS)('%s: 429 안내와 재설정 링크가 남는다', async (_, startsPhone) => {
+    const viewport = stubViewport(startsPhone, COMPACT_QUERY)
+    applyScenario('login-rate-limited')
+    await openLogin()
+    await fillLogin('pm@example.com', 'mock-password')
+    await userEvent.click(screen.getByRole('button', { name: '로그인' }))
+    await screen.findByRole('alert')
+
+    viewport.resize(!startsPhone)
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('비밀번호가 기억나지 않으면 재설정해 주세요.')
+    expect(within(alert).getByRole('link', { name: '비밀번호 재설정하기' })).toBeInTheDocument()
+  })
+
+  it.each(DIRECTIONS)('%s: 주소에서 지운 카카오 실패 안내가 남는다', async (_, startsPhone) => {
+    const viewport = stubViewport(startsPhone, COMPACT_QUERY)
+    db.authenticated = false
+    const app = renderApp('/login?oauth=kakao&oauth_result=failed')
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '카카오 로그인에 실패했어요. 다시 시도해 주세요.',
+    )
+    await app.expectSearch('')
+
+    viewport.resize(!startsPhone)
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '카카오 로그인에 실패했어요. 다시 시도해 주세요.',
+    )
   })
 })

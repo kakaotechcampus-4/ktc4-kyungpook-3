@@ -4,7 +4,13 @@ const DIVIDER = 'self-center text-[13px] text-dim'
 
 /* 색·반경·문구는 카카오 로그인 디자인 가이드가 정한 값이라 토큰을 쓰지 않는다 */
 const KAKAO_BUTTON =
-  'flex h-48 w-full items-center justify-center gap-8 rounded-[12px] bg-[#FEE500] text-[15px] font-semibold text-black/85'
+  'flex w-full items-center justify-center gap-8 rounded-[12px] bg-[#FEE500] text-black/85'
+
+/* 휴대폰 로그인(H-1)은 위 로그인 버튼과 같은 52px·16px 굵게다 */
+const KAKAO_SIZE = {
+  regular: 'h-48 text-[15px] font-semibold',
+  phone: 'h-[52px] text-[16px] font-bold',
+}
 
 /** 카카오 가이드의 말풍선 심볼. 모양·비율·색을 바꾸면 안 된다 */
 function KakaoSymbol() {
@@ -18,13 +24,22 @@ function KakaoSymbol() {
   )
 }
 
+export interface AlternativeAuthProps {
+  /** 휴대폰 로그인(H-1). `또는` 없이 버튼만 그린다 */
+  phone?: boolean
+}
+
 /** `또는` 과 카카오 버튼. 누르면 현재 탭이 카카오로 간다 (D-182) */
-export function AlternativeAuth() {
+export function AlternativeAuth({ phone = false }: AlternativeAuthProps) {
   const startKakao = useStartKakao()
   return (
     <>
-      <span className={DIVIDER}>또는</span>
-      <button type="button" className={KAKAO_BUTTON} onClick={startKakao}>
+      {phone ? null : <span className={DIVIDER}>또는</span>}
+      <button
+        type="button"
+        className={`${KAKAO_BUTTON} ${KAKAO_SIZE[phone ? 'phone' : 'regular']}`}
+        onClick={startKakao}
+      >
         <KakaoSymbol />
         카카오 로그인
       </button>
