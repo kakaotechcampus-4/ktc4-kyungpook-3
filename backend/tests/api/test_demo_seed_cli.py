@@ -2,6 +2,7 @@
 import json
 import sys
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select, update
 
@@ -134,3 +135,24 @@ def test_seed_error_exits_1(mdb, monkeypatch, capsys):
 
     assert seed_demo.main(_args()) == 1
     assert "재생 실패" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("pattern", ["demo@example.com", "demo+{n}", "x@{n}@y.com"])
+def test_bad_email_pattern_exits_2_writing_nothing(mdb, monkeypatch, capsys, pattern):
+    _env(monkeypatch)
+    monkeypatch.setattr(seed_demo, "SessionLocal", lambda: mdb)
+
+    assert seed_demo.main(["--email-pattern", pattern]) == 2
+
+    assert capsys.readouterr().err
+    assert _count(mdb, User) == 0
+
+
+def test_invalid_password_exits_2_writing_nothing(mdb, monkeypatch, capsys):
+    _env(monkeypatch)
+    monkeypatch.setenv("DEMO_PM_PASSWORD", "x")
+    monkeypatch.setattr(seed_demo, "SessionLocal", lambda: mdb)
+
+    assert seed_demo.main(_args()) == 2
+
+    assert _count(mdb, User) == 0

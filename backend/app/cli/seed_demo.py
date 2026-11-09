@@ -448,8 +448,12 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        data = load_seed_data(args.data)
         emails = emails_from_pattern(args.email_pattern)
+    except SeedError as error:
+        print(f"오류: {error}", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        data = load_seed_data(args.data)
     except (SeedError, SeedDataError) as error:
         print(f"오류: {error}", file=sys.stderr)
         return EXIT_FAILED
