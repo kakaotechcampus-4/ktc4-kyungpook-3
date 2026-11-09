@@ -72,12 +72,13 @@ jobs:
       - if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
       - run: npm run test:e2e
-      # 실패한 테스트의 재시도 trace(on-first-retry)와 HTML 리포트를 남긴다
+      # 재시도로 통과한 실행도 재시도 trace(on-first-retry)와 HTML 리포트를 남긴다
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: ${{ !cancelled() }}
         with:
           name: frontend-e2e-report
           path: |
             frontend/playwright-report
             frontend/test-results
+          if-no-files-found: ignore
           retention-days: 7
