@@ -53,6 +53,18 @@ downgrade 와 revert 배포 사이에는 새 코드가 옛 스키마에서 돈�
 
 Actions → deploy → Run workflow 에서 develop 을 고른다. mode 를 all 로 고르면 세 파트를 모두 다시 올린다. 수동 실행도 세 CI 를 먼저 통과해야 한다.
 
+## 자동 회의 요약 (#560)
+
+AI 또는 배포 실행 코드가 바뀌면 [enable-summary.py](enable-summary.py)가 실제 `mm-worker.service`를 검사한다. 유닛이 존재하고 active일 때만 `/etc/systemd/system/mm-worker.service.d/90-summary.conf`에 `MM_SUMMARY_LLM=luna`를 설치한다. `daemon-reload` 뒤 기존 워커를 재시작한다. 꺼진 워커를 켜지 않으며, 이 경우 `status=not-on`을 출력하고 성공 배포 SHA를 갱신하지 않는다. active 유닛은 부팅 시 자동 시작 여부와 무관하게 기존 배포 정책대로 재시작한다.
+
+검사는 실제 MainPID의 Python 명령, 사용자, 작업 디렉터리, 환경을 사용한다. 현재 지원하는 실행 명령은 절대 경로 Python의 `-m capture.worker`다. 같은 사용자와 실행 환경에서 `summary_from_env()`를 생성하되 회의 claim·BE 요청·LLM 호출은 하지 않는다. 재시작 전에는 Luna를 선택할 때의 설정을 검사하고, 재시작 뒤에는 새 PID의 실제 selector와 runner, 해당 PID의 `[summary] runner ready model=luna` 로그를 함께 확인한다. 로그의 monotonic 시각은 systemd가 보고한 현재 main process 시작시각 이상이어야 한다. PID와 시작시각이 최종 확인까지 같아야 하며, 시작시각이 없으면 `worker-start-time-unavailable`로 실패한다. 로그는 selector, 설정 존재 여부, PID와 ready 여부만 공개한다. 키·URL·토큰과 journal 원문은 출력하지 않는다.
+
+`ai/.env`는 기존 프로세스 환경에 없는 값만 채운다. systemd의 `EnvironmentFile` 등이 selector를 덮으면 실제 값 검사에서 `effective-selector-conflict`로 실패한다. `PM_AGENT_LLM=off`는 `global-llm-off`, Luna 키·URL 또는 BE URL·서비스 토큰 누락은 `required-settings-missing`으로 실패한다. 이 helper는 다른 기능의 전역 LLM 설정을 바꾸지 않는다. 실패하면 설치된 drop-in을 자동으로 되돌리지 않으며 성공 배포 SHA를 유지한다.
+
+`status=on`은 새 운영 프로세스의 요약 runner 준비를 뜻한다. 공급사 인증·실제 요약 저장·품질 검증 결과는 별도다. 대기 중인 요약은 재시작 후 워커가 자연스럽게 처리하며, 이 배포는 과거 회의를 새로 backfill 등록하지 않는다.
+
+요약을 끄려면 운영자가 해당 drop-in의 값을 빈 문자열로 바꾸고 `daemon-reload`와 워커 재시작을 수행한다. AI 또는 배포 코드의 다음 배포는 고정 Luna 값을 다시 설치하므로 지속적으로 끄려면 배포 정책도 함께 변경한다.
+
 ## 회의 삭제 활성화 (#576)
 
 회의 삭제는 `MEETING_DELETION_ENABLED=false`가 기본이다. 자동 배포는 BE·FE 뒤에 AI를 반영하고 녹음 중 봇 재시작을 건너뛸 수 있다. 따라서 배포 성공만으로 삭제를 활성화하지 않는다. 새 DELETE API는 gate가 꺼져 있으면 503을 반환하며 UI도 삭제 CTA를 숨긴다.

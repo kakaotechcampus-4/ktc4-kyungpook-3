@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import (
     AwareDatetime,
@@ -148,6 +148,8 @@ class MeetingMinutesResponse(BaseModel):
     source: str
     attendees: list[dict]
     summary: dict | None
+    # ready: 요약이 있다. pending: 곧 나온다. none: 없다(대상 아님, 실패)
+    summary_status: Literal["ready", "pending", "none"]
     transcript: list[dict]
     permissions: dict
 
