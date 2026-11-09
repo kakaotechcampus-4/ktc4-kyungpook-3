@@ -98,6 +98,7 @@ class ErrorCode(StrEnum):
     TOPIC_NOT_FOUND = "TOPIC_NOT_FOUND"
     SUMMARY_NOT_FOUND = "SUMMARY_NOT_FOUND"
     TRANSCRIPT_LINE_NOT_FOUND = "TRANSCRIPT_LINE_NOT_FOUND"
+    TOPIC_NAME_TAKEN = "TOPIC_NAME_TAKEN"
 
     # 가입 이메일 인증·카카오 로그인
     SIGNUP_CODE_RATE_LIMITED = "SIGNUP_CODE_RATE_LIMITED"
@@ -195,6 +196,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.TOPIC_NOT_FOUND: 404,
     ErrorCode.SUMMARY_NOT_FOUND: 404,
     ErrorCode.TRANSCRIPT_LINE_NOT_FOUND: 404,
+    ErrorCode.TOPIC_NAME_TAKEN: 409,
     ErrorCode.SIGNUP_CODE_RATE_LIMITED: 429,
     ErrorCode.SIGNUP_CODE_INVALID: 400,
     ErrorCode.SIGNUP_VERIFICATION_INVALID: 400,
@@ -285,6 +287,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.TOPIC_NOT_FOUND: "해당 주제를 찾을 수 없습니다.",
     ErrorCode.SUMMARY_NOT_FOUND: "이 회의의 요약본이 아직 없습니다.",
     ErrorCode.TRANSCRIPT_LINE_NOT_FOUND: "해당 발화를 찾을 수 없습니다.",
+    ErrorCode.TOPIC_NAME_TAKEN: "같은 이름의 주제가 이미 있습니다.",
     ErrorCode.SIGNUP_CODE_RATE_LIMITED: "인증 코드를 너무 자주 요청했습니다. 잠시 후 다시 시도해 주세요.",
     ErrorCode.SIGNUP_CODE_INVALID: "인증 코드가 맞지 않습니다.",
     ErrorCode.SIGNUP_VERIFICATION_INVALID: "이메일 인증이 필요합니다. 인증을 다시 진행해 주세요.",

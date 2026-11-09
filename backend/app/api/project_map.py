@@ -1,4 +1,4 @@
-"""웹의 프로젝트 맵과 요약본 내려받기. 요약에 팀원 발언이 들어가므로 볼 권한은 회의록과 같이 워크스페이스 멤버다."""
+"""웹의 프로젝트 맵과 요약본 내려받기, 주제·결정 고치기. 요약에 팀원 발언이 들어가므로 볼 권한과 고칠 권한은 회의록과 같이 워크스페이스 멤버다."""
 from datetime import date
 from urllib.parse import quote
 
@@ -10,7 +10,8 @@ from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Meeting, Member, User
 from app.schemas.project_map import GraphResponse, TopicDetailResponse
-from app.services import project_map
+from app.schemas.record_edit import TaskDetachResponse, TopicEditRequest, TopicMergeRequest
+from app.services import lifecycle, project_map, summary
 from app.services import meeting_deletion
 from app.services.project_map import MarkdownFile
 
@@ -33,6 +34,58 @@ def get_topic(
     db: Session = Depends(get_db),
 ) -> dict:
     return success(project_map.topic_detail(db, workspace_id, topic_id).model_dump(mode="json"))
+
+
+def _member_behind_gate(
+    workspace_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> Member:
+    """save_summary 와 같은 순서(관문, 그다음 공간 행)로 잠근다. get_current_member 는 공간 행을 먼저 잠가 순서가 거꾸로 된다."""
+    lifecycle.worker_gate(db)
+    return require_member(db, user, workspace_id)
+
+
+@router.patch("/workspaces/{workspace_id}/topics/{topic_id}", response_model=Envelope[TopicDetailResponse])
+def edit_topic(
+    workspace_id: str,
+    topic_id: str,
+    payload: TopicEditRequest,
+    member: Member = Depends(_member_behind_gate),
+    db: Session = Depends(get_db),
+) -> dict:
+    """이름·설명 고치기. 같은 이름의 다른 주제가 있으면 409 이고 details.topic_id 로 그 주제를 알려 준다."""
+    summary.rename_topic(db, workspace_id, topic_id, name=payload.name, description=payload.description)
+    data = project_map.topic_detail(db, workspace_id, topic_id).model_dump(mode="json")
+    db.commit()
+    return success(data)
+
+
+@router.post("/workspaces/{workspace_id}/topics/{topic_id}/merge", response_model=Envelope[TopicDetailResponse])
+def merge_topic(
+    workspace_id: str,
+    topic_id: str,
+    payload: TopicMergeRequest,
+    member: Member = Depends(_member_behind_gate),
+    db: Session = Depends(get_db),
+) -> dict:
+    """topic_id 를 into_topic_id 에 합치고 합친 주제를 돌려준다. topic_id 는 사라진다."""
+    into = summary.merge_topics(db, workspace_id, topic_id, payload.into_topic_id)
+    data = project_map.topic_detail(db, workspace_id, into.topic_id).model_dump(mode="json")
+    db.commit()
+    return success(data)
+
+
+@router.delete("/workspaces/{workspace_id}/topics/{topic_id}/tasks/{task_id}", response_model=Envelope[TaskDetachResponse])
+def detach_topic_task(
+    workspace_id: str,
+    topic_id: str,
+    task_id: str,
+    member: Member = Depends(_member_behind_gate),
+    db: Session = Depends(get_db),
+) -> dict:
+    """잘못 붙은 태스크를 주제에서 뗀다. 다시 불러도 같은 응답이다."""
+    summary.detach_task(db, workspace_id, topic_id, task_id)
+    db.commit()
+    return success(TaskDetachResponse(topic_id=topic_id, task_id=task_id).model_dump(mode="json"))
 
 
 @router.get("/meetings/{meeting_id}/summary.md", response_class=Response)

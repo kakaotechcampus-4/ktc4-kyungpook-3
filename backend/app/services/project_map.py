@@ -6,7 +6,7 @@
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, exists, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
@@ -24,6 +24,7 @@ from app.models import (
     Topic,
     TopicItem,
     TopicMeeting,
+    TopicTaskDetach,
     Workspace,
 )
 from app.schemas.project_map import (
@@ -64,7 +65,7 @@ class MarkdownFile:
 
 
 def _visible_links(workspace_id: str) -> Select:
-    """주제와 태스크 연결의 유일한 정의. (topic_id, task_id, meeting_id). 대기 중인 수정 항목은 승인 뒤에 잇는다."""
+    """주제와 태스크 연결의 유일한 정의. (topic_id, task_id, meeting_id). 대기 중인 수정 항목은 승인 뒤에 잇고, 팀원이 뗀 짝은 잇지 않는다."""
     final = item_fate.final_items().subquery()
     return (
         select(TopicItem.topic_id, Task.task_id, Extraction.meeting_id)
@@ -78,6 +79,7 @@ def _visible_links(workspace_id: str) -> Select:
             Topic.workspace_id == workspace_id,
             Task.workspace_id == workspace_id,
             Meeting.deleted_at.is_(None),
+            ~exists().where(TopicTaskDetach.topic_id == TopicItem.topic_id, TopicTaskDetach.task_id == Task.task_id),
         )
     )
 
@@ -190,6 +192,7 @@ def topic_detail(db: Session, workspace_id: str, topic_id: str) -> TopicDetailRe
         topic_id=topic.topic_id,
         name=topic.name,
         description=topic.description,
+        edited=topic.edited_at is not None,
         decisions=[
             TopicDecision(
                 decision_id=decision.decision_id,

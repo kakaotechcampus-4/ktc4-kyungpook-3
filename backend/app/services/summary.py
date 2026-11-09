@@ -1,4 +1,4 @@
-"""회의 요약 대기열과 저장. Extraction.summary*, Topic*, Decision 의 유일한 작성자다.
+"""회의 요약 대기열과 저장, 팀원의 주제·결정 고치기. Extraction.summary*, Topic*, Decision 의 유일한 작성자다.
 
 대기열 상태는 Extraction의 요청·시도·임대에서 나오고 claim token hash가 같은 임대의 저장만 허용한다.
 
@@ -35,9 +35,12 @@ from app.models import (
     MeetingStatus,
     Member,
     Source,
+    Task,
     Topic,
+    TopicAlias,
     TopicItem,
     TopicMeeting,
+    TopicTaskDetach,
     Workspace,
     WorkspaceAsrTerm,
 )
@@ -528,7 +531,10 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     previous_topics = set(
         db.scalars(select(TopicMeeting.topic_id).where(TopicMeeting.meeting_id == meeting.meeting_id))
     )
-    _clear_meeting(db, meeting.meeting_id, extraction_id)
+    _clear_meeting(db, meeting.meeting_id, extraction_id, keep_human=True)
+    kept_topics = set(
+        db.scalars(select(TopicMeeting.topic_id).where(TopicMeeting.meeting_id == meeting.meeting_id))
+    )
 
     item_ids = set(db.scalars(select(ExtractionItem.item_id).where(ExtractionItem.extraction_id == extraction_id)))
     topics: dict[str, str] = {}
@@ -564,7 +570,7 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
                 "replaces": _replace_decisions(db, row, meeting, decision.replaces),
             })
 
-    db.add_all(TopicMeeting(topic_id=topic_id, meeting_id=meeting.meeting_id) for topic_id in topics)
+    db.add_all(TopicMeeting(topic_id=topic_id, meeting_id=meeting.meeting_id) for topic_id in topics.keys() - kept_topics)
     db.add_all(TopicItem(topic_id=topic_id, item_id=item_id) for topic_id, item_id in links)
     extraction.summary = json.dumps(_document(payload, topics, details), ensure_ascii=False)
     extraction.summary_requested_at = None
@@ -572,7 +578,7 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     extraction.summary_claimed_at = None
     extraction.summary_claim_token_hash = None
     db.flush()
-    _delete_orphan_topics(db, previous_topics - set(topics))
+    _delete_orphan_topics(db, previous_topics - set(topics), keep_human=True)
     return SummarySaveResponse(
         extraction_id=extraction_id,
         meeting_id=meeting.meeting_id,
@@ -582,7 +588,8 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     )
 
 
-def _clear_meeting(db: Session, meeting_id: str, extraction_id: str | None) -> None:
+def _clear_meeting(db: Session, meeting_id: str, extraction_id: str | None, *, keep_human: bool) -> None:
+    """keep_human 이면(재요약) 팀원이 고친 주제의 회의 연결을 둔다. 아니면(회의 삭제) 전부 지운다."""
     decision_ids = select(Decision.decision_id).where(Decision.meeting_id == meeting_id)
     # 이 회의가 뒤집었던 옛 결정을 유효로 되돌린다. 새 요약이 다시 뒤집으면 다시 걸린다
     db.execute(update(Decision).where(Decision.replaced_by.in_(decision_ids)).values(replaced_by=None))
@@ -593,7 +600,8 @@ def _clear_meeting(db: Session, meeting_id: str, extraction_id: str | None) -> N
         else ExtractionItem.extraction_id.in_(extractions)
     )
     db.execute(delete(TopicItem).where(TopicItem.item_id.in_(item_ids)))
-    db.execute(delete(TopicMeeting).where(TopicMeeting.meeting_id == meeting_id))
+    kept = [TopicMeeting.topic_id.not_in(select(Topic.topic_id).where(Topic.edited_at.is_not(None)))] if keep_human else []
+    db.execute(delete(TopicMeeting).where(TopicMeeting.meeting_id == meeting_id, *kept))
 
 
 def remove_meeting_summary(db: Session, meeting: Meeting) -> None:
@@ -618,8 +626,8 @@ def remove_meeting_summary(db: Session, meeting: Meeting) -> None:
             changed |= len(previous) != len(detail["replaces"])
         if changed:
             extraction.summary = json.dumps(document, ensure_ascii=False)
-    _clear_meeting(db, meeting.meeting_id, None)
-    _delete_orphan_topics(db, topic_ids)
+    _clear_meeting(db, meeting.meeting_id, None, keep_human=False)
+    _delete_orphan_topics(db, topic_ids, keep_human=False)
 
 
 def _resolve_topic(db: Session, workspace_id: str, entry: SummaryTopicIn) -> Topic | None:
@@ -636,7 +644,15 @@ def _resolve_topic(db: Session, workspace_id: str, entry: SummaryTopicIn) -> Top
 
 
 def _topic_by_key(db: Session, workspace_id: str, key: str) -> Topic | None:
-    return db.scalars(select(Topic).where(Topic.workspace_id == workspace_id, Topic.name_key == key)).first()
+    """Topic.name_key, 없으면 이름을 바꾸거나 합쳐 사라진 옛 키(topic_alias)."""
+    topic = db.scalars(select(Topic).where(Topic.workspace_id == workspace_id, Topic.name_key == key)).first()
+    if topic is None:
+        topic = db.scalars(
+            select(Topic)
+            .join(TopicAlias, TopicAlias.topic_id == Topic.topic_id)
+            .where(TopicAlias.workspace_id == workspace_id, TopicAlias.name_key == key)
+        ).first()
+    return topic
 
 
 def _create_topic(db: Session, workspace_id: str, key: str, entry: SummaryTopicIn) -> Topic:
@@ -678,12 +694,92 @@ def _replace_decisions(db: Session, new: Decision, meeting: Meeting, replaces: l
     return copies
 
 
-def _delete_orphan_topics(db: Session, topic_ids: set[str]) -> None:
-    """이 회의가 더 쓰지 않는 주제 중 어느 회의에도 남지 않은 것을 지운다. 결정과 항목 연결은 회의를 통해서만 달리므로 함께 남는 것이 없다."""
+def _delete_orphan_topics(db: Session, topic_ids: set[str], *, keep_human: bool) -> None:
+    """이 회의가 더 쓰지 않는 주제 중 어느 회의에도 남지 않은 것을 지운다. 결정과 항목 연결은 회의를 통해서만 달리므로 함께 남는 것이 없다.
+
+    keep_human 이면 팀원이 고친 주제는 회의가 없어도 둔다. 별칭과 뗀 표시는 주제와 함께 FK 로 지워진다.
+    """
     if topic_ids:
+        human = [Topic.edited_at.is_(None)] if keep_human else []
         db.execute(
-            delete(Topic).where(Topic.topic_id.in_(topic_ids), ~exists().where(TopicMeeting.topic_id == Topic.topic_id))
+            delete(Topic).where(
+                Topic.topic_id.in_(topic_ids), ~exists().where(TopicMeeting.topic_id == Topic.topic_id), *human
+            )
         )
+
+
+def _workspace_topic(db: Session, workspace_id: str, topic_id: str) -> Topic:
+    topic = db.get(Topic, topic_id)
+    if topic is None or topic.workspace_id != workspace_id:
+        raise AppError(ErrorCode.TOPIC_NOT_FOUND, details={"topic_id": topic_id})
+    return topic
+
+
+def rename_topic(db: Session, workspace_id: str, topic_id: str, *, name: str | None, description: str | None) -> Topic:
+    """호출자가 worker_gate 를 먼저 잡는다. 옛 키는 별칭으로 남겨 재요약이 옛 이름을 내도 이 주제로 온다. 커밋은 호출자가 한다."""
+    topic = _workspace_topic(db, workspace_id, topic_id)
+    if name is not None:
+        key = normalize_topic_name(name)
+        if not key:
+            raise AppError(ErrorCode.INVALID_REQUEST, message="주제 이름에 글자가 없습니다.")
+        if key != topic.name_key:
+            taken = db.scalar(select(Topic.topic_id).where(Topic.workspace_id == workspace_id, Topic.name_key == key))
+            if taken is not None:
+                raise AppError(ErrorCode.TOPIC_NAME_TAKEN, details={"topic_id": taken})
+            # 새 키를 가리던 별칭은 지운다. 두면 별칭이 이 이름을 다른 주제로 보낸다
+            db.execute(delete(TopicAlias).where(TopicAlias.workspace_id == workspace_id, TopicAlias.name_key == key))
+            db.add(TopicAlias(workspace_id=workspace_id, name_key=topic.name_key, topic_id=topic.topic_id))
+            topic.name_key = key
+        topic.name = name
+    if description is not None:
+        topic.description = description
+    topic.edited_at = datetime.now(timezone.utc)
+    db.flush()
+    return topic
+
+
+def merge_topics(db: Session, workspace_id: str, topic_id: str, into_topic_id: str) -> Topic:
+    """topic 의 회의·항목·뗀 표시·결정·별칭을 into 로 옮기고 topic 의 키를 into 의 별칭으로 남긴 뒤 topic 을 지운다.
+
+    호출자가 worker_gate 를 먼저 잡는다. 커밋은 호출자가 한다.
+    """
+    if topic_id == into_topic_id:
+        raise AppError(ErrorCode.INVALID_REQUEST, message="같은 주제로는 합칠 수 없습니다.")
+    topic = _workspace_topic(db, workspace_id, topic_id)
+    into = _workspace_topic(db, workspace_id, into_topic_id)
+    for model, column in ((TopicMeeting, "meeting_id"), (TopicItem, "item_id"), (TopicTaskDetach, "task_id")):
+        # into 에 이미 있는 짝은 옮기지 않고 지운다. 옮기면 기본 키가 겹친다
+        present = aliased(model)
+        db.execute(
+            update(model)
+            .where(model.topic_id == topic_id,
+                   getattr(model, column).not_in(select(getattr(present, column)).where(present.topic_id == into_topic_id)))
+            .values(topic_id=into_topic_id)
+            .execution_options(synchronize_session=False)
+        )
+        db.execute(delete(model).where(model.topic_id == topic_id).execution_options(synchronize_session=False))
+    db.execute(update(Decision).where(Decision.topic_id == topic_id).values(topic_id=into_topic_id))
+    db.execute(update(TopicAlias).where(TopicAlias.topic_id == topic_id).values(topic_id=into_topic_id))
+    key = topic.name_key
+    db.delete(topic)
+    db.flush()
+    db.add(TopicAlias(workspace_id=workspace_id, name_key=key, topic_id=into_topic_id))
+    into.edited_at = datetime.now(timezone.utc)
+    db.flush()
+    return into
+
+
+def detach_task(db: Session, workspace_id: str, topic_id: str, task_id: str) -> None:
+    """주제에서 태스크를 뗀다. 항목 연결은 두고 _visible_links 가 가린다. 다시 불러도 같다. 커밋은 호출자가 한다."""
+    topic = _workspace_topic(db, workspace_id, topic_id)
+    task = db.get(Task, task_id)
+    if task is None or task.workspace_id != workspace_id or task.is_deleted:
+        raise AppError(ErrorCode.TASK_NOT_FOUND, details={"task_id": task_id})
+    if db.get(TopicTaskDetach, (topic_id, task_id)) is None:
+        db.add(TopicTaskDetach(topic_id=topic_id, task_id=task_id, workspace_id=workspace_id))
+    # 떼기도 고친 것으로 친다. 표시가 없으면 주제를 뺀 재요약이 주제를 고아로 지울 때 뗀 표시도 함께 지워져 태스크가 다시 붙는다
+    topic.edited_at = datetime.now(timezone.utc)
+    db.flush()
 
 
 def _document(payload: SummaryWriteRequest, topics: dict[str, str], details: list[dict]) -> dict:

@@ -436,6 +436,54 @@ def test_two_meetings_creating_one_new_topic_at_once_share_it(mdb, mseed):
     assert _topic_meetings(mdb, first_meeting) == _topic_meetings(mdb, second_meeting)
 
 
+def test_rerun_that_emits_the_old_name_lands_on_the_renamed_topic(mdb, mseed):
+    meeting, extraction, _ = _meeting(mdb, mseed["ws"])
+    _save(mdb, extraction, [{"name": "배포"}])
+    topic_id = _topics(mdb)[0].topic_id
+    summary.rename_topic(mdb, mseed["ws"], topic_id, name="인프라 배포", description=None)
+    mdb.commit()
+    _requeue(mdb, extraction)
+
+    _save(mdb, extraction, [{"name": "배포", "decisions": [{"text": "도커로 간다"}]}])
+
+    assert [(t.topic_id, t.name) for t in _topics(mdb)] == [(topic_id, "인프라 배포")]
+    assert _decision(mdb, "도커로 간다").topic_id == topic_id
+    assert _topic_meetings(mdb, meeting) == {topic_id}
+
+
+@pytest.mark.parametrize("entry", [
+    {"topic_id": "merged", "name": "배포"},
+    {"name": "배포"},
+    {"topic_id": "merged"},
+])
+def test_merged_away_topic_does_not_come_back(mdb, mseed, entry):
+    meeting, extraction, _ = _meeting(mdb, mseed["ws"])
+    _save(mdb, extraction, [{"name": "배포"}, {"name": "인프라"}])
+    merged, into = (t.topic_id for t in _topics(mdb))
+    summary.merge_topics(mdb, mseed["ws"], merged, into)
+    mdb.commit()
+    _requeue(mdb, extraction)
+
+    _save(mdb, extraction, [{**entry, "topic_id": merged} if "topic_id" in entry else entry])
+
+    assert [t.topic_id for t in _topics(mdb)] == [into]
+    assert _topic_meetings(mdb, meeting) == {into}
+
+
+def test_edited_topic_the_rerun_drops_is_kept_on_its_meeting(mdb, mseed):
+    meeting, extraction, _ = _meeting(mdb, mseed["ws"])
+    _save(mdb, extraction, [{"name": "배포"}, {"name": "인프라"}])
+    edited = next(t for t in _topics(mdb) if t.name == "배포")
+    summary.rename_topic(mdb, mseed["ws"], edited.topic_id, name=None, description="사람이 쓴 설명")
+    mdb.commit()
+    _requeue(mdb, extraction)
+
+    _save(mdb, extraction, [{"name": "인프라"}])
+
+    assert sorted(t.name for t in _topics(mdb)) == ["배포", "인프라"]
+    assert edited.topic_id in _topic_meetings(mdb, meeting)
+
+
 def test_golden_put_body_round_trips_through_the_schema():
     golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
 

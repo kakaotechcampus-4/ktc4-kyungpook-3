@@ -245,6 +245,8 @@ class TopicDetailResponse(BaseModel):
     topic_id: str
     name: str
     description: str
+    # 팀원이 이름·설명을 고치거나 합치거나 태스크를 뗐다(#605)
+    edited: bool = False
     decisions: list[TopicDecision]
     tasks: list[TopicTask]
     meetings: list[MeetingRef]
