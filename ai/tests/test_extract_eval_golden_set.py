@@ -100,10 +100,11 @@ def _first_person_case() -> tuple[GoldCase, list[ExtractedTask]]:
 
 
 def test_load_speaker_cases_reads_both_sets():
+    # judge 세트에 케이스를 더해도 깨지지 않게 건수는 고정하지 않는다(#607 리뷰)
     cases = load_speaker_cases()
-    assert len(cases) == 16
+    assert {c.case_id.split("/")[0] for c in cases} == {"speaker_dev", "speaker_test"}
     types = Counter(s.assignee_type for c in cases for s in c.sentences if s.assignee_type)
-    assert types == {"first": 20, "thirdname": 3}
+    assert types["first"] > 0
     assert cases[0].case_id.startswith("speaker_dev/")
 
 
