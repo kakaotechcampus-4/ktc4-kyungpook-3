@@ -302,7 +302,7 @@ Codex·Grok 독립 리뷰의 중간 2 건, 낮음 1 건을 고쳤다.
   - `entities/message/model/mapper.test.ts`: 모르는 이유는 `{ unknown: 'rate_limited' }` 와 개발 경고, 서버의 `unknown`·null 은 `unknown`. `widgets/message-inbox/model/conversation.test.ts`: 모르는 이유의 말풍선 문구.
   - `trackerOutcome.test.ts`: 지운 `refetchOnReturn` 단언을 뺐다. 회의 상세·추적기의 요청 수 테스트(`app/meetingInvalidResponse.test.tsx`·`app/meetingProcessing.test.tsx`)는 그대로 통과한다.
   - RTL 다섯과 mapper·conversation 둘, 모두 일곱 경우는 고치기 전 코드로 먼저 실패를 봤다.
-- 검사: typecheck(직접 돌려 0 건)·lint·build 통과, 바꾼 곳 62 파일·811 건 통과, `npm run test -- --maxWorkers=1` FULL_TEST_604.
+- 검사: typecheck(직접 돌려 0 건)·lint·build 통과, 바꾼 곳 62 파일·811 건 통과, `npm run test -- --maxWorkers=1` 309 파일 중 305·4033 건 중 4021 통과(3,874 초). 실패 12 건은 `app/onboardingMembers`·`settingsConnections`·`approvalsMsw`·`meetingDelete` 의 5초 시간 초과와 찾기 시간 초과다. 이 PR 이 건드리지 않은 화면이고, 그 네 파일만 다시 돌려 106 건 모두 통과해 부하 타이밍으로 본다.
 
 ## 남은 일
 
