@@ -29,6 +29,8 @@ async function signInAsInvitee() {
   await userEvent.type(screen.getByLabelText('비밀번호'), 'mock-password')
   await userEvent.click(screen.getByRole('button', { name: '로그인' }))
   await app.expectPath('/onboarding/start')
+  // 주소가 바뀐 뒤에도 시작 화면은 잠깐 불러오는 중(aria-busy)이다. 다 그린 뒤에 시작한다
+  await screen.findByRole('link', { name: /팀원으로 시작/ })
   return app
 }
 
