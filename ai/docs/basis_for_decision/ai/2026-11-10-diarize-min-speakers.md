@@ -10,7 +10,7 @@
 
 - `upload/diarize.py`: `Diarizer.submit`·`PyannoteAiDiarizer.submit` 이 `min_speakers` 를 받는다. 1 이상이면 `/v1/diarize` 본문에 `minSpeakers` 를 싣고, 0·None 이면 지금처럼 녹음 주소만 보낸다
 - `upload/intake.py`: 업로드의 참석자 수를 `min_speakers` 로 넘긴다
-- `frontend/src/features/meeting-upload/ui/AttendeePicker.tsx`: 참석자 고르기 아래 안내를 "녹음에서 실제로 말한 사람만 골라 주세요. 이 인원수로 목소리를 나눠요." 로 바꿨다. 원래 있던 안내 줄(`aria-describedby` 로 묶인 줄)의 문구만 바꿨다
+- `frontend/src/features/meeting-upload/ui/AttendeePicker.tsx`: 참석자 고르기 아래 안내를 "녹음에서 실제로 말한 사람만 골라 주세요. 적어도 이 인원수로 목소리를 나눠요." 로 바꿨다. 원래 있던 안내 줄(`aria-describedby` 로 묶인 줄)의 문구만 바꿨다
 
 ## 왜
 

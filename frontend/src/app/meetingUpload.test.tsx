@@ -321,10 +321,10 @@ describe('제목·날짜·참석자 (U3-5, U3-6)', () => {
     ])
   })
 
-  it('참석자 안내는 고른 인원수로 목소리를 나눈다고 알린다', async () => {
+  it('참석자 안내는 적어도 고른 인원수로 목소리를 나눈다고 알린다', async () => {
     await openUpload()
     expect(screen.getByRole('group', { name: '참석자' })).toHaveAccessibleDescription(
-      '녹음에서 실제로 말한 사람만 골라 주세요. 이 인원수로 목소리를 나눠요.',
+      '녹음에서 실제로 말한 사람만 골라 주세요. 적어도 이 인원수로 목소리를 나눠요.',
     )
   })
 

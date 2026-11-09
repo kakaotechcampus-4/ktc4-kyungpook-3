@@ -119,7 +119,7 @@ export function AttendeePicker({
         </ErrorText>
       )}
       <p id={hintId} className={HINT}>
-        녹음에서 실제로 말한 사람만 골라 주세요. 이 인원수로 목소리를 나눠요.
+        녹음에서 실제로 말한 사람만 골라 주세요. 적어도 이 인원수로 목소리를 나눠요.
       </p>
     </div>
   )
