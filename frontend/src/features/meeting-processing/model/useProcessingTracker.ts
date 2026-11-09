@@ -18,7 +18,7 @@ import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
 import { useLivePathname } from '@/shared/lib/live-pathname'
 import { hasPendingLeave, useGuardedNavigate } from '@/shared/lib/unsaved-changes'
-import { pollInterval, trackerOutcome } from './trackerOutcome'
+import { pollInterval, refetchOnReturn, trackerOutcome } from './trackerOutcome'
 
 /**
  * 끝난 회의 때문에 낡은 회의 캐시(목록·다른 회의 상세). 끝난 회의 자신의 상세는 방금 받은 끝 상태라 다시 받지 않는다 —
@@ -48,6 +48,8 @@ function invalidateFinished(queryClient: QueryClient, meeting: TrackedMeeting): 
  *
  * - 등록된 회의마다 상세를 3초 간격으로 polling 한다. 정리 중일 때만이다(화자 지정 대기는 30초) — 끝났거나(완료·실패) 볼 수 없게 되면(403·404) 멈춘다.
  *   일시적 조회 실패(네트워크)는 정리 실패가 아니다. 그대로 지켜보고, 창 포커스·온라인 복귀 때 바로 다시 묻는다 (U4-8).
+ *   응답을 읽지 못했으면(`INVALID_RESPONSE`) polling·포커스·복귀 재조회를 모두 멈추고 끝내지도 않는다. 처리 화면의 다시 시도가
+ *   성공하면 다시 지켜본다 (#348).
  * - 끝난 회의는 `finishMeeting` 이 처음 끝냈을 때만 알린다 — 재렌더·StrictMode·재발견·화면 이동에도 회의마다 한 번이다.
  * - 알림은 진행 토스트(ProcessingToast)가 그린다. 추적기는 끝난 결과(`settleMeeting`)만 적고, 정리 중·대기는 토스트가
  *   같은 상세 캐시를 읽는다 — 같은 회의의 신호는 토스트 하나다 (#424).
@@ -84,9 +86,9 @@ export function useProcessingTracker(): void {
       ...meetingDetailQueryOptions(meeting.workspaceId, meeting.meetingId),
       refetchInterval: ({ state }: { state: { data?: Meeting; error: unknown } }) =>
         pollInterval(state.data, state.error),
-      // 30초 최신 시간과 무관하게 돌아오면 바로 다시 묻는다 — 끊긴 사이에 끝났을 수 있다
-      refetchOnWindowFocus: 'always' as const,
-      refetchOnReconnect: 'always' as const,
+      // 30초 최신 시간과 무관하게 돌아오면 바로 다시 묻는다 — 끊긴 사이에 끝났을 수 있다. 읽지 못한 응답은 묻지 않는다
+      refetchOnWindowFocus: refetchOnReturn,
+      refetchOnReconnect: refetchOnReturn,
     })),
   })
 
@@ -165,7 +167,7 @@ export function useProcessingTracker(): void {
         if (promptSpeakers(meeting)) onAwaitingSpeakers(meeting)
         return
       }
-      if (outcome === 'processing') return
+      if (outcome === 'processing' || outcome === 'invalid') return
       // 이 호출이 처음 끝냈을 때만 알린다. 볼 수 없게 된 회의(lost)는 알리지 않고 그만 본다
       if (!finishMeeting(meeting) || result.data === undefined) return
       if (outcome === 'done') onDone(meeting, result.data)

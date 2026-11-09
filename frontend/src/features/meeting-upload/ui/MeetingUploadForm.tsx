@@ -11,7 +11,12 @@ import {
 import { paths } from '@/shared/config/routes'
 import { useAppForm } from '@/shared/lib/form'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
-import { confirmLeave, hasPendingLeave, useUnsavedChanges } from '@/shared/lib/unsaved-changes'
+import {
+  confirmLeave,
+  GuardedLink,
+  hasPendingLeave,
+  useUnsavedChanges,
+} from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { ErrorText } from '@/shared/ui/error-text'
@@ -45,6 +50,7 @@ const FIELDS = 'flex flex-col gap-18 rounded-16 border border-line bg-surface p-
 const ROW = 'grid grid-cols-[minmax(0px,1fr)_200px] gap-14 max-md:grid-cols-1'
 const FOOTER = 'flex items-center justify-between gap-20 max-md:flex-wrap'
 const NOTE = 'text-caption text-dim'
+const PANEL_LINK = 'text-body font-semibold text-ink underline underline-offset-3'
 
 /**
  * 회의 올리기 폼. 녹음 파일 하나 + 제목·날짜·참석자 (D-084~D-087).
@@ -136,7 +142,16 @@ export function MeetingUploadForm({ workspaceId }: MeetingUploadFormProps) {
 
   return (
     <form className={ROOT} noValidate onSubmit={onSubmit} aria-busy={locked || undefined}>
-      <FormErrorPanel message={upload.failure?.kind === 'form' ? upload.failure.message : null} />
+      <FormErrorPanel
+        message={upload.failure?.kind === 'file' ? null : upload.failure?.message}
+        action={
+          upload.failure?.kind === 'unconfirmed' ? (
+            <GuardedLink to={paths.meetings(workspaceId)} className={PANEL_LINK}>
+              회의록 목록 보기
+            </GuardedLink>
+          ) : undefined
+        }
+      />
 
       <div className="flex flex-col gap-10">
         <AudioDropzone

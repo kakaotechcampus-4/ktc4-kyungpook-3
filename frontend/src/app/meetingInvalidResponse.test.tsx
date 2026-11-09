@@ -1,9 +1,10 @@
 import type { MockInstance } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { focusManager, onlineManager } from '@tanstack/react-query'
 import { http } from 'msw'
 import { onTestFinished } from 'vitest'
-import { clearTrackedMeetings } from '@/entities/meeting'
+import { clearTrackedMeetings, trackMeeting, useMeetingTrackerStore } from '@/entities/meeting'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { ok } from '@/shared/mock/envelope'
@@ -136,7 +137,9 @@ it('추출 항목 한 건이 깨지면 추출된 일 대신 안내를 보이고 
 it('되돌리기 응답을 읽지 못하면 실패라고 하지 않고 결과를 확인하지 못했다고 알리며, 새로고침이 추출을 다시 받는다', async () => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(MOCK_NOW))
-  onTestFinished(() => vi.useRealTimers())
+  onTestFinished(() => {
+    vi.useRealTimers()
+  })
   server.use(
     http.post('/api/v1/extractions/:extractionId/items/:itemId/revert', () =>
       ok({ item_id: 'it_02' }),
@@ -165,4 +168,78 @@ it('되돌리기 응답을 읽지 못하면 실패라고 하지 않고 결과를
   await waitFor(() =>
     expect(log.started.slice(before)).toContainEqual({ method: 'GET', path: '/extractions/ex_01' }),
   )
+})
+
+describe('처리 추적기와 읽지 못한 상세 (#348 리뷰)', () => {
+  const MT_10 = paths.meetingProcessing('ws_01', 'mt_10')
+  type Log = ReturnType<typeof recordRequests>
+  const detailRequests = (log: Log) =>
+    log.started.filter(({ method, path }) => method === 'GET' && path === '/meetings/mt_10')
+  const invalidDetail = () =>
+    http.get('/api/v1/meetings/mt_10', () =>
+      ok({
+        ...structuredClone(db.meetings.find(({ meeting_id }) => meeting_id === 'mt_10')!),
+        status: 'archived',
+      }),
+    )
+  const tracked = () =>
+    useMeetingTrackerStore.getState().meetings.some(({ meetingId }) => meetingId === 'mt_10')
+
+  /** polling 간격(3초)보다 오래 기다리고 창 포커스·연결 복귀를 일으켜도 상세 요청이 늘지 않는다 */
+  async function expectNoMoreDetailRequests(log: Log) {
+    const before = detailRequests(log).length
+    await act(() => new Promise((resolve) => setTimeout(resolve, 3_500)))
+    act(() => {
+      focusManager.setFocused(false)
+      focusManager.setFocused(true)
+      onlineManager.setOnline(false)
+      onlineManager.setOnline(true)
+    })
+    await act(() => new Promise((resolve) => setTimeout(resolve, 300)))
+    expect(detailRequests(log)).toHaveLength(before)
+  }
+
+  afterEach(() => {
+    focusManager.setFocused(undefined)
+    onlineManager.setOnline(true)
+  })
+
+  it('받아 둔 상세 없이 처음부터 읽지 못하면 안내와 다시 시도만 보이고, 추적은 끝내지 않은 채 다시 묻지 않는다', async () => {
+    trackMeeting({ workspaceId: 'ws_01', meetingId: 'mt_10' })
+    server.use(invalidDetail())
+    const log = recordRequests()
+    renderApp(MT_10)
+    expect(await screen.findByText(INVALID, {}, { timeout: 5_000 })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: '정리하고 있어요' })).toBeNull()
+
+    await expectNoMoreDetailRequests(log)
+    expect(tracked()).toBe(true)
+    expect(screen.queryByText('회의를 정리하지 못했어요')).toBeNull()
+
+    server.resetHandlers()
+    fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+    expect(await screen.findByRole('heading', { name: '정리하고 있어요' })).toBeInTheDocument()
+  }, 25_000)
+
+  it('받아 둔 상세가 있어도 다음 응답을 읽지 못하면 마지막 단계 대신 안내를 보이고 다시 묻지 않는다. 다시 시도가 성공하면 다시 지켜본다', async () => {
+    const log = recordRequests()
+    renderApp(MT_10)
+    expect(await screen.findByRole('heading', { name: '정리하고 있어요' })).toBeInTheDocument()
+    await waitFor(() => expect(tracked()).toBe(true))
+
+    server.use(invalidDetail())
+    expect(await screen.findByText(INVALID, {}, { timeout: 5_000 })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: '정리하고 있어요' })).toBeNull()
+    expect(screen.queryByRole('list', { name: '정리 단계' })).toBeNull()
+
+    await expectNoMoreDetailRequests(log)
+    expect(tracked()).toBe(true)
+
+    server.resetHandlers()
+    fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+    expect(await screen.findByRole('heading', { name: '정리하고 있어요' })).toBeInTheDocument()
+    const recovered = detailRequests(log).length
+    await act(() => new Promise((resolve) => setTimeout(resolve, 3_500)))
+    expect(detailRequests(log).length).toBeGreaterThan(recovered)
+  }, 25_000)
 })

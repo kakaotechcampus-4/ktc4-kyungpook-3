@@ -1249,7 +1249,9 @@ describe('키보드·포커스 (AC-06)', () => {
 
   it('성공 응답에 승인 ID 가 없으면 읽지 못한 응답이라 되돌리기 버튼이 남고 포커스가 그 버튼으로 돌아온다 (E-04, #348)', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
-    onTestFinished(() => vi.restoreAllMocks())
+    onTestFinished(() => {
+      vi.restoreAllMocks()
+    })
     server.use(
       http.post('/api/v1/extractions/:extractionId/items/:itemId/revert', () =>
         HttpResponse.json({

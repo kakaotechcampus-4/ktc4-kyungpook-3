@@ -1,6 +1,9 @@
+import { http } from 'msw'
 import { ApiError } from '@/shared/api/errors'
+import { fail } from '@/shared/mock/envelope'
 import { meetingFixtures, meetingSummaryFixtures } from '@/shared/mock/fixtures/meeting'
 import { MOCK_SCENARIOS, applyScenario } from '@/shared/mock/scenarios'
+import { server } from '@/shared/mock/server'
 import type { MockScenario } from '@/shared/mock/scenarios'
 import { fetchDto } from '@/shared/test/api'
 import { extractionSchema } from './extraction'
@@ -87,23 +90,43 @@ describe('회의 스키마', () => {
   })
 })
 
-/** 이 공간의 회의를 화면이 부르는 순서로 모두 받는다. 볼 수 없는 회의(403·404)는 건너뛴다 */
-async function readMeetings(workspaceId: string): Promise<number> {
+interface Checked {
+  details: number
+  minutes: number
+  extractions: number
+  speakers: number
+}
+
+/** 볼 수 없는 회의(다른 사람의 403, 없는 회의 404)만 건너뛴다. 그 밖의 실패는 스키마 검사를 건너뛴 것이라 다시 던진다 */
+function isNotViewable(error: unknown): boolean {
+  return error instanceof ApiError && error.kind === 'http' && [403, 404].includes(error.status)
+}
+
+/** 이 공간의 회의를 화면이 부르는 순서로 모두 받아 스키마로 읽는다. 실제로 읽은 응답 수를 돌려준다 */
+async function readMeetings(workspaceId: string): Promise<Checked> {
+  const checked: Checked = { details: 0, minutes: 0, extractions: 0, speakers: 0 }
   const list = meetingListSchema.parse(await fetchDto(`/workspaces/${workspaceId}/meetings`))
   for (const { meeting_id, status } of list.items) {
     let meeting
     try {
       meeting = meetingSchema.parse(await fetchDto(`/meetings/${meeting_id}`))
     } catch (error) {
-      if (error instanceof ApiError && error.kind === 'http') continue
+      if (isNotViewable(error)) continue
       throw error
     }
-    if (status === 'done') minutesSchema.parse(await fetchDto(`/meetings/${meeting_id}/minutes`))
-    if (meeting.extraction_id !== null)
+    checked.details += 1
+    if (status === 'done') {
+      minutesSchema.parse(await fetchDto(`/meetings/${meeting_id}/minutes`))
+      checked.minutes += 1
+    }
+    if (meeting.extraction_id !== null) {
       extractionSchema.parse(await fetchDto(`/extractions/${meeting.extraction_id}`))
+      checked.extractions += 1
+    }
     if (status === 'awaiting_speakers') {
       try {
         speakerViewSchema.parse(await fetchDto(`/meetings/${meeting_id}/speakers`))
+        checked.speakers += 1
       } catch (error) {
         // 팀원은 403 이다
         if (!(error instanceof ApiError && error.kind === 'http' && error.status === 403))
@@ -111,7 +134,7 @@ async function readMeetings(workspaceId: string): Promise<number> {
       }
     }
   }
-  return list.items.length
+  return checked
 }
 
 describe('MSW 픽스처가 같은 스키마를 따른다', () => {
@@ -132,11 +155,26 @@ describe('MSW 픽스처가 같은 스키마를 따른다', () => {
     'reply-judgment',
   ]
 
+  const total: Checked = { details: 0, minutes: 0, extractions: 0, speakers: 0 }
+
   it.each(scenarios)(
     '%s 상태에서 handler 가 내는 회의 목록·상세·회의록·추출·화자 지정',
     async (scenario) => {
       if (scenario !== null) applyScenario(scenario)
-      expect(await readMeetings('ws_01')).toBeGreaterThan(0)
+      const checked = await readMeetings('ws_01')
+      expect(checked.details).toBeGreaterThan(0)
+      for (const key of Object.keys(total) as (keyof Checked)[]) total[key] += checked[key]
     },
   )
+
+  it('위 상태들에서 회의록·추출·화자 지정 응답도 실제로 읽었다', () => {
+    expect(total.minutes).toBeGreaterThan(0)
+    expect(total.extractions).toBeGreaterThan(0)
+    expect(total.speakers).toBeGreaterThan(0)
+  })
+
+  it('상세가 403·404 가 아닌 오류면 건너뛰지 않고 실패한다', async () => {
+    server.use(http.get('/api/v1/meetings/:meetingId', () => fail('INTERNAL_ERROR', '오류', 500)))
+    await expect(readMeetings('ws_01')).rejects.toMatchObject({ status: 500 })
+  })
 })
