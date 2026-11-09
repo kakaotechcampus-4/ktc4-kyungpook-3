@@ -45,7 +45,7 @@ export const signupCodeConfirmedSchema = z.object({ verification_token: z.string
 export type SignupCodeConfirmedDto = z.infer<typeof signupCodeConfirmedSchema>
 /** 대기 쿠키는 서명만 하고 암호화하지 않아 이메일을 담지 않는다 (#627) */
 export const kakaoPendingSchema = z.object({ nickname: z.string().nullable() })
-/* 아이디 (#627, 계약 §4.1.5). 중복 확인은 로그인 없이 부르고 늘 200 이다 */
+/* 아이디 (#627, 계약 §4.1.6). 중복 확인은 로그인 없이 부르고 늘 200 이다 */
 export const usernameAvailabilitySchema = z.discriminatedUnion('available', [
   z.object({ available: z.literal(true) }),
   z.object({ available: z.literal(false), reason: z.enum(['taken', 'invalid']) }),

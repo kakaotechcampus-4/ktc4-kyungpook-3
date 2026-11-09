@@ -1185,12 +1185,15 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 | POST | `/api/v1/auth/signup` | **201**. 본문이 바뀌었다 (§4.1.4) | ✅ |
 | POST | `/auth/login` · `/auth/logout` | | ✅ |
 | GET | `/api/v1/auth/me` | | ✅ |
+| GET | `/api/v1/auth/username-availability?username=` | 아이디 중복 확인. 로그인 없이 늘 200 (§4.1.6) | BE PR #626 미병합 |
+| PATCH | `/api/v1/users/me` | 아이디 바꾸기 `{"username"}` (§4.1.6) | BE PR #626 미병합 |
 | ~~GET~~ | ~~`/api/v1/auth/google/start?state=` · `/auth/google/callback`~~ | Google 로그인은 이번 범위에서 하지 않는다 (D-182). 카카오는 §4.1.4 | 해당 없음 |
 
 ```jsonc
-// signup 요청 {"verification_token"?, "name", "password", "link_kakao"} (§4.1.4)   login 요청 {"email", "password"}
-// signup · login · me 의 응답 data
-{"user": {"user_id": "us_01", "email": "pm@example.com", "name": "최진호", "avatar_url": null},
+// signup 요청은 이메일 가입 {"verification_token", "password", "name", "username"}, 카카오 가입 {"link_kakao": true, "name", "username"} (§4.1.4, #627)
+// login 요청 {"email", "password"}
+// signup · login · me 의 응답 data. #627 부터 username 이 있고, 카카오로 가입한 계정은 email 이 null 이다
+{"user": {"user_id": "us_01", "username": "userpm", "email": "pm@example.com", "name": "최진호", "avatar_url": null},
  "workspace_count": 2,
  "last_workspace_id": "ws_01"}
 ```
@@ -1313,16 +1316,16 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - callback 의 예외는 두 갈래다. 카카오 설정 오류(`OAuthConfigError`)는 돌아갈 곳을 버리고 `/login?next=%2F&oauth=kakao&oauth_result=failed`로 보낸다. FE는 `next=/`를 버리고 일반 실패 문구를 보인다. 그 밖의 예외는 전역 처리기가 HTTP 500 `INTERNAL_ERROR` 봉투로 답한다. 브라우저가 callback 주소에서 JSON을 보게 되고 앱 화면으로 돌아오지 않는다. 이 경우를 FE가 처리할 방법은 없다.
 - 같은 계정에 동시에 잇는 요청이 겹치면 먼저 이은 쪽을 따른다. 다른 카카오가 먼저 이었으면 `email_exists`다.
 
-**규약 (같은 브랜치 BE 코드 기준).** 모두 로그인이 필요 없다. 응답은 기존 봉투다.
+**규약 (같은 브랜치 BE 코드 기준).** 모두 로그인이 필요 없다. 응답은 기존 봉투다. `POST /auth/signup`·`GET /auth/kakao/pending`·카카오 callback 은 #627 에서 바뀐다. 아래 「#627 변경」을 본다.
 
 | Method | Path | 요청 | 성공 | 실패 |
 |---|---|---|---|---|
 | POST | `/api/v1/auth/signup/code` | `{"email"}` | 200 `{"expires_in": 600, "resend_after": 60}` | 400 `INVALID_REQUEST`, 409 `EMAIL_ALREADY_EXISTS`, 429 `SIGNUP_CODE_RATE_LIMITED`, 503 `MAIL_UNAVAILABLE` |
 | POST | `/api/v1/auth/signup/code/confirm` | `{"email", "code"}` | 200 `{"verification_token", "expires_in": 1800}` | 400 `INVALID_REQUEST`(코드가 6자리 숫자가 아님), 400 `SIGNUP_CODE_INVALID` |
-| POST | `/api/v1/auth/signup` | `{"verification_token"?, "name", "password", "link_kakao": false}` | 201 §4.1 응답, 세션 쿠키, 대기 쿠키 삭제 | 400 `INVALID_REQUEST`, 400 `SIGNUP_VERIFICATION_INVALID`, 400 `KAKAO_LINK_EXPIRED`, 409 `EMAIL_ALREADY_EXISTS`, 409 `KAKAO_ALREADY_LINKED` |
+| POST | `/api/v1/auth/signup` | ~~`{"verification_token"?, "name", "password", "link_kakao": false}`~~ #627 에서 바뀐다 | 201 §4.1 응답, 세션 쿠키, 대기 쿠키 삭제 | 400 `INVALID_REQUEST`, 400 `SIGNUP_VERIFICATION_INVALID`, 400 `KAKAO_LINK_EXPIRED`, 409 `EMAIL_ALREADY_EXISTS`, 409 `KAKAO_ALREADY_LINKED` |
 | GET | `/api/v1/auth/kakao/start?next=` | 전체 이동 | 302 카카오 동의 화면 | 설정 오류면 302 `/login?...oauth_result=failed` |
 | GET | `/api/v1/auth/kakao/callback` | 카카오가 부른다 | 항상 302 | 아래 복귀 주소 |
-| GET | `/api/v1/auth/kakao/pending` | 없음 | 200 `{"email": string\|null, "nickname": string\|null}` | 400 `KAKAO_LINK_EXPIRED` |
+| GET | `/api/v1/auth/kakao/pending` | 없음 | 200 ~~`{"email": string\|null, "nickname": string\|null}`~~ #627 에서 `{"nickname"}` 만 | 400 `KAKAO_LINK_EXPIRED` |
 
 - `POST /auth/signup`은 이메일을 받지 않는다. `link_kakao`가 거짓이면 증명 토큰의 이메일로 만든다. 참이면 대기 쿠키가 있어야 하고, 쿠키에 인증된 이메일이 있으면 그 값으로 만들고 토큰은 무시한다. 없으면 토큰이 있어야 한다.
 - 이메일은 앞뒤 공백을 빼고 소문자로 비교한다. 코드 요청과 카카오 충돌 판단, 로그인이 같은 규칙이다.
@@ -1338,7 +1341,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 | 이어진 카카오, 또는 인증 이메일이 빈 계정과 같아 이었다 | `/login?next=&oauth=kakao&oauth_result=success` + 세션 쿠키. 새로 이었으면 계정 이메일로 연결 알림을 보낸다 |
 | 동의 취소 | `/login?...oauth_result=cancelled` |
 | state·nonce 오류, 토큰·사용자 조회 실패 | `/login?...oauth_result=failed` |
-| 이메일이 기존 계정과 같은데 인증되지 않았거나 다른 카카오에 이어져 있다 | `/login?...oauth_result=failed&oauth_reason=email_exists` |
+| ~~이메일이 기존 계정과 같은데 인증되지 않았거나 다른 카카오에 이어져 있다~~ | ~~`/login?...oauth_result=failed&oauth_reason=email_exists`~~ #627 에서 없어졌다. 이어진 카카오가 없으면 가입 화면이다 |
 | 그 밖의 새 사용자 | `/signup?kakao=1&next=` + 대기 쿠키 |
 
 `next`가 없으면 BE는 `next=/`를 붙인다. FE `parseReturnPath`는 이 값을 보호 경로가 아니라고 버린다.
@@ -1365,6 +1368,32 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 **#538 보완 (2026-11-09).** API 형태는 바꾸지 않았다. FE는 휴대폰 로그인 화면을 시안 H-1 배치로 바꿨다(D-185). 카카오 버튼 문구는 `카카오 로그인`이다(D-182). E2E에 실패 복귀, 대기 없는 `kakao=1`에서 카카오로 다시 시작, 기존 계정 연결 뒤 이어진 카카오 로그인, 360·390·1280px 화면 확인을 더했다([결과](../issues/538-kakao-login-finish/result.md)).
 
 **확인하지 않은 것.** 실제 카카오 로그인, 실제 메일 수신, 실서버 왕복은 하지 않았다. BE 코드는 읽어서 대조만 했다. `Secure` 쿠키와 카카오 redirect URI, 비즈 앱 이메일 동의 설정은 배포 환경에서 확인해야 한다. 배포 순서상 BE의 새 signup이 먼저 나가면 지금 배포된 FE의 가입이 400이 되므로 FE와 함께 내보낸다.
+
+**#627 변경 (2026-11-10): 합의된 규약, BE PR #626 미병합.** 근거는 [#627](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/627) 본문의 계약표와 댓글 2개(대기 응답에서 `email` 제외, 가입 종류별 409)다. BE 브랜치 `feature/610-signup-username`의 `backend/app/api/auth.py`, `schemas/auth.py`, `schemas/username.py`, `core/errors.py`를 읽고 대조했다. 위 표와 규칙 중 아래와 다른 것은 #626 이 병합되기 전까지의 배포 규약이다.
+
+| Method | Path | 요청 | 성공 | 실패 |
+|---|---|---|---|---|
+| POST | `/api/v1/auth/signup` | 이메일 가입 `{"verification_token", "password", "name", "username"}`, 카카오 가입 `{"link_kakao": true, "name", "username"}` | 201 §4.1 응답(`username` 있음, 카카오 가입은 `email: null`) | 400 `INVALID_REQUEST`(아이디 규칙 밖, 카카오 가입에 `password`·`verification_token` 이 있음, 이메일 가입에 `password` 가 없음), 400 `SIGNUP_VERIFICATION_INVALID`, 400 `KAKAO_LINK_EXPIRED`. 409 는 이메일 가입이면 `EMAIL_ALREADY_EXISTS`·`USERNAME_TAKEN`(둘 다 겹치면 이메일 먼저), 카카오 가입이면 `KAKAO_ALREADY_LINKED`·`USERNAME_TAKEN` |
+| GET | `/api/v1/auth/kakao/pending` | 없음 | 200 `{"nickname": string\|null}` | 400 `KAKAO_LINK_EXPIRED` |
+
+- 카카오 가입은 대기 쿠키의 카카오 신원만으로 계정을 만든다. 이메일·비밀번호가 없고 카카오로만 로그인한다. 카카오가 이메일을 줘도 저장하지 않는다.
+- 카카오 이메일이 기존 계정과 같아도 잇지 않는다. 이어진 카카오가 없으면 늘 가입 화면(`/signup?kakao=1`)이다. 그래서 callback 의 `oauth_result=failed&oauth_reason=email_exists` 복귀가 없어졌다. 이미 카카오가 이어진 계정은 지금처럼 로그인된다.
+- 대기 쿠키는 서명만 하고 암호화하지 않아 카카오 이메일을 담지 않는다.
+- 아이디 규칙과 중복 확인·변경은 §4.1.6 이다.
+
+**FE 동작 (#627).** 화면 동작이며 API 형태가 아니다. 위 「FE가 맞추기로 한 동작」 중 카카오 가입·`oauth_reason` 부분을 대신한다.
+
+- 이메일 가입은 이메일 → 코드 → 프로필이고, 프로필에서 아이디(중복 확인)·이름·비밀번호를 받는다.
+- `kakao=1`이면 pending 을 읽은 뒤 이메일·코드 단계 없이 아이디(중복 확인)와 이름만 받는다. 이름은 닉네임으로 채우고 고칠 수 있다. 비밀번호 칸이 없다. `카카오 없이 가입`은 그대로다.
+- `계정 만들기`는 중복 확인이 지금 입력과 맞고 쓸 수 있을 때만 켜진다. 확인 뒤 아이디를 바꾸면 다시 확인해야 한다. 가입 응답의 409 `USERNAME_TAKEN` 과 400 의 username 칸 오류는 아이디 칸 오류가 되고 버튼이 꺼진다. `EMAIL_ALREADY_EXISTS`·`KAKAO_ALREADY_LINKED` 는 지금처럼 로그인 경로가 있는 폼 오류다.
+- 로그인 화면은 `oauth_reason` 을 읽지 않는다. 옛 주소에 붙어 와도 일반 실패 문구다. `shared/lib/oauth` 의 실패 사유 장치(`OAUTH_REASONS`, `readOAuthReason`)를 지웠다.
+
+**현재 구현 (#627, 2026-11-10).** FE 는 위 규약대로 만들었고 MSW 로만 확인했다. BE #626 이 병합되지 않아 실서버 왕복은 하지 않았다.
+
+- 요청: [DTO·zod 스키마](../../src/shared/types/api/auth.ts), [가입 요청](../../src/entities/user/api/auth.ts).
+- 화면: [가입 폼](../../src/features/auth/ui/SignupForm.tsx), [이메일 가입 단계](../../src/features/auth/ui/SignupSteps.tsx), [프로필 단계](../../src/features/auth/ui/SignupProfileStep.tsx), [복귀 문구](../../src/features/auth/model/kakaoLogin.ts).
+- MSW: [가입 handler](../../src/shared/mock/handlers/auth.ts), [모의 카카오](../../src/shared/mock/oauth/mockKakao.ts). 모의 카카오는 새 사용자, 이어진 계정(픽스처 계정에 이어진 `kakao-pm`), 닉네임 없는 새 사용자, 취소, 실패를 고른다.
+- 검증: Vitest [가입 흐름](../../src/app/signupFlow.test.tsx), [가입 요청](../../src/entities/user/api/auth.test.ts), [카카오 복귀](../../src/app/kakaoLogin.test.tsx). E2E [signup-kakao.e2e.ts](../../e2e/signup-kakao.e2e.ts) 기대값을 새 흐름으로 고쳤고 로컬에서는 돌리지 않았다.
 
 #### 4.1.5 이용약관·개인정보처리방침 동의 (#564): BE 제안, FE 합의 전
 
@@ -1393,6 +1422,39 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - FE Query 키는 사용자 ID·표시한 약관 판본·표시한 개인정보 판본을 포함한다. 응답은 정확히 `terms`·`privacy` 한 개씩과 일관된 동의 판본/시각을 요구한다. 두 현재 판본에 모두 동의했다는 기록과 `required`가 모순이면 잘못된 응답으로 거절한다. 표시 문서와 서버 현재 판본이 다르면 수락을 막고 갱신을 안내한다.
 - 가입 요청 모양은 유지한다. 계정 생성 뒤 새 세션 범위에서 두 판본을 POST하고 세션 Query를 반영한다. 동의 저장 실패·응답 유실은 생성된 계정을 유지하고 GET으로 복구한다. 동의가 없는 사용자의 다른 서버 API를 일괄 차단하거나 가입과 동의를 한 트랜잭션으로 묶지 않았다.
 - 합성 공개 콘텐츠는 별도 Vite·Playwright 테스트 설정으로만 넣는다. 실제 제품 공개 상태는 계속 `preparing`이고 최종 공개 동의 수집은 미실행이다. 실제 API의 A 화면·B 쿠키 GET/POST 무저장 반례는 SQLite·PostgreSQL 회귀로 검증했다. 화면·Kakao·메일의 실제 제공자 왕복과 운영 공개 확인은 별도다.
+
+#### 4.1.6 아이디 (#627): 합의된 규약, BE PR #626 미병합
+
+제공자는 BE, 소비자는 FE 가입 프로필 단계와 설정의 계정 절이다. 근거는 [#627](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/627) 본문의 계약표다. BE 브랜치 `feature/610-signup-username`의 `backend/app/api/auth.py`, `api/users.py`, `schemas/auth.py`, `schemas/username.py`, `core/errors.py`를 읽고 대조했다.
+
+| Method | Path | 요청 | 성공 `data` | 실패 |
+|---|---|---|---|---|
+| GET | `/api/v1/auth/username-availability?username=` | 없음. 로그인 불필요 | 200 `{"available": true, "reason": null}` 또는 `{"available": false, "reason": "taken" \| "invalid"}` | `username` 이 없으면 400 `INVALID_REQUEST` |
+| PATCH | `/api/v1/users/me` | `{"username"}`. 로그인 필요 | 200 `/auth/me` 의 `user` 와 같은 모양 | 400 `INVALID_REQUEST`(규칙 밖, `details.fields[].loc` 가 `["body", "username"]`), 401 `UNAUTHENTICATED`, 409 `USERNAME_TAKEN` |
+
+- 아이디 규칙은 영문과 숫자 4~20자다. 앞뒤 공백을 지운 뒤 소문자로 바꾸기 전에 검사하고, 소문자로 저장한다. 대소문자를 가리지 않고 유일하다. 예약어는 막지 않는다.
+- 중복 확인은 규칙 밖 값도 오류가 아니라 `invalid` 다. 내 아이디도 `taken` 이다.
+- `PATCH /users/me` 는 지금 아이디와 같으면 그대로 200 이다. 남이 쓰면 409 `USERNAME_TAKEN`(문구 `이미 사용 중인 아이디입니다.`)이다. 확인과 저장 사이에 남이 먼저 가져가도 409 다.
+- 기존 계정의 아이디는 BE 마이그레이션이 이메일 앞부분에서 만든다. 소문자 영문·숫자만 남기고 4자보다 짧으면 앞에 `user` 를 붙이며, 겹치면 가입 순서대로 숫자를 붙인다.
+
+**FE 동작.** 화면 동작이며 API 형태가 아니다.
+
+- 규칙과 정규화는 FE 에도 한 곳(`entities/user/model/username.ts`)에 둔다. 규칙 밖이면 묻지 않고 바로 `invalid` 문구를 보인다. 서버의 `invalid` 와 400 username 칸 오류도 같은 문구다.
+- 확인 상태는 `idle`·`checking`·`available`·`unavailable(taken|invalid|current)`·`failed` 하나의 상태로 둔다. 가입·저장 가능 여부는 `available` 이고 확인한 값이 지금 입력과 같을 때로 파생한다. 확인 중 입력이 바뀌면 앞 요청을 끊는다.
+- 설정은 지금 아이디와 같은 값이면 묻지 않고 `지금 쓰고 있는 아이디예요.` 다.
+- `USERNAME_TAKEN` 화면 문구는 `이미 사용 중인 아이디예요.` 다(`shared/api/errors.ts`, `errorMessages.ts`).
+- `PATCH /users/me` 는 누를 때의 세션으로만 보낸다(#594). 응답은 `user` 스키마로 읽고, 성공하면 세션 캐시의 `user` 를 응답으로 바꾼다. 응답을 읽지 못하면 쓰기 토스트 `변경 결과를 확인하지 못했어요` 를 띄우고 `새로고침` 이 세션을 다시 받는다(D-184).
+- 사용자 메뉴의 이름 아래는 `email ?? username` 이다. 설정 계정 절은 이메일이 없으면 `이메일 없음` 과 카카오로 로그인하는 계정이라는 설명을 보인다. 계정 절은 모든 역할이 쓴다.
+- 초대의 `accepted_user.email` 도 null 일 수 있다(`InvitedUser.email: str | None`). 계정 연결 끊기 확인 창은 이메일이 없으면 이름만 보인다.
+
+**현재 구현 (2026-11-10).** FE 는 위 규약대로 만들었고 MSW 로만 확인했다. BE #626 이 병합되지 않아 실서버 왕복은 하지 않았다.
+
+- 요청: [중복 확인·변경](../../src/entities/user/api/username.ts), [스키마](../../src/shared/types/api/auth.ts), [초대 스키마](../../src/shared/types/api/invitation.ts).
+- 화면: [확인 상태 훅](../../src/entities/user/model/useUsernameCheck.ts), [아이디 칸](../../src/entities/user/ui/UsernameField.tsx), [아이디 변경](../../src/features/username-change/ui/UsernameChangeForm.tsx), [계정 절](../../src/pages/settings/ui/AccountSection.tsx), [사용자 메뉴](../../src/widgets/app-shell/ui/UserMenu.tsx).
+- MSW: [중복 확인·가입 handler](../../src/shared/mock/handlers/auth.ts), [`PATCH /users/me` handler](../../src/shared/mock/handlers/users.ts). 시나리오 `username-taken`(박민수 `minsu` 가 있다), `username-race`(`newuser1` 은 확인은 되고 쓰기는 409), `kakao-account`(이메일 없는 카카오 계정으로 로그인).
+- 검증: Vitest [API·MSW](../../src/entities/user/api/username.test.ts), [설정 계정 절](../../src/app/settingsAccount.test.tsx), [가입 흐름](../../src/app/signupFlow.test.tsx).
+
+**합의 필요 변경.** 없다. 배포 순서는 #627 본문대로 BE #626 과 FE PR 을 이어서 병합한다. 한쪽만 먼저 나가면 가입이 400 이 된다.
 
 ### 4.2 워크스페이스의 사용자 스코프 · 역할 · 온보딩
 
