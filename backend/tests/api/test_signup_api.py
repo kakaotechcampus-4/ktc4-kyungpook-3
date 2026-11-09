@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
+from app.api import auth
 from app.core.database import get_db
 from app.main import app
 from app.models import Session as SessionModel, User
@@ -237,6 +238,16 @@ def test_kakao_id_bound_to_another_account_is_409(mdb, client):
     mdb.add(User(username="first", email="first@example.com", name="old", provider="kakao", provider_id="77"))
     mdb.commit()
     _set_pending(client, NO_EMAIL)
+
+    assert _error(_kakao_signup(client)) == (409, "KAKAO_ALREADY_LINKED")
+
+
+def test_kakao_id_lost_at_the_db_is_kakao_already_linked(mdb, client, monkeypatch):
+    """사전 검사와 재검사가 모두 놓친 카카오 충돌. 카카오 가입은 이메일을 넣지 않으니 이메일 중복이 아니다."""
+    mdb.add(User(username="first", email="first@example.com", name="old", provider="kakao", provider_id="77"))
+    mdb.commit()
+    _set_pending(client, NO_EMAIL)
+    monkeypatch.setattr(auth, "_signup_conflict", lambda db, user: None)
 
     assert _error(_kakao_signup(client)) == (409, "KAKAO_ALREADY_LINKED")
 

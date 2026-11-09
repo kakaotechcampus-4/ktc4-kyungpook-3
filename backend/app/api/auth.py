@@ -175,12 +175,18 @@ def signup(payload: SignupRequest, request: Request, response: Response, db: Ses
     except IntegrityError as exc:
         # PostgreSQL 은 실패한 트랜잭션에서 다시 읽지 못하므로 되돌린 뒤 어느 쪽과 겹쳤는지 찾는다.
         # 되돌리면 user 는 세션에서 빠지지만 넣으려던 값은 그대로 남는다.
-        # 다시 찾아도 없으면 이긴 쪽이 그 사이 아이디를 바꾼 것이다. 아이디는 identity_lock 밖이라 이 경합만 여기까지 온다.
+        # 다시 찾아도 없으면 이긴 쪽이 그 사이 아이디를 바꿨거나 탈퇴한 것이라, 막힌 제약으로 고른다.
         db.rollback()
         # PostgreSQL 은 제약 이름을 따로 주고, SQLite 는 문구에 "user.username" 으로만 남긴다. PostgreSQL 문구에는 입력값이 들어가서 보지 않는다.
         constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
         username_lost = constraint == "ix_user_username" if constraint else "user.username" in str(exc.orig)
-        fallback = ErrorCode.USERNAME_TAKEN if username_lost else ErrorCode.EMAIL_ALREADY_EXISTS
+        if username_lost:
+            fallback = ErrorCode.USERNAME_TAKEN
+        elif user.email is None:
+            # 카카오 가입은 이메일을 넣지 않으므로 남은 유일 제약은 카카오 id 다.
+            fallback = ErrorCode.KAKAO_ALREADY_LINKED
+        else:
+            fallback = ErrorCode.EMAIL_ALREADY_EXISTS
         raise AppError(_signup_conflict(db, user) or fallback) from None
     db.refresh(user)
 
