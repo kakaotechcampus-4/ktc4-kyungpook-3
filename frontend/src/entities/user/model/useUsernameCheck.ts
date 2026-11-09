@@ -79,6 +79,8 @@ export function useUsernameCheck(input: string, current?: string): UsernameCheck
     setResult({ status: 'unavailable', username: rejected, reason })
   }, [])
 
-  const check = result.status !== 'idle' && result.username === username ? result : IDLE
+  // 저장해 지금 내 아이디가 된 값의 `available` 은 지난 확인이다. 다시 저장할 것이 없다
+  const settled = result.status === 'available' && result.username === current
+  const check = result.status !== 'idle' && result.username === username && !settled ? result : IDLE
   return { check, confirmed: check.status === 'available', run, reject }
 }

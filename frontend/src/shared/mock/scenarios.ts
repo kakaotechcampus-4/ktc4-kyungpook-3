@@ -128,6 +128,12 @@ export const MOCK_SCENARIOS = [
   // #320 팀원 초대. team-invitations 는 ws_01 PM 이 보는 초대 상태, invitation-pending 은 초대받은 사람의 가입 전이다
   'team-invitations',
   'invitation-pending',
+  // #627 아이디. username-taken 은 비로그인이고 박민수(minsu)가 가입해 있다. username-race 는 비로그인이고
+  // newuser1 을 중복 확인하면 쓸 수 있다고 답하지만 가입·아이디 변경은 409 USERNAME_TAKEN 이다(확인 뒤 남이 가져감).
+  // kakao-account 는 이메일·비밀번호 없이 카카오로 가입한 계정(userpm, 최진호)으로 ws_01 PM 에 로그인한다
+  'username-taken',
+  'username-race',
+  'kakao-account',
   // #356 비밀번호 재설정. 모두 비로그인이다
   ...PASSWORD_RESET_SCENARIOS,
 ] as const
@@ -636,11 +642,8 @@ function invitation(
 const pendingInvitation = () =>
   invitation('iv_02', 'mb_03', 'jaehwan@example.com', 'pending', '2026-09-16T09:00:00Z')
 
-/**
- * 팀원마다 최근 초대가 다르다. 박민수(mb_02)는 us_02 가 수락했고, 이재환(mb_03)은 대기, 정하늘(mb_04)은 거절이다.
- * 이재환에게는 오타로 보냈다가 취소한 더 오래된 초대(iv_00)도 있다 — 화면은 최근 것만 본다
- */
-function addTeamInvitations(state: MockDb): void {
+/** 박민수(us_02, 아이디 minsu). 어느 공간에도 직접 속하지 않는다 */
+function addMinsuAccount(state: MockDb): void {
   state.accounts.push({
     session: {
       user: {
@@ -657,6 +660,14 @@ function addTeamInvitations(state: MockDb): void {
     workspaceIds: [],
     memberIds: {},
   })
+}
+
+/**
+ * 팀원마다 최근 초대가 다르다. 박민수(mb_02)는 us_02 가 수락했고, 이재환(mb_03)은 대기, 정하늘(mb_04)은 거절이다.
+ * 이재환에게는 오타로 보냈다가 취소한 더 오래된 초대(iv_00)도 있다 — 화면은 최근 것만 본다
+ */
+function addTeamInvitations(state: MockDb): void {
+  addMinsuAccount(state)
   state.invitations.push(
     invitation('iv_00', 'mb_03', 'jaehwan@exmaple.com', 'canceled', '2026-09-14T09:00:00Z'),
     {
@@ -1051,6 +1062,19 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'team-invitations':
       signInWith(state, ['ws_01'], 'ws_01')
       addTeamInvitations(state)
+      break
+    case 'username-taken':
+      state.authenticated = false
+      addMinsuAccount(state)
+      break
+    case 'username-race':
+      state.authenticated = false
+      state.usernameRace = ['newuser1']
+      break
+    case 'kakao-account':
+      signInWith(state, ['ws_01'], 'ws_01')
+      for (const user of [state.session.user, state.accounts[0].session.user]) user.email = null
+      state.accounts[0].password = null
       break
     case 'invitation-pending':
       // 비로그인. jaehwan@example.com 으로 가입하면 iv_02 가 내 초대에 보인다

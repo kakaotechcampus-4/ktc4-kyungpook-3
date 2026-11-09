@@ -3,9 +3,9 @@ import { db } from '@/shared/mock/db'
 import { ok } from '@/shared/mock/envelope'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
-import { fetchUsernameAvailability } from './username'
+import { fetchUsernameAvailability, updateUsername } from './username'
 
-/* #627 아이디 중복 확인 (BE GET /auth/username-availability). 로그인 없이 부르고 늘 200 이다 */
+/* #627 아이디 중복 확인(BE GET /auth/username-availability, 로그인 없이 늘 200)과 아이디 변경(PATCH /users/me) */
 
 beforeEach(() => applyScenario('signed-out'))
 
@@ -41,5 +41,60 @@ describe('아이디 중복 확인', () => {
     await expect(fetchUsernameAvailability('newuser1')).rejects.toMatchObject({
       code: 'INVALID_RESPONSE',
     })
+  })
+})
+
+describe('아이디 변경', () => {
+  beforeEach(() => applyScenario('single-workspace'))
+
+  it('바꾼 사용자 정보를 돌려주고, 다음 /auth/me 에도 남는다', async () => {
+    await expect(updateUsername('NewName1')).resolves.toMatchObject({
+      id: 'us_01',
+      username: 'newname1',
+      email: 'pm@example.com',
+    })
+    expect(db.accounts[0].session.user.username).toBe('newname1')
+  })
+
+  it('지금 아이디와 같으면 그대로 200 이다', async () => {
+    await expect(updateUsername('userpm')).resolves.toMatchObject({ username: 'userpm' })
+  })
+
+  it('남이 쓰는 아이디는 409 USERNAME_TAKEN 이다', async () => {
+    applyScenario('username-taken')
+    db.authenticated = true
+    await expect(updateUsername('minsu')).rejects.toMatchObject({
+      status: 409,
+      code: 'USERNAME_TAKEN',
+    })
+  })
+
+  it('규칙 밖이면 400 INVALID_REQUEST 의 username 칸 오류다', async () => {
+    await expect(updateUsername('ab')).rejects.toMatchObject({
+      status: 400,
+      code: 'INVALID_REQUEST',
+      details: { fields: [{ loc: ['body', 'username'] }] },
+    })
+  })
+
+  it('로그인하지 않았으면 401 이다', async () => {
+    db.authenticated = false
+    await expect(updateUsername('newname1')).rejects.toMatchObject({ status: 401 })
+  })
+})
+
+describe('#627 시나리오', () => {
+  it('username-race: 중복 확인은 쓸 수 있다고 답하지만 바꾸기는 409 다', async () => {
+    applyScenario('username-race')
+    await expect(fetchUsernameAvailability('newuser1')).resolves.toEqual({ available: true })
+    db.authenticated = true
+    await expect(updateUsername('newuser1')).rejects.toMatchObject({ code: 'USERNAME_TAKEN' })
+  })
+
+  it('kakao-account: 이메일·비밀번호 없는 계정으로 로그인돼 있다', () => {
+    applyScenario('kakao-account')
+    expect(db.authenticated).toBe(true)
+    expect(db.session.user).toMatchObject({ email: null, username: 'userpm' })
+    expect(db.accounts[0]).toMatchObject({ password: null, kakaoId: 'kakao-pm' })
   })
 })
