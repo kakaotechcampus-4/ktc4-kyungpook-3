@@ -24,4 +24,4 @@ commit 뒤 User ORM을 다시 읽으면, commit과 응답 사이에 탈퇴가 �
 
 외부 API 형식과 회원가입 요청 모양은 유지한다. migration `f7f0dc53a63a`는 최신 `e575b02d8a31`을 부모로 사용한다. 저장 표의 `ON DELETE CASCADE`와 익명 기록 주체의 역할은 바꾸지 않는다.
 
-실제 결과는 [M1 결과](../result.md), 요청·응답과 공개 경계는 [FE 대표 계약](../../../../../frontend/docs/contracts/frontend-api-contract.md#414-이용약관개인정보처리방침-동의-564-be-제안-fe-합의-전)에 있다. 운영 정책 공개나 실사용자 동의 수집은 이번 검증 범위가 아니다.
+실제 결과는 [M1 결과](../result.md), 요청·응답과 공개 경계는 [FE 대표 계약](../../../../../frontend/docs/contracts/frontend-api-contract.md#415-이용약관개인정보처리방침-동의-564-be-제안-fe-합의-전)에 있다. 운영 정책 공개나 실사용자 동의 수집은 이번 검증 범위가 아니다.
