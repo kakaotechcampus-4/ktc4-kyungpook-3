@@ -27,7 +27,7 @@ export function MemberInviteControl({ workspaceId, member }: MemberInviteControl
     ...latestInvitationsQueryOptions(workspaceId),
     select: (latest) => latest.get(member.id) ?? null,
   })
-  const actions = useMemberInviteActions(workspaceId, member)
+  const actions = useMemberInviteActions(workspaceId, member.id)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [revokeOpen, setRevokeOpen] = useState(false)
 

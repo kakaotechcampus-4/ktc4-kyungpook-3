@@ -131,7 +131,7 @@ describe('팀 화면 — 팀원 초대', () => {
     expect(await jaehwan.findByText('한도윤 · doyun')).toBeInTheDocument()
     expect(jaehwan.getByText('대기')).toBeInTheDocument()
     expect(toastWith('초대를 만들었어요')).toHaveTextContent(
-      '알림은 가지 않아요. 이재환에게 doyun 계정으로 로그인해 받은 초대를 수락하라고 알려 주세요.',
+      '알림은 가지 않아요. 한도윤에게 doyun 계정으로 로그인해 받은 초대를 수락하라고 알려 주세요.',
     )
     expect(invitationOf('iv_02')?.status).toBe('canceled')
   })
@@ -183,7 +183,7 @@ describe('팀 화면 — 팀원 초대', () => {
     expect(searches(log)).toEqual([])
   })
 
-  it('찾은 뒤 입력을 바꾸면 찾은 사람이 사라지고 초대하기가 꺼진다', async () => {
+  it('찾은 뒤 입력을 바꾸면 찾은 사람을 버린다. 같은 아이디로 되돌려도 다시 찾아야 한다', async () => {
     renderApp(TEAM)
     const opened = await openInvite('정하늘')
     const { user, dialog } = opened
@@ -193,6 +193,13 @@ describe('팀 화면 — 팀원 초대', () => {
 
     await user.type(dialog.getByLabelText('아이디'), '2')
 
+    expect(dialog.queryByText('한도윤')).toBeNull()
+    expect(dialog.getByRole('button', { name: '초대하기' })).toBeDisabled()
+    expect(dialog.getByRole('button', { name: '찾기' })).toBeEnabled()
+
+    await user.type(dialog.getByLabelText('아이디'), '{Backspace}')
+
+    expect(dialog.getByLabelText('아이디')).toHaveValue('doyun')
     expect(dialog.queryByText('한도윤')).toBeNull()
     expect(dialog.getByRole('button', { name: '초대하기' })).toBeDisabled()
     expect(dialog.getByRole('button', { name: '찾기' })).toBeEnabled()

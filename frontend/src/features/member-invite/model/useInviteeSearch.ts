@@ -20,21 +20,22 @@ export type InviteeSearch =
 const IDLE: InviteeSearch = { status: 'idle' }
 
 export interface InviteeSearchControl {
-  /** 지금 입력에 대한 결과. 다른 값을 찾은 결과는 `idle` 로 보인다 */
+  /** 지금 입력에 대한 결과. 입력이 바뀌면 `idle` 이다 */
   search: InviteeSearch
   /** 지금 입력으로 찾는다 */
   run: () => void
 }
 
 /**
- * 아이디로 초대할 가입자를 찾는다. 아이디 중복 확인(useUsernameCheck)과 같은 규칙이다 —
- * 찾은 뒤 입력을 바꾸면 결과가 지금 입력과 맞지 않아 저절로 `idle` 로 보이고, 찾던 요청은 끊는다.
+ * 아이디로 초대할 가입자를 찾는다. 찾은 뒤 입력을 바꾸면 결과를 버리고 찾던 요청은 끊는다 — 늦게 온 응답이 새 입력에 붙지 않는다.
  * 누를 때 세션 범위를 잡는다. 세션이 끝나면 요청이 함께 끊기고 늦은 응답은 버린다 (#594)
  */
 export function useInviteeSearch(workspaceId: string, input: string): InviteeSearchControl {
   const [result, setResult] = useState<InviteeSearch>(IDLE)
   const pending = useRef<{ username: string; controller: AbortController } | null>(null)
   const username = normalizeUsername(input)
+  // 같은 아이디로 되돌려도 지난 결과를 다시 쓰지 않는다. 그사이 탈퇴했을 수 있어 다시 찾게 한다 (#632)
+  if (result.status !== 'idle' && result.username !== username) setResult(IDLE)
 
   useEffect(() => {
     if (pending.current !== null && pending.current.username !== username) {

@@ -37,10 +37,7 @@ export interface MemberInviteActions {
  * 끝나면(성공·실패) 초대 목록을 다시 받는다 — 다시 초대·연결 끊기는 다른 초대도 닫고, 실패는 화면이 낡았다는 뜻일 수 있다.
  * 요청 중 세션이 바뀌었으면 늦은 응답으로 알림을 띄우지 않는다.
  */
-export function useMemberInviteActions(
-  workspaceId: string,
-  member: { id: string; displayName: string },
-): MemberInviteActions {
+export function useMemberInviteActions(workspaceId: string, memberId: string): MemberInviteActions {
   const queryClient = useQueryClient()
   const refresh = () =>
     void queryClient.invalidateQueries({
@@ -51,17 +48,13 @@ export function useMemberInviteActions(
     retry: false,
     mutationFn: ({ invitee, session }) => {
       if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
-      return createInvitation(
-        workspaceId,
-        { memberId: member.id, userId: invitee.userId },
-        session.signal,
-      )
+      return createInvitation(workspaceId, { memberId, userId: invitee.userId }, session.signal)
     },
     onSuccess: (_, { invitee, onSuccess, session }) => {
       if (!session.isCurrent()) return
       toast.show({
         title: '초대를 만들었어요',
-        description: `알림은 가지 않아요. ${member.displayName}에게 ${invitee.username} 계정으로 로그인해 받은 초대를 수락하라고 알려 주세요.`,
+        description: `알림은 가지 않아요. ${invitee.name}에게 ${invitee.username} 계정으로 로그인해 받은 초대를 수락하라고 알려 주세요.`,
       })
       onSuccess()
     },

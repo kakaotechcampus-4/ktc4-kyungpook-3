@@ -18,10 +18,7 @@ function setup() {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   )
-  const { result } = renderHook(
-    () => useMemberInviteActions('ws_01', { id: 'mb_02', displayName: '이서연' }),
-    { wrapper },
-  )
+  const { result } = renderHook(() => useMemberInviteActions('ws_01', 'mb_02'), { wrapper })
   return { client, actions: () => result.current }
 }
 
@@ -85,7 +82,7 @@ it.each([
   const { result } = renderHook(
     () => {
       const invitations = useQuery(latestInvitationsQueryOptions('ws_01'))
-      const actions = useMemberInviteActions('ws_01', { id: 'mb_02', displayName: '이서연' })
+      const actions = useMemberInviteActions('ws_01', 'mb_02')
       return { invitations, actions }
     },
     { wrapper },
