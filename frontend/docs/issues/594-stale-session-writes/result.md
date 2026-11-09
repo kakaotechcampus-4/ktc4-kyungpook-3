@@ -35,7 +35,7 @@ TanStack Query mutation 의 기본 `networkMode: 'online'` 은 오프라인이�
 | `npm run lint` | 통과 |
 | `npm run build` | 통과 |
 | 바꾼 곳 테스트 | 바꾼 조각·API 와 승인·태스크·초대·팀·알림·업로드·연결 설정 화면 55 파일·651 건. 업로드 변수 모양 단언 1 건이 실패해 고친 뒤 그 파일 43 건 통과 |
-| `npm run test -- --maxWorkers=1` | 차례를 기다린다 |
+| `npm run test -- --maxWorkers=1` | 312 파일·4049 건 모두 통과(2,222 초) |
 
 - 새 테스트
   - `app/staleSessionWrites.test.tsx`: 승인 반려·태스크 상태·태스크 만들기·Notion 다시 넣기·자동 반영 되돌리기마다 오프라인으로 멈춘 쓰기 → 세션 세대 올림 → 다시 연결에서 요청이 나가지 않는다. 같은 세션이면 다시 연결될 때 나간다(대조).
