@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { meetingListQueryOptions } from '@/entities/meeting'
-import { memberListQueryOptions } from '@/entities/member'
+import { memberListQueryOptions, recordMemberListQueryOptions } from '@/entities/member'
 import { TASK_STATUS_LABEL, isOverdue, taskDetailQueryOptions } from '@/entities/task'
 import type { Task } from '@/entities/task'
 import { TaskStatusControl, useTaskStatusOverlay } from '@/features/task-status'
@@ -155,7 +155,13 @@ function TaskBody({
   isPm: boolean
   today: string
 }) {
-  const members = useQuery(memberListQueryOptions(workspaceId))
+  const members = useQuery(recordMemberListQueryOptions(workspaceId))
+  const activeMembers = useQuery(memberListQueryOptions(workspaceId))
+  const unavailableAssignee =
+    task.assigneeMemberId !== null &&
+    members.data?.some(({ id }) => id === task.assigneeMemberId) === true &&
+    activeMembers.data !== undefined &&
+    !activeMembers.data.some(({ id }) => id === task.assigneeMemberId)
   // 처리 추적이 이미 받는 목록이다 — 같은 key 라 따로 요청하지 않는다
   const meetings = useQuery(meetingListQueryOptions(workspaceId))
   const pending = useTaskStatusOverlay(workspaceId)
@@ -228,6 +234,7 @@ function TaskBody({
           task={task}
           status={status}
           assigneeName={assignee}
+          recipientAvailable={!unavailableAssignee}
           overdue={overdue}
         />
       ) : null}

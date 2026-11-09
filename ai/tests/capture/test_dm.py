@@ -435,7 +435,8 @@ async def test_the_hour_survives_a_restart_and_expired_people_are_pruned(tmp_pat
     clock.at += 1800
     await restarted.on_message(FakeMsg(FakeAuthor(88)))
     (state,) = (tmp_path / ".bot" / "dm").glob("*.json")
-    assert set(json.loads(state.read_text(encoding="utf-8"))) == {str(USER_ID), "88"}
+    assert set(json.loads(state.read_text(encoding="utf-8"))) == {restarted._notice_key(str(USER_ID)), restarted._notice_key('88')}
+    assert str(USER_ID) not in json.loads(state.read_text(encoding='utf-8'))
 
 
 async def test_a_failed_rate_file_write_still_sends_the_notice(tmp_path, monkeypatch, capsys):

@@ -7,6 +7,29 @@
 - 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로, 추출 등록의 auto 판단 키는 2026-10-16 #232 변경 코드로 다시 대조했다. 웹 업로드 가져가기는 2026-10-14 #219 브랜치 코드로, 화자 지정 경로(speakers·assigned·resume)는 2026-11-02 #266 브랜치 코드로, 처리 단계 보고(`PATCH /meetings/{meeting_id}/stage`)는 2026-11-05 #381 브랜치 코드로 대조했다. 라벨 보고 재전송과 지정 대기 만료는 2026-11-06 #438 에서 develop 코드로 다시 대조했다
 - 합의 근거: 인계 방식은 [AI 결정 0009](../../../ai/decision_log/0009-bot-hands-off-to-be-api.md), 발화 저장은 [AI 결정 0017](../../../ai/decision_log/0017-transcript-sources-stage.md)에 AI 쪽 기록이 있다. 이 문서는 그 이후의 필드·오류 세부를 코드에서 읽은 것이며, 별도 합의 문서가 없는 항목은 구현 사실로만 적는다.
 
+## 계정 탈퇴의 개인정보 정리 (#575, 2026-11-09)
+
+계정 탈퇴의 웹 API는 [FE 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md#계정-탈퇴와-정리-상태-575-2026-11-09)에 있다. 이 절은 현재 BE·AI 생산자와 소비자 코드의 규약이며 운영 배포 완료나 공급사의 원격 삭제 확인을 뜻하지 않는다.
+
+| 요청 | 입력과 `data` |
+|---|---|
+| `POST /bot/privacy-cleanups/claim` | X-Service-Token, 빈 본문. `{item:null}` 또는 `{item:{cleanup_id,workspace_id,identity_epoch,member_ids,meeting_ids,message_ids,guild_ids,delete_workspace,claim_token,lease_until}}` |
+| `POST /bot/privacy-cleanups/{cleanup_id}/ack` | X-Service-Token, `{claim_token}`. `{cleanup_id,complete}` |
+
+claim은 SHA-256으로 저장한 토큰과 120초 임대를 사용한다. 만료 후 새 claim은 이전 토큰을 무효화한다. 같은 완료 토큰의 ack 재시도는 수렴하며 토큰 불일치·만료는 409 PURGE_CLAIM_EXPIRED다. claim_token은 정리 작업의 확인 용도이고 개인정보를 조회하는 키가 아니다.
+
+정리 행은 User·Workspace의 생존에 의존하지 않는다. selector에는 익명 Member·회의·메시지 UUID를 사용한다. guild_ids는 개인 Discord 사용자 ID가 아니라 과거 녹음 탐색에 필요한 공동 공간 리소스 ID이며 AI 확인 뒤 지운다. 개인 이름·이메일·개인 Discord ID·토큰을 정리 큐에 복사하지 않는다.
+
+공동 공간은 정확히 연결된 Member의 프로필·구조화 화자·별칭·파일명·캐시 사본을 정리하고 음성 바이트·공동 본문·다른 사람의 메타데이터는 보존한다. 단독 공간은 진행 중 회의와 BE ID 없는 로컬 capture까지 포함해 해당 공간의 파일을 정리한다. 옛 session의 재생성 금지 표식은 같은 guild에 새로 만든 Workspace의 capture를 막지 않는다.
+
+AI는 writer·manifest·outbox·chat·DM 잠금과 처리 세대를 확인하고 실제 로컬 정리가 성공한 뒤에만 ack한다. 실패·살아 있는 writer·소유 근거가 없는 공유 legacy 자료·구조화 화자 자료가 없는 과거 markdown은 완료 ack하지 않는다. backend는 기존 기본 10초 회의 정리 워커에서 저장소 삭제를 재시도하므로 AI가 중단돼도 backend 파일 재시도는 계속된다. backend와 AI가 모두 끝났는지는 웹 영수증 cleanup_status가 최종 기준이다.
+
+Workspace.identity_epoch는 탈퇴 시 증가한다. 서비스 쓰기는 현재 명단·claim의 세대를 X-Privacy-Epoch로 전달한다. 탈퇴가 없던 초기 세대 0은 기존 클라이언트의 무헤더 요청을 허용하지만, 세대가 증가한 공간의 누락·불일치는 409 PRIVACY_VERSION_CHANGED와 details.identity_epoch를 반환한다. 사용자 세션 쓰기는 이 헤더 대신 현재 권한과 공간 상태를 검사한다.
+
+guild/workspace 조회, 전사 명단 조회, 업로드·DM·초안·답장 판단 claim은 해당 snapshot의 identity_epoch를 제공한다. AI는 작업 시작 시 세대를 고정하며 최신 조회를 했다는 이유로 이미 계산한 옛 payload에 새 세대만 붙이지 않는다. in-flight 판단·업로드 결과의 저장도 고정된 세대로 판정한다. 단독 삭제 공간과 삭제 회의의 쓰기 거절은 기존 리소스 오류 규약을 따른다.
+
+임의 본문·음성 익명화, 이미 외부 게시된 결과 회수와 호스팅 diarizer 공급사의 데이터 보관·삭제는 이 로컬 정리 프로토콜의 완료 범위로 추정하지 않는다.
+
 ## 명시적 회의 삭제와 재처리 계보 (#576, 2026-11-09)
 
 사용자는 회의 원문·회의록·추출·근거 삭제와 기존 태스크 보존을 확정했다. 혼합 승인 대기 카드는 남은 회의 기여로 재구성한다. 웹 삭제 API는 [FE 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md#회의-삭제와-보존-태스크-576-2026-11-09)에만 정의한다. 이 절의 추가 HTTP 형식은 현재 구현이며 운영 배포를 검증한 기록은 아니다.

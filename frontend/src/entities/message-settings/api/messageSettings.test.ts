@@ -39,6 +39,7 @@ describe('메시지·알림 설정 조회', () => {
       discord_user_id: null,
       notion_name: null,
       role: 'pm',
+      has_login_account: false,
       created_at: '2026-09-02T00:00:00Z',
     })
     expect((await fetchMessageSettings('ws_01')).pms).toEqual([

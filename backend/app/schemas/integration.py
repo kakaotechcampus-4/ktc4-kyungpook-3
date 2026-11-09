@@ -41,6 +41,7 @@ class BotChatChannelItem(BaseModel):
     workspace_id: str
     guild_id: str
     channel_id: str
+    identity_epoch: int = 0
 
 
 class BotChatChannelListResponse(BaseModel):

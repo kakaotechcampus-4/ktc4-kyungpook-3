@@ -31,6 +31,7 @@ from app.models import (
 )
 from app.schemas.meeting_deletion import MeetingDeletionReceipt
 from app.services import upload_storage
+from app.services import lifecycle
 from app.services.pending_merge import merge_into_pending
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,10 @@ def deletion_available(db: Session, meeting: Meeting) -> bool:
 def require_live_meeting(
     db: Session, meeting_id: str, *, lock: bool = False
 ) -> Meeting:
-    stmt = select(Meeting).where(Meeting.meeting_id == meeting_id)
+    owner = db.scalar(select(Meeting.workspace_id).where(Meeting.meeting_id == meeting_id))
+    if owner is not None:
+        lifecycle.workspace(db, owner)
+    stmt = select(Meeting).where(Meeting.meeting_id == meeting_id).execution_options(populate_existing=True)
     if lock:
         stmt = stmt.with_for_update().execution_options(populate_existing=True)
     meeting = db.scalar(stmt)
@@ -416,6 +420,8 @@ def run_worker(stop: threading.Event, interval: float) -> None:
         with SessionLocal() as db:
             try:
                 purge_backend_files(db)
+                from app.services.account_withdrawal import purge_backend
+                purge_backend(db)
             except Exception:
                 logger.exception("meeting purge worker failed")
                 db.rollback()

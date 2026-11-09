@@ -68,6 +68,7 @@ def report_speakers(
     잠금에서 기다렸다가 status 조건에 걸려 rowcount 0 이 된다. 이긴 쪽만 같은 트랜잭션에서
     meeting_upload 에 라벨을 쓰고 한 번에 커밋한다. 같은 내용을 다시 보내면 멱등으로 성공한다.
     """
+    require_live_meeting(db, meeting_id, lock=True)
     now = now or datetime.now(timezone.utc)
     normalized = normalize_speakers(speakers)
     result = db.execute(
@@ -140,6 +141,7 @@ def resume_upload(
     이미 가져갔고 회의가 아직 processing 이면 같은 mapping 으로 200 을 준다. resume 은 응답에 실린
     mapping 이 있어야 이어서 처리할 수 있어서, 커밋 뒤 응답을 잃은 재시도도 다시 받게 한다.
     """
+    require_live_meeting(db, meeting_id, lock=True)
     now = now or datetime.now(timezone.utc)
     result = db.execute(
         update(MeetingUpload)

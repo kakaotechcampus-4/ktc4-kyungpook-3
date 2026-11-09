@@ -262,13 +262,15 @@ class Worker:
 
     async def _purge_once(self) -> None:
         from capture.meeting_purge import purge_one
+        from capture.privacy_cleanup import cleanup_one as privacy_cleanup_one
         handoff = self._handoff_factory()
         if handoff is None or self._stopping:
             return
-        try:
-            await asyncio.to_thread(purge_one, self.recordings_dir, self.transcripts_dir, client=handoff.client)
-        except Exception:  # noqa: BLE001 - a failed purge retains the backend lease for retry
-            print("[worker] meeting purge pending retry", flush=True)
+        for cleanup in (privacy_cleanup_one, purge_one):
+            try:
+                await asyncio.to_thread(cleanup, self.recordings_dir, self.transcripts_dir, client=handoff.client)
+            except Exception:  # noqa: BLE001 - a failed purge retains the backend lease for retry
+                print("[worker] artifact cleanup pending retry", flush=True)
 
     def _wakes(self) -> list[Path]:
         d = worker_dir(self.recordings_dir)

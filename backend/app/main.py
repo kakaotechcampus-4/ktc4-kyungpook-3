@@ -14,6 +14,7 @@ from app.api import approvals, bot_lookups, bot_messages, extractions, invitatio
 from app.api import message_settings, message_socket, notifications
 from app.services import scheduler, meeting_deletion
 from app.api import meeting_purges
+from app.api import withdrawal
 from app.core.errors import AppError, Envelope, ErrorCode, failure, success
 from app.services import embedding, notion_sync, sessions, upload_sweeper
 
@@ -90,6 +91,8 @@ app.include_router(notifications.push_router, prefix=API_PREFIX)
 app.include_router(message_settings.router, prefix=API_PREFIX)
 app.include_router(bot_lookups.router, prefix=API_PREFIX)
 app.include_router(meeting_purges.router, prefix=API_PREFIX)
+app.include_router(withdrawal.router, prefix=API_PREFIX)
+app.include_router(withdrawal.bot_router, prefix=API_PREFIX)
 
 
 @app.exception_handler(AppError)

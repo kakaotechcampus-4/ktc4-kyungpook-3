@@ -60,6 +60,7 @@ export const paths = {
   forgotPassword: () => '/forgot-password',
   /** 메일 링크가 여는 변경 화면. 토큰은 `#token=` 으로 온다 — BE 가 이 경로로 링크를 만든다 (#356) */
   resetPassword: () => '/reset-password',
+  withdrawal: () => '/account/withdrawal',
   workspaceSelect: () => '/workspaces',
   onboardingStart: () => '/onboarding/start',
   onboardingMember: () => '/onboarding/member',

@@ -30,9 +30,12 @@ BE 호출은 동기 requests 라 asyncio.to_thread 로 불러 게이트웨이를
 from __future__ import annotations
 
 import asyncio
+import functools
 import hashlib
+import hmac
 import json
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import discord
@@ -49,8 +52,8 @@ NOTICE_EVERY_S = 3600.0
 
 # 다시 보내도 같은 답이라 기록을 지운다. 그 밖(NETWORK, 5xx, 401)은 남겨 다음 바퀴에 다시
 RESULT_SETTLED = {"MESSAGE_RESULT_CONFLICT", "MESSAGE_NOT_FOUND", "INVALID_REQUEST"}
-DRAFT_DROPPED = {"DRAFT_STALE", "REMINDER_BUNDLE_NOT_FOUND"}
-JUDGMENT_DROPPED = {"REPLY_JUDGMENT_STALE", "REPLY_JUDGMENT_NOT_FOUND"}
+DRAFT_DROPPED = {"DRAFT_STALE", "REMINDER_BUNDLE_NOT_FOUND", 'PRIVACY_VERSION_CHANGED'}
+JUDGMENT_DROPPED = {"REPLY_JUDGMENT_STALE", "REPLY_JUDGMENT_NOT_FOUND", 'PRIVACY_VERSION_CHANGED'}
 
 _now = time.time
 
@@ -95,9 +98,39 @@ def _result_body(rec: dict) -> dict:
     return {**rec["outcome"], "discord_message_ids": rec["parts_sent"]}
 
 
+def _recover_outcome(rec: dict) -> None:
+    if rec.get('outcome') is None:
+        done = rec['parts_sent'] and len(rec['parts_sent']) == rec.get('parts_total')
+        rec['outcome'] = {'status': 'delivered'} if done else {'status': 'failed', 'failure_reason': 'unknown'}
+
+
 def _is_final(e: BeError, codes: set[str]) -> bool:
     """BE 의 영구 거절인지. 없는 경로의 404 도 INVALID_REQUEST 라서, 그 코드는 400 일 때만 거절로 읽는다."""
     return e.code in codes and (e.code != "INVALID_REQUEST" or e.status == 400)
+
+
+def _claimed_privacy(lock_name):
+    def decorate(function):
+        @functools.wraps(function)
+        async def guarded(self, item, *args, **kwargs):
+            from capture.privacy_cleanup import PrivacyPending, guard_workspace
+            from capture.recorder import try_lock
+            lock = try_lock(self.dir.parents[1] / lock_name)
+            if lock is None:
+                return None
+            try:
+                epoch = int(item.get('identity_epoch') or 0)
+                if item.get('workspace_id'):
+                    guard_workspace(self.dir.parents[1], item['workspace_id'], epoch)
+                scope = getattr(self.be, 'privacy_scope', None)
+                with scope(epoch) if scope else nullcontext():
+                    return await function(self, item, *args, **kwargs)
+            except PrivacyPending:
+                return None
+            finally:
+                lock.release()
+        return guarded
+    return decorate
 
 
 class DmCog(discord.Cog):
@@ -175,16 +208,33 @@ class DmCog(discord.Cog):
 
     async def startup(self) -> None:
         """프로세스에 한 번. 보내다 죽은 기록의 결과를 정한다. 보고는 이어지는 첫 바퀴가 한다."""
-        for path in sorted((self.dir / "sent").glob("*.json")):
-            rec = _read_json(path, None)
-            if rec is None or rec.get("outcome") is not None:
-                continue
-            done = rec["parts_sent"] and len(rec["parts_sent"]) == rec.get("parts_total")
-            rec["outcome"] = {"status": "delivered"} if done else {"status": "failed", "failure_reason": "unknown"}
-            _write_json(path, rec)
+        from capture.recorder import try_lock
+        lock = try_lock(self.dir.parents[1] / '.privacy-dm-writer.json')
+        if lock is None:
+            return
+        try:
+            for path in sorted((self.dir / 'sent').glob('*.json')):
+                rec = _read_json(path, None)
+                if rec is None or rec.get('outcome') is not None:
+                    continue
+                _recover_outcome(rec)
+                rec.pop('discord_user_id', None)
+                _write_json(path, rec)
+        finally:
+            lock.release()
 
     async def run_round(self) -> None:
         """남은 결과 보고 → claim 한 메시지 보내고 보고."""
+        from capture.recorder import try_lock
+        lock = try_lock(self.dir.parents[1] / '.privacy-dm-writer.json')
+        if lock is None:
+            return
+        try:
+            await self._run_round_locked()
+        finally:
+            lock.release()
+
+    async def _run_round_locked(self) -> None:
         for path in sorted((self.dir / "sent").glob("*.json")):
             await self._report(path)
         try:
@@ -194,7 +244,14 @@ class DmCog(discord.Cog):
             return
         self._web_url = data.get("web_url")
         for item in data.get("items") or []:
-            await self._report(*await self._deliver(item))
+            result = await self._deliver(item)
+            if result is not None:
+                await self._report(*result)
+            else:
+                await self._report(self.dir / 'sent' / f"{item['message_id']}.json", {
+                    'message_id': item['message_id'], 'parts_sent': [],
+                    'outcome': {'status': 'failed', 'failure_reason': 'unknown'},
+                })
 
     # ------------------------------------------------------------------ 발송
     async def _call(self, method: str, path: str, body: dict | None = None):
@@ -207,16 +264,27 @@ class DmCog(discord.Cog):
         except OSError as e:
             print(f"[dm] {rec['message_id']} 발송 기록을 쓰지 못했다: {e}", flush=True)
 
-    async def _deliver(self, item: dict) -> tuple[Path, dict]:
+    async def _deliver(self, item: dict) -> tuple[Path, dict] | None:
+        from capture.privacy_cleanup import PrivacyPending, guard_workspace
+        epoch = int(item.get('identity_epoch') or 0)
+        try:
+            if item.get('workspace_id'):
+                guard_workspace(self.dir.parents[1], item['workspace_id'], epoch)
+        except PrivacyPending:
+            return None
         uid = str(item["discord_user_id"])
         parts = split_body(item["body"])
         path = self.dir / "sent" / f"{item['message_id']}.json"
-        rec = {"message_id": item["message_id"], "discord_user_id": uid, "parts_total": len(parts),
+        rec = {"message_id": item["message_id"], 'workspace_id': item.get('workspace_id'),
+               'member_id': item.get('member_id'), 'identity_epoch': int(item.get('identity_epoch') or 0),
+               "parts_total": len(parts),
                "parts_sent": [], "outcome": None}
         try:
             _write_json(path, rec)
             user = self.bot.get_user(int(uid)) or await self.bot.fetch_user(int(uid))
             for i, chunk in enumerate(parts):
+                if item.get('workspace_id'):
+                    guard_workspace(self.dir.parents[1], item['workspace_id'], epoch)
                 sent = await user.send(chunk, nonce=_nonce(item["message_id"], i), enforce_nonce=True)
                 rec["parts_sent"].append(str(sent.id))
                 self._save(path, rec)
@@ -232,8 +300,9 @@ class DmCog(discord.Cog):
     async def _report(self, path: Path, rec: dict | None = None) -> None:
         """rec 을 주지 않으면 파일에서 읽는다. 방금 보낸 것은 파일을 못 썼어도 메모리의 결과로 보고한다."""
         rec = rec or _read_json(path, None)
-        if rec is None or rec.get("outcome") is None:
+        if rec is None:
             return
+        _recover_outcome(rec)
         try:
             await self._call("POST", f"/bot/messages/{rec['message_id']}/result", _result_body(rec))
         except BeError as e:
@@ -249,6 +318,16 @@ class DmCog(discord.Cog):
     async def on_message(self, message) -> None:
         if message.guild is not None or message.author.bot:
             return
+        from capture.recorder import try_lock
+        lock = try_lock(self.dir.parents[1] / '.privacy-notice-writer.json')
+        if lock is None:
+            return
+        try:
+            await self._notice(message)
+        finally:
+            lock.release()
+
+    async def _notice(self, message) -> None:
         uid = str(message.author.id)
         if not self._notice_due(uid):
             return
@@ -262,20 +341,25 @@ class DmCog(discord.Cog):
         """안내를 보낼 차례면 지금 시각을 적고 True. 파일을 못 써도 안내는 보낸다(디스크가 찬 경우)."""
         path = self.dir / "web_notice.json"
         now = _now()
-        recent = {u: at for u, at in _read_json(path, {}).items() if now - at < NOTICE_EVERY_S}
-        if uid in recent:
+        recent = {(u if len(u) == 64 else self._notice_key(u)): at
+                  for u, at in _read_json(path, {}).items() if now - at < NOTICE_EVERY_S}
+        key = self._notice_key(uid)
+        if key in recent:
             return False
         try:
-            _write_json(path, {**recent, uid: now})
+            _write_json(path, {**recent, key: now})
         except OSError as e:
             print(f"[dm] {uid} 안내 시각을 쓰지 못했다: {e}", flush=True)
         return True
+
+    def _notice_key(self, uid: str) -> str:
+        return hmac.new(self.be.service_token.encode(), uid.encode(), hashlib.sha256).hexdigest()
 
     def _forget_notice(self, uid: str) -> None:
         """나가지 못한 안내는 세지 않는다. 안내는 DM 창 글에 돌아가는 유일한 응답이라 다음 글에 다시 보낸다."""
         path = self.dir / "web_notice.json"
         marks = _read_json(path, {})
-        marks.pop(uid, None)
+        marks.pop(self._notice_key(uid), None)
         try:
             _write_json(path, marks)
         except OSError as e:
@@ -295,17 +379,21 @@ class DmCog(discord.Cog):
             print(f"[dm] 초안 묶음을 가져오지 못했다: {e}", flush=True)
             return
         for item in data.get("items") or []:
-            try:
-                body = await asyncio.to_thread(self._drafter, item)
-            except Exception as e:  # noqa: BLE001 - 다시 가져가 다시 부르지 않게 규칙 문구로 끝낸다
-                print(f"[dm] 묶음 {item['bundle_id']} 초안 예외: {type(e).__name__}: {e}", flush=True)
-                body = None
-            try:
-                await self._call("POST", f"/bot/drafts/{item['bundle_id']}",
-                                 {"draft_version": item["draft_version"], "body": body})
-            except BeError as e:
-                if e.code not in DRAFT_DROPPED:
-                    print(f"[dm] 묶음 {item['bundle_id']} 초안을 넣지 못했다: {e}", flush=True)
+            await self._draft_item(item)
+
+    @_claimed_privacy('.privacy-draft-writer.json')
+    async def _draft_item(self, item: dict) -> None:
+        try:
+            body = await asyncio.to_thread(self._drafter, item)
+        except Exception as e:  # noqa: BLE001 - 초안 실패는 규칙 문구로 돌아간다
+            print(f"[dm] 묶음 {item['bundle_id']} 초안 예외: {type(e).__name__}: {e}", flush=True)
+            body = None
+        try:
+            await self._call('POST', f"/bot/drafts/{item['bundle_id']}",
+                             {'draft_version': item['draft_version'], 'body': body})
+        except BeError as e:
+            if e.code not in DRAFT_DROPPED:
+                print(f"[dm] 묶음 {item['bundle_id']} 초안을 넣지 못했다: {e}", flush=True)
 
     # ------------------------------------------------------------------ 답장 판단
     async def reply_round(self) -> None:
@@ -318,13 +406,19 @@ class DmCog(discord.Cog):
                 return
             if item is None:
                 return
-            try:
-                body = await asyncio.to_thread(self._judger, item)
-            except Exception as e:  # noqa: BLE001 - 어떤 실패든 PM 에게 알려야 한다. 종류만 남겨 답장 글이 나가지 않게 한다
-                print(f"[dm] 답장 {item['message_id']} 판단 실패: {type(e).__name__}", flush=True)
-                body = {"attempt": item["attempt"], "failure_reason": type(e).__name__, "model_name": None,
-                        "changes": []}
-            await self._report_judgment(item, body)
+            if not await self._judge_item(item):
+                return
+
+    @_claimed_privacy('.privacy-judgment-writer.json')
+    async def _judge_item(self, item: dict) -> bool:
+        try:
+            body = await asyncio.to_thread(self._judger, item)
+        except Exception as e:  # noqa: BLE001 - 실패 종류만 전달하고 답장 본문은 기록하지 않는다
+            print(f"[dm] 답장 {item['message_id']} 판단 실패: {type(e).__name__}", flush=True)
+            body = {'attempt': item['attempt'], 'failure_reason': type(e).__name__, 'model_name': None,
+                    'changes': []}
+        await self._report_judgment(item, body)
+        return True
 
     async def _report_judgment(self, item: dict, body: dict) -> None:
         """BE 가 본문을 거절하면(400) 같은 판단을 다시 해도 같은 본문이 나온다. 실패로 보고해 PM 에게 바로 알린다."""

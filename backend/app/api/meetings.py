@@ -118,6 +118,8 @@ def create_meeting(
     db: Session = Depends(get_db),
     x_meeting_lineage_version: str | None = Header(None),
 ) -> dict:
+    from app.services import lifecycle
+    lifecycle.workspace(db, payload.workspace_id)
     versioned = x_meeting_lineage_version == "1"
     if payload.source == "discord" and meeting_deletion.enabled() and not versioned:
         raise AppError(ErrorCode.MEETING_CLIENT_UPDATE_REQUIRED)

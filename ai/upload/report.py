@@ -164,6 +164,8 @@ def report_one(recordings_dir: Path, *, client, now: Callable[[], datetime] = ut
         return None
     d, rec, fresh = found
     mid = rec["meeting_id"]
+    if hasattr(client, 'meeting_epochs'):
+        client.meeting_epochs[mid] = int((rec.get('item') or {}).get('identity_epoch') or 0)
     if fresh:
         try:
             speakers = _prepare(recordings_dir, mid)

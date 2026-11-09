@@ -148,13 +148,17 @@ def _candidates(db: Session, thread: MessageThread, replied_at: datetime) -> lis
 
 def claim(db: Session, now: datetime) -> ClaimedReply | None:
     """판단할 답장 한 통을 맡긴다. 대화마다 가장 오래된 행만 본다. 앞 답장이 끝나야 뒤 답장이 그 반영값을 본다."""
+    from app.services import lifecycle
+    lifecycle.worker_gate(db)
     now = messages.utc(now)
     db.flush()
     if not _take_claim_lock(db):
         return None
     pending = db.execute(
         select(ReplyJudgment.message_id, ReplyJudgment.thread_id, ReplyJudgment.claimed_at, ReplyJudgment.queued_at)
-        .where(ReplyJudgment.state == ReplyJudgmentState.PENDING)
+        .join(MessageThread, MessageThread.thread_id == ReplyJudgment.thread_id)
+        .join(Member, Member.member_id == MessageThread.member_id)
+        .where(ReplyJudgment.state == ReplyJudgmentState.PENDING, Member.withdrawn_at.is_(None))
         .order_by(ReplyJudgment.queued_at, ReplyJudgment.message_id)
     ).all()
     seen: set[str] = set()
@@ -257,14 +261,18 @@ def _lines(db: Session, message: ThreadMessage, task_ids: list[str]) -> list[Cla
 def submit(db: Session, message_id: str, body: ReplyJudgmentRequest, now: datetime) -> None:
     """판단 결과를 받는다. 값 변경·승인 요청·변경 줄·상태·알림이 부르는 쪽의 한 트랜잭션에 들어간다.
 
-    잠금 순서는 판단 행 → 태스크(id 순)다. _settle 은 태스크만 잠그고 판단 행은 읽기만 해 고리가 없다.
+    잠금 순서는 공간 → 판단 행 → 태스크(id 순)다. _settle 은 태스크만 잠그고 판단 행은 읽기만 해 고리가 없다.
     """
+    from app.services import lifecycle
+    workspace_id = db.scalar(select(ReplyJudgment.workspace_id).where(ReplyJudgment.message_id == message_id))
+    if workspace_id is not None:
+        lifecycle.workspace(db, workspace_id)
     now = messages.utc(now)
     row = db.get(ReplyJudgment, message_id, with_for_update=True, populate_existing=True)
     if row is None:
         raise AppError(ErrorCode.REPLY_JUDGMENT_NOT_FOUND, details={"message_id": message_id})
     # PM 이 고르면 attempt 는 그대로이고 맡긴 표시만 지워진다. 고르기 전 판단의 재전송을 그것으로 거른다.
-    if body.attempt != row.attempt or row.claimed_at is None:
+    if row.message.thread.member.withdrawn_at is not None or body.attempt != row.attempt or row.claimed_at is None:
         raise AppError(
             ErrorCode.REPLY_JUDGMENT_STALE,
             details={"message_id": message_id, "attempt": row.attempt, "state": row.state},
@@ -913,6 +921,10 @@ def overdue(db: Session, now: datetime) -> list[str]:
 
 def expire(db: Session, message_id: str, now: datetime) -> bool:
     """10분 안에 결과가 없는 판단을 끝낸다. overdue 뒤 PM 이 고르거나 결과가 왔을 수 있어 잠근 뒤 다시 본다. 끝냈으면 True."""
+    from app.services import lifecycle
+    workspace_id = db.scalar(select(ReplyJudgment.workspace_id).where(ReplyJudgment.message_id == message_id))
+    if workspace_id is not None:
+        lifecycle.workspace(db, workspace_id, check_epoch=False)
     now = messages.utc(now)
     row = db.get(ReplyJudgment, message_id, with_for_update=True, populate_existing=True)
     if row.state != ReplyJudgmentState.PENDING or messages.utc(row.queued_at) > now - JUDGE_WINDOW:
