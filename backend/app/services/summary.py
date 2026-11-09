@@ -192,7 +192,8 @@ def summary_input(db: Session, extraction_id: str) -> SummaryInputResponse:
             .order_by(WorkspaceAsrTerm.word)
         )),
         lines=_input_lines(db, meeting.meeting_id),
-        items=_input_items(db, extraction_id),
+        items=(items := _input_items(db, extraction_id)),
+        rejected_items=_input_rejected(db, extraction_id, {item.title for item in items}),
         topics=_input_topics(db, meeting.workspace_id),
         decisions=_input_decisions(db, meeting),
     )
@@ -259,6 +260,34 @@ def _member_names(db: Session, member_ids: set[str | None]) -> dict[str, str]:
     if not ids:
         return {}
     return dict(db.execute(select(Member.member_id, Member.display_name).where(Member.member_id.in_(ids))).all())
+
+
+def _input_rejected(db: Session, extraction_id: str, approved_titles: set[str]) -> list[str]:
+    """그 회의에서 PM 이 반려한 할 일. 요약 문장이 정해진 일로 쓰지 않게 준다. 수정 항목은 Task 가 그대로 있어 반려된
+    변경을 같이 적고, 바꿀 값이 없던 수정은 그 설명을 적는다. 반영된 항목의 제목과 같은 것은 빼서 승인된 일을 막지 않는다."""
+    rejected = item_fate.rejected_items().where(ExtractionItem.extraction_id == extraction_id).subquery()
+    rows = db.execute(
+        select(ExtractionItem, ApprovalRequest.payload)
+        .join(rejected, rejected.c.item_id == ExtractionItem.item_id)
+        .join(ApprovalRequest, ApprovalRequest.approval_id == ExtractionItem.approval_id)
+        .order_by(rejected.c.created_at, rejected.c.item_id)
+    ).all()
+    payloads = [json.loads(payload) for _, payload in rows]
+    names = _member_names(db, {payload.get("assignee_member_id") for payload in payloads})
+    titles: list[str] = []
+    for (item, _), payload in zip(rows, payloads):
+        title = item.task_title
+        if item.action == str(ExtractionAction.UPDATE):
+            changed = [f"{label} {value}" for label, value in (
+                ("담당", names.get(payload.get("assignee_member_id"))), ("마감", payload.get("due_date")),
+                ("상태", payload.get("status")),
+            ) if value] or ([item.doc_text] if item.doc_text else [])
+            if not changed:
+                continue
+            title = f"{title} (반려된 변경: {', '.join(changed)})"
+        if title not in approved_titles and title not in titles:
+            titles.append(title)
+    return titles
 
 
 def _input_topics(db: Session, workspace_id: str) -> list[SummaryInputTopic]:

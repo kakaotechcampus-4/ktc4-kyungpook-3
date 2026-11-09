@@ -67,6 +67,8 @@ class SummaryInputResponse(BaseModel):
     lines: list[SummaryInputLine]
     # 반영된 항목만이고 값은 그 회의 항목이 정한 값에 PM 이 승인하며 고친 값을 덮은 것이다. 수정 항목은 바꾼 값만 있다
     items: list[SummaryInputItem]
+    # 이 회의에서 PM 이 반려한 할 일. 수정 항목은 반려된 변경을 괄호에 적는다. items 의 제목과 겹치는 것은 없다
+    rejected_items: list[str] = []
     topics: list[SummaryInputTopic]
     decisions: list[SummaryInputDecision]
 

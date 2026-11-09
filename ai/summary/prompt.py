@@ -59,6 +59,8 @@ _RULES = """- 담당자를 모르면 "미정".
 - 추출 항목은 PM 이 이 회의 항목을 승인한 값이다. 전사와 항목이 다르면 항목을 따른다.
 - update 항목은 이 회의에서 바꾼 값만 보인다. task_changes 에서 바꾸지 않은 담당과 마감 칸은 비운다.
 - 할 일, 담당, 마감은 추출 항목에 있는 것만 할 일로 쓴다. task_changes 에는 추출 항목의 할 일만 넣고 item 에 그 I 키를 쓴다.
+- schedule 의 할 일은 추출 항목에서만 가져온다.
+- 반려된 할 일은 PM 이 받지 않은 일이다. 반려된 할 일은 정해진 일, 맡은 일, 예정된 일로 쓰지 않는다. overview, key_points, facts, schedule, task_changes 모두 같다. 논의했다는 것만 쓸 수 있다.
 - decisions 는 합의가 끝난 것만 쓴다. 제안과 의견은 open_items 다.
 - 결정은 그 결정이 속한 주제의 decisions 에 둔다. 주제 밖에 두지 않는다.
 - replaces 는 회의에서 이전 결정을 바꾼다고 명확히 말했을 때만 쓴다. 비슷해 보인다고 쓰지 않는다.
@@ -84,6 +86,9 @@ _BODY = """
 
 추출 항목
 {items}
+
+반려된 할 일
+{rejected}
 
 <전사>
 {transcript}
@@ -202,6 +207,7 @@ def build_prompt(summary_input: SummaryInput, limits: SectionLimits) -> tuple[st
         topics="\n".join(topic_lines) or "없음",
         decisions="\n".join(decision_lines) or "없음",
         items="\n".join(item_lines) or "없음",
+        rejected="\n".join(summary_input.rejected_items) or "없음",
         transcript=transcript,
         key_points=limits.key_points,
         discussion=limits.discussion,

@@ -263,6 +263,16 @@ def test_an_update_item_shows_only_what_that_meeting_changed():
     assert "I4 [update] 검색 (바꾼 값 없음)" in prompt
 
 
+@pytest.mark.parametrize("source", ["discord", "chat"])
+def test_the_prompt_lists_rejected_tasks_and_forbids_writing_them_as_decided(source):
+    rejected = ["발표 자료 작성", "검색 기능 개발 (반려된 변경: 담당 윤지민)"]
+    prompt, _ = build_prompt(_input(source=source, rejected_items=rejected), FULL)
+    assert "반려된 할 일\n발표 자료 작성\n검색 기능 개발 (반려된 변경: 담당 윤지민)\n" in prompt
+    assert "반려된 할 일은 정해진 일, 맡은 일, 예정된 일로 쓰지 않는다" in prompt
+    assert "schedule 의 할 일은 추출 항목에서만 가져온다" in prompt
+    assert "반려된 할 일\n없음\n" in build_prompt(_input(source=source), FULL)[0]
+
+
 def test_the_daily_chat_prompt_has_no_discussion_and_shows_wall_clock_times():
     lines = [SummaryLine(1, 0, "민수", "배포 언제 해요"), SummaryLine(2, 26 * 3600 * 1000, "지현", "내일 해요")]
     prompt, _ = build_prompt(_input(source="chat", lines=lines, started_at="2026-11-05T00:00:00Z"), FULL)

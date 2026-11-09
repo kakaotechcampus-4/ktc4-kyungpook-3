@@ -614,6 +614,28 @@ def test_summary_input_values_are_the_ones_approved_for_that_meeting(client, mdb
         ("update", "PM 제목", None, "2026-12-10", "done")]
 
 
+def test_summary_input_lists_the_tasks_rejected_in_that_meeting(client, mdb, mseed):
+    ws, (_, moved, finished) = mseed["ws"], mseed["tasks"]
+    _, [elsewhere] = _handed_off(client, mdb, ws, [{**REVIEW, "task_title": "다른 회의에서 버린 일"}],
+                                 started_at=T0 - timedelta(days=1))
+    _resolve(client, elsewhere, "rejected")
+    extraction_id, cards = _handed_off(client, mdb, ws, [
+        {**REVIEW, "task_title": "버릴 일"},
+        {**REVIEW, "task_title": "받은 일"},
+        {**REVIEW, "task_title": "받은 일"},
+        {"action": "update", "target_task_id": moved.task_id, "due_date": "2026-12-01"},
+        {"action": "update", "target_task_id": finished.task_id, "status": "done"},
+    ])
+    for approval_id, status in zip(cards, ("rejected", "approved", "rejected", "rejected", "approved")):
+        _resolve(client, approval_id, status)
+    mdb.expire_all()
+
+    data = _input(client, mdb.get(Extraction, extraction_id))
+
+    assert sorted(i["title"] for i in data["items"]) == ["받은 일", "할일2"]
+    assert data["rejected_items"] == ["버릴 일", "할일1 (반려된 변경: 마감 2026-12-01)"]
+
+
 def test_summary_input_gives_source_members_and_terms(client, mdb, mseed):
     _, extraction = _meeting(mdb, mseed["ws"], source="chat")
     mseed["carol"].is_deleted = True

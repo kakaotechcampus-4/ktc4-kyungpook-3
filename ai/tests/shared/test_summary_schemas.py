@@ -32,10 +32,11 @@ def test_summary_input_reads_source_members_and_terms_and_defaults_without_them(
         "extraction_id": "e1", "meeting_id": "m1", "workspace_id": "w1", "identity_epoch": 0, "title": None,
         "started_at": "2026-11-05T05:00:00Z", "lines": [], "items": [], "topics": [], "decisions": [],
     }
-    new = SummaryInput.from_dict({**base, "source": "chat", "members": ["민수"], "asr_terms": ["젠킨스"]})
+    new = SummaryInput.from_dict({**base, "source": "chat", "members": ["민수"], "asr_terms": ["젠킨스"],
+                                  "rejected_items": ["버린 일"]})
     old = SummaryInput.from_dict(base)
-    assert (new.source, new.members, new.asr_terms) == ("chat", ["민수"], ["젠킨스"])
-    assert (old.source, old.members, old.asr_terms) == ("", [], [])
+    assert (new.source, new.members, new.asr_terms, new.rejected_items) == ("chat", ["민수"], ["젠킨스"], ["버린 일"])
+    assert (old.source, old.members, old.asr_terms, old.rejected_items) == ("", [], [], [])
 
 
 def test_task_change_carries_an_optional_item_id():

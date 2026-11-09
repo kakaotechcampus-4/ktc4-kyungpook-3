@@ -22,6 +22,7 @@ from app.models import ApprovalRequest, ApprovalStatus, Extraction, ExtractionIt
 
 PENDING = str(ApprovalStatus.PENDING)
 APPROVED = str(ApprovalStatus.APPROVED)
+REJECTED = str(ApprovalStatus.REJECTED)
 
 
 def final_items() -> Select:
@@ -34,6 +35,15 @@ def final_items() -> Select:
             Task.is_deleted.is_(False),
             or_(ApprovalRequest.approval_id.is_(None), ApprovalRequest.status == APPROVED),
         )
+    )
+
+
+def rejected_items() -> Select:
+    """(item_id, extraction_id, created_at). PM 이 반려한 카드에 걸린 항목. 반려된 수정은 task_id 가 남아 카드로만 안다."""
+    return (
+        select(ExtractionItem.item_id, ExtractionItem.extraction_id, ExtractionItem.created_at)
+        .join(ApprovalRequest, ApprovalRequest.approval_id == ExtractionItem.approval_id)
+        .where(ApprovalRequest.status == REJECTED)
     )
 
 
