@@ -136,3 +136,30 @@ def test_run_returns_first_person_summary_without_llm():
 def test_run_without_errors_reports_zero_errors():
     case, preds = _first_person_case()
     assert run("stub", lambda c: preds, cases=[case])["errors"] == 0
+
+
+def test_speaker_set_case_feeds_only_first_person_tally():
+    """speaker 세트 케이스는 1인칭 집계에만 들어가고 P/R·타입·담당자·마감 합계에는 들어가지 않는다."""
+    legacy = _gold([GoldSentence("문서는 제가 정리할게요.", True, "first")], case_id="g/c1")
+    speaker = _gold([
+        GoldSentence("배포는 제가 할게요.", True, "first"),
+        GoldSentence("점심 뭐 먹을까요?", False),
+    ], case_id="speaker_dev/c1")
+    speaker.from_speaker_set = True
+
+    def extract_fn(c: GoldCase) -> list[ExtractedTask]:
+        if c is legacy:
+            return [_pred("문서는 제가 정리할게요.", "first")]
+        return [_pred("배포는 제가 할게요.", "thirdname", "제가"), _pred("점심 뭐 먹을까요?", "first")]
+
+    result = run("stub", extract_fn, cases=[legacy, speaker])
+    # 합계에는 legacy 케이스(tp 1)만 들어간다. speaker 의 tp 1·fp 1 은 더하지 않는다
+    assert result["overall"] == {"tp": 1, "fp": 0, "fn": 0, "tn": 0, "type_correct": 1, "type_total": 1}
+    # 1인칭 집계에는 두 세트 모두 들어간다
+    assert result["first_person"]["total"] == 2
+    assert result["first_person"]["by_type"] == {"first": 1, "thirdname": 1}
+
+
+def test_load_speaker_cases_marks_speaker_set():
+    cases = load_speaker_cases()
+    assert cases and all(c.from_speaker_set for c in cases)

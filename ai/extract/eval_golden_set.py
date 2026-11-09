@@ -8,7 +8,9 @@
 
 --set 은 golden(기본, extract 골든셋) / speaker(judge/golden_set/speaker_dev·speaker_test 를 이 추출기로) / all.
 어느 세트든 "-- 1인칭 (정답 first) --" 에 정답이 first 인 문장이 다른 타입으로 분류된 수를 따로 센다.
-speaker 세트엔 기준일이 없어 SPEAKER_REFERENCE_DATE 로 고정한다(마감은 이 세트에서 재지 않는다).
+speaker 세트는 이 1인칭 집계에만 넣고 P/R·타입·담당자·마감 합계(시나리오별·전체)에는 넣지 않는다.
+speaker 정답엔 담당자 언급·마감이 없고 should_flag 는 legacy is_task 와 뜻이 달라 합치면 수치가 틀린다.
+speaker 세트엔 기준일이 없어 SPEAKER_REFERENCE_DATE 로 고정한다.
 
 채점 방법 (extract/golden_set/README.md 참고):
   각 케이스의 turns 를 extract.text.split_sentences 로 쪼갠 문장 하나하나를 "탐지 대상"으로 보고,
@@ -38,7 +40,7 @@ from shared.schemas import ExtractedTask, Transcript, TranscriptSegment
 CASES_DIR = Path(__file__).resolve().parent / "golden_set"
 _JUDGE_GOLDEN_DIR = Path(__file__).resolve().parent.parent / "judge" / "golden_set"
 SPEAKER_DIRS: tuple[Path, ...] = (_JUDGE_GOLDEN_DIR / "speaker_dev", _JUDGE_GOLDEN_DIR / "speaker_test")
-SPEAKER_REFERENCE_DATE = date(2026, 11, 9)  # speaker 세트엔 날짜가 없다. 마감은 이 세트에서 재지 않는다
+SPEAKER_REFERENCE_DATE = date(2026, 11, 9)  # speaker 세트엔 날짜가 없다. 이 세트는 1인칭 집계에만 쓰고 마감은 재지 않는다
 
 
 @dataclass
@@ -61,6 +63,7 @@ class GoldCase:
     speaker_names: dict[str, str]
     transcript: Transcript
     sentences: list[GoldSentence]  # split_sentences 결과와 1:1, 순서대로 대응
+    from_speaker_set: bool = False  # judge 화자 세트 케이스면 True. 1인칭 집계에만 넣고 P/R·필드 합계에는 안 넣는다
 
 
 def load_case(path: Path) -> GoldCase:
@@ -108,9 +111,10 @@ def load_all_cases() -> list[GoldCase]:
 
 
 def load_speaker_case(path: Path, group: str) -> GoldCase:
-    """judge 화자 세트(speaker_dev/test) 케이스를 legacy 채점용 GoldCase 로 읽는다.
+    """judge 화자 세트(speaker_dev/test) 케이스를 GoldCase 로 읽는다(from_speaker_set=True).
 
-    정답은 should_flag(→is_task)와 assignee_type 뿐이다. 문장 목록은 split_sentences 와 맞추지 않는다
+    정답은 should_flag(→is_task)와 assignee_type 뿐이다. should_flag 는 legacy is_task 와 뜻이 달라
+    run 이 P/R·필드 합계에는 넣지 않고 1인칭 집계에만 쓴다. 문장 목록은 split_sentences 와 맞추지 않는다
     (match_predictions 가 포함관계로 맞춘다).
     """
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -130,6 +134,7 @@ def load_speaker_case(path: Path, group: str) -> GoldCase:
             GoldSentence(text=e["text"], is_task=e["should_flag"], assignee_type=e.get("assignee_type"))
             for e in data["expected"]
         ],
+        from_speaker_set=True,
     )
 
 
@@ -393,9 +398,10 @@ def run(
             errors += 1
             continue
         s = score_case(case, preds)
-        overall = overall + s
         first_person = first_person + tally_first_person(case, preds)
-        by_scenario[case.scenario] = by_scenario.get(case.scenario, ScoreResult()) + s
+        if not case.from_speaker_set:  # speaker 세트는 1인칭 집계에만 넣는다
+            overall = overall + s
+            by_scenario[case.scenario] = by_scenario.get(case.scenario, ScoreResult()) + s
         print(
             f"  {case.case_id:<22}{case.scenario:<18}{_fmt(s.precision):>5}{_fmt(s.recall):>5}"
             f"{_fmt(s.f1):>5}{_fmt(s.type_accuracy):>7}{_fmt(s.assignee_accuracy):>7}{_fmt(s.due_accuracy):>7}"
