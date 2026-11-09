@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import llm
 from llm import FakeLLM, LLMReply, MLAPIClient, NullLLM
 
 
@@ -101,7 +102,7 @@ def _response(content, *, finish="stop", usage=True, reasoning=7):
 def test_one_call_with_the_given_timeout_and_no_sdk_retries():
     sdk = _Sdk(_response('{"overview": "x"}'))
     reply = _client(sdk).generate_json_once("p", timeout_s=300.0, reasoning_effort="low")
-    assert sdk.options == [{"timeout": 300.0, "max_retries": 0}]
+    assert [(o["timeout"].read, o["max_retries"]) for o in sdk.options] == [(llm.READ_IDLE_S, 0)]
     assert len(sdk.creates) == 1 and sdk.creates[0]["reasoning_effort"] == "low"
     assert sdk.creates[0]["response_format"] == {"type": "json_object"}
     assert sdk.creates[0]["stream"] is True and sdk.creates[0]["stream_options"] == {"include_usage": True}
@@ -172,8 +173,9 @@ def test_fake_llm_hands_out_dicts_and_replies_in_order_and_records_the_prompt():
     assert fake.prompts == ["one", "two", "three", "four"]
 
 
-def test_a_stalled_stream_is_closed_at_the_deadline():
-    # 조각이 더 오지 않으면 조각마다 보는 상한은 걸리지 않는다. 타이머가 스트림을 닫아 끝낸다(#624 리뷰)
+def test_the_timer_closes_a_stalled_stream_at_the_deadline():
+    # 조각이 더 오지 않으면 조각마다 보는 상한은 걸리지 않는다. 타이머가 상한에 스트림을 닫는다(#624 리뷰).
+    # 실제 SDK 는 이미 막힌 읽기를 close 로 풀지 못해 조각 사이 대기(READ_IDLE_S)가 끝나야 돌아온다. 그 상한은 아래 테스트
     stalled = _Stalled(_response('{"a": 1}'))
     started = time.monotonic()
     reply = _client(_Sdk(streams=[stalled])).generate_json_once("p", timeout_s=0.3)
@@ -197,5 +199,35 @@ def test_generate_json_retries_share_one_deadline(monkeypatch):
     ticks = iter([0.0, 0.0, 0.0, 400.0])
     monkeypatch.setattr("llm.time.monotonic", lambda: next(ticks, 400.0))
     sdk = _Sdk(error=RuntimeError("429 rate_limit"))
+    assert _client(sdk).generate_json("p") is None
+    assert len(sdk.creates) == 1
+
+
+def test_the_wait_between_chunks_is_capped_apart_from_the_whole_deadline():
+    # 막힌 읽기는 조각 사이 대기가 끝나야 풀린다. 그 대기를 전체 상한(300초)과 같게 두면 상한의 두 배가 걸린다
+    sdk = _Sdk(_response('{"a": 1}'))
+    _client(sdk).generate_json_once("p", timeout_s=300.0)
+    (options,) = sdk.options
+    assert options["max_retries"] == 0
+    assert options["timeout"].read == llm.READ_IDLE_S < 300.0
+
+
+class _StatusError(Exception):
+    def __init__(self, status_code):
+        super().__init__(f"Error code: {status_code}")
+        self.status_code = status_code
+
+
+@pytest.mark.parametrize("status", [500, 502, 504, 408, 429])
+def test_a_retryable_http_status_is_retried_like_the_sdk_did(status, monkeypatch):
+    # SDK 재시도를 껐으니 SDK 가 다시 하던 응답(408·409·429·5xx)은 여기서 다시 한다. 문구가 아니라 상태 코드로 본다
+    monkeypatch.setattr("llm.time.sleep", lambda s: None)
+    sdk = _Sdk(error=_StatusError(status))
+    assert _client(sdk).generate_json("p") is None
+    assert len(sdk.creates) == 3
+
+
+def test_a_client_error_is_not_retried(monkeypatch):
+    sdk = _Sdk(error=_StatusError(400))
     assert _client(sdk).generate_json("p") is None
     assert len(sdk.creates) == 1

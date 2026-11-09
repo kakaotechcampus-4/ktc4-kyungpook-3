@@ -23,8 +23,12 @@ Which = Literal["terra", "luna"]
 ALLOWED_MODELS = ("gpt-5.6-terra", "gpt-5.6-luna")
 CALL_ATTEMPTS = 2  # 판단·초안이 실패한 호출을 그 자리에서 다시 하는 횟수까지 센 시도 수(#624)
 # generate_json 한 번의 전체 시간 상한. 재시도까지 이 안에서 한다. 4분 회의 1단계가 약 20초, 스트리밍은 초당 100토큰 남짓.
-# 판단·초안은 실패하면 CALL_ATTEMPTS 번까지 부르므로 finding 하나의 최악은 이 값의 네 배다(0061)
+# 상한 직전에 받은 조각 뒤로 게이트웨이가 멈추면 READ_IDLE_S 만큼 더 걸린다. 판단·초안은 실패하면 CALL_ATTEMPTS 번까지
+# 부르므로 finding 하나의 최악은 (이 값 + READ_IDLE_S) 의 네 배다(0061)
 GENERATE_TIMEOUT_S = 300.0
+# 조각 사이 대기 상한. 타이머의 close 는 이미 막힌 읽기를 풀지 못해 이 값이 지나야 돌아온다. 실측한 조각 사이 최대
+# 공백은 8.6초(출력 3711 토큰), 첫 조각 전 추론 시간은 1단계가 약 20초라 넉넉히 둔다
+READ_IDLE_S = 60.0
 
 
 @dataclass(frozen=True)
@@ -86,14 +90,18 @@ class FakeLLM:
 
 
 def _transient(e: Exception) -> bool:
-    """다시 해 볼 만한 실패. 속도 제한·과부하와, 스트림을 읽다 끊긴 연결·읽기 시간 초과다.
+    """다시 해 볼 만한 실패. SDK 재시도를 끄므로 SDK 가 다시 하던 것(연결 오류, 408·409·429·5xx)을 여기서 본다.
 
-    스트리밍이면 SDK 는 헤더를 받을 때까지만 다시 하므로 본문을 읽다 끊긴 것은 여기서 다시 한다.
+    스트리밍이면 SDK 는 헤더를 받을 때까지만 다시 하므로 본문을 읽다 끊긴 연결도 여기서 다시 한다.
     """
-    msg = str(e)
     names = {c.__name__ for c in type(e).__mro__}
-    return (bool(names & {"APIConnectionError", "APITimeoutError"})
-            or "429" in msg or "rate_limit" in msg.lower() or "503" in msg or "overloaded" in msg.lower())
+    if names & {"APIConnectionError", "APITimeoutError"}:
+        return True
+    status = getattr(e, "status_code", None)
+    if isinstance(status, int):
+        return status in (408, 409, 429) or status >= 500
+    msg = str(e)
+    return "429" in msg or "rate_limit" in msg.lower() or "503" in msg or "overloaded" in msg.lower()
 
 
 def _extract_json(text: str) -> dict[str, Any] | None:
@@ -131,12 +139,16 @@ class MLAPIClient:
     def _stream(self, prompt: str, *, reasoning_effort: str, timeout_s: float) -> LLMReply:
         """스트리밍으로 받은 응답 하나. 게이트웨이는 스트리밍이 아닌 응답을 2000 토큰(추론 포함)에서 자른다(0061).
 
-        SDK 의 timeout 은 조각 사이 대기에만 걸린다. 게이트웨이가 멈추거나 keepalive 만 보내면 끝나지 않으므로,
-        시작부터 timeout_s 가 지나면 타이머가 스트림을 닫고 TimeoutError 를 낸다. SDK 재시도는 쓰지 않는다.
+        SDK 의 timeout 은 조각 사이 대기에만 걸린다. 게이트웨이가 keepalive 만 보내면 끝나지 않으므로, 시작부터
+        timeout_s 가 지나면 타이머가 스트림을 닫고 TimeoutError 를 낸다. 이미 막힌 읽기는 close 로 풀리지 않아
+        조각 사이 대기(READ_IDLE_S)가 끝나야 돌아온다. 그래서 상한 뒤 최대 READ_IDLE_S 가 더 걸린다. SDK 재시도는 끈다.
         """
+        import httpx  # openai 가 쓰는 HTTP 클라이언트. 지연 import 는 openai 와 같은 이유
+
         started = time.monotonic()
         deadline = started + timeout_s
-        stream = self._client.with_options(timeout=timeout_s, max_retries=0).chat.completions.create(
+        timeout = httpx.Timeout(timeout_s, read=min(timeout_s, READ_IDLE_S))
+        stream = self._client.with_options(timeout=timeout, max_retries=0).chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
             reasoning_effort=reasoning_effort,
