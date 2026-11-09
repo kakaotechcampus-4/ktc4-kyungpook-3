@@ -16,6 +16,7 @@ import hashlib
 import logging
 import secrets
 import unicodedata
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
@@ -29,7 +30,6 @@ from app.models import (
     Extraction,
     ExtractionItem,
     Meeting,
-    MeetingSource,
     MeetingStatus,
     Member,
     Source,
@@ -60,8 +60,8 @@ logger = logging.getLogger(__name__)
 
 SUMMARY_MAX_ATTEMPTS = 2
 SUMMARY_LEASE = timedelta(minutes=15)
-# 표시한 지 이만큼 지나면 화면에 요약 중이라 하지 않는다. 스위치가 꺼졌거나 워커가 멈추면 끝없이 요약 중으로 보이기 때문이다.
-# 일감은 그대로 남아 나중에 집히면 요약이 나타난다
+# 표시나 마지막 승인 처리 뒤 이만큼 지나면 화면에 요약 중이라 하지 않는다. 스위치가 꺼졌거나 워커가 멈추면 끝없이 요약 중으로
+# 보이기 때문이다. 일감은 그대로 남아 나중에 집히면 요약이 나타난다
 SUMMARY_PENDING_WINDOW = timedelta(hours=1)
 JOB_TOPIC_LIMIT = 100
 JOB_DECISION_LIMIT = 50
@@ -306,8 +306,9 @@ def request_summaries(
         meeting_deletion.assert_live(meeting)
         extraction = extractions.get(meeting.meeting_id)
         meeting_chars = int(chars.get(meeting.meeting_id) or 0)
-        state = _request_state(meeting, extraction, meeting_chars, force=force, now=now)
-        if state == "requested" and not dry_run:
+        state = _request_state(db, meeting, extraction, meeting_chars, force=force, now=now)
+        if (state in ("requested", "awaiting_approval") and not dry_run
+                and (force or extraction.summary_requested_at is None)):
             extraction.summary_requested_at = now
             extraction.summary_attempts = 0
             extraction.summary_claimed_at = None
@@ -325,10 +326,9 @@ def request_summaries(
 
 
 def _request_state(
-    meeting: Meeting, extraction: Extraction | None, chars: int, *, force: bool, now: datetime
+    db: Session, meeting: Meeting, extraction: Extraction | None, chars: int, *, force: bool, now: datetime
 ) -> SummaryRequestState:
-    if meeting.source == MeetingSource.CHAT:
-        return "not_summarized_source"
+    """awaiting_approval 은 표시했거나 지금 표시하지만 승인이 끝나야 도는 회의, no_approved_items 는 표시하지 않는 채팅 회의다."""
     if meeting.status != MeetingStatus.DONE or extraction is None:
         return "not_done"
     if not chars:
@@ -336,11 +336,15 @@ def _request_state(
     leased = extraction.summary_claimed_at is not None and utc(extraction.summary_claimed_at) > utc(now) - SUMMARY_LEASE
     if extraction.summary_requested_at is not None and leased:
         return "queued"     # 돌고 있는 회의는 force 로도 덮지 않는다. 덮으면 같은 회의에 호출이 두 번 나간다
+    readiness = item_fate.readiness(db, extraction, meeting.source)
+    if not readiness.waiting_cards and not readiness.ready:
+        return "no_approved_items"
+    waits = "awaiting_approval" if readiness.waiting_cards else None
     if force:
-        return "requested"
+        return waits or "requested"
     if extraction.summary_requested_at is not None:
-        return "queued" if _queue_alive(extraction, now) else "gave_up"
-    return "done" if load_document(extraction) is not None else "requested"
+        return (waits or "queued") if _queue_alive(extraction, now) else "gave_up"
+    return "done" if load_document(extraction) is not None else waits or "requested"
 
 
 def _queue_alive(extraction: Extraction, now: datetime) -> bool:
@@ -364,13 +368,37 @@ def load_document(extraction: Extraction | None) -> dict | None:
     return document if isinstance(document, dict) else None
 
 
-def summary_status(extraction: Extraction | None, *, now: datetime | None = None) -> Literal["ready", "pending", "none"]:
-    if load_document(extraction) is not None:
-        return "ready"
-    now = now or datetime.now(timezone.utc)
+SummaryStatus = Literal["ready", "pending", "awaiting_approval", "none"]
+
+
+@dataclass(frozen=True)
+class SummaryState:
+    status: SummaryStatus
+    waiting_cards: int = 0
+
+
+_NO_EXTRACTION = item_fate.Readiness(ready=False, waiting_cards=0, last_resolved_at=None)
+
+
+def summary_state(
+    db: Session, meeting: Meeting, extraction: Extraction | None, *, now: datetime | None = None
+) -> SummaryState:
+    readiness = _NO_EXTRACTION if extraction is None else item_fate.readiness(db, extraction, meeting.source)
+    return _state(extraction, load_document(extraction) is not None, readiness, now or datetime.now(timezone.utc))
+
+
+def _state(extraction: Extraction | None, has_doc: bool, r: item_fate.Readiness, now: datetime) -> SummaryState:
+    """순수 함수. 승인 대기는 시간 제한 없이 기다리고, 승인된 항목이 없는 채팅 회의는 요약하지 않는다."""
+    if has_doc:
+        return SummaryState("ready")
     if extraction is None or not _queue_alive(extraction, now):
-        return "none"
-    return "pending" if utc(extraction.summary_requested_at) > utc(now) - SUMMARY_PENDING_WINDOW else "none"
+        return SummaryState("none")
+    if r.waiting_cards:
+        return SummaryState("awaiting_approval", r.waiting_cards)
+    if not r.ready:
+        return SummaryState("none")
+    since = max(utc(t) for t in (extraction.summary_requested_at, r.last_resolved_at) if t is not None)
+    return SummaryState("pending" if since > utc(now) - SUMMARY_PENDING_WINDOW else "none")
 
 
 def normalize_topic_name(name: str) -> str:

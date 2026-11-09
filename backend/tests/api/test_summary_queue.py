@@ -650,14 +650,23 @@ def test_summary_request_reports_each_state(client, mdb, mseed):
     done, done_row = _meeting(mdb, ws, requested=False)
     done_row.summary = '{"overview": "핵심"}'
     mdb.commit()
+    waiting_id, _ = _handed_off(client, mdb, ws, [REVIEW])
+    unmarked_id, _ = _handed_off(client, mdb, ws, [REVIEW])
+    mdb.get(Extraction, unmarked_id).summary_requested_at = None
+    mdb.commit()
+    waiting, unmarked = (mdb.get(Extraction, e).meeting for e in (waiting_id, unmarked_id))
 
     rows = _request(client, ws, include_all=True, dry_run=False)
 
-    assert {m: rows[m.meeting_id]["state"] for m in (chat, silent, processing, queued, leased, gave_up, done)} == {
-        chat: "not_summarized_source", silent: "no_sources", processing: "not_done", queued: "queued",
-        leased: "queued", gave_up: "gave_up", done: "done",
+    assert {m: rows[m.meeting_id]["state"]
+            for m in (chat, silent, processing, queued, leased, gave_up, done, waiting, unmarked)} == {
+        chat: "no_approved_items", silent: "no_sources", processing: "not_done", queued: "queued",
+        leased: "queued", gave_up: "gave_up", done: "done", waiting: "awaiting_approval", unmarked: "awaiting_approval",
     }
     assert rows[processing.meeting_id]["extraction_id"] is None
+    mdb.expire_all()
+    assert mdb.get(Extraction, unmarked_id).summary_requested_at is not None
+    assert mdb.get(Extraction, chat.extractions[0].extraction_id).summary_requested_at is None
 
 
 def test_force_requeues_given_up_and_done_and_keeps_old_summary(client, mdb, mseed):

@@ -4,7 +4,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 SummaryRequestState = Literal[
-    "requested", "done", "queued", "gave_up", "no_sources", "not_summarized_source", "not_done"
+    "requested", "done", "queued", "gave_up", "no_sources", "awaiting_approval", "no_approved_items", "not_done"
 ]
 
 

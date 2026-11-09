@@ -796,14 +796,77 @@ def test_minutes_none_once_attempts_ran_out(client, mdb, mseed):
     assert _status(client, meeting)["summary_status"] == "none"
 
 
-def test_minutes_none_for_old_meeting_chat_and_no_extraction(client, mdb, mseed):
+def test_minutes_none_for_old_meeting_and_no_extraction(client, mdb, mseed):
     old = _meeting(mdb, mseed["ws"])
     _extraction(mdb, old)
-    chat = _meeting(mdb, mseed["ws"], source="chat")
-    _extraction(mdb, chat)
     bare = _meeting(mdb, mseed["ws"])
 
-    assert [_status(client, m)["summary_status"] for m in (old, chat, bare)] == ["none", "none", "none"]
+    assert [_status(client, m)["summary_status"] for m in (old, bare)] == ["none", "none"]
+
+
+REVIEW = {"task_title": "검토 태스크", "task_confidence": 0.6, "due_confidence": 0.0}
+
+
+def _cards(db, extraction_id):
+    db.expire_all()
+    return list(dict.fromkeys(db.scalars(
+        select(ExtractionItem.approval_id)
+        .where(ExtractionItem.extraction_id == extraction_id, ExtractionItem.approval_id.is_not(None))
+        .order_by(ExtractionItem.created_at)
+    )))
+
+
+def test_minutes_awaiting_approval_gives_the_count_to_the_pm_only(client, mdb, mseed):
+    first = _meeting(mdb, mseed["ws"], status="processing")
+    [card] = _cards(mdb, _extract(client, first, [REVIEW]))
+    meeting = _meeting(mdb, mseed["ws"], status="processing")
+    merge = {"action": "merge", "target_approval_id": card, "task_title": "검토 태스크", "category": "due"}
+    extraction_id = _extract(client, meeting, [{**merge, "due_date": "2026-12-03"}, {**merge, "due_date": "2026-12-04"},
+                                               {**REVIEW, "task_title": "다른 일"}])
+    assert len(_cards(mdb, extraction_id)) == 2
+    member = TestClient(app, base_url="https://testserver")
+    member.cookies.set("session_token", "alice-token")
+
+    as_pm, as_member = _status(client, meeting), _status(member, meeting)
+
+    assert (as_pm["summary_status"], as_pm["summary_waiting_count"]) == ("awaiting_approval", 2)
+    assert (as_member["summary_status"], as_member["summary_waiting_count"]) == ("awaiting_approval", None)
+
+
+def test_minutes_waits_with_no_time_limit(client, mdb, mseed):
+    meeting = _meeting(mdb, mseed["ws"], status="processing")
+    extraction_id = _extract(client, meeting, [REVIEW])
+    mdb.get(Extraction, extraction_id).summary_requested_at = T0 - timedelta(days=30)
+    mdb.commit()
+
+    assert _status(client, meeting)["summary_status"] == "awaiting_approval"
+
+
+def test_minutes_pending_window_starts_at_the_last_resolve(client, mdb, mseed):
+    meeting = _meeting(mdb, mseed["ws"], status="processing")
+    extraction_id = _extract(client, meeting, [REVIEW])
+    mdb.get(Extraction, extraction_id).summary_requested_at = datetime.now(timezone.utc) - timedelta(days=2)
+    mdb.commit()
+
+    _resolve(client, _cards(mdb, extraction_id)[0], "approved")
+
+    data = _status(client, meeting)
+    assert (data["summary_status"], data["summary_waiting_count"]) == ("pending", None)
+
+
+def test_minutes_chat_is_none_until_an_item_is_approved(client, mdb, mseed):
+    chat = _meeting(mdb, mseed["ws"], source="chat", status="processing")
+    extraction_id = _extract(client, chat, [REVIEW])
+    [card] = _cards(mdb, extraction_id)
+    assert _status(client, chat)["summary_status"] == "awaiting_approval"
+    rejected = _meeting(mdb, mseed["ws"], source="chat", status="processing")
+    _resolve(client, _cards(mdb, _extract(client, rejected, [REVIEW]))[0], "rejected")
+    quiet = _meeting(mdb, mseed["ws"], source="chat", status="processing")
+    _extract(client, quiet, [])
+
+    _resolve(client, card, "approved")
+
+    assert [_status(client, m)["summary_status"] for m in (chat, rejected, quiet)] == ["pending", "none", "none"]
 
 
 def test_minutes_none_for_broken_document(client, mdb, mseed):
