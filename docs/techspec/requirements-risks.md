@@ -33,12 +33,14 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 
 | 관문 | 막는 것 | 실패 때 | 근거 |
 |---|---|---|---|
-| ① 근거 검증 (Jev) | 근거 원문에 할 일·마감이 명시되지 않은 항목(조건부·질문·제안·근사 마감) | Jev 실패·키 없음 → inferred → auto 안 됨 | [근거 검증](../ai-logic/evidence-check.md), 결정 [0031](../../ai/docs/basis_for_decision/ai/2026-11-02-0031-evidence-status-by-source-check.md) |
-| ② 전사 오인식 검사 | 근거는 충실하지만 전사가 틀려 제목이 틀린 항목("진도 정리" → "짐도 정리") | 검사 실패 → `asr_check_failed` 로 막음 | [전사 오인식 검사](../ai-logic/asr-check.md), 결정 [0051](../../ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md) |
+| ① 근거 검증 (Jev) | 근거 원문에 할 일·마감이 명시되지 않은 항목(조건부·질문·제안·근사 마감) | Jev 실패·키 없음 → inferred → auto 안 됨 | [근거 검증](../design/ai/evidence-check.md), 결정 [0031](../../ai/docs/basis_for_decision/ai/2026-11-02-0031-evidence-status-by-source-check.md) |
+| ② 전사 오인식 검사 | 근거는 충실하지만 전사가 틀려 제목이 틀린 항목("진도 정리" → "짐도 정리") | 검사 실패 → `asr_check_failed` 로 막음 | [전사 오인식 검사](../design/ai/asr-check.md), 결정 [0051](../../ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md) |
 | ③ 자동 생성 스위치 `AUTO_CREATE_ENABLED` | 운영 초기 검증 기간의 자동 생성 전체 | 모르는 값(오타)은 꺼짐으로 봄 | BE `app/api/extractions.py` `auto_create_enabled`, #526 |
 
 - 스위치를 끈 동안에도 검증은 돌고 "켰으면 auto 였을 항목"을 로그로 남겨 PM 결과와 맞춰 본다.
 - 운영 `.env` 의 `AUTO_CREATE_ENABLED` 실제 값 **[확인 필요]** (예시 파일 기본값은 `true`, 평가 기록은 처음 운영을 `false` 로 권고).
+
+자세히: [담당자 매칭과 게이트](../design/backend/gate-matching.md)
 
 ## 그 밖의 예외 처리
 
@@ -52,6 +54,8 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 | 채팅 회의 | auto 를 review 로 낮춤(전사를 거치지 않고 맥락이 약함) |
 | 잘못된 항목 | update 대상 없음·제목 빈 항목은 그 항목만 건너뜀 |
 
+자세히: [승인과 충돌](../design/backend/approval-conflict.md)
+
 ## 장애 대응
 
 | 장애 | 대응 | 근거 |
@@ -63,6 +67,8 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 | LLM 1단계 응답 깨짐 | 그 자리에서 1번 더 부름(#580) | [결정 기록](../../ai/docs/basis_for_decision/ai/2026-11-09-extract-first-stage-retry.md) |
 | 임베딩 실패 | 입력 오류 task 만 건너뜀, 그 밖은 지수 백오프(최대 5분). 임베딩 없는 task 가 있으면 auto 를 막음 | BE README |
 | 배포 중 녹음 | 녹음 중이면 봇 재시작 건너뜀, 워커는 하던 회의를 마치고 종료 | [deploy/README.md](../../deploy/README.md) |
+
+자세히: [Notion 동기화](../design/backend/notion-sync.md), [리마인드 스케줄러와 백그라운드 작업](../design/backend/reminder-scheduler.md)
 
 ## 보안
 
@@ -77,6 +83,8 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 | AI 비밀값 | `.env` 는 에이전트가 읽지 않는 규칙, 평가 원문은 레포 밖 |
 
 상세: [backend README 세션 토큰·로그인 제한](../../backend/README.md#로그인-제한).
+
+자세히: [보안](../design/backend/security.md)
 
 ## 알려진 한계 (프로젝트 상세 §13 요약)
 

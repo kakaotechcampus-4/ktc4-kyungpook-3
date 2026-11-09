@@ -16,7 +16,7 @@ flowchart LR
   P --> M[회의록·추출된 일]
 ```
 
-처리 흐름의 기술 설명은 [아키텍처](../techspec/architecture.md)와 [판단 파이프라인](../ai-logic/judge-pipeline.md)에 있어요.
+처리 흐름의 기술 설명은 [아키텍처](../techspec/architecture.md)와 [판단 파이프라인](../design/ai/judge-pipeline.md)에 있어요.
 
 ## 1. Discord 음성 채널에서 녹음하기
 

@@ -43,13 +43,28 @@ nav:
       - 테스트 전략: techspec/test-strategy.md
       - 추가 지표: techspec/metrics.md
       - 인터페이스 명세: techspec/interface.md
-  - AI 판단 심화:
-      - 개요: ai-logic/index.md
-      - 판단 파이프라인: ai-logic/judge-pipeline.md
-      - 근거 검증 (Jev): ai-logic/evidence-check.md
-      - 전사 오인식 검사: ai-logic/asr-check.md
-      - 답장 판단: ai-logic/reply-judgment.md
-      - 전사 (STT): ai-logic/stt.md
+  - 설계 심화:
+      - 개요: design/index.md
+      - AI:
+          - 개요: design/ai/index.md
+          - 판단 파이프라인: design/ai/judge-pipeline.md
+          - 근거 검증 (Jev): design/ai/evidence-check.md
+          - 전사 오인식 검사: design/ai/asr-check.md
+          - 답장 판단: design/ai/reply-judgment.md
+          - 전사 (STT): design/ai/stt.md
+      - Backend:
+          - 개요: design/backend/index.md
+          - 매칭과 게이트: design/backend/gate-matching.md
+          - 승인과 충돌: design/backend/approval-conflict.md
+          - Notion 동기화: design/backend/notion-sync.md
+          - 재촉 스케줄러: design/backend/reminder-scheduler.md
+          - 보안: design/backend/security.md
+      - Frontend:
+          - 개요: design/frontend/index.md
+          - 계약 먼저, MSW 먼저: design/frontend/contract-first-msw.md
+          - AI 결과 보여 주기: design/frontend/ai-result-ui.md
+          - 실시간 메시지: design/frontend/realtime-messages.md
+          - 접근성과 성능: design/frontend/a11y-performance.md
   - 협업 문서:
       - 개요: collab/index.md
       - 그라운드룰: collab/ground-rules.md

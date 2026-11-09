@@ -1,6 +1,6 @@
 # 리마인드 답장 판단
 
-마감이 다가온 태스크에 PM 이 승인한 재촉 DM 이 나가면, 팀원이 디스코드나 웹으로 답장한다. 이 답장을 읽어 "어느 태스크의 무엇이 바뀌었나"를 줄로 나누고, 확실한 상태 변경만 자동 반영한다. 코드는 [`ai/judge/reply.py`](../../ai/judge/reply.py), BE 쪽은 `backend/app/services/replies.py`, 결정은 [0043](../../ai/docs/basis_for_decision/ai/2026-11-04-0043-reminder-reply-judgment.md)(#331, PR #345).
+마감이 다가온 태스크에 PM 이 승인한 재촉 DM 이 나가면, 팀원이 디스코드나 웹으로 답장한다. 이 답장을 읽어 "어느 태스크의 무엇이 바뀌었나"를 줄로 나누고, 확실한 상태 변경만 자동 반영한다. 코드는 [`ai/judge/reply.py`](../../../ai/judge/reply.py), BE 쪽은 `backend/app/services/replies.py`, 결정은 [0043](../../../ai/docs/basis_for_decision/ai/2026-11-04-0043-reminder-reply-judgment.md)(#331, PR #345).
 
 ## 입력
 
@@ -57,7 +57,7 @@ AI 는 무엇을 반영할지 정하지 않는다. **자동 반영 조건은 BE 
 | `judge_seq` 로 이번 답장 finding 만 | 뒤에서 `evidence_at_ms` 로 거르기 | 앞 카드에 합치는 규칙 때문에 이번 변경까지 버릴 수 있다 |
 | 게이트는 BE | AI 가 auto 를 정해서 보냄 | BE 가 지금 값 확인을 어차피 해야 해 정책이 두 곳에 나뉜다 |
 | 1단계 프롬프트는 안 고치고 보충 판단 | 1단계 프롬프트 수정 | 1단계 프롬프트는 회의 골든셋에 닿는다 |
-| 같은 변경이 대기 카드에 있으면 그 카드에 잇기(#467) | 매번 새 카드 | 카드와 알림이 겹치고, 거절한 변경이 다른 카드로 들어갈 수 있었다([reply-duplicate-card](../../ai/docs/basis_for_decision/ai/2026-11-06-reply-duplicate-card.md)) |
+| 같은 변경이 대기 카드에 있으면 그 카드에 잇기(#467) | 매번 새 카드 | 카드와 알림이 겹치고, 거절한 변경이 다른 카드로 들어갈 수 있었다([reply-duplicate-card](../../../ai/docs/basis_for_decision/ai/2026-11-06-reply-duplicate-card.md)) |
 
 ### 판단 창 (#552, 2026-11-08)
 
@@ -68,12 +68,12 @@ AI 는 무엇을 반영할지 정하지 않는다. **자동 반영 조건은 BE 
 | 숫자 attempt 상한 N | 버림. PM 이 고른 재판단이 앞 차례 횟수를 이어받고, 차례별로 세려면 컬럼·마이그레이션이 든다. N=3 이면 9분이라 얻는 것도 거의 없다 |
 | **claim 이 판단 창을 직접 봄 (채택)** | 창이 지난 행은 가져가는 순간 닫고 같은 대화의 다음 답장으로 넘어간다. API·DB 변경 없음 |
 
-판단이 10분 안에 끝나지 않으면 PM 에게 한 번 알리고 답장을 응답으로 친다. 기록: [`reply-judgment-attempt-cap`](../../backend/docs/plan/m6/basis-for-decision/2026-11-08-reply-judgment-attempt-cap.md).
+판단이 10분 안에 끝나지 않으면 PM 에게 한 번 알리고 답장을 응답으로 친다. 기록: [`reply-judgment-attempt-cap`](../../../backend/docs/plan/m6/basis-for-decision/2026-11-08-reply-judgment-attempt-cap.md).
 
 ## 어떻게 평가했나
 
-- 데이터: 합성 답장 사례 30건([`judge/golden_set_reply/cases.json`](../../ai/judge/golden_set_reply/cases.json)). 코드를 고치기 전에 만들어 둔 사례다.
-- 방법: [`judge/eval_reply.py`](../../ai/judge/eval_reply.py) 가 운영 입구 `judge_reply` 를 그대로 돌려 변경 줄을 정답과 견준다. 자동 반영의 나머지 조건(지금 값, 담당자)은 BE 몫이라 재지 않는다.
+- 데이터: 합성 답장 사례 30건([`judge/golden_set_reply/cases.json`](../../../ai/judge/golden_set_reply/cases.json)). 코드를 고치기 전에 만들어 둔 사례다.
+- 방법: [`judge/eval_reply.py`](../../../ai/judge/eval_reply.py) 가 운영 입구 `judge_reply` 를 그대로 돌려 변경 줄을 정답과 견준다. 자동 반영의 나머지 조건(지금 값, 담당자)은 BE 몫이라 재지 않는다.
 
 | 지표 | 정의 | 보충 판단 전 3회 | 보충 판단 후 3회 | 최종 코드 2회 (2026-11-04) |
 |---|---|---|---|---|

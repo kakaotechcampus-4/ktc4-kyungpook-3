@@ -15,7 +15,7 @@
 | 사용자 가이드 | 서비스를 처음 써 보는 PM·팀원·심사위원 | [시작하기](user/getting-started.md) |
 | 개발자 가이드 | 코드를 실행·테스트·배포하려는 개발자 | [로컬 실행](dev/local-setup.md) |
 | 테크스펙 | 설계·에이전트 구조·안정성·품질 평가가 궁금한 분 | [테크스펙 요약](techspec/index.md) |
-| AI 판단 심화 | AI 판단을 왜 이렇게 만들었고 어떻게 평가했는지 | [개요](ai-logic/index.md) |
+| 설계 심화 | AI·BE·FE를 왜 이렇게 만들었고 어떻게 검증했는지 | [설계 심화](design/index.md) |
 | 협업 문서 | 팀의 그라운드룰·브랜치 전략·컨벤션·코드 리뷰 | [협업 개요](collab/index.md) |
 | API 문서 | 엔드포인트·스키마 | [API 문서](api/index.md) |
 

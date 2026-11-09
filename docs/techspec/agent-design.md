@@ -1,6 +1,6 @@
 # 에이전트 설계
 
-회의 전사록 하나를 승인용 항목(`/extractions` item)으로 바꾸는 판단 파이프라인(judge)의 단계, 단계별 모델·도구·입출력·상태·예외, 그리고 BE 게이트를 정리한다. 단계별 설계 이유는 [판단 파이프라인](../ai-logic/judge-pipeline.md)에 있다.
+회의 전사록 하나를 승인용 항목(`/extractions` item)으로 바꾸는 판단 파이프라인(judge)의 단계, 단계별 모델·도구·입출력·상태·예외, 그리고 BE 게이트를 정리한다. 단계별 설계 이유는 [판단 파이프라인](../design/ai/judge-pipeline.md)에 있다.
 
 ## 파이프라인 한눈에
 
@@ -84,17 +84,17 @@ auto 로 만든 태스크도 PM 이 되돌릴 수 있다(태스크를 소프트 
 
 | 선택 | 이유 | 근거 |
 |---|---|---|
-| 만든 모델이 스스로 채점하지 않게 Jev 분리 | 값을 만든 LLM 의 자기 표시는 거의 다 certain. 다른 모델에 "근거 원문에 명시됐나"를 다시 묻고 yes 확률 0.8 이상만 certain | 결정 [0031](../../ai/docs/basis_for_decision/ai/2026-11-02-0031-evidence-status-by-source-check.md), [근거 검증](../ai-logic/evidence-check.md) |
+| 만든 모델이 스스로 채점하지 않게 Jev 분리 | 값을 만든 LLM 의 자기 표시는 거의 다 certain. 다른 모델에 "근거 원문에 명시됐나"를 다시 묻고 yes 확률 0.8 이상만 certain | 결정 [0031](../../ai/docs/basis_for_decision/ai/2026-11-02-0031-evidence-status-by-source-check.md), [근거 검증](../design/ai/evidence-check.md) |
 | 기존 task 변경 판단을 분리(②③) | "금요일까지로 미루죠" 같은 변경을 새 할 일과 구분. 임베딩으로 후보를 좁히고 Terra 가 현재 값과 비교 | 결정 [0010](../../ai/docs/basis_for_decision/ai/2026-09-22-0010-embedding-similarity-threshold.md)(threshold 0.4 = 명확한 불일치 최고 0.33 과 명확한 매치 최저 0.42 사이), [0011](../../ai/docs/basis_for_decision/ai/2026-09-23-0011-final-judge-no-rules-fallback-and-candidate-index.md) |
 | 숫자 점수 대신 조건 게이트 | 탈락 사유를 PM 에게 보일 수 있고 감사·재현 가능 | BE #232 |
-| 근거 검증과 오인식 검사를 같은 Jev 호출로 | 호출 수가 늘지 않음 | 결정 [0051](../../ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md), [전사 오인식 검사](../ai-logic/asr-check.md) |
+| 근거 검증과 오인식 검사를 같은 Jev 호출로 | 호출 수가 늘지 않음 | 결정 [0051](../../ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md), [전사 오인식 검사](../design/ai/asr-check.md) |
 | 수정 항목은 항상 PM 확인 | 유사도·판단이 틀리면 기존 데이터를 망가뜨림. 승인 때 409 충돌 검사 | [요구사항·리스크](requirements-risks.md) |
 
 ## 같은 구조를 쓰는 다른 에이전트
 
 | 에이전트 | 흐름 | 자동 반영 조건 | 링크 |
 |---|---|---|---|
-| 리마인드 답장 판단 | 팀원 DM 답장 → 회의 파이프라인에 넣어 상태·마감·담당 변경 판단 → Jev 상태 검증 | 상태 변경이 certain, 본인, 판단이 본 값이 지금도 그대로일 때만 BE 가 반영. 나머지는 PM 확인 카드 | `ai/judge/reply.py`, 결정 [0043](../../ai/docs/basis_for_decision/ai/2026-11-04-0043-reminder-reply-judgment.md), [답장 판단](../ai-logic/reply-judgment.md) |
+| 리마인드 답장 판단 | 팀원 DM 답장 → 회의 파이프라인에 넣어 상태·마감·담당 변경 판단 → Jev 상태 검증 | 상태 변경이 certain, 본인, 판단이 본 값이 지금도 그대로일 때만 BE 가 반영. 나머지는 PM 확인 카드 | `ai/judge/reply.py`, 결정 [0043](../../ai/docs/basis_for_decision/ai/2026-11-04-0043-reminder-reply-judgment.md), [답장 판단](../design/ai/reply-judgment.md) |
 | 리마인드 문구 초안 | BE 가 묶음을 내주면 Luna 가 DM 가운데 문구 작성 → PM 승인 뒤 발송 | 자동 발송 없음(설정으로 묶음 자동 승인 가능) | `ai/draft/reminder_draft.py` |
 | 회의 요약 | 인계 뒤 BE 요약 대기열 → Luna 요약 → BE 저장 | — | BE 계약 [회의 요약](../../backend/docs/contracts/backend-ai-contract.md#회의-요약) |
 

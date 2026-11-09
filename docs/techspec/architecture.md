@@ -117,6 +117,8 @@ sequenceDiagram
 | AI | Python 3.12, py-cord(voice, 커밋 고정, capture 에만), Elice MLAPI(OpenAI 호환), faster-whisper(로컬 예비), kiwipiepy 0.24.1(형태소), pytest |
 | 인프라 | AWS EC2 t3.medium 1대(2 vCPU, 4GB), Docker Compose, Caddy(HTTPS·라우팅), systemd, GitHub Actions(OIDC → SSM) |
 
+자세히: [Frontend 구조와 화면 지도](../design/frontend/index.md) · [계약 먼저, MSW 먼저](../design/frontend/contract-first-msw.md) · [Backend 개요](../design/backend/index.md)
+
 ## 배포 구성
 
 | 항목 | 내용 |
@@ -136,7 +138,7 @@ sequenceDiagram
 
 | 결정 | 근거 수치 | 링크 |
 |---|---|---|
-| 외부 STT 기본, 로컬·GPU 는 장애 대응 | 로컬 turbo RTF 1.36(62분 회의 85분), Elice 65초. GPU 상시 운영 손익분기 월 오디오 1,863시간 | 결정 [0019](../../ai/docs/basis_for_decision/member/2026-10-07-0019-elice-api-default-local-fallback.md), [STT](../ai-logic/stt.md) |
-| 회의 뒤 배치 전사 | 실시간 전사를 번복(0003 → 0008) | [STT](../ai-logic/stt.md) |
+| 외부 STT 기본, 로컬·GPU 는 장애 대응 | 로컬 turbo RTF 1.36(62분 회의 85분), Elice 65초. GPU 상시 운영 손익분기 월 오디오 1,863시간 | 결정 [0019](../../ai/docs/basis_for_decision/member/2026-10-07-0019-elice-api-default-local-fallback.md), [STT](../design/ai/stt.md) |
+| 회의 뒤 배치 전사 | 실시간 전사를 번복(0003 → 0008) | [STT](../design/ai/stt.md) |
 | AI 는 HTTP API 로만 BE 와 대화 | 서비스 토큰으로 봇 경로 보호 | [인터페이스](interface.md) |
 | Notion 은 outbox | 요청 안에서 Notion 을 부르지 않음, 재시도·중복 방지 | [요구사항·리스크](requirements-risks.md) |

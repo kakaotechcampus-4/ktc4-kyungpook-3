@@ -1,6 +1,6 @@
 # 테크스펙
 
-Manager's Manager 의 기술 명세 요약이다. 각 쪽에는 결론과 근거 수치만 적고, 설계 이유는 [AI 로직](../ai-logic/index.md)과 결정 기록으로 링크한다.
+Manager's Manager 의 기술 명세 요약이다. 각 쪽에는 결론과 근거 수치만 적고, 설계 이유는 [AI 로직](../design/ai/index.md)과 결정 기록으로 링크한다.
 
 ## 한 페이지 요약
 
@@ -38,6 +38,6 @@ Manager's Manager 의 기술 명세 요약이다. 각 쪽에는 결론과 근거
 
 ## 함께 볼 곳
 
-- 설계 이유: [AI 로직](../ai-logic/index.md) — [판단 파이프라인](../ai-logic/judge-pipeline.md), [근거 검증](../ai-logic/evidence-check.md), [전사 오인식 검사](../ai-logic/asr-check.md), [답장 판단](../ai-logic/reply-judgment.md), [STT](../ai-logic/stt.md)
+- 설계 이유: [AI 로직](../design/ai/index.md) — [판단 파이프라인](../design/ai/judge-pipeline.md), [근거 검증](../design/ai/evidence-check.md), [전사 오인식 검사](../design/ai/asr-check.md), [답장 판단](../design/ai/reply-judgment.md), [STT](../design/ai/stt.md)
 - API 전체: [API 문서](../api/index.md)
 - 원자료: [프로젝트 상세 설명](../프로젝트%20상세%20설명.md) (2026-11-07 기준)

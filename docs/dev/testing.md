@@ -63,7 +63,7 @@ alembic upgrade head && alembic check       # 빈 DB 에서 마이그레이션 �
 | `python -m extract.eval_golden_set` | legacy 추출 골든셋 |
 | `python -m stt.eval.eval` | 전사 CER (`--init` 으로 준비) |
 
-결과는 `ai/judge/eval_results/`, `ai/stt/eval/results/` 에 날짜별로 남긴다. 수치는 [AI 로직](../ai-logic/index.md)과 [지표](../techspec/metrics.md)에 정리한다.
+결과는 `ai/judge/eval_results/`, `ai/stt/eval/results/` 에 날짜별로 남긴다. 수치는 [AI 로직](../design/ai/index.md)과 [지표](../techspec/metrics.md)에 정리한다.
 
 ## 테스트 종류
 

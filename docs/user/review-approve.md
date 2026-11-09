@@ -24,7 +24,7 @@ flowchart LR
 
 - 기존 태스크를 바꾸자는 제안(마감 변경, 담당 변경 등)은 항상 **확인 필요**로 가요.
 - Discord 채팅에서 나온 일은 반영하지 않고 모두 **확인 필요**로 가요.
-- 판단 기준은 [판단 파이프라인](../ai-logic/judge-pipeline.md)과 [근거 검증](../ai-logic/evidence-check.md)에 있어요.
+- 판단 기준은 [판단 파이프라인](../design/ai/judge-pipeline.md)과 [근거 검증](../design/ai/evidence-check.md)에 있어요.
 - 화면에는 신뢰도 숫자를 보이지 않아요. 대신 "확인이 필요한 이유"를 회의에서 한 말로 보여 줘요.
 
 ## 1. 회의록 보기

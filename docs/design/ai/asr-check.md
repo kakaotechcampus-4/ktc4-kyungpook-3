@@ -1,6 +1,6 @@
 # 전사 오인식 검사
 
-STT 가 "진도"를 "짐도"로 잘못 받아 적으면, 근거 원문에도 "짐도"가 있으니 Jev 근거 검증은 `certain` 을 준다. 그대로면 틀린 제목이 PM 확인 없이 보드에 들어간다. 이 검사는 새 할 일 제목의 명사가 맞게 전사됐는지를 따로 보고, 의심이 남으면 auto 를 막는다. 코드는 [`ai/judge/asr_check.py`](../../ai/judge/asr_check.py), 결정은 [0051](../../ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md)(#532).
+STT 가 "진도"를 "짐도"로 잘못 받아 적으면, 근거 원문에도 "짐도"가 있으니 Jev 근거 검증은 `certain` 을 준다. 그대로면 틀린 제목이 PM 확인 없이 보드에 들어간다. 이 검사는 새 할 일 제목의 명사가 맞게 전사됐는지를 따로 보고, 의심이 남으면 auto 를 막는다. 코드는 [`ai/judge/asr_check.py`](../../../ai/judge/asr_check.py), 결정은 [0051](../../../ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md)(#532).
 
 멘토 리뷰(#382) 1번 "원문 명시 여부와 태스크 신뢰도는 별개다"에 대한 한 가지 답이다.
 
@@ -17,7 +17,7 @@ STT 가 "진도"를 "짐도"로 잘못 받아 적으면, 근거 원문에도 "�
 | 출처 | 내용 | 코드 |
 |---|---|---|
 | 공통 명사 | kiwi 형태소 번호 상위 `MM_ASR_SEED_NOUNS`(기본 1000) 중 한글 명사. 번호는 대체로 빈도 순 | `seed_nouns()` |
-| 정적 업무 용어 | [`judge/asr_terms.txt`](../../ai/judge/asr_terms.txt) (배포, 회의록 등 할 일 제목에 흔한 업무 명사) | `load_terms()` |
+| 정적 업무 용어 | [`judge/asr_terms.txt`](../../../ai/judge/asr_terms.txt) (배포, 회의록 등 할 일 제목에 흔한 업무 명사) | `load_terms()` |
 | 같은 회의에서 2명 이상이 말한 명사 | STT 는 한 사람의 같은 발음을 같은 꼴로 거듭 잘못 듣는다. 두 사람이 같은 꼴로 말했으면 맞게 들었을 가능성이 크다 | `team_nouns()` |
 | 워크스페이스 용어 | BE `workspace_asr_term`. 지난 회의들의 "2명 이상 명사"와 PM 승인 제목의 명사가 쌓인다 | `_workspace_terms()` |
 | PM 승인 제목 큐 | BE 가 task_create 승인 때 최종 제목(PM 이 고쳤으면 고친 제목)을 `asr_title_queue` 에 넣는다. BE 에는 형태소 분석기가 없어 AI 가 받아 명사를 뽑아 워크스페이스 용어로 올리고 큐에서 지운다 | `GET/POST /workspaces/{id}/asr-terms` |
@@ -81,13 +81,13 @@ flowchart TD
 
 ### 첫 구현 합성 평가 (2026-11-07)
 
-자모 하나를 바꿔 넣은 오류로 튜닝 세트와 **처음 보는 세트(holdout)** 를 나눠 쟀다. 처음 보는 세트에서 오류 93% 차단, 정상 10% 차단([`asr-check-tuning.json`](../../ai/judge/eval_results/2026-11-07-asr-check-tuning.json), [`asr-check-holdout.json`](../../ai/judge/eval_results/2026-11-07-asr-check-holdout.json)). 하지만 이 세트는 **검사기가 가정한 오류 모양**으로 만든 것이었다. 실제 STT 오류 발화의 97% 는 사전에 있는 낱말이라 이 수치는 실제를 대표하지 않았다.
+자모 하나를 바꿔 넣은 오류로 튜닝 세트와 **처음 보는 세트(holdout)** 를 나눠 쟀다. 처음 보는 세트에서 오류 93% 차단, 정상 10% 차단([`asr-check-tuning.json`](../../../ai/judge/eval_results/2026-11-07-asr-check-tuning.json), [`asr-check-holdout.json`](../../../ai/judge/eval_results/2026-11-07-asr-check-holdout.json)). 하지만 이 세트는 **검사기가 가정한 오류 모양**으로 만든 것이었다. 실제 STT 오류 발화의 97% 는 사전에 있는 낱말이라 이 수치는 실제를 대표하지 않았다.
 
 ### AI Hub 실제 STT 오류 (2026-11-08)
 
 - 데이터: AI Hub 회의 음성 KconfSpeech D20(교육/일반, 스튜디오 방송) 10회의 중 4회의 **1,397발화(약 2시간)** 를 운영 STT(Elice)로 전사. 나머지 6회의 정답 대본에서 두 사람 이상이 말한 명사 727개를 "지난 회의"로 삼아 워크스페이스 용어 대신 썼다(재는 회의와 목록 회의를 분리).
 - AI Hub 에는 태스크 제목이 없어 **발화의 명사를 제목 대신** 봤다. 전사 명사 중 정답에 없는 것이 있으면 "명사가 틀린 발화"(230개), 나머지 1,167개는 "명사가 맞는 발화".
-- 방법: [`judge/eval_asr_real.py`](../../ai/judge/eval_asr_real.py). Jev 응답 누락 0. 원문은 레포 밖, 숫자만 [`eval_results/2026-11-08-asr-real-kconfspeech.json`](../../ai/judge/eval_results/2026-11-08-asr-real-kconfspeech.json).
+- 방법: [`judge/eval_asr_real.py`](../../../ai/judge/eval_asr_real.py). Jev 응답 누락 0. 원문은 레포 밖, 숫자만 [`eval_results/2026-11-08-asr-real-kconfspeech.json`](../../../ai/judge/eval_results/2026-11-08-asr-real-kconfspeech.json).
 
 | 방법 | 명사 오류 차단율 (95% 구간) | 정상인데 막은 비율 (오차단율) |
 |---|---|---|
@@ -101,7 +101,7 @@ flowchart TD
 - 같은 오탐 수준(10% 안팎)에서 새 설계가 첫 구현보다 약 2.5배 더 잡는다. Jev 는 실제로 틀린 명사(yes 중앙값 약 0.64)와 맞는 명사(약 0.95)를 가른다.
 - 기본 목록 크기 N 은 1단계 상한으로 정했다: N=0 64%, 1,000 62%, 10,000 34%, 50,000 14%. Jev 가 근거 판정과 같은 호출이라 비용 걱정 없이 작은 N 을 골랐다.
 - 0.8 은 측정으로 고른 최적값이 아니다. 근거 판정 기준을 따른 잠정값이고, 같은 데이터로 다시 고르면 그 데이터에 맞춘 값이 되므로 운영 결과로 다시 정한다.
-- [`asr_check.py`](../../ai/judge/asr_check.py) 의 `YES_THRESHOLD` 주석에는 "명사 오류 43%·정상 16%"로 적혀 있어 위 결과 파일(47%·19%)과 다르다 **[확인 필요: 주석이 다른 실행 값인지 확인]**.
+- [`asr_check.py`](../../../ai/judge/asr_check.py) 의 `YES_THRESHOLD` 주석에는 "명사 오류 43%·정상 16%"로 적혀 있어 위 결과 파일(47%·19%)과 다르다 **[확인 필요: 주석이 다른 실행 값인지 확인]**.
 
 ## 한계와 다음 단계
 

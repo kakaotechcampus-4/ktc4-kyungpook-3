@@ -20,7 +20,7 @@ sequenceDiagram
   Note over S,M: 72시간 동안 응답이 없으면 태스크를 자동으로 막힘 처리
 ```
 
-답장을 판단하는 방식은 [답장 판단](../ai-logic/reply-judgment.md)에 있어요.
+답장을 판단하는 방식은 [답장 판단](../design/ai/reply-judgment.md)에 있어요.
 
 ## 1. 마감 리마인드와 재촉
 

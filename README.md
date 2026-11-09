@@ -65,7 +65,7 @@ Frontend의 MSW 검사는 모의 API를 씁니다. 실제 서비스 연결과 �
 |---|---|
 | 서비스를 써 보고 싶다 | [사용자 가이드](docs/user/getting-started.md) |
 | 코드를 실행·배포하고 싶다 | [개발자 가이드](docs/dev/local-setup.md) |
-| 설계와 AI 판단 방식이 궁금하다 | [테크스펙](docs/techspec/index.md) · [AI 판단 심화](docs/ai-logic/index.md) |
+| 설계와 AI 판단 방식이 궁금하다 | [테크스펙](docs/techspec/index.md) · [설계 심화](docs/design/index.md) |
 | API를 보고 싶다 | [API 문서](docs/api/index.md) |
 | 팀이 어떻게 일했는지 궁금하다 | [협업 문서](docs/collab/index.md) |
 | 파트별 계약·계획·결과를 찾는다 | [문서 안내](docs/README.md) · [FE API 계약](frontend/docs/contracts/frontend-api-contract.md) · [BE·AI 계약](backend/docs/contracts/backend-ai-contract.md) |
