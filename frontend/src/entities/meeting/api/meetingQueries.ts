@@ -1,10 +1,10 @@
 import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
 import { ApiError, createWorkspaceMismatchError, isWorkspaceMismatch } from '@/shared/api/errors'
+import { parseResponse } from '@/shared/api/parseResponse'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { workspaceKey } from '@/shared/api/queryKeys'
-import type { ListDto } from '@/shared/types/api/envelope'
-import type { MeetingDto, MeetingSummaryDto } from '@/shared/types/api/meeting'
+import { meetingListSchema, meetingSchema } from '@/shared/types/api/meeting'
 import { toMeeting, toMeetingSummary } from '../model/mapper'
 import type { Meeting, MeetingSummary } from '../model/types'
 
@@ -22,9 +22,10 @@ export async function fetchMeetingList(
   workspaceId: string,
   signal?: AbortSignal,
 ): Promise<MeetingSummary[]> {
-  const { items } = await request<ListDto<MeetingSummaryDto>>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/meetings`,
-    { signal },
+  const { items } = parseResponse(
+    meetingListSchema,
+    await request<unknown>(`/workspaces/${encodeURIComponent(workspaceId)}/meetings`, { signal }),
+    'meeting',
   )
   return items.map(toMeetingSummary)
 }
@@ -51,9 +52,11 @@ export function meetingDetailQueryOptions(workspaceId: string, meetingId: string
   return queryOptions({
     queryKey: workspaceKey(workspaceId, 'meetings', 'detail', meetingId),
     queryFn: async ({ signal }) => {
-      const dto = await request<MeetingDto>(`/meetings/${encodeURIComponent(meetingId)}`, {
-        signal,
-      })
+      const dto = parseResponse(
+        meetingSchema,
+        await request<unknown>(`/meetings/${encodeURIComponent(meetingId)}`, { signal }),
+        'meeting',
+      )
       if (dto.workspace_id !== workspaceId)
         throw createWorkspaceMismatchError(workspaceId, dto.workspace_id)
       return toMeeting(dto)

@@ -1,32 +1,20 @@
+import { displayValue } from '@/shared/api/unknownValue'
 import type {
   MeetingDto,
   MeetingSummaryDto,
   MeetingUploadDto,
   SpeakerViewDto,
 } from '@/shared/types/api/meeting'
-import { enumValue } from '@/shared/lib/enum'
-import type {
-  Meeting,
-  MeetingStatus,
-  MeetingSummary,
-  MeetingUploadResult,
-  SpeakerView,
-} from './types'
+import { MEETING_SOURCES } from '@/shared/types/common'
+import type { Meeting, MeetingSummary, MeetingUploadResult, SpeakerView } from './types'
 
-const statuses: readonly MeetingStatus[] = [
-  'created',
-  'recording',
-  'processing',
-  'awaiting_speakers',
-  'done',
-  'failed',
-]
+/** 스키마를 통과한 응답만 받는다. 모르는 회의 상태는 이미 `INVALID_RESPONSE` 로 걸렀다 */
 export function toMeeting(dto: MeetingDto): Meeting {
   return {
     id: dto.meeting_id,
     workspaceId: dto.workspace_id,
     title: dto.title ?? '',
-    status: enumValue(dto.status, statuses, 'created', 'meeting status'),
+    status: dto.status,
     startedAt: dto.started_at,
     endedAt: dto.ended_at,
     extractionId: dto.extraction_id,
@@ -45,13 +33,8 @@ export function toMeetingSummary(dto: MeetingSummaryDto): MeetingSummary {
   return {
     id: dto.meeting_id,
     title: dto.title ?? '',
-    status: enumValue(dto.status, statuses, 'created', 'meeting status'),
-    source: enumValue(
-      dto.source,
-      ['discord', 'manual_upload', 'chat'] as const,
-      'discord',
-      'meeting source',
-    ),
+    status: dto.status,
+    source: displayValue(dto.source, MEETING_SOURCES, 'meeting source'),
     startedAt: dto.started_at,
     durationMs: dto.duration_ms,
     attendeeCount: dto.attendee_count,
@@ -60,15 +43,12 @@ export function toMeetingSummary(dto: MeetingSummaryDto): MeetingSummary {
   }
 }
 export function toMeetingUploadResult(dto: MeetingUploadDto): MeetingUploadResult {
-  return {
-    id: dto.meeting_id,
-    status: enumValue(dto.status, statuses, 'processing', 'meeting status'),
-  }
+  return { id: dto.meeting_id, status: dto.status }
 }
 export function toSpeakerView(dto: SpeakerViewDto): SpeakerView {
   return {
     meetingId: dto.meeting_id,
-    status: enumValue(dto.status, statuses, 'created', 'meeting status'),
+    status: dto.status,
     speakers: dto.speakers.map(({ label, total_sec, samples }) => ({
       label,
       totalSec: total_sec,

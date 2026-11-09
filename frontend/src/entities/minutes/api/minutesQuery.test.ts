@@ -1,5 +1,9 @@
 import { QueryClient } from '@tanstack/react-query'
+import { http } from 'msw'
 import { STALE_TIME } from '@/shared/api/queryClient'
+import { minutesFixtures } from '@/shared/mock/fixtures/minutes'
+import { ok } from '@/shared/mock/envelope'
+import { server } from '@/shared/mock/server'
 import { minutesQueryOptions } from './minutesQuery'
 
 describe('minutesQueryOptions', () => {
@@ -14,5 +18,35 @@ describe('minutesQueryOptions', () => {
     const minutes = await new QueryClient().fetchQuery(minutesQueryOptions('ws_01', 'mt_09'))
     expect(minutes).toMatchObject({ meetingId: 'mt_09', title: '3주차 정기회의', canReview: true })
     expect(minutes.transcript).toHaveLength(5)
+  })
+})
+
+describe('응답 검증 (#348)', () => {
+  const served = () => structuredClone(minutesFixtures[0])
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('모르는 출처는 discord 로 바꾸지 않고 받은 글자를 남긴다', async () => {
+    server.use(
+      http.get('/api/v1/meetings/:meetingId/minutes', () => ok({ ...served(), source: 'zoom' })),
+    )
+    const minutes = await new QueryClient().fetchQuery(minutesQueryOptions('ws_01', 'mt_09'))
+    expect(minutes.source).toEqual({ unknown: 'zoom' })
+  })
+
+  it('권한 모양이 틀리면 잘못된 응답이다', async () => {
+    server.use(
+      http.get('/api/v1/meetings/:meetingId/minutes', () =>
+        ok({ ...served(), permissions: { can_review: 'yes', can_undo: true } }),
+      ),
+    )
+    await expect(
+      new QueryClient().fetchQuery(minutesQueryOptions('ws_01', 'mt_09')),
+    ).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+      details: { entity: 'minutes', path: 'permissions.can_review' },
+    })
   })
 })

@@ -1,12 +1,12 @@
 import { errorMessage } from '@/shared/api/errorMessages'
-import { ApiError, ERROR_CODES, isCanceledError } from '@/shared/api/errors'
+import { ApiError, ERROR_CODES, isCanceledError, isInvalidResponse } from '@/shared/api/errors'
 import { AUDIO_REJECTION_MESSAGE } from './audioFile'
 
 /**
  * 업로드가 실패했을 때 화면이 할 일 (U3-8, U3-10).
  * - `processing`: 다른 정리가 먼저 시작됐다(409) — 그 처리 화면으로
  * - `file`: 파일 칸 오류(413·형식) / `form`: 폼 상단 오류(400 등)
- * - `lost`: 응답을 받지 못했다 — 서버가 받았는지 모른다. 목록을 다시 봐서 판단한다
+ * - `lost`: 응답을 받지 못했거나 읽지 못했다(#348) — 서버가 받았는지 모른다. 목록을 다시 봐서 판단한다
  * - `session`: 401 — 앱의 세션 만료 처리가 로그인으로 보낸다. 화면은 아무것도 하지 않는다
  * - `ignored`: 취소
  */
@@ -25,7 +25,7 @@ export const UPLOAD_LOST_MESSAGE =
 export function classifyUploadError(error: unknown): UploadFailure {
   if (isCanceledError(error)) return { kind: 'ignored' }
   if (!(error instanceof ApiError)) return { kind: 'form', message: errorMessage(error) }
-  if (error.kind === 'network') return { kind: 'lost' }
+  if (error.kind === 'network' || isInvalidResponse(error)) return { kind: 'lost' }
   if (error.kind === 'http' && error.status === 401) return { kind: 'session' }
   switch (error.code) {
     case ERROR_CODES.MEETING_PROCESSING_IN_PROGRESS: {

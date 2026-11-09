@@ -1,4 +1,4 @@
-import type { MeetingDto, SpeakerViewDto } from '@/shared/types/api/meeting'
+import type { MeetingDto, MeetingSummaryDto, SpeakerViewDto } from '@/shared/types/api/meeting'
 import { db } from './db'
 import type { MockDb, MockSpeakerUpload } from './db'
 import { SPEAKER_AUDIO_SECONDS, speakerLabelFixtures } from './fixtures/speaker'
@@ -16,7 +16,11 @@ function meetingOf(state: MockDb, meetingId: string): MeetingDto {
   return meeting
 }
 
-function setSummaryStatus(state: MockDb, meetingId: string, status: string): void {
+function setSummaryStatus(
+  state: MockDb,
+  meetingId: string,
+  status: MeetingSummaryDto['status'],
+): void {
   const summary = state.meetingSummaries.find(({ meeting_id }) => meeting_id === meetingId)
   if (summary) summary.status = status
 }
