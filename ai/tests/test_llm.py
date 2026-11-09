@@ -5,6 +5,11 @@ from types import SimpleNamespace
 import pytest
 
 from llm import FakeLLM, LLMReply, MLAPIClient, NullLLM
+from shared.schemas import SummaryInput
+from summary.summarize import summarize
+
+# Elice 게이트웨이가 스트리밍이 아닌 답에 받는 가장 큰 출력 상한. 넘으면 400 이다(2026-11-10 확인)
+GATEWAY_NON_STREAMING_CAP = 2000
 
 
 class _Sdk:
@@ -45,9 +50,10 @@ def _response(content, *, finish="stop", usage=True, reasoning=7):
 
 def test_one_call_with_the_given_timeout_and_no_sdk_retries():
     sdk = _Sdk(_response('{"overview": "x"}'))
-    reply = _client(sdk).generate_json_once("p", timeout_s=300.0, reasoning_effort="low")
+    reply = _client(sdk).generate_json_once("p", timeout_s=300.0, max_completion_tokens=4000, reasoning_effort="low")
     assert sdk.options == [{"timeout": 300.0, "max_retries": 0}]
     assert len(sdk.creates) == 1 and sdk.creates[0]["reasoning_effort"] == "low"
+    assert sdk.creates[0]["max_completion_tokens"] == 4000
     assert sdk.creates[0]["response_format"] == {"type": "json_object"}
     assert reply.data == {"overview": "x"} and reply.finish_reason == "stop"
     assert (reply.prompt_tokens, reply.completion_tokens, reply.reasoning_tokens) == (100, 20, 7)
@@ -56,19 +62,19 @@ def test_one_call_with_the_given_timeout_and_no_sdk_retries():
 
 def test_an_sdk_error_is_a_reply_without_data_and_is_not_retried():
     sdk = _Sdk(error=RuntimeError("503 overloaded"))
-    reply = _client(sdk).generate_json_once("p", timeout_s=1.0)
+    reply = _client(sdk).generate_json_once("p", timeout_s=1.0, max_completion_tokens=1)
     assert reply.data is None and reply.finish_reason is None and reply.prompt_tokens is None
     assert len(sdk.creates) == 1
 
 
 def test_broken_json_keeps_the_usage_because_the_call_was_paid_for():
-    reply = _client(_Sdk(_response("not json", finish="length"))).generate_json_once("p", timeout_s=1.0)
+    reply = _client(_Sdk(_response("not json", finish="length"))).generate_json_once("p", timeout_s=1.0, max_completion_tokens=1)
     assert reply.data is None and reply.finish_reason == "length" and reply.prompt_tokens == 100
 
 
 @pytest.mark.parametrize("response", [_response('{"a": 1}', usage=False), _response('{"a": 1}', reasoning=None)])
 def test_missing_usage_fields_are_none(response):
-    reply = _client(_Sdk(response)).generate_json_once("p", timeout_s=1.0)
+    reply = _client(_Sdk(response)).generate_json_once("p", timeout_s=1.0, max_completion_tokens=1)
     assert reply.data == {"a": 1} and reply.reasoning_tokens is None
 
 
@@ -80,16 +86,25 @@ def test_generate_json_still_retries_a_transient_error(monkeypatch):
 
 
 def test_null_llm_replies_without_data():
-    reply = NullLLM().generate_json_once("p", timeout_s=1.0)
+    reply = NullLLM().generate_json_once("p", timeout_s=1.0, max_completion_tokens=1)
     assert reply == LLMReply(None)
 
 
 def test_fake_llm_hands_out_dicts_and_replies_in_order_and_records_the_prompt():
     length = LLMReply({"overview": "x"}, finish_reason="length")
     fake = FakeLLM([{"a": 1}, length, None])
-    first = fake.generate_json_once("one", timeout_s=1.0)
+    first = fake.generate_json_once("one", timeout_s=1.0, max_completion_tokens=1)
     assert first.data == {"a": 1} and first.finish_reason == "stop"
-    assert fake.generate_json_once("two", timeout_s=1.0) is length
-    assert fake.generate_json_once("three", timeout_s=1.0) == LLMReply(None)
-    assert fake.generate_json_once("four", timeout_s=1.0) == LLMReply(None)
+    assert fake.generate_json_once("two", timeout_s=1.0, max_completion_tokens=1) is length
+    assert fake.generate_json_once("three", timeout_s=1.0, max_completion_tokens=1) == LLMReply(None)
+    assert fake.generate_json_once("four", timeout_s=1.0, max_completion_tokens=1) == LLMReply(None)
     assert fake.prompts == ["one", "two", "three", "four"]
+
+
+def test_the_summary_request_sends_an_output_cap_the_gateway_accepts():
+    sdk = _Sdk(_response('{"overview": "x", "key_points": []}'))
+    summary_input = SummaryInput(extraction_id="e", meeting_id="m", workspace_id="w", title=None,
+                                 started_at="2026-11-05T05:00:00Z", lines=[], items=[], topics=[], decisions=[],
+                                 identity_epoch=0)
+    summarize(summary_input, _client(sdk), attempt=1)
+    assert 0 < sdk.creates[0]["max_completion_tokens"] <= GATEWAY_NON_STREAMING_CAP

@@ -103,7 +103,7 @@ def test_a_read_failure_after_the_claim_does_not_raise_or_call_the_llm():
 
 def test_an_llm_that_raises_does_not_escape():
     class Broken(FakeLLM):
-        def generate_json_once(self, prompt, *, timeout_s, reasoning_effort="medium"):
+        def generate_json_once(self, prompt, *, timeout_s, max_completion_tokens, reasoning_effort="medium"):
             raise RuntimeError("boom")
 
     fake = FakeBe()
@@ -208,9 +208,10 @@ def test_withdrawal_during_llm_discards_old_payload_without_refreshing_epoch():
     fake.add_summary("m1")
 
     class WithdrawDuringReply(FakeLLM):
-        def generate_json_once(self, prompt, *, timeout_s, reasoning_effort="medium"):
+        def generate_json_once(self, prompt, *, timeout_s, max_completion_tokens, reasoning_effort="medium"):
             fake.summaries["m1"]["identity_epoch"] += 1
-            return super().generate_json_once(prompt, timeout_s=timeout_s, reasoning_effort=reasoning_effort)
+            return super().generate_json_once(prompt, timeout_s=timeout_s, max_completion_tokens=max_completion_tokens,
+                                              reasoning_effort=reasoning_effort)
 
     runner = S.SummaryRunner(H.BeClient("http://be", session=fake, service_token="svc-token"), WithdrawDuringReply([GOOD]))
     outcome = runner.run_once()

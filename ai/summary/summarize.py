@@ -24,6 +24,9 @@ from summary.prompt import CHAT, COMPACT, FULL, build_prompt, local_keys
 
 SUMMARY_TIMEOUT_S = 300.0           # 측정 뒤 확정. BE 임대 15분보다 짧아야 같은 회의에 돈이 두 번 들지 않는다
 REASONING_EFFORT = "low"            # 측정 뒤 확정
+# 추론 토큰이 들어간다. 게이트웨이는 스트리밍이 아닌 답을 2,000 에서 끊고 그보다 큰 값은 400 으로 거절한다(2026-11-10).
+# 30줄 회의의 첫 시도가 이 상한에 잘리면 워커의 두 번째 시도(COMPACT)가 받는다
+MAX_OUTPUT_TOKENS = 2000
 TOPIC_NAME_MAX = 100
 TOPIC_ITEMS_MAX = 500
 
@@ -38,7 +41,8 @@ class SummaryAttempt:
 def summarize(summary_input: SummaryInput, llm: LLMClient, *, attempt: int) -> SummaryAttempt:
     """attempt 는 BE 가 준 시도 번호다. 두 번째부터 섹션 상한을 줄인다."""
     prompt, truncated = build_prompt(summary_input, COMPACT if attempt > 1 else FULL)
-    reply = llm.generate_json_once(prompt, timeout_s=SUMMARY_TIMEOUT_S, reasoning_effort=REASONING_EFFORT)
+    reply = llm.generate_json_once(prompt, timeout_s=SUMMARY_TIMEOUT_S, max_completion_tokens=MAX_OUTPUT_TOKENS,
+                                   reasoning_effort=REASONING_EFFORT)
     if reply.finish_reason == "length":     # 잘린 JSON 이 우연히 파싱돼도 뒤쪽 섹션이 빠져 있다
         return SummaryAttempt(None, reply, "출력 잘림")
     if reply.data is None:

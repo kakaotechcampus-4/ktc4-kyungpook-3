@@ -40,7 +40,8 @@ class LLMClient(Protocol):
 
     def generate_json(self, prompt: str, *, reasoning_effort: str = "medium") -> dict[str, Any] | None: ...
 
-    def generate_json_once(self, prompt: str, *, timeout_s: float, reasoning_effort: str = "medium") -> LLMReply: ...
+    def generate_json_once(self, prompt: str, *, timeout_s: float, max_completion_tokens: int,
+                           reasoning_effort: str = "medium") -> LLMReply: ...
 
 
 class NullLLM:
@@ -52,7 +53,8 @@ class NullLLM:
     def generate_json(self, prompt: str, *, reasoning_effort: str = "medium") -> dict[str, Any] | None:
         return None
 
-    def generate_json_once(self, prompt: str, *, timeout_s: float, reasoning_effort: str = "medium") -> LLMReply:
+    def generate_json_once(self, prompt: str, *, timeout_s: float, max_completion_tokens: int,
+                           reasoning_effort: str = "medium") -> LLMReply:
         return LLMReply(None)
 
 
@@ -72,7 +74,8 @@ class FakeLLM:
             return None
         return self.responses.pop(0)
 
-    def generate_json_once(self, prompt: str, *, timeout_s: float, reasoning_effort: str = "medium") -> LLMReply:
+    def generate_json_once(self, prompt: str, *, timeout_s: float, max_completion_tokens: int,
+                           reasoning_effort: str = "medium") -> LLMReply:
         self.prompts.append(prompt)
         reply = self.responses.pop(0) if self.responses else None
         if reply is None:
@@ -137,8 +140,10 @@ class MLAPIClient:
                 return None
         return None
 
-    def generate_json_once(self, prompt: str, *, timeout_s: float, reasoning_effort: str = "medium") -> LLMReply:
-        """재시도 없는 호출 한 번. 예외를 내지 않는다. 시간 상한과 재시도를 호출자가 정할 때 쓴다."""
+    def generate_json_once(self, prompt: str, *, timeout_s: float, max_completion_tokens: int,
+                           reasoning_effort: str = "medium") -> LLMReply:
+        """재시도 없는 호출 한 번. 예외를 내지 않는다. 시간 상한, 출력 상한, 재시도를 호출자가 정할 때 쓴다.
+        Elice 게이트웨이는 스트리밍이 아닌 답의 출력 상한(추론 포함)을 2,000 까지만 받는다. 더 크면 400 이다."""
         started = time.monotonic()
         self.calls += 1
         try:
@@ -147,6 +152,7 @@ class MLAPIClient:
                 messages=[{"role": "user", "content": prompt}],
                 reasoning_effort=reasoning_effort,
                 response_format={"type": "json_object"},
+                max_completion_tokens=max_completion_tokens,
             )
             choice, usage = resp.choices[0], resp.usage
             return LLMReply(

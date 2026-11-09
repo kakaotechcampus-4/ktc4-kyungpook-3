@@ -17,10 +17,11 @@ async def test_blocked_summary_does_not_prevent_the_next_worker_pass(tmp_path, m
     fake.add_summary("m1")
 
     class BlockedLLM(FakeLLM):
-        def generate_json_once(self, prompt, *, timeout_s, reasoning_effort="medium"):
+        def generate_json_once(self, prompt, *, timeout_s, max_completion_tokens, reasoning_effort="medium"):
             entered.set()
             assert release.wait(20)
-            return super().generate_json_once(prompt, timeout_s=timeout_s, reasoning_effort=reasoning_effort)
+            return super().generate_json_once(prompt, timeout_s=timeout_s, max_completion_tokens=max_completion_tokens,
+                                              reasoning_effort=reasoning_effort)
 
     runner = SummaryRunner(BeClient("http://be", session=fake, service_token="svc-token"),
                            BlockedLLM([{"overview": "summary", "key_points": []}]))
