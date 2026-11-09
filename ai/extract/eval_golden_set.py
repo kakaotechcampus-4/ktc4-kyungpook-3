@@ -125,29 +125,52 @@ def match_predictions(gold: GoldCase, predictions: list[ExtractedTask]) -> dict[
 
 
 _PARTICLES = ("께서", "한테", "에게", "이가", "이", "가", "은", "는", "을", "를", "께")
+_HONORIFICS = ("님", "씨")
 
 
 def _name_candidates(s: str | None) -> set[str]:
-    """이름 표기에서 존칭·조사를 뗀 후보들을 만든다 (BE alias 검색과 같은 방식).
+    """이름 표기에서 호칭(님·씨)·조사를 뗀 후보들을 만든다.
+
+    BE 의 name_candidates(backend/app/services/matching.py)와 같은 규칙이다. 바꾸면 둘 다 바꾼다.
+    BE 는 리스트를 돌려주고 여기서는 같은 원소의 집합이다.
 
     조사가 붙었는지 아닌지 겉보기로는 알 수 없다 — "하은"의 "은"은 이름의 일부지만 "환은"의
-    "은"은 조사다. 그래서 BE 는 원문부터 조사를 뗀 것까지 **후보를 여럿 두고** 검색한다
-    (BE alias 문서). 채점도 같은 기준으로 한다: 후보끼리 겹치면 정답.
-    단순히 조사를 떼버리면 "하은"이 "하"가 돼서 멀쩡한 답을 오답 처리하게 된다.
+    "은"은 조사다. 그래서 원문부터 조사를 뗀 것까지 **후보를 여럿 두고** 검색한다.
+    채점도 같은 기준으로 한다: 후보끼리 겹치면 정답. 단순히 조사를 떼버리면 "하은"이 "하"가 돼서
+    멀쩡한 답을 오답 처리하게 된다.
+    공백은 한 칸으로 줄이고 후보마다 앞뒤를 지운다("환 님이" → "환"). 호칭은 "님"·"씨"다.
+    조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보다("하은이는" → 하은이는, 하은이, 하은).
+    조사는 원문과 원문에서 호칭을 뗀 꼴에서만 뗀다.
     """
     if not s:
         return set()
-    base = s.strip()
+    base = " ".join(s.split())
     out = {base}
-    if base.endswith("님"):
-        out.add(base[:-1])
-    for form in list(out):
-        for p in _PARTICLES:
-            if form.endswith(p) and len(form) > len(p):
-                stripped = form[: -len(p)]
-                out.add(stripped)
-                if stripped.endswith("님"):
-                    out.add(stripped[:-1])
+
+    def add_remainder(form: str) -> None:
+        form = form.strip()
+        if not form:
+            return
+        out.add(form)
+        if form.endswith("이") and len(form) > 1:
+            out.add(form[:-1].strip())
+
+    def without_honorific(form: str) -> str:
+        return form[:-1].strip() if form.endswith(_HONORIFICS) else ""
+
+    sources = [base]
+    bare = without_honorific(base)
+    if bare:
+        sources.append(bare)
+        add_remainder(bare)
+    for form in sources:
+        for particle in _PARTICLES:
+            if form.endswith(particle) and len(form) > len(particle):
+                stripped = form[: -len(particle)].strip()
+                add_remainder(stripped)
+                bare = without_honorific(stripped)
+                if bare:
+                    add_remainder(bare)
     return {x for x in out if x}
 
 
