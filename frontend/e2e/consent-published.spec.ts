@@ -112,9 +112,9 @@ test('카카오 가입도 같은 두 필수 동의와 문서 링크를 쓴다', 
   await expect(page.getByRole('heading', { name: '모의 카카오 로그인' })).toBeVisible({
     timeout: 15_000,
   })
-  await page.getByRole('button', { name: '새 사용자 (이메일 있음)', exact: true }).click()
+  await page.getByRole('button', { name: '새 사용자', exact: true }).click()
   await expect(page.getByLabel('이름')).toHaveValue('카카오 새 사용자', { timeout: 15_000 })
-  await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
+  await confirmUsername(page, 'kakaoconsent')
   await expect(page.getByRole('button', { name: '계정 만들기' })).toBeDisabled()
   await expect(page.getByRole('link', { name: '개인정보처리방침 보기 (새 탭)' })).toBeVisible()
   await page.getByRole('checkbox', { name: '[필수] 이용약관 동의', exact: true }).check()

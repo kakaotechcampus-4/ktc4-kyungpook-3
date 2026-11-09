@@ -2,66 +2,35 @@ import { paths } from '@/shared/config/routes'
 import { safeReturnPath, withOAuthResult } from '@/shared/lib/oauth'
 import { db } from '../db'
 import { saveDb } from '../persistence'
-import { accountWithEmail } from '../sessions'
 
 const PROVIDER = 'kakao'
 
 interface MockKakaoIdentity {
   id: string
-  email: string | null
-  emailVerified: boolean
   nickname: string | null
 }
 
-/* 픽스처 계정 pm@example.com 과의 관계로 callback 의 갈래를 재현한다 */
-const NEW: MockKakaoIdentity = {
-  id: 'kakao-new',
-  email: 'kakao-new@example.com',
-  emailVerified: true,
-  nickname: '카카오 새 사용자',
-}
+/* 카카오 이메일은 쓰지 않는다. 이어진 카카오 id 가 있으면 로그인, 없으면 가입이다 (#627) */
+const NEW: MockKakaoIdentity = { id: 'kakao-new', nickname: '카카오 새 사용자' }
 
-const RETURNING: MockKakaoIdentity = {
-  id: 'kakao-pm',
-  email: 'pm@example.com',
-  emailVerified: true,
-  nickname: '최진호',
-}
+/** 픽스처 계정 pm@example.com 에 이어진 카카오. 병합을 없애기 전에 이어진 계정이다 */
+const RETURNING: MockKakaoIdentity = { id: 'kakao-pm', nickname: '최진호' }
 
-const NO_EMAIL: MockKakaoIdentity = {
-  id: 'kakao-no-email',
-  email: null,
-  emailVerified: false,
-  nickname: '이메일 없는 사용자',
-}
-
-const COLLISION: MockKakaoIdentity = {
-  id: 'kakao-collision',
-  email: 'pm@example.com',
-  emailVerified: false,
-  nickname: '남의 이메일',
-}
+const NO_NICKNAME: MockKakaoIdentity = { id: 'kakao-no-nickname', nickname: null }
 
 export const MOCK_KAKAO_CHOICES = {
-  new: { label: '새 사용자 (이메일 있음)', identity: NEW },
+  new: { label: '새 사용자', identity: NEW },
   returning: { label: '이어진 계정으로 로그인', identity: RETURNING },
-  'no-email': { label: '새 사용자 (이메일 없음)', identity: NO_EMAIL },
-  collision: { label: '이메일 충돌', identity: COLLISION },
+  'no-nickname': { label: '새 사용자 (닉네임 없음)', identity: NO_NICKNAME },
 } as const
 
 export type MockKakaoChoice = keyof typeof MOCK_KAKAO_CHOICES | 'cancelled' | 'failed'
 
-type Outcome = 'signed-in' | 'email-exists' | 'needs-signup'
-
-/** 백엔드 `_kakao_outcome` 의 갈래. 위에서 아래로 먼저 맞는 것을 따른다 */
-function settle(identity: MockKakaoIdentity): Outcome {
+/** 백엔드 `_finish_kakao_login` 의 갈래. 카카오 id 로만 찾고 이메일로 잇지 않는다 */
+function settle(identity: MockKakaoIdentity): 'signed-in' | 'needs-signup' {
   const known = db.accounts.find(({ kakaoId }) => kakaoId === identity.id)
-  const owner = known ?? (identity.email === null ? undefined : accountWithEmail(identity.email))
-  if (owner === undefined) return 'needs-signup'
-  if (known === undefined && (!identity.emailVerified || owner.kakaoId !== undefined))
-    return 'email-exists'
-  owner.kakaoId = identity.id
-  db.session = structuredClone(owner.session)
+  if (known === undefined) return 'needs-signup'
+  db.session = structuredClone(known.session)
   db.authenticated = true
   return 'signed-in'
 }
@@ -79,13 +48,11 @@ export function finishMockKakao(
     url = withOAuthResult(login, PROVIDER, choice)
   } else {
     const { identity } = MOCK_KAKAO_CHOICES[choice]
-    const outcome = settle(identity)
-    // BE 는 이 두 복귀에서 대기 쿠키를 지운다. 앞서 멈춘 가입 대기가 다음 가입에 이어지지 않는다(계약 §4.1.4)
-    if (outcome !== 'needs-signup') db.kakao.pending = null
-    if (outcome === 'signed-in') url = withOAuthResult(login, PROVIDER, 'success')
-    else if (outcome === 'email-exists')
-      url = withOAuthResult(login, PROVIDER, 'failed', 'email_exists')
-    else {
+    // BE 는 로그인 복귀에서 대기 쿠키를 지운다. 앞서 멈춘 가입 대기가 다음 가입에 이어지지 않는다(계약 §4.1.4)
+    if (settle(identity) === 'signed-in') {
+      db.kakao.pending = null
+      url = withOAuthResult(login, PROVIDER, 'success')
+    } else {
       db.kakao.pending = { kakaoId: identity.id, nickname: identity.nickname }
       url = paths.signup({ kakao: true, next: returnPath })
     }

@@ -278,6 +278,8 @@ export function initialDb(): MockDb {
         password: 'mock-password',
         workspaceIds: ['ws_01', 'ws_02'],
         memberIds: { ws_01: 'mb_01' },
+        // 카카오 병합이 있던 때 이어진 카카오. 모의 카카오의 `이어진 계정으로 로그인` 이 이 계정이다 (#627)
+        kakaoId: 'kakao-pm',
       },
     ],
     workspaces: structuredClone(workspaceFixtures),
