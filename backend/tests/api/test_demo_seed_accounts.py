@@ -6,9 +6,17 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from app.cli.demo_seed import SeedPerson, load_seed_data
-from app.cli.seed_demo import SeedError, emails_from_pattern, seed_accounts
+from app.cli.seed_demo import (
+    ExistingState,
+    SeedConflictError,
+    SeedError,
+    emails_from_pattern,
+    inspect_existing,
+    seed_accounts,
+)
 from app.main import app
 from app.models import (
+    Meeting,
     Member,
     MemberAlias,
     OnboardingStep,
@@ -100,14 +108,14 @@ def test_existing_user_is_reused_without_password_change(mdb):
     mdb.add(User(email=EMAILS[0], name="기존PM", password_hash=hash_password("old-pm-pw-1")))
     mdb.commit()
 
-    _seed(mdb)
+    _seed(mdb, allow_existing=True)
 
     assert mdb.scalar(select(func.count()).select_from(User)) == 6
     assert _login(EMAILS[2], "existing-pw-1")[1].status_code == 200
     assert _login(EMAILS[0], "old-pm-pw-1")[1].status_code == 200
     assert _login(EMAILS[0], PM_PW)[1].status_code == 401
 
-    _seed(mdb, reset_passwords=True)
+    _seed(mdb, reset_passwords=True, allow_existing=True)
     assert _login(EMAILS[0], PM_PW)[1].status_code == 200
 
 
@@ -118,7 +126,7 @@ def test_reset_passwords_ends_existing_sessions(mdb):
     assert res.status_code == 200
     assert old_client.get("/api/v1/auth/me").status_code == 200
 
-    _seed(mdb, reset_passwords=True)
+    _seed(mdb, reset_passwords=True, allow_existing=True)
 
     # 실제 비밀번호 재설정처럼 옛 비밀번호로 연 세션도 끝난다.
     assert old_client.get("/api/v1/auth/me").status_code == 401
@@ -154,9 +162,9 @@ def test_existing_pm_seat_with_other_name_is_reused(mdb):
     mdb.add(Member(workspace_id=workspace.workspace_id, user_id=pm.user_id, display_name="다른이름", role="pm"))
     mdb.commit()
 
-    _seed(mdb)
+    _seed(mdb, allow_existing=True)
     members_after_first = mdb.scalar(select(func.count()).select_from(Member))
-    _seed(mdb)
+    _seed(mdb, allow_existing=True)
 
     seats = mdb.scalars(select(Member).where(Member.user_id == pm.user_id, Member.is_deleted.is_(False))).all()
     assert len(seats) == 1
@@ -209,3 +217,93 @@ def test_invalid_person_name_writes_nothing(mdb):
         )
 
     assert mdb.scalar(select(func.count()).select_from(User)) == 0
+
+
+def _snapshot(db):
+    steps = [(s.workspace_id, s.step, s.status) for s in db.scalars(select(WorkspaceOnboardingStepState)).all()]
+    return _counts(db), db.scalar(select(func.count()).select_from(Meeting)), sorted(steps)
+
+
+def test_existing_user_with_other_name_stops_without_writing(mdb):
+    mdb.add(User(email=EMAILS[0], name="실제PM", password_hash=hash_password("real-pm-pw-1")))
+    mdb.commit()
+    before = _snapshot(mdb)
+
+    with pytest.raises(SeedConflictError) as error:
+        _seed(mdb, reset_passwords=True)
+
+    assert EMAILS[0] in str(error.value)
+    assert _snapshot(mdb) == before
+    assert _login(EMAILS[0], "real-pm-pw-1")[1].status_code == 200
+
+
+def test_foreign_seat_in_found_workspace_stops_without_writing(mdb):
+    seeded = _seed(mdb)
+    outsider = User(email="real@example.com", name="실제팀원", password_hash=hash_password("real-pw-1"))
+    mdb.add(outsider)
+    mdb.flush()
+    mdb.add(Member(workspace_id=seeded.workspace_id, user_id=outsider.user_id, display_name="실제팀원", role="member"))
+    for state in mdb.scalars(select(WorkspaceOnboardingStepState)).all():
+        state.status = OnboardingStepStatus.PENDING
+    mdb.commit()
+    before = _snapshot(mdb)
+
+    with pytest.raises(SeedConflictError) as error:
+        _seed(mdb)
+
+    assert "실제팀원" in str(error.value)
+    assert _snapshot(mdb) == before
+
+    _seed(mdb, allow_existing=True)
+    assert mdb.scalar(select(func.count()).select_from(Member).where(Member.workspace_id == seeded.workspace_id)) == 7
+
+
+def test_seat_with_seed_name_linked_to_outsider_stops(mdb):
+    data = load_seed_data()
+    seeded = _seed(mdb)
+    outsider = User(email="real@example.com", name="실제팀원", password_hash=hash_password("real-pw-1"))
+    mdb.add(outsider)
+    mdb.flush()
+    p3 = mdb.get(Member, seeded.member_ids["p3"])
+    p3_name = next(person.name for person in data.people if person.key == "p3")
+    # p3 자리를 지우고 같은 이름의 자리를 시드 밖 계정에 잇는다
+    p3.is_deleted = True
+    mdb.add(Member(workspace_id=seeded.workspace_id, user_id=outsider.user_id, display_name=p3_name, role="member"))
+    mdb.commit()
+
+    with pytest.raises(SeedConflictError):
+        _seed(mdb)
+
+
+def test_member2_seat_linked_after_invite_is_still_seed(mdb):
+    seeded = _seed(mdb)
+    joined = User(email="m2-real@example.com", name="합류한팀원", password_hash=hash_password("m2-real-pw-1"))
+    mdb.add(joined)
+    mdb.flush()
+    mdb.get(Member, seeded.member_ids["p2"]).user_id = joined.user_id
+    mdb.commit()
+
+    assert _seed(mdb).workspace_id == seeded.workspace_id
+
+
+def test_non_seed_meeting_in_found_workspace_stops(mdb):
+    seeded = _seed(mdb)
+    mdb.add(Meeting(workspace_id=seeded.workspace_id, title="실제 주간 회의", source="discord"))
+    mdb.commit()
+
+    with pytest.raises(SeedConflictError) as error:
+        _seed(mdb)
+    assert "회의 1개" in str(error.value)
+
+
+def test_inspect_existing_reports_reuse(mdb):
+    data = load_seed_data()
+    assert inspect_existing(mdb, data, emails=EMAILS, workspace_name=NAME) == ExistingState()
+
+    seeded = _seed(mdb)
+    state = inspect_existing(mdb, data, emails=EMAILS, workspace_name=NAME)
+
+    assert state.workspace_id == seeded.workspace_id
+    assert len(state.reused_emails) == 6
+    assert state.seats == 6
+    assert state.problems() == []

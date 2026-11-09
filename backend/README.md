@@ -89,7 +89,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
   python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com'
 ```
 
-로컬 리허설은 API 를 띄운 뒤 같은 명령을 `python -m app.cli.seed_demo --email-pattern 'demo+{n}@example.com'` 로 돌린다. `--dry-run` 은 만들 계정 수와 회의 제목만 출력하고 DB·HTTP 를 건드리지 않는다(`SERVICE_TOKEN` 은 필요 없지만 비밀번호 검사는 하므로 비밀번호 환경변수는 필요하다). 비밀번호를 환경변수로 넘기지 않고 입력받으려면 터미널(TTY)이 필요하다(`docker compose exec` 는 기본으로 붙고, 원격에서 명령 한 줄로 돌릴 때는 `ssh -t`). 컨테이너에는 `SERVICE_TOKEN` 이 `env_file` 로 이미 들어 있다.
+로컬 리허설은 API 를 띄운 뒤 같은 명령을 `python -m app.cli.seed_demo --email-pattern 'demo+{n}@example.com'` 로 돌린다. `--dry-run` 은 DB 를 읽기만 해서 이미 있는 계정 수, 재사용할 공간과 그 공간의 활성 자리·회의 수, 재생할 회의 제목을 출력한다. 쓰지 않고 HTTP 도 부르지 않는다(`SERVICE_TOKEN` 은 필요 없지만 비밀번호 검사는 하므로 비밀번호 환경변수는 필요하다). 실제 실행이 멈출 상황이면 이유를 stderr 에 적고 종료 코드 2 로 끝난다. 비밀번호를 환경변수로 넘기지 않고 입력받으려면 터미널(TTY)이 필요하다(`docker compose exec` 는 기본으로 붙고, 원격에서 명령 한 줄로 돌릴 때는 `ssh -t`). 컨테이너에는 `SERVICE_TOKEN` 이 `env_file` 로 이미 들어 있다.
 
 | 옵션·환경변수 | 뜻 |
 |---|---|
@@ -97,7 +97,8 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `--base-url` | API 호스트 루트(기본 `http://localhost:8000`). 경로 앞에 `/api/v1` 은 명령이 붙인다 |
 | `--workspace-name` | 공간 이름. 기본은 시드 데이터 값 |
 | `--embed-timeout` | 회의마다 임베딩을 기다리는 초(기본 120) |
-| `--reset-passwords` | 이미 있는 계정의 비밀번호도 다시 정한다 |
+| `--reset-passwords` | 이미 있는 계정의 비밀번호도 다시 정하고, 그 계정의 로그인 세션을 지운다 |
+| `--allow-existing` | 시드가 아닌 기존 데이터가 있어도 재사용한다. 없으면 이름이 시드 인물과 다른 기존 계정, 찾은 공간의 시드 인물이 아닌 자리, 시드가 만들지 않은 회의가 하나라도 있을 때 아무것도 쓰지 않고 종료 코드 2 로 멈춘다 |
 | `DEMO_PM_PASSWORD`, `DEMO_MEMBER_PASSWORD` | PM·팀원2 비밀번호. 없으면 터미널일 때만 입력을 받고, 아니면 종료 코드 2 로 아무것도 쓰지 않고 끝난다 |
 | `SERVICE_TOKEN` | 서비스 토큰 API 호출용. 없으면 종료 코드 2 |
 
@@ -107,7 +108,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 |---|---|
 | 0 | 성공 |
 | 1 | 시드 실패(데이터·API·임베딩 대기 오류). 한 줄이 stderr 에 나온다. 같은 명령을 다시 실행하면 이어 간다 |
-| 2 | 입력·환경 부족(비밀번호, 이메일 패턴, `SERVICE_TOKEN`, 옵션). 아무것도 쓰지 않았다 |
+| 2 | 입력·환경 부족(비밀번호, 이메일 패턴, `SERVICE_TOKEN`, 옵션)이나 시드가 아닌 기존 데이터 재사용 거절(`--allow-existing` 참고). 아무것도 쓰지 않았다 |
 | 3 | 데이터는 다 썼지만 gate 분포에 auto·review·hold 중 0 건이 있다. JSON 은 그대로 나오고 stderr 에 경고가 나온다 |
 
 알아 둘 점:

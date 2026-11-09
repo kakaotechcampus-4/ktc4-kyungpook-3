@@ -57,6 +57,35 @@ def test_dry_run_changes_nothing(mdb, monkeypatch, capsys):
     assert _count(mdb, Meeting) == 0
 
 
+def test_dry_run_reports_reuse_and_foreign_rows(mdb, monkeypatch, capsys):
+    _env(monkeypatch, token=False)
+    monkeypatch.setattr(seed_demo, "SessionLocal", lambda: mdb)
+    mdb.add(User(email="demo+1@example.com", name="실제PM", password_hash="x"))
+    mdb.commit()
+
+    assert seed_demo.main(_args("--dry-run")) == 2
+    captured = capsys.readouterr()
+    assert "이미 있는 계정 1개" in captured.out
+    assert "demo+1@example.com" in captured.err
+    assert "--allow-existing" in captured.err
+    assert _count(mdb, User) == 1
+
+    assert seed_demo.main(_args("--dry-run", "--allow-existing")) == 0
+
+
+def test_conflict_exits_2_writing_nothing(mdb, monkeypatch, capsys):
+    _env(monkeypatch)
+    _inject(monkeypatch, mdb)
+    mdb.add(User(email="demo+1@example.com", name="실제PM", password_hash="x"))
+    mdb.commit()
+
+    assert seed_demo.main(_args()) == 2
+
+    assert "--allow-existing" in capsys.readouterr().err
+    assert _count(mdb, User) == 1
+    assert _count(mdb, Meeting) == 0
+
+
 def test_missing_service_token_exits_2(monkeypatch, capsys):
     _env(monkeypatch, token=False)
 

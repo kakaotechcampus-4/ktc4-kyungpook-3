@@ -60,6 +60,10 @@ class SeedError(RuntimeError):
     pass
 
 
+class SeedConflictError(SeedError):
+    """시드 것이 아닌 계정·자리·회의를 재사용하게 돼서 아무것도 쓰지 않고 멈췄다."""
+
+
 @dataclass
 class SeededWorkspace:
     workspace_id: str
@@ -79,6 +83,90 @@ def emails_from_pattern(pattern: str, count: int = PERSON_COUNT) -> list[str]:
     return emails
 
 
+@dataclass
+class ExistingState:
+    """시드가 재사용하게 될 기존 행. 읽기만 해서 모은다."""
+
+    reused_emails: list[str] = field(default_factory=list)
+    # 이메일은 같지만 이름이 시드 인물과 다른 계정(실제 사람 계정일 수 있다)
+    foreign_users: list[str] = field(default_factory=list)
+    workspace_id: str | None = None
+    seats: int = 0
+    # 시드 인물이 아니거나 시드 밖 계정에 연결된 활성 자리
+    foreign_seats: list[str] = field(default_factory=list)
+    meetings: int = 0
+    # 시드 회의(source=discord 이고 제목이 시드 회의 제목)가 아닌 회의
+    foreign_meetings: int = 0
+
+    def problems(self) -> list[str]:
+        problems = []
+        if self.foreign_users:
+            problems.append(f"이름이 시드 인물과 다른 기존 계정: {', '.join(self.foreign_users)}")
+        if self.foreign_seats:
+            problems.append(f"시드 인물이 아닌 자리: {', '.join(self.foreign_seats)}")
+        if self.foreign_meetings:
+            problems.append(f"시드가 만들지 않은 회의 {self.foreign_meetings}개")
+        return problems
+
+
+def inspect_existing(db: Session, data: SeedData, *, emails: list[str], workspace_name: str) -> ExistingState:
+    """seed_accounts 가 재사용할 계정·공간·자리·회의를 읽기만 해서 모은다(--dry-run 과 실행 전 검사)."""
+    state = ExistingState()
+    seed_user_ids: dict[str, str] = {}
+    for person, email in zip(data.people, emails):
+        email = normalize_email(email)
+        user = db.scalars(select(User).where(User.email == email)).first()
+        if user is None:
+            continue
+        state.reused_emails.append(email)
+        seed_user_ids[person.key] = user.user_id
+        if user.name != person.name:
+            state.foreign_users.append(email)
+    if "p1" not in seed_user_ids:
+        return state
+    workspace = _find_workspace(db, seed_user_ids["p1"], workspace_name)
+    if workspace is None:
+        return state
+    state.workspace_id = workspace.workspace_id
+    keys_by_name = {person.name: person.key for person in data.people}
+    seed_users = set(seed_user_ids.values())
+    seats = db.scalars(
+        select(Member).where(Member.workspace_id == workspace.workspace_id, Member.is_deleted.is_(False))
+    ).all()
+    state.seats = len(seats)
+    for seat in seats:
+        if seat.user_id is not None and seat.user_id in seed_users:
+            continue
+        key = keys_by_name.get(seat.display_name)
+        # 팀원2 자리는 초대·수락 시연으로 시드 밖 계정과 이어질 수 있다
+        if key is not None and (seat.user_id is None or key == "p2"):
+            continue
+        state.foreign_seats.append(seat.display_name)
+    titles = {meeting.title for meeting in data.meetings}
+    meetings = db.execute(
+        select(Meeting.source, Meeting.title).where(
+            Meeting.workspace_id == workspace.workspace_id, Meeting.deleted_at.is_(None)
+        )
+    ).all()
+    state.meetings = len(meetings)
+    state.foreign_meetings = sum(1 for source, title in meetings if source != SEED_SOURCE or title not in titles)
+    return state
+
+
+def _find_workspace(db: Session, pm_user_id: str, workspace_name: str) -> Workspace | None:
+    return db.scalars(
+        select(Workspace)
+        .join(Member, Member.workspace_id == Workspace.workspace_id)
+        .where(
+            Member.user_id == pm_user_id,
+            Member.role == MemberRole.PM,
+            Member.is_deleted.is_(False),
+            Workspace.name == workspace_name,
+            Workspace.deleted_at.is_(None),
+        )
+    ).first()
+
+
 def seed_accounts(
     db: Session,
     data: SeedData,
@@ -88,6 +176,7 @@ def seed_accounts(
     pm_password: str,
     member2_password: str,
     reset_passwords: bool = False,
+    allow_existing: bool = False,
 ) -> SeededWorkspace:
     if len(emails) != len(data.people):
         raise SeedError("이메일 수가 시드 인물 수와 다릅니다")
@@ -108,6 +197,14 @@ def seed_accounts(
     fixed = {"p1": pm_password, "p2": member2_password}
 
     try:
+        if not allow_existing:
+            # 이메일·공간 이름을 잘못 넣어 실제 계정·공간과 겹치면 쓰기 전에 멈춘다(실제 공간에 자리·회의가 들어가지 않게)
+            problems = inspect_existing(db, data, emails=emails, workspace_name=workspace_name).problems()
+            if problems:
+                raise SeedConflictError(
+                    "시드가 아닌 기존 데이터를 재사용하게 됩니다(" + "; ".join(problems) + "). "
+                    "이메일 패턴·공간 이름을 확인하고, 그래도 재사용하려면 --allow-existing 을 붙이세요"
+                )
         users: dict[str, User] = {}
         for person, email in zip(data.people, emails):
             email = normalize_email(email)
@@ -123,17 +220,7 @@ def seed_accounts(
             users[person.key] = user
         db.flush()
 
-        workspace = db.scalars(
-            select(Workspace)
-            .join(Member, Member.workspace_id == Workspace.workspace_id)
-            .where(
-                Member.user_id == users["p1"].user_id,
-                Member.role == MemberRole.PM,
-                Member.is_deleted.is_(False),
-                Workspace.name == workspace_name,
-                Workspace.deleted_at.is_(None),
-            )
-        ).first()
+        workspace = _find_workspace(db, users["p1"].user_id, workspace_name)
         if workspace is None:
             workspace = Workspace(name=workspace_name)
             db.add(workspace)
@@ -423,7 +510,7 @@ def poll_embeddings(
     return wait
 
 
-# 종료 코드: 0 성공, 1 시드 실패(SeedError), 2 입력·환경 부족(아무것도 쓰지 않음), 3 성공했으나 gate 분포 경고
+# 종료 코드: 0 성공, 1 시드 실패(SeedError), 2 입력·환경 부족이나 기존 데이터 재사용 거절(아무것도 쓰지 않음), 3 성공했으나 gate 분포 경고
 EXIT_OK, EXIT_FAILED, EXIT_USAGE, EXIT_GATE_WARNING = 0, 1, 2, 3
 
 
@@ -442,9 +529,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--email-pattern", required=True, help="{n} 이 1..6 으로 바뀌는 이메일 패턴")
     parser.add_argument("--workspace-name", default=None, help="공간 이름(기본은 시드 데이터 값)")
     parser.add_argument("--data", type=Path, default=DEFAULT_DATA_PATH)
-    parser.add_argument("--dry-run", action="store_true", help="계획만 출력하고 DB·HTTP 를 건드리지 않는다")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="DB 를 읽기만 해서 재사용할 계정·공간·회의를 출력하고 쓰지 않는다"
+    )
     parser.add_argument("--embed-timeout", type=float, default=120, help="임베딩 대기 초(회의마다)")
     parser.add_argument("--reset-passwords", action="store_true", help="기존 계정 비밀번호도 다시 정한다")
+    parser.add_argument(
+        "--allow-existing", action="store_true", help="시드가 아닌 계정·자리·회의가 있어도 재사용한다"
+    )
     return parser
 
 
@@ -471,11 +563,24 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
 
     if args.dry_run:
+        with SessionLocal() as db:
+            existing = inspect_existing(db, data, emails=emails, workspace_name=workspace_name)
+            db.rollback()
         print(f"공간 이름: {workspace_name}")
-        print(f"만들 계정: {len(emails)}개 ({', '.join(emails)})")
+        print(f"시드 계정: {len(emails)}개 ({', '.join(emails)}), 그중 이미 있는 계정 {len(existing.reused_emails)}개")
+        if existing.workspace_id is None:
+            print("공간: 새로 만든다")
+        else:
+            print(f"공간: 기존 공간 재사용 ({existing.workspace_id}), 활성 자리 {existing.seats}개, 회의 {existing.meetings}개")
         print(f"재생할 회의 {len(data.meetings)}개:")
         for meeting in data.meetings:
             print(f"- {meeting.title}")
+        problems = existing.problems()
+        if problems and not args.allow_existing:
+            for problem in problems:
+                print(f"멈출 이유: {problem}", file=sys.stderr)
+            print("실제 실행은 아무것도 쓰지 않고 멈춘다. 재사용하려면 --allow-existing 을 붙이세요", file=sys.stderr)
+            return EXIT_USAGE
         return EXIT_OK
 
     service_token = os.environ.get("SERVICE_TOKEN")
@@ -493,6 +598,7 @@ def main(argv: list[str] | None = None) -> int:
                 pm_password=pm_password,
                 member2_password=member_password,
                 reset_passwords=args.reset_passwords,
+                allow_existing=args.allow_existing,
             )
             report = replay_meetings(
                 http,
@@ -502,6 +608,9 @@ def main(argv: list[str] | None = None) -> int:
                 service_token=service_token,
                 wait_for_embeddings=poll_embeddings(SessionLocal, args.embed_timeout),
             )
+    except SeedConflictError as error:
+        print(f"오류: {error}", file=sys.stderr)
+        return EXIT_USAGE
     except SeedError as error:
         print(f"오류: {error}", file=sys.stderr)
         return EXIT_FAILED
