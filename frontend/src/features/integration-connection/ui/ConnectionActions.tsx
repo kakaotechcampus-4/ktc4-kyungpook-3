@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { IntegrationProvider } from '@/entities/integration'
 import { errorMessage } from '@/shared/api/errorMessages'
+import { captureSessionScope } from '@/shared/api/sessionScope'
 import { Button } from '@/shared/ui/button'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { Modal } from '@/shared/ui/modal'
@@ -89,7 +90,7 @@ export function ConnectionActions({
               variant="primary"
               loading={disconnect.isPending}
               onClick={() =>
-                disconnect.mutate(undefined, { onSuccess: () => setConfirming(false) })
+                disconnect.mutate(captureSessionScope(), { onSuccess: () => setConfirming(false) })
               }
             >
               연결 끊기

@@ -2,8 +2,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { memberListQueryOptions, updateMember } from '@/entities/member'
 import type { Member } from '@/entities/member'
-import { captureSession } from '@/entities/user'
 import { errorMessage } from '@/shared/api/errorMessages'
+import { CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
+import { captureSessionScope } from '@/shared/api/sessionScope'
+import type { SessionScope } from '@/shared/api/sessionScope'
 import { Button } from '@/shared/ui/button'
 import { Modal } from '@/shared/ui/modal'
 import { toast } from '@/shared/ui/toast'
@@ -16,19 +18,22 @@ interface MemberRoleControlProps {
 export function MemberRoleControl({ workspaceId, member }: MemberRoleControlProps) {
   const [open, setOpen] = useState(false)
   const queryClient = useQueryClient()
-  const mutation = useMutation<Member, Error, () => boolean>({
-    mutationFn: () => updateMember(member.id, { role: 'pm' }),
+  const mutation = useMutation<Member, Error, SessionScope>({
+    mutationFn: (session) => {
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
+      return updateMember(member.id, { role: 'pm' }, session.signal)
+    },
     retry: false,
-    onSuccess: (updated, isCurrentSession) => {
-      if (!isCurrentSession()) return
+    onSuccess: (updated, session) => {
+      if (!session.isCurrent()) return
       setOpen(false)
       toast.show({ title: `${member.displayName}에게 PM 권한을 부여했어요` })
       queryClient.setQueryData(memberListQueryOptions(workspaceId).queryKey, (members) =>
         members?.map((current) => (current.id === updated.id ? updated : current)),
       )
     },
-    onSettled: (_, __, isCurrentSession) => {
-      if (isCurrentSession())
+    onSettled: (_, __, session) => {
+      if (session.isCurrent())
         void queryClient.invalidateQueries({
           queryKey: memberListQueryOptions(workspaceId).queryKey,
         })
@@ -65,7 +70,7 @@ export function MemberRoleControl({ workspaceId, member }: MemberRoleControlProp
               variant="primary"
               loading={mutation.isPending}
               onClick={() => {
-                if (!mutation.isPending) mutation.mutate(captureSession())
+                if (!mutation.isPending) mutation.mutate(captureSessionScope())
               }}
             >
               PM 권한 부여

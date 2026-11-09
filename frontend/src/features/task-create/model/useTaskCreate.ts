@@ -2,8 +2,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 import { createTask, showTaskWriteUnconfirmed, taskListQueryOptions } from '@/entities/task'
 import type { Task, TaskCreateInput } from '@/entities/task'
-import { captureSession } from '@/entities/user'
-import { isInvalidResponse } from '@/shared/api/errors'
+import { CLIENT_ERROR_CODES, createClientError, isInvalidResponse } from '@/shared/api/errors'
+import { captureSessionScope } from '@/shared/api/sessionScope'
+import type { SessionScope } from '@/shared/api/sessionScope'
 
 /**
  * 직접 추가 mutation 의 key. 셋째 칸이 상태라 보드 칸마다 진행 중 요청을 따로 센다.
@@ -17,7 +18,7 @@ export function taskCreateMutationKey(workspaceId: string, status?: Task['status
 
 interface CreateVariables extends TaskCreateInput {
   /** 요청을 시작한 세션이 아직 이어지는지. 끝났으면 캐시에 아무것도 쓰지 않는다 */
-  isCurrentSession: () => boolean
+  session: SessionScope
 }
 
 export interface TaskCreate {
@@ -39,10 +40,12 @@ export function useTaskCreate(workspaceId: string, status: Task['status']): Task
   const mutationKey = taskCreateMutationKey(workspaceId, status)
   const { mutate, isPending, error, reset } = useMutation({
     mutationKey,
-    mutationFn: ({ title, status: next, assigneeMemberId }: CreateVariables) =>
-      createTask(workspaceId, { title, status: next, assigneeMemberId }),
-    onSuccess: (task, { isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    mutationFn: ({ title, status: next, assigneeMemberId, session }: CreateVariables) => {
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
+      return createTask(workspaceId, { title, status: next, assigneeMemberId }, session.signal)
+    },
+    onSuccess: (task, { session }) => {
+      if (!session.isCurrent()) return
       const { queryKey } = taskListQueryOptions(workspaceId)
       queryClient.setQueryData(queryKey, (current) =>
         current === undefined || current.some(({ id }) => id === task.id)
@@ -51,8 +54,8 @@ export function useTaskCreate(workspaceId: string, status: Task['status']): Task
       )
       void queryClient.invalidateQueries({ queryKey, exact: true })
     },
-    onError: (error, { isCurrentSession }) => {
-      if (isCurrentSession() && isInvalidResponse(error))
+    onError: (error, { session }) => {
+      if (session.isCurrent() && isInvalidResponse(error))
         showTaskWriteUnconfirmed(queryClient, workspaceId)
     },
   })
@@ -61,7 +64,7 @@ export function useTaskCreate(workspaceId: string, status: Task['status']): Task
     (input: TaskCreateInput, onCreated: (task: Task) => void) => {
       if (queryClient.isMutating({ mutationKey: taskCreateMutationKey(workspaceId, status) }) > 0)
         return
-      mutate({ ...input, isCurrentSession: captureSession() }, { onSuccess: onCreated })
+      mutate({ ...input, session: captureSessionScope() }, { onSuccess: onCreated })
     },
     [queryClient, mutate, workspaceId, status],
   )

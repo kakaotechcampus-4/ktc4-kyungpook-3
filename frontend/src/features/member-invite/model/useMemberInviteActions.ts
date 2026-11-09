@@ -6,12 +6,14 @@ import {
   latestInvitationsQueryOptions,
   revokeInvitation,
 } from '@/entities/invitation'
-import { captureSession } from '@/entities/user'
 import { errorMessage } from '@/shared/api/errorMessages'
+import { CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
+import { captureSessionScope } from '@/shared/api/sessionScope'
+import type { SessionScope } from '@/shared/api/sessionScope'
 import { toast } from '@/shared/ui/toast'
 
 interface Tracked {
-  isCurrentSession: () => boolean
+  session: SessionScope
 }
 
 export interface MemberInviteActions {
@@ -46,9 +48,12 @@ export function useMemberInviteActions(
 
   const create = useMutation<void, Error, Tracked & { email: string; onSuccess: () => void }>({
     retry: false,
-    mutationFn: ({ email }) => createInvitation(workspaceId, { memberId: member.id, email }),
-    onSuccess: (_, { email, onSuccess, isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    mutationFn: ({ email, session }) => {
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
+      return createInvitation(workspaceId, { memberId: member.id, email }, session.signal)
+    },
+    onSuccess: (_, { email, onSuccess, session }) => {
+      if (!session.isCurrent()) return
       toast.show({
         title: '초대를 만들었어요',
         description: `메일은 가지 않아요. ${member.displayName}에게 ${email}로 가입하거나 로그인하라고 알려 주세요.`,
@@ -67,14 +72,16 @@ export function useMemberInviteActions(
     Tracked & { kind: 'cancel' | 'revoke'; invitationId: string }
   >({
     retry: false,
-    mutationFn: ({ kind, invitationId }) =>
-      kind === 'cancel' ? cancelInvitation(invitationId) : revokeInvitation(invitationId),
-    onSuccess: (_, { kind, isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    mutationFn: ({ kind, invitationId, session }) => {
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
+      return (kind === 'cancel' ? cancelInvitation : revokeInvitation)(invitationId, session.signal)
+    },
+    onSuccess: (_, { kind, session }) => {
+      if (!session.isCurrent()) return
       toast.show({ title: kind === 'cancel' ? '초대를 취소했어요' : '계정 연결을 끊었어요' })
     },
-    onError: (error, { isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    onError: (error, { session }) => {
+      if (!session.isCurrent()) return
       toast.show({ title: errorMessage(error) })
     },
     onSettled: refresh,
@@ -83,7 +90,7 @@ export function useMemberInviteActions(
   return {
     invite: (email, onSuccess) => {
       if (create.isPending) return
-      create.mutate({ email, onSuccess, isCurrentSession: captureSession() })
+      create.mutate({ email, onSuccess, session: captureSessionScope() })
     },
     inviteError: create.error && create.error !== hiddenError ? errorMessage(create.error) : null,
     inviting: create.isPending,
@@ -91,14 +98,11 @@ export function useMemberInviteActions(
     clearInviteError: () => setHiddenError(create.error),
     cancel: (invitationId) => {
       if (close.isPending) return
-      close.mutate({ kind: 'cancel', invitationId, isCurrentSession: captureSession() })
+      close.mutate({ kind: 'cancel', invitationId, session: captureSessionScope() })
     },
     revoke: (invitationId, onSettled) => {
       if (close.isPending) return
-      close.mutate(
-        { kind: 'revoke', invitationId, isCurrentSession: captureSession() },
-        { onSettled },
-      )
+      close.mutate({ kind: 'revoke', invitationId, session: captureSessionScope() }, { onSettled })
     },
     closing: close.isPending,
   }
