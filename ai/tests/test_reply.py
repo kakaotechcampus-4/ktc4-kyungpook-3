@@ -496,6 +496,20 @@ def test_the_real_run_reports_a_cleared_due_as_due_clear(monkeypatch):
     assert body["changes"][0]["evidence_quote"] == "마감이 없어졌어요"
 
 
+def test_the_real_run_reports_a_cleared_due_even_on_a_task_without_one(monkeypatch):
+    # 마감 없는 태스크에 "마감이 없어졌어요" 도 후보 수와 상관없이 PM 에게 알린다. 후보가 둘이면 보충 판단이
+    # 알리는데 하나일 때만 조용하면 안 된다(#624 리뷰)
+    stage1 = {"findings": [{"indices": [1], "summary": "API 명세서 마감을 없앰", "assignee_type": "none", "reason": "일정"}]}
+    _install(monkeypatch, stage1=stage1, terra=[_terra(category="schedule")],
+             luna_draft=[{"task": None, "due_date": "none", "doc_text": "마감을 없앰"}])
+
+    body = judge_reply(_claim({**API, "due_date": None}, lines=[{"sender": "pm", "text": "마감 괜찮아요?"},
+                                                               {"sender": "member", "text": "마감이 없어졌어요"}]),
+                       jev=FakeJev())
+
+    assert _shape(body) == [("t_api", "due_clear", None, None)]
+
+
 def test_the_real_run_keeps_a_block_on_a_task_shown_with_its_earlier_status(monkeypatch):
     # 시계가 도는 막힘 태스크는 막기 전 상태로 온다. to_item 이 같은 값이라며 지우지 않아야 한다
     stage1 = {"findings": [{"indices": [1], "summary": "API 명세서가 막혔다고 함", "assignee_type": "none", "reason": "진척"}]}

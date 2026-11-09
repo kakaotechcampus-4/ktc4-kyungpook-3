@@ -134,8 +134,9 @@ def to_item(
     # ── update: 현재 값과 달라지는 필드만 남긴다
     if item["due_date"] == target.due_date:
         item["due_date"] = None
-    # BE 는 due_date=null 을 "바꾸지 않음"으로 받는다. 원래 마감이 있는 Task 의 마감을 없애는 결정은 따로 보낸다(#624)
-    if drafted.structured.due_cleared and target.due_date is not None:
+    # BE 는 due_date=null 을 "바꾸지 않음"으로 받는다. 마감을 없애는 결정은 따로 보낸다(0062). 원래 마감이 없으면
+    # BE 가 등록 시점 값으로 보고 승인 요청을 만들지 않는다. 답장 판단은 이 값으로 PM 에게 알린다
+    if drafted.structured.due_cleared:
         item["due_cleared"] = True
     if item["status"] == target.status:
         item["status"] = None
@@ -169,7 +170,7 @@ def _with_edit(base: NotionCandidate, card: dict[str, Any]) -> NotionCandidate:
     changes = []
     if card["due_date"] is not None:
         changes.append(f"마감을 {base.due_date or '없음'} → {card['due_date']}")
-    if card.get("due_cleared"):
+    if card.get("due_cleared") and base.due_date is not None:
         changes.append(f"마감을 {base.due_date} → 없음")
     if card["status"] is not None:
         changes.append(f"상태를 {base.status} → {card['status']}")

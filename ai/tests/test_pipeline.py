@@ -741,7 +741,9 @@ def test_clearing_an_existing_due_is_an_update_card_with_due_cleared(monkeypatch
     assert card["target_snapshot"]["due_date"] == "2026-10-02"
 
 
-def test_clearing_a_due_that_was_never_set_changes_nothing(monkeypatch):
+def test_clearing_a_due_that_was_never_set_still_says_so(monkeypatch):
+    # 원래 마감이 있는지는 BE 가 등록 시점 값으로 다시 본다(없으면 승인 요청을 만들지 않는다). AI 는 결정을 그대로
+    # 싣는다. 그래야 답장 판단이 후보 수와 상관없이 같은 알림을 낸다(#624 리뷰)
     _install(
         monkeypatch, stage1={"findings": [LOGIN_KEEP]}, terra=[_terra(category="schedule")],
         luna_draft=[{"task": None, "due_date": "none", "doc_text": "로그인 화면 마감은 미정"}],
@@ -749,7 +751,9 @@ def test_clearing_a_due_that_was_never_set_changes_nothing(monkeypatch):
 
     out = run(DEDUP_MEETING, workspace_id="ws_1", today=date(2026, 9, 28), candidates=NoDueCandidates())
 
-    assert out.items == [] and out.failures == []
+    assert out.failures == []
+    (card,) = out.items
+    assert (card["due_date"], card["due_cleared"]) == (None, True)
 
 
 def test_a_proposed_due_then_cleared_in_the_same_meeting_clears_the_existing_due(monkeypatch):
