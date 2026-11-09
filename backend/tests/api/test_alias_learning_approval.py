@@ -346,6 +346,20 @@ def test_thirdrole_item_is_alias_candidate_and_saved(client, pm_client, db, seed
     assert r.json()["data"]["alias_candidate"] is False
 
 
+def test_thirdrole_item_found_by_existing_role_alias_is_not_alias_candidate(client, pm_client, db, seed):
+    """이미 있는 역할 별칭("BE 리더")으로 찾힌 thirdrole 항목은 묻지도 저장하지도 않는다(#607 리뷰, thirdname 과 같은 경로)."""
+    extraction_id = _hold_item(client, seed, title="백엔드 배포", raw="BE 리더가", type_="thirdrole")
+    item = _extraction_item(pm_client, extraction_id)
+    before = len(_aliases(db))
+
+    r = _approve(pm_client, db, assignee=seed["leader"].member_id)
+
+    assert item["assignee"]["member_id"] == seed["leader"].member_id
+    assert (item["alias_candidate"], item["alias_text"]) == (False, None)
+    _assert_approved_with_task(db, r, "백엔드 배포")
+    assert len(_aliases(db)) == before
+
+
 @pytest.mark.parametrize("save_alias", [None, False])
 def test_approve_without_save_alias_saves_nothing(client, pm_client, db, seed, save_alias):
     _hold_item(client, seed)
