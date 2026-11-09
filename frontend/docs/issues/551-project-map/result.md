@@ -67,7 +67,7 @@ Codex·Grok 리뷰에서 감독 세션이 고르게 한 일곱 가지를 고쳤�
 6. 목록 줄의 담당 이름은 96px 에서 말줄임하고 전체 이름을 `title` 로 둔다. 390px 브라우저에서 긴 이름(26자)으로 가로 넘침 0 을 확인했다.
 7. 두 내려받기의 `mutationFn` 첫 줄에서 세션이 끝났으면 보내지 않는다(`REQUEST_CANCELED`, 알림 없음).
 
-검사: typecheck·lint·build 통과, 바꾼 파일의 prettier 통과. 바꾼 곳 테스트 14개 파일 158개 통과. 빌드 뒤 화면 chunk gzip 5.36KB, 그래프 chunk gzip 8.38KB.
+검사: typecheck·lint·build 통과, 바꾼 파일의 prettier 통과. 바꾼 곳 테스트 14개 파일 158개 통과. 전체 테스트(`npm run test -- --maxWorkers=1`, 커밋 `2228fad8`)는 319개 파일 4,105개 모두 통과했다(2,195초). 빌드 뒤 화면 chunk gzip 5.36KB, 그래프 chunk gzip 8.38KB.
 
 ## 남은 일
 
