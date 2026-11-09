@@ -16,6 +16,7 @@ function PublishedConsentGuard({ documents }: { documents: PublishedPolicies }) 
       key={`${session.data.user.id}:${documents.terms.version}:${documents.privacy.version}`}
       userId={session.data.user.id}
       documents={documents}
+      pendingFallback={<GuardSkeleton />}
       onLogout={logout.requestLogout}
       logoutPending={logout.isPending}
       logoutError={logout.error}

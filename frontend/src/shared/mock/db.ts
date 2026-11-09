@@ -6,6 +6,7 @@ import type { MessageSettingsDto } from '@/shared/types/api/messageSettings'
 import type { TaskDto } from '@/shared/types/api/task'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { sessionFixture } from './fixtures/auth'
+import { POLICY_VERSION } from '@/shared/config/publishedPolicies'
 import {
   aliasFixtures,
   discordUserFixtures,
@@ -261,8 +262,13 @@ export function initialDb(): MockDb {
   return {
     session: structuredClone(sessionFixture),
     authenticated: true,
-    consents: [],
-    consentVersions: { terms: '2026-11-08', privacy: '2026-11-08' },
+    consents: (['terms', 'privacy'] as const).map((kind) => ({
+      user_id: sessionFixture.user.user_id,
+      kind,
+      version: POLICY_VERSION,
+      agreed_at: '2026-11-10T00:00:00Z',
+    })),
+    consentVersions: { terms: POLICY_VERSION, privacy: POLICY_VERSION },
     consentFailure: 'none',
     withdrawals: [],
     withdrawnMemberIds: [],

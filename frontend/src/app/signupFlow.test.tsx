@@ -13,7 +13,7 @@ import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
-import { enterMailedCode, walkSignup } from './test/walkSignup'
+import { agreeToPolicies, enterMailedCode, walkSignup } from './test/walkSignup'
 
 /* #427 이메일 → 코드 → 프로필 가입과 카카오 연결 가입. 제품과 같은 배선(renderApp)에 MSW + 실제 request 경로다 */
 
@@ -427,6 +427,7 @@ describe('프로필 단계', () => {
   it('이름·비밀번호 규칙을 입력 아래에 알린다. 보기 토글과 규칙 안내가 있다', async () => {
     await openSignup()
     await reachProfile()
+    await agreeToPolicies()
     await click('계정 만들기')
 
     const name = screen.getByLabelText('이름')
@@ -456,6 +457,7 @@ describe('프로필 단계', () => {
     await userEvent.click(name)
     await userEvent.paste('가'.repeat(101))
     await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+    await agreeToPolicies()
     await click('계정 만들기')
 
     await waitFor(() => expect(name).toHaveAttribute('aria-invalid', 'true'))
@@ -469,6 +471,7 @@ describe('프로필 단계', () => {
     for (const proof of Object.values(db.signupVerification.proofs)) proof.expiresAt = 0
     await userEvent.type(screen.getByLabelText('이름'), NEW_USER.name)
     await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+    await agreeToPolicies()
     await click('계정 만들기')
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -483,6 +486,7 @@ describe('프로필 단계', () => {
     for (const proof of Object.values(db.signupVerification.proofs)) proof.expiresAt = 0
     await userEvent.type(screen.getByLabelText('이름'), NEW_USER.name)
     await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+    await agreeToPolicies()
     await click('계정 만들기')
     await screen.findByRole('alert')
 
@@ -504,6 +508,7 @@ describe('프로필 단계', () => {
     )
     await userEvent.type(screen.getByLabelText('이름'), NEW_USER.name)
     await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+    await agreeToPolicies()
     await click('계정 만들기')
 
     expect(await screen.findByRole('alert')).toHaveTextContent('이미 가입된 이메일이에요.')
@@ -525,6 +530,7 @@ describe('프로필 단계', () => {
     await userEvent.type(screen.getByLabelText('이름'), NEW_USER.name)
     await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
 
+    await agreeToPolicies()
     const submitButton = screen.getByRole('button', { name: '계정 만들기' })
     const form = submitButton.closest('form')!
     fireEvent.submit(form)
@@ -604,6 +610,7 @@ describe('카카오 연결 가입: 인증된 이메일이 있다', () => {
     const log = recordRequests()
     const app = await openKakaoProfile()
     await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+    await agreeToPolicies()
     await click('계정 만들기')
 
     await app.expectPath('/onboarding/start')
@@ -622,6 +629,7 @@ describe('카카오 연결 가입: 인증된 이메일이 있다', () => {
     await openKakaoProfile()
     db.kakao.pending = null
     await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+    await agreeToPolicies()
     await click('계정 만들기')
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -638,6 +646,7 @@ describe('카카오 연결 가입: 인증된 이메일이 있다', () => {
     server.use(http.post('/api/v1/auth/signup', () => fail(code, 'x', 409), { once: true }))
     const app = await openKakaoProfile()
     await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+    await agreeToPolicies()
     await click('계정 만들기')
 
     expect(await screen.findByRole('alert')).toHaveTextContent(message)
@@ -681,6 +690,7 @@ describe('카카오 연결 가입: 이메일이 없다', () => {
     await reachProfile()
     expect(screen.getByLabelText('이름')).toHaveValue(KAKAO.nickname)
     await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+    await agreeToPolicies()
     await click('계정 만들기')
 
     await app.expectPath('/onboarding/start')

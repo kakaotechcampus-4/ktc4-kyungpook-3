@@ -18,7 +18,7 @@ from app.services import consents
 from tests.api.conftest import _user, signup_verified
 
 P = "/api/v1/consents"
-V = "2026-11-08"
+V = "2026-11-10"
 
 
 @pytest.fixture(autouse=True)
@@ -126,6 +126,26 @@ def test_agreeing_again_keeps_one_row_per_version(mdb):
     rows = mdb.scalars(select(UserConsent)).all()
     assert sorted(r.kind for r in rows) == ["privacy", "terms"]
     assert {r.kind: (r.consent_id, r.agreed_at) for r in rows} == first
+
+
+def test_published_version_does_not_reuse_draft_acceptance(mdb):
+    user = _user(mdb, "draft")
+    user_id = user.user_id
+    for kind in ("terms", "privacy"):
+        mdb.add(UserConsent(user_id=user_id, kind=kind, version="2026-11-08",
+                            agreed_at=datetime(2026, 11, 8)))
+    mdb.commit()
+    c = client("draft")
+    assert c.get(f"{P}/me").json()["data"]["required"] is True
+    rejected = _agree(c, terms="2026-11-08", privacy="2026-11-08")
+    assert rejected.status_code == 400
+    assert rejected.json()["error"]["code"] == "CONSENT_VERSION_MISMATCH"
+    assert _agree(c).json()["data"]["required"] is False
+    rows = mdb.scalars(select(UserConsent).where(UserConsent.user_id == user_id)).all()
+    assert sorted((row.kind, row.version) for row in rows) == [
+        ("privacy", "2026-11-08"), ("privacy", V),
+        ("terms", "2026-11-08"), ("terms", V),
+    ]
 
 
 def test_new_document_version_requires_agreeing_again(mdb, monkeypatch):

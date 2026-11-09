@@ -3,6 +3,7 @@ import type { Page, TestInfo } from '@playwright/test'
 
 /** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 + M6 태스크·승인 + M7 대시보드 + M8 태스크 보기·설정 + #320 팀원 초대 + #256 화자 지정 + #370 재촉 만들기 + #371 메시지 + #411 알림 띠 + #419 수정 제안 + #482 메시지 긴 문구 + #457 로그인 시도 제한 */
 export type Scenario =
+  | 'policy-reconsent'
   | 'consent-required'
   | 'consent-signup'
   | 'consent-agreed'
@@ -106,6 +107,11 @@ export async function readMailedCode(page: Page): Promise<string> {
 }
 
 /** 이메일 → 코드 → 프로필을 밟고 `계정 만들기` 를 누른다 (#427) */
+export async function agreeToPolicies(page: Page): Promise<void> {
+  await page.getByRole('checkbox', { name: '[필수] 이용약관 동의', exact: true }).check()
+  await page.getByRole('checkbox', { name: '[필수] 개인정보처리방침 동의', exact: true }).check()
+}
+
 export async function signUp(
   page: Page,
   values: { name: string; email: string; password: string },
@@ -120,6 +126,7 @@ export async function signUp(
   await page.getByRole('button', { name: '코드 확인' }).click()
   await page.getByLabel('이름').fill(values.name)
   await page.getByLabel('비밀번호', { exact: true }).fill(values.password)
+  await agreeToPolicies(page)
   await page.getByRole('button', { name: '계정 만들기' }).click()
 }
 

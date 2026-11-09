@@ -15,7 +15,7 @@ from app.models import UserConsent
 
 TERMS = "terms"
 PRIVACY = "privacy"
-CURRENT_VERSIONS: dict[str, str] = {TERMS: "2026-11-08", PRIVACY: "2026-11-08"}
+CURRENT_VERSIONS: dict[str, str] = {TERMS: "2026-11-10", PRIVACY: "2026-11-10"}
 
 
 def status(db: Session, user_id: str) -> dict:
