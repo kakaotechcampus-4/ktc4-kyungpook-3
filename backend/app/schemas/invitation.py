@@ -13,7 +13,7 @@ class InvitationCreateRequest(BaseModel):
 class InvitedUser(BaseModel):
     user_id: str
     name: str
-    email: str
+    email: str | None = None
 
 
 class InvitationResponse(BaseModel):
