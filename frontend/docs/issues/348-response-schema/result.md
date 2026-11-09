@@ -2,7 +2,7 @@
 
 - 기록일: 2026-11-08
 - 대상: [#348](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/348)
-- 상태: **PR 1(초안 5절의 1+2, #588 병합), PR 2(approval, #592 병합), PR 3(meeting·minutes·extraction, #597 병합), PR 4(message·notification, #604 병합), PR 5(integration·invitation·workspace·member·user·메시지 설정, 마지막) 반영.** 공용 경계(`shared/api`)와 모든 entity 응답을 검증한다. 옛 `enumValue` 는 지웠다. 검사는 MSW 기준이고 실제 BE 와는 붙여 보지 않았다.
+- 상태: **PR 1(초안 5절의 1+2, #588 병합), PR 2(approval, #592 병합), PR 3(meeting·minutes·extraction, #597 병합), PR 4(message·notification, #604 병합), PR 5(integration·invitation·workspace·member·user·메시지 설정, #634), #335 `reminder_dm` FE 정리 반영.** 공용 경계(`shared/api`)와 모든 entity 응답을 검증한다. 옛 `enumValue` 는 지웠다. 검사는 MSW 기준이고 실제 BE 와는 붙여 보지 않았다.
 
 ## 작업 근거와 요약
 
@@ -361,10 +361,35 @@ Codex·Grok 독립 리뷰(PR #634)의 중간 2 건, 낮음 1 건과 CI `format:c
 - 새 테스트: `app/workspaceInvalidResponse.test.tsx` 에 이름 없는 채팅 채널, 만들기 응답을 읽지 못했을 때 그 공간으로 잇기(서버에 그 이름의 공간이 하나), 찾지 못하면 토스트·공간 선택, 만드는 사이 세션이 끝나면 알림 없음. `shared/types/api/integration.test.ts` 에 null 이름 허용. `features/onboarding/model/createdWorkspace.test.ts`(모호한 다섯 경우). 화면 넷과 스키마 하나는 고치기 전 코드(`e9e31e3d`)로 먼저 실패를 봤다.
 - 검사: typecheck(직접 0 건)·lint·build 통과, `.verify/` 를 뺀 `prettier --check` 통과, 바꾼 곳 80 파일·1,265 건 통과. 전체 테스트는 CI 로 대신한다(t15 지시).
 
+## #335 `reminder_dm` FE 정리 (2026-11-10)
+
+BE #616 이 승인 종류 `reminder_dm` 을 지우고(운영 DB 행 0 건, #335 댓글) develop 에 병합·배포됐다. 사용자 결정(2026-11-09)대로 #348 후속으로 FE 에 남은 흔적을 정리했다. `feature/348-workspace-schema`(`5e0f4cc0`) 위에서 `feature/348-reminder-dm-cleanup` 으로 땄다.
+
+### 실제 변경
+
+- 테스트 다섯 곳의 「모르는 승인 종류」 예시 값을 `reminder_dm` 에서 BE 에 없는 `future_kind` 로 바꿨다. 검사하는 동작(모르는 종류는 지원하지 않는 요청, 승인·반려 본문을 만들지 않음, 스키마가 거절하지 않음, 모의 서버가 그 종류의 `task_overrides` 를 거절)은 그대로다.
+  - `app/approvals.test.tsx`, `entities/approval/model/mapper.test.ts`(테스트 이름의 「알림·」도 뺐다), `entities/approval/model/resolution.test.ts`, `shared/mock/taskApprovalFlow.test.ts`, `shared/types/api/approval.test.ts`
+- API 계약: `task_overrides` 의 「`reminder_dm` 에 보내면 400」을 지우고 승인 종류가 `task_create`·`task_update` 둘이라고 적었다. 승인 반영 규칙의 `reminder_dm` 줄을 지웠다.
+- MSW approval handler 주석: 「그 밖의 종류(reminder_dm 등)」를 BE 의 두 종류와 모르는 종류로 바꿨다.
+- 타입·픽스처·화면 문구에는 `reminder_dm` 이 없었다. 모르는 종류를 읽기 전용(`unsupported`)으로 두는 규칙(D-184 표시용)은 `reminder_dm` 전용이 아니라 그대로다.
+- 고치지 않은 것: `docs/plan/m1/plan.md` 의 `reminder_dm` 문구는 M1 당시의 계획 기록이라 두었다. 앞선 PR 의 결과 기록(이 파일의 PR 4 절)도 그대로다.
+
+### 검증
+
+| 검사 | 결과 |
+|---|---|
+| `npm run typecheck` | 통과(직접 돌려 0 건 확인) |
+| `npm run lint` | 통과 |
+| `npm run build` | 통과 |
+| `prettier --check . "!.verify/**"` | 통과 |
+| 바꾼 곳 테스트 | 승인 화면·entity·스키마와 모의 handler 11 파일·261 건 통과 |
+| 전체 테스트 | CI 로 대신한다(t15 지시) |
+
+- `git grep reminder_dm -- frontend` 는 위 계약의 지운 내력 한 줄, M1 계획, 이 결과 문서만 남는다.
+
 ## 남은 일
 
 - 이 이슈의 entity 묶음은 PR 5 로 끝난다. PR 5 가 `Closes #348` 이다.
-- #335 `reminder_dm` 의 FE 정리(테스트의 모르는 종류 예시 값, 계약의 `reminder_dm` 줄, MSW approval 주석)는 BE 2차 배포 뒤 #348 후속이다.
 - BE 합의 두 가지(배포 순서, `status: str` 의 enum 타입화)는 계약에 요청으로 남겼다.
 - 실제 BE 응답과의 대조는 BE enum 타입화와 `/openapi.json` 접근이 갖춰진 뒤 후속이다(#348 추가 항목 1).
 - ~~정할 것: 변경 응답이 스키마에 맞지 않을 때의 문구.~~ 2026-11-09 사용자 결정으로 반영했다(위 「리뷰 반영」).
