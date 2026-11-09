@@ -370,6 +370,39 @@ def test_approving_update_applies_only_proposed_changes(client, db, seed):
     assert login.title == "로그인 화면 시안"
 
 
+def test_update_with_due_cleared_proposes_removing_the_due(client, db, seed):
+    """due_date=null 은 "바꾸지 않음"이다. 기존 마감을 없애자는 결정은 due_cleared 로 따로 온다(#624)."""
+    login = seed["login"]
+    r = _post(client, seed, [_update(login, category="schedule", due_cleared=True,
+                                     doc_text="로그인 시안 마감을 9/28에서 미정으로")])
+
+    assert r.status_code == 201
+    payload = _payload(_approvals(db, "task_update")[0])
+    assert "due_date" in payload and payload["due_date"] is None
+    assert payload["base_values"]["due_date"] == "2026-09-28"
+
+
+def test_due_cleared_on_a_task_without_a_due_creates_no_approval(client, db, seed):
+    r = _post(client, seed, [_update(seed["search"], category="schedule", due_cleared=True, doc_text="마감 미정")])
+
+    assert r.status_code == 201
+    assert _approvals(db, "task_update") == []
+
+
+def test_approving_due_cleared_removes_the_due(client, db, seed):
+    login = seed["login"]
+    _post(client, seed, [_update(login, category="schedule", due_cleared=True, doc_text="마감 미정")])
+    [approval] = _approvals(db, "task_update")
+
+    client.cookies.set("session_token", "pm-token")
+    r = client.patch(f"/api/v1/approvals/{approval.approval_id}",
+                     json={"status": "approved", "resolved_by": seed["pm"].member_id})
+
+    assert r.status_code == 200, r.text
+    db.refresh(login)
+    assert login.due_date is None
+
+
 # ── 추출 경로별 게이트(#201) ──
 
 
