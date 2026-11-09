@@ -7,7 +7,7 @@ import pytest
 from draft.doc_draft import DraftUnavailableError
 from jev import FakeJev
 from judge.final_judge import JudgeUnavailableError
-from judge.pipeline import DUE_CLEARED_REASON, PipelineFailure, PipelineResult
+from judge.pipeline import PipelineFailure, PipelineResult
 from judge.reply import MODEL_NAME, ReplyJudgeFailed, judge_reply
 from shared.schemas import DraftResult, DraftStructured, JudgeResult
 from tests.test_pipeline import _install, _terra
@@ -212,8 +212,8 @@ def test_a_target_failure_becomes_unknown():
     assert (body["changes"][0]["summary"], body["changes"][0]["evidence_quote"]) == ("요약", REPLY)
 
 
-def test_the_due_cleared_reason_becomes_due_clear():
-    body = _judge(FakeRun(failures=[PipelineFailure("draft", "마감을 없앰", DUE_CLEARED_REASON)]))
+def test_a_cleared_due_becomes_due_clear():
+    body = _judge(FakeRun(_update(category="schedule", due_cleared=True, doc_text="마감을 없앰")))
     assert _shape(body) == [("t_api", "due_clear", None, None)]
     assert (body["changes"][0]["summary"], body["changes"][0]["evidence_quote"]) == ("마감을 없앰", REPLY)
 
@@ -228,9 +228,8 @@ def test_another_failure_next_to_a_change_is_a_failed_line():
 
 
 def test_a_failure_of_a_known_task_keeps_it_among_several_candidates():
-    run = FakeRun(_update(status="done"),
-                  failures=[PipelineFailure("draft", "마감을 없앰", DUE_CLEARED_REASON, "t_login"),
-                            PipelineFailure("judge", "요약", "x")])
+    run = FakeRun(_update(status="done"), _update(LOGIN, category="schedule", due_cleared=True),
+                  failures=[PipelineFailure("judge", "요약", "x")])
     body = _judge(run, _claim(API, LOGIN), jev=FakeJev([_yes(status=0.9, target=0.9)]))
 
     assert [(c["task_id"], c["field"]) for c in body["changes"]] == [
@@ -452,12 +451,13 @@ def test_an_assignee_verdict_on_an_unclear_target_is_unknown():
 
 
 def test_failure_lines_stay_as_they_are_next_to_a_supplement():
-    run = FakeRun(failures=[PipelineFailure("draft", "마감을 없앰", DUE_CLEARED_REASON),
-                            PipelineFailure("target", "요약", "수정 대상 후보를 찾지 못했습니다.")])
+    run = FakeRun(_update(category="schedule", due_cleared=True),
+                  failures=[PipelineFailure("target", "요약", "수정 대상 후보를 찾지 못했습니다.")])
     body = _judge(run, _claim(API, LOGIN), jev=FakeJev([_yes(status=0.9, target=0.9)]),
                   judge=FakeJudge({"t_login": _changed(LOGIN)}))
 
-    assert [c["field"] for c in body["changes"]] == ["status", "due_clear", "unknown"]
+    # 마감 지움은 실패가 아니라 run 의 항목이라 보충 항목보다 먼저 온다. 실패 줄은 끝에 그대로
+    assert [c["field"] for c in body["changes"]] == ["due_clear", "status", "unknown"]
 
 
 # ── 실제 run
@@ -484,7 +484,7 @@ def test_the_real_run_splits_a_reply_stage_one_merged(monkeypatch):
 
 
 def test_the_real_run_reports_a_cleared_due_as_due_clear(monkeypatch):
-    # judge_reply 가 DUE_CLEARED_REASON 으로 알아보는 자리를 실제 run 으로 고정한다
+    # run 이 내는 due_cleared 를 judge_reply 가 due_clear 줄로 알아보는 자리를 실제 run 으로 고정한다
     stage1 = {"findings": [{"indices": [1], "summary": "API 명세서 마감을 없앰", "assignee_type": "none", "reason": "일정"}]}
     _install(monkeypatch, stage1=stage1, terra=[_terra(category="schedule")],
              luna_draft=[{"task": None, "due_date": "none", "doc_text": "마감을 없앰"}])

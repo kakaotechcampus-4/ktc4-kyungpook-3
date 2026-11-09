@@ -80,7 +80,7 @@ def _changes(result: pipeline.PipelineResult, claim: dict[str, Any], jev: JevCli
     create            unknown 한 줄. 답장으로 새 태스크를 만들지 않는다
     update            필드마다 한 줄. 대상이 분명하지 않으면 그 대신 unknown 한 줄
     보충 update       첫 판단이 고른 태스크가 있는데 Jev 가 다른 후보에 대한 말이라고 하면 버린다
-    마감 지움 실패    due_clear 한 줄
+    마감 지움         due_clear 한 줄. 자동 변경 없이 PM 에게 알린다. 남은 필드는 update 처럼
     대상 실패         unknown 한 줄
     그 밖의 실패      failed 한 줄
     """
@@ -95,6 +95,11 @@ def _changes(result: pipeline.PipelineResult, claim: dict[str, Any], jev: JevCli
         if item["action"] == "create":
             changes.append(_line("unknown", item["doc_text"], item["evidence_quote"]))
             continue
+        if item.get("due_cleared"):
+            changes.append(_line("due_clear", item["doc_text"], reply, task_id=item["target_task_id"]))
+            item = {k: v for k, v in item.items() if k != "due_cleared"}
+            if not pipeline._has_change(item) and item["category"] != "scope":
+                continue
         others = [title for task_id, title in titles.items() if task_id != item["target_task_id"]]
         evidence_status, target = verify_reply(lines, item["task_title"], status=item["status"],
                                                change=item["doc_text"], others=others, today=today, client=jev)
@@ -103,8 +108,7 @@ def _changes(result: pipeline.PipelineResult, claim: dict[str, Any], jev: JevCli
         elif not (target == TARGET_OTHER and run_chose and item["target_task_id"] in supplemented):
             changes.append(_line("unknown", item["doc_text"], item["evidence_quote"]))
     for failure in result.failures:
-        field = ("due_clear" if failure.reason == pipeline.DUE_CLEARED_REASON
-                 else "unknown" if failure.stage == "target" else "failed")
+        field = "unknown" if failure.stage == "target" else "failed"
         changes.append(_line(field, failure.finding_text, reply,
                              task_id=None if field == "unknown" else failure.task_id or only))
     return changes
@@ -131,14 +135,16 @@ def _supplement(result: pipeline.PipelineResult, found: list[NotionCandidate], t
             logger.warning("보충 판단을 건너뛴다: task=%s %s", target.task_id, type(e).__name__)
             lines.append(_line("failed", reply.text, reply.text, task_id=target.task_id))
             continue
-        if drafted.structured.due_cleared:  # run 의 DUE_CLEARED_REASON 분기와 같은 뜻. to_item 에는 지울 칸이 없다
+        if drafted.structured.due_cleared:  # 답장의 마감 지움은 반영하지 않고 알리기만 한다. to_item 의 due_cleared 는 뗀다
             lines.append(_line("due_clear", drafted.doc_text, reply.text, task_id=target.task_id))
         if verdict.category == "assignee":
             # 이 finding 에는 담당자가 없어 to_item 이 버린다. 이름을 짓지 않고 요약을 scope 줄로 PM 에게 보인다
             verdict = replace(verdict, category="scope")
         item = pipeline.to_item(finding, verdict, drafted, target, transcript)
         if item is not None:
-            items.append(item)
+            item.pop("due_cleared", None)
+            if pipeline._has_change(item) or item["category"] == "scope":
+                items.append(item)
     return items, lines
 
 
