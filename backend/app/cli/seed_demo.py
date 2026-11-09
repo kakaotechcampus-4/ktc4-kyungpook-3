@@ -3,20 +3,27 @@
 계정·공간·팀원 자리·온보딩 단계는 DB 에 직접 만들고(seed_accounts), 지난 회의는 AI 봇과 같은
 서비스 토큰 API 로 재생한다(replay_meetings). 회의 데이터는 DB 에 직접 넣지 않는다.
 """
+import argparse
 import copy
+import getpass
+import json
+import os
 import secrets
+import sys
 import time
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 import httpx
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.workspaces import _build_onboarding
-from app.cli.demo_seed import SeedData, SeedMeeting
+from app.cli.demo_seed import DEFAULT_DATA_PATH, SeedData, SeedDataError, SeedMeeting, load_seed_data
+from app.core.database import SessionLocal
 from app.models import (
     Extraction,
     ExtractionItem,
@@ -411,3 +418,98 @@ def poll_embeddings(
             time.sleep(min(interval_s, remaining))
 
     return wait
+
+
+# 종료 코드: 0 성공, 1 시드 실패(SeedError), 2 입력·환경 부족(아무것도 쓰지 않음), 3 성공했으나 gate 분포 경고
+EXIT_OK, EXIT_FAILED, EXIT_USAGE, EXIT_GATE_WARNING = 0, 1, 2, 3
+
+
+def _password(env_name: str, label: str) -> str:
+    value = os.environ.get(env_name)
+    if value:
+        return value
+    if sys.stdin.isatty():
+        return getpass.getpass(f"{label} 비밀번호: ")
+    raise SeedError(f"{env_name} 환경변수가 필요합니다(터미널이 아니면 입력을 받을 수 없습니다)")
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="python -m app.cli.seed_demo", description="심사용 시드(#606)")
+    parser.add_argument("--base-url", default="http://localhost:8000", help="API 호스트 루트(/api/v1 은 붙이지 않는다)")
+    parser.add_argument("--email-pattern", required=True, help="{n} 이 1..6 으로 바뀌는 이메일 패턴")
+    parser.add_argument("--workspace-name", default=None, help="공간 이름(기본은 시드 데이터 값)")
+    parser.add_argument("--data", type=Path, default=DEFAULT_DATA_PATH)
+    parser.add_argument("--dry-run", action="store_true", help="계획만 출력하고 DB·HTTP 를 건드리지 않는다")
+    parser.add_argument("--embed-timeout", type=float, default=120, help="임베딩 대기 초(회의마다)")
+    parser.add_argument("--reset-passwords", action="store_true", help="기존 계정 비밀번호도 다시 정한다")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    try:
+        data = load_seed_data(args.data)
+        emails = emails_from_pattern(args.email_pattern)
+    except (SeedError, SeedDataError) as error:
+        print(f"오류: {error}", file=sys.stderr)
+        return EXIT_FAILED
+    workspace_name = args.workspace_name or data.workspace_name
+    try:
+        pm_password = _password("DEMO_PM_PASSWORD", "PM")
+        member_password = _password("DEMO_MEMBER_PASSWORD", "팀원2")
+        for password in (pm_password, member_password):
+            validate_password(password)
+    except (SeedError, ValueError) as error:
+        print(f"오류: {error}", file=sys.stderr)
+        return EXIT_USAGE
+
+    if args.dry_run:
+        print(f"공간 이름: {workspace_name}")
+        print(f"만들 계정: {len(emails)}개 ({', '.join(emails)})")
+        print(f"재생할 회의 {len(data.meetings)}개:")
+        for meeting in data.meetings:
+            print(f"- {meeting.title}")
+        return EXIT_OK
+
+    service_token = os.environ.get("SERVICE_TOKEN")
+    if not service_token:
+        print("오류: SERVICE_TOKEN 환경변수가 필요합니다", file=sys.stderr)
+        return EXIT_USAGE
+
+    try:
+        with SessionLocal() as db, httpx.Client(base_url=args.base_url, timeout=30) as http:
+            seeded = seed_accounts(
+                db,
+                data,
+                emails=emails,
+                workspace_name=workspace_name,
+                pm_password=pm_password,
+                member2_password=member_password,
+                reset_passwords=args.reset_passwords,
+            )
+            report = replay_meetings(
+                http,
+                db,
+                seeded,
+                data,
+                service_token=service_token,
+                wait_for_embeddings=poll_embeddings(SessionLocal, args.embed_timeout),
+            )
+    except SeedError as error:
+        print(f"오류: {error}", file=sys.stderr)
+        return EXIT_FAILED
+
+    print(json.dumps({"workspace_id": seeded.workspace_id, **asdict(report)}, ensure_ascii=False))
+    missing = [gate for gate in ("auto", "review", "hold") if report.gates.get(gate, 0) == 0]
+    if missing:
+        print(
+            f"경고: gate 가 0 건인 분류가 있습니다({', '.join(missing)}). 심사 시연에 세 분류가 모두 필요하면 "
+            "임베딩 유사 검색 결과를 확인하세요",
+            file=sys.stderr,
+        )
+        return EXIT_GATE_WARNING
+    return EXIT_OK
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
