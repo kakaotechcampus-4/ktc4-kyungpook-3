@@ -46,6 +46,11 @@ systemctl() {
   esac
 }
 flock() { return 0; }
+# mode=all 은 세 파트를 모두 올리므로 빌드·설치 명령도 바꿔 끼운다
+docker() { return 0; }
+npm() { return 0; }
+curl() { return 0; }
+uv() { return 0; }
 '''
 
 
@@ -56,7 +61,7 @@ def _bash() -> str | None:
     return shutil.which("bash")
 
 
-def _run(tmp_path: Path, *, installed: bool, units_changed: bool, timer_active: bool = True):
+def _run(tmp_path: Path, *, installed: bool, units_changed: bool, timer_active: bool = True, mode: str = "changed"):
     bash = _bash()
     if not bash:
         pytest.skip("bash 가 있어야 배포 스크립트를 돌린다")
@@ -86,7 +91,7 @@ def _run(tmp_path: Path, *, installed: bool, units_changed: bool, timer_active: 
         UNITS_CHANGED="1" if units_changed else "0", TIMER_ACTIVE="1" if timer_active else "0",
     )
     done = subprocess.run(
-        [bash, str(script), "old-checkout", "changed"], env=env,
+        [bash, str(script), "old-checkout", mode], env=env,
         capture_output=True, text=True, encoding="utf-8", timeout=60,
     )
     return done, calls.read_text(encoding="utf-8"), systemd, repo
@@ -147,3 +152,12 @@ def test_not_installed_only_warns_and_completes(tmp_path):
     assert "daemon-reload" not in calls
     assert not (systemd / "mm-chat-poll.timer").exists()
     assert (repo / ".git" / "mm-deployed-sha").read_text().strip() == "new-commit"
+
+
+def test_mode_all_updates_units_even_when_unchanged(tmp_path):
+    done, calls, _, _ = _run(tmp_path, installed=True, units_changed=False, mode="all")
+
+    assert done.returncode == 0, done.stderr
+    assert "sudo install -m 0644 ai/deploy/systemd/mm-chat-poll.service ai/deploy/systemd/mm-chat-poll.timer" in calls
+    assert "sudo systemctl daemon-reload" in calls
+    assert "sudo systemctl restart mm-chat-poll.timer" in calls
