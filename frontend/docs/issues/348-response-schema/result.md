@@ -340,7 +340,7 @@ Codex·Grok 독립 리뷰의 중간 2 건, 낮음 1 건을 고쳤다.
 | `npm run lint` | 통과 |
 | `npm run build` | 통과 |
 | 바꾼 곳 테스트 | `src/shared`·`src/entities`, 바꾼 기능 조각, 설정·팀·온보딩·가드·인증·탈퇴·초대·동의 화면 211 파일·2,649 건. 가드의 모르는 단계 테스트 1 건이 요청 수 단언에서 실패해 고친 뒤 그 파일 32 건 통과 |
-| `npm run test -- --maxWorkers=1` | FULL_TEST_348LAST |
+| `npm run test -- --maxWorkers=1` | 320 파일 중 312·4,095 건 중 4,086 통과(4,734 초). 실패 9 건은 `app/appShell`·`boot`·`consentFlow`·`messagesActionsMsw`·`messagesSignals`·`settingsConnections`·`settingsPage`·`taskBoardCompact` 의 5초 시간 초과와 찾기 시간 초과다. 그 여덟 파일만 다시 돌려 134 건 모두 통과해 부하 타이밍으로 본다 |
 
 - 새·바꾼 테스트
   - `shared/types/api/{integration,invitation,workspace,member,auth,messageSettings}.test.ts`: 모르는 상태 판단 값 거절과 경로, 목록 한 건의 경로, 필수 필드 누락, 허용(모르는 역할·별칭 출처, 빈 현재 단계, `member_id` 없는 옛 응답, 프로필 사진 없음). 픽스처와 MSW handler 응답(연동·Discord 채널, PM 초대·받을 초대, 공간 목록·상세, 팀원·별칭·Discord 사용자, 세션·가입 코드·카카오 대기·재설정 확인, 설정 조회·바꾸기)을 같은 스키마로 `parse` 한다.
