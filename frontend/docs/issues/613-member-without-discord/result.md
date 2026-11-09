@@ -90,7 +90,7 @@ Codex·Grok 리뷰의 중간 2건과 낮음 2건, 사용자 결정 1건을 고�
 - 온보딩 버튼: 추가하면 `다음` 이 되고 누르면 `{step:'connect_members', action:'complete'}` 가 저장된다(RTL, 브라우저 1280·390).
 - `createMember` 정규화와 조합 가드를 하나씩 되돌리면 해당 테스트가 실패하는 것을 확인했다.
 - 바꾼 곳 테스트 `npx vitest run src/app/onboardingMembers.test.tsx src/app/team.test.tsx src/features/member-add/model/useMemberAdd.test.tsx src/app/onboardingFlow.test.tsx src/app/onboardingIntegrations.test.tsx --maxWorkers=1` 5파일 92개, `memberMapping.test.ts` 22개가 통과했다. typecheck·eslint 를 통과했다.
-- 이 회차의 전체 테스트·build 결과는 아래에 더한다.
+- 이 회차의 전체 테스트(`npm run test -- --maxWorkers=1`)는 326파일 4,169개가 모두 통과했다(2,414초). build 도 통과했다.
 
 ## 제한과 남은 검증
 
