@@ -32,6 +32,7 @@ import type {
   Viewer,
 } from '../message-state'
 import { readJson } from '../utils'
+import { signalThreadUpdated } from './messageSocket'
 
 /*
  * 메시지 (계약 §5.7). 경로·응답·오류 코드는 백엔드 api/messages.py 와 같다.
@@ -305,6 +306,8 @@ export const messageHandlers = [
       const message = writeMessage(thread, writer, body, MOCK_NOW, reminderContext(workspaceId))
       if ('refusal' in message) return memberNotFound(thread.member_id)
       notifyNewMessage(db.notifications, thread, message, MOCK_NOW)
+      // 백엔드처럼 201 보다 신호가 먼저 나간다
+      signalThreadUpdated(thread)
       return ok(
         { ...message, thread_id: thread.thread_id, created_at: utc(message.created_at) },
         { status: 201 },

@@ -20,6 +20,7 @@ import { avatarText, bundleDateLabel, shortDate } from '../lib/format'
 import { threadHeading } from '../model/conversation'
 import { inboxPane, nextPaneMemory, selectDetail } from '../model/selection'
 import type { ComposeKind, DetailSelection, PaneMemory } from '../model/selection'
+import { useMessageSignals } from '../model/useMessageSignals'
 import { useOpenThread } from '../model/useOpenThread'
 import { SELF_SECTION_TITLE, isOwnMessage, threadPolicy } from '../model/viewer'
 import type { MessageViewer, ThreadPolicy } from '../model/viewer'
@@ -112,6 +113,7 @@ export function MessageInbox({
   compose = null,
 }: MessageInboxProps) {
   const inbox = useQuery(messageInboxQueryOptions(workspaceId))
+  useMessageSignals(workspaceId)
   const detailRef = useRef<HTMLElement>(null)
   const navigate = useNavigate()
   const location = useLocation()

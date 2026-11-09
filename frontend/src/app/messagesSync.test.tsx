@@ -8,6 +8,7 @@ import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { notificationFixtures } from '@/shared/mock/fixtures/notification'
 import type { MockNotification } from '@/shared/mock/fixtures/notification'
+import { openMessageSockets } from '@/shared/mock/handlers/messageSocket'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { fetchDto, jsonRequest } from '@/shared/test/api'
 import { isNotificationListRequest, recordRequests } from '@/shared/test/requests'
@@ -96,6 +97,9 @@ async function openDraftingReview() {
   return { app, log }
 }
 
+/** 화면의 첫 조회와, 대화 신호 소켓이 열린 뒤의 조회 하나 (#558). 알림 목록은 아직 메시지를 다시 받게 하지 않았다 */
+const SETTLED_INBOX_GETS = 2
+
 async function openSettledInbox() {
   finishDraft()
   db.notifications = structuredClone(notificationFixtures)
@@ -103,7 +107,10 @@ async function openSettledInbox() {
   const app = renderApp(paths.messages('ws_01'))
   await until(() => expect(rowTexts(reviewList())).toHaveLength(2))
   await until(() => expect(notificationGets(log)).toBe(1))
+  await until(() => expect(openMessageSockets()).toHaveLength(1))
+  await until(() => expect(inboxGets(log)).toBe(SETTLED_INBOX_GETS))
   await pause(150)
+  expect(inboxGets(log)).toBe(SETTLED_INBOX_GETS)
   return { app, log }
 }
 
@@ -188,14 +195,14 @@ describe('AI 초안을 기다리는 동안만 다시 받는다', () => {
 describe('처음 보는 메시지 알림이 오면 메시지를 다시 받는다', () => {
   it('첫 알림 목록으로는 다시 받지 않고, 자동 취소 알림이 오면 목록을 다시 받아 취소된 묶음이 빠진다', async () => {
     const { log } = await openSettledInbox()
-    expect(inboxGets(log)).toBe(1)
+    expect(inboxGets(log)).toBe(SETTLED_INBOX_GETS)
 
     bundleOf('bd_01').status = 'cancelled'
     notify('nt_10', 'reminder_auto_cancelled')
     await advance(30_000)
     await until(() => expect(rowTexts(reviewList())).toHaveLength(1))
     expect(rowTexts(reviewList())[0]).toContain('정하늘')
-    expect(inboxGets(log)).toBe(2)
+    expect(inboxGets(log)).toBe(SETTLED_INBOX_GETS + 1)
   })
 
   it('태스크 알림(무응답 막힘)으로는 메시지를 다시 받지 않는다', async () => {
@@ -206,7 +213,7 @@ describe('처음 보는 메시지 알림이 오면 메시지를 다시 받는다
     await advance(30_000)
     await until(() => expect(notificationGets(log)).toBe(2))
     await pause(150)
-    expect(inboxGets(log)).toBe(1)
+    expect(inboxGets(log)).toBe(SETTLED_INBOX_GETS)
     expect(rowTexts(reviewList())).toHaveLength(2)
   })
 
@@ -223,12 +230,12 @@ describe('처음 보는 메시지 알림이 오면 메시지를 다시 받는다
       )
     await advance(30_000)
     await until(() => expect(rowTexts(reviewList())).toHaveLength(1))
-    expect(inboxGets(log)).toBe(2)
+    expect(inboxGets(log)).toBe(SETTLED_INBOX_GETS + 1)
 
     await advance(30_000)
     await until(() => expect(notificationGets(log)).toBe(3))
     await pause(150)
-    expect(inboxGets(log)).toBe(2)
+    expect(inboxGets(log)).toBe(SETTLED_INBOX_GETS + 1)
   })
 
   it('세션이 바뀐 뒤 처음 받은 알림 목록은 새 기준이라 이전 기준으로 무효화하지 않고, 이전 세션에 남은 화면은 무효화돼도 다시 받지 않는다', async () => {
@@ -248,7 +255,7 @@ describe('처음 보는 메시지 알림이 오면 메시지를 다시 받는다
     await advance(30_000)
     await until(() => expect(inboxInvalidated()).toBe(true))
     await pause(150)
-    expect(inboxGets(log)).toBe(1)
+    expect(inboxGets(log)).toBe(SETTLED_INBOX_GETS)
     expect(rowTexts(reviewList())).toHaveLength(2)
   })
 
