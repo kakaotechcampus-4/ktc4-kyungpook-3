@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
-import { capture, readMailedCode, start } from './support'
+import { agreeToPolicies, capture, readMailedCode, start } from './support'
 
 /*
  * #427·#538 가입 이메일 인증과 카카오 로그인, 휴대폰 로그인(H-1). 세부 문구와 오류 갈래는 app/signupFlow.test.tsx·kakaoLogin.test.tsx 가 본다.
@@ -91,6 +91,7 @@ test('카카오 새 사용자: 잠긴 이메일로 가입하면 다음에는 이
   await expect(page.getByLabel('이메일')).toHaveValue(NEW_EMAIL, { timeout: 15_000 })
 
   await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
+  await agreeToPolicies(page)
   await page.getByRole('button', { name: '계정 만들기' }).click()
   await expect(page).toHaveURL('/onboarding/start')
 
@@ -121,6 +122,7 @@ test('카카오 이메일 없음: 코드 인증 뒤 가입하면 입력한 이�
   await page.getByRole('button', { name: '코드 확인' }).click()
   await expect(page.getByLabel('이름')).toHaveValue('이메일 없는 사용자')
   await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
+  await agreeToPolicies(page)
   await page.getByRole('button', { name: '계정 만들기' }).click()
   await expect(page).toHaveURL('/onboarding/start')
 

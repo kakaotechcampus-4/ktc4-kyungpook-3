@@ -10,6 +10,10 @@ import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
 import { ok } from '@/shared/mock/envelope'
 
+beforeEach(() => {
+  db.consents = []
+})
+
 function open() {
   if (currentPolicyPublication.kind !== 'published')
     throw new Error('synthetic fixture must be published')

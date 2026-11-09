@@ -105,7 +105,7 @@ describe('상태 전환 — 같은 회의의 토스트 하나가 바뀐다', () 
     fakeIntervals()
     processingUpload()
     const app = renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
 
     const processing = await openCard()
@@ -179,7 +179,7 @@ describe('역할별 노출', () => {
     replaceDb(createSpeakerScenarioDb('meeting-speakers-member'))
     setMeetingFlowMode('manual')
     renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
 
     const card = await openCard()
@@ -203,7 +203,7 @@ describe('역할별 노출', () => {
     const user = userEvent.setup()
     replaceDb(createSpeakerScenarioDb('meeting-speakers'))
     const app = renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
     const speakers = await waitFor(() => {
       expect(signalsWith(SPEAKERS_NEEDED_TITLE)).toHaveLength(1)
@@ -261,7 +261,7 @@ describe('같은 공간의 이어진 정리', () => {
     fakeIntervals()
     processingUpload()
     renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
     await openCard()
 
@@ -387,7 +387,7 @@ describe('세션 경계', () => {
   it('세션이 바뀐 뒤 누른 「화자 지정하기」는 옮기지 않는다', async () => {
     replaceDb(createSpeakerScenarioDb('meeting-speakers'))
     const app = renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
     await waitFor(() => expect(signalsWith(SPEAKERS_NEEDED_TITLE)).toHaveLength(1))
 
@@ -432,7 +432,7 @@ describe('접기', () => {
     const user = userEvent.setup()
     processingUpload()
     renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
 
     expect(await waitForPill()).toHaveTextContent('정리 중0/3')
@@ -470,7 +470,7 @@ describe('접기', () => {
     const user = userEvent.setup()
     replaceDb(createSpeakerScenarioDb('meeting-speakers'))
     renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
     const speakers = await waitFor(() => {
       expect(signalsWith(SPEAKERS_NEEDED_TITLE)).toHaveLength(1)
@@ -492,7 +492,7 @@ describe('접기', () => {
     fakeIntervals()
     processingUpload()
     renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
     await waitForPill()
 
