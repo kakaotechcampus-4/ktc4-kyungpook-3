@@ -397,7 +397,7 @@ describe('Discord 건너뛰기 (U3-4, D-073 개정)', () => {
     await userEvent.click(await screen.findByRole('button', { name: '건너뛰기' }))
     expect(
       await screen.findByText(
-        '디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이전 단계에서 연결하거나 건너뛸 수 있어요.',
+        '디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이름으로 팀원을 추가하거나, 이전 단계에서 연결하거나, 건너뛸 수 있어요.',
       ),
     ).toBeInTheDocument()
     await app.expectPath('/onboarding/ws_03/connect_members')
