@@ -2400,6 +2400,7 @@ FE 연결 (#340, 2026-11-05).
 | 팀원별 별칭 보기·추가·삭제 | `GET /members/aliases`, `POST /members/{id}/aliases`, `DELETE /members/aliases/{alias_id}` | **구현됨(#523, 2026-11-08).** 설정 목차의 「팀원」이 여는 팀 화면에서 팀원 줄의 「별칭 N」을 펼친다. 칩마다 출처 꼬리표(`learned` 회의에서 배움, `display_name` 이름, `discord_profile` 디스코드, `manual` 직접 추가, 미확인이면 「· 미확인」). 추가·삭제는 PM 만 보인다. 본문은 `alias_text` 만 보낸다. 실패 문구는 오류 코드별이다([aliasMessages](../../src/features/member-alias/lib/aliasMessages.ts)). 같은 글자를 다시 넣으면 서버가 기존 행을 돌려주므로 「이미 있는 별칭이에요.」 로 보인다. MSW 기준 검증, 실서버 미검증 |
 | 건너뛴 온보딩 마저 하기 | 5.3 과 같다 | |
 | 팀원 초대·취소·연결 끊기 | `GET`·`POST /workspaces/{id}/invitations`, `POST /invitations/{id}/cancel`·`revoke` | FE·BE 구현. 소비 코드와 미검증 범위는 §5.9 |
+| 초대할 가입자 찾기 | `GET /users/search?q=&workspace_id=` | BE 구현(#628, 2026-11-10). FE 미연결. §5.9 |
 | 알림(메시지·알림 설정) | `GET`·`PATCH /workspaces/{id}/message-settings` | **구현됨** §5.7 (#340) |
 | 회의 채팅 채널(PM) | `GET /workspaces/{id}/discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel` | **구현됨** §4.3.1 (#428, #429) |
 
@@ -2410,25 +2411,29 @@ FE 연결 (#340, 2026-11-05).
 
 **현재 초대 API·FE 연결** (2026-11-09 소스 대조). #319에서 BE를 구현했고 현재 FE도 아래 API를 소비한다. 화면 쪽 합의 여부와 실제 계정 검증은 코드 연결과 구분한다. 결정 근거는 [결정 0036](../../../ai/docs/basis_for_decision/ai/2026-11-04-0036-member-invite-by-email.md). FE 요청 이슈는 #320, 제품 흐름은 #302.
 
+**2026-11-10 #628 BE 변경.** 초대를 이메일 대신 가입한 사용자의 ID 로 만든다. 카카오만으로 가입한 계정은 이메일이 없어(#610) 이메일 초대를 받을 수 없었다. 아래 표와 규칙은 바뀐 BE 계약이다. 위 FE 소비 코드는 아직 `{member_id, email}` 로 만들고 `email` 을 읽으므로 FE 반영과 같은 배포여야 한다. 결정 근거는 [아이디 초대 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-10-invite-by-username-decision.md). 배포할 때 대기 중이던 이메일 초대는 모두 `canceled` 가 되고, 대상 계정을 찾을 수 없는 닫힌 초대는 지워진다.
+
 현재 소비 근거는 [초대 Query](../../src/entities/invitation/api/invitationQueries.ts), [초대 명령](../../src/entities/invitation/api/invitationMutations.ts), [PM 제어](../../src/features/member-invite/ui/MemberInviteControl.tsx), [내 초대](../../src/widgets/app-shell/ui/MyInvitations.tsx), [수락·거절 처리](../../src/features/invitation-respond/model/useInvitationResponse.ts)다. PM 목록은 팀원별 최신 초대를 고르고 생성·취소·연결 끊기 뒤 목록을 다시 받는다. 내 초대는 수락 뒤 공간 목록을 새로 받아 이동한다. 코드와 [화면 회귀](../../src/app/invitationRespond.test.tsx)를 대조했으며 이번 문서 작업에서 이를 다시 실행하거나 실서버 성공으로 판정하지 않았다.
 
-온보딩에서 디스코드 명단으로 만든 팀원은 로그인 계정과 이어져 있지 않다(`member.user_id` 가 null). PM 이 그 팀원에게 가입 이메일로 초대를 만들고, 그 이메일로 로그인한 사람이 내 초대에서 수락하면 팀원과 계정이 이어져 워크스페이스 목록에 나타난다. 수락 전에는 그 워크스페이스의 API 가 모두 403 이다. 초대 메일은 보내지 않는다. PM 이 디스코드 등으로 알리고, 팀원은 로그인하면 내 초대에서 본다.
+온보딩에서 디스코드 명단으로 만든 팀원은 로그인 계정과 이어져 있지 않다(`member.user_id` 가 null). 팀원이 먼저 가입해 PM 에게 아이디를 알려 주면, PM 이 그 아이디로 가입자를 찾아 그 팀원에게 초대를 만든다. 그 사람이 내 초대에서 수락하면 팀원과 계정이 이어져 워크스페이스 목록에 나타난다. 수락 전에는 그 워크스페이스의 API 가 모두 403 이다. 초대 메일이나 알림은 보내지 않는다. PM 이 디스코드 등으로 알리고, 팀원은 로그인하면 내 초대에서 본다.
 
 | 요청 | 누가 | 하는 일 |
 |---|---|---|
-| `POST /workspaces/{workspace_id}/invitations` → 201 | PM | 초대 만들기 `{member_id, email}`. 같은 팀원에게 대기 중인 초대가 있으면 그 초대를 취소하고 새로 만든다 |
+| `GET /users/search?q=&workspace_id=` | 그 공간의 PM | 초대할 가입자 찾기. `{items: [{user_id, username, name}]}` |
+| `POST /workspaces/{workspace_id}/invitations` → 201 | PM | 초대 만들기 `{member_id, user_id}`. 같은 팀원에게 대기 중인 초대가 있으면 그 초대를 취소하고 새로 만든다 |
 | `GET /workspaces/{workspace_id}/invitations` | PM | 이 워크스페이스의 초대 전부, 최근 것부터 |
 | `POST /invitations/{invitation_id}/cancel` | PM | 수락 전 초대 취소 |
 | `POST /invitations/{invitation_id}/revoke` | PM | 수락한 계정과 팀원의 연결 끊기 |
-| `GET /invitations/me` | 로그인 사용자 | 내 가입 이메일로 온 대기 중 초대, 최근 것부터 |
+| `GET /invitations/me` | 로그인 사용자 | 나에게 온 대기 중 초대, 최근 것부터 |
 | `POST /invitations/{invitation_id}/accept` | 받는 사람 | 수락. `{workspace_id, member_id}` 를 돌려준다 |
 | `POST /invitations/{invitation_id}/decline` | 받는 사람 | 거절. `{invitation_id, status: "declined"}` |
 
-- PM 쪽 응답(만들기·목록 한 줄·취소·연결 끊기)은 `{invitation_id, member_id, member_display_name, email, status, invited_by_name, accepted_user, created_at, responded_at}` 이다.
+- 검색은 아이디가 대소문자와 앞뒤 공백만 빼고 같아야 찾는다. 앞부분이나 이름으로는 찾지 않는다. 결과는 0명 또는 1명이고 이메일은 없다. 이 워크스페이스의 활성 팀원은 빠진다. 아이디 규칙(영문·숫자 4 ~ 20자)에 맞지 않는 `q` 는 오류 대신 빈 목록이다. PM 이 아니면 403 `FORBIDDEN` 이다. 이름을 보여 맞는 사람인지 확인하게 한다.
+- PM 쪽 응답(만들기·목록 한 줄·취소·연결 끊기)은 `{invitation_id, member_id, member_display_name, invited_user, status, invited_by_name, accepted_user, created_at, responded_at}` 이다.
+  - `invited_user` 는 초대받은 계정 `{user_id, username, name}` 이다. 이메일은 없다.
   - `accepted_user` 는 수락한 계정 `{user_id, name, email}` 이고 수락 전에는 null 이다. 연결을 끊은 뒤에도 남아 누가 들어왔었는지 보인다. PM 은 이 이름·이메일을 보고 엉뚱한 계정이면 연결을 끊는다.
   - `responded_at` 은 마지막으로 상태가 바뀐 시각이다. 연결을 끊으면 수락 시각 대신 끊은 시각이 된다.
-- 내 초대 한 줄은 `{invitation_id, workspace_id, workspace_name, member_display_name, invited_by_name, created_at}` 이다. 초대보다 먼저 가입했든 나중에 가입했든 같은 기준(가입 이메일)으로 찾는다.
-- 이메일은 대소문자와 앞뒤 공백을 무시하고 비교한다. 초대의 `email` 은 소문자로 바꿔 저장하고 돌려준다. 이메일 형식이 아니면 400 `INVALID_REQUEST`.
+- 내 초대 한 줄은 `{invitation_id, workspace_id, workspace_name, member_display_name, invited_by_name, created_at}` 이다. 초대는 계정에 묶이므로 이메일 없는 카카오 계정도 받는다.
 - 상태와 화면 표기(제안)
 
   | `status` | 화면 | 뜻 |
@@ -2439,27 +2444,29 @@ FE 연결 (#340, 2026-11-05).
   | `canceled` | 취소 | PM 이 수락 전에 닫았거나, 같은 팀원에게 새 초대를 만들어 닫혔다 |
   | `revoked` | 연결 끊김 | PM 이 수락 뒤 연결을 끊었다. 팀원 행과 태스크·이력은 그대로고 `member.user_id` 만 null 로 돌아간다 |
 
-- 만료는 없다. 이메일 고치기 API 는 없고, 같은 팀원에게 다시 초대하면 대기 중인 초대가 `canceled` 가 된다. 거절·취소·연결 끊김 뒤에는 다시 초대할 수 있다. 연결을 끊은 팀원의 역할이 PM 이면 팀원으로 되돌린 뒤 초대한다.
+- 만료는 없다. 다른 사람을 골랐으면 같은 팀원에게 다시 초대한다. 대기 중이던 초대는 `canceled` 가 된다. 거절·취소·연결 끊김 뒤에는 다시 초대할 수 있다. 연결을 끊은 팀원의 역할이 PM 이면 팀원으로 되돌린 뒤 초대한다.
 - 수락한 팀원의 권한은 기존 팀원 권한 그대로다. 기존 API 에서 바뀐 것은 아래 `PATCH /members/{id}` 의 역할 변경 하나다.
 - 탈퇴한 팀원의 초대는 내 초대에 나오지 않고 수락할 수 없다(409 `INVITATION_NOT_PENDING`). PM 목록에는 남는다.
+- 초대받은 계정이 탈퇴하면 그 계정에 온 초대는 지워져 PM 목록에서도 사라진다.
 - 대기 초대가 있는 팀원은 PM 으로 올릴 수 없다. `PATCH /members/{id}` `{role: "pm"}` 이 409 `MEMBER_HAS_PENDING_INVITATION` 이고 역할과 초대는 그대로다. 받는 사람이 수락한 뒤 올리거나, 초대를 취소한 뒤 올린다. 역할 외의 수정은 막지 않는다.
 - 오류
 
   | 코드 | 상태 | 언제 |
   |---|---|---|
-  | `FORBIDDEN` | 403 | PM 이 아닌 사람이 PM 쪽 요청을 했다 |
+  | `FORBIDDEN` | 403 | PM 이 아닌 사람이 PM 쪽 요청이나 검색을 했다 |
   | `MEMBER_NOT_FOUND` | 404 | 만들기에서 팀원이 없거나, 이 워크스페이스 팀원이 아니거나, 탈퇴했다 |
+  | `USER_NOT_FOUND` | 404 | 만들기에서 그 `user_id` 의 가입자가 없다(탈퇴 포함). PM 이 아니면 이 코드 대신 403 이다 |
   | `MEMBER_ALREADY_LINKED` | 409 | 이미 로그인 계정이 이어진 팀원이다(만들기·수락) |
-  | `ALREADY_WORKSPACE_MEMBER` | 409 | 그 이메일의 계정, 또는 수락하려는 내가 이미 이 워크스페이스의 팀원이다 |
-  | `EMAIL_ALREADY_INVITED` | 409 | 같은 이메일로 다른 팀원에게 보낸 초대가 대기 중이다 |
+  | `ALREADY_WORKSPACE_MEMBER` | 409 | 초대할 계정, 또는 수락하려는 내가 이미 이 워크스페이스의 팀원이다 |
+  | `USER_ALREADY_INVITED` | 409 | 같은 사용자에게 다른 팀원으로 보낸 초대가 대기 중이다. #628 전의 `EMAIL_ALREADY_INVITED` 를 대신한다 |
   | `PM_MEMBER_NOT_INVITABLE` | 409 | 이 워크스페이스에서 역할이 PM 인 팀원을 초대하려 했다. 팀원으로 초대하고, 수락한 뒤 PM 으로 바꾼다. 다른 워크스페이스의 역할과는 상관없다 |
   | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 했다(`PATCH /members/{id}`) |
-  | `INVITATION_NOT_FOUND` | 404 | 초대가 없다. 수락·거절에서는 내 이메일로 온 초대가 아니어도, 취소·연결 끊기에서는 그 워크스페이스 소속이 아니어도 이 코드다(소속이지만 PM 이 아니면 403 `FORBIDDEN`) |
+  | `INVITATION_NOT_FOUND` | 404 | 초대가 없다. 수락·거절에서는 나에게 온 초대가 아니어도, 취소·연결 끊기에서는 그 워크스페이스 소속이 아니어도 이 코드다(소속이지만 PM 이 아니면 403 `FORBIDDEN`) |
   | `INVITATION_NOT_PENDING` | 409 | 대기 중이 아닌 초대를 수락·거절·취소했다 |
   | `INVITATION_NOT_ACCEPTED` | 409 | 수락하지 않은 초대의 연결을 끊으려 했다 |
   | `LAST_PM_REQUIRED` | 409 | 끊으면 로그인할 수 있는 PM 이 없어진다 |
 
-- 한 계정이 한 워크스페이스에서 두 팀원이 되지 않는다. 한 팀원에 대기 초대 하나, 한 워크스페이스에서 같은 이메일의 대기 초대 하나만 DB 가 허용하고, 수락할 때 이미 소속인지 다시 확인한다. 같은 초대를 동시에 수락하면 한 계정만 이어진다. 같은 이메일의 다른 초대가 수락되는 순간 새 초대를 만들면 드물게 수락할 수 없는 대기 초대가 생긴다. 그 초대를 수락하면 409 `ALREADY_WORKSPACE_MEMBER` 이고, PM 이 취소하면 된다. 연결을 끊으면 같은 이메일의 대기 초대도 함께 `canceled` 가 된다.
+- 한 계정이 한 워크스페이스에서 두 팀원이 되지 않는다. 한 팀원에 대기 초대 하나, 한 워크스페이스에서 같은 사용자의 대기 초대 하나만 DB 가 허용하고, 수락할 때 이미 소속인지 다시 확인한다. 같은 사용자가 다른 팀원 초대를 수락하는 중에 새 초대를 만들면 수락이 끝날 때까지 기다린 뒤 409 `ALREADY_WORKSPACE_MEMBER` 다(PostgreSQL 테스트로 확인). 연결을 끊으면 그 사용자에게 남은 대기 초대도 함께 `canceled` 가 된다.
 - 팀원이 온보딩(워크스페이스 만들기)을 건너뛰고 초대를 기다리는 데 새 백엔드 API 는 필요 없다. 초대를 기다리는 사용자는 `GET /auth/me` 의 `workspace_count` 가 0 이고 `GET /workspaces` 가 빈 목록 `{"items": [], "total": 0}` 이다.
 
 ### 착수 가능 여부 요약

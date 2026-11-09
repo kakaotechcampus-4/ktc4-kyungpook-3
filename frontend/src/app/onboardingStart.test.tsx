@@ -28,7 +28,9 @@ describe('시작 작업 선택', () => {
     await userEvent.click(screen.getByRole('link', { name: /팀원으로 시작/ }))
     await app.expectPath('/onboarding/member')
     expect(await screen.findByText('아직 소속된 워크스페이스가 없어요.')).toBeInTheDocument()
-    expect(await screen.findByText('PM에게 내 아이디(userpm)를 알려 주고 초대를 요청하세요.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('PM에게 내 아이디(userpm)를 알려 주고 초대를 요청하세요.'),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '새 워크스페이스 만들기' })).not.toBeInTheDocument()
 
     const before = log.started.filter(({ path }) => path === '/workspaces').length
@@ -147,7 +149,9 @@ describe('시작 작업 선택', () => {
   it('공간 선택의 빈 상태에서도 시작 방식을 다시 선택한다', async () => {
     applyScenario('no-workspace')
     const app = renderApp('/workspaces')
-    expect(await screen.findByText('PM에게 내 아이디(userpm)를 알려 주고 초대를 요청하세요.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('PM에게 내 아이디(userpm)를 알려 주고 초대를 요청하세요.'),
+    ).toBeInTheDocument()
     await userEvent.click(await screen.findByRole('link', { name: '시작 방식 다시 선택' }))
     await app.expectPath('/onboarding/start')
   })
