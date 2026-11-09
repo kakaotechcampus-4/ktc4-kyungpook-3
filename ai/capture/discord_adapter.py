@@ -12,6 +12,7 @@
   /stop     녹음 종료. 트랙을 닫고 저장한 뒤 워커를 찌른다. 처리 진행은 워커가 이 채널에 알린다
   /leave    음성 채널 퇴장 (녹음 중에는 거절)
   /end      자기 녹음의 저장까지 끝나면 퇴장. 그 사이 새 녹음이 시작됐으면 남는다
+  /gpu      GPU 전사 서버 켜기·끄기 요청과 상태(#530). 비공개 운영 채널(MM_OPS_CHANNEL_ID)에서 친 명령만 받는다
 
 녹음은 StreamingSink + TrackWriter 다. 패킷을 받는 즉시 16kHz 모노로 바꿔 화자별 wav 에 흘리고
 (메모리가 회의 길이와 무관), 트랙 안의 위치는 녹음 시작부터 흐른 monotonic 시간이다. 그래서
@@ -42,6 +43,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -56,6 +58,7 @@ from capture.recorder import (RECOVERY_INTERVAL_S, STATUS_RECORDING, STATUS_SAVE
 from capture.streaming_sink import StreamingSink
 from capture.track_writer import TrackPool
 from capture.voice_client import SafeVoiceClient
+from capture.worker import gpu as worker_gpu
 from capture.worker import request_nudge, worker_trouble
 from shared.config import RECORDINGS_DIR, settings
 from shared.schemas import now_iso
@@ -72,6 +75,8 @@ FLUSH_EVERY_S = 0.2   # 재정렬 창에 갇힌 마지막 패킷을 이 주기�
 RESUME_NOTICE = ("⚠️ 봇이 다시 시작되어 끊긴 회의의 녹음된 부분을 처리합니다. "
                  "이어서 기록하려면 `/join` 뒤 `/record` 를 실행해 주세요.")
 OUTBOX_POLL_S = 2.0        # 워커가 우편함에 쓴 알림을 채널에 올리는 주기
+# 운영 채널 글은 워커가 붙인 @everyone 만 울린다. 글에 섞인 사람·역할 멘션이 엉뚱한 사람을 부르지 않게
+OPS_MENTIONS = discord.AllowedMentions(everyone=True, roles=False, users=False, replied_user=False)
 OUTBOX_MAX_AGE_S = 1800.0  # 이보다 오래 올리지 못한 알림은 버린다. 봇이 오래 꺼져 있었으면 지난 진행은 의미가 없다
 
 
@@ -337,6 +342,20 @@ class RecordingCog(discord.Cog):
         await vc.disconnect(force=True)
         await self._notify(ctx.channel, "음성채널에서 나갔습니다.")
 
+    @discord.slash_command(name="gpu", description="GPU 전사 서버를 켜고 끄거나 상태를 봅니다(운영 채널에서만)")
+    @discord.option("action", str, description="on 켜기, off 끄기(24시간 자동 켜기 멈춤), status 상태",
+                    choices=["on", "off", "status"])
+    async def gpu(self, ctx: discord.ApplicationContext, action: str) -> None:
+        """요청 파일만 쓰고 상태 파일만 읽는다. 스위치를 부르고 상태를 바꾸는 것은 워커 하나다.
+        권한은 비공개 운영 채널에 들어온 멤버다. 채널 ID 가 비면 누구에게나 거절한다. 켜기는 개인 AWS 에 돈이 든다."""
+        ops = os.environ.get("MM_OPS_CHANNEL_ID", "").strip()
+        if not ops or str(getattr(ctx.channel, "id", "")) != ops:
+            await ctx.respond("운영 채널에서만 쓸 수 있습니다.", ephemeral=True)
+            return
+        answer = await asyncio.to_thread(worker_gpu, self.recordings_dir, action)
+        # 켜기·끄기는 돈과 전사를 바꾼다. 채널 기록에 누가 쳤는지 남긴다
+        await ctx.respond(f"{ctx.author.display_name} 님 요청: {answer}")
+
     # ------------------------------------------------------------------ 이벤트
     @discord.Cog.listener()
     async def on_voice_state_update(self, member, before, after) -> None:
@@ -425,6 +444,7 @@ class RecordingCog(discord.Cog):
         if not box.is_dir():
             return
         held: set[str] = set()                      # 이번 바퀴에 실패해 뒤 알림을 미루는 채널
+        ops = os.environ.get("MM_OPS_CHANNEL_ID", "").strip()
         for path in sorted(box.glob("*.json")):
             try:
                 note = json.loads(path.read_text(encoding="utf-8"))
@@ -447,12 +467,14 @@ class RecordingCog(discord.Cog):
                 continue
             channel = self._channel_for({"text_channel_id": cid})
             if channel is not None:                 # 볼 수 없는 채널이면 다시 해도 같아서 버린다
-                if await self._post_note(channel, note.get("text") or "", note.get("file")) == "retry":
+                mentions = OPS_MENTIONS if ops and cid == ops else None
+                if await self._post_note(channel, note.get("text") or "", note.get("file"), mentions) == "retry":
                     held.add(cid)
                     continue
             path.unlink(missing_ok=True)
 
-    async def _post_note(self, channel, text: str, file: str | None) -> str:
+    async def _post_note(self, channel, text: str, file: str | None,
+                         mentions: discord.AllowedMentions | None = None) -> str:
         """우편함 알림 하나를 올린다. sent, drop(다시 해도 같은 거절), retry 중 하나. 첨부를 열지 못하면 글만 올린다."""
         attachment = None
         if file:
@@ -460,11 +482,12 @@ class RecordingCog(discord.Cog):
                 attachment = discord.File(file)
             except OSError as e:
                 print(f"[outbox] 첨부를 열지 못해 글만 올린다: {type(e).__name__}: {e}", flush=True)
+        kw = {"allowed_mentions": mentions} if mentions is not None else {}
         try:
             if attachment is not None:
-                await channel.send(text, file=attachment)
+                await channel.send(text, file=attachment, **kw)
             else:
-                await channel.send(text)
+                await channel.send(text, **kw)
             return "sent"
         except discord.HTTPException as e:
             if 400 <= e.status < 500 and e.status != 429:

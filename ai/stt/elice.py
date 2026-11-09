@@ -26,6 +26,7 @@ vLLM 0.19.1 이 OpenAI 호환 API 로 서빙한다. word 를 요청해도 words 
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 
 import numpy as np
 import requests
@@ -41,6 +42,16 @@ def whisper_krw(audio_seconds: float) -> float:
     return audio_seconds * WHISPER_KRW_PER_SEC
 
 
+@dataclass(frozen=True)
+class SttEndpoint:
+    """주소·키·인증서를 생성자로 고정한 전사 서버. GPU 대기 서버가 쓴다. 전사 스레드 여럿이 같은 객체를 쓰므로
+    환경 변수를 바꿔서 서버를 옮기지 않는다(stt/failover.py)."""
+
+    base_url: str
+    api_key: str
+    ca_bundle: str | None = None
+
+
 class EliceStt:
     """Whisper large-v3 (API). 최종 전사용."""
 
@@ -50,8 +61,11 @@ class EliceStt:
     gives_word_times = False    # vLLM 이 words 를 채우지 않는다. 배치 전사가 묶음을 말한 순서대로 자른다(stt.batch.run)
     TIMEOUT_PER_AUDIO_S = 0.6   # 오디오 1초당 더 기다리는 시간. 옛 주소 실측 0.45배에 여유
 
-    def __init__(self, language: str = "ko", timeout: int = 30, word_timestamps: bool = True):
+    def __init__(self, language: str = "ko", timeout: int = 30, word_timestamps: bool = True,
+                 endpoint: SttEndpoint | None = None):
+        """endpoint 를 안 주면 호출마다 ELICE_* 환경 변수를 읽는다."""
         self.language = language
+        self.endpoint = endpoint
         self.timeout = timeout          # 고정 몫. 여기에 길이 비례분이 붙는다
         self.word_timestamps = word_timestamps
 
@@ -60,19 +74,20 @@ class EliceStt:
 
     def transcribe(self, samples: np.ndarray, sample_rate: int, prompt: str | None = None) -> SttResult:
         """prompt 를 주면 폼에 싣는다(#195). vLLM 은 위스퍼가 학습한 앞 문맥 기호가 아니라 <|prev|> 뒤에 넣는다."""
-        key = os.environ.get("ELICE_API_KEY")
+        ep = self.endpoint
+        key = ep.api_key if ep else os.environ.get("ELICE_API_KEY")
         if not key:
-            raise SttError("ELICE_API_KEY 환경변수가 없습니다.")
-        base = os.environ.get("ELICE_STT_BASE_URL")
+            raise SttError("ELICE_API_KEY 환경변수가 없습니다.", cause="config")
+        base = ep.base_url if ep else os.environ.get("ELICE_STT_BASE_URL")
         if not base:
-            raise SttError("ELICE_STT_BASE_URL 환경변수가 없습니다.")
+            raise SttError("ELICE_STT_BASE_URL 환경변수가 없습니다.", cause="config")
         if not base.startswith("https://"):
             # http 면 Bearer 키가 평문으로 나간다. 주소에 엔드포인트 id 가 있어 메시지에는 싣지 않는다
-            raise SttError("ELICE_STT_BASE_URL 은 https:// 로 시작해야 합니다.")
-        ca = os.environ.get("ELICE_STT_CA_BUNDLE")
+            raise SttError("ELICE_STT_BASE_URL 은 https:// 로 시작해야 합니다.", cause="config")
+        ca = ep.ca_bundle if ep else os.environ.get("ELICE_STT_CA_BUNDLE")
         if ca and not os.path.exists(ca):
             # requests 는 없는 경로에 plain OSError 를 던진다. 아래 except 를 지나쳐 SttError 가 되지 못한다
-            raise SttError("ELICE_STT_CA_BUNDLE 경로에 파일이 없습니다.")
+            raise SttError("ELICE_STT_CA_BUNDLE 경로에 파일이 없습니다.", cause="config")
 
         wav = to_wav_bytes(samples, sample_rate)
         grans = ["word", "segment"] if self.word_timestamps else ["segment"]
@@ -99,7 +114,7 @@ class EliceStt:
 
         if r.status_code != 200:
             # 서버가 헤더를 본문에 되돌려 주면 키가 실린다. 자르기 전에 가려야 경계에 걸친 키도 남지 않는다
-            raise SttError(f"STT {r.status_code}: {r.text.replace(key, '***')[:200]}")
+            raise SttError(f"STT {r.status_code}: {r.text.replace(key, '***')[:200]}", cause=_cause(r.status_code))
 
         try:
             j = r.json()
@@ -121,3 +136,12 @@ class EliceStt:
         except (KeyError, TypeError, ValueError) as e:
             raise SttError("STT 응답의 단어 시각을 읽지 못함") from e
         return SttResult(text=j["text"].strip(), words=words)
+
+
+def _cause(status: int) -> str:
+    """HTTP 상태를 SttError.cause 로. 408·429 는 서버가 바쁜 것이라 장애 쪽으로 센다."""
+    if status in (401, 402, 403):
+        return "auth"
+    if 400 <= status < 500 and status not in (408, 429):
+        return "request"
+    return "service"

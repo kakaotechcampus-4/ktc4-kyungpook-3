@@ -1,4 +1,7 @@
 # 운영 서버의 /etc/systemd/system/mm-worker.service.d/gpu-stt.conf 로 둔다. 절차는 README.md.
-# shared/config.py 의 load_env 는 이미 있는 환경변수를 덮지 않는다. 그래서 .env 를 고치지 않고 전사 주소와 키만 바뀐다.
+# 워커는 평소처럼 Elice 로 전사하고, GPU 서버 주소·키와 스위치 주소·토큰은 장애 대응에만 쓴다.
+# /etc/mm/gpu-stt.env 에는 GPU_STT_BASE_URL, GPU_STT_API_KEY, GPU_STT_CA_BUNDLE, GPU_SWITCH_URL, GPU_SWITCH_TOKEN 이 있다.
+# 들이는 순서는 manual, 저장 회의 리허설, auto 다. auto 는 리허설 뒤 이 값만 바꾼다.
 [Service]
 EnvironmentFile=/etc/mm/gpu-stt.env
+Environment=MM_GPU_FAILOVER=manual

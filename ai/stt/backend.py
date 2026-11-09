@@ -15,7 +15,12 @@ import numpy as np
 
 
 class SttError(RuntimeError):
-    pass
+    """cause 는 실패 원인이다. service(연결·타임아웃·5xx·이상한 응답), auth(401·402·403), request(그 밖의 4xx,
+    그 음성의 문제), config(키·주소·인증서 설정). GPU 전환(stt/failover.py)은 service 와 auth 만 장애 표본으로 센다."""
+
+    def __init__(self, message: str = "", cause: str = "service") -> None:
+        super().__init__(message)
+        self.cause = cause
 
 
 @dataclass(frozen=True)

@@ -3,6 +3,7 @@
 
     python -m capture.worker              # ai/ 안에서. --recordings, --transcripts, --interval 로 바꿀 수 있다
     python -m capture.worker --retry <서버ID>   # 떠 있는 워커가 그 서버를 포기한 것까지 돌게 깨운다
+    python -m capture.worker --gpu on|off|status   # GPU 전환(MM_GPU_FAILOVER)을 켠 워커에 켜기·끄기를 요청하거나 상태를 본다
 
 디스코드를 모른다. discord 와 capture.discord_adapter 를 import 하지 않고 봇 토큰도 필요 없다. 회의마다 단계가 끝날
 때 그 회의의 채널에 알릴 글을 우편함(recordings/.worker/outbox, capture.notify.FileOutbox)에 쓰고, 디스코드에 붙어
@@ -20,6 +21,10 @@ recordings/.worker/nudge 를 만들어(request_nudge) 다음 바퀴를 주기까
 SIGTERM·SIGINT 를 받으면 새 회의를 집지 않고 하던 회의를 마친 뒤 끝난다.
 
 바퀴 끝에 회의 요약을 한 건 맡는다(capture/summary_sweep.py). 처리 단계와 별개라 실패해도 회의 상태는 그대로다.
+
+GPU 전환(#530). MM_GPU_FAILOVER 가 manual 이나 auto 면 전사 백엔드가 stt.failover.FailoverStt 이고, 회의 바퀴와 따로 도는
+태스크가 주기마다 그 tick 을 부른다. Elice 가 계속 실패하면 GPU 대기 서버를 켜서 넘기고 돌아오면 되돌리고 끈다. 알림은
+운영 채널(MM_OPS_CHANNEL_ID)로 우편함에 쓴다. 비어 있거나 off 면 지금과 똑같다.
 """
 
 from __future__ import annotations
@@ -31,12 +36,14 @@ import os
 import signal
 import socket
 import time
+from datetime import datetime
 from pathlib import Path
 
 from capture.handoff import from_env as handoff_from_env
 from capture.judge_path import extract_path
 from capture.notify import FileOutbox, MeetingReporter, debug_from_env
 from capture.recorder import (
+    STATUS_FAILED,
     STATUS_SOURCED,
     Claims,
     backend_from_env,
@@ -134,21 +141,126 @@ def intake_from_env():
     return BeClient(cfg.be_base_url, service_token=token), PyannoteAiDiarizer(key)
 
 
+GPU_SETTINGS = ("GPU_STT_BASE_URL", "GPU_STT_API_KEY", "GPU_SWITCH_URL", "GPU_SWITCH_TOKEN")
+
+
+def ops_notifier(outbox):
+    """GPU 전환 알림을 비공개 운영 채널로 보낸다. 사람이 움직여야 하는 알림(켜기 시작·켜기 실패·상한)은 @everyone 을
+    붙인다. 비공개 채널이라 그 채널 멤버에게만 울린다. 채널이 비어 있으면 tick 이 남긴 로그뿐이다. 회의 채널에는 쓰지 않는다."""
+    def send(notice) -> None:
+        channel = os.environ.get("MM_OPS_CHANNEL_ID", "").strip()
+        if not channel:
+            return
+        outbox.send(channel, f"@everyone {notice.text}" if notice.alert else notice.text)
+    return send
+
+
+def wake_abandoned(recordings_dir: Path, since: float, notify) -> None:
+    """장애마다 처음 GPU 로 넘긴 직후 부른다. 이번 장애(since 이후) 전사 단계에서 포기한 회의의 서버를 깨워 GPU 로 다시 돌린다.
+
+    그 서버에 장애 전에 포기한 회의나 장애 중 전사가 아닌 단계에서 포기한 회의가 있으면 깨우지 않는다. 깨우기는 서버의
+    포기한 회의를 다 돌려서, 사람이 일부러 둔 옛 회의나 전사와 상관없이 멈춘 회의까지 BE 에 새 회의를 만들고 다시
+    과금한다(recorder._due). 그 서버는 이름만 알리고 사람이 --retry 한다.
+    업로드 회의는 포기 때 BE 가 실패로 닫아 깨워도 살릴 수 없다.
+    """
+    servers: dict[str, dict] = {}
+    for path in sorted(Path(recordings_dir).glob("session_*.json")):
+        try:
+            m = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        gid = m.get("guild_id")
+        if not gid or m.get("source") == "upload":
+            continue
+        state = m.get("recovery") or {}
+        if state.get("gave_up_at"):
+            at = datetime.fromisoformat(state["gave_up_at"]).timestamp()
+        elif "recovery" not in m and m.get("status") == STATUS_FAILED:
+            at = float("-inf")                         # 자동 복구 전의 실패. 포기한 회의로 둔다(recorder._due)
+        else:
+            continue
+        s = servers.setdefault(str(gid), {"name": m.get("guild") or str(gid), "now": 0, "other": False})
+        if at >= since and state.get("failed_stage") == "stt":
+            s["now"] += 1
+        else:
+            s["other"] = True
+    woke = [(gid, s) for gid, s in servers.items() if s["now"] and not s["other"]]
+    held = [(gid, s) for gid, s in servers.items() if s["now"] and s["other"]]
+    for gid, _ in woke:
+        request_wake(recordings_dir, gid)
+    from stt.failover import Notice
+    if woke:
+        notify(Notice("🔁 이번 장애 중 전사에서 멈춘 회의를 GPU 로 다시 돌립니다: "
+                      + ", ".join(f"{s['name']}({s['now']}건)" for _, s in woke)))
+    if held:
+        notify(Notice("⚠️ 장애 전이나 전사가 아닌 단계에서 멈춘 회의도 있어 자동으로 다시 돌리지 않은 서버가 있습니다. "
+                      "확인 뒤 다시 돌려 주세요: "
+                      + ", ".join(f"{s['name']} `python -m capture.worker --retry {gid}`" for gid, s in held)))
+
+
+def failover_from_env(recordings_dir: Path, *, notifier):
+    """MM_GPU_FAILOVER=manual|auto 면 FailoverStt, 비었거나 off 면 None 이다. 모르는 값, 주 전사기가 Elice 가 아님,
+    설정 빠짐, GPU 주소가 Elice 주소와 같음도 None 이고 이름만 로그에 남긴다. 값은 찍지 않는다."""
+    raw = os.environ.get("MM_GPU_FAILOVER", "").strip().lower()
+    if raw in ("", "off"):
+        return None
+    if raw not in ("manual", "auto"):
+        print("[worker] MM_GPU_FAILOVER 를 모르는 값이라 GPU 전환을 끈다(manual, auto, off 중 하나)", flush=True)
+        return None
+    if os.environ.get("MM_STT_BACKEND", "local") != "elice":
+        # backend_from_env 의 기본은 local 이다. 이 검사가 없으면 플래그만으로 주 전사기가 Elice 로 바뀐다
+        print("[worker] MM_STT_BACKEND 가 elice 가 아니라 GPU 전환을 끈다", flush=True)
+        return None
+    env = {k: os.environ.get(k, "").strip() for k in GPU_SETTINGS}
+    missing = [k for k, v in env.items() if not v]
+    if missing:
+        print(f"[worker] MM_GPU_FAILOVER={raw} 이지만 설정이 비어 GPU 전환을 끈다: {', '.join(missing)}", flush=True)
+        return None
+    if env["GPU_STT_BASE_URL"].rstrip("/") == os.environ.get("ELICE_STT_BASE_URL", "").strip().rstrip("/"):
+        print("[worker] GPU_STT_BASE_URL 이 ELICE_STT_BASE_URL 과 같아 GPU 전환을 끈다", flush=True)
+        return None
+    ca = os.environ.get("GPU_STT_CA_BUNDLE", "").strip() or None
+    # 설정이 틀리면 GPU 확인이 늘 실패해 서버를 두 번 켰다 끄고 멈춘다. 돈이 드는 그 길로 가기 전에 여기서 끈다
+    bad = [k for k in ("GPU_STT_BASE_URL", "GPU_SWITCH_URL") if not env[k].startswith("https://")]
+    if ca and not os.path.exists(ca):
+        bad.append("GPU_STT_CA_BUNDLE")
+    if bad:
+        print(f"[worker] 설정이 틀려 GPU 전환을 끈다(https 주소, 있는 인증서 파일이어야 한다): {', '.join(bad)}",
+              flush=True)
+        return None
+    from stt.elice import EliceStt, SttEndpoint
+    from stt.failover import FailoverStt, Mode
+    from stt.gpu_switch import GpuSwitch
+
+    elice, _, _ = backend_from_env()
+    gpu = EliceStt(endpoint=SttEndpoint(env["GPU_STT_BASE_URL"], env["GPU_STT_API_KEY"], ca))
+    d = worker_dir(recordings_dir)
+    notify = ops_notifier(notifier)
+    return FailoverStt(elice, gpu, switch=GpuSwitch(env["GPU_SWITCH_URL"], env["GPU_SWITCH_TOKEN"]), mode=Mode(raw),
+                       state_dir=d, notify=notify,
+                       on_gpu=lambda since: wake_abandoned(recordings_dir, since, notify))
+
+
 class Worker:
     def __init__(self, recordings_dir: Path = RECORDINGS_DIR, *, transcripts_dir: Path = TRANSCRIPTS_DIR,
                  stt_factory=None, gate_factory=None, extractor_factory=None, handoff_factory=None, intake_factory=None,
                  summary_factory=None, interval_s: float | None = None, poll_s: float = 1.0, notifier=None,
-                 debug: bool | None = None) -> None:
+                 debug: bool | None = None, failover=None) -> None:
         """팩토리 기본은 환경 변수다. poll_s 는 깨우기와 종료 신호를 확인하는 간격이다.
 
         notifier 는 채널 알림을 받는다(send). 기본은 봇이 읽는 우편함이다. debug 기본은 MM_DEBUG_REPORT 다.
+        failover 는 GPU 전환(stt.failover.FailoverStt)이다. stt_factory 를 주지 않았을 때만 환경 변수로 만든다.
         """
         extract_path()      # MM_EXTRACT_PATH 가 모르는 값이면 시작할 때 멈춘다. 추출은 워커만 한다
         # MM_SUMMARY_LLM 도 시작할 때 본다. 가져오기와 달리 설정 오타를 지나치지 않는다
         self._summary = (summary_factory if summary_factory is not None else summary_from_env)()
         self.recordings_dir = recordings_dir
         self.transcripts_dir = transcripts_dir
-        self._stt_factory = stt_factory or backend_from_env
+        self._notifier = notifier if notifier is not None else FileOutbox(recordings_dir)
+        if failover is None and stt_factory is None:
+            failover = failover_from_env(recordings_dir, notifier=self._notifier)
+        self._failover = failover
+        self._stt_factory = stt_factory or (failover.stt_factory if failover is not None else backend_from_env)
         self._gate_factory = gate_factory if gate_factory is not None else (lambda: None)   # 배치는 말 필터 없이(0030)
         self._extractor_factory = extractor_factory if extractor_factory is not None else build_extractor
         self._handoff_factory = handoff_factory if handoff_factory is not None else handoff_from_env
@@ -157,7 +269,6 @@ class Worker:
         self._intake_built = False
         self.interval_s = WORKER_INTERVAL_S if interval_s is None else interval_s
         self.poll_s = poll_s
-        self._notifier = notifier if notifier is not None else FileOutbox(recordings_dir)
         self._debug = debug_from_env() if debug is None else debug
         self._announced: set[str] = set()     # 이번 실행 동안 처리 시작을 알린 회의(capture.notify.MeetingReporter)
         self._claims = Claims()
@@ -172,15 +283,23 @@ class Worker:
         self._stopping = True
 
     def _beat(self, state: str = "running") -> None:
-        save_manifest(worker_dir(self.recordings_dir) / "heartbeat.json",
-                      {"state": state, "pid": os.getpid(), "host": socket.gethostname(), "at": now_iso(),
-                       "at_ts": time.time(), "interval_s": self.interval_s, "current": self._current,
-                       "started_at": self._started_at,
-                       "summary_running": self._summary_task is not None and not self._summary_task.done()})
+        beat = {"state": state, "pid": os.getpid(), "host": socket.gethostname(), "at": now_iso(),
+                "at_ts": time.time(), "interval_s": self.interval_s, "current": self._current,
+                "started_at": self._started_at,
+                "summary_running": self._summary_task is not None and not self._summary_task.done()}
+        if self._failover is not None:
+            beat["failover"] = f"{self._failover.mode}:{self._failover.phase}"
+        save_manifest(worker_dir(self.recordings_dir) / "heartbeat.json", beat)
 
     async def _heartbeat_loop(self) -> None:
         while True:
             self._beat()
+            await asyncio.sleep(self.interval_s)
+
+    async def _failover_loop(self) -> None:
+        """회의 바퀴와 따로 돈다. 첫 시도 하나가 몇 시간 걸려도 장애 판단이 늦지 않게 한다. tick 은 예외를 삼킨다."""
+        while True:
+            await asyncio.to_thread(self._failover.tick)
             await asyncio.sleep(self.interval_s)
 
     async def run_pass(self, *, guild_id=None, manual: bool = False) -> tuple[list[dict], list[dict]]:
@@ -323,6 +442,7 @@ class Worker:
 
     async def run(self) -> None:
         beat = asyncio.create_task(self._heartbeat_loop())
+        control = asyncio.create_task(self._failover_loop()) if self._failover is not None else None
         try:
             while not self._stopping:
                 self._nudge().unlink(missing_ok=True)      # 이번 바퀴가 그 녹음까지 본다
@@ -343,7 +463,9 @@ class Worker:
                     await self._summary_task
             finally:
                 beat.cancel()
-                await asyncio.gather(beat, return_exceptions=True)
+                if control is not None:
+                    control.cancel()
+                await asyncio.gather(beat, *([control] if control is not None else []), return_exceptions=True)
                 self._beat("stopped")
 
 
@@ -360,6 +482,28 @@ def retry(recordings_dir: Path, guild_id: str) -> str:
     return f"워커가 곧 서버 {guild_id} 의 회의를 포기한 것까지 돌립니다. 결과는 그 회의의 채널에 올라옵니다."
 
 
+def gpu(recordings_dir: Path, verb: str) -> str:
+    """--gpu on|off|status 와 디스코드 /gpu 가 쓴다. on·off 는 요청 파일만 남기고 떠 있는 워커의 다음 tick 이 읽는다.
+    status 는 상태 파일을 읽는다. 여기서 스위치를 직접 부르지 않는다. 상태 파일의 주인은 워커 하나다.
+
+    요청은 heartbeat 에 failover 칸이 있을 때(전환을 켠 워커가 남긴 것)만 남긴다. 받을 워커가 없는 요청은 며칠 뒤 전환을
+    켠 워커가 읽어 서버를 켠다."""
+    from stt.failover import request, status_text
+
+    d = worker_dir(recordings_dir)
+    hb = read_heartbeat(recordings_dir)
+    trouble = worker_trouble(recordings_dir)
+    note = f"\n⚠️ {trouble}." if trouble else ""
+    if verb == "status":
+        off = hb is not None and hb.get("state") == "running" and "failover" not in hb
+        return status_text(d) + ("\n⚠️ 떠 있는 워커의 GPU 전환이 꺼져 있습니다(MM_GPU_FAILOVER)." if off else "") + note
+    what = "켜기" if verb == "on" else "끄기(24시간 자동 켜기 멈춤)"
+    if hb is None or "failover" not in hb:
+        return f"GPU {what} 요청을 남기지 않았습니다. GPU 전환(MM_GPU_FAILOVER)을 켠 워커가 없습니다.{note}"
+    request(d, verb)
+    return f"GPU {what} 요청을 남겼습니다. 워커가 다음 확인 때 처리하고 결과는 운영 채널에 올립니다.{note}"
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="회의 후처리 워커")
     ap.add_argument("--recordings", default=str(RECORDINGS_DIR))
@@ -367,7 +511,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--interval", type=float, default=None, help="한 바퀴 주기(초). 기본 MM_WORKER_INTERVAL_S")
     ap.add_argument("--retry", metavar="서버ID", default=None,
                     help="떠 있는 워커가 그 서버의 회의를 포기한 것까지 돌게 깨우고 끝난다. 재시도를 다 써서 멈춘 회의에 쓴다")
+    ap.add_argument("--gpu", choices=("on", "off", "status"), default=None,
+                    help="GPU 전환을 켠 워커에 GPU 서버 켜기·끄기를 요청하거나 상태를 보고 끝난다")
     args = ap.parse_args(argv)
+    if args.gpu:
+        print(gpu(Path(args.recordings), args.gpu), flush=True)
+        return 0
     if args.retry:
         print(f"[worker] --retry {args.retry}: {retry(Path(args.recordings), args.retry)}", flush=True)
         return 0
