@@ -99,8 +99,8 @@ export interface MockInvitation {
   invitation_id: string
   workspace_id: string
   member_id: string
-  /** 앞뒤 공백을 빼고 소문자로 바꾼 값 */
-  email: string
+  /** 초대받은 계정. 그 계정이 탈퇴하면 초대가 지워진다 (#628) */
+  invited_user_id: string
   status: 'pending' | 'accepted' | 'declined' | 'canceled' | 'revoked'
   invited_by_user_id: string | null
   accepted_user_id: string | null

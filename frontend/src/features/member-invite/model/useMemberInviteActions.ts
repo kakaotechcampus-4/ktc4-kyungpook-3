@@ -6,6 +6,7 @@ import {
   latestInvitationsQueryOptions,
   revokeInvitation,
 } from '@/entities/invitation'
+import type { Invitee } from '@/entities/invitation'
 import { errorMessage, failureNotice } from '@/shared/api/errorMessages'
 import { CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
@@ -18,7 +19,7 @@ interface Tracked {
 
 export interface MemberInviteActions {
   /** 성공하면 알림을 띄우고 `onSuccess` 를 부른다. 실패 문구는 `inviteError` 로 남는다 — 창 안에 보인다 */
-  invite: (email: string, onSuccess: () => void) => void
+  invite: (invitee: Invitee, onSuccess: () => void) => void
   inviteError: string | null
   inviting: boolean
   /** 창을 새로 열 때 지난 초대 요청의 상태를 비운다 */
@@ -46,17 +47,21 @@ export function useMemberInviteActions(
       queryKey: latestInvitationsQueryOptions(workspaceId).queryKey,
     })
 
-  const create = useMutation<void, Error, Tracked & { email: string; onSuccess: () => void }>({
+  const create = useMutation<void, Error, Tracked & { invitee: Invitee; onSuccess: () => void }>({
     retry: false,
-    mutationFn: ({ email, session }) => {
+    mutationFn: ({ invitee, session }) => {
       if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
-      return createInvitation(workspaceId, { memberId: member.id, email }, session.signal)
+      return createInvitation(
+        workspaceId,
+        { memberId: member.id, userId: invitee.userId },
+        session.signal,
+      )
     },
-    onSuccess: (_, { email, onSuccess, session }) => {
+    onSuccess: (_, { invitee, onSuccess, session }) => {
       if (!session.isCurrent()) return
       toast.show({
         title: '초대를 만들었어요',
-        description: `메일은 가지 않아요. ${member.displayName}에게 ${email}로 가입하거나 로그인하라고 알려 주세요.`,
+        description: `알림은 가지 않아요. ${member.displayName}에게 ${invitee.username} 계정으로 로그인해 받은 초대를 수락하라고 알려 주세요.`,
       })
       onSuccess()
     },
@@ -94,9 +99,9 @@ export function useMemberInviteActions(
   })
 
   return {
-    invite: (email, onSuccess) => {
+    invite: (invitee, onSuccess) => {
       if (create.isPending) return
-      create.mutate({ email, onSuccess, session: captureSessionScope() })
+      create.mutate({ invitee, onSuccess, session: captureSessionScope() })
     },
     inviteError: create.error && create.error !== hiddenError ? failureNotice(create.error) : null,
     inviting: create.isPending,

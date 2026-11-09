@@ -96,7 +96,7 @@ describe('팀 화면', () => {
             {
               invitation_id: 'iv_09',
               member_id: 'mb_03',
-              email: 'jaehwan@example.com',
+              invited_user: { user_id: 'us_03', username: 'jaehwan', name: '이재환' },
               status: 'expired',
               accepted_user: null,
               created_at: '2026-09-10T00:00:00Z',

@@ -1,5 +1,4 @@
 import { http } from 'msw'
-import { z } from 'zod'
 import type { InvitationDto, MyInvitationDto } from '@/shared/types/api/invitation'
 
 /** 모의 서버의 초대 응답. 화면이 읽지 않는 칸도 백엔드처럼 낸다 */
@@ -14,15 +13,14 @@ import type { MockInvitation } from '../db'
 import { fail, list, ok } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
 import { requireAuth, requirePmRole } from '../auth-guard'
-import { isMemberOf, linkedUserIdOf, normalizeEmail, sessionEmail } from '../sessions'
+import { isMemberOf, linkedUserIdOf } from '../sessions'
 import { nextId, readJson } from '../utils'
+import { invalidBody, stringField } from '../validation'
 
 /*
  * 팀원 초대 (계약 §5.9). 검사 순서는 백엔드 api/invitations.py 와 같다.
+ * 초대는 가입한 계정(`invited_user_id`)에 묶인다 (#628). 그 계정이 탈퇴하면 탈퇴 handler 가 초대를 지운다.
  */
-
-/** 백엔드 EmailStr 처럼 연속 점·도메인 없는 주소를 거절한다. 화면(InviteDialog)과 같은 검사다 */
-const INVITE_EMAIL = z.email()
 
 const notFound = (invitationId: string) =>
   fail('INVITATION_NOT_FOUND', '초대를 찾을 수 없습니다.', 404, { invitation_id: invitationId })
@@ -31,11 +29,11 @@ const notPending = (invitationId: string) =>
     invitation_id: invitationId,
   })
 
+const accountOf = (userId: string | null) =>
+  db.accounts.find(({ session }) => session.user.user_id === userId)
+
 function accountName(userId: string | null): string | null {
-  if (userId === null) return null
-  return (
-    db.accounts.find(({ session }) => session.user.user_id === userId)?.session.user.name ?? null
-  )
+  return accountOf(userId)?.session.user.name ?? null
 }
 
 function memberOf(invitation: MockInvitation) {
@@ -43,14 +41,14 @@ function memberOf(invitation: MockInvitation) {
 }
 
 function toDto(invitation: MockInvitation): InvitationResponse {
-  const accepted = db.accounts.find(
-    ({ session }) => session.user.user_id === invitation.accepted_user_id,
-  )
+  const invited = accountOf(invitation.invited_user_id)?.session.user
+  if (!invited) throw new Error(`mock invited account ${invitation.invited_user_id} is missing`)
+  const accepted = accountOf(invitation.accepted_user_id)
   return {
     invitation_id: invitation.invitation_id,
     member_id: invitation.member_id,
     member_display_name: memberOf(invitation)?.display_name ?? '',
-    email: invitation.email,
+    invited_user: { user_id: invited.user_id, username: invited.username, name: invited.name },
     status: invitation.status,
     invited_by_name: accountName(invitation.invited_by_user_id),
     accepted_user: accepted
@@ -95,10 +93,10 @@ function pmInvitation(invitationId: string) {
   return requirePmRole(invitation.workspace_id) ?? invitation
 }
 
-/** 내 이메일로 온 초대가 아니면 있는지도 알리지 않는다(404). 팀원이 지워졌으면 닫힌 초대다 */
+/** 나에게 온 초대가 아니면 있는지도 알리지 않는다(404). 팀원이 지워졌으면 닫힌 초대다 */
 function myPendingInvitation(invitationId: string) {
   const invitation = db.invitations.find(({ invitation_id }) => invitation_id === invitationId)
-  if (!invitation || invitation.email !== sessionEmail(db.session.user))
+  if (!invitation || invitation.invited_user_id !== db.session.user.user_id)
     return notFound(invitationId)
   if (invitation.status !== 'pending' || !memberOf(invitation)) return notPending(invitationId)
   return invitation
@@ -107,16 +105,17 @@ function myPendingInvitation(invitationId: string) {
 export const invitationHandlers = [
   http.post('/api/v1/workspaces/:workspaceId/invitations', async ({ params, request }) => {
     const workspaceId = String(params.workspaceId)
+    const unauthenticated = requireAuth()
+    if (unauthenticated) return unauthenticated
+    const body = (await readJson(request)) ?? {}
+    const bodyError = invalidBody(stringField(body, 'member_id'), stringField(body, 'user_id'))
+    if (bodyError) return bodyError
     const denied = requirePmRole(workspaceId)
     if (denied) return denied
-    const body = await readJson(request)
-    if (
-      typeof body?.member_id !== 'string' ||
-      typeof body.email !== 'string' ||
-      !INVITE_EMAIL.safeParse(body.email.trim()).success
-    )
-      return fail('INVALID_REQUEST', '초대 요청이 올바르지 않습니다.', 400)
-    const email = normalizeEmail(body.email)
+    const userId = body.user_id as string
+    // 탈퇴한 계정은 행이 없다(accounts 에서 빠진다)
+    if (!accountOf(userId))
+      return fail('USER_NOT_FOUND', '사용자를 찾을 수 없습니다.', 404, { user_id: userId })
     const member = db.members.find(
       ({ member_id, workspace_id }) => member_id === body.member_id && workspace_id === workspaceId,
     )
@@ -127,23 +126,22 @@ export const invitationHandlers = [
       return fail('MEMBER_ALREADY_LINKED', '이미 계정이 연결된 팀원입니다.', 409, details)
     if (member.role === 'pm')
       return fail('PM_MEMBER_NOT_INVITABLE', 'PM 팀원은 초대할 수 없습니다.', 409, details)
-    if (
-      db.accounts.some(
-        ({ session }) =>
-          sessionEmail(session.user) === email && isMemberOf(workspaceId, session.user.user_id),
-      )
-    )
-      return fail('ALREADY_WORKSPACE_MEMBER', '이미 워크스페이스 팀원입니다.', 409, { email })
+    if (isMemberOf(workspaceId, userId))
+      return fail('ALREADY_WORKSPACE_MEMBER', '이미 워크스페이스 팀원입니다.', 409, {
+        user_id: userId,
+      })
     if (
       db.invitations.some(
         (invitation) =>
           invitation.workspace_id === workspaceId &&
-          invitation.email === email &&
+          invitation.invited_user_id === userId &&
           invitation.status === 'pending' &&
           invitation.member_id !== member.member_id,
       )
     )
-      return fail('EMAIL_ALREADY_INVITED', '이 이메일로 대기 중인 초대가 있습니다.', 409, { email })
+      return fail('USER_ALREADY_INVITED', '이 사용자에게 대기 중인 초대가 있습니다.', 409, {
+        user_id: userId,
+      })
     const createdAt = nextCreatedAt()
     closePending((invitation) => invitation.member_id === member.member_id)
     const invitation: MockInvitation = {
@@ -153,7 +151,7 @@ export const invitationHandlers = [
       ),
       workspace_id: workspaceId,
       member_id: member.member_id,
-      email,
+      invited_user_id: userId,
       status: 'pending',
       invited_by_user_id: db.session.user.user_id,
       accepted_user_id: null,
@@ -211,22 +209,21 @@ export const invitationHandlers = [
       })
     invitation.status = 'revoked'
     invitation.responded_at = respondedAt(invitation)
-    // 끊긴 계정이 같은 이메일의 남은 대기 초대로 돌아오지 못하게 함께 닫는다
+    // 끊긴 계정이 자기에게 남은 대기 초대로 돌아오지 못하게 함께 닫는다
     closePending(
-      ({ workspace_id, email }) =>
-        workspace_id === invitation.workspace_id && email === invitation.email,
+      ({ workspace_id, invited_user_id }) =>
+        workspace_id === invitation.workspace_id && invited_user_id === invitation.invited_user_id,
     )
     return ok(toDto(invitation))
   }),
   http.get('/api/v1/invitations/me', () => {
     const denied = requireAuth()
     if (denied) return denied
-    const email = sessionEmail(db.session.user)
     return list(
       db.invitations
         .filter(
           (invitation) =>
-            invitation.email === email &&
+            invitation.invited_user_id === db.session.user.user_id &&
             invitation.status === 'pending' &&
             memberOf(invitation) !== undefined,
         )

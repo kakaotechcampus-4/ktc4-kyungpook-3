@@ -5,7 +5,7 @@ function invitation(id: string, memberId: string, createdAt: string): Invitation
   return {
     id,
     memberId,
-    email: `${id}@example.com`,
+    invitedUser: { userId: `us_${id}`, username: `user${id}`, name: id },
     status: 'canceled',
     acceptedUser: null,
     createdAt,

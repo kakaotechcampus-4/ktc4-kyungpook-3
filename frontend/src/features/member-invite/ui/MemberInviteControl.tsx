@@ -81,11 +81,12 @@ export function MemberInviteControl({ workspaceId, member }: MemberInviteControl
       <InviteDialog
         open={inviteOpen}
         onOpenChange={setInviteOpen}
+        workspaceId={workspaceId}
         displayName={member.displayName}
-        pendingEmail={latest?.status === 'pending' ? latest.email : null}
+        pendingInvitee={latest?.status === 'pending' ? latest.invitedUser : null}
         pending={actions.inviting}
         serverError={actions.inviteError}
-        onSubmit={(email) => actions.invite(email, () => setInviteOpen(false))}
+        onSubmit={(invitee) => actions.invite(invitee, () => setInviteOpen(false))}
         onEdit={actions.clearInviteError}
       />
       {close?.kind === 'revoke' ? (

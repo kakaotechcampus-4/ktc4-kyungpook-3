@@ -128,7 +128,7 @@ export const MOCK_SCENARIOS = [
   // #344 리마인드 답장 판단. reply-judgment 는 ws_01 PM, reply-judgment-member 는 같은 상태의 일반 팀원(mb_01)이다
   'reply-judgment',
   'reply-judgment-member',
-  // #320 팀원 초대. team-invitations 는 ws_01 PM 이 보는 초대 상태, invitation-pending 은 초대받은 사람의 가입 전이다
+  // #320 팀원 초대. team-invitations 는 ws_01 PM 이 보는 초대 상태, invitation-pending 은 초대받은 사람의 로그인 전이다
   'team-invitations',
   'invitation-pending',
   // #627 아이디. username-taken 은 비로그인이고 박민수(minsu)가 가입해 있다. username-race 는 비로그인이고
@@ -626,11 +626,11 @@ function removeMeeting(state: MockDb, meetingId: string): void {
   )
 }
 
-/** ws_01 PM(us_01)이 보낸 초대. iv_02 는 이재환(mb_03)에게 jaehwan@example.com 으로 보낸 대기 초대다 */
+/** ws_01 PM(us_01)이 보낸 초대. iv_02 는 이재환(mb_03)에게 그 사람 계정(us_03)으로 보낸 대기 초대다 */
 function invitation(
   id: string,
   memberId: string,
-  email: string,
+  invitedUserId: string,
   status: MockInvitation['status'],
   createdAt: string,
 ): MockInvitation {
@@ -638,7 +638,7 @@ function invitation(
     invitation_id: id,
     workspace_id: 'ws_01',
     member_id: memberId,
-    email,
+    invited_user_id: invitedUserId,
     status,
     invited_by_user_id: 'us_01',
     accepted_user_id: null,
@@ -648,19 +648,21 @@ function invitation(
 }
 
 const pendingInvitation = () =>
-  invitation('iv_02', 'mb_03', 'jaehwan@example.com', 'pending', '2026-09-16T09:00:00Z')
+  invitation('iv_02', 'mb_03', 'us_03', 'pending', '2026-09-16T09:00:00Z')
 
-/** 박민수(us_02, 아이디 minsu). 어느 공간에도 직접 속하지 않는다 */
-function addMinsuAccount(state: MockDb): void {
+const acceptedByMinsu = (): MockInvitation => ({
+  ...invitation('iv_01', 'mb_02', 'us_02', 'accepted', '2026-09-15T09:00:00Z'),
+  accepted_user_id: 'us_02',
+})
+
+/** 어느 공간에도 직접 속하지 않은 가입자. 비밀번호는 픽스처 계정과 같다 */
+function addAccount(
+  state: MockDb,
+  user: { user_id: string; username: string; email: string; name: string },
+): void {
   state.accounts.push({
     session: {
-      user: {
-        user_id: 'us_02',
-        username: 'minsu',
-        email: 'minsu@example.com',
-        name: '박민수',
-        avatar_url: null,
-      },
+      user: { ...user, avatar_url: null },
       workspace_count: 0,
       last_workspace_id: null,
     },
@@ -670,20 +672,53 @@ function addMinsuAccount(state: MockDb): void {
   })
 }
 
+/** 박민수(us_02, 아이디 minsu). 어느 공간에도 직접 속하지 않는다 */
+function addMinsuAccount(state: MockDb): void {
+  addAccount(state, {
+    user_id: 'us_02',
+    username: 'minsu',
+    email: 'minsu@example.com',
+    name: '박민수',
+  })
+}
+
+/**
+ * 초대에 쓰는 가입자. 박민수(us_02, minsu), 이재환(us_03, jaehwan), 정하늘(us_04, haneul),
+ * 한도윤(us_05, doyun). 한도윤은 어느 팀원과도 이어지지 않아 아이디로 찾아 초대할 수 있다
+ */
+function addInviteeAccounts(state: MockDb): void {
+  addMinsuAccount(state)
+  addAccount(state, {
+    user_id: 'us_03',
+    username: 'jaehwan',
+    email: 'jaehwan@example.com',
+    name: '이재환',
+  })
+  addAccount(state, {
+    user_id: 'us_04',
+    username: 'haneul',
+    email: 'haneul@example.com',
+    name: '정하늘',
+  })
+  addAccount(state, {
+    user_id: 'us_05',
+    username: 'doyun',
+    email: 'doyun@example.com',
+    name: '한도윤',
+  })
+}
+
 /**
  * 팀원마다 최근 초대가 다르다. 박민수(mb_02)는 us_02 가 수락했고, 이재환(mb_03)은 대기, 정하늘(mb_04)은 거절이다.
- * 이재환에게는 오타로 보냈다가 취소한 더 오래된 초대(iv_00)도 있다 — 화면은 최근 것만 본다
+ * 이재환에게는 다른 사람(한도윤)을 잘못 골라 보냈다가 취소한 더 오래된 초대(iv_00)도 있다 — 화면은 최근 것만 본다
  */
 function addTeamInvitations(state: MockDb): void {
-  addMinsuAccount(state)
+  addInviteeAccounts(state)
   state.invitations.push(
-    invitation('iv_00', 'mb_03', 'jaehwan@exmaple.com', 'canceled', '2026-09-14T09:00:00Z'),
-    {
-      ...invitation('iv_01', 'mb_02', 'minsu@example.com', 'accepted', '2026-09-15T09:00:00Z'),
-      accepted_user_id: 'us_02',
-    },
+    invitation('iv_00', 'mb_03', 'us_05', 'canceled', '2026-09-14T09:00:00Z'),
+    acceptedByMinsu(),
     pendingInvitation(),
-    invitation('iv_03', 'mb_04', 'haneul@example.com', 'declined', '2026-09-17T09:00:00Z'),
+    invitation('iv_03', 'mb_04', 'us_04', 'declined', '2026-09-17T09:00:00Z'),
   )
 }
 
@@ -1025,10 +1060,8 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
         state.messageThreads
           .find((thread) => thread.thread_id === thread_id)
           ?.messages.push(structuredClone(message))
-      state.invitations.push({
-        ...invitation('iv_01', 'mb_02', 'minsu@example.com', 'accepted', '2026-09-15T09:00:00Z'),
-        accepted_user_id: 'us_02',
-      })
+      addMinsuAccount(state)
+      state.invitations.push(acceptedByMinsu())
       break
     case 'messages-long-content':
       // messages-default 에 긴 문구를 더한다. 공간(봇) 이름과 이재환(bd_01·th_01)의 이름이 띄어 쓰지 않은 긴 이름이고,
@@ -1112,8 +1145,9 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       break
     }
     case 'invitation-pending':
-      // 비로그인. jaehwan@example.com 으로 가입하면 iv_02 가 내 초대에 보인다
+      // 비로그인. 이재환(jaehwan@example.com, mock-password)으로 로그인하면 iv_02 가 내 초대에 보인다
       state.authenticated = false
+      addInviteeAccounts(state)
       state.invitations.push(pendingInvitation())
       break
   }
