@@ -18,7 +18,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.api.workspaces import _build_onboarding
@@ -32,6 +32,7 @@ from app.models import (
     MemberRole,
     OnboardingStep,
     OnboardingStepStatus,
+    Session as SessionModel,
     Task,
     User,
     Workspace,
@@ -117,6 +118,8 @@ def seed_accounts(
                 db.add(user)
             elif reset_passwords and person.key in fixed:
                 user.password_hash = hash_password(fixed[person.key])
+                # 실제 비밀번호 재설정(password_reset.confirm_reset)처럼 옛 비밀번호로 연 세션도 끝낸다.
+                db.execute(delete(SessionModel).where(SessionModel.user_id == user.user_id))
             users[person.key] = user
         db.flush()
 

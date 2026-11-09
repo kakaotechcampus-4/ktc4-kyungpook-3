@@ -111,6 +111,19 @@ def test_existing_user_is_reused_without_password_change(mdb):
     assert _login(EMAILS[0], PM_PW)[1].status_code == 200
 
 
+def test_reset_passwords_ends_existing_sessions(mdb):
+    mdb.add(User(email=EMAILS[0], name="기존PM", password_hash=hash_password("old-pm-pw-1")))
+    mdb.commit()
+    old_client, res = _login(EMAILS[0], "old-pm-pw-1")
+    assert res.status_code == 200
+    assert old_client.get("/api/v1/auth/me").status_code == 200
+
+    _seed(mdb, reset_passwords=True)
+
+    # 실제 비밀번호 재설정처럼 옛 비밀번호로 연 세션도 끝난다.
+    assert old_client.get("/api/v1/auth/me").status_code == 401
+
+
 def test_invalid_password_writes_nothing(mdb):
     with pytest.raises(SeedError):
         _seed(mdb, pm_password="short")
