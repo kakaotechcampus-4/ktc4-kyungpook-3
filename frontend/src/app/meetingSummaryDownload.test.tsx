@@ -50,13 +50,12 @@ describe('요약 상태', () => {
     expect(downloadButton()).toBeNull()
   })
 
-  it('요약이 없으면 요약 없이 끝났다고 단정하지 않는 중립 문구다', async () => {
+  it('요약이 없고 상태가 none 이면 요약 칸을 비운다', async () => {
     withoutSummary('none')
     const panel = await openMinutes(MT_07, '2주차 정기회의')
 
-    expect(within(panel).getByText('요약이 없어요')).toBeInTheDocument()
-    expect(within(panel).getByText('발언은 전사문에서 볼 수 있어요.')).toBeInTheDocument()
-    expect(within(panel).queryByText(/요약 없이/)).toBeNull()
+    expect(panel).toBeEmptyDOMElement()
+    expect(within(panel).queryByRole('heading')).toBeNull()
     expect(downloadButton()).toBeNull()
   })
 

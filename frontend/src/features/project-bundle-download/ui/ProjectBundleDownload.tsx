@@ -3,7 +3,7 @@ import { useId, useState } from 'react'
 import type { FormEvent } from 'react'
 import { requestMarkdownFile } from '@/shared/api/client'
 import { failureNotice } from '@/shared/api/errorMessages'
-import { ApiError, ERROR_CODES } from '@/shared/api/errors'
+import { ApiError, CLIENT_ERROR_CODES, ERROR_CODES, createClientError } from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
 import { saveTextFile } from '@/shared/lib/download'
@@ -30,12 +30,14 @@ export function ProjectBundleDownload({ workspaceId }: { workspaceId: string }) 
   const check = checkPeriod(period)
 
   const download = useMutation({
-    mutationFn: ({ params, session }: Attempt) =>
-      requestMarkdownFile(`/workspaces/${encodeURIComponent(workspaceId)}/project-bundle.md`, {
-        params,
-        signal: session.signal,
-        fallbackFilename: 'project-bundle.md',
-      }),
+    mutationFn: ({ params, session }: Attempt) => {
+      // 오프라인으로 기다리는 사이 세션이 끝났을 수 있다. 끝난 세션의 요청은 보내지 않는다
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
+      return requestMarkdownFile(
+        `/workspaces/${encodeURIComponent(workspaceId)}/project-bundle.md`,
+        { params, signal: session.signal, fallbackFilename: 'project-bundle.md' },
+      )
+    },
     onSuccess: (file, { session }) => {
       if (!session.isCurrent()) return
       saveTextFile(file.text, file.filename, 'text/markdown;charset=utf-8')

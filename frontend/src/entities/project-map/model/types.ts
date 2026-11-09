@@ -54,6 +54,8 @@ export interface ProjectMap {
   topicGroups: readonly TopicGroup[]
   /** 어느 주제와도 이어지지 않은 태스크 */
   looseTasks: readonly TaskNode[]
+  /** 태스크끼리 이은 선(비슷한 태스크). 태스크 ID → 이어진 태스크, `nodes` 순서다. 이어진 것이 없으면 키가 없다 */
+  relatedTasks: ReadonlyMap<string, readonly TaskNode[]>
 }
 
 /** 패널에 연 노드 */

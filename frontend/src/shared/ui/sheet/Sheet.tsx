@@ -1,10 +1,11 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent, ReactElement, ReactNode } from 'react'
 
 /*
  * 휴대폰 폭에서 아래에서 올라오는 시트. Radix Dialog 위에 모양만 입힌다 — 포커스 가둠, Esc, 바깥 누르기 닫기,
- * 뒤 화면 스크롤 잠금, 닫을 때 트리거로 포커스 복귀는 Radix 가 한다. 아래로 끌어 닫기만 여기서 한다.
+ * 뒤 화면 스크롤 잠금, 닫을 때 트리거로 포커스 복귀는 Radix 가 한다. 아래로 끌어 닫기, 트리거 없이 연 시트의 포커스 복귀,
+ * 열린 채 제목이 바뀔 때 제목으로 포커스 옮기기만 여기서 한다.
  * docs/plan/m6/basis-for-decision/2026-11-07-select-sheet-and-combobox.md
  */
 
@@ -19,19 +20,41 @@ const PANEL =
 /* 끄는 자리 — 손잡이와 제목. 목록은 스크롤해야 하므로 끌기를 받지 않는다 */
 const GRIP = 'flex cursor-grab touch-none flex-col items-stretch pt-10 pb-6 select-none'
 const HANDLE = 'mb-12 h-4 w-36 self-center rounded-999 bg-line'
-const TITLE = 'text-[16px] font-bold'
+const TITLE = 'text-[16px] font-bold outline-none'
 
 export interface SheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** 시트를 연 칸의 이름. 대화상자의 이름이 된다 */
   title: string
-  /** 여닫는 단추. 닫히면 포커스가 여기로 돌아온다. 없으면 화면이 `open` 으로 열고, 닫히면 열기 전 포커스로 돌아간다 */
+  /** 여닫는 단추. 닫히면 포커스가 여기로 돌아온다. 없으면 화면이 `open` 으로 열고, 닫힐 때 `returnFocus` 로 돌아간다 */
   trigger?: ReactElement
+  /**
+   * 닫힌 뒤 포커스를 둘 요소. 닫히는 순간에 묻는다. 트리거 없이 연 시트는 이것이 없으면 포커스가 `body` 로 빠진다 —
+   * Radix 는 트리거로만 돌려보낸다. 돌려준 요소가 문서에서 빠졌으면 옮기지 않는다
+   */
+  returnFocus?: () => HTMLElement | null
   children: ReactNode
 }
 
-export function Sheet({ open, onOpenChange, title, trigger, children }: SheetProps) {
+/* 시트 안에서 다른 항목으로 넘어가면 누른 단추가 사라진다. 제목이 바뀌면 제목으로 옮겨 포커스가 빠지지 않게 한다 */
+function SheetTitle({ title, open }: { title: string; open: boolean }) {
+  const heading = useRef<HTMLHeadingElement>(null)
+  const shown = useRef(title)
+  useEffect(() => {
+    // 닫히는 중에 바뀐 제목은 옮기지 않는다 — 포커스는 닫힘 복귀가 정한다
+    if (!open || shown.current === title) return
+    shown.current = title
+    heading.current?.focus()
+  }, [open, title])
+  return (
+    <Dialog.Title ref={heading} tabIndex={-1} className={TITLE}>
+      {title}
+    </Dialog.Title>
+  )
+}
+
+export function Sheet({ open, onOpenChange, title, trigger, returnFocus, children }: SheetProps) {
   const startY = useRef<number | null>(null)
   const [offset, setOffset] = useState(0)
 
@@ -48,6 +71,15 @@ export function Sheet({ open, onOpenChange, title, trigger, children }: SheetPro
         <Dialog.Content
           aria-describedby={undefined}
           className={PANEL}
+          onCloseAutoFocus={
+            returnFocus === undefined
+              ? undefined
+              : (event) => {
+                  event.preventDefault()
+                  const target = returnFocus()
+                  if (target?.isConnected === true) target.focus()
+                }
+          }
           style={offset > 0 ? { transform: `translateY(${String(offset)}px)` } : undefined}
         >
           <div
@@ -69,7 +101,7 @@ export function Sheet({ open, onOpenChange, title, trigger, children }: SheetPro
             onPointerCancel={release}
           >
             <span aria-hidden className={HANDLE} />
-            <Dialog.Title className={TITLE}>{title}</Dialog.Title>
+            <SheetTitle title={title} open={open} />
           </div>
           <div className="flex min-h-[0px] flex-1 flex-col gap-6">{children}</div>
         </Dialog.Content>

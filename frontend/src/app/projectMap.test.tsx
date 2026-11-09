@@ -1,7 +1,8 @@
-import { act, fireEvent, screen, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { focusManager, onlineManager } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
+import { onTestFinished } from 'vitest'
 import { paths } from '@/shared/config/routes'
 import { COMPACT_QUERY } from '@/shared/lib/compact-screen'
 import { fail, ok } from '@/shared/mock/envelope'
@@ -26,6 +27,16 @@ async function openList() {
   const app = renderApp(`${paths.projectMap(WS)}?view=list`)
   await screen.findByRole('heading', { level: 2, name: '로그인·계정' }, FIRST_PAINT)
   return app
+}
+
+/** 그래프가 이 너비(px)로 그려진 것처럼 잰다. jsdom 은 늘 0 이다 */
+function stubGraphWidth(width: number) {
+  const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+    this: Element,
+  ) {
+    return this instanceof SVGSVGElement ? new DOMRect(0, 0, width, (width * 5) / 8) : new DOMRect()
+  })
+  onTestFinished(() => spy.mockRestore())
 }
 
 describe('프로젝트 맵 화면 (#551)', () => {
@@ -108,6 +119,19 @@ describe('프로젝트 맵 화면 (#551)', () => {
     expect(await within(aside).findByText('배포는 스크립트 하나로 한다')).toBeVisible()
   })
 
+  it('휴대폰 폭(350px)으로 그려져도 태스크 점은 화면에서 지름 24px 이상을 누를 수 있고, 누르면 패널이 열린다', async () => {
+    const width = 350
+    stubGraphWidth(width)
+    renderApp(paths.projectMap(WS))
+    const svg = await graph()
+    const hit = svg.querySelector<SVGCircleElement>('circle[data-node-id="tk_10"]')
+    expect(hit).not.toBeNull()
+    expect(Number(hit!.getAttribute('r'))).toBeGreaterThanOrEqual((12 * 960) / width)
+
+    await userEvent.click(hit!)
+    expect(within(panel()).getByRole('heading', { name: '토큰 정리' })).toBeVisible()
+  })
+
   it('확대하면 태스크 이름이 보이고 전체 보기는 처음 배율로 돌아간다', async () => {
     renderApp(paths.projectMap(WS))
     const svg = await graph()
@@ -164,6 +188,67 @@ describe('프로젝트 맵 화면 (#551)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('태스크 패널은 그래프에서 선으로 이어진 태스크를 단추로 보이고, 누르면 그 태스크로 바뀐다', async () => {
+    await openList()
+    await userEvent.click(screen.getByRole('button', { name: /폰트 적용/ }))
+    const related = within(panel()).getByRole('region', { name: '이어진 태스크' })
+    expect(within(related).getAllByRole('button')).toHaveLength(1)
+
+    await userEvent.click(within(related).getByRole('button', { name: /토큰 정리/ }))
+    expect(within(panel()).getByRole('heading', { level: 2, name: '토큰 정리' })).toHaveFocus()
+    expect(
+      within(within(panel()).getByRole('region', { name: '이어진 태스크' })).getByRole('button', {
+        name: /폰트 적용/,
+      }),
+    ).toBeVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: /회원가입 화면/ }))
+    expect(within(panel()).queryByRole('region', { name: '이어진 태스크' })).toBeNull()
+  })
+
+  it('주제가 없어도 태스크 패널에서 이어진 태스크로 옮겨 간다', async () => {
+    applyScenario('project-map-no-topics')
+    renderApp(`${paths.projectMap(WS)}?view=list`)
+    const loose = await screen.findByRole('region', { name: '주제 없는 태스크' }, FIRST_PAINT)
+    await userEvent.click(within(loose).getByRole('button', { name: /DB 스키마 정리/ }))
+    const related = within(panel()).getByRole('region', { name: '이어진 태스크' })
+    await userEvent.click(within(related).getByRole('button', { name: /배포 스크립트/ }))
+    expect(within(panel()).getByRole('heading', { level: 2, name: '배포 스크립트' })).toHaveFocus()
+    expect(within(panel()).getByRole('region', { name: '이어진 태스크' })).toHaveTextContent(
+      'DB 스키마 정리',
+    )
+  })
+
+  it('담당 이름이 길면 줄 안에서 말줄임하고 전체 이름을 툴팁으로 둔다', async () => {
+    const name = '아주아주긴이름을가진팀원의디스코드표시이름'
+    server.use(
+      http.get('/api/v1/workspaces/:workspaceId/project-map', () =>
+        ok({
+          meetings: [],
+          nodes: [
+            {
+              id: 'tk_long',
+              kind: 'task',
+              label: '긴 이름 태스크',
+              status: 'todo',
+              due_date: '2026-09-22',
+              assignee_name: name,
+              blocker: null,
+              meeting_ids: [],
+              appeared_at: '2026-09-01T00:00:00Z',
+            },
+          ],
+          edges: [],
+        }),
+      ),
+    )
+    renderApp(`${paths.projectMap(WS)}?view=list`)
+    const row = await screen.findByRole('button', { name: /긴 이름 태스크/ }, FIRST_PAINT)
+    const assignee = within(row).getByText(name)
+    expect(assignee).toHaveClass('truncate')
+    expect(assignee).toHaveAttribute('title', name)
   })
 
   it('태스크도 주제도 없으면 빈 상태다', async () => {
@@ -267,6 +352,36 @@ describe('휴대폰의 프로젝트 맵 (D-180)', () => {
     const sheet = await screen.findByRole('dialog', { name: '회원가입 화면' })
     expect(sheet).toHaveTextContent('담당박민수')
     expect(screen.queryByRole('complementary', { name: '고른 항목' })).toBeNull()
+  })
+
+  it('시트를 Esc 로 닫으면 연 목록 줄로 포커스가 돌아온다', async () => {
+    stubViewport(true, COMPACT_QUERY)
+    const user = userEvent.setup()
+    renderApp(paths.projectMap(WS))
+    const row = await screen.findByRole('button', { name: /DB 스키마 정리/ }, FIRST_PAINT)
+    row.focus()
+    await user.keyboard('{Enter}')
+    expect(await screen.findByRole('dialog', { name: 'DB 스키마 정리' })).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(row).toHaveFocus())
+  })
+
+  it('시트 안에서 주제의 태스크를 키보드로 열면 포커스가 그 태스크 제목으로 간다', async () => {
+    stubViewport(true, COMPACT_QUERY)
+    const user = userEvent.setup()
+    renderApp(paths.projectMap(WS))
+    const topic = await screen.findByRole('button', { name: '로그인·계정' }, FIRST_PAINT)
+    topic.focus()
+    await user.keyboard('{Enter}')
+    const sheet = await screen.findByRole('dialog', { name: '로그인·계정' })
+    const task = await within(sheet).findByRole('button', { name: /회원가입 화면/ })
+    task.focus()
+    await user.keyboard('{Enter}')
+
+    const titled = await screen.findByRole('dialog', { name: '회원가입 화면' })
+    expect(within(titled).getByRole('heading', { name: '회원가입 화면' })).toHaveFocus()
   })
 
   it('넓은 화면의 계정 메뉴에는 프로젝트 맵이 없다', async () => {

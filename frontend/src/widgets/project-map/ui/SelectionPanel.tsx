@@ -11,6 +11,7 @@ import type {
   TopicNode,
 } from '@/entities/project-map'
 import { TASK_STATUS_LABEL, TaskStatusMark } from '@/entities/task'
+import type { TaskStatus } from '@/entities/task'
 import { errorMessage } from '@/shared/api/errorMessages'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
@@ -39,6 +40,31 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       </h3>
       {children}
     </section>
+  )
+}
+
+function TaskLine({
+  status,
+  title,
+  onOpen,
+}: {
+  status: TaskStatus
+  title: string
+  onOpen?: () => void
+}) {
+  const content = (
+    <>
+      <TaskStatusMark status={status} />
+      <span className="min-w-[0px] flex-1">{title}</span>
+      <span className={ROW_META}>{TASK_STATUS_LABEL[status]}</span>
+    </>
+  )
+  return onOpen === undefined ? (
+    <span className="flex items-center gap-8 text-body text-ink">{content}</span>
+  ) : (
+    <button type="button" className={TASK_BUTTON} onClick={onOpen}>
+      {content}
+    </button>
   )
 }
 
@@ -139,23 +165,15 @@ function TopicBody({
             {detail.tasks.map((task) => (
               <li key={task.taskId}>
                 {/* 맵을 받은 뒤 생긴 태스크는 패널을 열 데이터가 없어 글로만 둔다 */}
-                {map.nodeById.has(task.taskId) ? (
-                  <button
-                    type="button"
-                    className={TASK_BUTTON}
-                    onClick={() => onSelect({ kind: 'task', id: task.taskId })}
-                  >
-                    <TaskStatusMark status={task.status} />
-                    <span className="min-w-[0px] flex-1">{task.title}</span>
-                    <span className={ROW_META}>{TASK_STATUS_LABEL[task.status]}</span>
-                  </button>
-                ) : (
-                  <span className="flex items-center gap-8 text-body text-ink">
-                    <TaskStatusMark status={task.status} />
-                    <span className="min-w-[0px] flex-1">{task.title}</span>
-                    <span className={ROW_META}>{TASK_STATUS_LABEL[task.status]}</span>
-                  </span>
-                )}
+                <TaskLine
+                  status={task.status}
+                  title={task.title}
+                  onOpen={
+                    map.nodeById.has(task.taskId)
+                      ? () => onSelect({ kind: 'task', id: task.taskId })
+                      : undefined
+                  }
+                />
               </li>
             ))}
           </ul>
@@ -172,11 +190,14 @@ function TaskBody({
   workspaceId,
   task,
   map,
+  onSelect,
 }: {
   workspaceId: string
   task: TaskNode
   map: ProjectMap
+  onSelect: (selection: MapSelection) => void
 }) {
+  const related = map.relatedTasks.get(task.id) ?? []
   const meetings = task.meetingIds.flatMap((id) => {
     const meeting = map.meetingById.get(id)
     return meeting === undefined ? [] : [meeting]
@@ -200,6 +221,21 @@ function TaskBody({
           </>
         )}
       </dl>
+      {related.length === 0 ? null : (
+        <Section title="이어진 태스크">
+          <ul className={LIST}>
+            {related.map((other) => (
+              <li key={other.id}>
+                <TaskLine
+                  status={other.status}
+                  title={other.label}
+                  onOpen={() => onSelect({ kind: 'task', id: other.id })}
+                />
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
       <Section title="나온 회의">
         <MeetingLinks workspaceId={workspaceId} meetings={meetings} />
       </Section>
@@ -218,11 +254,14 @@ export interface SelectionPanelProps {
   onSelect: (selection: MapSelection) => void
 }
 
-/** 옆 패널의 본문. 주제는 그 주제의 결정·태스크·회의를 받아 보이고, 태스크는 맵에 이미 있는 값만 보인다 */
+/**
+ * 옆 패널의 본문. 주제는 그 주제의 결정·태스크·회의를 받아 보이고, 태스크는 맵에 이미 있는 값만 보인다.
+ * 태스크의 이어진 태스크는 그래프의 태스크끼리 선이다 — 목록·키보드로도 그 선을 따라간다
+ */
 export function SelectionPanel({ workspaceId, map, node, onSelect }: SelectionPanelProps) {
   return node.kind === 'topic' ? (
     <TopicBody key={node.id} workspaceId={workspaceId} topic={node} map={map} onSelect={onSelect} />
   ) : (
-    <TaskBody workspaceId={workspaceId} task={node} map={map} />
+    <TaskBody workspaceId={workspaceId} task={node} map={map} onSelect={onSelect} />
   )
 }

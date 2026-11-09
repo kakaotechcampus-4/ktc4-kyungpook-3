@@ -128,7 +128,7 @@ function MapBody({
   compact: boolean
 }) {
   const [selection, setSelection] = useState<MapSelection>(null)
-  // 패널을 닫으면 연 단추로 돌아간다. 그래프에서 열었으면 돌아갈 곳이 없다
+  // 패널을 닫으면 연 단추로 돌아간다. 그래프에서 열었으면 돌아갈 곳이 없다. 다음에 열 때 새로 적는다
   const opener = useRef<HTMLElement | null>(null)
   const node = selection === null ? undefined : map.nodeById.get(selection.id)
 
@@ -139,8 +139,8 @@ function MapBody({
   }
   const close = () => {
     setSelection(null)
+    // 시트는 닫힘이 끝난 뒤(포커스 가둠이 풀린 뒤) 스스로 돌려보낸다
     if (!compact) opener.current?.focus()
-    opener.current = null
   }
 
   const content =
@@ -172,6 +172,7 @@ function MapBody({
             if (!open) close()
           }}
           title={node?.label ?? ''}
+          returnFocus={() => opener.current}
         >
           <div className="min-h-[0px] overflow-y-auto pb-8">{panel}</div>
         </Sheet>

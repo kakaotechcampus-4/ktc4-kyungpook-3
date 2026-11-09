@@ -77,7 +77,7 @@ function Section({
 
 /**
  * 요약 탭. 요약이 있으면 상태와 무관하게 보인다 (계약 §4.4.2).
- * 없을 때 `none` 은 나중에 생길 수도 있어 "요약 없이 끝났다" 고 말하지 않는다. 모르는 상태도 같은 중립 문구다
+ * 없을 때 `none` 이면 칸을 비운다(#551 만들 것 7). 모르는 상태는 이유를 단정하지 않는 중립 문구다
  */
 export function SummaryPanel({
   summary,
@@ -91,7 +91,7 @@ export function SummaryPanel({
     summary === null ||
     (overview === '' && summary.keyPoints.length === 0 && summary.decisions.length === 0)
   )
-    return status === 'pending' ? (
+    return status === 'none' ? null : status === 'pending' ? (
       <SectionEmpty
         title="요약을 만드는 중이에요"
         description="요약이 만들어지면 여기에 보여요. 발언은 전사문에서 볼 수 있어요."

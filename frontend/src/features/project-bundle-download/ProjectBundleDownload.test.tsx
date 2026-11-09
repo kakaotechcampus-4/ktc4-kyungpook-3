@@ -1,8 +1,9 @@
-import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { QueryClientProvider, onlineManager } from '@tanstack/react-query'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { createQueryClient } from '@/shared/api/queryClient'
+import { endSessionScope } from '@/shared/api/sessionScope'
 import { fail } from '@/shared/mock/envelope'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
@@ -27,6 +28,10 @@ const bundleRequests = (log: ReturnType<typeof recordRequests>) =>
   log.started.filter(({ path }) => path.startsWith('/workspaces/ws_01/project-bundle.md'))
 
 const button = () => screen.getByRole('button', { name: /프로젝트 합본 내려받기|내려받는 중/ })
+
+afterEach(() => {
+  onlineManager.setOnline(true)
+})
 
 describe('프로젝트 합본 내려받기', () => {
   it('기본은 전체 기간이고 기간 없이 요청해 서버가 정한 한글 이름으로 저장한다', async () => {
@@ -142,5 +147,22 @@ describe('프로젝트 합본 내려받기', () => {
     expect(button()).toBeDisabled()
     release()
     await waitFor(() => expect(button()).toHaveTextContent('프로젝트 합본 내려받기'))
+  })
+
+  it('오프라인으로 기다리는 사이 세션이 끝나면 다시 연결돼도 요청을 보내지 않고 알리지도 않는다', async () => {
+    const saved = captureSavedFiles()
+    const log = recordRequests()
+    const user = renderDownload()
+
+    onlineManager.setOnline(false)
+    await user.click(button())
+    await waitFor(() => expect(button()).toHaveTextContent('내려받는 중…'))
+    act(() => endSessionScope())
+    act(() => onlineManager.setOnline(true))
+
+    await waitFor(() => expect(button()).toHaveTextContent('프로젝트 합본 내려받기'))
+    expect(bundleRequests(log)).toEqual([])
+    expect(saved).toEqual([])
+    expect(screen.queryByText('프로젝트 합본을 내려받지 못했어요')).toBeNull()
   })
 })

@@ -45,14 +45,25 @@ export function toProjectMap(dto: ProjectMapDto): ProjectMap {
 
   const topicTasks = new Map<string, Set<string>>()
   const linkedTasks = new Set<string>()
+  const taskLinks = new Map<string, Set<string>>()
+  const link = (links: Map<string, Set<string>>, from: string, to: string) => {
+    const linked = links.get(from) ?? new Set<string>()
+    linked.add(to)
+    links.set(from, linked)
+  }
   for (const { source, target } of edges) {
-    const ends = [nodeById.get(source), nodeById.get(target)]
-    const topic = ends.find((node) => node?.kind === 'topic')
-    const task = ends.find((node) => node?.kind === 'task')
-    if (topic === undefined || task === undefined) continue
-    const tasks = topicTasks.get(topic.id) ?? new Set<string>()
-    tasks.add(task.id)
-    topicTasks.set(topic.id, tasks)
+    const from = nodeById.get(source)!
+    const to = nodeById.get(target)!
+    if (from.kind === 'task' && to.kind === 'task') {
+      if (from.id === to.id) continue
+      link(taskLinks, from.id, to.id)
+      link(taskLinks, to.id, from.id)
+      continue
+    }
+    const topic = from.kind === 'topic' ? from : to
+    const task = from.kind === 'task' ? from : to
+    if (topic.kind !== 'topic' || task.kind !== 'task') continue
+    link(topicTasks, topic.id, task.id)
     linkedTasks.add(task.id)
   }
 
@@ -71,6 +82,12 @@ export function toProjectMap(dto: ProjectMapDto): ProjectMap {
         return { topic, tasks: taskNodes.filter((task) => linked?.has(task.id) === true) }
       }),
     looseTasks: taskNodes.filter((task) => !linkedTasks.has(task.id)),
+    relatedTasks: new Map(
+      [...taskLinks].map(([taskId, linked]) => [
+        taskId,
+        taskNodes.filter((other) => linked.has(other.id)),
+      ]),
+    ),
   }
 }
 

@@ -12,6 +12,8 @@ const ROW =
   'flex w-full items-center gap-12 border-b border-line py-12 text-left hover:bg-surface-sunken aria-[current=true]:bg-surface-selected'
 const STATUS = 'inline-flex w-[64px] shrink-0 items-center gap-6 text-caption text-sub'
 const ROW_TITLE = 'min-w-[0px] flex-1 text-[14px] font-semibold text-ink max-md:wrap-anywhere'
+/* 긴 이름이 휴대폰 폭에서 줄을 넘기거나 제목 칸을 다 먹지 않게 상한을 두고 말줄임한다. 마감(MM/DD)은 짧아 줄이지 않는다 */
+const ASSIGNEE = 'min-w-[0px] max-w-[96px] truncate text-caption text-dim'
 
 interface ListProps {
   map: ProjectMap
@@ -43,7 +45,9 @@ function TaskRows({
               {TASK_STATUS_LABEL[task.status]}
             </span>
             <span className={ROW_TITLE}>{task.label}</span>
-            <span className={ROW_META}>{task.assigneeName ?? '담당 없음'}</span>
+            <span className={ASSIGNEE} title={task.assigneeName ?? undefined}>
+              {task.assigneeName ?? '담당 없음'}
+            </span>
             <span className={ROW_META}>
               {task.dueDate === null ? '마감 없음' : `마감 ${monthDayOf(task.dueDate)}`}
             </span>

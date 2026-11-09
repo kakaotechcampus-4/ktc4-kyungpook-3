@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import type { PointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
+import type { PointerEvent, RefObject } from 'react'
 import type { MapEdge, MapNode, MapSelection, ProjectMap } from '@/entities/project-map'
 import { Button } from '@/shared/ui/button'
 import { Icon } from '@/shared/ui/icon'
@@ -23,6 +23,8 @@ const FRAME_BUDGET_MS = 10
 /* 이보다 덜 움직였으면 끌기가 아니라 누르기다 */
 const DRAG_THRESHOLD = 4
 const WHEEL_ZOOM = 0.0015
+/* 노드를 누를 수 있는 자리의 화면 반지름(px). 지름 24px — 보이는 점(태스크 지름 10)은 휴대폰 폭에서 4px 아래로 준다 */
+const HIT_RADIUS_PX = 12
 
 const BOX =
   'relative aspect-[8/5] w-full overflow-hidden rounded-16 border border-line bg-surface-sunken'
@@ -62,6 +64,21 @@ function toView(svg: SVGSVGElement, clientX: number, clientY: number): Point | n
   if (rect.width === 0) return null
   const scale = VIEW_WIDTH / rect.width
   return { x: (clientX - rect.left) * scale, y: (clientY - rect.top) * scale }
+}
+
+/** 그래프가 그려진 너비(px). 재지 못하면(jsdom 처럼 0) viewBox 너비 그대로 그려졌다고 본다 */
+function useRenderedWidth(svgRef: RefObject<SVGSVGElement | null>): number {
+  const [width, setWidth] = useState(VIEW_WIDTH)
+  useLayoutEffect(() => {
+    const svg = svgRef.current
+    if (svg === null) return
+    const measure = () => setWidth(svg.getBoundingClientRect().width || VIEW_WIDTH)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(svg)
+    return () => observer.disconnect()
+  }, [svgRef])
+  return width
 }
 
 function nodeIdOf(target: EventTarget): string | null {
@@ -104,6 +121,8 @@ function PlacedGraph({
   onSelect,
 }: GraphViewProps & { placement: Placement }) {
   const svgRef = useRef<SVGSVGElement>(null)
+  // 점은 viewBox 단위라 그래프가 좁게 그려지면 함께 준다. 누르는 자리는 화면 px 로 잡아 viewBox 단위로 바꾼다
+  const hitRadius = (HIT_RADIUS_PX * VIEW_WIDTH) / useRenderedWidth(svgRef)
   const [viewport, setViewport] = useState(() => fitViewport(placement.bounds))
   const [replay, dispatch] = useReducer(replayReducer, REPLAY_IDLE)
   const drag = useRef<Drag | null>(null)
@@ -169,6 +188,7 @@ function PlacedGraph({
   )
   const at = (id: string) => toScreen(placement.positions.get(id) ?? { x: 0, y: 0 }, viewport)
   const taskLabels = viewport.k >= TASK_LABEL_ZOOM
+  const shownNodes = map.nodes.slice(0, visible)
 
   return (
     <div className={BOX}>
@@ -200,7 +220,23 @@ function PlacedGraph({
             return <line key={`${source}|${target}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} />
           })}
         </g>
-        {map.nodes.slice(0, visible).map((node) => {
+        {/* 누르는 자리는 보이는 점 모두의 아래 한 층이다. 점끼리 가까우면 넓은 자리가 옆 점을 덮는데, 보이는 점은 늘 그 점이 받는다 */}
+        <g fill="transparent">
+          {shownNodes.map((node) => {
+            const { x, y } = at(node.id)
+            return (
+              <circle
+                key={node.id}
+                data-node-id={node.id}
+                cx={x}
+                cy={y}
+                r={Math.max(NODE_RADIUS[node.kind], hitRadius)}
+                className="cursor-pointer"
+              />
+            )
+          })}
+        </g>
+        {shownNodes.map((node) => {
           const { x, y } = at(node.id)
           const radius = NODE_RADIUS[node.kind]
           const selected = selection?.id === node.id
