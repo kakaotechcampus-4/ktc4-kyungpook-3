@@ -43,9 +43,13 @@ export function notificationListQueryOptions(workspaceId: string) {
 }
 
 /** 읽음 표시. 이미 읽었어도 200 이다 */
-export async function readNotification(workspaceId: string, notificationId: string): Promise<void> {
+export async function readNotification(
+  workspaceId: string,
+  notificationId: string,
+  signal?: AbortSignal,
+): Promise<void> {
   await request(
     `/workspaces/${encodeURIComponent(workspaceId)}/notifications/${encodeURIComponent(notificationId)}/read`,
-    { method: 'POST' },
+    { method: 'POST', signal },
   )
 }

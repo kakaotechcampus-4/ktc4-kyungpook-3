@@ -399,7 +399,8 @@ describe('제출 (U3-7, U3-8, U3-9)', () => {
     const mutations = app.queryClient.getMutationCache().getAll()
     // 업로드 mutation 은 성공으로 캐시에 남아 있다 — 그 변수·결과에 파일이 없다
     expect(mutations.map(({ state }) => state.status)).toEqual(['success'])
-    expect(mutations[0].state.variables).toEqual({
+    const { fields } = mutations[0].state.variables as { fields: unknown }
+    expect(fields).toEqual({
       title: '3주차 정기회의.m4a',
       startedAt: new Date(NINE_AM_SEOUL).toISOString(),
       attendeeMemberIds: ['mb_01'],

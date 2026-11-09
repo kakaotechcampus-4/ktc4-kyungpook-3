@@ -43,11 +43,11 @@ test('가입 → 워크스페이스 만들기 → Discord·Notion 모의 OAuth �
   await page.getByLabel('@minsu의 팀원 이름').fill('박민수')
   await page.getByRole('button', { name: '2명 확인 완료' }).click()
 
-  // 새 공간의 대시보드 (D-013) — 헤더와 5개 탭이 있는 앱 셸
+  // 새 공간의 대시보드 (D-013) — 헤더와 6개 탭이 있는 앱 셸 (D-186)
   await expect(page).toHaveURL(/\/workspaces\/ws_\d+\/dashboard$/)
   // M7 대시보드 — 회의가 없는 새 공간이라 최근 반영은 빈 상태 ①이다
   await expect(page.getByRole('heading', { name: '최근 반영' })).toBeVisible()
-  await expect(page.getByRole('navigation', { name: '주요 화면' }).getByRole('link')).toHaveCount(5)
+  await expect(page.getByRole('navigation', { name: '주요 화면' }).getByRole('link')).toHaveCount(6)
   await expect(page.getByRole('button', { name: /^워크스페이스 바꾸기/ })).toContainText(
     '캡스톤 5조',
   )

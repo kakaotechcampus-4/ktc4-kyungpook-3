@@ -46,10 +46,11 @@ export function integrationsQueryOptions(workspaceId: string) {
 export async function disconnectIntegration(
   workspaceId: string,
   provider: IntegrationProvider,
+  signal?: AbortSignal,
 ): Promise<void> {
   await request<void>(
     `/workspaces/${encodeURIComponent(workspaceId)}/integrations/${encodeURIComponent(provider)}`,
-    { method: 'DELETE' },
+    { method: 'DELETE', signal },
   )
 }
 

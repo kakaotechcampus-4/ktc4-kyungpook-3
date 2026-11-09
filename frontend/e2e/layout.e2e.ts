@@ -225,14 +225,14 @@ for (const width of VIEWPORTS) {
       return
     }
 
-    test('앱 헤더 — 탭 5개와 두 메뉴가 한 줄에 보인다', async ({ page }) => {
+    test('앱 헤더 — 탭 6개와 두 메뉴가 한 줄에 보인다', async ({ page }) => {
       await start(page, 'multiple-workspaces', '/workspaces/ws_01/dashboard')
       const header = page.getByRole('banner')
       const nav = header.getByRole('navigation', { name: '주요 화면' })
       // 이 시나리오의 ws_01 에는 정리 중 회의(mt_10)가 있다. 정리 신호는 헤더가 아니라 오른쪽 아래 진행 토스트다 (#424) —
-      // 그 토스트(좁은 폭에서는 접힌 알약)가 보인 뒤에도 탭은 5개뿐이다
+      // 그 토스트(좁은 폭에서는 접힌 알약)가 보인 뒤에도 탭은 6개뿐이다 (D-186)
       await expect(page.getByTestId('pinned-toast-slot')).toContainText('정리 중')
-      const TAB_NAMES = ['대시보드', '회의록', '태스크', '메시지', '팀']
+      const TAB_NAMES = ['대시보드', '회의록', '태스크', '메시지', '프로젝트 맵', '팀']
       const tabs = TAB_NAMES.map((name) => nav.getByRole('link', { name, exact: true }))
       for (const tab of tabs) await expect(tab).toHaveCount(1)
       await expect(nav.getByRole('link')).toHaveText(TAB_NAMES)

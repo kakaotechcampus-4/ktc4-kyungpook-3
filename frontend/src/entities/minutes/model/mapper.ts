@@ -1,4 +1,5 @@
 import { displayValue } from '@/shared/api/unknownValue'
+import { SUMMARY_STATUSES } from '@/shared/types/api/minutes'
 import type { MinutesDto } from '@/shared/types/api/minutes'
 import { MEETING_SOURCES } from '@/shared/types/common'
 import type { Minutes } from './types'
@@ -21,6 +22,7 @@ export function toMinutes(dto: MinutesDto): Minutes {
           decisions: [...dto.summary.decisions],
         }
       : null,
+    summaryStatus: displayValue(dto.summary_status, SUMMARY_STATUSES, 'minutes summary_status'),
     transcript: dto.transcript.map((line) => ({
       atMs: line.at_ms,
       speakerMemberId: line.speaker_member_id,
