@@ -977,3 +977,26 @@ async def test_an_upload_ended_in_be_is_dropped_by_the_pass_and_logged_without_a
     assert await w.run_pass() == ([], [])
     assert "끝난 회의" in capsys.readouterr().out
     assert not any(p.endswith("/fail") for _, p, _ in fake.calls)
+
+
+async def test_each_lap_drops_audio_of_handed_off_meetings(tmp_path):
+    """인계가 끝난 회의의 트랙 wav 는 다음 바퀴에 지운다(#561). 대본은 남는다."""
+    rec = tmp_path / "recordings"
+    (rec / "g_1").mkdir(parents=True)
+    (rec / "g_1" / "1_1.wav").write_bytes(b"RIFF")
+    (rec / "g_1" / "transcript.md").write_text("대본", encoding="utf-8")
+    R.save_manifest(R.manifest_path(rec, "g_1"), {"session": "g_1", "status": R.STATUS_HANDED_OFF, "meeting_dir": "g_1",
+                                                  "stages": {"handed_off": R._iso(R.AUDIO_PRUNE_SINCE)},
+                                                  "speakers": [{"user_id": "1", "file": "g_1/1_1.wav"}]})
+    w = _worker(tmp_path)
+    assert await _laps(w, 1) == 1
+    assert not (rec / "g_1" / "1_1.wav").exists()
+    assert (rec / "g_1" / "transcript.md").exists()
+
+
+async def test_audio_pruning_error_does_not_stop_the_worker(tmp_path, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("disk")
+    monkeypatch.setattr(W, "prune_audio", boom)
+    w = _worker(tmp_path, interval_s=0.05)
+    assert await _laps(w, 2) == 2

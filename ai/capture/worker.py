@@ -39,6 +39,7 @@ from capture.recorder import (
     Claims,
     backend_from_env,
     build_extractor,
+    prune_audio,
     recover_pass,
     save_manifest,
 )
@@ -260,6 +261,17 @@ class Worker:
             if progress is not None:
                 print(f"[worker] 업로드 {progress.meeting_id} {progress.event}", flush=True)
 
+    async def _prune_audio(self) -> None:
+        """보관 기한이 지난 회의 음성(트랙 wav)을 지운다(#561). 인계가 끝난 회의는 바로, 포기한 회의는 7일 뒤다.
+        실패해도 로그만 남기고 바퀴는 계속 돈다."""
+        try:
+            dropped = await asyncio.to_thread(prune_audio, self.recordings_dir)
+        except Exception as e:  # noqa: BLE001 - 음성 정리는 곁가지다. 다음 바퀴에 다시 한다
+            print(f"[worker] 음성 정리 오류: {type(e).__name__}: {e}", flush=True)
+            return
+        for session in dropped:
+            print(f"[worker] 세션 {session} 음성 삭제", flush=True)
+
     async def _purge_once(self) -> None:
         from capture.meeting_purge import purge_one
         from capture.privacy_cleanup import cleanup_one as privacy_cleanup_one
@@ -299,6 +311,7 @@ class Worker:
                     await self.run_pass(guild_id=wake.name[len("wake-"):], manual=True)
                 await self._intake_once()
                 await self._purge_once()
+                await self._prune_audio()
                 await self._nap()
         finally:
             beat.cancel()

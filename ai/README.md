@@ -51,7 +51,7 @@ recordings/         녹음 산출물 (git 제외)
   "transcript", "tasks" 또는 "items", "be", "speakers": [{"user_id", "display_name", "file", "duration_sec"}]}`. `status` 는
   recording → saved → transcribed → extracted → handed_off (실패 시 failed 와 `failed_stage`) 이고, 워커가
   마지막으로 끝난 단계 다음부터 마저 처리합니다. 실패 5회로 자동 재시도를 멈춘 회의는 서버에서
-  `python -m capture.worker --retry <서버ID>` 로 다시 돌립니다. 상대 날짜("내일")의 기준일은 처리하는 날이 아니라
+  `python -m capture.worker --retry <서버ID>` 로 다시 돌립니다. 포기 7일 뒤에는 음성이 지워져 다시 돌릴 수 없습니다. 상대 날짜("내일")의 기준일은 처리하는 날이 아니라
   `started_at` 을 `timezone` 으로 바꾼 회의 날짜입니다.
 - 수동 업로드(`upload/`): 회의를 녹음하지 못했을 때 오디오 파일 하나를 `python -m upload.prepare <오디오> --started-at <ISO>`
   (pyannoteAI 를 실제로 부르므로 `PYANNOTEAI_API_KEY` 가 필요하고 과금됩니다)로 화자 분리해 화자 라벨마다 원본 길이의 가상 트랙
@@ -117,7 +117,9 @@ recordings/         녹음 산출물 (git 제외)
   - 400 `details.member_ids` 를 받으면 그 ID 를 null 로 바꿔 다시 보내고(서로 다른 ID 수만큼만), 버린 ID 는 `be.sources.dropped_member_ids` 와 로그에 남깁니다.
   - 발화 저장의 409 `MEETING_FAILED`·404, 추출 등록의 409 `MEETING_NOT_PROCESSING`·404 는 BE 가 이미 끝낸 회의라는 뜻입니다. 새 회의를 만들지 않고 실패 횟수·`/fail` 도 없이
     잠금을 놓은 뒤 로컬 매니페스트·잠금·트랙 폴더를 지웁니다.
-  - 로컬 정리(`upload/cleanup.py`): 워커가 바퀴 끝에 `cleanup_one` 을 한 번 더 부릅니다. 지정 기한이 지난 업로드는 BE 가 끝났다고 답할 때만 로컬을 지우고, 포기·인계 완료된 업로드와 끝난 가져오기 기록은 7일 보관 뒤 지웁니다.
+  - 로컬 정리(`upload/cleanup.py`): 워커가 바퀴 끝에 `cleanup_one` 을 한 번 더 부릅니다. 지정 기한이 지난 업로드는 BE 가 끝났다고 답할 때만 로컬을 지우고, 포기한 업로드와 끝난 가져오기 기록은 7일 보관 뒤 지웁니다. 인계가 끝난 회의의 트랙 wav 는 업로드든 디스코드든 워커가 바퀴마다 바로 지웁니다(`recorder.prune_audio`, [결정 기록 0055](docs/basis_for_decision/ai/2026-11-08-0055-meeting-audio-retention.md)). 포기한 회의는 포기 7일 뒤, 인계까지 못 가고 멈춘 디스코드 회의는 마지막 진행 7일 뒤 지웁니다.
+  - 음성 정리 기준 `AUDIO_PRUNE_SINCE` 는 2026-11-09 00:00 KST이며 별도 활성화 설정은 없습니다. 배포 후 첫 워커 바퀴부터 기준에 맞는 트랙을 지웁니다. 기준과 비교하는 값은 회의 생성일이 아니라 인계·포기·마지막 진행 시각입니다. 오래된 녹음도 그 진행 시각이 기준 이후면 대상입니다. 기준 이전 진행 기록과 시간대가 없거나 해석할 수 없는 시각은 보존하며, 운영 기록 대조가 필요합니다. 기존 검증용 회의의 보존 여부도 이 조건으로 확인해야 합니다.
+  - `prune_audio` 는 매니페스트의 세션 잠금을 잡고 상태를 다시 읽은 뒤, 그 세션 폴더의 `speakers[].file` 에 등록된 실제 wav만 지웁니다. 경로가 다른 세션·폴더 밖·링크를 가리키면 해당 매니페스트의 정리를 보류합니다. 일부 파일 삭제가 실패하면 매니페스트를 남겨 다음 바퀴에서 남은 파일을 다시 지웁니다. 미등록 wav는 소유를 추정해 지우지 않습니다. 업로드 원본과 변환 wav는 트랙 생성 뒤 `upload/intake.py` 가 별도로 정리합니다.
 
 ## 설치 (이 디렉토리, `ai/` 안에서)
 

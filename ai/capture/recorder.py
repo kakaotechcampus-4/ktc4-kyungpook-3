@@ -65,7 +65,7 @@ import shutil
 import socket
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from zoneinfo import ZoneInfo
 
 import soundfile as sf
@@ -486,6 +486,125 @@ def drop_transcripts(transcripts_dir: Path, manifest: dict) -> None:
         for f in transcripts_dir.glob(pat):
             if f.is_file():
                 f.unlink(missing_ok=True)
+
+
+AUDIO_KEEP_AFTER_GIVE_UP_S = 7 * 86400   # 포기한 회의는 이만큼 두어 --retry 로 다시 돌릴 수 있게 하고, 멈춘 회의도 마지막 진행 뒤 이만큼 둔다(#561)
+# 음성 삭제는 이 시각 뒤에 인계되거나 포기한 회의에만 쓴다. 그 전 회의는 팀원 동의를 받은 E2E·검증용이라 남기고,
+# 지우려면 사람이 직접 지운다(#568, 결정 기록 0055)
+AUDIO_PRUNE_SINCE = datetime(2026, 11, 9, tzinfo=ZoneInfo("Asia/Seoul"))
+
+
+def _track_files(recordings_dir: Path, manifest: dict) -> list[Path]:
+    """소유 세션 폴더 안의 실제 wav 트랙만 고른다. 잘못된 항목이 있으면 전체 삭제를 보류한다."""
+    session = manifest["session"]
+    directory = recordings_dir / session
+    if directory.is_symlink() or getattr(directory, "is_junction", lambda: False)():
+        raise ValueError("audio session directory is a link")
+    root = recordings_dir.resolve()
+    if directory.resolve().parent != root:
+        raise ValueError("audio session directory is outside recordings")
+    out = []
+    for e in manifest.get("speakers") or []:
+        if isinstance(e, dict) and e.get("file"):
+            raw = e["file"]
+            if not isinstance(raw, str):
+                raise ValueError("audio track path is not text")
+            relative = PurePosixPath(raw.replace("\\", "/"))
+            if (relative.is_absolute() or len(relative.parts) != 2 or relative.parts[0] != session
+                    or ":" in raw or relative.suffix.lower() != ".wav"):
+                raise ValueError("audio track does not belong to this session")
+            p = recordings_dir.joinpath(*relative.parts)
+            if (p.is_symlink() or getattr(p, "is_junction", lambda: False)()
+                    or p.resolve().parent != directory.resolve()):
+                raise ValueError("audio track is a link or leaves its session")
+            if p.is_file():
+                out.append(p)
+            elif p.exists():
+                raise ValueError("audio track is not a regular file")
+    return out
+
+
+def _since(raw) -> datetime | None:
+    """보관 판정의 시각. 없거나 깨졌거나 시간대가 없으면 None."""
+    try:
+        at = datetime.fromisoformat(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+    return at if at is not None and at.tzinfo is not None else None
+
+
+def _last_progress(m: dict) -> datetime | None:
+    """멈춘 회의가 마지막으로 진행한 시각: 저장 시각(recorded_at)·단계 시각(stages)·다음 재시도 시각(recovery.next_at) 중
+    가장 늦은 것. 매니페스트 수정 시각·claimed_at·workspace_wait 는 워커가 다시 확인할 때마다 새로 쓰여 진행이 아니다."""
+    stages = m.get("stages") if isinstance(m.get("stages"), dict) else {}
+    state = m.get("recovery") if isinstance(m.get("recovery"), dict) else {}
+    raw_times = [raw for raw in (m.get("recorded_at"), *stages.values(), state.get("next_at")) if raw]
+    times = [_since(raw) for raw in raw_times]
+    if any(at is None for at in times):
+        return None
+    return max(times) if times else None
+
+
+def _audio_expired(recordings_dir: Path, m: dict, now: datetime) -> bool:
+    """이 회의의 음성을 지울 때인가. 인계가 끝나 더 돌 일이 없으면 바로, 처리를 포기했으면 포기 7일 뒤,
+    인계도 포기도 못 하고 멈춘 디스코드 회의는 마지막 진행 7일 뒤다. 기준 시각(인계·포기·마지막 진행)이
+    AUDIO_PRUNE_SINCE 뒤일 때만 지운다. 시각이 없거나 읽을 수 없는 회의와 자동 복구 전의 실패(recovery 없는 failed)는
+    정책 시행 전 회의로 보고 지우지 않는다. 녹음 중인 회의와 업로드(#439 정리와 BE 만료가 맡는다)는 멈춘 회의로 보지 않는다."""
+    status = m.get("status")
+    if status == STATUS_HANDED_OFF:
+        stages = m.get("stages")
+        at = _since(stages.get("handed_off")) if isinstance(stages, dict) else None
+        if at is None or at < AUDIO_PRUNE_SINCE or at > now:
+            return False
+        return not _is_pending(recordings_dir, m)   # partial 재전사가 남은 디스코드 회의는 트랙이 더 필요하다
+    state = m.get("recovery")
+    if isinstance(state, dict) and state.get("gave_up_at"):
+        at = _since(state.get("gave_up_at"))
+    elif status == STATUS_RECORDING or m.get("source") == "upload" or (state is None and status == STATUS_FAILED):
+        return False
+    else:
+        at = _last_progress(m)
+    if at is None or at < AUDIO_PRUNE_SINCE:
+        return False
+    return now >= at + timedelta(seconds=AUDIO_KEEP_AFTER_GIVE_UP_S)
+
+
+def prune_audio(recordings_dir: Path, *, now: datetime | None = None) -> list[str]:
+    """음성 보관 기한이 지난 회의의 트랙 wav 를 지우고 그 회의 목록을 돌려준다(#561, #360 결정). 기한은 _audio_expired.
+
+    트랙 wav(speakers[].file)만 지운다. 매니페스트·대본·처리 기록·diarization.json 은 남긴다. 잠긴 회의는 건너뛴다.
+    AUDIO_PRUNE_SINCE 전에 인계되거나 포기한 회의(팀원 동의를 받은 검증용)는 남긴다.
+    워커가 바퀴마다 부른다. 예외는 올리지 않는다."""
+    now = now or utcnow()
+    recordings_dir = Path(recordings_dir)
+    dropped = []
+    for path in sorted(recordings_dir.glob("session_*.json")):
+        lock = None
+        try:
+            if path.is_symlink() or getattr(path, "is_junction", lambda: False)() or not path.is_file():
+                continue
+            lock = try_lock(path)
+            if lock is None:
+                continue
+            m = _load(path)
+            if not isinstance(m, dict):
+                continue
+            session = m.get("session")
+            if (not isinstance(session, str) or not session or session in (".", "..")
+                    or any(c in session for c in "\\/:*?[]") or path != manifest_path(recordings_dir, session)):
+                raise ValueError("audio manifest does not match its session lock")
+            files = _track_files(recordings_dir, m)
+            if not files or not _audio_expired(recordings_dir, m, now):
+                continue
+            for f in files:
+                f.unlink(missing_ok=True)
+            dropped.append(session)
+        except Exception as e:  # noqa: BLE001 - 한 회의의 정리 실패가 바퀴를 멈추지 않는다. 다음 바퀴에 다시 본다
+            print(f"[audio] {path.name} 음성 정리 실패(다음에 다시 한다): {type(e).__name__}: {e}", flush=True)
+        finally:
+            if lock is not None:
+                lock.release()
+    return dropped
 
 
 def _resume_mapped(recordings_dir: Path, meeting_id: str) -> bool:

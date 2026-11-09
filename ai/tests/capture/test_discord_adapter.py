@@ -557,3 +557,10 @@ async def test_record_keeps_the_server_member_names_for_the_name_hint(tmp_path):
     rec = cog._active[GUILD_ID]
     assert _manifest(tmp_path, rec)["hint_names"] == ["민수", "서연"]
     rec.flush_task.cancel()
+
+
+def test_the_recording_notice_says_audio_goes_to_an_outside_service_and_how_to_refuse():
+    """녹음 공지(/record 와 늦게 들어온 사람 알림)가 외부 전송과 거부하는 방법을 알린다(#562)."""
+    assert "외부 서비스(Elice)로 보냅니다" in A.NOTICE
+    assert "음성 채널에서 나가 주세요" in A.NOTICE
+    assert A.NOTICE.startswith("🔴 녹음·전사 중입니다.")
