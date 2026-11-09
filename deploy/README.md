@@ -105,3 +105,42 @@ backend 파일 재시도는 `MEETING_PURGE_INTERVAL_SECONDS`의 기존 워커가
 처리 중·완료 작업에서 원문 토큰·이름·개인 Discord ID를 운영 로그나 정리 큐에 추가하지 않는다. guild ID는 과거 녹음 탐색용 공동 리소스 selector이며 AI 확인 후 제거한다. 원격 호스팅 diarizer 보관·삭제와 이미 게시된 Notion·Discord 결과 처리는 별도 확인 범위다.
 
 탈퇴로 지운 계정과 단독 공간 데이터는 스키마 downgrade로 복구되지 않는다. 최초 탈퇴 이후에는 개인정보 세대·삭제 표식을 무시하는 옛 BE·AI writer로 되돌리지 않는다. 되돌림이 필요하면 같은 정리 계약과 표식을 이해하는 호환 버전을 사용하고 대기 작업을 유지한다. 이 절의 운영 배포·되돌림·실제 계정 삭제는 이번 로컬 검증에서 실행하지 않았다.
+
+## 채팅 폴링 타이머 (#599)
+
+디스코드 채팅은 실시간으로 받지 않는다. `mm-chat-poll.timer` 가 매일 09:00 KST 에 `mm-chat-poll.service` 를 한 번 띄워, 연결된 채널(`GET /bot/chat-channels`)마다 새 메시지를 읽어 채팅 회의로 넘긴다. 유닛 파일은 [ai/deploy/systemd](../ai/deploy/systemd/)에 있다.
+
+배포 스크립트는 첫 설치를 하지 않는다. 이미 `/etc/systemd/system/mm-chat-poll.timer` 가 있는 서버에서 두 유닛 파일이 바뀐 배포(또는 mode=all)일 때만 저장소 판으로 덮어쓰고 `daemon-reload` 한다. 타이머가 켜져 있으면 다시 걸고, 꺼져 있으면 켜지 않는다. 실행 중인 폴링은 끊지 않는다. 설치되지 않은 서버에서는 Actions 화면에 경고만 띄우고 배포는 정상 완료로 처리한다.
+
+저장소 유닛은 `User=mm` 이지만 운영의 봇·워커는 다른 계정으로 돈다. 폴러는 `ai/.env` 를 읽고 `ai/runs` 에 쓰므로 워커와 같은 계정이어야 한다. 그래서 계정은 drop-in `mm-chat-poll.service.d/10-user.conf` 로 덮는다. 배포는 이 파일이 없을 때만 `mm-worker` 의 계정으로 만들고, 있으면 그대로 둔다.
+
+### 첫 설치
+
+서버에서 ubuntu 로 한 번 한다.
+
+```bash
+cd /opt/mm
+U=$(systemctl show -p User --value mm-worker); U=${U:-ubuntu}; echo "User=$U"
+sudo install -m 0644 ai/deploy/systemd/mm-chat-poll.service ai/deploy/systemd/mm-chat-poll.timer /etc/systemd/system/
+sudo mkdir -p /etc/systemd/system/mm-chat-poll.service.d
+printf '[Service]\nUser=%s\n' "$U" | sudo tee /etc/systemd/system/mm-chat-poll.service.d/10-user.conf
+sudo systemctl daemon-reload
+systemctl show -p User --value mm-chat-poll.service   # 위의 $U 와 같아야 한다
+sudo systemctl enable --now mm-chat-poll.timer        # 서비스가 아니라 타이머를 켠다
+systemctl list-timers mm-chat-poll.timer              # NEXT 가 다음 09:00 KST
+```
+
+### 손으로 한 번 돌리기
+
+```bash
+sudo systemctl start mm-chat-poll.service   # oneshot 이라 끝날 때까지 기다린다
+journalctl -u mm-chat-poll.service -n 80 --no-pager
+```
+
+채팅 회의가 아직 없는 워크스페이스는 최근 24시간(`CHAT_POLL_INITIAL_HOURS`)만 읽는다. 그보다 오래된 대화를 한 번만 더 읽으려면 그 워크스페이스만 따로 돌린다. 이미 채팅 회의가 있으면 그 시각부터 이어 읽으므로 이 값은 소용없다.
+
+```bash
+sudo -u "$U" sh -c 'cd /opt/mm/ai && CHAT_POLL_INITIAL_HOURS=48 /usr/bin/flock -n /run/lock/mm-chat-poll.lock .venv/bin/python -m capture.chat_poll --workspace <워크스페이스 ID>'
+```
+
+서비스의 `TimeoutStartSec` 를 7시간 이상으로 올리면 BE 의 채팅 회의 정리 기준(`chat_stalled`, 7시간)도 함께 올린다([봇 계약](../backend/docs/contracts/backend-ai-contract.md)).
