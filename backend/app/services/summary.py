@@ -87,6 +87,7 @@ def claim_next(db: Session, *, only: list[str] | None = None, now: datetime | No
     only 를 주면 그 extraction 안에서만 고른다. 빈 목록이면 아무것도 고르지 않는다. 커밋은 호출자가 한다.
     """
     now = now or datetime.now(timezone.utc)
+    # 워커와 측정 명령이 동시에 claim 하거나 저장해도 커밋 전인 앞 claim·주제 연결을 건너뛰지 않게 한 줄로 선다
     lifecycle.worker_gate(db)
     lease_alive = Extraction.summary_claimed_at > now - SUMMARY_LEASE
     # 앞 회의의 시도가 저장 없이 끝났으면 임대가 끝날 때까지 같은 워크스페이스의 뒤 회의를 주지 않는다. 포기한 앞 회의는 막지 않는다
@@ -387,6 +388,7 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     공간·회의·추출 순으로 잠그고 요청 표시와 살아 있는 임대의 토큰을 확인한다. 이 회의의 연결과 결정은 지우고 다시 써서 한 벌이다.
     다른 extraction 의 항목, 다른 워크스페이스의 주제와 결정, 이 회의보다 늦은 결정은 건너뛴다.
     """
+    lifecycle.worker_gate(db)
     meeting, extraction = require_live_extraction(db, extraction_id, lock=True)
     workspace = db.get(Workspace, meeting.workspace_id)
     now = datetime.now(timezone.utc)
