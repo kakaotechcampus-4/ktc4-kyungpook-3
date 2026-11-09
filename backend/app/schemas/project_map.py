@@ -58,7 +58,12 @@ class SummaryInputResponse(BaseModel):
     identity_epoch: int
     title: str | None
     started_at: datetime
+    source: str
+    # 전사 오인식을 고칠 때 쓰는 이름과 용어. 팀원은 워크스페이스 순서, 용어는 가나다순
+    members: list[str]
+    asr_terms: list[str]
     lines: list[SummaryInputLine]
+    # 반영된 항목만이고 값은 Task 의 지금 값이다
     items: list[SummaryInputItem]
     topics: list[SummaryInputTopic]
     decisions: list[SummaryInputDecision]

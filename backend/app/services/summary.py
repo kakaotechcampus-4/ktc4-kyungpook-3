@@ -33,10 +33,12 @@ from app.models import (
     MeetingStatus,
     Member,
     Source,
+    Task,
     Topic,
     TopicItem,
     TopicMeeting,
     Workspace,
+    WorkspaceAsrTerm,
 )
 from app.schemas.project_map import (
     SummaryClaimResponse,
@@ -178,6 +180,16 @@ def summary_input(db: Session, extraction_id: str) -> SummaryInputResponse:
         identity_epoch=workspace.identity_epoch,
         title=meeting.title,
         started_at=meeting.started_at,
+        source=meeting.source,
+        members=list(db.scalars(
+            select(Member.display_name)
+            .where(Member.workspace_id == meeting.workspace_id, Member.is_deleted.is_(False))
+            .order_by(Member.created_at, Member.member_id)
+        )),
+        asr_terms=list(db.scalars(
+            select(WorkspaceAsrTerm.word).where(WorkspaceAsrTerm.workspace_id == meeting.workspace_id)
+            .order_by(WorkspaceAsrTerm.word)
+        )),
         lines=_input_lines(db, meeting.meeting_id),
         items=_input_items(db, extraction_id),
         topics=_input_topics(db, meeting.workspace_id),
@@ -204,22 +216,21 @@ def _input_lines(db: Session, meeting_id: str) -> list[SummaryInputLine]:
 
 
 def _input_items(db: Session, extraction_id: str) -> list[SummaryInputItem]:
+    """반영된 항목만, 값은 Task 의 지금 값이다(PM 이 승인하며 고친 값). 같은 Task 에 합쳐진 항목은 먼저 나온 하나만 둔다."""
+    final = item_fate.final_items().where(ExtractionItem.extraction_id == extraction_id).subquery()
     rows = db.execute(
-        select(ExtractionItem, Member.display_name)
-        .outerjoin(Member, Member.member_id == ExtractionItem.assignee_member_id)
-        .where(ExtractionItem.extraction_id == extraction_id)
-        .order_by(ExtractionItem.created_at, ExtractionItem.item_id)
+        select(final.c.item_id, ExtractionItem.action, Task, Member.display_name)
+        .join(ExtractionItem, ExtractionItem.item_id == final.c.item_id)
+        .join(Task, Task.task_id == final.c.task_id)
+        .outerjoin(Member, Member.member_id == Task.assignee_member_id)
+        .order_by(final.c.created_at, final.c.item_id)
     ).all()
-    return [
-        SummaryInputItem(
-            item_id=item.item_id,
-            action=item.action,
-            title=item.task_title,
-            assignee=display_name or item.assignee_raw,
-            due_date=item.due_date,
-        )
-        for item, display_name in rows
-    ]
+    items: dict[str, SummaryInputItem] = {}
+    for item_id, action, task, display_name in rows:
+        items.setdefault(task.task_id, SummaryInputItem(
+            item_id=item_id, action=action, title=task.title, assignee=display_name, due_date=task.due_date,
+        ))
+    return list(items.values())
 
 
 def _input_topics(db: Session, workspace_id: str) -> list[SummaryInputTopic]:

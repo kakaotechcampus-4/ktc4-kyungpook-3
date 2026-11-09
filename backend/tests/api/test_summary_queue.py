@@ -21,6 +21,7 @@ from app.models import (
     Topic,
     TopicMeeting,
     Workspace,
+    WorkspaceAsrTerm,
 )
 from app.schemas.project_map import SummaryWriteRequest
 from app.services import summary
@@ -524,9 +525,15 @@ def test_summary_input_changes_nothing_and_carries_stored_rows(client, mdb, msee
                speaker_discord_user_id="u1"),
         Source(meeting_id=meeting.meeting_id, seq=2, start_ms=2, end_ms=3, text="uid", speaker_discord_user_id="u2"),
         Source(meeting_id=meeting.meeting_id, seq=3, start_ms=3, end_ms=4, text="없음"),
+    ])
+    deploy, doc = mseed["tasks"][:2]
+    deploy.title, deploy.assignee_member_id, deploy.due_date = "배포", alice.member_id, T0.date()
+    doc.title = "문서"
+    mdb.add_all([
         ExtractionItem(extraction_id=extraction.extraction_id, action="create", task_title="배포",
-                       assignee_member_id=alice.member_id, assignee_raw="앨리스님", due_date=T0.date()),
-        ExtractionItem(extraction_id=extraction.extraction_id, action="update", task_title="문서", assignee_raw="누군가"),
+                       assignee_raw="앨리스님", task_id=deploy.task_id),
+        ExtractionItem(extraction_id=extraction.extraction_id, action="update", task_title="문서", assignee_raw="누군가",
+                       task_id=doc.task_id),
     ])
     mdb.commit()
 
@@ -544,11 +551,51 @@ def test_summary_input_changes_nothing_and_carries_stored_rows(client, mdb, msee
     ]
     items = sorted(data["items"], key=lambda item: item["title"])
     assert [(i["action"], i["title"], i["assignee"], i["due_date"]) for i in items] == [
-        ("update", "문서", "누군가", None), ("create", "배포", "앨리스", "2026-11-05"),
+        ("update", "문서", None, None), ("create", "배포", "앨리스", "2026-11-05"),
     ]
     assert all(i["item_id"] for i in items)
     mdb.refresh(extraction)
     assert (extraction.summary_attempts, extraction.summary_claimed_at) == (0, None)
+
+
+def test_summary_input_items_are_the_approved_final_values(client, mdb, mseed):
+    ws, bob = mseed["ws"], mseed["bob"]
+    _, [card] = _handed_off(client, mdb, ws, [REVIEW], started_at=T0 - timedelta(days=1))
+    merge = {"action": "merge", "target_approval_id": card, "task_title": "검토 태스크", "category": "due"}
+    extraction_id, cards = _handed_off(client, mdb, ws, [
+        {**merge, "due_date": "2026-12-03"},
+        {**merge, "due_date": "2026-12-04"},
+        {**REVIEW, "task_title": "버릴 일"},
+        {"action": "update", "target_task_id": mseed["tasks"][1].task_id, "due_date": "2026-12-01"},
+        {"action": "update", "target_task_id": mseed["tasks"][2].task_id},
+        {**REVIEW, "task_title": "새 일"},
+    ])
+    assert cards[0] == card and len(cards) == 4
+    r = client.patch(f"/api/v1/approvals/{card}", json={"status": "approved", "task_overrides": {
+        "task_title": "PM 제목", "assignee_member_id": bob.member_id, "due_date": "2026-12-09"}})
+    assert r.status_code == 200, r.text
+    for approval_id, status in zip(cards[1:], ("rejected", "rejected", "approved")):
+        _resolve(client, approval_id, status)
+    mdb.expire_all()
+    extraction = mdb.get(Extraction, extraction_id)
+
+    items = _input(client, extraction)["items"]
+
+    assert sorted((i["title"], i["assignee"], i["due_date"]) for i in items) == [
+        ("PM 제목", "밥", "2026-12-09"), ("새 일", None, None), ("할일2", None, None),
+    ]
+    assert len({i["item_id"] for i in items}) == 3
+
+
+def test_summary_input_gives_source_members_and_terms(client, mdb, mseed):
+    _, extraction = _meeting(mdb, mseed["ws"], source="chat")
+    mseed["carol"].is_deleted = True
+    mdb.add_all([WorkspaceAsrTerm(workspace_id=mseed["ws"], word=word) for word in ("젠킨스", "배포")])
+    mdb.commit()
+
+    data = _input(client, extraction)
+
+    assert (data["source"], data["members"], data["asr_terms"]) == ("chat", ["PM", "앨리스", "밥"], ["배포", "젠킨스"])
 
 
 def test_summary_input_unknown_extraction_is_404(client, mdb, mseed):
