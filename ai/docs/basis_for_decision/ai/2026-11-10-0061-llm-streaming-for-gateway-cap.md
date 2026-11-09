@@ -43,7 +43,10 @@
 
 같이 바꾼 것:
 
-- SDK 의 timeout 은 조각 사이 대기에만 걸린다. 그래서 시작부터 정한 시간(요약은 `SUMMARY_TIMEOUT_S` 300초, 나머지는 `GENERATE_TIMEOUT_S` 300초)이 지나면 직접 끊는다. 요약은 이 값이 BE 임대 15분보다 짧아야 같은 회의에 돈이 두 번 들지 않는다.
+- SDK 의 timeout 은 조각 사이 대기에만 걸린다. 게이트웨이가 멈추거나 keepalive 만 보내면 끝나지 않는다. 그래서 시작부터 정한 시간(요약은 `SUMMARY_TIMEOUT_S` 300초, 나머지는 `GENERATE_TIMEOUT_S` 300초)이 지나면 타이머가 스트림을 닫는다. 요약은 이 값이 BE 임대 15분보다 짧아야 같은 회의에 돈이 두 번 들지 않는다.
+- `generate_json` 의 재시도는 처음 잡은 마감 하나 안에서 한다. 시도마다 상한을 새로 잡으면 SDK 재시도와 겹쳐 상한의 세 배까지 갔다. SDK 재시도는 끈다.
+- 스트리밍이면 SDK 는 헤더를 받을 때까지만 다시 한다. 본문을 읽다 끊긴 연결(`APIConnectionError`·`APITimeoutError`)은 `generate_json` 이 일시 오류로 보고 다시 한다. 비스트리밍일 때 SDK 가 하던 일이다.
+- 판단·초안은 실패하면 한 번 더 부르므로(0063) finding 하나의 최악은 `GENERATE_TIMEOUT_S` 의 네 배(20분)다. 게이트웨이가 멈춘 경우에만 닿는다.
 - `finish_reason` 이 `stop` 이 아니면 로그에 남긴다.
 - `generate_json` 은 잘린 응답(`length`)을 우연히 파싱돼도 버린다. 잘린 JSON 은 뒤쪽 항목이 빠져 있다.
 

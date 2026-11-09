@@ -32,18 +32,26 @@
 
 ## 한 일
 
-- `llm.py`: `MLAPIClient._stream` 을 새로 둬 `generate_json`·`generate_json_once` 가 스트리밍으로 받는다. 시작부터 정한 시간이 지나면 끊고, `finish_reason` 이 `stop` 이 아니면 로그에 남긴다. `generate_json` 은 잘린 응답을 버린다. `CALL_ATTEMPTS = 2`
+- `llm.py`: `MLAPIClient._stream` 을 새로 둬 `generate_json`·`generate_json_once` 가 스트리밍으로 받는다. 시작부터 정한 시간이 지나면 타이머가 스트림을 닫고, `finish_reason` 이 `stop` 이 아니면 로그에 남긴다. `generate_json` 은 잘린 응답을 버리고, 재시도까지 한 상한 안에서 하며, 본문을 읽다 끊긴 연결도 다시 한다. `CALL_ATTEMPTS = 2`
 - `judge/final_judge.judge`, `draft/doc_draft.draft`: 실패한 호출을 그 자리에서 한 번 더 한다
 - `draft/doc_draft.py` 프롬프트: `none` 에 "마감을 아직 못 정했다·미정이라고 하거나" 를 더했다
 - `judge/pipeline.py`
-  - `to_item`: 원래 마감이 있는 Task 의 해제는 update 항목에 `due_cleared: true` 를 싣는다
+  - `to_item`: 일정 변경 초안이 해제면 update 항목에 `due_cleared: true` 를 싣는다. 원래 마감이 없으면 BE 가 거른다
   - `_merge_into`, `_with_edit`: 같은 회의 안에서 합칠 때도 같은 규칙이다. 앞의 해제를 다음 판단에 "마감을 X → 없음" 으로 보인다
   - `_has_change`: 해제도 바뀌는 값으로 센다
   - `run`: 해제를 실패로 남기던 분기(`DUE_CLEARED_REASON`)를 지웠다
 - `judge/reply.py`: 답장 판단은 run 의 `due_cleared` 항목을 지금과 같은 `due_clear` 줄(알리기만)로 바꾼다. 보충 판단도 같다
 - `capture/recorder.py`, `.env.example`: `MM_EXTRACT_RETRY_MAX` 기본값 2 → 0
 - `backend/app/schemas/meeting.py`, `backend/app/api/extractions.py`: `due_cleared` 를 받아 대상 Task 에 마감이 있으면 변경안에 `due_date: null` 을 싣는다
-- `backend/docs/contracts/backend-ai-contract.md`: `due_cleared` 필드와 "update 마감 해제" 행
+- `backend/docs/contracts/backend-ai-contract.md`: `due_cleared` 필드와 "update 마감 해제" 행. `backend/README.md` 의 update 변경안 행
+- `docs/Manager's Manager AI flow.excalidraw`: 재시도 횟수 기본 0 과 그 자리 재시도
+
+리뷰에서 고친 것:
+
+- 스트림이 멈추거나 keepalive 만 오면 시간 상한이 걸리지 않던 것(로컬 SSE 서버로 재현: 상한 2초에 15.9초)
+- 시도마다 상한을 새로 잡아 재시도가 겹치면 상한의 세 배까지 가던 것
+- 본문을 읽다 끊긴 연결을 다시 하지 않던 것(비스트리밍일 때는 SDK 가 했다)
+- 답장 판단에서 마감 없는 태스크의 "마감이 없어졌어요" 알림이 후보가 하나일 때만 사라지던 것
 
 ## 왜
 
