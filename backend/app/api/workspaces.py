@@ -220,7 +220,8 @@ def list_workspace_meetings(
             Meeting.status != MeetingStatus.FAILED,
             and_(
                 Meeting.source == MeetingSource.MANUAL_UPLOAD,
-                Meeting.failed_stage == "speaker_assignment_expired",
+                # PM 이 다시 올려야 하는 업로드 실패는 목록에 남겨 알린다(#563 리뷰)
+                Meeting.failed_stage.in_(["speaker_assignment_expired", "upload_unclaimed"]),
             ),
         ),
     ).order_by(Meeting.started_at.desc()).all()
