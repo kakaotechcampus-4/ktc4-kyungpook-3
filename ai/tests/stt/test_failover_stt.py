@@ -129,6 +129,35 @@ def test_a_probe_success_ends_the_suspicion_without_starting(tmp_path):
     assert fo.phase is Phase.NORMAL and switch.calls == []
 
 
+class ShortOnlyElice(FakeBackend):
+    """확인 합성음에는 답하고 실제 묶음에는 늘 실패하는 Elice."""
+
+    def transcribe(self, samples, sample_rate, prompt=None):
+        if samples is PROBE:
+            return super().transcribe(samples, sample_rate, prompt)
+        raise SttError("STT service", cause="service")
+
+
+@pytest.mark.parametrize("mode", [Mode.AUTO, Mode.MANUAL])
+def test_elice_that_answers_only_the_probe_is_suspected_once_then_started(tmp_path, mode):
+    fo, _, gpu, switch, clock, notes = make(tmp_path, mode=mode)
+    fo._elice = ShortOnlyElice("elice")
+    for _ in range(LIMITS.suspect_fails):
+        call(fo)
+    ticks(fo, clock, 120)
+    assert fo.phase is Phase.NORMAL and fo.state.outage_since is not None
+    for _ in range(3 if mode is Mode.MANUAL else 1):
+        for _ in range(LIMITS.suspect_fails):
+            call(fo)
+        ticks(fo, clock, 600, until=lambda: fo.phase is Phase.ON_GPU)
+    assert sum(n.text.startswith("⏳") for n in notes) == 1
+    if mode is Mode.AUTO:
+        assert fo.phase is Phase.ON_GPU and switch.starts == 1
+    else:
+        assert fo.phase is Phase.NORMAL and switch.calls == []
+        assert sum("자동 모드였으면" in n.text for n in notes) == 1
+
+
 def test_an_empty_probe_answer_is_not_a_success(tmp_path):
     fo, elice, gpu, switch, clock, _ = make(tmp_path)
     fail_elice(fo, elice, 6)

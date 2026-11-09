@@ -6,8 +6,9 @@ recordings/.worker/gpu-failover.json 에 적는다. 그 파일은 tick 만 쓴�
 gpu-request 로 받는다(python -m capture.worker --gpu, 디스코드 /gpu).
 
 단계
-  NORMAL    Elice 로 보낸다. 실제 호출이 연속 6번 실패(SttError.cause 가 service 나 auth)하면 SUSPECT
-  SUSPECT   호출을 기다리게 하고 Elice 를 60초 간격으로 확인한다. 3번 연속 실패면 STARTING, 한 번 성공이면 NORMAL
+  NORMAL    Elice 로 보낸다. 실제 호출이 연속 6번 실패(SttError.cause 가 service 나 auth)하면 SUSPECT. 같은 장애(outage_since 가
+            남음)에서 두 번째면 확인하지 않고 바로 켠다. 실제 성공이 3번 이어지면 장애가 끝난다
+  SUSPECT   호출을 기다리게 하고 Elice 를 60초 간격으로 확인한다. 3번 연속 실패면 STARTING, 한 번 성공이면 NORMAL(장애는 남는다)
   STARTING  서버가 준비될 때까지 스위치 on 을 tick 마다 보낸다(멱등). 호출은 기다린다. 기다림이 풀린 뒤 서버가 켜지기 전에
             Elice 실제 호출이 성공하면 NORMAL
   ON_GPU    GPU 로 보낸다. 이름·문맥 프롬프트는 싣지 않는다. Elice 는 5분마다 확인한다. 장애마다 처음 넘길 때 포기한 회의를 깨운다.
@@ -332,6 +333,9 @@ def _normal(s, f, L, out, closed):
     # 알린 뒤 다시 붙잡지 않는 것은 manual 의 규칙이다. 장애 중 auto 로 바꿔 다시 띄운 워커는 상태 파일에 그 표시가 남아 있다
     announced = s.why == "would_start" and f.mode is Mode.MANUAL
     if not announced and not _paused(s, f.now) and _fails_here(s, sig) >= L.suspect_fails:
+        if s.outage_since is not None:
+            # 짧은 확인음에만 답하는 Elice 는 확인으로 다시 가리면 회의 시도만 깎는다. 같은 장애의 두 번째는 PARKED 처럼 바로 켠다
+            return _auto_start(s, f, L, out)
         out.append(Notice(f"⏳ Elice 전사가 연속 {sig.elice_streak}번 실패했습니다"
                           f"{'(키·크레딧 거절 포함)' if sig.auth else ''}. 전사를 잠시 멈추고 Elice 를 확인합니다."))
         return _enter(s, Phase.SUSPECT, "elice_down", f, hold_until=f.now + L.hold_s, next_probe_at=f.now,
@@ -347,7 +351,8 @@ def _suspect(s, f, L, out, closed):
         return _start(s, f, L, "manual", out, hold_until=s.hold_until)
     if f.elice_ok is True or _oks_here(s, f.signals) > 0:
         out.append(Notice("✅ Elice 가 응답합니다. 전사를 이어 갑니다."))
-        return _enter(s, Phase.NORMAL, "elice_ok", f)
+        # 확인 성공은 짧은 음성 하나다. 장애는 실제 성공이 이어질 때 _normal 이 끝낸다
+        return _enter(s, Phase.NORMAL, "elice_ok", f, outage_since=s.outage_since, boot_failures=s.boot_failures)
     if f.elice_ok is False:
         if s.probe_fails + 1 >= L.probe_fails:
             return _auto_start(s, f, L, out, hold_until=s.hold_until)
