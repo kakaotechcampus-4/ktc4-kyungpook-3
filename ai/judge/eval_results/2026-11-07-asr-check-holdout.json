@@ -1,0 +1,2371 @@
+{
+ "cases": 151,
+ "injected": {
+  "n": 61,
+  "flagged": 57,
+  "leaked_to_auto": 4,
+  "flagged_the_wrong_word": 57,
+  "right_in_top5": 34,
+  "right_top1": 33
+ },
+ "normal": {
+  "n": 70,
+  "flagged": 7
+ },
+ "realword": {
+  "n": 20,
+  "flagged": 2
+ },
+ "rows": [
+  {
+   "name": "injected: 쿠폰->쿠퐁 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "쿠퐁",
+   "right": "쿠폰",
+   "suspects": [
+    {
+     "word": "쿠퐁",
+     "source": "evidence",
+     "candidates": [
+      "쿠폰"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 장바구니->장마구니 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "장마구니",
+   "right": "장바구니",
+   "suspects": [
+    {
+     "word": "구니",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 리뉴얼->리뉴엘 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "리뉴엘",
+   "right": "리뉴얼",
+   "suspects": [
+    {
+     "word": "리뉴",
+     "source": "evidence",
+     "candidates": [
+      "리뷰"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 대시보드->데시보드 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "데시보드",
+   "right": "대시보드",
+   "suspects": [
+    {
+     "word": "데시보드",
+     "source": "evidence",
+     "candidates": [
+      "대시보드"
+     ]
+    },
+    {
+     "word": "데시",
+     "source": "title",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 캠페인->캄페인 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "캄페인",
+   "right": "캠페인",
+   "suspects": [
+    {
+     "word": "캄페인",
+     "source": "evidence",
+     "candidates": [
+      "캠페인"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 알고리즘->알고니즘 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "알고니즘",
+   "right": "알고리즘",
+   "suspects": [
+    {
+     "word": "알고니즘",
+     "source": "evidence",
+     "candidates": [
+      "알고리즘"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 프로모션->프로모선 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "프로모선",
+   "right": "프로모션",
+   "suspects": [
+    {
+     "word": "블프",
+     "source": "evidence",
+     "candidates": []
+    },
+    {
+     "word": "프로",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 와이어프레임->와이어프렘 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "와이어프렘",
+   "right": "와이어프레임",
+   "suspects": [
+    {
+     "word": "프렘",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 퍼널->퍼녈 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "퍼녈",
+   "right": "퍼널",
+   "suspects": [
+    {
+     "word": "퍼녈",
+     "source": "evidence",
+     "candidates": [
+      "퍼널"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 코호트->코호뜨 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "코호뜨",
+   "right": "코호트",
+   "suspects": [
+    {
+     "word": "코호뜨",
+     "source": "evidence",
+     "candidates": [
+      "코호트"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 리텐션->리탠션 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "리탠션",
+   "right": "리텐션",
+   "suspects": [
+    {
+     "word": "리탠션",
+     "source": "evidence",
+     "candidates": [
+      "리텐션"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 백오피스->백오비스 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "백오비스",
+   "right": "백오피스",
+   "suspects": [
+    {
+     "word": "백오",
+     "source": "evidence",
+     "candidates": [
+      "백업"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 어드민->어드밍 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "어드밍",
+   "right": "어드민",
+   "suspects": [
+    {
+     "word": "어드밍",
+     "source": "evidence",
+     "candidates": [
+      "어드민"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 배너->배녀 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "배녀",
+   "right": "배너",
+   "suspects": [
+    {
+     "word": "배녀",
+     "source": "evidence",
+     "candidates": [
+      "배너"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 썸네일->썸내일 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "썸내일",
+   "right": "썸네일",
+   "suspects": [
+    {
+     "word": "썸내일",
+     "source": "evidence",
+     "candidates": [
+      "썸네일"
+     ]
+    },
+    {
+     "word": "깨짐",
+     "source": "title",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 회고->회꼬 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "회꼬",
+   "right": "회고",
+   "suspects": [
+    {
+     "word": "회꼬",
+     "source": "evidence",
+     "candidates": [
+      "회고"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 공수->공쑤 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "공쑤",
+   "right": "공수",
+   "suspects": [
+    {
+     "word": "공쑤",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 인수인계->인수인게 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "인수인게",
+   "right": "인수인계",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 견적->견젹 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "견젹",
+   "right": "견적",
+   "suspects": [
+    {
+     "word": "견젹",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 기획안->기획얀 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "기획얀",
+   "right": "기획안",
+   "suspects": [
+    {
+     "word": "기획얀",
+     "source": "evidence",
+     "candidates": [
+      "기획안"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 일정표->일정포 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "일정포",
+   "right": "일정표",
+   "suspects": [
+    {
+     "word": "일정포",
+     "source": "evidence",
+     "candidates": [
+      "일정"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 산출물->산출믈 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "산출믈",
+   "right": "산출물",
+   "suspects": [
+    {
+     "word": "산출믈",
+     "source": "evidence",
+     "candidates": [
+      "산출물"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 계약서->계약써 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "계약써",
+   "right": "계약서",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 결제->겔제 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "겔제",
+   "right": "결제",
+   "suspects": [
+    {
+     "word": "겔제",
+     "source": "evidence",
+     "candidates": [
+      "결제"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 정산->정싼 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "정싼",
+   "right": "정산",
+   "suspects": [
+    {
+     "word": "정싼",
+     "source": "evidence",
+     "candidates": [
+      "정산"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 상세->상쎄 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "상쎄",
+   "right": "상세",
+   "suspects": [
+    {
+     "word": "로딩",
+     "source": "evidence",
+     "candidates": [
+      "로깅",
+      "랜딩"
+     ]
+    },
+    {
+     "word": "상쎄",
+     "source": "title",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 주문->주뭄 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "주뭄",
+   "right": "주문",
+   "suspects": [
+    {
+     "word": "주뭄",
+     "source": "evidence",
+     "candidates": [
+      "주문"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 추천->추촌 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "추촌",
+   "right": "추천",
+   "suspects": [
+    {
+     "word": "추촌",
+     "source": "evidence",
+     "candidates": [
+      "추론",
+      "추천"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 지표->지뵤 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "지뵤",
+   "right": "지표",
+   "suspects": [
+    {
+     "word": "지뵤",
+     "source": "evidence",
+     "candidates": [
+      "지표"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 이벤트->이밴트 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "이밴트",
+   "right": "이벤트",
+   "suspects": [
+    {
+     "word": "이밴트",
+     "source": "evidence",
+     "candidates": [
+      "이벤트"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 카테고리->카테고니 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "카테고니",
+   "right": "카테고리",
+   "suspects": [
+    {
+     "word": "카테",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 필터->필떠 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "필떠",
+   "right": "필터",
+   "suspects": [
+    {
+     "word": "필떠",
+     "source": "evidence",
+     "candidates": [
+      "필터"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 검색->검섹 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "검섹",
+   "right": "검색",
+   "suspects": [
+    {
+     "word": "검섹어",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 리뷰->리부 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "리부",
+   "right": "리뷰",
+   "suspects": [
+    {
+     "word": "리부",
+     "source": "evidence",
+     "candidates": [
+      "리뷰"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 환불->환뷸 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "환뷸",
+   "right": "환불",
+   "suspects": [
+    {
+     "word": "환뷸",
+     "source": "evidence",
+     "candidates": [
+      "환불"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 배송->배숑 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "배숑",
+   "right": "배송",
+   "suspects": [
+    {
+     "word": "배숑",
+     "source": "evidence",
+     "candidates": [
+      "배송"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 재고->재꼬 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "재꼬",
+   "right": "재고",
+   "suspects": [
+    {
+     "word": "재꼬",
+     "source": "evidence",
+     "candidates": [
+      "재고"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 온보딩->온보링 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "온보링",
+   "right": "온보딩",
+   "suspects": [
+    {
+     "word": "온보링",
+     "source": "evidence",
+     "candidates": [
+      "온보딩"
+     ]
+    },
+    {
+     "word": "온보",
+     "source": "title",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 로그인->로그잉 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "로그잉",
+   "right": "로그인",
+   "suspects": [
+    {
+     "word": "로그잉",
+     "source": "evidence",
+     "candidates": [
+      "로그인",
+      "로깅",
+      "로그아웃"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 회원가입->회언가입 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "회언가입",
+   "right": "회원가입",
+   "suspects": [
+    {
+     "word": "회언",
+     "source": "evidence",
+     "candidates": [
+      "회원"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 스프린트->스프린츠 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "스프린츠",
+   "right": "스프린트",
+   "suspects": [
+    {
+     "word": "스프",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 배포->배뽀 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "배뽀",
+   "right": "배포",
+   "suspects": [
+    {
+     "word": "배뽀",
+     "source": "evidence",
+     "candidates": [
+      "배포"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 마케팅->마캐팅 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "마캐팅",
+   "right": "마케팅",
+   "suspects": [
+    {
+     "word": "마캐팅",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 리포트->리포투 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "리포투",
+   "right": "리포트",
+   "suspects": [
+    {
+     "word": "리포투",
+     "source": "evidence",
+     "candidates": [
+      "리포트"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 쿼리->쿼니 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "쿼니",
+   "right": "쿼리",
+   "suspects": [
+    {
+     "word": "쿼니",
+     "source": "evidence",
+     "candidates": [
+      "쿼리"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 파이프라인->파이프라잉 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "파이프라잉",
+   "right": "파이프라인",
+   "suspects": [
+    {
+     "word": "라잉",
+     "source": "evidence",
+     "candidates": [
+      "라우팅"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 매출->매츨 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "매츨",
+   "right": "매출",
+   "suspects": [
+    {
+     "word": "매츨",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 할인->할잉 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "할잉",
+   "right": "할인",
+   "suspects": [
+    {
+     "word": "할잉",
+     "source": "evidence",
+     "candidates": [
+      "할일"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 적립금->정닙금 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "정닙금",
+   "right": "적립금",
+   "suspects": [
+    {
+     "word": "정닙금",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 체크아웃->체크아욷 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "체크아욷",
+   "right": "체크아웃",
+   "suspects": [
+    {
+     "word": "아욷",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 레이아웃->레이아옷 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "레이아옷",
+   "right": "레이아웃",
+   "suspects": [
+    {
+     "word": "레이아",
+     "source": "evidence",
+     "candidates": [
+      "레이아웃"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 고객센터->고객샌터 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "고객샌터",
+   "right": "고객센터",
+   "suspects": [
+    {
+     "word": "샌터",
+     "source": "evidence",
+     "candidates": [
+      "센터"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 문의->뭉의 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "뭉의",
+   "right": "문의",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 시안->시얀 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "시얀",
+   "right": "시안",
+   "suspects": [
+    {
+     "word": "시얀",
+     "source": "evidence",
+     "candidates": [
+      "시안",
+      "시연"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 피드백->피드빽 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "피드빽",
+   "right": "피드백",
+   "suspects": [
+    {
+     "word": "테스터",
+     "source": "evidence",
+     "candidates": [
+      "테스트",
+      "토스트"
+     ]
+    },
+    {
+     "word": "피드빽",
+     "source": "evidence",
+     "candidates": [
+      "피드백"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 런칭->런징 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "런징",
+   "right": "런칭",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 세그먼트->세그멍트 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "세그멍트",
+   "right": "세그먼트",
+   "suspects": [
+    {
+     "word": "세그멍트",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 디자인->디쟈인 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "디쟈인",
+   "right": "디자인",
+   "suspects": [
+    {
+     "word": "디쟈",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 프로필->프러필 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "프러필",
+   "right": "프로필",
+   "suspects": [
+    {
+     "word": "프러필",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 스키마->스키머 (error in title)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "스키머",
+   "right": "스키마",
+   "suspects": [
+    {
+     "word": "스키머",
+     "source": "evidence",
+     "candidates": [
+      "스키마"
+     ]
+    },
+    {
+     "word": "바꾸면",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 테스트->테수트 (title corrected)",
+   "group": "injected",
+   "expect": true,
+   "wrong": "테수트",
+   "right": "테스트",
+   "suspects": [
+    {
+     "word": "테수트",
+     "source": "evidence",
+     "candidates": [
+      "테스트",
+      "토스트"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "normal: 장바구니 쿠폰 적용",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 상품 상세 리뉴얼 시안",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 주문 취소 API 부분 취소 지원",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 추천 알고리즘 실험",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 데이터 대시보드 지표 정의",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 앱 푸시 캠페인 발송 시간 조정",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 결제 PG 연동",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [
+    {
+     "word": "페이먼츠",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: GA4 BigQuery 연동",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 주간 활성 사용자 스케줄 쿼리",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: A/B 테스트 결과 정리",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: CVR 하락 원인 분석",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: iOS AOS 배포 일정",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: PG사 미팅",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 메인 배너 이미지 사이즈 확인",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 환불 프로세스 개선",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 코호트 리텐션 분석",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 백오피스 어드민 권한",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 블랙프라이데이 프로모션 기획",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 재고 동기화 배치 실패 알림",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 푸시 메세지 문구 확정",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 컨텐츠 배너 교체",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 앱 첫 화면 진입 속도 개선",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 스테이징 환경 셋팅",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 정산 리포트 자동화",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 배송 상태 알림",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [
+    {
+     "word": "알림톡",
+     "source": "evidence",
+     "candidates": [
+      "알림"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 회원가입 온보딩 개선",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 검색 필터 고도화",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 리뷰 작성 리워드",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 구매 퍼널 전환율 분석",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: BigQuery 파이프라인 구축",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: GA4 이벤트 설계",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 고객센터 문의 분류",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [
+    {
+     "word": "키워드",
+     "source": "evidence",
+     "candidates": [
+      "리워드",
+      "워드"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 스프린트 회고",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: A/B 테스트 플랫폼 도입",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 11월 15일 점검 공지",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: SDK 버전 업데이트",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [
+    {
+     "word": "크래시율",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 결제 실패율 개선",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 주문 데이터 파티션 설계",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 쿠폰 중복 사용 방지",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 상품 목록 무한 스크롤",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [
+    {
+     "word": "로딩",
+     "source": "evidence",
+     "candidates": [
+      "로깅",
+      "랜딩"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 썸네일 webp 변환",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 개발 공수 산정",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 인수인계 문서 작성",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 어드민 엑셀 다운로드 마스킹",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [
+    {
+     "word": "마스킹",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 프로모션 예산 확인",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 구매 이력 세그먼트 분리",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 퍼널 단계 정의",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 리텐션 차트 주 단위 변경",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: CTR CVR 지표 정의",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 대시보드 쿼리 연결",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: PG 수수료율 재협상",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 푸시 수신 동의율 분석",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 장바구니 리마인드 푸시",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 상세 페이지 추천 상품",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 계약서 법무 확인",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 외주 업체 선정",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 분기 산출물 정리",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: QA 일정 조정",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 주간 정산 프로세스",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 회고 액션 아이템 반영",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 아이콘 세트 공유",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: SQL 코드 리뷰",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 품절 뱃지 표시",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 환불 요청 티켓 자동 생성",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 12월 정책 변경 공지",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 소셜 로그인 연동",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 인플루언서 협업 일정 공유",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [
+    {
+     "word": "인플루언서",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: BigQuery 권한 정리",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 메인 배너 문구 변경",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 주문 완료 쿠폰 노출",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 정산->정상",
+   "group": "realword",
+   "expect": false,
+   "wrong": "정상",
+   "right": "정산",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 지표->지퍼",
+   "group": "realword",
+   "expect": false,
+   "wrong": "지퍼",
+   "right": "지표",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 퍼널->퍼즐",
+   "group": "realword",
+   "expect": false,
+   "wrong": "퍼즐",
+   "right": "퍼널",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 리뷰->이유",
+   "group": "realword",
+   "expect": false,
+   "wrong": "이유",
+   "right": "리뷰",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 결제->결재",
+   "group": "realword",
+   "expect": false,
+   "wrong": "결재",
+   "right": "결제",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 공수->공부",
+   "group": "realword",
+   "expect": false,
+   "wrong": "공부",
+   "right": "공수",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 견적->결정",
+   "group": "realword",
+   "expect": false,
+   "wrong": "결정",
+   "right": "견적",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 일정->일종",
+   "group": "realword",
+   "expect": false,
+   "wrong": "일종",
+   "right": "일정",
+   "suspects": [
+    {
+     "word": "일종",
+     "source": "evidence",
+     "candidates": [
+      "일정",
+      "인증"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "realword: 문의->무늬",
+   "group": "realword",
+   "expect": false,
+   "wrong": "무늬",
+   "right": "문의",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 배송->배속",
+   "group": "realword",
+   "expect": false,
+   "wrong": "배속",
+   "right": "배송",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 상세->상체",
+   "group": "realword",
+   "expect": false,
+   "wrong": "상체",
+   "right": "상세",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 재고->제고",
+   "group": "realword",
+   "expect": false,
+   "wrong": "제고",
+   "right": "재고",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 주문->주민",
+   "group": "realword",
+   "expect": false,
+   "wrong": "주민",
+   "right": "주문",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 추천->추첨",
+   "group": "realword",
+   "expect": false,
+   "wrong": "추첨",
+   "right": "추천",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 회고->회계",
+   "group": "realword",
+   "expect": false,
+   "wrong": "회계",
+   "right": "회고",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 시안->시간",
+   "group": "realword",
+   "expect": false,
+   "wrong": "시간",
+   "right": "시안",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 필터->필드",
+   "group": "realword",
+   "expect": false,
+   "wrong": "필드",
+   "right": "필터",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 리포트->리모트",
+   "group": "realword",
+   "expect": false,
+   "wrong": "리모트",
+   "right": "리포트",
+   "suspects": [
+    {
+     "word": "리모트",
+     "source": "evidence",
+     "candidates": [
+      "리포트",
+      "리스트"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "realword: 전환->전화",
+   "group": "realword",
+   "expect": false,
+   "wrong": "전화",
+   "right": "전환",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 할인->하인",
+   "group": "realword",
+   "expect": false,
+   "wrong": "하인",
+   "right": "할인",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  }
+ ]
+}

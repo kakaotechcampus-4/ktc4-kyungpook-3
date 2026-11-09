@@ -212,6 +212,7 @@ from dataclasses import replace  # noqa: E402
 from datetime import date  # noqa: E402
 
 import draft.doc_draft as doc_draft  # noqa: E402
+import judge.asr_check as asr_check  # noqa: E402
 import judge.final_judge as final_judge  # noqa: E402
 import judge.pipeline as pipeline  # noqa: E402
 import judge.semantic_judge as semantic_judge  # noqa: E402
@@ -1131,6 +1132,144 @@ def test_run_passes_context_to_stage1(monkeypatch):
     ctx = Transcript(segments=[], source="chat")
     run(MEETING, workspace_id="ws_1", today=date(2026, 11, 5), candidates=FakeCandidates(), context=ctx)
     assert seen["context"] is ctx
+
+
+# ── 전사 오인식 의심 단어 (asr_suspects, judge/asr_check.py) ──────────────────────
+# 제목 명사 중 용어 목록에 없는 말을 근거 판정과 같은 Jev 호출로 "맞게 적힌 말인가?" 묻는다(결정 기록 0051)
+
+
+def _asr_answers(task_yes=0.95, **words):
+    """근거 판정 답에 asr0, asr1 … 답을 더한다. words 는 순서대로 yes 확률."""
+    out = _jev(task_yes)
+    for i, p in enumerate(words.values()):
+        out[f"asr{i}"] = {"choice": "yes", "probabilities": {"yes": p, "no": 1 - p, "unclear": 0.0}}
+    return out
+
+
+def _asr_run(monkeypatch, lines, task, *, jev=None, candidates=None, source="meeting", speakers=None):
+    segs = _one_line_meeting(*lines).segments
+    if speakers:
+        segs = [replace(s, speaker=who) for s, who in zip(segs, speakers)]
+    meeting = Transcript(source=source, segments=segs)
+    fakes = _install(monkeypatch, stage1={"findings": [_stage1(0)]}, terra=[NEW],
+                     luna_draft=[{"task": task, "due_date": None, "due_raw": None, "doc_text": task}],
+                     jev=[_jev(0.95)] if jev is None else jev)
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28), candidates=candidates or ListCandidates([]))
+    return out, fakes["jev"]
+
+
+def test_run_asks_jev_about_a_title_word_off_the_list_in_the_same_call(monkeypatch):
+    out, jev = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요."], "애포 문서 정리",
+                        jev=[_asr_answers(애포=0.2)])
+    [(state, questions)] = jev.calls          # 근거 판정과 한 호출이다
+    assert set(questions) == {"task", "asr0"} and "'애포'" in questions["asr0"]["instructions"]
+    [s] = out.items[0]["asr_suspects"]
+    assert (s["word"], s["source"]) == ("애포", "title") and "배포" in s["candidates"]
+    assert out.items[0]["task_status"] == "certain"   # 근거 판정의 뜻은 그대로다
+
+
+def test_run_passes_a_title_word_jev_says_is_right(monkeypatch):
+    out, _ = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요."], "애포 문서 정리", jev=[_asr_answers(애포=0.95)])
+    assert out.items[0]["asr_suspects"] == []
+
+
+def test_run_does_not_ask_when_every_title_noun_is_on_the_list(monkeypatch):
+    out, jev = _asr_run(monkeypatch, ["배포 문서 정리는 제가 맡을게요."], "배포 문서 정리")
+    [(_, questions)] = jev.calls
+    assert set(questions) == {"task"}
+    assert out.items[0]["asr_suspects"] == []
+
+
+def test_run_jev_failure_blocks_only_items_with_suspects(monkeypatch):
+    out, _ = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요."], "애포 문서 정리", jev=[None])
+    assert out.items[0]["asr_suspects"] == asr_check.failed()
+    clean, _ = _asr_run(monkeypatch, ["배포 문서 정리는 제가 맡을게요."], "배포 문서 정리", jev=[None])
+    assert clean.items[0]["asr_suspects"] == []
+
+
+def test_run_evidence_words_are_not_checked_only_the_title(monkeypatch):
+    # 초안이 제목을 고쳤으면 근거 원문의 오인식은 결과물에 남지 않는다
+    out, jev = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요."], "배포 문서 정리")
+    assert set(jev.calls[0][1]) == {"task"} and out.items[0]["asr_suspects"] == []
+
+
+class _Terms(ListCandidates):
+    def __init__(self, words=(), pending=(), fail=False):
+        super().__init__([])
+        self.words, self.pending, self.fail, self.pushed = list(words), list(pending), fail, []
+
+    def asr_terms(self, workspace_id):
+        if self.fail:
+            raise ConnectionError("BE 연결 실패")
+        return {"words": self.words, "pending_titles": self.pending}
+
+    def add_asr_terms(self, workspace_id, words, absorbed_title_ids):
+        self.pushed.append((words, absorbed_title_ids))
+
+
+def test_run_workspace_terms_and_approved_titles_count_as_known(monkeypatch):
+    be = _Terms(words=["핀테크볼트"], pending=[{"title_id": "t1", "title": "애포 대시보드 정리"}])
+    out, jev = _asr_run(monkeypatch, ["핀테크볼트 애포 정리는 제가 맡을게요."], "핀테크볼트 애포 정리", candidates=be)
+    assert set(jev.calls[0][1]) == {"task"} and out.items[0]["asr_suspects"] == []
+    # 승인 제목의 명사를 뽑아 올리고 그 제목을 큐에서 지운다. 이미 있는 말은 다시 올리지 않는다
+    [(words, ids)] = be.pushed
+    assert "애포" in words and "핀테크볼트" not in words and ids == ["t1"]
+
+
+def test_run_nouns_said_by_two_speakers_are_known_and_pushed(monkeypatch):
+    be = _Terms()
+    out, jev = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요.", "애포 일정은 금요일이에요."], "애포 문서 정리",
+                        candidates=be, speakers=["uid_a", "uid_b"])
+    assert set(jev.calls[0][1]) == {"task"} and out.items[0]["asr_suspects"] == []
+    assert "애포" in be.pushed[0][0]
+
+
+def test_run_a_word_one_speaker_repeats_is_still_asked(monkeypatch):
+    # STT 는 한 사람의 같은 발음을 같은 꼴로 거듭 잘못 듣는다(#532 리뷰)
+    be = _Terms()
+    _, jev = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요.", "애포 일정은 금요일이에요."], "애포 문서 정리",
+                      candidates=be, speakers=["uid_a", "uid_a"])
+    assert "asr0" in jev.calls[0][1]
+    assert not be.pushed or "애포" not in be.pushed[0][0]
+
+
+def test_run_term_lookup_failure_falls_back_to_the_base_list(monkeypatch):
+    out, jev = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요."], "애포 문서 정리",
+                        candidates=_Terms(fail=True), jev=[_asr_answers(애포=0.1)])
+    assert [s["word"] for s in out.items[0]["asr_suspects"]] == ["애포"]
+
+
+def test_run_member_names_and_search_titles_count_as_known(monkeypatch):
+    class WithNames(ListCandidates):
+        def member_names(self, workspace_id):
+            return [{"member_id": "m1", "name": "콜린스", "discord_user_id": "u1", "aliases": ["콜린"]}]
+
+    _, jev = _asr_run(monkeypatch, ["콜린스 문서 정리는 제가 맡을게요."], "콜린스 문서 정리", candidates=WithNames([]))
+    assert set(jev.calls[0][1]) == {"task"}
+    titled = ListCandidates([replace(SEARCH, title="핀테크볼트 정산 연동", similarity=0.5)])
+    _, jev = _asr_run(monkeypatch, ["핀테크볼트 정산 정리는 제가 맡을게요."], "핀테크볼트 정산 정리", candidates=titled)
+    assert set(jev.calls[0][1]) == {"task"}
+
+
+def test_run_marks_every_create_item_when_the_analyzer_cannot_start(monkeypatch):
+    def boom(n=None):
+        raise OSError("모델 파일 없음")
+    monkeypatch.setattr(asr_check, "seed_nouns", boom)
+    out, _ = _asr_run(monkeypatch, ["배포 문서 정리는 제가 맡을게요."], "배포 문서 정리")
+    assert out.items[0]["asr_suspects"] == asr_check.failed()
+
+
+def test_run_update_items_are_not_checked(monkeypatch):
+    _install(monkeypatch, stage1={"findings": FINDINGS}, terra=TERRA_OK, luna_draft=LUNA_DRAFT_OK)
+    create, update = _run().items
+    assert "asr_suspects" in create and "asr_suspects" not in update
+
+
+def test_run_chat_items_are_not_checked(monkeypatch):
+    # 채팅은 전사를 거치지 않고 auto 로도 가지 않는다(BE 가 review 로 내림). 분석기를 올리지 않는다
+    monkeypatch.setattr(asr_check, "_kiwi", lambda: (_ for _ in ()).throw(AssertionError("분석기를 올리면 안 된다")))
+    out, _ = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요."], "애포 문서 정리", source="chat")
+    assert "asr_suspects" not in out.items[0]
 
 
 def _ends(out):

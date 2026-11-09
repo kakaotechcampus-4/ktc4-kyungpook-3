@@ -341,6 +341,10 @@ class AutoSignals:
     unsearched_tasks_exist: bool = False
     # 승인 대기 중인 task_create 요청 가운데 임베딩이 없어 유사 검색(include_pending)에 잡히지 않은 것이 있는지
     unsearched_pending_exist: bool = False
+    # AI가 찾은 전사 오인식 의심 단어 수. 근거 문장 자체가 잘못 전사됐을 수 있어 auto로 보내지 않는다
+    asr_suspect_count: int = 0
+    # AI가 전사 오인식 검사를 하지 못했다(분석기 장애 등). 보수적으로 막고, 오탐 증가와 구별되게 사유를 따로 둔다
+    asr_check_failed: bool = False
 
 
 def auto_blockers(
@@ -384,6 +388,11 @@ def auto_blockers(
             reasons.append("unsearched_task_exists")
         if signals.unsearched_pending_exist:
             reasons.append("unsearched_pending_exists")
+    if signals.asr_suspect_count:
+        # Jev 의 certain 은 근거에 충실한지만 본다. "애포문서 정리"처럼 근거가 잘못 전사됐으면 그대로 certain 이다
+        reasons.append("asr_suspect")
+    if signals.asr_check_failed:
+        reasons.append("asr_check_failed")
     return reasons
 
 

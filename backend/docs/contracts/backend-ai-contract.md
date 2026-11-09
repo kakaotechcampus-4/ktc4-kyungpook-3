@@ -81,7 +81,7 @@ guild/workspace 조회, 전사 명단 조회, 업로드·DM·초안·답장 판�
 
 ## 인증
 
-- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·단계 보고·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회, 채팅 수집 대상 목록, 리마인드 DM 다섯 경로)와 웹 업로드 가져가기 여섯 경로에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
+- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·단계 보고·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회, 워크스페이스 용어 목록 조회·추가, 채팅 수집 대상 목록, 리마인드 DM 다섯 경로)와 웹 업로드 가져가기 여섯 경로에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
 - 합의 근거: 이슈 #179(BE)와 #193(AI). 회의 생성·종료·실패와 추출 등록이 리버스 프록시 설정에만 기대던 것을 서비스 토큰으로 막는다.
 - 현재 구현
   - BE(#179): 회의 생성·종료·실패와 추출 등록에 `require_service_token`을 건다. #179 전에는 발화 저장, 유사 검색, 서버로 워크스페이스 찾기에만 걸었다.
@@ -274,6 +274,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | create 게이트 | 담당자를 언급했는데 BE가 한 명으로 찾지 못했으면 `hold`다. 이름으로 풀지 못해 `assignee_raw` 없이 `second`·`thirdpronoun`·`thirdrole`만 보낸 항목과 화자가 없는 1인칭 항목(틀린 `evidence_speaker_member_id` 포함)도 언급했는데 찾지 못한 것으로 본다. 단 화자도 `assignee_raw`도 없는 legacy 1인칭은 `hint`가 없어 확신도 계산에서 담당자가 빠지므로 아래 legacy 기준(확신도)대로 `hold`가 아니라 `review`가 될 수 있다. 멤버 ID로 정한 화자는 확신도 1.0이라 다른 조건을 만족하면 `auto`가 될 수 있다. judge 항목은 그다음 아래 auto 조건을 모두 만족하면 `auto`, 아니면 `review`다. 경로를 가릴 수 없고 확신도도 없는 항목은 `review`, legacy는 확신도로 정한다(0.8 이상이고 담당자 확인 불필요면 `auto`, 0.5 이상 `review`, 그 아래 `hold`). 경로와 상관없이 `thirdrole` 새 항목은 `auto`가 나와도 `review`로 내린다(#459, 역할은 맡은 사람이 바뀔 수 있음). BE 환경변수 `AUTO_CREATE_ENABLED`가 꺼져 있으면(`false`·`0`·`off`·`no`, 모르는 값도 꺼짐, 기본 켜짐) 경로와 상관없이 `auto`를 `review`로 내린다. AI 요청과 응답은 그대로이고 근거 상태도 저장한다. 검증 실행(AI 의 `JEV_API_KEY`)과 자동 생성(이 값)을 따로 켜고 끈다(#382 멘토 리뷰). update는 지금처럼 항상 `review`다 |
 | judge auto 조건 | `task_status`가 certain, 담당자를 언급했으면 BE가 한 명으로 확정(검증된 별칭·화자, 확신도 0.8 이상), `assignee_type`이 `second`·`thirdpronoun`·`thirdrole`이 아님, `due_status`가 certain이거나 missing이고 `due_date` 유무와 맞음(missing인데 날짜가 있거나 certain인데 날짜가 없으면 탈락), `similar_count`가 0이고 워크스페이스에 임베딩이 없는 활성 task가 없음(그런 task는 유사 검색에 잡히지 않는다. 같은 요청에서 앞 항목이 auto로 만든 task와 임베딩 API가 제목을 거절한 task도 해당)이며, 승인 대기 중인 task_create 요청 가운데 임베딩이 없는 것이 없음(`unsearched_pending_exists`. `include_pending`을 켜도 검색이 못 보는 요청이다. 빈 제목으로 건너뛴 요청은 뺀다. 같은 요청에서 앞 항목이 review로 만든 pending은 보지 않는다). `task_status`·`due_status`·`similar_count` 중 하나라도 null이면 `review`라, 이 키를 보내지 않는 AI에서는 지금 동작이 그대로다. 상태 값이 셋 중 하나가 아니면 400 `INVALID_REQUEST`, `similar_count`가 음수거나 `top_similarity`가 0~1 밖이어도 400이다(#232) |
 | 근거 상태·유사 검색 값 | `similar_count`는 그 finding을 판단할 때 유사 검색 응답의 후보 수다(BE가 이미 `min_similarity` 미만을 뺀 결과). 같은 회의 앞부분 카드(pending)는 세지 않는다. `include_pending`을 켜면 BE가 준 승인 대기 후보도 센다. update 항목은 보내지 않아도 되고 보내도 게이트에 쓰지 않는다. 값은 추출 항목에 저장되고 추출 조회에 실린다 |
+| 전사 오인식 의심 단어 (`asr_suspects`, 2026-11-07) | judge 새 항목에 AI가 보내는 선택 필드. `[{word, source, candidates}]`이고 `source`는 `evidence`(근거 발화)·`title`(제목)·`check_failed`(AI가 검사하지 못함), `candidates`는 발음이 가까운 업무 용어 최대 5개다. 하나라도 있으면 auto 조건에서 막는다(실제 의심 단어는 사유 `asr_suspect`, `check_failed` 는 `asr_check_failed` 로 나눠 분석기 장애와 오탐 증가를 로그에서 구별한다). AI 는 50개까지만 보낸다(게이트는 하나만 있어도 막으므로 잘라도 같다). `source` 는 문자열로 받아 AI 가 새 값을 먼저 배포해도 400 이 되지 않고, 모르는 값도 payload 에 그대로 실린다. FE 는 `evidence`·`title` 만 교정 후보로 보이고, `check_failed`(`word` 가 빈 문자열)는 "검사하지 못함"으로 따로 보인다. 빈 목록(검사했고 없음)과 null(옛 AI)은 게이트에 영향이 없다. 목록 50개·단어 100자·후보 5개를 넘거나 모양이 틀리면 400 `INVALID_REQUEST`다. hold 는 그대로이고, review·hold 승인 요청 payload 에 그대로 싣는다(확인 카드 표시는 FE 후속). AI 쪽 규칙과 측정은 [결정 기록 0051](../../../ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md) |
 
 - 담당자 종류 저장과 승인 때 별칭 학습(#459, 현재 구현): BE가 `assignee_type`을 저장해, 담당자를 못 찾은 `thirdname` 항목을 PM이 담당자를 골라 승인할 때 `assignee_raw`를 다듬어 그 팀원의 확인된 별칭으로 저장한다. 요청 모양은 바뀌지 않는다. 학습한 별칭은 전사 힌트(`GET .../members/names`의 `aliases`)에도 실린다. AI가 1인칭을 `thirdname`으로 잘못 보내도 그 말이 할 일의 주어로 쓰인 꼴이면(어간 제·저·나·내 / 저희·우리 / 본인 × 복수 들 × 주어 표지, 예: "제가"·"저도"·"저희들은") 학습하지 않는다(#502). 부사어·구("우리끼리")는 막지 않는다. 오분류를 줄이는 것은 AI 몫이다. 규칙은 Backend README의 "1인칭 거르기의 범위"에 있다. `thirdrole`은 지금 학습하지 않는다. AI가 역할 원문을 빼고 문맥으로 추측한 이름을 `assignee_raw`로 보낼 수 있어서다. 역할 원문("BE 리더가")을 보내고 추측 이름은 보내지 않는 것은 AI 쪽 변경이라 합의 필요 변경이고, 그 뒤 BE가 `thirdrole`을 학습 대상에 다시 넣는다. 규칙은 [Backend README 승인 때 별칭 학습](../../README.md#승인-때-별칭-학습)에 있다.
 - 경로 판별의 전제: judge 항목(`ai/judge/pipeline.py`의 `to_item`)은 `action`·`category`·`doc_text`를 값이 null이어도 키째 보내고 확신도를 보내지 않는다. legacy 항목(`ai/capture/handoff.py`의 `to_extraction_items`)은 확신도 둘을 항상 보내고 judge의 키는 보내지 않는다. 판단 경로는 확신도를 만들지 않고 인계기에 임의 고정값을 넣지 않는다는 AI 쪽 기록(`ai/docs/plan/전체 계획.md`의 확신도 항목)을 따랐다.
@@ -490,7 +491,7 @@ AI 구현이 정한 처리(BE 동작은 그대로):
 
 ## 전사 힌트 조회
 
-봇이 전사(STT)에 이름 힌트를 걸 때 쓰는 읽기 경로다. 팀원 이름만 돌려주고 회의 발화나 추출 내용은 돌려주지 않는다.
+봇이 전사(STT)에 이름 힌트를 걸 때 쓰는 읽기 경로와, 전사 오인식 의심 단어를 가릴 때 쓰는 워크스페이스 용어 목록이다. 팀원 이름과 용어만 돌려주고 회의 발화나 추출 내용은 돌려주지 않는다.
 
 | 항목 | 동작 |
 |---|---|
@@ -514,6 +515,45 @@ AI 구현이 정한 처리(BE 동작은 그대로):
 
 - 합의 근거: AI 담당이 STT 이름 힌트용으로 제안했다(2026-10-13). #273 에서 AI·BE가 합의했고 #278 리뷰로 확인했다. 목록 키는 다른 BE 목록 응답처럼 `items`다. task 제목도 용어 힌트로 재 봤지만 전사가 나아지지 않아 경로를 만들지 않는다([AI 결정 기록 0025](../../../ai/docs/basis_for_decision/member/2026-10-13-0025-title-hint-not-now.md)).
 - 현재 구현: BE에 이 경로가 있다. 봇은 아직 부르지 않는다. 봇이 디스코드 표시 이름 대신 이 값을 힌트로 쓰는 작업은 AI 후속이다.
+
+### 워크스페이스 용어 목록 (#532)
+
+AI 는 새 할 일 제목의 명사 중 이 목록에 없는 말을 전사 오인식 의심 단어로 보고 Jev 로 확인한다(추출 등록의 `asr_suspects`). 목록에 들어가는 길은 둘이다.
+
+1. AI 가 회의 인계 때 두 사람 이상이 말한 명사를 `POST`로 올린다.
+2. PM 이 task_create 승인으로 태스크를 만들면 BE 가 그 **최종 제목**(PM 이 승인하면서 고쳤으면 고친 제목, `task_overrides.task_title`)을 승인과 같은 트랜잭션에서 제목 큐(`asr_title_queue`)에 한 줄 넣는다. BE 에는 형태소 분석기가 없으므로 AI 가 `GET`의 `pending_titles`로 받아 명사를 뽑고, `POST`의 `words`로 올리면서 `absorbed_title_ids`로 큐에서 지운다.
+   - 넣지 않는 경우: 반려, 승인 처리 실패(검증 오류·`APPROVAL_CONFLICT`·`APPROVAL_CHANGED` 등으로 승인이 되돌려짐), task_update 승인, 추출 등록의 auto 생성(PM 이 확인한 제목이 아니다).
+
+#### `GET /workspaces/{workspace_id}/asr-terms` → 200
+
+```jsonc
+// 응답 data
+{
+  "words": ["API", "결제", "정산"],            // 사전순(코드 포인트 순, 한글은 가나다순)
+  "pending_titles": [                          // 오래된 순(created_at, 같으면 title_id), 최대 200개
+    { "title_id": "3f0c…", "title": "결제 API 연동" }
+  ]
+}
+```
+
+#### `POST /workspaces/{workspace_id}/asr-terms` → 200
+
+```jsonc
+// 요청. 두 키 모두 선택, 없으면 빈 목록
+{ "words": ["결제", "정산"], "absorbed_title_ids": ["3f0c…"] }
+// 응답 data
+{ "added": 1, "absorbed": 1 }
+```
+
+| 항목 | 동작 |
+|---|---|
+| `words` | 0~2000개. 각 단어는 앞뒤 공백을 지운 뒤 1~30자. 이미 있는 단어와 요청 안의 중복은 조용히 건너뛰고(`ON CONFLICT DO NOTHING`), 같은 요청을 다시 보내거나 동시에 보내도 오류가 없다. `added`는 새로 넣은 수 |
+| `absorbed_title_ids` | 0~200개(각 36자 이하). 이 워크스페이스의 그 큐 행을 지운다. 다른 워크스페이스의 id 와 없는 id 는 무시한다. `absorbed`는 지운 수 |
+| 검증 | 개수·길이·모양이 틀리면 400 `INVALID_REQUEST`이고 아무것도 바꾸지 않는다 |
+| 대소문자·형태 | BE 는 앞뒤 공백 말고는 정규화하지 않는다. `API`와 `api`는 다른 단어다 |
+
+- 합의 상태: #532 작업 지시의 모양대로 BE 가 구현했다(2026-11-08). AI 쪽 호출은 같은 PR 의 AI 변경 범위이고, 리뷰에서 합의를 확인한다.
+- 현재 구현: `app/api/bot_lookups.py`의 `get_asr_terms`·`add_asr_terms`, 큐 적재는 `app/api/approvals.py`의 `_apply_approval`, 모델은 `WorkspaceAsrTerm`·`AsrTitleQueue`(마이그레이션 `9e4b2c7a1f53`).
 
 ## 리마인드 DM
 
@@ -834,7 +874,7 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 |---|---|---|---|
 | `UNAUTHENTICATED` | 401 | 봇 경로 전부 | 실패 (stage 는 로그만 남기고 계속) |
 | `MEETING_NOT_FOUND` | 404 | end, stage, fail, sources, extractions, uploads claim·file·speakers·resume, summary-requests | 실패 (stage 는 로그만 남기고 계속) |
-| `WORKSPACE_NOT_FOUND` | 404 | tasks/similar, members/names, summary-requests | 실패 |
+| `WORKSPACE_NOT_FOUND` | 404 | tasks/similar, members/names, asr-terms, summary-requests | 실패 |
 | `EXTRACTION_NOT_FOUND` | 404 | summary-input, PUT summary | 실패. 임대가 지나 다시 맡겨진다 |
 | `WORKSPACE_MISMATCH` | 400 | extractions | 실패 |
 | `MEETING_ALREADY_ENDED` | 409 | end, fail, uploads claim·speakers·resume | 지금 상태로 보고 계속 (claim이면 다음 회의로) |
@@ -855,7 +895,7 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 
 ## 코드 근거
 
-- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`(`chat-cursor` 포함), `app/api/integrations.py`의 `list_bot_chat_channels`, `app/services/chat_channel.py`, `app/schemas/integration.py`, `app/api/approvals.py`(채팅 이력 출처), `app/api/workspaces.py`(업로드 가드), `app/api/uploads.py`, `app/services/speaker_assignment.py`, `app/services/meeting_stage.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`, `app/api/bot_messages.py`, `app/services/messages.py`, `app/schemas/message.py`, `app/api/bot_summaries.py`, `app/services/summary.py`, `app/schemas/project_map.py`
+- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`(`chat-cursor`·`asr-terms` 포함), `app/api/integrations.py`의 `list_bot_chat_channels`, `app/services/chat_channel.py`, `app/schemas/integration.py`, `app/api/approvals.py`(채팅 이력 출처), `app/api/workspaces.py`(업로드 가드), `app/api/uploads.py`, `app/services/speaker_assignment.py`, `app/services/meeting_stage.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`, `app/api/bot_messages.py`, `app/services/messages.py`, `app/schemas/message.py`, `app/api/bot_summaries.py`, `app/services/summary.py`, `app/schemas/project_map.py`
 - AI: `ai/capture/handoff.py`의 `BeClient`(`report_stage`, `STAGE_TIMEOUT_S`), `Handoff`(`report_stage`), `from_env`, `ai/capture/recorder.py`의 `process_session`(`begin`), `ai/draft/reminder_draft.py`의 `draft_reminder`, `ai/capture/dm.py`의 `DmCog`
 
 회의 요약 경로는 `backend/tests/api/test_summary_queue.py`, `test_summary_save.py` 로 SQLite 와 PostgreSQL 에서 검증했다. 실제 봇과 연결해 돌리지는 않았다. `ai/tests/capture/fixtures/summary_put.json` 은 BE 테스트가 `SummaryWriteRequest` 왕복으로 검증하고, AI 구현이 같은 파일을 쓰게 되어 있다.

@@ -313,6 +313,8 @@ def create_extraction(
                         similar_count=raw_item.similar_count,
                         unsearched_tasks_exist=unsearched_tasks,
                         unsearched_pending_exist=bool(unsearched_pending),
+                        asr_suspect_count=sum(1 for s in raw_item.asr_suspects or [] if s.source != "check_failed"),
+                        asr_check_failed=any(s.source == "check_failed" for s in raw_item.asr_suspects or []),
                     ),
                     assignee_type=raw_item.assignee_type,
                     assignee=match if mentioned else None,
@@ -457,6 +459,9 @@ def create_extraction(
                 "meeting_id": meeting.meeting_id,
                 "gate": str(gate),
                 "doc_text": raw_item.doc_text,
+                # 확인 카드가 "'애포'는 '배포'일 수 있어요"를 보여 줄 수 있게 싣는다(FE 표시는 후속)
+                # [] (검사했고 없음)와 None (옛 AI) 을 구별해 받은 그대로 싣는다(계약)
+                "asr_suspects": None if raw_item.asr_suspects is None else [s.model_dump() for s in raw_item.asr_suspects],
                 "category": raw_item.category,
             }
             if raw_item.status:

@@ -10,17 +10,20 @@
   - 새 항목/수정, 대상, 상태, 분류 → JudgeResult  (Terra 가 후보와 비교해 판정)
   - 제목, 마감일, 설명 문장        → DraftResult  (Luna 가 생성)
   - 근거 상태                      → judge/evidence.py 가 Jev 에게 근거 원문에 명시됐는지 다시 물음
+  - 전사 오인식 의심 단어          → 제목 명사 중 용어 목록에 없는 말을 같은 Jev 호출로 확인(judge/asr_check.py)
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any, Literal, Protocol
 
 from draft.doc_draft import DraftUnavailableError, draft
 from jev import get_jev
-from judge.evidence import verify, worse
+from judge import asr_check
+from judge.evidence import verify_with_words, worse
 from judge.final_judge import JudgeUnavailableError, judge
 from judge.semantic_judge import empty_drops, extract_findings_counted
 from llm import get_llm
@@ -72,6 +75,8 @@ def _evidence(finding: JudgeFinding, transcript: Transcript) -> dict[str, Any]:
         "evidence_at_ms": _evidence_at_ms(finding, transcript),
     }
 
+
+logger = logging.getLogger(__name__)
 
 _MAX_EVIDENCE_SEQS = 100  # BE MAX_EVIDENCE_SEQS(schemas/meeting.py)와 같은 값. 넘으면 요청 전체가 400 이다
 
@@ -185,14 +190,20 @@ def _new_card_candidate(n: int, card: dict[str, Any]) -> NotionCandidate:
                            due_date=card["due_date"], status=card["status"], meeting_note=note)
 
 
-def _evidence_fields(finding: JudgeFinding, drafted: DraftResult, task: str | None, today: date) -> dict[str, Any]:
+def _evidence_fields(finding: JudgeFinding, drafted: DraftResult, task: str | None, today: date,
+                     words: dict[str, list[str]] | None = None) -> dict[str, Any]:
     """create 항목의 근거 상태 — 근거 원문에 명시됐는지 Jev 에게 다시 묻는다(호출 1회).
 
     근거는 finding.evidence 원문만 준다. 비어 있어도 LLM 요약(finding.text)으로 대신하지 않는다.
+    words(제목의 의심 단어 → 교정 후보)를 주면 같은 호출로 묻고 asr_suspects 를 싣는다. None 이면 싣지 않는다.
     """
     s = drafted.structured
-    task_status, due_status = verify(finding.evidence, task, s.due_date, s.due_raw, today, get_jev())
-    return {"task_status": task_status, "due_status": due_status, "due_raw": s.due_raw}
+    task_status, due_status, asr = verify_with_words(finding.evidence, task, s.due_date, s.due_raw, today, get_jev(),
+                                                     words or {})
+    out = {"task_status": task_status, "due_status": due_status, "due_raw": s.due_raw}
+    if words is not None:
+        out["asr_suspects"] = asr
+    return out
 
 
 def _search_fields(found: list[NotionCandidate]) -> dict[str, Any]:
@@ -241,6 +252,60 @@ def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult
             card["due_date"] = None
         if card["status"] == base.status:
             card["status"] = None
+
+
+def _member_words(candidates: Any, workspace_id: str) -> list[str]:
+    """팀원 이름·별칭. 유사 검색 구현(BeClient)이 member_names 를 주면 쓰고, 못 받으면 빈 목록이다."""
+    fetch = getattr(candidates, "member_names", None)
+    if fetch is None:
+        return []
+    try:
+        rows = fetch(workspace_id)
+    except Exception:  # noqa: BLE001 - 이름을 못 받아도 검사는 업무 용어·회의 발화로 돈다
+        return []
+    words: list[str] = []
+    for r in rows or []:
+        if isinstance(r, dict):
+            words += [w for w in [r.get("name"), *(r.get("aliases") or [])] if isinstance(w, str)]
+    return words
+
+
+def _workspace_terms(candidates: Any, workspace_id: str, team: set[str]) -> set[str]:
+    """BE 의 워크스페이스 용어 목록. PM 이 승인한 제목(pending_titles)은 여기서 명사를 뽑아 목록에 넣고, 이 회의에서 두
+    사람 이상이 말한 명사(team)도 올린다. BE 구현(BeClient)이 없거나 실패하면 빈 목록으로 두고 검사는 기본 목록으로 돈다.
+    """
+    fetch, push = getattr(candidates, "asr_terms", None), getattr(candidates, "add_asr_terms", None)
+    if fetch is None:
+        return set()
+    try:
+        data = fetch(workspace_id)
+    except Exception as e:  # noqa: BLE001 - 목록을 못 받으면 의심 단어가 늘 뿐이다(Jev 가 확인한다)
+        logger.warning("워크스페이스 용어 목록을 받지 못했다: %s: %s", type(e).__name__, e)
+        return set()
+    words = {w for w in data.get("words") or [] if isinstance(w, str)}
+    pending = [p for p in data.get("pending_titles") or [] if isinstance(p, dict) and p.get("title_id")]
+    approved = set().union(*(asr_check.nouns(p.get("title") or "") for p in pending)) if pending else set()
+    new = sorted((approved | team) - words)
+    if push is not None and (new or pending):
+        try:
+            push(workspace_id, new, [p["title_id"] for p in pending])
+        except Exception as e:  # noqa: BLE001 - 올리지 못하면 다음 회의에서 다시 올린다(BE 는 중복을 건너뛴다)
+            logger.warning("워크스페이스 용어를 올리지 못했다: %s: %s", type(e).__name__, e)
+    return words | approved
+
+
+def _asr_vocab(candidates: Any, workspace_id: str, transcript: Transcript) -> set[str] | None:
+    """이 회의의 전사 오인식 검사 용어 목록. 분석기를 올리지 못하면 None — 새 항목을 모두 check_failed 로 막는다."""
+    try:
+        vocab = asr_check.base_vocab()
+        team = asr_check.team_nouns((seg.speaker or seg.speaker_member_id, seg.text) for seg in transcript.segments)
+        vocab |= team | _workspace_terms(candidates, workspace_id, team)
+    except Exception as e:  # noqa: BLE001 - 검사를 못 하면 보수적으로 막는다
+        logger.warning("전사 오인식 검사를 준비하지 못했다: %s: %s", type(e).__name__, e)
+        return None
+    for name in _member_words(candidates, workspace_id):
+        vocab.update(name.split())
+    return vocab
 
 
 class CandidateSource(Protocol):
@@ -333,6 +398,9 @@ def run(
         findings = [f for f in findings if f.seq == judge_seq]
 
     out = PipelineResult(dropped=dropped)
+    # 전사 오인식 검사의 용어 목록. 채팅은 전사를 거치지 않아 보지 않는다(asr_suspects 를 싣지 않음)
+    vocab = _asr_vocab(candidates, workspace_id, transcript) if transcript.source != "chat" else None
+    seen_titles: set[str] = set()  # 유사 검색에서 본 기존 태스크 제목. 그 명사도 팀 용어다
     new_cards: list[dict[str, Any]] = []                         # 이번 회의 새 항목 카드
     edits: dict[str, tuple[NotionCandidate, dict[str, Any]]] = {}  # task_id → (DB 원래 후보, 수정 카드)
     for finding in findings:
@@ -342,6 +410,7 @@ def run(
             _fail(out, finding, PipelineFailure("similar", finding.text, f"{type(e).__name__}: {e}"))
             continue
 
+        seen_titles.update(c.title for c in found if c.title)
         shown = [_with_edit(*edits[c.task_id]) if c.task_id in edits else c for c in found]
         # 검색이 못 찾은 수정 카드도 보여 준다 — "마감은 원래대로" 처럼 Task 이름 없이 오면 검색에 안 잡혀
         # 번복을 못 알아본다(PR #206 리뷰). 새 항목 카드처럼 검색과 상관없이 넣는다
@@ -415,9 +484,26 @@ def run(
         out.items.append(item)
         out.outcomes.append(FindingOutcome(list(finding.indices), "item", item=item))
         if result.is_new:
-            item.update(_evidence_fields(finding, drafted, item["task_title"], day))
+            words = _title_words(item["task_title"], vocab, seen_titles) if transcript.source != "chat" else None
+            ev = _evidence_fields(finding, drafted, item["task_title"], day, words)
+            asr = ev.pop("asr_suspects", None)
+            item.update(ev)
             item.update(_search_fields(found))
+            if transcript.source != "chat":   # BE 로 가는 본문의 키 순서를 지킨다(asr_suspects 는 마지막)
+                item["asr_suspects"] = asr if words is not None else asr_check.failed()
             new_cards.append(item)
         else:
             edits[task_id] = (target, item)  # 여기 오는 target 은 덮어 보이지 않은 DB 원래 후보다
     return out
+
+
+def _title_words(title: str | None, vocab: set[str] | None, seen_titles: set[str]) -> dict[str, list[str]] | None:
+    """제목의 의심 단어 → 교정 후보. 목록 준비나 분석이 실패했으면 None — 호출자가 check_failed 로 막는다."""
+    if vocab is None:
+        return None
+    try:
+        known = vocab | set().union(*(asr_check.nouns(t) for t in seen_titles))
+        return {w: asr_check.candidates(w, known) for w in asr_check.suspects(title, known)}
+    except Exception as e:  # noqa: BLE001 - 분석이 실패하면 이 항목만 check_failed 로 막는다
+        logger.warning("제목 의심 단어를 찾지 못했다: %s: %s", type(e).__name__, e)
+        return None

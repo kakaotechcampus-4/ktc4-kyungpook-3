@@ -342,6 +342,22 @@ class BeClient:
             raise BeError("BAD_RESPONSE", "팀원 이름 응답에 items 목록이 없다")
         return items
 
+    def asr_terms(self, workspace_id: str) -> dict:
+        """전사 오인식 검사의 워크스페이스 용어 목록(judge/asr_check.py).
+
+        {"words": [str], "pending_titles": [{"title_id", "title"}]}. pending_titles 는 PM 이 승인한 뒤 아직 명사를
+        뽑아 올리지 않은 태스크 제목이다(BE 에는 형태소 분석기가 없다).
+        """
+        data = self._call("GET", f"/workspaces/{workspace_id}/asr-terms")
+        if not isinstance(data, dict) or not isinstance(data.get("words"), list):
+            raise BeError("BAD_RESPONSE", "용어 목록 응답에 words 목록이 없다")
+        return data
+
+    def add_asr_terms(self, workspace_id: str, words: list[str], absorbed_title_ids: list[str]) -> dict:
+        """용어를 더하고(이미 있는 말은 BE 가 건너뛴다) 명사를 뽑아 올린 승인 제목을 큐에서 지운다."""
+        return self._call("POST", f"/workspaces/{workspace_id}/asr-terms",
+                          {"words": words, "absorbed_title_ids": absorbed_title_ids})
+
     def chat_channels(self) -> list[dict]:
         """채팅 폴링 대상 채널 목록(BE #432 구현). [{"workspace_id", "guild_id", "channel_id"}] 모두 str."""
         data = self._call("GET", "/bot/chat-channels")

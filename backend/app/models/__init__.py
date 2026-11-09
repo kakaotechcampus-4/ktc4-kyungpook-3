@@ -19,6 +19,8 @@ from app.models.models import (
     WatchState,
     PmAlertMethod,
     WorkspaceMessageSettings,
+    WorkspaceAsrTerm,
+    AsrTitleQueue,
     PushStatus,
     PushSubscription,
     EvidenceStatus,
@@ -99,5 +101,5 @@ __all__ = [
     "Notification", "PushStatus", "PushSubscription", "ReminderWatch", "SchedulerSuggestion", "WatchState",
     "ReplyChange", "ReplyChangeField", "ReplyChangeOutcome", "ReplyJudgment", "ReplyJudgmentState",
     "Decision", "Topic", "TopicItem", "TopicMeeting",
-    "PmAlertMethod", "WorkspaceMessageSettings",
+    "PmAlertMethod", "WorkspaceMessageSettings", "WorkspaceAsrTerm", "AsrTitleQueue",
 ]

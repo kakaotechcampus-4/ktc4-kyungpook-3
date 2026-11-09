@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_member, get_current_user, require_member, require_pm
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, ExtractionItem, Meeting, MeetingSource, Member, MemberRole, Task, TaskStatus, User
+from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, AsrTitleQueue, ChangeSource, ExtractionItem, Meeting, MeetingSource, Member, MemberRole, Task, TaskStatus, User
 from app.schemas.approval import (
     ApprovalCreateRequest,
     ApprovalListResponse,
@@ -276,6 +276,8 @@ def _apply_approval(
                 changed_by=approval.resolved_by,
             )
         approval.related_task_id = task.task_id
+        # PM 이 확인한 최종 제목을 AI 가 받아 명사를 용어 목록에 올린다(#532). 승인이 되돌려지면 함께 사라진다
+        db.add(AsrTitleQueue(workspace_id=approval.workspace_id, title=task.title))
 
         # 합쳐진 항목(action="merge")도 같은 카드에서 나왔으므로 카드가 만든 task 를 함께 가리킨다
         linked_items = db.execute(

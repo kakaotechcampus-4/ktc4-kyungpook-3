@@ -1,0 +1,2575 @@
+{
+ "cases": 162,
+ "injected": {
+  "n": 72,
+  "flagged": 72,
+  "leaked_to_auto": 0,
+  "flagged_the_wrong_word": 72,
+  "right_in_top5": 58,
+  "right_top1": 55
+ },
+ "normal": {
+  "n": 70,
+  "flagged": 0
+ },
+ "realword": {
+  "n": 20,
+  "flagged": 2
+ },
+ "rows": [
+  {
+   "name": "injected: 배포→애포, 제목 교정",
+   "group": "injected",
+   "expect": true,
+   "wrong": "애포",
+   "right": "배포",
+   "suspects": [
+    {
+     "word": "애포",
+     "source": "evidence",
+     "candidates": [
+      "배포"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 배포→배퍼, 제목도 오류",
+   "group": "injected",
+   "expect": true,
+   "wrong": "배퍼",
+   "right": "배포",
+   "suspects": [
+    {
+     "word": "배퍼",
+     "source": "evidence",
+     "candidates": [
+      "배포"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 배포→패포",
+   "group": "injected",
+   "expect": true,
+   "wrong": "패포",
+   "right": "배포",
+   "suspects": [
+    {
+     "word": "패포",
+     "source": "evidence",
+     "candidates": [
+      "배포"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 배포→애포 조사 결합",
+   "group": "injected",
+   "expect": true,
+   "wrong": "애포",
+   "right": "배포",
+   "suspects": [
+    {
+     "word": "애포",
+     "source": "evidence",
+     "candidates": [
+      "배포"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 디자인→티자인",
+   "group": "injected",
+   "expect": true,
+   "wrong": "티자인",
+   "right": "디자인",
+   "suspects": [
+    {
+     "word": "티자인",
+     "source": "evidence",
+     "candidates": [
+      "디자인"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 디자인→티자인 복합어",
+   "group": "injected",
+   "expect": true,
+   "wrong": "티자인",
+   "right": "디자인",
+   "suspects": [
+    {
+     "word": "티자인",
+     "source": "evidence",
+     "candidates": [
+      "디자인"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 디자인→디쟈인, 제목도 오류",
+   "group": "injected",
+   "expect": true,
+   "wrong": "디쟈인",
+   "right": "디자인",
+   "suspects": [
+    {
+     "word": "디쟈",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 기획서→기획소",
+   "group": "injected",
+   "expect": true,
+   "wrong": "기획소",
+   "right": "기획서",
+   "suspects": [
+    {
+     "word": "기획소",
+     "source": "evidence",
+     "candidates": [
+      "기획서",
+      "기획"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 기획서→기훽서",
+   "group": "injected",
+   "expect": true,
+   "wrong": "기훽서",
+   "right": "기획서",
+   "suspects": [
+    {
+     "word": "기훽서",
+     "source": "evidence",
+     "candidates": [
+      "기획서"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 시안→시앙",
+   "group": "injected",
+   "expect": true,
+   "wrong": "시앙",
+   "right": "시안",
+   "suspects": [
+    {
+     "word": "시앙",
+     "source": "evidence",
+     "candidates": [
+      "시안"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 시안→시앙, 제목 교정",
+   "group": "injected",
+   "expect": true,
+   "wrong": "시앙",
+   "right": "시안",
+   "suspects": [
+    {
+     "word": "시앙",
+     "source": "evidence",
+     "candidates": [
+      "시안"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 테스트→테스뜨",
+   "group": "injected",
+   "expect": true,
+   "wrong": "테스뜨",
+   "right": "테스트",
+   "suspects": [
+    {
+     "word": "테스뜨",
+     "source": "evidence",
+     "candidates": [
+      "테스트",
+      "태스크",
+      "토스트"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 테스트→데스트",
+   "group": "injected",
+   "expect": true,
+   "wrong": "데스트",
+   "right": "테스트",
+   "suspects": [
+    {
+     "word": "데스트",
+     "source": "evidence",
+     "candidates": [
+      "테스트",
+      "리스트",
+      "토스트"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 리뷰→리유",
+   "group": "injected",
+   "expect": true,
+   "wrong": "리유",
+   "right": "리뷰",
+   "suspects": [
+    {
+     "word": "리유",
+     "source": "evidence",
+     "candidates": [
+      "리뷰"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 리뷰→니뷰",
+   "group": "injected",
+   "expect": true,
+   "wrong": "니뷰",
+   "right": "리뷰",
+   "suspects": [
+    {
+     "word": "니뷰",
+     "source": "evidence",
+     "candidates": [
+      "리뷰"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 회의록→회이록",
+   "group": "injected",
+   "expect": true,
+   "wrong": "회이록",
+   "right": "회의록",
+   "suspects": [
+    {
+     "word": "회이록",
+     "source": "evidence",
+     "candidates": [
+      "회의록"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 회의록→회이록, 제목도 오류",
+   "group": "injected",
+   "expect": true,
+   "wrong": "회이록",
+   "right": "회의록",
+   "suspects": [
+    {
+     "word": "회이록",
+     "source": "evidence",
+     "candidates": [
+      "회의록"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 대시보드→대시보더",
+   "group": "injected",
+   "expect": true,
+   "wrong": "대시보더",
+   "right": "대시보드",
+   "suspects": [
+    {
+     "word": "대시",
+     "source": "evidence",
+     "candidates": [
+      "캐시"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 대시보드→대쉬보더, 제목 교정",
+   "group": "injected",
+   "expect": true,
+   "wrong": "대쉬보더",
+   "right": "대시보드",
+   "suspects": [
+    {
+     "word": "대쉬",
+     "source": "evidence",
+     "candidates": []
+    },
+    {
+     "word": "로딩",
+     "source": "evidence",
+     "candidates": [
+      "로깅",
+      "랜딩"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 로그인→로긴인",
+   "group": "injected",
+   "expect": true,
+   "wrong": "로긴인",
+   "right": "로그인",
+   "suspects": [
+    {
+     "word": "로긴",
+     "source": "evidence",
+     "candidates": [
+      "로깅",
+      "로그인"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 회원가입→회원가빕",
+   "group": "injected",
+   "expect": true,
+   "wrong": "회원가빕",
+   "right": "회원가입",
+   "suspects": [
+    {
+     "word": "가빕",
+     "source": "evidence",
+     "candidates": [
+      "가입"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 알림→알름",
+   "group": "injected",
+   "expect": true,
+   "wrong": "알름",
+   "right": "알림",
+   "suspects": [
+    {
+     "word": "알름",
+     "source": "evidence",
+     "candidates": [
+      "알람",
+      "알림"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 결제→결체",
+   "group": "injected",
+   "expect": true,
+   "wrong": "결체",
+   "right": "결제",
+   "suspects": [
+    {
+     "word": "결체",
+     "source": "evidence",
+     "candidates": [
+      "결제"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 결제→결체, 제목도 오류",
+   "group": "injected",
+   "expect": true,
+   "wrong": "결체",
+   "right": "결제",
+   "suspects": [
+    {
+     "word": "결체",
+     "source": "evidence",
+     "candidates": [
+      "결제"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 모듈→모둘",
+   "group": "injected",
+   "expect": true,
+   "wrong": "모둘",
+   "right": "모듈",
+   "suspects": [
+    {
+     "word": "모둘",
+     "source": "evidence",
+     "candidates": [
+      "모달",
+      "모델",
+      "모듈"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 서버→서뻐",
+   "group": "injected",
+   "expect": true,
+   "wrong": "서뻐",
+   "right": "서버",
+   "suspects": [
+    {
+     "word": "서뻐",
+     "source": "evidence",
+     "candidates": [
+      "서버"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 문서→문소",
+   "group": "injected",
+   "expect": true,
+   "wrong": "문소",
+   "right": "문서",
+   "suspects": [
+    {
+     "word": "문소",
+     "source": "evidence",
+     "candidates": [
+      "문서"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 검색→검섹",
+   "group": "injected",
+   "expect": true,
+   "wrong": "검섹",
+   "right": "검색",
+   "suspects": [
+    {
+     "word": "검섹",
+     "source": "evidence",
+     "candidates": [
+      "검색",
+      "검수"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 마감→마갑",
+   "group": "injected",
+   "expect": true,
+   "wrong": "마갑",
+   "right": "마감",
+   "suspects": [
+    {
+     "word": "마갑",
+     "source": "evidence",
+     "candidates": [
+      "마감"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 초안→초엔",
+   "group": "injected",
+   "expect": true,
+   "wrong": "초엔",
+   "right": "초안",
+   "suspects": [
+    {
+     "word": "초엔",
+     "source": "evidence",
+     "candidates": [
+      "초안"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 일정→일덩",
+   "group": "injected",
+   "expect": true,
+   "wrong": "일덩",
+   "right": "일정",
+   "suspects": [
+    {
+     "word": "일덩",
+     "source": "evidence",
+     "candidates": [
+      "일정"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 일정→일졍, 제목 교정",
+   "group": "injected",
+   "expect": true,
+   "wrong": "일졍",
+   "right": "일정",
+   "suspects": [
+    {
+     "word": "일졍",
+     "source": "evidence",
+     "candidates": [
+      "일정",
+      "인증"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 화면→화먼",
+   "group": "injected",
+   "expect": true,
+   "wrong": "화먼",
+   "right": "화면",
+   "suspects": [
+    {
+     "word": "화먼",
+     "source": "evidence",
+     "candidates": [
+      "화면"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 연동→연둥",
+   "group": "injected",
+   "expect": true,
+   "wrong": "연둥",
+   "right": "연동",
+   "suspects": [
+    {
+     "word": "연둥",
+     "source": "evidence",
+     "candidates": [
+      "연동"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 스토리북→스토리분",
+   "group": "injected",
+   "expect": true,
+   "wrong": "스토리분",
+   "right": "스토리북",
+   "suspects": [
+    {
+     "word": "스토리분",
+     "source": "evidence",
+     "candidates": [
+      "스토리북",
+      "스토리"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 온보딩→오노딩",
+   "group": "injected",
+   "expect": true,
+   "wrong": "오노딩",
+   "right": "온보딩",
+   "suspects": [
+    {
+     "word": "오노딩",
+     "source": "evidence",
+     "candidates": [
+      "온보딩"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 리팩터링→리팩떠링",
+   "group": "injected",
+   "expect": true,
+   "wrong": "리팩떠링",
+   "right": "리팩터링",
+   "suspects": [
+    {
+     "word": "리팩떠링",
+     "source": "evidence",
+     "candidates": [
+      "리팩터링",
+      "리팩토링"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 핫픽스→핫피스",
+   "group": "injected",
+   "expect": true,
+   "wrong": "핫피스",
+   "right": "핫픽스",
+   "suspects": [
+    {
+     "word": "핫피스",
+     "source": "evidence",
+     "candidates": [
+      "핫픽스"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 스프린트→스프란트",
+   "group": "injected",
+   "expect": true,
+   "wrong": "스프란트",
+   "right": "스프린트",
+   "suspects": [
+    {
+     "word": "란트",
+     "source": "evidence",
+     "candidates": [
+      "간트"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 캘린더→캘린도",
+   "group": "injected",
+   "expect": true,
+   "wrong": "캘린도",
+   "right": "캘린더",
+   "suspects": [
+    {
+     "word": "캘린도",
+     "source": "evidence",
+     "candidates": [
+      "캘린더"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 모달→모덜",
+   "group": "injected",
+   "expect": true,
+   "wrong": "모덜",
+   "right": "모달",
+   "suspects": [
+    {
+     "word": "모덜",
+     "source": "evidence",
+     "candidates": [
+      "모달",
+      "모델",
+      "모듈"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 토스트→토스뜨",
+   "group": "injected",
+   "expect": true,
+   "wrong": "토스뜨",
+   "right": "토스트",
+   "suspects": [
+    {
+     "word": "토스뜨",
+     "source": "evidence",
+     "candidates": [
+      "토스트",
+      "태스크",
+      "테스트"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 웹훅→웹흑",
+   "group": "injected",
+   "expect": true,
+   "wrong": "웹흑",
+   "right": "웹훅",
+   "suspects": [
+    {
+     "word": "웹흑",
+     "source": "evidence",
+     "candidates": [
+      "웹훅"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 크론→크런",
+   "group": "injected",
+   "expect": true,
+   "wrong": "크런",
+   "right": "크론",
+   "suspects": [
+    {
+     "word": "크런",
+     "source": "evidence",
+     "candidates": [
+      "크론"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 임베딩→임베잉",
+   "group": "injected",
+   "expect": true,
+   "wrong": "임베잉",
+   "right": "임베딩",
+   "suspects": [
+    {
+     "word": "임베잉",
+     "source": "evidence",
+     "candidates": [
+      "임베딩",
+      "이메일"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 마스코트→마스코뜨",
+   "group": "injected",
+   "expect": true,
+   "wrong": "마스코뜨",
+   "right": "마스코트",
+   "suspects": [
+    {
+     "word": "코뜨",
+     "source": "evidence",
+     "candidates": [
+      "코드"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 스플래시→스프래시",
+   "group": "injected",
+   "expect": true,
+   "wrong": "스프래시",
+   "right": "스플래시",
+   "suspects": [
+    {
+     "word": "스프",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 깃허브→깃허부",
+   "group": "injected",
+   "expect": true,
+   "wrong": "깃허부",
+   "right": "깃허브",
+   "suspects": [
+    {
+     "word": "깃허부",
+     "source": "evidence",
+     "candidates": [
+      "깃허브"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 프로토타입→프로토타빕",
+   "group": "injected",
+   "expect": true,
+   "wrong": "프로토타빕",
+   "right": "프로토타입",
+   "suspects": [
+    {
+     "word": "토타빕",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 피그마→피그머",
+   "group": "injected",
+   "expect": true,
+   "wrong": "피그머",
+   "right": "피그마",
+   "suspects": [
+    {
+     "word": "피그머",
+     "source": "evidence",
+     "candidates": [
+      "피그마"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 컴포넌트→컴보넌트",
+   "group": "injected",
+   "expect": true,
+   "wrong": "컴보넌트",
+   "right": "컴포넌트",
+   "suspects": [
+    {
+     "word": "컴보넌트",
+     "source": "evidence",
+     "candidates": [
+      "컴포넌트"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 인증→인층",
+   "group": "injected",
+   "expect": true,
+   "wrong": "인층",
+   "right": "인증",
+   "suspects": [
+    {
+     "word": "인층",
+     "source": "evidence",
+     "candidates": [
+      "인증",
+      "기능"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 권한→권안",
+   "group": "injected",
+   "expect": true,
+   "wrong": "권안",
+   "right": "권한",
+   "suspects": [
+    {
+     "word": "권안",
+     "source": "evidence",
+     "candidates": [
+      "권한"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 데이터베이스→데이더베이스",
+   "group": "injected",
+   "expect": true,
+   "wrong": "데이더베이스",
+   "right": "데이터베이스",
+   "suspects": [
+    {
+     "word": "데이더",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 마이그레이션→마이크레이션",
+   "group": "injected",
+   "expect": true,
+   "wrong": "마이크레이션",
+   "right": "마이그레이션",
+   "suspects": [
+    {
+     "word": "레이션",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 엔드포인트→엔드포인뜨",
+   "group": "injected",
+   "expect": true,
+   "wrong": "엔드포인뜨",
+   "right": "엔드포인트",
+   "suspects": [
+    {
+     "word": "포인뜨",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 쿼리→쿼니",
+   "group": "injected",
+   "expect": true,
+   "wrong": "쿼니",
+   "right": "쿼리",
+   "suspects": [
+    {
+     "word": "쿼니",
+     "source": "evidence",
+     "candidates": [
+      "쿼리"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 피드백→피드박",
+   "group": "injected",
+   "expect": true,
+   "wrong": "피드박",
+   "right": "피드백",
+   "suspects": [
+    {
+     "word": "피드박",
+     "source": "evidence",
+     "candidates": [
+      "피드백"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 요구사항→요구사앙",
+   "group": "injected",
+   "expect": true,
+   "wrong": "요구사앙",
+   "right": "요구사항",
+   "suspects": [
+    {
+     "word": "사앙",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 명세서→명세소",
+   "group": "injected",
+   "expect": true,
+   "wrong": "명세소",
+   "right": "명세서",
+   "suspects": [
+    {
+     "word": "명세소",
+     "source": "evidence",
+     "candidates": [
+      "명세서",
+      "명세"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 백엔드→백인드",
+   "group": "injected",
+   "expect": true,
+   "wrong": "백인드",
+   "right": "백엔드",
+   "suspects": [
+    {
+     "word": "백인드",
+     "source": "evidence",
+     "candidates": [
+      "백엔드"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 버그→버구",
+   "group": "injected",
+   "expect": true,
+   "wrong": "버구",
+   "right": "버그",
+   "suspects": [
+    {
+     "word": "버구",
+     "source": "evidence",
+     "candidates": [
+      "버그"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 이슈→이쓔",
+   "group": "injected",
+   "expect": true,
+   "wrong": "이쓔",
+   "right": "이슈",
+   "suspects": [
+    {
+     "word": "이쓔",
+     "source": "evidence",
+     "candidates": [
+      "이슈"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 브랜치→브랜찌",
+   "group": "injected",
+   "expect": true,
+   "wrong": "브랜찌",
+   "right": "브랜치",
+   "suspects": [
+    {
+     "word": "브랜",
+     "source": "evidence",
+     "candidates": [
+      "브랜치"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 릴리스→닐리스",
+   "group": "injected",
+   "expect": true,
+   "wrong": "닐리스",
+   "right": "릴리스",
+   "suspects": [
+    {
+     "word": "닐리스",
+     "source": "evidence",
+     "candidates": [
+      "릴리스",
+      "릴리즈"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 체크리스트→체크니스트",
+   "group": "injected",
+   "expect": true,
+   "wrong": "체크니스트",
+   "right": "체크리스트",
+   "suspects": [
+    {
+     "word": "니스트",
+     "source": "evidence",
+     "candidates": [
+      "리스트",
+      "테스트",
+      "토스트"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 스크립트→스쿠립트",
+   "group": "injected",
+   "expect": true,
+   "wrong": "스쿠립트",
+   "right": "스크립트",
+   "suspects": [
+    {
+     "word": "스쿠립트",
+     "source": "evidence",
+     "candidates": [
+      "스크립트",
+      "스프린트"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 설문→설묜",
+   "group": "injected",
+   "expect": true,
+   "wrong": "설묜",
+   "right": "설문",
+   "suspects": [
+    {
+     "word": "설묜",
+     "source": "evidence",
+     "candidates": [
+      "설문"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 회고→훼고",
+   "group": "injected",
+   "expect": true,
+   "wrong": "훼고",
+   "right": "회고",
+   "suspects": [
+    {
+     "word": "훼고",
+     "source": "evidence",
+     "candidates": [
+      "회고"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 인터뷰→인터부",
+   "group": "injected",
+   "expect": true,
+   "wrong": "인터부",
+   "right": "인터뷰",
+   "suspects": [
+    {
+     "word": "인터부",
+     "source": "evidence",
+     "candidates": [
+      "인터뷰"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "injected: 와이어프레임→와이어프렘",
+   "group": "injected",
+   "expect": true,
+   "wrong": "와이어프렘",
+   "right": "와이어프레임",
+   "suspects": [
+    {
+     "word": "프렘",
+     "source": "evidence",
+     "candidates": []
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "injected: 다중 발화, 둘째 줄에 오류",
+   "group": "injected",
+   "expect": true,
+   "wrong": "테스뜨",
+   "right": "테스트",
+   "suspects": [
+    {
+     "word": "테스뜨",
+     "source": "evidence",
+     "candidates": [
+      "테스트",
+      "태스크",
+      "토스트"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "normal: 배포 스크립트",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: Jev 영문 혼용",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: sweeper",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: pyannote",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: PR 리뷰",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: README",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: CI 파이프라인",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: QA 시트",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: Notion 영문",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 디스코드 알림",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 깃허브 액션",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 스프린트 목표",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 핫픽스",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 리팩터링",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 온보딩",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 스토리북",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 마스코트",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 스플래시",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 토스트",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 모달",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 간트",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 캘린더 연동",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 웹훅",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 크론",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 임베딩",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 멤버 이름 이자인",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 멤버 이름 태윤",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 멤버 이름 원준",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 날짜 숫자",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 숫자 퍼센트",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 구어체 음",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 구어체 아 그거",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 구어체 근데",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 회원가입 API",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 검색 인덱스",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 기획서 초안",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 인증 모듈",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 서버 로그",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: API 문서",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 마감",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 카카오 로그인",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 마이페이지",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 영문 혼용 hotfix",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 영문 혼용 staging",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 영문 약어 LLM",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 영문 약어 STT",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 영문 약어 ERD",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 마이그레이션",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 스웨거",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 피드백 정리",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 릴리스 노트",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 회고",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 인터뷰",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 와이어프레임",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 디자인 시스템",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 다중 발화",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 다중 발화 담당 지정",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 간트 차트 대시보드",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 토큰 재발급",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 시드 데이터",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 시간 표현",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 변형표기 푸시",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 변형표기 푸쉬",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 변형표기 밸리데이션",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 변형표기 벨리데이션",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 변형표기 메세지",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 변형표기 컨텐츠",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 변형표기 릴리즈",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 변형표기 프런트",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "normal: 변형표기 셋업",
+   "group": "normal",
+   "expect": false,
+   "wrong": null,
+   "right": null,
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 배포→대표",
+   "group": "realword",
+   "expect": false,
+   "wrong": "대표",
+   "right": "배포",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 배포→대포",
+   "group": "realword",
+   "expect": false,
+   "wrong": "대포",
+   "right": "배포",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 결제→결재",
+   "group": "realword",
+   "expect": false,
+   "wrong": "결재",
+   "right": "결제",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 시안→시간",
+   "group": "realword",
+   "expect": false,
+   "wrong": "시간",
+   "right": "시안",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 리뷰→이유",
+   "group": "realword",
+   "expect": false,
+   "wrong": "이유",
+   "right": "리뷰",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 회의→회비",
+   "group": "realword",
+   "expect": false,
+   "wrong": "회비",
+   "right": "회의",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 일정→일종",
+   "group": "realword",
+   "expect": false,
+   "wrong": "일종",
+   "right": "일정",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 테스트→텍스트",
+   "group": "realword",
+   "expect": false,
+   "wrong": "텍스트",
+   "right": "테스트",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 검색→감색",
+   "group": "realword",
+   "expect": false,
+   "wrong": "감색",
+   "right": "검색",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 기획서→기획사",
+   "group": "realword",
+   "expect": false,
+   "wrong": "기획사",
+   "right": "기획서",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 문서→문자",
+   "group": "realword",
+   "expect": false,
+   "wrong": "문자",
+   "right": "문서",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 서버→서브",
+   "group": "realword",
+   "expect": false,
+   "wrong": "서브",
+   "right": "서버",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 모듈→모델",
+   "group": "realword",
+   "expect": false,
+   "wrong": "모델",
+   "right": "모듈",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 연동→연등",
+   "group": "realword",
+   "expect": false,
+   "wrong": "연등",
+   "right": "연동",
+   "suspects": [
+    {
+     "word": "연등",
+     "source": "evidence",
+     "candidates": [
+      "연동",
+      "인증"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "realword: 수정→수종",
+   "group": "realword",
+   "expect": false,
+   "wrong": "수종",
+   "right": "수정",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 알림→아림",
+   "group": "realword",
+   "expect": false,
+   "wrong": "아림",
+   "right": "알림",
+   "suspects": [
+    {
+     "word": "아림",
+     "source": "evidence",
+     "candidates": [
+      "알림",
+      "알람"
+     ]
+    }
+   ],
+   "flagged": true,
+   "hit_wrong": true,
+   "right_in_top5": true,
+   "right_top1": true
+  },
+  {
+   "name": "realword: 스프린트→프린트",
+   "group": "realword",
+   "expect": false,
+   "wrong": "프린트",
+   "right": "스프린트",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 토스트→토스",
+   "group": "realword",
+   "expect": false,
+   "wrong": "토스",
+   "right": "토스트",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 화면→화분",
+   "group": "realword",
+   "expect": false,
+   "wrong": "화분",
+   "right": "화면",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  },
+  {
+   "name": "realword: 마감→마감재",
+   "group": "realword",
+   "expect": false,
+   "wrong": "마감재",
+   "right": "마감",
+   "suspects": [],
+   "flagged": false,
+   "hit_wrong": false,
+   "right_in_top5": false,
+   "right_top1": false
+  }
+ ]
+}
