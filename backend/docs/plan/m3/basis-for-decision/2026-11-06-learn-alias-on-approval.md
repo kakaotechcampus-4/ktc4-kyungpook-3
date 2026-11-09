@@ -58,7 +58,7 @@
 - DB: `extraction_item.assignee_type VARCHAR(16) NULL`.
 - 다시 볼 때:
   - AI 가 역할 원문을 보내고 추측 이름은 보내지 않게 될 때. `thirdrole` 을 학습 대상에 다시 넣는다. 그때 역할을 맡은 사람이 바뀌면 이전 사람의 별칭이 남는 문제(수정 API 없음)도 함께 본다.
-    - 2026-11-09 갱신(#522): AI 가 역할 원문을 보내게 되어 같은 PR 에서 `thirdrole` 을 학습 대상에 다시 넣었다. 맡은 사람이 바뀐 역할의 옛 별칭은 따로 막지 않았다. `thirdrole` 새 항목은 `auto` 로 가지 않아 PM 이 카드에서 담당자를 보고 바꿀 수 있고, 옛 별칭은 `DELETE /members/aliases/{id}` 로 지운다. AI 쪽 결정은 [0058](../../../../../ai/docs/basis_for_decision/ai/2026-11-09-0058-thirdrole-sends-original-mention.md).
+    - 2026-11-09 갱신(#522): AI 가 역할 원문을 보내게 되어 같은 PR 에서 `thirdrole` 을 학습 대상에 다시 넣었다. 맡은 사람이 바뀐 역할의 옛 별칭은 따로 막지 않았다. `thirdrole` 새 항목은 `auto` 로 가지 않아 PM 이 카드에서 담당자를 보고 바꿀 수 있고, 옛 별칭은 `DELETE /members/aliases/{id}` 로 지운다. AI 쪽 결정은 [0060](../../../../../ai/docs/basis_for_decision/ai/2026-11-09-0060-thirdrole-sends-original-mention.md).
   - 승인 목록이 느려질 때. `approval_id` 인덱스를 추가한다.
 
 ## 근거와 관련 문서

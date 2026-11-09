@@ -32,5 +32,5 @@ BE #464 는 thirdname 항목을 추출 때 못 찾고 PM 이 고르며 `save_ali
 ## 다시 볼 조건
 
 - thirdname 항목이 PM 확인으로 많이 넘어가 불편이 보이면 둘째 안(resolved 를 따로 보내기)을 BE 와 다시 논의한다.
-- thirdrole 원문 전송은 [0058](2026-11-09-0058-thirdrole-sends-original-mention.md) 에서 정했다(#522, 2026-11-09). thirdrole 도 이 기록의 thirdname 과 같은 규칙을 쓴다.
+- thirdrole 원문 전송은 [0060](2026-11-09-0060-thirdrole-sends-original-mention.md) 에서 정했다(#522, 2026-11-09). thirdrole 도 이 기록의 thirdname 과 같은 규칙을 쓴다.
 - 1인칭 오분류로 이상한 별칭이 실제로 저장되면 AI 쪽 방어를 다시 본다.
