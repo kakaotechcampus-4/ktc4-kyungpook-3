@@ -25,8 +25,9 @@ discord 이름은 여기 없다. capture/discord_adapter.py 가 이 함수들을
   extract_runs       판단하지 못한 finding 을 남긴 채 끝난 실행 수. EXTRACT_RETRY_MAX 번까지 다시 돌린다
   extract_partial    다시 돌려도 남아서 판단하지 못한 finding 을 둔 채 인계로 갔다
   extract_error      포기 직전 차례에 파이프라인이 통째로 실패해 앞선 결과로 닫았을 때, 그 실패 한 줄
-  extract_dropped    남긴 판단 결과에서 1단계가 검증에 탈락시킨 항목 기록(#186). {"not_dict", "no_valid_indices",
-                     "bad_indices", "bad_indices_total", "lines"}. 원문은 없다
+  extract_dropped    판단 실행마다 1단계가 검증에 탈락시킨 항목 기록(#186) 의 리스트. 하나는 {"not_dict",
+                     "no_valid_indices", "bad_indices", "bad_indices_total", "lines"}. 원문은 없다
+  judge_runs         같은 전사로 돈 판단 실행들의 finding 별 결과 파일 경로. 이것을 얘기 단위로 합쳐 items 를 쓴다(#217)
   be           BE 인계 상태 {"meeting_id", "status", "extraction_id", ...}. capture/handoff.py 가 쓴다
   claimed_by, claimed_at   누가 언제부터 이 회의를 처리 중인지 보여 주는 표시. 누가 처리할지는 회의 잠금
                 (session_<회의ID>.lock 의 OS 파일 잠금)만 정한다. 놓으면 지운다
@@ -59,6 +60,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import hashlib
 import json
 import os
 import shutil
@@ -72,7 +74,7 @@ import soundfile as sf
 
 from capture import judge_path, ops_record
 from capture.handoff import MeetingEnded, session_privacy, speaker_names
-from capture.judge_path import JudgeOutput
+from capture.judge_path import JudgeOutput, merge_runs
 from shared.config import TRANSCRIPTS_DIR, settings
 from shared.config import today as config_today
 from shared.schemas import now_iso
@@ -111,7 +113,8 @@ RECOVERY_BACKOFF_CEIL_S = 3600.0                                                
 # 결과로 인계한다. 실패한 finding 만 다시 돌리는 진입점이 파이프라인에 없어 통째로 다시 돈다(docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md)
 EXTRACT_RETRY_MAX = int(os.environ.get("MM_EXTRACT_RETRY_MAX") or "2")       # .env 에 빈 값으로 적혀 있어도 기본값
 # 판단 경로가 매니페스트에 적는 칸. 전사가 바뀌거나 옛 경로로 다시 뽑으면 같이 버린다
-_JUDGE_KEYS = ("items", "extract_failures", "extract_runs", "extract_partial", "extract_error", "extract_dropped")
+_JUDGE_KEYS = ("items", "extract_failures", "extract_runs", "extract_partial", "extract_error", "extract_dropped",
+               "judge_runs")
 # 끊긴 녹음의 마지막 트랙 쓰기가 이보다 오래됐으면 회의가 끝났다고 보고 재시작 안내를 하지 않는다. 잠정값이다
 RESUME_NOTICE_WINDOW_S = 3600.0
 
@@ -953,9 +956,11 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 result["status"] = STATUS_PARTIAL
                 return result
             finish(STATUS_TRANSCRIBED)
-        elif manifest.get("failed_units"):
+        elif manifest.get("failed_units") and not (manifest.get("partial")
+                                                   and manifest.get("retry_runs", 0) >= PARTIAL_RETRY_MAX):
             # 지난번에 실패한 줄만 다시 보낸다. 상한 전에는 partial 로 두고 다음 시도를 기다린다.
-            # 상한에 닿으면 빠진 구간을 둔 채 추출·인계로 간다. 구간은 매니페스트에 남는다
+            # 상한에 닿으면 빠진 구간을 둔 채 추출·인계로 간다. 구간은 매니페스트에 남는다. 그 뒤에는 다시 보내지 않는다.
+            # 보내면 바퀴마다 전사 단계가 닫혀 recovery 가 지워지고, 뒤 단계가 계속 실패해도 포기하지 않는다
             stage = STATUS_TRANSCRIBED
             ops.load_model(backend)
             begin(FAILED_STAGE[stage])
@@ -1419,6 +1424,28 @@ def _last_attempt(manifest: dict) -> bool:
     return (manifest.get("recovery") or {}).get("attempts", 0) + 1 >= RECOVERY_MAX_ATTEMPTS
 
 
+def _kept_judge_runs(transcripts_dir: Path, manifest: dict, transcript: str) -> list[dict]:
+    """이 전사로 앞서 돈 판단 실행들의 finding 별 결과. 다시 돌릴 차례를 기다리는 회의에만 있다(#217).
+
+    근거 문장 번호는 전사마다 다른 문장을 가리키므로, 전사가 바뀐 표시를 지우지 못하고 남은 실행은 뺀다.
+    """
+    path = transcripts_dir / f"session_{manifest['session']}.judge_runs.json"
+    if manifest.get("judge_runs") != str(path) or not path.exists():
+        return []
+    return [r for r in json.loads(path.read_text(encoding="utf-8")) if r["transcript"] == transcript]
+
+
+def _kept_before_runs(path: Path, manifest: dict, out: JudgeOutput) -> bool:
+    """실행 기록 없이 재시도를 기다리던 회의의 결과를 지킬까. 합칠 수 없으니 옛 규칙(항목 수, 실패 수)으로 견준다.
+
+    합치는 규칙이 배포되기 전부터 기다리던 회의에만 있다. 번호가 없어 실행 기록으로 옮길 수 없다.
+    """
+    if "judge_runs" in manifest or manifest.get("items") != str(path) or not path.exists():
+        return False
+    items = json.loads(path.read_text(encoding="utf-8"))
+    return (len(out.items), -len(out.failures)) <= (len(items), -len(manifest.get("extract_failures") or []))
+
+
 def _keep_judge_output(transcripts_dir: Path, manifest: dict, out: JudgeOutput) -> Path:
     """판단 경로의 결과를 파일과 매니페스트에 적고, 이 결과로 단계를 닫을지 정한다. 항목은 인계 단계가 그대로 보낸다.
 
@@ -1426,23 +1453,33 @@ def _keep_judge_output(transcripts_dir: Path, manifest: dict, out: JudgeOutput) 
     그러면 기존 재시도 규칙(60초부터 두 배)이 파이프라인을 다시 돌린다. 성공한 것만 먼저 인계하지 않는 이유는
     BE 가 회의 하나에 추출을 한 번만 받아서 나머지를 나중에 넣을 수 없기 때문이다.
 
-    다시 돌린 결과는 항목이 더 많을 때, 같으면 실패가 더 적을 때만 바꿔 끼운다. 1단계는 돌릴 때마다 발화를 다르게
-    묶고, 응답이 이상하면 하나도 못 고른 채(항목 0, 실패 0) 끝난다. 실패 수만 견주면 그 빈 결과가 가진 결과를
-    밀어내고 빈 추출이 등록된다. 닫을지는 남긴 결과에 실패가 있는지로 정한다.
-    EXTRACT_RETRY_MAX 번 다시 돌렸거나 이번 실패가 포기가 되는 차례면(_last_attempt) 가장 나은 결과로 닫고
+    실행마다 finding 별 결과를 session_<회의ID>.judge_runs.json 에 쌓고, 지금까지의 실행을 얘기 단위로 합친
+    결과(judge_path.merge_runs)를 항목 파일과 extract_failures 에 쓴다. 실행 하나를 통째로 고르면 다시 돌려서
+    성공한 finding 이 버려진다(#217). 닫을지는 합친 결과에 실패가 있는지로 정한다.
+    EXTRACT_RETRY_MAX 번 다시 돌렸거나 이번 실패가 포기가 되는 차례면(_last_attempt) 합친 결과로 닫고
     extract_partial 과 extract_failures 를 남긴다. 가진 결과를 두고 회의를 실패로 닫지 않는다. 그 차례에
     파이프라인이 통째로 실패한 경우는 extract_after_transcription 이 같은 규칙으로 닫는다.
     """
     path = transcripts_dir / f"session_{manifest['session']}.items.json"
-    kept = None
-    if _kept_judge_result(transcripts_dir, manifest):
+    if _kept_before_runs(path, manifest, out):
         kept = manifest.get("extract_failures") or []
-        kept_items = len(json.loads(path.read_text(encoding="utf-8")))
-    if kept is None or (len(out.items), -len(out.failures)) > (kept_items, -len(kept)):
-        path.write_text(json.dumps(out.items, ensure_ascii=False, indent=2), encoding="utf-8")
-        kept = out.failures
-        # 1단계 탈락 기록(#186)도 이 결과의 것만 적는다. 바꿔 끼우지 않은 실행의 것이 남으면 항목과 맞지 않는다
-        manifest["extract_dropped"] = out.dropped
+    else:
+        runs_path = transcripts_dir / f"session_{manifest['session']}.judge_runs.json"
+        src = transcripts_dir / f"session_{manifest['session']}.transcript.json"
+        # 근거 문장 번호는 세그먼트의 시각과 문장으로 정해진다. 개인정보 정리처럼 화자 값만 바뀐 전사는 같은 전사로 본다
+        segments = json.loads(src.read_text(encoding="utf-8")).get("segments", [])
+        transcript = hashlib.sha256(json.dumps([[s.get("start"), s.get("text")] for s in segments],
+                                               ensure_ascii=False).encode()).hexdigest()
+        history = _kept_judge_runs(transcripts_dir, manifest, transcript)
+        history.append({"transcript": transcript, "outcomes": out.outcomes, "dropped": out.dropped})
+        tmp = runs_path.with_suffix(runs_path.suffix + ".tmp")   # 쓰다 죽어도 앞선 실행을 읽을 수 있게 바꿔 끼운다
+        tmp.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, runs_path)
+        manifest["judge_runs"] = str(runs_path)
+        items, kept = merge_runs([r["outcomes"] for r in history])
+        path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+        # 1단계 탈락 기록(#186). 항목이 여러 실행에서 오므로 실행마다 하나씩 남긴다
+        manifest["extract_dropped"] = [r["dropped"] for r in history]
     manifest["items"] = str(path)
     manifest.pop("tasks", None)
     if not kept:

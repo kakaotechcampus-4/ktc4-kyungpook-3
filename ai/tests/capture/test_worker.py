@@ -382,12 +382,12 @@ def test_an_unknown_extract_path_fails_at_start(tmp_path, monkeypatch):
 
 async def test_a_worker_pass_hands_judge_items_to_be(tmp_path):
     """워커 모드에서도 같은 추출기가 돈다. 판단 항목이 그대로 BE 로 간다."""
-    from capture.judge_path import JudgeOutput
+    from tests.capture.test_judge_stage import _out
 
     rec, path, _ = _session(tmp_path, ts=500)
     item = T._judge_item("결제 환불 기능 구현")
     fake = FakeBe()
-    worker = _worker(tmp_path, extractor=lambda transcript, names, today, workspace_id=None: JudgeOutput(items=[item]),
+    worker = _worker(tmp_path, extractor=lambda transcript, names, today, workspace_id=None: _out([item]),
                      handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     results, busy = await worker.run_pass()
     assert _status(path) == "handed_off" and results[0]["items"] == [item] and busy == []
@@ -396,14 +396,14 @@ async def test_a_worker_pass_hands_judge_items_to_be(tmp_path):
 
 async def test_the_worker_log_says_why_a_meeting_failed_and_what_was_left_unjudged(tmp_path, monkeypatch, capsys):
     """워커 모드는 채널에 결과를 올리지 않는다. 판단하지 못한 finding 과 실패 이유가 로그에도 없으면 매니페스트를 열어야 안다."""
-    from capture.judge_path import JudgeOutput
+    from tests.capture.test_judge_stage import _out
 
     monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 1)
     rec, path, _ = _session(tmp_path, ts=500)
     item = T._judge_item("결제 환불 기능 구현")
     unjudged = [{"stage": "judge", "text": "로그인 마감을 미루기로 함", "reason": "Terra 응답을 파싱하지 못했습니다."}]
     fake = FakeBe()
-    worker = _worker(tmp_path, extractor=lambda transcript, names, today, workspace_id=None: JudgeOutput(items=[item], failures=unjudged),
+    worker = _worker(tmp_path, extractor=lambda transcript, names, today, workspace_id=None: _out([item], unjudged),
                      handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     await worker.run_pass()
     first = capsys.readouterr().out

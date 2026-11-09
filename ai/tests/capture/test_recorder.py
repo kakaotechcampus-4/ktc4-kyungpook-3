@@ -935,7 +935,7 @@ def test_the_judge_path_counts_the_llm_calls_of_the_extract_stage(tmp_path, monk
     def judging(transcript, names, today, workspace_id=None):
         clients["terra"].calls += 2
         clients["luna"].calls += 3
-        return JudgeOutput(items=[], failures=[])
+        return JudgeOutput()
 
     rec, path, manifest = _session(tmp_path)
     r = _run(rec, manifest, tmp_path, extractor=judging)
