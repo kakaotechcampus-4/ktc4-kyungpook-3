@@ -272,7 +272,7 @@ develop `92f511bb`(PR 3 #597 병합 뒤)에서 `feature/348-message-schema` 로 
 | `npm run lint` | 통과 |
 | `npm run build` | 통과 |
 | 바꾼 곳 테스트 | 62 파일·1013 건 통과 |
-| `npm run test -- --maxWorkers=1` | FULL_TEST |
+| `npm run test -- --maxWorkers=1` | 309 파일·4027 건 통과(3,756초) |
 
 - 새·바꾼 테스트
   - `shared/types/api/message.test.ts`: 거절(모르는 보낸 쪽·DM 상태·묶음 상태, 칸 맞춤 다섯, 정수가 아닌 문구 판, 문구 누락, 만든 재촉의 예정이 아닌 묶음, 답장 고르기의 모르는 상태)과 경로, 허용(모르는 문구 출처·초안 상태·근거 종류·DM 실패 이유·답장 경로, #519·#525·#418 의 옛 응답), 웹소켓 프레임. 열두 MSW 상태의 목록·대화·답장 고르기와 쓰기 응답 다섯을 스키마로 `parse` 하고, 대화와 답장 고르기를 실제로 읽었는지 수로 본다.
