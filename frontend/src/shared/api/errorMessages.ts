@@ -19,6 +19,8 @@ export const WRITE_UNCONFIRMED_MESSAGES = {
 /* 서버 코드 전부 (backend core/errors.py). AI 경로에서만 오는 코드는 뺐다(계약 §2.3.1). 비밀번호 재설정의 두 코드는 합의만 됐고 BE 에 아직 없다(계약 §4.1.1).
    로그인 시도 제한은 BE PR #456 이 병합 전이고, 서버 문장을 그대로 쓴다 — 남은 시간도 잠금도 말하지 않는다 (#457) */
 const SERVER_MESSAGES: Record<ErrorCode, string> = {
+  CONSENT_VERSION_MISMATCH: '문서 판본이 바뀌었어요. 문서를 다시 확인해 주세요.',
+  CONSENT_ACCOUNT_CHANGED: '로그인한 계정이 바뀌었어요. 새로고침해서 다시 확인해 주세요.',
   INVALID_REQUEST: '요청 내용을 다시 확인해 주세요.',
   MEETING_NOT_FOUND: '회의를 찾을 수 없어요.',
   MEETING_ALREADY_ENDED: '이미 끝난 회의예요.',

@@ -5,7 +5,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.models import Meeting, MeetingSource, MeetingStatus
-from app.services import upload_storage
+from app.services import meeting_deletion, upload_storage
 
 
 def fail_meeting_if(
@@ -17,10 +17,12 @@ def fail_meeting_if(
 ) -> bool:
     """아직 끝나지 않은(done·failed 가 아닌) 회의를 failed 로 바꾼다. 바꿨으면 True, 졌으면 롤백하고 False.
 
-    상태를 읽고 나서 쓰면, 그 사이 추출 등록이 processing → done 으로 선점한 결과를 늦게 도착한 실패가 덮을 수 있다.
-    판정과 쓰기를 한 문장으로 묶고, 호출자가 더 걸 조건(`extra_where`)도 같은 문장에 넣는다.
-    이겼을 때만 커밋하고, 업로드 회의면 커밋 뒤에 녹음 폴더를 지운다.
+    claim·진행 보고와 같은 공간→회의 잠금을 먼저 얻고, 새 UPDATE 문장에서 조건을 판단한다.
+    잠금을 기다리는 동안 MeetingUpload에 반영된 claim도 읽어야 한다. 조건부 UPDATE만 먼저 시작하면
+    PostgreSQL의 이전 snapshot이 claim을 놓칠 수 있다. 추출 등록의 done 상태도 덮지 않는다.
+    True는 처리 상태 전환을 뜻한다. 업로드 파일 삭제는 커밋 뒤 시도하며 실패하면 sweeper가 재시도한다.
     """
+    meeting_deletion.require_live_meeting(db, meeting_id, lock=True)
     result = db.execute(
         update(Meeting)
         .where(
@@ -34,6 +36,7 @@ def fail_meeting_if(
             failed_stage=failed_stage,
             ended_at=now or datetime.now(timezone.utc),
         )
+        .execution_options(synchronize_session="fetch")
     )
     if result.rowcount == 0:
         db.rollback()

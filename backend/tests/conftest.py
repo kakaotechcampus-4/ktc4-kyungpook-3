@@ -15,3 +15,13 @@ def _reset_login_limit():
     login_limit.reset()
     yield
     login_limit.reset()
+
+
+@pytest.fixture(autouse=True)
+def _reset_password_reset_limit():
+    """재설정 요청 IP 제한기도 프로세스 메모리에 있으므로 테스트마다 비운다."""
+    from app.services import password_reset_limit
+
+    password_reset_limit.reset()
+    yield
+    password_reset_limit.reset()

@@ -35,6 +35,43 @@ function countOnboardingSaves(page: Page): () => number {
   return () => count
 }
 
+test('Notion 연결 해제는 응답 관측 알림 없이도 새로고침 뒤 유지된다', async ({ page }) => {
+  await page.addInitScript(() => {
+    let paused = false
+    window.addEventListener('e2e-pause-mock-response', () => {
+      paused = true
+    })
+    navigator.serviceWorker.addEventListener(
+      'message',
+      (event) => {
+        const data: unknown = event.data
+        if (
+          paused &&
+          typeof data === 'object' &&
+          data !== null &&
+          'type' in data &&
+          data.type === 'RESPONSE'
+        )
+          event.stopImmediatePropagation()
+      },
+      { capture: true },
+    )
+  })
+  await start(page, 'settings-discord-skipped', SETTINGS)
+  const notion = page.getByTestId('notion-connection')
+  await notion.getByRole('button', { name: '연결 끊기' }).click()
+  const confirm = page.getByRole('dialog', { name: 'Notion 연결을 끊을까요?' })
+  await page.evaluate(() => window.dispatchEvent(new Event('e2e-pause-mock-response')))
+  const deleted = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/integrations/notion') && response.request().method() === 'DELETE',
+  )
+  await confirm.getByRole('button', { name: '연결 끊기', exact: true }).click()
+  expect((await deleted).status()).toBe(204)
+  await page.reload()
+  await expect(notion.getByText('연결 안 됨')).toBeVisible(FIRST_PAINT)
+})
+
 test('PM 이 설정에서 Discord 를 연결하면 팀원 연결 창으로 가고, 새로고침해도 연결이 남는다 (D-074)', async ({
   page,
 }) => {

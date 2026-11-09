@@ -1,4 +1,5 @@
 export {
+  COMPACT_QUERY,
   useCompactScreen,
   useHideShellChrome,
   useShellChromeHidden,

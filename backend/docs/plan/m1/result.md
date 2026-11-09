@@ -138,3 +138,25 @@ AI 정리 지연 중의 완료 표시 기준도 확정하지 않았다. 별도 �
 기존 코드에서 승인 두 실패를 root와 독립 검토자가 각각 재현했다. 자연 경합에 의존하던 답장 교착은 실제 공간 잠금과 `pg_blocking_pids`로 순서를 고정한 회귀를 추가했다. 수정 전에는 실제 `DeadlockDetected`로 실패했고 수정 후에는 제출만 반영되고 불필요한 만료 알림이 생기지 않았다. 재현 테스트는 `8ac09e4a`에 먼저 커밋했다.
 
 수정 작성자의 실제 PostgreSQL 핵심 검사는 6 통과·SQLite 변형 2 건너뜀이며, root도 같은 반례의 수정 전 출력을 별도로 확인했다. Ruff는 통과했다. 확대 회귀·독립 실행과 Linux 전체 CI의 최종 결과는 [PR #584](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/584)에 연결한다. 이 절의 핵심 검사만으로 전체 CI 성공이나 병합을 미리 판정하지 않는다.
+
+## 2026-11-09 추가: #564 동의 기록 API의 최신 인증·탈퇴 통합
+
+사용자가 #572의 처리 가능한 코드·문서 진행을 요청해 [PR #569](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/569)의 기존 구현을 `develop@70534a85`와 통합했다. 비어 있는 M1 계획의 완료조건을 만들거나 마일스톤 전체 완료로 판정하지 않는다.
+
+- UserConsent 모델·조회/기록 API와 제안된 HTTP 형식은 보존했다. `f7f0dc53a63a`의 부모를 `e575b02d8a31`로 연결해 두 개였던 migration head를 하나로 만들었다. 새 동의 판본은 과거 기록과 별개 행이며 탈퇴 시 User FK의 CASCADE로 삭제한다.
+- 모든 저장 무결성 오류를 성공으로 삼키던 API 경계를 없앴다. `(user_id, kind, version)` 유일키 충돌만 DB의 ON CONFLICT로 수렴하며 최초 동의 시각을 보존한다. 실제 NOT NULL 실패가 200이던 반례를 SQLite·PostgreSQL에서 확인하고 수정했다.
+- 동의와 탈퇴의 실제 HTTP 요청을 독립 세션으로 겹쳐 두 잠금 선후행을 확인했다. 기존 User 공유·독점 잠금을 사용하며 새 전역 잠금은 추가하지 않았다. 동의 commit 뒤 응답 전에 탈퇴가 끝나면 500이던 별도 반례도 재현해, 응답을 같은 트랜잭션 안에서 계산한 후 commit 성공 시 반환하도록 맞췄다.
+
+검증은 격리 SQLite와 PostgreSQL에서 `pytest tests/api/test_consents_api.py tests/api/test_account_withdrawal.py tests/api/test_withdrawal_concurrency.py -q`로 **62 통과·SQLite 변형 8 건너뜀**이다. 미로그인, 타인 ID 주입, 한쪽 판본 불일치의 전체 무저장, 과거 판본·최초 시각 보존, 동시 POST, 탈퇴·늦은 POST, 같은 이메일 실제 재가입의 초기화를 포함한다. 별도 PostgreSQL `mm572_migrations`에서 빈 DB upgrade head, alembic check, downgrade -1, 재upgrade가 모두 종료 코드 0이며 단일 head `f7f0dc53a63a`다. backend 전체 Ruff도 통과했다. Linux 전체 CI와 독립 HTTPS 검증은 이 로컬 기록과 구분한다.
+
+[FE 대표 계약](../../../../frontend/docs/contracts/frontend-api-contract.md#415-이용약관개인정보처리방침-동의-564-be-제안-fe-합의-전)에 현재 코드·합의 상태·초안 판본을 구분했고 [후속 결정](basis-for-decision/2026-11-09-consent-transaction-boundary.md)에 저장·응답 경계와 공개 전 제약을 기록했다. 이 단위는 로그인 사용자용 기록 API다. 가입 강제·최종 정책 본문 공개·법률 검토 완료는 포함하지 않으며, 최종 공개 시 새 검토 완료 판본으로 문서·BE·FE를 함께 맞춰야 한다.
+
+리뷰 후 동시 POST의 두 HTTP 응답에 담긴 동의 시각을 최종 DB 값과 비교하도록 회귀를 보강했다. 시각을 덮어쓰는 DO UPDATE 변형은 기존 검사에서 통과했으나, 보강한 검사의 실제 시각 비교에서 실패했다. 정상 구현의 동의·탈퇴·경합 검사는 다시 62 통과·8 건너뜀이었다. 초기 보강본의 import 누락 실패는 이 반례로 세지 않았다. 섹션 번호 정정과 함께 대표 계약의 앵커 참조도 맞췄다.
+
+## 2026-11-09 #566 화면의 기대 계정 확인
+
+사용자의 동의 화면 연결 요청에 따라 GET·POST에 선택 `X-Consent-Account-ID` precondition을 추가했다. 실제 쿠키 계정과 다르면 동의 상태를 읽거나 쓰기 전에 `409 CONSENT_ACCOUNT_CHANGED`다. 헤더가 없는 기존 호출자는 이전 동작을 유지하며 추가 계정 비교가 적용되지 않는다. 사용자 ID 본문·가입 schema·동의 모델·migration은 변경하지 않았다.
+
+[API 회귀](../../../tests/api/test_consents_api.py)의 A 계정 기대 헤더·B 계정 실제 쿠키 조합에서 기존 GET·POST가 모두 200인 반례를 SQLite·PostgreSQL로 각각 확인했다. 수정 뒤 `pytest tests/api/test_consents_api.py -q`는 30 통과·SQLite 전용 변형 4 건너뜀이다. 잘못된 계정 요청의 409·전체 무저장과 올바른 B 헤더의 B 계정만 저장을 확인했다. 격리 PostgreSQL `mm566_owner`를 사용했으며 운영 DB와 실사용자 데이터는 사용하지 않았다.
+
+FE는 이 헤더를 항상 보내고 계정 변경 때 새로고침을 안내한다. 현재 문서 공개 상태는 준비 중이며 실제 정책 게시·초안 동의 수집은 하지 않았다. 전체 서버 접근 차단과 가입·동의의 원자적 저장은 이번 변경 범위가 아니다. [대표 계약](../../../../frontend/docs/contracts/frontend-api-contract.md#415-이용약관개인정보처리방침-동의-564-be-제안-fe-합의-전)과 [화면 결과](../../../../frontend/docs/issues/566-consent-connection/result.md)에 구현과 공개 제약을 구분했다.

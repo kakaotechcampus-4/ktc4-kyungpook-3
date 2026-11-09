@@ -8,8 +8,9 @@
 
 - [문서 안내](docs/README.md): 문서 구조와 기존 문서 배치.
 - 계약: [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md), 웹 화면용은 [프론트엔드 대표 계약](../frontend/docs/contracts/frontend-api-contract.md).
-- 계획: [전체 계획](docs/plan/backend-plan.md), [M0~M7 안내](docs/plan/README.md). 마일스톤별 plan.md는 아직 비어 있다. 진행 상태는 전체 계획의 마일스톤 개요(2026-10-02 기준)를 따른다.
-- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M1](docs/plan/m1/result.md)(가입 인증·카카오 로그인 PR 최신 기반 검증, 계정 탈퇴·공동 기록 익명화·파일 정리 #575), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M3](docs/plan/m3/result.md)(추출 근거·담당자 별칭 #459, 회의 원문 삭제와 태스크 보존 #576), [M5](docs/plan/m5/result.md)(녹음 업로드 저장과 AI 가져가기 API, AI 경로 미구현), [M6](docs/plan/m6/result.md)(AI 처리 단계 보고와 진행 표시 #381, 답장 담당자 변경 승인 #460, 승인 대기 요청 유사 검색과 합치기 #141, 메시지 탭 읽지 않은 수 #480, 범위 변경 승인 이력 #205), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서). 모두 마일스톤 완료를 판정하지 않았다.
+- 계획: [전체 계획](docs/plan/backend-plan.md), [M0~M7 안내](docs/plan/README.md). 마일스톤별 plan.md는 아직 비어 있다. 과거 전체 계획의 상태와 후속 구현·검증 결과는 M0~M7 안내에서 구분한다.
+- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M1](docs/plan/m1/result.md)(가입 인증·카카오 로그인 PR 최신 기반 검증, 계정 탈퇴·공동 기록 익명화·파일 정리 #575, 동의 기록 API #564), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M3](docs/plan/m3/result.md)(추출 근거·담당자 별칭 #459, 회의 원문 삭제와 태스크 보존 #576), [M5](docs/plan/m5/result.md)(업로드 저장·AI 가져가기 API·화자 지정 만료 이력·만료 경합과 실패 파일 재시도. AI 워커 연결은 아래 안내 참조), [M6](docs/plan/m6/result.md)(AI 처리 단계 보고와 진행 표시 #381, 답장 담당자 변경 승인 #460, 승인 대기 요청 유사 검색과 합치기 #141, 메시지 탭 읽지 않은 수 #480, 범위 변경 승인 이력 #205), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서). 모두 마일스톤 완료를 판정하지 않았다.
+- AI 웹 업로드 처리 코드는 [worker](../ai/capture/worker.py), [가져오기](../ai/upload/intake.py), [화자 지정](../ai/upload/assign.py), [AI 실행 안내](../ai/README.md)에 있다. M5 결과의 초기 `AI 미구현` 설명은 당시 기록이다. 현재 코드 존재와 실제 공급사·운영 성공을 구분한다.
 - 배포: [배포 안내](../deploy/README.md). 요청: [녹음 시작 때 배포 재시작 잠금 확인](docs/requests/bot-restart-lock.md)(AI).
 
 ## 실행
@@ -32,8 +33,7 @@ docker compose up -d db         # PostgreSQL(pgvector 포함) 기동, 데이터�
 - DB를 비우고 처음부터 다시 만들려면 `docker compose down -v` 후 다시 띄운다.
 - SQLite(`mm.db`) 시절 데이터와 마이그레이션은 이관(#98) 때 정리했다. 예전 `mm.db` 파일은 지워도 된다.
 - `run.sh`는 `.env`를 읽어 alembic과 uvicorn에 환경변수로 넘긴다. `run.sh` 없이 직접 띄우면 `.env`를 읽지 않는다.
-- 테스트(`pytest`)는 sqlite in-memory로 돌아서 DB를 띄우지 않아도 된다. pgvector 검색 테스트만
-  PostgreSQL이 필요해서 `TEST_DATABASE_URL`이 있을 때만 돈다(`tests/services/test_embedding_search_pg.py` 참고).
+- 테스트(`pytest`)는 기본 SQLite 변형과 `TEST_DATABASE_URL`이 있을 때의 PostgreSQL 변형을 구분한다. API 잠금·경합과 pgvector 검색의 PostgreSQL 검증에는 격리된 테스트 DB가 필요하다. DB가 없어서 건너뛴 검사를 통과로 세지 않는다. 설정은 `tests/api/conftest.py`와 `tests/services/test_embedding_search_pg.py`를 확인한다.
 - CI(`.github/workflows/backend-ci.yml`)는 ruff 린트, pytest, 빈 PostgreSQL에 `alembic upgrade head`·`alembic check`, 운영 이미지 빌드를 돌린다.
   로컬에서 린트는 `.venv/bin/python -m ruff check .`(설정 `ruff.toml`).
 
@@ -69,10 +69,10 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 필수 값 | `OAUTH_STATE_SECRET`이 비어 있으면 `docker compose`가 기동 전에 멈춘다(OAuth state, 가입 이메일 증명, 카카오 로그인이 함께 쓰는 서명 키) |
 | 데이터 | DB는 `mm-prod_pgdata` 볼륨에 남는다. 로컬 개발용 볼륨(`mm-pgdata`)과 따로다 |
 | 업로드 녹음 | `mm-prod_uploads` 볼륨(컨테이너의 `/data/uploads`)에 둔다. 회의가 done·failed가 되면 그 회의 폴더를 지운다 |
-| 업로드 sweeper | 서버 안의 워커가 `UPLOAD_SWEEP_INTERVAL_SECONDS`(기본 300, 0 이하면 끔)마다 멈춘 업로드 회의를 failed 로 바꾸고 녹음 폴더를 지운다. AI 가 가져간 뒤 진행이 3시간 없으면 `failed_stage=diarize`, 화자 지정을 7일 기다리면 `speaker_assignment_expired`. 기준은 [봇 계약](docs/contracts/backend-ai-contract.md)의 "웹 업로드 가져가기" |
+| 업로드 sweeper | 서버 안의 워커가 `UPLOAD_SWEEP_INTERVAL_SECONDS`(기본 300, 0 이하면 끔)마다 멈춘 업로드 회의를 failed로 바꾸고 녹음 폴더 제거를 시도한다. AI가 가져간 뒤 진행이 3시간 없으면 `failed_stage=diarize`, 화자 지정을 7일 기다리면 `speaker_assignment_expired`, 가져가지 않은 채 24시간이 지나면 `upload_unclaimed`. live failed 업로드의 남은 폴더는 다음 바퀴마다 재시도한다. 과거 failed 잔존 파일도 대상이며 처리 실패가 삭제 완료를 뜻하지 않는다. 기준은 [봇 계약](docs/contracts/backend-ai-contract.md)의 "웹 업로드 가져가기" |
 | 세션 sweeper | 서버 안의 워커가 `SESSION_SWEEP_INTERVAL_SECONDS`(기본 3600, 0 이하면 끔)마다 만료된(`expires_at` 이 지난) 세션 행을 지운다. 만료 세션은 워커가 돌기 전에도 조회 때 401 이다 |
 | 리마인드 스케줄러 | 서버 안의 워커가 `REMINDER_SCHEDULER_INTERVAL_SECONDS`(기본 60, 0 이하면 끔)마다 재촉 제안, 발송 직전 확인, 72시간 무응답 막힘, 푸시 발송을 돈다. 브라우저 푸시는 `VAPID_PRIVATE_KEY`·`VAPID_PUBLIC_KEY`·`VAPID_SUBJECT` 가 모두 있어야 나가고, 하나라도 없으면 웹 안 알림만 쌓인다 |
-| 대화 신호 웹소켓 | `GET /api/v1/workspaces/{workspace_id}/messages/ws`. 인증은 `session_token` 쿠키이고, `Origin` 의 `host:port` 가 `Host` 와 다르면 HTTP 403 으로 거절한다. 대화에 새 줄이 커밋되면 `thread_updated` 신호만 보낸다(본문 없음). 열린 소켓은 30초마다 세션과 소속을 다시 확인해 4401(세션 없음)·4403(소속 아님)으로 닫고, 신호가 밀리거나 팀원 행이 바뀌면 1013 으로 닫는다. 리버스 프록시는 이 경로의 업그레이드를 넘겨야 한다. 자세한 동작은 [FE 계약](../frontend/docs/contracts/frontend-api-contract.md) §5.7 |
+| 대화 신호 웹소켓 | `GET /api/v1/workspaces/{workspace_id}/messages/ws`. 인증은 `session_token` 쿠키이고, `Origin` 의 `host:port` 가 `Host` 와 다르면 HTTP 403 으로 거절한다. 대화에 새 줄이 커밋되면 `thread_updated` 신호만 보낸다(본문 없음). 열린 소켓은 신호를 보내기 전과 클라이언트 프레임을 받은 뒤 세션과 소속을 확인하고, 유휴 상태에서도 30초마다 재확인한다. 탈퇴·세션 철회 신호로도 연결을 닫는다. 권한이 사라지면 4401(세션 없음)·4403(소속 아님)으로 닫고, 신호가 밀리거나 팀원 행이 바뀌면 1013 으로 닫는다. 리버스 프록시는 이 경로의 업그레이드를 넘겨야 한다. 자세한 동작은 [FE 계약](../frontend/docs/contracts/frontend-api-contract.md) §5.7 |
 | 자동 막힘 표시 | 태스크 응답의 `auto_blocked` 는 `POST /tasks/{task_id}/auto-block/undo` 가 지금 성공하는 상태와 같다. 이력의 `change_source` 로 가리지 않는다. 막힌 뒤 사유를 PM 이 바꾸면 false 다 |
 | 로그 | 컨테이너당 10MB × 3개까지만 남긴다(디스크 50GB 고정) |
 
@@ -99,6 +99,8 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 코드 | HTTP | 의미 |
 |---|---|---|
 | `INVALID_REQUEST` | 400 | 요청 형식이 올바르지 않음 (필드 검증 실패 등) |
+| `CONSENT_VERSION_MISMATCH` | 400 | 동의 요청의 약관·개인정보처리방침 버전이 현재 BE 설정과 다름. 두 문서 모두 저장하지 않으며 `details.current_versions`·`received`로 현재 값과 받은 값을 안내 |
+| `CONSENT_ACCOUNT_CHANGED` | 409 | 동의 GET·POST의 선택 `X-Consent-Account-ID`와 쿠키 계정이 다름. 조회·저장 없이 반환하며 새로고침 후 계정을 다시 확인. 헤더 없는 기존 소비자는 호환 |
 | `WORKSPACE_MISMATCH` | 400 | 요청한 workspace_id가 대상 리소스의 실제 workspace와 다름 |
 | `MEETING_NOT_FOUND` | 404 | 회의를 찾을 수 없음 |
 | `EXTRACTION_NOT_FOUND` | 404 | 추출 결과를 찾을 수 없음 |
@@ -533,6 +535,9 @@ SMTP 설정이 없으면 코드 요청이 503 이라 이메일로는 가입할 �
 
 - 링크: `{APP_BASE_URL}/reset-password#token=<토큰>`. 30분 동안 한 번만 쓸 수 있고 DB 에는 sha256 해시만 둔다. 새 토큰을 발급하면 이전 미사용 토큰은 `invalid` 가 된다.
 - 요청 제한: 계정마다 60초에 1번, 1시간에 5번. 걸려도 응답은 같은 200 이고 이전 링크는 살아 있다. 이메일은 [정규화한 값](#이메일-정규화)으로 찾는다.
+- 전체·IP 상한(#550): 아래에 걸려도 응답은 같은 200 `{}` 이고 토큰·메일을 만들지 않으며 이전 링크는 살아 있다. 막힌 이유는 서버 로그(`password reset request blocked: reason=ip|global`)로만 남기고 이메일은 남기지 않는다.
+  - 같은 공인 IP(IPv6 는 /64): 1시간에 5번. 가입 여부와 상관없이 모든 요청을 세고, 막힌 요청은 세지 않는다. 메일 설정 503 검사 뒤, 첫 DB 조회 전에 메모리에서 막는다. IP 판단은 [로그인 제한](#로그인-제한)과 같다(사설 주소·해석할 수 없는 값은 건너뜀). 원본은 `app/services/password_reset_limit.py`. 서버를 재시작하면 풀리고 단일 프로세스 전제다.
+  - 전체: 지난 1시간에 발급한 재설정 토큰(쓰거나 무효가 된 것 포함)이 10개면 새로 발급하지 않는다. IP 상한(5)보다 크게 두어 공인 IP 하나로는 다 쓰지 못한다. 사용자 조회 전에 DB 에서 세므로 재시작해도 풀리지 않는다. 동시 요청이 몰리면 몇 통 넘을 수 있다.
 - 발송: 응답 뒤 백그라운드에서 보내고, 실패하면 2·4·8초 뒤 3번 더 보낸다. 그래도 실패하면 로그만 남긴다(사용자는 다시 요청한다). 서버가 재시작되면 보내던 메일은 사라진다.
 - 비밀번호 규칙: 8자 이상, 숫자(0-9) 하나 이상. 회원가입(`POST /api/v1/auth/signup`)에도 같이 적용되고 어기면 400 `INVALID_REQUEST`.
 
@@ -545,7 +550,7 @@ SMTP 설정이 없으면 코드 요청이 503 이라 이메일로는 가입할 �
 3. 서버 `.env` 에 `SMTP_HOST=smtp.gmail.com`, `SMTP_USERNAME=<계정>`, `SMTP_PASSWORD=<앱 비밀번호>`, `APP_BASE_URL=<웹 주소>` 를 넣고 백엔드를 재시작한다.
 4. 실제 계정으로 재설정 메일을 받아 링크로 비밀번호를 바꿔 본다. 받은편지함에 없으면 스팸함을 본다.
 
-Gmail 은 하루 발송 한도(약 500통)가 있다. 다른 SMTP 로 옮길 때는 환경변수만 바꾼다(포트 465 면 `SMTP_SECURITY=ssl`).
+Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체 시간당 10통으로 묶는다. 같은 계정을 쓰는 가입 인증 메일(#454)의 상한과는 따로라, 두 경로를 하루 내내 채우면 한도를 넘을 수 있다([결정 기록](docs/plan/m1/basis-for-decision/2026-11-08-reset-mail-cap.md)). 다른 SMTP 로 옮길 때는 환경변수만 바꾼다(포트 465 면 `SMTP_SECURITY=ssl`).
 
 ## 가입 이름 규칙
 

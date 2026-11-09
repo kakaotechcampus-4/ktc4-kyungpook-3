@@ -202,6 +202,9 @@ export interface MockDb {
   session: SessionDto
   authenticated: boolean
   accounts: MockAccount[]
+  consents: { user_id: string; kind: 'terms' | 'privacy'; version: string; agreed_at: string }[]
+  consentVersions: { terms: string; privacy: string }
+  consentFailure: 'none' | 'read' | 'write' | 'response-lost'
   withdrawals: {
     keyHash: string
     receipt: {
@@ -255,6 +258,9 @@ export function initialDb(): MockDb {
   return {
     session: structuredClone(sessionFixture),
     authenticated: true,
+    consents: [],
+    consentVersions: { terms: '2026-11-08', privacy: '2026-11-08' },
+    consentFailure: 'none',
     withdrawals: [],
     withdrawnMemberIds: [],
     accounts: [

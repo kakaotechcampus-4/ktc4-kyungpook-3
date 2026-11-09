@@ -1,24 +1,23 @@
+import { fallbackValue } from '@/shared/api/unknownValue'
 import type { ExtractionDto, ExtractionItemDto } from '@/shared/types/api/extraction'
-import { enumValue } from '@/shared/lib/enum'
-import type { Extraction, ExtractionApprovalStatus, ExtractionItem } from './types'
+import type { Extraction, ExtractionApprovalStatus, ExtractionGate, ExtractionItem } from './types'
 
-const APPROVAL_STATUSES = ['pending', 'approved', 'rejected'] as const
+const GATES: readonly ExtractionGate[] = ['auto', 'review', 'hold']
+const APPROVAL_STATUSES: readonly ExtractionApprovalStatus[] = ['pending', 'approved', 'rejected']
 
-// 없는 값(이전 서버 응답)·모르는 값은 null 이다. 승인이 걸린 항목이 null 이면 반영으로 보지 않는다(extractionView). 모르는 값은 경고를 남긴다
+// 없는 값(이전 서버 응답)·모르는 값은 null 이다. 승인이 걸린 항목이 null 이면 반영으로 보지 않는다(extractionView)
 function approvalStatusOf(value: string | null | undefined): ExtractionApprovalStatus | null {
-  if (value === null || value === undefined) return null
-  if ((APPROVAL_STATUSES as readonly string[]).includes(value))
-    return value as ExtractionApprovalStatus
-  if (import.meta.env.DEV) console.warn(`Unknown extraction approval status: ${value}`)
-  return null
+  return value == null
+    ? null
+    : fallbackValue(value, APPROVAL_STATUSES, null, 'extraction approval status')
 }
 
 export function toExtractionItem(dto: ExtractionItemDto): ExtractionItem {
   return {
     id: dto.item_id,
     title: dto.task.title,
-    confidence: dto.confidence,
-    gate: enumValue(dto.gate, ['auto', 'review', 'hold'] as const, 'hold', 'extraction gate'),
+    // 모르는 판단은 hold 로 읽는다. 자동으로 만든 태스크로 보이지 않게 한다
+    gate: fallbackValue(dto.gate, GATES, 'hold', 'extraction gate'),
     assigneeMemberId: dto.assignee.member_id,
     assigneeLabel:
       (dto.assignee.member_id !== null ? dto.assignee.display_name : null) ??

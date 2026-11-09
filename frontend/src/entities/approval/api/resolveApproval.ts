@@ -1,5 +1,6 @@
 import { request } from '@/shared/api/client'
-import type { ApprovalDto } from '@/shared/types/api/approval'
+import { parseResponse } from '@/shared/api/parseResponse'
+import { approvalSchema } from '@/shared/types/api/approval'
 import { toApproval, toApprovalResolveRequestDto } from '../model/mapper'
 import { planApprovalResolution } from '../model/resolution'
 import type { ApprovalDecision, ApprovalResolveContext, TaskCreateIssue } from '../model/resolution'
@@ -34,9 +35,13 @@ export async function resolveApproval(
   const plan = planApprovalResolution(approval, decision, context)
   if (!plan.ok) throw new ApprovalNotResolvableError(plan.reason, plan.issues)
   return toApproval(
-    await request<ApprovalDto>(`/approvals/${encodeURIComponent(approval.id)}`, {
-      method: 'PATCH',
-      body: toApprovalResolveRequestDto(plan.resolution),
-    }),
+    parseResponse(
+      approvalSchema,
+      await request<unknown>(`/approvals/${encodeURIComponent(approval.id)}`, {
+        method: 'PATCH',
+        body: toApprovalResolveRequestDto(plan.resolution),
+      }),
+      'approval',
+    ),
   )
 }
