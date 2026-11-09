@@ -93,6 +93,41 @@ describe('팀 화면 — PM', () => {
     ).toBeInTheDocument()
   })
 
+  it('미리 추가한 팀원을 이름 칸 제안에서 고르면 새로 만들지 않고 그 팀원에 잇는다 (#613)', async () => {
+    const user = userEvent.setup()
+    renderApp(TEAM)
+    const area = await unlinkedArea()
+    await user.click(await area.findByRole('button', { name: '연결 — jihun_dev' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const name = await dialog.findByRole('combobox', { name: '@jihun_dev의 팀원 이름' })
+
+    await user.type(name, '이')
+    const suggestions = await screen.findByRole('listbox', { name: '미리 추가한 팀원' })
+    expect(
+      within(suggestions)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['이재환'])
+    await user.click(within(suggestions).getByRole('option', { name: '이재환' }))
+    expect(name).toHaveValue('이재환')
+
+    const log = recordRequests()
+    await user.click(dialog.getByRole('button', { name: '저장' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(
+      log.started
+        .filter(({ method, path }) => method !== 'GET' && path.startsWith('/members'))
+        .map(({ method, path }) => `${method} ${path}`),
+    ).toEqual(['PATCH /members/mb_03'])
+    expect(db.members).toContainEqual(
+      expect.objectContaining({
+        member_id: 'mb_03',
+        display_name: '이재환',
+        discord_user_id: '1125',
+      }),
+    )
+  })
+
   it('`팀원 관리` 로 연 창은 아무도 잇지 않고 `나중에 하기` 로 닫을 수 있다 (D-075)', async () => {
     const user = userEvent.setup()
     const app = renderApp(TEAM)

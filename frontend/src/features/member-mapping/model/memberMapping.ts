@@ -43,6 +43,28 @@ export function buildMappingRows(discordUsers: DiscordUser[], members: Member[])
   )
 }
 
+/**
+ * 이름 칸에 제안할 팀원 이름. 연결 안 된 일반 팀원만 — PM 은 줄 앞 체크로 잇는다.
+ * 다른 줄에 이미 적은 이름은 뺀다 — 고르면 `duplicated` 로 막힌다. PM 을 체크한 줄의 이름은 보지 않는다
+ */
+export function suggestedMemberNames(
+  members: readonly Member[],
+  rows: readonly MappingRow[],
+  index: number,
+): string[] {
+  const written = new Set(
+    rows
+      .filter((row, other) => other !== index && !row.pmMemberId)
+      .map(({ name }) => memberNameKey(name)),
+  )
+  return members
+    .filter(
+      ({ role, discordUserId, displayName }) =>
+        role !== 'pm' && discordUserId === null && !written.has(memberNameKey(displayName)),
+    )
+    .map(({ displayName }) => displayName)
+}
+
 export type MappingIssue = 'duplicated' | 'taken' | 'pmDuplicated' | 'pmClaimed'
 
 /**

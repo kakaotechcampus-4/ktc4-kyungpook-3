@@ -113,7 +113,7 @@ describe('팀원 연결 목록 (U3-8)', () => {
     })
     await openMembers()
     expect(screen.queryByText('@manager_bot')).not.toBeInTheDocument()
-    expect(screen.getAllByRole('textbox')).toHaveLength(3)
+    expect(screen.getAllByRole('combobox', { name: /의 팀원 이름$/ })).toHaveLength(3)
     expect(nameInput('jihun_dev')).toHaveValue('이지훈')
     expect(nameInput('seoyeon_01')).toHaveValue('')
     expect(screen.getByText(/디스코드에서 팀원 3명을 찾았어요/)).toBeInTheDocument()
