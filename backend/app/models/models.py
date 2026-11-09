@@ -609,6 +609,15 @@ class Source(Base):
 
 class Extraction(Base):
     __tablename__ = "extraction"
+    # 워커가 바퀴마다 부르는 claim 이 표시된 행만 훑는다
+    __table_args__ = (
+        Index(
+            "ix_extraction_summary_requested_at",
+            "summary_requested_at",
+            postgresql_where=text("summary_requested_at IS NOT NULL"),
+            sqlite_where=text("summary_requested_at IS NOT NULL"),
+        ),
+    )
 
     extraction_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     meeting_id: Mapped[str] = mapped_column(
