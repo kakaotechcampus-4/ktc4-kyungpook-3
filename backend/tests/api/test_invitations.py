@@ -730,6 +730,60 @@ def test_last_workspace_is_the_one_just_accepted(db, seed):
     assert _client("jiyoung-token").get("/api/v1/auth/me").json()["data"]["last_workspace_id"] == seed["ws"]
 
 
+def _search(q: str, ws: str, token: str = "pm-token"):
+    return _client(token).get("/api/v1/users/search", params={"q": q, "workspace_id": ws})
+
+
+def _found(q: str, ws: str) -> list[dict]:
+    res = _search(q, ws)
+    assert res.status_code == 200, res.text
+    return res.json()["data"]["items"]
+
+
+@pytest.mark.parametrize("token", ["jimin-token", "outsider-token"])
+def test_only_the_workspace_pm_can_search_users(db, seed, token):
+    res = _search(db.get(User, seed["jiyoung_uid"]).username, seed["ws"], token)
+    assert res.status_code == 403
+
+
+def test_search_finds_one_user_by_the_exact_username_ignoring_case(db, seed):
+    username = db.get(User, seed["jiyoung_uid"]).username
+
+    items = _found(f"  {username.upper()} ", seed["ws"])
+
+    assert items == [{"user_id": seed["jiyoung_uid"], "username": username, "name": "jiyoung"}]
+
+
+def test_search_does_not_match_part_of_a_username_or_a_name(db, seed):
+    username = db.get(User, seed["jiyoung_uid"]).username
+
+    assert _found(username[:-1], seed["ws"]) == []
+    assert _found(username[1:], seed["ws"]) == []
+    assert _found("jiyoung", seed["ws"]) == []
+
+
+@pytest.mark.parametrize("q", ["", "abc", "a" * 21, "한글아이디", "jiyo ung", "jiyoung@example.com"])
+def test_search_with_a_query_that_cannot_be_a_username_is_empty(seed, q):
+    assert _found(q, seed["ws"]) == []
+
+
+def test_search_leaves_out_active_members_of_the_workspace(db, seed):
+    for who in ("pm", "jimin"):
+        assert _found(db.get(User, seed[who].user_id).username, seed["ws"]) == []
+    seed["jimin"].is_deleted = True
+    db.commit()
+
+    assert [i["user_id"] for i in _found(db.get(User, seed["jimin"].user_id).username, seed["ws"])] == [
+        seed["jimin"].user_id
+    ]
+
+
+def test_found_user_can_be_invited(db, seed):
+    [found] = _found(db.get(User, seed["outsider_uid"]).username, seed["ws"])
+
+    assert _invite(seed["ws"], seed["minsu"].member_id, found["user_id"]).status_code == 201
+
+
 def test_migration_keeps_the_open_invite_indexes_partial_on_sqlite():
     path = Path(__file__).parents[2] / "migrations" / "versions" / "e8b2f4c6a1d9_add_invitation.py"
     spec = importlib.util.spec_from_file_location("add_invitation_migration", path)
