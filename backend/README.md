@@ -105,6 +105,8 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `MEETING_NOT_FOUND` | 404 | 회의를 찾을 수 없음 |
 | `EXTRACTION_NOT_FOUND` | 404 | 추출 결과를 찾을 수 없음 |
 | `EXTRACTION_ITEM_NOT_FOUND` | 404 | 그 추출 결과에 해당 항목이 없음 (auto 되돌리기) |
+| `TOPIC_NOT_FOUND` | 404 | 주제를 찾을 수 없음 (프로젝트 맵 주제 상세) |
+| `SUMMARY_NOT_FOUND` | 404 | 그 회의의 요약본이 아직 없음 (`summary.md`) |
 | `APPROVAL_NOT_FOUND` | 404 | 승인 요청을 찾을 수 없음 |
 | `WORKSPACE_NOT_FOUND` | 404 | 워크스페이스를 찾을 수 없음 |
 | `MEMBER_NOT_FOUND` | 404 | 팀원을 찾을 수 없음 |

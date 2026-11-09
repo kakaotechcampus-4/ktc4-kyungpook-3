@@ -20,8 +20,8 @@
 
 회의록 요약 칸은 BE·FE 에 있었지만 채우는 쪽이 없어 늘 비어 있었다. 대기열을 BE 에 둔 이유와 할 일 변화를 요약에 남기는 이유는 결정 기록에 있다.
 
-- [0056 회의 요약 대기열을 BE 에 둔다](2026-11-07-0056-meeting-summary-queue-in-be.md)
-- [0057 요약의 할 일 변화와 D-104](2026-11-07-0057-summary-task-changes-and-d104.md)
+- [0058 회의 요약 대기열을 BE 에 둔다](2026-11-07-0058-meeting-summary-queue-in-be.md)
+- [0059 요약의 할 일 변화와 D-104](2026-11-07-0059-summary-task-changes-and-d104.md)
 
 ## 결과
 
