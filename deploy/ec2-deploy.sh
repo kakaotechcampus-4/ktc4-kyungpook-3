@@ -96,6 +96,18 @@ restart_if_running() {
 
 complete=1   # 건너뛴 일 없이 끝까지 올렸나. 아니면 기록을 남기지 않아 다음 배포가 다시 올린다
 
+activate_summary() {
+  local result=0
+  sudo python3 deploy/enable-summary.py || result=$?
+  if [ "$result" = 3 ]; then
+    complete=0
+    echo "::warning::mm-worker 요약은 ON이 아니다. 꺼진 유닛은 시작하지 않았다"
+  elif [ "$result" != 0 ]; then
+    echo "mm-worker 요약 활성화 검증 실패. 배포 기준 커밋을 유지한다" >&2
+    return "$result"
+  fi
+}
+
 if changed backend; then
   echo "== backend"
   # 마이그레이션은 컨테이너가 시작하면서 먼저 올린다(backend/Dockerfile CMD)
@@ -129,7 +141,7 @@ if changed ai; then
     echo "ai 의존성 설치 완료"
   fi
   # 워커는 SIGTERM 을 받으면 하던 회의를 마치고 끝난다(mm-worker.service TimeoutStopSec)
-  restart_if_running mm-worker
+  activate_summary
   mkdir -p ai/recordings
   # 녹음 확인과 재시작 사이에 새 녹음이 시작되지 않게 잠금을 쥔 채로 둘을 한다.
   # 재시작 뒤 살아났는지 기다리는 10초도 쥐고 있어서, 그동안 새 봇의 녹음 시작은 거절된다.
@@ -152,6 +164,9 @@ if changed ai; then
   exec 8>&-   # 잠금을 놓는다. 열지 못했으면 닫을 것이 없고, 열리지 않은 번호를 닫아도 오류가 아니다
 else
   echo "== ai 변경 없음"
+  if changed deploy; then
+    activate_summary
+  fi
 fi
 
 if [ "$complete" = 1 ]; then

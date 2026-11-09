@@ -7,7 +7,7 @@ from shared.schemas import SummaryClaim, SummaryInput, TopicDraft
 
 def test_summary_input_parses_nested_rows_and_ignores_keys_it_does_not_know():
     parsed = SummaryInput.from_dict({
-        "extraction_id": "e1", "meeting_id": "m1", "workspace_id": "w1", "title": None,
+        "extraction_id": "e1", "meeting_id": "m1", "workspace_id": "w1", "identity_epoch": 0, "title": None,
         "started_at": "2026-11-05T05:00:00Z", "later_key": 1,
         "lines": [{"seq": 1, "at_ms": 0, "speaker": "민수", "text": "안녕"}],
         "items": [{"item_id": "i", "action": "create", "title": "t", "assignee": None, "due_date": None}],
@@ -19,7 +19,7 @@ def test_summary_input_parses_nested_rows_and_ignores_keys_it_does_not_know():
 
 
 def test_claim_parses():
-    assert SummaryClaim.from_dict({"extraction_id": "e", "meeting_id": "m", "workspace_id": "w", "attempt": 2}).attempt == 2
+    assert SummaryClaim.from_dict({"extraction_id": "e", "meeting_id": "m", "workspace_id": "w", "attempt": 2, "claim_token": "token", "identity_epoch": 0}).attempt == 2
 
 
 def test_a_topic_needs_an_id_or_a_name():

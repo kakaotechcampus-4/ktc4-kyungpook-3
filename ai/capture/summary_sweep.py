@@ -47,12 +47,13 @@ class SummaryRunner:
     def _summarize(self, claim: SummaryClaim) -> SummaryOutcome:
         outcome = SummaryOutcome(claim.extraction_id, claim.meeting_id, claim.attempt, False)
         try:
-            summary_input = self.client.summary_input(claim.extraction_id)
+            summary_input = self.client.summary_input(claim.extraction_id, identity_epoch=claim.identity_epoch)
             attempt = summarize(summary_input, self.llm, attempt=claim.attempt)
             outcome = replace(outcome, reply=attempt.reply, draft=attempt.draft, error=attempt.failure)
             if attempt.draft is None:
                 return outcome
-            result = self.client.submit_summary(claim.extraction_id, attempt.draft.to_dict())
+            result = self.client.submit_summary(claim.extraction_id, attempt.draft.to_dict(),
+                                                claim_token=claim.claim_token, identity_epoch=claim.identity_epoch)
             return replace(outcome, saved=bool(result["applied"]))
         except Exception as e:  # noqa: BLE001 - 요약 실패가 워커를 멈추면 안 된다
             return replace(outcome, error=_why(e))
@@ -90,4 +91,6 @@ def summary_from_env() -> SummaryRunner | None:
     if missing:
         print(f"[summary] MM_SUMMARY_LLM={which} 이지만 설정이 비어 요약을 끈다: {', '.join(missing)}", flush=True)
         return None
-    return SummaryRunner(BeClient(cfg.be_base_url, service_token=cfg.be_service_token), llm)
+    runner = SummaryRunner(BeClient(cfg.be_base_url, service_token=cfg.be_service_token), llm)
+    print(f"[summary] runner ready model={which}", flush=True)
+    return runner

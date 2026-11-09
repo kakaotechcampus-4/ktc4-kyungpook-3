@@ -3,8 +3,8 @@
 디스코드 녹음 봇이 회의를 백엔드에 넘길 때 쓰는 API를 현재 코드 기준으로 정리한다. 웹 화면이 쓰는 API는 [프론트엔드 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md)에 있고 여기서 다시 적지 않는다.
 
 - 제공자: Backend (`backend/app/api/`)
-- 소비자: AI 녹음 봇 (`ai/capture/handoff.py`의 `BeClient`·`Handoff`, 판단 파이프라인 `ai/judge/pipeline.py`). [웹 업로드 가져가기](#웹-업로드-가져가기)의 소비자는 AI 쪽 업로드 처리 워커(`ai/capture/worker.py`)다. [회의 요약](#회의-요약)의 소비자는 AI 쪽 요약 워커(`ai/capture/summary_sweep.py`)와 재처리 명령(`ai/capture/backfill_summaries.py`)이다
-- 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로, 추출 등록의 auto 판단 키는 2026-10-16 #232 변경 코드로 다시 대조했다. 웹 업로드 가져가기는 2026-10-14 #219 브랜치 코드로, 화자 지정 경로(speakers·assigned·resume)는 2026-11-02 #266 브랜치 코드로, 처리 단계 보고(`PATCH /meetings/{meeting_id}/stage`)는 2026-11-05 #381 브랜치 코드로 대조했다. 라벨 보고 재전송과 지정 대기 만료는 2026-11-06 #438 에서 develop 코드로 다시 대조했다
+- 소비자: AI 녹음 봇 (`ai/capture/handoff.py`의 `BeClient`·`Handoff`, 판단 파이프라인 `ai/judge/pipeline.py`). [웹 업로드 가져가기](#웹-업로드-가져가기)의 소비자는 AI 쪽 업로드 처리 워커(`ai/capture/worker.py`)다. [회의 요약](#회의-요약)은 AI `capture/summary_sweep.py`가 소비한다(#560)
+- 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로, 추출 등록의 auto 판단 키는 2026-10-16 #232 변경 코드로 다시 대조했다. 웹 업로드 가져가기는 2026-10-14 #219 브랜치 코드로, 화자 지정 경로(speakers·assigned·resume)는 2026-11-02 #266 브랜치 코드로, 처리 단계 보고(`PATCH /meetings/{meeting_id}/stage`)는 2026-11-05 #381 브랜치 코드로 대조했다. 라벨 보고 재전송과 지정 대기 만료는 2026-11-06 #438 에서 develop 코드로 다시 대조했다. 회의 요약 경로는 2026-11-07 #462 브랜치 코드로 대조했다
 - 합의 근거: 인계 방식은 [AI 결정 0009](../../../ai/docs/basis_for_decision/member/2026-09-19-0009-bot-hands-off-to-be-api.md), 발화 저장은 [AI 결정 0017](../../../ai/docs/basis_for_decision/member/2026-10-05-0017-transcript-sources-stage.md)에 AI 쪽 기록이 있다. 이 문서는 그 이후의 필드·오류 세부를 코드에서 읽은 것이며, 별도 합의 문서가 없는 항목은 구현 사실로만 적는다.
 
 ## 계정 탈퇴의 개인정보 정리 (#575, 2026-11-09)
@@ -713,9 +713,10 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 
 음성 회의와 업로드 회의가 끝나면 BE 가 쥔 대기열에서 봇이 한 건씩 요약을 만든다. 처리 단계와 별개라 요약이 실패해도 회의는 `done` 그대로다.
 
-- 합의 상태: **BE 담당 합의(2026-11-06), BE·AI 구현(#462).** 실제 봇과 운영 서버로는 아직 돌리지 않았다. 워커는 `MM_SUMMARY_LLM` 이 켜져 있을 때만 대기열을 집는다.
+- 합의 상태: **BE 담당 합의(2026-11-06), BE·AI 구현(#462).** 실제 봇과 운영 서버로는 아직 돌리지 않았다. 워커는 `MM_SUMMARY_LLM` 이 luna 또는 terra일 때만 대기열을 집는다. 로컬 기본은 OFF이고 운영 활성화는 실제 mm-worker 환경과 재시작으로 확인한다.
 - 합의 내용: 요약 일감은 BE 가 쥐고 봇이 서비스 토큰으로 회의 전문과 팀원 이름을 읽는다. 라이브와 재처리를 한 경로로 두고 항목 ID 를 얻기 위해서다. 라우터를 `app/api/bot_summaries.py` 로 나눠 회의 내용을 돌려주지 않는 `bot_lookups` 의 약속은 그대로다.
 - 대상: `POST /extractions` 가 표시한 회의, 재처리로 표시한 회의다. 표시가 없는 옛 회의와 채팅 회의는 돌지 않는다.
+- 스위치 OFF 중에도 BE가 대상 회의를 표시한다. ON하면 이미 pending인 회의를 시간순으로 처리하며 비용이 발생한다. 오래된 미요청 회의를 새로 등록하는 backfill과는 다르다. 화면의 pending은 1시간 표시 제한이며 실제 큐를 버리지 않는다.
 - 순서: `Meeting.started_at` 오름차순이다. 앞 회의의 주제와 결정이 있어야 뒤 회의가 재사용하고 뒤집을 수 있다.
 - 재시도: claim 때 `attempt` 가 오르고 15분 임대가 걸린다. 임대가 지나면 다음 claim 이 다시 맡긴다. 회의당 2번까지다. 임대가 살아 있는 동안 같은 워크스페이스의 더 늦은 회의는 주지 않는다. 뒤 회의가 앞 회의의 주제와 결정을 재료로 받아야 하기 때문이다. 두 번 다 실패한 회의는 뒤 회의를 막지 않는다. claim 과 PUT 은 BE 안에서 한 줄로 서므로 워커와 재처리 명령이 동시에 불러도 순서가 지켜진다. 실패를 알리는 경로는 없다. 봇은 실패하면 PUT 을 보내지 않는다. LLM 실패, PUT 의 400·5xx, 워커 종료가 모두 같은 길을 간다.
 
@@ -732,11 +733,16 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 // 요청. 본문은 없어도 된다
 { "extraction_ids": ["…"] | null }      // 최대 500개
 // data. 맡길 것이 없으면 data 가 null 이다. 답장 claim 의 { "item": null } 과 다르다
-{ "extraction_id": "…", "meeting_id": "…", "workspace_id": "…", "attempt": 1 }
+{ "extraction_id": "…", "meeting_id": "…", "workspace_id": "…", "attempt": 1, "claim_token": "…", "identity_epoch": 0 }
 ```
 
 - `extraction_ids` 를 주면 그 안에서만 고른다. 빈 목록은 아무것도 맡기지 않고 `data` 가 null 이다. 본문이 없거나 `extraction_ids` 가 null 이면 범위 없이 고른다.
 - 재료는 싣지 않는다. 상태를 바꾸는 호출과 읽기를 나눠 미리 보기가 BE 상태를 건드리지 않는다.
+- `claim_token`은 서버가 매 임대마다 발급하며 DB에는 발급 당시 `identity_epoch`와 토큰을 결합한 SHA-256만 저장한다. AI는 토큰을 로그나 평가 산출물에 남기지 않는다.
+- claim의 `identity_epoch`는 input GET과 PUT의 `X-Privacy-Epoch`에 고정한다. 탈퇴로 세대가 달라지면 409 `PRIVACY_VERSION_CHANGED`다. 옛 입력에 새 세대만 붙여 다시 보내지 않는다.
+- claim 없는 미리보기 GET은 현재 세대를 응답으로 받지만 저장 토큰을 발급하지 않는다. 재처리 CLI는 현재 명단 세대를 읽어 request에 보낸다.
+- 삭제된 공간·회의는 claim에서 제외한다. input·request·PUT은 기존 404·410을 따르며 추출이 이미 지워졌으면 404 `EXTRACTION_NOT_FOUND`다.
+- 다중 공간 claim은 worker gate, 공간, 회의, 추출 순서로 잠근다. 같은 공간의 PUT과 삭제는 공간 잠금으로 직렬화한다.
 
 ### `GET /extractions/{extraction_id}/summary-input` → 200
 
@@ -745,7 +751,7 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 ```jsonc
 // data
 {
-  "extraction_id": "…", "meeting_id": "…", "workspace_id": "…",
+  "extraction_id": "…", "meeting_id": "…", "workspace_id": "…", "identity_epoch": 0,
   "title": "3주차 정기회의" | null, "started_at": "2026-11-05T05:00:00Z",
   "lines": [{ "seq": 12, "at_ms": 125000, "speaker": "김서연", "text": "…" }],
   "items": [{ "item_id": "…", "action": "create" | "update", "title": "…", "assignee": "민수" | null, "due_date": "2026-11-14" | null }],
@@ -764,6 +770,7 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 ```jsonc
 // 요청. 예시 전체는 ai/tests/capture/fixtures/summary_put.json
 {
+  "claim_token": "…",           // claim 응답의 토큰, 필수
   "model_name": "gpt-5.6-luna", "truncated_input": false,
   "overview": "…",                // 필수, 빈 문자열 불가
   "key_points": ["…"],            // 필수
@@ -788,7 +795,7 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 |---|---|
 | 결정의 자리 | 결정은 주제 아래에만 있다. 주제 없는 결정은 보낼 수 없다 |
 | 먼저 온 쪽 | 표시가 비어 있으면 `applied=false` 이고 아무것도 쓰지 않는다. 늦게 온 PUT, 같은 PUT 재전송, 표시된 적 없는 추출이 여기 든다. 200 이므로 재시도하지 않는다 |
-| 임대 | PUT 은 임대나 `attempt` 를 보지 않는다. 표시가 남아 있으면 시도가 끝난 뒤 온 PUT 도 저장한다 |
+| 임대 | PUT은 잠근 workspace의 현재 세대와 claim_token을 결합한 hash 및 15분 임대를 확인한다. 만료·다른 claim·force·세대 변경으로 무효화된 토큰이면 200 `applied=false`다. 최신 세대 헤더를 붙여도 이전 세대에 발급한 토큰은 저장할 수 없다. 토큰이 없으면 400이다. 성공하면 토큰 hash를 비운다 |
 | 건너뜀 | 이 추출에 없는 `item_id`, 이 워크스페이스에 없는 `topic_id`(같이 온 `name` 이 있으면 그 이름으로 찾거나 만든다), 없거나 다른 워크스페이스이거나 이 회의와 같거나 늦은 회의의 `decision_id` 는 그 값만 건너뛴다. 이름 없이 건너뛴 `topic_id` 나 글자가 없는 `name` 의 주제는 그 아래 결정까지 저장하지 않는다 |
 | 주제 재사용 | `name` 은 정규화(NFKC, 소문자, 글자와 숫자만 남김)한 값이 같으면 기존 주제를 쓴다. 표기와 설명은 처음 만든 값이 남는다. 한 본문에 같은 주제가 여러 번 있으면 합친다 |
 | 재실행 | 이 회의의 연결과 결정을 지우고 다시 쓴다. 이 회의가 뒤집었던 결정은 유효로 돌아갔다가 새 본문의 `replaces` 로 다시 뒤집힌다. 어느 회의에도 남지 않은 주제는 지운다. 다른 회의가 그 주제를 재료로 이미 받았으면 그 회의의 PUT 이 같이 실은 이름으로 다시 만든다. 더 늦은 회의가 이 회의의 결정을 뒤집어 둔 표시는 사라지므로 번복을 맞추려면 시간순으로 전체를 다시 돈다 |
@@ -852,3 +859,9 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 - AI: `ai/capture/handoff.py`의 `BeClient`(`report_stage`, `STAGE_TIMEOUT_S`), `Handoff`(`report_stage`), `from_env`, `ai/capture/recorder.py`의 `process_session`(`begin`), `ai/draft/reminder_draft.py`의 `draft_reminder`, `ai/capture/dm.py`의 `DmCog`
 
 회의 요약 경로는 `backend/tests/api/test_summary_queue.py`, `test_summary_save.py` 로 SQLite 와 PostgreSQL 에서 검증했다. 실제 봇과 연결해 돌리지는 않았다. `ai/tests/capture/fixtures/summary_put.json` 은 BE 테스트가 `SummaryWriteRequest` 왕복으로 검증하고, AI 구현이 같은 파일을 쓰게 되어 있다.
+
+### #560 통합의 삭제·탈퇴 경계, 2026-11-09
+
+현재 구현은 회의 삭제와 같은 트랜잭션에서 Decision, TopicMeeting, TopicItem과 고아 Topic을 지운다. 다른 회의 요약의 decision_details.replaces 사본도 삭제된 회의·결정 ID로 제거한다. 생존 Task는 보존하되 프로젝트 맵의 삭제 원문 링크는 제외한다. 공유 공간 탈퇴는 기존 구조화 소유 필드를 익명화하고 옛 세대의 요약 PUT을 막는다. 이미 저장된 공동 자유문장 전체의 이름 치환은 수행하지 않는다.
+
+임대 토큰과 삭제 경계는 #560 통합에서 추가한 현재 구현이다. 별도 팀 합의 여부는 확인 필요다. 선택과 검증 근거는 [결정 기록](../plan/m3/basis-for-decision/2026-11-09-summary-lease-and-deletion.md)과 [통합 결과](../../../frontend/docs/issues/560-summary-integration/result.md)에 있다.

@@ -609,14 +609,10 @@ class Source(Base):
 
 class Extraction(Base):
     __tablename__ = "extraction"
-    # 워커가 바퀴마다 부르는 claim 이 표시된 행만 훑는다
     __table_args__ = (
-        Index(
-            "ix_extraction_summary_requested_at",
-            "summary_requested_at",
-            postgresql_where=text("summary_requested_at IS NOT NULL"),
-            sqlite_where=text("summary_requested_at IS NOT NULL"),
-        ),
+        Index("ix_extraction_summary_requested_at", "summary_requested_at",
+              postgresql_where=text("summary_requested_at IS NOT NULL"),
+              sqlite_where=text("summary_requested_at IS NOT NULL")),
     )
 
     extraction_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -632,6 +628,7 @@ class Extraction(Base):
     summary_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # 임대 시작. 지나면 다음 claim 이 다시 집는다. 실패를 알리는 API 없이 실패와 크래시가 이 한 경로로 돈다
     summary_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    summary_claim_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     meeting: Mapped["Meeting"] = relationship(back_populates="extractions")

@@ -11,6 +11,7 @@ from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Meeting, Member, User
 from app.schemas.project_map import GraphResponse, TopicDetailResponse
 from app.services import project_map
+from app.services import meeting_deletion
 from app.services.project_map import MarkdownFile
 
 router = APIRouter(tags=["project-map"])
@@ -42,6 +43,7 @@ def get_summary_markdown(
     if meeting is None:
         raise AppError(ErrorCode.MEETING_NOT_FOUND, details={"meeting_id": meeting_id})
     require_member(db, user, meeting.workspace_id)
+    meeting_deletion.assert_live(meeting)
     return _markdown_response(project_map.summary_markdown(db, meeting))
 
 

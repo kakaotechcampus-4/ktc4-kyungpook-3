@@ -155,11 +155,12 @@ def test_empty_switch_is_off(monkeypatch):
 
 
 @pytest.mark.parametrize("which", ["luna", "terra"])
-def test_a_known_model_builds_a_runner(monkeypatch, which):
+def test_a_known_model_builds_a_runner(monkeypatch, capsys, which):
     _settings(monkeypatch)
     monkeypatch.setenv("MM_SUMMARY_LLM", which)
     runner = S.summary_from_env()
     assert runner.llm.model == f"gpt-5.6-{which}" and isinstance(runner.client, H.BeClient)
+    assert capsys.readouterr().out == f"[summary] runner ready model={which}\n"
 
 
 def test_an_unknown_model_raises(monkeypatch):
@@ -183,3 +184,36 @@ def test_missing_be_settings_mean_not_enabled_and_values_are_not_printed(monkeyp
     assert S.summary_from_env() is None
     out = capsys.readouterr().out
     assert "BE_SERVICE_TOKEN" in out and "be-secret-host" not in out
+
+
+def test_claim_epoch_is_fixed_for_input_and_put_even_if_client_cache_changes():
+    fake = FakeBe()
+    fake.add_summary("m1")
+    runner = _runner(fake, GOOD)
+    original = fake.request
+
+    def cached_newer_epoch(method, url, **kwargs):
+        if method == "GET" and url.endswith("/summary-input"):
+            runner.client.workspace_epochs["ws-1"] = 10
+        return original(method, url, **kwargs)
+
+    fake.request = cached_newer_epoch
+    assert runner.run_once().saved is True
+    assert [headers.get("X-Privacy-Epoch") for headers in fake.headers] == [None, "0", "0"]
+    assert fake.calls[-1][2]["claim_token"] == fake.summaries["m1"]["claim_token"]
+
+
+def test_withdrawal_during_llm_discards_old_payload_without_refreshing_epoch():
+    fake = FakeBe()
+    fake.add_summary("m1")
+
+    class WithdrawDuringReply(FakeLLM):
+        def generate_json_once(self, prompt, *, timeout_s, reasoning_effort="medium"):
+            fake.summaries["m1"]["identity_epoch"] += 1
+            return super().generate_json_once(prompt, timeout_s=timeout_s, reasoning_effort=reasoning_effort)
+
+    runner = S.SummaryRunner(H.BeClient("http://be", session=fake, service_token="svc-token"), WithdrawDuringReply([GOOD]))
+    outcome = runner.run_once()
+    assert outcome.saved is False and "PRIVACY_VERSION_CHANGED" in outcome.error
+    assert fake.summaries["m1"]["saved"] is None
+    assert fake.headers[-1]["X-Privacy-Epoch"] == "0"

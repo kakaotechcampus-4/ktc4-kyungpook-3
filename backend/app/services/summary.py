@@ -1,6 +1,6 @@
 """회의 요약 대기열과 저장. Extraction.summary*, Topic*, Decision 의 유일한 작성자다.
 
-대기열 상태는 Extraction 칸 셋에서 나온다.
+대기열 상태는 Extraction의 요청·시도·임대에서 나오고 claim token hash가 같은 임대의 저장만 허용한다.
 
 - 대상 아님: summary_requested_at 이 NULL. 옛 회의와 채팅 회의가 여기 있어 표시 없이는 돌지 않는다.
 - 대기: 표시가 있고 attempts 가 상한 아래이며 임대가 없거나 지났다.
@@ -11,12 +11,14 @@
 실패를 알리는 API 가 없다. 봇이 보내지 않으면 임대가 지나 다음 claim 이 다시 집으므로 LLM 실패와 워커 크래시가 같은 길을 간다.
 """
 import json
+import hashlib
 import logging
+import secrets
 import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
-from sqlalchemy import delete, exists, func, or_, select, text, tuple_, update
+from sqlalchemy import delete, exists, func, or_, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
@@ -50,6 +52,7 @@ from app.schemas.project_map import (
     SummaryWriteRequest,
 )
 from app.services.messages import utc
+from app.services import lifecycle, meeting_deletion
 from app.services.scheduler import WORKSPACE_TZ
 
 logger = logging.getLogger(__name__)
@@ -63,16 +66,6 @@ SUMMARY_PENDING_WINDOW = timedelta(hours=1)
 JOB_TOPIC_LIMIT = 100
 JOB_DECISION_LIMIT = 50
 SCHEMA_VERSION = 1
-
-
-# 요약 claim 과 저장은 이 열쇠 하나로 줄을 선다. 워커와 측정 명령이 동시에 부르면, 커밋 전인 앞 claim 을 못 보고 뒤 회의를 주거나
-# 커밋 전인 다른 회의의 주제 연결을 못 보고 주제를 지울 수 있다. 호출이 드물어 하나로 묶어도 기다림이 짧다
-SUMMARY_GATE = 462_20261109
-
-
-def _summary_gate(db: Session) -> None:
-    if db.get_bind().dialect.name == "postgresql":
-        db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": SUMMARY_GATE})
 
 
 def meeting_date(started_at: datetime) -> date:
@@ -93,14 +86,16 @@ def claim_next(db: Session, *, only: list[str] | None = None, now: datetime | No
 
     only 를 주면 그 extraction 안에서만 고른다. 빈 목록이면 아무것도 고르지 않는다. 커밋은 호출자가 한다.
     """
-    _summary_gate(db)
     now = now or datetime.now(timezone.utc)
+    # 워커와 측정 명령이 동시에 claim 하거나 저장해도 커밋 전인 앞 claim·주제 연결을 건너뛰지 않게 한 줄로 선다
+    lifecycle.worker_gate(db)
     lease_alive = Extraction.summary_claimed_at > now - SUMMARY_LEASE
     # 앞 회의의 시도가 저장 없이 끝났으면 임대가 끝날 때까지 같은 워크스페이스의 뒤 회의를 주지 않는다. 포기한 앞 회의는 막지 않는다
     earlier, earlier_meeting = aliased(Extraction), aliased(Meeting)
     earlier_in_flight = exists().where(
         earlier_meeting.meeting_id == earlier.meeting_id,
         earlier_meeting.workspace_id == Meeting.workspace_id,
+        earlier_meeting.deleted_at.is_(None),
         tuple_(earlier_meeting.started_at, earlier.extraction_id) < tuple_(Meeting.started_at, Extraction.extraction_id),
         earlier.summary_requested_at.is_not(None),
         earlier.summary_claimed_at > now - SUMMARY_LEASE,
@@ -108,7 +103,12 @@ def claim_next(db: Session, *, only: list[str] | None = None, now: datetime | No
     stmt = (
         select(Extraction)
         .join(Meeting, Meeting.meeting_id == Extraction.meeting_id)
+        .join(Workspace, Workspace.workspace_id == Meeting.workspace_id)
         .where(
+            Workspace.deleted_at.is_(None),
+            Meeting.deleted_at.is_(None),
+            Meeting.status == MeetingStatus.DONE,
+            Meeting.source.in_(SUMMARIZED_SOURCES),
             Extraction.summary_requested_at.is_not(None),
             Extraction.summary_attempts < SUMMARY_MAX_ATTEMPTS,
             or_(Extraction.summary_claimed_at.is_(None), ~lease_alive),
@@ -116,7 +116,6 @@ def claim_next(db: Session, *, only: list[str] | None = None, now: datetime | No
         )
         .order_by(Meeting.started_at, Extraction.extraction_id)
         .limit(1)
-        .with_for_update(skip_locked=True, of=Extraction)
         .execution_options(populate_existing=True)
     )
     if only is not None:
@@ -124,27 +123,59 @@ def claim_next(db: Session, *, only: list[str] | None = None, now: datetime | No
     extraction = db.scalars(stmt).first()
     if extraction is None:
         return None
+    workspace = lifecycle.workspace(db, extraction.meeting.workspace_id, check_epoch=False)
+    meeting = db.scalar(select(Meeting).where(Meeting.meeting_id == extraction.meeting_id)
+                        .with_for_update().execution_options(populate_existing=True))
+    if (meeting is None or meeting.deleted_at is not None or meeting.status != MeetingStatus.DONE
+            or meeting.source not in SUMMARIZED_SOURCES):
+        return None
+    extraction = db.get(Extraction, extraction.extraction_id, with_for_update=True, populate_existing=True)
+    if extraction is None or extraction.summary_requested_at is None or extraction.summary_attempts >= SUMMARY_MAX_ATTEMPTS:
+        return None
+    if extraction.summary_claimed_at is not None and utc(extraction.summary_claimed_at) > utc(now) - SUMMARY_LEASE:
+        return None
+    token = secrets.token_urlsafe(32)
     extraction.summary_attempts += 1
     extraction.summary_claimed_at = now
+    extraction.summary_claim_token_hash = _token_hash(token, workspace.identity_epoch)
     db.flush()
     return SummaryClaimResponse(
         extraction_id=extraction.extraction_id,
         meeting_id=extraction.meeting_id,
         workspace_id=extraction.meeting.workspace_id,
         attempt=extraction.summary_attempts,
+        claim_token=token,
+        identity_epoch=workspace.identity_epoch,
     )
+
+
+def _token_hash(token: str, identity_epoch: int) -> str:
+    return hashlib.sha256(f"{identity_epoch}:{token}".encode()).hexdigest()
+
+
+def require_live_extraction(db: Session, extraction_id: str, *, lock: bool = False) -> tuple[Meeting, Extraction]:
+    meeting_id = db.scalar(select(Extraction.meeting_id).where(Extraction.extraction_id == extraction_id))
+    if meeting_id is None:
+        raise AppError(ErrorCode.EXTRACTION_NOT_FOUND, details={"extraction_id": extraction_id})
+    meeting = meeting_deletion.require_live_meeting(db, meeting_id, lock=lock)
+    extraction = db.get(Extraction, extraction_id, with_for_update=lock, populate_existing=True)
+    if extraction is None:
+        raise AppError(ErrorCode.EXTRACTION_NOT_FOUND, details={"extraction_id": extraction_id})
+    return meeting, extraction
 
 
 def summary_input(db: Session, extraction_id: str) -> SummaryInputResponse:
     """요약 재료. 상태를 바꾸지 않아 미리 보기가 같이 쓴다."""
-    extraction = db.get(Extraction, extraction_id)
-    if extraction is None:
-        raise AppError(ErrorCode.EXTRACTION_NOT_FOUND, details={"extraction_id": extraction_id})
-    meeting = extraction.meeting
+    meeting, extraction = require_live_extraction(db, extraction_id)
+    workspace = db.get(Workspace, meeting.workspace_id)
+    expected_epoch = db.info.get("privacy_epoch")
+    if expected_epoch is not None and expected_epoch != str(workspace.identity_epoch):
+        raise AppError(ErrorCode.PRIVACY_VERSION_CHANGED, details={"identity_epoch": workspace.identity_epoch})
     return SummaryInputResponse(
         extraction_id=extraction.extraction_id,
         meeting_id=meeting.meeting_id,
         workspace_id=meeting.workspace_id,
+        identity_epoch=workspace.identity_epoch,
         title=meeting.title,
         started_at=meeting.started_at,
         lines=_input_lines(db, meeting.meeting_id),
@@ -196,7 +227,7 @@ def _input_topics(db: Session, workspace_id: str) -> list[SummaryInputTopic]:
         select(Topic)
         .join(TopicMeeting, TopicMeeting.topic_id == Topic.topic_id)
         .join(Meeting, Meeting.meeting_id == TopicMeeting.meeting_id)
-        .where(Topic.workspace_id == workspace_id)
+        .where(Topic.workspace_id == workspace_id, Meeting.deleted_at.is_(None))
         .group_by(Topic.topic_id)
         .order_by(func.max(Meeting.started_at).desc(), Topic.topic_id)
         .limit(JOB_TOPIC_LIMIT)
@@ -216,6 +247,7 @@ def _input_decisions(db: Session, meeting: Meeting) -> list[SummaryInputDecision
         .outerjoin(replacement_meeting, replacement_meeting.meeting_id == replacement.meeting_id)
         .where(
             Decision.workspace_id == meeting.workspace_id,
+            Meeting.deleted_at.is_(None),
             Meeting.started_at < meeting.started_at,
             or_(Decision.replaced_by.is_(None), replacement_meeting.started_at >= meeting.started_at),
         )
@@ -243,9 +275,10 @@ def request_summaries(
     force 면 시도 횟수를 비우고 다시 줄 세운다. 기존 요약은 새 요약이 올 때까지 남는다. 커밋은 호출자가 한다.
     """
     now = now or datetime.now(timezone.utc)
-    if db.get(Workspace, workspace_id) is None:
-        raise AppError(ErrorCode.WORKSPACE_NOT_FOUND, details={"workspace_id": workspace_id})
+    lifecycle.workspace(db, workspace_id)
     stmt = select(Meeting).where(Meeting.workspace_id == workspace_id).order_by(Meeting.started_at, Meeting.meeting_id)
+    if include_all:
+        stmt = stmt.where(Meeting.deleted_at.is_(None))
     if not include_all:
         stmt = stmt.where(Meeting.meeting_id.in_(meeting_ids))
     meetings = db.scalars(stmt).all()
@@ -270,6 +303,7 @@ def request_summaries(
 
     rows = []
     for meeting in meetings:
+        meeting_deletion.assert_live(meeting)
         extraction = extractions.get(meeting.meeting_id)
         meeting_chars = int(chars.get(meeting.meeting_id) or 0)
         state = _request_state(meeting, extraction, meeting_chars, force=force, now=now)
@@ -277,6 +311,7 @@ def request_summaries(
             extraction.summary_requested_at = now
             extraction.summary_attempts = 0
             extraction.summary_claimed_at = None
+            extraction.summary_claim_token_hash = None
         rows.append(SummaryRequestRow(
             meeting_id=meeting.meeting_id,
             extraction_id=extraction.extraction_id if extraction else None,
@@ -350,19 +385,23 @@ def normalize_topic_name(name: str) -> str:
 def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) -> SummarySaveResponse:
     """요약, 주제, 연결, 결정을 한 트랜잭션에 쓴다. 커밋은 호출자가 한다.
 
-    행을 잠그고 표시가 비어 있으면 쓰지 않는다(늦은 중복). 이 회의의 연결과 결정은 지우고 다시 쓰므로 재실행해도 한 벌이다.
+    공간·회의·추출 순으로 잠그고 요청 표시와 살아 있는 임대의 토큰을 확인한다. 이 회의의 연결과 결정은 지우고 다시 써서 한 벌이다.
     다른 extraction 의 항목, 다른 워크스페이스의 주제와 결정, 이 회의보다 늦은 결정은 건너뛴다.
     """
-    _summary_gate(db)
-    extraction = db.get(Extraction, extraction_id, with_for_update=True, populate_existing=True)
-    if extraction is None:
-        raise AppError(ErrorCode.EXTRACTION_NOT_FOUND, details={"extraction_id": extraction_id})
-    if extraction.summary_requested_at is None:
+    lifecycle.worker_gate(db)
+    meeting, extraction = require_live_extraction(db, extraction_id, lock=True)
+    workspace = db.get(Workspace, meeting.workspace_id)
+    now = datetime.now(timezone.utc)
+    if (extraction.summary_requested_at is None
+            or extraction.summary_claim_token_hash is None
+            or not secrets.compare_digest(
+                extraction.summary_claim_token_hash, _token_hash(payload.claim_token, workspace.identity_epoch))
+            or extraction.summary_claimed_at is None
+            or utc(extraction.summary_claimed_at) <= now - SUMMARY_LEASE):
         return SummarySaveResponse(
             extraction_id=extraction_id, meeting_id=extraction.meeting_id, applied=False, topic_count=0, decision_count=0
         )
 
-    meeting = extraction.meeting
     previous_topics = set(
         db.scalars(select(TopicMeeting.topic_id).where(TopicMeeting.meeting_id == meeting.meeting_id))
     )
@@ -407,6 +446,7 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     extraction.summary_requested_at = None
     extraction.summary_attempts = 0
     extraction.summary_claimed_at = None
+    extraction.summary_claim_token_hash = None
     db.flush()
     _delete_orphan_topics(db, previous_topics - set(topics))
     return SummarySaveResponse(
@@ -418,14 +458,44 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     )
 
 
-def _clear_meeting(db: Session, meeting_id: str, extraction_id: str) -> None:
+def _clear_meeting(db: Session, meeting_id: str, extraction_id: str | None) -> None:
     decision_ids = select(Decision.decision_id).where(Decision.meeting_id == meeting_id)
     # 이 회의가 뒤집었던 옛 결정을 유효로 되돌린다. 새 요약이 다시 뒤집으면 다시 걸린다
     db.execute(update(Decision).where(Decision.replaced_by.in_(decision_ids)).values(replaced_by=None))
     db.execute(delete(Decision).where(Decision.meeting_id == meeting_id))
-    item_ids = select(ExtractionItem.item_id).where(ExtractionItem.extraction_id == extraction_id)
+    extractions = select(Extraction.extraction_id).where(Extraction.meeting_id == meeting_id)
+    item_ids = select(ExtractionItem.item_id).where(
+        ExtractionItem.extraction_id == extraction_id if extraction_id is not None
+        else ExtractionItem.extraction_id.in_(extractions)
+    )
     db.execute(delete(TopicItem).where(TopicItem.item_id.in_(item_ids)))
     db.execute(delete(TopicMeeting).where(TopicMeeting.meeting_id == meeting_id))
+
+
+def remove_meeting_summary(db: Session, meeting: Meeting) -> None:
+    topic_ids = set(db.scalars(select(TopicMeeting.topic_id).where(TopicMeeting.meeting_id == meeting.meeting_id)))
+    decision_ids = set(db.scalars(select(Decision.decision_id).where(Decision.meeting_id == meeting.meeting_id)))
+    rows = db.scalars(select(Extraction).join(Meeting, Meeting.meeting_id == Extraction.meeting_id).where(
+        Meeting.workspace_id == meeting.workspace_id, Meeting.meeting_id != meeting.meeting_id,
+        Extraction.summary.is_not(None),
+    ))
+    for extraction in rows:
+        document = load_document(extraction)
+        if document is None:
+            continue
+        changed = False
+        for detail in document.get("decision_details", []):
+            if not isinstance(detail, dict) or not isinstance(detail.get("replaces"), list):
+                continue
+            previous = detail["replaces"]
+            detail["replaces"] = [copy for copy in previous if not isinstance(copy, dict) or (
+                copy.get("meeting_id") != meeting.meeting_id and copy.get("decision_id") not in decision_ids
+            )]
+            changed |= len(previous) != len(detail["replaces"])
+        if changed:
+            extraction.summary = json.dumps(document, ensure_ascii=False)
+    _clear_meeting(db, meeting.meeting_id, None)
+    _delete_orphan_topics(db, topic_ids)
 
 
 def _resolve_topic(db: Session, workspace_id: str, entry: SummaryTopicIn) -> Topic | None:
@@ -448,7 +518,6 @@ def _topic_by_key(db: Session, workspace_id: str, key: str) -> Topic | None:
 def _create_topic(db: Session, workspace_id: str, key: str, entry: SummaryTopicIn) -> Topic:
     topic = Topic(workspace_id=workspace_id, name=entry.name.strip(), name_key=key, description=entry.description)
     try:
-        # 워커와 측정 명령이 같은 새 이름을 동시에 만들 수 있다. claim 은 회의 단위라 막지 못하고 유니크 제약이 막는다
         with db.begin_nested():
             db.add(topic)
             db.flush()
@@ -467,6 +536,7 @@ def _replace_decisions(db: Session, new: Decision, meeting: Meeting, replaces: l
         .where(
             Decision.decision_id.in_(replaces),
             Decision.workspace_id == meeting.workspace_id,
+            Meeting.deleted_at.is_(None),
             Meeting.started_at < meeting.started_at,
         )
         .order_by(Meeting.started_at, Decision.position)

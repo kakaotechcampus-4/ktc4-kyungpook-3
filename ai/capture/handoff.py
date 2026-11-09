@@ -186,7 +186,7 @@ class BeClient:
         match = re.match(r'/(?:meetings|uploads)/([^/]+)', path)
         if epoch is None and match:
             epoch = self.meeting_epochs.get(match[1], 0)
-        if method != 'GET' and epoch is not None and epoch > 0:
+        if method != 'GET' and epoch is not None and epoch > 0 and 'X-Privacy-Epoch' not in (headers or {}):
             headers = {**(headers or {}), 'X-Privacy-Epoch': str(epoch)}
         if self.service_token:
             headers = {**(headers or {}), "X-Service-Token": self.service_token}
@@ -428,21 +428,25 @@ class BeClient:
         data = self._call("POST", "/summaries/claim", None if only is None else {"extraction_ids": only})
         return SummaryClaim.from_dict(data) if data else None
 
-    def summary_input(self, extraction_id: str) -> SummaryInput:
+    def summary_input(self, extraction_id: str, *, identity_epoch: int | None = None) -> SummaryInput:
         """요약 재료를 읽는다. BE 상태를 바꾸지 않는다."""
+        headers = {"X-Privacy-Epoch": str(identity_epoch)} if identity_epoch is not None else None
         return SummaryInput.from_dict(self._call("GET", f"/extractions/{extraction_id}/summary-input",
-                                                 timeout=SUMMARY_BE_TIMEOUT_S))
+                                                 headers=headers, timeout=SUMMARY_BE_TIMEOUT_S))
 
-    def submit_summary(self, extraction_id: str, body: dict) -> dict:
+    def submit_summary(self, extraction_id: str, body: dict, *, claim_token: str, identity_epoch: int) -> dict:
         """요약을 저장한다. 돌려주는 것은 {extraction_id, meeting_id, applied, topic_count, decision_count}.
         applied=false 는 먼저 끝난 쪽이 있다는 200 이다. 다시 보내지 않는다."""
-        return self._call("PUT", f"/extractions/{extraction_id}/summary", body, timeout=SUMMARY_BE_TIMEOUT_S)
+        return self._call("PUT", f"/extractions/{extraction_id}/summary", {**body, "claim_token": claim_token},
+                          headers={"X-Privacy-Epoch": str(identity_epoch)}, timeout=SUMMARY_BE_TIMEOUT_S)
 
     def request_summaries(self, workspace_id: str, *, meeting_ids: list[str] | None = None, include_all: bool = False,
                           force: bool = False, dry_run: bool) -> list[dict]:
         """옛 회의를 줄 세운다. meeting_ids 와 include_all 중 하나만 준다. dry_run 이면 쓰지 않고 대상만 돌려준다."""
+        self.member_names(workspace_id)
         data = self._call("POST", f"/workspaces/{workspace_id}/summary-requests",
                           {"meeting_ids": meeting_ids, "include_all": include_all, "force": force, "dry_run": dry_run},
+                          headers={"X-Privacy-Epoch": str(self.workspace_epochs.get(workspace_id, 0))},
                           timeout=SUMMARY_BE_TIMEOUT_S)
         return data["items"]
 

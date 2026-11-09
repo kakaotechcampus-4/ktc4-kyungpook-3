@@ -980,8 +980,6 @@ async def test_an_upload_ended_in_be_is_dropped_by_the_pass_and_logged_without_a
     assert not any(p.endswith("/fail") for _, p, _ in fake.calls)
 
 
-# ---- 회의 요약: 바퀴 끝에 한 건, 한 회의 자리 안에서, 정지 신호 뒤에는 맡지 않는다 ----
-
 class _Summary:
     """SummaryRunner 자리. 부를 때 한 회의 자리가 잠겨 있는지 남긴다."""
 
@@ -1004,26 +1002,34 @@ class _Summary:
             raise self.error
 
 
-async def test_each_lap_summarizes_once_after_the_pass_and_the_intake(tmp_path, monkeypatch):
+async def test_each_lap_summarizes_once_after_intake_purge_and_audio_pruning(tmp_path, monkeypatch):
     w = _worker(tmp_path, intake=("client", "diarizer"), interval_s=0.05)
     order = []
     monkeypatch.setattr(W, "intake_one", lambda *a, **k: order.append("intake"))
+    async def purge():
+        order.append("purge")
+
+    async def prune():
+        order.append("prune")
+
+    monkeypatch.setattr(w, "_purge_once", purge)
+    monkeypatch.setattr(w, "_prune_audio", prune)
     summary = _Summary(on_call=lambda: order.append("summary"))
     w._summary = summary
     assert await _laps(w, 3) == 3
-    assert order == ["intake", "summary", "intake", "summary"]
+    assert order == ["intake", "purge", "prune", "summary"] * 2 + ["purge", "prune"]
 
 
-async def test_summary_runs_inside_the_one_meeting_seat(tmp_path):
+async def test_summary_leaves_the_main_meeting_seat_and_current_session_alone(tmp_path):
     w = _worker(tmp_path)
     summary = _Summary(w)
     w._summary = summary
     await w._summary_once()
-    assert summary.locked == [True] and summary.current == ["summary"]
+    assert summary.locked == [False] and summary.current == [None]
     assert w._current is None and not w._sem.locked()
 
 
-async def test_no_claim_after_the_stop_signal(tmp_path):
+async def test_no_summary_claim_after_the_stop_signal(tmp_path):
     w = _worker(tmp_path)
     w._summary = summary = _Summary()
     w.stop()
@@ -1031,16 +1037,13 @@ async def test_no_claim_after_the_stop_signal(tmp_path):
     assert summary.calls == 0
 
 
-async def test_a_stop_while_waiting_for_the_seat_does_not_claim(tmp_path):
+async def test_summary_does_not_wait_for_the_main_meeting_seat(tmp_path):
     w = _worker(tmp_path)
     w._summary = summary = _Summary()
     await w._sem.acquire()
-    waiting = asyncio.create_task(w._summary_once())
-    await asyncio.sleep(0)
-    w.stop()
+    await asyncio.wait_for(w._summary_once(), 5)
     w._sem.release()
-    await waiting
-    assert summary.calls == 0
+    assert summary.calls == 1
 
 
 async def test_no_runner_means_no_summary_work(tmp_path):
@@ -1061,7 +1064,6 @@ def test_an_unknown_summary_model_stops_the_worker_at_start(tmp_path, monkeypatc
     monkeypatch.setenv("MM_SUMMARY_LLM", "gpt4")
     with pytest.raises(ValueError):
         W.Worker(tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts", notifier=object(), debug=False)
-
 async def test_each_lap_drops_audio_of_handed_off_meetings(tmp_path):
     """인계가 끝난 회의의 트랙 wav 는 다음 바퀴에 지운다(#561). 대본은 남는다."""
     rec = tmp_path / "recordings"

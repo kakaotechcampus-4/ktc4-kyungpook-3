@@ -244,7 +244,7 @@ FE 변경과 실제 검증은 [M6 후속 결과](../plan/m6/result.md)에 기록
 | §4.0-②-17 업로드 PM 권한 강제 요청 | [workspaces.py](../../../backend/app/api/workspaces.py)의 업로드 의존성이 `get_current_pm` | 기존 요청은 과거 기록으로 보존. 서버 권한 동작은 실행 검증하지 않음 |
 | §4.4 반복 참석자 multipart 필드 | 프론트는 참석자마다 필드를 반복. 서버는 `attendee_member_ids: list[str] = Form(...)`로 받고 중복 제거·소속 검사 후 `MeetingUpload`에 저장 | 과거 형식 차이는 현재 코드에 없음. 실제 파일 처리 성공은 별도 검증 |
 | §4.4 파일 저장 | 업로드는 processing 회의 행을 만들고 녹음 파일과 참석자(`meeting_upload`)를 저장한다. 화자 지정은 §2.3.1 | 실제 업로드부터 처리 완료까지 성공을 선언하지 않음 |
-| §4.0-②-11 회의록 본문 하드코딩·summary 미생성 | [meetings.py](../../../backend/app/api/meetings.py)는 Source에서 전사·참석자를 구성하고 Extraction.summary JSON을 읽음. 저장 경로는 [bot_summaries.py](../../../backend/app/api/bot_summaries.py)(#462) | summary 저장 여부·실제 파이프라인 성공은 이 정적 확인만으로 검증하지 않음 |
+| §4.0-②-11 회의록 본문 하드코딩·summary 미생성 | [meetings.py](../../../backend/app/api/meetings.py)는 Source에서 전사·참석자를 구성하고 Extraction.summary JSON을 읽음. 저장 경로는 [bot_summaries.py](../../../backend/app/api/bot_summaries.py)에 구현(#462) | AI 워커 구현은 #560에 있다. 실제 운영 활성화·요약 결과는 별도 검증(§4.4.2) |
 | §4.5 Discord 사용자 목록 스텁 | 연동과 봇 토큰을 확인한 뒤 `discord.list_guild_members`로 외부 목록을 조회 | 토큰·봇 권한·실제 서버 응답은 별도 검증 |
 
 이번 문서 구조화로 요청·합의 상태를 변경하지 않는다. 신규 확인은 정적 코드 대조이고, 실 연동 검증 결과와 담당 파트 합의는 별도 근거가 필요하다. 백엔드 요청 목록은 계속 이 문서 §4를 사용하며 [request 디렉터리](../requests)에 복제하지 않는다.
@@ -1147,7 +1147,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 | §4.1 Google OAuth `start` · `callback` (302) | 미구현. 로컬 이메일·비밀번호 경로만 있다 |
 | §4.3 integrations `start` · `callback` (302) | 미구현. 연결을 만들 방법이 API 에 없다 |
 | §4.7-3 `failed_stage` 값 구분 | 자유 문자열 유지. #256의 `diarize`·`speaker_assignment_expired`는 §4.4.1대로 구분. Notion 원인 전용 값은 미확정 |
-| §4.7-4 요약 저장 | **BE 구현됨(#462).** 대기열과 저장 경로가 생겼다. 요약을 만드는 AI 쪽이 붙기 전까지 값은 비어 있다 (§4.4.2) |
+| §4.7-4 요약 저장 | **BE 구현됨(#462).** 대기열과 저장 경로가 생겼다. AI 워커의 실제 환경에서 요약이 켜져야 값이 채워진다 (§4.4.2) |
 | §4.7-5 transcript 구조화 | 미구현 (②-11) |
 | §2.6 actor 유추 | 미구현. `created_by` · `changed_by` · `resolved_by` 를 여전히 프론트엔드가 실어 보낸다 |
 
@@ -1568,8 +1568,10 @@ POST .../meetings/upload            multipart/form-data
 
 - 제공자는 BE 다. FE 는 아직 쓰지 않는다. 소비 화면은 FE 요청 이슈로 정한다.
 - 합의 상태: **BE 구현(#462), FE 합의 여부 확인 필요.** 표시 항목(노드는 주제와 태스크, 선 종류 없음, 패널 내용, 합본 전체 공개)은 사용자가 정했다(2026-11-06). 경로와 응답 모양은 이번 구현에서 정했다.
-- 요약을 만드는 AI 쪽이 붙기 전까지 주제와 결정이 없다. 그래프에는 태스크만 나오고 `summary` 는 `null`, `summary.md` 는 404 다. 봇 쪽 경로는 [백엔드 ↔ AI 계약](../../../backend/docs/contracts/backend-ai-contract.md#회의-요약)에 있다.
+- 요약 AI 워커는 #560에서 연결했다. 유효 요약이 없는 회의는 `summary`가 `null`이고 `summary.md`는 404다. 자동 처리는 실제 워커의 `MM_SUMMARY_LLM` 환경을 따른다. 봇 쪽 경로는 [백엔드 ↔ AI 계약](../../../backend/docs/contracts/backend-ai-contract.md#회의-요약)에 있다.
 - 권한: 네 경로 모두 워크스페이스 멤버다. 비소속 403, 세션 없음 401 이다.
+- 삭제 회의의 summary.md는 기존 회의록처럼 410이다. 회의 삭제는 주제·결정 연결과 다른 요약의 삭제 원문 사본도 정리한다. 합본·맵에 삭제 원문은 포함하지 않는다.
+- 스위치 OFF 중에도 요약 대상은 쌓이며 ON하면 기존 pending도 과금 처리한다. pending의 1시간 화면 제한은 큐를 제거하지 않는다.
 
 **`GET /meetings/{id}/minutes` 의 `summary_status`.** 기존 키는 그대로이고 이 키를 더했다.
 
@@ -1600,7 +1602,7 @@ POST .../meetings/upload            multipart/form-data
 - `nodes` 는 주제 전부와 지워지지 않은 태스크 전부다. 주제 없는 태스크도 들어가고 주제를 추정해 붙이지 않는다.
 - `edges` 에 종류 칸이 없다. 주제와 태스크의 선, 임베딩 유사도로 찾은 태스크끼리의 선이 섞여 있다.
 - 주제와 태스크의 선: 추출 항목에 달린 주제를 따라간다. 승인 전 수정 항목은 바로 이어지고, 승인 전 새 항목은 태스크가 생길 때 이어지고, 반려된 항목은 이어지지 않는다.
-- `meeting_ids` 는 그 태스크가 나온 회의와 주제로 이어진 회의다. 시간순이다. `meetings` 는 노드가 가리키는 회의다.
+- `meeting_ids`는 그 태스크가 나온 회의와 주제로 이어진 살아 있는 회의다. 삭제된 회의의 태스크는 남지만 원문 링크는 제외한다. 시간순이다. `meetings` 는 노드가 가리키는 회의다.
 - `appeared_at` 은 주제면 처음 나온 회의 시각, 태스크면 만든 시각과 이어진 회의 시각 중 가장 이른 값이다.
 - 임베딩 유사도 기준(`EDGE_TOP_K`, `EDGE_MIN_SIMILARITY`)은 측정 전의 자리값이다.
 
@@ -1707,7 +1709,7 @@ POST .../meetings/upload            multipart/form-data
 | 1 | `GET /meetings/{id}` | `audio_merged` · `transcribed` · `extracted` 를 다시 내려 달라 | ✅ **반영.** `MeetingProgress` 로 **필수** 필드다 | 모델에는 있는데 API 에 없었다. `status` 만으로는 진행률 UI 를 그릴 수 없다 (D-094) |
 | 2 | `meeting.started_at` | 업로드 요청의 사용자 지정 날짜를 그대로 저장 | ✅ **반영.** `started_at or now` | 지난 녹음을 나중에 올리면 회의 날짜가 업로드 날짜가 된다. 목록 정렬이 깨진다 (D-079, D-106, D-164) |
 | 3 | `meeting.failed_stage` | Notion 연결 끊김을 구분할 수 있는 값 포함 | ❌ 자유 문자열 그대로. 봇이 `"STT"` · `"LLM"` 같은 값을 보낸다. **2026-11-07(#507): 철회** — 서버에 Notion 때문에 정리가 실패하는 경로가 없다 | 차단 모달(D-100)과 오류 토스트(D-092)로 화면이 갈린다. 지금은 일반 실패 안내 하나다 (D-182) |
-| 4 | `extraction` | 회의 요약을 저장할 컬럼 또는 테이블 | ✅ **BE 반영(#462).** `Extraction.summary`(TEXT, JSON 문자열)를 대기열과 저장 경로가 채운다. 요약을 만드는 AI 쪽이 붙기 전까지 값은 비어 있다 (§4.4.2) | 회의록 상세의 요약 영역에 데이터 출처가 없다 (D-156) |
+| 4 | `extraction` | 회의 요약을 저장할 컬럼 또는 테이블 | ✅ **BE 반영(#462).** `Extraction.summary`(TEXT, JSON 문자열)를 대기열과 저장 경로가 채운다. AI 워커의 실제 환경에서 요약이 켜져야 값이 채워진다 (§4.4.2) | 회의록 상세의 요약 영역에 데이터 출처가 없다 (D-156) |
 | 5 | `extraction.transcript_path` | 화자·시각이 붙은 구조화 응답으로 제공 | ❌ `/minutes` 의 `transcript` 가 하드코딩 1줄이다 | 브라우저가 서버 파일을 읽을 수 없다. `audio_segment` 에 화자와 구간이 이미 있다 (D-028, D-105) |
 | 6 | `task` | `start_date` (nullable, `YYYY-MM-DD`) 를 응답과 `POST`·`PATCH` 에 추가 | ✅ **반영.** `TaskResponse` · `POST` · `PATCH` · `ChangedField.START_DATE` 전부 | 간트차트에 기간 축이 없다. `due_date` 만으로는 막대를 그릴 수 없다 (D-016, D-170) |
 

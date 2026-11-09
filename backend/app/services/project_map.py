@@ -76,12 +76,14 @@ def _visible_links(workspace_id: str) -> Select:
         .join(Topic, Topic.topic_id == TopicItem.topic_id)
         .join(ExtractionItem, ExtractionItem.item_id == TopicItem.item_id)
         .join(Extraction, Extraction.extraction_id == ExtractionItem.extraction_id)
+        .join(Meeting, Meeting.meeting_id == Extraction.meeting_id)
         .join(Task, Task.task_id == ExtractionItem.task_id)
         .outerjoin(ApprovalRequest, ApprovalRequest.approval_id == ExtractionItem.approval_id)
         .where(
             Topic.workspace_id == workspace_id,
             Task.workspace_id == workspace_id,
             Task.is_deleted.is_(False),
+            Meeting.deleted_at.is_(None),
             or_(
                 ApprovalRequest.approval_id.is_(None),
                 ApprovalRequest.status != str(ApprovalStatus.REJECTED),
@@ -108,19 +110,22 @@ def build_graph(db: Session, workspace_id: str) -> GraphResponse:
         meeting_id: MeetingRef(meeting_id=meeting_id, title=title, started_at=started_at)
         for meeting_id, title, started_at in db.execute(
             select(Meeting.meeting_id, Meeting.title, Meeting.started_at)
-            .where(Meeting.workspace_id == workspace_id)
+            .where(Meeting.workspace_id == workspace_id, Meeting.deleted_at.is_(None))
             .order_by(Meeting.started_at, Meeting.meeting_id)
         )
     }
+    links = [link for link in links if link.meeting_id in meetings]
     topic_meetings = db.execute(
         select(TopicMeeting.topic_id, TopicMeeting.meeting_id)
         .join(Topic, Topic.topic_id == TopicMeeting.topic_id)
-        .where(Topic.workspace_id == workspace_id)
+        .join(Meeting, Meeting.meeting_id == TopicMeeting.meeting_id)
+        .where(Topic.workspace_id == workspace_id, Meeting.deleted_at.is_(None),
+               TopicMeeting.meeting_id.in_(meetings))
     ).all()
 
     task_meetings: dict[str, set[str]] = {task.task_id: set() for task, _ in tasks}
     for task, _ in tasks:
-        if task.meeting_id:
+        if task.meeting_id in meetings:
             task_meetings[task.task_id].add(task.meeting_id)
     for _, task_id, meeting_id in links:
         if task_id in task_meetings:
@@ -175,7 +180,7 @@ def topic_detail(db: Session, workspace_id: str, topic_id: str) -> TopicDetailRe
     decisions = db.execute(
         select(Decision, Meeting)
         .join(Meeting, Meeting.meeting_id == Decision.meeting_id)
-        .where(Decision.topic_id == topic_id)
+        .where(Decision.topic_id == topic_id, Meeting.deleted_at.is_(None))
         .order_by(Meeting.started_at, Meeting.meeting_id, Decision.position)
     ).all()
     task_ids = select(_visible_links(workspace_id).where(TopicItem.topic_id == topic_id).subquery().c.task_id)
@@ -188,7 +193,7 @@ def topic_detail(db: Session, workspace_id: str, topic_id: str) -> TopicDetailRe
     meetings = db.scalars(
         select(Meeting)
         .join(TopicMeeting, TopicMeeting.meeting_id == Meeting.meeting_id)
-        .where(TopicMeeting.topic_id == topic_id)
+        .where(TopicMeeting.topic_id == topic_id, Meeting.deleted_at.is_(None))
         .order_by(Meeting.started_at, Meeting.meeting_id)
     ).all()
     return TopicDetailResponse(
@@ -321,7 +326,7 @@ def _valid_decisions(db: Session, workspace_id: str) -> list[BundleDecision]:
         select(Topic.name, Decision.text, Meeting.started_at)
         .join(Topic, Topic.topic_id == Decision.topic_id)
         .join(Meeting, Meeting.meeting_id == Decision.meeting_id)
-        .where(Decision.workspace_id == workspace_id, Decision.replaced_by.is_(None))
+        .where(Decision.workspace_id == workspace_id, Decision.replaced_by.is_(None), Meeting.deleted_at.is_(None))
         .order_by(Topic.name, Meeting.started_at, Decision.position)
     ).all()
     return [
@@ -348,7 +353,7 @@ def _period_summaries(
     stmt = (
         select(Meeting, Extraction)
         .join(Extraction, Extraction.meeting_id == Meeting.meeting_id)
-        .where(Meeting.workspace_id == workspace_id, Extraction.summary.is_not(None))
+        .where(Meeting.workspace_id == workspace_id, Meeting.deleted_at.is_(None), Extraction.summary.is_not(None))
         .order_by(Meeting.started_at, Meeting.meeting_id, Extraction.created_at)
     )
     if start is not None:

@@ -19,6 +19,8 @@ class SummaryClaimResponse(BaseModel):
     meeting_id: str
     workspace_id: str
     attempt: int
+    claim_token: str
+    identity_epoch: int
 
 
 class SummaryInputLine(BaseModel):
@@ -53,6 +55,7 @@ class SummaryInputResponse(BaseModel):
     extraction_id: str
     meeting_id: str
     workspace_id: str
+    identity_epoch: int
     title: str | None
     started_at: datetime
     lines: list[SummaryInputLine]
@@ -119,6 +122,7 @@ def _has_unstorable(value: Any) -> bool:
 class SummaryWriteRequest(BaseModel):
     """LLM 이 만든 글이 들어오는 신뢰 경계다. DB 에 쓸 수 없는 글자(NUL, 짝 없는 서로게이트)는 500 대신 400 으로 막는다."""
 
+    claim_token: str = Field(min_length=1, max_length=128)
     model_name: str
     truncated_input: bool = False
     overview: str = Field(min_length=1)

@@ -125,7 +125,7 @@ def test_force_requeues_a_finished_meeting(fake):
     fake.add_summary("m1", requested=False, saved={"overview": "x"})
     assert B.main(_ws("--meeting", "m1", "--force")) == 0
     assert fake.summaries["m1"]["requested"] is True
-    assert fake.calls[0][2]["force"] is True
+    assert next(body for method, path, body in fake.calls if path.endswith("/summary-requests"))["force"] is True
 
 
 def test_a_meeting_already_in_line_is_exit_two(fake, capsys):
@@ -238,7 +238,7 @@ def test_preview_summarizes_by_extraction_id_and_never_writes(fake, llm, tmp_pat
     llm.responses = [GOOD, GOOD]
     assert B.main(_paid(tmp_path, "--meeting", "m1", "--meeting", "m2", "--meeting", "m3", "--preview")) == 0
     assert _writes(fake) == []
-    assert [c[1] for c in fake.calls if c[0] == "GET"] == ["/extractions/e-m1/summary-input",
+    assert [c[1] for c in fake.calls if c[0] == "GET"] == ["/workspaces/ws-1/members/names", "/extractions/e-m1/summary-input",
                                                            "/extractions/e-m2/summary-input"]
     assert fake.summaries["m1"]["saved"] == {"overview": "옛 요약"} and fake.summaries["m2"]["attempts"] == 0
     assert json.loads((tmp_path / "out/m1.luna.json").read_text(encoding="utf-8"))["draft"]["overview"] == "요약"

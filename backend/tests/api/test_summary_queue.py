@@ -17,7 +17,7 @@ from tests.api.conftest import SERVICE_TOKEN
 
 H = {"X-Service-Token": SERVICE_TOKEN}
 T0 = datetime(2026, 11, 5, 5, 0, tzinfo=timezone.utc)
-BODY = {"model_name": "gpt-5.6-luna", "overview": "핵심", "key_points": ["하나"]}
+BODY = {"claim_token": "not-claimed", "model_name": "gpt-5.6-luna", "overview": "핵심", "key_points": ["하나"]}
 
 
 @pytest.fixture
@@ -50,11 +50,17 @@ def _extract(client, meeting):
 def _claim(client, **body):
     r = client.post("/api/v1/summaries/claim", json=body or None, headers=H)
     assert r.status_code == 200, r.text
-    return r.json()["data"]
+    job = r.json()["data"]
+    if job is not None:
+        claims = getattr(client, "summary_claims", {})
+        claims[job["extraction_id"]] = job["claim_token"]
+        client.summary_claims = claims
+    return job
 
 
 def _put(client, extraction_id, body=None):
-    r = client.put(f"/api/v1/extractions/{extraction_id}/summary", json=body or BODY, headers=H)
+    payload = {**(body or BODY), "claim_token": getattr(client, "summary_claims", {}).get(extraction_id, "not-claimed")}
+    r = client.put(f"/api/v1/extractions/{extraction_id}/summary", json=payload, headers=H)
     assert r.status_code == 200, r.text
     return r.json()["data"]
 
@@ -107,11 +113,13 @@ def test_old_meeting_is_never_picked_up_unless_marked(client, mdb, mseed):
 def test_claim_returns_only_ids_and_attempt(client, mdb, mseed):
     meeting, extraction = _meeting(mdb, mseed["ws"])
 
-    assert _claim(client) == {
+    claim = _claim(client)
+    assert len(claim["claim_token"]) >= 32
+    assert claim == {
         "extraction_id": extraction.extraction_id,
         "meeting_id": meeting.meeting_id,
         "workspace_id": mseed["ws"],
-        "attempt": 1,
+        "attempt": 1, "claim_token": claim["claim_token"], "identity_epoch": 0,
     }
 
 
@@ -246,14 +254,14 @@ def test_repeated_put_keeps_one_set_of_rows(client, mdb, mseed):
     assert len(mdb.scalars(select(Decision)).all()) == 1
 
 
-def test_put_after_attempts_ran_out_still_saves(client, mdb, mseed):
+def test_put_after_attempts_ran_out_does_not_save(client, mdb, mseed):
     _, extraction = _meeting(mdb, mseed["ws"])
     now = datetime.now(timezone.utc)
     summary.claim_next(mdb, now=now - summary.SUMMARY_LEASE * 3)
     summary.claim_next(mdb, now=now - summary.SUMMARY_LEASE * 2)
     mdb.commit()
 
-    assert _put(client, extraction.extraction_id)["applied"] is True
+    assert _put(client, extraction.extraction_id)["applied"] is False
 
 
 def test_put_unknown_extraction_is_404(client, mdb, mseed):
@@ -403,7 +411,8 @@ def test_summary_input_unknown_extraction_is_404(client, mdb, mseed):
 
 def _saved(db, ws, started_at, topics):
     meeting, extraction = _meeting(db, ws, started_at=started_at)
-    summary.save_summary(db, extraction.extraction_id, SummaryWriteRequest(**BODY, topics=topics))
+    claim = summary.claim_next(db, only=[extraction.extraction_id])
+    summary.save_summary(db, extraction.extraction_id, SummaryWriteRequest(**{**BODY, "claim_token": claim.claim_token}, topics=topics))
     db.commit()
     return meeting, extraction
 
