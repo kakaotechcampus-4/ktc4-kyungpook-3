@@ -1,6 +1,7 @@
 import type { RequestHandler } from 'msw'
 import { authHandlers } from './auth'
 import { passwordResetHandlers } from './passwordReset'
+import { signupCodeHandlers } from './signupCode'
 import { memberHandlers } from './member'
 import { workspaceHandlers } from './workspace'
 import { integrationHandlers } from './integration'
@@ -14,11 +15,14 @@ import { messageHandlers } from './message'
 import { messageSettingsHandlers } from './messageSettings'
 import { notificationHandlers } from './notification'
 import { invitationHandlers } from './invitation'
+import { withdrawalHandlers } from './withdrawal'
 
 /** Entity handler modules are accumulated here for the common browser and test server. */
 export const handlers: RequestHandler[] = [
   ...authHandlers,
+  ...withdrawalHandlers,
   ...passwordResetHandlers,
+  ...signupCodeHandlers,
   ...workspaceHandlers,
   ...memberHandlers,
   ...integrationHandlers,

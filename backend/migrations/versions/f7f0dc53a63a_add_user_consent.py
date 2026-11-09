@@ -5,7 +5,7 @@
 되돌리면 user_consent 테이블과 동의 기록이 지워진다. 다시 올리면 모든 사용자가 다시 동의해야 한다.
 
 Revision ID: f7f0dc53a63a
-Revises: d6e1b4a8c297
+Revises: e575b02d8a31
 Create Date: 2026-11-08 12:00:00.000000
 
 """
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'f7f0dc53a63a'
-down_revision: Union[str, Sequence[str], None] = 'd6e1b4a8c297'
+down_revision: Union[str, Sequence[str], None] = 'e575b02d8a31'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -2,7 +2,7 @@ import { Route, Routes, useParams, useSearchParams } from 'react-router'
 import { useMemberWorkspace } from '@/entities/workspace'
 import { MESSAGE_PARAMS } from '@/shared/config/routes'
 import { parseRouteId, useRouteId } from '@/shared/lib/url'
-import { MessageInbox } from '@/widgets/message-inbox'
+import { MessageInbox, composeKindOf } from '@/widgets/message-inbox'
 
 /**
  * 라우트 표의 `messages/*` 아래 하위 경로. `messages` 는 목록, `messages/threads/:threadId` 는 팀원 한 명과의 대화다.
@@ -19,7 +19,7 @@ export function MessagesPage() {
 }
 
 /**
- * 고른 대화는 경로가, 고른 보낼 메시지(묶음)는 검색 파라미터 `review` 가, 재촉 만들기는 `new=reminder` 가 정한다.
+ * 고른 대화는 경로가, 고른 보낼 메시지(묶음)는 검색 파라미터 `review` 가, 재촉 만들기·대화 시작은 `new` 가 정한다.
  * URL 값은 여기서 한 번 검증한다 (D-132).
  * 소속은 RequireTeamMember 가 이미 확인했다
  */
@@ -39,7 +39,7 @@ function Messages({ unknownPath = false }: { unknownPath?: boolean }) {
       threadId={threadId}
       bundleId={rawBundleId === null ? undefined : parseRouteId(rawBundleId)}
       invalidPath={unknownPath || (rawThreadId !== undefined && threadId === null)}
-      composing={searchParams.get(MESSAGE_PARAMS.compose) === 'reminder'}
+      compose={composeKindOf(searchParams.get(MESSAGE_PARAMS.compose))}
     />
   )
 }

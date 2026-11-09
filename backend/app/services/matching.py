@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from app.core.errors import AppError, ErrorCode
 
 from app.models import (
     AliasResolutionLog,
@@ -13,6 +14,7 @@ from app.models import (
     Member,
     MemberAlias,
     ResolutionResult,
+    Source,
 )
 
 AMBIGUOUS_CONFIDENCE = 0.3
@@ -270,6 +272,14 @@ def log_resolution(
     if not alias_text:
         return None
 
+    from app.services.meeting_deletion import require_live_meeting
+    if meeting_id:
+        require_live_meeting(db, meeting_id, lock=True)
+    if source_id:
+        source = db.get(Source, source_id)
+        if source is None:
+            raise AppError(ErrorCode.MEETING_NOT_FOUND)
+        require_live_meeting(db, source.meeting_id, lock=True)
     log = AliasResolutionLog(
         workspace_id=workspace_id,
         alias_text=alias_text,

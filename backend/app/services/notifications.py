@@ -13,8 +13,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
-from app.models import Member, MemberRole, Notification, PushStatus, PushSubscription
-from app.services import messages, push
+from app.models import Member, MemberRole, Notification, PushStatus, PushSubscription, User
+from app.services import lifecycle, messages, push
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +63,9 @@ def notify(
 
 def notify_pms(
     db: Session, *, workspace_id: str, kind: str, text: str, link_type: str, link_id: str, now: datetime,
-    dedupe_key: str | None = None,
+    dedupe_key: str | None = None, exclude: str | None = None,
 ) -> list[Notification]:
-    """워크스페이스의 PM 모두에게 알린다. dedupe_key 는 PM 마다 따로 붙는다."""
+    """워크스페이스의 PM 모두에게 알린다. exclude 는 뺄 팀원이다. dedupe_key 는 PM 마다 따로 붙는다."""
     pms = db.scalars(
         select(Member).where(
             Member.workspace_id == workspace_id, Member.role == MemberRole.PM, Member.is_deleted.is_(False)
@@ -76,7 +76,7 @@ def notify_pms(
             db, member_id=pm.member_id, kind=kind, text=text, link_type=link_type, link_id=link_id, now=now,
             dedupe_key=None if dedupe_key is None else f"{dedupe_key}:{pm.member_id}",
         )
-        for pm in pms
+        for pm in pms if pm.member_id != exclude
     ]
 
 
@@ -167,20 +167,40 @@ def send_pending_pushes(
     한 기기에도 못 보냈고 일시 오류가 있었으면 다음 틱에 다시 보낸다(최대 PUSH_MAX_ATTEMPTS 번). 한 기기라도
     받았으면 다시 보내지 않는다. send 가 None 이면 서버에 푸시 키가 없는 것이라 보내지 않고 건너뛴다.
     """
+    db.info["read_only_request"] = False
     now = messages.utc(now)
     work = _claim_pushes(db, now, send is not None)
     db.commit()
     give_up_at = time.monotonic() + PUSH_TICK_SECONDS
     for notification_id, body, subs in work:
         if time.monotonic() > give_up_at:
-            db.get(Notification, notification_id).pushed_at = None
+            current = db.get(Notification, notification_id, populate_existing=True)
+            if current is not None:
+                current.pushed_at = None
             db.commit()
             continue
         delivered = failed = rejected = False
         gone = []
         for sub in subs:
+            user_id = db.scalar(select(PushSubscription.user_id).where(PushSubscription.subscription_id == sub.subscription_id))
+            if user_id is None or db.scalar(select(User.user_id).where(User.user_id == user_id)) is None:
+                continue
             try:
-                send(sub, body)
+                lifecycle.user(db, user_id)
+            except AppError:
+                continue
+            current = db.get(Notification, notification_id, populate_existing=True)
+            if current is None or db.get(PushSubscription, sub.subscription_id, populate_existing=True) is None:
+                continue
+            try:
+                lifecycle.workspace(db, current.workspace_id, check_epoch=False)
+            except AppError:
+                continue
+            current = db.get(Notification, notification_id, populate_existing=True)
+            if current is None:
+                continue
+            try:
+                send(sub, payload(current))
                 delivered = True
             except push.PushGone:
                 gone.append(sub.subscription_id)
@@ -229,6 +249,8 @@ def _record_push(
     db: Session, notification_id: str, *, delivered: bool, failed: bool, rejected: bool, gone: list[str], now: datetime
 ) -> None:
     notification = db.get(Notification, notification_id, populate_existing=True)
+    if notification is None:
+        return
     for subscription_id in gone:
         sub = db.get(PushSubscription, subscription_id)
         if sub is not None:

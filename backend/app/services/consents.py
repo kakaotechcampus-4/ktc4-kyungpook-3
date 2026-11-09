@@ -6,6 +6,8 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
@@ -45,9 +47,12 @@ def agree(db: Session, user_id: str, versions: dict[str, str], now: datetime | N
             details={"current_versions": dict(CURRENT_VERSIONS), "received": versions},
         )
     now = now or datetime.now(timezone.utc)
-    done = set(db.execute(
-        select(UserConsent.kind, UserConsent.version).where(UserConsent.user_id == user_id)
-    ).tuples().all())
-    for kind, version in versions.items():
-        if (kind, version) not in done:
-            db.add(UserConsent(user_id=user_id, kind=kind, version=version, agreed_at=now))
+    insert = pg_insert if db.get_bind().dialect.name == "postgresql" else sqlite_insert
+    db.execute(
+        insert(UserConsent)
+        .values([
+            {"user_id": user_id, "kind": kind, "version": version, "agreed_at": now}
+            for kind, version in versions.items()
+        ])
+        .on_conflict_do_nothing(index_elements=["user_id", "kind", "version"])
+    )

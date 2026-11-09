@@ -480,7 +480,9 @@ def discord_oauth_callback(
 @bot_chat_router.get("/chat-channels", response_model=Envelope[BotChatChannelListResponse])
 def list_bot_chat_channels(db: Session = Depends(get_db)) -> dict:
     """채팅 수집을 켠 워크스페이스의 (서버, 채널) 목록. 봇이 매일 읽을 대상을 정한다(#428)."""
-    return success({"items": chat_channel.list_enabled_for_bot(db)})
+    from app.models import Workspace
+    items = chat_channel.list_enabled_for_bot(db)
+    return success({"items": [{**item, "identity_epoch": db.get(Workspace, item["workspace_id"]).identity_epoch} for item in items]})
 
 
 @bot_router.get(
@@ -503,4 +505,6 @@ def get_discord_guild_workspace(guild_id: str, db: Session = Depends(get_db)) ->
         raise AppError(
             ErrorCode.INTEGRATION_NOT_CONNECTED, details={"provider": "discord", "guild_id": guild_id}
         )
-    return success({"guild_id": guild_id, "workspace_id": workspace_id})
+    from app.services import lifecycle
+    workspace = lifecycle.workspace(db, workspace_id, check_epoch=False)
+    return success({"guild_id": guild_id, "workspace_id": workspace_id, "identity_epoch": workspace.identity_epoch})

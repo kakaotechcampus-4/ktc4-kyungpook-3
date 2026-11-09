@@ -477,6 +477,8 @@ test('담당자와 마감을 미정으로 승인하고 원래 제안과 서버 �
   expect(bodies).toEqual([
     {
       status: 'approved',
+      // 본 카드의 지문 (#547)
+      payload_version: expect.stringMatching(/^[0-9a-f]{16}$/),
       task_overrides: { task_title: '미정으로 승인한 태스크', due_date: null },
     },
   ])

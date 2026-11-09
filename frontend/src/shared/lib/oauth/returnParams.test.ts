@@ -1,4 +1,5 @@
 import {
+  readOAuthReason,
   readOAuthResult,
   safeReturnPath,
   withOAuthResult,
@@ -36,11 +37,42 @@ describe('withOAuthResult · readOAuthResult', () => {
   })
 })
 
+describe('readOAuthReason', () => {
+  it('아는 사유만 읽는다', () => {
+    expect(readOAuthReason(new URLSearchParams({ oauth_reason: 'email_exists' }))).toBe(
+      'email_exists',
+    )
+  })
+
+  it.each([null, '', 'x', '<script>'])('모르는 사유 %s 는 null 이다', (reason) => {
+    const params = new URLSearchParams(reason === null ? {} : { oauth_reason: reason })
+    expect(readOAuthReason(params)).toBeNull()
+  })
+
+  it('withOAuthResult 가 붙인 사유를 다시 읽는다', () => {
+    const url = withOAuthResult('/login?next=%2Fworkspaces', 'kakao', 'failed', 'email_exists')
+    expect(url).toBe(
+      '/login?next=%2Fworkspaces&oauth=kakao&oauth_result=failed&oauth_reason=email_exists',
+    )
+    expect(readOAuthReason(new URL(url, location.origin).searchParams)).toBe('email_exists')
+  })
+})
+
 describe('withoutOAuthResult', () => {
   it('복귀 결과만 빼고 나머지 검색 파라미터(둘러보기 표시)는 남긴다', () => {
     expect(
       withoutOAuthResult(new URLSearchParams('review=1&oauth=discord&oauth_result=success')),
     ).toBe('?review=1')
+  })
+
+  it('실패 사유도 함께 뺀다', () => {
+    expect(
+      withoutOAuthResult(
+        new URLSearchParams(
+          'next=%2Fworkspaces&oauth=kakao&oauth_result=failed&oauth_reason=email_exists',
+        ),
+      ),
+    ).toBe('?next=%2Fworkspaces')
   })
 
   it('남는 것이 없으면 빈 문자열이다', () => {

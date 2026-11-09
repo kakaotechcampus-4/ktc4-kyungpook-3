@@ -79,6 +79,7 @@ export const workspaceHandlers = [
       discord_user_id: null,
       notion_name: null,
       role: 'pm',
+      has_login_account: true,
       created_at: MOCK_NOW,
     }
     db.members.push(creator)

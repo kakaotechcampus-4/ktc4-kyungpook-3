@@ -11,6 +11,7 @@ from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
+from app.services.meeting_deletion import require_live_meeting
 from app.models import Meeting, MeetingSource, MeetingStatus, MeetingUpload, Member
 from app.schemas.upload import SpeakerLabel
 from app.services import upload_storage
@@ -50,9 +51,9 @@ def normalize_speakers(speakers: list[SpeakerLabel] | list[dict]) -> list[dict]:
 
 def _read_upload_meeting(db: Session, meeting_id: str) -> tuple[Meeting, MeetingUpload]:
     """업로드 회의와 업로드 정보를 읽는다. 없거나 업로드 회의가 아니면 404."""
-    meeting = db.get(Meeting, meeting_id)
+    meeting = require_live_meeting(db, meeting_id, lock=True)
     upload = db.get(MeetingUpload, meeting_id)
-    if meeting is None or upload is None or meeting.source != str(MeetingSource.MANUAL_UPLOAD):
+    if upload is None or meeting.source != str(MeetingSource.MANUAL_UPLOAD):
         raise _not_found(meeting_id)
     return meeting, upload
 
@@ -67,12 +68,14 @@ def report_speakers(
     잠금에서 기다렸다가 status 조건에 걸려 rowcount 0 이 된다. 이긴 쪽만 같은 트랜잭션에서
     meeting_upload 에 라벨을 쓰고 한 번에 커밋한다. 같은 내용을 다시 보내면 멱등으로 성공한다.
     """
+    require_live_meeting(db, meeting_id, lock=True)
     now = now or datetime.now(timezone.utc)
     normalized = normalize_speakers(speakers)
     result = db.execute(
         update(Meeting)
         .where(
             Meeting.meeting_id == meeting_id,
+            Meeting.deleted_at.is_(None),
             Meeting.source == str(MeetingSource.MANUAL_UPLOAD),
             Meeting.status == str(MeetingStatus.PROCESSING),
             exists().where(
@@ -138,6 +141,7 @@ def resume_upload(
     이미 가져갔고 회의가 아직 processing 이면 같은 mapping 으로 200 을 준다. resume 은 응답에 실린
     mapping 이 있어야 이어서 처리할 수 있어서, 커밋 뒤 응답을 잃은 재시도도 다시 받게 한다.
     """
+    require_live_meeting(db, meeting_id, lock=True)
     now = now or datetime.now(timezone.utc)
     result = db.execute(
         update(MeetingUpload)
@@ -270,6 +274,7 @@ def assign_speakers(
         update(Meeting)
         .where(
             Meeting.meeting_id == meeting_id,
+            Meeting.deleted_at.is_(None),
             Meeting.source == str(MeetingSource.MANUAL_UPLOAD),
             Meeting.status == str(MeetingStatus.AWAITING_SPEAKERS),
         )

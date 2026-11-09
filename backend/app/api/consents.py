@@ -1,6 +1,5 @@
 """로그인한 사용자의 이용약관·개인정보처리방침 동의 조회와 저장(#564). 가입·카카오 첫 로그인·문서 버전 변경을 같은 두 API 로 처리한다."""
 from fastapi import APIRouter, Depends
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -28,9 +27,6 @@ def agree_consents(
 ) -> dict:
     versions = {consents.TERMS: payload.terms_version, consents.PRIVACY: payload.privacy_version}
     consents.agree(db, user.user_id, versions)
-    try:
-        db.commit()
-    except IntegrityError:
-        # 같은 사용자가 동시에 두 번 보내 유일 제약에 걸렸다. 이미 저장된 것이므로 성공으로 본다
-        db.rollback()
-    return success(_data(db, user))
+    data = _data(db, user)
+    db.commit()
+    return success(data)

@@ -1,8 +1,12 @@
 """봇 경로로 답장을 맡기고 판단 결과를 넣는다. 게이트·반영·승인·알림·재시도."""
 import json
+import threading
+import time
 from datetime import date, timedelta
 
 import pytest
+from sqlalchemy import event, text
+from sqlalchemy.orm import sessionmaker
 
 from app.models import (
     ApprovalRequest,
@@ -14,7 +18,7 @@ from app.models import (
     ReplyJudgmentState as S,
     TaskHistory,
 )
-from app.services import messages, replies
+from app.services import lifecycle, messages, replies
 from tests.api.test_messages_api import P, client
 from tests.api.test_replies import _remind, _reply
 from tests.api.test_reply_clock import DEADLINE, _auto_blocked
@@ -191,6 +195,166 @@ def test_other_threads_are_not_held_back(mdb, mseed):
     )
     mdb.commit()
     assert {_claim()["message_id"], _claim()["message_id"]} == {alice.message_id, carol.message_id}
+
+
+# 판단 창
+
+def _unjudged(db):
+    return len(_notes(db, "reply_unjudged"))
+
+
+def test_claim_closes_a_reply_past_the_window_and_hands_out_the_next_in_the_same_thread(mdb, mseed, two):
+    first = _reply(mdb, mseed, AT, body="앞")
+    second = _reply(mdb, mseed, AT + MIN, body="뒤")
+    assert replies.claim(mdb, AT).message_id == first.message_id
+
+    item = replies.claim(mdb, AT + replies.JUDGE_WINDOW)
+
+    assert (item.message_id, item.attempt) == (second.message_id, 1)
+    mdb.expire_all()
+    assert mdb.get(ReplyJudgment, first.message_id).state == S.TIMED_OUT
+    assert _unjudged(mdb) == 1
+
+
+def test_repeated_unreported_judgments_are_claimed_at_most_four_times(mdb, mseed, two):
+    first = _reply(mdb, mseed, AT)
+    attempts = [replies.claim(mdb, AT + i * replies.JUDGE_LEASE).attempt for i in range(4)]
+    assert attempts == [1, 2, 3, 4]
+
+    assert replies.claim(mdb, AT + replies.JUDGE_WINDOW) is None
+    mdb.expire_all()
+    assert mdb.get(ReplyJudgment, first.message_id).state == S.TIMED_OUT
+    assert _unjudged(mdb) == 1
+
+
+def test_claim_closes_past_window_rows_without_a_scheduler_tick(mdb, mseed, two):
+    message = _reply(mdb, mseed, AT)
+
+    assert replies.claim(mdb, AT + replies.JUDGE_WINDOW + MIN) is None
+
+    mdb.expire_all()
+    row = mdb.get(ReplyJudgment, message.message_id)
+    assert (row.state, row.attempt) == (S.TIMED_OUT, 0)
+    assert _unjudged(mdb) == 1
+
+
+def test_a_picked_reply_gets_a_fresh_window_whatever_its_attempt(mdb, mseed, two):
+    a, _ = two
+    message = _reply(mdb, mseed, AT)
+    for i in range(4):
+        replies.claim(mdb, AT + i * replies.JUDGE_LEASE)
+    row = mdb.get(ReplyJudgment, message.message_id)
+    row.state = S.NEEDS_PM
+    mdb.commit()
+    later = AT + 30 * MIN
+    replies.attribute(mdb, mseed["ws"], message.message_id, a.task_id, later)
+    mdb.commit()
+
+    item = replies.claim(mdb, later + 9 * MIN)
+
+    assert (item.message_id, item.attempt) == (message.message_id, 5)
+    assert replies.claim(mdb, later + replies.JUDGE_WINDOW + MIN) is None
+    mdb.expire_all()
+    assert mdb.get(ReplyJudgment, message.message_id).state == S.TIMED_OUT
+
+
+def test_scheduler_expire_after_claim_closed_it_does_not_notify_twice(mdb, mseed, two):
+    _reply(mdb, mseed, AT)
+    now = AT + replies.JUDGE_WINDOW
+    assert replies.claim(mdb, now) is None
+    mdb.commit()
+
+    tick(mdb, now)
+
+    assert _unjudged(mdb) == 1
+
+
+def test_late_judgment_after_claim_closed_it_is_recorded_only(mdb, mseed, two):
+    a, _ = two
+    _reply(mdb, mseed, AT)
+    item = replies.claim(mdb, AT).model_dump(mode="json")
+    assert replies.claim(mdb, AT + replies.JUDGE_WINDOW) is None
+    mdb.commit()
+
+    _judge(item, _change(a, "status", "done", evidence="certain", claimed=item))
+
+    assert a.status == "in_progress"
+    assert _outcomes(mdb, item) == [("status", "recorded")]
+    assert _row(mdb, item).state == S.TIMED_OUT
+    assert _cards(mdb) == []
+    assert _notes(mdb) == []
+    assert _unjudged(mdb) == 1
+
+
+def test_a_failing_expire_does_not_stop_other_threads(mdb, mseed, monkeypatch):
+    a, b = mseed["tasks"][:2]
+    _remind(mdb, mseed, [a], SLOT)
+    _remind(mdb, mseed, [b], SLOT, who="carol")
+    alice = _reply(mdb, mseed, AT)
+    alice_next = _reply(mdb, mseed, AT + 5 * MIN, body="다음 답장")
+    carol, _ = messages.ingest_discord_reply(
+        mdb, discord_user_id="d_carol", discord_message_id="c1", body="네", sent_at=AT + 5 * MIN, now=AT + 5 * MIN,
+    )
+    mdb.commit()
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("notify down")
+
+    monkeypatch.setattr(replies.notifications, "notify_pms", boom)
+
+    item = replies.claim(mdb, AT + replies.JUDGE_WINDOW)
+
+    assert item.message_id == carol.message_id
+    # 닫지 못한 앞 답장을 건너뛰고 같은 대화의 뒤 답장이 먼저 나가지 않는다
+    assert replies.claim(mdb, AT + replies.JUDGE_WINDOW) is None
+    mdb.expire_all()
+    assert mdb.get(ReplyJudgment, alice.message_id).state == S.PENDING
+    assert mdb.get(ReplyJudgment, alice_next.message_id).attempt == 0
+
+
+def test_a_failing_expire_in_claim_logs_one_warning_line_without_a_traceback(mdb, mseed, monkeypatch, caplog):
+    # 봇이 10초마다 claim 하므로 계속 실패하는 행의 스택 트레이스를 매번 남기지 않는다. 트레이스는 스케줄러 틱이 남긴다
+    a = mseed["tasks"][0]
+    _remind(mdb, mseed, [a], SLOT)
+    first = _reply(mdb, mseed, AT)
+    mdb.commit()
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("notify down")
+
+    monkeypatch.setattr(replies.notifications, "notify_pms", boom)
+
+    with caplog.at_level("WARNING", logger=replies.logger.name):
+        assert replies.claim(mdb, AT + replies.JUDGE_WINDOW) is None
+
+    [record] = [r for r in caplog.records if r.name == replies.logger.name]
+    assert record.levelname == "WARNING"
+    assert record.exc_info is None
+    text = record.getMessage()
+    assert first.message_id in text and "RuntimeError" in text and "notify down" in text
+
+
+def test_claim_keeps_thread_order_when_expire_finds_the_row_no_longer_past_the_window(mdb, mseed, monkeypatch):
+    # claim 의 스냅샷 뒤 PM 이 고르는 바람에 새 창에 들어간 앞 답장은 닫히지 않는다. 그 대화의 뒤 답장이 앞질러 나가면 안 된다
+    a = mseed["tasks"][0]
+    _remind(mdb, mseed, [a], SLOT)
+    first = _reply(mdb, mseed, AT)
+    later = _reply(mdb, mseed, AT + 5 * MIN, body="다음 답장")
+    mdb.commit()
+    real_expire = replies.expire
+
+    def racing(db, message_id, now):
+        db.get(ReplyJudgment, message_id).queued_at = now
+        db.flush()
+        return real_expire(db, message_id, now)
+
+    monkeypatch.setattr(replies, "expire", racing)
+
+    assert replies.claim(mdb, AT + replies.JUDGE_WINDOW) is None
+
+    mdb.expire_all()
+    assert mdb.get(ReplyJudgment, first.message_id).state == S.PENDING
+    assert mdb.get(ReplyJudgment, later.message_id).attempt == 0
 
 
 # 게이트
@@ -702,6 +866,66 @@ def test_submit_racing_expire_ends_one_way(mdb, mseed, two):
     [line] = mdb.query(ReplyChange).all()
     assert (state, line.outcome) in {(S.DONE, "applied"), (S.TIMED_OUT, "recorded")}
     assert mdb.query(Notification).filter(Notification.kind == "reply_unjudged").count() == (state == S.TIMED_OUT)
+
+
+def test_expire_waiting_for_submit_workspace_does_not_lock_its_judgment(mdb, mseed, two):
+    _postgres_only(mdb)
+    a, _ = two
+    message = _reply(mdb, mseed, AT)
+    item = replies.claim(mdb, AT).model_dump(mode="json")
+    body = replies.ReplyJudgmentRequest(
+        attempt=item["attempt"], changes=[_change(a, "status", "done", evidence="certain", claimed=item)],
+    )
+    message_id, task_id, workspace_id = message.message_id, a.task_id, mseed["ws"]
+    mdb.commit()
+    engine = mdb.get_bind()
+    factory = sessionmaker(bind=engine, autoflush=False)
+    expiry_ready, judgment_locked = threading.Event(), threading.Event()
+    expiry_pid, errors = [], []
+
+    def after(conn, cursor, statement, params, context, executemany):
+        if threading.current_thread() is expiry and "FROM reply_judgment" in statement and "FOR UPDATE" in statement:
+            judgment_locked.set()
+
+    def expire():
+        with factory() as db:
+            try:
+                expiry_pid.append(db.scalar(text("SELECT pg_backend_pid()")))
+                expiry_ready.set()
+                replies.expire(db, message_id, AT + replies.JUDGE_WINDOW)
+                db.commit()
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+                db.rollback()
+
+    expiry = threading.Thread(target=expire, daemon=True)
+    event.listen(engine, "after_cursor_execute", after)
+    try:
+        with factory() as submitting:
+            lifecycle.workspace(submitting, workspace_id)
+            submitting_pid = submitting.scalar(text("SELECT pg_backend_pid()"))
+            expiry.start()
+            assert expiry_ready.wait(10), "expiry did not start"
+            deadline = time.monotonic() + 10
+            with engine.connect() as observer:
+                while not judgment_locked.is_set():
+                    blockers = observer.scalar(text("SELECT pg_blocking_pids(:pid)"), {"pid": expiry_pid[0]})
+                    if submitting_pid in blockers:
+                        break
+                    assert time.monotonic() < deadline, "expiry did not reach its lock"
+                    judgment_locked.wait(0.01)
+            replies.submit(submitting, message_id, body, AT + replies.JUDGE_WINDOW)
+            submitting.commit()
+    finally:
+        expiry.join(20)
+        event.remove(engine, "after_cursor_execute", after)
+    assert not expiry.is_alive(), "expiry did not finish"
+    assert errors == []
+    mdb.expire_all()
+    assert mdb.get(ReplyJudgment, message_id).state == S.DONE
+    [line] = mdb.query(ReplyChange).all()
+    assert (line.task_id, line.outcome) == (task_id, "applied")
+    assert mdb.query(Notification).filter(Notification.kind == "reply_unjudged").count() == 0
 
 
 def test_a_card_with_status_and_scope_is_a_scope_card(mdb, mseed, two):

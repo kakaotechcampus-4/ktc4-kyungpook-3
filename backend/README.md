@@ -9,7 +9,7 @@
 - [문서 안내](docs/README.md): 문서 구조와 기존 문서 배치.
 - 계약: [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md), 웹 화면용은 [프론트엔드 대표 계약](../frontend/docs/contracts/frontend-api-contract.md).
 - 계획: [전체 계획](docs/plan/backend-plan.md), [M0~M7 안내](docs/plan/README.md). 마일스톤별 plan.md는 아직 비어 있다. 진행 상태는 전체 계획의 마일스톤 개요(2026-10-02 기준)를 따른다.
-- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M3](docs/plan/m3/result.md)(추출 근거를 발화 seq로 저장, 담당자 별칭 자동 채우기와 승인 때 별칭 학습 #459), [M5](docs/plan/m5/result.md)(녹음 업로드 저장과 AI 가져가기 API, AI 경로 미구현), [M6](docs/plan/m6/result.md)(AI 처리 단계 보고와 진행 표시 #381, 답장 담당자 변경 승인 #460, 승인 대기 요청 유사 검색과 합치기 #141, 메시지 탭 읽지 않은 수 #480), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서). 모두 마일스톤 완료를 판정하지 않았다.
+- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M1](docs/plan/m1/result.md)(가입 인증·카카오 로그인 PR 최신 기반 검증, 계정 탈퇴·공동 기록 익명화·파일 정리 #575), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M3](docs/plan/m3/result.md)(추출 근거·담당자 별칭 #459, 회의 원문 삭제와 태스크 보존 #576), [M5](docs/plan/m5/result.md)(녹음 업로드 저장과 AI 가져가기 API, AI 경로 미구현), [M6](docs/plan/m6/result.md)(AI 처리 단계 보고와 진행 표시 #381, 답장 담당자 변경 승인 #460, 승인 대기 요청 유사 검색과 합치기 #141, 메시지 탭 읽지 않은 수 #480, 범위 변경 승인 이력 #205), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서). 모두 마일스톤 완료를 판정하지 않았다.
 - 배포: [배포 안내](../deploy/README.md). 요청: [녹음 시작 때 배포 재시작 잠금 확인](docs/requests/bot-restart-lock.md)(AI).
 
 ## 실행
@@ -62,16 +62,17 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 항목 | 동작 |
 |---|---|
 | 기동 순서 | db가 healthy가 된 뒤 api가 뜬다. api는 `alembic upgrade head` 후 uvicorn을 띄운다 |
-| 프로세스 | uvicorn `--workers 1`, `--reload` 없음. Notion/임베딩/업로드 sweeper/세션 sweeper/리마인드 스케줄러 워커가 프로세스마다 뜨므로 워커를 늘리지 않는다 |
+| 프로세스 | uvicorn `--workers 1`, `--reload` 없음. Notion/임베딩/업로드 sweeper/세션 sweeper/리마인드 스케줄러 워커가 프로세스마다 뜨므로 워커를 늘리지 않는다. 대화 신호 웹소켓의 연결 목록도 프로세스 메모리에 있어서, 워커를 늘리면 신호가 일부 소켓에만 간다 |
 | 포트 | api는 `127.0.0.1:8000`에만 열린다. 외부 공개는 같은 서버의 리버스 프록시(HTTPS)가 맡는다. db는 호스트에 열지 않는다 |
 | DB 접속 | api의 `DATABASE_URL`은 `.env`의 `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`로 다시 만든다(`db:5432`) |
-| 나머지 환경변수 | `NOTION_*`·`DISCORD_*`·`EMBEDDING_*`·`SERVICE_TOKEN` 등은 `.env`를 그대로 넘긴다 |
-| 필수 값 | `OAUTH_STATE_SECRET`이 비어 있으면 `docker compose`가 기동 전에 멈춘다(Notion 연결용 서명 키) |
+| 나머지 환경변수 | `NOTION_*`·`DISCORD_*`·`KAKAO_*`·`EMBEDDING_*`·`SERVICE_TOKEN` 등은 `.env`를 그대로 넘긴다 |
+| 필수 값 | `OAUTH_STATE_SECRET`이 비어 있으면 `docker compose`가 기동 전에 멈춘다(OAuth state, 가입 이메일 증명, 카카오 로그인이 함께 쓰는 서명 키) |
 | 데이터 | DB는 `mm-prod_pgdata` 볼륨에 남는다. 로컬 개발용 볼륨(`mm-pgdata`)과 따로다 |
 | 업로드 녹음 | `mm-prod_uploads` 볼륨(컨테이너의 `/data/uploads`)에 둔다. 회의가 done·failed가 되면 그 회의 폴더를 지운다 |
 | 업로드 sweeper | 서버 안의 워커가 `UPLOAD_SWEEP_INTERVAL_SECONDS`(기본 300, 0 이하면 끔)마다 멈춘 업로드 회의를 failed 로 바꾸고 녹음 폴더를 지운다. AI 가 가져간 뒤 진행이 3시간 없으면 `failed_stage=diarize`, 화자 지정을 7일 기다리면 `speaker_assignment_expired`. 기준은 [봇 계약](docs/contracts/backend-ai-contract.md)의 "웹 업로드 가져가기" |
 | 세션 sweeper | 서버 안의 워커가 `SESSION_SWEEP_INTERVAL_SECONDS`(기본 3600, 0 이하면 끔)마다 만료된(`expires_at` 이 지난) 세션 행을 지운다. 만료 세션은 워커가 돌기 전에도 조회 때 401 이다 |
 | 리마인드 스케줄러 | 서버 안의 워커가 `REMINDER_SCHEDULER_INTERVAL_SECONDS`(기본 60, 0 이하면 끔)마다 재촉 제안, 발송 직전 확인, 72시간 무응답 막힘, 푸시 발송을 돈다. 브라우저 푸시는 `VAPID_PRIVATE_KEY`·`VAPID_PUBLIC_KEY`·`VAPID_SUBJECT` 가 모두 있어야 나가고, 하나라도 없으면 웹 안 알림만 쌓인다 |
+| 대화 신호 웹소켓 | `GET /api/v1/workspaces/{workspace_id}/messages/ws`. 인증은 `session_token` 쿠키이고, `Origin` 의 `host:port` 가 `Host` 와 다르면 HTTP 403 으로 거절한다. 대화에 새 줄이 커밋되면 `thread_updated` 신호만 보낸다(본문 없음). 열린 소켓은 30초마다 세션과 소속을 다시 확인해 4401(세션 없음)·4403(소속 아님)으로 닫고, 신호가 밀리거나 팀원 행이 바뀌면 1013 으로 닫는다. 리버스 프록시는 이 경로의 업그레이드를 넘겨야 한다. 자세한 동작은 [FE 계약](../frontend/docs/contracts/frontend-api-contract.md) §5.7 |
 | 자동 막힘 표시 | 태스크 응답의 `auto_blocked` 는 `POST /tasks/{task_id}/auto-block/undo` 가 지금 성공하는 상태와 같다. 이력의 `change_source` 로 가리지 않는다. 막힌 뒤 사유를 PM 이 바꾸면 false 다 |
 | 로그 | 컨테이너당 10MB × 3개까지만 남긴다(디스크 50GB 고정) |
 
@@ -118,9 +119,12 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `MEETING_PROCESSING_IN_PROGRESS` | 409 | 같은 워크스페이스에 이미 처리 중인 회의가 있어 업로드를 받지 않음. `details.meeting_id` |
 | `APPROVAL_ALREADY_RESOLVED` | 409 | 이미 승인/반려 처리된 요청을 다시 처리하려 함 |
 | `APPROVAL_CONFLICT` | 409 | task_update 제안 이후 같은 필드가 바뀌었거나 대상 task 제목이 바뀌어 승인하지 않음. `details.conflicts`에 필드별 기준값·지금 값·제안 값(`field: "title"`은 대상 확인용이라 `proposed`가 null). 확인 후 `details.task_version`을 `confirm_task_version`에 담아 다시 승인하면 반영(그 사이 또 바뀌었으면 다시 409) |
+| `APPROVAL_CHANGED` | 409 | task_create 승인·반려 요청의 `payload_version`이 지금 카드 값과 달라(본 뒤 다른 회의 항목이 합쳐짐) 처리하지 않음. 카드는 대기로 남는다. `details.approval_id`, `details.payload_version`(지금 값). 상세를 다시 받아 확인한 뒤 새 값으로 다시 보낸다 |
 | `TASK_HISTORY_ALREADY_ROLLED_BACK` | 409 | 이미 되돌린 변경을 다시 되돌리려 함 |
 | `AUTO_TASK_NOT_REVERTIBLE` | 409 | auto로 만든 태스크를 되돌릴 수 없음. `details.reason`: `already_reverted`(이미 되돌림) · `not_auto_created`(auto로 만든 항목이 아님) · `task_missing`(태스크가 없음) · `task_changed`(만든 뒤 바뀜, `details.task_version`) · `pending_approval`(그 태스크의 처리 대기 승인 요청이 있음, `details.approval_id`). 태스크를 직접 고친다 |
 | `LAST_PM_REQUIRED` | 409 | 워크스페이스의 마지막 PM(로그인 계정이 있는 PM)을 member로 내리려 함. 다른 팀원을 먼저 PM으로 지정해야 함 |
+| `WITHDRAWAL_ACCOUNT_CHANGED` | 409 | 탈퇴 요청이 가리킨 계정과 현재 쿠키 계정이 다름. 어느 계정도 삭제하지 않음 |
+| `PRIVACY_VERSION_CHANGED` | 409 | 서비스 쓰기의 명단 세대가 현재 공간과 다름. 이전 계산 결과를 새 세대로 바꿔 재전송하지 않음 |
 | `REMINDER_NOT_EDITABLE` | 409 | 예정 상태가 아닌 리마인드·묶음을 고치거나 승인하거나 취소하려 함. `details`에 `reminder_id` 또는 `bundle_id`와 `status` |
 | `REMINDER_SCHEDULED_AT_PASSED` | 409 | 지난 시각으로 만들거나 고치거나, 시각이 지난 묶음을 승인하려 함 |
 | `BUNDLE_CHANGED` | 409 | PM 이 본 뒤 묶음 문구나 구성이 바뀌어 승인하지 않음. `details.bundle_id`, `details.draft_version`(지금 판) |
@@ -133,7 +137,12 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `PM_MEMBER_NOT_INVITABLE` | 409 | 역할이 PM 인 팀원을 초대하려 함. 팀원으로 초대해 수락한 뒤 PM 으로 바꿈. `details.member_id` |
 | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 함. `details.member_id` |
 | `PASSWORD_RESET_TOKEN_INVALID` | 400 | 비밀번호 재설정 링크를 쓸 수 없음(없는·무효화된·이미 쓴·만료된 토큰). `details.reason` 은 `invalid`·`used`·`expired` |
-| `MAIL_UNAVAILABLE` | 503 | 메일을 보낼 수 없음(SMTP 설정이 없음). 발송 실패는 응답에 드러나지 않는다 |
+| `MAIL_UNAVAILABLE` | 503 | 메일을 보낼 수 없음(SMTP 설정이 없음). 비밀번호 재설정 요청과 가입 코드 요청에서 나온다. 발송 실패는 응답에 드러나지 않는다 |
+| `SIGNUP_CODE_RATE_LIMITED` | 429 | 가입 코드를 너무 자주 요청함. `details.reason` 은 `cooldown`(60초 재발송 제한)·`hourly`(시간당 5회)·`global`(전체 시간당 20통), `details.retry_after` 는 기다릴 초 |
+| `SIGNUP_CODE_INVALID` | 400 | 가입 코드를 쓸 수 없음. `details.reason` 은 `wrong`(`details.attempts_left` 함께)·`expired`(만료, 요청한 적 없음, 이미 씀)·`too_many`(5회 초과) |
+| `SIGNUP_VERIFICATION_INVALID` | 400 | 가입에 이메일 증명이 없거나 쓸 수 없음. 코드 인증부터 다시 한다 |
+| `KAKAO_LINK_EXPIRED` | 400 | 카카오 대기 쿠키가 없거나 만료됨. 카카오 로그인부터 다시 한다 |
+| `KAKAO_ALREADY_LINKED` | 409 | 대기 중인 카카오 계정이 이미 다른 계정에 이어져 있어 가입하지 않음 |
 | `TOO_MANY_LOGIN_ATTEMPTS` | 429 | 같은 이메일 10회·같은 공인 IP 50회 실패가 15분 안에 쌓여 로그인이 막힘(맞는 비밀번호도 막음). `Retry-After` 헤더와 `details.retry_after_seconds` 는 같은 정수 초 |
 | `MESSAGE_RESULT_CONFLICT` | 409 | 이미 다른 결과가 보고됐거나 아직 가져가지 않은 메시지에 결과를 보고함. `details.message_id` |
 | `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST` |
@@ -221,7 +230,7 @@ callback은 워크스페이스별 경로가 아닌 고정 경로다. Notion에 �
 |---|---|
 | `NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET` | Notion 개발자 페이지의 Public connection → Configuration 탭. 워커의 토큰 갱신에도 쓴다. 없으면 401 때 갱신하지 못하고 error 로그를 남긴다 |
 | `NOTION_REDIRECT_URI` | 프론트와 같은 주소의 callback. 로컬 `http://localhost:5173/api/v1/integrations/notion/callback`(Vite 프록시가 백엔드로 넘긴다), 운영 `https://<서비스 주소>/api/v1/integrations/notion/callback` |
-| `OAUTH_STATE_SECRET` | state 서명 키, 32자 이상. `python3 -c "import secrets;print(secrets.token_urlsafe(48))"`로 만든다. 없으면 연결 시작이 `failed`가 된다 |
+| `OAUTH_STATE_SECRET` | state 서명 키, 32자 이상. `python3 -c "import secrets;print(secrets.token_urlsafe(48))"`로 만든다. 없으면 연결 시작이 `failed`가 된다. 가입 이메일 증명과 카카오 로그인도 이 키를 쓴다 |
 
 **Notion 개발자 페이지 설정** (Public connection)
 
@@ -373,13 +382,14 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 | update 충돌 기준값 | 변경 필드마다 `base_values`를 남겨 승인 시 그 뒤 수정과 충돌을 확인한다. 기준값은 AI가 유사 검색에서 본 값(`target_snapshot`의 `due_date`·`status`·`assignee_member_id`)이다. 보내지 않은 필드나 `target_snapshot`이 없는 요청은 등록 시점의 값을 쓴다. 검색과 등록 사이에 PM이 고친 값을 승인이 덮지 않게 하려는 것이다 |
 | update 대상 확인 | AI가 task를 고를 때 본 제목(`target_snapshot.title`, 없거나 null이면 등록 시점 제목)을 payload의 `base_title`에 남긴다. 승인할 때 지금 제목과 다르면 다른 필드가 그대로여도 `APPROVAL_CONFLICT`의 `title` 항목으로 알린다. 제목은 바꾸지 않는다. 앞뒤 공백만 다르면 같은 제목으로 본다. `base_title`이 없는 요청(이 기능 전에 만든 요청, `base_title`을 보내지 않은 수동 생성)은 제목을 확인하지 않는다. 수동 생성(`POST /approvals`)은 payload를 그대로 저장해서 `base_title`·`base_values`를 넣으면 확인한다(#185) |
 | update 승인 요청 생성 여부 | 담당자를 하나로 못 찾았으면(중의적이거나 없음) 다른 변경이 없어도 PM이 보도록 승인 요청을 만든다. `category: scope`(대응하는 task 필드가 없는 범위 결정)도 다른 변경이 없어도 승인 요청을 만든다. 그 외에 담당자까지 같거나 언급이 없고 다른 변경도 없으면 승인 요청 자체를 만들지 않는다(단 `doc_text`·근거는 ExtractionItem에 남는다) |
+| 범위 변경 승인 | `category: scope` 인 task_update 를 승인하면 필드 반영 뒤에 `changed_field: "scope"` 이력 한 줄을 남긴다. `old_value` 는 null, `new_value` 는 payload `doc_text`(앞뒤 공백을 지우고 비면 null), 출처는 같은 승인의 제안 값 이력과 같다(`change_source` 가 있으면 그 값, 없으면 채팅 회의는 chat, 그 밖은 meeting). 범위만 있는 승인은 `version` 을 올리지 않고 Notion 동기화를 요청하지 않는다. 반려·409 `APPROVAL_CONFLICT` 면 남기지 않는다. 답장 카드는 이 이력을 답장의 scope 줄에 잇는다. 범위 이력 되돌리기는 400 `INVALID_REQUEST`. 근거는 [M6 결정 기록](docs/plan/m6/basis-for-decision/2026-11-08-scope-change-history.md) |
 | 추출 조회의 auto 표시 | 항목의 `gate`가 `auto`면 승인 없이 만든 항목이다. 되돌렸으면 `reverted_at`이 있고 새 승인 요청이 `approval_id`·`approval_status`로 보인다. 판단 근거로 `task.evidence_status`·`due_date.evidence_status`·`similar_count`·`top_similarity`를 함께 싣는다(보내지 않았으면 null) |
 | 추출 조회의 반영 여부 | `GET /api/v1/extractions/{extraction_id}` 항목의 `task_id`는 연결된 task다. create는 task가 생긴 뒤에 채워지지만, update는 수정 대상이라 승인 전에도 있다. 그래서 반영 여부는 `approval_status`(연결된 승인 요청의 `status`: pending·approved·rejected, 승인 요청이 없으면 null)로 본다. approved는 task 반영과 같은 트랜잭션에서 커밋되고, 충돌로 반영하지 못하면 pending으로 남는다. 상태는 항목 조회에 승인 요청을 붙여 한 쿼리로 읽는다. 따로 읽으면 그 사이 승인이 커밋되어 `task_id`는 승인 전, `approval_status`는 승인 뒤 값으로 어긋날 수 있다(#211) |
 | 잘못된 항목 | update의 `target_task_id`가 없거나 다른 워크스페이스 task면, create·merge의 `task_title`이 비어 있으면 그 항목만 건너뛰고 나머지는 처리한다(응답 `item_count`는 저장된 항목 수) |
 | `action: merge` | `target_approval_id`의 승인 대기 task_create 카드(같은 워크스페이스, 팀원이 직접 만든 카드 포함)에 합친다. 새 카드·task는 만들지 않고 항목은 `action=merge`, `approval_id`=그 카드로 남는다. 규칙은 `app/services/pending_merge.py`에 있다. 마감은 새 값이 있을 때만, `status`는 보냈을 때만 덮어쓴다(`status`는 표시용이라 승인으로 만드는 task 는 항상 `todo`다). 담당자·`assignee_raw`·카드 gate·`assignee_item_id`(담당자를 정한 항목)는 `category`가 `assignee`일 때만 덮어쓴다. 카드에 있던 담당자를 지우게 되면(담당자 표현이 없는 none·group 항목) PM 이 알아보도록 카드 gate 를 `hold`로 올린다. 그 밖의 merge 항목은 `assignee_type`·`assignee_raw`를 보지 않는다(별칭을 찾지 않고 판정 로그도 남기지 않으며 항목 gate 는 `review`). `doc_text`는 " / "로 잇고, 합친 항목의 근거는 `merged_items`에 쌓는다. 제목·대표 근거·`extraction_item_id`는 처음 것 그대로다. 합친 항목은 새 일이 아니라 judge auto 조건을 보지 않고 gate가 `auto`면 `review`로 내린다 |
 | merge 대상을 쓸 수 없을 때 | 대상이 없음·못 찾음·다른 워크스페이스·task_create 아님·승인 대기 아님·payload가 dict 아님(`merged_items`가 리스트 아님 포함)이면 400 없이 create로 처리하고(새 카드) gate가 `auto`면 `review`로 내린다. 중복 검사를 거치지 못한 항목이라서다. info 로그 `merge_target_unavailable reason=...` |
 | merge 잠금 | 선점 뒤 update 대상 task를 ID 순으로, 이어 merge 대상 task_create 카드를 ID 순으로 한 쿼리에서 `FOR UPDATE`로 잠근다(`populate_existing`으로 최신 상태를 읽음). 승인은 카드 상태를 조건부 UPDATE 로 바꾸므로, 합치기가 먼저 잡으면 승인은 합친 값으로 task를 만들고, 승인이 먼저 잡으면 합치기는 새 카드로 간다. task_update 카드는 잠그지 않는다. 그 승인은 카드 → task 순서로 잠가 이 요청과 순서가 반대다 |
-| 합친 카드 승인 | 조건부 UPDATE 뒤 카드를 다시 읽어 최신 payload로 task를 만든다(PM이 고친 칸은 PM 값). 같은 카드에 연결된 모든 추출 항목에 `task_id`를 채운다. 팀원이 직접 만든 카드는 payload 에 `meeting_id` 가 없어, 회의 항목을 합친 뒤 승인해도 task 는 `meeting_id` 없이 `manual` 출처로 만들어진다(`merged_items` 의 회의는 보지 않는다). 반려하면 연결된 항목 모두 `approval_status`가 rejected다 |
+| 합친 카드 승인 | 조건부 UPDATE 뒤 카드를 다시 읽어 최신 payload로 task를 만든다(PM이 고친 칸은 PM 값). 같은 카드에 연결된 모든 추출 항목에 `task_id`를 채운다. 팀원이 직접 만든 카드는 payload 에 `meeting_id` 가 없어, 회의 항목을 합친 뒤 승인해도 task 는 `meeting_id` 없이 `manual` 출처로 만들어진다(`merged_items` 의 회의는 보지 않는다). 반려하면 연결된 항목 모두 `approval_status`가 rejected다. 승인·반려 요청에 `payload_version`(승인 응답 최상위, task_create 만 값이 있는 카드 내용 지문)을 실으면 다시 읽은 카드 값과 비교해, 다르면 되돌리고 409 `APPROVAL_CHANGED`다. `task_overrides` 검증(400)이 이 비교보다 먼저다. 보내지 않으면 비교하지 않는다(#535) |
 
 ## 담당자 별칭
 
@@ -403,7 +413,7 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 | 저장할 글자 | `assignee_raw`를 다듬은 것이다. 앞뒤 공백 제거 → 끝 조사 한 번(께서·한테·에게·이가·가·이·는·을·를·께, 긴 것부터, "은"은 떼지 않음) → 끝 "님" → 연속 공백을 하나로. 비면 저장하지 않는다. 예: "하은이가" → "하은", "지민님이" → "지민", "환 님이" → "환" |
 | 물어볼 항목 (`alias_candidate`) | 모두 만족하면 `true`이고 `alias_text`에 저장할 글자가 실린다. ① 새 항목(create, 승인 대기 카드에 합친 merge 포함)이고 카드의 담당 항목(payload `assignee_item_id`, 없으면 `extraction_item_id`) ② 추출 때 담당자가 비어 있었음(못 찾음·애매함) ③ `assignee_type`이 `thirdname`(역할 `thirdrole`은 아래 역할 행) ④ 다듬은 글자가 비지 않음 ⑤ 연결된 승인 요청이 pending ⑥ 같은 워크스페이스에서 탈퇴하지 않은 팀원 누구도 저장할 글자와 찾기 후보(`name_candidates(assignee_raw)`)를 별칭으로 갖고 있지 않음(후보 중 하나라도 있으면 이미 찾히거나 애매한 표현이다. 예: "하은은"은 후보 [하은은, 하은]이고 "하은"을 두 팀원이 가졌으면, "하은은"을 저장하면 이후 항상 그 팀원으로 확정된다. 탈퇴 팀원의 별칭은 담당자를 찾을 때도 보지 않으므로 세지 않고, 지우지도 않는다. PM이 `DELETE /members/aliases/{id}`로 지울 수 있다). 아니면 `false`·`null`이다. 응답을 만들 때 계산하고 저장하지 않는다 |
 | 싣는 응답 | `GET /extractions/{id}`의 항목, `GET /approvals`, `GET /approvals/{id}`, `POST /approvals`, `PATCH /approvals/{id}`(처리 뒤라 항상 `false`). 수동으로 만든 승인 요청은 추출 항목이 없어 `false`다 |
-| 저장 (`save_alias`) | `PATCH /approvals/{id}`에 `{"status": "approved", "save_alias": true}`를 보내고, 카드의 담당 항목이 그 카드에 연결된 항목이며(payload 의 항목 ID 가 다른 카드 것이면 무시), 위 ①~④·⑥을 만족하고, 최종 담당자(`task_overrides`로 고른 값 포함)가 있으면 그 팀원에게 `member_alias`(`source=learned`, `verified=true`, `confidence=0.9`, `alias_type=nickname`)를 하나 만든다. 확인된 별칭이라 다음 회의에서 바로 확정 매칭된다. 단 한 글자 별칭("환", "민")은 찾을 때 확정 근거로 쓰지 않아(`matching._is_one_letter`) 담당자만 채우고 PM 확인(`review`)으로 간다. 미매칭 목록에서는 PM이 직접 등록한(`manual`·`learned`) 별칭이라 해결로 보고 뺀다(`resolved_texts`). 띄어 쓴 님("화은 님이")과 연속 공백도 같은 후보 규칙으로 찾는다. 이름 끝 글자가 조사와 같으면("민이" → "민", "수가" → "수") 깎여 한 글자가 되고, 저장 글자를 승인에서 고칠 수는 없다. 잘못 저장된 별칭은 `DELETE /members/aliases/{id}`로 지우고 필요하면 다시 등록한다(수정 API 없음) |
+| 저장 (`save_alias`) | `PATCH /approvals/{id}`에 `{"status": "approved", "save_alias": true}`를 보내고, 카드의 담당 항목이 그 카드에 연결된 항목이며(payload 의 항목 ID 가 다른 카드 것이면 무시), 위 ①~④·⑥을 만족하고, 최종 담당자(`task_overrides`로 고른 값 포함)가 있으면 그 팀원에게 `member_alias`(`source=learned`, `verified=true`, `confidence=0.9`, `alias_type=nickname`)를 하나 만든다. 확인된 별칭이라 다음 회의에서 바로 확정 매칭된다. 단 한 글자 별칭("환", "민")은 찾을 때 확정 근거로 쓰지 않아(`matching._is_one_letter`) 담당자만 채우고 PM 확인(`review`)으로 간다. 미매칭 목록에서는 PM이 직접 등록한(`manual`·`learned`) 별칭이라 해결로 보고 뺀다(`resolved_texts`). 띄어 쓴 님("화은 님이")과 연속 공백도 같은 후보 규칙으로 찾는다. 이름 끝 글자가 조사와 같으면("민이" → "민", "수가" → "수") 깎여 한 글자가 되고, 저장 글자를 승인에서 고칠 수는 없다. 잘못 저장된 별칭은 `DELETE /members/aliases/{id}`로 지우고 필요하면 다시 등록한다(수정 API 없음). 카드를 연 뒤 담당 항목이 바뀌는 합치기는 `payload_version`을 바꾸므로, 그 값을 같이 보내면 PM 이 본 것과 다른 글자가 저장되지 않는다(#535) |
 | 저장하지 않는 경우 | `save_alias`가 없거나 false, 반려(같이 와도 오류 없이 무시), task_update 승인, 추출 때 담당자를 찾았던 항목(PM이 다른 사람으로 바꿔도), 1·2인칭·대명사·그룹·없음, `assignee_type`이 NULL인 옛 항목, 담당자를 미정으로 승인, 다듬은 글자가 1인칭이 주어로 쓰인 꼴(AI가 1인칭을 `thirdname`으로 잘못 분류한 경우. 범위는 아래 1인칭 거르기 행), 그 글자를 탈퇴하지 않은 누군가가 이미 가짐, `thirdrole`(아래 역할 행). 모두 승인은 그대로 성공한다 |
 | 1인칭 거르기의 범위 | 1인칭이 할 일의 **주어로 쓰인 꼴**만 막는다. 규칙은 어간(제·저·나·내 / 저희·우리 / 본인) × 복수 "들"(저희·우리·본인에만) × 주어 표지다. 이·가·는·를 같은 격조사는 다듬기가 먼저 떼고, 도·만과 받침 있는 말 뒤의 은("본인은", "저희들은")은 이 규칙이 처리한다. 막는 예: 제가·저는·저도·저만·저희들이·저희들은·본인은. **막지 않는 것**: 주어 표지가 아닌 부사어·구·끝말(우리끼리·우리까지·저희 모두·제가요), 3인칭 "저들". 통째로 일치할 때만 막으므로 "제인"·"나연"·"나은"은 배우지만, 조사 "이"를 떼면 "제"·"나"가 되는 "제이"·"나이"는 배우지 않으니 PM이 직접 등록한다. 규칙 밖에서 새는 경우는 PM 동의, 한 글자 확인 필요, 별칭 삭제, AI 오분류 개선이 받는다. 새 꼴이 거론되면 "이 규칙이 만드는 조합인가"로 판단해, 안이면 고치고 밖이면 문서에 남긴다 |
 | 동시 승인 | 저장 전에 같은 글자가 있는지 보고, 같은 팀원·글자 유니크 제약(`uq_alias_per_member`)에 걸리면 그 저장만 savepoint로 되돌린다. 승인과 태스크 생성은 커밋된다 |
@@ -452,13 +462,64 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 
 - 막힌 동안에는 비밀번호가 맞아도 해시 계산 없이 429 를 준다. 막힌 동안 시도해도 시간이 늘지 않는다. 점증 잠금은 없다.
 - 응답은 이메일 막힘과 IP 막힘이 같고, 있는 이메일과 없는 이메일도 같다. `Retry-After` 헤더와 `details.retry_after_seconds` 는 같은 정수 초(올림, 최소 1)다.
-- 해제: 시간이 지나면 풀린다. 로그인에 성공하면 그 이메일의 횟수를 지운다. 비밀번호 재설정 confirm 이 commit 된 뒤에도 그 이메일의 막힘을 푼다. 이미 로그인한 세션은 영향이 없다.
+- 해제: 시간이 지나면 풀린다. 로그인에 성공하면 그 이메일의 횟수를 지운다. 비밀번호 재설정 confirm 이 commit 된 뒤에도 그 이메일의 막힘을 푼다. 시간이 지나기 전에 사용자가 직접 풀 수 있는 방법은 이것뿐이고, 같은 공인 IP 의 막힘은 confirm 으로 풀리지 않는다. 막힌 화면에서 재설정으로 안내하는 것은 FE 몫이다(#554). 이미 로그인한 세션은 영향이 없다.
 - 시도는 사용자 조회와 해시 계산 전에 잠금 안에서 먼저 센다(예약). 틀린 비밀번호는 센다. 500 같은 예기치 못한 오류나 401 이외의 `AppError` 는 예약을 되돌린다.
 - IP 판단: `request.client.host` 만 읽고 `X-Forwarded-For` 를 직접 읽지 않는다(uvicorn 이 `--proxy-headers` 로 해석한 값). IPv6 는 /64 로 묶는다. 사설 주소·해석할 수 없는 값(테스트 기본값 `testclient` 포함)은 IP 제한을 건너뛰고 이메일 제한만 적용한다. 로그인 성공 때 IP 쪽은 이번 예약만 되돌린다. IP 전체를 지우면 자기 계정으로 로그인해 초기화할 수 있어서다.
 - 같은 공인 IP(교육장 등)에서 실패가 50번 쌓이면 그 IP 전체가 막힌다. 급히 풀어야 할 때는 API 를 재시작한다.
 - 저장은 프로세스 메모리다. 서버를 재시작하면 모두 풀린다. 항목은 5만 개까지이고 넘치면 만료된 것을 먼저, 그다음 오래된 것부터 지운다.
 - 서버가 단일 프로세스(`--workers 1`)라는 전제다. `--workers` 를 늘리거나 서버를 2대 이상 두면 프로세스마다 횟수가 따로 쌓이므로 저장소부터 다시 설계한다.
-- 같은 이메일로 막을 수 있어 남이 내 계정을 15분 막을 수 있다. 결정 근거와 남은 노출은 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-06-login-rate-limit.md).
+- 같은 이메일로 막을 수 있어 남이 내 계정을 15분 막을 수 있다. #549 에서 (이메일, IP) 조합 키는 다시 버리고 재설정 안내로 완화하기로 했다. 결정 근거와 남은 노출은 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-06-login-rate-limit.md).
+
+## 가입과 카카오 로그인
+
+이메일을 인증해야 가입할 수 있고, 카카오로 들어온 사용자도 가입 화면에서 비밀번호를 정해 두 로그인을 모두 쓴다. 원본은 `app/api/auth.py`, `app/services/signup_codes.py`, `app/services/kakao_oauth.py`.
+
+| 경로 | 요청 | 응답 |
+|---|---|---|
+| `POST /api/v1/auth/signup/code` | `{email}` | 200 `{expires_in: 600, resend_after: 60}`. 503 `MAIL_UNAVAILABLE`, 409 `EMAIL_ALREADY_EXISTS`, 429 `SIGNUP_CODE_RATE_LIMITED` |
+| `POST /api/v1/auth/signup/code/confirm` | `{email, code}`(숫자 6자리) | 200 `{verification_token, expires_in: 1800}`. 400 `SIGNUP_CODE_INVALID` |
+| `POST /api/v1/auth/signup` | `{verification_token?, name, password, link_kakao?}` | 201 사용자 정보와 세션 쿠키, 대기 쿠키 삭제. 본문의 이메일은 읽지 않는다 |
+| `GET /api/v1/auth/kakao/start?next=` | 앱 안 경로 | 302 카카오 동의 화면. 설정 오류면 302 `/login?oauth=kakao&oauth_result=failed` |
+| `GET /api/v1/auth/kakao/callback` | 카카오가 부른다 | 항상 302 |
+| `GET /api/v1/auth/kakao/pending` | 대기 쿠키 | 200 `{email, nickname}`(없으면 null). 400 `KAKAO_LINK_EXPIRED` |
+
+**가입할 이메일**
+
+| `link_kakao` | 대기 쿠키 | 이메일 |
+|---|---|---|
+| false | 있어도 보지 않는다 | 증명 토큰의 이메일. 없으면 400 `SIGNUP_VERIFICATION_INVALID` |
+| true | 없거나 만료 | 400 `KAKAO_LINK_EXPIRED` |
+| true | 카카오가 인증한 이메일 있음 | 쿠키의 이메일. 증명 토큰은 무시한다 |
+| true | 이메일 없음 | 증명 토큰의 이메일 |
+
+겹치면 409 `EMAIL_ALREADY_EXISTS` 또는 409 `KAKAO_ALREADY_LINKED` 다.
+
+**callback 갈래** (위에서 아래로 먼저 맞는 것)
+
+| 조건 | 결과 |
+|---|---|
+| `error` 있음 | `access_denied` 는 `cancelled`, 나머지는 `failed`. 유효한 state 가 있을 때만 `next` 를 유지한다 |
+| state·nonce 불일치, 카카오 토큰·사용자 조회 실패 | `failed`, 원인은 로그에만 남긴다 |
+| `(kakao, id)` 계정 있음 | 세션, `/login?next=&oauth=kakao&oauth_result=success` |
+| 인증된 이메일의 계정 있음 | 비어 있으면 카카오를 잇고 세션과 `success`, 계정 이메일로 연결 알림을 보낸다. 다른 카카오에 이어져 있으면 `failed`, `oauth_reason=email_exists` |
+| 인증되지 않은 이메일의 계정 있음 | `failed`, `oauth_reason=email_exists` |
+| 나머지 | 대기 쿠키를 심고 `/signup?kakao=1&next=`. callback 은 사용자를 만들지 않는다 |
+
+- 코드: 6자리, 유효 10분, 코드당 5회, 재발송 60초, 시간당 5회. 전체 주소 합계는 시간당 20통이고 넘으면 429 `global` 이다. DB 에는 HMAC 만 두고 맞으면 코드만 만료시킨다. 행은 재발송 제한과 전체 상한 집계에 남고, 하루 지나면 다음 코드 요청이 지운다.
+- 대기 쿠키 `kakao_pending`: 서명, HttpOnly, Secure, SameSite=Lax, Path `/api/v1/auth`, 30분. 카카오 id, 인증된 이메일, 닉네임을 담고 주소에는 싣지 않는다. 서명이지 암호화가 아니므로 비밀 값을 넣지 않는다.
+- 카카오 이메일: `is_email_valid` 가 거짓이면 이메일이 없는 것으로 본다. `is_email_verified` 가 참일 때만 코드 인증을 생략한다.
+- 메일: 제목에 코드를 넣지 않고 재설정 메일과 같은 메일 전용 스레드로 보낸다. 보내는 이름은 `SMTP_FROM` 으로 정한다(`Manager's Manager <주소>`).
+
+**환경변수** (`.env.example` 참고)
+
+| 이름 | 값 |
+|---|---|
+| `KAKAO_REST_API_KEY` | 카카오 개발자 콘솔의 REST API 키 |
+| `KAKAO_CLIENT_SECRET` | 카카오 로그인 보안 설정의 Client Secret |
+| `KAKAO_REDIRECT_URI` | 콘솔에 등록한 값과 같은 callback. 로컬 `http://localhost:5173/api/v1/auth/kakao/callback`, 운영 `https://<서비스 주소>/api/v1/auth/kakao/callback` |
+| `OAUTH_STATE_SECRET` | Notion 연결과 같은 서명 키를 쓴다. 코드 해시 키도 여기서 파생한다 |
+
+SMTP 설정이 없으면 코드 요청이 503 이라 이메일로는 가입할 수 없다(운영 메일 설정은 아래 절).
 
 ## 비밀번호 재설정
 
@@ -477,7 +538,7 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 
 ### 운영 메일 설정
 
-`.env` 에 `SMTP_HOST`·`SMTP_USERNAME`·`SMTP_PASSWORD`·`APP_BASE_URL` 이 모두 있어야 켜진다(나머지는 [.env.example](.env.example)). 팀 Gmail 을 쓰는 경우:
+`.env` 에 `SMTP_HOST`·`SMTP_USERNAME`·`SMTP_PASSWORD`·`APP_BASE_URL` 이 모두 있어야 켜진다(나머지는 [.env.example](.env.example)). `APP_BASE_URL` 은 PM 글 DM 의 대화 링크에도 쓰이므로 메일을 쓰지 않아도 넣는다. 팀 Gmail 을 쓰는 경우:
 
 1. 팀 전용 Gmail 계정에 2단계 인증을 켠다.
 2. Google 계정 > 보안 > 앱 비밀번호에서 비밀번호를 만든다. 일반 비밀번호로는 SMTP 로그인이 안 된다.
@@ -488,7 +549,11 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 다른 SMTP 로 옮길 때
 
 ## 가입 이름 규칙
 
-`POST /api/v1/auth/signup` 의 `name` 은 앞뒤 공백을 지운 값으로 저장한다. 지운 뒤 비었거나, 보이지 않는 글자(형식 문자·결합 부호)만 있거나, 제어문자·줄 구분자·짝 없는 서로게이트·글자 방향 제어 문자가 있거나, 100자를 넘으면 400 `INVALID_REQUEST` 다. 이미 있는 계정의 이름은 검사하지 않는다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-06-signup-name-rule.md), 원본은 `app/schemas/auth.py` 의 `validate_name`.
+`POST /api/v1/auth/signup` 의 `name` 은 앞뒤 공백을 지운 값으로 저장한다. 지운 뒤 비었거나, 보이지 않는 글자(형식 문자·결합 부호)만 있거나, 제어문자·줄 구분자·짝 없는 서로게이트·글자 방향 제어 문자가 있거나, 100자를 넘으면 400 `INVALID_REQUEST` 다. 이미 있는 계정의 이름은 검사하지 않는다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-06-signup-name-rule.md), 원본은 `app/schemas/name.py` 의 `validate_name`(`NameStr`). 팀원 표시명도 같은 규칙을 쓴다(아래 [팀원 표시명 규칙](#팀원-표시명-규칙)).
+
+## 팀원 표시명 규칙
+
+`POST /api/v1/members` 와 `PATCH /api/v1/members/{member_id}` 의 `display_name` 은 [가입 이름 규칙](#가입-이름-규칙)과 같은 규칙을 따른다. 앞뒤 공백을 지운 값으로 저장하고, 규칙을 어기면 400 `INVALID_REQUEST` 이며 `details.fields[].loc` 에 `display_name` 이 들어간다. PATCH 에서 `display_name` 을 빼면 이름을 바꾸지 않고, `null` 을 보내면 400 이다. 이미 저장된 표시명은 검사하지 않는다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-08-member-display-name-rule.md), 규칙 원본은 `app/schemas/name.py` 의 `validate_name`(`NameStr`).
 
 ## 권한
 
@@ -534,10 +599,21 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 다른 SMTP 로 옮길 때
 | `GET /api/v1/workspaces/{workspace_id}/messages/unread-count` | 소속 팀원 | `{unread_count}`. 쓰기 없음 |
 | `POST /api/v1/workspaces/{workspace_id}/messages/threads/{thread_id}/read` | PM 또는 대화 주인 | 그 대화의 가장 늦은 메시지까지 읽음으로 옮긴다(뒤로 가지 않음). `{thread_id, unread_count: 0, total_unread_count, last_read_at}`. 다시 불러도 200, 메시지 없는 대화는 `last_read_at` null. 없음·다른 워크스페이스·(PM 이 보낸) 탈퇴 팀원 대화는 404 `MESSAGE_THREAD_NOT_FOUND`, 팀원이 남의 대화면 403 `FORBIDDEN` |
 
-- 대화 목록(`GET .../messages`)의 `threads[]` 와 대화 상세(`GET .../threads/{id}`)의 `thread` 에 `unread_count` 가 있다. 조회는 읽음을 바꾸지 않는다.
-- 도착 시각은 `coalesce(received_at, created_at)` 다. 늦게 들어온 디스코드 답장도 센다. 단 봇 메시지에 답했는지는 보낸 시각(`created_at`)으로 가른다. `awaiting_reply_since` 와 같은 기준이다.
-- 상대편: 자기 대화면 봇 메시지, 남의 대화(PM)면 대화 주인의 답장. 자기 대화에서 봇 메시지 뒤에 내가 답했으면 그 봇 메시지는 세지 않는다.
-- PM 마다 따로 센다. PM 자기 대화의 봇 메시지도 센다. 탈퇴한 팀원 대화와 보내기 전 묶음은 세지 않는다.
+- 대화 목록(`GET .../messages`)의 `threads[]`, 대화 상세(`GET .../threads/{id}`)의 `thread`, 대화 열기(`POST .../threads`) 응답에 `unread_count` 가 있다. 조회와 대화 열기는 읽음을 바꾸지 않는다.
+- 도착 시각은 `coalesce(received_at, created_at)` 다. 늦게 들어온 디스코드 답장도 센다. 단 상대편 메시지에 답했는지는 보낸 시각(`created_at`)으로 가른다. 봇 리마인드의 `awaiting_reply_since` 도 이 기준을 쓴다.
+- 상대편: 자기 대화면 봇·PM 메시지, 남의 대화(PM)면 대화 주인의 답장. 자기 대화에서 상대편 메시지 뒤에 내가 답했으면 그 메시지는 세지 않는다.
+- PM 마다 따로 센다. PM 자기 대화의 봇·다른 PM 메시지도 센다. 탈퇴한 팀원 대화와 보내기 전 묶음은 세지 않는다.
 - 읽은 위치가 없으면 그 사람이 들어온 시각이 기준이다. 배포 때 있던 메시지는 마이그레이션이 모두 읽음으로 채웠다.
-- 팀원을 PM 으로 올리면 그 순간까지 남의 대화가 읽음이 된다. 자기 대화의 봇 메시지는 그대로 센다.
+- 팀원을 PM 으로 올리면 그 순간까지 남의 대화가 읽음이 된다. 자기 대화의 봇·PM 메시지는 그대로 센다.
 - 종 알림(`notifications`)과는 별개다. 결정 근거는 [결정 기록](docs/plan/m6/basis-for-decision/2026-11-07-message-unread-count.md).
+
+## 답장 판단 재시도와 판단 창
+
+리마인드 답장 판단(`POST /bot/replies/claim`, `POST /bot/replies/{message_id}/judgment`)의 재시도 규칙이다(#548).
+
+- 리스는 3분(`JUDGE_LEASE`)이다. 그 안에 결과가 없으면 `attempt` 를 올려 다시 맡긴다.
+- 판단 창은 답장을 받은 뒤(PM 이 태스크를 고르면 고른 뒤) 10분(`JUDGE_WINDOW`)이다. 창이 지난 답장은 claim 이 더 맡기지 않고 `timed_out` 으로 닫은 뒤 PM 에게 `reply_unjudged` 알림을 한 번 보내고, 같은 claim 에서 같은 대화의 다음 답장을 준다. 그래서 한 차례에 같은 답장을 맡기는 것은 최대 4회다. 창은 받은 시각 기준이라 같은 대화의 앞 답장이 밀리면 더 적을 수 있다.
+- 스케줄러 틱도 같은 창으로 닫는다. 먼저 본 쪽이 닫고 알림은 한 번만 간다. 스케줄러가 꺼져 있어도 claim 이 상한을 지킨다.
+- 한 대화의 닫기가 실패하면(알림 오류 등) 그 대화만 건너뛰고 다른 대화의 답장은 준다. 실패한 답장은 다음 claim·틱에서 다시 닫는다.
+- 닫힌 답장에 늦게 온 결과는 200 으로 받아 기록만 한다. PM 이 고른 재판단은 앞 차례 `attempt` 와 상관없이 새 10분 창을 받는다.
+- 결정 근거는 [결정 기록](docs/plan/m6/basis-for-decision/2026-11-08-reply-judgment-attempt-cap.md)에 있다.

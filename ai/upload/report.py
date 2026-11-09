@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from capture.handoff import BeError
+from capture.meeting_purge import mark_deleted, upload_writer
 from capture.recorder import _iso, backoff_s, drop_local, manifest_path, utcnow
 from upload.assign import _is_gone
 from upload.intake import FAILED_STAGE, Progress, _cleanup, _dir, _due, _load, _save
@@ -152,6 +153,7 @@ def _pending(recordings_dir: Path, t: datetime):
     return fresh
 
 
+@upload_writer
 def report_one(recordings_dir: Path, *, client, now: Callable[[], datetime] = utcnow) -> Progress | None:
     """한 건을 한 번 진전시킨다. 할 일이 없으면 None. 예외는 올리지 않는다(실패는 기록하고 Progress.event 로 알린다).
 
@@ -162,6 +164,8 @@ def report_one(recordings_dir: Path, *, client, now: Callable[[], datetime] = ut
         return None
     d, rec, fresh = found
     mid = rec["meeting_id"]
+    if hasattr(client, 'meeting_epochs'):
+        client.meeting_epochs[mid] = int((rec.get('item') or {}).get('identity_epoch') or 0)
     if fresh:
         try:
             speakers = _prepare(recordings_dir, mid)
@@ -180,6 +184,9 @@ def report_one(recordings_dir: Path, *, client, now: Callable[[], datetime] = ut
     try:
         client.report_speakers(mid, r["speakers"])
     except BeError as e:
+        if e.code == "MEETING_DELETED":
+            mark_deleted(recordings_dir, {mid})
+            return _finish(d, rec, "ended", e.code)
         if e.code == "SPEAKERS_ALREADY_REPORTED":
             labels = e.details.get("labels")
             if isinstance(labels, list) and set(labels) == {s["label"] for s in r["speakers"]}:

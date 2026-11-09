@@ -25,6 +25,7 @@ def fail_meeting_if(
         update(Meeting)
         .where(
             Meeting.meeting_id == meeting_id,
+            Meeting.deleted_at.is_(None),
             Meeting.status.not_in([str(MeetingStatus.DONE), str(MeetingStatus.FAILED)]),
             *extra_where,
         )
