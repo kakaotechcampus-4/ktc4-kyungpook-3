@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { MESSAGE_BODY_MAX_LENGTH } from '@/entities/message'
 import type { BodySource, Bundle } from '@/entities/message'
+import { isKnownValue } from '@/shared/api/unknownValue'
 import { useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { Icon } from '@/shared/ui/icon'
@@ -31,6 +32,11 @@ const BODY_SOURCE_LABEL: Record<BodySource, string> = {
   pm: '직접 고친 문구',
   ai: 'AI 초안',
   rule: '기본 문구',
+}
+
+/** 문구가 어디서 왔는지. 모르는 출처는 다른 출처로 짐작하지 않는다 (#348) */
+function bodySourceLabel(source: Bundle['bodySource']): string {
+  return isKnownValue(source) ? BODY_SOURCE_LABEL[source] : '출처를 알 수 없는 문구'
 }
 
 export interface ReviewMessageCardProps {
@@ -117,7 +123,7 @@ export function ReviewMessageCard({
       </div>
       {editing ? null : (
         <div className={CARD_FOOT}>
-          <span>{BODY_SOURCE_LABEL[bundle.bodySource]} · 문구는 그대로 고칠 수 있어요</span>
+          <span>{bodySourceLabel(bundle.bodySource)} · 문구는 그대로 고칠 수 있어요</span>
           <LockedButton
             ref={editButtonRef}
             size="message-edit"

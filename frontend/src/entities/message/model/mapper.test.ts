@@ -15,14 +15,12 @@ import {
 
 const botDto = (patch: Partial<MessageDto> = {}): MessageDto => ({
   message_id: 'mg_01',
-  thread_id: 'th_01',
   sender: 'bot',
   body: '진행 상황 알려 주세요 🙂',
   created_at: '2026-09-16T09:00:00Z',
   reply_channel: null,
   dm_status: 'delivered',
   dm_failure_reason: null,
-  scheduled_at: '2026-09-16T09:00:00Z',
   author_member_id: null,
   author_name: null,
   ...patch,
@@ -34,7 +32,6 @@ const pmDto = (patch: Partial<MessageDto> = {}): MessageDto => ({
   sender: 'pm',
   body: '오늘 회의 전에 한 번 봐 주세요',
   dm_status: 'pending',
-  scheduled_at: null,
   author_member_id: 'mb_01',
   author_name: '김서연',
   ...patch,
@@ -47,21 +44,15 @@ const memberDto = (patch: Partial<MessageDto> = {}): MessageDto => ({
   body: '네',
   reply_channel: 'web',
   dm_status: null,
-  scheduled_at: null,
   ...patch,
 })
 
 const reminderDto = (patch: Partial<ReminderDto> = {}): ReminderDto => ({
   reminder_id: 'rm_01',
-  bundle_id: 'bd_01',
   task_id: 'tk_01',
   task_title: 'API 명세서',
   due_date: '2026-09-24',
   note: null,
-  status: 'scheduled',
-  kind: 'nudge',
-  origin: 'scheduler',
-  created_at: '2026-09-15T00:00:00Z',
   ...patch,
 })
 
@@ -225,8 +216,21 @@ it('#418 이전 서버처럼 요약·이유·근거 칸이 없으면 요약은 �
   ).toBe('지워진 태스크 외 1건')
 })
 
-it('승인한 묶음에 승인 시각이 없으면 던진다', () => {
-  expect(() => toBundle(bundleDto({ approved: true }))).toThrow(/승인 시각/)
+/** 스키마가 먼저 거르는 모양이다. 그래도 mapper 에 오면 다른 값으로 그리지 않고 읽지 못한 응답으로 끝낸다 (#348) */
+function thrown(run: () => unknown): unknown {
+  try {
+    run()
+  } catch (error) {
+    return error
+  }
+  throw new Error('did not throw')
+}
+
+it('승인한 묶음에 승인 시각이 없으면 읽지 못한 응답이다', () => {
+  expect(thrown(() => toBundle(bundleDto({ approved: true })))).toMatchObject({
+    code: 'INVALID_RESPONSE',
+    details: { entity: 'message', path: 'approved_at' },
+  })
 })
 
 it('대화 메시지는 보낸 쪽으로 갈린다 — 봇은 DM 상태, 팀원은 답장 경로를 갖는다', () => {
@@ -273,10 +277,16 @@ it('PM 메시지는 DM 상태와 작성자를 갖고, 작성자 칸이 비어 �
   })
 })
 
-it('보낸 쪽과 칸이 맞지 않으면 던진다', () => {
-  expect(() => toMessage(botDto({ dm_status: null }))).toThrow(/mg_01/)
-  expect(() => toMessage(pmDto({ dm_status: null }))).toThrow(/mg_03/)
-  expect(() => toMessage(memberDto({ reply_channel: null }))).toThrow(/mg_02/)
+it('보낸 쪽과 칸이 맞지 않으면 읽지 못한 응답이다', () => {
+  for (const [dto, path] of [
+    [botDto({ dm_status: null }), 'dm_status'],
+    [pmDto({ dm_status: null }), 'dm_status'],
+    [memberDto({ reply_channel: null }), 'reply_channel'],
+  ] as const)
+    expect(thrown(() => toMessage(dto))).toMatchObject({
+      code: 'INVALID_RESPONSE',
+      details: { path },
+    })
 })
 
 it('웹 답장 가능 여부는 세 가지다 — 칸이 없는 옛 응답은 어느 쪽으로도 단정하지 않는다', () => {
@@ -303,15 +313,17 @@ it('대화는 요약·메시지·예정 묶음이다 — 팀원의 bundles null 
   expect(member.upcoming).toEqual([])
 })
 
-it('만든 재촉은 리마인드 ID 와 그것이 든 예정 묶음이고, 묶음이 예정이 아니면 계약 위반으로 던진다', () => {
+it('만든 재촉은 리마인드 ID 와 그것이 든 예정 묶음이고, 묶음이 예정이 아니면 읽지 못한 응답이다', () => {
   const dto = bundleDto()
   const created = toCreatedReminder({ reminder: dto.reminders[0], bundle: dto })
   expect(created.bundle.summary).toBe('API 명세서 진행 상황 확인')
   expect(created.reminderId).toBe('rm_01')
   expect(created.bundle).toMatchObject({ id: 'bd_01', stage: 'awaitingApproval', draftVersion: 2 })
-  expect(() =>
-    toCreatedReminder({ reminder: dto.reminders[0], bundle: bundleDto({ status: 'cancelled' }) }),
-  ).toThrow('bd_01')
+  expect(
+    thrown(() =>
+      toCreatedReminder({ reminder: dto.reminders[0], bundle: bundleDto({ status: 'cancelled' }) }),
+    ),
+  ).toMatchObject({ code: 'INVALID_RESPONSE', details: { path: 'bundle.status' } })
 })
 
 describe('toReplyAttribution', () => {
@@ -324,7 +336,6 @@ describe('toReplyAttribution', () => {
           { task_id: 'tk_02', title: '회원가입 화면' },
           { task_id: 'tk_05', title: '회의록 요약 검수' },
         ],
-        task: null,
       }),
     ).toEqual({
       messageId: 'mg_05',
@@ -338,12 +349,69 @@ describe('toReplyAttribution', () => {
       toReplyAttribution({
         message_id: 'mg_05',
         status: 'resolved',
-        candidates: null,
         task: { task_id: 'tk_02', title: '회원가입 화면' },
       }),
     ).toEqual({ messageId: 'mg_05', kind: 'picked', task: { id: 'tk_02', title: '회원가입 화면' } })
+    expect(toReplyAttribution({ message_id: 'mg_05', status: 'resolved', task: null })).toEqual({
+      messageId: 'mg_05',
+      kind: 'picked',
+      task: null,
+    })
+  })
+})
+
+describe('모르는 값 (#348)', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('문구 출처는 받은 글자를 남긴다', () => {
+    expect(toBundle(bundleDto({ body_source: 'template' }))?.bodySource).toEqual({
+      unknown: 'template',
+    })
+    expect(console.warn).toHaveBeenCalledWith('Unknown bundle body source: template')
+  })
+
+  it('초안 상태를 모르면 작성 중으로 본다 — 문구가 바뀔 수 있다고 보고 승인을 늦춘다', () => {
+    expect(toBundle(bundleDto({ draft_status: 'queued' }))?.drafting).toBe(true)
+    expect(console.warn).toHaveBeenCalledWith('Unknown bundle draft status: queued')
+  })
+
+  it('DM 실패 이유를 모르면 이유를 알 수 없음이고, 실패라는 사실은 남는다', () => {
     expect(
-      toReplyAttribution({ message_id: 'mg_05', status: 'resolved', candidates: null, task: null }),
-    ).toEqual({ messageId: 'mg_05', kind: 'picked', task: null })
+      toMessage(botDto({ dm_status: 'failed', dm_failure_reason: 'rate_limited' })),
+    ).toMatchObject({ dm: { status: 'failed', reason: 'unknown' } })
+  })
+
+  it('답장 경로를 모르면 웹에서 답했다고 하지 않는다', () => {
+    expect(toMessage(memberDto({ reply_channel: 'slack' }))).toMatchObject({
+      replyChannel: 'discord',
+    })
+  })
+
+  it('근거 종류를 모르면 근거 없음이다 — 답장·태스크 변경으로 짐작해 잘못된 곳으로 보내지 않는다', () => {
+    const tasks = toBundle(
+      bundleDto({
+        reminders: [
+          reminderDto({
+            evidence: { kind: 'meeting', at: '2026-09-16T00:00:00Z', message_id: 'mg_02' },
+          }),
+        ],
+      }),
+    )?.tasks
+    expect(tasks?.[0]?.evidence).toBeNull()
+    expect(console.warn).toHaveBeenCalledWith('Unknown reminder evidence kind: meeting')
+  })
+
+  it('작성자 칸이 빠진 옛 PM 메시지는 작성자 없음이다 (#519)', () => {
+    const legacy: Partial<MessageDto> = pmDto()
+    delete legacy.author_member_id
+    delete legacy.author_name
+    expect(toMessage(legacy as MessageDto)).toMatchObject({
+      sender: 'pm',
+      authorMemberId: null,
+      authorName: null,
+    })
   })
 })
