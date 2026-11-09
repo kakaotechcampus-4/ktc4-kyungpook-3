@@ -175,3 +175,63 @@ def test_confirm_invalidated_token_keeps_password(mdb):
     assert exc.value.details["reason"] == "invalid"
     mdb.refresh(user)
     assert verify_password("old-pass-1", user.password_hash)
+
+
+def _fill_global(db, count=svc.GLOBAL_HOURLY_LIMIT, start=NOW):
+    users = []
+    for i in range(count):
+        users.append(_user(db, email=f"user{i}@example.com"))
+        assert _request(db, start + timedelta(seconds=i), email=f"user{i}@example.com") is not None
+    return users
+
+
+def test_request_global_hourly_cap(mdb):
+    _fill_global(mdb)
+    _user(mdb, email="late@example.com")
+    assert _request(mdb, NOW + timedelta(seconds=10), email="late@example.com") is None
+    assert len(mdb.scalars(select(PasswordResetToken)).all()) == svc.GLOBAL_HOURLY_LIMIT
+
+
+def test_global_cap_keeps_previous_link(mdb):
+    users = _fill_global(mdb)
+    assert _request(mdb, NOW + timedelta(seconds=120), email=users[0].email) is None
+    row = mdb.scalars(select(PasswordResetToken).where(PasswordResetToken.user_id == users[0].user_id)).one()
+    assert row.invalidated_at is None
+    assert len(mdb.scalars(select(PasswordResetToken)).all()) == svc.GLOBAL_HOURLY_LIMIT
+
+
+def test_global_cap_window_slides(mdb):
+    _fill_global(mdb)
+    _user(mdb, email="late@example.com")
+    assert _request(mdb, NOW + timedelta(seconds=3599), email="late@example.com") is None
+    assert _request(mdb, NOW + timedelta(hours=1), email="late@example.com") is not None
+
+
+def test_global_cap_counts_invalidated_and_used_rows(mdb):
+    users = _fill_global(mdb, count=svc.GLOBAL_HOURLY_LIMIT - 2)
+    # 한 사용자가 재발급해 앞 토큰을 무효화하고, 다른 토큰은 사용 처리해도 행은 모두 센다.
+    reissued = _request(mdb, NOW + timedelta(seconds=100), email=users[0].email)
+    assert reissued is not None
+    svc.confirm_reset(mdb, _raw(reissued), "new-pass-1", now=NOW + timedelta(seconds=101))
+    mdb.commit()
+    flags = mdb.execute(select(PasswordResetToken.invalidated_at, PasswordResetToken.used_at)).all()
+    assert len(flags) == svc.GLOBAL_HOURLY_LIMIT - 1
+    assert any(inv is not None for inv, _ in flags) and any(used is not None for _, used in flags)
+    assert _request(mdb, NOW + timedelta(seconds=102), email=users[1].email) is not None
+    assert _request(mdb, NOW + timedelta(seconds=200), email=users[2].email) is None
+
+
+def test_unknown_email_does_not_consume_global_budget(mdb):
+    for i in range(10):
+        assert _request(mdb, NOW + timedelta(seconds=i), email=f"ghost{i}@example.com") is None
+    _fill_global(mdb, start=NOW + timedelta(seconds=20))
+    assert len(mdb.scalars(select(PasswordResetToken)).all()) == svc.GLOBAL_HOURLY_LIMIT
+
+
+def test_global_cap_blocked_logs_reason_without_email(mdb, caplog):
+    _fill_global(mdb)
+    _user(mdb, email="late@example.com")
+    with caplog.at_level("WARNING"):
+        assert _request(mdb, NOW + timedelta(seconds=10), email="late@example.com") is None
+    assert "reason=global" in caplog.text
+    assert "late@example.com" not in caplog.text

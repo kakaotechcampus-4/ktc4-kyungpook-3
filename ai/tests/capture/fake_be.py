@@ -9,6 +9,7 @@ requests.Session 자리에 넣는다. 부른 순서를 calls 에 남기고 회�
 from __future__ import annotations
 
 import math
+import secrets
 
 
 class _Resp:
@@ -121,6 +122,7 @@ class FakeBe:
         extraction_id = None if blocked == "not_done" else extraction_id or f"e-{meeting_id}"
         self.summaries[meeting_id] = {
             "meeting_id": meeting_id, "extraction_id": extraction_id, "workspace_id": workspace_id,
+            "identity_epoch": 0, "claim_token": None,
             "requested": requested, "attempts": attempts, "leased": leased, "saved": saved, "blocked": blocked,
             "chars": chars, "title": f"{meeting_id} 회의", "started_at": "2026-11-05T05:00:00Z",
             "lines": [{"seq": 1, "at_ms": 125000, "speaker": "민수", "text": "초대는 이메일로만 하죠"}],
@@ -138,6 +140,12 @@ class FakeBe:
         u["speakers"] = normalize_speakers([{"label": l, "total_sec": 1, "samples": []} for l in labels])
         u["reported"] = True
         self.meetings[meeting_id]["status"] = "awaiting_speakers"
+
+    def expire(self, meeting_id: str) -> None:
+        """테스트 준비용: BE 의 업로드 sweeper 가 기한이 지난 회의를 닫은 것을 흉내 낸다(awaiting_speakers·processing -> failed)."""
+        m = self.meetings[meeting_id]
+        assert m["status"] in ("awaiting_speakers", "processing"), f"기한으로 닫히는 것은 지정을 기다리거나 처리 중인 회의다(지금 {m['status']})"
+        m["status"] = "failed"
 
     def assign(self, meeting_id: str, mapping: dict) -> None:
         """PM 이 화자 지정을 끝낸 것을 흉내 낸다(assign_speakers). 엄격하다: awaiting_speakers 이고 지정 키 집합이
@@ -189,8 +197,9 @@ class FakeBe:
             if method == "POST":
                 return self._summary_requests(path.split("/")[2], body)
             if method == "GET":
-                return self._summary_input(path.split("/")[2])
-            return self._put_summary(path.split("/")[2], body)
+                return self._summary_input(path.split("/")[2], headers or {})
+            if method == "PUT":
+                return self._put_summary(path.split("/")[2], body, headers or {})
         if (method == "POST" and path in ("/meetings", "/extractions")) or method == "PATCH":
             if (headers or {}).get("X-Service-Token") != self.service_token:   # 봇 쓰기 경로의 토큰 검사(#179)
                 return _err(401, "UNAUTHENTICATED")
@@ -335,31 +344,37 @@ class FakeBe:
             if eligible and (only is None or row["extraction_id"] in only):
                 row["attempts"] += 1
                 row["leased"] = True
+                row["claim_token"] = secrets.token_urlsafe(32)
                 return _ok(200, {"extraction_id": row["extraction_id"], "meeting_id": row["meeting_id"],
-                                 "workspace_id": row["workspace_id"], "attempt": row["attempts"]})
+                                 "workspace_id": row["workspace_id"], "attempt": row["attempts"],
+                                 "claim_token": row["claim_token"], "identity_epoch": row["identity_epoch"]})
         return _ok(200, None)
 
     def _summary_row(self, extraction_id: str) -> dict | None:
         return next((r for r in self.summaries.values() if r["extraction_id"] == extraction_id), None)
 
-    def _summary_input(self, extraction_id: str):
+    def _summary_input(self, extraction_id: str, headers: dict):
         row = self._summary_row(extraction_id)
         if row is None:
             return _err(404, "EXTRACTION_NOT_FOUND", {"extraction_id": extraction_id})
+        if "X-Privacy-Epoch" in headers and headers["X-Privacy-Epoch"] != str(row["identity_epoch"]):
+            return _err(409, "PRIVACY_VERSION_CHANGED")
         keys = ("extraction_id", "meeting_id", "workspace_id", "title", "started_at", "lines", "items", "topics",
-                "decisions")
+                "decisions", "identity_epoch")
         return _ok(200, {k: row[k] for k in keys})
 
-    def _put_summary(self, extraction_id: str, body: dict):
+    def _put_summary(self, extraction_id: str, body: dict, headers: dict):
         row = self._summary_row(extraction_id)
         if row is None:
             return _err(404, "EXTRACTION_NOT_FOUND", {"extraction_id": extraction_id})
         if self.summary_put_fail:
             status, code = self.summary_put_fail
             return _err(status, code)
+        if headers.get("X-Privacy-Epoch") != str(row["identity_epoch"]):
+            return _err(409, "PRIVACY_VERSION_CHANGED")
         if _summary_problems(body):                  # SummaryWriteRequest 가 받지 않는 본문
             return _err(422, "VALIDATION_ERROR", {"problems": _summary_problems(body)})
-        if not row["requested"]:
+        if not row["requested"] or not row["leased"] or body.get("claim_token") != row["claim_token"]:
             return _ok(200, {"extraction_id": extraction_id, "meeting_id": row["meeting_id"], "applied": False,
                              "topic_count": 0, "decision_count": 0})
         row.update(saved=body, requested=False, attempts=0, leased=False)
@@ -391,6 +406,8 @@ class FakeBe:
     def _summary_state(row: dict, force: bool) -> str:
         if row["blocked"]:
             return row["blocked"]
+        if row["requested"] and row["leased"]:
+            return "queued"
         if force:
             return "requested"
         if row["requested"]:

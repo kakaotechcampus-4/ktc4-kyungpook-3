@@ -18,6 +18,7 @@ function meeting(overrides: Partial<Meeting> = {}): Meeting {
     endedAt: null,
     extractionId: null,
     failedStage: null,
+    deletionAvailable: false,
     progress: { audioMerged: true, transcribed: false, extracted: false },
     ...overrides,
   }

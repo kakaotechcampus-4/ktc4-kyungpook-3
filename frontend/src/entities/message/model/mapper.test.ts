@@ -23,6 +23,20 @@ const botDto = (patch: Partial<MessageDto> = {}): MessageDto => ({
   dm_status: 'delivered',
   dm_failure_reason: null,
   scheduled_at: '2026-09-16T09:00:00Z',
+  author_member_id: null,
+  author_name: null,
+  ...patch,
+})
+
+const pmDto = (patch: Partial<MessageDto> = {}): MessageDto => ({
+  ...botDto(),
+  message_id: 'mg_03',
+  sender: 'pm',
+  body: '오늘 회의 전에 한 번 봐 주세요',
+  dm_status: 'pending',
+  scheduled_at: null,
+  author_member_id: 'mb_01',
+  author_name: '김서연',
   ...patch,
 })
 
@@ -83,9 +97,12 @@ const summaryDto: ThreadSummaryDto = {
     sender: 'bot',
     body: '진행 상황 알려 주세요 🙂',
     created_at: '2026-09-16T09:00:00Z',
+    author_member_id: null,
+    author_name: null,
   },
   awaiting_reply_since: '2026-09-16T09:00:00Z',
   dm_failed: true,
+  web_reply_available: true,
 }
 
 it('목록은 bundles 로 보는 사람을 가른다 — PM 은 묶음과 대화, 팀원은 대화만이다', () => {
@@ -101,9 +118,12 @@ it('목록은 bundles 로 보는 사람을 가른다 — PM 은 묶음과 대화
         sender: 'bot',
         body: '진행 상황 알려 주세요 🙂',
         createdAt: '2026-09-16T09:00:00Z',
+        authorMemberId: null,
+        authorName: null,
       },
       awaitingReplySince: '2026-09-16T09:00:00Z',
       dmFailed: true,
+      webReply: 'available',
     },
   ])
   expect(pm.viewer === 'pm' && pm.bundles.map(({ id }) => id)).toEqual(['bd_01'])
@@ -233,9 +253,40 @@ it('대화 메시지는 보낸 쪽으로 갈린다 — 봇은 DM 상태, 팀원�
   })
 })
 
+it('PM 메시지는 DM 상태와 작성자를 갖고, 작성자 칸이 비어 와도 메시지는 읽는다', () => {
+  expect(toMessage(pmDto())).toEqual({
+    sender: 'pm',
+    id: 'mg_03',
+    body: '오늘 회의 전에 한 번 봐 주세요',
+    createdAt: '2026-09-16T09:00:00Z',
+    dm: { status: 'pending' },
+    authorMemberId: 'mb_01',
+    authorName: '김서연',
+  })
+  expect(
+    toMessage(pmDto({ dm_status: 'failed', dm_failure_reason: 'discord_not_linked' })),
+  ).toMatchObject({ dm: { status: 'failed', reason: 'discord_not_linked' } })
+  expect(toMessage(pmDto({ author_member_id: null, author_name: null }))).toMatchObject({
+    sender: 'pm',
+    authorMemberId: null,
+    authorName: null,
+  })
+})
+
 it('보낸 쪽과 칸이 맞지 않으면 던진다', () => {
   expect(() => toMessage(botDto({ dm_status: null }))).toThrow(/mg_01/)
+  expect(() => toMessage(pmDto({ dm_status: null }))).toThrow(/mg_03/)
   expect(() => toMessage(memberDto({ reply_channel: null }))).toThrow(/mg_02/)
+})
+
+it('웹 답장 가능 여부는 세 가지다 — 칸이 없는 옛 응답은 어느 쪽으로도 단정하지 않는다', () => {
+  const webReplyOf = (patch: Partial<ThreadSummaryDto>) =>
+    toMessageInbox({ threads: [{ ...summaryDto, ...patch }], bundles: null }).threads[0].webReply
+  expect(webReplyOf({ web_reply_available: true })).toBe('available')
+  expect(webReplyOf({ web_reply_available: false })).toBe('unavailable')
+  const legacy = { ...summaryDto }
+  delete legacy.web_reply_available
+  expect(toMessageInbox({ threads: [legacy], bundles: null }).threads[0].webReply).toBe('unknown')
 })
 
 it('대화는 요약·메시지·예정 묶음이다 — 팀원의 bundles null 은 빈 예정이다', () => {

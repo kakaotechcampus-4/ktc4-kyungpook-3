@@ -293,6 +293,8 @@ class SummaryClaim(_Base):
     meeting_id: str
     workspace_id: str
     attempt: int
+    claim_token: str
+    identity_epoch: int
 
 
 @dataclass(frozen=True)
@@ -340,6 +342,7 @@ class SummaryInput(_Base):
     items: list[SummaryItem]
     topics: list[SummaryTopic]
     decisions: list[SummaryPriorDecision]
+    identity_epoch: int
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "SummaryInput":

@@ -47,6 +47,8 @@ def _meeting(db, ws, *, started_at=T0, title="정기회의", items=0):
 
 def _save(db, extraction, topics=(), **fields):
     body = {"model_name": "m", "overview": "핵심", "key_points": ["하나"], "topics": list(topics), **fields}
+    claim = summary.claim_next(db, only=[extraction.extraction_id])
+    body["claim_token"] = claim.claim_token
     result = summary.save_summary(db, extraction.extraction_id, SummaryWriteRequest(**body))
     db.commit()
     return result
@@ -390,17 +392,22 @@ def test_two_meetings_creating_one_new_topic_at_once_share_it(mdb, mseed):
     second_meeting, second, _ = _meeting(mdb, ws)
     first_id, second_id = first.extraction_id, second.extraction_id
     Session = sessionmaker(bind=mdb.get_bind(), autoflush=False)
-    payload = SummaryWriteRequest(model_name="m", overview="핵심", key_points=[], topics=[{"name": "새 주제"}])
+    second_claim = summary.claim_next(mdb, only=[second_id])
+    first_claim = summary.claim_next(mdb, only=[first_id])
+    mdb.commit()
+    payload = SummaryWriteRequest(claim_token=first_claim.claim_token, model_name="m", overview="핵심",
+                                  key_points=[], topics=[{"name": "새 주제"}])
+    other_payload = payload.model_copy(update={"claim_token": second_claim.claim_token})
     holder, other = Session(), Session()
     outcome = []
 
     summary.save_summary(holder, first_id, payload)
 
-    def blocked_on_the_unique_index():
-        outcome.append(summary.save_summary(other, second_id, payload))
+    def blocked_on_workspace():
+        outcome.append(summary.save_summary(other, second_id, other_payload))
         other.commit()
 
-    thread = threading.Thread(target=blocked_on_the_unique_index)
+    thread = threading.Thread(target=blocked_on_workspace)
     thread.start()
     time.sleep(0.5)
     holder.commit()
@@ -427,6 +434,8 @@ def test_golden_put_body_is_accepted_over_http(mdb, mseed):
     golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
     _, extraction, _ = _meeting(mdb, mseed["ws"])
 
+    golden["claim_token"] = summary.claim_next(mdb, only=[extraction.extraction_id]).claim_token
+    mdb.commit()
     r = TestClient(app, base_url="https://testserver").put(
         f"/api/v1/extractions/{extraction.extraction_id}/summary", json=golden, headers=H,
     )

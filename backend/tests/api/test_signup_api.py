@@ -1,0 +1,293 @@
+"""인증된 상태로만 가입한다(#427). 본문의 이메일은 읽지 않고, 카카오 연결은 link_kakao 로만 한다."""
+import re
+import threading
+import time
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import sessionmaker
+
+from app.core.database import get_db
+from app.main import app
+from app.models import Session as SessionModel, User
+from app.services import kakao_oauth, mailer, oauth_state, signup_codes
+from app.services.kakao_oauth import KakaoIdentity
+from app.services.passwords import verify_password
+from tests.api.conftest import TEST_DATABASE_URL
+
+EMAIL = "new@example.com"
+PW = "pw-123456"
+SIGNUP = "/api/v1/auth/signup"
+
+
+class _InlineExecutor:
+    def submit(self, fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+
+@pytest.fixture(autouse=True)
+def env(monkeypatch):
+    monkeypatch.setenv("OAUTH_STATE_SECRET", "k" * 40)
+
+
+@pytest.fixture
+def client():
+    return TestClient(app, base_url="https://testserver")
+
+
+def _proof(email=EMAIL, ttl=60):
+    return oauth_state.seal(signup_codes.PROOF_KIND, ttl, {"m": email})
+
+
+def _set_pending(client, identity):
+    client.cookies.set(kakao_oauth.PENDING_COOKIE, kakao_oauth.seal_pending(identity))
+
+
+def _signup(client, **body):
+    return client.post(SIGNUP, json={"name": "새사람", "password": PW, **body})
+
+
+def _users(db):
+    db.expire_all()
+    return db.scalars(select(User)).all()
+
+
+def _error(res):
+    return res.status_code, res.json()["error"]["code"]
+
+
+VERIFIED = KakaoIdentity("77", "kim@example.com", True, "동우")
+NO_EMAIL = KakaoIdentity("77", None, False, "동우")
+
+
+def test_full_flow_from_code_to_account(mdb, client, monkeypatch):
+    box = []
+    monkeypatch.setattr(mailer, "_executor", _InlineExecutor())
+    monkeypatch.setattr(mailer, "send_mail", lambda to, subject, text, html=None: box.append(text))
+    for key in ("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "APP_BASE_URL"):
+        monkeypatch.setenv(key, "x")
+
+    client.post(f"{SIGNUP}/code", json={"email": EMAIL})
+    code = re.search(r"^(\d{6})$", box[0], re.M).group(1)
+    token = client.post(f"{SIGNUP}/code/confirm", json={"email": EMAIL, "code": code}).json()["data"]
+    res = _signup(client, verification_token=token["verification_token"])
+
+    assert res.status_code == 201, res.text
+    assert res.json()["data"]["user"]["email"] == EMAIL
+    assert client.get("/api/v1/auth/me").status_code == 200
+    [user] = _users(mdb)
+    assert (user.provider, user.provider_id) == ("local", None)
+    assert verify_password(PW, user.password_hash)
+
+
+def test_signup_without_a_code_is_refused(mdb, client):
+    res = client.post(SIGNUP, json={"email": EMAIL, "name": "x", "password": PW})
+
+    assert _error(res) == (400, "SIGNUP_VERIFICATION_INVALID")
+    assert _users(mdb) == []
+
+
+def test_email_in_the_body_is_never_read(mdb, client):
+    """이 이메일을 그대로 믿던 것이 팀원 초대를 가로채는 구멍이었다."""
+    res = _signup(client, verification_token=_proof("attacker@example.com"), email="victim@example.com")
+
+    assert res.status_code == 201, res.text
+    assert [u.email for u in _users(mdb)] == ["attacker@example.com"]
+
+
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda: "garbage",
+        lambda: "",
+        lambda: oauth_state.seal(signup_codes.PROOF_KIND, -1, {"m": EMAIL}),
+        lambda: oauth_state.seal("kakao_login", 60, {"m": EMAIL, "p": "/", "n": "x"}),
+        lambda: kakao_oauth.seal_pending(VERIFIED),
+    ],
+    ids=["garbage", "empty", "expired", "login_state", "pending_token"],
+)
+def test_unusable_token_is_refused(mdb, client, make):
+    assert _error(_signup(client, verification_token=make())) == (400, "SIGNUP_VERIFICATION_INVALID")
+    assert _users(mdb) == []
+
+
+def test_registered_email_is_409_even_in_another_case(mdb, client):
+    mdb.add(User(email="New@example.com", name="old", provider="local"))
+    mdb.commit()
+
+    assert _error(_signup(client, verification_token=_proof())) == (409, "EMAIL_ALREADY_EXISTS")
+
+
+def test_token_replay_is_409(mdb, client):
+    proof = _proof()
+    assert _signup(client, verification_token=proof).status_code == 201
+
+    assert _error(_signup(TestClient(app, base_url="https://testserver"), verification_token=proof)) == (
+        409,
+        "EMAIL_ALREADY_EXISTS",
+    )
+
+
+def test_link_without_a_cookie_is_refused_rather_than_creating_an_unlinked_account(mdb, client):
+    assert _error(_signup(client, verification_token=_proof(), link_kakao=True)) == (400, "KAKAO_LINK_EXPIRED")
+    assert _users(mdb) == []
+
+
+def test_link_with_an_expired_cookie_is_refused(mdb, client):
+    client.cookies.set(kakao_oauth.PENDING_COOKIE, kakao_oauth.seal_pending(NO_EMAIL, now=time.time() - 1800))
+
+    assert _error(_signup(client, verification_token=_proof(), link_kakao=True)) == (400, "KAKAO_LINK_EXPIRED")
+
+
+def test_link_with_a_proof_in_the_cookie_slot_is_refused(mdb, client):
+    client.cookies.set(kakao_oauth.PENDING_COOKIE, _proof())
+
+    assert _error(_signup(client, verification_token=_proof(), link_kakao=True)) == (400, "KAKAO_LINK_EXPIRED")
+
+
+def test_verified_kakao_email_needs_no_code_and_beats_any_token(mdb, client):
+    _set_pending(client, VERIFIED)
+
+    res = _signup(client, verification_token=_proof("other@example.com"), link_kakao=True)
+
+    assert res.status_code == 201, res.text
+    [user] = _users(mdb)
+    assert (user.email, user.provider, user.provider_id) == ("kim@example.com", "kakao", "77")
+
+
+def test_kakao_without_email_binds_to_the_verified_email(mdb, client):
+    _set_pending(client, NO_EMAIL)
+
+    res = _signup(client, verification_token=_proof(), link_kakao=True)
+
+    assert res.status_code == 201, res.text
+    [user] = _users(mdb)
+    assert (user.email, user.provider, user.provider_id) == (EMAIL, "kakao", "77")
+    assert user.password_hash
+
+
+def test_kakao_without_email_still_needs_a_code(mdb, client):
+    _set_pending(client, NO_EMAIL)
+
+    assert _error(_signup(client, link_kakao=True)) == (400, "SIGNUP_VERIFICATION_INVALID")
+    assert _users(mdb) == []
+
+
+def test_unverified_kakao_email_is_never_trusted(mdb, client):
+    _set_pending(client, KakaoIdentity("77", "victim@example.com", False, None))
+
+    assert _error(_signup(client, link_kakao=True)) == (400, "SIGNUP_VERIFICATION_INVALID")
+    assert _users(mdb) == []
+
+
+def test_link_false_never_binds_even_with_a_cookie(mdb, client):
+    """다른 사람이 같은 브라우저로 가입해도 앞 사람의 카카오가 그 계정에 묶이면 안 된다."""
+    _set_pending(client, VERIFIED)
+
+    res = _signup(client, verification_token=_proof())
+
+    assert res.status_code == 201, res.text
+    [user] = _users(mdb)
+    assert (user.email, user.provider, user.provider_id) == (EMAIL, "local", None)
+
+
+def test_link_false_does_not_borrow_the_cookie_email(mdb, client):
+    _set_pending(client, VERIFIED)
+
+    assert _error(_signup(client)) == (400, "SIGNUP_VERIFICATION_INVALID")
+    assert _users(mdb) == []
+
+
+@pytest.mark.parametrize("link", [True, False])
+def test_success_clears_the_pending_cookie_on_its_own_path(mdb, client, link):
+    _set_pending(client, NO_EMAIL)
+
+    res = _signup(client, verification_token=_proof(), link_kakao=link)
+
+    cookies = res.headers.get_list("set-cookie")
+    [cleared] = [c for c in cookies if c.startswith(f"{kakao_oauth.PENDING_COOKIE}=")]
+    assert "Max-Age=0" in cleared
+    assert "Path=/api/v1/auth" in cleared
+    assert "Secure" in cleared
+    assert any(c.startswith("session_token=") for c in cookies)
+
+
+def test_kakao_email_taken_since_the_cookie_was_set_is_409(mdb, client):
+    mdb.add(User(email="kim@example.com", name="old", provider="local"))
+    mdb.commit()
+    _set_pending(client, VERIFIED)
+
+    assert _error(_signup(client, link_kakao=True)) == (409, "EMAIL_ALREADY_EXISTS")
+
+
+def test_kakao_id_bound_to_another_account_is_409(mdb, client):
+    mdb.add(User(email="first@example.com", name="old", provider="kakao", provider_id="77"))
+    mdb.commit()
+    _set_pending(client, NO_EMAIL)
+
+    assert _error(_signup(client, verification_token=_proof(), link_kakao=True)) == (409, "KAKAO_ALREADY_LINKED")
+
+
+def test_failed_signup_keeps_the_pending_cookie_and_makes_no_session(mdb, client):
+    _set_pending(client, NO_EMAIL)
+
+    res = _signup(client, link_kakao=True)
+
+    assert res.headers.get_list("set-cookie") == []
+    assert mdb.scalar(select(SessionModel.session_id)) is None
+
+
+pg_only = pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL(PostgreSQL)이 없습니다.")
+
+
+def _race(mdb, bodies, cookie=None):
+    """요청마다 세션을 새로 열어 둘을 겹친다. 비밀번호 해시가 느려 둘 다 사전 조회를 지나 insert 에서 부딪힌다."""
+    make = sessionmaker(bind=mdb.get_bind(), autoflush=False)
+
+    def per_request():
+        with make() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = per_request
+    start = threading.Barrier(len(bodies))
+    results = [None] * len(bodies)
+
+    def run(i, body):
+        client = TestClient(app, base_url="https://testserver")
+        if cookie:
+            client.cookies.set(kakao_oauth.PENDING_COOKIE, cookie)
+        start.wait()
+        results[i] = client.post(SIGNUP, json={"name": "새사람", "password": PW, **body})
+
+    threads = [threading.Thread(target=run, args=(i, b)) for i, b in enumerate(bodies)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    mdb.rollback()
+    return sorted(r.status_code for r in results), results
+
+
+@pg_only
+@pytest.mark.parametrize("mdb", ["postgresql"], indirect=True)
+def test_double_submit_makes_one_account(mdb):
+    proof = _proof()
+
+    codes, results = _race(mdb, [{"verification_token": proof}] * 2)
+
+    assert codes == [201, 409]
+    assert {r.json()["error"]["code"] for r in results if r.status_code == 409} == {"EMAIL_ALREADY_EXISTS"}
+    assert len(_users(mdb)) == 1
+
+
+@pg_only
+@pytest.mark.parametrize("mdb", ["postgresql"], indirect=True)
+def test_one_kakao_cannot_bind_two_new_accounts(mdb):
+    bodies = [{"verification_token": _proof(e), "link_kakao": True} for e in ("a@example.com", "b@example.com")]
+
+    codes, results = _race(mdb, bodies, kakao_oauth.seal_pending(NO_EMAIL))
+
+    assert codes == [201, 409]
+    assert {r.json()["error"]["code"] for r in results if r.status_code == 409} == {"KAKAO_ALREADY_LINKED"}
+    assert len(_users(mdb)) == 1

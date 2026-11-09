@@ -769,6 +769,55 @@ def test_save_alias_learns_from_merged_assignee_item(client, pm_client, db, seed
     assert _learned(db) == [(seed["leader"].member_id, "화은")]
 
 
+def _detail_of(pm_client, card_id: str) -> dict:
+    r = pm_client.get(f"/api/v1/approvals/{card_id}")
+    assert r.status_code == 200, r.text
+    return r.json()["data"]
+
+
+def test_assignee_merge_then_stale_version_save_alias_is_409_without_alias(client, pm_client, db, seed):
+    """카드를 본 뒤 담당자 항목이 합쳐지면, 옛 버전으로 별칭 저장을 눌러도 막히고 별칭이 남지 않는다."""
+    _hold_item(client, seed, raw="하은")
+    card = _approvals(db, "task_create")[0]
+    stale = _detail_of(pm_client, card.approval_id)["payload_version"]
+    r = _post_in_new_meeting(client, db, seed, [_merge(card.approval_id, assignee_raw="화은이가")])
+    assert r.status_code == 201, r.text
+    current = _detail_of(pm_client, card.approval_id)["payload_version"]
+    assert current != stale
+    before = len(_aliases(db))
+
+    resp = pm_client.patch(f"/api/v1/approvals/{card.approval_id}", json={
+        "status": "approved", "save_alias": True, "payload_version": stale,
+        "task_overrides": {"assignee_member_id": seed["leader"].member_id},
+    })
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["error"]["code"] == "APPROVAL_CHANGED"
+    assert resp.json()["error"]["details"] == {"approval_id": card.approval_id, "payload_version": current}
+    db.expire_all()
+    assert len(_aliases(db)) == before
+    assert _learned(db) == []
+    assert db.get(ApprovalRequest, card.approval_id).status == "pending"
+
+
+def test_current_version_save_alias_saves_shown_alias_text(client, pm_client, db, seed):
+    """새 버전으로 별칭 저장을 누르면, 그 버전 상세가 보여 준 alias_text 가 그대로 저장된다."""
+    _hold_item(client, seed, raw="하은")
+    card = _approvals(db, "task_create")[0]
+    r = _post_in_new_meeting(client, db, seed, [_merge(card.approval_id, assignee_raw="화은이가")])
+    assert r.status_code == 201, r.text
+    shown = _detail_of(pm_client, card.approval_id)
+    assert shown["alias_text"] == "화은"
+
+    resp = pm_client.patch(f"/api/v1/approvals/{card.approval_id}", json={
+        "status": "approved", "save_alias": True, "payload_version": shown["payload_version"],
+        "task_overrides": {"assignee_member_id": seed["leader"].member_id},
+    })
+
+    _assert_approved_with_task(db, resp)
+    assert _learned(db) == [(seed["leader"].member_id, shown["alias_text"])]
+
+
 def test_save_alias_ignores_forged_assignee_item_id(client, pm_client, db, seed):
     """payload 의 assignee_item_id 가 다른 카드의 항목을 가리켜도 그 카드의 연결 항목이 아니면 무시한다."""
     _hold_item(client, seed, title="다른 카드 일")

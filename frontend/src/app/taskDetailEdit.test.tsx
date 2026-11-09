@@ -1,12 +1,14 @@
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { onTestFinished } from 'vitest'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
-import { fail } from '@/shared/mock/envelope'
+import { fail, ok } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
+import { toTaskResponse } from '@/shared/mock/task-state'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
@@ -164,6 +166,35 @@ describe('PM 의 담당자·마감 고치기 (#471)', () => {
     expect(screen.getByRole('textbox', { name: '마감' })).toHaveValue('2026-09-27')
     expect(screen.getByText('바뀐 내용 1개 · 마감 09/20 → 09/27')).toBeVisible()
     expect(mockTask('tk_01').due_date).toBe('2026-09-20')
+  })
+
+  it('저장 응답을 읽지 못하면 저장 줄에 실패라 하지 않고 결과를 확인하지 못했다고 알린다. 새로고침은 태스크를 다시 받는다 (#348)', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    onTestFinished(() => warning.mockRestore())
+    const user = userEvent.setup()
+    server.use(
+      http.patch('/api/v1/tasks/:taskId', () =>
+        ok({
+          ...toTaskResponse(db.tasks.find(({ task_id }) => task_id === 'tk_01')!),
+          status: 'archived',
+        }),
+      ),
+    )
+    const log = recordRequests()
+    await openDetail('tk_01', '로그인 API 연동')
+    await editDue(user, '2026-09-27')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+    const notice = (
+      await screen.findByText('변경 결과를 확인하지 못했어요', {}, { timeout: 5_000 })
+    ).closest('li') as HTMLElement
+    expect(within(notice).getByText(/서버에는 반영됐을 수 있어요/)).toBeInTheDocument()
+    expect(within(info()).queryByRole('alert')).toBeNull()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 300)))
+    const before = log.started.length
+    fireEvent.click(within(notice).getByRole('button', { name: '새로고침' }))
+    await waitFor(() =>
+      expect(log.started.slice(before)).toContainEqual({ method: 'GET', path: '/tasks/tk_01' }),
+    )
   })
 
   it('날짜 모양이 틀리면 저장을 막고 고쳐 적게 한다', async () => {

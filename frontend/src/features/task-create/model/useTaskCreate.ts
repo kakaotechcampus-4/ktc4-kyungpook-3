@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
-import { createTask, taskListQueryOptions } from '@/entities/task'
+import { createTask, showTaskWriteUnconfirmed, taskListQueryOptions } from '@/entities/task'
 import type { Task, TaskCreateInput } from '@/entities/task'
 import { captureSession } from '@/entities/user'
+import { isInvalidResponse } from '@/shared/api/errors'
 
 /**
  * 직접 추가 mutation 의 key. 셋째 칸이 상태라 보드 칸마다 진행 중 요청을 따로 센다.
@@ -50,6 +51,10 @@ export function useTaskCreate(workspaceId: string, status: Task['status']): Task
       )
       void queryClient.invalidateQueries({ queryKey, exact: true })
     },
+    onError: (error, { isCurrentSession }) => {
+      if (isCurrentSession() && isInvalidResponse(error))
+        showTaskWriteUnconfirmed(queryClient, workspaceId)
+    },
   })
 
   const create = useCallback(
@@ -61,5 +66,6 @@ export function useTaskCreate(workspaceId: string, status: Task['status']): Task
     [queryClient, mutate, workspaceId, status],
   )
 
-  return { create, pending: isPending, error, reset }
+  // 응답을 읽지 못한 실패는 토스트가 알린다. 만들어졌을 수 있어 입력 칸의 실패로 보이지 않는다
+  return { create, pending: isPending, error: isInvalidResponse(error) ? null : error, reset }
 }

@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models import AliasSource, AliasType, MemberRole
+from app.schemas.name import NameStr
 from app.services.matching import normalize_alias_text
 
 # member.discord_user_id 컬럼 길이
@@ -19,7 +20,7 @@ def _normalize_discord_user_id(value: object) -> object:
 
 class MemberCreateRequest(BaseModel):
     workspace_id: str = Field(..., description="소속 워크스페이스 ID")
-    display_name: str = Field(..., min_length=1, max_length=100)
+    display_name: NameStr
     discord_user_id: str | None = Field(None, max_length=DISCORD_USER_ID_MAX_LENGTH)
     notion_name: str | None = None
     role: MemberRole = MemberRole.MEMBER
@@ -31,7 +32,7 @@ class MemberCreateRequest(BaseModel):
 
 
 class MemberUpdateRequest(BaseModel):
-    display_name: str | None = None
+    display_name: NameStr | None = None
     discord_user_id: str | None = Field(
         None, max_length=DISCORD_USER_ID_MAX_LENGTH, description="빈 값이나 null이면 연결을 해제한다"
     )
@@ -43,6 +44,14 @@ class MemberUpdateRequest(BaseModel):
     def _blank_discord_user_id_is_none(cls, value: object) -> object:
         return _normalize_discord_user_id(value)
 
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def _display_name_is_not_null(cls, value: object) -> object:
+        # 키를 생략하면 이 검증은 돌지 않아 이름이 유지된다. null 을 명시하면 NOT NULL 컬럼에서 500 이 나므로 막는다.
+        if value is None:
+            raise ValueError("표시명은 null 일 수 없습니다. 이름을 바꾸지 않으려면 display_name 을 빼 주세요")
+        return value
+
 
 class MemberResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -53,6 +62,7 @@ class MemberResponse(BaseModel):
     discord_user_id: str | None
     notion_name: str | None
     role: str
+    has_login_account: bool
     created_at: datetime
 
 
@@ -127,3 +137,4 @@ class MemberNameResponse(BaseModel):
 
 class MemberNameListResponse(BaseModel):
     items: list[MemberNameResponse]
+    identity_epoch: int = 0

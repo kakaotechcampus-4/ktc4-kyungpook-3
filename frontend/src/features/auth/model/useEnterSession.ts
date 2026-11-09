@@ -10,6 +10,9 @@ import { preloadScreenCode } from '@/shared/lib/screen-code'
 import { showSplash } from '@/shared/lib/splash'
 import { clearUserScope } from '../lib/userScope'
 import { clearSignOutMark } from './signOutMarker'
+import { agreeConsents, consentKey } from '@/entities/consent'
+import type { PolicyVersions } from '@/entities/consent'
+import { captureSessionScope } from '@/shared/api/sessionScope'
 
 /**
  * 로그인 뒤 도착할 화면을 고르기 전에 그 코드를 먼저 받을 경로. 돌아갈 경로(`?next=`)가 있으면 그곳, 없으면 대시보드다.
@@ -32,22 +35,34 @@ function entryPath(next: string | null): string {
  * 공간 목록을 받는 동안 도착할 화면의 코드를 함께 받기 시작한다 (#539) — 세션을 반영한 뒤 화면 코드를 기다리는 뼈대가
  * 보이지 않게. 미리 받기는 덤이라 실패해도 로그인을 막지 않는다. 데이터는 여기서 받지 않는다.
  */
-export function useEnterSession(): (session: Session) => Promise<void> {
+export function useEnterSession(): (input: {
+  session: Session
+  acceptance: PolicyVersions | null
+}) => Promise<void> {
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const next = searchParams.get(LOGIN_PARAMS.next)
 
   return useCallback(
-    async (session) => {
+    async ({ session, acceptance }) => {
       // 로그인 직후의 공간 확인부터 도착한 화면이 그려질 때까지 스플래시가 덮는다 (#430).
       // 공간 확인은 세션 반영 전에 끝나므로 RedirectIfAuthed 가 세션을 보는 때에는 이미 늦다
       const releaseSplash = showSplash()
       try {
         preloadScreenCode(entryPath(next))
         await clearUserScope(queryClient)
+        const scope = captureSessionScope()
+        if (acceptance !== null) {
+          const request = { userId: session.user.id, ...acceptance }
+          // 계정은 이미 생성됐다. 저장 응답을 잃어도 세션을 반영하고 guard의 GET으로 실제 결과를 확인한다.
+          const status = await agreeConsents(request, scope.signal).catch(() => null)
+          if (!scope.isCurrent()) return
+          if (status !== null) queryClient.setQueryData(consentKey(request), status)
+        }
         // 가드가 이 캐시를 그대로 쓴다. 세션을 반영하기 전에 받아 둬야 이동이 한 번에 끝난다
         // 실패는 목록 query 의 오류 상태로 남는다. 가드(RedirectIfAuthed)가 그것을 구독해 보인다
         await fetchFreshWorkspaces(queryClient).catch(() => undefined)
+        if (!scope.isCurrent()) return
         clearSignOutMark()
         queryClient.setQueryData(SESSION_QUERY_KEY, session)
       } finally {

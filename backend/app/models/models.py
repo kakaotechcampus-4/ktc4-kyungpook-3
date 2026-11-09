@@ -128,6 +128,7 @@ class ChangedField(StrEnum):
     STATUS = "status"
     TITLE = "title"
     BLOCKER = "blocker"
+    SCOPE = "scope"
 
 
 class ChangeSource(StrEnum):
@@ -176,6 +177,8 @@ class Gate(StrEnum):
 
 class User(Base):
     __tablename__ = "user"
+    # 비어 있는 provider_id 끼리는 겹치지 않는다(PostgreSQL·SQLite 모두 NULL 은 서로 다른 값으로 본다).
+    __table_args__ = (UniqueConstraint("provider", "provider_id", name="uq_user_provider_provider_id"),)
 
     user_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
@@ -214,6 +217,35 @@ class PasswordResetToken(Base):
     invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class UserConsent(Base):
+    """이용약관·개인정보처리방침 동의 기록(#564). 문서 버전마다 한 행이고, 새 버전에 동의하면 행이 하나 더 생긴다."""
+
+    __tablename__ = "user_consent"
+    __table_args__ = (UniqueConstraint("user_id", "kind", "version", name="uq_user_consent_user_kind_version"),)
+
+    consent_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("user.user_id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16))  # terms | privacy
+    version: Mapped[str] = mapped_column(String(32))
+    agreed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class SignupEmailCode(Base):
+    """가입 이메일 인증 코드. 이메일마다 한 행이고, 코드가 맞으면 지운다. 원문은 두지 않고 HMAC 만 둔다(#427)."""
+
+    __tablename__ = "signup_email_code"
+
+    email: Mapped[str] = mapped_column(String(255), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    window_count: Mapped[int] = mapped_column(Integer, default=1)
+
+
 class Session(Base):
     __tablename__ = "session"
 
@@ -234,6 +266,8 @@ class Workspace(Base):
 
     workspace_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(100))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    identity_epoch: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # 모든 단계가 pending이 아니면 true. 단계 상태(onboarding_steps)를 바꿀 때 함께 맞춘다.
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -244,6 +278,33 @@ class Workspace(Base):
     onboarding_steps: Mapped[list["WorkspaceOnboardingStepState"]] = relationship(
         back_populates="workspace", cascade="all, delete-orphan"
     )
+
+
+class WithdrawalReceipt(Base):
+    __tablename__ = "withdrawal_receipt"
+
+    withdrawal_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    proof_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    account_deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PrivacyCleanup(Base):
+    __tablename__ = "privacy_cleanup"
+
+    cleanup_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    withdrawal_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("withdrawal_receipt.withdrawal_id", ondelete="CASCADE"), index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String(36), index=True)
+    identity_epoch: Mapped[int] = mapped_column(Integer)
+    delete_workspace: Mapped[bool] = mapped_column(Boolean)
+    selectors: Mapped[str] = mapped_column(Text)
+    backend_done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ai_done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    claim_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class WorkspaceOnboardingStepState(Base):
@@ -304,8 +365,14 @@ class Integration(Base):
 class Member(Base):
     __tablename__ = "member"
     __table_args__ = (
-        # 탈퇴(is_deleted)한 팀원은 과거 이력 때문에 행과 discord_user_id를 남긴다. 그래서 같은 디스코드 계정은
-        # 탈퇴하지 않은 팀원끼리만 겹치지 않게 막는다. API의 사전 검사(api/members.py)와 같은 범위다(#166).
+        CheckConstraint(
+            "withdrawn_at IS NULL OR (user_id IS NULL AND discord_user_id IS NULL "
+            "AND notion_name IS NULL AND display_name = '탈퇴한 사용자' "
+            "AND role = 'member' AND is_deleted IS TRUE AND deleted_at IS NOT NULL)",
+            name="withdrawn_profile_erased",
+        ),
+        # 기존 명단 이탈(is_deleted)은 이력과 Discord ID를 남긴다. 계정 탈퇴(withdrawn_at)는 위 CHECK대로 지운다.
+        # 같은 디스코드 계정은 활성 팀원끼리만 겹치지 않게 막는다. API 사전 검사와 같은 범위다(#166).
         Index(
             "uq_workspace_discord_user", "workspace_id", "discord_user_id",
             unique=True,
@@ -327,11 +394,28 @@ class Member(Base):
     role: Mapped[str] = mapped_column(String(16), default=MemberRole.MEMBER)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     aliases: Mapped[list["MemberAlias"]] = relationship(
         back_populates="member", cascade="all, delete-orphan"
     )
+
+    @property
+    def has_login_account(self) -> bool:
+        return self.user_id is not None and not self.is_deleted
+
+    def erase_profile(self, at: datetime) -> None:
+        """공동 기록의 주체는 남기고 프로필과 직접 별칭만 지운다. 계정 탈퇴 전체 작업은 아니다."""
+        self.user_id = None
+        self.discord_user_id = None
+        self.notion_name = None
+        self.display_name = "탈퇴한 사용자"
+        self.role = str(MemberRole.MEMBER)
+        self.is_deleted = True
+        self.deleted_at = self.deleted_at or at
+        self.withdrawn_at = self.withdrawn_at or at
+        self.aliases.clear()
 
 
 class MemberAlias(Base):
@@ -404,6 +488,14 @@ class Meeting(Base):
     workspace_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    deletion_ready: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    recording_root_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey('meeting.meeting_id'), nullable=True, index=True
+    )
+    replaces_meeting_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey('meeting.meeting_id'), nullable=True, unique=True
+    )
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default=MeetingSource.DISCORD)
     status: Mapped[str] = mapped_column(String(32), default=MeetingStatus.CREATED, index=True)
@@ -428,6 +520,18 @@ class Meeting(Base):
     sources: Mapped[list["Source"]] = relationship(
         back_populates="meeting", cascade="all, delete-orphan"
     )
+
+
+class MeetingPurge(Base):
+    __tablename__ = "meeting_purge"
+
+    meeting_id: Mapped[str] = mapped_column(String(36), ForeignKey("meeting.meeting_id", ondelete="CASCADE"), primary_key=True)
+    backend_done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ai_done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    claim_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class MeetingUpload(Base):
@@ -505,6 +609,11 @@ class Source(Base):
 
 class Extraction(Base):
     __tablename__ = "extraction"
+    __table_args__ = (
+        Index("ix_extraction_summary_requested_at", "summary_requested_at",
+              postgresql_where=text("summary_requested_at IS NOT NULL"),
+              sqlite_where=text("summary_requested_at IS NOT NULL")),
+    )
 
     extraction_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     meeting_id: Mapped[str] = mapped_column(
@@ -519,6 +628,7 @@ class Extraction(Base):
     summary_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # 임대 시작. 지나면 다음 claim 이 다시 집는다. 실패를 알리는 API 없이 실패와 크래시가 이 한 경로로 돈다
     summary_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    summary_claim_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     meeting: Mapped["Meeting"] = relationship(back_populates="extractions")
@@ -823,8 +933,9 @@ class ReminderOrigin(StrEnum):
 
 
 class MessageSender(StrEnum):
-    BOT = "bot"
-    MEMBER = "member"
+    BOT = "bot"  # 리마인드 묶음이 나간 글만 뜻한다. 나가는 DM 전부는 dm_status 로 본다
+    PM = "pm"  # PM 이 웹에서 남의 대화에 쓴 글. 봇 계정으로 나간다
+    MEMBER = "member"  # 대화 주인이 쓴 글. PM 이 자기 대화에 쓴 글도 여기다
 
 
 class ReplyChannel(StrEnum):
@@ -866,10 +977,10 @@ class MessageThread(Base):
 
 
 class ThreadMessage(Base):
-    """대화에 들어간 메시지 한 통. 봇이 보낸 DM(발송된 묶음)이거나 팀원의 답장이다.
+    """대화에 들어간 메시지 한 통. 발송된 묶음이거나 PM 이 쓴 글(둘 다 봇 DM 으로 나간다)이거나 팀원의 답장이다.
 
     created_at 은 대화에 들어온 시각이다. 팀원 메시지의 reply_channel·discord_message_id·received_at 과
-    봇 메시지의 dm_*·claimed_at·scheduled_at 은 보낸 쪽에 따라 한쪽만 채운다.
+    나가는 메시지의 dm_*·claimed_at 은 보낸 쪽에 따라 한쪽만 채운다. scheduled_at 은 묶음에만 있다.
     """
 
     __tablename__ = "thread_message"
@@ -895,8 +1006,16 @@ class ThreadMessage(Base):
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     dm_reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    author_member_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
+    )
 
     thread: Mapped["MessageThread"] = relationship()
+    author: Mapped["Member | None"] = relationship()
+
+    @property
+    def author_name(self) -> str | None:
+        return self.author.display_name if self.author else None
 
 
 class MessageThreadRead(Base):

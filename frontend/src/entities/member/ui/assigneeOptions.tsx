@@ -13,6 +13,7 @@ export const ASSIGNEE_NONE_OPTION = { label: '미정', leading: <SelectNoneMark 
 export function assigneeOptions(
   members: readonly Member[] | undefined,
   current: string | null,
+  retainedNames?: ReadonlyMap<string, string>,
 ): SelectOption<string>[] {
   const options = (members ?? []).map(({ id, displayName }) => ({
     value: id,
@@ -23,7 +24,12 @@ export function assigneeOptions(
     members !== undefined && current !== null && !members.some(({ id }) => id === current)
   return unknown
     ? [
-        { value: current, label: '알 수 없는 담당자', leading: <SelectInitial name="?" /> },
+        {
+          value: current,
+          label: retainedNames?.get(current) ?? '알 수 없는 담당자',
+          leading: <SelectInitial name="?" />,
+          ...(retainedNames?.has(current) ? { disabled: true } : {}),
+        },
         ...options,
       ]
     : options

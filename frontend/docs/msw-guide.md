@@ -197,6 +197,14 @@ http://localhost:5173/workspaces/ws_01/members?msw-scenario=settings-unmapped
 
 로컬 브라우저는 `warn`으로 경고하고 실제 네트워크로 보낸다. 의도한 mock에서 경고가 나면 handler 누락을 먼저 확인한다. OAuth `start`·`callback` 같은 302 네비게이션, AI→BE 전용 생성 경로는 M1 mock 범위 밖이다. 메시지는 계약 §5.7 의 화면용 경로(조회 `/workspaces/{id}/messages`, `/workspaces/{id}/messages/threads/{id}`, 행동 `PATCH …/messages/bundles/{id}`, `POST …/bundles/{id}/approve`, `POST …/bundles/{id}/cancel`, `POST …/messages/threads/{id}/replies`, #370 의 재촉 만들기 `POST …/messages/reminders`, 리마인드 고치기 `PATCH …/messages/reminders/{id}`, 빼기 `POST …/messages/reminders/{id}/cancel`)만 둔다. 봇 경로는 화면이 부르지 않아 두지 않았다(`messages-*` 시나리오).
 
+## 알림과 자동 막힘 시나리오 (#364)
+
+MSW를 켠 개발 서버에서 `/workspaces/ws_01/tasks/tk_06?msw-scenario=notifications-default`로 들어간다. 이 시나리오는 ws_01의 PM으로 시작하며 읽지 않은 알림 4건과 읽은 알림 1건을 준비한다. 읽지 않은 항목에는 알 수 없는 종류 1건이 포함된다. `tk_06`은 무응답으로 자동 막힌 태스크다.
+
+알림 종 배지·목록, 알림 이동과 태스크 상세의 **막힘 풀기**를 확인할 때 사용한다. 같은 여정의 새로고침에는 시나리오 파라미터를 다시 붙이지 않는다. 다시 붙이면 저장한 상태 대신 초기 시나리오를 준비한다.
+
+시나리오는 `src/shared/mock/scenarios.ts`에 있고 `src/app/taskAutoBlock.test.tsx`에서 사용한다. 현재 `e2e/support.ts`의 `Scenario` 타입에는 없으므로 새 E2E에서 `start`로 사용하려면 해당 타입도 확장해야 한다. 이 모의 데이터는 실제 VAPID 설정·브라우저 푸시 수신·iOS PWA·로그아웃 후 구독 해제의 검증 근거가 아니다. 실서버 검증은 #364에 별도로 기록한다.
+
 ## 실 백엔드와 다른 점
 
 `VITE_ENABLE_MSW=false`로 붙일 때 어긋나는 것들이다. 전체 현황은 [계약 §4.0](contracts/frontend-api-contract.md)에 있다.
@@ -204,9 +212,9 @@ http://localhost:5173/workspaces/ws_01/members?msw-scenario=settings-unmapped
 - **로그인이 쿠키 세션이다.** 실 백엔드는 `Set-Cookie: session_token`(HttpOnly·Secure·SameSite=Lax)으로 응답하고, 이후 요청은 쿠키로 인증한다. MSW는 쿠키를 심지 않는다. 브라우저에서 두 모드를 오가면 로그인 상태가 이어지지 않는다.
 - **온보딩·Discord 사용자 목록·회의록 본문·회의 업로드가 실 API에서 스텁이다.** 엔드포인트는 응답하지만 값이 하드코딩이거나 저장을 하지 않는다. MSW 쪽이 더 완전하므로 이 네 화면은 mock으로 개발한다.
   회의록 본문은 비어 있는 게 아니라 **안내 문구 1줄**이 온다. extraction이 없을 때만 빈 배열이다.
-- **OAuth `start`·`callback`은 실 백엔드에도 MSW handler 에도 없다.** 실 백엔드에서는 Google 로그인과 Discord·Notion 연결이 동작하지 않는다.
+- **OAuth `start`·`callback`은 실 백엔드에도 MSW handler 에도 없다.** 실 백엔드에서는 Discord·Notion 연결이 동작하지 않는다.
   MSW 모드(개발)에서는 Discord·Notion 연결만 프론트의 모의 OAuth 화면(`shared/mock/oauth/`, `devPaths.mockOAuth`)이 콜백을 흉내내 연결·취소·실패 뒤 원래 화면으로 돌려보낸다(위 「회의 정리 흐름」의 `meeting-notion-not-connected`).
-  Google 로그인은 MSW 모드에서도 비활성 버튼이다(D-007).
+  Google 로그인은 없다(D-182). 카카오 로그인은 실 백엔드에 `/auth/kakao/*`가 있고(계약 §4.1.4), MSW 모드에서는 모의 카카오 화면(`/__mock/kakao`)이 결과(새 사용자·이어진 계정·이메일 없음·이메일 충돌·취소·실패)를 고르게 한다.
 - 실 백엔드는 업로드한 **파일을 저장하지 않고 큐에도 보내지 않는다.** 회의가 `processing`에 머물러 다음 업로드를 409로 막는다. MSW는 위 「회의 정리 흐름」으로 정상 흐름을 낸다.
 - 실 백엔드는 **업로드를 PM 에게만 허용하지 않는다**(소속만 본다). 프론트의 PM 가드는 화면만 막는다 — [계약 §4](contracts/frontend-api-contract.md) 백엔드 요청 17.
 

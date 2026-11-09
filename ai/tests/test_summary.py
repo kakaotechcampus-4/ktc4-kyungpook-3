@@ -18,7 +18,7 @@ DECISION_ID = "00000000-0000-0000-0000-00000000cccc"
 
 def _input(*, lines=None, started_at="2026-11-05T05:00:00Z", title="3주차 정기회의"):
     return SummaryInput(
-        extraction_id="e1", meeting_id="m1", workspace_id="w1", title=title, started_at=started_at,
+        extraction_id="e1", meeting_id="m1", workspace_id="w1", identity_epoch=0, title=title, started_at=started_at,
         lines=lines if lines is not None else [SummaryLine(1, 125000, "민수", "초대는 이메일로만 하죠")],
         items=[SummaryItem(ITEM_ID, "create", "초대 메일 보내기", "민수", "2026-11-14")],
         topics=[SummaryTopic(TOPIC_ID, "팀원 초대", "초대 방식")],
@@ -60,7 +60,7 @@ def test_the_put_body_matches_the_golden_file_key_for_key():
     long_lines = [SummaryLine(i, i * 1000, "민수", "가" * 1000) for i in range(200)]
     attempt = summarize(_input(lines=long_lines), llm, attempt=1)
     assert attempt.failure is None
-    assert attempt.draft.to_dict() == json.loads(GOLDEN.read_text(encoding="utf-8"))
+    assert attempt.draft.to_dict() == {k: v for k, v in json.loads(GOLDEN.read_text(encoding="utf-8")).items() if k != "claim_token"}
 
 
 def test_valid_json_becomes_a_draft_and_the_prompt_carries_the_inputs():
@@ -168,7 +168,7 @@ def test_a_long_topic_name_is_trimmed_instead_of_losing_the_attempt():
 
 def test_item_ids_are_deduplicated_and_capped_at_the_be_limit():
     items = [SummaryItem(f"i{n}", "create", "t", None, None) for n in range(600)]
-    summary_input = SummaryInput("e", "m", "w", None, "2026-11-05T05:00:00Z", [], items, [], [])
+    summary_input = SummaryInput("e", "m", "w", None, "2026-11-05T05:00:00Z", [], items, [], [], identity_epoch=0)
     keys = [f"I{n}" for n in range(1, 601)]
     draft = _parse(_raw(topics=[{"key": "N1", "name": "n", "items": keys + keys}]), summary_input)
     assert len(draft.topics[0].item_ids) == 500

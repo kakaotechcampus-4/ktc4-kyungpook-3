@@ -54,8 +54,9 @@ def test_submit_returns_the_result_and_a_second_put_is_not_applied():
     fake.add_summary("m1")
     client = _client(fake)
     body = {"overview": "요약", "key_points": [], "topics": []}
-    assert client.submit_summary("e-m1", body)["applied"] is True
-    assert client.submit_summary("e-m1", body)["applied"] is False
+    claim = client.claim_summary()
+    assert client.submit_summary("e-m1", body, claim_token=claim.claim_token, identity_epoch=claim.identity_epoch)["applied"] is True
+    assert client.submit_summary("e-m1", body, claim_token=claim.claim_token, identity_epoch=claim.identity_epoch)["applied"] is False
 
 
 def test_put_errors_are_be_errors():
@@ -63,7 +64,8 @@ def test_put_errors_are_be_errors():
     fake.add_summary("m1")
     fake.summary_put_fail = (500, "INTERNAL_ERROR")
     with pytest.raises(H.BeError):
-        _client(fake).submit_summary("e-m1", {"overview": "x", "key_points": [], "topics": []})
+        _client(fake).submit_summary("e-m1", {"overview": "x", "key_points": [], "topics": []},
+                                     claim_token="unclaimed", identity_epoch=0)
 
 
 def test_a_wrong_service_token_is_refused():

@@ -112,7 +112,7 @@ export const invitationHandlers = [
     const member = db.members.find(
       ({ member_id, workspace_id }) => member_id === body.member_id && workspace_id === workspaceId,
     )
-    if (!member)
+    if (!member || db.withdrawnMemberIds.includes(member.member_id))
       return fail('MEMBER_NOT_FOUND', '팀원이 없습니다.', 404, { member_id: body.member_id })
     const details = { member_id: member.member_id }
     if (linkedUserIdOf(member.member_id) !== null)

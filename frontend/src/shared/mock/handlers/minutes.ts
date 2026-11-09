@@ -1,4 +1,5 @@
 import { http } from 'msw'
+import { deletedMeetingResponse } from '../meetingDeletion'
 import { db } from '../db'
 import { ok, fail } from '../envelope'
 import { requireAuth, requireMember } from '../auth-guard'
@@ -6,6 +7,8 @@ import { roleIn } from '../sessions'
 
 export const minutesHandlers = [
   http.get('/api/v1/meetings/:meetingId/minutes', ({ params }) => {
+    const deleted = deletedMeetingResponse(String(params.meetingId))
+    if (deleted) return deleted
     // 백엔드는 Depends(get_current_user) 가 함수 본문보다 먼저 돈다. 비로그인이면 회의가
     // 있는지 보기 전에 401 이다 — 리소스 존재 여부를 먼저 드러내지 않는다 (meetings.py:159)
     const unauthenticated = requireAuth()

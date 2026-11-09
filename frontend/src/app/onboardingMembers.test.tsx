@@ -48,7 +48,7 @@ const pmCheck = (username: string) =>
   screen.getByRole('checkbox', { name: `@${username} — PM 최진호` })
 
 const memberListReads = (requests: RecordedRequest[]) =>
-  requests.filter(({ method, path }) => method === 'GET' && path.startsWith('/members?'))
+  requests.filter(({ method, path }) => method === 'GET' && path === '/members?workspace_id=ws_03')
 
 /** 서버는 팀원을 만들었는데 응답이 도중에 끊긴다. 화면은 만들어졌는지 모른다 */
 const createMemberButLoseResponse = () =>
@@ -67,6 +67,7 @@ const createMemberButLoseResponse = () =>
         discord_user_id: body.discord_user_id,
         notion_name: null,
         role: 'member',
+        has_login_account: false,
         created_at: MOCK_NOW,
       })
       return HttpResponse.error()
@@ -107,6 +108,7 @@ describe('팀원 연결 목록 (U3-8)', () => {
       discord_user_id: '1125',
       notion_name: null,
       role: 'member',
+      has_login_account: false,
       created_at: MOCK_NOW,
     })
     await openMembers()
@@ -208,6 +210,7 @@ describe('팀원 저장 규칙 (U3-9)', () => {
       discord_user_id: '1125',
       notion_name: null,
       role: 'member',
+      has_login_account: false,
       created_at: MOCK_NOW,
     })
     const bodies = recordRequestBodies('PATCH', '/members/mb_91')
@@ -323,6 +326,14 @@ describe('팀원 저장 규칙 (U3-9)', () => {
     await screen.findByRole('heading', { name: '대시보드' })
     expect(memberListReads(log.started)).toHaveLength(4)
     expect(memberWrites(log.started)).toEqual(['PATCH /members/mb_90', 'POST /members'])
+    await waitFor(() =>
+      expect(
+        log.started.filter(
+          ({ method, path }) =>
+            method === 'GET' && path === '/members?workspace_id=ws_03&include_withdrawn=true',
+        ),
+      ).toHaveLength(1),
+    )
   })
 
   it('매핑은 모두 저장됐는데 완료 요청이 실패하면 재시도는 완료 요청만 보낸다', async () => {
@@ -360,6 +371,7 @@ describe('매핑 옮기기와 나중에 하기 (U3-r1 #5·#6)', () => {
       discord_user_id: '1125',
       notion_name: null,
       role: 'member',
+      has_login_account: false,
       created_at: MOCK_NOW,
     })
     const bodies = recordRequestBodies('PATCH', '/members/mb_91')
@@ -389,6 +401,7 @@ describe('매핑 옮기기와 나중에 하기 (U3-r1 #5·#6)', () => {
         discord_user_id: '1123',
         notion_name: null,
         role: 'member',
+        has_login_account: false,
         created_at: MOCK_NOW,
       },
       {
@@ -398,6 +411,7 @@ describe('매핑 옮기기와 나중에 하기 (U3-r1 #5·#6)', () => {
         discord_user_id: '1124',
         notion_name: null,
         role: 'member',
+        has_login_account: false,
         created_at: MOCK_NOW,
       },
     )
@@ -776,6 +790,7 @@ describe('PM 을 체크해 잇기 (#228)', () => {
       discord_user_id: '1123',
       notion_name: null,
       role: 'member',
+      has_login_account: false,
       created_at: MOCK_NOW,
     })
     server.use(

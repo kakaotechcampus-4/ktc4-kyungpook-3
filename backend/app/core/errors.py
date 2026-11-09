@@ -9,6 +9,12 @@ T = TypeVar("T")
 class ErrorCode(StrEnum):
     INVALID_REQUEST = "INVALID_REQUEST"
     MEETING_NOT_FOUND = "MEETING_NOT_FOUND"
+    MEETING_DELETED = "MEETING_DELETED"
+    MEETING_DELETE_BLOCKED = "MEETING_DELETE_BLOCKED"
+    MEETING_DELETION_UNAVAILABLE = "MEETING_DELETION_UNAVAILABLE"
+    MEETING_LINEAGE_UNVERIFIED = "MEETING_LINEAGE_UNVERIFIED"
+    MEETING_CLIENT_UPDATE_REQUIRED = "MEETING_CLIENT_UPDATE_REQUIRED"
+    PURGE_CLAIM_EXPIRED = "PURGE_CLAIM_EXPIRED"
     MEETING_ALREADY_ENDED = "MEETING_ALREADY_ENDED"
     MEETING_NOT_PROCESSING = "MEETING_NOT_PROCESSING"
     MEETING_FAILED = "MEETING_FAILED"
@@ -22,8 +28,11 @@ class ErrorCode(StrEnum):
     APPROVAL_NOT_FOUND = "APPROVAL_NOT_FOUND"
     APPROVAL_ALREADY_RESOLVED = "APPROVAL_ALREADY_RESOLVED"
     APPROVAL_CONFLICT = "APPROVAL_CONFLICT"
+    APPROVAL_CHANGED = "APPROVAL_CHANGED"
     NOTION_WRITE_FAILED = "NOTION_WRITE_FAILED"
     WORKSPACE_NOT_FOUND = "WORKSPACE_NOT_FOUND"
+    PRIVACY_VERSION_CHANGED = "PRIVACY_VERSION_CHANGED"
+    WITHDRAWAL_ACCOUNT_CHANGED = "WITHDRAWAL_ACCOUNT_CHANGED"
     WORKSPACE_MISMATCH = "WORKSPACE_MISMATCH"
     MEMBER_NOT_FOUND = "MEMBER_NOT_FOUND"
     MEMBER_ALIAS_NOT_FOUND = "MEMBER_ALIAS_NOT_FOUND"
@@ -89,13 +98,29 @@ class ErrorCode(StrEnum):
     TOPIC_NOT_FOUND = "TOPIC_NOT_FOUND"
     SUMMARY_NOT_FOUND = "SUMMARY_NOT_FOUND"
 
+    # 가입 이메일 인증·카카오 로그인
+    SIGNUP_CODE_RATE_LIMITED = "SIGNUP_CODE_RATE_LIMITED"
+    SIGNUP_CODE_INVALID = "SIGNUP_CODE_INVALID"
+    SIGNUP_VERIFICATION_INVALID = "SIGNUP_VERIFICATION_INVALID"
+    KAKAO_LINK_EXPIRED = "KAKAO_LINK_EXPIRED"
+    KAKAO_ALREADY_LINKED = "KAKAO_ALREADY_LINKED"
     # 로그인 시도 제한
     TOO_MANY_LOGIN_ATTEMPTS = "TOO_MANY_LOGIN_ATTEMPTS"
+
+    # 약관·개인정보처리방침 동의
+    CONSENT_VERSION_MISMATCH = "CONSENT_VERSION_MISMATCH"
+    CONSENT_ACCOUNT_CHANGED = "CONSENT_ACCOUNT_CHANGED"
 
 
 ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.INVALID_REQUEST: 400,
     ErrorCode.MEETING_NOT_FOUND: 404,
+    ErrorCode.MEETING_DELETED: 410,
+    ErrorCode.MEETING_DELETION_UNAVAILABLE: 503,
+    ErrorCode.MEETING_LINEAGE_UNVERIFIED: 409,
+    ErrorCode.MEETING_CLIENT_UPDATE_REQUIRED: 409,
+    ErrorCode.MEETING_DELETE_BLOCKED: 409,
+    ErrorCode.PURGE_CLAIM_EXPIRED: 409,
     ErrorCode.MEETING_ALREADY_ENDED: 409,
     ErrorCode.MEETING_NOT_PROCESSING: 409,
     ErrorCode.MEETING_FAILED: 409,
@@ -109,8 +134,11 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.APPROVAL_NOT_FOUND: 404,
     ErrorCode.APPROVAL_ALREADY_RESOLVED: 409,
     ErrorCode.APPROVAL_CONFLICT: 409,
+    ErrorCode.APPROVAL_CHANGED: 409,
     ErrorCode.NOTION_WRITE_FAILED: 502,
     ErrorCode.WORKSPACE_NOT_FOUND: 404,
+    ErrorCode.PRIVACY_VERSION_CHANGED: 409,
+    ErrorCode.WITHDRAWAL_ACCOUNT_CHANGED: 409,
     ErrorCode.WORKSPACE_MISMATCH: 400,
     ErrorCode.MEMBER_NOT_FOUND: 404,
     ErrorCode.MEMBER_ALIAS_NOT_FOUND: 404,
@@ -165,10 +193,23 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.MAIL_UNAVAILABLE: 503,
     ErrorCode.TOPIC_NOT_FOUND: 404,
     ErrorCode.SUMMARY_NOT_FOUND: 404,
+    ErrorCode.SIGNUP_CODE_RATE_LIMITED: 429,
+    ErrorCode.SIGNUP_CODE_INVALID: 400,
+    ErrorCode.SIGNUP_VERIFICATION_INVALID: 400,
+    ErrorCode.KAKAO_LINK_EXPIRED: 400,
+    ErrorCode.KAKAO_ALREADY_LINKED: 409,
     ErrorCode.TOO_MANY_LOGIN_ATTEMPTS: 429,
+    ErrorCode.CONSENT_VERSION_MISMATCH: 400,
+    ErrorCode.CONSENT_ACCOUNT_CHANGED: 409,
 }
 
 ERROR_MESSAGE: dict[ErrorCode, str] = {
+    ErrorCode.MEETING_DELETED: "삭제된 회의입니다.",
+    ErrorCode.MEETING_DELETION_UNAVAILABLE: "회의 삭제 기능을 준비하고 있습니다.",
+    ErrorCode.MEETING_LINEAGE_UNVERIFIED: "회의 재처리 기록을 확인한 뒤 삭제할 수 있습니다.",
+    ErrorCode.MEETING_CLIENT_UPDATE_REQUIRED: "녹음 봇을 최신 버전으로 업데이트해 주세요.",
+    ErrorCode.MEETING_DELETE_BLOCKED: "처리 중인 회의는 삭제할 수 없습니다.",
+    ErrorCode.PURGE_CLAIM_EXPIRED: "파일 정리 작업의 처리 권한이 만료되었습니다.",
     ErrorCode.INVALID_REQUEST: "요청 형식이 올바르지 않습니다.",
     ErrorCode.MEETING_NOT_FOUND: "해당 회의 세션을 찾을 수 없습니다.",
     ErrorCode.MEETING_ALREADY_ENDED: "이미 종료된 회의 세션입니다.",
@@ -184,6 +225,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.APPROVAL_NOT_FOUND: "해당 승인 요청을 찾을 수 없습니다.",
     ErrorCode.APPROVAL_ALREADY_RESOLVED: "이미 처리된 승인 요청입니다.",
     ErrorCode.APPROVAL_CONFLICT: "제안 이후 task가 바뀌었습니다. 지금 값을 확인한 뒤 다시 승인해 주세요.",
+    ErrorCode.APPROVAL_CHANGED: "보신 뒤 승인 요청 내용이 바뀌었습니다. 새 내용을 확인한 뒤 다시 처리해 주세요.",
     ErrorCode.NOTION_WRITE_FAILED: "Notion 반영에 실패했습니다.",
     ErrorCode.WORKSPACE_NOT_FOUND: "해당 워크스페이스를 찾을 수 없습니다.",
     ErrorCode.WORKSPACE_MISMATCH: "요청한 워크스페이스가 대상 리소스의 워크스페이스와 다릅니다.",
@@ -240,7 +282,14 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.MAIL_UNAVAILABLE: "지금은 메일을 보낼 수 없습니다.",
     ErrorCode.TOPIC_NOT_FOUND: "해당 주제를 찾을 수 없습니다.",
     ErrorCode.SUMMARY_NOT_FOUND: "이 회의의 요약본이 아직 없습니다.",
+    ErrorCode.SIGNUP_CODE_RATE_LIMITED: "인증 코드를 너무 자주 요청했습니다. 잠시 후 다시 시도해 주세요.",
+    ErrorCode.SIGNUP_CODE_INVALID: "인증 코드가 맞지 않습니다.",
+    ErrorCode.SIGNUP_VERIFICATION_INVALID: "이메일 인증이 필요합니다. 인증을 다시 진행해 주세요.",
+    ErrorCode.KAKAO_LINK_EXPIRED: "카카오 로그인 정보가 만료됐습니다. 카카오로 다시 시작해 주세요.",
+    ErrorCode.KAKAO_ALREADY_LINKED: "이미 다른 계정에 연결된 카카오 계정입니다.",
     ErrorCode.TOO_MANY_LOGIN_ATTEMPTS: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+    ErrorCode.CONSENT_VERSION_MISMATCH: "지금 문서 버전이 아닙니다. 문서를 다시 확인해 주세요.",
+    ErrorCode.CONSENT_ACCOUNT_CHANGED: "로그인한 계정이 바뀌었습니다. 계정을 다시 확인해 주세요.",
 }
 
 

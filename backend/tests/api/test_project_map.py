@@ -63,6 +63,8 @@ def _extraction(db, meeting, **fields):
 def _save(db, meeting, topics=(), *, extraction=None, **fields):
     row = extraction or _extraction(db, meeting, summary_requested_at=T0)
     body = {"model_name": "m", "overview": "핵심", "key_points": ["하나"], "topics": list(topics), **fields}
+    claim = summary.claim_next(db, only=[row.extraction_id])
+    body["claim_token"] = claim.claim_token
     summary.save_summary(db, row.extraction_id, SummaryWriteRequest(**body))
     db.commit()
     return row
@@ -524,6 +526,7 @@ def test_bundle_header_comes_from_the_database(client, mdb, mseed):
     gone = Member(workspace_id=ws, display_name="떠난 사람", role="member", is_deleted=True)
     mdb.add(gone)
     task, stuck, loose = mseed["tasks"]
+    stuck.created_at, loose.created_at = T0, T0 + timedelta(seconds=1)
     stuck.status, stuck.blocker, stuck.assignee_member_id = "blocked", "키가 없다", alice.member_id
     deleted_stuck = Task(workspace_id=ws, title="지운 막힌 일", status="blocked", is_deleted=True)
     mdb.add(deleted_stuck)
@@ -725,8 +728,9 @@ def test_handoff_then_save_walks_through_the_statuses(client, mdb, mseed):
     extraction_id = _extract(client, meeting, [])
     assert _status(client, meeting)["summary_status"] == "pending"
 
+    claim = client.post("/api/v1/summaries/claim", headers=H).json()["data"]
     r = client.put(f"/api/v1/extractions/{extraction_id}/summary", json={
-        "model_name": "m", "overview": "핵심", "key_points": [],
+        "claim_token": claim["claim_token"], "model_name": "m", "overview": "핵심", "key_points": [],
     }, headers=H)
 
     assert r.json()["data"]["applied"] is True

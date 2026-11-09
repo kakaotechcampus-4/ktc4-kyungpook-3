@@ -1,4 +1,4 @@
-import { fetchDto, fetchSessionDto, jsonRequest } from '@/shared/test/api'
+import { fetchDto, fetchSessionDto, jsonRequest, signUpVerified } from '@/shared/test/api'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { InvitationDto, MyInvitationDto } from '@/shared/types/api/invitation'
 import type { MemberDto } from '@/shared/types/api/member'
@@ -25,8 +25,7 @@ const act = (invitationId: string, action: string) =>
   fetchDto(`/invitations/${invitationId}/${action}`, { method: 'POST' })
 const login = (email: string) =>
   fetchDto('/auth/login', jsonRequest('POST', { email, password: 'mock-password' }))
-const signup = (email: string) =>
-  fetchDto('/auth/signup', jsonRequest('POST', { email, password: 'pass1234', name: '이재환' }))
+const signup = (email: string) => signUpVerified({ email, password: 'pass1234', name: '이재환' })
 const listedWorkspaces = async () =>
   (await fetchDto<ListDto<WorkspaceDto>>('/workspaces')).items.map(({ workspace_id, role }) => ({
     id: workspace_id,

@@ -354,7 +354,7 @@ describe('프로필 메뉴의 설정 (#244)', () => {
       within(menu)
         .getAllByRole('menuitem')
         .map((item) => item.textContent),
-    ).toEqual(['설정', '로그아웃'])
+    ).toEqual(['설정', '로그아웃', '계정 탈퇴'])
     await userEvent.click(within(menu).getByRole('menuitem', { name: '설정' }))
     expect(await screen.findByRole('heading', { name: '설정' })).toBeInTheDocument()
     await app.expectPath('/workspaces/ws_01/settings')
