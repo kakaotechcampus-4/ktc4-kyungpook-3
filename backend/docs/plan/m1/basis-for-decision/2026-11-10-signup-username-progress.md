@@ -14,6 +14,7 @@
 - 카카오 callback 에서 기존 이메일 계정에 잇는 경로와 연결 알림 메일을 지웠다
 - `GET /auth/username-availability` 와 `PATCH /users/me` 를 더했다
 - 이메일 없는 계정도 `/auth/me`, 초대 목록 조회, 탈퇴가 된다. 가입·탈퇴 잠금 키를 이메일이 없으면 카카오 id 로 잡는다
+- 가입이 아이디 경합에서 지면, 이긴 계정이 재검사 전에 아이디를 바꾼 경우 409 `EMAIL_ALREADY_EXISTS` 를 받았다. 재검사가 비면 위반된 제약 이름(PostgreSQL `ix_user_username`, SQLite `user.username`)으로 `USERNAME_TAKEN` 을 고른다. PostgreSQL 의 위반 문구에는 입력한 이메일이 들어가서 문구로는 고르지 않는다
 - 같은 계정이 아이디 변경을 동시에 두 번 보내면 PostgreSQL 에서 교착이 났다. 로그인 확인이 사용자 행을 공유 잠금으로 읽은 채 둘 다 UPDATE 하려 했기 때문이다. 아이디 변경은 처음부터 배타 잠금으로 읽는다
 
 ## 왜
@@ -24,8 +25,8 @@
 
 | 항목 | 값 |
 |---|---|
-| backend pytest sqlite | 3175 통과, 2247 건너뜀 |
-| backend pytest PostgreSQL | 5355 통과, 67 건너뜀 |
+| backend pytest sqlite | 3176 통과, 2249 건너뜀 |
+| backend pytest PostgreSQL | 5356 통과, 67 건너뜀. 마지막 커밋 전에 돌렸고, 그 뒤 가입 테스트 3개 파일 116개를 다시 돌려 통과 |
 | 동시 요청 테스트 | 같은 계정 두 번 변경, 두 계정 같은 아이디 변경, 두 가입 같은 아이디. PostgreSQL 에서 매번 통과 |
 | alembic | PostgreSQL 에서 upgrade, downgrade, upgrade, check 통과. 이메일 없는 계정이 있으면 downgrade 가 멈춘다 |
 | 비용 | 0원 |
@@ -34,5 +35,5 @@
 
 ## 다음
 
-- 프론트 가입 화면과 설정의 아이디 칸은 FE 요청으로 넘긴다. 이 PR 이 먼저 머지되어야 한다
+- 프론트 가입 화면과 설정의 아이디 칸은 FE 요청으로 넘긴다. develop 머지가 곧 운영 배포라서 이 PR 은 프론트 수정과 같은 배포에 들어가야 한다. 따로 들어가면 그 사이 가입이 400 으로 막힌다
 - 아이디로 팀원을 찾아 초대하는 작업을 이어서 한다
