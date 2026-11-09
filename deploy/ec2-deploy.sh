@@ -22,6 +22,9 @@ STATE="$REPO/.git/mm-deployed-sha"   # .git 안이라 git status 에 안 잡히�
 RESTART_LOCK="$REPO/ai/recordings/restart.lock"
 RESTART_LOCK_WAIT=60   # 봇은 녹음을 시작하는 짧은 순간만 쥔다. 이보다 오래 못 잡으면 무언가 멈춘 것이다
 LOG="$HOME/mm-deploy.log"
+SYSTEMD_DIR=/etc/systemd/system
+# 채팅 폴링 유닛(#599). 매일 09:00 KST 에 타이머가 서비스를 한 번 띄운다. 첫 설치는 사람이 한다(deploy/README.md)
+CHAT_POLL_UNITS="ai/deploy/systemd/mm-chat-poll.service ai/deploy/systemd/mm-chat-poll.timer"
 MODE=${2:-changed}
 
 cd "$REPO"
@@ -108,6 +111,36 @@ activate_summary() {
   fi
 }
 
+# 채팅 폴링 유닛을 저장소 판으로 맞춘다. 이미 설치된 서버에서 유닛 파일이 바뀌었을 때만 한다.
+# 설치되지 않았으면 설치·enable 하지 않고 경고만 낸다. 꺼 둔 유닛을 켜지 않는다는 restart_if_running 과 같은 원칙이다.
+# 기준 커밋은 묶지 않는다. 묶으면 배포마다 AI 단계가 다시 돌아 봇이 재시작된다.
+# 저장소 유닛은 User=mm 이지만 운영의 봇·워커는 다른 계정이라, 계정은 drop-in 으로 워커와 맞춘다. 있는 drop-in 은 두고 간다.
+# 실행 중인 폴링은 유닛 파일을 바꿔도 끊기지 않으므로 서비스는 재시작하지 않는다. 타이머만 다시 걸어 새 OnCalendar 를 읽힌다.
+sync_chat_poll() {
+  local drop_in="$SYSTEMD_DIR/mm-chat-poll.service.d/10-user.conf" user
+  if [ ! -e "$SYSTEMD_DIR/mm-chat-poll.timer" ]; then
+    echo "::warning::mm-chat-poll.timer 가 설치되지 않았다. 채팅이 수집되지 않는다. deploy/README.md 의 절차로 설치한다"
+    return 0
+  fi
+  # shellcheck disable=SC2086  # 유닛 경로 두 개로 나눠 넘긴다
+  if [ "$MODE" != all ] && git diff --quiet "$OLD" "$NEW" -- $CHAT_POLL_UNITS; then
+    return 0
+  fi
+  # shellcheck disable=SC2086
+  quiet "채팅 폴링 유닛 복사" sudo install -m 0644 $CHAT_POLL_UNITS "$SYSTEMD_DIR"/
+  if [ ! -e "$drop_in" ]; then
+    user=$(systemctl show -p User --value mm-worker 2>/dev/null || true)
+    user=${user:-$(id -un)}
+    quiet "채팅 폴링 계정 설정" sudo mkdir -p "${drop_in%/*}"
+    printf '[Service]\nUser=%s\n' "$user" | sudo tee "$drop_in" >/dev/null
+  fi
+  quiet "systemd 다시 읽기" sudo systemctl daemon-reload
+  if systemctl is-active -q mm-chat-poll.timer; then
+    quiet "채팅 폴링 타이머 다시 걸기" sudo systemctl restart mm-chat-poll.timer
+  fi
+  echo "채팅 폴링 유닛 갱신"
+}
+
 if changed backend; then
   echo "== backend"
   # 마이그레이션은 컨테이너가 시작하면서 먼저 올린다(backend/Dockerfile CMD)
@@ -162,6 +195,8 @@ if changed ai; then
     restart_if_running mm-bot
   fi
   exec 8>&-   # 잠금을 놓는다. 열지 못했으면 닫을 것이 없고, 열리지 않은 번호를 닫아도 오류가 아니다
+  # 봇 재시작 뒤에 둔다. 여기서 실패하면 배포가 실패하고 기준 커밋이 남아 다음 배포가 다시 한다
+  sync_chat_poll
 else
   echo "== ai 변경 없음"
   if changed deploy; then
