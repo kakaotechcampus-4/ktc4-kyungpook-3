@@ -261,7 +261,7 @@ def _lines(db: Session, message: ThreadMessage, task_ids: list[str]) -> list[Cla
 def submit(db: Session, message_id: str, body: ReplyJudgmentRequest, now: datetime) -> None:
     """판단 결과를 받는다. 값 변경·승인 요청·변경 줄·상태·알림이 부르는 쪽의 한 트랜잭션에 들어간다.
 
-    잠금 순서는 판단 행 → 태스크(id 순)다. _settle 은 태스크만 잠그고 판단 행은 읽기만 해 고리가 없다.
+    잠금 순서는 공간 → 판단 행 → 태스크(id 순)다. _settle 은 태스크만 잠그고 판단 행은 읽기만 해 고리가 없다.
     """
     from app.services import lifecycle
     workspace_id = db.scalar(select(ReplyJudgment.workspace_id).where(ReplyJudgment.message_id == message_id))
@@ -921,6 +921,10 @@ def overdue(db: Session, now: datetime) -> list[str]:
 
 def expire(db: Session, message_id: str, now: datetime) -> bool:
     """10분 안에 결과가 없는 판단을 끝낸다. overdue 뒤 PM 이 고르거나 결과가 왔을 수 있어 잠근 뒤 다시 본다. 끝냈으면 True."""
+    from app.services import lifecycle
+    workspace_id = db.scalar(select(ReplyJudgment.workspace_id).where(ReplyJudgment.message_id == message_id))
+    if workspace_id is not None:
+        lifecycle.workspace(db, workspace_id, check_epoch=False)
     now = messages.utc(now)
     row = db.get(ReplyJudgment, message_id, with_for_update=True, populate_existing=True)
     if row.state != ReplyJudgmentState.PENDING or messages.utc(row.queued_at) > now - JUDGE_WINDOW:

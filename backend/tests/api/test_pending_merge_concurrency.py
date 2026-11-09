@@ -45,6 +45,10 @@ def _locks_cards(statement: str) -> bool:
     return "FOR UPDATE" in statement and "FROM approval_request" in statement
 
 
+def _locks_workspace(statement: str) -> bool:
+    return "FOR UPDATE" in statement and "FROM workspace" in statement
+
+
 def _resolves_card(statement: str) -> bool:
     return statement.lstrip().startswith("UPDATE approval_request") and "resolved_by" in statement
 
@@ -187,7 +191,7 @@ def _db_state(factory):
 
 
 def _race_approval_against_merge(pg, seed, *, send_seen_version: bool):
-    """합치기가 카드를 잠근 동안 승인을 보낸다. 승인의 조건부 UPDATE 가 그 잠금에 걸린 뒤에야 합치기를 놓는다.
+    """합치기가 카드를 잠근 동안 승인을 보낸다. 승인이 공간 잠금을 요청한 뒤에야 합치기를 놓는다.
 
     send_seen_version 이면 합치기 전에 본 payload_version 을 승인 요청에 싣는다.
     """
@@ -199,10 +203,8 @@ def _race_approval_against_merge(pg, seed, *, send_seen_version: bool):
     merge_holds_card, approval_is_waiting = threading.Event(), threading.Event()
     state = {"merge_locked": False}
 
-    # 합치기가 카드를 잠근 직후 멈춘다. 승인이 상태 UPDATE 를 보내 그 잠금에 걸린 뒤에야 풀어, 승인이
-    # 합치기 전의 값이 아니라 합쳐진 값으로 task 를 만드는지 본다
     def before(conn, cursor, statement, params, context, executemany):
-        if _resolves_card(statement):
+        if _locks_workspace(statement) and state["merge_locked"]:
             approval_is_waiting.set()
 
     def after(conn, cursor, statement, params, context, executemany):
@@ -272,10 +274,8 @@ def test_merge_waits_for_approval_and_becomes_new_review_card(pg, seed):
     approval_holds_card, merge_is_waiting = threading.Event(), threading.Event()
     state = {"resolved": False}
 
-    # 승인이 상태 UPDATE 로 카드를 잠근 직후 멈춘다. 합치기가 카드 FOR UPDATE 에서 기다린 뒤 승인이 커밋되면,
-    # 합치기는 처리된 카드를 알아보고 새 카드로 만들어야 한다
     def before(conn, cursor, statement, params, context, executemany):
-        if _locks_cards(statement):
+        if _locks_workspace(statement) and state["resolved"]:
             merge_is_waiting.set()
 
     def after(conn, cursor, statement, params, context, executemany):
@@ -334,14 +334,12 @@ def test_two_extractions_merging_same_cards_in_opposite_order_do_not_deadlock(pg
     both_inside = threading.Barrier(2, timeout=10)
     barrier_broken = threading.Event()
 
-    # 둘 다 합치기 요청이 카드 잠금 쿼리를 보낸 시점에 겹치게 한다. 한쪽이 잠금을 잡은 채 잠깐 멈추면 다른 쪽은
-    # 같은 쿼리에서 기다릴 뿐이다. 카드를 항목 순서대로 하나씩 잠그면 서로를 기다려 데드락이 난다
     def after(conn, cursor, statement, params, context, executemany):
-        if _locks_cards(statement):
+        if _locks_workspace(statement):
             time.sleep(SETTLE)
 
     def before(conn, cursor, statement, params, context, executemany):
-        if _locks_cards(statement):
+        if _locks_workspace(statement):
             try:
                 both_inside.wait()
             except threading.BrokenBarrierError:
@@ -367,7 +365,7 @@ def test_two_extractions_merging_same_cards_in_opposite_order_do_not_deadlock(pg
         event.remove(engine, "before_cursor_execute", before)
         event.remove(engine, "after_cursor_execute", after)
 
-    # 두 요청이 같은 시점에 잠금 쿼리에 들어갔어야 겹침을 확인한 것이다
+    # 같은 공간의 두 요청이 fence 앞에서 겹쳐도 양쪽 항목이 모두 보존돼야 한다.
     assert not barrier_broken.is_set(), "두 요청이 겹치지 않았다"
     assert results == {"xy": 201, "yx": 201}
     cards, _, _ = _db_state(factory)
