@@ -37,6 +37,7 @@ import { mergeIntoApproval } from './approvalMerge'
  */
 
 export const MOCK_SCENARIOS = [
+  'policy-reconsent',
   'consent-required',
   'consent-signup',
   'consent-agreed',
@@ -57,6 +58,7 @@ export const MOCK_SCENARIOS = [
   'meeting-fail',
   'meeting-fail-diarize',
   'meeting-fail-expired',
+  'meeting-fail-unclaimed',
   'meeting-expired-member',
   // Notion 을 연결하지 않은 공간. 회의 올리기·정리·회의록·태스크를 그대로 쓴다 (D-182)
   'meeting-notion-not-connected',
@@ -667,6 +669,10 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
   if (isPasswordResetScenario(scenario)) return createPasswordResetScenarioDb(scenario)
   const state = initialDb()
   switch (scenario) {
+    case 'policy-reconsent':
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.consents = state.consents.map((row) => ({ ...row, version: '2026-11-08' }))
+      break
     case 'consent-required':
     case 'consent-signup':
     case 'consent-agreed':
@@ -676,6 +682,7 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'consent-response-lost':
       signInWith(state, ['ws_01'], 'ws_01')
       state.consentVersions = { terms: 'test-terms-v1', privacy: 'test-privacy-v1' }
+      state.consents = []
       if (scenario === 'consent-signup') state.authenticated = false
       if (scenario === 'consent-mismatch') state.consentVersions.terms = 'server-new-terms'
       if (scenario === 'consent-read-error') state.consentFailure = 'read'
@@ -730,6 +737,9 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       break
     case 'meeting-fail-expired':
       readyToUpload(state, 'fail-expired')
+      break
+    case 'meeting-fail-unclaimed':
+      readyToUpload(state, 'fail-unclaimed')
       break
     case 'meeting-expired-member':
       signInWith(state, ['ws_01'], 'ws_01')
@@ -1051,6 +1061,24 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       state.authenticated = false
       state.invitations.push(pendingInvitation())
       break
+  }
+  if (!scenario.startsWith('consent-') && scenario !== 'policy-reconsent') {
+    for (const account of state.accounts) {
+      for (const kind of ['terms', 'privacy'] as const) {
+        if (
+          !state.consents.some(
+            (row) => row.user_id === account.session.user.user_id && row.kind === kind,
+          )
+        ) {
+          state.consents.push({
+            user_id: account.session.user.user_id,
+            kind,
+            version: state.consentVersions[kind],
+            agreed_at: MOCK_NOW,
+          })
+        }
+      }
+    }
   }
   return state
 }

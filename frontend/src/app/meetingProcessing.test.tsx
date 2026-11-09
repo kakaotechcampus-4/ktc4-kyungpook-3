@@ -724,6 +724,25 @@ describe('실패 (U4-6, U4-7)', () => {
     expect(tracked()).toEqual([])
   })
 
+  it('처리 화면을 보다가 정리 시작 기한이 지나면(upload_unclaimed) 그 회의 상세로 옮기고 목록의 이력을 유지한다 (#598)', async () => {
+    fakeIntervals()
+    const app = await openProcessing({ strict: true })
+
+    failMeeting('mt_10', { failedStage: 'upload_unclaimed' })
+    await act(() => vi.advanceTimersByTimeAsync(3_000))
+    await until(() => expect(app.visited().at(-1)?.pathname).toBe(paths.meetings('ws_01', 'mt_10')))
+    await until(() =>
+      expect(
+        app.queryClient
+          .getQueryData(meetingListQueryOptions('ws_01').queryKey)
+          ?.find(({ id }) => id === 'mt_10'),
+      ).toMatchObject({ status: 'failed', failedStage: 'upload_unclaimed' }),
+    )
+    expect(signalsWith('업로드 뒤 24시간 동안 정리가 시작되지 않아')).toHaveLength(1)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(tracked()).toEqual([])
+  })
+
   it('다른 화면을 보고 있으면 토스트만 띄우고 옮기지 않는다', async () => {
     fakeIntervals()
     const app = renderApp(paths.tasks('ws_01'))

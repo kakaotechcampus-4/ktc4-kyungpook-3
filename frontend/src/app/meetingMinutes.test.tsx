@@ -154,7 +154,10 @@ describe('상태 항목과 빈 상태 (U5-2)', () => {
     db.meetings = db.meetings.filter(({ meeting_id }) => meeting_id === 'mt_10')
     const log = recordRequests()
     renderApp(paths.meetings('ws_01'))
-    const expired = await screen.findByRole('list', { name: '화자 지정 기한 만료' })
+    const expired = await screen.findByRole('list', { name: '기한 만료' })
+    expect(within(expired).getByRole('link', { name: /기획 논의 녹음/ })).toHaveTextContent(
+      '화자 지정 기한 만료',
+    )
     expect(screen.queryByText('아직 올린 회의가 없어요')).toBeNull()
     await user.click(within(expired).getByRole('link', { name: /기획 논의 녹음/ }))
     expect(
@@ -166,6 +169,33 @@ describe('상태 항목과 빈 상태 (U5-2)', () => {
     )
     expect(minutesRequests(log)).toEqual([])
     expect(extractionRequests(log)).toEqual([])
+  })
+
+  it('24시간 동안 가져가지 않은 업로드(upload_unclaimed)는 사유 배지로 남고, 상세는 사유와 다시 업로드를 보이며 파일을 지웠다고 하지 않는다 (#598)', async () => {
+    const user = userEvent.setup()
+    failMeeting('mt_10', { failedStage: 'upload_unclaimed' })
+    const log = recordRequests()
+    renderApp(paths.meetings('ws_01'))
+    const expired = await screen.findByRole('list', { name: '기한 만료' })
+    const row = within(expired).getByRole('link', { name: /기획 논의 녹음/ })
+    expect(row).toHaveTextContent('정리 시작 기한 만료')
+    expect(within(minutesList()).queryByText('기획 논의 녹음')).toBeNull()
+    await user.click(row)
+    expect(
+      await screen.findByRole('heading', { name: '정리 시작 기한이 지났어요' }),
+    ).toBeInTheDocument()
+    expect(
+      within(detail()).getByText(
+        '업로드 뒤 24시간 동안 정리가 시작되지 않아 회의 정리가 종료됐어요. 다시 진행하려면 원본 파일을 다시 올려 주세요.',
+      ),
+    ).toBeInTheDocument()
+    expect(within(detail()).queryByText(/지웠|지워|삭제됐|삭제했/)).toBeNull()
+    expect(within(detail()).getByRole('link', { name: '다시 업로드' })).toHaveAttribute(
+      'href',
+      paths.meetingUpload('ws_01'),
+    )
+    // 목록 첫 진입은 가장 최근 회의록(mt_09)을 연다. 실패한 mt_10 의 회의록은 읽지 않는다
+    expect(minutesRequests(log).map(({ path }) => path)).not.toContain('/meetings/mt_10/minutes')
   })
 
   it('멈춘 채팅 회의(chat_stalled)를 직접 열면 다시 올리라고 하지 않는다 (#450)', async () => {

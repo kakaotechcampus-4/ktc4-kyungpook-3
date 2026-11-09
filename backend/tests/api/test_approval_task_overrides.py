@@ -225,83 +225,20 @@ def test_reject_with_overrides_is_400_and_leaves_approval_pending(client, db, se
     assert _pending(db, approval_id)
 
 
-def _legacy_reminder_dm(db, seed) -> str:
-    """리마인드가 묶음 승인으로 옮기기 전에 쌓인 reminder_dm 행. 이제 POST 로는 만들 수 없어 직접 넣는다(#335)."""
-    row = ApprovalRequest(
-        workspace_id=seed["ws"].workspace_id, type="reminder_dm",
-        payload=json.dumps({"text": "마감 알림"}), requested_by=seed["pm"].member_id,
-    )
-    db.add(row)
-    db.commit()
-    return row.approval_id
-
-
 def _approval_count(db) -> int:
     db.expire_all()
     return len(db.execute(select(ApprovalRequest)).scalars().all())
 
 
 def test_create_reminder_dm_is_400_and_creates_nothing(client, db, seed):
+    """리마인드는 메시지 묶음 승인으로 옮겼고 reminder_dm 종류는 없다(#335)."""
     r = _request(client, seed, "reminder_dm", {"text": "마감 알림"})
 
     assert r.status_code == 400
     error = r.json()["error"]
     assert error["code"] == "INVALID_REQUEST"
-    assert error["details"] == {"field": "type", "allowed": ["task_create", "task_update"]}
+    assert [f["loc"] for f in error["details"]["fields"]] == [["body", "type"]]
     assert _approval_count(db) == 0
-
-
-def test_create_reminder_dm_in_other_workspace_checks_membership_first(client, db, seed):
-    """소속이 아닌 공간이면 type 검사보다 소속 확인이 먼저다. 입력 검증 결과를 비소속자에게 알려 주지 않는다."""
-    r = client.post("/api/v1/approvals", json={
-        "workspace_id": seed["outsider"].workspace_id, "type": "reminder_dm", "payload": {"text": "마감 알림"},
-    })
-
-    assert r.status_code in (403, 404)
-    assert r.json()["error"]["code"] != "INVALID_REQUEST"
-    assert _approval_count(db) == 0
-
-
-def test_legacy_reminder_dm_with_overrides_is_400(client, db, seed):
-    approval_id = _legacy_reminder_dm(db, seed)
-
-    r = _resolve(client, approval_id, task_overrides={"due_date": "2026-10-20"})
-
-    assert r.status_code == 400
-    assert _pending(db, approval_id)
-
-
-def test_legacy_reminder_dm_approves_without_touching_tasks(client, db, seed):
-    """남은 행은 승인돼도 태스크를 바꾸지 않을 뿐, 어디로도 발송되지 않는다. #335 2차 PR 에서 이 분기와 함께 지운다."""
-    approval_id = _legacy_reminder_dm(db, seed)
-    before = _task_count(db)
-
-    r = _resolve(client, approval_id, task_overrides={})
-
-    assert r.status_code == 200
-    assert r.json()["data"]["status"] == "approved"
-    assert _task_count(db) == before
-
-
-def test_legacy_reminder_dm_can_be_rejected(client, db, seed):
-    approval_id = _legacy_reminder_dm(db, seed)
-
-    r = _resolve(client, approval_id, "rejected")
-
-    assert r.status_code == 200
-    assert r.json()["data"]["status"] == "rejected"
-
-
-def test_legacy_reminder_dm_is_listed_and_readable(client, db, seed):
-    approval_id = _legacy_reminder_dm(db, seed)
-
-    listed = client.get("/api/v1/approvals", params={"workspace_id": seed["ws"].workspace_id})
-    one = client.get(f"/api/v1/approvals/{approval_id}")
-
-    assert listed.status_code == 200
-    assert [a["type"] for a in listed.json()["data"]["items"] if a["approval_id"] == approval_id] == ["reminder_dm"]
-    assert one.status_code == 200
-    assert one.json()["data"]["type"] == "reminder_dm"
 
 
 @pytest.mark.parametrize("overrides", [

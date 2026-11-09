@@ -20,8 +20,22 @@ describe('공개 정책 문서 화면', () => {
       const app = renderApp(path)
 
       expect(await screen.findByRole('heading', { level: 1, name: title })).toBeInTheDocument()
-      expect(screen.getByText('문서를 준비하고 있어요.')).toBeInTheDocument()
-      expect(screen.getByText('내용과 시행일은 검토가 끝난 뒤 공개할게요.')).toBeInTheDocument()
+      expect(screen.queryByText('문서를 준비하고 있어요.')).not.toBeInTheDocument()
+      expect(screen.getByText('판본 2026-11-10 · 시행일 2026-11-10')).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: '서비스·개인정보 문의 이메일' })).toHaveAttribute(
+        'href',
+        'mailto:managersmanager.noreply@gmail.com',
+      )
+      if (path === '/privacy') {
+        const reference = screen.getByRole('link', {
+          name: 'Elice 공식 ML API 활용 가이드·국내 처리 설명',
+        })
+        expect(reference).toHaveAttribute(
+          'href',
+          'https://elice.io/ko/resources/blog/open-code-ml-api',
+        )
+        expect(reference).toHaveAttribute('rel', 'noopener noreferrer')
+      }
       expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: /동의/ })).not.toBeInTheDocument()
       await app.expectPath(path)
