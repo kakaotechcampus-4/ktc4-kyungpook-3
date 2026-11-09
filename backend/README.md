@@ -100,6 +100,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 |---|---|---|
 | `INVALID_REQUEST` | 400 | 요청 형식이 올바르지 않음 (필드 검증 실패 등) |
 | `CONSENT_VERSION_MISMATCH` | 400 | 동의 요청의 약관·개인정보처리방침 버전이 현재 BE 설정과 다름. 두 문서 모두 저장하지 않으며 `details.current_versions`·`received`로 현재 값과 받은 값을 안내 |
+| `CONSENT_ACCOUNT_CHANGED` | 409 | 동의 GET·POST의 선택 `X-Consent-Account-ID`와 쿠키 계정이 다름. 조회·저장 없이 반환하며 새로고침 후 계정을 다시 확인. 헤더 없는 기존 소비자는 호환 |
 | `WORKSPACE_MISMATCH` | 400 | 요청한 workspace_id가 대상 리소스의 실제 workspace와 다름 |
 | `MEETING_NOT_FOUND` | 404 | 회의를 찾을 수 없음 |
 | `EXTRACTION_NOT_FOUND` | 404 | 추출 결과를 찾을 수 없음 |

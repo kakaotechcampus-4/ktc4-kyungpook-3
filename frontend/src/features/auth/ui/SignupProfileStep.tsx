@@ -13,6 +13,8 @@ import { useAuthNext } from '../model/useAuthNext'
 import { useEnterSession } from '../model/useEnterSession'
 import { isKakaoLinkExpired } from '../model/useKakaoLink'
 import { PASSWORD_HINT, signupProfileSchema } from '../model/schemas'
+import { ConsentFields, emptyConsentSelection, policyVersions } from '@/entities/consent'
+import { currentPolicyPublication } from '@/shared/config/policyPublication'
 import type { SignupStep } from '../model/signupStep'
 
 const FORM = 'flex flex-col gap-16'
@@ -64,17 +66,29 @@ export function SignupProfileStep({
   const navigate = useNavigate()
   const next = useAuthNext()
   const [failure, setFailure] = useState<{ message: string; conflict: boolean } | null>(null)
+  const [consents, setConsents] = useState(emptyConsentSelection)
+  const publication = currentPolicyPublication
+  const mustAgree = publication.kind === 'published'
+  const agreed = consents.terms && consents.privacy
 
   useEffect(() => {
     setFocus(defaultName === '' ? 'name' : 'password')
   }, [defaultName, setFocus])
 
   const onSubmit = submit(async ({ name, password }) => {
+    if (mustAgree && !agreed) return
     setFailure(null)
     try {
-      await enterSession(
-        await signup({ verificationToken: step.verificationToken, name, password, linkKakao }),
-      )
+      const session = await signup({
+        verificationToken: step.verificationToken,
+        name,
+        password,
+        linkKakao,
+      })
+      await enterSession({
+        session,
+        acceptance: publication.kind === 'published' ? policyVersions(publication.documents) : null,
+      })
     } catch (error) {
       if (isKakaoLinkExpired(error)) onLinkExpired(error)
       else if (error instanceof ApiError && error.code === ERROR_CODES.SIGNUP_VERIFICATION_INVALID)
@@ -128,7 +142,22 @@ export function SignupProfileStep({
         error={errors.password?.message}
         {...register('password')}
       />
-      <Button type="submit" variant="primary" size="auth" loading={isSubmitting} className="mt-8">
+      {publication.kind === 'published' && (
+        <ConsentFields
+          documents={publication.documents}
+          value={consents}
+          onChange={setConsents}
+          disabled={isSubmitting}
+        />
+      )}
+      <Button
+        type="submit"
+        variant="primary"
+        size="auth"
+        loading={isSubmitting}
+        disabled={mustAgree && !agreed}
+        className="mt-8"
+      >
         계정 만들기
       </Button>
     </form>

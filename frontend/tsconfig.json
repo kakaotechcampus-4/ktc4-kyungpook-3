@@ -21,5 +21,12 @@
 
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src", "vite.config.ts", "e2e", "playwright.config.ts"]
+  "include": [
+    "src",
+    "vite.config.ts",
+    "vite.consent.config.ts",
+    "e2e",
+    "playwright.config.ts",
+    "playwright.consent.config.ts"
+  ]
 }

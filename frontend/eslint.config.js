@@ -14,6 +14,7 @@ export default tseslint.config(
       'coverage',
       'playwright-report',
       'test-results',
+      '.vite',
       'docs',
       'public/mockServiceWorker.js',
     ],

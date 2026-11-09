@@ -1,11 +1,14 @@
 import { Link } from 'react-router'
 import { policyDocuments } from '@/shared/config/policy'
+import { currentPolicyPublication } from '@/shared/config/policyPublication'
 import type { PolicyKind } from '@/shared/config/policy'
 import { paths } from '@/shared/config/routes'
 import { BrandMark } from '@/shared/ui/brand-mark'
 
 function PolicyPage({ kind }: { kind: PolicyKind }) {
   const document = policyDocuments[kind]
+  const published =
+    currentPolicyPublication.kind === 'published' ? currentPolicyPublication.documents[kind] : null
 
   return (
     <div className="flex min-h-dvh flex-col bg-surface text-ink">
@@ -44,10 +47,28 @@ function PolicyPage({ kind }: { kind: PolicyKind }) {
           <h1 id="policy-title" className="text-[30px] leading-[1.25] font-bold tracking-h1">
             {document.title}
           </h1>
-          <div className="flex flex-col gap-10 rounded-16 border border-line bg-surface-sunken p-24">
-            <p className="text-lead font-semibold">문서를 준비하고 있어요.</p>
-            <p className="text-body text-sub">내용과 시행일은 검토가 끝난 뒤 공개할게요.</p>
-          </div>
+          {published === null ? (
+            <div className="flex flex-col gap-10 rounded-16 border border-line bg-surface-sunken p-24">
+              <p className="text-lead font-semibold">문서를 준비하고 있어요.</p>
+              <p className="text-body text-sub">내용과 시행일은 검토가 끝난 뒤 공개할게요.</p>
+            </div>
+          ) : (
+            <>
+              <p className="text-body text-sub">
+                판본 {published.version} · 시행일 {published.effectiveOn}
+              </p>
+              {published.sections.map((section) => (
+                <section key={section.title} className="flex flex-col gap-12">
+                  <h2 className="text-lead font-semibold">{section.title}</h2>
+                  {section.paragraphs.map((paragraph) => (
+                    <p key={paragraph} className="text-body text-sub">
+                      {paragraph}
+                    </p>
+                  ))}
+                </section>
+              ))}
+            </>
+          )}
         </section>
       </main>
     </div>

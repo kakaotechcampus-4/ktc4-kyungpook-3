@@ -28,9 +28,10 @@ export const MOCK_DB_STORAGE_KEY = 'msw-db'
  * 18: 가입 인증·카카오 대기와 별칭 후보를 함께 저장한다. 서로 다른 17 저장본은 복원하지 않는다.
  * 19: 삭제된 회의의 원문 없는 삭제 기록을 저장한다 (#576).
  * 20: 계정 탈퇴의 익명 팀원과 개인정보 없는 정리 영수증을 저장한다 (#575).
+ * 21: 사용자별 동의 행과 독립된 서버 판본을 저장한다 (#566).
  * 올리면 e2e/restore.e2e.ts 와 src/shared/mock/taskScenarios.test.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
  */
-export const MOCK_DB_VERSION = 20
+export const MOCK_DB_VERSION = 21
 
 interface StoredDb {
   version: number
@@ -106,6 +107,13 @@ function isMockDb(value: unknown): value is MockDb {
   const state = value as unknown as MockDb
   return (
     isSession(state.session) &&
+    hasStrings(state.consentVersions, ['terms', 'privacy']) &&
+    ['none', 'read', 'write', 'response-lost'].includes(state.consentFailure) &&
+    state.consents.every(
+      (entry) =>
+        hasStrings(entry, ['user_id', 'version', 'agreed_at']) &&
+        (entry.kind === 'terms' || entry.kind === 'privacy'),
+    ) &&
     state.withdrawnMemberIds.every((id) => typeof id === 'string') &&
     state.withdrawals.every(
       (entry) =>

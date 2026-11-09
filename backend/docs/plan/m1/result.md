@@ -152,3 +152,11 @@ AI 정리 지연 중의 완료 표시 기준도 확정하지 않았다. 별도 �
 [FE 대표 계약](../../../../frontend/docs/contracts/frontend-api-contract.md#415-이용약관개인정보처리방침-동의-564-be-제안-fe-합의-전)에 현재 코드·합의 상태·초안 판본을 구분했고 [후속 결정](basis-for-decision/2026-11-09-consent-transaction-boundary.md)에 저장·응답 경계와 공개 전 제약을 기록했다. 이 단위는 로그인 사용자용 기록 API다. 가입 강제·최종 정책 본문 공개·법률 검토 완료는 포함하지 않으며, 최종 공개 시 새 검토 완료 판본으로 문서·BE·FE를 함께 맞춰야 한다.
 
 리뷰 후 동시 POST의 두 HTTP 응답에 담긴 동의 시각을 최종 DB 값과 비교하도록 회귀를 보강했다. 시각을 덮어쓰는 DO UPDATE 변형은 기존 검사에서 통과했으나, 보강한 검사의 실제 시각 비교에서 실패했다. 정상 구현의 동의·탈퇴·경합 검사는 다시 62 통과·8 건너뜀이었다. 초기 보강본의 import 누락 실패는 이 반례로 세지 않았다. 섹션 번호 정정과 함께 대표 계약의 앵커 참조도 맞췄다.
+
+## 2026-11-09 #566 화면의 기대 계정 확인
+
+사용자의 동의 화면 연결 요청에 따라 GET·POST에 선택 `X-Consent-Account-ID` precondition을 추가했다. 실제 쿠키 계정과 다르면 동의 상태를 읽거나 쓰기 전에 `409 CONSENT_ACCOUNT_CHANGED`다. 헤더가 없는 기존 호출자는 이전 동작을 유지하며 추가 계정 비교가 적용되지 않는다. 사용자 ID 본문·가입 schema·동의 모델·migration은 변경하지 않았다.
+
+[API 회귀](../../../tests/api/test_consents_api.py)의 A 계정 기대 헤더·B 계정 실제 쿠키 조합에서 기존 GET·POST가 모두 200인 반례를 SQLite·PostgreSQL로 각각 확인했다. 수정 뒤 `pytest tests/api/test_consents_api.py -q`는 30 통과·SQLite 전용 변형 4 건너뜀이다. 잘못된 계정 요청의 409·전체 무저장과 올바른 B 헤더의 B 계정만 저장을 확인했다. 격리 PostgreSQL `mm566_owner`를 사용했으며 운영 DB와 실사용자 데이터는 사용하지 않았다.
+
+FE는 이 헤더를 항상 보내고 계정 변경 때 새로고침을 안내한다. 현재 문서 공개 상태는 준비 중이며 실제 정책 게시·초안 동의 수집은 하지 않았다. 전체 서버 접근 차단과 가입·동의의 원자적 저장은 이번 변경 범위가 아니다. [대표 계약](../../../../frontend/docs/contracts/frontend-api-contract.md#415-이용약관개인정보처리방침-동의-564-be-제안-fe-합의-전)과 [화면 결과](../../../../frontend/docs/issues/566-consent-connection/result.md)에 구현과 공개 제약을 구분했다.

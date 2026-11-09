@@ -47,6 +47,28 @@ def test_requires_login(mdb):
     assert _agree(client()).status_code == 401
 
 
+@pytest.mark.parametrize("method", ["get", "post"])
+def test_changed_cookie_account_cannot_use_previous_account_agreement(mdb, method):
+    original = _user(mdb, "original")
+    current = _user(mdb, "current")
+    expected_id = original.user_id
+    current_id = current.user_id
+    mdb.commit()
+    c = client("current")
+    headers = {"X-Consent-Account-ID": expected_id}
+    if method == "get":
+        response = c.get(f"{P}/me", headers=headers)
+    else:
+        response = c.post(P, headers=headers, json={"terms_version": V, "privacy_version": V})
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "CONSENT_ACCOUNT_CHANGED"
+    assert mdb.scalars(select(UserConsent)).all() == []
+    accepted = c.post(P, headers={"X-Consent-Account-ID": current_id},
+                      json={"terms_version": V, "privacy_version": V})
+    assert accepted.status_code == 200
+    assert {row.user_id for row in mdb.scalars(select(UserConsent))} == {current_id}
+
+
 def test_new_user_must_agree(mdb):
     _user(mdb, "a")
     mdb.commit()
