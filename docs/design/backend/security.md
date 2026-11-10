@@ -98,6 +98,6 @@ Notion·Discord 연결과 카카오 로그인이 같이 쓴다([`oauth_state.py`
 - 로그인·재설정 IP 제한이 메모리라 `--workers 1` 전제. 재시작하면 횟수가 풀린다.
 - 전체 메일 상한은 IP 여러 개로 채울 수 있다. 로그(`reason=global`)로 알아채고 IP 를 막는 운영 대응이다.
 - 서버는 약관에 동의하지 않은 사용자의 다른 API 를 막지 않는다(FE 가 동의 화면을 띄운다).
-- 가입의 `EMAIL_ALREADY_EXISTS` 로 가입 여부가 드러난다(남은 노출).
+- 가입 코드 요청(`POST /auth/signup/code`)의 `EMAIL_ALREADY_EXISTS` 로 이메일 가입 여부가, 아이디 확인 API(`GET /auth/username-availability`, 인증·횟수 제한 없음)로 아이디 존재가 드러난다(아이디는 초대에 쓰는 공개 식별자). 남은 노출이다.
 - 탈퇴 정리는 로컬 사본까지다. 외부 공급사(STT·LLM)의 원격 보관과 이미 나간 Discord 메시지는 회수했다고 주장하지 않는다.
 - 운영 `SERVICE_TOKEN`·`OAUTH_STATE_SECRET` 교체 주기 [확인 필요].
