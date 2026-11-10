@@ -73,7 +73,7 @@ def test_pm_can_invite_member2_and_member2_accepts(mdb):
     pm, _ = _login(EMAILS[0], PM_PW)
     invited = pm.post(
         f"/api/v1/workspaces/{seeded.workspace_id}/invitations",
-        json={"member_id": seeded.member_ids["p2"], "email": EMAILS[1]},
+        json={"member_id": seeded.member_ids["p2"], "user_id": seeded.user_ids["p2"]},
     )
     assert invited.status_code == 201
 
