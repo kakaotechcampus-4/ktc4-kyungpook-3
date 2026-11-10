@@ -17,7 +17,7 @@
 | 이름 | 파트 | 값 | 의미 | 운영 메모 |
 |---|---|---|---|---|
 | `AUTO_CREATE_ENABLED` | BE | true(기본) / false·0·off·no | 확신도가 높은 새 항목을 PM 확인 없이 태스크로 만든다(auto). 끄면 auto 를 review 로 내린다. 모르는 값은 꺼짐 | 처음 운영은 끄고 검증 결과·PM 승인 기록을 본 뒤 여는 것을 권한다(#382, #526). 바꾸면 `docker compose ... up -d` 로 컨테이너를 다시 만든다(restart 로는 반영 안 됨). 운영값 [확인 필요] |
-| `MEETING_DELETION_ENABLED` | BE | false(기본) / true | 회의 삭제 API·UI 를 연다. 꺼져 있으면 DELETE 가 503 | 구 봇 교체와 녹음 계보 검증 뒤에만 켠다([deploy README](../../deploy/README.md#회의-삭제-활성화-576)) |
+| `MEETING_DELETION_ENABLED` | BE | false(기본) / 정확히 소문자 `true` 만 켜짐(True·1·on 은 꺼짐). `AUTO_CREATE_ENABLED` 와 다르다 | 회의 삭제 API·UI 를 연다. 꺼져 있으면 DELETE 가 503 | 구 봇 교체와 녹음 계보 검증 뒤에만 켠다([deploy README](../../deploy/README.md#회의-삭제-활성화-576)) |
 | `UPLOAD_MAX_BYTES` | BE | 바이트 (예시 104857600 = 100MiB) | 웹 녹음 업로드 한도 | 바꾸면 프론트 한도(`uploadPolicy`)도 같이 바꾼다 |
 | `MM_EXTRACT_PATH` | AI | 비움·legacy / judge | 할 일 추출 경로. judge 는 판단 파이프라인(`judge/pipeline.py`) | judge 는 `TERRA_*`, `LUNA_*`, `BE_*` 가 모두 있어야 돈다. Jev 근거 상태는 judge 에서만 쓴다. 운영값 [확인 필요] |
 | `MM_STT_BACKEND` | AI | local(기본) / elice | 전사 백엔드. local 은 로컬 Whisper(`MM_STT_MODEL`, 기본 large-v3-turbo) | 운영은 elice 로 본다(`ai/deploy/gpu-stt/README.md`: "워커는 지금처럼 Elice 만 쓴다"). `.env.example` 에는 없다 |
