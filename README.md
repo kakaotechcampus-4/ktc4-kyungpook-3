@@ -40,7 +40,8 @@ flowchart LR
   W -- "전사 · 판단 · 초안" --> BE[Backend<br/>FastAPI + PostgreSQL]
   BE -- "auto / review / hold" --> FE[Frontend<br/>React PWA]
   BE --> N[Notion 보드]
-  BE -- 재촉 DM --> V
+  BE -- 재촉 DM --> BOT
+  BOT --> M[팀원 개인 DM]
 ```
 
 자세한 구조는 [테크스펙 — 아키텍처](docs/techspec/architecture.md)를 봅니다.
