@@ -32,4 +32,4 @@
 - 이름 비교에서 대소문자를 무시할지 확인한다. 정한 문구와 FE `memberNameKey` 가 다르다(결정 기록의 결정 3)
 - FE #647 이 `move_discord_link` 와 `MEMBER_NAME_DUPLICATED` 를 쓴다
 - 승인 카드 payload 의 `evidence_speaker_member_id` 와 이미 저장된 요약 문서의 이름은 옮긴 팀원을 따르지 않는다
-- 같은 이름으로 동시에 만드는 두 요청은 둘 다 통과할 수 있다
+- 같은 이름을 동시에 보내면 워크스페이스 행 잠금(`lifecycle.workspace`)으로 차례로 처리돼 두 번째가 409 다(리뷰에서 Postgres 두 세션으로 확인). DB 제약은 없어 이 잠금을 거치지 않는 쓰기 경로가 생기면 막지 못한다
