@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { clearTrackedMeetings } from '@/entities/meeting'
@@ -129,6 +129,23 @@ describe('요약 상태', () => {
 
     expect(within(panel).getByText('요약을 만드는 중이에요')).toBeInTheDocument()
     expect(within(panel).queryByText(AWAITING_TITLE)).toBeNull()
+  })
+
+  it('PM 이 카드 하나를 승인하고 돌아오면 남은 건수가 줄어 있다', async () => {
+    awaitApprovals()
+    db.approvals.find(({ approval_id }) => approval_id === 'ap_02')!.payload.due_date = '2026-09-30'
+    const user = userEvent.setup()
+    const app = renderApp(MT_09)
+    expect(await screen.findByText(/승인 대기 3건이 남았어요/)).toBeInTheDocument()
+
+    act(() => app.navigate(paths.approval('ws_01', 'ap_02')))
+    const approve = await screen.findByRole('button', { name: '승인' })
+    await waitFor(() => expect(approve).toBeEnabled())
+    await user.click(approve)
+    expect(await screen.findByTestId('approval-result')).toHaveTextContent('승인했어요')
+
+    act(() => app.navigate(MT_09))
+    expect(await screen.findByText(/승인 대기 2건이 남았어요/)).toBeInTheDocument()
   })
 
   it('요약이 있으면 승인을 기다리는 상태여도 요약과 내려받기를 보인다', async () => {
