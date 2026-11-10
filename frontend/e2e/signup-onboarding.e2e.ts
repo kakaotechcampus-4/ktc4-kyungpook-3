@@ -36,11 +36,15 @@ test('가입 → 워크스페이스 만들기 → Discord·Notion 모의 OAuth �
   await expect(page).toHaveURL(/\/connect_members$/)
   await expect(page.getByText('노션 연동 완료')).toBeVisible()
 
-  // 팀원 연결: 봇은 없고, 생성자 PM 을 체크하면 새로 만들지 않고 연결한다.
-  // 확인 완료는 PM 체크가 있어야 한다 (#228) — 예전에는 생성자 이름을 그대로 적어 이었다
+  // 팀원 연결: 팀원 한 명이 한 줄이고 줄마다 바로 저장한다 (#647). 봇은 없다.
+  // 확인 완료는 PM 이 디스코드에 연결돼 있어야 한다 (#228) — PM 줄에서 계정을 고르면 새로 만들지 않고 잇는다
   await expect(page.getByText('@manager_bot')).toHaveCount(0)
-  await page.getByRole('checkbox', { name: '@seoyeon_01 — PM 새 사용자' }).click()
-  await page.getByLabel('@minsu의 팀원 이름').fill('박민수')
+  await page.getByRole('combobox', { name: '새 사용자의 디스코드 계정' }).click()
+  await page.getByRole('option', { name: /^@seoyeon_01/ }).click()
+  await page.getByRole('button', { name: '@minsu 팀원으로 추가' }).click()
+  await page.getByRole('textbox', { name: 'minsu의 새 이름' }).fill('박민수')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: '박민수 이름 고치기' })).toBeVisible()
   await page.getByRole('button', { name: '2명 확인 완료' }).click()
 
   // 새 공간의 대시보드 (D-013) — 헤더와 6개 탭이 있는 앱 셸 (D-186)
@@ -53,7 +57,7 @@ test('가입 → 워크스페이스 만들기 → Discord·Notion 모의 OAuth �
   )
 })
 
-test('팀원 연결: 이름이 달라도 PM 을 체크해 잇고, 다시 들어오면 PM 이 체크된 채 이름 칸이 잠겨 있다 (#228)', async ({
+test('팀원 연결: 이름이 달라도 PM 줄에서 계정을 골라 잇고, 다시 들어오면 그 계정이 골라져 있다 (#228)', async ({
   page,
 }) => {
   // 생성자 PM 은 로그인 계정 이름(최진호)으로 이미 있다
@@ -65,24 +69,28 @@ test('팀원 연결: 이름이 달라도 PM 을 체크해 잇고, 다시 들어�
   await page.getByRole('button', { name: '건너뛰기' }).click()
   await expect(page).toHaveURL('/onboarding/ws_03/connect_members')
 
-  // PM 이름과 다르게 적었어도 PM 을 체크하면 이름 칸은 PM 이름으로 잠긴다. 키보드(Space)로 체크한다
-  await page.getByLabel('@seoyeon_01의 팀원 이름').fill('진호')
-  await page.getByRole('checkbox', { name: '@seoyeon_01 — PM 최진호' }).focus()
-  await page.keyboard.press('Space')
-  await expect(page.getByLabel('@seoyeon_01의 팀원 이름')).toBeDisabled()
-  await expect(page.getByLabel('@seoyeon_01의 팀원 이름')).toHaveValue('최진호')
-  await page.getByLabel('@minsu의 팀원 이름').fill('박민수')
+  // 디스코드 표시 이름(서연)이 PM 이름과 달라도 PM 줄에서 고르면 PM 에 잇는다. 키보드로 연다
+  const pmAccount = page.getByRole('combobox', { name: '최진호의 디스코드 계정' })
+  await pmAccount.focus()
+  await page.keyboard.press('Enter')
+  await page.getByRole('option', { name: /^@seoyeon_01/ }).click()
+  await expect(pmAccount).toContainText('@seoyeon_01')
+  // 연결 안 된 계정은 디스코드 이름으로 바로 팀원이 되고, 그 줄에서 이름을 고친다
+  await page.getByRole('button', { name: '@minsu 팀원으로 추가' }).click()
+  await page.getByRole('textbox', { name: 'minsu의 새 이름' }).fill('박민수')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: '박민수 이름 고치기' })).toBeVisible()
 
-  // 나가기는 입력 중 매핑을 저장하고 단계는 완료하지 않는다
+  // 줄마다 이미 저장했다. 나가기는 단계를 완료하지 않는다
   await page.getByRole('link', { name: '온보딩 나가기' }).click()
   await expect(page).toHaveURL('/workspaces')
 
-  // 다시 들어온다(새 문서). PM 이 연결된 줄은 PM 을 체크해 두고 이름 칸을 잠근다
+  // 다시 들어온다(새 문서). 고른 계정과 고친 이름이 그대로다
   await page.goto('/onboarding/ws_03/connect_members')
-  await expect(page.getByRole('checkbox', { name: '@seoyeon_01 — PM 최진호' })).toBeChecked()
-  await expect(page.getByLabel('@seoyeon_01의 팀원 이름')).toBeDisabled()
-  await expect(page.getByLabel('@seoyeon_01의 팀원 이름')).toHaveValue('최진호')
-  await expect(page.getByLabel('@minsu의 팀원 이름')).toHaveValue('박민수')
+  await expect(pmAccount).toContainText('@seoyeon_01')
+  await expect(page.getByRole('combobox', { name: '박민수의 디스코드 계정' })).toContainText(
+    '@minsu',
+  )
   await page.getByRole('button', { name: '2명 확인 완료' }).click()
 
   // 같은 PM 계정으로 대시보드에 들어간다

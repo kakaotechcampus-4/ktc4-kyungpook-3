@@ -1,20 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
-import type { FormEvent } from 'react'
 import { integrationsQueryOptions } from '@/entities/integration'
 import { discordUsersQueryOptions, memberListQueryOptions, pmsOf } from '@/entities/member'
-import type { Member } from '@/entities/member'
-import { MemberAddForm } from '@/features/member-add'
-import {
-  MemberMappingFields,
-  buildMappingRows,
-  useMemberMappingForm,
-} from '@/features/member-mapping'
-import type { MappingRow } from '@/features/member-mapping'
+import type { DiscordUser, Member } from '@/entities/member'
+import { MemberRows, useMemberRowsBusy } from '@/features/member-mapping'
 import { useOnboardingSave } from '@/features/onboarding'
 import { errorMessage } from '@/shared/api/errorMessages'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
+import { guardLeave } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
@@ -34,10 +28,15 @@ const CARD = {
 const NOT_CONNECTED =
   '디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이름으로 팀원을 추가하거나, 이전 단계에서 연결하거나, 건너뛸 수 있어요.'
 
-function messagesFor(rows: readonly MappingRow[]): string[] {
-  const unknown = rows.filter(({ name }) => !name.trim()).length
+/** `확인 완료` 는 만든 PM 이 디스코드에 연결돼 있어야 한다 (#228, 2026-10-14 사용자 결정) */
+const PM_REQUIRED = 'PM의 디스코드 계정을 골라야 완료할 수 있어요.'
+
+function messagesFor(discordUsers: readonly DiscordUser[], members: readonly Member[]): string[] {
+  const accounts = discordUsers.filter(({ isBot }) => !isBot)
+  const linked = new Set(members.map(({ discordUserId }) => discordUserId))
+  const unknown = accounts.filter(({ discordUserId }) => !linked.has(discordUserId)).length
   return [
-    `마지막이에요. 디스코드에서 팀원 ${rows.length}명을 찾았어요 — 이름만 확인해 주세요.`,
+    `마지막이에요. 디스코드에서 팀원 ${accounts.length}명을 찾았어요 — 누구인지 확인해 주세요.`,
     ...(unknown > 0
       ? [`${unknown}명은 누구인지 모르겠어요. 매칭하지 않으면 그 사람에게는 DM을 보낼 수 없습니다.`]
       : []),
@@ -46,9 +45,7 @@ function messagesFor(rows: readonly MappingRow[]): string[] {
 
 interface MembersFormProps {
   workspaceId: string
-  initialRows: MappingRow[]
-  /** PM 팀원. 먼저 만들어진 순서다 — 첫째가 워크스페이스를 만든 PM 이고 체크박스가 그 PM 을 가리킨다 (#228) */
-  pms: Member[]
+  discordUsers: DiscordUser[]
   notice: string | undefined
   /** `이전 단계` 가 갈 Notion 둘러보기 */
   previous: string | null
@@ -57,126 +54,85 @@ interface MembersFormProps {
 }
 
 /**
- * 온보딩의 팀원 연결 입력. 입력과 저장 규칙은 `useMemberMappingForm` 이 맡는다.
- * `확인 완료` 는 PM 을 체크해야 하고(#228), 모두 저장한 뒤에만 팀원 연결 단계 완료를 보낸다.
- * `나중에 하기`·나가기 저장은 PM 체크를 막지 않는다.
- * 하단 `다음 단계` 는 `나중에 하기` 와 같다(같은 잠금). `이전 단계` 는 공통 이탈 확인을 거친다 — 입력을 저장하지 않는다.
+ * 온보딩의 팀원 연결. 목록은 팀원 관리 창과 같은 `MemberRows` 이고 줄마다 바로 저장한다 — 초대는 숨긴다.
+ * `N명 확인 완료` 의 N 은 디스코드에 연결된 팀원 수다. 만든 PM 이 연결돼 있어야 하고(#228), 단계 완료만 보낸다.
+ * `나중에 하기` 와 하단 `다음 단계` 는 건너뜀을 저장한다. 줄을 쓰거나 단계를 저장하는 동안에는 셋 다와 나가기를 막는다.
+ * 열린 이름 고치기 칸에 바꾼 글자가 있으면 나가기·`이전 단계` 와 단계 저장(완료·건너뜀) 모두 공통 이탈 확인을 거친다 —
+ * 단계를 저장하면 대시보드로 가서 칸이 사라진다.
  */
-function MembersForm({
-  workspaceId,
-  initialRows,
-  pms,
-  notice,
-  previous,
-  reveal,
-}: MembersFormProps) {
-  const mapping = useMemberMappingForm(workspaceId, initialRows, pms)
-  const {
-    form: {
-      getValues,
-      formState: { isSubmitting, isDirty },
-    },
-    submit,
-    filled,
-    setFormError,
-    save,
-    release,
-  } = mapping
+function MembersForm({ workspaceId, discordUsers, notice, previous, reveal }: MembersFormProps) {
+  const members = useQuery(memberListQueryOptions(workspaceId)).data ?? []
+  const writing = useMemberRowsBusy(workspaceId)
   const onboarding = useOnboardingSave(workspaceId)
+  const pmAccount = useRef<HTMLButtonElement>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const creator = pmsOf(members)[0]
+  const linked = members.filter(({ discordUserId }) => discordUserId !== null).length
 
-  /* `확인 완료` · `나중에 하기` · `나가기` 저장은 한 번에 하나다 (F-r1 #7). 둘이 겹치면 같은 팀원 캐시로 계획해
-     같은 줄에 POST 가 두 번 나갈 수 있다. 렌더를 기다리지 않고 ref 로 막는다 — 버튼이 비활성이 되기 전의 클릭도 막힌다 */
+  // 카드 버튼과 `›` 가 겹쳐 눌려도 단계 저장은 하나다
   const lock = useRef(false)
-  const [exiting, setExiting] = useState(false)
-  const exclusive = async (work: () => Promise<void>) => {
-    if (lock.current) return
-    lock.current = true
-    try {
-      await work()
-    } finally {
-      lock.current = false
-    }
-  }
-
-  /* 제출 handler 는 이벤트 안에서 만든다 — lock 을 쓰는 함수를 렌더 중에 넘기지 않는다 */
-  const onSubmit = (event: FormEvent<HTMLFormElement>) =>
-    submit((values) =>
-      exclusive(async () => {
-        if (!(await save(values, true))) return
-        await onboarding
-          .save({ step: 'connect_members', action: 'complete' })
-          .catch((error: unknown) => setFormError(errorMessage(error)))
-      }),
-    )(event)
-
-  /* 건너뛰기가 저장된 뒤에만 등록을 푼다. 실패하면 입력이 남아 있으니 이탈 확인도 남아야 한다.
-     성공하면 단계 가드가 옮기는데, 그 <Navigate> 는 관문을 타지 않아 등록이 남아 있어도 막지 않는다 */
-  const skip = () => {
-    setFormError(null)
-    void exclusive(() =>
-      onboarding
-        .save({ step: 'connect_members', action: 'skip' })
-        .then(() => release())
-        .catch((error: unknown) => setFormError(errorMessage(error))),
-    )
-  }
-
-  /** 나가기 전 저장. 다른 저장이 진행 중이면 나가지 않는다 — 끝난 뒤 다시 누르면 된다 */
-  const beforeLeave = async (): Promise<boolean> => {
-    if (lock.current) return false
-    if (!isDirty) return true
-    let ok = false
-    setExiting(true)
-    await exclusive(async () => {
-      ok = await save(getValues())
+  const saveStep = (action: 'complete' | 'skip') =>
+    guardLeave(() => {
+      if (lock.current) return
+      lock.current = true
+      setFormError(null)
+      void onboarding
+        .save({ step: 'connect_members', action })
+        .catch((error: unknown) => setFormError(errorMessage(error)))
+        .finally(() => {
+          lock.current = false
+        })
     })
-    setExiting(false)
-    return ok
+  const complete = () => {
+    if (creator?.discordUserId === null) {
+      setFormError(PM_REQUIRED)
+      pmAccount.current?.focus()
+      return
+    }
+    saveStep('complete')
   }
-
-  const busy = isSubmitting || onboarding.isPending || exiting
+  const skip = () => saveStep('skip')
+  const busy = writing || onboarding.isPending
 
   return (
     <OnboardingLayout
       stepNumber={STEP_NUMBER.connect_members}
       title={STEP_TITLE.connect_members}
-      exit={<ExitLink beforeLeave={beforeLeave} />}
+      exit={<ExitLink busy={busy} />}
       notice={notice}
-      messages={messagesFor(initialRows)}
+      messages={messagesFor(discordUsers, members)}
       nav={{ previous, onNext: skip, disabled: busy }}
     >
-      <form noValidate onSubmit={(event) => void onSubmit(event)}>
-        <OnboardingCard
-          title={CARD.title}
-          description={CARD.description}
-          actions={
-            <Reveal indicator={{ reveal }}>
-              <Button
-                type="submit"
-                variant="primary"
-                size="lg-onboarding"
-                loading={busy}
-                disabled={filled === 0}
-              >
-                {filled}명 확인 완료
-              </Button>
-              <Button
-                type="button"
-                variant="text"
-                size="lg-onboarding"
-                disabled={busy}
-                onClick={skip}
-              >
-                나중에 하기
-              </Button>
-            </Reveal>
-          }
-        >
+      <OnboardingCard
+        title={CARD.title}
+        description={CARD.description}
+        actions={
           <Reveal indicator={{ reveal }}>
-            <MemberMappingFields mapping={mapping} />
+            <Button
+              variant="primary"
+              size="lg-onboarding"
+              loading={onboarding.isPending}
+              disabled={linked === 0 || writing}
+              onClick={complete}
+            >
+              {linked}명 확인 완료
+            </Button>
+            <Button variant="text" size="lg-onboarding" disabled={busy} onClick={skip}>
+              나중에 하기
+            </Button>
           </Reveal>
-        </OnboardingCard>
-      </form>
+        }
+      >
+        <Reveal indicator={{ reveal }}>
+          <FormErrorPanel message={formError} className="mt-6" />
+          <MemberRows
+            workspaceId={workspaceId}
+            discordUsers={discordUsers}
+            tone="onboarding"
+            pmAccountRef={pmAccount}
+          />
+        </Reveal>
+      </OnboardingCard>
     </OnboardingLayout>
   )
 }
@@ -191,35 +147,37 @@ interface DiscordNotConnectedProps {
 
 /**
  * Discord 를 연결하지 않은 채 온 팀원 연결 (D-073 개정, 2026-09-29). 불러올 Discord 사용자가 없다 —
- * 오류 대신 까닭을 알리고, 이름만으로 팀원을 추가하게 한다 (#613). 추가한 팀원은 Discord 를 연결한 뒤 매칭 폼에서 잇는다.
+ * 오류 대신 까닭을 알리고, 이름만으로 팀원을 추가·고치게 한다 (#613). 추가한 팀원은 Discord 를 연결한 뒤 팀원 관리에서 잇는다.
  * PM 이 아닌 팀원이 있으면 `다음` 으로 단계 완료를, 없으면 `건너뛰기` 로 건너뜀을 저장한다. 하단 `›` 도 같다.
  * `‹` 로 Notion·Discord 둘러보기에 가서 연결할 수 있다.
  */
 function DiscordNotConnected({ workspaceId, notice, previous, reveal }: DiscordNotConnectedProps) {
   const onboarding = useOnboardingSave(workspaceId)
+  const writing = useMemberRowsBusy(workspaceId)
   const members = useQuery(memberListQueryOptions(workspaceId))
   const added = members.data?.some(({ role }) => role !== 'pm') ?? false
   const [formError, setFormError] = useState<string | null>(null)
   // 카드 버튼과 `›` 가 겹쳐 눌려도 저장 요청은 하나다
   const lock = useRef(false)
-  const next = () => {
-    if (lock.current) return
-    lock.current = true
-    setFormError(null)
-    void onboarding
-      .save({ step: 'connect_members', action: added ? 'complete' : 'skip' })
-      .catch((error: unknown) => setFormError(errorMessage(error)))
-      .finally(() => {
-        lock.current = false
-      })
-  }
-  const busy = onboarding.isPending
+  const next = () =>
+    guardLeave(() => {
+      if (lock.current) return
+      lock.current = true
+      setFormError(null)
+      void onboarding
+        .save({ step: 'connect_members', action: added ? 'complete' : 'skip' })
+        .catch((error: unknown) => setFormError(errorMessage(error)))
+        .finally(() => {
+          lock.current = false
+        })
+    })
+  const busy = onboarding.isPending || writing
 
   return (
     <OnboardingLayout
       stepNumber={STEP_NUMBER.connect_members}
       title={STEP_TITLE.connect_members}
-      exit={<ExitLink />}
+      exit={<ExitLink busy={busy} />}
       notice={notice}
       messages={['마지막이에요. 디스코드를 연결하면 팀원 이름을 이어 둘 수 있어요.']}
       nav={{ previous, onNext: next, disabled: busy }}
@@ -229,7 +187,13 @@ function DiscordNotConnected({ workspaceId, notice, previous, reveal }: DiscordN
         description={CARD.description}
         actions={
           <Reveal indicator={{ reveal }}>
-            <Button variant="primary" size="lg-onboarding" loading={busy} onClick={next}>
+            <Button
+              variant="primary"
+              size="lg-onboarding"
+              loading={onboarding.isPending}
+              disabled={writing}
+              onClick={next}
+            >
               {added ? '다음' : '건너뛰기'}
             </Button>
           </Reveal>
@@ -238,9 +202,7 @@ function DiscordNotConnected({ workspaceId, notice, previous, reveal }: DiscordN
         <Reveal indicator={{ reveal }}>
           <FormErrorPanel message={formError} className="mt-6" />
           <p className="pt-6 text-body text-dim">{NOT_CONNECTED}</p>
-          <div className="pt-14">
-            <MemberAddForm workspaceId={workspaceId} tone="onboarding" />
-          </div>
+          <MemberRows workspaceId={workspaceId} discordUsers={null} tone="onboarding" />
         </Reveal>
       </OnboardingCard>
     </OnboardingLayout>
@@ -256,7 +218,7 @@ export interface MembersStepProps {
 }
 
 /**
- * 온보딩 4단계. Discord 사용자와 기존 팀원을 함께 불러와 `linkDiscordUsers` 로 줄을 만든다.
+ * 온보딩 4단계. Discord 사용자와 기존 팀원을 함께 불러온 뒤 팀원 목록을 그린다.
  * Discord 가 연결되지 않았으면(연동 상태로 알거나 409 `INTEGRATION_NOT_CONNECTED`) 건너뛰기 안내를 보인다.
  */
 export function MembersStep({ workspaceId }: MembersStepProps) {
@@ -325,8 +287,7 @@ export function MembersStep({ workspaceId }: MembersStepProps) {
   return (
     <MembersForm
       workspaceId={workspaceId}
-      initialRows={buildMappingRows(discordUsers.data, members.data)}
-      pms={pmsOf(members.data)}
+      discordUsers={discordUsers.data}
       notice={notice}
       previous={previous}
       reveal={indicator.reveal}

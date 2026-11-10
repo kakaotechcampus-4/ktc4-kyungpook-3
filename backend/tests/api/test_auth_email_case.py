@@ -6,7 +6,6 @@ from sqlalchemy import select
 from app.api import auth
 from app.main import app
 from app.models import User
-from app.schemas.invitation import InvitationCreateRequest
 from tests.api.conftest import signup_verified
 from tests.usernames import username_for
 
@@ -66,10 +65,6 @@ def test_signup_race_lost_at_the_db_is_409_not_500(mdb, monkeypatch):
     assert res.status_code == 409
     assert res.json()["error"]["code"] == "EMAIL_ALREADY_EXISTS"
     assert len(_users(mdb)) == 1
-
-
-def test_invitation_schema_still_normalizes():
-    assert InvitationCreateRequest(member_id="m", email=" A@B.com ").email == "a@b.com"
 
 
 def test_user_model_normalizes_email_on_create(mdb):

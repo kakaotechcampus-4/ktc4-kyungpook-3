@@ -69,10 +69,10 @@ FE는 crypto.getRandomValues로 만든 256비트 키를 sessionStorage에 보관
 |---|---|---|
 | `TaskResponse` (조회·목록·생성·`PATCH`·Notion 재시도·자동 막힘 풀기·답장 변경 되돌리기) | `status` 가 `todo`·`in_progress`·`blocked`·`done` 밖, `version` 이 정수가 아님, `meeting_deleted` 가 불리언이 아님, 그 밖의 필수 필드 누락·타입 오류. 목록은 한 건만 틀려도 전체 | `start_date` 가 없으면 `created_at` 날짜(옛 응답). `meeting_deleted` 가 없으면 지우지 않은 회의(false, #576 전 BE). 모르는 `notion_sync_status` 는 반영 상태 없음(null). `auto_blocked` 가 불리언이 아니거나 없으면 풀 수 없음(false) |
 | `TaskHistoryResponse` 목록 | 필수 필드 누락·타입 오류. 요청한 태스크가 아닌 `task_id`(`items[n].task_id`) | 모르는 `changed_field` 는 `알 수 없는 항목`, 모르는 `change_source` 는 `알 수 없는 출처` |
-| `ApprovalResponse` (상세·대기 목록·`PATCH` 승인·반려) | `status` 가 `pending`·`approved`·`rejected` 밖, `payload` 가 객체가 아님. `payload.task_overrides` 가 객체가 아니거나 `task_title` 이 문자열이 아님, `assignee_member_id`·`due_date` 가 문자열·null 이 아님, `status` 가 태스크 네 값 밖. `payload.merged_items` 가 배열이 아니거나 항목이 객체가 아님, `payload.assignee_item_id` 가 문자열이 아님. `payload_version`·`alias_text` 가 문자열이 아님, `alias_candidate` 가 불리언이 아님, 그 밖의 필수 필드 누락·타입 오류. 목록은 한 건만 틀려도 전체 | 모르는 `type` 은 지원하지 않는 요청(읽기 전용, 승인·반려 없음). 모르는 `payload.category` 는 분류 없음(null), 모르는 `payload.gate` 는 없음(null). `payload` 의 제안 값·근거와 `merged_items` 항목의 키는 문자열일 때만 읽는다. `payload_version` 이 없으면 지문 없이 처리한다(#547 전 BE). `alias_candidate` 가 없으면 별칭 후보가 아니다(#523 전 BE). `merged_items` 가 없거나 null 이면 합쳐지지 않은 카드다. `assignee_item_id` 가 없으면 카드를 만든 항목(`extraction_item_id`)이 담당 항목이다 |
+| `ApprovalResponse` (상세·대기 목록·`PATCH` 승인·반려) | `status` 가 `pending`·`approved`·`rejected` 밖, `payload` 가 객체가 아님. `payload.task_overrides` 가 객체가 아니거나 `task_title` 이 문자열이 아님, `assignee_member_id`·`due_date` 가 문자열·null 이 아님, `status` 가 태스크 네 값 밖. `payload.merged_items` 가 배열이 아니거나 항목이 객체가 아님, `payload.assignee_item_id` 가 문자열이 아님. `payload_version`·`alias_text` 가 문자열이 아님, `alias_candidate` 가 불리언이 아님, 그 밖의 필수 필드 누락·타입 오류. 목록은 한 건만 틀려도 전체 | 모르는 `type` 은 지원하지 않는 요청(읽기 전용, 승인·반려 없음). 모르는 `payload.category` 는 분류 없음(null), 모르는 `payload.gate` 는 없음(null). `payload` 의 제안 값·근거와 `merged_items` 항목의 키는 문자열일 때만 읽는다. `payload_version` 이 없으면 지문 없이 처리한다(#547 전 BE). `alias_candidate` 가 없으면 별칭 후보가 아니다(#523 전 BE). `merged_items` 가 없거나 null 이면 합쳐지지 않은 카드다. `assignee_item_id` 가 없으면 카드를 만든 항목(`extraction_item_id`)이 담당 항목이다. `payload.asr_suspects` 는 표시용이라 거절하지 않는다. 배열이 아니면 없음, 모양이 틀린 항목·모르는 `source` 는 그 항목만 버린다(#643, 아래 §2.5) |
 | 승인 처리 409 `details` | 거절하지 않는다. 오류 응답이라 `INVALID_RESPONSE` 로 바꾸지 않는다 | `APPROVAL_CONFLICT` 는 `approval_id`·`task_id`·`task_version`(정수 ≥ 1)·`conflicts[]`(`field` 문자열, `base`·`current`·`proposed` 키가 모두 있음)이 맞아야 재승인할 수 있는 충돌로 읽고, 틀리면 일반 실패다. `APPROVAL_CHANGED` 의 `details` 는 읽지 않고 승인 목록·상세를 다시 받는다. `APPROVAL_ALREADY_RESOLVED` 의 모르는 `current_status`·빠진 `approval_id` 는 없음(null) |
 | 회의 목록 `GET /workspaces/{workspace_id}/meetings` (BE `items: list[dict]`) | `status` 가 `created`·`recording`·`processing`·`awaiting_speakers`·`done`·`failed` 밖, `title` 이 문자열·null 이 아님, `duration_ms` 가 숫자·null 이 아님, `attendee_count` 가 숫자가 아님, 그 밖의 필수 필드 누락·타입 오류. 한 건만 틀려도 전체 | 모르는 `source` 는 `알 수 없는 출처` 다. 길이와 회의 안 시각을 녹음 위치로도 채팅 시각으로도 읽지 않고, 정리 단계와 배지를 그리지 않는다. 업로드를 막는 정리 중 회의에서는 채팅이 아닌 회의로 본다. `failed_stage` 가 없으면 null |
-| `MeetingDetailResponse` | `status` 가 위 여섯 값 밖, `deletion_available` 이 불리언이 아님, `progress` 의 세 값이 불리언이 아님, 그 밖의 필수 필드 누락·타입 오류 | `deletion_available` 이 없으면 지울 수 없음(false, #576 전 BE). `progress` 가 없거나 null 이면 모든 단계가 아직이다. `processing` 은 읽지 않는다. 거절하면 처리 추적기가 polling·창 포커스·연결 복귀 재조회를 멈추고, 처리 화면은 받아 둔 상세가 있어도 안내와 `다시 시도`만 보인다 |
+| `MeetingDetailResponse` | `status` 가 위 여섯 값 밖, `deletion_available` 이 불리언이 아님, `progress` 의 세 값이 불리언이 아님, 그 밖의 필수 필드 누락·타입 오류 | `deletion_available` 이 없으면 지울 수 없음(false, #576 전 BE). `progress` 가 없거나 null 이면 모든 단계가 아직이다. `processing`(#483)은 거절하지 않는다. 모양이 틀리면(객체가 아님, `stt` 의 `done`·`total` 이 정수가 아니거나 `done > total`·`total < 1` 등) 또는 `stage` 를 모르면 없는 것(null)으로 보고 옛 응답처럼 세 단계로 그린다(D-189). 키가 없으면(#542 전 BE) null 이다. 거절하면 처리 추적기가 polling·창 포커스·연결 복귀 재조회를 멈추고, 처리 화면은 받아 둔 상세가 있어도 안내와 `다시 시도`만 보인다 |
 | 업로드 202 `{meeting_id, status}` | `status` 가 위 여섯 값 밖, 필드 누락 | 응답을 읽지 못하면 응답을 잃었을 때처럼 목록을 다시 받는다. 올리기 전에 없던 같은 제목·`started_at` 의 직접 올린 회의가 하나 있으면 상태(정리 중·화자 지정 대기·완료)와 상관없이 그 처리 화면으로, 없으면 정리 중인 다른 회의의 처리 화면으로, 그것도 없으면 다시 올리라고 안내한다. 목록을 받지 못했거나 같은 회의가 여럿이면 다시 올리라고 하지 않고 회의록 목록으로 가는 길을 둔다 |
 | `SpeakerViewResponse` | `status` 가 위 여섯 값 밖, `mapping` 이 객체·null 이 아니거나 값이 문자열·null 이 아님, 라벨·후보·녹음 정보의 타입 오류 | `PUT /meetings/{meeting_id}/speakers` 의 응답 본문은 읽지 않는다 |
 | `MeetingMinutesResponse` | `permissions.can_review`·`can_undo` 가 불리언이 아님, `duration_ms` 가 숫자가 아님, 참석자·전사문 줄의 필수 필드 누락·타입 오류(`at_ms` 는 숫자) | 모르는 `source` 는 `알 수 없는 출처` 다. 머리 메타는 시작 시각만 보이고 전사문·근거 시각은 비운다. `summary` 가 `overview` 문자열·`key_points`·`decisions` 문자열 배열 모양이 아니면 BE 가 깨진 JSON 을 다루듯 요약 없음(null)으로 보고 전사문은 보인다 |
@@ -242,7 +242,7 @@ FE 변경과 실제 검증은 [M6 후속 결과](../plan/m6/result.md)에 기록
 | `/workspaces` 목록·생성·상세, `PATCH /workspaces/{id}/onboarding` | 공간·역할·단계 상태를 사용. 단계 갱신 후 상세 재조회 | [공간 API](../../src/entities/workspace/api), [공간 DTO](../../src/shared/types/api/workspace.ts) |
 | `GET /workspaces/{id}/integrations`, `DELETE /workspaces/{id}/integrations/{provider}` | Discord·Notion 상태. 해제는 204 무본문. Discord 의 `chat_channel` 과 채팅 채널 목록·저장·해제는 §4.3.1 | [연동 API](../../src/entities/integration/api/integrations.ts), [연동 DTO](../../src/shared/types/api/integration.ts) |
 | `POST /workspaces/{id}/meetings/upload` | multipart `title`, ISO `started_at`, 참석자별 반복 `attendee_member_ids`, `file`. 202 data `{meeting_id,status}` | [업로드](../../src/entities/meeting/api/uploadMeeting.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
-| `GET /workspaces/{id}/meetings`, `GET /meetings/{id}` | 목록은 `{items,total}`, nullable title. 상세는 workspace_id·status·progress·extraction_id·failed_stage | [회의 조회](../../src/entities/meeting/api/meetingQueries.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
+| `GET /workspaces/{id}/meetings`, `GET /meetings/{id}` | 목록은 `{items,total}`, nullable title. 상세는 workspace_id·status·progress·processing(#483)·extraction_id·failed_stage | [회의 조회](../../src/entities/meeting/api/meetingQueries.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
 | `GET /meetings/{id}/minutes` | nullable summary·title, summary_status(빈 요약 문구만 고름, §4.4.2), 참석자 배열, 전사 배열, permissions `{can_review,can_undo}` | [회의록 조회](../../src/entities/minutes/api/minutesQuery.ts), [회의록 DTO](../../src/shared/types/api/minutes.ts) |
 | 회의 추출·대기 승인 조회 | 반영 항목과 확인 필요 항목을 조합. 일반 팀원은 대기 승인 조회·확인 필요 영역 제외 | [추출 조회](../../src/entities/extraction/api/extractionQuery.ts), [승인 조회](../../src/entities/approval/api/pendingApprovals.ts), [회의록 화면](../../src/pages/meetings) |
 
@@ -544,6 +544,9 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 
 2026-11-10 #613 FE 사용: Discord 를 연결하지 않은 팀의 온보딩 4단계와 팀원 연결 창이 `POST /members` 를 `{workspace_id, display_name}` 만으로 보낸다(`discord_user_id` 키 없음). 요청 형식은 위 그대로이고 BE 는 바꾸지 않았다. 서버는 같은 이름의 팀원을 막지 않는다. FE 가 보내기 전에 지금 팀원 목록과 이름(앞뒤 공백 제거, 대소문자 그대로)을 견줘 막는다(D-187). 같은 이름 거절을 서버 규약으로 둘지는 합의하지 않았다.
 
+2026-11-10 #660 FE 사용: Discord 를 연결한 팀의 팀원 연결 창과 온보딩 4단계도 서버에 없는 사람을 같은 형식(`{workspace_id, display_name}`)으로 만든다(D-188). 요청 형식과 BE 는 바꾸지 않았다.
+2026-11-10 #647 FE 사용: 팀원 관리 창과 온보딩 4단계가 팀원 한 명이 한 줄인 목록에서 줄마다 바로 보낸다. 이름 고치기는 `PATCH /members/{id}` `{display_name}`, 계정 잇기는 `{discord_user_id}`, 연결 풀기는 `{discord_user_id: null}` 이다. 다른 팀원에 연결된 계정을 옮길 때는 앞 팀원에 `{discord_user_id: null}` 을 보낸 뒤 새 팀원에 `{discord_user_id}` 를 보낸다. 같은 계정을 두 팀원에 붙이면 409 `DISCORD_USER_ALREADY_MAPPED` 라서다. 두 요청을 묶는 API 는 없어 두 번째가 실패하면 앞 팀원 연결만 풀린 채 남고 FE 가 그 상태를 보이고 다시 시도하게 한다. 연결 안 된 Discord 계정으로 팀원을 만들 때는 `POST /members` `{workspace_id, display_name, discord_user_id}` 이고 `display_name` 은 Discord 표시 이름(없으면 사용자명)이다. 요청 형식은 위 그대로이고 BE 는 바꾸지 않았다. 팀원 삭제는 BE API 가 없어 쓰지 않는다(#637). 근거: [D-190](../decision/frontend-decisions.md), MSW 기준 검증, 실서버 미검증.
+
 계정 영구 탈퇴용 익명 기록 주체는 기존 명단 비활성화와 구분한다. 영구 탈퇴자의 대화는 PM 목록·상세·읽음에 남고 표시명은 `탈퇴한 사용자`, `web_reply_available`은 false다. 프로필 수정·별칭 추가·초대·새 발송과 늦은 봇 결과는 거절한다. 기존 `is_deleted`만 있는 명단 비활성화의 unread 0·읽음 POST 404는 유지한다. [익명 주체 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-09-withdrawn-record-actor.md)에 첫 구현의 범위를 기록했고, 본인 탈퇴 API·화면과 기록용 목록은 위 [계정 탈퇴 규약](#계정-탈퇴와-정리-상태-575-2026-11-09)을 따른다. 실제 외부 제공자·운영 계정의 삭제를 확인한 기록은 아니다.
 
 - `alias_type` 은 `realname` \| `nickname` \| `mention` \| `inferred`, `source` 는 `manual` \| `discord_profile` \| `learned` \| `display_name`.
@@ -575,7 +578,9 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
  "started_at": "2026-09-15T14:00:00Z", "ended_at": "2026-09-15T14:45:00Z",
  "extraction_id": "ex_01",
  "failed_stage": null,
- "progress": {"audio_merged": true, "transcribed": true, "extracted": true}}
+ "progress": {"audio_merged": true, "transcribed": true, "extracted": true},
+ "processing": null}                    // 정리 중일 때만 객체 (#483, BE #542)
+// 정리 중 예: "processing": {"stage": "stt", "stage_at": "2026-11-10T03:55:00Z", "stt": {"done": 3, "total": 5}}
 ```
 
 - `status` 는 `created` → `recording` → `processing` → `done` \| `failed`.
@@ -595,9 +600,16 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
   - 단계를 알리지 않는 회의는 병합 뒤에도 현재 develop 열처럼 데이터로 판정한다. 옛 회의, 웹 업로드 회의(업로드 처리 소비자 #254·#255 가 보고를 붙이기 전까지), 채팅 회의(PR #378, 병합 전)가 그렇다. 이 회의들은 `audio_merged`·`transcribed` 가 함께 바뀌어 처리 화면의 둘째 단계가 진행 중으로 보이지 않는다.
   - 병합 뒤 달라지는 두 경우. 항목 0개로 `done` 된 회의와 인계 단계에서 `failed` 된 회의도 `extracted` 가 true 다(단계 값이 `done`·`failed` 뒤에도 남는다). FE 는 `done` 이면 `progress` 와 관계없이 세 단계를 끝난 것으로 보고, `failed` 이면 단계 목록을 그리지 않고 `failed_stage` 로 실패 안내를 고른다. 그래서 화면은 같다. [단계 테스트](../../src/entities/meeting/lib/processingSteps.test.ts)와 [처리 화면 테스트](../../src/app/meetingProcessingProgress.test.tsx)가 두 경우를 확인한다.
   - ~~처리 화면의 세 단계 이름은 바꾸지 않는다. 병합 뒤 단계 구간은 1단계 「음성 파일 준비하기」가 워커 대기·모델 준비, 2단계 「음성을 텍스트로 옮기기」가 전사, 3단계 「결정사항과 할 일 뽑아내기」가 발화 저장과 추출이다. 인계 중에는 `status: processing` 인 채 세 단계가 모두 끝난 것(`3 / 3 단계 완료`)으로 보인다.~~ #483 B안(2026-11-07 사용자 결정, AI·BE 변경 없음)으로 FE 표시만 바뀌었다. 응답 키·시점은 위 표 그대로다.
-  - 현재 구현(#483): 녹음·업로드 회의는 1단계 「차례 기다리는 중」(`audio_merged` 로 끝), 2단계 「음성을 텍스트로 옮기기」(`transcribed` 로 끝), 3단계 「결정사항과 할 일 뽑아내기」다. 채팅 회의(`source: chat`)는 「대화 모으기」(`transcribed` 로 끝) → 「결정사항과 할 일 뽑아내기」 두 단계다. 채팅 수집([chat_poll.py](../../../ai/capture/chat_poll.py))은 단계를 알리지 않고 `/end` → `sources` → 판단 → `/extractions` 순서라, 발화가 저장되면 `_compute_progress` 가 앞 두 값을 함께 true 로 만든다. 마지막 단계는 `extracted` 와 관계없이 `status` 가 `done` 이 될 때까지 진행 중이다 — 인계 중은 녹음 `2 / 3`, 채팅 `1 / 2` 단계 완료로 보인다. 진행 토스트의 단계 수(`n/3`·`n/2`)도 같은 목록이다. 구현: [processingSteps.ts](../../src/entities/meeting/lib/processingSteps.ts).
+  - ~~현재 구현(#483): 녹음·업로드 회의는 1단계 「차례 기다리는 중」(`audio_merged` 로 끝), 2단계 「음성을 텍스트로 옮기기」(`transcribed` 로 끝), 3단계 「결정사항과 할 일 뽑아내기」다. 채팅 회의(`source: chat`)는 「대화 모으기」(`transcribed` 로 끝) → 「결정사항과 할 일 뽑아내기」 두 단계다. 채팅 수집([chat_poll.py](../../../ai/capture/chat_poll.py))은 단계를 알리지 않고 `/end` → `sources` → 판단 → `/extractions` 순서라, 발화가 저장되면 `_compute_progress` 가 앞 두 값을 함께 true 로 만든다. 마지막 단계는 `extracted` 와 관계없이 `status` 가 `done` 이 될 때까지 진행 중이다 — 인계 중은 녹음 `2 / 3`, 채팅 `1 / 2` 단계 완료로 보인다. 진행 토스트의 단계 수(`n/3`·`n/2`)도 같은 목록이다. 구현: [processingSteps.ts](../../src/entities/meeting/lib/processingSteps.ts).~~ #483 A안 뒤 D-189 로 바뀌었다(아래 `processing` 절). 이 세 단계는 `processing` 이 없는 옛 응답에만 남는다. 채팅 두 단계는 그대로다.
   - `source` 는 상세 응답(`MeetingDetailResponse`)에 없다. FE 는 처리 화면이 이미 참석 인원 때문에 읽는 회의 목록 요약(`GET /workspaces/{id}/meetings` 의 `source`)에서 가져온다. 받아 둔 목록에 그 회의가 없으면(목록을 받은 뒤 생긴 회의, 오래된 목록) 회의마다 한 번 목록을 새로 받는다. 출처를 모르는 동안(목록 대기·재조회 중·조회 실패·새로 받아도 없음)은 처리 화면과 진행 토스트 모두 단계 수를 정하지 않고 정리 중이라고만 보인다. 녹음 단계로 짐작하지 않는다. 구현: [meetingSources.ts](../../src/entities/meeting/api/meetingSources.ts). 상세에 `source` 를 더해 달라는 BE 요청은 하지 않았다.
-  - FE 는 현재 처리 단계 값(`processing_stage`)을 요청하지 않는다. 화면의 단계는 `progress` 값과 `status` 로 정해지고, 마지막 단계 안의 발화 저장·추출·인계는 나눠 보이지 않는다. 단계를 알리는 회의의 인계 구간은 `processing` + `extracted: true` 로 이미 알 수 있다.
+  - ~~FE 는 현재 처리 단계 값(`processing_stage`)을 요청하지 않는다. 화면의 단계는 `progress` 값과 `status` 로 정해지고, 마지막 단계 안의 발화 저장·추출·인계는 나눠 보이지 않는다. 단계를 알리는 회의의 인계 구간은 `processing` + `extracted: true` 로 이미 알 수 있다.~~ #483 A안으로 BE(#542)가 아래 `processing` 을 더했고 FE 가 읽는다. ~~화면의 단계 판정은 여전히 `progress`·`status` 다.~~ D-189 뒤 녹음·업로드 회의의 단계 판정은 `processing`·`progress`·`status` 를 함께 쓴다(아래 「FE 단계 판정」). `progress`·`status` 만으로 정하는 것은 `processing` 이 없는 옛 응답과 채팅 회의다.
+- `processing` (#483 A안).
+  - 현재 BE 구현(#542, 병합됨): 회의가 `processing` 일 때만 `{stage, stage_at, stt}` 객체이고 그 밖의 상태에서는 `null` 이다. `stage` 는 AI 가 알린 단계(`stt`·`sources`·`extract`·`handoff`, 보고 전 `null`), `stage_at` 은 그 단계가 시작된 시각, `stt` 는 `stage` 가 `stt` 이고 AI 가 진행을 보냈을 때만 `{done, total}`(정수, `0 ≤ done ≤ total`, `total ≥ 1`)이다. 같은 `stt` 단계의 진행 갱신은 `stage_at` 을 바꾸지 않는다. 근거: [meeting 스키마](../../../backend/app/schemas/meeting.py) `MeetingProcessing`·`MeetingSttProgress`, [BE-AI 계약](../../../backend/docs/contracts/backend-ai-contract.md) stage 절. 목록 API 에는 없다.
+  - AI 구현(PR #653, 2026-11-10 병합): `done`·`total` 은 전사를 끝낸 입력 음성 트랙(WAV) 수다. 무음·필터 탈락·최종 실패 트랙도 끝난 것으로 세어 성공률이 아니다. 순서는 단계 시작 보고(`{stage: "stt"}`, 수치 없음) → `0/N` → 트랙이 끝날 때 2초 간격의 중간값(건너뛸 수 있다) → `N/N` 이다. 실패 줄 재시도도 같은 `N` 으로 `0/N` 부터 다시 센다. 긴 트랙 하나는 낮은 값으로 오래 머물 수 있다. 근거: [BE-AI 계약](../../../backend/docs/contracts/backend-ai-contract.md) stage 절. 실서버로 확인하지 않았다.
+  - FE 단계 판정(D-189, 2026-11-10 사용자 결정): 녹음·업로드 회의는 읽을 수 있는 `processing` 이 있으면(`stage` 가 `null` 인 보고 전 포함) 서버 단계와 1:1 인 다섯 단계다 — 「차례 기다리는 중」(보고 전) → 「음성을 텍스트로 옮기기」(`stt`) → 「회의록 정리하기」(`sources`) → 「결정사항과 할 일 뽑아내기」(`extract`) → 「정리 결과 보내기」(`handoff`). 지금 단계는 `stage` 순위와 `progress` 가 뜻하는 순위(`audio_merged` 1, `transcribed` 2, `extracted` 4) 중 큰 쪽이다. 마지막 단계는 `status` 가 `done` 일 때만 끝난다. 화자 지정 대기(`awaiting_speakers`, 서버 `processing` 은 `null`)도 다섯 단계다. `processing` 이 없거나(#542 전 BE) 모양이 틀리거나 `stage` 를 모르면 위의 세 단계다. 채팅 회의는 두 단계다. 구현: [processingSteps.ts](../../src/entities/meeting/lib/processingSteps.ts).
+  - FE 구현(#483 A안): 처리 화면과 진행 토스트(펼친 카드)의 **지금 단계** 옆에 진행 수 `음성 트랙 3/5`(화면 읽기 프로그램은 `음성 트랙 5개 중 3개 완료`)와 그 단계의 경과(`방금 시작`·`N분째`·`H시간 M분째`)를 보인다. 문구는 [stageDetail.ts](../../src/entities/meeting/lib/stageDetail.ts) 한 곳에 있다. 수치가 없는 단계 시작 보고에는 경과만, 수치가 그대로여도(긴 트랙) 경과는 조회마다 오른다. 서버 단계가 화면의 지금 단계에 속할 때만 붙인다. 다섯 단계에서는 단계마다 서버 단계 하나라 경과가 단계 안에서 되돌아가지 않는다. 채팅의 「결정사항과 할 일 뽑아내기」는 `sources`·`extract`·`handoff` 를 모두 받는다. 경과는 상세 응답을 받은 시각(polling 3초)까지로 세고 따로 타이머가 없다. 클라이언트 시계가 늦어 음수면 0(`방금 시작`)이다. 진행 막대·남은 시간 추정은 없다(U4-4). 전사 진행 수·경과는 처리 화면의 `role=status` 안내와 토스트의 접힌 알약·알림 문장에 넣지 않는다(3초마다 읽히지 않게). 안내와 알약의 단계 이름·수(`n / 5`, `정리 중n/5`)는 위 단계 판정을 따른다.
+  - 화면 전체가 #542 전과 같은 경우(세 단계, 진행 수·경과 없음): `processing` 이 없거나(키 없음·`null`) 모양이 틀림, `stage` 가 모르는 값. 다섯 단계이지만 진행 수·경과가 없는 경우: `stage` 가 `null`(보고 전), 서버 단계가 화면의 지금 단계에 속하지 않음, `stage_at` 이 없거나 읽을 수 없고 진행 수도 없음.
+  - 진행 숫자만 빠지는 경우: `stt` 가 `null` 이어도 `stage` 가 지금 단계에 속하고 `stage_at` 이 유효하면 경과(`N분째`)는 보인다. AI 의 전사 시작 보고(`{stage: "stt"}`, 수치 없음)와 `sources`·`extract`·`handoff` 단계가 그렇다.
 - 이미 종료된 회의에 `/end` 를 호출하면 409 `MEETING_ALREADY_ENDED`.
 
 ### 2.3.1 업로드 회의 화자 지정 — PM 경로 (#266)
@@ -753,7 +765,9 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
  "evidence_at_ms": 125000,
  "extraction_item_id": "it_01",
  "meeting_id": "mt_09",
- "gate": "hold"}                        // review | hold
+ "gate": "hold",                        // review | hold
+ "asr_suspects": [                      // #643. null 은 옛 AI, [] 는 검사했고 없음
+   {"word": "애포", "source": "title", "candidates": ["배포"]}]}
 ```
 
 승인 시 백엔드가 읽는 키는 `api/approvals.py` 의 `_apply_approval` 에 있다.
@@ -766,10 +780,15 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
   - 현재 BE 구현: 회의에서 만드는 `task_update` payload 에는 반영 키 말고도 표시용 `task_title`·`base_title`·`doc_text`·`category`(`schedule`·`assignee`·`status`·`scope`·`decision`·`none`)·`evidence_quote`·`evidence_speaker`·`evidence_speaker_member_id`·`evidence_at_ms`·`meeting_id` 가 온다. `category` 가 `scope`(범위 결정)면 바뀌는 필드가 없어도 승인 요청을 만든다([extractions.py](../../../backend/app/api/extractions.py)). 승인해도 반영 키가 없으면 태스크·이력에 아무것도 남지 않는다.
   - 합의됨, BE 미구현(#205): `category` 가 `scope` 인 승인을 승인하면 필드 반영과 별개로 `changed_field: "scope"` 이력 한 줄을 남긴다. 바뀌는 필드가 함께 있으면 필드 이력과 범위 이력을 둘 다 남긴다. 범위 이력만 남는 승인은 Task `version` 과 Notion 동기화를 건드리지 않는다. 반려하면 이력을 남기지 않는다. FE 가 먼저 배포된 뒤 BE 를 배포한다.
   - FE 구현(#205): 승인 매퍼가 `doc_text`·`category`·근거 발화·`meeting_id` 를 읽는다. 모르는 `category` 는 `null` 이다. 승인 상세는 `scope` 면 「범위 변경」 절에 `doc_text` 와 근거를 보이고, 바뀌는 필드가 있을 때만 변경 표를 보인다. 대시보드 확인 필요 목록과 보드 승인 카드는 `범위 변경을 확인해야 해요` 로 보인다. MSW 는 합의대로 승인 때 범위 이력을 남긴다(시나리오 `approval-scope`).
+  - FE 구현(#644): 마감 해제 카드(payload 에 `"due_date": null` 이 키째 있음, [backend-ai-contract](../../../backend/docs/contracts/backend-ai-contract.md) 「update 마감 해제」 #630)는 변경 표가 `없음`, 마감 칸 안내가 `원래 제안 유지 · 미정` 이다. `due_date` 키가 없는 카드는 `원래 제안 유지 · YYYY-MM-DD` 그대로다. 칸을 비워 승인하면 `task_overrides` 없이 보내 제안대로 마감이 지워진다(시나리오 `approval-due-clear`).
 
 **프론트엔드가 지킬 규칙**
 
-- **보완 사유는 서버가 주지 않는다.** `assignee_member_id` 가 `null` 이면 `담당자 없음`, `due_date` 가 `null` 이면 `마감 없음` 으로 프론트엔드가 파생한다.
+- **보완 사유는 서버가 주지 않는다.** `assignee_member_id` 가 `null` 이면 `담당자 없음`, `due_date` 가 `null` 이면 `마감 없음` 으로 프론트엔드가 파생한다. 전사 오인식 의심만 서버가 준다(아래 `asr_suspects`).
+- **전사 오인식 의심 `asr_suspects` (#643).**
+  - 현재 BE 구현: 판단 경로(judge) AI 가 제목의 의심 단어를 보내면 BE 가 auto 를 막고 생성 승인 payload 에 받은 그대로 싣는다([extractions.py](../../../backend/app/api/extractions.py)). 항목은 [meeting 스키마](../../../backend/app/schemas/meeting.py) `AsrSuspect` 다. `word` 는 의심 단어(최대 100자, 검사 실패면 빈 글자), `source` 는 `evidence`(근거 발화)·`title`(제목)·`check_failed`(검사 실패)인 자유 문자열, `candidates` 는 발음이 가까운 업무 용어(가까운 순, 최대 5개, 비어 있을 수 있음)다. `null` 은 옛 AI, `[]` 는 검사했고 의심 단어가 없음이다. 지금 AI 는 `title` 과 `check_failed` 만 보내고 단어마다 한 번이다(`ai/judge/asr_check.py`). 정적 확인이며 실 API 호출은 하지 않았다.
+  - 합의된 표시 규칙(#643 이슈 본문): `evidence`·`title` 은 교정 후보, `check_failed` 는 검사하지 못함으로 보인다. `null`·`[]` 은 표시하지 않고 모르는 `source` 는 무시한다.
+  - FE 구현(#643): 표시용이라 응답을 거절하지 않는다. 배열이 아니면 없음, 모양이 틀린 항목·모르는 `source`·`word` 가 빈 교정 후보는 그 항목만 버린다. `check_failed` 는 여럿이어도 한 줄이다. 문구는 후보 하나면 「'애포'는 '배포'일 수 있어요」, 여럿이면 「'애포'는 '배포', '애플' 중 하나일 수 있어요」, 없으면 「'애포'를 다시 확인해 주세요」, 검사 실패면 「전사 확인을 하지 못했어요」다. 태스크 목록의 생성 승인 카드는 사유 줄 아래 「전사 확인」 목록, 승인 상세는 「확인이 필요한 이유」의 `전사` 줄(라벨을 되풀이하지 않게 검사 실패는 「확인하지 못했어요」), 대시보드 확인 필요 행은 빠진 값이 없을 때 첫 줄을 사유로 보인다. MSW 시나리오 `approval-asr-suspects`.
 - `assignee_raw` 와 `due_raw` 는 회의에서 나온 원문이다. 확정 값이 아니므로 보조 표시한다.
 - `evidence_quote` · `evidence_speaker` · `evidence_at_ms` 로 근거를 보여준다. 생성·수정 승인 payload 에는 `evidence_speaker_member_id` 도 온다(BE [extractions.py](../../../backend/app/api/extractions.py)). 화자 이름은 이 값을 먼저 쓰고 `evidence_speaker` uid 로 돌아간다(2026-11-05, #256 A1, 위 §2.4).
 - `type` 마다 화면이 다르므로 **`type` 으로 분기한 뒤 payload 를 읽는다.** 공통 필드를 가정하지 않는다.
@@ -2401,6 +2420,7 @@ FE 연결 (#340, 2026-11-05).
 | 팀원별 별칭 보기·추가·삭제 | `GET /members/aliases`, `POST /members/{id}/aliases`, `DELETE /members/aliases/{alias_id}` | **구현됨(#523, 2026-11-08).** 설정 목차의 「팀원」이 여는 팀 화면에서 팀원 줄의 「별칭 N」을 펼친다. 칩마다 출처 꼬리표(`learned` 회의에서 배움, `display_name` 이름, `discord_profile` 디스코드, `manual` 직접 추가, 미확인이면 「· 미확인」). 추가·삭제는 PM 만 보인다. 본문은 `alias_text` 만 보낸다. 실패 문구는 오류 코드별이다([aliasMessages](../../src/features/member-alias/lib/aliasMessages.ts)). 같은 글자를 다시 넣으면 서버가 기존 행을 돌려주므로 「이미 있는 별칭이에요.」 로 보인다. MSW 기준 검증, 실서버 미검증 |
 | 건너뛴 온보딩 마저 하기 | 5.3 과 같다 | |
 | 팀원 초대·취소·연결 끊기 | `GET`·`POST /workspaces/{id}/invitations`, `POST /invitations/{id}/cancel`·`revoke` | FE·BE 구현. 소비 코드와 미검증 범위는 §5.9 |
+| 초대할 가입자 찾기 | `GET /users/search?q=&workspace_id=` | BE 구현(#628, 2026-11-10). FE 연결(#632, 초대 창의 아이디 찾기). MSW 기준 검증, 실서버 미검증. §5.9 |
 | 알림(메시지·알림 설정) | `GET`·`PATCH /workspaces/{id}/message-settings` | **구현됨** §5.7 (#340) |
 | 회의 채팅 채널(PM) | `GET /workspaces/{id}/discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel` | **구현됨** §4.3.1 (#428, #429) |
 
@@ -2411,25 +2431,38 @@ FE 연결 (#340, 2026-11-05).
 
 **현재 초대 API·FE 연결** (2026-11-09 소스 대조). #319에서 BE를 구현했고 현재 FE도 아래 API를 소비한다. 화면 쪽 합의 여부와 실제 계정 검증은 코드 연결과 구분한다. 결정 근거는 [결정 0036](../../../ai/docs/basis_for_decision/ai/2026-11-04-0036-member-invite-by-email.md). FE 요청 이슈는 #320, 제품 흐름은 #302.
 
+**2026-11-10 #628 BE 변경.** 초대를 이메일 대신 가입한 사용자의 ID 로 만든다. 카카오만으로 가입한 계정은 이메일이 없어(#610) 이메일 초대를 받을 수 없었다. 아래 표와 규칙은 바뀐 BE 계약이다. FE 는 #632 에서 `{member_id, user_id}` 로 만들고 `invited_user` 를 읽도록 바꿨다(아래 「#632 FE 반영」). BE #631 과 FE #632 는 같은 배포여야 한다. 결정 근거는 [아이디 초대 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-10-invite-by-username-decision.md). 배포할 때 대기 중이던 이메일 초대는 모두 `canceled` 가 되고, 대상 계정을 찾을 수 없는 닫힌 초대는 지워진다.
+
 현재 소비 근거는 [초대 Query](../../src/entities/invitation/api/invitationQueries.ts), [초대 명령](../../src/entities/invitation/api/invitationMutations.ts), [PM 제어](../../src/features/member-invite/ui/MemberInviteControl.tsx), [내 초대](../../src/widgets/app-shell/ui/MyInvitations.tsx), [수락·거절 처리](../../src/features/invitation-respond/model/useInvitationResponse.ts)다. PM 목록은 팀원별 최신 초대를 고르고 생성·취소·연결 끊기 뒤 목록을 다시 받는다. 내 초대는 수락 뒤 공간 목록을 새로 받아 이동한다. 코드와 [화면 회귀](../../src/app/invitationRespond.test.tsx)를 대조했으며 이번 문서 작업에서 이를 다시 실행하거나 실서버 성공으로 판정하지 않았다.
 
-온보딩에서 디스코드 명단으로 만든 팀원은 로그인 계정과 이어져 있지 않다(`member.user_id` 가 null). PM 이 그 팀원에게 가입 이메일로 초대를 만들고, 그 이메일로 로그인한 사람이 내 초대에서 수락하면 팀원과 계정이 이어져 워크스페이스 목록에 나타난다. 수락 전에는 그 워크스페이스의 API 가 모두 403 이다. 초대 메일은 보내지 않는다. PM 이 디스코드 등으로 알리고, 팀원은 로그인하면 내 초대에서 본다.
+**2026-11-10 #632 FE 반영 (현재 구현, 이 브랜치 코드 기준).** 초대 창은 이메일 대신 아이디로 가입자를 찾고, 찾은 사람의 이름·아이디를 보인 뒤에만 초대한다. 화면 문구·흐름의 제품 합의는 이슈 #632 본문이 근거다.
+
+- 찾기: [searchInvitee](../../src/entities/invitation/api/searchInvitee.ts) 가 `GET /users/search` 에 `q`(앞뒤 공백을 지우고 소문자로 바꾼 아이디)와 `workspace_id` 를 보내고 `userSearchSchema` 로 읽는다. 결과 첫 사람만 쓰고 없으면 0명이다. 아이디 규칙(#627 `isUsernameAllowed`) 밖이면 요청하지 않는다. 상태는 [useInviteeSearch](../../src/features/member-invite/model/useInviteeSearch.ts) 의 판별 유니온(`idle`·`searching`·`found`·`none`·`invalid`·`failed`)이고, 찾은 뒤 입력을 바꾸면 결과가 사라지고 찾던 요청은 끊긴다. 누를 때의 세션 범위로 보내고 끝난 세션의 응답은 버린다(#594).
+- 만들기: [초대 명령](../../src/entities/invitation/api/invitationMutations.ts) 이 `{member_id, user_id}` 를 보낸다. `user_id` 는 찾은 사람의 것이다.
+- 읽기: PM 목록의 `invited_user` 는 null 이 아닌 `{user_id, username, name}` 로 읽는다(빠지면 `INVALID_RESPONSE`). 팀원 줄과 대기 초대 안내는 `이름 · 아이디` 다([inviteView](../../src/features/member-invite/model/inviteView.ts)). 수락한 계정 표시는 그대로 `accepted_user` 다.
+- 오류 문구: `USER_ALREADY_INVITED`, `USER_NOT_FOUND` 를 더하고 `EMAIL_ALREADY_INVITED` 를 지웠다([errorMessages](../../src/shared/api/errorMessages.ts)). 검색 0명, 규칙 밖, 검색 403·네트워크·`INVALID_RESPONSE` 와 만들기 거절은 모두 창의 아이디 칸 오류다.
+- 받은 초대가 없고 소속 공간도 없으면 [내 초대](../../src/widgets/app-shell/ui/MyInvitations.tsx) 가 「PM에게 내 아이디(…)를 알려 주고 초대를 요청하세요.」 를 보인다.
+- 검증: MSW handler(검색·만들기 검사 순서는 BE #631 의 `search_users`·`create_invitation` 을 옮김)와 [초대 handler 테스트](../../src/shared/mock/invitationFlow.test.ts), [팀 화면 회귀](../../src/app/teamInvitations.test.tsx), [받은 초대 회귀](../../src/app/invitationRespond.test.tsx), `e2e/member-invitations.e2e.ts` 를 이 브랜치에서 돌렸다. BE #631 실서버와의 왕복은 확인하지 않았다.
+
+온보딩에서 디스코드 명단으로 만든 팀원은 로그인 계정과 이어져 있지 않다(`member.user_id` 가 null). 팀원이 먼저 가입해 PM 에게 아이디를 알려 주면, PM 이 그 아이디로 가입자를 찾아 그 팀원에게 초대를 만든다. 그 사람이 내 초대에서 수락하면 팀원과 계정이 이어져 워크스페이스 목록에 나타난다. 수락 전에는 그 워크스페이스의 API 가 모두 403 이다. 초대 메일이나 알림은 보내지 않는다. PM 이 디스코드 등으로 알리고, 팀원은 로그인하면 내 초대에서 본다.
 
 | 요청 | 누가 | 하는 일 |
 |---|---|---|
-| `POST /workspaces/{workspace_id}/invitations` → 201 | PM | 초대 만들기 `{member_id, email}`. 같은 팀원에게 대기 중인 초대가 있으면 그 초대를 취소하고 새로 만든다 |
+| `GET /users/search?q=&workspace_id=` | 그 공간의 PM | 초대할 가입자 찾기. `{items: [{user_id, username, name}]}` |
+| `POST /workspaces/{workspace_id}/invitations` → 201 | PM | 초대 만들기 `{member_id, user_id}`. 같은 팀원에게 대기 중인 초대가 있으면 그 초대를 취소하고 새로 만든다 |
 | `GET /workspaces/{workspace_id}/invitations` | PM | 이 워크스페이스의 초대 전부, 최근 것부터 |
 | `POST /invitations/{invitation_id}/cancel` | PM | 수락 전 초대 취소 |
 | `POST /invitations/{invitation_id}/revoke` | PM | 수락한 계정과 팀원의 연결 끊기 |
-| `GET /invitations/me` | 로그인 사용자 | 내 가입 이메일로 온 대기 중 초대, 최근 것부터 |
+| `GET /invitations/me` | 로그인 사용자 | 나에게 온 대기 중 초대, 최근 것부터 |
 | `POST /invitations/{invitation_id}/accept` | 받는 사람 | 수락. `{workspace_id, member_id}` 를 돌려준다 |
 | `POST /invitations/{invitation_id}/decline` | 받는 사람 | 거절. `{invitation_id, status: "declined"}` |
 
-- PM 쪽 응답(만들기·목록 한 줄·취소·연결 끊기)은 `{invitation_id, member_id, member_display_name, email, status, invited_by_name, accepted_user, created_at, responded_at}` 이다.
+- 검색은 아이디가 대소문자와 앞뒤 공백만 빼고 같아야 찾는다. 앞부분이나 이름으로는 찾지 않는다. 결과는 0명 또는 1명이고 이메일은 없다. 이 워크스페이스의 활성 팀원은 빠진다. 아이디 규칙(영문·숫자 4 ~ 20자)에 맞지 않는 `q` 는 오류 대신 빈 목록이다. 공간이 없거나 삭제됐으면 PM 확인보다 먼저 404 `WORKSPACE_NOT_FOUND` 이다. 존재하는 공간의 PM 이 아니면 403 `FORBIDDEN` 이다. 이름을 보여 맞는 사람인지 확인하게 한다.
+- PM 쪽 응답(만들기·목록 한 줄·취소·연결 끊기)은 `{invitation_id, member_id, member_display_name, invited_user, status, invited_by_name, accepted_user, created_at, responded_at}` 이다.
+  - `invited_user` 는 초대받은 계정 `{user_id, username, name}` 이다. 이메일은 없다.
   - `accepted_user` 는 수락한 계정 `{user_id, name, email}` 이고 수락 전에는 null 이다. 연결을 끊은 뒤에도 남아 누가 들어왔었는지 보인다. PM 은 이 이름·이메일을 보고 엉뚱한 계정이면 연결을 끊는다.
   - `responded_at` 은 마지막으로 상태가 바뀐 시각이다. 연결을 끊으면 수락 시각 대신 끊은 시각이 된다.
-- 내 초대 한 줄은 `{invitation_id, workspace_id, workspace_name, member_display_name, invited_by_name, created_at}` 이다. 초대보다 먼저 가입했든 나중에 가입했든 같은 기준(가입 이메일)으로 찾는다.
-- 이메일은 대소문자와 앞뒤 공백을 무시하고 비교한다. 초대의 `email` 은 소문자로 바꿔 저장하고 돌려준다. 이메일 형식이 아니면 400 `INVALID_REQUEST`.
+- 내 초대 한 줄은 `{invitation_id, workspace_id, workspace_name, member_display_name, invited_by_name, created_at}` 이다. 초대는 계정에 묶이므로 이메일 없는 카카오 계정도 받는다.
 - 상태와 화면 표기(제안)
 
   | `status` | 화면 | 뜻 |
@@ -2440,27 +2473,30 @@ FE 연결 (#340, 2026-11-05).
   | `canceled` | 취소 | PM 이 수락 전에 닫았거나, 같은 팀원에게 새 초대를 만들어 닫혔다 |
   | `revoked` | 연결 끊김 | PM 이 수락 뒤 연결을 끊었다. 팀원 행과 태스크·이력은 그대로고 `member.user_id` 만 null 로 돌아간다 |
 
-- 만료는 없다. 이메일 고치기 API 는 없고, 같은 팀원에게 다시 초대하면 대기 중인 초대가 `canceled` 가 된다. 거절·취소·연결 끊김 뒤에는 다시 초대할 수 있다. 연결을 끊은 팀원의 역할이 PM 이면 팀원으로 되돌린 뒤 초대한다.
+- 만료는 없다. 다른 사람을 골랐으면 같은 팀원에게 다시 초대한다. 대기 중이던 초대는 `canceled` 가 된다. 거절·취소·연결 끊김 뒤에는 다시 초대할 수 있다. 연결을 끊은 팀원의 역할이 PM 이면 팀원으로 되돌린 뒤 초대한다.
 - 수락한 팀원의 권한은 기존 팀원 권한 그대로다. 기존 API 에서 바뀐 것은 아래 `PATCH /members/{id}` 의 역할 변경 하나다.
 - 탈퇴한 팀원의 초대는 내 초대에 나오지 않고 수락할 수 없다(409 `INVITATION_NOT_PENDING`). PM 목록에는 남는다.
+- 초대받은 계정이 탈퇴하면 그 계정에 온 초대는 지워져 PM 목록에서도 사라진다.
 - 대기 초대가 있는 팀원은 PM 으로 올릴 수 없다. `PATCH /members/{id}` `{role: "pm"}` 이 409 `MEMBER_HAS_PENDING_INVITATION` 이고 역할과 초대는 그대로다. 받는 사람이 수락한 뒤 올리거나, 초대를 취소한 뒤 올린다. 역할 외의 수정은 막지 않는다.
 - 오류
 
   | 코드 | 상태 | 언제 |
   |---|---|---|
-  | `FORBIDDEN` | 403 | PM 이 아닌 사람이 PM 쪽 요청을 했다 |
+  | `WORKSPACE_NOT_FOUND` | 404 | 가입자 검색에서 공간이 없거나 삭제됐다. PM 확인보다 먼저 응답한다 |
+  | `FORBIDDEN` | 403 | PM 이 아닌 사람이 PM 쪽 요청이나 검색을 했다 |
   | `MEMBER_NOT_FOUND` | 404 | 만들기에서 팀원이 없거나, 이 워크스페이스 팀원이 아니거나, 탈퇴했다 |
+  | `USER_NOT_FOUND` | 404 | 만들기에서 그 `user_id` 의 가입자가 없다(탈퇴 포함). PM 이 아니면 이 코드 대신 403 이다 |
   | `MEMBER_ALREADY_LINKED` | 409 | 이미 로그인 계정이 이어진 팀원이다(만들기·수락) |
-  | `ALREADY_WORKSPACE_MEMBER` | 409 | 그 이메일의 계정, 또는 수락하려는 내가 이미 이 워크스페이스의 팀원이다 |
-  | `EMAIL_ALREADY_INVITED` | 409 | 같은 이메일로 다른 팀원에게 보낸 초대가 대기 중이다 |
+  | `ALREADY_WORKSPACE_MEMBER` | 409 | 초대할 계정, 또는 수락하려는 내가 이미 이 워크스페이스의 팀원이다 |
+  | `USER_ALREADY_INVITED` | 409 | 같은 사용자에게 다른 팀원으로 보낸 초대가 대기 중이다. #628 전의 `EMAIL_ALREADY_INVITED` 를 대신한다 |
   | `PM_MEMBER_NOT_INVITABLE` | 409 | 이 워크스페이스에서 역할이 PM 인 팀원을 초대하려 했다. 팀원으로 초대하고, 수락한 뒤 PM 으로 바꾼다. 다른 워크스페이스의 역할과는 상관없다 |
   | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 했다(`PATCH /members/{id}`) |
-  | `INVITATION_NOT_FOUND` | 404 | 초대가 없다. 수락·거절에서는 내 이메일로 온 초대가 아니어도, 취소·연결 끊기에서는 그 워크스페이스 소속이 아니어도 이 코드다(소속이지만 PM 이 아니면 403 `FORBIDDEN`) |
+  | `INVITATION_NOT_FOUND` | 404 | 초대가 없다. 수락·거절에서는 나에게 온 초대가 아니어도, 취소·연결 끊기에서는 그 워크스페이스 소속이 아니어도 이 코드다(소속이지만 PM 이 아니면 403 `FORBIDDEN`) |
   | `INVITATION_NOT_PENDING` | 409 | 대기 중이 아닌 초대를 수락·거절·취소했다 |
   | `INVITATION_NOT_ACCEPTED` | 409 | 수락하지 않은 초대의 연결을 끊으려 했다 |
   | `LAST_PM_REQUIRED` | 409 | 끊으면 로그인할 수 있는 PM 이 없어진다 |
 
-- 한 계정이 한 워크스페이스에서 두 팀원이 되지 않는다. 한 팀원에 대기 초대 하나, 한 워크스페이스에서 같은 이메일의 대기 초대 하나만 DB 가 허용하고, 수락할 때 이미 소속인지 다시 확인한다. 같은 초대를 동시에 수락하면 한 계정만 이어진다. 같은 이메일의 다른 초대가 수락되는 순간 새 초대를 만들면 드물게 수락할 수 없는 대기 초대가 생긴다. 그 초대를 수락하면 409 `ALREADY_WORKSPACE_MEMBER` 이고, PM 이 취소하면 된다. 연결을 끊으면 같은 이메일의 대기 초대도 함께 `canceled` 가 된다.
+- 한 계정이 한 워크스페이스에서 두 팀원이 되지 않는다. 한 팀원에 대기 초대 하나, 한 워크스페이스에서 같은 사용자의 대기 초대 하나만 DB 가 허용하고, 수락할 때 이미 소속인지 다시 확인한다. 같은 사용자가 다른 팀원 초대를 수락하는 중에 새 초대를 만들면 수락이 끝날 때까지 기다린 뒤 409 `ALREADY_WORKSPACE_MEMBER` 다(PostgreSQL 테스트로 확인). 연결을 끊으면 그 사용자에게 남은 대기 초대도 함께 `canceled` 가 된다.
 - 팀원이 온보딩(워크스페이스 만들기)을 건너뛰고 초대를 기다리는 데 새 백엔드 API 는 필요 없다. 초대를 기다리는 사용자는 `GET /auth/me` 의 `workspace_count` 가 0 이고 `GET /workspaces` 가 빈 목록 `{"items": [], "total": 0}` 이다.
 
 ### 착수 가능 여부 요약

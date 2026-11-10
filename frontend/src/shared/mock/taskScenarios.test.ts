@@ -27,7 +27,10 @@ const M6_SCENARIOS = [
   'approval-resolved',
   'approval-conflict',
   'approval-scope',
+  'approval-due-clear',
   'approval-chat',
+  'approval-asr-suspects',
+  'approval-asr-suspects-long',
   'minutes-edit-pending',
   'notion-sync-pending',
   'notion-sync-failed',
@@ -73,7 +76,7 @@ describe('M6 시나리오 목록', () => {
   })
 
   it.each(M6_SCENARIOS)('%s 는 저장 버전 그대로 sessionStorage 에서 복원된다', (scenario) => {
-    expect(MOCK_DB_VERSION).toBe(22)
+    expect(MOCK_DB_VERSION).toBe(23)
     replaceDb(createScenarioDb(scenario))
     saveDb(sessionStorage)
     resetDb()
@@ -233,6 +236,21 @@ describe('M6 시나리오 상태와 전이', () => {
         approval_status: 'rejected',
       })
       await expect(fetchDto('/tasks/tk_04')).resolves.toMatchObject({ due_date: '2026-09-24' })
+    })
+  })
+
+  it('approval-asr-suspects: 생성 승인마다 고칠 후보·확인 실패·확인하지 않음(null)을 싣는다 (#643)', async () => {
+    applyScenario('approval-asr-suspects')
+    const suspects = new Map(
+      (await pending()).items.map(({ approval_id, payload }) => [
+        approval_id,
+        payload.asr_suspects,
+      ]),
+    )
+    expect(Object.fromEntries(suspects)).toEqual({
+      ap_01: [{ word: '애포', source: 'title', candidates: ['배포'] }],
+      ap_02: [{ word: '', source: 'check_failed', candidates: [] }],
+      ap_03: null,
     })
   })
 

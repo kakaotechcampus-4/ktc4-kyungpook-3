@@ -41,6 +41,7 @@ import functools
 import json
 import logging
 import re
+import time
 from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -393,13 +394,19 @@ class BeClient:
                 return str(e.details.get("status", "processing"))
             raise
 
-    def report_stage(self, meeting_id: str, stage: str) -> dict:
+    def report_stage(self, meeting_id: str, stage: str, *, stt: dict | None = None) -> dict:
         """처리 단계가 시작됐다고 알린다(stt, sources, extract, handoff). BE 가 진행 표시에 쓴다.
 
         data 는 {meeting_id, status, processing_stage, applied}. 처리 중이 아니거나 같은·앞선 단계면 applied 가 False 다.
         오류는 BeError 그대로 올린다. 삼키는 것은 Handoff.report_stage 다.
         """
-        return self._call("PATCH", f"/meetings/{meeting_id}/stage", {"stage": stage}, timeout=STAGE_TIMEOUT_S)
+        body = {"stage": stage}
+        if stt is not None:
+            done, total = stt.get("done"), stt.get("total")
+            if stage != "stt" or type(done) is not int or type(total) is not int or not 0 <= done <= total <= 2**31 - 1 or total < 1:
+                raise ValueError("STT 진행은 stt 단계의 0 <= done <= total, total >= 1 정수여야 한다")
+            body["stt"] = {"done": done, "total": total}
+        return self._call("PATCH", f"/meetings/{meeting_id}/stage", body, timeout=STAGE_TIMEOUT_S)
 
     def fail_meeting(self, meeting_id: str, failed_stage: str) -> dict:
         try:
@@ -490,9 +497,9 @@ def locate_sentence(sentence: str, segments: list[dict]) -> tuple[str | None, in
 def to_extraction_items(tasks: list[dict], transcript: dict) -> list[dict]:
     """ExtractedTask.to_dict() 목록을 BE 의 ExtractionItemCreate 목록으로.
 
-    assignee_raw 는 별칭 텍스트다. 2인칭·대명사·역할은 추출기가 문맥으로 푼 이름(assignee_resolved)이 있으면
-    그것을 보낸다. thirdname 은 원문 언급만 보낸다 — 추출기가 고친 이름이 틀리면 BE 가 그 글자를 별칭으로
-    배우기 때문이다. first, group, none 은 None 이 간다.
+    assignee_raw 는 별칭 텍스트다. 2인칭·대명사는 추출기가 문맥으로 푼 이름(assignee_resolved)이 있으면
+    그것을 보낸다. thirdname·thirdrole 은 원문 언급만 보낸다 — 추출기가 고친 이름이 틀리면 BE 가 그 글자를
+    별칭으로 배우기 때문이다(#501·#522). first, group, none 은 None 이 간다.
     """
     segments = transcript.get("segments", [])
     items = []
@@ -500,11 +507,11 @@ def to_extraction_items(tasks: list[dict], transcript: dict) -> list[dict]:
         sentence = t.get("source_sentence") or ""
         speaker, at_ms, seq = locate_sentence(sentence, segments)
         kind = t.get("assignee_type")
-        # "네가"·"그분"·"백엔드 리더" 는 별칭이 아니라 푼 이름만 보낸다. 1인칭·그룹·없음은 보낼 글자가 없다
-        # (BE 가 "우리" 같은 글자를 별칭 조회하지 않게). 그 밖은 원문 언급만(resolved 무시)
+        # "네가"·"그분" 은 별칭이 아니라 푼 이름만 보낸다. 1인칭·그룹·없음은 보낼 글자가 없다
+        # (BE 가 "우리" 같은 글자를 별칭 조회하지 않게). 그 밖(thirdname·thirdrole)은 원문 언급만(resolved 무시)
         if kind in ("first", "group", "none"):
             assignee_raw = None
-        elif kind in ("second", "thirdpronoun", "thirdrole"):
+        elif kind in ("second", "thirdpronoun"):
             assignee_raw = t.get("assignee_resolved")
         else:
             assignee_raw = t.get("assignee_mention")
@@ -637,22 +644,39 @@ class Handoff:
         return be
 
     @_manifest_privacy
-    def report_stage(self, manifest: dict, stage: str) -> None:
+    def report_stage(self, manifest: dict, stage: str, *, stt: dict | None = None) -> None:
         """단계가 시작될 때 BE 에 알린다. 삭제 응답은 종결하고 그 밖의 진행 표시 실패는 삼킨다.
 
-        BE 회의가 아직 없으면(be.meeting_id 없음) 부르지 않는다. 처리 결과를 바꾸면 안 되므로 예외는 로그만 남긴다.
+        BE 회의가 아직 없으면(be.meeting_id 없음) 부르지 않는다. 일반 전송 오류는 로그만 남긴다.
         """
         meeting_id = (manifest.get("be") or {}).get("meeting_id")
         if not meeting_id:
             return
         try:
-            self.client.report_stage(meeting_id, stage)
+            if stt is None:
+                self.client.report_stage(meeting_id, stage)
+            else:
+                self.client.report_stage(meeting_id, stage, stt=stt)
         except BeError as e:
             if e.code == "MEETING_DELETED":
                 raise MeetingEnded(e.code, e.message, status=e.status) from e
             print(f"[stage] 세션 {manifest.get('session')} 단계 보고 실패({stage}): {type(e).__name__}: {e}", flush=True)
         except Exception as e:  # noqa: BLE001 - 진행 표시 실패가 전사·인계를 막으면 안 된다
             print(f"[stage] 세션 {manifest.get('session')} 단계 보고 실패({stage}): {type(e).__name__}: {e}", flush=True)
+
+    def stt_progress(self, manifest: dict):
+        """한 전사 시도의 직렬 완료 훅. 시작·최종값은 보내고 중간 보고는 2초 간격으로 제한한다."""
+        last_attempt = None
+
+        def report(done: int, total: int) -> None:
+            nonlocal last_attempt
+            now = time.monotonic()
+            if done not in (0, total) and last_attempt is not None and now - last_attempt < 2.0:
+                return
+            last_attempt = now
+            self.report_stage(manifest, "stt", stt={"done": done, "total": total})
+
+        return report
 
     @_manifest_privacy
     def save_sources(self, manifest: dict, *, transcripts_dir: Path, title: str | None = None) -> dict:

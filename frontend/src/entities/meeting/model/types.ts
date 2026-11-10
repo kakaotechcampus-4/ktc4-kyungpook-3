@@ -22,6 +22,20 @@ export interface MeetingProgress {
   transcribed: boolean
   extracted: boolean
 }
+/** AI 가 알린 지금 처리 단계 (BE MeetingProcessing.stage) */
+export const PROCESSING_STAGES = ['stt', 'sources', 'extract', 'handoff'] as const
+export type ProcessingStage = (typeof PROCESSING_STAGES)[number]
+export interface SttProgress {
+  done: number
+  total: number
+}
+/** 녹음 회의는 이 값이 있으면 서버 단계와 1:1 인 다섯 단계이고, 지금 단계 옆에 진행 수·경과를 붙인다 (#483) */
+export interface MeetingProcessing {
+  /** AI 가 아직 아무 단계도 알리지 않았다면 null */
+  stage: ProcessingStage | null
+  stageAt: string | null
+  stt: SttProgress | null
+}
 export interface Meeting {
   id: string
   workspaceId: string
@@ -33,6 +47,8 @@ export interface Meeting {
   failedStage: string | null
   deletionAvailable: boolean
   progress: MeetingProgress | null
+  /** 정리 중이 아니거나, #542 전 서버이거나, 모양이 틀렸거나, 모르는 단계면 null */
+  processing: MeetingProcessing | null
 }
 /** 업로드 요청. 회의 시각은 ISO 문자열이다 — 날짜를 고치지 않았으면 파일의 원래 시각이다 (D-079, D-164) */
 export interface UploadMeetingInput {

@@ -210,3 +210,15 @@ def test_dispatcher_raises_when_llm_parse_fails(monkeypatch):
     ji = JudgeInput(source="meeting", text="결제 환불 기능 구현하기로 했다.", candidates=[])
     with pytest.raises(JudgeUnavailableError):
         judge(ji)
+
+
+def test_dispatcher_retries_a_failed_call_once_in_place(monkeypatch):
+    # 실패한 호출만 그 자리에서 한 번 더 한다. 회의 전체를 다시 돌리면 앞 발화의 판단을 다 다시 사야 한다(#624)
+    import judge.final_judge as fj
+
+    good = {"is_meaningful": True, "category": "decision", "is_new": True, "matched_candidate_index": None,
+            "status": "todo", "evidence": "새 일"}
+    fake = FakeLLM(responses=[{"is_meaningful": "not-a-bool"}, good])
+    monkeypatch.setattr(fj, "get_llm", lambda which: fake)
+    result = judge(JudgeInput(source="meeting", text="결제 환불 기능 구현하기로 했다.", candidates=[]))
+    assert result.is_new and len(fake.prompts) == 2

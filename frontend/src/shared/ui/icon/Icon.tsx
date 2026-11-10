@@ -139,6 +139,16 @@ const ICONS = {
       </>
     ),
   },
+  /** 헤더의 처음 쓰는 분을 위한 안내 (#650). 캔버스에 없어 info 의 원에 물음표를 그렸다 */
+  help: {
+    strokeWidth: 1.8,
+    paths: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6M12 17h.01" />
+      </>
+    ),
+  },
   /* 아래 넷은 Messages·MessagesThread 캔버스 그대로다 — 고쳐 쓰기·이대로 발송·답장 없음 칩·Discord 바깥 링크 */
   edit: {
     strokeWidth: 1.8,

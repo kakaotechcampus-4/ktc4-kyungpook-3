@@ -10,6 +10,7 @@ import type {
   Approval,
   ApprovalMissing,
   ApprovalResolveFailure,
+  AsrSuspect,
   MergedApprovalItem,
   TaskUpdateCategory,
 } from './types'
@@ -57,6 +58,44 @@ function taskUpdateCategory(value: unknown): TaskUpdateCategory | null {
   if (typeof value === 'string' && import.meta.env.DEV)
     console.warn(`Unknown approval category: ${value}`)
   return null
+}
+
+type AsrSuspectDto = NonNullable<NonNullable<ApprovalDto['payload']['asr_suspects']>[number]>
+
+function misheard({ word, candidates }: AsrSuspectDto): AsrSuspect | null {
+  const heard = word.trim()
+  if (heard === '') return null
+  return {
+    kind: 'misheard',
+    word: heard,
+    candidates: candidates.map((each) => each.trim()).filter((each) => each !== ''),
+  }
+}
+
+/** 서버 `source` 마다 화면이 읽는 의심 (#643). evidence·title 은 고칠 후보, check_failed 는 확인하지 못했다는 뜻이다 */
+const asrSuspectBySource = new Map<string, (dto: AsrSuspectDto) => AsrSuspect | null>([
+  ['evidence', misheard],
+  ['title', misheard],
+  ['check_failed', () => ({ kind: 'check_failed' })],
+])
+
+/** 모르는 source·빈 글자는 버린다. 확인 실패는 몇 개가 와도 한 줄이다 */
+function asrSuspects(items: ApprovalDto['payload']['asr_suspects']): AsrSuspect[] {
+  const suspects: AsrSuspect[] = []
+  for (const item of items ?? []) {
+    if (item === null) continue
+    const read = asrSuspectBySource.get(item.source)
+    if (read === undefined) {
+      if (import.meta.env.DEV) console.warn(`Unknown asr suspect source: ${item.source}`)
+      continue
+    }
+    const suspect = read(item)
+    if (suspect === null) continue
+    if (suspect.kind === 'check_failed' && suspects.some(({ kind }) => kind === 'check_failed'))
+      continue
+    suspects.push(suspect)
+  }
+  return suspects
 }
 
 /** 범위 변경은 바꿀 필드가 없어도 승인 요청이 된다 (#205). 화면은 모두 이 판정을 쓴다 */
@@ -140,6 +179,7 @@ export function toApproval(dto: ApprovalDto): Approval {
       payloadVersion: dto.payload_version || null,
       mergedItems: mergedItems(payload.merged_items ?? []),
       assigneeItemId: payload.assignee_item_id || text(payload.extraction_item_id),
+      asrSuspects: asrSuspects(payload.asr_suspects),
     }
   }
   // 대상 태스크 이름은 `task_title`(없으면 제안 때 본 `base_title`)이다. `title` 은 바꿀 제목이라 이름으로 쓰지 않는다

@@ -6,8 +6,9 @@ import {
   latestInvitationsQueryOptions,
   revokeInvitation,
 } from '@/entities/invitation'
+import type { Invitee } from '@/entities/invitation'
 import { errorMessage, failureNotice } from '@/shared/api/errorMessages'
-import { CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
+import { ApiError, CLIENT_ERROR_CODES, ERROR_CODES, createClientError } from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
 import { toast } from '@/shared/ui/toast'
@@ -17,8 +18,11 @@ interface Tracked {
 }
 
 export interface MemberInviteActions {
-  /** 성공하면 알림을 띄우고 `onSuccess` 를 부른다. 실패 문구는 `inviteError` 로 남는다 — 창 안에 보인다 */
-  invite: (email: string, onSuccess: () => void) => void
+  /**
+   * 성공하면 알림을 띄우고 `onSuccess` 를 부른다. 실패 문구는 `inviteError` 로 남는다 — 창 안에 보인다.
+   * 찾은 사람이 그사이 없어졌으면(404 `USER_NOT_FOUND`) `onUserGone` 도 부른다
+   */
+  invite: (invitee: Invitee, onSuccess: () => void, onUserGone: () => void) => void
   inviteError: string | null
   inviting: boolean
   /** 창을 새로 열 때 지난 초대 요청의 상태를 비운다 */
@@ -36,29 +40,38 @@ export interface MemberInviteActions {
  * 끝나면(성공·실패) 초대 목록을 다시 받는다 — 다시 초대·연결 끊기는 다른 초대도 닫고, 실패는 화면이 낡았다는 뜻일 수 있다.
  * 요청 중 세션이 바뀌었으면 늦은 응답으로 알림을 띄우지 않는다.
  */
-export function useMemberInviteActions(
-  workspaceId: string,
-  member: { id: string; displayName: string },
-): MemberInviteActions {
+export function useMemberInviteActions(workspaceId: string, memberId: string): MemberInviteActions {
   const queryClient = useQueryClient()
   const refresh = () =>
     void queryClient.invalidateQueries({
       queryKey: latestInvitationsQueryOptions(workspaceId).queryKey,
     })
 
-  const create = useMutation<void, Error, Tracked & { email: string; onSuccess: () => void }>({
+  const create = useMutation<
+    void,
+    Error,
+    Tracked & { invitee: Invitee; onSuccess: () => void; onUserGone: () => void }
+  >({
     retry: false,
-    mutationFn: ({ email, session }) => {
+    mutationFn: ({ invitee, session }) => {
       if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
-      return createInvitation(workspaceId, { memberId: member.id, email }, session.signal)
+      return createInvitation(workspaceId, { memberId, userId: invitee.userId }, session.signal)
     },
-    onSuccess: (_, { email, onSuccess, session }) => {
+    onSuccess: (_, { invitee, onSuccess, session }) => {
       if (!session.isCurrent()) return
       toast.show({
         title: '초대를 만들었어요',
-        description: `메일은 가지 않아요. ${member.displayName}에게 ${email}로 가입하거나 로그인하라고 알려 주세요.`,
+        description: `알림은 가지 않아요. ${invitee.name}에게 ${invitee.username} 계정으로 로그인해 받은 초대를 수락하라고 알려 주세요.`,
       })
       onSuccess()
+    },
+    onError: (error, { onUserGone, session }) => {
+      if (
+        session.isCurrent() &&
+        error instanceof ApiError &&
+        error.code === ERROR_CODES.USER_NOT_FOUND
+      )
+        onUserGone()
     },
     // 끝난 세션의 쓰기는 보내지 않았다. 다음 세션의 목록을 다시 받지 않는다
     onSettled: (_data, _error, { session }) => {
@@ -94,9 +107,9 @@ export function useMemberInviteActions(
   })
 
   return {
-    invite: (email, onSuccess) => {
+    invite: (invitee, onSuccess, onUserGone) => {
       if (create.isPending) return
-      create.mutate({ email, onSuccess, session: captureSessionScope() })
+      create.mutate({ invitee, onSuccess, onUserGone, session: captureSessionScope() })
     },
     inviteError: create.error && create.error !== hiddenError ? failureNotice(create.error) : null,
     inviting: create.isPending,

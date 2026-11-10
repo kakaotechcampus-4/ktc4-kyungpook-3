@@ -120,7 +120,7 @@ export const withdrawalHandlers = [
     }
     db.invitations = db.invitations.filter(
       (invitation) =>
-        invitation.email !== email &&
+        invitation.invited_user_id !== userId &&
         invitation.accepted_user_id !== userId &&
         !memberIds.has(invitation.member_id),
     )
