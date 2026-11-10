@@ -332,3 +332,40 @@ def test_a_deleted_member_cannot_take_an_account(db, seed):
     assert r.status_code == 404
     assert r.json()["error"]["code"] == "MEMBER_NOT_FOUND"
     assert _member(db, seed["holder"]).discord_user_id == "disc_x"
+
+
+def test_moving_onto_a_member_who_already_has_another_account(db, seed, monkeypatch):
+    # 옮겨 받는 팀원에게 이미 계정 V 가 있으면, V 닉네임 별칭은 지우고 V 발화는 그 팀원에 남기고, U 를 잇고
+    # U 발화를 붙이고 U 닉네임을 별칭으로 읽어 온다(#463). 옮기기 순서를 고정한다(#662 리뷰)
+    from app.models import Integration
+    from app.services import member_aliases
+
+    target, holder, meeting = seed["target"], seed["holder"], seed["meeting"]
+    monkeypatch.setenv("DISCORD_BOT_TOKEN", "bot-token")
+    db.add(Integration(workspace_id=seed["ws"].workspace_id, provider="discord", provider_channel_id="g1"))
+    target.discord_user_id = "disc_v"
+    db.add(MemberAlias(
+        member_id=target.member_id, workspace_id=seed["ws"].workspace_id, alias_text="브이닉",
+        alias_type="nickname", source=str(AliasSource.DISCORD_PROFILE), confidence=0.8, verified=False,
+    ))
+    db.add(Source(meeting_id=meeting.meeting_id, seq=100, speaker_discord_user_id="disc_v", member_id=target.member_id,
+                  start_ms=100000, end_ms=100900, text="V 발화"))
+    db.commit()
+    looked_up = []
+
+    def fake(bot_token, guild_id, user_id, **kwargs):
+        looked_up.append(user_id)
+        return {"nick": "유닉", "user": {"id": user_id}}
+
+    monkeypatch.setattr(member_aliases.discord, "get_guild_member", fake)
+
+    r = _patch(target, {"discord_user_id": "disc_x", "move_discord_link": True})
+
+    assert r.status_code == 200, r.text
+    assert (_member(db, target).discord_user_id, _member(db, holder).discord_user_id) == ("disc_x", None)
+    profile = {a.alias_text for a in db.scalars(select(MemberAlias).where(
+        MemberAlias.member_id == target.member_id, MemberAlias.source == str(AliasSource.DISCORD_PROFILE)))}
+    assert profile == {"유닉"} and looked_up == ["disc_x"]
+    speakers = _speakers(db, meeting)
+    assert ("disc_v", target.member_id) in speakers
+    assert [m for uid, m in speakers if uid == "disc_x"] == [target.member_id, target.member_id]
