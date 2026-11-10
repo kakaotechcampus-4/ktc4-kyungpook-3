@@ -153,7 +153,7 @@ describe('발견과 등록 (U4-1, U4-2)', () => {
 
     const card = await openProcessingCard()
     expect(card).toHaveTextContent('음성을 텍스트로 옮기고 있어요')
-    expect(card).toHaveTextContent('1 / 3 단계 완료')
+    expect(card).toHaveTextContent('1 / 5 단계 완료')
     const names = within(screen.getByRole('navigation', { name: '주요 화면' }))
       .getAllByRole('link')
       .map((node) => node.textContent)
@@ -434,17 +434,19 @@ describe('polling (U4-3)', () => {
 })
 
 describe('처리 화면 (U4-4, U4-10)', () => {
-  it('서버의 progress 세 값을 단계로만 보인다 — 백분율·남은 시간·진행 막대가 없다', async () => {
+  it('서버 단계와 1:1 인 다섯 단계를 단계로만 보인다 — 백분율·남은 시간·진행 막대가 없다', async () => {
     await openProcessing()
     const steps = within(screen.getByRole('list', { name: '정리 단계' })).getAllByRole('listitem')
     expect(steps.map((step) => step.textContent)).toEqual([
       '차례 기다리는 중완료',
       '음성을 텍스트로 옮기기진행 중',
+      '회의록 정리하기대기',
       '결정사항과 할 일 뽑아내기대기',
+      '정리 결과 보내기대기',
     ])
     expect(steps[1]).toHaveAttribute('aria-current', 'step')
     expect(screen.getByRole('status')).toHaveTextContent(
-      '1 / 3 단계 완료 · 음성을 텍스트로 옮기기 진행 중',
+      '1 / 5 단계 완료 · 음성을 텍스트로 옮기기 진행 중',
     )
     const main = screen.getByRole('main')
     expect(main.textContent).not.toMatch(/%|남은|경과|분 후|초 후/)
@@ -470,27 +472,25 @@ describe('처리 화면 (U4-4, U4-10)', () => {
     expect(main).not.toHaveTextContent('승인한 뒤')
   })
 
-  it('아직 끝난 단계가 없으면 정리하고 있다는 제목과 0 / 3 단계 완료를 알린다', async () => {
+  it('아직 끝난 단계가 없으면 정리하고 있다는 제목과 0 / 5 단계 완료를 알린다', async () => {
     db.meetings.find(({ meeting_id }) => meeting_id === 'mt_10')!.progress = {
       audio_merged: false,
       transcribed: false,
       extracted: false,
     }
     await openProcessing()
-    expect(screen.getByRole('status')).toHaveTextContent('0 / 3 단계 완료')
+    expect(screen.getByRole('status')).toHaveTextContent('0 / 5 단계 완료')
   })
 
   it('단계가 바뀌면 role="status" 안내가 바뀐다 (U4-10)', async () => {
     fakeIntervals()
     await openProcessing()
     const status = screen.getByRole('status')
-    expect(status).toHaveTextContent('1 / 3 단계 완료')
+    expect(status).toHaveTextContent('1 / 5 단계 완료')
 
     advanceMeeting('mt_10')
     await act(() => vi.advanceTimersByTimeAsync(3_000))
-    await until(() =>
-      expect(status).toHaveTextContent('2 / 3 단계 완료 · 결정사항과 할 일 뽑아내기 진행 중'),
-    )
+    await until(() => expect(status).toHaveTextContent('2 / 5 단계 완료 · 회의록 정리하기 진행 중'))
     // 같은 안내 요소가 남아 갱신된다 — 스크린리더가 바뀐 내용을 읽는다
     expect(screen.getByRole('status')).toBe(status)
   })

@@ -56,6 +56,8 @@ export const MOCK_SCENARIOS = [
   'incomplete-workspace',
   // M5 회의 흐름. 모두 ws_01 하나에 로그인한다 — docs/impl-decision/2026-10-02-meeting-upload-policy.md
   'meeting-demo',
+  // meeting-demo 와 같은 흐름을 #542 전 서버로 본다 — 상세에 processing 이 없어 진행 수·경과가 없다
+  'meeting-demo-legacy',
   'meeting-instant',
   'meeting-fail',
   'meeting-fail-diarize',
@@ -821,6 +823,9 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'meeting-demo':
       // 브라우저 데모: 상세 조회(처리 화면 polling)마다 한 단계씩 보인다
       readyToUpload(state, 'staged')
+      break
+    case 'meeting-demo-legacy':
+      readyToUpload(state, 'staged-legacy')
       break
     case 'meeting-instant':
       // E2E: 업로드 뒤 첫 상세 조회에 정리가 끝난다

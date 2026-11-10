@@ -17,6 +17,7 @@ export type Scenario =
   | 'multiple-workspaces'
   | 'incomplete-workspace'
   | 'meeting-demo'
+  | 'meeting-demo-legacy'
   | 'meeting-instant'
   | 'meeting-fail'
   | 'meeting-fail-diarize'

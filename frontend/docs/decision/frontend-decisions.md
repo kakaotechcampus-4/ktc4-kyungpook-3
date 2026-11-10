@@ -2368,7 +2368,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 |---|---|---|
 | 상태 판단·쓰기 기준 | 응답 전체가 `INVALID_RESPONSE` 다. 다른 정상 값으로 바꾸지 않는다 | task `status`·`version`, approval `status`, meeting `status`, integration·invitation `status`, onboarding `step`·`status`, message `sender`·`dm_status`, 보낼 메시지(묶음) `status`, 답장 고르기 `status`, 메시지 설정 `pm_alert_method`(PM 이 바꿔 저장하는 값이다) |
 | 표시용 분류 | 받은 값을 보존하고(`UnknownValue`) `알 수 없는 ○○` 또는 기본 문구로 보인다. 행동은 없다. 서버가 행동을 허락해도(예: 답장 줄 `undoable`) 그 줄에는 두지 않는다 | history `changed_field`·`change_source`, approval `type`·`category`, notification `kind`·`link.type`, meeting·minutes `source`, 묶음 `body_source`(`출처를 알 수 없는 문구`), `dm_failure_reason`(받은 값을 남기고 서버의 `unknown` 과 같은 `이유를 알 수 없어요`), 별칭 `source`(`알 수 없는 출처`) |
-| 보수 폴백 | 권한·행동이 줄고 화면이 사실과 다르게 말하지 않는 값으로 내린다 | 워크스페이스·팀원 `role` → `member`, extraction `gate` → `hold`, extraction `approval_status` → 없음, `notion_sync_status` → 없음, task `auto_blocked` 가 불리언이 아니면 풀 수 없음(false), 답장 `channel`·`evidence_status` → 없음, 회의록 `summary` 모양이 틀리면 없음(BE 가 깨진 요약을 다루는 방식과 같다), 묶음 `draft_status` → 작성 중, 팀원 메시지 `reply_channel` → 웹 답장 표시 없음, 재촉 근거 `kind` → 근거 없음 |
+| 보수 폴백 | 권한·행동이 줄고 화면이 사실과 다르게 말하지 않는 값으로 내린다 | 워크스페이스·팀원 `role` → `member`, extraction `gate` → `hold`, extraction `approval_status` → 없음, `notion_sync_status` → 없음, task `auto_blocked` 가 불리언이 아니면 풀 수 없음(false), 답장 `channel`·`evidence_status` → 없음, 회의록 `summary` 모양이 틀리면 없음(BE 가 깨진 요약을 다루는 방식과 같다), 묶음 `draft_status` → 작성 중, 팀원 메시지 `reply_channel` → 웹 답장 표시 없음, 재촉 근거 `kind` → 근거 없음, 회의 상세 `processing` 모양이 틀리거나 `stage` 를 모르면 없음(진행 수·경과가 빠지고 단계는 옛 응답처럼 `progress` 로 세 단계를 그린다, #483·D-189 2026-11-10) |
 | 표시용 덧붙임 목록 | 응답을 거절하지 않는다. 목록 모양이 틀리면 없음, 틀린 항목·모르는 종류는 그 항목만 버리고 나머지를 보인다. 아래 「목록은 한 건만 깨져도 전체가 실패한다」의 예외다. 버린 항목은 화면이 사실과 다르게 말하지 않는다(사유 한 줄이 빠질 뿐이다) | approval `payload.asr_suspects`(#643, 2026-11-10). 모르는 `source` 는 이슈 본문이 무시로 정했다 |
 
 - **목록은 한 건만 깨져도 전체가 실패한다.** 깨진 항목을 몰래 빼지 않는다.
@@ -2503,6 +2503,43 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 - 연결된 온보딩 화면에서 이름만 추가하고 매칭 줄을 채우지 않으면 `확인 완료` 가 잠겨 있어 `나중에 하기`(건너뜀)로 넘어간다. D-187 대로 이 단계의 완료와 건너뜀은 2026-11-10 기준 다르게 쓰이지 않는다.
 - BE 는 Discord 연결을 끊어도 팀원의 `discord_user_id` 를 비우지 않는다(2026-11-10 코드 기준, 비우는 곳은 계정 탈퇴의 `erase_profile` 뿐이다). 그래서 연결을 끊은 팀의 미연결 화면 `추가한 팀원` 에는 예전에 이은 팀원이 보이지 않는다. 전체 팀원은 팀 화면에서 본다.
 - 근거: [결과](../issues/660-member-add-discord-connected/result.md).
+
+### D-189. 녹음·업로드 회의의 정리 단계는 서버 단계와 1:1 인 5단계다 (#483)
+
+- 결정일: 2026-11-10
+- 상태: 확정 (사용자 결정, 관리 세션 전달, #483)
+
+#483 A안으로 회의 상세에 `processing`(AI 가 알린 단계 `stage`, 그 시작 시각 `stage_at`, 전사 진행 `stt`)이 생겼다(BE #542, AI #653). 처리 화면의 셋째 단계 「결정사항과 할 일 뽑아내기」 안에서 서버 단계가 `sources` → `extract` → `handoff` 로 바뀌면, 그 단계 옆 경과가 `3분째` 다음에 `방금 시작` 으로 되돌아가 보였다.
+
+- 녹음·업로드 회의(`source` 가 `chat` 이 아님)는 다섯 단계다. 단계마다 서버 단계 하나다.
+
+| 단계 | 서버 `stage` | 진행 토스트 문장 |
+|---|---|---|
+| 차례 기다리는 중 | 보고 전(`null`) | 차례를 기다리고 있어요 |
+| 음성을 텍스트로 옮기기 | `stt` | 음성을 텍스트로 옮기고 있어요 |
+| 회의록 정리하기 | `sources` | 회의록을 정리하고 있어요 |
+| 결정사항과 할 일 뽑아내기 | `extract` | 결정사항과 할 일을 뽑고 있어요 |
+| 정리 결과 보내기 | `handoff` | 정리 결과를 보내고 있어요 |
+
+- **언제 다섯 단계인가.** 응답에 읽을 수 있는 `processing` 객체가 있으면 다섯 단계다. `stage` 가 `null`(보고 전)이어도 다섯 단계다. `processing` 이 없거나(#542 전 BE) 모양이 틀리거나 `stage` 를 모르면 전처럼 `progress` 로 세 단계다. 모르는 `stage` 는 `processing` 전체를 없는 것으로 본다(D-184 보수 폴백).
+- **지금 단계.** 서버 단계 순위(`stt` 1, `sources` 2, `extract` 3, `handoff` 4, 보고 전 0)와 `progress` 가 뜻하는 순위(`audio_merged` 1, `transcribed` 2, `extracted` 4) 중 큰 쪽이다. 앞 단계는 완료, 그 단계는 진행 중, 뒤는 대기다. 마지막 단계는 회의가 `done` 일 때만 완료다. 예를 들어 `extracted` 가 참인데 `stage` 가 `sources` 면 「정리 결과 보내기」가 진행 중이다.
+- **경과·진행 수.** 서버 단계가 화면의 지금 단계와 같을 때만 붙는다. 그래서 각 경과는 그 단계의 `stage_at` 부터이고 단계 안에서 되돌아가지 않는다.
+- 업로드 회의의 화자 지정 대기(`awaiting_speakers`)도 다섯 단계다. 서버는 정리 중일 때만 `processing` 을 주므로, 세 단계로 두면 대기를 오갈 때 목록이 5칸 → 3칸 → 5칸으로 바뀐다. 대가로 옛 서버에서는 대기 동안만 다섯 칸이다(관리 세션 판단).
+- 채팅 회의는 전처럼 「대화 모으기 → 결정사항과 할 일 뽑아내기」 두 단계다. 채팅 수집은 단계를 알리지 않는다.
+- 구현은 단계 정의 표 하나(`entities/meeting/lib/processingSteps.ts`)다. 단계마다 이름, 속한 서버 단계, 끝났다고 보는 `progress` 값을 둔다. 진행 수·경과를 어느 단계에 붙일지도 이 표가 정한다.
+
+이유:
+
+- 단계를 서버 단계와 맞추면 경과가 단계 안에서 되돌아가지 않고, 사용자가 지금 무엇을 하는지 더 정확히 안다.
+- 보고 전(`null`)을 세 단계로 보내면 첫 보고 때 목록이 3칸에서 5칸으로 바뀐다. 지금 BE 는 정리 중이면 늘 객체를 주므로, 객체가 있으면 다섯 단계로 둔다.
+- `progress` 는 발화·추출 데이터로도 참이 된다(BE `_compute_progress` 는 단계 순위와 데이터 판정을 OR 한다). 보고가 늦거나 빠져도 화면이 서버의 `progress` 보다 뒤처지지 않게 큰 쪽을 믿는다.
+- 마지막 단계 이름. 사용자는 「결과 전송하기」라고 했다. AI 의 `handoff` 는 추출 결과를 BE 에 등록(`POST /extractions`)하고 BE 가 그 결과로 태스크·승인을 만든다. 「전송」의 뜻은 살리되, 다른 단계 이름(옮기기·정리하기·뽑아내기)과 같은 쉬운 동사인 「보내기」로 쓰고, 무엇을 보내는지 「정리 결과」로 밝혔다(관리 세션 판단). 「태스크 만들기」는 확인이 필요한 항목은 태스크가 아니라 승인 요청이 되어 사실과 다르다.
+
+영향:
+
+- 처리 화면의 「n / 5 단계 완료」, 진행 토스트의 칸 다섯 개와 알약 `정리 중 n/5`.
+- MSW `meeting-demo` 가 조회마다 다섯 단계를 차례로 보인다. `meeting-demo-legacy` 는 세 단계다.
+- 근거: [결과](../issues/483-processing-steps/result.md), 계약 §2.3 `processing`.
 
 ## 현재 논의
 

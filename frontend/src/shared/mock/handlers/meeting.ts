@@ -6,7 +6,7 @@ import { MOCK_NOW } from '../fixtures/constants'
 import { deletedMeetingResponse, purgeMeeting } from '../meetingDeletion'
 import { requireMember, requirePmRole, requireAuth } from '../auth-guard'
 import { readJson, nextId } from '../utils'
-import { isChatMeeting, readMeeting } from '../meetingFlow'
+import { isChatMeeting, meetingResponse, readMeeting } from '../meetingFlow'
 import { registerSpeakerUpload } from '../speakerFlow'
 
 /** PM 이 다시 올려야 하는 업로드 실패. BE `list_workspace_meetings` 가 수동 업로드일 때만 목록에 남긴다 */
@@ -108,7 +108,7 @@ export const meetingHandlers = [
     const meeting = readMeeting(String(params.meetingId))
     return meeting
       ? ok({
-          ...meeting,
+          ...meetingResponse(meeting),
           extraction_id: meeting.status === 'done' ? meeting.extraction_id : null,
           deletion_available:
             meeting.deletion_available === true &&
