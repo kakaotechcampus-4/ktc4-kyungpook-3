@@ -44,6 +44,13 @@ const TRANSCRIBE: StepDefinition = {
   doneWhen: 'transcribed',
 }
 const EXTRACT_LABEL = '결정사항과 할 일 뽑아내기'
+/** 서버 단계를 나눠 보이지 않는 목록의 마지막 단계. sources·extract·handoff 가 모두 여기 속한다 */
+const WHOLE_EXTRACT: StepDefinition = {
+  key: 'extract',
+  label: EXTRACT_LABEL,
+  stages: ['sources', 'extract', 'handoff'],
+  doneWhen: null,
+}
 
 /**
  * 서버가 처리 단계를 알리는 녹음·업로드 회의. 서버 단계와 1:1 이라 단계가 바뀌면 화면 단계도 바뀌고, 경과는 그 단계 기준이다.
@@ -58,26 +65,12 @@ const STAGED_RECORDING_STEPS: readonly StepDefinition[] = [
 ]
 
 /** `processing` 을 주지 않는 #542 전 서버. `progress` 만으로는 sources·extract·handoff 를 가를 수 없어 한 단계다 */
-const LEGACY_RECORDING_STEPS: readonly StepDefinition[] = [
-  QUEUE,
-  TRANSCRIBE,
-  {
-    key: 'extract',
-    label: EXTRACT_LABEL,
-    stages: ['sources', 'extract', 'handoff'],
-    doneWhen: null,
-  },
-]
+const LEGACY_RECORDING_STEPS: readonly StepDefinition[] = [QUEUE, TRANSCRIBE, WHOLE_EXTRACT]
 
 /** 채팅 회의. 채팅 수집은 단계를 알리지 않는다 — 발화를 저장하면 서버가 앞 두 값을 함께 참으로 만든다 */
 const CHAT_STEPS: readonly StepDefinition[] = [
   { key: 'collect', label: '대화 모으기', stages: [], doneWhen: 'transcribed' },
-  {
-    key: 'extract',
-    label: EXTRACT_LABEL,
-    stages: ['sources', 'extract', 'handoff'],
-    doneWhen: null,
-  },
+  WHOLE_EXTRACT,
 ]
 
 /**
