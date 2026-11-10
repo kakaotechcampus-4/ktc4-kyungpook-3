@@ -33,3 +33,7 @@ export const approvalFixtures: ApprovalDto[] = extractionFixtures[1].items
     alias_candidate: false,
     alias_text: null,
   }))
+
+/** 공백 없는 긴 전사 의심 단어·후보 (#643). BE 는 각각 100자까지 받는다 */
+export const LONG_ASR_WORD = '배포파이프라인점검자동화'.repeat(3)
+export const LONG_ASR_CANDIDATE = '전사오인식확인'.repeat(6)

@@ -29,6 +29,7 @@ const M6_SCENARIOS = [
   'approval-scope',
   'approval-chat',
   'approval-asr-suspects',
+  'approval-asr-suspects-long',
   'minutes-edit-pending',
   'notion-sync-pending',
   'notion-sync-failed',

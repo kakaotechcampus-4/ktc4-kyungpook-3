@@ -8,7 +8,7 @@ BE 는 판단 경로 AI 가 제목의 의심 단어를 보내면 auto 를 막고
 
 ## 변경
 
-- **경계.** 승인 응답 스키마(`shared/types/api/approval.ts`)가 `payload.asr_suspects` 를 읽는다. 항목은 `word`·`source`·`candidates` 이고, 모양이 틀린 항목은 null, 배열이 아닌 값은 null 로 둔다. `candidates` 가 틀리면 빈 목록이다. 이 키 때문에 응답이 `INVALID_RESPONSE` 가 되는 일은 없다.
+- **경계.** 승인 응답 스키마(`shared/types/api/approval.ts`)가 `payload.asr_suspects` 를 읽는다. 항목은 `word`·`source`·`candidates` 이고, 모양이 틀린 항목은 null, 배열이 아닌 값은 null 로 둔다. `candidates` 가 글자 목록이 아니면 그 항목을 버린다(줄이 빠진다). 빈 후보로 읽으면 「다시 확인해 주세요」로 말이 바뀌기 때문이다. 키가 없으면 후보 없음이다. 이 키 때문에 응답이 `INVALID_RESPONSE` 가 되는 일은 없다.
 - **도메인.** `AsrSuspect = { kind: 'misheard'; word; candidates } | { kind: 'check_failed' }`, 생성 승인의 `asrSuspects: AsrSuspect[]`. mapper 는 `source` → 읽기 함수 표로 바꾼다. `evidence`·`title` 은 교정 후보, `check_failed` 는 검사 실패다. 모르는 `source`·빈 `word`·null 항목은 버리고(개발 모드 경고), 검사 실패는 여럿이어도 하나다. `null`·`[]`·키 없음은 모두 빈 목록이다.
 - **문구.** `asrSuspectLine`(`entities/approval/lib/asrSuspect.ts`)이 한 줄을 만든다. 조사 `은/는` 은 `shared/lib/korean.ts` 의 `topicParticle` 이다. `objectParticle` 과 받침 판정을 함께 쓴다.
 
@@ -23,7 +23,8 @@ BE 는 판단 경로 AI 가 제목의 의심 단어를 보내면 auto 를 막고
   - 태스크 목록 확인 필요 탭의 생성 승인 카드: 사유 줄 아래 「전사 확인」 목록(마이크 아이콘, 작은 글씨). 확인 필요·보류 카드 모두.
   - 승인 상세: 「확인이 필요한 이유」 절(`GapReasons` → `ConfirmReasons`)이 빠진 값이 없어도 의심이 있으면 열리고, 담당자·마감 줄 뒤에 굵은 `전사` 줄을 둔다. 대기 중 생성 승인만이다.
   - 대시보드 확인 필요 행: 빠진 값·보류가 없을 때 마지막 기본 문구 「내용을 확인해야 해요」 대신 첫 의심 문구다.
-- **MSW.** 기본 승인 픽스처는 `asr_suspects: []`(검사했고 없음). 시나리오 `approval-asr-suspects` 는 ap_01 교정 후보(애포 → 배포), ap_02 검사 실패, ap_03 `null` 이다. 회의 올리기 흐름이 만드는 승인 payload 는 키가 없어 표시가 없다. 모의 저장 버전은 그대로다(키가 없으면 빈 목록이다).
+  - 세 곳 모두 공백 없는 긴 단어·후보(BE 는 각 100자)를 칸 폭에서 끊는다(`wrap-anywhere`, 카드 줄은 글자 칸 `min-w-0`·아이콘 `shrink-0`). 전역 `word-break: keep-all` 때문에 그대로 두면 390 폭에서 카드 밖으로 나갔다(Codex 리뷰).
+- **MSW.** 기본 승인 픽스처는 `asr_suspects: []`(검사했고 없음). 시나리오 `approval-asr-suspects` 는 ap_01 교정 후보(애포 → 배포), ap_02 검사 실패, ap_03 `null` 이다. `approval-asr-suspects-long` 은 공백 없는 긴 단어·후보다(ap_02 는 빠진 값이 없어 대시보드에도 보인다). 회의 올리기 흐름이 만드는 승인 payload 는 키가 없어 표시가 없다. 모의 저장 버전은 그대로다(키가 없으면 빈 목록이다).
 - **문서.** [계약](../../contracts/frontend-api-contract.md) `ApprovalResponse` 줄과 §2.5 payload 에 필드·표시 규칙·FE 구현을 더했다. [D-184](../../decision/frontend-decisions.md) 표에 「표시용 덧붙임 목록」 줄을 더했다. 새 결정 번호는 쓰지 않았다.
 
 ## 설계에서 정한 것
@@ -47,6 +48,7 @@ BE 는 판단 경로 AI 가 제목의 의심 단어를 보내면 auto 를 막고
 
 - 새 화면 테스트(`app/approvalAsrSuspects.test.tsx`, 10 건): 교정 후보·검사 실패 문구, `null`·`[]` 표시 없음, 모르는 `source` 무시(옆의 정상 항목은 보임), 모양이 틀린 `asr_suspects`(문자열, 숫자 `word`)에도 카드 제목·승인 버튼이 남음, 목록 이름 `전사 확인`·절 이름 `확인이 필요한 이유`, 빠진 값 없이 의심만 있어도 절이 열림.
 - mapper 가 늘 빈 목록을 돌려주게 일부러 망가뜨리면 표시를 확인하는 6 건이 실패한다(표시 없음을 보는 4 건은 통과). 되돌린 뒤 통과.
+- E2E `e2e/approval-asr-suspects.e2e.ts`(390 폭, `approval-asr-suspects-long`): 목록 카드·상세 ap_01·ap_02·대시보드 행에서 의심 줄이 칸 안에서 끝나고 옆으로 넘치지 않는다. 줄바꿈 수정을 뺀 코드에서는 카드 줄이 199px 넘쳐 실패하는 것을 확인했다.
 - 브라우저(MSW, `approval-asr-suspects`): 1280·390 에서 목록 카드 두 장에 각 한 줄, 상세 ap_01·ap_02 에 `전사` 줄, ap_03 에는 없음을 확인했다. 증거는 커밋하지 않는 `frontend/.verify/643/shots/` 에 있다.
 
 ## 확인하지 않은 것
