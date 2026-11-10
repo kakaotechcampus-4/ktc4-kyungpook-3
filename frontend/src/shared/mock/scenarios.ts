@@ -95,6 +95,9 @@ export const MOCK_SCENARIOS = [
   'approval-asr-suspects-long',
   // #419 회의록 mt_09 의 수정 제안 it_08(tk_04 마감 변경). 승인 전에도 task_id 가 tk_04 다
   'minutes-edit-pending',
+  // #551 mt_09 의 요약이 승인을 기다린다. 대기 카드 ap_01~ap_03 이라 PM 은 3건을 보고, -member 는 건수 없이 본다
+  'minutes-awaiting-approval',
+  'minutes-awaiting-approval-member',
   'notion-sync-pending',
   'notion-sync-failed',
   'tasks-member',
@@ -326,6 +329,14 @@ function approvalOf(state: MockDb, approvalId: string) {
   const approval = state.approvals.find(({ approval_id }) => approval_id === approvalId)
   if (!approval) throw new Error(`mock approval ${approvalId} is missing`)
   return approval
+}
+
+/** 요약을 아직 만들지 않았다. 남은 건수는 minutes handler 가 지금 대기 카드로 센다 */
+function awaitApprovalSummary(state: MockDb, meetingId: string): void {
+  const minutes = state.minutes.find(({ meeting_id }) => meeting_id === meetingId)
+  if (!minutes) throw new Error(`mock minutes ${meetingId} is missing`)
+  minutes.summary = null
+  minutes.summary_status = 'awaiting_approval'
 }
 
 function taskOf(state: MockDb, taskId: string) {
@@ -942,6 +953,12 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'minutes-edit-pending':
       signInWith(state, ['ws_01'], 'ws_01')
       addEditProposal(state)
+      break
+    case 'minutes-awaiting-approval':
+    case 'minutes-awaiting-approval-member':
+      signInWith(state, ['ws_01'], 'ws_01')
+      awaitApprovalSummary(state, 'mt_09')
+      if (scenario === 'minutes-awaiting-approval-member') setMockRole('member', 'ws_01', state)
       break
     case 'notion-sync-pending':
       // tk_04 가 반영 대기다. synced 로 넘기는 워커는 없다 — 테스트가 필드를 직접 바꾼다

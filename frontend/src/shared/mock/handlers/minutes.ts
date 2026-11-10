@@ -4,6 +4,36 @@ import { db } from '../db'
 import { ok, fail } from '../envelope'
 import { requireAuth, requireMember } from '../auth-guard'
 import { roleIn } from '../sessions'
+import type { MinutesDto } from '@/shared/types/api/minutes'
+
+/**
+ * 백엔드 item_fate.readiness 의 waiting_cards. 이 회의 항목이 걸린 대기 카드 수이고 합친 카드는 한 장이다 (#605).
+ * 다른 회의에 합쳐진 항목도 approval_id 가 그 카드를 가리켜 두 회의가 함께 기다린다
+ */
+function waitingCards(meetingId: string): number {
+  const pending = new Set(
+    db.approvals.filter(({ status }) => status === 'pending').map(({ approval_id }) => approval_id),
+  )
+  const cards = new Set<string>()
+  for (const extraction of db.extractions)
+    if (extraction.meeting_id === meetingId)
+      for (const { approval_id } of extraction.items)
+        if (approval_id !== null && pending.has(approval_id)) cards.add(approval_id)
+  return cards.size
+}
+
+/** 저장된 `awaiting_approval` 은 지금 대기 카드로 다시 판정한다. 모두 처리되면 백엔드처럼 `pending` 이다 */
+function summaryStateOf(
+  minutes: MinutesDto,
+  isPm: boolean,
+): Pick<MinutesDto, 'summary_status' | 'summary_waiting_count'> {
+  if (minutes.summary_status !== 'awaiting_approval')
+    return { summary_status: minutes.summary_status, summary_waiting_count: null }
+  const waiting = waitingCards(minutes.meeting_id)
+  if (waiting === 0) return { summary_status: 'pending', summary_waiting_count: null }
+  // 백엔드는 PM 에게만 건수를 준다 (D-104)
+  return { summary_status: 'awaiting_approval', summary_waiting_count: isPm ? waiting : null }
+}
 
 export const minutesHandlers = [
   http.get('/api/v1/meetings/:meetingId/minutes', ({ params }) => {
@@ -20,7 +50,12 @@ export const minutesHandlers = [
     if (denied) return denied
     const isPm = roleIn(meeting.workspace_id) === 'pm'
     const minutes = db.minutes.find(({ meeting_id }) => meeting_id === params.meetingId)
-    if (minutes) return ok({ ...minutes, permissions: { can_review: isPm, can_undo: isPm } })
+    if (minutes)
+      return ok({
+        ...minutes,
+        ...summaryStateOf(minutes, isPm),
+        permissions: { can_review: isPm, can_undo: isPm },
+      })
     // 백엔드는 extraction 이 없어도 200 을 준다. summary=null, transcript=[] 로 초기화한 뒤
     // 그대로 내려보낸다 (meetings.py 의 get_meeting_minutes). 빈 상태는 오류가 아니다.
     return ok({

@@ -2,6 +2,7 @@ import { fetchDto, fetchSessionDto, jsonRequest } from '@/shared/test/api'
 import type { ApprovalDto } from '@/shared/types/api/approval'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { ExtractionDto } from '@/shared/types/api/extraction'
+import type { MinutesDto } from '@/shared/types/api/minutes'
 import type { TaskDto, TaskHistoryDto } from '@/shared/types/api/task'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { db, initialDb, replaceDb, resetDb } from './db'
@@ -32,6 +33,8 @@ const M6_SCENARIOS = [
   'approval-asr-suspects',
   'approval-asr-suspects-long',
   'minutes-edit-pending',
+  'minutes-awaiting-approval',
+  'minutes-awaiting-approval-member',
   'notion-sync-pending',
   'notion-sync-failed',
   'tasks-member',
@@ -236,6 +239,36 @@ describe('M6 시나리오 상태와 전이', () => {
         approval_status: 'rejected',
       })
       await expect(fetchDto('/tasks/tk_04')).resolves.toMatchObject({ due_date: '2026-09-24' })
+    })
+  })
+
+  describe('minutes-awaiting-approval: mt_09 요약이 승인을 기다린다 (#551)', () => {
+    const minutes = () => fetchDto<MinutesDto>('/meetings/mt_09/minutes')
+
+    it('PM 은 남은 대기 카드 수를 받고, 모두 처리하면 pending 으로 바뀐다', async () => {
+      applyScenario('minutes-awaiting-approval')
+      await expect(minutes()).resolves.toMatchObject({
+        summary: null,
+        summary_status: 'awaiting_approval',
+        summary_waiting_count: 3,
+      })
+      await resolve('ap_01', { status: 'rejected' })
+      await expect(minutes()).resolves.toMatchObject({ summary_waiting_count: 2 })
+      await resolve('ap_02', { status: 'rejected' })
+      await resolve('ap_03', { status: 'rejected' })
+      await expect(minutes()).resolves.toMatchObject({
+        summary_status: 'pending',
+        summary_waiting_count: null,
+      })
+    })
+
+    it('일반 팀원은 같은 상태를 건수 없이 받는다', async () => {
+      applyScenario('minutes-awaiting-approval-member')
+      await expect(minutes()).resolves.toMatchObject({
+        summary: null,
+        summary_status: 'awaiting_approval',
+        summary_waiting_count: null,
+      })
     })
   })
 

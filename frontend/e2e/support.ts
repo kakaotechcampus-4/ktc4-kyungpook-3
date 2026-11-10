@@ -41,6 +41,8 @@ export type Scenario =
   | 'approval-scope'
   | 'approval-asr-suspects-long'
   | 'minutes-edit-pending'
+  | 'minutes-awaiting-approval'
+  | 'minutes-awaiting-approval-member'
   | 'notion-sync-pending'
   | 'notion-sync-failed'
   | 'tasks-member'
