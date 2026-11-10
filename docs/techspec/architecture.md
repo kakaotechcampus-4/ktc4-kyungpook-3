@@ -60,7 +60,7 @@ flowchart LR
 | 경로 | 시작 | 화자 구분 | 판단 경로 | 게이트 특이점 |
 |---|---|---|---|---|
 | Discord 음성 | 봇 `/record`, 서버 ID 로 워크스페이스 고정(연결 없으면 녹음 안 함) | 화자별 트랙(분리 불필요) | `MM_EXTRACT_PATH`(legacy 기본 / judge) | — |
-| 웹 업로드 | PM 이 음성 1개 업로드(최대 100MiB), `MM_UPLOAD_INTAKE=1` 인 워커가 가져감 | pyannoteAI → PM 이 라벨마다 팀원 지정 | 동일 | 디스코드 회의보다 먼저 처리 |
+| 웹 업로드 | PM 이 음성 1개 업로드(최대 200MiB, 코드 기본), `MM_UPLOAD_INTAKE=1` 인 워커가 가져감 | pyannoteAI → PM 이 라벨마다 팀원 지정 | 동일 | 디스코드 회의보다 먼저 처리 |
 | Discord 채팅 | PM 이 고른 채널, BE 커서 이후 메시지를 하루치 "채팅 회의"로 | 메시지 작성자 | 항상 judge | auto 를 review 로 낮춤 |
 
 근거: [프로젝트 상세 §3.2](../프로젝트%20상세%20설명.md), 결정 [0028](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-01-0028-manual-upload-hosted-diarization-and-diarized-state.md), [0042](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-04-0042-chat-daily-poll-as-chat-meeting.md).
