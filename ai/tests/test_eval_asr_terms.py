@@ -29,8 +29,8 @@ def test_unmatched_approve_is_skipped_and_ids_keep_their_index():
 
 
 def test_series_be_adds_and_absorbs_terms():
-    be = SeriesBe.__new__(SeriesBe)   # 임베딩 없이 메모리 상태만 쓴다
-    be.words, be.pending, be.members = set(), [{"title_id": "a", "title": "x"}, {"title_id": "b", "title": "y"}], []
+    be = SeriesBe([], [])   # 태스크가 없으면 임베딩을 부르지 않는다
+    be.pending = [{"title_id": "a", "title": "x"}, {"title_id": "b", "title": "y"}]
     assert be.asr_terms("ws") == {"words": [], "pending_titles": be.pending}
     be.add_asr_terms("ws", ["폴러", "제브"], ["a"])
     assert be.asr_terms("ws")["words"] == ["제브", "폴러"]
