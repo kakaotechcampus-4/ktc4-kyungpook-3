@@ -10,6 +10,7 @@ import { meetingHandlers } from './meeting'
 import { speakerHandlers } from './speaker'
 import { meetingAudioHandlers } from './meetingAudio'
 import { minutesHandlers } from './minutes'
+import { minutesEditHandlers } from './minutesEdits'
 import { markdownFileHandlers } from './markdownFiles'
 import { extractionHandlers } from './extraction'
 import { taskHandlers } from './task'
@@ -37,6 +38,7 @@ export const handlers: RequestHandler[] = [
   ...speakerHandlers,
   ...meetingAudioHandlers,
   ...minutesHandlers,
+  ...minutesEditHandlers,
   ...markdownFileHandlers,
   ...extractionHandlers,
   ...taskHandlers,

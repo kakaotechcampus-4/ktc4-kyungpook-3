@@ -44,13 +44,15 @@ interface RevertVariables {
 
 /**
  * 되돌리기 뒤 서버와 맞출 캐시. 지운 태스크(목록·상세), 새 생성 승인(대기 목록), 항목의 연결(추출).
- * 실패해도 같은 캐시를 다시 받는다 — 거절 사유가 다른 화면의 변경 때문일 수 있다
+ * 실패해도 같은 캐시를 다시 받는다 — 거절 사유가 다른 화면의 변경 때문일 수 있다.
+ * 새 생성 승인은 그 회의 요약의 승인 대기 건수도 늘려 회의록도 다시 받는다 (#551)
  */
 function syncAfterRevert(queryClient: QueryClient, workspaceId: string): void {
   for (const queryKey of [
     taskKeys(workspaceId),
     workspaceKey(workspaceId, 'approvals'),
     extractionKeys(workspaceId),
+    workspaceKey(workspaceId, 'minutes'),
   ])
     void queryClient.invalidateQueries({ queryKey })
 }

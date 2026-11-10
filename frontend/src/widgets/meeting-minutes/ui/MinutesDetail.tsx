@@ -22,7 +22,7 @@ import { SummaryDownloadButton } from '@/features/summary-download'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { MEETING_PARAMS, paths } from '@/shared/config/routes'
 import { formatSeoulDateTime } from '@/shared/lib/date'
-import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { GuardedLink, guardLeave } from '@/shared/lib/unsaved-changes'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import type { LoadingIndicator } from '@/shared/lib/loading-indicator'
 import { MinutesDetailSkeleton } from '@/shared/ui/page-skeleton'
@@ -32,6 +32,7 @@ import { MINUTES_DIM_DELAY_MS } from '../model/useShownMeeting'
 import { SummaryPanel, TasksPanel, TranscriptPanel } from './MinutesBody'
 import type { ReviewState, TasksState } from './MinutesBody'
 import { ATTENDEE_ROW, AttendeeRow, CHIP } from './AttendeeRow'
+import { EditableTitle } from './MinutesEditing'
 import { MinutesTabs } from './MinutesTabs'
 import { MinutesTitle } from './MinutesTitle'
 
@@ -91,7 +92,8 @@ function Head({
   action,
   children,
 }: {
-  title: string
+  /** 글이면 읽기만 하는 제목, 노드면 그 제목 줄(고치기)이다 */
+  title: string | ReactNode
   meta: string
   source: MeetingSummary['source']
   action?: ReactNode
@@ -99,7 +101,11 @@ function Head({
 }) {
   return (
     <header className={HEAD}>
-      <MinutesTitle title={title === '' ? '제목 없는 회의' : title} />
+      {typeof title === 'string' ? (
+        <MinutesTitle title={title === '' ? '제목 없는 회의' : title} />
+      ) : (
+        title
+      )}
       <div className={META_ROW}>
         {meta === '' ? null : <span className={`min-w-[0px] truncate ${META}`}>{meta}</span>}
         <span className={CHIP}>{sourceLabel(source)}</span>
@@ -414,7 +420,8 @@ function MinutesContent({
         ? 0
         : null
 
-  const title = held !== null ? held.title : minutes.title !== '' ? minutes.title : meeting.title
+  // 고친 제목과 되돌린 빈 제목은 회의록에 바로 들어온다. 회의 상세의 제목은 다시 받기 전까지 옛 값이라 쓰지 않는다
+  const title = held !== null ? held.title : minutes.title
   const momentOf = (atMs: number) => formatMoment(minutes.source, minutes.startedAt, atMs)
 
   return (
@@ -423,7 +430,16 @@ function MinutesContent({
         <SummaryHead summary={held} />
       ) : (
         <Head
-          title={title}
+          title={
+            <EditableTitle
+              key={minutes.meetingId}
+              workspaceId={workspaceId}
+              meetingId={minutes.meetingId}
+              title={title}
+              titleEdited={minutes.titleEdited}
+              titleOriginal={minutes.titleOriginal}
+            />
+          }
           meta={detailMeta(minutes.source, minutes.startedAt, minutes.durationMs)}
           source={minutes.source}
           action={action}
@@ -446,7 +462,8 @@ function MinutesContent({
         <MinutesTabs<TabId>
           label="회의록 내용"
           selected={tab}
-          onSelect={setTab}
+          // 탭을 옮기면 고치던 발화가 사라진다. 저장하지 않은 글이 있으면 먼저 묻는다
+          onSelect={(next) => guardLeave(() => setTab(next))}
           beforePanel={
             // 회의나 시각이 바뀌면 플레이어를 새로 만든다 — 앞 회의의 재생·위치를 이어 쓰지 않는다
             <MeetingRecording
@@ -460,12 +477,26 @@ function MinutesContent({
             {
               id: 'summary',
               label: '요약',
-              panel: <SummaryPanel summary={minutes.summary} status={minutes.summaryStatus} />,
+              panel: (
+                <SummaryPanel
+                  summary={minutes.summary}
+                  status={minutes.summaryStatus}
+                  waitingCount={minutes.summaryWaitingCount}
+                />
+              ),
             },
             {
               id: 'transcript',
               label: '전사문',
-              panel: <TranscriptPanel transcript={minutes.transcript} momentOf={momentOf} />,
+              panel: (
+                <TranscriptPanel
+                  key={minutes.meetingId}
+                  workspaceId={workspaceId}
+                  meetingId={minutes.meetingId}
+                  transcript={minutes.transcript}
+                  momentOf={momentOf}
+                />
+              ),
             },
             {
               id: 'tasks',

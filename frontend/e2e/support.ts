@@ -42,6 +42,8 @@ export type Scenario =
   | 'approval-asr-suspects-long'
   | 'minutes-edit-pending'
   | 'meeting-audio-expired'
+  | 'minutes-awaiting-approval'
+  | 'minutes-awaiting-approval-member'
   | 'notion-sync-pending'
   | 'notion-sync-failed'
   | 'tasks-member'
