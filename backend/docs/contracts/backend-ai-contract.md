@@ -238,7 +238,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
     "task_confidence": 0.0 | null,            // legacy만 보낸다. 보내지 않으면 null(측정 안 함)
     "assignee_raw": "…" | null, "assignee_type": "first" | "second" | "thirdname" | "thirdpronoun" | "thirdrole" | "group" | "none" | null,   // BE가 저장한다. 그 밖의 값은 NULL로 저장(요청은 받음)
     "due_date": "YYYY-MM-DD" | null, "due_raw": "…" | null, "due_confidence": 0.0 | null,
-    "due_cleared": true | false,              // update만. 대상 task의 마감을 없애자는 결정. 생략하면 false(#624)
+    "due_cleared": true | false,              // update만. 대상 task의 마감을 없애자는 결정. 생략하면 false. create·merge에 오면 400 없이 무시한다(#624)
     "evidence_quote": "…" | null, "evidence_speaker": "<Discord uid>" | null, "evidence_at_ms": 0 | null,
     "evidence_speaker_member_id": "<멤버 ID>" | null,   // 선택. 근거 문장을 말한 팀원의 멤버 ID
     "evidence_seqs": [12, 13, 15] | null,     // 근거 발화의 seq(발화 저장 API의 seq). 0 ~ 2^31-1. 모르면 [] 또는 생략
