@@ -93,7 +93,15 @@ function RecentBody({ workspaceId, isPm, data }: RecentSectionProps) {
       </SectionBody>
     )
   if (recent === null)
-    return <RecentEmpty workspaceId={workspaceId} isPm={isPm} reason="no-meeting" latestId={null} />
+    return (
+      <RecentEmpty
+        workspaceId={workspaceId}
+        isPm={isPm}
+        reason="no-meeting"
+        latestId={null}
+        firstMeeting={data.meetings.status === 'ready' && data.meetings.data.length === 0}
+      />
+    )
   return (
     <SectionBody state={integrations} errorTitle="연동 상태를 불러오지 못했어요">
       {(connected) => {
@@ -147,28 +155,44 @@ interface RecentEmptyProps {
   reason: RecentEmptyReason
   /** 최근 회의록으로 갈 회의. 회의가 없으면 null */
   latestId: string | null
+  /** 녹음·정리 중·만료까지 회의가 하나도 없다. 이미 기록을 시작한 사람에게는 첫 회의를 권하지 않는다 */
+  firstMeeting?: boolean
 }
 
 /**
  * 빈 상태 세 갈래 (D-040~D-042). 회의 업로드·Notion 설정은 PM 만 할 수 있어 일반 팀원에게는 이동을 두지 않는다.
- * 회의가 없으면 회의를 Discord 에서 기록한다는 것을 모르는 처음 쓰는 사람이다 — 누구에게나 안내를 연다 (#650)
+ * 회의가 하나도 없으면 회의를 Discord 에서 기록한다는 것을 모르는 처음 쓰는 사람이다 — 누구에게나 안내를 연다 (#650)
  */
-function RecentEmpty({ workspaceId, isPm, reason, latestId }: RecentEmptyProps) {
+function RecentEmpty({
+  workspaceId,
+  isPm,
+  reason,
+  latestId,
+  firstMeeting = false,
+}: RecentEmptyProps) {
   if (reason === 'no-meeting')
     return (
       <div className={EMPTY}>
         <p className={EMPTY_TITLE}>아직 정리한 회의가 없어요</p>
         <p className="text-caption text-dim">
-          <FirstMeetingHint />
+          {firstMeeting ? (
+            <FirstMeetingHint />
+          ) : (
+            '회의를 정리하면 자동으로 반영한 일이 여기에 보여요.'
+          )}
         </p>
-        <div className="flex flex-wrap items-center gap-8">
-          <QuickGuideButton className={EMPTY_LINK}>방법 보기</QuickGuideButton>
-          {isPm ? (
-            <GuardedLink to={paths.meetingUpload(workspaceId)} className={EMPTY_LINK}>
-              회의 업로드
-            </GuardedLink>
-          ) : null}
-        </div>
+        {firstMeeting || isPm ? (
+          <div className="flex flex-wrap items-center gap-8">
+            {firstMeeting ? (
+              <QuickGuideButton className={EMPTY_LINK}>방법 보기</QuickGuideButton>
+            ) : null}
+            {isPm ? (
+              <GuardedLink to={paths.meetingUpload(workspaceId)} className={EMPTY_LINK}>
+                회의 업로드
+              </GuardedLink>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     )
   if (reason === 'notion')
