@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { rememberReturnWorkspace } from '@/shared/lib/return-workspace'
 import { hasUnsavedChanges } from '@/shared/lib/unsaved-changes'
+import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { fail } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
@@ -1045,5 +1046,73 @@ describe('PM 을 체크해 잇기 (#228)', () => {
     expect(pmCheck('minsu')).toBeEnabled()
     expect(nameInput('seoyeon_01')).toBeEnabled()
     expect(nameInput('seoyeon_01')).toHaveValue('최진호')
+  })
+})
+
+describe('Discord 서버에 없는 사람을 이름으로 추가 (#660)', () => {
+  it('Discord 사용자가 없어도 이름으로 팀원을 추가하고, 단계를 마친 뒤 팀 화면의 그 팀원 줄에 `초대` 가 있다', async () => {
+    db.discordUsers.length = 0
+    const bodies = recordRequestBodies('POST', '/members')
+    const user = userEvent.setup()
+    const app = renderApp('/onboarding/ws_03/connect_members')
+    const name = await screen.findByRole('textbox', { name: '팀원 이름' })
+    expect(screen.queryByLabelText(/의 팀원 이름$/)).toBeNull()
+
+    await user.type(name, '김서연')
+    await user.click(screen.getByRole('button', { name: '추가' }))
+    expect(
+      await within(await screen.findByRole('list', { name: '추가한 팀원' })).findByText('김서연'),
+    ).toBeInTheDocument()
+    expect(bodies).toEqual([{ workspace_id: 'ws_03', display_name: '김서연' }])
+
+    await user.click(screen.getByRole('button', { name: '나중에 하기' }))
+    await screen.findByRole('heading', { name: '대시보드' })
+    app.navigate(paths.members('ws_03'))
+    const added = within(await screen.findByRole('region', { name: '김서연' }))
+    expect(await added.findByRole('button', { name: '초대' })).toBeInTheDocument()
+  })
+
+  it('매칭 줄에 적던 입력은 이름 추가 뒤에도 남고, 추가한 팀원은 그 줄의 이름 제안에 나온다', async () => {
+    const user = userEvent.setup()
+    await openMembers()
+    await user.type(nameInput('minsu'), '박')
+
+    await user.type(screen.getByRole('textbox', { name: '팀원 이름' }), '박민수')
+    await user.click(screen.getByRole('button', { name: '추가' }))
+    await within(await screen.findByRole('list', { name: '추가한 팀원' })).findByText('박민수')
+    expect(nameInput('minsu')).toHaveValue('박')
+
+    await user.type(nameInput('minsu'), '민')
+    const suggestions = await screen.findByRole('listbox', { name: '미리 추가한 팀원' })
+    expect(within(suggestions).getByRole('option', { name: '박민수' })).toBeInTheDocument()
+  })
+
+  it('이름을 추가하는 동안에는 `확인 완료` 와 나가기 저장이 매칭을 저장하지 않는다', async () => {
+    const gate = deferred()
+    server.use(
+      http.post(
+        '/api/v1/members',
+        async () => {
+          await gate.promise
+        },
+        { once: true },
+      ),
+    )
+    const bodies = recordRequestBodies('POST', '/members')
+    const user = userEvent.setup()
+    const app = await openMembers()
+    await user.type(screen.getByRole('textbox', { name: '팀원 이름' }), '박민수')
+    await user.click(screen.getByRole('button', { name: '추가' }))
+
+    await user.type(nameInput('minsu'), '박민수')
+    expect(screen.getByRole('button', { name: /확인 완료$/ })).toBeDisabled()
+    await user.type(nameInput('minsu'), '{Enter}')
+    await user.click(screen.getByRole('link', { name: '온보딩 나가기' }))
+    expect(bodies).toHaveLength(1)
+    await app.expectPath('/onboarding/ws_03/connect_members')
+
+    gate.resolve()
+    await within(await screen.findByRole('list', { name: '추가한 팀원' })).findByText('박민수')
+    expect(bodies).toHaveLength(1)
   })
 })

@@ -115,6 +115,83 @@ def test_off_to_on_installs_restarts_and_checks_actual_new_process(tmp_path, cap
     assert SECRET not in output
 
 
+class StartingRuntime(FixtureRuntime):
+    def __init__(self, root, cmdline, *, becomes_ready=True):
+        self.starting_cmdline = cmdline
+        self.becomes_ready = becomes_ready
+        self.process_reads = []
+        self.probes = []
+        self.pauses = 0
+        super().__init__(root)
+
+    def create_process(self, pid, selector):
+        super().create_process(pid, selector)
+        if pid != 100:
+            (self.proc / str(pid) / "cmdline").write_bytes(self.starting_cmdline)
+            self.marker = False
+
+    def process(self, pid):
+        self.process_reads.append((pid, self.marker))
+        return super().process(pid)
+
+    def probe(self, process, *, planned=False):
+        self.probes.append((process.pid, planned, self.marker))
+        return super().probe(process, planned=planned)
+
+    def pause(self):
+        self.pauses += 1
+        if self.becomes_ready:
+            super().create_process(101, "luna")
+            self.marker = True
+
+
+@pytest.mark.parametrize("cmdline", [b"worker-starting\0", b""])
+def test_new_execution_waits_for_its_marker_before_reading_process(tmp_path, capsys, cmdline):
+    runtime = StartingRuntime(tmp_path, cmdline)
+    assert activation.activate(runtime) == 0
+    assert runtime.pauses == 1
+    assert runtime.process_reads == [(100, True), (101, True)]
+    assert runtime.probes == [(100, True, True), (101, False, True)]
+    output = capsys.readouterr().out
+    assert "new_pid=true runner_ready=true startup_marker=true" in output
+    assert SECRET not in output
+
+
+@pytest.mark.parametrize("cmdline", [b"worker-starting\0", b""])
+def test_unready_new_execution_never_reads_or_probes_process(tmp_path, capsys, cmdline):
+    runtime = StartingRuntime(tmp_path, cmdline, becomes_ready=False)
+    with pytest.raises(activation.ActivationError, match="new-worker-ready-marker-missing"):
+        activation.activate(runtime)
+    assert runtime.pauses == 30
+    assert runtime.process_reads == [(100, True)]
+    assert runtime.probes == [(100, True, True)]
+    output = capsys.readouterr().out
+    assert "status=on" not in output
+    assert SECRET not in output
+
+
+def test_ready_marker_does_not_allow_unsupported_new_process(tmp_path, capsys):
+    runtime = FixtureRuntime(tmp_path)
+    original = runtime.create_process
+    interpreter = str(tmp_path / SECRET / "python")
+
+    def create_process(pid, selector):
+        original(pid, selector)
+        if pid != 100:
+            (runtime.proc / str(pid) / "cmdline").write_bytes(
+                "\0".join([interpreter, "-m", "capture.run_recorder", ""]).encode()
+            )
+
+    runtime.create_process = create_process
+    with pytest.raises(activation.ActivationError, match="worker-command-unsupported"):
+        activation.activate(runtime)
+    probes = [event for event in runtime.events if event[:2] == [sys.executable, "-c"]]
+    assert len(probes) == 1
+    output = capsys.readouterr().out
+    assert "status=on" not in output
+    assert SECRET not in output and interpreter not in output
+
+
 def test_repeat_converges_without_rewriting_drop_in(tmp_path, capsys):
     runtime = FixtureRuntime(tmp_path)
     assert activation.activate(runtime) == 0

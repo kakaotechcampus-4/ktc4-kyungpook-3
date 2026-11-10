@@ -8,6 +8,7 @@
 - `resume-dialog`는 새로고침 뒤에도 팀원 연결 창을 유지한다.
 - `defer-members`는 연결을 미루고 미연결 계정 영역을 표시한다.
 - `persist-connection`은 설정 재방문 뒤 연결 상태와 온보딩 저장 요청 부재를 확인한다.
+- `add-without-discord`는 Discord 서버에 아무도 없는 연결된 공간에서 이름으로 팀원을 추가하고, 새로고침 뒤 그 팀원 줄에서 아이디로 초대한다(#660).
 
 ## How to get to it (user POV)
 
@@ -27,6 +28,8 @@ Preconditions:
 - **새로고침과 보류.** `page.reload()` 후 같은 입력이 보이는지 확인한다. **나중에 하기**를 누르면 URL의 `connect`가 사라지고 **연결되지 않은 계정** 영역에 `jihun_dev`가 남는다.
 - **후속 상태.** `/workspaces/ws_03/settings`로 다시 이동해 Discord 영역의 정확한 **연결됨**을 확인한다. 온보딩 PATCH 요청이 0회라는 단언도 증거에 포함한다.
 - **프로필 메뉴 진입.** 자동 테스트는 설정 주소로 시작한다. 메뉴 진입도 요청에 포함되면 `getByRole('button', { name: /^내 계정/ }).click()` 후 `getByRole('menuitem', { name: '설정', exact: true }).click()`을 추가로 확인한다. 이 동작은 `auth`의 공간 전환 테스트에도 있다.
+
+- **이름 추가와 초대.** `settings-discord-empty`로 `/workspaces/ws_01/members`에 간다. **팀원 관리** → **팀원 연결** 대화상자의 `팀원 이름` 입력에 이름을 적고 **추가**를 누르면 **추가한 팀원** 목록에 보인다. **나중에 하기** 후 새로고침하면 그 이름의 region에 **초대**가 있다. **아이디**에 `doyun`을 넣고 **찾기** → **초대하기** 후 **대기**가 새로고침 뒤에도 남는다.
 
 ## Gotchas
 

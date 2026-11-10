@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   APPROVAL_RESOLUTION_REASONS,
   aliasToLearn,
+  asrSuspectLine,
   isScopeChange,
   mergedCount,
   planApprovalResolution,
@@ -47,7 +48,11 @@ const HOLD_BADGE =
 const TITLE = 'text-[19px] leading-[1.55] font-bold tracking-h2 text-ink'
 const MEETING_LINK =
   'inline-flex shrink-0 items-center gap-6 text-[12px] text-dim hover:text-ink tabular-nums'
+const REASON_BLOCK = 'flex flex-col gap-6'
 const REASON = 'text-body text-sub'
+/* 후보는 공백 없이 100자까지 온다. 전역 keep-all 이라 글자 칸이 끊어 주지 않으면 카드 밖으로 나간다 */
+const SUSPECT = 'flex min-w-[0px] items-start gap-6 text-caption text-sub'
+const SUSPECT_TEXT = 'min-w-[0px] wrap-anywhere'
 const FIELDS = 'grid grid-cols-[minmax(0px,1.6fr)_minmax(0px,1fr)_minmax(0px,1fr)] gap-12'
 const EVIDENCE = 'flex flex-col gap-7 rounded-12 bg-surface-sunken px-20 py-18'
 const EVIDENCE_HEAD = 'flex items-center justify-between gap-12'
@@ -212,14 +217,29 @@ function TaskCreateCard({
         )}
       </div>
 
-      <p className={REASON}>
-        {reasonLine(approval)}
-        {merged === null ? null : (
-          <span className={`${SUB_NOTE} ml-8 tabular-nums`}>
-            회의 {merged.meetings}곳 · 항목 {merged.items}개 합침
-          </span>
+      <div className={REASON_BLOCK}>
+        <p className={REASON}>
+          {reasonLine(approval)}
+          {merged === null ? null : (
+            <span className={`${SUB_NOTE} ml-8 tabular-nums`}>
+              회의 {merged.meetings}곳 · 항목 {merged.items}개 합침
+            </span>
+          )}
+        </p>
+        {approval.asrSuspects.length === 0 ? null : (
+          <ul aria-label="전사 확인" className="flex flex-col gap-4">
+            {approval.asrSuspects.map((suspect) => {
+              const line = asrSuspectLine(suspect)
+              return (
+                <li key={line} className={SUSPECT}>
+                  <Icon name="mic" size={13} className="mt-[5px] shrink-0" />
+                  <span className={SUSPECT_TEXT}>{line}</span>
+                </li>
+              )
+            })}
+          </ul>
         )}
-      </p>
+      </div>
 
       {filling ? (
         <ApprovalFields

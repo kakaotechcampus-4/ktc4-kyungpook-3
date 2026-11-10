@@ -94,7 +94,7 @@ export function TaskUpdateOverrideFields({
             // 비운 칸은 원래 제안 유지다. 미정은 「마감 미정」으로만 바꾼다
             placeholder={
               edits.dueDate === undefined
-                ? `원래 제안 유지 · ${overrides.proposedDue ?? 'YYYY-MM-DD'}`
+                ? `원래 제안 유지 · ${overrides.proposedDue === null ? '미정' : (overrides.proposedDue ?? 'YYYY-MM-DD')}`
                 : '미정'
             }
             calendarLabel="마감 달력 열기"

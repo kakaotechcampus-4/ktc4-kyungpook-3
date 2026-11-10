@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { createMember, memberListQueryOptions, upsertMember } from '@/entities/member'
 import type { Member } from '@/entities/member'
@@ -52,6 +52,21 @@ export interface MemberAdd {
   add: (text: string, onAdded: () => void) => void
 }
 
+const memberAddMutationKey = (workspaceId: string) => ['member-add', workspaceId] as const
+
+/**
+ * 이 공간에서 이름 추가가 진행 중인지. 같은 화면의 매칭 저장이 묻는다 (#660) — 둘이 겹치면 같은 이름을
+ * 서로 모른 채 보내 같은 이름의 팀원이 둘 생긴다. `adding` 은 렌더용, `isAdding` 은 누른 순간의 값이다
+ */
+export function useMemberAdding(workspaceId: string): { adding: boolean; isAdding: () => boolean } {
+  const queryClient = useQueryClient()
+  const mutationKey = memberAddMutationKey(workspaceId)
+  return {
+    adding: useIsMutating({ mutationKey }) > 0,
+    isAdding: () => queryClient.isMutating({ mutationKey }) > 0,
+  }
+}
+
 /** 요청은 나갔는데 서버가 반영했는지 모른다. 4xx 는 서버가 거절한 것이라 반영된 게 없다. 모르는 실패는 반영됐을 수 있다고 본다 */
 function mayHaveBeenApplied(error: unknown): boolean {
   if (!(error instanceof ApiError)) return true
@@ -69,7 +84,7 @@ export function useMemberAdd(workspaceId: string): MemberAdd {
   const memberList = useQuery(memberListQueryOptions(workspaceId))
   const [feedback, setFeedback] = useState<string | null>(null)
   const { queryKey } = memberListQueryOptions(workspaceId)
-  const mutationKey = ['member-add', workspaceId] as const
+  const mutationKey = memberAddMutationKey(workspaceId)
   const refreshMembers = () => queryClient.invalidateQueries({ queryKey })
 
   const create = useMutation<Member, Error, AddVariables>({
