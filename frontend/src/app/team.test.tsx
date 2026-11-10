@@ -300,7 +300,9 @@ describe('팀 화면 — Discord 를 건너뛴 공간', () => {
 
     await user.click(screen.getByRole('button', { name: '팀원 관리' }))
     const dialog = within(await screen.findByRole('dialog', { name: '팀원 관리' }))
-    expect(dialog.getByText(/Discord를 연결하지 않아 팀원을 불러올 수 없어요/)).toBeInTheDocument()
+    expect(
+      dialog.getByText(/Discord를 연결하지 않아 디스코드 계정을 고를 수 없어요/),
+    ).toBeInTheDocument()
     // 디스코드 계정 칸과 연결 안 된 계정 영역이 없다. 이름 고치기는 된다
     expect(await dialog.findByRole('button', { name: '최진호 이름 고치기' })).toBeInTheDocument()
     expect(dialog.queryByRole('combobox')).toBeNull()

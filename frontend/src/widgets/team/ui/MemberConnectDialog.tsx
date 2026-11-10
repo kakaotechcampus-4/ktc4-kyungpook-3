@@ -88,8 +88,8 @@ export function MemberConnectDialog({
                 rowExtra={invite}
               />
               <p className="pt-14 text-body text-dim">
-                Discord를 연결하지 않아 팀원을 불러올 수 없어요. 설정에서 Discord를 연결하면 이 창이
-                다시 열려요.
+                Discord를 연결하지 않아 디스코드 계정을 고를 수 없어요. 설정에서 Discord를 연결하면
+                이 창이 다시 열려요.
               </p>
               <GuardedLink to={paths.settings(workspaceId)} className={LINK_BUTTON}>
                 설정에서 Discord 연결하기
