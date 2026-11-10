@@ -91,4 +91,4 @@
 - [tokens.css](../../../../src/app/styles/tokens.css)
 - [대비 E2E](../../../../e2e/color-contrast.e2e.ts)
 - [이전 기록](2026-11-04-accent-faint-contrast.md), [포커스 선 기록](2026-09-23-focus-outline-over-border.md)
-- [#423 결과](../../../issues/423-accent-red/result.md)
+- [#423 결과](../work-items/423-accent-red/result.md)

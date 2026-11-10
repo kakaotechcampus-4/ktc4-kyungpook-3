@@ -108,4 +108,4 @@ CI E2E 6건이 진행 토스트 때문에 본문 버튼을 누르지 못했다. 
 - 이슈 #424 본문(사용자 결정 2026-11-06), 비교 화면 https://claude.ai/artifact/BZNwKNaXzFEfLXy1mVzj4v
 - [제품·기술 결정](../../../decision/frontend-decisions.md) D-088·D-095
 - [강조색 R2 결정](../../m2/basis-for-decision/2026-11-06-accent-red-r2.md)
-- [#424 결과](../../../issues/424-processing-toast/result.md)
+- [#424 결과](../work-items/424-processing-toast/result.md)

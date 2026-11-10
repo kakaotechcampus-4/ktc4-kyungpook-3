@@ -8,7 +8,7 @@
 
 사용자가 누를 때 세션 세대와 취소 신호를 잡는다. 요청 직전에 같은 세션인지 확인하고, 전송 중 세션이 끝나면 요청을 취소한다. 취소된 쓰기가 새 계정의 캐시나 오류 안내를 바꾸는 후처리도 막는다.
 
-[#594 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/594-stale-session-writes/result.md)는 오프라인 중단 → 세션 교체 → 재연결 회귀와 같은 세션의 정상 전송을 기록한다. 온보딩의 다중 요청과 다른 탭의 쿠키 변경은 당시 남은 범위다. 여기서 적용한 규칙은 이전 세션의 요청·응답·후처리를 함께 차단하는 것이다.
+[#594 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m3/work-items/594-stale-session-writes/result.md)는 오프라인 중단 → 세션 교체 → 재연결 회귀와 같은 세션의 정상 전송을 기록한다. 온보딩의 다중 요청과 다른 탭의 쿠키 변경은 당시 남은 범위다. 여기서 적용한 규칙은 이전 세션의 요청·응답·후처리를 함께 차단하는 것이다.
 
 ## 타입이 있어도 잘못된 응답이 정상 화면으로 보이는 문제
 
@@ -16,7 +16,7 @@
 
 entity 요청 경계에서 Zod 검증을 추가하고 DTO 타입을 스키마에서 유도했다. 상태·버전처럼 행동을 결정하는 값이 잘못되면 `INVALID_RESPONSE`로 처리한다. 표시용 값은 알 수 없는 값으로 남기거나 명시한 부가 정보 정책을 적용한다. 쓰기 응답이 잘못되면 이미 서버에 반영됐을 수 있으므로 재시도 쓰기 대신 먼저 재조회한다.
 
-근거는 [#348 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/348-response-schema/result.md)와 [D-184](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/decision/frontend-decisions.md)다. 전사 의심 사유는 부가 정보이므로 잘못된 항목만 버리는 예외를 [#643](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/643-asr-suspect-reason/result.md)에 따로 기록했다. 검증 수준을 필드의 영향에 맞춘 사례다.
+근거는 [#348 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m3/work-items/348-response-schema/result.md)와 [D-184](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/decision/frontend-decisions.md)다. 전사 의심 사유는 부가 정보이므로 잘못된 항목만 버리는 예외를 [#643](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m6/work-items/643-asr-suspect-reason/result.md)에 따로 기록했다. 검증 수준을 필드의 영향에 맞춘 사례다.
 
 ## 메시지 변경 신호를 받아도 새 글이 사라지는 문제
 
@@ -24,7 +24,7 @@ WebSocket 변경 신호 뒤 재조회해도 진행 중이던 첫 조회의 옛 �
 
 `thread_updated` 신호에서는 진행 중 조회를 `cancelQueries`로 끊고 다시 조회한다. 소켓이 처음 열릴 때 진행 중인 조회는 완료를 기다린 다음 다시 조회한다. 끊긴 사이 놓친 신호는 재연결 시 재조회로 복구한다.
 
-[#558 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/558-message-websocket/result.md)는 경합 회귀, Chromium·MSW, 가짜 BE를 이용한 Vite 프록시 검증을 기록한다. 실제 BE와 운영 Caddy를 거친 소켓 검증은 해당 기록의 미확인 범위다. 신호 수신과 최신 데이터 조회 완료를 구분해야 한다는 사례다.
+[#558 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/work-items/558-message-websocket/result.md)는 경합 회귀, Chromium·MSW, 가짜 BE를 이용한 Vite 프록시 검증을 기록한다. 실제 BE와 운영 Caddy를 거친 소켓 검증은 해당 기록의 미확인 범위다. 신호 수신과 최신 데이터 조회 완료를 구분해야 한다는 사례다.
 
 ## 승인 카드가 갱신돼도 폼이 옛 제안을 보여 주는 문제
 
@@ -32,7 +32,7 @@ WebSocket 변경 신호 뒤 재조회해도 진행 중이던 첫 조회의 옛 �
 
 카드 버전이 바뀌면 편집한 값은 보존하고 나머지 값과 기본값은 새 카드로 맞춘다. PM이 본 카드 버전을 제출하며 충돌 시 다시 확인한다. 충돌 확인 뒤 입력을 바꾸면 확인을 해제한다. 값을 원래대로 돌려도 옛 확인을 재사용하지 않는다.
 
-[#512 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/512-merged-approval/result.md)와 [결정 원문](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-08-merged-approval-recheck.md)은 카드 갱신·편집 유지 검증을 기록한다. 중간의 모든 변경 이력 대신 처음 본 카드와 현재 카드 차이를 보여 주는 한계가 있다.
+[#512 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m6/work-items/512-merged-approval/result.md)와 [결정 원문](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-08-merged-approval-recheck.md)은 카드 갱신·편집 유지 검증을 기록한다. 중간의 모든 변경 이력 대신 처음 본 카드와 현재 카드 차이를 보여 주는 한계가 있다.
 
 ## 화자 지정 대기를 실패로 판단해 추적을 멈추는 문제
 
@@ -48,15 +48,15 @@ FE가 `awaiting_speakers`를 기존 상태로 잘못 읽어 처리 추적을 끝
 
 별도로 동작 줄이기 CSS의 짧은 transition이 원래 없던 포커스 전환을 만들었다. 전환 시간을 0으로 바꾸고 최초 포커스 시점부터 검사했다.
 
-[#593 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/593-e2e-stability/result.md)는 알림 차단과 동작 설정 대조로 수정 전 실패·수정 후 통과를 기록한다. 당시 CI의 첫 실패 trace는 없어 최초 사건의 정확한 순서까지 확정하지 않았다. 후속 CI에서는 재시도로 통과한 보고서도 보존한다.
+[#593 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m0/work-items/593-e2e-stability/result.md)는 알림 차단과 동작 설정 대조로 수정 전 실패·수정 후 통과를 기록한다. 당시 CI의 첫 실패 trace는 없어 최초 사건의 정확한 순서까지 확정하지 않았다. 후속 CI에서는 재시도로 통과한 보고서도 보존한다.
 
 ## 추가 사례를 찾는 곳
 
 | 사례 | 원인·조치가 남은 원본 |
 |---|---|
-| 빠른 응답의 스켈레톤 번쩍임과 조건부 래퍼의 재마운트 | [로딩 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-07-skeleton-delay.md), [#508](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/508-skeleton-delay/result.md). |
-| 빌드는 통과하지만 `gap-0` 클래스가 생성되지 않음 | [#497](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/497-spacing-zero/result.md). |
+| 빠른 응답의 스켈레톤 번쩍임과 조건부 래퍼의 재마운트 | [로딩 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-07-skeleton-delay.md), [#508](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m2/work-items/508-skeleton-delay/result.md). |
+| 빌드는 통과하지만 `gap-0` 클래스가 생성되지 않음 | [#497](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m2/work-items/497-spacing-zero/result.md). |
 | 실제 API에 없는 메시지 기능을 MSW만 제공 | [실제 메시지 API 연결 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-04-messages-real-api-drop-unbacked-ui.md). |
-| 휴대폰에서 셸과 업무 화면의 가로 넘침 | [#478](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/478-mobile/result.md), [접근성·성능](a11y-performance.md). |
+| 휴대폰에서 셸과 업무 화면의 가로 넘침 | [#478](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m4/work-items/478-mobile/result.md), [접근성·성능](a11y-performance.md). |
 
 각 문제에서 비교한 대안과 현재 남은 대가는 [대안과 결정](tradeoffs-decisions.md)에서 이어 읽는다.

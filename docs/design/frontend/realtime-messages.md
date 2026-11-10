@@ -1,6 +1,6 @@
 # 메시지·알림 실시간
 
-리마인드 DM 확인(PM), 팀원과의 대화·웹 답장, 알림 종·브라우저 푸시, 진행 토스트를 "얼마나 빨리, 어떤 길로" 화면에 반영하는지의 설계다. 화면 정책은 D-174(메시지 정책), 갱신 방식은 [2026-11-06 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-06-message-sync-and-e2e.md)과 #558 [결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/558-message-websocket/result.md)에 있다.
+리마인드 DM 확인(PM), 팀원과의 대화·웹 답장, 알림 종·브라우저 푸시, 진행 토스트를 "얼마나 빨리, 어떤 길로" 화면에 반영하는지의 설계다. 화면 정책은 D-174(메시지 정책), 갱신 방식은 [2026-11-06 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-06-message-sync-and-e2e.md)과 #558 [결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/work-items/558-message-websocket/result.md)에 있다.
 
 ## 문제
 

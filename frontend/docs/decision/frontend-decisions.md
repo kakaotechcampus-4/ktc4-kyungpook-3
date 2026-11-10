@@ -2226,7 +2226,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 
 돌아갈 경로:
 
-- 로그인 화면의 회원가입 링크와 `/signup` 은 `next` 를 들고 있어서, 가입 화면에서 로그인으로 옮겨도 이어진다. 가입을 마친 새 계정은 `next` 를 쓰지 않고 시작 화면으로 간다. 새 계정은 어느 공간에도 속하지 않아 그 주소는 늘 접근 불가이고, 초대는 시작 화면에서 받기 때문이다([#411 결과](../issues/411-login-return-push-prompt/result.md)). 이동은 `RedirectIfAuthed` 한 곳에서 가른다.
+- 로그인 화면의 회원가입 링크와 `/signup` 은 `next` 를 들고 있어서, 가입 화면에서 로그인으로 옮겨도 이어진다. 가입을 마친 새 계정은 `next` 를 쓰지 않고 시작 화면으로 간다. 새 계정은 어느 공간에도 속하지 않아 그 주소는 늘 접근 불가이고, 초대는 시작 화면에서 받기 때문이다([#411 결과](../plan/m4/work-items/411-login-return-push-prompt/result.md)). 이동은 `RedirectIfAuthed` 한 곳에서 가른다.
 
 ### D-179. 막혔다는 답장은 막힘을 풀지 않는다 (D-058·D-059 일부 변경)
 
@@ -2304,7 +2304,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 - D-141 을 폐기하고 D-143·D-146 의 Storybook 부분을 바꾼다. 세 항목의 본문은 그 시점의 결정으로 남긴다.
 - CI 의 `storybook` job(약 2.5~3.5분)이 없어진다.
 - 컴포넌트를 눈으로 둘러보는 화면이 없어진다. 화면 확인은 MSW 개발 서버(`VITE_ENABLE_MSW=true`, `?msw-scenario=`)로 한다.
-- 근거와 옮긴 검사의 분류: [결정 기록](../plan/m8/basis-for-decision/2026-11-07-remove-storybook.md), [결과](../issues/482-remove-storybook/result.md).
+- 근거와 옮긴 검사의 분류: [결정 기록](../plan/m8/basis-for-decision/2026-11-07-remove-storybook.md), [결과](../plan/m0/work-items/482-remove-storybook/result.md).
 
 ### D-182. Notion 은 선택 기능이다 (D-096~D-100 대체, D-101 일부 변경)
 
@@ -2330,7 +2330,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 
 - D-096~D-100 을 대체하고 D-101 의 회의록 본문 반영을 뺀다. 본문은 그 시점의 결정으로 남긴다.
 - 계약 문서에 FE 가 Notion 연결을 요구하지 않는다는 점을 적는다. `GET /integrations` 의 `revoked` 구분 요청(계약 §4.0-②-6)은 설정 카드 표시에만 쓰인다.
-- 보호 계획(`plan/frontend-plan.md`, 마일스톤 `plan.md`)의 차단 모달·복귀 설명은 이 결정으로 대체됐다. 결과: [#507](../issues/507-notion-optional/result.md).
+- 보호 계획(`plan/frontend-plan.md`, 마일스톤 `plan.md`)의 차단 모달·복귀 설명은 이 결정으로 대체됐다. 결과: [#507](../plan/m5/work-items/507-notion-optional/result.md).
 
 ### D-183. 다시 온 사람은 랜딩 대신 로그인으로 (D-003 관련)
 
@@ -2353,7 +2353,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 영향:
 
 - D-003 의 `시작하기 → 로그인` 은 그대로다. 랜딩 `시작하기` 는 12시간 규칙에 따라 스플래시를 띄우며 로그인으로 간다(#510).
-- 근거: [결정 기록](../plan/m2/basis-for-decision/2026-11-06-splash-direction-a-smile.md#이후-변경-스플래시는-12시간에-한-번-다시-온-사람은-로그인으로-510), [결과](../issues/510-splash-frequency/result.md).
+- 근거: [결정 기록](../plan/m2/basis-for-decision/2026-11-06-splash-direction-a-smile.md#이후-변경-스플래시는-12시간에-한-번-다시-온-사람은-로그인으로-510), [결과](../plan/m4/work-items/510-splash-frequency/result.md).
 
 ### D-184. API 응답을 zod 스키마로 검증하고 모르는 값을 종류별로 다룬다 (D-134 대체)
 
@@ -2399,7 +2399,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 - D-134 를 대체한다. D-121 의 「API 응답은 `unknown` 으로 받고 스키마 검증 후 사용」을 따른다. D-134 본문은 그 시점의 결정으로 남긴다.
 - entity 묶음마다 PR 을 나눠 적용한다. 첫 PR 은 `shared/api` 의 `parseResponse`·`displayValue`·`fallbackValue` 와 task 다. 두 번째 PR 은 approval, 세 번째 PR 은 meeting·minutes·extraction, 네 번째 PR 은 message·notification, 다섯 번째(마지막) PR 은 integration·invitation·workspace·member·user·메시지 설정이다. 마지막 PR 이 옛 `enumValue`(`shared/lib/enum.ts`)를 지웠다.
 - BE 요청 두 가지(배포 순서 합의, 응답 스키마의 `status: str` 을 enum 타입으로)는 계약 맨 위 「응답 검증과 새 값 배포 순서」의 「합의 필요 변경」에 둔다.
-- 근거: [#348](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/348), [결과](../issues/348-response-schema/result.md).
+- 근거: [#348](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/348), [결과](../plan/m3/work-items/348-response-schema/result.md).
 
 ### D-185. 휴대폰 로그인은 시안 H-1 배치다 (D-182 화면 보완)
 
@@ -2425,7 +2425,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 
 - 라우트 뼈대도 같은 배치로 그린다(#510). `e2e/route-skeleton.e2e.ts` 가 390px 에서 글자 자리를 잰다.
 - 입력 칸에 `auth-phone` 화면군, 버튼에 `auth-phone` 크기를 더했다.
-- 근거: [결과](../issues/538-kakao-login-finish/result.md).
+- 근거: [결과](../plan/m4/work-items/538-kakao-login-finish/result.md).
 
 ### D-186. 프로젝트 맵은 헤더 탭과 d3-force 배치·SVG 그래프다 (D-180 보완)
 
@@ -2451,7 +2451,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 
 - 초기 chunk 는 1.17KB(gzip) 늘었다. 화면 chunk 5.20KB, 그래프 chunk 8.23KB(d3-force 포함, gzip)다. 측정과 대안 비교는 [결정 기록](../plan/m8/basis-for-decision/2026-11-09-project-map-graph.md)에 있다.
 - 디자인 시스템 §7-11 앱 셸의 탭 목록에 `프로젝트 맵` 을 더했다.
-- 근거: [결과](../issues/551-project-map/result.md).
+- 근거: [결과](../plan/m8/work-items/551-project-map/result.md).
 
 ### D-187. Discord 없이 이름으로 팀원을 추가하고, 연결 뒤 이름 칸은 자유 입력 자동 완성이다 (D-173 보완)
 
@@ -2479,7 +2479,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 
 - 온보딩 미연결 안내 문구가 `디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이름으로 팀원을 추가하거나, 이전 단계에서 연결하거나, 건너뛸 수 있어요.` 로 바뀌었다(D-173 의 문구).
 - 미리 추가한 팀원을 지우는 기능은 없다. 팀원 삭제 BE API 가 없어 후속 #637 로 나눴다(#613 의 물어볼 것 2).
-- 근거: [결과](../issues/613-member-without-discord/result.md).
+- 근거: [결과](../plan/m8/work-items/613-member-without-discord/result.md).
 
 ### D-188. Discord 를 연결한 팀도 서버에 없는 사람을 이름으로 추가한다 (D-187 보완)
 
@@ -2504,7 +2504,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 
 - 연결된 온보딩 화면에서 이름만 추가하고 매칭 줄을 채우지 않으면 `확인 완료` 가 잠겨 있어 `나중에 하기`(건너뜀)로 넘어간다. D-187 대로 이 단계의 완료와 건너뜀은 2026-11-10 기준 다르게 쓰이지 않는다.
 - BE 는 Discord 연결을 끊어도 팀원의 `discord_user_id` 를 비우지 않는다(2026-11-10 코드 기준, 비우는 곳은 계정 탈퇴의 `erase_profile` 뿐이다). 그래서 연결을 끊은 팀의 미연결 화면 `추가한 팀원` 에는 예전에 이은 팀원이 보이지 않는다. 전체 팀원은 팀 화면에서 본다.
-- 근거: [결과](../issues/660-member-add-discord-connected/result.md).
+- 근거: [결과](../plan/m8/work-items/660-member-add-discord-connected/result.md).
 
 ### D-189. 녹음·업로드 회의의 정리 단계는 서버 단계와 1:1 인 5단계다 (#483)
 
@@ -2541,7 +2541,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 
 - 처리 화면의 「n / 5 단계 완료」, 진행 토스트의 칸 다섯 개와 알약 `정리 중 n/5`.
 - MSW `meeting-demo` 가 조회마다 다섯 단계를 차례로 보인다. `meeting-demo-legacy` 는 세 단계다.
-- 근거: [결과](../issues/483-processing-steps/result.md), 계약 §2.3 `processing`.
+- 근거: [결과](../plan/m5/work-items/483-processing-steps/result.md), 계약 §2.3 `processing`.
 
 ### D-190. 팀원 연결은 팀원 한 명이 한 줄이고 줄마다 바로 저장한다 (D-026 대체, D-177·D-187·D-188 일부 변경)
 
@@ -2574,7 +2574,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 
 - D-188 이 바뀐다. 이름 추가 칸과 그 위 안내는 이 목록의 맨 아래로 합쳐져 Discord 연결 여부와 상관없이 늘 있다. 안내는 Discord 를 연결한 공간에만 보인다. 이름 추가와 매칭 저장을 서로 잠그던 `useMemberAdding` 은 이 목록의 쓰기 실행기 하나가 대신한다. 실행기는 이름 추가를 포함한 모든 쓰기를 하나씩만 보낸다. `추가한 팀원` 목록은 없다. 추가한 팀원은 목록의 새 줄이고, 나중에 서버에 들어오면 그 줄에서 계정을 골라 `PATCH {discord_user_id}` 하나로 잇는다.
 - D-026(디스코드 계정 옆에 이름을 적는 입력)을 이 결정이 대신한다. D-027(1:1)·D-029(일부만 연결해도 완료)·D-031(떠난 계정의 연결 유지)은 그대로다. 떠난 계정에 연결된 팀원 줄은 `서버에 없는 계정` 으로 보이고 연결 풀기만 된다. D-177 의 PM 안내 문구는 「PM 줄을 체크하지 않으면」에서 「PM의 디스코드 계정을 고르지 않으면」으로 바뀐다.
-- 근거: [결과](../issues/647-member-rows/result.md).
+- 근거: [결과](../plan/m8/work-items/647-member-rows/result.md).
 
 ### D-191. 프로젝트 맵 주제 패널에서 주제와 결정을 고치고, 되돌릴 수 없는 고치기는 확인을 거친다 (D-186 보완)
 
@@ -2604,7 +2604,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 
 - 패널 제목으로 포커스를 옮기는 때를 제목이 바뀔 때에서 고른 항목이 바뀔 때로 바꿨다. 이름을 고친 뒤 맵을 다시 받아 제목이 바뀌어도 포커스가 고친 단추에 남는다. 시트(`Sheet`)도 같다(`itemKey`).
 - 고친 뒤 캐시는 §4.4.3 대로다. 회의록은 무효로만 둔다.
-- 근거: [결과](../issues/551-project-map/result-topic-edit.md), 계약 §4.4.2 「FE 사용 (#551)」.
+- 근거: [결과](../plan/m8/work-items/551-project-map/result-topic-edit.md), 계약 §4.4.2 「FE 사용 (#551)」.
 
 ### D-192. 회의록 제목과 발화는 그 자리에서 고치고, 완료 회의록도 30초 뒤 오래된 것으로 본다 (#551, D-136 일부 변경)
 
@@ -2632,7 +2632,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 영향:
 
 - 회의록 화면(`widgets/meeting-minutes`), `features/minutes-edit`, 회의록 스키마와 MSW.
-- 근거: [결과](../issues/551-project-map/result-minutes-edit.md), 계약 §4.4.3 아래 FE 사용(회의록 제목·발화 고치기).
+- 근거: [결과](../plan/m5/work-items/551-project-map/result-minutes-edit.md), 계약 §4.4.3 아래 FE 사용(회의록 제목·발화 고치기).
 
 ## 현재 논의
 

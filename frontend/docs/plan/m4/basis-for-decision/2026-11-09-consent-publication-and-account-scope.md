@@ -24,4 +24,4 @@
 
 ## 근거와 관련 문서
 
-[공개 상태](../../../../src/shared/config/policyPublication.ts), [가드](../../../../src/features/consent/ui/ConsentGate.tsx), [가입 후 세션 반영](../../../../src/features/auth/model/useEnterSession.ts), [실제 결과](../../../issues/566-consent-connection/result.md), [대표 API 계약](../../../contracts/frontend-api-contract.md#415-이용약관개인정보처리방침-동의-564-be-제안-fe-합의-전).
+[공개 상태](../../../../src/shared/config/policyPublication.ts), [가드](../../../../src/features/consent/ui/ConsentGate.tsx), [가입 후 세션 반영](../../../../src/features/auth/model/useEnterSession.ts), [실제 결과](../work-items/566-consent-connection/result.md), [대표 API 계약](../../../contracts/frontend-api-contract.md#415-이용약관개인정보처리방침-동의-564-be-제안-fe-합의-전).

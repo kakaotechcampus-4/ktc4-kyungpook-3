@@ -13,7 +13,7 @@
 | 메시지 소켓 기록 | MSW 소켓, 가짜 BE·Vite 프록시 | 변경 신호·경합·재연결·종료·개발 프록시 | 운영 BE·Caddy를 거친 소켓 성공 |
 | 대비·레이아웃·키보드 E2E | Chromium, 지정 화면·너비 | 실제 색 대비·넘침·포커스·업로드·승인 조작 | WCAG 전 항목 준수·스크린 리더 실사용·iOS 실기기 |
 
-근거는 [프론트엔드 CI](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/workflows/frontend-ci.yml), [Playwright 설정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/playwright.config.ts), [동의 설정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/playwright.consent.config.ts), [#626](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/626-backend-integration/result.md), [#631](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/631-backend-integration/result.md), [#558](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/558-message-websocket/result.md)이다.
+근거는 [프론트엔드 CI](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/workflows/frontend-ci.yml), [Playwright 설정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/playwright.config.ts), [동의 설정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/playwright.consent.config.ts), [#626](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m4/work-items/626-backend-integration/result.md), [#631](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/work-items/631-backend-integration/result.md), [#558](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/work-items/558-message-websocket/result.md)이다.
 
 ## 평가표에서 프론트엔드 근거를 찾는 법
 
@@ -61,7 +61,7 @@ MSW를 사용하면 모의 데이터·모의 외부 연동임을 밝힌다. 실�
 
 ## 과거 수치와 현재 상태를 구분한다
 
-[테스트 안내](../../dev/testing.md)의 2026-11-07 무렵 수치는 역사 기록이다. [#594 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/594-stale-session-writes/result.md)의 전체 통과 수 역시 독립 리뷰 수정 후 전체 재실행 대기라는 단서를 함께 읽어야 한다. 두 기록 모두 최종 발표 버전의 최신 성공 수로 옮기지 않는다.
+[테스트 안내](../../dev/testing.md)의 2026-11-07 무렵 수치는 역사 기록이다. [#594 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m3/work-items/594-stale-session-writes/result.md)의 전체 통과 수 역시 독립 리뷰 수정 후 전체 재실행 대기라는 단서를 함께 읽어야 한다. 두 기록 모두 최종 발표 버전의 최신 성공 수로 옮기지 않는다.
 
 성능은 [측정 원문](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/performance/README.md)의 날짜·번들·브라우저·네트워크·반복 조건을 함께 제시한다. 스크린 리더, 운영 소켓, 실제 외부 공급사, 실기기 푸시의 미확인을 자동 테스트 성공으로 대신하지 않는다.
 

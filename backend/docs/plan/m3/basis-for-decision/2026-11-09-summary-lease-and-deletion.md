@@ -36,5 +36,5 @@ claim은 기존 worker gate 이후 공간·회의·추출 순으로 잠근다. P
 ## 근거와 관련 문서
 
 - [요약 서비스](../../../../app/services/summary.py), [삭제 서비스](../../../../app/services/meeting_deletion.py), [워커](../../../../../ai/capture/worker.py).
-- [BE·AI 계약](../../../contracts/backend-ai-contract.md#회의-요약), [이슈 통합 결과](../../../../../frontend/docs/issues/560-summary-integration/result.md).
+- [BE·AI 계약](../../../contracts/backend-ai-contract.md#회의-요약), [이슈 통합 결과](../../../../../frontend/docs/plan/m5/work-items/560-summary-integration/result.md).
 - [API·DB 수명주기 검사](../../../../tests/api/test_summary_lifecycle.py), [막힌 LLM과 일반 워커 검사](../../../../../ai/tests/capture/test_summary_scheduling.py).

@@ -923,4 +923,4 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 
 현재 구현은 회의 삭제와 같은 트랜잭션에서 Decision, TopicMeeting, TopicItem과 고아 Topic을 지운다. 다른 회의 요약의 decision_details.replaces 사본도 삭제된 회의·결정 ID로 제거한다. 생존 Task는 보존하되 프로젝트 맵의 삭제 원문 링크는 제외한다. 공유 공간 탈퇴는 기존 구조화 소유 필드를 익명화하고 옛 세대의 요약 PUT을 막는다. 이미 저장된 공동 자유문장 전체의 이름 치환은 수행하지 않는다.
 
-임대 토큰과 삭제 경계는 #560 통합에서 추가한 현재 구현이다. 별도 팀 합의 여부는 확인 필요다. 선택과 검증 근거는 [결정 기록](../plan/m3/basis-for-decision/2026-11-09-summary-lease-and-deletion.md)과 [통합 결과](../../../frontend/docs/issues/560-summary-integration/result.md)에 있다.
+임대 토큰과 삭제 경계는 #560 통합에서 추가한 현재 구현이다. 별도 팀 합의 여부는 확인 필요다. 선택과 검증 근거는 [결정 기록](../plan/m3/basis-for-decision/2026-11-09-summary-lease-and-deletion.md)과 [통합 결과](../../../frontend/docs/plan/m5/work-items/560-summary-integration/result.md)에 있다.
