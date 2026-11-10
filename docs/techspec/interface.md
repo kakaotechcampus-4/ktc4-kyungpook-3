@@ -102,7 +102,7 @@ judge 새 항목 하나의 예. 전체 필드는 [계약](https://github.com/kak
 { "status": "approved", "task_overrides": { "task_title": "로그인 API 연동", "assignee_member_id": null } }
 ```
 
-반려는 `{"status": "rejected"}` 만 보낸다. 생성 승인은 제목·담당·마감, 수정 승인은 상태·마감만 고칠 수 있다.
+반려는 `status` 와 상세에서 받은 `payload_version` 을 보낸다. 생성 승인은 제목·담당·마감, 수정 승인은 상태·마감만 고칠 수 있다.
 
 ### 4. 승인 충돌 409 `APPROVAL_CONFLICT`
 
