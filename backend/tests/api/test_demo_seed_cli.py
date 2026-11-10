@@ -133,6 +133,9 @@ def test_main_runs_end_to_end_with_injected_clients(mdb, monkeypatch, capsys):
     assert result["done"] == len(load_seed_data().meetings)
     assert result["workspace_id"]
     assert result["processing"] == 0
+    # PM 이 팀원2 를 아이디로 찾아 초대하므로 출력에 계정별 아이디가 나와야 한다
+    assert set(result["usernames"]) == {person.key for person in load_seed_data().people}
+    assert all(result["usernames"].values())
 
 
 def test_missing_gate_warns_and_exits_3(mdb, monkeypatch, capsys):
