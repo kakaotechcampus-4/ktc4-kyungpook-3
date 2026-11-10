@@ -5,6 +5,7 @@
 이 모듈은 DB 만 보고 판단하며 파일은 읽거나 지우지 않는다(파일은 `upload_storage` 담당).
 """
 import logging
+import math
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -112,6 +113,16 @@ def require_playable(db: Session, meeting: Meeting, now: datetime) -> MeetingAud
             details={"meeting_id": meeting.meeting_id, "reason": reason or REASON_NO_RECORDING},
         )
     return row
+
+
+def remaining_seconds(meeting: Meeting, row: MeetingAudio, now: datetime) -> int | None:
+    """들을 수 있는 시간이 앞으로 몇 초 남았는지(올림). 기간이 지나도 듣게 두는 회의(done 이 아님)는 None.
+
+    presigned URL 이 보관 기간이 끝난 뒤까지 열려 있지 않게 유효 시간을 줄이는 데 쓴다.
+    """
+    if meeting.status != MeetingStatus.DONE:
+        return None
+    return max(0, math.ceil((expires_at(row) - now).total_seconds()))
 
 
 def playback_info(db: Session, meeting: Meeting, now: datetime) -> dict | None:

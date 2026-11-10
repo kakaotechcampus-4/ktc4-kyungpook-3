@@ -26,7 +26,7 @@
 
 1번을 택했다. `UPLOAD_STORAGE=local|s3`(기본 local)로 저장소를 고르는 추상화를 두고([upload_storage.py](../../../../app/services/upload_storage.py)), 운영은 s3 만 쓴다. 키는 업로드·디스코드 모두 `{UPLOAD_S3_PREFIX}{meeting_id}/audio.<확장자>`(기본 `meetings/`)로 같다. local 은 개발·테스트용으로 남겼다.
 
-`GET /meetings/{id}/audio` 는 done 회의는 팀원 모두, 그 밖의 상태는 PM 만 허용한다([meetings.py](../../../../app/api/meetings.py)). s3 에서는 `Cache-Control: private, no-store`, 응답 Content-Type 고정(`ResponseContentType`), 유효 시간 `UPLOAD_PLAYBACK_URL_TTL_SECONDS`(기본 3600)의 presigned GET 으로 302 한다. 302 를 내기 전에 DB 연결을 닫는다. S3 가 Range 와 대역폭을 맡으므로 BE 는 재생 중 아무것도 중계하지 않는다.
+`GET /meetings/{id}/audio` 는 done 회의는 팀원 모두, 그 밖의 상태는 PM 만 허용한다([meetings.py](../../../../app/api/meetings.py)). s3 에서는 `Cache-Control: private, no-store`, 응답 Content-Type 고정(`ResponseContentType`), 유효 시간 `UPLOAD_PLAYBACK_URL_TTL_SECONDS`(기본 3600)의 presigned GET 으로 302 한다. done 회의는 `expires_at` 까지 남은 시간이 TTL 보다 짧으면 그만큼으로 줄인다(주소가 보관 기간 뒤까지 열려 있지 않게). 처리 중 회의는 기간이 지나도 듣게 두므로 TTL 그대로다. 서명하기 전에 필요한 값을 읽고 DB 연결(공간·회의 잠금)을 닫는다. S3 가 Range 와 대역폭을 맡으므로 BE 는 재생 중 아무것도 중계하지 않는다.
 
 AI 가 가져가는 `GET /uploads/{id}/file` 은 모양을 바꾸지 않았다. s3 에서는 BE 가 S3 에서 읽어 바이트를 대신 보낸다(리다이렉트 없음). AI 쪽 코드를 건드리지 않기 위해서다.
 

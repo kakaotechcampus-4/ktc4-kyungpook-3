@@ -241,6 +241,26 @@ def test_s3_mode_returns_db_connection_before_redirect(db, seed, s3):
     assert closed
 
 
+def test_s3_mode_presigned_url_does_not_outlive_retention_on_done(db, seed, s3):
+    # 보관 기간이 90초 남은 done 회의: URL 이 TTL(1시간)까지 열려 있으면 만료 뒤에도 받을 수 있다
+    meeting_id, _ = _meeting(db, seed, received_ago=timedelta(days=7) - timedelta(seconds=90))
+
+    r = _audio(meeting_id)
+
+    assert r.status_code == 302, r.text
+    assert 0 < s3.presign_calls[0]["ExpiresIn"] <= 90
+
+
+def test_s3_mode_presigned_url_keeps_ttl_while_processing(db, seed, s3):
+    # 처리 중인 회의는 보관 기간이 지나도 만료로 보지 않으므로 TTL 그대로
+    meeting_id, _ = _meeting(db, seed, status="awaiting_speakers", received_ago=timedelta(days=8))
+
+    r = _audio(meeting_id, token="pm-token")
+
+    assert r.status_code == 302, r.text
+    assert s3.presign_calls[0]["ExpiresIn"] == 3600
+
+
 def test_s3_mode_signs_after_returning_db_connection(db, seed, s3, monkeypatch):
     meeting_id, _ = _meeting(db, seed)
     closed = []

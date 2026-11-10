@@ -408,13 +408,16 @@ def get_meeting_audio(
     if not _may_play(meeting, member):
         # 팀원이어도 done 이 아니면 PM 만 듣는다. 기존과 같은 PM 전용 메시지로 막는다
         require_pm(db, user, meeting.workspace_id)
-    row = meeting_audio.require_playable(db, meeting, datetime.now(timezone.utc))
+    now = datetime.now(timezone.utc)
+    row = meeting_audio.require_playable(db, meeting, now)
     filename, content_type = row.filename, row.content_type
     headers = {"Cache-Control": "private, no-store"}
     if upload_storage.storage_mode() == "s3":
+        # done 회의는 주소가 보관 기간(expires_at)이 끝난 뒤까지 열려 있지 않게 남은 시간으로 줄인다
+        max_expires_in = meeting_audio.remaining_seconds(meeting, row, now)
         # 필요한 값을 다 읽었으니 공간·회의 잠금과 DB 연결을 먼저 놓는다. 서명은 자격 갱신으로 외부 요청이 끼일 수 있다
         db.close()
-        url = upload_storage.presigned_audio_url(meeting_id, filename, content_type)
+        url = upload_storage.presigned_audio_url(meeting_id, filename, content_type, max_expires_in)
         return RedirectResponse(url, status_code=302, headers=headers)
     path = upload_storage.local_audio_path(meeting_id, filename)
     if path is None:

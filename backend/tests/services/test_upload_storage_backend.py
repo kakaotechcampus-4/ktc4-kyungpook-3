@@ -131,6 +131,26 @@ def test_presigned_url_default_ttl_is_one_hour(fake, s3_env):
     assert fake.presign_calls[0]["ExpiresIn"] == 3600
 
 
+def test_presigned_url_is_capped_by_max_expires_in(fake, s3_env):
+    upload_storage.presigned_audio_url("m1", "audio.m4a", "audio/mp4", max_expires_in=90)
+
+    assert fake.presign_calls[0]["ExpiresIn"] == 90
+
+
+def test_presigned_url_cap_does_not_extend_ttl(fake, s3_env, monkeypatch):
+    monkeypatch.setenv("UPLOAD_PLAYBACK_URL_TTL_SECONDS", "120")
+
+    upload_storage.presigned_audio_url("m1", "audio.m4a", "audio/mp4", max_expires_in=86400)
+
+    assert fake.presign_calls[0]["ExpiresIn"] == 120
+
+
+def test_presigned_url_cap_is_at_least_one_second(fake, s3_env):
+    upload_storage.presigned_audio_url("m1", "audio.m4a", "audio/mp4", max_expires_in=0)
+
+    assert fake.presign_calls[0]["ExpiresIn"] == 1
+
+
 @pytest.mark.parametrize("raw", ["abc", "0", "-5", "1.5"])
 def test_playback_url_ttl_falls_back_to_default_on_bad_value(monkeypatch, caplog, raw):
     monkeypatch.setenv("UPLOAD_PLAYBACK_URL_TTL_SECONDS", raw)

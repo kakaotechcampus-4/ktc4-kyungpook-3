@@ -296,14 +296,23 @@ def open_audio_stream(meeting_id: str, filename: str) -> tuple[Iterator[bytes], 
     return chunks(), int(response["ContentLength"])
 
 
-def presigned_audio_url(meeting_id: str, filename: str, content_type: str) -> str:
-    """브라우저가 S3 에서 바로 받는 임시 주소. 응답 Content-Type 을 `content_type`으로 고정한다."""
+def presigned_audio_url(
+    meeting_id: str, filename: str, content_type: str, max_expires_in: int | None = None
+) -> str:
+    """브라우저가 S3 에서 바로 받는 임시 주소. 응답 Content-Type 을 `content_type`으로 고정한다.
+
+    유효 시간은 `UPLOAD_PLAYBACK_URL_TTL_SECONDS` 이고, `max_expires_in`(초)이 더 짧으면 그만큼으로 줄인다
+    (보관 기간이 끝난 뒤까지 주소가 열려 있지 않게 하려는 값이며 최소 1초).
+    """
     bucket, key = _s3_bucket(), _s3_key(meeting_id, filename)
+    expires_in = playback_url_ttl_seconds()
+    if max_expires_in is not None:
+        expires_in = max(1, min(expires_in, max_expires_in))
     try:
         return _s3_client().generate_presigned_url(
             "get_object",
             Params={"Bucket": bucket, "Key": key, "ResponseContentType": content_type},
-            ExpiresIn=playback_url_ttl_seconds(),
+            ExpiresIn=expires_in,
         )
     except Exception as exc:
         raise _as_oserror(exc) from exc
