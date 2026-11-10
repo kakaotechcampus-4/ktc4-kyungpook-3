@@ -1,5 +1,6 @@
 import {
   clearTrackedMeetings,
+  dismissProcessingToast,
   dismissSettled,
   finishMeeting,
   promptSpeakers,
@@ -77,9 +78,54 @@ describe('추적 끝내기 (U4-5)', () => {
       finished: [],
       prompted: [],
       settled: [],
+      dismissed: [],
     })
     trackMeeting(meeting)
     expect(tracked()).toEqual([meeting])
+  })
+})
+
+describe('진행 알림 숨기기 (#614)', () => {
+  const meeting = { workspaceId: 'ws_01', meetingId: 'mt_11' }
+
+  it('추적과 안내·결과를 보존하고 같은 알림을 두 번 닫아도 상태는 그대로다', () => {
+    trackMeeting(meeting)
+    promptSpeakers(meeting)
+    const before = useMeetingTrackerStore.getState()
+    dismissProcessingToast(meeting)
+    const after = useMeetingTrackerStore.getState()
+    expect(after).toEqual({ ...before, dismissed: ['ws_01/mt_11'] })
+    expect(after.meetings).toBe(before.meetings)
+    expect(after.prompted).toBe(before.prompted)
+    expect(after.finished).toBe(before.finished)
+    expect(after.settled).toBe(before.settled)
+    dismissProcessingToast(meeting)
+    expect(useMeetingTrackerStore.getState()).toBe(after)
+  })
+
+  it('추적하지 않거나 끝난 회의는 숨김 기록을 만들지 않는다', () => {
+    const before = useMeetingTrackerStore.getState()
+    dismissProcessingToast(meeting)
+    expect(useMeetingTrackerStore.getState()).toBe(before)
+    trackMeeting(meeting)
+    finishMeeting(meeting)
+    dismissProcessingToast(meeting)
+    expect(useMeetingTrackerStore.getState().dismissed).toEqual([])
+  })
+
+  it('공간이 다른 같은 회의 ID는 따로 숨기며 세션을 비우면 다시 보일 수 있다', () => {
+    const other = { ...meeting, workspaceId: 'ws_04' }
+    trackMeeting(meeting)
+    trackMeeting(other)
+    dismissProcessingToast(meeting)
+    expect(useMeetingTrackerStore.getState().dismissed).toEqual(['ws_01/mt_11'])
+    dismissProcessingToast(other)
+    expect(useMeetingTrackerStore.getState().dismissed).toEqual(['ws_01/mt_11', 'ws_04/mt_11'])
+    clearTrackedMeetings()
+    expect(useMeetingTrackerStore.getState().dismissed).toEqual([])
+    trackMeeting(meeting)
+    dismissProcessingToast(meeting)
+    expect(useMeetingTrackerStore.getState().dismissed).toEqual(['ws_01/mt_11'])
   })
 })
 

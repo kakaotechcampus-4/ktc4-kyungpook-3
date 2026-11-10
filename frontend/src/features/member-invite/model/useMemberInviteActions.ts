@@ -6,17 +6,23 @@ import {
   latestInvitationsQueryOptions,
   revokeInvitation,
 } from '@/entities/invitation'
-import { captureSession } from '@/entities/user'
-import { errorMessage } from '@/shared/api/errorMessages'
+import type { Invitee } from '@/entities/invitation'
+import { errorMessage, failureNotice } from '@/shared/api/errorMessages'
+import { ApiError, CLIENT_ERROR_CODES, ERROR_CODES, createClientError } from '@/shared/api/errors'
+import { captureSessionScope } from '@/shared/api/sessionScope'
+import type { SessionScope } from '@/shared/api/sessionScope'
 import { toast } from '@/shared/ui/toast'
 
 interface Tracked {
-  isCurrentSession: () => boolean
+  session: SessionScope
 }
 
 export interface MemberInviteActions {
-  /** 성공하면 알림을 띄우고 `onSuccess` 를 부른다. 실패 문구는 `inviteError` 로 남는다 — 창 안에 보인다 */
-  invite: (email: string, onSuccess: () => void) => void
+  /**
+   * 성공하면 알림을 띄우고 `onSuccess` 를 부른다. 실패 문구는 `inviteError` 로 남는다 — 창 안에 보인다.
+   * 찾은 사람이 그사이 없어졌으면(404 `USER_NOT_FOUND`) `onUserGone` 도 부른다
+   */
+  invite: (invitee: Invitee, onSuccess: () => void, onUserGone: () => void) => void
   inviteError: string | null
   inviting: boolean
   /** 창을 새로 열 때 지난 초대 요청의 상태를 비운다 */
@@ -34,28 +40,43 @@ export interface MemberInviteActions {
  * 끝나면(성공·실패) 초대 목록을 다시 받는다 — 다시 초대·연결 끊기는 다른 초대도 닫고, 실패는 화면이 낡았다는 뜻일 수 있다.
  * 요청 중 세션이 바뀌었으면 늦은 응답으로 알림을 띄우지 않는다.
  */
-export function useMemberInviteActions(
-  workspaceId: string,
-  member: { id: string; displayName: string },
-): MemberInviteActions {
+export function useMemberInviteActions(workspaceId: string, memberId: string): MemberInviteActions {
   const queryClient = useQueryClient()
   const refresh = () =>
     void queryClient.invalidateQueries({
       queryKey: latestInvitationsQueryOptions(workspaceId).queryKey,
     })
 
-  const create = useMutation<void, Error, Tracked & { email: string; onSuccess: () => void }>({
+  const create = useMutation<
+    void,
+    Error,
+    Tracked & { invitee: Invitee; onSuccess: () => void; onUserGone: () => void }
+  >({
     retry: false,
-    mutationFn: ({ email }) => createInvitation(workspaceId, { memberId: member.id, email }),
-    onSuccess: (_, { email, onSuccess, isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    mutationFn: ({ invitee, session }) => {
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
+      return createInvitation(workspaceId, { memberId, userId: invitee.userId }, session.signal)
+    },
+    onSuccess: (_, { invitee, onSuccess, session }) => {
+      if (!session.isCurrent()) return
       toast.show({
         title: '초대를 만들었어요',
-        description: `메일은 가지 않아요. ${member.displayName}에게 ${email}로 가입하거나 로그인하라고 알려 주세요.`,
+        description: `알림은 가지 않아요. ${invitee.name}에게 ${invitee.username} 계정으로 로그인해 받은 초대를 수락하라고 알려 주세요.`,
       })
       onSuccess()
     },
-    onSettled: refresh,
+    onError: (error, { onUserGone, session }) => {
+      if (
+        session.isCurrent() &&
+        error instanceof ApiError &&
+        error.code === ERROR_CODES.USER_NOT_FOUND
+      )
+        onUserGone()
+    },
+    // 끝난 세션의 쓰기는 보내지 않았다. 다음 세션의 목록을 다시 받지 않는다
+    onSettled: (_data, _error, { session }) => {
+      if (session.isCurrent()) refresh()
+    },
   })
 
   // reset() 은 보내는 중인 요청도 끝난 것처럼 보이게 해 중복 전송을 연다 — 입력 중에는 문구만 숨긴다
@@ -67,38 +88,40 @@ export function useMemberInviteActions(
     Tracked & { kind: 'cancel' | 'revoke'; invitationId: string }
   >({
     retry: false,
-    mutationFn: ({ kind, invitationId }) =>
-      kind === 'cancel' ? cancelInvitation(invitationId) : revokeInvitation(invitationId),
-    onSuccess: (_, { kind, isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    mutationFn: ({ kind, invitationId, session }) => {
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
+      return (kind === 'cancel' ? cancelInvitation : revokeInvitation)(invitationId, session.signal)
+    },
+    onSuccess: (_, { kind, session }) => {
+      if (!session.isCurrent()) return
       toast.show({ title: kind === 'cancel' ? '초대를 취소했어요' : '계정 연결을 끊었어요' })
     },
-    onError: (error, { isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    onError: (error, { session }) => {
+      if (!session.isCurrent()) return
       toast.show({ title: errorMessage(error) })
     },
-    onSettled: refresh,
+    // 끝난 세션의 쓰기는 보내지 않았다. 다음 세션의 목록을 다시 받지 않는다
+    onSettled: (_data, _error, { session }) => {
+      if (session.isCurrent()) refresh()
+    },
   })
 
   return {
-    invite: (email, onSuccess) => {
+    invite: (invitee, onSuccess, onUserGone) => {
       if (create.isPending) return
-      create.mutate({ email, onSuccess, isCurrentSession: captureSession() })
+      create.mutate({ invitee, onSuccess, onUserGone, session: captureSessionScope() })
     },
-    inviteError: create.error && create.error !== hiddenError ? errorMessage(create.error) : null,
+    inviteError: create.error && create.error !== hiddenError ? failureNotice(create.error) : null,
     inviting: create.isPending,
     resetInvite: create.reset,
     clearInviteError: () => setHiddenError(create.error),
     cancel: (invitationId) => {
       if (close.isPending) return
-      close.mutate({ kind: 'cancel', invitationId, isCurrentSession: captureSession() })
+      close.mutate({ kind: 'cancel', invitationId, session: captureSessionScope() })
     },
     revoke: (invitationId, onSettled) => {
       if (close.isPending) return
-      close.mutate(
-        { kind: 'revoke', invitationId, isCurrentSession: captureSession() },
-        { onSettled },
-      )
+      close.mutate({ kind: 'revoke', invitationId, session: captureSessionScope() }, { onSettled })
     },
     closing: close.isPending,
   }

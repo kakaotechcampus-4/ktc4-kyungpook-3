@@ -7,6 +7,10 @@ import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { recordRequests } from '@/shared/test/requests'
+import { http } from 'msw'
+import { ok } from '@/shared/mock/envelope'
+import { server } from '@/shared/mock/server'
+import { toast } from '@/shared/ui/toast'
 import { useMessageAction } from './useMessageAction'
 
 beforeEach(() => {
@@ -54,5 +58,40 @@ describe('useMessageAction', () => {
     ).toBe('scheduled')
     expect(onSuccess).not.toHaveBeenCalled()
     expect(result.current.failure).toBeNull()
+  })
+
+  it('태스크 빼기 응답을 읽지 못하면 실패로 남기지 않고 결과를 확인하지 못했다고 알린다. 새로고침은 메시지를 다시 받는다 (#348)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const shown = vi.spyOn(toast, 'show')
+    server.use(
+      http.post('/api/v1/workspaces/:workspaceId/messages/reminders/:reminderId/cancel', () =>
+        ok({ reminder: { reminder_id: 'rm_02' }, bundle: { bundle_id: 'bd_02' } }),
+      ),
+    )
+    const client = createQueryClient()
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    )
+    const { result } = renderHook(() => useMessageAction('ws_01'), { wrapper })
+    const onSuccess = vi.fn()
+    act(() =>
+      result.current.run(
+        { kind: 'removeTask', bundleId: 'bd_02', reminderId: 'rm_02' },
+        { onSuccess },
+      ),
+    )
+    await waitFor(() => expect(client.isMutating()).toBe(0))
+
+    expect(result.current.failure).toBeNull()
+    expect(onSuccess).not.toHaveBeenCalled()
+    const notice = shown.mock.calls.at(-1)?.[0]
+    expect(notice).toMatchObject({
+      key: 'write-unconfirmed',
+      title: '변경 결과를 확인하지 못했어요',
+    })
+    const invalidate = vi.spyOn(client, 'invalidateQueries')
+    act(() => notice?.action?.onClick())
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['workspace', 'ws_01', 'messages'] })
+    vi.restoreAllMocks()
   })
 })

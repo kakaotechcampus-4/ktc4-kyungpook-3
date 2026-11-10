@@ -141,6 +141,34 @@ it('clearing a proposed deadline keeps the field empty and approves the original
   expect(db.tasks[0]).toMatchObject({ due_date: '2026-10-10' })
 })
 
+describe('마감 해제 카드 (#644)', () => {
+  beforeEach(() => {
+    updateProposal({ due_date: null, base_values: { due_date: '2026-11-10' } })
+    db.tasks[0].due_date = '2026-11-10'
+  })
+
+  it('shows the cleared proposal as 미정 and clears the deadline when approved untouched', async () => {
+    const bodies = recordRequestBodies('PATCH', '/approvals/ap_01')
+    await open()
+    expect(dueInput()).toHaveValue('')
+    expect(dueInput()).toHaveAttribute('placeholder', '원래 제안 유지 · 미정')
+    await userEvent.click(approve())
+    await screen.findByTestId('approval-result')
+    expect(bodies).toEqual([{ status: 'approved' }])
+    expect(db.tasks[0]).toMatchObject({ due_date: null })
+  })
+
+  it('approves a typed date instead of clearing', async () => {
+    const bodies = recordRequestBodies('PATCH', '/approvals/ap_01')
+    await open()
+    await userEvent.type(dueInput(), '2026-10-12')
+    await userEvent.click(approve())
+    await screen.findByTestId('approval-result')
+    expect(bodies).toEqual([{ status: 'approved', task_overrides: { due_date: '2026-10-12' } }])
+    expect(db.tasks[0]).toMatchObject({ due_date: '2026-10-12' })
+  })
+})
+
 it('replays exact saved edits with each explicit conflict version, retaining drafts across repeated conflicts', async () => {
   updateProposal({
     status: 'done',

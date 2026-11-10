@@ -1,11 +1,13 @@
 import type { MockMeetingDeletion } from './meetingDeletion'
 import type { SessionDto } from '@/shared/types/api/auth'
 import type { SpeakerViewDto } from '@/shared/types/api/meeting'
-import type { MemberAliasDto, MemberDto } from '@/shared/types/api/member'
+import type { MemberDto } from '@/shared/types/api/member'
+import type { MockMemberAlias } from './fixtures/member'
 import type { MessageSettingsDto } from '@/shared/types/api/messageSettings'
 import type { TaskDto } from '@/shared/types/api/task'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { sessionFixture } from './fixtures/auth'
+import { POLICY_VERSION } from '@/shared/config/publishedPolicies'
 import {
   aliasFixtures,
   discordUserFixtures,
@@ -21,6 +23,8 @@ import { extractionFixtures } from './fixtures/extraction'
 import { taskFixtures, taskHistoryFixtures } from './fixtures/task'
 import { approvalFixtures } from './fixtures/approval'
 import { messageBundleFixtures, messageThreadFixtures } from './fixtures/message'
+import { projectMapFixture } from './fixtures/projectMap'
+import type { MockProjectMap } from './fixtures/projectMap'
 import type { MockNotification, MockPushSubscription } from './fixtures/notification'
 import type { MockReplies } from './reply-state'
 
@@ -31,6 +35,7 @@ import type { MockReplies } from './reply-state'
  *   채팅은 대기 → 앞 두 값(발화 저장) → `extracted` → `done` 이다 (#483). 브라우저 데모용
  * - `instant`: 첫 조회에 바로 `done`. 인위적 지연이 없다 — E2E 용
  * - `fail`: 첫 조회에 `failed`
+ * - `fail-unclaimed`: 첫 조회에 `failed`(`upload_unclaimed`)다. 24시간 동안 AI 가 가져가지 않은 업로드를 BE sweeper 가 끝낸 것을 흉내 낸다 (#598)
  * - `fail-chat-stalled`: 채팅 회의만 첫 조회에 `failed`(`chat_stalled`)다. 업로드 회의는 `manual` 처럼 그대로다 (#450)
  * - `speakers`: 업로드 회의가 첫 조회에 화자 지정 대기가 된다. PM 이 지정을 내면 조회마다 한 단계씩(`staged`) 끝난다 (#256)
  */
@@ -41,6 +46,7 @@ export type MeetingFlowMode =
   | 'fail'
   | 'fail-diarize'
   | 'fail-expired'
+  | 'fail-unclaimed'
   | 'fail-chat-stalled'
   | 'speakers'
 
@@ -51,6 +57,7 @@ export const MEETING_FLOW_MODES = [
   'fail',
   'fail-diarize',
   'fail-expired',
+  'fail-unclaimed',
   'fail-chat-stalled',
   'speakers',
 ] as const satisfies readonly MeetingFlowMode[]
@@ -92,8 +99,8 @@ export interface MockInvitation {
   invitation_id: string
   workspace_id: string
   member_id: string
-  /** 앞뒤 공백을 빼고 소문자로 바꾼 값 */
-  email: string
+  /** 초대받은 계정. 그 계정이 탈퇴하면 초대가 지워진다 (#628) */
+  invited_user_id: string
   status: 'pending' | 'accepted' | 'declined' | 'canceled' | 'revoked'
   invited_by_user_id: string | null
   accepted_user_id: string | null
@@ -179,19 +186,22 @@ export interface MockSignupVerification {
   proofs: Record<string, { email: string; expiresAt: number }>
 }
 
-/** 가입을 기다리는 카카오 신원. 실 API 의 HttpOnly 대기 쿠키 자리다. 이메일은 카카오가 인증했을 때만 있다 */
+/** 가입을 기다리는 카카오 신원. 실 API 의 HttpOnly 대기 쿠키 자리다. 카카오 이메일은 담지 않는다 (#627) */
 export interface MockKakaoPending {
   kakaoId: string
-  email: string | null
   nickname: string | null
 }
 
-/** 저장한 메시지·알림 설정 행. 응답의 `saved`·`pms` 는 handler 가 붙인다 */
-export type MockMessageSettings = Omit<MessageSettingsDto, 'saved' | 'pms'>
+/** 저장한 메시지·알림 설정 행. 응답의 `saved`·`pms` 는 handler 가 붙인다. 화면이 읽지 않는 `updated_*` 도 낸다 */
+export type MockMessageSettings = Omit<MessageSettingsDto, 'saved' | 'pms'> & {
+  updated_at: string | null
+  updated_by: string | null
+}
 
 interface MockAccount {
   session: SessionDto
-  password: string
+  /** 카카오로 가입한 계정은 비밀번호가 없다 (#627) */
+  password: string | null
   workspaceIds: string[]
   /** 공간별로 이 계정이 연결된 팀원 행. 백엔드 Member.user_id 의 대응이다. 초대로 이어진 행은 수락한 초대가 대응이라 여기 두지 않는다 */
   memberIds: Record<string, string>
@@ -217,7 +227,7 @@ export interface MockDb {
   withdrawnMemberIds: string[]
   workspaces: WorkspaceDto[]
   members: MemberDto[]
-  aliases: MemberAliasDto[]
+  aliases: MockMemberAlias[]
   unresolvedAliases: typeof unresolvedAliasFixtures
   discordUsers: typeof discordUserFixtures
   integrations: typeof integrationFixtures
@@ -234,6 +244,8 @@ export interface MockDb {
   /** #344 리마인드 답장 판단 결과. 판단은 시나리오가 넣는다 (reply-state.ts) */
   replies: MockReplies
   approvals: typeof approvalFixtures
+  /** #551 프로젝트 맵의 주제·결정·태스크 선. 태스크와 회의는 위의 tasks·meetings 다 */
+  projectMap: MockProjectMap
   /** 회의 정리 흐름. 원본 파일은 담지 않는다 — 생성 결과는 위의 meetings·minutes·extractions·tasks·approvals 에 들어간다 */
   meetingFlow: MeetingFlowState
   /** M8 메시지 (계약 §5.7). 보낼 메시지(묶음)와 대화는 공간별이다 */
@@ -250,6 +262,11 @@ export interface MockDb {
   passwordReset: MockPasswordReset
   signupVerification: MockSignupVerification
   kakao: { pending: MockKakaoPending | null }
+  /**
+   * 중복 확인 뒤 남이 가져간 아이디(#627). 중복 확인은 쓸 수 있다고 답하지만 가입·변경은 409 `USERNAME_TAKEN` 이다.
+   * 확인과 쓰기 사이에 다른 계정이 먼저 가입한 경우를 재현한다
+   */
+  usernameRace: string[]
   /** loginLimitKey 로 정규화한 이메일이 키다 */
   loginLimit: Record<string, MockLoginLimit>
 }
@@ -258,8 +275,13 @@ export function initialDb(): MockDb {
   return {
     session: structuredClone(sessionFixture),
     authenticated: true,
-    consents: [],
-    consentVersions: { terms: '2026-11-08', privacy: '2026-11-08' },
+    consents: (['terms', 'privacy'] as const).map((kind) => ({
+      user_id: sessionFixture.user.user_id,
+      kind,
+      version: POLICY_VERSION,
+      agreed_at: '2026-11-10T00:00:00Z',
+    })),
+    consentVersions: { terms: POLICY_VERSION, privacy: POLICY_VERSION },
     consentFailure: 'none',
     withdrawals: [],
     withdrawnMemberIds: [],
@@ -269,6 +291,8 @@ export function initialDb(): MockDb {
         password: 'mock-password',
         workspaceIds: ['ws_01', 'ws_02'],
         memberIds: { ws_01: 'mb_01' },
+        // 카카오 병합이 있던 때 이어진 카카오. 모의 카카오의 `이어진 계정으로 로그인` 이 이 계정이다 (#627)
+        kakaoId: 'kakao-pm',
       },
     ],
     workspaces: structuredClone(workspaceFixtures),
@@ -288,6 +312,7 @@ export function initialDb(): MockDb {
     autoBlocks: {},
     replies: { judgments: [], changes: [], historyLinks: {} },
     approvals: structuredClone(approvalFixtures),
+    projectMap: structuredClone(projectMapFixture),
     meetingFlow: { mode: 'manual', attendees: {}, speakers: {} },
     messageBundles: structuredClone(messageBundleFixtures),
     messageThreads: structuredClone(messageThreadFixtures),
@@ -299,6 +324,7 @@ export function initialDb(): MockDb {
     passwordReset: { tokens: [], nextMailAt: {}, outbox: [], failure: 'none' },
     signupVerification: { codes: {}, outbox: [], proofs: {} },
     kakao: { pending: null },
+    usernameRace: [],
     loginLimit: {},
   }
 }

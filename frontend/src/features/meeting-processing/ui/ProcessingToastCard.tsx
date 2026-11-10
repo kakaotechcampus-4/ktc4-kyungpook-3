@@ -26,13 +26,17 @@ const SUB = 'text-caption text-sub wrap-anywhere'
 const META = 'text-meta text-dim tabular-nums'
 const FOOTER = 'flex items-center justify-between gap-8'
 const ICON_BUTTON =
-  '-mt-4 -mr-6 inline-flex size-26 shrink-0 items-center justify-center rounded-7 text-sub hover:bg-control'
+  'inline-flex size-26 shrink-0 items-center justify-center rounded-7 text-sub hover:bg-control'
 const LINK = 'text-caption font-semibold text-ink underline underline-offset-3'
 /* 먹 면 위 흰 포커스 선은 Button 의 주 버튼과 같다 */
 const SPEAKERS_BUTTON =
   'inline-flex h-32 items-center justify-center rounded-9 bg-accent-solid px-12 text-[13px] font-semibold whitespace-nowrap text-surface hover:bg-accent focus-visible:outline-surface focus-visible:-outline-offset-3'
 const PILL =
-  'pointer-events-auto inline-flex h-34 items-center gap-8 rounded-999 bg-ink px-14 text-caption font-semibold text-surface focus-visible:outline-surface focus-visible:-outline-offset-3'
+  'pointer-events-auto inline-flex h-34 items-center rounded-999 bg-ink pr-4 text-caption font-semibold text-surface'
+const PILL_TOGGLE =
+  'inline-flex h-full min-w-0 items-center gap-8 rounded-999 pl-14 pr-8 focus-visible:outline-surface focus-visible:-outline-offset-3'
+const PILL_DISMISS =
+  'inline-flex size-26 shrink-0 items-center justify-center rounded-999 text-surface hover:bg-surface/15 focus-visible:outline-surface focus-visible:-outline-offset-3'
 
 const SEGMENT: Record<ProcessingStepState, string> = {
   done: 'bg-ink',
@@ -89,29 +93,32 @@ export function ProcessingToastCard({
     <div className="flex flex-col items-end">
       <p ref={status} role="status" className="sr-only" />
       {(signal.kind === 'processing' || signal.kind === 'speakers') && collapsed ? (
-        <button
-          type="button"
-          ref={toggleButton}
-          className={PILL}
-          aria-expanded={false}
-          onClick={() => toggle(false)}
-        >
-          <span aria-hidden="true" className="size-6 shrink-0 rounded-999 bg-accent-signal" />
-          {signal.kind === 'processing' ? (
-            <>
-              정리 중
-              {signal.steps === null ? null : (
-                <span className="font-normal text-inactive tabular-nums">
-                  {signal.doneCount}/{signal.steps.length}
-                </span>
-              )}
-            </>
-          ) : (
-            SPEAKERS_NEEDED_TITLE
-          )}
-          <Icon name="chevron-up" size={14} />
-          <span className="sr-only">펼치기</span>
-        </button>
+        <div role="group" aria-label={`${signal.title} 정리 알림`} className={PILL}>
+          <button
+            type="button"
+            ref={toggleButton}
+            className={PILL_TOGGLE}
+            aria-expanded={false}
+            onClick={() => toggle(false)}
+          >
+            <span aria-hidden="true" className="size-6 shrink-0 rounded-999 bg-accent-signal" />
+            {signal.kind === 'processing' ? (
+              <>
+                정리 중
+                {signal.steps === null ? null : (
+                  <span className="font-normal text-inactive tabular-nums">
+                    {signal.doneCount}/{signal.steps.length}
+                  </span>
+                )}
+              </>
+            ) : (
+              SPEAKERS_NEEDED_TITLE
+            )}
+            <Icon name="chevron-up" size={14} />
+            <span className="sr-only">펼치기</span>
+          </button>
+          <DismissButton onDismiss={actions.onDismiss} appearance="pill" />
+        </div>
       ) : (
         <Card
           signal={signal}
@@ -145,7 +152,10 @@ function Card({
               <span aria-hidden="true" className="size-6 shrink-0 rounded-999 bg-ink" />
               <span className="min-w-0 wrap-anywhere">{signal.title} 정리 중</span>
             </p>
-            <CollapseButton toggleButton={toggleButton} onCollapse={onCollapse} />
+            <div className="-mt-4 -mr-6 flex shrink-0 gap-2">
+              <CollapseButton toggleButton={toggleButton} onCollapse={onCollapse} />
+              <DismissButton onDismiss={onDismiss} />
+            </div>
           </div>
           <p className={SUB}>{signal.sentence}</p>
           {/* 칸 수는 회의 출처마다 다르다 — 녹음 셋, 채팅 둘. 출처를 모르면 칸·수를 그리지 않는다 (#483) */}
@@ -173,7 +183,10 @@ function Card({
         <section aria-label={SPEAKERS_NEEDED_TITLE} className={`${CARD} ${ATTENTION}`}>
           <div className={TOP}>
             <p className={`${TITLE} text-accent`}>{SPEAKERS_NEEDED_TITLE}</p>
-            <CollapseButton toggleButton={toggleButton} onCollapse={onCollapse} />
+            <div className="-mt-4 -mr-6 flex shrink-0 gap-2">
+              <CollapseButton toggleButton={toggleButton} onCollapse={onCollapse} />
+              <DismissButton onDismiss={onDismiss} />
+            </div>
           </div>
           <p className={SUB}>{signal.title} · 누가 말했는지 정하면 정리가 이어져요</p>
           <div className={FOOTER}>
@@ -189,7 +202,9 @@ function Card({
         <section aria-label={PROCESSING_DONE_TITLE} className={`${CARD} ${NEUTRAL}`}>
           <div className={TOP}>
             <p className={`${TITLE} text-ink`}>{PROCESSING_DONE_TITLE}</p>
-            <DismissButton onDismiss={onDismiss} />
+            <div className="-mt-4 -mr-6">
+              <DismissButton onDismiss={onDismiss} />
+            </div>
           </div>
           <p className={SUB}>{signal.title}</p>
           <div className="flex justify-end">
@@ -204,7 +219,9 @@ function Card({
         <section aria-label={PROCESSING_FAILED_TITLE} className={`${CARD} ${NEUTRAL}`}>
           <div className={TOP}>
             <p className={`${TITLE} text-ink`}>{PROCESSING_FAILED_TITLE}</p>
-            <DismissButton onDismiss={onDismiss} />
+            <div className="-mt-4 -mr-6">
+              <DismissButton onDismiss={onDismiss} />
+            </div>
           </div>
           <p className={SUB}>
             {signal.title} · {signal.description}
@@ -235,9 +252,20 @@ function CollapseButton({
   )
 }
 
-function DismissButton({ onDismiss }: { onDismiss: () => void }) {
+function DismissButton({
+  onDismiss,
+  appearance = 'card',
+}: {
+  onDismiss: () => void
+  appearance?: 'card' | 'pill'
+}) {
   return (
-    <button type="button" className={ICON_BUTTON} aria-label="닫기" onClick={onDismiss}>
+    <button
+      type="button"
+      className={appearance === 'pill' ? PILL_DISMISS : ICON_BUTTON}
+      aria-label="닫기"
+      onClick={onDismiss}
+    >
       <Icon name="close" size={14} />
     </button>
   )

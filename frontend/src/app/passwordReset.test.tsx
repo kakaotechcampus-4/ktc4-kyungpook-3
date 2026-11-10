@@ -374,7 +374,13 @@ const OTHER_TOKEN = 'mock-reset-minsu'
 function addOtherAccount(): void {
   db.accounts.push({
     session: {
-      user: { user_id: 'us_02', email: 'minsu@example.com', name: '박민수', avatar_url: null },
+      user: {
+        user_id: 'us_02',
+        username: 'minsu',
+        email: 'minsu@example.com',
+        name: '박민수',
+        avatar_url: null,
+      },
       workspace_count: 0,
       last_workspace_id: null,
     },

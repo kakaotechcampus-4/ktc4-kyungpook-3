@@ -1,5 +1,5 @@
 import type { DiscordUser, Member } from '@/entities/member'
-import { buildMappingRows, findMappingIssues, planRow } from './memberMapping'
+import { buildMappingRows, findMappingIssues, planRow, suggestedMemberNames } from './memberMapping'
 import type { MappingOperation, MappingRow } from './memberMapping'
 
 const member = (id: string, displayName: string, discordUserId: string | null): Member => ({
@@ -327,5 +327,31 @@ describe('PM 을 골라 잇기 (#228)', () => {
     ])
     expect(findMappingIssues(rows, members).size).toBe(0)
     expect(save(rows, members).sent).toEqual([])
+  })
+})
+
+describe('이름 칸 제안 (#613)', () => {
+  const pm: Member = { ...member('mb_01', '최진호', null), role: 'pm' }
+  const members = [
+    pm,
+    member('mb_02', '김서연', null),
+    member('mb_03', '박민수', null),
+    member('mb_04', '이재환', '1126'),
+  ]
+  const row = (discordUserId: string, name: string, pmMemberId?: string): MappingRow => ({
+    discordUserId,
+    username: discordUserId,
+    name,
+    ...(pmMemberId ? { pmMemberId } : {}),
+  })
+
+  it('연결 안 된 일반 팀원만 제안한다 — PM 과 이미 연결된 팀원은 빠진다', () => {
+    expect(suggestedMemberNames(members, [row('1123', '')], 0)).toEqual(['김서연', '박민수'])
+  })
+
+  it('다른 줄에 적은 이름은 빼고, 이 줄의 이름과 PM 을 체크한 줄의 이름은 빼지 않는다', () => {
+    const rows = [row('1123', '김서연'), row('1124', ' 박민수 '), row('1125', '김서연', 'mb_01')]
+    expect(suggestedMemberNames(members, rows, 0)).toEqual(['김서연'])
+    expect(suggestedMemberNames(members, rows, 2)).toEqual([])
   })
 })

@@ -3,16 +3,19 @@ import type {
   InboxDto,
   MessageDto,
   ReminderDto,
-  ReminderEvidenceDto,
   ReminderWithBundleDto,
   ThreadDetailDto,
   ThreadSummaryDto,
 } from '@/shared/types/api/message'
+
+type ReminderEvidenceDto = NonNullable<ReminderDto['evidence']>
 import type { TaskHistoryDto } from '@/shared/types/api/task'
 import type {
   MockBundle,
+  MockMessageResponse,
   MockMessageThread,
   MockReminder,
+  MockReminderResponse,
   MockThreadMessage,
 } from './fixtures/message'
 import type { MockNotification } from './fixtures/notification'
@@ -153,7 +156,7 @@ export function reminderDto(
   reminder: MockReminder,
   threadId: string,
   context: ReasonContext,
-): ReminderDto {
+): MockReminderResponse {
   const task = taskNow(reminder, context)
   return {
     reminder_id: reminder.reminder_id,
@@ -216,7 +219,7 @@ export function bundleDto(bundle: MockBundle, context: ReasonContext): BundleDto
   }
 }
 
-function messageDto(thread: MockMessageThread, index: number): MessageDto {
+function messageDto(thread: MockMessageThread, index: number): MockMessageResponse {
   const message = thread.messages[index]
   return {
     ...message,

@@ -22,6 +22,7 @@ from app.models import (
     Workspace,
 )
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 SERVICE_TOKEN = "test-service-token"
 SERVICE_HEADERS = {"X-Service-Token": SERVICE_TOKEN}
@@ -60,8 +61,8 @@ def seed(db):
     db.flush()
 
     expires = datetime.now(timezone.utc) + timedelta(days=1)
-    pm_user = User(email="pm@example.com", name="pm")
-    member_user = User(email="member@example.com", name="member")
+    pm_user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
+    member_user = User(username=username_for("member@example.com"), email="member@example.com", name="member")
     db.add_all([pm_user, member_user])
     db.flush()
     db.add_all([

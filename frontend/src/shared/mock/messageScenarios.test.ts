@@ -9,10 +9,12 @@ import type {
   ThreadSummaryDto,
 } from '@/shared/types/api/message'
 import type { ListDto } from '@/shared/types/api/envelope'
-import type { AttributionResponseDto, ReplyAttributionDto } from '@/shared/types/api/reply'
+import type { AttributionResponseDto } from '@/shared/types/api/reply'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { db, initialDb, replaceDb, resetDb } from './db'
 import { messagesMemberThread } from './fixtures/message'
+import type { MockMessageResponse } from './fixtures/message'
+import type { MockAttributionResponse } from './reply-state'
 import { MOCK_DB_STORAGE_KEY, restoreDb, saveDb } from './persistence'
 import { setMockRole } from './sessions'
 import { applyScenario, createScenarioDb } from './scenarios'
@@ -43,7 +45,9 @@ afterEach(() => sessionStorage.clear())
 const base = (workspaceId = 'ws_01') => `/workspaces/${workspaceId}/messages`
 const inbox = (workspaceId = 'ws_01') => fetchDto<InboxDto>(base(workspaceId))
 const thread = (threadId: string, workspaceId = 'ws_01') =>
-  fetchDto<ThreadDetailDto>(`${base(workspaceId)}/threads/${threadId}`)
+  fetchDto<Omit<ThreadDetailDto, 'messages'> & { messages: MockMessageResponse[] }>(
+    `${base(workspaceId)}/threads/${threadId}`,
+  )
 const patchBundle = (bundleId: string, body: unknown, workspaceId?: string) =>
   fetchDto<BundleDto>(`${base(workspaceId)}/bundles/${bundleId}`, jsonRequest('PATCH', body))
 const approve = (bundleId: string, body: unknown, workspaceId?: string) =>
@@ -377,13 +381,13 @@ describe('리마인드 handler — 백엔드 api/messages.py 의 reminders 경�
 })
 
 const attributions = (threadId: string) =>
-  fetchDto<ListDto<ReplyAttributionDto>>(`${base()}/threads/${threadId}/attributions`)
+  fetchDto<ListDto<MockAttributionResponse>>(`${base()}/threads/${threadId}/attributions`)
 const attribute = (messageId: string, body: unknown) =>
   fetchDto<AttributionResponseDto>(
     `${base()}/replies/${messageId}/attribution`,
     jsonRequest('POST', body),
   )
-const NEEDS_PICK: ReplyAttributionDto = {
+const NEEDS_PICK: MockAttributionResponse = {
   message_id: 'mg_05',
   status: 'needs_pm',
   candidates: [

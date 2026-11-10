@@ -19,6 +19,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models import Member, Session as SessionModel, User, Workspace
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
@@ -68,7 +69,7 @@ def db(request):
 def seed(db):
     """워크스페이스 A: PM(pm-token), 디스코드 계정이 연결된 팀원(disc_active), 탈퇴한 팀원(disc_left),
     디스코드 계정이 없는 팀원. 워크스페이스 B는 비어 있다."""
-    user = User(email="pm@example.com", name="pm")
+    user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     db.add(user)
     db.flush()
     db.add(SessionModel(

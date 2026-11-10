@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { myInvitationsQueryOptions } from '@/entities/invitation'
 import type { MyInvitation } from '@/entities/invitation'
+import { sessionQueryOptions } from '@/entities/user'
 import { workspaceListQueryOptions } from '@/entities/workspace'
 import { useInvitationResponse } from '@/features/invitation-respond'
 import { useEnterWorkspace } from '@/features/workspace-switch'
@@ -15,13 +16,15 @@ const NAME = 'text-body font-semibold text-ink'
 const META = 'text-[12px] text-dim'
 
 /**
- * 내 가입 이메일로 온 초대. 수락하면 그 공간에 들어간다 — 공간에 들어가는 길은 useEnterWorkspace 하나다.
- * 거절은 되돌릴 수 없어 먼저 묻는다. 초대도 소속 공간도 없으면 PM 에게 초대를 요청하라고 알린다.
+ * 나에게 온 초대. 수락하면 그 공간에 들어간다 — 공간에 들어가는 길은 useEnterWorkspace 하나다.
+ * 거절은 되돌릴 수 없어 먼저 묻는다. 초대도 소속 공간도 없으면 PM 에게 내 아이디를 알려 초대를 요청하라고 알린다
+ * — PM 은 아이디로 찾아 초대한다 (#632).
  * 소속 공간이 있고 초대가 없으면 아무것도 그리지 않는다. 불러오는 동안도 그리지 않는다.
  */
 export function MyInvitations() {
   const invitations = useQuery(myInvitationsQueryOptions())
   const workspaces = useQuery(workspaceListQueryOptions())
+  const username = useQuery(sessionQueryOptions()).data?.user.username
   const enter = useEnterWorkspace()
   const respond = useInvitationResponse((workspace) => enter(workspace, null))
   const [declining, setDeclining] = useState<MyInvitation | null>(null)
@@ -33,7 +36,11 @@ export function MyInvitations() {
   }
   if (invitations.data.length === 0) {
     return workspaces.data?.length === 0 ? (
-      <p className="text-body text-sub">PM에게 가입한 이메일로 초대를 요청하세요.</p>
+      <p className="text-body text-sub">
+        {username === undefined
+          ? 'PM에게 가입한 아이디를 알려 주고 초대를 요청하세요.'
+          : `PM에게 내 아이디(${username})를 알려 주고 초대를 요청하세요.`}
+      </p>
     ) : null
   }
 

@@ -2,25 +2,35 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.schemas.email import NormalizedEmail
-
 
 class InvitationCreateRequest(BaseModel):
     member_id: str = Field(..., description="초대할 팀원. 로그인 계정이 연결되지 않은 팀원이어야 한다")
-    email: NormalizedEmail = Field(..., description="팀원의 가입 이메일. 소문자로 바꿔 저장한다")
+    user_id: str = Field(..., description="초대할 가입자. GET /users/search 로 아이디를 찾아 고른다")
 
 
 class InvitedUser(BaseModel):
     user_id: str
     name: str
-    email: str
+    email: str | None = None
+
+
+class UserSummary(BaseModel):
+    """초대할 사람을 고를 때 보이는 가입자. 이메일은 싣지 않는다."""
+
+    user_id: str
+    username: str
+    name: str
+
+
+class UserSearchResponse(BaseModel):
+    items: list[UserSummary]
 
 
 class InvitationResponse(BaseModel):
     invitation_id: str
     member_id: str
     member_display_name: str
-    email: str
+    invited_user: UserSummary
     status: str
     invited_by_name: str | None
     accepted_user: InvitedUser | None = Field(

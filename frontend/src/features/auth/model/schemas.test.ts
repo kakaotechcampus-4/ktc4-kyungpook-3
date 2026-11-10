@@ -1,6 +1,7 @@
 import {
   AUTH_MESSAGES,
   forgotPasswordSchema,
+  kakaoProfileSchema,
   loginSchema,
   resetPasswordSchema,
   signupCodeSchema,
@@ -15,7 +16,7 @@ function issues(result: {
   return (result.error?.issues ?? []).map(({ path, message }) => [path.join('.'), message])
 }
 
-const profile = { name: '새 사용자', password: 'pass1234' }
+const profile = { username: 'newuser1', name: '새 사용자', password: 'pass1234' }
 
 describe('회원가입 이메일 단계', () => {
   it('앞뒤 공백을 지운다', () => {
@@ -59,7 +60,7 @@ describe('회원가입 코드 단계', () => {
 })
 
 describe('회원가입 프로필 단계', () => {
-  const valid = { name: '최진호', password: 'abcd1234' }
+  const valid = { username: 'newuser1', name: '최진호', password: 'abcd1234' }
 
   it('이름의 앞뒤 공백을 지운다', () => {
     expect(signupProfileSchema.parse({ ...valid, name: '  최진호 ' })).toEqual(valid)
@@ -91,7 +92,14 @@ describe('회원가입 프로필 단계', () => {
   })
 
   it('약관 동의 칸이 없다', () => {
-    expect(Object.keys(signupProfileSchema.shape)).toEqual(['name', 'password'])
+    expect(Object.keys(signupProfileSchema.shape)).toEqual(['username', 'name', 'password'])
+  })
+
+  it('카카오 가입은 비밀번호를 보지 않는다 (#627)', () => {
+    expect(kakaoProfileSchema.safeParse({ ...valid, password: '' }).success).toBe(true)
+    expect(issues(kakaoProfileSchema.safeParse({ ...valid, name: ' ' }))).toEqual([
+      ['name', AUTH_MESSAGES.nameRequired],
+    ])
   })
 })
 

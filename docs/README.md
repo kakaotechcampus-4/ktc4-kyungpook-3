@@ -39,6 +39,10 @@ Frontend는 [문서 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-
 
 Backend는 [문서 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/README.md), [AI 계약](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/contracts/backend-ai-contract.md), [전체 계획](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/backend-plan.md), [M0~M7 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/README.md)로 구조화했습니다. 전체 계획은 `backend-development-plan.md`에서 이름만 바꿨고, M0~M7의 plan.md는 빈 초기화 파일입니다. AI 문서는 아직 재배치하지 않았습니다.
 
+## 서비스 정책
+
+[정책 확정 내용과 게시 상태](policy/README.md)에서 교육·평가용 시범 운영의 확정 정책, 약관·개인정보처리방침 게시 준비본, 외부 업체 공식 링크와 남은 확인 항목을 볼 수 있습니다.
+
 ## 공통 문서 역할과 양식
 
 아래 경로는 계획·구현·검증 근거를 찾는 공통 규약입니다. 기존 문서 중 역할이 대응되는 부분만 정리하며, 다른 폴더의 존재는 오류가 아닙니다. `<part>`는 실제 파트 경로입니다.

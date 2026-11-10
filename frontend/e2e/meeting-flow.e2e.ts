@@ -170,7 +170,7 @@ test('③ 일반 팀원이 회의 올리기 주소로 바로 들어오면 막히
   page,
 }) => {
   const requests = recordRequests(page)
-  // 셸은 한가할 때 다섯 탭의 첫 데이터를 미리 받는다(#536). 대시보드·팀 화면은 역할과 상관없이 연동 상태를 쓰므로 그 미리 받기도
+  // 셸은 한가할 때 셸 탭의 첫 데이터를 미리 받는다(#536). 대시보드·팀 화면은 역할과 상관없이 연동 상태를 쓰므로 그 미리 받기도
   // `/integrations` 를 부른다. 여기서 보는 것은 업로드 화면의 진입 판정이라, 브라우저가 한가해지지 않는 것처럼 두어 미리 받기를 빼고
   // 화면 자신의 요청만 적는다
   await page.addInitScript(() => {
@@ -226,12 +226,14 @@ test('⑤ 화자 지정 기한 만료는 목록과 상세에 남고 새로고침
   await expect(page.getByRole('heading', { name: '화자 지정 기한이 지났어요' })).toBeVisible(
     FIRST_PAINT,
   )
-  const meetingId = new URL(page.url()).pathname.split('/').pop()
-  const list = page.getByRole('list', { name: '화자 지정 기한 만료' })
+  await page.getByRole('banner').getByRole('link', { name: '회의록', exact: true }).click()
+  const list = page.getByRole('list', { name: '기한 만료' })
   await expect(list.getByRole('link', { name: new RegExp(SHORT_AUDIO.name) })).toBeVisible()
+  await list.getByRole('link', { name: new RegExp(SHORT_AUDIO.name) }).click()
   await expect(
     page.getByRole('region', { name: '회의록 본문' }).getByText(/화자 지정 대기가 7일을 넘어/),
   ).toBeVisible()
+  const meetingId = new URL(page.url()).pathname.split('/').pop()
   await page.reload()
   await expect(page.getByRole('heading', { name: '화자 지정 기한이 지났어요' })).toBeVisible(
     FIRST_PAINT,
@@ -256,6 +258,33 @@ test('⑤ 화자 지정 기한 만료는 목록과 상세에 남고 새로고침
   await expect(page.getByRole('heading', { name: '회의를 올려 주세요' })).toBeVisible(FIRST_PAINT)
 })
 
+test('⑤-1 24시간 동안 가져가지 않은 업로드도 목록과 상세에 남고 다시 업로드할 수 있다 (#598)', async ({
+  page,
+}, testInfo) => {
+  await start(page, 'meeting-fail-unclaimed', UPLOAD)
+  await uploadShortAudio(page)
+
+  await expect(page.getByRole('heading', { name: '정리 시작 기한이 지났어요' })).toBeVisible(
+    FIRST_PAINT,
+  )
+  await page.getByRole('banner').getByRole('link', { name: '회의록', exact: true }).click()
+  const row = page
+    .getByRole('list', { name: '기한 만료' })
+    .getByRole('link', { name: new RegExp(SHORT_AUDIO.name) })
+  await expect(row).toContainText('정리 시작 기한 만료')
+  await row.click()
+  await expect(
+    page
+      .getByRole('region', { name: '회의록 본문' })
+      .getByText(/업로드 뒤 24시간 동안 정리가 시작되지 않아/),
+  ).toBeVisible()
+  await page.reload()
+  await expect(row).toHaveAttribute('aria-current', 'page', FIRST_PAINT)
+  await page.screenshot({ path: testInfo.outputPath('unclaimed-history.png') })
+  await page.getByRole('link', { name: '다시 업로드', exact: true }).click()
+  await expect(page).toHaveURL(UPLOAD)
+})
+
 test('⑥ 음성 처리 실패는 그 사유로 안내한다', async ({ page }) => {
   await start(page, 'meeting-fail-diarize', UPLOAD)
   await uploadShortAudio(page)
@@ -275,9 +304,7 @@ test('⑦ 일반 팀원도 만료 이력을 볼 수 있고 재업로드는 PM에
   )
   await expect(page.getByText('PM에게 파일 재업로드를 요청해 주세요.')).toBeVisible()
   await expect(page.getByRole('link', { name: '다시 업로드', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('list', { name: '화자 지정 기한 만료' })).toContainText(
-    '기획 논의 녹음',
-  )
+  await expect(page.getByRole('list', { name: '기한 만료' })).toContainText('기획 논의 녹음')
 })
 
 test('⑧ 채팅 회의가 정리 중이어도 업로드 화면에 머물고 올릴 수 있다 (#450)', async ({

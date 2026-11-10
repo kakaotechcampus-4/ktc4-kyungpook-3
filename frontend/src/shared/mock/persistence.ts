@@ -29,9 +29,11 @@ export const MOCK_DB_STORAGE_KEY = 'msw-db'
  * 19: 삭제된 회의의 원문 없는 삭제 기록을 저장한다 (#576).
  * 20: 계정 탈퇴의 익명 팀원과 개인정보 없는 정리 영수증을 저장한다 (#575).
  * 21: 사용자별 동의 행과 독립된 서버 판본을 저장한다 (#566).
+ * 22: 프로젝트 맵의 주제·결정·태스크 선(`projectMap`) 칸 추가 (#551).
+ * 23: 초대가 이메일 대신 초대받은 계정(`invited_user_id`)을 가리킨다 (#632).
  * 올리면 e2e/restore.e2e.ts 와 src/shared/mock/taskScenarios.test.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
  */
-export const MOCK_DB_VERSION = 21
+export const MOCK_DB_VERSION = 23
 
 interface StoredDb {
   version: number
@@ -49,7 +51,9 @@ function hasStrings(value: unknown, keys: readonly string[]): boolean {
 function isSession(value: unknown): boolean {
   return (
     isRecord(value) &&
-    hasStrings(value.user, ['user_id', 'email', 'name']) &&
+    isRecord(value.user) &&
+    hasStrings(value.user, ['user_id', 'username', 'name']) &&
+    (typeof value.user.email === 'string' || value.user.email === null) &&
     typeof value.workspace_count === 'number'
   )
 }
@@ -137,7 +141,7 @@ function isMockDb(value: unknown): value is MockDb {
       (account) =>
         isRecord(account) &&
         isSession(account.session) &&
-        typeof account.password === 'string' &&
+        (typeof account.password === 'string' || account.password === null) &&
         Array.isArray(account.workspaceIds) &&
         isRecord(account.memberIds),
     ) &&
@@ -148,6 +152,9 @@ function isMockDb(value: unknown): value is MockDb {
         Array.isArray(workspace.onboarding.steps),
     ) &&
     state.members.every((member) => hasStrings(member, ['member_id', 'workspace_id'])) &&
+    state.invitations.every((invitation) =>
+      hasStrings(invitation, ['invitation_id', 'workspace_id', 'member_id', 'invited_user_id']),
+    ) &&
     Object.values(state.integrations).every(
       (integration) =>
         hasStrings(integration.discord, ['status']) &&
@@ -159,6 +166,9 @@ function isMockDb(value: unknown): value is MockDb {
       hasStrings(channel, ['channel_id', 'name', 'access']),
     ) &&
     isMeetingFlow(state.meetingFlow) &&
+    Array.isArray(state.projectMap.topics) &&
+    Array.isArray(state.projectMap.decisions) &&
+    Array.isArray(state.projectMap.taskLinks) &&
     isPasswordReset(state.passwordReset) &&
     isSignupVerification(state.signupVerification) &&
     (state.kakao.pending === null || hasStrings(state.kakao.pending, ['kakaoId'])) &&

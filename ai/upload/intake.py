@@ -252,7 +252,8 @@ def _step(recordings_dir, d, rec, *, client, diarizer, now, timezone, fresh) -> 
         _set(d, rec, "converted")
         return Progress(mid, "converted")
     if state == "converted":
-        rec["job_id"] = diarizer.submit(_wav(d))
+        # 참석자는 워크스페이스 멤버만 고를 수 있어 외부 화자가 더 있을 수 있다. 그래서 정확한 수가 아니라 최소로 넘긴다
+        rec["job_id"] = diarizer.submit(_wav(d), min_speakers=len(item.get("attendees") or []))
         rec["submitted_at"] = _iso(now())
         _set(d, rec, "submitted")
         return Progress(mid, "submitted")

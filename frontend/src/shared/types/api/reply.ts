@@ -4,28 +4,28 @@ import { z } from 'zod'
  * 리마인드 답장 판단 (계약 §5.7 「리마인드 답장 판단」). backend/app/schemas/reply.py 와 칸을 1:1 로 맞춘다
  */
 
-export interface TaskRefDto {
-  task_id: string
-  title: string
-}
+const taskRefSchema = z.object({ task_id: z.string(), title: z.string() })
+export type TaskRefDto = z.infer<typeof taskRefSchema>
 
-/** 어느 태스크인지 PM 이 골라야 하는 답장. 지운 태스크는 후보에 없다 */
-export interface NeedsPickAttributionDto {
-  message_id: string
-  status: 'needs_pm'
-  candidates: TaskRefDto[]
-  task: null
-}
+/**
+ * 답장이 어느 태스크에 대한 것인지 (`ReplyAttribution`). `status` 가 PM 이 고를 차례인지 정해 모르는 값이면 응답 전체가
+ * `INVALID_RESPONSE` 다 (#348). needs_pm 은 후보가 있고(지운 태스크는 없다), resolved 는 고른 태스크다(null 이면 해당 없음)
+ */
+export const replyAttributionSchema = z.discriminatedUnion('status', [
+  z.object({
+    message_id: z.string(),
+    status: z.literal('needs_pm'),
+    candidates: z.array(taskRefSchema),
+  }),
+  z.object({
+    message_id: z.string(),
+    status: z.literal('resolved'),
+    task: taskRefSchema.nullable(),
+  }),
+])
+export type ReplyAttributionDto = z.infer<typeof replyAttributionSchema>
 
-/** PM 이 고른 답장. `task` 가 null 이면 해당 없음이다 */
-export interface ResolvedAttributionDto {
-  message_id: string
-  status: 'resolved'
-  candidates: null
-  task: TaskRefDto | null
-}
-
-export type ReplyAttributionDto = NeedsPickAttributionDto | ResolvedAttributionDto
+export const replyAttributionListSchema = z.object({ items: z.array(replyAttributionSchema) })
 
 export interface AttributionRequestDto {
   /** null 이면 해당 없음 */

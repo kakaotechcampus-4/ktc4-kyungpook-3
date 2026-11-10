@@ -698,7 +698,7 @@ def _reply_guide(member: Member, thread: MessageThread) -> str:
     if not base:
         logger.warning("APP_BASE_URL 이 비어 DM 안내에 링크를 넣지 못한다")
     if member.user_id is None:
-        guide, path = "웹 답장을 하려면 PM 에게 초대를 요청하고, 초대받은 이메일로 가입해 주세요.", "/signup"
+        guide, path = "웹 답장을 하려면 가입한 뒤 PM 에게 아이디를 알려 초대를 받아 주세요.", "/signup"
     else:
         guide = "웹에서 답장해 주세요." if base else "웹사이트에서 답장해 주세요."
         path = f"/workspaces/{_segment(thread.workspace_id)}/messages/threads/{_segment(thread.thread_id)}"

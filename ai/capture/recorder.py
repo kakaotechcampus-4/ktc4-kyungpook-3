@@ -111,7 +111,9 @@ RECOVERY_BACKOFF_S = float(os.environ.get("MM_RECOVERY_BACKOFF_S", "60"))      #
 RECOVERY_BACKOFF_CEIL_S = 3600.0                                                # 두 배로 늘려도 한 시간에서 멈춘다
 # 판단 경로에서 finding 몇 개만 실패했을 때 인계를 미루고 파이프라인을 다시 돌리는 횟수. 상한에 닿으면 가장 나은
 # 결과로 인계한다. 실패한 finding 만 다시 돌리는 진입점이 파이프라인에 없어 통째로 다시 돈다(docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md)
-EXTRACT_RETRY_MAX = int(os.environ.get("MM_EXTRACT_RETRY_MAX") or "2")       # .env 에 빈 값으로 적혀 있어도 기본값
+# 기본 0: 판단·초안은 실패한 호출을 그 자리에서 한 번 더 한다. 그 뒤에도 남는 실패는 같은 입력에서 되풀이돼, 2 일 때
+# 4분 회의 하나가 통째 재실행 두 번과 대기로 6분 30초를 더 썼다(#624)
+EXTRACT_RETRY_MAX = int(os.environ.get("MM_EXTRACT_RETRY_MAX") or "0")       # .env 에 빈 값으로 적혀 있어도 기본값
 # 판단 경로가 매니페스트에 적는 칸. 전사가 바뀌거나 옛 경로로 다시 뽑으면 같이 버린다
 _JUDGE_KEYS = ("items", "extract_failures", "extract_runs", "extract_partial", "extract_error", "extract_dropped",
                "judge_runs")

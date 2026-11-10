@@ -5,6 +5,7 @@ repo_url: https://github.com/kakaotechcampus-4/ktc4-kyungpook-3
 docs_dir: docs
 exclude_docs: |
   /README.md
+  /policy/README.md
 theme:
   name: material
   language: ko

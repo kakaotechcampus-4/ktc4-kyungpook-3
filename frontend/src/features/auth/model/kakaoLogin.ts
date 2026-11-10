@@ -1,4 +1,4 @@
-import { readOAuthReason, readOAuthResult } from '@/shared/lib/oauth'
+import { readOAuthResult } from '@/shared/lib/oauth'
 import type { OAuthOutcome } from '@/shared/lib/oauth'
 
 const PROVIDER = 'kakao'
@@ -12,8 +12,6 @@ export interface LoginNotice {
 const NO_NOTICE: LoginNotice = { status: null, error: null }
 
 const FAILED = '카카오 로그인에 실패했어요. 다시 시도해 주세요.'
-
-const EMAIL_EXISTS = '이미 가입된 이메일이에요. 이메일로 로그인해 주세요.'
 
 const CANCELLED = '카카오 로그인을 취소했어요.'
 
@@ -38,10 +36,7 @@ export function readKakaoNotice(params: URLSearchParams): LoginNotice {
     case 'cancelled':
       return { status: CANCELLED, error: null }
     case 'failed':
-      return {
-        status: null,
-        error: readOAuthReason(params) === 'email_exists' ? EMAIL_EXISTS : FAILED,
-      }
+      return { status: null, error: FAILED }
     default:
       return NO_NOTICE
   }

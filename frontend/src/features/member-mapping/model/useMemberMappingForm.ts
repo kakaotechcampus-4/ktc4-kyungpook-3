@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { z } from 'zod'
 import { memberListQueryOptions } from '@/entities/member'
@@ -47,6 +47,8 @@ export interface MemberMappingForm extends AppForm<MappingFormValues> {
   initialRows: MappingRow[]
   /** PM 팀원. 먼저 만들어진 순서다 — 첫째가 워크스페이스를 만든 PM 이고 체크박스가 그 PM 을 가리킨다 (#228) */
   pms: Member[]
+  /** 지금 팀원 목록. 이름 칸 제안에 쓴다 */
+  members: Member[]
   /** 지금 입력한 줄 */
   rows: FormRow[]
   /** 저장할 줄 수 */
@@ -75,6 +77,7 @@ export function useMemberMappingForm(
   pms: Member[],
 ): MemberMappingForm {
   const queryClient = useQueryClient()
+  const memberList = useQuery(memberListQueryOptions(workspaceId))
   const { form, submit } = useAppForm(schema, {
     rows: initialRows.map((row) => ({ ...row, pmMemberId: row.pmMemberId ?? null })),
   })
@@ -142,6 +145,7 @@ export function useMemberMappingForm(
     submit,
     initialRows,
     pms,
+    members: memberList.data ?? [],
     rows,
     filled: rows.filter(isFilled).length,
     formError,

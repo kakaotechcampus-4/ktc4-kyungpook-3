@@ -15,6 +15,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base
 from app.models import User
 from app.services.sessions import find_session, hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 VERSIONS = Path(__file__).resolve().parents[1] / "migrations" / "versions"
@@ -51,7 +52,7 @@ def engine(request):
         eng = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(eng)
     with eng.begin() as conn:
-        conn.execute(User.__table__.insert().values(user_id="user-0", email="a@x.com", name="n"))
+        conn.execute(User.__table__.insert().values(username=username_for("a@x.com"), user_id="user-0", email="a@x.com", name="n"))
     try:
         yield eng
     finally:

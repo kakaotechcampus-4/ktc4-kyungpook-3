@@ -61,12 +61,31 @@ function PolicyPage({ kind }: { kind: PolicyKind }) {
                 <section key={section.title} className="flex flex-col gap-12">
                   <h2 className="text-lead font-semibold">{section.title}</h2>
                   {section.paragraphs.map((paragraph) => (
-                    <p key={paragraph} className="text-body text-sub">
+                    <p key={paragraph} className="text-body leading-relaxed break-words text-sub">
                       {paragraph}
                     </p>
                   ))}
                 </section>
               ))}
+              {published.references.length > 0 ? (
+                <section aria-label="공식 참고 자료" className="flex flex-col gap-12">
+                  <h2 className="text-lead font-semibold">공식 참고 자료와 문의</h2>
+                  <ul className="flex flex-col gap-10">
+                    {published.references.map(({ label, href }) => (
+                      <li key={href}>
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-body break-words text-sub underline underline-offset-3 hover:text-ink"
+                        >
+                          {label}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
             </>
           )}
         </section>

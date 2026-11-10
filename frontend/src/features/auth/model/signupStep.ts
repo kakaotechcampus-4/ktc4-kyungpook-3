@@ -1,24 +1,30 @@
-import type { KakaoPending, SignupCodeProblem } from '@/entities/user'
+import type { SignupCodeProblem } from '@/entities/user'
 
-/**
- * 가입 단계. 증명 토큰은 `profile` 에만 있다. 카카오 연결 여부는 여기 두지 않고 주소(`kakao=1`)에서 읽는다 —
- * 메일 앱을 다녀오며 새로고침돼도 연결이 풀리지 않게 한다.
- * `verificationToken` 이 null 이면 카카오가 인증한 이메일이고, 서버가 그 값을 쿠키에서 읽는다.
- */
+/** 이메일 가입 단계. 증명 토큰은 `profile` 에만 있다. 카카오 가입은 이 단계를 타지 않는다 (#627) */
 export type SignupStep =
   | { step: 'email' }
   | { step: 'code'; email: string; resendAt: number }
-  | { step: 'profile'; email: string; verificationToken: string | null; emailLocked: boolean }
+  | { step: 'profile'; email: string; verificationToken: string }
 
-/** 카카오가 인증한 이메일이 있으면 코드 없이 프로필부터다. 그 밖에는 이메일부터다 */
-export function firstSignupStep(pending: KakaoPending | null): SignupStep {
-  return pending?.email
-    ? { step: 'profile', email: pending.email, verificationToken: null, emailLocked: true }
-    : { step: 'email' }
-}
-
-/** 카카오로 온 사람이 이미 있는 이메일을 넣었다. 그 계정에 잇지 않으므로 다른 이메일을 받는다 */
-export const KAKAO_EMAIL_TAKEN_MESSAGE = '이미 가입된 이메일이에요. 다른 이메일을 입력해 주세요.'
+/**
+ * 가입 마지막 단계의 종류. 이메일 가입은 인증한 이메일을 보이고 비밀번호를 받는다.
+ * 카카오 가입은 이메일·비밀번호가 없고 이름을 닉네임으로 채운다. 종류마다 되돌아갈 길이 다르다
+ */
+export type SignupProfile =
+  | {
+      kind: 'email'
+      email: string
+      verificationToken: string
+      onChangeEmail: () => void
+      /** 증명이 만료됐다. 이메일 인증부터 다시 한다 */
+      onVerificationLost: (message: string) => void
+    }
+  | {
+      kind: 'kakao'
+      nickname: string | null
+      /** 가입 요청이 대기 만료로 거절됐다 */
+      onLinkExpired: (error: unknown) => void
+    }
 
 const NEW_CODE_NEEDED = '새 코드를 받아 주세요.'
 

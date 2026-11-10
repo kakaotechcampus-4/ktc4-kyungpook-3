@@ -149,7 +149,7 @@ function holdScript(mode: Mode): string {
     const mode = ${JSON.stringify(mode)}
     const auth = (url) => {
       const path = new URL(url, window.location.href).pathname
-      return path === '/api/v1/auth/me' || path === '/api/v1/workspaces'
+      return path === '/api/v1/auth/me' || path === '/api/v1/workspaces' || path === '/api/v1/consents/me'
     }
     const hold = (url) => {
       if (!url.includes('/api/v1/') || mode === 'loaded') return false

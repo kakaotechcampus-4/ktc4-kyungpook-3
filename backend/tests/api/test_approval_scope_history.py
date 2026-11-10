@@ -21,6 +21,7 @@ from app.models import (
     Workspace,
 )
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 SENTENCE = "소셜 로그인은 이번 범위에서 뺀다"
@@ -72,7 +73,7 @@ def seed(db):
     ws = Workspace(name="A")
     db.add(ws)
     db.flush()
-    pm_user = User(email="pm@example.com", name="pm")
+    pm_user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     db.add(pm_user)
     db.flush()
     db.add(SessionModel(

@@ -67,7 +67,7 @@ describe('처리 추적 — 화자 지정 대기', () => {
     awaitingUpload()
     const log = recordRequests()
     const app = renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(MEETING))
     await waitFor(() => expect(speakerToasts()).toHaveLength(1))
     const before = detailRequests(log).length

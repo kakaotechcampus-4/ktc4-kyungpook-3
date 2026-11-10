@@ -238,6 +238,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
     "task_confidence": 0.0 | null,            // legacy만 보낸다. 보내지 않으면 null(측정 안 함)
     "assignee_raw": "…" | null, "assignee_type": "first" | "second" | "thirdname" | "thirdpronoun" | "thirdrole" | "group" | "none" | null,   // BE가 저장한다. 그 밖의 값은 NULL로 저장(요청은 받음)
     "due_date": "YYYY-MM-DD" | null, "due_raw": "…" | null, "due_confidence": 0.0 | null,
+    "due_cleared": true | false,              // update만. 대상 task의 마감을 없애자는 결정. 생략하면 false. create·merge에 오면 400 없이 무시한다(#624)
     "evidence_quote": "…" | null, "evidence_speaker": "<Discord uid>" | null, "evidence_at_ms": 0 | null,
     "evidence_speaker_member_id": "<멤버 ID>" | null,   // 선택. 근거 문장을 말한 팀원의 멤버 ID
     "evidence_seqs": [12, 13, 15] | null,     // 근거 발화의 seq(발화 저장 API의 seq). 0 ~ 2^31-1. 모르면 [] 또는 생략
@@ -268,6 +269,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | merge 처리 | `target_approval_id`의 카드가 같은 워크스페이스의 승인 대기 task_create 카드면 새 카드·task를 만들지 않고 그 카드에 합친다(팀원이 직접 만든 카드도 받는다). 마감(`due_date`·`due_raw`)은 새 값이 있을 때만, `status`는 보냈을 때만 덮어쓴다(`status`는 카드에 표시용으로만 남고, 승인으로 만드는 task 는 항상 `todo`다). 담당자(`assignee_member_id`·`assignee_raw`)와 카드 gate는 `category`가 `assignee`일 때만 덮어쓴다. 이때 카드에 있던 담당자가 지워지면(담당자 표현이 없는 none·group 항목) 카드 gate 는 `hold`가 된다. 그 밖의 merge 항목은 `assignee_type`·`assignee_raw`를 보지 않는다(별칭을 찾지 않고 판정 로그도 남기지 않으며, 항목의 gate 는 `review`다. AI 는 보내지 않아도 된다). `doc_text`는 " / "로 이어 붙인다. 제목과 대표 근거는 처음 회의 것 그대로이고, 합친 항목의 근거는 payload `merged_items`에 쌓인다. 한 요청에서 같은 카드에 여러 번 합치면 항목 순서대로 덮어쓴다. 마감 지우기는 merge로 전달되지 않는다. 합친 항목의 gate는 `auto`가 되지 않고(auto면 `review`, `hold`는 그대로) judge auto 조건을 보지 않는다 |
 | merge 대상을 쓸 수 없을 때 | `target_approval_id`가 없거나, 카드가 없거나, 다른 워크스페이스거나, task_create가 아니거나, 이미 승인·반려됐거나, payload가 깨졌으면 400 없이 그 항목을 create로 처리한다(새 카드). 이때 gate가 `auto`면 `review`로 내린다. 검색 뒤 PM이 먼저 승인한 경우 등이다. BE 로그에 `merge_target_unavailable`과 이유가 남는다 |
 | update 처리 | 게이트·승인 생성 규칙과 `target_snapshot`의 충돌 기준값은 [Backend README 유사 task 검색과 AI 판단 접수](../../README.md#유사-task-검색과-ai-판단-접수)를 따른다 |
+| update 마감 해제 | `due_date: null`은 "바꾸지 않음"이다. 대상 task의 마감을 없애자는 결정은 `due_cleared: true`로 보낸다. 대상 task에 마감이 있으면 승인 요청 payload에 `"due_date": null`을 싣고 `base_values.due_date`에 원래 마감을 남긴다. 승인하면 task 마감과 Notion 날짜가 비워진다. 마감이 없던 task면 바뀌는 것이 없다. `due_date`가 함께 오면 `due_date`를 따른다. update라 게이트는 항상 `review`다. AI는 대상 task의 마감 유무와 상관없이 결정을 그대로 보내고 BE가 등록 시점 값으로 거른다(#624). 답장 판단의 `due_clear` 줄은 지금처럼 알리기만 한다 |
 | `target_snapshot.title` | 유사 검색 응답의 `title`을 그대로 보낸다. 제목을 바꾸는 값이 아니라 승인 때 대상 task가 그대로인지 확인하는 기준이다. 없거나 null이면 등록 시점의 제목을 쓴다. 필드 모양은 #185에서 AI·BE가 정했다 |
 | 확신도 | `task_confidence`·`due_confidence`를 보내지 않으면 null(측정 안 함)로 저장하고 0.0(측정했는데 낮음)과 구분한다. 할 일 확신도가 null이면 항목 확신도도 null이다 |
 | 추출 경로 | AI가 경로를 따로 보내지 않으므로 BE가 항목이 보낸 키로 가린다. `action`·`category`·`doc_text` 중 하나라도 보냈으면 judge, 아니고 `task_confidence`·`due_confidence`를 보냈으면 legacy, 둘 다 아니면 판별 불가다. 모든 항목이 같은 경로일 때만 추출의 `extraction_path`에 기록하고, 항목이 없거나 섞였거나 판별 불가 항목이 있으면 null이다(#201) |
@@ -626,7 +628,7 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 - `body` 는 저장하지 않는다. 저장된 메시지 본문과 웹 푸시 미리보기는 승인된 묶음 문구 또는 PM 이 쓴 글 그대로다.
 - 리마인드의 `body` 첫 줄은 `{워크스페이스 이름}에서 답장을 기다리는 리마인드가 {n}개 있어요.` 다. `n` 은 그 대화의 열린 시계와 이번 묶음의 리마인드를 합쳐 태스크로 중복을 뺀 수다. 열린 시계 중 PM 확인 대기 등으로 일시 정지된 시계(`paused_at` 있음), 지운 태스크, 끝난 태스크, 담당이 대화 주인이 아닌 태스크, 사람이 막힘을 푼 태스크는 뺀다. 태스크 없는 리마인드는 하나씩 센다. 봇이 가져간 뒤에 시계가 열릴 수 있어 이번 묶음을 직접 합친다.
 - 계정이 연결된 팀원은 그다음 줄이 `웹에서 답장해 주세요.` 와 대화 링크(`{web_url}/workspaces/{workspace_id}/messages/threads/{thread_id}`)다. `web_url` 이 없으면 `웹사이트에서 답장해 주세요.` 한 줄만 싣고 BE 가 경고 로그를 남긴다.
-- 계정이 없는 팀원(`member.user_id` 없음, 연결을 끊은 팀원 포함)은 대화 링크가 403 이다. 가입만으로는 팀원과 계정이 이어지지 않으므로 `웹 답장을 하려면 PM 에게 초대를 요청하고, 초대받은 이메일로 가입해 주세요.` 와 `{web_url}/signup` 을 준다. `web_url` 이 없으면 링크 줄을 뺀다.
+- 계정이 없는 팀원(`member.user_id` 없음, 연결을 끊은 팀원 포함)은 대화 링크가 403 이다. 가입만으로는 팀원과 계정이 이어지지 않으므로 `웹 답장을 하려면 가입한 뒤 PM 에게 아이디를 알려 초대를 받아 주세요.` 와 `{web_url}/signup` 을 준다. `web_url` 이 없으면 링크 줄을 뺀다.
 
 - **한 메시지는 한 번만 준다.** 가져간 메시지는 다시 나오지 않는다. 동시에 두 번 불러도 같은 메시지가 두 곳에 가지 않는다.
 - 가져간 뒤 10분 안에 결과 보고가 없으면 BE 가 못 보냄(`unknown`)으로 닫고 다시 주지 않는다. 같은 DM 이 두 번 가는 것을 막으려는 것이다. 봇이 재시작하면 가져갔지만 보고하지 못한 메시지는 보내지 말고, 보냈다면 결과를 보고한다(늦은 보고는 받는다).

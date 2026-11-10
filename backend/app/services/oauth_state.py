@@ -33,8 +33,6 @@ MIN_SECRET_LENGTH = 32
 MAX_RETURN_PATH_LENGTH = 512
 # 프론트(shared/lib/oauth/returnParams.ts)가 읽는 결과 값이다.
 OAUTH_RESULTS = ("success", "cancelled", "failed")
-# 프론트가 문구를 달리 보여 주는 실패 이유만 둔다. 나머지 원인은 로그에만 남긴다.
-OAUTH_REASONS = ("email_exists",)
 
 
 class OAuthConfigError(Exception):
@@ -167,7 +165,7 @@ def verify_state(provider: str, token: str, *, now: float | None = None) -> Stat
     return StatePayload(workspace_id, user_id, safe_return_path(return_path), nonce)
 
 
-def frontend_return_url(provider: str, path: str, result: str, reason: str | None = None) -> str:
+def frontend_return_url(provider: str, path: str, result: str) -> str:
     """앱의 복귀 화면 주소. 프론트가 `?oauth=<provider>&oauth_result=...`를 읽는다.
 
     프론트와 API는 같은 주소에서 서빙된다(백엔드에 CORS가 없고 프론트는 같은 주소의 `/api`를
@@ -175,8 +173,6 @@ def frontend_return_url(provider: str, path: str, result: str, reason: str | Non
     """
     if result not in OAUTH_RESULTS:
         raise ValueError(f"result는 {OAUTH_RESULTS} 중 하나여야 합니다")
-    if reason is not None and reason not in OAUTH_REASONS:
-        raise ValueError(f"reason은 {OAUTH_REASONS} 중 하나여야 합니다")
     parts = urlsplit(safe_return_path(path))
     # 이미 붙어 있는 같은 이름의 값은 이번 결과로 덮어쓴다.
     query = [
@@ -185,6 +181,4 @@ def frontend_return_url(provider: str, path: str, result: str, reason: str | Non
         if key not in ("oauth", "oauth_result", "oauth_reason")
     ]
     query += [("oauth", provider), ("oauth_result", result)]
-    if reason is not None:
-        query.append(("oauth_reason", reason))
     return urlunsplit(("", "", parts.path, urlencode(query), parts.fragment))

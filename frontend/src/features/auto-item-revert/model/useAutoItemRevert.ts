@@ -9,10 +9,11 @@ import {
 } from '@/entities/extraction'
 import type { AutoItemRevert, AutoItemRevertReason } from '@/entities/extraction'
 import { taskKeys } from '@/entities/task'
-import { captureSession } from '@/entities/user'
 import { errorMessage } from '@/shared/api/errorMessages'
-import { isInvalidResponse } from '@/shared/api/errors'
+import { CLIENT_ERROR_CODES, createClientError, isInvalidResponse } from '@/shared/api/errors'
 import { workspaceKey } from '@/shared/api/queryKeys'
+import { captureSessionScope } from '@/shared/api/sessionScope'
+import type { SessionScope } from '@/shared/api/sessionScope'
 import { showWriteUnconfirmed, toast } from '@/shared/ui/toast'
 import { REVERT_SUCCESS, revertRejectionMessage } from '../lib/revertMessage'
 
@@ -38,7 +39,7 @@ export type AutoItemRevertOutcome =
 interface RevertVariables {
   extractionId: string
   itemId: string
-  isCurrentSession: () => boolean
+  session: SessionScope
 }
 
 /**
@@ -92,9 +93,12 @@ export function useAutoItemRevert(workspaceId: string): AutoItemRevertControl {
   const { mutate, isPending, variables } = useMutation<AutoItemRevert, Error, RevertVariables>({
     mutationKey,
     retry: false,
-    mutationFn: ({ extractionId, itemId }) => revertAutoItem(extractionId, itemId),
-    onSuccess: (reverted, { extractionId, itemId, isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    mutationFn: ({ extractionId, itemId, session }) => {
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
+      return revertAutoItem(extractionId, itemId, session.signal)
+    },
+    onSuccess: (reverted, { extractionId, itemId, session }) => {
+      if (!session.isCurrent()) return
       queryClient.setQueryData(
         extractionQueryOptions(workspaceId, extractionId).queryKey,
         (current) =>
@@ -117,8 +121,8 @@ export function useAutoItemRevert(workspaceId: string): AutoItemRevertControl {
       toast.show({ key: 'auto-item-revert', ...REVERT_SUCCESS })
       syncAfterRevert(queryClient, workspaceId)
     },
-    onError: (error, { itemId, isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    onError: (error, { itemId, session }) => {
+      if (!session.isCurrent()) return
       if (isInvalidResponse(error)) {
         showWriteUnconfirmed(() => syncAfterRevert(queryClient, workspaceId))
         return
@@ -145,7 +149,7 @@ export function useAutoItemRevert(workspaceId: string): AutoItemRevertControl {
       if (queryClient.isMutating({ mutationKey: autoItemRevertMutationKey(workspaceId) }) > 0)
         return
       record(itemId, null)
-      mutate({ extractionId, itemId, isCurrentSession: captureSession() }, { onSettled })
+      mutate({ extractionId, itemId, session: captureSessionScope() }, { onSettled })
     },
     [queryClient, mutate, record, workspaceId],
   )

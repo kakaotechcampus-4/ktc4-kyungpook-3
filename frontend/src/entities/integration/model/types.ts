@@ -9,10 +9,10 @@ export interface Integration {
   displayName: string | null
   connectedAt: string | null
 }
-/** 채팅 자동 수집이 읽는 Discord 텍스트 채널 (#428). 이름은 고를 때의 이름이다 */
+/** 채팅 자동 수집이 읽는 Discord 텍스트 채널 (#428). 이름은 고를 때의 이름이고, 서버에 남지 않았으면 null 이다 */
 export interface ChatChannel {
   channelId: string
-  name: string
+  name: string | null
 }
 /** Discord 연동. `chatChannel` 이 null 이면 채팅 수집이 꺼져 있다 */
 export type DiscordIntegration = Integration & { chatChannel: ChatChannel | null }

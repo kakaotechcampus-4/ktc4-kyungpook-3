@@ -4,6 +4,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'settings-connections', label: '연결' },
   { id: 'settings-auto-apply', label: '자동 반영' },
   { id: 'settings-notifications', label: '알림' },
+  { id: 'settings-account', label: '계정' },
 ] as const
 
 export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]['id']

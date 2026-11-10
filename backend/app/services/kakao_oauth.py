@@ -11,7 +11,6 @@ from urllib.parse import urlencode
 
 import httpx
 
-from app.schemas.email import normalize_email
 from app.services import oauth_state
 from app.services.oauth_state import require_env
 
@@ -38,8 +37,6 @@ class KakaoOAuthError(Exception):
 @dataclass(frozen=True)
 class KakaoIdentity:
     provider_id: str
-    email: str | None
-    email_verified: bool
     nickname: str | None
 
 
@@ -91,15 +88,11 @@ def _parse_identity(data: dict) -> KakaoIdentity:
         raise KakaoOAuthError("사용자 정보에 id가 없습니다")
     account = data.get("kakao_account")
     account = account if isinstance(account, dict) else {}
-    email = account.get("email")
-    # is_email_valid가 거짓이면 다른 카카오 계정이 가져간 만료된 이메일이다.
-    usable = isinstance(email, str) and bool(email) and account.get("is_email_valid") is True
+    # 카카오가 이메일을 줘도 읽지 않는다. 카카오 가입은 이메일을 두지 않는다(#610).
     profile = account.get("profile")
     nickname = profile.get("nickname") if isinstance(profile, dict) else None
     return KakaoIdentity(
         provider_id=str(raw_id),
-        email=normalize_email(email) if usable else None,
-        email_verified=usable and account.get("is_email_verified") is True,
         nickname=nickname if isinstance(nickname, str) and nickname else None,
     )
 
@@ -125,31 +118,18 @@ def fetch_identity(code: str, *, transport: httpx.BaseTransport | None = None) -
     return _parse_identity(_json(user, "사용자 정보 조회"))
 
 
-def link_notice(base_url: str) -> tuple[str, str]:
-    """기존 계정에 카카오를 이었을 때 그 계정 이메일로 보낼 (제목, 본문)."""
-    text = (
-        "이 계정에 카카오 로그인이 연결되었습니다.\n"
-        "직접 하신 일이라면 아무것도 하지 않으셔도 됩니다.\n\n"
-        "만든 적 없는 계정이거나 모르는 비밀번호가 있다면 비밀번호를 재설정해 주세요.\n"
-        f"{base_url}/forgot-password\n\n"
-        "재설정하면 다른 기기의 로그인도 끊어집니다."
-    )
-    return "[Manager's Manager] 카카오 계정이 연결되었습니다", text
-
-
 def seal_pending(identity: KakaoIdentity, *, now: float | None = None) -> str:
-    """가입을 마칠 때까지 쿠키에 둘 토큰. 인증되지 않은 이메일은 담지 않아 가입에 쓰일 길이 없다."""
-    email = identity.email if identity.email_verified else None
-    fields = {"i": identity.provider_id, "m": email, "k": identity.nickname}
+    """가입을 마칠 때까지 쿠키에 둘 토큰. 서명만 하고 암호화하지 않으므로 카카오 id 와 닉네임만 담는다."""
+    fields = {"i": identity.provider_id, "k": identity.nickname}
     return oauth_state.seal(_PENDING_KIND, PENDING_TTL_SECONDS, fields, now=now)
 
 
 def read_pending(token: str, *, now: float | None = None) -> KakaoIdentity | None:
-    """대기 쿠키의 카카오 신원. email이 있으면 카카오가 인증한 값이다. 쓸 수 없는 토큰이면 None이다."""
+    """대기 쿠키의 카카오 신원. 쓸 수 없는 토큰이면 None이다."""
     data = oauth_state.decode(_PENDING_KIND, token, now=now)
     if data is None:
         return None
-    return KakaoIdentity(data["i"], data["m"], data["m"] is not None, data["k"])
+    return KakaoIdentity(data["i"], data["k"])
 
 
 def _auth_screen(path: str, return_path: str) -> str:
@@ -159,9 +139,9 @@ def _auth_screen(path: str, return_path: str) -> str:
     return wrapped if len(wrapped) <= oauth_state.MAX_RETURN_PATH_LENGTH else path
 
 
-def frontend_return_url(return_path: str, result: str, reason: str | None = None) -> str:
+def frontend_return_url(return_path: str, result: str) -> str:
     """로그인 화면 주소. 프론트가 `?oauth=kakao&oauth_result=...`를 읽고 `next`로 이어 간다."""
-    return oauth_state.frontend_return_url(PROVIDER, _auth_screen("/login", return_path), result, reason)
+    return oauth_state.frontend_return_url(PROVIDER, _auth_screen("/login", return_path), result)
 
 
 def signup_url(return_path: str) -> str:

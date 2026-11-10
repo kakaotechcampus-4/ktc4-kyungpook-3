@@ -2,7 +2,7 @@
 
 - 기록일: 2026-11-08
 - 대상: [#348](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/348)
-- 상태: **PR 1(초안 5절의 1+2, #588 병합), PR 2(approval, #592 병합), PR 3(meeting·minutes·extraction) 반영.** 공용 경계(`shared/api`)와 task·approval·meeting·minutes·extraction 응답을 검증한다. message·notification → integration·invitation·workspace·member·user 는 다음 PR 이 이 파일에 이어 쓴다. 검사는 MSW 기준이고 실제 BE 와는 붙여 보지 않았다.
+- 상태: **PR 1(초안 5절의 1+2, #588 병합), PR 2(approval, #592 병합), PR 3(meeting·minutes·extraction, #597 병합), PR 4(message·notification, #604 병합), PR 5(integration·invitation·workspace·member·user·메시지 설정, #634), #335 `reminder_dm` FE 정리 반영.** 공용 경계(`shared/api`)와 모든 entity 응답을 검증한다. 옛 `enumValue` 는 지웠다. 검사는 MSW 기준이고 실제 BE 와는 붙여 보지 않았다.
 
 ## 작업 근거와 요약
 
@@ -235,9 +235,161 @@ Codex·Grok 독립 리뷰의 중간 2 건, 낮음 1 건을 고쳤다.
   - 추적기 두 경우와 업로드의 화자 지정 대기·완료·목록 실패 세 경우는 고치기 전 코드로 먼저 실패를 봤다. 업로드 정리 중 경우는 고치기 전에도 통과한다(차단 검색이 찾는다).
 - 검사: typecheck·lint·build 통과, 바꾼 곳 30 파일·537 건 통과, `npm run test -- --maxWorkers=1` 302 파일·3926 건 모두 통과(2,236 초). 초기 chunk 는 다시 재지 않았다.
 
+## PR 4: message·notification (2026-11-09)
+
+develop `92f511bb`(PR 3 #597 병합 뒤)에서 `feature/348-message-schema` 로 땄다. #335 `reminder_dm` 의 FE 정리는 넣지 않았다(BE 2차 배포 뒤 후속, 사용자 결정 2026-11-09).
+
+### 실제 변경
+
+- `shared/types/api/message.ts`: 손으로 쓴 응답 DTO 를 zod 스키마와 `z.infer` 로 바꿨다. 요청 DTO 는 그대로다. BE `backend/app/schemas/message.py` 와 대조했다.
+  - 상태 판단: 보낸 쪽 `sender`(`bot`·`pm`·`member`), `dm_status`, 묶음 `status` 는 enum 이다. 화면이 무엇을 그릴지(DM 전달 표시·답장 경로·작성자)와 승인 대상을 정한다.
+  - 칸 맞춤: 팀원 메시지는 `reply_channel`, 봇·PM 메시지는 `dm_status` 가 있어야 하고, 승인한 예정 묶음은 `approved_at` 이 있어야 한다(`superRefine`). 막 만든 재촉의 묶음은 예정이어야 한다(`createdReminderSchema`). 전에는 mapper 가 일반 `Error` 를 던졌다.
+  - 표시용·보수 폴백: `body_source` 는 받은 글자를 남겨 `출처를 알 수 없는 문구` 로, `dm_failure_reason` 은 서버의 `unknown` 과 같은 `이유를 알 수 없어요` 로, `draft_status` 는 작성 중으로, `reply_channel` 은 웹 답장 표시 없이, 근거 `kind` 는 근거 없음으로 읽는다. 모두 개발 모드에서 경고한다.
+  - #583: PM 글(`sender: pm`)의 `author_member_id`·`author_name`(#519)과 대화 요약의 `web_reply_available`(#525)은 빠진 옛 응답을 받는다. 작성자가 없으면 `PM`, 웹 답장은 모름이다.
+  - #587(#558): 대화 신호 웹소켓의 `thread_updated` 프레임을 `threadUpdatedSignalSchema` 로 읽는다. 모르는 프레임은 버린다(응답이 아니다).
+  - 화면이 읽지 않는 메시지 `thread_id`·`scheduled_at`, 리마인드 `bundle_id`·`status`·`kind`·`origin`·`created_at` 은 보지 않는다. 모의 서버는 `MockMessageResponse`·`MockReminderResponse` 로 그 칸을 계속 낸다.
+- `shared/types/api/reply.ts`: 답장 고르기를 `status` 판별 유니온 스키마로 바꿨다. 모르는 상태는 거절한다.
+- `shared/types/api/notification.ts`: 알림 목록·푸시 내용·푸시 공개키 스키마를 entity 의 mapper·api 에서 옮겼다. `kind`(`message_received` 포함)·`link.type` 은 열린 문자열이다. 목록·공개키는 `parseResponse(…, 'notification')` 로 읽어 전에 그대로 나가던 `ZodError` 대신 `INVALID_RESPONSE` 다. 서비스 워커의 푸시 내용은 지금처럼 `safeParse` 로 모양이 틀리면 버린다.
+- `entities/message/api`: 목록·대화·답장 고르기 조회와, 응답을 읽는 쓰기(보낼 시각 옮기기·태스크 빼기·재촉 만들기·대화 열기)가 `parseResponse(…, 'message')` 다. `reads` 가 그 경로의 스키마를 받는다. 응답을 읽지 않는 쓰기(승인·보내지 않음·문구·답장·메모·답장 고르기)는 그대로다.
+- 쓰기 응답(D-184): `useMessageAction`·`useCreateReminder`·`useOpenThread` 는 `INVALID_RESPONSE` 면 실패로 남기지 않고 `변경 결과를 확인하지 못했어요` 토스트와 `새로고침`(그 공간의 메시지 목록·대화 다시 받기)을 보인다. 재촉 만들기는 다시 만들면 둘이 될 수 있어 특히 실패라고 하지 않는다.
+
+### 바뀐 동작
+
+| 응답 | 전 | 후 |
+|---|---|---|
+| 메시지 보낸 쪽·DM 상태 모름 | 보낸 쪽은 mapper 가 메시지를 만들지 못해 그리다 깨지고, DM 상태는 그대로 지나가 실패가 아닌 것처럼 보임 | 대화·목록이 `응답을 읽지 못했어요` 와 `다시 시도` |
+| 보낸 쪽과 칸이 맞지 않음, 승인 시각 없는 승인 묶음 | 일반 `Error` 라 `문제가 생겼어요` | `INVALID_RESPONSE`, 그 칸 경로가 남는다 |
+| 묶음 `status` 모름 | 예정이 아닌 것으로 보고 조용히 뺌 | 목록 전체가 `INVALID_RESPONSE` |
+| 문구 출처 모름 | 화면이 표에 없는 키로 빈 글자 | `출처를 알 수 없는 문구` |
+| 알림 목록 한 건 깨짐 | `ZodError` 라 공통 문구 | 종 안에 `응답을 읽지 못했어요` |
+| 시각 옮기기·태스크 빼기·재촉 만들기·대화 열기 응답을 읽지 못함 | 단언한 응답으로 성공 처리하거나, mapper 의 `Error` 로 실패 문구 | 토스트와 `새로고침` |
+
+### 검증
+
+| 검사 | 결과 |
+|---|---|
+| `npm run typecheck` | 통과(직접 돌려 0 건 확인) |
+| `npm run lint` | 통과 |
+| `npm run build` | 통과 |
+| 바꾼 곳 테스트 | 62 파일·1013 건 통과 |
+| `npm run test -- --maxWorkers=1` | 309 파일·4027 건 통과(3,756초) |
+
+- 새·바꾼 테스트
+  - `shared/types/api/message.test.ts`: 거절(모르는 보낸 쪽·DM 상태·묶음 상태, 칸 맞춤 다섯, 정수가 아닌 문구 판, 문구 누락, 만든 재촉의 예정이 아닌 묶음, 답장 고르기의 모르는 상태)과 경로, 허용(모르는 문구 출처·초안 상태·근거 종류·DM 실패 이유·답장 경로, #519·#525·#418 의 옛 응답), 웹소켓 프레임. 열두 MSW 상태의 목록·대화·답장 고르기와 쓰기 응답 다섯을 스키마로 `parse` 하고, 대화와 답장 고르기를 실제로 읽었는지 수로 본다.
+  - `shared/types/api/notification.test.ts`: 모르는 종류·링크 허용, 날짜·링크·본문 오류 거절, 목록 한 건의 경로, 음수 안 읽은 수, 픽스처·handler 목록·푸시 공개키.
+  - `entities/message/model/mapper.test.ts`: mapper 의 칸 맞춤 검사가 `INVALID_RESPONSE`(경로 포함)인지로 바꿨다. 모르는 값 여섯(문구 출처·초안 상태·DM 실패 이유·답장 경로·근거 종류·작성자 없는 옛 PM 글).
+  - `entities/message/api/messageQueries.test.ts`·`entities/notification/api/notificationApi.test.ts`: 목록의 모르는 보낸 쪽이 캐시에 들어가지 않고 한 번만 요청, 답장 고르기·시각 옮기기·재촉 만들기·알림 목록·푸시 공개키의 경로.
+  - `features/message-action/model/useMessageAction.test.tsx`: 태스크 빼기 응답을 읽지 못하면 실패 없이 토스트, `새로고침` 이 메시지 key 를 무효화.
+  - `app/messageInvalidResponse.test.tsx`(RTL): 대화·목록의 안내와 다시 시도, 안내 뒤 재요청 없음, 다시 시도로 복구. 모르는 문구 출처 표시. 알림 종의 안내.
+  - 처음에는 대화 신호 소켓이 열릴 때(`opened`)의 받기를 허용하고 그 뒤 요청 수만 봤다. 리뷰 반영에서 그 받기도 막고 요청 한 번인지 본다(아래).
+  - 새 동작을 보는 일곱 경우(RTL 넷, 훅 하나, 알림 api 둘)는 develop 코드로 먼저 실패를 봤다.
+  - 알림 mapper 의 「잘못된 날짜」 테스트는 스키마 테스트로 옮겼다.
+- 초기 chunk(develop `92f511bb` 와 같은 방식): 원본 975,603 → 978,206 B(+2,603 B, +0.27%), gzip 306,320 → 307,311 B(+991 B, +0.32%). 메시지·알림 스키마 코드다(index chunk +2,266 B, task chunk +232 B). zod 핵심 chunk 크기는 같아 새 zod 클래스는 없다(판별 유니온은 PR 1 의 기록 칸이 이미 쓴다). 파일 35 → 36 개는 `unknownValue` 가 162 B chunk 로 갈라진 것이다.
+- 브라우저 확인은 하지 않았다. 정상 응답의 사용자 경로는 그대로이고, 잘못된 응답 화면은 RTL 이 MSW 로 본다.
+
+### 리뷰 반영 (2026-11-09)
+
+Codex·Grok 독립 리뷰의 중간 2 건, 낮음 1 건을 고쳤다.
+
+- **읽지 못한 메시지·알림 조회를 스스로 다시 물었다(중간 둘, 두 리뷰, Codex 재현).** 알림 30초 polling, 받아 둔 목록·대화의 초안 10초 polling(마지막 성공 데이터만 봤다), 목록·대화·답장 고르기의 창 포커스·연결 복귀 재조회, 대화 신호 소켓의 `opened`·`thread_updated` 무효화가 `INVALID_RESPONSE` 뒤에도 같은 요청을 보냈다. PR 3 의 회의 상세에 이은 같은 실수라 조회마다 막지 않고 공용으로 막았다(D-184 「읽지 못한 조회는 스스로 다시 묻지 않는다」).
+  - `createQueryClient` 가 모든 조회의 기본 옵션을 만들 때(`defaultQueryOptions`) 간격·창 포커스·연결 복귀 값을 감싼다. 마지막 조회가 `INVALID_RESPONSE` 면 `false`, 아니면 조회가 정한 값(숫자·함수·`always`) 그대로다. TanStack 기본값 자리(`defaultOptions`)는 조회가 자기 값을 정하면 덮여, 조회가 정한 간격까지 막으려고 이 자리를 골랐다.
+  - 자동 무효화는 `hasReadableResponse` 로 읽지 못한 조회를 거른다. 대화 신호 소켓(`useMessageSignals`, 받는 중인 다시 시도도 끊지 않는다), 새 알림의 다시 받기(`useRefreshOnNotification`), 회의 정리 완료 뒤 다시 받기(`useProcessingTracker`). 다시 시도·쓰기 토스트의 `새로고침`은 거르지 않는다.
+  - PR 3 의 개별 처리를 공용으로 옮겼다. `meetingDetailQueryOptions` 의 포커스·복귀 함수와 추적기의 `refetchOnReturn` 을 지웠고 추적기는 `always` 만 정한다. 추적 판정의 `invalid`(polling 간격 없음·화면 안내)는 화면 상태라 그대로다.
+- **표시용 DM 실패 이유의 모르는 원문을 잃었다(낮음, Codex).** `dm_failure_reason` 을 `displayValue` 로 읽어 모르는 값은 `UnknownValue` 로 남는다. 화면만 서버의 `unknown` 과 같은 `이유를 알 수 없어요` 로 읽는다(`dmFailureText`). 이유가 null 인 실패는 서버의 `unknown` 이다.
+- 새·바꾼 테스트
+  - `app/messageInvalidResponse.test.tsx`: 대화(처음부터)·목록(처음부터, 받아 둔 초안 목록 뒤)·답장 고르기·알림 종에서 31초 넘게 가짜 간격 시계를 돌리고 창 포커스·연결 복귀와 그 공간 모든 대화의 `thread_updated` 신호를 지나도 그 조회의 요청 수가 그대로다(소켓 `opened` 뒤 받기도 없다). 목록과 알림은 다시 시도가 성공하면 10초·30초 간격이 다시 돈다. 답장 고르기 경우는 같은 신호로 읽을 수 있는 대화는 다시 받는지도 본다.
+  - `shared/api/queryClient.test.ts`: 조회가 정한 숫자 간격·`always` 포커스·연결 복귀를 받아 둔 데이터가 있어도 멈추고 다시 시도 성공 뒤 간격이 다시 돈다, 처음부터 읽지 못하면 함수 간격도 돌지 않는다, 다른 오류(404)는 그대로 다시 묻는다, `hasReadableResponse` 가 읽지 못한 조회를 거른다.
+  - `entities/message/model/mapper.test.ts`: 모르는 이유는 `{ unknown: 'rate_limited' }` 와 개발 경고, 서버의 `unknown`·null 은 `unknown`. `widgets/message-inbox/model/conversation.test.ts`: 모르는 이유의 말풍선 문구.
+  - `trackerOutcome.test.ts`: 지운 `refetchOnReturn` 단언을 뺐다. 회의 상세·추적기의 요청 수 테스트(`app/meetingInvalidResponse.test.tsx`·`app/meetingProcessing.test.tsx`)는 그대로 통과한다.
+  - RTL 다섯과 mapper·conversation 둘, 모두 일곱 경우는 고치기 전 코드로 먼저 실패를 봤다.
+- 검사: typecheck(직접 돌려 0 건)·lint·build 통과, 바꾼 곳 62 파일·811 건 통과, `npm run test -- --maxWorkers=1` 309 파일 중 305·4033 건 중 4021 통과(3,874 초). 실패 12 건은 `app/onboardingMembers`·`settingsConnections`·`approvalsMsw`·`meetingDelete` 의 5초 시간 초과와 찾기 시간 초과다. 이 PR 이 건드리지 않은 화면이고, 그 네 파일만 다시 돌려 106 건 모두 통과해 부하 타이밍으로 본다.
+
+## PR 5: integration·invitation·workspace·member·user (2026-11-10)
+
+마지막 묶음이다. #594(PR #623, 초대·연동 쓰기의 세션 검사)와 같은 파일을 고쳐 `fix/594-approval-session-check`(`47959625`) 위에서 `feature/348-workspace-schema` 로 땄고, #623 리뷰 반영(`b6d72a8c`)을 merge 했다. #623 이 develop 에 병합되면 origin/develop 을 merge 한다.
+
+### 실제 변경
+
+- `shared/types/api`: `integration.ts`·`invitation.ts`·`workspace.ts`·`member.ts`·`auth.ts`·`messageSettings.ts` 의 손으로 쓴 응답 DTO 를 zod 스키마와 `z.infer` 로 바꿨다. 요청 DTO 는 그대로다. BE `backend/app/schemas/` 와 `app/api/workspaces.py`(온보딩은 항상 채운다)를 대조했다.
+  - 상태 판단: 연동 `status`, 초대 `status`, 온보딩 `steps[].step`·`steps[].status`·`current_step`(완료한 공간의 빈 문자열 포함), 메시지 설정 `pm_alert_method` 는 enum 이다. 연결 카드·`준비 중` 재조회, 팀원 줄의 초대·취소·연결 끊기 버튼, 가드가 이어 갈 온보딩 단계, PM 이 바꿔 저장하는 알림 방법을 정한다.
+  - 보수 폴백: 워크스페이스·팀원 `role` 은 모르면 `member`(`fallbackValue`), 워크스페이스의 null 은 경고 없이 `member` 다.
+  - 표시용: 별칭 `source` 는 받은 값을 남기고(`UnknownValue`) 팀 화면 칩이 `알 수 없는 출처` 로 읽는다(`aliasSourceLabel`).
+  - 화면이 읽지 않는 별칭 `alias_type`, 초대의 `member_display_name`·`invited_by_name`·`responded_at`, 받을 초대 `created_at`, 설정 `updated_*`, 가입 코드 `expires_in` 은 보지 않는다. 모의 서버는 `MockMemberAlias`·`MockMessageSettings`·초대 handler 의 응답 타입으로 그 칸을 계속 낸다.
+- 지운 것: `shared/lib/enum.ts`(`enumValue`). 쓰는 곳이 없던 별칭 `type`(모르면 `nickname` 으로 바꿨다)과 미해결 별칭 매핑(`toUnresolvedAlias`·`UnresolvedAlias`). 미해결 별칭 모의 응답 타입은 `shared/mock/fixtures/member.ts` 로 옮겼다.
+- entity `api/`: 연동(상태·Discord 채널·채팅 채널 정하기·끄기), 초대(PM 목록·받을 초대), 워크스페이스(목록·상세·만들기), 팀원(목록·기록 목록·만들기·`PATCH`·별칭 목록·더하기·Discord 사용자), 사용자(세션·로그인·가입·가입 코드·카카오 대기·재설정 확인·탈퇴 계획·탈퇴·영수증), 메시지 설정(조회·`PATCH`)이 `parseResponse` 다. 탈퇴는 전에 `schema.parse` 의 `ZodError` 가 그대로 나갔다. entity 이름은 `user` 로 모았다.
+- 쓰기 응답(D-184): 회의 채팅 채널 정하기·끄기, 별칭 더하기, PM 권한 주기, 메시지·알림 설정 바꾸기, 워크스페이스 만들기가 `INVALID_RESPONSE` 면 실패로 남기지 않고 `변경 결과를 확인하지 못했어요` 토스트와 `새로고침`(연동 상태·별칭·팀원·설정·공간 목록)을 보인다. 워크스페이스 만들기는 다시 만들면 이름이 겹친다.
+- 복구 경로가 있는 쓰기는 그 경로다(D-184 에 더함). 온보딩 팀원 저장은 응답을 잃었을 때처럼 팀원 목록을 다시 읽는다(전부터 `invalid_response` 를 그렇게 봤다). 계정 탈퇴는 결과를 모르는 요청으로 같은 요청을 다시 확인한다. 로그인·가입은 폼에 `응답을 읽지 못했어요` 다.
+
+### 바뀐 동작
+
+| 응답 | 전 | 후 |
+|---|---|---|
+| 연동 상태 모름 | 미연결로 그려 `연결하기` 를 보임 | 설정·온보딩 카드가 안내와 `다시 시도` |
+| 초대 상태 모름 | 닫힌 초대(취소)로 그려 다시 초대하게 함 | 팀원 줄이 `초대 상태를 불러오지 못했어요.` 와 `다시 시도` |
+| 온보딩 단계·단계 상태 모름 | 현재 단계는 첫 pending 으로, 모르는 단계는 생성 단계로, 모르는 상태는 pending 으로 바꿔 그 단계로 보냄 | 공간 목록 전체가 `INVALID_RESPONSE`, 가드가 이동하지 않고 안내와 `다시 시도` |
+| PM 알림 방법 모름 | `둘 다` 로 보여 다른 칸을 저장할 때 서버 값과 다르게 보임 | 설정 절이 안내와 `다시 시도` |
+| 별칭 출처 모름 | `직접 추가` 로 보임 | `알 수 없는 출처` |
+| 팀원·공간·세션·초대 응답의 필수 필드 누락 | 타입 단언으로 들어가 `TypeError` 면 공통 문구 | `INVALID_RESPONSE`, 그 칸 경로가 남는다 |
+| 채팅 채널·별칭·PM 권한·설정·공간 만들기 응답을 읽지 못함 | 응답을 단언해 성공으로 보거나 실패 문구 | 토스트와 `새로고침` |
+
+### 검증
+
+| 검사 | 결과 |
+|---|---|
+| `npm run typecheck` | 통과(직접 돌려 0 건 확인) |
+| `npm run lint` | 통과 |
+| `npm run build` | 통과 |
+| 바꾼 곳 테스트 | `src/shared`·`src/entities`, 바꾼 기능 조각, 설정·팀·온보딩·가드·인증·탈퇴·초대·동의 화면 211 파일·2,649 건. 가드의 모르는 단계 테스트 1 건이 요청 수 단언에서 실패해 고친 뒤 그 파일 32 건 통과 |
+| `npm run test -- --maxWorkers=1` | 320 파일 중 312·4,095 건 중 4,086 통과(4,734 초). 실패 9 건은 `app/appShell`·`boot`·`consentFlow`·`messagesActionsMsw`·`messagesSignals`·`settingsConnections`·`settingsPage`·`taskBoardCompact` 의 5초 시간 초과와 찾기 시간 초과다. 그 여덟 파일만 다시 돌려 134 건 모두 통과해 부하 타이밍으로 본다 |
+
+- 새·바꾼 테스트
+  - `shared/types/api/{integration,invitation,workspace,member,auth,messageSettings}.test.ts`: 모르는 상태 판단 값 거절과 경로, 목록 한 건의 경로, 필수 필드 누락, 허용(모르는 역할·별칭 출처, 빈 현재 단계, `member_id` 없는 옛 응답, 프로필 사진 없음). 픽스처와 MSW handler 응답(연동·Discord 채널, PM 초대·받을 초대, 공간 목록·상세, 팀원·별칭·Discord 사용자, 세션·가입 코드·카카오 대기·재설정 확인, 설정 조회·바꾸기)을 같은 스키마로 `parse` 한다.
+  - `app/workspaceInvalidResponse.test.tsx`(RTL): 모르는 연동 상태(연결하기 없음, 재시도 없음), 모르는 PM 알림 방법(선택 칸 없음), 모르는 초대 상태(다시 초대 없음, 재시도 없음), 모르는 별칭 출처의 칩, 별칭 더하기 응답을 읽지 못한 토스트. 다섯 모두 고치기 전 코드(`b6d72a8c`)로 먼저 실패를 봤다.
+  - `app/router/guards.test.tsx`: 모르는 현재 단계는 첫 pending 단계로 보내지 않고 안내와 `다시 시도`, 그 뒤 다시 묻지 않는다(부팅 조회 위에 가드 조회가 붙을 때 한 번은 받는다). `pending 도 없으면 생성 단계` 는 현재 단계가 없는 정상 응답으로 바꿨다.
+  - mapper 테스트: 연동·워크스페이스는 모르는 값 폴백 단언을 스키마 테스트로 옮겼다. 팀원 별칭은 `{ unknown: 'new' }` 와 개발 경고. 미해결 별칭 handler 테스트는 모의 응답 타입으로 본다.
+- 초기 chunk(`index.html` 의 script·modulepreload·CSS, `b6d72a8c` 와 같은 방식): 원본 978,974 → 980,048 B(+1,074 B, +0.11%), gzip 306,459 → 306,420 B(−39 B). 늘어난 곳은 workspace chunk +278 B, user chunk +427 B, 가장 큰 공용 chunk(`url`) +574 B, `index` +692 B 다. 파일 37 → 34 개는 `enum`·`parseResponse`·`unknownValue` 의 작은 chunk(합 660 B)가 다른 chunk 로 합쳐진 것이고, 그래서 approval·meeting·notification·task chunk 는 40~79 B 줄었다.
+- 브라우저 확인은 하지 않았다. 정상 응답의 사용자 경로는 그대로이고, 잘못된 응답 화면은 RTL 이 MSW 로 본다.
+
+### 리뷰 반영 (2026-11-10)
+
+Codex·Grok 독립 리뷰(PR #634)의 중간 2 건, 낮음 1 건과 CI `format:check` 실패를 고쳤다. origin/develop(#623·#617 병합 뒤)은 리뷰 전에 merge 했다.
+
+- **워크스페이스 만들기의 확인 불가 경로가 세션을 보지 않았다(중간, 둘 다, Codex 재현).** 세션이 끝난 뒤 늦은 생성 응답이 비운 토스트를 다시 띄웠다. 이제 누를 때 세션 범위를 잡고 `createWorkspace` 에 `signal` 을 달며, 알림·목록 캐시·이동은 그 세션일 때만 한다(#594 규칙). 진행 저장 실패는 전처럼 폼의 실패와 `다시 시도` 다.
+- **확인 불가 뒤 새로고침으로 공간이 보여도 폼은 생성 전 상태였다(중간, Codex 재현).** 다시 만들기는 이름 겹침에 막혔다. 이제 만들기 응답을 읽지 못하면 공간 목록을 다시 받아(`fetchFreshWorkspaces`), 보내기 전에 없던 같은 이름의 내가 PM 인 공간이 하나면 그 공간으로 생성 단계를 저장하고 다음 단계로 잇는다(`findCreatedWorkspace`, 업로드 복구 `findAcceptedUpload` 와 같은 꼴). 하나로 정하지 못하면 토스트와 함께 공간 선택으로 보낸다. 만들기 POST 는 다시 보내지 않는다. D-184 「복구 경로가 있는 쓰기」로 옮겼다.
+- **저장한 채팅 채널 이름이 null 이면 연동 응답 전체를 거절했다(낮음, Grok).** BE `chat_channel_name` 은 nullable 이다. `name` 을 null 로 받고 화면은 `이름 없는 채널(ID)` 로 보인다(`chatChannelLabel`).
+- **CI `format:check`.** prettier 를 적용하지 않은 파일 열을 고쳤다(`appShell`·`meetingMinutesRaces`·`meetingProcessing`·`processingToast` 테스트, `signupCode.ts`, 워크스페이스 mapper, 모의 워크스페이스 픽스처·연동 handler, `invitation.ts`). 로컬 `.verify/`(git 제외)를 뺀 `prettier --check` 가 통과한다.
+- 새 테스트: `app/workspaceInvalidResponse.test.tsx` 에 이름 없는 채팅 채널, 만들기 응답을 읽지 못했을 때 그 공간으로 잇기(서버에 그 이름의 공간이 하나), 찾지 못하면 토스트·공간 선택, 만드는 사이 세션이 끝나면 알림 없음. `shared/types/api/integration.test.ts` 에 null 이름 허용. `features/onboarding/model/createdWorkspace.test.ts`(모호한 다섯 경우). 화면 넷과 스키마 하나는 고치기 전 코드(`e9e31e3d`)로 먼저 실패를 봤다.
+- 검사: typecheck(직접 0 건)·lint·build 통과, `.verify/` 를 뺀 `prettier --check` 통과, 바꾼 곳 80 파일·1,265 건 통과. 전체 테스트는 CI 로 대신한다(t15 지시).
+
+## #335 `reminder_dm` FE 정리 (2026-11-10)
+
+BE #616 이 승인 종류 `reminder_dm` 을 지우고(운영 DB 행 0 건, #335 댓글) develop 에 병합·배포됐다. 사용자 결정(2026-11-09)대로 #348 후속으로 FE 에 남은 흔적을 정리했다. `feature/348-workspace-schema`(`5e0f4cc0`) 위에서 `feature/348-reminder-dm-cleanup` 으로 땄다.
+
+### 실제 변경
+
+- 테스트 다섯 곳의 「모르는 승인 종류」 예시 값을 `reminder_dm` 에서 BE 에 없는 `future_kind` 로 바꿨다. 검사하는 동작(모르는 종류는 지원하지 않는 요청, 승인·반려 본문을 만들지 않음, 스키마가 거절하지 않음, 모의 서버가 그 종류의 `task_overrides` 를 거절)은 그대로다.
+  - `app/approvals.test.tsx`, `entities/approval/model/mapper.test.ts`(테스트 이름의 「알림·」도 뺐다), `entities/approval/model/resolution.test.ts`, `shared/mock/taskApprovalFlow.test.ts`, `shared/types/api/approval.test.ts`
+- API 계약: `task_overrides` 의 「`reminder_dm` 에 보내면 400」을 지우고 승인 종류가 `task_create`·`task_update` 둘이라고 적었다. 승인 반영 규칙의 `reminder_dm` 줄을 지웠다.
+- MSW approval handler 주석: 「그 밖의 종류(reminder_dm 등)」를 BE 의 두 종류와 모르는 종류로 바꿨다.
+- 타입·픽스처·화면 문구에는 `reminder_dm` 이 없었다. 모르는 종류를 읽기 전용(`unsupported`)으로 두는 규칙(D-184 표시용)은 `reminder_dm` 전용이 아니라 그대로다.
+- 고치지 않은 것: `docs/plan/m1/plan.md` 의 `reminder_dm` 문구는 M1 당시의 계획 기록이라 두었다. 앞선 PR 의 결과 기록(이 파일의 PR 4 절)도 그대로다.
+
+### 검증
+
+| 검사 | 결과 |
+|---|---|
+| `npm run typecheck` | 통과(직접 돌려 0 건 확인) |
+| `npm run lint` | 통과 |
+| `npm run build` | 통과 |
+| `prettier --check . "!.verify/**"` | 통과 |
+| 바꾼 곳 테스트 | 승인 화면·entity·스키마와 모의 handler 11 파일·261 건 통과 |
+| 전체 테스트 | CI 로 대신한다(t15 지시) |
+
+- `git grep reminder_dm -- frontend` 는 위 계약의 지운 내력 한 줄, M1 계획, 이 결과 문서만 남는다.
+
 ## 남은 일
 
-- 다음 PR: message·notification(`ZodError`·`Error` 를 `INVALID_RESPONSE` 로) → integration·invitation·workspace·member·user. 마지막 PR 이 `enumValue` 를 지우고 이 이슈를 닫는다.
+- 이 이슈의 entity 묶음은 PR 5 로 끝난다. PR 5 가 `Closes #348` 이다.
 - BE 합의 두 가지(배포 순서, `status: str` 의 enum 타입화)는 계약에 요청으로 남겼다.
 - 실제 BE 응답과의 대조는 BE enum 타입화와 `/openapi.json` 접근이 갖춰진 뒤 후속이다(#348 추가 항목 1).
 - ~~정할 것: 변경 응답이 스키마에 맞지 않을 때의 문구.~~ 2026-11-09 사용자 결정으로 반영했다(위 「리뷰 반영」).

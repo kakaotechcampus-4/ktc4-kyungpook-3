@@ -17,6 +17,7 @@ from app.main import app
 from app.models import Meeting, MeetingUpload, Member, Session as SessionModel, User, Workspace
 from app.services import upload_storage, upload_sweeper
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 TOKEN = "test-service-token"
@@ -70,7 +71,7 @@ def db(request, monkeypatch):
 
 @pytest.fixture
 def seed(db):
-    user = User(email="pm@example.com", name="pm")
+    user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     db.add(user)
     db.flush()
     db.add(SessionModel(

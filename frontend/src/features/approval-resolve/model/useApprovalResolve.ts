@@ -17,10 +17,16 @@ import type {
 } from '@/entities/approval'
 import { memberAliasesQueryOptions } from '@/entities/member'
 import { taskDetailQueryOptions, taskHistoryQueryOptions, taskKeys } from '@/entities/task'
-import { captureSession } from '@/entities/user'
 import { errorMessage } from '@/shared/api/errorMessages'
-import { isCanceledError, isInvalidResponse } from '@/shared/api/errors'
+import {
+  CLIENT_ERROR_CODES,
+  createClientError,
+  isCanceledError,
+  isInvalidResponse,
+} from '@/shared/api/errors'
 import { workspaceKey } from '@/shared/api/queryKeys'
+import { captureSessionScope } from '@/shared/api/sessionScope'
+import type { SessionScope } from '@/shared/api/sessionScope'
 import { showWriteUnconfirmed } from '@/shared/ui/toast'
 
 /** 승인 처리 mutation 의 key. 셋째 칸이 승인이라 같은 승인의 진행 중 요청을 따로 센다 */
@@ -34,7 +40,7 @@ interface ResolveVariables {
   confirmTaskVersion?: number
   revision: number
   approval: Approval
-  isCurrentSession: () => boolean
+  session: SessionScope
 }
 
 /** 화면이 승인 처리 실패를 그리는 모양 */
@@ -107,22 +113,27 @@ export function useApprovalResolve(
   const { mutate, isPending, variables, error, reset } = useMutation({
     mutationKey,
     retry: false,
-    mutationFn: ({ approval, decision, edits, confirmTaskVersion }: ResolveVariables) =>
-      resolveApproval(workspaceId, approval, decision, {
-        memberIds,
-        edits,
-        confirmTaskVersion,
-      }),
-    onSuccess: (resolved, { isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    mutationFn: ({ approval, decision, edits, confirmTaskVersion, session }: ResolveVariables) => {
+      // 오프라인으로 기다리는 사이 세션이 끝났을 수 있다. 그대로 보내면 다음에 로그인한 계정의 쿠키로 승인한다 (#594)
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
+      return resolveApproval(
+        workspaceId,
+        approval,
+        decision,
+        { memberIds, edits, confirmTaskVersion },
+        session.signal,
+      )
+    },
+    onSuccess: (resolved, { session }) => {
+      if (!session.isCurrent()) return
       queryClient.setQueryData(
         approvalDetailQueryOptions(workspaceId, resolved.id).queryKey,
         resolved,
       )
       syncAfterResolve(queryClient, workspaceId)
     },
-    onError: (failure, { isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    onError: (failure, { session }) => {
+      if (!session.isCurrent()) return
       if (isInvalidResponse(failure)) {
         showWriteUnconfirmed(() => syncAfterResolve(queryClient, workspaceId))
         return
@@ -205,7 +216,7 @@ export function useApprovalResolve(
         ...(confirm && problem?.kind === 'conflict'
           ? { confirmTaskVersion: problem.taskVersion }
           : {}),
-        isCurrentSession: captureSession(),
+        session: captureSessionScope(),
       })
     },
     [queryClient, mutate, workspaceId, approvalId, error, variables],

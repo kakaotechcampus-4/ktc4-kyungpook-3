@@ -32,7 +32,9 @@ export function RevokeConfirm({
       }}
       title={`${displayName}의 계정 연결을 끊을까요?`}
       description={
-        account === null ? `연결된 ${TAIL}` : `${account.name}(${account.email}) ${TAIL}`
+        account === null
+          ? `연결된 ${TAIL}`
+          : `${account.email === null ? account.name : `${account.name}(${account.email})`} ${TAIL}`
       }
       actions={
         <>
