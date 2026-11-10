@@ -9,7 +9,7 @@ import { expectAudioReady, expectMinutesOpened, SHORT_AUDIO, start } from './sup
  * - meeting-instant: 업로드 뒤 첫 상세 조회에 정리가 끝난다(인위적 지연 없음)
  * - meeting-notion-not-connected: meeting-instant 와 같고 Notion 을 연결하지 않았다. Notion 은 선택 기능이다(D-182)
  * - meeting-demo: 상세 조회마다 AI 보고 하나씩 간다. 앱의 3초 polling 으로 대기·stt 넷(수치 없음·0/5·3/5·5/5)·sources·extract·넘기기 + 완료,
- *   여덟 번 조회한다(#483) — 정리 중에 다른 화면으로
+ *   아홉 번(대기 1 + 보고 7 + 완료 1) 조회한다(#483) — 정리 중에 다른 화면으로
  *   떠날 틈이 있어야 하는 ② 에만 쓴다. instant 는 처리 화면이 첫 조회에서 끝을 보고 회의록으로 옮겨 그 틈이 없다(U4-5)
  * - meeting-fail: 첫 상세 조회에 실패로 끝난다(일반 실패, D-092)
  * - meeting-member: ws_01 의 일반 팀원
@@ -153,7 +153,7 @@ test('② 정리 중에 다른 화면으로 가면 진행 토스트가 따라오
     .click()
   await expect(processing.getByRole('button', { name: '자세히 보기' })).toBeVisible()
 
-  // 앱 수준 추적기가 polling 을 이어 간다(3초 간격, 보고 일곱 + 완료, #483). 다른 화면이라 옮기지 않고 토스트만 완료로 바뀐다 (U4-1, U4-5)
+  // 앱 수준 추적기가 polling 을 이어 간다(3초 간격, 대기 1 + 보고 7 + 완료 1 의 아홉 번, #483). 다른 화면이라 옮기지 않고 토스트만 완료로 바뀐다 (U4-1, U4-5)
   const toast = signalOf(page, '회의 정리가 끝났어요')
   await expect(toast).toBeVisible({ timeout: 40_000 })
   await expect(page).toHaveURL(`${WORKSPACE}/tasks`)

@@ -111,7 +111,7 @@ MSW 개발 서버(5233)에서 1280·390 폭으로 녹음 회의·채팅 회의�
 - 기록일: 2026-11-10
 - 대상: [#483](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/483) A안의 FE 몫. BE 몫은 PR #542, AI 몫(전사 진행 보고)은 PR #653 이고 둘 다 병합됐다. PR 본문은 `Part of #483` 이다.
 - 기준: develop `cb0e9004` 에서 시작해 AI #653 병합 뒤 develop 을 merge 했다. MSW 로만 확인했다. 실서버는 확인하지 않았다.
-- 상태: **FE 몫을 반영했다.** `processing.stt` 가 없는 응답(옛 BE, 진행을 보내지 않는 AI)에서는 화면이 전과 같다.
+- 상태: **FE 몫을 반영했다.** `processing` 이 없거나(옛 BE) 모양이 틀린 응답, `stage` 가 `null` 인 응답(보고 전)에서는 화면이 전과 같다. `stt` 만 `null` 이고 `stage`·`stage_at` 이 유효하면(전사 시작 보고, 진행 수를 보내지 않는 AI) 진행 숫자 없이 경과만 보인다.
 
 ## 작업 근거
 
