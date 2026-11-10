@@ -20,3 +20,13 @@ export type { SignupCodeProblem } from './model/signupCode'
 export { resetLinkProblem } from './model/passwordReset'
 export type { ResetLinkProblem } from './model/passwordReset'
 export { advanceSessionGeneration, captureSession } from './model/sessionGeneration'
+export { updateUsername } from './api/username'
+export {
+  USERNAME_HINT,
+  USERNAME_MESSAGES,
+  isUsernameAllowed,
+  normalizeUsername,
+  usernameRejection,
+} from './model/username'
+export { useUsernameCheck } from './model/useUsernameCheck'
+export { UsernameField } from './ui/UsernameField'

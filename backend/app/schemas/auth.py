@@ -1,11 +1,12 @@
 import re
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.email import NormalizedEmail
 from app.schemas.name import NameStr
+from app.schemas.username import UsernameStr
 
 PASSWORD_RULE_MESSAGE = "비밀번호는 8자 이상이고 숫자를 하나 이상 포함해야 합니다."
 
@@ -19,9 +20,19 @@ def validate_password(value: str) -> str:
 
 class UserResponse(BaseModel):
     user_id: str
-    email: str
+    username: str
+    email: Optional[str] = None
     name: str
     avatar_url: Optional[str] = None
+
+class UsernameUpdateRequest(BaseModel):
+    username: UsernameStr
+
+
+class UsernameAvailabilityResponse(BaseModel):
+    available: bool
+    reason: Optional[Literal["taken", "invalid"]] = None
+
 
 class AuthResponse(BaseModel):
     user: UserResponse
@@ -33,21 +44,31 @@ class LoginRequest(BaseModel):
     password: str
 
 class SignupRequest(BaseModel):
-    """이메일은 받지 않는다. 증명 토큰이나 카카오 대기 쿠키에 든 인증된 값으로만 만든다."""
+    """이메일 가입은 증명 토큰의 인증된 이메일과 비밀번호로 만든다. 본문의 이메일은 읽지 않는다.
+    카카오 가입(link_kakao)은 대기 쿠키의 카카오 신원만으로 만들고 비밀번호·이메일을 두지 않는다(#610)."""
 
     verification_token: Optional[str] = None
-    password: str
+    password: Optional[str] = None
     name: NameStr
+    username: UsernameStr
     link_kakao: bool = False
 
     @field_validator("password")
     @classmethod
-    def _check_password(cls, value: str) -> str:
-        return validate_password(value)
+    def _check_password(cls, value: Optional[str]) -> Optional[str]:
+        return None if value is None else validate_password(value)
+
+    @model_validator(mode="after")
+    def _check_signup_kind(self) -> "SignupRequest":
+        if self.link_kakao:
+            if self.password is not None or self.verification_token is not None:
+                raise ValueError("카카오 가입은 비밀번호와 이메일 인증 토큰을 받지 않습니다.")
+        elif self.password is None:
+            raise ValueError("이메일 가입은 비밀번호가 필요합니다.")
+        return self
 
 
 class KakaoPendingResponse(BaseModel):
-    email: Optional[str] = None
     nickname: Optional[str] = None
 
 

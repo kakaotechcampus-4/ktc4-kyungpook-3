@@ -23,6 +23,7 @@ from app.models import (
     Workspace,
 )
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 
 # 추출 등록은 봇 경로라 서비스 토큰을 요구한다.
@@ -74,7 +75,7 @@ def seed(db):
     db.add_all([ws, other_ws])
     db.flush()
 
-    pm_user = User(email="pm@example.com", name="pm")
+    pm_user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     db.add(pm_user)
     db.flush()
     db.add(SessionModel(
@@ -387,6 +388,26 @@ def test_due_cleared_on_a_task_without_a_due_creates_no_approval(client, db, see
 
     assert r.status_code == 201
     assert _approvals(db, "task_update") == []
+
+
+def test_due_date_wins_over_due_cleared_when_both_are_sent(client, db, seed):
+    """계약대로 due_date 가 함께 오면 due_date 를 따른다. 분기 순서가 바뀌어도 조용히 깨지지 않게 고정한다."""
+    login = seed["login"]
+    r = _post(client, seed, [_update(login, category="schedule", due_date="2026-10-05", due_cleared=True,
+                                     doc_text="로그인 시안 마감을 10/5로")])
+
+    assert r.status_code == 201
+    payload = _payload(_approvals(db, "task_update")[0])
+    assert payload["due_date"] == "2026-10-05"
+
+
+def test_due_cleared_on_a_create_item_is_ignored(client, db, seed):
+    """due_cleared 는 update 에만 뜻이 있다. create 에 와도 400 없이 무시하고 마감 없이 만든다."""
+    r = _post(client, seed, [_judge_create("배포 점검 문서화", due_cleared=True)])
+
+    assert r.status_code == 201
+    payload = _payload(_approvals(db, "task_create")[0])
+    assert payload.get("due_date") is None
 
 
 def test_approving_due_cleared_removes_the_due(client, db, seed):

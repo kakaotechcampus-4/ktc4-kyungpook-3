@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http } from 'msw'
+import { HttpResponse, http } from 'msw'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { fail } from '@/shared/mock/envelope'
@@ -8,7 +8,7 @@ import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
-import { businessRequests, recordRequests } from '@/shared/test/requests'
+import { businessRequests, recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import { onTestFinished } from 'vitest'
 import { renderApp } from './test/renderApp'
 
@@ -91,6 +91,41 @@ describe('팀 화면 — PM', () => {
     expect(
       await (await unlinkedArea()).findByText('모든 Discord 계정이 팀원과 연결돼 있어요.'),
     ).toBeInTheDocument()
+  })
+
+  it('미리 추가한 팀원을 이름 칸 제안에서 고르면 새로 만들지 않고 그 팀원에 잇는다 (#613)', async () => {
+    const user = userEvent.setup()
+    renderApp(TEAM)
+    const area = await unlinkedArea()
+    await user.click(await area.findByRole('button', { name: '연결 — jihun_dev' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const name = await dialog.findByRole('combobox', { name: '@jihun_dev의 팀원 이름' })
+
+    await user.type(name, '이')
+    const suggestions = await screen.findByRole('listbox', { name: '미리 추가한 팀원' })
+    expect(
+      within(suggestions)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['이재환'])
+    await user.click(within(suggestions).getByRole('option', { name: '이재환' }))
+    expect(name).toHaveValue('이재환')
+
+    const log = recordRequests()
+    await user.click(dialog.getByRole('button', { name: '저장' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(
+      log.started
+        .filter(({ method, path }) => method !== 'GET' && path.startsWith('/members'))
+        .map(({ method, path }) => `${method} ${path}`),
+    ).toEqual(['PATCH /members/mb_03'])
+    expect(db.members).toContainEqual(
+      expect.objectContaining({
+        member_id: 'mb_03',
+        display_name: '이재환',
+        discord_user_id: '1125',
+      }),
+    )
   })
 
   it('`팀원 관리` 로 연 창은 아무도 잇지 않고 `나중에 하기` 로 닫을 수 있다 (D-075)', async () => {
@@ -243,6 +278,120 @@ describe('팀 화면 — Discord 를 건너뛴 공간', () => {
     const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
     expect(dialog.getByText(/Discord를 연결하지 않아 팀원을 불러올 수 없어요/)).toBeInTheDocument()
     expect(dialog.queryByRole('button', { name: '저장' })).toBeNull()
+  })
+
+  it('팀원 연결 창에서 이름만 적어 팀원을 추가한다. 설정 링크는 그 아래에 있다 (#613)', async () => {
+    const bodies = recordRequestBodies('POST', '/members')
+    const user = userEvent.setup()
+    renderApp(paths.members('ws_03'))
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const name = await dialog.findByRole('textbox', { name: '팀원 이름' })
+    const link = dialog.getByRole('link', { name: '설정에서 Discord 연결하기' })
+    expect(name.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    await user.type(name, '박민수')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+    expect(
+      await within(dialog.getByRole('list', { name: '추가한 팀원' })).findByText('박민수'),
+    ).toBeInTheDocument()
+    expect(bodies).toEqual([{ workspace_id: 'ws_03', display_name: '박민수' }])
+
+    await user.type(name, ' 박민수')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+    expect(await dialog.findByText('이미 같은 이름의 팀원이 있어요.')).toBeInTheDocument()
+    expect(bodies).toHaveLength(1)
+
+    await user.click(dialog.getByRole('button', { name: '닫기' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    const added = within(await screen.findByRole('region', { name: '박민수' }))
+    expect(await added.findByRole('button', { name: '초대' })).toBeInTheDocument()
+  })
+
+  it('추가 응답을 읽지 못하면 실패라고 하지 않고 결과를 확인하지 못했다고 알린다 (#613)', async () => {
+    server.use(
+      http.post('/api/v1/members', () => new HttpResponse('<html></html>', { status: 201 }), {
+        once: true,
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp(paths.members('ws_03'))
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const name = await dialog.findByRole('textbox', { name: '팀원 이름' })
+    await user.type(name, '박민수')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+
+    expect(await screen.findByText('변경 결과를 확인하지 못했어요')).toBeInTheDocument()
+    expect(name).not.toHaveAccessibleDescription()
+    expect(name).toHaveValue('박민수')
+  })
+
+  it('추가가 201 인데 팀원을 읽지 못하면 결과를 확인하지 못했다고 알리고, 다시 눌러도 같은 이름을 또 만들지 않는다 (#613)', async () => {
+    server.use(
+      http.post(
+        '/api/v1/members',
+        async ({ request }) => {
+          const body = (await request.json()) as { workspace_id: string; display_name: string }
+          db.members.push({
+            member_id: 'mb_88',
+            workspace_id: body.workspace_id,
+            display_name: body.display_name,
+            discord_user_id: null,
+            notion_name: null,
+            role: 'member',
+            has_login_account: false,
+            created_at: MOCK_NOW,
+          })
+          return HttpResponse.json({ data: null, error: null }, { status: 201 })
+        },
+        { once: true },
+      ),
+    )
+    const log = recordRequests()
+    const user = userEvent.setup()
+    renderApp(paths.members('ws_03'))
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const name = await dialog.findByRole('textbox', { name: '팀원 이름' })
+    await user.type(name, '박민수')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+
+    expect(await screen.findByText('변경 결과를 확인하지 못했어요')).toBeInTheDocument()
+    expect(name).not.toHaveAccessibleDescription()
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+    expect(await dialog.findByText('이미 같은 이름의 팀원이 있어요.')).toBeInTheDocument()
+    expect(
+      log.started.filter(({ method, path }) => method === 'POST' && path === '/members'),
+    ).toHaveLength(1)
+    expect(
+      db.members.filter(
+        ({ workspace_id, display_name }) => workspace_id === 'ws_03' && display_name === '박민수',
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('팀원 목록을 받지 못하면 팀원 연결 창의 추가 칸에도 오류와 `다시 시도` 를 보이고, 다시 받으면 추가할 수 있다 (#613)', async () => {
+    let failing = true
+    server.use(
+      http.get('/api/v1/members', () => (failing ? fail('FORBIDDEN', 'x', 403) : undefined)),
+    )
+    const user = userEvent.setup()
+    renderApp(paths.members('ws_03'))
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const name = await dialog.findByRole('textbox', { name: '팀원 이름' })
+    const retry = await dialog.findByRole('button', { name: '다시 시도' })
+    await user.type(name, '박민수')
+    expect(dialog.getByRole('button', { name: '추가' })).toBeDisabled()
+
+    failing = false
+    await user.click(retry)
+    await waitFor(() => expect(dialog.queryByRole('button', { name: '다시 시도' })).toBeNull())
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+    expect(
+      await within(dialog.getByRole('list', { name: '추가한 팀원' })).findByText('박민수'),
+    ).toBeInTheDocument()
   })
 })
 

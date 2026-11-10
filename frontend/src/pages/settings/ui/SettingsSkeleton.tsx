@@ -48,7 +48,6 @@ export function SettingsSkeleton({ isPm, connections }: SettingsSkeletonProps) {
               </span>
             ))}
             <span className={NAV_ITEM}>팀원</span>
-            <span className={NAV_ITEM}>내 계정</span>
           </div>
         </div>
         <div className={CONTENT}>

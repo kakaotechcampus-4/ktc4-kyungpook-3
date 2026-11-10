@@ -67,7 +67,7 @@ def test_fetch_identity_exchanges_the_code_then_reads_the_user():
 
     identity = kakao_oauth.fetch_identity("code-1", transport=_transport(seen=seen))
 
-    assert identity == KakaoIdentity("4242424242", "kim@example.com", True, "동우")
+    assert identity == KakaoIdentity("4242424242", "동우")
     token_call, me_call = seen
     assert str(token_call.url) == "https://kauth.kakao.com/oauth/token"
     assert parse_qs(token_call.content.decode()) == {
@@ -81,23 +81,14 @@ def test_fetch_identity_exchanges_the_code_then_reads_the_user():
     assert me_call.headers["authorization"] == "Bearer at-1"
 
 
-def test_unverified_email_is_kept_but_marked():
-    identity = _identity(is_email_verified=False)
-
-    assert (identity.email, identity.email_verified) == ("kim@example.com", False)
-
-
-@pytest.mark.parametrize("overrides", [{"is_email_valid": False}, {"email": None}, {"email": ""}, {"is_email_valid": None}])
-def test_invalid_or_missing_email_counts_as_no_email(overrides):
-    identity = _identity(**overrides)
-
-    assert (identity.email, identity.email_verified) == (None, False)
+def test_a_verified_kakao_email_is_not_read():
+    assert _identity() == KakaoIdentity("7", "동우")
 
 
 def test_user_with_no_account_details_has_only_an_id():
     identity = kakao_oauth.fetch_identity("c", transport=_transport({"id": 7}))
 
-    assert identity == KakaoIdentity("7", None, False, None)
+    assert identity == KakaoIdentity("7", None)
 
 
 @pytest.mark.parametrize("me", [{}, {"id": None}, {"id": "7"}, {"id": True}, []])
@@ -154,20 +145,29 @@ def test_integration_state_is_not_a_login_state():
     assert kakao_oauth.verify_state(state, now=NOW) is None
 
 
-def test_pending_round_trip_keeps_a_verified_email():
-    token = kakao_oauth.seal_pending(KakaoIdentity("7", "kim@example.com", True, "동우"), now=NOW)
+def test_pending_round_trip():
+    token = kakao_oauth.seal_pending(KakaoIdentity("7", "동우"), now=NOW)
 
-    assert kakao_oauth.read_pending(token, now=NOW) == KakaoIdentity("7", "kim@example.com", True, "동우")
+    assert kakao_oauth.read_pending(token, now=NOW) == KakaoIdentity("7", "동우")
 
 
-def test_pending_drops_an_unverified_email():
-    token = kakao_oauth.seal_pending(KakaoIdentity("7", "kim@example.com", False, None), now=NOW)
+def test_pending_token_carries_only_the_kakao_id_and_nickname():
+    """서명만 하고 암호화하지 않는 쿠키라 브라우저에서 읽힌다."""
+    token = kakao_oauth.seal_pending(KakaoIdentity("7", "동우"), now=NOW)
 
-    assert kakao_oauth.read_pending(token, now=NOW) == KakaoIdentity("7", None, False, None)
+    data = oauth_state.decode("kakao_pending", token, now=NOW)
+    assert (data["i"], data["k"]) == ("7", "동우")
+    assert "m" not in data
+
+
+def test_pending_sealed_with_an_email_before_the_change_still_reads():
+    token = oauth_state.seal("kakao_pending", 1800, {"i": "7", "m": "kim@example.com", "k": "동우"}, now=NOW)
+
+    assert kakao_oauth.read_pending(token, now=NOW) == KakaoIdentity("7", "동우")
 
 
 def test_pending_expires_after_thirty_minutes():
-    token = kakao_oauth.seal_pending(KakaoIdentity("7", None, False, None), now=NOW)
+    token = kakao_oauth.seal_pending(KakaoIdentity("7", None), now=NOW)
 
     assert kakao_oauth.read_pending(token, now=NOW + 1799) is not None
     assert kakao_oauth.read_pending(token, now=NOW + 1800) is None
@@ -179,7 +179,7 @@ def test_other_kinds_are_not_a_pending_token():
 
 
 def test_return_url_keeps_next_on_the_login_screen():
-    url = kakao_oauth.frontend_return_url("/workspaces/1?tab=a", "failed", "email_exists")
+    url = kakao_oauth.frontend_return_url("/workspaces/1?tab=a", "failed")
 
     parts = urlsplit(url)
     assert parts.path == "/login"
@@ -187,7 +187,6 @@ def test_return_url_keeps_next_on_the_login_screen():
         "next": ["/workspaces/1?tab=a"],
         "oauth": ["kakao"],
         "oauth_result": ["failed"],
-        "oauth_reason": ["email_exists"],
     }
 
 

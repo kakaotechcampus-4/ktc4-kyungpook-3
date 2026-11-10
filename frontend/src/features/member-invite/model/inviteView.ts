@@ -7,7 +7,7 @@ export type InviteChipTone = 'waiting' | 'linked' | 'signal' | 'closed'
 export interface MemberInviteView {
   /** 초대한 적이 없으면 null */
   chip: { label: string; tone: InviteChipTone } | null
-  /** 초대한 이메일. 수락이면 수락한 계정의 `이름 · 이메일`(계정이 지워졌으면 이메일만) */
+  /** 초대받은 계정의 `이름 · 아이디`. 수락이면 수락한 계정의 `이름 · 이메일`(이메일이 없으면 이름만, 계정이 지워졌으면 초대받은 계정) */
   detail: string | null
   /** 연결된 팀원이면 null */
   invite: '초대' | '다시 초대' | null
@@ -39,9 +39,15 @@ export function memberInviteView(role: Role, latest: Invitation | null): MemberI
   const status = STATUS_VIEW[latest.status]
   const accepted = latest.status === 'accepted'
   const account = latest.acceptedUser
+  const invitee = latest.invitedUser
   return {
     chip: { label: status.label, tone: status.tone },
-    detail: accepted && account ? `${account.name} · ${account.email}` : latest.email,
+    detail:
+      accepted && account
+        ? account.email === null
+          ? account.name
+          : `${account.name} · ${account.email}`
+        : `${invitee.name} · ${invitee.username}`,
     invite: accepted ? null : '다시 초대',
     close: status.close && { kind: status.close, invitationId: latest.id },
   }

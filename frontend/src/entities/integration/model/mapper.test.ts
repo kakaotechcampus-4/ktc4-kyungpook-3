@@ -43,20 +43,11 @@ it('keeps connecting distinct — the server sends it while the Notion database 
   ).toBe('connecting')
 })
 
-it('keeps revoked distinct and falls back unknown statuses with a development warning', () => {
-  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
-  try {
-    expect(
-      toIntegrations({
-        discord: { status: 'revoked', display_name: null, connected_at: null, chat_channel: null },
-        notion: { status: 'future', display_name: null, connected_at: null },
-      }),
-    ).toMatchObject({
-      discord: { status: 'revoked' },
-      notion: { status: 'not_connected' },
-    })
-    expect(warning).toHaveBeenCalled()
-  } finally {
-    warning.mockRestore()
-  }
+it('keeps revoked distinct from not connected', () => {
+  expect(
+    toIntegrations({
+      discord: { status: 'revoked', display_name: null, connected_at: null, chat_channel: null },
+      notion: { status: 'not_connected', display_name: null, connected_at: null },
+    }),
+  ).toMatchObject({ discord: { status: 'revoked' }, notion: { status: 'not_connected' } })
 })

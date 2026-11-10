@@ -1,8 +1,9 @@
 import { request } from '@/shared/api/client'
+import { parseResponse } from '@/shared/api/parseResponse'
+import { passwordResetVerifiedSchema } from '@/shared/types/api/auth'
 import type {
   PasswordResetConfirmDto,
   PasswordResetRequestDto,
-  PasswordResetVerifiedDto,
   PasswordResetVerifyDto,
 } from '@/shared/types/api/auth'
 
@@ -23,11 +24,11 @@ export async function verifyPasswordReset(
   signal?: AbortSignal,
 ): Promise<{ expiresAt: string; emailMasked: string }> {
   const body: PasswordResetVerifyDto = { token }
-  const data = await request<PasswordResetVerifiedDto>('/auth/password-reset/verify', {
-    method: 'POST',
-    body,
-    signal,
-  })
+  const data = parseResponse(
+    passwordResetVerifiedSchema,
+    await request<unknown>('/auth/password-reset/verify', { method: 'POST', body, signal }),
+    'user',
+  )
   return { expiresAt: data.expires_at, emailMasked: data.email_masked }
 }
 

@@ -2,6 +2,7 @@ import { useQueries } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useLocation } from 'react-router'
 import {
+  dismissProcessingToast,
   dismissSettled,
   meetingDetailQueryOptions,
   useMeetingSources,
@@ -63,6 +64,7 @@ function isWatched(detail: Meeting | undefined): boolean {
 export function ProcessingToast({ workspaceId }: { workspaceId: string }) {
   const tracked = useMeetingTrackerStore((state) => state.meetings)
   const settled = useMeetingTrackerStore((state) => state.settled)
+  const dismissed = useMeetingTrackerStore((state) => state.dismissed)
   const role = useMemberWorkspace(workspaceId)?.role
   const { pathname } = useLocation()
 
@@ -92,10 +94,16 @@ export function ProcessingToast({ workspaceId }: { workspaceId: string }) {
   if (role === undefined) return null
   const items: { meeting: TrackedMeeting; signal: ProcessingSignal }[] = []
   const add = (meeting: TrackedMeeting, subject: ProcessingSubject | null) => {
+    if (subject === null) return
+    if (
+      (subject.phase === 'processing' || subject.phase === 'awaiting_speakers') &&
+      dismissed.includes(keyOf(meeting))
+    )
+      return
     const hidden =
       pathname === paths.meetingProcessing(meeting.workspaceId, meeting.meetingId) ||
       pathname === paths.meetingSpeakers(meeting.workspaceId, meeting.meetingId)
-    const signal = subject === null || hidden ? null : processingSignal(subject, role)
+    const signal = hidden ? null : processingSignal(subject, role)
     if (signal !== null) items.push({ meeting, signal })
   }
   settledHere.forEach((record) => add(record, settledSubject(record)))
@@ -150,10 +158,18 @@ function ProcessingToastItem({
       onOpenProcessing={() => go(paths.meetingProcessing(workspaceId, meetingId))}
       onAssignSpeakers={() => go(paths.meetingSpeakers(workspaceId, meetingId))}
       onOpenMinutes={() => {
+        if (!isCurrentSession()) return
         dismissSettled(meeting)
         go(paths.meetings(workspaceId, meetingId))
       }}
-      onDismiss={() => dismissSettled(meeting)}
+      onDismiss={() => {
+        if (!isCurrentSession()) return
+        if (signal.kind === 'processing' || signal.kind === 'speakers') {
+          dismissProcessingToast(meeting)
+        } else {
+          dismissSettled(meeting)
+        }
+      }}
     />
   )
 }

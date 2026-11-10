@@ -89,7 +89,10 @@ export function UserMenu({ workspaceId }: UserMenuProps) {
           {/* 묶음 제목(대문자 · 자간) 모양이 아니라 계정 정보라 Label 대신 평범한 칸이다 */}
           <div className="flex flex-col gap-2 px-10 py-5">
             <span className="text-control font-semibold text-ink">{user?.name}</span>
-            <span className="text-[11px] text-dim">{user?.email}</span>
+            {/* 카카오로 가입한 계정은 이메일이 없어 아이디를 보인다 (#627) */}
+            <span className="text-[11px] text-dim">
+              {user ? (user.email ?? user.username) : null}
+            </span>
           </div>
           <DropdownMenuSeparator />
           {workspaceId === undefined || !compact

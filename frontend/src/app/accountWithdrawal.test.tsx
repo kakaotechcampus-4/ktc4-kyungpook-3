@@ -229,7 +229,7 @@ describe('계정 탈퇴', () => {
     await withdrawAccount('f'.repeat(64), db.session.user.user_id)
     const remaining = db.accounts[0]
     if (!remaining) throw new Error('remaining PM missing')
-    await login({ email: remaining.session.user.email, password: remaining.password })
+    await login({ email: remaining.session.user.email ?? '', password: remaining.password ?? '' })
     const members = z
       .object({ items: z.array(z.object({ member_id: z.string() })) })
       .parse(await request<unknown>('/members', { params: { workspace_id: 'ws_01' } }))
@@ -240,7 +240,7 @@ describe('계정 탈퇴', () => {
     await expect(
       request('/workspaces/ws_01/invitations', {
         method: 'POST',
-        body: { member_id: 'mb_01', email: 'fresh@example.com' },
+        body: { member_id: 'mb_01', user_id: 'us_05' },
       }),
     ).rejects.toMatchObject({ code: 'MEMBER_NOT_FOUND' })
     expect(db.members.find((member) => member.member_id === 'mb_01')?.display_name).toBe(
@@ -250,7 +250,7 @@ describe('계정 탈퇴', () => {
 
   it('같은 이메일 재가입은 새 사용자이며 옛 팀과 초대를 복구하지 않는다', async () => {
     readyAccount()
-    const email = db.session.user.email
+    const email = db.session.user.email ?? ''
     const oldId = db.session.user.user_id
     const app = renderApp('/account/withdrawal')
     await confirmWithdrawal()
@@ -265,8 +265,14 @@ describe('계정 탈퇴', () => {
       db.accounts.find((account) => account.session.user.user_id === db.session.user.user_id)
         ?.workspaceIds,
     ).toEqual([])
-    expect(db.invitations.some((invitation) => invitation.email === email)).toBe(false)
-    expect(await screen.findByText('PM에게 가입한 이메일로 초대를 요청하세요.')).toBeInTheDocument()
+    expect(
+      db.invitations.some(({ invited_user_id }) => invited_user_id === db.session.user.user_id),
+    ).toBe(false)
+    expect(
+      await screen.findByText(
+        `PM에게 내 아이디(${db.session.user.username})를 알려 주고 초대를 요청하세요.`,
+      ),
+    ).toBeInTheDocument()
   })
 
   it('공개 사용자 메뉴에서 탈퇴 화면으로 이동할 수 있다', async () => {

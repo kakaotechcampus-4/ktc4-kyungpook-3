@@ -263,7 +263,7 @@ def test_same_email_signup_is_new_identity_without_old_membership_or_invitation(
     other = Member(workspace_id=mseed["ws"], display_name="예전 초대", role="member")
     mdb.add(other)
     mdb.flush()
-    invitation = Invitation(workspace_id=mseed["ws"], member_id=other.member_id, email="alice@example.com", invited_by_user_id=mseed["pm"].user_id)
+    invitation = Invitation(workspace_id=mseed["ws"], member_id=other.member_id, invited_user_id=old_uid, invited_by_user_id=mseed["pm"].user_id)
     mdb.add(invitation)
     mdb.commit()
     invitation_id = invitation.invitation_id

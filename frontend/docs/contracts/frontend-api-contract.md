@@ -86,17 +86,24 @@ FE는 crypto.getRandomValues로 만든 256비트 키를 sessionStorage에 보관
 | 대화 신호 웹소켓 프레임 | 거절하지 않는다. 응답이 아니다 | `{type: "thread_updated", thread_id: 문자열}` 만 신호로 읽고(#558) 모르는 프레임·깨진 JSON 은 버린다 |
 | 알림 목록 `NotificationListResponse`·푸시 공개키 | 항목의 `read_at`·`created_at` 이 시간대 있는 ISO 시각이 아님, `unread_count` 가 음이 아닌 정수가 아님, `public_key` 가 문자열·null 이 아님, 그 밖의 필수 필드 누락·타입 오류. 목록은 한 건만 틀려도 전체 | 모르는 `kind` 는 `새 알림` 제목(`message_received` 는 `새 메시지가 왔어요`), 모르는 `link.type` 은 읽음만 표시하고 옮기지 않는다. 서비스 워커의 푸시 내용은 모양이 틀리면 그 푸시만 버린다. 목록을 거절하면 30초 간격·창 포커스·연결 복귀로 다시 묻지 않고 종의 `다시 시도`를 기다린다 |
 | `GET /tasks/{task_id}/timeline` | 모르는 `kind`, 필수 필드 누락·타입 오류 | 답장 줄의 모르는 `field` 는 `알 수 없는 변경이에요`, 모르는 `result` 는 `알 수 없는 결과`. 종류나 결과를 모르는 줄은 읽기 전용이라 서버 `undoable` 이 true 여도 되돌리기가 없다(표시용 분류에는 행동이 없다). 아는 줄은 서버 `undoable` 을 따른다. 모르는 `channel`·`evidence_status` 는 없음(null) |
+| 연동 상태 `GET /workspaces/{workspace_id}/integrations` | `discord`·`notion` 의 `status` 가 `not_connected`·`connecting`·`connected`·`revoked` 밖, `chat_channel` 이 객체·null 이 아님, 그 밖의 필수 필드 누락·타입 오류 | 거절하면 설정·온보딩의 연결 카드가 미연결로 보이지 않고 안내와 `다시 시도`를 보인다. `준비 중` 재조회도 멈춘다. 저장한 채팅 채널의 `name` 이 null 이면(`chat_channel_name` 은 nullable) `이름 없는 채널(ID)` 로 보인다 |
+| Discord 채널 목록·채팅 채널 정하기(`PUT`)·끄기(`DELETE …/chat-channel`) | 채널의 `channel_id` 가 문자열이 아님, `name` 이 문자열·null 이 아님, `off_notice_sent` 가 불리언이 아님. 목록은 한 건만 틀려도 전체 | `total` 은 읽지 않는다 |
+| 초대 목록 `GET /workspaces/{workspace_id}/invitations`·받을 초대 `GET /invitations/me` | 초대 `status` 가 `pending`·`accepted`·`declined`·`canceled`·`revoked` 밖, `accepted_user` 가 객체·null 이 아님, 그 밖의 필수 필드 누락·타입 오류. 한 건만 틀려도 전체 | 거절하면 팀원 줄은 `초대 상태를 불러오지 못했어요.` 와 `다시 시도` 다(전에는 닫힌 초대로 보고 다시 초대하게 했다). `member_display_name`·`invited_by_name`·`responded_at`(PM 목록), `created_at`(받을 초대)은 읽지 않는다. 초대 만들기·취소·연결 끊기·수락·거절의 응답 본문은 읽지 않는다 |
+| `WorkspaceResponse` (목록·상세·생성) | 온보딩 `steps[].step`·`current_step` 이 네 단계(`create_workspace`·`connect_discord`·`connect_notion`·`connect_members`) 밖, `steps[].status` 가 `pending`·`completed`·`skipped` 밖, `completed` 가 불리언이 아님, `onboarding` 이 없음, 그 밖의 필수 필드 누락·타입 오류. 목록은 한 건만 틀려도 전체 | 완료한 공간의 빈 `current_step` 은 없음(null)과 같다. 모르는 `role` 은 팀원(`member`), null 은 경고 없이 팀원이다. `member_id` 가 없으면 null(#367 전 BE). 거절하면 가드가 짐작한 온보딩 단계로 보내지 않고 안내와 `다시 시도`를 보인다 |
+| `MemberResponse` (목록·생성·`PATCH`)·별칭 `MemberAliasResponse`(목록·생성)·Discord 사용자 목록 | `has_login_account`·`verified`·`is_bot` 이 불리언이 아님, `confidence` 가 숫자가 아님, 그 밖의 필수 필드 누락·타입 오류. 목록은 한 건만 틀려도 전체 | 모르는 `role` 은 팀원(`member`). 모르는 별칭 `source` 는 받은 값을 남기고 `알 수 없는 출처` 다. 별칭 `alias_type` 은 읽지 않는다 |
+| `MessageSettingsResponse` (조회·`PATCH`) | `pm_alert_method` 가 `web`·`discord_dm`·`both` 밖, 켜고 끄는 값이 불리언이 아님, `nudge_rule` 의 두 값이 숫자가 아님, `pms[]` 의 필드 누락·타입 오류 | 화면이 고를 수 없는 재촉 규칙은 고를 수 있는 범위로 맞춘다(전과 같다). `updated_at`·`updated_by` 는 읽지 않는다. 전에는 모르는 알림 방법을 `both` 로 보였다 |
+| 인증 `AuthResponse`(`/auth/me`·로그인·가입)·가입 코드·카카오 대기·비밀번호 재설정 확인·탈퇴 계획·탈퇴 영수증 | 세션의 `user` 필드·`workspace_count`(음이 아닌 정수)·`last_workspace_id` 타입 오류, 가입 코드 `resend_after`·`verification_token`, 재설정 확인 `expires_at`·`email_masked`, 탈퇴의 `disposition`·`cleanup_status` 가 정한 값 밖 | 가입 코드 `expires_in` 은 읽지 않는다. 로그인·가입 응답을 읽지 못하면 폼에 `응답을 읽지 못했어요` 를 보인다. 로그인은 다시 하면 되고, 가입은 이미 만든 계정이라 다시 보내면 계정 충돌 안내가 로그인으로 보낸다. 탈퇴 영수증을 읽지 못하면 결과를 모르는 요청으로 보고 같은 요청으로 다시 확인한다(지금도 응답을 잃었을 때의 경로다) |
 
-- 쓰기 응답(태스크 `PATCH`·생성·Notion 재시도·자동 막힘 풀기·답장 변경 되돌리기, 승인 `PATCH`, 추출 항목 되돌리기, 메시지의 보낼 시각 옮기기·태스크 빼기·재촉 만들기·대화 열기)이 `INVALID_RESPONSE` 면 FE 는 서버에 반영됐을 수 있다고 보고 실패라 하지 않는다. 토스트 `변경 결과를 확인하지 못했어요` 와 `새로고침` 을 보인다. `새로고침` 은 태스크 쓰기면 그 공간의 태스크 목록·상세·이력을, 승인 처리면 승인 목록·상세와 태스크·추출·별칭을, 되돌리기면 태스크·승인·추출을, 메시지 쓰기면 그 공간의 메시지 목록·대화를 다시 받는다. 회의 업로드는 토스트 대신 응답을 잃었을 때의 복구(목록에서 이 업로드나 정리 중 회의 찾기)를 쓴다. 다른 실패는 기존 문구다(D-184).
+- 쓰기 응답(태스크 `PATCH`·생성·Notion 재시도·자동 막힘 풀기·답장 변경 되돌리기, 승인 `PATCH`, 추출 항목 되돌리기, 메시지의 보낼 시각 옮기기·태스크 빼기·재촉 만들기·대화 열기, 회의 채팅 채널 정하기·끄기, 별칭 더하기, PM 권한 주기, 메시지·알림 설정 바꾸기)이 `INVALID_RESPONSE` 면 FE 는 서버에 반영됐을 수 있다고 보고 실패라 하지 않는다. 토스트 `변경 결과를 확인하지 못했어요` 와 `새로고침` 을 보인다. `새로고침` 은 태스크 쓰기면 그 공간의 태스크 목록·상세·이력을, 승인 처리면 승인 목록·상세와 태스크·추출·별칭을, 되돌리기면 태스크·승인·추출을, 메시지 쓰기면 그 공간의 메시지 목록·대화를, 채팅 채널이면 연동 상태를, 별칭이면 별칭 목록을, PM 권한이면 팀원 목록을, 설정이면 설정을 다시 받는다. 워크스페이스 만들기는 공간 목록을 다시 받아 보내기 전에 없던 같은 이름의 PM 공간이 하나면 그 온보딩으로 잇고, 아니면 토스트와 공간 선택이다. 만들기를 다시 보내지 않는다. 온보딩 팀원 저장은 토스트 대신 응답을 잃었을 때처럼 팀원 목록을 다시 읽고 저장을 이어 간다. 회의 업로드는 토스트 대신 응답을 잃었을 때의 복구(목록에서 이 업로드나 정리 중 회의 찾기)를 쓴다. 다른 실패는 기존 문구다(D-184).
 - 오류의 `details` 는 `{entity, path}` 다(예: `{"entity": "task", "path": "items[3].status"}`). 받은 값은 넣지 않는다. 개발 모드만 콘솔에 경로와 값을 남긴다.
 - 스키마는 FE 가 읽는 필드만 본다. BE 가 필드를 더해도 실패하지 않는다. `total` 은 읽지 않는다.
-- 남은 entity(integration·invitation·workspace·member·user)는 아직 이전 방식(타입 단언과 `enumValue` 폴백)이다.
-- 근거 코드: `frontend/src/shared/api/parseResponse.ts`, `frontend/src/shared/api/unknownValue.ts`, `frontend/src/shared/types/api/task.ts`, `frontend/src/shared/types/api/reply.ts`, `frontend/src/shared/types/api/approval.ts`, `frontend/src/shared/types/api/meeting.ts`, `frontend/src/shared/types/api/minutes.ts`, `frontend/src/shared/types/api/extraction.ts`, `frontend/src/entities/task/api/taskApi.ts`, `frontend/src/entities/approval/api/`, `frontend/src/entities/meeting/api/`, `frontend/src/entities/minutes/api/minutesQuery.ts`, `frontend/src/entities/extraction/api/`, `frontend/src/entities/meeting/model/sourceTraits.ts`, `frontend/src/shared/types/api/message.ts`, `frontend/src/shared/types/api/notification.ts`, `frontend/src/entities/message/api/`, `frontend/src/entities/notification/api/`.
+- 모든 entity 응답이 이 방식이다. 옛 `enumValue` 폴백은 지웠다(#348 마지막 PR).
+- 근거 코드: `frontend/src/shared/api/parseResponse.ts`, `frontend/src/shared/api/unknownValue.ts`, `frontend/src/shared/types/api/task.ts`, `frontend/src/shared/types/api/reply.ts`, `frontend/src/shared/types/api/approval.ts`, `frontend/src/shared/types/api/meeting.ts`, `frontend/src/shared/types/api/minutes.ts`, `frontend/src/shared/types/api/extraction.ts`, `frontend/src/entities/task/api/taskApi.ts`, `frontend/src/entities/approval/api/`, `frontend/src/entities/meeting/api/`, `frontend/src/entities/minutes/api/minutesQuery.ts`, `frontend/src/entities/extraction/api/`, `frontend/src/entities/meeting/model/sourceTraits.ts`, `frontend/src/shared/types/api/message.ts`, `frontend/src/shared/types/api/notification.ts`, `frontend/src/entities/message/api/`, `frontend/src/entities/notification/api/`, `frontend/src/shared/types/api/integration.ts`, `frontend/src/shared/types/api/invitation.ts`, `frontend/src/shared/types/api/workspace.ts`, `frontend/src/shared/types/api/member.ts`, `frontend/src/shared/types/api/auth.ts`, `frontend/src/shared/types/api/messageSettings.ts`, `frontend/src/entities/user/api/withdrawal.ts`.
 
 ### 합의 필요 변경
 
 - 위 배포 순서를 BE 와 합의한다(#348 정책 결정 3). 합의 여부 확인 필요.
-- BE 응답 스키마의 `status: str` 을 enum 타입으로 바꿔 OpenAPI 에 값 목록이 드러나게 해 달라(#348 정책 결정 4). `TaskFields.status`, `TaskHistoryResponse.changed_field`·`change_source`, `TimelineChange.field`·`evidence_status`, `TimelineReply.channel`, `ApprovalResponse.status`·`type`, `MeetingDetailResponse.status`, `MeetingMinutesResponse.source`, `ExtractionItemResponse.gate`, `SpeakerViewResponse.status`, 업로드 202 의 `status`, `BundleResponse.status`·`body_source`·`draft_status`, `MessageResponse.sender`·`reply_channel`·`dm_status`·`dm_failure_reason`, `LastMessage.sender`, `ReminderResponse.status`·`kind`·`origin`, `NotificationResponse.kind` 가 지금 `str` 이다. 회의 목록 `items` 는 `list[dict]`, 회의록의 `attendees`·`transcript`·`summary`·`permissions` 는 `dict` 라 OpenAPI 에 필드가 드러나지 않는다. 합의 여부 확인 필요.
+- BE 응답 스키마의 `status: str` 을 enum 타입으로 바꿔 OpenAPI 에 값 목록이 드러나게 해 달라(#348 정책 결정 4). `TaskFields.status`, `TaskHistoryResponse.changed_field`·`change_source`, `TimelineChange.field`·`evidence_status`, `TimelineReply.channel`, `ApprovalResponse.status`·`type`, `MeetingDetailResponse.status`, `MeetingMinutesResponse.source`, `ExtractionItemResponse.gate`, `SpeakerViewResponse.status`, 업로드 202 의 `status`, `BundleResponse.status`·`body_source`·`draft_status`, `MessageResponse.sender`·`reply_channel`·`dm_status`·`dm_failure_reason`, `LastMessage.sender`, `ReminderResponse.status`·`kind`·`origin`, `NotificationResponse.kind`, 연동 상태의 `status`, `InvitationResponse.status`, `WorkspaceOnboardingStep.step`·`status`, `WorkspaceOnboarding.current_step`, `WorkspaceResponse.role`, `MemberResponse.role`, `MemberAliasResponse.source`·`alias_type`, `MessageSettingsResponse.pm_alert_method` 가 지금 `str` 이다. 회의 목록 `items` 는 `list[dict]`, 회의록의 `attendees`·`transcript`·`summary`·`permissions` 는 `dict` 라 OpenAPI 에 필드가 드러나지 않는다. 합의 여부 확인 필요.
 
 ## 회의 삭제와 보존 태스크 (#576, 2026-11-09)
 
@@ -294,7 +301,7 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 
 | 항목 | 서버 동작 |
 |---|---|
-| 받는 때 | `status: "approved"` 일 때만. 반려와 같이 보내거나 `reminder_dm` 에 보내면 400 `INVALID_REQUEST` 이고 승인 상태도 바뀌지 않는다 |
+| 받는 때 | `status: "approved"` 일 때만. 반려와 같이 보내면 400 `INVALID_REQUEST` 이고 승인 상태도 바뀌지 않는다. 승인 종류는 `task_create`·`task_update` 둘이다(`reminder_dm` 은 #616 에서 지웠다) |
 | `task_create` 키 | `task_title`, `assignee_member_id`, `due_date`. 상태는 고를 수 없고 항상 `todo` |
 | `task_update` 키 | `status`, `due_date`. 담당자 줄이 있는 답장 카드(답장 판단의 변경 줄에 담당자가 있는 카드)는 `assignee_member_id` 도 받는다(`null` 이면 미정, #460). 상태·마감만 있는 답장 카드, 회의 추출 카드, 수동 생성 카드에 보내면 400 `INVALID_REQUEST` 다. 카드는 payload 가 아니라 답장 판단 기록으로 고른다 |
 | 키가 없을 때 | 그 필드는 제안 그대로 |
@@ -536,6 +543,8 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 
 2026-11-09 #575 구현은 `MemberResponse.has_login_account: boolean`을 추가한다. 활성 팀원에 로그인 계정이 연결됐는지 나타내며 User ID는 반환하지 않는다. FE는 `hasLoginAccount`로 옮기고, PM에게 로그인 연결된 일반 팀원의 `PM 권한 부여`를 제공한다. 기존 `PATCH /members/{id}`의 `{role:"pm"}`를 사용하며 기존 PM의 권한은 유지한다. 대기 초대의 `MEMBER_HAS_PENDING_INVITATION` 등 서버 오류는 그대로 따른다. 생산자·소비자 코드를 함께 변경한 현재 구현이며, 별도 파트 합의·병합·배포 완료 기록은 아니다.
 
+2026-11-10 #613 FE 사용: Discord 를 연결하지 않은 팀의 온보딩 4단계와 팀원 연결 창이 `POST /members` 를 `{workspace_id, display_name}` 만으로 보낸다(`discord_user_id` 키 없음). 요청 형식은 위 그대로이고 BE 는 바꾸지 않았다. 서버는 같은 이름의 팀원을 막지 않는다. FE 가 보내기 전에 지금 팀원 목록과 이름(앞뒤 공백 제거, 대소문자 그대로)을 견줘 막는다(D-187). 같은 이름 거절을 서버 규약으로 둘지는 합의하지 않았다.
+
 계정 영구 탈퇴용 익명 기록 주체는 기존 명단 비활성화와 구분한다. 영구 탈퇴자의 대화는 PM 목록·상세·읽음에 남고 표시명은 `탈퇴한 사용자`, `web_reply_available`은 false다. 프로필 수정·별칭 추가·초대·새 발송과 늦은 봇 결과는 거절한다. 기존 `is_deleted`만 있는 명단 비활성화의 unread 0·읽음 POST 404는 유지한다. [익명 주체 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-09-withdrawn-record-actor.md)에 첫 구현의 범위를 기록했고, 본인 탈퇴 API·화면과 기록용 목록은 위 [계정 탈퇴 규약](#계정-탈퇴와-정리-상태-575-2026-11-09)을 따른다. 실제 외부 제공자·운영 계정의 삭제를 확인한 기록은 아니다.
 
 - `alias_type` 은 `realname` \| `nickname` \| `mention` \| `inferred`, `source` 는 `manual` \| `discord_profile` \| `learned` \| `display_name`.
@@ -758,7 +767,6 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
   - 현재 BE 구현: 회의에서 만드는 `task_update` payload 에는 반영 키 말고도 표시용 `task_title`·`base_title`·`doc_text`·`category`(`schedule`·`assignee`·`status`·`scope`·`decision`·`none`)·`evidence_quote`·`evidence_speaker`·`evidence_speaker_member_id`·`evidence_at_ms`·`meeting_id` 가 온다. `category` 가 `scope`(범위 결정)면 바뀌는 필드가 없어도 승인 요청을 만든다([extractions.py](../../../backend/app/api/extractions.py)). 승인해도 반영 키가 없으면 태스크·이력에 아무것도 남지 않는다.
   - 합의됨, BE 미구현(#205): `category` 가 `scope` 인 승인을 승인하면 필드 반영과 별개로 `changed_field: "scope"` 이력 한 줄을 남긴다. 바뀌는 필드가 함께 있으면 필드 이력과 범위 이력을 둘 다 남긴다. 범위 이력만 남는 승인은 Task `version` 과 Notion 동기화를 건드리지 않는다. 반려하면 이력을 남기지 않는다. FE 가 먼저 배포된 뒤 BE 를 배포한다.
   - FE 구현(#205): 승인 매퍼가 `doc_text`·`category`·근거 발화·`meeting_id` 를 읽는다. 모르는 `category` 는 `null` 이다. 승인 상세는 `scope` 면 「범위 변경」 절에 `doc_text` 와 근거를 보이고, 바뀌는 필드가 있을 때만 변경 표를 보인다. 대시보드 확인 필요 목록과 보드 승인 카드는 `범위 변경을 확인해야 해요` 로 보인다. MSW 는 합의대로 승인 때 범위 이력을 남긴다(시나리오 `approval-scope`).
-- `reminder_dm` → 태스크에 반영하지 않는다. 발송은 Discord 봇의 책임이다
 
 **프론트엔드가 지킬 규칙**
 
@@ -1180,12 +1188,15 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 | POST | `/api/v1/auth/signup` | **201**. 본문이 바뀌었다 (§4.1.4) | ✅ |
 | POST | `/auth/login` · `/auth/logout` | | ✅ |
 | GET | `/api/v1/auth/me` | | ✅ |
+| GET | `/api/v1/auth/username-availability?username=` | 아이디 중복 확인. 로그인 없이 늘 200 (§4.1.6) | BE PR #626 미병합 |
+| PATCH | `/api/v1/users/me` | 아이디 바꾸기 `{"username"}` (§4.1.6) | BE PR #626 미병합 |
 | ~~GET~~ | ~~`/api/v1/auth/google/start?state=` · `/auth/google/callback`~~ | Google 로그인은 이번 범위에서 하지 않는다 (D-182). 카카오는 §4.1.4 | 해당 없음 |
 
 ```jsonc
-// signup 요청 {"verification_token"?, "name", "password", "link_kakao"} (§4.1.4)   login 요청 {"email", "password"}
-// signup · login · me 의 응답 data
-{"user": {"user_id": "us_01", "email": "pm@example.com", "name": "최진호", "avatar_url": null},
+// signup 요청은 이메일 가입 {"verification_token", "password", "name", "username"}, 카카오 가입 {"link_kakao": true, "name", "username"} (§4.1.4, #627)
+// login 요청 {"email", "password"}
+// signup · login · me 의 응답 data. #627 부터 username 이 있고, 카카오로 가입한 계정은 email 이 null 이다
+{"user": {"user_id": "us_01", "username": "userpm", "email": "pm@example.com", "name": "최진호", "avatar_url": null},
  "workspace_count": 2,
  "last_workspace_id": "ws_01"}
 ```
@@ -1304,20 +1315,20 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 
 2026-11-09 (#538): 그 브랜치가 PR #454로 develop에 병합됐다. develop `69869392`의 [auth.py](../../../backend/app/api/auth.py)를 다시 읽었고 아래 표와 복귀 주소가 그대로다. 대조하며 더 확인한 사실은 이렇다.
 
-- 성공 복귀와 `email_exists` 복귀는 남아 있던 대기 쿠키를 지운다. 앞서 다른 카카오로 가입하다 멈춘 대기가 다음 가입에 이어지지 않는다.
+- 성공 복귀와 `email_exists` 복귀는 남아 있던 대기 쿠키를 지운다. 앞서 다른 카카오로 가입하다 멈춘 대기가 다음 가입에 이어지지 않는다. `email_exists` 복귀는 #627 에서 없어졌다.
 - callback 의 예외는 두 갈래다. 카카오 설정 오류(`OAuthConfigError`)는 돌아갈 곳을 버리고 `/login?next=%2F&oauth=kakao&oauth_result=failed`로 보낸다. FE는 `next=/`를 버리고 일반 실패 문구를 보인다. 그 밖의 예외는 전역 처리기가 HTTP 500 `INTERNAL_ERROR` 봉투로 답한다. 브라우저가 callback 주소에서 JSON을 보게 되고 앱 화면으로 돌아오지 않는다. 이 경우를 FE가 처리할 방법은 없다.
-- 같은 계정에 동시에 잇는 요청이 겹치면 먼저 이은 쪽을 따른다. 다른 카카오가 먼저 이었으면 `email_exists`다.
+- 같은 계정에 동시에 잇는 요청이 겹치면 먼저 이은 쪽을 따른다. 다른 카카오가 먼저 이었으면 `email_exists`다. #627 에서 기존 계정에 잇는 경로가 없어져 이 경우도 없다.
 
-**규약 (같은 브랜치 BE 코드 기준).** 모두 로그인이 필요 없다. 응답은 기존 봉투다.
+**규약 (같은 브랜치 BE 코드 기준).** 모두 로그인이 필요 없다. 응답은 기존 봉투다. `POST /auth/signup`·`GET /auth/kakao/pending`·카카오 callback 은 #627 에서 바뀐다. 아래 「#627 변경」을 본다.
 
 | Method | Path | 요청 | 성공 | 실패 |
 |---|---|---|---|---|
 | POST | `/api/v1/auth/signup/code` | `{"email"}` | 200 `{"expires_in": 600, "resend_after": 60}` | 400 `INVALID_REQUEST`, 409 `EMAIL_ALREADY_EXISTS`, 429 `SIGNUP_CODE_RATE_LIMITED`, 503 `MAIL_UNAVAILABLE` |
 | POST | `/api/v1/auth/signup/code/confirm` | `{"email", "code"}` | 200 `{"verification_token", "expires_in": 1800}` | 400 `INVALID_REQUEST`(코드가 6자리 숫자가 아님), 400 `SIGNUP_CODE_INVALID` |
-| POST | `/api/v1/auth/signup` | `{"verification_token"?, "name", "password", "link_kakao": false}` | 201 §4.1 응답, 세션 쿠키, 대기 쿠키 삭제 | 400 `INVALID_REQUEST`, 400 `SIGNUP_VERIFICATION_INVALID`, 400 `KAKAO_LINK_EXPIRED`, 409 `EMAIL_ALREADY_EXISTS`, 409 `KAKAO_ALREADY_LINKED` |
+| POST | `/api/v1/auth/signup` | ~~`{"verification_token"?, "name", "password", "link_kakao": false}`~~ #627 에서 바뀐다 | 201 §4.1 응답, 세션 쿠키, 대기 쿠키 삭제 | 400 `INVALID_REQUEST`, 400 `SIGNUP_VERIFICATION_INVALID`, 400 `KAKAO_LINK_EXPIRED`, 409 `EMAIL_ALREADY_EXISTS`, 409 `KAKAO_ALREADY_LINKED` |
 | GET | `/api/v1/auth/kakao/start?next=` | 전체 이동 | 302 카카오 동의 화면 | 설정 오류면 302 `/login?...oauth_result=failed` |
 | GET | `/api/v1/auth/kakao/callback` | 카카오가 부른다 | 항상 302 | 아래 복귀 주소 |
-| GET | `/api/v1/auth/kakao/pending` | 없음 | 200 `{"email": string\|null, "nickname": string\|null}` | 400 `KAKAO_LINK_EXPIRED` |
+| GET | `/api/v1/auth/kakao/pending` | 없음 | 200 ~~`{"email": string\|null, "nickname": string\|null}`~~ #627 에서 `{"nickname"}` 만 | 400 `KAKAO_LINK_EXPIRED` |
 
 - `POST /auth/signup`은 이메일을 받지 않는다. `link_kakao`가 거짓이면 증명 토큰의 이메일로 만든다. 참이면 대기 쿠키가 있어야 하고, 쿠키에 인증된 이메일이 있으면 그 값으로 만들고 토큰은 무시한다. 없으면 토큰이 있어야 한다.
 - 이메일은 앞뒤 공백을 빼고 소문자로 비교한다. 코드 요청과 카카오 충돌 판단, 로그인이 같은 규칙이다.
@@ -1333,7 +1344,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 | 이어진 카카오, 또는 인증 이메일이 빈 계정과 같아 이었다 | `/login?next=&oauth=kakao&oauth_result=success` + 세션 쿠키. 새로 이었으면 계정 이메일로 연결 알림을 보낸다 |
 | 동의 취소 | `/login?...oauth_result=cancelled` |
 | state·nonce 오류, 토큰·사용자 조회 실패 | `/login?...oauth_result=failed` |
-| 이메일이 기존 계정과 같은데 인증되지 않았거나 다른 카카오에 이어져 있다 | `/login?...oauth_result=failed&oauth_reason=email_exists` |
+| ~~이메일이 기존 계정과 같은데 인증되지 않았거나 다른 카카오에 이어져 있다~~ | ~~`/login?...oauth_result=failed&oauth_reason=email_exists`~~ #627 에서 없어졌다. 이어진 카카오가 없으면 가입 화면이다 |
 | 그 밖의 새 사용자 | `/signup?kakao=1&next=` + 대기 쿠키 |
 
 `next`가 없으면 BE는 `next=/`를 붙인다. FE `parseReturnPath`는 이 값을 보호 경로가 아니라고 버린다.
@@ -1345,14 +1356,14 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - `wrong`은 남은 횟수를 보인다. `expired`와 `too_many`는 코드 단계에 남아 다시 보내기로 이어 간다. `SIGNUP_VERIFICATION_INVALID`는 이메일 단계로 돌아간다.
 - `kakao=1`이면 pending을 읽는다. 이메일이 있으면 프로필부터 시작하고 이메일은 고칠 수 없다. 이름은 닉네임으로 채우고 고칠 수 있다. 이메일이 없으면 코드 인증을 거치고 이름만 채운다. 이 모드의 가입은 모두 `link_kakao: true`다. `카카오 없이 가입`은 URL에서 모드를 지운다.
 - 이 모드의 코드 요청 409는 이메일 칸에 다른 이메일을 입력하라고 알린다. 프로필의 409는 어느 모드든 로그인 경로를 보인다. `KAKAO_LINK_EXPIRED`는 카카오로 다시 시작하는 버튼을 보인다.
-- 로그인 화면은 카카오 결과를 한 번 읽고 주소에서 지운다. `next`는 남긴다. `oauth_reason`은 허용 목록으로만 읽고 URL 값을 화면에 싣지 않는다.
+- 로그인 화면은 카카오 결과를 한 번 읽고 주소에서 지운다. `next`는 남긴다. `oauth_reason`은 허용 목록으로만 읽고 URL 값을 화면에 싣지 않는다. #627 뒤로는 `oauth_reason`을 읽지 않는다(아래 「FE 동작 (#627)」).
 - 성공 복귀는 새 문서라 `useEnterSession`을 거치지 않는다. 가드가 복귀 표시를 보고 이메일 로그인과 같은 공간 개수 분기로 보낸다(D-010). 카카오 버튼은 떠나기 전에 복귀 공간을 지운다.
 
 **현재 구현 (2026-11-06).** FE는 위 규약대로 만들었고 MSW로만 확인했다.
 
 - 요청: [DTO](../../src/shared/types/api/auth.ts), [가입 요청](../../src/entities/user/api/auth.ts), [코드·카카오 요청](../../src/entities/user/api/signupCode.ts), [details 해석](../../src/entities/user/model/signupCode.ts).
 - 화면: [가입 폼](../../src/features/auth/ui/SignupForm.tsx), [단계 전이](../../src/features/auth/ui/SignupSteps.tsx), [대기 상태](../../src/features/auth/model/useKakaoLink.ts), [로그인 안내](../../src/features/auth/model/useLoginNotice.ts), [복귀 문구](../../src/features/auth/model/kakaoLogin.ts), [가드](../../src/app/router/guards/RedirectIfAuthed.tsx).
-- MSW: [가입 코드 handler](../../src/shared/mock/handlers/signupCode.ts), [가입 handler](../../src/shared/mock/handlers/auth.ts), [모의 카카오](../../src/shared/mock/oauth/mockKakao.ts). 개발·MSW 모드에서만 `/__mock/kakao`가 새 사용자, 이어진 계정, 이메일 없음, 이메일 충돌, 취소, 실패를 고르게 하고 `/__mock/mail`이 코드를 보인다.
+- MSW: [가입 코드 handler](../../src/shared/mock/handlers/signupCode.ts), [가입 handler](../../src/shared/mock/handlers/auth.ts), [모의 카카오](../../src/shared/mock/oauth/mockKakao.ts). 개발·MSW 모드에서만 `/__mock/kakao`가 결과를 고르게 하고 `/__mock/mail`이 코드를 보인다. 이때는 새 사용자, 이어진 계정, 이메일 없음, 이메일 충돌, 취소, 실패를 골랐다. #627 에서 이메일 없음·이메일 충돌을 지웠고 지금 선택지는 아래 #627 구현 문단에 있다.
 - 검증: Vitest 단위·통합, 실제 Chromium E2E [signup-kakao.e2e.ts](../../e2e/signup-kakao.e2e.ts).
 
 **돌아갈 경로.** 로그인 화면의 회원가입 링크와 `/signup`은 `next`를 들고 있어 로그인으로 옮겨도 이어진다. 가입을 마친 새 계정은 `next`를 쓰지 않고 시작 화면으로 간다(#411, D-182).
@@ -1360,6 +1371,32 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 **#538 보완 (2026-11-09).** API 형태는 바꾸지 않았다. FE는 휴대폰 로그인 화면을 시안 H-1 배치로 바꿨다(D-185). 카카오 버튼 문구는 `카카오 로그인`이다(D-182). E2E에 실패 복귀, 대기 없는 `kakao=1`에서 카카오로 다시 시작, 기존 계정 연결 뒤 이어진 카카오 로그인, 360·390·1280px 화면 확인을 더했다([결과](../issues/538-kakao-login-finish/result.md)).
 
 **확인하지 않은 것.** 실제 카카오 로그인, 실제 메일 수신, 실서버 왕복은 하지 않았다. BE 코드는 읽어서 대조만 했다. `Secure` 쿠키와 카카오 redirect URI, 비즈 앱 이메일 동의 설정은 배포 환경에서 확인해야 한다. 배포 순서상 BE의 새 signup이 먼저 나가면 지금 배포된 FE의 가입이 400이 되므로 FE와 함께 내보낸다.
+
+**#627 변경 (2026-11-10): 합의된 규약, BE PR #626 미병합.** 근거는 [#627](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/627) 본문의 계약표와 댓글 2개(대기 응답에서 `email` 제외, 가입 종류별 409)다. BE 브랜치 `feature/610-signup-username`의 `backend/app/api/auth.py`, `schemas/auth.py`, `schemas/username.py`, `core/errors.py`를 읽고 대조했다. 위 표와 규칙 중 아래와 다른 것은 #626 이 병합되기 전까지의 배포 규약이다.
+
+| Method | Path | 요청 | 성공 | 실패 |
+|---|---|---|---|---|
+| POST | `/api/v1/auth/signup` | 이메일 가입 `{"verification_token", "password", "name", "username"}`, 카카오 가입 `{"link_kakao": true, "name", "username"}` | 201 §4.1 응답(`username` 있음, 카카오 가입은 `email: null`) | 400 `INVALID_REQUEST`(아이디 규칙 밖, 카카오 가입에 `password`·`verification_token` 이 있음, 이메일 가입에 `password` 가 없음), 400 `SIGNUP_VERIFICATION_INVALID`, 400 `KAKAO_LINK_EXPIRED`. 409 는 이메일 가입이면 `EMAIL_ALREADY_EXISTS`·`USERNAME_TAKEN`(둘 다 겹치면 이메일 먼저), 카카오 가입이면 `KAKAO_ALREADY_LINKED`·`USERNAME_TAKEN` |
+| GET | `/api/v1/auth/kakao/pending` | 없음 | 200 `{"nickname": string\|null}` | 400 `KAKAO_LINK_EXPIRED` |
+
+- 카카오 가입은 대기 쿠키의 카카오 신원만으로 계정을 만든다. 이메일·비밀번호가 없고 카카오로만 로그인한다. 카카오가 이메일을 줘도 저장하지 않는다.
+- 카카오 이메일이 기존 계정과 같아도 잇지 않는다. 이어진 카카오가 없으면 늘 가입 화면(`/signup?kakao=1`)이다. 그래서 callback 의 `oauth_result=failed&oauth_reason=email_exists` 복귀가 없어졌다. 이미 카카오가 이어진 계정은 지금처럼 로그인된다.
+- 대기 쿠키는 서명만 하고 암호화하지 않아 카카오 이메일을 담지 않는다.
+- 아이디 규칙과 중복 확인·변경은 §4.1.6 이다.
+
+**FE 동작 (#627).** 화면 동작이며 API 형태가 아니다. 위 「FE가 맞추기로 한 동작」 중 카카오 가입·`oauth_reason` 부분을 대신한다.
+
+- 이메일 가입은 이메일 → 코드 → 프로필이고, 프로필에서 아이디(중복 확인)·이름·비밀번호를 받는다.
+- `kakao=1`이면 pending 을 읽은 뒤 이메일·코드 단계 없이 아이디(중복 확인)와 이름만 받는다. 이름은 닉네임으로 채우고 고칠 수 있다. 비밀번호 칸이 없다. `카카오 없이 가입`은 그대로다.
+- `계정 만들기`는 중복 확인이 지금 입력과 맞고 쓸 수 있을 때만 켜진다. 확인 뒤 아이디를 바꾸면 다시 확인해야 한다. 가입 응답의 409 `USERNAME_TAKEN` 과 400 의 username 칸 오류는 아이디 칸 오류가 되고 버튼이 꺼진다. `EMAIL_ALREADY_EXISTS`·`KAKAO_ALREADY_LINKED` 는 지금처럼 로그인 경로가 있는 폼 오류다.
+- 로그인 화면은 `oauth_reason` 을 읽지 않는다. 옛 주소에 붙어 와도 일반 실패 문구다. `shared/lib/oauth` 의 실패 사유 장치(`OAUTH_REASONS`, `readOAuthReason`)를 지웠다.
+
+**현재 구현 (#627, 2026-11-10).** FE 는 위 규약대로 만들었고 MSW 로만 확인했다. BE #626 이 병합되지 않아 실서버 왕복은 하지 않았다.
+
+- 요청: [DTO·zod 스키마](../../src/shared/types/api/auth.ts), [가입 요청](../../src/entities/user/api/auth.ts).
+- 화면: [가입 폼](../../src/features/auth/ui/SignupForm.tsx), [이메일 가입 단계](../../src/features/auth/ui/SignupSteps.tsx), [프로필 단계](../../src/features/auth/ui/SignupProfileStep.tsx), [복귀 문구](../../src/features/auth/model/kakaoLogin.ts).
+- MSW: [가입 handler](../../src/shared/mock/handlers/auth.ts), [모의 카카오](../../src/shared/mock/oauth/mockKakao.ts). 모의 카카오는 새 사용자, 이어진 계정(픽스처 계정에 이어진 `kakao-pm`), 닉네임 없는 새 사용자, 취소, 실패를 고른다.
+- 검증: Vitest [가입 흐름](../../src/app/signupFlow.test.tsx), [가입 요청](../../src/entities/user/api/auth.test.ts), [카카오 복귀](../../src/app/kakaoLogin.test.tsx). E2E [signup-kakao.e2e.ts](../../e2e/signup-kakao.e2e.ts) 기대값을 새 흐름으로 고쳤다. 바탕 develop 병합 전 코드로 로컬 Chromium 6/6 통과를 확인했고, 병합 뒤(가입 동의 체크 추가)는 CI 가 돈다.
 
 #### 4.1.5 이용약관·개인정보처리방침 동의 (#564): BE 제안, FE 합의 전
 
@@ -1396,6 +1433,39 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - 동의 상태 조회 중에는 앱의 기존 `GuardSkeleton`을 유지해 헤더·본문 자리가 움직이지 않게 한다. 필요한 동의가 확인되면 동의 폼을 표시하며 조회 대기를 동의 완료로 간주하지 않는다.
 - 공식 자료 링크를 본문과 함께 제공한다. Elice의 국내 처리 설명과 모든 운영 엔드포인트의 적용 확인을 구분한다. 보관 기간·학습 이용 조건 등 미확인 사실을 확인 완료로 바꾸지 않는다. 별도 국외 이전 동의 API를 추가하거나 법적 요건을 충족했다고 선언한 변경은 아니다.
 - 사이트와 Markdown의 본문 및 BE 판본 일치는 `npm run policy:check`로 검사한다. 실행·배포 검증 근거는 [#565 결과](../issues/565-policy-publication/result.md)에 기록한다.
+
+#### 4.1.6 아이디 (#627): 합의된 규약, BE PR #626 미병합
+
+제공자는 BE, 소비자는 FE 가입 프로필 단계와 설정의 계정 절이다. 근거는 [#627](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/627) 본문의 계약표다. BE 브랜치 `feature/610-signup-username`의 `backend/app/api/auth.py`, `api/users.py`, `schemas/auth.py`, `schemas/username.py`, `core/errors.py`를 읽고 대조했다.
+
+| Method | Path | 요청 | 성공 `data` | 실패 |
+|---|---|---|---|---|
+| GET | `/api/v1/auth/username-availability?username=` | 없음. 로그인 불필요 | 200 `{"available": true, "reason": null}` 또는 `{"available": false, "reason": "taken" \| "invalid"}` | `username` 이 없으면 400 `INVALID_REQUEST` |
+| PATCH | `/api/v1/users/me` | `{"username"}`. 로그인 필요 | 200 `/auth/me` 의 `user` 와 같은 모양 | 400 `INVALID_REQUEST`(규칙 밖, `details.fields[].loc` 가 `["body", "username"]`), 401 `UNAUTHENTICATED`, 409 `USERNAME_TAKEN` |
+
+- 아이디 규칙은 영문과 숫자 4~20자다. 앞뒤 공백을 지운 뒤 소문자로 바꾸기 전에 검사하고, 소문자로 저장한다. 대소문자를 가리지 않고 유일하다. 예약어는 막지 않는다.
+- 중복 확인은 규칙 밖 값도 오류가 아니라 `invalid` 다. 내 아이디도 `taken` 이다.
+- `PATCH /users/me` 는 지금 아이디와 같으면 그대로 200 이다. 남이 쓰면 409 `USERNAME_TAKEN`(문구 `이미 사용 중인 아이디입니다.`)이다. 확인과 저장 사이에 남이 먼저 가져가도 409 다.
+- 기존 계정의 아이디는 BE 마이그레이션이 이메일 앞부분에서 만든다. 소문자 영문·숫자만 남기고 4자보다 짧으면 앞에 `user` 를 붙이며, 겹치면 가입 순서대로 숫자를 붙인다.
+
+**FE 동작.** 화면 동작이며 API 형태가 아니다.
+
+- 규칙과 정규화는 FE 에도 한 곳(`entities/user/model/username.ts`)에 둔다. 규칙 밖이면 묻지 않고 바로 `invalid` 문구를 보인다. 서버의 `invalid` 와 400 username 칸 오류도 같은 문구다.
+- 확인 상태는 `idle`·`checking`·`available`·`unavailable(taken|invalid|current)`·`failed` 하나의 상태로 둔다. 가입·저장 가능 여부는 `available` 이고 확인한 값이 지금 입력과 같을 때로 파생한다. 확인 중 입력이 바뀌면 앞 요청을 끊는다.
+- 설정은 지금 아이디와 같은 값이면 묻지 않고 `지금 쓰고 있는 아이디예요.` 다.
+- `USERNAME_TAKEN` 화면 문구는 `이미 사용 중인 아이디예요.` 다(`shared/api/errors.ts`, `errorMessages.ts`).
+- `PATCH /users/me` 는 누를 때의 세션으로만 보낸다(#594). 응답은 `user` 스키마로 읽고, 성공하면 세션 캐시의 `user` 를 응답으로 바꾼다. 응답을 읽지 못하면 쓰기 토스트 `변경 결과를 확인하지 못했어요` 를 띄우고 `새로고침` 이 세션을 다시 받는다(D-184).
+- 사용자 메뉴의 이름 아래는 `email ?? username` 이다. 설정 계정 절은 이메일이 없으면 `이메일 없음` 과 카카오로 로그인하는 계정이라는 설명을 보인다. 계정 절은 모든 역할이 쓴다.
+- 초대의 `accepted_user.email` 도 null 일 수 있다(`InvitedUser.email: str | None`). 계정 연결 끊기 확인 창은 이메일이 없으면 이름만 보인다.
+
+**현재 구현 (2026-11-10).** FE 는 위 규약대로 만들었고 MSW 로만 확인했다. BE #626 이 병합되지 않아 실서버 왕복은 하지 않았다.
+
+- 요청: [중복 확인·변경](../../src/entities/user/api/username.ts), [스키마](../../src/shared/types/api/auth.ts), [초대 스키마](../../src/shared/types/api/invitation.ts).
+- 화면: [확인 상태 훅](../../src/entities/user/model/useUsernameCheck.ts), [아이디 칸](../../src/entities/user/ui/UsernameField.tsx), [아이디 변경](../../src/features/username-change/ui/UsernameChangeForm.tsx), [계정 절](../../src/pages/settings/ui/AccountSection.tsx), [사용자 메뉴](../../src/widgets/app-shell/ui/UserMenu.tsx).
+- MSW: [중복 확인·가입 handler](../../src/shared/mock/handlers/auth.ts), [`PATCH /users/me` handler](../../src/shared/mock/handlers/users.ts). 시나리오 `username-taken`(박민수 `minsu` 가 있다), `username-race`(`newuser1` 은 확인은 되고 쓰기는 409), `kakao-account`(이메일 없는 카카오 계정으로 로그인).
+- 검증: Vitest [API·MSW](../../src/entities/user/api/username.test.ts), [설정 계정 절](../../src/app/settingsAccount.test.tsx), [가입 흐름](../../src/app/signupFlow.test.tsx).
+
+**합의 필요 변경.** 없다. 배포 순서는 #627 본문대로 BE #626 과 FE PR 을 이어서 병합한다. 한쪽만 먼저 나가면 가입이 400 이 된다.
 
 ### 4.2 워크스페이스의 사용자 스코프 · 역할 · 온보딩
 
@@ -1473,7 +1543,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - `display_name` 이 `"Discord 연결됨"` 같은 **생성 문자열**이다 (§4.0-②-7). 화면에 그대로 쓸 수 없다.
   연동 카드는 provider 이름을 프론트엔드가 쓰고, `display_name` 은 실제 값이 올 때까지 표시하지 않는다.
 - 연결 요청은 본문 없는 페이지 이동이다. 현재 Notion start·callback과 연결 뒤 DB 준비 경로가 있다. FE는 데이터베이스 선택 화면을 만들지 않고(D-154) 연결 상태를 조회한다.
-- 복귀 주소의 결과 이름 `oauth`, `oauth_result`는 카카오 로그인(§4.1.4)도 같다. 그쪽에만 `oauth_reason`이 더 있고, 연동 화면은 이 값을 읽지 않는다. [복귀 주소 코드](../../src/shared/lib/oauth/returnParams.ts)가 한 곳에서 다룬다.
+- 복귀 주소의 결과 이름 `oauth`, `oauth_result`는 카카오 로그인(§4.1.4)도 같다. 카카오에 있던 `oauth_reason`(`email_exists`)은 #627 에서 없어졌다. 연동 화면도 실패 사유를 읽지 않는다. [복귀 주소 코드](../../src/shared/lib/oauth/returnParams.ts)가 한 곳에서 다룬다.
 
 #### 4.3.1 회의 채팅 채널 (#428·#429, 2026-11-07)
 
@@ -2378,6 +2448,7 @@ FE 연결 (#340, 2026-11-05).
 | 팀원별 별칭 보기·추가·삭제 | `GET /members/aliases`, `POST /members/{id}/aliases`, `DELETE /members/aliases/{alias_id}` | **구현됨(#523, 2026-11-08).** 설정 목차의 「팀원」이 여는 팀 화면에서 팀원 줄의 「별칭 N」을 펼친다. 칩마다 출처 꼬리표(`learned` 회의에서 배움, `display_name` 이름, `discord_profile` 디스코드, `manual` 직접 추가, 미확인이면 「· 미확인」). 추가·삭제는 PM 만 보인다. 본문은 `alias_text` 만 보낸다. 실패 문구는 오류 코드별이다([aliasMessages](../../src/features/member-alias/lib/aliasMessages.ts)). 같은 글자를 다시 넣으면 서버가 기존 행을 돌려주므로 「이미 있는 별칭이에요.」 로 보인다. MSW 기준 검증, 실서버 미검증 |
 | 건너뛴 온보딩 마저 하기 | 5.3 과 같다 | |
 | 팀원 초대·취소·연결 끊기 | `GET`·`POST /workspaces/{id}/invitations`, `POST /invitations/{id}/cancel`·`revoke` | FE·BE 구현. 소비 코드와 미검증 범위는 §5.9 |
+| 초대할 가입자 찾기 | `GET /users/search?q=&workspace_id=` | BE 구현(#628, 2026-11-10). FE 연결(#632, 초대 창의 아이디 찾기). MSW 기준 검증, 실서버 미검증. §5.9 |
 | 알림(메시지·알림 설정) | `GET`·`PATCH /workspaces/{id}/message-settings` | **구현됨** §5.7 (#340) |
 | 회의 채팅 채널(PM) | `GET /workspaces/{id}/discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel` | **구현됨** §4.3.1 (#428, #429) |
 
@@ -2388,25 +2459,38 @@ FE 연결 (#340, 2026-11-05).
 
 **현재 초대 API·FE 연결** (2026-11-09 소스 대조). #319에서 BE를 구현했고 현재 FE도 아래 API를 소비한다. 화면 쪽 합의 여부와 실제 계정 검증은 코드 연결과 구분한다. 결정 근거는 [결정 0036](../../../ai/docs/basis_for_decision/ai/2026-11-04-0036-member-invite-by-email.md). FE 요청 이슈는 #320, 제품 흐름은 #302.
 
+**2026-11-10 #628 BE 변경.** 초대를 이메일 대신 가입한 사용자의 ID 로 만든다. 카카오만으로 가입한 계정은 이메일이 없어(#610) 이메일 초대를 받을 수 없었다. 아래 표와 규칙은 바뀐 BE 계약이다. FE 는 #632 에서 `{member_id, user_id}` 로 만들고 `invited_user` 를 읽도록 바꿨다(아래 「#632 FE 반영」). BE #631 과 FE #632 는 같은 배포여야 한다. 결정 근거는 [아이디 초대 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-10-invite-by-username-decision.md). 배포할 때 대기 중이던 이메일 초대는 모두 `canceled` 가 되고, 대상 계정을 찾을 수 없는 닫힌 초대는 지워진다.
+
 현재 소비 근거는 [초대 Query](../../src/entities/invitation/api/invitationQueries.ts), [초대 명령](../../src/entities/invitation/api/invitationMutations.ts), [PM 제어](../../src/features/member-invite/ui/MemberInviteControl.tsx), [내 초대](../../src/widgets/app-shell/ui/MyInvitations.tsx), [수락·거절 처리](../../src/features/invitation-respond/model/useInvitationResponse.ts)다. PM 목록은 팀원별 최신 초대를 고르고 생성·취소·연결 끊기 뒤 목록을 다시 받는다. 내 초대는 수락 뒤 공간 목록을 새로 받아 이동한다. 코드와 [화면 회귀](../../src/app/invitationRespond.test.tsx)를 대조했으며 이번 문서 작업에서 이를 다시 실행하거나 실서버 성공으로 판정하지 않았다.
 
-온보딩에서 디스코드 명단으로 만든 팀원은 로그인 계정과 이어져 있지 않다(`member.user_id` 가 null). PM 이 그 팀원에게 가입 이메일로 초대를 만들고, 그 이메일로 로그인한 사람이 내 초대에서 수락하면 팀원과 계정이 이어져 워크스페이스 목록에 나타난다. 수락 전에는 그 워크스페이스의 API 가 모두 403 이다. 초대 메일은 보내지 않는다. PM 이 디스코드 등으로 알리고, 팀원은 로그인하면 내 초대에서 본다.
+**2026-11-10 #632 FE 반영 (현재 구현, 이 브랜치 코드 기준).** 초대 창은 이메일 대신 아이디로 가입자를 찾고, 찾은 사람의 이름·아이디를 보인 뒤에만 초대한다. 화면 문구·흐름의 제품 합의는 이슈 #632 본문이 근거다.
+
+- 찾기: [searchInvitee](../../src/entities/invitation/api/searchInvitee.ts) 가 `GET /users/search` 에 `q`(앞뒤 공백을 지우고 소문자로 바꾼 아이디)와 `workspace_id` 를 보내고 `userSearchSchema` 로 읽는다. 결과 첫 사람만 쓰고 없으면 0명이다. 아이디 규칙(#627 `isUsernameAllowed`) 밖이면 요청하지 않는다. 상태는 [useInviteeSearch](../../src/features/member-invite/model/useInviteeSearch.ts) 의 판별 유니온(`idle`·`searching`·`found`·`none`·`invalid`·`failed`)이고, 찾은 뒤 입력을 바꾸면 결과가 사라지고 찾던 요청은 끊긴다. 누를 때의 세션 범위로 보내고 끝난 세션의 응답은 버린다(#594).
+- 만들기: [초대 명령](../../src/entities/invitation/api/invitationMutations.ts) 이 `{member_id, user_id}` 를 보낸다. `user_id` 는 찾은 사람의 것이다.
+- 읽기: PM 목록의 `invited_user` 는 null 이 아닌 `{user_id, username, name}` 로 읽는다(빠지면 `INVALID_RESPONSE`). 팀원 줄과 대기 초대 안내는 `이름 · 아이디` 다([inviteView](../../src/features/member-invite/model/inviteView.ts)). 수락한 계정 표시는 그대로 `accepted_user` 다.
+- 오류 문구: `USER_ALREADY_INVITED`, `USER_NOT_FOUND` 를 더하고 `EMAIL_ALREADY_INVITED` 를 지웠다([errorMessages](../../src/shared/api/errorMessages.ts)). 검색 0명, 규칙 밖, 검색 403·네트워크·`INVALID_RESPONSE` 와 만들기 거절은 모두 창의 아이디 칸 오류다.
+- 받은 초대가 없고 소속 공간도 없으면 [내 초대](../../src/widgets/app-shell/ui/MyInvitations.tsx) 가 「PM에게 내 아이디(…)를 알려 주고 초대를 요청하세요.」 를 보인다.
+- 검증: MSW handler(검색·만들기 검사 순서는 BE #631 의 `search_users`·`create_invitation` 을 옮김)와 [초대 handler 테스트](../../src/shared/mock/invitationFlow.test.ts), [팀 화면 회귀](../../src/app/teamInvitations.test.tsx), [받은 초대 회귀](../../src/app/invitationRespond.test.tsx), `e2e/member-invitations.e2e.ts` 를 이 브랜치에서 돌렸다. BE #631 실서버와의 왕복은 확인하지 않았다.
+
+온보딩에서 디스코드 명단으로 만든 팀원은 로그인 계정과 이어져 있지 않다(`member.user_id` 가 null). 팀원이 먼저 가입해 PM 에게 아이디를 알려 주면, PM 이 그 아이디로 가입자를 찾아 그 팀원에게 초대를 만든다. 그 사람이 내 초대에서 수락하면 팀원과 계정이 이어져 워크스페이스 목록에 나타난다. 수락 전에는 그 워크스페이스의 API 가 모두 403 이다. 초대 메일이나 알림은 보내지 않는다. PM 이 디스코드 등으로 알리고, 팀원은 로그인하면 내 초대에서 본다.
 
 | 요청 | 누가 | 하는 일 |
 |---|---|---|
-| `POST /workspaces/{workspace_id}/invitations` → 201 | PM | 초대 만들기 `{member_id, email}`. 같은 팀원에게 대기 중인 초대가 있으면 그 초대를 취소하고 새로 만든다 |
+| `GET /users/search?q=&workspace_id=` | 그 공간의 PM | 초대할 가입자 찾기. `{items: [{user_id, username, name}]}` |
+| `POST /workspaces/{workspace_id}/invitations` → 201 | PM | 초대 만들기 `{member_id, user_id}`. 같은 팀원에게 대기 중인 초대가 있으면 그 초대를 취소하고 새로 만든다 |
 | `GET /workspaces/{workspace_id}/invitations` | PM | 이 워크스페이스의 초대 전부, 최근 것부터 |
 | `POST /invitations/{invitation_id}/cancel` | PM | 수락 전 초대 취소 |
 | `POST /invitations/{invitation_id}/revoke` | PM | 수락한 계정과 팀원의 연결 끊기 |
-| `GET /invitations/me` | 로그인 사용자 | 내 가입 이메일로 온 대기 중 초대, 최근 것부터 |
+| `GET /invitations/me` | 로그인 사용자 | 나에게 온 대기 중 초대, 최근 것부터 |
 | `POST /invitations/{invitation_id}/accept` | 받는 사람 | 수락. `{workspace_id, member_id}` 를 돌려준다 |
 | `POST /invitations/{invitation_id}/decline` | 받는 사람 | 거절. `{invitation_id, status: "declined"}` |
 
-- PM 쪽 응답(만들기·목록 한 줄·취소·연결 끊기)은 `{invitation_id, member_id, member_display_name, email, status, invited_by_name, accepted_user, created_at, responded_at}` 이다.
+- 검색은 아이디가 대소문자와 앞뒤 공백만 빼고 같아야 찾는다. 앞부분이나 이름으로는 찾지 않는다. 결과는 0명 또는 1명이고 이메일은 없다. 이 워크스페이스의 활성 팀원은 빠진다. 아이디 규칙(영문·숫자 4 ~ 20자)에 맞지 않는 `q` 는 오류 대신 빈 목록이다. 공간이 없거나 삭제됐으면 PM 확인보다 먼저 404 `WORKSPACE_NOT_FOUND` 이다. 존재하는 공간의 PM 이 아니면 403 `FORBIDDEN` 이다. 이름을 보여 맞는 사람인지 확인하게 한다.
+- PM 쪽 응답(만들기·목록 한 줄·취소·연결 끊기)은 `{invitation_id, member_id, member_display_name, invited_user, status, invited_by_name, accepted_user, created_at, responded_at}` 이다.
+  - `invited_user` 는 초대받은 계정 `{user_id, username, name}` 이다. 이메일은 없다.
   - `accepted_user` 는 수락한 계정 `{user_id, name, email}` 이고 수락 전에는 null 이다. 연결을 끊은 뒤에도 남아 누가 들어왔었는지 보인다. PM 은 이 이름·이메일을 보고 엉뚱한 계정이면 연결을 끊는다.
   - `responded_at` 은 마지막으로 상태가 바뀐 시각이다. 연결을 끊으면 수락 시각 대신 끊은 시각이 된다.
-- 내 초대 한 줄은 `{invitation_id, workspace_id, workspace_name, member_display_name, invited_by_name, created_at}` 이다. 초대보다 먼저 가입했든 나중에 가입했든 같은 기준(가입 이메일)으로 찾는다.
-- 이메일은 대소문자와 앞뒤 공백을 무시하고 비교한다. 초대의 `email` 은 소문자로 바꿔 저장하고 돌려준다. 이메일 형식이 아니면 400 `INVALID_REQUEST`.
+- 내 초대 한 줄은 `{invitation_id, workspace_id, workspace_name, member_display_name, invited_by_name, created_at}` 이다. 초대는 계정에 묶이므로 이메일 없는 카카오 계정도 받는다.
 - 상태와 화면 표기(제안)
 
   | `status` | 화면 | 뜻 |
@@ -2417,27 +2501,30 @@ FE 연결 (#340, 2026-11-05).
   | `canceled` | 취소 | PM 이 수락 전에 닫았거나, 같은 팀원에게 새 초대를 만들어 닫혔다 |
   | `revoked` | 연결 끊김 | PM 이 수락 뒤 연결을 끊었다. 팀원 행과 태스크·이력은 그대로고 `member.user_id` 만 null 로 돌아간다 |
 
-- 만료는 없다. 이메일 고치기 API 는 없고, 같은 팀원에게 다시 초대하면 대기 중인 초대가 `canceled` 가 된다. 거절·취소·연결 끊김 뒤에는 다시 초대할 수 있다. 연결을 끊은 팀원의 역할이 PM 이면 팀원으로 되돌린 뒤 초대한다.
+- 만료는 없다. 다른 사람을 골랐으면 같은 팀원에게 다시 초대한다. 대기 중이던 초대는 `canceled` 가 된다. 거절·취소·연결 끊김 뒤에는 다시 초대할 수 있다. 연결을 끊은 팀원의 역할이 PM 이면 팀원으로 되돌린 뒤 초대한다.
 - 수락한 팀원의 권한은 기존 팀원 권한 그대로다. 기존 API 에서 바뀐 것은 아래 `PATCH /members/{id}` 의 역할 변경 하나다.
 - 탈퇴한 팀원의 초대는 내 초대에 나오지 않고 수락할 수 없다(409 `INVITATION_NOT_PENDING`). PM 목록에는 남는다.
+- 초대받은 계정이 탈퇴하면 그 계정에 온 초대는 지워져 PM 목록에서도 사라진다.
 - 대기 초대가 있는 팀원은 PM 으로 올릴 수 없다. `PATCH /members/{id}` `{role: "pm"}` 이 409 `MEMBER_HAS_PENDING_INVITATION` 이고 역할과 초대는 그대로다. 받는 사람이 수락한 뒤 올리거나, 초대를 취소한 뒤 올린다. 역할 외의 수정은 막지 않는다.
 - 오류
 
   | 코드 | 상태 | 언제 |
   |---|---|---|
-  | `FORBIDDEN` | 403 | PM 이 아닌 사람이 PM 쪽 요청을 했다 |
+  | `WORKSPACE_NOT_FOUND` | 404 | 가입자 검색에서 공간이 없거나 삭제됐다. PM 확인보다 먼저 응답한다 |
+  | `FORBIDDEN` | 403 | PM 이 아닌 사람이 PM 쪽 요청이나 검색을 했다 |
   | `MEMBER_NOT_FOUND` | 404 | 만들기에서 팀원이 없거나, 이 워크스페이스 팀원이 아니거나, 탈퇴했다 |
+  | `USER_NOT_FOUND` | 404 | 만들기에서 그 `user_id` 의 가입자가 없다(탈퇴 포함). PM 이 아니면 이 코드 대신 403 이다 |
   | `MEMBER_ALREADY_LINKED` | 409 | 이미 로그인 계정이 이어진 팀원이다(만들기·수락) |
-  | `ALREADY_WORKSPACE_MEMBER` | 409 | 그 이메일의 계정, 또는 수락하려는 내가 이미 이 워크스페이스의 팀원이다 |
-  | `EMAIL_ALREADY_INVITED` | 409 | 같은 이메일로 다른 팀원에게 보낸 초대가 대기 중이다 |
+  | `ALREADY_WORKSPACE_MEMBER` | 409 | 초대할 계정, 또는 수락하려는 내가 이미 이 워크스페이스의 팀원이다 |
+  | `USER_ALREADY_INVITED` | 409 | 같은 사용자에게 다른 팀원으로 보낸 초대가 대기 중이다. #628 전의 `EMAIL_ALREADY_INVITED` 를 대신한다 |
   | `PM_MEMBER_NOT_INVITABLE` | 409 | 이 워크스페이스에서 역할이 PM 인 팀원을 초대하려 했다. 팀원으로 초대하고, 수락한 뒤 PM 으로 바꾼다. 다른 워크스페이스의 역할과는 상관없다 |
   | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 했다(`PATCH /members/{id}`) |
-  | `INVITATION_NOT_FOUND` | 404 | 초대가 없다. 수락·거절에서는 내 이메일로 온 초대가 아니어도, 취소·연결 끊기에서는 그 워크스페이스 소속이 아니어도 이 코드다(소속이지만 PM 이 아니면 403 `FORBIDDEN`) |
+  | `INVITATION_NOT_FOUND` | 404 | 초대가 없다. 수락·거절에서는 나에게 온 초대가 아니어도, 취소·연결 끊기에서는 그 워크스페이스 소속이 아니어도 이 코드다(소속이지만 PM 이 아니면 403 `FORBIDDEN`) |
   | `INVITATION_NOT_PENDING` | 409 | 대기 중이 아닌 초대를 수락·거절·취소했다 |
   | `INVITATION_NOT_ACCEPTED` | 409 | 수락하지 않은 초대의 연결을 끊으려 했다 |
   | `LAST_PM_REQUIRED` | 409 | 끊으면 로그인할 수 있는 PM 이 없어진다 |
 
-- 한 계정이 한 워크스페이스에서 두 팀원이 되지 않는다. 한 팀원에 대기 초대 하나, 한 워크스페이스에서 같은 이메일의 대기 초대 하나만 DB 가 허용하고, 수락할 때 이미 소속인지 다시 확인한다. 같은 초대를 동시에 수락하면 한 계정만 이어진다. 같은 이메일의 다른 초대가 수락되는 순간 새 초대를 만들면 드물게 수락할 수 없는 대기 초대가 생긴다. 그 초대를 수락하면 409 `ALREADY_WORKSPACE_MEMBER` 이고, PM 이 취소하면 된다. 연결을 끊으면 같은 이메일의 대기 초대도 함께 `canceled` 가 된다.
+- 한 계정이 한 워크스페이스에서 두 팀원이 되지 않는다. 한 팀원에 대기 초대 하나, 한 워크스페이스에서 같은 사용자의 대기 초대 하나만 DB 가 허용하고, 수락할 때 이미 소속인지 다시 확인한다. 같은 사용자가 다른 팀원 초대를 수락하는 중에 새 초대를 만들면 수락이 끝날 때까지 기다린 뒤 409 `ALREADY_WORKSPACE_MEMBER` 다(PostgreSQL 테스트로 확인). 연결을 끊으면 그 사용자에게 남은 대기 초대도 함께 `canceled` 가 된다.
 - 팀원이 온보딩(워크스페이스 만들기)을 건너뛰고 초대를 기다리는 데 새 백엔드 API 는 필요 없다. 초대를 기다리는 사용자는 `GET /auth/me` 의 `workspace_count` 가 0 이고 `GET /workspaces` 가 빈 목록 `{"items": [], "total": 0}` 이다.
 
 ### 착수 가능 여부 요약

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
-import { readMailedCode, start } from './support'
+import { confirmUsername, readMailedCode, start } from './support'
 
 const gate = (page: Page) => page.getByRole('heading', { name: '서비스 이용 동의' })
 async function accept(page: Page) {
@@ -91,6 +91,7 @@ test('이메일 가입은 체크 전 계정을 만들지 않고 가입 뒤 정�
   await page.getByRole('button', { name: '인증 코드 받기' }).click()
   await page.getByLabel('인증 코드').fill(await readMailedCode(page))
   await page.getByRole('button', { name: '코드 확인' }).click()
+  await confirmUsername(page, 'consentnew')
   await page.getByLabel('이름').fill('동의 사용자')
   await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
   await expect(page.getByRole('button', { name: '계정 만들기' })).toBeDisabled()
@@ -111,9 +112,9 @@ test('카카오 가입도 같은 두 필수 동의와 문서 링크를 쓴다', 
   await expect(page.getByRole('heading', { name: '모의 카카오 로그인' })).toBeVisible({
     timeout: 15_000,
   })
-  await page.getByRole('button', { name: '새 사용자 (이메일 있음)', exact: true }).click()
+  await page.getByRole('button', { name: '새 사용자', exact: true }).click()
   await expect(page.getByLabel('이름')).toHaveValue('카카오 새 사용자', { timeout: 15_000 })
-  await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
+  await confirmUsername(page, 'kakaoconsent')
   await expect(page.getByRole('button', { name: '계정 만들기' })).toBeDisabled()
   await expect(page.getByRole('link', { name: '개인정보처리방침 보기 (새 탭)' })).toBeVisible()
   await page.getByRole('checkbox', { name: '[필수] 이용약관 동의', exact: true }).check()

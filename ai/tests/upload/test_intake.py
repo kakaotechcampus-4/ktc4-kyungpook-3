@@ -107,13 +107,25 @@ def test_pyannote_gets_the_16k_mono_wav(env, monkeypatch):
     seen = {}
 
     class Spy(FakeDiarizer):
-        def submit(self, path):
+        def submit(self, path, **kw):
             info = sf.info(str(path))
             seen.update(sr=info.samplerate, ch=info.channels)
-            return super().submit(path)
+            return super().submit(path, **kw)
 
     _drive(env, diar=Spy(SEGS))
     assert seen == {"sr": 16000, "ch": 1}
+
+
+def test_attendee_count_is_sent_as_min_speakers(env):
+    env.be.uploads[MID]["item"]["attendees"] = [{"member_id": f"u{i}", "display_name": f"멤버{i}"} for i in range(4)]
+    _drive(env)
+    assert env.diar.min_speakers == [4]
+
+
+def test_no_attendees_sends_no_speaker_count(env):
+    env.be.uploads[MID]["item"]["attendees"] = []
+    _drive(env)
+    assert env.diar.min_speakers == [0]   # 0 이면 PyannoteAiDiarizer 가 minSpeakers 를 빼고 보낸다
 
 
 def test_claim_response_lost_then_continue_from_claiming_record(env):
@@ -186,11 +198,11 @@ class FlakySubmit(FakeDiarizer):
         super().__init__(segs)
         self.fail_times = fail_times
 
-    def submit(self, path):
+    def submit(self, path, **kw):
         if self.fail_times > 0:
             self.fail_times -= 1
             raise RuntimeError("pyannoteAI 503")
-        return super().submit(path)
+        return super().submit(path, **kw)
 
 
 def test_transient_failure_backs_off_then_recovers(env):
@@ -370,7 +382,7 @@ def _json_error():
 
 def test_a_valueerror_from_the_diarizer_submit_is_transient_not_a_fail(env):
     class BadJsonSubmit(FakeDiarizer):
-        def submit(self, path):
+        def submit(self, path, **kw):
             raise _json_error()
 
     assert _drive(env, BadJsonSubmit(SEGS))[-1] == "retry"

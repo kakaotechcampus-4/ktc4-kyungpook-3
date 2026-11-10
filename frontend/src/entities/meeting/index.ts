@@ -42,6 +42,7 @@ export { processingSteps } from './lib/processingSteps'
 export type { SettledMeeting, TrackedMeeting } from './model/processingTracker'
 export {
   clearTrackedMeetings,
+  dismissProcessingToast,
   dismissSettled,
   finishMeeting,
   promptSpeakers,

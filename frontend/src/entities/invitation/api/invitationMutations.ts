@@ -8,10 +8,10 @@ import type { InvitationCreateDto } from '@/shared/types/api/invitation'
 /** 같은 팀원에게 열린 초대가 있으면 서버가 취소하고 새로 만든다 */
 export async function createInvitation(
   workspaceId: string,
-  input: { memberId: string; email: string },
+  input: { memberId: string; userId: string },
   signal?: AbortSignal,
 ): Promise<void> {
-  const body: InvitationCreateDto = { member_id: input.memberId, email: input.email }
+  const body: InvitationCreateDto = { member_id: input.memberId, user_id: input.userId }
   await request(`/workspaces/${encodeURIComponent(workspaceId)}/invitations`, {
     method: 'POST',
     body,

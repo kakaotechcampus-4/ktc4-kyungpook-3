@@ -11,8 +11,8 @@ export interface SettingsNavProps {
 }
 
 /**
- * 설정 왼쪽 목차 (Settings 캔버스). 일반·연결·자동 반영·알림은 이 화면의 절로 옮긴다.
- * 팀원은 설정과 따로 있는 팀 화면으로 간다(2026-10-30 사용자 답변). 내 계정 화면은 아직 없어 누를 수 없는 항목이다
+ * 설정 왼쪽 목차 (Settings 캔버스). 일반·연결·자동 반영·알림·계정은 이 화면의 절로 옮긴다.
+ * 팀원은 설정과 따로 있는 팀 화면으로 간다(2026-10-30 사용자 답변). 캔버스의 누를 수 없던 `내 계정` 은 계정 절이 대신한다 (#627)
  */
 export function SettingsNav({ workspaceId, current, onSelect }: SettingsNavProps) {
   return (
@@ -34,10 +34,6 @@ export function SettingsNav({ workspaceId, current, onSelect }: SettingsNavProps
       <GuardedLink to={paths.members(workspaceId)} className={ITEM}>
         팀원
       </GuardedLink>
-      {/* 내 계정 화면은 아직 없다. 계정 조작(로그아웃)은 헤더의 `내 계정` 메뉴에 있다 — 누를 수 없는 항목으로 둔다 */}
-      <span aria-disabled="true" className={ITEM}>
-        내 계정<span className="sr-only"> (준비 중)</span>
-      </span>
     </nav>
   )
 }

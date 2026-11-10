@@ -3,12 +3,17 @@ import { useState } from 'react'
 import { memberListQueryOptions, updateMember } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { errorMessage } from '@/shared/api/errorMessages'
-import { CLIENT_ERROR_CODES, createClientError, isCanceledError } from '@/shared/api/errors'
+import {
+  CLIENT_ERROR_CODES,
+  createClientError,
+  isCanceledError,
+  isInvalidResponse,
+} from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
 import { Button } from '@/shared/ui/button'
 import { Modal } from '@/shared/ui/modal'
-import { toast } from '@/shared/ui/toast'
+import { showWriteUnconfirmed, toast } from '@/shared/ui/toast'
 
 interface MemberRoleControlProps {
   workspaceId: string
@@ -30,6 +35,17 @@ export function MemberRoleControl({ workspaceId, member }: MemberRoleControlProp
       toast.show({ title: `${member.displayName}에게 PM 권한을 부여했어요` })
       queryClient.setQueryData(memberListQueryOptions(workspaceId).queryKey, (members) =>
         members?.map((current) => (current.id === updated.id ? updated : current)),
+      )
+    },
+    onError: (error, session) => {
+      // 응답을 읽지 못했다. 권한이 바뀌었을 수 있어 창에 실패로 남기지 않는다 (D-184)
+      if (!session.isCurrent() || !isInvalidResponse(error)) return
+      setOpen(false)
+      showWriteUnconfirmed(
+        () =>
+          void queryClient.invalidateQueries({
+            queryKey: memberListQueryOptions(workspaceId).queryKey,
+          }),
       )
     },
     onSettled: (_, __, session) => {
@@ -78,7 +94,9 @@ export function MemberRoleControl({ workspaceId, member }: MemberRoleControlProp
           </>
         }
       >
-        {mutation.error && !isCanceledError(mutation.error) ? (
+        {mutation.error &&
+        !isCanceledError(mutation.error) &&
+        !isInvalidResponse(mutation.error) ? (
           <p role="alert" className="text-caption text-accent">
             {errorMessage(mutation.error)}
           </p>
