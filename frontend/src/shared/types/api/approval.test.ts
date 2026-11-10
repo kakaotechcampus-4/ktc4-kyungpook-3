@@ -116,9 +116,17 @@ describe('승인 스키마', () => {
             { word: 3, source: 'title', candidates: [] },
             'oops',
             { word: '애포', source: 'evidence', candidates: ['배포', 2] },
+            { word: '폴런', source: 'title', candidates: '풀런' },
+            { word: '스펙', source: 'title', candidates: ['스택'] },
           ],
         }),
-      ).toEqual([null, null, { word: '애포', source: 'evidence', candidates: [] }])
+      ).toEqual([null, null, null, null, { word: '스펙', source: 'title', candidates: ['스택'] }])
+    })
+
+    it('후보 키가 없으면 후보 없음으로 읽는다', () => {
+      expect(parse({ asr_suspects: [{ word: '애포', source: 'title' }] })).toEqual([
+        { word: '애포', source: 'title', candidates: [] },
+      ])
     })
   })
 

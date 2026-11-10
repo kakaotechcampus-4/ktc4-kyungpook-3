@@ -27,7 +27,8 @@ const asrSuspectSchema = z
   .object({
     word: z.string(),
     source: z.string(),
-    candidates: z.array(z.string()).catch([]),
+    // 키가 없으면 후보 없음이다. 글자 목록이 아니면 항목을 버린다. 빈 후보로 읽으면 「다시 확인해 주세요」로 말이 바뀐다
+    candidates: z.array(z.string()).default([]),
   })
   .nullable()
   .catch(null)

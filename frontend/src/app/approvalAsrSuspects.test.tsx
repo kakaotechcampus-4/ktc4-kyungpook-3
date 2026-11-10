@@ -107,7 +107,12 @@ describe('태스크 목록의 확인 필요 카드', () => {
     replaceDb(createScenarioDb('approval-asr-suspects'))
     Object.assign(payloadOf('ap_02'), { asr_suspects: 'garbage' })
     Object.assign(payloadOf('ap_03'), {
-      asr_suspects: [{ word: 3, source: 'title', candidates: [] }, 'oops'],
+      asr_suspects: [
+        { word: 3, source: 'title', candidates: [] },
+        'oops',
+        // 후보 목록이 깨지면 「다시 확인해 주세요」로 바꾸지 않고 그 의심을 뺀다
+        { word: '애포', source: 'title', candidates: ['배포', 2] },
+      ],
     })
     const cardOf = await openCards()
     for (const title of ['테스트 계획 정리', '배포 문서 보완']) {
