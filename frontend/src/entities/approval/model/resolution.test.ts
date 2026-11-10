@@ -39,6 +39,7 @@ function createApproval(overrides: Partial<TaskCreateApproval> = {}): TaskCreate
     payloadVersion: null,
     mergedItems: [],
     assigneeItemId: 'ei_04',
+    asrSuspects: [],
     ...overrides,
   }
 }

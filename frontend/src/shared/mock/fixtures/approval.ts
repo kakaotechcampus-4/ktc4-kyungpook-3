@@ -20,6 +20,8 @@ export const approvalFixtures: ApprovalDto[] = extractionFixtures[1].items
       extraction_item_id: item.item_id,
       meeting_id: 'mt_09',
       gate: item.gate,
+      // 지금 서버는 전사를 확인한 뒤 의심이 없으면 빈 목록을 싣는다 (#643)
+      asr_suspects: [],
     },
     related_task_id: null,
     requested_by: null,
@@ -31,3 +33,7 @@ export const approvalFixtures: ApprovalDto[] = extractionFixtures[1].items
     alias_candidate: false,
     alias_text: null,
   }))
+
+/** 공백 없는 긴 전사 의심 단어·후보 (#643). BE 는 각각 100자까지 받는다 */
+export const LONG_ASR_WORD = '배포파이프라인점검자동화'.repeat(3)
+export const LONG_ASR_CANDIDATE = '전사오인식확인'.repeat(6)

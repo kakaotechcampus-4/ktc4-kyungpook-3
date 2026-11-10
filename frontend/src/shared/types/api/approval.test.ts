@@ -74,6 +74,62 @@ describe('승인 스키마', () => {
     ).toBe(false)
   })
 
+  describe('전사 오인식 의심은 표시만 하므로 응답을 막지 않는다 (#643, D-184)', () => {
+    const parse = (patch: Record<string, unknown>) =>
+      approvalSchema.parse({ ...valid, payload: { ...valid.payload, ...patch } }).payload
+        .asr_suspects
+
+    it('항목의 글자·출처·후보를 읽고, 후보가 없으면 빈 목록이다', () => {
+      expect(
+        parse({
+          asr_suspects: [
+            { word: '애포', source: 'title', candidates: ['배포'] },
+            { word: '', source: 'check_failed' },
+          ],
+        }),
+      ).toEqual([
+        { word: '애포', source: 'title', candidates: ['배포'] },
+        { word: '', source: 'check_failed', candidates: [] },
+      ])
+    })
+
+    it('null·빈 목록은 그대로, 키가 없으면 없다', () => {
+      expect(parse({ asr_suspects: null })).toBeNull()
+      expect(parse({ asr_suspects: [] })).toEqual([])
+      const payload: Record<string, unknown> = { ...valid.payload }
+      delete payload.asr_suspects
+      expect(approvalSchema.parse({ ...valid, payload }).payload).not.toHaveProperty('asr_suspects')
+    })
+
+    it.each([
+      ['글자', 'misheard'],
+      ['숫자', 3],
+      ['객체', { word: '애포' }],
+    ])('목록이 아닌 %s 값은 null 로 읽는다', (_, value) => {
+      expect(parse({ asr_suspects: value })).toBeNull()
+    })
+
+    it('모양이 틀린 항목만 null 이 되고 나머지는 읽는다', () => {
+      expect(
+        parse({
+          asr_suspects: [
+            { word: 3, source: 'title', candidates: [] },
+            'oops',
+            { word: '애포', source: 'evidence', candidates: ['배포', 2] },
+            { word: '폴런', source: 'title', candidates: '풀런' },
+            { word: '스펙', source: 'title', candidates: ['스택'] },
+          ],
+        }),
+      ).toEqual([null, null, null, null, { word: '스펙', source: 'title', candidates: ['스택'] }])
+    })
+
+    it('후보 키가 없으면 후보 없음으로 읽는다', () => {
+      expect(parse({ asr_suspects: [{ word: '애포', source: 'title' }] })).toEqual([
+        { word: '애포', source: 'title', candidates: [] },
+      ])
+    })
+  })
+
   it('합쳐진 항목이 없거나 null 이면 합쳐지지 않은 카드로 읽는다', () => {
     expect(approvalSchema.safeParse({ ...valid, payload: { merged_items: null } }).success).toBe(
       true,
@@ -134,6 +190,7 @@ describe('MSW 픽스처가 같은 스키마를 따른다', () => {
     'approval-due-clear',
     'approval-chat',
     'approval-merged',
+    'approval-asr-suspects',
     'reply-judgment',
   ])('%s 상태에서 handler 가 내는 목록·상세', async (scenario) => {
     if (scenario !== null) applyScenario(scenario)

@@ -36,7 +36,12 @@ export interface TaskCreateApproval extends ApprovalBase {
   mergedItems: MergedApprovalItem[]
   /** 담당자를 정한 항목. 합치며 담당자가 바뀌었으면 그 항목이고, 아니면 카드를 만든 항목이다 */
   assigneeItemId: string | null
+  /** 전사 오인식 의심 (#643). 확인하지 않은 옛 카드도, 확인했고 의심이 없는 카드도 비어 있다 */
+  asrSuspects: AsrSuspect[]
 }
+/** 전사 오인식 의심 (#643). 모르는 source·모양이 틀린 항목은 mapper 가 버린다 */
+export type AsrSuspect =
+  { kind: 'misheard'; word: string; candidates: string[] } | { kind: 'check_failed' }
 export interface MergedApprovalItem {
   extractionItemId: string | null
   meetingId: string | null
