@@ -88,7 +88,7 @@ def _discussion(doc: dict) -> str:
 
 
 def _decision(detail: dict) -> str:
-    lines = [f"- {detail['text']}"]
+    lines = [f"- {detail['text']}" + (" (유효하지 않음)" if detail.get("state") == "invalid" else "")]
     if detail.get("reason"):
         lines.append(f"  - 이유: {detail['reason']}")
     if detail.get("rejected"):

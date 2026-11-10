@@ -96,6 +96,16 @@ def test_empty_sections_are_left_out():
     assert "짧은 회의" in text
 
 
+def test_invalid_decision_is_marked():
+    doc = {**EMPTY, "decision_details": [
+        {"text": "유효한 결정", "state": "valid"}, {"text": "틀린 결정", "state": "invalid"},
+    ]}
+
+    text = render_summary(doc, HEAD)
+
+    assert "## 결정\n- 유효한 결정\n- 틀린 결정 (유효하지 않음)\n" in text
+
+
 def test_empty_optional_fields_leave_no_labels():
     doc = {**EMPTY, "decision_details": [{"text": "결정", "reason": None, "rejected": [], "topic": "t", "replaces": []}],
            "task_changes": [{"task": "할 일", "assignee": "", "due": "", "purpose": "", "precondition": ""}]}

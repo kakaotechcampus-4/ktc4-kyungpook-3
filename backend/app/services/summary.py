@@ -1,4 +1,4 @@
-"""회의 요약 대기열과 저장. Extraction.summary*, Topic*, Decision 의 유일한 작성자다.
+"""회의 요약 대기열과 저장, 팀원의 주제·결정 고치기. Extraction.summary*, Topic*, Decision 의 유일한 작성자다.
 
 대기열 상태는 Extraction의 요청·시도·임대에서 나오고 claim token hash가 같은 임대의 저장만 허용한다.
 
@@ -16,6 +16,7 @@ import hashlib
 import logging
 import secrets
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
@@ -28,6 +29,7 @@ from app.core.errors import AppError, ErrorCode
 from app.models import (
     ApprovalRequest,
     Decision,
+    DecisionState,
     Extraction,
     ExtractionAction,
     ExtractionItem,
@@ -35,9 +37,12 @@ from app.models import (
     MeetingStatus,
     Member,
     Source,
+    Task,
     Topic,
+    TopicAlias,
     TopicItem,
     TopicMeeting,
+    TopicTaskDetach,
     Workspace,
     WorkspaceAsrTerm,
 )
@@ -210,7 +215,7 @@ def _input_lines(db: Session, meeting_id: str) -> list[SummaryInputLine]:
             seq=src.seq,
             at_ms=src.start_ms,
             speaker=display_name or src.speaker_name or src.speaker_discord_user_id or "Unknown",
-            text=src.text,
+            text=src.shown_text,
         )
         for src, display_name in rows
     ]
@@ -336,6 +341,7 @@ def _input_decisions(db: Session, meeting: Meeting) -> list[SummaryInputDecision
             Decision.workspace_id == meeting.workspace_id,
             Meeting.deleted_at.is_(None),
             Meeting.started_at < meeting.started_at,
+            Decision.state == DecisionState.VALID,
             or_(Decision.replaced_by.is_(None), replacement_meeting.started_at >= meeting.started_at),
         )
         .order_by(Meeting.started_at.desc(), Meeting.meeting_id, Decision.position)
@@ -447,8 +453,11 @@ def _queue_alive(extraction: Extraction, now: datetime) -> bool:
 
 
 def documents(db: Session, rows: list[tuple[Meeting, Extraction | None]]) -> dict[str, dict]:
-    """화면, summary.md, 합본이 읽는 유일한 요약. meeting_id -> 보여 줄 문서.
+    """화면, summary.md, 합본이 읽는 유일한 요약. meeting_id -> 보여 줄 문서. 회의 수와 무관하게 쿼리는 많아야 다섯 번이다.
 
+    JSON 은 AI 의 기록이고 결정 문장·상태와 주제 이름은 행이 정본이라 여기서 합친다. 결정은 지우지 않은 행을 회의 안 순서로 두고
+    문자열 목록(decisions)에는 유효한 것만 둔다. 버린 대안과 뒤집은 결정 사본은 같은 decision_id 의 JSON 에서 가져오고, 사본은
+    지운 결정을 빼고 회의 제목을 지금 값으로 바꾼다. 주제는 회의에 이어진 주제의 지금 이름을 저장된 순서대로 둔다.
     할 일 변화는 항목이 지금 반영된 것만 보인다. 항목 키가 없는 옛 요약의 할 일 변화와 요약 뒤 되돌린 항목은 숨는다.
     """
     stored = {
@@ -456,16 +465,68 @@ def documents(db: Session, rows: list[tuple[Meeting, Extraction | None]]) -> dic
         for meeting, extraction in rows
         if (document := _stored(extraction)) is not None
     }
+    if not stored:
+        return {}
     final = item_fate.final_items().where(
         ExtractionItem.extraction_id.in_({extraction_id for extraction_id, _ in stored.values()})
     ).subquery()
-    shown = set(db.execute(select(final.c.extraction_id, final.c.item_id)).all()) if stored else set()
+    shown = set(db.execute(select(final.c.extraction_id, final.c.item_id)).all())
     for extraction_id, document in stored.values():
         if isinstance(document.get("task_changes"), list):
             document["task_changes"] = [
                 change for change in document["task_changes"]
                 if isinstance(change, dict) and (extraction_id, change.get("item_id")) in shown
             ]
+    decisions: dict[str, list[tuple[Decision, str]]] = {}
+    for row, topic_name in db.execute(
+        select(Decision, Topic.name).join(Topic, Topic.topic_id == Decision.topic_id)
+        .where(Decision.meeting_id.in_(stored), Decision.state != DecisionState.REMOVED)
+        .order_by(Decision.meeting_id, Decision.position)
+    ):
+        decisions.setdefault(row.meeting_id, []).append((row, topic_name))
+    topics: dict[str, list[tuple[str, str]]] = {}
+    for meeting_id, topic_id, name in db.execute(
+        select(TopicMeeting.meeting_id, Topic.topic_id, Topic.name).join(Topic, Topic.topic_id == TopicMeeting.topic_id)
+        .where(TopicMeeting.meeting_id.in_(stored)).order_by(Topic.created_at, Topic.topic_id)
+    ):
+        topics.setdefault(meeting_id, []).append((topic_id, name))
+    records = {
+        meeting_id: {detail.get("decision_id"): detail for detail in document.get("decision_details", [])
+                     if isinstance(detail, dict)}
+        for meeting_id, (_, document) in stored.items()
+    }
+    copies = [copy for details in records.values() for detail in details.values()
+              for copy in detail.get("replaces", []) if isinstance(copy, dict)]
+    removed = set(db.scalars(select(Decision.decision_id).where(
+        Decision.decision_id.in_({copy.get("decision_id") for copy in copies}), Decision.state == DecisionState.REMOVED,
+    ))) if copies else set()
+    titles = dict(db.execute(select(Meeting.meeting_id, Meeting.title).where(
+        Meeting.meeting_id.in_({copy.get("meeting_id") for copy in copies}),
+    )).all()) if copies else {}
+    for meeting_id, (_, document) in stored.items():
+        details = []
+        for row, topic_name in decisions.get(meeting_id, []):
+            record = records[meeting_id].get(row.decision_id, {})
+            details.append({
+                "decision_id": row.decision_id,
+                "text": row.text,
+                "reason": row.reason,
+                "rejected": record.get("rejected", []),
+                "topic": topic_name,
+                "replaces": [
+                    {**copy, "meeting_title": titles.get(copy.get("meeting_id"), copy.get("meeting_title"))}
+                    for copy in record.get("replaces", [])
+                    if isinstance(copy, dict) and copy.get("decision_id") not in removed
+                ],
+                "state": row.state,
+                "edited": row.edited_at is not None,
+            })
+        document["decision_details"] = details
+        document["decisions"] = [detail["text"] for detail in details if detail["state"] == DecisionState.VALID]
+        order = {topic_id: i for i, topic_id in enumerate(document.get("topic_ids") or [])}
+        linked = sorted(topics.get(meeting_id, []), key=lambda topic: order.get(topic[0], len(order)))
+        document["topics"] = [name for _, name in linked]
+        document["topic_ids"] = [topic_id for topic_id, _ in linked]
     return {meeting_id: document for meeting_id, (_, document) in stored.items()}
 
 
@@ -549,12 +610,17 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     previous_topics = set(
         db.scalars(select(TopicMeeting.topic_id).where(TopicMeeting.meeting_id == meeting.meeting_id))
     )
-    _clear_meeting(db, meeting.meeting_id, extraction_id)
+    previous_decisions = _decision_keys(db, meeting.meeting_id)
+    frozen = _clear_meeting(db, meeting.meeting_id, extraction_id, keep_human=True)
+    kept_topics = set(
+        db.scalars(select(TopicMeeting.topic_id).where(TopicMeeting.meeting_id == meeting.meeting_id))
+    )
 
     item_ids = set(db.scalars(select(ExtractionItem.item_id).where(ExtractionItem.extraction_id == extraction_id)))
     topics: dict[str, str] = {}
     links: set[tuple[str, str]] = set()
-    details: list[dict] = []
+    # 결정을 고정한 회의는 AI 의 결정을 버리고 앞 요약의 결정 기록을 그대로 옮긴다. 행의 위치와 ID 가 그대로라 맞는다
+    details: list[dict] = list((_stored(extraction) or {}).get("decision_details", [])) if frozen else []
     for entry in payload.topics:
         topic = _resolve_topic(db, meeting.workspace_id, entry)
         if topic is None:
@@ -565,7 +631,7 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
             continue
         topics.setdefault(topic.topic_id, topic.name)
         links.update((topic.topic_id, item_id) for item_id in entry.item_ids if item_id in item_ids)
-        for decision in entry.decisions:
+        for decision in [] if frozen else entry.decisions:
             row = Decision(
                 workspace_id=meeting.workspace_id,
                 meeting_id=meeting.meeting_id,
@@ -582,10 +648,10 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
                 "reason": decision.reason,
                 "rejected": decision.rejected,
                 "topic": topic.name,
-                "replaces": _replace_decisions(db, row, meeting, decision.replaces),
+                "replaces": _replaced_copies(db, meeting, decision.replaces),
             })
 
-    db.add_all(TopicMeeting(topic_id=topic_id, meeting_id=meeting.meeting_id) for topic_id in topics)
+    db.add_all(TopicMeeting(topic_id=topic_id, meeting_id=meeting.meeting_id) for topic_id in topics.keys() - kept_topics)
     db.add_all(TopicItem(topic_id=topic_id, item_id=item_id) for topic_id, item_id in links)
     extraction.summary = json.dumps(_document(payload, topics, details), ensure_ascii=False)
     extraction.summary_requested_at = None
@@ -593,7 +659,10 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     extraction.summary_claimed_at = None
     extraction.summary_claim_token_hash = None
     db.flush()
-    _delete_orphan_topics(db, previous_topics - set(topics))
+    if not frozen:
+        _carry_replaced(db, meeting.workspace_id, previous_decisions, _decision_keys(db, meeting.meeting_id))
+    _relink(db, meeting.workspace_id)
+    _delete_orphan_topics(db, previous_topics - set(topics), keep_human=True)
     return SummarySaveResponse(
         extraction_id=extraction_id,
         meeting_id=meeting.meeting_id,
@@ -603,18 +672,29 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     )
 
 
-def _clear_meeting(db: Session, meeting_id: str, extraction_id: str | None) -> None:
-    decision_ids = select(Decision.decision_id).where(Decision.meeting_id == meeting_id)
-    # 이 회의가 뒤집었던 옛 결정을 유효로 되돌린다. 새 요약이 다시 뒤집으면 다시 걸린다
-    db.execute(update(Decision).where(Decision.replaced_by.in_(decision_ids)).values(replaced_by=None))
-    db.execute(delete(Decision).where(Decision.meeting_id == meeting_id))
+def _clear_meeting(db: Session, meeting_id: str, extraction_id: str | None, *, keep_human: bool) -> bool:
+    """재요약(keep_human)이면 팀원이 고친 결정이 하나라도 있는 회의의 결정 전부와 그 뒤집기 연결을 두고 True 를 돌려준다.
+
+    결정이 남는 주제(상태와 무관)와 팀원이 고친 주제는 회의 연결도 둔다. Decision.topic_id 가 CASCADE 라 주제가 고아로 지워지면
+    지운 결정 표시까지 사라져 다음 재요약에서 그 결정이 되살아나기 때문이다. 회의 삭제(keep_human 아님)는 전부 지운다.
+    """
+    frozen = keep_human and bool(
+        db.scalar(select(exists().where(Decision.meeting_id == meeting_id, Decision.edited_at.is_not(None))))
+    )
+    if not frozen:
+        db.execute(delete(Decision).where(Decision.meeting_id == meeting_id))
     extractions = select(Extraction.extraction_id).where(Extraction.meeting_id == meeting_id)
     item_ids = select(ExtractionItem.item_id).where(
         ExtractionItem.extraction_id == extraction_id if extraction_id is not None
         else ExtractionItem.extraction_id.in_(extractions)
     )
     db.execute(delete(TopicItem).where(TopicItem.item_id.in_(item_ids)))
-    db.execute(delete(TopicMeeting).where(TopicMeeting.meeting_id == meeting_id))
+    kept = [
+        TopicMeeting.topic_id.not_in(select(Decision.topic_id).where(Decision.meeting_id == meeting_id)),
+        TopicMeeting.topic_id.not_in(select(Topic.topic_id).where(Topic.edited_at.is_not(None))),
+    ] if keep_human else []
+    db.execute(delete(TopicMeeting).where(TopicMeeting.meeting_id == meeting_id, *kept))
+    return frozen
 
 
 def remove_meeting_summary(db: Session, meeting: Meeting) -> None:
@@ -624,10 +704,12 @@ def remove_meeting_summary(db: Session, meeting: Meeting) -> None:
         Meeting.workspace_id == meeting.workspace_id, Meeting.meeting_id != meeting.meeting_id,
         Extraction.summary.is_not(None),
     ))
+    named = set()
     for extraction in rows:
         document = _stored(extraction)
         if document is None:
             continue
+        named.update(normalize_topic_name(name) for name in document.get("topics", []) if isinstance(name, str))
         changed = False
         for detail in document.get("decision_details", []):
             if not isinstance(detail, dict) or not isinstance(detail.get("replaces"), list):
@@ -639,8 +721,12 @@ def remove_meeting_summary(db: Session, meeting: Meeting) -> None:
             changed |= len(previous) != len(detail["replaces"])
         if changed:
             extraction.summary = json.dumps(document, ensure_ascii=False)
-    _clear_meeting(db, meeting.meeting_id, None)
-    _delete_orphan_topics(db, topic_ids)
+    _clear_meeting(db, meeting.meeting_id, None, keep_human=False)
+    _relink(db, meeting.workspace_id)
+    _delete_orphan_topics(db, topic_ids, keep_human=False)
+    # 합쳐 사라진 주제의 이름은 살아 있는 주제의 별칭으로 남아 FK 로 지워지지 않는다. 어느 회의의 이름인지 적어 두지 않아서
+    # 남은 회의의 요약이 쓰지 않은 이름은 지운 회의의 것으로 보고 지운다
+    db.execute(delete(TopicAlias).where(TopicAlias.topic_id.in_(topic_ids), TopicAlias.name_key.not_in(named)))
 
 
 def _resolve_topic(db: Session, workspace_id: str, entry: SummaryTopicIn) -> Topic | None:
@@ -657,7 +743,15 @@ def _resolve_topic(db: Session, workspace_id: str, entry: SummaryTopicIn) -> Top
 
 
 def _topic_by_key(db: Session, workspace_id: str, key: str) -> Topic | None:
-    return db.scalars(select(Topic).where(Topic.workspace_id == workspace_id, Topic.name_key == key)).first()
+    """Topic.name_key, 없으면 이름을 바꾸거나 합쳐 사라진 옛 키(topic_alias)."""
+    topic = db.scalars(select(Topic).where(Topic.workspace_id == workspace_id, Topic.name_key == key)).first()
+    if topic is None:
+        topic = db.scalars(
+            select(Topic)
+            .join(TopicAlias, TopicAlias.topic_id == Topic.topic_id)
+            .where(TopicAlias.workspace_id == workspace_id, TopicAlias.name_key == key)
+        ).first()
+    return topic
 
 
 def _create_topic(db: Session, workspace_id: str, key: str, entry: SummaryTopicIn) -> Topic:
@@ -671,8 +765,8 @@ def _create_topic(db: Session, workspace_id: str, key: str, entry: SummaryTopicI
     return topic
 
 
-def _replace_decisions(db: Session, new: Decision, meeting: Meeting, replaces: list[str]) -> list[dict]:
-    """옛 결정에 뒤집은 결정을 걸고, 문서에 넣을 사본을 돌려준다. 사본은 옛 결정이 또 바뀌어도 그 회의의 기록으로 남는다."""
+def _replaced_copies(db: Session, meeting: Meeting, replaces: list[str]) -> list[dict]:
+    """이 회의가 뒤집은 앞 회의의 결정을 문서에 넣을 사본으로 돌려준다. 사본은 옛 결정이 또 바뀌어도 그 회의의 기록으로 남는다."""
     if not replaces:
         return []
     rows = db.execute(
@@ -688,7 +782,6 @@ def _replace_decisions(db: Session, new: Decision, meeting: Meeting, replaces: l
     ).all()
     copies = []
     for old, old_meeting in rows:
-        old.replaced_by = new.decision_id
         copies.append({
             "decision_id": old.decision_id,
             "text": old.text,
@@ -699,12 +792,206 @@ def _replace_decisions(db: Session, new: Decision, meeting: Meeting, replaces: l
     return copies
 
 
-def _delete_orphan_topics(db: Session, topic_ids: set[str]) -> None:
-    """이 회의가 더 쓰지 않는 주제 중 어느 회의에도 남지 않은 것을 지운다. 결정과 항목 연결은 회의를 통해서만 달리므로 함께 남는 것이 없다."""
-    if topic_ids:
-        db.execute(
-            delete(Topic).where(Topic.topic_id.in_(topic_ids), ~exists().where(TopicMeeting.topic_id == Topic.topic_id))
+def _summarized(db: Session, workspace_id: str) -> list[Extraction]:
+    return db.scalars(select(Extraction).join(Meeting, Meeting.meeting_id == Extraction.meeting_id).where(
+        Meeting.workspace_id == workspace_id, Meeting.deleted_at.is_(None), Extraction.summary.is_not(None),
+    )).all()
+
+
+def _decision_keys(db: Session, meeting_id: str) -> dict[str, tuple[str, str]]:
+    return {
+        decision_id: (topic_id, text)
+        for decision_id, topic_id, text in db.execute(
+            select(Decision.decision_id, Decision.topic_id, Decision.text).where(Decision.meeting_id == meeting_id)
         )
+    }
+
+
+def _carry_replaced(
+    db: Session, workspace_id: str, previous: dict[str, tuple[str, str]], current: dict[str, tuple[str, str]],
+) -> None:
+    """재요약이 지우고 다시 만든 결정을 다른 회의의 기록이 뒤집었다고 적었으면, 그 사본을 같은 주제·같은 문장의 새 결정으로 옮긴다.
+
+    뒤집기는 뒤집은 회의의 것이라 앞 회의의 재요약이 지우지 않는다. 결정을 고친 뒤 회의는 다시 요약해도 뒤집기를 다시 걸지 못한다.
+    주제나 문장이 바뀌었거나 한 주제에 같은 문장이 둘 이상이면 같은 결정인지 알 수 없어 옮기지 않는다.
+    틀리게 이으면 유효한 결정이 말없이 사라진다.
+    """
+    def unique(keys: dict[str, tuple[str, str]]) -> dict[tuple[str, str], str]:
+        counts = Counter(keys.values())
+        return {key: decision_id for decision_id, key in keys.items() if counts[key] == 1}
+
+    old, new = unique(previous), unique(current)
+    successors = {old[key]: new[key] for key in old.keys() & new.keys()}
+    if not successors:
+        return
+    for extraction in _summarized(db, workspace_id):
+        document = _stored(extraction) or {}
+        changed = False
+        for detail in document.get("decision_details", []):
+            for copy in detail.get("replaces", []) if isinstance(detail, dict) else []:
+                if isinstance(copy, dict) and copy.get("decision_id") in successors:
+                    copy["decision_id"] = successors[copy["decision_id"]]
+                    changed = True
+        if changed:
+            extraction.summary = json.dumps(document, ensure_ascii=False)
+
+
+def _relink(db: Session, workspace_id: str) -> None:
+    """replaced_by 를 쓰는 유일한 곳. 뒤집기는 뒤집은 결정이 있는 회의의 기록(decision_details[].replaces)이 정본이고
+    replaced_by 는 그 색인이라, 기록이나 결정 상태를 바꾼 쪽은 여기서 워크스페이스의 색인을 기록대로 다시 맞춘다.
+
+    옛 결정을 뒤집었다고 적은, 지우지 않은 더 늦은 결정이 여럿이면 가장 이른 회의의 것을 건다. 그래야 회의 시점에 유효했던 결정
+    (_input_decisions)이 맞고, 하나를 지워도 남은 것이 이어받으며, 되살린 결정이 다른 회의의 뒤집기를 빼앗지 않는다.
+    """
+    decisions = {
+        decision.decision_id: (decision, started_at)
+        for decision, started_at in db.execute(
+            select(Decision, Meeting.started_at).join(Meeting, Meeting.meeting_id == Decision.meeting_id)
+            .where(Decision.workspace_id == workspace_id, Meeting.deleted_at.is_(None))
+        )
+    }
+    claims: dict[str, list[tuple]] = {}
+    for extraction in _summarized(db, workspace_id):
+        for detail in (_stored(extraction) or {}).get("decision_details", []):
+            new, new_at = decisions.get(detail.get("decision_id"), (None, None)) if isinstance(detail, dict) else (None, None)
+            if new is None or new.state == DecisionState.REMOVED:
+                continue
+            for copy in detail.get("replaces", []):
+                old_id = copy.get("decision_id") if isinstance(copy, dict) else None
+                if old_id in decisions and decisions[old_id][1] < new_at:
+                    claims.setdefault(old_id, []).append((new_at, new.meeting_id, new.position, new.decision_id))
+    for decision_id, (decision, _) in decisions.items():
+        decision.replaced_by = min(claims[decision_id])[-1] if decision_id in claims else None
+    db.flush()
+
+
+def _delete_orphan_topics(db: Session, topic_ids: set[str], *, keep_human: bool) -> None:
+    """이 회의가 더 쓰지 않는 주제 중 어느 회의에도 남지 않은 것을 지운다. 결정과 항목 연결은 회의를 통해서만 달리므로 함께 남는 것이 없다.
+
+    keep_human 이면 팀원이 고친 주제는 회의가 없어도 둔다. 별칭과 뗀 표시는 주제와 함께 FK 로 지워진다.
+    """
+    if topic_ids:
+        human = [Topic.edited_at.is_(None)] if keep_human else []
+        db.execute(
+            delete(Topic).where(
+                Topic.topic_id.in_(topic_ids), ~exists().where(TopicMeeting.topic_id == Topic.topic_id), *human
+            )
+        )
+
+
+def _workspace_topic(db: Session, workspace_id: str, topic_id: str) -> Topic:
+    topic = db.get(Topic, topic_id)
+    if topic is None or topic.workspace_id != workspace_id:
+        raise AppError(ErrorCode.TOPIC_NOT_FOUND, details={"topic_id": topic_id})
+    return topic
+
+
+def rename_topic(db: Session, workspace_id: str, topic_id: str, *, name: str | None, description: str | None) -> Topic:
+    """호출자가 worker_gate 를 먼저 잡는다. 옛 키는 별칭으로 남겨 재요약이 옛 이름을 내도 이 주제로 온다. 커밋은 호출자가 한다."""
+    topic = _workspace_topic(db, workspace_id, topic_id)
+    if name is not None:
+        key = normalize_topic_name(name)
+        if not key:
+            raise AppError(ErrorCode.INVALID_REQUEST, message="주제 이름에 글자가 없습니다.")
+        if key != topic.name_key:
+            taken = db.scalar(select(Topic.topic_id).where(Topic.workspace_id == workspace_id, Topic.name_key == key))
+            if taken is not None:
+                raise AppError(ErrorCode.TOPIC_NAME_TAKEN, details={"topic_id": taken})
+            # 새 키를 가리던 별칭은 지운다. 두면 별칭이 이 이름을 다른 주제로 보낸다
+            db.execute(delete(TopicAlias).where(TopicAlias.workspace_id == workspace_id, TopicAlias.name_key == key))
+            db.add(TopicAlias(workspace_id=workspace_id, name_key=topic.name_key, topic_id=topic.topic_id))
+            topic.name_key = key
+        topic.name = name
+    if description is not None:
+        topic.description = description
+    topic.edited_at = datetime.now(timezone.utc)
+    db.flush()
+    return topic
+
+
+def merge_topics(db: Session, workspace_id: str, topic_id: str, into_topic_id: str) -> Topic:
+    """topic 의 회의·항목·뗀 표시·결정·별칭을 into 로 옮기고 topic 의 키를 into 의 별칭으로 남긴 뒤 topic 을 지운다.
+
+    into 가 합치기 전에 보이던 태스크의 뗀 표시는 옮기지 않는다. topic 에서 뗀 것이고 into 에서는 아무도 떼지 않았다.
+    호출자가 worker_gate 를 먼저 잡는다. 커밋은 호출자가 한다.
+    """
+    from app.services import project_map
+
+    if topic_id == into_topic_id:
+        raise AppError(ErrorCode.INVALID_REQUEST, message="같은 주제로는 합칠 수 없습니다.")
+    topic = _workspace_topic(db, workspace_id, topic_id)
+    into = _workspace_topic(db, workspace_id, into_topic_id)
+    links = project_map._visible_links(workspace_id).where(TopicItem.topic_id == into_topic_id).subquery()
+    shown = list(db.scalars(select(links.c.task_id)))
+    db.execute(
+        delete(TopicTaskDetach).where(TopicTaskDetach.topic_id == topic_id, TopicTaskDetach.task_id.in_(shown))
+        .execution_options(synchronize_session=False)
+    )
+    for model, column in ((TopicMeeting, "meeting_id"), (TopicItem, "item_id"), (TopicTaskDetach, "task_id")):
+        # into 에 이미 있는 짝은 옮기지 않고 지운다. 옮기면 기본 키가 겹친다
+        present = aliased(model)
+        db.execute(
+            update(model)
+            .where(model.topic_id == topic_id,
+                   getattr(model, column).not_in(select(getattr(present, column)).where(present.topic_id == into_topic_id)))
+            .values(topic_id=into_topic_id)
+            .execution_options(synchronize_session=False)
+        )
+        db.execute(delete(model).where(model.topic_id == topic_id).execution_options(synchronize_session=False))
+    db.execute(update(Decision).where(Decision.topic_id == topic_id).values(topic_id=into_topic_id))
+    db.execute(update(TopicAlias).where(TopicAlias.topic_id == topic_id).values(topic_id=into_topic_id))
+    key = topic.name_key
+    db.delete(topic)
+    db.flush()
+    db.add(TopicAlias(workspace_id=workspace_id, name_key=key, topic_id=into_topic_id))
+    into.edited_at = datetime.now(timezone.utc)
+    db.flush()
+    return into
+
+
+def edit_decision(
+    db: Session, workspace_id: str, decision_id: str, *, text: str | None, state: DecisionState | None
+) -> Decision:
+    """문장 고치기와 상태 바꾸기. 고치면 그 회의의 결정은 재요약에서 고정된다. 커밋은 호출자가 한다.
+
+    호출자가 worker_gate 를 먼저 잡는다. 회의 행을 잠가 회의 삭제와 줄을 선다. 지우면(removed) 이 결정이 뒤집은 옛 결정이 다시
+    유효해지고(다른 결정도 뒤집었으면 그 결정이 이어받는다), 지운 것을 되돌리면 요약 기록대로 다시 뒤집는다. 유효하지 않음(invalid)은
+    연결을 그대로 둔다.
+    """
+    meeting_id = db.scalar(
+        select(Decision.meeting_id).where(Decision.decision_id == decision_id, Decision.workspace_id == workspace_id)
+    )
+    meeting = None if meeting_id is None else db.scalar(
+        select(Meeting).where(Meeting.meeting_id == meeting_id).with_for_update().execution_options(populate_existing=True)
+    )
+    if meeting is None or meeting.deleted_at is not None:
+        raise AppError(ErrorCode.DECISION_NOT_FOUND, details={"decision_id": decision_id})
+    decision = db.get(Decision, decision_id, populate_existing=True)
+    if text is not None:
+        decision.text = text
+    if state is not None:
+        decision.state = state
+    decision.edited_at = datetime.now(timezone.utc)
+    db.flush()
+    _relink(db, workspace_id)
+    return decision
+
+
+def detach_task(db: Session, workspace_id: str, topic_id: str, task_id: str) -> None:
+    """주제에서 태스크를 뗀다. 항목 연결은 두고 _visible_links 가 가린다. 다시 불러도 같다. 커밋은 호출자가 한다."""
+    from app.services import project_map
+
+    topic = _workspace_topic(db, workspace_id, topic_id)
+    task = db.get(Task, task_id)
+    if task is None or task.workspace_id != workspace_id or task.is_deleted:
+        raise AppError(ErrorCode.TASK_NOT_FOUND, details={"task_id": task_id})
+    links = project_map._visible_links(workspace_id).where(TopicItem.topic_id == topic_id, Task.task_id == task_id)
+    if not db.scalar(select(links.exists())):
+        return
+    db.add(TopicTaskDetach(topic_id=topic_id, task_id=task_id, workspace_id=workspace_id))
+    # 떼기도 고친 것으로 친다. 표시가 없으면 주제를 뺀 재요약이 주제를 고아로 지울 때 뗀 표시도 함께 지워져 태스크가 다시 붙는다
+    topic.edited_at = datetime.now(timezone.utc)
+    db.flush()
 
 
 def _document(payload: SummaryWriteRequest, topics: dict[str, str], details: list[dict]) -> dict:

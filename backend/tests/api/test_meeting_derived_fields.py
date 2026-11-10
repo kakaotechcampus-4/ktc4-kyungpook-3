@@ -248,7 +248,8 @@ def test_audio_merged_follows_source(client, db, seed):
 @pytest.mark.parametrize(
     ("stored", "expected"),
     [
-        ('{"decisions": ["배포 일정 확정"]}', {"decisions": ["배포 일정 확정"]}),
+        ('{"overview": "배포 일정 확정"}', {"overview": "배포 일정 확정", "decisions": [], "decision_details": [],
+                                      "topics": [], "topic_ids": []}),
         ("{깨진 JSON", None),
         ('["목록"]', None),
         ('"문자열"', None),

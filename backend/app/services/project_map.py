@@ -6,12 +6,13 @@
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, exists, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
 from app.models import (
     Decision,
+    DecisionState,
     Extraction,
     Meeting,
     MeetingSource,
@@ -24,6 +25,7 @@ from app.models import (
     Topic,
     TopicItem,
     TopicMeeting,
+    TopicTaskDetach,
     Workspace,
 )
 from app.schemas.project_map import (
@@ -64,7 +66,7 @@ class MarkdownFile:
 
 
 def _visible_links(workspace_id: str) -> Select:
-    """주제와 태스크 연결의 유일한 정의. (topic_id, task_id, meeting_id). 대기 중인 수정 항목은 승인 뒤에 잇는다."""
+    """주제와 태스크 연결의 유일한 정의. (topic_id, task_id, meeting_id). 대기 중인 수정 항목은 승인 뒤에 잇고, 팀원이 뗀 짝은 잇지 않는다."""
     final = item_fate.final_items().subquery()
     return (
         select(TopicItem.topic_id, Task.task_id, Extraction.meeting_id)
@@ -78,6 +80,7 @@ def _visible_links(workspace_id: str) -> Select:
             Topic.workspace_id == workspace_id,
             Task.workspace_id == workspace_id,
             Meeting.deleted_at.is_(None),
+            ~exists().where(TopicTaskDetach.topic_id == TopicItem.topic_id, TopicTaskDetach.task_id == Task.task_id),
         )
     )
 
@@ -162,15 +165,29 @@ def build_graph(db: Session, workspace_id: str) -> GraphResponse:
     )
 
 
+def topic_decision(decision: Decision, meeting: Meeting) -> TopicDecision:
+    return TopicDecision(
+        decision_id=decision.decision_id,
+        text=decision.text,
+        reason=decision.reason,
+        meeting_id=meeting.meeting_id,
+        meeting_title=meeting.title,
+        decided_at=meeting.started_at,
+        replaced_by=decision.replaced_by,
+        state=decision.state,
+        edited=decision.edited_at is not None,
+    )
+
+
 def topic_detail(db: Session, workspace_id: str, topic_id: str) -> TopicDetailResponse:
-    """바뀐 결정도 replaced_by 와 함께 준다."""
+    """바뀐 결정도 replaced_by 와 함께 준다. 팀원이 지운 결정은 빼고 유효하지 않다고 한 결정은 state 로 알린다."""
     topic = db.get(Topic, topic_id)
     if topic is None or topic.workspace_id != workspace_id:
         raise AppError(ErrorCode.TOPIC_NOT_FOUND, details={"topic_id": topic_id})
     decisions = db.execute(
         select(Decision, Meeting)
         .join(Meeting, Meeting.meeting_id == Decision.meeting_id)
-        .where(Decision.topic_id == topic_id, Meeting.deleted_at.is_(None))
+        .where(Decision.topic_id == topic_id, Meeting.deleted_at.is_(None), Decision.state != DecisionState.REMOVED)
         .order_by(Meeting.started_at, Meeting.meeting_id, Decision.position)
     ).all()
     task_ids = select(_visible_links(workspace_id).where(TopicItem.topic_id == topic_id).subquery().c.task_id)
@@ -190,18 +207,8 @@ def topic_detail(db: Session, workspace_id: str, topic_id: str) -> TopicDetailRe
         topic_id=topic.topic_id,
         name=topic.name,
         description=topic.description,
-        decisions=[
-            TopicDecision(
-                decision_id=decision.decision_id,
-                text=decision.text,
-                reason=decision.reason,
-                meeting_id=meeting.meeting_id,
-                meeting_title=meeting.title,
-                decided_at=meeting.started_at,
-                replaced_by=decision.replaced_by,
-            )
-            for decision, meeting in decisions
-        ],
+        edited=topic.edited_at is not None,
+        decisions=[topic_decision(decision, meeting) for decision, meeting in decisions],
         tasks=[
             TopicTask(
                 task_id=task.task_id,
@@ -236,8 +243,10 @@ def _attendees(db: Session, meeting_ids: list[str]) -> dict[str, list[str]]:
 def _head(meeting: Meeting, document: dict, attendees: list[str]) -> SummaryHead:
     chat = meeting.source == MeetingSource.CHAT
     start = utc(meeting.started_at).astimezone(WORKSPACE_TZ)
+    # 채팅 회의는 수집이 붙인 "채팅 <날짜>" 대신 일일 요약이라 부르고, 팀원이 고친 제목이 있으면 그것을 쓴다
+    title = (meeting.title if meeting.title_edited_at is not None else "일일 요약") if chat else meeting.title or "회의"
     return SummaryHead(
-        title="일일 요약" if chat else meeting.title or "회의",
+        title=title,
         date=summary.meeting_date(meeting.started_at),
         attendees=attendees,
         source_url=f"{mailer.app_base_url()}/workspaces/{meeting.workspace_id}/meetings/{meeting.meeting_id}",
@@ -321,7 +330,8 @@ def _valid_decisions(db: Session, workspace_id: str) -> list[BundleDecision]:
         select(Topic.name, Decision.text, Meeting.started_at)
         .join(Topic, Topic.topic_id == Decision.topic_id)
         .join(Meeting, Meeting.meeting_id == Decision.meeting_id)
-        .where(Decision.workspace_id == workspace_id, Decision.replaced_by.is_(None), Meeting.deleted_at.is_(None))
+        .where(Decision.workspace_id == workspace_id, Decision.replaced_by.is_(None), Meeting.deleted_at.is_(None),
+               Decision.state == DecisionState.VALID)
         .order_by(Topic.name, Meeting.started_at, Decision.position)
     ).all()
     return [
