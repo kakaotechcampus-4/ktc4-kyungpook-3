@@ -90,17 +90,19 @@ function MapTabs({
 }
 
 function DesktopPanel({
+  itemId,
   title,
   onClose,
   children,
 }: {
+  itemId: string
   title: string
   onClose: () => void
   children: ReactNode
 }) {
   const heading = useRef<HTMLHeadingElement>(null)
-  // 고른 항목이 바뀌면 패널 제목으로 옮긴다 — 키보드로 고른 사람이 바로 이어 읽는다
-  useEffect(() => heading.current?.focus(), [title])
+  // 고른 항목이 바뀌면 패널 제목으로 옮긴다 — 키보드로 고른 사람이 바로 이어 읽는다. 이름만 바뀐 것(고치기)은 옮기지 않는다
+  useEffect(() => heading.current?.focus(), [itemId])
   return (
     <aside aria-label="고른 항목" className={ASIDE}>
       <div className={ASIDE_HEAD}>
@@ -172,6 +174,7 @@ function MapBody({
             if (!open) close()
           }}
           title={node?.label ?? ''}
+          itemKey={node?.id}
           returnFocus={() => opener.current}
         >
           <div className="min-h-[0px] overflow-y-auto pb-8">{panel}</div>
@@ -182,7 +185,7 @@ function MapBody({
     <div className={node === undefined ? 'flex flex-col' : COLUMNS_WITH_PANEL}>
       <div className="min-w-[0px]">{content}</div>
       {node === undefined ? null : (
-        <DesktopPanel title={node.label} onClose={close}>
+        <DesktopPanel itemId={node.id} title={node.label} onClose={close}>
           {panel}
         </DesktopPanel>
       )}
