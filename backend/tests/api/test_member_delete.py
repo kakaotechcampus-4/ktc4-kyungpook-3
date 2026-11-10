@@ -191,3 +191,12 @@ def test_deleted_member_loses_access_and_open_sockets(mdb, mseed, monkeypatch):
 
     assert revoked == [mseed["alice"].member_id]
     assert client("alice").get(f"{P}/members", params={"workspace_id": mseed["ws"]}).status_code == 403
+
+
+def test_deleted_member_cannot_be_edited(mdb, mseed):
+    # 지운 팀원에 디스코드를 다시 잇거나 이름을 바꾸면 명단에 없는 사람이 다시 일을 받는다(#652 와 맞물림). 조회는 이력용으로 둔다
+    assert _delete("pm", mseed["carol"]).status_code == 204
+    r = client("pm").patch(f"{P}/members/{mseed['carol'].member_id}", json={"display_name": "캐롤2"})
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "MEMBER_NOT_FOUND"
+    assert client("pm").get(f"{P}/members/{mseed['carol'].member_id}").status_code == 200

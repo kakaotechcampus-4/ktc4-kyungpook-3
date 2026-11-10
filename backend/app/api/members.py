@@ -311,6 +311,8 @@ def update_member(
     db: Session = Depends(get_db),
 ) -> dict:
     member = _get_member(db, member_id, user, pm=True)
+    if member.is_deleted:  # 지운 팀원은 이력용으로 조회만 된다. 고치면 명단에 없는 사람이 다시 일을 받는다(#637)
+        raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
 
     updates = {field: getattr(payload, field) for field in payload.model_fields_set}
 
