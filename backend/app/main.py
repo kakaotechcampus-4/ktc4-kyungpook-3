@@ -14,7 +14,7 @@ from app.api import approvals, bot_lookups, bot_messages, extractions, invitatio
 from app.api import bot_summaries, consents, message_settings, message_socket, notifications, project_map
 from app.services import scheduler, meeting_deletion
 from app.api import meeting_purges
-from app.api import users, withdrawal
+from app.api import health, users, withdrawal
 from app.core.errors import AppError, Envelope, ErrorCode, failure, success
 from app.services import embedding, notion_sync, sessions, upload_sweeper
 
@@ -68,6 +68,7 @@ app = FastAPI(
 )
 
 API_PREFIX = "/api/v1"
+app.include_router(health.router, prefix=API_PREFIX)
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(workspaces.router, prefix=API_PREFIX)
 app.include_router(members.router, prefix=API_PREFIX)

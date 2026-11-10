@@ -95,6 +95,7 @@ class ErrorCode(StrEnum):
     # 비밀번호 재설정
     PASSWORD_RESET_TOKEN_INVALID = "PASSWORD_RESET_TOKEN_INVALID"
     MAIL_UNAVAILABLE = "MAIL_UNAVAILABLE"
+    DATABASE_UNAVAILABLE = "DATABASE_UNAVAILABLE"
     # 회의 요약·프로젝트 맵
     TOPIC_NOT_FOUND = "TOPIC_NOT_FOUND"
     SUMMARY_NOT_FOUND = "SUMMARY_NOT_FOUND"
@@ -197,6 +198,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.REPLY_CHANGE_NOT_UNDOABLE: 409,
     ErrorCode.PASSWORD_RESET_TOKEN_INVALID: 400,
     ErrorCode.MAIL_UNAVAILABLE: 503,
+    ErrorCode.DATABASE_UNAVAILABLE: 503,
     ErrorCode.TOPIC_NOT_FOUND: 404,
     ErrorCode.SUMMARY_NOT_FOUND: 404,
     ErrorCode.TRANSCRIPT_LINE_NOT_FOUND: 404,
@@ -291,6 +293,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.REPLY_CHANGE_NOT_UNDOABLE: "되돌릴 수 없는 답장 변경입니다.",
     ErrorCode.PASSWORD_RESET_TOKEN_INVALID: "쓸 수 없는 재설정 링크입니다.",
     ErrorCode.MAIL_UNAVAILABLE: "지금은 메일을 보낼 수 없습니다.",
+    ErrorCode.DATABASE_UNAVAILABLE: "데이터베이스에 연결할 수 없습니다.",
     ErrorCode.TOPIC_NOT_FOUND: "해당 주제를 찾을 수 없습니다.",
     ErrorCode.SUMMARY_NOT_FOUND: "이 회의의 요약본이 아직 없습니다.",
     ErrorCode.TRANSCRIPT_LINE_NOT_FOUND: "해당 발화를 찾을 수 없습니다.",

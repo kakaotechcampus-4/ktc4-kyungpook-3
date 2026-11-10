@@ -192,6 +192,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 함. `details.member_id` |
 | `PASSWORD_RESET_TOKEN_INVALID` | 400 | 비밀번호 재설정 링크를 쓸 수 없음(없는·무효화된·이미 쓴·만료된 토큰). `details.reason` 은 `invalid`·`used`·`expired` |
 | `MAIL_UNAVAILABLE` | 503 | 메일을 보낼 수 없음(SMTP 설정이 없음). 비밀번호 재설정 요청과 가입 코드 요청에서 나온다. 발송 실패는 응답에 드러나지 않는다 |
+| `DATABASE_UNAVAILABLE` | 503 | DB 에 연결할 수 없음. `GET /api/v1/health/ready` 에서만 나온다. 원인 예외 문구는 응답에 넣지 않는다 |
 | `SIGNUP_CODE_RATE_LIMITED` | 429 | 가입 코드를 너무 자주 요청함. `details.reason` 은 `cooldown`(60초 재발송 제한)·`hourly`(시간당 5회)·`global`(전체 시간당 20통), `details.retry_after` 는 기다릴 초 |
 | `SIGNUP_CODE_INVALID` | 400 | 가입 코드를 쓸 수 없음. `details.reason` 은 `wrong`(`details.attempts_left` 함께)·`expired`(만료, 요청한 적 없음, 이미 씀)·`too_many`(5회 초과) |
 | `SIGNUP_VERIFICATION_INVALID` | 400 | 가입에 이메일 증명이 없거나 쓸 수 없음. 코드 인증부터 다시 한다 |
@@ -675,6 +676,14 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 - 한 대화의 닫기가 실패하면(알림 오류 등) 그 대화만 건너뛰고 다른 대화의 답장은 준다. 실패한 답장은 다음 claim·틱에서 다시 닫는다.
 - 닫힌 답장에 늦게 온 결과는 200 으로 받아 기록만 한다. PM 이 고른 재판단은 앞 차례 `attempt` 와 상관없이 새 10분 창을 받는다.
 - 결정 근거는 [결정 기록](docs/plan/m6/basis-for-decision/2026-11-08-reply-judgment-attempt-cap.md)에 있다.
+
+## health ready
+
+`GET /api/v1/health/ready` 는 DB 에 `SELECT 1` 을 보내 연결을 확인한다(#675). Grafana Cloud Synthetic Monitoring 이 밖에서 부르는 모니터링 전용 경로이고 FE·AI 는 부르지 않는다. 인증이 없다.
+
+- 정상이면 200 `{"data": {"status": "ok"}, "error": null}` 이다.
+- DB 에 연결할 수 없으면 503 `DATABASE_UNAVAILABLE` 이다. 응답에는 예외 문구(호스트·계정)를 넣지 않고, 로그에도 예외 클래스 이름만 warning 으로 남긴다.
+- Caddy 는 `/api` 만 백엔드로 넘기므로 경로가 `/api/v1` 아래에 있다. 루트 `/health` 는 DB 를 보지 않는 프로세스 확인이고, compose healthcheck 가 그대로 쓴다.
 
 ## KPI view
 
