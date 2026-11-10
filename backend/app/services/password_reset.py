@@ -53,14 +53,21 @@ def _reason(row: PasswordResetToken | None, now: datetime) -> str | None:
     return None
 
 
-def request_reset(db: DbSession, email: str, *, now: datetime, base_url: str) -> ResetMail | None:
+def request_reset(
+    db: DbSession, email: str, *, now: datetime, base_url: str, login_locked: bool = False
+) -> ResetMail | None:
     # 사용자 조회 전에 전체 발급량을 본다(있는/없는 이메일이 같은 경로). 무효·사용된 행도 센다. 이전 링크는 건드리지 않는다.
-    issued = db.scalar(
-        select(func.count()).select_from(PasswordResetToken).where(PasswordResetToken.created_at > now - timedelta(hours=1))
-    )
-    if issued >= GLOBAL_HOURLY_LIMIT:
-        logger.warning("password reset request blocked: reason=global")
-        return None
+    # 로그인이 잠긴 이메일은 전체 상한을 보지 않는다. 남이 전체 상한을 채우고 로그인을 잠가 로그인과 재설정을 함께
+    # 막지 못하게 한다(#691). 계정별·IP 제한은 그대로이고, 없는 이메일도 잠길 수 있어 가입 여부와는 무관하다.
+    if not login_locked:
+        issued = db.scalar(
+            select(func.count())
+            .select_from(PasswordResetToken)
+            .where(PasswordResetToken.created_at > now - timedelta(hours=1))
+        )
+        if issued >= GLOBAL_HOURLY_LIMIT:
+            logger.warning("password reset request blocked: reason=global")
+            return None
     user = db.scalars(select(User).where(User.email == email).with_for_update()).first()
     if user is None:
         return None

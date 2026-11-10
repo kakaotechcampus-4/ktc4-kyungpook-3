@@ -7,7 +7,7 @@ from sqlalchemy import event
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services import mailer, password_reset, password_reset_limit
+from app.services import login_limit, mailer, password_reset, password_reset_limit
 from tests.api.conftest import signup_verified
 
 pytestmark = pytest.mark.usefixtures("signup_secret")
@@ -313,3 +313,37 @@ def test_one_public_ip_cannot_use_up_the_global_budget(mdb, sent, smtp_env):
     _signup(_client())
     assert _request(_public_client(("1.1.1.1", 50000))).status_code == 200
     assert len(sent) == password_reset_limit.IP_HOURLY_LIMIT + 1
+
+
+def _lock_login(email):
+    for _ in range(login_limit.EMAIL_LIMIT):
+        login_limit.reserve(email, None, now=login_limit.clock())
+    assert login_limit.email_blocked(email, now=login_limit.clock())
+
+
+def test_login_locked_email_can_still_reset_when_the_global_cap_is_full(mdb, sent, smtp_env):
+    # 남이 전체 상한을 채우고 내 이메일로 로그인을 잠가도 재설정 메일은 받는다(#691)
+    for i in range(password_reset.GLOBAL_HOURLY_LIMIT):
+        email = f"user{i}@example.com"
+        assert signup_verified(_client(), email, OLD_PW, "r").status_code == 201
+        assert _request(_client(), email).status_code == 200
+    _signup(_client())
+    assert _request(_client()).status_code == 200
+    assert len(sent) == password_reset.GLOBAL_HOURLY_LIMIT
+
+    _lock_login(EMAIL)
+
+    assert _request(_client()).status_code == 200
+    assert sent[-1][0] == EMAIL
+    assert len(sent) == password_reset.GLOBAL_HOURLY_LIMIT + 1
+
+
+def test_login_locked_email_still_has_the_ip_cap(mdb, sent, smtp_env):
+    _signup(_client())
+    _lock_login(EMAIL)
+    c = _public_client()
+    for i in range(password_reset_limit.IP_HOURLY_LIMIT):
+        _request(c, f"ghost{i}@example.com")
+
+    assert _request(c).status_code == 200
+    assert sent == []
