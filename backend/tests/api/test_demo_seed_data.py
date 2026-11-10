@@ -4,6 +4,7 @@ import json
 import pytest
 
 from app.cli.demo_seed import DEFAULT_DATA_PATH, SeedDataError, load_seed_data
+from app.cli.demo_seed import _auto_shaped as _loader_auto_shaped
 
 
 def test_default_data_loads_and_has_required_shape():
@@ -30,12 +31,8 @@ def test_items_reference_existing_turns_and_people():
 
 
 def _auto_shaped(item, keys):
-    return (
-        item["task_status"] == "certain" and item["similar_count"] == 0
-        and item["due_status"] in ("certain", "missing")
-        and item["assignee_type"] == "first" and item["asr_suspects"] == []
-        and item["speaker_key"] in keys
-    )
+    # 조건은 로더의 것을 그대로 쓰고, 담당 화자가 실제 인물인지만 더 본다(조건이 한쪽만 바뀌지 않게)
+    return _loader_auto_shaped(item) and item["speaker_key"] in keys
 
 
 def test_some_meeting_starts_with_auto_shaped_item_and_review_hold_exist():
