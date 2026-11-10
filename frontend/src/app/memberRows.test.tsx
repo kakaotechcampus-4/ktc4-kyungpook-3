@@ -41,6 +41,13 @@ async function openManage(user: UserEvent) {
   return within(dialog)
 }
 
+/** 창 바깥 덮개. 창이 열리면 Radix 가 창 밖을 접근성 트리에서 숨겨 역할로 찾지 못한다 */
+function scrimOf(dialog: HTMLElement): HTMLElement {
+  const scrim = dialog.parentElement?.querySelector<HTMLElement>(':scope > button')
+  if (!scrim) throw new Error('scrim not found')
+  return scrim
+}
+
 const accountField = (name: string) =>
   screen.getByRole('combobox', { name: `${name}의 디스코드 계정` })
 
@@ -304,6 +311,35 @@ describe('팀원 목록 — 팀원 추가와 이름 고치기', () => {
     expect(dialog.queryByRole('textbox', { name: '이재환의 새 이름' })).toBeNull()
     expect(screen.getByRole('dialog', { name: '팀원 관리' })).toBeInTheDocument()
     expect(dialog.getByText('이재환')).toBeInTheDocument()
+  })
+
+  it('고친 이름을 저장하지 않고 `닫기`·Esc·바깥 클릭으로 닫으려 하면 공통 이탈 확인을 거친다', async () => {
+    const user = userEvent.setup()
+    const dialog = await openManage(user)
+    const manage = screen.getByRole('dialog', { name: '팀원 관리' })
+    await user.click(dialog.getByRole('button', { name: '이재환 이름 고치기' }))
+    await user.type(dialog.getByRole('textbox', { name: '이재환의 새 이름' }), '민')
+    const leavePrompt = () =>
+      screen.findByRole('dialog', { name: '저장하지 않은 변경 내용이 있어요' })
+
+    await user.click(dialog.getByRole('button', { name: '닫기' }))
+    await user.click(within(await leavePrompt()).getByRole('button', { name: '계속 작성하기' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: '저장하지 않은 변경 내용이 있어요' })).toBeNull(),
+    )
+    expect(dialog.getByRole('textbox', { name: '이재환의 새 이름' })).toHaveValue('이재환민')
+
+    dialog.getByRole('button', { name: '닫기' }).focus()
+    await user.keyboard('{Escape}')
+    await user.click(within(await leavePrompt()).getByRole('button', { name: '계속 작성하기' }))
+    expect(screen.getByRole('dialog', { name: '팀원 관리' })).toBe(manage)
+
+    await user.click(scrimOf(manage))
+    await user.click(
+      within(await leavePrompt()).getByRole('button', { name: '변경 내용 버리고 나가기' }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(dbMember('mb_03').display_name).toBe('이재환')
   })
 })
 

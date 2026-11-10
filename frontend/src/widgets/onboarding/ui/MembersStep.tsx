@@ -8,6 +8,7 @@ import { useOnboardingSave } from '@/features/onboarding'
 import { errorMessage } from '@/shared/api/errorMessages'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
+import { guardLeave } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
@@ -56,7 +57,8 @@ interface MembersFormProps {
  * 온보딩의 팀원 연결. 목록은 팀원 관리 창과 같은 `MemberRows` 이고 줄마다 바로 저장한다 — 초대는 숨긴다.
  * `N명 확인 완료` 의 N 은 디스코드에 연결된 팀원 수다. 만든 PM 이 연결돼 있어야 하고(#228), 단계 완료만 보낸다.
  * `나중에 하기` 와 하단 `다음 단계` 는 건너뜀을 저장한다. 줄을 쓰거나 단계를 저장하는 동안에는 셋 다와 나가기를 막는다.
- * 열린 이름 고치기 칸에 바꾼 글자가 있으면 나가기·`이전 단계` 는 공통 이탈 확인을 거친다.
+ * 열린 이름 고치기 칸에 바꾼 글자가 있으면 나가기·`이전 단계` 와 단계 저장(완료·건너뜀) 모두 공통 이탈 확인을 거친다 —
+ * 단계를 저장하면 대시보드로 가서 칸이 사라진다.
  */
 function MembersForm({ workspaceId, discordUsers, notice, previous, reveal }: MembersFormProps) {
   const members = useQuery(memberListQueryOptions(workspaceId)).data ?? []
@@ -69,17 +71,18 @@ function MembersForm({ workspaceId, discordUsers, notice, previous, reveal }: Me
 
   // 카드 버튼과 `›` 가 겹쳐 눌려도 단계 저장은 하나다
   const lock = useRef(false)
-  const saveStep = (action: 'complete' | 'skip') => {
-    if (lock.current) return
-    lock.current = true
-    setFormError(null)
-    void onboarding
-      .save({ step: 'connect_members', action })
-      .catch((error: unknown) => setFormError(errorMessage(error)))
-      .finally(() => {
-        lock.current = false
-      })
-  }
+  const saveStep = (action: 'complete' | 'skip') =>
+    guardLeave(() => {
+      if (lock.current) return
+      lock.current = true
+      setFormError(null)
+      void onboarding
+        .save({ step: 'connect_members', action })
+        .catch((error: unknown) => setFormError(errorMessage(error)))
+        .finally(() => {
+          lock.current = false
+        })
+    })
   const complete = () => {
     if (creator?.discordUserId === null) {
       setFormError(PM_REQUIRED)
@@ -156,17 +159,18 @@ function DiscordNotConnected({ workspaceId, notice, previous, reveal }: DiscordN
   const [formError, setFormError] = useState<string | null>(null)
   // 카드 버튼과 `›` 가 겹쳐 눌려도 저장 요청은 하나다
   const lock = useRef(false)
-  const next = () => {
-    if (lock.current) return
-    lock.current = true
-    setFormError(null)
-    void onboarding
-      .save({ step: 'connect_members', action: added ? 'complete' : 'skip' })
-      .catch((error: unknown) => setFormError(errorMessage(error)))
-      .finally(() => {
-        lock.current = false
-      })
-  }
+  const next = () =>
+    guardLeave(() => {
+      if (lock.current) return
+      lock.current = true
+      setFormError(null)
+      void onboarding
+        .save({ step: 'connect_members', action: added ? 'complete' : 'skip' })
+        .catch((error: unknown) => setFormError(errorMessage(error)))
+        .finally(() => {
+          lock.current = false
+        })
+    })
   const busy = onboarding.isPending || writing
 
   return (

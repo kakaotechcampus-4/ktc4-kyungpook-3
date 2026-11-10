@@ -432,6 +432,64 @@ describe('미저장 변경 확인 (U3-10)', () => {
   })
 })
 
+describe('저장하지 않은 이름 고치기와 단계 저장 (U3-10)', () => {
+  const leavePrompt = () =>
+    screen.findByRole('dialog', { name: '저장하지 않은 변경 내용이 있어요' })
+
+  async function editPmName() {
+    await userEvent.click(screen.getByRole('button', { name: '최진호 이름 고치기' }))
+    await userEvent.type(screen.getByRole('textbox', { name: '최진호의 새 이름' }), '님')
+  }
+
+  it('`확인 완료` 는 공통 이탈 확인을 거치고, 버리고 나가기를 골라야 단계를 완료한다', async () => {
+    db.members.find(({ member_id }) => member_id === 'mb_90')!.discord_user_id = '1123'
+    const bodies = recordRequestBodies('PATCH', '/workspaces/ws_03/onboarding')
+    const log = recordRequests()
+    await openMembers()
+    await editPmName()
+
+    await userEvent.click(screen.getByRole('button', { name: '1명 확인 완료' }))
+    await userEvent.click(
+      within(await leavePrompt()).getByRole('button', { name: '계속 작성하기' }),
+    )
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: '저장하지 않은 변경 내용이 있어요' })).toBeNull(),
+    )
+    expect(screen.getByRole('textbox', { name: '최진호의 새 이름' })).toHaveValue('최진호님')
+    expect(onboardingPatches(log.started)).toHaveLength(0)
+
+    await userEvent.click(screen.getByRole('button', { name: '1명 확인 완료' }))
+    await userEvent.click(
+      within(await leavePrompt()).getByRole('button', { name: '변경 내용 버리고 나가기' }),
+    )
+    await screen.findByRole('heading', { name: '대시보드' })
+    await waitFor(() => expect(bodies).toEqual([{ step: 'connect_members', action: 'complete' }]))
+    expect(memberWrites(log.started)).toEqual([])
+  })
+
+  it('`나중에 하기` 와 `다음 단계` 도 공통 이탈 확인을 거친다', async () => {
+    const bodies = recordRequestBodies('PATCH', '/workspaces/ws_03/onboarding')
+    const log = recordRequests()
+    await openMembers()
+    await editPmName()
+
+    const nav = screen.getByRole('navigation', { name: '단계 이동' })
+    await userEvent.click(within(nav).getByRole('button', { name: '다음 단계' }))
+    await userEvent.click(
+      within(await leavePrompt()).getByRole('button', { name: '계속 작성하기' }),
+    )
+    expect(onboardingPatches(log.started)).toHaveLength(0)
+
+    await userEvent.click(screen.getByRole('button', { name: '나중에 하기' }))
+    await userEvent.click(
+      within(await leavePrompt()).getByRole('button', { name: '변경 내용 버리고 나가기' }),
+    )
+    await screen.findByRole('heading', { name: '대시보드' })
+    await waitFor(() => expect(bodies).toEqual([{ step: 'connect_members', action: 'skip' }]))
+    expect(memberWrites(log.started)).toEqual([])
+  })
+})
+
 describe('팀원 연결에서 나가기 (U3-7)', () => {
   it('줄마다 이미 저장돼 나가기는 따로 저장하지 않고 시작한 공간의 대시보드로 간다 — 단계는 완료하지 않는다', async () => {
     // ws_01 에서 새 공간 만들기를 시작한 사용자다
@@ -627,6 +685,20 @@ describe('Discord 없이 온 팀원 연결 (D-073 개정)', () => {
     )
     expect(screen.getByRole('button', { name: '다음' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: '건너뛰기' })).toBeNull()
+  })
+
+  it('이름을 고치다 `건너뛰기` 를 누르면 공통 이탈 확인을 거친다', async () => {
+    const bodies = recordRequestBodies('PATCH', '/workspaces/ws_03/onboarding')
+    renderApp('/onboarding/ws_03/connect_members')
+    await userEvent.click(await screen.findByRole('button', { name: '최진호 이름 고치기' }))
+    await userEvent.type(screen.getByRole('textbox', { name: '최진호의 새 이름' }), '님')
+
+    await userEvent.click(screen.getByRole('button', { name: '건너뛰기' }))
+    const prompt = await screen.findByRole('dialog', { name: '저장하지 않은 변경 내용이 있어요' })
+    expect(bodies).toEqual([])
+    await userEvent.click(within(prompt).getByRole('button', { name: '변경 내용 버리고 나가기' }))
+    await screen.findByRole('heading', { name: '대시보드' })
+    expect(bodies).toEqual([{ step: 'connect_members', action: 'skip' }])
   })
 
   it('팀원을 추가한 뒤 `다음` 을 누르면 팀원 연결을 완료로 저장해 대시보드로 간다 (#613)', async () => {
