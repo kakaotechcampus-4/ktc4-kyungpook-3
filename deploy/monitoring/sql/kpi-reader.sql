@@ -1,10 +1,13 @@
 -- Grafana Cloud 가 쓰는 읽기 전용 계정(#675). 운영 DB 에서 슈퍼유저(POSTGRES_USER)로 한 번 실행한다.
 --   read -rs PW   # 비밀번호를 입력한다(셸 기록에 남기지 않는다)
 --   docker compose -f backend/docker-compose.prod.yml exec -T db \
---     psql -U <POSTGRES_USER> -d <POSTGRES_DB> -v pw="$PW" < deploy/monitoring/sql/kpi-reader.sql
+--     psql -U <POSTGRES_USER> -d <POSTGRES_DB> -v ON_ERROR_STOP=1 -v pw="$PW" < deploy/monitoring/sql/kpi-reader.sql
+-- 중간 문장이 실패하면 뒤의 GRANT 로 넘어가지 않고 멈춘다(ON_ERROR_STOP).
 -- 이 파일에는 비밀번호가 없다. psql 변수 pw 로만 받는다. 다시 실행해도 안전하다(비밀번호를 바꾸고 권한을 다시 준다).
 -- kpi view 를 DROP 하고 다시 만든 마이그레이션 뒤에는 이 파일을 다시 실행한다(GRANT 가 view 와 함께 사라진다).
 -- kpi.excluded_workspace 는 일부러 권한을 주지 않는다. 읽기 계정은 view 세 개만 본다.
+
+\set ON_ERROR_STOP on
 
 SELECT 'CREATE ROLE kpi_reader LOGIN'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kpi_reader')

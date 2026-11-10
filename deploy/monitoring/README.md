@@ -78,7 +78,7 @@
 
 - `MemoryMax=200M`: Alloy 가 이 이상 쓰면 Alloy 만 죽는다. 서버에는 워커가 `MemoryMax 3G` 까지 쓰므로 수집기가 메모리를 먹지 않게 한다.
 - `EnvironmentFile`: 접속 값은 위 600 파일에서만 읽는다.
-- `SupplementaryGroups=docker`: 컨테이너 이름을 읽으려고 docker 소켓에 닿게 한다. **docker 그룹은 root 와 같은 권한이다.** Alloy 가 뚫리면 서버 전체가 뚫린 것과 같다. 이 권한을 원하지 않으면 이 줄을 빼고 `config.alloy` 에서 `prometheus.exporter.cadvisor` 의 컨테이너 이름 대상을 포기한다(서비스 cgroup 지표는 남는다).
+- `SupplementaryGroups=docker`: 컨테이너 이름을 읽으려고 docker 소켓에 닿게 한다. **docker 그룹은 root 와 같은 권한이다.** Alloy 가 뚫리면 서버 전체가 뚫린 것과 같다. 이 권한을 원하지 않으면 이 줄을 빼고 `config.alloy` 에서 `prometheus.exporter.cadvisor` 의 컨테이너 이름 대상을 포기한다(서비스 cgroup 지표는 남을 것으로 보지만 설치 때 확인한다).
 
 `config.alloy` 는 시계열을 아끼려고 필요한 지표만 남기고 `instance` 라벨을 `mm-prod` 로 고정한다(호스트 이름이 공개 링크로 새지 않게). 대신 서버가 둘이 동시에 보내면 시계열이 섞이니 이전할 때는 옛 서버를 먼저 멈춘다.
 
@@ -104,7 +104,7 @@ PDC 는 서버 안에서 Grafana Cloud 쪽으로 터널을 건다. 바깥에서 
 - 이미 `pdc-agent` 컨테이너가 있으면 지우고 새로 만든다. 이미지 태그는 고정값이다. 올릴 때는 Docker Hub 의 `grafana/pdc-agent` 태그를 확인하고 스크립트를 고친다.
 - `--read-only`·`--cap-drop ALL` 로 뜨는지는 공식 문서에 없는 설정이다. 안 뜨면 `docker logs pdc-agent` 로 원인을 보고 필요한 것만 푼다.
 - 서버를 다시 켜도 `--restart unless-stopped` 로 컨테이너가 다시 뜬다(docker 가 켜져 있으면).
-- 토큰은 컨테이너 인자로 들어가 `docker inspect` 에 보인다. docker 권한이 있는 사람은 어차피 root 와 같으므로 이 서버에서는 받아들인다.
+- 토큰은 컨테이너 인자가 아니라 환경 변수(`--env GCLOUD_PDC_SIGNING_TOKEN`)로 넘긴다. 에이전트가 세 값을 환경 변수로 받는 것은 [PDC agent CLI 레퍼런스](https://grafana.com/docs/grafana-cloud/connect-externally-hosted/private-data-source-connect/pdc-agent-cli-reference/)에 있다. 호스트 `ps` 에는 값이 보이지 않는다. 컨테이너 환경에는 남으므로 `docker inspect` 에는 보이지만, docker 권한이 있는 사람은 어차피 root 와 같으므로 이 서버에서는 받아들인다.
 
 ## 4. 읽기 계정 SQL
 
@@ -113,7 +113,7 @@ PDC 는 서버 안에서 Grafana Cloud 쪽으로 터널을 건다. 바깥에서 
 ```bash
 read -rs PW
 docker compose -f /opt/mm/backend/docker-compose.prod.yml exec -T db \
-  psql -U <POSTGRES_USER> -d <POSTGRES_DB> -v pw="$PW" < /opt/mm/deploy/monitoring/sql/kpi-reader.sql
+  psql -U <POSTGRES_USER> -d <POSTGRES_DB> -v ON_ERROR_STOP=1 -v pw="$PW" < /opt/mm/deploy/monitoring/sql/kpi-reader.sql
 unset PW
 ```
 
@@ -287,7 +287,7 @@ Grafana Alerting 에 규칙만 만든다. 연락 지점(Discord·메일)은 연�
 docker compose -f /opt/mm/backend/docker-compose.prod.yml exec -T api printenv AUTO_CREATE_ENABLED
 ```
 
-비어 있으면 기본값(켜짐)이다. `false`·`0`·`off`·`no` 면 꺼져 있다([환경 변수](../../docs/dev/env.md)). 확인한 값을 아래 기록란에 적는다.
+비어 있으면 기본값(켜짐)이다. `false`·`0`·`off`·`no` 면 꺼져 있다. 그 밖의 모르는 값도 꺼짐으로 읽는다(`backend/app/api/extractions.py` 가 경고만 남기고 끈다, [환경 변수](../../docs/dev/env.md)). 확인한 값을 아래 기록란에 적는다.
 
 ## 기록란
 

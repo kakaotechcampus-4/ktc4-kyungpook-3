@@ -38,7 +38,10 @@ docker rm -f "$NAME" >/dev/null 2>&1 || true
 
 # 설치 때 확인: --read-only·--cap-drop ALL·--tmpfs /tmp 로 에이전트가 뜨는지는 공식 문서에 없는 설정이다.
 # 안 뜨면 `docker logs pdc-agent` 로 원인을 보고 필요한 것만 푼다(예: --tmpfs 경로 추가).
-# 설치 때 확인: -token·-cluster·-gcloud-hosted-grafana-id 는 PDC 설정 문서의 docker 예시 그대로다.
+# 토큰·클러스터·ID 는 인자가 아니라 환경 변수로 넘긴다. `--env NAME` 은 값을 이 스크립트의 환경에서 가져가므로
+# 호스트 `ps` 에 값이 보이지 않는다. 에이전트가 이 세 값을 환경 변수로도 받는 것은 PDC agent CLI 레퍼런스에 있다
+# (deploy/monitoring/README.md 3절에 링크).
+# 설치 때 확인: 토큰으로 터널이 붙는지 `docker logs pdc-agent` 로 본다.
 docker run -d \
   --name "$NAME" \
   --network mm-prod_default \
@@ -48,9 +51,9 @@ docker run -d \
   --tmpfs /tmp \
   --cap-drop ALL \
   --security-opt no-new-privileges \
-  "$IMAGE" \
-  -token "$GCLOUD_PDC_SIGNING_TOKEN" \
-  -cluster "$GCLOUD_PDC_CLUSTER" \
-  -gcloud-hosted-grafana-id "$GCLOUD_HOSTED_GRAFANA_ID"
+  --env GCLOUD_PDC_SIGNING_TOKEN \
+  --env GCLOUD_PDC_CLUSTER \
+  --env GCLOUD_HOSTED_GRAFANA_ID \
+  "$IMAGE"
 
 docker ps --filter "name=^${NAME}\$" --format '{{.Names}} {{.Status}}'

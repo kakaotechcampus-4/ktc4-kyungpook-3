@@ -32,6 +32,8 @@ def test_kpi_reader_grants_only_views():
         assert setting in sql, setting
     # 비밀번호는 psql 변수로만 받는다
     assert ":'pw'" in sql
+    # ALTER ROLE 이 실패하면 뒤의 GRANT 로 넘어가지 않고 멈춘다
+    assert re.search(r"^\\set\s+ON_ERROR_STOP\s+on\s*$", sql, re.M)
     assert not re.search(r"PASSWORD\s+'(?!:)", sql, re.I)
 
 
@@ -91,6 +93,62 @@ def test_run_pdc_script_safety(tmp_path):
     result = run(loose)
     assert result.returncode != 0
     assert not trace.exists()
+
+
+def test_run_pdc_success_path_keeps_token_out_of_argv(tmp_path):
+    """조건이 맞으면 docker run 을 부른다. 토큰은 인자가 아니라 환경 변수로만 넘긴다(ps 에 안 보이게)."""
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    trace = tmp_path / "docker-argv"
+    # 인자를 한 줄에 하나씩 기록하고, 토큰이 환경 변수로 들어왔는지도 남긴다
+    docker = fake_bin / "docker"
+    docker.write_text(
+        "#!/bin/sh\n"
+        'echo "CALL $1" >> "' + str(trace) + '"\n'
+        'for a in "$@"; do echo "ARG $a" >> "' + str(trace) + '"; done\n'
+        'echo "ENVTOKEN=$GCLOUD_PDC_SIGNING_TOKEN" >> "' + str(trace) + '"\n'
+    )
+    docker.chmod(0o755)
+    fake_id = fake_bin / "id"
+    fake_id.write_text("#!/bin/sh\necho 0\n")
+    fake_id.chmod(0o755)
+    env_file = tmp_path / "pdc.env"
+    env_file.write_text(
+        "GCLOUD_PDC_SIGNING_TOKEN=test-token-value\n"
+        "GCLOUD_PDC_CLUSTER=test-cluster\n"
+        "GCLOUD_HOSTED_GRAFANA_ID=12345\n"
+    )
+    env_file.chmod(0o600)
+
+    result = subprocess.run(
+        ["env", "-i", f"PATH={fake_bin}:/usr/bin:/bin", f"PDC_ENV_FILE={env_file}", "bash", str(RUN_PDC)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    lines = trace.read_text().splitlines()
+    run_start = lines.index("CALL run")
+    run_args = []
+    for line in lines[run_start:]:
+        if line.startswith("ARG "):
+            run_args.append(line[4:])
+        elif line.startswith("CALL ") and line != "CALL run":
+            break
+    joined = " ".join(run_args)
+    assert run_args[0] == "run"
+    assert "--network mm-prod_default" in joined
+    assert "--read-only" in run_args
+    assert "--cap-drop ALL" in joined
+    assert re.search(r"grafana/pdc-agent:[0-9][^\s]*", joined)
+    # 토큰 값은 docker 인자에 없어야 한다(ps 로 다른 사용자가 읽을 수 있다). 이름만 --env 로 넘기면 docker 가 값을 환경에서 읽는다.
+    assert "test-token-value" not in joined
+    assert "-token" not in run_args
+    for name in ("GCLOUD_PDC_SIGNING_TOKEN", "GCLOUD_PDC_CLUSTER", "GCLOUD_HOSTED_GRAFANA_ID"):
+        i = run_args.index(name)
+        assert run_args[i - 1] == "--env", name
+    # docker 프로세스의 환경에는 값이 들어 있어 --env NAME 이 값을 가져갈 수 있다
+    assert "ENVTOKEN=test-token-value" in lines
 
 
 def test_run_pdc_requires_root(tmp_path):
