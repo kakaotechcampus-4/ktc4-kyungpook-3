@@ -1,5 +1,5 @@
 """심사용 시드의 지난 회의 재생(#606). AI 봇과 같은 서비스 토큰 API 로 회의를 만들고 끝까지 처리한다."""
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -8,7 +8,16 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import sessionmaker
 
 from app.cli.demo_seed import load_seed_data
-from app.cli.seed_demo import SeedError, poll_embeddings, replay_meetings, seed_accounts
+from app.cli.seed_demo import (
+    KST,
+    SeedConflictError,
+    SeedError,
+    _started_at,
+    poll_embeddings,
+    replay_meetings,
+    seed_accounts,
+    today_kst,
+)
 from app.main import app
 from app.models import EMBEDDING_DIMENSIONS, ApprovalRequest, Extraction, ExtractionItem, Meeting, Member, Source, Task
 from tests.api.conftest import SERVICE_TOKEN
@@ -48,10 +57,10 @@ def _setup(db):
     return data, seeded
 
 
-def _replay(db, data, seeded, http=None, wait=None):
+def _replay(db, data, seeded, http=None, wait=None, today=None):
     return replay_meetings(
         http or _client(), db, seeded, data,
-        service_token=SERVICE_TOKEN, wait_for_embeddings=wait or _fill_embeddings(db),
+        service_token=SERVICE_TOKEN, wait_for_embeddings=wait or _fill_embeddings(db), today=today,
     )
 
 
@@ -165,7 +174,10 @@ def test_resume_from_partial_meeting(mdb):
     first = data.meetings[0]
     created = _client().post(
         "/api/v1/meetings",
-        json={"workspace_id": seeded.workspace_id, "title": first.title, "source": "discord"},
+        json={
+            "workspace_id": seeded.workspace_id, "title": first.title, "source": "discord",
+            "started_at": _started_at(first, today_kst()).isoformat(),
+        },
         headers={**SERVICE, "X-Meeting-Lineage-Version": "1"},
     )
     assert created.status_code == 201, created.text
@@ -255,7 +267,10 @@ def _bot_start(data, seeded, index=0):
     meeting = data.meetings[index]
     created = client.post(
         "/api/v1/meetings",
-        json={"workspace_id": seeded.workspace_id, "title": meeting.title, "source": "discord"},
+        json={
+            "workspace_id": seeded.workspace_id, "title": meeting.title, "source": "discord",
+            "started_at": _started_at(meeting, today_kst()).isoformat(),
+        },
         headers={**SERVICE, "X-Meeting-Lineage-Version": "1"},
     )
     assert created.status_code == 201, created.text
@@ -292,7 +307,7 @@ def test_resume_writes_missing_summary(mdb):
     ).status_code == 201
     extracted = client.post("/api/v1/extractions", json={
         "meeting_id": meeting_id, "workspace_id": seeded.workspace_id,
-        "items": _items(data.meetings[0], seeded.member_ids, datetime.now(timezone.utc).date()),
+        "items": _items(data.meetings[0], seeded.member_ids, today_kst() - timedelta(days=data.meetings[0].days_ago)),
     }, headers=SERVICE)
     assert extracted.status_code == 201, extracted.text
     _fill_embeddings(mdb)(seeded.workspace_id)
@@ -353,3 +368,78 @@ def test_embedding_timeout_mentions_rejected_titles(mdb):
         poll_embeddings(factory, timeout_s=0.05, interval_s=0.01)(seeded.workspace_id)
     assert "EMBEDDING_API_KEY" in str(error.value)
     assert "embedding_rejected_title" in str(error.value)
+
+
+def _kst_start(meeting):
+    started = meeting.started_at
+    return started.replace(tzinfo=started.tzinfo or timezone.utc).astimezone(KST)
+
+
+def test_replay_uses_given_today(mdb):
+    data, seeded = _setup(mdb)
+    today = date(2026, 1, 15)
+    _replay(mdb, data, seeded, today=today)
+
+    mdb.expire_all()
+    by_title = {m.title: m for m in _meetings(mdb, seeded.workspace_id)}
+    for seed_meeting in data.meetings:
+        d = today - timedelta(days=seed_meeting.days_ago)
+        stored = by_title[seed_meeting.title]
+        assert _kst_start(stored) == datetime(d.year, d.month, d.day, 10, tzinfo=KST)
+        due_in = {i["due_in_days"] for i in seed_meeting.items if i.get("due_in_days") is not None}
+        if due_in:
+            due_dates = set(mdb.scalars(
+                select(ExtractionItem.due_date)
+                .join(Extraction, Extraction.extraction_id == ExtractionItem.extraction_id)
+                .where(Extraction.meeting_id == stored.meeting_id)
+            ))
+            assert {d + timedelta(days=n) for n in due_in} <= due_dates
+
+
+def test_replay_default_today_is_kst_run_date(mdb):
+    data, seeded = _setup(mdb)
+    _replay(mdb, data, seeded)
+
+    mdb.expire_all()
+    by_title = {m.title: m for m in _meetings(mdb, seeded.workspace_id)}
+    for seed_meeting in data.meetings:
+        expected = today_kst() - timedelta(days=seed_meeting.days_ago)
+        assert _kst_start(by_title[seed_meeting.title]).date() == expected
+
+
+def test_future_today_stops_before_any_meeting(mdb):
+    data, seeded = _setup(mdb)
+    with pytest.raises(SeedConflictError, match="늦습니다"):
+        _replay(mdb, data, seeded, today=today_kst() + timedelta(days=30))
+    assert _count(mdb, Meeting) == 0
+
+
+def test_rerun_with_other_today_is_refused(mdb):
+    data, seeded = _setup(mdb)
+    base = date(2026, 1, 15)
+    _replay(mdb, data, seeded, today=base)
+    models = (Meeting, ExtractionItem)
+    counts = [_count(mdb, model) for model in models]
+
+    with pytest.raises(SeedConflictError) as error:
+        _replay(mdb, data, seeded, today=base - timedelta(days=1))
+    assert "--today 2026-01-15" in str(error.value)
+    assert [_count(mdb, model) for model in models] == counts
+
+    with pytest.raises(SeedConflictError) as error:
+        _replay(mdb, data, seeded)
+    assert "--today 2026-01-15" in str(error.value)
+    assert [_count(mdb, model) for model in models] == counts
+
+
+def test_resume_with_same_today_continues(mdb):
+    data, seeded = _setup(mdb)
+    base = date(2026, 1, 15)
+    _replay(mdb, data, seeded, today=base)
+    models = (Meeting, ExtractionItem)
+    counts = [_count(mdb, model) for model in models]
+
+    report = _replay(mdb, data, seeded, today=base)
+
+    assert report.done == len(data.meetings)
+    assert [_count(mdb, model) for model in models] == counts
