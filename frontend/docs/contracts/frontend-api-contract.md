@@ -1769,7 +1769,6 @@ POST .../meetings/upload            multipart/form-data
 - 합의 필요: 위 FE 처리(특히 `summary_status` 를 표시용으로 본 것, 노드 `kind` 와 결정 `state` 를 판별 값으로 본 것)는 FE 판단이다. BE 합의 여부 확인 필요.
 - `awaiting_approval`·`summary_waiting_count` 처리(#551 묶음 A, 2026-11-10)는 BE #645 의 스키마·라우터·요약 상태 서비스(`summary_state`)를 읽고 MSW 로 맞췄다. MSW 는 저장된 `awaiting_approval` 을 BE `_state` 순서(요약 있음 `ready`, 대기 카드 있음 `awaiting_approval`, 승인 항목 없는 채팅 회의 `none`, 그 밖 `pending`)로 다시 판정하고 건수는 PM 에게만 준다. `pending` 의 1시간 창은 흉내 내지 않는다. 승인·반려와 자동 반영 되돌리기 뒤에는 `workspaceKey(ws,'minutes')` 를 다시 받는다. 문구는 이슈 #551 댓글의 요청(2026-11-09)을 따랐다. 실서버로는 확인하지 않았다.
 
-
 #### 4.4.3 회의 기록 고치기 (#605, 2026-11-10)
 
 워크스페이스 팀원 누구나 전사 제목과 발화 줄, AI 가 만든 주제와 결정을 고친다. 원문은 남고 고친 것에는 표시가 남으며 다시 요약해도 덮이지 않는다.
@@ -1816,6 +1815,21 @@ POST .../meetings/upload            multipart/form-data
 - 결정: 응답을 그 주제 키에 쓰고 `workspaceKey(ws,'project-map')`(다른 주제에 있는 옛 결정의 뒤집힘), `workspaceKey(ws,'minutes')`.
 
 구현 근거: [회의 라우터](../../../backend/app/api/meetings.py), [project_map 라우터](../../../backend/app/api/project_map.py), [전사 고치기](../../../backend/app/services/transcript.py), [주제·결정 고치기와 요약 합치기](../../../backend/app/services/summary.py), [요청 스키마](../../../backend/app/schemas/record_edit.py). 결정 근거는 [0067](../../../ai/docs/basis_for_decision/ai/2026-11-10-0067-human-record-edits-survive-resummary.md). 검증은 `backend/tests/api/test_transcript_edit.py`, `backend/tests/api/test_topic_decision_edit.py`, `backend/tests/api/test_summary_save.py`, `backend/tests/test_migration_record_edits.py` 로 SQLite 와 PostgreSQL 에서 했다. 실서버와 화면에서는 돌려 보지 않았다.
+
+**FE 사용 — 회의록 제목·발화 고치기 (#551, 2026-11-10).** 경로와 응답은 위 §4.4.3(BE #669, develop 병합 `83d9b22a`)이다. 실 API 로는 확인하지 않았다. develop 의 `backend/app/schemas/record_edit.py`·`api/meetings.py`·`services/transcript.py` 를 읽어 MSW 를 맞췄고, 병합 뒤 다시 대조했다(2026-11-11, 리뷰 때 본 `fe76543f` 와 같다). 주제·결정 고치기는 이 묶음 밖이다.
+
+| 경로 | FE 가 읽는 것 | FE 가 거절하는 것 (`INVALID_RESPONSE`) | 받고 따로 다루는 것 |
+|---|---|---|---|
+| `GET /meetings/{id}/minutes` 의 더한 칸 | `title_edited`·`title_original`, 줄의 `seq`·`edited`·`original_text` | 거절하지 않는다 | 표시용(D-184)이라 모양이 틀리면 그 표시만 버린다. `title_edited`·`edited` 는 false, `title_original`·`original_text` 는 null 이다. `seq` 가 없거나 0 이상 정수가 아니면 그 줄은 글만 보이고 고칠 수 없다(D-192). 키가 없는 이전 서버도 같다 |
+| `PATCH /meetings/{id}/title` | `meeting_id`·`title`·`title_original`·`title_edited` | `meeting_id`·`title` 의 모양이 틀림 | 앞뒤 공백을 Python `strip` 처럼 빼고 1~200자(문자 수)만 보낸다. 바뀌지 않았으면 보내지 않는다. 되돌리기는 `null`. 성공하면 그 회의록 캐시의 제목 칸을 응답으로 바꾸고 `workspaceKey(ws,'meetings')`·`(ws,'minutes')`·`(ws,'project-map')` 을 무효화한다 |
+| `PATCH /meetings/{id}/transcript/{seq}` | `seq`·`text`·`original_text`·`edited` | `seq`·`text` 의 모양이 틀림 | 앞뒤 공백을 빼지 않고 보낸다. 공백만(Python `strip` 기준)이거나 10,000자를 넘으면 보내지 않는다. 되돌리기는 `null`. 성공하면 그 회의록 캐시의 그 줄만 바꾸고 다시 받지 않는다 |
+
+- 오류: 410 `MEETING_DELETED` 는 토스트 `삭제된 회의라 고칠 수 없어요.` 와 함께 회의 상세·회의록을 다시 받아 `삭제된 회의예요` 안내로 바꾼다. 404 `TRANSCRIPT_LINE_NOT_FOUND` 는 그 줄 아래 `발화를 찾을 수 없어요. 회의록을 다시 불러왔어요.` 와 회의록 재조회다. 400 `INVALID_REQUEST` 는 길이 문구다. 응답을 못 읽으면 `변경 결과를 확인하지 못했어요` 토스트와 재조회이고 고치던 글은 남긴다.
+- 회의록은 팀원이 고쳐 바뀌므로 완료 회의록도 `staleTime` 을 기본 30초로 둔다(D-136 의 5분을 D-192 가 바꿨다).
+- 고친 이름은 별칭이 되지 않는다는 BE 규칙에 맞춰 발화 고치기 칸 아래 `원문은 남아요. 이름을 고쳐도 팀원 별칭은 바뀌지 않아요.` 를 둔다.
+- 구현: [회의록 스키마](../../src/shared/types/api/minutes.ts), [고치기 요청](../../src/entities/minutes/api/minutesEdits.ts), [고치기 훅](../../src/features/minutes-edit), [화면](../../src/widgets/meeting-minutes/ui/MinutesEditing.tsx), [MSW](../../src/shared/mock/handlers/minutesEdits.ts).
+- 합의 필요: BE 계약은 `seq` 의 모양 오류를 다루지 않는다. 그 줄만 고칠 수 없게 둔 것은 FE 판단이다. BE 합의 여부 확인 필요.
+
 
 ### 4.5 Discord 서버 사용자 목록
 

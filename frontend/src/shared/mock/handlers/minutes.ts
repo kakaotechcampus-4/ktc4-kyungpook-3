@@ -75,9 +75,15 @@ export const minutesHandlers = [
     if (denied) return denied
     const isPm = roleIn(meeting.workspace_id) === 'pm'
     const minutes = db.minutes.find(({ meeting_id }) => meeting_id === params.meetingId)
+    const titleEdit = db.titleEdits[meeting.meeting_id]
+    const titleFields = {
+      title_edited: titleEdit !== undefined,
+      title_original: titleEdit?.original ?? null,
+    }
     if (minutes)
       return ok({
         ...minutes,
+        ...titleFields,
         ...summaryStateOf(minutes, isPm),
         permissions: { can_review: isPm, can_undo: isPm },
       })
@@ -86,6 +92,7 @@ export const minutesHandlers = [
     return ok({
       meeting_id: meeting.meeting_id,
       title: meeting.title,
+      ...titleFields,
       started_at: meeting.started_at,
       duration_ms: 0,
       source:

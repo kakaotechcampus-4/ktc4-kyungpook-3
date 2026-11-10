@@ -47,6 +47,7 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
   TOPIC_NAME_TAKEN: '같은 이름의 주제가 이미 있어요.',
   DECISION_NOT_FOUND: '결정을 찾을 수 없어요. 지워졌을 수 있어요.',
   SUMMARY_NOT_FOUND: '이 회의의 요약본이 아직 없어요.',
+  TRANSCRIPT_LINE_NOT_FOUND: '발화를 찾을 수 없어요.',
   INTERNAL_ERROR: '서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
   UNAUTHENTICATED: '로그인이 필요해요.',
   FORBIDDEN: '접근 권한이 없어요.',

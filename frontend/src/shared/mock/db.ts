@@ -238,6 +238,8 @@ export interface MockDb {
   /** #428 모의 Discord 서버의 텍스트 채널. 팀원 목록(`discordUsers`)처럼 서버가 하나라 어느 공간이든 연결하면 이 목록이다 */
   discordChannels: MockDiscordChannel[]
   meetingDeletions: MockMeetingDeletion[]
+  /** 팀원이 고친 제목의 처음 제목. 회의 ID 별이고 고친 적 없으면 없다 (BE Meeting.title_original·title_edited_at, #551) */
+  titleEdits: Record<string, { original: string | null }>
   meetings: typeof meetingFixtures
   meetingSummaries: typeof meetingSummaryFixtures
   minutes: typeof minutesFixtures
@@ -307,6 +309,7 @@ export function initialDb(): MockDb {
     integrations: structuredClone(integrationFixtures),
     discordChannels: structuredClone(discordChannelFixtures),
     meetingDeletions: [],
+    titleEdits: {},
     meetings: structuredClone(meetingFixtures),
     meetingSummaries: structuredClone(meetingSummaryFixtures),
     minutes: structuredClone(minutesFixtures),

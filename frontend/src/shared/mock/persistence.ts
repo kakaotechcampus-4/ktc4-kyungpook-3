@@ -218,6 +218,26 @@ function withTaskDefaults(state: MockDb): MockDb {
   return state
 }
 
+/**
+ * #551 에서 회의록 줄에 `seq`·`edited`·`original_text` 가, db 에 고친 제목 기록(`titleEdits`)이 생겼다.
+ * 칸만 더해져 버전은 올리지 않고, 그 전에 저장된 값은 고친 적 없는 것으로 채운다. 줄 번호는 서버처럼 순서다
+ */
+function withMinutesDefaults(state: MockDb): MockDb {
+  for (const minutes of state.minutes as Partial<MockDb['minutes'][number]>[]) {
+    if (!isRecord(minutes)) continue
+    if (!Array.isArray(minutes.transcript)) continue
+    minutes.transcript.forEach(
+      (line: Partial<MockDb['minutes'][number]['transcript'][number]>, seq) => {
+        if (!isRecord(line)) return
+        line.seq ??= seq
+        line.edited ??= false
+        line.original_text ??= null
+      },
+    )
+  }
+  return state
+}
+
 /** 저장값을 읽는다. 없거나, 버전이 다르거나, 손상됐으면 지우고 null */
 export function loadSavedDb(storage: Storage): MockDb | null {
   let raw: string | null
@@ -229,8 +249,10 @@ export function loadSavedDb(storage: Storage): MockDb | null {
   if (raw === null) return null
   try {
     const parsed: unknown = JSON.parse(raw)
-    if (isRecord(parsed) && parsed.version === MOCK_DB_VERSION && isMockDb(parsed.db))
-      return withTaskDefaults(parsed.db)
+    if (isRecord(parsed) && parsed.version === MOCK_DB_VERSION && isRecord(parsed.db)) {
+      parsed.db.titleEdits ??= {}
+      if (isMockDb(parsed.db)) return withMinutesDefaults(withTaskDefaults(parsed.db))
+    }
   } catch {
     // JSON 이 아니다. 아래에서 지운다
   }

@@ -225,11 +225,14 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
     transcript: TRANSCRIPT_LINES.map((text, index) => {
       const member = speaker(index)
       return {
+        seq: index,
         at_ms: index * 60_000,
         speaker_member_id: member?.member_id ?? null,
         speaker_display_name: member?.display_name ?? null,
         speaker_fallback: member?.display_name ?? '참석자',
         text,
+        edited: false,
+        original_text: null,
       }
     }),
     // minutes handler 가 요청한 사람의 역할로 다시 채운다
