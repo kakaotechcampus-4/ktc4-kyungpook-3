@@ -23,6 +23,7 @@ export function toMinutes(dto: MinutesDto): Minutes {
         }
       : null,
     summaryStatus: displayValue(dto.summary_status, SUMMARY_STATUSES, 'minutes summary_status'),
+    summaryWaitingCount: dto.summary_waiting_count,
     transcript: dto.transcript.map((line) => ({
       atMs: line.at_ms,
       speakerMemberId: line.speaker_member_id,

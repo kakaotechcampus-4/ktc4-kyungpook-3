@@ -17,6 +17,7 @@ const minutes: MinutesDto = {
     decisions: ['담당자와 마감이 확정된 항목부터 반영한다.'],
   },
   summary_status: 'ready',
+  summary_waiting_count: null,
   transcript: [
     {
       at_ms: 0,
@@ -77,6 +78,7 @@ export const minutesFixtures: MinutesDto[] = [
     })),
     summary: null,
     summary_status: 'none',
+    summary_waiting_count: null,
     // 메시지 하나가 한 줄이다. at_ms 는 첫 메시지 기준 오프셋이라 실제 작성 시각은 started_at + at_ms 다
     transcript: [
       {
