@@ -18,7 +18,10 @@ import { showWriteUnconfirmed } from '@/shared/ui/toast'
 import { checkWrite, writeTarget } from './memberRows'
 import type { RowWrite } from './memberRows'
 
-/** 다시 받은 팀원 목록으로 보니 보낼 수 없는 쓰기였다(같은 이름). 아무것도 보내지 않았다 */
+/** 옮기려던 계정의 주인이 확인받은 앞 팀원이 아니다. 그 사이 다른 곳에서 연결이 바뀌었다 */
+const MOVE_STALE = '그사이 연결이 바뀌었어요. 새 목록에서 다시 골라 주세요.'
+
+/** 다시 받은 팀원 목록으로 보니 보낼 수 없는 쓰기였다(같은 이름, 바뀐 계정 주인). 아무것도 보내지 않았다 */
 class WriteRejectedError extends Error {
   constructor(message: string) {
     super(message)
@@ -90,7 +93,9 @@ function isStaleMapping(error: unknown): boolean {
  * 팀원 목록의 쓰기 실행기 (#647). 줄마다 바로 저장한다.
  * - 목록 전체에서 쓰기는 한 번에 하나다. 같은 틱의 두 번째 누름도 막는다 — 렌더 전의 isPending 은 아직 false 라
  *   mutation key 와 ref 로 묻는다. 빠른 연속 조작, 같은 계정을 두 줄에서 동시에 고르기가 모두 이것으로 막힌다
- * - 응답을 잃은 실패 뒤에는 캐시를 믿을 수 없다. 보내기 전에 목록을 다시 받아 옮기기의 주인과 이름 중복을 다시 본다
+ * - 응답을 잃은 실패 뒤에는 캐시를 믿을 수 없다. 보내기 전에 목록을 다시 받아 이름 중복을 다시 본다
+ * - 옮기기는 앞 팀원 연결을 푸는 파괴적인 요청이라 캐시가 멀쩡해 보여도 늘 목록을 다시 받는다. 다른 탭·PM 이 바꾼 것은
+ *   캐시를 무효로 만들지 않는다. 계정 주인이 확인받은 앞 팀원일 때만 풀고, 아니면 아무것도 보내지 않고 다시 고르게 한다
  * - 옮기기는 앞 팀원 연결을 먼저 푼다. 같은 계정을 두 팀원에 붙일 수 없다(409 `DISCORD_USER_ALREADY_MAPPED`)
  * - 세션이 끝났으면 보내지 않고, 늦은 응답은 캐시·문구에 남기지 않는다 (#594)
  * - PM 의 Discord 연결이 알림 설정의 PM 연결 상태(`pms`)를 바꾸므로 알림 설정도 다시 받는다 (#340)
@@ -114,7 +119,7 @@ export function useMemberRowWrites(workspaceId: string): MemberRowWrites {
       if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
       let members = queryClient.getQueryData<Member[]>(queryKey) ?? []
       let checked = write
-      if (queryClient.getQueryState(queryKey)?.isInvalidated) {
+      if (write.kind === 'move' || queryClient.getQueryState(queryKey)?.isInvalidated) {
         members = await queryClient.fetchQuery({
           ...memberListQueryOptions(workspaceId),
           staleTime: 0,
@@ -161,9 +166,9 @@ export function useMemberRowWrites(workspaceId: string): MemberRowWrites {
             ({ discordUserId }) => discordUserId === checked.discordUserId,
           )
           if (holder?.id === checked.memberId) return holder
-          // 그사이 주인이 바뀌었으면 풀지 않는다 — 다른 팀원의 연결을 대신 풀지 않는다
-          const from = holder?.id === checked.fromId ? holder : null
-          if (from !== null) save(await updateMember(from.id, { discordUserId: null }, signal))
+          if (holder === undefined || holder.id !== checked.fromId)
+            throw new WriteRejectedError(MOVE_STALE)
+          save(await updateMember(holder.id, { discordUserId: null }, signal))
           try {
             return save(
               await updateMember(
@@ -173,7 +178,7 @@ export function useMemberRowWrites(workspaceId: string): MemberRowWrites {
               ),
             )
           } catch (error) {
-            throw from === null ? error : new MoveLinkError(from, error)
+            throw new MoveLinkError(holder, error)
           }
         }
       }
