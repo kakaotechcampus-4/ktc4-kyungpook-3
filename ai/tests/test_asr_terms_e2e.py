@@ -12,6 +12,7 @@ import judge.pipeline as pipeline
 import judge.semantic_judge as semantic_judge
 from capture.handoff import BeClient
 from judge import asr_check
+from judge.eval_asr_terms import approve_titles
 from llm import FakeLLM
 from shared.schemas import JudgeFinding, Transcript
 from tests.capture.fake_be import FakeBe
@@ -174,9 +175,7 @@ def _replay(fb, monkeypatch, name):
     """회의 하나를 돌리고, PM 이 승인한 항목의 제목을 승인 뒤 큐에 넣는다(approvals.py 흉내)."""
     m = _load(f"{name}.json")
     out, _ = _run_meeting(fb, m, monkeypatch)
-    for i, a in enumerate(m["approve"]):
-        item = _item(out, a["title_contains"])
-        fb.asr_titles[WS].append({"title_id": f"{name}-{i}", "title": a.get("title", item["task_title"])})
+    fb.asr_titles[WS] += approve_titles(out.items, m["approve"], name)
     return out
 
 
