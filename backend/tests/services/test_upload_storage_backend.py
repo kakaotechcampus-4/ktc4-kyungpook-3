@@ -202,3 +202,44 @@ def test_meeting_deletion_delegates_to_remove_audio(fake, s3_env):
     meeting_deletion.remove_backend_files("m1")
 
     assert fake.keys("b") == []
+
+
+class _FailingFile(BytesIO):
+    """앞부분만 읽히고 그 뒤 읽기가 실패하는 파일. 복사 도중 실패를 흉내 낸다."""
+
+    def __init__(self, data: bytes):
+        super().__init__(data)
+        self.reads = 0
+
+    def read(self, size=-1):
+        self.reads += 1
+        if self.reads > 1:
+            raise OSError("disk error")
+        return super().read(8)
+
+
+def test_local_overwrite_failure_keeps_existing_audio():
+    upload_storage.save_audio("m1", BytesIO(M4A), "audio.m4a")
+
+    with pytest.raises(OSError):
+        upload_storage.save_audio("m1", _FailingFile(M4A + b"new"), "audio.m4a", overwrite=True)
+
+    assert (upload_storage.meeting_dir("m1") / "audio.m4a").read_bytes() == M4A
+    assert [p.name for p in upload_storage.meeting_dir("m1").iterdir()] == ["audio.m4a"]
+
+
+def test_local_overwrite_failure_on_new_meeting_leaves_nothing():
+    with pytest.raises(OSError):
+        upload_storage.save_audio("m1", _FailingFile(M4A), "audio.m4a", overwrite=True)
+
+    assert not upload_storage.meeting_dir("m1").exists()
+
+
+def test_s3_overwrite_failure_keeps_existing_audio(fake, s3_env):
+    upload_storage.save_audio("m1", BytesIO(M4A), "audio.m4a")
+    fake.fail_next = "upload_fileobj"
+
+    with pytest.raises(OSError):
+        upload_storage.save_audio("m1", BytesIO(M4A + b"new"), "audio.m4a", overwrite=True)
+
+    assert fake.objects[("b", "meetings/m1/audio.m4a")]["body"] == M4A

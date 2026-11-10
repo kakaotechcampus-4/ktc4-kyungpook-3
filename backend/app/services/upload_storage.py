@@ -7,6 +7,7 @@ s3 자격은 boto3 기본 체인(인스턴스 역할 등)에 맡기고 AWS 키 �
 업로드 API는 녹음을 다 쓴 뒤에 회의 행과 `meeting_upload`을 커밋한다. 저장 도중 서버가 죽으면 주인 없는
 폴더만 남고, 녹음 없는 업로드 회의는 생기지 않는다.
 """
+import contextlib
 import functools
 import logging
 import os
@@ -155,38 +156,54 @@ def _is_missing(exc: Exception) -> bool:
 
 
 def save_audio(meeting_id: str, fileobj: BinaryIO, filename: str, *, overwrite: bool = False) -> int:
-    """녹음을 `filename`으로 저장하고 크기를 돌려준다. 실패하면 부분 결과를 지우고 OSError 를 올린다.
+    """녹음을 `filename`으로 저장하고 크기를 돌려준다. 실패하면 OSError 를 올린다.
 
-    local 은 `overwrite=False`이면 이미 있는 폴더를 다른 회의 것으로 보고 거절한다(FileExistsError).
+    `overwrite=False`(처음 저장)이면 실패할 때 회의 폴더(S3 prefix)째 지우고, local 은 이미 있는 폴더를
+    다른 회의 것으로 보고 거절한다(FileExistsError).
+    `overwrite=True`(같은 회의에 다시 저장)이면 실패해도 이전 녹음을 그대로 둔다. 새 녹음은 완성된 뒤에야 바꿔 끼운다.
     """
     if storage_mode() == "s3":
-        return _save_audio_s3(meeting_id, fileobj, filename)
+        return _save_audio_s3(meeting_id, fileobj, filename, overwrite=overwrite)
     target = meeting_dir(meeting_id)
     # 이미 있는 폴더면 다른 회의 것이다. 실패해도 지우지 않도록 try 밖에서 만든다.
+    existed = target.exists()
     target.mkdir(parents=True, exist_ok=overwrite)
+    # 다시 저장할 때는 임시 파일에 다 쓴 뒤 os.replace 로 바꿔 끼운다. 쓰다 실패해도 이전 녹음은 그대로다
+    written = target / (f".{filename}.tmp" if overwrite else filename)
     try:
         fileobj.seek(0)
-        with open(target / filename, "wb") as out:
+        with open(written, "wb") as out:
             shutil.copyfileobj(fileobj, out, CHUNK_BYTES)
             out.flush()
             os.fsync(out.fileno())
-        return (target / filename).stat().st_size
+        size = written.stat().st_size
+        if overwrite:
+            os.replace(written, target / filename)
+        return size
     except BaseException:
-        remove_upload(meeting_id)
+        if overwrite:
+            written.unlink(missing_ok=True)
+            if not existed:
+                with contextlib.suppress(OSError):
+                    target.rmdir()  # 이번에 만든 빈 폴더만 치운다
+        else:
+            remove_upload(meeting_id)
         raise
 
 
-def _save_audio_s3(meeting_id: str, fileobj: BinaryIO, filename: str) -> int:
+def _save_audio_s3(meeting_id: str, fileobj: BinaryIO, filename: str, *, overwrite: bool) -> int:
     bucket = _s3_bucket()
     key = _s3_key(meeting_id, filename)
     content_type = PLAYBACK_CONTENT_TYPES.get(_extension(filename), "application/octet-stream")
     try:
         fileobj.seek(0)
         size = file_size(fileobj)
+        # 같은 키로 올리면 S3 가 업로드가 끝난 뒤에야 바꾼다. 실패하면 이전 객체가 남는다
         _s3_client().upload_fileobj(fileobj, bucket, key, ExtraArgs={"ContentType": content_type})
         return size
     except BaseException as exc:
-        remove_upload(meeting_id)
+        if not overwrite:
+            remove_upload(meeting_id)
         if isinstance(exc, Exception):
             raise _as_oserror(exc) from exc
         raise

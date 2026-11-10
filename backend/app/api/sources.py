@@ -229,20 +229,30 @@ def upload_recording(
 
     # 녹음을 복사하는 동안 DB 연결을 붙잡지 않도록 읽기 트랜잭션과 회의 잠금을 끝낸다.
     # 그 사이 바뀐 것은 아래 커밋 직전 잠금과 재확인이 잡는다
+    first_upload = existing is None
     db.rollback()
     try:
         saved_size = upload_storage.save_audio(
             meeting_id, file.file, RECORDING_FILENAME, overwrite=True
         )
     except OSError:
+        # 다시 올리는 경우에도 save_audio 가 이전 녹음은 지우지 않는다
         logger.exception("디스코드 회의 녹음을 저장하지 못했습니다: meeting_id=%s", meeting_id)
         raise AppError(ErrorCode.AUDIO_UPLOAD_FAILED)
 
     try:
         require_live_meeting(db, meeting_id, lock=True)
+        # 복사하는 사이 정리 작업이 이 녹음을 지웠을 수 있다. 정리된 기록에는 새 파일을 남기지 않는다
+        current = db.get(MeetingAudio, meeting_id, populate_existing=True)
+        if current is not None and current.deleted_at is not None:
+            db.rollback()
+            upload_storage.remove_upload(meeting_id)
+            return _recording_response(current, stored=False)
     except AppError:
-        # 복사하는 사이 회의가 지워졌다. 삭제 경로는 이미 지나갔으니 방금 저장한 파일은 여기서 치운다
-        upload_storage.remove_audio(meeting_id)
+        # 복사하는 사이 회의가 지워졌다. 삭제 경로는 이미 지나갔으니 방금 저장한 파일은 여기서 치운다.
+        # 지우지 못해도 410 은 그대로 낸다
+        db.rollback()
+        upload_storage.remove_upload(meeting_id)
         raise
     try:
         row = meeting_audio.record(
@@ -252,5 +262,8 @@ def upload_recording(
         db.commit()
     except Exception:
         db.rollback()
+        if first_upload:
+            # 행이 없는데 파일만 남지 않게 한다. 다시 올린 경우는 기존 행이 가리키는 파일이라 둔다
+            upload_storage.remove_upload(meeting_id)
         raise
     return _recording_response(row, stored=True)

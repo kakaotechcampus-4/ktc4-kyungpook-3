@@ -248,3 +248,145 @@ def test_storage_failure_returns_upload_failed(db, ws_id, monkeypatch):
     assert r.status_code == 422
     assert r.json()["error"]["code"] == "AUDIO_UPLOAD_FAILED"
     assert db.get(MeetingAudio, meeting_id) is None
+
+
+def _existing_recording(db, meeting_id):
+    """이전에 정상으로 올라간 녹음(행과 파일)을 만든다."""
+    assert _put(meeting_id).status_code == 200
+    db.expire_all()
+
+
+def test_reupload_local_copy_failure_keeps_previous_recording(db, ws_id, monkeypatch):
+    meeting_id = _meeting(db, ws_id)
+    _existing_recording(db, meeting_id)
+
+    def broken_copy(src, dst, length=0):
+        dst.write(b"partial")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(upload_storage.shutil, "copyfileobj", broken_copy)
+
+    r = _put(meeting_id, AUDIO_2)
+
+    assert r.status_code == 422
+    assert r.json()["error"]["code"] == "AUDIO_UPLOAD_FAILED"
+    assert _stored(meeting_id) == AUDIO
+    assert db.get(MeetingAudio, meeting_id).size_bytes == len(AUDIO)
+
+
+def test_reupload_s3_failure_keeps_previous_recording(db, ws_id, monkeypatch):
+    from tests.fake_s3 import FakeS3
+
+    fake = FakeS3()
+    monkeypatch.setattr(upload_storage, "_s3_client", lambda: fake)
+    monkeypatch.setenv("UPLOAD_STORAGE", "s3")
+    monkeypatch.setenv("UPLOAD_S3_BUCKET", "b")
+    meeting_id = _meeting(db, ws_id)
+    _existing_recording(db, meeting_id)
+    key = ("b", f"meetings/{meeting_id}/audio.m4a")
+    assert fake.objects[key]["body"] == AUDIO
+    fake.fail_next = "upload_fileobj"
+
+    r = _put(meeting_id, AUDIO_2)
+
+    assert r.status_code == 422
+    assert r.json()["error"]["code"] == "AUDIO_UPLOAD_FAILED"
+    assert fake.objects[key]["body"] == AUDIO
+
+
+def _after_save(monkeypatch, action):
+    """save_audio 가 끝난 직후(복사가 끝나고 다시 잠그기 전)에 다른 요청이 끼어든 상황을 만든다."""
+    real = upload_storage.save_audio
+
+    def wrapper(*args, **kwargs):
+        size = real(*args, **kwargs)
+        action()
+        return size
+
+    monkeypatch.setattr(upload_storage, "save_audio", wrapper)
+
+
+def test_meeting_deleted_while_copying_gets_410_and_leaves_no_file(db, ws_id, monkeypatch):
+    meeting_id = _meeting(db, ws_id)
+
+    def delete_meeting():
+        db.get(Meeting, meeting_id).deleted_at = datetime.now(timezone.utc)
+        db.commit()
+
+    _after_save(monkeypatch, delete_meeting)
+
+    r = _put(meeting_id)
+
+    assert r.status_code == 410
+    assert _stored(meeting_id) is None
+    assert db.get(MeetingAudio, meeting_id) is None
+
+
+def test_cleanup_failure_after_meeting_deleted_while_copying_still_gets_410(db, ws_id, monkeypatch):
+    meeting_id = _meeting(db, ws_id)
+
+    def delete_meeting():
+        db.get(Meeting, meeting_id).deleted_at = datetime.now(timezone.utc)
+        db.commit()
+
+    def cannot_remove(meeting_id):
+        raise OSError("s3 down")
+
+    _after_save(monkeypatch, delete_meeting)
+    monkeypatch.setattr(upload_storage, "remove_audio", cannot_remove)
+
+    r = _put(meeting_id)
+
+    assert r.status_code == 410
+
+
+def test_recording_swept_while_copying_is_not_stored(db, ws_id, monkeypatch):
+    meeting_id = _meeting(db, ws_id)
+    _existing_recording(db, meeting_id)
+
+    def sweep():
+        row = db.get(MeetingAudio, meeting_id)
+        row.deleted_at = datetime.now(timezone.utc)
+        db.commit()
+
+    _after_save(monkeypatch, sweep)
+
+    r = _put(meeting_id, AUDIO_2)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["stored"] is False
+    assert _stored(meeting_id) is None
+    db.expire_all()
+    assert db.get(MeetingAudio, meeting_id).deleted_at is not None
+
+
+def test_first_upload_commit_failure_removes_saved_file(db, ws_id, monkeypatch):
+    meeting_id = _meeting(db, ws_id)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr("app.api.sources.meeting_audio.record", boom)
+
+    with pytest.raises(RuntimeError):
+        _put(meeting_id)
+
+    assert _stored(meeting_id) is None
+    assert db.get(MeetingAudio, meeting_id) is None
+
+
+def test_reupload_commit_failure_keeps_file_for_existing_row(db, ws_id, monkeypatch):
+    meeting_id = _meeting(db, ws_id)
+    _existing_recording(db, meeting_id)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr("app.api.sources.meeting_audio.record", boom)
+
+    with pytest.raises(RuntimeError):
+        _put(meeting_id, AUDIO_2)
+
+    # 행은 그대로 있고 파일은 새 바이트다. 지우면 행이 가리키는 녹음이 사라진다
+    assert _stored(meeting_id) == AUDIO_2
+    assert db.get(MeetingAudio, meeting_id) is not None
