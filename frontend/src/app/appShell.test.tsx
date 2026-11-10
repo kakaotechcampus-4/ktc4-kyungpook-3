@@ -347,6 +347,17 @@ describe('메뉴 키보드 (U4-3)', () => {
   })
 })
 
+describe('이메일 없는 계정 (#627)', () => {
+  it('카카오로 가입해 이메일이 없으면 이름 아래에 아이디를 보인다', async () => {
+    for (const user of [db.session.user, db.accounts[0].session.user]) user.email = null
+    renderApp('/workspaces/ws_01/dashboard')
+    const menu = await openUserMenu()
+    expect(within(menu).getByText('최진호')).toBeInTheDocument()
+    expect(within(menu).getByText('userpm')).toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: '로그아웃' })).toBeInTheDocument()
+  })
+})
+
 describe('프로필 메뉴의 설정 (#244)', () => {
   it('아바타를 열면 계정 정보 아래·로그아웃 위에 `설정` 이 있고, 고르면 지금 공간의 설정으로 간다', async () => {
     const app = renderApp('/workspaces/ws_01/dashboard')

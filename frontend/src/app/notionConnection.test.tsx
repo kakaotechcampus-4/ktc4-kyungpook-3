@@ -92,6 +92,7 @@ describe('설정의 Notion 연결 영역 (U3-3)', () => {
       '연결',
       '자동 반영 기준',
       '알림',
+      '계정',
       '이 팀 삭제하기',
     ])
     expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([

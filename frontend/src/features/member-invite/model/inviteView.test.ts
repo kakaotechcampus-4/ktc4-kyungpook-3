@@ -52,6 +52,12 @@ describe('memberInviteView', () => {
     })
   })
 
+  it('수락한 계정에 이메일이 없으면 이름만 보인다 (#627)', () => {
+    expect(
+      memberInviteView('member', latest('accepted', { ...account, email: null })),
+    ).toMatchObject({ detail: '이재환', close: { kind: 'revoke' } })
+  })
+
   it('수락한 계정이 지워졌으면 초대 이메일만 보인다', () => {
     expect(memberInviteView('member', latest('accepted'))).toMatchObject({
       detail: 'jaehwan@example.com',

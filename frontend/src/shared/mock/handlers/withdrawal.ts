@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { db } from '../db'
 import { requireAuth } from '../auth-guard'
 import { fail, ok } from '../envelope'
-import { isMemberOf, linkedUserIdOf, normalizeEmail, roleIn, sessionMemberId } from '../sessions'
+import { isMemberOf, linkedUserIdOf, roleIn, sessionEmail, sessionMemberId } from '../sessions'
 
 function plan() {
   const workspaces = db.workspaces
@@ -80,7 +80,7 @@ export const withdrawalHandlers = [
         workspace_ids: before.blocked_workspace_ids,
       })
     const userId = db.session.user.user_id
-    const email = normalizeEmail(db.session.user.email)
+    const email = sessionEmail(db.session.user)
     const memberIds = new Set(
       db.members
         .filter((member) => linkedUserIdOf(member.member_id) === userId)
@@ -128,13 +128,17 @@ export const withdrawalHandlers = [
       if (invitation.invited_by_user_id === userId) invitation.invited_by_user_id = null
     db.consents = db.consents.filter((consent) => consent.user_id !== userId)
     db.accounts = db.accounts.filter((account) => account.session.user.user_id !== userId)
-    db.passwordReset.tokens = db.passwordReset.tokens.filter((token) => token.email !== email)
-    db.passwordReset.outbox = db.passwordReset.outbox.filter((mail) => mail.to !== email)
-    delete db.signupVerification.codes[email]
-    db.signupVerification.outbox = db.signupVerification.outbox.filter((mail) => mail.to !== email)
-    for (const [proof, value] of Object.entries(db.signupVerification.proofs))
-      if (value.email === email) delete db.signupVerification.proofs[proof]
-    delete db.loginLimit[email]
+    if (email !== null) {
+      db.passwordReset.tokens = db.passwordReset.tokens.filter((token) => token.email !== email)
+      db.passwordReset.outbox = db.passwordReset.outbox.filter((mail) => mail.to !== email)
+      delete db.signupVerification.codes[email]
+      db.signupVerification.outbox = db.signupVerification.outbox.filter(
+        (mail) => mail.to !== email,
+      )
+      for (const [proof, value] of Object.entries(db.signupVerification.proofs))
+        if (value.email === email) delete db.signupVerification.proofs[proof]
+      delete db.loginLimit[email]
+    }
     db.workspaces = db.workspaces.filter((workspace) => !deleted.has(workspace.workspace_id))
     db.members = db.members.filter((member) => !deleted.has(member.workspace_id))
     db.meetings = db.meetings.filter((meeting) => !deleted.has(meeting.workspace_id))
@@ -148,7 +152,7 @@ export const withdrawalHandlers = [
       (subscription) => subscription.user_id !== userId,
     )
     db.session = {
-      user: { user_id: '', name: '탈퇴한 사용자', email: '', avatar_url: null },
+      user: { user_id: '', username: '', name: '탈퇴한 사용자', email: null, avatar_url: null },
       workspace_count: 0,
       last_workspace_id: null,
     }

@@ -4,7 +4,8 @@ export type InvitationStatus = 'pending' | 'accepted' | 'declined' | 'canceled' 
 export interface InvitedAccount {
   userId: string
   name: string
-  email: string
+  /** 카카오로 가입한 계정은 이메일이 없다 (#627) */
+  email: string | null
 }
 
 /** PM 이 보는 초대 한 건 */

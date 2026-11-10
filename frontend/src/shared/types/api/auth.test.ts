@@ -40,7 +40,7 @@ describe('MSW handler 응답이 같은 스키마를 따른다', () => {
     signupCodeConfirmedSchema.parse(
       await fetchDto('/auth/signup/code/confirm', jsonRequest('POST', { email, code })),
     )
-    db.kakao.pending = { kakaoId: 'pending-kakao', email: null, nickname: '가입 대기' }
+    db.kakao.pending = { kakaoId: 'pending-kakao', nickname: '가입 대기' }
     kakaoPendingSchema.parse(await fetchDto('/auth/kakao/pending'))
   })
 
