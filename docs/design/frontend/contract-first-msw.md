@@ -46,7 +46,7 @@ flowchart LR
 | 모의 화면 | `/__mock/oauth/...`(Discord·Notion), `/__mock/kakao`, `/__mock/mail` |
 
 - production 번들에는 MSW 가 들어가지 않는다(`import.meta.env.DEV` 조건). 실제 API 호출이 실패해도 모의 응답으로 자동 전환하지 않는다.
-- 픽스처가 지켜야 할 값(예: `gate=auto` 는 `task_id` 만, `review`·`hold` 는 `approval_id` 만)은 계약 §7 에 적었다.
+- 픽스처가 지켜야 할 값(예: 새 항목을 만든 시점에 `gate=auto` 는 `task_id` 만, `review`·`hold` 는 `approval_id` 만. 수정 항목은 둘 다 가질 수 있고, auto 를 되돌리면 `gate=auto` 인 채 `task_id=null` 에 새 승인이 걸린다)은 계약 §7 에 적었다.
 
 ## 계약 불일치를 어떻게 잡았나
 
