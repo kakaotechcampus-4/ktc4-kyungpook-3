@@ -277,6 +277,7 @@ class Worker:
         self._stopping = False
         self._current: str | None = None
         self._summary_task: asyncio.Task[None] | None = None
+        self._drain_task: asyncio.Task[None] | None = None
         self._started_at = now_iso()
 
     def stop(self) -> None:
@@ -434,6 +435,14 @@ class Worker:
             else:   # 운영에서 녹음이 빠진 걸 알 수 있게 따로 남긴다(#670 리뷰)
                 print(f"[worker] 경고: 회의 {meeting_id} 녹음 올리기 포기({reason}). 웹 재생 녹음 없음", flush=True)
 
+    def _schedule_drain(self) -> None:
+        """녹음 올리기를 요약처럼 따로 돌린다. BE·S3 가 느려도 다음 바퀴(새 회의 처리)가 기다리지 않는다(#670 리뷰).
+        앞 올리기가 아직 돌고 있으면 새로 띄우지 않는다."""
+        if self._stopping:
+            return
+        if self._drain_task is None or self._drain_task.done():
+            self._drain_task = asyncio.create_task(self._drain_outbox())
+
     async def _purge_once(self) -> None:
         from capture.meeting_purge import purge_one
         from capture.privacy_cleanup import cleanup_one as privacy_cleanup_one
@@ -475,13 +484,15 @@ class Worker:
                 await self._intake_once()
                 await self._purge_once()
                 await self._prune_audio()
-                await self._drain_outbox()
+                self._schedule_drain()
                 self._schedule_summary()
                 await self._nap()
         finally:
             try:
-                if self._summary_task is not None:
-                    await self._summary_task
+                # 하던 올리기·요약은 마치고 끝낸다. 올리기는 항목마다 원자적으로 지우므로 중간에 멈춰도 다음 실행이 이어 간다
+                for task in (self._drain_task, self._summary_task):
+                    if task is not None:
+                        await asyncio.gather(task, return_exceptions=True)
             finally:
                 beat.cancel()
                 if control is not None:

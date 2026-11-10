@@ -1017,11 +1017,36 @@ async def test_each_lap_summarizes_once_after_intake_purge_and_audio_pruning(tmp
 
     monkeypatch.setattr(w, "_purge_once", purge)
     monkeypatch.setattr(w, "_prune_audio", prune)
-    monkeypatch.setattr(w, "_drain_outbox", drain)
+    monkeypatch.setattr(w, "_schedule_drain", lambda: order.append("drain"))
     summary = _Summary(on_call=lambda: order.append("summary"))
     w._summary = summary
     assert await _laps(w, 3) == 3
     assert order == ["intake", "purge", "prune", "drain", "summary"] * 2 + ["purge", "prune", "drain"]
+
+
+async def test_slow_recording_upload_does_not_hold_up_the_next_lap(tmp_path, monkeypatch):
+    # 녹음 올리기는 요약처럼 따로 돈다. BE 가 느려도 다음 바퀴(새 회의 처리)가 기다리지 않는다(#670 리뷰)
+    gate = asyncio.Event()
+    started = []
+
+    async def slow_drain():
+        started.append(1)
+        await gate.wait()
+
+    w = _worker(tmp_path, interval_s=0.01)
+    monkeypatch.setattr(w, "_drain_outbox", slow_drain)
+    laps = []
+    real_pass = w.run_pass
+    async def counting_pass(*a, **k):
+        laps.append(1)
+        if len(laps) >= 3:
+            w.stop()
+            gate.set()
+        return await real_pass(*a, **k)
+    monkeypatch.setattr(w, "run_pass", counting_pass)
+    await asyncio.wait_for(w.run(), timeout=5)
+    assert len(laps) >= 3        # 첫 올리기가 끝나기 전에 바퀴가 계속 돌았다
+    assert started == [1]        # 앞 올리기가 도는 동안 새로 띄우지 않는다
 
 
 async def test_drain_outbox_logs_giving_up_separately(tmp_path, monkeypatch, capsys):
