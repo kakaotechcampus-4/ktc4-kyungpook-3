@@ -608,6 +608,9 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     previous_topics = set(
         db.scalars(select(TopicMeeting.topic_id).where(TopicMeeting.meeting_id == meeting.meeting_id))
     )
+    previous_decisions = dict(db.execute(
+        select(Decision.decision_id, Decision.text).where(Decision.meeting_id == meeting.meeting_id)
+    ).all())
     frozen = _clear_meeting(db, meeting.meeting_id, extraction_id, keep_human=True)
     kept_topics = set(
         db.scalars(select(TopicMeeting.topic_id).where(TopicMeeting.meeting_id == meeting.meeting_id))
@@ -656,6 +659,8 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     extraction.summary_claimed_at = None
     extraction.summary_claim_token_hash = None
     db.flush()
+    if not frozen:
+        _carry_replaced(db, meeting.workspace_id, previous_decisions, details)
     _relink(db, meeting.workspace_id)
     _delete_orphan_topics(db, previous_topics - set(topics), keep_human=True)
     return SummarySaveResponse(
@@ -787,6 +792,36 @@ def _replaced_copies(db: Session, meeting: Meeting, replaces: list[str]) -> list
     return copies
 
 
+def _summarized(db: Session, workspace_id: str) -> list[Extraction]:
+    return db.scalars(select(Extraction).join(Meeting, Meeting.meeting_id == Extraction.meeting_id).where(
+        Meeting.workspace_id == workspace_id, Meeting.deleted_at.is_(None), Extraction.summary.is_not(None),
+    )).all()
+
+
+def _carry_replaced(db: Session, workspace_id: str, previous: dict[str, str], details: list[dict]) -> None:
+    """재요약이 지우고 다시 만든 결정을 다른 회의의 기록이 뒤집었다고 적었으면, 그 사본을 같은 문장의 새 결정으로 옮긴다.
+
+    뒤집기는 뒤집은 회의의 것이라 앞 회의의 재요약이 지우지 않는다. 결정을 고친 뒤 회의는 다시 요약해도 뒤집기를 다시 걸지 못한다.
+    문장이 바뀌면 같은 결정인지 알 수 없어 옮기지 않는다. 틀리게 이으면 유효한 결정이 말없이 사라진다.
+    """
+    texts: dict[str, str] = {}
+    for detail in details:
+        texts.setdefault(detail["text"], detail["decision_id"])
+    successors = {old_id: texts[text] for old_id, text in previous.items() if text in texts}
+    if not successors:
+        return
+    for extraction in _summarized(db, workspace_id):
+        document = _stored(extraction) or {}
+        changed = False
+        for detail in document.get("decision_details", []):
+            for copy in detail.get("replaces", []) if isinstance(detail, dict) else []:
+                if isinstance(copy, dict) and copy.get("decision_id") in successors:
+                    copy["decision_id"] = successors[copy["decision_id"]]
+                    changed = True
+        if changed:
+            extraction.summary = json.dumps(document, ensure_ascii=False)
+
+
 def _relink(db: Session, workspace_id: str) -> None:
     """replaced_by 를 쓰는 유일한 곳. 뒤집기는 뒤집은 결정이 있는 회의의 기록(decision_details[].replaces)이 정본이고
     replaced_by 는 그 색인이라, 기록이나 결정 상태를 바꾼 쪽은 여기서 워크스페이스의 색인을 기록대로 다시 맞춘다.
@@ -802,9 +837,7 @@ def _relink(db: Session, workspace_id: str) -> None:
         )
     }
     claims: dict[str, list[tuple]] = {}
-    for extraction in db.scalars(select(Extraction).join(Meeting, Meeting.meeting_id == Extraction.meeting_id).where(
-        Meeting.workspace_id == workspace_id, Meeting.deleted_at.is_(None), Extraction.summary.is_not(None),
-    )):
+    for extraction in _summarized(db, workspace_id):
         for detail in (_stored(extraction) or {}).get("decision_details", []):
             new, new_at = decisions.get(detail.get("decision_id"), (None, None)) if isinstance(detail, dict) else (None, None)
             if new is None or new.state == DecisionState.REMOVED:

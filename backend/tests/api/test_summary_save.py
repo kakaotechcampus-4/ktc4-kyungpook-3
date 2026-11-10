@@ -326,8 +326,26 @@ def test_rerun_of_a_meeting_whose_decision_was_replaced_later(mdb, mseed):
 
     _save(mdb, old, [{"name": "초대", "decisions": [{"text": "코드로 합류"}]}])
 
-    # 설계상 받아들인 손실이다. 단건 재실행은 늦은 회의가 건 번복을 잃고, 시간순 전체 재처리가 맞춘다
-    assert _decision(mdb, "코드로 합류").replaced_by is None
+    again = _decision(mdb, "코드로 합류")
+    assert again.replaced_by == _decision(mdb, "이메일로만").decision_id
+    assert [(c["decision_id"], c["text"]) for c in _document(mdb, new)["decision_details"][0]["replaces"]] == [
+        (again.decision_id, "코드로 합류"),
+    ]
+
+
+def test_rerun_that_rewords_a_replaced_decision_does_not_guess_the_link(mdb, mseed):
+    ws = mseed["ws"]
+    _, old, _ = _meeting(mdb, ws, started_at=T0 - timedelta(days=9))
+    _, new, _ = _meeting(mdb, ws)
+    _save(mdb, old, [{"name": "초대", "decisions": [{"text": "코드로 합류"}]}])
+    _save(mdb, new, [{"name": "초대", "decisions": [
+        {"text": "이메일로만", "replaces": [_decision(mdb, "코드로 합류").decision_id]},
+    ]}])
+    _requeue(mdb, old)
+
+    _save(mdb, old, [{"name": "초대", "decisions": [{"text": "초대 코드로 합류"}]}])
+
+    assert _decision(mdb, "초대 코드로 합류").replaced_by is None
     assert _document(mdb, new)["decision_details"][0]["replaces"][0]["text"] == "코드로 합류"
 
 
@@ -600,6 +618,26 @@ def test_removing_the_later_of_two_replacing_decisions_keeps_the_old_one_replace
     _edit_decision(mdb, ws, "링크로 합류", state="removed")
 
     assert _valid_now(mdb, ws) == (["이메일로만"], ["이메일로만"])
+
+
+def test_replacement_by_a_frozen_meeting_survives_a_rerun_of_the_earlier_meeting(mdb, mseed):
+    ws = mseed["ws"]
+    _, early, _ = _meeting(mdb, ws, started_at=T0 - timedelta(days=9))
+    _, late, _ = _meeting(mdb, ws)
+    _save(mdb, early, [{"name": "초대", "decisions": [{"text": "코드로 합류"}]}])
+    _save(mdb, late, [{"name": "초대", "decisions": [
+        {"text": "이메일로만", "replaces": [_decision(mdb, "코드로 합류").decision_id]},
+    ]}])
+    _edit_decision(mdb, ws, "이메일로만", text="이메일 초대만")
+
+    _requeue(mdb, early)
+    _save(mdb, early, [{"name": "초대", "decisions": [{"text": "코드로 합류"}]}])
+    _requeue(mdb, late)
+    _save(mdb, late, [{"name": "초대", "decisions": [
+        {"text": "이메일로만", "replaces": [_decision(mdb, "코드로 합류").decision_id]},
+    ]}])
+
+    assert _valid_now(mdb, ws) == (["이메일 초대만"], ["이메일 초대만"])
 
 
 def test_the_earliest_replacement_decides_what_was_valid_at_a_meeting_in_between(mdb, mseed):
