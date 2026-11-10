@@ -26,9 +26,9 @@ function addCompletedWorkspace() {
     onboarding: {
       completed: true,
       current_step: null,
-      steps: ['create_workspace', 'connect_discord', 'connect_notion', 'connect_members'].map(
-        (step) => ({ step, status: 'completed' }),
-      ),
+      steps: (
+        ['create_workspace', 'connect_discord', 'connect_notion', 'connect_members'] as const
+      ).map((step) => ({ step, status: 'completed' as const })),
     },
   })
   db.accounts[0].workspaceIds.push('ws_04')
@@ -128,14 +128,14 @@ describe('워크스페이스 선택 화면과 헤더 메뉴 (U4-1)', () => {
 })
 
 describe('앱 셸 (U4-2)', () => {
-  it('헤더에 5개 탭이 있고 설정은 탭이 아니라 프로필 메뉴에 있다', async () => {
+  it('헤더에 6개 탭이 있고 설정은 탭이 아니라 프로필 메뉴에 있다', async () => {
     renderApp('/workspaces/ws_01/dashboard')
     const nav = await screen.findByRole('navigation', { name: '주요 화면' })
     expect(
       within(nav)
         .getAllByRole('link')
         .map((link) => link.textContent),
-    ).toEqual(['대시보드', '회의록', '태스크', '메시지', '팀'])
+    ).toEqual(['대시보드', '회의록', '태스크', '메시지', '프로젝트 맵', '팀'])
     expect(within(nav).getByRole('link', { name: '대시보드' })).toHaveAttribute(
       'aria-current',
       'page',
@@ -159,6 +159,7 @@ describe('앱 셸 (U4-2)', () => {
       ['태스크', '태스크', '/workspaces/ws_01/tasks'],
       // #315 가 준비 중 안내를 지우고 메시지 화면을 모든 모드에서 연다
       ['메시지', '메시지', '/workspaces/ws_01/messages'],
+      ['프로젝트 맵', '프로젝트 맵', '/workspaces/ws_01/project-map'],
       // M8-B 가 팀 자리표시자를 Team 캔버스 화면으로 바꿨다 — 제목은 `팀` 이다
       ['팀', '팀', '/workspaces/ws_01/members'],
     ] as const) {
@@ -170,7 +171,7 @@ describe('앱 셸 (U4-2)', () => {
     await userEvent.click(within(await openUserMenu()).getByRole('menuitem', { name: '설정' }))
     expect(await screen.findByRole('heading', { name: '설정' })).toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: '주요 화면' })).toBeInTheDocument()
-    // 탭 다섯과 설정을 차례로 그린다. M8-B 로 팀·설정이 자리표시자에서 실제 화면이 되어 전체 실행 부하에서 5초를 넘겼다
+    // 탭 여섯과 설정을 차례로 그린다. M8-B 로 팀·설정이 자리표시자에서 실제 화면이 되어 전체 실행 부하에서 5초를 넘겼다
   }, 10_000)
 })
 
@@ -275,6 +276,8 @@ describe('휴대폰 셸 (D-180)', () => {
   it.each([
     ['알림', /^알림/, 1024, 390],
     ['공간 메뉴', /^워크스페이스 바꾸기/, 390, 1024],
+    ['도움말', /^도움말$/, 1024, 390],
+    ['도움말', /^도움말$/, 390, 1024],
   ] as const)(
     '자리를 옮기는 %s 버튼에 있던 포커스는 %ipx → %ipx 뒤에도 그 버튼에 있다',
     async (_, name, from, to) => {
@@ -285,6 +288,27 @@ describe('휴대폰 셸 (D-180)', () => {
       resize(to)
       expect(screen.getByRole('button', { name })).toBe(trigger)
       expect(trigger).toHaveFocus()
+    },
+  )
+})
+
+describe('헤더의 처음 쓰는 분을 위한 안내 (#650)', () => {
+  it.each([1024, 390])(
+    '%ipx: 알림 옆 도움말 단추가 안내를 열고, 닫으면 그 단추로 포커스가 돌아온다',
+    async (width) => {
+      stubViewportWidth(width)
+      renderApp('/workspaces/ws_01/dashboard')
+      const header = await shellHeader()
+      const help = within(header).getByRole('button', { name: '도움말' })
+      expect(help).toHaveAttribute('aria-haspopup', 'dialog')
+      expect(screen.queryByRole('dialog')).toBeNull()
+
+      await userEvent.click(help)
+      const panel = await screen.findByRole('dialog', { name: '처음 쓰는 분을 위한 안내' })
+      expect(within(panel).getAllByRole('heading', { level: 3 })).toHaveLength(5)
+      await userEvent.keyboard('{Escape}')
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      await waitFor(() => expect(help).toHaveFocus())
     },
   )
 })
@@ -343,6 +367,17 @@ describe('메뉴 키보드 (U4-3)', () => {
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
     expect(trigger).toHaveFocus()
+  })
+})
+
+describe('이메일 없는 계정 (#627)', () => {
+  it('카카오로 가입해 이메일이 없으면 이름 아래에 아이디를 보인다', async () => {
+    for (const user of [db.session.user, db.accounts[0].session.user]) user.email = null
+    renderApp('/workspaces/ws_01/dashboard')
+    const menu = await openUserMenu()
+    expect(within(menu).getByText('최진호')).toBeInTheDocument()
+    expect(within(menu).getByText('userpm')).toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: '로그아웃' })).toBeInTheDocument()
   })
 })
 

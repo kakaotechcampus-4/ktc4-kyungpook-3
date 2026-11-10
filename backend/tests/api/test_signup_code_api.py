@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.models import User
 from app.services import mailer
+from tests.usernames import username_for
 
 EMAIL = "new@example.com"
 
@@ -71,7 +72,7 @@ def test_request_without_mail_config_is_503_and_sends_nothing(mdb, client, sent,
 
 
 def test_request_for_a_registered_email_is_409_and_sends_nothing(mdb, client, sent):
-    mdb.add(User(email=EMAIL, name="t", provider="local"))
+    mdb.add(User(username=username_for(EMAIL), email=EMAIL, name="t", provider="local"))
     mdb.commit()
 
     res = _ask(client, EMAIL.upper())

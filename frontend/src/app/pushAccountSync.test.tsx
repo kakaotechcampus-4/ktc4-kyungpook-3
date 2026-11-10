@@ -27,9 +27,23 @@ const closedRecord = (userId: string) =>
 const owners = () => db.push.subscriptions.map(({ user_id }) => user_id)
 
 function addAccountB() {
+  db.consents.push(
+    ...db.consents
+      .filter((row) => row.user_id === ACCOUNT_A.id)
+      .map((row) => ({
+        ...row,
+        user_id: ACCOUNT_B.id,
+      })),
+  )
   db.accounts.push({
     session: {
-      user: { user_id: ACCOUNT_B.id, email: ACCOUNT_B.email, name: '이재환', avatar_url: null },
+      user: {
+        user_id: ACCOUNT_B.id,
+        username: 'jaehwan',
+        email: ACCOUNT_B.email,
+        name: '이재환',
+        avatar_url: null,
+      },
       workspace_count: 1,
       last_workspace_id: 'ws_01',
     },

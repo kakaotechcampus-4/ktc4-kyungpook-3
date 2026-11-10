@@ -4,7 +4,7 @@ import { onTestFinished } from 'vitest'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { completeMeeting, failMeeting, startChatMeeting } from '@/shared/mock/meetingFlow'
-import { fail } from '@/shared/mock/envelope'
+import { fail, ok } from '@/shared/mock/envelope'
 import { server } from '@/shared/mock/server'
 import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
@@ -23,8 +23,34 @@ function meeting(meetingId: string) {
 }
 
 describe('처리 화면과 #383 의 progress (#384)', () => {
-  it('인계 중이면 extracted 가 참이어도 마지막 단계는 아직 진행 중이다 (#483)', async () => {
+  it('인계 중이면 extracted 가 참이어도 마지막 단계 정리 결과 보내기는 아직 진행 중이다 (#483)', async () => {
     meeting('mt_10').progress = ALL_DONE
+    renderApp(paths.meetingProcessing('ws_01', 'mt_10'))
+
+    expect(await screen.findByRole('heading', { name: '정리하고 있어요' })).toBeInTheDocument()
+    const steps = within(screen.getByRole('list', { name: '정리 단계' })).getAllByRole('listitem')
+    expect(steps.map((step) => step.textContent)).toEqual([
+      '차례 기다리는 중완료',
+      '음성을 텍스트로 옮기기완료',
+      '회의록 정리하기완료',
+      '결정사항과 할 일 뽑아내기완료',
+      '정리 결과 보내기진행 중',
+    ])
+    expect(steps[4]).toHaveAttribute('aria-current', 'step')
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /^4 \/ 5 단계 완료 · 정리 결과 보내기 진행 중$/,
+    )
+  })
+
+  it('처리 단계가 없는 옛 서버(#542 전)는 세 단계이고, 인계 중에도 뽑아내기가 진행 중이다 (#483)', async () => {
+    meeting('mt_10').progress = ALL_DONE
+    server.use(
+      http.get('/api/v1/meetings/mt_10', () => {
+        const legacy: Record<string, unknown> = { ...structuredClone(meeting('mt_10')) }
+        delete legacy.processing
+        return ok(legacy)
+      }),
+    )
     renderApp(paths.meetingProcessing('ws_01', 'mt_10'))
 
     expect(await screen.findByRole('heading', { name: '정리하고 있어요' })).toBeInTheDocument()
@@ -34,7 +60,6 @@ describe('처리 화면과 #383 의 progress (#384)', () => {
       '음성을 텍스트로 옮기기완료',
       '결정사항과 할 일 뽑아내기진행 중',
     ])
-    expect(steps[2]).toHaveAttribute('aria-current', 'step')
     expect(screen.getByRole('status')).toHaveTextContent(
       /^2 \/ 3 단계 완료 · 결정사항과 할 일 뽑아내기 진행 중$/,
     )

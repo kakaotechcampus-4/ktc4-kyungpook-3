@@ -382,7 +382,9 @@ function ReviewRow({ workspaceId, approval, meetings }: ReviewRowProps) {
           <span className={`${REVIEW_TITLE} ${hold ? 'text-sub' : ''}`}>{title}</span>
           {at === null ? null : <span className="text-meta text-dim tabular-nums">{at}</span>}
         </div>
-        <p className="text-control font-normal text-sub">{approvalReason(approval)}</p>
+        <p className="text-control font-normal wrap-anywhere text-sub">
+          {approvalReason(approval)}
+        </p>
       </div>
       {/* D-034·D-162: 처리는 확인 필요 상세에서 한다. 보류는 `채워 넣기` 다 — 보완 폼을 열고 간다 (D-176) */}
       {/* 행마다 같은 글자라 읽는 이름에 제목을 붙인다. 보이는 글자로 시작한다 */}

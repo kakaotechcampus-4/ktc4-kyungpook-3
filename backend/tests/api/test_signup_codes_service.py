@@ -11,6 +11,7 @@ from app.core.errors import AppError, ErrorCode
 from app.models import SignupEmailCode, User
 from app.services import signup_codes as svc
 from tests.api.conftest import TEST_DATABASE_URL
+from tests.usernames import username_for
 
 NOW = datetime(2026, 11, 6, 0, 0, tzinfo=timezone.utc)
 EMAIL = "new@example.com"
@@ -204,7 +205,7 @@ def test_requests_for_other_emails_do_not_share_a_limit(mdb):
 
 
 def test_registered_email_is_refused(mdb):
-    mdb.add(User(email="Taken@example.com", name="t", provider="local"))
+    mdb.add(User(username=username_for("Taken@example.com"), email="Taken@example.com", name="t", provider="local"))
     mdb.commit()
 
     err = _failure(lambda: svc.request_code(mdb, "taken@example.com", now=NOW))

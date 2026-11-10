@@ -82,7 +82,8 @@ it('빈 목록의 total도 0이다', async () => {
 | mode | 상세 조회 한 번에 | 쓰는 곳 |
 |---|---|---|
 | `manual` | 아무것도 하지 않는다 | Vitest 기본값, M4 시나리오 5개 |
-| `staged` | 한 단계 (`audio_merged` → `transcribed` → `extracted` → `done`) | 브라우저 데모 |
+| `staged` | 녹음 회의는 AI 보고 하나 — 대기 → 전사 시작(수치 없음) → 0/5 → 3/5 → 5/5(끝낸 음성 트랙 수, AI #653 순서) → 저장 → 추출 → 넘기기 → `done`. `progress` 는 서버처럼 단계 순위에서 얻고 `processing` 을 준다(#483). 채팅 회의는 `progress` 한 단계 | 브라우저 데모 |
+| `staged-legacy` | 한 단계 (`audio_merged` → `transcribed` → `extracted` → `done`). 응답에 `processing` 키가 없다(#542 전 BE) | 옛 응답 확인 |
 | `instant` | 바로 `done` | E2E |
 | `fail` | 바로 `failed` | 실패 흐름 |
 | `fail-chat-stalled` | 채팅 회의만 `failed`(`chat_stalled`), 업로드 회의는 그대로 | 멈춘 채팅 회의(#450) |
@@ -95,7 +96,8 @@ it('빈 목록의 total도 0이다', async () => {
 
 | 시나리오 | 역할 | mode | Notion | 해 볼 것 |
 |---|---|---|---|---|
-| `meeting-demo` | PM | `staged` | 연결됨 | 올리고 처리 화면에서 대기부터 세 단계가 차례로 진행되는 것(넘기는 중에도 마지막 단계 진행 중, #483), 다른 화면으로 가서 완료 토스트 |
+| `meeting-demo` | PM | `staged` | 연결됨 | 올리고 처리 화면에서 대기부터 다섯 단계(D-189)가 차례로 진행되는 것(넘기는 중에도 마지막 단계 진행 중, #483), 전사 단계의 `음성 트랙 0/5 → 3/5 → 5/5` 와 단계 경과, 다른 화면으로 가서 완료 토스트. 단계 시작 시각은 MOCK_NOW(2026-09-18 09:00 서울) 직전이라, 실제 날짜로 열면 경과가 큰 수다 — 브라우저 시계를 MOCK_NOW 로 두면 `5분째`·`2분째`·`1분째`·`방금 시작` 이 보인다 |
+| `meeting-demo-legacy` | PM | `staged-legacy` | 연결됨 | `meeting-demo` 와 같지만 #542 전 서버라 `processing` 이 없다. 진행 수·경과 없이 단계만 보인다 (#483) |
 | `meeting-instant` | PM | `instant` | 연결됨 | 올리자마자 회의록으로 |
 | `meeting-fail` | PM | `fail` | 연결됨 | 재업로드 토스트, 목록에서 빠진 회의 |
 | `meeting-notion-not-connected` | PM | `instant` | 미연결 | Notion 없이 회의 올리기 → 정리 → 회의록·태스크(D-182). 설정 Notion 영역 → 모의 OAuth → 설정 복귀 |
@@ -133,7 +135,7 @@ setMockRole('member') // ws_01 의 역할을 일반 팀원으로
 
 ### E2E 에서 고르기
 
-E2E 는 `start(page, 'meeting-instant', '/workspaces/ws_01/meetings/upload')`(`e2e/support.ts`)처럼 시나리오와 주소를 함께 준다. 테스트마다 새 컨텍스트라 서로 상태를 나누지 않는다. 정리 중에 다른 화면으로 떠날 틈이 필요하면 `meeting-demo`(3초 × 5회, #483)를 쓴다 — `instant` 는 처리 화면이 첫 조회에서 끝을 보고 회의록으로 옮긴다.
+E2E 는 `start(page, 'meeting-instant', '/workspaces/ws_01/meetings/upload')`(`e2e/support.ts`)처럼 시나리오와 주소를 함께 준다. 테스트마다 새 컨텍스트라 서로 상태를 나누지 않는다. 정리 중에 다른 화면으로 떠날 틈이 필요하면 `meeting-demo`(3초 × 9회, #483)를 쓴다 — `instant` 는 처리 화면이 첫 조회에서 끝을 보고 회의록으로 옮긴다.
 
 승인 요청에는 계약 §2.5의 `resolved_by`도 보낸다.
 
@@ -214,7 +216,7 @@ MSW를 켠 개발 서버에서 `/workspaces/ws_01/tasks/tk_06?msw-scenario=notif
   회의록 본문은 비어 있는 게 아니라 **안내 문구 1줄**이 온다. extraction이 없을 때만 빈 배열이다.
 - **OAuth `start`·`callback`은 실 백엔드에도 MSW handler 에도 없다.** 실 백엔드에서는 Discord·Notion 연결이 동작하지 않는다.
   MSW 모드(개발)에서는 Discord·Notion 연결만 프론트의 모의 OAuth 화면(`shared/mock/oauth/`, `devPaths.mockOAuth`)이 콜백을 흉내내 연결·취소·실패 뒤 원래 화면으로 돌려보낸다(위 「회의 정리 흐름」의 `meeting-notion-not-connected`).
-  Google 로그인은 없다(D-182). 카카오 로그인은 실 백엔드에 `/auth/kakao/*`가 있고(계약 §4.1.4), MSW 모드에서는 모의 카카오 화면(`/__mock/kakao`)이 결과(새 사용자·이어진 계정·이메일 없음·이메일 충돌·취소·실패)를 고르게 한다.
+  Google 로그인은 없다(D-182). 카카오 로그인은 실 백엔드에 `/auth/kakao/*`가 있고(계약 §4.1.4), MSW 모드에서는 모의 카카오 화면(`/__mock/kakao`)이 결과(새 사용자·이어진 계정·닉네임 없는 새 사용자·취소·실패)를 고르게 한다. 이어진 계정은 픽스처 계정에 이어진 `kakao-pm` 이다. 이어진 카카오가 없으면 늘 가입 화면이고 카카오 가입은 아이디·이름만 받는다(#627).
 - 실 백엔드는 업로드한 **파일을 저장하지 않고 큐에도 보내지 않는다.** 회의가 `processing`에 머물러 다음 업로드를 409로 막는다. MSW는 위 「회의 정리 흐름」으로 정상 흐름을 낸다.
 - 실 백엔드는 **업로드를 PM 에게만 허용하지 않는다**(소속만 본다). 프론트의 PM 가드는 화면만 막는다 — [계약 §4](contracts/frontend-api-contract.md) 백엔드 요청 17.
 

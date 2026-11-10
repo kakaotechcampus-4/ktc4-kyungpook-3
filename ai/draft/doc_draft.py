@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import date
 
 from extract.dates import sanity_check_due_date
-from llm import LLMClient, get_llm
+from llm import CALL_ATTEMPTS, LLMClient, get_llm
 from shared.schemas import DraftResult, DraftStructured, JudgeFinding, JudgeResult, NotionCandidate
 
 
@@ -123,7 +123,7 @@ def _draft_prompt(
         "   - 요일이 특정되지 않은 기간은 그 기간의 마지막 날:\n"
         '     "이번 주 안으로" → 이번 주 일요일, "다음 주까지" → 다음 주 일요일, "월말까지" → 그 달 마지막 날\n'
         '   - "원래대로"처럼 되돌리자고 하면 현재 값 아래 괄호 메모의 원래 값(화살표 앞의 날짜)\n'
-        '   - 마감을 없애자고 하거나, 되돌릴 원래 값이 "없음"이면 "none"\n'
+        '   - 마감을 없애자고 하거나, 마감을 아직 못 정했다·미정이라고 하거나, 되돌릴 원래 값이 "없음"이면 "none"\n'
         '3. due_raw — due_date 를 계산한 근거 원문의 마감 표현을 고치지 말고 그대로 (예: "이번 주 금요일까지").\n'
         "   due_date 가 null 이면 null.\n"
         "4. doc_text — PM 이 승인 화면에서 읽을 한 문장. 무엇이 어떻게 바뀌는지 쓴다.\n"
@@ -206,7 +206,8 @@ def draft(
     client = get_llm("luna")
     if client.name == "off":
         raise DraftUnavailableError("Luna API 키가 없어 승인 요청 값을 만들 수 없습니다.")
-    drafted = draft_llm(finding, result, candidate, today, client)
-    if drafted is None:
-        raise DraftUnavailableError("Luna 응답을 파싱하지 못했습니다.")
-    return drafted
+    for _ in range(CALL_ATTEMPTS):  # 실패한 호출만 그 자리에서 한 번 더(#624)
+        drafted = draft_llm(finding, result, candidate, today, client)
+        if drafted is not None:
+            return drafted
+    raise DraftUnavailableError("Luna 응답을 파싱하지 못했습니다.")

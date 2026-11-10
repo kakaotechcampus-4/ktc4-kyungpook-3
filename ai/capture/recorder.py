@@ -111,7 +111,9 @@ RECOVERY_BACKOFF_S = float(os.environ.get("MM_RECOVERY_BACKOFF_S", "60"))      #
 RECOVERY_BACKOFF_CEIL_S = 3600.0                                                # 두 배로 늘려도 한 시간에서 멈춘다
 # 판단 경로에서 finding 몇 개만 실패했을 때 인계를 미루고 파이프라인을 다시 돌리는 횟수. 상한에 닿으면 가장 나은
 # 결과로 인계한다. 실패한 finding 만 다시 돌리는 진입점이 파이프라인에 없어 통째로 다시 돈다(docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md)
-EXTRACT_RETRY_MAX = int(os.environ.get("MM_EXTRACT_RETRY_MAX") or "2")       # .env 에 빈 값으로 적혀 있어도 기본값
+# 기본 0: 판단·초안은 실패한 호출을 그 자리에서 한 번 더 한다. 그 뒤에도 남는 실패는 같은 입력에서 되풀이돼, 2 일 때
+# 4분 회의 하나가 통째 재실행 두 번과 대기로 6분 30초를 더 썼다(#624)
+EXTRACT_RETRY_MAX = int(os.environ.get("MM_EXTRACT_RETRY_MAX") or "0")       # .env 에 빈 값으로 적혀 있어도 기본값
 # 판단 경로가 매니페스트에 적는 칸. 전사가 바뀌거나 옛 경로로 다시 뽑으면 같이 버린다
 _JUDGE_KEYS = ("items", "extract_failures", "extract_runs", "extract_partial", "extract_error", "extract_dropped",
                "judge_runs")
@@ -377,7 +379,7 @@ def remember_member_names(manifest: dict, handoff) -> bool:
 
 
 def transcribe_session(recordings_dir: Path, manifest: dict, *, backend, model_name: str, workers: int,
-                       gate=None, transcripts_dir: Path | None = None, progress=None) -> dict:
+                       gate=None, transcripts_dir: Path | None = None, progress=None, track_progress=None) -> dict:
     """매니페스트의 트랙을 chunk 모드로 전사해 회의록까지 쓴다. 스레드에서 부른다.
 
     산출물은 셋이다. transcripts/ 의 파일당 json 과 session_<회의ID>.transcript.json (BE 계약),
@@ -390,7 +392,7 @@ def transcribe_session(recordings_dir: Path, manifest: dict, *, backend, model_n
     wavs, names = _wavs_and_names(recordings_dir, manifest)
     run = run_session(wavs, names, hinted(backend, manifest), mode="chunk", model_name=model_name, gate=gate,
                       workers=workers, out_dir=transcripts_dir or TRANSCRIPTS_DIR, session_id=str(manifest["session"]),
-                      progress=progress)
+                      progress=progress, track_progress=track_progress)
     meeting_dir = recordings_dir / manifest["meeting_dir"]
     md = write_transcript(run["lines"], meeting_dir, manifest["meeting_dir"])
     return {"markdown": md["markdown"], "jsonl": md["jsonl"], "failed": md["failed"],
@@ -399,14 +401,15 @@ def transcribe_session(recordings_dir: Path, manifest: dict, *, backend, model_n
 
 
 def retry_failed(recordings_dir: Path, manifest: dict, *, backend, model_name: str,
-                 transcripts_dir: Path | None = None) -> dict:
+                 transcripts_dir: Path | None = None, track_progress=None) -> dict:
     """failed_units 의 구간만 화자 wav 에서 잘라 다시 보내고 회의록과 계약 파일을 다시 쓴다."""
     from stt.transcribe import retry_failed_lines
     from stt.transcript_writer import write_transcript
 
     wavs, names = _wavs_and_names(recordings_dir, manifest)
     out = retry_failed_lines(wavs, names, hinted(backend, manifest), model_name=model_name, mode="chunk",
-                             out_dir=transcripts_dir or TRANSCRIPTS_DIR, session=str(manifest["session"]))
+                             out_dir=transcripts_dir or TRANSCRIPTS_DIR, session=str(manifest["session"]),
+                             track_progress=track_progress)
     md = write_transcript(out["lines"], recordings_dir / manifest["meeting_dir"], manifest["meeting_dir"])
     return {"markdown": md["markdown"], "jsonl": md["jsonl"], "failed": out["still_failed"],
             "retried": out["retried"], "transcript_json": out["transcript_json"], "lines": out["lines"],
@@ -936,7 +939,8 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 lambda done, sent, tracks, total: tell("stt", {"done": done, "sent": sent, "tracks": tracks,
                                                               "tracks_total": total}))
             out = transcribe_session(recordings_dir, manifest, backend=backend, model_name=model_name,
-                                     workers=workers, gate=gate, transcripts_dir=tdir, progress=counted_by)
+                                     workers=workers, gate=gate, transcripts_dir=tdir, progress=counted_by,
+                                     track_progress=handoff.stt_progress(manifest) if handoff is not None else None)
             ops.end()                                  # partial 이면 실패를 세며 BE 에 fail 을 보낼 수 있다. 전사 시간에 넣지 않는다
             manifest["transcript"] = Path(out["markdown"]).relative_to(recordings_dir).as_posix()
             manifest["transcript_json"] = str(out["transcript_json"]) if out["transcript_json"] else None
@@ -964,7 +968,8 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             stage = STATUS_TRANSCRIBED
             ops.load_model(backend)
             begin(FAILED_STAGE[stage])
-            out = retry_failed(recordings_dir, manifest, backend=backend, model_name=model_name, transcripts_dir=tdir)
+            out = retry_failed(recordings_dir, manifest, backend=backend, model_name=model_name, transcripts_dir=tdir,
+                               track_progress=handoff.stt_progress(manifest) if handoff is not None else None)
             ops.end()                                  # 이 길은 finish 를 지나지 않는다. 여기서 닫아야 다음 단계 준비가 안 섞인다
             manifest["retry_runs"] = manifest.get("retry_runs", 0) + 1
             manifest["transcript_json"] = str(out["transcript_json"]) if out["transcript_json"] else None

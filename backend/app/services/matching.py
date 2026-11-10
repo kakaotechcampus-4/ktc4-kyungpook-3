@@ -35,8 +35,9 @@ class MatchResult:
 
 # 담당자 이름 뒤에 붙는 조사. AI 의 _PARTICLES(ai/extract/eval_golden_set.py)와 순서까지 같게 둔다
 _PARTICLES = ("께서", "한테", "에게", "이가", "이", "가", "은", "는", "을", "를", "께")
-# 이름 뒤에 붙는 호칭. "님"은 AI 규칙에도 있고 "씨"는 BE 에서 더했다(#463 리뷰, AI 쪽도 같이 맞춘다)
-_HONORIFICS = ("님", "씨")
+# 이름·역할 뒤에 붙는 호칭. AI 의 _HONORIFICS 와 같다("씨"는 #463 리뷰, "분"은 역할어 "디자이너분"을 찾으려고 #607
+# 리뷰에서 더했다). 후보는 긴 것부터 찾으므로 "옥분"처럼 "분"으로 끝나는 이름은 원래 꼴이 먼저 걸린다
+_HONORIFICS = ("님", "씨", "분")
 
 
 def normalize_alias_text(text: str) -> str:
@@ -53,10 +54,9 @@ def name_candidates(text: str | None) -> list[str]:
     AI 의 _name_candidates(ai/extract/eval_golden_set.py)와 같은 규칙이다. 바꾸면 둘 다 바꾼다.
     조사가 붙었는지 겉보기로 알 수 없다("하은"의 "은"은 이름, "환은"의 "은"은 조사). 그래서 조사를 뗀 것까지
     후보를 모두 만들고, 긴 후보(원문에 가까운 것)부터 찾는다. 예: "하은이가" → 하은이가, 하은이, 하은.
-    AI 규칙과 다른 점(AI 쪽도 같이 맞춘다, #463 리뷰): ① 공백을 한 칸으로 줄이고 후보마다 앞뒤 공백을 지운다.
-    그래야 띄어 쓴 님("환 님이" → "환")도 찾는다. ② 조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보다.
-    "하은이는" → 하은이는, 하은이, 하은. ③ "님"처럼 "씨"도 뗀다. "민수 씨", "민수씨가" → 민수. 호칭을 뗀 뒤에도
-    ②의 "이" 떼기를 적용한다. "하은이님이", "하은이 씨는" → 하은.
+    규칙: ① 공백을 한 칸으로 줄이고 후보마다 앞뒤 공백을 지운다. 그래야 띄어 쓴 님("환 님이" → "환")도 찾는다.
+    ② 조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보다. "하은이는" → 하은이는, 하은이, 하은. ③ "님"처럼 "씨"·"분"도
+    뗀다. "민수 씨", "민수씨가" → 민수, "디자이너분이" → 디자이너. 호칭을 뗀 뒤에도 ②의 "이" 떼기를 적용한다. "하은이님이", "하은이 씨는" → 하은.
     """
     if not text:
         return []
@@ -75,7 +75,7 @@ def name_candidates(text: str | None) -> list[str]:
             out.add(form[:-1].strip())
 
     def without_honorific(form: str) -> str:
-        # 호칭(님·씨)으로 끝나면 뗀 꼴(앞뒤 공백 정리), 아니면 빈 문자열
+        # 호칭(님·씨·분)으로 끝나면 뗀 꼴(앞뒤 공백 정리), 아니면 빈 문자열
         return form[:-1].strip() if form.endswith(_HONORIFICS) else ""
 
     # 조사를 떼는 대상은 원문과 원문에서 호칭을 뗀 꼴뿐이다. 떼고 남은 꼴("이"를 더 뗀 것 포함)에서 다시 떼지 않는다
@@ -325,8 +325,8 @@ def mentions_assignee(assignee_type: str | None, assignee_hint: str | None) -> b
     return assignee_type is not None and assignee_type not in _NO_PERSON_ASSIGNEE_TYPES
 
 
-# AI가 대명사·역할("그분", "너", "디자이너분")을 문맥으로 풀어 이름을 보낸 담당자 종류. 이름이 한 명으로 찾아져도
-# LLM의 추측이라 auto로 보내지 않는다. legacy도 이 종류는 inferred로 본다(ai/extract/llm.py _assignee_status)
+# 대명사("그분", "너")는 AI가 문맥으로 풀어 이름을 보내고, 역할("디자이너분")은 맡은 사람이 바뀔 수 있다.
+# 이름이 한 명으로 찾아져도 추측이거나 바뀔 수 있어 auto로 보내지 않는다. legacy도 이 종류는 inferred로 본다(ai/extract/llm.py _assignee_status)
 _INFERRED_ASSIGNEE_TYPES = frozenset({"second", "thirdpronoun", "thirdrole"})
 
 

@@ -28,6 +28,7 @@ from app.models import (
 )
 from app.schemas.meeting import MAX_EVIDENCE_SEQS
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 
 # 추출 등록은 봇 경로라 서비스 토큰을 요구한다.
@@ -56,7 +57,7 @@ def db():
 
 @pytest.fixture
 def seed(db):
-    user = User(email="pm@example.com", name="pm")
+    user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     db.add(user)
     db.flush()
     db.add(SessionModel(

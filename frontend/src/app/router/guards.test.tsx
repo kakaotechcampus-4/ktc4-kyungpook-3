@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import { getResponse, http } from 'msw'
 import { db } from '@/shared/mock/db'
 import { handlers } from '@/shared/mock/handlers'
@@ -140,29 +140,31 @@ describe('RequireOnboardingComplete · 온보딩', () => {
     expect(businessRequests(log.started)).toEqual([])
   })
 
-  it('현재 단계가 잘못되면 첫 pending 단계로 보낸다', async () => {
+  it('현재 단계를 모르면 짐작한 단계로 보내지 않고 응답을 읽지 못했다고 알린다 (#348)', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const ws02 = workspaceDto('ws_02')
-    ws02.onboarding.current_step = 'future_step'
-    ws02.onboarding.steps = [
-      { step: 'create_workspace', status: 'completed' },
-      { step: 'connect_discord', status: 'skipped' },
-      { step: 'connect_notion', status: 'completed' },
-      { step: 'connect_members', status: 'pending' },
-    ]
+    // 상태 판단 필드라 목록 전체가 INVALID_RESPONSE 다(D-184). 전에는 첫 pending 단계로 보냈다
+    Object.assign(workspaceDto('ws_02').onboarding, { current_step: 'future_step' })
+    const log = recordRequests()
     const app = renderApp('/workspaces/ws_02/tasks')
-    await landsOn(app, '/onboarding/ws_02/connect_members')
+    expect(
+      await screen.findByText('응답을 읽지 못했어요. 잠시 후 다시 시도해 주세요.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
+    await app.expectPath('/workspaces/ws_02/tasks')
+    // 부팅 조회의 오류 위에 가드의 조회가 붙을 때 한 번 더 받는다(D-184 의 새로 붙는 조회). 그 뒤로는 다시 묻지 않는다
+    const listed = () => log.started.filter(({ path }) => path === '/workspaces').length
+    const before = listed()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 1_300)))
+    expect(listed()).toBe(before)
     warn.mockRestore()
   })
 
-  it('pending 도 없으면 생성 단계로 보낸다', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  it('현재 단계도 pending 도 없으면 생성 단계로 보낸다', async () => {
     const ws02 = workspaceDto('ws_02')
-    ws02.onboarding.current_step = 'future_step'
+    ws02.onboarding.current_step = null
     ws02.onboarding.steps = [{ step: 'create_workspace', status: 'completed' }]
     const app = renderApp('/workspaces/ws_02/tasks')
     await landsOn(app, '/onboarding/ws_02/create_workspace')
-    warn.mockRestore()
   })
 
   it('온보딩 경로에는 완료 가드가 없어 루프 없이 그 자리에 머문다', async () => {

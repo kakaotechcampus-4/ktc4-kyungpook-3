@@ -11,6 +11,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models import AliasResolutionLog, Member, MemberAlias, Session as SessionModel, User, Workspace
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 
 @pytest.fixture
@@ -35,7 +36,7 @@ def db():
 
 @pytest.fixture
 def seed(db):
-    user = User(email="pm@example.com", name="pm")
+    user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     db.add(user)
     db.flush()
     db.add(SessionModel(

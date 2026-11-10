@@ -13,6 +13,7 @@ from app.models import (
     User,
     Workspace,
 )
+from tests.usernames import username_for
 
 
 @pytest.fixture
@@ -41,7 +42,7 @@ def base(db):
 
 
 def test_user_provider_defaults_to_local(db):
-    user = User(email="a@example.com", name="a")
+    user = User(username=username_for("a@example.com"), email="a@example.com", name="a")
     db.add(user)
     db.commit()
     assert user.provider == "local"

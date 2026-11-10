@@ -2,6 +2,7 @@ import { request } from '@/shared/api/client'
 import type { HttpMethod, RequestOptions } from '@/shared/api/client'
 import { ApiError } from '@/shared/api/errors'
 import { db } from '@/shared/mock/db'
+import { usernameFromEmail } from '@/shared/mock/sessions'
 import type { SessionDto, SignupCodeConfirmedDto } from '@/shared/types/api/auth'
 
 /**
@@ -26,13 +27,17 @@ export async function fetchSessionDto(): Promise<SessionDto | null> {
   }
 }
 
-/** 화면이 밟는 순서 그대로 모의 서버에 가입한다. 코드 요청 → 메일함의 코드 → 확인 → 가입 */
+/**
+ * 화면이 밟는 순서 그대로 모의 서버에 가입한다. 코드 요청 → 메일함의 코드 → 확인 → 가입.
+ * 아이디를 주지 않으면 BE 가 기존 계정에 채우는 규칙으로 이메일에서 만든다
+ */
 export async function signUpVerified(input: {
   email: string
   password: string
   name: string
+  username?: string
 }): Promise<SessionDto> {
-  const { email, ...profile } = input
+  const { email, username = usernameFromEmail(email), ...profile } = input
   await request('/auth/signup/code', jsonRequest('POST', { email }))
   const mail = db.signupVerification.outbox.at(-1)
   if (!mail) throw new Error('no signup mail')
@@ -42,6 +47,6 @@ export async function signUpVerified(input: {
   )
   return request<SessionDto>(
     '/auth/signup',
-    jsonRequest('POST', { ...profile, verification_token, link_kakao: false }),
+    jsonRequest('POST', { ...profile, username, verification_token }),
   )
 }

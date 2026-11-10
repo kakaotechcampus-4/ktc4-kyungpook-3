@@ -18,6 +18,7 @@ export {
   setChatChannel,
 } from './api/integrations'
 export { integrationStartUrl } from './api/oauth'
+export { chatChannelLabel } from './lib/chatChannelLabel'
 export type { IntegrationReturn } from './lib/oauthReturn'
 export { readIntegrationReturn } from './lib/oauthReturn'
 export {

@@ -513,3 +513,138 @@ def test_a_failing_progress_report_does_not_stop_the_transcription(tmp_path):
 
     lines, stats = B.run(_session(tmp_path), EchoStt(), mode="chunk", gate=None, progress=boom)
     assert stats.failed == 0 and lines
+
+
+def test_track_progress_is_owner_thread_completed_input_files_with_duplicate_speakers(tmp_path):
+    import threading
+    owner = threading.get_ident()
+    tracks = _session(tmp_path)
+    tracks[1].speaker_id = tracks[0].speaker_id
+    seen = []
+    lines, stats = B.run(tracks, EchoStt(), workers=2,
+                         track_progress=lambda done, total: seen.append((done, total, threading.get_ident())))
+    assert [(done, total) for done, total, _ in seen] == [(0, 2), (1, 2), (2, 2)]
+    assert all(thread == owner for _, _, thread in seen)
+    assert stats.failed == 0 and lines
+
+
+def test_track_progress_waits_for_reclip_results(tmp_path):
+    seen, during_calls = [], []
+
+    class Reclip(EchoStt):
+        reclip_unmapped = True
+
+        def transcribe(self, samples, sample_rate):
+            during_calls.append(list(seen))
+            return super().transcribe(samples, sample_rate)
+
+    backend = Reclip(words=False)
+    lines, stats = B.run(_session(tmp_path)[:1], backend, track_progress=lambda *count: seen.append(count))
+    assert stats.calls == 3 and lines and stats.failed == 0
+    assert all(values == [(0, 1)] for values in during_calls)
+    assert seen == [(0, 1), (1, 1)]
+
+
+def test_track_progress_waits_for_deferred_chunks_after_primary_work(tmp_path):
+    seen, during_calls = [], []
+
+    class Deferred(ContextStt):
+        def transcribe(self, samples, sample_rate, context=None):
+            during_calls.append(list(seen))
+            return super().transcribe(samples, sample_rate, context=context)
+
+    backend = Deferred()
+    lines, stats = B.run(_reply(tmp_path), backend, track_progress=lambda *count: seen.append(count))
+    assert len(backend.sent) == stats.calls == 3 and lines and stats.failed == 0
+    assert seen == [(0, 2), (1, 2), (2, 2)]
+    assert during_calls[-1] == [(0, 2), (1, 2)]
+    assert all((2, 2) not in values for values in during_calls)
+
+
+def test_silent_and_filtered_tracks_are_finished_without_provider_calls(tmp_path):
+    write_track(tmp_path / 'silent.wav', [silence(2000)])
+    write_track(tmp_path / 'speech.wav', [tone(1000), silence(1000)])
+
+    class RejectAll:
+        def accepts(self, *args, **kwargs):
+            return False
+
+    backend, seen = EchoStt(), []
+    lines, stats = B.run(B.discover(tmp_path), backend, gate=RejectAll(),
+                         track_progress=lambda *count: seen.append(count))
+    assert seen == [(0, 2), (1, 2), (2, 2)]
+    assert lines == [] and stats.calls == 0 and backend.calls == []
+
+
+def test_empty_input_has_no_fabricated_track_progress():
+    seen = []
+    assert B.run([], EchoStt(), track_progress=lambda *count: seen.append(count))[0] == []
+    assert seen == []
+
+
+def test_failed_provider_results_count_as_processed_tracks(tmp_path, monkeypatch):
+    monkeypatch.setattr(B, 'RETRY_WAIT_S', 0)
+    seen = []
+    lines, stats = B.run(_session(tmp_path), FailingStt(), track_progress=lambda *count: seen.append(count))
+    assert seen == [(0, 2), (1, 2), (2, 2)]
+    assert stats.failed and all(line.error for line in lines)
+
+
+def test_terminal_track_hook_cancels_queued_provider_calls(tmp_path, monkeypatch):
+    import threading
+    import pytest
+    write_track(tmp_path / 'a.wav', [tone(1000), silence(1000)])
+    write_track(tmp_path / 'b.wav', [tone(1000), silence(1500), tone(1000), silence(1500), tone(1000)])
+    second_prepared, second_running, release = threading.Event(), threading.Event(), threading.Event()
+
+    class Stopped(Exception):
+        pass
+
+    class Blocked(EchoStt):
+        def transcribe(self, samples, sample_rate):
+            if not self.calls:
+                assert second_prepared.wait(5)
+            else:
+                second_running.set()
+                assert release.wait(5)
+            return super().transcribe(samples, sample_rate)
+
+    prepared = 0
+
+    def preprocess(audio, sr):
+        nonlocal prepared
+        prepared += 1
+        if prepared == 2:
+            second_prepared.set()
+        return audio
+
+    cancelled = []
+    executor = B.ThreadPoolExecutor
+
+    class ObservedExecutor(executor):
+        def submit(self, *args, **kwargs):
+            future = super().submit(*args, **kwargs)
+
+            def finished(job):
+                if job.cancelled():
+                    cancelled.append(job)
+                    release.set()
+
+            future.add_done_callback(finished)
+            return future
+
+    monkeypatch.setattr(B, 'ThreadPoolExecutor', ObservedExecutor)
+
+    def stop(done, total):
+        if done == 1:
+            assert second_running.wait(5)
+            raise Stopped('deleted')
+
+    backend = Blocked()
+    try:
+        with pytest.raises(Stopped, match='deleted'):
+            B.run(B.discover(tmp_path), backend, mode='clip', workers=1, max_inflight=10,
+                  preprocess=preprocess, track_progress=stop)
+    finally:
+        release.set()
+    assert len(backend.calls) == 2 and cancelled

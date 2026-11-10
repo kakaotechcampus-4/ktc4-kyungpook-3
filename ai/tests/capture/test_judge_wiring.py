@@ -215,6 +215,7 @@ def test_an_unjudged_finding_with_no_items_is_not_registered_as_an_empty_extract
 def test_a_rerun_of_the_real_pipeline_keeps_what_each_run_judged(tmp_path, monkeypatch):
     """#128 멘토 리뷰의 예를 실제 파이프라인으로 돈다. 1회차는 환불과 검색이 항목이고 로그인에서 Terra 가 실패한다.
     2회차는 앞 둘을 바꿀 것 없음으로 보고 로그인만 항목으로 낸다. 항목 수로 실행을 고르면 로그인이 끝까지 빠진다."""
+    monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 2)   # 기본은 0(#624). 다시 돌리는 장치는 설정으로 남아 있다
     fake = FakeBe()
     fake.tasks |= {"task_search", "task_login"}
     fake.similar["검색"] = [_candidate("task_search", "검색 기능 성능 개선")]

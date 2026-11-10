@@ -19,6 +19,20 @@ const storedOverridesSchema = z.object({
   status: taskStatusSchema.optional(),
 })
 
+/**
+ * 전사 오인식 의심 한 개 (#643, backend schemas/meeting.py `AsrSuspect`). `source` 는 서버도 자유 문자열이라
+ * 모르는 값은 mapper 가 버린다. 표시만 하는 값이라 모양이 틀린 항목은 null 로 두고 응답을 막지 않는다 (D-184)
+ */
+const asrSuspectSchema = z
+  .object({
+    word: z.string(),
+    source: z.string(),
+    // 키가 없으면 후보 없음이다. 글자 목록이 아니면 항목을 버린다. 빈 후보로 읽으면 「다시 확인해 주세요」로 말이 바뀐다
+    candidates: z.array(z.string()).default([]),
+  })
+  .nullable()
+  .catch(null)
+
 /** 자유 dict 다. 제안 값·근거는 mapper 가 글자일 때만 읽고, 아래 키만 모양을 본다 */
 const approvalPayloadSchema = z.looseObject({
   task_overrides: storedOverridesSchema.optional(),
@@ -26,6 +40,8 @@ const approvalPayloadSchema = z.looseObject({
   merged_items: z.array(z.looseObject({})).nullish(),
   // 합치며 담당자를 바꾼 항목. 없으면 카드를 만든 항목이다
   assignee_item_id: z.string().nullish(),
+  // null 은 확인하지 않은 옛 AI, [] 는 확인했고 의심이 없다. 배열이 아니면 null 로 둔다
+  asr_suspects: z.array(asrSuspectSchema).nullable().catch(null).optional(),
 })
 
 export const approvalSchema = z.object({

@@ -1,22 +1,27 @@
-import { meetingFailure, processingSteps } from '@/entities/meeting'
+import { meetingFailure, processingSteps, stageDetail } from '@/entities/meeting'
 import type {
+  MeetingProcessing,
   MeetingProgress,
   MeetingSource,
   ProcessingStepKey,
   ProcessingStepState,
+  StageDetail,
 } from '@/entities/meeting'
 import type { Role } from '@/shared/types/common'
 import { PROCESSING_DONE_TITLE, PROCESSING_FAILED_TITLE, SPEAKERS_NEEDED_TITLE } from './notices'
 
 /**
  * 진행 토스트가 보는 회의 하나. 정리 중·대기는 상세 캐시에서, 완료·실패는 끝난 결과 기록에서 온다 (#424).
- * `source` 는 상세에 없어 목록 요약에서 온다. 모르면 null — 단계 칸·수 없이 보인다 (#483)
+ * `source` 는 상세에 없어 목록 요약에서 온다. 모르면 null — 단계 칸·수 없이 보인다 (#483).
+ * `observedAt` 은 상세 응답을 마지막으로 받은 시각이다 — 지금 단계의 경과를 이 시각까지로 센다
  */
 export type ProcessingSubject =
   | {
       phase: 'processing' | 'awaiting_speakers'
       title: string
       progress: MeetingProgress | null
+      processing: MeetingProcessing | null
+      observedAt: number
       source: MeetingSource | null
     }
   | { phase: 'done'; title: string }
@@ -32,6 +37,8 @@ export type ProcessingSignal =
       /** 출처를 모르면 null — 단계 수를 정하지 않는다 */
       steps: ProcessingStepState[] | null
       doneCount: number | null
+      /** 지금 단계의 진행 수·경과. 출처를 모르거나 화자 지정을 기다리면 null */
+      detail: StageDetail | null
     }
   | { kind: 'speakers'; title: string }
   | { kind: 'done'; title: string }
@@ -49,12 +56,14 @@ const VIEWS: Record<Role, Record<Phase, View | null>> = {
   member: { processing: 'processing', awaiting_speakers: 'waiting', done: 'done', failed: null },
 }
 
-/** 처리 화면의 단계마다 하나다. 지금 단계가 없는 정리 중은 마지막 단계 문장이다 */
+/** 처리 화면의 단계마다 하나다. 지금 단계가 없는 정리 중은 뽑아내기 문장이다 */
 const STAGE_SENTENCES: Record<ProcessingStepKey, string> = {
   queue: '차례를 기다리고 있어요',
   transcribe: '음성을 텍스트로 옮기고 있어요',
   collect: '대화를 모으고 있어요',
+  organize: '회의록을 정리하고 있어요',
   extract: '결정사항과 할 일을 뽑고 있어요',
+  deliver: '정리 결과를 보내고 있어요',
 }
 
 const WAITING_SENTENCE = '화자 지정을 기다리고 있어요'
@@ -73,8 +82,9 @@ function progressSignal(
       sentence: waiting ? WAITING_SENTENCE : UNKNOWN_STAGE_SENTENCE,
       steps: null,
       doneCount: null,
+      detail: null,
     }
-  const steps = processingSteps(subject.progress, subject.phase, subject.source)
+  const steps = processingSteps(subject.progress, subject.phase, subject.source, subject.processing)
   const current = steps.find(({ state }) => state === 'current')
   return {
     kind: 'processing',
@@ -82,6 +92,7 @@ function progressSignal(
     sentence: waiting ? WAITING_SENTENCE : STAGE_SENTENCES[current?.key ?? 'extract'],
     steps: steps.map(({ state }) => state),
     doneCount: steps.filter(({ state }) => state === 'done').length,
+    detail: waiting ? null : stageDetail(subject.processing, current, subject.observedAt),
   }
 }
 

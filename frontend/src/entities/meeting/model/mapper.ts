@@ -1,4 +1,4 @@
-import { displayValue } from '@/shared/api/unknownValue'
+import { displayValue, fallbackValue } from '@/shared/api/unknownValue'
 import type {
   MeetingDto,
   MeetingSummaryDto,
@@ -6,7 +6,14 @@ import type {
   SpeakerViewDto,
 } from '@/shared/types/api/meeting'
 import { MEETING_SOURCES } from '@/shared/types/common'
-import type { Meeting, MeetingSummary, MeetingUploadResult, SpeakerView } from './types'
+import { PROCESSING_STAGES } from './types'
+import type {
+  Meeting,
+  MeetingProcessing,
+  MeetingSummary,
+  MeetingUploadResult,
+  SpeakerView,
+} from './types'
 
 /** 스키마를 통과한 응답만 받는다. 모르는 회의 상태는 이미 `INVALID_RESPONSE` 로 걸렀다 */
 export function toMeeting(dto: MeetingDto): Meeting {
@@ -27,6 +34,20 @@ export function toMeeting(dto: MeetingDto): Meeting {
           extracted: dto.progress.extracted,
         }
       : null,
+    processing: dto.processing ? toMeetingProcessing(dto.processing) : null,
+  }
+}
+/** 모르는 단계면 처리 단계 전체를 없는 것으로 본다 — 단계 목록이 옛 응답처럼 `progress` 로만 정해진다 */
+function toMeetingProcessing(dto: NonNullable<MeetingDto['processing']>): MeetingProcessing | null {
+  const stage =
+    dto.stage === null
+      ? null
+      : fallbackValue(dto.stage, PROCESSING_STAGES, undefined, 'processing stage')
+  if (stage === undefined) return null
+  return {
+    stage,
+    stageAt: dto.stage_at,
+    stt: dto.stt && { done: dto.stt.done, total: dto.stt.total },
   }
 }
 export function toMeetingSummary(dto: MeetingSummaryDto): MeetingSummary {

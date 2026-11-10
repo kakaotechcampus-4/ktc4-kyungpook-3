@@ -75,11 +75,11 @@ def test_create_item_carries_all_three_stages():
     ("thirdpronoun", "그분", "환", "환"),       # 문맥으로 푼 이름을 보낸다
     ("thirdpronoun", "그분", None, None),       # 못 풀었으면 "그분"을 별칭으로 조회시키지 않는다
     ("second", "너", None, None),
-    ("thirdrole", "백엔드 리더", None, None),
+    ("thirdrole", "백엔드 리더", None, "백엔드 리더"),
     ("first", None, None, None),                # 1인칭은 BE 가 evidence_speaker 로 푼다
     ("thirdname", "화은님", "하은", "화은님"),  # 이름 지목은 원문만 — 추측한 이름이 별칭으로 학습되지 않게
     ("first", None, "민수", None),              # first 에 섞여 온 resolved 도 보내지 않는다
-    ("thirdrole", "백엔드 리더", "환", "환"),   # 역할 지목은 지금처럼 푼 이름(별도 이슈)
+    ("thirdrole", "백엔드 리더", "환", "백엔드 리더"),  # 역할 지목도 원문만(#522)
 ])
 def test_assignee_raw_is_only_a_lookupable_alias(a_type, raw, resolved, expected):
     finding = _finding(assignee_type=a_type, assignee_raw=raw, assignee_resolved=resolved)
@@ -102,6 +102,15 @@ def test_update_assignee_uses_the_resolved_name_for_thirdname():
     finding = _finding(assignee_type="thirdname", assignee_raw="화은이가", assignee_resolved="하은")
     item = to_item(finding, _result(category="assignee"), _drafted(), _target(), TRANSCRIPT)
     assert item["assignee_raw"] == "하은"
+
+
+def test_update_assignee_for_thirdrole_prefers_resolved_then_original():
+    finding = _finding(assignee_type="thirdrole", assignee_raw="백엔드 리더가", assignee_resolved="환")
+    item = to_item(finding, _result(category="assignee"), _drafted(), _target(), TRANSCRIPT)
+    assert item["assignee_raw"] == "환"
+    finding = _finding(assignee_type="thirdrole", assignee_raw="백엔드 리더가", assignee_resolved=None)
+    item = to_item(finding, _result(category="assignee"), _drafted(), _target(), TRANSCRIPT)
+    assert item["assignee_raw"] == "백엔드 리더가"
 
 
 # ── update ────────────────────────────────────────────────────────────────
@@ -333,7 +342,7 @@ def test_run_mixed_meeting(monkeypatch):
 
 
 def test_run_terra_failure_skips_only_that_finding(monkeypatch):
-    terra = [TERRA_OK[0], {"is_meaningful": "모름"}, *TERRA_OK[2:]]  # 로그인 finding 만 파싱 실패
+    terra = [TERRA_OK[0], {"is_meaningful": "모름"}, {"is_meaningful": "모름"}, *TERRA_OK[2:]]  # 로그인만 다시 해도 실패
     _install(monkeypatch, stage1={"findings": FINDINGS}, terra=terra, luna_draft=[LUNA_DRAFT_OK[0], LUNA_DRAFT_OK[2]])
 
     out = _run()
@@ -525,6 +534,22 @@ def test_new_card_merge_keeps_the_original_thirdname_mention(monkeypatch):
     (card,) = out.items
     assert card["action"] == "create"
     assert card["assignee_raw"] == "화은이가"
+
+
+def test_new_card_merge_keeps_the_original_thirdrole_mention(monkeypatch):
+    # 역할 지목도 새 할 일 카드에서는 원문이 간다(#522)
+    who = {"indices": [1], "summary": "결제 환불 기능을 백엔드 리더가 맡기로 함", "assignee_type": "thirdrole",
+           "assignee_raw": "백엔드 리더가", "assignee_resolved": "환", "reason": "담당"}
+    out = _run_owner(
+        monkeypatch, [REFUND_NEW, who],
+        [_terra(is_new=True, matched_candidate_index=None), _terra(category="assignee")],
+        [{"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "결제 환불 기능 구현"},
+         {"task": None, "due_date": None, "doc_text": "백엔드 리더 담당"}],
+    )
+
+    (card,) = out.items
+    assert card["action"] == "create"
+    assert card["assignee_raw"] == "백엔드 리더가"
 
 
 def test_assignee_change_card_sends_the_resolved_name(monkeypatch):
@@ -724,17 +749,67 @@ def test_reverting_to_no_due_in_same_meeting_leaves_no_card(monkeypatch):
     assert out.failures == []
 
 
-def test_clearing_an_existing_due_is_a_failure_not_a_silent_drop(monkeypatch):
-    # 원래 마감이 있는 Task 의 마감을 없애자는 결정은 BE 에 보낼 칸이 없다. 조용히 버리지 않고 실패로 남긴다
+def test_clearing_an_existing_due_is_an_update_card_with_due_cleared(monkeypatch):
+    # 원래 마감(10/2)이 있는 Task 의 마감을 없애자는 결정. BE 는 due_date=null 을 "바꾸지 않음"으로 받으므로
+    # due_cleared 로 따로 보낸다. 전에는 보낼 칸이 없어 실패로 남았고, 회의 전체 재시도만 불렀다(#624)
     _install(
         monkeypatch, stage1={"findings": [LOGIN_KEEP]}, terra=[_terra(category="schedule")],
-        luna_draft=[{"task": None, "due_date": "none", "doc_text": "로그인 화면 마감을 없앰"}],
+        luna_draft=[{"task": None, "due_date": "none", "doc_text": "로그인 화면 마감을 10/2에서 미정으로 변경"}],
     )
 
     out = _run_dedup()
 
-    assert out.items == []
-    assert [f.stage for f in out.failures] == ["draft"]
+    assert out.failures == []
+    (card,) = out.items
+    assert (card["action"], card["target_task_id"], card["due_date"], card["due_cleared"]) == (
+        "update", "task_login", None, True)
+    assert card["target_snapshot"]["due_date"] == "2026-10-02"
+
+
+def test_clearing_a_due_that_was_never_set_still_says_so(monkeypatch):
+    # 원래 마감이 있는지는 BE 가 등록 시점 값으로 다시 본다(없으면 승인 요청을 만들지 않는다). AI 는 결정을 그대로
+    # 싣는다. 그래야 답장 판단이 후보 수와 상관없이 같은 알림을 낸다(#624 리뷰)
+    _install(
+        monkeypatch, stage1={"findings": [LOGIN_KEEP]}, terra=[_terra(category="schedule")],
+        luna_draft=[{"task": None, "due_date": "none", "doc_text": "로그인 화면 마감은 미정"}],
+    )
+
+    out = run(DEDUP_MEETING, workspace_id="ws_1", today=date(2026, 9, 28), candidates=NoDueCandidates())
+
+    assert out.failures == []
+    (card,) = out.items
+    assert (card["due_date"], card["due_cleared"]) == (None, True)
+
+
+def test_a_proposed_due_then_cleared_in_the_same_meeting_clears_the_existing_due(monkeypatch):
+    # 10/2 인 Task 를 10/6 으로 미루자고 했다가 "날짜는 아직 못 정하겠다". 카드는 하나, 마감은 없앰
+    _install(
+        monkeypatch, stage1={"findings": [LOGIN_DELAY, LOGIN_KEEP]},
+        terra=[_terra(category="schedule"), _terra(category="schedule")],
+        luna_draft=[
+            {"task": None, "due_date": "2026-10-06", "doc_text": "로그인 화면 마감을 10/6으로 연기"},
+            {"task": None, "due_date": "none", "doc_text": "로그인 화면 마감을 미정으로"},
+        ],
+    )
+
+    (card,) = _run_dedup().items
+    assert (card["due_date"], card["due_cleared"]) == (None, True)
+
+
+def test_a_cleared_due_then_dated_again_keeps_the_new_date(monkeypatch):
+    fakes = _install(
+        monkeypatch, stage1={"findings": [LOGIN_DELAY, LOGIN_KEEP]},
+        terra=[_terra(category="schedule"), _terra(category="schedule")],
+        luna_draft=[
+            {"task": None, "due_date": "none", "doc_text": "로그인 화면 마감을 미정으로"},
+            {"task": None, "due_date": "2026-10-08", "doc_text": "로그인 화면 마감을 10/8로"},
+        ],
+    )
+
+    (card,) = _run_dedup().items
+    assert "마감을 2026-10-02 → 없음" in fakes["terra"].prompts[1]   # 뒤 발화를 판단할 때 앞의 해제가 보인다
+    assert card["due_date"] == "2026-10-08" and not card.get("due_cleared")
+
 
 def test_changed_again_in_same_meeting_keeps_last_value(monkeypatch):
     # 10/2 → 10/6 → 10/7. 카드는 하나, 마감은 마지막 값. 스냅샷은 덮어 보여 준 값이 아니라 DB 원래 값
@@ -1098,16 +1173,6 @@ def test_judge_seq_with_nothing_from_this_reply_judges_nothing(monkeypatch):
 
     assert out.items == [] and out.failures == []
     assert source.calls == [] and fakes["terra"].prompts == []
-
-
-def test_clearing_an_existing_due_carries_the_reason_callers_can_match(monkeypatch):
-    _install(
-        monkeypatch, stage1={"findings": [LOGIN_KEEP]}, terra=[_terra(category="schedule")],
-        luna_draft=[{"task": None, "due_date": "none", "doc_text": "로그인 화면 마감을 없앰"}],
-    )
-
-    (failure,) = _run_dedup().failures
-    assert (failure.reason, failure.task_id) == (pipeline.DUE_CLEARED_REASON, LOGIN_FRI.task_id)
 
 
 def test_run_uses_per_seq_dates(monkeypatch):

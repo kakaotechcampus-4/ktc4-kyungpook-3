@@ -329,8 +329,8 @@ def create_extraction(
                 blockers=blockers,
             )
             if raw_item.assignee_type == "thirdrole" and gate == Gate.AUTO:
-                # 역할 지목은 AI가 역할 원문 대신 문맥으로 추측한 이름을 assignee_raw로 보낼 수 있다. 그 이름이 별칭에
-                # 걸려 legacy 확신도가 높아져도 추측이라 PM이 본다(#459).
+                # 역할은 맡은 사람이 바뀔 수 있다. 역할 원문("BE 리더")이 별칭에 걸려 legacy 확신도가 높아져도
+                # PM이 본다(#459). update 카드나 이 변경 전의 옛 카드는 추측한 이름일 수도 있다.
                 # 판단 경로(judge)는 auto_blockers가 이미 막으므로 사실상 legacy에 걸리지만, 경로와 무관하게 막는다.
                 # 채팅 강등보다 먼저 둔다. 아래 로그가 "채팅이 아니었으면 auto였을 항목"만 세게 하려는 것이다
                 gate = Gate.REVIEW
@@ -726,6 +726,10 @@ def _request_task_update(
     base_values: dict[str, object] = {}
     if raw_item.due_date is not None and raw_item.due_date != target.due_date:
         changes["due_date"] = raw_item.due_date.isoformat()
+        base_values["due_date"] = base("due_date", target.due_date)
+    elif raw_item.due_cleared and raw_item.due_date is None and target.due_date is not None:
+        # 마감을 없애는 변경안. 승인하면 null 이 그대로 반영된다(#624)
+        changes["due_date"] = None
         base_values["due_date"] = base("due_date", target.due_date)
     if raw_item.status is not None and str(raw_item.status) != target.status:
         changes["status"] = str(raw_item.status)

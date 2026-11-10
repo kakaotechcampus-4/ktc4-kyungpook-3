@@ -25,6 +25,30 @@ import { nextId } from './utils'
 export const MEETING_STAGES = ['audio_merged', 'transcribed', 'extracted'] as const
 export type MeetingStage = (typeof MEETING_STAGES)[number]
 
+type ProcessingDto = NonNullable<MeetingDto['processing']>
+
+/** AI 가 아직 아무 단계도 알리지 않았다 */
+const NO_REPORT: ProcessingDto = { stage: null, stage_at: null, stt: null }
+
+/**
+ * `staged` 녹음 회의가 조회마다 하나씩 받는 AI 보고(#653). 단계 시작 보고는 수치가 없고, 이어서 끝낸 트랙 수를
+ * 시작 0/N·중간(2초 간격이라 건너뛸 수 있다)·최종 N/N 으로 보낸다. 같은 stt 의 재보고는 단계 시작 시각을 바꾸지 않는다.
+ * 시각은 MOCK_NOW(서울 09:00) 앞이다 — 브라우저 시계를 MOCK_NOW 로 두면 5분째·2분째·1분째·방금 시작이 보인다
+ */
+const STAGED_REPORTS: readonly ProcessingDto[] = [
+  NO_REPORT,
+  { stage: 'stt', stage_at: '2026-09-17T23:55:00Z', stt: null },
+  { stage: 'stt', stage_at: '2026-09-17T23:55:00Z', stt: { done: 0, total: 5 } },
+  { stage: 'stt', stage_at: '2026-09-17T23:55:00Z', stt: { done: 3, total: 5 } },
+  { stage: 'stt', stage_at: '2026-09-17T23:55:00Z', stt: { done: 5, total: 5 } },
+  { stage: 'sources', stage_at: '2026-09-17T23:58:00Z', stt: null },
+  { stage: 'extract', stage_at: '2026-09-17T23:58:30Z', stt: null },
+  { stage: 'handoff', stage_at: '2026-09-17T23:59:30Z', stt: null },
+]
+
+/** 서버 `_STAGE_RANK`. `progress` 는 데이터 판정과 이 순위(audio_merged ≥1, transcribed ≥2, extracted ≥4)의 OR 다 */
+const STAGE_RANK: Record<string, number> = { stt: 1, sources: 2, extract: 3, handoff: 4 }
+
 /** 생성 ID 의 시작 번호. 픽스처(ex_01·it_06·ap_03)와 겹치지 않는다. 태스크는 task-state 와 같은 90 이다 */
 const GENERATED_ID_MINIMUM = 90
 
@@ -75,6 +99,37 @@ export function advanceMeeting(meetingId: string, state: MockDb = db): MeetingDt
   if (stage === 'audio_merged' && isChatMeeting(meetingId, state))
     meeting.progress.transcribed = true
   return meeting
+}
+
+/** `staged` 녹음 회의가 다음 AI 보고를 받는다. 마지막 보고(handoff) 다음은 완료다 */
+function reportNextStage(meeting: MeetingDto, state: MockDb): void {
+  const current = meeting.processing ?? NO_REPORT
+  const index = STAGED_REPORTS.findIndex(
+    ({ stage, stt }) => stage === current.stage && stt?.done === current.stt?.done,
+  )
+  const report = STAGED_REPORTS[index + 1]
+  if (report === undefined) {
+    completeMeeting(meeting.meeting_id, state)
+    return
+  }
+  const rank = report.stage === null ? 0 : STAGE_RANK[report.stage]
+  const progress = progressOf(meeting)
+  meeting.processing = structuredClone(report)
+  meeting.progress = {
+    audio_merged: progress.audio_merged || rank >= 1,
+    transcribed: progress.transcribed || rank >= 2,
+    extracted: progress.extracted || rank >= 4,
+  }
+}
+
+/**
+ * 상세 응답의 처리 단계. BE `_processing` 처럼 정리 중일 때만 객체이고(보고 전이면 세 값이 null), 그 밖은 null 이다.
+ * `staged-legacy` 는 #542 전 서버라 키가 없다
+ */
+export function meetingResponse(meeting: MeetingDto, state: MockDb = db): MeetingDto {
+  const { processing, ...rest } = meeting
+  if (state.meetingFlow.mode === 'staged-legacy') return rest
+  return { ...rest, processing: meeting.status === 'processing' ? (processing ?? NO_REPORT) : null }
 }
 
 /** 참석자. 업로드가 받은 ID 를 쓰고, 없으면(봇 회의·픽스처 회의) 그 공간 팀원을 목록의 참석자 수만큼 쓴다 */
@@ -165,6 +220,7 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
       key_points: ['지난주 작업을 공유했다.', '남은 일의 담당자를 정했다.'],
       decisions: ['확실한 항목은 바로 반영하고 나머지는 PM이 확인한다.'],
     },
+    summary_status: 'ready',
     transcript: TRANSCRIPT_LINES.map((text, index) => {
       const member = speaker(index)
       return {
@@ -365,12 +421,13 @@ export function startChatMeeting(state: MockDb = db): string {
 
 /**
  * 상세 조회(`GET /meetings/{id}`) 한 번. 답할 회의를 돌려준다(없으면 undefined).
- * `staged` 는 지금 모습을 답하고 다음 조회 몫으로 한 단계 진행한다 — 첫 조회가 대기(셋 다 거짓)라 서버 순서
- * 대기 → stt → sources → handoff → done 을 조회마다 하나씩 본다 (#483). 그 밖의 방식은 진행한 뒤에 답한다
+ * `staged`·`staged-legacy` 는 지금 모습을 답하고 다음 조회 몫으로 한 단계 진행한다 — 첫 조회가 대기(보고 없음)라 서버 순서를
+ * 조회마다 하나씩 본다 (#483). 그 밖의 방식은 진행한 뒤에 답한다
  */
 export function readMeeting(meetingId: string, state: MockDb = db): MeetingDto | undefined {
   const find = () => state.meetings.find(({ meeting_id }) => meeting_id === meetingId)
-  if (state.meetingFlow.mode !== 'staged') {
+  const mode = state.meetingFlow.mode
+  if (mode !== 'staged' && mode !== 'staged-legacy') {
     tickMeeting(meetingId, state)
     return find()
   }
@@ -389,6 +446,10 @@ export function tickMeeting(meetingId: string, state: MockDb = db): void {
     case 'manual':
       return
     case 'staged':
+      if (isChatMeeting(meetingId, state)) advanceMeeting(meetingId, state)
+      else reportNextStage(meeting, state)
+      return
+    case 'staged-legacy':
       advanceMeeting(meetingId, state)
       return
     case 'instant':

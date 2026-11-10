@@ -1,8 +1,11 @@
 export type {
   Meeting,
   MeetingSummary,
+  MeetingProcessing,
   MeetingProgress,
   MeetingStatus,
+  ProcessingStage,
+  SttProgress,
   MeetingSource,
   MeetingSourceValue,
   MeetingUploadResult,
@@ -39,9 +42,13 @@ export { latestMinutesId, toMinutesList } from './lib/minutesList'
 export { meetingFailure } from './lib/meetingFailure'
 export type { ProcessingStep, ProcessingStepKey, ProcessingStepState } from './lib/processingSteps'
 export { processingSteps } from './lib/processingSteps'
+export type { StageDetail } from './lib/stageDetail'
+export { stageDetail } from './lib/stageDetail'
+export { StageDetailText } from './ui/StageDetailText'
 export type { SettledMeeting, TrackedMeeting } from './model/processingTracker'
 export {
   clearTrackedMeetings,
+  dismissProcessingToast,
   dismissSettled,
   finishMeeting,
   promptSpeakers,

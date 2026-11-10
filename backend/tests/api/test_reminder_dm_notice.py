@@ -5,6 +5,7 @@
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import select
 
 from app.models import (
     Member,
@@ -14,6 +15,7 @@ from app.models import (
     ReminderWatch,
     Task,
     ThreadMessage,
+    User,
     WatchState,
     Workspace,
 )
@@ -29,7 +31,7 @@ from tests.api.test_scheduler import SLOT, H, _approve_all, tick
 BASE = "https://app.example.com"
 REPLY_ON_WEB = "웹에서 답장해 주세요."
 REPLY_ON_SITE = "웹사이트에서 답장해 주세요."
-ASK_INVITE = "웹 답장을 하려면 PM 에게 초대를 요청하고, 초대받은 이메일로 가입해 주세요."
+ASK_INVITE = "웹 답장을 하려면 가입한 뒤 PM 에게 아이디를 알려 초대를 받아 주세요."
 
 
 @pytest.fixture(autouse=True)
@@ -112,8 +114,9 @@ def test_a_member_without_an_account_and_a_base_url_gets_no_link(mdb, mseed, mon
 
 
 def test_a_revoked_member_goes_back_to_the_invitation_note(mdb, mseed):
+    outsider_id = mdb.scalar(select(User.user_id).where(User.email == "outsider@example.com"))
     invited = client("pm").post(f"{P}/workspaces/{mseed['ws']}/invitations",
-                                json={"member_id": mseed["carol"].member_id, "email": "outsider@example.com"})
+                                json={"member_id": mseed["carol"].member_id, "user_id": outsider_id})
     invitation_id = invited.json()["data"]["invitation_id"]
     assert client("outsider").post(f"{P}/invitations/{invitation_id}/accept").status_code == 200
     linked = _sent(mdb, mseed, mseed["tasks"][:1], SLOT, who="carol")

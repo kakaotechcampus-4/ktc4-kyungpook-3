@@ -235,7 +235,7 @@ class ExtractionItemResponse(BaseModel):
     )
     alias_candidate: bool = Field(
         False,
-        description="담당자를 못 찾은 이름 지목(thirdname) 항목의 pending 생성 승인이고, 그 항목이 카드의 담당 항목(payload assignee_item_id, 없으면 extraction_item_id)이며(다른 회의 항목을 합친 카드는 담당 항목에만 나온다), 같은 워크스페이스에서 탈퇴하지 않은 팀원 누구도 그 글자(님·조사를 뗀 찾기 후보 포함)를 별칭으로 갖고 있지 않으면 true. PM 이 담당자를 골라 save_alias=true 로 승인하면 alias_text 를 그 팀원의 별칭으로 저장한다. 탈퇴하지 않은 누군가가 이미 갖고 있으면 false 이고 저장하지 않는다(탈퇴한 팀원의 별칭은 세지 않는다)",
+        description="담당자를 못 찾은 이름·역할 지목(thirdname·thirdrole) 항목의 pending 생성 승인이고, 그 항목이 카드의 담당 항목(payload assignee_item_id, 없으면 extraction_item_id)이며(다른 회의 항목을 합친 카드는 담당 항목에만 나온다), 같은 워크스페이스에서 탈퇴하지 않은 팀원 누구도 그 글자(님·조사를 뗀 찾기 후보 포함)를 별칭으로 갖고 있지 않으면 true. PM 이 담당자를 골라 save_alias=true 로 승인하면 alias_text 를 그 팀원의 별칭으로 저장한다. 탈퇴하지 않은 누군가가 이미 갖고 있으면 false 이고 저장하지 않는다(탈퇴한 팀원의 별칭은 세지 않는다)",
     )
     alias_text: str | None = Field(
         None,
@@ -332,6 +332,11 @@ class ExtractionItemCreate(BaseModel):
         "없거나 탈퇴한 팀원이면 그 발화의 화자 uid. 그 발화를 찾지 못하면 화자가 없다.",
     )
     due_date: date | None = None
+    due_cleared: bool = Field(
+        False,
+        description="update에서 대상 task의 마감을 없애자는 결정이면 true. due_date=null은 '바꾸지 않음'이라 따로 둔다. "
+        "due_date가 함께 오면 due_date를 따른다. 대상 task에 마감이 없으면 바뀌는 것이 없다.",
+    )
     due_raw: str | None = None
     due_confidence: float | None = Field(
         None, description="마감 확신도(0~1). legacy 경로만 보낸다. 보내지 않으면 null(측정 안 함)."

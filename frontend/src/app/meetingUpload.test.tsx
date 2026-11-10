@@ -321,6 +321,13 @@ describe('제목·날짜·참석자 (U3-5, U3-6)', () => {
     ])
   })
 
+  it('참석자 안내는 적어도 고른 인원수로 목소리를 나눈다고 알린다', async () => {
+    await openUpload()
+    expect(screen.getByRole('group', { name: '참석자' })).toHaveAccessibleDescription(
+      '녹음에서 실제로 말한 사람만 골라 주세요. 적어도 이 인원수로 목소리를 나눠요.',
+    )
+  })
+
   it('공백뿐인 제목은 막는다 — 요청하지 않는다', async () => {
     const log = recordRequests()
     const { user } = await openUpload()
@@ -399,7 +406,8 @@ describe('제출 (U3-7, U3-8, U3-9)', () => {
     const mutations = app.queryClient.getMutationCache().getAll()
     // 업로드 mutation 은 성공으로 캐시에 남아 있다 — 그 변수·결과에 파일이 없다
     expect(mutations.map(({ state }) => state.status)).toEqual(['success'])
-    expect(mutations[0].state.variables).toEqual({
+    const { fields } = mutations[0].state.variables as { fields: unknown }
+    expect(fields).toEqual({
       title: '3주차 정기회의.m4a',
       startedAt: new Date(NINE_AM_SEOUL).toISOString(),
       attendeeMemberIds: ['mb_01'],

@@ -2,6 +2,7 @@ import { useId, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { DiscordUser, Member } from '@/entities/member'
 import { pmsOf } from '@/entities/member'
+import { MemberAddForm, NOT_IN_DISCORD_SERVER, useMemberAdding } from '@/features/member-add'
 import {
   MemberMappingFields,
   buildMappingRows,
@@ -68,6 +69,7 @@ function MappingForm({
   const [initialRows] = useState(() => buildMappingRows(discordUsers, members))
   const [pms] = useState(() => pmsOf(members))
   const mapping = useMemberMappingForm(workspaceId, initialRows, pms)
+  const { adding, isAdding } = useMemberAdding(workspaceId)
   const hintShown = pmLeftUnchecked(mapping)
   const formId = useId()
   const hintId = useId()
@@ -81,6 +83,7 @@ function MappingForm({
   } = mapping
   const onSubmit = (event: FormEvent<HTMLFormElement>) =>
     submit(async (values) => {
+      if (isAdding()) return
       onSavingChange(true)
       const saved = await save(values).finally(() => onSavingChange(false))
       if (saved) onSaved()
@@ -96,6 +99,8 @@ function MappingForm({
           {PM_UNCHECKED}
         </p>
       ) : null}
+      <p className="pt-14 pb-10 text-body text-dim">{NOT_IN_DISCORD_SERVER}</p>
+      <MemberAddForm workspaceId={workspaceId} tone="product" disabled={isSubmitting} />
       <div className="flex justify-end gap-8 pt-6">
         <Button variant="ghost" disabled={isSubmitting} onClick={onCancel}>
           나중에 하기
@@ -105,7 +110,7 @@ function MappingForm({
           form={formId}
           variant="primary"
           loading={isSubmitting}
-          disabled={filled === 0}
+          disabled={filled === 0 || adding}
           aria-describedby={hintShown ? hintId : undefined}
         >
           저장
@@ -169,7 +174,8 @@ export function MemberConnectDialog({
             </>
           ) : source.status === 'not_connected' ? (
             <>
-              <p className="text-body text-dim">
+              <MemberAddForm workspaceId={workspaceId} tone="product" />
+              <p className="pt-14 text-body text-dim">
                 Discord를 연결하지 않아 팀원을 불러올 수 없어요. 설정에서 Discord를 연결하면 이 창이
                 다시 열려요.
               </p>

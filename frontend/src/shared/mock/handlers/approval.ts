@@ -423,7 +423,7 @@ export const approvalHandlers = [
           ? prepareTaskCreate(approval, overrides)
           : approval.type === 'task_update'
             ? prepareTaskUpdate(approval, typeof confirm === 'number' ? confirm : null, overrides)
-            : // 그 밖의 종류(reminder_dm 등)는 태스크에 반영할 내용이 없다 — 백엔드와 같다
+            : // 백엔드 승인 종류는 task_create·task_update 둘이다(#616). 모르는 종류는 태스크에 반영할 내용이 없다
               () => {}
       if (prepared instanceof Response) return prepared
       const since = db.taskHistory.length

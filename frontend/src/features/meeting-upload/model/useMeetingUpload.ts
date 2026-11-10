@@ -8,9 +8,11 @@ import {
   uploadMeeting,
 } from '@/entities/meeting'
 import type { MeetingSummary, UploadMeetingInput } from '@/entities/meeting'
-import { captureSession } from '@/entities/user'
 import type { UploadProgress } from '@/shared/api/client'
+import { CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
 import { fetchFresh } from '@/shared/api/fetchFresh'
+import { captureSessionScope } from '@/shared/api/sessionScope'
+import type { SessionScope } from '@/shared/api/sessionScope'
 import { useLivePathname } from '@/shared/lib/live-pathname'
 import {
   classifyUploadError,
@@ -103,14 +105,17 @@ export function useMeetingUpload(
   }, [])
 
   const { mutateAsync, isPending } = useMutation({
-    mutationFn: (fields: UploadFields) => {
+    mutationFn: ({ fields, session }: { fields: UploadFields; session: SessionScope }) => {
       const file = outgoingFile.current
       outgoingFile.current = null
+      // 오프라인으로 기다리는 사이 세션이 끝났을 수 있다. 그대로 보내면 다음에 로그인한 계정의 쿠키로 올린다 (#594)
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
       if (file === null) return Promise.reject(new Error('upload started without a file'))
       return uploadMeeting(
         workspaceId,
         { ...fields, file },
         {
+          signal: session.signal,
           onProgress: (next) => {
             if (mounted.current) setProgress(next)
           },
@@ -118,10 +123,9 @@ export function useMeetingUpload(
       )
     },
     retry: 0,
-    // 보내기 시작한 세션. 응답이 왔을 때 세션이 바뀌었으면 등록하지 않는다
-    onMutate: () => ({ isCurrentSession: captureSession() }),
-    onSuccess: (result, _fields, { isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    // 응답이 왔을 때 보내기 시작한 세션이 바뀌었으면 등록하지 않는다
+    onSuccess: (result, { session }) => {
+      if (!session.isCurrent()) return
       trackMeeting({ workspaceId, meetingId: result.id })
       void queryClient.invalidateQueries({
         queryKey: meetingListQueryOptions(workspaceId).queryKey,
@@ -176,7 +180,8 @@ export function useMeetingUpload(
       const { file, ...fields } = input
       outgoingFile.current = file
       // 보내기 시작한 세션과 화면. 응답이 왔을 때 둘 다 그대로일 때만 이 화면에서 이어 간다
-      const isCurrentSession = captureSession()
+      const session = captureSessionScope()
+      const isCurrentSession = session.isCurrent
       const startedAt = livePathname()
       const stillHere = () => mounted.current && isCurrentSession() && livePathname() === startedAt
       const knownBefore = new Set(
@@ -186,7 +191,7 @@ export function useMeetingUpload(
       )
       let meetingId: string
       try {
-        meetingId = (await mutateAsync(fields)).id
+        meetingId = (await mutateAsync({ fields, session })).id
       } catch (error) {
         const outcome = classifyUploadError(error)
         // 세션이 끝나 취소됐거나 401 이었다. 그 업로드의 뒷처리는 없다

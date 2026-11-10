@@ -8,6 +8,7 @@ import type { TaskDto } from '@/shared/types/api/task'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { db, initialDb, resetDb } from './db'
 import { settleMockOAuth } from './oauth/mockOAuth'
+import { applyScenario } from './scenarios'
 import {
   MOCK_DB_STORAGE_KEY,
   MOCK_DB_VERSION,
@@ -86,6 +87,17 @@ describe('sessionStorage 영속', () => {
     expect(stored.version).toBe(MOCK_DB_VERSION)
   })
 
+  it('이메일·비밀번호 없는 카카오 계정으로 로그인한 상태도 새로고침 뒤 복원된다 (#627)', () => {
+    applyScenario('kakao-account')
+    const saved = structuredClone(db)
+    saveDb(sessionStorage)
+    resetDb()
+    expect(restoreDb(sessionStorage)).toBe(true)
+    expect(db.authenticated).toBe(true)
+    expect(db.session.user).toEqual(saved.session.user)
+    expect(db.accounts[0]).toMatchObject({ password: null, session: { user: { email: null } } })
+  })
+
   it('저장값이 없으면 복원하지 않고 db 를 건드리지 않는다', () => {
     expect(restoreDb(sessionStorage)).toBe(false)
     expect(db).toEqual(initialDb())
@@ -129,7 +141,7 @@ describe('sessionStorage 영속', () => {
       jsonRequest('POST', { email, code: mail.code }),
     )
     db.accounts[0].kakaoId = 'linked-kakao'
-    db.kakao.pending = { kakaoId: 'pending-kakao', email, nickname: '가입 대기' }
+    db.kakao.pending = { kakaoId: 'pending-kakao', nickname: '가입 대기' }
     saveDb(sessionStorage)
 
     resetDb()
@@ -138,10 +150,7 @@ describe('sessionStorage 영속', () => {
     expect(db.signupVerification.proofs[verification_token]).toMatchObject({ email })
     expect(db.signupVerification.outbox).toContainEqual(mail)
     expect(db.accounts[0].kakaoId).toBe('linked-kakao')
-    await expect(fetchDto('/auth/kakao/pending')).resolves.toEqual({
-      email,
-      nickname: '가입 대기',
-    })
+    await expect(fetchDto('/auth/kakao/pending')).resolves.toEqual({ nickname: '가입 대기' })
     const aliases = await fetchDto<ListDto<MemberAliasDto>>('/members/aliases?workspace_id=ws_01')
     expect(aliases.items).toContainEqual(
       expect.objectContaining({ member_id: 'mb_02', alias_text: '복원 별칭', verified: true }),

@@ -1,5 +1,6 @@
 import { ApiError } from '@/shared/api/errors'
 import { approvalFixtures } from '@/shared/mock/fixtures/approval'
+import { approvalSchema } from '@/shared/types/api/approval'
 import { isScopeChange, toApproval, toApprovalResolveFailure } from './mapper'
 
 it('maps task-create payload and derives each missing-field combination', () => {
@@ -89,6 +90,62 @@ describe('별칭 후보 (#523)', () => {
     expect(toApproval({ ...approvalFixtures[2], alias_candidate, alias_text })).toMatchObject({
       aliasCandidate: null,
     })
+  })
+})
+
+describe('전사 오인식 의심 (#643)', () => {
+  const read = (asr_suspects: unknown) => {
+    const approval = toApproval(
+      approvalSchema.parse({
+        ...approvalFixtures[2],
+        payload: { ...approvalFixtures[2].payload, asr_suspects },
+      }),
+    )
+    if (approval.kind !== 'task_create') throw new Error('not a task_create approval')
+    return approval.asrSuspects
+  }
+
+  it('근거·제목에서 나온 의심은 들린 말과 고칠 후보로 읽고, 빈 후보는 버린다', () => {
+    expect(
+      read([
+        { word: '애포', source: 'title', candidates: ['배포'] },
+        { word: '폴런', source: 'evidence', candidates: ['풀런', ' ', '폴른'] },
+        { word: '스펙', source: 'evidence', candidates: [] },
+      ]),
+    ).toEqual([
+      { kind: 'misheard', word: '애포', candidates: ['배포'] },
+      { kind: 'misheard', word: '폴런', candidates: ['풀런', '폴른'] },
+      { kind: 'misheard', word: '스펙', candidates: [] },
+    ])
+  })
+
+  it('확인 실패는 여러 개가 와도 하나다', () => {
+    const failed = { word: '', source: 'check_failed', candidates: [] }
+    expect(read([failed, failed])).toEqual([{ kind: 'check_failed' }])
+  })
+
+  it('확인하지 않은 옛 카드(null·키 없음)와 의심이 없는 카드([])는 비어 있다', () => {
+    expect(read(null)).toEqual([])
+    expect(read([])).toEqual([])
+    expect(read(undefined)).toEqual([])
+    expect(read('garbage')).toEqual([])
+  })
+
+  it('모르는 출처·빈 글자·모양이 틀린 항목은 버리고 나머지는 읽는다', () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(
+        read([
+          { word: '애포', source: 'future', candidates: ['배포'] },
+          { word: '  ', source: 'title', candidates: ['배포'] },
+          { word: 3, source: 'title', candidates: [] },
+          { word: '애포', source: 'title', candidates: ['배포'] },
+        ]),
+      ).toEqual([{ kind: 'misheard', word: '애포', candidates: ['배포'] }])
+      expect(warning).toHaveBeenCalledTimes(1)
+    } finally {
+      warning.mockRestore()
+    }
   })
 })
 
@@ -243,10 +300,10 @@ describe('task_update 의 범위 변경 (#205)', () => {
   })
 })
 
-it('알림·모르는 종류는 지원하지 않는 요청으로 읽는다. 모르는 상태는 스키마가 거절한다 (#348)', () => {
-  expect(toApproval({ ...approvalFixtures[0], type: 'reminder_dm' })).toMatchObject({
+it('모르는 종류는 지원하지 않는 요청으로 읽는다. 모르는 상태는 스키마가 거절한다 (#348)', () => {
+  expect(toApproval({ ...approvalFixtures[0], type: 'future_kind' })).toMatchObject({
     kind: 'unsupported',
-    type: 'reminder_dm',
+    type: 'future_kind',
   })
   expect(toApproval({ ...approvalFixtures[0], type: 'future' })).toMatchObject({
     kind: 'unsupported',

@@ -10,6 +10,10 @@ import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
 import { ok } from '@/shared/mock/envelope'
 
+beforeEach(() => {
+  db.consents = []
+})
+
 function open() {
   if (currentPolicyPublication.kind !== 'published')
     throw new Error('synthetic fixture must be published')
@@ -21,6 +25,7 @@ function open() {
       <ConsentGate
         userId="us_01"
         documents={currentPolicyPublication.documents}
+        pendingFallback={<p role="status">동의 기록 확인 중</p>}
         onLogout={logout}
         logoutPending={false}
         logoutError={null}

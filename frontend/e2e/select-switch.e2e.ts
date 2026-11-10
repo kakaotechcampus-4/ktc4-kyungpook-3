@@ -51,13 +51,14 @@ test('키보드만으로 워크스페이스 메뉴를 열고 고르고 닫는다
   const header = page.getByRole('banner')
   const trigger = header.getByRole('button', { name: /^워크스페이스 바꾸기/ })
   await expect(trigger).toBeVisible()
-  // 실제 Tab 으로 헤더를 차례로 지나간다 — 마크 → 탭 5개 → 알림 종 → 워크스페이스 메뉴 → 내 계정.
+  // 실제 Tab 으로 헤더를 차례로 지나간다 — 마크 → 탭 6개 → 도움말 → 알림 종 → 워크스페이스 메뉴 → 내 계정.
   // 이 시나리오의 ws_01 에는 정리 중 회의(mt_10)가 있지만 그 신호는 헤더가 아니라 오른쪽 아래 진행 토스트다 (#424)
   const headerOrder = [
     header.getByRole('link', { name: "Manager's Manager 대시보드" }),
-    ...['대시보드', '회의록', '태스크', '메시지', '팀'].map((name) =>
+    ...['대시보드', '회의록', '태스크', '메시지', '프로젝트 맵', '팀'].map((name) =>
       header.getByRole('link', { name, exact: true }),
     ),
+    header.getByRole('button', { name: '도움말' }),
     header.getByRole('button', { name: /^알림/ }),
     trigger,
     header.getByRole('button', { name: /^내 계정/ }),

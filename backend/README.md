@@ -159,7 +159,8 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `TASK_HISTORY_NOT_FOUND` | 404 | 반영 로그(태스크 히스토리)를 찾을 수 없음 |
 | `REMINDER_NOT_FOUND` | 404 | 리마인드를 찾을 수 없음. `details.reminder_id` |
 | `REMINDER_BUNDLE_NOT_FOUND` | 404 | 보낼 메시지(묶음)를 찾을 수 없음. `details.bundle_id` |
-| `INVITATION_NOT_FOUND` | 404 | 초대를 찾을 수 없음. 내 이메일로 온 초대가 아니거나(수락·거절), 그 워크스페이스 소속이 아니어도(취소·연결 끊기) 같음. `details.invitation_id` |
+| `INVITATION_NOT_FOUND` | 404 | 초대를 찾을 수 없음. 나에게 온 초대가 아니거나(수락·거절), 그 워크스페이스 소속이 아니어도(취소·연결 끊기) 같음. `details.invitation_id` |
+| `USER_NOT_FOUND` | 404 | 초대할 가입자가 없음(탈퇴 포함). PM 이 아니면 이 코드 대신 403. `details.user_id` |
 | `MESSAGE_THREAD_NOT_FOUND` | 404 | 대화를 찾을 수 없음. `details.thread_id` |
 | `MESSAGE_NOT_FOUND` | 404 | 봇 메시지를 찾을 수 없음. `details.message_id` |
 | `MEETING_ALREADY_ENDED` | 409 | 이미 종료된 회의 |
@@ -180,8 +181,8 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `INVITATION_NOT_PENDING` | 409 | 대기 중이 아닌 초대를 수락·거절·취소하려 함. `details.invitation_id` |
 | `INVITATION_NOT_ACCEPTED` | 409 | 수락하지 않은 초대의 연결을 끊으려 함. `details.invitation_id` |
 | `MEMBER_ALREADY_LINKED` | 409 | 이미 계정이 연결된 팀원을 초대하거나 수락하려 함. `details.member_id` |
-| `ALREADY_WORKSPACE_MEMBER` | 409 | 그 이메일의 계정이 이미 이 워크스페이스 팀원임. 초대할 때 `details.email`, 수락할 때 `details.workspace_id` |
-| `EMAIL_ALREADY_INVITED` | 409 | 같은 이메일로 다른 팀원에게 보낸 초대가 대기 중임. `details.email` |
+| `ALREADY_WORKSPACE_MEMBER` | 409 | 초대할 계정이나 수락하는 내가 이미 이 워크스페이스 팀원임. 초대할 때 `details.user_id`, 수락할 때 `details.workspace_id` |
+| `USER_ALREADY_INVITED` | 409 | 같은 사용자에게 다른 팀원으로 보낸 초대가 대기 중임. `details.user_id` |
 | `PM_MEMBER_NOT_INVITABLE` | 409 | 역할이 PM 인 팀원을 초대하려 함. 팀원으로 초대해 수락한 뒤 PM 으로 바꿈. `details.member_id` |
 | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 함. `details.member_id` |
 | `PASSWORD_RESET_TOKEN_INVALID` | 400 | 비밀번호 재설정 링크를 쓸 수 없음(없는·무효화된·이미 쓴·만료된 토큰). `details.reason` 은 `invalid`·`used`·`expired` |
@@ -191,6 +192,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `SIGNUP_VERIFICATION_INVALID` | 400 | 가입에 이메일 증명이 없거나 쓸 수 없음. 코드 인증부터 다시 한다 |
 | `KAKAO_LINK_EXPIRED` | 400 | 카카오 대기 쿠키가 없거나 만료됨. 카카오 로그인부터 다시 한다 |
 | `KAKAO_ALREADY_LINKED` | 409 | 대기 중인 카카오 계정이 이미 다른 계정에 이어져 있어 가입하지 않음 |
+| `USERNAME_TAKEN` | 409 | 가입이나 아이디 변경에서 다른 계정이 이미 쓰는 아이디. 대소문자만 다른 아이디도 같은 아이디다 |
 | `TOO_MANY_LOGIN_ATTEMPTS` | 429 | 같은 이메일 10회·같은 공인 IP 50회 실패가 15분 안에 쌓여 로그인이 막힘(맞는 비밀번호도 막음). `Retry-After` 헤더와 `details.retry_after_seconds` 는 같은 정수 초 |
 | `MESSAGE_RESULT_CONFLICT` | 409 | 이미 다른 결과가 보고됐거나 아직 가져가지 않은 메시지에 결과를 보고함. `details.message_id` |
 | `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST` |
@@ -198,7 +200,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `SPEAKERS_ALREADY_REPORTED` | 409 | 이미 화자 목록을 받은 업로드에 저장된 것과 다른 목록을 보고하려 함(같은 목록의 재전송은 200). `details.status` |
 | `MEETING_NOT_AWAITING_SPEAKERS` | 409 | 회의가 화자 지정 대기(`awaiting_speakers`) 상태가 아닌데 화자를 지정하려 함. `details.status` |
 | `SPEAKERS_NOT_ASSIGNED` | 409 | PM이 화자 지정을 끝내지 않은 업로드의 처리를 AI가 이어 가려 함. `details.status` |
-| `AUDIO_TOO_LARGE` | 413 | 업로드한 녹음이 한도(기본 100MiB, `UPLOAD_MAX_BYTES`)를 넘음. `details.size_bytes`·`max_bytes` |
+| `AUDIO_TOO_LARGE` | 413 | 업로드한 녹음이 한도(기본 200MiB, `UPLOAD_MAX_BYTES`)를 넘음. `details.size_bytes`·`max_bytes` |
 | `AUDIO_UPLOAD_FAILED` | 422 | 오디오 저장·병합 실패 |
 | `AUDIO_FORMAT_UNSUPPORTED` | 422 | 지원하지 않는 오디오 형식. `details.filename`·`supported` |
 | `TRANSCRIPTION_FAILED` | 502 | 음성 전사 실패 *(아직 미구현 경로)* |
@@ -421,12 +423,12 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 | 검색 인증 | 봇이 세션 없이 부르므로 `X-Service-Token` 헤더를 `SERVICE_TOKEN`과 비교한다. 없거나 다르면 401 |
 | 검색 실패 | 임베딩 호출이 실패하면 빈 목록 대신 `EMBEDDING_UNAVAILABLE`(502). 빈 목록이면 호출한 쪽이 중복 task를 만들 수 있다 |
 | `action` 없음 / `create` | 게이트가 auto면 task 생성, 아니면 task_create 승인 요청. 게이트는 `decide_create_gate`가 정한다. 먼저 BE가 계산한 담당자 확신도를 본다. 담당자를 언급했는데 찾지 못했으면(중의적·없음) `hold`다. `assignee_raw` 없이 `second`·`thirdpronoun`·`thirdrole`만 오거나 1인칭인데 화자가 없으면, 사람을 지목했지만 누군지 모르는 것이라 `hold`다(`mentions_assignee`). 1인칭 화자는 `evidence_speaker_member_id`(탈퇴하지 않은 팀원이 아니면 화자를 못 찾은 것이고 아래로 넘어가지 않는다), `evidence_speaker`(uid), 결론 발화의 `member_id`(활성 팀원일 때, 아니면 그 발화의 uid) 순으로 정한다. 틀린 `evidence_speaker_member_id`는 새 항목이 경로와 무관하게 `hold`이고, 화자도 `assignee_raw`도 없는 1인칭은 judge·경로 불명이 `hold`, legacy는 확신도로 정해 `review`가 될 수 있다. update 항목은 항상 `review`다(#265). judge 항목은 그다음 아래 auto 조건을 모두 만족하면 `auto`, 아니면 `review`다. 경로를 가릴 수 없고 확신도도 없는 항목은 `review`, legacy는 확신도로 정한다(#201). 경로와 상관없이 `assignee_type`이 `thirdrole`(역할로 지목)인 새 항목은 `auto`가 나와도 `review`로 내린다. 역할은 맡은 사람이 바뀔 수 있어 PM이 본다(#459). 환경변수 `AUTO_CREATE_ENABLED`가 켬 값(`true`·`1`·`on`·`yes`·빈 값)이 아니면 경로와 상관없이 `auto`를 `review`로 내린다(기본 켜짐, `hold`는 그대로, 모르는 값은 경고 후 꺼짐). 근거 상태는 그대로 저장하므로 AI 검증은 계속 돌고 태스크만 PM 확인 뒤에 생긴다. "자동 생성이 꺼져 있어" 로그가 켰으면 auto였을 항목이다(#382 멘토 리뷰) |
-| judge auto 조건 | 숫자 점수가 아니라 조건을 모두 만족할 때만 `auto`다(`matching.auto_blockers`, #232). ① 새 항목 ② `task_status`가 certain ③ 담당자를 언급했으면 한 명으로 찾았고(검증된 별칭이나 화자) 확신도 0.8 이상 ④ `assignee_type`이 `second`·`thirdpronoun`·`thirdrole`이 아님(AI가 대명사·역할을 문맥으로 푼 이름) ⑤ `due_status`가 certain이거나 missing이고 `due_date` 유무와 맞음 ⑥ `similar_count`가 0이고, 워크스페이스에 임베딩이 없는 활성 task가 없음(`embedding.has_unsearchable_tasks`). 그런 task는 AI의 유사 검색에 잡히지 않아 0을 믿을 수 없다. 같은 회의에서 앞 항목이 auto로 만든 task도 여기 걸려, 한 회의에서 auto는 보통 첫 항목뿐이다. 임베딩 API가 지금 제목을 거절한 task도 포함한다. 워커가 다시 시도하지 않을 뿐 검색에서 빠진 것은 같아서, 제목이 바뀌어 임베딩이 채워지거나 지워질 때까지 auto를 막는다. 지운 task와 제목이 비었거나 공백뿐인 task는 뺀다. 승인 대기 중인 task_create 요청 가운데 임베딩이 없는 것(`embedding.has_unsearchable_pending`)이 있어도 막는다(`unsearched_pending_exists`). 유사 검색에 합치는 승인 대기 후보에 잡히지 않기 때문이고, 빈 제목으로 건너뛴 요청은 뺀다. 이 요청 안에서 앞 항목이 만든 pending은 보지 않는다. `task_status`·`due_status`·`similar_count` 중 하나라도 보내지 않으면 `review`다. 할 일 근거 상태는 LLM의 자기 표시라 걸러 내는 힘이 약해서, 중복 생성은 임베딩으로 계산한 유사 검색 결과로 막는다. `top_similarity`는 판단에 쓰지 않고 기록만 한다(유사도 기준값을 정할 근거). ⑦ AI가 보낸 전사 오인식 의심 단어(`asr_suspects`)가 없음. AI는 새 할 일 제목의 명사 중 워크스페이스 용어 목록(`GET /workspaces/{id}/asr-terms`)에 없는 말을 Jev로 확인해, 맞게 적혔다고 보지 않은 단어를 `asr_suspects`로 보낸다. 의심 단어가 있으면 `asr_suspect`, AI가 검사를 하지 못했다고 보내면(`source=check_failed`) `asr_check_failed`로 막는다. 빈 목록과 null은 막지 않는다(AI 결정 기록 0051). 못 맞춘 조건은 info 로그(`reasons=`)로 남긴다 |
+| judge auto 조건 | 숫자 점수가 아니라 조건을 모두 만족할 때만 `auto`다(`matching.auto_blockers`, #232). ① 새 항목 ② `task_status`가 certain ③ 담당자를 언급했으면 한 명으로 찾았고(검증된 별칭이나 화자) 확신도 0.8 이상 ④ `assignee_type`이 `second`·`thirdpronoun`·`thirdrole`이 아님(대명사는 AI가 문맥으로 푼 이름이고, 역할은 맡은 사람이 바뀔 수 있다) ⑤ `due_status`가 certain이거나 missing이고 `due_date` 유무와 맞음 ⑥ `similar_count`가 0이고, 워크스페이스에 임베딩이 없는 활성 task가 없음(`embedding.has_unsearchable_tasks`). 그런 task는 AI의 유사 검색에 잡히지 않아 0을 믿을 수 없다. 같은 회의에서 앞 항목이 auto로 만든 task도 여기 걸려, 한 회의에서 auto는 보통 첫 항목뿐이다. 임베딩 API가 지금 제목을 거절한 task도 포함한다. 워커가 다시 시도하지 않을 뿐 검색에서 빠진 것은 같아서, 제목이 바뀌어 임베딩이 채워지거나 지워질 때까지 auto를 막는다. 지운 task와 제목이 비었거나 공백뿐인 task는 뺀다. 승인 대기 중인 task_create 요청 가운데 임베딩이 없는 것(`embedding.has_unsearchable_pending`)이 있어도 막는다(`unsearched_pending_exists`). 유사 검색에 합치는 승인 대기 후보에 잡히지 않기 때문이고, 빈 제목으로 건너뛴 요청은 뺀다. 이 요청 안에서 앞 항목이 만든 pending은 보지 않는다. `task_status`·`due_status`·`similar_count` 중 하나라도 보내지 않으면 `review`다. 할 일 근거 상태는 LLM의 자기 표시라 걸러 내는 힘이 약해서, 중복 생성은 임베딩으로 계산한 유사 검색 결과로 막는다. `top_similarity`는 판단에 쓰지 않고 기록만 한다(유사도 기준값을 정할 근거). ⑦ AI가 보낸 전사 오인식 의심 단어(`asr_suspects`)가 없음. AI는 새 할 일 제목의 명사 중 워크스페이스 용어 목록(`GET /workspaces/{id}/asr-terms`)에 없는 말을 Jev로 확인해, 맞게 적혔다고 보지 않은 단어를 `asr_suspects`로 보낸다. 의심 단어가 있으면 `asr_suspect`, AI가 검사를 하지 못했다고 보내면(`source=check_failed`) `asr_check_failed`로 막는다. 빈 목록과 null은 막지 않는다(AI 결정 기록 0051). 못 맞춘 조건은 info 로그(`reasons=`)로 남긴다 |
 | auto 되돌리기 | `POST /api/v1/extractions/{extraction_id}/items/{item_id}/revert`(PM). auto로 만든 태스크를 지우고(`task.is_deleted`) 같은 내용의 task_create 승인 요청(`gate: review`, 표시용 `reverted_task_id`)을 만들어 항목에 잇는다. 항목의 `task_id`는 비우고 `reverted_at`·`reverted_by`를 남기며 `gate`는 처음 판단대로 `auto`다. 승인하면 새 태스크가 생겨 항목에 이어지고, 반려하면 태스크 없이 끝난다. 값 하나가 틀린 것은 태스크를 직접 고치면 되지만 중복·오판은 고칠 값이 없어서 PM이 승인·반려를 다시 고르게 한다. 만든 뒤 태스크가 바뀌었거나(`version`이 1이 아님) 그 태스크의 처리 대기 승인 요청이 있으면 409 `AUTO_TASK_NOT_REVERTIBLE`이다. 바뀐 값이 승인 요청에 담기지 않고 사라지기 때문이다. 근거는 저장된 근거 발화(`evidence`, #229) 중 seq가 가장 큰 발화로 승인 요청에 담긴다. AI가 `evidence_seqs`를 보내지 않았거나 하나도 찾지 못했으면 비어 있다 |
 | 지운 task | 지금은 auto 되돌리기만 task를 지운다. 행은 남기고(Notion 페이지 보관, 추출 항목·이력 연결 유지) task 목록·조회·수정·이력·유사 검색·임베딩·승인 요청 대상에서 뺀다. 지운 task를 가리키는 조회는 404 `TASK_NOT_FOUND`, update 추출 항목은 건너뛰고, 추출 조회는 그 task를 가리키던 항목의 `task_id`를 null로 내린다. Notion 재시도(`POST /tasks/{id}/notion-sync/retry`)만 지운 task도 받는다(페이지 보관 재시도). task를 바꾸는 경로(`PATCH /tasks/{id}`, 이력 되돌리기, 승인 요청 생성, 추출 update 대상)는 task 행을 커밋까지 잠그고 다시 읽어, 되돌리기와 겹쳐도 지운 task에 쓰지 않는다 |
 | 추출 경로 | AI가 경로를 보내지 않으므로 항목이 보낸 키로 가린다. `action`·`category`·`doc_text`를 보냈으면 judge, 확신도를 보냈으면 legacy다(`ExtractionItemCreate.extraction_path`). 모든 항목이 같을 때만 `extraction.extraction_path`에 남기고 아니면 NULL. 확신도를 보내지 않으면 0.0이 아니라 NULL(측정 안 함)로 저장한다 |
 | `action: update` | `target_task_id`의 task_update 승인 요청을 만든다(신뢰도와 무관하게 항상 PM 승인 대상). `task_title`은 없어도 되고, 와도 제목은 바꾸지 않는다 |
-| update 변경안 | 들어온 값 중 지금 task와 다른 `due_date`·`status`·`assignee_member_id`만 담는다. 담당자는 지금 task와 다를 때만 넣고 같으면 뺀다 |
+| update 변경안 | 들어온 값 중 지금 task와 다른 `due_date`·`status`·`assignee_member_id`만 담는다. 담당자는 지금 task와 다를 때만 넣고 같으면 뺀다. `due_cleared`가 true이고 `due_date`가 없으면, 지금 task에 마감이 있을 때만 `due_date: null`과 `base_values.due_date`를 담는다(마감 해제, #624) |
 | update 충돌 기준값 | 변경 필드마다 `base_values`를 남겨 승인 시 그 뒤 수정과 충돌을 확인한다. 기준값은 AI가 유사 검색에서 본 값(`target_snapshot`의 `due_date`·`status`·`assignee_member_id`)이다. 보내지 않은 필드나 `target_snapshot`이 없는 요청은 등록 시점의 값을 쓴다. 검색과 등록 사이에 PM이 고친 값을 승인이 덮지 않게 하려는 것이다 |
 | update 대상 확인 | AI가 task를 고를 때 본 제목(`target_snapshot.title`, 없거나 null이면 등록 시점 제목)을 payload의 `base_title`에 남긴다. 승인할 때 지금 제목과 다르면 다른 필드가 그대로여도 `APPROVAL_CONFLICT`의 `title` 항목으로 알린다. 제목은 바꾸지 않는다. 앞뒤 공백만 다르면 같은 제목으로 본다. `base_title`이 없는 요청(이 기능 전에 만든 요청, `base_title`을 보내지 않은 수동 생성)은 제목을 확인하지 않는다. 수동 생성(`POST /approvals`)은 payload를 그대로 저장해서 `base_title`·`base_values`를 넣으면 확인한다(#185) |
 | update 승인 요청 생성 여부 | 담당자를 하나로 못 찾았으면(중의적이거나 없음) 다른 변경이 없어도 PM이 보도록 승인 요청을 만든다. `category: scope`(대응하는 task 필드가 없는 범위 결정)도 다른 변경이 없어도 승인 요청을 만든다. 그 외에 담당자까지 같거나 언급이 없고 다른 변경도 없으면 승인 요청 자체를 만들지 않는다(단 `doc_text`·근거는 ExtractionItem에 남는다) |
@@ -445,7 +447,7 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 
 | 항목 | 동작 |
 |---|---|
-| 찾기 | `resolve_assignee`가 `assignee_raw`에서 "님"·조사를 뗀 후보를 만들어 긴 것부터 찾는다("하은이가" → 하은이가, 하은이, 하은). 처음 걸린 후보에 팀원이 1명이면 매칭, 2명 이상이면 애매함, 아무 후보도 안 걸리면 못 찾음이다. 탈퇴한 팀원의 별칭은 보지 않는다. 한 글자 별칭으로 찾으면 담당자는 채우되 확인 필요로 둬서 auto 가 되지 않는다(조사를 떼면 "하은" → "하"처럼 한 글자 후보가 생겨, 팀에 없는 사람이 엉뚱한 팀원에게 자동 배정될 수 있다). 후보 규칙(`matching.name_candidates`)은 AI 채점 코드 `_name_candidates`(`ai/extract/eval_golden_set.py`)와 같고, 세 가지만 다르다. 공백을 한 칸으로 줄이고 후보마다 앞뒤 공백을 지운다(띄어 쓴 님: "환 님이" → 환). 조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보다("하은이는" → 하은이는, 하은이, 하은). "님"처럼 "씨"도 떼고("민수 씨", "민수씨가" → 민수), 호칭을 뗀 뒤에도 "이"를 한 번 더 뗀다("하은이님이", "하은이 씨는" → 하은) |
+| 찾기 | `resolve_assignee`가 `assignee_raw`에서 "님"·조사를 뗀 후보를 만들어 긴 것부터 찾는다("하은이가" → 하은이가, 하은이, 하은). 처음 걸린 후보에 팀원이 1명이면 매칭, 2명 이상이면 애매함, 아무 후보도 안 걸리면 못 찾음이다. 탈퇴한 팀원의 별칭은 보지 않는다. 한 글자 별칭으로 찾으면 담당자는 채우되 확인 필요로 둬서 auto 가 되지 않는다(조사를 떼면 "하은" → "하"처럼 한 글자 후보가 생겨, 팀에 없는 사람이 엉뚱한 팀원에게 자동 배정될 수 있다). 후보 규칙(`matching.name_candidates`)은 AI 평가 도구 `_name_candidates`(`ai/extract/eval_golden_set.py`)와 같은 규칙이다(#522 에서 AI 가 맞춤. 바꾸면 둘 다 바꾼다). 규칙은 세 가지다. 공백을 한 칸으로 줄이고 후보마다 앞뒤 공백을 지운다(띄어 쓴 님: "환 님이" → 환). 조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보다("하은이는" → 하은이는, 하은이, 하은). "님"처럼 "씨"·"분"도 떼고("민수 씨", "민수씨가" → 민수, "디자이너분이" → 디자이너, "분"은 #607 리뷰), 호칭을 뗀 뒤에도 "이"를 한 번 더 뗀다("하은이님이", "하은이 씨는" → 하은) |
 | 미매칭 목록 | `GET /members/unresolved-aliases`도 같은 후보 규칙으로 판정한다. 처음 걸린 후보의 별칭이 1개이고 확인된(`verified`) 것이면 해결로 보고 목록에서 뺀다. 한 글자 별칭은 PM 이 직접 등록한(`manual`·`learned`) 것만 해결로 본다. 이름에서 자동으로 만든 한 글자 별칭("김환" → "환")은 목록에 남는다. 담당자 찾기는 한 글자면 계속 확인 필요다 |
 | 팀원 이름 | 팀원을 만들 때(`POST /members`, 워크스페이스를 만들 때의 PM)와 이름을 바꿀 때 이름과 성 뗀 이름을 `source=display_name` 별칭으로 넣는다(확인됨, 확신도 1.0). 한글 2글자 이상만 넣고, 4글자는 앞 두 글자, 그 외는 첫 글자를 성으로 본다("김동우" → 김동우, 동우). 규칙은 AI 전사 힌트 `member_forms`(`ai/stt/backend.py`)와 같다. 이름을 바꾸면 옛 이름에서 만든 `display_name` 별칭만 지우고, PM이 넣은 별칭과 닉네임 별칭은 남긴다. `display_name` 은 서버만 쓰는 값이라 별칭 등록 API(`POST /members/{id}/aliases`)에 보내면 400 `INVALID_REQUEST` 다. 이 API 는 `alias_text` 의 공백을 후보와 같은 규칙으로 정리해 저장하고(한 칸으로 줄이고 앞뒤를 지움), 공백뿐이면 400 이다. 같은 글자의 자동 별칭이 이미 있으면 요청의 `source` 가 `manual`·`learned` 일 때만 그 행을 요청 값으로 올린다. 기존 팀원은 마이그레이션 `1032faab5855`가 채웠다 |
 | 디스코드 닉네임 | 팀원에 `discord_user_id`를 붙이면 팀원을 저장한 뒤 봇 토큰으로 Discord `GET /guilds/{guild_id}/members/{user_id}`를 부른다(제한 3초, 호출 동안 DB 트랜잭션을 열지 않는다). 서버 닉네임, 계정 표시 이름(`global_name`) 순서로 한글로만 된 첫 값을 `source=discord_profile` 별칭으로 넣는다(미확인, 확신도 0.8. 이 별칭으로 찾으면 담당자는 채워지지만 PM 검토로 간다). 토큰·연동이 없거나 호출이 실패해도 경고 로그만 남기고 응답은 그대로다. `discord_user_id`가 바뀌거나 풀리면 그 팀원의 `discord_profile` 별칭을 지우고 새 계정이면 다시 넣는다. 이미 연결돼 있던 팀원의 닉네임은 채우지 않았다 |
@@ -458,14 +460,14 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 | 항목 | 동작 |
 |---|---|
 | 담당자 종류 저장 | `POST /extractions` 항목의 `assignee_type`을 `extraction_item.assignee_type`에 저장한다. 알려진 7개(first·second·thirdname·thirdpronoun·thirdrole·group·none)가 아니면 NULL로 저장하고 경고 로그를 남긴다. 요청은 거절하지 않고, 게이트 판단에는 보낸 값을 그대로 쓴다. 이 기능 전에 저장된 항목은 NULL이다 |
-| 저장할 글자 | `assignee_raw`를 다듬은 것이다. 앞뒤 공백 제거 → 끝 조사 한 번(께서·한테·에게·이가·가·이·는·을·를·께, 긴 것부터, "은"은 떼지 않음) → 끝 "님" → 연속 공백을 하나로. 비면 저장하지 않는다. 예: "하은이가" → "하은", "지민님이" → "지민", "환 님이" → "환" |
-| 물어볼 항목 (`alias_candidate`) | 모두 만족하면 `true`이고 `alias_text`에 저장할 글자가 실린다. ① 새 항목(create, 승인 대기 카드에 합친 merge 포함)이고 카드의 담당 항목(payload `assignee_item_id`, 없으면 `extraction_item_id`) ② 추출 때 담당자가 비어 있었음(못 찾음·애매함) ③ `assignee_type`이 `thirdname`(역할 `thirdrole`은 아래 역할 행) ④ 다듬은 글자가 비지 않음 ⑤ 연결된 승인 요청이 pending ⑥ 같은 워크스페이스에서 탈퇴하지 않은 팀원 누구도 저장할 글자와 찾기 후보(`name_candidates(assignee_raw)`)를 별칭으로 갖고 있지 않음(후보 중 하나라도 있으면 이미 찾히거나 애매한 표현이다. 예: "하은은"은 후보 [하은은, 하은]이고 "하은"을 두 팀원이 가졌으면, "하은은"을 저장하면 이후 항상 그 팀원으로 확정된다. 탈퇴 팀원의 별칭은 담당자를 찾을 때도 보지 않으므로 세지 않고, 지우지도 않는다. PM이 `DELETE /members/aliases/{id}`로 지울 수 있다). 아니면 `false`·`null`이다. 응답을 만들 때 계산하고 저장하지 않는다 |
+| 저장할 글자 | `assignee_raw`를 다듬은 것이다. 앞뒤 공백 제거 → 끝 조사 한 번(께서·한테·에게·이가·가·이·는·을·를·께, 긴 것부터, "은"은 떼지 않음) → 끝 "님" → 연속 공백을 하나로. 역할(`thirdrole`)도 같은 규칙이다. 기준은 "찾기는 넓게, 저장은 좁게"다(#607 리뷰, AI 결정 기록 0060). 더 떼면 손상된 글자("화은" → "화")가 확인된 별칭으로 남고, 덜 떼면("팀장은") 다음에 다른 꼴("팀장이")로 왔을 때 PM 이 한 번 더 골라 "팀장"을 배워 메워진다. 종류마다 다르게 다듬으면 AI 분류 오류가 글자 손상이 된다. 비면 저장하지 않는다. 예: "하은이가" → "하은", "지민님이" → "지민", "환 님이" → "환" |
+| 물어볼 항목 (`alias_candidate`) | 모두 만족하면 `true`이고 `alias_text`에 저장할 글자가 실린다. ① 새 항목(create, 승인 대기 카드에 합친 merge 포함)이고 카드의 담당 항목(payload `assignee_item_id`, 없으면 `extraction_item_id`) ② 추출 때 담당자가 비어 있었음(못 찾음·애매함) ③ `assignee_type`이 `thirdname` 또는 `thirdrole`(역할은 아래 역할 행) ④ 다듬은 글자가 비지 않음 ⑤ 연결된 승인 요청이 pending ⑥ 같은 워크스페이스에서 탈퇴하지 않은 팀원 누구도 저장할 글자와 찾기 후보(`name_candidates(assignee_raw)`)를 별칭으로 갖고 있지 않음(후보 중 하나라도 있으면 이미 찾히거나 애매한 표현이다. 예: "하은은"은 후보 [하은은, 하은]이고 "하은"을 두 팀원이 가졌으면, "하은은"을 저장하면 이후 항상 그 팀원으로 확정된다. 탈퇴 팀원의 별칭은 담당자를 찾을 때도 보지 않으므로 세지 않고, 지우지도 않는다. PM이 `DELETE /members/aliases/{id}`로 지울 수 있다). 아니면 `false`·`null`이다. 응답을 만들 때 계산하고 저장하지 않는다 |
 | 싣는 응답 | `GET /extractions/{id}`의 항목, `GET /approvals`, `GET /approvals/{id}`, `POST /approvals`, `PATCH /approvals/{id}`(처리 뒤라 항상 `false`). 수동으로 만든 승인 요청은 추출 항목이 없어 `false`다 |
 | 저장 (`save_alias`) | `PATCH /approvals/{id}`에 `{"status": "approved", "save_alias": true}`를 보내고, 카드의 담당 항목이 그 카드에 연결된 항목이며(payload 의 항목 ID 가 다른 카드 것이면 무시), 위 ①~④·⑥을 만족하고, 최종 담당자(`task_overrides`로 고른 값 포함)가 있으면 그 팀원에게 `member_alias`(`source=learned`, `verified=true`, `confidence=0.9`, `alias_type=nickname`)를 하나 만든다. 확인된 별칭이라 다음 회의에서 바로 확정 매칭된다. 단 한 글자 별칭("환", "민")은 찾을 때 확정 근거로 쓰지 않아(`matching._is_one_letter`) 담당자만 채우고 PM 확인(`review`)으로 간다. 미매칭 목록에서는 PM이 직접 등록한(`manual`·`learned`) 별칭이라 해결로 보고 뺀다(`resolved_texts`). 띄어 쓴 님("화은 님이")과 연속 공백도 같은 후보 규칙으로 찾는다. 이름 끝 글자가 조사와 같으면("민이" → "민", "수가" → "수") 깎여 한 글자가 되고, 저장 글자를 승인에서 고칠 수는 없다. 잘못 저장된 별칭은 `DELETE /members/aliases/{id}`로 지우고 필요하면 다시 등록한다(수정 API 없음). 카드를 연 뒤 담당 항목이 바뀌는 합치기는 `payload_version`을 바꾸므로, 그 값을 같이 보내면 PM 이 본 것과 다른 글자가 저장되지 않는다(#535) |
-| 저장하지 않는 경우 | `save_alias`가 없거나 false, 반려(같이 와도 오류 없이 무시), task_update 승인, 추출 때 담당자를 찾았던 항목(PM이 다른 사람으로 바꿔도), 1·2인칭·대명사·그룹·없음, `assignee_type`이 NULL인 옛 항목, 담당자를 미정으로 승인, 다듬은 글자가 1인칭이 주어로 쓰인 꼴(AI가 1인칭을 `thirdname`으로 잘못 분류한 경우. 범위는 아래 1인칭 거르기 행), 그 글자를 탈퇴하지 않은 누군가가 이미 가짐, `thirdrole`(아래 역할 행). 모두 승인은 그대로 성공한다 |
+| 저장하지 않는 경우 | `save_alias`가 없거나 false, 반려(같이 와도 오류 없이 무시), task_update 승인, 추출 때 담당자를 찾았던 항목(PM이 다른 사람으로 바꿔도), 1·2인칭·대명사·그룹·없음, `assignee_type`이 NULL인 옛 항목, 담당자를 미정으로 승인, 다듬은 글자가 1인칭이 주어로 쓰인 꼴(AI가 1인칭을 `thirdname`으로 잘못 분류한 경우. 범위는 아래 1인칭 거르기 행), 그 글자를 탈퇴하지 않은 누군가가 이미 가짐. 모두 승인은 그대로 성공한다 |
 | 1인칭 거르기의 범위 | 1인칭이 할 일의 **주어로 쓰인 꼴**만 막는다. 규칙은 어간(제·저·나·내 / 저희·우리 / 본인) × 복수 "들"(저희·우리·본인에만) × 주어 표지다. 이·가·는·를 같은 격조사는 다듬기가 먼저 떼고, 도·만과 받침 있는 말 뒤의 은("본인은", "저희들은")은 이 규칙이 처리한다. 막는 예: 제가·저는·저도·저만·저희들이·저희들은·본인은. **막지 않는 것**: 주어 표지가 아닌 부사어·구·끝말(우리끼리·우리까지·저희 모두·제가요), 3인칭 "저들". 통째로 일치할 때만 막으므로 "제인"·"나연"·"나은"은 배우지만, 조사 "이"를 떼면 "제"·"나"가 되는 "제이"·"나이"는 배우지 않으니 PM이 직접 등록한다. 규칙 밖에서 새는 경우는 PM 동의, 한 글자 확인 필요, 별칭 삭제, AI 오분류 개선이 받는다. 새 꼴이 거론되면 "이 규칙이 만드는 조합인가"로 판단해, 안이면 고치고 밖이면 문서에 남긴다 |
 | 동시 승인 | 저장 전에 같은 글자가 있는지 보고, 같은 팀원·글자 유니크 제약(`uq_alias_per_member`)에 걸리면 그 저장만 savepoint로 되돌린다. 승인과 태스크 생성은 커밋된다 |
-| 역할 | `thirdrole` 새 항목은 학습한 별칭으로 확신도가 높아져도 `auto`로 보내지 않는다(위 create 행). 역할은 지금 학습하지 않는다. AI는 `thirdrole`이면 역할 원문("BE 리더가")을 빼고, 문맥으로 추측한 이름이 있으면 그 이름을 `assignee_raw`로 보낸다(`ai/capture/handoff.py`, `ai/judge/pipeline.py`). BE는 원문과 추측을 구분할 수 없어, 배우면 추측한 이름이 확인된 별칭이 될 수 있다. AI가 역할 원문을 보내고 추측 이름은 보내지 않게 되면 학습 대상(`LEARNABLE_ASSIGNEE_TYPES`)에 다시 넣는다 |
+| 역할 | `thirdrole`도 `thirdname`처럼 묻고 배운다(#522). AI가 새 할 일(create·merge) 항목의 `assignee_raw`에 역할 원문("BE 리더가" → 별칭 "BE 리더")을 보내고 추측한 이름은 보내지 않는다(update 카드는 추측한 이름이 있으면 그것, 없으면 원문이지만 update는 학습 대상이 아니다). 역할은 맡은 사람이 바뀔 수 있어 `thirdrole` 새 항목은 학습한 별칭으로 확신도가 높아져도 `auto`로 보내지 않는다(위 create 행). 이 변경 전에 저장된 옛 `thirdrole` 대기 카드는 `assignee_raw`가 추측한 이름일 수 있지만 따로 거르지 않는다(PM이 승인 전에 저장할 글자를 보고, 잘못 저장된 별칭은 지울 수 있다) |
 
 ## 전사 힌트 조회
 
@@ -482,7 +484,7 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 
 ## 이메일 정규화
 
-가입(`POST /api/v1/auth/signup`)·로그인(`POST /api/v1/auth/login`)·비밀번호 재설정 요청·워크스페이스 초대는 이메일의 앞뒤 공백을 지우고 소문자로 바꿔(`@` 앞부분 포함) 비교·저장한다. 규칙은 `app/schemas/email.py` 의 `normalize_email`·`NormalizedEmail` 한 곳에 있고, `User` 모델이 저장할 때도 같은 함수를 부른다. `Kim@Example.com` 과 `kim@example.com` 은 같은 계정이다.
+가입(`POST /api/v1/auth/signup`)·로그인(`POST /api/v1/auth/login`)·비밀번호 재설정 요청은 이메일의 앞뒤 공백을 지우고 소문자로 바꿔(`@` 앞부분 포함) 비교·저장한다. 규칙은 `app/schemas/email.py` 의 `normalize_email`·`NormalizedEmail` 한 곳에 있고, `User` 모델이 저장할 때도 같은 함수를 부른다. `Kim@Example.com` 과 `kim@example.com` 은 같은 계정이다.
 
 - 응답의 `user.email`·`accepted_user.email`·`email_masked` 는 소문자다.
 - 같은 이메일로 동시에 가입하면 하나만 만들어지고 나머지는 409 `EMAIL_ALREADY_EXISTS` 를 받는다.
@@ -520,27 +522,30 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 
 ## 가입과 카카오 로그인
 
-이메일을 인증해야 가입할 수 있고, 카카오로 들어온 사용자도 가입 화면에서 비밀번호를 정해 두 로그인을 모두 쓴다. 원본은 `app/api/auth.py`, `app/services/signup_codes.py`, `app/services/kakao_oauth.py`.
+이메일 가입은 이메일을 인증하고 비밀번호를 정한다. 카카오 가입은 카카오 신원만으로 끝나고 이메일과 비밀번호를 두지 않는다(#610). 두 가입 모두 아이디와 이름을 받는다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-10-signup-username-decision.md). 원본은 `app/api/auth.py`, `app/services/signup_codes.py`, `app/services/kakao_oauth.py`.
 
 | 경로 | 요청 | 응답 |
 |---|---|---|
 | `POST /api/v1/auth/signup/code` | `{email}` | 200 `{expires_in: 600, resend_after: 60}`. 503 `MAIL_UNAVAILABLE`, 409 `EMAIL_ALREADY_EXISTS`, 429 `SIGNUP_CODE_RATE_LIMITED` |
 | `POST /api/v1/auth/signup/code/confirm` | `{email, code}`(숫자 6자리) | 200 `{verification_token, expires_in: 1800}`. 400 `SIGNUP_CODE_INVALID` |
-| `POST /api/v1/auth/signup` | `{verification_token?, name, password, link_kakao?}` | 201 사용자 정보와 세션 쿠키, 대기 쿠키 삭제. 본문의 이메일은 읽지 않는다 |
+| `POST /api/v1/auth/signup` | 이메일 가입 `{verification_token, password, name, username}`, 카카오 가입 `{link_kakao: true, name, username}` | 201 사용자 정보와 세션 쿠키, 대기 쿠키 삭제. 본문의 이메일은 읽지 않는다. 카카오 가입에 `password`·`verification_token` 이 오면 400 `INVALID_REQUEST` |
+| `GET /api/v1/auth/username-availability?username=` | 로그인 없음 | 200 `{available, reason}`. `reason` 은 `taken`·`invalid`·null. 규칙 밖 값도 400 이 아니라 `invalid` 다. 내 아이디도 `taken` 이다 |
+| `PATCH /api/v1/users/me` | 로그인, `{username}` | 200 바뀐 사용자 정보. 지금과 같은 값이면 그대로 200, 남의 아이디면 409 `USERNAME_TAKEN`, 규칙 밖이면 400 `INVALID_REQUEST` |
 | `GET /api/v1/auth/kakao/start?next=` | 앱 안 경로 | 302 카카오 동의 화면. 설정 오류면 302 `/login?oauth=kakao&oauth_result=failed` |
 | `GET /api/v1/auth/kakao/callback` | 카카오가 부른다 | 항상 302 |
-| `GET /api/v1/auth/kakao/pending` | 대기 쿠키 | 200 `{email, nickname}`(없으면 null). 400 `KAKAO_LINK_EXPIRED` |
+| `GET /api/v1/auth/kakao/pending` | 대기 쿠키 | 200 `{nickname}`(없으면 null). 400 `KAKAO_LINK_EXPIRED` |
 
-**가입할 이메일**
+**가입할 신원**
 
-| `link_kakao` | 대기 쿠키 | 이메일 |
+| `link_kakao` | 대기 쿠키 | 만드는 계정 |
 |---|---|---|
-| false | 있어도 보지 않는다 | 증명 토큰의 이메일. 없으면 400 `SIGNUP_VERIFICATION_INVALID` |
+| false | 있어도 보지 않는다 | 증명 토큰의 이메일과 비밀번호. 토큰이 없거나 쓸 수 없으면 400 `SIGNUP_VERIFICATION_INVALID` |
 | true | 없거나 만료 | 400 `KAKAO_LINK_EXPIRED` |
-| true | 카카오가 인증한 이메일 있음 | 쿠키의 이메일. 증명 토큰은 무시한다 |
-| true | 이메일 없음 | 증명 토큰의 이메일 |
+| true | 있음 | 카카오 id 만. 카카오가 이메일을 줘도 저장하지 않고 비밀번호도 없다 |
 
-겹치면 409 `EMAIL_ALREADY_EXISTS` 또는 409 `KAKAO_ALREADY_LINKED` 다.
+겹치면 이메일, 카카오, 아이디 순으로 보고 409 `EMAIL_ALREADY_EXISTS`, `KAKAO_ALREADY_LINKED`, `USERNAME_TAKEN` 중 하나다. 이미 있는 계정의 로그인 방법은 바꾸지 않는다. 전에 카카오로 가입하며 비밀번호를 정한 계정과 카카오가 이어진 이메일 계정은 두 로그인을 그대로 쓴다.
+
+**아이디**: 영문과 숫자 4 ~ 20자. 앞뒤 공백을 지우고 소문자로 저장·비교한다. 규칙은 `app/schemas/username.py` 의 `validate_username` 한 곳에 있다. 예약어는 막지 않는다. 마이그레이션 전부터 있던 계정은 이메일 앞부분에서 영문·숫자만 남긴 값을 받았다. 4자 미만이면 앞에 `user` 를 붙이고 20자로 자르며, 겹치면 가입 순서대로 뒤에 숫자를 붙였다. `PATCH /users/me` 로 바꾼다. 이메일 없는 계정이 있으면 이 마이그레이션의 downgrade 는 오류로 멈춘다.
 
 **callback 갈래** (위에서 아래로 먼저 맞는 것)
 
@@ -549,13 +554,10 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 | `error` 있음 | `access_denied` 는 `cancelled`, 나머지는 `failed`. 유효한 state 가 있을 때만 `next` 를 유지한다 |
 | state·nonce 불일치, 카카오 토큰·사용자 조회 실패 | `failed`, 원인은 로그에만 남긴다 |
 | `(kakao, id)` 계정 있음 | 세션, `/login?next=&oauth=kakao&oauth_result=success` |
-| 인증된 이메일의 계정 있음 | 비어 있으면 카카오를 잇고 세션과 `success`, 계정 이메일로 연결 알림을 보낸다. 다른 카카오에 이어져 있으면 `failed`, `oauth_reason=email_exists` |
-| 인증되지 않은 이메일의 계정 있음 | `failed`, `oauth_reason=email_exists` |
-| 나머지 | 대기 쿠키를 심고 `/signup?kakao=1&next=`. callback 은 사용자를 만들지 않는다 |
+| 나머지 | 대기 쿠키를 심고 `/signup?kakao=1&next=`. 같은 이메일의 계정이 있어도 잇지 않는다. callback 은 사용자를 만들지 않는다 |
 
 - 코드: 6자리, 유효 10분, 코드당 5회, 재발송 60초, 시간당 5회. 전체 주소 합계는 시간당 20통이고 넘으면 429 `global` 이다. DB 에는 HMAC 만 두고 맞으면 코드만 만료시킨다. 행은 재발송 제한과 전체 상한 집계에 남고, 하루 지나면 다음 코드 요청이 지운다.
-- 대기 쿠키 `kakao_pending`: 서명, HttpOnly, Secure, SameSite=Lax, Path `/api/v1/auth`, 30분. 카카오 id, 인증된 이메일, 닉네임을 담고 주소에는 싣지 않는다. 서명이지 암호화가 아니므로 비밀 값을 넣지 않는다.
-- 카카오 이메일: `is_email_valid` 가 거짓이면 이메일이 없는 것으로 본다. `is_email_verified` 가 참일 때만 코드 인증을 생략한다.
+- 대기 쿠키 `kakao_pending`: 서명, HttpOnly, Secure, SameSite=Lax, Path `/api/v1/auth`, 30분. 카카오 id 와 닉네임만 담고 주소에는 싣지 않는다. 서명이지 암호화가 아니므로 카카오가 이메일을 줘도 읽지 않고 담지 않는다.
 - 메일: 제목에 코드를 넣지 않고 재설정 메일과 같은 메일 전용 스레드로 보낸다. 보내는 이름은 `SMTP_FROM` 으로 정한다(`Manager's Manager <주소>`).
 
 **환경변수** (`.env.example` 참고)

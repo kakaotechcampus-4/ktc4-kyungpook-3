@@ -15,6 +15,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base
 from app.models import Meeting, MeetingPurge, MeetingUpload, Member, PrivacyCleanup, Source, User, Workspace
 from app.services import account_withdrawal, meeting_deletion, meeting_failure, upload_storage, upload_sweeper
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 NOW = datetime(2026, 11, 3, 12, 0, tzinfo=timezone.utc)
@@ -241,7 +242,7 @@ def test_deleted_meeting_file_retry_is_owned_by_meeting_purge(db, ws, monkeypatc
 
 def test_withdrawn_workspace_file_retry_is_owned_by_privacy_cleanup(db, ws, monkeypatch):
     meeting = _upload(db, ws, status="failed")
-    user = User(email="sole-retention@example.com", name="sole")
+    user = User(username=username_for("sole-retention@example.com"), email="sole-retention@example.com", name="sole")
     db.add(user)
     db.flush()
     db.add(Member(workspace_id=ws.workspace_id, user_id=user.user_id, display_name="sole", role="pm"))

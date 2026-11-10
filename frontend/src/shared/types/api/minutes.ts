@@ -5,6 +5,10 @@ import { z } from 'zod'
  * 타입은 이 스키마에서 만든다 (#348)
  */
 
+/** 요약 상태 (계약 §4.4.2). `pending` 은 아직 만들고 있고 `none` 은 쓸 수 있는 요약이 없다 */
+export const SUMMARY_STATUSES = ['ready', 'pending', 'none'] as const
+export type SummaryStatus = (typeof SUMMARY_STATUSES)[number]
+
 const minutesSummarySchema = z.object({
   overview: z.string(),
   key_points: z.array(z.string()),
@@ -25,6 +29,8 @@ export const minutesSchema = z.object({
     if (import.meta.env.DEV) console.warn('Invalid minutes summary:', input)
     return null
   }),
+  // 빈 요약에 어떤 문구를 보일지만 고르는 표시용 값이라 응답을 거절하지 않는다. 키가 없는 이전 서버는 `none` 이다
+  summary_status: z.string().default('none').catch('none'),
   transcript: z.array(
     z.object({
       at_ms: z.number(),

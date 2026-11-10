@@ -5,7 +5,7 @@ function latest(status: InvitationStatus, acceptedUser: Invitation['acceptedUser
   return {
     id: 'iv_01',
     memberId: 'mb_03',
-    email: 'jaehwan@example.com',
+    invitedUser: { userId: 'us_03', username: 'jaehwan', name: '이재환' },
     status,
     acceptedUser,
     createdAt: '2026-09-16T09:00:00Z',
@@ -30,11 +30,11 @@ describe('memberInviteView', () => {
     ['canceled', '취소', 'closed', null],
     ['revoked', '연결 끊김', 'closed', null],
   ] as const)(
-    '%s 는 %s 칩과 초대 이메일을 보이고 다시 초대할 수 있다',
+    '%s 는 %s 칩과 초대받은 사람의 이름·아이디를 보이고 다시 초대할 수 있다',
     (status, label, tone, close) => {
       expect(memberInviteView('member', latest(status, account))).toEqual({
         chip: { label, tone },
-        detail: 'jaehwan@example.com',
+        detail: '이재환 · jaehwan',
         invite: '다시 초대',
         close,
       })
@@ -52,9 +52,15 @@ describe('memberInviteView', () => {
     })
   })
 
-  it('수락한 계정이 지워졌으면 초대 이메일만 보인다', () => {
+  it('수락한 계정에 이메일이 없으면 이름만 보인다 (#627)', () => {
+    expect(
+      memberInviteView('member', latest('accepted', { ...account, email: null })),
+    ).toMatchObject({ detail: '이재환', close: { kind: 'revoke' } })
+  })
+
+  it('수락한 계정이 지워졌으면 초대받은 사람의 이름·아이디를 보인다', () => {
     expect(memberInviteView('member', latest('accepted'))).toMatchObject({
-      detail: 'jaehwan@example.com',
+      detail: '이재환 · jaehwan',
       close: { kind: 'revoke' },
     })
   })

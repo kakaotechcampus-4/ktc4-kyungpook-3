@@ -1,13 +1,13 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { z } from 'zod'
-import { readMailedCode, start } from './support'
+import { agreeToPolicies, confirmUsername, readMailedCode, start } from './support'
 
 const storedStateSchema = z.object({
   db: z.object({
     authenticated: z.boolean(),
     session: z.object({
-      user: z.object({ user_id: z.string(), email: z.string() }),
+      user: z.object({ user_id: z.string(), username: z.string(), email: z.string().nullable() }),
       workspace_count: z.number(),
     }),
     accounts: z.array(z.object({ session: z.object({ user: z.object({ user_id: z.string() }) }) })),
@@ -19,7 +19,7 @@ const storedStateSchema = z.object({
       }),
     ),
     tasks: z.array(z.object({ task_id: z.string() })),
-    invitations: z.array(z.object({ email: z.string() })),
+    invitations: z.array(z.object({ invited_user_id: z.string() })),
   }),
 })
 
@@ -45,6 +45,9 @@ test('마지막 PM 이전부터 탈퇴·정리 상태 복원·같은 이메일 �
   await page.screenshot({ path: testInfo.outputPath('withdrawal-confirm.png'), fullPage: true })
 
   const before = await readMockState(page)
+  const beforeEmail = before.session.user.email
+  if (beforeEmail === null)
+    throw new Error('탈퇴할 픽스처 계정에 이메일이 있어야 같은 이메일로 다시 가입한다')
   await page.getByRole('button', { name: '계정 탈퇴하기' }).click()
   await expect(page.getByRole('heading', { name: '개인정보 정리 중' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('withdrawal-pending.png'), fullPage: true })
@@ -100,20 +103,26 @@ test('마지막 PM 이전부터 탈퇴·정리 상태 복원·같은 이메일 �
   await expect(page).toHaveURL('/login')
   await page.getByRole('link', { name: '회원가입', exact: true }).click()
   await expect(page.getByRole('heading', { name: '회원가입', exact: true })).toBeVisible()
-  await page.getByLabel('이메일').fill(before.session.user.email)
+  await page.getByLabel('이메일').fill(beforeEmail)
   await page.getByRole('button', { name: '인증 코드 받기' }).click()
   await page.getByLabel('인증 코드').fill(await readMailedCode(page))
   await page.getByRole('button', { name: '코드 확인' }).click()
+  await confirmUsername(page, 'newaccount1')
   await page.getByLabel('이름').fill('새 계정')
   await page.getByLabel('비밀번호', { exact: true }).fill('new-password123')
+  await agreeToPolicies(page)
   await page.getByRole('button', { name: '계정 만들기' }).click()
   await expect(page).toHaveURL('/onboarding/start')
-  await expect(page.getByText('PM에게 가입한 이메일로 초대를 요청하세요.')).toBeVisible()
+  await expect(
+    page.getByText('PM에게 내 아이디(newaccount1)를 알려 주고 초대를 요청하세요.'),
+  ).toBeVisible()
   const fresh = await readMockState(page)
   expect(fresh.session.user.user_id).not.toBe(before.session.user.user_id)
   expect(fresh.session.workspace_count).toBe(0)
   expect(
-    fresh.invitations.some((invitation) => invitation.email === before.session.user.email),
+    fresh.invitations.some(
+      (invitation) => invitation.invited_user_id === fresh.session.user.user_id,
+    ),
   ).toBe(false)
 })
 
