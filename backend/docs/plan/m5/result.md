@@ -181,10 +181,10 @@ plan.md 가 비어 있어 완료조건이 없다. 아래는 전체 계획 M5 의
 - 이 문서화 작업(Task 7)의 마지막 커밋 상태에서 `backend/` 에서 `.venv/bin/python -m ruff check --no-cache .`: 통과. `.venv/bin/python -m pytest -q -p no:cacheprovider`: **3297 passed, 2279 skipped**(PostgreSQL 변형 skip), 0 failed. `ai/` 에서 `.venv/bin/python -m pytest -q`: 설정 때문에 요약 줄이 나오지 않아 진행 표시를 세었다. 통과 3063개, skip 1개, 실패 없음.
 - 앞선 구현 태스크에서 PostgreSQL(mm_test) 로 바뀐 테스트 파일 400 passed / 4 skipped, 로컬 DB 에서 `alembic downgrade b20d029aec7b` → `upgrade head` → `alembic check` 성공("No new upgrade operations detected")을 확인했다. 이번 문서 작업에서는 다시 돌리지 않았다.
 - 실제 S3·인스턴스 역할·IMDS hop limit·Caddy CSP·ffmpeg 없는 환경의 AI 운영 실행은 확인하지 않았다. 테스트는 가짜 S3(`tests/fake_s3.py`)를 쓴다. presigned URL 로 브라우저가 실제로 재생되는지(CORS 포함)도 확인하지 않았다.
-- 체크리스트(인프라)와 운영 전환 절차는 문서만 썼고 실행하지 않았다. AI 결정 기록(0055 후속)은 아직 쓰지 않았다.
+- 체크리스트(인프라)와 운영 전환 절차는 문서만 썼고 실행하지 않았다. AI 결정 기록(0055 후속)은 [0066](../../../../ai/docs/basis_for_decision/ai/2026-11-10-0066-mix-discord-audio-and-upload-to-be.md)에 썼다.
 
 ### 다른 파트에 알릴 것
 
 - FE(이슈로 요청, 이 PR 은 frontend/ 를 고치지 않음): 원문 듣기 재생(`/api/v1/meetings/{id}/audio` 302), `minutes.audio`, `AUDIO_NOT_AVAILABLE` 처리, 주소 만료 시 `src` 재설정, `/speakers` 의 `audio` 가 done 뒤에도 보관 기간 동안 값, 방침 문구(`POLICY_VERSION` 그대로, 업로드 회의가 처리 중이면 7일을 넘길 수 있음), FE 계약.
-- AI: 이 PR 이 `ai/capture/` 와 0055(인계 즉시 wav 삭제)의 후속 동작을 바꿨다. 결정 기록은 아직 없다(ai/ 문서는 이 BE 담당 작업에서 쓰지 않았다).
+- AI: 이 PR 이 `ai/capture/` 와 0055(인계 즉시 wav 삭제)의 후속 동작을 바꿨다. 결정 기록은 [0066](../../../../ai/docs/basis_for_decision/ai/2026-11-10-0066-mix-discord-audio-and-upload-to-be.md)이다.
 - 인프라: 버킷·역할 정책·IMDSv2 hop limit 2·lifecycle·`.env`·Caddy CSP `media-src` 는 [배포 안내](../../../../deploy/README.md#회의-녹음-s3-준비)의 체크리스트다. 처리 중 업로드가 없을 때 `UPLOAD_STORAGE=s3` 로 전환한다.
