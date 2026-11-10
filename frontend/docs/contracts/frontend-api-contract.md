@@ -1778,6 +1778,15 @@ POST .../meetings/upload            multipart/form-data
 - 회의록 `summary` 의 결정과 주제 칸은 지금 행에서 읽는다. `decision_details` 는 지우지 않은 결정이 회의 안 순서로 오고 각각 `state` 와 `edited` 가 있다. 문장과 `topic` 은 고친 값이다. `replaces[].meeting_title` 은 그 회의의 지금 제목이고 지운 결정의 사본은 빠진다. `decisions` 는 `valid` 인 결정의 문장만이다. `topics`·`topic_ids` 는 회의에 이어진 주제의 지금 이름과 ID 다.
 - 회의 삭제(#576)는 고친 제목, 처음 제목, 고친 발화, 그 회의의 결정(고친 것과 지운 표시 포함)을 함께 지운다. 그 회의에만 있던 주제는 고쳤어도 지우고 별칭과 뗀 표시도 같이 지운다. 혼자 쓰던 워크스페이스를 탈퇴(#575)할 때도 같다. 함께 쓰는 워크스페이스에서는 다른 기록처럼 고친 문장도 남는다. 누가 고쳤는지는 저장하지 않는다.
 
+고친 뒤 FE 가 다시 받을 캐시는 경로마다 아래와 같다. 키는 FE 의 `workspaceKey` 모양이다. 회의록은 다른 회의의 고친 제목, 주제 이름, 결정도 보여 주므로(`replaces[].meeting_title`, `topics`, `decision_details[].topic`) 제목, 주제, 결정을 고치면 그 회의 하나가 아니라 회의록 전체를 다시 받는다.
+
+- 제목: `workspaceKey(ws,'meetings')`(목록과 상세), `workspaceKey(ws,'minutes')`, `workspaceKey(ws,'project-map')`.
+- 발화: 응답의 `seq` 로 `workspaceKey(ws,'minutes',meetingId)` 의 그 줄만 바꾼다. 다른 캐시는 그대로다.
+- 주제 이름·설명: 응답을 주제 키에 쓰고 `workspaceKey(ws,'project-map')`(그래프의 이름 포함). 이름을 바꿨으면 `workspaceKey(ws,'minutes')` 도.
+- 합치기: 응답을 `into_topic_id` 의 주제 키에 쓰고 원래 주제 키는 지운다. `workspaceKey(ws,'project-map')`, `workspaceKey(ws,'minutes')`.
+- 떼기: 응답을 주제 키에 쓰고 `workspaceKey(ws,'project-map')`(그래프의 선).
+- 결정: 응답을 그 주제 키에 쓰고 `workspaceKey(ws,'project-map')`(다른 주제에 있는 옛 결정의 뒤집힘), `workspaceKey(ws,'minutes')`.
+
 구현 근거: [회의 라우터](../../../backend/app/api/meetings.py), [project_map 라우터](../../../backend/app/api/project_map.py), [전사 고치기](../../../backend/app/services/transcript.py), [주제·결정 고치기와 요약 합치기](../../../backend/app/services/summary.py), [요청 스키마](../../../backend/app/schemas/record_edit.py). 결정 근거는 [0066](../../../ai/docs/basis_for_decision/ai/2026-11-10-0066-human-record-edits-survive-resummary.md). 검증은 `backend/tests/api/test_transcript_edit.py`, `backend/tests/api/test_topic_decision_edit.py`, `backend/tests/api/test_summary_save.py`, `backend/tests/test_migration_record_edits.py` 로 SQLite 와 PostgreSQL 에서 했다. 실서버와 화면에서는 돌려 보지 않았다.
 
 ### 4.5 Discord 서버 사용자 목록
