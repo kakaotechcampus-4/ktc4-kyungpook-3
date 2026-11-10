@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useMutationState, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { meetingDetailQueryOptions } from '@/entities/meeting'
@@ -21,7 +21,7 @@ import {
 export interface EditActions<Target> {
   /** `null` 은 되돌리기다. 끝나기 전 같은 회의의 같은 종류 고치기는 받지 않는다. 저장되면 `onSaved` 를 부른다 */
   save: (target: Target, onSaved?: () => void) => void
-  /** 지금 저장 중인 대상. 없으면 null 이다 */
+  /** 지금 저장 중인 대상. 없으면 null 이다. 이 훅이 아니라 mutation 캐시에서 읽어, 화면이 다시 그려져도(탭 왕복) 남는다 */
   saving: Target | null
   failure: { target: Target; message: string } | null
   clearFailure: () => void
@@ -61,6 +61,10 @@ function useEdit<Target, Result>({
   const mutationKey = ['minutes-edit', workspaceId, meetingId, kind] as const
   const reload = () => void refresh(queryClient)
 
+  const pending = useMutationState({
+    filters: { mutationKey, status: 'pending' },
+    select: (pendingMutation) => pendingMutation.state.variables as Variables<Target>,
+  })
   const mutation = useMutation<Result, Error, Variables<Target>>({
     mutationKey,
     retry: false,
@@ -110,7 +114,7 @@ function useEdit<Target, Result>({
         },
       )
     },
-    saving: mutation.isPending ? (mutation.variables?.target ?? null) : null,
+    saving: pending[0]?.target ?? null,
     failure,
     clearFailure: () => setFailure(null),
   }

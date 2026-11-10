@@ -335,6 +335,7 @@ export function EditableLine({
   const editing = draft !== null
   const returnFocus = useReturnFocus(editing, lineButton)
   const originalId = useId()
+  const savingId = useId()
   const { seq } = line
   const mine = seq !== null && edit.failure?.target.seq === seq
   const failure = mine ? edit.failure!.message : null
@@ -388,7 +389,7 @@ export function EditableLine({
             ref={lineButton}
             type="button"
             className={LINE_BUTTON}
-            aria-describedby={hintId}
+            aria-describedby={saving ? savingId : hintId}
             // 이 줄의 저장·되돌리기 응답 전에는 다시 열지 않는다. 열면 초안이 요청 전 문장이라 응답을 다시 덮는다
             aria-disabled={saving || undefined}
             aria-busy={saving || undefined}
@@ -401,6 +402,11 @@ export function EditableLine({
             {line.text}
           </button>
         )}
+        {saving ? (
+          <span id={savingId} hidden>
+            이 발화를 저장하고 있어요.
+          </span>
+        ) : null}
         {line.edited && line.originalText !== null && showOriginal ? (
           <div id={originalId} className={`mt-4 ${ORIGINAL_BOX}`}>
             <p className="text-meta font-semibold text-dim">원문</p>
@@ -490,7 +496,8 @@ function LineForm({
             submit()
             return
           }
-          closeOnEscape(event, onCancel)
+          // 저장 중에는 닫지 않는다. 닫으면 바뀐 글 표시가 사라져, 응답 전에 같은 줄을 요청 전 문장으로 다시 열 수 있다
+          if (!saving) closeOnEscape(event, onCancel)
         }}
       />
       <EditNotes
