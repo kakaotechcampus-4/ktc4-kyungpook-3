@@ -20,6 +20,7 @@ fail 을 보낸다. 보내지 못하면 fail_pending 이 남아 다음 호출이
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -45,6 +46,11 @@ FETCH_POLL_S = 30.0           # 결과를 기다릴 때 다시 확인하는 간�
 # failed 로 바꾸므로 그보다 먼저 끝낸다(#288 합의). 결과 대기 30분 × 5회와 재시도 간격만 더해도 3시간 근처라 따로 둔다
 INTAKE_DEADLINE_S = 2.5 * 3600
 FAILED_STAGE = "diarize"
+# 풀어 낸 음성 길이의 상한. BE 는 바이트(200MB)만 막아서, 비트레이트가 낮으면 그 안에 몇십 시간이 들어간다.
+# 넘으면 메모리(서버 4GB)와 유료 분리·전사를 쓰기 전에 실패로 보고한다
+DEFAULT_MAX_SECONDS = 3 * 3600
+# 받는 확장자(BE upload_storage._SIGNATURES)마다 여는 FFmpeg 형식. 내용을 보고 형식을 고르게 두지 않는다
+_FORMATS = {".mp3": "mp3", ".m4a": "mp4", ".wav": "wav", ".ogg": "ogg", ".webm": "webm"}
 _FINISHED = ("done", "failed")
 _CLEAN = ("claiming", "claimed", "converted", "submitted")
 
@@ -87,6 +93,15 @@ def _cleanup(d: Path) -> None:
 
 def _source(d: Path, rec: dict) -> Path:
     return d / f"source{Path(str(rec['item'].get('stored_filename') or '')).suffix}"
+
+
+def max_upload_seconds() -> float:
+    """MM_UPLOAD_MAX_SECONDS. 비었거나 숫자가 아니거나 0 이하면 기본값(오타로 모든 업로드를 실패시키지 않는다)."""
+    try:
+        v = float(os.getenv("MM_UPLOAD_MAX_SECONDS") or DEFAULT_MAX_SECONDS)
+    except ValueError:
+        return DEFAULT_MAX_SECONDS
+    return v if v > 0 else DEFAULT_MAX_SECONDS
 
 
 def _wav(d: Path) -> Path:
@@ -245,9 +260,12 @@ def _step(recordings_dir, d, rec, *, client, diarizer, now, timezone, fresh) -> 
         if expected is not None and size != expected:
             src.unlink(missing_ok=True)
             raise OSError(f"받은 크기 {size} 가 올린 크기 {expected} 와 다르다")
+        fmt = _FORMATS.get(src.suffix.lower())
+        if fmt is None:
+            raise _Permanent(f"받지 않는 확장자다: {src.name}")
         try:
-            to_wav_16k(src, _wav(d))
-        except ValueError as e:   # 디코딩할 수 없는 파일: 다시 받아도 같다
+            to_wav_16k(src, _wav(d), max_seconds=max_upload_seconds(), format=fmt)
+        except ValueError as e:   # 디코딩할 수 없거나 상한보다 긴 파일: 다시 받아도 같다
             raise _Permanent(f"{type(e).__name__}: {e}") from e
         _set(d, rec, "converted")
         return Progress(mid, "converted")

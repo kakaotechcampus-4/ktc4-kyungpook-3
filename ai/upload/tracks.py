@@ -14,10 +14,11 @@ from upload.diarize import Segment
 SR = 16000
 
 
-def _decode_mono_16k(path: Path):
-    """PyAV 로 스트리밍 디코딩하며 16k 로 리샘플한다. 프레임 조각(float32 mono)을 낸다."""
+def _decode_mono_16k(path: Path, *, format: str | None = None):
+    """PyAV 로 스트리밍 디코딩하며 16k 로 리샘플한다. 프레임 조각(float32 mono)을 낸다.
+    format 을 주면 그 형식으로만 연다(FFmpeg 가 내용을 보고 형식을 고르지 않는다)."""
     try:
-        container = av.open(str(path))
+        container = av.open(str(path), format=format)
     except (av.error.FFmpegError, OSError, ValueError) as e:
         raise ValueError(f"오디오를 열 수 없다: {path} ({e})") from e
     try:
@@ -59,15 +60,19 @@ def load_mono_16k(path: Path) -> tuple[np.ndarray, float]:
     return buf, n / SR
 
 
-def to_wav_16k(src: Path, dst: Path) -> float:
+def to_wav_16k(src: Path, dst: Path, *, max_seconds: float | None = None, format: str | None = None) -> float:
     """src 를 16k mono PCM_16 wav 로 dst 에 쓴다. 길이(초)를 돌려준다. 조각을 바로 파일에 써서 전체 배열을 만들지 않는다.
-    열거나 디코딩하지 못하거나 비어 있으면 ValueError 이고 dst 를 남기지 않는다."""
+    열거나 디코딩하지 못하거나 비어 있으면 ValueError 이고 dst 를 남기지 않는다.
+    max_seconds 를 넘는 순간 디코딩을 멈추고 ValueError 다(전부 풀어 본 뒤 재지 않는다). format 은 _decode_mono_16k 와 같다."""
     n = 0
+    limit = None if max_seconds is None else int(max_seconds * SR)
     try:
         with sf.SoundFile(str(dst), "w", samplerate=SR, channels=1, subtype="PCM_16") as out:
-            for chunk in _decode_mono_16k(src):
-                out.write(chunk.astype(np.float32, copy=False))
+            for chunk in _decode_mono_16k(src, format=format):
                 n += len(chunk)
+                if limit is not None and n > limit:
+                    raise ValueError(f"오디오가 {max_seconds:.0f}초보다 길다: {src}")
+                out.write(chunk.astype(np.float32, copy=False))
         if n == 0:
             raise ValueError(f"디코딩된 오디오가 비어 있다: {src}")
     except BaseException:

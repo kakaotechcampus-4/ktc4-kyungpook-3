@@ -183,7 +183,7 @@ def _many_small_chunks(total):
     """잘게 쪼갠 디코딩 조각(초기 버퍼를 여러 번 넘기게). 값은 위치를 알 수 있게 오름차순."""
     data = np.arange(total, dtype=np.float32) / total
 
-    def fake(path):
+    def fake(path, **_):
         for i in range(0, total, 1000):
             yield data[i:i + 1000]
 
@@ -203,7 +203,7 @@ def test_to_wav_16k_streams_chunks_without_building_the_whole_array(tmp_path, mo
 
 def test_to_wav_16k_of_nothing_is_a_valueerror_and_leaves_no_file(tmp_path, monkeypatch):
     from upload import tracks
-    monkeypatch.setattr(tracks, "_decode_mono_16k", lambda path: iter(()))
+    monkeypatch.setattr(tracks, "_decode_mono_16k", lambda path, **_: iter(()))
     dst = tmp_path / "out.wav"
     with pytest.raises(ValueError):
         to_wav_16k(tmp_path / "ignored", dst)
@@ -219,3 +219,52 @@ def test_load_mono_16k_keeps_every_sample_when_the_buffer_has_to_grow(tmp_path, 
     got, secs = load_mono_16k(tmp_path / "ignored")
     assert got.dtype == np.float32 and len(got) == total and secs == pytest.approx(total / SR)
     assert np.array_equal(got, data)
+
+
+def test_to_wav_16k_stops_decoding_past_the_cap_and_leaves_no_file(tmp_path, monkeypatch):
+    from upload import tracks
+    pulled = []
+
+    def endless(path, **_):
+        while True:   # 끝없이 긴 오디오
+            pulled.append(1000)
+            yield np.zeros(1000, dtype=np.float32)
+
+    monkeypatch.setattr(tracks, "_decode_mono_16k", endless)
+    dst = tmp_path / "out.wav"
+    with pytest.raises(ValueError, match="길다"):
+        to_wav_16k(tmp_path / "ignored", dst, max_seconds=1)
+    assert not dst.exists()
+    assert sum(pulled) <= SR + 1000   # 상한을 넘긴 조각에서 멈춘다
+
+
+def test_to_wav_16k_at_the_cap_is_kept_whole(tmp_path, monkeypatch):
+    from upload import tracks
+    data, fake = _many_small_chunks(SR)
+    monkeypatch.setattr(tracks, "_decode_mono_16k", fake)
+    dst = tmp_path / "out.wav"
+    assert to_wav_16k(tmp_path / "ignored", dst, max_seconds=1) == pytest.approx(1.0)
+    assert len(sf.read(dst)[0]) == SR
+
+
+@pytest.mark.parametrize("suffix,fmt,codec,rate", [
+    (".mp3", "mp3", "libmp3lame", 44100), (".m4a", "mp4", "aac", 44100),
+    (".ogg", "ogg", "libopus", 48000), (".webm", "webm", "libopus", 48000),
+])
+def test_to_wav_16k_decodes_each_upload_container_with_its_named_format(tmp_path, suffix, fmt, codec, rate):
+    src = tmp_path / f"source{suffix}"
+    _encode(src, codec, rate, "mono")
+    assert to_wav_16k(src, tmp_path / "out.wav", format=fmt) == pytest.approx(2.0, abs=0.15)
+
+
+def test_to_wav_16k_decodes_wav_with_its_named_format(tmp_path):
+    src = tmp_path / "source.wav"
+    sf.write(src, np.zeros(SR, dtype=np.float32) + 0.2, SR, subtype="PCM_16")
+    assert to_wav_16k(src, tmp_path / "out.wav", format="wav") == pytest.approx(1.0)
+
+
+def test_to_wav_16k_rejects_a_file_that_is_not_the_named_format(tmp_path):
+    src = tmp_path / "source.ogg"
+    sf.write(src, np.zeros(SR, dtype=np.float32), SR, format="WAV", subtype="PCM_16")   # 이름만 ogg 인 wav
+    with pytest.raises(ValueError):
+        to_wav_16k(src, tmp_path / "out.wav", format="ogg")
