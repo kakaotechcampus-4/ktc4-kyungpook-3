@@ -114,7 +114,6 @@ export function useMemberRowWrites(workspaceId: string): MemberRowWrites {
   const lock = useRef(false)
   const [failure, setFailure] = useState<RowWriteFailure | null>(null)
 
-  // 서버는 팀원을 만들거나 이름·Discord 계정을 바꿀 때 자동 별칭도 맞춘다. 팀원과 별칭을 함께 다시 받는다
   const refreshMembers = () => {
     void queryClient.invalidateQueries({ queryKey })
     void queryClient.invalidateQueries({
