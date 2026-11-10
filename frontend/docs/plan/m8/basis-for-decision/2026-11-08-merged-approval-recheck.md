@@ -1,7 +1,7 @@
 # 합쳐진 승인 카드를 본 뒤 바뀌면 폼을 새 카드에 맞추고 PM 이 고친 칸은 둔다
 
 - 기록일: 2026-11-08
-- 관련 마일스톤: M8 밖의 이슈 작업 [#512](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/512)(BE #533·#547, #535). 결과는 [이슈 결과](../../../issues/512-merged-approval/result.md)에 있다.
+- 관련 마일스톤: M8 밖의 이슈 작업 [#512](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/512)(BE #533·#547, #535). 결과는 [이슈 결과](../../m6/work-items/512-merged-approval/result.md)에 있다.
 
 ## 문제와 제약
 

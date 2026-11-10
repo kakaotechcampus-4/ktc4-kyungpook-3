@@ -149,7 +149,7 @@ FE는 crypto.getRandomValues로 만든 256비트 키를 sessionStorage에 보관
 
 - 서버 경계는 [삭제 서비스](../../../backend/app/services/meeting_deletion.py), [회의 API](../../../backend/app/api/meetings.py), [Task 응답](../../../backend/app/schemas/task.py)에 있다.
 - FE는 [삭제 기능](../../src/features/meeting-delete/ui/MeetingDelete.tsx), [Task 변환](../../src/entities/task/model/mapper.ts), [라우팅 테스트](../../src/app/meetingDelete.test.tsx), [Chromium E2E](../../e2e/meeting-delete.e2e.ts)로 검증한다.
-- 실제 실행 결과와 남은 환경 검증은 [#576 FE 결과](../issues/576-meeting-delete/result.md)와 [BE M3 결과](../../../backend/docs/plan/m3/result.md)에 기록한다. 봇 파일 정리 규약은 [BE·AI 대표 계약](../../../backend/docs/contracts/backend-ai-contract.md)에 둔다.
+- 실제 실행 결과와 남은 환경 검증은 [#576 FE 결과](../plan/m5/work-items/576-meeting-delete/result.md)와 [BE M3 결과](../../../backend/docs/plan/m3/result.md)에 기록한다. 봇 파일 정리 규약은 [BE·AI 대표 계약](../../../backend/docs/contracts/backend-ai-contract.md)에 둔다.
 
 ## Notion 선택 기능 (#507, 2026-11-07)
 
@@ -1434,7 +1434,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 
 **돌아갈 경로.** 로그인 화면의 회원가입 링크와 `/signup`은 `next`를 들고 있어 로그인으로 옮겨도 이어진다. 가입을 마친 새 계정은 `next`를 쓰지 않고 시작 화면으로 간다(#411, D-182).
 
-**#538 보완 (2026-11-09).** API 형태는 바꾸지 않았다. FE는 휴대폰 로그인 화면을 시안 H-1 배치로 바꿨다(D-185). 카카오 버튼 문구는 `카카오 로그인`이다(D-182). E2E에 실패 복귀, 대기 없는 `kakao=1`에서 카카오로 다시 시작, 기존 계정 연결 뒤 이어진 카카오 로그인, 360·390·1280px 화면 확인을 더했다([결과](../issues/538-kakao-login-finish/result.md)).
+**#538 보완 (2026-11-09).** API 형태는 바꾸지 않았다. FE는 휴대폰 로그인 화면을 시안 H-1 배치로 바꿨다(D-185). 카카오 버튼 문구는 `카카오 로그인`이다(D-182). E2E에 실패 복귀, 대기 없는 `kakao=1`에서 카카오로 다시 시작, 기존 계정 연결 뒤 이어진 카카오 로그인, 360·390·1280px 화면 확인을 더했다([결과](../plan/m4/work-items/538-kakao-login-finish/result.md)).
 
 **확인하지 않은 것.** 실제 카카오 로그인, 실제 메일 수신, 실서버 왕복은 하지 않았다. BE 코드는 읽어서 대조만 했다. `Secure` 쿠키와 카카오 redirect URI, 비즈 앱 이메일 동의 설정은 배포 환경에서 확인해야 한다. 배포 순서상 BE의 새 signup이 먼저 나가면 지금 배포된 FE의 가입이 400이 되므로 FE와 함께 내보낸다.
 
@@ -1484,7 +1484,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - 문서 내용을 바꾸면 FE 문서 화면의 버전과 BE `CURRENT_VERSIONS` 를 같이 올린다.
 - `2026-11-08`은 정책 초안·BE 제안의 판본이다. 최종 공개 시 검토 완료한 새 판본으로 문서·BE·FE를 함께 맞춰 초안 판본의 동의 행을 유효 동의로 재사용하지 않는다. `required=false`는 서버 설정 판본의 두 기록이 있다는 뜻이며 법률 검토 완료·정책 공개 승인·다른 API의 접근 권한 판정을 뜻하지 않는다.
 
-**2026-11-09 #566 화면 연결 후속.** 위 제목과 초안·공개 승인에 관한 기존 기록은 유지한다. 후속 구현은 [FE 결과](../issues/566-consent-connection/result.md)에 구분한다. 사용자 지시에 따른 구현 규약이며 법률 검토·정책 공개의 합의를 뜻하지 않는다.
+**2026-11-09 #566 화면 연결 후속.** 위 제목과 초안·공개 승인에 관한 기존 기록은 유지한다. 후속 구현은 [FE 결과](../plan/m4/work-items/566-consent-connection/result.md)에 구분한다. 사용자 지시에 따른 구현 규약이며 법률 검토·정책 공개의 합의를 뜻하지 않는다.
 
 - GET·POST 모두 선택 헤더 `X-Consent-Account-ID: <화면이 기대하는 user_id>`를 받는다. 쿠키로 인증한 사용자와 다르면 동의 상태를 읽거나 저장하기 전에 `409 CONSENT_ACCOUNT_CHANGED`다. FE는 항상 보낸다. 본문에 사용자 ID를 추가하지 않는다. 헤더를 생략한 기존 호출자는 이전처럼 동작하며 기대 계정 비교가 적용되지 않는다.
 - 현재 제품의 `preparing` 상태에서는 동의 API를 호출하지 않는다. 최종 두 본문·판본·시행일이 들어 있는 `published` 문서 쌍을 코드로 제공한 뒤에만 체크와 가드가 활성화된다. 환경 변수·URL이 공개 상태를 정하지 않는다. 공개 문서·계정 탈퇴는 동의 가드 밖이다.
@@ -1498,7 +1498,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - FE는 기본 두 항목을 모두 체크하기 전 가입·동의 제출을 막고, 실제 저장 상태 확인 뒤 업무 화면을 연다. 공개 문서와 계정 탈퇴는 계속 가드 밖이다.
 - 동의 상태 조회 중에는 앱의 기존 `GuardSkeleton`을 유지해 헤더·본문 자리가 움직이지 않게 한다. 필요한 동의가 확인되면 동의 폼을 표시하며 조회 대기를 동의 완료로 간주하지 않는다.
 - 공식 자료 링크를 본문과 함께 제공한다. Elice의 국내 처리 설명과 모든 운영 엔드포인트의 적용 확인을 구분한다. 보관 기간·학습 이용 조건 등 미확인 사실을 확인 완료로 바꾸지 않는다. 별도 국외 이전 동의 API를 추가하거나 법적 요건을 충족했다고 선언한 변경은 아니다.
-- 사이트와 Markdown의 본문 및 BE 판본 일치는 `npm run policy:check`로 검사한다. 실행·배포 검증 근거는 [#565 결과](../issues/565-policy-publication/result.md)에 기록한다.
+- 사이트와 Markdown의 본문 및 BE 판본 일치는 `npm run policy:check`로 검사한다. 실행·배포 검증 근거는 [#565 결과](../plan/m4/work-items/565-policy-publication/result.md)에 기록한다.
 
 #### 4.1.6 아이디 (#627): 합의된 규약, BE PR #626 미병합
 

@@ -66,7 +66,7 @@ sequenceDiagram
 | 결정 근거 (basis-for-decision) | `<part>/docs/plan/mN/basis-for-decision/`, AI 는 [ai/docs/basis_for_decision/](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/ai/docs/basis_for_decision) | 여러 선택지 중 하나를 고를 때 | 에이전트·사람 |
 | 계약 | `<part>/docs/contracts/` | 인터페이스 변경 때 | 에이전트 |
 | 트러블슈팅 | `<part>/docs/plan/mN/trouble-shooting/` | 문제를 겪은 사람이 | **사람만** |
-| 이슈 단위 결과(FE) | `frontend/docs/issues/<번호>-<이름>/result.md` | 마일스톤 밖 이슈 작업 | 에이전트 |
+| 작업 단위 결과(FE) | `frontend/docs/plan/mN/work-items/<식별자>-<이름>/result.md`, 독립 개선은 `plan/refactor/work-items/` | 실제 이슈·PR을 구분한 후속 작업 | 에이전트 |
 
 - 파일명은 `YYYY-MM-DD-<slug>.md`. AI 결정 기록은 `YYYY-MM-DD-NNNN-<slug>.md` 로 번호를 이어 쓴다([ai/docs/README.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/README.md)).
 - 전체 개발 계획(`frontend-plan.md`, `backend-plan.md`, `ai/docs/plan/전체 계획.md`)은 보호 문서다. 에이전트는 고치지 않는다.
