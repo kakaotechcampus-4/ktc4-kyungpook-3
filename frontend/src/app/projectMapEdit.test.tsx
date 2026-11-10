@@ -12,6 +12,7 @@ import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
 import { recordRequests } from '@/shared/test/requests'
 import { stubViewport } from '@/shared/test/viewport'
+import { toast } from '@/shared/ui/toast'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -529,6 +530,41 @@ describe('고치기 사이를 옮길 때 (#551)', () => {
     expect(within(panel()).getByRole('textbox', { name: '결정 문장' })).toHaveValue(
       '배포는 스크립트 하나로 한다!',
     )
+  })
+})
+
+describe('합친 뒤 패널을 닫으면 (#551)', () => {
+  async function mergeIntoLogin(scope: () => HTMLElement) {
+    await userEvent.click(within(scope()).getByRole('button', { name: '다른 주제와 합치기' }))
+    const dialog = await screen.findByRole('dialog', { name: '다른 주제와 합칠까요?' })
+    await userEvent.click(within(dialog).getByRole('combobox', { name: '합칠 주제' }))
+    await userEvent.click(await screen.findByRole('option', { name: '로그인·계정' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: '합치기' }))
+    expect(await screen.findByText('주제를 합쳤어요.')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('button', { name: '배포·인프라' })).toBeNull())
+    act(() => toast.clear())
+  }
+
+  it('휴대폰 시트는 사라진 원래 주제 대신 합친 주제의 목록 단추로 포커스를 돌려준다', async () => {
+    stubViewport(true, COMPACT_QUERY)
+    renderApp(`${paths.projectMap(WS)}?view=list`)
+    await userEvent.click(await screen.findByRole('button', { name: '배포·인프라' }, FIRST_PAINT))
+    const sheet = () => screen.getByRole('dialog', { name: /배포·인프라|로그인·계정/ })
+    await within(sheet()).findByRole('button', { name: '다른 주제와 합치기' })
+    await mergeIntoLogin(sheet)
+
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(screen.getByRole('button', { name: '로그인·계정' })).toHaveFocus())
+  })
+
+  it('옆 패널도 닫으면 합친 주제의 목록 단추로 돌아간다', async () => {
+    await openTopic('배포·인프라')
+    await mergeIntoLogin(panel)
+
+    await userEvent.click(screen.getByRole('button', { name: '패널 닫기' }))
+    expect(screen.queryByRole('complementary', { name: '고른 항목' })).toBeNull()
+    expect(screen.getByRole('button', { name: '로그인·계정' })).toHaveFocus()
   })
 })
 

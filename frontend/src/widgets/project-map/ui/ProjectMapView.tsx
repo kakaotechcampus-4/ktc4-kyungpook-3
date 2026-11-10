@@ -134,14 +134,17 @@ function MapBody({
   map,
   view,
   compact,
+  tabId,
 }: {
   workspaceId: string
   map: ProjectMap
   view: MapViewKind
   compact: boolean
+  /** 고른 보기 탭. 닫을 때 돌아갈 단추가 없으면 여기로 간다 */
+  tabId: string
 }) {
   const [selection, setSelection] = useState<MapSelection>(null)
-  // 패널을 닫으면 연 단추로 돌아간다. 그래프에서 열었으면 돌아갈 곳이 없다. 다음에 열 때 새로 적는다
+  // 패널을 닫으면 연 단추로 돌아간다. 다음에 열 때 새로 적는다
   const opener = useRef<HTMLElement | null>(null)
   const node = selectedNode(map, selection)
 
@@ -150,7 +153,16 @@ function MapBody({
       opener.current = document.activeElement
     setSelection(next)
   }
+  // 연 단추가 사라졌으면(합쳐서 없어진 주제) 지금 고른 노드의 목록 줄로, 그것도 없으면(그래프) 보기 탭으로 간다
+  const returnTarget = (): HTMLElement | null => {
+    if (opener.current?.isConnected === true) return opener.current
+    const row = [...document.querySelectorAll<HTMLElement>('[data-node-id]')].find(
+      (element) => element.dataset.nodeId === selection?.id,
+    )
+    return row ?? document.getElementById(tabId)
+  }
   const close = () => {
+    opener.current = returnTarget()
     setSelection(null)
     // 시트는 닫힘이 끝난 뒤(포커스 가둠이 풀린 뒤) 스스로 돌려보낸다
     if (!compact) opener.current?.focus()
@@ -255,7 +267,13 @@ export function ProjectMapView({ workspaceId, view, onViewChange, compact }: Pro
                 아직 주제가 없어요. 회의 요약이 만들어지면 주제와 결정이 생겨요.
               </p>
             ) : null}
-            <MapBody workspaceId={workspaceId} map={map} view={view} compact={compact} />
+            <MapBody
+              workspaceId={workspaceId}
+              map={map}
+              view={view}
+              compact={compact}
+              tabId={`${prefix}-tab-${view}`}
+            />
           </>
         )}
       </div>
