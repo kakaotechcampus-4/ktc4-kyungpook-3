@@ -73,7 +73,7 @@ sequenceDiagram
 |---|---|
 | `task_changed`(version ≠ 1) | 진행 상황·PM 수정값이 카드에 담기지 않고 사라진다. 직접 고친다 |
 | `pending_approval` | 그 태스크를 대상으로 한 대기 카드가 있다 |
-| `already_reverted`, `not_auto_created`, `task_missing` | 두 번 되돌리기, auto 가 아닌 항목 |
+| `already_reverted`, `not_auto_created`, `task_missing` | 두 번 되돌리기, auto 가 아닌 항목, 이미 지워진(없는) 태스크 |
 
 ### 다른 회의 항목 합치기(#533)
 
