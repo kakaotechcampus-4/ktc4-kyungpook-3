@@ -44,6 +44,18 @@ def test_base_vocab_has_the_terms_file_and_common_task_nouns():
     assert {"배포", "문서", "정리", "구현"} <= v
 
 
+def test_terms_file_words_count_however_the_analyzer_splits_them():
+    # 업무 용어 파일의 말도 제목 안에서 쪼개진 꼴로 안다("리마인드" → 리·마인드, #668 리뷰)
+    v = A.base_vocab()
+    assert A.suspects("리마인드 메일 정리", v) == []
+    assert A.suspects("워크스페이스 정리", v) == []
+
+
+def test_term_words_splits_by_space_and_by_the_analyzer():
+    assert {"코드 컨벤션", "코드", "컨벤션"} <= A.term_words({"코드 컨벤션"})
+    assert "카프카" in A.term_words({"카프카 대시보드"})   # 형태소만으로는 카·카프로 쪼개진다
+
+
 def test_suspects_are_title_nouns_off_the_list():
     v = A.base_vocab()
     assert A.suspects("애포 문서 정리", v) == ["애포"]
