@@ -52,7 +52,7 @@ class SeedData:
     asr_terms: list[str]
 
 
-def _validate_item(title: str, index: int, item: Any, turn_count: int, keys: set[str], first: bool) -> None:
+def _validate_item(title: str, index: int, item: Any, turn_count: int, keys: set[str]) -> None:
     def fail(problem: str) -> SeedDataError:
         return SeedDataError(f"회의 '{title}' 항목 {index}: {problem}")
 
@@ -82,16 +82,16 @@ def _validate_item(title: str, index: int, item: Any, turn_count: int, keys: set
         raise fail("task_status·due_status 는 certain/inferred/missing 이어야 합니다")
     if (item["due_status"] == "missing") != (due_in_days is None):
         raise fail("due_status 가 missing 일 때만 due_in_days 가 없어야 합니다")
-    if first:
-        auto_shaped = (
-            item["task_status"] == "certain"
-            and item["due_status"] in ("certain", "missing")
-            and item["similar_count"] == 0
-            and item["asr_suspects"] == []
-            and item["assignee_type"] == "first"
-        )
-        if not auto_shaped:
-            raise fail("첫 항목은 auto 조건(certain·similar_count 0·asr_suspects 비움·first)이어야 합니다")
+
+
+def _auto_shaped(item: dict) -> bool:
+    return (
+        item["task_status"] == "certain"
+        and item["due_status"] in ("certain", "missing")
+        and item["similar_count"] == 0
+        and item["asr_suspects"] == []
+        and item["assignee_type"] == "first"
+    )
 
 
 def _parse(raw: Any) -> SeedData:
@@ -130,9 +130,12 @@ def _parse(raw: Any) -> SeedData:
         if not meeting.summary.get("overview"):
             raise SeedDataError(f"회의 '{title}': summary.overview 가 없습니다")
         for index, item in enumerate(meeting.items):
-            _validate_item(title, index, item, len(turns), keys, first=index == 0)
+            _validate_item(title, index, item, len(turns), keys)
         meetings.append(meeting)
 
+    # 실제 AI 결과를 그대로 쓰므로 auto 후보가 없는 회의도 있다. 시연에 auto 가 보이도록 전체에서 하나는 있어야 한다
+    if not any(_auto_shaped(m.items[0]) for m in meetings):
+        raise SeedDataError("첫 항목이 auto 조건(certain·similar_count 0·asr_suspects 비움·first)인 회의가 하나 이상 있어야 합니다")
     if len({m.title for m in meetings}) != len(meetings):
         raise SeedDataError("회의 제목이 겹칩니다")
     days = [m.days_ago for m in meetings]

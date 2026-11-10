@@ -29,15 +29,19 @@ def test_items_reference_existing_turns_and_people():
             assert "evidence_speaker" not in item and "due_date" not in item
 
 
-def test_first_item_of_each_meeting_is_auto_shaped_and_review_hold_exist():
+def _auto_shaped(item, keys):
+    return (
+        item["task_status"] == "certain" and item["similar_count"] == 0
+        and item["due_status"] in ("certain", "missing")
+        and item["assignee_type"] == "first" and item["asr_suspects"] == []
+        and item["speaker_key"] in keys
+    )
+
+
+def test_some_meeting_starts_with_auto_shaped_item_and_review_hold_exist():
     data = load_seed_data()
     keys = {p.key for p in data.people}
-    for m in data.meetings:
-        first = m.items[0]
-        assert first["task_status"] == "certain" and first["similar_count"] == 0
-        assert first["due_status"] in ("certain", "missing")
-        assert first["assignee_type"] == "first" and first["asr_suspects"] == []
-        assert first["speaker_key"] in keys
+    assert any(_auto_shaped(m.items[0], keys) for m in data.meetings)
     rest = [i for m in data.meetings for i in m.items[1:]]
     assert any(i["task_status"] == "inferred" or i["assignee_type"] == "thirdrole" for i in rest)
     holds = [i for i in rest if i["assignee_type"] == "thirdname"]
@@ -78,6 +82,17 @@ def _duplicate_days(raw):
 def test_bad_reference_is_rejected(tmp_path, mutate):
     path = _write_variant(tmp_path, mutate)
     with pytest.raises(SeedDataError):
+        load_seed_data(path)
+
+
+def _no_auto_first(raw):
+    for meeting in raw["meetings"]:
+        meeting["items"][0]["task_status"] = "inferred"
+
+
+def test_no_auto_shaped_first_item_anywhere_is_rejected(tmp_path):
+    path = _write_variant(tmp_path, _no_auto_first)
+    with pytest.raises(SeedDataError, match="auto"):
         load_seed_data(path)
 
 
