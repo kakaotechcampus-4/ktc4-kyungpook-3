@@ -148,6 +148,23 @@ describe('요약 상태', () => {
     expect(await screen.findByText(/승인 대기 2건이 남았어요/)).toBeInTheDocument()
   })
 
+  it('PM 이 대시보드에서 자동 반영을 되돌리고 돌아오면 새 카드만큼 건수가 늘어 있다', async () => {
+    awaitApprovals()
+    const user = userEvent.setup()
+    const app = renderApp(MT_09)
+    expect(await screen.findByText(/승인 대기 3건이 남았어요/)).toBeInTheDocument()
+
+    act(() => app.navigate(paths.dashboard('ws_01')))
+    const recent = await screen.findByRole('list', { name: '최근 반영 목록' })
+    await user.click(await within(recent).findByRole('button', { name: '회원가입 화면 되돌리기' }))
+    const dialog = await screen.findByRole('dialog', { name: '자동 반영을 되돌릴까요?' })
+    await user.click(within(dialog).getByRole('button', { name: '되돌리기' }))
+    expect(await screen.findByText('자동 반영을 되돌렸어요')).toBeInTheDocument()
+
+    act(() => app.navigate(MT_09))
+    expect(await screen.findByText(/승인 대기 4건이 남았어요/)).toBeInTheDocument()
+  })
+
   it('요약이 있으면 승인을 기다리는 상태여도 요약과 내려받기를 보인다', async () => {
     db.minutes.find(({ meeting_id }) => meeting_id === 'mt_09')!.summary_status =
       'awaiting_approval'
