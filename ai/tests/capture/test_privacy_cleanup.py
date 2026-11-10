@@ -434,11 +434,20 @@ def _queue(recordings, meeting_id, workspace):
                                                         'handed_off_at': '2026-11-10T00:00:00+00:00'}), encoding='utf-8')
 
 
-@pytest.mark.parametrize('delete_workspace', [False, True])
-def test_cleanup_removes_that_workspaces_audio_outbox_only(tmp_path, delete_workspace):
+def test_member_cleanup_keeps_the_audio_outbox(tmp_path):
+    """공동 공간 팀원 정리는 음성 바이트를 보존한다(backend-ai 계약). 대기 중인 녹음도 그대로 올라간다."""
+    recordings, transcripts, _, _ = fixture(tmp_path)
+    _queue(recordings, 'mine-1', 'workspace-a')
+    _queue(recordings, 'theirs', 'workspace-other')
+    assert apply_cleanup(recordings, transcripts, claim(delete_workspace=False, meeting_ids=['mine-1']))
+    assert sorted(p.name for p in (recordings / 'audio_outbox').iterdir()) == [
+        'mine-1.json', 'mine-1.m4a', 'theirs.json', 'theirs.m4a']
+
+
+def test_workspace_deletion_removes_that_workspaces_audio_outbox_only(tmp_path):
     recordings, transcripts, _, _ = fixture(tmp_path)
     _queue(recordings, 'mine-1', 'workspace-a')
     _queue(recordings, 'mine-2', 'workspace-a')
     _queue(recordings, 'theirs', 'workspace-other')
-    assert apply_cleanup(recordings, transcripts, claim(delete_workspace=delete_workspace))
+    assert apply_cleanup(recordings, transcripts, claim(delete_workspace=True))
     assert sorted(p.name for p in (recordings / 'audio_outbox').iterdir()) == ['theirs.json', 'theirs.m4a']

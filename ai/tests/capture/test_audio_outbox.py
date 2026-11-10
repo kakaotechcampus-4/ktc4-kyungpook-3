@@ -162,7 +162,29 @@ def test_drain_skips_broken_meta(tmp_path):
     rec = tmp_path / "rec"
     _enqueue(rec, "ok")
     (rec / "audio_outbox" / "broken.json").write_text("{", encoding="utf-8")
-    assert O.drain(rec, Client(), now=NOW) == ["ok"]
+    assert O.drain(rec, Client(), now=datetime.now(timezone.utc)) == ["ok"]   # 방금 쓴 깨진 항목은 7일 전까지 둔다
+    assert (rec / "audio_outbox" / "broken.json").exists()
+
+
+def test_drain_removes_unreadable_entries_after_7_days(tmp_path):
+    """깨진 meta 나 이름이 다른 meta 는 시각을 알 수 없어 건너뛰지만, 파일이 7일 넘게 묵으면 m4a 와 함께 지운다."""
+    import os
+    rec = tmp_path / "rec"
+    box = rec / "audio_outbox"
+    box.mkdir(parents=True)
+    for name, text in (("broken", "{"), ("renamed", json.dumps({"meeting_id": "other", "handed_off_at": NOW.isoformat()}))):
+        (box / f"{name}.json").write_text(text, encoding="utf-8")
+        (box / f"{name}.m4a").write_bytes(b"x")
+    fresh = NOW.timestamp() - O.OUTBOX_KEEP_S + 60
+    for name in ("broken", "renamed"):
+        os.utime(box / f"{name}.json", (fresh, fresh))
+    assert O.drain(rec, Client(), now=NOW) == []
+    assert _entries(rec) == ["broken.json", "broken.m4a", "renamed.json", "renamed.m4a"]
+    stale = NOW.timestamp() - O.OUTBOX_KEEP_S
+    os.utime(box / "broken.json", (stale, stale))
+    os.utime(box / "renamed.json", (stale, stale))
+    assert O.drain(rec, Client(), now=NOW) == ["broken", "renamed"]
+    assert _entries(rec) == []
 
 
 def test_drain_of_missing_folder_is_empty(tmp_path):

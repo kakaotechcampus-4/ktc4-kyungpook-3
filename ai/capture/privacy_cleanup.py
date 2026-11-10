@@ -375,10 +375,6 @@ def apply_cleanup(recordings: Path, transcripts: Path, claim: dict, *, runs: Pat
                 not data.get('workspace_id') and str(data.get('channel_id')) in channels
             ):
                 _remove(path, recordings)
-        # 올리지 못해 대기 중인 섞은 녹음(#659)은 화자별로 가를 수 없어 이 워크스페이스 것을 모두 지운다
-        audio_outbox.remove_workspace(recordings, workspace_id)
-        for meeting_id in known:
-            audio_outbox.remove_meeting(recordings, _component(meeting_id))
         message_ids = set(claim.get('message_ids') or [])
         for path in (recordings / '.bot' / 'dm' / 'sent').glob('*'):
             if not path.name.endswith(('.json', '.json.tmp')):
@@ -409,6 +405,8 @@ def apply_cleanup(recordings: Path, transcripts: Path, claim: dict, *, runs: Pat
             lock.release()
         restart.release()
     if claim['delete_workspace']:
+        # 올리지 못해 대기 중인 섞은 녹음(#659). 공동 공간 팀원 정리는 음성 바이트를 보존하니(계약) 공간 전체 정리에서만 지운다
+        audio_outbox.remove_workspace(recordings, workspace_id)
         for meeting_id in sorted(set(targets) | set(claim.get('meeting_ids') or [])):
             if not purge_files(recordings, transcripts, meeting_id):
                 return False

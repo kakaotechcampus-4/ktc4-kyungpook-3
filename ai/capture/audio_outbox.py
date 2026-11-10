@@ -112,6 +112,11 @@ def drain(recordings_dir: Path, client, *, now: datetime | None = None) -> list[
         try:
             data = _read_meta(meta)
             if data is None or data.get("meeting_id") != meeting_id:
+                # 읽을 수 없는 항목은 인계 시각을 몰라 올리지 않는다. 그래도 7일 상한은 지켜야 해서 json 이 그만큼 묵으면 지운다
+                if now.timestamp() >= meta.stat().st_mtime + OUTBOX_KEEP_S:
+                    for path in (meta, meta.with_suffix(".m4a"), meta.with_suffix(".part"), meta.with_suffix(".json.tmp")):
+                        path.unlink(missing_ok=True)
+                    done.append(meeting_id)
                 continue
             audio = _paths(recordings_dir, meeting_id)[0]
             handed = _handed_off_at(data)
