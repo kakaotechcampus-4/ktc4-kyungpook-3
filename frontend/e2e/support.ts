@@ -57,6 +57,7 @@ export type Scenario =
   | 'dashboard-recent-overflow'
   | 'settings-discord-skipped'
   | 'settings-unmapped'
+  | 'settings-discord-empty'
   | 'settings-member'
   | 'team-invitations'
   | 'invitation-pending'

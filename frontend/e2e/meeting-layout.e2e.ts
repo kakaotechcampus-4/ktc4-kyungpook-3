@@ -70,7 +70,7 @@ const SCREENS: {
   {
     name: '처리',
     // ws_01 의 mt_10 이 정리 중이다. 흐름 방식이 manual 이라 polling 해도 단계가 그대로다.
-    // 응답에 processing 이 있어(보고 전) 녹음 회의의 다섯 단계다(D-188)
+    // 응답에 processing 이 있어(보고 전) 녹음 회의의 다섯 단계다(D-189)
     scenario: 'single-workspace',
     path: '/workspaces/ws_01/meetings/mt_10/processing',
     check: async (page) => {

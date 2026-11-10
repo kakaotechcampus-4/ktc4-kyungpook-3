@@ -257,8 +257,8 @@ def test_from_env_needs_the_base_url_and_the_token_only(monkeypatch):
 
 
 def test_unresolved_second_person_and_pronouns_are_not_sent_as_aliases():
-    """"네가", "그분", "백엔드 리더" 는 별칭이 아니다. 이름으로 풀리지 않았으면 BE 에 조회를 시키지 않는다."""
-    for kind, mention in (("second", "네가"), ("thirdpronoun", "그분이"), ("thirdrole", "백엔드 리더가")):
+    """"네가", "그분" 은 별칭이 아니다. 이름으로 풀리지 않았으면 BE 에 조회를 시키지 않는다."""
+    for kind, mention in (("second", "네가"), ("thirdpronoun", "그분이")):
         t = _task(assignee_type=kind, assignee_mention=mention, assignee_resolved=None)
         assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] is None, kind
     t = _task(assignee_type="thirdname", assignee_mention="민수", assignee_resolved=None)
@@ -271,9 +271,16 @@ def test_thirdname_sends_the_original_mention_even_when_resolved():
     assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "화은이가"
     t = _task(assignee_type="first", assignee_mention=None, assignee_resolved="민수")
     assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] is None
-    # 역할 지목은 이번엔 그대로 푼 이름을 보낸다(원문 전송은 별도 이슈)
+
+
+def test_thirdrole_sends_the_original_role_mention():
+    """역할 지목은 원문만 보낸다(#522). BE 가 그 글자로 역할 별칭을 찾고, 승인 때 배운다."""
     t = _task(assignee_type="thirdrole", assignee_mention="백엔드 리더가", assignee_resolved="환")
-    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "환"
+    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "백엔드 리더가"
+    t = _task(assignee_type="thirdrole", assignee_mention="백엔드 리더가", assignee_resolved=None)
+    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "백엔드 리더가"
+    t = _task(assignee_type="thirdrole", assignee_mention=None, assignee_resolved="환")
+    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] is None
 
 
 def test_first_group_none_never_send_assignee_text():
