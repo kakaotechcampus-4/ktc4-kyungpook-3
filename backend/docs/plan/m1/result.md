@@ -160,3 +160,11 @@ AI 정리 지연 중의 완료 표시 기준도 확정하지 않았다. 별도 �
 [API 회귀](../../../tests/api/test_consents_api.py)의 A 계정 기대 헤더·B 계정 실제 쿠키 조합에서 기존 GET·POST가 모두 200인 반례를 SQLite·PostgreSQL로 각각 확인했다. 수정 뒤 `pytest tests/api/test_consents_api.py -q`는 30 통과·SQLite 전용 변형 4 건너뜀이다. 잘못된 계정 요청의 409·전체 무저장과 올바른 B 헤더의 B 계정만 저장을 확인했다. 격리 PostgreSQL `mm566_owner`를 사용했으며 운영 DB와 실사용자 데이터는 사용하지 않았다.
 
 FE는 이 헤더를 항상 보내고 계정 변경 때 새로고침을 안내한다. 현재 문서 공개 상태는 준비 중이며 실제 정책 게시·초안 동의 수집은 하지 않았다. 전체 서버 접근 차단과 가입·동의의 원자적 저장은 이번 변경 범위가 아니다. [대표 계약](../../../../frontend/docs/contracts/frontend-api-contract.md#415-이용약관개인정보처리방침-동의-564-be-제안-fe-합의-전)과 [화면 결과](../../../../frontend/docs/issues/566-consent-connection/result.md)에 구현과 공개 제약을 구분했다.
+
+## 2026-11-11 팀원 디스코드 계정의 서버 멤버 확인
+
+`POST /members`·`PATCH /members/{id}` 가 `discord_user_id` 를 새로 붙일 때 워크스페이스에 연결한 Discord 서버의 멤버인지 봇 토큰으로 확인하고, 확인되지 않으면 저장하지 않는다. 전에는 같은 워크스페이스 안에서 겹치는지만 봐서, 다른 워크스페이스가 남의 디스코드 계정을 팀원에 붙여 DM 답장을 가져갈 수 있었다. 연결한 서버가 없으면 409 `INTEGRATION_NOT_CONNECTED`, 서버에 없는 계정이면 새 코드 409 `DISCORD_USER_NOT_IN_GUILD`, 봇 토큰이 없거나 Discord 가 답하지 않으면 502 `DISCORD_API_FAILED` 다. 연결 풀기와 같은 값의 PATCH 는 확인하지 않는다. 봇이 DM 을 가져갈 때도 서버를 연결하지 않은 워크스페이스의 DM 은 `failed`(`discord_not_linked`) 로 닫는다.
+
+Discord 호출은 서버 ID 를 읽고 커밋한 뒤 하고, 끝나면 PM 권한과 워크스페이스를 다시 잠가 서버가 그대로인지 본다. 닉네임 별칭은 이 확인에서 받은 값으로 넣어 Discord 를 한 번만 부른다. 선택지와 남긴 것은 [결정 기록](basis-for-decision/2026-11-11-member-discord-guild-check.md)에 있다.
+
+검증은 새 [API 테스트](../../../tests/api/test_member_discord_guild_check.py)(연동 없음, 서버에 없음, 확인 실패, 토큰 없음, 확인 중 연결 끊김·서버 바뀜·팀원 삭제, 서버 멤버 저장, null 해제, DM 닫기)를 먼저 커밋해 18건이 실패하는 것을 본 뒤 구현했다. 기존 테스트는 공용 시드(`mseed`)에 Discord 연동을 두고, 계정을 붙이는 테스트는 서버 멤버라고 답하는 스텁(`guild_members`)을 쓰게 바꿨다. 실제 Discord 호출과 운영 데이터는 확인하지 않았다.
