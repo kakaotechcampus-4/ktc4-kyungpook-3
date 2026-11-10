@@ -57,7 +57,7 @@ const EMPTY_DETAIL = 'flex flex-1 items-center justify-center px-36 pt-48 pb-96 
 /* EmptyMessages 캔버스 — 가운데 정렬(위 48 · 좌우 48 · 아래 96), 주 액션 먹 면 40 */
 const EMPTY_PAGE = 'flex flex-1 items-center justify-center px-48 pt-48 pb-96'
 const EMPTY_ACTION =
-  'inline-flex h-40 items-center justify-center rounded-9 bg-ink px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
+  'inline-flex h-40 items-center justify-center rounded-9 bg-ink-solid px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
 /* 빈 화면의 두 번째 행동 — 아웃라인 버튼 모양(design-system §7-12) */
 const EMPTY_SECOND_ACTION =
   'inline-flex h-40 items-center justify-center rounded-9 border border-line bg-surface px-20 text-body font-semibold text-ink hover:bg-control'
@@ -654,7 +654,7 @@ function ThreadRow({
     >
       <span
         aria-hidden="true"
-        className={`${AVATAR} size-30 text-[11px] group-aria-[current=page]:bg-ink group-aria-[current=page]:text-surface`}
+        className={`${AVATAR} size-30 text-[11px] group-aria-[current=page]:bg-ink-solid group-aria-[current=page]:text-surface`}
       >
         {avatarText(title)}
       </span>

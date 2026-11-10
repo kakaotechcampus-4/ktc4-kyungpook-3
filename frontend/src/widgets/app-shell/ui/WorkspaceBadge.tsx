@@ -21,7 +21,7 @@ export function WorkspaceRowContent({ workspace, current }: WorkspaceRowContentP
     <>
       <span
         aria-hidden="true"
-        className={`${BADGE} ${current ? 'bg-ink text-surface' : 'bg-divider text-ink'}`}
+        className={`${BADGE} ${current ? 'bg-ink-solid text-surface' : 'bg-divider text-ink'}`}
       >
         {Array.from(workspace.name)[0] ?? ''}
       </span>

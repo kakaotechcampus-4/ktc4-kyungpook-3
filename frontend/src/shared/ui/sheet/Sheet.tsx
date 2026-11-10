@@ -14,7 +14,7 @@ const CLOSE_DRAG_PX = 80
 
 /* `inset-[0px]`·`bottom-[0px]` 은 tokens.css 에 `--spacing-0` 이 없어 `inset-0` 이 생성되지 않던 때의 우회다 (Modal 과 같다).
    #497 부터는 `inset-0` 도 같은 값이다 */
-const SCRIM = 'fixed inset-[0px] z-100 bg-ink/32'
+const SCRIM = 'fixed inset-[0px] z-100 bg-ink-solid/32'
 const PANEL =
   'fixed inset-x-[0px] bottom-[0px] z-100 flex max-h-[85dvh] flex-col rounded-t-[20px] bg-surface px-16 pb-[calc(30px+env(safe-area-inset-bottom))] text-ink outline-none'
 /* 끄는 자리 — 손잡이와 제목. 목록은 스크롤해야 하므로 끌기를 받지 않는다 */
