@@ -16,6 +16,8 @@
 - 고친 제목, 발화, 주제, 결정은 요약 재료의 같은 칸으로 들어가고, #645 의 `build_prompt` 가 사용자 글 칸 전부에 `_unfence`(꺾쇠를 전각으로)를 건다. 고친 글이 이 처리를 거치는지 따로 테스트하지는 않았다
 - 마이그레이션 `6631d28f2e1b`(부모 `b20d029aec7b`)가 고친 값 칸과 두 테이블을 더하고, 옛 요약의 최신본에 결정·주제 ID 를 채워 `schema_version` 을 2 로 올린다
 - 회의 삭제(#576)와 혼자 쓰던 워크스페이스의 탈퇴(#575)가 고친 제목·발화와 그 회의의 결정을 함께 지운다
+- 응답 모양은 FE 가 이미 읽는 모양에 맞췄다. 주제 이름·설명 고치기, 합치기, 태스크 떼기, 결정 고치기가 모두 그 주제의 `TopicDetailResponse` 를 돌려줘 FE 는 주제 상세 스키마 하나로 받는다. 지운 결정은 응답에 들어 있지 않아 FE 가 받는 결정 상태는 `valid`, `invalid` 둘뿐이다. 제목 고치기 응답은 회의록과 같은 칸 이름(`title_edited`)을 쓴다. 계약에 경로마다 FE 가 다시 받을 캐시를 적었다
+- 제목, 주제 이름, 결정 문장은 앞뒤 공백을 빼고 1자 이상이어야 한다. 발화는 원문과 견주므로 공백을 빼지 않고 공백만인 글만 400 으로 막는다
 - 프론트 계약 §4.4.3, 백엔드 AI 계약, 결정 기록 0066 을 썼다
 
 ## 왜
@@ -29,8 +31,8 @@
 | 명령 | 결과 |
 |---|---|
 | `cd ai && .venv/bin/python -m pytest` | 3003 passed |
-| `cd backend && env -u TEST_DATABASE_URL .venv/bin/python -m pytest -q -p no:cacheprovider` (SQLite) | 3281 passed, 2356 skipped |
-| 같은 명령, `TEST_DATABASE_URL` 로컬 PostgreSQL 16 | 5566 passed, 71 skipped |
+| `cd backend && env -u TEST_DATABASE_URL .venv/bin/python -m pytest -q -p no:cacheprovider` (SQLite) | 3301 passed, 2376 skipped |
+| 같은 명령, `TEST_DATABASE_URL` 로컬 PostgreSQL 16 | 5606 passed, 71 skipped |
 
 마이그레이션은 빈 PostgreSQL 16 DB 에 `DATABASE_URL` 을 두고 `cd backend && .venv/bin/alembic upgrade head`, `alembic downgrade -1`, `alembic upgrade head`, `alembic check` 순서로 돌렸다. 헤드는 `6631d28f2e1b` 하나이고 내리면 `b20d029aec7b` 로 돌아가며 `alembic check` 는 `No new upgrade operations detected.` 였다. `tests/test_migration_record_edits.py` 는 SQLite 만 두면 2 passed, 2 skipped 이고 `TEST_DATABASE_URL` 을 주면 두 DB 에서 4 passed 였다.
 
