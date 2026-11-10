@@ -67,6 +67,12 @@ nav:
           - 보안: design/backend/security.md
       - Frontend:
           - 개요: design/frontend/index.md
+          - 테크스펙: design/frontend/techspec.md
+          - 프론트엔드 구조: design/frontend/structure.md
+          - 주요 문제 해결 사례: design/frontend/troubleshooting.md
+          - 대안 비교와 결정: design/frontend/tradeoffs-decisions.md
+          - 성능 개선: design/frontend/performance.md
+          - 검증 범위와 발표 데모: design/frontend/verification.md
           - 계약 먼저, MSW 먼저: design/frontend/contract-first-msw.md
           - AI 결과 보여 주기: design/frontend/ai-result-ui.md
           - 실시간 메시지: design/frontend/realtime-messages.md
