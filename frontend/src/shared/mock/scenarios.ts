@@ -95,6 +95,8 @@ export const MOCK_SCENARIOS = [
   'approval-asr-suspects-long',
   // #419 회의록 mt_09 의 수정 제안 it_08(tk_04 마감 변경). 승인 전에도 task_id 가 tk_04 다
   'minutes-edit-pending',
+  // #676 mt_09 의 녹음 보관 기간(7일)이 지났다. 회의록 audio 가 null 이고 재생은 404 AUDIO_NOT_AVAILABLE(expired)
+  'meeting-audio-expired',
   'notion-sync-pending',
   'notion-sync-failed',
   'tasks-member',
@@ -969,6 +971,10 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'minutes-edit-pending':
       signInWith(state, ['ws_01'], 'ws_01')
       addEditProposal(state)
+      break
+    case 'meeting-audio-expired':
+      signInWith(state, ['ws_01'], 'ws_01')
+      for (const minutes of state.minutes) minutes.audio = null
       break
     case 'notion-sync-pending':
       // tk_04 가 반영 대기다. synced 로 넘기는 워커는 없다 — 테스트가 필드를 직접 바꾼다
