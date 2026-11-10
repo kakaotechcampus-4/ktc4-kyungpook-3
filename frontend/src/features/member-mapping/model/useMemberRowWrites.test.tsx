@@ -4,7 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { http } from 'msw'
 import type { ReactNode } from 'react'
 import { onTestFinished } from 'vitest'
-import { memberListQueryOptions } from '@/entities/member'
+import { memberAliasesQueryOptions, memberListQueryOptions } from '@/entities/member'
 import { createQueryClient } from '@/shared/api/queryClient'
 import { endSessionScope } from '@/shared/api/sessionScope'
 import { db } from '@/shared/mock/db'
@@ -23,6 +23,7 @@ function renderWrites(client: QueryClient) {
     () => ({
       writes: useMemberRowWrites('ws_01'),
       members: useQuery(memberListQueryOptions('ws_01')).data,
+      aliases: useQuery(memberAliasesQueryOptions('ws_01')).data,
     }),
     { wrapper },
   )
@@ -182,6 +183,35 @@ describe('useMemberRowWrites', () => {
     // 새 목록이 캐시에 있어 다시 고를 때는 지금 주인을 본다
     await waitFor(() =>
       expect(result.current.members?.find(({ id }) => id === 'mb_04')?.discordUserId).toBe('1124'),
+    )
+  })
+
+  it('주인이 바뀌어 옮기기를 거절하면 다시 받은 팀원 목록에 맞춰 별칭도 다시 받는다', async () => {
+    const client = createQueryClient()
+    const { result } = renderWrites(client)
+    await waitFor(() => expect(result.current.aliases).toBeDefined())
+    // 다른 탭에서 1124 를 정하늘(mb_04)에게 이었고, 서버가 그 계정의 닉네임 별칭을 정하늘에게 만들었다
+    dbMember('mb_02').discord_user_id = '1125'
+    dbMember('mb_04').discord_user_id = '1124'
+    db.aliases.push({
+      alias_id: 'al_90',
+      member_id: 'mb_04',
+      workspace_id: 'ws_01',
+      alias_text: '민수야',
+      alias_type: 'nickname',
+      source: 'discord_profile',
+      confidence: 0.8,
+      verified: false,
+      created_at: MOCK_NOW,
+    })
+
+    act(() => {
+      result.current.writes.run(moveToJaehwan)
+    })
+
+    await waitFor(() => expect(result.current.writes.failure?.message).toBe(MOVE_STALE))
+    await waitFor(() =>
+      expect(result.current.aliases?.find(({ id }) => id === 'al_90')?.memberId).toBe('mb_04'),
     )
   })
 

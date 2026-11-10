@@ -117,11 +117,11 @@ export function useMemberRowWrites(workspaceId: string): MemberRowWrites {
   const lock = useRef(false)
   const [failure, setFailure] = useState<RowWriteFailure | null>(null)
 
+  const refreshAliases = () =>
+    queryClient.invalidateQueries({ queryKey: memberAliasesQueryOptions(workspaceId).queryKey })
   const refreshMembers = () => {
     void queryClient.invalidateQueries({ queryKey })
-    void queryClient.invalidateQueries({
-      queryKey: memberAliasesQueryOptions(workspaceId).queryKey,
-    })
+    void refreshAliases()
   }
   const refreshSettings = () =>
     queryClient.invalidateQueries({ queryKey: messageSettingsQueryOptions(workspaceId).queryKey })
@@ -208,6 +208,8 @@ export function useMemberRowWrites(workspaceId: string): MemberRowWrites {
       if (!session.isCurrent() || isCanceledError(error)) return
       const target = writeTarget(write)
       if (error instanceof WriteRejectedError) {
+        // 보낸 것은 없지만 거절은 다시 받은 목록이 낸 것이다. 그 목록을 바꾼 다른 곳의 쓰기가 별칭도 바꿨다
+        void refreshAliases()
         setFailure({ target, write, message: error.message, retry: null })
         return
       }
