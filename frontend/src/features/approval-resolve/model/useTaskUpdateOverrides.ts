@@ -12,8 +12,8 @@ export interface TaskUpdateOverrides {
   /** 칸에 보이는 값. '' 는 상태면 원래 제안 유지, 마감이면 비어 있음이다 */
   status: TaskStatus | ''
   dueDate: string
-  /** 제안한 마감. 비운 칸의 안내에 「원래 제안 유지」 값으로 보인다 */
-  proposedDue: string | null
+  /** 제안한 마감. 비운 칸의 안내에 「원래 제안 유지」 값으로 보인다. null 은 마감 해제, undefined 는 마감을 바꾸지 않는 제안이다 */
+  proposedDue: string | null | undefined
   /** 제안에 상태가 없다 — 상태 칸에 「원래 제안 유지」 줄이 있다 */
   statusKeepsProposal: boolean
   /** PM 이 바꾼 칸만. 마감은 키가 없으면 원래 제안 유지, null 이면 미정으로 변경이다 */
@@ -35,7 +35,8 @@ export function useTaskUpdateOverrides(approval: TaskUpdateApproval): TaskUpdate
   const proposedStatus = proposed(approval, 'status')
   const initialStatus = STATUSES.find((status) => status === proposedStatus) ?? null
   const proposedDue = proposed(approval, 'due_date')
-  const initialDue = typeof proposedDue === 'string' ? proposedDue : null
+  const initialDue =
+    typeof proposedDue === 'string' || proposedDue === null ? proposedDue : undefined
   // 칸의 글자는 따로 둔다. 다 지우면 원래 제안 유지(키 없음)지만 칸은 비어 있어야 이어서 칠 수 있다
   const [dueText, setDueText] = useState(initialDue ?? '')
   return {

@@ -2,6 +2,7 @@ import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { initialDb, replaceDb } from './db'
 import type { MeetingFlowMode, MockDb, MockInvitation } from './db'
 import { MOCK_NOW } from './fixtures/constants'
+import { LONG_ASR_CANDIDATE, LONG_ASR_WORD } from './fixtures/approval'
 import {
   LONG_BUNDLE_BODY,
   LONG_RECIPIENT_NAME,
@@ -80,12 +81,18 @@ export const MOCK_SCENARIOS = [
   'approval-resolved',
   'approval-conflict',
   'approval-scope',
+  // #644 tk_04 의 마감을 없애자는 변경 승인 ap_09. payload 에 due_date 가 null 로 실린다 (backend-ai-contract update 마감 해제)
+  'approval-due-clear',
   // #397 채팅 회의(mt_08)에서 나온 생성 승인 ap_07. 근거 시각이 실제 작성 시각이다
   'approval-chat',
   // #512 ap_03(배포 문서 보완)에 2주차 정기회의(mt_07)의 항목 it_21 이 합쳐져 담당자·마감이 바뀌었다
   'approval-merged',
   // #512 같은 합치기가 PM 이 카드를 연 뒤에 일어난다. 첫 승인·반려가 409 APPROVAL_CHANGED 다
   'approval-merged-after-view',
+  // #643 생성 승인의 전사 오인식 의심. ap_01 은 고칠 후보, ap_02 는 확인 실패, ap_03 은 확인하지 않은 옛 카드(null)다
+  'approval-asr-suspects',
+  // #643 공백 없는 긴 의심 단어·후보. ap_02 는 빠진 값이 없어 대시보드도 의심 문구를 사유로 보인다
+  'approval-asr-suspects-long',
   // #419 회의록 mt_09 의 수정 제안 it_08(tk_04 마감 변경). 승인 전에도 task_id 가 tk_04 다
   'minutes-edit-pending',
   'notion-sync-pending',
@@ -495,6 +502,36 @@ function addScopeChanges(state: MockDb): void {
   })
 }
 
+function addDueClearProposal(state: MockDb): void {
+  const task = taskOf(state, 'tk_04')
+  state.approvals.push({
+    approval_id: 'ap_09',
+    workspace_id: 'ws_01',
+    type: 'task_update',
+    payload: {
+      due_date: null,
+      base_values: { due_date: task.due_date },
+      base_task_version: task.version,
+      base_title: task.title,
+      task_title: task.title,
+      evidence_quote: '배포 스크립트는 날짜를 아직 못 박겠어요.',
+      evidence_speaker: '1123',
+      evidence_speaker_member_id: 'mb_01',
+      evidence_at_ms: 412_000,
+      meeting_id: 'mt_09',
+      gate: 'review',
+    },
+    related_task_id: task.task_id,
+    requested_by: null,
+    status: 'pending',
+    resolved_by: null,
+    created_at: '2026-09-17T04:10:00Z',
+    resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
+  })
+}
+
 /**
  * 회의 mt_09 에서 나온 수정 제안. 백엔드 수정 항목처럼 추출 항목의 task_id 는 승인 전에도 대상 태스크 tk_04 이고,
  * 반영 여부는 조회 handler 가 채우는 approval_status 로만 알 수 있다 (#419)
@@ -865,6 +902,10 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       signInWith(state, ['ws_01'], 'ws_01')
       addScopeChanges(state)
       break
+    case 'approval-due-clear':
+      signInWith(state, ['ws_01'], 'ws_01')
+      addDueClearProposal(state)
+      break
     case 'approval-chat':
       signInWith(state, ['ws_01'], 'ws_01')
       addChatApproval(state)
@@ -873,6 +914,28 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'approval-merged-after-view':
       signInWith(state, ['ws_01'], 'ws_01')
       mergeIntoDeployDoc(state, scenario === 'approval-merged-after-view')
+      break
+    case 'approval-asr-suspects':
+      signInWith(state, ['ws_01'], 'ws_01')
+      approvalOf(state, 'ap_01').payload.asr_suspects = [
+        { word: '애포', source: 'title', candidates: ['배포'] },
+      ]
+      approvalOf(state, 'ap_02').payload.asr_suspects = [
+        { word: '', source: 'check_failed', candidates: [] },
+      ]
+      approvalOf(state, 'ap_03').payload.asr_suspects = null
+      break
+    case 'approval-asr-suspects-long':
+      signInWith(state, ['ws_01'], 'ws_01')
+      approvalOf(state, 'ap_01').payload.asr_suspects = [
+        { word: '애포', source: 'title', candidates: [LONG_ASR_CANDIDATE] },
+      ]
+      Object.assign(approvalOf(state, 'ap_02').payload, {
+        due_date: '2026-09-30',
+        asr_suspects: [
+          { word: LONG_ASR_WORD, source: 'title', candidates: [LONG_ASR_CANDIDATE, '배포'] },
+        ],
+      })
       break
     case 'minutes-edit-pending':
       signInWith(state, ['ws_01'], 'ws_01')

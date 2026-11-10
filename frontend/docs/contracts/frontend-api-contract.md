@@ -69,7 +69,7 @@ FE는 crypto.getRandomValues로 만든 256비트 키를 sessionStorage에 보관
 |---|---|---|
 | `TaskResponse` (조회·목록·생성·`PATCH`·Notion 재시도·자동 막힘 풀기·답장 변경 되돌리기) | `status` 가 `todo`·`in_progress`·`blocked`·`done` 밖, `version` 이 정수가 아님, `meeting_deleted` 가 불리언이 아님, 그 밖의 필수 필드 누락·타입 오류. 목록은 한 건만 틀려도 전체 | `start_date` 가 없으면 `created_at` 날짜(옛 응답). `meeting_deleted` 가 없으면 지우지 않은 회의(false, #576 전 BE). 모르는 `notion_sync_status` 는 반영 상태 없음(null). `auto_blocked` 가 불리언이 아니거나 없으면 풀 수 없음(false) |
 | `TaskHistoryResponse` 목록 | 필수 필드 누락·타입 오류. 요청한 태스크가 아닌 `task_id`(`items[n].task_id`) | 모르는 `changed_field` 는 `알 수 없는 항목`, 모르는 `change_source` 는 `알 수 없는 출처` |
-| `ApprovalResponse` (상세·대기 목록·`PATCH` 승인·반려) | `status` 가 `pending`·`approved`·`rejected` 밖, `payload` 가 객체가 아님. `payload.task_overrides` 가 객체가 아니거나 `task_title` 이 문자열이 아님, `assignee_member_id`·`due_date` 가 문자열·null 이 아님, `status` 가 태스크 네 값 밖. `payload.merged_items` 가 배열이 아니거나 항목이 객체가 아님, `payload.assignee_item_id` 가 문자열이 아님. `payload_version`·`alias_text` 가 문자열이 아님, `alias_candidate` 가 불리언이 아님, 그 밖의 필수 필드 누락·타입 오류. 목록은 한 건만 틀려도 전체 | 모르는 `type` 은 지원하지 않는 요청(읽기 전용, 승인·반려 없음). 모르는 `payload.category` 는 분류 없음(null), 모르는 `payload.gate` 는 없음(null). `payload` 의 제안 값·근거와 `merged_items` 항목의 키는 문자열일 때만 읽는다. `payload_version` 이 없으면 지문 없이 처리한다(#547 전 BE). `alias_candidate` 가 없으면 별칭 후보가 아니다(#523 전 BE). `merged_items` 가 없거나 null 이면 합쳐지지 않은 카드다. `assignee_item_id` 가 없으면 카드를 만든 항목(`extraction_item_id`)이 담당 항목이다 |
+| `ApprovalResponse` (상세·대기 목록·`PATCH` 승인·반려) | `status` 가 `pending`·`approved`·`rejected` 밖, `payload` 가 객체가 아님. `payload.task_overrides` 가 객체가 아니거나 `task_title` 이 문자열이 아님, `assignee_member_id`·`due_date` 가 문자열·null 이 아님, `status` 가 태스크 네 값 밖. `payload.merged_items` 가 배열이 아니거나 항목이 객체가 아님, `payload.assignee_item_id` 가 문자열이 아님. `payload_version`·`alias_text` 가 문자열이 아님, `alias_candidate` 가 불리언이 아님, 그 밖의 필수 필드 누락·타입 오류. 목록은 한 건만 틀려도 전체 | 모르는 `type` 은 지원하지 않는 요청(읽기 전용, 승인·반려 없음). 모르는 `payload.category` 는 분류 없음(null), 모르는 `payload.gate` 는 없음(null). `payload` 의 제안 값·근거와 `merged_items` 항목의 키는 문자열일 때만 읽는다. `payload_version` 이 없으면 지문 없이 처리한다(#547 전 BE). `alias_candidate` 가 없으면 별칭 후보가 아니다(#523 전 BE). `merged_items` 가 없거나 null 이면 합쳐지지 않은 카드다. `assignee_item_id` 가 없으면 카드를 만든 항목(`extraction_item_id`)이 담당 항목이다. `payload.asr_suspects` 는 표시용이라 거절하지 않는다. 배열이 아니면 없음, 모양이 틀린 항목·모르는 `source` 는 그 항목만 버린다(#643, 아래 §2.5) |
 | 승인 처리 409 `details` | 거절하지 않는다. 오류 응답이라 `INVALID_RESPONSE` 로 바꾸지 않는다 | `APPROVAL_CONFLICT` 는 `approval_id`·`task_id`·`task_version`(정수 ≥ 1)·`conflicts[]`(`field` 문자열, `base`·`current`·`proposed` 키가 모두 있음)이 맞아야 재승인할 수 있는 충돌로 읽고, 틀리면 일반 실패다. `APPROVAL_CHANGED` 의 `details` 는 읽지 않고 승인 목록·상세를 다시 받는다. `APPROVAL_ALREADY_RESOLVED` 의 모르는 `current_status`·빠진 `approval_id` 는 없음(null) |
 | 회의 목록 `GET /workspaces/{workspace_id}/meetings` (BE `items: list[dict]`) | `status` 가 `created`·`recording`·`processing`·`awaiting_speakers`·`done`·`failed` 밖, `title` 이 문자열·null 이 아님, `duration_ms` 가 숫자·null 이 아님, `attendee_count` 가 숫자가 아님, 그 밖의 필수 필드 누락·타입 오류. 한 건만 틀려도 전체 | 모르는 `source` 는 `알 수 없는 출처` 다. 길이와 회의 안 시각을 녹음 위치로도 채팅 시각으로도 읽지 않고, 정리 단계와 배지를 그리지 않는다. 업로드를 막는 정리 중 회의에서는 채팅이 아닌 회의로 본다. `failed_stage` 가 없으면 null |
 | `MeetingDetailResponse` | `status` 가 위 여섯 값 밖, `deletion_available` 이 불리언이 아님, `progress` 의 세 값이 불리언이 아님, 그 밖의 필수 필드 누락·타입 오류 | `deletion_available` 이 없으면 지울 수 없음(false, #576 전 BE). `progress` 가 없거나 null 이면 모든 단계가 아직이다. `processing`(#483)은 표시용이라 거절하지 않는다. 모양이 틀리면(객체가 아님, `stt` 의 `done`·`total` 이 정수가 아니거나 `done > total`·`total < 1` 등) 없는 것(null)으로 보고 진행 수·경과만 보이지 않는다. 모르는 `stage` 는 없음(null)이다. 키가 없으면(#542 전 BE) null 이다. 거절하면 처리 추적기가 polling·창 포커스·연결 복귀 재조회를 멈추고, 처리 화면은 받아 둔 상세가 있어도 안내와 `다시 시도`만 보인다 |
@@ -759,7 +759,9 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
  "evidence_at_ms": 125000,
  "extraction_item_id": "it_01",
  "meeting_id": "mt_09",
- "gate": "hold"}                        // review | hold
+ "gate": "hold",                        // review | hold
+ "asr_suspects": [                      // #643. null 은 옛 AI, [] 는 검사했고 없음
+   {"word": "애포", "source": "title", "candidates": ["배포"]}]}
 ```
 
 승인 시 백엔드가 읽는 키는 `api/approvals.py` 의 `_apply_approval` 에 있다.
@@ -772,10 +774,15 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
   - 현재 BE 구현: 회의에서 만드는 `task_update` payload 에는 반영 키 말고도 표시용 `task_title`·`base_title`·`doc_text`·`category`(`schedule`·`assignee`·`status`·`scope`·`decision`·`none`)·`evidence_quote`·`evidence_speaker`·`evidence_speaker_member_id`·`evidence_at_ms`·`meeting_id` 가 온다. `category` 가 `scope`(범위 결정)면 바뀌는 필드가 없어도 승인 요청을 만든다([extractions.py](../../../backend/app/api/extractions.py)). 승인해도 반영 키가 없으면 태스크·이력에 아무것도 남지 않는다.
   - 합의됨, BE 미구현(#205): `category` 가 `scope` 인 승인을 승인하면 필드 반영과 별개로 `changed_field: "scope"` 이력 한 줄을 남긴다. 바뀌는 필드가 함께 있으면 필드 이력과 범위 이력을 둘 다 남긴다. 범위 이력만 남는 승인은 Task `version` 과 Notion 동기화를 건드리지 않는다. 반려하면 이력을 남기지 않는다. FE 가 먼저 배포된 뒤 BE 를 배포한다.
   - FE 구현(#205): 승인 매퍼가 `doc_text`·`category`·근거 발화·`meeting_id` 를 읽는다. 모르는 `category` 는 `null` 이다. 승인 상세는 `scope` 면 「범위 변경」 절에 `doc_text` 와 근거를 보이고, 바뀌는 필드가 있을 때만 변경 표를 보인다. 대시보드 확인 필요 목록과 보드 승인 카드는 `범위 변경을 확인해야 해요` 로 보인다. MSW 는 합의대로 승인 때 범위 이력을 남긴다(시나리오 `approval-scope`).
+  - FE 구현(#644): 마감 해제 카드(payload 에 `"due_date": null` 이 키째 있음, [backend-ai-contract](../../../backend/docs/contracts/backend-ai-contract.md) 「update 마감 해제」 #630)는 변경 표가 `없음`, 마감 칸 안내가 `원래 제안 유지 · 미정` 이다. `due_date` 키가 없는 카드는 `원래 제안 유지 · YYYY-MM-DD` 그대로다. 칸을 비워 승인하면 `task_overrides` 없이 보내 제안대로 마감이 지워진다(시나리오 `approval-due-clear`).
 
 **프론트엔드가 지킬 규칙**
 
-- **보완 사유는 서버가 주지 않는다.** `assignee_member_id` 가 `null` 이면 `담당자 없음`, `due_date` 가 `null` 이면 `마감 없음` 으로 프론트엔드가 파생한다.
+- **보완 사유는 서버가 주지 않는다.** `assignee_member_id` 가 `null` 이면 `담당자 없음`, `due_date` 가 `null` 이면 `마감 없음` 으로 프론트엔드가 파생한다. 전사 오인식 의심만 서버가 준다(아래 `asr_suspects`).
+- **전사 오인식 의심 `asr_suspects` (#643).**
+  - 현재 BE 구현: 판단 경로(judge) AI 가 제목의 의심 단어를 보내면 BE 가 auto 를 막고 생성 승인 payload 에 받은 그대로 싣는다([extractions.py](../../../backend/app/api/extractions.py)). 항목은 [meeting 스키마](../../../backend/app/schemas/meeting.py) `AsrSuspect` 다. `word` 는 의심 단어(최대 100자, 검사 실패면 빈 글자), `source` 는 `evidence`(근거 발화)·`title`(제목)·`check_failed`(검사 실패)인 자유 문자열, `candidates` 는 발음이 가까운 업무 용어(가까운 순, 최대 5개, 비어 있을 수 있음)다. `null` 은 옛 AI, `[]` 는 검사했고 의심 단어가 없음이다. 지금 AI 는 `title` 과 `check_failed` 만 보내고 단어마다 한 번이다(`ai/judge/asr_check.py`). 정적 확인이며 실 API 호출은 하지 않았다.
+  - 합의된 표시 규칙(#643 이슈 본문): `evidence`·`title` 은 교정 후보, `check_failed` 는 검사하지 못함으로 보인다. `null`·`[]` 은 표시하지 않고 모르는 `source` 는 무시한다.
+  - FE 구현(#643): 표시용이라 응답을 거절하지 않는다. 배열이 아니면 없음, 모양이 틀린 항목·모르는 `source`·`word` 가 빈 교정 후보는 그 항목만 버린다. `check_failed` 는 여럿이어도 한 줄이다. 문구는 후보 하나면 「'애포'는 '배포'일 수 있어요」, 여럿이면 「'애포'는 '배포', '애플' 중 하나일 수 있어요」, 없으면 「'애포'를 다시 확인해 주세요」, 검사 실패면 「전사 확인을 하지 못했어요」다. 태스크 목록의 생성 승인 카드는 사유 줄 아래 「전사 확인」 목록, 승인 상세는 「확인이 필요한 이유」의 `전사` 줄(라벨을 되풀이하지 않게 검사 실패는 「확인하지 못했어요」), 대시보드 확인 필요 행은 빠진 값이 없을 때 첫 줄을 사유로 보인다. MSW 시나리오 `approval-asr-suspects`.
 - `assignee_raw` 와 `due_raw` 는 회의에서 나온 원문이다. 확정 값이 아니므로 보조 표시한다.
 - `evidence_quote` · `evidence_speaker` · `evidence_at_ms` 로 근거를 보여준다. 생성·수정 승인 payload 에는 `evidence_speaker_member_id` 도 온다(BE [extractions.py](../../../backend/app/api/extractions.py)). 화자 이름은 이 값을 먼저 쓰고 `evidence_speaker` uid 로 돌아간다(2026-11-05, #256 A1, 위 §2.4).
 - `type` 마다 화면이 다르므로 **`type` 으로 분기한 뒤 payload 를 읽는다.** 공통 필드를 가정하지 않는다.

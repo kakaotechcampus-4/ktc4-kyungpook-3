@@ -2355,7 +2355,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 
 ### D-184. API 응답을 zod 스키마로 검증하고 모르는 값을 종류별로 다룬다 (D-134 대체)
 
-- 결정일: 2026-11-05 (정책, #348), 2026-11-07 (테스트 보완), 2026-11-09 (쓰기 응답 문구, approval 의 오류 details, 모르는 회의 출처의 특성, message 의 칸 맞춤 검사, 읽지 못한 조회의 자동 재조회), 2026-11-10 (마지막 묶음의 인증·복구가 있는 쓰기)
+- 결정일: 2026-11-05 (정책, #348), 2026-11-07 (테스트 보완), 2026-11-09 (쓰기 응답 문구, approval 의 오류 details, 모르는 회의 출처의 특성, message 의 칸 맞춤 검사, 읽지 못한 조회의 자동 재조회), 2026-11-10 (마지막 묶음의 인증·복구가 있는 쓰기, 표시용 덧붙임 목록 #643)
 - 상태: 확정
 
 팀 결정(#348)으로 D-134 를 대체한다. D-134 는 일반 API 응답을 OpenAPI 생성 타입과 MSW 통합 테스트로 검증하고 zod 로 중복 검증하지 않기로 했다. 그 전제인 생성 타입이 아직 없다. 응답은 손으로 쓴 DTO 타입으로 단언했고, 모르는 상태는 정상 값으로 바뀌었다.
@@ -2369,6 +2369,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 | 상태 판단·쓰기 기준 | 응답 전체가 `INVALID_RESPONSE` 다. 다른 정상 값으로 바꾸지 않는다 | task `status`·`version`, approval `status`, meeting `status`, integration·invitation `status`, onboarding `step`·`status`, message `sender`·`dm_status`, 보낼 메시지(묶음) `status`, 답장 고르기 `status`, 메시지 설정 `pm_alert_method`(PM 이 바꿔 저장하는 값이다) |
 | 표시용 분류 | 받은 값을 보존하고(`UnknownValue`) `알 수 없는 ○○` 또는 기본 문구로 보인다. 행동은 없다. 서버가 행동을 허락해도(예: 답장 줄 `undoable`) 그 줄에는 두지 않는다 | history `changed_field`·`change_source`, approval `type`·`category`, notification `kind`·`link.type`, meeting·minutes `source`, 묶음 `body_source`(`출처를 알 수 없는 문구`), `dm_failure_reason`(받은 값을 남기고 서버의 `unknown` 과 같은 `이유를 알 수 없어요`), 별칭 `source`(`알 수 없는 출처`) |
 | 보수 폴백 | 권한·행동이 줄고 화면이 사실과 다르게 말하지 않는 값으로 내린다 | 워크스페이스·팀원 `role` → `member`, extraction `gate` → `hold`, extraction `approval_status` → 없음, `notion_sync_status` → 없음, task `auto_blocked` 가 불리언이 아니면 풀 수 없음(false), 답장 `channel`·`evidence_status` → 없음, 회의록 `summary` 모양이 틀리면 없음(BE 가 깨진 요약을 다루는 방식과 같다), 묶음 `draft_status` → 작성 중, 팀원 메시지 `reply_channel` → 웹 답장 표시 없음, 재촉 근거 `kind` → 근거 없음, 회의 상세 `processing` 모양이 틀리면 없음·모르는 `stage` → 없음(진행 수·경과만 빠지고 단계는 `progress` 로 그린다, #483 2026-11-10) |
+| 표시용 덧붙임 목록 | 응답을 거절하지 않는다. 목록 모양이 틀리면 없음, 틀린 항목·모르는 종류는 그 항목만 버리고 나머지를 보인다. 아래 「목록은 한 건만 깨져도 전체가 실패한다」의 예외다. 버린 항목은 화면이 사실과 다르게 말하지 않는다(사유 한 줄이 빠질 뿐이다) | approval `payload.asr_suspects`(#643, 2026-11-10). 모르는 `source` 는 이슈 본문이 무시로 정했다 |
 
 - **목록은 한 건만 깨져도 전체가 실패한다.** 깨진 항목을 몰래 빼지 않는다.
 - **모르는 회의 출처는 시각 축이 없다.** 출처는 회의 안 시각(`at_ms`)과 길이를 녹음 위치로 읽을지 채팅 시각으로 읽을지 정한다(`meetingSourceTraits`). 모르는 출처는 둘 다 짐작하지 않는다. 길이와 전사문·근거 시각을 보이지 않고 머리 메타는 시작 시각만이다. 정리 단계 수도 출처마다 달라 단계를 그리지 않는다. 배지는 없고 출처 칩은 `알 수 없는 출처` 다.

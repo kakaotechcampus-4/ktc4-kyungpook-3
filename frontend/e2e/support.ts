@@ -39,6 +39,7 @@ export type Scenario =
   | 'approval-resolved'
   | 'approval-conflict'
   | 'approval-scope'
+  | 'approval-asr-suspects-long'
   | 'minutes-edit-pending'
   | 'notion-sync-pending'
   | 'notion-sync-failed'
