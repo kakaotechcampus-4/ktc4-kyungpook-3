@@ -449,6 +449,70 @@ describe('팀원 연결에서 나가기 (U3-7)', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  it('확인 완료 저장 중에는 나가기를 눌러도 나가지 않는다', async () => {
+    db.accounts[0].workspaceIds.unshift('ws_01')
+    rememberReturnWorkspace('ws_01')
+    db.members.find(({ member_id }) => member_id === 'mb_90')!.discord_user_id = '1123'
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.patch(
+        '/api/v1/workspaces/:workspaceId/onboarding',
+        async () => {
+          await gate.promise
+        },
+        { once: true },
+      ),
+    )
+    const log = recordRequests()
+    const app = await openMembers()
+    await userEvent.click(screen.getByRole('button', { name: '1명 확인 완료' }))
+    await waitFor(() => expect(onboardingPatches(log.started)).toHaveLength(1))
+
+    const exit = screen.getByRole('link', { name: '온보딩 나가기' })
+    expect(exit).toHaveAttribute('aria-disabled', 'true')
+    await userEvent.click(exit)
+    await app.expectPath('/onboarding/ws_03/connect_members')
+
+    gate.resolve()
+    await screen.findByRole('heading', { name: '대시보드' })
+    await app.expectPath('/workspaces/ws_03/dashboard')
+    expect(app.visited().map(({ pathname }) => pathname)).not.toContain(
+      '/workspaces/ws_01/dashboard',
+    )
+  })
+
+  it('줄을 저장하는 동안에는 나가기를 눌러도 나가지 않고, 저장이 실패하면 그 줄에 문구가 남는다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.patch(
+        '/api/v1/members/mb_90',
+        async () => {
+          await gate.promise
+          return fail('INTERNAL_ERROR', 'x', 500)
+        },
+        { once: true },
+      ),
+    )
+    const log = recordRequests()
+    const app = await openMembers()
+    await userEvent.click(accountField('최진호'))
+    await userEvent.click(await screen.findByRole('option', { name: /^@seoyeon_01/ }))
+    await waitFor(() => expect(memberWrites(log.started)).toEqual(['PATCH /members/mb_90']))
+
+    await userEvent.click(screen.getByRole('link', { name: '온보딩 나가기' }))
+    await app.expectPath('/onboarding/ws_03/connect_members')
+
+    gate.resolve()
+    const row = accountField('최진호').closest('li')!
+    expect(await within(row).findByRole('alert')).toHaveTextContent(
+      '서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
+    )
+    await app.expectPath('/onboarding/ws_03/connect_members')
+    expect(screen.getByRole('link', { name: '온보딩 나가기' })).not.toHaveAttribute('aria-disabled')
+  })
+
   it('바꾸지 않았으면 저장 없이 나간다', async () => {
     const log = recordRequests()
     const app = await openMembers()
@@ -786,7 +850,7 @@ describe('Discord 서버에 없는 사람을 이름으로 추가 (#660)', () => 
     expect(accountField('박민수')).toHaveTextContent('계정 고르기')
   })
 
-  it('이름을 추가하는 동안에는 `확인 완료`·`나중에 하기`·`다음 단계` 가 잠기고 단계를 저장하지 않는다', async () => {
+  it('이름을 추가하는 동안에는 `확인 완료`·`나중에 하기`·`다음 단계`·나가기가 잠기고 단계를 저장하지 않는다', async () => {
     const gate = deferred()
     onTestFinished(() => gate.resolve())
     server.use(
@@ -811,6 +875,7 @@ describe('Discord 서버에 없는 사람을 이름으로 추가 (#660)', () => 
     )
     expect(screen.getByRole('button', { name: '나중에 하기' })).toBeDisabled()
     expect(within(nav).getByRole('button', { name: '다음 단계' })).toBeDisabled()
+    await user.click(screen.getByRole('link', { name: '온보딩 나가기' }))
     await app.expectPath('/onboarding/ws_03/connect_members')
 
     gate.resolve()

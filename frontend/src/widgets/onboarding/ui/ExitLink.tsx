@@ -6,14 +6,20 @@ import { clearReturnWorkspace, readReturnWorkspace } from '@/shared/lib/return-w
 import { GuardedLink, guardLeave } from '@/shared/lib/unsaved-changes'
 import { Icon } from '@/shared/ui/icon'
 
-const LINK = 'inline-flex h-36 w-36 items-center justify-center rounded-9 text-sub hover:bg-control'
+const LINK =
+  'inline-flex h-36 w-36 items-center justify-center rounded-9 text-sub hover:bg-control aria-disabled:cursor-not-allowed aria-disabled:text-faint aria-disabled:hover:bg-transparent'
+
+export interface ExitLinkProps {
+  /** 이 화면이 저장하는 중이다. 끝날 때까지 나가지 않는다 — 나가면 실패를 보일 화면이 없다 */
+  busy?: boolean
+}
 
 /**
  * 온보딩 왼쪽 위의 나가기 화살표 (D-069). 진행 상태는 단계마다 서버에 이미 저장돼 있다.
  * 목적지는 새 공간 만들기를 시작한 기존 공간의 대시보드, 없으면 워크스페이스 선택 화면이다.
  * 저장하지 않은 입력이 있으면 공통 이탈 확인을 거친다.
  */
-export function ExitLink() {
+export function ExitLink({ busy = false }: ExitLinkProps) {
   const workspaces = useQuery(workspaceListQueryOptions())
   const navigate = useNavigate()
   const to = onboardingExitPath(workspaces.data ?? [], readReturnWorkspace())
@@ -31,10 +37,11 @@ export function ExitLink() {
     <GuardedLink
       to={to}
       aria-label="온보딩 나가기"
+      aria-disabled={busy || undefined}
       className={LINK}
       onClick={(event) => {
         event.preventDefault()
-        leave()
+        if (!busy) leave()
       }}
     >
       <Icon name="arrow-left" size={18} />
