@@ -66,7 +66,7 @@ AI 는 값과 근거 상태를 만들어 보낼 뿐, auto·review·hold 를 직�
 | 확인 못 하면 보수적으로 | Jev 실패 → inferred, 분석기 실패 → `check_failed`. 둘 다 auto 를 막는다 | [근거 검증](evidence-check.md), [전사 오인식 검사](asr-check.md) |
 | 검사는 auto 를 막기만 하고 열지 않는다 | 잘못된 auto 는 PM 확인 없이 틀린 Task 를 만든다. 잘못된 review 는 PM 이 한 번 더 볼 뿐이다 | BE [`matching.py`](../../../backend/app/services/matching.py) `auto_blockers` |
 | 측정 전에 기준을 정하고, 같은 데이터로 기준값을 다시 고르지 않는다 | 그 데이터에 맞춘 값이 된다 | [LoRA 결정 0052](../../../ai/docs/basis_for_decision/ai/2026-11-07-0052-lora-not-adopted.md), [0051](../../../ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md) |
-| 처음 운영은 auto 를 끄고 검증만 | 위 평가들은 "근거 명시 여부"를 잰 것이지 태스크 정답률이 아니다 | BE `AUTO_CREATE_ENABLED`(#526) |
+| 처음 운영은 auto 를 끄고 검증만 하라고 권고했다(운영값 [확인 필요]) | 위 평가들은 "근거 명시 여부"를 잰 것이지 태스크 정답률이 아니다 | BE `AUTO_CREATE_ENABLED`(#526) |
 
 ## 평가 스크립트 한눈에
 

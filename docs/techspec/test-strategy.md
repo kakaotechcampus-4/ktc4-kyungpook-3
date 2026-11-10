@@ -59,6 +59,6 @@
 
 ## 운영에서 이어서 볼 것
 
-- `AUTO_CREATE_ENABLED=false` 기간의 "켰으면 auto 였을 항목"과 PM 승인·수정·반려 결과 대조 → auto 개방 판단.
+- 스위치를 끈 기간(`AUTO_CREATE_ENABLED=false`, 운영값 [확인 필요])의 "켰으면 auto 였을 항목"과 PM 승인·수정·반려 결과 대조 → auto 개방 판단.
 - `asr_suspect` 로 막힌 항목과 안 막힌 항목의 PM 제목 수정 비율 → 오인식 기준값 재조정.
 - 지표 정의는 [추가 지표](metrics.md).

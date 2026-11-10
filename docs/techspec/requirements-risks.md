@@ -35,7 +35,7 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 |---|---|---|---|
 | ① 근거 검증 (Jev) | 근거 원문에 할 일·마감이 명시되지 않은 항목(조건부·질문·제안·근사 마감) | Jev 실패·키 없음 → inferred → auto 안 됨 | [근거 검증](../design/ai/evidence-check.md), 결정 [0031](../../ai/docs/basis_for_decision/ai/2026-11-02-0031-evidence-status-by-source-check.md) |
 | ② 전사 오인식 검사 | 근거는 충실하지만 전사가 틀려 제목이 틀린 항목("진도 정리" → "짐도 정리") | 검사 실패 → `asr_check_failed` 로 막음 | [전사 오인식 검사](../design/ai/asr-check.md), 결정 [0051](../../ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md) |
-| ③ 자동 생성 스위치 `AUTO_CREATE_ENABLED` | 운영 초기 검증 기간의 자동 생성 전체 | 모르는 값(오타)은 꺼짐으로 봄 | BE `app/api/extractions.py` `auto_create_enabled`, #526 |
+| ③ 자동 생성 스위치 `AUTO_CREATE_ENABLED` | 운영 초기 검증 기간에 끌 것을 권고한 자동 생성 전체(코드 기본은 켜짐) | 모르는 값(오타)은 꺼짐으로 봄 | BE `app/api/extractions.py` `auto_create_enabled`, #526 |
 
 - 스위치를 끈 동안에도 검증은 돌고 "켰으면 auto 였을 항목"을 로그로 남겨 PM 결과와 맞춰 본다.
 - 운영 `.env` 의 `AUTO_CREATE_ENABLED` 실제 값 **[확인 필요]** (예시 파일 기본값은 `true`, 평가 기록은 처음 운영을 `false` 로 권고).

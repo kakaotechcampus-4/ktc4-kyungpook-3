@@ -111,4 +111,4 @@ flowchart TD
 - **초반에는 워크스페이스 용어가 비어** Jev 확인과 review 가 많다. 목록이 쌓이면 준다.
 - **분석기가 문맥에 따라 다르게 쪼갠다**("핀테크볼트 연동" → 핀테크+볼트). 쪼갠 꼴이 목록에 없으면 의심 단어가 된다.
 - **자원**: kiwi 를 처음 쓸 때 약 2초, 메모리 약 300MB(워커 MemoryMax 3G 안). 형태소 번호 순서에 기대므로 `kiwipiepy==0.24.1` 로 고정했다.
-- 다음: `AUTO_CREATE_ENABLED=false` 기간에 "켰으면 auto 였을 항목" 중 `asr_suspect` 로 막힌 쪽과 안 막힌 쪽의 PM 제목 수정 비율을 보고 `MM_ASR_YES_THRESHOLD`·`MM_ASR_SEED_NOUNS` 를 다시 정한다. PM 이 용어 목록을 보고 고치는 화면은 후속.
+- 다음: 스위치를 끈 기간(`AUTO_CREATE_ENABLED=false`, 권고이며 운영값 [확인 필요])에 "켰으면 auto 였을 항목" 중 `asr_suspect` 로 막힌 쪽과 안 막힌 쪽의 PM 제목 수정 비율을 보고 `MM_ASR_YES_THRESHOLD`·`MM_ASR_SEED_NOUNS` 를 다시 정한다. PM 이 용어 목록을 보고 고치는 화면은 후속.
