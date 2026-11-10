@@ -1796,7 +1796,7 @@ POST .../meetings/upload            multipart/form-data
 - 떼기: 응답을 주제 키에 쓰고 `workspaceKey(ws,'project-map')`(그래프의 선).
 - 결정: 응답을 그 주제 키에 쓰고 `workspaceKey(ws,'project-map')`(다른 주제에 있는 옛 결정의 뒤집힘), `workspaceKey(ws,'minutes')`.
 
-구현 근거: [회의 라우터](../../../backend/app/api/meetings.py), [project_map 라우터](../../../backend/app/api/project_map.py), [전사 고치기](../../../backend/app/services/transcript.py), [주제·결정 고치기와 요약 합치기](../../../backend/app/services/summary.py), [요청 스키마](../../../backend/app/schemas/record_edit.py). 결정 근거는 [0066](../../../ai/docs/basis_for_decision/ai/2026-11-10-0066-human-record-edits-survive-resummary.md). 검증은 `backend/tests/api/test_transcript_edit.py`, `backend/tests/api/test_topic_decision_edit.py`, `backend/tests/api/test_summary_save.py`, `backend/tests/test_migration_record_edits.py` 로 SQLite 와 PostgreSQL 에서 했다. 실서버와 화면에서는 돌려 보지 않았다.
+구현 근거: [회의 라우터](../../../backend/app/api/meetings.py), [project_map 라우터](../../../backend/app/api/project_map.py), [전사 고치기](../../../backend/app/services/transcript.py), [주제·결정 고치기와 요약 합치기](../../../backend/app/services/summary.py), [요청 스키마](../../../backend/app/schemas/record_edit.py). 결정 근거는 [0067](../../../ai/docs/basis_for_decision/ai/2026-11-10-0067-human-record-edits-survive-resummary.md). 검증은 `backend/tests/api/test_transcript_edit.py`, `backend/tests/api/test_topic_decision_edit.py`, `backend/tests/api/test_summary_save.py`, `backend/tests/test_migration_record_edits.py` 로 SQLite 와 PostgreSQL 에서 했다. 실서버와 화면에서는 돌려 보지 않았다.
 
 ### 4.5 Discord 서버 사용자 목록
 
