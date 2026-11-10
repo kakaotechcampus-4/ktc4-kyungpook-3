@@ -31,9 +31,10 @@ export const MOCK_DB_STORAGE_KEY = 'msw-db'
  * 21: 사용자별 동의 행과 독립된 서버 판본을 저장한다 (#566).
  * 22: 프로젝트 맵의 주제·결정·태스크 선(`projectMap`) 칸 추가 (#551).
  * 23: 초대가 이메일 대신 초대받은 계정(`invited_user_id`)을 가리킨다 (#632).
+ * 24: 프로젝트 맵 주제에 뗀 태스크(`detached_task_ids`)·고침(`edited`), 결정에 상태(`state`)·고침(`edited`) 칸 추가 (#551).
  * 올리면 e2e/restore.e2e.ts 와 src/shared/mock/taskScenarios.test.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
  */
-export const MOCK_DB_VERSION = 23
+export const MOCK_DB_VERSION = 24
 
 interface StoredDb {
   version: number

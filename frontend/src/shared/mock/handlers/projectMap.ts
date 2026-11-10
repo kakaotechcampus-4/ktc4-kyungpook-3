@@ -3,10 +3,13 @@ import type { MeetingRefDto, ProjectMapDto, TopicDetailDto } from '@/shared/type
 import { requireMember } from '../auth-guard'
 import { db } from '../db'
 import { fail, ok } from '../envelope'
+import type { MockDecision, MockTopic } from '../fixtures/projectMap'
+import { readJson } from '../utils'
+import { PYTHON_STRIP } from '../validation'
 
 /*
- * 백엔드 services/project_map.py 의 build_graph · topic_detail 과 같은 규칙이다. 회의는 지워지면 db.meetings 에서 빠지므로
- * 남은 회의만 살아 있는 회의다. 권한은 워크스페이스 멤버다 (401 → 403)
+ * 백엔드 services/project_map.py 의 build_graph · topic_detail 과 services/summary.py 의 주제·결정 고치기(#605)와 같은 규칙이다.
+ * 회의는 지워지면 db.meetings 에서 빠지므로 남은 회의만 살아 있는 회의다. 권한은 워크스페이스 멤버다 (401 → 403)
  */
 
 const at = (timestamp: string) => Date.parse(timestamp)
@@ -56,6 +59,7 @@ function buildGraph(workspaceId: string): ProjectMapDto {
   for (const topic of topics)
     for (const item of topic.items) {
       if (!taskIds.has(item.task_id) || !meetings.has(item.meeting_id)) continue
+      if (topic.detached_task_ids.includes(item.task_id)) continue
       taskMeetings.get(item.task_id)?.add(item.meeting_id)
       addEdge(topic.topic_id, item.task_id)
     }
@@ -105,21 +109,41 @@ function buildGraph(workspaceId: string): ProjectMapDto {
   }
 }
 
-function topicDetail(workspaceId: string, topicId: string): TopicDetailDto | null {
-  const topic = db.projectMap.topics.find(
+function workspaceTopic(workspaceId: string, topicId: string): MockTopic | undefined {
+  return db.projectMap.topics.find(
     ({ topic_id, workspace_id }) => topic_id === topicId && workspace_id === workspaceId,
   )
+}
+
+function topicDetail(workspaceId: string, topicId: string): TopicDetailDto | null {
+  const topic = workspaceTopic(workspaceId, topicId)
   if (topic === undefined) return null
   const meetings = liveMeetings(workspaceId)
   const linked = new Set(
-    topic.items.filter(({ meeting_id }) => meetings.has(meeting_id)).map(({ task_id }) => task_id),
+    topic.items
+      .filter(
+        ({ task_id, meeting_id }) =>
+          meetings.has(meeting_id) && !topic.detached_task_ids.includes(task_id),
+      )
+      .map(({ task_id }) => task_id),
+  )
+  const removed = new Set(
+    db.projectMap.decisions
+      .filter(({ state }) => state === 'removed')
+      .map(({ decision_id }) => decision_id),
   )
   return {
     topic_id: topic.topic_id,
     name: topic.name,
     description: topic.description,
+    edited: topic.edited,
     decisions: db.projectMap.decisions
-      .filter(({ topic_id, meeting_id }) => topic_id === topicId && meetings.has(meeting_id))
+      .filter(
+        (decision): decision is MockDecision & { state: 'valid' | 'invalid' } =>
+          decision.topic_id === topicId &&
+          meetings.has(decision.meeting_id) &&
+          decision.state !== 'removed',
+      )
       .map((decision) => {
         const meeting = meetings.get(decision.meeting_id)!
         return {
@@ -129,7 +153,13 @@ function topicDetail(workspaceId: string, topicId: string): TopicDetailDto | nul
           meeting_id: meeting.meeting_id,
           meeting_title: meeting.title,
           decided_at: meeting.started_at,
-          replaced_by: decision.replaced_by,
+          // 지운 결정이 뒤집었던 결정은 다시 유효하다. 되살리면 요약 기록대로 다시 뒤집힌다
+          replaced_by:
+            decision.replaced_by !== null && removed.has(decision.replaced_by)
+              ? null
+              : decision.replaced_by,
+          state: decision.state,
+          edited: decision.edited,
         }
       })
       .sort((a, b) => at(a.decided_at) - at(b.decided_at)),
@@ -149,6 +179,26 @@ function topicDetail(workspaceId: string, topicId: string): TopicDetailDto | nul
   }
 }
 
+/** BE normalize_topic_name. 표기만 다른 이름을 같은 키로 모은다 */
+export function normalizeTopicName(name: string): string {
+  return [...name.normalize('NFKC').toLowerCase()]
+    .filter((char) => /[\p{L}\p{M}\p{N}]/u.test(char))
+    .slice(0, 100)
+    .join('')
+}
+
+/** Python `len()` 처럼 코드 포인트로 센다 */
+const lengthOf = (text: string) => [...text].length
+
+/** 없거나 null 이면 보내지 않은 칸이다 (pydantic `str | None = None`) */
+function optionalString(value: unknown): value is string | null | undefined {
+  return value === undefined || value === null || typeof value === 'string'
+}
+
+const invalid = (message: string) => fail('INVALID_REQUEST', message, 400)
+const topicNotFound = (topicId: string) =>
+  fail('TOPIC_NOT_FOUND', '주제를 찾을 수 없습니다.', 404, { topic_id: topicId })
+
 export const projectMapHandlers = [
   http.get('/api/v1/workspaces/:workspaceId/project-map', ({ params }) => {
     const workspaceId = String(params.workspaceId)
@@ -164,4 +214,129 @@ export const projectMapHandlers = [
     if (detail === null) return fail('TOPIC_NOT_FOUND', '주제를 찾을 수 없습니다.', 404)
     return ok(detail)
   }),
+  http.patch('/api/v1/workspaces/:workspaceId/topics/:topicId', async ({ params, request }) => {
+    const workspaceId = String(params.workspaceId)
+    const topicId = String(params.topicId)
+    const denied = requireMember(workspaceId)
+    if (denied) return denied
+    const body = await readJson(request)
+    if (body === null || !optionalString(body.name) || !optionalString(body.description))
+      return invalid('주제 변경 값이 올바르지 않습니다.')
+    const name = body.name?.replace(PYTHON_STRIP, '') ?? null
+    const description = body.description ?? null
+    if (name === null && description === null)
+      return invalid('name 이나 description 이 있어야 합니다.')
+    if (name !== null && (lengthOf(name) < 1 || lengthOf(name) > 100))
+      return invalid('주제 이름은 1자 이상 100자 이하입니다.')
+    if (description !== null && lengthOf(description) > 1000)
+      return invalid('주제 설명은 1000자 이하입니다.')
+    const topic = workspaceTopic(workspaceId, topicId)
+    if (topic === undefined) return topicNotFound(topicId)
+    if (name !== null) {
+      const key = normalizeTopicName(name)
+      if (key === '') return invalid('주제 이름에 글자가 없습니다.')
+      const taken = db.projectMap.topics.find(
+        (other) =>
+          other.workspace_id === workspaceId &&
+          other !== topic &&
+          normalizeTopicName(other.name) === key,
+      )
+      // 자기 이름과 같은 키(표기만 바꾸기)는 다른 주제를 보지 않는다
+      if (key !== normalizeTopicName(topic.name) && taken !== undefined)
+        return fail('TOPIC_NAME_TAKEN', '같은 이름의 주제가 있습니다.', 409, {
+          topic_id: taken.topic_id,
+        })
+      topic.name = name
+    }
+    if (description !== null) topic.description = description
+    topic.edited = true
+    return ok(topicDetail(workspaceId, topicId))
+  }),
+  http.post(
+    '/api/v1/workspaces/:workspaceId/topics/:topicId/merge',
+    async ({ params, request }) => {
+      const workspaceId = String(params.workspaceId)
+      const topicId = String(params.topicId)
+      const denied = requireMember(workspaceId)
+      if (denied) return denied
+      const intoId = (await readJson(request))?.into_topic_id
+      if (typeof intoId !== 'string' || intoId.length < 1 || intoId.length > 36)
+        return invalid('합칠 주제가 올바르지 않습니다.')
+      if (intoId === topicId) return invalid('같은 주제로는 합칠 수 없습니다.')
+      const topic = workspaceTopic(workspaceId, topicId)
+      if (topic === undefined) return topicNotFound(topicId)
+      const into = workspaceTopic(workspaceId, intoId)
+      if (into === undefined) return topicNotFound(intoId)
+      // into 에 이미 보이던 태스크는 topic 에서 뗐어도 into 에 그대로 보인다
+      const shown = new Set(topicDetail(workspaceId, intoId)!.tasks.map(({ task_id }) => task_id))
+      const pair = ({ task_id, meeting_id }: MockTopic['items'][number]) =>
+        `${task_id}|${meeting_id}`
+      const pairs = new Set(into.items.map(pair))
+      into.meeting_ids = [...new Set([...into.meeting_ids, ...topic.meeting_ids])]
+      into.items.push(...topic.items.filter((item) => !pairs.has(pair(item))))
+      into.detached_task_ids = [
+        ...new Set([
+          ...into.detached_task_ids,
+          ...topic.detached_task_ids.filter((taskId) => !shown.has(taskId)),
+        ]),
+      ]
+      for (const decision of db.projectMap.decisions)
+        if (decision.topic_id === topicId) decision.topic_id = intoId
+      db.projectMap.topics = db.projectMap.topics.filter((other) => other !== topic)
+      into.edited = true
+      return ok(topicDetail(workspaceId, intoId))
+    },
+  ),
+  http.delete('/api/v1/workspaces/:workspaceId/topics/:topicId/tasks/:taskId', ({ params }) => {
+    const workspaceId = String(params.workspaceId)
+    const topicId = String(params.topicId)
+    const taskId = String(params.taskId)
+    const denied = requireMember(workspaceId)
+    if (denied) return denied
+    const topic = workspaceTopic(workspaceId, topicId)
+    if (topic === undefined) return topicNotFound(topicId)
+    if (
+      !db.tasks.some(
+        ({ task_id, workspace_id }) => task_id === taskId && workspace_id === workspaceId,
+      )
+    )
+      return fail('TASK_NOT_FOUND', '태스크가 없습니다.', 404, { task_id: taskId })
+    if (!topic.detached_task_ids.includes(taskId)) topic.detached_task_ids.push(taskId)
+    topic.edited = true
+    return ok(topicDetail(workspaceId, topicId))
+  }),
+  http.patch(
+    '/api/v1/workspaces/:workspaceId/decisions/:decisionId',
+    async ({ params, request }) => {
+      const workspaceId = String(params.workspaceId)
+      const decisionId = String(params.decisionId)
+      const denied = requireMember(workspaceId)
+      if (denied) return denied
+      const body = await readJson(request)
+      if (body === null || !optionalString(body.text))
+        return invalid('결정 변경 값이 올바르지 않습니다.')
+      const text = body.text?.replace(PYTHON_STRIP, '') ?? null
+      const state = body.state ?? null
+      if (state !== null && state !== 'valid' && state !== 'invalid' && state !== 'removed')
+        return invalid('결정 상태가 올바르지 않습니다.')
+      if (text === null && state === null) return invalid('text 나 state 가 있어야 합니다.')
+      if (text !== null && (lengthOf(text) < 1 || lengthOf(text) > 1000))
+        return invalid('결정 문장은 1자 이상 1000자 이하입니다.')
+      // 지운 결정도 찾는다 — valid 로 되살릴 수 있다. 삭제된 회의의 결정은 없는 결정이다
+      const decision = db.projectMap.decisions.find(
+        ({ decision_id, topic_id, meeting_id }) =>
+          decision_id === decisionId &&
+          workspaceTopic(workspaceId, topic_id) !== undefined &&
+          db.meetings.some((meeting) => meeting.meeting_id === meeting_id),
+      )
+      if (decision === undefined)
+        return fail('DECISION_NOT_FOUND', '결정을 찾을 수 없습니다.', 404, {
+          decision_id: decisionId,
+        })
+      if (text !== null) decision.text = text
+      if (state !== null) decision.state = state
+      decision.edited = true
+      return ok(topicDetail(workspaceId, decision.topic_id))
+    },
+  ),
 ]

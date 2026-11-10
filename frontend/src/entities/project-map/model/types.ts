@@ -61,6 +61,9 @@ export interface ProjectMap {
 /** 패널에 연 노드 */
 export type MapSelection = { kind: 'topic'; id: string } | { kind: 'task'; id: string } | null
 
+/** 팀원이 유효하지 않다고 표시한 결정은 `invalid` 다. 지운 결정은 오지 않는다 */
+export type DecisionState = 'valid' | 'invalid'
+
 export interface TopicDecision {
   decisionId: string
   text: string
@@ -68,8 +71,11 @@ export interface TopicDecision {
   meetingId: string
   meetingTitle: string | null
   decidedAt: string
-  /** 이 결정을 뒤집은 결정. null 이면 유효하다 */
+  /** 이 결정을 뒤집은 결정. null 이면 뒤집히지 않았다 */
   replacedBy: string | null
+  state: DecisionState
+  /** 팀원이 문장이나 상태를 고쳤다 */
+  edited: boolean
 }
 
 export interface TopicTask {
@@ -84,6 +90,8 @@ export interface TopicDetail {
   topicId: string
   name: string
   description: string
+  /** 팀원이 이름·설명을 고치거나 합치거나 태스크를 뗐다 */
+  edited: boolean
   decisions: readonly TopicDecision[]
   tasks: readonly TopicTask[]
   meetings: readonly MeetingRef[]
