@@ -61,6 +61,34 @@ beforeEach(() => {
 })
 
 describe('팀원 목록 — 계정 고르기와 옮기기', () => {
+  it('이슈의 재현(member-rows): 이재환에 잘못 이은 지훈의 계정을 최지훈 줄에서 고르면 이재환 이름은 그대로다', async () => {
+    applyScenario('member-rows')
+    const user = userEvent.setup()
+    const log = recordRequests()
+    const bodies = [
+      recordRequestBodies('PATCH', '/members/mb_03'),
+      recordRequestBodies('PATCH', '/members/mb_05'),
+    ]
+    await openManage(user)
+    expect(accountField('이재환')).toHaveTextContent('@jihun_dev')
+
+    await pickAccount(user, '최지훈', 'jihun_dev')
+    await user.click(
+      within(await screen.findByRole('dialog', { name: '이재환 님에서 옮길까요?' })).getByRole(
+        'button',
+        { name: '옮기기' },
+      ),
+    )
+
+    await waitFor(() => expect(accountField('최지훈')).toHaveTextContent('@jihun_dev'))
+    expect(memberWrites(log.started)).toEqual(['PATCH /members/mb_03', 'PATCH /members/mb_05'])
+    await waitFor(() =>
+      expect(bodies).toEqual([[{ discord_user_id: null }], [{ discord_user_id: '1125' }]]),
+    )
+    expect(accountField('이재환')).toHaveTextContent('계정 고르기')
+    expect(dbMember('mb_03').display_name).toBe('이재환')
+  })
+
   it('잘못 고른 계정을 다른 팀원에서 다시 고르면 연결만 옮기고 앞 팀원 이름은 그대로다', async () => {
     const user = userEvent.setup()
     const leeBodies = recordRequestBodies('PATCH', '/members/mb_03')
