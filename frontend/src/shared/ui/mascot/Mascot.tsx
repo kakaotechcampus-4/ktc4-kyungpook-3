@@ -49,7 +49,7 @@ const R = 84
 const CENTER = 120
 const VIEW_BOX = '0 0 240 240'
 
-const INK = '#171717'
+const INK = '#333333'
 const CORAL = '#FF6969'
 /** 얼굴과 줄무늬는 포즈·팔레트와 무관하게 항상 흰색이다 (§8-1) */
 const WHITE = '#FFFFFF'

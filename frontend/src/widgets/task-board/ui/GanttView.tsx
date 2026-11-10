@@ -32,8 +32,8 @@ const BAR_BASE =
   'flex h-26 items-center justify-between gap-8 overflow-hidden rounded-7 px-9 text-[10.5px] whitespace-nowrap'
 
 const BAR: Record<TaskTone, string> = {
-  active: 'bg-ink text-surface',
-  warn: 'bg-ink text-surface',
+  active: 'bg-ink-solid text-surface',
+  warn: 'bg-ink-solid text-surface',
   danger: 'bg-accent-solid text-surface',
   todo: 'border border-line-strong bg-surface text-sub',
   done: 'bg-surface-sunken text-dim',
@@ -157,7 +157,7 @@ export function GanttView({
                     <span
                       className={
                         date === today
-                          ? 'inline-flex h-20 min-w-[20px] items-center justify-center rounded-999 bg-ink px-5 text-[11px] leading-none font-semibold text-surface tabular-nums'
+                          ? 'inline-flex h-20 min-w-[20px] items-center justify-center rounded-999 bg-ink-solid px-5 text-[11px] leading-none font-semibold text-surface tabular-nums'
                           : 'text-[11px] text-sub tabular-nums'
                       }
                     >

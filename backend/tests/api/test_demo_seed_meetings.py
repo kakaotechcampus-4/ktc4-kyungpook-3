@@ -1,4 +1,6 @@
 """심사용 시드의 지난 회의 재생(#606). AI 봇과 같은 서비스 토큰 API 로 회의를 만들고 끝까지 처리한다."""
+import json
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import httpx
@@ -7,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import sessionmaker
 
-from app.cli.demo_seed import load_seed_data
+from app.cli.demo_seed import DEFAULT_DATA_PATH, SeedDataError, load_seed_data
 from app.cli.seed_demo import SeedError, poll_embeddings, replay_meetings, seed_accounts
 from app.main import app
 from app.models import EMBEDDING_DIMENSIONS, ApprovalRequest, Extraction, ExtractionItem, Meeting, Member, Source, Task
@@ -51,7 +53,7 @@ def _setup(db):
 def _replay(db, data, seeded, http=None, wait=None):
     return replay_meetings(
         http or _client(), db, seeded, data,
-        service_token=SERVICE_TOKEN, wait_for_embeddings=wait or _fill_embeddings(db),
+        service_token=SERVICE_TOKEN, pm_password=PM_PW, wait_for_embeddings=wait or _fill_embeddings(db),
     )
 
 
@@ -107,18 +109,35 @@ def test_replay_does_not_change_seed_data(mdb):
     assert "speaker_key" in data.meetings[0].items[0]
 
 
-def test_each_meeting_has_ready_summary(mdb):
+@pytest.mark.parametrize("scheme", ["http", "https"])
+def test_ready_history_and_pending_demo_cards_coexist(mdb, scheme):
     data, seeded = _setup(mdb)
-    report = _replay(mdb, data, seeded)
-    assert report.summaries_written == len(data.meetings)
+    report = _replay(mdb, data, seeded, http=TestClient(app, base_url=f"{scheme}://testserver"))
+    assert report.summaries_written == 5
     assert report.summaries_skipped == []
 
     pm = _client()
     assert pm.post("/api/v1/auth/login", json={"email": EMAILS[0], "password": PM_PW}).status_code == 200
+    expected = {meeting.title: meeting.approval_state for meeting in data.meetings}
     for meeting in _meetings(mdb, seeded.workspace_id):
         res = pm.get(f"/api/v1/meetings/{meeting.meeting_id}/minutes")
         assert res.status_code == 200, res.text
-        assert res.json()["data"]["summary_status"] == "ready"
+        minutes = res.json()["data"]
+        if expected[meeting.title] == "approved":
+            assert minutes["summary_status"] == "ready"
+        else:
+            assert minutes["summary_status"] == "awaiting_approval"
+            assert minutes["summary_waiting_count"] == 2
+            extraction_id = mdb.scalar(select(Extraction.extraction_id).where(Extraction.meeting_id == meeting.meeting_id))
+            assert _client().post(
+                "/api/v1/summaries/claim", json={"extraction_ids": [extraction_id]}, headers=SERVICE,
+            ).json()["data"] is None
+    cards = mdb.scalars(select(ApprovalRequest).where(ApprovalRequest.status == "pending")).all()
+    assert len(cards) == 2
+    pending_ids = {card.approval_id for card in cards}
+    assert {item.gate for item in mdb.scalars(select(ExtractionItem).where(
+        ExtractionItem.approval_id.in_(pending_ids),
+    ))} == {"review", "hold"}
 
 
 def test_asr_terms_seeded(mdb):
@@ -133,6 +152,27 @@ def test_asr_terms_seeded(mdb):
 def test_replay_is_idempotent(mdb):
     data, seeded = _setup(mdb)
     _replay(mdb, data, seeded)
+    pm = _client()
+    assert pm.post("/api/v1/auth/login", json={"email": EMAILS[0], "password": PM_PW}).status_code == 200
+    meeting = mdb.scalars(select(Meeting).where(Meeting.title == data.meetings[0].title)).one()
+    extraction_id = mdb.scalar(select(Extraction.extraction_id).where(Extraction.meeting_id == meeting.meeting_id))
+    task_id = mdb.scalar(select(ExtractionItem.task_id).where(
+        ExtractionItem.extraction_id == extraction_id, ExtractionItem.gate == "auto",
+    ))
+    edited = pm.patch(f"/api/v1/tasks/{task_id}", json={"title": "PM이 직접 고친 태스크"})
+    assert edited.status_code == 200, edited.text
+    requested = _client().post(f"/api/v1/workspaces/{seeded.workspace_id}/summary-requests", json={
+        "meeting_ids": [meeting.meeting_id], "force": True, "dry_run": False,
+    }, headers=SERVICE)
+    assert requested.status_code == 200, requested.text
+    claimed = _client().post("/api/v1/summaries/claim", json={"extraction_ids": [extraction_id]}, headers=SERVICE)
+    saved = _client().put(f"/api/v1/extractions/{extraction_id}/summary", json={
+        "claim_token": claimed.json()["data"]["claim_token"], "model_name": "actual-worker",
+        "overview": "PM 처리 후 워커가 갱신한 요약", "key_points": [],
+    }, headers=SERVICE)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["data"]["applied"] is True
+    summary_before = pm.get(f"/api/v1/meetings/{meeting.meeting_id}/minutes").json()["data"]["summary"]
     counts = [_count(mdb, model) for model in (Meeting, Source, ExtractionItem, Task, Extraction)]
 
     report = _replay(mdb, data, seeded)
@@ -140,6 +180,68 @@ def test_replay_is_idempotent(mdb):
     assert [_count(mdb, model) for model in (Meeting, Source, ExtractionItem, Task, Extraction)] == counts
     assert report.done == len(data.meetings)
     assert report.summaries_skipped == []
+    assert report.summaries_written == 0
+    assert pm.get(f"/api/v1/tasks/{task_id}").json()["data"]["title"] == "PM이 직접 고친 태스크"
+    assert pm.get(f"/api/v1/meetings/{meeting.meeting_id}/minutes").json()["data"]["summary"] == summary_before
+
+
+def test_pending_policy_never_logs_in_or_approves_cards(mdb):
+    data, seeded = _setup(mdb)
+    data = replace(data, meetings=[replace(meeting, approval_state="pending") for meeting in data.meetings])
+    http = _client()
+
+    report = replay_meetings(
+        http, mdb, seeded, data, service_token=SERVICE_TOKEN, pm_password="unused-password",
+        wait_for_embeddings=_fill_embeddings(mdb),
+    )
+
+    assert report.summaries_written == 0
+    assert report.summaries_skipped == []
+    assert http.cookies.get("session_token") is None
+    assert mdb.scalar(select(func.count()).select_from(ApprovalRequest).where(
+        ApprovalRequest.status == "approved",
+    )) == 0
+    assert all(extraction.summary is None for extraction in mdb.scalars(select(Extraction)))
+
+
+def test_approved_input_cannot_resolve_a_card_from_an_existing_pending_meeting(mdb, tmp_path):
+    data, seeded = _setup(mdb)
+    pending = replace(data, meetings=[replace(data.meetings[0], approval_state="pending")])
+    _replay(mdb, pending, seeded)
+    approval_id = mdb.scalars(select(ApprovalRequest.approval_id)).first()
+    pm = _client()
+    assert pm.post("/api/v1/auth/login", json={"email": EMAILS[0], "password": PM_PW}).status_code == 200
+    before = pm.get(f"/api/v1/approvals/{approval_id}").json()["data"]
+    assert before["status"] == "pending"
+    raw = json.loads(DEFAULT_DATA_PATH.read_text(encoding="utf-8"))
+    raw["meetings"][0]["approval_state"] = "pending"
+    raw["meetings"][1]["items"][1].update(action="merge", target_approval_id=approval_id)
+    path = tmp_path / "reuse-pending-card.json"
+    path.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(SeedDataError, match="approved.*create"):
+        _replay(mdb, load_seed_data(path), seeded)
+
+    assert pm.get(f"/api/v1/approvals/{approval_id}").json()["data"] == before
+    assert _count(mdb, Meeting) == 1
+
+
+def test_authenticated_requests_do_not_follow_external_redirects():
+    from app.cli.seed_demo import _call
+
+    destinations = []
+
+    def redirect(request):
+        destinations.append(request.url.host)
+        return httpx.Response(302, headers={"Location": "https://another-origin.example/collect"})
+
+    with httpx.Client(base_url="https://seed-api.example", follow_redirects=True,
+                      transport=httpx.MockTransport(redirect)) as http:
+        with pytest.raises(SeedError, match="302"):
+            _call(http, "PATCH", "/approvals/card", service_token=SERVICE_TOKEN,
+                  headers={"Cookie": "session_token=test-session"}, json={"status": "approved"})
+
+    assert destinations == ["seed-api.example"]
 
 
 def test_rerun_after_replay_is_not_stopped_as_existing_data(mdb):
@@ -185,6 +287,10 @@ class _ClaimStealer:
         self.inner = inner
         self.stolen = False
 
+    @property
+    def cookies(self):
+        return self.inner.cookies
+
     def request(self, method, url, **kwargs):
         if url.endswith("/summaries/claim") and not self.stolen:
             self.stolen = True
@@ -227,7 +333,7 @@ def test_http_error_raises_seed_error(mdb):
     with pytest.raises(SeedError) as error:
         replay_meetings(
             _client(), mdb, seeded, data,
-            service_token="wrong-token", wait_for_embeddings=_fill_embeddings(mdb),
+            service_token="wrong-token", pm_password=PM_PW, wait_for_embeddings=_fill_embeddings(mdb),
         )
     assert "/meetings" in str(error.value)
     assert "401" in str(error.value) or "403" in str(error.value)
@@ -282,7 +388,8 @@ def test_resume_from_partial_sources(mdb):
     assert stored == len(data.meetings[0].turns)
 
 
-def test_resume_writes_missing_summary(mdb):
+@pytest.mark.parametrize("resolution", ["pending", "rejected", "approved", "overridden"])
+def test_resume_preserves_existing_extraction_without_injecting_summary(mdb, resolution):
     from app.cli.seed_demo import _items
 
     data, seeded = _setup(mdb)
@@ -295,16 +402,36 @@ def test_resume_writes_missing_summary(mdb):
         "items": _items(data.meetings[0], seeded.member_ids, datetime.now(timezone.utc).date()),
     }, headers=SERVICE)
     assert extracted.status_code == 201, extracted.text
+    pm = _client()
+    assert pm.post("/api/v1/auth/login", json={"email": EMAILS[0], "password": PM_PW}).status_code == 200
+    extraction_id = extracted.json()["data"]["extraction_id"]
+    approval_ids = mdb.scalars(select(ExtractionItem.approval_id).where(
+        ExtractionItem.extraction_id == extraction_id, ExtractionItem.approval_id.is_not(None),
+    )).all()
+    if resolution != "pending":
+        for approval_id in approval_ids:
+            card = pm.get(f"/api/v1/approvals/{approval_id}").json()["data"]
+            body = {"status": "rejected" if resolution == "rejected" else "approved",
+                    "payload_version": card["payload_version"]}
+            if resolution == "overridden":
+                body["task_overrides"] = {"task_title": "PM이 고친 " + approval_id}
+            resolved = pm.patch(f"/api/v1/approvals/{approval_id}", json=body)
+            assert resolved.status_code == 200, resolved.text
+    before = {approval_id: pm.get(f"/api/v1/approvals/{approval_id}").json()["data"]
+              for approval_id in approval_ids}
     _fill_embeddings(mdb)(seeded.workspace_id)
 
     report = _replay(mdb, data, seeded)
 
-    assert report.summaries_written == len(data.meetings)
+    assert report.summaries_written == 4
+    assert report.summaries_skipped == [data.meetings[0].title]
     assert _count(mdb, Extraction) == len(data.meetings)
-    pm = _client()
-    assert pm.post("/api/v1/auth/login", json={"email": EMAILS[0], "password": PM_PW}).status_code == 200
+    assert {approval_id: pm.get(f"/api/v1/approvals/{approval_id}").json()["data"]
+            for approval_id in approval_ids} == before
     minutes = pm.get(f"/api/v1/meetings/{meeting_id}/minutes")
-    assert minutes.json()["data"]["summary_status"] == "ready"
+    assert minutes.json()["data"]["summary"] is None
+    if resolution == "pending":
+        assert minutes.json()["data"]["summary_status"] == "awaiting_approval"
 
 
 def test_same_title_upload_meeting_is_left_alone(mdb):

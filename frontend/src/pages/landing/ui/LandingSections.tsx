@@ -115,7 +115,7 @@ const FEATURES = [
           재환님, API 명세서 마감이 다음 주 목요일이에요 🙂 막히는 부분 있으면 알려주세요.
         </p>
         <div className="mt-auto flex flex-row-reverse items-center justify-start gap-8">
-          <span className="inline-flex h-32 items-center rounded-999 bg-ink px-14 text-control font-semibold text-surface">
+          <span className="inline-flex h-32 items-center rounded-999 bg-ink-solid px-14 text-control font-semibold text-surface">
             이대로 발송
           </span>
           <span className="inline-flex h-32 items-center px-12 text-control font-semibold text-dim">
@@ -188,7 +188,7 @@ export function Capabilities() {
             key={task}
             className={`${TASK_PILL} ${
               index === 0
-                ? 'border-transparent bg-ink text-surface'
+                ? 'border-transparent bg-ink-solid text-surface'
                 : 'border-line bg-surface text-ink'
             }`}
           >

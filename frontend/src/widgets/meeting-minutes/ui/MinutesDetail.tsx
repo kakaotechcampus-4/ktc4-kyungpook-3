@@ -50,7 +50,7 @@ const HELD_BODY_STYLE = { transitionDelay: `${MINUTES_DIM_DELAY_MS}ms` }
 const NOTICE = 'flex flex-col items-start gap-10 px-36 pt-44 pb-56 max-md:px-20'
 const NOTICE_TEXT = 'text-body text-sub'
 const LINK =
-  'inline-flex h-36 items-center justify-center rounded-9 bg-ink px-16 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
+  'inline-flex h-36 items-center justify-center rounded-9 bg-ink-solid px-16 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
 
 type TabId = 'summary' | 'transcript' | 'tasks'
 

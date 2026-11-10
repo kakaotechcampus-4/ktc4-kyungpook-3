@@ -27,7 +27,7 @@ const TIME = 'min-w-44 shrink-0 text-[12px] leading-[1.7] whitespace-nowrap text
 const APPLIED_ROW = 'flex items-start gap-14 rounded-16 border border-line bg-surface px-18 py-15'
 const PENDING_ROW = 'flex items-start gap-16 border-b border-line py-18 last:border-b-0'
 const BADGE_REVIEW =
-  'inline-flex h-[21px] shrink-0 items-center gap-5 rounded-6 bg-ink px-8 text-meta leading-none font-semibold text-surface'
+  'inline-flex h-[21px] shrink-0 items-center gap-5 rounded-6 bg-ink-solid px-8 text-meta leading-none font-semibold text-surface'
 const BADGE_HOLD =
   'inline-flex h-[21px] shrink-0 items-center rounded-6 bg-control px-8 text-meta leading-none font-semibold text-sub'
 const REVIEW_LINK =

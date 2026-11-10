@@ -48,7 +48,7 @@ describe('Checkbox', () => {
     expect(box).toHaveAttribute('aria-checked', 'true')
     expect(box).toHaveAttribute('data-state', 'checked')
     expect(box).toHaveClass(
-      'data-[state=checked]:bg-ink',
+      'data-[state=checked]:bg-ink-solid',
       'data-[state=checked]:border-transparent',
     )
 
@@ -66,7 +66,7 @@ describe('Checkbox', () => {
 
     expect(box).toHaveAttribute('aria-checked', 'mixed')
     expect(box).toHaveAttribute('data-state', 'indeterminate')
-    expect(box).toHaveClass('data-[state=indeterminate]:bg-ink')
+    expect(box).toHaveClass('data-[state=indeterminate]:bg-ink-solid')
     expect(container.querySelector('svg')).toBeNull()
     expect(container.querySelector('span.bg-surface')).toHaveClass('h-2', 'w-9', 'rounded-999')
   })

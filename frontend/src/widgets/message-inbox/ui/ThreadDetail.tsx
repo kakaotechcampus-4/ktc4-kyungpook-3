@@ -40,7 +40,7 @@ const BODY =
   'relative flex min-h-[0px] flex-1 flex-col gap-16 overflow-y-auto bg-surface-sunken px-28 pt-24 pb-18 max-md:px-16 max-md:pt-16'
 const DAY_RULE = 'h-1 flex-1 bg-line'
 const BUBBLE = 'px-15 py-12 text-body leading-[1.75] wrap-anywhere whitespace-pre-line'
-const BOT_BUBBLE = `${BUBBLE} max-w-[438px] rounded-[15px_15px_4px_15px] bg-ink text-surface`
+const BOT_BUBBLE = `${BUBBLE} max-w-[438px] rounded-[15px_15px_4px_15px] bg-ink-solid text-surface`
 const UPCOMING_BUBBLE = `${BUBBLE} max-w-[438px] rounded-[15px_15px_4px_15px] border border-dashed bg-surface text-sub`
 const COUNTERPART_BUBBLE = `${BUBBLE} max-w-[410px] rounded-[15px_15px_15px_4px] border border-line bg-surface text-ink`
 const TIME = 'mono text-[10.5px] text-dim'

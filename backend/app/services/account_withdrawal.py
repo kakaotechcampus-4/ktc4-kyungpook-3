@@ -258,6 +258,8 @@ def _empty_workspace(db: Session, workspace: Workspace, now: datetime) -> None:
     for meeting in meetings:
         meeting.deleted_at = now
         meeting.title = None
+        meeting.title_original = None
+        meeting.title_edited_at = None
         meeting.failed_stage = None
         meeting.processing_stage = None
         meeting.processing_stage_at = None

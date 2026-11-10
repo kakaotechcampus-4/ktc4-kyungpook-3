@@ -8,7 +8,7 @@
 const PILL_LINK =
   'inline-flex items-center justify-center whitespace-nowrap rounded-999 font-semibold'
 
-export const LINK_PRIMARY = `${PILL_LINK} bg-ink text-surface hover:bg-dim hover:text-surface active:bg-sub`
+export const LINK_PRIMARY = `${PILL_LINK} bg-ink-solid text-surface hover:bg-dim hover:text-surface active:bg-sub`
 
 export const LINK_SECONDARY = `${PILL_LINK} bg-control text-ink hover:bg-line-strong active:bg-inactive`
 
