@@ -90,7 +90,7 @@ const HOURS = Array.from({ length: 24 }, (_, hour) => hour)
 const ROW = 'flex items-center gap-16 px-18 py-15 border-line'
 /* 토글 — 켜짐은 먹 트랙에 흰 손잡이 오른쪽, 꺼짐은 비활성 면 트랙에 점선 테두리 손잡이 왼쪽 */
 const TRACK =
-  'inline-flex h-[23px] w-40 shrink-0 items-center rounded-999 p-3 leading-none aria-checked:bg-ink disabled:cursor-default'
+  'inline-flex h-[23px] w-40 shrink-0 items-center rounded-999 p-3 leading-none aria-checked:bg-ink-solid disabled:cursor-default'
 const KNOB = 'h-[17px] w-[17px] rounded-999 bg-surface'
 /* 꺼진 손잡이의 실선 테두리는 점선 색이다. `border-dashed` 는 모양까지 점선으로 바꿔 쓰지 않는다
    (docs/impl-decision/2026-09-16-border-dashed-name-collision.md) */

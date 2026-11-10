@@ -374,7 +374,7 @@ function ReviewRow({ workspaceId, approval, meetings }: ReviewRowProps) {
           {hold ? (
             <span className={`${BADGE} bg-control text-sub`}>보류</span>
           ) : (
-            <span className={`${BADGE} bg-ink text-surface`}>
+            <span className={`${BADGE} bg-ink-solid text-surface`}>
               <span aria-hidden="true" className="mr-3 h-5 w-5 rounded-999 bg-current" />
               확인 필요
             </span>

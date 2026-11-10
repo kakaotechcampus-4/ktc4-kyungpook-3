@@ -47,7 +47,7 @@ const SYNC_LABEL: Record<RecentSyncState, string> = {
 }
 
 const SYNC_TONE: Record<RecentSyncState, string> = {
-  reverted: 'bg-ink text-surface',
+  reverted: 'bg-ink-solid text-surface',
   pending: 'bg-control text-sub',
   failed: 'bg-surface text-accent border border-accent',
   synced: 'bg-control text-ink',

@@ -45,7 +45,8 @@ export function clearUnsavedChanges(): void {
  * 경로가 바뀌는 이동 하나를 관문에 넣는다. 변경이 없으면 바로 실행한다.
  * 변경이 있으면 실행하지 않고 저장해 둔다 — 모달이 열리고 사용자가 고른다.
  * 이동 관문은 GuardedLink·useGuardedNavigate·useBrowserLeaveGuard 셋이다. 그 밖에는 화면을 떠나는
- * 동작(로그아웃, features/auth 의 useLogout)만 이 함수로 먼저 묻는다.
+ * 동작(로그아웃, features/auth 의 useLogout 등)도 이 함수로 먼저 묻는다. 화면에 남는 전환(프로젝트 맵 주제 패널의
+ * 고치기 바꾸기)은 나가기 문구가 맞지 않아 여기를 거치지 않고 스스로 묻는다.
  * 지금 실행했으면 true, 모달에 맡겼으면 false 다 — 호출한 쪽이 이동 뒤의 포커스를 정할 때 쓴다.
  */
 export function guardLeave(leave: () => void): boolean {

@@ -101,12 +101,14 @@
 
 ### 성능 수치
 
+개선 원인·전후 범위·측정 조건·채택하지 않은 시도는 [프론트엔드 성능 개선](performance.md)에 정리했다. 아래 표는 과거 기록의 요약이며 현재 운영 서비스에서 새로 측정한 결과가 아니다.
+
 | 날짜 | 무엇 | 조건 | 결과 | 근거 |
 |---|---|---|---|---|
 | 2026-11 (M8-A) | 태스크 1건 상태 변경 때 다른 항목 재렌더 | 310건, 렌더 횟수 계측 | 보드 309 → 0, 간트 311 → 0, 캘린더 315 → 6 | [M8 결과 A](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/result-a.md) AC-A-04, `taskViewsRender.test.tsx` |
 | 2026-11-05 | Bold 폰트 preload 제거 | Chromium headless, Slow 4G(지연 562.5ms, 180KB/s), 구성마다 7회, 168회 | LCP HTTP/2 로그인 −0.49초·대시보드 −0.56초, HTTP/1.1 −1.01초·−0.57초. 굵은 글씨는 약 1.5초 폴백 글꼴 | [폰트 재측정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/performance/2026-11-05-font-loading-remeasure.md), #352 |
 | 2026-11-05 | 폰트 unicode-range 분할 | 같은 조건 | 첫 화면 폰트 325 → 234KB 인데 LCP 는 오히려 92~220ms 늦음 → 채택 안 함 | 같은 문서 |
-| 2026-11-05 | 대시보드 최신 완료 회의 고르기 | Node, 1만 건 | 약 61ms → 1.5ms(체감 개선은 주장하지 않음) | #350, [이슈 목록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/README.md) |
+| 2026-11-05 | 대시보드 최신 완료 회의 고르기 | Node, 1만 건 | 약 61ms → 1.5ms(체감 개선은 주장하지 않음) | #350, [이슈 목록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/history/2026-11-07-followups.md) |
 | 2026-11-05 | 태스크 보드 파생값 | 프로덕션 모양 번들, 2,000건, 15라운드 중앙값 | 한 번에 5.3~8.7ms, 화면 비중 최대 약 5% → 코드 변경 보류 | [taskboard-derived](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/performance/2026-11-05-taskboard-derived.md), #351 |
 
 - 측정했지만 고치지 않은 것은 [성능 개선 거리](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/performance/README.md)에 모은다. 고치면 결정 기록으로 옮긴다.

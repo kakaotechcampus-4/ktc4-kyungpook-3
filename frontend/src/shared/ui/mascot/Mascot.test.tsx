@@ -204,10 +204,10 @@ describe('Mascot', () => {
   it('inks the body, the cap and the eyes by default', () => {
     const { container } = render(<Mascot />)
 
-    expect(part(container, 'outer')).toHaveAttribute('fill', '#171717')
-    expect(part(container, 'cap')).toHaveAttribute('fill', '#171717')
-    expect(part(container, 'eye-l')).toHaveAttribute('fill', '#171717')
-    expect(part(container, 'eye-r')).toHaveAttribute('fill', '#171717')
+    expect(part(container, 'outer')).toHaveAttribute('fill', '#333333')
+    expect(part(container, 'cap')).toHaveAttribute('fill', '#333333')
+    expect(part(container, 'eye-l')).toHaveAttribute('fill', '#333333')
+    expect(part(container, 'eye-r')).toHaveAttribute('fill', '#333333')
   })
 
   it('paints the whole mascot coral', () => {
@@ -221,9 +221,9 @@ describe('Mascot', () => {
   it('paints only the cap coral in coralCap', () => {
     const { container } = render(<Mascot palette="coralCap" />)
 
-    expect(part(container, 'outer')).toHaveAttribute('fill', '#171717')
+    expect(part(container, 'outer')).toHaveAttribute('fill', '#333333')
     expect(part(container, 'cap')).toHaveAttribute('fill', '#FF6969')
-    expect(part(container, 'eye-l')).toHaveAttribute('fill', '#171717')
+    expect(part(container, 'eye-l')).toHaveAttribute('fill', '#333333')
   })
 
   it('falls back to 96px and lets the cap overflow the viewBox', () => {
@@ -421,7 +421,7 @@ describe('Mascot', () => {
       expect(smileL).toHaveAttribute('d', SMILE_L)
       expect(smileL).toHaveAttribute('stroke-width', '14.78')
       expect(smileL).toHaveAttribute('stroke-linecap', 'round')
-      expect(smileL).toHaveAttribute('stroke', '#171717')
+      expect(smileL).toHaveAttribute('stroke', '#333333')
       expect(smileL).toHaveAttribute('fill', 'none')
       expect(part(container, 'smile-r')).toHaveAttribute('d', SMILE_R)
       expect(container.querySelector('[data-part="eye-l"], [data-part="eye-r"]')).toBeNull()

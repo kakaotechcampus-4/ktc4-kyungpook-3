@@ -4,7 +4,7 @@
 
 - [이용약관](terms.md)
 - [개인정보처리방침](privacy.md)
-- [게시와 검증 결과](../../frontend/docs/issues/565-policy-publication/result.md)
+- [게시와 검증 결과](../../frontend/docs/plan/m4/work-items/565-policy-publication/result.md)
 - [잔여 운영 확인 #565](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/565)
 
 ## 본문과 판본 관리

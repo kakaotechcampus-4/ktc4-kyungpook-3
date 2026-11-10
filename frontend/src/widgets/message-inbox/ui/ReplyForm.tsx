@@ -25,8 +25,8 @@ const FIELD = [
 ].join(' ')
 const SEND = 'grid size-44 shrink-0 place-items-center rounded-12 text-surface'
 const SEND_FACE = {
-  ready: 'bg-ink focus-visible:outline-surface focus-visible:-outline-offset-3',
-  sending: 'bg-ink opacity-45',
+  ready: 'bg-ink-solid focus-visible:outline-surface focus-visible:-outline-offset-3',
+  sending: 'bg-ink-solid opacity-45',
   blank: 'cursor-default bg-inactive',
 } as const
 const FAILURE = 'flex flex-wrap items-center gap-x-8 text-[12.5px] text-accent *:leading-[1.6]'

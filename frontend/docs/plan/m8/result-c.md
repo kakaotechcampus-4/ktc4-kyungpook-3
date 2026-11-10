@@ -3,7 +3,7 @@
 - 기록일: 2026-10-31 (2026-11-01 디자인 캔버스 기준 재작업과 검증 VR-C 발견 수정, 2026-11-02 Discord DM 카드 잘림 수정, 발송 시점 카드 hover·저장 중 버튼 깜빡임 수정, 대화 미리 받기 반영, 2026-11-04 실제 메시지 API 연결, 2026-11-05 합친 묶음으로 선택 옮기기, 재촉 직접 만들기와 태스크 빼기·메모 고치기, 2026-11-06 PM 자기 대화 답장, 리마인드 답장 판단 결과 연결, 2026-11-07 PM 자기 리마인드 대화 구역, 2026-11-08 담당자를 찾지 못한 답장 카드의 담당자 고르기, 재촉 이유·근거·목록 요약 되살리기)
 - 이슈: #245, 후속 #315(실제 API 연결), #368(묶음 합치기), #370(재촉 만들기·태스크 빼기), #367(PM 자기 대화 답장), #344(리마인드 답장 판단 결과, 2026-11-08 담당자 고르기), #417(PM 자기 리마인드 대화 구역), #394(재촉 이유·근거·목록 요약)
 - 대상: [M8 계획](plan.md) C 절의 구현 순서 1~6(결정 전)과 최종 게이트, 2026-11-01 사용자 결정(결정 4의 UI 범위 = 디자인 캔버스 기준, MSW 목)에 따른 재작업
-- 상태 (2026-11-08, #394): **보내기 전 확인의 묶은 태스크 행마다 재촉 이유와 근거 링크(`답장 보기`·`변경 보기`)가, 목록 행에 BE 요약이 보인다.** MSW 기준으로 확인했고 실제 서버 연동은 미검증이다(아래 2026-11-08 #394 절, [#394 결과](../../issues/394-bundle-reason/result.md)).
+- 상태 (2026-11-08, #394): **보내기 전 확인의 묶은 태스크 행마다 재촉 이유와 근거 링크(`답장 보기`·`변경 보기`)가, 목록 행에 BE 요약이 보인다.** MSW 기준으로 확인했고 실제 서버 연동은 미검증이다(아래 2026-11-08 #394 절, [#394 결과](work-items/394-bundle-reason/result.md)).
 - 상태 (2026-11-08, #344): **담당자를 찾지 못한 답장 카드에서 PM 이 담당자(미정 포함)를 골라야 승인할 수 있고, 고른 값이 `task_overrides.assignee_member_id` 로 나간다.** BE #460(PR #503) 판별과 공용 `Select` 를 따른다. MSW 기준으로 확인했고 실제 서버 연동은 미검증이다(아래 2026-11-08 절).
 - 상태 (2026-11-07, #417): **PM 의 자기 리마인드 대화가 메시지 목록 맨 위 `내 리마인드` 구역에 따로 있고, 팀원 화면 규칙으로 그려진다.** `대화` 와 `답장 기다리는 중 N` 에서 빠지고 기기 알림 띠가 보인다. MSW 기준으로 확인했고 실제 서버 연동은 미검증이다(아래 2026-11-07 #417 절).
 - 상태 (2026-11-06, #344): **AI 가 태스크를 정하지 못한 답장을 PM 이 대화에서 고르고, 태스크 기록이 답장과 그 답장이 바꾼 값을 한 칸으로 보이며, PM 이 자동 반영을 되돌린다.** 답장에서 온 승인은 답장을 근거로 보이고 알림 두 종류에 제목이 생겼다. MSW 기준으로 게이트·E2E 를 돌렸고 실제 서버 연동은 미검증이다(아래 2026-11-06 #344 절).
@@ -14,7 +14,7 @@
 
 ## 2026-11-08 재촉 이유·근거·목록 요약 되살리기 (#394)
 
-구현·검증 기록은 [#394 결과](../../issues/394-bundle-reason/result.md)에 있다. 여기에는 디자인 차이만 적는다. BE 가 #418 에서 묶음 응답에 `summary`·`reason`·`evidence` 를 더해, [2026-11-04 결정](basis-for-decision/2026-11-04-messages-real-api-drop-unbacked-ui.md)으로 뺀 셋 중 재촉 이유 문장·근거 링크·목록 요약을 되살렸다.
+구현·검증 기록은 [#394 결과](work-items/394-bundle-reason/result.md)에 있다. 여기에는 디자인 차이만 적는다. BE 가 #418 에서 묶음 응답에 `summary`·`reason`·`evidence` 를 더해, [2026-11-04 결정](basis-for-decision/2026-11-04-messages-real-api-drop-unbacked-ui.md)으로 뺀 셋 중 재촉 이유 문장·근거 링크·목록 요약을 되살렸다.
 
 ### 디자인과 다른 점 (2026-11-08 기준)
 
@@ -406,7 +406,7 @@ PM 이 묶음 A 를 연 채(`?review=A`) 보낼 시각을 같은 팀원의 예�
 
 ### 화면
 
-[ReviewDetail](../../../src/widgets/message-inbox/ui/ReviewDetail.tsx)에서 시각 저장 결과가 `merged` 면 상세 영역에 포커스를 두고 주소를 `?review=<B>` 로 바꿔 끼운다(replace). A 는 없어졌으므로 뒤로 가기로 돌아가지 않게 한다. 합쳐지지 않으면 지금과 같다(주소 그대로, 직접 정하기 칸을 닫고 그 카드로 포커스). [SendTimingPicker](../../../src/widgets/message-inbox/ui/SendTimingPicker.tsx)는 바꾸지 않았다. 문구를 고치는 동안 시각 카드가 잠기므로 시각과 문구가 한 요청에 섞이지 않는다.
+[ReviewDetail](../../../src/widgets/message-inbox/ui/ReviewDetail.tsx)에서 시각 저장 결과가 `merged` 면 상세 영역에 포커스를 두고 주소를 `?review=<B>` 로 바꿔 끼운다(replace). A 는 없어졌으므로 뒤로 가기로 돌아가지 않게 한다. 합쳐지지 않으면 지금과 같다(주소 그대로, 직접 정하기 칸을 닫고 그 카드로 포커스). [SendTimingPicker](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/190440b017b4d36e764238810136f020115d825a/frontend/src/widgets/message-inbox/ui/SendTimingPicker.tsx)는 바꾸지 않았다. 문구를 고치는 동안 시각 카드가 잠기므로 시각과 문구가 한 요청에 섞이지 않는다.
 
 ### MSW
 
@@ -499,7 +499,7 @@ PM 이 묶음 A 를 연 채(`?review=A`) 보낼 시각을 같은 팀원의 예�
 | [meetingProcessing.test.tsx](../../../src/app/meetingProcessing.test.tsx) 「업무 요청은 추적기 두 모양뿐」 | 시작 화면(메시지)의 업무 요청 0 | 메시지 조회를 뺀 업무 요청 0 | 같은 이유. 추적기 요청 단언은 그대로 |
 | [messagesMsw](../../../src/app/messagesMsw.test.tsx)·[messagesActionsMsw](../../../src/app/messagesActionsMsw.test.tsx) | MSW 모드 흉내(`vi.mock` 설정), 검토 항목·지금 바로·사유·채널·답장 판정·취소/만료 줄 | 설정 흉내 없음, 묶음·태스크·두 카드·DM 실패·초안 대기·`BUNDLE_CHANGED`·이미 처리됨 | 계약 모양과 화면 범위 변경 |
 | mapper·conversation·selection·format·message-state·messageScenarios 단위 테스트 | 임시 모양 | §5.7 모양 | 같은 이유 |
-| [MessageInbox.stories.tsx](../../../src/widgets/message-inbox/ui/MessageInbox.stories.tsx) | `답장_확인_필요`·`대화_취소_만료` | `초안_대기`·`DM_못_보냄`·`발송_시점_고를_수_없음` | 같은 이유 |
+| [MessageInbox.stories.tsx](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/5a97ddcbb084e84aab9108d5ecaf56d2299fdf7e/frontend/src/widgets/message-inbox/ui/MessageInbox.stories.tsx) | `답장_확인_필요`·`대화_취소_만료` | `초안_대기`·`DM_못_보냄`·`발송_시점_고를_수_없음` | 같은 이유 |
 
 ### 검증 (2026-11-04)
 
@@ -543,7 +543,7 @@ Node v24.11.0. 계획 [plan.md](plan.md)는 읽기만 했다. 다른 워크트�
 | 커밋 | 요지 |
 |---|---|
 | `13151bf` | 임시 DTO·도메인 타입에 시안 항목(역할, Discord 주소, 답장 대기 시작 시각, 승인 대기, 메시지 상태·발송 방식·승인자, 마감·사유·근거 링크·발송 시점) 추가, 행동 요청 `requestMessageReviewAction`, MSW handler 행동 3개(PATCH·send·dismiss)와 시나리오 `messages-send-fail`, 모의 DB 저장 버전 3→4, `features/message-review`(행동 훅·실패 알림) |
-| `c542a0f` | 보내기 전 확인([ReviewDetail](../../../src/widgets/message-inbox/ui/ReviewDetail.tsx)·[ReviewMessageCard](../../../src/widgets/message-inbox/ui/ReviewMessageCard.tsx)·[SendTimingPicker](../../../src/widgets/message-inbox/ui/SendTimingPicker.tsx)), 대화([ThreadDetail](../../../src/widgets/message-inbox/ui/ThreadDetail.tsx)), 목록·기본 선택·빈 상태 액션([MessageInbox](../../../src/widgets/message-inbox/ui/MessageInbox.tsx)), 아이콘 4개(`edit`·`send`·`clock`·`link-out`), 통합 테스트·스토리 |
+| `c542a0f` | 보내기 전 확인([ReviewDetail](../../../src/widgets/message-inbox/ui/ReviewDetail.tsx)·[ReviewMessageCard](../../../src/widgets/message-inbox/ui/ReviewMessageCard.tsx)·[SendTimingPicker](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/190440b017b4d36e764238810136f020115d825a/frontend/src/widgets/message-inbox/ui/SendTimingPicker.tsx)), 대화([ThreadDetail](../../../src/widgets/message-inbox/ui/ThreadDetail.tsx)), 목록·기본 선택·빈 상태 액션([MessageInbox](../../../src/widgets/message-inbox/ui/MessageInbox.tsx)), 아이콘 4개(`edit`·`send`·`clock`·`link-out`), 통합 테스트·스토리 |
 | `bbccc5f` | 저장 버전 기대값 3→4([taskScenarios.test.ts](../../../src/shared/mock/taskScenarios.test.ts), [restore.e2e.ts](../../../e2e/restore.e2e.ts)) |
 | `d058561` | [MSW 안내](../../msw-guide.md)의 메시지 절(행동 경로, `messages-send-fail`, 기본 선택, 상대 표기와 날짜) |
 | `ee14e91` | [결정 기록](basis-for-decision/2026-11-01-message-ui-scope-design-canvas-msw.md) |
@@ -604,7 +604,7 @@ Node v24.11.0. 계획 [plan.md](plan.md)는 읽기만 했다. 다른 워크트�
 | [mapper.test.ts](../../../src/entities/message/model/mapper.test.ts) | 화면이 마지막 메시지로 답장 대기를 계산 | 서버가 준 시작 시각을 그대로 옮김 | 답장 대기 판정을 handler로 옮김(며칠째 계산의 기준 시각이 필요) |
 | [messageScenarios.test.ts](../../../src/shared/mock/messageScenarios.test.ts) | 조회만 | 행동·검증·실패 시나리오 추가 | 행동 handler 추가 |
 | 저장 버전 3 기대값 2곳 | 3 | 4 | MockDb 모양 변경(파일 규칙) |
-| [MessageInbox.stories.tsx](../../../src/widgets/message-inbox/ui/MessageInbox.stories.tsx) `검토_항목` | 버튼 없음 | 버튼·시점·사유 있음 | 같은 이유. 스토리 `고쳐_쓰기`·`발송_실패`·`대화_승인` 추가(모두 `M8 메시지/화면`) |
+| [MessageInbox.stories.tsx](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/5a97ddcbb084e84aab9108d5ecaf56d2299fdf7e/frontend/src/widgets/message-inbox/ui/MessageInbox.stories.tsx) `검토_항목` | 버튼 없음 | 버튼·시점·사유 있음 | 같은 이유. 스토리 `고쳐_쓰기`·`발송_실패`·`대화_승인` 추가(모두 `M8 메시지/화면`) |
 
 ### 검증 (2026-11-01)
 
@@ -645,7 +645,7 @@ Node v24.11.0, 기준 커밋 `ee14e91`. 무거운 명령은 직렬화 wrapper로
 | VR-01 major | `직접 정하기`를 연 채(시각 미저장) `이대로 발송`이 즉시 발송으로 나감 | 시각 칸이 열린 상태를 [ReviewDetail](../../../src/widgets/message-inbox/ui/ReviewDetail.tsx)로 올려(`choosingTime`) 열린 동안 `이대로 발송`·`보내지 않음`·`고쳐 쓰기`를 잠그고, 안내 `정한 시각을 저장하거나 취소한 뒤에 보낼 수 있어요.`를 `aria-describedby`로 잇는다 | `804eac2` | [messagesActionsMsw](../../../src/app/messagesActionsMsw.test.tsx) 「직접 정하기를 연 동안에는 … 잠기고, 취소하면 풀린다」(누름이 요청 0건) |
 | VR-02 minor | 저장한 `직접 정하기` 시각을 다시 열 수 없음(checked 라디오는 change 없음) | `직접 정하기` 라디오의 누름(click, Space 포함)으로도 시각 칸을 연다. 저장된 시각이 채워진다 | `804eac2` | 「저장한 직접 정하기 시각은 그 카드를 다시 눌러 고칠 수 있다 — 마우스와 Space 모두」 |
 | VR-03 minor | 화살표 키 이동만으로 발송 시점이 저장되고, 저장 중 포커스가 BODY로 떨어짐 | 화살표는 카드 사이로 포커스만 옮기고(끝에서 처음으로, `마감 없음` 건너뜀) Space·누름으로만 고른다. 요청 중 잠금은 `fieldset disabled` 대신 라디오의 `aria-disabled` + 조기 반환. [기록](basis-for-decision/2026-11-01-send-timing-arrow-keys-move-focus-only.md) | `804eac2` | 「화살표 키는 카드 사이를 옮겨 다닐 뿐 저장하지 않는다」, 「… 고를 수 없는 카드(마감 없음)를 건너뛴다」, 「지금 바로를 누르면 …」에 포커스·`aria-disabled` 단언 |
-| VR-04 minor | 행동 뒤 포커스가 BODY로 사라짐 | 문구 칸을 열면 그 칸, 닫으면(취소·저장 성공) `고쳐 쓰기`, 시각 칸을 닫으면 `직접 정하기` 카드로 포커스. 요청 중인 버튼은 [LockedButton](../../../src/widgets/message-inbox/ui/LockedButton.tsx)(`aria-disabled` + 누름 버림)으로 포커스를 남기고 실패해도 그 버튼에 있다. 발송·보내지 않음 성공 뒤에는 상세 칸(`메시지 내용`, `tabIndex=-1`)이 포커스를 받는다 — 대화의 승인·반려 성공 뒤 `대화 내용`으로 옮기는 것과 같은 방식 | `804eac2` | 발송·보내지 않음·고쳐 쓰기·발송 시점·대화 승인/반려 사례의 `document.activeElement` 단언, 스토리 `고쳐_쓰기` play의 문구 칸 포커스 |
+| VR-04 minor | 행동 뒤 포커스가 BODY로 사라짐 | 문구 칸을 열면 그 칸, 닫으면(취소·저장 성공) `고쳐 쓰기`, 시각 칸을 닫으면 `직접 정하기` 카드로 포커스. 요청 중인 버튼은 [LockedButton](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/ddba9eca8e6b313bdf74c75869eca92de139cdcd/frontend/src/widgets/message-inbox/ui/LockedButton.tsx)(`aria-disabled` + 누름 버림)으로 포커스를 남기고 실패해도 그 버튼에 있다. 발송·보내지 않음 성공 뒤에는 상세 칸(`메시지 내용`, `tabIndex=-1`)이 포커스를 받는다 — 대화의 승인·반려 성공 뒤 `대화 내용`으로 옮기는 것과 같은 방식 | `804eac2` | 발송·보내지 않음·고쳐 쓰기·발송 시점·대화 승인/반려 사례의 `document.activeElement` 단언, 스토리 `고쳐_쓰기` play의 문구 칸 포커스 |
 | VR-05 minor | 발송 시점 카드 포커스 선 offset +4px | 테두리 위 `-1`, 고른 먹 면 카드는 안쪽 흰 선 `-3`(디자인 시스템 §3-3) | `9add5ac` | [messagesMsw](../../../src/app/messagesMsw.test.tsx) 「… 포커스 선은 테두리 위(-1) …」 |
 | VR-06 minor | 목록 영역 라벨 700(시안 400) | `font-normal` | `9add5ac` | 「목록 영역 라벨은 400 이다」 |
 | VR-07 minor | `보내지 않음` 좌우 22px(시안 18), `이대로 발송` 아이콘 간격 6px(시안 8) — `className` 덮어쓰기가 생성 CSS 순서에 져서 적용되지 않음 | 공용 [Button](../../../src/shared/ui/button/Button.tsx) 크기 표에 `message-dismiss`(44 · 좌우 18 · 14px)·`message-send`(44 · 좌우 24 · 간격 8 · 14.5px)를 더하고 `className` 덮어쓰기를 지웠다. 간격(gap)은 BASE에서 빼 크기마다 하나만 고른다([클래스 병합을 쓰지 않는 결정](../m2/basis-for-decision/2026-09-16-no-cn-clsx-tailwind-merge.md)의 「시각은 size가 API」) | `9add5ac` | 「보내기 전 확인의 버튼은 캔버스 크기 …」, [Button.test](../../../src/shared/ui/button/Button.test.tsx) 새 크기 사례와 「크기마다 간격 하나」 |
@@ -676,7 +676,7 @@ VR-08을 재현하다 공용 문제를 하나 찾았다. `text-control`(토큰 1
 |---|---|---|---|
 | [messagesActionsMsw.test.tsx](../../../src/app/messagesActionsMsw.test.tsx) 요청 중·고치는 중 잠금 10곳(`이대로 발송`·`보내지 않음`·`고쳐 쓰기`·`지금 바로` 라디오·`반려`) | `toBeDisabled()` | `aria-disabled="true"` | 잠금을 포커스를 남기는 `aria-disabled`로 바꿨다(VR-03·VR-04). `toBeDisabled`는 네이티브 `disabled`만 본다 |
 | 같은 파일 실패·저장 뒤 풀림 3곳 | `toBeEnabled()` | `aria-disabled` 없음 | 같은 이유 — `toBeEnabled`는 `aria-disabled`가 있어도 통과해 잠금 해제를 가리지 못한다 |
-| [MessageInbox.stories.tsx](../../../src/widgets/message-inbox/ui/MessageInbox.stories.tsx) `고쳐_쓰기` | `이대로 발송` `toBeDisabled()` | `aria-disabled="true"`, 문구 칸 포커스 | 같은 이유, VR-04 회귀 |
+| [MessageInbox.stories.tsx](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/5a97ddcbb084e84aab9108d5ecaf56d2299fdf7e/frontend/src/widgets/message-inbox/ui/MessageInbox.stories.tsx) `고쳐_쓰기` | `이대로 발송` `toBeDisabled()` | `aria-disabled="true"`, 문구 칸 포커스 | 같은 이유, VR-04 회귀 |
 | [Button.tsx](../../../src/shared/ui/button/Button.tsx) BASE | `gap-6` | 크기 표마다 `gap-6`(메시지 발송만 `gap-8`) | 기존 크기 사례는 그대로 통과한다. 그 밖의 렌더 결과는 같다 |
 
 jsdom은 `disabled`가 된 요소에서 포커스를 빼지 않는다. 그래서 `document.activeElement` 단언만으로는 예전 결함이 잡히지 않고(대화 `반려` 실패 사례는 수정 전에도 통과했다), 잠금이 `aria-disabled`인지 함께 단언한다.
@@ -763,7 +763,7 @@ Node v24.11.0, 커밋 `228eabb`·`c2b5fac` 뒤 작업 트리. 무거운 명령�
 
 사용자 지적(코디네이터 지시, 2026-11-02, 직전 커밋 `0e45a43` 후속) 두 가지를 재현했다.
 
-1. **시점 카드에 hover 효과가 없음(결함).** [SendTimingPicker](../../../src/widgets/message-inbox/ui/SendTimingPicker.tsx)의 카드 클래스에 hover 지정이 없었다. [디자인 시스템](../../design/design-system.md) §7-12는 「선택 카드: hover 면은 아웃라인 버튼과 같은 `#EDEDED`, 테두리는 hover에서 바꾸지 않는다」다.
+1. **시점 카드에 hover 효과가 없음(결함).** [SendTimingPicker](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/190440b017b4d36e764238810136f020115d825a/frontend/src/widgets/message-inbox/ui/SendTimingPicker.tsx)의 카드 클래스에 hover 지정이 없었다. [디자인 시스템](../../design/design-system.md) §7-12는 「선택 카드: hover 면은 아웃라인 버튼과 같은 `#EDEDED`, 테두리는 hover에서 바꾸지 않는다」다.
 2. **시점 카드를 누르면 `이대로 발송`이 깜빡임.** 카드를 누르면 바로 발송 시점을 저장하고(PATCH), 그동안 [ReviewDetail](../../../src/widgets/message-inbox/ui/ReviewDetail.tsx)의 행동 잠금으로 `이대로 발송`·`보내지 않음`·`고쳐 쓰기`가 공용 [Button](../../../src/shared/ui/button/Button.tsx)의 `aria-disabled` 모양이 된다. 코디네이터 실측(포트 5223, `messages-default`, `지금 바로`): 20ms에 `aria-disabled=true`·면 `rgb(240, 240, 240)`, 111ms에 풀려 `rgb(23, 23, 23)` — 약 90ms 깜빡임.
 
 ### 수정
@@ -771,8 +771,8 @@ Node v24.11.0, 커밋 `228eabb`·`c2b5fac` 뒤 작업 트리. 무거운 명령�
 | 지적 | 수정 | 회귀 테스트 |
 |---|---|---|
 | 1 hover 없음 | 카드에 `hover:bg-control`(아웃라인 버튼 hover와 같은 컨트롤 토큰 `#EDEDED`). 고른 먹 면·고를 수 없는(`disabled`, `마감 하루 전` 비활성)·잠긴(`aria-disabled`) 카드는 `not-has-[…]`로 뺀다. 테두리는 그대로 | 스토리 `발송_시점_hover` — 고를 수 있는 카드만 hover 면 `rgb(237, 237, 237)`, 고른 카드·고를 수 없는 카드는 hover 규칙이 걸리지 않음. `발송_시점_저장_중` — 잠긴 카드도 걸리지 않음 |
-| 2 깜빡임(사용자 결정 방식 A) | 시점 저장만으로 잠긴 동안 [LockedButton](../../../src/widgets/message-inbox/ui/LockedButton.tsx)의 새 옵션 `keepLook`이 버튼 모양을 유지한다. 잠금은 그대로 `aria-disabled="true"`이고 누름을 버린다. 시점 묶음(`fieldset`)에는 `aria-busy`. 시각 칸이 열림(lockHint)·문구 고치는 중·발송/보내지 않음 요청 중은 지금처럼 잠긴 모양이다. 공용 Button은 바꾸지 않았다 | 스토리 `발송_시점_저장_중` — PATCH를 붙잡고 `이대로 발송`이 `aria-disabled`이면서 면·글자 색이 잠금 전과 같음, `보내지 않음` 글자 색 같음, 그때 누른 발송 요청 0건. lockHint·고치는 중 잠금은 기존 단언([messagesActionsMsw](../../../src/app/messagesActionsMsw.test.tsx) 「직접 정하기를 연 동안에는 …」, 스토리 `고쳐_쓰기`) 그대로 |
-| 2 누름이 무시된 이유 | 저장이 400ms를 넘으면 저장 중인 카드 오른쪽 위에 `저장 중`을 작게 얹는다([useShownAfter](../../../src/widgets/message-inbox/lib/useShownAfter.ts)). 카드의 테두리·면·글자 색과 높이는 바꾸지 않고, 저장이 끝나면 바로 사라진다 | [messagesActionsMsw](../../../src/app/messagesActionsMsw.test.tsx) 「저장이 늦을 때만 그 카드에 저장 중이 보인다 …」(누른 직후 없음 → 잠시 뒤 그 카드에만 → 저장 뒤 사라짐, `aria-busy`), 스토리 `발송_시점_저장_중` |
+| 2 깜빡임(사용자 결정 방식 A) | 시점 저장만으로 잠긴 동안 [LockedButton](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/ddba9eca8e6b313bdf74c75869eca92de139cdcd/frontend/src/widgets/message-inbox/ui/LockedButton.tsx)의 새 옵션 `keepLook`이 버튼 모양을 유지한다. 잠금은 그대로 `aria-disabled="true"`이고 누름을 버린다. 시점 묶음(`fieldset`)에는 `aria-busy`. 시각 칸이 열림(lockHint)·문구 고치는 중·발송/보내지 않음 요청 중은 지금처럼 잠긴 모양이다. 공용 Button은 바꾸지 않았다 | 스토리 `발송_시점_저장_중` — PATCH를 붙잡고 `이대로 발송`이 `aria-disabled`이면서 면·글자 색이 잠금 전과 같음, `보내지 않음` 글자 색 같음, 그때 누른 발송 요청 0건. lockHint·고치는 중 잠금은 기존 단언([messagesActionsMsw](../../../src/app/messagesActionsMsw.test.tsx) 「직접 정하기를 연 동안에는 …」, 스토리 `고쳐_쓰기`) 그대로 |
+| 2 누름이 무시된 이유 | 저장이 400ms를 넘으면 저장 중인 카드 오른쪽 위에 `저장 중`을 작게 얹는다([useShownAfter](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/ddba9eca8e6b313bdf74c75869eca92de139cdcd/frontend/src/widgets/message-inbox/lib/useShownAfter.ts)). 카드의 테두리·면·글자 색과 높이는 바꾸지 않고, 저장이 끝나면 바로 사라진다 | [messagesActionsMsw](../../../src/app/messagesActionsMsw.test.tsx) 「저장이 늦을 때만 그 카드에 저장 중이 보인다 …」(누른 직후 없음 → 잠시 뒤 그 카드에만 → 저장 뒤 사라짐, `aria-busy`), 스토리 `발송_시점_저장_중` |
 
 고른 방식과 이유 — 접근성 의미(버튼 `aria-disabled` + 묶음 `aria-busy`), 모양 유지를 위젯 전용 `LockedButton`에 둔 것, 저장 중 표시를 지연만 두고 최소 표시 시간을 두지 않은 것 — 는 [결정 기록](basis-for-decision/2026-11-02-schedule-save-lock-keeps-button-look.md)에 남겼다. 같은 이유로 깜빡이던 `고쳐 쓰기`(default 변형)도 함께 유지했다 — 지시가 이름 붙인 두 버튼 밖이지만 같은 잠금·같은 결함이라 포함했다.
 
@@ -877,7 +877,7 @@ Node v24.11.0. 계획 [plan.md](plan.md)는 읽기만 했다.
 - **MSW** — [handler](../../../src/shared/mock/handlers/message.ts)는 조회 `GET /api/v1/workspaces/:workspaceId/messages`, `GET /api/v1/workspaces/:workspaceId/messages/threads/:threadId`와 2026-11-01에 더한 행동 `PATCH …/messages/reviews/:reviewId`, `POST …/reviews/:reviewId/send`, `POST …/reviews/:reviewId/dismiss`다. 공간 ID로 걸러 다른 공간의 대화는 404다. 없는 대화의 오류 코드 `MESSAGE_THREAD_NOT_FOUND`도 임시이며 화면은 상태 404만 본다. [픽스처](../../../src/shared/mock/fixtures/message.ts), [메모리 DB](../../../src/shared/mock/db.ts)의 `messageReviews`·`messageThreads`·`messageFailures`, 시나리오 `messages-default`·`messages-empty`·`messages-list-error`·`messages-thread-error`와 2026-11-01의 `messages-send-fail`([scenarios.ts](../../../src/shared/mock/scenarios.ts)). MockDb 모양이 바뀌어 [persistence.ts](../../../src/shared/mock/persistence.ts)의 `MOCK_DB_VERSION`을 2→3으로, 2026-11-01에 다시 4로 올렸다(파일 규칙 「MockDb 모양을 바꾸면 버전을 올린다」).
 - **화면** — [widgets/message-inbox](../../../src/widgets/message-inbox): [MessageInbox](../../../src/widgets/message-inbox/ui/MessageInbox.tsx)(2단·목록·빈 상태·목록 오류), [ThreadDetail](../../../src/widgets/message-inbox/ui/ThreadDetail.tsx)(대화·대화 오류·404·승인 대기·안내 바), 보내기 전 확인 [ReviewDetail](../../../src/widgets/message-inbox/ui/ReviewDetail.tsx)(2026-10-31의 읽기 전용 `ReviewPreview`를 대신함), [MessageSkeletons](../../../src/widgets/message-inbox/ui/MessageSkeletons.tsx), 날짜·시각 [format.ts](../../../src/widgets/message-inbox/lib/format.ts). 목록 Query와 대화 Query는 서로 기다리지 않는다.
 - **스크롤 칸** — 목록과 대화가 각자 세로로 스크롤한다. 구현 중 첫 측정에서 문서 높이가 5955px로 늘어 페이지가 세로로 스크롤되는 것을 발견했다. 말풍선·행의 `sr-only`(absolute) 글자가 스크롤 칸 밖으로 새어 나간 것이라 스크롤 칸을 `relative`로 고쳤다(`351a70e`).
-- **스토리** — [MessageInbox.stories.tsx](../../../src/widgets/message-inbox/ui/MessageInbox.stories.tsx)(`M8 메시지/화면`): 기본, 검토 항목, 고쳐 쓰기, 발송 실패, 대화, 대화 승인, 빈 상태, 로딩, 목록 오류, 대화 오류, 긴 대화(11개, 고쳐 쓰기·발송 실패·대화 승인은 2026-11-01 추가).
+- **스토리** — [MessageInbox.stories.tsx](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/5a97ddcbb084e84aab9108d5ecaf56d2299fdf7e/frontend/src/widgets/message-inbox/ui/MessageInbox.stories.tsx)(`M8 메시지/화면`): 기본, 검토 항목, 고쳐 쓰기, 발송 실패, 대화, 대화 승인, 빈 상태, 로딩, 목록 오류, 대화 오류, 긴 대화(11개, 고쳐 쓰기·발송 실패·대화 승인은 2026-11-01 추가).
 - **테스트** — MSW 모드 통합 테스트 [messagesMsw.test.tsx](../../../src/app/messagesMsw.test.tsx)(테스트 파일 안에서만 `config.mswEnabled`를 바꾼다), handler [messageScenarios.test.ts](../../../src/shared/mock/messageScenarios.test.ts), [mapper.test.ts](../../../src/entities/message/model/mapper.test.ts), [format.test.ts](../../../src/widgets/message-inbox/lib/format.test.ts), 2026-11-01에 더한 행동 통합 테스트 [messagesActionsMsw.test.tsx](../../../src/app/messagesActionsMsw.test.tsx)와 두 파일이 함께 쓰는 [messageScreen.ts](../../../src/app/test/messageScreen.ts). 로딩과 「응답 전에는 그대로」는 시나리오가 아니라 응답을 붙잡아(deferred) 재현한다.
 
 임시 도메인 타입, DTO, MSW 경로, 오류 코드, 화면 하위 경로와 `review` 파라미터는 **계약이 아니다.** 코드의 각 파일 머리말에 임시라고 적었고 [대표 계약](../../contracts/frontend-api-contract.md) §5.7(「1차에서 화면을 만들지 않는다(D-171)」)은 고치지 않았다.

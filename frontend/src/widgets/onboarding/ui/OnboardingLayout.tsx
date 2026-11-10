@@ -32,7 +32,7 @@ const EXIT_SLOT = 'absolute top-24 left-24'
 
 const DOTS = 'flex items-center justify-center gap-7'
 
-const DOT_CURRENT = 'h-6 w-6 rounded-999 bg-ink'
+const DOT_CURRENT = 'h-6 w-6 rounded-999 bg-ink-solid'
 
 const DOT = 'h-5 w-5 rounded-999 bg-inactive'
 

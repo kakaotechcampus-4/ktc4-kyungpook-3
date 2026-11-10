@@ -33,16 +33,16 @@ const LINK = 'text-caption font-semibold text-ink underline underline-offset-3'
 const SPEAKERS_BUTTON =
   'inline-flex h-32 items-center justify-center rounded-9 bg-accent-solid px-12 text-[13px] font-semibold whitespace-nowrap text-surface hover:bg-accent focus-visible:outline-surface focus-visible:-outline-offset-3'
 const PILL =
-  'pointer-events-auto inline-flex h-34 items-center rounded-999 bg-ink pr-4 text-caption font-semibold text-surface'
+  'pointer-events-auto inline-flex h-34 items-center rounded-999 bg-ink-solid pr-4 text-caption font-semibold text-surface'
 const PILL_TOGGLE =
   'inline-flex h-full min-w-0 items-center gap-8 rounded-999 pl-14 pr-8 focus-visible:outline-surface focus-visible:-outline-offset-3'
 const PILL_DISMISS =
   'inline-flex size-26 shrink-0 items-center justify-center rounded-999 text-surface hover:bg-surface/15 focus-visible:outline-surface focus-visible:-outline-offset-3'
 
 const SEGMENT: Record<ProcessingStepState, string> = {
-  done: 'bg-ink',
+  done: 'bg-ink-solid',
   current:
-    'bg-[repeating-linear-gradient(90deg,var(--color-ink)_0_6px,var(--color-line)_6px_10px)]',
+    'bg-[repeating-linear-gradient(90deg,var(--color-ink-solid)_0_6px,var(--color-line)_6px_10px)]',
   waiting: 'bg-line',
 }
 
@@ -150,7 +150,7 @@ function Card({
         <section aria-label={`${signal.title} 정리 중`} className={`${CARD} ${NEUTRAL}`}>
           <div className={TOP}>
             <p className={`${TITLE} text-ink`}>
-              <span aria-hidden="true" className="size-6 shrink-0 rounded-999 bg-ink" />
+              <span aria-hidden="true" className="size-6 shrink-0 rounded-999 bg-ink-solid" />
               <span className="min-w-0 wrap-anywhere">{signal.title} 정리 중</span>
             </p>
             <div className="-mt-4 -mr-6 flex shrink-0 gap-2">

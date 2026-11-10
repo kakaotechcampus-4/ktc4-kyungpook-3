@@ -313,11 +313,17 @@ class SummaryLine(_Base):
 
 @dataclass(frozen=True)
 class SummaryItem(_Base):
+    """그 회의 항목이 정한 값에 PM 이 승인하며 고친 값을 덮은 것이다. update 는 그 수정이 바꾼 값만 있고 나머지는 None.
+    update 가 비운 칸은 cleared("assignee", "due_date"), 승인된 범위 결정은 scope 로 온다."""
+
     item_id: str
     action: str
     title: str
     assignee: str | None
     due_date: str | None
+    status: str | None = None
+    cleared: list[str] = field(default_factory=list)
+    scope: str | None = None
 
 
 @dataclass(frozen=True)
@@ -349,6 +355,10 @@ class SummaryInput(_Base):
     topics: list[SummaryTopic]
     decisions: list[SummaryPriorDecision]
     identity_epoch: int
+    source: str = ""                # "chat" 이면 일일 채팅 요약 틀을 쓴다
+    members: list[str] = field(default_factory=list)       # 오인식된 이름을 고칠 팀원 이름
+    asr_terms: list[str] = field(default_factory=list)     # 오인식된 용어를 고칠 워크스페이스 용어
+    rejected_items: list[str] = field(default_factory=list)  # 이 회의에서 PM 이 반려한 할 일. 정해진 일로 쓰지 않게 한다
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "SummaryInput":
@@ -374,6 +384,7 @@ class TaskChange(_Base):
     due: str
     purpose: str
     precondition: str
+    item_id: str | None = None      # 재료의 항목. BE 는 반영된 항목의 줄만 보인다
 
 
 @dataclass(frozen=True)

@@ -78,15 +78,15 @@ docker compose -f docker-compose.prod.yml logs -f api
 
 ## 심사용 시드
 
-심사 시연용으로 계정 6개, 공간 하나, 팀원 자리, 온보딩 단계, 지난 회의를 채우는 명령이다(#606). 계정·공간·자리는 DB 에 직접 만들고, 지난 회의는 AI 봇과 같은 서비스 토큰 API 로 재생한다(회의 데이터를 DB 에 직접 넣지 않는다). 같은 명령을 다시 실행해도 같은 결과이고, 멈춘 지점부터 이어 간다. 시드 데이터는 `app/cli/demo_seed/meetings.json` 이다.
+심사 시연용으로 계정 6개, 공간 하나, 팀원 자리, 온보딩 단계, 지난 회의를 채우는 명령이다(#606). 계정·공간·자리는 DB 에 직접 만들고, 지난 회의는 AI 봇과 같은 서비스 토큰 API 로 재생한다(회의 데이터를 DB 에 직접 넣지 않는다). 기본 데이터는 승인 완료된 회의 5개와 승인 대기 시연 회의 1개다. 같은 명령을 다시 실행해도 계정·회의를 중복 생성하지 않고 기존 승인과 요약을 보존한다. 시드 데이터는 `app/cli/demo_seed/meetings.json` 이다.
 
-전제는 세 가지다. API 서버에 `EMBEDDING_API_KEY` 가 있어야 하고(없으면 임베딩이 안 채워져 회의 사이에서 멈춘다), `AUTO_CREATE_ENABLED` 가 켜져 있어야 하고, 명령을 돌리는 환경에 `SERVICE_TOKEN` 이 있어야 한다.
+API 서버에 `EMBEDDING_API_KEY` 가 있어야 하고(없으면 임베딩이 안 채워져 회의 사이에서 멈춘다), `AUTO_CREATE_ENABLED` 가 켜져 있어야 하고, 명령을 돌리는 환경에 `SERVICE_TOKEN` 이 있어야 한다. 승인 완료로 선언한 새 회의는 `DEMO_PM_PASSWORD`로 실제 PM 로그인과 승인 API를 호출한다. 기존 PM 계정을 재사용하면 그 계정의 현재 비밀번호가 필요하다.
 
 운영(이메일은 자리표시자다. 실제 주소를 문서나 셸 기록에 남기지 않는다). 비밀번호는 셸 기록에 남지 않게 `read -rs DEMO_PM_PASSWORD && export DEMO_PM_PASSWORD` 처럼 입력해 둔다(`DEMO_MEMBER_PASSWORD` 도 같다).
 
 ```bash
 docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBER_PASSWORD api \
-  python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com' --today 2026-11-19
+  python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com' --today 2026-11-12
 ```
 
 `--today` 는 회의 날짜의 기준일(KST)이다. 가장 늦은 회의 시작(기준일 − 가장 작은 `days_ago`, 10:00 KST)이 지난 뒤에만 끝까지 돈다. 서버가 미래 `started_at` 을 400 으로 거절하기 때문이고, 그 전이면 쓰기 전에 종료 코드 2 로 멈춘다. 재실행은 같은 기준일로 해야 이어 간다. 기준일이 다르면 종료 코드 2 와 원래 기준일 안내가 나온다(옵션 없이 처음 돌린 시드도 같고, `--allow-existing` 으로 넘길 수 없다).
@@ -110,14 +110,16 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | 종료 코드 | 뜻 |
 |---|---|
 | 0 | 성공 |
-| 1 | 시드 실패(데이터·API·임베딩 대기 오류). 한 줄이 stderr 에 나온다. 같은 명령을 다시 실행하면 이어 간다 |
+| 1 | 시드 실패(데이터·API·PM 로그인·임베딩 대기 오류). 한 줄이 stderr 에 나온다. 다시 실행하면 기존 승인을 보존하며 원문·추출 단계부터 이어 간다. 기존 추출의 요약 복구 제한은 아래를 참고한다 |
 | 2 | 입력·환경 부족(비밀번호, 이메일 패턴, `SERVICE_TOKEN`, 옵션)이나 시드가 아닌 기존 데이터 재사용 거절(`--allow-existing` 참고), 기준일 검사 실패(회의 시작이 지금보다 늦음, 이미 있는 회의의 날짜가 이번 기준일과 다름). 아무것도 쓰지 않았다 |
 | 3 | 데이터는 다 썼지만 gate 분포에 auto·review·hold 중 0 건이 있다. JSON 은 그대로 나오고 stderr 에 경고가 나온다 |
 
 알아 둘 점:
 
 - 임베딩 대기 시간 초과는 `EMBEDDING_API_KEY` 미설정일 수도 있고, 임베딩 API 가 제목을 거절한 행(`embedding_rejected_title`)일 수도 있다.
-- 운영 요약 워커(AI mm-worker, `MM_SUMMARY_LLM`)가 시드와 동시에 돌면 워커가 먼저 잡은 회의의 요약은 `summaries_skipped` 에 들어가고, 그 임대 15분 동안 같은 공간의 뒤 회의들도 건너뛸 수 있다. 시드 중에는 워커를 잠시 멈추거나, `summaries_skipped` 가 나오면 15분 뒤 같은 명령을 다시 실행한다. 요약만 채운다.
+- `approval_state`가 `approved`인 회의는 이번 실행에서 새로 만든 추출의 카드만 PM API로 승인한 뒤 고정 요약을 쓴다. 이 정책의 항목은 `action: create`만 허용한다. 필드가 없거나 `pending`인 회의는 자동 승인하거나 요약하지 않는다. 기본 6번째 회의에는 review·hold 카드가 하나씩 남는다.
+- 기존 추출은 사람이 보류·반려·수정한 것과 중단된 시드를 구분할 수 없어 자동 승인하지 않는다. 요약이 없더라도 고정 시드 요약을 다시 주입하지 않고, 승인 완료로 선언한 회의 제목을 `summaries_skipped`에 적는다. PM이 현재 승인 상태를 확인하고 정상 요약 워커로 처리하거나 새 공간에서 다시 시드한다. 기존 태스크와 저장된 요약은 덮어쓰지 않는다.
+- 운영 요약 워커(AI mm-worker, `MM_SUMMARY_LLM`)가 시드와 동시에 돌면 워커가 먼저 잡은 회의의 요약은 `summaries_skipped`에 들어가고, 그 임대 15분 동안 같은 공간의 뒤 회의들도 건너뛸 수 있다. 이 경우에도 재실행이 기존 추출의 고정 요약을 복구하지는 않는다.
 - 시드 항목의 `similar_count` 는 모두 0 이라 gate 분포는 유사 검색 결과로 바뀌지 않는다. 출력 JSON 의 `gates` 에서 auto 가 0 건이면 API 서버의 `AUTO_CREATE_ENABLED` 가 꺼져 있거나(auto 가 review 로 내려간다), 재생 중 임베딩이 아직 없는 task·승인 대기 카드가 남아 있던 경우(서버 로그의 `unsearched_task_exists`·`unsearched_pending_exists`)다.
 - 회의의 처리 완료 시각(`ended_at`)은 시드를 실행한 시각으로 남는다. 시작 시각만 며칠 전으로 합성하며, `--today` 와는 무관하다.
 - 팀원2 자리는 초대·수락 시연용으로 비워 둔다. PM 이 초대할 때는 팀원2 의 아이디(출력 JSON 의 `usernames.p2`)를 정확히 입력해 찾는다. 동의 기록은 넣지 않아 첫 로그인 때 동의 화면이 뜬다.
@@ -154,6 +156,8 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `EXTRACTION_ITEM_NOT_FOUND` | 404 | 그 추출 결과에 해당 항목이 없음 (auto 되돌리기) |
 | `TOPIC_NOT_FOUND` | 404 | 주제를 찾을 수 없음 (프로젝트 맵 주제 상세) |
 | `SUMMARY_NOT_FOUND` | 404 | 그 회의의 요약본이 아직 없음 (`summary.md`) |
+| `TRANSCRIPT_LINE_NOT_FOUND` | 404 | 그 회의에 해당 번호의 발화가 없음 (발화 고치기). `details.meeting_id`, `details.seq` |
+| `DECISION_NOT_FOUND` | 404 | 결정을 찾을 수 없음. 다른 워크스페이스의 결정이나 삭제된 회의의 결정도 같음 (결정 고치기). `details.decision_id` |
 | `APPROVAL_NOT_FOUND` | 404 | 승인 요청을 찾을 수 없음 |
 | `WORKSPACE_NOT_FOUND` | 404 | 워크스페이스를 찾을 수 없음 |
 | `MEMBER_NOT_FOUND` | 404 | 팀원을 찾을 수 없음 |
@@ -169,6 +173,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `MEETING_ALREADY_ENDED` | 409 | 이미 종료된 회의 |
 | `MEETING_NOT_PROCESSING` | 409 | 회의가 PROCESSING 상태가 아닌데 추출을 시도함 |
 | `MEETING_PROCESSING_IN_PROGRESS` | 409 | 같은 워크스페이스에 이미 처리 중인 회의가 있어 업로드를 받지 않음. `details.meeting_id` |
+| `TOPIC_NAME_TAKEN` | 409 | 바꾸려는 이름(정규화한 값)을 다른 주제가 쓰고 있음 (주제 이름 고치기). `details.topic_id` 가 그 주제 |
 | `APPROVAL_ALREADY_RESOLVED` | 409 | 이미 승인/반려 처리된 요청을 다시 처리하려 함 |
 | `APPROVAL_CONFLICT` | 409 | task_update 제안 이후 같은 필드가 바뀌었거나 대상 task 제목이 바뀌어 승인하지 않음. `details.conflicts`에 필드별 기준값·지금 값·제안 값(`field: "title"`은 대상 확인용이라 `proposed`가 null). 확인 후 `details.task_version`을 `confirm_task_version`에 담아 다시 승인하면 반영(그 사이 또 바뀌었으면 다시 409) |
 | `APPROVAL_CHANGED` | 409 | task_create 승인·반려 요청의 `payload_version`이 지금 카드 값과 달라(본 뒤 다른 회의 항목이 합쳐짐) 처리하지 않음. 카드는 대기로 남는다. `details.approval_id`, `details.payload_version`(지금 값). 상세를 다시 받아 확인한 뒤 새 값으로 다시 보낸다 |
@@ -198,7 +203,8 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `USERNAME_TAKEN` | 409 | 가입이나 아이디 변경에서 다른 계정이 이미 쓰는 아이디. 대소문자만 다른 아이디도 같은 아이디다 |
 | `TOO_MANY_LOGIN_ATTEMPTS` | 429 | 같은 이메일 10회·같은 공인 IP 50회 실패가 15분 안에 쌓여 로그인이 막힘(맞는 비밀번호도 막음). `Retry-After` 헤더와 `details.retry_after_seconds` 는 같은 정수 초 |
 | `MESSAGE_RESULT_CONFLICT` | 409 | 이미 다른 결과가 보고됐거나 아직 가져가지 않은 메시지에 결과를 보고함. `details.message_id` |
-| `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST` |
+| `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST`. `PATCH` 에 `move_discord_link: true` 를 같이 보내면 이 오류 대신 계정을 옮긴다([팀원 디스코드 연결 옮기기](#팀원-디스코드-연결-옮기기)) |
+| `MEMBER_NAME_DUPLICATED` | 409 | 팀원 추가나 이름 고치기에서 같은 워크스페이스의 활성 팀원과 이름이 같음(앞뒤 공백만 지우고 견줌). `details.display_name`·`member_id`(이미 그 이름을 쓰는 팀원) |
 | `UPLOAD_NOT_CLAIMED` | 409 | AI가 아직 가져가지(claim) 않은 업로드에 화자를 보고하려 함. `details.status`(그 시점의 회의 상태) |
 | `SPEAKERS_ALREADY_REPORTED` | 409 | 이미 화자 목록을 받은 업로드에 저장된 것과 다른 목록을 보고하려 함(같은 목록의 재전송은 200). `details.status` |
 | `MEETING_NOT_AWAITING_SPEAKERS` | 409 | 회의가 화자 지정 대기(`awaiting_speakers`) 상태가 아닌데 화자를 지정하려 함. `details.status` |
@@ -611,6 +617,14 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 
 `POST /api/v1/members` 와 `PATCH /api/v1/members/{member_id}` 의 `display_name` 은 [가입 이름 규칙](#가입-이름-규칙)과 같은 규칙을 따른다. 앞뒤 공백을 지운 값으로 저장하고, 규칙을 어기면 400 `INVALID_REQUEST` 이며 `details.fields[].loc` 에 `display_name` 이 들어간다. PATCH 에서 `display_name` 을 빼면 이름을 바꾸지 않고, `null` 을 보내면 400 이다. 이미 저장된 표시명은 검사하지 않는다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-08-member-display-name-rule.md), 규칙 원본은 `app/schemas/name.py` 의 `validate_name`(`NameStr`).
 
+같은 워크스페이스의 활성 팀원(삭제·탈퇴 제외)과 이름이 같으면 409 `MEMBER_NAME_DUPLICATED` 다. 앞뒤 공백만 지우고 견주며 대소문자는 그대로 본다(FE `memberNameKey` 와 같다). 공백은 JS `trim` 과 같은 글자(BOM·전각 공백·NBSP 포함)를 지운다. `PATCH` 는 이름이 바뀔 때만 보므로 자기 이름을 그대로 보내거나 다른 칸만 고치면 통과한다. 이미 저장된 중복은 그대로 둔다. 같은 워크스페이스의 쓰기는 워크스페이스 행 잠금으로 차례로 처리돼, 같은 이름을 동시에 보내면 두 번째가 409 다. DB 제약은 없어서 이 잠금을 거치지 않는 쓰기 경로가 생기면 막지 못한다. 원본은 `app/api/members.py` 의 `_ensure_name_free`(#652).
+
+## 팀원 디스코드 연결 옮기기
+
+`PATCH /api/v1/members/{member_id}` 에 `{discord_user_id, move_discord_link: true}` 를 보내면 그 계정을 가진 같은 워크스페이스의 다른 활성 팀원의 연결을 풀고 이 팀원에 잇는다(#652). 한 트랜잭션이고, 두 팀원 행을 `member_id` 순서로 잠근다. 앞 팀원의 이름은 그대로이고 `discord_profile` 별칭은 연결 해제 때처럼 지운다. 플래그가 없거나 `false` 면 409 `DISCORD_USER_ALREADY_MAPPED` 다. 응답은 이 팀원의 `MemberResponse` 다.
+
+팀원에 계정을 이으면(`POST` 의 `discord_user_id`, `PATCH` 의 새 계정, 옮기기) 같은 트랜잭션에서 이 워크스페이스 회의의 `source` 중 `speaker_discord_user_id` 가 그 계정인 행의 `member_id` 를 이 팀원으로 바꾼다. 연결이 없던 발화와 삭제한 팀원에 붙어 있던 발화도 포함한다. 연결을 풀기만 하면 발화는 그대로다. 계정 탈퇴는 그 팀원 발화의 화자 계정을 지우므로 다시 붙지 않는다. 이미 저장된 요약 문서와 승인 카드 payload 의 `evidence_speaker_member_id` 는 바꾸지 않는다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-10-discord-link-move-decision.md).
+
 ## 권한
 
 로그인한 사용자가 요청한 워크스페이스의 팀원인지(소속) 확인하고, 아래 쓰기 API는 PM인지까지 확인한다. 아니면 403 `FORBIDDEN`.
@@ -618,12 +632,13 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 
 | 구분 | API |
 |---|---|
-| PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, auto 되돌리기(`POST /extractions/{id}/items/{item_id}/revert`), Notion 재시도, 팀원 생성·수정, 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), Discord 연결 시작·콜백(`GET .../integrations/discord/start`, `GET /integrations/discord/callback`), Discord 채널 목록·채팅 수집 채널 저장·해제(`GET .../discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel`), 연동 해제, 회의 업로드, 온보딩 저장, 메시지 설정 변경(`PATCH /workspaces/{workspace_id}/message-settings`) |
+| PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, auto 되돌리기(`POST /extractions/{id}/items/{item_id}/revert`), Notion 재시도, 팀원 생성·수정·삭제(`DELETE /members/{id}`), 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), Discord 연결 시작·콜백(`GET .../integrations/discord/start`, `GET /integrations/discord/callback`), Discord 채널 목록·채팅 수집 채널 저장·해제(`GET .../discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel`), 연동 해제, 회의 업로드, 온보딩 저장, 메시지 설정 변경(`PATCH /workspaces/{workspace_id}/message-settings`) |
 | 소속이면 누구나 | 조회 API 전부(메시지 설정 조회 `GET .../message-settings` 포함), 승인 요청 생성(`POST /approvals`) |
 
 - Notion 연결 시작·콜백은 브라우저 페이지 이동이라 403 대신 앱 화면의 `?oauth=notion&oauth_result=failed`로 돌려보낸다.
 - 일반 팀원은 할일을 직접 바꾸지 못하고 승인 요청을 올려 PM의 승인을 받는다. 요청자(`requested_by`)는 바디 값이 아니라 로그인한 팀원으로 기록한다.
 - PM 역할은 `PATCH /members/{id}`의 `role`로 바꾼다. PM을 넘길 때는 다른 팀원을 먼저 PM으로 올린 뒤 자기를 내린다. 로그인 계정이 있는 PM이 한 명도 남지 않게 되면 409 `LAST_PM_REQUIRED`.
+- 팀원 삭제(`DELETE /members/{id}`, 204)는 행을 남기고 `is_deleted` 만 켠다. 이름·디스코드 계정·로그인 연결은 이력용으로 남는다. 마지막 PM 이 자기를 지우면 409 `LAST_PM_REQUIRED`, 없거나 탈퇴했거나 이미 지운 팀원은 404 `MEMBER_NOT_FOUND`. 끝나지 않은 태스크의 담당을 태스크 이력으로 비우고, 대기 초대와 예약 재촉·안 나간 DM 을 닫는다. 근거는 [결정 기록](docs/plan/m1/basis-for-decision/2026-11-10-member-delete-decision.md).
 - 봇 경로(회의 생성·종료·단계 보고·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회, 채팅 수집 대상 목록 `GET /bot/chat-channels`)는 사용자 세션 대신 서비스 토큰(`X-Service-Token`, `deps.require_service_token`)으로 막는다. 없거나 틀리면 401 `UNAUTHENTICATED`. 자세한 내용은 [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md#인증).
 
 ## 아직 없는 것

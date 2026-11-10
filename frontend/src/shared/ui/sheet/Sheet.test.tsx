@@ -118,4 +118,23 @@ describe('Sheet', () => {
     const sheet = await screen.findByRole('dialog', { name: '둘째 항목' })
     expect(within(sheet).getByRole('heading', { name: '둘째 항목' })).toHaveFocus()
   })
+
+  it('항목 키를 주면 같은 항목의 제목만 바뀔 때 포커스를 옮기지 않는다', async () => {
+    function Renamed() {
+      const [title, setTitle] = useState('처음 이름')
+      return (
+        <Sheet open onOpenChange={() => undefined} title={title} itemKey="item">
+          <button type="button" onClick={() => setTitle('고친 이름')}>
+            이름 고치기
+          </button>
+        </Sheet>
+      )
+    }
+    const user = userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.Never })
+    render(<Renamed />)
+    const rename = await screen.findByRole('button', { name: '이름 고치기' })
+    await user.click(rename)
+    expect(await screen.findByRole('dialog', { name: '고친 이름' })).toBeInTheDocument()
+    expect(rename).toHaveFocus()
+  })
 })

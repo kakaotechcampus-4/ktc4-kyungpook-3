@@ -1,7 +1,7 @@
 import type { MockTask } from './task'
 
 /*
- * 프로젝트 맵의 원본 (#551). 백엔드 topic · topic_meeting · topic_item · decision 표와 임베딩 유사 선에 대응한다.
+ * 프로젝트 맵의 원본 (#551). 백엔드 topic · topic_meeting · topic_item · topic_task_detach · decision 표와 임베딩 유사 선에 대응한다.
  * 응답(project-map · topics/{id})은 handler 가 이 표와 db 의 태스크·회의·팀원으로 만든다
  */
 
@@ -15,6 +15,10 @@ export interface MockTopic {
   meeting_ids: string[]
   /** 주제에 달린 태스크와 그 항목이 나온 회의 (topic_item) */
   items: { task_id: string; meeting_id: string }[]
+  /** 팀원이 뗀 태스크 (topic_task_detach). 항목은 두고 맵·주제에서 가린다 */
+  detached_task_ids: string[]
+  /** 팀원이 이름·설명을 고치거나 합치거나 태스크를 뗐다 */
+  edited: boolean
 }
 
 export interface MockDecision {
@@ -23,7 +27,14 @@ export interface MockDecision {
   text: string
   reason: string | null
   meeting_id: string
-  replaced_by: string | null
+  /**
+   * 요약이 적은, 이 결정이 뒤집은 옛 결정 (decision_details[].replaces). 뒤집기의 정본이다.
+   * 응답의 `replaced_by` 는 handler 가 이것으로 BE `_relink` 처럼 읽을 때 계산한다
+   */
+  replaces: string[]
+  /** 지운 결정(removed)은 응답에 나오지 않는다 */
+  state: 'valid' | 'invalid' | 'removed'
+  edited: boolean
 }
 
 export interface MockProjectMap {
@@ -47,6 +58,8 @@ export const projectMapFixture: MockProjectMap = {
         { task_id: 'tk_02', meeting_id: 'mt_09' },
         { task_id: 'tk_07', meeting_id: 'mt_07' },
       ],
+      detached_task_ids: [],
+      edited: false,
     },
     {
       topic_id: 'tp_02',
@@ -59,6 +72,8 @@ export const projectMapFixture: MockProjectMap = {
         { task_id: 'tk_03', meeting_id: 'mt_09' },
         { task_id: 'tk_04', meeting_id: 'mt_09' },
       ],
+      detached_task_ids: [],
+      edited: false,
     },
     {
       topic_id: 'tp_03',
@@ -71,6 +86,8 @@ export const projectMapFixture: MockProjectMap = {
         { task_id: 'tk_05', meeting_id: 'mt_08' },
         { task_id: 'tk_06', meeting_id: 'mt_08' },
       ],
+      detached_task_ids: [],
+      edited: false,
     },
     {
       topic_id: 'tp_04',
@@ -83,6 +100,8 @@ export const projectMapFixture: MockProjectMap = {
         { task_id: 'tk_08', meeting_id: 'mt_07' },
         { task_id: 'tk_09', meeting_id: 'mt_07' },
       ],
+      detached_task_ids: [],
+      edited: false,
     },
   ],
   decisions: [
@@ -92,7 +111,9 @@ export const projectMapFixture: MockProjectMap = {
       text: '이메일 인증 전에는 계정을 만들지 않는다',
       reason: '가짜 계정이 쌓이지 않게 한다',
       meeting_id: 'mt_07',
-      replaced_by: 'dc_02',
+      replaces: [],
+      state: 'valid',
+      edited: false,
     },
     {
       decision_id: 'dc_02',
@@ -100,7 +121,9 @@ export const projectMapFixture: MockProjectMap = {
       text: '카카오 로그인은 인증 없이 바로 계정을 만든다',
       reason: '카카오가 이미 본인을 확인했다',
       meeting_id: 'mt_09',
-      replaced_by: null,
+      replaces: ['dc_01'],
+      state: 'valid',
+      edited: false,
     },
     {
       decision_id: 'dc_03',
@@ -108,7 +131,19 @@ export const projectMapFixture: MockProjectMap = {
       text: '배포는 스크립트 하나로 한다',
       reason: null,
       meeting_id: 'mt_09',
-      replaced_by: null,
+      replaces: [],
+      state: 'valid',
+      edited: false,
+    },
+    {
+      decision_id: 'dc_04',
+      topic_id: 'tp_02',
+      text: '운영 DB 는 매일 새벽에 백업한다',
+      reason: '복구 지점을 하루 안으로 둔다',
+      meeting_id: 'mt_09',
+      replaces: [],
+      state: 'invalid',
+      edited: true,
     },
   ],
   taskLinks: [
@@ -175,6 +210,8 @@ export function largeProjectMap(): { tasks: MockTask[]; projectMap: MockProjectM
       items: linked
         .filter((_, taskIndex) => taskIndex % LARGE_TOPICS === index)
         .map(({ task_id }) => ({ task_id, meeting_id })),
+      detached_task_ids: [],
+      edited: false,
     }
   })
   const pairs = new Set<string>()

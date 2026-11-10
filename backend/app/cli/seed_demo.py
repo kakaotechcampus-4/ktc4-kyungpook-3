@@ -26,6 +26,7 @@ from app.api.workspaces import _build_onboarding
 from app.cli.demo_seed import DEFAULT_DATA_PATH, SeedData, SeedDataError, SeedMeeting, load_seed_data
 from app.core.database import SessionLocal
 from app.models import (
+    ApprovalRequest,
     Extraction,
     ExtractionItem,
     Meeting,
@@ -313,7 +314,7 @@ class ReplayReport:
 def _call(http: httpx.Client, method: str, path: str, *, service_token: str, **kwargs) -> dict | None:
     headers = {"X-Service-Token": service_token, **kwargs.pop("headers", {})}
     try:
-        res = http.request(method, API + path, headers=headers, **kwargs)
+        res = http.request(method, API + path, headers=headers, follow_redirects=False, **kwargs)
     except httpx.TransportError as error:
         raise SeedError(f"{method} {path} 를 보내지 못했습니다(API 서버 주소·실행 여부 확인): {error!r}") from error
     if not 200 <= res.status_code < 300:
@@ -445,6 +446,37 @@ def _write_summary(http: httpx.Client, extraction_id: str, meeting: SeedMeeting,
     return bool(saved and saved.get("applied"))
 
 
+def _login_pm(
+    http: httpx.Client, db: Session, seeded: SeededWorkspace, password: str, service_token: str,
+) -> dict[str, str]:
+    email = db.scalar(select(User.email).where(User.user_id == seeded.user_ids["p1"]))
+    db.rollback()
+    _call(http, "POST", "/auth/login", service_token=service_token, json={"email": email, "password": password})
+    token = http.cookies.get("session_token")
+    if not token:
+        raise SeedError("PM 로그인 응답에 세션 쿠키가 없습니다")
+    return {"Cookie": f"session_token={token}"}
+
+
+def _approve_new_extraction(
+    http: httpx.Client, db: Session, extraction_id: str, service_token: str, pm_headers: dict[str, str],
+) -> None:
+    approval_ids = db.scalars(
+        select(ApprovalRequest.approval_id)
+        .join(ExtractionItem, ExtractionItem.approval_id == ApprovalRequest.approval_id)
+        .where(ExtractionItem.extraction_id == extraction_id)
+        .order_by(ApprovalRequest.approval_id)
+    ).all()
+    db.rollback()
+    for approval_id in approval_ids:
+        path = f"/approvals/{approval_id}"
+        card = _call(http, "GET", path, service_token=service_token, headers=pm_headers)
+        _call(
+            http, "PATCH", path, service_token=service_token, headers=pm_headers,
+            json={"status": "approved", "payload_version": card["payload_version"]},
+        )
+
+
 def replay_meetings(
     http: httpx.Client,
     db: Session,
@@ -452,11 +484,12 @@ def replay_meetings(
     data: SeedData,
     *,
     service_token: str,
+    pm_password: str,
     wait_for_embeddings: Callable[[str], None],
     today: date | None = None,
     now: datetime | None = None,
 ) -> ReplayReport:
-    """지난 회의를 봇과 같은 API 순서(생성 → 종료 → 발화 → 추출 → 요약)로 재생한다.
+    """지난 회의를 봇 API 로 재생하고 명시적으로 승인 완료인 새 추출만 PM 승인 뒤 요약한다.
 
     제목으로 기존 회의를 찾아 멈춘 단계부터 잇는다. 회의마다 임베딩이 채워질 때까지 기다려야 다음 회의의
     첫 항목이 auto 로 갈 수 있다(임베딩 없는 task·대기 카드가 있으면 auto 를 막는다).
@@ -468,6 +501,7 @@ def replay_meetings(
     if problems:
         raise SeedConflictError("; ".join(problems))
     written, skipped = 0, []
+    pm_headers = None
     for meeting in data.meetings:
         found = _find_meeting(db, workspace_id, meeting.title)
         # CLI 세션이 HTTP 호출·임베딩 대기 동안 읽기 트랜잭션을 열어 두지 않게 바로 닫는다
@@ -502,11 +536,17 @@ def replay_meetings(
                     "items": _items(meeting, seeded.member_ids, started_at.astimezone(KST).date()),
                 },
             )
-            summary_target = extraction["extraction_id"]
+            summary_target = extraction["extraction_id"] if meeting.approval_state == "approved" else None
+            if summary_target is not None:
+                if pm_headers is None:
+                    pm_headers = _login_pm(http, db, seeded, pm_password, service_token)
+                _approve_new_extraction(http, db, summary_target, service_token, pm_headers)
         else:
             latest = _latest_extraction(db, meeting_id)
             db.rollback()
-            summary_target = latest[0] if latest is not None and latest[1] is None else None
+            summary_target = None
+            if meeting.approval_state == "approved" and latest is not None and latest[1] is None:
+                skipped.append(meeting.title)
         if summary_target is not None:
             if _write_summary(http, summary_target, meeting, service_token):
                 written += 1
@@ -514,6 +554,8 @@ def replay_meetings(
                 skipped.append(meeting.title)
         wait_for_embeddings(workspace_id)
 
+    if pm_headers is not None:
+        _call(http, "POST", "/auth/logout", service_token=service_token, headers=pm_headers)
     _call(
         http, "POST", f"/workspaces/{workspace_id}/asr-terms", service_token=service_token,
         json={"words": data.asr_terms},
@@ -692,6 +734,7 @@ def main(argv: list[str] | None = None) -> int:
                 seeded,
                 data,
                 service_token=service_token,
+                pm_password=pm_password,
                 wait_for_embeddings=poll_embeddings(SessionLocal, args.embed_timeout),
                 today=today,
             )

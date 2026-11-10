@@ -40,7 +40,7 @@ const ROW = 'flex items-center gap-13 border-b border-line py-16 last:border-b-0
 /* 단계 표식 22px 원. 진행 중은 회전 대신 먹 점이다 — 공통 UI 는 스피너를 쓰지 않는다(Skeleton·Button) */
 const MARK = 'inline-flex size-22 shrink-0 items-center justify-center rounded-999 border'
 const LINK =
-  'inline-flex h-36 items-center justify-center self-start rounded-9 bg-ink px-16 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
+  'inline-flex h-36 items-center justify-center self-start rounded-9 bg-ink-solid px-16 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
 
 /**
  * Notion 반영 안내. 확실한 태스크는 바로, 확인 필요 태스크는 PM 승인 뒤 올라간다 (D-101). BE 는 회의록 본문을 Notion 에 올리지 않는다.
@@ -330,7 +330,7 @@ function StepRow({ step, detail }: { step: ProcessingStep; detail: StageDetail |
         </span>
       ) : step.state === 'current' ? (
         <span className={`${MARK} border-ink bg-surface`}>
-          <span className="size-8 rounded-999 bg-ink" />
+          <span className="size-8 rounded-999 bg-ink-solid" />
         </span>
       ) : (
         <span className={`${MARK} border-line-strong`} />
