@@ -57,6 +57,40 @@ describe('랜딩 (U2-1)', () => {
     expect(within(preview).queryAllByRole('link')).toHaveLength(0)
   })
 
+  it('제품 미리보기는 실제 태스크 화면의 메뉴와 상태·담당자·마감을 보여 준다', async () => {
+    await openLanding()
+    const preview = within(screen.getByRole('img', { name: /제품 화면 미리보기/ }))
+    for (const label of ['대시보드', '프로젝트 맵']) {
+      expect(preview.getAllByText(label)).toHaveLength(1)
+    }
+    for (const label of ['회의록', '메시지', '팀']) {
+      expect(preview.getAllByText(label)).toHaveLength(2)
+    }
+    expect(preview.getAllByText('태스크')).toHaveLength(3)
+    expect(preview.getByText('카테캠 3팀')).toBeInTheDocument()
+    expect(preview.getByText('진호')).toBeInTheDocument()
+    for (const label of ['전체', '확인 필요', '완료']) {
+      expect(preview.getByText(label)).toBeInTheDocument()
+    }
+    expect(preview.getAllByText('진행 중')).toHaveLength(2)
+    for (const label of [
+      '온보딩 문구 수정',
+      '회원가입 화면',
+      'STT 정확도 측정',
+      '담당자 없음',
+      '박민수',
+      '정하늘',
+      '09/10',
+      '09/16',
+      '09/19',
+    ]) {
+      expect(preview.getByText(label)).toBeInTheDocument()
+    }
+    expect(preview.getAllByText('할 일')).toHaveLength(2)
+    expect(preview.getAllByText('기한 지남')).toHaveLength(2)
+    expect(preview.getByText('7일 안에 마감')).toBeInTheDocument()
+  })
+
   it('회의록 수정·프로젝트 맵·태스크 보기·웹 답장을 소개한다', async () => {
     await openLanding()
     expect(
