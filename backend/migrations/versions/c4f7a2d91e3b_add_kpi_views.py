@@ -43,7 +43,11 @@ SELECT m.ended_at, e.extracted_at, m.source, m.status,
        ELSE 'other' END                                   AS failed_stage,
   EXISTS (SELECT 1 FROM meeting r WHERE r.replaces_meeting_id = m.meeting_id) AS replaced,
   round(m.duration_ms / 60000.0, 1)                       AS meeting_minutes,
-  EXTRACT(EPOCH FROM e.extracted_at - m.ended_at)         AS processing_seconds,
+  -- 디스코드 회의의 ended_at 은 워커가 처리를 시작한 시각이라 큐 대기가 빠진다. 녹음 끝(마지막 발화 끝)부터 잰다.
+  EXTRACT(EPOCH FROM e.extracted_at - CASE
+    WHEN m.source = 'discord' AND m.duration_ms IS NOT NULL
+      THEN m.started_at + m.duration_ms * INTERVAL '1 millisecond'
+    ELSE m.ended_at END)                                AS processing_seconds,
   EXTRACT(EPOCH FROM u.speakers_assigned_at - u.speakers_reported_at) AS speaker_wait_seconds
 FROM meeting m
 LEFT JOIN LATERAL (SELECT min(x.created_at) AS extracted_at FROM extraction x

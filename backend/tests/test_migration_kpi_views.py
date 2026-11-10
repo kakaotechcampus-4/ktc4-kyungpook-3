@@ -208,12 +208,20 @@ def test_view_columns_exact(pg_engine):
 def test_meeting_fact_processing_and_filters(pg_engine):
     t1 = T + timedelta(hours=1)
     with pg_engine.begin() as conn:
-        _meeting(conn, "m-discord", ended_at=_at(1), duration_ms=600_000)
+        # 디스코드 회의의 ended_at 은 워커가 처리를 시작한 시각이다. 녹음은 그 10분 전(started_at + duration_ms)에
+        # 끝났으므로 처리 시간은 큐에서 기다린 10분을 포함한 900초다.
+        _meeting(
+            conn, "m-discord", ended_at=_at(1), started_at=_at(1) - timedelta(minutes=20), duration_ms=600_000
+        )
         _extraction(conn, "x-discord", "m-discord", _at(1) + timedelta(seconds=300))
         # 같은 회의에 추출이 둘이어도 첫 추출 시각을 쓴다.
         _extraction(conn, "x-discord-2", "m-discord", _at(1) + timedelta(seconds=900))
 
-        _meeting(conn, "m-upload", source="manual_upload", ended_at=_at(2))
+        # 업로드 회의는 started_at·duration_ms 와 관계없이 ended_at(업로드 시각)부터 잰다.
+        _meeting(
+            conn, "m-upload", source="manual_upload", ended_at=_at(2),
+            started_at=_at(2) - timedelta(hours=3), duration_ms=600_000,
+        )
         conn.execute(
             MeetingUpload.__table__.insert().values(
                 meeting_id="m-upload",
@@ -234,15 +242,18 @@ def test_meeting_fact_processing_and_filters(pg_engine):
         _meeting(conn, "m-deleted", status="failed", failed_stage="stt", ended_at=_at(8), deleted_at=_at(9))
         _meeting(conn, "m-not-ended", status="recording", ended_at=None)
         _meeting(conn, "m-sweeper", status="failed", failed_stage="upload_unclaimed", ended_at=_at(10))
+        # duration_ms 가 없는 디스코드 회의는 ended_at 부터 잰다.
+        _meeting(conn, "m-no-duration", ended_at=_at(11), started_at=_at(11) - timedelta(hours=1), duration_ms=None)
+        _extraction(conn, "x-no-duration", "m-no-duration", _at(11) + timedelta(seconds=60))
 
     with pg_engine.connect() as conn:
         rows = _by(_rows(conn, "meeting_fact", "ended_at"), "ended_at")
 
     # 삭제 회의와 ended_at 이 없는 회의는 행이 없다.
-    assert set(rows) == {_at(n) for n in (1, 2, 3, 4, 5, 6, 7, 10)}
+    assert set(rows) == {_at(n) for n in (1, 2, 3, 4, 5, 6, 7, 10, 11)}
 
     discord = rows[_at(1)]
-    assert discord["processing_seconds"] == 300
+    assert discord["processing_seconds"] == 900
     assert discord["extracted_at"] == _at(1) + timedelta(seconds=300)
     assert discord["speaker_wait_seconds"] is None
     assert float(discord["meeting_minutes"]) == 10.0
@@ -264,6 +275,7 @@ def test_meeting_fact_processing_and_filters(pg_engine):
     assert rows[_at(10)]["failed_stage"] == "upload_unclaimed"
     assert rows[_at(3)]["extracted_at"] is None
     assert rows[_at(3)]["processing_seconds"] is None
+    assert rows[_at(11)]["processing_seconds"] == 60
 
 
 @pg_only
@@ -439,7 +451,7 @@ def test_views_depend_only_on_listed_columns(pg_engine):
     # backend/README.md 의 "KPI view" 원천 컬럼 표와 같아야 한다.
     expected = {
         "meeting": {
-            "meeting_id", "workspace_id", "deleted_at", "source", "status", "failed_stage", "ended_at",
+            "meeting_id", "workspace_id", "deleted_at", "source", "status", "failed_stage", "started_at", "ended_at",
             "duration_ms", "replaces_meeting_id",
         },
         "extraction": {"extraction_id", "meeting_id", "created_at", "extraction_path"},

@@ -123,7 +123,7 @@ unset PW
 
 ## 5. 시드 공간 제외
 
-심사용 시드(#621) 워크스페이스는 실제 사용이 아니므로 KPI 에서 뺀다. 팀 워크스페이스는 뺀 적이 없다.
+심사용 시드(#621) 워크스페이스는 실제 사용이 아니므로 KPI 에서 뺀다. 팀 워크스페이스는 뺀 적이 없다. 시드는 회의 시작 시각을 며칠 전으로 합성하므로, 빼지 않으면 처리 시간이 며칠로 잡혀 p95 와 10분 초과 건수가 망가진다.
 
 1. DB 에서 시드 워크스페이스 ID 를 찾는다(`workspace` 의 이름·생성 시각으로 알아본다).
 2. [exclude-workspace.sql](sql/exclude-workspace.sql)의 `<시드 워크스페이스 ID>` 를 그 값으로 바꿔 슈퍼유저로 실행한다.
@@ -154,7 +154,7 @@ date_trunc('week', t AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul'
 | 패널 | 읽는 view | 조건과 값 |
 |---|---|---|
 | auto 롤백률(주별, 5% 기준선) | `extraction_item_fact` | `gate='auto' AND action='create'` 의 `avg(reverted::int)`. 항목을 만든 주 기준이라 최근 주는 낮게 나온다 |
-| 처리 시간 p50·p95, 10분 초과 | `meeting_fact` | `status='done' AND source IN ('discord','manual_upload')`. 값은 `processing_seconds - coalesce(speaker_wait_seconds,0)`. `percentile_cont`, `count(*) FILTER (WHERE … > 600)`. 채팅은 뺀다 |
+| 처리 시간 p50·p95, 10분 초과 | `meeting_fact` | `status='done' AND source IN ('discord','manual_upload')`. 값은 `processing_seconds - coalesce(speaker_wait_seconds,0)`. `percentile_cont`, `count(*) FILTER (WHERE … > 600)`. 채팅은 뺀다. 디스코드 회의는 마지막 발화 끝부터 재서 큐 대기가 들어간다 |
 | 실패율·단계 | `meeting_fact` | `status IN ('done','failed')` 중 failed 비율, `failed_stage` 별, `replaced` 로 다시 시도해 회복했는지 가른다 |
 | 게이트 분포 | `extraction_item_fact` | `gate` 별 개수 |
 | 승인·수정·반려 | `approval_fact` | `outcome` 별 개수 |
@@ -224,7 +224,7 @@ FROM kpi.approval_fact
 WHERE asr_flag IS NOT NULL AND outcome <> 'pending' AND $__timeFilter(created_at)
 GROUP BY 1;
 
--- 메모리 주석(Annotations 쿼리. 회의 처리 구간)
+-- 메모리 주석(Annotations 쿼리. 회의 처리 구간). 디스코드 회의의 ended_at 은 워커가 처리를 시작한 시각이다
 SELECT ended_at AS time, extracted_at AS timeend
 FROM kpi.meeting_fact
 WHERE $__timeFilter(ended_at) AND extracted_at IS NOT NULL;

@@ -697,7 +697,7 @@ Grafana Cloud 대시보드(#675)가 읽는 `kpi` 스키마다. 마이그레이�
 | `kpi.excluded_workspace` | 세 view 에서 뺄 워크스페이스(`workspace_id` 하나). 비어 있고 운영 SQL 로 채운다 | `workspace_id` |
 
 - view 에는 ID·제목·본문·payload·이름·이메일 컬럼이 없다. 워크스페이스 컬럼도 없어 서비스 전체 값만 본다.
-- 값의 뜻: `failed_stage` 는 실패한 회의에서만 알려진 단계(`stt`·`sources`·`extract`·`handoff`·`diarize`·`speaker_assignment_expired`·`upload_unclaimed`·`chat_stalled`)를 그대로 주고 그 밖의 값은 `other`, 실패가 아니면 null 이다. `replaced` 는 이 회의를 다시 시도한 회의가 있다는 뜻이다. `origin` 은 `auto_revert`·`manual`·`reply`·`meeting`·`other`, `outcome` 은 `pending`·`approved`·`approved_edited`·`rejected`·`other`, `asr_flag` 는 회의 추출로 만든 `task_create` 카드에서만 `none`·`suspect`·`check_failed`(그 밖은 null)다.
+- 값의 뜻: `processing_seconds` 는 녹음이 끝난 때부터 첫 추출 등록까지다. 디스코드 회의는 `ended_at` 이 워커가 처리를 시작한 시각(`PATCH /meetings/{id}/end`)이라 큐 대기가 빠지므로, `started_at + duration_ms`(마지막 발화 끝)를 녹음 끝으로 쓴다. `duration_ms` 가 없거나 디스코드가 아닌 회의는 `ended_at` 을 쓴다. `ended_at` 컬럼 자체는 그대로 내보내 워커 처리 구간(`ended_at`→`extracted_at`)을 볼 수 있다. `failed_stage` 는 실패한 회의에서만 알려진 단계(`stt`·`sources`·`extract`·`handoff`·`diarize`·`speaker_assignment_expired`·`upload_unclaimed`·`chat_stalled`)를 그대로 주고 그 밖의 값은 `other`, 실패가 아니면 null 이다. `replaced` 는 이 회의를 다시 시도한 회의가 있다는 뜻이다. `origin` 은 `auto_revert`·`manual`·`reply`·`meeting`·`other`, `outcome` 은 `pending`·`approved`·`approved_edited`·`rejected`·`other`, `asr_flag` 는 회의 추출로 만든 `task_create` 카드에서만 `none`·`suspect`·`check_failed`(그 밖은 null)다.
 - payload 는 JSON 객체일 때만 읽는다. 깨진 payload 한 행은 view 에서 빠지고 조회 전체를 깨지 않는다. JSON 문법은 맞아도 `\u0000`(NUL)이 든 payload 는 jsonb 로 바꿀 수 없어 같은 이유로 뺀다(조회가 실패하지 않게 막는 것이라 `\\u0000` 같은 드문 값도 함께 빠질 수 있다). 키 확인은 `?` 연산자 대신 `-> ... IS NOT NULL` 을 쓴다(바인드 해석을 피한다).
 - 새 상태값·새 `failed_stage` 가 생기면 view 가 `other` 로 담는다. 따로 고치지 않아도 조회는 깨지지 않는다.
 - view 는 소유자 권한으로 원본을 읽는다. 읽기 계정은 view 3개에만 SELECT 를 받고 원본 표와 `excluded_workspace` 는 보지 못한다.
@@ -706,7 +706,7 @@ view 가 쓰는 원천 컬럼은 다음과 같다.
 
 | 표 | 컬럼 |
 |---|---|
-| `meeting` | `meeting_id`, `workspace_id`, `deleted_at`, `source`, `status`, `failed_stage`, `ended_at`, `duration_ms`, `replaces_meeting_id` |
+| `meeting` | `meeting_id`, `workspace_id`, `deleted_at`, `source`, `status`, `failed_stage`, `started_at`, `ended_at`, `duration_ms`, `replaces_meeting_id` |
 | `extraction` | `extraction_id`, `meeting_id`, `created_at`, `extraction_path` |
 | `extraction_item` | `extraction_id`, `created_at`, `action`, `gate`, `reverted_at` |
 | `meeting_upload` | `meeting_id`, `speakers_reported_at`, `speakers_assigned_at` |
