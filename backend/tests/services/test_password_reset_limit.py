@@ -52,3 +52,17 @@ def test_expired_entries_evicted_first(monkeypatch):
         allow(f"old{i}", 1000.0)
     allow("fresh", 1000.0 + limit.WINDOW_SECONDS + 1)
     assert list(limit._entries) == ["fresh"]
+
+
+def test_scopes_count_separately_with_their_own_limit():
+    _fill()
+    assert allow("8.8.8.8", 1000.0, scope="signup:", limit=10) is True
+    assert [allow("8.8.8.8", 1000.0, scope="signup:", limit=10) for _ in range(9)] == [True] * 9
+    assert allow("8.8.8.8", 1000.0, scope="signup:", limit=10) is False
+
+
+def test_retry_after_counts_down_to_the_window_end():
+    _fill()
+    assert limit.retry_after("8.8.8.8", 1000.0) == limit.WINDOW_SECONDS
+    assert limit.retry_after("8.8.8.8", 1000.0 + limit.WINDOW_SECONDS - 0.5) == 1
+    assert limit.retry_after("8.8.8.8", 1000.0, scope="signup:") == 1
