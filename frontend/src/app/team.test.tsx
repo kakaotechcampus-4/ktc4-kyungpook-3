@@ -451,6 +451,38 @@ describe('팀 화면 — Discord 를 건너뛴 공간', () => {
     expect(dialog.queryByText(/아직 팀원에 연결되지 않은 디스코드 계정/)).toBeNull()
   })
 
+  it('팀원을 추가하는 동안 설정 링크는 잠겨 눌러도 떠나지 않고, 추가가 실패하면 창에 문구가 남는다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.post(
+        '/api/v1/members',
+        async () => {
+          await gate.promise
+          return fail('INTERNAL_ERROR', 'x', 500)
+        },
+        { once: true },
+      ),
+    )
+    const user = userEvent.setup()
+    const app = renderApp(paths.members('ws_03'))
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 관리' }))
+    await user.type(await dialog.findByRole('textbox', { name: '팀원 이름' }), '박민수')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+    const link = dialog.getByRole('link', { name: '설정에서 Discord 연결하기' })
+    await waitFor(() => expect(link).toHaveAttribute('aria-disabled', 'true'))
+
+    await user.click(link)
+    gate.resolve()
+
+    expect(
+      await dialog.findByText('서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.'),
+    ).toBeInTheDocument()
+    expect(link).not.toHaveAttribute('aria-disabled')
+    expect(app.visited().map(({ pathname }) => pathname)).not.toContain(paths.settings('ws_03'))
+  })
+
   it('팀원 관리 창에서 이름만 적어 팀원을 추가하면 목록의 새 줄이 된다. 설정 링크는 그 아래에 있다 (#613)', async () => {
     const bodies = recordRequestBodies('POST', '/members')
     const user = userEvent.setup()

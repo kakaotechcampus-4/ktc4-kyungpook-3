@@ -41,7 +41,7 @@ export interface MemberConnectDialogProps {
 /**
  * 팀원 관리 (D-074, D-075, #647). 팀 화면의 `팀원 관리`·`연결` 과 설정의 Discord 연결 성공이 이 창을 연다.
  * 팀원 한 명이 한 줄이고 줄마다 바로 저장한다 — 아래 버튼은 `닫기` 하나다. 줄 아래에 초대 상태와 조작을 둔다.
- * 쓰는 동안에는 닫히지 않는다 — 닫히면 실패를 보일 곳이 없다. 고친 이름을 저장하지 않았으면 닫기 전에 공통 이탈 확인을 거친다
+ * 쓰는 동안에는 닫히지 않고 설정 링크로도 떠나지 않는다 — 떠나면 실패를 보일 곳이 없다. 고친 이름을 저장하지 않았으면 닫기 전에 공통 이탈 확인을 거친다
  */
 export function MemberConnectDialog({
   workspaceId,
@@ -91,7 +91,14 @@ export function MemberConnectDialog({
                 Discord를 연결하지 않아 디스코드 계정을 고를 수 없어요. 설정에서 Discord를 연결하면
                 이 창이 다시 열려요.
               </p>
-              <GuardedLink to={paths.settings(workspaceId)} className={LINK_BUTTON}>
+              <GuardedLink
+                to={paths.settings(workspaceId)}
+                aria-disabled={busy || undefined}
+                className={LINK_BUTTON}
+                onClick={(event) => {
+                  if (busy) event.preventDefault()
+                }}
+              >
                 설정에서 Discord 연결하기
               </GuardedLink>
             </>
