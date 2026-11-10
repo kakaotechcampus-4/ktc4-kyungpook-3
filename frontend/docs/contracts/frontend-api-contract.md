@@ -543,7 +543,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 
 2026-11-09 #575 구현은 `MemberResponse.has_login_account: boolean`을 추가한다. 활성 팀원에 로그인 계정이 연결됐는지 나타내며 User ID는 반환하지 않는다. FE는 `hasLoginAccount`로 옮기고, PM에게 로그인 연결된 일반 팀원의 `PM 권한 부여`를 제공한다. 기존 `PATCH /members/{id}`의 `{role:"pm"}`를 사용하며 기존 PM의 권한은 유지한다. 대기 초대의 `MEMBER_HAS_PENDING_INVITATION` 등 서버 오류는 그대로 따른다. 생산자·소비자 코드를 함께 변경한 현재 구현이며, 별도 파트 합의·병합·배포 완료 기록은 아니다.
 
-2026-11-10 #613 FE 사용: Discord 를 연결하지 않은 팀의 온보딩 4단계와 팀원 연결 창이 `POST /members` 를 `{workspace_id, display_name}` 만으로 보낸다(`discord_user_id` 키 없음). 요청 형식은 위 그대로이고 BE 는 바꾸지 않았다. 서버는 같은 이름의 팀원을 막지 않는다. FE 가 보내기 전에 지금 팀원 목록과 이름(앞뒤 공백 제거, 대소문자 그대로)을 견줘 막는다(D-187). 같은 이름 거절을 서버 규약으로 둘지는 합의하지 않았다.
+2026-11-10 #613 FE 사용: Discord 를 연결하지 않은 팀의 온보딩 4단계와 팀원 연결 창이 `POST /members` 를 `{workspace_id, display_name}` 만으로 보낸다(`discord_user_id` 키 없음). 요청 형식은 위 그대로이고 BE 는 바꾸지 않았다. ~~서버는 같은 이름의 팀원을 막지 않는다.~~ FE 가 보내기 전에 지금 팀원 목록과 이름(앞뒤 공백 제거, 대소문자 그대로)을 견줘 막는다(D-187). ~~같은 이름 거절을 서버 규약으로 둘지는 합의하지 않았다.~~ 2026-11-10 #652 부터 서버도 같은 규칙으로 막는다(아래).
 
 2026-11-10 #652 BE 현재 구현(FE #647 이 쓸 예정, FE 반영과 합의 여부 확인 필요): 아래 세 가지를 더했다. 결정 근거는 [BE 결정 기록](../../../backend/docs/plan/m1/basis-for-decision/2026-11-10-discord-link-move-decision.md).
 
