@@ -1750,7 +1750,7 @@ POST .../meetings/upload            multipart/form-data
 - 두 `.md` 요청은 `Accept: text/markdown, application/json` 을 보내고, 실패 응답은 다른 API 와 같은 봉투로 읽는다(401 알림 포함).
 - 구현: [응답 스키마](../../src/shared/types/api/projectMap.ts), [맵 조회](../../src/entities/project-map/api/projectMapQuery.ts), [맵 화면](../../src/widgets/project-map), [파일 요청](../../src/shared/api/client.ts), [합본](../../src/features/project-bundle-download), [요약본](../../src/features/summary-download), [회의록 스키마](../../src/shared/types/api/minutes.ts). 화면 배치는 D-186 이다.
 - 합의 필요: 위 FE 처리(특히 `summary_status` 를 표시용으로 본 것, 노드 `kind` 를 판별 값으로 본 것)는 FE 판단이다. BE 합의 여부 확인 필요.
-- `awaiting_approval`·`summary_waiting_count` 처리(2026-11-10)는 BE #645 브랜치(`feature/605-approved-summary`)의 스키마·라우터와 이 문서 §4.4.2 를 읽고 MSW 로만 맞췄다. #645 가 병합되기 전 develop 서버는 이 값을 보내지 않는다. 문구는 이슈 #551 댓글의 요청(2026-11-09)을 따랐다.
+- `awaiting_approval`·`summary_waiting_count` 처리(2026-11-10)는 BE #645 브랜치(`feature/605-approved-summary`)의 스키마·라우터·요약 상태 서비스와 그 브랜치 계약 §4.4.2 를 읽고 MSW 로만 맞췄다. 이 브랜치의 §4.4.2 값 표는 #645 와 충돌하지 않게 고치지 않았다. #645 가 병합되기 전 develop 서버는 이 값을 보내지 않는다. 문구는 이슈 #551 댓글의 요청(2026-11-09)을 따랐다.
 
 
 ### 4.5 Discord 서버 사용자 목록

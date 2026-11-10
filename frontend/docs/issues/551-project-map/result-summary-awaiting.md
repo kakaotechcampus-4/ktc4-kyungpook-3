@@ -10,8 +10,8 @@
 
 - **응답 읽기.** [회의록 스키마](../../../src/shared/types/api/minutes.ts)의 `SUMMARY_STATUSES` 에 `awaiting_approval` 을 더했다. `summary_waiting_count` 는 표시용이라(D-184) 0 이상의 정수가 아니면 건수만 버리고 응답은 받는다. 키가 없는 이전 서버는 `null` 이다. [타입](../../../src/entities/minutes/model/types.ts)은 `summaryWaitingCount: number | null` 이다.
 - **요약 칸.** [MinutesBody](../../../src/widgets/meeting-minutes/ui/MinutesBody.tsx)의 빈 요약 문구를 상태별 표(`EMPTY_SUMMARY`)로 바꿨다. `awaiting_approval` 은 모든 팀원에게 `승인이 끝나면 요약이 만들어져요` / `발언은 전사문에서 볼 수 있어요.` 이고, 건수가 1 이상이면 설명 앞에 `승인 대기 N건이 남았어요.` 가 붙는다. 건수는 서버가 PM 에게만 주므로 화면은 역할을 다시 보지 않는다(D-104). `pending`·`none`·`ready`·모르는 값은 그대로다. 요약이 있으면 상태와 무관하게 요약을 보인다.
-- **승인 뒤 다시 받기.** [승인 쓰기](../../../src/features/approval-resolve/model/useApprovalResolve.ts)의 `syncAfterResolve` 가 공간의 회의록 쿼리(`workspaceKey(ws,'minutes')`)도 무효화한다. 끝난 회의록은 5분 동안 최신으로 보므로(D-136), 이것이 없으면 PM 이 카드를 승인하거나 반려하고 돌아와도 남은 건수가 그대로였다. 합친 카드는 다른 회의도 함께 기다려 공간 전체를 본다.
-- **MSW.** [회의록 핸들러](../../../src/shared/mock/handlers/minutes.ts)가 저장된 `awaiting_approval` 을 지금의 대기 카드로 다시 판정한다. 그 회의 추출 항목의 `approval_id` 가운데 `pending` 인 카드 수를 센다. BE `item_fate` 와 같은 조인이라 합친 카드도 한 장이다. 0장이면 BE 처럼 `pending` 을 준다. 건수는 PM 에게만 준다. 시나리오 `minutes-awaiting-approval`(PM, mt_09 대기 카드 3장)과 `minutes-awaiting-approval-member` 를 더했다. 모의 db 판은 23 그대로다. 핸들러가 응답마다 `summary_waiting_count` 를 덮어써서 저장된 옛 상태도 같은 응답을 준다.
+- **쓰기 뒤 다시 받기.** 남은 건수를 바꾸는 두 쓰기가 공간의 회의록 쿼리(`workspaceKey(ws,'minutes')`)도 무효화한다. [승인 쓰기](../../../src/features/approval-resolve/model/useApprovalResolve.ts)의 `syncAfterResolve` 는 카드를 줄이고, [자동 반영 되돌리기](../../../src/features/auto-item-revert/model/useAutoItemRevert.ts)의 `syncAfterRevert` 는 새 생성 승인 카드를 만든다. 끝난 회의록은 5분 동안 최신으로 보므로(D-136), 이것이 없으면 PM 이 처리하고 돌아와도 건수가 그대로였다. 합친 카드는 다른 회의도 함께 기다려 공간 전체를 본다. 두 쓰기 모두 기존의 세션 확인(`isCurrent`)과 취소 신호를 그대로 거친다.
+- **MSW.** [회의록 핸들러](../../../src/shared/mock/handlers/minutes.ts)가 저장된 `awaiting_approval` 을 BE `summary._state` 의 순서로 다시 판정한다. 요약이 있으면 `ready`, 대기 카드가 있으면 `awaiting_approval`, 승인된 카드에 걸린 살아 있는 태스크가 없는 채팅 회의는 `none`, 그 밖은 `pending` 이다. 대기 카드는 그 회의 추출 항목의 `approval_id` 가운데 `pending` 인 카드 수다. BE `item_fate` 와 같은 조인이라 합친 카드도 한 장이다. 건수는 PM 에게만 준다. 저장된 다른 상태는 그대로 준다. 시나리오 `minutes-awaiting-approval`(PM, mt_09 대기 카드 3장)과 `minutes-awaiting-approval-member` 를 더했다. 모의 db 판은 23 그대로다. 핸들러가 응답마다 `summary_waiting_count` 를 덮어써서 저장된 옛 상태도 같은 응답을 준다.
 
 ## 판단
 
@@ -20,7 +20,7 @@
 | 건수에서 승인 화면으로 가는 링크 | 두지 않는다 | 승인 목록 화면이 없어 링크는 카드 하나로만 갈 수 있다. 같은 회의록의 `추출된 일` 탭이 남은 카드마다 `확인하기` 링크를 이미 준다. 서버 건수는 카드 단위이고 그 탭은 항목 단위라, 합친 카드가 있으면 수가 달라 보일 수 있다 |
 | 건수가 0 이거나 `null` | 건수 없이 제목과 전사문 안내만 | `승인 대기 0건` 은 기다린다는 제목과 어긋난다. 정상 서버는 0장이면 `pending` 을 준다 |
 | 건수 모양이 틀림 | 건수만 버린다 | 응답 거절(`INVALID_RESPONSE`)은 전사문까지 못 보게 한다. 건수는 상태 판단에 쓰지 않는 표시값이다(D-184) |
-| 승인 뒤 회의록 | 공간의 회의록 쿼리를 무효화 | 한 회의만 무효화하려면 승인에서 회의 ID 를 찾아야 하고, 합친 카드는 여러 회의에 걸친다. 관찰 중인 회의록만 다시 받으므로 비용이 작다 |
+| 승인·반려·되돌리기 뒤 회의록 | 공간의 회의록 쿼리를 무효화 | 한 회의만 무효화하려면 승인에서 회의 ID 를 찾아야 하고, 합친 카드는 여러 회의에 걸친다. 관찰 중인 회의록만 다시 받으므로 비용이 작다 |
 
 결정 기록(D-193)은 쓰지 않았다. 위 선택은 이 화면 안의 표시 판단이고 다른 화면의 규칙을 바꾸지 않는다.
 
@@ -30,7 +30,12 @@
 
 ## 계약
 
-[대표 계약](../../contracts/frontend-api-contract.md) §4.4.2 「FE 사용 (#551)」 표의 `summary_status` 줄에 `awaiting_approval` 문구를, 새 줄에 `summary_waiting_count` 처리를 적었다. #645 가 고치는 줄(회의록 조회 요약 표의 `summary_waiting_count(FE 미사용)`, §4.4.2 값 표)은 충돌을 피하려고 건드리지 않았다. #645 병합 뒤 develop 을 이 브랜치에 병합할 때 요약 표의 「FE 미사용」 과 「`awaiting_approval` 은 아직 따로 그리지 않음」 을 지워야 한다.
+[대표 계약](../../contracts/frontend-api-contract.md) §4.4.2 「FE 사용 (#551)」 표의 `summary_status` 줄에 `awaiting_approval` 문구를, 새 줄에 `summary_waiting_count` 처리를 적었다(이 브랜치 1747·1748행). #645 가 고치는 줄은 충돌을 피하려고 건드리지 않았다. 그래서 #645 병합 전까지 이 브랜치의 계약은 상태 값을 두 벌로 말한다.
+
+#645 병합 뒤 develop 을 이 브랜치에 병합할 때 확인할 곳은 아래와 같다.
+
+- 이 브랜치에서 아직 세 값만 말하는 행(2026-11-10 커밋 기준 행 번호). 246행 회의록 조회 요약 표, 1629행 회의록 예시 JSON(`summary_waiting_count` 없음), 1644행 「`ready` · `pending` · `none` 이다」, 1682~1684행 §4.4.2 값 표. #645 가 이 행들을 고친다. 병합 뒤 값 표에 `awaiting_approval` 을 포함한 네 상태와 `summary_waiting_count` 규칙이 있는지 본다.
+- BE 브랜치(`feature/605-approved-summary`, `f3bb86de`)의 계약 246행에만 있는 두 문구. 「`awaiting_approval` 은 아직 따로 그리지 않음」과 「summary_waiting_count(FE 미사용)」. 이 브랜치에는 없다. 병합 뒤 develop 에 남으면 FE 가 이제 그린다는 뜻으로 고친다.
 
 ## 검증 내역
 
@@ -40,5 +45,6 @@
 - 바꾼 곳 테스트 14개 파일 295개 통과(`--maxWorkers=1`). 승인 화면 테스트 7개 파일 152개도 통과했다.
 - `npm run typecheck`, `npm run lint`, `.verify` 를 뺀 `prettier --check`, `npm run build` 통과.
 - 브라우저(검증 스킬 `meetings --grep '#551'`, Vite + MSW, Chromium): [회의 흐름 E2E](../../../e2e/meeting-flow.e2e.ts) ⑫ PM 이 3건을 보고 카드 하나를 반려한 뒤 뒤로 가기로 돌아오면 2건, ⑬ 390px 팀원은 건수 없이 같은 문구이고 가로 넘침이 없다. 2개 통과, 포트 정리 확인.
+- 리뷰 반영(2026-11-10, PR #671 Codex·Grok). 대시보드에서 자동 반영을 되돌리고 회의록으로 돌아오면 3건이 4건이 되는 RTL 테스트는 고치기 전 코드에서 실패했다. MSW 판정 테스트(채팅 회의 전부 반려 `none`, 승인 항목이 있으면 `pending`, 요약이 있으면 `ready`) 가운데 `none`·`ready` 둘은 예전 핸들러에서 실패했다. 반영 뒤 바꾼 곳 테스트 16개 파일 380개, typecheck·lint·`.verify` 를 뺀 prettier·build 가 통과했다. E2E 는 다시 돌리지 않았다.
 - 전체 테스트(`npm run test`)는 돌리지 않았다. CI 가 돌린다.
 - 실제 BE #645 서버로는 확인하지 않았다. MSW 는 BE 의 `pending` 1시간 제한을 흉내 내지 않는다.
