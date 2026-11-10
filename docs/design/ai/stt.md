@@ -31,7 +31,7 @@ flowchart LR
 | 장치 | 효과 | 기록 |
 |---|---|---|
 | 팀원 이름 힌트 | 9/29 녹음 이름 자리 0/4 → 3/4 | [0020](../../../ai/docs/basis_for_decision/member/2026-10-09-0020-name-hint-prompt.md), [0024](../../../ai/docs/basis_for_decision/member/2026-10-13-0024-member-name-hint.md) |
-| 다른 화자가 말을 시작한 자리에서 묶음 가르기 | 교차 대화에서 건너뛴 줄 6 → 0, CER 5.33 → 5.20% | [0023](../../../ai/docs/basis_for_decision/member/2026-10-13-0023-ordered-chunks.md) |
+| 다른 화자가 말을 시작한 자리에서 묶음 가르기 | 교차 대화에서 건너뛴 줄 6·7 → 0. CER 은 m01 5.33 → 5.20% 로 좋아졌지만 m02 4.73 → 5.78% 로 나빠졌다(호출 7 → 15·17 증가) | [0023](../../../ai/docs/basis_for_decision/member/2026-10-13-0023-ordered-chunks.md) |
 | 1.5초 미만 묶음에 앞 줄 프롬프트 + 최소 발화 100ms | CER 4.78 → 4.67%, 짧은 대답 3/7 → 5/7 | [0031](../../../ai/docs/basis_for_decision/member/2026-11-03-0031-short-chunk-context.md) |
 | 배치에서는 말 필터(Silero) 끔 | 짧은 대답을 살림 | [0030](../../../ai/docs/basis_for_decision/member/2026-11-02-0030-batch-without-speech-gate.md) |
 | (넣지 않음) 기존 할 일 제목 힌트 | CER 이 나빠짐 | [0025](../../../ai/docs/basis_for_decision/member/2026-10-13-0025-title-hint-not-now.md) |
