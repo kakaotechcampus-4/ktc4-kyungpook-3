@@ -73,7 +73,7 @@ judge 새 항목 하나의 예. 전체 필드는 [계약](../../backend/docs/con
 { "data": { "extraction_id": "e_456", "meeting_id": "m_123", "item_count": 1 }, "error": null }
 ```
 
-이 항목은 `due_status` 가 inferred 라 `due_not_certain` 으로 review 가 된다. 이미 `done` 인 회의에 다시 보내면 같은 `extraction_id` 를 돌려준다(멱등).
+담당자 "지민님"이 팀원으로 매칭되면, 이 항목은 `due_status` 가 inferred 라 `due_not_certain` 으로 review 가 된다. 못 찾으면 담당자 확신도가 기준 미만이라 hold 다. 이미 `done` 인 회의에 다시 보내면 같은 `extraction_id` 를 돌려준다(멱등).
 
 ### 2. AI → BE 유사 task 검색 `POST /api/v1/workspaces/{id}/tasks/similar` → 200
 
