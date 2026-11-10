@@ -22,8 +22,9 @@ from app.schemas.meeting import (
     MeetingStageResponse,
     MeetingSttProgress,
 )
+from app.schemas.record_edit import LineEditRequest, LineEditResponse, TitleEditRequest, TitleEditResponse
 from app.schemas.upload import SpeakerAssignRequest, SpeakerAssignResponse, SpeakerViewResponse
-from app.services import meeting_failure, meeting_stage, speaker_assignment, summary
+from app.services import meeting_failure, meeting_stage, speaker_assignment, summary, transcript
 from app.services import meeting_deletion
 from app.schemas.meeting_deletion import MeetingDeletionReceipt
 
@@ -315,7 +316,10 @@ def get_meeting_minutes(
             "speaker_display_name": display_name,
             # 팀원이 아니면 FE가 이름 대신 보여 주는 값이다. 디스코드 표시 이름, 없으면 uid 순으로 쓴다
             "speaker_fallback": src.speaker_name or src.speaker_discord_user_id or "Unknown",
-            "text": src.text,
+            "seq": src.seq,
+            "text": src.shown_text,
+            "edited": src.text_edit is not None,
+            "original_text": src.text if src.text_edit is not None else None,
         }
         for src, display_name in lines
     ]
@@ -330,19 +334,67 @@ def get_meeting_minutes(
     ]
 
     extraction = db.query(Extraction).filter(Extraction.meeting_id == meeting_id).order_by(Extraction.created_at.desc()).first()
+    state = summary.summary_state(db, meeting, extraction)
 
     return success(MeetingMinutesResponse(
         meeting_id=meeting.meeting_id,
         title=meeting.title,
+        title_edited=meeting.title_edited_at is not None,
+        title_original=meeting.title_original,
         started_at=meeting.started_at,
         duration_ms=meeting.duration_ms or 0,
         source=meeting.source,
         attendees=attendees,
-        summary=summary.load_document(extraction),
-        summary_status=summary.summary_status(extraction),
+        summary=summary.documents(db, [(meeting, extraction)]).get(meeting.meeting_id),
+        summary_status=state.status,
+        summary_waiting_count=state.waiting_cards if state.status == "awaiting_approval" and member.role == "pm" else None,
         transcript=transcript,
         permissions={"can_review": member.role == "pm", "can_undo": member.role == "pm"}
     ).model_dump(mode="json"))
+
+
+def _meeting_of_member(db: Session, user: User, meeting_id: str) -> None:
+    meeting = db.get(Meeting, meeting_id)
+    if meeting is None:
+        raise AppError(ErrorCode.MEETING_NOT_FOUND, details={"meeting_id": meeting_id})
+    require_member(db, user, meeting.workspace_id)
+
+
+@router.patch("/{meeting_id}/title", response_model=Envelope[TitleEditResponse])
+def edit_meeting_title(
+    meeting_id: str,
+    payload: TitleEditRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """팀원 누구나 제목을 고친다. 처음 제목은 title_original 로 남는다."""
+    _meeting_of_member(db, user, meeting_id)
+    meeting = transcript.edit_title(db, meeting_id, payload.title)
+    data = TitleEditResponse(
+        meeting_id=meeting.meeting_id, title=meeting.title, title_original=meeting.title_original,
+        title_edited=meeting.title_edited_at is not None,
+    ).model_dump(mode="json")
+    db.commit()
+    return success(data)
+
+
+@router.patch("/{meeting_id}/transcript/{seq}", response_model=Envelope[LineEditResponse])
+def edit_transcript_line(
+    meeting_id: str,
+    seq: int,
+    payload: LineEditRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """팀원 누구나 발화 한 줄을 고친다. 원문은 남고 승인 근거 인용은 원문을 쓴다."""
+    _meeting_of_member(db, user, meeting_id)
+    source = transcript.edit_line(db, meeting_id, seq, payload.text)
+    data = LineEditResponse(
+        seq=source.seq, text=source.shown_text,
+        original_text=source.text if source.text_edit is not None else None, edited=source.text_edit is not None,
+    ).model_dump(mode="json")
+    db.commit()
+    return success(data)
 
 
 @router.get("/{meeting_id}/speakers", response_model=Envelope[SpeakerViewResponse])

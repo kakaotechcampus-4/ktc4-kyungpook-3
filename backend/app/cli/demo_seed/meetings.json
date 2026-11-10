@@ -480,7 +480,8 @@
             ]
           }
         ]
-      }
+      },
+      "approval_state": "approved"
     },
     {
       "title": "주간 회의 - 폴러 마감 확정과 시연 시나리오",
@@ -923,7 +924,8 @@
             "decisions": []
           }
         ]
-      }
+      },
+      "approval_state": "approved"
     },
     {
       "title": "발표 전 정리 - 담당 이관과 PPT 마감",
@@ -1435,7 +1437,8 @@
           "발표 PPT 초안 담당자는 명시되지 않았다."
         ],
         "topics": []
-      }
+      },
+      "approval_state": "approved"
     },
     {
       "title": "주간 회의 - 제브 기준값과 발표 리허설",
@@ -1856,7 +1859,8 @@
           "제브 근거 문장 표시를 발표 이후에 적용할지는 정해지지 않았다."
         ],
         "topics": []
-      }
+      },
+      "approval_state": "approved"
     },
     {
       "title": "발표 준비 마무리 - 폴러 타이머와 백업 절차",
@@ -2303,7 +2307,88 @@
           "시연 영상의 작은 소리를 보완할지는 논의되지 않았다."
         ],
         "topics": []
-      }
+      },
+      "approval_state": "approved"
+    },
+    {
+      "title": "심사 준비 - 승인 대기 시연",
+      "days_ago": 1,
+      "turns": [
+        {
+          "speaker": "p1",
+          "text": "제가 내일까지 심사 데모 동선을 점검할게요."
+        },
+        {
+          "speaker": "p4",
+          "text": "원준님이 회의록 다운로드도 확인해 주면 좋겠어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "수빈님은 발표 장비 확인을 부탁드려요."
+        }
+      ],
+      "items": [
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "심사 데모 동선 점검",
+          "doc_text": "지민님이 내일까지 심사 데모 동선을 점검하기로 함",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "내일까지",
+          "due_in_days": 1,
+          "evidence_quote": "제가 내일까지 심사 데모 동선을 점검할게요",
+          "speaker_key": "p1",
+          "evidence_seqs": [
+            0
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "데모 회의록 다운로드 확인",
+          "doc_text": "원준님의 회의록 다운로드 확인이 필요해 PM 확인을 기다림",
+          "assignee_type": "thirdname",
+          "assignee_raw": "원준님",
+          "evidence_quote": "원준님이 회의록 다운로드도 확인해 주면 좋겠어요",
+          "speaker_key": null,
+          "evidence_seqs": [
+            1
+          ],
+          "task_status": "inferred",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "데모 발표 장비 확인",
+          "doc_text": "명단에 없는 수빈님에게 요청한 장비 확인은 PM의 담당자 지정을 기다림",
+          "assignee_type": "thirdname",
+          "assignee_raw": "수빈님",
+          "evidence_quote": "수빈님은 발표 장비 확인을 부탁드려요",
+          "speaker_key": null,
+          "evidence_seqs": [
+            2
+          ],
+          "task_status": "certain",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        }
+      ],
+      "summary": {
+        "overview": "심사 데모 동선과 회의록 다운로드, 발표 장비 준비를 논의했다. 담당자가 불명확한 항목은 PM 확인을 기다린다."
+      },
+      "approval_state": "pending"
     }
   ],
   "asr_terms": [

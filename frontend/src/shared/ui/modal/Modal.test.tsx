@@ -34,7 +34,7 @@ describe('Modal', () => {
     expect(overlay).toHaveClass('fixed', 'inset-[0px]', 'z-100', 'flex', 'items-center', 'p-24')
 
     const scrim = overlay?.querySelector('button')
-    expect(scrim).toHaveClass('absolute', 'inset-[0px]', 'bg-ink/32', 'cursor-pointer')
+    expect(scrim).toHaveClass('absolute', 'inset-[0px]', 'bg-ink-solid/32', 'cursor-pointer')
 
     expect(card).toHaveClass(
       'relative',

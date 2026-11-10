@@ -117,6 +117,24 @@ http://localhost:5173/workspaces/ws_01/meetings/upload?msw-scenario=meeting-demo
 
 PM 시나리오는 픽스처의 처리 중 회의 `mt_10` 을 먼저 끝내 둔다 — 처리 중 회의가 있으면 업로드가 409 이고 진입이 처리 화면으로 바뀐다(D-088·D-090). 파일은 아무 짧은 음원이면 된다. 브라우저가 길이를 읽을 수 있어야 폼이 받는다 — 저장소의 `e2e/fixtures/short-meeting.wav`(1초, 8 KB)를 써도 된다. 원본 파일은 db 에도 sessionStorage 에도 남지 않는다. 남는 것은 참석자 ID(`db.meetingFlow.attendees`)뿐이다.
 
+### 회의 녹음 재생 (#676)
+
+회의록의 '원문 듣기' 재생이다. `GET /meetings/{id}/audio` 는 실 서버의 S3 모드처럼 권한을 본 뒤 302 로 모의 S3 주소(`/__mock/s3/meetings/{id}/audio.wav`)를 준다. 그 주소는 같은 출처이고 600초 무음 WAV 를 Range 206 으로 준다. done 회의는 팀원 모두, 그 밖에는 PM 만 듣는다. 들을 수 없으면 404 `AUDIO_NOT_AVAILABLE` 이고 `details.reason` 이 `expired`·`no_recording` 이다(`shared/mock/meetingAudio.ts`). 모의 handler 는 시계를 읽지 않으므로 done 회의는 회의록의 `audio` 가 null 이면 보관 기간이 지난 것이다.
+
+| 회의 | 녹음 |
+|---|---|
+| `mt_09` | 들을 수 있다. 승인 `ap_01`~`ap_03` 의 근거가 이 회의다 |
+| `mt_07` | 보관 기간이 지났다(`expired`) |
+| `mt_08`(채팅)·실패한 회의 | 녹음이 없다(`no_recording`) |
+| 정리 중 업로드·`completeMeeting` 으로 끝낸 회의 | 들을 수 있다 |
+
+시나리오 `meeting-audio-expired` 는 `mt_09` 까지 기간이 지난 상태다. 실제 S3 출처·임시 주소 만료·Safari 의 구간 이동은 흉내 내지 않는다.
+
+```text
+http://localhost:5173/workspaces/ws_01/approvals/ap_02?msw-scenario=tasks-default        → 원문 듣기 → 02:45 부터
+http://localhost:5173/workspaces/ws_01/approvals/ap_02?msw-scenario=meeting-audio-expired → 원문 듣기 → 기간 지남 안내
+```
+
 ### Vitest 에서 고르기
 
 Vitest 는 시나리오를 거치지 않는다. 기본 db 는 `manual` 이라 회의가 저절로 끝나지 않는다. 필요한 테스트만 도우미를 부른다 — 모두 `shared/mock/` 에 있고 `state` 를 받는다(기본 `db`).

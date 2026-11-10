@@ -32,6 +32,8 @@ export {
 } from './api/meetingQueries'
 export { useMeetingSources } from './api/meetingSources'
 export { assignSpeakers, meetingAudioUrl, speakerViewQueryOptions } from './api/speakers'
+export type { AudioProbe, AudioUnavailableReason } from './api/meetingAudio'
+export { probeMeetingAudio, toAudioProbe } from './api/meetingAudio'
 export { speakerTitle, speakingTime } from './lib/speakers'
 export type { UploadMeetingOptions } from './api/uploadMeeting'
 export { toUploadForm, uploadMeeting } from './api/uploadMeeting'

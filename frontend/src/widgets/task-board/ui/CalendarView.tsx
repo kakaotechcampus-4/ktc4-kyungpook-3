@@ -188,7 +188,7 @@ export function CalendarView({
                       <GuardedLink
                         key={approval.id}
                         to={`${paths.tasks(workspaceId)}?tab=needs_review`}
-                        className={`${CHIP_BASE} bg-ink`}
+                        className={`${CHIP_BASE} bg-ink-solid`}
                         aria-label={chipName(
                           MARK.review,
                           approval.title,
@@ -304,7 +304,7 @@ function DayNumber({
     <span
       className={
         today
-          ? 'inline-flex h-22 min-w-[22px] items-center justify-center self-start rounded-999 bg-ink px-6 text-[12px] leading-none text-surface tabular-nums'
+          ? 'inline-flex h-22 min-w-[22px] items-center justify-center self-start rounded-999 bg-ink-solid px-6 text-[12px] leading-none text-surface tabular-nums'
           : `text-[12px] tabular-nums ${tone}`
       }
     >
@@ -354,7 +354,7 @@ function UndatedApproval({
   return (
     <GuardedLink
       to={`${paths.tasks(workspaceId)}?tab=needs_review`}
-      className="flex flex-col gap-1 rounded-7 bg-ink px-11 py-7 wrap-anywhere"
+      className="flex flex-col gap-1 rounded-7 bg-ink-solid px-11 py-7 wrap-anywhere"
       aria-label={chipName(MARK.review, approval.title, meta)}
     >
       <span className="text-[12px] leading-[1.4] font-bold text-surface">

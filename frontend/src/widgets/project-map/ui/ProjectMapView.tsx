@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Suspense, lazy, useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { projectMapQueryOptions } from '@/entities/project-map'
-import type { MapSelection, ProjectMap } from '@/entities/project-map'
+import type { MapNode, MapSelection, ProjectMap, TopicNode } from '@/entities/project-map'
 import { ProjectBundleDownload } from '@/features/project-bundle-download'
 import { queryView } from '@/shared/lib/query-view'
 import { panelTabStop } from '@/shared/lib/tab-panel'
@@ -90,17 +90,19 @@ function MapTabs({
 }
 
 function DesktopPanel({
+  itemId,
   title,
   onClose,
   children,
 }: {
+  itemId: string
   title: string
   onClose: () => void
   children: ReactNode
 }) {
   const heading = useRef<HTMLHeadingElement>(null)
-  // 고른 항목이 바뀌면 패널 제목으로 옮긴다 — 키보드로 고른 사람이 바로 이어 읽는다
-  useEffect(() => heading.current?.focus(), [title])
+  // 고른 항목이 바뀌면 패널 제목으로 옮긴다 — 키보드로 고른 사람이 바로 이어 읽는다. 이름만 바뀐 것(고치기)은 옮기지 않는다
+  useEffect(() => heading.current?.focus(), [itemId])
   return (
     <aside aria-label="고른 항목" className={ASIDE}>
       <div className={ASIDE_HEAD}>
@@ -116,28 +118,52 @@ function DesktopPanel({
   )
 }
 
+/** 고른 노드. 맵에 아직 없는 주제는 고를 때 받은 이름으로 연다 */
+function selectedNode(
+  map: ProjectMap,
+  selection: MapSelection,
+): MapNode | Pick<TopicNode, 'kind' | 'id' | 'label'> | undefined {
+  if (selection === null) return undefined
+  const node = map.nodeById.get(selection.id)
+  if (node !== undefined || selection.kind !== 'topic' || selection.label === undefined) return node
+  return { kind: 'topic', id: selection.id, label: selection.label }
+}
+
 function MapBody({
   workspaceId,
   map,
   view,
   compact,
+  tabId,
 }: {
   workspaceId: string
   map: ProjectMap
   view: MapViewKind
   compact: boolean
+  /** 고른 보기 탭. 닫을 때 돌아갈 단추가 없으면 여기로 간다 */
+  tabId: string
 }) {
   const [selection, setSelection] = useState<MapSelection>(null)
-  // 패널을 닫으면 연 단추로 돌아간다. 그래프에서 열었으면 돌아갈 곳이 없다. 다음에 열 때 새로 적는다
+  // 패널을 닫으면 연 단추로 돌아간다. 다음에 열 때 새로 적는다
   const opener = useRef<HTMLElement | null>(null)
-  const node = selection === null ? undefined : map.nodeById.get(selection.id)
+  const node = selectedNode(map, selection)
 
   const select = (next: MapSelection) => {
     if (selection === null && document.activeElement instanceof HTMLElement)
       opener.current = document.activeElement
     setSelection(next)
   }
+  // 연 단추가 사라졌으면(합쳐서 없어진 주제) 지금 고른 노드의 목록 줄로, 그것도 없으면(그래프) 보기 탭으로 간다.
+  // 그래프의 노드도 data-node-id 를 갖지만 포커스를 받지 못하는 SVG 라 목록 단추만 고른다
+  const returnTarget = (): HTMLElement | null => {
+    if (opener.current?.isConnected === true) return opener.current
+    const row = [...document.querySelectorAll<HTMLElement>('button[data-node-id]')].find(
+      (element) => element.dataset.nodeId === selection?.id,
+    )
+    return row ?? document.getElementById(tabId)
+  }
   const close = () => {
+    opener.current = returnTarget()
     setSelection(null)
     // 시트는 닫힘이 끝난 뒤(포커스 가둠이 풀린 뒤) 스스로 돌려보낸다
     if (!compact) opener.current?.focus()
@@ -172,6 +198,7 @@ function MapBody({
             if (!open) close()
           }}
           title={node?.label ?? ''}
+          itemKey={node?.id}
           returnFocus={() => opener.current}
         >
           <div className="min-h-[0px] overflow-y-auto pb-8">{panel}</div>
@@ -182,7 +209,7 @@ function MapBody({
     <div className={node === undefined ? 'flex flex-col' : COLUMNS_WITH_PANEL}>
       <div className="min-w-[0px]">{content}</div>
       {node === undefined ? null : (
-        <DesktopPanel title={node.label} onClose={close}>
+        <DesktopPanel itemId={node.id} title={node.label} onClose={close}>
           {panel}
         </DesktopPanel>
       )}
@@ -241,7 +268,13 @@ export function ProjectMapView({ workspaceId, view, onViewChange, compact }: Pro
                 아직 주제가 없어요. 회의 요약이 만들어지면 주제와 결정이 생겨요.
               </p>
             ) : null}
-            <MapBody workspaceId={workspaceId} map={map} view={view} compact={compact} />
+            <MapBody
+              workspaceId={workspaceId}
+              map={map}
+              view={view}
+              compact={compact}
+              tabId={`${prefix}-tab-${view}`}
+            />
           </>
         )}
       </div>

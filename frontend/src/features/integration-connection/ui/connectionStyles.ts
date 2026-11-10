@@ -16,7 +16,7 @@ export const META_VALUE = 'text-sub tabular-nums'
 export const BADGE =
   'inline-flex h-20 items-center gap-5 rounded-6 bg-control px-8 text-[11px] leading-none font-semibold text-sub'
 export const DOT: Record<IntegrationStatus, string> = {
-  connected: 'h-5 w-5 rounded-999 bg-ink',
+  connected: 'h-5 w-5 rounded-999 bg-ink-solid',
   connecting: 'h-5 w-5 rounded-999 bg-dim',
   not_connected: 'h-5 w-5 rounded-999 bg-dashed',
   revoked: 'h-5 w-5 rounded-999 bg-accent-point',

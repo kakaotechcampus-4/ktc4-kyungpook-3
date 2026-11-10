@@ -180,6 +180,8 @@ describe('MSW 픽스처가 같은 스키마를 따른다', () => {
     null,
     ...MOCK_SCENARIOS.filter((scenario) => scenario.startsWith('meeting-')),
     'minutes-edit-pending',
+    'minutes-awaiting-approval',
+    'minutes-awaiting-approval-member',
     'dashboard-default',
     'dashboard-recent-overflow',
     'dashboard-revert-rejected',

@@ -36,10 +36,10 @@ const STATUS_BADGE =
   'inline-flex h-18 shrink-0 items-center gap-5 rounded-6 bg-control px-6 text-[10.5px] leading-none font-semibold text-sub'
 /* 업로드 진입. PM 만 본다 — 캔버스의 검색 자리다(검색은 범위 밖) */
 const UPLOAD_LINK =
-  'inline-flex h-32 items-center gap-6 rounded-9 bg-ink px-12 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
+  'inline-flex h-32 items-center gap-6 rounded-9 bg-ink-solid px-12 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
 const EMPTY_PAGE = 'flex flex-1 items-center justify-center px-48 pt-48 pb-96 max-md:px-20'
 const EMPTY_UPLOAD =
-  'inline-flex h-40 items-center justify-center rounded-9 bg-ink px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
+  'inline-flex h-40 items-center justify-center rounded-9 bg-ink-solid px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
 /* 업로드 옆의 보조 액션. 같은 높이의 컨트롤 면이다 */
 const EMPTY_GUIDE =
   'inline-flex h-40 items-center justify-center rounded-9 bg-control px-20 text-body font-semibold text-ink hover:bg-line-strong'
@@ -330,7 +330,7 @@ function InProgressRow({ workspaceId, meeting }: { workspaceId: string; meeting:
         <span className="flex-1 text-body text-sub group-hover:text-ink">{title}</span>
         <SourceBadge meeting={meeting} />
         <span className={STATUS_BADGE}>
-          <span aria-hidden="true" className="size-5 shrink-0 rounded-999 bg-ink" />
+          <span aria-hidden="true" className="size-5 shrink-0 rounded-999 bg-ink-solid" />
           {status.label}
         </span>
       </span>

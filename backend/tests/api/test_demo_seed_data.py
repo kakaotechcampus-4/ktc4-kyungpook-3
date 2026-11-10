@@ -17,6 +17,7 @@ def test_default_data_loads_and_has_required_shape():
     assert len(set(data.asr_terms)) == len(data.asr_terms)
     days = [m.days_ago for m in data.meetings]
     assert len(set(days)) == len(days) and all(1 <= d <= 30 for d in days)
+    assert [m.approval_state for m in data.meetings] == ["approved"] * 5 + ["pending"]
 
 
 def test_items_reference_existing_turns_and_people():
@@ -73,8 +74,12 @@ def _duplicate_days(raw):
     raw["meetings"][1]["days_ago"] = raw["meetings"][0]["days_ago"]
 
 
+def _invalid_approval_state(raw):
+    raw["meetings"][0]["approval_state"] = "auto"
+
+
 @pytest.mark.parametrize(
-    "mutate", [_seq_out_of_range, _unknown_speaker, _unknown_speaker_key, _duplicate_days]
+    "mutate", [_seq_out_of_range, _unknown_speaker, _unknown_speaker_key, _duplicate_days, _invalid_approval_state]
 )
 def test_bad_reference_is_rejected(tmp_path, mutate):
     path = _write_variant(tmp_path, mutate)
@@ -98,3 +103,28 @@ def test_error_message_names_the_meeting(tmp_path):
     title = json.loads(path.read_text(encoding="utf-8"))["meetings"][0]["title"]
     with pytest.raises(SeedDataError, match=title):
         load_seed_data(path)
+
+
+def test_omitted_approval_policy_defaults_to_pending(tmp_path):
+    path = _write_variant(tmp_path, lambda raw: [m.pop("approval_state") for m in raw["meetings"]])
+    assert all(meeting.approval_state == "pending" for meeting in load_seed_data(path).meetings)
+
+
+@pytest.mark.parametrize("action", ["merge", "update"])
+def test_approved_history_rejects_items_that_reuse_existing_work(tmp_path, action):
+    def reuse_existing(raw):
+        raw["meetings"][0]["items"][1]["action"] = action
+
+    path = _write_variant(tmp_path, reuse_existing)
+    with pytest.raises(SeedDataError, match="approved.*create"):
+        load_seed_data(path)
+
+
+@pytest.mark.parametrize("action", ["merge", "update"])
+def test_pending_policy_preserves_existing_item_actions(tmp_path, action):
+    def reuse_existing(raw):
+        raw["meetings"][0]["approval_state"] = "pending"
+        raw["meetings"][0]["items"][1]["action"] = action
+
+    path = _write_variant(tmp_path, reuse_existing)
+    assert load_seed_data(path).meetings[0].items[1]["action"] == action

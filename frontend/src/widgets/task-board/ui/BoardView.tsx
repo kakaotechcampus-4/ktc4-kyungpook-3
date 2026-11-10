@@ -386,7 +386,7 @@ function ColumnHead({
         </h2>
         <span
           className={`inline-flex h-[19px] min-w-[19px] items-center justify-center rounded-6 px-6 text-[11px] leading-none font-semibold tabular-nums ${
-            column === 'active' ? 'bg-ink text-surface' : 'bg-divider text-sub'
+            column === 'active' ? 'bg-ink-solid text-surface' : 'bg-divider text-sub'
           }`}
         >
           {count}
@@ -459,7 +459,7 @@ function TonePill({ tone }: { tone: 'danger' | 'warn' }) {
   return tone === 'danger' ? (
     <span className={`${PILL} bg-accent-badge font-bold text-accent`}>위험</span>
   ) : (
-    <span className={`${PILL} gap-3 bg-ink font-semibold text-surface`}>
+    <span className={`${PILL} gap-3 bg-ink-solid font-semibold text-surface`}>
       <span aria-hidden="true" className="mr-3 h-5 w-5 rounded-999 bg-current" />
       주의
     </span>
