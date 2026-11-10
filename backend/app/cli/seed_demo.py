@@ -327,9 +327,58 @@ def _call(http: httpx.Client, method: str, path: str, *, service_token: str, **k
     return body.get("data")
 
 
-def _started_at(meeting: SeedMeeting, now: datetime) -> datetime:
-    day = (now.astimezone(KST) - timedelta(days=meeting.days_ago)).date()
+def today_kst(now: datetime | None = None) -> date:
+    return (now or datetime.now(timezone.utc)).astimezone(KST).date()
+
+
+def _started_at(meeting: SeedMeeting, today: date) -> datetime:
+    day = today - timedelta(days=meeting.days_ago)
     return datetime(day.year, day.month, day.day, MEETING_HOUR_KST, tzinfo=KST)
+
+
+def future_starts(data: SeedData, today: date, now: datetime) -> list[tuple[str, datetime]]:
+    """계산한 시작 시각이 now 보다 늦은 회의. 서버가 미래 started_at 을 거절한다."""
+    starts = [(m.title, _started_at(m, today)) for m in data.meetings]
+    return [(title, start) for title, start in starts if start > now]
+
+
+def date_mismatches(
+    db: Session, data: SeedData, workspace_id: str, today: date
+) -> list[tuple[str, date, date, date]]:
+    """이미 있는 시드 회의 중 저장된 시작의 KST 날짜가 이번 기준일의 기대 날짜와 다른 것.
+
+    (제목, 저장 날짜, 기대 날짜, 원래 기준일)."""
+    found = []
+    for meeting in data.meetings:
+        row = _find_meeting(db, workspace_id, meeting.title)
+        if row is None:
+            continue
+        started_at = row[2]
+        if started_at.tzinfo is None:  # SQLite 는 시간대를 저장하지 않는다
+            started_at = started_at.replace(tzinfo=timezone.utc)
+        stored = started_at.astimezone(KST).date()
+        expected = today - timedelta(days=meeting.days_ago)
+        if stored != expected:
+            found.append((meeting.title, stored, expected, stored + timedelta(days=meeting.days_ago)))
+    return found
+
+
+def check_today(
+    db: Session, data: SeedData, workspace_id: str | None, today: date, now: datetime
+) -> list[str]:
+    problems = [
+        f"회의 '{title}' 시작 {start:%Y-%m-%d %H:%M} KST 가 지금보다 늦습니다(서버가 거절). "
+        "가장 늦은 회의 시작이 지난 뒤 실행하세요"
+        for title, start in future_starts(data, today, now)
+    ]
+    if workspace_id is not None:
+        problems += [
+            f"회의 '{title}' 가 이미 {stored} 로 있습니다(이번 기준일이면 {expected}). "
+            f"원래 기준일 --today {origin} 로 다시 실행하세요"
+            for title, stored, expected, origin in date_mismatches(db, data, workspace_id, today)
+        ]
+        db.rollback()
+    return problems
 
 
 def _segments(meeting: SeedMeeting, member_ids: dict[str, str]) -> list[dict]:
@@ -404,6 +453,7 @@ def replay_meetings(
     *,
     service_token: str,
     wait_for_embeddings: Callable[[str], None],
+    today: date | None = None,
     now: datetime | None = None,
 ) -> ReplayReport:
     """지난 회의를 봇과 같은 API 순서(생성 → 종료 → 발화 → 추출 → 요약)로 재생한다.
@@ -412,7 +462,11 @@ def replay_meetings(
     첫 항목이 auto 로 갈 수 있다(임베딩 없는 task·대기 카드가 있으면 auto 를 막는다).
     """
     now = now or datetime.now(timezone.utc)
+    today = today or today_kst(now)
     workspace_id = seeded.workspace_id
+    problems = check_today(db, data, workspace_id, today, now)
+    if problems:
+        raise SeedConflictError("; ".join(problems))
     written, skipped = 0, []
     for meeting in data.meetings:
         found = _find_meeting(db, workspace_id, meeting.title)
@@ -424,7 +478,7 @@ def replay_meetings(
                 headers={"X-Meeting-Lineage-Version": "1"},
                 json={
                     "workspace_id": workspace_id, "title": meeting.title, "source": SEED_SOURCE,
-                    "started_at": _started_at(meeting, now).isoformat(),
+                    "started_at": _started_at(meeting, today).isoformat(),
                 },
             )
             found = (created["meeting_id"], created["status"], datetime.fromisoformat(created["started_at"]))
@@ -524,7 +578,7 @@ def poll_embeddings(
     return wait
 
 
-# 종료 코드: 0 성공, 1 시드 실패(SeedError), 2 입력·환경 부족이나 기존 데이터 재사용 거절(아무것도 쓰지 않음), 3 성공했으나 gate 분포 경고
+# 종료 코드: 0 성공, 1 시드 실패(SeedError), 2 입력·환경 부족, 기존 데이터 재사용 거절, 기준일 형식·미래 시작·기존 회의 날짜 불일치(아무것도 쓰지 않음), 3 성공했으나 gate 분포 경고
 EXIT_OK, EXIT_FAILED, EXIT_USAGE, EXIT_GATE_WARNING = 0, 1, 2, 3
 
 
@@ -537,6 +591,13 @@ def _password(env_name: str, label: str) -> str:
     raise SeedError(f"{env_name} 환경변수가 필요합니다(터미널이 아니면 입력을 받을 수 없습니다)")
 
 
+def _today_arg(value: str) -> date:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        raise argparse.ArgumentTypeError("YYYY-MM-DD 형식이어야 합니다") from None
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli.seed_demo", description="심사용 시드(#606)")
     parser.add_argument("--base-url", default="http://localhost:8000", help="API 호스트 루트(/api/v1 은 붙이지 않는다)")
@@ -545,6 +606,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--data", type=Path, default=DEFAULT_DATA_PATH)
     parser.add_argument(
         "--dry-run", action="store_true", help="DB 를 읽기만 해서 재사용할 계정·공간·회의를 출력하고 쓰지 않는다"
+    )
+    parser.add_argument(
+        "--today", type=_today_arg, default=None,
+        help="회의 날짜의 기준일(KST, 기본은 실행일). 회의는 그날 − days_ago 의 10:00 KST",
     )
     parser.add_argument("--embed-timeout", type=float, default=120, help="임베딩 대기 초(회의마다)")
     parser.add_argument("--reset-passwords", action="store_true", help="기존 계정 비밀번호도 다시 정한다")
@@ -576,11 +641,23 @@ def main(argv: list[str] | None = None) -> int:
         print(f"오류: {error}", file=sys.stderr)
         return EXIT_USAGE
 
+    service_token = os.environ.get("SERVICE_TOKEN")
+    if not args.dry_run and not service_token:
+        print("오류: SERVICE_TOKEN 환경변수가 필요합니다", file=sys.stderr)
+        return EXIT_USAGE
+    today = args.today or today_kst()
+    with SessionLocal() as db:
+        existing = inspect_existing(db, data, emails=emails, workspace_name=workspace_name)
+        db.rollback()
+        today_problems = check_today(db, data, existing.workspace_id, today, datetime.now(timezone.utc))
+    if today_problems:
+        for problem in today_problems:
+            print(f"멈출 이유: {problem}", file=sys.stderr)
+        return EXIT_USAGE
+
     if args.dry_run:
-        with SessionLocal() as db:
-            existing = inspect_existing(db, data, emails=emails, workspace_name=workspace_name)
-            db.rollback()
         print(f"공간 이름: {workspace_name}")
+        print(f"기준일: {today} (KST, {'--today' if args.today else '실행일'})")
         print(f"시드 계정: {len(emails)}개 ({', '.join(emails)}), 그중 이미 있는 계정 {len(existing.reused_emails)}개")
         if existing.workspace_id is None:
             print("공간: 새로 만든다")
@@ -588,7 +665,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"공간: 기존 공간 재사용 ({existing.workspace_id}), 활성 자리 {existing.seats}개, 회의 {existing.meetings}개")
         print(f"재생할 회의 {len(data.meetings)}개:")
         for meeting in data.meetings:
-            print(f"- {meeting.title}")
+            print(f"- {_started_at(meeting, today):%Y-%m-%d} 10:00 KST {meeting.title}")
         problems = existing.problems()
         if problems and not args.allow_existing:
             for problem in problems:
@@ -596,11 +673,6 @@ def main(argv: list[str] | None = None) -> int:
             print("실제 실행은 아무것도 쓰지 않고 멈춘다. 재사용하려면 --allow-existing 을 붙이세요", file=sys.stderr)
             return EXIT_USAGE
         return EXIT_OK
-
-    service_token = os.environ.get("SERVICE_TOKEN")
-    if not service_token:
-        print("오류: SERVICE_TOKEN 환경변수가 필요합니다", file=sys.stderr)
-        return EXIT_USAGE
 
     try:
         with SessionLocal() as db, httpx.Client(base_url=args.base_url, timeout=30) as http:
@@ -621,6 +693,7 @@ def main(argv: list[str] | None = None) -> int:
                 data,
                 service_token=service_token,
                 wait_for_embeddings=poll_embeddings(SessionLocal, args.embed_timeout),
+                today=today,
             )
     except SeedConflictError as error:
         print(f"오류: {error}", file=sys.stderr)
