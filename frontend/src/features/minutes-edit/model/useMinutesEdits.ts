@@ -87,7 +87,7 @@ function useEdit<Target, Result>({
     mutationKey,
     retry: false,
     // 실패 문구를 이 요청의 결과에서 읽는다. 기본 5분 수거를 끄고, 지우기는 clearFailure 가 맡는다.
-    // 세션이 끝나도 남을 수 있지만 다른 세션의 실패는 보이지 않고(inlineFailure), 앱을 버릴 때 queryClient.clear 가 비운다
+    // 세션이 끝나면 clearUserCache 가 mutation 캐시째 비운다(#681)
     gcTime: Infinity,
     mutationFn: async ({ target, session }) => {
       // 앞선 일을 기다리는 사이 세션이 끝났을 수 있다. 그대로 보내면 다음에 로그인한 계정의 쿠키로 저장된다

@@ -629,3 +629,39 @@ describe('리뷰 #672 마지막 재반영', () => {
     )
   })
 })
+
+describe('세션이 끝나면 고치기 기록을 지운다 (#681)', () => {
+  it('실패한 발화 고치기 뒤 로그아웃하면 mutation 캐시에 그 글이 없다', async () => {
+    server.use(
+      http.patch('/api/v1/meetings/:meetingId/transcript/:seq', () =>
+        fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400),
+      ),
+    )
+    const user = userEvent.setup()
+    const app = renderApp(MT_09)
+    await screen.findByRole('heading', { level: 2, name: '3주차 정기회의' })
+    const panel = await openTranscript(user)
+    await user.click(within(panel).getByRole('button', { name: LINE_1 }))
+    const field = within(panel).getByRole('textbox', { name: '발화 고치기' })
+    await user.clear(field)
+    await user.type(field, '앞 계정의 초안')
+    await user.click(within(panel).getByRole('button', { name: '저장' }))
+    await within(panel).findByRole('alert')
+    const drafts = () =>
+      app.queryClient
+        .getMutationCache()
+        .getAll()
+        .filter(({ state }) => JSON.stringify(state.variables ?? null).includes('앞 계정의 초안'))
+    expect(drafts()).toHaveLength(1)
+
+    await user.click(screen.getByRole('button', { name: /^내 계정/ }))
+    await user.click(await screen.findByRole('menuitem', { name: '로그아웃' }))
+    await user.click(await screen.findByRole('button', { name: '변경 내용 버리고 나가기' }))
+    expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
+
+    expect(drafts()).toEqual([])
+    expect(app.queryClient.getMutationCache().findAll({ mutationKey: ['minutes-edit'] })).toEqual(
+      [],
+    )
+  })
+})
