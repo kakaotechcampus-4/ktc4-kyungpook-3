@@ -19,7 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover'
 import { useRefreshOnNotification } from '../model/useRefreshOnNotification'
 
 const TRIGGER =
-  'relative inline-flex size-36 items-center justify-center rounded-9 text-ink hover:bg-surface-selected data-[state=open]:bg-surface-selected'
+  'relative inline-flex size-36 shrink-0 items-center justify-center rounded-9 text-ink hover:bg-surface-selected data-[state=open]:bg-surface-selected'
 const BADGE =
   'absolute -top-2 -right-2 inline-flex h-16 min-w-16 items-center justify-center rounded-999 bg-accent-solid px-4 text-[10.5px] leading-none font-bold text-surface'
 const ITEM =

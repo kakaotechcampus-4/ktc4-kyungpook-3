@@ -39,7 +39,7 @@ const MARK = {
   todo: { label: TASK_STATUS_LABEL.todo },
 } as const satisfies Record<string, StatusMark>
 
-/** 칩 색. 진행 중은 회색, 마감 임박(주의·위험)은 연한 레드 면에 먹색 굵은 제목(시안 600), 완료는 취소선 */
+/** 칩 색. 진행 중은 회색, 마감 임박(주의·위험)은 주황 면에 흰 굵은 제목, 완료는 취소선 */
 const CHIP: Record<TaskTone, { box: string; title: string; sub: string; mark: StatusMark }> = {
   done: {
     box: 'bg-surface-sunken',
@@ -48,15 +48,15 @@ const CHIP: Record<TaskTone, { box: string; title: string; sub: string; mark: St
     mark: MARK.done,
   },
   danger: {
-    box: 'bg-accent-chip',
-    title: 'font-semibold text-ink',
-    sub: 'text-sub',
+    box: 'bg-accent-solid',
+    title: 'font-semibold text-surface',
+    sub: 'text-surface',
     mark: MARK.urgent,
   },
   warn: {
-    box: 'bg-accent-chip',
-    title: 'font-semibold text-ink',
-    sub: 'text-sub',
+    box: 'bg-accent-solid',
+    title: 'font-semibold text-surface',
+    sub: 'text-surface',
     mark: MARK.urgent,
   },
   active: { box: 'bg-surface-selected', title: 'text-ink', sub: 'text-sub', mark: MARK.active },

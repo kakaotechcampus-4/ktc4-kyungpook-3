@@ -303,7 +303,8 @@ def _workspace_terms(candidates: Any, workspace_id: str, team: set[str]) -> set[
             push(workspace_id, new, [p["title_id"] for p in pending])
         except Exception as e:  # noqa: BLE001 - 올리지 못하면 다음 회의에서 다시 올린다(BE 는 중복을 건너뛴다)
             logger.warning("워크스페이스 용어를 올리지 못했다: %s: %s", type(e).__name__, e)
-    return words | approved
+    # 사람이 넣은 여러 단어 용어(심사용 시드 #621)도 제목을 쪼개는 방식대로 나눠 안다. 나눈 말은 BE 에 다시 올리지 않는다
+    return asr_check.term_words(words) | approved
 
 
 def _asr_vocab(candidates: Any, workspace_id: str, transcript: Transcript) -> set[str] | None:

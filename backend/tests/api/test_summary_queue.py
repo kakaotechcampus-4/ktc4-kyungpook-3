@@ -20,6 +20,7 @@ from app.models import (
     Source,
     Topic,
     TopicMeeting,
+    Task,
     Workspace,
     WorkspaceAsrTerm,
 )
@@ -614,6 +615,46 @@ def test_summary_input_values_are_the_ones_approved_for_that_meeting(client, mdb
         ("update", "PM 제목", None, "2026-12-10", "done")]
 
 
+@pytest.mark.parametrize("override", [None, "2026-12-09"])
+def test_merged_summary_items_keep_their_meeting_values_unless_pm_overrides(client, mdb, mseed, override):
+    first_id, [card] = _handed_off(client, mdb, mseed["ws"], [{**REVIEW, "due_date": "2026-12-01"}],
+                                   started_at=T0 - timedelta(days=1))
+    second_id, [merged_card] = _handed_off(client, mdb, mseed["ws"], [{
+        "action": "merge", "target_approval_id": card, "task_title": REVIEW["task_title"],
+        "category": "due", "due_date": "2026-12-05"}])
+    assert merged_card == card
+    response = client.patch(f"/api/v1/approvals/{card}", json={"status": "approved", **(
+        {"task_overrides": {"due_date": override}} if override else {})})
+    assert response.status_code == 200, response.text
+
+    first = _input(client, mdb.get(Extraction, first_id))["items"]
+    second = _input(client, mdb.get(Extraction, second_id))["items"]
+
+    assert [item["due_date"] for item in first] == [override or "2026-12-01"]
+    assert [item["due_date"] for item in second] == [override or "2026-12-05"]
+
+
+def test_deleting_a_meeting_erases_merged_card_overrides_for_surviving_summary(client, mdb, mseed, monkeypatch):
+    monkeypatch.setenv("MEETING_DELETION_ENABLED", "true")
+    first_id, [card] = _handed_off(client, mdb, mseed["ws"], [REVIEW], started_at=T0 - timedelta(days=1))
+    second_id, _ = _handed_off(client, mdb, mseed["ws"], [{
+        "action": "merge", "target_approval_id": card, "task_title": "합쳐진 회의 제목"}])
+    response = client.patch(f"/api/v1/approvals/{card}", json={"status": "approved", "task_overrides": {
+        "task_title": "PM 수정 제목"}})
+    assert response.status_code == 200, response.text
+    assert _input(client, mdb.get(Extraction, first_id))["items"][0]["title"] == "PM 수정 제목"
+    deleted = mdb.get(Extraction, second_id).meeting
+    deleted.deletion_ready = True
+    mdb.commit()
+
+    response = client.delete(f"/api/v1/meetings/{deleted.meeting_id}")
+
+    assert response.status_code == 202, response.text
+    assert _input(client, mdb.get(Extraction, first_id))["items"][0]["title"] == REVIEW["task_title"]
+    assert json.loads(mdb.get(ApprovalRequest, card).payload) == {
+        "meeting_id": deleted.meeting_id, "source_deleted": True}
+
+
 def test_summary_input_lists_the_tasks_rejected_in_that_meeting(client, mdb, mseed):
     ws, (_, moved, finished) = mseed["ws"], mseed["tasks"]
     _, [elsewhere] = _handed_off(client, mdb, ws, [{**REVIEW, "task_title": "다른 회의에서 버린 일"}],
@@ -651,15 +692,19 @@ def test_summary_input_tells_an_approved_clear_and_scope_change_from_no_change(c
         {"action": "update", "target_task_id": scoped.task_id, "category": "scope", "doc_text": "소셜 로그인은 이번에 뺀다"},
     ])
     assert len(cards) == 3
-    _resolve(client, cards[0], "approved")
-    r = client.patch(f"/api/v1/approvals/{cards[1]}", json={"status": "approved", "task_overrides": {"due_date": None}})
+    by_task = dict(mdb.execute(select(ExtractionItem.task_id, ExtractionItem.approval_id).where(
+        ExtractionItem.extraction_id == extraction_id,
+    )).all())
+    _resolve(client, by_task[cleared.task_id], "approved")
+    r = client.patch(f"/api/v1/approvals/{by_task[overridden.task_id]}", json={
+        "status": "approved", "task_overrides": {"due_date": None}})
     assert r.status_code == 200, r.text
-    _resolve(client, cards[2], "approved")
+    _resolve(client, by_task[scoped.task_id], "approved")
     mdb.expire_all()
 
     items = _input(client, mdb.get(Extraction, extraction_id))["items"]
 
-    assert [(i["title"], i["due_date"], i["cleared"], i["scope"]) for i in items] == [
+    assert sorted((i["title"], i["due_date"], i["cleared"], i["scope"]) for i in items) == [
         ("할일0", None, ["due_date"], None),
         ("할일1", None, ["due_date"], None),
         ("할일2", None, [], "소셜 로그인은 이번에 뺀다"),
@@ -696,9 +741,11 @@ def test_summary_input_keeps_each_update_of_one_task_in_one_meeting(client, mdb,
 
     items = _input(client, mdb.get(Extraction, extraction_id))["items"]
 
-    assert [(i["title"], i["due_date"], i["status"]) for i in items] == [
-        ("할일0", None, None), ("할일0", "2026-12-01", None), ("할일0", None, "done")]
-    changed = [i["item_id"] for i in items[1:]]
+    assert len(items) == 3
+    assert {(i["title"], i["due_date"], i["status"]) for i in items} == {
+        ("할일0", None, None), ("할일0", "2026-12-01", None), ("할일0", None, "done")}
+    by_change = {(i["due_date"], i["status"]): i["item_id"] for i in items}
+    changed = [by_change[("2026-12-01", None)], by_change[(None, "done")]]
     assert _claim(client, extraction_ids=[extraction_id])["extraction_id"] == extraction_id
     _put(client, extraction_id, {**BODY, "topics": [{"name": "일정", "item_ids": changed}], "task_changes": [
         {"task": "할일0", "due": "2026-12-01", "item_id": changed[0]}, {"task": "할일0 완료", "item_id": changed[1]}]})
@@ -709,13 +756,16 @@ def test_summary_input_keeps_each_update_of_one_task_in_one_meeting(client, mdb,
 
 def test_summary_input_gives_source_members_and_terms(client, mdb, mseed):
     _, extraction = _meeting(mdb, mseed["ws"], source="chat")
+    for offset, name in enumerate(("pm", "alice", "bob")):
+        mseed[name].created_at = T0 + timedelta(seconds=offset)
     mseed["carol"].is_deleted = True
-    mdb.add_all([WorkspaceAsrTerm(workspace_id=mseed["ws"], word=word) for word in ("젠킨스", "배포")])
+    words = ("젠킨스", "배포", "zebra", "Alpha", "alpha")
+    mdb.add_all([WorkspaceAsrTerm(workspace_id=mseed["ws"], word=word) for word in words])
     mdb.commit()
 
     data = _input(client, extraction)
 
-    assert (data["source"], data["members"], data["asr_terms"]) == ("chat", ["PM", "앨리스", "밥"], ["배포", "젠킨스"])
+    assert (data["source"], data["members"], data["asr_terms"]) == ("chat", ["PM", "앨리스", "밥"], sorted(words))
 
 
 def test_summary_input_unknown_extraction_is_404(client, mdb, mseed):
@@ -801,6 +851,24 @@ def test_summary_request_marks_old_meeting_for_the_claim(client, mdb, mseed):
     _request(client, mseed["ws"], include_all=True, dry_run=False)
 
     assert _claim(client)["extraction_id"] == extraction.extraction_id
+
+
+def test_completed_chat_summary_stays_done_after_approved_task_is_deleted(client, mdb, mseed):
+    extraction_id, [card] = _handed_off(client, mdb, mseed["ws"], [REVIEW], source="chat")
+    _resolve(client, card, "approved")
+    assert _claim(client)["extraction_id"] == extraction_id
+    _put(client, extraction_id)
+    extraction = mdb.get(Extraction, extraction_id)
+    item = mdb.scalar(select(ExtractionItem).where(ExtractionItem.extraction_id == extraction_id))
+    mdb.get(Task, item.task_id).is_deleted = True
+    mdb.commit()
+
+    rows = _request(client, mseed["ws"], meeting_ids=[extraction.meeting_id], dry_run=False)
+
+    assert rows[extraction.meeting_id]["state"] == "done"
+    assert extraction.summary_requested_at is None
+    assert _request(client, mseed["ws"], meeting_ids=[extraction.meeting_id], force=True)[
+        extraction.meeting_id]["state"] == "no_approved_items"
 
 
 def test_summary_request_reports_each_state(client, mdb, mseed):

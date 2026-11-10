@@ -130,7 +130,10 @@ class FakeBe:
             "source": "discord", "members": ["민수"], "asr_terms": [],
             "lines": [{"seq": 1, "at_ms": 125000, "speaker": "민수", "text": "초대는 이메일로만 하죠"}],
             "items": [{"item_id": "item-1", "action": "create", "title": "초대 메일 보내기", "assignee": "민수",
-                       "due_date": "2026-11-14"}],
+                       "due_date": "2026-11-14", "status": None, "cleared": [], "scope": None},
+                      {"item_id": "item-2", "action": "update", "title": "초대 화면", "assignee": None,
+                       "due_date": None, "status": "done", "cleared": ["due_date"], "scope": "이메일 초대만 제공한다"}],
+            "rejected_items": [],
             "topics": [{"topic_id": "topic-1", "name": "팀원 초대", "description": "초대 방식"}],
             "decisions": [{"decision_id": "dec-1", "text": "초대 코드로 합류한다", "topic": "팀원 초대",
                            "decided_on": "2026-10-20"}],
@@ -364,7 +367,7 @@ class FakeBe:
     def _claim_summary(self, body: dict):
         only = body.get("extraction_ids")
         for row in self.summaries.values():
-            eligible = row["requested"] and row["attempts"] < 2 and not row["leased"]
+            eligible = row["requested"] and row["attempts"] < 2 and not row["leased"] and not row["blocked"]
             if eligible and (only is None or row["extraction_id"] in only):
                 row["attempts"] += 1
                 row["leased"] = True
@@ -384,7 +387,7 @@ class FakeBe:
         if "X-Privacy-Epoch" in headers and headers["X-Privacy-Epoch"] != str(row["identity_epoch"]):
             return _err(409, "PRIVACY_VERSION_CHANGED")
         keys = ("extraction_id", "meeting_id", "workspace_id", "title", "started_at", "source", "members", "asr_terms",
-                "lines", "items", "topics", "decisions", "identity_epoch")
+                "lines", "items", "rejected_items", "topics", "decisions", "identity_epoch")
         return _ok(200, {k: row[k] for k in keys})
 
     def _put_summary(self, extraction_id: str, body: dict, headers: dict):
@@ -429,6 +432,8 @@ class FakeBe:
 
     @staticmethod
     def _summary_state(row: dict, force: bool) -> str:
+        if not force and not row["requested"] and row["saved"] is not None:
+            return "done"
         if row["blocked"]:
             return row["blocked"]
         if row["requested"] and row["leased"]:

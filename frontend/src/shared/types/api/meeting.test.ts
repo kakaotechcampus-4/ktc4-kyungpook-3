@@ -55,6 +55,39 @@ describe('회의 스키마', () => {
     expect(meetingSummarySchema.safeParse(listLegacy).success).toBe(true)
   })
 
+  describe('정리 중 처리 단계 (#483)', () => {
+    const processing = {
+      stage: 'stt',
+      stage_at: '2026-09-18T00:00:00Z',
+      stt: { done: 3, total: 5 },
+    }
+
+    it('진행 수·단계·시각을 읽고, 없는 키(#542 전 서버)는 없는 그대로다', () => {
+      expect(meetingSchema.parse({ ...detail, processing }).processing).toEqual(processing)
+      expect(meetingSchema.parse({ ...detail, processing: null }).processing).toBeNull()
+      expect(meetingSchema.parse(detail)).not.toHaveProperty('processing')
+    })
+
+    it.each([
+      ['끝낸 수가 전체보다 많음', { ...processing, stt: { done: 6, total: 5 } }],
+      ['전체가 0', { ...processing, stt: { done: 0, total: 0 } }],
+      ['정수가 아닌 진행 수', { ...processing, stt: { done: 1.5, total: 5 } }],
+      ['문자열 진행', { ...processing, stt: '3/5' }],
+      ['숫자 단계', { ...processing, stage: 1 }],
+      ['문자열 processing', 'stt'],
+    ])('%s 은 응답을 거절하지 않고 처리 단계만 없는 것으로 본다', (_, value) => {
+      const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const parsed = meetingSchema.safeParse({ ...detail, processing: value })
+        expect(parsed.success).toBe(true)
+        expect(parsed.data?.processing).toBeNull()
+        expect(parsed.data?.meeting_id).toBe(detail.meeting_id)
+      } finally {
+        warning.mockRestore()
+      }
+    })
+  })
+
   it('목록 한 건이 모르는 상태면 목록 전체를 읽지 않는다', () => {
     const result = meetingListSchema.safeParse({
       items: [summary, { ...summary, meeting_id: 'mt_99', status: 'archived' }],

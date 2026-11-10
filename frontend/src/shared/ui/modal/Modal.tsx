@@ -19,6 +19,8 @@ export interface ModalProps {
   closeLabel?: string
   /** 카드에 덧붙인다 */
   className?: string
+  /** Esc 로 닫기 전에 부른다. `preventDefault` 하면 닫지 않는다 — 창 안에서 Esc 를 스스로 쓰는 칸(그 자리 고치기)이 쓴다 */
+  onEscapeKeyDown?: (event: KeyboardEvent) => void
 }
 
 /* 표는 모듈 스코프에 둔다 — 렌더마다 다시 만들지 않는다.
@@ -78,6 +80,7 @@ export function Modal({
   width,
   closeLabel = '닫기',
   className,
+  onEscapeKeyDown,
 }: ModalProps) {
   const opener = useRef<HTMLElement | null>(null)
 
@@ -90,6 +93,7 @@ export function Modal({
           <DialogPrimitive.Content
             className={[CARD, className].filter(Boolean).join(' ')}
             style={width === undefined ? undefined : { width }}
+            onEscapeKeyDown={onEscapeKeyDown}
             onOpenAutoFocus={() => {
               // FocusScope 가 첫 요소로 옮기기 전이다 — 지금 포커스가 있는 요소가 모달을 연 요소다
               const active = document.activeElement

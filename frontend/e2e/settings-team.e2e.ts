@@ -4,7 +4,7 @@ import { capture, expectNoHorizontalOverflow, finishOAuth, start } from './suppo
 
 /*
  * M8-B — 설정에서 온보딩 때 건너뛴 Discord 를 연결한다 (D-011). 모의 OAuth 는 현재 탭 이동이다 (D-158).
- * 연결이 확인되면 팀 화면의 팀원 연결 창으로 간다 (D-074).
+ * 연결이 확인되면 팀 화면의 팀원 관리 창으로 간다 (D-074).
  * settings-discord-skipped 는 ws_03 이 온보딩을 마쳤고 Discord·팀원 연결을 건너뛰었다. Notion 만 연결돼 있다.
  * 브라우저에서만 볼 수 있는 것만 둔다 — 현재 탭 OAuth 왕복과 새로고침 뒤 상태, 너비·키보드.
  * 취소·실패·재조회 불일치·조회 오류·일반 팀원은 app/settingsConnections.test.tsx 가 본다
@@ -72,7 +72,7 @@ test('Notion 연결 해제는 응답 관측 알림 없이도 새로고침 뒤 �
   await expect(notion.getByText('연결 안 됨')).toBeVisible(FIRST_PAINT)
 })
 
-test('PM 이 설정에서 Discord 를 연결하면 팀원 연결 창으로 가고, 새로고침해도 연결이 남는다 (D-074)', async ({
+test('PM 이 설정에서 Discord 를 연결하면 팀원 관리 창으로 가고, 새로고침해도 연결이 남는다 (D-074)', async ({
   page,
 }) => {
   const onboardingSaves = countOnboardingSaves(page)
@@ -83,18 +83,19 @@ test('PM 이 설정에서 Discord 를 연결하면 팀원 연결 창으로 가�
   await area.getByRole('button', { name: 'Discord 연결하기' }).click()
 
   await finishOAuth(page, '디스코드')
-  // 연결을 확인하면 팀 화면의 팀원 연결 창으로 간다. 복귀 표시는 주소에 남지 않는다
+  // 연결을 확인하면 팀 화면의 팀원 관리 창으로 간다. 복귀 표시는 주소에 남지 않는다
   await expect(page).toHaveURL(`${TEAM}?connect=members`)
-  const dialog = page.getByRole('dialog', { name: '팀원 연결' })
-  await expect(dialog.getByLabel('@jihun_dev의 팀원 이름')).toBeVisible(FIRST_PAINT)
+  const dialog = page.getByRole('dialog', { name: '팀원 관리' })
+  const addJihun = dialog.getByRole('button', { name: '@jihun_dev 팀원으로 추가' })
+  await expect(addJihun).toBeVisible(FIRST_PAINT)
   await expect(
-    dialog.getByText('PM 줄을 체크하지 않으면 Discord 알림을 받을 수 없어요.'),
+    dialog.getByText('PM의 디스코드 계정을 고르지 않으면 Discord 알림을 받을 수 없어요.'),
   ).toBeVisible()
 
   // 창은 주소가 쥔다 — 새로고침해도 열려 있고, 아무도 잇지 않고 닫을 수 있다 (D-075)
   await page.reload()
-  await expect(dialog.getByLabel('@jihun_dev의 팀원 이름')).toBeVisible(FIRST_PAINT)
-  await dialog.getByRole('button', { name: '나중에 하기' }).click()
+  await expect(addJihun).toBeVisible(FIRST_PAINT)
+  await dialog.getByRole('button', { name: '닫기' }).click()
   await expect(page).toHaveURL(TEAM)
   await expect(
     page.getByRole('region', { name: '연결되지 않은 계정' }).getByText('jihun_dev'),
