@@ -131,6 +131,16 @@ def test_presigned_url_default_ttl_is_one_hour(fake, s3_env):
     assert fake.presign_calls[0]["ExpiresIn"] == 3600
 
 
+@pytest.mark.parametrize("raw", ["abc", "0", "-5", "1.5"])
+def test_playback_url_ttl_falls_back_to_default_on_bad_value(monkeypatch, caplog, raw):
+    monkeypatch.setenv("UPLOAD_PLAYBACK_URL_TTL_SECONDS", raw)
+
+    with caplog.at_level("WARNING"):
+        assert upload_storage.playback_url_ttl_seconds() == 3600
+
+    assert "UPLOAD_PLAYBACK_URL_TTL_SECONDS" in caplog.text
+
+
 def test_local_mode_unchanged():
     assert upload_storage.storage_mode() == "local"
 

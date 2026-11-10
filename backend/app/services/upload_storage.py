@@ -123,7 +123,24 @@ def _s3_prefix() -> str:
 
 
 def playback_url_ttl_seconds() -> int:
-    return int(os.getenv("UPLOAD_PLAYBACK_URL_TTL_SECONDS") or DEFAULT_PLAYBACK_URL_TTL_SECONDS)
+    """presigned URL 유효 시간(초). 값이 양의 정수가 아니면 경고를 남기고 기본값을 쓴다.
+
+    잘못된 값 하나로 s3 재생이 전부 500 이 되지 않게 한다(`meeting_audio.retention()` 과 같은 방식).
+    """
+    raw = os.getenv("UPLOAD_PLAYBACK_URL_TTL_SECONDS")
+    if not raw:
+        return DEFAULT_PLAYBACK_URL_TTL_SECONDS
+    try:
+        seconds = int(raw)
+    except ValueError:
+        seconds = 0
+    if seconds <= 0:
+        logger.warning(
+            "UPLOAD_PLAYBACK_URL_TTL_SECONDS 는 양의 정수여야 합니다(받은 값=%r). 기본 %d초를 씁니다.",
+            raw, DEFAULT_PLAYBACK_URL_TTL_SECONDS,
+        )
+        return DEFAULT_PLAYBACK_URL_TTL_SECONDS
+    return seconds
 
 
 @functools.lru_cache(maxsize=1)

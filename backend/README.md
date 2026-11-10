@@ -578,7 +578,7 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 | `UPLOAD_S3_PREFIX` | `meetings/` | 키 접두어. 끝에 `/` 가 없으면 붙인다 |
 | `AWS_REGION` | `ap-northeast-2` | S3 클라이언트 리전. 프로세스당 캐시라 바꾸면 재시작 |
 | `UPLOAD_AUDIO_RETENTION_DAYS` | `7` | 양의 정수. 잘못된 값은 경고 로그 뒤 7일 |
-| `UPLOAD_PLAYBACK_URL_TTL_SECONDS` | `3600` | presigned URL 유효 시간 |
+| `UPLOAD_PLAYBACK_URL_TTL_SECONDS` | `3600` | presigned URL 유효 시간(초). 양의 정수가 아니면 경고를 남기고 기본값을 쓴다 |
 
 자격은 boto3 기본 자격 체인으로 받는다. 운영 버킷이 팀 계정 밖(개인 AWS 계정)에 있어, 그 버킷의 `meetings/*` 만 허용한 전용 IAM 사용자 키를 `.env` 의 `AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY` 에 둔다([배포 안내](../deploy/README.md#회의-녹음-s3-준비)). 보관 기준·처리 중 보호·정리 규칙은 위 [운영 실행](#운영-실행-docker)의 "녹음 보관·정리"에 있다.
 
