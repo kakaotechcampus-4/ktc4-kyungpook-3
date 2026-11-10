@@ -202,6 +202,11 @@ export function EditableTitle({
           <Icon name="edit" size={15} />
         </button>
       </div>
+      {failure !== null && !(titleEdited && showOriginal) ? (
+        <p role="alert" className={FAILURE}>
+          {failure}
+        </p>
+      ) : null}
       {titleEdited && showOriginal ? (
         <div id={originalId} className={ORIGINAL_BOX}>
           <p className="text-caption text-sub wrap-anywhere">
@@ -402,6 +407,13 @@ export function EditableLine({
             {line.text}
           </button>
         )}
+        {failure !== null &&
+        !editing &&
+        !(line.edited && line.originalText !== null && showOriginal) ? (
+          <p role="alert" className={FAILURE}>
+            {failure}
+          </p>
+        ) : null}
         {saving ? (
           <span id={savingId} hidden>
             이 발화를 저장하고 있어요.

@@ -533,3 +533,37 @@ describe('리뷰 #672 재리뷰 반영', () => {
     )
   })
 })
+
+describe('리뷰 #672 마지막 반영', () => {
+  it('탭을 떠난 사이 실패한 되돌리기는 돌아와도 그 줄 아래 실패 문구가 있고, 다시 열면 지운다', async () => {
+    const stored = db.minutes.find(({ meeting_id }) => meeting_id === 'mt_09')!.transcript[1]
+    Object.assign(stored, { text: '이미 고친 문장', edited: true, original_text: LINE_1 })
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.patch('/api/v1/meetings/:meetingId/transcript/:seq', async () => {
+        await gate.promise
+        return fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400)
+      }),
+    )
+    const user = userEvent.setup()
+    await openMinutes()
+    let panel = await openTranscript(user)
+    await user.click(within(panel).getByRole('button', { name: '고친 발화 — 원문 보기' }))
+    await user.click(within(panel).getByRole('button', { name: '원래 문장으로 되돌리기' }))
+    await user.click(screen.getByRole('tab', { name: /요약/ }))
+    gate.resolve()
+
+    panel = await openTranscript(user)
+    const line = within(panel).getByRole('button', { name: '이미 고친 문장' })
+    await waitFor(() => expect(line).not.toHaveAttribute('aria-disabled'))
+    expect(await within(panel).findByRole('alert')).toHaveTextContent(
+      '발화는 1~10,000자로 적어 주세요.',
+    )
+
+    await user.click(line)
+    expect(within(panel).queryByRole('alert')).toBeNull()
+    await user.click(within(panel).getByRole('button', { name: '취소' }))
+    expect(within(panel).queryByRole('alert')).toBeNull()
+  })
+})

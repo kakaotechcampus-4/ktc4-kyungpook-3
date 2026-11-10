@@ -1,6 +1,5 @@
 import { useMutation, useMutationState, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
 import { meetingDetailQueryOptions } from '@/entities/meeting'
 import { editMeetingTitle, editTranscriptLine, minutesQueryOptions } from '@/entities/minutes'
 import type { LineEdit, Minutes, TitleEdit } from '@/entities/minutes'
@@ -10,6 +9,7 @@ import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
 import { showWriteUnconfirmed, toast } from '@/shared/ui/toast'
 import {
+  DELETED_MEETING,
   editFailure,
   isDeletedMeeting,
   isMissingLine,
@@ -57,14 +57,30 @@ function useEdit<Target, Result>({
   reverted: string
 }): EditActions<Target> {
   const queryClient = useQueryClient()
-  const [failure, setFailure] = useState<EditActions<Target>['failure']>(null)
   const mutationKey = ['minutes-edit', workspaceId, meetingId, kind] as const
   const reload = () => void refresh(queryClient)
 
-  const pending = useMutationState({
-    filters: { mutationKey, status: 'pending' },
-    select: (pendingMutation) => pendingMutation.state.variables as Variables<Target>,
+  // 잠금과 실패 문구는 이 훅이 아니라 mutation 캐시에서 읽는다. 탭을 떠나 화면이 다시 마운트돼도 그 요청의 상태가 남는다
+  const attempts = useMutationState({
+    filters: { mutationKey },
+    select: ({ state }) => ({
+      status: state.status,
+      submittedAt: state.submittedAt,
+      variables: state.variables as Variables<Target> | undefined,
+      error: state.error,
+    }),
   })
+  const pending = attempts.find(({ status }) => status === 'pending')?.variables
+  const latest = attempts.reduce<(typeof attempts)[number] | undefined>(
+    (newest, attempt) =>
+      newest === undefined || attempt.submittedAt >= newest.submittedAt ? attempt : newest,
+    undefined,
+  )
+  const failure = latest === undefined ? null : inlineFailure(latest, kind)
+  const clearFailure = () => {
+    const cache = queryClient.getMutationCache()
+    for (const failed of cache.findAll({ mutationKey, status: 'error' })) cache.remove(failed)
+  }
   const mutation = useMutation<Result, Error, Variables<Target>>({
     mutationKey,
     retry: false,
@@ -78,7 +94,7 @@ function useEdit<Target, Result>({
       await apply(queryClient, result)
       if (session.isCurrent() && reverts(target)) toast.show({ title: reverted })
     },
-    onError: (error, { target, session }) => {
+    onError: (error, { session }) => {
       if (!session.isCurrent()) return
       // 응답을 읽지 못했다. 저장됐을 수 있어 실패로 보이지 않고 고치던 글은 그대로 둔다 (D-184)
       if (isInvalidResponse(error)) {
@@ -93,17 +109,15 @@ function useEdit<Target, Result>({
         })
         reload()
       } else if (isMissingLine(error)) reload()
-      const message = editFailure(error, kind)
-      if (message === null) return
-      if (isDeletedMeeting(error)) toast.show({ title: message })
-      else setFailure({ target, message })
+      // 그 밖의 실패 문구는 이 요청의 결과에서 읽어 그 칸 아래에 보인다(inlineFailure)
+      if (isDeletedMeeting(error)) toast.show({ title: DELETED_MEETING })
     },
   })
 
   return {
     save: (target, onSaved) => {
       if (queryClient.isMutating({ mutationKey }) > 0) return
-      setFailure(null)
+      clearFailure()
       const session = captureSessionScope()
       mutation.mutate(
         { target, session },
@@ -114,10 +128,25 @@ function useEdit<Target, Result>({
         },
       )
     },
-    saving: pending[0]?.target ?? null,
+    saving: pending?.target ?? null,
     failure,
-    clearFailure: () => setFailure(null),
+    clearFailure,
   }
+}
+
+/**
+ * 칸 아래에 남길 실패 문구. 가장 최근 시도가 실패했을 때만이다. 세션이 바뀐 요청, 취소, 응답을 못 읽은 것(토스트),
+ * 삭제된 회의(토스트)는 칸 아래에 남기지 않는다
+ */
+function inlineFailure<Target>(
+  attempt: { status: string; variables?: Variables<Target>; error: unknown },
+  kind: 'title' | 'line',
+): EditActions<Target>['failure'] {
+  const { status, variables, error } = attempt
+  if (status !== 'error' || variables === undefined || !variables.session.isCurrent()) return null
+  if (isInvalidResponse(error) || isDeletedMeeting(error)) return null
+  const message = editFailure(error, kind)
+  return message === null ? null : { target: variables.target, message }
 }
 
 /**
