@@ -6,27 +6,31 @@ import { CARD_WIDTH, SECTION_LEAD, SECTION_TITLE, TEXT_WIDTH } from './styles'
 
 const VALUES = [
   {
+    id: 'meeting-summary',
     title: '회의를 올리면, 정리는 끝납니다',
     lead: '녹음을 올리면 발화자를 나누고 결정된 것과 담당자, 마감을 뽑아냅니다. 녹음이 없으면 텍스트 회의록을 붙여 넣어도 됩니다.',
   },
   {
+    id: 'approvals',
     title: '확인이 필요한 것만 모아 드립니다',
     lead: '전부 다시 읽을 필요 없어요. 담당자가 둘로 갈렸거나 마감이 "다음 주쯤"으로만 나온 것만 승인 목록에 올라옵니다.',
   },
   {
+    id: 'integrations',
     title: '승인한 것만 나갑니다',
     lead: '자동 발송은 기본값이 아닙니다. Notion 반영도 Discord DM도 확인한 뒤에 나가고, 반영 로그에서 언제든 되돌릴 수 있어요.',
   },
 ] as const
 
-const VALUE = `${TEXT_WIDTH} flex flex-col items-center gap-16 text-center`
+const VALUE = `${TEXT_WIDTH} flex scroll-mt-56 flex-col items-center gap-16 text-center`
 
 export function ValueSections() {
   return (
     <div id="values" className="flex w-full flex-col items-center">
-      {VALUES.map(({ title, lead }, index) => (
+      {VALUES.map(({ id, title, lead }, index) => (
         <section
-          key={title}
+          id={id}
+          key={id}
           className={`${VALUE} ${index === VALUES.length - 1 ? 'pb-[118px]' : 'pb-[60px]'}`}
         >
           <h2 className={SECTION_TITLE}>{title}</h2>
@@ -148,7 +152,7 @@ export function FeatureCards() {
     <section
       id="features"
       aria-label="기능"
-      className={`${CARD_WIDTH} grid grid-cols-2 gap-24 pb-128`}
+      className={`${CARD_WIDTH} grid scroll-mt-56 grid-cols-2 gap-24 pb-128`}
     >
       {FEATURES.map(({ title, text, sample }) => (
         <div key={title} className={FEATURE_CARD}>

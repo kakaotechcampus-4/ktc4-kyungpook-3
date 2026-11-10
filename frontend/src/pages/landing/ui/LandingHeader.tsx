@@ -8,7 +8,7 @@ import { StartLink } from './StartLink'
 const NAV_ITEMS = [
   { label: '제품', href: '#product' },
   { label: '기능', href: '#features' },
-  { label: '연동', href: '#values' },
+  { label: '연동', href: '#integrations' },
 ] as const
 
 const HEADER = 'flex h-64 w-full shrink-0 items-center justify-center border-b border-line px-40'
