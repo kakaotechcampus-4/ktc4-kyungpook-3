@@ -412,6 +412,8 @@ test('⑩ 녹음 회의의 단계는 대기 → 텍스트로 옮기기 → 뽑�
 }) => {
   await warmProcessingScreen(page)
   const announcements = await recordStepAnnouncements(page)
+  // 모의 단계 시작 시각은 MOCK_NOW 직전이다. 실제 날짜면 경과가 수천 시간이라 시계를 MOCK_NOW 로 둔다
+  await page.clock.setFixedTime(new Date('2026-09-18T09:00:00+09:00'))
   await start(page, 'meeting-demo', UPLOAD)
   const answers: string[] = []
   let meetingId = ''
@@ -437,7 +439,7 @@ test('⑩ 녹음 회의의 단계는 대기 → 텍스트로 옮기기 → 뽑�
   await expect(steps).toHaveText([
     /차례 기다리는 중\s*완료/,
     /음성을 텍스트로 옮기기\s*완료/,
-    /결정사항과 할 일 뽑아내기\s*진행 중/,
+    /결정사항과 할 일 뽑아내기\s*방금 시작\s*진행 중/,
   ])
   await expect(steps.nth(2)).toHaveAttribute('aria-current', 'step')
 
