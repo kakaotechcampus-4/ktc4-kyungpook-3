@@ -10,7 +10,10 @@ import type { CreateMemberInput, Member, UpdateMemberInput } from '../model/type
  * 같은 공간에 이미 연결된 Discord 사용자는 409 `DISCORD_USER_ALREADY_MAPPED` 다.
  */
 
-export async function createMember(input: CreateMemberInput): Promise<Member> {
+export async function createMember(
+  input: CreateMemberInput,
+  signal?: AbortSignal,
+): Promise<Member> {
   const body: MemberCreateDto = { workspace_id: input.workspaceId, display_name: input.displayName }
   if (input.discordUserId !== undefined) body.discord_user_id = input.discordUserId
   if (input.notionName !== undefined) body.notion_name = input.notionName
@@ -18,7 +21,7 @@ export async function createMember(input: CreateMemberInput): Promise<Member> {
   return toMember(
     parseResponse(
       memberSchema,
-      await request<unknown>('/members', { method: 'POST', body }),
+      await request<unknown>('/members', { method: 'POST', body, signal }),
       'member',
     ),
   )

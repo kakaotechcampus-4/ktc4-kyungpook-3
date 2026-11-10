@@ -2,6 +2,7 @@ import { useId, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { DiscordUser, Member } from '@/entities/member'
 import { pmsOf } from '@/entities/member'
+import { MemberAddForm } from '@/features/member-add'
 import {
   MemberMappingFields,
   buildMappingRows,
@@ -169,7 +170,8 @@ export function MemberConnectDialog({
             </>
           ) : source.status === 'not_connected' ? (
             <>
-              <p className="text-body text-dim">
+              <MemberAddForm workspaceId={workspaceId} tone="product" />
+              <p className="pt-14 text-body text-dim">
                 Discord를 연결하지 않아 팀원을 불러올 수 없어요. 설정에서 Discord를 연결하면 이 창이
                 다시 열려요.
               </p>

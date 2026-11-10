@@ -9,6 +9,8 @@ export type {
 export { toDiscordUser, toMember, toMemberAlias } from './model/mapper'
 export type { MemberLink, MemberLinkKind } from './lib/linkDiscordUsers'
 export { linkDiscordUsers } from './lib/linkDiscordUsers'
+export { memberNameKey } from './lib/memberName'
+export { upsertMember } from './lib/upsertMember'
 export { pmsOf } from './lib/pmsOf'
 export { speakerName } from './lib/speakerName'
 export { memberListQueryOptions, recordMemberListQueryOptions } from './api/memberList'
