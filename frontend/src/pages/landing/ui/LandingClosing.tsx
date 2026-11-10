@@ -20,7 +20,7 @@ export function FinalCta() {
         </p>
       </div>
       <StartLink
-        className={`${LINK_PRIMARY} ${HERO_SIZE} border border-surface/40 hover:border-surface focus-visible:outline-surface focus-visible:outline-offset-4`}
+        className={`${LINK_PRIMARY} ${HERO_SIZE} border border-surface/40 hover:border-surface focus-visible:outline-surface`}
       >
         시작하기
       </StartLink>
