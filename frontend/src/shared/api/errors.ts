@@ -103,6 +103,8 @@ export const ERROR_CODES = {
   USERNAME_TAKEN: 'USERNAME_TAKEN',
   // #457 BE PR #456 에 있고 아직 병합 전이다 (계약 §4.1)
   TOO_MANY_LOGIN_ATTEMPTS: 'TOO_MANY_LOGIN_ATTEMPTS',
+  // #676 BE PR #670 에 있고 아직 병합 전이다. `details.reason` 이 `expired`·`no_recording` 이다 (계약 §2.3.1)
+  AUDIO_NOT_AVAILABLE: 'AUDIO_NOT_AVAILABLE',
 } as const
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES]

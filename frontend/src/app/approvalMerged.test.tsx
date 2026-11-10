@@ -250,9 +250,10 @@ describe('합쳐진 카드의 근거 (#512)', () => {
     expect(item).toHaveTextContent('배포 문서는 재환님이 26일까지 마무리해 주세요.')
     expect(item).toHaveTextContent('합친 시각')
     expect(within(item).getByText('담당자 근거')).toBeInTheDocument()
+    // 합쳐진 근거도 그 회의의 근거 시각을 넘긴다 (#676)
     expect(within(item).getByRole('link', { name: /원문 듣기/ })).toHaveAttribute(
       'href',
-      paths.meetings('ws_01', 'mt_07'),
+      '/workspaces/ws_01/meetings/mt_07?t=1250000',
     )
     expect(within(block).getAllByText('담당자 근거')).toHaveLength(1)
   })

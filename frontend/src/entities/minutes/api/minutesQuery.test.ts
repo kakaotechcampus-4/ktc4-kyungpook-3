@@ -4,6 +4,7 @@ import { STALE_TIME, createQueryClient } from '@/shared/api/queryClient'
 import { minutesFixtures } from '@/shared/mock/fixtures/minutes'
 import { ok } from '@/shared/mock/envelope'
 import { server } from '@/shared/mock/server'
+import type { MinutesDto } from '@/shared/types/api/minutes'
 import { minutesQueryOptions } from './minutesQuery'
 
 describe('minutesQueryOptions', () => {
@@ -34,6 +35,26 @@ describe('응답 검증 (#348)', () => {
     )
     const minutes = await new QueryClient().fetchQuery(minutesQueryOptions('ws_01', 'mt_09'))
     expect(minutes.source).toEqual({ unknown: 'zoom' })
+  })
+
+  it('audio 키가 없는 이전 서버 응답은 녹음이 없는 회의록이다 (#676)', async () => {
+    const withoutAudio: Partial<MinutesDto> = served()
+    delete withoutAudio.audio
+    server.use(http.get('/api/v1/meetings/:meetingId/minutes', () => ok(withoutAudio)))
+    const minutes = await new QueryClient().fetchQuery(minutesQueryOptions('ws_01', 'mt_09'))
+    expect(minutes.audio).toBeNull()
+    expect(minutes.transcript).toHaveLength(5)
+  })
+
+  it('audio 모양이 틀려도 회의록은 받고 녹음만 없는 것으로 본다 (#676)', async () => {
+    server.use(
+      http.get('/api/v1/meetings/:meetingId/minutes', () =>
+        ok({ ...served(), audio: { content_type: 'audio/mp4' } }),
+      ),
+    )
+    const minutes = await new QueryClient().fetchQuery(minutesQueryOptions('ws_01', 'mt_09'))
+    expect(minutes.audio).toBeNull()
+    expect(minutes.transcript).toHaveLength(5)
   })
 
   it('권한 모양이 틀리면 잘못된 응답이다', async () => {

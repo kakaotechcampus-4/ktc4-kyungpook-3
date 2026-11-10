@@ -76,3 +76,13 @@ it('preserves false permissions and does not treat an empty display name as null
 it('keeps a chat source instead of falling back to discord', () => {
   expect(toMinutes({ ...minutesFixtures[1], source: 'chat' }).source).toBe('chat')
 })
+
+// 들을 수 있는지는 audio 가 null 인지로만 정한다. 보관 끝 시각은 받은 글자 그대로 두고 지났는지 따지지 않는다 (#676)
+it('keeps the playable recording as received and a missing one as null', () => {
+  const playable = toMinutes({
+    ...structuredClone(minutesFixtures[1]),
+    audio: { content_type: 'audio/mp4', expires_at: '2020-01-01T00:00:00Z' },
+  })
+  expect(playable.audio).toEqual({ contentType: 'audio/mp4', expiresAt: '2020-01-01T00:00:00Z' })
+  expect(toMinutes({ ...structuredClone(minutesFixtures[1]), audio: null }).audio).toBeNull()
+})

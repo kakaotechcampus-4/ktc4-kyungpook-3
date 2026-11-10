@@ -38,6 +38,7 @@ export function toMinutes(dto: MinutesDto): Minutes {
     })),
     canReview: dto.permissions.can_review,
     canUndo: dto.permissions.can_undo,
+    audio: dto.audio && { contentType: dto.audio.content_type, expiresAt: dto.audio.expires_at },
   }
 }
 

@@ -1,6 +1,7 @@
 export type {
   LineEdit,
   Minutes,
+  MinutesAudio,
   MinutesSummary,
   MinutesAttendee,
   TitleEdit,
