@@ -53,6 +53,26 @@ Claude Opus 5.5의 독립 코드 리뷰에서 차단 결함은 없었다. 재시
 
 로컬 AI 검증 스킬로 전사 저장·실패 줄 재처리·업로드 화자 지정도 실행했다. 스킬과 `.verify` 증거는 사용자 요청대로 커밋·푸시하지 않는다. 이 기록은 AI 범위의 구현·검증 결과이며 PR 병합·운영 배포 상태와는 구분한다.
 
+## 배포 후속: 워커 시작 점검
+
+PR [#653](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/653)은 `ba81fdd8`로 병합됐다. 그러나 [배포 42778162091](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/actions/runs/42778162091)은 전체 CI 통과 뒤 기존 요약 활성화 점검에서 실패했다. 이전 워커의 명령·planned 설정은 정상이었지만, 재시작 직후 새 프로세스의 명령 형태가 argc 1·비절대 경로로 관측돼 `worker-command-unsupported`로 끝났다. 운영의 원문 argv는 수집하지 않아 정확한 상태를 단정하지 않는다.
+
+실제 Linux `/proc` 재현에서는 자기 소유의 살아 있는 동일 PID가 그 임시 형태에서 절대 Python의 `-u -m capture.worker`로 전환됐다. 기존 점검은 전환을 기다리지 않고 실패했다. 이 재현은 가능한 실패 메커니즘을 확인한 것이며, systemd 상태·설정 probe·journal과 워커 모듈은 명시적인 대역이다. [systemd 공식 문서](https://www.freedesktop.org/software/systemd/man/255/systemd.service.html)의 `Type=simple`도 실제 실행 전 시작 상태를 반환할 수 있으나, 운영 유닛의 실제 상태를 이 재현으로 확정하지 않는다.
+
+[활성화 함수](../../../../deploy/enable-summary.py)의 새 실행 점검 순서를 준비 표식 확인 → 허용 명령·실제 설정 검사 → 최종 PID·시작시각 확인으로 바꾸고, 표식 대기 중의 probe 캐시를 제거했다. 기존 명령 allowlist, 재시작 전 점검, 실제 사용자·환경, 현재 실행의 정확한 표식, 최종 동일성, 30회 대기 상한은 유지한다. 서비스 Type·drop-in 내용·전사 처리 코드는 바꾸지 않았다. 표식을 내지 못하는 잘못된 설정은 구체 설정 오류보다 준비 표식 누락으로 실패할 수 있다.
+
+| 검증 | 실제 결과 |
+|---|---|
+| 수정 전 새 회귀 5개 | 4개 실패·1개 통과. 정상 전환을 기다리지 않고 미지원 명령으로 종결하는 실패를 확인 |
+| 수정 후 활성화 모듈 전체 | 56개 통과·실패와 오류 0, 종료 코드 0 |
+| 실제 `/proc` 전환 재현 | 같은 PID가 정상 명령으로 전환될 때까지 한 번 대기하고, release 이후에만 새 프로세스의 실제 probe를 한 번 실행하여 성공 |
+| 프로세스·scratch 정리 | 자기 소유 프로세스 종료·scratch 삭제·결과 보존 확인 |
+| 전체 AI 회귀 | WSL Python 3.12, 2,987개 통과·26개 건너뜀·실패와 오류 0, 종료 코드 0 |
+| 독립 실행 검증 | 실제 `/proc` 기준·수정 코드 비교와 안전 검사 56개 통과, PASS+NOTES. 실행 전후 production 해시 일치 |
+| 후속 CI·운영 재배포 | 최종 확인 대기. 격리 증거를 실제 운영 활성화 성공으로 확대하지 않음 |
+
+집중 테스트는 `ai/`에서 `python -m pytest tests/deploy/test_summary_activation.py -q --junitxml=owner-green.xml`로 실행했다. 로컬 원본은 `.verify/issue-483-deploy/owner-red.{json,xml,log}`, `owner-green.{json,xml,log}`, `proc-repro-owner-green/result.json`에 있다. 재현과 테스트는 실제 설정·키·공급사·운영 서비스를 사용하지 않았다. [배포 안내](../../../../deploy/README.md#자동-회의-요약-560)에 순서와 진단 제약을 반영했다.
+
 ## 계획 대비 변경과 제한
 
 이슈 본문이 가정한 기존 트랙 완료 수는 현재 코드에 없었다. 읽은 트랙·동적으로 늘어나는 호출 수를 재사용하는 대신 실제 수거 경계를 추가했다. 긴 단일 트랙과 생략된 중간값의 표시 지연, HTTP 대기의 처리 시간 포함을 감수한다.

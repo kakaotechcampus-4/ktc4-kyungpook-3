@@ -223,7 +223,6 @@ def activate(runtime: Runtime) -> int:
     verify_probe(runtime.probe(runtime.process(old_pid), planned=True), planned=True)
     runtime.install()
     runtime.restart()
-    verified_execution = None
     for _ in range(30):
         state = runtime.unit()
         pid = int(state.get("MainPID", "0"))
@@ -232,11 +231,8 @@ def activate(runtime: Runtime) -> int:
             if not started.isascii() or not started.isdecimal() or int(started) <= 0:
                 raise ActivationError("worker-start-time-unavailable")
             started_us = int(started)
-            execution = (pid, started_us)
-            if execution != verified_execution:
-                verify_probe(runtime.probe(runtime.process(pid)))
-                verified_execution = execution
             if runtime.ready_marker(pid, started_us):
+                verify_probe(runtime.probe(runtime.process(pid)))
                 final = runtime.unit()
                 if (final.get("MainPID") != str(pid) or final.get("ActiveState") != "active"
                         or final.get("ExecMainStartTimestampMonotonic") != str(started_us)):
