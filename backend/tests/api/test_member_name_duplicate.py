@@ -143,3 +143,26 @@ def test_existing_duplicates_stay_and_can_still_be_edited(db, seed):
 
 def test_existing_duplicate_can_be_renamed_to_a_free_name(db, seed):
     assert _rename(seed["dup2"], "중복 둘째").status_code == 200
+
+
+@pytest.mark.parametrize("name", ["﻿민수", "민수﻿", "　민수", "민수\xa0"])
+def test_create_trims_like_the_frontend(db, seed, name):
+    # FE memberNameKey 는 JS trim 이다. BOM·전각 공백·NBSP 도 지운다. Python strip 은 BOM 을 남겨 같은 이름이 통과했다(#652 리뷰)
+    _assert_duplicated(_create(seed, name), seed["minsu"])
+
+
+@pytest.mark.parametrize("stored", ["서연0　", "서연1\t", "서연2\xa0", "﻿서연3"])
+def test_create_matches_stored_names_with_other_spaces(db, seed, stored):
+    # 이름 규칙 전에 저장된 이름에 탭·NBSP·전각 공백이 남아 있어도 같은 이름으로 본다. DB trim 은 보통 공백만 지운다
+    old = Member(workspace_id=seed["ws"].workspace_id, display_name=stored)
+    db.add(old)
+    db.commit()
+    _assert_duplicated(_create(seed, stored.strip("﻿　\t\xa0")), old)
+
+
+def test_characters_js_trim_keeps_are_not_stripped(db, seed):
+    # JS trim 은 \x1c ~ \x1f 와 \x85 를 남긴다. Python strip 처럼 지우면 FE 가 다르게 보는 이름을 막는다
+    from app.api.members import _name_key
+
+    assert _name_key("\x1c민수\x85") == "\x1c민수\x85"
+    assert _name_key("﻿  민수 　") == "민수"

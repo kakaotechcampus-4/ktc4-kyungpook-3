@@ -324,3 +324,11 @@ def test_withdrawn_member_utterances_are_not_reattributed(db, seed):
     # 탈퇴한 팀원은 고칠 수 없다
     assert _patch(gone, {"discord_user_id": "disc_x", "move_discord_link": True}).status_code == 404
     assert _member(db, seed["holder"]).discord_user_id == "disc_x"
+
+
+def test_a_deleted_member_cannot_take_an_account(db, seed):
+    # 삭제한 팀원에 옮기기 플래그를 보내면 활성 팀원의 계정을 빼앗고 발화도 가져갔다(#652 리뷰). #637 과 머지 순서와 상관없이 막는다
+    r = _patch(seed["left"], {"discord_user_id": "disc_x", "move_discord_link": True})
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "MEMBER_NOT_FOUND"
+    assert _member(db, seed["holder"]).discord_user_id == "disc_x"

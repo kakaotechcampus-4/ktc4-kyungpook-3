@@ -99,21 +99,30 @@ def _ensure_name_free(
 ) -> None:
     """같은 워크스페이스의 활성 팀원이 같은 이름이면 409(#652). 이름이 같으면 화자 지정·담당자에서 둘을 가를 수 없다.
 
-    FE memberNameKey 와 같이 앞뒤 공백만 지우고 견준다. 이름 규칙 전에 저장된 값은 공백이 남았을 수 있어 DB 쪽도 지운다.
-    이미 있는 중복은 막지 않으므로 DB 제약은 두지 않는다. 동시에 같은 이름으로 만들면 둘 다 통과할 수 있다.
+    FE memberNameKey 와 같은 키(_name_key)로 견준다. 이름 규칙 전에 저장된 값에는 탭·전각 공백이 남았을 수 있고 DB 의
+    trim 은 보통 공백만 지우므로, 활성 팀원 이름을 읽어 파이썬에서 견준다(워크스페이스 팀원 수만큼).
+    이미 있는 중복은 막지 않으므로 DB 제약은 두지 않는다. 같은 워크스페이스의 쓰기는 워크스페이스 행 잠금
+    (lifecycle.workspace)으로 차례로 처리돼, 같은 이름을 동시에 보내면 두 번째가 409 다.
     """
-    stmt = select(Member.member_id).where(
-        Member.workspace_id == workspace_id,
-        Member.is_deleted.is_(False),
-        func.trim(Member.display_name) == display_name.strip(),
+    key = _name_key(display_name)
+    stmt = select(Member.member_id, Member.display_name).where(
+        Member.workspace_id == workspace_id, Member.is_deleted.is_(False),
     )
     if exclude_member_id is not None:
         stmt = stmt.where(Member.member_id != exclude_member_id)
-    existing = db.scalar(stmt.limit(1))
+    existing = next((mid for mid, name in db.execute(stmt.order_by(Member.member_id)) if _name_key(name) == key), None)
     if existing is not None:
-        raise AppError(
-            ErrorCode.MEMBER_NAME_DUPLICATED, details={"display_name": display_name.strip(), "member_id": existing}
-        )
+        raise AppError(ErrorCode.MEMBER_NAME_DUPLICATED, details={"display_name": key, "member_id": existing})
+
+
+# JS String.prototype.trim 이 지우는 글자(WhiteSpace + LineTerminator). Python str.strip 은 BOM 을 남기고 \x1c ~ \x1f,
+# \x85 를 지워 FE 와 다르다
+_JS_TRIM = "\t\n\x0b\x0c\r \xa0                　﻿"
+
+
+def _name_key(name: str) -> str:
+    """FE memberNameKey(trim 만, 대소문자는 그대로)와 같은 이름 키."""
+    return name.strip(_JS_TRIM)
 
 
 def _lock_discord_holder(db: Session, member: Member, discord_user_id: str) -> Member | None:
@@ -394,6 +403,8 @@ def update_member(
     db: Session = Depends(get_db),
 ) -> dict:
     member = _get_member(db, member_id, user, pm=True)
+    if member.is_deleted:  # 지운 팀원은 이력용으로 조회만 된다. 고치면 명단에 없는 사람이 다시 일을 받는다(#637)
+        raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
 
     updates = {field: getattr(payload, field) for field in payload.model_fields_set}
     move_to = updates.get("discord_user_id") if updates.pop("move_discord_link", False) else None
