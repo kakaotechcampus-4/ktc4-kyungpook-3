@@ -1,5 +1,6 @@
 // 시나리오 1: 로그인한 PM 이 대시보드를 여는 흐름. 요청 묶음은 frontend/src/widgets/dashboard/model/useDashboardData.ts 와
 // 전역 배지(알림 30초 폴링, 안 읽은 대화 수)를 따랐다. 한 바퀴 = 대시보드 열기 + 회의 상세 + 다섯 번에 한 번 태스크 상태 변경
+// (LT_READONLY 를 주면 상태 변경을 빼고 읽기만 한다. 운영용)
 import http from 'k6/http'
 import { check, sleep } from 'k6'
 import { BASE, WORKSPACES, data, levels, login, pmEmail, stages } from './lib.js'
@@ -44,7 +45,7 @@ export function dashboard() {
   }
 
   const tasks = res[7].status === 200 ? data(res[7]).items : []
-  if (__ITER % 5 === 0 && tasks.length > 0) {
+  if (!__ENV.LT_READONLY && __ITER % 5 === 0 && tasks.length > 0) {
     const t = tasks[__ITER % tasks.length]
     const status = t.status === 'todo' ? 'in_progress' : 'todo'
     const patched = http.patch(`${BASE}/tasks/${t.task_id}`, JSON.stringify({ status }), {

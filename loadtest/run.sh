@@ -4,6 +4,7 @@
 #   loadtest/run.sh web|handoff      시나리오 하나를 돌린다. 결과는 LT_OUT(기본 mm/eval-runs/loadtest/<시각>-<이름>)
 #   loadtest/run.sh down             스택과 테스트 데이터를 지운다
 # 부하 단계는 LT_LEVELS=10,25,50 처럼, 단계 길이는 LT_STAGE_SECONDS 로 바꾼다.
+# 운영: BASE_URL=https://... LT_SSH=ktc-server LT_TARGETS="mm-prod-api-1 mm-prod-db-1 unit:mm-worker unit:mm-bot host" LT_READONLY=1
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -33,7 +34,11 @@ case "${1:-}" in
   web|handoff)
     out="${LT_OUT:-$HOME/Desktop/카테캠 아이디어톤/mm/eval-runs/loadtest/$(date +%Y%m%d-%H%M%S)-$1}"
     mkdir -p "$out"
-    python3 sampler.py "$out/server.csv" mm-loadtest-api-1 mm-loadtest-db-1 &
+    if [ -n "${LT_SSH:-}" ]; then
+      ssh -F "$HOME/Desktop/kakaotech4/secrets/ssh_config" "$LT_SSH" python3 - $LT_TARGETS < sampler.py > "$out/server.csv" &
+    else
+      python3 sampler.py mm-loadtest-api-1 mm-loadtest-db-1 > "$out/server.csv" &
+    fi
     sampler=$!
     trap 'kill $sampler 2>/dev/null' EXIT
     K6_WEB_DASHBOARD=true K6_WEB_DASHBOARD_EXPORT="$out/report.html" K6_WEB_DASHBOARD_PERIOD=2s \
