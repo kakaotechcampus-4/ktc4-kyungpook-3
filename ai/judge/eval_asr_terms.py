@@ -84,6 +84,17 @@ class RecordingJev:
         self.calls.append((state, questions, answers))
         return answers
 
+    def evidence_yes(self) -> dict[str, dict]:
+        """할 일 제목 → {task, due} yes 확률. state 의 "할 일: <제목>" 줄로 어느 항목인지 맞춘다(같은 제목은 마지막 호출)."""
+        out = {}
+        for state, qs, ans in self.calls:
+            m = re.search(r"^할 일: (.*)$", state, re.M)
+            if not m or "task" not in qs:
+                continue
+            yes = lambda k: (((ans or {}).get(k) or {}).get("probabilities") or {}).get("yes")  # noqa: E731
+            out[m.group(1)] = {"task": yes("task"), "due": yes("due")}
+        return out
+
     def asr_questions(self) -> list[dict]:
         """asr 질문마다 {word, yes}. 응답이 없으면 yes 는 None."""
         out = []
@@ -107,14 +118,19 @@ def run_meeting(be: SeriesBe, m: dict, ws: str) -> dict:
                            today=date.fromisoformat(m["meeting_date"]), candidates=be)
     finally:
         pipeline.get_jev = orig
-    return {"date": m["meeting_date"], "items": out.items, "failures": [str(f) for f in out.failures],
+    ev = rec.evidence_yes()
+    items = [{**i, "jev": ev.get(i.get("task_title"))} for i in out.items]
+    return {"date": m["meeting_date"], "items": items, "failures": [str(f) for f in out.failures],
             "new_terms": sorted(be.words - before), "jev_asr": rec.asr_questions()}
 
 
 def show(name: str, r: dict) -> None:
     print(f"--- {name} ({r['date']})")
     for i in r["items"]:
-        print(f"  {i['action']:<6} {i['task_title']!r} task={i['task_status']} due={i['due_status']} "
+        head = f"  {i['action']:<6} {i.get('task_title')!r}"
+        if i["action"] != "create":
+            head += f" target={i.get('target_task_id')} due_date={i.get('due_date')} status={i.get('status')} assignee={i.get('assignee_raw')!r}"
+        print(f"{head} task={i.get('task_status', '-')} due={i.get('due_status', '-')} jev(yes)={i.get('jev') or '-'} "
               f"suspects={[(s['word'], s['source']) for s in i.get('asr_suspects') or []]}")
     print(f"  새 용어: {r['new_terms']}")
     for q in r["jev_asr"]:
@@ -125,12 +141,19 @@ def show(name: str, r: dict) -> None:
         print(f"  승인 큐: {[a['title'] for a in r['approved']]} (승인 {r['approve_wanted']}건 중 {len(r['approved'])}건 매칭)")
 
 
-def one_run() -> dict:
+def save(runs: list[dict]) -> None:
+    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    (RUNS_DIR / "asr_terms_eval.json").write_text(json.dumps(runs, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def one_run(runs: list[dict] | None = None) -> dict:
     series = json.loads((DIR / "series.json").read_text(encoding="utf-8"))
     ws = series["workspace_id"]
     load = lambda n: json.loads((DIR / f"{n}.json").read_text(encoding="utf-8"))  # noqa: E731
     be = SeriesBe([], series["members"])
     result = {"meetings": {}, "meeting6": {}}
+    if runs is not None:
+        runs.append(result)   # 회의가 끝날 때마다 저장해 중간에 죽어도 쓴 비용의 결과가 남는다
     for n in range(1, 6):
         name = f"meeting_0{n}"
         m = load(name)
@@ -140,12 +163,16 @@ def one_run() -> dict:
         be.pending += r["approved"]
         show(name, r)
         result["meetings"][name] = r
+        if runs is not None:
+            save(runs)
     after5 = be
     for label, base, name in [("correct", after5, "meeting_06_correct"), ("misheard", after5, "meeting_06_misheard"),
                               ("no_history", SeriesBe([], series["members"]), "meeting_06_correct")]:
         r = run_meeting(copy.deepcopy(base), load(name), ws)
         show(f"6회차 {label}", r)
         result["meeting6"][label] = r
+        if runs is not None:
+            save(runs)
     return result
 
 
@@ -163,16 +190,14 @@ def main() -> None:
     runs = []
     for k in range(n_runs):
         print(f"\n==== 실행 {k + 1} ====")
-        runs.append(one_run())
+        one_run(runs)
     print("\n[6회차 요약]")
     for k, r in enumerate(runs, 1):
         for label, v in r["meeting6"].items():
             sus = [s["word"] for i in v["items"] for s in i.get("asr_suspects") or []]
             print(f"  실행{k} {label:<10} 의심={sus} Jev asr 질문={[q['word'] for q in v['jev_asr']]}")
-    RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    out = RUNS_DIR / "asr_terms_eval.json"
-    out.write_text(json.dumps(runs, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"결과 저장: {out}")
+    save(runs)
+    print(f"결과 저장: {RUNS_DIR / 'asr_terms_eval.json'}")
 
 
 if __name__ == "__main__":

@@ -65,7 +65,7 @@ def _main_with(monkeypatch, llm_off, jev_name):
 
     monkeypatch.setattr(pipeline, "get_llm", lambda which: L())
     monkeypatch.setattr(pipeline, "get_jev", lambda: J())
-    monkeypatch.setattr(mod, "one_run", lambda: pytest.fail("키 확인 전에 돌면 안 된다"))
+    monkeypatch.setattr(mod, "one_run", lambda *a: pytest.fail("키 확인 전에 돌면 안 된다"))
     monkeypatch.setattr("sys.argv", ["x"])
     with pytest.raises(SystemExit):
         mod.main()
@@ -77,3 +77,28 @@ def test_main_stops_before_running_when_llm_key_is_missing(monkeypatch):
 
 def test_main_stops_before_running_when_jev_key_is_missing(monkeypatch):
     _main_with(monkeypatch, False, "off")
+
+
+def test_recording_jev_records_task_and_due_yes_by_title():
+    from judge.eval_asr_terms import RecordingJev
+
+    class Inner:
+        def decide(self, state, questions):
+            return {k: {"probabilities": {"yes": 0.3 if k == "task" else 0.8}} for k in questions}
+
+    rec = RecordingJev(Inner())
+    rec.decide("회의 날짜: 2026-11-02\n할 일: 서버 설정\n근거: x", {"task": {"instructions": "a"}, "due": {"instructions": "b"}})
+    assert rec.evidence_yes() == {"서버 설정": {"task": 0.3, "due": 0.8}}
+
+
+def test_show_handles_update_items_without_evidence_status(capsys):
+    from judge.eval_asr_terms import show
+
+    r = {"date": "2026-11-05", "failures": [], "new_terms": [], "jev_asr": [],
+         "items": [{"action": "create", "task_title": "A", "task_status": "inferred", "due_status": "inferred",
+                    "asr_suspects": [], "jev": {"task": 0.3, "due": None}},
+                   {"action": "update", "task_title": None, "target_task_id": "t1", "due_date": "2026-11-20",
+                    "status": None, "assignee_raw": "지민"}]}
+    show("m", r)
+    out = capsys.readouterr().out
+    assert "t1" in out and "2026-11-20" in out and "0.3" in out
