@@ -416,7 +416,7 @@ def update_member(
         _ensure_no_pending_invitation(db, member)
 
     # 이름이 바뀔 때만 본다. 예전에 생긴 중복 팀원도 이름을 그대로 보내거나 다른 칸을 고칠 수 있게 한다.
-    if "display_name" in updates and updates["display_name"].strip() != member.display_name.strip():
+    if "display_name" in updates and _name_key(updates["display_name"]) != _name_key(member.display_name):
         _ensure_name_free(db, member.workspace_id, updates["display_name"], exclude_member_id=member_id)
     if not move_to:
         _ensure_discord_user_free(

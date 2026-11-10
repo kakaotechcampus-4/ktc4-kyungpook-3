@@ -166,3 +166,12 @@ def test_characters_js_trim_keeps_are_not_stripped(db, seed):
 
     assert _name_key("\x1c민수\x85") == "\x1c민수\x85"
     assert _name_key("﻿  민수 　") == "민수"
+
+
+def test_name_change_is_judged_with_the_same_key(db, seed):
+    # 이름이 바뀌었는지도 _name_key 로 본다. 예전에 "지민\x85" 로 저장된 팀원을 "지민" 으로 고치면, Python strip 은
+    # \x85 를 지워 "안 바뀜" 으로 보고 중복 검사를 건너뛰어 활성 팀원 "지민" 과 같은 이름이 생겼다(#662 리뷰)
+    legacy = Member(workspace_id=seed["ws"].workspace_id, display_name="지민\x85")
+    db.add(legacy)
+    db.commit()
+    _assert_duplicated(_rename(legacy, "지민"), seed["jimin"])
