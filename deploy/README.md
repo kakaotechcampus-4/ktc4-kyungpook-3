@@ -121,6 +121,24 @@ backend 파일 재시도는 `MEETING_PURGE_INTERVAL_SECONDS`의 기존 워커가
 6. **전환 시점**: 디스크에서 S3 를 예비로 읽는 경로가 없다. 처리 중인 업로드가 없을 때(`processing`·`awaiting_speakers` 업로드 회의가 없는지 확인) `UPLOAD_STORAGE=s3` 로 바꾼다. 처리 중에 바꾸면 AI 가 `GET /uploads/{id}/file` 에서 404 를 받는다. 전환 시점 이전(local 기간)에 디스크에 저장된 녹음은 s3 모드에서 재생되지 않는다. 보관 기록(`meeting_audio`)이 있는 녹음은 재생 정보가 남아 있어도 S3 에 객체가 없어 브라우저가 S3 오류를 받는다. 정리는 된다: s3 모드의 녹음 삭제(만료 정리·회의 삭제·탈퇴 정리)가 S3 prefix 와 함께 디스크의 `UPLOAD_DIR/{meeting_id}` 폴더도 지운다. `.env` 변경은 `docker compose -f backend/docker-compose.prod.yml up -d` 로 컨테이너를 다시 만든다(restart 는 반영하지 않는다).
 7. **Caddy CSP `media-src`**: 브라우저는 302 로 S3 주소(`https://<bucket>.s3.ap-northeast-2.amazonaws.com`)에서 바로 받는다. BE 는 S3 클라이언트를 리전 endpoint·가상 호스트 방식으로 만들어, presigned URL 의 host 가 항상 이 출처(`AWS_REGION` 의 리전)다. 서버의 Caddy 설정에 `Content-Security-Policy` 가 있다면 `media-src` 가 이 출처를 허용하는지 확인한다(#654). Caddy 설정은 이 저장소에 없어 확인하지 못했다. 프론트가 `crossOrigin` 이나 Web Audio 를 쓰면 버킷 CORS 도 필요하다.
 
+### 개인 계정 버킷의 위험과 키 운영
+
+운영 녹음을 팀원 한 명의 개인 계정에 두는 것은 이번 일정 안에 팀 계정에서 버킷·역할을 준비하기 어려워 고른 임시 방식이다(#670 리뷰). 아래 위험이 있어 과정이 끝나기 전에 팀 계정 버킷과 EC2 인스턴스 역할로 옮기는 것을 후속으로 둔다.
+
+- 키가 비활성화되거나, 계정 결제가 막히거나, 계정이 닫히면 S3 호출이 실패한다. 업로드·재생은 500, 회의 삭제(`purge_backend_files`)와 탈퇴 정리(`account_withdrawal.purge_backend`)는 `BACKEND_STORAGE_DELETE_FAILED` 로 남아 다시 시도만 반복한다. 탈퇴 영수증은 "정리 중"에서 끝나지 않는다.
+- 담당자(@hwnv)만 콘솔에서 버킷·키를 다룰 수 있다. 담당자 없이는 삭제 요청을 직접 확인하거나 키를 바꿀 수 없다.
+
+키 교체(정기·유출 의심 때):
+1. 담당자가 개인 계정 IAM 콘솔에서 `mm-backend-meeting-audio` 사용자에 새 액세스 키를 만든다(사용자당 키는 2개까지라 겹쳐 둘 수 있다).
+2. 운영 `backend/.env` 의 `AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY` 를 새 값으로 바꾸고 `docker compose -f backend/docker-compose.prod.yml up -d` 로 다시 만든다.
+3. 웹에서 녹음 재생이 되는지 확인한 뒤 옛 키를 비활성화하고, 하루 지나 문제가 없으면 지운다. 유출이 의심되면 1단계 직후 옛 키를 바로 비활성화한다(그 사이 업로드·재생은 실패할 수 있다).
+
+팀 계정으로 옮길 때(또는 서비스를 끝낼 때):
+1. 처리 중인 업로드가 없을 때 진행한다. 팀 계정에 같은 설정(서울, 공개 차단, SSE-S3, `meetings/` 30일 lifecycle)의 버킷과, 위 정책을 가진 EC2 인스턴스 역할을 준비하고 IMDSv2 hop limit 을 2 로 둔다(도커 컨테이너가 역할 자격을 받으려면 필요하다).
+2. 남은 녹음은 최대 7일치다. 옮기려면 `aws s3 sync s3://<옛 버킷>/meetings/ s3://<새 버킷>/meetings/` 로 복사하고, 옮기지 않으면 7일 기다리거나 그 기간의 재생을 포기한다(BE 기록상 들을 수 있는데 객체가 없으면 브라우저가 S3 오류를 받는다).
+3. 운영 `.env` 에서 키 두 줄을 지우고 `UPLOAD_S3_BUCKET` 을 새 버킷으로 바꾼 뒤 다시 만든다. 코드는 바꾸지 않는다.
+4. 옛 버킷의 `meetings/` 를 비우고, 전용 IAM 사용자의 키와 사용자를 지운다. 서비스를 끝내는 경우에도 3·4단계로 녹음과 키를 남기지 않는다.
+
 AI 서버(`mm-worker`)는 인계한 디스코드 회의의 녹음을 `ai/recordings/audio_outbox/` 에 두었다가 `PUT /meetings/{id}/recording` 으로 올린다. 이 폴더는 올릴 때까지 디스크를 쓰고 인계 7일 뒤 지운다. 서비스 토큰·BE 주소 설정은 기존 그대로다.
 
 ## 채팅 폴링 타이머 (#599)

@@ -41,7 +41,8 @@ services:
       # 웹 업로드 녹음. 아래 uploads 볼륨이라 재배포해도 남는다
       UPLOAD_DIR: /data/uploads
       # 회의 녹음 저장소(#659). 기본은 local(위 볼륨)이고, 운영은 .env 의 UPLOAD_STORAGE=s3 로 바꾼다.
-      # 키는 넣지 않는다. 자격은 EC2 인스턴스 역할로 받는다(deploy/README.md 의 S3 체크리스트).
+      # 운영 버킷은 개인 AWS 계정이라 전용 IAM 사용자 키(AWS_ACCESS_KEY_ID·AWS_SECRET_ACCESS_KEY)를 .env 에 둔다.
+      # 위 env_file 로 그대로 넘어가 boto3 기본 체인이 읽는다(deploy/README.md 의 "회의 녹음 S3 준비").
       UPLOAD_STORAGE: ${UPLOAD_STORAGE:-local}
       UPLOAD_S3_BUCKET: ${UPLOAD_S3_BUCKET:-}
       UPLOAD_S3_PREFIX: ${UPLOAD_S3_PREFIX:-meetings/}
