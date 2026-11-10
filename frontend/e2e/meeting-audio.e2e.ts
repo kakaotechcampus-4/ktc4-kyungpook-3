@@ -12,10 +12,7 @@ import { start } from './support'
 const recording = (page: Page) => page.getByRole('region', { name: '회의 녹음' })
 
 async function openSourceFromApproval(page: Page) {
-  await page
-    .getByRole('figure', { name: '근거' })
-    .getByRole('link', { name: '원문 듣기' })
-    .click()
+  await page.getByRole('figure', { name: '근거' }).getByRole('link', { name: '원문 듣기' }).click()
   await expect(page).toHaveURL(/\/workspaces\/ws_01\/meetings\/mt_09\?t=165000$/)
 }
 
