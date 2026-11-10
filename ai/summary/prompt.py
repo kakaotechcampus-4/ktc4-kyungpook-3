@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -165,6 +166,14 @@ def render_transcript(lines: list[SummaryLine], limit: int = MAX_TRANSCRIPT_CHAR
     return f"{head}\n[중간 {omitted}줄 생략]\n{tail}", True
 
 
+# 사용자 글 속 전사 울타리 태그. 그대로 두면 채팅 글이 울타리를 닫고 그 뒤가 지시처럼 읽힌다
+_FENCE_TAG = re.compile(r"<(\s*/?\s*전사\s*)>")
+
+
+def _unfence(text: str) -> str:
+    return _FENCE_TAG.sub(r"＜\1＞", text)
+
+
 _STATUS = {"todo": "할 일", "in_progress": "진행 중", "blocked": "막힘", "done": "완료"}
 
 
@@ -201,18 +210,21 @@ def build_prompt(summary_input: SummaryInput, limits: SectionLimits) -> tuple[st
     transcript, truncated = render_transcript(summary_input.lines, clock=clock)
     last_ms = summary_input.lines[-1].at_ms if summary_input.lines else 0
     period = " ~ ".join(_wall_time(summary_input.started_at, ms).strftime("%Y-%m-%d %H:%M") for ms in (0, last_ms))
+    user_text = {
+        "title": summary_input.title or "제목 없음",
+        "members": ", ".join(summary_input.members) or "없음",
+        "asr_terms": ", ".join(summary_input.asr_terms) or "없음",
+        "topics": "\n".join(topic_lines) or "없음",
+        "decisions": "\n".join(decision_lines) or "없음",
+        "items": "\n".join(item_lines) or "없음",
+        "rejected": "\n".join(summary_input.rejected_items) or "없음",
+        "transcript": transcript,
+    }
     prompt = (DAILY_PROMPT if daily else SUMMARY_PROMPT).format(
-        title=summary_input.title or "제목 없음",
+        **{name: _unfence(text) for name, text in user_text.items()},
         meeting_date=meeting_date(summary_input.started_at).isoformat(),
         period=period,
-        members=", ".join(summary_input.members) or "없음",
-        asr_terms=", ".join(summary_input.asr_terms) or "없음",
         new_topics=limits.new_topics,
-        topics="\n".join(topic_lines) or "없음",
-        decisions="\n".join(decision_lines) or "없음",
-        items="\n".join(item_lines) or "없음",
-        rejected="\n".join(summary_input.rejected_items) or "없음",
-        transcript=transcript,
         key_points=limits.key_points,
         discussion=limits.discussion,
         decisions_max=limits.decisions,
