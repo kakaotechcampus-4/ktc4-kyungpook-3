@@ -118,7 +118,7 @@ describe('DateField', () => {
     const input = screen.getByLabelText('마감')
 
     expect(screen.getByText('마감')).toHaveClass('text-accent')
-    expect(input).toHaveClass('placeholder:text-accent-solid')
+    expect(input).toHaveClass('placeholder:text-accent')
     expect(input.parentElement).toHaveClass(
       'border-accent',
       'has-[input:focus-visible]:outline-accent-point',

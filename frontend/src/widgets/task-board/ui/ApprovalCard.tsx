@@ -397,7 +397,7 @@ function ApprovalFields({
         type="text"
         placeholder="YYYY-MM-DD 또는 미정"
         value={values.dueDate ?? ''}
-        style={dueMissing && !dueInvalid ? { color: 'var(--color-accent-solid)' } : undefined}
+        style={dueMissing && !dueInvalid ? { color: 'var(--color-accent)' } : undefined}
         readOnly={!editable}
         labelTone={dueMissing && !dueInvalid ? 'required-blocking' : 'normal'}
         error={dueInvalid ? '마감은 있는 날짜여야 해요.' : undefined}

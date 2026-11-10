@@ -34,7 +34,7 @@ function labelOf(name: string, missing: boolean): string {
 
 /**
  * 태스크명·담당자·마감을 한 줄에서 바로 고친다 (E-6). 세 칸 모두 44px 다.
- * 빠졌거나 승인할 수 없는 값의 칸은 레드 R2 — 라벨·경계 accent, 플레이스홀더 accent-solid, 포커스 accent-point
+ * 빠졌거나 승인할 수 없는 값의 칸은 강조색 — 라벨·경계·플레이스홀더 accent, 포커스 accent-point
  */
 export function TaskCreateOverrideFields({
   overrides,

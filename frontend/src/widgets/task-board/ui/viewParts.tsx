@@ -135,7 +135,7 @@ export function CalendarLegend() {
       <LegendItem swatch="bg-ink text-surface" icon="eye">
         확인 필요
       </LegendItem>
-      <LegendItem swatch="bg-accent-chip text-ink" icon="alert">
+      <LegendItem swatch="bg-accent-solid text-surface" icon="alert">
         마감 임박
       </LegendItem>
       <LegendItem swatch="bg-surface-selected">진행 중</LegendItem>
