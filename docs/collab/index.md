@@ -8,9 +8,9 @@ GitHub 아이디 기준이다. 커밋·PR·변경 경로로 추정한 파트 배
 
 | 파트 | GitHub 아이디 | 주로 맡은 일 |
 |---|---|---|
-| AI | dw021213 | judge 파이프라인, STT, GPU 폴백, 근거 seq, 답장 판단. BE 리마인드 스케줄러·카카오 로그인에도 참여 |
-| AI | Y-Jimin | 캡처·워커·채팅 수집, BE 인계, 주간 멘토 리뷰 PR 작성과 대응 |
-| AI | letsgojh | 웹 업로드(수동 업로드) 파이프라인, judge 멘토 리뷰 반영 |
+| AI | dw021213 | 녹음 봇·워커, STT·GPU 폴백, 리마인드 DM·답장 판단, 근거 seq. BE 리마인드 스케줄러·카카오 로그인에도 참여 |
+| AI | Y-Jimin | legacy 추출, Jev 근거 검증, 전사 오인식 검사, auto 스위치(#526, #532), 채팅 수집, 주간 멘토 리뷰 PR 작성과 대응 |
+| AI | letsgojh | judge 핵심(Terra 1단계, final_judge, Luna 초안, 오케스트레이터), 웹 업로드(수동 업로드) 파이프라인 |
 | Backend | wkddnjswns | API·DB 이관(SQLite→PostgreSQL), Notion 동기화, 메시지·리마인드 API, CI/CD·배포 |
 | Backend | hwnv | 업로드 API, Notion OAuth, 녹음 재생 연결, 담당자 별칭 매칭 |
 | Frontend | hotpringles | 프론트엔드 전체(M0~M8), 디자인 시스템, 접근성, 모바일 |
