@@ -94,6 +94,28 @@ def _ensure_discord_user_free(
         )
 
 
+def _ensure_name_free(
+    db: Session, workspace_id: str, display_name: str, *, exclude_member_id: str | None = None
+) -> None:
+    """같은 워크스페이스의 활성 팀원이 같은 이름이면 409(#652). 이름이 같으면 화자 지정·담당자에서 둘을 가를 수 없다.
+
+    FE memberNameKey 와 같이 앞뒤 공백만 지우고 견준다. 이름 규칙 전에 저장된 값은 공백이 남았을 수 있어 DB 쪽도 지운다.
+    이미 있는 중복은 막지 않으므로 DB 제약은 두지 않는다. 동시에 같은 이름으로 만들면 둘 다 통과할 수 있다.
+    """
+    stmt = select(Member.member_id).where(
+        Member.workspace_id == workspace_id,
+        Member.is_deleted.is_(False),
+        func.trim(Member.display_name) == display_name.strip(),
+    )
+    if exclude_member_id is not None:
+        stmt = stmt.where(Member.member_id != exclude_member_id)
+    existing = db.scalar(stmt.limit(1))
+    if existing is not None:
+        raise AppError(
+            ErrorCode.MEMBER_NAME_DUPLICATED, details={"display_name": display_name.strip(), "member_id": existing}
+        )
+
+
 def _lock_discord_holder(db: Session, member: Member, discord_user_id: str) -> Member | None:
     """이 계정을 가진 다른 활성 팀원을 찾아 이 팀원과 함께 member_id 순서로 커밋까지 잠근다. 없으면 이 팀원만 잠근다.
 
@@ -232,6 +254,7 @@ def create_member(
         )
     require_pm(db, user, payload.workspace_id)
 
+    _ensure_name_free(db, payload.workspace_id, payload.display_name)
     _ensure_discord_user_free(db, payload.workspace_id, payload.discord_user_id)
 
     member = Member(
@@ -381,6 +404,9 @@ def update_member(
     if updates.get("role") == MemberRole.PM and member.role != MemberRole.PM:
         _ensure_no_pending_invitation(db, member)
 
+    # 이름이 바뀔 때만 본다. 예전에 생긴 중복 팀원도 이름을 그대로 보내거나 다른 칸을 고칠 수 있게 한다.
+    if "display_name" in updates and updates["display_name"].strip() != member.display_name.strip():
+        _ensure_name_free(db, member.workspace_id, updates["display_name"], exclude_member_id=member_id)
     if not move_to:
         _ensure_discord_user_free(
             db, member.workspace_id, updates.get("discord_user_id"), exclude_member_id=member_id
