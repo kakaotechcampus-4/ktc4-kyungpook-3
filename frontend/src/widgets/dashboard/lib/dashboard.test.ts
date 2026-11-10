@@ -123,6 +123,28 @@ describe('정렬 (AC-02 판정부)', () => {
     expect(approvalReason(review)).toBe('마감을 정해야 해요')
   })
 
+  it('빠진 값이 없으면 첫 전사 오인식 의심을 사유로 보이고, 빠진 값이 있으면 그것이 먼저다 (#643)', () => {
+    const create = (payload: Record<string, unknown>) =>
+      toApproval({
+        ...approvalFixtures[1],
+        payload: {
+          ...approvalFixtures[1].payload,
+          due_date: '2026-09-30',
+          asr_suspects: [
+            { word: '애포', source: 'title', candidates: ['배포'] },
+            { word: '', source: 'check_failed', candidates: [] },
+          ],
+          ...payload,
+        },
+      })
+    expect(approvalReason(create({}))).toBe("'애포'는 '배포'일 수 있어요")
+    expect(approvalReason(create({ due_date: null }))).toBe('마감을 정해야 해요')
+    expect(approvalReason(create({ gate: 'hold' }))).toBe(
+      '정보가 부족해 태스크 초안을 만들지 않았어요',
+    )
+    expect(approvalReason(create({ asr_suspects: [] }))).toBe('내용을 확인해야 해요')
+  })
+
   it('범위 변경 승인은 바꿀 값이 있어도 범위 변경을 확인하라고 한다 (#205)', () => {
     const update = (payload: Record<string, unknown>) =>
       toApproval({ ...approvalFixtures[0], type: 'task_update', payload })
