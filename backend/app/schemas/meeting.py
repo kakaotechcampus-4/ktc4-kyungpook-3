@@ -57,6 +57,15 @@ class MeetingCreateResponse(BaseModel):
     started_at: datetime
 
 
+class RecordingUploadResponse(BaseModel):
+    """AI 가 올린 디스코드 회의 녹음을 보관한 결과. 이미 정리된 녹음이면 저장하지 않고 `stored=false`."""
+
+    meeting_id: str
+    size_bytes: int
+    expires_at: datetime
+    stored: bool
+
+
 class MeetingEndResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
