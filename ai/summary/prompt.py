@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -166,12 +165,13 @@ def render_transcript(lines: list[SummaryLine], limit: int = MAX_TRANSCRIPT_CHAR
     return f"{head}\n[중간 {omitted}줄 생략]\n{tail}", True
 
 
-# 사용자 글 속 전사 울타리 태그. 그대로 두면 채팅 글이 울타리를 닫고 그 뒤가 지시처럼 읽힌다
-_FENCE_TAG = re.compile(r"<(\s*/?\s*전사\s*)>")
+# 사용자 글의 꺾쇠는 모두 전각으로 바꾼다. 그대로 두면 채팅 글이 전사 울타리를 닫고 그 뒤가 지시처럼 읽힌다.
+# 태그 모양만 고르면 폭 없는 공백이나 속성을 끼운 변형이 빠진다
+_UNFENCE = str.maketrans({"<": "＜", ">": "＞"})
 
 
 def _unfence(text: str) -> str:
-    return _FENCE_TAG.sub(r"＜\1＞", text)
+    return text.translate(_UNFENCE)
 
 
 _STATUS = {"todo": "할 일", "in_progress": "진행 중", "blocked": "막힘", "done": "완료"}
