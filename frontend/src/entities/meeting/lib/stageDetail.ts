@@ -38,9 +38,9 @@ export function stageDetail(
   return { stt, elapsedMinutes }
 }
 
-/** 진행 단위(트랙·STT 조각)를 아직 정하지 않아 단위를 말하지 않는다. 정하면 이 문구만 바꾼다 */
+/** 단위는 전사를 끝낸 입력 음성 트랙 수다(AI #653). 무음·실패 트랙도 끝난 것으로 세어 성공률이 아니다 */
 export function sttProgressText({ done, total }: SttProgress): { shown: string; spoken: string } {
-  return { shown: `${done}/${total}`, spoken: `${total} 중 ${done} 완료` }
+  return { shown: `음성 트랙 ${done}/${total}`, spoken: `음성 트랙 ${total}개 중 ${done}개 완료` }
 }
 
 export function elapsedText(minutes: number): string {

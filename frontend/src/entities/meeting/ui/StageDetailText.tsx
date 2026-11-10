@@ -1,7 +1,7 @@
 import { elapsedText, sttProgressText } from '../lib/stageDetail'
 import type { StageDetail } from '../lib/stageDetail'
 
-/** 지금 단계의 `3/5 · 4분째`. 화면 읽기 프로그램은 `5 중 3 완료, 4분째` 로 읽는다 (#483) */
+/** 지금 단계의 `음성 트랙 3/5 · 4분째`. 화면 읽기 프로그램은 `음성 트랙 5개 중 3개 완료, 4분째` 로 읽는다 (#483) */
 export function StageDetailText({
   detail,
   className,

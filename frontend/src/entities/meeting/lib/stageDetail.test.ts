@@ -53,7 +53,10 @@ describe('지금 단계의 보조 표시 (#483)', () => {
 
 describe('문구', () => {
   it('진행 수는 단위 없이 보이고 화면 읽기 프로그램에는 문장이다', () => {
-    expect(sttProgressText({ done: 3, total: 5 })).toEqual({ shown: '3/5', spoken: '5 중 3 완료' })
+    expect(sttProgressText({ done: 3, total: 5 })).toEqual({
+      shown: '음성 트랙 3/5',
+      spoken: '음성 트랙 5개 중 3개 완료',
+    })
   })
 
   it.each([

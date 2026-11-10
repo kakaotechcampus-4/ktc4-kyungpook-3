@@ -75,20 +75,26 @@ async function openProcessing() {
   return rows
 }
 
+/** 시계를 `at` 으로 옮기고 polling 한 번(3초)을 돌린다. 응답 내용은 그대로다 */
+async function poll(at: number) {
+  vi.setSystemTime(at)
+  await act(() => vi.advanceTimersByTimeAsync(3_000))
+}
+
 function silenceWarnings() {
   const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
   onTestFinished(() => warning.mockRestore())
 }
 
 describe('처리 화면 — 지금 단계의 진행 수·경과 (#483)', () => {
-  it('전사 중이면 지금 단계 줄에 3/5 · 4분째 를 보이고 화면 읽기 프로그램은 「5 중 3 완료」로 읽는다', async () => {
+  it('전사 중이면 지금 단계 줄에 음성 트랙 3/5 · 4분째 를 보이고 화면 읽기 프로그램은 「음성 트랙 5개 중 3개 완료」로 읽는다', async () => {
     report({ stage: 'stt', stage_at: minutesAgo(4), stt: { done: 3, total: 5 } })
     const rows = await openProcessing()
 
     const current = rows()[1]
     expect(current).toHaveAttribute('aria-current', 'step')
-    expect(shown(current)).toBe('음성을 텍스트로 옮기기3/5 · 4분째진행 중')
-    expect(spoken(current)).toBe('음성을 텍스트로 옮기기5 중 3 완료, 4분째진행 중')
+    expect(shown(current)).toBe('음성을 텍스트로 옮기기음성 트랙 3/5 · 4분째진행 중')
+    expect(spoken(current)).toBe('음성을 텍스트로 옮기기음성 트랙 5개 중 3개 완료, 4분째진행 중')
     expect(
       rows()
         .map((row) => row.textContent)
@@ -135,20 +141,40 @@ describe('처리 화면 — 지금 단계의 진행 수·경과 (#483)', () => {
   })
 
   it.each([
-    ['1분 미만', minutesAgo(0.5), '음성을 텍스트로 옮기기1/2 · 방금 시작진행 중'],
-    ['서버 시각이 앞선(음수) 경과', minutesAgo(-2), '음성을 텍스트로 옮기기1/2 · 방금 시작진행 중'],
-    ['60분 이상', minutesAgo(125), '음성을 텍스트로 옮기기1/2 · 2시간 5분째진행 중'],
+    ['1분 미만', minutesAgo(0.5), '음성을 텍스트로 옮기기음성 트랙 1/2 · 방금 시작진행 중'],
+    [
+      '서버 시각이 앞선(음수) 경과',
+      minutesAgo(-2),
+      '음성을 텍스트로 옮기기음성 트랙 1/2 · 방금 시작진행 중',
+    ],
+    ['60분 이상', minutesAgo(125), '음성을 텍스트로 옮기기음성 트랙 1/2 · 2시간 5분째진행 중'],
   ])('%s 경과를 분·시간 문구로 보인다', async (_, stageAt, row) => {
     report({ stage: 'stt', stage_at: stageAt, stt: { done: 1, total: 2 } })
     const rows = await openProcessing()
     expect(shown(rows()[1])).toBe(row)
   })
 
+  it('긴 트랙 하나가 끝나지 않아 진행 수가 그대로여도 조회마다 경과는 오른다 (AI #653)', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'], now: NOW })
+    report({ stage: 'stt', stage_at: minutesAgo(4), stt: { done: 0, total: 1 } })
+    const rows = await openProcessing()
+    expect(shown(rows()[1])).toBe('음성을 텍스트로 옮기기음성 트랙 0/1 · 4분째진행 중')
+
+    await poll(NOW + 60_000)
+    await waitFor(() =>
+      expect(shown(rows()[1])).toBe('음성을 텍스트로 옮기기음성 트랙 0/1 · 5분째진행 중'),
+    )
+    await poll(NOW + 57 * 60_000)
+    await waitFor(() =>
+      expect(shown(rows()[1])).toBe('음성을 텍스트로 옮기기음성 트랙 0/1 · 1시간 1분째진행 중'),
+    )
+  })
+
   it('단계가 바뀌면 다음 조회 뒤 새 단계 줄에 그 단계의 경과만 보인다 — 진행 수는 사라진다', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'], now: NOW })
     report({ stage: 'stt', stage_at: minutesAgo(4), stt: { done: 3, total: 5 } })
     const rows = await openProcessing()
-    expect(shown(rows()[1])).toContain('3/5 · 4분째')
+    expect(shown(rows()[1])).toContain('음성 트랙 3/5 · 4분째')
 
     mt10().progress = { audio_merged: true, transcribed: true, extracted: true }
     report({ stage: 'handoff', stage_at: minutesAgo(1), stt: { done: 5, total: 5 } })
@@ -177,12 +203,22 @@ describe('진행 토스트 — 펼친 카드의 진행 수·경과 (#483)', () =
   const announcement = () =>
     document.querySelector<HTMLElement>('[data-testid="pinned-toast-slot"] [role="status"]')
 
-  it('전사 중이면 문장 아래 3/5 · 4분째 이고, 알림 문장에는 숫자가 없다', async () => {
+  it('전사 중이면 문장 아래 음성 트랙 3/5 · 4분째 이고, 알림 문장에는 숫자가 없다', async () => {
     report({ stage: 'stt', stage_at: minutesAgo(4), stt: { done: 3, total: 5 } })
     const card = await openCard()
     expect(card).toHaveTextContent('음성을 텍스트로 옮기고 있어요')
-    expect(shown(card)).toContain('음성을 텍스트로 옮기고 있어요3/5 · 4분째')
-    expect(spoken(card)).toContain('5 중 3 완료, 4분째')
+    expect(shown(card)).toContain('음성을 텍스트로 옮기고 있어요음성 트랙 3/5 · 4분째')
+    expect(spoken(card)).toContain('음성 트랙 5개 중 3개 완료, 4분째')
+    expect(announcement()).toHaveTextContent(/^음성을 텍스트로 옮기고 있어요$/)
+  })
+
+  it('긴 트랙 하나가 끝나지 않아도 카드의 경과는 조회마다 오른다 (AI #653)', async () => {
+    report({ stage: 'stt', stage_at: minutesAgo(4), stt: { done: 0, total: 1 } })
+    const card = await openCard()
+    expect(shown(card)).toContain('음성 트랙 0/1 · 4분째')
+
+    await poll(NOW + 60_000)
+    await waitFor(() => expect(shown(card)).toContain('음성 트랙 0/1 · 5분째'))
     expect(announcement()).toHaveTextContent(/^음성을 텍스트로 옮기고 있어요$/)
   })
 
