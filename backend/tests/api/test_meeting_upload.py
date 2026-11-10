@@ -146,7 +146,7 @@ def test_upload_saves_audio_and_upload_row_and_creates_processing_meeting(db, se
     # 재생용 보관 기록이 같은 커밋으로 남는다
     audio = db.get(MeetingAudio, meeting.meeting_id)
     assert (audio.filename, audio.content_type, audio.size_bytes) == ("audio.wav", "audio/wav", len(AUDIO))
-    assert audio.received_at is not None
+    assert audio.retention_from is not None
     assert audio.deleted_at is None
 
 

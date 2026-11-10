@@ -168,7 +168,7 @@ def _record_audio(mdb, mid):
     mdb.add(
         MeetingAudio(
             meeting_id=mid, filename="audio.wav", content_type="audio/wav",
-            size_bytes=11, received_at=datetime.now(timezone.utc),
+            size_bytes=11, retention_from=datetime.now(timezone.utc),
         )
     )
     mdb.commit()

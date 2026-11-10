@@ -1,6 +1,6 @@
 """회의 녹음 보관 기록(`meeting_audio`)과 원문 듣기 가능 여부 판단(#659).
 
-녹음은 BE 에 들어온 시각(`received_at`)부터 `UPLOAD_AUDIO_RETENTION_DAYS`(기본 7)일 동안 듣게 둔다.
+녹음은 보관 기준 시각(`retention_from`)부터 `UPLOAD_AUDIO_RETENTION_DAYS`(기본 7)일 동안 듣게 둔다.
 처리 중(`done`·`failed` 가 아님)인 회의는 기간이 지나도 만료로 보지 않는다. 처리에 아직 필요한 녹음이라 지우지 않는다.
 이 모듈은 DB 만 보고 판단하며 파일은 읽거나 지우지 않는다(파일은 `upload_storage` 담당).
 """
@@ -49,8 +49,13 @@ def _aware(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
 
+def deadline(retention_from: datetime) -> datetime:
+    """보관 기준 시각에서 보관 기간만큼 지난 시각. 이때부터 들을 수 없다."""
+    return _aware(retention_from) + retention()
+
+
 def expires_at(row: MeetingAudio) -> datetime:
-    return _aware(row.received_at) + retention()
+    return deadline(row.retention_from)
 
 
 def record(
@@ -59,9 +64,11 @@ def record(
     filename: str,
     content_type: str,
     size_bytes: int,
-    now: datetime,
+    retention_from: datetime,
 ) -> MeetingAudio:
-    """회의의 녹음 기록을 남긴다. 이미 있으면 파일 정보만 바꾸고 `received_at` 은 그대로 둔다.
+    """회의의 녹음 기록을 남긴다. 이미 있으면 파일 정보만 바꾸고 `retention_from` 은 처음 값을 그대로 둔다.
+
+    `retention_from` 은 보관 기간을 세기 시작할 시각이다(업로드 회의는 받은 시각, 디스코드 회의는 회의 종료 시각).
 
     커밋은 호출한 쪽이 한다.
     """
@@ -72,7 +79,7 @@ def record(
             filename=filename,
             content_type=content_type,
             size_bytes=size_bytes,
-            received_at=now,
+            retention_from=retention_from,
         )
         db.add(row)
         return row
@@ -138,7 +145,7 @@ def sweep_expired_audio(db: Session, now: datetime | None = None) -> list[str]:
             Meeting.deleted_at.is_(None),
             Workspace.deleted_at.is_(None),
             (Meeting.status == str(MeetingStatus.FAILED))
-            | ((Meeting.status == str(MeetingStatus.DONE)) & (MeetingAudio.received_at < cutoff)),
+            | ((Meeting.status == str(MeetingStatus.DONE)) & (MeetingAudio.retention_from < cutoff)),
         )
     ).all()
     swept: list[str] = []

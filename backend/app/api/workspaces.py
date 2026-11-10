@@ -374,7 +374,7 @@ def upload_meeting(
         if busy_id is not None:
             raise AppError(ErrorCode.MEETING_PROCESSING_IN_PROGRESS, details={"meeting_id": busy_id})
         db.add_all([meeting, upload])
-        # 재생용 보관 기록은 같은 커밋에 둔다. 보관 기간은 녹음이 들어온 이 시각부터 센다
+        # 재생용 보관 기록은 같은 커밋에 둔다. 업로드 회의는 녹음이 들어온 이 시각부터 보관 기간을 센다
         meeting_audio.record(
             db,
             meeting.meeting_id,

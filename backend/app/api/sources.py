@@ -182,7 +182,7 @@ def upload_recording(
 ) -> dict:
     """AI 가 끝난 디스코드 회의의 섞은 녹음(m4a)을 올린다. 팀원이 보관 기간 동안 원문을 듣게 된다.
 
-    같은 회의에 다시 올리면 파일만 바꾸고 보관 시작 시각(`received_at`)은 처음 값을 유지한다.
+    같은 회의에 다시 올리면 파일만 바꾸고 보관 기준 시각(`retention_from`)은 처음 값을 유지한다.
     이미 정리된(`deleted_at`) 녹음에는 저장하지 않고 `stored=false` 로 성공한다. AI 가 다시 보내도 깨지지 않게 한다.
     """
     meeting = require_live_meeting(db, meeting_id, lock=True)
@@ -210,9 +210,22 @@ def upload_recording(
             ErrorCode.AUDIO_TOO_LARGE,
             details={"size_bytes": size_bytes, "max_bytes": max_bytes},
         )
+    now = datetime.now(timezone.utc)
+    # 보관 기간은 회의가 끝난 시각부터 센다. AI 가 늦게 올려도 팀원이 듣는 기간이 길어지지 않는다
+    retention_from = meeting.ended_at or now
     existing = db.get(MeetingAudio, meeting_id)
     if existing is not None and existing.deleted_at is not None:
         return _recording_response(existing, stored=False)
+    if existing is None and meeting_audio.deadline(retention_from) <= now:
+        # 보관 기간이 이미 지났다. 저장해도 바로 정리될 녹음이라 받지 않는다
+        return success(
+            RecordingUploadResponse(
+                meeting_id=meeting_id,
+                size_bytes=size_bytes,
+                expires_at=meeting_audio.deadline(retention_from),
+                stored=False,
+            ).model_dump(mode="json")
+        )
 
     # 녹음을 복사하는 동안 DB 연결을 붙잡지 않도록 읽기 트랜잭션과 회의 잠금을 끝낸다.
     # 그 사이 바뀐 것은 아래 커밋 직전 잠금과 재확인이 잡는다
@@ -234,7 +247,7 @@ def upload_recording(
     try:
         row = meeting_audio.record(
             db, meeting_id, RECORDING_FILENAME, RECORDING_CONTENT_TYPE,
-            saved_size, datetime.now(timezone.utc),
+            saved_size, retention_from,
         )
         db.commit()
     except Exception:

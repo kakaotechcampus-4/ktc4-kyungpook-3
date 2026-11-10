@@ -47,7 +47,7 @@ def _recorded(db, status="done") -> Meeting:
     return meeting
 
 
-def test_record_keeps_first_received_at(db):
+def test_record_keeps_first_retention_from(db):
     meeting = _meeting(db)
     later = RECEIVED + DAY
 
@@ -56,7 +56,7 @@ def test_record_keeps_first_received_at(db):
     db.commit()
 
     row = db.get(MeetingAudio, meeting.meeting_id)
-    assert row.received_at.replace(tzinfo=timezone.utc) == RECEIVED
+    assert row.retention_from.replace(tzinfo=timezone.utc) == RECEIVED
     assert (row.filename, row.content_type, row.size_bytes) == ("audio.mp3", "audio/mpeg", 20)
     assert row.deleted_at is None
 

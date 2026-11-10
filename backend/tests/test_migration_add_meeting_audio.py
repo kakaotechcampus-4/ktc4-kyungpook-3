@@ -103,7 +103,7 @@ def _rows(engine):
         return {
             row[0]: row[1:]
             for row in conn.execute(
-                text("SELECT meeting_id, filename, content_type, size_bytes, received_at, deleted_at FROM meeting_audio")
+                text("SELECT meeting_id, filename, content_type, size_bytes, retention_from, deleted_at FROM meeting_audio")
             )
         }
 
@@ -120,9 +120,9 @@ def test_upgrade_backfills_only_in_flight_upload_meetings(engine):
 
     rows = _rows(engine)
     assert sorted(rows) == ["m-awaiting", "m-processing"]
-    filename, content_type, size_bytes, received_at, deleted_at = rows["m-processing"]
+    filename, content_type, size_bytes, retention_from, deleted_at = rows["m-processing"]
     assert (filename, content_type, size_bytes) == ("audio.m4a", "audio/mp4", 111)
-    assert _as_utc(received_at) == UPLOADED
+    assert _as_utc(retention_from) == UPLOADED
     assert deleted_at is None
     assert rows["m-awaiting"][:3] == ("audio.wav", "audio/wav", 222)
 

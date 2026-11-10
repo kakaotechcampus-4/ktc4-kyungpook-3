@@ -257,7 +257,7 @@ def test_sole_workspace_withdrawal_removes_audio_row_and_s3_objects(mdb, mseed, 
     mdb.flush()
     meeting_id = meeting.meeting_id
     mdb.add(MeetingAudio(meeting_id=meeting_id, filename="audio.wav", content_type="audio/wav",
-                         size_bytes=4, received_at=datetime.now(timezone.utc)))
+                         size_bytes=4, retention_from=datetime.now(timezone.utc)))
     mdb.commit()
     fake.put("b", f"meetings/{meeting_id}/audio.wav", b"RIFF", "audio/wav")
 

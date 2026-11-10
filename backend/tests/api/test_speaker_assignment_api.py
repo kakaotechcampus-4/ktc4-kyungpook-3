@@ -131,7 +131,7 @@ def _meeting(db, seed, *, status="awaiting_speakers", speakers=REPORTED, source=
         # 업로드 API 가 같은 커밋에 남기는 재생용 보관 기록. 보관 기간은 지금부터 센다
         db.add(MeetingAudio(
             meeting_id=meeting.meeting_id, filename="audio.ogg", content_type="audio/ogg",
-            size_bytes=1234, received_at=datetime.now(timezone.utc),
+            size_bytes=1234, retention_from=datetime.now(timezone.utc),
         ))
     db.commit()
     return meeting
@@ -215,7 +215,7 @@ def test_audio_info_is_null_when_the_recording_cannot_be_played(db, seed, kind):
     meeting = _meeting(db, seed, status=status)
     row = db.get(MeetingAudio, meeting.meeting_id)
     if kind == "expired":
-        row.received_at = datetime.now(timezone.utc) - timedelta(days=8)
+        row.retention_from = datetime.now(timezone.utc) - timedelta(days=8)
     elif kind == "deleted":
         row.deleted_at = datetime.now(timezone.utc)
     db.commit()

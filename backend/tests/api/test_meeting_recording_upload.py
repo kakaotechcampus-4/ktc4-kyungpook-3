@@ -58,8 +58,8 @@ def ws_id(db):
     return ws.workspace_id
 
 
-def _meeting(db, ws_id, *, source="discord", status="done"):
-    meeting = Meeting(workspace_id=ws_id, title="주간 회의", source=source, status=status)
+def _meeting(db, ws_id, *, source="discord", status="done", ended_at=None):
+    meeting = Meeting(workspace_id=ws_id, title="주간 회의", source=source, status=status, ended_at=ended_at)
     db.add(meeting)
     db.commit()
     return meeting.meeting_id
@@ -102,17 +102,46 @@ def test_discord_recording_stored_and_playable(db, ws_id):
     assert played.content == AUDIO
 
 
-def test_reupload_keeps_received_at(db, ws_id):
+def test_discord_retention_counts_from_meeting_end(db, ws_id):
+    ended_at = datetime.now(timezone.utc) - timedelta(days=3)
+    meeting_id = _meeting(db, ws_id, ended_at=ended_at)
+
+    r = _put(meeting_id)
+
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["stored"] is True
+    assert datetime.fromisoformat(data["expires_at"]) == ended_at + timedelta(days=7)
+    db.expire_all()
+    stored = db.get(MeetingAudio, meeting_id).retention_from
+    assert stored.replace(tzinfo=timezone.utc) == ended_at
+
+
+def test_discord_upload_after_retention_not_stored(db, ws_id):
+    ended_at = datetime.now(timezone.utc) - timedelta(days=8)
+    meeting_id = _meeting(db, ws_id, ended_at=ended_at)
+
+    r = _put(meeting_id)
+
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["stored"] is False
+    assert datetime.fromisoformat(data["expires_at"]) == ended_at + timedelta(days=7)
+    assert _stored(meeting_id) is None
+    assert db.get(MeetingAudio, meeting_id) is None
+
+
+def test_reupload_keeps_retention_from(db, ws_id):
     meeting_id = _meeting(db, ws_id)
     assert _put(meeting_id).status_code == 200
-    first = db.get(MeetingAudio, meeting_id).received_at
+    first = db.get(MeetingAudio, meeting_id).retention_from
 
     r = _put(meeting_id, AUDIO_2)
 
     assert r.status_code == 200, r.text
     db.expire_all()
     row = db.get(MeetingAudio, meeting_id)
-    assert row.received_at == first
+    assert row.retention_from == first
     assert row.size_bytes == len(AUDIO_2)
     assert _stored(meeting_id) == AUDIO_2
 
@@ -191,7 +220,7 @@ def test_after_expiry_cleanup_not_stored(db, ws_id):
     received = datetime.now(timezone.utc) - timedelta(days=8)
     db.add(MeetingAudio(
         meeting_id=meeting_id, filename="audio.m4a", content_type="audio/mp4",
-        size_bytes=len(AUDIO), received_at=received, deleted_at=datetime.now(timezone.utc),
+        size_bytes=len(AUDIO), retention_from=received, deleted_at=datetime.now(timezone.utc),
     ))
     db.commit()
 

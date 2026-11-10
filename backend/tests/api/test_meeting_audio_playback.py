@@ -78,7 +78,7 @@ def _meeting(db, ws_id, *, status="done", received_ago=timedelta(hours=1), recor
     if recorded:
         db.add(MeetingAudio(
             meeting_id=meeting_id, filename="audio.m4a", content_type="audio/mp4",
-            size_bytes=len(AUDIO), received_at=received_at,
+            size_bytes=len(AUDIO), retention_from=received_at,
         ))
         db.add(MeetingUpload(
             meeting_id=meeting_id, stored_filename="audio.m4a", original_filename="회의.m4a",
