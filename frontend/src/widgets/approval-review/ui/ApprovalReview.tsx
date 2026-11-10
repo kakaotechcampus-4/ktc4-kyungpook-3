@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import {
   APPROVAL_RESOLUTION_REASONS,
   approvalDetailQueryOptions,
+  asrSuspectLine,
   dueFillSuggestion,
   isScopeChange,
   mergedCount,
@@ -732,8 +733,8 @@ function TaskCreatePending({
         />
         <EvidenceBlock approval={seen} context={context} gaps={gaps} />
       </ReviewCard>
-      {gaps.length === 0 ? null : (
-        <GapReasons
+      {gaps.length === 0 && seen.asrSuspects.length === 0 ? null : (
+        <ConfirmReasons
           approval={seen}
           gaps={gaps}
           dueFill={dueFillSuggestion(seen, meetingDate)}
@@ -751,9 +752,10 @@ function TaskCreatePending({
 
 /**
  * 「확인이 필요한 이유」. 빠진 값마다 회의에서 한 말을 보이고, 원문 마감이 회의 날짜 기준으로 확실한 날이면
- * 「M/D(요일)로 채우기」를 둔다 — 누르면 마감 칸만 채운다. 서버에는 승인할 때 보낸다
+ * 「M/D(요일)로 채우기」를 둔다 — 누르면 마감 칸만 채운다. 서버에는 승인할 때 보낸다.
+ * 그 아래에 전사 오인식 의심을 한 줄씩 둔다 (#643)
  */
-function GapReasons({
+function ConfirmReasons({
   approval,
   gaps,
   dueFill,
@@ -791,6 +793,15 @@ function GapReasons({
             ) : null}
           </li>
         ))}
+        {approval.asrSuspects.map((suspect) => {
+          const line = asrSuspectLine(suspect)
+          return (
+            <li key={line} className="py-10 text-[15px] leading-[1.6] text-ink">
+              <b className="mr-6 font-bold">전사</b>
+              {line}
+            </li>
+          )
+        })}
       </ul>
     </section>
   )
