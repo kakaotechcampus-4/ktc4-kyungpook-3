@@ -140,6 +140,11 @@ class MeetingListResponse(BaseModel):
     total: int
 
 
+class MeetingAudioInfo(BaseModel):
+    content_type: str
+    expires_at: datetime = Field(description="이 시각까지 원문 녹음을 들을 수 있다")
+
+
 class MeetingMinutesResponse(BaseModel):
     meeting_id: str
     title: str | None
@@ -152,6 +157,9 @@ class MeetingMinutesResponse(BaseModel):
     summary_status: Literal["ready", "pending", "none"]
     transcript: list[dict]
     permissions: dict
+    audio: MeetingAudioInfo | None = Field(
+        None, description="호출자가 이 회의 녹음을 들을 수 있을 때만 값(보관 기간 안, done 이 아니면 PM 만). 아니면 null"
+    )
 
 
 
