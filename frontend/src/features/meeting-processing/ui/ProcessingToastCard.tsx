@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { Ref } from 'react'
+import { StageDetailText } from '@/entities/meeting'
 import type { ProcessingStepState } from '@/entities/meeting'
 import { Button } from '@/shared/ui/button'
 import { Icon } from '@/shared/ui/icon'
@@ -158,6 +159,9 @@ function Card({
             </div>
           </div>
           <p className={SUB}>{signal.sentence}</p>
+          {signal.detail === null ? null : (
+            <StageDetailText detail={signal.detail} className={META} />
+          )}
           {/* 칸 수는 회의 출처마다 다르다 — 녹음 셋, 채팅 둘. 출처를 모르면 칸·수를 그리지 않는다 (#483) */}
           {signal.steps === null ? null : (
             <div aria-hidden="true" className="grid auto-cols-fr grid-flow-col gap-4">
