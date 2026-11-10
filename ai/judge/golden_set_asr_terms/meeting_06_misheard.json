@@ -1,0 +1,118 @@
+{
+  "description": "6회차 오인식본 — 동우의 '폴러' 가 '볼러' 로 받아 적힘(한 줄만 다름) — 2026-11-19 목 정기 회의, 지민·동우. A 폴러 줄(마감 분명), B 발표 자료 줄(애매한 마감), C 완료 보고",
+  "meeting_date": "2026-11-19",
+  "workspace_id": "ws_asr_demo",
+  "tasks": [],
+  "transcript": {
+    "source": "meeting",
+    "segments": [
+      {
+        "speaker": "uid_jimin",
+        "start": 0.0,
+        "end": 8.3,
+        "text": "안녕하세요, 정기 회의 시작할게요. 오늘은 짧게 갑니다.",
+        "seq": 0
+      },
+      {
+        "speaker": "uid_dongwoo",
+        "start": 9.1,
+        "end": 17.6,
+        "text": "네, 좋아요. 지난주 발표 준비하느라 다들 고생 많았어요.",
+        "seq": 1
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 18.4,
+        "end": 25.8,
+        "text": "맞아요. 그럼 먼저 지난번에 말한 것부터 볼까요?",
+        "seq": 2
+      },
+      {
+        "speaker": "uid_dongwoo",
+        "start": 26.6,
+        "end": 36.0,
+        "text": "루나 제목 정리는 어제 끝났어요. 제브 쪽 확인도 같이 마쳤고요.",
+        "seq": 3
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 36.8,
+        "end": 43.6,
+        "text": "수고했어요. 그럼 새로 할 일 얘기해 봐요.",
+        "seq": 4
+      },
+      {
+        "speaker": "uid_dongwoo",
+        "start": 44.4,
+        "end": 53.6,
+        "text": "채팅 볼러 서버 설정은 제가 11월 20일 금요일까지 끝낼게요.",
+        "seq": 5
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 54.4,
+        "end": 58.1,
+        "text": "좋아요, 부탁해요.",
+        "seq": 6
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 58.9,
+        "end": 66.3,
+        "text": "발표 자료 최종본은 제가 다음 주 중에 올릴게요.",
+        "seq": 7
+      },
+      {
+        "speaker": "uid_dongwoo",
+        "start": 67.1,
+        "end": 72.6,
+        "text": "네, 올라오면 저도 한번 볼게요.",
+        "seq": 8
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 73.4,
+        "end": 80.0,
+        "text": "그럼 오늘은 여기까지 할게요. 수고했어요.",
+        "seq": 9
+      },
+      {
+        "speaker": "uid_dongwoo",
+        "start": 80.8,
+        "end": 83.8,
+        "text": "수고하셨어요.",
+        "seq": 10
+      }
+    ]
+  },
+  "approve": [],
+  "findings": [
+    {
+      "indices": [
+        5
+      ],
+      "summary": "동우가 채팅 볼러 서버 설정을 11월 20일 금요일까지 끝내기로 함",
+      "title": "채팅 볼러 서버 설정"
+    },
+    {
+      "indices": [
+        7
+      ],
+      "summary": "지민이 발표 자료 최종본을 다음 주 중에 올리기로 함",
+      "title": "발표 자료 최종본 업로드"
+    }
+  ],
+  "expected": [
+    {
+      "note": "A — 마감 11월 20일. 정확본은 auto, 오인식본은 '볼러' 때문에 review",
+      "action": "create",
+      "title_contains": "서버 설정",
+      "due_date": "2026-11-20"
+    },
+    {
+      "note": "B — 다음 주 중(inferred) 이라 review",
+      "action": "create",
+      "title_contains": "발표 자료"
+    }
+  ]
+}

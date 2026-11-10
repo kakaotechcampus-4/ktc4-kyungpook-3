@@ -1,0 +1,51 @@
+{
+  "workspace_id": "ws_asr_demo",
+  "members": [
+    {
+      "member_id": "m_jimin",
+      "name": "지민",
+      "discord_user_id": "uid_jimin",
+      "aliases": []
+    },
+    {
+      "member_id": "m_dongwoo",
+      "name": "동우",
+      "discord_user_id": "uid_dongwoo",
+      "aliases": []
+    },
+    {
+      "member_id": "m_wonjun",
+      "name": "원준",
+      "discord_user_id": "uid_wonjun",
+      "aliases": []
+    },
+    {
+      "member_id": "m_kimhwan",
+      "name": "김환",
+      "discord_user_id": "uid_kimhwan",
+      "aliases": []
+    },
+    {
+      "member_id": "m_jaehwan",
+      "name": "재환",
+      "discord_user_id": "uid_jaehwan",
+      "aliases": []
+    },
+    {
+      "member_id": "m_jinho",
+      "name": "진호",
+      "discord_user_id": "uid_jinho",
+      "aliases": []
+    }
+  ],
+  "terms": [
+    "제브",
+    "폴러",
+    "루나"
+  ],
+  "misheard": {
+    "seq": 5,
+    "correct": "폴러",
+    "heard": "볼러"
+  }
+}

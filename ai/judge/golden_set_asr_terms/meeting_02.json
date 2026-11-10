@@ -1,0 +1,340 @@
+{
+  "description": "2회차 — 폴러 유닛 마감이 '다음 주 중'에서 11월 11일로 확정(마감 변경), 재환 화면·진호 시연 시나리오 새 할 일, 외부 디자이너 수빈님 시안, 다크 모드는 보류",
+  "meeting_date": "2026-11-05",
+  "workspace_id": "ws_asr_demo",
+  "tasks": [
+    {
+      "task_id": "t_kakao",
+      "notion_page_id": null,
+      "title": "카카오 로그인 구현",
+      "assignee_member_id": "m_kimhwan",
+      "due_date": "2026-11-13",
+      "status": "in_progress"
+    },
+    {
+      "task_id": "t_e2e",
+      "notion_page_id": null,
+      "title": "제브 근거 E2E 확인",
+      "assignee_member_id": "m_dongwoo",
+      "due_date": "2026-11-06",
+      "status": "in_progress"
+    },
+    {
+      "task_id": "t_unit",
+      "notion_page_id": null,
+      "title": "폴러 서버 유닛 만들기",
+      "assignee_member_id": "m_wonjun",
+      "due_date": null,
+      "status": "in_progress"
+    },
+    {
+      "task_id": "t_luna",
+      "notion_page_id": null,
+      "title": "루나 프롬프트 정리",
+      "assignee_member_id": "m_kimhwan",
+      "due_date": null,
+      "status": "in_progress"
+    },
+    {
+      "task_id": "t_login",
+      "notion_page_id": null,
+      "title": "로그인 화면 문구 수정",
+      "assignee_member_id": "m_jaehwan",
+      "due_date": "2026-11-06",
+      "status": "in_progress"
+    }
+  ],
+  "transcript": {
+    "source": "meeting",
+    "segments": [
+      {
+        "speaker": "uid_jimin",
+        "start": 0.0,
+        "end": 6.6,
+        "text": "녹음 시작했어요. 목요일 회의 시작할게요.",
+        "seq": 0
+      },
+      {
+        "speaker": "uid_dongwoo",
+        "start": 7.4,
+        "end": 12.9,
+        "text": "안녕하세요. 어제 비 엄청 왔죠?",
+        "seq": 1
+      },
+      {
+        "speaker": "uid_jinho",
+        "start": 13.7,
+        "end": 19.2,
+        "text": "저는 우산이 없어서 다 젖었어요.",
+        "seq": 2
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 20.0,
+        "end": 28.8,
+        "text": "감기 조심해요. 먼저 지난 회의에서 정한 것부터 확인할게요.",
+        "seq": 3
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 29.6,
+        "end": 37.0,
+        "text": "동우님, 제브 근거 E2E는 어떻게 되고 있어요?",
+        "seq": 4
+      },
+      {
+        "speaker": "uid_dongwoo",
+        "start": 37.8,
+        "end": 47.7,
+        "text": "제브는 거의 다 봤어요. 내일 금요일까지는 문제없이 끝낼 수 있어요.",
+        "seq": 5
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 48.5,
+        "end": 53.7,
+        "text": "좋아요. 원준님 폴러 유닛은요?",
+        "seq": 6
+      },
+      {
+        "speaker": "uid_wonjun",
+        "start": 54.5,
+        "end": 68.8,
+        "text": "그게 다음 주 중으로 했는데, 오늘 보니까 코드 머지가 내일이라서 유닛 파일도 그 뒤에 써야 하더라고요.",
+        "seq": 7
+      },
+      {
+        "speaker": "uid_wonjun",
+        "start": 69.6,
+        "end": 78.8,
+        "text": "폴러 서버 유닛은 제가 11월 11일 수요일까지로 못 박을게요.",
+        "seq": 8
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 79.6,
+        "end": 86.4,
+        "text": "네, 11일 수요일로 확정하고 적어 둘게요.",
+        "seq": 9
+      },
+      {
+        "speaker": "uid_kimhwan",
+        "start": 87.2,
+        "end": 99.9,
+        "text": "루나 프롬프트는 길이를 절반으로 줄여 봤는데, 예시 두 개를 빼니까 제목이 좀 거칠어졌어요.",
+        "seq": 10
+      },
+      {
+        "speaker": "uid_jinho",
+        "start": 100.7,
+        "end": 112.8,
+        "text": "루나가 만든 초안 제목을 제가 몇 개 읽어 봤는데 동사가 빠져서 어색한 게 있더라고요.",
+        "seq": 11
+      },
+      {
+        "speaker": "uid_kimhwan",
+        "start": 113.6,
+        "end": 123.0,
+        "text": "아, 그 부분은 다음 버전에서 볼게요. 마감은 따로 안 잡을게요.",
+        "seq": 12
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 123.8,
+        "end": 129.0,
+        "text": "네, 루나는 급하지 않으니까요.",
+        "seq": 13
+      },
+      {
+        "speaker": "uid_jaehwan",
+        "start": 129.8,
+        "end": 143.4,
+        "text": "프런트는 카드 목록 화면 만들고 있어요. 제브 점수가 낮은 카드에 확인 필요 표시가 붙는 화면이요.",
+        "seq": 14
+      },
+      {
+        "speaker": "uid_jaehwan",
+        "start": 144.2,
+        "end": 153.4,
+        "text": "카드 목록 화면은 제가 11월 10일 화요일까지 PR 올릴게요.",
+        "seq": 15
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 154.2,
+        "end": 156.6,
+        "text": "좋아요.",
+        "seq": 16
+      },
+      {
+        "speaker": "uid_jaehwan",
+        "start": 157.4,
+        "end": 163.7,
+        "text": "시간 되면 다크 모드도 해 보고 싶어요.",
+        "seq": 17
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 164.5,
+        "end": 171.7,
+        "text": "그건 발표 끝나고 생각해요. 지금은 보류할게요.",
+        "seq": 18
+      },
+      {
+        "speaker": "uid_jinho",
+        "start": 172.5,
+        "end": 183.2,
+        "text": "저는 발표 시연 시나리오를 써 보겠다고 했었는데요, 아직 시작을 못 했어요.",
+        "seq": 19
+      },
+      {
+        "speaker": "uid_jinho",
+        "start": 184.0,
+        "end": 193.6,
+        "text": "시연 시나리오 초안은 제가 11월 9일 월요일까지 써서 공유할게요.",
+        "seq": 20
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 194.4,
+        "end": 204.7,
+        "text": "좋아요. 시연에서는 폴러가 가져온 채팅이 카드로 바뀌는 장면이 중요해요.",
+        "seq": 21
+      },
+      {
+        "speaker": "uid_jinho",
+        "start": 205.5,
+        "end": 214.3,
+        "text": "네, 폴러 장면이랑 루나가 초안 쓰는 장면 둘 다 넣을게요.",
+        "seq": 22
+      },
+      {
+        "speaker": "uid_dongwoo",
+        "start": 215.1,
+        "end": 223.6,
+        "text": "시연 때 제브가 근거를 보여 주는 화면도 넣으면 좋겠어요.",
+        "seq": 23
+      },
+      {
+        "speaker": "uid_jinho",
+        "start": 224.4,
+        "end": 229.4,
+        "text": "좋아요, 그것도 적어 둘게요.",
+        "seq": 24
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 230.2,
+        "end": 237.9,
+        "text": "디자인 쪽은 수빈님한테 스플래시 시안 부탁드렸어요.",
+        "seq": 25
+      },
+      {
+        "speaker": "uid_wonjun",
+        "start": 238.7,
+        "end": 242.2,
+        "text": "수빈님이 누구죠?",
+        "seq": 26
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 243.0,
+        "end": 250.7,
+        "text": "다른 팀 디자이너분이요. 잠깐 도와주시기로 했어요.",
+        "seq": 27
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 251.5,
+        "end": 262.2,
+        "text": "수빈님 시안은 다음 주 금요일쯤 받을 것 같아요. 정확한 날은 아직 몰라요.",
+        "seq": 28
+      },
+      {
+        "speaker": "uid_kimhwan",
+        "start": 263.0,
+        "end": 271.5,
+        "text": "카카오 로그인 PR 충돌은 아직 안 건드렸어요. 죄송해요.",
+        "seq": 29
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 272.3,
+        "end": 278.6,
+        "text": "괜찮아요. 다음 회의 때 다시 얘기해요.",
+        "seq": 30
+      },
+      {
+        "speaker": "uid_wonjun",
+        "start": 279.4,
+        "end": 285.3,
+        "text": "저녁에 멘토링 있는 거 잊지 마세요.",
+        "seq": 31
+      },
+      {
+        "speaker": "uid_dongwoo",
+        "start": 286.1,
+        "end": 289.1,
+        "text": "네, 7시요.",
+        "seq": 32
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 289.9,
+        "end": 297.3,
+        "text": "네, 그럼 오늘은 여기까지 할게요. 녹음 끕니다.",
+        "seq": 33
+      }
+    ]
+  },
+  "approve": [
+    {
+      "title_contains": "시연 시나리오",
+      "title": "시연 시나리오 초안 작성"
+    }
+  ],
+  "findings": [
+    {
+      "indices": [
+        8
+      ],
+      "summary": "원준이 폴러 서버 유닛 마감을 11월 11일 수요일로 확정함",
+      "title": "폴러 서버 유닛 마감 확정"
+    },
+    {
+      "indices": [
+        15
+      ],
+      "summary": "재환이 카드 목록 화면 PR 을 11월 10일 화요일까지 올리기로 함",
+      "title": "카드 목록 화면 PR 올리기"
+    },
+    {
+      "indices": [
+        20
+      ],
+      "summary": "진호가 시연 시나리오 초안을 11월 9일 월요일까지 공유하기로 함",
+      "title": "시연 시나리오 초안 작성"
+    },
+    {
+      "indices": [
+        12
+      ],
+      "summary": "김환이 루나 프롬프트를 다음 버전에서 손보기로 함. 마감 없음",
+      "title": "루나 프롬프트 개선"
+    }
+  ],
+  "expected": [
+    {
+      "note": "마감 변경 — 다음 주 중 → 11월 11일",
+      "action": "update",
+      "target_task_id": "t_unit",
+      "due_date": "2026-11-11"
+    },
+    {
+      "note": "새 할 일 — 시연 시나리오 11월 9일",
+      "action": "create",
+      "title_contains": "시연 시나리오",
+      "due_date": "2026-11-09"
+    }
+  ]
+}
