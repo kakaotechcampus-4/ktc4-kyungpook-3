@@ -33,6 +33,7 @@
   - 세대를 먼저 올리므로 진행 중이던 쓰기의 뒷처리는 이미 무효다(`isCurrent`). 요청 자체는 세션 signal 로 끊긴다.
   - 쓰기 key 는 모두 공간·대상 범위라, 비워도 다음 사용자의 두 번째 누름 막기(`isMutating`)가 잘못 풀리지 않는다.
   - 두 곳에 같은 쿼리 정리가 따로 있던 것을 한 함수로 모았다.
+  - scope 에 밀려 멈춰 있던(paused) mutation(지금은 알림 설정 한 곳)은 캐시를 비워도 스스로 끝나지 않아 변수가 남는다. 그래서 비운 뒤 이어 가게 해 `mutationFn` 첫 줄의 세대 검사가 `REQUEST_CANCELED` 로 끝내게 한다. 요청은 나가지 않는다(리뷰 #681). 오프라인이라 멈춘 mutation 은 연결이 돌아와야 이어지고, 그때도 같은 검사로 끝난다.
 - **머리 제목(리뷰 #672 반영).** 회의록을 받은 뒤에는 회의록 제목만 쓴다(비었으면 `제목 없는 회의`). 제목 저장은 다른 쿼리의 재조회를 기다리지 않고 알림·포커스를 바로 준다.
 - **공백(리뷰 #672 반영).** 보내기 전 검사는 Python `strip` 과 같은 공백을 뺀다([pythonStrip](../../../src/shared/lib/validation/pythonStrip.ts), MSW 도 같은 것을 쓴다).
 - **MSW.** [고치기 핸들러](../../../src/shared/mock/handlers/minutesEdits.ts)가 BE `services/transcript.py`·`schemas/record_edit.py` 를 따른다.
