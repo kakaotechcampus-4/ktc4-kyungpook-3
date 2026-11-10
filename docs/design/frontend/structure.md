@@ -67,6 +67,6 @@ flowchart TD
 
 [세션 범위](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/src/shared/api/sessionScope.ts)는 세대와 `AbortSignal`을 함께 사용한다. 세션을 끝낼 때 세대부터 올린 뒤 이전 요청을 취소한다. [clearUserScope()](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/src/features/auth/lib/userScope.ts)는 이전 사용자의 조회·캐시·토스트·처리 추적·미저장 변경을 정리한다.
 
-FE 가드는 화면 접근을 안내하는 장치다. 실제 권한은 서버가 검사한다. 또한 세션 범위를 제공하는 구조와 모든 쓰기에 적용이 끝났다는 주장은 구분해야 한다. 적용 범위와 남은 예외는 [#594 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/594-stale-session-writes/result.md)에 기록돼 있다.
+FE 가드는 화면 접근을 안내하는 장치다. 실제 권한은 서버가 검사한다. 또한 세션 범위를 제공하는 구조와 모든 쓰기에 적용이 끝났다는 주장은 구분해야 한다. 적용 범위와 남은 예외는 [#594 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m3/work-items/594-stale-session-writes/result.md)에 기록돼 있다.
 
 이 설명은 소스 대조 결과다. 실제 서버 연동, 배포 커밋, 실기기 검증을 완료했다는 의미는 아니다.

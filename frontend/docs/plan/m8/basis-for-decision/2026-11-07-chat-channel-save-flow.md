@@ -32,7 +32,7 @@
 ## 영향 범위와 재검토 조건
 
 - 영향 코드: `src/features/integration-connection/ui/ChatChannelField.tsx`, `model/useChatChannelSetting.ts`, `lib/chatChannelMessages.ts`.
-- 카드의 `채널 바꾸기` 자리 버튼(준비 중 토스트)이 이 칸과 뜻이 겹쳤다. 사용자 결정(2026-11-07)으로 버튼을 지웠다(#505, [결과](../../../issues/505-discord-channel-button/result.md)). 채널은 이 칸 하나에서 고른다.
+- 카드의 `채널 바꾸기` 자리 버튼(준비 중 토스트)이 이 칸과 뜻이 겹쳤다. 사용자 결정(2026-11-07)으로 버튼을 지웠다(#505, [결과](../work-items/505-discord-channel-button/result.md)). 채널은 이 칸 하나에서 고른다.
 - PM·디자인이 안내 문구나 위치를 바꾸면(#429 의 기본값 댓글에 이견) 이 기록을 고친다.
 
 ## 근거와 관련 문서

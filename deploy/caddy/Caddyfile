@@ -1,0 +1,35 @@
+managers-manager.duckdns.org {
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "frame-ancestors 'none'"
+		X-Frame-Options "DENY"
+	}
+	handle /api/* {
+		@bot_create {
+			method POST
+			path /api/v1/meetings /api/v1/extractions
+		}
+		@bot_state {
+			method PATCH
+			path_regexp ^/api/v1/meetings/[^/]+/(end|fail)$
+		}
+		@bot_read {
+			method GET
+			path_regexp ^/api/v1/meetings/[^/]+$
+		}
+		respond @bot_create 404
+		respond @bot_state 404
+		request_body {
+			max_size 210MiB
+		}
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle {
+		root * /srv/mm/frontend
+		try_files {path} /index.html
+		file_server
+	}
+}

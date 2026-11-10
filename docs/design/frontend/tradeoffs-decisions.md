@@ -7,9 +7,9 @@
 | 문제·제약 | 비교한 대안 | 기록된 선택·이유 | 감수한 비용 | 근거 |
 |---|---|---|---|---|
 | BE·AI와 병렬로 화면 개발 | API 완성을 기다림, FE가 가정 계약·MSW로 먼저 개발 | 가정 계약을 문서화하고 entity에서 DTO를 변환한다. 실제 BE가 오면 대조한다. | 수동 계약·MSW가 실제 API와 달라질 수 있어 대조가 필요하다. | [D-159·D-160·D-172](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/decision/frontend-decisions.md), [계약 우선](contract-first-msw.md). |
-| 생성 타입 없이 타입 단언만 존재 | 생성 타입·통합 검사에 의존, Zod 경계 검증 | D-184가 D-134의 전제를 대체했다. 응답 스키마를 DTO의 원본으로 둔다. | 스키마 유지 비용과 서버보다 엄격한 검증의 위험이 있다. | [D-184](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/decision/frontend-decisions.md), [#348](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/348-response-schema/result.md). |
+| 생성 타입 없이 타입 단언만 존재 | 생성 타입·통합 검사에 의존, Zod 경계 검증 | D-184가 D-134의 전제를 대체했다. 응답 스키마를 DTO의 원본으로 둔다. | 스키마 유지 비용과 서버보다 엄격한 검증의 위험이 있다. | [D-184](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/decision/frontend-decisions.md), [#348](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m3/work-items/348-response-schema/result.md). |
 | 실제 서버에 없는 메시지 기능 | 화면 제거, MSW 전용 유지, 실제 계약에 맞춤 | 실제 계약에 맞춰 화면·핸들러·검사를 함께 조정한다. 후속 계약이 생긴 기능은 다시 연결한다. | 시안 일부 기능을 제공하지 못한다. | [실제 API 연결 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-04-messages-real-api-drop-unbacked-ui.md). |
-| 같은 동작을 여러 검사 도구에서 관리 | Storybook 제거 후 검증을 옮길 위치 비교 | 상태·권한·요청은 RTL, 배치·색·hover·스크롤은 Playwright에 둔다. | 컴포넌트 탐색 화면이 사라진다. | [제거 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-07-remove-storybook.md), [#482](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/482-remove-storybook/result.md). |
+| 같은 동작을 여러 검사 도구에서 관리 | Storybook 제거 후 검증을 옮길 위치 비교 | 상태·권한·요청은 RTL, 배치·색·hover·스크롤은 Playwright에 둔다. | 컴포넌트 탐색 화면이 사라진다. | [제거 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-07-remove-storybook.md), [#482](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m0/work-items/482-remove-storybook/result.md). |
 
 Storybook 자체의 유지·폐기를 재비교한 기록으로 해석하지 않는다. 제거 결정 후 검사 이동 방식을 비교한 기록이다.
 
@@ -29,7 +29,7 @@ Storybook 자체의 유지·폐기를 재비교한 기록으로 해석하지 않
 
 | 문제·제약 | 비교한 대안 | 기록된 선택·이유 | 감수한 비용 | 근거 |
 |---|---|---|---|---|
-| 메시지 변경을 화면에 반영 | 상시 polling, 알림 연동·초안 대기 polling, 후속 WebSocket 신호 | 소켓은 변경 신호만 보내고 데이터는 REST로 받는다. 알림과 조건부 polling을 보완 경로로 둔다. | REST 추가 조회와 소켓 수명 관리가 필요하다. 소켓 밖 화면의 갱신은 즉시가 아니다. | [메시지 갱신 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-06-message-sync-and-e2e.md), [#558](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/558-message-websocket/result.md). |
+| 메시지 변경을 화면에 반영 | 상시 polling, 알림 연동·초안 대기 polling, 후속 WebSocket 신호 | 소켓은 변경 신호만 보내고 데이터는 REST로 받는다. 알림과 조건부 polling을 보완 경로로 둔다. | REST 추가 조회와 소켓 수명 관리가 필요하다. 소켓 밖 화면의 갱신은 즉시가 아니다. | [메시지 갱신 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-06-message-sync-and-e2e.md), [#558](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/work-items/558-message-websocket/result.md). |
 | 화자 지정은 사람이 끝내야 함 | 짧은 polling 유지, 완전 중단, 간격 확대 | 대기 중에도 추적하되 30초 간격으로 확인한다. | 다른 PM의 지정을 늦게 볼 수 있다. | [화자 지정 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m5/basis-for-decision/2026-11-05-speaker-assignment-screen.md). |
 | 빠른 응답에서 로딩이 번쩍임 | 즉시 표시, 지연·최소 표시 | 높이를 유지하며 200ms 뒤 표시하고 한 번 보이면 최소 400ms 유지한다. | 데이터가 먼저 도착해도 내용 표시가 잠시 늦어진다. | [스켈레톤 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-07-skeleton-delay.md). |
 | 폰트 요청이 첫 화면과 경쟁 | Bold preload 유지·제거, unicode-range 분할 | 기존 측정에서 Bold preload 제거를 적용하고 분할은 채택하지 않았다. | 굵은 글씨가 폴백 글꼴로 먼저 보일 수 있다. | [2026-11-05 측정 원문](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/performance/2026-11-05-font-loading-remeasure.md). |
@@ -40,9 +40,9 @@ Storybook 자체의 유지·폐기를 재비교한 기록으로 해석하지 않
 
 | 현재 규칙 | 문제와의 연결 | 코드·검증을 찾을 곳 |
 |---|---|---|
-| DTO 검증·변환을 요청 경계에 둔다. | 모르는 응답을 정상 데이터로 바꾸지 않기 위한 선택이다. | [구조](structure.md), [응답 스키마 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/348-response-schema/result.md). |
-| 이전 세션의 쓰기는 요청과 후처리 모두 막는다. | 오프라인 재개와 계정 전환이 겹치는 문제를 막는다. | [세션 문제 사례](troubleshooting.md), [#594](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/594-stale-session-writes/result.md). |
-| PM이 본 버전과 실제 제출값을 함께 확인한다. | 새 카드·편집 변경 뒤 과거 충돌 확인을 재사용하지 않는다. | [AI 결과 화면](ai-result-ui.md), [#512](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/512-merged-approval/result.md). |
+| DTO 검증·변환을 요청 경계에 둔다. | 모르는 응답을 정상 데이터로 바꾸지 않기 위한 선택이다. | [구조](structure.md), [응답 스키마 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m3/work-items/348-response-schema/result.md). |
+| 이전 세션의 쓰기는 요청과 후처리 모두 막는다. | 오프라인 재개와 계정 전환이 겹치는 문제를 막는다. | [세션 문제 사례](troubleshooting.md), [#594](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m3/work-items/594-stale-session-writes/result.md). |
+| PM이 본 버전과 실제 제출값을 함께 확인한다. | 새 카드·편집 변경 뒤 과거 충돌 확인을 재사용하지 않는다. | [AI 결과 화면](ai-result-ui.md), [#512](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m6/work-items/512-merged-approval/result.md). |
 | 완료 표시는 조회한 서버 상태를 따른다. | 업로드 완료·승인 성공을 전체 처리·외부 동기화 완료와 혼동하지 않는다. | [M5](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m5/result.md), [M6](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m6/result.md). |
 | 모의 흐름과 실제 운영 성공을 구분한다. | MSW가 실제 API 차이를 숨기는 문제를 줄인다. | [검증 경계](verification.md), [대표 계약](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/contracts/frontend-api-contract.md). |
 

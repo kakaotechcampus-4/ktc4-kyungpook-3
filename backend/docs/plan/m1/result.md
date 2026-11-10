@@ -97,7 +97,7 @@ AI 정리 지연 중의 완료 표시 기준도 확정하지 않았다. 별도 �
 - 계정·모든 세션·비밀번호 재설정·푸시와 개인 프로필·연결·별칭을 삭제한다. 남은 공동 기록은 비식별 Member를 참조한다. 단독 활성 공간은 업무 내용을 지우고 파일 정리가 끝나면 임시 식별 행도 삭제한다. 같은 이메일·카카오 재가입은 새 User와 새 초대만 사용한다.
 - 독립 `PrivacyCleanup`에 backend·AI 완료를 따로 기록한다. 기존 파일 정리 워커가 backend 삭제를 재시도하고, AI는 실제 로컬 사본 정리 후 임대 토큰으로 확인한다. 두 완료가 교차해도 최신 행 잠금으로 최종 삭제를 판정한다. 세션 종료는 소켓 폐기와 송수신 재검사로 반영한다.
 - `identity_epoch`로 탈퇴 이전 명단·추론 결과의 늦은 저장을 거절한다. AI는 계산 시작 시의 세대를 유지한다. 필드별 담당자·발화자 소유와 알림의 thread·bundle·watch·reply 연결로 구조화 개인정보를 정리하며 임의 본문을 이름 문자열로 치환하지 않는다.
-- 명시적인 `include_withdrawn=true` 조회만 기록용 익명 Member를 포함한다. 새 담당자·초대·재촉 목록은 활성 명단을 유지한다. 웹 화면·PM 이전·응답 유실 재시도·영수증 복원은 [FE 결과](../../../../frontend/docs/issues/575-account-withdrawal/result.md)에 있다.
+- 명시적인 `include_withdrawn=true` 조회만 기록용 익명 Member를 포함한다. 새 담당자·초대·재촉 목록은 활성 명단을 유지한다. 웹 화면·PM 이전·응답 유실 재시도·영수증 복원은 [FE 결과](../../../../frontend/docs/plan/m4/work-items/575-account-withdrawal/result.md)에 있다.
 
 스키마 head는 `e575b02d8a31`이며 익명 주체의 `e575a01c9d42` 다음이다. 공개 요청·오류는 [FE 대표 계약](../../../../frontend/docs/contracts/frontend-api-contract.md#계정-탈퇴와-정리-상태-575-2026-11-09), 정리 claim·ack와 세대는 [BE–AI 계약](../../contracts/backend-ai-contract.md#계정-탈퇴의-개인정보-정리-575-2026-11-09), 선택 근거는 [정리 프로토콜 결정](basis-for-decision/2026-11-09-withdrawal-cleanup-protocol.md)에 기록했다.
 
@@ -159,7 +159,7 @@ AI 정리 지연 중의 완료 표시 기준도 확정하지 않았다. 별도 �
 
 [API 회귀](../../../tests/api/test_consents_api.py)의 A 계정 기대 헤더·B 계정 실제 쿠키 조합에서 기존 GET·POST가 모두 200인 반례를 SQLite·PostgreSQL로 각각 확인했다. 수정 뒤 `pytest tests/api/test_consents_api.py -q`는 30 통과·SQLite 전용 변형 4 건너뜀이다. 잘못된 계정 요청의 409·전체 무저장과 올바른 B 헤더의 B 계정만 저장을 확인했다. 격리 PostgreSQL `mm566_owner`를 사용했으며 운영 DB와 실사용자 데이터는 사용하지 않았다.
 
-FE는 이 헤더를 항상 보내고 계정 변경 때 새로고침을 안내한다. 현재 문서 공개 상태는 준비 중이며 실제 정책 게시·초안 동의 수집은 하지 않았다. 전체 서버 접근 차단과 가입·동의의 원자적 저장은 이번 변경 범위가 아니다. [대표 계약](../../../../frontend/docs/contracts/frontend-api-contract.md#415-이용약관개인정보처리방침-동의-564-be-제안-fe-합의-전)과 [화면 결과](../../../../frontend/docs/issues/566-consent-connection/result.md)에 구현과 공개 제약을 구분했다.
+FE는 이 헤더를 항상 보내고 계정 변경 때 새로고침을 안내한다. 현재 문서 공개 상태는 준비 중이며 실제 정책 게시·초안 동의 수집은 하지 않았다. 전체 서버 접근 차단과 가입·동의의 원자적 저장은 이번 변경 범위가 아니다. [대표 계약](../../../../frontend/docs/contracts/frontend-api-contract.md#415-이용약관개인정보처리방침-동의-564-be-제안-fe-합의-전)과 [화면 결과](../../../../frontend/docs/plan/m4/work-items/566-consent-connection/result.md)에 구현과 공개 제약을 구분했다.
 
 ## 2026-11-11 팀원 디스코드 계정의 서버 멤버 확인
 

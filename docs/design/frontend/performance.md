@@ -88,16 +88,16 @@
 
 1만 건의 첫 실행 범위는 전 56.4~71.7ms, 후 1.43~1.72ms다. 두 번째는 전 59.0~69.4ms, 후 1.46~1.58ms다. 별도 CPU 프로파일에서 반복 `Date.parse`가 주요 비용으로 확인됐다. 정렬 비교 때마다 날짜를 다시 읽던 비용을 완료 회의당 한 번으로 줄였다.
 
-실제 수십 건에서는 절약 시간이 수십 µs여서 사용자 체감 개선을 주장하지 않았다. 브라우저 대시보드 전체 렌더 시간은 재지 않았고 추가 `useMemo`도 넣지 않았다. 당시 CPU 사용률은 다른 작업으로 39~65%였다. 현재 함수에는 후속 인자도 추가돼 있으므로 과거 결과를 현재 함수의 새 측정으로 보지 않는다. 근거와 전체 크기별 범위는 [#350 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/refactor/result-latest-done-meeting.md)에 있다.
+실제 수십 건에서는 절약 시간이 수십 µs여서 사용자 체감 개선을 주장하지 않았다. 브라우저 대시보드 전체 렌더 시간은 재지 않았고 추가 `useMemo`도 넣지 않았다. 당시 CPU 사용률은 다른 작업으로 39~65%였다. 현재 함수에는 후속 인자도 추가돼 있으므로 과거 결과를 현재 함수의 새 측정으로 보지 않는다. 근거와 전체 크기별 범위는 [#350 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/refactor/work-items/350-latest-done-meeting/result.md)에 있다.
 
 ## 대기 경험은 별도로 개선했다
 
 | 작업 | 구현·검증 근거 | 발표에서 구분할 점 |
 |---|---|---|
 | 태스크 보기 코드 분할 | [M8-A 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/result-a.md). 보드·캘린더·간트가 별도 청크이며 리스트 진입 시 로드하지 않고 선택 시 불러오는지 검사했다. | 초기 로딩과 선택한 보기의 코드 대기를 나누는 구현이다. 이 변경만의 첫 화면 LCP 차이는 측정하지 않았다. |
-| 셸 탭의 코드·첫 데이터 사전 조회 | [#536](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/536-shell-tab-prefetch/result.md). 탭 접근 의도·유휴 시간에 받고 데이터 절약 설정을 고려한다. 과거 다섯 탭 E2E는 API를 350ms 늦추고 사전 조회 완료 뒤 첫 이동의 뼈대·빈 자리가 없는지 검사했다. | 현재 셸은 프로젝트 맵을 포함한 여섯 탭이다. 모든 방문에서 대기가 0이라는 결과는 아니다. 사전 요청량과 캐시 사용이 늘어난다. |
-| 로딩 표시의 번쩍임 완화 | [#508](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/508-skeleton-delay/result.md). 200ms 뒤 표시하고 한 번 보이면 최소 400ms 유지한다. | API나 계산을 빠르게 하는 변경이 아니다. 이미 받은 내용 표시를 잠시 늦출 수 있다. |
-| 로그인 직후 스플래시 순서 정리 | [#539](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/539-login-splash-instant/result.md). 덮개를 즉시 표시해 뼈대가 먼저 보이는 순서를 막았다. | 300ms는 제거한 표시 대기 설정이다. 로그인 응답이나 전체 진입 시간이 300ms 줄었다는 측정이 아니다. |
+| 셸 탭의 코드·첫 데이터 사전 조회 | [#536](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m3/work-items/536-shell-tab-prefetch/result.md). 탭 접근 의도·유휴 시간에 받고 데이터 절약 설정을 고려한다. 과거 다섯 탭 E2E는 API를 350ms 늦추고 사전 조회 완료 뒤 첫 이동의 뼈대·빈 자리가 없는지 검사했다. | 현재 셸은 프로젝트 맵을 포함한 여섯 탭이다. 모든 방문에서 대기가 0이라는 결과는 아니다. 사전 요청량과 캐시 사용이 늘어난다. |
+| 로딩 표시의 번쩍임 완화 | [#508](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m2/work-items/508-skeleton-delay/result.md). 200ms 뒤 표시하고 한 번 보이면 최소 400ms 유지한다. | API나 계산을 빠르게 하는 변경이 아니다. 이미 받은 내용 표시를 잠시 늦출 수 있다. |
+| 로그인 직후 스플래시 순서 정리 | [#539](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m4/work-items/539-login-splash-instant/result.md). 덮개를 즉시 표시해 뼈대가 먼저 보이는 순서를 막았다. | 300ms는 제거한 표시 대기 설정이다. 로그인 응답이나 전체 진입 시간이 300ms 줄었다는 측정이 아니다. |
 
 ## 측정 후 채택하지 않은 시도
 

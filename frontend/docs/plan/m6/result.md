@@ -20,9 +20,9 @@
 - **계약·데이터 계층** — 태스크 목록·상세·이력 Query와 상태 변경·Notion 재시도 API, `version`·`notion_sync_status` 매핑(반영 완료는 `synced`뿐), 승인 처리 본문 판정(`planApprovalResolution`)과 409 `APPROVAL_CONFLICT`·`APPROVAL_ALREADY_RESOLVED` 해석. [taskApi](../../../src/entities/task/api/taskApi.ts), [Task mapper](../../../src/entities/task/model/mapper.ts), [승인 판정](../../../src/entities/approval/model/resolution.ts), [resolveApproval](../../../src/entities/approval/api/resolveApproval.ts).
 - **MSW** — 세션 기반 처리자·변경자, PM 쓰기 권한, 버전·충돌, 생성 승인 보완(`task_overrides`)의 검증 후 일괄 적용, 추출 항목 `task_id` 연결, Notion 대기·실패·재시도. M6 시나리오 9개(`tasks-default` 등). [승인 handler](../../../src/shared/mock/handlers/approval.ts), [태스크 handler](../../../src/shared/mock/handlers/task.ts), [태스크 상태](../../../src/shared/mock/task-state.ts), [시나리오](../../../src/shared/mock/scenarios.ts).
 - **태스크 목록·상세** — 역할별 탭·개수·대기 승인 병합·정렬, URL `tab`·`due` 조건, 상세의 담당자·상태·마감·진행률·막힌 사유·연결 회의·이력, PM의 낙관적 상태 변경(해당 태스크만 복구). [TaskBoard](../../../src/widgets/task-board/ui/TaskBoard.tsx), [TaskDetail](../../../src/widgets/task-detail/ui/TaskDetail.tsx), [상태 변경](../../../src/features/task-status/model/useTaskStatusChange.ts).
-- **확인 필요 상세** — 근거·원문·확정값 구분, 개발 MSW에서만 `보완하기`, 실 API에서는 필수값이 빠진 생성 승인의 `승인` 비활성화와 사유, 변경 승인의 현재값·제안값 비교, 충돌 재확인, 처리 결과와 생성·변경된 태스크 링크. [ApprovalReview](../../../src/widgets/approval-review/ui/ApprovalReview.tsx), [승인 처리](../../../src/features/approval-resolve/model/useApprovalResolve.ts), [보완 폼](../../../src/features/approval-resolve/ui/TaskCreateOverridesForm.tsx), 당시 `transport.ts`(#311에서 삭제).
+- **확인 필요 상세** — 근거·원문·확정값 구분, 개발 MSW에서만 `보완하기`, 실 API에서는 필수값이 빠진 생성 승인의 `승인` 비활성화와 사유, 변경 승인의 현재값·제안값 비교, 충돌 재확인, 처리 결과와 생성·변경된 태스크 링크. [ApprovalReview](../../../src/widgets/approval-review/ui/ApprovalReview.tsx), [승인 처리](../../../src/features/approval-resolve/model/useApprovalResolve.ts), [보완 폼](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/7b90dcf16f5909cc28c62136f27404e3f1a5adc2/frontend/src/features/approval-resolve/ui/TaskCreateOverridesForm.tsx), 당시 `transport.ts`(#311에서 삭제).
 - **Notion 상태** — 서버 상태만 따르는 문구, `pending`인 동안 3초 polling, PM의 반영 실패 재시도. [TaskNotionSyncStatus](../../../src/features/task-notion-sync/ui/TaskNotionSyncStatus.tsx), [useTaskNotionSync](../../../src/features/task-notion-sync/model/useTaskNotionSync.ts).
-- **S5 검증 추가** — Storybook 다섯 묶음([목록](../../../src/widgets/task-board/ui/TaskBoard.stories.tsx), [상세](../../../src/widgets/task-detail/ui/TaskDetail.stories.tsx), [확인 필요 상세](../../../src/widgets/approval-review/ui/ApprovalReview.stories.tsx), [보완 폼](../../../src/features/approval-resolve/ui/TaskCreateOverridesForm.stories.tsx), [Notion 상태](../../../src/features/task-notion-sync/ui/TaskNotionSyncStatus.stories.tsx))과 그 play 회귀([stories.sb.ts](../../../e2e/storybook/stories.sb.ts)), 앱 E2E [tasks-approval.e2e.ts](../../../e2e/tasks-approval.e2e.ts). 제품 코드는 바꾸지 않았다.
+- **S5 검증 추가** — Storybook 다섯 묶음([목록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/ed2585631203156d789a0acb57561e4eaaeaee16/frontend/src/widgets/task-board/ui/TaskBoard.stories.tsx), [상세](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/039ae73033d0c2878fae12733063a8f66de41461/frontend/src/widgets/task-detail/ui/TaskDetail.stories.tsx), [확인 필요 상세](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/58923cff9cd94235ea52955d7f41fef4ab75c1c7/frontend/src/widgets/approval-review/ui/ApprovalReview.stories.tsx), [보완 폼](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/2eb0e52baa1866d8e25001239af5a61e77e57398/frontend/src/features/approval-resolve/ui/TaskCreateOverridesForm.stories.tsx), [Notion 상태](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/14727b2a35a0715d9f4b00b028a089ad936490a3/frontend/src/features/task-notion-sync/ui/TaskNotionSyncStatus.stories.tsx))과 그 play 회귀([stories.sb.ts](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/58923cff9cd94235ea52955d7f41fef4ab75c1c7/frontend/e2e/storybook/stories.sb.ts)), 앱 E2E [tasks-approval.e2e.ts](../../../e2e/tasks-approval.e2e.ts). 제품 코드는 바꾸지 않았다.
 
 ## 완료조건 확인
 
@@ -77,7 +77,7 @@
 ### S5에서 추가한 검증
 
 - Storybook 다섯 묶음 32개(목록 7 · 상세 6 · 확인 필요 상세 9 · 보완 폼 3 · Notion 상태 7). 정상·로딩·빈 상태·오류·권한(팀원)·보완 누락·충돌·처리 결과(승인·반려)·입력 오류·재시도 오류를 포함한다. Storybook 빌드는 개발 MSW가 아니라 처리 경로가 `live`다 — 확인 필요 상세 스토리에 `보완하기`가 없고, 보완 폼은 따로 그린다.
-- [stories.sb.ts](../../../e2e/storybook/stories.sb.ts)에 M6 스토리 play 통과·handler 누락(404) 검사를 M5와 같은 방식으로 추가했다. 기존 단언은 그대로다.
+- [stories.sb.ts](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/58923cff9cd94235ea52955d7f41fef4ab75c1c7/frontend/e2e/storybook/stories.sb.ts)에 M6 스토리 play 통과·handler 누락(404) 검사를 M5와 같은 방식으로 추가했다. 기존 단언은 그대로다.
 - [tasks-approval.e2e.ts](../../../e2e/tasks-approval.e2e.ts) 13개 — 회의록에서 확인 필요로 이동·보완·승인·복귀 갱신, 승인 → `반영됨`(MSW), 팀원 승인 URL 차단, 키보드, 1024·1440·1920px × 목록·상세·확인 필요 상세.
 - MSW에는 Notion 대기열 워커가 없다. E2E는 통합 테스트처럼 모의 db의 태스크 `notion_sync_status`를 `synced`로 바꾸고, 다음 polling 응답 본문이 `synced`임을 받은 뒤에 `반영됨`을 단언한다. 실제 Notion 반영 검증이 아니다.
 
@@ -104,12 +104,12 @@ S1~S4의 통합 테스트와 브라우저 확인은 각 단계 감독 기록에 
 - **Storybook의 승인 처리 경로:** Storybook 빌드는 `live`라 보완 흐름은 보완 폼 단독 스토리와 개발 MSW E2E로 확인했다.
 - **확인 필요 구역:** 대기 승인을 태스크 행 안에 끼우지 않고 `확인 필요 목록` 카드로 태스크 목록 위에 둔다. 탭 개수·정렬·팀원 승인 조회 0회는 같다. 근거는 [확인 필요를 카드 구역으로 두는 선택](basis-for-decision/2026-10-11-task-list-approval-section.md).
 - **목록에서 승인한 뒤:** 카드는 대기 줄에서 빠지고 만든 태스크는 `태스크 목록`에 온다. 처리 결과 문장·생성된 태스크의 Notion polling은 승인 상세와 태스크 상세에 남긴다(계획 §4-5·§4-8).
-- **리스트 본문 폭:** 리스트 `main`만 960px 이하로 가운데에 둔다. 보드·캘린더·간트는 셸 폭이다. 2026-11-06 #466에서 보드도 960px로 바꿨다([결과](../../issues/466-board-width/result.md)). AC-09 E2E가 보는 목록·상세·확인 필요 상세에는 넓은 보기가 없다.
+- **리스트 본문 폭:** 리스트 `main`만 960px 이하로 가운데에 둔다. 보드·캘린더·간트는 셸 폭이다. 2026-11-06 #466에서 보드도 960px로 바꿨다([결과](../m8/work-items/466-board-width/result.md)). AC-09 E2E가 보는 목록·상세·확인 필요 상세에는 넓은 보기가 없다.
 - **늦은 상태 변경 성공:** 공간 전환이나 역할 변경 뒤에도 세션이 살아 있으면, 도착한 성공은 아직 남아 있는 그 공간의 목록·상세 캐시를 서버 값으로 갱신한다. S3 검증은 이를 실패로 봤으나 §3.6의 정합으로 보고 재작업하지 않았다. [기록](basis-for-decision/2026-10-11-late-status-success-keeps-workspace-cache.md).
 
 ## 태스크 상세 재조회 실패 안내 (#236, 2026-10-18)
 
-[계획](../refactor/plan-task-detail-refetch-error.md)에 따라 M6 구현 이후 발견된 결함을 수정했다. 상세를 연 채 Notion `반영 대기`를 polling하다 재조회가 실패하면 polling은 멈추는데 화면은 안내 없이 마지막 `반영 대기`를 보였다([E-06](../m7/errors/E-06-m6-detail-refetch-error-hidden.md)).
+[계획](../refactor/work-items/236-task-detail-refetch-error/plan.md)에 따라 M6 구현 이후 발견된 결함을 수정했다. 상세를 연 채 Notion `반영 대기`를 polling하다 재조회가 실패하면 polling은 멈추는데 화면은 안내 없이 마지막 `반영 대기`를 보였다([E-06](../m7/errors/E-06-m6-detail-refetch-error-hidden.md)).
 
 ### 변경
 
@@ -142,8 +142,8 @@ S1~S4의 통합 테스트와 브라우저 확인은 각 단계 감독 기록에 
 
 ### 후속 (2026-10-30)
 
-- [TaskDetail.stories.tsx](../../../src/widgets/task-detail/ui/TaskDetail.stories.tsx)에 갱신 실패 스토리 `갱신_실패`를 추가했고 Storybook은 105건 통과했다. 끊어졌던 `queryView` 링크 5개도 연결했다.
-- Codex 읽기 전용 독립 검증: AC-01~08 충족(AC-03은 MSW 기준), AC-09는 착수 전 기준 대비 보존이 검증불가다. 최초 전체 Vitest·관련 E2E에서 timeout 각 1건이 있었고 단독·겹침 없는 재실행에서 통과했다. 세부와 제한은 [#236 결과](../refactor/result-task-detail-refetch-error.md)에 있다.
+- [TaskDetail.stories.tsx](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/039ae73033d0c2878fae12733063a8f66de41461/frontend/src/widgets/task-detail/ui/TaskDetail.stories.tsx)에 갱신 실패 스토리 `갱신_실패`를 추가했고 Storybook은 105건 통과했다. 끊어졌던 `queryView` 링크 5개도 연결했다.
+- Codex 읽기 전용 독립 검증: AC-01~08 충족(AC-03은 MSW 기준), AC-09는 착수 전 기준 대비 보존이 검증불가다. 최초 전체 Vitest·관련 E2E에서 timeout 각 1건이 있었고 단독·겹침 없는 재실행에서 통과했다. 세부와 제한은 [#236 결과](../refactor/work-items/236-task-detail-refetch-error/result.md)에 있다.
 
 ### 계획 대비 변경
 
@@ -164,7 +164,7 @@ S1~S4의 통합 테스트와 브라우저 확인은 각 단계 감독 기록에 
 - [공간 전환·역할 변경 뒤 늦은 상태 변경 성공이 남아 있는 공간 캐시를 갱신하는 선택](basis-for-decision/2026-10-11-late-status-success-keeps-workspace-cache.md)
 - [보완값을 승인 요청 때까지 화면에 두는 선택](basis-for-decision/2026-10-11-approval-overrides-held-until-approve.md)
 - [조회 오류 뒤 Notion polling을 재진입까지 멈추는 선택](basis-for-decision/2026-10-11-notion-polling-stops-on-query-error.md)
-- [태스크 상세 재조회 실패 안내 계획 (#236)](../refactor/plan-task-detail-refetch-error.md) · [결과](../refactor/result-task-detail-refetch-error.md)
+- [태스크 상세 재조회 실패 안내 계획 (#236)](../refactor/work-items/236-task-detail-refetch-error/plan.md) · [결과](../refactor/work-items/236-task-detail-refetch-error/result.md)
 - [대표 계약](../../contracts/frontend-api-contract.md) 「M6 태스크·승인 처리 경계」
 - [M5 인수인계](../m5/m5-handoff.md)
 

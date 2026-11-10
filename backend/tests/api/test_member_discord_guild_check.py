@@ -221,6 +221,18 @@ def test_patch_to_a_user_not_in_guild_keeps_the_old_account(client, mdb, mseed, 
     assert mseed["carol"].discord_user_id == "d_carol"
 
 
+def test_moving_an_account_not_in_guild_keeps_it_on_the_holder(client, mdb, mseed, guild, lookups):
+    lookups.error = DiscordApiError("HTTP 404 (Unknown Member)", status_code=404, discord_code=10007)
+
+    r = client.patch(
+        f"{API}/members/{mseed['bob'].member_id}", json={"discord_user_id": "d_alice", "move_discord_link": True}
+    )
+
+    assert (r.status_code, _code(r)) == (409, "DISCORD_USER_NOT_IN_GUILD")
+    mdb.refresh(mseed["alice"]), mdb.refresh(mseed["bob"])
+    assert (mseed["alice"].discord_user_id, mseed["bob"].discord_user_id) == ("d_alice", None)
+
+
 def test_patch_without_discord_integration_is_rejected(client, mdb, mseed, lookups, monkeypatch):
     monkeypatch.setenv("DISCORD_BOT_TOKEN", "bot-token")
     mdb.execute(delete(Integration).where(Integration.workspace_id == mseed["ws"]))
