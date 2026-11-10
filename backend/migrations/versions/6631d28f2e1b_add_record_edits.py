@@ -10,7 +10,7 @@ position 이 문서의 순서와 같아 결정은 정확히 맞는다.
 되돌리면 두 테이블과 고친 값이 지워진다. 채운 JSON 키는 남지만 옛 코드는 읽지 않는다.
 
 Revision ID: 6631d28f2e1b
-Revises: 9e4b2c7a1f53
+Revises: b20d029aec7b
 Create Date: 2026-11-10 12:00:00.000000
 
 """
@@ -23,7 +23,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '6631d28f2e1b'
-down_revision: Union[str, Sequence[str], None] = '9e4b2c7a1f53'
+down_revision: Union[str, Sequence[str], None] = 'b20d029aec7b'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
