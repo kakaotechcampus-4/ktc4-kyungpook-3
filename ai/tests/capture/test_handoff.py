@@ -257,8 +257,8 @@ def test_from_env_needs_the_base_url_and_the_token_only(monkeypatch):
 
 
 def test_unresolved_second_person_and_pronouns_are_not_sent_as_aliases():
-    """"네가", "그분", "백엔드 리더" 는 별칭이 아니다. 이름으로 풀리지 않았으면 BE 에 조회를 시키지 않는다."""
-    for kind, mention in (("second", "네가"), ("thirdpronoun", "그분이"), ("thirdrole", "백엔드 리더가")):
+    """"네가", "그분" 은 별칭이 아니다. 이름으로 풀리지 않았으면 BE 에 조회를 시키지 않는다."""
+    for kind, mention in (("second", "네가"), ("thirdpronoun", "그분이")):
         t = _task(assignee_type=kind, assignee_mention=mention, assignee_resolved=None)
         assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] is None, kind
     t = _task(assignee_type="thirdname", assignee_mention="민수", assignee_resolved=None)
@@ -271,9 +271,16 @@ def test_thirdname_sends_the_original_mention_even_when_resolved():
     assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "화은이가"
     t = _task(assignee_type="first", assignee_mention=None, assignee_resolved="민수")
     assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] is None
-    # 역할 지목은 이번엔 그대로 푼 이름을 보낸다(원문 전송은 별도 이슈)
+
+
+def test_thirdrole_sends_the_original_role_mention():
+    """역할 지목은 원문만 보낸다(#522). BE 가 그 글자로 역할 별칭을 찾고, 승인 때 배운다."""
     t = _task(assignee_type="thirdrole", assignee_mention="백엔드 리더가", assignee_resolved="환")
-    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "환"
+    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "백엔드 리더가"
+    t = _task(assignee_type="thirdrole", assignee_mention="백엔드 리더가", assignee_resolved=None)
+    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "백엔드 리더가"
+    t = _task(assignee_type="thirdrole", assignee_mention=None, assignee_resolved="환")
+    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] is None
 
 
 def test_first_group_none_never_send_assignee_text():
@@ -1484,3 +1491,60 @@ def test_chat_channels_wrong_token_is_unauthenticated():
     with pytest.raises(H.BeError) as e:
         H.BeClient("http://be.local", session=FakeBe(), service_token="틀린 토큰").chat_channels()
     assert e.value.code == "UNAUTHENTICATED" and e.value.status == 401
+
+
+def test_stt_progress_payload_preserves_timeout_auth_and_privacy_epoch():
+    fake = FakeBe()
+    fake.meetings['m1'] = {'meeting_id': 'm1', 'workspace_id': 'ws-1', 'status': 'processing'}
+    manifest = {**_staged(), 'workspace_id': 'ws-1', 'identity_epoch': 7}
+    handoff = _handoff(fake)
+    handoff.report_stage(manifest, 'stt', stt={'done': 0, 'total': 3})
+    handoff.report_stage(manifest, 'stt', stt={'done': 1, 'total': 3})
+    assert fake.meetings['m1']['stt'] == {'done': 1, 'total': 3}
+    assert fake.calls[-1] == ('PATCH', '/meetings/m1/stage', {'stage': 'stt', 'stt': {'done': 1, 'total': 3}})
+    assert fake.headers[-1] == {'X-Service-Token': 'svc-token', 'X-Privacy-Epoch': '7'}
+    assert fake.timeouts[-1] == H.STAGE_TIMEOUT_S
+    handoff.report_stage(manifest, 'sources')
+    assert fake.meetings['m1']['stt'] is None
+
+
+@pytest.mark.parametrize('stage,stt', [
+    ('sources', {'done': 0, 'total': 1}),
+    ('stt', {'done': False, 'total': 1}),
+    ('stt', {'done': 0, 'total': True}),
+    ('stt', {'done': -1, 'total': 1}),
+    ('stt', {'done': 2, 'total': 1}),
+    ('stt', {'done': 0, 'total': 0}),
+    ('stt', {'done': 0, 'total': 2**31}),
+])
+def test_invalid_stt_progress_never_reaches_transport(stage, stt):
+    fake = FakeBe()
+    with pytest.raises(ValueError):
+        _client(fake).report_stage('m1', stage, stt=stt)
+    assert fake.calls == []
+
+
+def test_stt_hook_throttles_failed_attempts_and_always_sends_initial_and_final(monkeypatch):
+    fake = FakeBe()
+    fake.meetings['m1'] = {'meeting_id': 'm1', 'workspace_id': 'ws-1', 'status': 'processing'}
+    fake.stage_fail = 500
+    clock = iter([0.0, 0.5, 1.9, 2.0, 2.1, 2.2])
+    monkeypatch.setattr(H.time, 'monotonic', lambda: next(clock))
+    handoff = _handoff(fake)
+    report = handoff.stt_progress(_staged())
+    for done in (0, 1, 2, 3, 5):
+        report(done, 5)
+    assert [body['stt']['done'] for _, _, body in fake.calls] == [0, 3, 5]
+    handoff.stt_progress(_staged())(0, 5)
+    assert fake.calls[-1][2]['stt'] == {'done': 0, 'total': 5}
+
+
+def test_stt_hook_propagates_meeting_deletion():
+    class Deleted:
+        def request(self, *args, **kwargs):
+            return fake_be._err(410, 'MEETING_DELETED')
+
+    handoff = H.Handoff(H.BeClient('http://be', session=Deleted()))
+    with pytest.raises(H.MeetingEnded) as error:
+        handoff.stt_progress(_staged())(0, 2)
+    assert error.value.code == 'MEETING_DELETED'

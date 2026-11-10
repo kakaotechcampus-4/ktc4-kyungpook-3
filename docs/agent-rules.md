@@ -34,7 +34,7 @@
 - 중요한 선택 기록: decision-record
 - 문서 작업 마무리 검사: docs-audit
 
-해당 작업에 필요한 스킬과 참조만 읽는다. 상세 절차·양식은 각 스킬에 있으며, 문서 구조·탐색이 필요할 때 [문서 안내](README.md)를 확인한다. 스킬 부재는 수정 권한을 확대하지 않는다.
+해당 작업에 필요한 스킬과 참조만 읽는다. 상세 절차·양식은 각 스킬에 있으며, 문서 구조·탐색이 필요할 때 [문서 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/docs/README.md)를 확인한다. 스킬 부재는 수정 권한을 확대하지 않는다.
 
 ## 마무리
 
@@ -44,8 +44,8 @@
 
 ## 현재 저장소
 
-Frontend 문서의 진입점은 [파트 README](../frontend/README.md)와 [문서 안내](../frontend/docs/README.md)다. 대표 계약은 `frontend/docs/contracts/`, 전체 계획과 새 마일스톤 구조는 `frontend/docs/plan/`에 있다. `frontend/docs/plan/frontend-plan.md`와 `backend/docs/plan/backend-plan.md`는 보호하는 전체 계획이다.
+Frontend 문서의 진입점은 [파트 README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/README.md)와 [문서 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/README.md)다. 대표 계약은 `frontend/docs/contracts/`, 전체 계획과 새 마일스톤 구조는 `frontend/docs/plan/`에 있다. `frontend/docs/plan/frontend-plan.md`와 `backend/docs/plan/backend-plan.md`는 보호하는 전체 계획이다.
 
-Frontend의 기존 M0~M5 계획 원문은 `frontend/docs/plan/mN/plan.md`에 있다. 이전 경로의 파일과 이동 안내는 삭제했으며 문서는 현재 경로에서만 관리한다. M6~M8의 plan.md도 후속 계획이 작성돼 있으며, 현재 계획·결과 연결은 마일스톤 안내에서 확인한다. 보호 계획에 남은 이동 전 경로 표기는 [연결 안내](../frontend/docs/plan/README.md)의 현재 문서 링크로 확인한다. AI 문서와 frontend 고유·공유 자료는 기존 위치를 유지한다.
+Frontend의 기존 M0~M5 계획 원문은 `frontend/docs/plan/mN/plan.md`에 있다. 이전 경로의 파일과 이동 안내는 삭제했으며 문서는 현재 경로에서만 관리한다. M6~M8의 plan.md도 후속 계획이 작성돼 있으며, 현재 계획·결과 연결은 마일스톤 안내에서 확인한다. 보호 계획에 남은 이동 전 경로 표기는 [연결 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/README.md)의 현재 문서 링크로 확인한다. AI 문서와 frontend 고유·공유 자료는 기존 위치를 유지한다.
 
-Backend 문서의 진입점은 [파트 README](../backend/README.md)와 [문서 안내](../backend/docs/README.md)다. 봇 계약은 `backend/docs/contracts/`, 웹 화면용 API 계약은 frontend 대표 계약에 있다. M0~M7의 plan.md는 초기화한 빈 파일이며 마일스톤 연결은 [M0~M7 안내](../backend/docs/plan/README.md)에서 확인한다.
+Backend 문서의 진입점은 [파트 README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md)와 [문서 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/README.md)다. 봇 계약은 `backend/docs/contracts/`, 웹 화면용 API 계약은 frontend 대표 계약에 있다. M0~M7의 plan.md는 초기화한 빈 파일이며 마일스톤 연결은 [M0~M7 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/README.md)에서 확인한다.

@@ -4,6 +4,7 @@ export type {
   ApprovalResolveFailure,
   ApprovalStatus,
   ApprovalMissing,
+  AsrSuspect,
   MergedApprovalItem,
   TaskCreateApproval,
   TaskUpdateApproval,
@@ -36,6 +37,7 @@ export {
 } from './model/resolution'
 export { ApprovalNotResolvableError, resolveApproval } from './api/resolveApproval'
 export { sortByWaiting } from './lib/sortByWaiting'
+export { asrSuspectLine } from './lib/asrSuspect'
 export { dueFillSuggestion } from './lib/dueFill'
 export { approvalDetailQueryOptions } from './api/approvalDetail'
 export { approvalIds, pendingApprovalListQueryOptions } from './api/pendingApprovals'

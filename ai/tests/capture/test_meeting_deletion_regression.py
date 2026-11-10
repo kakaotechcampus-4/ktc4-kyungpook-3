@@ -168,3 +168,32 @@ async def test_worker_purges_without_upload_intake_enabled(tmp_path):
     await worker._purge_once()
     assert client.acks == [('m576', 'token')]
     assert not path.exists() and not list(transcripts.iterdir())
+
+
+def test_deletion_discovered_in_track_progress_stops_storage_and_purges_after_release(tmp_path):
+    rec, path, data = _session(tmp_path)
+    fake = FakeBe()
+    handoff = _be(fake)
+    handoff.start(data)
+    R.save_manifest(path, data)
+    actual = fake.request
+    progress = []
+
+    def request(method, url, **kwargs):
+        body = kwargs.get('json') or {}
+        if method == 'PATCH' and url.endswith('/stage') and 'stt' in body:
+            progress.append(body['stt'])
+            if body['stt']['done'] > 0:
+                return _Resp(410, {'error': {'code': 'MEETING_DELETED', 'message': 'deleted'}})
+        return actual(method, url, **kwargs)
+
+    fake.request = request
+    result = R.recover_one(rec, path, claims=R.Claims(), backend=EchoStt(), model_name='echo', workers=1,
+                           transcripts_dir=tmp_path / 'transcripts', handoff=handoff)
+    assert progress[0] == {'done': 0, 'total': 2} and progress[-1]['done'] > 0
+    assert result['ended'] and result['deleted'] and result['error'] is None and result['attempts'] == 0
+    assert not any(route.endswith('/sources') or route.endswith('/fail') or route == '/extractions'
+                   for _, route, _ in fake.calls)
+    assert not (tmp_path / 'transcripts' / f"session_{data['session']}.lines.json").exists()
+    assert not path.exists() and not (rec / data['session']).exists()
+    assert deleted(rec, 'm1')
