@@ -16,6 +16,7 @@ import hashlib
 import logging
 import secrets
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
@@ -608,9 +609,7 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     previous_topics = set(
         db.scalars(select(TopicMeeting.topic_id).where(TopicMeeting.meeting_id == meeting.meeting_id))
     )
-    previous_decisions = dict(db.execute(
-        select(Decision.decision_id, Decision.text).where(Decision.meeting_id == meeting.meeting_id)
-    ).all())
+    previous_decisions = _decision_keys(db, meeting.meeting_id)
     frozen = _clear_meeting(db, meeting.meeting_id, extraction_id, keep_human=True)
     kept_topics = set(
         db.scalars(select(TopicMeeting.topic_id).where(TopicMeeting.meeting_id == meeting.meeting_id))
@@ -660,7 +659,7 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     extraction.summary_claim_token_hash = None
     db.flush()
     if not frozen:
-        _carry_replaced(db, meeting.workspace_id, previous_decisions, details)
+        _carry_replaced(db, meeting.workspace_id, previous_decisions, _decision_keys(db, meeting.meeting_id))
     _relink(db, meeting.workspace_id)
     _delete_orphan_topics(db, previous_topics - set(topics), keep_human=True)
     return SummarySaveResponse(
@@ -798,16 +797,30 @@ def _summarized(db: Session, workspace_id: str) -> list[Extraction]:
     )).all()
 
 
-def _carry_replaced(db: Session, workspace_id: str, previous: dict[str, str], details: list[dict]) -> None:
-    """재요약이 지우고 다시 만든 결정을 다른 회의의 기록이 뒤집었다고 적었으면, 그 사본을 같은 문장의 새 결정으로 옮긴다.
+def _decision_keys(db: Session, meeting_id: str) -> dict[str, tuple[str, str]]:
+    return {
+        decision_id: (topic_id, text)
+        for decision_id, topic_id, text in db.execute(
+            select(Decision.decision_id, Decision.topic_id, Decision.text).where(Decision.meeting_id == meeting_id)
+        )
+    }
+
+
+def _carry_replaced(
+    db: Session, workspace_id: str, previous: dict[str, tuple[str, str]], current: dict[str, tuple[str, str]],
+) -> None:
+    """재요약이 지우고 다시 만든 결정을 다른 회의의 기록이 뒤집었다고 적었으면, 그 사본을 같은 주제·같은 문장의 새 결정으로 옮긴다.
 
     뒤집기는 뒤집은 회의의 것이라 앞 회의의 재요약이 지우지 않는다. 결정을 고친 뒤 회의는 다시 요약해도 뒤집기를 다시 걸지 못한다.
-    문장이 바뀌면 같은 결정인지 알 수 없어 옮기지 않는다. 틀리게 이으면 유효한 결정이 말없이 사라진다.
+    주제나 문장이 바뀌었거나 한 주제에 같은 문장이 둘 이상이면 같은 결정인지 알 수 없어 옮기지 않는다.
+    틀리게 이으면 유효한 결정이 말없이 사라진다.
     """
-    texts: dict[str, str] = {}
-    for detail in details:
-        texts.setdefault(detail["text"], detail["decision_id"])
-    successors = {old_id: texts[text] for old_id, text in previous.items() if text in texts}
+    def unique(keys: dict[str, tuple[str, str]]) -> dict[tuple[str, str], str]:
+        counts = Counter(keys.values())
+        return {key: decision_id for decision_id, key in keys.items() if counts[key] == 1}
+
+    old, new = unique(previous), unique(current)
+    successors = {old[key]: new[key] for key in old.keys() & new.keys()}
     if not successors:
         return
     for extraction in _summarized(db, workspace_id):

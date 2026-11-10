@@ -349,6 +349,54 @@ def test_rerun_that_rewords_a_replaced_decision_does_not_guess_the_link(mdb, mse
     assert _document(mdb, new)["decision_details"][0]["replaces"][0]["text"] == "코드로 합류"
 
 
+def _valid_pairs(db, ws):
+    return sorted((d.topic, d.text) for d in project_map._valid_decisions(db, ws))
+
+
+def _replace_a_login_decision(db, ws, body):
+    """앞 회의가 body 를 내고, 뒤 회의가 앞 회의의 "로그인" 결정 "다음 주에 다시 정한다" 중 첫째를 뒤집는다."""
+    _, early, _ = _meeting(db, ws, started_at=T0 - timedelta(days=9))
+    _, late, _ = _meeting(db, ws)
+    _save(db, early, body)
+    login = db.scalars(
+        select(Decision).join(Topic, Topic.topic_id == Decision.topic_id)
+        .where(Topic.name == "로그인", Decision.text == "다음 주에 다시 정한다").order_by(Decision.position)
+    ).first()
+    _save(db, late, [{"name": "로그인", "decisions": [{"text": "카카오 로그인만", "replaces": [login.decision_id]}]}])
+    return early
+
+
+@pytest.mark.parametrize("late_text", ["카카오 로그인만", "카카오 계정으로만 로그인"], ids=["as_summarized", "edited"])
+def test_rerun_carries_a_replacement_to_the_same_text_under_the_same_topic(mdb, mseed, late_text):
+    ws = mseed["ws"]
+    body = [{"name": "초대", "decisions": [{"text": "다음 주에 다시 정한다"}]},
+            {"name": "로그인", "decisions": [{"text": "다음 주에 다시 정한다"}]}]
+    early = _replace_a_login_decision(mdb, ws, body)
+    if late_text != "카카오 로그인만":
+        _edit_decision(mdb, ws, "카카오 로그인만", text=late_text)
+    before = _valid_pairs(mdb, ws)
+    _requeue(mdb, early)
+
+    _save(mdb, early, body)
+
+    assert before == [("로그인", late_text), ("초대", "다음 주에 다시 정한다")]
+    assert _valid_pairs(mdb, ws) == before
+
+
+def test_rerun_does_not_guess_between_same_texts_under_one_topic(mdb, mseed):
+    ws = mseed["ws"]
+    body = [{"name": "로그인", "decisions": [{"text": "다음 주에 다시 정한다", "reason": "일정"},
+                                         {"text": "다음 주에 다시 정한다", "reason": "비용"}]}]
+    early = _replace_a_login_decision(mdb, ws, body)
+    _requeue(mdb, early)
+
+    _save(mdb, early, body)
+
+    assert _valid_pairs(mdb, ws) == [
+        ("로그인", "다음 주에 다시 정한다"), ("로그인", "다음 주에 다시 정한다"), ("로그인", "카카오 로그인만"),
+    ]
+
+
 def test_rerun_deletes_topic_no_meeting_uses_anymore(mdb, mseed):
     _, extraction, items = _meeting(mdb, mseed["ws"], items=1)
     _save(mdb, extraction, [
