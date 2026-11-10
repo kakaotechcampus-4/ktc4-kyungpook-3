@@ -1716,7 +1716,7 @@ POST .../meetings/upload            multipart/form-data
 ```
 
 - 없거나 다른 워크스페이스의 주제는 404 `TOPIC_NOT_FOUND` 다.
-- 뒤집힌 결정도 나온다. `replaced_by` 가 뒤집은 결정의 ID 이고 `null` 이면 유효하다. 시간순이다.
+- 뒤집힌 결정도 나온다. `replaced_by` 가 뒤집은 결정의 ID 이고 `null` 이면 유효하다. 여러 결정이 뒤집었으면 가장 이른 회의의 결정이다(#605). 시간순이다.
 - 팀원이 지운 결정은 나오지 않는다. 결정의 `state`·`edited` 와 주제의 `edited` 는 §4.4.3 이다(#605).
 
 `GET /meetings/{meeting_id}/summary.md`, `GET /workspaces/{workspace_id}/project-bundle.md?from=2026-09-01&to=2026-11-06`
@@ -1772,7 +1772,7 @@ POST .../meetings/upload            multipart/form-data
 - 떼기는 그 주제와 태스크의 선을 지운다. 맵, 주제 상세, 합본 어디에서도 다시 이어지지 않고 다시 요약해도 그대로다.
 - 이름·설명을 고치거나 합치거나 태스크를 뗀 주제는 `TopicDetailResponse.edited` 가 true 다. 그 주제가 나온 회의를 다시 요약해 AI 가 주제를 빼도 주제와 회의 연결이 남는다.
 - 결정의 `state` 는 `valid`(유효), `invalid`(유효하지 않음), `removed`(지움)다. `valid` 를 보내면 되돌린다. `edited` 는 팀원이 고쳤는가다. `removed` 는 결정 고치기 응답에만 나온다.
-- 지운 결정은 회의록, 요약본, 주제 상세에서 빠진다. 그 결정이 뒤집었던 옛 결정은 다시 유효해지고, 되돌리면 다시 뒤집힌다.
+- 지운 결정은 회의록, 요약본, 주제 상세에서 빠진다. 그 결정이 뒤집었던 옛 결정은 다시 유효해지고, 되돌리면 다시 뒤집힌다. 다른 결정도 그 옛 결정을 뒤집었으면 옛 결정은 뒤집힌 채이고 `replaced_by` 가 남은 결정으로 바뀐다.
 - 유효하지 않다고 한 결정은 회의록 `summary.decision_details` 와 주제 상세에 `state: "invalid"` 로 남고 요약본에는 `(유효하지 않음)` 이 붙는다. `summary.decisions` 문자열 목록, 합본의 「지금 유효한 결정」, 다음 회의의 요약 재료에서는 빠진다. 그 결정이 뒤집은 연결은 그대로 둔다.
 - 한 회의에서 결정을 하나라도 고치면 그 회의를 다시 요약해도 결정은 모두 그대로다. 개요, 핵심, 할 일 변화, 주제만 새로 쓴다(사용자 결정 2026-11-09).
 - 회의록 `summary` 의 결정과 주제 칸은 지금 행에서 읽는다. `decision_details` 는 지우지 않은 결정이 회의 안 순서로 오고 각각 `state` 와 `edited` 가 있다. 문장과 `topic` 은 고친 값이다. `replaces[].meeting_title` 은 그 회의의 지금 제목이고 지운 결정의 사본은 빠진다. `decisions` 는 `valid` 인 결정의 문장만이다. `topics`·`topic_ids` 는 회의에 이어진 주제의 지금 이름과 ID 다.

@@ -23,7 +23,7 @@ from app.models import (
     Workspace,
 )
 from app.schemas.project_map import SummaryWriteRequest
-from app.services import summary
+from app.services import project_map, summary
 from tests.api.conftest import SERVICE_TOKEN
 
 H = {"X-Service-Token": SERVICE_TOKEN}
@@ -562,6 +562,59 @@ def test_invalid_decision_keeps_its_link_and_leaves_the_summary_input(mdb, mseed
 
     assert _decision(mdb, "코드로 합류").replaced_by == _decision(mdb, "이메일로만").decision_id
     assert summary.summary_input(mdb, later.extraction_id).decisions == []
+
+
+def _replaced_again_meanwhile(db, ws):
+    """회의1 의 결정을 회의2 가 뒤집었고, 그 결정을 지운 사이 회의3 이 다시 뒤집은 뒤 회의2 의 결정을 되살렸다."""
+    _, first, _ = _meeting(db, ws, started_at=T0)
+    _, second, _ = _meeting(db, ws, started_at=T0 + timedelta(days=1))
+    _, third, _ = _meeting(db, ws, started_at=T0 + timedelta(days=2))
+    _save(db, first, [{"name": "초대", "decisions": [{"text": "코드로 합류"}]}])
+    old = _decision(db, "코드로 합류").decision_id
+    _save(db, second, [{"name": "초대", "decisions": [{"text": "이메일로만", "replaces": [old]}]}])
+    _edit_decision(db, ws, "이메일로만", state="removed")
+    _save(db, third, [{"name": "초대", "decisions": [{"text": "링크로 합류", "replaces": [old]}]}])
+    _edit_decision(db, ws, "이메일로만", state="valid")
+
+
+def _valid_now(db, ws):
+    """합본의 지금 유효한 결정과 뒤 회의의 요약 재료에 든 결정."""
+    _, later, _ = _meeting(db, ws, started_at=T0 + timedelta(days=9))
+    return ([d.text for d in project_map._valid_decisions(db, ws)],
+            [d.text for d in summary.summary_input(db, later.extraction_id).decisions])
+
+
+def test_removing_a_restored_decision_again_keeps_the_replacement_another_meeting_made(mdb, mseed):
+    ws = mseed["ws"]
+    _replaced_again_meanwhile(mdb, ws)
+
+    _edit_decision(mdb, ws, "이메일로만", state="removed")
+
+    assert _valid_now(mdb, ws) == (["링크로 합류"], ["링크로 합류"])
+
+
+def test_removing_the_later_of_two_replacing_decisions_keeps_the_old_one_replaced(mdb, mseed):
+    ws = mseed["ws"]
+    _replaced_again_meanwhile(mdb, ws)
+
+    _edit_decision(mdb, ws, "링크로 합류", state="removed")
+
+    assert _valid_now(mdb, ws) == (["이메일로만"], ["이메일로만"])
+
+
+def test_the_earliest_replacement_decides_what_was_valid_at_a_meeting_in_between(mdb, mseed):
+    ws = mseed["ws"]
+    _, first, _ = _meeting(mdb, ws, started_at=T0)
+    _, second, _ = _meeting(mdb, ws, started_at=T0 + timedelta(days=1))
+    _, between, _ = _meeting(mdb, ws, started_at=T0 + timedelta(days=2))
+    _, third, _ = _meeting(mdb, ws, started_at=T0 + timedelta(days=3))
+    _save(mdb, first, [{"name": "초대", "decisions": [{"text": "코드로 합류"}]}])
+    old = _decision(mdb, "코드로 합류").decision_id
+    _save(mdb, second, [{"name": "초대", "decisions": [{"text": "이메일로만", "replaces": [old]}]}])
+
+    _save(mdb, third, [{"name": "초대", "decisions": [{"text": "링크로 합류", "replaces": [old]}]}])
+
+    assert [d.text for d in summary.summary_input(mdb, between.extraction_id).decisions] == ["이메일로만"]
 
 
 def test_golden_put_body_round_trips_through_the_schema():

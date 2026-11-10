@@ -645,7 +645,7 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
                 "reason": decision.reason,
                 "rejected": decision.rejected,
                 "topic": topic.name,
-                "replaces": _replace_decisions(db, row, meeting, decision.replaces),
+                "replaces": _replaced_copies(db, meeting, decision.replaces),
             })
 
     db.add_all(TopicMeeting(topic_id=topic_id, meeting_id=meeting.meeting_id) for topic_id in topics.keys() - kept_topics)
@@ -656,6 +656,7 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
     extraction.summary_claimed_at = None
     extraction.summary_claim_token_hash = None
     db.flush()
+    _relink(db, meeting.workspace_id)
     _delete_orphan_topics(db, previous_topics - set(topics), keep_human=True)
     return SummarySaveResponse(
         extraction_id=extraction_id,
@@ -676,9 +677,6 @@ def _clear_meeting(db: Session, meeting_id: str, extraction_id: str | None, *, k
         db.scalar(select(exists().where(Decision.meeting_id == meeting_id, Decision.edited_at.is_not(None))))
     )
     if not frozen:
-        decision_ids = select(Decision.decision_id).where(Decision.meeting_id == meeting_id)
-        # 이 회의가 뒤집었던 옛 결정을 유효로 되돌린다. 새 요약이 다시 뒤집으면 다시 걸린다
-        db.execute(update(Decision).where(Decision.replaced_by.in_(decision_ids)).values(replaced_by=None))
         db.execute(delete(Decision).where(Decision.meeting_id == meeting_id))
     extractions = select(Extraction.extraction_id).where(Extraction.meeting_id == meeting_id)
     item_ids = select(ExtractionItem.item_id).where(
@@ -719,6 +717,7 @@ def remove_meeting_summary(db: Session, meeting: Meeting) -> None:
         if changed:
             extraction.summary = json.dumps(document, ensure_ascii=False)
     _clear_meeting(db, meeting.meeting_id, None, keep_human=False)
+    _relink(db, meeting.workspace_id)
     _delete_orphan_topics(db, topic_ids, keep_human=False)
     # 합쳐 사라진 주제의 이름은 살아 있는 주제의 별칭으로 남아 FK 로 지워지지 않는다. 어느 회의의 이름인지 적어 두지 않아서
     # 남은 회의의 요약이 쓰지 않은 이름은 지운 회의의 것으로 보고 지운다
@@ -761,8 +760,8 @@ def _create_topic(db: Session, workspace_id: str, key: str, entry: SummaryTopicI
     return topic
 
 
-def _replace_decisions(db: Session, new: Decision, meeting: Meeting, replaces: list[str]) -> list[dict]:
-    """옛 결정에 뒤집은 결정을 걸고, 문서에 넣을 사본을 돌려준다. 사본은 옛 결정이 또 바뀌어도 그 회의의 기록으로 남는다."""
+def _replaced_copies(db: Session, meeting: Meeting, replaces: list[str]) -> list[dict]:
+    """이 회의가 뒤집은 앞 회의의 결정을 문서에 넣을 사본으로 돌려준다. 사본은 옛 결정이 또 바뀌어도 그 회의의 기록으로 남는다."""
     if not replaces:
         return []
     rows = db.execute(
@@ -778,7 +777,6 @@ def _replace_decisions(db: Session, new: Decision, meeting: Meeting, replaces: l
     ).all()
     copies = []
     for old, old_meeting in rows:
-        old.replaced_by = new.decision_id
         copies.append({
             "decision_id": old.decision_id,
             "text": old.text,
@@ -787,6 +785,37 @@ def _replace_decisions(db: Session, new: Decision, meeting: Meeting, replaces: l
             "decided_on": meeting_date(old_meeting.started_at).isoformat(),
         })
     return copies
+
+
+def _relink(db: Session, workspace_id: str) -> None:
+    """replaced_by 를 쓰는 유일한 곳. 뒤집기는 뒤집은 결정이 있는 회의의 기록(decision_details[].replaces)이 정본이고
+    replaced_by 는 그 색인이라, 기록이나 결정 상태를 바꾼 쪽은 여기서 워크스페이스의 색인을 기록대로 다시 맞춘다.
+
+    옛 결정을 뒤집었다고 적은, 지우지 않은 더 늦은 결정이 여럿이면 가장 이른 회의의 것을 건다. 그래야 회의 시점에 유효했던 결정
+    (_input_decisions)이 맞고, 하나를 지워도 남은 것이 이어받으며, 되살린 결정이 다른 회의의 뒤집기를 빼앗지 않는다.
+    """
+    decisions = {
+        decision.decision_id: (decision, started_at)
+        for decision, started_at in db.execute(
+            select(Decision, Meeting.started_at).join(Meeting, Meeting.meeting_id == Decision.meeting_id)
+            .where(Decision.workspace_id == workspace_id, Meeting.deleted_at.is_(None))
+        )
+    }
+    claims: dict[str, list[tuple]] = {}
+    for extraction in db.scalars(select(Extraction).join(Meeting, Meeting.meeting_id == Extraction.meeting_id).where(
+        Meeting.workspace_id == workspace_id, Meeting.deleted_at.is_(None), Extraction.summary.is_not(None),
+    )):
+        for detail in (_stored(extraction) or {}).get("decision_details", []):
+            new, new_at = decisions.get(detail.get("decision_id"), (None, None)) if isinstance(detail, dict) else (None, None)
+            if new is None or new.state == DecisionState.REMOVED:
+                continue
+            for copy in detail.get("replaces", []):
+                old_id = copy.get("decision_id") if isinstance(copy, dict) else None
+                if old_id in decisions and decisions[old_id][1] < new_at:
+                    claims.setdefault(old_id, []).append((new_at, new.meeting_id, new.position, new.decision_id))
+    for decision_id, (decision, _) in decisions.items():
+        decision.replaced_by = min(claims[decision_id])[-1] if decision_id in claims else None
+    db.flush()
 
 
 def _delete_orphan_topics(db: Session, topic_ids: set[str], *, keep_human: bool) -> None:
@@ -870,7 +899,8 @@ def edit_decision(
     """문장 고치기와 상태 바꾸기. 고치면 그 회의의 결정은 재요약에서 고정된다. 커밋은 호출자가 한다.
 
     호출자가 worker_gate 를 먼저 잡는다. 회의 행을 잠가 회의 삭제와 줄을 선다. 지우면(removed) 이 결정이 뒤집은 옛 결정이 다시
-    유효해지고, 지운 것을 되돌리면 요약 기록의 replaces 로 다시 뒤집는다. 유효하지 않음(invalid)은 연결을 그대로 둔다.
+    유효해지고(다른 결정도 뒤집었으면 그 결정이 이어받는다), 지운 것을 되돌리면 요약 기록대로 다시 뒤집는다. 유효하지 않음(invalid)은
+    연결을 그대로 둔다.
     """
     meeting_id = db.scalar(
         select(Decision.meeting_id).where(Decision.decision_id == decision_id, Decision.workspace_id == workspace_id)
@@ -883,27 +913,12 @@ def edit_decision(
     decision = db.get(Decision, decision_id, populate_existing=True)
     if text is not None:
         decision.text = text
-    if state is not None and state != decision.state:
-        if state == DecisionState.REMOVED:
-            db.execute(update(Decision).where(Decision.replaced_by == decision_id).values(replaced_by=None))
-        elif decision.state == DecisionState.REMOVED:
-            _replace_decisions(db, decision, meeting, _replaced_ids(db, meeting_id, decision_id))
+    if state is not None:
         decision.state = state
     decision.edited_at = datetime.now(timezone.utc)
     db.flush()
+    _relink(db, workspace_id)
     return decision
-
-
-def _replaced_ids(db: Session, meeting_id: str, decision_id: str) -> list[str]:
-    """요약 기록에 남은, 이 결정이 뒤집은 옛 결정 ID."""
-    extraction = db.scalars(
-        select(Extraction).where(Extraction.meeting_id == meeting_id, Extraction.summary.is_not(None))
-        .order_by(Extraction.created_at.desc()).limit(1)
-    ).first()
-    for detail in (_stored(extraction) or {}).get("decision_details", []):
-        if isinstance(detail, dict) and detail.get("decision_id") == decision_id:
-            return [copy["decision_id"] for copy in detail.get("replaces", []) if isinstance(copy, dict) and copy.get("decision_id")]
-    return []
 
 
 def detach_task(db: Session, workspace_id: str, topic_id: str, task_id: str) -> None:
