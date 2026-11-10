@@ -358,9 +358,9 @@ test('⑨ 멈춘 채팅 회의(chat_stalled)는 토스트·처리 화면·회의
 })
 
 /*
- * #483 — 처리 화면의 단계가 서버의 실제 처리 순서대로 바뀌고, 넘기는 중(`extracted` 참, 아직 processing)에도 마지막 단계가
- * 진행 중이다. 흐름 방식 staged 는 조회마다 서버 순서로 AI 보고 하나씩 간다(shared/mock/meetingFlow.ts readMeeting).
- * 전사 진행(stt 수치 없음·0/5·3/5·5/5)과 extract 는 progress 를 바꾸지 않아 단계 안내가 늘지 않는다
+ * #483 — 처리 화면의 단계가 서버 단계와 1:1 로 실제 처리 순서대로 바뀌고, 넘기는 중(`extracted` 참, 아직 processing)에도 마지막
+ * 단계가 진행 중이다. 흐름 방식 staged 는 조회마다 서버 순서로 AI 보고 하나씩 간다(shared/mock/meetingFlow.ts readMeeting).
+ * 전사 진행(stt 수치 없음·0/5·3/5·5/5)은 같은 단계라 단계 안내가 늘지 않는다
  */
 
 /** 상세 조회 주소에서 회의 ID 를 꺼낸다 */
@@ -407,7 +407,7 @@ async function warmProcessingScreen(page: Page) {
     expect((await page.request.get(module)).ok()).toBe(true)
 }
 
-test('⑩ 녹음 회의의 단계는 대기 → 텍스트로 옮기기 → 뽑아내기 순서이고, 넘기는 중에도 마지막 단계가 진행 중이다 (#483)', async ({
+test('⑩ 녹음 회의의 단계는 대기 → 텍스트로 옮기기 → 회의록 정리 → 뽑아내기 → 보내기 순서이고, 넘기는 중에도 마지막 단계가 진행 중이다 (#483)', async ({
   page,
 }) => {
   await warmProcessingScreen(page)
@@ -439,15 +439,19 @@ test('⑩ 녹음 회의의 단계는 대기 → 텍스트로 옮기기 → 뽑�
   await expect(steps).toHaveText([
     /차례 기다리는 중\s*완료/,
     /음성을 텍스트로 옮기기\s*완료/,
-    /결정사항과 할 일 뽑아내기\s*방금 시작\s*진행 중/,
+    /회의록 정리하기\s*완료/,
+    /결정사항과 할 일 뽑아내기\s*완료/,
+    /정리 결과 보내기\s*방금 시작\s*진행 중/,
   ])
-  await expect(steps.nth(2)).toHaveAttribute('aria-current', 'step')
+  await expect(steps.nth(4)).toHaveAttribute('aria-current', 'step')
 
   await expectMinutesOpened(page, 20_000)
   expect(await announcements()).toEqual([
-    '0 / 3 단계 완료 · 차례 기다리는 중 진행 중',
-    '1 / 3 단계 완료 · 음성을 텍스트로 옮기기 진행 중',
-    '2 / 3 단계 완료 · 결정사항과 할 일 뽑아내기 진행 중',
+    '0 / 5 단계 완료 · 차례 기다리는 중 진행 중',
+    '1 / 5 단계 완료 · 음성을 텍스트로 옮기기 진행 중',
+    '2 / 5 단계 완료 · 회의록 정리하기 진행 중',
+    '3 / 5 단계 완료 · 결정사항과 할 일 뽑아내기 진행 중',
+    '4 / 5 단계 완료 · 정리 결과 보내기 진행 중',
   ])
   expect(answers).toEqual(
     expect.arrayContaining(['processing:100', 'processing:110', 'processing:111', 'done:111']),
