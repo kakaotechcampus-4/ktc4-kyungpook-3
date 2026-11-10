@@ -107,6 +107,8 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `EXTRACTION_ITEM_NOT_FOUND` | 404 | 그 추출 결과에 해당 항목이 없음 (auto 되돌리기) |
 | `TOPIC_NOT_FOUND` | 404 | 주제를 찾을 수 없음 (프로젝트 맵 주제 상세) |
 | `SUMMARY_NOT_FOUND` | 404 | 그 회의의 요약본이 아직 없음 (`summary.md`) |
+| `TRANSCRIPT_LINE_NOT_FOUND` | 404 | 그 회의에 해당 번호의 발화가 없음 (발화 고치기). `details.meeting_id`, `details.seq` |
+| `DECISION_NOT_FOUND` | 404 | 결정을 찾을 수 없음. 다른 워크스페이스의 결정이나 삭제된 회의의 결정도 같음 (결정 고치기). `details.decision_id` |
 | `APPROVAL_NOT_FOUND` | 404 | 승인 요청을 찾을 수 없음 |
 | `WORKSPACE_NOT_FOUND` | 404 | 워크스페이스를 찾을 수 없음 |
 | `MEMBER_NOT_FOUND` | 404 | 팀원을 찾을 수 없음 |
@@ -122,6 +124,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `MEETING_ALREADY_ENDED` | 409 | 이미 종료된 회의 |
 | `MEETING_NOT_PROCESSING` | 409 | 회의가 PROCESSING 상태가 아닌데 추출을 시도함 |
 | `MEETING_PROCESSING_IN_PROGRESS` | 409 | 같은 워크스페이스에 이미 처리 중인 회의가 있어 업로드를 받지 않음. `details.meeting_id` |
+| `TOPIC_NAME_TAKEN` | 409 | 바꾸려는 이름(정규화한 값)을 다른 주제가 쓰고 있음 (주제 이름 고치기). `details.topic_id` 가 그 주제 |
 | `APPROVAL_ALREADY_RESOLVED` | 409 | 이미 승인/반려 처리된 요청을 다시 처리하려 함 |
 | `APPROVAL_CONFLICT` | 409 | task_update 제안 이후 같은 필드가 바뀌었거나 대상 task 제목이 바뀌어 승인하지 않음. `details.conflicts`에 필드별 기준값·지금 값·제안 값(`field: "title"`은 대상 확인용이라 `proposed`가 null). 확인 후 `details.task_version`을 `confirm_task_version`에 담아 다시 승인하면 반영(그 사이 또 바뀌었으면 다시 409) |
 | `APPROVAL_CHANGED` | 409 | task_create 승인·반려 요청의 `payload_version`이 지금 카드 값과 달라(본 뒤 다른 회의 항목이 합쳐짐) 처리하지 않음. 카드는 대기로 남는다. `details.approval_id`, `details.payload_version`(지금 값). 상세를 다시 받아 확인한 뒤 새 값으로 다시 보낸다 |
