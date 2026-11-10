@@ -5,6 +5,7 @@
 from datetime import datetime, timedelta, timezone
 
 from app.models import (
+    Integration,
     Member,
     MessageThread,
     ReminderBundle,
@@ -256,6 +257,7 @@ def _second_workspace(db, seed):
     other = Workspace(name="B")
     db.add(other)
     db.flush()
+    db.add(Integration(workspace_id=other.workspace_id, provider="discord", provider_channel_id="g_b"))
     before = datetime.now(timezone.utc) - timedelta(days=30)
     pm = Member(workspace_id=other.workspace_id, user_id=seed["pm"].user_id, display_name="비", role="pm")
     alice = Member(

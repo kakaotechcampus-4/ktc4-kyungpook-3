@@ -1,10 +1,12 @@
 """디스코드 계정을 연결하면 서버 닉네임(한글만)을 별칭으로 넣는다 (#459).
 
-Discord 호출은 커밋 뒤에 하고 실패해도 팀원 저장·응답은 그대로다. 테스트는 get_guild_member 를 스텁으로 바꾼다.
+닉네임은 팀원 저장 전에 서버 멤버를 확인할 때 받은 값을 쓴다. 별칭 저장은 팀원 커밋 뒤에 하고 실패해도 팀원 저장·응답은
+그대로다. 서버 멤버 확인이 실패하면 팀원을 저장하지 않는다(test_member_discord_guild_check.py). 테스트는 get_guild_member 를
+스텁으로 바꾼다.
 """
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 
 from app.main import app
 from app.models import Integration, Member, MemberAlias
@@ -25,7 +27,11 @@ def client(mseed):
 def discord_env(mdb, mseed, monkeypatch):
     """봇 토큰과 Discord 연동 행(guild g1)을 갖춘다."""
     monkeypatch.setenv("DISCORD_BOT_TOKEN", "bot-token")
-    mdb.add(Integration(workspace_id=mseed["ws"], provider="discord", provider_channel_id="g1"))
+    mdb.execute(
+        update(Integration)
+        .where(Integration.workspace_id == mseed["ws"], Integration.provider == "discord")
+        .values(provider_channel_id="g1")
+    )
     mdb.commit()
 
 
@@ -83,38 +89,37 @@ def test_post_member_without_korean_nickname_adds_nothing(client, mdb, mseed, di
     assert _profile(mdb, r.json()["data"]["member_id"]) == []
 
 
-def test_discord_failure_keeps_member_and_response(client, mdb, mseed, discord_env, calls):
+def test_discord_failure_saves_no_member(client, mdb, mseed, discord_env, calls):
     calls.error = DiscordApiError("요청 실패: ReadTimeout")
 
     r = _post(client, mseed["ws"], "Alice", "d1")
 
-    assert r.status_code == 201
-    assert r.json()["data"]["discord_user_id"] == "d1"
-    assert _profile(mdb, r.json()["data"]["member_id"]) == []
+    assert (r.status_code, r.json()["error"]["code"]) == (502, "DISCORD_API_FAILED")
+    mdb.expire_all()
+    assert mdb.execute(select(Member).where(Member.discord_user_id == "d1")).first() is None
     assert len(calls) == 1
 
 
-def test_no_bot_token_skips_discord(client, mdb, mseed, calls, monkeypatch):
+def test_no_bot_token_skips_discord_and_saves_no_member(client, mdb, mseed, calls, monkeypatch):
     monkeypatch.delenv("DISCORD_BOT_TOKEN", raising=False)
-    mdb.add(Integration(workspace_id=mseed["ws"], provider="discord", provider_channel_id="g1"))
-    mdb.commit()
 
     r = _post(client, mseed["ws"], "Alice", "d1")
 
-    assert r.status_code == 201
+    assert (r.status_code, r.json()["error"]["code"]) == (502, "DISCORD_API_FAILED")
     assert calls == []
 
 
 @pytest.mark.parametrize("channel_id", ["missing_row", None, ""])
-def test_no_discord_integration_skips_discord(client, mdb, mseed, calls, monkeypatch, channel_id):
+def test_no_discord_integration_skips_discord_and_saves_no_member(client, mdb, mseed, calls, monkeypatch, channel_id):
     monkeypatch.setenv("DISCORD_BOT_TOKEN", "bot-token")
+    mdb.execute(delete(Integration).where(Integration.workspace_id == mseed["ws"]))
     if channel_id != "missing_row":
         mdb.add(Integration(workspace_id=mseed["ws"], provider="discord", provider_channel_id=channel_id))
-        mdb.commit()
+    mdb.commit()
 
     r = _post(client, mseed["ws"], "Alice", "d1")
 
-    assert r.status_code == 201
+    assert (r.status_code, r.json()["error"]["code"]) == (409, "INTEGRATION_NOT_CONNECTED")
     assert calls == []
 
 
@@ -208,12 +213,14 @@ def test_failed_alias_insert_is_swallowed(client, mdb, mseed, discord_env, calls
     from sqlalchemy.exc import IntegrityError
 
     real_commit = mdb.commit
-    state = {"after_discord": False}
+    state = {"after_discord": 0}
 
     def commit_that_fails_after_discord():
-        if calls and not state["after_discord"]:
-            state["after_discord"] = True
-            raise IntegrityError("x", {}, Exception("boom"))
+        # Discord 다음 첫 커밋은 팀원, 두 번째가 닉네임 별칭이다
+        if calls:
+            state["after_discord"] += 1
+            if state["after_discord"] == 2:
+                raise IntegrityError("x", {}, Exception("boom"))
         return real_commit()
 
     monkeypatch.setattr(mdb, "commit", commit_that_fails_after_discord)
@@ -338,21 +345,22 @@ def test_patch_unlink_with_same_name_refills_only_the_removed_nickname_text(clie
 @pytest.mark.parametrize(
     "change", [{"discord_user_id": None}, {"discord_user_id": "d9"}, {"is_deleted": True}], ids=["unlinked", "relinked", "deleted"]
 )
-def test_account_changed_while_waiting_for_discord_adds_no_nickname_alias(
-    client, mdb, mseed, discord_env, monkeypatch, change
+def test_account_changed_after_the_member_commit_adds_no_nickname_alias(
+    client, mdb, mseed, discord_env, calls, monkeypatch, change
 ):
-    """Discord 를 기다리는 동안(트랜잭션 닫힘) 다른 요청이 계정을 바꾸거나 팀원을 지우면 옛 닉네임을 넣지 않는다."""
+    """팀원 커밋 뒤 별칭을 넣기 전에 다른 요청이 계정을 바꾸거나 팀원을 지우면 옛 닉네임을 넣지 않는다."""
     member_id = _post(client, mseed["ws"], "Alice", None).json()["data"]["member_id"]
+    real_pick = member_aliases.pick_discord_nickname
 
-    def fake(bot_token, guild_id, user_id, **kwargs):
+    def pick_after_another_request(guild_member):
         # 다른 요청이 끼어들어 커밋한 것과 같다
         member = mdb.get(Member, member_id)
         for field, value in change.items():
             setattr(member, field, value)
         mdb.commit()
-        return {"nick": "동우", "user": {}}
+        return real_pick(guild_member)
 
-    monkeypatch.setattr(member_aliases.discord, "get_guild_member", fake)
+    monkeypatch.setattr(member_aliases, "pick_discord_nickname", pick_after_another_request)
 
     r = client.patch(f"{API}/members/{member_id}", json={"discord_user_id": "d1"})
 
@@ -365,12 +373,14 @@ def test_operational_error_on_alias_commit_is_swallowed(client, mdb, mseed, disc
     from sqlalchemy.exc import OperationalError
 
     real_commit = mdb.commit
-    state = {"failed": False}
+    state = {"after_discord": 0}
 
     def commit_that_fails_after_discord():
-        if calls and not state["failed"]:
-            state["failed"] = True
-            raise OperationalError("x", {}, Exception("connection lost"))
+        # Discord 다음 첫 커밋은 팀원, 두 번째가 닉네임 별칭이다
+        if calls:
+            state["after_discord"] += 1
+            if state["after_discord"] == 2:
+                raise OperationalError("x", {}, Exception("connection lost"))
         return real_commit()
 
     monkeypatch.setattr(mdb, "commit", commit_that_fails_after_discord)

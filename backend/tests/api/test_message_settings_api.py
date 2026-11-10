@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 
 from app.main import app
 from app.models import Integration, Member, Workspace
@@ -112,7 +113,11 @@ def test_pms_report_discord_link(mdb, mseed):
     pms = svc.pm_contacts(mdb, wid)
     assert pms == [{"member_id": mseed["pm"].member_id, "name": "PM", "discord_linked": False}]
 
-    mdb.add(Integration(workspace_id=wid, provider="discord", provider_channel_id="guild-1"))
+    mdb.execute(
+        update(Integration)
+        .where(Integration.workspace_id == wid, Integration.provider == "discord")
+        .values(provider_channel_id="guild-1")
+    )
     mseed["pm"].discord_user_id = "d_pm"
     mdb.commit()
     assert svc.pm_contacts(mdb, wid)[0]["discord_linked"] is True
