@@ -131,8 +131,10 @@ def sweep_expired_audio(db: Session, now: datetime | None = None) -> list[str]:
 
     대상은 아직 지우지 않은 기록 중 회의·공간이 살아 있고, 회의가 failed 이거나(바로 지운다)
     done 이면서 보관 기간이 지난 것이다. 처리 중인 회의는 지나도 건드리지 않는다.
-    회의마다 잠근 뒤 조건을 다시 확인하고, 파일 삭제가 성공한 뒤에만 `deleted_at` 을 커밋한다.
-    지우지 못하면 `deleted_at` 을 비워 두어 다음 바퀴에 다시 시도한다.
+    파일(S3)은 트랜잭션·잠금 없이 먼저 지운다. 지울 조건(failed, 또는 done 이면서 보관 기간 지남)은 한 번 참이면
+    계속 참이라, 잠그기 전에 지워도 들을 수 있는 녹음을 지우지 않는다. 지운 뒤 공간→회의를 짧게 잠가 조건을 다시
+    확인하고 `deleted_at` 을 커밋한다. 그 사이 회의·공간이 지워졌으면 건너뛴다(삭제 경로가 정리를 맡는다).
+    지우지 못하면 `deleted_at` 을 비워 두어 다음 바퀴에 다시 시도한다. 한 회의의 실패가 나머지를 막지 않는다.
     """
     now = now or datetime.now(timezone.utc)
     cutoff = now - retention()
@@ -148,24 +150,28 @@ def sweep_expired_audio(db: Session, now: datetime | None = None) -> list[str]:
             | ((Meeting.status == str(MeetingStatus.DONE)) & (MeetingAudio.retention_from < cutoff)),
         )
     ).all()
+    # 후보만 읽었다. 파일을 지우는 동안 트랜잭션(DB 연결)을 쥐지 않도록 끝낸다
+    db.rollback()
     swept: list[str] = []
     for meeting_id in meeting_ids:
+        try:
+            upload_storage.remove_audio(meeting_id)
+        except (OSError, ValueError):
+            logger.exception("회의 녹음 정리 실패 meeting_id=%s. 다음 바퀴에 다시 시도합니다.", meeting_id)
+            continue
         try:
             meeting = meeting_deletion.require_live_meeting(db, meeting_id, lock=True)
             row = db.get(MeetingAudio, meeting_id, populate_existing=True)
             if row is None or row.deleted_at is not None:
                 continue
-            # 잠근 뒤 상태가 바뀌었을 수 있어 만료 판단을 다시 한다. 들을 수 있으면 지울 때가 아니다.
+            # 고른 뒤 바뀐 것이 없는지 잠근 채로 다시 본다. 들을 수 있는 상태면 기록을 바꾸지 않는다
             if _row_and_reason(db, meeting, now)[1] is None:
                 continue
-            upload_storage.remove_audio(meeting_id)
             row.deleted_at = now
             db.commit()
             swept.append(meeting_id)
         except AppError:
             continue  # 그 사이 회의나 공간이 지워졌다. 삭제 경로가 파일을 정리한다.
-        except (OSError, ValueError):
-            logger.exception("회의 녹음 정리 실패 meeting_id=%s. 다음 바퀴에 다시 시도합니다.", meeting_id)
         finally:
             db.rollback()
     return swept

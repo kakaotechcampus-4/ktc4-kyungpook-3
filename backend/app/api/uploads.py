@@ -170,12 +170,13 @@ def download_upload(meeting_id: str, db: Session = Depends(get_db)) -> Response:
     media_type = upload.content_type or "application/octet-stream"
     filename = upload.stored_filename
     if upload_storage.storage_mode() == "s3":
+        # S3 에서 읽기 전에 공간·회의 잠금과 트랜잭션을 끝낸다. get_db 정리는 응답을 다 보낸 뒤라,
+        # 닫지 않으면 S3 가 느릴 때와 파일을 보내는 동안 잠금과 DB 연결을 잡고 있다
+        db.close()
         try:
             chunks, size = upload_storage.open_audio_stream(meeting_id, filename)
         except FileNotFoundError:
             raise _not_found(meeting_id) from None
-        # get_db 정리는 응답을 다 보낸 뒤라, 닫지 않으면 파일을 보내는 동안 DB 연결을 잡고 있다
-        db.close()
         return StreamingResponse(
             chunks,
             media_type=media_type,

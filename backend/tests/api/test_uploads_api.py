@@ -273,6 +273,47 @@ def test_file_returns_the_db_connection_before_sending_the_file(db, ws, monkeypa
     assert in_transaction_when_sending == [False]
 
 
+@pytest.fixture
+def s3(monkeypatch):
+    from tests.fake_s3 import FakeS3
+
+    fake = FakeS3()
+    monkeypatch.setenv("UPLOAD_STORAGE", "s3")
+    monkeypatch.setenv("UPLOAD_S3_BUCKET", "b")
+    monkeypatch.setattr(upload_storage, "_s3_client", lambda: fake)
+    return fake
+
+
+def test_s3_file_is_read_after_releasing_the_lock(db, ws, s3, monkeypatch):
+    """s3 저장소에서 녹음을 읽기(get_object) 전에 공간·회의 잠금과 트랜잭션을 끝낸다. 느린 S3 가 잠금을 붙잡지 않는다."""
+    meeting = _upload(db, ws)
+    s3.put("b", f"meetings/{meeting.meeting_id}/audio.ogg", AUDIO, "audio/ogg")
+    real_open = upload_storage.open_audio_stream
+    in_transaction = []
+
+    def open_stream(meeting_id, filename):
+        in_transaction.append(db.in_transaction())
+        return real_open(meeting_id, filename)
+
+    monkeypatch.setattr(upload_storage, "open_audio_stream", open_stream)
+
+    r = _client().get(f"/api/v1/uploads/{meeting.meeting_id}/file", headers=HEADERS)
+
+    assert r.status_code == 200, r.text
+    assert r.content == AUDIO
+    assert r.headers["content-type"] == "audio/ogg"
+    assert in_transaction == [False]
+
+
+def test_s3_file_missing_object_gets_404(db, ws, s3):
+    meeting = _upload(db, ws)
+
+    r = _client().get(f"/api/v1/uploads/{meeting.meeting_id}/file", headers=HEADERS)
+
+    assert r.status_code == 404, r.text
+    assert r.json()["error"]["code"] == "MEETING_NOT_FOUND"
+
+
 def _register_extraction(meeting: Meeting):
     return _client().post("/api/v1/extractions", headers=HEADERS, json={
         "meeting_id": meeting.meeting_id, "workspace_id": meeting.workspace_id, "items": [],

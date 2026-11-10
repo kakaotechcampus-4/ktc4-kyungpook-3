@@ -130,8 +130,24 @@ def playback_url_ttl_seconds() -> int:
 def _s3_client():
     # 로컬 모드와 테스트가 boto3 import 비용을 내지 않도록 여기서 가져온다. 테스트는 이 함수를 바꿔 끼운다
     import boto3
+    from botocore.config import Config
 
-    return boto3.client("s3", region_name=os.getenv("AWS_REGION") or DEFAULT_AWS_REGION)
+    region = os.getenv("AWS_REGION") or DEFAULT_AWS_REGION
+    # 리전 endpoint 와 가상 호스트 방식을 정해 두어야 presigned URL 이 `<bucket>.s3.<region>.amazonaws.com` 이 된다
+    # (지정하지 않으면 전역 `<bucket>.s3.amazonaws.com` 이라 배포 안내의 CSP 출처와 어긋난다).
+    # S3 가 느릴 때 요청·정리 워커가 오래 붙잡히지 않도록 시간 제한과 재시도를 줄인다
+    return boto3.client(
+        "s3",
+        region_name=region,
+        endpoint_url=f"https://s3.{region}.amazonaws.com",
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "virtual"},
+            connect_timeout=5,
+            read_timeout=30,
+            retries={"max_attempts": 2},
+        ),
+    )
 
 
 def _s3_meeting_prefix(meeting_id: str) -> str:
@@ -277,10 +293,17 @@ def presigned_audio_url(meeting_id: str, filename: str, content_type: str) -> st
 
 
 def remove_audio(meeting_id: str) -> None:
-    """회의 녹음을 지운다. 없으면 멱등 성공이고, 지우지 못했거나 남아 있으면 OSError(안전하지 않은 경로는 ValueError)."""
+    """회의 녹음을 지운다. 없으면 멱등 성공이고, 지우지 못했거나 남아 있으면 OSError(안전하지 않은 경로는 ValueError).
+
+    s3 모드는 S3 prefix 와 local 폴더(`UPLOAD_DIR/{meeting_id}`, local 기간에 남은 것)를 모두 지운다.
+    """
     if storage_mode() == "s3":
         _remove_audio_s3(meeting_id)
-        return
+    # s3 모드에서도 local 로 운영하던 기간의 녹음 폴더가 남아 있을 수 있어 함께 지운다(없으면 그냥 넘어간다)
+    _remove_audio_local(meeting_id)
+
+
+def _remove_audio_local(meeting_id: str) -> None:
     root = upload_dir().resolve()
     target = root / meeting_id
     if target.resolve().parent != root or target.is_symlink() or target.is_junction():

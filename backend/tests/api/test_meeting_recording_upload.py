@@ -1,9 +1,13 @@
-"""AI 가 디스코드 회의의 섞은 녹음을 올리는 API(PUT /meetings/{id}/recording, #659)."""
+"""AI 가 디스코드 회의의 섞은 녹음을 올리는 API(PUT /meetings/{id}/recording, #659).
+
+TEST_DATABASE_URL 이 있으면 PostgreSQL 에서도 돈다.
+"""
+import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -14,18 +18,38 @@ from app.services import upload_storage
 from app.services.sessions import hash_session_token
 from tests.usernames import username_for
 
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 SERVICE_TOKEN = "test-service-token"
 AUDIO = b"\x00\x00\x00\x18ftypM4A " + bytes(range(256)) * 4
 AUDIO_2 = b"\x00\x00\x00\x18ftypM4A " + bytes(range(255, -1, -1)) * 3
 WAV = b"RIFF\x24\x00\x00\x00WAVEfmt " + bytes(64)
 
 
-@pytest.fixture
-def db(monkeypatch):
+def _pg_engine():
+    engine = create_engine(TEST_DATABASE_URL)
+    with engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    Base.metadata.drop_all(engine)
+    return engine
+
+
+@pytest.fixture(
+    params=[
+        "sqlite",
+        pytest.param(
+            "postgresql",
+            marks=pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL(PostgreSQL)이 없습니다."),
+        ),
+    ]
+)
+def db(request, monkeypatch):
     monkeypatch.setenv("SERVICE_TOKEN", SERVICE_TOKEN)
-    engine = create_engine(
-        "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
+    if request.param == "postgresql":
+        engine = _pg_engine()
+    else:
+        engine = create_engine(
+            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        )
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
 
@@ -38,6 +62,7 @@ def db(monkeypatch):
     finally:
         app.dependency_overrides.pop(get_db, None)
         session.close()
+        Base.metadata.drop_all(engine)
         engine.dispose()
 
 
@@ -65,8 +90,10 @@ def _meeting(db, ws_id, *, source="discord", status="done", ended_at=None):
     return meeting.meeting_id
 
 
-def _put(meeting_id, content=AUDIO, filename="audio.m4a", token=SERVICE_TOKEN):
+def _put(meeting_id, content=AUDIO, filename="audio.m4a", token=SERVICE_TOKEN, privacy_epoch=None):
     headers = {"X-Service-Token": token} if token else {}
+    if privacy_epoch is not None:
+        headers["X-Privacy-Epoch"] = privacy_epoch
     client = TestClient(app, base_url="https://testserver")
     return client.put(
         f"/api/v1/meetings/{meeting_id}/recording",
@@ -200,6 +227,39 @@ def test_requires_service_token(db, ws_id):
 
     assert _put(meeting_id, token=None).status_code == 401
     assert _put(meeting_id, token="wrong").status_code == 401
+    assert _stored(meeting_id) is None
+
+
+@pytest.mark.parametrize("privacy_epoch", [None, "0"], ids=["no-header", "stale-header"])
+def test_ignores_privacy_epoch_after_withdrawal(db, ws_id, privacy_epoch):
+    """탈퇴가 있었던 공간(identity_epoch>0)이어도 녹음 올리기는 X-Privacy-Epoch 를 보지 않는다.
+
+    녹음 바이트에는 신원 정보가 없고, 공동 공간 팀원 정리도 음성 바이트는 남긴다. AI 의 대기 항목 올리기는
+    바퀴마다 새 클라이언트라 헤더가 없다.
+    """
+    db.get(Workspace, ws_id).identity_epoch = 1
+    db.commit()
+    meeting_id = _meeting(db, ws_id)
+
+    r = _put(meeting_id, privacy_epoch=privacy_epoch)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["stored"] is True
+    assert _stored(meeting_id) == AUDIO
+    db.expire_all()
+    assert db.get(MeetingAudio, meeting_id).size_bytes == len(AUDIO)
+
+
+def test_deleted_workspace_404(db, ws_id):
+    """공간 전체 정리(삭제)된 공간의 회의는 404 WORKSPACE_NOT_FOUND 로 끝나고 저장하지 않는다."""
+    meeting_id = _meeting(db, ws_id)
+    db.get(Workspace, ws_id).deleted_at = datetime.now(timezone.utc)
+    db.commit()
+
+    r = _put(meeting_id)
+
+    assert r.status_code == 404, r.text
+    assert r.json()["error"]["code"] == "WORKSPACE_NOT_FOUND"
     assert _stored(meeting_id) is None
 
 

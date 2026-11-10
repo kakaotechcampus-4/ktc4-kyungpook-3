@@ -53,11 +53,12 @@ def deletion_available(db: Session, meeting: Meeting) -> bool:
 
 
 def require_live_meeting(
-    db: Session, meeting_id: str, *, lock: bool = False
+    db: Session, meeting_id: str, *, lock: bool = False, check_epoch: bool = True
 ) -> Meeting:
+    """살아 있는 회의를 돌려준다. `check_epoch=False` 면 서비스 쓰기의 개인정보 세대(X-Privacy-Epoch)를 보지 않는다."""
     owner = db.scalar(select(Meeting.workspace_id).where(Meeting.meeting_id == meeting_id))
     if owner is not None:
-        lifecycle.workspace(db, owner)
+        lifecycle.workspace(db, owner, check_epoch=check_epoch)
     stmt = select(Meeting).where(Meeting.meeting_id == meeting_id).execution_options(populate_existing=True)
     if lock:
         stmt = stmt.with_for_update().execution_options(populate_existing=True)

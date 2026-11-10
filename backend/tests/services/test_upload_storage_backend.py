@@ -243,3 +243,82 @@ def test_s3_overwrite_failure_keeps_existing_audio(fake, s3_env):
         upload_storage.save_audio("m1", BytesIO(M4A + b"new"), "audio.m4a", overwrite=True)
 
     assert fake.objects[("b", "meetings/m1/audio.m4a")]["body"] == M4A
+
+
+def _local_leftover(meeting_id: str) -> None:
+    """local 운영 기간에 디스크에 남은 녹음 폴더."""
+    folder = upload_storage.meeting_dir(meeting_id)
+    folder.mkdir(parents=True)
+    (folder / "audio.wav").write_bytes(b"RIFF")
+
+
+def test_s3_remove_also_deletes_local_leftover_folder(fake, s3_env):
+    """local 로 운영하다 s3 로 바꾼 뒤에도, local 기간 녹음 폴더가 S3 객체와 함께 지워진다."""
+    _local_leftover("m1")
+    fake.put("b", "meetings/m1/audio.m4a", b"1")
+
+    upload_storage.remove_audio("m1")
+
+    assert fake.keys("b") == []
+    assert not upload_storage.meeting_dir("m1").exists()
+
+
+def test_s3_remove_deletes_local_leftover_without_s3_object(fake, s3_env):
+    _local_leftover("m1")
+
+    upload_storage.remove_audio("m1")
+
+    assert not upload_storage.meeting_dir("m1").exists()
+
+
+def test_s3_remove_raises_when_local_leftover_cannot_be_deleted(fake, s3_env, monkeypatch):
+    _local_leftover("m1")
+    fake.put("b", "meetings/m1/audio.m4a", b"1")
+
+    def locked(path):
+        raise PermissionError("temporary file lock")
+
+    monkeypatch.setattr(upload_storage.shutil, "rmtree", locked)
+
+    with pytest.raises(OSError):
+        upload_storage.remove_audio("m1")
+    assert upload_storage.meeting_dir("m1").exists()
+
+
+@pytest.fixture
+def real_s3_client(tmp_path, monkeypatch):
+    """실제 boto3 클라이언트. 더미 자격을 환경변수로 주고 사용자 AWS 설정 파일은 읽지 않는다(네트워크 호출 없음)."""
+    for name in ("AWS_PROFILE", "AWS_SESSION_TOKEN", "AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_S3", "AWS_DEFAULT_REGION"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIDEXAMPLE")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "dummy-secret")
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "no-aws-config"))
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(tmp_path / "no-aws-credentials"))
+    monkeypatch.setenv("AWS_REGION", "ap-northeast-2")
+    upload_storage._s3_client.cache_clear()
+    yield upload_storage._s3_client()
+    upload_storage._s3_client.cache_clear()
+
+
+def test_presigned_url_uses_regional_virtual_host(real_s3_client, s3_env, monkeypatch):
+    """presigned URL 의 host 는 버킷의 서울 리전 가상 호스트다(배포 안내의 CSP media-src 출처와 같다)."""
+    from urllib.parse import urlsplit
+
+    monkeypatch.setenv("UPLOAD_S3_BUCKET", "mm-audio")
+
+    url = upload_storage.presigned_audio_url("m1", "audio.m4a", "audio/mp4")
+
+    parts = urlsplit(url)
+    assert parts.scheme == "https"
+    assert parts.netloc == "mm-audio.s3.ap-northeast-2.amazonaws.com"
+    assert parts.path == "/meetings/m1/audio.m4a"
+    assert "X-Amz-Algorithm=AWS4-HMAC-SHA256" in parts.query
+
+
+def test_s3_client_has_short_timeouts_and_few_retries(real_s3_client):
+    config = real_s3_client.meta.config
+
+    assert config.connect_timeout == 5
+    assert config.read_timeout == 30
+    # botocore 는 max_attempts(재시도 횟수)=2 를 첫 시도 포함 total_max_attempts=3 으로 바꿔 둔다
+    assert config.retries["total_max_attempts"] == 3

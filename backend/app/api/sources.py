@@ -184,8 +184,10 @@ def upload_recording(
 
     같은 회의에 다시 올리면 파일만 바꾸고 보관 기준 시각(`retention_from`)은 처음 값을 유지한다.
     이미 정리된(`deleted_at`) 녹음에는 저장하지 않고 `stored=false` 로 성공한다. AI 가 다시 보내도 깨지지 않게 한다.
+    개인정보 세대(`X-Privacy-Epoch`)는 보지 않는다. 녹음 바이트에는 신원 정보가 없고 공동 공간 팀원 정리도
+    음성 바이트는 남긴다. 공간 전체 정리는 회의·공간을 지우므로 404·410 으로 끝난다.
     """
-    meeting = require_live_meeting(db, meeting_id, lock=True)
+    meeting = require_live_meeting(db, meeting_id, lock=True, check_epoch=False)
     if meeting.source != MeetingSource.DISCORD:
         raise AppError(
             ErrorCode.INVALID_REQUEST,
@@ -241,7 +243,7 @@ def upload_recording(
         raise AppError(ErrorCode.AUDIO_UPLOAD_FAILED)
 
     try:
-        require_live_meeting(db, meeting_id, lock=True)
+        require_live_meeting(db, meeting_id, lock=True, check_epoch=False)
         # 복사하는 사이 정리 작업이 이 녹음을 지웠을 수 있다. 정리된 기록에는 새 파일을 남기지 않는다
         current = db.get(MeetingAudio, meeting_id, populate_existing=True)
         if current is not None and current.deleted_at is not None:

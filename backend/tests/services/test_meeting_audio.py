@@ -1,8 +1,12 @@
-"""회의 녹음 보관 기록과 재생 가능 판단(#659). now 를 주입해 보관 기간 경계를 본다."""
+"""회의 녹음 보관 기록과 재생 가능 판단(#659). now 를 주입해 보관 기간 경계를 본다.
+
+TEST_DATABASE_URL 이 있으면 PostgreSQL 에서도 돈다.
+"""
+import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -11,22 +15,43 @@ from app.core.errors import AppError, ErrorCode
 from app.models import Meeting, MeetingAudio, Workspace
 from app.services import meeting_audio
 
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 RECEIVED = datetime(2026, 11, 3, 12, 0, tzinfo=timezone.utc)
 DAY = timedelta(days=1)
 SECOND = timedelta(seconds=1)
 
 
-@pytest.fixture
-def db():
-    engine = create_engine(
-        "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
+def _pg_engine():
+    engine = create_engine(TEST_DATABASE_URL)
+    with engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    Base.metadata.drop_all(engine)
+    return engine
+
+
+@pytest.fixture(
+    params=[
+        "sqlite",
+        pytest.param(
+            "postgresql",
+            marks=pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL(PostgreSQL)이 없습니다."),
+        ),
+    ]
+)
+def db(request):
+    if request.param == "postgresql":
+        engine = _pg_engine()
+    else:
+        engine = create_engine(
+            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        )
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
     try:
         yield session
     finally:
         session.close()
+        Base.metadata.drop_all(engine)
         engine.dispose()
 
 
@@ -292,3 +317,65 @@ def test_sweep_skips_already_deleted_row(db, storage):
     assert meeting_audio.sweep_expired_audio(db, RECEIVED + 8 * DAY) == []
 
     assert folder.exists()
+
+
+def test_sweep_removes_files_without_holding_a_transaction(db, storage, monkeypatch):
+    """S3 를 지우는 동안 워크스페이스·회의 잠금(트랜잭션)을 쥐지 않는다. 잠금은 deleted_at 을 남길 때만 짧게 잡는다."""
+    meeting = _recorded(db)
+    folder = _with_file(storage, meeting)
+    real_remove = meeting_audio.upload_storage.remove_audio
+    in_transaction = []
+
+    def remove(meeting_id):
+        in_transaction.append(db.in_transaction())
+        real_remove(meeting_id)
+
+    monkeypatch.setattr(meeting_audio.upload_storage, "remove_audio", remove)
+    now = RECEIVED + 8 * DAY
+
+    assert meeting_audio.sweep_expired_audio(db, now) == [meeting.meeting_id]
+
+    assert in_transaction == [False]
+    assert not folder.exists()
+    assert _aware_deleted_at(db, meeting) == now
+
+
+def test_sweep_failure_of_one_meeting_does_not_block_others(db, storage, monkeypatch):
+    first, second = _recorded(db), _recorded(db)
+    first_folder, second_folder = _with_file(storage, first), _with_file(storage, second)
+    real_remove = meeting_audio.upload_storage.remove_audio
+
+    def remove(meeting_id):
+        if meeting_id == first.meeting_id:
+            raise OSError("s3 down")
+        real_remove(meeting_id)
+
+    monkeypatch.setattr(meeting_audio.upload_storage, "remove_audio", remove)
+
+    assert meeting_audio.sweep_expired_audio(db, RECEIVED + 8 * DAY) == [second.meeting_id]
+
+    assert first_folder.exists() and not second_folder.exists()
+    db.expire_all()
+    assert db.get(MeetingAudio, first.meeting_id).deleted_at is None
+    assert db.get(MeetingAudio, second.meeting_id).deleted_at is not None
+
+
+@pytest.mark.parametrize("deleted", ["meeting", "workspace"])
+def test_sweep_skips_meeting_deleted_while_removing(db, storage, monkeypatch, deleted):
+    """파일을 지우는 사이 회의·공간이 지워지면 deleted_at 을 남기지 않는다. 그 뒤 정리는 삭제 경로(purge)가 맡는다."""
+    meeting = _recorded(db)
+    _with_file(storage, meeting)
+    real_remove = meeting_audio.upload_storage.remove_audio
+
+    def remove_then_delete(meeting_id):
+        real_remove(meeting_id)
+        target = db.get(Meeting, meeting_id) if deleted == "meeting" else db.get(Workspace, meeting.workspace_id)
+        target.deleted_at = RECEIVED + 8 * DAY
+        db.commit()
+
+    monkeypatch.setattr(meeting_audio.upload_storage, "remove_audio", remove_then_delete)
+
+    assert meeting_audio.sweep_expired_audio(db, RECEIVED + 8 * DAY) == []
+
+    db.expire_all()
+    assert db.get(MeetingAudio, meeting.meeting_id).deleted_at is None
