@@ -898,12 +898,21 @@ def rename_topic(db: Session, workspace_id: str, topic_id: str, *, name: str | N
 def merge_topics(db: Session, workspace_id: str, topic_id: str, into_topic_id: str) -> Topic:
     """topic 의 회의·항목·뗀 표시·결정·별칭을 into 로 옮기고 topic 의 키를 into 의 별칭으로 남긴 뒤 topic 을 지운다.
 
+    into 가 합치기 전에 보이던 태스크의 뗀 표시는 옮기지 않는다. topic 에서 뗀 것이고 into 에서는 아무도 떼지 않았다.
     호출자가 worker_gate 를 먼저 잡는다. 커밋은 호출자가 한다.
     """
+    from app.services import project_map
+
     if topic_id == into_topic_id:
         raise AppError(ErrorCode.INVALID_REQUEST, message="같은 주제로는 합칠 수 없습니다.")
     topic = _workspace_topic(db, workspace_id, topic_id)
     into = _workspace_topic(db, workspace_id, into_topic_id)
+    links = project_map._visible_links(workspace_id).where(TopicItem.topic_id == into_topic_id).subquery()
+    shown = list(db.scalars(select(links.c.task_id)))
+    db.execute(
+        delete(TopicTaskDetach).where(TopicTaskDetach.topic_id == topic_id, TopicTaskDetach.task_id.in_(shown))
+        .execution_options(synchronize_session=False)
+    )
     for model, column in ((TopicMeeting, "meeting_id"), (TopicItem, "item_id"), (TopicTaskDetach, "task_id")):
         # into 에 이미 있는 짝은 옮기지 않고 지운다. 옮기면 기본 키가 겹친다
         present = aliased(model)

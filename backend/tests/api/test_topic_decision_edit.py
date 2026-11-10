@@ -180,6 +180,32 @@ def test_merge_moves_meetings_tasks_and_decisions_into_the_target(client, mdb, m
     assert _edges(client, ws) == {(ids["인프라"], task.task_id)}
 
 
+@pytest.mark.parametrize("target_shows_it", [True, False])
+def test_merge_keeps_a_task_the_target_showed_and_hides_one_detached_from_the_merged_topic(
+    client, mdb, mseed, target_shows_it,
+):
+    ws = mseed["ws"]
+    task = Task(workspace_id=ws, title="도커 이미지", status="todo")
+    mdb.add(task)
+    meeting = _meeting(mdb, ws)
+    extraction = _extraction(mdb, meeting, summary_requested_at=T0)
+    item = ExtractionItem(extraction_id=extraction.extraction_id, task_title=task.title, task_id=task.task_id)
+    mdb.add(item)
+    mdb.commit()
+    _save(mdb, meeting, [
+        {"name": "회의록", "item_ids": [item.item_id]},
+        {"name": "배포", "item_ids": [item.item_id] if target_shows_it else []},
+    ], extraction=extraction)
+    ids = _topic_ids(mdb, ws)
+    client.delete(f"{P}/{ws}/topics/{ids['회의록']}/tasks/{task.task_id}")
+
+    r = client.post(f"{P}/{ws}/topics/{ids['회의록']}/merge", json={"into_topic_id": ids["배포"]})
+
+    shown = [task.task_id] if target_shows_it else []
+    assert [t["task_id"] for t in r.json()["data"]["tasks"]] == shown
+    assert _edges(client, ws) == {(ids["배포"], task_id) for task_id in shown}
+
+
 def test_detach_hides_the_task_from_graph_detail_and_bundle_and_is_idempotent(client, mdb, mseed):
     ws = mseed["ws"]
     _, _, _, task, topic_id = _linked(mdb, ws)
