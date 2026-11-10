@@ -23,7 +23,7 @@ import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf } from '@/shared/lib/date'
 import { queryView } from '@/shared/lib/query-view'
-import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { GuardedLink, useUnsavedChangesStore } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
@@ -177,11 +177,24 @@ function TopicView({
   const decisionMenus = useRef(new Map<string, HTMLButtonElement>())
   // 닫은 뒤 포커스를 둘 곳. 닫힌 화면이 그려진 뒤에 찾는다 — 폼 자리에 단추가 다시 생긴다
   const refocus = useRef<(() => { focus: () => void } | null | undefined) | null>(null)
+  // 앱의 이탈 확인(뒤로가기 등)이 열려 있다. 그 창이 포커스를 가두는 동안에는 패널 안으로 옮기지 않는다
+  const leaving = useUnsavedChangesStore((state) => state.pendingLeave !== null)
   useEffect(() => {
+    if (leaving) return
     const target = refocus.current?.()
     refocus.current = null
     target?.focus()
-  }, [mode, pendingSwitch])
+  }, [mode, pendingSwitch, leaving])
+  // 이탈 확인이 뜨면 같은 제목의 패널 안 확인은 닫는다. 쓰던 폼은 두고, 계속 쓰기로 하면 그 칸으로 돌아간다 —
+  // 이탈 확인을 연 단추가 패널 안 확인과 함께 사라져 그대로면 포커스가 body 로 떨어진다
+  useEffect(() => {
+    if (pendingSwitch === null) return
+    return useUnsavedChangesStore.subscribe(({ pendingLeave }) => {
+      if (pendingLeave === null) return
+      refocus.current = () => form.current
+      setPendingSwitch(null)
+    })
+  }, [pendingSwitch])
 
   const switchTo = (next: PanelMode) => {
     editor.clearFailure()

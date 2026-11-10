@@ -1,6 +1,7 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
+import { BrowserRouter, Routes } from 'react-router'
 import { onTestFinished } from 'vitest'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import { endSessionScope } from '@/shared/api/sessionScope'
@@ -13,6 +14,9 @@ import { deferred } from '@/shared/test/deferred'
 import { recordRequests } from '@/shared/test/requests'
 import { stubViewport } from '@/shared/test/viewport'
 import { toast } from '@/shared/ui/toast'
+import { App } from './App'
+import { createApp } from './createApp'
+import { appRoutes } from './router/routes'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -526,6 +530,56 @@ describe('고치기 사이를 옮길 때 (#551)', () => {
     expect(
       within(prompt).getByRole('button', { name: '변경 내용 버리고 나가기' }),
     ).toBeInTheDocument()
+  })
+
+  it('패널 안 확인이 열린 채 브라우저 뒤로가기를 하면 이탈 확인 하나만 남고, 계속 쓰면 쓰던 칸으로 돌아가며 버리면 떠난다', async () => {
+    // MemoryRouter 는 popstate 를 내지 않는다. 태스크 화면에서 맵으로 온 기록 위에서 BrowserRouter 로 돈다
+    window.history.replaceState(null, '', paths.tasks(WS))
+    window.history.pushState(null, '', `${paths.projectMap(WS)}?view=list`)
+    const app = createApp()
+    const view = render(
+      <App queryClient={app.queryClient}>
+        <BrowserRouter>
+          <Routes>{appRoutes}</Routes>
+        </BrowserRouter>
+      </App>,
+    )
+    onTestFinished(() => {
+      view.unmount()
+      app.dispose()
+      window.history.replaceState(null, '', '/')
+    })
+    await screen.findByRole('heading', { level: 2, name: '로그인·계정' }, FIRST_PAINT)
+    await userEvent.click(screen.getByRole('button', { name: '배포·인프라' }))
+    await within(panel()).findByRole('region', { name: '결정' })
+
+    const text = '배포는 스크립트 하나로 한다'
+    await chooseMenu(text, '문장 고치기')
+    const field = await within(panel()).findByRole('textbox', { name: '결정 문장' })
+    await userEvent.type(field, ' 롤백도')
+    await userEvent.click(within(panel()).getByRole('button', { name: '이름·설명 고치기' }))
+    await askedToSwitch()
+
+    act(() => window.history.back())
+    await screen.findByText(LEAVE)
+    // 위에 뜬 창은 아래 창을 aria-hidden 으로 가린다. 가려진 창까지 센다
+    await waitFor(() => expect(screen.getAllByRole('dialog', { hidden: true })).toHaveLength(1))
+    expect(screen.queryByText(SWITCH)).toBeNull()
+    const prompt = screen.getByRole('dialog', { name: PROMPT })
+    expect(prompt).toHaveAccessibleDescription(LEAVE)
+    expect(window.location.pathname).toBe(paths.projectMap(WS))
+
+    await userEvent.click(within(prompt).getByRole('button', { name: '계속 작성하기' }))
+    await promptClosed()
+    expect(field).toHaveValue(`${text} 롤백도`)
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(field).toHaveFocus()
+    expect(window.location.pathname).toBe(paths.projectMap(WS))
+
+    act(() => window.history.back())
+    await userEvent.click(await screen.findByRole('button', { name: '변경 내용 버리고 나가기' }))
+    await waitFor(() => expect(window.location.pathname).toBe(paths.tasks(WS)))
+    expect(screen.queryByRole('dialog', { name: PROMPT })).toBeNull()
   })
 
   it('저장하는 동안에는 다른 고치기를 열 수 없고, 저장이 끝난 뒤 연 폼은 그 저장이 닫지 않는다', async () => {
