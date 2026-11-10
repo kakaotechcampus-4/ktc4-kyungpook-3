@@ -1,6 +1,13 @@
 import { expect, test } from '@playwright/test'
 import type { Page, Response } from '@playwright/test'
-import { expectAudioReady, expectMinutesOpened, SHORT_AUDIO, start } from './support'
+import {
+  capture,
+  expectAudioReady,
+  expectMinutesOpened,
+  expectNoHorizontalOverflow,
+  SHORT_AUDIO,
+  start,
+} from './support'
 
 /*
  * M5 U6-2 — 회의 올리기 → 정리 → 회의록. 상태는 MSW 시나리오(shared/mock/scenarios.ts)로만 만든다.
@@ -479,4 +486,47 @@ test('⑪ 채팅 회의는 대화 모으기 → 뽑아내기 두 단계이고, �
     '0 / 2 단계 완료 · 대화 모으기 진행 중',
     '1 / 2 단계 완료 · 결정사항과 할 일 뽑아내기 진행 중',
   ])
+})
+
+test('⑫ 요약이 승인을 기다리면 PM 은 남은 건수를 보고, 하나를 반려하고 돌아오면 건수가 준다 (#551)', async ({
+  page,
+}, testInfo) => {
+  await start(page, 'minutes-awaiting-approval', `${WORKSPACE}/meetings/mt_09`)
+  const summary = page.getByRole('tabpanel')
+  await expect(summary.getByText('승인이 끝나면 요약이 만들어져요')).toBeVisible()
+  await expect(
+    summary.getByText('승인 대기 3건이 남았어요. 발언은 전사문에서 볼 수 있어요.'),
+  ).toBeVisible()
+  await capture(page, testInfo, 'awaiting-pm.png')
+
+  await page.getByRole('tab', { name: /추출된 일/ }).click()
+  await page
+    .getByRole('tabpanel')
+    .getByRole('link', { name: /확인하기$/ })
+    .first()
+    .click()
+  await page.getByRole('button', { name: '반려', exact: true }).click()
+  await expect(page.getByTestId('approval-result')).toHaveText(/^반려했어요/)
+
+  await page.goBack()
+  await page.getByRole('tab', { name: '요약' }).click()
+  await expect(
+    page
+      .getByRole('tabpanel')
+      .getByText('승인 대기 2건이 남았어요. 발언은 전사문에서 볼 수 있어요.'),
+  ).toBeVisible()
+  await capture(page, testInfo, 'awaiting-pm-after-reject.png')
+})
+
+test('⑬ 요약이 승인을 기다리면 일반 팀원은 같은 문구를 건수 없이 본다 (#551)', async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await start(page, 'minutes-awaiting-approval-member', `${WORKSPACE}/meetings/mt_09`)
+  const summary = page.getByRole('tabpanel')
+  await expect(summary.getByText('승인이 끝나면 요약이 만들어져요')).toBeVisible()
+  await expect(summary.getByText('발언은 전사문에서 볼 수 있어요.', { exact: true })).toBeVisible()
+  await expect(summary.getByText(/승인 대기/)).toHaveCount(0)
+  await expectNoHorizontalOverflow(page)
+  await capture(page, testInfo, 'awaiting-member-390.png')
 })
