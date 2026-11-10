@@ -27,6 +27,10 @@ const SECTION_TITLE = 'text-caption font-semibold text-sub'
 const ACCOUNT_ROW =
   'flex flex-wrap items-center gap-8 border-b border-surface-selected py-8 last:border-b-0'
 
+/** Discord 를 연결한 공간에서 이름 추가 칸 위에 둔다 (#660) */
+const NOT_IN_DISCORD_SERVER =
+  'Discord 서버에 없는 팀원은 이름으로 추가할 수 있어요. 서버에 들어와 이어 주기 전까지는 그 팀원의 Discord 회의 발화가 잡히지 않아요.'
+
 const isPending = (pending: RowWrite | null, target: string) =>
   pending !== null && writeTarget(pending) === target
 
@@ -94,10 +98,12 @@ function UnlinkedAccounts({ users, writes, onAdded }: UnlinkedAccountsProps) {
 interface NameAddFormProps {
   tone: Tone
   writes: MemberRowWrites
+  /** 칸 위의 안내. Discord 를 연결한 공간이 서버에 없는 사람을 이름으로 추가한다고 알린다 (#660) */
+  notice?: string
 }
 
 /** Discord 없이 이름만으로 팀원을 추가한다 (#613). 추가한 팀원은 위 목록의 새 줄로 나타난다 */
-function NameAddForm({ tone, writes }: NameAddFormProps) {
+function NameAddForm({ tone, writes, notice }: NameAddFormProps) {
   const [text, setText] = useState('')
   const fieldId = useId()
   const failure = writes.failure?.target === 'new' ? writes.failure.message : undefined
@@ -112,6 +118,7 @@ function NameAddForm({ tone, writes }: NameAddFormProps) {
         writes.run({ kind: 'create', displayName: text, discordUserId: null }, () => setText(''))
       }}
     >
+      {notice === undefined ? null : <p className="pb-10 text-body text-dim">{notice}</p>}
       <Label htmlFor={fieldId} tone={tone} className={LABEL_GAP[tone]}>
         팀원 이름
       </Label>
@@ -235,7 +242,11 @@ export function MemberRows({
           onAdded={(member) => setRowEditing(member.id, true)}
         />
       )}
-      <NameAddForm tone={tone} writes={writes} />
+      <NameAddForm
+        tone={tone}
+        writes={writes}
+        notice={discordUsers === null ? undefined : NOT_IN_DISCORD_SERVER}
+      />
       <MoveConfirm
         fromName={moving?.from.displayName ?? null}
         onCancel={() => setMoving(null)}

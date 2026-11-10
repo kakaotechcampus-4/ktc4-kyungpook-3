@@ -281,6 +281,148 @@ describe('팀 화면 — PM', () => {
   })
 })
 
+describe('팀 화면 — Discord 서버에 없는 사람 (#660)', () => {
+  beforeEach(() => {
+    applyScenario('settings-unmapped')
+  })
+
+  const memberWrites = (log: ReturnType<typeof recordRequests>) =>
+    log.started
+      .filter(({ method, path }) => method !== 'GET' && path.startsWith('/members'))
+      .map(({ method, path }) => `${method} ${path}`)
+
+  async function openDialog() {
+    const user = userEvent.setup()
+    renderApp(TEAM)
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 관리' }))
+    await dialog.findByRole('button', { name: '이재환 이름 고치기' })
+    return { user, dialog }
+  }
+
+  it('Discord 사용자가 없어도 팀원 관리 창에서 이름으로 추가하고, 창과 팀 화면의 그 팀원 줄에 `초대` 가 생긴다', async () => {
+    db.discordUsers.length = 0
+    const bodies = recordRequestBodies('POST', '/members')
+    const { user, dialog } = await openDialog()
+    expect(
+      dialog.getByText(
+        'Discord 서버에 없는 팀원은 이름으로 추가할 수 있어요. 서버에 들어와 이어 주기 전까지는 그 팀원의 Discord 회의 발화가 잡히지 않아요.',
+      ),
+    ).toBeInTheDocument()
+    const name = dialog.getByRole('textbox', { name: '팀원 이름' })
+
+    await user.type(name, '한지민')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+    const row = (await dialog.findByRole('button', { name: '한지민 이름 고치기' })).closest('li')!
+    expect(await within(row).findByRole('button', { name: '초대' })).toBeInTheDocument()
+    expect(bodies).toEqual([{ workspace_id: 'ws_01', display_name: '한지민' }])
+
+    await user.type(name, ' 한지민')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+    expect(await dialog.findByText('이미 같은 이름의 팀원이 있어요.')).toBeInTheDocument()
+    expect(bodies).toHaveLength(1)
+
+    await user.click(dialog.getByRole('button', { name: '닫기' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    const added = within(await screen.findByRole('region', { name: '한지민' }))
+    expect(await added.findByRole('button', { name: '초대' })).toBeInTheDocument()
+  })
+
+  it('다른 줄에서 고치던 이름은 이름 추가 뒤에도 남고, 추가한 팀원 줄에서 계정을 고르면 새로 만들지 않고 그 팀원에 잇는다', async () => {
+    const { user, dialog } = await openDialog()
+    await user.click(dialog.getByRole('button', { name: '이재환 이름 고치기' }))
+    const editor = dialog.getByRole('textbox', { name: '이재환의 새 이름' })
+    await user.type(editor, '님')
+
+    await user.type(dialog.getByRole('textbox', { name: '팀원 이름' }), '최지훈')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+    await dialog.findByRole('button', { name: '최지훈 이름 고치기' })
+    expect(editor).toHaveValue('이재환님')
+    const added = db.members.find(({ display_name }) => display_name === '최지훈')
+    expect(added).toMatchObject({ workspace_id: 'ws_01', discord_user_id: null })
+
+    const log = recordRequests()
+    const account = dialog.getByRole('combobox', { name: '최지훈의 디스코드 계정' })
+    await user.click(account)
+    await user.click(await screen.findByRole('option', { name: /^@jihun_dev/ }))
+    await waitFor(() => expect(account).toHaveTextContent('@jihun_dev'))
+    expect(memberWrites(log)).toEqual([`PATCH /members/${added?.member_id}`])
+    expect(db.members.filter(({ display_name }) => display_name === '최지훈')).toEqual([
+      expect.objectContaining({ member_id: added?.member_id, discord_user_id: '1125' }),
+    ])
+    expect(editor).toHaveValue('이재환님')
+  })
+
+  it('이름을 추가하는 동안에는 줄의 계정 고르기·이름 고치기가 잠긴다 — 같은 이름의 팀원이 둘 생기지 않는다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.post(
+        '/api/v1/members',
+        async () => {
+          await gate.promise
+        },
+        { once: true },
+      ),
+    )
+    const log = recordRequests()
+    const { user, dialog } = await openDialog()
+    await user.click(dialog.getByRole('button', { name: '이재환 이름 고치기' }))
+    const editor = dialog.getByRole('textbox', { name: '이재환의 새 이름' })
+    await user.clear(editor)
+    await user.type(editor, '최지훈')
+    await user.type(dialog.getByRole('textbox', { name: '팀원 이름' }), '최지훈')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+
+    await waitFor(() =>
+      expect(dialog.getByRole('combobox', { name: '박민수의 디스코드 계정' })).toBeDisabled(),
+    )
+    expect(dialog.getByRole('button', { name: '박민수 이름 고치기' })).toBeDisabled()
+    await user.type(editor, '{Enter}')
+    expect(memberWrites(log)).toEqual(['POST /members'])
+
+    gate.resolve()
+    await dialog.findByRole('button', { name: '최지훈 이름 고치기' })
+    await user.type(editor, '{Enter}')
+    expect(
+      await within(editor.closest('li')!).findByText('이미 같은 이름의 팀원이 있어요.'),
+    ).toBeInTheDocument()
+    expect(memberWrites(log)).toEqual(['POST /members'])
+    expect(db.members.filter(({ display_name }) => display_name === '최지훈')).toHaveLength(1)
+  })
+
+  it('줄을 저장하는 동안에는 이름을 추가하지 않는다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.patch(
+        '/api/v1/members/mb_03',
+        async () => {
+          await gate.promise
+        },
+        { once: true },
+      ),
+    )
+    const log = recordRequests()
+    const { user, dialog } = await openDialog()
+    await user.click(dialog.getByRole('combobox', { name: '이재환의 디스코드 계정' }))
+    await user.click(await screen.findByRole('option', { name: /^@jihun_dev/ }))
+
+    const name = dialog.getByRole('textbox', { name: '팀원 이름' })
+    await user.type(name, '최지훈')
+    await waitFor(() => expect(dialog.getByRole('button', { name: '추가' })).toBeDisabled())
+    await user.type(name, '{Enter}')
+    expect(memberWrites(log)).toEqual(['PATCH /members/mb_03'])
+
+    gate.resolve()
+    await waitFor(() => expect(dialog.getByRole('button', { name: '추가' })).toBeEnabled())
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+    await dialog.findByRole('button', { name: '최지훈 이름 고치기' })
+    expect(memberWrites(log)).toEqual(['PATCH /members/mb_03', 'POST /members'])
+    expect(db.members.filter(({ display_name }) => display_name === '최지훈')).toHaveLength(1)
+  })
+})
+
 describe('팀 화면 — Discord 를 건너뛴 공간', () => {
   beforeEach(() => {
     applyScenario('settings-discord-skipped')

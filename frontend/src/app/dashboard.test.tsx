@@ -244,6 +244,58 @@ describe('요약·제목·회의 안내 (AC-01 · AC-05)', () => {
     // 제목 아래 안내와 최근 반영 영역 — 두 자리는 로딩 자리의 최소 표시가 따로 끝난다 (#508)
     await waitFor(() => expect(screen.getAllByText('아직 정리한 회의가 없어요')).toHaveLength(2))
   })
+
+  it.each([
+    ['PM', 'pm', true],
+    ['일반 팀원', 'member', false],
+  ] as const)(
+    '회의가 하나도 없으면 %s 에게 `/record` 안내와 방법 보기를 보이고, 방법 보기는 안내를 연다 (#650)',
+    async (_label, role, hasUpload) => {
+      const user = userEvent.setup()
+      useScenario('dashboard-no-meeting')
+      db.meetings.length = 0
+      setMockRole(role)
+      renderApp(DASHBOARD)
+      const recent = await screen.findByRole('region', { name: '최근 반영' })
+      const hint = await within(recent).findByText(/디스코드 음성 채널에서/)
+      expect(hint).toHaveTextContent('디스코드 음성 채널에서 /record로 첫 회의를 기록해 보세요.')
+      expect(within(hint).getByText('/record').tagName).toBe('CODE')
+      expect(within(recent).queryByRole('link', { name: '회의 업로드' }) !== null).toBe(hasUpload)
+
+      const guide = within(recent).getByRole('button', { name: '방법 보기' })
+      await user.click(guide)
+      const panel = await screen.findByRole('dialog', { name: '처음 쓰는 분을 위한 안내' })
+      await user.click(within(panel).getByRole('button', { name: '닫기' }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      await waitFor(() => expect(guide).toHaveFocus())
+    },
+  )
+
+  it.each([
+    ['PM', 'pm', true],
+    ['일반 팀원', 'member', false],
+  ] as const)(
+    '정리 중인 회의만 있으면 %s 에게 첫 회의 안내와 방법 보기를 두지 않는다 (#650)',
+    async (_label, role, hasUpload) => {
+      // 이 시나리오에는 정리 중 회의(mt_10) 하나만 있다
+      useScenario('dashboard-no-meeting')
+      setMockRole(role)
+      renderApp(DASHBOARD)
+      const recent = await screen.findByRole('region', { name: '최근 반영' })
+      expect(
+        await within(recent).findByText('회의를 정리하면 자동으로 반영한 일이 여기에 보여요.'),
+      ).toBeInTheDocument()
+      expect(within(recent).queryByText(/디스코드 음성 채널에서/)).toBeNull()
+      expect(within(recent).queryByRole('button', { name: '방법 보기' })).toBeNull()
+      expect(within(recent).queryByRole('link', { name: '회의 업로드' }) !== null).toBe(hasUpload)
+    },
+  )
+
+  it('정리한 회의가 있으면 방법 보기가 없다 (#650)', async () => {
+    await openDashboard()
+    expect(screen.queryByText(/디스코드 음성 채널에서/)).toBeNull()
+    expect(screen.queryByRole('button', { name: '방법 보기' })).toBeNull()
+  })
 })
 
 describe('역할 (AC-05)', () => {

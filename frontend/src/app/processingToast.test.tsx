@@ -234,7 +234,7 @@ describe('상태 전환 — 같은 회의의 토스트 하나가 바뀐다', () 
     const processing = await openCard()
     expect(processing).toHaveTextContent('주간 회고 녹음 정리 중')
     expect(processing).toHaveTextContent('차례를 기다리고 있어요')
-    expect(processing).toHaveTextContent('0 / 3 단계 완료')
+    expect(processing).toHaveTextContent('0 / 5 단계 완료')
     expect(within(processing).getByRole('button', { name: '닫기' })).toBeVisible()
     const status = announcement()
 
@@ -254,9 +254,7 @@ describe('상태 전환 — 같은 회의의 토스트 하나가 바뀐다', () 
     setStatus('processing')
     meetingRow().progress = { audio_merged: true, transcribed: true, extracted: false }
     await poll(30_000)
-    await waitFor(() =>
-      expect(processingCard()).toHaveTextContent('결정사항과 할 일을 뽑고 있어요'),
-    )
+    await waitFor(() => expect(processingCard()).toHaveTextContent('회의록을 정리하고 있어요'))
     expect(processingSignals()).toHaveLength(1)
 
     completeMeeting(AWAITING_MEETING_ID)
@@ -307,7 +305,8 @@ describe('역할별 노출', () => {
 
     const card = await openCard()
     expect(card).toHaveTextContent('화자 지정을 기다리고 있어요')
-    expect(card).toHaveTextContent('1 / 3 단계 완료')
+    // 서버는 화자 지정 대기에 처리 단계를 주지 않지만, 정리 중과 같은 다섯 단계라 대기를 오가도 칸 수가 그대로다
+    expect(card).toHaveTextContent('1 / 5 단계 완료')
     expect(signalsWith(SPEAKERS_NEEDED_TITLE)).toEqual([])
     expect(screen.queryByRole('button', { name: '화자 지정하기' })).toBeNull()
   })
@@ -411,7 +410,7 @@ describe('같은 공간의 이어진 정리', () => {
     db.meetingFlow.attendees.mt_12 = db.meetingFlow.attendees[AWAITING_MEETING_ID]
     act(() => trackMeeting({ workspaceId: 'ws_01', meetingId: 'mt_12' }))
     await waitFor(() => expect(processingSignals()).toHaveLength(2))
-    await waitFor(() => expect(pill()).toHaveTextContent('정리 중0/3'))
+    await waitFor(() => expect(pill()).toHaveTextContent('정리 중0/5'))
 
     completeMeeting('mt_12')
     await poll()
@@ -522,12 +521,12 @@ describe('세션 경계', () => {
 })
 
 describe('접기', () => {
-  it('화면 폭과 상관없이 정리 중은 「정리 중 n/3」 알약으로 시작하고, 펼치면 같은 공간의 다른 화면에서도 펼친 채다. 새로 열면 다시 알약이다', async () => {
+  it('화면 폭과 상관없이 정리 중은 「정리 중 n/5」 알약으로 시작하고, 펼치면 같은 공간의 다른 화면에서도 펼친 채다. 새로 열면 다시 알약이다', async () => {
     const user = userEvent.setup()
     const first = await openTasks()
     const button = await waitForPill()
     expect(processingCard()).toBeNull()
-    expect(button).toHaveTextContent('정리 중1/3')
+    expect(button).toHaveTextContent('정리 중1/5')
     expect(button).toHaveAttribute('aria-expanded', 'false')
 
     await user.click(button)
@@ -558,11 +557,11 @@ describe('접기', () => {
     expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
 
-    expect(await waitForPill()).toHaveTextContent('정리 중0/3')
+    expect(await waitForPill()).toHaveTextContent('정리 중0/5')
 
     meetingRow().progress = { audio_merged: true, transcribed: false, extracted: false }
     await poll()
-    await waitFor(() => expect(pill()).toHaveTextContent('정리 중1/3'))
+    await waitFor(() => expect(pill()).toHaveTextContent('정리 중1/5'))
     expect(processingCard()).toBeNull()
 
     awaitSpeakers(AWAITING_MEETING_ID)
@@ -576,16 +575,14 @@ describe('접기', () => {
 
     await user.click(within(speakers).getByRole('button', { name: '접기' }))
     expect(pill()).toHaveTextContent(SPEAKERS_NEEDED_TITLE)
-    expect(pill()).not.toHaveTextContent(/\d\/3/)
+    expect(pill()).not.toHaveTextContent(/\d\/\d/)
     expect(pill()).toHaveFocus()
     expect(screen.getByRole('button', { name: '닫기' })).toBeVisible()
 
     setStatus('processing')
     meetingRow().progress = { audio_merged: true, transcribed: true, extracted: false }
     await poll(30_000)
-    await waitFor(() =>
-      expect(processingCard()).toHaveTextContent('결정사항과 할 일을 뽑고 있어요'),
-    )
+    await waitFor(() => expect(processingCard()).toHaveTextContent('회의록을 정리하고 있어요'))
     expect(pill()).toBeNull()
   }, 15_000)
 
@@ -632,7 +629,7 @@ describe('접기', () => {
 })
 
 describe('단계 표시는 처리 화면과 같은 목록이다 (#483)', () => {
-  it('녹음 회의는 넘기는 중(extracted 참, 아직 processing)에도 2/3 이고 마지막 칸이 진행 중이다', async () => {
+  it('녹음 회의는 넘기는 중(extracted 참, 아직 processing)에도 4/5 이고 마지막 칸 정리 결과 보내기가 진행 중이다', async () => {
     fakeIntervals()
     db.meetings.find(({ meeting_id }) => meeting_id === 'mt_10')!.progress = {
       audio_merged: true,
@@ -640,10 +637,10 @@ describe('단계 표시는 처리 화면과 같은 목록이다 (#483)', () => {
       extracted: true,
     }
     await openTasks()
-    expect(await waitForPill()).toHaveTextContent('정리 중2/3')
+    expect(await waitForPill()).toHaveTextContent('정리 중4/5')
     const card = await openCard()
-    expect(card).toHaveTextContent('결정사항과 할 일을 뽑고 있어요')
-    expect(card).toHaveTextContent('2 / 3 단계 완료')
+    expect(card).toHaveTextContent('정리 결과를 보내고 있어요')
+    expect(card).toHaveTextContent('4 / 5 단계 완료')
   })
 
   it('채팅 회의는 두 단계다 — 대화 모으기 0/2 → 뽑아내기 1/2, 넘기는 중에도 1/2 다', async () => {
@@ -707,7 +704,7 @@ describe('화면 읽기 알림 (role=status)', () => {
     await openCard()
     const status = announcement()!
     expect(status).toHaveTextContent('음성을 텍스트로 옮기고 있어요')
-    expect(status).not.toHaveTextContent(/단계 완료|\d\/3/)
+    expect(status).not.toHaveTextContent(/단계 완료|\d\/\d/)
 
     const changes: MutationRecord[] = []
     const observer = new MutationObserver((records) => changes.push(...records))
@@ -724,7 +721,7 @@ describe('화면 읽기 알림 (role=status)', () => {
 
     advanceMeeting('mt_10')
     await poll()
-    await waitFor(() => expect(status).toHaveTextContent('결정사항과 할 일을 뽑고 있어요'))
+    await waitFor(() => expect(status).toHaveTextContent('회의록을 정리하고 있어요'))
     expect(changes.length).toBeGreaterThan(0)
   })
 })

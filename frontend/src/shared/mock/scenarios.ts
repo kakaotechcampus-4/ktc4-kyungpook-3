@@ -56,6 +56,8 @@ export const MOCK_SCENARIOS = [
   'incomplete-workspace',
   // M5 회의 흐름. 모두 ws_01 하나에 로그인한다 — docs/impl-decision/2026-10-02-meeting-upload-policy.md
   'meeting-demo',
+  // meeting-demo 와 같은 흐름을 #542 전 서버로 본다 — 상세에 processing 이 없어 진행 수·경과가 없다
+  'meeting-demo-legacy',
   'meeting-instant',
   'meeting-fail',
   'meeting-fail-diarize',
@@ -129,6 +131,8 @@ export const MOCK_SCENARIOS = [
   // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
   'settings-discord-skipped',
   'settings-unmapped',
+  // #660 settings-unmapped 에서 Discord 서버에 사용자가 아무도 없다 — 새로 만든 테스트 서버다. 아이디로 초대할 가입자가 있다
+  'settings-discord-empty',
   'settings-member',
   // #647 팀원 한 명이 한 줄인 팀원 관리. ws_01 PM 이다. 이재환에 지훈의 계정(1125)을 잘못 이어 두었다 —
   // 최지훈 줄에서 그 계정을 고르면 옮기기를 확인한다. 1128 dahye 는 아무에게도 연결되지 않았고, 정하늘의 1126 은 서버를 떠났다
@@ -845,6 +849,9 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       // 브라우저 데모: 상세 조회(처리 화면 polling)마다 한 단계씩 보인다
       readyToUpload(state, 'staged')
       break
+    case 'meeting-demo-legacy':
+      readyToUpload(state, 'staged-legacy')
+      break
     case 'meeting-instant':
       // E2E: 업로드 뒤 첫 상세 조회에 정리가 끝난다
       readyToUpload(state, 'instant')
@@ -1170,6 +1177,11 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'settings-unmapped':
       // 픽스처 그대로의 ws_01 이다. Discord 연결됨, 1125(지훈)는 미매핑, mb_04 의 1126 은 서버를 떠났다(inactive), 1199 는 봇이다
       signInWith(state, ['ws_01'], 'ws_01')
+      break
+    case 'settings-discord-empty':
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.discordUsers = []
+      addInviteeAccounts(state)
       break
     case 'member-rows':
       signInWith(state, ['ws_01'], 'ws_01')

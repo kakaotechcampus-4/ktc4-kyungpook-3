@@ -41,6 +41,13 @@ function atMembers() {
 
 const stepNav = () => screen.getByRole('navigation', { name: '단계 이동' })
 
+/** 카드의 진행 버튼 이름. `어떻게 쓰나요?` 는 진행이 아니라 안내를 여는 글자 링크라 세지 않는다 (#650) */
+const cardActions = (card: HTMLElement) =>
+  within(card)
+    .getAllByRole('button')
+    .map((button) => button.textContent)
+    .filter((name) => name !== '어떻게 쓰나요?')
+
 beforeEach(() => {
   applyScenario('incomplete-workspace')
   vi.mocked(leaveApp).mockClear()
@@ -262,11 +269,7 @@ describe('연동 단계 둘러보기', () => {
     renderApp('/onboarding/ws_03/connect_discord?review=1')
     const card = await screen.findByRole('region', { name: '디스코드 연동' })
     expect(await within(card).findByText('연결됨')).toBeInTheDocument()
-    expect(
-      within(card)
-        .getAllByRole('button')
-        .map((button) => button.textContent),
-    ).toEqual(['다음'])
+    expect(cardActions(card)).toEqual(['다음'])
     expect(within(stepNav()).getByRole('button', { name: '이전 단계' })).toBeEnabled()
     expect(within(stepNav()).getByRole('button', { name: '다음 단계' })).toBeEnabled()
   })
@@ -308,11 +311,7 @@ describe('연동 단계 둘러보기', () => {
     expect(log.started).toContainEqual({ method: 'GET', path: '/workspaces/ws_03/integrations' })
     expect(patches(log.started)).toHaveLength(0)
     // 연결됐으니 `연결하기`·`건너뛰기` 대신 `다음` 이다
-    expect(
-      within(returned)
-        .getAllByRole('button')
-        .map((button) => button.textContent),
-    ).toEqual(['다음'])
+    expect(cardActions(returned)).toEqual(['다음'])
 
     await userEvent.click(within(stepNav()).getByRole('button', { name: '다음 단계' }))
     expect(await screen.findByRole('heading', { name: 'Notion 연결' })).toBeInTheDocument()
