@@ -84,7 +84,9 @@ for key, label in labels.items():
         landing_pr = next(p for r in selected if r["id"] == "682-landing-navigation" for p in r["prs"] if p["number"] == 682)
         lines += [f"- PR #682는 처음 조사할 때 로컬에만 있던 기록이다. 추가 확인 상태는 {landing_pr['state']}이며 위 표의 병합일을 따른다. 이 이관이 앱 코드를 변경한 것은 아니다."]
     if key == "m5":
-        lines += ["- FE 원문 듣기 PR #680은 MERGED지만 BE 녹음 보관 PR #670은 조회 당시 OPEN이다. 실제 운영 재생 검증과 구분한다."]
+        audio = next((p for p in manifest.get("context_prs", []) if p["number"] == 670), None)
+        audio_state = audio["state"] if audio else "OPEN"
+        lines += [f"- FE 원문 듣기 PR #680은 MERGED이며 BE 녹음 보관 PR #670의 조회 상태는 {audio_state}다. 실제 운영 재생 검증과 구분한다."]
     write(page, lines)
 
 page = plan / "README.md"
@@ -125,7 +127,8 @@ if manifest.get("unavailable_references"):
         reference_lines += ["", f"## 기록 {index}", "", f"원래 경로는 `{item['path']}`다.", "", item["reason"]]
     write(reference_page, reference_lines)
 write(page, lines)
-print(f"Rendered {len(labels) + 2} history pages from {len(work)} work records.")
+page_count = len(labels) + 2 + bool(manifest.get("unavailable_references"))
+print(f"Rendered {page_count} history pages from {len(work)} work records.")
 for page in stale_pages:
     print(f"Stale generated page: {page}")
 raise SystemExit(bool(stale_pages))

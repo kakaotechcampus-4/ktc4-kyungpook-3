@@ -47,6 +47,9 @@ for record in records:
         original_bytes = restored.encode("utf-8")
         if hashlib.sha256(original_bytes).hexdigest() != record["source_sha256"]:
             errors.append(f"External snapshot not preserved: {source}")
+        git_original = subprocess.run(["git", "show", f"{base}:{source}"], cwd=root, capture_output=True)
+        if git_original.returncode == 0 and hashlib.sha256(git_original.stdout).hexdigest() != record["source_sha256"]:
+            errors.append(f"External snapshot differs from the now available Git original: {source}")
     if record["kind"] == "guide-update":
         if target not in guide_updates or source != target:
             errors.append(f"Unapproved guide rewrite: {target}")
@@ -68,6 +71,9 @@ for record in records:
 original_issues = subprocess.check_output(["git", "ls-tree", "-r", "--name-only", base, "frontend/docs/issues"], cwd=root).decode("utf-8").splitlines()
 if not set(original_issues).issubset(sources):
     errors.append("Not every original issues file is mapped")
+original_refactor = subprocess.check_output(["git", "ls-tree", "-r", "--name-only", base, "frontend/docs/plan/refactor"], cwd=root).decode("utf-8").splitlines()
+if not {name for name in original_refactor if name.endswith(".md")}.issubset(sources):
+    errors.append("Not every original refactor file is mapped")
 if (root / "frontend/docs/issues").exists() or (root / "frontend/docs/plan/issues").exists():
     errors.append("Legacy issues directory still exists")
 for name, digest in manifest["protected_files"].items():

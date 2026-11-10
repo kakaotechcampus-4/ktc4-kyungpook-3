@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-11-11T06:08:49.611882+09:00",
+  "captured_at": "2026-11-11T06:25:23.465182+09:00",
   "source_commit": "fabf4386f3c3255f45347c1f0afccbadc43fe2a9",
   "repository": "https://github.com/kakaotechcampus-4/ktc4-kyungpook-3",
   "classification": "사후 문서 분류. 원래 계획 범위·완료조건을 변경하지 않는다.",
@@ -6765,10 +6765,10 @@
         {
           "number": 661,
           "title": "feat(backend): PM 이 팀원을 명단에서 빼는 삭제 API 를 더한다",
-          "state": "OPEN",
+          "state": "MERGED",
           "url": "https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/661",
           "created_at": "2026-11-10T10:09:44Z",
-          "merged_at": null,
+          "merged_at": "2026-11-10T21:24:16Z",
           "author": "dw021213",
           "base": "develop",
           "head": "feature/637-member-delete",
@@ -11541,5 +11541,14 @@
     "frontend/docs/plan/README.md",
     "frontend/docs/plan/implementation-history.md",
     "frontend/docs/plan/history/unavailable-references.md"
-  ]
+  ],
+  "context_prs": [
+    {
+      "number": 670,
+      "state": "OPEN",
+      "url": "https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/670",
+      "merged_at": null
+    }
+  ],
+  "capture_source_commit": "fabf4386f3c3255f45347c1f0afccbadc43fe2a9"
 }
