@@ -3,11 +3,11 @@ import userEvent from '@testing-library/user-event'
 import { Capabilities } from './LandingSections'
 
 const TASK_DESCRIPTIONS = [
-  ['회의록 정리', '녹음을 올리면 발화자를 나누고 회의 내용을 정리해요.'],
-  ['마감 리마인드', '다가오는 마감과 담당자를 확인하고 알림을 준비해요.'],
-  ['담당자 배치', '회의에서 정해진 업무에 담당자와 마감을 연결해요.'],
-  ['진행 상황 점검', '담당자에게 진행 상황을 물어보는 메시지를 준비해요.'],
-  ['주간 요약', '회의록과 태스크로 이번 주에 한 일과 남은 일을 살펴보세요.'],
+  ['회의록 정리', '녹음의 화자를 지정하고, 제목과 전사문을 직접 다듬으세요.'],
+  ['마감 리마인드', '다가오는 마감과 담당자를 확인하고 재촉을 준비하세요.'],
+  ['담당자 배치', '회의에서 정해진 업무에 담당자와 마감을 연결하세요.'],
+  ['진행 상황 점검', '대시보드에서 마감 임박과 막힌 일을 먼저 살펴보세요.'],
+  ['주간 요약', '회의록과 태스크로 이번 주에 한 일과 남은 일을 돌아보세요.'],
 ]
 
 describe('랜딩에서 맡길 수 있는 일', () => {
@@ -18,7 +18,7 @@ describe('랜딩에서 맡길 수 있는 일', () => {
     const panel = screen.getByRole('tabpanel', { name: '회의록 정리' })
     expect(selected).toHaveAttribute('aria-selected', 'true')
     expect(selected).toHaveAttribute('aria-controls', panel.id)
-    expect(panel).toHaveTextContent('녹음을 올리면 발화자를 나누고 회의 내용을 정리해요.')
+    expect(panel).toHaveTextContent('녹음의 화자를 지정하고, 제목과 전사문을 직접 다듬으세요.')
   })
 
   it('다섯 업무를 선택하면 선택 표시와 설명이 함께 바뀐다', async () => {

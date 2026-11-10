@@ -1,92 +1,56 @@
 import { Link } from 'react-router'
 import { policyDocuments } from '@/shared/config/policy'
 import { BrandMark } from '@/shared/ui/brand-mark'
-import { Button } from '@/shared/ui/button'
-import {
-  CARD_WIDTH,
-  HERO_SIZE,
-  LINK_PRIMARY,
-  SECTION_LEAD,
-  SECTION_TITLE,
-  TEXT_WIDTH,
-} from './styles'
+import { CARD_WIDTH, HERO_SIZE } from './styles'
 import { StartLink } from './StartLink'
 
-/** 마지막 CTA. `시작하기` → 로그인 (D-003). `문의하기` 는 창구가 아직 없어 비활성이다 */
 export function FinalCta() {
   return (
-    <section className={`${TEXT_WIDTH} flex flex-col items-center gap-20 pb-[120px] text-center`}>
-      <h2 className={SECTION_TITLE}>이번 주 회의부터 시작해 보세요</h2>
-      <p className={`${SECTION_LEAD} max-w-[620px]`}>
-        첫 회의를 올리고 확인하는 데까지 10분이면 충분합니다. 팀원에게는 아무것도 요청하지 않아도
-        돼요.
-      </p>
-      <div className="flex items-center gap-10 pt-8">
-        <StartLink className={`${LINK_PRIMARY} ${HERO_SIZE}`}>시작하기</StartLink>
-        <Button size="landing-hero" aria-disabled="true">
-          문의하기
-        </Button>
+    <section
+      className={`${CARD_WIDTH} mb-64 flex flex-col items-start justify-between gap-28 rounded-[24px] bg-accent-solid px-28 py-40 sm:mb-96 sm:flex-row sm:items-center sm:px-48 sm:py-56`}
+    >
+      <div className="max-w-[720px]">
+        <h2 className="text-[30px] leading-[1.3] font-semibold tracking-h3 text-ink sm:text-[36px]">
+          다음 회의부터,
+          <br />
+          일의 흐름을 함께 정리해 보세요.
+        </h2>
+        <p className="mt-16 text-[16px] leading-[28px] text-ink">
+          회의의 기록과 팀의 다음 행동을 한곳에 모으세요.
+        </p>
       </div>
+      <StartLink
+        className={`inline-flex shrink-0 items-center justify-center rounded-999 bg-ink-solid font-semibold text-surface hover:bg-ink hover:text-surface focus-visible:outline-offset-4 ${HERO_SIZE}`}
+      >
+        시작하기
+      </StartLink>
     </section>
   )
 }
 
-const FOOTER_GROUPS = [
-  // 요금제 절을 뺐으니 푸터에서도 뺀다. 캔버스의 `[상태 페이지]` 자리표시도 두지 않는다
-  { title: '제품', items: ['기능', '연동', '변경 기록'] },
-  { title: '쓰는 법', items: ['시작 가이드', '회의 올리기', '승인 워크벤치'] },
-  { title: '회사', items: ['소개', '블로그', '문의하기'] },
-  { title: '약관', items: [policyDocuments.terms, policyDocuments.privacy, '보안'] },
-] as const
-
 export function LandingFooter() {
   return (
-    <footer className="flex w-full justify-center border-t border-line px-40">
-      <div className={`${CARD_WIDTH} flex flex-col gap-44 pt-48 pb-40`}>
-        <div className="flex items-start justify-between gap-56">
-          <div className="flex max-w-[260px] flex-col gap-14">
-            <span className="inline-flex items-center gap-9">
-              <BrandMark size="sm" />
-              <span className="text-[14px] font-semibold tracking-h3 text-ink">
-                Manager&apos;s Manager
-              </span>
-            </span>
-            <p className="text-[13px] leading-[20px] text-dim">
-              한 번의 클릭으로, 매니저가 정리합니다
-            </p>
-          </div>
-          <div className="flex gap-56">
-            {FOOTER_GROUPS.map(({ title, items }) => (
-              <div key={title} className="flex flex-col gap-12">
-                <span className="text-[13px] font-semibold text-ink">{title}</span>
-                <ul className="flex flex-col gap-12">
-                  {items.map((item) => (
-                    <li
-                      key={typeof item === 'string' ? item : item.to}
-                      className="text-body text-dim"
-                    >
-                      {typeof item === 'string' ? (
-                        item
-                      ) : (
-                        <Link
-                          to={item.to}
-                          className="hover:text-ink hover:underline underline-offset-3"
-                        >
-                          {item.title}
-                        </Link>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="border-t border-line pt-28">
-          <span className="text-[13px] text-dim">
-            © 2026 Manager&apos;s Manager · 카카오테크캠퍼스 4기 · 경북대 3팀
+    <footer className="w-full border-t border-line px-20 sm:px-40">
+      <div
+        className={`${CARD_WIDTH} flex flex-col gap-28 py-32 sm:flex-row sm:items-center sm:justify-between sm:py-40`}
+      >
+        <div className="flex flex-col gap-12">
+          <span className="inline-flex items-center gap-9 text-[14px] font-semibold tracking-h3 text-ink">
+            <BrandMark size="sm" />
+            Manager&apos;s Manager
+            <span aria-hidden="true" className="h-6 w-6 rounded-999 bg-accent-solid" />
           </span>
+          <p className="text-[12px] leading-[20px] text-dim">
+            © 2026 Manager&apos;s Manager · 카카오테크캠퍼스 4기 · 경북대 3팀
+          </p>
         </div>
+        <nav aria-label="서비스 정책" className="flex flex-wrap gap-20 text-[13px] text-dim">
+          {[policyDocuments.terms, policyDocuments.privacy].map(({ title, to }) => (
+            <Link key={to} to={to} className="hover:text-ink hover:underline underline-offset-3">
+              {title}
+            </Link>
+          ))}
+        </nav>
       </div>
     </footer>
   )

@@ -5,7 +5,7 @@ import type { Scenario } from './support'
 
 /*
  * U5-4 레이아웃 — 주요 화면에 가로 스크롤이 없고 핵심 요소가 화면 안에 보인다. 최소 지원 폭은 360px 이다 (D-180).
- * 1024px 미만(360·390·768)은 `narrow` 인 화면만 본다. 랜딩·로그인·회원가입의 휴대폰 배치는 #478 의 다음 PR 이 한다.
+ * 1024px 미만(360·390·768)은 `narrow` 인 화면만 본다. 로그인·회원가입의 휴대폰 배치는 #478 의 다음 PR 이 한다.
  * 768px 은 휴대폰 셸과 데스크톱 셸의 경계라 한 번 본다.
  * 화면마다 스크린샷을 테스트 결과에 붙인다(playwright-report).
  */
@@ -30,7 +30,14 @@ const SCREENS: {
   /** 데이터 본문(또는 빈 상태)이 그려졌다는 표지. 제목은 불러오는 중에도 보여 그것만으로는 넘침을 잴 때가 아니다 */
   ready?: (page: Page) => Locator
 }[] = [
-  { name: '랜딩', role: 'link', scenario: 'signed-out', path: '/', landmark: '시작하기' },
+  {
+    name: '랜딩',
+    role: 'link',
+    scenario: 'signed-out',
+    path: '/',
+    landmark: '시작하기',
+    narrow: true,
+  },
   { name: '로그인', role: 'button', scenario: 'signed-out', path: '/login', landmark: '로그인' },
   {
     name: '회원가입',

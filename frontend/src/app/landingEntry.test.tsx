@@ -8,7 +8,7 @@ import { renderApp } from './test/renderApp'
 
 /* 다시 온 사람은 랜딩 대신 로그인, 랜딩 `시작하기` 스플래시 (#510). 스플래시 자체의 순서는 splash/SplashHost.test.tsx 가 본다 */
 
-const LANDING_TITLE = /한 번의 클릭으로/
+const LANDING_TITLE = /회의에서 나온 일을/
 
 function recordShownAgo(ms: number) {
   window.localStorage.setItem(SPLASH_RECORD_KEY, String(Date.now() - ms))

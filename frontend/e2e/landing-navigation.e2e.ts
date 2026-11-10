@@ -23,8 +23,10 @@ for (const width of [1280, 1440]) {
       const target = page.locator(region).locator(content).first()
       await expect(target).toBeVisible()
       if (label === '연동') {
-        await expect(target).toHaveText('승인한 것만 나갑니다')
-        await expect(page.locator(region)).toContainText('Notion 반영도 Discord DM도')
+        await expect(target).toHaveText('팀이 쓰는 도구와,필요한 만큼 연결하세요.')
+        await expect(page.locator(region)).toContainText(
+          '회의에서 정한 태스크를 팀의 Notion에 반영',
+        )
       }
       await expect.poll(async () => (await target.boundingBox())?.y).toBeCloseTo(56, 0)
       await capture(page, testInfo, `landing-${hash.slice(1)}-${width}.png`)
@@ -48,11 +50,11 @@ for (const width of [1280, 1440]) {
     expect(initialLink).not.toBeNull()
 
     for (const [label, description] of [
-      ['회의록 정리', '녹음을 올리면 발화자를 나누고 회의 내용을 정리해요.'],
-      ['마감 리마인드', '다가오는 마감과 담당자를 확인하고 알림을 준비해요.'],
-      ['담당자 배치', '회의에서 정해진 업무에 담당자와 마감을 연결해요.'],
-      ['진행 상황 점검', '담당자에게 진행 상황을 물어보는 메시지를 준비해요.'],
-      ['주간 요약', '회의록과 태스크로 이번 주에 한 일과 남은 일을 살펴보세요.'],
+      ['회의록 정리', '녹음의 화자를 지정하고, 제목과 전사문을 직접 다듬으세요.'],
+      ['마감 리마인드', '다가오는 마감과 담당자를 확인하고 재촉을 준비하세요.'],
+      ['담당자 배치', '회의에서 정해진 업무에 담당자와 마감을 연결하세요.'],
+      ['진행 상황 점검', '대시보드에서 마감 임박과 막힌 일을 먼저 살펴보세요.'],
+      ['주간 요약', '회의록과 태스크로 이번 주에 한 일과 남은 일을 돌아보세요.'],
     ]) {
       await section.getByRole('tab', { name: label, exact: true }).click()
       await expect(section.getByRole('tab', { selected: true })).toHaveText(label)
