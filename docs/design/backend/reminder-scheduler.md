@@ -109,7 +109,7 @@ AI 쪽 판단 방법은 [리마인드 답장 판단](../ai/reply-judgment.md).
 | 리마인드 스케줄러 | 60초 | 위 틱 | 항목별 커밋, advisory lock |
 | Notion 동기화 | 5초 | [Notion 동기화](notion-sync.md) | 300초 리스, 지수 백오프 |
 | 임베딩 채우기 | 5초 | 임베딩 없는 태스크를 `text-embedding-3-small` 로 채움(50개씩). 키 없으면 안 띄움 | 입력 오류(400·413·422)는 그 태스크만 건너뜀, 그 밖은 백오프 최대 300초. 임베딩 없는 태스크가 있으면 auto 를 막음 |
-| 업로드 정리 | 300초 | [`upload_sweeper.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/upload_sweeper.py): 미인계 24시간, 진행 없음 3시간, 화자 지정 대기 7일, 채팅 `/end` 뒤 7시간 → `failed` + 녹음 폴더 삭제 | 공간→회의 잠금 뒤 조건부 UPDATE. AI 보고가 먼저 오면 건너뜀 |
+| 업로드 정리 | 300초 | [`upload_sweeper.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/upload_sweeper.py): AI 가 가져가지 않은 업로드 24시간(`upload_unclaimed`), 진행 없음 3시간, 화자 지정 대기 7일, 채팅 `/end` 뒤 7시간 → `failed` + 녹음 폴더 삭제 | 공간→회의 잠금 뒤 조건부 UPDATE. AI 보고가 먼저 오면 건너뜀 |
 | 세션 정리 | 3600초 | 만료 세션 DELETE 한 문장 | 여러 번 돌려도 같음 |
 | 회의 삭제 정리 | 10초 | 삭제 접수된 회의의 BE 파일 정리, AI 정리 확인 대기 | claim token 해시·120초 리스 |
 | 요약 큐 | 봇이 claim | [`summary.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/summary.py): 추출 등록 때 요약 요청 표시 → 봇이 맡아 요약 저장. 실패 알림 API 없이 15분 리스가 지나면 다시 맡김, 최대 2회 | claim token 해시가 같은 리스의 저장만 허용 |

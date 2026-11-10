@@ -62,7 +62,7 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 |---|---|---|
 | Elice STT 장애 | 워커가 연속 실패를 감지해 GPU 대기 서버(g4dn.xlarge)를 Lambda 로 켜고, Elice 회복 확인 3번이면 복귀. 하루 6시간·누적 15시간 상한, 운영 채널 `/gpu on\|off\|status` 수동 조작 | 결정 [0056](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-08-0056-gpu-stt-auto-failover.md) |
 | Notion API 실패 | outbox. 429·409·5xx 지수 백오프 최대 5회, 401 은 토큰 refresh 한 번. 결과를 모른 채 끝난 생성은 "Task ID" 속성으로 먼저 조회해 중복 방지 | [backend README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md#notion-연동) |
-| 멈춘 업로드·채팅 회의 | BE sweeper(300초): 미인계 24시간, 진행 없음 3시간, 화자 지정 대기 7일, 채팅 `/end` 뒤 7시간 → failed | `backend/app/services/upload_sweeper.py` |
+| 멈춘 업로드·채팅 회의 | BE sweeper(300초): AI 가 가져가지 않은 업로드 24시간(`upload_unclaimed`), 진행 없음 3시간, 화자 지정 대기 7일, 채팅 `/end` 뒤 7시간 → failed | `backend/app/services/upload_sweeper.py` |
 | 워커 재시작·중단 | 매니페스트 단계 상태로 마지막 단계 다음부터 재개, 회의 단위 재시도 백오프, 포기 7일 안 `--retry` | [아키텍처](architecture.md#단계-상태와-재시작-매니페스트) |
 | LLM 1단계 응답 깨짐 | 그 자리에서 1번 더 부름(#580) | [결정 기록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-09-extract-first-stage-retry.md) |
 | 임베딩 실패 | 입력 오류 task 만 건너뜀, 그 밖은 지수 백오프(최대 5분). 임베딩 없는 task 가 있으면 auto 를 막음 | BE README |
