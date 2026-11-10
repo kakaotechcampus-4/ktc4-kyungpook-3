@@ -151,7 +151,7 @@ MSW 개발 서버(5233)에서 1280·390 폭으로 녹음 회의·채팅 회의�
 
 ### 화면
 
-- [처리 화면](../../../src/pages/meeting-processing/ui/MeetingProcessingPage.tsx): 지금 단계 줄의 라벨 아래 작은 글씨로 보인다. 보조 표시가 없으면 줄의 DOM 이 전과 같다. 단계 판정과 `role=status` 안내(단계가 바뀔 때만 읽는다)는 바꾸지 않았다.
+- [처리 화면](../../../src/pages/meeting-processing/ui/MeetingProcessingPage.tsx): 지금 단계 줄의 라벨 아래 작은 글씨로 보인다. 보조 표시가 없으면 줄의 DOM 이 전과 같다. 진행 수·경과는 `role=status` 안내(단계가 바뀔 때만 읽는다)에 넣지 않는다. 단계 판정은 이 절을 쓸 때 그대로였고 뒤의 「다섯 단계로 나눔」(D-188)에서 바뀌었다.
 - [진행 토스트](../../../src/features/meeting-processing/ui/ProcessingToastCard.tsx): 펼친 카드의 단계 문장 아래 줄에 보인다. 접힌 알약(`정리 중 1/3`)과 알림 문장은 바꾸지 않았다. 숫자 두 개를 알약에 나란히 두면 단계 수와 헷갈리고, 알림에 진행 수를 넣으면 3초마다 읽힌다.
 
 ### 모의 서버
@@ -266,5 +266,6 @@ PR 리뷰 중 사용자 결정(관리 세션 전달). 세 단계의 마지막 �
 | `npm run build` | 통과 |
 | 바꾼 곳 테스트 `--maxWorkers=1` | `entities/meeting`·`features/meeting-processing` 전체, `meetingProcessingStageDetail`·`meetingProcessingProgress`, mock `meetingFlow`·`meetingScenarios` 17 파일 228건, `meetingProcessing`·`processingToast` 2 파일 71건 통과. 전체는 CI |
 | E2E `meeting-flow` ②·⑩·⑪ (검증 스킬) | 3건 통과 |
+| E2E `meeting-layout` 처리 화면(1024·1440·1920) | CI 에서 단계 줄 3개를 기대해 실패(run 42792282991). 5개로 고쳤다 |
 
 - 브라우저(MSW, 시계 MOCK_NOW): 처리 화면 1280·390 에서 다섯 단계가 차례로 진행 중이 되고, 진행 중 단계 아래 경과가 `5분째`(옮기기) → `2분째`(회의록 정리하기) → `1분째`(뽑아내기) → `방금 시작`(정리 결과 보내기)으로 그 단계 기준이다. 토스트는 칸 다섯 개와 `1 / 5 단계 완료`. `meeting-demo-legacy` 는 세 단계다. 증거는 커밋하지 않는 `frontend/.verify/483a/shots/` 에 있다.

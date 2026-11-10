@@ -69,13 +69,14 @@ const SCREENS: {
   },
   {
     name: '처리',
-    // ws_01 의 mt_10 이 정리 중이다. 흐름 방식이 manual 이라 polling 해도 단계가 그대로다
+    // ws_01 의 mt_10 이 정리 중이다. 흐름 방식이 manual 이라 polling 해도 단계가 그대로다.
+    // 응답에 processing 이 있어(보고 전) 녹음 회의의 다섯 단계다(D-188)
     scenario: 'single-workspace',
     path: '/workspaces/ws_01/meetings/mt_10/processing',
     check: async (page) => {
       await expect(page.getByRole('heading', { name: '정리하고 있어요' })).toBeVisible(FIRST_PAINT)
       const steps = page.getByRole('list', { name: '정리 단계' })
-      await expect(steps.getByRole('listitem')).toHaveCount(3)
+      await expect(steps.getByRole('listitem')).toHaveCount(5)
       // 단계 목록이 든 본문 단 — 제목·단계·안내를 담은 560px 칸
       await expectCenteredColumn(page, steps.locator('xpath=../..'), 560)
       for (const row of await steps.getByRole('listitem').all()) await expect(row).toBeInViewport()
