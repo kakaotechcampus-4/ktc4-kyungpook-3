@@ -78,6 +78,8 @@ export const MOCK_SCENARIOS = [
   'approval-resolved',
   'approval-conflict',
   'approval-scope',
+  // #644 tk_04 의 마감을 없애자는 변경 승인 ap_09. payload 에 due_date 가 null 로 실린다 (backend-ai-contract update 마감 해제)
+  'approval-due-clear',
   // #397 채팅 회의(mt_08)에서 나온 생성 승인 ap_07. 근거 시각이 실제 작성 시각이다
   'approval-chat',
   // #512 ap_03(배포 문서 보완)에 2주차 정기회의(mt_07)의 항목 it_21 이 합쳐져 담당자·마감이 바뀌었다
@@ -493,6 +495,36 @@ function addScopeChanges(state: MockDb): void {
   })
 }
 
+function addDueClearProposal(state: MockDb): void {
+  const task = taskOf(state, 'tk_04')
+  state.approvals.push({
+    approval_id: 'ap_09',
+    workspace_id: 'ws_01',
+    type: 'task_update',
+    payload: {
+      due_date: null,
+      base_values: { due_date: task.due_date },
+      base_task_version: task.version,
+      base_title: task.title,
+      task_title: task.title,
+      evidence_quote: '배포 스크립트는 날짜를 아직 못 박겠어요.',
+      evidence_speaker: '1123',
+      evidence_speaker_member_id: 'mb_01',
+      evidence_at_ms: 412_000,
+      meeting_id: 'mt_09',
+      gate: 'review',
+    },
+    related_task_id: task.task_id,
+    requested_by: null,
+    status: 'pending',
+    resolved_by: null,
+    created_at: '2026-09-17T04:10:00Z',
+    resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
+  })
+}
+
 /**
  * 회의 mt_09 에서 나온 수정 제안. 백엔드 수정 항목처럼 추출 항목의 task_id 는 승인 전에도 대상 태스크 tk_04 이고,
  * 반영 여부는 조회 handler 가 채우는 approval_status 로만 알 수 있다 (#419)
@@ -859,6 +891,10 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'approval-scope':
       signInWith(state, ['ws_01'], 'ws_01')
       addScopeChanges(state)
+      break
+    case 'approval-due-clear':
+      signInWith(state, ['ws_01'], 'ws_01')
+      addDueClearProposal(state)
       break
     case 'approval-chat':
       signInWith(state, ['ws_01'], 'ws_01')

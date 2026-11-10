@@ -27,6 +27,7 @@ const M6_SCENARIOS = [
   'approval-resolved',
   'approval-conflict',
   'approval-scope',
+  'approval-due-clear',
   'approval-chat',
   'minutes-edit-pending',
   'notion-sync-pending',

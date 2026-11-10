@@ -131,6 +131,7 @@ describe('MSW 픽스처가 같은 스키마를 따른다', () => {
     'approval-rejected',
     'approval-conflict',
     'approval-scope',
+    'approval-due-clear',
     'approval-chat',
     'approval-merged',
     'reply-judgment',

@@ -766,6 +766,7 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
   - 현재 BE 구현: 회의에서 만드는 `task_update` payload 에는 반영 키 말고도 표시용 `task_title`·`base_title`·`doc_text`·`category`(`schedule`·`assignee`·`status`·`scope`·`decision`·`none`)·`evidence_quote`·`evidence_speaker`·`evidence_speaker_member_id`·`evidence_at_ms`·`meeting_id` 가 온다. `category` 가 `scope`(범위 결정)면 바뀌는 필드가 없어도 승인 요청을 만든다([extractions.py](../../../backend/app/api/extractions.py)). 승인해도 반영 키가 없으면 태스크·이력에 아무것도 남지 않는다.
   - 합의됨, BE 미구현(#205): `category` 가 `scope` 인 승인을 승인하면 필드 반영과 별개로 `changed_field: "scope"` 이력 한 줄을 남긴다. 바뀌는 필드가 함께 있으면 필드 이력과 범위 이력을 둘 다 남긴다. 범위 이력만 남는 승인은 Task `version` 과 Notion 동기화를 건드리지 않는다. 반려하면 이력을 남기지 않는다. FE 가 먼저 배포된 뒤 BE 를 배포한다.
   - FE 구현(#205): 승인 매퍼가 `doc_text`·`category`·근거 발화·`meeting_id` 를 읽는다. 모르는 `category` 는 `null` 이다. 승인 상세는 `scope` 면 「범위 변경」 절에 `doc_text` 와 근거를 보이고, 바뀌는 필드가 있을 때만 변경 표를 보인다. 대시보드 확인 필요 목록과 보드 승인 카드는 `범위 변경을 확인해야 해요` 로 보인다. MSW 는 합의대로 승인 때 범위 이력을 남긴다(시나리오 `approval-scope`).
+  - FE 구현(#644): 마감 해제 카드(payload 에 `"due_date": null` 이 키째 있음, [backend-ai-contract](../../../backend/docs/contracts/backend-ai-contract.md) 「update 마감 해제」 #630)는 변경 표가 `없음`, 마감 칸 안내가 `원래 제안 유지 · 미정` 이다. `due_date` 키가 없는 카드는 `원래 제안 유지 · YYYY-MM-DD` 그대로다. 칸을 비워 승인하면 `task_overrides` 없이 보내 제안대로 마감이 지워진다(시나리오 `approval-due-clear`).
 
 **프론트엔드가 지킬 규칙**
 
