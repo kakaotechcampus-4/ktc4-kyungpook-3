@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "captured_at": "2026-11-11T06:25:23.465182+09:00",
-  "source_commit": "fabf4386f3c3255f45347c1f0afccbadc43fe2a9",
+  "source_commit": "b009f81dfd6e03a7860cb207436ee1d276b28ac2",
   "repository": "https://github.com/kakaotechcampus-4/ktc4-kyungpook-3",
   "classification": "사후 문서 분류. 원래 계획 범위·완료조건을 변경하지 않는다.",
   "records": [
@@ -7499,7 +7499,7 @@
       "owner": "m4",
       "source": "frontend/docs/issues/682-landing-navigation/result.md",
       "target": "frontend/docs/plan/m4/work-items/682-landing-navigation/result.md",
-      "source_origin": "external_snapshot",
+      "source_origin": "git",
       "reference_type": "pr",
       "issues": [],
       "prs": [
@@ -7594,7 +7594,9 @@
           "old": "../../../src/pages/landing/ui/ProductPreview.tsx",
           "new": "../../../../../src/pages/landing/ui/ProductPreview.tsx"
         }
-      ]
+      ],
+      "initial_source_origin": "external_snapshot",
+      "initial_source_sha256": "9dadace7cd6e731bf56eff0b576a277638182281fd1bb92a1a5c623d5c6a6e4d"
     },
     {
       "id": "551-project-map/result-minutes-edit.md",
@@ -9948,8 +9950,8 @@
       "source": "frontend/docs/contracts/frontend-api-contract.md",
       "target": "frontend/docs/contracts/frontend-api-contract.md",
       "source_origin": "git",
-      "source_sha256": "f873c80cf37819c92c22859b2b906ad58c323a4f6d0adb71d95312857c7fc205",
-      "target_sha256": "0eef4fb6b15ce34c552aa14619535431e84f5420e8e004622afd344137c1cd53",
+      "source_sha256": "1e09a0fdb7d099cffe1595542ede7af6a486eeb2d2e281a75719884b65c1135e",
+      "target_sha256": "b0ac731aa59992808d50a72ffdbd12b0d8830cf7336ed791fec295d34fce08a6",
       "link_edits": [
         {
           "source_start": 21168,
@@ -9958,20 +9960,20 @@
           "new": "../plan/m5/work-items/576-meeting-delete/result.md"
         },
         {
-          "source_start": 128292,
-          "target_start": 128304,
+          "source_start": 129422,
+          "target_start": 129434,
           "old": "../issues/538-kakao-login-finish/result.md",
           "new": "../plan/m4/work-items/538-kakao-login-finish/result.md"
         },
         {
-          "source_start": 133358,
-          "target_start": 133382,
+          "source_start": 134488,
+          "target_start": 134512,
           "old": "../issues/566-consent-connection/result.md",
           "new": "../plan/m4/work-items/566-consent-connection/result.md"
         },
         {
-          "source_start": 135263,
-          "target_start": 135299,
+          "source_start": 136393,
+          "target_start": 136429,
           "old": "../issues/565-policy-publication/result.md",
           "new": "../plan/m4/work-items/565-policy-publication/result.md"
         }
@@ -10081,7 +10083,7 @@
       "target": "frontend/docs/plan/README.md",
       "source_origin": "git",
       "source_sha256": "ba86698583ff306079814a85397ff890961ba44f730fad221c14e99553e55315",
-      "target_sha256": "d37c62d27192116b7d4207c43417aaa27ff0538b7daddcee28e7740dc7990991",
+      "target_sha256": "5d2fe1b3a45c9e97e6595d1eb99e8e7020c5cc1af9c487ae30198bdd75bb05c3",
       "link_edits": [
         {
           "source_start": 2383,
@@ -11550,5 +11552,6 @@
       "merged_at": null
     }
   ],
-  "capture_source_commit": "fabf4386f3c3255f45347c1f0afccbadc43fe2a9"
+  "capture_source_commit": "fabf4386f3c3255f45347c1f0afccbadc43fe2a9",
+  "integrated_at": "2026-11-11T06:34:41.153432+09:00"
 }

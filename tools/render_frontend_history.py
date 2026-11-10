@@ -99,6 +99,7 @@ for key, label in labels.items():
     count = len([r for r in work if r["owner"] == key])
     lines.append(f"| [{key.upper()} {label}]({key}/README.md) | {issue_links} | {pr_links} | {count} |")
 lines += ["", "## 실제 순서와 기록의 범위", "", "- [이슈 생성·PR 병합 이력](implementation-history.md)은 확인된 날짜 순서로 초기 구현과 후속 작업을 연결한다.", f"- 기존 이슈 결과 디렉터리의 추적 결과 65개와 로컬 PR #682 결과 1개를 합쳐 {len(followups)}개 결과 파일을 이관했다. 같은 이슈 #551의 개별 결과 파일도 각각 보존했다.", "- refactor의 계획·결과 5쌍과 제품 결정 1개는 작업별 폴더에 보존했다.", "- [2026-11-07까지의 기존 후속 목록](history/2026-11-07-followups.md)은 과거 안내 원문이다. 그 안의 당시 운영 규칙은 현재 규칙을 대체하지 않는다.", "- [원본 전체 계획](frontend-plan.md)은 과거 사전 계획으로 보존한다. [제품·기술 결정](../decision/frontend-decisions.md), [대표 API 계약](../contracts/frontend-api-contract.md), [구현 결정 안내](basis-for-decision-guide.md)는 기존 위치에서 관리한다.", "", "## 이관과 검증", "", "[work-items.json](work-items.json)은 원래 경로·새 경로·원문 해시·허용한 링크 편집과 조회 당시 이슈·PR 사실의 단일 색인이다. 새 원문 위치만 관리하며 기존 issues 디렉터리는 제거했다. 문서 원문의 실험 결과를 새 실행처럼 고쳐 쓰지 않았다.", "", "```sh", "python tools/check_frontend_history.py", "python tools/render_frontend_history.py", "```", "", "첫 명령은 이관 누락·원문 보존·링크를 검사한다. 두 번째는 같은 색인에서 이 안내와 영역별 README를 다시 만든다. 새 작업 기록은 주 담당 `plan/mN/work-items/<식별자>-<이름>/`에 둔다. 독립적인 개선은 `plan/refactor/work-items/`를 사용한다. 이슈가 없는 PR 번호를 식별자로 쓰면 색인에서 그 종류를 명시한다.", "", "전체 계획의 이동 전 인라인 경로는 역사적 표기다. 현재 위치는 위 진입점에서 찾는다. 사람이 작성하는 트러블슈팅은 원문을 보존한다."]
+lines += ["", "재구성 과정의 선택과 검증은 [작업 기록](history/2026-11-11-reorganization.tsv)에 남겼다."]
 write(page, lines)
 
 page = plan / "implementation-history.md"
