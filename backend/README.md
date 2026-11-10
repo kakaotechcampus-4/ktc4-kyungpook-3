@@ -86,7 +86,7 @@ API 서버에 `EMBEDDING_API_KEY` 가 있어야 하고(없으면 임베딩이 �
 
 ```bash
 docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBER_PASSWORD api \
-  python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com' --today 2026-11-12
+  python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com' --today 2026-11-11
 ```
 
 `--today` 는 회의 날짜의 기준일(KST)이다. 가장 늦은 회의 시작(기준일 − 가장 작은 `days_ago`, 10:00 KST)이 지난 뒤에만 끝까지 돈다. 서버가 미래 `started_at` 을 400 으로 거절하기 때문이고, 그 전이면 쓰기 전에 종료 코드 2 로 멈춘다. 재실행은 같은 기준일로 해야 이어 간다. 기준일이 다르면 종료 코드 2 와 원래 기준일 안내가 나온다(옵션 없이 처음 돌린 시드도 같고, `--allow-existing` 으로 넘길 수 없다).
