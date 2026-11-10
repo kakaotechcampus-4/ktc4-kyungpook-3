@@ -21,6 +21,8 @@ it.each([
   [paths.dashboard('ws_01'), '/workspaces/ws_01/dashboard'],
   [paths.meetings('ws_01'), '/workspaces/ws_01/meetings'],
   [paths.meetings('ws_01', 'mt_09'), '/workspaces/ws_01/meetings/mt_09'],
+  [paths.meetings('ws_01', 'mt_09', 125_000), '/workspaces/ws_01/meetings/mt_09?t=125000'],
+  [paths.meetings('ws_01', 'mt_09', 0), '/workspaces/ws_01/meetings/mt_09?t=0'],
   [paths.meetingUpload('ws_01'), '/workspaces/ws_01/meetings/upload'],
   [paths.meetingProcessing('ws_01', 'mt_10'), '/workspaces/ws_01/meetings/mt_10/processing'],
   [paths.tasks('ws_01'), '/workspaces/ws_01/tasks'],
@@ -45,4 +47,15 @@ it('처리 화면 경로도 회의 ID 를 인코딩한다', () => {
   expect(paths.meetingProcessing('ws_01', 'a/b')).toBe(
     '/workspaces/ws_01/meetings/a%2Fb/processing',
   )
+})
+
+it.each([null, undefined, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+  '회의 시각이 %s 면 원문 듣기 주소에 t 를 붙이지 않는다',
+  (atMs) => {
+    expect(paths.meetings('ws_01', 'mt_09', atMs)).toBe('/workspaces/ws_01/meetings/mt_09')
+  },
+)
+
+it('회의를 고르지 않은 목록 주소에는 시각을 붙이지 않는다', () => {
+  expect(paths.meetings('ws_01', undefined, 5_000)).toBe('/workspaces/ws_01/meetings')
 })

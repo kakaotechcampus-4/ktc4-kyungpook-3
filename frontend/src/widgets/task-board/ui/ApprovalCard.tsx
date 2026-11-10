@@ -274,7 +274,7 @@ function TaskCreateCard({
           </span>
           {approval.meetingId === null ? null : (
             <GuardedLink
-              to={paths.meetings(workspaceId, approval.meetingId)}
+              to={paths.meetings(workspaceId, approval.meetingId, approval.evidence.atMs)}
               className={EVIDENCE_LINK}
             >
               원문 듣기

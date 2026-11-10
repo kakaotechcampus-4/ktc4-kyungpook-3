@@ -395,7 +395,7 @@ function EvidenceFigure({
         )}
         {replied || approval.meetingId === null ? null : (
           <GuardedLink
-            to={paths.meetings(context.workspaceId, approval.meetingId)}
+            to={paths.meetings(context.workspaceId, approval.meetingId, atMs)}
             className={HEAD_LINK}
           >
             원문 듣기
@@ -571,7 +571,7 @@ function MergedEvidence({
         </span>
         {item.meetingId === null ? null : (
           <GuardedLink
-            to={paths.meetings(context.workspaceId, item.meetingId)}
+            to={paths.meetings(context.workspaceId, item.meetingId, item.evidence.atMs)}
             className={HEAD_LINK}
           >
             원문 듣기
