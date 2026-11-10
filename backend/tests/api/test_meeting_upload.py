@@ -287,6 +287,23 @@ def test_disk_failure_leaves_no_meeting_and_no_folder(db, seed, monkeypatch):
     assert list(_upload_root().iterdir()) == []
 
 
+def test_upload_returns_audio_upload_failed_on_s3_error(db, seed, monkeypatch):
+    from tests.fake_s3 import FakeS3
+
+    fake = FakeS3()
+    fake.fail_next = "upload_fileobj"
+    monkeypatch.setenv("UPLOAD_STORAGE", "s3")
+    monkeypatch.setenv("UPLOAD_S3_BUCKET", "b")
+    monkeypatch.setattr(upload_storage, "_s3_client", lambda: fake)
+
+    r = _upload(seed, [seed["pm"].member_id])
+
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["code"] == "AUDIO_UPLOAD_FAILED"
+    assert _meetings(db) == []
+    assert fake.keys("b") == []
+
+
 def test_commit_failure_removes_saved_folder(db, seed, monkeypatch):
     def broken_commit():
         raise RuntimeError("DB 연결이 끊겼습니다")

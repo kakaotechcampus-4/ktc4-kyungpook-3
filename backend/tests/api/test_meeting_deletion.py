@@ -14,7 +14,7 @@ from app.models import (
     MeetingPurge,
     EMBEDDING_DIMENSIONS,
 )
-from app.services import meeting_deletion, embedding
+from app.services import meeting_deletion, embedding, upload_storage
 
 
 @pytest.fixture
@@ -690,12 +690,12 @@ def test_storage_failure_remains_pending_until_real_retry(
     folder = tmp_path / mid
     folder.mkdir()
     (folder / "source.wav").write_bytes(b"private")
-    original = meeting_deletion.shutil.rmtree
+    original = upload_storage.shutil.rmtree
 
     def fail(path):
         raise PermissionError("busy")
 
-    monkeypatch.setattr(meeting_deletion.shutil, "rmtree", fail)
+    monkeypatch.setattr(upload_storage.shutil, "rmtree", fail)
     assert (
         client.delete(f"/api/v1/meetings/{mid}").json()["data"]["cleanup_status"]
         == "pending"
@@ -708,7 +708,7 @@ def test_storage_failure_remains_pending_until_real_retry(
         meeting_deletion.ack_purge(mdb, mid, claim["claim_token"]).cleanup_status
         == "pending"
     )
-    monkeypatch.setattr(meeting_deletion.shutil, "rmtree", original)
+    monkeypatch.setattr(upload_storage.shutil, "rmtree", original)
     meeting_deletion.purge_backend_files(mdb)
     assert not folder.exists()
     assert (

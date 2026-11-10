@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import secrets
-import shutil
 import threading
 from datetime import datetime, timedelta, timezone
 
@@ -329,16 +328,7 @@ def _delete_content(db: Session, meeting: Meeting, now: datetime) -> None:
 
 
 def remove_backend_files(meeting_id: str) -> None:
-    root = upload_storage.upload_dir().resolve()
-    target = root / meeting_id
-    if target.resolve().parent != root or target.is_symlink() or target.is_junction():
-        raise ValueError("unsafe meeting storage path")
-    try:
-        shutil.rmtree(target)
-    except FileNotFoundError:
-        pass
-    if target.exists():
-        raise OSError("meeting storage remains")
+    upload_storage.remove_audio(meeting_id)
 
 
 def purge_backend_files(db: Session, *, meeting_id: str | None = None) -> None:
