@@ -190,98 +190,98 @@
       {
         "speaker": "uid_jinho",
         "start": 184.0,
-        "end": 193.6,
-        "text": "시연 시나리오 초안은 제가 11월 9일 월요일까지 써서 공유할게요.",
+        "end": 192.5,
+        "text": "시연 시나리오 초안은 제가 다음 주 초쯤 써서 공유할게요.",
         "seq": 20
       },
       {
         "speaker": "uid_jimin",
-        "start": 194.4,
-        "end": 204.7,
+        "start": 193.3,
+        "end": 203.6,
         "text": "좋아요. 시연에서는 폴러가 가져온 채팅이 카드로 바뀌는 장면이 중요해요.",
         "seq": 21
       },
       {
         "speaker": "uid_jinho",
-        "start": 205.5,
-        "end": 214.3,
+        "start": 204.4,
+        "end": 213.2,
         "text": "네, 폴러 장면이랑 루나가 초안 쓰는 장면 둘 다 넣을게요.",
         "seq": 22
       },
       {
         "speaker": "uid_dongwoo",
-        "start": 215.1,
-        "end": 223.6,
+        "start": 214.0,
+        "end": 222.5,
         "text": "시연 때 제브가 근거를 보여 주는 화면도 넣으면 좋겠어요.",
         "seq": 23
       },
       {
         "speaker": "uid_jinho",
-        "start": 224.4,
-        "end": 229.4,
+        "start": 223.3,
+        "end": 228.3,
         "text": "좋아요, 그것도 적어 둘게요.",
         "seq": 24
       },
       {
         "speaker": "uid_jimin",
-        "start": 230.2,
-        "end": 237.9,
+        "start": 229.1,
+        "end": 236.8,
         "text": "디자인 쪽은 수빈님한테 스플래시 시안 부탁드렸어요.",
         "seq": 25
       },
       {
         "speaker": "uid_wonjun",
-        "start": 238.7,
-        "end": 242.2,
+        "start": 237.6,
+        "end": 241.1,
         "text": "수빈님이 누구죠?",
         "seq": 26
       },
       {
         "speaker": "uid_jimin",
-        "start": 243.0,
-        "end": 250.7,
+        "start": 241.9,
+        "end": 249.6,
         "text": "다른 팀 디자이너분이요. 잠깐 도와주시기로 했어요.",
         "seq": 27
       },
       {
         "speaker": "uid_jimin",
-        "start": 251.5,
-        "end": 262.2,
+        "start": 250.4,
+        "end": 261.1,
         "text": "수빈님 시안은 다음 주 금요일쯤 받을 것 같아요. 정확한 날은 아직 몰라요.",
         "seq": 28
       },
       {
         "speaker": "uid_kimhwan",
-        "start": 263.0,
-        "end": 271.5,
+        "start": 261.9,
+        "end": 270.4,
         "text": "카카오 로그인 PR 충돌은 아직 안 건드렸어요. 죄송해요.",
         "seq": 29
       },
       {
         "speaker": "uid_jimin",
-        "start": 272.3,
-        "end": 278.6,
+        "start": 271.2,
+        "end": 277.5,
         "text": "괜찮아요. 다음 회의 때 다시 얘기해요.",
         "seq": 30
       },
       {
         "speaker": "uid_wonjun",
-        "start": 279.4,
-        "end": 285.3,
+        "start": 278.3,
+        "end": 284.2,
         "text": "저녁에 멘토링 있는 거 잊지 마세요.",
         "seq": 31
       },
       {
         "speaker": "uid_dongwoo",
-        "start": 286.1,
-        "end": 289.1,
+        "start": 285.0,
+        "end": 288.0,
         "text": "네, 7시요.",
         "seq": 32
       },
       {
         "speaker": "uid_jimin",
-        "start": 289.9,
-        "end": 297.3,
+        "start": 288.8,
+        "end": 296.2,
         "text": "네, 그럼 오늘은 여기까지 할게요. 녹음 끕니다.",
         "seq": 33
       }
@@ -312,7 +312,7 @@
       "indices": [
         20
       ],
-      "summary": "진호가 시연 시나리오 초안을 11월 9일 월요일까지 공유하기로 함",
+      "summary": "진호가 시연 시나리오 초안을 다음 주 초쯤 공유하기로 함",
       "title": "시연 시나리오 초안 작성"
     },
     {
@@ -331,10 +331,9 @@
       "due_date": "2026-11-11"
     },
     {
-      "note": "새 할 일 — 시연 시나리오 11월 9일",
+      "note": "애매한 마감 — 다음 주 초쯤",
       "action": "create",
-      "title_contains": "시연 시나리오",
-      "due_date": "2026-11-09"
+      "title_contains": "시연 시나리오"
     }
   ]
 }

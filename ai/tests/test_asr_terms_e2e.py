@@ -85,3 +85,13 @@ def test_judge_script_matches_meeting6_correct():
     segs = _transcript(CORRECT).segments
     assert [t for _, t in rows] == [s.text for s in segs]
     assert [n for n, _ in rows] == [names[s.speaker] for s in segs]
+
+
+def test_meeting4_rehearsal_is_said_only_by_kimhwan():
+    segs = _transcript(MEETINGS[3]).segments
+    who = {s.speaker for s in segs if "리허설" in asr_check.nouns(s.text)}
+    assert who == {"uid_kimhwan"}
+
+
+def test_outsider_is_not_a_member():
+    assert not any("수빈" in m["name"] for m in SERIES["members"])
