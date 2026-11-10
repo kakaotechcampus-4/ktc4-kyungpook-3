@@ -9,6 +9,9 @@ import { createTask } from './task-state'
 import { awaitSpeakers, needsSpeakers } from './speakerFlow'
 import { nextId } from './utils'
 
+/** 모의 흐름이 끝낸 회의의 녹음 보관 끝 — MOCK_NOW 에서 7일 뒤다 */
+const MOCK_AUDIO_EXPIRES_AT = '2026-09-25T00:00:00Z'
+
 /*
  * 업로드된 회의의 정리 흐름. 처리 중 회의를 한 단계씩 진행시키거나 완료·실패로 끝낸다.
  * 완료는 회의록 본문·추출 결과·태스크·대기 승인을 한 번에 만든다. 서로 같은 ID 로 이어진다:
@@ -233,6 +236,11 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
     }),
     // minutes handler 가 요청한 사람의 역할로 다시 채운다
     permissions: { can_review: false, can_undo: false },
+    // 업로드는 받은 시각, 디스코드는 끝난 시각부터 7일이다. 모의 흐름은 둘 다 MOCK_NOW 에서 센다 (#676)
+    audio:
+      sourceOf(state, meeting.meeting_id) === 'chat'
+        ? null
+        : { content_type: 'audio/wav', expires_at: MOCK_AUDIO_EXPIRES_AT },
   }
 
   const extractionId = nextId(

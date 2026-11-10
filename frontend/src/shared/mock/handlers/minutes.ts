@@ -20,7 +20,13 @@ export const minutesHandlers = [
     if (denied) return denied
     const isPm = roleIn(meeting.workspace_id) === 'pm'
     const minutes = db.minutes.find(({ meeting_id }) => meeting_id === params.meetingId)
-    if (minutes) return ok({ ...minutes, permissions: { can_review: isPm, can_undo: isPm } })
+    if (minutes)
+      return ok({
+        ...minutes,
+        permissions: { can_review: isPm, can_undo: isPm },
+        // 재생 API 와 같은 규칙이다 — done 이 아니면 PM 만 녹음을 안다 (#676)
+        audio: meeting.status === 'done' || isPm ? minutes.audio : null,
+      })
     // 백엔드는 extraction 이 없어도 200 을 준다. summary=null, transcript=[] 로 초기화한 뒤
     // 그대로 내려보낸다 (meetings.py 의 get_meeting_minutes). 빈 상태는 오류가 아니다.
     return ok({
@@ -37,6 +43,7 @@ export const minutesHandlers = [
       transcript: [],
       // 백엔드는 현재 멤버가 PM 일 때만 두 값을 true 로 준다 (meetings.py:222)
       permissions: { can_review: isPm, can_undo: isPm },
+      audio: null,
     })
   }),
 ]

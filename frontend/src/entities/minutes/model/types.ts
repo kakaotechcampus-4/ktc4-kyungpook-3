@@ -32,4 +32,13 @@ export interface Minutes {
   transcript: TranscriptLine[]
   canReview: boolean
   canUndo: boolean
+  /**
+   * 지금 들을 수 있는 녹음. 없거나 보관 기간이 지났으면 null 이다 (#676).
+   * 들을 수 있는지는 null 인지로만 판단한다 — 처리 중 회의는 `expiresAt` 이 지나도 들을 수 있다
+   */
+  audio: MinutesAudio | null
+}
+export interface MinutesAudio {
+  contentType: string
+  expiresAt: string
 }
