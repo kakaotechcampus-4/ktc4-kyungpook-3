@@ -1,11 +1,15 @@
-import type { InvitationDto, MyInvitationDto } from '@/shared/types/api/invitation'
-import type { Invitation, MyInvitation } from './types'
+import type { InvitationDto, MyInvitationDto, UserSummaryDto } from '@/shared/types/api/invitation'
+import type { Invitation, Invitee, MyInvitation } from './types'
+
+export function toInvitee(dto: UserSummaryDto): Invitee {
+  return { userId: dto.user_id, username: dto.username, name: dto.name }
+}
 
 export function toInvitation(dto: InvitationDto): Invitation {
   return {
     id: dto.invitation_id,
     memberId: dto.member_id,
-    email: dto.email,
+    invitedUser: toInvitee(dto.invited_user),
     status: dto.status,
     acceptedUser: dto.accepted_user && {
       userId: dto.accepted_user.user_id,

@@ -16,11 +16,22 @@ export const invitationStatusSchema = z.enum([
   'revoked',
 ])
 
+/** 초대할 사람을 고를 때 보이는 가입자이자 초대받은 계정. 남의 이메일은 싣지 않는다 (#628) */
+export const userSummarySchema = z.object({
+  user_id: z.string(),
+  username: z.string(),
+  name: z.string(),
+})
+export type UserSummaryDto = z.infer<typeof userSummarySchema>
+
+/** `GET /users/search`. 아이디가 정확히 같은 가입자 0명 또는 1명이다 */
+export const userSearchSchema = z.object({ items: z.array(userSummarySchema) })
+
 /** PM 이 보는 초대 한 건. accepted_user 는 연결을 끊은 뒤에도 남고, 계정이 지워지면 null 이다 */
 export const invitationSchema = z.object({
   invitation_id: z.string(),
   member_id: z.string(),
-  email: z.string(),
+  invited_user: userSummarySchema,
   status: invitationStatusSchema,
   accepted_user: z
     .object({ user_id: z.string(), name: z.string(), email: z.string().nullable() })
@@ -31,7 +42,7 @@ export type InvitationDto = z.infer<typeof invitationSchema>
 
 export const invitationListSchema = z.object({ items: z.array(invitationSchema) })
 
-/** 내 가입 이메일로 온 대기 중 초대 */
+/** 나에게 온 대기 중 초대 */
 export const myInvitationSchema = z.object({
   invitation_id: z.string(),
   workspace_id: z.string(),
@@ -43,8 +54,8 @@ export type MyInvitationDto = z.infer<typeof myInvitationSchema>
 
 export const myInvitationListSchema = z.object({ items: z.array(myInvitationSchema) })
 
-/** 요청 본문. 서버가 이메일을 소문자로 바꿔 저장한다 */
+/** 요청 본문. `user_id` 는 `GET /users/search` 로 찾은 가입자다 */
 export interface InvitationCreateDto {
   member_id: string
-  email: string
+  user_id: string
 }

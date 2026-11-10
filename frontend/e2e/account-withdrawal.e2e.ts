@@ -19,7 +19,7 @@ const storedStateSchema = z.object({
       }),
     ),
     tasks: z.array(z.object({ task_id: z.string() })),
-    invitations: z.array(z.object({ email: z.string() })),
+    invitations: z.array(z.object({ invited_user_id: z.string() })),
   }),
 })
 
@@ -113,11 +113,17 @@ test('마지막 PM 이전부터 탈퇴·정리 상태 복원·같은 이메일 �
   await agreeToPolicies(page)
   await page.getByRole('button', { name: '계정 만들기' }).click()
   await expect(page).toHaveURL('/onboarding/start')
-  await expect(page.getByText('PM에게 가입한 이메일로 초대를 요청하세요.')).toBeVisible()
+  await expect(
+    page.getByText('PM에게 내 아이디(newaccount1)를 알려 주고 초대를 요청하세요.'),
+  ).toBeVisible()
   const fresh = await readMockState(page)
   expect(fresh.session.user.user_id).not.toBe(before.session.user.user_id)
   expect(fresh.session.workspace_count).toBe(0)
-  expect(fresh.invitations.some((invitation) => invitation.email === beforeEmail)).toBe(false)
+  expect(
+    fresh.invitations.some(
+      (invitation) => invitation.invited_user_id === fresh.session.user.user_id,
+    ),
+  ).toBe(false)
 })
 
 test('모바일에서도 마지막 PM 안내와 권한 이전 링크가 가로 넘침 없이 보인다', async ({

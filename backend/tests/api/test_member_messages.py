@@ -146,7 +146,7 @@ def test_pm_message_to_a_member_without_an_account_asks_for_an_invitation(mdb, m
     assert item["discord_user_id"] == "d_carol"
     assert item["body"] == "\n".join([
         "A PM PM 이 메시지를 보냈어요.",
-        "웹 답장을 하려면 PM 에게 초대를 요청하고, 초대받은 이메일로 가입해 주세요.",
+        "웹 답장을 하려면 가입한 뒤 PM 에게 아이디를 알려 초대를 받아 주세요.",
         "https://mm.example/signup",
     ])
     assert "웹에서만 볼 비공개 본문" not in item["body"]
@@ -282,7 +282,7 @@ def test_reply_to_a_pm_dm_lands_in_that_workspace(mdb, mseed):
     _report(reminder, "dm_a")
     _send_in(other_ws, other_thread)
     (plain,) = _claim()
-    assert plain["body"] == "B 비 PM 이 메시지를 보냈어요.\n웹 답장을 하려면 PM 에게 초대를 요청하고, 초대받은 이메일로 가입해 주세요."
+    assert plain["body"] == "B 비 PM 이 메시지를 보냈어요.\n웹 답장을 하려면 가입한 뒤 PM 에게 아이디를 알려 초대를 받아 주세요."
     _report(plain, "dm_b")
 
     later = datetime.now(timezone.utc) + timedelta(minutes=5)

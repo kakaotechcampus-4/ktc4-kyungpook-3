@@ -1371,14 +1371,14 @@ class InvitationStatus(StrEnum):
 
 
 class Invitation(Base):
-    """PM 이 로그인 계정 없는 팀원에게 가입 이메일로 보낸 초대. 그 이메일로 로그인한 사람이 수락하면 팀원과 계정이 이어진다.
+    """PM 이 로그인 계정 없는 팀원에게 가입한 사용자를 골라 보낸 초대(#628). 그 사용자가 수락하면 팀원과 계정이 이어진다.
 
-    email 은 앞뒤 공백을 지우고 소문자로 바꿔 저장한다. 끊은(revoked) 초대도 accepted_user_id 를 남겨 누가 들어왔었는지 보인다.
+    끊은(revoked) 초대도 accepted_user_id 를 남겨 누가 들어왔었는지 보인다.
     """
 
     __tablename__ = "invitation"
     __table_args__ = (
-        # 한 팀원에 열린 초대 하나, 한 워크스페이스에서 같은 이메일의 열린 초대 하나. 둘째가 있어야 한 계정이
+        # 한 팀원에 열린 초대 하나, 한 워크스페이스에서 같은 사용자의 열린 초대 하나. 둘째가 있어야 한 계정이
         # 한 워크스페이스에서 두 팀원에 이어지지 않는다(수락할 때의 소속 확인과 함께).
         Index(
             "uq_invitation_pending_member", "member_id",
@@ -1387,7 +1387,7 @@ class Invitation(Base):
             sqlite_where=text("status = 'pending'"),
         ),
         Index(
-            "uq_invitation_pending_email", "workspace_id", "email",
+            "uq_invitation_pending_user", "workspace_id", "invited_user_id",
             unique=True,
             postgresql_where=text("status = 'pending'"),
             sqlite_where=text("status = 'pending'"),
@@ -1401,7 +1401,9 @@ class Invitation(Base):
     member_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="CASCADE"), index=True
     )
-    email: Mapped[str] = mapped_column(String(255), index=True)
+    invited_user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("user.user_id", ondelete="CASCADE"), index=True
+    )
     status: Mapped[str] = mapped_column(String(16), default=InvitationStatus.PENDING)
     invited_by_user_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("user.user_id", ondelete="SET NULL"), nullable=True

@@ -80,8 +80,9 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
   INVITATION_NOT_ACCEPTED: '수락하지 않은 초대라 연결을 끊을 수 없어요.',
   MEMBER_ALREADY_LINKED: '이미 로그인 계정이 연결된 팀원이에요.',
   ALREADY_WORKSPACE_MEMBER: '이미 이 워크스페이스에 속한 계정이에요.',
-  EMAIL_ALREADY_INVITED:
-    '이 이메일로 다른 팀원에게 보낸 초대가 기다리고 있어요. 그 초대를 먼저 취소해 주세요.',
+  USER_ALREADY_INVITED:
+    '이 사용자에게 다른 팀원으로 보낸 초대가 기다리고 있어요. 그 초대를 먼저 취소해 주세요.',
+  USER_NOT_FOUND: '가입한 사용자를 찾을 수 없어요. 아이디를 다시 찾아 주세요.',
   PM_MEMBER_NOT_INVITABLE:
     'PM인 팀원은 초대할 수 없어요. 팀원 역할로 초대하고, 수락한 뒤 PM으로 바꿔 주세요.',
   MEMBER_HAS_PENDING_INVITATION: '초대를 수락한 뒤 바꾸거나 초대를 취소해 주세요.',

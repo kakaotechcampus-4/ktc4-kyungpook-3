@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
-from app.models import BotDmPart, Member, MemberAlias, ReplyChange, ReplyJudgment, ThreadMessage, Workspace
+from app.models import BotDmPart, Member, MemberAlias, ReplyChange, ReplyJudgment, ThreadMessage, User, Workspace
 from app.services import account_withdrawal, messages, replies
 from app.services.account_withdrawal import WorkspaceDisposition
 from tests.api.test_messages_api import P, _claim, _create, _future, client
@@ -159,8 +159,9 @@ def test_erased_actor_rejects_late_judgment_without_saving_copied_names(mdb, mse
 
 def test_erased_actor_cannot_receive_or_accept_existing_invitation(mdb, mseed):
     member = mseed["carol"]
+    outsider_id = mdb.scalar(select(User.user_id).where(User.email == "outsider@example.com"))
     created = client("pm").post(f"{P}/workspaces/{mseed['ws']}/invitations", json={
-        "member_id": member.member_id, "email": "outsider@example.com",
+        "member_id": member.member_id, "user_id": outsider_id,
     })
     assert created.status_code == 201, created.text
     invitation_id = created.json()["data"]["invitation_id"]
@@ -168,7 +169,7 @@ def test_erased_actor_cannot_receive_or_accept_existing_invitation(mdb, mseed):
     accepted = client("outsider").post(f"{P}/invitations/{invitation_id}/accept")
     assert accepted.status_code == 409 and accepted.json()["error"]["code"] == "INVITATION_NOT_PENDING"
     again = client("pm").post(f"{P}/workspaces/{mseed['ws']}/invitations", json={
-        "member_id": member.member_id, "email": "outsider@example.com",
+        "member_id": member.member_id, "user_id": outsider_id,
     })
     assert again.status_code == 404 and again.json()["error"]["code"] == "MEMBER_NOT_FOUND"
     mdb.refresh(member)

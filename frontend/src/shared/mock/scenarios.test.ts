@@ -171,10 +171,13 @@ describe('E2E 시나리오', () => {
     ])
   })
 
-  it('받을 초대: 비로그인이고 jaehwan@example.com 으로 가입하면 공간 없이 초대 하나를 받는다', async () => {
+  it('받을 초대: 비로그인이고 jaehwan@example.com 으로 로그인하면 공간 없이 초대 하나를 받는다', async () => {
     applyScenario('invitation-pending')
     await expect(fetchSessionDto()).resolves.toBeNull()
-    await signUpVerified({ email: 'jaehwan@example.com', password: 'pass1234', name: '이재환' })
+    await fetchDto(
+      '/auth/login',
+      jsonRequest('POST', { email: 'jaehwan@example.com', password: 'mock-password' }),
+    )
     await expect(listedWorkspaces()).resolves.toEqual([])
     await expect(fetchDto<ListDto<MyInvitationDto>>('/invitations/me')).resolves.toMatchObject({
       items: [
