@@ -33,7 +33,7 @@ describe('승인 스키마', () => {
   })
 
   it('모르는 종류는 거절하지 않는다. 화면이 지원하지 않는 요청으로 읽는다', () => {
-    expect(approvalSchema.safeParse({ ...valid, type: 'reminder_dm' }).success).toBe(true)
+    expect(approvalSchema.safeParse({ ...valid, type: 'future_kind' }).success).toBe(true)
   })
 
   it.each([

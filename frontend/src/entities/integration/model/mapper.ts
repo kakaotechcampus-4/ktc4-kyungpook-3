@@ -3,18 +3,12 @@ import type {
   IntegrationDto,
   IntegrationsDto,
 } from '@/shared/types/api/integration'
-import { enumValue } from '@/shared/lib/enum'
 import type { ChatChannel, Integration, IntegrationProvider, Integrations } from './types'
 
 function toIntegration(dto: IntegrationDto, provider: IntegrationProvider): Integration {
   return {
     provider,
-    status: enumValue(
-      dto.status,
-      ['not_connected', 'connecting', 'connected', 'revoked'] as const,
-      'not_connected',
-      'integration status',
-    ),
+    status: dto.status,
     displayName: dto.display_name,
     connectedAt: dto.connected_at,
   }

@@ -3,10 +3,10 @@ import { useCallback, useMemo } from 'react'
 import { messageSettingsQueryOptions, updateMessageSettings } from '@/entities/message-settings'
 import type { MessageSettings, MessageSettingsChange } from '@/entities/message-settings'
 import { failureNotice } from '@/shared/api/errorMessages'
-import { CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
+import { CLIENT_ERROR_CODES, createClientError, isInvalidResponse } from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
-import { toast } from '@/shared/ui/toast'
+import { showWriteUnconfirmed, toast } from '@/shared/ui/toast'
 
 export const MESSAGE_SETTINGS_FAILED_TITLE = '알림 설정을 저장하지 못했어요'
 
@@ -61,6 +61,13 @@ export function useMessageSettings(workspaceId: string): MessageSettingsState {
     },
     onError: (error, { session }) => {
       if (!session.isCurrent()) return
+      // 응답을 읽지 못했다. 저장됐을 수 있어 실패로 보이지 않는다. 기다리는 변경이 끝나면 서버 값을 다시 읽는다 (D-184)
+      if (isInvalidResponse(error)) {
+        showWriteUnconfirmed(
+          () => void queryClient.invalidateQueries({ queryKey: options.queryKey }),
+        )
+        return
+      }
       const notice = failureNotice(error)
       if (notice !== null)
         toast.show({

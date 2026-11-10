@@ -2,8 +2,8 @@ import { unwrap } from '@/shared/api/envelope'
 import type { Envelope, ListDto } from '@/shared/types/api/envelope'
 import type { MemberDto } from '@/shared/types/api/member'
 import type { DiscordUserDto, MemberAliasDto } from '@/shared/types/api/member'
-import { toDiscordUser, toMember, toMemberAlias, toUnresolvedAlias } from './model/mapper'
-import type { UnresolvedAliasDto } from '@/shared/types/api/member'
+import { toDiscordUser, toMember, toMemberAlias } from './model/mapper'
+import type { MockUnresolvedAlias } from '@/shared/mock/fixtures/member'
 import { setMockRole } from '@/shared/mock/sessions'
 
 it('scopes members and supports unlinking a Discord user', async () => {
@@ -45,11 +45,9 @@ it('creates, lists and deletes aliases and maps unresolved names', async () => {
   )
   const unresolved = await fetch(`${base}/members/unresolved-aliases?workspace_id=ws_01`)
   expect(
-    unwrap(
-      (await unresolved.json()) as Envelope<ListDto<UnresolvedAliasDto>>,
-      unresolved.status,
-    ).items.map(toUnresolvedAlias),
-  ).toEqual([{ text: '지훈', occurrences: 3, lastSeenAt: '2026-09-15T06:00:00Z' }])
+    unwrap((await unresolved.json()) as Envelope<ListDto<MockUnresolvedAlias>>, unresolved.status)
+      .items,
+  ).toEqual([{ alias_text: '지훈', occurrences: 3, last_seen_at: '2026-09-15T06:00:00Z' }])
   expect((await fetch(`${base}/workspaces/ws_02/discord/members`)).status).toBe(409)
 })
 
@@ -136,7 +134,7 @@ describe('unresolved aliases', () => {
   const unresolved = async () => {
     const response = await fetch(`${base}/members/unresolved-aliases?workspace_id=ws_01`)
     return unwrap(
-      (await response.json()) as Envelope<ListDto<UnresolvedAliasDto>>,
+      (await response.json()) as Envelope<ListDto<MockUnresolvedAlias>>,
       response.status,
     ).items.map(({ alias_text }) => alias_text)
   }

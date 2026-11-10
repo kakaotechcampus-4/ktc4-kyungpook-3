@@ -78,6 +78,7 @@ FE는 crypto.getRandomValues로 만든 256비트 키를 sessionStorage에 보관
 | `MeetingMinutesResponse` | `permissions.can_review`·`can_undo` 가 불리언이 아님, `duration_ms` 가 숫자가 아님, 참석자·전사문 줄의 필수 필드 누락·타입 오류(`at_ms` 는 숫자) | 모르는 `source` 는 `알 수 없는 출처` 다. 머리 메타는 시작 시각만 보이고 전사문·근거 시각은 비운다. `summary` 가 `overview` 문자열·`key_points`·`decisions` 문자열 배열 모양이 아니면 BE 가 깨진 JSON 을 다루듯 요약 없음(null)으로 보고 전사문은 보인다 |
 | `ExtractionDetailResponse` | 항목의 `task.title`·`gate` 가 문자열이 아님, `assignee`·`due_date`·`evidence` 의 필드가 문자열·null(`evidence.at_ms` 는 숫자·null)이 아님, `task_id`·`approval_id` 가 문자열·null 이 아님, 그 밖의 필수 필드 누락. 한 항목만 틀려도 전체 | 모르는 `gate` 는 `hold`(자동으로 만든 태스크로 보이지 않음). 모르는 `approval_status` 는 없음(null, 반영으로 보지 않음). `reverted_at`·`approval_status` 가 없으면 null(옛 응답). 확신도(`confidence`·`task.confidence`·`assignee.confidence`·`due_date.confidence`)·`needs_check`·`alias_candidate`·`alias_text`·`extraction_path` 는 읽지 않는다 |
 | `ExtractionItemRevertResponse` | 네 필드(`item_id`·`reverted_task_id`·`approval_id`·`reverted_at`) 중 하나라도 문자열이 아님 | 없음 |
+| `GET .../project-map`·`GET .../topics/{topic_id}` (#551) | 모르는 노드 `kind`, 태스크 `status` 가 네 값 밖, 필수 필드 누락·타입 오류. 노드 한 개만 틀려도 전체 | 회의록 `summary_status` 는 표시용이라 모르는 값을 보존한다. 자세한 것은 §4.4.2 「FE 사용 (#551)」 |
 | 되돌리기 409 `AUTO_TASK_NOT_REVERTIBLE` `details` | 거절하지 않는다. 오류 응답이라 `INVALID_RESPONSE` 로 바꾸지 않는다 | 모르는 `reason`·문자열이 아닌 `reason` 은 기본 안내(`unknown`)다. `task_id`·`approval_id` 가 문자열이 아니면 없음(null) |
 | 메시지 목록 `InboxResponse`·대화 `ThreadDetailResponse`·대화 열기 `ThreadSummary` | 보낸 쪽(`sender`)이 `bot`·`pm`·`member` 밖, `dm_status` 가 `pending`·`claimed`·`delivered`·`failed` 밖, 팀원 메시지에 `reply_channel` 이 없음, 봇·PM 메시지에 `dm_status` 가 없음, 묶음 `status` 가 `scheduled`·`sent`·`cancelled`·`expired` 밖, 승인한 예정 묶음에 `approved_at` 이 없음, `draft_version` 이 정수가 아님, 그 밖의 필수 필드 누락·타입 오류. 목록·대화는 한 건만 틀려도 전체 | 모르는 `body_source` 는 `출처를 알 수 없는 문구`, 모르는 `draft_status` 는 작성 중, 모르는 `dm_failure_reason` 은 받은 값을 남기고 `이유를 알 수 없어요`, 모르는 `reply_channel` 은 웹 답장 표시 없음, 모르는 근거 `kind` 는 근거 없음. `author_member_id`·`author_name`(#519)이 없으면 작성자 없음(`PM` 으로 보인다), `web_reply_available`(#525)이 없으면 모름, `summary`·`reason`·`evidence`(#418)가 없으면 태스크 제목으로 줄인 요약·이유 없음·근거 없음. 메시지 `thread_id`·`scheduled_at`, 리마인드 `bundle_id`·`status`·`kind`·`origin`·`created_at` 은 읽지 않는다. 거절하면 초안 간격(10초)·창 포커스·연결 복귀·대화 신호로 다시 묻지 않는다 |
 | 답장 고르기 `GET …/threads/{thread_id}/attributions` | `status` 가 `needs_pm`·`resolved` 밖, `needs_pm` 의 후보·`resolved` 의 태스크 모양 오류. 한 건만 틀려도 전체 | 반대쪽 null 칸(`needs_pm` 의 `task`, `resolved` 의 `candidates`)은 읽지 않는다 |
@@ -85,17 +86,24 @@ FE는 crypto.getRandomValues로 만든 256비트 키를 sessionStorage에 보관
 | 대화 신호 웹소켓 프레임 | 거절하지 않는다. 응답이 아니다 | `{type: "thread_updated", thread_id: 문자열}` 만 신호로 읽고(#558) 모르는 프레임·깨진 JSON 은 버린다 |
 | 알림 목록 `NotificationListResponse`·푸시 공개키 | 항목의 `read_at`·`created_at` 이 시간대 있는 ISO 시각이 아님, `unread_count` 가 음이 아닌 정수가 아님, `public_key` 가 문자열·null 이 아님, 그 밖의 필수 필드 누락·타입 오류. 목록은 한 건만 틀려도 전체 | 모르는 `kind` 는 `새 알림` 제목(`message_received` 는 `새 메시지가 왔어요`), 모르는 `link.type` 은 읽음만 표시하고 옮기지 않는다. 서비스 워커의 푸시 내용은 모양이 틀리면 그 푸시만 버린다. 목록을 거절하면 30초 간격·창 포커스·연결 복귀로 다시 묻지 않고 종의 `다시 시도`를 기다린다 |
 | `GET /tasks/{task_id}/timeline` | 모르는 `kind`, 필수 필드 누락·타입 오류 | 답장 줄의 모르는 `field` 는 `알 수 없는 변경이에요`, 모르는 `result` 는 `알 수 없는 결과`. 종류나 결과를 모르는 줄은 읽기 전용이라 서버 `undoable` 이 true 여도 되돌리기가 없다(표시용 분류에는 행동이 없다). 아는 줄은 서버 `undoable` 을 따른다. 모르는 `channel`·`evidence_status` 는 없음(null) |
+| 연동 상태 `GET /workspaces/{workspace_id}/integrations` | `discord`·`notion` 의 `status` 가 `not_connected`·`connecting`·`connected`·`revoked` 밖, `chat_channel` 이 객체·null 이 아님, 그 밖의 필수 필드 누락·타입 오류 | 거절하면 설정·온보딩의 연결 카드가 미연결로 보이지 않고 안내와 `다시 시도`를 보인다. `준비 중` 재조회도 멈춘다. 저장한 채팅 채널의 `name` 이 null 이면(`chat_channel_name` 은 nullable) `이름 없는 채널(ID)` 로 보인다 |
+| Discord 채널 목록·채팅 채널 정하기(`PUT`)·끄기(`DELETE …/chat-channel`) | 채널의 `channel_id` 가 문자열이 아님, `name` 이 문자열·null 이 아님, `off_notice_sent` 가 불리언이 아님. 목록은 한 건만 틀려도 전체 | `total` 은 읽지 않는다 |
+| 초대 목록 `GET /workspaces/{workspace_id}/invitations`·받을 초대 `GET /invitations/me` | 초대 `status` 가 `pending`·`accepted`·`declined`·`canceled`·`revoked` 밖, `accepted_user` 가 객체·null 이 아님, 그 밖의 필수 필드 누락·타입 오류. 한 건만 틀려도 전체 | 거절하면 팀원 줄은 `초대 상태를 불러오지 못했어요.` 와 `다시 시도` 다(전에는 닫힌 초대로 보고 다시 초대하게 했다). `member_display_name`·`invited_by_name`·`responded_at`(PM 목록), `created_at`(받을 초대)은 읽지 않는다. 초대 만들기·취소·연결 끊기·수락·거절의 응답 본문은 읽지 않는다 |
+| `WorkspaceResponse` (목록·상세·생성) | 온보딩 `steps[].step`·`current_step` 이 네 단계(`create_workspace`·`connect_discord`·`connect_notion`·`connect_members`) 밖, `steps[].status` 가 `pending`·`completed`·`skipped` 밖, `completed` 가 불리언이 아님, `onboarding` 이 없음, 그 밖의 필수 필드 누락·타입 오류. 목록은 한 건만 틀려도 전체 | 완료한 공간의 빈 `current_step` 은 없음(null)과 같다. 모르는 `role` 은 팀원(`member`), null 은 경고 없이 팀원이다. `member_id` 가 없으면 null(#367 전 BE). 거절하면 가드가 짐작한 온보딩 단계로 보내지 않고 안내와 `다시 시도`를 보인다 |
+| `MemberResponse` (목록·생성·`PATCH`)·별칭 `MemberAliasResponse`(목록·생성)·Discord 사용자 목록 | `has_login_account`·`verified`·`is_bot` 이 불리언이 아님, `confidence` 가 숫자가 아님, 그 밖의 필수 필드 누락·타입 오류. 목록은 한 건만 틀려도 전체 | 모르는 `role` 은 팀원(`member`). 모르는 별칭 `source` 는 받은 값을 남기고 `알 수 없는 출처` 다. 별칭 `alias_type` 은 읽지 않는다 |
+| `MessageSettingsResponse` (조회·`PATCH`) | `pm_alert_method` 가 `web`·`discord_dm`·`both` 밖, 켜고 끄는 값이 불리언이 아님, `nudge_rule` 의 두 값이 숫자가 아님, `pms[]` 의 필드 누락·타입 오류 | 화면이 고를 수 없는 재촉 규칙은 고를 수 있는 범위로 맞춘다(전과 같다). `updated_at`·`updated_by` 는 읽지 않는다. 전에는 모르는 알림 방법을 `both` 로 보였다 |
+| 인증 `AuthResponse`(`/auth/me`·로그인·가입)·가입 코드·카카오 대기·비밀번호 재설정 확인·탈퇴 계획·탈퇴 영수증 | 세션의 `user` 필드·`workspace_count`(음이 아닌 정수)·`last_workspace_id` 타입 오류, 가입 코드 `resend_after`·`verification_token`, 재설정 확인 `expires_at`·`email_masked`, 탈퇴의 `disposition`·`cleanup_status` 가 정한 값 밖 | 가입 코드 `expires_in` 은 읽지 않는다. 로그인·가입 응답을 읽지 못하면 폼에 `응답을 읽지 못했어요` 를 보인다. 로그인은 다시 하면 되고, 가입은 이미 만든 계정이라 다시 보내면 계정 충돌 안내가 로그인으로 보낸다. 탈퇴 영수증을 읽지 못하면 결과를 모르는 요청으로 보고 같은 요청으로 다시 확인한다(지금도 응답을 잃었을 때의 경로다) |
 
-- 쓰기 응답(태스크 `PATCH`·생성·Notion 재시도·자동 막힘 풀기·답장 변경 되돌리기, 승인 `PATCH`, 추출 항목 되돌리기, 메시지의 보낼 시각 옮기기·태스크 빼기·재촉 만들기·대화 열기)이 `INVALID_RESPONSE` 면 FE 는 서버에 반영됐을 수 있다고 보고 실패라 하지 않는다. 토스트 `변경 결과를 확인하지 못했어요` 와 `새로고침` 을 보인다. `새로고침` 은 태스크 쓰기면 그 공간의 태스크 목록·상세·이력을, 승인 처리면 승인 목록·상세와 태스크·추출·별칭을, 되돌리기면 태스크·승인·추출을, 메시지 쓰기면 그 공간의 메시지 목록·대화를 다시 받는다. 회의 업로드는 토스트 대신 응답을 잃었을 때의 복구(목록에서 이 업로드나 정리 중 회의 찾기)를 쓴다. 다른 실패는 기존 문구다(D-184).
+- 쓰기 응답(태스크 `PATCH`·생성·Notion 재시도·자동 막힘 풀기·답장 변경 되돌리기, 승인 `PATCH`, 추출 항목 되돌리기, 메시지의 보낼 시각 옮기기·태스크 빼기·재촉 만들기·대화 열기, 회의 채팅 채널 정하기·끄기, 별칭 더하기, PM 권한 주기, 메시지·알림 설정 바꾸기)이 `INVALID_RESPONSE` 면 FE 는 서버에 반영됐을 수 있다고 보고 실패라 하지 않는다. 토스트 `변경 결과를 확인하지 못했어요` 와 `새로고침` 을 보인다. `새로고침` 은 태스크 쓰기면 그 공간의 태스크 목록·상세·이력을, 승인 처리면 승인 목록·상세와 태스크·추출·별칭을, 되돌리기면 태스크·승인·추출을, 메시지 쓰기면 그 공간의 메시지 목록·대화를, 채팅 채널이면 연동 상태를, 별칭이면 별칭 목록을, PM 권한이면 팀원 목록을, 설정이면 설정을 다시 받는다. 워크스페이스 만들기는 공간 목록을 다시 받아 보내기 전에 없던 같은 이름의 PM 공간이 하나면 그 온보딩으로 잇고, 아니면 토스트와 공간 선택이다. 만들기를 다시 보내지 않는다. 온보딩 팀원 저장은 토스트 대신 응답을 잃었을 때처럼 팀원 목록을 다시 읽고 저장을 이어 간다. 회의 업로드는 토스트 대신 응답을 잃었을 때의 복구(목록에서 이 업로드나 정리 중 회의 찾기)를 쓴다. 다른 실패는 기존 문구다(D-184).
 - 오류의 `details` 는 `{entity, path}` 다(예: `{"entity": "task", "path": "items[3].status"}`). 받은 값은 넣지 않는다. 개발 모드만 콘솔에 경로와 값을 남긴다.
 - 스키마는 FE 가 읽는 필드만 본다. BE 가 필드를 더해도 실패하지 않는다. `total` 은 읽지 않는다.
-- 남은 entity(integration·invitation·workspace·member·user)는 아직 이전 방식(타입 단언과 `enumValue` 폴백)이다.
-- 근거 코드: `frontend/src/shared/api/parseResponse.ts`, `frontend/src/shared/api/unknownValue.ts`, `frontend/src/shared/types/api/task.ts`, `frontend/src/shared/types/api/reply.ts`, `frontend/src/shared/types/api/approval.ts`, `frontend/src/shared/types/api/meeting.ts`, `frontend/src/shared/types/api/minutes.ts`, `frontend/src/shared/types/api/extraction.ts`, `frontend/src/entities/task/api/taskApi.ts`, `frontend/src/entities/approval/api/`, `frontend/src/entities/meeting/api/`, `frontend/src/entities/minutes/api/minutesQuery.ts`, `frontend/src/entities/extraction/api/`, `frontend/src/entities/meeting/model/sourceTraits.ts`, `frontend/src/shared/types/api/message.ts`, `frontend/src/shared/types/api/notification.ts`, `frontend/src/entities/message/api/`, `frontend/src/entities/notification/api/`.
+- 모든 entity 응답이 이 방식이다. 옛 `enumValue` 폴백은 지웠다(#348 마지막 PR).
+- 근거 코드: `frontend/src/shared/api/parseResponse.ts`, `frontend/src/shared/api/unknownValue.ts`, `frontend/src/shared/types/api/task.ts`, `frontend/src/shared/types/api/reply.ts`, `frontend/src/shared/types/api/approval.ts`, `frontend/src/shared/types/api/meeting.ts`, `frontend/src/shared/types/api/minutes.ts`, `frontend/src/shared/types/api/extraction.ts`, `frontend/src/entities/task/api/taskApi.ts`, `frontend/src/entities/approval/api/`, `frontend/src/entities/meeting/api/`, `frontend/src/entities/minutes/api/minutesQuery.ts`, `frontend/src/entities/extraction/api/`, `frontend/src/entities/meeting/model/sourceTraits.ts`, `frontend/src/shared/types/api/message.ts`, `frontend/src/shared/types/api/notification.ts`, `frontend/src/entities/message/api/`, `frontend/src/entities/notification/api/`, `frontend/src/shared/types/api/integration.ts`, `frontend/src/shared/types/api/invitation.ts`, `frontend/src/shared/types/api/workspace.ts`, `frontend/src/shared/types/api/member.ts`, `frontend/src/shared/types/api/auth.ts`, `frontend/src/shared/types/api/messageSettings.ts`, `frontend/src/entities/user/api/withdrawal.ts`.
 
 ### 합의 필요 변경
 
 - 위 배포 순서를 BE 와 합의한다(#348 정책 결정 3). 합의 여부 확인 필요.
-- BE 응답 스키마의 `status: str` 을 enum 타입으로 바꿔 OpenAPI 에 값 목록이 드러나게 해 달라(#348 정책 결정 4). `TaskFields.status`, `TaskHistoryResponse.changed_field`·`change_source`, `TimelineChange.field`·`evidence_status`, `TimelineReply.channel`, `ApprovalResponse.status`·`type`, `MeetingDetailResponse.status`, `MeetingMinutesResponse.source`, `ExtractionItemResponse.gate`, `SpeakerViewResponse.status`, 업로드 202 의 `status`, `BundleResponse.status`·`body_source`·`draft_status`, `MessageResponse.sender`·`reply_channel`·`dm_status`·`dm_failure_reason`, `LastMessage.sender`, `ReminderResponse.status`·`kind`·`origin`, `NotificationResponse.kind` 가 지금 `str` 이다. 회의 목록 `items` 는 `list[dict]`, 회의록의 `attendees`·`transcript`·`summary`·`permissions` 는 `dict` 라 OpenAPI 에 필드가 드러나지 않는다. 합의 여부 확인 필요.
+- BE 응답 스키마의 `status: str` 을 enum 타입으로 바꿔 OpenAPI 에 값 목록이 드러나게 해 달라(#348 정책 결정 4). `TaskFields.status`, `TaskHistoryResponse.changed_field`·`change_source`, `TimelineChange.field`·`evidence_status`, `TimelineReply.channel`, `ApprovalResponse.status`·`type`, `MeetingDetailResponse.status`, `MeetingMinutesResponse.source`, `ExtractionItemResponse.gate`, `SpeakerViewResponse.status`, 업로드 202 의 `status`, `BundleResponse.status`·`body_source`·`draft_status`, `MessageResponse.sender`·`reply_channel`·`dm_status`·`dm_failure_reason`, `LastMessage.sender`, `ReminderResponse.status`·`kind`·`origin`, `NotificationResponse.kind`, 연동 상태의 `status`, `InvitationResponse.status`, `WorkspaceOnboardingStep.step`·`status`, `WorkspaceOnboarding.current_step`, `WorkspaceResponse.role`, `MemberResponse.role`, `MemberAliasResponse.source`·`alias_type`, `MessageSettingsResponse.pm_alert_method` 가 지금 `str` 이다. 회의 목록 `items` 는 `list[dict]`, 회의록의 `attendees`·`transcript`·`summary`·`permissions` 는 `dict` 라 OpenAPI 에 필드가 드러나지 않는다. 합의 여부 확인 필요.
 
 ## 회의 삭제와 보존 태스크 (#576, 2026-11-09)
 
@@ -235,7 +243,7 @@ FE 변경과 실제 검증은 [M6 후속 결과](../plan/m6/result.md)에 기록
 | `GET /workspaces/{id}/integrations`, `DELETE /workspaces/{id}/integrations/{provider}` | Discord·Notion 상태. 해제는 204 무본문. Discord 의 `chat_channel` 과 채팅 채널 목록·저장·해제는 §4.3.1 | [연동 API](../../src/entities/integration/api/integrations.ts), [연동 DTO](../../src/shared/types/api/integration.ts) |
 | `POST /workspaces/{id}/meetings/upload` | multipart `title`, ISO `started_at`, 참석자별 반복 `attendee_member_ids`, `file`. 202 data `{meeting_id,status}` | [업로드](../../src/entities/meeting/api/uploadMeeting.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
 | `GET /workspaces/{id}/meetings`, `GET /meetings/{id}` | 목록은 `{items,total}`, nullable title. 상세는 workspace_id·status·progress·extraction_id·failed_stage | [회의 조회](../../src/entities/meeting/api/meetingQueries.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
-| `GET /meetings/{id}/minutes` | nullable summary·title, summary_status(FE 미사용, §4.4.2), 참석자 배열, 전사 배열, permissions `{can_review,can_undo}` | [회의록 조회](../../src/entities/minutes/api/minutesQuery.ts), [회의록 DTO](../../src/shared/types/api/minutes.ts) |
+| `GET /meetings/{id}/minutes` | nullable summary·title, summary_status(빈 요약 문구만 고름, §4.4.2), 참석자 배열, 전사 배열, permissions `{can_review,can_undo}` | [회의록 조회](../../src/entities/minutes/api/minutesQuery.ts), [회의록 DTO](../../src/shared/types/api/minutes.ts) |
 | 회의 추출·대기 승인 조회 | 반영 항목과 확인 필요 항목을 조합. 일반 팀원은 대기 승인 조회·확인 필요 영역 제외 | [추출 조회](../../src/entities/extraction/api/extractionQuery.ts), [승인 조회](../../src/entities/approval/api/pendingApprovals.ts), [회의록 화면](../../src/pages/meetings) |
 
 업로드 화면의 형식·한도는 [uploadPolicy](../../src/entities/meeting/model/uploadPolicy.ts)의 MP3·WAV·M4A·OGG·WebM, 200 MiB·2시간이다. 브라우저 검증이 서버의 동일 검증을 보장하지 않는다. 전송 진행률 100%와 서버의 처리 완료는 다르며, 409 `MEETING_PROCESSING_IN_PROGRESS`는 `details.meeting_id`로 기존 처리 화면에 연결한다. 처리 상세는 3초 간격으로 추적하며 완료·실패·접근 상실 시 중단한다.
@@ -293,7 +301,7 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 
 | 항목 | 서버 동작 |
 |---|---|
-| 받는 때 | `status: "approved"` 일 때만. 반려와 같이 보내거나 `reminder_dm` 에 보내면 400 `INVALID_REQUEST` 이고 승인 상태도 바뀌지 않는다 |
+| 받는 때 | `status: "approved"` 일 때만. 반려와 같이 보내면 400 `INVALID_REQUEST` 이고 승인 상태도 바뀌지 않는다. 승인 종류는 `task_create`·`task_update` 둘이다(`reminder_dm` 은 #616 에서 지웠다) |
 | `task_create` 키 | `task_title`, `assignee_member_id`, `due_date`. 상태는 고를 수 없고 항상 `todo` |
 | `task_update` 키 | `status`, `due_date`. 담당자 줄이 있는 답장 카드(답장 판단의 변경 줄에 담당자가 있는 카드)는 `assignee_member_id` 도 받는다(`null` 이면 미정, #460). 상태·마감만 있는 답장 카드, 회의 추출 카드, 수동 생성 카드에 보내면 400 `INVALID_REQUEST` 다. 카드는 payload 가 아니라 답장 판단 기록으로 고른다 |
 | 키가 없을 때 | 그 필드는 제안 그대로 |
@@ -534,6 +542,8 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 
 2026-11-09 #575 구현은 `MemberResponse.has_login_account: boolean`을 추가한다. 활성 팀원에 로그인 계정이 연결됐는지 나타내며 User ID는 반환하지 않는다. FE는 `hasLoginAccount`로 옮기고, PM에게 로그인 연결된 일반 팀원의 `PM 권한 부여`를 제공한다. 기존 `PATCH /members/{id}`의 `{role:"pm"}`를 사용하며 기존 PM의 권한은 유지한다. 대기 초대의 `MEMBER_HAS_PENDING_INVITATION` 등 서버 오류는 그대로 따른다. 생산자·소비자 코드를 함께 변경한 현재 구현이며, 별도 파트 합의·병합·배포 완료 기록은 아니다.
 
+2026-11-10 #613 FE 사용: Discord 를 연결하지 않은 팀의 온보딩 4단계와 팀원 연결 창이 `POST /members` 를 `{workspace_id, display_name}` 만으로 보낸다(`discord_user_id` 키 없음). 요청 형식은 위 그대로이고 BE 는 바꾸지 않았다. 서버는 같은 이름의 팀원을 막지 않는다. FE 가 보내기 전에 지금 팀원 목록과 이름(앞뒤 공백 제거, 대소문자 그대로)을 견줘 막는다(D-187). 같은 이름 거절을 서버 규약으로 둘지는 합의하지 않았다.
+
 계정 영구 탈퇴용 익명 기록 주체는 기존 명단 비활성화와 구분한다. 영구 탈퇴자의 대화는 PM 목록·상세·읽음에 남고 표시명은 `탈퇴한 사용자`, `web_reply_available`은 false다. 프로필 수정·별칭 추가·초대·새 발송과 늦은 봇 결과는 거절한다. 기존 `is_deleted`만 있는 명단 비활성화의 unread 0·읽음 POST 404는 유지한다. [익명 주체 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-09-withdrawn-record-actor.md)에 첫 구현의 범위를 기록했고, 본인 탈퇴 API·화면과 기록용 목록은 위 [계정 탈퇴 규약](#계정-탈퇴와-정리-상태-575-2026-11-09)을 따른다. 실제 외부 제공자·운영 계정의 삭제를 확인한 기록은 아니다.
 
 - `alias_type` 은 `realname` \| `nickname` \| `mention` \| `inferred`, `source` 는 `manual` \| `discord_profile` \| `learned` \| `display_name`.
@@ -756,7 +766,6 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
   - 현재 BE 구현: 회의에서 만드는 `task_update` payload 에는 반영 키 말고도 표시용 `task_title`·`base_title`·`doc_text`·`category`(`schedule`·`assignee`·`status`·`scope`·`decision`·`none`)·`evidence_quote`·`evidence_speaker`·`evidence_speaker_member_id`·`evidence_at_ms`·`meeting_id` 가 온다. `category` 가 `scope`(범위 결정)면 바뀌는 필드가 없어도 승인 요청을 만든다([extractions.py](../../../backend/app/api/extractions.py)). 승인해도 반영 키가 없으면 태스크·이력에 아무것도 남지 않는다.
   - 합의됨, BE 미구현(#205): `category` 가 `scope` 인 승인을 승인하면 필드 반영과 별개로 `changed_field: "scope"` 이력 한 줄을 남긴다. 바뀌는 필드가 함께 있으면 필드 이력과 범위 이력을 둘 다 남긴다. 범위 이력만 남는 승인은 Task `version` 과 Notion 동기화를 건드리지 않는다. 반려하면 이력을 남기지 않는다. FE 가 먼저 배포된 뒤 BE 를 배포한다.
   - FE 구현(#205): 승인 매퍼가 `doc_text`·`category`·근거 발화·`meeting_id` 를 읽는다. 모르는 `category` 는 `null` 이다. 승인 상세는 `scope` 면 「범위 변경」 절에 `doc_text` 와 근거를 보이고, 바뀌는 필드가 있을 때만 변경 표를 보인다. 대시보드 확인 필요 목록과 보드 승인 카드는 `범위 변경을 확인해야 해요` 로 보인다. MSW 는 합의대로 승인 때 범위 이력을 남긴다(시나리오 `approval-scope`).
-- `reminder_dm` → 태스크에 반영하지 않는다. 발송은 Discord 봇의 책임이다
 
 **프론트엔드가 지킬 규칙**
 
@@ -1579,8 +1588,8 @@ POST .../meetings/upload            multipart/form-data
 
 회의가 끝나면 AI 가 요약을 만들고, 주제가 태스크를 묶어 프로젝트 맵이 된다. 이 절은 BE 가 내주는 읽기 경로다.
 
-- 제공자는 BE 다. FE 는 아직 쓰지 않는다. 소비 화면은 FE 요청 이슈로 정한다.
-- 합의 상태: **BE 구현(#462), FE 합의 여부 확인 필요.** 표시 항목(노드는 주제와 태스크, 선 종류 없음, 패널 내용, 합본 전체 공개)은 사용자가 정했다(2026-11-06). 경로와 응답 모양은 이번 구현에서 정했다.
+- 제공자는 BE 다. 소비자는 FE 프로젝트 맵 화면과 회의록 화면이다(#551, 아래 「FE 사용 (#551)」).
+- 합의 상태: **BE 구현(#462), FE 가 아래 모양대로 구현(#551, 2026-11-09). 별도 합의 기록은 없다.** 표시 항목(노드는 주제와 태스크, 선 종류 없음, 패널 내용, 합본 전체 공개)은 사용자가 정했다(2026-11-06). 경로와 응답 모양은 이번 구현에서 정했다.
 - 요약 AI 워커는 #560에서 연결했다. 유효 요약이 없는 회의는 `summary`가 `null`이고 `summary.md`는 404다. 자동 처리는 실제 워커의 `MM_SUMMARY_LLM` 환경을 따른다. 봇 쪽 경로는 [백엔드 ↔ AI 계약](../../../backend/docs/contracts/backend-ai-contract.md#회의-요약)에 있다.
 - 권한: 네 경로 모두 워크스페이스 멤버다. 비소속 403, 세션 없음 401 이다.
 - 삭제 회의의 summary.md는 기존 회의록처럼 410이다. 회의 삭제는 주제·결정 연결과 다른 요약의 삭제 원문 사본도 정리한다. 합본·맵에 삭제 원문은 포함하지 않는다.
@@ -1646,6 +1655,20 @@ POST .../meetings/upload            multipart/form-data
 - 요약의 `할 일 변화` 에는 승인 전이나 반려된 일이 글로 들어갈 수 있다(사용자 결정 2026-11-06).
 
 구현 근거: [project_map 라우터](../../../backend/app/api/project_map.py), [서비스](../../../backend/app/services/project_map.py), [렌더러](../../../backend/app/services/summary_markdown.py), [스키마](../../../backend/app/schemas/project_map.py). 검증은 `backend/tests/api/test_project_map.py`, `backend/tests/services/test_summary_markdown.py` 로 SQLite 와 PostgreSQL 에서 했다. 응답 크기와 실서버 동작은 재지 않았다.
+
+**FE 사용 (#551, 2026-11-09).** 실 API 호출로는 확인하지 않았다. MSW 와 BE 스키마(`backend/app/schemas/project_map.py`)·라우터를 읽어 맞췄다.
+
+| 경로 | FE 가 읽는 것 | FE 가 거절하는 것 (`INVALID_RESPONSE`) | 받고 따로 다루는 것 |
+|---|---|---|---|
+| `GET .../project-map` | 노드의 `kind`·`label`·`appeared_at`, 태스크 노드의 `status`·`due_date`·`assignee_name`·`blocker`·`meeting_ids`, `edges`, `meetings` | 모르는 노드 `kind`(판별 값), 태스크 `status` 가 네 값 밖(D-184), 그 밖의 필수 필드 누락·타입 오류 | 끝이 `nodes` 에 없는 선은 그리지 않는다. 주제와 태스크를 잇는 선으로 목록 보기의 주제별 묶음을 만들고, 주제 선이 없는 태스크는 `주제 없는 태스크` 다. 태스크끼리의 선은 태스크 패널의 `이어진 태스크` 단추다(목록·키보드로도 같은 연결을 따라간다) |
+| `GET .../topics/{topic_id}` | 이름·설명·결정(`replaced_by` 가 있으면 흐리게 `뒤집힘`)·태스크·회의 | 태스크 `status` 가 네 값 밖, 필수 필드 누락·타입 오류 | 404 `TOPIC_NOT_FOUND` 는 패널 안 안내 `주제를 찾을 수 없어요. 지워졌을 수 있어요.` |
+| `GET /meetings/{id}/summary.md` | 본문과 `Content-Disposition` 의 `filename*`(없으면 `filename`, 둘 다 없으면 `summary.md`) | 2xx 인데 `Content-Type` 이 `text/markdown` 이 아님 | 404 `SUMMARY_NOT_FOUND` 는 토스트. 단추는 `summary` 가 null 이 아닐 때만 보인다(팀원 포함) |
+| `GET .../project-bundle.md` | 위와 같다. 대체 이름은 `project-bundle.md` | 위와 같다 | `from`·`to` 는 적은 쪽만 보낸다. 둘 다 비면 전체 기간이다. `from > to` 는 보내지 않고 `시작일이 종료일보다 늦어요.`, 서버 400 `INVALID_REQUEST` 도 같은 문구다. 단추 옆 안내 `팀원 발언 요약이 들어 있어요. 외부 AI 에 첨부할 때 주의해 주세요.` |
+| `GET /meetings/{id}/minutes` 의 `summary_status` | 요약이 없을 때의 표시. `pending` 은 `요약을 만드는 중이에요`, `none` 은 요약 칸을 비운다(이슈 원문) | 거절하지 않는다 | 표시용이라 모르는 값은 받은 글자를 보존하고 중립 문구 `요약이 없어요` 를 보인다(D-184 표시용). 키가 없거나 문자열이 아니면 `none` 이다. `summary` 가 있으면 상태와 무관하게 보인다. 재시도 단추는 없다 |
+
+- 두 `.md` 요청은 `Accept: text/markdown, application/json` 을 보내고, 실패 응답은 다른 API 와 같은 봉투로 읽는다(401 알림 포함).
+- 구현: [응답 스키마](../../src/shared/types/api/projectMap.ts), [맵 조회](../../src/entities/project-map/api/projectMapQuery.ts), [맵 화면](../../src/widgets/project-map), [파일 요청](../../src/shared/api/client.ts), [합본](../../src/features/project-bundle-download), [요약본](../../src/features/summary-download), [회의록 스키마](../../src/shared/types/api/minutes.ts). 화면 배치는 D-186 이다.
+- 합의 필요: 위 FE 처리(특히 `summary_status` 를 표시용으로 본 것, 노드 `kind` 를 판별 값으로 본 것)는 FE 판단이다. BE 합의 여부 확인 필요.
 
 
 ### 4.5 Discord 서버 사용자 목록

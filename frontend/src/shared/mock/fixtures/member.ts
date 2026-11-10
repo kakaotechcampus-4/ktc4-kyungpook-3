@@ -1,9 +1,13 @@
-import type {
-  DiscordUserDto,
-  MemberAliasDto,
-  MemberDto,
-  UnresolvedAliasDto,
-} from '@/shared/types/api/member'
+import type { DiscordUserDto, MemberAliasDto, MemberDto } from '@/shared/types/api/member'
+
+/** 모의 서버가 내는 별칭. 화면이 읽지 않는 `alias_type` 도 백엔드처럼 낸다 */
+export type MockMemberAlias = MemberAliasDto & { alias_type: string }
+/** `GET /members/aliases/unresolved`. 화면은 아직 부르지 않는다 */
+export interface MockUnresolvedAlias {
+  alias_text: string
+  occurrences: number
+  last_seen_at: string
+}
 const memberSeeds: [string, string, string | null, string][] = [
   ['mb_01', '김서연', '1123', 'pm'],
   ['mb_02', '박민수', '1124', 'member'],
@@ -57,8 +61,8 @@ const alias = (
   alias_id: string,
   member_id: string,
   alias_text: string,
-  rest: Pick<MemberAliasDto, 'alias_type' | 'source' | 'confidence' | 'verified' | 'created_at'>,
-): MemberAliasDto => ({ alias_id, member_id, workspace_id: 'ws_01', alias_text, ...rest })
+  rest: Pick<MockMemberAlias, 'alias_type' | 'source' | 'confidence' | 'verified' | 'created_at'>,
+): MockMemberAlias => ({ alias_id, member_id, workspace_id: 'ws_01', alias_text, ...rest })
 
 /* 백엔드가 팀원을 만들 때 채우는 이름 별칭(이름 전체와 성을 뗀 이름, 확인됨). 이미 같은 글자가 있으면 건너뛴다(services/member_aliases.py) */
 const nameAlias = (alias_id: string, member_id: string, alias_text: string) =>
@@ -71,7 +75,7 @@ const nameAlias = (alias_id: string, member_id: string, alias_text: string) =>
   })
 
 /* 네 출처가 모두 보이게 둔다. '지훈' 은 아무에게도 주지 않는다 — 미해결 별칭과 승인 카드의 별칭 후보가 그 이름을 쓴다 */
-export const aliasFixtures: MemberAliasDto[] = [
+export const aliasFixtures: MockMemberAlias[] = [
   alias('al_01', 'mb_01', '서연', {
     alias_type: 'nickname',
     source: 'manual',
@@ -103,6 +107,6 @@ export const aliasFixtures: MemberAliasDto[] = [
     created_at: '2026-09-16T00:00:00Z',
   }),
 ]
-export const unresolvedAliasFixtures: UnresolvedAliasDto[] = [
+export const unresolvedAliasFixtures: MockUnresolvedAlias[] = [
   { alias_text: '지훈', occurrences: 3, last_seen_at: '2026-09-15T06:00:00Z' },
 ]

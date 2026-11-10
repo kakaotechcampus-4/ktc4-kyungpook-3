@@ -1,17 +1,12 @@
 import type { InvitationDto, MyInvitationDto } from '@/shared/types/api/invitation'
-import type { Invitation, InvitationStatus, MyInvitation } from './types'
+import type { Invitation, MyInvitation } from './types'
 
-const statuses: InvitationStatus[] = ['pending', 'accepted', 'declined', 'canceled', 'revoked']
-
-/** 모르는 상태는 닫힌 초대(canceled)로 읽는다 — 다시 초대할 수 있고 연결로 보지 않는다 */
 export function toInvitation(dto: InvitationDto): Invitation {
-  const known = statuses.includes(dto.status as InvitationStatus)
-  if (!known && import.meta.env.DEV) console.warn(`Unknown invitation status: ${dto.status}`)
   return {
     id: dto.invitation_id,
     memberId: dto.member_id,
     email: dto.email,
-    status: known ? (dto.status as InvitationStatus) : 'canceled',
+    status: dto.status,
     acceptedUser: dto.accepted_user && {
       userId: dto.accepted_user.user_id,
       name: dto.accepted_user.name,

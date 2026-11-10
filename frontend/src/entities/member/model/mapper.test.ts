@@ -24,21 +24,23 @@ it('maps member and discord null leaves', () => {
   ).toMatchObject({ displayName: null })
 })
 
-it('maps aliases and falls back unknown unions without throwing', async () => {
+it('keeps an unknown alias source as received instead of calling it manual (#348)', async () => {
   const { toMemberAlias } = await import('./mapper')
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
   expect(
     toMemberAlias({
       alias_id: 'al',
       member_id: 'mb',
       workspace_id: 'ws',
       alias_text: '별명',
-      alias_type: 'new',
       source: 'new',
       confidence: 0.2,
       verified: false,
       created_at: '',
     }),
-  ).toMatchObject({ type: 'nickname', source: 'manual', verified: false })
+  ).toMatchObject({ source: { unknown: 'new' }, verified: false })
+  expect(warn).toHaveBeenCalledWith('Unknown alias source: new')
+  warn.mockRestore()
 })
 
 it('keeps the server-only display_name source as itself', async () => {
@@ -49,11 +51,10 @@ it('keeps the server-only display_name source as itself', async () => {
       member_id: 'mb',
       workspace_id: 'ws',
       alias_text: '김서연',
-      alias_type: 'realname',
       source: 'display_name',
       confidence: 1,
       verified: true,
       created_at: '',
     }),
-  ).toMatchObject({ type: 'realname', source: 'display_name' })
+  ).toMatchObject({ source: 'display_name' })
 })

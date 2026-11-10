@@ -16,6 +16,7 @@ import { minutesQueryOptions } from '@/entities/minutes'
 import type { Minutes } from '@/entities/minutes'
 import { MeetingDelete } from '@/features/meeting-delete'
 import { SPEAKERS_NEEDED_ACTION, SPEAKERS_NEEDED_TITLE } from '@/features/meeting-processing'
+import { SummaryDownloadButton } from '@/features/summary-download'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { formatSeoulDateTime } from '@/shared/lib/date'
@@ -101,7 +102,7 @@ function Head({
         {meta === '' ? null : <span className={`min-w-[0px] truncate ${META}`}>{meta}</span>}
         <span className={CHIP}>{sourceLabel(source)}</span>
         {action == null ? null : (
-          <div className="ml-auto flex h-22 shrink-0 items-center">{action}</div>
+          <div className="ml-auto flex h-22 shrink-0 items-center gap-4">{action}</div>
         )}
       </div>
       {children}
@@ -318,14 +319,26 @@ function MinutesView({
       )
     return loading
   }
+  // 요약이 있으면 팀원도 내려받는다. 볼 권한이 회의록과 같다
+  const canDownload = body.summary !== null
+  const canDelete = isPm && meeting.deletionAvailable
   return (
     <MinutesContent
       workspaceId={workspaceId}
       meeting={meeting}
       minutes={body}
       action={
-        isPm && meeting.deletionAvailable ? (
-          <MeetingDelete workspaceId={workspaceId} meetingId={meeting.id} onDeleted={onDeleted} />
+        canDownload || canDelete ? (
+          <>
+            {canDownload ? <SummaryDownloadButton meetingId={meeting.id} /> : null}
+            {canDelete ? (
+              <MeetingDelete
+                workspaceId={workspaceId}
+                meetingId={meeting.id}
+                onDeleted={onDeleted}
+              />
+            ) : null}
+          </>
         ) : null
       }
       held={held}
@@ -430,7 +443,11 @@ function MinutesContent({
           selected={tab}
           onSelect={setTab}
           tabs={[
-            { id: 'summary', label: '요약', panel: <SummaryPanel summary={minutes.summary} /> },
+            {
+              id: 'summary',
+              label: '요약',
+              panel: <SummaryPanel summary={minutes.summary} status={minutes.summaryStatus} />,
+            },
             {
               id: 'transcript',
               label: '전사문',

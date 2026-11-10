@@ -26,9 +26,9 @@ function addCompletedWorkspace() {
     onboarding: {
       completed: true,
       current_step: null,
-      steps: ['create_workspace', 'connect_discord', 'connect_notion', 'connect_members'].map(
-        (step) => ({ step, status: 'completed' }),
-      ),
+      steps: (
+        ['create_workspace', 'connect_discord', 'connect_notion', 'connect_members'] as const
+      ).map((step) => ({ step, status: 'completed' as const })),
     },
   })
   db.accounts[0].workspaceIds.push('ws_04')
@@ -128,14 +128,14 @@ describe('워크스페이스 선택 화면과 헤더 메뉴 (U4-1)', () => {
 })
 
 describe('앱 셸 (U4-2)', () => {
-  it('헤더에 5개 탭이 있고 설정은 탭이 아니라 프로필 메뉴에 있다', async () => {
+  it('헤더에 6개 탭이 있고 설정은 탭이 아니라 프로필 메뉴에 있다', async () => {
     renderApp('/workspaces/ws_01/dashboard')
     const nav = await screen.findByRole('navigation', { name: '주요 화면' })
     expect(
       within(nav)
         .getAllByRole('link')
         .map((link) => link.textContent),
-    ).toEqual(['대시보드', '회의록', '태스크', '메시지', '팀'])
+    ).toEqual(['대시보드', '회의록', '태스크', '메시지', '프로젝트 맵', '팀'])
     expect(within(nav).getByRole('link', { name: '대시보드' })).toHaveAttribute(
       'aria-current',
       'page',
@@ -159,6 +159,7 @@ describe('앱 셸 (U4-2)', () => {
       ['태스크', '태스크', '/workspaces/ws_01/tasks'],
       // #315 가 준비 중 안내를 지우고 메시지 화면을 모든 모드에서 연다
       ['메시지', '메시지', '/workspaces/ws_01/messages'],
+      ['프로젝트 맵', '프로젝트 맵', '/workspaces/ws_01/project-map'],
       // M8-B 가 팀 자리표시자를 Team 캔버스 화면으로 바꿨다 — 제목은 `팀` 이다
       ['팀', '팀', '/workspaces/ws_01/members'],
     ] as const) {
@@ -170,7 +171,7 @@ describe('앱 셸 (U4-2)', () => {
     await userEvent.click(within(await openUserMenu()).getByRole('menuitem', { name: '설정' }))
     expect(await screen.findByRole('heading', { name: '설정' })).toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: '주요 화면' })).toBeInTheDocument()
-    // 탭 다섯과 설정을 차례로 그린다. M8-B 로 팀·설정이 자리표시자에서 실제 화면이 되어 전체 실행 부하에서 5초를 넘겼다
+    // 탭 여섯과 설정을 차례로 그린다. M8-B 로 팀·설정이 자리표시자에서 실제 화면이 되어 전체 실행 부하에서 5초를 넘겼다
   }, 10_000)
 })
 

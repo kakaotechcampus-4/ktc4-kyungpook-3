@@ -1,6 +1,6 @@
 import { ApiError } from '@/shared/api/errors'
 import { fetchDto, jsonRequest } from '@/shared/test/api'
-import type { SignupCodeConfirmedDto, SignupCodeSentDto } from '@/shared/types/api/auth'
+import type { SignupCodeConfirmedDto } from '@/shared/types/api/auth'
 import { db } from './db'
 import { applyScenario } from './scenarios'
 
@@ -9,7 +9,10 @@ import { applyScenario } from './scenarios'
 const EMAIL = 'new@example.com'
 
 const requestCode = (email: string = EMAIL) =>
-  fetchDto<SignupCodeSentDto>('/auth/signup/code', jsonRequest('POST', { email }))
+  fetchDto<{ expires_in: number; resend_after: number }>(
+    '/auth/signup/code',
+    jsonRequest('POST', { email }),
+  )
 const confirmCode = (code: string, email: string = EMAIL) =>
   fetchDto<SignupCodeConfirmedDto>(
     '/auth/signup/code/confirm',

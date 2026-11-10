@@ -165,6 +165,7 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
       key_points: ['지난주 작업을 공유했다.', '남은 일의 담당자를 정했다.'],
       decisions: ['확실한 항목은 바로 반영하고 나머지는 PM이 확인한다.'],
     },
+    summary_status: 'ready',
     transcript: TRANSCRIPT_LINES.map((text, index) => {
       const member = speaker(index)
       return {

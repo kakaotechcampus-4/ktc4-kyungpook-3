@@ -1,6 +1,14 @@
 import { http } from 'msw'
 import { z } from 'zod'
 import type { InvitationDto, MyInvitationDto } from '@/shared/types/api/invitation'
+
+/** 모의 서버의 초대 응답. 화면이 읽지 않는 칸도 백엔드처럼 낸다 */
+type InvitationResponse = InvitationDto & {
+  member_display_name: string
+  invited_by_name: string | null
+  responded_at: string | null
+}
+type MyInvitationResponse = MyInvitationDto & { created_at: string }
 import { db } from '../db'
 import type { MockInvitation } from '../db'
 import { fail, list, ok } from '../envelope'
@@ -34,7 +42,7 @@ function memberOf(invitation: MockInvitation) {
   return db.members.find(({ member_id }) => member_id === invitation.member_id)
 }
 
-function toDto(invitation: MockInvitation): InvitationDto {
+function toDto(invitation: MockInvitation): InvitationResponse {
   const accepted = db.accounts.find(
     ({ session }) => session.user.user_id === invitation.accepted_user_id,
   )
@@ -224,7 +232,7 @@ export const invitationHandlers = [
             memberOf(invitation) !== undefined,
         )
         .sort(newestFirst)
-        .map((invitation): MyInvitationDto => ({
+        .map((invitation): MyInvitationResponse => ({
           invitation_id: invitation.invitation_id,
           workspace_id: invitation.workspace_id,
           workspace_name:
