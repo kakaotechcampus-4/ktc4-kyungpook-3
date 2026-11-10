@@ -31,6 +31,7 @@ from app.models import (
     DmFailureReason,
     DmStatus,
     DraftStatus,
+    Integration,
     Member,
     MemberRole,
     MessageSender,
@@ -791,10 +792,15 @@ def claim_for_bot(db: Session, now: datetime) -> list[ClaimedMessage]:
         .order_by(ThreadMessage.created_at, ThreadMessage.message_id)
         .with_for_update(skip_locked=True)
     ).all()
+    # 디스코드 서버를 연결하지 않은 워크스페이스의 계정에는 DM 을 보내지 않는다. 팀원 계정은 연결한 서버의 멤버만 붙인다.
+    linked = set(db.scalars(select(Integration.workspace_id).where(
+        Integration.provider == "discord", Integration.provider_channel_id.is_not(None),
+        Integration.provider_channel_id != "",
+    )))
     claimed = []
     for message in pending:
         member = message.thread.member
-        if member.is_deleted or not member.discord_user_id:
+        if member.is_deleted or not member.discord_user_id or message.thread.workspace_id not in linked:
             # 발송 요청을 만든 뒤 연결이 끊기거나 탈퇴했다. 이 메시지만 닫고 같은 배치의 나머지는 준다.
             message.dm_status = DmStatus.FAILED
             message.dm_failure_reason = DmFailureReason.DISCORD_NOT_LINKED
