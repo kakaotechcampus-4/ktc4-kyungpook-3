@@ -200,3 +200,61 @@ def test_deleted_member_cannot_be_edited(mdb, mseed):
     assert r.status_code == 404
     assert r.json()["error"]["code"] == "MEMBER_NOT_FOUND"
     assert client("pm").get(f"{P}/members/{mseed['carol'].member_id}").status_code == 200
+
+
+def test_pending_reply_judgment_is_closed(mdb, mseed):
+    # 재촉에 답한 직후 지우면 대기 판정이 남아, 방금 담당을 비운 태스크에 승인 카드가 새로 생겼다(#637 리뷰)
+    from datetime import timedelta
+
+    from app.models import ReplyJudgment
+    from app.services import replies
+    from tests.api.test_replies import _remind, _reply
+    from tests.api.test_scheduler import SLOT
+
+    task = mseed["tasks"][0]
+    task.status = "in_progress"
+    _remind(mdb, mseed, [task], SLOT)
+    at = SLOT.replace(hour=16)
+    message = _reply(mdb, mseed, at, body="그거 막혔어요")
+    assert _delete("pm", mseed["alice"]).status_code == 204
+    mdb.expire_all()
+    judgment = mdb.get(ReplyJudgment, message.message_id)
+    assert (judgment.state, judgment.failure_reason) == ("failed", "MEMBER_DELETED")
+    assert replies.claim(mdb, at + timedelta(minutes=1)) is None
+
+
+def test_no_reply_watch_opens_after_delete(mdb, mseed):
+    # 재촉이 나간 뒤 시계가 열리기 전(다음 틱까지)에 지우면, 지운 팀원 대화에 시계가 새로 열려 72시간 뒤 막힘이 됐다
+    from app.services import scheduler
+    from tests.api.test_messages_api import _approve, _due
+
+    pm = client("pm")
+    bundle_id = _create(pm, mseed, "alice", task=1)["bundle"]["bundle_id"]
+    assert _approve(pm, mseed, bundle_id).status_code == 200
+    _due(mdb, bundle_id)
+    now = datetime.now(timezone.utc)
+    [claim] = messages.claim_for_bot(mdb, now)
+    messages.report_result(mdb, claim.message.message_id, delivered=True, failure_reason=None,
+                           discord_message_ids=["1300000000000000001"], now=now)
+    mdb.commit()
+    assert _delete("pm", mseed["alice"]).status_code == 204
+    scheduler.open_watches(mdb, datetime.now(timezone.utc))
+    mdb.commit()
+    assert mdb.scalars(select(ReminderWatch)).all() == []
+
+
+def test_patch_rechecks_deletion_after_taking_the_lock(mdb, mseed, monkeypatch):
+    # PATCH 가 검사한 뒤 잠그기 전에 DELETE 가 커밋되면, 잠근 뒤 다시 보지 않아 지운 팀원에 이름이 쓰였다
+    from app.api import members as members_api
+
+    original = members_api._lock_member
+
+    def deleted_meanwhile(db, member):
+        db.execute(Member.__table__.update().where(Member.member_id == member.member_id).values(is_deleted=True))
+        original(db, member)
+
+    monkeypatch.setattr(members_api, "_lock_member", deleted_meanwhile)
+    r = client("pm").patch(f"{P}/members/{mseed['carol'].member_id}", json={"display_name": "캐롤2"})
+    assert r.status_code == 404
+    mdb.expire_all()
+    assert mdb.get(Member, mseed["carol"].member_id).display_name != "캐롤2"

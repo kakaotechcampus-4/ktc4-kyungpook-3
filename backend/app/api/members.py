@@ -17,6 +17,8 @@ from app.models import (
     MemberAlias,
     MemberRole,
     MessageThread,
+    ReplyJudgment,
+    ReplyJudgmentState,
     Task,
     TaskStatus,
     User,
@@ -329,6 +331,10 @@ def update_member(
     # 별칭이 바뀔 수 있는 PATCH 는 팀원 행을 잠근다. 위 PM·초대 검사가 잠그는 행보다 뒤에 잠가 순서가 꼬이지 않게 한다.
     if "display_name" in updates or "discord_user_id" in updates:
         _lock_member(db, member)
+    # 위 검사와 잠금 사이에 DELETE 가 커밋됐을 수 있다. 잠근 뒤 다시 본다
+    db.refresh(member)
+    if member.is_deleted:
+        raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
 
     # 승격은 이 PATCH 의 commit 에 함께 넣는다. 올라가기 전 대화는 PM 이 되기 전 일이라 읽지 않은 것으로 세지 않는다.
     if updates.get("role") == MemberRole.PM and member.role != MemberRole.PM:
@@ -412,6 +418,11 @@ def delete_member(
     if thread_id is not None:
         messages.cancel_scheduled_bundles(db, thread_id, now)
         messages.stop_thread_dms(db, [thread_id], now)
+        # 판단을 기다리는 답장을 닫는다. 남기면 방금 담당을 비운 태스크에 승인 카드가 새로 생긴다
+        db.execute(update(ReplyJudgment).where(
+            ReplyJudgment.thread_id == thread_id, ReplyJudgment.state == str(ReplyJudgmentState.PENDING),
+        ).values(state=str(ReplyJudgmentState.FAILED), claimed_at=None, finished_at=now,
+                 failure_reason="MEMBER_DELETED"))
 
     member.is_deleted = True
     member.deleted_at = now
