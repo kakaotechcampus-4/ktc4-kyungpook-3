@@ -21,11 +21,12 @@ const HEADER =
 const COMPACT_HEADER =
   'flex h-[calc(56px+env(safe-area-inset-top))] shrink-0 items-center justify-between gap-12 bg-surface pt-[env(safe-area-inset-top)] pr-[max(20px,env(safe-area-inset-right))] pl-[max(20px,env(safe-area-inset-left))]'
 
-const ACTIONS = 'flex items-center gap-24'
+/* 탭은 줄지 않고, 오른쪽 묶음이 남는 폭만 쓴다. 1024px 아래는 간격을 좁히고 공간 이름을 줄여 768px 에서도 한 줄이다 */
+const ACTIONS = 'flex min-w-0 items-center gap-24 max-lg:gap-8'
 
 /* 알림 종(NotificationBell)과 같은 36px 아이콘 단추. 열린 동안 선택 면이다 */
 const HELP =
-  'inline-flex size-36 items-center justify-center rounded-9 text-ink hover:bg-surface-selected aria-expanded:bg-surface-selected'
+  'inline-flex size-36 shrink-0 items-center justify-center rounded-9 text-ink hover:bg-surface-selected aria-expanded:bg-surface-selected'
 
 /* 공간 메뉴는 왼쪽 끝, 안내 · 알림 · 아바타는 오른쪽이다. 공간 이름이 길면 공간 메뉴가 줄어든다 */
 const COMPACT_ACTIONS = 'flex min-w-0 flex-1 items-center gap-8 [&>:first-child]:mr-auto'
@@ -62,7 +63,7 @@ export function AppHeader({ workspaceId, onTabIntent }: AppHeaderProps) {
   return (
     <header className={compact ? COMPACT_HEADER : HEADER}>
       {compact ? null : (
-        <div className="flex items-center gap-30">
+        <div className="flex shrink-0 items-center gap-30">
           <GuardedLink
             to={paths.dashboard(workspaceId)}
             aria-label="Manager's Manager 대시보드"

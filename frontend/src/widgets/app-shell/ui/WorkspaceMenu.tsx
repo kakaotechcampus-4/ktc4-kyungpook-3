@@ -20,9 +20,9 @@ export interface WorkspaceMenuProps {
   workspaceId: string
 }
 
-/* Main 의 .team-btn — 36px · 반경 9 · 선 테두리. 열려 있으면 선택 면이다 */
+/* Main 의 .team-btn — 36px · 반경 9 · 선 테두리. 열려 있으면 선택 면이다. 헤더가 좁으면 이름을 말줄임해 줄어든다 */
 const TRIGGER =
-  'inline-flex h-36 max-w-[240px] items-center gap-8 rounded-9 border border-line bg-surface px-11 text-control font-semibold text-ink hover:bg-surface-sunken data-[state=open]:bg-surface-selected'
+  'inline-flex h-36 max-w-[240px] min-w-0 items-center gap-8 rounded-9 border border-line bg-surface px-11 text-control font-semibold text-ink hover:bg-surface-sunken data-[state=open]:bg-surface-selected'
 
 const ACTION_TEXT = 'flex-1 text-control font-semibold text-sub'
 
