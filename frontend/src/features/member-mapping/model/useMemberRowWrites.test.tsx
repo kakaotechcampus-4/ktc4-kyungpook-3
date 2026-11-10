@@ -1,12 +1,17 @@
 import { QueryClientProvider, onlineManager, useQuery } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
+import { http } from 'msw'
 import type { ReactNode } from 'react'
+import { onTestFinished } from 'vitest'
 import { memberListQueryOptions } from '@/entities/member'
 import { createQueryClient } from '@/shared/api/queryClient'
 import { endSessionScope } from '@/shared/api/sessionScope'
 import { db } from '@/shared/mock/db'
+import { fail } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
+import { server } from '@/shared/mock/server'
+import { deferred } from '@/shared/test/deferred'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import { useMemberRowWrites } from './useMemberRowWrites'
 
@@ -71,6 +76,36 @@ describe('useMemberRowWrites', () => {
     expect(onSuccess).not.toHaveBeenCalled()
     expect(result.current.writes.failure).toBeNull()
     expect(db.members.some(({ display_name }) => display_name === '최지훈')).toBe(false)
+  })
+
+  it('보낸 뒤 세션이 바뀌면 늦은 응답은 캐시·문구에 남기지 않는다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.patch('/api/v1/members/mb_02', async () => {
+        await gate.promise
+        return fail('INTERNAL_ERROR', 'late', 500)
+      }),
+    )
+    const client = createQueryClient()
+    const { result } = renderWrites(client)
+    await waitFor(() => expect(result.current.members).toBeDefined())
+    const onSuccess = vi.fn()
+
+    act(() => {
+      result.current.writes.run(
+        { kind: 'rename', memberId: 'mb_02', displayName: '박민준' },
+        onSuccess,
+      )
+    })
+    await waitFor(() => expect(result.current.writes.pending?.kind).toBe('rename'))
+    act(() => endSessionScope())
+    gate.resolve()
+
+    await waitFor(() => expect(client.isMutating()).toBe(0))
+    expect(result.current.writes.failure).toBeNull()
+    expect(onSuccess).not.toHaveBeenCalled()
+    expect(result.current.members?.find(({ id }) => id === 'mb_02')?.displayName).toBe('박민수')
   })
 
   it('목록을 믿을 수 없으면 다시 받아 같은 이름을 확인하고, 있으면 보내지 않는다', async () => {

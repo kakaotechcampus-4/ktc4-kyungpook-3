@@ -28,6 +28,12 @@ async function unlinkedArea() {
 }
 
 /** 창 바깥 덮개. 창이 열리면 Radix 가 창 밖을 접근성 트리에서 숨겨 역할로 찾지 못한다 */
+const dbMember = (id: string) => {
+  const member = db.members.find(({ member_id }) => member_id === id)
+  if (member === undefined) throw new Error(`${id} missing`)
+  return member
+}
+
 function scrimOf(dialog: HTMLElement): HTMLElement {
   const scrim = dialog.parentElement?.querySelector<HTMLElement>(':scope > button')
   if (!scrim) throw new Error('scrim not found')
@@ -71,16 +77,20 @@ describe('팀 화면 — PM', () => {
     expect(area.getByRole('button', { name: '연결 — jihun_dev' })).toBeInTheDocument()
   })
 
-  it('`연결` 은 팀원 연결 창을 열고, 이름을 적어 저장하면 그 계정이 팀원이 된다', async () => {
+  it('`연결` 은 팀원 관리 창을 열고, 연결 안 된 계정을 팀원으로 추가하면 그 계정이 팀원이 된다', async () => {
     const user = userEvent.setup()
     const app = renderApp(TEAM)
     const area = await unlinkedArea()
     await user.click(await area.findByRole('button', { name: '연결 — jihun_dev' }))
 
-    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 관리' }))
     await app.expectSearch('?connect=members')
-    await user.type(dialog.getByLabelText('@jihun_dev의 팀원 이름'), '최지훈')
-    await user.click(dialog.getByRole('button', { name: '저장' }))
+    await user.click(await dialog.findByRole('button', { name: '@jihun_dev 팀원으로 추가' }))
+    const editor = await dialog.findByRole('textbox', { name: '지훈의 새 이름' })
+    await user.clear(editor)
+    await user.type(editor, '최지훈{Enter}')
+    expect(await dialog.findByRole('button', { name: '최지훈 이름 고치기' })).toBeInTheDocument()
+    await user.click(dialog.getByRole('button', { name: '닫기' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await app.expectSearch('')
@@ -93,27 +103,18 @@ describe('팀 화면 — PM', () => {
     ).toBeInTheDocument()
   })
 
-  it('미리 추가한 팀원을 이름 칸 제안에서 고르면 새로 만들지 않고 그 팀원에 잇는다 (#613)', async () => {
+  it('미리 추가한 팀원의 줄에서 계정을 고르면 새로 만들지 않고 그 팀원에 잇는다 (#613)', async () => {
     const user = userEvent.setup()
     renderApp(TEAM)
     const area = await unlinkedArea()
     await user.click(await area.findByRole('button', { name: '연결 — jihun_dev' }))
-    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
-    const name = await dialog.findByRole('combobox', { name: '@jihun_dev의 팀원 이름' })
-
-    await user.type(name, '이')
-    const suggestions = await screen.findByRole('listbox', { name: '미리 추가한 팀원' })
-    expect(
-      within(suggestions)
-        .getAllByRole('option')
-        .map((option) => option.textContent),
-    ).toEqual(['이재환'])
-    await user.click(within(suggestions).getByRole('option', { name: '이재환' }))
-    expect(name).toHaveValue('이재환')
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 관리' }))
+    const account = await dialog.findByRole('combobox', { name: '이재환의 디스코드 계정' })
 
     const log = recordRequests()
-    await user.click(dialog.getByRole('button', { name: '저장' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await user.click(account)
+    await user.click(await screen.findByRole('option', { name: /^@jihun_dev/ }))
+    await waitFor(() => expect(account).toHaveTextContent('@jihun_dev'))
     expect(
       log.started
         .filter(({ method, path }) => method !== 'GET' && path.startsWith('/members'))
@@ -128,21 +129,29 @@ describe('팀 화면 — PM', () => {
     )
   })
 
-  it('`팀원 관리` 로 연 창은 아무도 잇지 않고 `나중에 하기` 로 닫을 수 있다 (D-075)', async () => {
+  it('`팀원 관리` 로 연 창은 줄마다 저장하고 아래 버튼은 `닫기` 하나다. 아무것도 바꾸지 않고 닫을 수 있다 (D-075)', async () => {
     const user = userEvent.setup()
     const app = renderApp(TEAM)
     const manage = await screen.findByRole('button', { name: '팀원 관리' })
     // 캔버스 `height:34px; min-height:36px`, 아이콘 간격 7px
     expect(manage).toHaveClass('min-h-[36px]', 'gap-7')
     await user.click(manage)
-    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
-    // 이미 이은 계정은 이름이 채워져 있고, 잇지 않은 계정은 비어 있다
-    expect(await dialog.findByLabelText('@minsu의 팀원 이름')).toHaveValue('박민수')
-    expect(dialog.getByLabelText('@jihun_dev의 팀원 이름')).toHaveValue('')
-    expect(dialog.queryByText('PM 줄을 체크하지 않으면 Discord 알림을 받을 수 없어요.')).toBeNull()
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 관리' }))
+    // 이미 이은 팀원은 계정이 골라져 있고, 잇지 않은 팀원은 비어 있다
+    expect(
+      await dialog.findByRole('combobox', { name: '박민수의 디스코드 계정' }),
+    ).toHaveTextContent('@minsu')
+    expect(dialog.getByRole('combobox', { name: '이재환의 디스코드 계정' })).toHaveTextContent(
+      '계정 고르기',
+    )
+    expect(
+      dialog.queryByText('PM의 디스코드 계정을 고르지 않으면 Discord 알림을 받을 수 없어요.'),
+    ).toBeNull()
+    expect(dialog.queryByRole('button', { name: '저장' })).toBeNull()
+    expect(dialog.queryByRole('button', { name: '나중에 하기' })).toBeNull()
 
     const log = recordRequests()
-    await user.click(dialog.getByRole('button', { name: '나중에 하기' }))
+    await user.click(dialog.getByRole('button', { name: '닫기' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await app.expectSearch('')
     expect(businessRequests(log.started).filter(({ method }) => method !== 'GET')).toEqual([])
@@ -151,44 +160,58 @@ describe('팀 화면 — PM', () => {
     expect(app.visited().at(-1)?.key).toBe(app.visited()[0]?.key)
   })
 
-  it('PM 계정이 없고 체크하지 않으면 Discord 알림을 못 받는다고 안내하고, 체크 없이도 저장된다', async () => {
-    const creator = db.members.find((member) => member.member_id === 'mb_01')
-    if (creator === undefined) throw new Error('mb_01 missing')
-    creator.discord_user_id = null
+  it('PM 이 디스코드에 연결되지 않았으면 Discord 알림을 못 받는다고 안내하고, PM 줄에서 계정을 고르면 안내가 사라진다 (D-177)', async () => {
+    dbMember('mb_01').discord_user_id = null
     const user = userEvent.setup()
     renderApp(TEAM)
     await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
-    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
-    const hint = 'PM 줄을 체크하지 않으면 Discord 알림을 받을 수 없어요.'
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 관리' }))
+    const hint = 'PM의 디스코드 계정을 고르지 않으면 Discord 알림을 받을 수 없어요.'
     expect(await dialog.findByText(hint)).toBeInTheDocument()
-    expect(dialog.getByRole('button', { name: '저장' })).toHaveAccessibleDescription(hint)
 
-    const pmCheck = dialog.getAllByRole('checkbox', { name: /PM 김서연/ })[0]
-    if (pmCheck === undefined) throw new Error('PM checkbox missing')
-    await user.click(pmCheck)
-    expect(dialog.queryByText(hint)).toBeNull()
-    await user.click(pmCheck)
-    expect(dialog.getByText(hint)).toBeInTheDocument()
+    await user.click(dialog.getByRole('combobox', { name: '김서연의 디스코드 계정' }))
+    await user.click(await screen.findByRole('option', { name: /^@seoyeon_01/ }))
+    await waitFor(() => expect(dialog.queryByText(hint)).toBeNull())
+    expect(dbMember('mb_01')).toMatchObject({ display_name: '김서연', discord_user_id: '1123' })
+  })
 
-    await user.type(dialog.getByLabelText('@jihun_dev의 팀원 이름'), '최지훈')
-    await user.click(dialog.getByRole('button', { name: '저장' }))
+  it('줄마다 초대 상태와 조작이 있고, 창에서 초대를 취소하면 팀 화면의 그 팀원 줄도 바로 바뀐다', async () => {
+    applyScenario('team-invitations')
+    const user = userEvent.setup()
+    renderApp(TEAM)
+    const page = within(await screen.findByRole('region', { name: '이재환' }))
+    expect(await page.findByRole('button', { name: '초대 취소' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 관리' }))
+    const rowOf = (name: string) => {
+      const row = dialog.getByRole('combobox', { name: `${name}의 디스코드 계정` }).closest('li')
+      if (row === null) throw new Error(`${name} row missing`)
+      return within(row)
+    }
+    await dialog.findByRole('combobox', { name: '이재환의 디스코드 계정' })
+    expect(await rowOf('이재환').findByText('대기')).toBeInTheDocument()
+    expect(await rowOf('박민수').findByRole('button', { name: '연결 끊기' })).toBeInTheDocument()
+
+    await user.click(rowOf('이재환').getByRole('button', { name: '초대 취소' }))
+    expect(await rowOf('이재환').findByRole('button', { name: '다시 초대' })).toBeInTheDocument()
+    await user.click(dialog.getByRole('button', { name: '닫기' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(db.members).toContainEqual(
-      expect.objectContaining({ display_name: '최지훈', discord_user_id: '1125' }),
-    )
+    const after = within(screen.getByRole('region', { name: '이재환' }))
+    expect(after.getByRole('button', { name: '다시 초대' })).toBeInTheDocument()
+    expect(after.queryByRole('button', { name: '초대 취소' })).toBeNull()
   })
 
   it('주소의 `connect=members` 로 오면 창이 열려 있다 — 설정의 Discord 연결 성공이 오는 곳이다 (D-074)', async () => {
     const user = userEvent.setup()
     const app = renderApp(paths.membersConnect('ws_01'))
-    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 관리' }))
     // 이 화면이 기록을 쌓지 않았다 — 뒤로 가지 않고 주소의 표시만 지운다(앱 밖으로 나가지 않는다)
-    await user.click(await dialog.findByRole('button', { name: '나중에 하기' }))
+    await user.click(await dialog.findByRole('button', { name: '닫기' }))
     await app.expectSearch('')
     expect(app.visitedActions().at(-1)).toBe('REPLACE')
   })
 
-  it('저장하는 동안에는 Esc·바깥 클릭으로 창이 닫히지 않고, 실패하면 창 안에 오류가 남는다', async () => {
+  it('쓰는 동안에는 `닫기`·Esc·바깥 클릭으로 창이 닫히지 않고, 실패하면 창 안의 그 항목에 오류가 남는다', async () => {
     const user = userEvent.setup()
     const gate = deferred()
     server.use(
@@ -199,21 +222,20 @@ describe('팀 화면 — PM', () => {
     )
     renderApp(TEAM)
     await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
-    const dialogElement = await screen.findByRole('dialog', { name: '팀원 연결' })
+    const dialogElement = await screen.findByRole('dialog', { name: '팀원 관리' })
     const dialog = within(dialogElement)
-    await user.type(await dialog.findByLabelText('@jihun_dev의 팀원 이름'), '최지훈')
-    await user.click(dialog.getByRole('button', { name: '저장' }))
-    await waitFor(() => expect(dialog.getByRole('button', { name: '나중에 하기' })).toBeDisabled())
+    await user.click(await dialog.findByRole('button', { name: '@jihun_dev 팀원으로 추가' }))
+    await waitFor(() => expect(dialog.getByRole('button', { name: '닫기' })).toBeDisabled())
 
     await user.keyboard('{Escape}')
     await user.click(scrimOf(dialogElement))
-    expect(screen.getByRole('dialog', { name: '팀원 연결' })).toBe(dialogElement)
+    expect(screen.getByRole('dialog', { name: '팀원 관리' })).toBe(dialogElement)
 
     gate.resolve()
     expect(await dialog.findByRole('alert')).toHaveTextContent(
-      '일부 팀원을 저장하지 못했어요. 남은 줄만 다시 저장해요.',
+      '서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
     )
-    expect(dialog.getByLabelText('@jihun_dev의 팀원 이름')).toHaveValue('최지훈')
+    expect(dialog.getByRole('button', { name: '닫기' })).toBeEnabled()
   })
 
   it('팀원을 받는 동안 제목과 기다림 표시를 그리고 팀원 영역은 아직 없다', async () => {
@@ -249,11 +271,13 @@ describe('팀 화면 — PM', () => {
     )
     renderApp(TEAM)
     await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
-    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 관리' }))
     const retry = await dialog.findByRole('button', { name: '다시 시도' })
     expect(dialog.getByRole('button', { name: '닫기' })).toBeInTheDocument()
     await user.click(retry)
-    expect(await dialog.findByLabelText('@minsu의 팀원 이름')).toHaveValue('박민수')
+    expect(
+      await dialog.findByRole('combobox', { name: '박민수의 디스코드 계정' }),
+    ).toHaveTextContent('@minsu')
   })
 })
 
@@ -275,26 +299,28 @@ describe('팀 화면 — Discord 를 건너뛴 공간', () => {
     )
 
     await user.click(screen.getByRole('button', { name: '팀원 관리' }))
-    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 관리' }))
     expect(dialog.getByText(/Discord를 연결하지 않아 팀원을 불러올 수 없어요/)).toBeInTheDocument()
-    expect(dialog.queryByRole('button', { name: '저장' })).toBeNull()
+    // 디스코드 계정 칸과 연결 안 된 계정 영역이 없다. 이름 고치기는 된다
+    expect(await dialog.findByRole('button', { name: '최진호 이름 고치기' })).toBeInTheDocument()
+    expect(dialog.queryByRole('combobox')).toBeNull()
+    expect(dialog.queryByText(/아직 팀원에 연결되지 않은 디스코드 계정/)).toBeNull()
   })
 
-  it('팀원 연결 창에서 이름만 적어 팀원을 추가한다. 설정 링크는 그 아래에 있다 (#613)', async () => {
+  it('팀원 관리 창에서 이름만 적어 팀원을 추가하면 목록의 새 줄이 된다. 설정 링크는 그 아래에 있다 (#613)', async () => {
     const bodies = recordRequestBodies('POST', '/members')
     const user = userEvent.setup()
     renderApp(paths.members('ws_03'))
     await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
-    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 관리' }))
     const name = await dialog.findByRole('textbox', { name: '팀원 이름' })
     const link = dialog.getByRole('link', { name: '설정에서 Discord 연결하기' })
     expect(name.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     await user.type(name, '박민수')
     await user.click(dialog.getByRole('button', { name: '추가' }))
-    expect(
-      await within(dialog.getByRole('list', { name: '추가한 팀원' })).findByText('박민수'),
-    ).toBeInTheDocument()
+    expect(await dialog.findByRole('button', { name: '박민수 이름 고치기' })).toBeInTheDocument()
+    expect(name).toHaveValue('')
     expect(bodies).toEqual([{ workspace_id: 'ws_03', display_name: '박민수' }])
 
     await user.type(name, ' 박민수')
@@ -317,7 +343,7 @@ describe('팀 화면 — Discord 를 건너뛴 공간', () => {
     const user = userEvent.setup()
     renderApp(paths.members('ws_03'))
     await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
-    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 관리' }))
     const name = await dialog.findByRole('textbox', { name: '팀원 이름' })
     await user.type(name, '박민수')
     await user.click(dialog.getByRole('button', { name: '추가' }))
@@ -352,7 +378,7 @@ describe('팀 화면 — Discord 를 건너뛴 공간', () => {
     const user = userEvent.setup()
     renderApp(paths.members('ws_03'))
     await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
-    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 관리' }))
     const name = await dialog.findByRole('textbox', { name: '팀원 이름' })
     await user.type(name, '박민수')
     await user.click(dialog.getByRole('button', { name: '추가' }))
@@ -371,7 +397,7 @@ describe('팀 화면 — Discord 를 건너뛴 공간', () => {
     ).toHaveLength(1)
   })
 
-  it('팀원 목록을 받지 못하면 팀원 연결 창의 추가 칸에도 오류와 `다시 시도` 를 보이고, 다시 받으면 추가할 수 있다 (#613)', async () => {
+  it('팀원 목록을 받지 못하면 팀원 관리 창에 오류와 `다시 시도` 를 보이고, 다시 받으면 추가할 수 있다 (#613)', async () => {
     let failing = true
     server.use(
       http.get('/api/v1/members', () => (failing ? fail('FORBIDDEN', 'x', 403) : undefined)),
@@ -379,19 +405,16 @@ describe('팀 화면 — Discord 를 건너뛴 공간', () => {
     const user = userEvent.setup()
     renderApp(paths.members('ws_03'))
     await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
-    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
-    const name = await dialog.findByRole('textbox', { name: '팀원 이름' })
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 관리' }))
     const retry = await dialog.findByRole('button', { name: '다시 시도' })
-    await user.type(name, '박민수')
-    expect(dialog.getByRole('button', { name: '추가' })).toBeDisabled()
+    expect(dialog.queryByRole('textbox', { name: '팀원 이름' })).toBeNull()
 
     failing = false
     await user.click(retry)
-    await waitFor(() => expect(dialog.queryByRole('button', { name: '다시 시도' })).toBeNull())
+    const name = await dialog.findByRole('textbox', { name: '팀원 이름' })
+    await user.type(name, '박민수')
     await user.click(dialog.getByRole('button', { name: '추가' }))
-    expect(
-      await within(dialog.getByRole('list', { name: '추가한 팀원' })).findByText('박민수'),
-    ).toBeInTheDocument()
+    expect(await dialog.findByRole('button', { name: '박민수 이름 고치기' })).toBeInTheDocument()
   })
 })
 
