@@ -39,8 +39,8 @@ export interface InviteDialogProps {
   serverError: string | null
   /** `onUserGone` 은 찾은 사람이 그사이 없어졌을 때(404) 부른다. 찾은 결과를 버린다 */
   onSubmit: (invitee: Invitee, onUserGone: () => void) => void
-  /** 입력이 바뀌었다. 지난 서버 오류를 지운다 */
-  onEdit: () => void
+  /** 지난 서버 오류를 지운다. 입력을 바꾸거나 다시 찾을 때 부른다 */
+  onClearError: () => void
 }
 
 /**
@@ -70,24 +70,30 @@ function InviteForm({
   pending,
   serverError,
   onSubmit,
-  onEdit,
+  onClearError,
   onClose,
 }: Omit<InviteDialogProps, 'open' | 'onOpenChange' | 'displayName'> & { onClose: () => void }) {
   const [input, setInput] = useState('')
   const { search, run, forget } = useInviteeSearch(workspaceId, input)
   const searching = search.status === 'searching'
   const found = search.status === 'found' ? search.invitee : null
-  const problem = problemOf(search)
+  const error = problemOf(search) ?? serverError ?? undefined
   const field = useRef<HTMLInputElement>(null)
 
-  // 실패 문구는 칸의 설명으로 이어져 있다. 찾기 버튼에 남은 포커스를 칸으로 옮겨 읽게 한다
+  // 실패 문구는 칸의 설명으로 이어져 있다. 찾기·초대하기에 남은 포커스를 칸으로 옮겨 읽게 한다.
+  // 404 로 찾은 사람을 버리면 초대하기가 꺼져 포커스가 거기 남는다
   useEffect(() => {
-    if (problem !== undefined) field.current?.focus()
-  }, [problem])
+    if (error !== undefined) field.current?.focus()
+  }, [error])
+
+  const find = () => {
+    onClearError()
+    run()
+  }
 
   const proceed = () => {
     if (pending || searching) return
-    if (found === null) run()
+    if (found === null) find()
     else onSubmit(found, () => forget(found.userId))
   }
 
@@ -117,7 +123,7 @@ function InviteForm({
         disabled={pending}
         onChange={(event) => {
           setInput(event.target.value)
-          onEdit()
+          onClearError()
         }}
         // 찾기 전에는 초대하기가 꺼져 있어 Enter 가 폼을 보내지 않는다. 찾기로 잇는다
         onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
@@ -125,7 +131,7 @@ function InviteForm({
           event.preventDefault()
           proceed()
         }}
-        error={problem ?? serverError ?? undefined}
+        error={error}
         endAdornment={
           <Button
             type="button"
@@ -133,7 +139,7 @@ function InviteForm({
             className="shrink-0"
             loading={searching}
             disabled={pending || found !== null}
-            onClick={run}
+            onClick={find}
           >
             찾기
           </Button>

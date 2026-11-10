@@ -20,6 +20,7 @@ vi.setConfig({ testTimeout: 15_000 })
 
 const TEAM = paths.members('ws_01')
 const NOT_FOUND = '가입한 사용자의 아이디를 정확히 입력해 주세요.'
+const GONE = '가입한 사용자를 찾을 수 없어요. 아이디를 다시 찾아 주세요.'
 const SEARCH = '/api/v1/users/search'
 const CREATE = '/api/v1/workspaces/:workspaceId/invitations'
 
@@ -361,7 +362,9 @@ describe('팀 화면 — 팀원 초대', () => {
         '이 사용자에게 다른 팀원으로 보낸 초대가 기다리고 있어요. 그 초대를 먼저 취소해 주세요.',
       ),
     ).toBeInTheDocument()
-    expect(opened.dialog.getByLabelText('아이디')).toHaveAttribute('aria-invalid', 'true')
+    const field = opened.dialog.getByLabelText('아이디')
+    expect(field).toHaveAttribute('aria-invalid', 'true')
+    await waitFor(() => expect(field).toHaveFocus())
     expect(db.invitations).toEqual(before)
   })
 
@@ -377,20 +380,42 @@ describe('팀 화면 — 팀원 초대', () => {
 
     await user.click(dialog.getByRole('button', { name: '초대하기' }))
 
-    expect(
-      await dialog.findByText('가입한 사용자를 찾을 수 없어요. 아이디를 다시 찾아 주세요.'),
-    ).toBeInTheDocument()
+    expect(await dialog.findByText(GONE)).toBeInTheDocument()
     expect(dialog.queryByText('한도윤')).toBeNull()
     expect(dialog.getByRole('button', { name: '초대하기' })).toBeDisabled()
     await waitFor(() => expect(log.timeline).toContain('answer GET /workspaces/ws_01/invitations'))
     expect(screen.queryByText('초대 상태를 불러오지 못했어요.')).toBeNull()
 
+    const field = dialog.getByLabelText('아이디')
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(field).toHaveAccessibleDescription(expect.stringContaining(GONE))
     expect(dialog.getByRole('button', { name: '찾기' })).toBeEnabled()
-    await user.click(dialog.getByLabelText('아이디'))
     await user.keyboard('{Enter}')
     expect(await dialog.findByText(NOT_FOUND)).toBeInTheDocument()
     expect(searches(log)).toHaveLength(1)
     expect(creates(log)).toHaveLength(1)
+  })
+
+  it('404 뒤 같은 아이디로 다시 찾아 사람이 나오면 지난 404 문구가 남지 않는다', async () => {
+    server.use(http.post(CREATE, () => fail('USER_NOT_FOUND', 'gone', 404)))
+    renderApp(TEAM)
+    const opened = await openInvite('정하늘')
+    const { user, dialog } = opened
+    await find(opened, 'doyun')
+    await dialog.findByText('한도윤')
+    await user.click(dialog.getByRole('button', { name: '초대하기' }))
+    expect(await dialog.findByText(GONE)).toBeInTheDocument()
+    server.use(
+      http.get(SEARCH, () =>
+        ok({ items: [{ user_id: 'us_99', username: 'doyun', name: '한도윤' }] }),
+      ),
+    )
+
+    await user.click(dialog.getByRole('button', { name: '찾기' }))
+
+    expect(await dialog.findByText('한도윤')).toBeInTheDocument()
+    expect(dialog.queryByText(GONE)).toBeNull()
+    expect(dialog.getByLabelText('아이디')).not.toHaveAttribute('aria-invalid', 'true')
   })
 
   it('규칙 밖 글자로 바꿨다가 되돌려도 찾은 사람이 다시 붙지 않는다', async () => {
