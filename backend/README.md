@@ -68,7 +68,9 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 나머지 환경변수 | `NOTION_*`·`DISCORD_*`·`KAKAO_*`·`EMBEDDING_*`·`SERVICE_TOKEN` 등은 `.env`를 그대로 넘긴다 |
 | 필수 값 | `OAUTH_STATE_SECRET`이 비어 있으면 `docker compose`가 기동 전에 멈춘다(OAuth state, 가입 이메일 증명, 카카오 로그인이 함께 쓰는 서명 키) |
 | 데이터 | DB는 `mm-prod_pgdata` 볼륨에 남는다. 로컬 개발용 볼륨(`mm-pgdata`)과 따로다 |
-| 업로드 녹음 | `mm-prod_uploads` 볼륨(컨테이너의 `/data/uploads`)에 둔다. 회의가 done·failed가 되면 그 회의 폴더를 지운다 |
+| 업로드 녹음 | `UPLOAD_STORAGE`(local 기본 | s3)로 저장소를 고른다. 운영은 s3 이고 키는 `{UPLOAD_S3_PREFIX}{meeting_id}/audio.<확장자>`다(기본 `meetings/`). local 이면 `mm-prod_uploads` 볼륨(컨테이너의 `/data/uploads`)의 `{meeting_id}/`에 둔다. 회의가 done 이 돼도 지우지 않고 원문 듣기용으로 보관한다. failed 가 되면 바로 지운다 |
+| 녹음 보관·정리 | 보관 기간(`UPLOAD_AUDIO_RETENTION_DAYS`, 기본 7일)은 `meeting_audio.retention_from` 부터 센다. 업로드 회의는 녹음을 받은 시각(`uploaded_at`), 디스코드 회의는 회의 종료 시각(`meeting.ended_at`, 없으면 받은 시각)이다. 같은 sweeper 바퀴가 done 이면서 기간이 지난 녹음을 지우고 `deleted_at` 을 채운다. 처리 중(done·failed 가 아님)인 회의는 기간이 지나도 지우지 않는다. 파일을 지우지 못하면 `deleted_at` 을 비워 두고 다음 바퀴에 다시 한다. 회의·공간 삭제와 탈퇴 정리는 S3 prefix 도 지운다. 근거는 [결정 기록](docs/plan/m5/basis-for-decision/2026-11-10-meeting-audio-s3-retention.md) |
+| 녹음 저장소 설정 | `UPLOAD_STORAGE=s3` 인데 `UPLOAD_S3_BUCKET` 이 비었거나 `UPLOAD_STORAGE` 가 `local`·`s3` 가 아니면 설정 오류라 업로드·재생·정리가 500 으로 실패한다(가려 주는 코드는 없다). S3 클라이언트(`_s3_client`)는 프로세스당 한 번 만들어 캐시하므로 `AWS_REGION` 을 바꾸면 api 를 다시 띄워야 한다. 자격은 EC2 인스턴스 역할이고 AWS 키 변수는 읽지 않는다. 인프라 준비는 [배포 안내](../deploy/README.md#회의-녹음-s3-준비) |
 | 업로드 sweeper | 서버 안의 워커가 `UPLOAD_SWEEP_INTERVAL_SECONDS`(기본 300, 0 이하면 끔)마다 멈춘 업로드 회의를 failed로 바꾸고 녹음 폴더 제거를 시도한다. AI가 가져간 뒤 진행이 3시간 없으면 `failed_stage=diarize`, 화자 지정을 7일 기다리면 `speaker_assignment_expired`, 가져가지 않은 채 24시간이 지나면 `upload_unclaimed`. live failed 업로드의 남은 폴더는 다음 바퀴마다 재시도한다. 과거 failed 잔존 파일도 대상이며 처리 실패가 삭제 완료를 뜻하지 않는다. 기준은 [봇 계약](docs/contracts/backend-ai-contract.md)의 "웹 업로드 가져가기" |
 | 세션 sweeper | 서버 안의 워커가 `SESSION_SWEEP_INTERVAL_SECONDS`(기본 3600, 0 이하면 끔)마다 만료된(`expires_at` 이 지난) 세션 행을 지운다. 만료 세션은 워커가 돌기 전에도 조회 때 401 이다 |
 | 리마인드 스케줄러 | 서버 안의 워커가 `REMINDER_SCHEDULER_INTERVAL_SECONDS`(기본 60, 0 이하면 끔)마다 재촉 제안, 발송 직전 확인, 72시간 무응답 막힘, 푸시 발송을 돈다. 브라우저 푸시는 `VAPID_PRIVATE_KEY`·`VAPID_PUBLIC_KEY`·`VAPID_SUBJECT` 가 모두 있어야 나가고, 하나라도 없으면 웹 안 알림만 쌓인다 |
@@ -158,6 +160,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `SPEAKERS_NOT_ASSIGNED` | 409 | PM이 화자 지정을 끝내지 않은 업로드의 처리를 AI가 이어 가려 함. `details.status` |
 | `AUDIO_TOO_LARGE` | 413 | 업로드한 녹음이 한도(기본 200MiB, `UPLOAD_MAX_BYTES`)를 넘음. `details.size_bytes`·`max_bytes` |
 | `AUDIO_UPLOAD_FAILED` | 422 | 오디오 저장·병합 실패 |
+| `AUDIO_NOT_AVAILABLE` | 404 | 들을 수 있는 회의 녹음이 없음(`GET /meetings/{id}/audio`). `details.meeting_id`, `details.reason`: `expired`(보관 기간이 지났다) · `no_recording`(녹음이 없거나 지워졌거나 failed 회의다) |
 | `AUDIO_FORMAT_UNSUPPORTED` | 422 | 지원하지 않는 오디오 형식. `details.filename`·`supported` |
 | `TRANSCRIPTION_FAILED` | 502 | 음성 전사 실패 *(아직 미구현 경로)* |
 | `EXTRACTION_FAILED` | 502 | 회의 분석 실패 *(아직 미구현 경로)* |
@@ -556,6 +559,28 @@ SMTP 설정이 없으면 코드 요청이 503 이라 이메일로는 가입할 �
 
 Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체 시간당 10통으로 묶는다. 같은 계정을 쓰는 가입 인증 메일(#454)의 상한과는 따로라, 두 경로를 하루 내내 채우면 한도를 넘을 수 있다([결정 기록](docs/plan/m1/basis-for-decision/2026-11-08-reset-mail-cap.md)). 다른 SMTP 로 옮길 때는 환경변수만 바꾼다(포트 465 면 `SMTP_SECURITY=ssl`).
 
+## 회의 녹음 보관과 재생
+
+회의 녹음(웹 업로드 원본, 디스코드 회의는 AI 가 섞어 올린 m4a)을 보관 기간 동안 팀원이 웹에서 다시 듣게 한다(#659). 기록은 `meeting_audio` 표(회의당 한 행: 파일명·형식·크기·`retention_from`·`deleted_at`)에 둔다.
+
+| 항목 | 동작 |
+|---|---|
+| 재생 | `GET /api/v1/meetings/{meeting_id}/audio`. done 회의는 소속이면 누구나, 그 밖의 상태는 PM 만 듣는다. 보관 기간 안이면 s3 저장소는 S3 presigned GET URL 로 302(`Cache-Control: private, no-store`, 응답 Content-Type 고정, 유효 시간 `UPLOAD_PLAYBACK_URL_TTL_SECONDS`), local 저장소는 파일을 그대로 보낸다(Range 지원). 없거나 지났으면 404 `AUDIO_NOT_AVAILABLE` |
+| 재생 정보 | `GET /meetings/{meeting_id}/minutes` 의 `audio: {content_type, expires_at} \| null`. 호출자가 지금 들을 수 있을 때만 값이다. `expires_at` 은 `retention_from` + 보관 기간이다 |
+| 디스코드 녹음 받기 | `PUT /meetings/{meeting_id}/recording`(서비스 토큰). [봇 계약](docs/contracts/backend-ai-contract.md#회의-녹음-올리기-put-meetingsmeeting_idrecording--200) |
+| 업로드 원본 가져가기 | `GET /uploads/{meeting_id}/file` 의 모양은 그대로다. s3 저장소에서는 BE 가 S3 에서 읽어 바이트를 대신 보낸다(리다이렉트 없음) |
+
+| 환경변수 | 기본 | 설명 |
+|---|---|---|
+| `UPLOAD_STORAGE` | `local` | `local` 또는 `s3` |
+| `UPLOAD_S3_BUCKET` | 없음 | s3 일 때 필수. 비어 있으면 500 |
+| `UPLOAD_S3_PREFIX` | `meetings/` | 키 접두어. 끝에 `/` 가 없으면 붙인다 |
+| `AWS_REGION` | `ap-northeast-2` | S3 클라이언트 리전. 프로세스당 캐시라 바꾸면 재시작 |
+| `UPLOAD_AUDIO_RETENTION_DAYS` | `7` | 양의 정수. 잘못된 값은 경고 로그 뒤 7일 |
+| `UPLOAD_PLAYBACK_URL_TTL_SECONDS` | `3600` | presigned URL 유효 시간 |
+
+AWS 키 변수는 읽지 않는다. 자격은 인스턴스 역할에서 받는다. 보관 기준·처리 중 보호·정리 규칙은 위 [운영 실행](#운영-실행-docker)의 "녹음 보관·정리"에 있다.
+
 ## 가입 이름 규칙
 
 `POST /api/v1/auth/signup` 의 `name` 은 앞뒤 공백을 지운 값으로 저장한다. 지운 뒤 비었거나, 보이지 않는 글자(형식 문자·결합 부호)만 있거나, 제어문자·줄 구분자·짝 없는 서로게이트·글자 방향 제어 문자가 있거나, 100자를 넘으면 400 `INVALID_REQUEST` 다. 이미 있는 계정의 이름은 검사하지 않는다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-06-signup-name-rule.md), 원본은 `app/schemas/name.py` 의 `validate_name`(`NameStr`). 팀원 표시명도 같은 규칙을 쓴다(아래 [팀원 표시명 규칙](#팀원-표시명-규칙)).
@@ -572,6 +597,7 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 | 구분 | API |
 |---|---|
 | PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, auto 되돌리기(`POST /extractions/{id}/items/{item_id}/revert`), Notion 재시도, 팀원 생성·수정, 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), Discord 연결 시작·콜백(`GET .../integrations/discord/start`, `GET /integrations/discord/callback`), Discord 채널 목록·채팅 수집 채널 저장·해제(`GET .../discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel`), 연동 해제, 회의 업로드, 온보딩 저장, 메시지 설정 변경(`PATCH /workspaces/{workspace_id}/message-settings`) |
+| 처리 상태에 따라 | 회의 녹음 재생(`GET /meetings/{id}/audio`)과 `GET /meetings/{id}/minutes` 의 `audio`: done 회의는 소속이면 누구나, 그 밖의 상태(처리 중 등)는 PM. 팀원이 done 이 아닌 회의를 요청하면 403 `FORBIDDEN` |
 | 소속이면 누구나 | 조회 API 전부(메시지 설정 조회 `GET .../message-settings` 포함), 승인 요청 생성(`POST /approvals`) |
 
 - Notion 연결 시작·콜백은 브라우저 페이지 이동이라 403 대신 앱 화면의 `?oauth=notion&oauth_result=failed`로 돌려보낸다.

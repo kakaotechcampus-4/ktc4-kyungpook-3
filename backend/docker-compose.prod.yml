@@ -40,6 +40,14 @@ services:
       FORWARDED_ALLOW_IPS: "*"
       # 웹 업로드 녹음. 아래 uploads 볼륨이라 재배포해도 남는다
       UPLOAD_DIR: /data/uploads
+      # 회의 녹음 저장소(#659). 기본은 local(위 볼륨)이고, 운영은 .env 의 UPLOAD_STORAGE=s3 로 바꾼다.
+      # 키는 넣지 않는다. 자격은 EC2 인스턴스 역할로 받는다(deploy/README.md 의 S3 체크리스트).
+      UPLOAD_STORAGE: ${UPLOAD_STORAGE:-local}
+      UPLOAD_S3_BUCKET: ${UPLOAD_S3_BUCKET:-}
+      UPLOAD_S3_PREFIX: ${UPLOAD_S3_PREFIX:-meetings/}
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
+      UPLOAD_AUDIO_RETENTION_DAYS: ${UPLOAD_AUDIO_RETENTION_DAYS:-7}
+      UPLOAD_PLAYBACK_URL_TTL_SECONDS: ${UPLOAD_PLAYBACK_URL_TTL_SECONDS:-3600}
     volumes:
       - uploads:/data/uploads
     ports:

@@ -106,6 +106,22 @@ backend 파일 재시도는 `MEETING_PURGE_INTERVAL_SECONDS`의 기존 워커가
 
 탈퇴로 지운 계정과 단독 공간 데이터는 스키마 downgrade로 복구되지 않는다. 최초 탈퇴 이후에는 개인정보 세대·삭제 표식을 무시하는 옛 BE·AI writer로 되돌리지 않는다. 되돌림이 필요하면 같은 정리 계약과 표식을 이해하는 호환 버전을 사용하고 대기 작업을 유지한다. 이 절의 운영 배포·되돌림·실제 계정 삭제는 이번 로컬 검증에서 실행하지 않았다.
 
+## 회의 녹음 S3 준비
+
+회의 녹음을 S3 에 7일 보관하고 웹에서 다시 듣게 한다(#659, [결정 기록](../backend/docs/plan/m5/basis-for-decision/2026-11-10-meeting-audio-s3-retention.md)). `UPLOAD_STORAGE` 기본은 `local` 이라, 아래를 준비하고 `.env` 를 바꾸기 전에는 배포해도 동작이 바뀌지 않는다. 이 절은 인프라 담당이 확인할 체크리스트이며, 실제 AWS 설정과 운영 전환은 이번 로컬 개발에서 실행하거나 검증하지 않았다.
+
+1. **버킷**: 서울(`ap-northeast-2`), 퍼블릭 액세스 모두 차단, 기본 암호화 SSE-S3. 녹음은 `meetings/{meeting_id}/audio.<확장자>` 키에 둔다(`UPLOAD_S3_PREFIX`, 기본 `meetings/`).
+2. **인스턴스 역할(IAM instance profile)**: EC2 에 붙은 역할에 아래 정책을 준다. AWS 키는 `.env` 에 넣지 않는다. 코드는 AWS 키 환경변수를 읽지 않고 boto3 기본 자격 체인을 쓴다.
+   - `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` — 리소스 `arn:aws:s3:::<bucket>/meetings/*`
+   - `s3:ListBucket` — 리소스 `arn:aws:s3:::<bucket>`, 조건 `StringLike` `s3:prefix` = `meetings/*`. 회의 삭제·정리가 prefix 아래를 나열해 지운다.
+3. **lifecycle**: `meetings/` 접두어 객체를 30일 뒤 만료. BE 정리(`UPLOAD_AUDIO_RETENTION_DAYS`, 기본 7일)가 어긋나도 30일 안에는 사라지는 안전망이다.
+4. **IMDSv2 hop limit 2**: API 는 도커 컨테이너에서 돈다. 인스턴스 메타데이터 응답이 컨테이너(브리지 네트워크 한 홉 더)까지 닿아야 역할 자격을 받는다. `aws ec2 modify-instance-metadata-options --instance-id <id> --http-put-response-hop-limit 2 --http-tokens required` 로 정한다. hop limit 이 1 이면 컨테이너가 자격을 못 받아 업로드·재생이 500 이다.
+5. **`backend/.env`** (값은 [.env.example](../backend/.env.example)): `UPLOAD_STORAGE=s3`, `UPLOAD_S3_BUCKET=<bucket>`, `UPLOAD_S3_PREFIX=meetings/`, `AWS_REGION=ap-northeast-2`, `UPLOAD_AUDIO_RETENTION_DAYS=7`, `UPLOAD_PLAYBACK_URL_TTL_SECONDS=3600`. `uploads` 볼륨과 `UPLOAD_DIR` 는 그대로 둔다. `UPLOAD_STORAGE=s3` 인데 버킷이 없거나 값이 `local`·`s3` 가 아니면 설정 오류라 업로드·재생이 500 이다. S3 클라이언트는 프로세스당 한 번 만들어 캐시하므로 `AWS_REGION` 을 바꾸면 컨테이너를 다시 띄운다.
+6. **전환 시점**: 디스크에서 S3 를 예비로 읽는 경로가 없다. 처리 중인 업로드가 없을 때(`processing`·`awaiting_speakers` 업로드 회의가 없는지 확인) `UPLOAD_STORAGE=s3` 로 바꾼다. 처리 중에 바꾸면 AI 가 `GET /uploads/{id}/file` 에서 404 를 받는다. 이미 디스크에 있는 옛 완료 업로드는 `meeting_audio` 기록이 없어 재생되지 않는다. `.env` 변경은 `docker compose -f backend/docker-compose.prod.yml up -d` 로 컨테이너를 다시 만든다(restart 는 반영하지 않는다).
+7. **Caddy CSP `media-src`**: 브라우저는 302 로 S3 주소(`https://<bucket>.s3.ap-northeast-2.amazonaws.com`)에서 바로 받는다. 서버의 Caddy 설정에 `Content-Security-Policy` 가 있다면 `media-src` 가 이 출처를 허용하는지 확인한다(#654). Caddy 설정은 이 저장소에 없어 확인하지 못했다. 프론트가 `crossOrigin` 이나 Web Audio 를 쓰면 버킷 CORS 도 필요하다.
+
+AI 서버(`mm-worker`)는 인계한 디스코드 회의의 녹음을 `ai/recordings/audio_outbox/` 에 두었다가 `PUT /meetings/{id}/recording` 으로 올린다. 이 폴더는 올릴 때까지 디스크를 쓰고 인계 7일 뒤 지운다. 서비스 토큰·BE 주소 설정은 기존 그대로다.
+
 ## 채팅 폴링 타이머 (#599)
 
 디스코드 채팅은 실시간으로 받지 않는다. `mm-chat-poll.timer` 가 매일 09:00 KST 에 `mm-chat-poll.service` 를 한 번 띄워, 연결된 채널(`GET /bot/chat-channels`)마다 새 메시지를 읽어 채팅 회의로 넘긴다. 유닛 파일은 [ai/deploy/systemd](../ai/deploy/systemd/)에 있다.
