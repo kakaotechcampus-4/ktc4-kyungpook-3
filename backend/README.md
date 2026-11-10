@@ -675,3 +675,33 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 - 한 대화의 닫기가 실패하면(알림 오류 등) 그 대화만 건너뛰고 다른 대화의 답장은 준다. 실패한 답장은 다음 claim·틱에서 다시 닫는다.
 - 닫힌 답장에 늦게 온 결과는 200 으로 받아 기록만 한다. PM 이 고른 재판단은 앞 차례 `attempt` 와 상관없이 새 10분 창을 받는다.
 - 결정 근거는 [결정 기록](docs/plan/m6/basis-for-decision/2026-11-08-reply-judgment-attempt-cap.md)에 있다.
+
+## KPI view
+
+Grafana Cloud 대시보드(#675)가 읽는 `kpi` 스키마다. 마이그레이션 `c4f7a2d91e3b` 가 PostgreSQL 에만 만들고 sqlite 에서는 아무것도 하지 않는다. 설치와 패널 SQL 은 [deploy/monitoring/README.md](../deploy/monitoring/README.md)에 있다.
+
+| 이름 | 한 행 | 컬럼 |
+|---|---|---|
+| `kpi.meeting_fact` | 회의 한 건(삭제된 회의·`ended_at` 없는 회의 제외) | `ended_at`, `extracted_at`, `source`, `status`, `failed_stage`, `replaced`, `meeting_minutes`, `processing_seconds`, `speaker_wait_seconds` |
+| `kpi.extraction_item_fact` | 추출 항목 한 건(삭제된 회의 제외) | `created_at`, `meeting_source`, `extraction_path`, `action`, `gate`, `reverted`, `revert_after_seconds` |
+| `kpi.approval_fact` | 승인 요청 한 건(회의 삭제로 닫힌 요청 제외) | `created_at`, `resolved_at`, `type`, `origin`, `meeting_source`, `card_gate`, `outcome`, `response_seconds`, `asr_flag`, `title_edited` |
+| `kpi.excluded_workspace` | 세 view 에서 뺄 워크스페이스(`workspace_id` 하나). 비어 있고 운영 SQL 로 채운다 | `workspace_id` |
+
+- view 에는 ID·제목·본문·payload·이름·이메일 컬럼이 없다. 워크스페이스 컬럼도 없어 서비스 전체 값만 본다.
+- 값의 뜻: `failed_stage` 는 실패한 회의에서만 알려진 단계(`stt`·`sources`·`extract`·`handoff`·`diarize`·`speaker_assignment_expired`·`upload_unclaimed`·`chat_stalled`)를 그대로 주고 그 밖의 값은 `other`, 실패가 아니면 null 이다. `replaced` 는 이 회의를 다시 시도한 회의가 있다는 뜻이다. `origin` 은 `auto_revert`·`manual`·`reply`·`meeting`·`other`, `outcome` 은 `pending`·`approved`·`approved_edited`·`rejected`·`other`, `asr_flag` 는 회의 추출로 만든 `task_create` 카드에서만 `none`·`suspect`·`check_failed`(그 밖은 null)다.
+- payload 는 JSON 객체일 때만 읽는다. 깨진 payload 한 행은 view 에서 빠지고 조회 전체를 깨지 않는다. 키 확인은 `?` 연산자 대신 `-> ... IS NOT NULL` 을 쓴다(바인드 해석을 피한다).
+- 새 상태값·새 `failed_stage` 가 생기면 view 가 `other` 로 담는다. 따로 고치지 않아도 조회는 깨지지 않는다.
+- view 는 소유자 권한으로 원본을 읽는다. 읽기 계정은 view 3개에만 SELECT 를 받고 원본 표와 `excluded_workspace` 는 보지 못한다.
+
+view 가 쓰는 원천 컬럼은 다음과 같다.
+
+| 표 | 컬럼 |
+|---|---|
+| `meeting` | `meeting_id`, `workspace_id`, `deleted_at`, `source`, `status`, `failed_stage`, `ended_at`, `duration_ms`, `replaces_meeting_id` |
+| `extraction` | `extraction_id`, `meeting_id`, `created_at`, `extraction_path` |
+| `extraction_item` | `extraction_id`, `created_at`, `action`, `gate`, `reverted_at` |
+| `meeting_upload` | `meeting_id`, `speakers_reported_at`, `speakers_assigned_at` |
+| `approval_request` | `workspace_id`, `type`, `payload`(키 `reverted_task_id`·`change_source`·`extraction_item_id`·`meeting_id`·`gate`·`task_overrides`·`asr_suspects`·`source_deleted`), `requested_by`, `status`, `created_at`, `resolved_at` |
+
+- 이 컬럼을 DROP 하거나 타입을 바꾸는 마이그레이션은 PostgreSQL 이 거부한다. 같은 마이그레이션에서 view 를 DROP 한 뒤 다시 만든다. 다시 만든 뒤에는 읽기 계정의 GRANT 를 다시 실행한다.
+- 마이그레이션 테스트(`tests/test_migration_kpi_views.py`)가 view 컬럼 목록, 고정 행의 값, `downgrade()` 뒤 스키마가 남지 않는 것, 위 거부 동작을 확인한다. PostgreSQL 이 필요해 `TEST_DATABASE_URL` 이 있을 때만 돈다.
