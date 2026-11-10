@@ -27,8 +27,11 @@ export interface MockDecision {
   text: string
   reason: string | null
   meeting_id: string
-  /** 요약이 적은 뒤집은 결정. 그 결정을 지우면 응답에서는 null 로 읽는다 */
-  replaced_by: string | null
+  /**
+   * 요약이 적은, 이 결정이 뒤집은 옛 결정 (decision_details[].replaces). 뒤집기의 정본이다.
+   * 응답의 `replaced_by` 는 handler 가 이것으로 BE `_relink` 처럼 읽을 때 계산한다
+   */
+  replaces: string[]
   /** 지운 결정(removed)은 응답에 나오지 않는다 */
   state: 'valid' | 'invalid' | 'removed'
   edited: boolean
@@ -108,7 +111,7 @@ export const projectMapFixture: MockProjectMap = {
       text: '이메일 인증 전에는 계정을 만들지 않는다',
       reason: '가짜 계정이 쌓이지 않게 한다',
       meeting_id: 'mt_07',
-      replaced_by: 'dc_02',
+      replaces: [],
       state: 'valid',
       edited: false,
     },
@@ -118,7 +121,7 @@ export const projectMapFixture: MockProjectMap = {
       text: '카카오 로그인은 인증 없이 바로 계정을 만든다',
       reason: '카카오가 이미 본인을 확인했다',
       meeting_id: 'mt_09',
-      replaced_by: null,
+      replaces: ['dc_01'],
       state: 'valid',
       edited: false,
     },
@@ -128,7 +131,7 @@ export const projectMapFixture: MockProjectMap = {
       text: '배포는 스크립트 하나로 한다',
       reason: null,
       meeting_id: 'mt_09',
-      replaced_by: null,
+      replaces: [],
       state: 'valid',
       edited: false,
     },
@@ -138,7 +141,7 @@ export const projectMapFixture: MockProjectMap = {
       text: '운영 DB 는 매일 새벽에 백업한다',
       reason: '복구 지점을 하루 안으로 둔다',
       meeting_id: 'mt_09',
-      replaced_by: null,
+      replaces: [],
       state: 'invalid',
       edited: true,
     },

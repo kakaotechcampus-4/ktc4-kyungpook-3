@@ -366,7 +366,7 @@ function TopicView({
             <>
               회의록·요약본·주제에서 이 결정이 빠져요. 지운 결정은 이 화면에서 되살릴 수 없어요.
               {detail.decisions.some(({ replacedBy }) => replacedBy === removing)
-                ? ' 이 결정이 뒤집었던 결정은 다시 유효해져요.'
+                ? ' 이 결정이 뒤집었던 결정은, 그 결정을 뒤집은 다른 결정이 없으면 다시 유효해져요.'
                 : null}
             </>
           }

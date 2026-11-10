@@ -37,7 +37,7 @@ test('가입한 계정·세션·만든 공간·온보딩 단계가 새로고침 
   // E2E 는 앱 모듈을 가져오지 않아 현재 MOCK_DB_VERSION 을 직접 단언한다.
   const store = await page.evaluate(() => sessionStorage.getItem('msw-db'))
   expect(store).toContain('restore@example.com')
-  expect(JSON.parse(store ?? '{}')).toMatchObject({ version: 24 })
+  expect(JSON.parse(store ?? '{}')).toMatchObject({ version: 25 })
 })
 
 test('OAuth 왕복(현재 탭 이동 두 번)을 지나도 로그인·연동·단계가 이어진다', async ({ page }) => {
@@ -104,7 +104,7 @@ test('손상된 저장값은 버리고 비로그인으로 시작한다', async (
   // 손상값은 버려지고 비로그인 시작 상태가 현재 버전(MOCK_DB_VERSION, 위 첫 시나리오 참고)으로 새로 저장됐다
   expect(after.stored).not.toBe('{broken')
   expect(JSON.parse(after.stored ?? 'null')).toMatchObject({
-    version: 24,
+    version: 25,
     db: { authenticated: false },
   })
 })

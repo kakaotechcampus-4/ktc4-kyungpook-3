@@ -1,11 +1,13 @@
 import { QueryClient } from '@tanstack/react-query'
 import { http } from 'msw'
+import { db } from '@/shared/mock/db'
 import { ok } from '@/shared/mock/envelope'
 import { normalizeTopicName } from '@/shared/mock/handlers/projectMap'
 import { server } from '@/shared/mock/server'
 import { fetchDto } from '@/shared/test/api'
 import { projectMapQueryOptions, topicQueryOptions } from './api/projectMapQuery'
 import { sendTopicEdit } from './api/topicEdit'
+import type { TopicDecision } from './model/types'
 
 /*
  * 주제·결정 고치기 (#551 묶음 B, 계약 §4.4.3). 모의 서버가 BE services/summary.py 의 규칙을 따르는지와
@@ -213,6 +215,43 @@ describe('결정 고치기', () => {
       ['dc_01', 'dc_02'],
       ['dc_02', null],
     ])
+  })
+
+  it('같은 옛 결정을 둘이 뒤집었으면 가장 이른 회의의 결정이 뒤집은 것이다. 그것을 지우면 남은 결정이 이어받는다', async () => {
+    db.projectMap.decisions.push({
+      decision_id: 'dc_late',
+      topic_id: 'tp_01',
+      text: '카카오 로그인도 이메일 인증을 받는다',
+      reason: null,
+      meeting_id: 'mt_10',
+      replaces: ['dc_01'],
+      state: 'valid',
+      edited: false,
+    })
+    const replacedBy = (detail: { decisions: readonly TopicDecision[] }) =>
+      detail.decisions.find(({ decisionId }) => decisionId === 'dc_01')?.replacedBy
+    expect(replacedBy(await topic('tp_01'))).toBe('dc_02')
+
+    const removed = await sendTopicEdit(WS, 'tp_01', {
+      kind: 'decision',
+      decisionId: 'dc_02',
+      state: 'removed',
+    })
+    expect(replacedBy(removed)).toBe('dc_late')
+
+    const restored = await sendTopicEdit(WS, 'tp_01', {
+      kind: 'decision',
+      decisionId: 'dc_02',
+      state: 'valid',
+    })
+    expect(replacedBy(restored)).toBe('dc_02')
+
+    const invalid = await sendTopicEdit(WS, 'tp_01', {
+      kind: 'decision',
+      decisionId: 'dc_02',
+      state: 'invalid',
+    })
+    expect(replacedBy(invalid)).toBe('dc_02')
   })
 
   it.each([

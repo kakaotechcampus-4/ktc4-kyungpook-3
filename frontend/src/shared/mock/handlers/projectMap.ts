@@ -115,6 +115,24 @@ function workspaceTopic(workspaceId: string, topicId: string): MockTopic | undef
   )
 }
 
+/**
+ * BE `_relink`. 이 결정을 뒤집었다고 적은, 지우지 않은 더 늦은 결정 중 가장 이른 회의의 것이다(같으면 회의 ID, 적힌 순서).
+ * 하나를 지우면 남은 것이 이어받고, 되살리면 다시 뒤집는다. 유효하지 않음은 뒤집기를 그대로 둔다
+ */
+function replacedBy(old: MockDecision, meetings: Map<string, MeetingRefDto>): string | null {
+  const startedAt = ({ meeting_id }: MockDecision) => at(meetings.get(meeting_id)!.started_at)
+  const claims = db.projectMap.decisions.filter(
+    (decision) =>
+      decision.state !== 'removed' &&
+      meetings.has(decision.meeting_id) &&
+      decision.replaces.includes(old.decision_id) &&
+      startedAt(decision) > startedAt(old),
+  )
+  // sort 는 안정 정렬이라 같은 회의 안에서는 적힌 순서가 남는다
+  claims.sort((a, b) => startedAt(a) - startedAt(b) || a.meeting_id.localeCompare(b.meeting_id))
+  return claims[0]?.decision_id ?? null
+}
+
 function topicDetail(workspaceId: string, topicId: string): TopicDetailDto | null {
   const topic = workspaceTopic(workspaceId, topicId)
   if (topic === undefined) return null
@@ -126,11 +144,6 @@ function topicDetail(workspaceId: string, topicId: string): TopicDetailDto | nul
           meetings.has(meeting_id) && !topic.detached_task_ids.includes(task_id),
       )
       .map(({ task_id }) => task_id),
-  )
-  const removed = new Set(
-    db.projectMap.decisions
-      .filter(({ state }) => state === 'removed')
-      .map(({ decision_id }) => decision_id),
   )
   return {
     topic_id: topic.topic_id,
@@ -153,11 +166,7 @@ function topicDetail(workspaceId: string, topicId: string): TopicDetailDto | nul
           meeting_id: meeting.meeting_id,
           meeting_title: meeting.title,
           decided_at: meeting.started_at,
-          // 지운 결정이 뒤집었던 결정은 다시 유효하다. 되살리면 요약 기록대로 다시 뒤집힌다
-          replaced_by:
-            decision.replaced_by !== null && removed.has(decision.replaced_by)
-              ? null
-              : decision.replaced_by,
+          replaced_by: replacedBy(decision, meetings),
           state: decision.state,
           edited: decision.edited,
         }

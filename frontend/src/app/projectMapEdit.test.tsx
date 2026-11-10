@@ -336,7 +336,9 @@ describe('결정 고치기 (#551)', () => {
     const text = '카카오 로그인은 인증 없이 바로 계정을 만든다'
     await chooseMenu(text, '지우기')
     let dialog = await screen.findByRole('dialog', { name: '결정을 지울까요?' })
-    expect(dialog).toHaveTextContent('이 결정이 뒤집었던 결정은 다시 유효해져요.')
+    expect(dialog).toHaveTextContent(
+      '이 결정이 뒤집었던 결정은, 그 결정을 뒤집은 다른 결정이 없으면 다시 유효해져요.',
+    )
     await userEvent.click(within(dialog).getByRole('button', { name: '취소' }))
     await waitFor(() => expect(menuOf(text)).toHaveFocus())
     expect(bodies).toEqual([])
