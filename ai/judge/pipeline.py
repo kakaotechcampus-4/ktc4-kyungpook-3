@@ -303,7 +303,17 @@ def _workspace_terms(candidates: Any, workspace_id: str, team: set[str]) -> set[
             push(workspace_id, new, [p["title_id"] for p in pending])
         except Exception as e:  # noqa: BLE001 - 올리지 못하면 다음 회의에서 다시 올린다(BE 는 중복을 건너뛴다)
             logger.warning("워크스페이스 용어를 올리지 못했다: %s: %s", type(e).__name__, e)
-    return words | approved
+    return _term_words(words) | approved
+
+
+def _term_words(words: set[str]) -> set[str]:
+    """용어를 제목을 쪼개는 방식대로도 나눠 안다. 사람이 넣은 여러 단어 용어("결제 모듈", 심사용 시드 #621)는 통째로는
+    제목의 명사와 맞지 않는다. 회의에서 쌓인 용어는 이미 명사 하나라 그대로다. 나눈 말은 BE 에 다시 올리지 않는다."""
+    out = set(words)
+    for w in words:
+        out.update(w.split())
+        out |= asr_check.nouns(w)
+    return out
 
 
 def _asr_vocab(candidates: Any, workspace_id: str, transcript: Transcript) -> set[str] | None:

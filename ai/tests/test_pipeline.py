@@ -1281,6 +1281,17 @@ def test_run_workspace_terms_and_approved_titles_count_as_known(monkeypatch):
     assert "애포" in words and "핀테크볼트" not in words and ids == ["t1"]
 
 
+def test_run_multi_word_workspace_terms_count_word_by_word(monkeypatch):
+    # 사람이 넣은 여러 단어 용어(심사용 시드 "결제 모듈", #621)도 제목을 쪼개는 방식대로 나눠 안다
+    be = _Terms(words=["애포 모듈", "핀테크볼트 체크리스트"])
+    _, jev = _asr_run(monkeypatch, ["애포 정리는 제가 맡을게요."], "애포 정리", candidates=be)
+    assert set(jev.calls[0][1]) == {"task"}
+    _, jev = _asr_run(monkeypatch, ["체크리스트 정리는 제가 맡을게요."], "체크리스트 정리", candidates=be)
+    assert set(jev.calls[0][1]) == {"task"}
+    # 나눈 말은 BE 에 다시 올리지 않는다(이미 있는 용어를 쪼갠 것뿐이다)
+    assert all("애포" not in words and "체크" not in words for words, _ in be.pushed)
+
+
 def test_run_nouns_said_by_two_speakers_are_known_and_pushed(monkeypatch):
     be = _Terms()
     out, jev = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요.", "애포 일정은 금요일이에요."], "애포 문서 정리",
