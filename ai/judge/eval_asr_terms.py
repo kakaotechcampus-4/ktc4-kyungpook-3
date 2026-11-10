@@ -190,9 +190,19 @@ def main() -> None:
     runs = []
     for k in range(n_runs):
         print(f"\n==== 실행 {k + 1} ====")
-        one_run(runs)
+        before = len(runs)
+        try:
+            one_run(runs)
+        except Exception as e:  # noqa: BLE001 - 한 실행이 실패해도(1단계 파싱 실패 등) 남은 실행을 돈다
+            if len(runs) == before:
+                runs.append({"meetings": {}, "meeting6": {}})
+            runs[-1]["error"] = f"{type(e).__name__}: {e}"
+            print(f"  [실패] 실행 {k + 1}: {runs[-1]['error']}")
+            save(runs)
     print("\n[6회차 요약]")
     for k, r in enumerate(runs, 1):
+        if "error" in r:
+            print(f"  실행{k} 실패: {r['error']}")
         for label, v in r["meeting6"].items():
             sus = [s["word"] for i in v["items"] for s in i.get("asr_suspects") or []]
             print(f"  실행{k} {label:<10} 의심={sus} Jev asr 질문={[q['word'] for q in v['jev_asr']]}")

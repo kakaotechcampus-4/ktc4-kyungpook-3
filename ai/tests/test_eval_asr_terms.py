@@ -79,6 +79,33 @@ def test_main_stops_before_running_when_jev_key_is_missing(monkeypatch):
     _main_with(monkeypatch, False, "off")
 
 
+def test_a_failed_run_is_recorded_and_the_next_run_still_goes(monkeypatch):
+    import judge.eval_asr_terms as mod
+    import judge.pipeline as pipeline
+
+    class Key:
+        name = "x"
+
+    calls, saved = [], []
+
+    def flaky_run(runs):
+        calls.append(1)
+        runs.append({"meetings": {}, "meeting6": {}})
+        if len(calls) == 1:
+            raise RuntimeError("1단계 응답을 쓰지 못함")
+        runs[-1]["meeting6"] = {"correct": {"items": [], "jev_asr": []}}
+
+    monkeypatch.setattr(pipeline, "get_llm", lambda which: Key())
+    monkeypatch.setattr(pipeline, "get_jev", lambda: Key())
+    monkeypatch.setattr(mod, "one_run", flaky_run)
+    monkeypatch.setattr(mod, "save", lambda runs: saved.append([dict(r) for r in runs]))
+    monkeypatch.setattr("sys.argv", ["x", "--runs", "2"])
+    mod.main()
+    assert len(calls) == 2
+    first, second = saved[-1]
+    assert "1단계 응답을 쓰지 못함" in first["error"] and "error" not in second
+
+
 def test_recording_jev_records_task_and_due_yes_by_title():
     from judge.eval_asr_terms import RecordingJev
 
