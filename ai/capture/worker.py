@@ -422,12 +422,17 @@ class Worker:
         if handoff is None or self._stopping:
             return
         try:
-            done = await asyncio.to_thread(audio_outbox.drain, self.recordings_dir, handoff.client)
+            results = await asyncio.to_thread(audio_outbox.drain_results, self.recordings_dir, handoff.client)
         except Exception as e:  # noqa: BLE001 - 녹음 올리기는 곁가지다. 다음 바퀴에 다시 한다
             print(f"[worker] 녹음 올리기 오류: {type(e).__name__}: {e}", flush=True)
             return
-        for meeting_id in done:
-            print(f"[worker] 회의 {meeting_id} 녹음 대기 항목 처리", flush=True)
+        for meeting_id, outcome, reason in results:
+            if outcome == audio_outbox.UPLOADED:
+                print(f"[worker] 회의 {meeting_id} 녹음 올림", flush=True)
+            elif outcome == audio_outbox.NOT_STORED:
+                print(f"[worker] 회의 {meeting_id} 녹음을 BE 가 받지 않음(보관 기간 지남)", flush=True)
+            else:   # 운영에서 녹음이 빠진 걸 알 수 있게 따로 남긴다(#670 리뷰)
+                print(f"[worker] 경고: 회의 {meeting_id} 녹음 올리기 포기({reason}). 웹 재생 녹음 없음", flush=True)
 
     async def _purge_once(self) -> None:
         from capture.meeting_purge import purge_one

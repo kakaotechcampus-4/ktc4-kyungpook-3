@@ -129,9 +129,22 @@ def drain(recordings_dir: Path, client, *, now: datetime | None = None) -> list[
 
     인계 7일 뒤면 올리지 않고 지운다. 올렸으면(BE 가 보관 기간이 지났다며 stored=false 로 답해도) 지운다.
     BE 가 다시 해도 같다고 답한 오류(PERMANENT_ERRORS)도 지우고, 네트워크·5xx 같은 나머지는 남겨 next_at 이 지난 바퀴에 다시 한다.
-    실패하면 attempts 를 올리고 next_at 을 now + min(60초 × 2^(attempts-1), 1시간) 으로 적는다. 7일 포기 규칙은 next_at 보다 먼저 본다."""
+    실패하면 attempts 를 올리고 next_at 을 now + min(60초 × 2^(attempts-1), 1시간) 으로 적는다. 7일 포기 규칙은 next_at 보다 먼저 본다.
+    결과를 나눠 보려면 drain_results 를 쓴다."""
+    return [meeting_id for meeting_id, _, _ in drain_results(recordings_dir, client, now=now)]
+
+
+UPLOADED, NOT_STORED, GAVE_UP = "uploaded", "not_stored", "gave_up"
+
+
+def drain_results(recordings_dir: Path, client, *, now: datetime | None = None) -> list[tuple[str, str, str]]:
+    """drain 과 같지만 지운 항목마다 (회의 ID, 결과, 이유) 를 돌려준다(#670 리뷰: 녹음이 빠진 걸 운영에서 알 수 있게).
+
+    결과는 uploaded(BE 가 저장), not_stored(BE 가 보관 기간이 지났다며 받지 않음), gave_up(올리지 못하고 지움) 셋이다.
+    gave_up 의 이유는 BE 오류 코드, "인계 7일 지남", "녹음 파일 없음", "항목을 읽을 수 없음" 중 하나다.
+    다시 하려고 남긴 항목은 목록에 없다."""
     now = now or datetime.now(timezone.utc)
-    done = []
+    results: list[tuple[str, str, str]] = []
     for meta in sorted(_dir(recordings_dir).glob("*.json")):
         meeting_id = meta.stem
         try:
@@ -141,27 +154,33 @@ def drain(recordings_dir: Path, client, *, now: datetime | None = None) -> list[
                 if now.timestamp() >= meta.stat().st_mtime + OUTBOX_KEEP_S:
                     for path in (meta, meta.with_suffix(".m4a"), meta.with_suffix(".part"), meta.with_suffix(".json.tmp")):
                         path.unlink(missing_ok=True)
-                    done.append(meeting_id)
+                    results.append((meeting_id, GAVE_UP, "항목을 읽을 수 없음"))
                 continue
             audio = _paths(recordings_dir, meeting_id)[0]
             handed = _handed_off_at(data)
             if handed is None or not audio.is_file() or now >= handed + timedelta(seconds=OUTBOX_KEEP_S):
+                reason = ("항목을 읽을 수 없음" if handed is None
+                          else "녹음 파일 없음" if not audio.is_file() else "인계 7일 지남")
                 remove_meeting(recordings_dir, meeting_id)
-                done.append(meeting_id)
+                results.append((meeting_id, GAVE_UP, reason))
                 continue
             next_at = _next_at(data)
             if next_at is not None and now < next_at:
                 continue
             try:
-                client.upload_recording(meeting_id, audio)
+                answer = client.upload_recording(meeting_id, audio)
             except Exception as e:  # noqa: BLE001 - BeError 가 아닌 읽기·전송 오류도 같은 간격으로 다시 한다
                 if not (isinstance(e, BeError) and e.code in PERMANENT_ERRORS):
                     code = e.code if isinstance(e, BeError) else type(e).__name__
                     print(f"[audio] {meeting_id} 녹음 올리기 실패(간격을 두고 다시 한다): {code}", flush=True)
                     _record_failure(meta, data, now)
                     continue
+                remove_meeting(recordings_dir, meeting_id)
+                results.append((meeting_id, GAVE_UP, e.code))
+                continue
             remove_meeting(recordings_dir, meeting_id)
-            done.append(meeting_id)
+            stored = not isinstance(answer, dict) or answer.get("stored", True) is not False
+            results.append((meeting_id, UPLOADED if stored else NOT_STORED, ""))
         except Exception as e:  # noqa: BLE001 - 한 항목의 실패가 나머지를 막지 않는다. 다음 바퀴에 다시 본다
             print(f"[audio] {meeting_id} 녹음 올리기 오류(다음에 다시 한다): {type(e).__name__}: {e}", flush=True)
-    return done
+    return results

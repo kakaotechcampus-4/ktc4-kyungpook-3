@@ -206,6 +206,31 @@ def test_drain_gives_up_after_7_days(tmp_path):
     assert _entries(rec) == []
 
 
+def test_drain_results_tell_uploads_apart_from_giving_up(tmp_path):
+    # 운영에서 녹음이 빠진 걸 알 수 있게, 올림·BE 가 받지 않음·포기를 나눠 돌려준다(#670 리뷰)
+    rec = tmp_path / "rec"
+    _enqueue(rec, "ok")
+    _enqueue(rec, "late")
+    _enqueue(rec, "gone")
+    _enqueue(rec, "old", handed=NOW - timedelta(seconds=O.OUTBOX_KEEP_S))
+    client = Client({"gone": BeError("MEETING_DELETED", "x", status=410)})
+    real = client.upload_recording
+    client.upload_recording = lambda mid, path: {**real(mid, path), "stored": mid != "late"}
+    assert O.drain_results(rec, client, now=NOW) == [
+        ("gone", "gave_up", "MEETING_DELETED"),
+        ("late", "not_stored", ""),
+        ("ok", "uploaded", ""),
+        ("old", "gave_up", "인계 7일 지남"),
+    ]
+    assert _entries(rec) == []
+
+
+def test_drain_still_returns_meeting_ids(tmp_path):
+    rec = tmp_path / "rec"
+    _enqueue(rec, "a")
+    assert O.drain(rec, Client(), now=NOW) == ["a"]
+
+
 def test_one_failure_does_not_block_others(tmp_path):
     rec = tmp_path / "rec"
     for mid in ("a", "b", "c"):

@@ -1024,6 +1024,17 @@ async def test_each_lap_summarizes_once_after_intake_purge_and_audio_pruning(tmp
     assert order == ["intake", "purge", "prune", "drain", "summary"] * 2 + ["purge", "prune", "drain"]
 
 
+async def test_drain_outbox_logs_giving_up_separately(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(W.audio_outbox, "drain_results", lambda *a, **k: [
+        ("m1", "uploaded", ""), ("m2", "not_stored", ""), ("m3", "gave_up", "UNAUTHENTICATED")])
+    w = _worker(tmp_path, handoff=type("H", (), {"client": _RecordingClient()})())
+    await w._drain_outbox()
+    out = capsys.readouterr().out
+    assert "회의 m1 녹음 올림" in out
+    assert "회의 m2 녹음을 BE 가 받지 않음" in out
+    assert "경고: 회의 m3 녹음 올리기 포기(UNAUTHENTICATED)" in out
+
+
 async def test_summary_leaves_the_main_meeting_seat_and_current_session_alone(tmp_path):
     w = _worker(tmp_path)
     summary = _Summary(w)
@@ -1133,7 +1144,7 @@ async def test_drain_outbox_without_a_handoff_leaves_the_queue_alone(tmp_path):
 async def test_drain_outbox_error_is_logged_and_the_worker_keeps_going(tmp_path, monkeypatch, capsys):
     def boom(*a, **k):
         raise RuntimeError("disk")
-    monkeypatch.setattr(W.audio_outbox, "drain", boom)
+    monkeypatch.setattr(W.audio_outbox, "drain_results", boom)
     w = _worker(tmp_path, handoff=type("H", (), {"client": _RecordingClient()})(), interval_s=0.05)
     assert await _laps(w, 2) == 2
     assert "녹음 올리기 오류: RuntimeError: disk" in capsys.readouterr().out
