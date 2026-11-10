@@ -372,7 +372,7 @@ def edit_meeting_title(
     meeting = transcript.edit_title(db, meeting_id, payload.title)
     data = TitleEditResponse(
         meeting_id=meeting.meeting_id, title=meeting.title, title_original=meeting.title_original,
-        edited=meeting.title_edited_at is not None,
+        title_edited=meeting.title_edited_at is not None,
     ).model_dump(mode="json")
     db.commit()
     return success(data)

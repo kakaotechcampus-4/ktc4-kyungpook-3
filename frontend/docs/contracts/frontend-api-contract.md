@@ -1756,7 +1756,7 @@ POST .../meetings/upload            multipart/form-data
 
 | 경로 | 본문 | 200 `data` | 오류 |
 |---|---|---|---|
-| `PATCH /meetings/{meeting_id}/title` | `{"title": 문자열 \| null}`. 앞뒤 공백을 빼고 1자 이상 200자 이하 | `{meeting_id, title, title_original, edited}` | 404 `MEETING_NOT_FOUND`, 410 `MEETING_DELETED` |
+| `PATCH /meetings/{meeting_id}/title` | `{"title": 문자열 \| null}`. 앞뒤 공백을 빼고 1자 이상 200자 이하 | `{meeting_id, title, title_original, title_edited}`. 회의록과 같은 칸 이름이다 | 404 `MEETING_NOT_FOUND`, 410 `MEETING_DELETED` |
 | `PATCH /meetings/{meeting_id}/transcript/{seq}` | `{"text": 문자열 \| null}`. 1자 이상 10000자 이하 | `{seq, text, original_text, edited}` | 404 `MEETING_NOT_FOUND`·`TRANSCRIPT_LINE_NOT_FOUND`, 410 `MEETING_DELETED` |
 | `PATCH /workspaces/{workspace_id}/topics/{topic_id}` | `{"name"?: 문자열, "description"?: 문자열}`. 이름은 앞뒤 공백을 빼고 1자 이상 100자 이하, 설명은 1000자 이하. 하나는 있어야 한다 | 그 주제의 `TopicDetailResponse` | 400 글자가 없는 이름, 404 `TOPIC_NOT_FOUND`, 409 `TOPIC_NAME_TAKEN` |
 | `POST /workspaces/{workspace_id}/topics/{topic_id}/merge` | `{"into_topic_id": 문자열}` | 합친 주제(`into_topic_id`)의 `TopicDetailResponse` | 400 자기 자신, 404 `TOPIC_NOT_FOUND` |
@@ -1764,7 +1764,7 @@ POST .../meetings/upload            multipart/form-data
 | `PATCH /workspaces/{workspace_id}/decisions/{decision_id}` | `{"text"?: 문자열, "state"?: "valid" \| "invalid" \| "removed"}`. 문장은 1자 이상 1000자 이하. 하나는 있어야 한다 | 그 결정이 속한 주제의 `TopicDetailResponse`. 지운 결정은 들어 있지 않다 | 404 `DECISION_NOT_FOUND` |
 
 - 제목은 그 자리에서 바뀐다. 회의록, 회의 목록, 프로젝트 맵, 주제 상세, 요약본 머리와 파일 이름, 합본이 고친 제목을 쓴다. 채팅 회의 요약본은 고친 제목이 있으면 `일일 요약` 대신 그 제목을 쓴다.
-- `title_original` 은 처음 고치기 전 제목이고 고친 적 없으면 null 이다. 제목 없던 회의를 고치면 `title_original` 은 null 이고 `edited` 가 true 다. `null` 이나 처음 제목을 보내면 되돌린다.
+- `title_original` 은 처음 고치기 전 제목이고 고친 적 없으면 null 이다. 제목 없던 회의를 고치면 `title_original` 은 null 이고 `title_edited` 가 true 다. `null` 이나 처음 제목을 보내면 되돌린다.
 - 발화는 원문을 두고 고친 문장을 따로 둔다. 회의록 전사와 AI 의 요약 재료가 고친 문장을 쓰고, 승인 카드와 추출 상세의 근거 인용은 원문 그대로다. `null` 이나 원문과 같은 값을 보내면 되돌린다. 응답의 `original_text` 는 고쳤을 때만 원문이다.
 - 고친 제목과 발화로 담당자 별칭을 만들지 않는다.
 - 주제 이름을 바꾸면 옛 이름이 그 주제의 별칭으로 남아, 다시 요약할 때 AI 가 옛 이름을 내도 이 주제로 간다. 다른 주제가 같은 이름(정규화한 값)을 쓰고 있으면 409 이고 `details.topic_id` 가 그 주제다. 합치기를 권할 때 쓴다.

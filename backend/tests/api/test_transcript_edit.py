@@ -158,7 +158,7 @@ def test_edited_title_shows_in_minutes_list_summary_and_bundle(mdb, mseed, alice
 
     assert r.status_code == 200, r.text
     assert r.json()["data"] == {
-        "meeting_id": meeting.meeting_id, "title": "3주차 회의", "title_original": "정기회의", "edited": True,
+        "meeting_id": meeting.meeting_id, "title": "3주차 회의", "title_original": "정기회의", "title_edited": True,
     }
     minutes = _minutes(alice, meeting)
     assert (minutes["title"], minutes["title_edited"], minutes["title_original"]) == ("3주차 회의", True, "정기회의")
@@ -178,7 +178,7 @@ def test_second_edit_keeps_the_recorded_title_and_null_restores_it(mdb, mseed, a
     r = _title(alice, meeting, None)
 
     assert r.json()["data"] == {
-        "meeting_id": meeting.meeting_id, "title": "정기회의", "title_original": None, "edited": False,
+        "meeting_id": meeting.meeting_id, "title": "정기회의", "title_original": None, "title_edited": False,
     }
     minutes = _minutes(alice, meeting)
     assert (minutes["title"], minutes["title_edited"], minutes["title_original"]) == ("정기회의", False, None)
@@ -190,7 +190,7 @@ def test_null_on_a_title_never_edited_changes_nothing(mdb, mseed, alice):
     r = _title(alice, meeting, None)
 
     assert r.json()["data"] == {
-        "meeting_id": meeting.meeting_id, "title": "정기회의", "title_original": None, "edited": False,
+        "meeting_id": meeting.meeting_id, "title": "정기회의", "title_original": None, "title_edited": False,
     }
 
 
@@ -200,8 +200,8 @@ def test_title_given_to_an_untitled_meeting_is_marked_and_restores_to_none(mdb, 
     named = _title(alice, meeting, "이름 붙임").json()["data"]
     restored = _title(alice, meeting, None).json()["data"]
 
-    assert (named["title"], named["title_original"], named["edited"]) == ("이름 붙임", None, True)
-    assert (restored["title"], restored["edited"]) == (None, False)
+    assert (named["title"], named["title_original"], named["title_edited"]) == ("이름 붙임", None, True)
+    assert (restored["title"], restored["title_edited"]) == (None, False)
 
 
 def test_daily_summary_head_uses_the_edited_title(mdb, mseed, alice):

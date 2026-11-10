@@ -26,9 +26,9 @@ class TitleEditRequest(_Storable):
 class TitleEditResponse(BaseModel):
     meeting_id: str
     title: str | None
-    # 처음 고치기 전 제목. 고친 적 없으면 null 이다. 제목 없던 회의를 고쳐도 null 이라 고쳤는지는 edited 로 본다
+    # 처음 고치기 전 제목. 고친 적 없으면 null 이다. 제목 없던 회의를 고쳐도 null 이라 고쳤는지는 title_edited 로 본다
     title_original: str | None
-    edited: bool
+    title_edited: bool
 
 
 class LineEditRequest(_Storable):
