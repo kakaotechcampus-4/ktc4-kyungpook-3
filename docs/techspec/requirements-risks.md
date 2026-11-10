@@ -47,7 +47,7 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 | 상황 | 처리 |
 |---|---|
 | 승인 충돌 | 수정 제안마다 AI 가 본 값(`target_snapshot`)을 기준값으로 저장. 승인 때 지금 값이 다르면 409 `APPROVAL_CONFLICT`(base·current·proposed). PM 이 `confirm_task_version` 으로 다시 승인, 그사이 또 바뀌면 다시 409 |
-| 같은 카드 동시 처리 | 이미 처리됨 409 `APPROVAL_ALREADY_RESOLVED`, 판단 중 카드가 바뀌면 409 `APPROVAL_CHANGED` |
+| 같은 카드 동시 처리 | 이미 처리됨 409 `APPROVAL_ALREADY_RESOLVED`, PM 이 카드를 연 뒤 카드 내용이 바뀌었으면(`payload_version` 불일치, 다른 회의 항목이 합쳐짐) 409 `APPROVAL_CHANGED` |
 | 추측 이름 학습 방지 | 승인 때 별칭 학습은 추출 때 못 찾은 `thirdname`(이름 지목) 원문만. 2인칭·대명사·역할(추측한 이름), 1인칭이 주어로 쓰인 꼴("제가")은 저장하지 않음. 역할 지목은 이름이 찾아져도 auto 로 보내지 않음 |
 | 오인식 용어 오염 방지 | 워크스페이스 용어 목록에는 두 사람 이상이 말한 명사와 PM 이 승인한 제목의 명사만 넣음 |
 | finding 하나 실패 | 그 finding 만 `failures`, 나머지는 계속 처리 |
