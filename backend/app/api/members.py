@@ -40,6 +40,8 @@ from app.services import message_reads, messages, thread_signals
 from app.services.matching import resolved_texts
 from app.services.member_aliases import (
     add_discord_nickname_alias,
+    connected_guild,
+    lookup_guild_member,
     remove_discord_profile_aliases,
     sync_name_aliases,
 )
@@ -97,6 +99,12 @@ def _ensure_discord_user_free(
         raise AppError(
             ErrorCode.DISCORD_USER_ALREADY_MAPPED, details={"discord_user_id": discord_user_id}
         )
+
+
+def _ensure_same_guild(db: Session, workspace_id: str, guild_id: str) -> None:
+    """Discord 를 기다리는 동안 서버 연결이 끊기거나 다른 서버로 바뀌었으면 409. 다시 잠근 뒤에 부른다."""
+    if connected_guild(db, workspace_id) != guild_id:
+        raise AppError(ErrorCode.INTEGRATION_NOT_CONNECTED, details={"provider": "discord"})
 
 
 def _ensure_no_pending_invitation(db: Session, member: Member) -> None:
@@ -176,6 +184,14 @@ def create_member(
 
     _ensure_discord_user_free(db, payload.workspace_id, payload.discord_user_id)
 
+    guild_member = None
+    if payload.discord_user_id:
+        # 연결한 서버의 멤버만 붙인다. Discord 를 부르려고 커밋해 잠금이 풀리므로 다시 잠그고 서버가 그대로인지 본다.
+        # 그 사이 같은 계정을 다른 팀원에 붙였으면 _commit_member 가 409 로 돌려준다.
+        guild_id, guild_member = lookup_guild_member(db, payload.workspace_id, payload.discord_user_id)
+        require_pm(db, user, payload.workspace_id)
+        _ensure_same_guild(db, payload.workspace_id, guild_id)
+
     member = Member(
         workspace_id=payload.workspace_id,
         display_name=payload.display_name,
@@ -188,10 +204,10 @@ def create_member(
     sync_name_aliases(db, member)
     _commit_member(db, member)
     db.refresh(member)
-    if payload.discord_user_id:
-        # 서버 닉네임은 팀원 커밋 뒤에 Discord 에서 읽는다. 실패해도 팀원 등록은 그대로다.
+    if guild_member is not None:
+        # 서버 닉네임 별칭은 팀원 커밋 뒤에 넣는다. 실패해도 팀원 등록은 그대로다.
         workspace_id, member_id = payload.workspace_id, member.member_id
-        add_discord_nickname_alias(db, workspace_id, member_id, payload.discord_user_id)
+        add_discord_nickname_alias(db, workspace_id, member_id, payload.discord_user_id, guild_member)
         db.refresh(member)
     return success(MemberResponse.model_validate(member).model_dump(mode="json"))
 
@@ -318,6 +334,17 @@ def update_member(
 
     updates = {field: getattr(payload, field) for field in payload.model_fields_set}
 
+    guild_member = None
+    new_discord = updates.get("discord_user_id")
+    if new_discord and new_discord != member.discord_user_id:
+        # 연결한 서버의 멤버만 붙인다. 아래 잠금보다 먼저 Discord 를 부르고(커밋해 잠금을 푼다) 팀원을 다시 읽는다.
+        _ensure_discord_user_free(db, member.workspace_id, new_discord, exclude_member_id=member_id)
+        guild_id, guild_member = lookup_guild_member(db, member.workspace_id, new_discord)
+        member = _get_member(db, member_id, user, pm=True)
+        if member.is_deleted:
+            raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
+        _ensure_same_guild(db, member.workspace_id, guild_id)
+
     # PM을 넘길 때는 다른 팀원을 먼저 PM으로 올리고 나서 자기를 내린다. 마지막 PM은 내릴 수 없다.
     if updates.get("role") == MemberRole.MEMBER and member.role == MemberRole.PM:
         _ensure_other_pm(db, member)
@@ -362,11 +389,11 @@ def update_member(
     elif removed_nicknames:
         sync_name_aliases(db, member, only_texts=removed_nicknames)
 
-    workspace_id, new_discord = member.workspace_id, updates.get("discord_user_id")
+    workspace_id = member.workspace_id
     _commit_member(db, member)
     db.refresh(member)
-    if discord_changed and new_discord:
-        add_discord_nickname_alias(db, workspace_id, member_id, new_discord)
+    if discord_changed and guild_member is not None:
+        add_discord_nickname_alias(db, workspace_id, member_id, new_discord, guild_member)
         db.refresh(member)
     return success(MemberResponse.model_validate(member).model_dump(mode="json"))
 
