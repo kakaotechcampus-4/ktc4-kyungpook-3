@@ -49,7 +49,7 @@ flowchart LR
 |---|---|---|
 | 로컬 faster-whisper large-v3-turbo | 62.42분 회의에 84.93분(RTF 1.36). 전사 프로세스 메모리 최대 2,305MiB 라 워커 2개는 스왑 없이 안 들어감 | 목표 불가. 장애 대비로만 |
 | 로컬 small | 회의 1분당 약 25초, CER 8.20·8.68%(5% 기준 넘음) | 품질·시간 모두 미달 |
-| **Elice API whisper-large-v3 (채택)** | 62.42분 회의 65.07초(회의당 동시 6호출), 회의 5개 동시 9.58초 실패 0, 메모리 120~490MiB, CER 은 로컬 turbo 와 비슷 | 목표를 맞추는 유일한 안. 호출 비용과 공급자 장애를 감수 |
+| **Elice API whisper-large-v3 (채택)** | 62.42분 회의 65.07초(회의당 동시 6호출), 약 2.5분 6인 정렬본(m01) 5개 동시 9.58초 실패 0, 메모리 120~490MiB, CER 은 로컬 turbo 와 비슷 | 목표를 맞추는 유일한 안. 호출 비용과 공급자 장애를 감수 |
 | GPU 서버 상시 주 전사기 (g4dn.xlarge) | CER Elice 와 같음, 62.42분 회의 159.8초. 상시 월 약 $479 | 상시는 손익 불일치. 장애 때만 켬 |
 
 결정: [0019](../../../ai/docs/basis_for_decision/member/2026-10-07-0019-elice-api-default-local-fallback.md), [0039](../../../ai/docs/basis_for_decision/ai/2026-11-04-0039-gpu-stt-server.md).
