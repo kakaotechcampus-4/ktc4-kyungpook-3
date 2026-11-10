@@ -34,6 +34,7 @@ export const minutesHandlers = [
       attendees: [],
       summary: null,
       summary_status: 'none',
+      summary_waiting_count: null,
       transcript: [],
       // 백엔드는 현재 멤버가 PM 일 때만 두 값을 true 로 준다 (meetings.py:222)
       permissions: { can_review: isPm, can_undo: isPm },

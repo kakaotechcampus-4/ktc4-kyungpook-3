@@ -43,9 +43,23 @@ it('keeps an unknown summary_status as the received text', () => {
   const dto = {
     ...structuredClone(minutesFixtures[0]),
     summary: null,
-    summary_status: 'awaiting_approval',
+    summary_status: 'regenerating',
   }
-  expect(toMinutes(dto).summaryStatus).toEqual({ unknown: 'awaiting_approval' })
+  expect(toMinutes(dto).summaryStatus).toEqual({ unknown: 'regenerating' })
+})
+
+it('passes the awaiting status and the remaining approval count through', () => {
+  const dto = {
+    ...structuredClone(minutesFixtures[0]),
+    summary: null,
+    summary_status: 'awaiting_approval',
+    summary_waiting_count: 3,
+  }
+  expect(toMinutes(dto)).toMatchObject({
+    summaryStatus: 'awaiting_approval',
+    summaryWaitingCount: 3,
+  })
+  expect(toMinutes(minutesFixtures[0]).summaryWaitingCount).toBeNull()
 })
 
 it('preserves false permissions and does not treat an empty display name as null', () => {

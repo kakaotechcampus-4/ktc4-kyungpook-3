@@ -63,7 +63,7 @@ describe('요약 상태', () => {
     const served = structuredClone(db.minutes.find(({ meeting_id }) => meeting_id === 'mt_07')!)
     server.use(
       http.get('/api/v1/meetings/mt_07/minutes', () =>
-        ok({ ...served, summary: null, summary_status: 'awaiting_approval' }),
+        ok({ ...served, summary: null, summary_status: 'regenerating' }),
       ),
     )
     const panel = await openMinutes(MT_07, '2주차 정기회의')
