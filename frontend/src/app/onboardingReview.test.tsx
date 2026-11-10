@@ -257,11 +257,12 @@ describe('연동 단계 둘러보기', () => {
     renderApp('/onboarding/ws_03/connect_discord?review=1')
     const card = await screen.findByRole('region', { name: '디스코드 연동' })
     expect(await within(card).findByText('연결됨')).toBeInTheDocument()
+    // `어떻게 쓰나요?` 는 진행 버튼이 아니라 안내를 여는 글자 링크다 (#650)
     expect(
       within(card)
         .getAllByRole('button')
         .map((button) => button.textContent),
-    ).toEqual(['다음'])
+    ).toEqual(['어떻게 쓰나요?', '다음'])
     expect(within(stepNav()).getByRole('button', { name: '이전 단계' })).toBeEnabled()
     expect(within(stepNav()).getByRole('button', { name: '다음 단계' })).toBeEnabled()
   })
@@ -307,7 +308,7 @@ describe('연동 단계 둘러보기', () => {
       within(returned)
         .getAllByRole('button')
         .map((button) => button.textContent),
-    ).toEqual(['다음'])
+    ).toEqual(['어떻게 쓰나요?', '다음'])
 
     await userEvent.click(within(stepNav()).getByRole('button', { name: '다음 단계' }))
     expect(await screen.findByRole('heading', { name: 'Notion 연결' })).toBeInTheDocument()
