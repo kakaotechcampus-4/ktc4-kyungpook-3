@@ -162,7 +162,7 @@ function Card({
           {signal.detail === null ? null : (
             <StageDetailText detail={signal.detail} className={META} />
           )}
-          {/* 칸 수는 회의 출처마다 다르다 — 녹음 셋, 채팅 둘. 출처를 모르면 칸·수를 그리지 않는다 (#483) */}
+          {/* 칸 수는 회의 출처마다 다르다 — 녹음 다섯(처리 단계가 없는 옛 응답은 셋), 채팅 둘. 출처를 모르면 칸·수를 그리지 않는다 (#483) */}
           {signal.steps === null ? null : (
             <div aria-hidden="true" className="grid auto-cols-fr grid-flow-col gap-4">
               {signal.steps.map((state, index) => (

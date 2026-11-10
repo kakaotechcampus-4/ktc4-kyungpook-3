@@ -83,13 +83,16 @@ const CHAT_STEPS: readonly StepDefinition[] = [
 /**
  * 단계 목록과 단계 판정에 쓸 서버 단계. 채팅 회의는 `processing` 을 단계 판정에 쓰지 않는다.
  * 녹음 회의는 유효한 `processing` 이 있으면(보고 전 stage null 포함) 다섯 단계다 — 보고 전을 세 단계로 두면 첫 보고 때 목록이 바뀐다.
+ * 화자 지정 대기도 다섯 단계다 — 서버는 정리 중일 때만 `processing` 을 줘서, 세 단계로 두면 대기를 오갈 때 목록이 바뀐다.
  * 모르는 stage 는 매퍼가 `processing` 째 null 로 내려 세 단계가 된다
  */
 function stepList(
   source: MeetingSource,
+  status: MeetingStatus,
   processing: MeetingProcessing | null,
 ): { definitions: readonly StepDefinition[]; stage: ProcessingStage | null } {
   if (source === 'chat') return { definitions: CHAT_STEPS, stage: null }
+  if (status === 'awaiting_speakers') return { definitions: STAGED_RECORDING_STEPS, stage: null }
   if (processing === null) return { definitions: LEGACY_RECORDING_STEPS, stage: null }
   return { definitions: STAGED_RECORDING_STEPS, stage: processing.stage }
 }
@@ -107,7 +110,7 @@ export function processingSteps(
   source: MeetingSource,
   processing: MeetingProcessing | null,
 ): ProcessingStep[] {
-  const { definitions, stage } = stepList(source, processing)
+  const { definitions, stage } = stepList(source, status, processing)
   const stageRank = definitions.findIndex(({ stages }) => stage !== null && stages.includes(stage))
   const progressRank = definitions.reduce(
     (rank, { doneWhen }, index) =>

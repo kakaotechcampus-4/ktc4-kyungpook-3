@@ -132,6 +132,16 @@ describe('processingSteps — 서버가 처리 단계를 알리는 녹음 회의
     ])
   })
 
+  it('화자 지정 대기는 서버가 처리 단계를 주지 않아도 다섯 단계이고 진행 중 단계가 없다', () => {
+    expect(states(STT, 'awaiting_speakers', 'manual_upload', null)).toEqual([
+      'done',
+      'waiting',
+      'waiting',
+      'waiting',
+      'waiting',
+    ])
+  })
+
   it('채팅 회의는 처리 단계가 있어도 대화 모으기 → 뽑아내기 두 단계이고 progress 로만 정한다', () => {
     expect(labels(NONE, 'processing', 'chat', reported('extract'))).toEqual([
       '대화 모으기',
@@ -194,11 +204,6 @@ describe('processingSteps — 처리 단계가 없는 옛 응답 (U4-4, #483)', 
 
   it('정리 중이 아니면 진행 중 단계를 만들지 않는다', () => {
     expect(states(STT, 'failed', 'manual_upload', null)).toEqual(['done', 'waiting', 'waiting'])
-    expect(states(SOURCES, 'awaiting_speakers', 'manual_upload', null)).toEqual([
-      'done',
-      'done',
-      'waiting',
-    ])
   })
 
   it('#383 뒤 extracted 가 남은 회의 — 완료는 모두 끝, 실패는 마지막 단계를 끝내지 않았다 (#384)', () => {
