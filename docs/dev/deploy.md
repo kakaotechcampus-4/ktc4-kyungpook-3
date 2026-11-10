@@ -82,6 +82,7 @@ flowchart TB
 | GPU 전사 | [`ai/deploy/gpu-stt/`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/ai/deploy/gpu-stt) | Elice 전사 장애 때 쓰는 GPU 대기 서버 절차 |
 
 - 리버스 프록시(Caddy) 설정 파일은 저장소에 없다. 저장소로는 설정 위치·내용을 알 수 없고, 서버에서 직접 관리한다.
+- 녹음 업로드(`POST /api/v1/workspaces/{id}/meetings/upload`)는 백엔드가 본문을 받는 동안 `UPLOAD_MAX_BYTES` + 1MiB 를 넘으면 413 으로 끊는다. 리버스 프록시에서도 이 경로의 본문 상한을 약 210MB 로 두는 것을 권한다(Caddy 는 `request_body` 의 `max_size`). 다른 경로는 이 상한과 상관없다. 서버 설정에 적용됐는지는 저장소로 확인할 수 없다([M5 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m5/result.md)).
 - systemd 유닛은 `/etc/systemd/system/` 에 복사해 설치한다. 유닛 파일 변경은 자동 배포에 포함되지 않는다(채팅 폴링 유닛만 예외적으로 이미 설치된 서버에서 덮어쓴다). 저장소 유닛은 "예시"이고 운영 계정은 drop-in 으로 덮는다.
 
 ## 배포 절차 요약
