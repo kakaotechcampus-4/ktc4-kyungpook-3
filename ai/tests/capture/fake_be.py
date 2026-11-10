@@ -251,8 +251,12 @@ class FakeBe:
         applied = m["status"] == "processing" and (old is None or self.STAGES.index(stage) > self.STAGES.index(old))
         if applied:
             m["stage"] = stage
+            m["stt"] = body.get("stt") if stage == "stt" else None
+        elif m["status"] == "processing" and old == stage == "stt" and body.get("stt") is not None:
+            applied = m.get("stt") != body["stt"]
+            m["stt"] = dict(body["stt"])
         return _ok(200, {"meeting_id": mid, "status": m["status"], "processing_stage": m.get("stage"),
-                         "applied": applied})
+                         "stt": m.get("stt"), "applied": applied})
 
     def _create_extraction(self, body: dict):
         fields = [{"loc": ["body", "items", i, "evidence_speaker_member_id"], "msg": "String should have at most 36 characters"}

@@ -95,3 +95,80 @@ def test_retry_legacy_session_lines_writes_namespaced_outputs_with_same_sequence
     assert result['transcript_json'] == out / 'session_upload-A.transcript.json'
     assert (out / 'session_upload-A__1_500__echo.json').exists()
     assert T.build_session_transcript(out, 'upload-A', 'echo') == result['transcript_json']
+
+
+def test_retry_track_progress_keeps_input_wav_total_and_credits_unaffected_track(tmp_path):
+    wavs = _session(tmp_path)
+    out = tmp_path / 'out'
+    T.run_session(wavs, {}, EchoStt(), model_name='echo', out_dir=out, session_id='retry-count')
+    path = out / 'session_retry-count.lines.json'
+    lines = T.lines_from_json(path)
+    for line in lines:
+        if line.speaker_id == '1':
+            line.error = 'retry me'
+    T.lines_to_json(lines, path)
+    seen = []
+    result = T.retry_failed_lines(wavs, {}, EchoStt(), model_name='echo', mode='chunk', out_dir=out,
+                                 session='retry-count', track_progress=lambda *count: seen.append(count))
+    assert seen == [(0, 2), (1, 2), (2, 2)]
+    assert result['retried'] == 2 and result['still_failed'] == 0
+    assert [line.seq for line in T.lines_from_json(path)] == [1, 2, 3]
+
+
+def test_track_hook_exception_prevents_transcript_output(tmp_path):
+    import pytest
+    out = tmp_path / 'out'
+
+    def stop(done, total):
+        if done == total:
+            raise RuntimeError('terminal')
+
+    with pytest.raises(RuntimeError, match='terminal'):
+        T.run_session(_session(tmp_path), {}, EchoStt(), model_name='echo', out_dir=out,
+                      session_id='stopped', track_progress=stop)
+    assert not out.exists()
+
+
+def test_retry_hook_exception_does_not_overwrite_saved_failed_lines(tmp_path):
+    import pytest
+    wavs = _session(tmp_path)
+    out = tmp_path / 'out'
+    T.run_session(wavs, {}, EchoStt(), model_name='echo', out_dir=out, session_id='stop-retry')
+    path = out / 'session_stop-retry.lines.json'
+    lines = T.lines_from_json(path)
+    for line in lines:
+        line.error = 'failed'
+    T.lines_to_json(lines, path)
+    before = {p.name: p.read_bytes() for p in out.iterdir()}
+
+    def stop(done, total):
+        if done:
+            raise RuntimeError('terminal')
+
+    with pytest.raises(RuntimeError, match='terminal'):
+        T.retry_failed_lines(wavs, {}, EchoStt(), model_name='echo', mode='chunk', out_dir=out,
+                             session='stop-retry', track_progress=stop)
+    assert {p.name: p.read_bytes() for p in out.iterdir()} == before
+
+
+def test_retry_all_failed_results_still_report_processed_wav_total(tmp_path, monkeypatch):
+    from stt import batch as B
+    monkeypatch.setattr(B, 'RETRY_WAIT_S', 0)
+    wavs = _session(tmp_path)
+    out = tmp_path / 'out'
+    T.run_session(wavs, {}, EchoStt(), model_name='echo', out_dir=out, session_id='retry-failed')
+    path = out / 'session_retry-failed.lines.json'
+    lines = T.lines_from_json(path)
+    for line in lines:
+        line.error = 'failed'
+    T.lines_to_json(lines, path)
+
+    class Broken:
+        def transcribe(self, *args):
+            raise RuntimeError('offline')
+
+    seen = []
+    result = T.retry_failed_lines(wavs, {}, Broken(), model_name='echo', mode='chunk', out_dir=out,
+                                 session='retry-failed', track_progress=lambda *count: seen.append(count))
+    assert seen == [(0, 2), (1, 2), (2, 2)]
+    assert result['retried'] == result['still_failed'] == 3
