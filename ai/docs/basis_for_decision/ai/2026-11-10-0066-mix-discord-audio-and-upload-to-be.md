@@ -19,7 +19,7 @@
 
 ## 결정
 
-- [`prune_audio`](../../../capture/recorder.py)가 인계가 끝난 디스코드 회의의 트랙 wav 를 지우기 직전에 [`audio_outbox.enqueue`](../../../capture/audio_outbox.py)로 섞는다. 섞지 못하면 예외가 나가 그 회의는 이번 바퀴에 wav 를 지우지 않는다. wav 삭제 규칙(0055)은 그대로이고, 삭제는 업로드 성공이 아니라 대기 폴더에 넣은 뒤에 한다. 업로드 회의(`source=upload`)는 섞지 않는다.
+- [`prune_audio`](../../../capture/recorder.py)가 인계가 끝난 디스코드 회의의 트랙 wav 를 지우기 직전에 [`audio_outbox.enqueue`](../../../capture/audio_outbox.py)로 섞는다. 섞지 못하면(디스크 가득 참 등) 로그를 남기고 다시 시도하지 않은 채 wav 를 지운다. 그 회의는 웹 재생 녹음이 없다. 녹음 올리기는 곁가지라 디스크 정리를 막지 않게 했다(#670 리뷰). wav 삭제 규칙(0055)은 그대로이고, 삭제는 업로드 성공이 아니라 대기 폴더에 넣은 뒤에 한다. 업로드 회의(`source=upload`)는 섞지 않는다.
 - 섞기([audio_mix.py](../../../capture/audio_mix.py)): 트랙(16kHz 모노 PCM_16, 회의 시작이 샘플 0)을 샘플 0 에 맞춰 더해 m4a(AAC, 16kHz 모노, 32kbps)로 쓴다. 인코더는 PyAV 의 aac 이고 시스템 ffmpeg 에 기대지 않는다. 형식이 다르거나 트랙이 없으면 ValueError 로 막는다. 더한 값이 1.0 을 넘으면 최댓값이 0.95 가 되게 줄인다(AAC 가 되살릴 때 조금 넘치는 몫을 남기는 천장). 긴 회의도 10초 블록으로 읽어 메모리에 통째로 올리지 않는다.
 - 대기: `recordings/audio_outbox/<회의ID>.m4a` 와 `.json`(`meeting_id`, `workspace_id`, `handed_off_at`). 매니페스트는 읽기만 하고 올리기 상태를 쓰지 않는다. m4a 를 먼저, json 을 나중에 원자적으로 써서 json 이 있으면 m4a 도 있다.
 - 올리기: 워커가 바퀴마다 `drain` 으로 `PUT /meetings/{id}/recording` 을 부르고, 성공하면 항목을 지운다. BE 가 보관 기간이 지났다며 `stored=false` 로 답해도 응답을 받은 것이므로 지운다. 같은 파일로 다시 해도 같은 오류(`MEETING_DELETED`, `MEETING_NOT_FOUND`, `INVALID_REQUEST`, `AUDIO_FORMAT_UNSUPPORTED`, `AUDIO_TOO_LARGE`, 공간이 지워진 `WORKSPACE_NOT_FOUND`, BE 가 이 API 에서 세대를 보지 않아 나오지 않는 안전망 `PRIVACY_VERSION_CHANGED`)도 지운다. 그 밖의 오류(네트워크, 5xx, `AUDIO_UPLOAD_FAILED`, `UNAUTHENTICATED` 등)와 파일을 읽지 못한 경우는 남기고, 실패할 때마다 간격을 늘려(60초 × 2^(실패 횟수-1), 최대 1시간) 다시 한다. 횟수와 다음 시각은 항목 json 의 `attempts`·`next_at` 에 원자적으로 적고, 인계 7일 포기 규칙이 먼저다. 실패마다 10초 바퀴로 전체 m4a 를 다시 보내던 것을 막으려는 것이다. 섞은 m4a 는 `movflags=+faststart` 로 써서 moov 가 앞에 오게 한다(원문 듣기가 다 받기 전에 시작되도록). BE 설정이 없으면 건너뛴다.
@@ -29,7 +29,7 @@
 
 ## 장단점과 감수한 제약
 
-- 인계 뒤 처음 한 번 CPU 를 쓴다(회의 길이에 비례). 섞기가 계속 실패하면 그 회의의 wav 가 남는다. 단, 인계 7일이 지나면 섞기를 건너뛰고 wav 는 0055 대로 지워진다.
+- 인계 뒤 처음 한 번 CPU 를 쓴다(회의 길이에 비례). 섞기에 한 번 실패하면 다시 시도하지 않고 그 회의는 웹 재생 녹음 없이 wav 를 지운다(일시적인 오류로도 녹음을 잃을 수 있다는 대가).
 - BE 의 보관 기준은 회의 종료 시각이고 AI 의 포기 기준은 인계 시각이다. 인계가 종료보다 늦어 AI 가 조금 더 오래 시도할 수 있고, 그동안 BE 가 기간이 지났다며 `stored=false` 로 답할 수 있다. 그때도 항목은 지워진다.
 - 올리기에 실패해도 wav 는 이미 지워졌으므로 다시 섞을 수 없다. 남은 대기 m4a 가 유일한 사본이고, 7일 안에 못 올리면 그 회의는 녹음이 없다.
 - 이 PR 에서는 실제 BE·S3 연결, ffmpeg 없는 운영 서버에서의 섞기 실행, 음질 청취를 확인하지 않았다. 테스트는 스텁으로 했다. 32kbps 는 말소리 중심의 값이며 측정해 고른 것이 아니다.

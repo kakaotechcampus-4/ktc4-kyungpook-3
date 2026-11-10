@@ -579,7 +579,7 @@ def _enqueue_recording(recordings_dir: Path, m: dict, files: list[Path], now: da
     """wav 를 지우기 직전에 인계한 디스코드 회의의 트랙을 섞어 BE 로 올릴 대기 폴더에 넣는다(#659).
     인계가 끝난 디스코드 회의이고 BE 회의 ID 가 있을 때만 하고, 인계 AUDIO_KEEP_AFTER_GIVE_UP_S 가 지났으면 섞지 않는다.
     BE 가 그만큼 지난 회의는 보관 기간이 끝났다고 답하고, 섞기가 계속 실패해도 디스크를 지켜야 해서다.
-    섞지 못하면 예외가 나가 호출자가 이번 바퀴는 wav 를 지우지 않는다. 매니페스트는 읽기만 한다."""
+    섞지 못하면 예외가 나가고, 호출자(prune_audio)는 로그를 남긴 뒤 wav 를 그대로 지운다. 매니페스트는 읽기만 한다."""
     be = m.get("be") if isinstance(m.get("be"), dict) else {}
     meeting_id = be.get("meeting_id")
     if m.get("status") != STATUS_HANDED_OFF or m.get("source") == "upload" or not meeting_id:
@@ -599,7 +599,8 @@ def prune_audio(recordings_dir: Path, *, now: datetime | None = None) -> list[st
 
     트랙 wav(speakers[].file)만 지운다. 매니페스트·대본·처리 기록·diarization.json 은 남긴다. 잠긴 회의는 건너뛴다.
     AUDIO_PRUNE_SINCE 전에 인계되거나 포기한 회의(팀원 동의를 받은 검증용)는 남긴다.
-    인계한 디스코드 회의는 지우기 직전에 트랙을 섞어 audio_outbox 에 넣는다(#659). 못 넣으면 이번 바퀴는 지우지 않는다.
+    인계한 디스코드 회의는 지우기 직전에 트랙을 섞어 audio_outbox 에 넣는다(#659). 섞지 못하면 로그만 남기고 그대로 지운다
+    (그 회의는 웹 재생 녹음이 없다). 녹음 올리기가 디스크 정리를 막지 않게 하려는 것이다(#670 리뷰).
     워커가 바퀴마다 부른다. 예외는 올리지 않는다."""
     now = now or utcnow()
     recordings_dir = Path(recordings_dir)
@@ -622,7 +623,12 @@ def prune_audio(recordings_dir: Path, *, now: datetime | None = None) -> list[st
             files = _track_files(recordings_dir, m)
             if not files or not _audio_expired(recordings_dir, m, now):
                 continue
-            _enqueue_recording(recordings_dir, m, files, now)   # 섞지 못하면 예외로 빠져 wav 를 남긴다
+            try:
+                _enqueue_recording(recordings_dir, m, files, now)
+            except Exception as e:  # noqa: BLE001 - 녹음 올리기는 곁가지다. 섞지 못해도(디스크 가득 참 등) wav 는 지워 공간을 비운다
+                mid = (m.get("be") or {}).get("meeting_id")
+                print(f"[audio] {session} 녹음 섞기 실패(회의 {mid} 은 웹 재생 녹음 없이 wav 를 지운다): "
+                      f"{type(e).__name__}: {e}", flush=True)
             for f in files:
                 f.unlink(missing_ok=True)
             dropped.append(session)

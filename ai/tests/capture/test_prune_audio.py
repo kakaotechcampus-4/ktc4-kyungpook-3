@@ -225,12 +225,25 @@ def test_prune_keeps_manifest_content_unchanged(tmp_path):
     assert not [k for k in json.loads(before) if k.startswith("audio")]   # 올리기 상태가 매니페스트에 생기지 않는다
 
 
-def test_prune_keeps_wav_when_enqueue_fails(tmp_path):
+def test_prune_deletes_wav_even_when_mixing_fails(tmp_path, capsys):
+    # 녹음 올리기는 곁가지다. 섞지 못해도(디스크 가득 참 등) wav 는 지금처럼 지워 공간을 비운다(#670 리뷰)
     rec = tmp_path / "recordings"
     _real_meeting(rec, "g_1", broken=True, be={"meeting_id": "m1", "status": "done"}, stages=HANDED)
-    assert R.prune_audio(rec, now=NOW) == []
-    assert len(_wavs(rec, "g_1")) == 2          # 섞지 못했으니 이번 바퀴는 지우지 않는다
+    assert R.prune_audio(rec, now=NOW) == ["g_1"]
+    assert _wavs(rec, "g_1") == []
     assert _queued(rec) == []
+    assert "녹음 섞기 실패" in capsys.readouterr().out   # 웹 재생 녹음이 빠진 걸 로그로 알 수 있다
+
+
+def test_prune_does_not_retry_mixing_on_the_next_pass(tmp_path, monkeypatch):
+    rec = tmp_path / "recordings"
+    _real_meeting(rec, "g_1", broken=True, be={"meeting_id": "m1", "status": "done"}, stages=HANDED)
+    calls = []
+    real = R.audio_outbox.enqueue
+    monkeypatch.setattr(R.audio_outbox, "enqueue", lambda *a, **k: calls.append(1) or real(*a, **k))
+    R.prune_audio(rec, now=NOW)
+    R.prune_audio(rec, now=NOW + timedelta(seconds=10))
+    assert calls == [1]                         # wav 가 지워졌으니 다음 바퀴에 같은 섞기를 다시 하지 않는다
 
 
 def test_prune_deletes_without_mix_after_7_days(tmp_path):
