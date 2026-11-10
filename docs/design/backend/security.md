@@ -21,7 +21,7 @@
 |---|---|---|
 | 비밀번호 | PBKDF2-HMAC-SHA256 260,000회, 무작위 salt. 비교는 `hmac.compare_digest`. 없는 계정도 더미 해시로 한 번 계산해 응답 시간을 맞춘다 | [`passwords.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/passwords.py) |
 | 세션(#437) | 쿠키 `session_token`(7일)에는 원문, DB 에는 **sha256 해시만**. 쿠키 값을 해시해 찾는다. 만료 세션은 401 을 주고, 지우는 일은 정리 워커(1시간) 몫. 로그아웃은 그 행 하나, 재설정 확인은 그 계정 세션 전부를 지운다 | [`sessions.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/sessions.py) |
-| 로그인 잠금 | 같은 이메일 15분 10회, 같은 공인 IP 15분 50회 실패 → 15분 429 `TOO_MANY_LOGIN_ATTEMPTS`(`Retry-After`). 막힌 동안은 **해시 계산도 DB 연결도 없이** 끊는다. 이메일·IP 막힘, 있는·없는 이메일 응답이 같다. IPv6 는 /64, 사설 주소는 IP 제한 생략 | [`login_limit.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/login_limit.py) |
+| 로그인 잠금 | 같은 이메일 15분 10회, 같은 공인 IP 15분 50회 실패 → 15분 429 `TOO_MANY_LOGIN_ATTEMPTS`(`Retry-After`). 막힌 동안은 **해시 계산도 DB 연결도 없이** 끊는다. 이메일·IP 막힘, 있는·없는 이메일 응답이 같다. IPv6 는 /64, 사설 주소는 IP 제한 생략. 운영 프록시 뒤 XFF 위조 차단은 미확인(한계 참고) | [`login_limit.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/login_limit.py) |
 | 비밀번호 재설정 | 30분 1회용 토큰(해시 저장). 계정당 60초 1회·1시간 5회, 공인 IP 시간당 5회(#550), 전체 시간당 10통. 확인이 커밋되면 그 이메일의 로그인 막힘도 푼다 | [`password_reset.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/password_reset.py), [`password_reset_limit.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/password_reset_limit.py) |
 | 가입 이메일 인증 | 6자리 코드 10분, 코드당 5회, 재발송 60초, 시간당 5회, 전체 시간당 20통. DB 에는 HMAC 만. 맞으면 이메일을 담은 서명 증명(30분)을 준다 | [`signup_codes.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/signup_codes.py) |
 | 카카오 로그인 | state·nonce 확인 → 카카오 사용자 조회. 이미 가입한 카카오 계정이면 세션을 만든다. 아니면 서명된 대기 쿠키(HttpOnly, Secure, SameSite=Lax, 30분)에 카카오 id 와 닉네임만 담고 가입 화면으로 보낸다. 카카오가 이메일을 줘도 저장하지 않고 같은 이메일의 기존 계정과 잇지도 않는다(#610). 가입 화면에서는 이메일 인증 없이 이름·아이디만 정하며 비밀번호는 없다 | [`kakao_oauth.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/kakao_oauth.py) |
@@ -96,6 +96,7 @@ Notion·Discord 연결과 카카오 로그인이 같이 쓴다([`oauth_state.py`
 ## 한계와 다음 단계
 
 - 로그인·재설정 IP 제한이 메모리라 `--workers 1` 전제. 재시작하면 횟수가 풀린다.
+- 로그인·재설정 IP 제한은 `uvicorn --proxy-headers` 가 해석한 `request.client.host` 에 기댄다. 운영 프록시(Caddy) 뒤에서 위조한 `X-Forwarded-For` 가 걸러지는지는 아직 확인하지 않았다.
 - 전체 메일 상한은 IP 여러 개로 채울 수 있다. 로그(`reason=global`)로 알아채고 IP 를 막는 운영 대응이다.
 - 서버는 약관에 동의하지 않은 사용자의 다른 API 를 막지 않는다(FE 가 동의 화면을 띄운다).
 - 가입 코드 요청(`POST /auth/signup/code`)의 `EMAIL_ALREADY_EXISTS` 로 이메일 가입 여부가, 아이디 확인 API(`GET /auth/username-availability`, 인증·횟수 제한 없음)로 아이디 존재가 드러난다(아이디는 초대에 쓰는 공개 식별자). 남은 노출이다.
