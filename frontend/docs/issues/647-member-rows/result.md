@@ -48,7 +48,7 @@
 
 | 결함 | 고친 것 | 테스트 |
 |---|---|---|
-| (높음) 옮기기의 주인 검사가 캐시를 믿었다. 다른 탭이 바꾼 것은 캐시를 무효로 만들지 않아, 앞 팀원의 **지금** 연결(다른 계정)을 풀 수 있었다 | 앞 팀원을 풀기 전에 늘 목록을 서버에서 다시 받는다(`fetchQuery`, `staleTime: 0`). 주인이 옮길 팀원이면 요청 없이 끝난다. 확인받은 앞 팀원이면 풀고 잇는다. 그 밖이면 아무것도 보내지 않고 줄에 `그사이 연결이 바뀌었어요. 새 목록에서 다시 골라 주세요.` 를 둔다. 다시 받은 목록이 캐시에 남아 새 상태에서 다시 고른다 | `useMemberRowWrites.test.tsx` 「옮기기 전에 목록이 무효가 아니어도 다시 받는다…」 외 셋. Codex 의 재현(박민수는 1125 로, 1124 는 정하늘로 바뀐 서버, 무효 표시 없는 캐시)에서 박민수에게 가는 PATCH 가 없다 |
+| (높음) 옮기기의 주인 검사가 캐시를 믿었다. 다른 탭이 바꾼 것은 캐시를 무효로 만들지 않아, 앞 팀원의 **지금** 연결(다른 계정)을 풀 수 있었다 | 앞 팀원을 풀기 전에 늘 목록을 서버에서 다시 받는다(재리뷰 뒤로는 `fetchFresh`, 아래 「재리뷰 반영」). 주인이 옮길 팀원이면 요청 없이 끝난다. 확인받은 앞 팀원이면 풀고 잇는다. 그 밖이면 아무것도 보내지 않고 줄에 `그사이 연결이 바뀌었어요. 새 목록에서 다시 골라 주세요.` 를 둔다. 다시 받은 목록이 캐시에 남아 새 상태에서 다시 고른다 | `useMemberRowWrites.test.tsx` 「옮기기 전에 목록이 무효가 아니어도 다시 받는다…」 외 셋. Codex 의 재현(박민수는 1125 로, 1124 는 정하늘로 바뀐 서버, 무효 표시 없는 캐시)에서 박민수에게 가는 PATCH 가 없다 |
 | (중간) 온보딩 왼쪽 위 나가기가 줄 쓰기·단계 저장 중에도 나갔다. 실패와 반쯤 끝난 옮기기를 보일 화면이 없어졌다 | `ExitLink` 에 `busy` 를 두었다. 그동안 `aria-disabled` 이고 눌러도 나가지 않는다. 두 분기 모두 `writing || onboarding.isPending` 을 넘긴다 | `onboardingMembers.test.tsx` 「확인 완료 저장 중에는 나가기를 눌러도 나가지 않는다」(되살림), 「줄을 저장하는 동안에는 나가기를 눌러도 나가지 않고…」 |
 | (중간) 이름을 고친 뒤 별칭을 다시 받지 않아 팀 화면 칩에 옛 이름이 남았다 | 성공한 쓰기와, 반영됐을 수 있는 실패·응답을 읽지 못함·반쯤 끝난 옮기기에서 팀원과 함께 `memberAliasesQueryOptions` 도 다시 받는다. MSW 는 백엔드처럼 만들 때 이름 별칭, 이름을 바꾸면 옛 이름 별칭 교체, Discord 계정이 바뀌면 닉네임 별칭 정리·추가를 한다 | `teamAliases.test.tsx` 「팀원 관리 창에서 이름을 고치면 펼쳐 둔 별칭도 새 이름으로 바뀐다…」 |
 | (중간) 저장하지 않은 이름 고치기가 단계 완료·건너뛰기·창 닫기에서 확인 없이 사라졌다 | `N명 확인 완료`·`나중에 하기`·하단 `다음 단계`·미연결 화면의 `다음`/`건너뛰기`, 창의 `닫기`·Esc·바깥 클릭이 `guardLeave` 를 거친다. 이름 칸 안의 Esc 는 여전히 고치기만 취소한다 | `onboardingMembers.test.tsx` 「`확인 완료` 는 공통 이탈 확인을 거치고…」, 「`나중에 하기` 와 `다음 단계` 도…」, 「이름을 고치다 `건너뛰기` 를 누르면…」, `memberRows.test.tsx` 「고친 이름을 저장하지 않고 `닫기`·Esc·바깥 클릭으로…」 |
@@ -56,6 +56,17 @@
 | (낮음) 빈 이름이 문구 없이 넘어갔다. 표시 이름이 빈 계정은 이름 없이 추가하려 했다 | 빈 이름 고치기는 칸을 연 채 `이름을 입력해 주세요.` 를 둔다. 칸을 닫는 것은 자기 이름 그대로일 때뿐이다. `팀원으로 추가` 는 표시 이름의 앞뒤 공백을 지우고 비면 사용자명을 쓴다 | `memberRows.test.tsx` 「이름을 비우고 저장하면…」, 「Discord 표시 이름이 공백뿐인 계정을…」, `memberRows.test.ts` 「빈 이름은 보내지 않고…」 |
 
 남는 한계. 다시 받은 뒤 첫 PATCH 를 보내기까지의 짧은 사이에 생긴 변경은 FE 만으로 막지 못한다. BE 의 조건부 해제나 원자 이동 API(#662)가 필요하다.
+
+### 재리뷰 반영
+
+같은 두 리뷰어(Codex, Grok)가 위 반영을 다시 보고 결함 넷을 더 찾았다. 항목마다 재현 테스트를 먼저 쓰고, 고치기 전 코드에서 실패하는 것을 본 뒤 고쳤다.
+
+| 결함 | 고친 것 | 테스트 |
+|---|---|---|
+| (높음, Codex·Grok) 옮기기의 다시 받기가 확인 전에 날아간 목록 조회에 합류했다. `fetchQuery` 는 진행 중인 같은 key 의 조회를 그대로 돌려준다. 그 조회가 그 전 주인을 읽었으면 다른 계정의 연결을 풀었다 | 다시 받기를 `fetchFresh` 로 바꿨다. 진행 중인 목록 조회를 거두고, 확인 뒤에 출발한 조회의 답으로만 주인을 판정한다. 그 조회의 `signal` 은 Query 의 `signal` 과 누른 세션의 `signal` 을 묶은 것이다(`AbortSignal.any`). 이를 위해 `fetchMembers(workspaceId, signal)` 을 뽑아 `memberListQueryOptions` 도 그것을 쓴다. 응답을 잃은 뒤의 다시 받기도 같은 길을 쓴다 | `useMemberRowWrites.test.tsx` 「옮기기를 확인하기 전에 출발한 목록 조회는 주인 판정에 쓰지 않는다…」(Codex 재현 그대로), 「옮기기 전 목록 조회를 기다리는 사이 세션이 끝나면 그 조회를 끊고…」 |
+| (낮음, Grok) 주인이 바뀌어 옮기기를 거절하면 팀원 목록은 새것인데 별칭은 그 전 것이었다 | 거절에서도 별칭을 다시 받는다. 보낸 것은 없지만 거절을 낸 다시 받은 목록은 다른 곳의 쓰기를 담고 있고, 그 쓰기가 별칭도 바꿨다 | `useMemberRowWrites.test.tsx` 「주인이 바뀌어 옮기기를 거절하면 다시 받은 팀원 목록에 맞춰 별칭도 다시 받는다」 |
+| (낮음, Grok) Discord 미연결 팀원 관리 창의 `설정에서 Discord 연결하기` 가 쓰는 중에도 페이지를 떠났다 | 쓰는 동안(`useMemberRowsBusy`) 링크가 `aria-disabled` 이고 눌러도 떠나지 않는다. 그 밖에는 전처럼 `GuardedLink` 의 이탈 확인을 거친다 | `team.test.tsx` 「팀원을 추가하는 동안 설정 링크는 잠겨 눌러도 떠나지 않고…」 |
+| (낮음, Grok) MSW 의 Discord 닉네임 별칭이 `display_name` 하나로 골랐다. 백엔드는 서버 별명(`nick`) → 계정 표시 이름(`global_name`) 순으로 한글만인 첫 값을 고르고 사용자 이름은 보지 않는다 | 모의 Discord 사용자에 `nick`·`global_name` 을 두고(`MockDiscordUser`, 응답에는 싣지 않는다) 백엔드와 같은 순서로 고른다. 기존 픽스처는 `display_name` 과 맞게 채웠다. `1124` 의 `display_name: null` 은 백엔드라면 사용자 이름이 들어갈 자리지만 화면의 빈 표시 이름 경우를 보려고 그대로 둔다 | `member.integration.test.ts` 「Discord nickname alias on link」 셋 |
 
 ### #660 흡수
 
@@ -89,6 +100,20 @@ develop 의 #660(Discord 를 연결한 팀도 서버에 없는 사람을 이름�
 | `npm run build` | 통과(기존 500 kB 청크 경고, 기존 문서 마크다운의 CSS 경고 1건) |
 | `npx vitest run <바꾼 테스트와 바꾼 모듈을 쓰는 테스트 28개> --maxWorkers=1` | 28 파일 465 테스트 통과 |
 | `E2E_PORT=5248 npx playwright test e2e/settings-team.e2e.ts e2e/signup-onboarding.e2e.ts e2e/member-add-discord.e2e.ts --workers=1` | 13 통과 |
+
+재리뷰 반영 뒤(2026-11-10, 같은 워크트리) 다시 돌렸다. 새 테스트는 모두 고치기 전 코드에서 먼저 실패했다.
+
+| 명령 | 결과 |
+|---|---|
+| 고치기 전 `useMemberRowWrites.test.tsx` (진행 중 조회 재현) | 1 실패, 8 통과. 실패 내용은 `PATCH /members/mb_02`·`PATCH /members/mb_03` 이 나간 것이다 |
+| 세션 `signal` 을 빼고 `useMemberRowWrites.test.tsx` (세션 종료 재현) | 1 실패, 9 통과 |
+| 고치기 전 `useMemberRowWrites.test.tsx` (거절 뒤 별칭) | 1 실패, 10 통과 |
+| 고치기 전 `team.test.tsx -t "설정 링크는 잠겨"` | 1 실패 |
+| 고치기 전 `member.integration.test.ts` | 2 실패, 15 통과 |
+| `npx vitest run <바꾼 테스트와 바꾼 모듈을 쓰는 테스트 22개> --maxWorkers=1` | 22 파일 300 테스트 통과 |
+| `npm run typecheck`·`npm run lint`·`npx prettier --check . '!.verify/**'` | 통과 |
+| `npm run build` | 통과(기존 500 kB 청크 경고, 기존 CSS 경고 1건) |
+| `E2E_PORT=5248 npx playwright test e2e/member-add-discord.e2e.ts e2e/settings-team.e2e.ts --workers=1` | 10 통과 |
 
 재현 테스트(`memberRows.test.tsx` 「이슈의 재현(member-rows)…」)가 버그를 잡는지도 확인했다. 옮기기의 첫 요청을 `display_name` PATCH 로 바꾸면 이 테스트가 실패했다. 확인한 뒤 되돌렸다.
 
