@@ -544,6 +544,8 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 
 2026-11-10 #613 FE 사용: Discord 를 연결하지 않은 팀의 온보딩 4단계와 팀원 연결 창이 `POST /members` 를 `{workspace_id, display_name}` 만으로 보낸다(`discord_user_id` 키 없음). 요청 형식은 위 그대로이고 BE 는 바꾸지 않았다. 서버는 같은 이름의 팀원을 막지 않는다. FE 가 보내기 전에 지금 팀원 목록과 이름(앞뒤 공백 제거, 대소문자 그대로)을 견줘 막는다(D-187). 같은 이름 거절을 서버 규약으로 둘지는 합의하지 않았다.
 
+2026-11-10 #647 FE 사용: 팀원 관리 창과 온보딩 4단계가 팀원 한 명이 한 줄인 목록에서 줄마다 바로 보낸다. 이름 고치기는 `PATCH /members/{id}` `{display_name}`, 계정 잇기는 `{discord_user_id}`, 연결 풀기는 `{discord_user_id: null}` 이다. 다른 팀원에 연결된 계정을 옮길 때는 앞 팀원에 `{discord_user_id: null}` 을 보낸 뒤 새 팀원에 `{discord_user_id}` 를 보낸다. 같은 계정을 두 팀원에 붙이면 409 `DISCORD_USER_ALREADY_MAPPED` 라서다. 두 요청을 묶는 API 는 없어 두 번째가 실패하면 앞 팀원 연결만 풀린 채 남고 FE 가 그 상태를 보이고 다시 시도하게 한다. 연결 안 된 Discord 계정으로 팀원을 만들 때는 `POST /members` `{workspace_id, display_name, discord_user_id}` 이고 `display_name` 은 Discord 표시 이름(없으면 사용자명)이다. 요청 형식은 위 그대로이고 BE 는 바꾸지 않았다. 팀원 삭제는 BE API 가 없어 쓰지 않는다(#637). 근거: [D-189](../decision/frontend-decisions.md), MSW 기준 검증, 실서버 미검증.
+
 계정 영구 탈퇴용 익명 기록 주체는 기존 명단 비활성화와 구분한다. 영구 탈퇴자의 대화는 PM 목록·상세·읽음에 남고 표시명은 `탈퇴한 사용자`, `web_reply_available`은 false다. 프로필 수정·별칭 추가·초대·새 발송과 늦은 봇 결과는 거절한다. 기존 `is_deleted`만 있는 명단 비활성화의 unread 0·읽음 POST 404는 유지한다. [익명 주체 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-09-withdrawn-record-actor.md)에 첫 구현의 범위를 기록했고, 본인 탈퇴 API·화면과 기록용 목록은 위 [계정 탈퇴 규약](#계정-탈퇴와-정리-상태-575-2026-11-09)을 따른다. 실제 외부 제공자·운영 계정의 삭제를 확인한 기록은 아니다.
 
 - `alias_type` 은 `realname` \| `nickname` \| `mention` \| `inferred`, `source` 는 `manual` \| `discord_profile` \| `learned` \| `display_name`.
