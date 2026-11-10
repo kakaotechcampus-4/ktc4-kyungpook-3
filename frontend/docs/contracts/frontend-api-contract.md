@@ -523,6 +523,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 | GET | `/api/v1/members/aliases?workspace_id=` | 별칭 목록 |
 | GET | `/api/v1/members/unresolved-aliases?workspace_id=` | **미매칭 이름** |
 | DELETE | `/api/v1/members/aliases/{alias_id}` | 204 |
+| DELETE | `/api/v1/members/{member_id}` | 팀원 삭제. PM 전용, 204 (아래 2026-11-10 #637) |
 
 ```jsonc
 // MemberResponse
@@ -548,6 +549,8 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 
 2026-11-10 #660 FE 사용: Discord 를 연결한 팀의 팀원 연결 창과 온보딩 4단계도 서버에 없는 사람을 같은 형식(`{workspace_id, display_name}`)으로 만든다(D-188). 요청 형식과 BE 는 바꾸지 않았다.
 2026-11-10 #647 FE 사용: 팀원 관리 창과 온보딩 4단계가 팀원 한 명이 한 줄인 목록에서 줄마다 바로 보낸다. 이름 고치기는 `PATCH /members/{id}` `{display_name}`, 계정 잇기는 `{discord_user_id}`, 연결 풀기는 `{discord_user_id: null}` 이다. 다른 팀원에 연결된 계정을 옮길 때는 앞 팀원에 `{discord_user_id: null}` 을 보낸 뒤 새 팀원에 `{discord_user_id}` 를 보낸다. 같은 계정을 두 팀원에 붙이면 409 `DISCORD_USER_ALREADY_MAPPED` 라서다. 두 요청을 묶는 API 는 없어 두 번째가 실패하면 앞 팀원 연결만 풀린 채 남고 FE 가 그 상태를 보이고 다시 시도하게 한다. 연결 안 된 Discord 계정으로 팀원을 만들 때는 `POST /members` `{workspace_id, display_name, discord_user_id}` 이고 `display_name` 은 Discord 표시 이름(없으면 사용자명)이다. 요청 형식은 위 그대로이고 BE 는 바꾸지 않았다. 팀원 삭제는 BE API 가 없어 쓰지 않는다(#637). 근거: [D-190](../decision/frontend-decisions.md), MSW 기준 검증, 실서버 미검증.
+
+2026-11-10 #637 BE 구현: `DELETE /members/{member_id}` 는 팀원을 명단에서 뺀다. 본문 없이 204 를 돌려준다. 행은 지우지 않고 `is_deleted` 만 켜며 이름·`discord_user_id`·로그인 연결은 이력용으로 남긴다(탈퇴의 익명화와 다르다). 그 공간의 PM 만 부른다. 일반 팀원과 다른 공간의 사용자는 403 `FORBIDDEN`, 없거나 탈퇴했거나 이미 지운 팀원은 404 `MEMBER_NOT_FOUND`, 로그인 계정이 있는 PM 이 남지 않게 되면(마지막 PM 이 자기를 지울 때) 409 `LAST_PM_REQUIRED` 다. 지우면 기본 `GET /members` 목록·담당자 찾기·봇 이름 목록에서 빠지고, 끝나지 않은(`done` 이 아닌) 태스크의 담당이 비워진다(태스크 이력 `assignee`, `change_source=manual`, `changed_by` 는 지운 PM). `done` 태스크와 지운 태스크는 그대로다. 대기 초대는 `canceled`, 예약 재촉 묶음과 리마인드는 `cancelled`, 안 나간 DM 은 `failed`(`discord_not_linked`) 가 되고 대화는 남는다. 같은 디스코드 계정은 다른 팀원에 다시 이을 수 있다. 지운 팀원은 `include_withdrawn=true` 목록에도 들어오지 않아, 이력에 남은 그 팀원 ID 의 이름을 FE 가 이 목록으로 찾지 못한다. 지운 팀원의 `GET /members/{id}` 는 이력용으로 200 이고, `PATCH` 는 404 `MEMBER_NOT_FOUND` 다. FE 화면은 #647 이 붙이며 아직 이 API 를 쓰지 않는다. 생산자 코드만 바꾼 현재 구현이고 파트 합의 기록은 아니다. 근거: [members.py](../../../backend/app/api/members.py) `delete_member`, [결정 기록](../../../backend/docs/plan/m1/basis-for-decision/2026-11-10-member-delete-decision.md).
 
 계정 영구 탈퇴용 익명 기록 주체는 기존 명단 비활성화와 구분한다. 영구 탈퇴자의 대화는 PM 목록·상세·읽음에 남고 표시명은 `탈퇴한 사용자`, `web_reply_available`은 false다. 프로필 수정·별칭 추가·초대·새 발송과 늦은 봇 결과는 거절한다. 기존 `is_deleted`만 있는 명단 비활성화의 unread 0·읽음 POST 404는 유지한다. [익명 주체 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-09-withdrawn-record-actor.md)에 첫 구현의 범위를 기록했고, 본인 탈퇴 API·화면과 기록용 목록은 위 [계정 탈퇴 규약](#계정-탈퇴와-정리-상태-575-2026-11-09)을 따른다. 실제 외부 제공자·운영 계정의 삭제를 확인한 기록은 아니다.
 
