@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { clearTrackedMeetings } from '@/entities/meeting'
@@ -565,5 +565,67 @@ describe('리뷰 #672 마지막 반영', () => {
     expect(within(panel).queryByRole('alert')).toBeNull()
     await user.click(within(panel).getByRole('button', { name: '취소' }))
     expect(within(panel).queryByRole('alert')).toBeNull()
+  })
+})
+
+describe('리뷰 #672 마지막 재반영', () => {
+  function failRevertAway() {
+    const stored = db.minutes.find(({ meeting_id }) => meeting_id === 'mt_09')!.transcript[1]
+    Object.assign(stored, { text: '이미 고친 문장', edited: true, original_text: LINE_1 })
+    server.use(
+      http.patch('/api/v1/meetings/:meetingId/transcript/:seq', () =>
+        fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400),
+      ),
+    )
+  }
+
+  it('접힌 줄의 실패 문구는 5분이 지나도 남고, 그 줄 단추의 설명이다', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    onTestFinished(() => {
+      vi.useRealTimers()
+    })
+    failRevertAway()
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    await openMinutes()
+    let panel = await openTranscript(user)
+    await user.click(within(panel).getByRole('button', { name: '고친 발화 — 원문 보기' }))
+    await user.click(within(panel).getByRole('button', { name: '원래 문장으로 되돌리기' }))
+    await within(panel).findByRole('alert')
+    await user.click(screen.getByRole('tab', { name: /요약/ }))
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6 * 60_000)
+    })
+    panel = await openTranscript(user)
+
+    const alerts = within(panel).getAllByRole('alert')
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0]).toHaveTextContent('발화는 1~10,000자로 적어 주세요.')
+    expect(
+      within(panel).getByRole('button', { name: '이미 고친 문장' }),
+    ).toHaveAccessibleDescription(
+      '발화는 1~10,000자로 적어 주세요. 발화를 누르면 잘못 적힌 이름이나 용어를 고칠 수 있어요.',
+    )
+  })
+
+  it('제목 되돌리기 실패를 접으면 문구가 제목 고치기 단추의 설명이다', async () => {
+    server.use(
+      http.patch('/api/v1/meetings/:meetingId/title', () =>
+        fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400),
+      ),
+    )
+    db.titleEdits.mt_09 = { original: '처음 제목' }
+    const user = userEvent.setup()
+    await openMinutes()
+    const toggle = screen.getByRole('button', { name: '고친 제목 — 처음 제목 보기' })
+    await user.click(toggle)
+    await user.click(screen.getByRole('button', { name: '처음 제목으로 되돌리기' }))
+    await screen.findByRole('alert')
+    await user.click(toggle)
+
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: '제목 고치기' })).toHaveAccessibleDescription(
+      '제목은 1~200자로 적어 주세요.',
+    )
   })
 })

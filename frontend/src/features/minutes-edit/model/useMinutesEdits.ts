@@ -77,13 +77,18 @@ function useEdit<Target, Result>({
     undefined,
   )
   const failure = latest === undefined ? null : inlineFailure(latest, kind)
+  /** 끝난 시도(실패·성공)를 mutation 캐시에서 뺀다. 그 줄을 다시 열거나 새로 저장할 때 부른다. 그래서 key 마다 끝난 시도는 많아야 하나다 */
   const clearFailure = () => {
     const cache = queryClient.getMutationCache()
-    for (const failed of cache.findAll({ mutationKey, status: 'error' })) cache.remove(failed)
+    for (const settled of cache.findAll({ mutationKey }))
+      if (settled.state.status !== 'pending') cache.remove(settled)
   }
   const mutation = useMutation<Result, Error, Variables<Target>>({
     mutationKey,
     retry: false,
+    // 실패 문구를 이 요청의 결과에서 읽는다. 기본 5분 수거를 끄고, 지우기는 clearFailure 가 맡는다.
+    // 세션이 끝나도 남을 수 있지만 다른 세션의 실패는 보이지 않고(inlineFailure), 앱을 버릴 때 queryClient.clear 가 비운다
+    gcTime: Infinity,
     mutationFn: async ({ target, session }) => {
       // 앞선 일을 기다리는 사이 세션이 끝났을 수 있다. 그대로 보내면 다음에 로그인한 계정의 쿠키로 저장된다
       if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)

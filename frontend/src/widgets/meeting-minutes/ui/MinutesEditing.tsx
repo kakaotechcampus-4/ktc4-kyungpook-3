@@ -157,7 +157,9 @@ export function EditableTitle({
   const editButton = useRef<HTMLButtonElement>(null)
   const returnFocus = useReturnFocus(editing, editButton)
   const originalId = useId()
+  const failureId = useId()
   const failure = edit.failure?.message ?? null
+  const collapsedFailure = failure !== null && !(titleEdited && showOriginal)
 
   const close = () => {
     returnFocus()
@@ -193,6 +195,7 @@ export function EditableTitle({
           ref={editButton}
           type="button"
           aria-label="제목 고치기"
+          aria-describedby={collapsedFailure ? failureId : undefined}
           className={ICON_BUTTON}
           onClick={() => {
             edit.clearFailure()
@@ -202,8 +205,8 @@ export function EditableTitle({
           <Icon name="edit" size={15} />
         </button>
       </div>
-      {failure !== null && !(titleEdited && showOriginal) ? (
-        <p role="alert" className={FAILURE}>
+      {collapsedFailure ? (
+        <p id={failureId} role="alert" className={FAILURE}>
           {failure}
         </p>
       ) : null}
@@ -341,6 +344,7 @@ export function EditableLine({
   const returnFocus = useReturnFocus(editing, lineButton)
   const originalId = useId()
   const savingId = useId()
+  const failureId = useId()
   const { seq } = line
   const mine = seq !== null && edit.failure?.target.seq === seq
   const failure = mine ? edit.failure!.message : null
@@ -361,6 +365,9 @@ export function EditableLine({
     if (mine) edit.clearFailure()
     if (onClose()) returnFocus()
   }
+  const originalShown = line.edited && line.originalText !== null && showOriginal
+  /** 고치는 칸·원문 칸이 없을 때의 실패. 그 줄 아래에 보이고 줄 단추의 설명이 된다 */
+  const collapsedFailure = failure !== null && !editing && !originalShown
 
   return (
     <>
@@ -394,7 +401,9 @@ export function EditableLine({
             ref={lineButton}
             type="button"
             className={LINE_BUTTON}
-            aria-describedby={saving ? savingId : hintId}
+            aria-describedby={
+              saving ? savingId : collapsedFailure ? `${failureId} ${hintId}` : hintId
+            }
             // 이 줄의 저장·되돌리기 응답 전에는 다시 열지 않는다. 열면 초안이 요청 전 문장이라 응답을 다시 덮는다
             aria-disabled={saving || undefined}
             aria-busy={saving || undefined}
@@ -407,10 +416,8 @@ export function EditableLine({
             {line.text}
           </button>
         )}
-        {failure !== null &&
-        !editing &&
-        !(line.edited && line.originalText !== null && showOriginal) ? (
-          <p role="alert" className={FAILURE}>
+        {collapsedFailure ? (
+          <p id={failureId} role="alert" className={FAILURE}>
             {failure}
           </p>
         ) : null}
@@ -419,7 +426,7 @@ export function EditableLine({
             이 발화를 저장하고 있어요.
           </span>
         ) : null}
-        {line.edited && line.originalText !== null && showOriginal ? (
+        {originalShown ? (
           <div id={originalId} className={`mt-4 ${ORIGINAL_BOX}`}>
             <p className="text-meta font-semibold text-dim">원문</p>
             <p className={`${LINE_TEXT} text-sub`}>{line.originalText}</p>
