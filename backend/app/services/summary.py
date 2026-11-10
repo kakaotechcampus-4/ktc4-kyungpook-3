@@ -978,12 +978,16 @@ def edit_decision(
 
 def detach_task(db: Session, workspace_id: str, topic_id: str, task_id: str) -> None:
     """주제에서 태스크를 뗀다. 항목 연결은 두고 _visible_links 가 가린다. 다시 불러도 같다. 커밋은 호출자가 한다."""
+    from app.services import project_map
+
     topic = _workspace_topic(db, workspace_id, topic_id)
     task = db.get(Task, task_id)
     if task is None or task.workspace_id != workspace_id or task.is_deleted:
         raise AppError(ErrorCode.TASK_NOT_FOUND, details={"task_id": task_id})
-    if db.get(TopicTaskDetach, (topic_id, task_id)) is None:
-        db.add(TopicTaskDetach(topic_id=topic_id, task_id=task_id, workspace_id=workspace_id))
+    links = project_map._visible_links(workspace_id).where(TopicItem.topic_id == topic_id, Task.task_id == task_id)
+    if not db.scalar(select(links.exists())):
+        return
+    db.add(TopicTaskDetach(topic_id=topic_id, task_id=task_id, workspace_id=workspace_id))
     # 떼기도 고친 것으로 친다. 표시가 없으면 주제를 뺀 재요약이 주제를 고아로 지울 때 뗀 표시도 함께 지워져 태스크가 다시 붙는다
     topic.edited_at = datetime.now(timezone.utc)
     db.flush()
