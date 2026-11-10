@@ -96,6 +96,8 @@ def test_unknown_line_is_404(mdb, mseed, alice, seq):
     ("title", {}),
     ("transcript/0", {"text": "a\ud800b"}),
     ("transcript/0", {"text": ""}),
+    ("transcript/0", {"text": "   "}),
+    ("transcript/0", {"text": "\u3000\n"}),
     ("transcript/0", {"text": "가" * 10001}),
 ])
 def test_unstorable_empty_or_too_long_text_is_400(mdb, mseed, alice, path, body):
@@ -138,6 +140,14 @@ def test_edited_line_shows_in_minutes_and_summary_input_and_the_original_stays(m
     extraction_id = mdb.scalar(select(Extraction.extraction_id).where(Extraction.meeting_id == meeting.meeting_id))
     lines = _client().get(f"/api/v1/extractions/{extraction_id}/summary-input", headers=H).json()["data"]["lines"]
     assert [line["text"] for line in lines] == ["원문 0", "고친 문장"]
+
+
+def test_edited_line_keeps_surrounding_spaces(mdb, mseed, alice):
+    meeting = _meeting(mdb, mseed["ws"])
+
+    r = _line(alice, meeting, 1, " 고친 문장 ")
+
+    assert (r.status_code, r.json()["data"]["text"]) == (200, " 고친 문장 ")
 
 
 @pytest.mark.parametrize("restore", [None, "원문 1"])

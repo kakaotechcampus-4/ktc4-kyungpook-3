@@ -303,7 +303,7 @@ def test_decision_of_another_workspace_unknown_or_of_a_deleted_meeting_is_404(cl
         assert _error(r) == (404, "DECISION_NOT_FOUND"), decision_id
 
 
-@pytest.mark.parametrize("body", [{}, {"state": "gone"}, {"text": ""}, {"text": "가" * 1001}])
+@pytest.mark.parametrize("body", [{}, {"state": "gone"}, {"text": ""}, {"text": "  "}, {"text": "\u3000"}, {"text": "가" * 1001}])
 def test_decision_edit_without_a_change_or_outside_the_limits_is_400(client, mdb, mseed, body):
     ws = mseed["ws"]
     _decided(mdb, ws, "이메일로만")

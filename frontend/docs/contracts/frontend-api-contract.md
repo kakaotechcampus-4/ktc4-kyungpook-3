@@ -1752,16 +1752,16 @@ POST .../meetings/upload            multipart/form-data
 - 제공자는 BE 다. 화면은 아직 없고 FE 에 요청했다(#551). 합의 상태는 BE 구현(#605)이고 FE 합의 전이다. 고칠 수 있는 범위와 재요약 규칙은 사용자가 정했다(2026-11-09). 경로와 응답 모양은 이번 구현에서 정했다.
 - 여섯 경로 모두 워크스페이스 멤버면 부를 수 있고 PM 이 아니어도 된다. 세션 없음 401, 비소속 403 이다. 경로와 본문의 ID 가 그 워크스페이스에 없으면 404 다.
 - 삭제된 회의의 제목과 발화를 고치면 410 `MEETING_DELETED`, 삭제된 회의의 결정은 404 `DECISION_NOT_FOUND` 다.
-- 글에 NUL 이나 짝 없는 서로게이트가 있거나, 길이를 넘거나, 바꿀 칸이 하나도 없으면 400 `INVALID_REQUEST` 다.
+- 글에 NUL 이나 짝 없는 서로게이트가 있거나, 공백만이거나, 길이를 넘거나, 바꿀 칸이 하나도 없으면 400 `INVALID_REQUEST` 다.
 
 | 경로 | 본문 | 200 `data` | 오류 |
 |---|---|---|---|
 | `PATCH /meetings/{meeting_id}/title` | `{"title": 문자열 \| null}`. 앞뒤 공백을 빼고 1자 이상 200자 이하 | `{meeting_id, title, title_original, title_edited}`. 회의록과 같은 칸 이름이다 | 404 `MEETING_NOT_FOUND`, 410 `MEETING_DELETED` |
-| `PATCH /meetings/{meeting_id}/transcript/{seq}` | `{"text": 문자열 \| null}`. 1자 이상 10000자 이하 | `{seq, text, original_text, edited}` | 404 `MEETING_NOT_FOUND`·`TRANSCRIPT_LINE_NOT_FOUND`, 410 `MEETING_DELETED` |
+| `PATCH /meetings/{meeting_id}/transcript/{seq}` | `{"text": 문자열 \| null}`. 1자 이상 10000자 이하이고 공백만이면 안 된다. 원문과 견주므로 앞뒤 공백은 빼지 않는다 | `{seq, text, original_text, edited}` | 404 `MEETING_NOT_FOUND`·`TRANSCRIPT_LINE_NOT_FOUND`, 410 `MEETING_DELETED` |
 | `PATCH /workspaces/{workspace_id}/topics/{topic_id}` | `{"name"?: 문자열, "description"?: 문자열}`. 이름은 앞뒤 공백을 빼고 1자 이상 100자 이하, 설명은 1000자 이하. 하나는 있어야 한다 | 그 주제의 `TopicDetailResponse` | 400 글자가 없는 이름, 404 `TOPIC_NOT_FOUND`, 409 `TOPIC_NAME_TAKEN` |
 | `POST /workspaces/{workspace_id}/topics/{topic_id}/merge` | `{"into_topic_id": 문자열}` | 합친 주제(`into_topic_id`)의 `TopicDetailResponse` | 400 자기 자신, 404 `TOPIC_NOT_FOUND` |
 | `DELETE /workspaces/{workspace_id}/topics/{topic_id}/tasks/{task_id}` | 없음 | 그 주제의 `TopicDetailResponse`. 다시 불러도 같다 | 404 `TOPIC_NOT_FOUND`·`TASK_NOT_FOUND` |
-| `PATCH /workspaces/{workspace_id}/decisions/{decision_id}` | `{"text"?: 문자열, "state"?: "valid" \| "invalid" \| "removed"}`. 문장은 1자 이상 1000자 이하. 하나는 있어야 한다 | 그 결정이 속한 주제의 `TopicDetailResponse`. 지운 결정은 들어 있지 않다 | 404 `DECISION_NOT_FOUND` |
+| `PATCH /workspaces/{workspace_id}/decisions/{decision_id}` | `{"text"?: 문자열, "state"?: "valid" \| "invalid" \| "removed"}`. 문장은 앞뒤 공백을 빼고 1자 이상 1000자 이하. 하나는 있어야 한다 | 그 결정이 속한 주제의 `TopicDetailResponse`. 지운 결정은 들어 있지 않다 | 404 `DECISION_NOT_FOUND` |
 
 - 제목은 그 자리에서 바뀐다. 회의록, 회의 목록, 프로젝트 맵, 주제 상세, 요약본 머리와 파일 이름, 합본이 고친 제목을 쓴다. 채팅 회의 요약본은 고친 제목이 있으면 `일일 요약` 대신 그 제목을 쓴다.
 - `title_original` 은 처음 고치기 전 제목이고 고친 적 없으면 null 이다. 제목 없던 회의를 고치면 `title_original` 은 null 이고 `title_edited` 가 true 다. `null` 이나 처음 제목을 보내면 되돌린다.

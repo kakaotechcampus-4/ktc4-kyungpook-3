@@ -1,7 +1,7 @@
 """팀원이 회의 기록을 고치는 요청. 사람이 쓴 글이 들어오는 신뢰 경계다."""
 from typing import Annotated
 
-from pydantic import BaseModel, Field, StringConstraints, model_validator
+from pydantic import AfterValidator, BaseModel, Field, StringConstraints, model_validator
 
 from app.models import DecisionState
 from app.schemas.project_map import _has_unstorable
@@ -31,10 +31,16 @@ class TitleEditResponse(BaseModel):
     title_edited: bool
 
 
-class LineEditRequest(_Storable):
-    """null 이나 원문과 같은 값은 되돌리기다."""
+def _not_blank(text: str) -> str:
+    if not text.strip():
+        raise ValueError("공백만인 글은 받지 않습니다.")
+    return text
 
-    text: Annotated[str, StringConstraints(min_length=1, max_length=10000)] | None
+
+class LineEditRequest(_Storable):
+    """null 이나 원문과 같은 값은 되돌리기다. 원문과 견주므로 앞뒤 공백을 빼지 않는다."""
+
+    text: Annotated[str, StringConstraints(min_length=1, max_length=10000), AfterValidator(_not_blank)] | None
 
 
 class LineEditResponse(BaseModel):
@@ -65,7 +71,7 @@ class TopicMergeRequest(_Storable):
 class DecisionEditRequest(_Storable):
     """보낸 칸만 바꾼다. state 를 valid 로 보내면 지우기나 유효하지 않음 표시를 되돌린다."""
 
-    text: Annotated[str, StringConstraints(min_length=1, max_length=1000)] | None = None
+    text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)] | None = None
     state: DecisionState | None = None
 
     @model_validator(mode="after")
