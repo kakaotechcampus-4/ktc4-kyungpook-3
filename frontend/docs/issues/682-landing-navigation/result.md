@@ -1,4 +1,4 @@
-# 랜딩 이동 위치와 업무 소개 탭
+# 랜딩 내용·브랜드 디자인과 탐색 개선
 
 ## 작업 근거와 요약
 
@@ -43,6 +43,37 @@
 - Playwright `landing-navigation.e2e.ts`는 기존 앵커 6개와 새 탭 2개를 합쳐 8개 통과했다. 다섯 업무의 설명과 선택 상태, 키보드 전환과 패널 진입, 설명 영역과 하단 링크 위치를 검증했다.
 - 기존 랜딩 검사 11개, TypeScript 검사, 프로덕션 빌드가 통과했다. 변경 파일의 ESLint·Prettier와 `git diff --check`도 확인했다.
 - 실제 Chromium의 주간 요약 선택 화면 PNG를 열어 선택 표시와 두 줄 설명을 확인했다. 로컬 로그·PNG·trace는 `.verify/landing-capabilities/`에 보관했다.
+
+## 최신 제품 내용과 브랜드 디자인 갱신
+
+2026-11-11 사용자가 develop에 추가된 기능을 반영하고 브랜드 주황색과 먹색으로 랜딩을 다시 디자인해 달라고 요청했다. `origin/develop`의 `59773dd4`를 기존 PR에 병합한 `f82c90ae`를 조사 기준으로 삼았다.
+
+- [회의록](../../../src/widgets/meeting-minutes/ui/MinutesBody.tsx), [프로젝트 맵](../../../src/widgets/project-map/ui/ProjectMapView.tsx), [웹 답장](../../../src/widgets/message-inbox/ui/ReplyForm.tsx), [프로젝트 합본](../../../src/features/project-bundle-download/ui/ProjectBundleDownload.tsx) 구현을 확인해 소개 문구를 작성했다.
+- 회의 제목·전사문 수정과 승인 후 요약, 프로젝트 맵, 리스트·보드·캘린더·간트, 웹 메시지와 답장, Markdown 내보내기를 소개한다.
+- Notion은 태스크 반영, Discord는 웹 메시지 알림으로 구분했다. 재촉의 자동 승인 설정과 연동 없이 웹에서 시작할 수 있는 범위도 반영했다.
+- 근거 없는 10분 처리 시간, 텍스트 붙여넣기 업로드, 모든 작업 복원, 대화창 부재, 모든 발송의 수동 승인으로 읽히는 기존 문구는 제거했다.
+- 두 HTML 시안을 1440px·390px Chromium에서 비교했다. 첫 화면에서 설명과 제품 예시를 함께 보는 밝은 분할 구성을 선택하고, 다른 시안의 실제 네 단계 업무 흐름을 가져왔다.
+- 주황색은 CTA·선택 탭·업무 흐름에, 먹색은 제목·제품 프레임·연동 영역에 사용한다. 주황 배경의 작은 글자는 먹색이다. 기존 NanumSquare와 전역 색상 토큰은 유지했다.
+- [제품 예시](../../../src/pages/landing/ui/ProductPreview.tsx)를 정적 태스크 화면으로 바꾸고 예시임을 명시했다. 개발용 마스코트 포즈 설명, 비활성 문의 버튼과 연결되지 않는 푸터 목록을 정리했다.
+- 기존 세 헤더 앵커와 56px 이동 여백, 로그인으로 가는 시작하기 링크 세 개, 다섯 업무 탭과 키보드 계약, 실제 정책 링크를 유지했다.
+
+| 요청 조건 | 상태 | 근거 |
+| --- | --- | --- |
+| 최신 develop 기능에 맞는 소개 | 충족 | 실제 코드 조사와 새 기능·연동 범위에 대한 별도 리뷰 |
+| 주황·먹색 브랜드 디자인 | 충족 | 계산된 CTA 색상과 두 먹색 토큰 확인, 데스크톱·모바일 PNG 직접 검토 |
+| 기존 헤더 이동·업무 탭 보존 | 충족 | 기존 Chromium 8개 회귀 통과 |
+| 모바일에서도 읽을 수 있는 배치 | 충족 | 360·390·768·1024·1280·1440px 검사에서 가로 넘침 없음 |
+
+추가 검증은 Windows와 Node v24.21.0에서 수행했다.
+
+- 변경 전 baseline에서는 390px 화면의 문서 폭이 771px였다. 변경 후 360~1440px 여섯 폭에서 문서 폭이 창을 넘지 않았다.
+- `LandingSections.test.tsx`, `landing.test.tsx`, `landingEntry.test.tsx`, `router/routes.test.tsx` 네 파일의 Vitest 53개가 통과했다.
+- `landing-navigation.e2e.ts`의 Chromium 8개가 통과했다. 실행 포트 5302의 종료를 확인했다.
+- 기존 `layout.e2e.ts`의 랜딩을 모바일 검사 대상에 등록했다. 여섯 폭의 레이아웃, 실제 정책 링크 두 개와 첫 방문·로그인·랜딩 복귀를 합친 Chromium 9개가 통과했고 포트 5303도 종료됐다. 증거는 `.verify/landing-redesign/smoke-artifacts/`와 `smoke.log`다.
+- 독립 검증 helper의 최종 여섯 검사가 통과했다. CTA 경로·색상, 고유 앵커, 다섯 설명 전환, 방향키·Home·End·Tab 포커스, 설명과 하단 링크 위치를 확인했다. `sourceStable=true`, `playwrightExit=0`, `portOpen=false`다.
+- 초기 helper는 검사 폭을 여섯 개로 늘린 뒤에도 성공 개수를 세 개로 집계해 실패했다. 집계 설정을 수정하고 실제 재실행해 `passed=true`를 확인했다. 해당 초기 기록은 성공으로 변경하지 않았다.
+- 타입 검사, 변경 파일의 ESLint·Prettier, 프로덕션 빌드, `git diff --check`가 통과했다. 주황 면 위 마무리 CTA의 포커스 링은 바깥으로 띄우고 실제 Tab 진입 PNG로 확인했다.
+- 로컬 증거는 `.verify/landing-redesign/`에 있다. 최종 화면 검증은 `baseline-artifacts/check-2026-11-10T19-42-24-245Z/`, 구현 검사는 `implementation-artifacts/`에 보관했다. 실행 명령은 저장소 루트의 `fnm exec --using 24.21.0 node .verify/landing-redesign/verify.cjs check`다.
 
 ## 남은 작업과 제한 사항
 
