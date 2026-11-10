@@ -2401,7 +2401,7 @@ FE 연결 (#340, 2026-11-05).
 | 팀원별 별칭 보기·추가·삭제 | `GET /members/aliases`, `POST /members/{id}/aliases`, `DELETE /members/aliases/{alias_id}` | **구현됨(#523, 2026-11-08).** 설정 목차의 「팀원」이 여는 팀 화면에서 팀원 줄의 「별칭 N」을 펼친다. 칩마다 출처 꼬리표(`learned` 회의에서 배움, `display_name` 이름, `discord_profile` 디스코드, `manual` 직접 추가, 미확인이면 「· 미확인」). 추가·삭제는 PM 만 보인다. 본문은 `alias_text` 만 보낸다. 실패 문구는 오류 코드별이다([aliasMessages](../../src/features/member-alias/lib/aliasMessages.ts)). 같은 글자를 다시 넣으면 서버가 기존 행을 돌려주므로 「이미 있는 별칭이에요.」 로 보인다. MSW 기준 검증, 실서버 미검증 |
 | 건너뛴 온보딩 마저 하기 | 5.3 과 같다 | |
 | 팀원 초대·취소·연결 끊기 | `GET`·`POST /workspaces/{id}/invitations`, `POST /invitations/{id}/cancel`·`revoke` | FE·BE 구현. 소비 코드와 미검증 범위는 §5.9 |
-| 초대할 가입자 찾기 | `GET /users/search?q=&workspace_id=` | BE 구현(#628, 2026-11-10). FE 미연결. §5.9 |
+| 초대할 가입자 찾기 | `GET /users/search?q=&workspace_id=` | BE 구현(#628, 2026-11-10). FE 연결(#632, 초대 창의 아이디 찾기). MSW 기준 검증, 실서버 미검증. §5.9 |
 | 알림(메시지·알림 설정) | `GET`·`PATCH /workspaces/{id}/message-settings` | **구현됨** §5.7 (#340) |
 | 회의 채팅 채널(PM) | `GET /workspaces/{id}/discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel` | **구현됨** §4.3.1 (#428, #429) |
 
@@ -2412,9 +2412,18 @@ FE 연결 (#340, 2026-11-05).
 
 **현재 초대 API·FE 연결** (2026-11-09 소스 대조). #319에서 BE를 구현했고 현재 FE도 아래 API를 소비한다. 화면 쪽 합의 여부와 실제 계정 검증은 코드 연결과 구분한다. 결정 근거는 [결정 0036](../../../ai/docs/basis_for_decision/ai/2026-11-04-0036-member-invite-by-email.md). FE 요청 이슈는 #320, 제품 흐름은 #302.
 
-**2026-11-10 #628 BE 변경.** 초대를 이메일 대신 가입한 사용자의 ID 로 만든다. 카카오만으로 가입한 계정은 이메일이 없어(#610) 이메일 초대를 받을 수 없었다. 아래 표와 규칙은 바뀐 BE 계약이다. 위 FE 소비 코드는 아직 `{member_id, email}` 로 만들고 `email` 을 읽으므로 FE 반영과 같은 배포여야 한다. 결정 근거는 [아이디 초대 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-10-invite-by-username-decision.md). 배포할 때 대기 중이던 이메일 초대는 모두 `canceled` 가 되고, 대상 계정을 찾을 수 없는 닫힌 초대는 지워진다.
+**2026-11-10 #628 BE 변경.** 초대를 이메일 대신 가입한 사용자의 ID 로 만든다. 카카오만으로 가입한 계정은 이메일이 없어(#610) 이메일 초대를 받을 수 없었다. 아래 표와 규칙은 바뀐 BE 계약이다. FE 는 #632 에서 `{member_id, user_id}` 로 만들고 `invited_user` 를 읽도록 바꿨다(아래 「#632 FE 반영」). BE #631 과 FE #632 는 같은 배포여야 한다. 결정 근거는 [아이디 초대 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-10-invite-by-username-decision.md). 배포할 때 대기 중이던 이메일 초대는 모두 `canceled` 가 되고, 대상 계정을 찾을 수 없는 닫힌 초대는 지워진다.
 
 현재 소비 근거는 [초대 Query](../../src/entities/invitation/api/invitationQueries.ts), [초대 명령](../../src/entities/invitation/api/invitationMutations.ts), [PM 제어](../../src/features/member-invite/ui/MemberInviteControl.tsx), [내 초대](../../src/widgets/app-shell/ui/MyInvitations.tsx), [수락·거절 처리](../../src/features/invitation-respond/model/useInvitationResponse.ts)다. PM 목록은 팀원별 최신 초대를 고르고 생성·취소·연결 끊기 뒤 목록을 다시 받는다. 내 초대는 수락 뒤 공간 목록을 새로 받아 이동한다. 코드와 [화면 회귀](../../src/app/invitationRespond.test.tsx)를 대조했으며 이번 문서 작업에서 이를 다시 실행하거나 실서버 성공으로 판정하지 않았다.
+
+**2026-11-10 #632 FE 반영 (현재 구현, 이 브랜치 코드 기준).** 초대 창은 이메일 대신 아이디로 가입자를 찾고, 찾은 사람의 이름·아이디를 보인 뒤에만 초대한다. 화면 문구·흐름의 제품 합의는 이슈 #632 본문이 근거다.
+
+- 찾기: [searchInvitee](../../src/entities/invitation/api/searchInvitee.ts) 가 `GET /users/search` 에 `q`(앞뒤 공백을 지우고 소문자로 바꾼 아이디)와 `workspace_id` 를 보내고 `userSearchSchema` 로 읽는다. 결과 첫 사람만 쓰고 없으면 0명이다. 아이디 규칙(#627 `isUsernameAllowed`) 밖이면 요청하지 않는다. 상태는 [useInviteeSearch](../../src/features/member-invite/model/useInviteeSearch.ts) 의 판별 유니온(`idle`·`searching`·`found`·`none`·`invalid`·`failed`)이고, 찾은 뒤 입력을 바꾸면 결과가 사라지고 찾던 요청은 끊긴다. 누를 때의 세션 범위로 보내고 끝난 세션의 응답은 버린다(#594).
+- 만들기: [초대 명령](../../src/entities/invitation/api/invitationMutations.ts) 이 `{member_id, user_id}` 를 보낸다. `user_id` 는 찾은 사람의 것이다.
+- 읽기: PM 목록의 `invited_user` 는 null 이 아닌 `{user_id, username, name}` 로 읽는다(빠지면 `INVALID_RESPONSE`). 팀원 줄과 대기 초대 안내는 `이름 · 아이디` 다([inviteView](../../src/features/member-invite/model/inviteView.ts)). 수락한 계정 표시는 그대로 `accepted_user` 다.
+- 오류 문구: `USER_ALREADY_INVITED`, `USER_NOT_FOUND` 를 더하고 `EMAIL_ALREADY_INVITED` 를 지웠다([errorMessages](../../src/shared/api/errorMessages.ts)). 검색 0명, 규칙 밖, 검색 403·네트워크·`INVALID_RESPONSE` 와 만들기 거절은 모두 창의 아이디 칸 오류다.
+- 받은 초대가 없고 소속 공간도 없으면 [내 초대](../../src/widgets/app-shell/ui/MyInvitations.tsx) 가 「PM에게 내 아이디(…)를 알려 주고 초대를 요청하세요.」 를 보인다.
+- 검증: MSW handler(검색·만들기 검사 순서는 BE #631 의 `search_users`·`create_invitation` 을 옮김)와 [초대 handler 테스트](../../src/shared/mock/invitationFlow.test.ts), [팀 화면 회귀](../../src/app/teamInvitations.test.tsx), [받은 초대 회귀](../../src/app/invitationRespond.test.tsx), `e2e/member-invitations.e2e.ts` 를 이 브랜치에서 돌렸다. BE #631 실서버와의 왕복은 확인하지 않았다.
 
 온보딩에서 디스코드 명단으로 만든 팀원은 로그인 계정과 이어져 있지 않다(`member.user_id` 가 null). 팀원이 먼저 가입해 PM 에게 아이디를 알려 주면, PM 이 그 아이디로 가입자를 찾아 그 팀원에게 초대를 만든다. 그 사람이 내 초대에서 수락하면 팀원과 계정이 이어져 워크스페이스 목록에 나타난다. 수락 전에는 그 워크스페이스의 API 가 모두 403 이다. 초대 메일이나 알림은 보내지 않는다. PM 이 디스코드 등으로 알리고, 팀원은 로그인하면 내 초대에서 본다.
 

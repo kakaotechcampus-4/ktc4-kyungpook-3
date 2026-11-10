@@ -240,7 +240,7 @@ describe('계정 탈퇴', () => {
     await expect(
       request('/workspaces/ws_01/invitations', {
         method: 'POST',
-        body: { member_id: 'mb_01', email: 'fresh@example.com' },
+        body: { member_id: 'mb_01', user_id: 'us_05' },
       }),
     ).rejects.toMatchObject({ code: 'MEMBER_NOT_FOUND' })
     expect(db.members.find((member) => member.member_id === 'mb_01')?.display_name).toBe(
@@ -265,8 +265,14 @@ describe('계정 탈퇴', () => {
       db.accounts.find((account) => account.session.user.user_id === db.session.user.user_id)
         ?.workspaceIds,
     ).toEqual([])
-    expect(db.invitations.some((invitation) => invitation.email === email)).toBe(false)
-    expect(await screen.findByText('PM에게 가입한 이메일로 초대를 요청하세요.')).toBeInTheDocument()
+    expect(
+      db.invitations.some(({ invited_user_id }) => invited_user_id === db.session.user.user_id),
+    ).toBe(false)
+    expect(
+      await screen.findByText(
+        `PM에게 내 아이디(${db.session.user.username})를 알려 주고 초대를 요청하세요.`,
+      ),
+    ).toBeInTheDocument()
   })
 
   it('공개 사용자 메뉴에서 탈퇴 화면으로 이동할 수 있다', async () => {
