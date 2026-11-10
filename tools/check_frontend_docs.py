@@ -68,7 +68,7 @@ for page in pages:
         continue
     content = page.read_text(encoding="utf-8")
     content = re.sub(r"```[^\n]*\n.*?```", "", content, flags=re.S)
-    if len(re.findall(r"^# ", content, flags=re.M)) != 1:
+    if len(re.findall(r"^#(?!#)", content, flags=re.M)) != 1:
         errors.append(f"Expected one title: {page.relative_to(root)}")
     for target in re.findall(r"\[[^\]]*\]\(([^)]+)\)", content):
         url = urlsplit(target.strip("<>"))
