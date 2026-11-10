@@ -257,6 +257,140 @@ describe('팀 화면 — PM', () => {
   })
 })
 
+describe('팀 화면 — Discord 서버에 없는 사람 (#660)', () => {
+  beforeEach(() => {
+    applyScenario('settings-unmapped')
+  })
+
+  it('Discord 사용자가 없어도 팀원 연결 창에서 이름으로 추가하고, 그 팀원 줄에 `초대` 가 생긴다', async () => {
+    db.discordUsers.length = 0
+    const bodies = recordRequestBodies('POST', '/members')
+    const user = userEvent.setup()
+    renderApp(TEAM)
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const name = await dialog.findByRole('textbox', { name: '팀원 이름' })
+    expect(dialog.queryByRole('combobox', { name: /의 팀원 이름$/ })).toBeNull()
+
+    await user.type(name, '한지민')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+    expect(
+      await within(dialog.getByRole('list', { name: '추가한 팀원' })).findByText('한지민'),
+    ).toBeInTheDocument()
+    expect(bodies).toEqual([{ workspace_id: 'ws_01', display_name: '한지민' }])
+
+    await user.type(name, ' 한지민')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+    expect(await dialog.findByText('이미 같은 이름의 팀원이 있어요.')).toBeInTheDocument()
+    expect(bodies).toHaveLength(1)
+
+    await user.click(dialog.getByRole('button', { name: '나중에 하기' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    const added = within(await screen.findByRole('region', { name: '한지민' }))
+    expect(await added.findByRole('button', { name: '초대' })).toBeInTheDocument()
+  })
+
+  it('매칭 줄에 적던 입력은 이름 추가 뒤에도 남고, 추가한 팀원은 그 줄에 같은 이름으로 이어진다', async () => {
+    const user = userEvent.setup()
+    renderApp(TEAM)
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const row = await dialog.findByRole('combobox', { name: '@jihun_dev의 팀원 이름' })
+    await user.type(row, '최지')
+
+    await user.type(dialog.getByRole('textbox', { name: '팀원 이름' }), '최지훈')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+    await within(dialog.getByRole('list', { name: '추가한 팀원' })).findByText('최지훈')
+    expect(row).toHaveValue('최지')
+    const added = db.members.find(({ display_name }) => display_name === '최지훈')
+    expect(added).toMatchObject({ workspace_id: 'ws_01', discord_user_id: null })
+
+    await user.type(row, '훈')
+    const log = recordRequests()
+    await user.click(dialog.getByRole('button', { name: '저장' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(
+      log.started
+        .filter(({ method, path }) => method !== 'GET' && path.startsWith('/members'))
+        .map(({ method, path }) => `${method} ${path}`),
+    ).toEqual([`PATCH /members/${added?.member_id}`])
+    expect(db.members.filter(({ display_name }) => display_name === '최지훈')).toEqual([
+      expect.objectContaining({ member_id: added?.member_id, discord_user_id: '1125' }),
+    ])
+  })
+
+  it('이름을 추가하는 동안에는 매칭을 저장하지 않는다 — 같은 이름의 팀원이 둘 생기지 않는다', async () => {
+    const gate = deferred()
+    server.use(
+      http.post(
+        '/api/v1/members',
+        async () => {
+          await gate.promise
+        },
+        { once: true },
+      ),
+    )
+    const bodies = recordRequestBodies('POST', '/members')
+    const user = userEvent.setup()
+    renderApp(TEAM)
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const row = await dialog.findByRole('combobox', { name: '@jihun_dev의 팀원 이름' })
+    await user.type(dialog.getByRole('textbox', { name: '팀원 이름' }), '최지훈')
+    await user.click(dialog.getByRole('button', { name: '추가' }))
+
+    await user.type(row, '최지훈')
+    const save = dialog.getByRole('button', { name: '저장' })
+    expect(save).toBeDisabled()
+    await user.type(row, '{Enter}')
+    expect(bodies).toHaveLength(1)
+
+    gate.resolve()
+    await within(dialog.getByRole('list', { name: '추가한 팀원' })).findByText('최지훈')
+    await waitFor(() => expect(save).toBeEnabled())
+    await user.click(save)
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(bodies).toHaveLength(1)
+    expect(db.members.filter(({ display_name }) => display_name === '최지훈')).toEqual([
+      expect.objectContaining({ discord_user_id: '1125' }),
+    ])
+  })
+
+  it('매칭을 저장하는 동안에는 이름을 추가하지 않는다', async () => {
+    const gate = deferred()
+    server.use(
+      http.post(
+        '/api/v1/members',
+        async () => {
+          await gate.promise
+        },
+        { once: true },
+      ),
+    )
+    const bodies = recordRequestBodies('POST', '/members')
+    const user = userEvent.setup()
+    renderApp(TEAM)
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    await user.type(
+      await dialog.findByRole('combobox', { name: '@jihun_dev의 팀원 이름' }),
+      '최지훈',
+    )
+    await user.click(dialog.getByRole('button', { name: '저장' }))
+
+    const name = dialog.getByRole('textbox', { name: '팀원 이름' })
+    await user.type(name, '최지훈')
+    await waitFor(() => expect(dialog.getByRole('button', { name: '추가' })).toBeDisabled())
+    await user.type(name, '{Enter}')
+    expect(bodies).toHaveLength(1)
+
+    gate.resolve()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(bodies).toHaveLength(1)
+    expect(db.members.filter(({ display_name }) => display_name === '최지훈')).toHaveLength(1)
+  })
+})
+
 describe('팀 화면 — Discord 를 건너뛴 공간', () => {
   beforeEach(() => {
     applyScenario('settings-discord-skipped')
