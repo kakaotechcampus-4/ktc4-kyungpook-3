@@ -66,10 +66,9 @@ describe('설정 화면 — PM', () => {
       '연결',
       '자동 반영',
       '알림',
+      '계정',
       '팀원',
     ])
-    // 내 계정 화면은 아직 없다 — 누를 수 없는 항목이다(헤더의 `내 계정` 메뉴와 겹치지 않는다)
-    expect(nav.getByText('내 계정')).toHaveAttribute('aria-disabled', 'true')
     expect(nav.queryByRole('button')).toBeNull()
     expect(nav.getByRole('link', { name: '일반' })).toHaveAttribute('aria-current', 'location')
 

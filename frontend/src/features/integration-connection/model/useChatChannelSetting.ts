@@ -7,10 +7,16 @@ import {
   setChatChannel,
 } from '@/entities/integration'
 import type { ChatChannel } from '@/entities/integration'
-import { ApiError, CLIENT_ERROR_CODES, ERROR_CODES, createClientError } from '@/shared/api/errors'
+import {
+  ApiError,
+  CLIENT_ERROR_CODES,
+  ERROR_CODES,
+  createClientError,
+  isInvalidResponse,
+} from '@/shared/api/errors'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
-import { toast } from '@/shared/ui/toast'
+import { showWriteUnconfirmed, toast } from '@/shared/ui/toast'
 import {
   CHAT_CHANNEL_CLEARED,
   CHAT_CHANNEL_SAVED,
@@ -89,6 +95,16 @@ export function useChatChannelSetting(workspaceId: string, connected: boolean): 
     },
     onError: (error, { session }) => {
       if (!session.isCurrent()) return
+      // 응답을 읽지 못했다. 저장됐을 수 있어 실패로 보이지 않는다 (D-184)
+      if (isInvalidResponse(error)) {
+        showWriteUnconfirmed(
+          () =>
+            void queryClient.invalidateQueries({
+              queryKey: integrationsQueryOptions(workspaceId).queryKey,
+            }),
+        )
+        return
+      }
       // 목록이 낡았거나 연결이 끊겼다. 다시 고를 수 있게 그 조회를 새로 받는다
       if (error instanceof ApiError && error.code === ERROR_CODES.DISCORD_CHANNEL_NOT_FOUND)
         void queryClient.invalidateQueries({

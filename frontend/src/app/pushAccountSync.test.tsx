@@ -37,7 +37,13 @@ function addAccountB() {
   )
   db.accounts.push({
     session: {
-      user: { user_id: ACCOUNT_B.id, email: ACCOUNT_B.email, name: '이재환', avatar_url: null },
+      user: {
+        user_id: ACCOUNT_B.id,
+        username: 'jaehwan',
+        email: ACCOUNT_B.email,
+        name: '이재환',
+        avatar_url: null,
+      },
       workspace_count: 1,
       last_workspace_id: 'ws_01',
     },

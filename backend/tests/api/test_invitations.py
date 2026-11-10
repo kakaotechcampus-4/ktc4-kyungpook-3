@@ -746,6 +746,21 @@ def test_only_the_workspace_pm_can_search_users(db, seed, token):
     assert res.status_code == 403
 
 
+@pytest.mark.parametrize("workspace_state", ["missing", "deleted"])
+def test_search_rejects_missing_or_deleted_workspaces(db, seed, workspace_state):
+    workspace_id = seed["ws"]
+    if workspace_state == "missing":
+        workspace_id = "missing-workspace"
+    else:
+        db.get(Workspace, workspace_id).deleted_at = datetime.now(timezone.utc)
+        db.commit()
+
+    res = _search("outsider", workspace_id)
+
+    assert res.status_code == 404
+    assert _code(res) == "WORKSPACE_NOT_FOUND"
+
+
 def test_search_finds_one_user_by_the_exact_username_ignoring_case(db, seed):
     username = db.get(User, seed["jiyoung_uid"]).username
 

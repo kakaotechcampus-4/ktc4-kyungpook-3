@@ -333,12 +333,12 @@ describe('승인·반려는 서버 성공 뒤에, 한 번만 (AC-05 · AC-06)', 
     db.approvals.push({
       ...approvalOf('ap_01'),
       approval_id: 'ap_05',
-      type: 'reminder_dm',
+      type: 'future_kind',
       payload: { message: '내일까지 부탁해요' },
     })
     const log = recordRequests()
     await openApproval('ap_05', '지원하지 않는 확인 요청')
-    expect(screen.getByText('reminder_dm')).toBeVisible()
+    expect(screen.getByText('future_kind')).toBeVisible()
     expect(screen.getByText('지원하지 않는 확인 요청이라 여기서 처리할 수 없어요.')).toBeVisible()
     expect(screen.queryByRole('button', { name: '승인' })).toBeNull()
     expect(screen.queryByRole('button', { name: '반려' })).toBeNull()

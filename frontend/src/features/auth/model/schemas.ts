@@ -56,7 +56,12 @@ export const signupCodeSchema = z.object({
 })
 export type SignupCodeValues = z.infer<typeof signupCodeSchema>
 
+/**
+ * 이메일 가입의 마지막 단계. 아이디는 여기서 검사하지 않는다. 중복 확인(`useUsernameCheck`)이 지금 입력과 맞아야
+ * `계정 만들기` 가 켜지고, 보낼 값도 그 확인의 정규화한 아이디다 (#627)
+ */
 export const signupProfileSchema = z.object({
+  username: z.string(),
   name: z
     .string()
     .trim()
@@ -65,6 +70,9 @@ export const signupProfileSchema = z.object({
   password: newPassword,
 })
 export type SignupProfileValues = z.infer<typeof signupProfileSchema>
+
+/** 카카오 가입은 비밀번호가 없다. 칸을 그리지 않아 값은 늘 빈 문자열이고 보내지 않는다 (#627) */
+export const kakaoProfileSchema = signupProfileSchema.extend({ password: z.string() })
 
 /** 재설정 메일 요청. 로그인과 같은 이메일 검사다 */
 export const forgotPasswordSchema = z.object({ email })

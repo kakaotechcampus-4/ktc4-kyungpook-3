@@ -31,8 +31,6 @@ it('저장된 규칙이 화면이 고를 수 있는 범위 밖이면 범위 안�
     pm_alert_method: 'both',
     reminder_auto_approve: false,
     saved: true,
-    updated_at: null,
-    updated_by: null,
     pms: [],
   })
   expect(settings.nudgeRule).toEqual({ daysBefore: 3, hour: 9 })

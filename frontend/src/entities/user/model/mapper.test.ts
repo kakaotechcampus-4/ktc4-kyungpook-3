@@ -3,7 +3,13 @@ import { toSession } from './mapper'
 it('maps a session DTO', () => {
   expect(
     toSession({
-      user: { user_id: 'us_01', email: 'pm@example.com', name: '최진호', avatar_url: null },
+      user: {
+        user_id: 'us_01',
+        username: 'userpm',
+        email: 'pm@example.com',
+        name: '최진호',
+        avatar_url: null,
+      },
       workspace_count: 2,
       last_workspace_id: 'ws_01',
     }),
@@ -14,13 +20,14 @@ it('maps a session DTO', () => {
   })
 })
 
-it('preserves an avatar and null last workspace', async () => {
+it('preserves an avatar, a missing email and null last workspace', async () => {
   const { toSession } = await import('./mapper')
   expect(
     toSession({
       user: {
         user_id: 'us_02',
-        email: 'a@example.com',
+        username: 'kakaouser',
+        email: null,
         name: 'A',
         avatar_url: 'https://example.com/a.png',
       },
@@ -30,7 +37,8 @@ it('preserves an avatar and null last workspace', async () => {
   ).toEqual({
     user: {
       id: 'us_02',
-      email: 'a@example.com',
+      username: 'kakaouser',
+      email: null,
       name: 'A',
       avatarUrl: 'https://example.com/a.png',
     },

@@ -1,4 +1,5 @@
 import { useId, useRef } from 'react'
+import { chatChannelLabel } from '@/entities/integration'
 import type { DisconnectedStatus, Integration, IntegrationStatus } from '@/entities/integration'
 import { paths } from '@/shared/config/routes'
 import { formatSeoulMonthDayTime } from '@/shared/lib/date'
@@ -154,7 +155,7 @@ export function DiscordConnectionSection({
                 onDisconnected={focusAfterDisconnect}
                 disconnectNote={
                   integration?.chatChannel
-                    ? `회의 채팅 채널(#${integration.chatChannel.name}) 수집도 함께 꺼져요.`
+                    ? `회의 채팅 채널(${chatChannelLabel(integration.chatChannel)}) 수집도 함께 꺼져요.`
                     : undefined
                 }
               />

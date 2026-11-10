@@ -6,8 +6,10 @@ import { Checkbox } from '@/shared/ui/checkbox'
 import { ErrorText } from '@/shared/ui/error-text'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { Icon } from '@/shared/ui/icon'
+import { Autocomplete } from '@/shared/ui/select'
 import { TextField } from '@/shared/ui/text-field'
 import type { FieldTone } from '@/shared/ui/text-field'
+import { suggestedMemberNames } from '../model/memberMapping'
 import type { MappingFormValues, MemberMappingForm } from '../model/useMemberMappingForm'
 
 const ROW = 'flex items-start gap-10 border-b border-surface-selected py-10 last:border-b-0'
@@ -65,6 +67,37 @@ function PmCheck({ control, index, username, pm, takenElsewhere, errorId }: PmCh
   )
 }
 
+interface NameFieldProps {
+  control: Control<MappingFormValues>
+  index: number
+  username: string
+  tone: FieldTone
+  suggestions: string[]
+}
+
+/** 팀원 이름 칸. 미리 추가한 팀원(#613)을 제안한다 — 고르면 저장할 때 새로 만들지 않고 그 팀원에 잇는다 */
+function NameField({ control, index, username, tone, suggestions }: NameFieldProps) {
+  const {
+    field: { ref, name, value, onChange, onBlur },
+    fieldState: { error },
+  } = useController({ control, name: `rows.${index}.name` })
+  return (
+    <Autocomplete
+      ref={ref}
+      name={name}
+      tone={tone}
+      aria-label={`@${username}의 팀원 이름`}
+      placeholder="누구인가요?"
+      error={error?.message}
+      value={value}
+      onValueChange={onChange}
+      onBlur={onBlur}
+      suggestions={suggestions}
+      listLabel="미리 추가한 팀원"
+    />
+  )
+}
+
 export interface MemberMappingFieldsProps {
   mapping: MemberMappingForm
   /** 이름 칸 모양. 온보딩 카드는 `onboarding`, 제품 화면(팀 화면의 팀원 연결)은 `product` 다. 기본 `onboarding` */
@@ -76,9 +109,8 @@ export interface MemberMappingFieldsProps {
  * PM 을 체크한 줄은 이름 칸을 PM 이름으로 잠근다 (#228).
  */
 export function MemberMappingFields({ mapping, tone = 'onboarding' }: MemberMappingFieldsProps) {
-  const { form, initialRows, pms, rows, formError } = mapping
+  const { form, initialRows, pms, members, rows, formError } = mapping
   const {
-    register,
     control,
     formState: { errors },
   } = form
@@ -127,13 +159,13 @@ export function MemberMappingFields({ mapping, tone = 'onboarding' }: MemberMapp
                   <div className={FIELDS}>
                     {/* PM 을 체크한 줄은 이름을 보지 않는다. 적어 둔 이름은 남겨 두고 PM 이름을 잠가 보인다 */}
                     {pmMemberId === null ? (
-                      <TextField
+                      <NameField
                         key="name"
+                        control={control}
+                        index={index}
+                        username={row.username}
                         tone={tone}
-                        aria-label={`@${row.username}의 팀원 이름`}
-                        placeholder="누구인가요?"
-                        error={errors.rows?.[index]?.name?.message}
-                        {...register(`rows.${index}.name`)}
+                        suggestions={suggestedMemberNames(members, rows, index)}
                       />
                     ) : (
                       <TextField

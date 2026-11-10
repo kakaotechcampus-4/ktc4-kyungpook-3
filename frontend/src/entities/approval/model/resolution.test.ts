@@ -361,7 +361,7 @@ describe('별칭 등록 (save_alias, #523)', () => {
 
 describe('처리할 수 없는 승인', () => {
   it('지원하지 않는 종류는 승인·반려 본문을 만들지 않는다', () => {
-    const approval: Approval = { ...base, kind: 'unsupported', type: 'reminder_dm' }
+    const approval: Approval = { ...base, kind: 'unsupported', type: 'future_kind' }
     for (const decision of ['approved', 'rejected'] as const)
       expect(planApprovalResolution(approval, decision)).toMatchObject({
         ok: false,

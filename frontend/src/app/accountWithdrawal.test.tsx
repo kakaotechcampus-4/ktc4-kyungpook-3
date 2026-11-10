@@ -1,9 +1,15 @@
 import { webcrypto } from 'node:crypto'
-import { screen, waitFor } from '@testing-library/react'
+import { onlineManager } from '@tanstack/react-query'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { z } from 'zod'
-import { SESSION_QUERY_KEY, login, withdrawAccount } from '@/entities/user'
+import {
+  SESSION_QUERY_KEY,
+  advanceSessionGeneration,
+  login,
+  withdrawAccount,
+} from '@/entities/user'
 import { request } from '@/shared/api/client'
 import {
   WITHDRAWAL_STORAGE_KEY,
@@ -16,6 +22,7 @@ import { db } from '@/shared/mock/db'
 import { fail } from '@/shared/mock/envelope'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
+import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 import { walkSignup } from './test/walkSignup'
 import { installPushBrowser } from './test/pushBrowser'
@@ -42,8 +49,36 @@ describe('계정 탈퇴', () => {
     vi.stubGlobal('crypto', webcrypto)
   })
   afterEach(() => {
+    onlineManager.setOnline(true)
     sessionStorage.clear()
     vi.unstubAllGlobals()
+  })
+
+  it('오프라인으로 멈춘 탈퇴는 로그아웃 뒤 같은 계정으로 다시 로그인한 세션에서 나가지 않는다 (#594)', async () => {
+    readyAccount()
+    const app = renderApp('/account/withdrawal')
+    const log = recordRequests()
+    await userEvent.click(
+      await screen.findByRole('checkbox', { name: '삭제 범위와 새 초대가 필요함을 확인했어요.' }),
+    )
+    onlineManager.setOnline(false)
+    await userEvent.click(screen.getByRole('button', { name: '계정 탈퇴하기' }))
+    await waitFor(() =>
+      expect(app.queryClient.getMutationCache().getAll().at(-1)?.state.isPaused).toBe(true),
+    )
+
+    // 로그아웃과 같은 계정의 다시 로그인이 세션 세대를 두 번 올린다. 서버의 계정 ID 검사는 같은 계정을 가르지 못한다
+    act(() => {
+      advanceSessionGeneration()
+      advanceSessionGeneration()
+    })
+    onlineManager.setOnline(true)
+
+    await waitFor(() => expect(app.queryClient.isMutating()).toBe(0))
+    expect(log.timeline).not.toContain('start DELETE /auth/me')
+    expect(db.withdrawals).toHaveLength(0)
+    expect(db.authenticated).toBe(true)
+    expect(screen.queryByText('탈퇴 요청이 거절됐어요. 계정은 변경되지 않았어요.')).toBeNull()
   })
 
   it('마지막 PM이면 권한 이전을 안내하고 계정과 캐시를 유지한다', async () => {
@@ -194,7 +229,7 @@ describe('계정 탈퇴', () => {
     await withdrawAccount('f'.repeat(64), db.session.user.user_id)
     const remaining = db.accounts[0]
     if (!remaining) throw new Error('remaining PM missing')
-    await login({ email: remaining.session.user.email, password: remaining.password })
+    await login({ email: remaining.session.user.email ?? '', password: remaining.password ?? '' })
     const members = z
       .object({ items: z.array(z.object({ member_id: z.string() })) })
       .parse(await request<unknown>('/members', { params: { workspace_id: 'ws_01' } }))
@@ -215,7 +250,7 @@ describe('계정 탈퇴', () => {
 
   it('같은 이메일 재가입은 새 사용자이며 옛 팀과 초대를 복구하지 않는다', async () => {
     readyAccount()
-    const email = db.session.user.email
+    const email = db.session.user.email ?? ''
     const oldId = db.session.user.user_id
     const app = renderApp('/account/withdrawal')
     await confirmWithdrawal()

@@ -41,7 +41,12 @@ export function memberInviteView(role: Role, latest: Invitation | null): MemberI
   const account = latest.acceptedUser
   return {
     chip: { label: status.label, tone: status.tone },
-    detail: accepted && account ? `${account.name} · ${account.email}` : latest.email,
+    detail:
+      accepted && account
+        ? account.email === null
+          ? account.name
+          : `${account.name} · ${account.email}`
+        : latest.email,
     invite: accepted ? null : '다시 초대',
     close: status.close && { kind: status.close, invitationId: latest.id },
   }
