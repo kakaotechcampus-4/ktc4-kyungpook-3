@@ -207,7 +207,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 함. `details.member_id` |
 | `PASSWORD_RESET_TOKEN_INVALID` | 400 | 비밀번호 재설정 링크를 쓸 수 없음(없는·무효화된·이미 쓴·만료된 토큰). `details.reason` 은 `invalid`·`used`·`expired` |
 | `MAIL_UNAVAILABLE` | 503 | 메일을 보낼 수 없음(SMTP 설정이 없음). 비밀번호 재설정 요청과 가입 코드 요청에서 나온다. 발송 실패는 응답에 드러나지 않는다 |
-| `SIGNUP_CODE_RATE_LIMITED` | 429 | 가입 코드를 너무 자주 요청함. `details.reason` 은 `cooldown`(60초 재발송 제한)·`hourly`(시간당 5회)·`global`(전체 시간당 20통), `details.retry_after` 는 기다릴 초 |
+| `SIGNUP_CODE_RATE_LIMITED` | 429 | 가입 코드를 너무 자주 요청함. `details.reason` 은 `cooldown`(60초 재발송 제한)·`hourly`(시간당 5회)·`ip`(공인 IP 시간당 10회, #691)·`global`(전체 시간당 20통), `details.retry_after` 는 기다릴 초 |
 | `SIGNUP_CODE_INVALID` | 400 | 가입 코드를 쓸 수 없음. `details.reason` 은 `wrong`(`details.attempts_left` 함께)·`expired`(만료, 요청한 적 없음, 이미 씀)·`too_many`(5회 초과) |
 | `SIGNUP_VERIFICATION_INVALID` | 400 | 가입에 이메일 증명이 없거나 쓸 수 없음. 코드 인증부터 다시 한다 |
 | `KAKAO_LINK_EXPIRED` | 400 | 카카오 대기 쿠키가 없거나 만료됨. 카카오 로그인부터 다시 한다 |
@@ -549,7 +549,7 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 
 | 경로 | 요청 | 응답 |
 |---|---|---|
-| `POST /api/v1/auth/signup/code` | `{email}` | 200 `{expires_in: 600, resend_after: 60}`. 503 `MAIL_UNAVAILABLE`, 409 `EMAIL_ALREADY_EXISTS`, 429 `SIGNUP_CODE_RATE_LIMITED` |
+| `POST /api/v1/auth/signup/code` | `{email}` | 200 `{expires_in: 600, resend_after: 60}`. 503 `MAIL_UNAVAILABLE`, 409 `EMAIL_ALREADY_EXISTS`, 429 `SIGNUP_CODE_RATE_LIMITED`. 공인 IP 시간당 10회(#691), 재발송·시간당·전체 제한을 모두 본 뒤에 가입 여부를 판단한다 |
 | `POST /api/v1/auth/signup/code/confirm` | `{email, code}`(숫자 6자리) | 200 `{verification_token, expires_in: 1800}`. 400 `SIGNUP_CODE_INVALID` |
 | `POST /api/v1/auth/signup` | 이메일 가입 `{verification_token, password, name, username}`, 카카오 가입 `{link_kakao: true, name, username}` | 201 사용자 정보와 세션 쿠키, 대기 쿠키 삭제. 본문의 이메일은 읽지 않는다. 카카오 가입에 `password`·`verification_token` 이 오면 400 `INVALID_REQUEST` |
 | `GET /api/v1/auth/username-availability?username=` | 로그인 없음 | 200 `{available, reason}`. `reason` 은 `taken`·`invalid`·null. 규칙 밖 값도 400 이 아니라 `invalid` 다. 내 아이디도 `taken` 이다 |
@@ -609,6 +609,7 @@ SMTP 설정이 없으면 코드 요청이 503 이라 이메일로는 가입할 �
 - 전체·IP 상한(#550): 아래에 걸려도 응답은 같은 200 `{}` 이고 토큰·메일을 만들지 않으며 이전 링크는 살아 있다. 막힌 이유는 서버 로그(`password reset request blocked: reason=ip|global`)로만 남기고 이메일은 남기지 않는다.
   - 같은 공인 IP(IPv6 는 /64): 1시간에 5번. 가입 여부와 상관없이 모든 요청을 세고, 막힌 요청은 세지 않는다. 메일 설정 503 검사 뒤, 첫 DB 조회 전에 메모리에서 막는다. IP 판단은 [로그인 제한](#로그인-제한)과 같다(사설 주소·해석할 수 없는 값은 건너뜀). 원본은 `app/services/password_reset_limit.py`. 서버를 재시작하면 풀리고 단일 프로세스 전제다.
   - 전체: 지난 1시간에 발급한 재설정 토큰(쓰거나 무효가 된 것 포함)이 10개면 새로 발급하지 않는다. IP 상한(5)보다 크게 두어 공인 IP 하나로는 다 쓰지 못한다. 사용자 조회 전에 DB 에서 세므로 재시작해도 풀리지 않는다. 동시 요청이 몰리면 몇 통 넘을 수 있다.
+  - 로그인이 잠긴 이메일(#691): 전체 상한을 보지 않는다. 남이 전체 상한을 채우고 내 이메일로 로그인을 잠가도 재설정 메일은 받는다. 계정마다·IP 제한은 그대로다. 근거는 [결정 기록](docs/plan/m1/basis-for-decision/2026-11-11-auth-abuse-hardening-decision.md).
 - 발송: 응답 뒤 백그라운드에서 보내고, 실패하면 2·4·8초 뒤 3번 더 보낸다. 그래도 실패하면 로그만 남긴다(사용자는 다시 요청한다). 서버가 재시작되면 보내던 메일은 사라진다.
 - 비밀번호 규칙: 8자 이상, 숫자(0-9) 하나 이상. 회원가입(`POST /api/v1/auth/signup`)에도 같이 적용되고 어기면 400 `INVALID_REQUEST`.
 

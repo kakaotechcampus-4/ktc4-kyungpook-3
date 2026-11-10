@@ -236,3 +236,24 @@ def test_global_cap_blocked_logs_reason_without_email(mdb, caplog):
         assert _request(mdb, NOW + timedelta(seconds=10), email="late@example.com") is None
     assert "reason=global" in caplog.text
     assert "late@example.com" not in caplog.text
+
+
+def test_login_locked_request_skips_only_the_global_cap(mdb):
+    # 로그인이 잠긴 이메일은 전체 상한에서 빼되 계정별 제한은 그대로다(#691)
+    _user(mdb, password_hash="x")
+    _fill_global(mdb)
+    assert _request(mdb) is None
+
+    mail = svc.request_reset(mdb, "abcd@example.com", now=NOW, base_url=BASE, login_locked=True)
+    mdb.commit()
+
+    assert mail is not None
+    assert svc.request_reset(mdb, "abcd@example.com", now=NOW, base_url=BASE, login_locked=True) is None
+    issued = 1
+    for minutes in (2, 4, 6, 8, 10):
+        if svc.request_reset(
+            mdb, "abcd@example.com", now=NOW + timedelta(minutes=minutes), base_url=BASE, login_locked=True
+        ):
+            issued += 1
+        mdb.commit()
+    assert issued == svc.HOURLY_LIMIT

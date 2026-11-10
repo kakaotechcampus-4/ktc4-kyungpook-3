@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.models import User
-from app.services import mailer
+from app.services import mailer, password_reset_limit, signup_codes
 from tests.usernames import username_for
 
 EMAIL = "new@example.com"
@@ -80,6 +80,54 @@ def test_request_for_a_registered_email_is_409_and_sends_nothing(mdb, client, se
     assert res.status_code == 409
     assert res.json()["error"]["code"] == "EMAIL_ALREADY_EXISTS"
     assert sent == []
+
+
+PUBLIC = ("8.8.8.8", 50000)
+
+
+def _public_client(host=PUBLIC):
+    return TestClient(app, base_url="https://testserver", client=host)
+
+
+def test_one_public_ip_is_capped_below_the_global_limit(mdb, sent):
+    # 공인 IP 하나로 전체 상한을 다 써서 다른 사람의 가입을 막지 못한다(#691)
+    assert signup_codes.GLOBAL_HOURLY_LIMIT > signup_codes.IP_HOURLY_LIMIT
+    attacker = _public_client()
+    for i in range(signup_codes.IP_HOURLY_LIMIT):
+        assert _ask(attacker, f"user{i}@example.com").status_code == 200
+
+    res = _ask(attacker, "one-more@example.com")
+
+    assert res.status_code == 429
+    body = res.json()["error"]
+    assert body["code"] == "SIGNUP_CODE_RATE_LIMITED"
+    assert body["details"]["reason"] == "ip"
+    assert 0 < body["details"]["retry_after"] <= 3600
+    assert len(sent) == signup_codes.IP_HOURLY_LIMIT
+    assert _ask(_public_client(("1.1.1.1", 50000)), "one-more@example.com").status_code == 200
+
+
+def test_ip_cap_is_checked_before_the_existence_check(mdb, sent):
+    # 가입한 이메일을 묻는 요청도 IP 상한에 센다. 막히면 409 가 아니라 429 다(#691)
+    mdb.add(User(username=username_for(EMAIL), email=EMAIL, name="t", provider="local"))
+    mdb.commit()
+    attacker = _public_client()
+    for _ in range(signup_codes.IP_HOURLY_LIMIT):
+        assert _ask(attacker).status_code == 409
+
+    res = _ask(attacker)
+
+    assert res.status_code == 429
+    assert res.json()["error"]["details"]["reason"] == "ip"
+    assert sent == []
+
+
+def test_signup_ip_cap_does_not_share_the_reset_ip_count(mdb, sent):
+    attacker = _public_client()
+    for i in range(password_reset_limit.IP_HOURLY_LIMIT):
+        assert attacker.post("/api/v1/auth/password-reset/request", json={"email": f"x{i}@example.com"}).status_code == 200
+
+    assert _ask(attacker).status_code == 200
 
 
 def test_resend_is_429_with_a_reason_and_sends_nothing_more(mdb, client, sent):

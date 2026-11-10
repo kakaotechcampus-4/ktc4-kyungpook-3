@@ -24,6 +24,9 @@ COOLDOWN = timedelta(seconds=60)
 HOURLY_LIMIT = 5
 # 전체 주소 합계. 재설정 메일과 같은 계정을 쓰므로 하루로 곱해도 Gmail 발송 한도(약 500통)를 넘지 않게 둔다.
 GLOBAL_HOURLY_LIMIT = 20
+# 공인 IP 하나의 시간당 요청 수(#691). 전체 상한보다 작아 IP 하나로 남의 가입을 막지 못한다. 한 와이파이에서 여럿이
+# 가입하는 시연을 생각해 재설정(5)보다 넉넉히 둔다. 메일을 보내지 않은 요청(재발송 제한·가입한 이메일)도 센다.
+IP_HOURLY_LIMIT = 10
 WINDOW = timedelta(hours=1)
 RETENTION = timedelta(days=1)
 PROOF_KIND = "signup_email"
@@ -61,10 +64,14 @@ def _check_global_cap(db: DbSession, now: datetime) -> None:
         raise _rate_limited("global", utc(oldest) + WINDOW, now)
 
 
-def request_code(db: DbSession, email: str, *, now: datetime) -> SignupCodeMail:
-    """정규화한 이메일에 새 코드를 만든다. commit 은 호출자가 한다."""
+def _check_not_registered(db: DbSession, email: str) -> None:
+    # 횟수 제한을 모두 본 뒤에 판단한다. 제한에 걸린 요청으로는 가입 여부를 물어볼 수 없다(#691).
     if db.scalar(select(User.user_id).where(User.email == email)) is not None:
         raise AppError(ErrorCode.EMAIL_ALREADY_EXISTS)
+
+
+def request_code(db: DbSession, email: str, *, now: datetime) -> SignupCodeMail:
+    """정규화한 이메일에 새 코드를 만든다. commit 은 호출자가 한다."""
     db.execute(
         delete(SignupEmailCode)
         .where(SignupEmailCode.sent_at < now - RETENTION)
@@ -75,6 +82,7 @@ def request_code(db: DbSession, email: str, *, now: datetime) -> SignupCodeMail:
     code = f"{secrets.randbelow(1_000_000):06d}"
     if row is None:
         _check_global_cap(db, now)
+        _check_not_registered(db, email)
         db.add(
             SignupEmailCode(
                 email=email,
@@ -102,6 +110,7 @@ def request_code(db: DbSession, email: str, *, now: datetime) -> SignupCodeMail:
         elif row.window_count >= HOURLY_LIMIT:
             raise _rate_limited("hourly", window_ends, now)
         _check_global_cap(db, now)
+        _check_not_registered(db, email)
         row.window_count += 1
         row.code_hash = _hash(email, code)
         row.attempts = 0
