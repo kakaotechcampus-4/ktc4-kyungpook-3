@@ -75,6 +75,16 @@
 - 타입 검사, 변경 파일의 ESLint·Prettier, 프로덕션 빌드, `git diff --check`가 통과했다. 주황 면 위 마무리 CTA의 포커스 링은 바깥으로 띄우고 실제 Tab 진입 PNG로 확인했다.
 - 로컬 증거는 `.verify/landing-redesign/`에 있다. 최종 화면 검증은 `baseline-artifacts/check-2026-11-10T19-42-24-245Z/`, 구현 검사는 `implementation-artifacts/`에 보관했다. 실행 명령은 저장소 루트의 `fnm exec --using 24.21.0 node .verify/landing-redesign/verify.cjs check`다.
 
+## 먹색 중심 최종 팔레트 조정
+
+같은 날 사용자가 시작하기 버튼·활성 업무 탭·마지막 안내 영역을 먹색 배경과 흰 글씨로 통일하고, 주황은 작은 포인트로만 사용하도록 요청했다.
+
+- 시작하기 세 개와 활성 업무 탭에 기존 `ink-solid` 면과 흰 글씨를 적용했다. 마지막 먹색 영역의 버튼에는 흰 테두리와 바깥 포커스 링을 더했다.
+- 마지막 안내 영역의 제목·본문을 흰색 계열로 바꿨다. 업무 흐름·연동의 긴 주황 선과 Markdown 안내의 살구색 면은 중립색으로 바꿨다. 브랜드 점·단계 번호·작은 상태 표식에 주황을 남겼다.
+- 기존 내용·레이아웃·앵커·키보드·선택 상태는 유지했다. 앱 변경은 `styles.ts`, `LandingSections.tsx`, `LandingClosing.tsx` 세 파일의 팔레트에 한정했다.
+- 360·390·768·1024·1280·1440px Chromium 여섯 검사가 통과했다. 모든 시작하기와 활성 탭의 계산된 색이 먹색 `rgb(51, 51, 51)`과 흰색 `rgb(255, 255, 255)`인지 확인했다. 마지막 영역의 배경·제목과 흰 포커스 링도 확인했다.
+- 변경 파일의 ESLint·Prettier, 프로덕션 빌드와 `git diff --check`가 통과했다. 최종 PNG를 직접 검토했다. 근거는 `.verify/landing-redesign/baseline-artifacts/check-2026-11-10T19-59-09-241Z/`이며 소스 해시는 같고 포트 5301은 닫혔다.
+
 ## 남은 작업과 제한 사항
 
 운영 배포는 수행하지 않았다. 빌드에는 CSS의 `var(...)` 토큰과 번들 크기 경고가 남아 있다. 마일스톤 전체 완료나 외부 Notion·Discord 연동 완료를 의미하지 않는다.

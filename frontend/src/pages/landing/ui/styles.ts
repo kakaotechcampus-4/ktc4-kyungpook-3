@@ -1,7 +1,7 @@
 const PILL_LINK =
   'inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-999 font-semibold'
 
-export const LINK_PRIMARY = `${PILL_LINK} bg-accent-solid text-ink hover:bg-accent-chip hover:text-ink active:bg-accent-badge`
+export const LINK_PRIMARY = `${PILL_LINK} bg-ink-solid text-surface hover:bg-ink hover:text-surface active:bg-ink active:text-surface`
 
 export const LINK_SECONDARY = `${PILL_LINK} border border-line bg-surface text-ink hover:bg-control`
 

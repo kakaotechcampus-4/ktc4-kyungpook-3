@@ -1,26 +1,26 @@
 import { Link } from 'react-router'
 import { policyDocuments } from '@/shared/config/policy'
 import { BrandMark } from '@/shared/ui/brand-mark'
-import { CARD_WIDTH, HERO_SIZE } from './styles'
+import { CARD_WIDTH, HERO_SIZE, LINK_PRIMARY } from './styles'
 import { StartLink } from './StartLink'
 
 export function FinalCta() {
   return (
     <section
-      className={`${CARD_WIDTH} mb-64 flex flex-col items-start justify-between gap-28 rounded-[24px] bg-accent-solid px-28 py-40 sm:mb-96 sm:flex-row sm:items-center sm:px-48 sm:py-56`}
+      className={`${CARD_WIDTH} mb-64 flex flex-col items-start justify-between gap-28 rounded-[24px] bg-ink-solid px-28 py-40 sm:mb-96 sm:flex-row sm:items-center sm:px-48 sm:py-56`}
     >
       <div className="max-w-[720px]">
-        <h2 className="text-[30px] leading-[1.3] font-semibold tracking-h3 text-ink sm:text-[36px]">
+        <h2 className="text-[30px] leading-[1.3] font-semibold tracking-h3 text-surface sm:text-[36px]">
           다음 회의부터,
           <br />
           일의 흐름을 함께 정리해 보세요.
         </h2>
-        <p className="mt-16 text-[16px] leading-[28px] text-ink">
+        <p className="mt-16 text-[16px] leading-[28px] text-surface/80">
           회의의 기록과 팀의 다음 행동을 한곳에 모으세요.
         </p>
       </div>
       <StartLink
-        className={`inline-flex shrink-0 items-center justify-center rounded-999 bg-ink-solid font-semibold text-surface hover:bg-ink hover:text-surface focus-visible:outline-offset-4 ${HERO_SIZE}`}
+        className={`${LINK_PRIMARY} ${HERO_SIZE} border border-surface/40 hover:border-surface focus-visible:outline-surface focus-visible:outline-offset-4`}
       >
         시작하기
       </StartLink>

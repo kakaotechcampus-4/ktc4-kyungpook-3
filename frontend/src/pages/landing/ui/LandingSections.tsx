@@ -21,7 +21,7 @@ export function ValueSections() {
         {WORKFLOW_STEPS.map((step, index) => (
           <li
             key={step}
-            className="flex items-start gap-10 border-t-2 border-accent-solid pt-12 text-[12px] leading-[20px] text-ink sm:text-[14px]"
+            className="flex items-start gap-10 border-t-2 border-line pt-12 text-[12px] leading-[20px] text-ink sm:text-[14px]"
           >
             <span className="font-semibold text-accent">0{index + 1}</span>
             <span>{step}</span>
@@ -64,9 +64,9 @@ export function FeatureCards() {
           정리된 회의록만으로는 일이 끝나지 않으니까요. 원문을 바로잡는 순간부터 다음 회의를 준비할
           때까지 함께합니다.
         </p>
-        <div className="mt-32 rounded-r-12 border-l-[3px] border-accent-solid bg-accent-badge px-24 py-24">
+        <div className="mt-32 rounded-r-12 border-l-[3px] border-accent-solid bg-surface-sunken px-24 py-24">
           <h3 className="text-[16px] font-semibold text-ink">필요한 기록은 파일로 가져가세요.</h3>
-          <p className="mt-6 text-[14px] leading-[24px] text-accent">
+          <p className="mt-6 text-[14px] leading-[24px] text-dim">
             회의 요약과 기간별 프로젝트 기록을 Markdown으로 내려받아 공유할 수 있어요.
           </p>
         </div>
@@ -118,7 +118,7 @@ export function Integrations() {
         </div>
         <div className="mt-36 grid gap-32 sm:grid-cols-2 sm:gap-40">
           {INTEGRATIONS.map(({ name, text, note }) => (
-            <article key={name} className="border-t-2 border-accent-solid pt-24">
+            <article key={name} className="border-t-2 border-surface/20 pt-24">
               <h3 className="text-[26px] font-semibold text-surface">{name}</h3>
               <p className="mt-12 text-[15px] leading-[27px] text-surface/90">{text}</p>
               <p className="mt-16 text-[12px] leading-[21px] text-surface/70">{note}</p>
@@ -209,7 +209,7 @@ export function Capabilities() {
             aria-selected={task.id === selected.id}
             aria-controls={`${prefix}-panel`}
             tabIndex={task.id === selected.id ? 0 : -1}
-            className={`${TASK_PILL} ${task.id === selected.id ? 'border-transparent bg-accent-solid text-ink' : 'border-line bg-surface text-ink hover:bg-accent-badge'}`}
+            className={`${TASK_PILL} ${task.id === selected.id ? 'border-transparent bg-ink-solid text-surface' : 'border-line bg-surface text-ink hover:bg-control'}`}
             onClick={() => setSelected(task)}
             onKeyDown={(event) => {
               const last = TASKS.length - 1
