@@ -200,7 +200,8 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `USERNAME_TAKEN` | 409 | 가입이나 아이디 변경에서 다른 계정이 이미 쓰는 아이디. 대소문자만 다른 아이디도 같은 아이디다 |
 | `TOO_MANY_LOGIN_ATTEMPTS` | 429 | 같은 이메일 10회·같은 공인 IP 50회 실패가 15분 안에 쌓여 로그인이 막힘(맞는 비밀번호도 막음). `Retry-After` 헤더와 `details.retry_after_seconds` 는 같은 정수 초 |
 | `MESSAGE_RESULT_CONFLICT` | 409 | 이미 다른 결과가 보고됐거나 아직 가져가지 않은 메시지에 결과를 보고함. `details.message_id` |
-| `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST` |
+| `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST`. `PATCH` 에 `move_discord_link: true` 를 같이 보내면 이 오류 대신 계정을 옮긴다([팀원 디스코드 연결 옮기기](#팀원-디스코드-연결-옮기기)) |
+| `MEMBER_NAME_DUPLICATED` | 409 | 팀원 추가나 이름 고치기에서 같은 워크스페이스의 활성 팀원과 이름이 같음(앞뒤 공백만 지우고 견줌). `details.display_name`·`member_id`(이미 그 이름을 쓰는 팀원) |
 | `UPLOAD_NOT_CLAIMED` | 409 | AI가 아직 가져가지(claim) 않은 업로드에 화자를 보고하려 함. `details.status`(그 시점의 회의 상태) |
 | `SPEAKERS_ALREADY_REPORTED` | 409 | 이미 화자 목록을 받은 업로드에 저장된 것과 다른 목록을 보고하려 함(같은 목록의 재전송은 200). `details.status` |
 | `MEETING_NOT_AWAITING_SPEAKERS` | 409 | 회의가 화자 지정 대기(`awaiting_speakers`) 상태가 아닌데 화자를 지정하려 함. `details.status` |
@@ -612,6 +613,14 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 ## 팀원 표시명 규칙
 
 `POST /api/v1/members` 와 `PATCH /api/v1/members/{member_id}` 의 `display_name` 은 [가입 이름 규칙](#가입-이름-규칙)과 같은 규칙을 따른다. 앞뒤 공백을 지운 값으로 저장하고, 규칙을 어기면 400 `INVALID_REQUEST` 이며 `details.fields[].loc` 에 `display_name` 이 들어간다. PATCH 에서 `display_name` 을 빼면 이름을 바꾸지 않고, `null` 을 보내면 400 이다. 이미 저장된 표시명은 검사하지 않는다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-08-member-display-name-rule.md), 규칙 원본은 `app/schemas/name.py` 의 `validate_name`(`NameStr`).
+
+같은 워크스페이스의 활성 팀원(삭제·탈퇴 제외)과 이름이 같으면 409 `MEMBER_NAME_DUPLICATED` 다. 앞뒤 공백만 지우고 견주며 대소문자는 그대로 본다(FE `memberNameKey` 와 같다). 공백은 JS `trim` 과 같은 글자(BOM·전각 공백·NBSP 포함)를 지운다. `PATCH` 는 이름이 바뀔 때만 보므로 자기 이름을 그대로 보내거나 다른 칸만 고치면 통과한다. 이미 저장된 중복은 그대로 둔다. 같은 워크스페이스의 쓰기는 워크스페이스 행 잠금으로 차례로 처리돼, 같은 이름을 동시에 보내면 두 번째가 409 다. DB 제약은 없어서 이 잠금을 거치지 않는 쓰기 경로가 생기면 막지 못한다. 원본은 `app/api/members.py` 의 `_ensure_name_free`(#652).
+
+## 팀원 디스코드 연결 옮기기
+
+`PATCH /api/v1/members/{member_id}` 에 `{discord_user_id, move_discord_link: true}` 를 보내면 그 계정을 가진 같은 워크스페이스의 다른 활성 팀원의 연결을 풀고 이 팀원에 잇는다(#652). 한 트랜잭션이고, 두 팀원 행을 `member_id` 순서로 잠근다. 앞 팀원의 이름은 그대로이고 `discord_profile` 별칭은 연결 해제 때처럼 지운다. 플래그가 없거나 `false` 면 409 `DISCORD_USER_ALREADY_MAPPED` 다. 응답은 이 팀원의 `MemberResponse` 다.
+
+팀원에 계정을 이으면(`POST` 의 `discord_user_id`, `PATCH` 의 새 계정, 옮기기) 같은 트랜잭션에서 이 워크스페이스 회의의 `source` 중 `speaker_discord_user_id` 가 그 계정인 행의 `member_id` 를 이 팀원으로 바꾼다. 연결이 없던 발화와 삭제한 팀원에 붙어 있던 발화도 포함한다. 연결을 풀기만 하면 발화는 그대로다. 계정 탈퇴는 그 팀원 발화의 화자 계정을 지우므로 다시 붙지 않는다. 이미 저장된 요약 문서와 승인 카드 payload 의 `evidence_speaker_member_id` 는 바꾸지 않는다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-10-discord-link-move-decision.md).
 
 ## 권한
 
