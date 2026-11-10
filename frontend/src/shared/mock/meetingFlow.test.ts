@@ -268,11 +268,11 @@ describe('흐름 방식 — 상세 조회가 진행시킨다', () => {
     return seen
   }
 
-  it('staged 녹음 회의는 AI 보고 순서다 — 대기 → stt 0/5·3/5·5/5 → sources → extract → handoff(아직 processing) → done (#483)', async () => {
+  it('staged 녹음 회의는 AI 보고 순서다 — 대기 → stt(수치 없음) → 0/5·3/5·5/5 → sources → extract → handoff(아직 processing) → done (#483)', async () => {
     const id = await upload()
     setMeetingFlowMode('staged')
     const seen: [string, MeetingDto['processing']][] = []
-    for (let poll = 0; poll < 8; poll += 1) {
+    for (let poll = 0; poll < 9; poll += 1) {
       const meeting = await detail(id)
       const progress = meeting.progress!
       seen.push([
@@ -288,6 +288,7 @@ describe('흐름 방식 — 상세 조회가 진행시킨다', () => {
     })
     expect(seen).toEqual([
       ['processing:000', { stage: null, stage_at: null, stt: null }],
+      ['processing:100', { stage: 'stt', stage_at: '2026-09-17T23:55:00Z', stt: null }],
       ['processing:100', stt(0)],
       ['processing:100', stt(3)],
       ['processing:100', stt(5)],

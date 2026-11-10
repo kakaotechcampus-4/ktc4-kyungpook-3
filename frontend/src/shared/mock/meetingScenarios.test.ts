@@ -73,12 +73,13 @@ describe('회의 시나리오 (U2-4)', () => {
     applyScenario('meeting-demo')
     const { meeting_id } = await upload()
     const seen: string[] = []
-    for (let poll = 0; poll < 8; poll += 1) {
+    for (let poll = 0; poll < 9; poll += 1) {
       const { status, processing } = await detail(meeting_id)
       seen.push(`${status}:${processing?.stage ?? '-'}:${processing?.stt?.done ?? '-'}`)
     }
     expect(seen).toEqual([
       'processing:-:-',
+      'processing:stt:-',
       'processing:stt:0',
       'processing:stt:3',
       'processing:stt:5',
@@ -227,13 +228,13 @@ describe('sessionStorage 영속 (U2-4)', () => {
         [meeting_id]: { speakers: [], mapping: null, audio: true, expireOnSubmit: false },
       },
     })
-    // 복원된 진행 단계에서 이어 간다 — 첫 조회가 대기를 답하고 stt 0/5 로 넘어가 있었다 (#483)
+    // 복원된 진행 단계에서 이어 간다 — 첫 조회가 대기를 답하고 수치 없는 stt 로 넘어가 있었다 (#483)
     await expect(detail(meeting_id)).resolves.toMatchObject({
       progress: { audio_merged: true, transcribed: false, extracted: false },
-      processing: { stage: 'stt', stt: { done: 0, total: 5 } },
+      processing: { stage: 'stt', stt: null },
     })
-    // 남은 보고 3/5·5/5·sources·extract·handoff 를 지나면 끝난다
-    for (let poll = 0; poll < 5; poll += 1) await detail(meeting_id)
+    // 남은 보고 0/5·3/5·5/5·sources·extract·handoff 를 지나면 끝난다
+    for (let poll = 0; poll < 6; poll += 1) await detail(meeting_id)
     await expect(fetchDto<MinutesDto>(`/meetings/${meeting_id}/minutes`)).resolves.toMatchObject({
       attendees: [{ member_id: 'mb_01' }, { member_id: 'mb_04' }],
     })

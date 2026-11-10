@@ -31,11 +31,13 @@ type ProcessingDto = NonNullable<MeetingDto['processing']>
 const NO_REPORT: ProcessingDto = { stage: null, stage_at: null, stt: null }
 
 /**
- * `staged` 녹음 회의가 조회마다 하나씩 받는 AI 보고. 같은 stt 의 재보고는 단계 시작 시각을 바꾸지 않는다.
+ * `staged` 녹음 회의가 조회마다 하나씩 받는 AI 보고(#653). 단계 시작 보고는 수치가 없고, 이어서 끝낸 트랙 수를
+ * 시작 0/N·중간(2초 간격이라 건너뛸 수 있다)·최종 N/N 으로 보낸다. 같은 stt 의 재보고는 단계 시작 시각을 바꾸지 않는다.
  * 시각은 MOCK_NOW(서울 09:00) 앞이다 — 브라우저 시계를 MOCK_NOW 로 두면 5분째·2분째·1분째·방금 시작이 보인다
  */
 const STAGED_REPORTS: readonly ProcessingDto[] = [
   NO_REPORT,
+  { stage: 'stt', stage_at: '2026-09-17T23:55:00Z', stt: null },
   { stage: 'stt', stage_at: '2026-09-17T23:55:00Z', stt: { done: 0, total: 5 } },
   { stage: 'stt', stage_at: '2026-09-17T23:55:00Z', stt: { done: 3, total: 5 } },
   { stage: 'stt', stage_at: '2026-09-17T23:55:00Z', stt: { done: 5, total: 5 } },
