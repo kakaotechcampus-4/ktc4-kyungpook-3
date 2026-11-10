@@ -198,3 +198,13 @@ def test_failed_unit_update_fails_deploy_and_keeps_base_commit(tmp_path, failing
     assert f"sudo {failing}" in calls
     # 기준 커밋을 올리지 않아 다음 배포가 같은 구간을 다시 비교한다
     assert (repo / ".git" / "mm-deployed-sha").read_text().strip() == "old-success"
+
+
+def test_failed_step_output_stays_in_server_log(tmp_path):
+    # 저장소가 공개라 SSM 출력은 누구나 보는 Actions 로그에 실린다. 실패한 명령의 출력은 서버 로그에만 남긴다
+    done, _, _, _ = _run(tmp_path, installed=True, units_changed=True, fail_sudo="install -m")
+
+    assert done.returncode != 0
+    assert "sudo: install -m 실패" in (tmp_path / "deploy.log").read_text(encoding="utf-8")
+    assert "sudo: install -m 실패" not in done.stdout + done.stderr
+    assert "채팅 폴링 유닛 복사 실패" in done.stderr
