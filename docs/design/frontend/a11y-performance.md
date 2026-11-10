@@ -101,6 +101,8 @@
 
 ### 성능 수치
 
+개선 원인·전후 범위·측정 조건·채택하지 않은 시도는 [프론트엔드 성능 개선](performance.md)에 정리했다. 아래 표는 과거 기록의 요약이며 현재 운영 서비스에서 새로 측정한 결과가 아니다.
+
 | 날짜 | 무엇 | 조건 | 결과 | 근거 |
 |---|---|---|---|---|
 | 2026-11 (M8-A) | 태스크 1건 상태 변경 때 다른 항목 재렌더 | 310건, 렌더 횟수 계측 | 보드 309 → 0, 간트 311 → 0, 캘린더 315 → 6 | [M8 결과 A](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/result-a.md) AC-A-04, `taskViewsRender.test.tsx` |
