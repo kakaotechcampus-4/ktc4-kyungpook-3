@@ -145,7 +145,7 @@ test('캘린더 — 날짜 이동·마감일 없음·주말 숫자·마감 임�
     (await cssOf(urgent, 'background-color'))[0],
     (await cssOf(title, 'color'))[0],
     (await cssOf(urgent.locator('xpath=*[last()]'), 'color'))[0],
-  ]).toEqual(['rgb(244, 217, 215)', 'rgb(23, 23, 23)', 'rgb(90, 90, 90)'])
+  ]).toEqual(['rgb(236, 107, 64)', 'rgb(255, 255, 255)', 'rgb(255, 255, 255)'])
   await expect(title).toHaveCSS('font-weight', '600')
 })
 

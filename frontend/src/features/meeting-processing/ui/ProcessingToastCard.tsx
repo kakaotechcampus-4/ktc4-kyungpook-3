@@ -102,7 +102,7 @@ export function ProcessingToastCard({
             aria-expanded={false}
             onClick={() => toggle(false)}
           >
-            <span aria-hidden="true" className="size-6 shrink-0 rounded-999 bg-accent-signal" />
+            <span aria-hidden="true" className="size-6 shrink-0 rounded-999 bg-accent-solid" />
             {signal.kind === 'processing' ? (
               <>
                 정리 중
