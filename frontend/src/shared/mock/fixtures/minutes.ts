@@ -1,9 +1,20 @@
 import type { MinutesDto } from '@/shared/types/api/minutes'
 import { memberFixtures } from './member'
 
+type TranscriptLineDto = MinutesDto['transcript'][number]
+
+/** 서버처럼 seq 순으로 번호를 붙인다. 고친 줄은 없다 */
+function transcriptLines(
+  lines: Omit<TranscriptLineDto, 'seq' | 'edited' | 'original_text'>[],
+): TranscriptLineDto[] {
+  return lines.map((line, seq) => ({ ...line, seq, edited: false, original_text: null }))
+}
+
 const minutes: MinutesDto = {
   meeting_id: 'mt_09',
   title: '3주차 정기회의',
+  title_edited: false,
+  title_original: null,
   started_at: '2026-09-15T05:00:00Z',
   duration_ms: 2730000,
   source: 'discord',
@@ -17,7 +28,7 @@ const minutes: MinutesDto = {
     decisions: ['담당자와 마감이 확정된 항목부터 반영한다.'],
   },
   summary_status: 'ready',
-  transcript: [
+  transcript: transcriptLines([
     {
       at_ms: 0,
       speaker_member_id: 'mb_01',
@@ -53,7 +64,7 @@ const minutes: MinutesDto = {
       speaker_fallback: 'haneul',
       text: 'STT 정확도 측정을 진행하겠습니다.',
     },
-  ],
+  ]),
   permissions: { can_review: true, can_undo: true },
 }
 export const minutesFixtures: MinutesDto[] = [
@@ -68,6 +79,8 @@ export const minutesFixtures: MinutesDto[] = [
   {
     meeting_id: 'mt_08',
     title: '채팅 2026-09-11',
+    title_edited: false,
+    title_original: null,
     started_at: '2026-09-11T00:12:00Z',
     duration_ms: 84_480_000,
     source: 'chat',
@@ -78,7 +91,7 @@ export const minutesFixtures: MinutesDto[] = [
     summary: null,
     summary_status: 'none',
     // 메시지 하나가 한 줄이다. at_ms 는 첫 메시지 기준 오프셋이라 실제 작성 시각은 started_at + at_ms 다
-    transcript: [
+    transcript: transcriptLines([
       {
         at_ms: 0,
         speaker_member_id: 'mb_01',
@@ -107,7 +120,7 @@ export const minutesFixtures: MinutesDto[] = [
         speaker_fallback: 'jaehwan',
         text: '확인했어요. 내일 리뷰할게요.',
       },
-    ],
+    ]),
     permissions: { can_review: true, can_undo: true },
   },
 ]

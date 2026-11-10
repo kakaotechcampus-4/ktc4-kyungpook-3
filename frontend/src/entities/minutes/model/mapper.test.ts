@@ -17,11 +17,14 @@ it('maps attendees, summary, permissions and speaker fallback without interpreti
     ],
   })
   expect(minutes.transcript[3]).toEqual({
+    seq: 3,
     atMs: 360000,
     speakerMemberId: null,
     speakerName: 'jihun_dev',
     isFallbackName: true,
     text: '다음 주까지 확인할게요.',
+    edited: false,
+    originalText: null,
   })
   expect(minutes.transcript[0]).toMatchObject({ speakerName: '김서연', isFallbackName: false })
   expect(minutes.summary?.keyPoints).toHaveLength(2)

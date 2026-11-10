@@ -26,6 +26,8 @@ export const minutesHandlers = [
     return ok({
       meeting_id: meeting.meeting_id,
       title: meeting.title,
+      title_edited: false,
+      title_original: null,
       started_at: meeting.started_at,
       duration_ms: 0,
       source:

@@ -216,6 +216,25 @@ describe('sessionStorage 영속', () => {
     expect(restored).toMatchObject({ title: '저장된 제목', version: 1, notion_sync_status: null })
   })
 
+  it('고친 제목·발화 칸이 없는 예전 회의록 저장본은 고친 적 없고 줄 번호가 순서인 회의록으로 복원한다 (#551)', () => {
+    const legacy = JSON.parse(JSON.stringify(initialDb())) as {
+      minutes: Record<string, unknown>[]
+    }
+    for (const minutes of legacy.minutes) {
+      delete minutes.title_edited
+      delete minutes.title_original
+      for (const line of minutes.transcript as Record<string, unknown>[])
+        for (const key of ['seq', 'edited', 'original_text']) delete line[key]
+    }
+    sessionStorage.setItem(
+      MOCK_DB_STORAGE_KEY,
+      JSON.stringify({ version: MOCK_DB_VERSION, db: legacy }),
+    )
+
+    expect(restoreDb(sessionStorage)).toBe(true)
+    expect(db.minutes).toEqual(initialDb().minutes)
+  })
+
   it('이미 있는 version·notion_sync_status 는 복원할 때 바꾸지 않는다', () => {
     const saved = initialDb()
     saved.tasks[0].version = 4

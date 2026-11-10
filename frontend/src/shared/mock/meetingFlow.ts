@@ -211,6 +211,8 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
   const minutes: MinutesDto = {
     meeting_id: meeting.meeting_id,
     title: meeting.title,
+    title_edited: false,
+    title_original: null,
     started_at: meeting.started_at,
     duration_ms: GENERATED_DURATION_MS,
     source: sourceOf(state, meeting.meeting_id),
@@ -224,11 +226,14 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
     transcript: TRANSCRIPT_LINES.map((text, index) => {
       const member = speaker(index)
       return {
+        seq: index,
         at_ms: index * 60_000,
         speaker_member_id: member?.member_id ?? null,
         speaker_display_name: member?.display_name ?? null,
         speaker_fallback: member?.display_name ?? '참석자',
         text,
+        edited: false,
+        original_text: null,
       }
     }),
     // minutes handler 가 요청한 사람의 역할로 다시 채운다
