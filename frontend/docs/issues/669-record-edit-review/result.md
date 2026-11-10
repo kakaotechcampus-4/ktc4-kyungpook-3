@@ -45,3 +45,5 @@ python -m pytest -q -p no:cacheprovider tests/api/test_topic_decision_edit.py te
 ## 선행 #645 CI 수정 반영
 
 #645의 BE CI 실패는 새 승인 대기 규칙과 develop의 데모 시드가 충돌한 것이었다. `b0085119`의 수정을 일반 merge해 이 PR에도 반영한다. 승인 완료 회의 5개와 독립된 pending 시연 회의를 분리하고, 새 추출만 정상 PM 승인 API를 거친다. 기존 추출과 사용자의 처리 상태는 보존한다. 선행 수정의 PostgreSQL·SQLite 시드 전체 **129 passed**, 별도 독립 SQLite 검토 **40 passed, 25 skipped**와 세부 근거는 [#645 후속 결과](../645-summary-review/result.md#2026-11-11-ci-실패-후속-수정)에 있다. 이 PR의 최신 원격 CI는 병합 후 커밋을 기준으로 따로 확인한다.
+
+병합 후 시드 완료·대기 공존, 기존 추출 보존, 연결 없는 태스크 해제와 해제 반복 요청의 핵심 API를 PostgreSQL·SQLite에서 실행해 **16 passed**를 확인했다. 첫 시도는 로컬 DB 기동 중에 연결해 8개 setup 오류가 났고, `pg_isready` 확인 후 같은 16개를 다시 실행해 통과했다. 실행 helper는 로컬 `.verify/ci-fix-20261111/verify_669_integrated.sh`에 보관했다. 제품 코드에 DB 재시도나 승인 우회는 추가하지 않았다.
