@@ -19,7 +19,11 @@ export function QuickGuideButton(props: QuickGuideButtonProps) {
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        onClick={() => setOpen(true)}
+        onClick={(event) => {
+          // Safari 는 눌러도 단추에 포커스를 주지 않는다. 모달이 열 때 포커스를 연 요소로 기억하므로 먼저 준다
+          event.currentTarget.focus()
+          setOpen(true)
+        }}
       />
       <QuickGuidePanel open={open} onOpenChange={setOpen} returnFocus={() => button.current} />
     </>
