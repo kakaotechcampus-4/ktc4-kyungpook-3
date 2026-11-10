@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -10,11 +10,15 @@ from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import (
     AliasResolutionLog,
     AliasSource,
+    ChangeSource,
     Invitation,
     InvitationStatus,
     Member,
     MemberAlias,
     MemberRole,
+    MessageThread,
+    Task,
+    TaskStatus,
     User,
     Workspace,
 )
@@ -30,13 +34,14 @@ from app.schemas.member import (
     UnresolvedAliasResponse,
 )
 from app.api.deps import get_current_member, get_current_user, require_member, require_pm
-from app.services import message_reads
+from app.services import message_reads, messages, thread_signals
 from app.services.matching import resolved_texts
 from app.services.member_aliases import (
     add_discord_nickname_alias,
     remove_discord_profile_aliases,
     sync_name_aliases,
 )
+from app.services.tasks import apply_task_updates
 
 router = APIRouter(prefix="/members", tags=["members"])
 
@@ -356,6 +361,61 @@ def update_member(
         add_discord_nickname_alias(db, workspace_id, member_id, new_discord)
         db.refresh(member)
     return success(MemberResponse.model_validate(member).model_dump(mode="json"))
+
+
+@router.delete("/{member_id}", status_code=204)
+def delete_member(
+    member_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """팀원을 명단에서 뺀다(#637). 행과 이름·디스코드 계정·로그인 계정은 이력용으로 남기고 is_deleted 만 켠다.
+
+    물리 삭제는 대화(message_thread)가 CASCADE 로 지워지고 alias_review.reviewed_by 가 막아서 하지 않는다.
+    끝나지 않은 태스크의 담당은 태스크 변경 경로로 비워 이력·버전·Notion 동기화가 남게 하고, 대기 초대와 예약 DM 은 닫는다.
+    """
+    member = db.get(Member, member_id)
+    if member is None or member.withdrawn_at is not None:
+        raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
+    pm = require_pm(db, user, member.workspace_id)
+    # PM 행과 이 팀원 행을 member_id 순으로 잠근다. PM 이 아닌 팀원이면 요청한 PM 이 남아 늘 통과한다.
+    # 팀원 행을 먼저 잠가야 초대 만들기·수락과 순서가 맞는다(invitations.py).
+    _ensure_other_pm(db, member)
+    db.refresh(member)
+    if member.is_deleted:
+        raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
+    now = datetime.now(timezone.utc)
+
+    db.execute(
+        update(Invitation)
+        .where(Invitation.member_id == member_id, Invitation.status == str(InvitationStatus.PENDING))
+        .values(status=str(InvitationStatus.CANCELED), responded_at=now)
+    )
+    open_tasks = db.scalars(
+        select(Task)
+        .where(
+            Task.assignee_member_id == member_id,
+            Task.status != str(TaskStatus.DONE),
+            Task.is_deleted.is_(False),
+        )
+        .order_by(Task.task_id)
+        .with_for_update()
+    ).all()
+    for task in open_tasks:
+        apply_task_updates(
+            db, task, {"assignee_member_id": None},
+            change_source=str(ChangeSource.MANUAL), changed_by=pm.member_id,
+        )
+    thread_id = db.scalar(select(MessageThread.thread_id).where(MessageThread.member_id == member_id))
+    if thread_id is not None:
+        messages.cancel_scheduled_bundles(db, thread_id, now)
+        messages.stop_thread_dms(db, [thread_id], now)
+
+    member.is_deleted = True
+    member.deleted_at = now
+    db.commit()
+    # 로그인 계정이 있던 팀원의 열린 대화 소켓을 끊는다. 다음 요청부터는 require_member 가 403 으로 막는다.
+    thread_signals.revoke([member_id])
 
 
 @router.post(
