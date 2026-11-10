@@ -278,3 +278,12 @@ def test_auto_blocked_watch_stays_undoable(mdb, mseed):
     assert mdb.get(ReminderWatch, blocked.watch_id).state == "blocked"
     r = client("pm").post(f"{P}/tasks/{task.task_id}/auto-block/undo")
     assert r.status_code == 200, r.text
+
+
+def test_deleted_member_cannot_get_a_new_alias(mdb, mseed):
+    # PATCH 와 같이 지운 팀원에는 별칭도 더하지 않는다. 명단에 없는 사람에게 별칭이 쌓인다(#661 리뷰)
+    assert _delete("pm", mseed["carol"]).status_code == 204
+    r = client("pm").post(f"{P}/members/{mseed['carol'].member_id}/aliases", json={"alias_text": "캐롤닉"})
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "MEMBER_NOT_FOUND"
+    assert mdb.scalar(select(MemberAlias).where(MemberAlias.alias_text == "캐롤닉")) is None

@@ -441,6 +441,8 @@ def create_alias(
     db: Session = Depends(get_db),
 ) -> dict:
     member = _get_member(db, member_id, user, pm=True)
+    if member.is_deleted:  # PATCH 와 같다. 명단에 없는 사람에게 별칭이 쌓이지 않게 한다(#637)
+        raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
 
     exists = db.execute(
         select(MemberAlias).where(
