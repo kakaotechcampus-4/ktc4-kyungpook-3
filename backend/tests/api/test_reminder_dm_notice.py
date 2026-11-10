@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models import (
+    Integration,
     Member,
     Notification,
     Reminder,
@@ -140,6 +141,7 @@ def test_a_member_of_two_workspaces_gets_each_workspace_its_own_notice(mdb, msee
     other = Workspace(name="B팀")
     mdb.add(other)
     mdb.flush()
+    mdb.add(Integration(workspace_id=other.workspace_id, provider="discord", provider_channel_id="g_b"))
     tasks = [Task(workspace_id=other.workspace_id, title=f"B할일{i}", status="todo") for i in range(2)]
     mdb.add_all(tasks)
     pm_b = Member(workspace_id=other.workspace_id, user_id=mseed["pm"].user_id, display_name="PM", role="pm")

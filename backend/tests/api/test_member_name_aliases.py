@@ -14,6 +14,11 @@ from tests.usernames import username_for
 API = "/api/v1"
 
 
+@pytest.fixture(autouse=True)
+def _in_guild(guild_members):
+    """팀원에 붙이는 디스코드 계정은 모두 연결한 서버의 멤버로 본다."""
+
+
 @pytest.fixture
 def client(mseed):
     c = TestClient(app)

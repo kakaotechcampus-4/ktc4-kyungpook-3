@@ -17,7 +17,7 @@ from sqlalchemy.pool import StaticPool
 from app.api import members as members_api
 from app.core.database import Base, get_db
 from app.main import app
-from app.models import Member, Session as SessionModel, User, Workspace
+from app.models import Integration, Member, Session as SessionModel, User, Workspace
 from app.services.sessions import hash_session_token
 from tests.usernames import username_for
 
@@ -65,6 +65,11 @@ def db(request):
         engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def _in_guild(guild_members):
+    """팀원에 붙이는 디스코드 계정은 모두 연결한 서버의 멤버로 본다. 서버 멤버 확인은 test_member_discord_guild_check.py 가 잰다."""
+
+
 @pytest.fixture
 def seed(db):
     """워크스페이스 A: PM(pm-token), 디스코드 계정이 연결된 팀원(disc_active), 탈퇴한 팀원(disc_left),
@@ -87,6 +92,7 @@ def seed(db):
     )
     unlinked = Member(workspace_id=ws.workspace_id, display_name="지민")
     db.add_all([pm, active, left, unlinked])
+    db.add(Integration(workspace_id=ws.workspace_id, provider="discord", provider_channel_id="g1"))
     db.commit()
     return {"ws": ws, "other_ws": other_ws, "active": active, "left": left, "unlinked": unlinked}
 

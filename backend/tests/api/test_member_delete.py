@@ -5,6 +5,7 @@ TEST_DATABASE_URL 이 있으면 PostgreSQL 에서도 돈다.
 """
 from datetime import datetime, timezone
 
+import pytest
 from sqlalchemy import select
 
 from app.models import (
@@ -13,6 +14,11 @@ from app.models import (
 )
 from app.services import matching, messages, thread_signals
 from tests.api.test_messages_api import P, _create, client
+
+
+@pytest.fixture(autouse=True)
+def _in_guild(guild_members):
+    """팀원에 붙이는 디스코드 계정은 모두 연결한 서버의 멤버로 본다."""
 
 
 def _delete(who, member):

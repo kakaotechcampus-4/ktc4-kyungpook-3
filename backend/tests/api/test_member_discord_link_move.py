@@ -18,6 +18,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models import (
     AliasSource,
+    Integration,
     Meeting,
     Member,
     MemberAlias,
@@ -78,6 +79,11 @@ def db(request):
 ID_ORDERS = {"target_first": ("a-target", "z-holder"), "holder_first": ("z-target", "a-holder")}
 
 
+@pytest.fixture(autouse=True)
+def _in_guild(guild_members):
+    """팀원에 붙이는 디스코드 계정은 모두 연결한 서버의 멤버로 본다. 서버 멤버 확인은 test_member_discord_guild_check.py 가 잰다."""
+
+
 @pytest.fixture(params=list(ID_ORDERS))
 def seed(request, db):
     """워크스페이스 A: PM, disc_x 에 연결된 민수(holder), 연결 없는 지민(target), 삭제된 팀원(left, disc_left).
@@ -103,6 +109,10 @@ def seed(request, db):
     )
     other = Member(workspace_id=other_ws.workspace_id, display_name="민수", discord_user_id="disc_x")
     db.add_all([pm, holder, target, left, other])
+    db.add_all([
+        Integration(workspace_id=ws.workspace_id, provider="discord", provider_channel_id="g1"),
+        Integration(workspace_id=other_ws.workspace_id, provider="discord", provider_channel_id="g_b"),
+    ])
     db.flush()
     meeting = Meeting(workspace_id=ws.workspace_id, status="done")
     other_meeting = Meeting(workspace_id=other_ws.workspace_id, status="done")
@@ -337,12 +347,10 @@ def test_a_deleted_member_cannot_take_an_account(db, seed):
 def test_moving_onto_a_member_who_already_has_another_account(db, seed, monkeypatch):
     # 옮겨 받는 팀원에게 이미 계정 V 가 있으면, V 닉네임 별칭은 지우고 V 발화는 그 팀원에 남기고, U 를 잇고
     # U 발화를 붙이고 U 닉네임을 별칭으로 읽어 온다(#463). 옮기기 순서를 고정한다(#662 리뷰)
-    from app.models import Integration
     from app.services import member_aliases
 
     target, holder, meeting = seed["target"], seed["holder"], seed["meeting"]
     monkeypatch.setenv("DISCORD_BOT_TOKEN", "bot-token")
-    db.add(Integration(workspace_id=seed["ws"].workspace_id, provider="discord", provider_channel_id="g1"))
     target.discord_user_id = "disc_v"
     db.add(MemberAlias(
         member_id=target.member_id, workspace_id=seed["ws"].workspace_id, alias_text="브이닉",
