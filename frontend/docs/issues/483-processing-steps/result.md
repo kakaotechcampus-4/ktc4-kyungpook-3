@@ -103,3 +103,110 @@ MSW 개발 서버(5233)에서 1280·390 폭으로 녹음 회의·채팅 회의�
 
 - 이슈 [#483](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/483) 사용자 결정 댓글
 - [#384 progress 시점](../../contracts/frontend-api-contract.md), [#424 진행 토스트](../424-processing-toast/result.md), [#379 채팅 회의](../379-chat-meeting/result.md)
+
+---
+
+# 결과 — 정리 중 화면의 전사 진행과 단계 경과 (#483 A안 FE)
+
+- 기록일: 2026-11-10
+- 대상: [#483](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/483) A안의 FE 몫. BE 몫은 PR #542(병합됨)다. AI 몫(전사 진행 보고)은 남는다. PR 본문은 `Part of #483` 이다.
+- 기준: develop `cb0e9004`. MSW 로만 확인했다. 실서버는 확인하지 않았다.
+- 상태: **FE 몫을 반영했다.** AI 가 `stt` 진행을 보내기 전에는 운영 화면이 지금과 같다.
+
+## 작업 근거
+
+마일스톤 계획 밖 이슈 작업이다. 근거는 #483 의 BE 설계 확정 댓글, BE PR #542, 2026-11-10 사용자 결정(관리 세션 전달)이다. 전체 계획은 고치지 않았다.
+
+사용자 결정(2026-11-10):
+
+- 표시는 숫자와 경과 시간이다. 막대·회전 표시·남은 시간 추정은 없다. 서버 값이 아닌 숫자를 만들지 않는다(U4-4).
+- 진행 단위(트랙인지 STT 호출 조각인지)는 정하지 않았다. 그래서 문구는 단위를 말하지 않는다. 단위가 정해지면 문구 한 곳만 바꾼다.
+- 경과는 지금 단계가 `stage_at` 부터 몇 분째인지다. 1분 미만은 `방금 시작`, 음수는 0 이다. 갱신은 polling 주기를 따른다.
+
+## 실제 구현
+
+### 경계
+
+- [meeting 스키마](../../../src/shared/types/api/meeting.ts)가 `processing: {stage, stage_at, stt: {done, total} | null} | null` 을 읽는다. `stt` 는 정수이고 `0 ≤ done ≤ total`, `total ≥ 1` 이다(BE `MeetingSttProgress` 와 같다).
+- 모양이 틀리면 응답을 거절하지 않고 `processing` 만 null 로 본다(D-184 보수 폴백, 개발 모드 경고). 키가 없는 옛 BE 도 null 이다.
+- [mapper](../../../src/entities/meeting/model/mapper.ts)는 모르는 `stage` 를 null 로 내린다. 도메인은 `Meeting.processing: {stage, stageAt, stt} | null` 이다([types.ts](../../../src/entities/meeting/model/types.ts)).
+
+### 표시 판정과 문구
+
+- [stageDetail.ts](../../../src/entities/meeting/lib/stageDetail.ts) `stageDetail(processing, 지금 단계, now)` 가 지금 단계 옆에 붙일 진행 수와 경과(분)를 정한다.
+  - 서버 단계가 화면의 지금 단계에 속할 때만 붙인다. 표 `STEP_STAGES` 가 대응을 갖는다: 「음성을 텍스트로 옮기기」 ← `stt`, 「결정사항과 할 일 뽑아내기」 ← `sources`·`extract`·`handoff`. 첫 단계·채팅의 「대화 모으기」에는 붙지 않는다. 발화 데이터로 `progress` 가 서버 단계보다 앞서 간 회의에 다른 단계의 경과를 붙이지 않기 위해서다.
+  - 진행 수는 `stage` 가 `stt` 일 때만이다.
+  - `now` 는 상세 응답을 마지막으로 받은 시각(쿼리의 `dataUpdatedAt`)이다. 3초 polling 마다 다시 그려지고 따로 타이머가 없다. polling 이 멈추면(읽지 못한 응답·연결 끊김) 경과도 멈춘다.
+- 문구는 같은 파일 한 곳에 있다.
+
+| 경우 | 보이는 글 | 화면 읽기 프로그램 |
+|---|---|---|
+| 진행 수 | `3/5` | `5 중 3 완료` |
+| 경과 1분 미만, 음수 | `방금 시작` | 같음 |
+| 경과 1~59분 | `4분째` | 같음 |
+| 경과 60분 이상 | `1시간 15분째`, 나머지가 0 이면 `2시간째` | 같음 |
+| 둘 다 | `3/5 · 4분째` | `5 중 3 완료, 4분째` |
+
+- [StageDetailText.tsx](../../../src/entities/meeting/ui/StageDetailText.tsx)가 처리 화면과 토스트에 같은 모양으로 그린다.
+
+### 화면
+
+- [처리 화면](../../../src/pages/meeting-processing/ui/MeetingProcessingPage.tsx): 지금 단계 줄의 라벨 아래 작은 글씨로 보인다. 보조 표시가 없으면 줄의 DOM 이 전과 같다. 단계 판정과 `role=status` 안내(단계가 바뀔 때만 읽는다)는 바꾸지 않았다.
+- [진행 토스트](../../../src/features/meeting-processing/ui/ProcessingToastCard.tsx): 펼친 카드의 단계 문장 아래 줄에 보인다. 접힌 알약(`정리 중 1/3`)과 알림 문장은 바꾸지 않았다. 숫자 두 개를 알약에 나란히 두면 단계 수와 헷갈리고, 알림에 진행 수를 넣으면 3초마다 읽힌다.
+
+### 모의 서버
+
+- [meetingFlow.ts](../../../src/shared/mock/meetingFlow.ts)
+  - 상세 응답의 `processing` 은 BE `_processing` 처럼 정리 중일 때만 객체(보고 전이면 세 값이 null)이고 그 밖은 null 이다(`meetingResponse`).
+  - `staged`(시나리오 `meeting-demo`)의 녹음 회의는 조회마다 AI 보고 하나를 받는다: 대기 → 전사 0/5 → 3/5 → 5/5 → 저장(sources) → 추출 → 넘기기 → 완료. `progress` 는 서버처럼 단계 순위에서 얻는다. 같은 `stt` 재보고는 `stage_at` 을 바꾸지 않는다. 조회는 5번에서 8번으로 늘었다.
+  - 단계 시작 시각은 결정적 값이다(MOCK_NOW 2026-09-18 09:00 서울 직전, 08:55·08:58·08:58:30·08:59:30). 실제 날짜로 열면 경과가 큰 수다. 브라우저 시계를 MOCK_NOW 로 두면 `5분째`·`2분째`·`1분째`·`방금 시작` 이 보인다.
+  - 새 방식 `staged-legacy`(시나리오 `meeting-demo-legacy`)는 전의 `staged` 그대로이고 `processing` 키가 없다(#542 전 BE).
+  - 채팅 회의의 `staged` 는 전과 같다(채팅 수집은 단계를 알리지 않는다). `advanceMeeting` 의 뜻도 바꾸지 않았다. 픽스처 `mt_10` 에는 `processing` 을 넣지 않아 기존 화면 테스트가 그대로다.
+- [MSW 안내](../../msw-guide.md)의 흐름 방식·시나리오 표를 고쳤다.
+- E2E [meeting-flow.e2e.ts](../../../e2e/meeting-flow.e2e.ts): 조회가 8번으로 늘어 ② 완료 토스트 대기 25초 → 40초, ⑩ 넘기기 응답 대기 30초 → 40초, 이 파일의 테스트 한도 60초 → 90초로 늘렸다.
+
+### 문서
+
+- [대표 계약](../../contracts/frontend-api-contract.md): `MeetingDetailResponse` 검증 줄, §2.3 응답 예와 `processing` 절(BE 구현·AI 미전송·FE 구현), 코드 대조 표.
+- [D-184](../../decision/frontend-decisions.md) 표의 보수 폴백 줄에 회의 상세 `processing` 을 더했다. 새 결정 번호는 쓰지 않았다.
+
+## 설계에서 정한 것
+
+| 결정 | 고른 길 | 대안과 버린 이유 |
+|---|---|---|
+| 틀린 `processing` | 그 필드만 null(D-184 보수 폴백) | 응답 전체 `INVALID_RESPONSE`: 진행 표시 하나 때문에 처리 화면이 「응답을 읽지 못했어요」가 되고 추적 polling 이 멈춘다. 숫자가 빠질 뿐 화면이 사실과 다르게 말하지 않는다 |
+| 틀린 범위 | `processing` 전체를 버림 | `stt` 만 버리고 경과는 남기기: 한 응답 안의 모양이 틀리면 나머지도 믿기 어렵고, 검사를 둘로 나눌 만큼의 이득이 없다 |
+| 경과의 기준 시각 | 상세 응답을 받은 시각(`dataUpdatedAt`) | 분 단위 타이머: 화면이 쿼리와 따로 다시 그려지고 테스트가 타이머를 다뤄야 한다. 브리프의 「polling 주기에 맞춘다」와 같다 |
+| 어느 단계에 붙이나 | 서버 단계가 화면의 지금 단계에 속할 때만(`STEP_STAGES` 표) | 늘 지금 단계에 붙이기: 데이터로 `progress` 가 앞서 간 회의(발화가 이미 저장됐는데 서버 단계는 `stt`)에 전사 경과가 「뽑아내기」 옆에 붙는다 |
+| 알림·알약 | 바꾸지 않음 | 진행 수를 넣으면 3초마다 화면 읽기 프로그램이 읽는다(#424 이 이미 막은 일) |
+| 모의 서버 | 보고 표 `STAGED_REPORTS` + 옛 서버 모드 | `advanceMeeting` 을 보고 단위로 바꾸기: 한 번에 `progress` 한 칸을 기대하는 기존 테스트를 모두 바꿔야 한다 |
+
+## 검증
+
+### 검사 명령
+
+| 검사 | 결과 |
+|---|---|
+| `npm run typecheck` | 통과 |
+| `npm run lint` | 통과 |
+| `npx prettier --check . '!.verify/**'` | 통과 |
+| `npm run build` | 통과 |
+| 바꾼 곳 테스트 `--maxWorkers=1` | 25 파일 399 건 + `features/meeting-processing` 2 파일 36 건 통과. 전체 `npm run test` 는 CI 가 돈다 |
+
+- 새 화면 테스트 [meetingProcessingStageDetail.test.tsx](../../../src/app/meetingProcessingStageDetail.test.tsx) 13건: 진행 있음(3/5, 낭독 `5 중 3 완료`), 진행 없음·키 없음(단계 줄이 전과 같음), 모양 틀림(표시만 없고 화면 정상), 1분 미만·음수·60분 이상, 단계가 바뀌면 새 `stage_at` 기준, 모르는 `stage`, 토스트 카드(알림 문장에는 숫자 없음).
+- 단위: [stageDetail.test.ts](../../../src/entities/meeting/lib/stageDetail.test.ts), mapper·스키마·`processingSignal`·모의 흐름·시나리오 테스트.
+- `stageDetail` 이 늘 null 을 돌려주게 망가뜨리면 표시를 보는 7건이 실패했다(「없을 때 지금과 같음」을 보는 테스트는 통과). 되돌린 뒤 통과.
+
+### 화면 검증
+
+MSW 개발 서버에서 브라우저 시계를 MOCK_NOW 로 두고 찍었다(로컬 `frontend/.verify/483a/shots/`, 커밋하지 않음).
+
+- 처리 화면 1280·390: 올린 뒤 지금 단계 줄이 `0/5 · 5분째` → `3/5 · 5분째` → `5/5 · 5분째` → 「결정사항과 할 일 뽑아내기」의 `2분째` → `1분째` → `방금 시작` 순서로 바뀌었다. `3/5` 에서 낭독되는 글이 `5 중 3 완료, 5분째` 다.
+- 진행 토스트 1280·390: 태스크 화면에서 펼친 카드의 문장 아래에 `3/5 · 5분째`. 알림 문장에는 숫자가 없다.
+- `meeting-demo-legacy`(옛 서버) 1280·390: 단계 줄에 보조 표시가 없다.
+
+## 남은 작업과 제한 사항
+
+- AI 가 `stt` 진행을 보내야 숫자가 보인다. 무엇을 세는지 정해지면 [stageDetail.ts](../../../src/entities/meeting/lib/stageDetail.ts)의 문구만 바꾼다.
+- 마지막 단계 「결정사항과 할 일 뽑아내기」 안에서 서버 단계가 `sources` → `extract` → `handoff` 로 바뀌면 경과가 새로 센다. 화면의 단계 이름은 그대로라 `3분째` 뒤에 `방금 시작` 이 보일 수 있다. 사용자 결정(「지금 단계가 `stage_at` 부터」)대로 두었다. 마지막 단계 전체의 경과를 보이려면 BE 가 단계별 시작 시각을 따로 줘야 한다.
+- 실서버(BE·AI)와는 확인하지 않았다. `stage_at` 은 BE 코드(`DateTime(timezone=True)`)를 읽어 시간대가 붙은 ISO 로 보았다.
