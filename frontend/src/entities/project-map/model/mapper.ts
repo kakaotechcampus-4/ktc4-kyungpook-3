@@ -96,6 +96,7 @@ export function toTopicDetail(dto: TopicDetailDto): TopicDetail {
     topicId: dto.topic_id,
     name: dto.name,
     description: dto.description,
+    edited: dto.edited,
     decisions: dto.decisions.map((decision) => ({
       decisionId: decision.decision_id,
       text: decision.text,
@@ -104,6 +105,8 @@ export function toTopicDetail(dto: TopicDetailDto): TopicDetail {
       meetingTitle: decision.meeting_title,
       decidedAt: decision.decided_at,
       replacedBy: decision.replaced_by,
+      state: decision.state,
+      edited: decision.edited,
     })),
     tasks: dto.tasks.map((task) => ({
       taskId: task.task_id,

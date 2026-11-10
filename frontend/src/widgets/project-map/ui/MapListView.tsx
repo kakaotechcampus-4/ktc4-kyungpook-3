@@ -37,6 +37,7 @@ function TaskRows({
           <button
             type="button"
             className={ROW}
+            data-node-id={task.id}
             aria-current={selection?.kind === 'task' && selection.id === task.id}
             onClick={() => onSelect({ kind: 'task', id: task.id })}
           >
@@ -60,7 +61,8 @@ function TaskRows({
 
 /**
  * 목록 보기. 그래프와 같은 내용을 주제별로 적는다 — 키보드·스크린리더와 휴대폰의 길이다.
- * 주제 이름과 태스크 줄이 모두 단추이고 누르면 그래프와 같은 패널이 열린다
+ * 주제 이름과 태스크 줄이 모두 단추이고 누르면 그래프와 같은 패널이 열린다.
+ * 단추의 `data-node-id` 는 패널을 닫을 때 연 단추가 사라졌으면 고른 노드의 단추를 찾는 데 쓴다 (MapBody)
  */
 export function MapListView({ map, selection, onSelect }: ListProps) {
   const prefix = useId()
@@ -72,6 +74,7 @@ export function MapListView({ map, selection, onSelect }: ListProps) {
             <button
               type="button"
               className={TOPIC_BUTTON}
+              data-node-id={topic.id}
               aria-current={selection?.kind === 'topic' && selection.id === topic.id}
               onClick={() => onSelect({ kind: 'topic', id: topic.id })}
             >

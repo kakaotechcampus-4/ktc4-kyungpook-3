@@ -42,10 +42,21 @@ export const projectMapSchema = z.object({
 })
 export type ProjectMapDto = z.infer<typeof projectMapSchema>
 
+/**
+ * 결정의 상태가 어떤 고치기를 보일지 정하는 판별 값이라 모르는 값이면 `INVALID_RESPONSE` 다 (D-184).
+ * #605 전 BE 는 키가 없어 유효로 읽는다. 지운 결정(`removed`)은 응답에 나오지 않는다 (계약 §4.4.3)
+ */
+export const decisionStateSchema = z.enum(['valid', 'invalid'])
+export type DecisionStateDto = z.infer<typeof decisionStateSchema>
+
+/** 고침 표시는 보기만 하므로 모양이 틀리면 그 표시만 뺀다 */
+const editedSchema = z.boolean().catch(false)
+
 export const topicDetailSchema = z.object({
   topic_id: z.string(),
   name: z.string(),
   description: z.string(),
+  edited: editedSchema,
   decisions: z.array(
     z.object({
       decision_id: z.string(),
@@ -55,6 +66,8 @@ export const topicDetailSchema = z.object({
       meeting_title: z.string().nullable(),
       decided_at: z.string(),
       replaced_by: z.string().nullable(),
+      state: decisionStateSchema.default('valid'),
+      edited: editedSchema,
     }),
   ),
   tasks: z.array(
