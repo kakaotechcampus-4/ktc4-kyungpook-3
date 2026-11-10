@@ -521,6 +521,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 | GET | `/api/v1/members/aliases?workspace_id=` | 별칭 목록 |
 | GET | `/api/v1/members/unresolved-aliases?workspace_id=` | **미매칭 이름** |
 | DELETE | `/api/v1/members/aliases/{alias_id}` | 204 |
+| DELETE | `/api/v1/members/{member_id}` | 팀원 삭제. PM 전용, 204 (아래 2026-11-10 #637) |
 
 ```jsonc
 // MemberResponse
@@ -543,6 +544,8 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 2026-11-09 #575 구현은 `MemberResponse.has_login_account: boolean`을 추가한다. 활성 팀원에 로그인 계정이 연결됐는지 나타내며 User ID는 반환하지 않는다. FE는 `hasLoginAccount`로 옮기고, PM에게 로그인 연결된 일반 팀원의 `PM 권한 부여`를 제공한다. 기존 `PATCH /members/{id}`의 `{role:"pm"}`를 사용하며 기존 PM의 권한은 유지한다. 대기 초대의 `MEMBER_HAS_PENDING_INVITATION` 등 서버 오류는 그대로 따른다. 생산자·소비자 코드를 함께 변경한 현재 구현이며, 별도 파트 합의·병합·배포 완료 기록은 아니다.
 
 2026-11-10 #613 FE 사용: Discord 를 연결하지 않은 팀의 온보딩 4단계와 팀원 연결 창이 `POST /members` 를 `{workspace_id, display_name}` 만으로 보낸다(`discord_user_id` 키 없음). 요청 형식은 위 그대로이고 BE 는 바꾸지 않았다. 서버는 같은 이름의 팀원을 막지 않는다. FE 가 보내기 전에 지금 팀원 목록과 이름(앞뒤 공백 제거, 대소문자 그대로)을 견줘 막는다(D-187). 같은 이름 거절을 서버 규약으로 둘지는 합의하지 않았다.
+
+2026-11-10 #637 BE 구현: `DELETE /members/{member_id}` 는 팀원을 명단에서 뺀다. 본문 없이 204 를 돌려준다. 행은 지우지 않고 `is_deleted` 만 켜며 이름·`discord_user_id`·로그인 연결은 이력용으로 남긴다(탈퇴의 익명화와 다르다). 그 공간의 PM 만 부른다. 일반 팀원과 다른 공간의 사용자는 403 `FORBIDDEN`, 없거나 탈퇴했거나 이미 지운 팀원은 404 `MEMBER_NOT_FOUND`, 로그인 계정이 있는 PM 이 남지 않게 되면(마지막 PM 이 자기를 지울 때) 409 `LAST_PM_REQUIRED` 다. 지우면 기본 `GET /members` 목록·담당자 찾기·봇 이름 목록에서 빠지고, 끝나지 않은(`done` 이 아닌) 태스크의 담당이 비워진다(태스크 이력 `assignee`, `change_source=manual`, `changed_by` 는 지운 PM). `done` 태스크와 지운 태스크는 그대로다. 대기 초대는 `canceled`, 예약 재촉 묶음과 리마인드는 `cancelled`, 안 나간 DM 은 `failed`(`discord_not_linked`) 가 되고 대화는 남는다. 같은 디스코드 계정은 다른 팀원에 다시 이을 수 있다. 지운 팀원은 `include_withdrawn=true` 목록에도 들어오지 않아, 이력에 남은 그 팀원 ID 의 이름을 FE 가 이 목록으로 찾지 못한다. 지운 팀원의 `GET`·`PATCH /members/{id}` 는 지금도 200 이다. FE 화면은 #647 이 붙이며 아직 이 API 를 쓰지 않는다. 생산자 코드만 바꾼 현재 구현이고 파트 합의 기록은 아니다. 근거: [members.py](../../../backend/app/api/members.py) `delete_member`, [결정 기록](../../../backend/docs/plan/m1/basis-for-decision/2026-11-10-member-delete-decision.md).
 
 계정 영구 탈퇴용 익명 기록 주체는 기존 명단 비활성화와 구분한다. 영구 탈퇴자의 대화는 PM 목록·상세·읽음에 남고 표시명은 `탈퇴한 사용자`, `web_reply_available`은 false다. 프로필 수정·별칭 추가·초대·새 발송과 늦은 봇 결과는 거절한다. 기존 `is_deleted`만 있는 명단 비활성화의 unread 0·읽음 POST 404는 유지한다. [익명 주체 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-09-withdrawn-record-actor.md)에 첫 구현의 범위를 기록했고, 본인 탈퇴 API·화면과 기록용 목록은 위 [계정 탈퇴 규약](#계정-탈퇴와-정리-상태-575-2026-11-09)을 따른다. 실제 외부 제공자·운영 계정의 삭제를 확인한 기록은 아니다.
 

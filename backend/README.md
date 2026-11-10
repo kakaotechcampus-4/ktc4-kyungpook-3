@@ -571,12 +571,13 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 
 | 구분 | API |
 |---|---|
-| PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, auto 되돌리기(`POST /extractions/{id}/items/{item_id}/revert`), Notion 재시도, 팀원 생성·수정, 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), Discord 연결 시작·콜백(`GET .../integrations/discord/start`, `GET /integrations/discord/callback`), Discord 채널 목록·채팅 수집 채널 저장·해제(`GET .../discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel`), 연동 해제, 회의 업로드, 온보딩 저장, 메시지 설정 변경(`PATCH /workspaces/{workspace_id}/message-settings`) |
+| PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, auto 되돌리기(`POST /extractions/{id}/items/{item_id}/revert`), Notion 재시도, 팀원 생성·수정·삭제(`DELETE /members/{id}`), 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), Discord 연결 시작·콜백(`GET .../integrations/discord/start`, `GET /integrations/discord/callback`), Discord 채널 목록·채팅 수집 채널 저장·해제(`GET .../discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel`), 연동 해제, 회의 업로드, 온보딩 저장, 메시지 설정 변경(`PATCH /workspaces/{workspace_id}/message-settings`) |
 | 소속이면 누구나 | 조회 API 전부(메시지 설정 조회 `GET .../message-settings` 포함), 승인 요청 생성(`POST /approvals`) |
 
 - Notion 연결 시작·콜백은 브라우저 페이지 이동이라 403 대신 앱 화면의 `?oauth=notion&oauth_result=failed`로 돌려보낸다.
 - 일반 팀원은 할일을 직접 바꾸지 못하고 승인 요청을 올려 PM의 승인을 받는다. 요청자(`requested_by`)는 바디 값이 아니라 로그인한 팀원으로 기록한다.
 - PM 역할은 `PATCH /members/{id}`의 `role`로 바꾼다. PM을 넘길 때는 다른 팀원을 먼저 PM으로 올린 뒤 자기를 내린다. 로그인 계정이 있는 PM이 한 명도 남지 않게 되면 409 `LAST_PM_REQUIRED`.
+- 팀원 삭제(`DELETE /members/{id}`, 204)는 행을 남기고 `is_deleted` 만 켠다. 이름·디스코드 계정·로그인 연결은 이력용으로 남는다. 마지막 PM 이 자기를 지우면 409 `LAST_PM_REQUIRED`, 없거나 탈퇴했거나 이미 지운 팀원은 404 `MEMBER_NOT_FOUND`. 끝나지 않은 태스크의 담당을 태스크 이력으로 비우고, 대기 초대와 예약 재촉·안 나간 DM 을 닫는다. 근거는 [결정 기록](docs/plan/m1/basis-for-decision/2026-11-10-member-delete-decision.md).
 - 봇 경로(회의 생성·종료·단계 보고·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회, 채팅 수집 대상 목록 `GET /bot/chat-channels`)는 사용자 세션 대신 서비스 토큰(`X-Service-Token`, `deps.require_service_token`)으로 막는다. 없거나 틀리면 401 `UNAUTHENTICATED`. 자세한 내용은 [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md#인증).
 
 ## 아직 없는 것
