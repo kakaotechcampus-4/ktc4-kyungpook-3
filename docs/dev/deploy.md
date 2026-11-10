@@ -81,7 +81,7 @@ flowchart TB
 | 요약 활성화 | [`deploy/enable-summary.py`](../../deploy/enable-summary.py) | 활성 `mm-worker` 에 `MM_SUMMARY_LLM=luna` drop-in 설치·검사 |
 | GPU 전사 | [`ai/deploy/gpu-stt/`](../../ai/deploy/gpu-stt/) | Elice 전사 장애 때 쓰는 GPU 대기 서버 절차 |
 
-- 리버스 프록시(Caddy) 설정 파일은 저장소에 없다. 설정 위치·내용은 [확인 필요].
+- 리버스 프록시(Caddy) 설정 파일은 저장소에 없다. 저장소로는 설정 위치·내용을 알 수 없고, 서버에서 직접 관리한다.
 - systemd 유닛은 `/etc/systemd/system/` 에 복사해 설치한다. 유닛 파일 변경은 자동 배포에 포함되지 않는다(채팅 폴링 유닛만 예외적으로 이미 설치된 서버에서 덮어쓴다). 저장소 유닛은 "예시"이고 운영 계정은 drop-in 으로 덮는다.
 
 ## 배포 절차 요약

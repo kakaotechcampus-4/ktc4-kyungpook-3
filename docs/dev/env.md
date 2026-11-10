@@ -88,7 +88,7 @@
 | 재시도·주기 | `MM_EXTRACT_RETRY_MAX` | judge 1단계에서 판단 못 한 finding 이 남을 때 인계를 미루는 횟수(기본 2) |
 | | `MM_WORKER_INTERVAL_S` | 워커 한 바퀴 주기(systemd 유닛에서 10) |
 | | `MM_PARTIAL_RETRY_MAX`, `MM_RECOVERY_INTERVAL_S` 등 | 부분 실패 재시도·복구 안내 주기. `.env.example` 에는 없고 코드 기본값을 쓴다(`capture/recorder.py`) |
-| Notion | `NOTION_API_KEY`, `NOTION_DATABASE_ID` | 개발용 Notion 직접 연동. 현재 쓰임새 [확인 필요] |
+| Notion | `NOTION_API_KEY`, `NOTION_DATABASE_ID` | 개발용 Notion 직접 연동. `ai/shared/config.py` 에서 읽기만 하고 쓰는 곳은 없다. Notion 연동은 BE 의 OAuth·outbox 가 맡는다 |
 | 개발용 | `PM_AGENT_TODAY` | 상대 날짜 해석 기준일 고정(테스트·재현) |
 | | `LOG_LEVEL` | DEBUG 면 실시간 실행기의 voice 로거를 올린다 |
 

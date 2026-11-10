@@ -49,7 +49,7 @@
 | 리마인드 답장 판단 | `judge.eval_reply` | 합성 30건 × 2 | 나뉨 60/60, 자동 반영 정밀도 26/26, 잘못된 certain 0/38, 평균 9.4초 (2026-11-04) | [결정 기록](../../ai/docs/basis_for_decision/ai/2026-11-04-reminder-reply-judgment.md) |
 | STT CER | `ai/stt/eval/` | 실제 회의 녹음(대본 정렬본) | 4.67% (2026-11-03), 업체 비교 녹음 6개 Elice 11.52% / OpenAI 10.22% / 리턴제로 11.17% / Soniox 7.54% (2026-10-14) | `ai/stt/eval/results/` |
 | GPU 전사 동등성 | `ai/stt/eval/` | 62.42분 회의 | CER Elice 와 같음, 159.8초 (2026-11-04) | `ai/stt/eval/results/2026-11-04-gpu-serving/` |
-| legacy 추출 | `extract.eval_golden_set` | 17케이스 | 할 일 83개 중 P 99%, R 94%, F1 96% (측정일 [확인 필요]) | [ai/extract/README.md](../../ai/extract/README.md) |
+| legacy 추출 | `extract.eval_golden_set` | 17케이스 | 할 일 83개 중 P 99%, R 94%, F1 96% (ai/extract/README.md 예시 출력 기준, 이 출력이 들어간 커밋 243f262e 2026-09-26) | [ai/extract/README.md](../../ai/extract/README.md) |
 
 ### 평가 방식에서 지킨 것
 
