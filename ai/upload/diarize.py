@@ -3,7 +3,7 @@
 pyannoteAI 흐름 (https://docs.pyannote.ai/openapi.json 로 확인):
   POST /v1/media/input {url: media://..} -> {url: 서명된 PUT 주소}
   PUT  서명된 주소 (파일 본문)
-  POST /v1/diarize {url: media://..} -> {jobId}
+  POST /v1/diarize {url: media://.., minSpeakers?} -> {jobId}
   GET  /v1/jobs/{jobId} 폴링 -> status(succeeded|failed|canceled|...) 와 output.diarization[{speaker,start,end}]
 인증은 `Authorization: Bearer <PYANNOTEAI_API_KEY>`.
 확인: docs.pyannote.ai/openapi.json 을 2026-10-31 에 받아 url(media://), jobId, status 열거값, output.diarization[{speaker,start,end}] 를 대조했다.
@@ -37,8 +37,9 @@ class JobNotFound(LookupError):
 class Diarizer(Protocol):
     def diarize(self, path: Path) -> list[Segment]: ...
 
-    def submit(self, path: Path) -> str:
-        """파일을 올리고 분리 job 을 만들어 job_id 를 돌려준다. 기다리지 않는다."""
+    def submit(self, path: Path, *, min_speakers: int | None = None) -> str:
+        """파일을 올리고 분리 job 을 만들어 job_id 를 돌려준다. 기다리지 않는다.
+        min_speakers 가 1 이상이면 화자를 그보다 적게 나누지 않는다."""
         ...
 
     def fetch(self, job_id: str) -> list[Segment] | None:
@@ -123,7 +124,7 @@ class PyannoteAiDiarizer:
             raise RuntimeError("PYANNOTEAI_API_KEY 환경변수가 없습니다.")
         return {"Authorization": f"Bearer {key}"}
 
-    def submit(self, path: Path) -> str:
+    def submit(self, path: Path, *, min_speakers: int | None = None) -> str:
         headers = self._headers()
         http = self._http()
         media = f"media://mm-upload/{uuid.uuid4().hex}"
@@ -133,7 +134,10 @@ class PyannoteAiDiarizer:
         with open(path, "rb") as fh:
             http.put(r.json()["url"], data=fh, timeout=UPLOAD_TIMEOUT_S).raise_for_status()
 
-        r = http.post(f"{API}/v1/diarize", json={"url": media}, headers=headers, timeout=HTTP_TIMEOUT_S)
+        body = {"url": media}
+        if min_speakers:   # API 는 1 이상만 받는다. 0·None 이면 지금처럼 화자 수를 알아서 찾게 둔다
+            body["minSpeakers"] = min_speakers
+        r = http.post(f"{API}/v1/diarize", json=body, headers=headers, timeout=HTTP_TIMEOUT_S)
         r.raise_for_status()
         return r.json()["jobId"]
 

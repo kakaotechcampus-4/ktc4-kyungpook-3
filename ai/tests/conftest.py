@@ -36,6 +36,7 @@ class FakeDiarizer:
         self.segments = segments
         self.calls = []
         self.submits = []
+        self.min_speakers = []
         self.fetches = []
         self.pending_fetches = pending_fetches  # fetch 가 None(진행 중)을 돌려주는 횟수
 
@@ -43,8 +44,9 @@ class FakeDiarizer:
         self.calls.append(path)
         return list(self.segments)
 
-    def submit(self, path):
+    def submit(self, path, *, min_speakers=None):
         self.submits.append(path)
+        self.min_speakers.append(min_speakers)
         return f"job-{len(self.submits)}"
 
     def fetch(self, job_id):
