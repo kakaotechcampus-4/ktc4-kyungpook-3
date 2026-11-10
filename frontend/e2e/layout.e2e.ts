@@ -207,7 +207,7 @@ for (const width of VIEWPORTS) {
           .getByRole('banner')
           .filter({ has: page.getByRole('button', { name: /^워크스페이스 바꾸기/ }) })
         await expect(header.getByRole('link')).toHaveCount(0)
-        for (const name of [/^알림/, /^워크스페이스 바꾸기/, /^내 계정/])
+        for (const name of [/^도움말/, /^알림/, /^워크스페이스 바꾸기/, /^내 계정/])
           await expect(header.getByRole('button', { name })).toBeInViewport({ ratio: 1 })
 
         const toast = page.getByTestId('pinned-toast-slot')
@@ -225,7 +225,7 @@ for (const width of VIEWPORTS) {
       return
     }
 
-    test('앱 헤더 — 탭 6개와 두 메뉴가 한 줄에 보인다', async ({ page }) => {
+    test('앱 헤더 — 탭 6개와 도움말·알림·두 메뉴가 한 줄에 보인다', async ({ page }) => {
       await start(page, 'multiple-workspaces', '/workspaces/ws_01/dashboard')
       const header = page.getByRole('banner')
       const nav = header.getByRole('navigation', { name: '주요 화면' })
@@ -236,10 +236,11 @@ for (const width of VIEWPORTS) {
       const tabs = TAB_NAMES.map((name) => nav.getByRole('link', { name, exact: true }))
       for (const tab of tabs) await expect(tab).toHaveCount(1)
       await expect(nav.getByRole('link')).toHaveText(TAB_NAMES)
-      const menus = [/^워크스페이스 바꾸기/, /^내 계정/].map((name) =>
+      const menus = [/^도움말/, /^알림/, /^워크스페이스 바꾸기/, /^내 계정/].map((name) =>
         header.getByRole('button', { name }),
       )
-      for (const menu of menus) await expect(menu).toBeInViewport()
+      // 일부만 걸쳐도 통과하지 않게 통째로 화면 안인지 본다 (#650 에서 768px 의 계정 단추가 밀려났다)
+      for (const menu of menus) await expect(menu).toBeInViewport({ ratio: 1 })
 
       // 높이 대신 위치로 본다 — 줄바꿈이 없으면 탭은 모두 같은 top, 헤더 항목은 모두 같은 세로 중심에 있다
       const boxOf = async (locator: Locator) => {

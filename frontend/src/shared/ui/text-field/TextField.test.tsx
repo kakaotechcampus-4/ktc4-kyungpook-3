@@ -71,10 +71,7 @@ describe('TextField', () => {
     render(<TextField label="담당자" labelTone="required-blocking" />)
 
     expect(screen.getByText('담당자')).toHaveClass('text-accent')
-    expect(screen.getByLabelText('담당자')).toHaveClass(
-      'border-accent',
-      'placeholder:text-accent-solid',
-    )
+    expect(screen.getByLabelText('담당자')).toHaveClass('border-accent', 'placeholder:text-accent')
   })
 
   it('paints the border with the accent when an error is shown', () => {

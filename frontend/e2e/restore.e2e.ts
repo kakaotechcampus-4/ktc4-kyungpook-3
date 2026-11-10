@@ -70,8 +70,8 @@ test('Notion 에서 `이전 단계` 로 연결한 Discord 를 둘러보고 `다�
   await expect(page).toHaveURL('/onboarding/ws_03/connect_discord?review=1')
   const card = page.getByRole('region', { name: '디스코드 연동' })
   await expect(card.getByText('연결됨')).toBeVisible()
-  // 둘러보기 카드의 앞으로 가기는 `다음` 하나다 (2026-09-29)
-  await expect(card.getByRole('button')).toHaveCount(1)
+  // 둘러보기 카드의 앞으로 가기는 `다음` 하나다 (2026-09-29). `어떻게 쓰나요?` 는 안내를 여는 글자 링크다 (#650)
+  await expect(card.getByRole('button').filter({ hasNotText: '어떻게 쓰나요?' })).toHaveCount(1)
   await expect(card.getByRole('button', { name: '다음', exact: true })).toBeVisible()
 
   // 둘러보기의 `다음 단계` 는 요청 없이 이어 갈 단계로 간다

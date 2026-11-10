@@ -4,6 +4,7 @@ import type { MemberDto } from '@/shared/types/api/member'
 import type { DiscordUserDto, MemberAliasDto } from '@/shared/types/api/member'
 import { toDiscordUser, toMember, toMemberAlias } from './model/mapper'
 import type { MockUnresolvedAlias } from '@/shared/mock/fixtures/member'
+import { db } from '@/shared/mock/db'
 import { setMockRole } from '@/shared/mock/sessions'
 
 it('scopes members and supports unlinking a Discord user', async () => {
@@ -279,5 +280,44 @@ describe('alias writes', () => {
       member_id: 'mb_01',
       alias_text: '민수',
     })
+  })
+})
+
+// 백엔드 pick_discord_nickname: 서버 별명(nick) → 계정 표시 이름(global_name) 순으로 한글만인 첫 값. 사용자 이름은 보지 않는다
+describe('Discord nickname alias on link', () => {
+  const base = `${location.origin}/api/v1`
+  const linkJihun = async () => {
+    const response = await fetch(`${base}/members/mb_03`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ discord_user_id: '1125' }),
+    })
+    expect(response.status).toBe(200)
+    const aliases = await fetch(`${base}/members/aliases?workspace_id=ws_01`)
+    return unwrap((await aliases.json()) as Envelope<ListDto<MemberAliasDto>>, aliases.status)
+      .items.map(toMemberAlias)
+      .filter(({ memberId, source }) => memberId === 'mb_03' && source === 'discord_profile')
+      .map(({ text }) => text)
+  }
+  const jihun = () => db.discordUsers.find(({ discord_user_id }) => discord_user_id === '1125')!
+
+  it('takes the server nickname before the account display name', async () => {
+    Object.assign(jihun(), { display_name: '제이', nick: '제이', global_name: '박지훈' })
+    expect(await linkJihun()).toEqual(['제이'])
+  })
+
+  it('falls back to the account display name when the server nickname is not Hangul only', async () => {
+    Object.assign(jihun(), { display_name: 'JH', nick: 'JH', global_name: '지훈이' })
+    expect(await linkJihun()).toEqual(['지훈이'])
+  })
+
+  it('never takes the username', async () => {
+    Object.assign(jihun(), {
+      display_name: '지훈',
+      nick: null,
+      global_name: null,
+      username: '지훈',
+    })
+    expect(await linkJihun()).toEqual([])
   })
 })

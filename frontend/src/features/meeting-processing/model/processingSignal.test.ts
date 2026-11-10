@@ -1,16 +1,31 @@
-import type { MeetingProgress, MeetingSource } from '@/entities/meeting'
+import type { MeetingProcessing, MeetingProgress, MeetingSource } from '@/entities/meeting'
 import { processingSignal, signalAnnouncement } from './processingSignal'
 import type { ProcessingSubject } from './processingSignal'
 
 const TITLE = '3주차 정기회의'
+const OBSERVED_AT_ISO = '2026-09-18T00:00:00Z'
+const OBSERVED_AT = Date.parse(OBSERVED_AT_ISO)
+const TRANSCRIBING = { audioMerged: true, transcribed: false, extracted: false }
+/** 응답을 받기 4분 전에 stt 를 알렸고 5개 중 3개를 끝냈다 */
+const STT_3_OF_5: MeetingProcessing = {
+  stage: 'stt',
+  stageAt: '2026-09-17T23:56:00Z',
+  stt: { done: 3, total: 5 },
+}
+
+/** 지금 서버는 정리 중이면 처리 단계를 늘 준다. 보고 전은 stage null 이다 */
+const NO_REPORT: MeetingProcessing = { stage: null, stageAt: null, stt: null }
 
 const processing = (
   progress: MeetingProgress | null,
   source: MeetingSource | null = 'manual_upload',
+  stage: MeetingProcessing | null = NO_REPORT,
 ): ProcessingSubject => ({
   phase: 'processing',
   title: TITLE,
   progress,
+  processing: stage,
+  observedAt: OBSERVED_AT,
   source,
 })
 
@@ -18,13 +33,15 @@ const AWAITING: ProcessingSubject = {
   phase: 'awaiting_speakers',
   title: TITLE,
   progress: { audioMerged: true, transcribed: true, extracted: false },
+  processing: null,
+  observedAt: OBSERVED_AT,
   source: 'manual_upload',
 }
 const DONE: ProcessingSubject = { phase: 'done', title: TITLE }
 const FAILED: ProcessingSubject = { phase: 'failed', title: TITLE, failedStage: 'diarize' }
 
 describe('진행 토스트의 역할 × 단계 (#424)', () => {
-  it.each(['pm', 'member'] as const)('%s 는 정리 중을 단계 문장과 3칸 진행으로 본다', (role) => {
+  it.each(['pm', 'member'] as const)('%s 는 정리 중을 단계 문장과 5칸 진행으로 본다', (role) => {
     expect(
       processingSignal(
         processing({ audioMerged: true, transcribed: false, extracted: false }),
@@ -34,8 +51,9 @@ describe('진행 토스트의 역할 × 단계 (#424)', () => {
       kind: 'processing',
       title: TITLE,
       sentence: '음성을 텍스트로 옮기고 있어요',
-      steps: ['done', 'current', 'waiting'],
+      steps: ['done', 'current', 'waiting', 'waiting', 'waiting'],
       doneCount: 1,
+      detail: null,
     })
   })
 
@@ -43,13 +61,14 @@ describe('진행 토스트의 역할 × 단계 (#424)', () => {
     expect(processingSignal(AWAITING, 'pm')).toEqual({ kind: 'speakers', title: TITLE })
   })
 
-  it('팀원은 화자 지정 대기를 정리 중 모양으로 본다 — 지금 단계 없이 기다린다는 문장이다', () => {
+  it('팀원은 화자 지정 대기를 정리 중 모양으로 본다 — 지금 단계 없이 기다린다는 문장이고, 서버가 처리 단계를 주지 않아도 5칸이다', () => {
     expect(processingSignal(AWAITING, 'member')).toEqual({
       kind: 'processing',
       title: TITLE,
       sentence: '화자 지정을 기다리고 있어요',
-      steps: ['done', 'done', 'waiting'],
+      steps: ['done', 'done', 'waiting', 'waiting', 'waiting'],
       doneCount: 2,
+      detail: null,
     })
   })
 
@@ -86,30 +105,56 @@ describe('진행 토스트의 역할 × 단계 (#424)', () => {
 })
 
 describe('정리 중 단계 문장 (#483)', () => {
-  it.each([
-    [{ audioMerged: false, transcribed: false, extracted: false }, '차례를 기다리고 있어요', 0],
-    [
-      { audioMerged: true, transcribed: false, extracted: false },
-      '음성을 텍스트로 옮기고 있어요',
-      1,
-    ],
-    [
-      { audioMerged: true, transcribed: true, extracted: false },
-      '결정사항과 할 일을 뽑고 있어요',
-      2,
-    ],
-  ])('녹음 회의는 지금 단계의 문장이다', (progress, sentence, doneCount) => {
-    expect(processingSignal(processing(progress), 'pm')).toMatchObject({ sentence, doneCount })
+  const NONE = { audioMerged: false, transcribed: false, extracted: false }
+  const SOURCES = { audioMerged: true, transcribed: true, extracted: false }
+  const reported = (stage: MeetingProcessing['stage']): MeetingProcessing => ({
+    stage,
+    stageAt: OBSERVED_AT_ISO,
+    stt: null,
   })
 
-  it('넘기는 중(extracted 참, 아직 processing)에도 마지막 단계 진행 중이다', () => {
+  it.each([
+    [NONE, NO_REPORT, '차례를 기다리고 있어요', 0],
+    [TRANSCRIBING, reported('stt'), '음성을 텍스트로 옮기고 있어요', 1],
+    [SOURCES, reported('sources'), '회의록을 정리하고 있어요', 2],
+    [SOURCES, reported('extract'), '결정사항과 할 일을 뽑고 있어요', 3],
+    [SOURCES, reported('handoff'), '정리 결과를 보내고 있어요', 4],
+  ])(
+    '녹음 회의는 서버 단계마다 그 단계의 문장이다 — %#',
+    (progress, stage, sentence, doneCount) => {
+      expect(processingSignal(processing(progress, 'manual_upload', stage), 'pm')).toMatchObject({
+        sentence,
+        doneCount,
+      })
+    },
+  )
+
+  it('넘기는 중(extracted 참, 아직 processing)에도 마지막 단계 정리 결과 보내기가 진행 중이다', () => {
     expect(
       processingSignal(processing({ audioMerged: true, transcribed: true, extracted: true }), 'pm'),
     ).toMatchObject({
+      sentence: '정리 결과를 보내고 있어요',
+      steps: ['done', 'done', 'done', 'done', 'current'],
+      doneCount: 4,
+    })
+  })
+
+  it('처리 단계가 없는 옛 응답은 세 칸이고 넘기는 중에도 뽑아내기가 진행 중이다', () => {
+    expect(processingSignal(processing(SOURCES, 'manual_upload', null), 'pm')).toMatchObject({
       sentence: '결정사항과 할 일을 뽑고 있어요',
       steps: ['done', 'done', 'current'],
       doneCount: 2,
     })
+    expect(
+      processingSignal(
+        processing(
+          { audioMerged: true, transcribed: true, extracted: true },
+          'manual_upload',
+          null,
+        ),
+        'pm',
+      ),
+    ).toMatchObject({ steps: ['done', 'done', 'current'], doneCount: 2 })
   })
 
   it('채팅 회의는 두 칸이다 — 대화 모으기 → 뽑아내기, 넘기는 중에도 둘째가 진행 중이다', () => {
@@ -138,7 +183,7 @@ describe('정리 중 단계 문장 (#483)', () => {
   })
 
   it('progress 가 없는 옛 응답은 첫 단계부터다', () => {
-    expect(processingSignal(processing(null), 'pm')).toMatchObject({
+    expect(processingSignal(processing(null, 'manual_upload', null), 'pm')).toMatchObject({
       sentence: '차례를 기다리고 있어요',
       steps: ['current', 'waiting', 'waiting'],
       doneCount: 0,
@@ -153,11 +198,38 @@ describe('정리 중 단계 문장 (#483)', () => {
       sentence: '회의를 정리하고 있어요',
       steps: null,
       doneCount: null,
+      detail: null,
     })
     expect(processingSignal({ ...AWAITING, source: null }, 'member')).toMatchObject({
       sentence: '화자 지정을 기다리고 있어요',
       steps: null,
     })
+  })
+})
+
+describe('지금 단계의 진행 수·경과 (#483)', () => {
+  it('전사 중이면 서버가 알린 진행 수와 응답을 받은 시각까지의 경과다', () => {
+    expect(
+      processingSignal(processing(TRANSCRIBING, 'manual_upload', STT_3_OF_5), 'member'),
+    ).toMatchObject({ detail: { stt: { done: 3, total: 5 }, elapsedMinutes: 4 } })
+  })
+
+  it('출처를 모르면 단계를 모르니 붙이지 않는다', () => {
+    expect(processingSignal(processing(TRANSCRIBING, null, STT_3_OF_5), 'pm')).toMatchObject({
+      sentence: '회의를 정리하고 있어요',
+      detail: null,
+    })
+  })
+
+  it('팀원이 보는 화자 지정 대기에는 붙이지 않는다', () => {
+    expect(
+      processingSignal({ ...AWAITING, progress: TRANSCRIBING, processing: STT_3_OF_5 }, 'member'),
+    ).toMatchObject({ sentence: '화자 지정을 기다리고 있어요', detail: null })
+  })
+
+  it('알림 문장에는 진행 수·경과를 넣지 않는다', () => {
+    const signal = processingSignal(processing(TRANSCRIBING, 'manual_upload', STT_3_OF_5), 'pm')
+    expect(signal && signalAnnouncement(signal)).toBe('음성을 텍스트로 옮기고 있어요')
   })
 })
 

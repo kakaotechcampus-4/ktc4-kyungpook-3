@@ -276,6 +276,8 @@ describe('휴대폰 셸 (D-180)', () => {
   it.each([
     ['알림', /^알림/, 1024, 390],
     ['공간 메뉴', /^워크스페이스 바꾸기/, 390, 1024],
+    ['도움말', /^도움말$/, 1024, 390],
+    ['도움말', /^도움말$/, 390, 1024],
   ] as const)(
     '자리를 옮기는 %s 버튼에 있던 포커스는 %ipx → %ipx 뒤에도 그 버튼에 있다',
     async (_, name, from, to) => {
@@ -286,6 +288,27 @@ describe('휴대폰 셸 (D-180)', () => {
       resize(to)
       expect(screen.getByRole('button', { name })).toBe(trigger)
       expect(trigger).toHaveFocus()
+    },
+  )
+})
+
+describe('헤더의 처음 쓰는 분을 위한 안내 (#650)', () => {
+  it.each([1024, 390])(
+    '%ipx: 알림 옆 도움말 단추가 안내를 열고, 닫으면 그 단추로 포커스가 돌아온다',
+    async (width) => {
+      stubViewportWidth(width)
+      renderApp('/workspaces/ws_01/dashboard')
+      const header = await shellHeader()
+      const help = within(header).getByRole('button', { name: '도움말' })
+      expect(help).toHaveAttribute('aria-haspopup', 'dialog')
+      expect(screen.queryByRole('dialog')).toBeNull()
+
+      await userEvent.click(help)
+      const panel = await screen.findByRole('dialog', { name: '처음 쓰는 분을 위한 안내' })
+      expect(within(panel).getAllByRole('heading', { level: 3 })).toHaveLength(5)
+      await userEvent.keyboard('{Escape}')
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      await waitFor(() => expect(help).toHaveFocus())
     },
   )
 })

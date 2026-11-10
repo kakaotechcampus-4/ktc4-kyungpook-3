@@ -7,7 +7,7 @@ export const BADGE_DOT = 'mr-3 h-5 w-5 shrink-0 rounded-999 bg-current'
 export const SMALL_BUTTON =
   'inline-flex h-28 shrink-0 items-center rounded-7 border border-line-strong bg-surface-sunken px-10 text-[12px] text-ink hover:bg-control'
 export const LINK_BUTTON =
-  'inline-flex h-32 min-h-[36px] items-center self-start rounded-9 bg-control px-13 text-caption font-semibold text-ink hover:bg-line-strong'
+  'inline-flex h-32 min-h-[36px] items-center self-start rounded-9 bg-control px-13 text-caption font-semibold text-ink hover:bg-line-strong aria-disabled:cursor-not-allowed aria-disabled:text-faint aria-disabled:hover:bg-control'
 
 /* 팀원 영역의 머리 줄·맡은 일 줄. 팀원 목록과 그 뼈대가 같이 쓴다 */
 export const HEAD = 'flex items-center gap-12 border-b border-line py-14'
