@@ -26,11 +26,17 @@ export const memberFixtures: MemberDto[] = memberSeeds.map(
     created_at: '2026-09-01T00:00:00Z',
   }),
 )
-export const discordUserFixtures: DiscordUserDto[] = [
+/** 모의 Discord 서버의 사용자. 백엔드가 Discord 에서 받는 서버 별명(nick)·계정 표시 이름(global_name)도 둔다 —
+    닉네임 별칭은 이 둘에서 고른다. `display_name` 은 화면 응답이고 백엔드는 nick → global_name → username 순으로 채운다 */
+export type MockDiscordUser = DiscordUserDto & { nick: string | null; global_name: string | null }
+
+export const discordUserFixtures: MockDiscordUser[] = [
   {
     discord_user_id: '1123',
     username: 'seoyeon_01',
     display_name: '서연',
+    nick: null,
+    global_name: '서연',
     avatar_url: null,
     is_bot: false,
   },
@@ -38,6 +44,8 @@ export const discordUserFixtures: DiscordUserDto[] = [
     discord_user_id: '1124',
     username: 'minsu',
     display_name: null,
+    nick: null,
+    global_name: null,
     avatar_url: null,
     is_bot: false,
   },
@@ -45,6 +53,8 @@ export const discordUserFixtures: DiscordUserDto[] = [
     discord_user_id: '1125',
     username: 'jihun_dev',
     display_name: '지훈',
+    nick: '지훈',
+    global_name: null,
     avatar_url: null,
     is_bot: false,
   },
@@ -52,6 +62,8 @@ export const discordUserFixtures: DiscordUserDto[] = [
     discord_user_id: '1199',
     username: 'manager_bot',
     display_name: '매니저봇',
+    nick: null,
+    global_name: '매니저봇',
     avatar_url: null,
     is_bot: true,
   },

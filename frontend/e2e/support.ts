@@ -58,6 +58,7 @@ export type Scenario =
   | 'settings-discord-skipped'
   | 'settings-unmapped'
   | 'settings-discord-empty'
+  | 'member-rows'
   | 'settings-member'
   | 'team-invitations'
   | 'invitation-pending'

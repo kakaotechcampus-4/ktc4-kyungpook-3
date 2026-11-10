@@ -113,8 +113,23 @@ def seed_nouns(n: int = SEED_NOUNS) -> frozenset[str]:
     return frozenset(out)
 
 
+def term_words(terms: Iterable[str]) -> set[str]:
+    """용어를 띄어쓰기와 제목을 쪼개는 방식(형태소)으로도 나눠 안다. 여러 단어 용어("코드 컨벤션")는 통째로는 제목의
+    명사와 맞지 않고, 한 단어 용어도 혼자 분석하면 제목 안에서와 다르게 쪼개질 수 있다("리마인드" → 리·마인드)."""
+    out = set(terms)
+    for w in terms:
+        out.update(w.split())
+        out |= nouns(w)
+    return out
+
+
+@lru_cache(maxsize=1)
+def _terms_vocab() -> frozenset[str]:
+    return frozenset(term_words(load_terms()))
+
+
 def base_vocab() -> set[str]:
-    return set(seed_nouns()) | set(load_terms())
+    return set(seed_nouns()) | set(_terms_vocab())
 
 
 def team_nouns(lines: Iterable[tuple[str | None, str]]) -> set[str]:
