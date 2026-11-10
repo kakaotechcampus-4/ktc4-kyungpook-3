@@ -2,6 +2,7 @@ import { FinalCta, LandingFooter } from './LandingClosing'
 import { LandingHeader } from './LandingHeader'
 import { LandingHero } from './LandingHero'
 import { Capabilities, FeatureCards, Integrations, ValueSections } from './LandingSections'
+import { MascotIntroduction } from './MascotIntroduction'
 import { ProductPreview } from './ProductPreview'
 import { CARD_WIDTH } from './styles'
 
@@ -18,6 +19,7 @@ export function LandingPage() {
         </div>
         <ValueSections />
         <FeatureCards />
+        <MascotIntroduction />
         <Integrations />
         <Capabilities />
         <FinalCta />

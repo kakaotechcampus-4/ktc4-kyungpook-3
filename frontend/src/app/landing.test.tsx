@@ -82,6 +82,21 @@ describe('랜딩 (U2-1)', () => {
     ).toBeInTheDocument()
   })
 
+  it('마스코트 매스의 이름과 함께하는 순간을 소개한다', async () => {
+    await openLanding()
+    const introduction = screen.getByRole('region', { name: '함께 일할 매스예요.' })
+    expect(
+      within(introduction).getByRole('heading', { level: 2, name: '함께 일할 매스예요.' }),
+    ).toBeInTheDocument()
+    expect(within(introduction).getByRole('img', { name: '마스코트 매스' })).toBeInTheDocument()
+    expect(
+      within(introduction).getByText(/Manager's Manager의 마스코트, 매스예요/),
+    ).toBeInTheDocument()
+    expect(
+      within(introduction).getByText(/회의 정리를 기다릴 때, 확인할 메시지를 살펴볼 때/),
+    ).toBeInTheDocument()
+  })
+
   it('요금제 절을 뺐으니 푸터에도 `요금제` 가 없고 `[상태 페이지]` 자리표시도 없다', async () => {
     await openLanding()
     const footer = screen.getByRole('contentinfo')
