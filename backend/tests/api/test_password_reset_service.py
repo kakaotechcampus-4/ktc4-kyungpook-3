@@ -10,6 +10,7 @@ from app.models import PasswordResetToken, Session as SessionModel, User
 from app.services import messages, password_reset as svc
 from app.services.passwords import hash_password, verify_password
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 NOW = datetime(2026, 11, 5, 0, 0, tzinfo=timezone.utc)
 BASE = "https://mm.example"
@@ -19,7 +20,7 @@ LINK = re.compile(r"https://mm\.example/reset-password#token=([A-Za-z0-9_-]+)")
 def _user(db, email="abcd@example.com", password_hash="__default__", provider="local"):
     if password_hash == "__default__":
         password_hash = hash_password("old-pass-1")
-    user = User(email=email, password_hash=password_hash, name="테스터", provider=provider)
+    user = User(username=username_for(email), email=email, password_hash=password_hash, name="테스터", provider=provider)
     db.add(user)
     db.commit()
     return user

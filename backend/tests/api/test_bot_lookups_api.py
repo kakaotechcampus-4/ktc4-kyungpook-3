@@ -15,6 +15,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models import Meeting, Member, MemberAlias, Session as SessionModel, User, Workspace
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 TOKEN = "test-token"
@@ -74,7 +75,7 @@ def seed(db):
 
     정렬의 동점 비교가 DB 콜레이션에 흔들리지 않게 ID는 영숫자로만 정한다.
     """
-    user = User(email="pm@example.com", name="pm")
+    user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     a = Workspace(workspace_id="wsa", name="A")
     b = Workspace(workspace_id="wsb", name="B")
     c = Workspace(workspace_id="wsc", name="C")

@@ -288,7 +288,7 @@ def withdraw(db: Session, user_id: str, proof: str) -> WithdrawalResponse:
             return prior
         raise AppError(ErrorCode.UNAUTHENTICATED)
     email = user.email
-    lifecycle.identity_lock(db, email)
+    lifecycle.identity_lock(db, lifecycle.user_identity(user))
     lifecycle.worker_gate(db)
     historical = select(Invitation.member_id).where(Invitation.accepted_user_id == user_id)
     owned = db.scalars(select(Member).where(or_(
@@ -331,13 +331,17 @@ def withdraw(db: Session, user_id: str, proof: str) -> WithdrawalResponse:
             _empty_workspace(db, space, now)
         else:
             _scrub_shared(db, wid, members, now)
-    db.execute(delete(Invitation).where(or_(Invitation.email == email, Invitation.member_id.in_(owned_member_ids), Invitation.accepted_user_id == user_id)))
-    db.execute(delete(SignupEmailCode).where(SignupEmailCode.email == email))
+    # 카카오만으로 가입한 계정은 이메일이 없어 이메일로 찾을 초대·인증 코드·로그인 제한이 없다(#610).
+    by_email = [Invitation.email == email] if email else []
+    db.execute(delete(Invitation).where(or_(*by_email, Invitation.member_id.in_(owned_member_ids), Invitation.accepted_user_id == user_id)))
+    if email:
+        db.execute(delete(SignupEmailCode).where(SignupEmailCode.email == email))
     db.execute(delete(User).where(User.user_id == user_id))
     db.commit()
     from app.services import thread_signals
     thread_signals.revoke(owned_member_ids)
-    login_limit.clear_email(email)
+    if email:
+        login_limit.clear_email(email)
     purge_backend(db, withdrawal_id=receipt.withdrawal_id)
     return find_receipt(db, proof)
 

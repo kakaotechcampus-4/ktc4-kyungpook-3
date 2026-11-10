@@ -26,6 +26,7 @@ from app.models import (
     WorkspaceAsrTerm,
 )
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 TOKEN = "test-token"
@@ -74,7 +75,7 @@ def db(request, monkeypatch):
 @pytest.fixture
 def seed(db):
     """워크스페이스 A(PM 세션·팀원·task), 다른 워크스페이스 B(팀원 하나)."""
-    user = User(email="pm@example.com", name="pm")
+    user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     db.add_all([user, Workspace(workspace_id="wsa", name="A"), Workspace(workspace_id="wsb", name="B")])
     db.flush()
     db.add_all([

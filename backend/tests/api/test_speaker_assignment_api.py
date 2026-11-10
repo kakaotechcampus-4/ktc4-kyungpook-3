@@ -20,6 +20,7 @@ from app.main import app
 from app.services import upload_storage
 from app.models import Meeting, MeetingUpload, Member, Session as SessionModel, User, Workspace
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 SERVICE_TOKEN = "test-service-token"
@@ -73,7 +74,7 @@ def db(request, monkeypatch):
 
 
 def _add_user(db, email, token, ws_id, role, name):
-    user = User(email=email, name=name)
+    user = User(username=username_for(email), email=email, name=name)
     db.add(user)
     db.flush()
     db.add(SessionModel(

@@ -103,7 +103,7 @@ def test_unrelated_workspace_invitation_cannot_escape_email_cleanup(mdb, mseed):
         with Session(engine) as db:
             _timeout(db)
             lifecycle.user(db, inviter_uid)
-            lifecycle.identity_lock(db, "alice@example.com")
+            lifecycle.identity_lock(db, lifecycle.email_identity("alice@example.com"))
             lifecycle.workspace(db, wid)
             db.add(Invitation(workspace_id=wid, member_id=mid, email="alice@example.com", invited_by_user_id=inviter_uid))
             db.flush()

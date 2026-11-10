@@ -17,9 +17,23 @@ def worker_gate(db: Session) -> None:
         db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": WORKER_GATE})
 
 
-def identity_lock(db: Session, email: str) -> None:
+def email_identity(email: str) -> str:
+    return "email:" + email
+
+
+def kakao_identity(provider_id: str) -> str:
+    return "kakao:" + provider_id
+
+
+def user_identity(user: User) -> str:
+    """가입·탈퇴가 같은 줄에 서는 계정의 신원. 이메일 없는 계정은 카카오만으로 가입한 계정이다(#610)."""
+    return email_identity(user.email) if user.email else kakao_identity(user.provider_id)
+
+
+def identity_lock(db: Session, identity: str) -> None:
+    """identity 는 email_identity·kakao_identity 의 값이다. 같은 신원의 가입·초대·탈퇴가 한 줄로 선다."""
     if db.get_bind().dialect.name == "postgresql":
-        key = int.from_bytes(hashlib.sha256(("email:" + email).encode()).digest()[:8], "big", signed=True)
+        key = int.from_bytes(hashlib.sha256(identity.encode()).digest()[:8], "big", signed=True)
         db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
 
 

@@ -21,6 +21,7 @@ from app.models import (
     Workspace,
 )
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 
 @pytest.fixture
@@ -45,7 +46,7 @@ def db():
 
 
 def _user_with_session(db, email: str, token: str) -> User:
-    user = User(email=email, name=email.split("@")[0])
+    user = User(username=username_for(email), email=email, name=email.split("@")[0])
     db.add(user)
     db.flush()
     db.add(

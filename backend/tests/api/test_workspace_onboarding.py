@@ -15,6 +15,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models import Member, Session as SessionModel, User, Workspace, WorkspaceOnboardingStepState
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 STEPS = ["create_workspace", "connect_discord", "connect_notion", "connect_members"]
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
@@ -62,7 +63,7 @@ def db(request):
 
 
 def _user_with_session(db, email: str, token: str) -> User:
-    user = User(email=email, name=email.split("@")[0])
+    user = User(username=username_for(email), email=email, name=email.split("@")[0])
     db.add(user)
     db.flush()
     db.add(
