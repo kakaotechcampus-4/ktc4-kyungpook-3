@@ -564,3 +564,8 @@ def test_the_recording_notice_says_audio_goes_to_an_outside_service_and_how_to_r
     assert "외부 서비스(Elice)로 보냅니다" in A.NOTICE
     assert "음성 채널에서 나가 주세요" in A.NOTICE
     assert A.NOTICE.startswith("🔴 녹음·전사 중입니다.")
+
+
+def test_notice_mentions_7_day_retention():
+    assert "최대 7일" in A.NOTICE
+    assert A.NOTICE.index("Elice") < A.NOTICE.index("최대 7일") < A.NOTICE.index("녹음을 원하지 않으면")

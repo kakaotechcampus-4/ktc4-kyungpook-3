@@ -39,6 +39,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from capture import audio_outbox
 from capture.handoff import from_env as handoff_from_env
 from capture.judge_path import extract_path
 from capture.notify import FileOutbox, MeetingReporter, debug_from_env
@@ -414,6 +415,20 @@ class Worker:
         for session in dropped:
             print(f"[worker] 세션 {session} 음성 삭제", flush=True)
 
+    async def _drain_outbox(self) -> None:
+        """인계한 회의의 녹음(m4a)을 BE 로 올린다(#659). 대기 폴더는 prune_audio 가 wav 를 지우기 직전에 채운다.
+        BE 설정이 없으면 건너뛴다. 실패해도 로그만 남기고 바퀴는 계속 돈다(남은 항목은 다음 바퀴에 다시 한다)."""
+        handoff = self._handoff_factory()
+        if handoff is None or self._stopping:
+            return
+        try:
+            done = await asyncio.to_thread(audio_outbox.drain, self.recordings_dir, handoff.client)
+        except Exception as e:  # noqa: BLE001 - 녹음 올리기는 곁가지다. 다음 바퀴에 다시 한다
+            print(f"[worker] 녹음 올리기 오류: {type(e).__name__}: {e}", flush=True)
+            return
+        for meeting_id in done:
+            print(f"[worker] 회의 {meeting_id} 녹음 대기 항목 처리", flush=True)
+
     async def _purge_once(self) -> None:
         from capture.meeting_purge import purge_one
         from capture.privacy_cleanup import cleanup_one as privacy_cleanup_one
@@ -455,6 +470,7 @@ class Worker:
                 await self._intake_once()
                 await self._purge_once()
                 await self._prune_audio()
+                await self._drain_outbox()
                 self._schedule_summary()
                 await self._nap()
         finally:

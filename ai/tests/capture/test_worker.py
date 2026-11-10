@@ -1012,12 +1012,16 @@ async def test_each_lap_summarizes_once_after_intake_purge_and_audio_pruning(tmp
     async def prune():
         order.append("prune")
 
+    async def drain():
+        order.append("drain")
+
     monkeypatch.setattr(w, "_purge_once", purge)
     monkeypatch.setattr(w, "_prune_audio", prune)
+    monkeypatch.setattr(w, "_drain_outbox", drain)
     summary = _Summary(on_call=lambda: order.append("summary"))
     w._summary = summary
     assert await _laps(w, 3) == 3
-    assert order == ["intake", "purge", "prune", "summary"] * 2 + ["purge", "prune"]
+    assert order == ["intake", "purge", "prune", "drain", "summary"] * 2 + ["purge", "prune", "drain"]
 
 
 async def test_summary_leaves_the_main_meeting_seat_and_current_session_alone(tmp_path):
@@ -1085,3 +1089,51 @@ async def test_audio_pruning_error_does_not_stop_the_worker(tmp_path, monkeypatc
     monkeypatch.setattr(W, "prune_audio", boom)
     w = _worker(tmp_path, interval_s=0.05)
     assert await _laps(w, 2) == 2
+
+
+class _RecordingClient:
+    def __init__(self, error=None):
+        self.error, self.uploaded = error, []
+
+    def upload_recording(self, meeting_id, path):
+        if self.error:
+            raise self.error
+        self.uploaded.append(meeting_id)
+        return {"meeting_id": meeting_id, "stored": True}
+
+
+def _queue_recording(tmp_path, meeting_id="m1"):
+    import numpy as np
+    import soundfile as sf
+
+    from capture import audio_outbox
+    rec = tmp_path / "recordings"
+    rec.mkdir(exist_ok=True)
+    track = rec / f"{meeting_id}.wav"
+    sf.write(str(track), np.full(1600, 0.1, dtype=np.float32), 16000, subtype="PCM_16")
+    audio_outbox.enqueue(rec, meeting_id=meeting_id, workspace_id="ws-1", handed_off_at=R.utcnow(), tracks=[track])
+    return rec
+
+
+async def test_drain_outbox_uploads_queued_recordings_with_the_handoff_client(tmp_path):
+    rec = _queue_recording(tmp_path)
+    client = _RecordingClient()
+    w = _worker(tmp_path, handoff=type("H", (), {"client": client})())
+    await w._drain_outbox()
+    assert client.uploaded == ["m1"]
+    assert not list((rec / "audio_outbox").glob("m1.*"))
+
+
+async def test_drain_outbox_without_a_handoff_leaves_the_queue_alone(tmp_path):
+    rec = _queue_recording(tmp_path)
+    await _worker(tmp_path, handoff=None)._drain_outbox()
+    assert (rec / "audio_outbox" / "m1.json").exists()
+
+
+async def test_drain_outbox_error_is_logged_and_the_worker_keeps_going(tmp_path, monkeypatch, capsys):
+    def boom(*a, **k):
+        raise RuntimeError("disk")
+    monkeypatch.setattr(W.audio_outbox, "drain", boom)
+    w = _worker(tmp_path, handoff=type("H", (), {"client": _RecordingClient()})(), interval_s=0.05)
+    assert await _laps(w, 2) == 2
+    assert "녹음 올리기 오류: RuntimeError: disk" in capsys.readouterr().out

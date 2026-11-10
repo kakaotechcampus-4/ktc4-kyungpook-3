@@ -424,3 +424,21 @@ def test_chat_snapshot_epoch_reaches_separately_constructed_ai_tool_client(tmp_p
         return 0
     assert operation(None, client, workspace_id='workspace-a') == 0
     assert headers[-1]['X-Privacy-Epoch'] == '4'
+
+
+def _queue(recordings, meeting_id, workspace):
+    box = recordings / 'audio_outbox'
+    box.mkdir(exist_ok=True)
+    (box / f'{meeting_id}.m4a').write_bytes(b'mixed voices')
+    (box / f'{meeting_id}.json').write_text(json.dumps({'meeting_id': meeting_id, 'workspace_id': workspace,
+                                                        'handed_off_at': '2026-11-10T00:00:00+00:00'}), encoding='utf-8')
+
+
+@pytest.mark.parametrize('delete_workspace', [False, True])
+def test_cleanup_removes_that_workspaces_audio_outbox_only(tmp_path, delete_workspace):
+    recordings, transcripts, _, _ = fixture(tmp_path)
+    _queue(recordings, 'mine-1', 'workspace-a')
+    _queue(recordings, 'mine-2', 'workspace-a')
+    _queue(recordings, 'theirs', 'workspace-other')
+    assert apply_cleanup(recordings, transcripts, claim(delete_workspace=delete_workspace))
+    assert sorted(p.name for p in (recordings / 'audio_outbox').iterdir()) == ['theirs.json', 'theirs.m4a']

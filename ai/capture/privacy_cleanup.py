@@ -278,6 +278,7 @@ def _clean_session(recordings: Path, transcripts: Path, path: Path, manifest: di
 
 
 def apply_cleanup(recordings: Path, transcripts: Path, claim: dict, *, runs: Path | None = None) -> bool:
+    from capture import audio_outbox
     from capture.meeting_purge import _remove, mark_deleted, meeting_ids, purge_files
     from capture.recorder import manifest_path, try_lock, try_restart_lock
     from shared.config import RUNS_DIR
@@ -374,6 +375,10 @@ def apply_cleanup(recordings: Path, transcripts: Path, claim: dict, *, runs: Pat
                 not data.get('workspace_id') and str(data.get('channel_id')) in channels
             ):
                 _remove(path, recordings)
+        # 올리지 못해 대기 중인 섞은 녹음(#659)은 화자별로 가를 수 없어 이 워크스페이스 것을 모두 지운다
+        audio_outbox.remove_workspace(recordings, workspace_id)
+        for meeting_id in known:
+            audio_outbox.remove_meeting(recordings, _component(meeting_id))
         message_ids = set(claim.get('message_ids') or [])
         for path in (recordings / '.bot' / 'dm' / 'sent').glob('*'):
             if not path.name.endswith(('.json', '.json.tmp')):

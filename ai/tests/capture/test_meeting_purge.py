@@ -306,3 +306,36 @@ def test_identical_track_names_have_separate_outputs_and_purging_a_preserves_b(t
     assert not list(transcripts.glob('session_A*')) and not manifests['A'].exists()
     assert manifests['B'].exists() and (recordings / 'B' / '1_500.wav').exists()
     assert all(path.read_bytes() == content for path, content in b_outputs.items())
+
+
+def _queue(recordings, meeting_id, workspace='w'):
+    box = recordings / 'audio_outbox'
+    box.mkdir(exist_ok=True)
+    (box / f'{meeting_id}.m4a').write_bytes(b'private mix')
+    (box / f'{meeting_id}.json').write_text(json.dumps({'meeting_id': meeting_id, 'workspace_id': workspace,
+                                                        'handed_off_at': '2026-11-10T00:00:00+00:00'}), encoding='utf-8')
+
+
+def test_purge_removes_the_audio_outbox_entry_of_that_meeting_only(tmp_path):
+    recordings, transcripts, _, _ = fixture_files(tmp_path)
+    _queue(recordings, 'm576')
+    _queue(recordings, 'other')
+    assert purge_files(recordings, transcripts, 'm576')
+    assert sorted(p.name for p in (recordings / 'audio_outbox').iterdir()) == ['other.json', 'other.m4a']
+
+
+def test_purge_removes_the_outbox_entry_of_a_replaced_meeting_id(tmp_path):
+    recordings, transcripts, path, data = fixture_files(tmp_path)
+    data['be'] = {'meeting_id': 'm576', 'replaced': ['older']}
+    save_manifest(path, data)
+    _queue(recordings, 'older')
+    assert purge_files(recordings, transcripts, 'm576')
+    assert not list((recordings / 'audio_outbox').iterdir())
+
+
+def test_purge_removes_an_outbox_entry_even_without_a_session_manifest(tmp_path):
+    recordings, transcripts, path, _ = fixture_files(tmp_path)
+    path.unlink()
+    _queue(recordings, 'm576')
+    assert purge_files(recordings, transcripts, 'm576')
+    assert not list((recordings / 'audio_outbox').iterdir())
