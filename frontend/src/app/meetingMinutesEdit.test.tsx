@@ -422,3 +422,70 @@ describe('리뷰 #672 반영', () => {
     expect(patches(log)).toEqual([])
   })
 })
+
+describe('리뷰 #672 재리뷰 반영', () => {
+  function holdLinePatch() {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.patch('/api/v1/meetings/:meetingId/transcript/:seq', async ({ request, params }) => {
+        await gate.promise
+        const { text } = (await request.json()) as { text: string | null }
+        return ok({
+          seq: Number(params.seq),
+          text: text ?? LINE_1,
+          original_text: text === null ? null : LINE_1,
+          edited: text !== null,
+        })
+      }),
+    )
+    return gate
+  }
+
+  it('되돌리기 응답 전에는 그 줄을 다시 열 수 없고, 응답 뒤 열면 원문이 초안이다', async () => {
+    const stored = db.minutes.find(({ meeting_id }) => meeting_id === 'mt_09')!.transcript[1]
+    Object.assign(stored, { text: '이미 고친 문장', edited: true, original_text: LINE_1 })
+    const gate = holdLinePatch()
+    const user = userEvent.setup()
+    await openMinutes()
+    const panel = await openTranscript(user)
+    await user.click(within(panel).getByRole('button', { name: '이미 고친 문장' }))
+    await user.click(within(panel).getByRole('button', { name: '고친 발화 — 원문 보기' }))
+    await user.click(within(panel).getByRole('button', { name: '원래 문장으로 되돌리기' }))
+
+    const pending = within(panel).getByRole('button', { name: '이미 고친 문장' })
+    expect(pending).toHaveAttribute('aria-disabled', 'true')
+    await user.click(pending)
+    expect(within(panel).queryByRole('textbox')).toBeNull()
+
+    gate.resolve()
+    await user.click(await within(panel).findByRole('button', { name: LINE_1 }))
+    expect(within(panel).getByRole('textbox', { name: '발화 고치기' })).toHaveValue(LINE_1)
+  })
+
+  it('저장 응답 전에 다른 줄로 갔다가 돌아와도 저장 중인 줄은 열리지 않는다', async () => {
+    const gate = holdLinePatch()
+    const user = userEvent.setup()
+    await openMinutes()
+    const panel = await openTranscript(user)
+    await user.click(within(panel).getByRole('button', { name: LINE_1 }))
+    const field = within(panel).getByRole('textbox', { name: '발화 고치기' })
+    await user.clear(field)
+    await user.type(field, '저장 중인 문장')
+    await user.click(within(panel).getByRole('button', { name: '저장' }))
+    await user.click(within(panel).getByRole('button', { name: '다음 주까지 확인할게요.' }))
+    await user.click(await screen.findByRole('button', { name: '변경 내용 버리고 나가기' }))
+    await user.click(within(panel).getByRole('button', { name: '취소' }))
+
+    const saving = within(panel).getByRole('button', { name: LINE_1 })
+    expect(saving).toHaveAttribute('aria-disabled', 'true')
+    await user.click(saving)
+    expect(within(panel).queryByRole('textbox')).toBeNull()
+
+    gate.resolve()
+    await user.click(await within(panel).findByRole('button', { name: '저장 중인 문장' }))
+    expect(within(panel).getByRole('textbox', { name: '발화 고치기' })).toHaveValue(
+      '저장 중인 문장',
+    )
+  })
+})

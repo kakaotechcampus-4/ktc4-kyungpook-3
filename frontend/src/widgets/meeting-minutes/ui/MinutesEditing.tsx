@@ -32,7 +32,7 @@ const FAILURE = 'text-[12px] text-accent'
 const ORIGINAL_BOX = 'flex flex-col items-start gap-6 rounded-9 bg-surface-sunken px-12 py-10'
 /* 긴 줄(띄어쓰기 없는 주소·영문)도 폭 안에서 접는다 */
 const LINE_TEXT = 'text-[14px] leading-[1.7] whitespace-pre-wrap text-ink wrap-anywhere'
-const LINE_BUTTON = `-mx-6 block w-[calc(100%+12px)] rounded-6 px-6 text-left hover:bg-surface-sunken ${LINE_TEXT}`
+const LINE_BUTTON = `-mx-6 block w-[calc(100%+12px)] rounded-6 px-6 text-left hover:bg-surface-sunken aria-disabled:text-dim aria-disabled:hover:bg-transparent ${LINE_TEXT}`
 
 /** 닫힌 뒤 고치기를 연 단추로 포커스를 돌린다. 다른 줄을 열어 닫힌 때는 돌리지 않는다 */
 function useReturnFocus(open: boolean, target: RefObject<HTMLElement | null>) {
@@ -389,7 +389,11 @@ export function EditableLine({
             type="button"
             className={LINE_BUTTON}
             aria-describedby={hintId}
+            // 이 줄의 저장·되돌리기 응답 전에는 다시 열지 않는다. 열면 초안이 요청 전 문장이라 응답을 다시 덮는다
+            aria-disabled={saving || undefined}
+            aria-busy={saving || undefined}
             onClick={() => {
+              if (saving) return
               if (mine) edit.clearFailure()
               onOpen()
             }}
