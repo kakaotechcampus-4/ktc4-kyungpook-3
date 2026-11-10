@@ -258,3 +258,23 @@ def test_patch_rechecks_deletion_after_taking_the_lock(mdb, mseed, monkeypatch):
     assert r.status_code == 404
     mdb.expire_all()
     assert mdb.get(Member, mseed["carol"].member_id).display_name != "캐롤2"
+
+
+def test_auto_blocked_watch_stays_undoable(mdb, mseed):
+    # 삭제는 열린 시계(watching)만 멈춘다. 72시간 무응답으로 막힌 시계는 담당이 바뀔 때(scheduler._settle)처럼 남겨
+    # 되돌릴 수 있게 한다. 이미 닫힌 시계도 같은 조건으로 건드리지 않는다(#661 리뷰)
+    from datetime import timedelta
+
+    from tests.api.test_scheduler import SLOT, _suggested_and_sent, tick
+
+    task = _suggested_and_sent(mdb, mseed)
+    tick(mdb, SLOT + timedelta(hours=73))
+    blocked = mdb.scalar(select(ReminderWatch))
+    assert (blocked.state, blocked.applied) == ("blocked", True)
+
+    assert _delete("pm", mseed["alice"]).status_code == 204
+
+    mdb.expire_all()
+    assert mdb.get(ReminderWatch, blocked.watch_id).state == "blocked"
+    r = client("pm").post(f"{P}/tasks/{task.task_id}/auto-block/undo")
+    assert r.status_code == 200, r.text

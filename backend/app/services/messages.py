@@ -457,17 +457,20 @@ def cancel_bundle(db: Session, bundle: ReminderBundle, *, now: datetime) -> Remi
     return bundle
 
 
-def stop_thread_dms(db: Session, thread_ids: list[str], now: datetime) -> None:
+def stop_thread_dms(db: Session, thread_ids: list[str], now: datetime, *, watching_only: bool = False) -> None:
     """명단에서 빠진 팀원의 대화에서 아직 안 나간 DM 을 못 보냄으로 닫고 답을 기다리는 시계를 멈춘다.
 
-    계정 탈퇴와 팀원 삭제가 같이 쓴다. 대화와 메시지 본문은 남긴다.
+    계정 탈퇴와 팀원 삭제가 같이 쓴다. 대화와 메시지 본문은 남긴다. watching_only 면 재고 있는 시계만 멈춘다.
+    팀원 삭제가 쓴다. 자동 막힘이 걸린 시계는 담당이 바뀔 때(scheduler._settle)처럼 남겨 되돌릴 수 있게 하고,
+    이미 닫힌 시계의 상태와 닫힌 시각은 이력이라 덮지 않는다.
     """
     db.execute(update(ThreadMessage).where(
         ThreadMessage.thread_id.in_(thread_ids), ThreadMessage.dm_status.in_(("pending", "claimed")),
     ).values(dm_status="failed", dm_failure_reason="discord_not_linked", claimed_at=None))
-    db.execute(update(ReminderWatch).where(ReminderWatch.thread_id.in_(thread_ids)).values(
-        state=str(WatchState.STOPPED), closed_at=now, paused_at=None,
-    ))
+    watches = update(ReminderWatch).where(ReminderWatch.thread_id.in_(thread_ids))
+    if watching_only:
+        watches = watches.where(ReminderWatch.state == str(WatchState.WATCHING))
+    db.execute(watches.values(state=str(WatchState.STOPPED), closed_at=now, paused_at=None))
 
 
 def cancel_scheduled_bundles(db: Session, thread_id: str, now: datetime) -> None:

@@ -417,7 +417,7 @@ def delete_member(
     thread_id = db.scalar(select(MessageThread.thread_id).where(MessageThread.member_id == member_id))
     if thread_id is not None:
         messages.cancel_scheduled_bundles(db, thread_id, now)
-        messages.stop_thread_dms(db, [thread_id], now)
+        messages.stop_thread_dms(db, [thread_id], now, watching_only=True)
         # 판단을 기다리는 답장을 닫는다. 남기면 방금 담당을 비운 태스크에 승인 카드가 새로 생긴다
         db.execute(update(ReplyJudgment).where(
             ReplyJudgment.thread_id == thread_id, ReplyJudgment.state == str(ReplyJudgmentState.PENDING),
