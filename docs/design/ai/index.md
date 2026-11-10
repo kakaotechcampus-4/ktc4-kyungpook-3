@@ -23,7 +23,7 @@ flowchart TD
     U --> D[화자 분리<br/>pyannoteAI + PM 지정]
     V --> S[배치 전사 STT<br/>Elice whisper-large-v3]
     D --> S
-    S -.Elice 장애.-> G[GPU 전사 서버<br/>자동 켜기·끄기]
+    S -.Elice 장애.-> G["GPU 전사 서버<br/>자동 켜기·끄기 (구현 완료, 기본 꺼짐)"]
     G -.-> S
 
     S --> P1
@@ -55,7 +55,7 @@ AI 는 값과 근거 상태를 만들어 보낼 뿐, auto·review·hold 를 직�
 | [근거 검증 (Jev)](evidence-check.md) | certain/inferred/missing, 만든 모델이 스스로 채점하지 않게 분리 | 217개×3회 평가, 잘못된 certain 비율과 95% 상한 |
 | [전사 오인식 검사](asr-check.md) | 제목 명사 중 용어 목록 밖의 말을 Jev 로 확인, 남으면 auto 금지 | 첫 구현의 합성 93% 가 실제 14% 였던 이야기, AI Hub 실측 47%·19% |
 | [리마인드 답장 판단](reply-judgment.md) | 재촉 DM 답장 → 상태·마감·담당 변경 줄, 자동 반영 조건 | 합성 30건 평가, 판단 창(#552) |
-| [전사 (STT)](stt.md) | Elice vs 로컬 vs GPU, 화자 분리, CER 비교, GPU 자동 전환(#581) | 서버 용량 측정, 업체 비교, LoRA 미채택 |
+| [전사 (STT)](stt.md) | Elice vs 로컬 vs GPU, 화자 분리, CER 비교, GPU 자동 전환(#581, 구현 완료·기본 꺼짐) | 서버 용량 측정, 업체 비교, LoRA 미채택 |
 
 ## 공통 원칙 (모든 쪽에 해당)
 

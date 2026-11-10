@@ -20,7 +20,7 @@ flowchart LR
 | [근거 검증 (Jev)](ai/evidence-check.md) | 만든 모델이 스스로 채점하지 않게 검증을 분리한 이유와 평가 |
 | [전사 오인식 검사](ai/asr-check.md) | 용어 목록과 의심 단어 확인, 실측 차단율·오차단율 |
 | [답장 판단](ai/reply-judgment.md) | 재촉 DM 답장에서 상태·마감 변경 읽기 |
-| [전사 (STT)](ai/stt.md) | 엔진 선택, CER 비교, GPU 자동 전환 |
+| [전사 (STT)](ai/stt.md) | 엔진 선택, CER 비교, GPU 자동 전환(구현 완료·기본 꺼짐) |
 
 ## Backend — 가드레일과 후속 관리
 

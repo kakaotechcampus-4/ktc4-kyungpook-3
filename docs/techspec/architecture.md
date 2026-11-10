@@ -129,7 +129,7 @@ sequenceDiagram
 | AI | systemd `mm-bot`, `mm-worker`(MemoryMax 3G), `mm-chat-poll` + 타이머 |
 | 자동 배포 | develop push → 세 파트 CI 를 같은 커밋으로 → 모두 통과 시 SSM 으로 `/opt/mm` fast-forward → 바뀐 파트만 재시작. BE 는 시작 때 `alembic upgrade head` |
 | 녹음 보호 | 녹음 중이면 봇을 재시작하지 않음(`restart.lock`), 워커는 SIGTERM 에 하던 회의를 마치고 종료 |
-| GPU 전사 자동 전환 (#581) | 실제 호출 연속 6번 실패 + Elice 확인 3번 실패 → Lambda 스위치로 g4dn.xlarge 를 켬. Elice 확인 3번 연속 성공이면 복귀, GPU 호출 10분 없으면 끔. 하루 6시간·누적 15시간($9.7) 상한. `manual` 로 배포 → 리허설 → `auto` 순서 |
+| GPU 전사 자동 전환 (#581) | 실제 호출 연속 6번 실패 + Elice 확인 3번 실패 → Lambda 스위치로 g4dn.xlarge 를 켬. Elice 확인 3번 연속 성공이면 복귀, GPU 호출 10분 없으면 끔. 하루 6시간·누적 15시간($9.7) 상한. `manual` 로 배포 → 리허설 → `auto` 순서. 기본은 꺼짐(`MM_GPU_FAILOVER` 가 비면 꺼짐)이고 실제 Lambda·GPU 로는 아직 리허설하지 않았다 |
 
 - GPU 운영 모드(현재 `manual` 인지 `auto` 인지) **[확인 필요]**.
 - 상세: [배포 문서](../../deploy/README.md), [개발 배포 안내](../dev/deploy.md), 결정 [0039](../../ai/docs/basis_for_decision/ai/2026-11-04-0039-gpu-stt-server.md)·[0056](../../ai/docs/basis_for_decision/ai/2026-11-08-0056-gpu-stt-auto-failover.md).
