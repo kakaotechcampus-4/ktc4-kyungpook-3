@@ -1,4 +1,4 @@
-"""Verify the frontend documentation migration against its original Git content."""
+"""Verify archived migration content and current reference links."""
 
 import hashlib
 import json
@@ -12,6 +12,7 @@ manifest = json.loads((root / "frontend/docs/plan/work-items.json").read_text(en
 records = manifest["records"]
 base = manifest["source_commit"]
 errors = []
+evolved_live_files = []
 sources = set()
 targets = set()
 guide_updates = set(manifest.get("guide_updates", []))
@@ -28,7 +29,10 @@ for record in records:
         continue
     actual = path.read_bytes()
     if hashlib.sha256(actual).hexdigest() != record["target_sha256"]:
-        errors.append(f"Changed target content: {target}")
+        if source != target:
+            errors.append(f"Changed target content: {target}")
+        else:
+            evolved_live_files.append(target)
     if record["source_origin"] == "git":
         original = subprocess.run(["git", "show", f"{base}:{source}"], cwd=root, capture_output=True)
         if original.returncode:
@@ -63,8 +67,10 @@ for record in records:
         if (start, end) not in link_spans or expected[start:end] != edit["old"]:
             errors.append(f"Edit is not an original Markdown link: {source}")
         expected = expected[:start] + edit["new"] + expected[end:]
-    if expected.encode("utf-8") != actual:
+    if source != target and expected.encode("utf-8") != actual:
         errors.append(f"Body changed beyond allowed link edits: {target}")
+    if source == target and hashlib.sha256(expected.encode("utf-8")).hexdigest() != record["target_sha256"]:
+        errors.append(f"Invalid original reference snapshot: {target}")
     if source != target and (root / source).exists():
         errors.append(f"Old source still exists: {source}")
 
@@ -109,5 +115,5 @@ for name in sorted(targets | set(manifest.get("generated_files", []))):
 for error in errors:
     print(error)
 counts = {kind: sum(r["kind"] == kind for r in records) for kind in sorted({r["kind"] for r in records})}
-print(json.dumps({"records": counts, "local_links": link_count, "errors": len(errors)}, ensure_ascii=True))
+print(json.dumps({"records": counts, "local_links": link_count, "evolved_live_files": evolved_live_files, "errors": len(errors)}, ensure_ascii=True))
 raise SystemExit(bool(errors))
