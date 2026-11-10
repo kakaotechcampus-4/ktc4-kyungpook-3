@@ -783,6 +783,8 @@ function addMemberRows(state: MockDb): void {
     discord_user_id: '1128',
     username: 'dahye',
     display_name: '다혜',
+    nick: '다혜',
+    global_name: null,
     avatar_url: null,
     is_bot: false,
   })

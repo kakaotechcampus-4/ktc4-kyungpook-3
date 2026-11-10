@@ -6,11 +6,11 @@ import { MOCK_NOW } from '../fixtures/constants'
 import { nextId } from '../utils'
 import { linkedUserIdOf } from '../sessions'
 import type { MemberDto } from '@/shared/types/api/member'
+import type { MockDiscordUser } from '../fixtures/member'
 const base = '/api/v1'
 
 /* 팀원을 만들거나 고칠 때 백엔드가 맞추는 자동 별칭 (services/member_aliases.py, api/members.py).
-   이름 별칭은 한글 두 글자 이상인 이름의 전체와 성을 뗀 꼴이다. 닉네임 별칭은 한글만인 Discord 이름이다 —
-   백엔드는 서버 별명·계정 표시 이름 순으로 보고, 모의 Discord 사용자는 그 결과인 표시 이름만 있다 */
+   이름 별칭은 한글 두 글자 이상인 이름의 전체와 성을 뗀 꼴이다. 닉네임 별칭은 한글만인 Discord 이름이다 */
 function nameAliasForms(displayName: string): string[] {
   const name = displayName.trim()
   if (!/^[가-힣]{2,}$/.test(name)) return []
@@ -78,12 +78,20 @@ function removeDiscordProfileAliases(member: MemberDto): Set<string> {
   return removed
 }
 
+/** `pick_discord_nickname`. 서버 별명 → 계정 표시 이름 순으로 한글만인 첫 값. 사용자 이름은 보지 않는다 */
+function pickDiscordNickname({ nick, global_name }: MockDiscordUser): string | null {
+  for (const value of [nick, global_name]) {
+    const text = value?.trim()
+    if (text !== undefined && /^[가-힣]+$/.test(text)) return text
+  }
+  return null
+}
+
 /** `add_discord_nickname_alias` */
 function addDiscordNicknameAlias(member: MemberDto, discordUserId: string) {
-  const nickname = db.discordUsers
-    .find((user) => user.discord_user_id === discordUserId)
-    ?.display_name?.trim()
-  if (nickname === undefined || !/^[가-힣]+$/.test(nickname)) return
+  const user = db.discordUsers.find(({ discord_user_id }) => discord_user_id === discordUserId)
+  const nickname = user === undefined ? null : pickDiscordNickname(user)
+  if (nickname === null) return
   const held = db.aliases.some(
     ({ member_id, alias_text }) => member_id === member.member_id && alias_text === nickname,
   )
@@ -144,7 +152,17 @@ export const memberHandlers = [
     // 모의 Discord 서버는 하나다. 어느 공간이든 연결만 되면 같은 사용자 목록을 돌려준다 —
     // 새로 만든 공간도 Discord 연결 뒤 팀원 연결 단계를 진행할 수 있어야 한다
     return db.integrations[String(params.workspaceId)]?.discord.status === 'connected'
-      ? list(db.discordUsers)
+      ? list(
+          db.discordUsers.map(
+            ({ discord_user_id, username, display_name, avatar_url, is_bot }) => ({
+              discord_user_id,
+              username,
+              display_name,
+              avatar_url,
+              is_bot,
+            }),
+          ),
+        )
       : fail('INTEGRATION_NOT_CONNECTED', 'Discord 연결이 필요합니다.', 409)
   }),
   http.get(`${base}/members`, ({ request }) => {
