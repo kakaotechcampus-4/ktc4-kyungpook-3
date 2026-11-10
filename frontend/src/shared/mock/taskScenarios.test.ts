@@ -262,6 +262,45 @@ describe('M6 시나리오 상태와 전이', () => {
       })
     })
 
+    it('채팅 회의는 카드를 모두 반려하면 요약하지 않아 none 이다', async () => {
+      applyScenario('minutes-awaiting-approval')
+      db.minutes.find(({ meeting_id }) => meeting_id === 'mt_09')!.source = 'chat'
+      for (const id of ['ap_01', 'ap_02', 'ap_03']) await resolve(id, { status: 'rejected' })
+      await expect(minutes()).resolves.toMatchObject({
+        summary_status: 'none',
+        summary_waiting_count: null,
+      })
+    })
+
+    it('채팅 회의도 승인한 항목이 남아 있으면 마지막 카드 처리 뒤 pending 이다', async () => {
+      applyScenario('minutes-awaiting-approval')
+      db.minutes.find(({ meeting_id }) => meeting_id === 'mt_09')!.source = 'chat'
+      await resolve('ap_02', {
+        status: 'approved',
+        task_overrides: { due_date: '2026-09-30' },
+      })
+      await resolve('ap_01', { status: 'rejected' })
+      await expect(minutes()).resolves.toMatchObject({ summary_waiting_count: 1 })
+      await resolve('ap_03', { status: 'rejected' })
+      await expect(minutes()).resolves.toMatchObject({
+        summary_status: 'pending',
+        summary_waiting_count: null,
+      })
+    })
+
+    it('요약이 있으면 대기 카드가 남아도 ready 이고 건수가 없다', async () => {
+      applyScenario('minutes-awaiting-approval')
+      db.minutes.find(({ meeting_id }) => meeting_id === 'mt_09')!.summary = {
+        overview: '배포 준비를 정리했다.',
+        key_points: [],
+        decisions: [],
+      }
+      await expect(minutes()).resolves.toMatchObject({
+        summary_status: 'ready',
+        summary_waiting_count: null,
+      })
+    })
+
     it('일반 팀원은 같은 상태를 건수 없이 받는다', async () => {
       applyScenario('minutes-awaiting-approval-member')
       await expect(minutes()).resolves.toMatchObject({

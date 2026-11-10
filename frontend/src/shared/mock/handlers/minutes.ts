@@ -15,24 +15,49 @@ function waitingCards(meetingId: string): number {
     db.approvals.filter(({ status }) => status === 'pending').map(({ approval_id }) => approval_id),
   )
   const cards = new Set<string>()
-  for (const extraction of db.extractions)
-    if (extraction.meeting_id === meetingId)
-      for (const { approval_id } of extraction.items)
-        if (approval_id !== null && pending.has(approval_id)) cards.add(approval_id)
+  for (const { approval_id } of itemsOf(meetingId))
+    if (approval_id !== null && pending.has(approval_id)) cards.add(approval_id)
   return cards.size
 }
 
-/** 저장된 `awaiting_approval` 은 지금 대기 카드로 다시 판정한다. 모두 처리되면 백엔드처럼 `pending` 이다 */
+/** 백엔드 item_fate.approved. 승인된 카드에 걸린 항목의 태스크가 살아 있다. 채팅 회의는 이것이 있어야 요약한다 */
+function hasApprovedItem(meetingId: string): boolean {
+  const approved = new Set(
+    db.approvals
+      .filter(({ status }) => status === 'approved')
+      .map(({ approval_id }) => approval_id),
+  )
+  const live = new Set(db.tasks.map(({ task_id }) => task_id))
+  return itemsOf(meetingId).some(
+    ({ approval_id, task_id }) =>
+      approval_id !== null && approved.has(approval_id) && task_id !== null && live.has(task_id),
+  )
+}
+
+function itemsOf(meetingId: string) {
+  return db.extractions
+    .filter(({ meeting_id }) => meeting_id === meetingId)
+    .flatMap(({ items }) => items)
+}
+
+/**
+ * 저장된 `awaiting_approval` 은 백엔드 summary._state 의 순서로 다시 판정한다. 요약이 있으면 `ready`, 대기 카드가 있으면
+ * `awaiting_approval`, 승인된 항목이 없는 채팅 회의는 `none`, 그 밖은 `pending` 이다. `pending` 의 1시간 창은 흉내 내지 않는다
+ */
 function summaryStateOf(
   minutes: MinutesDto,
   isPm: boolean,
 ): Pick<MinutesDto, 'summary_status' | 'summary_waiting_count'> {
   if (minutes.summary_status !== 'awaiting_approval')
     return { summary_status: minutes.summary_status, summary_waiting_count: null }
+  if (minutes.summary !== null) return { summary_status: 'ready', summary_waiting_count: null }
   const waiting = waitingCards(minutes.meeting_id)
-  if (waiting === 0) return { summary_status: 'pending', summary_waiting_count: null }
   // 백엔드는 PM 에게만 건수를 준다 (D-104)
-  return { summary_status: 'awaiting_approval', summary_waiting_count: isPm ? waiting : null }
+  if (waiting > 0)
+    return { summary_status: 'awaiting_approval', summary_waiting_count: isPm ? waiting : null }
+  if (minutes.source === 'chat' && !hasApprovedItem(minutes.meeting_id))
+    return { summary_status: 'none', summary_waiting_count: null }
+  return { summary_status: 'pending', summary_waiting_count: null }
 }
 
 export const minutesHandlers = [
