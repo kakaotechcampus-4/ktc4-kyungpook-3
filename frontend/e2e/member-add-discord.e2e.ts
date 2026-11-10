@@ -3,8 +3,9 @@ import { capture, expectNoHorizontalOverflow, start } from './support'
 
 /*
  * #660 Discord 를 연결한 공간에서 서버에 없는 사람을 이름으로 추가하고 아이디로 초대한다.
- * 매칭 줄 입력 유지·같은 이름 막기·온보딩은 app/team.test.tsx·onboardingMembers.test.tsx 가 본다. 여기는 브라우저에서
- * 추가한 자리가 새로고침 뒤에도 남고 그 자리에서 초대까지 이어지는지만 본다
+ * 추가한 팀원은 팀원 관리 창 목록의 새 줄이다 (#647). 열린 이름 고치기 유지·같은 이름 막기·온보딩은
+ * app/team.test.tsx·onboardingMembers.test.tsx 가 본다. 여기는 브라우저에서 추가한 자리가 새로고침 뒤에도 남고
+ * 그 자리에서 초대까지 이어지는지만 본다
  */
 
 test('Discord 서버에 아무도 없어도 PM 이 이름으로 팀원을 추가하고, 새로고침 뒤 그 팀원 줄에서 아이디로 초대한다', async ({
@@ -12,16 +13,22 @@ test('Discord 서버에 아무도 없어도 PM 이 이름으로 팀원을 추가
 }, testInfo) => {
   await start(page, 'settings-discord-empty', '/workspaces/ws_01/members')
   await page.getByRole('button', { name: '팀원 관리' }).click()
-  const dialog = page.getByRole('dialog', { name: '팀원 연결' })
+  const dialog = page.getByRole('dialog', { name: '팀원 관리' })
+  await expect(
+    dialog.getByText(/Discord 서버에 없는 팀원은 이름으로 추가할 수 있어요/),
+  ).toBeVisible()
   await dialog.getByRole('textbox', { name: '팀원 이름' }).fill('한지민')
   await dialog.getByRole('button', { name: '추가' }).click()
-  await expect(dialog.getByRole('list', { name: '추가한 팀원' }).getByText('한지민')).toBeVisible()
+  const row = dialog
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('button', { name: '한지민 이름 고치기' }) })
+  await expect(row.getByRole('button', { name: '초대' })).toBeVisible()
   await capture(page, testInfo, 'dialog-added.png')
   await page.setViewportSize({ width: 390, height: 844 })
   await expectNoHorizontalOverflow(page)
   await capture(page, testInfo, 'dialog-added-390.png')
   await page.setViewportSize({ width: 1280, height: 720 })
-  await dialog.getByRole('button', { name: '나중에 하기' }).click()
+  await dialog.getByRole('button', { name: '닫기' }).click()
   await expect(dialog).toHaveCount(0)
 
   await page.reload()
