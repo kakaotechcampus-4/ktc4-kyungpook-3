@@ -682,6 +682,31 @@ def test_summary_input_lists_a_rejected_clear_and_scope_change(client, mdb, msee
     assert data["rejected_items"] == ["할일0 (반려된 변경: 마감 없앰)", "할일1 (반려된 변경: 범위: 결제는 다음 달로 미룬다)"]
 
 
+def test_summary_input_keeps_each_update_of_one_task_in_one_meeting(client, mdb, mseed):
+    task = mseed["tasks"][0]
+    extraction_id, cards = _handed_off(client, mdb, mseed["ws"], [
+        {"action": "update", "target_task_id": task.task_id},
+        {"action": "update", "target_task_id": task.task_id, "due_date": "2026-12-01"},
+        {"action": "update", "target_task_id": task.task_id, "status": "done"},
+    ])
+    assert len(cards) == 2
+    for card in cards:
+        _resolve(client, card, "approved")
+    mdb.expire_all()
+
+    items = _input(client, mdb.get(Extraction, extraction_id))["items"]
+
+    assert [(i["title"], i["due_date"], i["status"]) for i in items] == [
+        ("할일0", None, None), ("할일0", "2026-12-01", None), ("할일0", None, "done")]
+    changed = [i["item_id"] for i in items[1:]]
+    assert _claim(client, extraction_ids=[extraction_id])["extraction_id"] == extraction_id
+    _put(client, extraction_id, {**BODY, "topics": [{"name": "일정", "item_ids": changed}], "task_changes": [
+        {"task": "할일0", "due": "2026-12-01", "item_id": changed[0]}, {"task": "할일0 완료", "item_id": changed[1]}]})
+    meeting_id = mdb.get(Extraction, extraction_id).meeting_id
+    minutes = client.get(f"/api/v1/meetings/{meeting_id}/minutes").json()["data"]
+    assert [c["task"] for c in minutes["summary"]["task_changes"]] == ["할일0", "할일0 완료"]
+
+
 def test_summary_input_gives_source_members_and_terms(client, mdb, mseed):
     _, extraction = _meeting(mdb, mseed["ws"], source="chat")
     mseed["carol"].is_deleted = True

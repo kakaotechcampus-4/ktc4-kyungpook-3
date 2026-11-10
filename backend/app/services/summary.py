@@ -219,7 +219,8 @@ def _input_lines(db: Session, meeting_id: str) -> list[SummaryInputLine]:
 
 def _input_items(db: Session, extraction_id: str) -> list[SummaryInputItem]:
     """반영된 항목만. 값은 그 회의 항목이 정한 값에 PM 이 승인하며 고친 값을 덮은 것이다. 뒤 회의나 직접 수정이
-    바꾼 Task 의 지금 값은 쓰지 않는다. 같은 Task 에 합쳐진 항목은 먼저 나온 하나만 둔다."""
+    바꾼 Task 의 지금 값은 쓰지 않는다. 같은 Task 의 새 항목(create, merge)은 먼저 나온 하나만 둔다. 수정 항목은
+    카드마다 따로 승인되고 바꾼 칸만 있어 접으면 승인된 변경이 사라지므로 항목마다 둔다."""
     final = item_fate.final_items().where(ExtractionItem.extraction_id == extraction_id).subquery()
     rows = db.execute(
         select(ExtractionItem, ApprovalRequest.payload)
@@ -229,7 +230,8 @@ def _input_items(db: Session, extraction_id: str) -> list[SummaryInputItem]:
     ).all()
     approved: dict[str, tuple[ExtractionItem, dict]] = {}
     for item, payload in rows:
-        approved.setdefault(item.task_id, (item, _approved_values(item, json.loads(payload) if payload else {})))
+        key = item.item_id if item.action == str(ExtractionAction.UPDATE) else item.task_id
+        approved.setdefault(key, (item, _approved_values(item, json.loads(payload) if payload else {})))
     names = _member_names(db, {values["assignee_member_id"] for _, values in approved.values()})
     return [
         SummaryInputItem(
