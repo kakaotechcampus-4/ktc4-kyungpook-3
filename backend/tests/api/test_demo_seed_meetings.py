@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from app.cli.demo_seed import load_seed_data
 from app.cli.seed_demo import SeedError, poll_embeddings, replay_meetings, seed_accounts
 from app.main import app
-from app.models import EMBEDDING_DIMENSIONS, ApprovalRequest, Extraction, ExtractionItem, Meeting, Source, Task
+from app.models import EMBEDDING_DIMENSIONS, ApprovalRequest, Extraction, ExtractionItem, Meeting, Member, Source, Task
 from tests.api.conftest import SERVICE_TOKEN
 
 PM_PW = "demo-pm-1234"
@@ -140,6 +140,24 @@ def test_replay_is_idempotent(mdb):
     assert [_count(mdb, model) for model in (Meeting, Source, ExtractionItem, Task, Extraction)] == counts
     assert report.done == len(data.meetings)
     assert report.summaries_skipped == []
+
+
+def test_rerun_after_replay_is_not_stopped_as_existing_data(mdb):
+    """회의를 재생한 뒤 --allow-existing 없이 다시 돌려도 시드가 만든 회의·자리를 시드 밖으로 보고 멈추지 않는다(#606).
+
+    README 의 "다시 실행하면 이어 간다"를 지키는 경로다. 기존 데이터 검사의 판정이 바뀌면 여기서 잡힌다."""
+    data, seeded = _setup(mdb)
+    _replay(mdb, data, seeded)
+    models = (Meeting, Source, ExtractionItem, Task, Extraction, Member)
+    counts = [_count(mdb, model) for model in models]
+
+    again = seed_accounts(mdb, data, emails=EMAILS, workspace_name=NAME, pm_password=PM_PW, member2_password=M2_PW)
+
+    assert again.workspace_id == seeded.workspace_id
+    assert [_count(mdb, model) for model in models] == counts
+    report = _replay(mdb, data, again)
+    assert report.done == len(data.meetings)
+    assert [_count(mdb, model) for model in models] == counts
 
 
 def test_resume_from_partial_meeting(mdb):
