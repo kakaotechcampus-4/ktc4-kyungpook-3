@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { PointerEventsCheckLevel } from '@testing-library/user-event'
 import { QuickGuideButton } from './QuickGuideButton'
 
@@ -16,6 +16,28 @@ function stubViewportWidth(width: number) {
       removeEventListener: () => {},
     }
   })
+}
+
+/** 폭을 바꾸면 change 를 듣는 쪽(useCompactScreen)에 알린다 — 창 크기 바꾸기·회전 */
+function stubResizableWidth(initial: number) {
+  let width = initial
+  const listeners = new Set<() => void>()
+  vi.stubGlobal('matchMedia', (query: string) => {
+    const max = /max-width: ([\d.]+)px/.exec(query)
+    return {
+      get matches() {
+        return max === null ? false : width <= Number(max[1])
+      },
+      media: query,
+      addEventListener: (_: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
+    }
+  })
+  return (next: number) =>
+    act(() => {
+      width = next
+      for (const listener of listeners) listener()
+    })
 }
 
 async function openGuide() {
@@ -132,4 +154,37 @@ describe('처음 쓰는 분을 위한 안내 (#650)', () => {
       await waitFor(() => expect(opener).toHaveFocus())
     },
   )
+
+  it.each([
+    ['시트를 연 채 1024px 로 넓히고 닫기', 390, 1024, closeByButton],
+    ['시트를 연 채 1024px 로 넓히고 Esc', 390, 1024, closeByEscape],
+    ['시트를 연 채 1024px 로 넓히고 끌어 내리기', 390, 1024, closeByDrag],
+    ['모달을 연 채 390px 로 좁히고 닫기', 1280, 390, closeByButton],
+    ['모달을 연 채 390px 로 좁히고 Esc', 1280, 390, closeByEscape],
+  ] as const)('%s 로 닫아도 연 단추로 포커스가 돌아온다', async (_, from, to, close) => {
+    const resize = stubResizableWidth(from)
+    const { user, opener, panel } = await openGuide()
+    await waitFor(() => expect(panel).toContainElement(document.activeElement as HTMLElement))
+    resize(to)
+    // 연 패널을 바꿔 끼우지 않는다 — 같은 대화상자가 남고 포커스도 그 안에 있다
+    expect(screen.getByRole('dialog', { name: '처음 쓰는 분을 위한 안내' })).toBe(panel)
+    expect(panel).toContainElement(document.activeElement as HTMLElement)
+    await close(user, panel)
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(opener).toHaveFocus())
+  })
+
+  it('닫은 뒤 다시 열면 지금 폭의 모양으로 연다', async () => {
+    const resize = stubResizableWidth(390)
+    const { user, opener, panel } = await openGuide()
+    resize(1024)
+    await closeByEscape(user)
+    await waitFor(() => expect(opener).toHaveFocus())
+    await user.click(opener)
+    const modal = await screen.findByRole('dialog', { name: '처음 쓰는 분을 위한 안내' })
+    expect(modal).not.toBe(panel)
+    // 모달은 끌어 내려도 닫히지 않는다
+    await closeByDrag(user, modal)
+    expect(screen.getByRole('dialog', { name: '처음 쓰는 분을 위한 안내' })).toBe(modal)
+  })
 })

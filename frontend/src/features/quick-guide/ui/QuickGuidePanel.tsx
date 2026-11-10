@@ -1,4 +1,3 @@
-import { useCompactScreen } from '@/shared/lib/compact-screen'
 import { Button } from '@/shared/ui/button'
 import { Modal } from '@/shared/ui/modal'
 import { Sheet } from '@/shared/ui/sheet'
@@ -49,23 +48,26 @@ function QuickGuideContent() {
   )
 }
 
+/** 넓은 화면은 모달, 휴대폰 폭은 아래 시트 */
+export type QuickGuideForm = 'modal' | 'sheet'
+
 export interface QuickGuidePanelProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  form: QuickGuideForm
   /** 닫힌 뒤 포커스를 돌릴 요소. 연 단추를 준다 */
   returnFocus: () => HTMLElement | null
 }
 
-/** 넓은 화면은 모달, 휴대폰 폭은 아래 시트다. 본문만 스크롤하고 제목과 닫기는 늘 보인다 */
-export function QuickGuidePanel({ open, onOpenChange, returnFocus }: QuickGuidePanelProps) {
-  const compact = useCompactScreen()
+/** 본문만 스크롤하고 제목과 닫기는 늘 보인다 */
+export function QuickGuidePanel({ open, onOpenChange, form, returnFocus }: QuickGuidePanelProps) {
   const close = (
     <Button variant="default" onClick={() => onOpenChange(false)}>
       닫기
     </Button>
   )
 
-  if (compact)
+  if (form === 'sheet')
     return (
       // 열림을 단추가 쥐어 Radix Trigger 가 없다 — returnFocus 가 없으면 닫힌 뒤 포커스가 body 로 빠진다
       <Sheet
