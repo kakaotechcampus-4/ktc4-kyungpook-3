@@ -38,6 +38,8 @@ export interface Minutes {
   summary: MinutesSummary | null
   /** 모르는 값은 받은 글자를 남긴다. 화면은 요약이 없다고만 말한다 */
   summaryStatus: SummaryStatus | UnknownValue
+  /** 남은 승인 요청 수. PM 에게만 숫자이고 `awaiting_approval` 일 때만 뜻이 있다 (D-104) */
+  summaryWaitingCount: number | null
   transcript: TranscriptLine[]
   canReview: boolean
   canUndo: boolean

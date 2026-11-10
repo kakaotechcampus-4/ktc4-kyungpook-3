@@ -221,6 +221,7 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
       decisions: ['확실한 항목은 바로 반영하고 나머지는 PM이 확인한다.'],
     },
     summary_status: 'ready',
+    summary_waiting_count: null,
     transcript: TRANSCRIPT_LINES.map((text, index) => {
       const member = speaker(index)
       return {

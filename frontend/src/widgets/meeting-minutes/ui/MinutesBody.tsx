@@ -2,6 +2,7 @@ import { useId } from 'react'
 import type { ReactNode } from 'react'
 import type { ExtractionItem } from '@/entities/extraction'
 import type { Minutes, MinutesSummary, TranscriptLine } from '@/entities/minutes'
+import { isKnownValue } from '@/shared/api/unknownValue'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
@@ -79,30 +80,51 @@ function Section({
   )
 }
 
+const TRANSCRIPT_HINT = '발언은 전사문에서 볼 수 있어요.'
+const NO_SUMMARY = { title: '요약이 없어요', description: TRANSCRIPT_HINT }
+
+/** 요약이 비었을 때 상태별 안내. `null` 은 칸을 비운다(#551 만들 것 7) */
+const EMPTY_SUMMARY: Record<
+  Extract<Minutes['summaryStatus'], string>,
+  (waitingCount: number | null) => { title: string; description: string } | null
+> = {
+  ready: () => NO_SUMMARY,
+  pending: () => ({
+    title: '요약을 만드는 중이에요',
+    description: `요약이 만들어지면 여기에 보여요. ${TRANSCRIPT_HINT}`,
+  }),
+  // 0건은 기다린다는 제목과 어긋나 건수를 말하지 않는다. 건수는 PM 에게만 온다 (D-104)
+  awaiting_approval: (waitingCount) => ({
+    title: '승인이 끝나면 요약이 만들어져요',
+    description:
+      waitingCount !== null && waitingCount > 0
+        ? `승인 대기 ${waitingCount}건이 남았어요. ${TRANSCRIPT_HINT}`
+        : TRANSCRIPT_HINT,
+  }),
+  none: () => null,
+}
+
 /**
  * 요약 탭. 요약이 있으면 상태와 무관하게 보인다 (계약 §4.4.2).
- * 없을 때 `none` 이면 칸을 비운다(#551 만들 것 7). 모르는 상태는 이유를 단정하지 않는 중립 문구다
+ * 없을 때의 안내는 `EMPTY_SUMMARY` 가 상태별로 고른다. 모르는 상태는 이유를 단정하지 않는 중립 문구다
  */
 export function SummaryPanel({
   summary,
   status,
+  waitingCount,
 }: {
   summary: MinutesSummary | null
   status: Minutes['summaryStatus']
+  waitingCount: number | null
 }) {
   const overview = summary?.overview.trim() ?? ''
   if (
     summary === null ||
     (overview === '' && summary.keyPoints.length === 0 && summary.decisions.length === 0)
-  )
-    return status === 'none' ? null : status === 'pending' ? (
-      <SectionEmpty
-        title="요약을 만드는 중이에요"
-        description="요약이 만들어지면 여기에 보여요. 발언은 전사문에서 볼 수 있어요."
-      />
-    ) : (
-      <SectionEmpty title="요약이 없어요" description="발언은 전사문에서 볼 수 있어요." />
-    )
+  ) {
+    const empty = isKnownValue(status) ? EMPTY_SUMMARY[status](waitingCount) : NO_SUMMARY
+    return empty === null ? null : <SectionEmpty {...empty} />
+  }
   return (
     <>
       {overview === '' ? null : <p className={BODY}>{overview}</p>}

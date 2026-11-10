@@ -463,7 +463,13 @@ function MinutesContent({
             {
               id: 'summary',
               label: '요약',
-              panel: <SummaryPanel summary={minutes.summary} status={minutes.summaryStatus} />,
+              panel: (
+                <SummaryPanel
+                  summary={minutes.summary}
+                  status={minutes.summaryStatus}
+                  waitingCount={minutes.summaryWaitingCount}
+                />
+              ),
             },
             {
               id: 'transcript',

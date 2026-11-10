@@ -243,7 +243,7 @@ FE 변경과 실제 검증은 [M6 후속 결과](../plan/m6/result.md)에 기록
 | `GET /workspaces/{id}/integrations`, `DELETE /workspaces/{id}/integrations/{provider}` | Discord·Notion 상태. 해제는 204 무본문. Discord 의 `chat_channel` 과 채팅 채널 목록·저장·해제는 §4.3.1 | [연동 API](../../src/entities/integration/api/integrations.ts), [연동 DTO](../../src/shared/types/api/integration.ts) |
 | `POST /workspaces/{id}/meetings/upload` | multipart `title`, ISO `started_at`, 참석자별 반복 `attendee_member_ids`, `file`. 202 data `{meeting_id,status}` | [업로드](../../src/entities/meeting/api/uploadMeeting.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
 | `GET /workspaces/{id}/meetings`, `GET /meetings/{id}` | 목록은 `{items,total}`, nullable title. 상세는 workspace_id·status·progress·processing(#483)·extraction_id·failed_stage | [회의 조회](../../src/entities/meeting/api/meetingQueries.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
-| `GET /meetings/{id}/minutes` | nullable summary·title, summary_status(빈 요약 문구만 고름. `awaiting_approval` 은 아직 따로 그리지 않음, §4.4.2), summary_waiting_count(FE 미사용), 참석자 배열, 전사 배열, permissions `{can_review,can_undo}` | [회의록 조회](../../src/entities/minutes/api/minutesQuery.ts), [회의록 DTO](../../src/shared/types/api/minutes.ts) |
+| `GET /meetings/{id}/minutes` | nullable summary·title, summary_status(빈 요약 문구만 고름. `awaiting_approval` 은 `승인이 끝나면 요약이 만들어져요`, §4.4.2), summary_waiting_count(PM 에게만 숫자. 1 이상이면 남은 건수를 보임), 참석자 배열, 전사 배열, permissions `{can_review,can_undo}` | [회의록 조회](../../src/entities/minutes/api/minutesQuery.ts), [회의록 DTO](../../src/shared/types/api/minutes.ts) |
 | 회의 추출·대기 승인 조회 | 반영 항목과 확인 필요 항목을 조합. 일반 팀원은 대기 승인 조회·확인 필요 영역 제외 | [추출 조회](../../src/entities/extraction/api/extractionQuery.ts), [승인 조회](../../src/entities/approval/api/pendingApprovals.ts), [회의록 화면](../../src/pages/meetings) |
 
 업로드 화면의 형식·한도는 [uploadPolicy](../../src/entities/meeting/model/uploadPolicy.ts)의 MP3·WAV·M4A·OGG·WebM, 200 MiB·2시간이다. 브라우저 검증이 서버의 동일 검증을 보장하지 않는다. 전송 진행률 100%와 서버의 처리 완료는 다르며, 409 `MEETING_PROCESSING_IN_PROGRESS`는 `details.meeting_id`로 기존 처리 화면에 연결한다. 처리 상세는 3초 간격으로 추적하며 완료·실패·접근 상실 시 중단한다.
@@ -1630,7 +1630,7 @@ POST .../meetings/upload            multipart/form-data
  "started_at": "2026-09-15T14:00:00Z", "duration_ms": 2730000, "source": "discord",
  "attendees": [{"member_id": "mb_01", "display_name": "김서연"}],
  "summary": {"overview": "...", "key_points": ["..."], "decisions": ["..."]},
- "summary_status": "ready",
+ "summary_status": "ready", "summary_waiting_count": null,
  "transcript": [{"seq": 0, "at_ms": 125000, "speaker_member_id": "mb_01",
                  "speaker_display_name": "김서연", "speaker_fallback": "seoyeon_01",
                  "text": "...", "edited": false, "original_text": null}],
@@ -1760,12 +1760,14 @@ POST .../meetings/upload            multipart/form-data
 | 주제·결정 고치기 네 경로(#669, §4.4.3): `PATCH .../topics/{id}`, `POST .../topics/{id}/merge`, `DELETE .../topics/{id}/tasks/{task_id}`, `PATCH .../decisions/{id}` | 응답의 `TopicDetailResponse` 를 위 주제 조회와 같은 스키마로 읽어 응답의 `topic_id` 키에 쓴다 | 위와 같다. 읽지 못하면 실패라 하지 않고 `변경 결과를 확인하지 못했어요` 토스트와 `새로고침`(맵·회의록을 다시 받는다)이다(#348) | 보낸 칸만 싣는다(이름을 안 바꾸면 `name` 없음). 409 `TOPIC_NAME_TAKEN` 은 `details.topic_id` 를 읽어 그 주제로 합치기를 권한다(문자열이 아니거나 그 주제 조회가 404 면 권하지 않는다). 맵에 없는 주제면 그 주제 상세로 이름을 채우고, 409 뒤 맵을 다시 받는다. 404 `TOPIC_NOT_FOUND`·`DECISION_NOT_FOUND`·`TASK_NOT_FOUND` 는 고치던 폼·확인 창 안 문구와 맵 다시 받기. 캐시는 §4.4.3 「고친 뒤 FE 가 다시 받을 캐시」 대로이고 `project-map` 은 접두로 무효화한다(다른 주제의 `replaced_by` 도 바뀐다). 화면은 D-191 |
 | `GET /meetings/{id}/summary.md` | 본문과 `Content-Disposition` 의 `filename*`(없으면 `filename`, 둘 다 없으면 `summary.md`) | 2xx 인데 `Content-Type` 이 `text/markdown` 이 아님 | 404 `SUMMARY_NOT_FOUND` 는 토스트. 단추는 `summary` 가 null 이 아닐 때만 보인다(팀원 포함) |
 | `GET .../project-bundle.md` | 위와 같다. 대체 이름은 `project-bundle.md` | 위와 같다 | `from`·`to` 는 적은 쪽만 보낸다. 둘 다 비면 전체 기간이다. `from > to` 는 보내지 않고 `시작일이 종료일보다 늦어요.`, 서버 400 `INVALID_REQUEST` 도 같은 문구다. 단추 옆 안내 `팀원 발언 요약이 들어 있어요. 외부 AI 에 첨부할 때 주의해 주세요.` |
-| `GET /meetings/{id}/minutes` 의 `summary_status` | 요약이 없을 때의 표시. `pending` 은 `요약을 만드는 중이에요`, `none` 은 요약 칸을 비운다(이슈 원문) | 거절하지 않는다 | 표시용이라 모르는 값은 받은 글자를 보존하고 중립 문구 `요약이 없어요` 를 보인다(D-184 표시용). 키가 없거나 문자열이 아니면 `none` 이다. `summary` 가 있으면 상태와 무관하게 보인다. 재시도 단추는 없다 |
+| `GET /meetings/{id}/minutes` 의 `summary_status` | 요약이 없을 때의 표시. `pending` 은 `요약을 만드는 중이에요`, `none` 은 요약 칸을 비운다(이슈 원문). `awaiting_approval`(#605) 은 모든 팀원에게 `승인이 끝나면 요약이 만들어져요` 다(2026-11-10) | 거절하지 않는다 | 표시용이라 모르는 값은 받은 글자를 보존하고 중립 문구 `요약이 없어요` 를 보인다(D-184 표시용). 키가 없거나 문자열이 아니면 `none` 이다. `summary` 가 있으면 상태와 무관하게 보인다. 재시도 단추는 없다 |
+| `GET /meetings/{id}/minutes` 의 `summary_waiting_count` (#605) | `awaiting_approval` 일 때만 읽는다. 1 이상이면 같은 칸에 `승인 대기 N건이 남았어요.` 를 더한다. 서버가 PM 에게만 숫자를 주므로 FE 는 역할을 다시 보지 않는다(D-104) | 거절하지 않는다 | 표시용이라 0 이상의 정수가 아니면 건수 표시만 버린다(D-184). 키가 없으면 `null` 이다. `null` 과 `0` 은 건수 없이 문구만 보인다. 승인 화면으로 가는 링크는 두지 않는다. 승인 목록 화면이 없고, 같은 회의록의 `추출된 일` 탭이 남은 카드마다 링크를 준다 |
 
 - 두 `.md` 요청은 `Accept: text/markdown, application/json` 을 보내고, 실패 응답은 다른 API 와 같은 봉투로 읽는다(401 알림 포함).
 - 구현: [응답 스키마](../../src/shared/types/api/projectMap.ts), [맵 조회](../../src/entities/project-map/api/projectMapQuery.ts), [맵 화면](../../src/widgets/project-map), [파일 요청](../../src/shared/api/client.ts), [합본](../../src/features/project-bundle-download), [요약본](../../src/features/summary-download), [회의록 스키마](../../src/shared/types/api/minutes.ts). 화면 배치는 D-186 이다.
 - 고치기 네 경로(#551 묶음 B, 2026-11-10)는 BE #669 가 병합되기 전이라 MSW 로만 확인했다. MSW 는 BE `services/summary.py` 의 `rename_topic`·`merge_topics`·`detach_task`·`edit_decision` 규칙과 `record_edit.py` 의 저장 불가 글자(NUL·짝 없는 서로게이트) 400 을 따른다. 결정은 뒤집은 결정 목록(`replaces`)을 두고 `replaced_by` 를 읽을 때 지우지 않은 결정 중 가장 이른 회의의 것으로 계산한다([모의 핸들러](../../src/shared/mock/handlers/projectMap.ts)). 구현: [고치기 요청·캐시](../../src/entities/project-map/api/topicEdit.ts), [고치기 훅·화면](../../src/features/topic-edit), [주제 패널](../../src/widgets/project-map/ui/TopicPanel.tsx).
 - 합의 필요: 위 FE 처리(특히 `summary_status` 를 표시용으로 본 것, 노드 `kind` 와 결정 `state` 를 판별 값으로 본 것)는 FE 판단이다. BE 합의 여부 확인 필요.
+- `awaiting_approval`·`summary_waiting_count` 처리(#551 묶음 A, 2026-11-10)는 BE #645 의 스키마·라우터·요약 상태 서비스(`summary_state`)를 읽고 MSW 로 맞췄다. MSW 는 저장된 `awaiting_approval` 을 BE `_state` 순서(요약 있음 `ready`, 대기 카드 있음 `awaiting_approval`, 승인 항목 없는 채팅 회의 `none`, 그 밖 `pending`)로 다시 판정하고 건수는 PM 에게만 준다. `pending` 의 1시간 창은 흉내 내지 않는다. 승인·반려와 자동 반영 되돌리기 뒤에는 `workspaceKey(ws,'minutes')` 를 다시 받는다. 문구는 이슈 #551 댓글의 요청(2026-11-09)을 따랐다. 실서버로는 확인하지 않았다.
 
 #### 4.4.3 회의 기록 고치기 (#605, 2026-11-10)
 
