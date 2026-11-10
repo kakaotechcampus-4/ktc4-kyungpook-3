@@ -24,7 +24,7 @@
 | 로그인 잠금 | 같은 이메일 15분 10회, 같은 공인 IP 15분 50회 실패 → 15분 429 `TOO_MANY_LOGIN_ATTEMPTS`(`Retry-After`). 막힌 동안은 **해시 계산도 DB 연결도 없이** 끊는다. 이메일·IP 막힘, 있는·없는 이메일 응답이 같다. IPv6 는 /64, 사설 주소는 IP 제한 생략 | [`login_limit.py`](../../../backend/app/services/login_limit.py) |
 | 비밀번호 재설정 | 30분 1회용 토큰(해시 저장). 계정당 60초 1회·1시간 5회, 공인 IP 시간당 5회(#550), 전체 시간당 10통. 확인이 커밋되면 그 이메일의 로그인 막힘도 푼다 | [`password_reset.py`](../../../backend/app/services/password_reset.py), [`password_reset_limit.py`](../../../backend/app/services/password_reset_limit.py) |
 | 가입 이메일 인증 | 6자리 코드 10분, 코드당 5회, 재발송 60초, 시간당 5회, 전체 시간당 20통. DB 에는 HMAC 만. 맞으면 이메일을 담은 서명 증명(30분)을 준다 | [`signup_codes.py`](../../../backend/app/services/signup_codes.py) |
-| 카카오 로그인 | state·nonce 확인 → 카카오 사용자 조회. 카카오가 **인증한 이메일** 일 때만 기존 계정에 잇는다. 신규는 서명된 대기 쿠키(HttpOnly, Secure, SameSite=Lax, 30분)에 신원을 담고 가입 화면에서 비밀번호까지 정한다 | [`kakao_oauth.py`](../../../backend/app/services/kakao_oauth.py) |
+| 카카오 로그인 | state·nonce 확인 → 카카오 사용자 조회. 이미 가입한 카카오 계정이면 세션을 만든다. 아니면 서명된 대기 쿠키(HttpOnly, Secure, SameSite=Lax, 30분)에 카카오 id 와 닉네임만 담고 가입 화면으로 보낸다. 카카오가 이메일을 줘도 저장하지 않고 같은 이메일의 기존 계정과 잇지도 않는다(#610). 가입 화면에서는 이메일 인증 없이 이름·아이디만 정하며 비밀번호는 없다 | [`kakao_oauth.py`](../../../backend/app/services/kakao_oauth.py) |
 
 **#549 재검토.** 이메일 기준 잠금은 남이 내 이메일로 10번 틀려 15분 막을 수 있다. (이메일, IP) 조합 키도 다시 봤지만 버리고, 429 화면에서 재설정 안내(FE)로 완화했다. 429 에 이메일·IP 구분을 싣지 않는 것은 공격자에게 무엇을 바꿀지 신호가 되기 때문이다.
 
@@ -78,7 +78,7 @@ Notion·Discord 연결과 카카오 로그인이 같이 쓴다([`oauth_state.py`
 | 로그인 잠금은 프로세스 메모리 | DB 테이블 | 막힌 요청을 DB 연결 없이 끊고, 공격 중 실패마다 쓰기가 생기지 않는다. 재시작이 비상 해제 수단 | [login-rate-limit](../../../backend/docs/plan/m1/basis-for-decision/2026-11-06-login-rate-limit.md) |
 | 재설정 메일 IP·전체 상한 | 계정별 제한만 | 가입된 주소 여러 개로 팀 Gmail 하루 한도(약 500통)를 바닥낼 수 있다 | [reset-mail-cap](../../../backend/docs/plan/m1/basis-for-decision/2026-11-08-reset-mail-cap.md) |
 | 탈퇴자 Member 보존 | 기록 주체 테이블 신설(FK 16개 이전) | 공동 기록의 참조를 그대로 두는 비용이 더 작다 | [withdrawn-record-actor](../../../backend/docs/plan/m1/basis-for-decision/2026-11-09-withdrawn-record-actor.md) |
-| 카카오 callback 은 계정을 만들지 않고, 인증된 카카오 이메일만 믿음 | callback 에서 바로 가입 / 이 기능 뒤 가입 계정만 연결 | 비밀번호 없는 계정이 생기지 않는다. 인증 안 된 이메일은 코드 인증을 받는다. 옛 계정에 처음 이을 때 계정 이메일로 알림과 재설정 주소를 보낸다(선점 계정 대비) | [kakao-login-decision](../../../backend/docs/plan/m1/basis-for-decision/2026-11-06-kakao-login-decision.md) |
+| 카카오 callback 은 계정을 만들지 않고, 카카오 가입을 카카오만으로 끝내며 이메일 기반 기존 계정 병합을 두지 않음(#610) | callback 에서 바로 가입 / 인증된 카카오 이메일로 기존 계정에 병합(#610 이전 안) | 카카오 이메일을 저장하지 않으므로 같은 이메일 계정을 선점하거나 잇는 경로가 없다. 카카오 가입 계정은 이메일·비밀번호 없이 카카오 id 로만 로그인한다 | [kakao-login-decision](../../../backend/docs/plan/m1/basis-for-decision/2026-11-06-kakao-login-decision.md) |
 
 ## 어떻게 검증했나
 
