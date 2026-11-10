@@ -145,3 +145,22 @@ sudo -u "$U" sh -c 'cd /opt/mm/ai && CHAT_POLL_INITIAL_HOURS=48 /usr/bin/flock -
 ```
 
 서비스의 `TimeoutStartSec` 를 7시간 이상으로 올리면 BE 의 채팅 회의 정리 기준(`chat_stalled`, 7시간)도 함께 올린다([봇 계약](../backend/docs/contracts/backend-ai-contract.md)).
+
+## 앞단 프록시 Caddy (#692)
+
+운영 Caddy 설정의 원본은 [caddy/Caddyfile](caddy/Caddyfile)이다. 서버 `/etc/caddy/Caddyfile`(2026-11-09 수정본)과 같고, 보안 헤더 `header` 블록만 더했다. 배포 스크립트는 이 파일을 서버에 반영하지 않는다. 바꾼 뒤에는 운영자가 서버에서 아래 순서로 직접 반영한다.
+
+```bash
+cd /opt/mm
+diff -w /etc/caddy/Caddyfile deploy/caddy/Caddyfile        # header 블록 말고 다른 차이가 있으면 멈추고 맞춘다
+sudo cp -p /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$(date +%Y%m%d)
+sudo cp deploy/caddy/Caddyfile /etc/caddy/Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl reload caddy
+curl -sI https://managers-manager.duckdns.org/ | grep -i -E 'strict-transport|x-content-type|referrer-policy|content-security|x-frame'
+curl -sI https://managers-manager.duckdns.org/api/v1/ | grep -i content-security   # 응답 코드와 상관없이 API 응답에도 붙는지
+```
+
+validate 가 실패하면 reload 하지 않고 백업으로 되돌린다. reload 는 기존 연결을 끊지 않는다.
+
+`deploy/` 아래 파일이라 이 파일만 바뀐 커밋이 배포돼도 `changed deploy` 가 참이 되어 요약 활성화(`enable-summary.py`)가 다시 돌고, 켜져 있는 `mm-worker` 가 재시작된다. 워커는 하던 회의를 마치고 내려간다.

@@ -81,9 +81,34 @@ flowchart TB
 | 요약 활성화 | [`deploy/enable-summary.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/enable-summary.py) | 활성 `mm-worker` 에 `MM_SUMMARY_LLM=luna` drop-in 설치·검사 |
 | GPU 전사 | [`ai/deploy/gpu-stt/`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/ai/deploy/gpu-stt) | Elice 전사 장애 때 쓰는 GPU 대기 서버 절차 |
 
-- 리버스 프록시(Caddy) 설정 파일은 저장소에 없다. 저장소로는 설정 위치·내용을 알 수 없고, 서버에서 직접 관리한다.
-- 녹음 업로드(`POST /api/v1/workspaces/{id}/meetings/upload`)는 백엔드가 본문을 받는 동안 `UPLOAD_MAX_BYTES` + 1MiB 를 넘으면 413 으로 끊는다. 리버스 프록시에서도 이 경로의 본문 상한을 약 210MB 로 두는 것을 권한다(Caddy 는 `request_body` 의 `max_size`). 다른 경로는 이 상한과 상관없다. 서버 설정에 적용됐는지는 저장소로 확인할 수 없다([M5 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m5/result.md)).
+- 리버스 프록시(Caddy) 설정의 원본은 [`deploy/caddy/Caddyfile`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/caddy/Caddyfile)이다. 서버의 `/etc/caddy/Caddyfile` 로는 자동 배포되지 않고 운영자가 손으로 반영한다(아래 [앞단 프록시](#앞단-프록시-caddy)).
+- 녹음 업로드(`POST /api/v1/workspaces/{id}/meetings/upload`)는 백엔드가 본문을 받는 동안 `UPLOAD_MAX_BYTES` + 1MiB 를 넘으면 413 으로 끊는다. 앞단 Caddy 도 `/api/*` 본문을 `max_size 210MiB` 로 막는다(2026-11-11 서버에서 확인, [M5 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m5/result.md)).
 - systemd 유닛은 `/etc/systemd/system/` 에 복사해 설치한다. 유닛 파일 변경은 자동 배포에 포함되지 않는다(채팅 폴링 유닛만 예외적으로 이미 설치된 서버에서 덮어쓴다). 저장소 유닛은 "예시"이고 운영 계정은 drop-in 으로 덮는다.
+
+## 앞단 프록시 Caddy
+
+2026-11-11 운영 서버(Caddy v2.11.6)의 설정을 읽어 확인했다(#692).
+
+| 항목 | 결과 |
+|---|---|
+| 요청 크기 | `/api/*` 본문을 `request_body max_size 210MiB` 로 자른다 |
+| 연결 수 | 제한 없음. 기본 Caddy 에는 IP 별·동시 연결 제한이 없고 플러그인이 필요하다 |
+| 클라이언트 IP | `trusted_proxies` 를 두지 않아 클라이언트가 보낸 `X-Forwarded-For` 를 버리고 실제 접속 주소로 덮어 넘긴다 |
+| 보안 헤더 | 없었다. 이 저장소 판에서 더했다 |
+
+BE 의 `FORWARDED_ALLOW_IPS: "*"` 는 두 조건이 지켜질 때만 안전하다. API 가 `127.0.0.1:8000` 에만 열려 있어 Caddy 를 거치지 않고는 닿을 수 없어야 하고, Caddy 앞에 CDN·다른 프록시가 없어야 한다. 앞에 무언가를 두면 클라이언트 IP 가 그 주소가 되므로 Caddy 에 `trusted_proxies` 를 함께 설정한다. 위조한 `X-Forwarded-For` 가 바뀌는 것은 `caddy:2.11` 컨테이너에 이 설정을 띄우고 업스트림이 받은 값을 출력하게 해 확인했다(`X-Forwarded-For: 1.2.3.4` 를 보내도 업스트림은 실제 접속 주소를 받음).
+
+더한 헤더는 모든 응답(정적 파일, API, Caddy 가 직접 내는 404)에 붙는다.
+
+| 헤더 | 값 |
+|---|---|
+| `Strict-Transport-Security` | `max-age=31536000`(preload 없음) |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Content-Security-Policy` | `frame-ancestors 'none'` |
+| `X-Frame-Options` | `DENY` |
+
+스크립트·스타일까지 막는 전체 CSP 는 아직 두지 않았다. 인라인 스플래시 스크립트(해시 허용), 웹소켓 연결, 푸시 서비스 워커(`/push/sw.js`)를 운영에서 확인한 뒤 따로 더한다. 서버 반영 절차는 [deploy README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md#앞단-프록시-caddy-692)에 있다.
 
 ## 배포 절차 요약
 
@@ -127,6 +152,7 @@ flowchart TB
 - [회의 삭제 활성화 (#576)](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md#회의-삭제-활성화-576)
 - [계정 탈퇴와 정리 작업 (#575)](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md#계정-탈퇴와-정리-작업-575)
 - [채팅 폴링 타이머 첫 설치·수동 실행 (#599)](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md#채팅-폴링-타이머-599)
+- [앞단 프록시 Caddy 반영 (#692)](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md#앞단-프록시-caddy-692)
 - [GPU 전사 대기 서버](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/deploy/gpu-stt/README.md)
 
 ## 관련 문서
