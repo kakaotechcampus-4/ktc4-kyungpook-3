@@ -152,8 +152,16 @@ def one_run() -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", type=int, default=1)
+    n_runs = ap.parse_args().runs
+    # 비용을 쓰기 전에 키부터 본다(키 확인은 LLM 을 부르지 않는다)
+    try:
+        pipeline._check_llm_keys()
+    except pipeline.PipelineUnavailableError as e:
+        raise SystemExit(str(e))
+    if pipeline.get_jev().name == "off":
+        raise SystemExit("JEV 키가 없어 오인식 검사가 모두 check_failed 가 된다 — .env 를 확인하세요.")
     runs = []
-    for k in range(ap.parse_args().runs):
+    for k in range(n_runs):
         print(f"\n==== 실행 {k + 1} ====")
         runs.append(one_run())
     print("\n[6회차 요약]")

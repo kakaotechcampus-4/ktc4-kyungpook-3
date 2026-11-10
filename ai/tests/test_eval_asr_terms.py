@@ -37,3 +37,43 @@ def test_series_be_adds_and_absorbs_terms():
     assert [p["title_id"] for p in be.pending] == ["b"]
     be.add_asr_terms("ws", ["폴러"], [])
     assert be.words == {"제브", "폴러"}
+
+
+def test_recording_jev_extracts_asr_word_and_yes_probability():
+    from judge.eval_asr_terms import RecordingJev
+
+    class Inner:
+        def decide(self, state, questions):
+            return {"asr1": {"choice": "yes", "probabilities": {"yes": 0.1}}, "task": {"probabilities": {"yes": 0.9}}}
+
+    rec = RecordingJev(Inner())
+    rec.decide("s", {"task": {"instructions": "x 'no'"}, "asr1": {"instructions": "'볼러' 는 맞게 적힌 말인가?"}})
+    assert rec.asr_questions() == [{"word": "볼러", "yes": 0.1}]
+
+
+def _main_with(monkeypatch, llm_off, jev_name):
+    import pytest
+
+    import judge.eval_asr_terms as mod
+    import judge.pipeline as pipeline
+
+    class L:
+        name = "off" if llm_off else "x"
+
+    class J:
+        name = jev_name
+
+    monkeypatch.setattr(pipeline, "get_llm", lambda which: L())
+    monkeypatch.setattr(pipeline, "get_jev", lambda: J())
+    monkeypatch.setattr(mod, "one_run", lambda: pytest.fail("키 확인 전에 돌면 안 된다"))
+    monkeypatch.setattr("sys.argv", ["x"])
+    with pytest.raises(SystemExit):
+        mod.main()
+
+
+def test_main_stops_before_running_when_llm_key_is_missing(monkeypatch):
+    _main_with(monkeypatch, True, "jev")
+
+
+def test_main_stops_before_running_when_jev_key_is_missing(monkeypatch):
+    _main_with(monkeypatch, False, "off")
