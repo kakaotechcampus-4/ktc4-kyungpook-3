@@ -153,10 +153,11 @@ function MapBody({
       opener.current = document.activeElement
     setSelection(next)
   }
-  // 연 단추가 사라졌으면(합쳐서 없어진 주제) 지금 고른 노드의 목록 줄로, 그것도 없으면(그래프) 보기 탭으로 간다
+  // 연 단추가 사라졌으면(합쳐서 없어진 주제) 지금 고른 노드의 목록 줄로, 그것도 없으면(그래프) 보기 탭으로 간다.
+  // 그래프의 노드도 data-node-id 를 갖지만 포커스를 받지 못하는 SVG 라 목록 단추만 고른다
   const returnTarget = (): HTMLElement | null => {
     if (opener.current?.isConnected === true) return opener.current
-    const row = [...document.querySelectorAll<HTMLElement>('[data-node-id]')].find(
+    const row = [...document.querySelectorAll<HTMLElement>('button[data-node-id]')].find(
       (element) => element.dataset.nodeId === selection?.id,
     )
     return row ?? document.getElementById(tabId)

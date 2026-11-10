@@ -566,6 +566,18 @@ describe('합친 뒤 패널을 닫으면 (#551)', () => {
     expect(screen.queryByRole('complementary', { name: '고른 항목' })).toBeNull()
     expect(screen.getByRole('button', { name: '로그인·계정' })).toHaveFocus()
   })
+
+  it('그래프로 바꿔 목록 단추가 없으면 고른 보기 탭으로 돌아간다', async () => {
+    await openTopic('배포·인프라')
+    const graph = screen.getByRole('tab', { name: '그래프' })
+    await userEvent.click(graph)
+    await screen.findByRole('img', { name: /그래프/ }, FIRST_PAINT)
+    expect(screen.queryByRole('button', { name: '배포·인프라' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: '패널 닫기' }))
+    expect(screen.queryByRole('complementary', { name: '고른 항목' })).toBeNull()
+    expect(screen.getByRole('tab', { name: '그래프' })).toHaveFocus()
+  })
 })
 
 describe('고치기는 보기와 화면 폭에 상관없이 같다 (#551)', () => {
