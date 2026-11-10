@@ -4,6 +4,7 @@ import type { ExtractionItem } from '@/entities/extraction'
 import type { Task } from '@/entities/task'
 import { RevertConfirmModal, useAutoItemRevert } from '@/features/auto-item-revert'
 import type { AutoItemRevertOutcome } from '@/features/auto-item-revert'
+import { FirstMeetingHint, QuickGuideButton } from '@/features/quick-guide'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
@@ -148,18 +149,26 @@ interface RecentEmptyProps {
   latestId: string | null
 }
 
-/** 빈 상태 세 갈래 (D-040~D-042). 회의 업로드·Notion 설정은 PM 만 할 수 있어 일반 팀원에게는 이동을 두지 않는다 */
+/**
+ * 빈 상태 세 갈래 (D-040~D-042). 회의 업로드·Notion 설정은 PM 만 할 수 있어 일반 팀원에게는 이동을 두지 않는다.
+ * 회의가 없으면 회의를 Discord 에서 기록한다는 것을 모르는 처음 쓰는 사람이다 — 누구에게나 안내를 연다 (#650)
+ */
 function RecentEmpty({ workspaceId, isPm, reason, latestId }: RecentEmptyProps) {
   if (reason === 'no-meeting')
     return (
       <div className={EMPTY}>
         <p className={EMPTY_TITLE}>아직 정리한 회의가 없어요</p>
-        <p className="text-caption text-dim">회의를 정리하면 자동으로 반영한 일이 여기에 보여요.</p>
-        {isPm ? (
-          <GuardedLink to={paths.meetingUpload(workspaceId)} className={EMPTY_LINK}>
-            회의 업로드
-          </GuardedLink>
-        ) : null}
+        <p className="text-caption text-dim">
+          <FirstMeetingHint />
+        </p>
+        <div className="flex flex-wrap items-center gap-8">
+          <QuickGuideButton className={EMPTY_LINK}>방법 보기</QuickGuideButton>
+          {isPm ? (
+            <GuardedLink to={paths.meetingUpload(workspaceId)} className={EMPTY_LINK}>
+              회의 업로드
+            </GuardedLink>
+          ) : null}
+        </div>
       </div>
     )
   if (reason === 'notion')
