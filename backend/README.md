@@ -115,7 +115,8 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `TASK_HISTORY_NOT_FOUND` | 404 | 반영 로그(태스크 히스토리)를 찾을 수 없음 |
 | `REMINDER_NOT_FOUND` | 404 | 리마인드를 찾을 수 없음. `details.reminder_id` |
 | `REMINDER_BUNDLE_NOT_FOUND` | 404 | 보낼 메시지(묶음)를 찾을 수 없음. `details.bundle_id` |
-| `INVITATION_NOT_FOUND` | 404 | 초대를 찾을 수 없음. 내 이메일로 온 초대가 아니거나(수락·거절), 그 워크스페이스 소속이 아니어도(취소·연결 끊기) 같음. `details.invitation_id` |
+| `INVITATION_NOT_FOUND` | 404 | 초대를 찾을 수 없음. 나에게 온 초대가 아니거나(수락·거절), 그 워크스페이스 소속이 아니어도(취소·연결 끊기) 같음. `details.invitation_id` |
+| `USER_NOT_FOUND` | 404 | 초대할 가입자가 없음(탈퇴 포함). PM 이 아니면 이 코드 대신 403. `details.user_id` |
 | `MESSAGE_THREAD_NOT_FOUND` | 404 | 대화를 찾을 수 없음. `details.thread_id` |
 | `MESSAGE_NOT_FOUND` | 404 | 봇 메시지를 찾을 수 없음. `details.message_id` |
 | `MEETING_ALREADY_ENDED` | 409 | 이미 종료된 회의 |
@@ -136,8 +137,8 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `INVITATION_NOT_PENDING` | 409 | 대기 중이 아닌 초대를 수락·거절·취소하려 함. `details.invitation_id` |
 | `INVITATION_NOT_ACCEPTED` | 409 | 수락하지 않은 초대의 연결을 끊으려 함. `details.invitation_id` |
 | `MEMBER_ALREADY_LINKED` | 409 | 이미 계정이 연결된 팀원을 초대하거나 수락하려 함. `details.member_id` |
-| `ALREADY_WORKSPACE_MEMBER` | 409 | 그 이메일의 계정이 이미 이 워크스페이스 팀원임. 초대할 때 `details.email`, 수락할 때 `details.workspace_id` |
-| `EMAIL_ALREADY_INVITED` | 409 | 같은 이메일로 다른 팀원에게 보낸 초대가 대기 중임. `details.email` |
+| `ALREADY_WORKSPACE_MEMBER` | 409 | 초대할 계정이나 수락하는 내가 이미 이 워크스페이스 팀원임. 초대할 때 `details.user_id`, 수락할 때 `details.workspace_id` |
+| `USER_ALREADY_INVITED` | 409 | 같은 사용자에게 다른 팀원으로 보낸 초대가 대기 중임. `details.user_id` |
 | `PM_MEMBER_NOT_INVITABLE` | 409 | 역할이 PM 인 팀원을 초대하려 함. 팀원으로 초대해 수락한 뒤 PM 으로 바꿈. `details.member_id` |
 | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 함. `details.member_id` |
 | `PASSWORD_RESET_TOKEN_INVALID` | 400 | 비밀번호 재설정 링크를 쓸 수 없음(없는·무효화된·이미 쓴·만료된 토큰). `details.reason` 은 `invalid`·`used`·`expired` |
@@ -439,7 +440,7 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 
 ## 이메일 정규화
 
-가입(`POST /api/v1/auth/signup`)·로그인(`POST /api/v1/auth/login`)·비밀번호 재설정 요청·워크스페이스 초대는 이메일의 앞뒤 공백을 지우고 소문자로 바꿔(`@` 앞부분 포함) 비교·저장한다. 규칙은 `app/schemas/email.py` 의 `normalize_email`·`NormalizedEmail` 한 곳에 있고, `User` 모델이 저장할 때도 같은 함수를 부른다. `Kim@Example.com` 과 `kim@example.com` 은 같은 계정이다.
+가입(`POST /api/v1/auth/signup`)·로그인(`POST /api/v1/auth/login`)·비밀번호 재설정 요청은 이메일의 앞뒤 공백을 지우고 소문자로 바꿔(`@` 앞부분 포함) 비교·저장한다. 규칙은 `app/schemas/email.py` 의 `normalize_email`·`NormalizedEmail` 한 곳에 있고, `User` 모델이 저장할 때도 같은 함수를 부른다. `Kim@Example.com` 과 `kim@example.com` 은 같은 계정이다.
 
 - 응답의 `user.email`·`accepted_user.email`·`email_masked` 는 소문자다.
 - 같은 이메일로 동시에 가입하면 하나만 만들어지고 나머지는 409 `EMAIL_ALREADY_EXISTS` 를 받는다.

@@ -1,5 +1,5 @@
-"""팀원 초대. PM 이 로그인 계정 없는 팀원에게 가입 이메일로 초대를 만들고, 그 이메일로 로그인한 사람이 수락하면
-팀원(Member.user_id)과 계정이 이어진다. 메일은 보내지 않는다. 받는 사람은 로그인한 뒤 내 초대에서 본다.
+"""팀원 초대. PM 이 로그인 계정 없는 팀원에게 아이디로 찾은 가입자를 초대하고(#628), 그 사람이 수락하면
+팀원(Member.user_id)과 계정이 이어진다. 알림은 보내지 않는다. 받는 사람은 로그인한 뒤 내 초대에서 본다.
 
 여러 행을 고치는 요청은 팀원 행을 먼저, 초대 행을 나중에 고친다. 순서가 엇갈리면 PostgreSQL 에서 교착한다.
 """
@@ -24,6 +24,7 @@ from app.schemas.invitation import (
     InvitedUser,
     MyInvitationListResponse,
     MyInvitationResponse,
+    UserSummary,
 )
 
 router = APIRouter(tags=["invitations"])
@@ -33,9 +34,14 @@ def _invitation_pm(
     workspace_id: str, payload: InvitationCreateRequest,
     user: User = Depends(get_current_user), db: Session = Depends(get_db),
 ) -> Member:
-    from app.services import lifecycle
-    lifecycle.identity_lock(db, lifecycle.email_identity(payload.email))
-    return require_pm(db, user, workspace_id)
+    # 탈퇴처럼 사용자 행 → 공간(require_pm) → 팀원 행 순서로 잠근다. 탈퇴가 먼저 끝났으면 행이 없어 404 다.
+    invitee = db.scalar(
+        select(User).where(User.user_id == payload.user_id).with_for_update(read=True).execution_options(populate_existing=True)
+    )
+    pm = require_pm(db, user, workspace_id)
+    if invitee is None:
+        raise AppError(ErrorCode.USER_NOT_FOUND, details={"user_id": payload.user_id})
+    return pm
 
 # 옮겨 갈 상태 → (옮길 수 있는 상태, 그 상태가 아닐 때의 오류)
 _TRANSITIONS: dict[InvitationStatus, tuple[InvitationStatus, ErrorCode]] = {
@@ -46,6 +52,7 @@ _TRANSITIONS: dict[InvitationStatus, tuple[InvitationStatus, ErrorCode]] = {
 }
 
 _Inviter = aliased(User)
+_Invited = aliased(User)
 _Accepted = aliased(User)
 
 
@@ -74,8 +81,9 @@ def _move(db: Session, invitation_id: str, to: InvitationStatus, **values: objec
 
 def _invitations(db: Session, *where) -> list[InvitationResponse]:
     rows = db.execute(
-        select(Invitation, Member.display_name, _Inviter.name, _Accepted)
+        select(Invitation, Member.display_name, _Inviter.name, _Invited, _Accepted)
         .join(Member, Member.member_id == Invitation.member_id)
+        .join(_Invited, _Invited.user_id == Invitation.invited_user_id)
         .outerjoin(_Inviter, _Inviter.user_id == Invitation.invited_by_user_id)
         .outerjoin(_Accepted, _Accepted.user_id == Invitation.accepted_user_id)
         .where(*where)
@@ -86,7 +94,7 @@ def _invitations(db: Session, *where) -> list[InvitationResponse]:
             invitation_id=invitation.invitation_id,
             member_id=invitation.member_id,
             member_display_name=display_name,
-            email=invitation.email,
+            invited_user=UserSummary(user_id=invited.user_id, username=invited.username, name=invited.name),
             status=invitation.status,
             invited_by_name=inviter_name,
             accepted_user=InvitedUser(user_id=accepted.user_id, name=accepted.name, email=accepted.email)
@@ -95,7 +103,7 @@ def _invitations(db: Session, *where) -> list[InvitationResponse]:
             created_at=invitation.created_at,
             responded_at=invitation.responded_at,
         )
-        for invitation, display_name, inviter_name, accepted in rows
+        for invitation, display_name, inviter_name, invited, accepted in rows
     ]
 
 
@@ -104,24 +112,14 @@ def _invitation_response(db: Session, invitation_id: str) -> dict:
     return success(item.model_dump(mode="json"))
 
 
-def _email_pending_for_other_member(db: Session, workspace_id: str, email: str, member_id: str) -> bool:
+def _user_pending_for_other_member(db: Session, workspace_id: str, user_id: str, member_id: str) -> bool:
     return db.execute(
         select(Invitation.invitation_id).where(
             Invitation.workspace_id == workspace_id,
-            Invitation.email == email,
+            Invitation.invited_user_id == user_id,
             Invitation.status == str(InvitationStatus.PENDING),
             Invitation.member_id != member_id,
         ).limit(1)
-    ).first() is not None
-
-
-def _email_in_workspace(db: Session, workspace_id: str, email: str) -> bool:
-    """이 이메일로 가입한 계정이 이미 이 워크스페이스의 (탈퇴하지 않은) 팀원인가. 저장된 이메일은 User 모델이 정규화한다."""
-    return db.execute(
-        select(User.user_id)
-        .join(Member, Member.user_id == User.user_id)
-        .where(Member.workspace_id == workspace_id, Member.is_deleted.is_(False), User.email == email)
-        .limit(1)
     ).first() is not None
 
 
@@ -145,13 +143,12 @@ def _pm_invitation(db: Session, invitation_id: str, user: User) -> Invitation:
 
 
 def _my_pending_invitation(db: Session, invitation_id: str, user: User, to: InvitationStatus) -> tuple[Invitation, Member]:
-    """내 이메일로 온 초대가 아니면 있는지도 알려 주지 않는다(404). 이메일 없는 계정에는 이메일 초대가 없다.
-    팀원이 탈퇴한 초대는 닫힌 것으로 본다."""
+    """나에게 온 초대가 아니면 있는지도 알려 주지 않는다(404). 팀원이 탈퇴한 초대는 닫힌 것으로 본다."""
     invitation = db.get(Invitation, invitation_id)
-    if invitation is None or user.email is None or invitation.email != user.email:
+    if invitation is None or invitation.invited_user_id != user.user_id:
         raise AppError(ErrorCode.INVITATION_NOT_FOUND, details={"invitation_id": invitation_id})
     from app.services import lifecycle
-    lifecycle.identity_lock(db, lifecycle.email_identity(user.email))
+    lifecycle.user(db, user.user_id)
     lifecycle.workspace(db, invitation.workspace_id)
     db.refresh(invitation)
     _check_can_move(invitation, to)
@@ -170,7 +167,7 @@ def create_invitation(
     pm: Member = Depends(_invitation_pm),
     db: Session = Depends(get_db),
 ) -> dict:
-    """같은 팀원에게 열린 초대가 있으면 취소하고 새로 만든다. 이메일 오타는 다시 초대해서 고친다."""
+    """같은 팀원에게 열린 초대가 있으면 취소하고 새로 만든다. 다른 사람을 골랐으면 다시 초대해서 고친다."""
     # 팀원 행을 잠가 같은 팀원을 동시에 다시 초대하거나 수락하는 요청을 차례로 돌린다.
     member = db.execute(
         select(Member)
@@ -185,10 +182,10 @@ def create_invitation(
     # 수락한 계정이 바로 PM 이 되면 원래 PM 을 내려 연결 끊기를 막을 수 있다(결정 0036).
     if member.role == str(MemberRole.PM):
         raise AppError(ErrorCode.PM_MEMBER_NOT_INVITABLE, details={"member_id": member.member_id})
-    if _email_in_workspace(db, workspace_id, payload.email):
-        raise AppError(ErrorCode.ALREADY_WORKSPACE_MEMBER, details={"email": payload.email})
-    if _email_pending_for_other_member(db, workspace_id, payload.email, member.member_id):
-        raise AppError(ErrorCode.EMAIL_ALREADY_INVITED, details={"email": payload.email})
+    if _user_in_workspace(db, workspace_id, payload.user_id):
+        raise AppError(ErrorCode.ALREADY_WORKSPACE_MEMBER, details={"user_id": payload.user_id})
+    if _user_pending_for_other_member(db, workspace_id, payload.user_id, member.member_id):
+        raise AppError(ErrorCode.USER_ALREADY_INVITED, details={"user_id": payload.user_id})
 
     db.execute(
         update(Invitation)
@@ -196,16 +193,17 @@ def create_invitation(
         .values(status=str(InvitationStatus.CANCELED), responded_at=_now())
     )
     invitation = Invitation(
-        workspace_id=workspace_id, member_id=member.member_id, email=payload.email, invited_by_user_id=pm.user_id
+        workspace_id=workspace_id, member_id=member.member_id, invited_user_id=payload.user_id,
+        invited_by_user_id=pm.user_id,
     )
     db.add(invitation)
     try:
         db.commit()
     except IntegrityError:
-        # 다른 팀원에게 같은 이메일로 동시에 초대해 둘 다 사전 검사를 통과했다. 같은 팀원 쪽 인덱스는 팀원 행
+        # 다른 팀원으로 같은 사용자를 동시에 초대해 둘 다 사전 검사를 통과했다. 같은 팀원 쪽 인덱스는 팀원 행
         # 잠금으로 차례가 정해져 여기 오지 않는다. 이긴 쪽 초대가 그새 닫혔을 수 있어 다시 보지 않고 409 로 돌린다.
         db.rollback()
-        raise AppError(ErrorCode.EMAIL_ALREADY_INVITED, details={"email": payload.email}) from None
+        raise AppError(ErrorCode.USER_ALREADY_INVITED, details={"user_id": payload.user_id}) from None
     return _invitation_response(db, invitation.invitation_id)
 
 
@@ -254,12 +252,12 @@ def revoke_invitation(
             .values(user_id=None)
         )
     _move(db, invitation_id, InvitationStatus.REVOKED)
-    # 끊긴 계정이 같은 이메일의 남은 대기 초대로 돌아오지 못하게 함께 닫는다.
+    # 끊긴 계정이 자기에게 남은 대기 초대로 돌아오지 못하게 함께 닫는다.
     db.execute(
         update(Invitation)
         .where(
             Invitation.workspace_id == invitation.workspace_id,
-            Invitation.email == invitation.email,
+            Invitation.invited_user_id == invitation.invited_user_id,
             Invitation.status == str(InvitationStatus.PENDING),
         )
         .values(status=str(InvitationStatus.CANCELED), responded_at=_now())
@@ -273,17 +271,14 @@ def list_my_invitations(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """내 가입 이메일로 온 대기 중 초대. 초대보다 먼저 가입했든 나중에 가입했든 같은 기준으로 찾는다."""
-    if user.email is None:
-        # 카카오만으로 가입한 계정은 이메일 초대를 받을 수 없다(#610). 아이디 초대는 다음 작업이다.
-        return success(MyInvitationListResponse(items=[], total=0).model_dump(mode="json"))
+    """나에게 온 대기 중 초대."""
     rows = db.execute(
         select(Invitation, Workspace.name, Member.display_name, _Inviter.name)
         .join(Workspace, Workspace.workspace_id == Invitation.workspace_id)
         .join(Member, Member.member_id == Invitation.member_id)
         .outerjoin(_Inviter, _Inviter.user_id == Invitation.invited_by_user_id)
         .where(
-            Invitation.email == user.email,
+            Invitation.invited_user_id == user.user_id,
             Invitation.status == str(InvitationStatus.PENDING),
             Member.is_deleted.is_(False),
         )
@@ -316,7 +311,7 @@ def accept_invitation(
     if _user_in_workspace(db, workspace_id, user.user_id):
         raise AppError(ErrorCode.ALREADY_WORKSPACE_MEMBER, details={"workspace_id": workspace_id})
 
-    # 두 사람이 같은 초대를 동시에 수락해도(대소문자만 다른 두 계정) 한 계정만 이어지도록 조건부로 고친다.
+    # 확인한 뒤 이 팀원이 다른 계정과 이어졌으면 덮어쓰지 않도록 조건부로 고친다.
     linked = db.execute(
         update(Member)
         .where(
