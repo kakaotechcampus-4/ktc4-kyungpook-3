@@ -86,16 +86,19 @@ docker compose -f docker-compose.prod.yml logs -f api
 
 ```bash
 docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBER_PASSWORD api \
-  python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com'
+  python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com' --today 2026-11-19
 ```
 
-로컬 리허설은 API 를 띄운 뒤 같은 명령을 `python -m app.cli.seed_demo --email-pattern 'demo+{n}@example.com'` 로 돌린다. `--dry-run` 은 DB 를 읽기만 해서 이미 있는 계정 수, 재사용할 공간과 그 공간의 활성 자리·회의 수, 재생할 회의 제목을 출력한다. 쓰지 않고 HTTP 도 부르지 않는다(`SERVICE_TOKEN` 은 필요 없지만 비밀번호 검사는 하므로 비밀번호 환경변수는 필요하다). 실제 실행이 멈출 상황이면 이유를 stderr 에 적고 종료 코드 2 로 끝난다. 비밀번호를 환경변수로 넘기지 않고 입력받으려면 터미널(TTY)이 필요하다(`docker compose exec` 는 기본으로 붙고, 원격에서 명령 한 줄로 돌릴 때는 `ssh -t`). 컨테이너에는 `SERVICE_TOKEN` 이 `env_file` 로 이미 들어 있다.
+`--today` 는 회의 날짜의 기준일(KST)이다. 가장 늦은 회의 시작(기준일 − 가장 작은 `days_ago`, 10:00 KST)이 지난 뒤에만 끝까지 돈다. 서버가 미래 `started_at` 을 400 으로 거절하기 때문이고, 그 전이면 쓰기 전에 종료 코드 2 로 멈춘다. 재실행은 같은 기준일로 해야 이어 간다. 기준일이 다르면 종료 코드 2 와 원래 기준일 안내가 나온다(옵션 없이 처음 돌린 시드도 같고, `--allow-existing` 으로 넘길 수 없다).
+
+로컬 리허설은 API 를 띄운 뒤 같은 명령을 `python -m app.cli.seed_demo --email-pattern 'demo+{n}@example.com'` 로 돌린다. `--dry-run` 은 DB 를 읽기만 해서 이미 있는 계정 수, 재사용할 공간과 그 공간의 활성 자리·회의 수, 기준일, 재생할 회의의 날짜와 제목을 출력한다. 쓰지 않고 HTTP 도 부르지 않는다(`SERVICE_TOKEN` 은 필요 없지만 비밀번호 검사는 하므로 비밀번호 환경변수는 필요하다). 실제 실행이 멈출 상황이면 이유를 stderr 에 적고 종료 코드 2 로 끝난다. 비밀번호를 환경변수로 넘기지 않고 입력받으려면 터미널(TTY)이 필요하다(`docker compose exec` 는 기본으로 붙고, 원격에서 명령 한 줄로 돌릴 때는 `ssh -t`). 컨테이너에는 `SERVICE_TOKEN` 이 `env_file` 로 이미 들어 있다.
 
 | 옵션·환경변수 | 뜻 |
 |---|---|
 | `--email-pattern` | 필수. `{n}` 이 1~6 으로 바뀐다. 1번이 PM, 2번이 팀원2 |
 | `--base-url` | API 호스트 루트(기본 `http://localhost:8000`). 경로 앞에 `/api/v1` 은 명령이 붙인다 |
 | `--workspace-name` | 공간 이름. 기본은 시드 데이터 값 |
+| `--today` | 회의 날짜의 기준일. `YYYY-MM-DD` 형식(KST)이고 기본은 실행일이다. 회의 시작은 기준일 − `days_ago` 의 10:00 KST, 항목 마감은 회의일 + `due_in_days` 다. `--dry-run` 에도 같은 검사를 한다 |
 | `--embed-timeout` | 회의마다 임베딩을 기다리는 초(기본 120) |
 | `--reset-passwords` | 이미 있는 계정의 비밀번호도 다시 정하고, 그 계정의 로그인 세션을 지운다 |
 | `--allow-existing` | 시드가 아닌 기존 데이터가 있어도 재사용한다. 없으면 이름이 시드 인물과 다른 기존 계정, 찾은 공간의 시드 인물이 아닌 자리, 시드가 만들지 않은 회의가 하나라도 있을 때 아무것도 쓰지 않고 종료 코드 2 로 멈춘다 |
@@ -108,7 +111,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 |---|---|
 | 0 | 성공 |
 | 1 | 시드 실패(데이터·API·임베딩 대기 오류). 한 줄이 stderr 에 나온다. 같은 명령을 다시 실행하면 이어 간다 |
-| 2 | 입력·환경 부족(비밀번호, 이메일 패턴, `SERVICE_TOKEN`, 옵션)이나 시드가 아닌 기존 데이터 재사용 거절(`--allow-existing` 참고). 아무것도 쓰지 않았다 |
+| 2 | 입력·환경 부족(비밀번호, 이메일 패턴, `SERVICE_TOKEN`, 옵션)이나 시드가 아닌 기존 데이터 재사용 거절(`--allow-existing` 참고), 기준일 검사 실패(회의 시작이 지금보다 늦음, 이미 있는 회의의 날짜가 이번 기준일과 다름). 아무것도 쓰지 않았다 |
 | 3 | 데이터는 다 썼지만 gate 분포에 auto·review·hold 중 0 건이 있다. JSON 은 그대로 나오고 stderr 에 경고가 나온다 |
 
 알아 둘 점:
@@ -116,7 +119,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 - 임베딩 대기 시간 초과는 `EMBEDDING_API_KEY` 미설정일 수도 있고, 임베딩 API 가 제목을 거절한 행(`embedding_rejected_title`)일 수도 있다.
 - 운영 요약 워커(AI mm-worker, `MM_SUMMARY_LLM`)가 시드와 동시에 돌면 워커가 먼저 잡은 회의의 요약은 `summaries_skipped` 에 들어가고, 그 임대 15분 동안 같은 공간의 뒤 회의들도 건너뛸 수 있다. 시드 중에는 워커를 잠시 멈추거나, `summaries_skipped` 가 나오면 15분 뒤 같은 명령을 다시 실행한다. 요약만 채운다.
 - 시드 항목의 `similar_count` 는 모두 0 이라 gate 분포는 유사 검색 결과로 바뀌지 않는다. 출력 JSON 의 `gates` 에서 auto 가 0 건이면 API 서버의 `AUTO_CREATE_ENABLED` 가 꺼져 있거나(auto 가 review 로 내려간다), 재생 중 임베딩이 아직 없는 task·승인 대기 카드가 남아 있던 경우(서버 로그의 `unsearched_task_exists`·`unsearched_pending_exists`)다.
-- 회의의 처리 완료 시각(`ended_at`)은 시드를 실행한 시각으로 남는다. 시작 시각만 며칠 전으로 합성한다.
+- 회의의 처리 완료 시각(`ended_at`)은 시드를 실행한 시각으로 남는다. 시작 시각만 며칠 전으로 합성하며, `--today` 와는 무관하다.
 - 팀원2 자리는 초대·수락 시연용으로 비워 둔다. PM 이 초대할 때는 팀원2 의 아이디(출력 JSON 의 `usernames.p2`)를 정확히 입력해 찾는다. 동의 기록은 넣지 않아 첫 로그인 때 동의 화면이 뜬다.
 - 다시 시드하려면 새 `--workspace-name` 과 새 이메일을 쓴다. 지우는 기능은 없다.
 
