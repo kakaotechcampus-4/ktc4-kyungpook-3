@@ -56,12 +56,14 @@ const VIEWS: Record<Role, Record<Phase, View | null>> = {
   member: { processing: 'processing', awaiting_speakers: 'waiting', done: 'done', failed: null },
 }
 
-/** 처리 화면의 단계마다 하나다. 지금 단계가 없는 정리 중은 마지막 단계 문장이다 */
+/** 처리 화면의 단계마다 하나다. 지금 단계가 없는 정리 중은 뽑아내기 문장이다 */
 const STAGE_SENTENCES: Record<ProcessingStepKey, string> = {
   queue: '차례를 기다리고 있어요',
   transcribe: '음성을 텍스트로 옮기고 있어요',
   collect: '대화를 모으고 있어요',
+  organize: '회의록을 정리하고 있어요',
   extract: '결정사항과 할 일을 뽑고 있어요',
+  deliver: '정리 결과를 보내고 있어요',
 }
 
 const WAITING_SENTENCE = '화자 지정을 기다리고 있어요'
@@ -82,7 +84,7 @@ function progressSignal(
       doneCount: null,
       detail: null,
     }
-  const steps = processingSteps(subject.progress, subject.phase, subject.source)
+  const steps = processingSteps(subject.progress, subject.phase, subject.source, subject.processing)
   const current = steps.find(({ state }) => state === 'current')
   return {
     kind: 'processing',
@@ -90,7 +92,7 @@ function progressSignal(
     sentence: waiting ? WAITING_SENTENCE : STAGE_SENTENCES[current?.key ?? 'extract'],
     steps: steps.map(({ state }) => state),
     doneCount: steps.filter(({ state }) => state === 'done').length,
-    detail: waiting ? null : stageDetail(subject.processing, current?.key, subject.observedAt),
+    detail: waiting ? null : stageDetail(subject.processing, current, subject.observedAt),
   }
 }
 

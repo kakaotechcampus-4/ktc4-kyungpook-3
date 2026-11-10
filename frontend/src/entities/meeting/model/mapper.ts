@@ -37,12 +37,15 @@ export function toMeeting(dto: MeetingDto): Meeting {
     processing: dto.processing ? toMeetingProcessing(dto.processing) : null,
   }
 }
-function toMeetingProcessing(dto: NonNullable<MeetingDto['processing']>): MeetingProcessing {
+/** 모르는 단계면 처리 단계 전체를 없는 것으로 본다 — 단계 목록이 옛 응답처럼 `progress` 로만 정해진다 */
+function toMeetingProcessing(dto: NonNullable<MeetingDto['processing']>): MeetingProcessing | null {
+  const stage =
+    dto.stage === null
+      ? null
+      : fallbackValue(dto.stage, PROCESSING_STAGES, undefined, 'processing stage')
+  if (stage === undefined) return null
   return {
-    stage:
-      dto.stage === null
-        ? null
-        : fallbackValue(dto.stage, PROCESSING_STAGES, null, 'processing stage'),
+    stage,
     stageAt: dto.stage_at,
     stt: dto.stt && { done: dto.stt.done, total: dto.stt.total },
   }

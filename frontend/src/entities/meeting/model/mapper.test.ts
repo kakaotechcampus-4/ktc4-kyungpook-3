@@ -55,7 +55,7 @@ it('treats a missing progress as null instead of throwing', () => {
   expect(toMeeting(dto).progress).toBeNull()
 })
 
-it('정리 중 처리 단계를 읽고, 모르는 단계는 단계 없음으로 내린다 (#483)', () => {
+it('정리 중 처리 단계를 읽고, 모르는 단계면 처리 단계 전체를 없는 것으로 본다 (#483)', () => {
   const processing = {
     stage: 'stt',
     stage_at: '2026-09-18T00:00:00Z',
@@ -71,10 +71,14 @@ it('정리 중 처리 단계를 읽고, 모르는 단계는 단계 없음으로 
     expect(
       toMeeting({ ...meetingFixtures[2], processing: { ...processing, stage: 'diarize' } })
         .processing,
-    ).toEqual({ stage: null, stageAt: '2026-09-18T00:00:00Z', stt: { done: 3, total: 5 } })
+    ).toBeNull()
   } finally {
     warning.mockRestore()
   }
+  expect(
+    toMeeting({ ...meetingFixtures[2], processing: { stage: null, stage_at: null, stt: null } })
+      .processing,
+  ).toEqual({ stage: null, stageAt: null, stt: null })
   expect(toMeeting({ ...meetingFixtures[2], processing: undefined }).processing).toBeNull()
 })
 
