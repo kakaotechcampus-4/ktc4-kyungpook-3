@@ -224,3 +224,17 @@ def test_dispatcher_rejects_not_meaningful_result(monkeypatch):
     with pytest.raises(ValueError):
         draft(_finding(), _result(is_meaningful=False), today=TODAY)
     assert fake.prompts == []
+
+
+def test_dispatcher_retries_a_failed_call_once_in_place(monkeypatch):
+    # 실패한 호출만 그 자리에서 한 번 더 한다(#624). 두 번째도 실패하면 지금처럼 DraftUnavailableError
+    fake = FakeLLM(responses=[{"task": None, "due_date": None}, {"task": None, "due_date": "2026-10-06", "doc_text": "마감 연기"}])
+    monkeypatch.setattr(dd, "get_llm", lambda which: fake)
+    assert draft(_finding(), _result(), candidate=_candidate(), today=TODAY).structured.due_date == "2026-10-06"
+    assert len(fake.prompts) == 2
+
+
+def test_prompt_asks_for_none_when_the_due_is_still_undecided():
+    # "날짜는 아직 못 박겠어요" 는 날짜도, 없애자는 말도 아니다. null 을 주면 일정 변경이 실패로 남는다(#624)
+    prompt = _draft_prompt(_finding(), _result(), _candidate(), TODAY)
+    assert "아직 못 정했다" in prompt
