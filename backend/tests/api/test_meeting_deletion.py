@@ -287,6 +287,56 @@ def test_raw_database_copies_are_removed_in_one_delete(mdb, mseed, deleted_fixtu
     assert (deleted.title, deleted.title_original, deleted.title_edited_at) == (None, None, None)
 
 
+@pytest.mark.parametrize("renamed", [None, "김민수 병가 처리"])
+def test_names_of_a_topic_merged_away_from_the_deleted_meeting_are_removed(mdb, mseed, monkeypatch, renamed):
+    from datetime import timedelta
+    from app.models import Topic, TopicAlias
+    from app.services import summary
+    from tests.api.test_project_map import T0, _meeting, _save
+
+    monkeypatch.setenv("MEETING_DELETION_ENABLED", "true")
+    ws = mseed["ws"]
+    private = _meeting(mdb, ws, title="1:1")
+    private.deletion_ready = True
+    mdb.commit()
+    _save(mdb, private, [{"name": "김민수 병가 private-576"}])
+    _save(mdb, _meeting(mdb, ws, started_at=T0 + timedelta(days=1)), [{"name": "인사"}])
+    ids = {t.name: t.topic_id for t in mdb.scalars(select(Topic))}
+    if renamed:
+        summary.rename_topic(mdb, ws, ids["김민수 병가 private-576"], name=renamed, description=None)
+    summary.merge_topics(mdb, ws, ids["김민수 병가 private-576"], ids["인사"])
+    mdb.commit()
+
+    meeting_deletion.delete_meeting(mdb, private.meeting_id)
+    mdb.commit()
+    mdb.expire_all()
+
+    assert list(mdb.scalars(select(TopicAlias.name_key))) == []
+
+
+def test_old_name_another_meeting_still_summarized_stays_after_a_deletion(mdb, mseed, monkeypatch):
+    from datetime import timedelta
+    from app.models import Topic, TopicAlias
+    from app.services import summary
+    from tests.api.test_project_map import T0, _meeting, _save
+
+    monkeypatch.setenv("MEETING_DELETION_ENABLED", "true")
+    ws = mseed["ws"]
+    deleted = _meeting(mdb, ws)
+    deleted.deletion_ready = True
+    mdb.commit()
+    _save(mdb, deleted, [{"name": "배포"}])
+    _save(mdb, _meeting(mdb, ws, started_at=T0 + timedelta(days=1)), [{"name": "배포"}])
+    summary.rename_topic(mdb, ws, mdb.scalar(select(Topic.topic_id)), name="인프라 배포", description=None)
+    mdb.commit()
+
+    meeting_deletion.delete_meeting(mdb, deleted.meeting_id)
+    mdb.commit()
+    mdb.expire_all()
+
+    assert list(mdb.scalars(select(TopicAlias.name_key))) == [summary.normalize_topic_name("배포")]
+
+
 def merged_card(mdb, workspace, deleted_mid):
     old_extraction = mdb.scalar(
         select(Extraction).where(Extraction.meeting_id == deleted_mid)

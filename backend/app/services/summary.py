@@ -701,10 +701,12 @@ def remove_meeting_summary(db: Session, meeting: Meeting) -> None:
         Meeting.workspace_id == meeting.workspace_id, Meeting.meeting_id != meeting.meeting_id,
         Extraction.summary.is_not(None),
     ))
+    named = set()
     for extraction in rows:
         document = _stored(extraction)
         if document is None:
             continue
+        named.update(normalize_topic_name(name) for name in document.get("topics", []) if isinstance(name, str))
         changed = False
         for detail in document.get("decision_details", []):
             if not isinstance(detail, dict) or not isinstance(detail.get("replaces"), list):
@@ -718,6 +720,9 @@ def remove_meeting_summary(db: Session, meeting: Meeting) -> None:
             extraction.summary = json.dumps(document, ensure_ascii=False)
     _clear_meeting(db, meeting.meeting_id, None, keep_human=False)
     _delete_orphan_topics(db, topic_ids, keep_human=False)
+    # 합쳐 사라진 주제의 이름은 살아 있는 주제의 별칭으로 남아 FK 로 지워지지 않는다. 어느 회의의 이름인지 적어 두지 않아서
+    # 남은 회의의 요약이 쓰지 않은 이름은 지운 회의의 것으로 보고 지운다
+    db.execute(delete(TopicAlias).where(TopicAlias.topic_id.in_(topic_ids), TopicAlias.name_key.not_in(named)))
 
 
 def _resolve_topic(db: Session, workspace_id: str, entry: SummaryTopicIn) -> Topic | None:
