@@ -7,6 +7,8 @@ export interface EditConfirmProps {
   title: string
   description: ReactNode
   confirmLabel: string
+  /** 기본은 `취소` */
+  cancelLabel?: string
   pending: boolean
   /** 서버가 거절한 이유 */
   failure: string | null
@@ -22,6 +24,7 @@ export function EditConfirm({
   title,
   description,
   confirmLabel,
+  cancelLabel = '취소',
   pending,
   failure,
   confirmDisabled = false,
@@ -40,7 +43,7 @@ export function EditConfirm({
       actions={
         <>
           <Button variant="ghost" disabled={pending} onClick={onCancel}>
-            취소
+            {cancelLabel}
           </Button>
           <Button
             variant="primary"

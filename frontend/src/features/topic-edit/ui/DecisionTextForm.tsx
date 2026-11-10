@@ -1,9 +1,11 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import type { FormEvent, ReactNode } from 'react'
+import type { FormEvent, ReactNode, Ref } from 'react'
 import { useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { ErrorText } from '@/shared/ui/error-text'
 import { Label } from '@/shared/ui/label'
+import { useEditFormHandle } from './editFormHandle'
+import type { EditFormHandle } from './editFormHandle'
 import { ACTIONS, FIELD, FORM, TEXTAREA } from './styles'
 
 export interface DecisionTextFormProps {
@@ -12,6 +14,7 @@ export interface DecisionTextFormProps {
   alert?: ReactNode
   onSave: (text: string) => void
   onCancel: () => void
+  ref?: Ref<EditFormHandle>
 }
 
 /** 결정 문장 고치기. 1000자는 칸이 막고 빈 문장만 여기서 막는다. 같은 문장이면 보내지 않고 닫는다 */
@@ -21,12 +24,15 @@ export function DecisionTextForm({
   alert,
   onSave,
   onCancel,
+  ref,
 }: DecisionTextFormProps) {
   const [draft, setDraft] = useState(text)
   const [error, setError] = useState<string | null>(null)
   const field = useRef<HTMLTextAreaElement>(null)
   const id = useId()
-  useUnsavedChanges(draft !== text)
+  const dirty = draft !== text
+  useUnsavedChanges(dirty)
+  const trackField = useEditFormHandle(ref, dirty, field)
   // 연 단추가 폼으로 바뀌므로 포커스를 첫 칸으로 옮긴다
   useEffect(() => field.current?.focus(), [])
 
@@ -43,7 +49,13 @@ export function DecisionTextForm({
   }
 
   return (
-    <form aria-label="결정 고치기" className={FORM} onSubmit={submit} noValidate>
+    <form
+      aria-label="결정 고치기"
+      className={FORM}
+      onSubmit={submit}
+      onFocus={trackField}
+      noValidate
+    >
       <div className={FIELD}>
         <Label htmlFor={id}>결정 문장</Label>
         <textarea

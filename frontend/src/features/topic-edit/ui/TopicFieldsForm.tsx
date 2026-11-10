@@ -1,9 +1,11 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import type { FormEvent, ReactNode } from 'react'
+import type { FormEvent, ReactNode, Ref } from 'react'
 import { useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { Label } from '@/shared/ui/label'
 import { TextField } from '@/shared/ui/text-field'
+import { useEditFormHandle } from './editFormHandle'
+import type { EditFormHandle } from './editFormHandle'
 import { ACTIONS, FIELD, FORM, TEXTAREA } from './styles'
 
 /** 바뀐 칸만 담는다 */
@@ -20,6 +22,7 @@ export interface TopicFieldsFormProps {
   alert?: ReactNode
   onSave: (change: TopicFieldsChange) => void
   onCancel: () => void
+  ref?: Ref<EditFormHandle>
 }
 
 /**
@@ -33,13 +36,16 @@ export function TopicFieldsForm({
   alert,
   onSave,
   onCancel,
+  ref,
 }: TopicFieldsFormProps) {
   const [draftName, setDraftName] = useState(name)
   const [draftDescription, setDraftDescription] = useState(description)
   const [nameError, setNameError] = useState<string | null>(null)
   const nameField = useRef<HTMLInputElement>(null)
   const descriptionId = useId()
-  useUnsavedChanges(draftName !== name || draftDescription !== description)
+  const dirty = draftName !== name || draftDescription !== description
+  useUnsavedChanges(dirty)
+  const trackField = useEditFormHandle(ref, dirty, nameField)
   // 연 단추가 폼으로 바뀌므로 포커스를 첫 칸으로 옮긴다
   useEffect(() => nameField.current?.focus(), [])
 
@@ -61,7 +67,13 @@ export function TopicFieldsForm({
   }
 
   return (
-    <form aria-label="주제 고치기" className={FORM} onSubmit={submit} noValidate>
+    <form
+      aria-label="주제 고치기"
+      className={FORM}
+      onSubmit={submit}
+      onFocus={trackField}
+      noValidate
+    >
       <TextField
         ref={nameField}
         label="이름"

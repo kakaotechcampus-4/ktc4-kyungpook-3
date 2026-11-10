@@ -449,9 +449,20 @@ describe('결정 고치기 (#551)', () => {
 })
 
 describe('고치기 사이를 옮길 때 (#551)', () => {
-  const LEAVE = '저장하지 않은 변경 내용이 있어요'
+  const PROMPT = '저장하지 않은 변경 내용이 있어요'
+  const SWITCH = '쓰던 내용은 버려지고 다른 고치기가 열려요.'
+  const LEAVE = '지금 나가면 작성한 내용이 사라져요.'
 
-  it('쓰던 결정 문장이 있으면 다른 고치기를 열기 전에 묻고, 계속 쓰면 그대로 둔다. 바뀐 것이 없으면 묻지 않는다', async () => {
+  async function askedToSwitch() {
+    const prompt = await screen.findByRole('dialog', { name: PROMPT })
+    expect(prompt).toHaveAccessibleDescription(SWITCH)
+    expect(within(prompt).queryByRole('button', { name: '변경 내용 버리고 나가기' })).toBeNull()
+    return prompt
+  }
+  const promptClosed = () =>
+    waitFor(() => expect(screen.queryByRole('dialog', { name: PROMPT })).toBeNull())
+
+  it('쓰던 결정 문장이 있으면 다른 고치기를 열기 전에 패널 안 문구로 묻는다. 계속 쓰면 그 칸으로 돌아가고, 바뀐 것이 없으면 묻지 않는다', async () => {
     await openTopic('배포·인프라')
     const text = '배포는 스크립트 하나로 한다'
     await chooseMenu(text, '문장 고치기')
@@ -459,27 +470,36 @@ describe('고치기 사이를 옮길 때 (#551)', () => {
     await userEvent.type(field, ' 롤백도')
 
     await userEvent.click(within(panel()).getByRole('button', { name: '이름·설명 고치기' }))
-    let prompt = await screen.findByRole('dialog', { name: LEAVE })
+    let prompt = await askedToSwitch()
     await userEvent.click(within(prompt).getByRole('button', { name: '계속 작성하기' }))
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: LEAVE })).toBeNull())
-    expect(within(panel()).getByRole('textbox', { name: '결정 문장' })).toHaveValue(
-      `${text} 롤백도`,
-    )
+    await promptClosed()
+    expect(field).toHaveValue(`${text} 롤백도`)
     expect(within(panel()).queryByRole('form', { name: '주제 고치기' })).toBeNull()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(field).toHaveFocus()
 
     await userEvent.click(within(panel()).getByRole('button', { name: '이름·설명 고치기' }))
-    prompt = await screen.findByRole('dialog', { name: LEAVE })
-    await userEvent.click(within(prompt).getByRole('button', { name: '변경 내용 버리고 나가기' }))
+    prompt = await askedToSwitch()
+    await userEvent.click(within(prompt).getByRole('button', { name: '버리기' }))
     const name = await within(panel()).findByRole('textbox', { name: '이름' })
     expect(within(panel()).queryByRole('form', { name: '결정 고치기' })).toBeNull()
     await waitFor(() => expect(name).toHaveFocus())
 
-    await userEvent.type(name, '!')
+    const description = within(panel()).getByRole('textbox', { name: '설명' })
+    await userEvent.type(description, '!')
     await chooseMenu(text, '문장 고치기')
-    prompt = await screen.findByRole('dialog', { name: LEAVE })
-    await userEvent.click(within(prompt).getByRole('button', { name: '변경 내용 버리고 나가기' }))
+    await askedToSwitch()
+    await userEvent.keyboard('{Escape}')
+    await promptClosed()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(description).toHaveFocus()
+    expect(within(panel()).queryByRole('form', { name: '결정 고치기' })).toBeNull()
+
+    await chooseMenu(text, '문장 고치기')
+    prompt = await askedToSwitch()
+    await userEvent.click(within(prompt).getByRole('button', { name: '버리기' }))
     const reopened = await within(panel()).findByRole('textbox', { name: '결정 문장' })
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: LEAVE })).toBeNull())
+    await promptClosed()
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
     expect(reopened).toHaveValue(text)
     expect(reopened).toHaveFocus()
@@ -488,10 +508,24 @@ describe('고치기 사이를 옮길 때 (#551)', () => {
     await chooseMenu(text, '문장 고치기')
     await within(panel()).findByRole('textbox', { name: '결정 문장' })
     await chooseMenu('운영 DB 는 매일 새벽에 백업한다', '문장 고치기')
-    expect(screen.queryByRole('dialog', { name: LEAVE })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: PROMPT })).toBeNull()
     expect(within(panel()).getByRole('textbox', { name: '결정 문장' })).toHaveValue(
       '운영 DB 는 매일 새벽에 백업한다',
     )
+  })
+
+  it('쓰던 폼을 두고 패널의 회의 링크로 떠나면 앱의 이탈 확인으로 묻는다', async () => {
+    await openTopic('배포·인프라')
+    await chooseMenu('배포는 스크립트 하나로 한다', '문장 고치기')
+    const field = await within(panel()).findByRole('textbox', { name: '결정 문장' })
+    await userEvent.type(field, '!')
+
+    await userEvent.click(within(decisionRow('운영 DB 는 매일 새벽에 백업한다')).getByRole('link'))
+    const prompt = await screen.findByRole('dialog', { name: PROMPT })
+    expect(prompt).toHaveAccessibleDescription(LEAVE)
+    expect(
+      within(prompt).getByRole('button', { name: '변경 내용 버리고 나가기' }),
+    ).toBeInTheDocument()
   })
 
   it('저장하는 동안에는 다른 고치기를 열 수 없고, 저장이 끝난 뒤 연 폼은 그 저장이 닫지 않는다', async () => {

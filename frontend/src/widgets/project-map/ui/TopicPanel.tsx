@@ -9,6 +9,7 @@ import type {
   TopicDetail,
   TopicEdit,
 } from '@/entities/project-map'
+import type { EditFormHandle } from '@/features/topic-edit'
 import {
   DecisionMenu,
   DecisionTextForm,
@@ -22,7 +23,7 @@ import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf } from '@/shared/lib/date'
 import { queryView } from '@/shared/lib/query-view'
-import { GuardedLink, guardLeave } from '@/shared/lib/unsaved-changes'
+import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
@@ -160,6 +161,10 @@ function TopicView({
 }) {
   const editor = useTopicEdit(workspaceId, topicId)
   const [mode, setShownMode] = useState<PanelMode>(VIEW)
+  // 쓰던 폼을 두고 열려던 고치기. 있으면 버릴지 묻는다
+  const [pendingSwitch, setPendingSwitch] = useState<PanelMode | null>(null)
+  // 열린 고치기 폼. 한 번에 하나라 하나로 둔다
+  const form = useRef<EditFormHandle>(null)
   // 저장 응답이 올 때의 모드. 렌더를 기다리지 않고 읽는다
   const shown = useRef<PanelMode>(VIEW)
   const setMode = (next: PanelMode) => {
@@ -171,20 +176,23 @@ function TopicView({
   const tasksHeading = useRef<HTMLHeadingElement>(null)
   const decisionMenus = useRef(new Map<string, HTMLButtonElement>())
   // 닫은 뒤 포커스를 둘 곳. 닫힌 화면이 그려진 뒤에 찾는다 — 폼 자리에 단추가 다시 생긴다
-  const refocus = useRef<(() => HTMLElement | null | undefined) | null>(null)
+  const refocus = useRef<(() => { focus: () => void } | null | undefined) | null>(null)
   useEffect(() => {
     const target = refocus.current?.()
     refocus.current = null
     target?.focus()
-  }, [mode])
+  }, [mode, pendingSwitch])
 
-  // 저장하는 동안에는 다른 고치기를 열지 않는다. 쓰던 폼을 두고 옮기면 앱의 이탈 확인으로 묻는다
+  const switchTo = (next: PanelMode) => {
+    editor.clearFailure()
+    setMode(next)
+  }
+  // 저장하는 동안에는 다른 고치기를 열지 않는다. 쓰던 폼을 두고 옮기면 패널 안 확인으로 묻는다 —
+  // 경로를 떠나지 않으므로 앱의 이탈 확인 문구는 맞지 않는다
   const open = (next: PanelMode) => {
     if (editor.pending) return
-    guardLeave(() => {
-      editor.clearFailure()
-      setMode(next)
-    })
+    if (form.current?.dirty === true) setPendingSwitch(next)
+    else switchTo(next)
   }
   const close = (focus: () => HTMLElement | null | undefined) => {
     refocus.current = focus
@@ -248,6 +256,7 @@ function TopicView({
     <div className={BODY}>
       {editingTopic ? (
         <TopicFieldsForm
+          ref={form}
           name={detail.name}
           description={detail.description}
           pending={editor.pending}
@@ -309,6 +318,7 @@ function TopicView({
                   form={
                     editingText ? (
                       <DecisionTextForm
+                        ref={form}
                         text={decision.text}
                         pending={editor.pending}
                         alert={textFailure === undefined ? null : <Alert>{textFailure}</Alert>}
@@ -441,6 +451,25 @@ function TopicView({
             )
           }
           onCancel={() => setMode(VIEW)}
+        />
+      )}
+      {pendingSwitch === null ? null : (
+        <EditConfirm
+          title="저장하지 않은 변경 내용이 있어요"
+          description="쓰던 내용은 버려지고 다른 고치기가 열려요."
+          confirmLabel="버리기"
+          cancelLabel="계속 작성하기"
+          pending={false}
+          failure={null}
+          onConfirm={() => {
+            setPendingSwitch(null)
+            switchTo(pendingSwitch)
+          }}
+          onCancel={() => {
+            // 확인 창은 닫히며 연 단추로 돌아가려 한다. 그보다 먼저 쓰던 칸에 둔다
+            refocus.current = () => form.current
+            setPendingSwitch(null)
+          }}
         />
       )}
     </div>
