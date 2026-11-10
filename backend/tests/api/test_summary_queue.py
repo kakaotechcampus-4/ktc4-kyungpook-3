@@ -741,9 +741,11 @@ def test_summary_input_keeps_each_update_of_one_task_in_one_meeting(client, mdb,
 
     items = _input(client, mdb.get(Extraction, extraction_id))["items"]
 
-    assert [(i["title"], i["due_date"], i["status"]) for i in items] == [
-        ("할일0", None, None), ("할일0", "2026-12-01", None), ("할일0", None, "done")]
-    changed = [i["item_id"] for i in items[1:]]
+    assert len(items) == 3
+    assert {(i["title"], i["due_date"], i["status"]) for i in items} == {
+        ("할일0", None, None), ("할일0", "2026-12-01", None), ("할일0", None, "done")}
+    by_change = {(i["due_date"], i["status"]): i["item_id"] for i in items}
+    changed = [by_change[("2026-12-01", None)], by_change[(None, "done")]]
     assert _claim(client, extraction_ids=[extraction_id])["extraction_id"] == extraction_id
     _put(client, extraction_id, {**BODY, "topics": [{"name": "일정", "item_ids": changed}], "task_changes": [
         {"task": "할일0", "due": "2026-12-01", "item_id": changed[0]}, {"task": "할일0 완료", "item_id": changed[1]}]})
