@@ -29,8 +29,8 @@ STT 가 "진도"를 "짐도"로 잘못 받아 적으면, 근거 원문에도 "�
 
 | 질문 | 결과 | 뜻 |
 |---|---|---|
-| task: 이 할 일을 원문이 분명히 말했나? | `certain` / `inferred` | inferred 는 원문에서 추측한 할 일 |
-| due: 이 마감을 원문이 분명히 말했나? | `certain` / `inferred` / `missing` | inferred 는 "다음 주 중"처럼 애매한 마감 |
+| task: 이 할 일을 원문이 분명히 말했나? | `certain` / `inferred` | inferred 는 원문이 분명히 확인해 주지 않은 것(추측·조건부·제안·번복, Jev yes 0.8 미만, 호출 실패, 근거 줄 없음 포함) |
+| due: 이 마감을 원문이 분명히 말했나? | `certain` / `inferred` / `missing` | **마감 날짜가 있을 때만 묻는다.** inferred 는 "다음 주 중"처럼 애매하거나 날짜 계산이 맞지 않는 마감, missing 은 마감을 말하지 않음 |
 | asr0, asr1…: 이 단어를 맞게 받아 적었나? | `asr_suspects` | 이 문서의 검사. 전사 오류 의심 |
 
 `inferred` 와 의심 단어는 다른 것이다. 셋 중 하나라도 걸리면 그 태스크는 자동 반영되지 않고 확인 필요로 간다.
