@@ -20,6 +20,8 @@ export const approvalFixtures: ApprovalDto[] = extractionFixtures[1].items
       extraction_item_id: item.item_id,
       meeting_id: 'mt_09',
       gate: item.gate,
+      // 지금 서버는 전사를 확인한 뒤 의심이 없으면 빈 목록을 싣는다 (#643)
+      asr_suspects: [],
     },
     related_task_id: null,
     requested_by: null,
