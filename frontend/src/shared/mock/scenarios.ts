@@ -129,6 +129,8 @@ export const MOCK_SCENARIOS = [
   // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
   'settings-discord-skipped',
   'settings-unmapped',
+  // #660 settings-unmapped 에서 Discord 서버에 사용자가 아무도 없다 — 새로 만든 테스트 서버다. 아이디로 초대할 가입자가 있다
+  'settings-discord-empty',
   'settings-member',
   // #330 알림·자동 막힘. ws_01 PM 이다
   'notifications-default',
@@ -1145,6 +1147,11 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'settings-unmapped':
       // 픽스처 그대로의 ws_01 이다. Discord 연결됨, 1125(지훈)는 미매핑, mb_04 의 1126 은 서버를 떠났다(inactive), 1199 는 봇이다
       signInWith(state, ['ws_01'], 'ws_01')
+      break
+    case 'settings-discord-empty':
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.discordUsers = []
+      addInviteeAccounts(state)
       break
     case 'settings-member':
       // 일반 팀원. Discord 는 미연결(요청 안내), Notion 은 연결됨(PM 이 관리한다는 안내)이다. 연결·매핑 쓰기는 PM 만 한다
