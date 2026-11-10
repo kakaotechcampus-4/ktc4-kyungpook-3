@@ -1288,6 +1288,10 @@ def test_run_multi_word_workspace_terms_count_word_by_word(monkeypatch):
     assert set(jev.calls[0][1]) == {"task"}
     _, jev = _asr_run(monkeypatch, ["체크리스트 정리는 제가 맡을게요."], "체크리스트 정리", candidates=be)
     assert set(jev.calls[0][1]) == {"task"}
+    # 형태소만으로는 빠지는 말도 띄어쓰기로 나눠 안다: "카프카 대시보드" 를 통째로 쪼개면 카·카프·대시보드다
+    be = _Terms(words=["카프카 대시보드"])
+    _, jev = _asr_run(monkeypatch, ["카프카 정리는 제가 맡을게요."], "카프카 정리", candidates=be)
+    assert set(jev.calls[0][1]) == {"task"}
     # 나눈 말은 BE 에 다시 올리지 않는다(이미 있는 용어를 쪼갠 것뿐이다)
     assert all("애포" not in words and "체크" not in words for words, _ in be.pushed)
 
