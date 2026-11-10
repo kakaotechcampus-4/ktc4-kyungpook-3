@@ -31,8 +31,8 @@
 | 명령 | 결과 |
 |---|---|
 | `cd ai && .venv/bin/python -m pytest` | 3003 passed |
-| `cd backend && env -u TEST_DATABASE_URL .venv/bin/python -m pytest -q -p no:cacheprovider` (SQLite) | 3301 passed, 2376 skipped |
-| 같은 명령, `TEST_DATABASE_URL` 로컬 PostgreSQL 16 | 5606 passed, 71 skipped |
+| `cd backend && env -u TEST_DATABASE_URL .venv/bin/python -m pytest -q -p no:cacheprovider` (SQLite) | 3304 passed, 2379 skipped |
+| 같은 명령, `TEST_DATABASE_URL` 로컬 PostgreSQL 16 | 5612 passed, 71 skipped |
 
 마이그레이션은 빈 PostgreSQL 16 DB 에 `DATABASE_URL` 을 두고 `cd backend && .venv/bin/alembic upgrade head`, `alembic downgrade -1`, `alembic upgrade head`, `alembic check` 순서로 돌렸다. 헤드는 `6631d28f2e1b` 하나이고 내리면 `b20d029aec7b` 로 돌아가며 `alembic check` 는 `No new upgrade operations detected.` 였다. `tests/test_migration_record_edits.py` 는 SQLite 만 두면 2 passed, 2 skipped 이고 `TEST_DATABASE_URL` 을 주면 두 DB 에서 4 passed 였다.
 
