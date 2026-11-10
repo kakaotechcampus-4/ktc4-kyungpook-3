@@ -540,6 +540,25 @@ class MeetingPurge(Base):
     last_error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
+class MeetingAudio(Base):
+    """회의 하나의 재생용 녹음 한 개. 파일 위치는 `upload_storage` 의 키 규칙(`{meeting_id}/{filename}`)을 따른다.
+
+    보관 기간은 `received_at`(녹음이 BE 에 들어온 시각)부터 센다. 기록은 한 번 만들고 처리가 끝나도 남기며,
+    파일을 지웠을 때만 `deleted_at` 을 채운다. 회의를 지우면 함께 지워진다.
+    """
+
+    __tablename__ = "meeting_audio"
+
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meeting.meeting_id", ondelete="CASCADE"), primary_key=True
+    )
+    filename: Mapped[str] = mapped_column(String(32))
+    content_type: Mapped[str] = mapped_column(String(64))
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class MeetingUpload(Base):
     """웹에서 올린 녹음 하나. `source=manual_upload` 회의마다 한 행이다.
 

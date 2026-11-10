@@ -689,5 +689,7 @@ def test_upload_to_done_flow_with_speaker_assignment(db, seed):
     done = register()
     assert done.status_code == 201, done.text
     assert _status(db, Meeting(meeting_id=meeting_id)) == "done"
-    assert not folder.exists()
-    assert pm.get(f"/api/v1/meetings/{meeting_id}/audio").status_code == 404
+    # 처리가 끝나도 녹음은 보관 기간 동안 남는다. 이 재생 경로는 상태를 보지 않고 파일이 있으면 내준다
+    # (보관 기간·만료 판단은 meeting_audio 를 쓰는 원문 듣기 경로가 맡는다)
+    assert folder.exists()
+    assert pm.get(f"/api/v1/meetings/{meeting_id}/audio").content == WAV

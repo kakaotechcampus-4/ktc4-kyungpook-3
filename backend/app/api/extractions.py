@@ -60,7 +60,7 @@ from app.services.matching import (
     resolve_speaker,
     speaker_match,
 )
-from app.services import summary, upload_storage
+from app.services import summary
 from app.services.alias_learning import (
     card_assignee_item,
     learnable_alias_texts,
@@ -480,9 +480,7 @@ def create_extraction(
     summary.mark_requested(db, meeting, extraction)
     db.commit()
     db.refresh(extraction)
-    # 결과를 저장했으니 업로드 녹음은 더 필요 없다(처리 중에만 보관). 커밋이 성공한 뒤에 지운다
-    if meeting.source == MeetingSource.MANUAL_UPLOAD:
-        upload_storage.remove_upload(meeting.meeting_id)
+    # 업로드 녹음은 처리가 끝나도 남긴다. 원문 듣기용이라 보관 기간(meeting_audio)이 지나면 정리한다
 
     return success(
         ExtractionCreateResponse(
