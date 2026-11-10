@@ -477,6 +477,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 - 비밀번호 재설정(BE PR #398, 2026-11-06 병합)이 `PASSWORD_RESET_TOKEN_INVALID(400)`·`MAIL_UNAVAILABLE(503)` 을 더했다. 위 31개에는 넣지 않았고 쓰임새는 §4.1.1 에 있다. 프론트 [오류 코드 목록](../../src/shared/api/errors.ts)과 [문구](../../src/shared/api/errorMessages.ts)에도 있다.
 - 회의 채팅 채널(#428)이 `DISCORD_CHANNEL_NOT_FOUND(404)`·`DISCORD_CHANNEL_NOT_ACCESSIBLE(409)` 를 더했다. 위 목록의 개수는 이 절을 처음 쓴 때 기준이며 전체 목록은 `core/errors.py` 가 원천이다 → §4.3.1.
 - 회의 요약과 프로젝트 맵(#462)이 `TOPIC_NOT_FOUND(404)`·`SUMMARY_NOT_FOUND(404)` 를 더했다 → §4.4.2.
+- 팀원 이름 중복(#652)이 `MEMBER_NAME_DUPLICATED(409)` 를 더했다 → §2.2.
 - 본 뒤 바뀐 승인 카드 `APPROVAL_CHANGED(409)` 는 BE #547 이 더했다 → §2.5.
 - 로그인 시도 제한(BE PR #456, 2026-11-07 병합)이 `TOO_MANY_LOGIN_ATTEMPTS(429)` 를 더했다. 위 목록에는 넣지 않았고 쓰임새는 §4.1.3 에 있다.
 - 아래 3개는 **정의만 되고 아직 아무도 던지지 않는다.** 화면은 처리 경로를 갖되 실제로 오는지는 기대하지 않는다 → §4.0.
@@ -516,7 +517,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 |---|---|---|
 | POST | `/api/v1/members` | 201 |
 | GET | `/api/v1/members?workspace_id=` | `workspace_id` 필수 |
-| GET · PATCH | `/api/v1/members/{member_id}` | 대기 초대가 있는 팀원을 PM 으로 올리면 409 (§5.9) |
+| GET · PATCH | `/api/v1/members/{member_id}` | 대기 초대가 있는 팀원을 PM 으로 올리면 409 (§5.9). 디스코드 연결 옮기기 `move_discord_link`(#652) |
 | POST | `/api/v1/members/{member_id}/aliases` | 별칭 추가 |
 | GET | `/api/v1/members/aliases?workspace_id=` | 별칭 목록 |
 | GET | `/api/v1/members/unresolved-aliases?workspace_id=` | **미매칭 이름** |
@@ -528,7 +529,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
  "discord_user_id": "1123...", "notion_name": null,
  "role": "member", "has_login_account": true, "created_at": "2026-09-15T04:10:00Z"}
 // POST 요청: {workspace_id, display_name, discord_user_id?, notion_name?, role?}
-// PATCH 요청: 위 4개 모두 선택
+// PATCH 요청: 위 4개 모두 선택. move_discord_link?: boolean (기본 false, #652)
 
 // MemberAliasResponse
 {"alias_id": "al_01", "member_id": "mb_01", "workspace_id": "ws_01",
@@ -543,6 +544,12 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 2026-11-09 #575 구현은 `MemberResponse.has_login_account: boolean`을 추가한다. 활성 팀원에 로그인 계정이 연결됐는지 나타내며 User ID는 반환하지 않는다. FE는 `hasLoginAccount`로 옮기고, PM에게 로그인 연결된 일반 팀원의 `PM 권한 부여`를 제공한다. 기존 `PATCH /members/{id}`의 `{role:"pm"}`를 사용하며 기존 PM의 권한은 유지한다. 대기 초대의 `MEMBER_HAS_PENDING_INVITATION` 등 서버 오류는 그대로 따른다. 생산자·소비자 코드를 함께 변경한 현재 구현이며, 별도 파트 합의·병합·배포 완료 기록은 아니다.
 
 2026-11-10 #613 FE 사용: Discord 를 연결하지 않은 팀의 온보딩 4단계와 팀원 연결 창이 `POST /members` 를 `{workspace_id, display_name}` 만으로 보낸다(`discord_user_id` 키 없음). 요청 형식은 위 그대로이고 BE 는 바꾸지 않았다. 서버는 같은 이름의 팀원을 막지 않는다. FE 가 보내기 전에 지금 팀원 목록과 이름(앞뒤 공백 제거, 대소문자 그대로)을 견줘 막는다(D-187). 같은 이름 거절을 서버 규약으로 둘지는 합의하지 않았다.
+
+2026-11-10 #652 BE 현재 구현(FE #647 이 쓸 예정, FE 반영과 합의 여부 확인 필요): 아래 세 가지를 더했다. 결정 근거는 [BE 결정 기록](../../../backend/docs/plan/m1/basis-for-decision/2026-11-10-discord-link-move-decision.md).
+
+- 연결 옮기기: `PATCH /members/{member_id}` 에 `{discord_user_id: "<계정>", move_discord_link: true}` 를 보내면, 그 계정을 가진 같은 워크스페이스의 다른 활성 팀원의 연결을 풀고 이 팀원에 잇는다. 한 트랜잭션이라 중간에 실패해도 둘 다 풀리는 일이 없다. 두 팀원의 이름은 바뀌지 않는다. 앞 팀원의 `discord_profile` 별칭은 연결 해제와 같이 지운다. 플래그가 없거나 `false` 면 지금처럼 409 `DISCORD_USER_ALREADY_MAPPED` 다. 그 계정을 가진 활성 팀원이 없으면 보통 연결과 같고, `discord_user_id` 없이 플래그만 보내면 아무것도 바꾸지 않는다. 응답은 지금과 같은 `MemberResponse`(이 팀원)이고 앞 팀원 id 는 싣지 않는다. 앞 팀원의 바뀐 연결은 `GET /members` 를 다시 읽어 확인한다
+- 지난 발화 화자: 팀원에 계정을 이으면(`POST /members` 의 `discord_user_id`, `PATCH` 의 새 계정, 옮기기 모두) 이 워크스페이스 회의의 발화 중 그 계정이 말한 행의 `speaker_member_id` 가 이 팀원으로 바뀐다. 전에 연결이 없던 발화(`null`)와 삭제한 팀원에 붙어 있던 발화도 포함한다. 그래서 회의록(`GET /meetings/{id}/minutes`)의 `speaker_display_name` 과 참석자가 새 팀원 이름으로 나온다. 연결을 풀기만 하면(`null`) 발화는 그대로다. 탈퇴한 팀원의 발화는 화자 계정이 지워져 있어 바뀌지 않는다. 이미 만든 요약 문서와 승인 카드 payload 의 `evidence_speaker_member_id` 는 바꾸지 않는다
+- 같은 이름 거절: `POST /members` 와 이름이 바뀌는 `PATCH display_name` 이 같은 워크스페이스 활성 팀원(삭제·탈퇴 제외)과 이름이 같으면 409 `MEMBER_NAME_DUPLICATED`, `details: {display_name, member_id}`(`member_id` 는 이미 그 이름을 쓰는 팀원). 위 #613 의 FE 규칙처럼 앞뒤 공백만 지우고 견주며 대소문자는 그대로 본다. 자기 이름을 그대로 보내거나 다른 칸만 고치면 통과하고, 이미 저장된 중복은 그대로 둔다. 동시에 같은 이름으로 만드는 두 요청은 둘 다 통과할 수 있다(DB 제약 없음)
 
 계정 영구 탈퇴용 익명 기록 주체는 기존 명단 비활성화와 구분한다. 영구 탈퇴자의 대화는 PM 목록·상세·읽음에 남고 표시명은 `탈퇴한 사용자`, `web_reply_available`은 false다. 프로필 수정·별칭 추가·초대·새 발송과 늦은 봇 결과는 거절한다. 기존 `is_deleted`만 있는 명단 비활성화의 unread 0·읽음 POST 404는 유지한다. [익명 주체 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-09-withdrawn-record-actor.md)에 첫 구현의 범위를 기록했고, 본인 탈퇴 API·화면과 기록용 목록은 위 [계정 탈퇴 규약](#계정-탈퇴와-정리-상태-575-2026-11-09)을 따른다. 실제 외부 제공자·운영 계정의 삭제를 확인한 기록은 아니다.
 
@@ -1768,6 +1775,7 @@ POST .../meetings/upload            multipart/form-data
 | 팀원 생성과 동시에 Discord 사용자 연결 | `POST /api/v1/members` `{workspace_id, display_name, discord_user_id}` |
 | 이미 있는 팀원에 연결 | `PATCH /api/v1/members/{member_id}` `{discord_user_id}` |
 | 연결 해제 | `PATCH /api/v1/members/{member_id}` `{discord_user_id: null}` |
+| 다른 팀원에서 옮겨 오기 (#652) | `PATCH /api/v1/members/{member_id}` `{discord_user_id, move_discord_link: true}` → §2.2 |
 | 매핑 현황 | `GET /api/v1/members?workspace_id=` 의 `discord_user_id` 와 위 목록을 클라이언트에서 조인 |
 
 - 한 Discord 사용자가 두 팀원에 붙지 않도록 **`member.discord_user_id` 에 워크스페이스 범위 유일 제약**을 걸어 달라 (D-027). 위반은 409 `DISCORD_USER_ALREADY_MAPPED`.
