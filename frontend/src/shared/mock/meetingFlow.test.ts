@@ -268,19 +268,37 @@ describe('흐름 방식 — 상세 조회가 진행시킨다', () => {
     return seen
   }
 
-  it('staged 녹음 회의는 서버 순서다 — 대기 → stt → sources → handoff(아직 processing) → done (#483)', async () => {
+  it('staged 녹음 회의는 AI 보고 순서다 — 대기 → stt 0/5·3/5·5/5 → sources → extract → handoff(아직 processing) → done (#483)', async () => {
     const id = await upload()
     setMeetingFlowMode('staged')
-    expect(await polls(id, 5)).toEqual([
-      'processing:000',
-      'processing:100',
-      'processing:110',
-      'processing:111',
-      'done:111',
+    const seen: [string, MeetingDto['processing']][] = []
+    for (let poll = 0; poll < 8; poll += 1) {
+      const meeting = await detail(id)
+      const progress = meeting.progress!
+      seen.push([
+        `${meeting.status}:${Number(progress.audio_merged)}${Number(progress.transcribed)}${Number(progress.extracted)}`,
+        meeting.processing,
+      ])
+    }
+    // 서울 08:55·08:58·08:58:30·08:59:30 — MOCK_NOW(09:00) 기준 5분째·2분째·1분째·방금 시작
+    const stt = (done: number) => ({
+      stage: 'stt',
+      stage_at: '2026-09-17T23:55:00Z',
+      stt: { done, total: 5 },
+    })
+    expect(seen).toEqual([
+      ['processing:000', { stage: null, stage_at: null, stt: null }],
+      ['processing:100', stt(0)],
+      ['processing:100', stt(3)],
+      ['processing:100', stt(5)],
+      ['processing:110', { stage: 'sources', stage_at: '2026-09-17T23:58:00Z', stt: null }],
+      ['processing:110', { stage: 'extract', stage_at: '2026-09-17T23:58:30Z', stt: null }],
+      ['processing:111', { stage: 'handoff', stage_at: '2026-09-17T23:59:30Z', stt: null }],
+      ['done:111', null],
     ])
   })
 
-  it('staged 채팅 회의는 발화 저장에 앞 두 값이 함께 켜진다 — 000 → 110 → 111 → done (#483)', async () => {
+  it('staged 채팅 회의는 단계를 알리지 않고 발화 저장에 앞 두 값이 함께 켜진다 — 000 → 110 → 111 → done (#483)', async () => {
     completeMeeting('mt_10')
     const id = startChatMeeting()
     setMeetingFlowMode('staged')
@@ -290,6 +308,29 @@ describe('흐름 방식 — 상세 조회가 진행시킨다', () => {
       'processing:111',
       'done:111',
     ])
+    await expect(detail(id)).resolves.toMatchObject({ processing: null })
+  })
+
+  it('staged 채팅 회의의 정리 중 응답은 보고 없는 처리 단계다', async () => {
+    completeMeeting('mt_10')
+    const id = startChatMeeting()
+    setMeetingFlowMode('staged')
+    await expect(detail(id)).resolves.toMatchObject({
+      processing: { stage: null, stage_at: null, stt: null },
+    })
+  })
+
+  it('staged-legacy 는 #542 전 서버다 — progress 만 조회마다 한 칸이고 processing 키가 없다', async () => {
+    const id = await upload()
+    setMeetingFlowMode('staged-legacy')
+    expect(await polls(id, 5)).toEqual([
+      'processing:000',
+      'processing:100',
+      'processing:110',
+      'processing:111',
+      'done:111',
+    ])
+    expect(await detail(id)).not.toHaveProperty('processing')
   })
 
   it('instant 는 첫 조회에 done 이고 회의록을 바로 읽을 수 있다', async () => {

@@ -8,7 +8,8 @@ import { expectAudioReady, expectMinutesOpened, SHORT_AUDIO, start } from './sup
  *
  * - meeting-instant: 업로드 뒤 첫 상세 조회에 정리가 끝난다(인위적 지연 없음)
  * - meeting-notion-not-connected: meeting-instant 와 같고 Notion 을 연결하지 않았다. Notion 은 선택 기능이다(D-182)
- * - meeting-demo: 상세 조회마다 한 단계씩 간다. 앱의 3초 polling 으로 대기·세 단계·넘기기 + 완료를 밟는다(#483) — 정리 중에 다른 화면으로
+ * - meeting-demo: 상세 조회마다 AI 보고 하나씩 간다. 앱의 3초 polling 으로 대기·stt 셋(0/5·3/5·5/5)·sources·extract·넘기기 + 완료,
+ *   여덟 번 조회한다(#483) — 정리 중에 다른 화면으로
  *   떠날 틈이 있어야 하는 ② 에만 쓴다. instant 는 처리 화면이 첫 조회에서 끝을 보고 회의록으로 옮겨 그 틈이 없다(U4-5)
  * - meeting-fail: 첫 상세 조회에 실패로 끝난다(일반 실패, D-092)
  * - meeting-member: ws_01 의 일반 팀원
@@ -16,9 +17,10 @@ import { expectAudioReady, expectMinutesOpened, SHORT_AUDIO, start } from './sup
 
 /*
  * 한 테스트가 lazy 화면 셋(회의 올리기·처리·회의록)을 지난다. 개발 서버는 처음 요청받은 화면을 그때 변환해서, 병렬로 처음 돌 때
- * 한 테스트가 기본 30초에 닿았다(27초 관찰, 따뜻한 서버에서는 8~15초). 단언 한도는 그대로 두고 테스트 전체 한도만 늘린다 (F-r3)
+ * 한 테스트가 기본 30초에 닿았다(27초 관찰, 따뜻한 서버에서는 8~15초). 단언 한도는 그대로 두고 테스트 전체 한도만 늘린다 (F-r3).
+ * meeting-demo 는 끝나기까지 3초 × 8번 조회라 ②·⑩ 만으로 24초를 기다린다 (#483)
  */
-test.describe.configure({ timeout: 60_000 })
+test.describe.configure({ timeout: 90_000 })
 
 /** lazy 화면으로 옮긴 뒤 첫 단언 — 개발 서버가 그 화면을 처음 변환하는 동안 기본 5초를 넘길 때가 있다 (support.start 와 같은 까닭) */
 const FIRST_PAINT = { timeout: 15_000 }
@@ -151,9 +153,9 @@ test('② 정리 중에 다른 화면으로 가면 진행 토스트가 따라오
     .click()
   await expect(processing.getByRole('button', { name: '자세히 보기' })).toBeVisible()
 
-  // 앱 수준 추적기가 polling 을 이어 간다(3초 간격, 대기·세 단계·넘기기 + 완료, #483). 다른 화면이라 옮기지 않고 토스트만 완료로 바뀐다 (U4-1, U4-5)
+  // 앱 수준 추적기가 polling 을 이어 간다(3초 간격, 보고 일곱 + 완료, #483). 다른 화면이라 옮기지 않고 토스트만 완료로 바뀐다 (U4-1, U4-5)
   const toast = signalOf(page, '회의 정리가 끝났어요')
-  await expect(toast).toBeVisible({ timeout: 25_000 })
+  await expect(toast).toBeVisible({ timeout: 40_000 })
   await expect(page).toHaveURL(`${WORKSPACE}/tasks`)
   await expect(processing).toHaveCount(0)
 
@@ -357,7 +359,8 @@ test('⑨ 멈춘 채팅 회의(chat_stalled)는 토스트·처리 화면·회의
 
 /*
  * #483 — 처리 화면의 단계가 서버의 실제 처리 순서대로 바뀌고, 넘기는 중(`extracted` 참, 아직 processing)에도 마지막 단계가
- * 진행 중이다. 흐름 방식 staged 는 조회마다 서버 순서로 한 단계씩 간다(shared/mock/meetingFlow.ts readMeeting).
+ * 진행 중이다. 흐름 방식 staged 는 조회마다 서버 순서로 AI 보고 하나씩 간다(shared/mock/meetingFlow.ts readMeeting).
+ * 전사 진행(stt 0/5·3/5·5/5)과 extract 는 progress 를 바꾸지 않아 단계 안내가 늘지 않는다
  */
 
 /** 상세 조회 주소에서 회의 ID 를 꺼낸다 */
@@ -421,7 +424,7 @@ test('⑩ 녹음 회의의 단계는 대기 → 텍스트로 옮기기 → 뽑�
   const handoff = page.waitForResponse(
     async (response) =>
       meetingId !== '' && (await detailAnswer(response, meetingId)) === 'processing:111',
-    { timeout: 30_000 },
+    { timeout: 40_000 },
   )
 
   await uploadShortAudio(page)
