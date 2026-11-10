@@ -17,21 +17,32 @@ const ADDED = 'flex flex-col pt-10'
 const ADDED_ROW =
   'border-b border-surface-selected py-8 text-body wrap-anywhere text-ink last:border-b-0'
 
+/** Discord 를 연결한 공간에서 이 칸 위에 둔다 (#660) */
+export const NOT_IN_DISCORD_SERVER =
+  'Discord 서버에 없는 팀원은 이름으로 추가할 수 있어요. 서버에 들어와 이어 주기 전까지는 그 팀원의 Discord 회의 발화가 잡히지 않아요.'
+
 export interface MemberAddFormProps {
   workspaceId: string
   /** 칸 모양. 온보딩 카드는 `onboarding`, 팀 화면의 팀원 연결 창은 `product` 다. 기본 `product` */
   tone?: 'product' | 'onboarding'
+  /** 같은 화면의 매칭 저장이 진행 중이다. 겹치면 같은 이름의 팀원이 둘 생길 수 있어 추가를 막는다 (#660) */
+  disabled?: boolean
 }
 
 /**
- * Discord 를 연결하지 않은 팀이 이름만으로 팀원을 추가한다 (#613). 아래에 PM 이 아닌 팀원을 보인다.
+ * Discord 계정 없이 이름만으로 팀원을 추가한다. Discord 를 연결하기 전(#613)과, 연결했지만 서버에 없는 사람(#660)이다.
+ * 아래에 Discord 계정과 잇지 않은 일반 팀원을 보인다 — 연결된 공간에서 이미 이은 팀원은 매칭 줄에 있다.
  * 라벨을 칸 밖에 두어 칸과 `추가` 버튼이 한 줄에서 같은 높이로 선다
  */
-export function MemberAddForm({ workspaceId, tone = 'product' }: MemberAddFormProps) {
+export function MemberAddForm({
+  workspaceId,
+  tone = 'product',
+  disabled = false,
+}: MemberAddFormProps) {
   const { list, members, adding, feedback, clearFeedback, add } = useMemberAdd(workspaceId)
   const [text, setText] = useState('')
   const fieldId = useId()
-  const added = members.filter(({ role }) => role !== 'pm')
+  const added = members.filter(({ role, discordUserId }) => role !== 'pm' && discordUserId === null)
 
   return (
     <div>
@@ -39,7 +50,7 @@ export function MemberAddForm({ workspaceId, tone = 'product' }: MemberAddFormPr
         noValidate
         onSubmit={(event) => {
           event.preventDefault()
-          add(text, () => setText(''))
+          if (!disabled) add(text, () => setText(''))
         }}
       >
         <Label htmlFor={fieldId} tone={tone} className={LABEL_GAP[tone]}>
@@ -72,7 +83,7 @@ export function MemberAddForm({ workspaceId, tone = 'product' }: MemberAddFormPr
             type="submit"
             size={tone === 'onboarding' ? 'lg-onboarding' : 'lg'}
             className="min-h-[42px] shrink-0"
-            disabled={list.status !== 'ready' || text.trim() === ''}
+            disabled={disabled || list.status !== 'ready' || text.trim() === ''}
             loading={adding}
           >
             추가
