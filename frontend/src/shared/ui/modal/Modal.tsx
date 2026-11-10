@@ -32,7 +32,7 @@ export interface ModalProps {
 const OVERLAY = 'fixed inset-[0px] z-100 flex items-center justify-center p-24'
 
 /** 스크림은 먹의 32% 알파다. 검정이 아니다 (§5-1 금지 목록과 어긋나지 않는다) */
-const SCRIM = 'absolute inset-[0px] cursor-pointer bg-ink/32'
+const SCRIM = 'absolute inset-[0px] cursor-pointer bg-ink-solid/32'
 
 /* `relative` 는 실측표에 없지만 빠뜨릴 수 없다 — 스크림이 `absolute` 라서
    자리잡지 않은 카드는 스크림 아래로 깔린다. 쌓임 순서를 위한 한 개다. */

@@ -29,7 +29,7 @@ const REVEAL_BELOW_TITLE = 'motion-safe:[&>:not(h1)]:animate-[loading-reveal_150
 const LEAD = 'text-body text-sub'
 const META = 'text-caption text-dim tabular-nums'
 const LINK =
-  'inline-flex h-36 items-center justify-center self-start rounded-9 bg-ink px-16 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
+  'inline-flex h-36 items-center justify-center self-start rounded-9 bg-ink-solid px-16 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
 
 type SpeakerScreen =
   | { kind: 'loading' }

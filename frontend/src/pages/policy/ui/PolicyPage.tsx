@@ -35,7 +35,7 @@ function PolicyPage({ kind }: { kind: PolicyKind }) {
               aria-current={to === document.to ? 'page' : undefined}
               className={
                 to === document.to
-                  ? 'rounded-9 bg-ink px-14 py-10 text-body font-semibold text-surface'
+                  ? 'rounded-9 bg-ink-solid px-14 py-10 text-body font-semibold text-surface'
                   : 'rounded-9 bg-control px-14 py-10 text-body text-sub hover:bg-line'
               }
             >

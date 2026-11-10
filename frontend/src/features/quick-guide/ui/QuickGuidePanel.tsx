@@ -9,7 +9,7 @@ export const QUICK_GUIDE_TITLE = '처음 쓰는 분을 위한 안내'
 const CALLOUT = 'rounded-10 bg-surface-selected px-14 py-10 text-body text-ink'
 const STEP = 'flex gap-10'
 const STEP_NUMBER =
-  'mt-1 inline-flex size-22 shrink-0 items-center justify-center rounded-999 bg-ink text-meta font-bold text-surface'
+  'mt-1 inline-flex size-22 shrink-0 items-center justify-center rounded-999 bg-ink-solid text-meta font-bold text-surface'
 const STEP_TITLE = 'text-body font-bold text-ink'
 const STEP_BODY = 'flex min-w-[0px] flex-1 flex-col gap-6 text-body text-sub'
 const MEMBER = 'rounded-9 bg-surface-sunken px-10 py-6 text-caption text-sub'
