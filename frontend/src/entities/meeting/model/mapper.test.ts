@@ -23,6 +23,7 @@ it('maps detail and summary independently including the required progress', () =
     deletionAvailable: true,
     // 백엔드가 필수로 내려주므로 픽스처에도 있다 (계약 §2.3, §4.7-1)
     progress: { audioMerged: true, transcribed: true, extracted: true },
+    processing: null,
   })
   expect(toMeetingSummary(meetingSummaryFixtures[2])).toEqual({
     id: 'mt_10',
@@ -52,6 +53,29 @@ it('preserves nullable fields and keeps the processing progress shape', () => {
 it('treats a missing progress as null instead of throwing', () => {
   const dto = { ...structuredClone(meetingFixtures[1]), progress: undefined }
   expect(toMeeting(dto).progress).toBeNull()
+})
+
+it('정리 중 처리 단계를 읽고, 모르는 단계는 단계 없음으로 내린다 (#483)', () => {
+  const processing = {
+    stage: 'stt',
+    stage_at: '2026-09-18T00:00:00Z',
+    stt: { done: 3, total: 5 },
+  }
+  expect(toMeeting({ ...meetingFixtures[2], processing }).processing).toEqual({
+    stage: 'stt',
+    stageAt: '2026-09-18T00:00:00Z',
+    stt: { done: 3, total: 5 },
+  })
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    expect(
+      toMeeting({ ...meetingFixtures[2], processing: { ...processing, stage: 'diarize' } })
+        .processing,
+    ).toEqual({ stage: null, stageAt: '2026-09-18T00:00:00Z', stt: { done: 3, total: 5 } })
+  } finally {
+    warning.mockRestore()
+  }
+  expect(toMeeting({ ...meetingFixtures[2], processing: undefined }).processing).toBeNull()
 })
 
 it('모르는 출처는 discord 로 바꾸지 않고 받은 글자를 남긴다. 모르는 상태는 스키마가 거절한다 (#348)', () => {

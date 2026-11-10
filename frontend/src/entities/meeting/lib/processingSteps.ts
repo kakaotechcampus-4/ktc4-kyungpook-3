@@ -13,7 +13,8 @@ export interface ProcessingStep {
 /**
  * 단계와 그 단계를 끝냈다고 보는 `progress` 값(계약 §2.3). 마지막 단계는 `progress` 로 끝내지 않는다 —
  * 서버는 AI 가 넘기기(handoff)를 알릴 때 `extracted` 를 참으로 만들지만, 회의는 `done` 이 될 때까지 아직 정리 중이다 (#483).
- * 캔버스의 네 단계·단계별 소요 시간·경과 시간은 서버가 주지 않아 만들지 않는다 (U4-4)
+ * 캔버스의 네 단계·단계별 소요 시간은 서버가 주지 않아 만들지 않는다 (U4-4). 지금 단계의 진행 수·경과는 서버 `processing` 으로
+ * 따로 붙인다(`stageDetail`) — 단계 판정에는 쓰지 않는다
  */
 type StepDefinition = {
   key: ProcessingStepKey

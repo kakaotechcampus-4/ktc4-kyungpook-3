@@ -1,4 +1,4 @@
-import { displayValue } from '@/shared/api/unknownValue'
+import { displayValue, fallbackValue } from '@/shared/api/unknownValue'
 import type {
   MeetingDto,
   MeetingSummaryDto,
@@ -6,7 +6,14 @@ import type {
   SpeakerViewDto,
 } from '@/shared/types/api/meeting'
 import { MEETING_SOURCES } from '@/shared/types/common'
-import type { Meeting, MeetingSummary, MeetingUploadResult, SpeakerView } from './types'
+import { PROCESSING_STAGES } from './types'
+import type {
+  Meeting,
+  MeetingProcessing,
+  MeetingSummary,
+  MeetingUploadResult,
+  SpeakerView,
+} from './types'
 
 /** 스키마를 통과한 응답만 받는다. 모르는 회의 상태는 이미 `INVALID_RESPONSE` 로 걸렀다 */
 export function toMeeting(dto: MeetingDto): Meeting {
@@ -27,6 +34,17 @@ export function toMeeting(dto: MeetingDto): Meeting {
           extracted: dto.progress.extracted,
         }
       : null,
+    processing: dto.processing ? toMeetingProcessing(dto.processing) : null,
+  }
+}
+function toMeetingProcessing(dto: NonNullable<MeetingDto['processing']>): MeetingProcessing {
+  return {
+    stage:
+      dto.stage === null
+        ? null
+        : fallbackValue(dto.stage, PROCESSING_STAGES, null, 'processing stage'),
+    stageAt: dto.stage_at,
+    stt: dto.stt && { done: dto.stt.done, total: dto.stt.total },
   }
 }
 export function toMeetingSummary(dto: MeetingSummaryDto): MeetingSummary {
