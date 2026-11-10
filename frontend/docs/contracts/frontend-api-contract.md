@@ -1399,7 +1399,8 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - `POST /auth/signup`은 이메일을 받지 않는다. `link_kakao`가 거짓이면 증명 토큰의 이메일로 만든다. 참이면 대기 쿠키가 있어야 하고, 쿠키에 인증된 이메일이 있으면 그 값으로 만들고 토큰은 무시한다. 없으면 토큰이 있어야 한다.
 - 이메일은 앞뒤 공백을 빼고 소문자로 비교한다. 코드 요청과 카카오 충돌 판단, 로그인이 같은 규칙이다.
 - 코드는 10분 유효, 코드당 5회 입력, 재발송 60초, 시간당 5회다. 증명 토큰과 대기 쿠키는 30분이다.
-- `SIGNUP_CODE_RATE_LIMITED`의 `details`는 `{"reason": "cooldown" | "hourly" | "global", "retry_after": 초}`다. 재발송 제한 중에는 앞 코드가 그대로 유효하다.
+- `SIGNUP_CODE_RATE_LIMITED`의 `details`는 `{"reason": "cooldown" | "hourly" | "ip" | "global", "retry_after": 초}`다. 재발송 제한 중에는 앞 코드가 그대로 유효하다.
+- `ip`(BE #691)는 같은 공인 IP 의 요청이 시간당 10회를 넘은 경우다. 가입한 이메일을 묻는 요청도 센다. FE 는 `cooldown` 만 따로 읽고 나머지는 같은 문구라 코드 변경이 없다. 이미 가입한 이메일의 409 `EMAIL_ALREADY_EXISTS` 는 이제 재발송·시간당·전체 제한을 모두 본 뒤에 나온다. 제한에 걸리면 409 대신 429 다.
 - `SIGNUP_CODE_INVALID`의 `details`는 `{"reason": "wrong", "attempts_left": n}`, `{"reason": "expired"}`, `{"reason": "too_many"}`다. 다섯 번째 틀린 입력은 `wrong`에 `attempts_left: 0`이고 그 뒤가 `too_many`다.
 - 대기 쿠키 `kakao_pending`은 HttpOnly이고 Path가 `/api/v1/auth`다. 카카오 신원은 URL에 싣지 않는다. 인증되지 않은 카카오 이메일은 쿠키에 담지 않아 `pending.email`이 null이다.
 
