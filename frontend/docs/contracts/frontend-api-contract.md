@@ -1744,11 +1744,13 @@ POST .../meetings/upload            multipart/form-data
 | `GET .../topics/{topic_id}` | 이름·설명·결정(`replaced_by` 가 있으면 흐리게 `뒤집힘`)·태스크·회의 | 태스크 `status` 가 네 값 밖, 필수 필드 누락·타입 오류 | 404 `TOPIC_NOT_FOUND` 는 패널 안 안내 `주제를 찾을 수 없어요. 지워졌을 수 있어요.` |
 | `GET /meetings/{id}/summary.md` | 본문과 `Content-Disposition` 의 `filename*`(없으면 `filename`, 둘 다 없으면 `summary.md`) | 2xx 인데 `Content-Type` 이 `text/markdown` 이 아님 | 404 `SUMMARY_NOT_FOUND` 는 토스트. 단추는 `summary` 가 null 이 아닐 때만 보인다(팀원 포함) |
 | `GET .../project-bundle.md` | 위와 같다. 대체 이름은 `project-bundle.md` | 위와 같다 | `from`·`to` 는 적은 쪽만 보낸다. 둘 다 비면 전체 기간이다. `from > to` 는 보내지 않고 `시작일이 종료일보다 늦어요.`, 서버 400 `INVALID_REQUEST` 도 같은 문구다. 단추 옆 안내 `팀원 발언 요약이 들어 있어요. 외부 AI 에 첨부할 때 주의해 주세요.` |
-| `GET /meetings/{id}/minutes` 의 `summary_status` | 요약이 없을 때의 표시. `pending` 은 `요약을 만드는 중이에요`, `none` 은 요약 칸을 비운다(이슈 원문) | 거절하지 않는다 | 표시용이라 모르는 값은 받은 글자를 보존하고 중립 문구 `요약이 없어요` 를 보인다(D-184 표시용). 키가 없거나 문자열이 아니면 `none` 이다. `summary` 가 있으면 상태와 무관하게 보인다. 재시도 단추는 없다 |
+| `GET /meetings/{id}/minutes` 의 `summary_status` | 요약이 없을 때의 표시. `pending` 은 `요약을 만드는 중이에요`, `none` 은 요약 칸을 비운다(이슈 원문). `awaiting_approval`(#605) 은 모든 팀원에게 `승인이 끝나면 요약이 만들어져요` 다(2026-11-10) | 거절하지 않는다 | 표시용이라 모르는 값은 받은 글자를 보존하고 중립 문구 `요약이 없어요` 를 보인다(D-184 표시용). 키가 없거나 문자열이 아니면 `none` 이다. `summary` 가 있으면 상태와 무관하게 보인다. 재시도 단추는 없다 |
+| `GET /meetings/{id}/minutes` 의 `summary_waiting_count` (#605) | `awaiting_approval` 일 때만 읽는다. 1 이상이면 같은 칸에 `승인 대기 N건이 남았어요.` 를 더한다. 서버가 PM 에게만 숫자를 주므로 FE 는 역할을 다시 보지 않는다(D-104) | 거절하지 않는다 | 표시용이라 0 이상의 정수가 아니면 건수 표시만 버린다(D-184). 키가 없으면 `null` 이다. `null` 과 `0` 은 건수 없이 문구만 보인다. 승인 화면으로 가는 링크는 두지 않는다. 승인 목록 화면이 없고, 같은 회의록의 `추출된 일` 탭이 남은 카드마다 링크를 준다 |
 
 - 두 `.md` 요청은 `Accept: text/markdown, application/json` 을 보내고, 실패 응답은 다른 API 와 같은 봉투로 읽는다(401 알림 포함).
 - 구현: [응답 스키마](../../src/shared/types/api/projectMap.ts), [맵 조회](../../src/entities/project-map/api/projectMapQuery.ts), [맵 화면](../../src/widgets/project-map), [파일 요청](../../src/shared/api/client.ts), [합본](../../src/features/project-bundle-download), [요약본](../../src/features/summary-download), [회의록 스키마](../../src/shared/types/api/minutes.ts). 화면 배치는 D-186 이다.
 - 합의 필요: 위 FE 처리(특히 `summary_status` 를 표시용으로 본 것, 노드 `kind` 를 판별 값으로 본 것)는 FE 판단이다. BE 합의 여부 확인 필요.
+- `awaiting_approval`·`summary_waiting_count` 처리(2026-11-10)는 BE #645 브랜치(`feature/605-approved-summary`)의 스키마·라우터와 이 문서 §4.4.2 를 읽고 MSW 로만 맞췄다. #645 가 병합되기 전 develop 서버는 이 값을 보내지 않는다. 문구는 이슈 #551 댓글의 요청(2026-11-09)을 따랐다.
 
 
 ### 4.5 Discord 서버 사용자 목록
