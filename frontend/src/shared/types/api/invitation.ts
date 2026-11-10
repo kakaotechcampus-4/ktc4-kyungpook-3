@@ -22,7 +22,9 @@ export const invitationSchema = z.object({
   member_id: z.string(),
   email: z.string(),
   status: invitationStatusSchema,
-  accepted_user: z.object({ user_id: z.string(), name: z.string(), email: z.string() }).nullable(),
+  accepted_user: z
+    .object({ user_id: z.string(), name: z.string(), email: z.string().nullable() })
+    .nullable(),
   created_at: z.string(),
 })
 export type InvitationDto = z.infer<typeof invitationSchema>

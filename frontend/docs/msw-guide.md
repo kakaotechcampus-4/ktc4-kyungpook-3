@@ -214,7 +214,7 @@ MSW를 켠 개발 서버에서 `/workspaces/ws_01/tasks/tk_06?msw-scenario=notif
   회의록 본문은 비어 있는 게 아니라 **안내 문구 1줄**이 온다. extraction이 없을 때만 빈 배열이다.
 - **OAuth `start`·`callback`은 실 백엔드에도 MSW handler 에도 없다.** 실 백엔드에서는 Discord·Notion 연결이 동작하지 않는다.
   MSW 모드(개발)에서는 Discord·Notion 연결만 프론트의 모의 OAuth 화면(`shared/mock/oauth/`, `devPaths.mockOAuth`)이 콜백을 흉내내 연결·취소·실패 뒤 원래 화면으로 돌려보낸다(위 「회의 정리 흐름」의 `meeting-notion-not-connected`).
-  Google 로그인은 없다(D-182). 카카오 로그인은 실 백엔드에 `/auth/kakao/*`가 있고(계약 §4.1.4), MSW 모드에서는 모의 카카오 화면(`/__mock/kakao`)이 결과(새 사용자·이어진 계정·이메일 없음·이메일 충돌·취소·실패)를 고르게 한다.
+  Google 로그인은 없다(D-182). 카카오 로그인은 실 백엔드에 `/auth/kakao/*`가 있고(계약 §4.1.4), MSW 모드에서는 모의 카카오 화면(`/__mock/kakao`)이 결과(새 사용자·이어진 계정·닉네임 없는 새 사용자·취소·실패)를 고르게 한다. 이어진 계정은 픽스처 계정에 이어진 `kakao-pm` 이다. 이어진 카카오가 없으면 늘 가입 화면이고 카카오 가입은 아이디·이름만 받는다(#627).
 - 실 백엔드는 업로드한 **파일을 저장하지 않고 큐에도 보내지 않는다.** 회의가 `processing`에 머물러 다음 업로드를 409로 막는다. MSW는 위 「회의 정리 흐름」으로 정상 흐름을 낸다.
 - 실 백엔드는 **업로드를 PM 에게만 허용하지 않는다**(소속만 본다). 프론트의 PM 가드는 화면만 막는다 — [계약 §4](contracts/frontend-api-contract.md) 백엔드 요청 17.
 

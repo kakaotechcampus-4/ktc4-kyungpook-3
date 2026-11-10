@@ -107,12 +107,29 @@ export async function readMailedCode(page: Page): Promise<string> {
   return code as string
 }
 
-/** 이메일 → 코드 → 프로필을 밟고 `계정 만들기` 를 누른다 (#427) */
+/** 가입 프로필의 아이디 칸을 채우고 중복 확인을 마친다 (#627) */
+export async function confirmUsername(page: Page, username: string): Promise<void> {
+  await page.getByLabel('아이디').fill(username)
+  await page.getByRole('button', { name: '중복 확인' }).click()
+  await expect(page.getByText('사용할 수 있는 아이디예요.')).toBeVisible()
+}
+
+/** 이메일 앞부분의 영문·숫자로 만든 아이디. 짧으면 앞에 user 를 붙인다 */
+function usernameFor(email: string): string {
+  const local = email
+    .split('@')[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+  return (local.length < 4 ? `user${local}` : local).slice(0, 20)
+}
+
+/** 가입 동의(#565). 정책이 게시된 동안 `계정 만들기` 전에 필수 항목 둘을 체크한다 */
 export async function agreeToPolicies(page: Page): Promise<void> {
   await page.getByRole('checkbox', { name: '[필수] 이용약관 동의', exact: true }).check()
   await page.getByRole('checkbox', { name: '[필수] 개인정보처리방침 동의', exact: true }).check()
 }
 
+/** 이메일 → 코드 → 프로필을 밟고 `계정 만들기` 를 누른다 (#427, #627) */
 export async function signUp(
   page: Page,
   values: { name: string; email: string; password: string },
@@ -125,6 +142,7 @@ export async function signUp(
   await expect(page.getByLabel('인증 코드')).toBeVisible()
   await page.getByLabel('인증 코드').fill(await readMailedCode(page))
   await page.getByRole('button', { name: '코드 확인' }).click()
+  await confirmUsername(page, usernameFor(values.email))
   await page.getByLabel('이름').fill(values.name)
   await page.getByLabel('비밀번호', { exact: true }).fill(values.password)
   await agreeToPolicies(page)

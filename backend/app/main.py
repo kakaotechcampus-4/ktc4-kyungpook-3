@@ -14,7 +14,7 @@ from app.api import approvals, bot_lookups, bot_messages, extractions, invitatio
 from app.api import bot_summaries, consents, message_settings, message_socket, notifications, project_map
 from app.services import scheduler, meeting_deletion
 from app.api import meeting_purges
-from app.api import withdrawal
+from app.api import users, withdrawal
 from app.core.errors import AppError, Envelope, ErrorCode, failure, success
 from app.services import embedding, notion_sync, sessions, upload_sweeper
 
@@ -94,6 +94,7 @@ app.include_router(bot_summaries.router, prefix=API_PREFIX)
 app.include_router(project_map.router, prefix=API_PREFIX)
 app.include_router(consents.router, prefix=API_PREFIX)
 app.include_router(meeting_purges.router, prefix=API_PREFIX)
+app.include_router(users.router, prefix=API_PREFIX)
 app.include_router(withdrawal.router, prefix=API_PREFIX)
 app.include_router(withdrawal.bot_router, prefix=API_PREFIX)
 

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { z } from 'zod'
-import { agreeToPolicies, readMailedCode, start } from './support'
+import { agreeToPolicies, confirmUsername, readMailedCode, start } from './support'
 
 const savedConsentSchema = z.object({
   db: z.object({
@@ -22,6 +22,7 @@ test('게시한 실제 판본은 가입 전 두 동의를 받고 새로고침 �
   await page.getByRole('button', { name: '인증 코드 받기' }).click()
   await page.getByLabel('인증 코드').fill(await readMailedCode(page))
   await page.getByRole('button', { name: '코드 확인' }).click()
+  await confirmUsername(page, 'published')
   await page.getByLabel('이름').fill('공개 정책 사용자')
   await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
   const submit = page.getByRole('button', { name: '계정 만들기' })

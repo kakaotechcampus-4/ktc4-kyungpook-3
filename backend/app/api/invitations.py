@@ -34,7 +34,7 @@ def _invitation_pm(
     user: User = Depends(get_current_user), db: Session = Depends(get_db),
 ) -> Member:
     from app.services import lifecycle
-    lifecycle.identity_lock(db, payload.email)
+    lifecycle.identity_lock(db, lifecycle.email_identity(payload.email))
     return require_pm(db, user, workspace_id)
 
 # 옮겨 갈 상태 → (옮길 수 있는 상태, 그 상태가 아닐 때의 오류)
@@ -145,12 +145,13 @@ def _pm_invitation(db: Session, invitation_id: str, user: User) -> Invitation:
 
 
 def _my_pending_invitation(db: Session, invitation_id: str, user: User, to: InvitationStatus) -> tuple[Invitation, Member]:
-    """내 이메일로 온 초대가 아니면 있는지도 알려 주지 않는다(404). 팀원이 탈퇴한 초대는 닫힌 것으로 본다."""
+    """내 이메일로 온 초대가 아니면 있는지도 알려 주지 않는다(404). 이메일 없는 계정에는 이메일 초대가 없다.
+    팀원이 탈퇴한 초대는 닫힌 것으로 본다."""
     invitation = db.get(Invitation, invitation_id)
-    if invitation is None or invitation.email != user.email:
+    if invitation is None or user.email is None or invitation.email != user.email:
         raise AppError(ErrorCode.INVITATION_NOT_FOUND, details={"invitation_id": invitation_id})
     from app.services import lifecycle
-    lifecycle.identity_lock(db, user.email)
+    lifecycle.identity_lock(db, lifecycle.email_identity(user.email))
     lifecycle.workspace(db, invitation.workspace_id)
     db.refresh(invitation)
     _check_can_move(invitation, to)
@@ -273,6 +274,9 @@ def list_my_invitations(
     db: Session = Depends(get_db),
 ) -> dict:
     """내 가입 이메일로 온 대기 중 초대. 초대보다 먼저 가입했든 나중에 가입했든 같은 기준으로 찾는다."""
+    if user.email is None:
+        # 카카오만으로 가입한 계정은 이메일 초대를 받을 수 없다(#610). 아이디 초대는 다음 작업이다.
+        return success(MyInvitationListResponse(items=[], total=0).model_dump(mode="json"))
     rows = db.execute(
         select(Invitation, Workspace.name, Member.display_name, _Inviter.name)
         .join(Workspace, Workspace.workspace_id == Invitation.workspace_id)

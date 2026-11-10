@@ -50,7 +50,9 @@ function hasStrings(value: unknown, keys: readonly string[]): boolean {
 function isSession(value: unknown): boolean {
   return (
     isRecord(value) &&
-    hasStrings(value.user, ['user_id', 'email', 'name']) &&
+    isRecord(value.user) &&
+    hasStrings(value.user, ['user_id', 'username', 'name']) &&
+    (typeof value.user.email === 'string' || value.user.email === null) &&
     typeof value.workspace_count === 'number'
   )
 }
@@ -138,7 +140,7 @@ function isMockDb(value: unknown): value is MockDb {
       (account) =>
         isRecord(account) &&
         isSession(account.session) &&
-        typeof account.password === 'string' &&
+        (typeof account.password === 'string' || account.password === null) &&
         Array.isArray(account.workspaceIds) &&
         isRecord(account.memberIds),
     ) &&

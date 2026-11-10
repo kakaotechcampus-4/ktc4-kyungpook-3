@@ -92,6 +92,7 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
   SIGNUP_VERIFICATION_INVALID: '이메일 인증 시간이 지났어요. 이메일 인증을 다시 해 주세요.',
   KAKAO_LINK_EXPIRED: '카카오 로그인 정보가 만료됐어요. 카카오로 다시 시작해 주세요.',
   KAKAO_ALREADY_LINKED: '이미 다른 계정에 연결된 카카오 계정이에요.',
+  USERNAME_TAKEN: '이미 사용 중인 아이디예요.',
   TOO_MANY_LOGIN_ATTEMPTS: '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.',
 }
 

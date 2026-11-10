@@ -7,7 +7,13 @@ import { toast, useToastStore } from '@/shared/ui/toast'
 import { expireSession } from './expireSession'
 
 const SESSION: Session = {
-  user: { id: 'us_01', email: 'pm@example.com', name: '최진호', avatarUrl: null },
+  user: {
+    id: 'us_01',
+    username: 'userpm',
+    email: 'pm@example.com',
+    name: '최진호',
+    avatarUrl: null,
+  },
   workspaceCount: 2,
   lastWorkspaceId: 'ws_01',
 }

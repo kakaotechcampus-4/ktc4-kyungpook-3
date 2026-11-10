@@ -104,6 +104,7 @@ class ErrorCode(StrEnum):
     SIGNUP_VERIFICATION_INVALID = "SIGNUP_VERIFICATION_INVALID"
     KAKAO_LINK_EXPIRED = "KAKAO_LINK_EXPIRED"
     KAKAO_ALREADY_LINKED = "KAKAO_ALREADY_LINKED"
+    USERNAME_TAKEN = "USERNAME_TAKEN"
     # 로그인 시도 제한
     TOO_MANY_LOGIN_ATTEMPTS = "TOO_MANY_LOGIN_ATTEMPTS"
 
@@ -198,6 +199,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.SIGNUP_VERIFICATION_INVALID: 400,
     ErrorCode.KAKAO_LINK_EXPIRED: 400,
     ErrorCode.KAKAO_ALREADY_LINKED: 409,
+    ErrorCode.USERNAME_TAKEN: 409,
     ErrorCode.TOO_MANY_LOGIN_ATTEMPTS: 429,
     ErrorCode.CONSENT_VERSION_MISMATCH: 400,
     ErrorCode.CONSENT_ACCOUNT_CHANGED: 409,
@@ -287,6 +289,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.SIGNUP_VERIFICATION_INVALID: "이메일 인증이 필요합니다. 인증을 다시 진행해 주세요.",
     ErrorCode.KAKAO_LINK_EXPIRED: "카카오 로그인 정보가 만료됐습니다. 카카오로 다시 시작해 주세요.",
     ErrorCode.KAKAO_ALREADY_LINKED: "이미 다른 계정에 연결된 카카오 계정입니다.",
+    ErrorCode.USERNAME_TAKEN: "이미 사용 중인 아이디입니다.",
     ErrorCode.TOO_MANY_LOGIN_ATTEMPTS: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
     ErrorCode.CONSENT_VERSION_MISMATCH: "지금 문서 버전이 아닙니다. 문서를 다시 확인해 주세요.",
     ErrorCode.CONSENT_ACCOUNT_CHANGED: "로그인한 계정이 바뀌었습니다. 계정을 다시 확인해 주세요.",

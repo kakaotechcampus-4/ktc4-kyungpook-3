@@ -22,16 +22,20 @@ export async function login(input: LoginInput): Promise<Session> {
 }
 
 /**
- * 201. 가입과 동시에 로그인된다. 이미 있는 이메일은 409 `EMAIL_ALREADY_EXISTS`.
+ * 201. 가입과 동시에 로그인된다. 409 는 이메일 가입이면 `EMAIL_ALREADY_EXISTS`·`USERNAME_TAKEN`(둘 다면 이메일 먼저),
+ * 카카오 가입이면 `KAKAO_ALREADY_LINKED`·`USERNAME_TAKEN` 이다. 아이디가 규칙 밖이면 400 `INVALID_REQUEST`.
  * 증명이 없거나 만료면 400 `SIGNUP_VERIFICATION_INVALID`, 카카오 대기가 만료면 400 `KAKAO_LINK_EXPIRED`
  */
 export async function signup(input: SignupInput): Promise<Session> {
-  const body: SignupDto = {
-    password: input.password,
-    name: input.name,
-    link_kakao: input.linkKakao,
-    ...(input.verificationToken === null ? {} : { verification_token: input.verificationToken }),
-  }
+  const body: SignupDto =
+    input.kind === 'email'
+      ? {
+          verification_token: input.verificationToken,
+          password: input.password,
+          name: input.name,
+          username: input.username,
+        }
+      : { link_kakao: true, name: input.name, username: input.username }
   return toSession(
     parseResponse(
       sessionSchema,

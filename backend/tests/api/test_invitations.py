@@ -24,6 +24,7 @@ from app.main import app
 from app.models import Invitation, Member, Session as SessionModel, User, Workspace
 from app.services.sessions import hash_session_token
 from tests.api.conftest import signup_verified
+from tests.usernames import username_for
 
 pytestmark = pytest.mark.usefixtures("signup_secret")
 
@@ -67,7 +68,7 @@ def db(request):
 
 
 def _user(db, name: str, email: str | None = None) -> User:
-    user = User(email=email or f"{name}@example.com", name=name)
+    user = User(username=username_for(email or f"{name}@example.com"), email=email or f"{name}@example.com", name=name)
     db.add(user)
     db.flush()
     db.add(SessionModel(

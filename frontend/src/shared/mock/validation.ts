@@ -1,5 +1,15 @@
 import { fail } from './envelope'
 
+/** Python `str.strip()` 의 공백. JS `trim()` 과 달리 \x1c-\x1f·\x85 를 지우고 \ufeff 는 남긴다 */
+export const PYTHON_STRIP =
+  // eslint-disable-next-line no-control-regex
+  /^[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/g
+/** BE validate_username. 앞뒤 공백을 지우고 영문·숫자 4~20자면 소문자로, 아니면 null 이다 */
+export function checkedUsername(value: string): string | null {
+  const username = value.replace(PYTHON_STRIP, '')
+  return /^[A-Za-z0-9]{4,20}$/.test(username) ? username.toLowerCase() : null
+}
+
 /** BE 본문 검증(pydantic) 오류 한 칸. 400 `INVALID_REQUEST` 의 `details.fields` 에 들어간다 */
 export interface FieldError {
   loc: string[]
@@ -32,5 +42,14 @@ export function invalidBody(...fields: (FieldError | null)[]) {
   const errors = fields.filter((error): error is FieldError => error !== null)
   return errors.length > 0
     ? fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400, { fields: errors })
+    : null
+}
+
+/** 필수 아이디 칸을 BE 처럼 검사한다 */
+export function usernameField(body: Record<string, unknown>, name: string): FieldError | null {
+  const typeError = stringField(body, name)
+  if (typeError) return typeError
+  return checkedUsername(body[name] as string) === null
+    ? { loc: ['body', name], msg: 'Value error, 아이디는 영문과 숫자로 된 4~20자여야 합니다.' }
     : null
 }

@@ -13,6 +13,7 @@ from app.models import Member, Session as SessionModel, Task, User, Workspace
 from app.schemas.email import normalize_email
 from app.services import oauth_state, signup_codes
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 SERVICE_TOKEN = "test-service-token"
@@ -68,16 +69,15 @@ def signup_secret(monkeypatch):
     monkeypatch.setenv("OAUTH_STATE_SECRET", "k" * 40)
 
 
-def signup_verified(client, email: str, password: str = "pw-123456", name: str = "테스터"):
+def signup_verified(client, email: str, password: str = "pw-123456", name: str = "테스터", username: str | None = None):
     """코드 메일을 거치지 않고 인증을 마친 상태로 가입한다. 코드 흐름은 test_signup_api.py 가 잰다."""
     proof = oauth_state.seal(signup_codes.PROOF_KIND, 60, {"m": normalize_email(email)})
-    return client.post(
-        "/api/v1/auth/signup", json={"verification_token": proof, "password": password, "name": name}
-    )
+    body = {"verification_token": proof, "password": password, "name": name, "username": username or username_for(email)}
+    return client.post("/api/v1/auth/signup", json=body)
 
 
 def _user(db, name: str) -> User:
-    user = User(email=f"{name}@example.com", name=name)
+    user = User(username=username_for(f"{name}@example.com"), email=f"{name}@example.com", name=name)
     db.add(user)
     db.flush()
     db.add(SessionModel(

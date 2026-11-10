@@ -5,9 +5,11 @@ import { z } from 'zod'
  * 요청 본문은 손으로 쓴 타입이다
  */
 
-const userSchema = z.object({
+/** `/auth/me` 의 `user`·`PATCH /users/me` 의 응답. 카카오로 가입한 계정은 `email` 이 null 이다 (#627) */
+export const userSchema = z.object({
   user_id: z.string(),
-  email: z.string(),
+  username: z.string(),
+  email: z.string().nullable(),
   name: z.string(),
   avatar_url: z.string().nullable(),
 })
@@ -25,12 +27,10 @@ export interface LoginDto {
   email: string
   password: string
 }
-export interface SignupDto {
-  verification_token?: string
-  password: string
-  name: string
-  link_kakao: boolean
-}
+/** 카카오 가입에 `password`·`verification_token` 이 있으면 400 이다 (#627) */
+export type SignupDto =
+  | { verification_token: string; password: string; name: string; username: string }
+  | { link_kakao: true; name: string; username: string }
 /* 가입 이메일 인증과 카카오 로그인 (#427, 계약 §4.1.2). 모두 로그인 없이 부른다 */
 export interface SignupCodeRequestDto {
   email: string
@@ -43,11 +43,16 @@ export interface SignupCodeConfirmDto {
 }
 export const signupCodeConfirmedSchema = z.object({ verification_token: z.string() })
 export type SignupCodeConfirmedDto = z.infer<typeof signupCodeConfirmedSchema>
-export const kakaoPendingSchema = z.object({
-  /** 카카오가 인증한 이메일. 없거나 인증되지 않았으면 null */
-  email: z.string().nullable(),
-  nickname: z.string().nullable(),
-})
+/** 대기 쿠키는 서명만 하고 암호화하지 않아 이메일을 담지 않는다 (#627) */
+export const kakaoPendingSchema = z.object({ nickname: z.string().nullable() })
+/* 아이디 (#627, 계약 §4.1.6). 중복 확인은 로그인 없이 부르고 늘 200 이다 */
+export const usernameAvailabilitySchema = z.discriminatedUnion('available', [
+  z.object({ available: z.literal(true) }),
+  z.object({ available: z.literal(false), reason: z.enum(['taken', 'invalid']) }),
+])
+export interface UsernameUpdateDto {
+  username: string
+}
 /* 비밀번호 재설정 (#356, 계약 §4.1.1). 세 경로 모두 로그인 없이 부른다 */
 export interface PasswordResetRequestDto {
   email: string

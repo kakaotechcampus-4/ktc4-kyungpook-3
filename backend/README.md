@@ -147,6 +147,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `SIGNUP_VERIFICATION_INVALID` | 400 | 가입에 이메일 증명이 없거나 쓸 수 없음. 코드 인증부터 다시 한다 |
 | `KAKAO_LINK_EXPIRED` | 400 | 카카오 대기 쿠키가 없거나 만료됨. 카카오 로그인부터 다시 한다 |
 | `KAKAO_ALREADY_LINKED` | 409 | 대기 중인 카카오 계정이 이미 다른 계정에 이어져 있어 가입하지 않음 |
+| `USERNAME_TAKEN` | 409 | 가입이나 아이디 변경에서 다른 계정이 이미 쓰는 아이디. 대소문자만 다른 아이디도 같은 아이디다 |
 | `TOO_MANY_LOGIN_ATTEMPTS` | 429 | 같은 이메일 10회·같은 공인 IP 50회 실패가 15분 안에 쌓여 로그인이 막힘(맞는 비밀번호도 막음). `Retry-After` 헤더와 `details.retry_after_seconds` 는 같은 정수 초 |
 | `MESSAGE_RESULT_CONFLICT` | 409 | 이미 다른 결과가 보고됐거나 아직 가져가지 않은 메시지에 결과를 보고함. `details.message_id` |
 | `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST` |
@@ -476,27 +477,30 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 
 ## 가입과 카카오 로그인
 
-이메일을 인증해야 가입할 수 있고, 카카오로 들어온 사용자도 가입 화면에서 비밀번호를 정해 두 로그인을 모두 쓴다. 원본은 `app/api/auth.py`, `app/services/signup_codes.py`, `app/services/kakao_oauth.py`.
+이메일 가입은 이메일을 인증하고 비밀번호를 정한다. 카카오 가입은 카카오 신원만으로 끝나고 이메일과 비밀번호를 두지 않는다(#610). 두 가입 모두 아이디와 이름을 받는다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-10-signup-username-decision.md). 원본은 `app/api/auth.py`, `app/services/signup_codes.py`, `app/services/kakao_oauth.py`.
 
 | 경로 | 요청 | 응답 |
 |---|---|---|
 | `POST /api/v1/auth/signup/code` | `{email}` | 200 `{expires_in: 600, resend_after: 60}`. 503 `MAIL_UNAVAILABLE`, 409 `EMAIL_ALREADY_EXISTS`, 429 `SIGNUP_CODE_RATE_LIMITED` |
 | `POST /api/v1/auth/signup/code/confirm` | `{email, code}`(숫자 6자리) | 200 `{verification_token, expires_in: 1800}`. 400 `SIGNUP_CODE_INVALID` |
-| `POST /api/v1/auth/signup` | `{verification_token?, name, password, link_kakao?}` | 201 사용자 정보와 세션 쿠키, 대기 쿠키 삭제. 본문의 이메일은 읽지 않는다 |
+| `POST /api/v1/auth/signup` | 이메일 가입 `{verification_token, password, name, username}`, 카카오 가입 `{link_kakao: true, name, username}` | 201 사용자 정보와 세션 쿠키, 대기 쿠키 삭제. 본문의 이메일은 읽지 않는다. 카카오 가입에 `password`·`verification_token` 이 오면 400 `INVALID_REQUEST` |
+| `GET /api/v1/auth/username-availability?username=` | 로그인 없음 | 200 `{available, reason}`. `reason` 은 `taken`·`invalid`·null. 규칙 밖 값도 400 이 아니라 `invalid` 다. 내 아이디도 `taken` 이다 |
+| `PATCH /api/v1/users/me` | 로그인, `{username}` | 200 바뀐 사용자 정보. 지금과 같은 값이면 그대로 200, 남의 아이디면 409 `USERNAME_TAKEN`, 규칙 밖이면 400 `INVALID_REQUEST` |
 | `GET /api/v1/auth/kakao/start?next=` | 앱 안 경로 | 302 카카오 동의 화면. 설정 오류면 302 `/login?oauth=kakao&oauth_result=failed` |
 | `GET /api/v1/auth/kakao/callback` | 카카오가 부른다 | 항상 302 |
-| `GET /api/v1/auth/kakao/pending` | 대기 쿠키 | 200 `{email, nickname}`(없으면 null). 400 `KAKAO_LINK_EXPIRED` |
+| `GET /api/v1/auth/kakao/pending` | 대기 쿠키 | 200 `{nickname}`(없으면 null). 400 `KAKAO_LINK_EXPIRED` |
 
-**가입할 이메일**
+**가입할 신원**
 
-| `link_kakao` | 대기 쿠키 | 이메일 |
+| `link_kakao` | 대기 쿠키 | 만드는 계정 |
 |---|---|---|
-| false | 있어도 보지 않는다 | 증명 토큰의 이메일. 없으면 400 `SIGNUP_VERIFICATION_INVALID` |
+| false | 있어도 보지 않는다 | 증명 토큰의 이메일과 비밀번호. 토큰이 없거나 쓸 수 없으면 400 `SIGNUP_VERIFICATION_INVALID` |
 | true | 없거나 만료 | 400 `KAKAO_LINK_EXPIRED` |
-| true | 카카오가 인증한 이메일 있음 | 쿠키의 이메일. 증명 토큰은 무시한다 |
-| true | 이메일 없음 | 증명 토큰의 이메일 |
+| true | 있음 | 카카오 id 만. 카카오가 이메일을 줘도 저장하지 않고 비밀번호도 없다 |
 
-겹치면 409 `EMAIL_ALREADY_EXISTS` 또는 409 `KAKAO_ALREADY_LINKED` 다.
+겹치면 이메일, 카카오, 아이디 순으로 보고 409 `EMAIL_ALREADY_EXISTS`, `KAKAO_ALREADY_LINKED`, `USERNAME_TAKEN` 중 하나다. 이미 있는 계정의 로그인 방법은 바꾸지 않는다. 전에 카카오로 가입하며 비밀번호를 정한 계정과 카카오가 이어진 이메일 계정은 두 로그인을 그대로 쓴다.
+
+**아이디**: 영문과 숫자 4 ~ 20자. 앞뒤 공백을 지우고 소문자로 저장·비교한다. 규칙은 `app/schemas/username.py` 의 `validate_username` 한 곳에 있다. 예약어는 막지 않는다. 마이그레이션 전부터 있던 계정은 이메일 앞부분에서 영문·숫자만 남긴 값을 받았다. 4자 미만이면 앞에 `user` 를 붙이고 20자로 자르며, 겹치면 가입 순서대로 뒤에 숫자를 붙였다. `PATCH /users/me` 로 바꾼다. 이메일 없는 계정이 있으면 이 마이그레이션의 downgrade 는 오류로 멈춘다.
 
 **callback 갈래** (위에서 아래로 먼저 맞는 것)
 
@@ -505,13 +509,10 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 | `error` 있음 | `access_denied` 는 `cancelled`, 나머지는 `failed`. 유효한 state 가 있을 때만 `next` 를 유지한다 |
 | state·nonce 불일치, 카카오 토큰·사용자 조회 실패 | `failed`, 원인은 로그에만 남긴다 |
 | `(kakao, id)` 계정 있음 | 세션, `/login?next=&oauth=kakao&oauth_result=success` |
-| 인증된 이메일의 계정 있음 | 비어 있으면 카카오를 잇고 세션과 `success`, 계정 이메일로 연결 알림을 보낸다. 다른 카카오에 이어져 있으면 `failed`, `oauth_reason=email_exists` |
-| 인증되지 않은 이메일의 계정 있음 | `failed`, `oauth_reason=email_exists` |
-| 나머지 | 대기 쿠키를 심고 `/signup?kakao=1&next=`. callback 은 사용자를 만들지 않는다 |
+| 나머지 | 대기 쿠키를 심고 `/signup?kakao=1&next=`. 같은 이메일의 계정이 있어도 잇지 않는다. callback 은 사용자를 만들지 않는다 |
 
 - 코드: 6자리, 유효 10분, 코드당 5회, 재발송 60초, 시간당 5회. 전체 주소 합계는 시간당 20통이고 넘으면 429 `global` 이다. DB 에는 HMAC 만 두고 맞으면 코드만 만료시킨다. 행은 재발송 제한과 전체 상한 집계에 남고, 하루 지나면 다음 코드 요청이 지운다.
-- 대기 쿠키 `kakao_pending`: 서명, HttpOnly, Secure, SameSite=Lax, Path `/api/v1/auth`, 30분. 카카오 id, 인증된 이메일, 닉네임을 담고 주소에는 싣지 않는다. 서명이지 암호화가 아니므로 비밀 값을 넣지 않는다.
-- 카카오 이메일: `is_email_valid` 가 거짓이면 이메일이 없는 것으로 본다. `is_email_verified` 가 참일 때만 코드 인증을 생략한다.
+- 대기 쿠키 `kakao_pending`: 서명, HttpOnly, Secure, SameSite=Lax, Path `/api/v1/auth`, 30분. 카카오 id 와 닉네임만 담고 주소에는 싣지 않는다. 서명이지 암호화가 아니므로 카카오가 이메일을 줘도 읽지 않고 담지 않는다.
 - 메일: 제목에 코드를 넣지 않고 재설정 메일과 같은 메일 전용 스레드로 보낸다. 보내는 이름은 `SMTP_FROM` 으로 정한다(`Manager's Manager <주소>`).
 
 **환경변수** (`.env.example` 참고)
