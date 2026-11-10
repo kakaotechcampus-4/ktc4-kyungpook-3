@@ -799,7 +799,8 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
   "members": ["김서연", "민수"], "asr_terms": ["젠킨스"],
   "lines": [{ "seq": 12, "at_ms": 125000, "speaker": "김서연", "text": "…" }],
   "items": [{ "item_id": "…", "action": "create" | "update" | "merge", "title": "…", "assignee": "민수" | null,
-              "due_date": "2026-11-14" | null, "status": "done" | null }],
+              "due_date": "2026-11-14" | null, "status": "done" | null,
+              "cleared": ["due_date"], "scope": "소셜 로그인은 이번에 뺀다" | null }],
   "rejected_items": ["발표 자료 작성", "검색 기능 개발 (반려된 변경: 담당 윤지민)"],
   "topics": [{ "topic_id": "…", "name": "로그인·계정", "description": "…" }],
   "decisions": [{ "decision_id": "…", "text": "…", "topic": "팀원 초대", "decided_on": "2026-10-20" }]
@@ -810,9 +811,9 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 - `source` 가 `chat` 이면 AI 는 일일 채팅 요약 틀을 쓴다. 기간은 따로 오지 않고 `started_at` 과 마지막 줄의 `at_ms` 로 정한다.
 - `members` 는 탈퇴하지 않은 팀원의 표시 이름이고 가입 순서다. `asr_terms` 는 워크스페이스 용어이고 가나다순이다. 전사의 오인식을 고칠 때 쓴다.
 - `items` 는 지금 반영된 항목만이다(#605). 자동 반영됐거나 승인됐고 태스크가 살아 있는 항목이다. 승인 대기, 반려, 되돌린 항목은 없다. 같은 태스크에 이어진 항목은 먼저 만든 하나만 둔다. 값은 그 회의 항목이 정한 값에 PM 이 승인하며 고친 값을 덮은 것이다. 뒤 회의의 수정이나 직접 수정으로 바뀐 태스크의 지금 값은 쓰지 않는다. 그래서 같은 태스크라도 회의마다 그 회의에서 정한 마감이 간다. `assignee` 는 담당 팀원 이름이고 없으면 null 이다.
-- `update` 항목은 그 수정이 바꾼 값만 있다. `title` 은 그 회의가 가리킨 태스크 제목이고, 바꾸지 않은 `assignee`, `due_date`, `status` 는 null 이다. `status` 는 `update` 항목에만 오고 `todo`, `in_progress`, `blocked`, `done` 중 하나다. 새 항목(`create`, `merge`)의 `status` 는 늘 null 이다.
-- `rejected_items` 는 이 회의 항목 가운데 PM 이 반려한 할 일이다(#605). AI 는 이 일을 정해진 일, 맡은 일, 예정된 일로 쓰지 않고, 반려나 승인처럼 회의 뒤에 PM 이 처리한 일도 요약에 쓰지 않는다. 회의에서 제안이나 논의로 나왔다면 그렇게만 쓴다. 반려된 수정은 태스크가 그대로 있어 제목 뒤 괄호에 반려된 변경을 적고, 바꿀 값 없이 반려된 수정은 그 설명을 적는다. `items` 의 제목과 같은 글은 넣지 않는다. 없으면 빈 목록이다.
-- 배포 순서: `rejected_items` 와 `status` 는 기본값이 있어 BE 와 AI 중 어느 쪽이 먼저 나가도 읽힌다. 다만 `update` 항목의 null 은 뜻이 바뀌었다. 옛 AI 는 바꾸지 않은 칸을 "담당 미정, 마감 없음" 으로 적으므로 운영에서 `MM_SUMMARY_LLM` 을 켜기 전에 두 쪽을 모두 배포한다.
+- `update` 항목은 그 수정이 바꾼 값만 있다. `title` 은 그 회의가 가리킨 태스크 제목이고, 바꾸지 않은 `assignee`, `due_date`, `status` 는 null 이다. `status` 는 `update` 항목에만 오고 `todo`, `in_progress`, `blocked`, `done` 중 하나다. `cleared` 는 그 수정이 비운 칸이고 `assignee`, `due_date` 중에서 온다. 그 칸의 값은 null 이라 바꾸지 않은 칸과는 `cleared` 로 가른다. 마감 해제(`due_cleared`)와 PM 이 승인하며 비운 칸이 여기에 온다. `scope` 는 승인된 범위 결정 수정(`category: scope`)의 설명이다. 범위는 바꾸는 칸이 없어 따로 싣는다. 새 항목(`create`, `merge`)의 `status` 와 `scope` 는 늘 null 이고 `cleared` 는 빈 목록이다.
+- `rejected_items` 는 이 회의 항목 가운데 PM 이 반려한 할 일이다(#605). AI 는 이 일을 정해진 일, 맡은 일, 예정된 일로 쓰지 않고, 반려나 승인처럼 회의 뒤에 PM 이 처리한 일도 요약에 쓰지 않는다. 회의에서 제안이나 논의로 나왔다면 그렇게만 쓴다. 반려된 수정은 태스크가 그대로 있어 제목 뒤 괄호에 반려된 변경을 적는다. 비운 칸은 `마감 없앰`, 범위 결정은 `범위: 설명` 으로 적는다. 바꿀 값 없이 반려된 수정은 그 설명을 적는다. `items` 의 제목과 같은 글은 넣지 않는다. 없으면 빈 목록이다.
+- 배포 순서: `rejected_items`, `status`, `cleared`, `scope` 는 기본값이 있어 BE 와 AI 중 어느 쪽이 먼저 나가도 읽힌다. 다만 `update` 항목의 null 은 뜻이 바뀌었다. 옛 AI 는 바꾸지 않은 칸을 "담당 미정, 마감 없음" 으로 적고, `cleared` 와 `scope` 를 모르는 AI 는 마감 해제와 범위 변경을 "바꾼 값 없음" 으로 적으므로 운영에서 `MM_SUMMARY_LLM` 을 켜기 전에 두 쪽을 모두 배포한다.
 - `topics` 는 최근에 쓴 순서로 최대 100개다.
 - `decisions` 는 이 회의 시점에 유효했던 결정이다. 이 회의보다 앞선 회의의 결정 중 뒤집히지 않았거나 이 회의 이후에 뒤집힌 것이고, 최근 순으로 최대 50개다. `decided_on` 은 한국 시간 날짜다.
 

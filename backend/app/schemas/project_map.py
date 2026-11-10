@@ -38,6 +38,10 @@ class SummaryInputItem(BaseModel):
     due_date: date | None
     # 수정 항목이 바꾼 상태. 새 항목과 상태를 바꾸지 않은 수정은 None
     status: str | None = None
+    # 수정 항목이 비운 칸. assignee·due_date 가 None 인 것만으로는 바꾸지 않은 것과 구별되지 않는다
+    cleared: list[Literal["assignee", "due_date"]] = []
+    # 승인된 범위 결정 수정의 설명. 범위는 바꾸는 칸이 없어 따로 싣는다
+    scope: str | None = None
 
 
 class SummaryInputTopic(BaseModel):

@@ -263,6 +263,14 @@ def test_an_update_item_shows_only_what_that_meeting_changed():
     assert "I4 [update] 검색 (바꾼 값 없음)" in prompt
 
 
+def test_an_update_item_shows_a_cleared_value_and_a_scope_change():
+    items = [SummaryItem("i1", "update", "알림 API", None, None, cleared=["assignee", "due_date"]),
+             SummaryItem("i2", "update", "로그인", None, None, "done", scope="소셜 로그인은 이번에 뺀다")]
+    prompt, _ = build_prompt(_input(items=items), FULL)
+    assert "I1 [update] 알림 API (바꾼 값: 담당 없앰, 마감 없앰)" in prompt
+    assert "I2 [update] 로그인 (바꾼 값: 상태 완료, 범위: 소셜 로그인은 이번에 뺀다)" in prompt
+
+
 @pytest.mark.parametrize("source", ["discord", "chat"])
 def test_the_prompt_lists_rejected_tasks_only_as_things_not_to_state_as_decided(source):
     rejected = ["발표 자료 작성", "검색 기능 개발 (반려된 변경: 담당 윤지민)"]

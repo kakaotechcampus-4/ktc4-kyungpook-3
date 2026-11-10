@@ -307,7 +307,8 @@ class SummaryLine(_Base):
 
 @dataclass(frozen=True)
 class SummaryItem(_Base):
-    """그 회의 항목이 정한 값에 PM 이 승인하며 고친 값을 덮은 것이다. update 는 그 수정이 바꾼 값만 있고 나머지는 None."""
+    """그 회의 항목이 정한 값에 PM 이 승인하며 고친 값을 덮은 것이다. update 는 그 수정이 바꾼 값만 있고 나머지는 None.
+    update 가 비운 칸은 cleared("assignee", "due_date"), 승인된 범위 결정은 scope 로 온다."""
 
     item_id: str
     action: str
@@ -315,6 +316,8 @@ class SummaryItem(_Base):
     assignee: str | None
     due_date: str | None
     status: str | None = None
+    cleared: list[str] = field(default_factory=list)
+    scope: str | None = None
 
 
 @dataclass(frozen=True)

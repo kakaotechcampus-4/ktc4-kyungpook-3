@@ -636,6 +636,52 @@ def test_summary_input_lists_the_tasks_rejected_in_that_meeting(client, mdb, mse
     assert data["rejected_items"] == ["버릴 일", "할일1 (반려된 변경: 마감 2026-12-01)"]
 
 
+def _with_due(db, tasks):
+    for task in tasks:
+        task.due_date = datetime(2026, 12, 1).date()
+    db.commit()
+
+
+def test_summary_input_tells_an_approved_clear_and_scope_change_from_no_change(client, mdb, mseed):
+    cleared, overridden, scoped = mseed["tasks"]
+    _with_due(mdb, [cleared, overridden])
+    extraction_id, cards = _handed_off(client, mdb, mseed["ws"], [
+        {"action": "update", "target_task_id": cleared.task_id, "due_cleared": True},
+        {"action": "update", "target_task_id": overridden.task_id, "due_date": "2026-12-05"},
+        {"action": "update", "target_task_id": scoped.task_id, "category": "scope", "doc_text": "소셜 로그인은 이번에 뺀다"},
+    ])
+    assert len(cards) == 3
+    _resolve(client, cards[0], "approved")
+    r = client.patch(f"/api/v1/approvals/{cards[1]}", json={"status": "approved", "task_overrides": {"due_date": None}})
+    assert r.status_code == 200, r.text
+    _resolve(client, cards[2], "approved")
+    mdb.expire_all()
+
+    items = _input(client, mdb.get(Extraction, extraction_id))["items"]
+
+    assert [(i["title"], i["due_date"], i["cleared"], i["scope"]) for i in items] == [
+        ("할일0", None, ["due_date"], None),
+        ("할일1", None, ["due_date"], None),
+        ("할일2", None, [], "소셜 로그인은 이번에 뺀다"),
+    ]
+
+
+def test_summary_input_lists_a_rejected_clear_and_scope_change(client, mdb, mseed):
+    cleared, scoped, _ = mseed["tasks"]
+    _with_due(mdb, [cleared])
+    extraction_id, cards = _handed_off(client, mdb, mseed["ws"], [
+        {"action": "update", "target_task_id": cleared.task_id, "due_cleared": True},
+        {"action": "update", "target_task_id": scoped.task_id, "category": "scope", "doc_text": "결제는 다음 달로 미룬다"},
+    ])
+    for card in cards:
+        _resolve(client, card, "rejected")
+    mdb.expire_all()
+
+    data = _input(client, mdb.get(Extraction, extraction_id))
+
+    assert data["rejected_items"] == ["할일0 (반려된 변경: 마감 없앰)", "할일1 (반려된 변경: 범위: 결제는 다음 달로 미룬다)"]
+
+
 def test_summary_input_gives_source_members_and_terms(client, mdb, mseed):
     _, extraction = _meeting(mdb, mseed["ws"], source="chat")
     mseed["carol"].is_deleted = True

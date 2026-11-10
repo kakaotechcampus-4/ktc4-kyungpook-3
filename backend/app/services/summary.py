@@ -235,24 +235,39 @@ def _input_items(db: Session, extraction_id: str) -> list[SummaryInputItem]:
         SummaryInputItem(
             item_id=item.item_id, action=item.action, title=values["task_title"],
             assignee=names.get(values["assignee_member_id"]), due_date=values["due_date"], status=values["status"],
+            cleared=values["cleared"], scope=values["scope"],
         )
         for item, values in approved.values()
     ]
 
 
-# 수정 항목이 바꿀 수 있는 값. 카드 payload 의 같은 이름 키가 그 수정이 바꾼 값이다
+# 수정 항목이 바꿀 수 있는 값. 카드 payload 에 같은 이름 키가 있으면 그 수정이 바꾼 것이고, 값이 None 이면 비운 것이다
 _UPDATE_FIELDS = ("assignee_member_id", "due_date", "status")
+# 비울 수 있는 칸과 재료에서의 이름
+_CLEARABLE = {"assignee_member_id": "assignee", "due_date": "due_date"}
 
 
 def _approved_values(item: ExtractionItem, payload: dict) -> dict:
-    """새 항목은 항목 값, 수정 항목은 그 수정이 바꾼 값(바꾸지 않은 것은 None)에 PM 이 고친 값(task_overrides)을 덮는다.
-    PM 이 담당이나 마감을 비운 것도 고친 값이라 키가 있으면 None 이어도 쓴다."""
+    """새 항목은 항목 값, 수정 항목은 그 수정이 바꾼 값에 PM 이 고친 값(task_overrides)을 덮는다."""
+    overrides = payload.get("task_overrides") or {}
     if item.action == str(ExtractionAction.UPDATE):
-        own = {"task_title": item.task_title, **{field: payload.get(field) for field in _UPDATE_FIELDS}}
-    else:
-        own = {"task_title": item.task_title, "assignee_member_id": item.assignee_member_id,
-               "due_date": item.due_date, "status": None}
-    return {**own, **(payload.get("task_overrides") or {})}
+        return _update_change(item, {**payload, **overrides})
+    return {"task_title": item.task_title, "assignee_member_id": item.assignee_member_id,
+            "due_date": item.due_date, "status": None, "cleared": [], "scope": None, **overrides}
+
+
+def _update_change(item: ExtractionItem, card: dict) -> dict:
+    """수정 카드가 바꾼 값. 바꾸지 않은 칸은 None 이고 비운 칸은 cleared 에 적는다. 범위 결정은 바꾸는 칸이 없어
+    승인 때 이력에 남기는 설명(doc_text)을 scope 로 둔다."""
+    changed = {field: card[field] for field in _UPDATE_FIELDS if field in card}
+    doc_text = card.get("doc_text")
+    scope = doc_text.strip() if card.get("category") == "scope" and isinstance(doc_text, str) else ""
+    return {
+        "task_title": item.task_title,
+        **{field: changed.get(field) for field in _UPDATE_FIELDS},
+        "cleared": [name for field, name in _CLEARABLE.items() if field in changed and changed[field] is None],
+        "scope": scope or None,
+    }
 
 
 def _member_names(db: Session, member_ids: set[str | None]) -> dict[str, str]:
@@ -278,10 +293,13 @@ def _input_rejected(db: Session, extraction_id: str, approved_titles: set[str]) 
     for (item, _), payload in zip(rows, payloads):
         title = item.task_title
         if item.action == str(ExtractionAction.UPDATE):
+            change = _update_change(item, payload)
             changed = [f"{label} {value}" for label, value in (
-                ("담당", names.get(payload.get("assignee_member_id"))), ("마감", payload.get("due_date")),
-                ("상태", payload.get("status")),
-            ) if value] or ([item.doc_text] if item.doc_text else [])
+                ("담당", "없앰" if "assignee" in change["cleared"] else names.get(change["assignee_member_id"])),
+                ("마감", "없앰" if "due_date" in change["cleared"] else change["due_date"]),
+                ("상태", change["status"]),
+            ) if value] + ([f"범위: {change['scope']}"] if change["scope"] else [])
+            changed = changed or ([item.doc_text] if item.doc_text else [])
             if not changed:
                 continue
             title = f"{title} (반려된 변경: {', '.join(changed)})"

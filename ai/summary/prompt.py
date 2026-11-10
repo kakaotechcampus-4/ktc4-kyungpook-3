@@ -57,7 +57,7 @@ _DAILY_HEAD = """너는 팀 채팅을 일일 채팅 요약 JSON 으로 바꾼다
 
 _RULES = """- 담당자를 모르면 "미정".
 - 추출 항목은 PM 이 이 회의 항목을 승인한 값이다. 전사와 항목이 다르면 항목을 따른다.
-- update 항목은 이 회의에서 바꾼 값만 보인다. task_changes 에서 바꾸지 않은 담당과 마감 칸은 비운다.
+- update 항목은 이 회의에서 바꾼 값만 보인다. task_changes 에서 바꾸지 않은 담당과 마감 칸은 비우고, 없앤 담당은 "미정", 없앤 마감은 "없음" 으로 쓴다.
 - 할 일, 담당, 마감은 추출 항목에 있는 것만 할 일로 쓴다. task_changes 에는 추출 항목의 할 일만 넣고 item 에 그 I 키를 쓴다.
 - schedule 의 할 일은 추출 항목에서만 가져온다.
 - 정해진 일로 쓰지 않을 할 일은 정해진 일, 맡은 일, 예정된 일로 쓰지 않는다. overview, key_points, facts, schedule, task_changes 모두 같다. 회의에서 제안이나 논의로 나왔다면 그렇게만 쓴다. 그 일이 이 목록에 있다는 것과 할 일이 됐는지, 정해졌는지는 쓰지 않는다. "정해진 일로 확정되지 않았다", "할 일에 포함되지 않았다" 같은 말을 쓰지 않는다.
@@ -172,9 +172,12 @@ def _item_values(item: SummaryItem) -> str:
     """update 는 그 회의가 바꾼 값만 있다. 비어 있는 칸을 "미정" 으로 쓰면 담당이 없어진 것처럼 읽힌다."""
     if item.action != "update":
         return f"담당 {item.assignee or '미정'}, 마감 {item.due_date or '없음'}"
+    cleared = set(item.cleared)
     changed = [f"{label} {value}" for label, value in (
-        ("담당", item.assignee), ("마감", item.due_date), ("상태", _STATUS.get(item.status or "", item.status)),
-    ) if value]
+        ("담당", item.assignee or ("없앰" if "assignee" in cleared else None)),
+        ("마감", item.due_date or ("없앰" if "due_date" in cleared else None)),
+        ("상태", _STATUS.get(item.status or "", item.status)),
+    ) if value] + ([f"범위: {item.scope}"] if item.scope else [])
     return f"바꾼 값: {', '.join(changed)}" if changed else "바꾼 값 없음"
 
 

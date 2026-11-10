@@ -15,6 +15,7 @@ def test_summary_input_parses_nested_rows_and_ignores_keys_it_does_not_know():
         "decisions": [{"decision_id": "d", "text": "x", "topic": "n", "decided_on": "2026-10-20"}],
     })
     assert parsed.lines[0].speaker == "민수" and parsed.items[0].item_id == "i" and parsed.items[0].status is None
+    assert (parsed.items[0].cleared, parsed.items[0].scope) == ([], None)
     assert parsed.topics[0].name == "n" and parsed.decisions[0].decided_on == "2026-10-20"
 
 
