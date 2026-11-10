@@ -19,7 +19,7 @@ DB는 PostgreSQL이다. 로컬에서는 Docker로 띄운다(Docker Desktop 필�
 
 ```bash
 uv venv --python 3.12 .venv
-uv pip install -r requirements-dev.txt   # requirements.txt(운영) + pytest, ruff
+uv pip install -r requirements.lock -r requirements-dev.txt   # 운영 잠금 버전 + pytest, ruff
 cp .env.example .env
 
 docker compose up -d db         # PostgreSQL(pgvector 포함) 기동, 데이터는 mm-pgdata 볼륨에 남는다
@@ -36,6 +36,21 @@ docker compose up -d db         # PostgreSQL(pgvector 포함) 기동, 데이터�
 - 테스트(`pytest`)는 기본 SQLite 변형과 `TEST_DATABASE_URL`이 있을 때의 PostgreSQL 변형을 구분한다. API 잠금·경합과 pgvector 검색의 PostgreSQL 검증에는 격리된 테스트 DB가 필요하다. DB가 없어서 건너뛴 검사를 통과로 세지 않는다. 설정은 `tests/api/conftest.py`와 `tests/services/test_embedding_search_pg.py`를 확인한다.
 - CI(`.github/workflows/backend-ci.yml`)는 ruff 린트, pytest, 빈 PostgreSQL에 `alembic upgrade head`·`alembic check`, 운영 이미지 빌드를 돌린다.
   로컬에서 린트는 `.venv/bin/python -m ruff check .`(설정 `ruff.toml`).
+
+### 의존성 잠금
+
+운영 이미지와 CI 는 `requirements.lock`(버전과 해시 고정)으로 설치한다. `requirements.txt` 는 직접 쓰는 패키지와 하한만 적는 입력이다. 둘 다 `backend/` 에서, CI 와 같은 uv 0.13.7 로 만든다.
+
+```bash
+# requirements.txt 를 고친 뒤. 이미 고정한 버전은 그대로 두고 바뀐 것만 다시 푼다
+uvx uv@0.13.7 pip compile requirements.txt --universal --python-version 3.12 --generate-hashes -o requirements.lock
+# 특정 패키지만 올릴 때
+uvx uv@0.13.7 pip compile requirements.txt --universal --python-version 3.12 --generate-hashes -o requirements.lock --upgrade-package fastapi
+# 전부 최신으로 올릴 때(CI 와 운영 이미지 빌드를 다시 확인한다)
+uvx uv@0.13.7 pip compile requirements.txt --universal --python-version 3.12 --generate-hashes -o requirements.lock --upgrade
+```
+
+`requirements.txt` 만 고치고 잠금 파일을 다시 만들지 않으면 CI lint 잡의 "잠금 파일 확인" 이 실패한다. `--universal` 은 서버(리눅스)에서만 쓰는 패키지가 맥에서 만들 때 빠지지 않게 한다.
 
 서버가 뜨면 `http://localhost:8000` 기준으로:
 
