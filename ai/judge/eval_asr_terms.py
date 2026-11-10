@@ -35,6 +35,10 @@ def approve_titles(items: list[dict], approve: list[dict], prefix: str) -> list[
         if item is None:
             print(f"  [경고] 승인 '{a['title_contains']}' 와 맞는 create 항목이 없어 건너뜀")
             continue
+        # 실제 BE 는 확인 카드를 승인할 때만 제목을 큐에 넣는다. auto 로 갔을 모양이면 실제로는 큐에 들어가지 않는다
+        if (item.get("task_status") == "certain" and item.get("due_status") in ("certain", "missing")
+                and not item.get("asr_suspects")):
+            print(f"  [경고] 승인 '{a['title_contains']}' 항목이 auto 모양이라 실제로는 승인 큐에 들어가지 않을 수 있음")
         rows.append({"title_id": f"{prefix}-{i}", "title": a.get("title", item["task_title"])})
     return rows
 
