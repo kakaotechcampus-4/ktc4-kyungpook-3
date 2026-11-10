@@ -215,9 +215,8 @@ def test_detach_hides_the_task_from_graph_detail_and_bundle_and_is_idempotent(cl
     again = client.delete(f"{P}/{ws}/topics/{topic_id}/tasks/{task.task_id}")
 
     assert first.status_code == again.status_code == 200
-    assert first.json()["data"] == again.json()["data"] == {
-        "topic_id": topic_id, "task_id": task.task_id, "detached": True,
-    }
+    assert first.json()["data"] == again.json()["data"] == _detail(client, ws, topic_id)
+    assert (first.json()["data"]["topic_id"], first.json()["data"]["tasks"]) == (topic_id, [])
     _assert_hidden(client, ws, topic_id, task)
 
 
@@ -258,19 +257,35 @@ def _decided(db, ws, *texts, title="인증 설계"):
     return meeting
 
 
-def test_decision_edit_returns_the_marked_decision(client, mdb, mseed):
+def test_decision_edit_returns_the_topic_with_the_marked_decision(client, mdb, mseed):
     ws = mseed["ws"]
-    meeting = _decided(mdb, ws, "이메일로만")
+    meeting = _decided(mdb, ws, "이메일로만", "남는 결정")
     decision_id = _decision_id(mdb, "이메일로만")
 
     r = client.patch(f"{P}/{ws}/decisions/{decision_id}", json={"text": "이메일 초대만", "state": "invalid"})
 
     assert r.status_code == 200, r.text
     data = r.json()["data"]
-    assert {k: data[k] for k in ("decision_id", "text", "meeting_id", "meeting_title", "state", "edited")} == {
+    topic_id = _topic_ids(mdb, ws)["초대"]
+    assert data == _detail(client, ws, topic_id)
+    marked = data["decisions"][0]
+    assert {k: marked[k] for k in ("decision_id", "text", "meeting_id", "meeting_title", "state", "edited")} == {
         "decision_id": decision_id, "text": "이메일 초대만", "meeting_id": meeting.meeting_id,
         "meeting_title": "인증 설계", "state": "invalid", "edited": True,
     }
+
+
+def test_removing_a_decision_returns_its_topic_without_it_and_restoring_brings_it_back(client, mdb, mseed):
+    ws = mseed["ws"]
+    _decided(mdb, ws, "지울 결정", "남는 결정")
+    decision_id = _decision_id(mdb, "지울 결정")
+
+    removed = client.patch(f"{P}/{ws}/decisions/{decision_id}", json={"state": "removed"}).json()["data"]
+    restored = client.patch(f"{P}/{ws}/decisions/{decision_id}", json={"state": "valid"}).json()["data"]
+
+    assert removed["topic_id"] == _topic_ids(mdb, ws)["초대"]
+    assert [(d["text"], d["state"]) for d in removed["decisions"]] == [("남는 결정", "valid")]
+    assert [(d["text"], d["state"]) for d in restored["decisions"]] == [("지울 결정", "valid"), ("남는 결정", "valid")]
 
 
 def test_decision_of_another_workspace_unknown_or_of_a_deleted_meeting_is_404(client, mdb, mseed):

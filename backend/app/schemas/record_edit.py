@@ -1,5 +1,5 @@
 """팀원이 회의 기록을 고치는 요청. 사람이 쓴 글이 들어오는 신뢰 경계다."""
-from typing import Annotated, Literal
+from typing import Annotated
 
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
@@ -60,12 +60,6 @@ class TopicEditRequest(_Storable):
 
 class TopicMergeRequest(_Storable):
     into_topic_id: str = Field(min_length=1, max_length=36)
-
-
-class TaskDetachResponse(BaseModel):
-    topic_id: str
-    task_id: str
-    detached: Literal[True] = True
 
 
 class DecisionEditRequest(_Storable):

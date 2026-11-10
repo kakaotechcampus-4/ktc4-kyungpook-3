@@ -9,8 +9,8 @@ from app.api.deps import get_current_member, get_current_user, require_member
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Meeting, Member, User
-from app.schemas.project_map import GraphResponse, TopicDecision, TopicDetailResponse
-from app.schemas.record_edit import DecisionEditRequest, TaskDetachResponse, TopicEditRequest, TopicMergeRequest
+from app.schemas.project_map import GraphResponse, TopicDetailResponse
+from app.schemas.record_edit import DecisionEditRequest, TopicEditRequest, TopicMergeRequest
 from app.services import lifecycle, project_map, summary
 from app.services import meeting_deletion
 from app.services.project_map import MarkdownFile
@@ -74,7 +74,7 @@ def merge_topic(
     return success(data)
 
 
-@router.delete("/workspaces/{workspace_id}/topics/{topic_id}/tasks/{task_id}", response_model=Envelope[TaskDetachResponse])
+@router.delete("/workspaces/{workspace_id}/topics/{topic_id}/tasks/{task_id}", response_model=Envelope[TopicDetailResponse])
 def detach_topic_task(
     workspace_id: str,
     topic_id: str,
@@ -82,13 +82,14 @@ def detach_topic_task(
     member: Member = Depends(_member_behind_gate),
     db: Session = Depends(get_db),
 ) -> dict:
-    """잘못 붙은 태스크를 주제에서 뗀다. 다시 불러도 같은 응답이다."""
+    """잘못 붙은 태스크를 주제에서 떼고 그 주제를 돌려준다. 다시 불러도 같은 응답이다."""
     summary.detach_task(db, workspace_id, topic_id, task_id)
+    data = project_map.topic_detail(db, workspace_id, topic_id).model_dump(mode="json")
     db.commit()
-    return success(TaskDetachResponse(topic_id=topic_id, task_id=task_id).model_dump(mode="json"))
+    return success(data)
 
 
-@router.patch("/workspaces/{workspace_id}/decisions/{decision_id}", response_model=Envelope[TopicDecision])
+@router.patch("/workspaces/{workspace_id}/decisions/{decision_id}", response_model=Envelope[TopicDetailResponse])
 def edit_decision(
     workspace_id: str,
     decision_id: str,
@@ -96,9 +97,9 @@ def edit_decision(
     member: Member = Depends(_member_behind_gate),
     db: Session = Depends(get_db),
 ) -> dict:
-    """결정 문장을 고치거나 유효하지 않음·지움으로 바꾼다. valid 로 되돌릴 수 있다."""
+    """결정 문장을 고치거나 유효하지 않음·지움으로 바꾸고 그 결정의 주제를 돌려준다. 지운 결정은 주제에서 빠진다. valid 로 되돌릴 수 있다."""
     decision = summary.edit_decision(db, workspace_id, decision_id, text=payload.text, state=payload.state)
-    data = project_map.topic_decision(decision, db.get(Meeting, decision.meeting_id)).model_dump(mode="json")
+    data = project_map.topic_detail(db, workspace_id, decision.topic_id).model_dump(mode="json")
     db.commit()
     return success(data)
 

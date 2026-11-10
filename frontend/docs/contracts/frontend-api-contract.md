@@ -1760,8 +1760,8 @@ POST .../meetings/upload            multipart/form-data
 | `PATCH /meetings/{meeting_id}/transcript/{seq}` | `{"text": 문자열 \| null}`. 1자 이상 10000자 이하 | `{seq, text, original_text, edited}` | 404 `MEETING_NOT_FOUND`·`TRANSCRIPT_LINE_NOT_FOUND`, 410 `MEETING_DELETED` |
 | `PATCH /workspaces/{workspace_id}/topics/{topic_id}` | `{"name"?: 문자열, "description"?: 문자열}`. 이름은 앞뒤 공백을 빼고 1자 이상 100자 이하, 설명은 1000자 이하. 하나는 있어야 한다 | 그 주제의 `TopicDetailResponse` | 400 글자가 없는 이름, 404 `TOPIC_NOT_FOUND`, 409 `TOPIC_NAME_TAKEN` |
 | `POST /workspaces/{workspace_id}/topics/{topic_id}/merge` | `{"into_topic_id": 문자열}` | 합친 주제(`into_topic_id`)의 `TopicDetailResponse` | 400 자기 자신, 404 `TOPIC_NOT_FOUND` |
-| `DELETE /workspaces/{workspace_id}/topics/{topic_id}/tasks/{task_id}` | 없음 | `{topic_id, task_id, detached: true}`. 다시 불러도 같다 | 404 `TOPIC_NOT_FOUND`·`TASK_NOT_FOUND` |
-| `PATCH /workspaces/{workspace_id}/decisions/{decision_id}` | `{"text"?: 문자열, "state"?: "valid" \| "invalid" \| "removed"}`. 문장은 1자 이상 1000자 이하. 하나는 있어야 한다 | `TopicDecision` 모양(아래 `state`, `edited` 포함) | 404 `DECISION_NOT_FOUND` |
+| `DELETE /workspaces/{workspace_id}/topics/{topic_id}/tasks/{task_id}` | 없음 | 그 주제의 `TopicDetailResponse`. 다시 불러도 같다 | 404 `TOPIC_NOT_FOUND`·`TASK_NOT_FOUND` |
+| `PATCH /workspaces/{workspace_id}/decisions/{decision_id}` | `{"text"?: 문자열, "state"?: "valid" \| "invalid" \| "removed"}`. 문장은 1자 이상 1000자 이하. 하나는 있어야 한다 | 그 결정이 속한 주제의 `TopicDetailResponse`. 지운 결정은 들어 있지 않다 | 404 `DECISION_NOT_FOUND` |
 
 - 제목은 그 자리에서 바뀐다. 회의록, 회의 목록, 프로젝트 맵, 주제 상세, 요약본 머리와 파일 이름, 합본이 고친 제목을 쓴다. 채팅 회의 요약본은 고친 제목이 있으면 `일일 요약` 대신 그 제목을 쓴다.
 - `title_original` 은 처음 고치기 전 제목이고 고친 적 없으면 null 이다. 제목 없던 회의를 고치면 `title_original` 은 null 이고 `edited` 가 true 다. `null` 이나 처음 제목을 보내면 되돌린다.
@@ -1771,7 +1771,7 @@ POST .../meetings/upload            multipart/form-data
 - 합치면 회의, 태스크 연결, 결정, 뗀 표시가 대상 주제로 옮겨 가고 원래 주제는 사라진다. 대상 주제가 합치기 전에 보이던 태스크는 원래 주제에서 뗐어도 대상 주제에 그대로 보인다. 원래 이름은 대상 주제의 별칭이 된다.
 - 떼기는 그 주제와 태스크의 선을 지운다. 맵, 주제 상세, 합본 어디에서도 다시 이어지지 않고 다시 요약해도 그대로다.
 - 이름·설명을 고치거나 합치거나 태스크를 뗀 주제는 `TopicDetailResponse.edited` 가 true 다. 그 주제가 나온 회의를 다시 요약해 AI 가 주제를 빼도 주제와 회의 연결이 남는다.
-- 결정의 `state` 는 `valid`(유효), `invalid`(유효하지 않음), `removed`(지움)다. `valid` 를 보내면 되돌린다. `edited` 는 팀원이 고쳤는가다. `removed` 는 결정 고치기 응답에만 나온다.
+- 결정의 `state` 는 `valid`(유효), `invalid`(유효하지 않음), `removed`(지움)다. `valid` 를 보내면 되돌린다. `edited` 는 팀원이 고쳤는가다. 응답과 조회에는 `valid` 와 `invalid` 만 나오고 `removed` 는 나오지 않는다.
 - 지운 결정은 회의록, 요약본, 주제 상세에서 빠진다. 그 결정이 뒤집었던 옛 결정은 다시 유효해지고, 되돌리면 다시 뒤집힌다. 다른 결정도 그 옛 결정을 뒤집었으면 옛 결정은 뒤집힌 채이고 `replaced_by` 가 남은 결정으로 바뀐다.
 - 유효하지 않다고 한 결정은 회의록 `summary.decision_details` 와 주제 상세에 `state: "invalid"` 로 남고 요약본에는 `(유효하지 않음)` 이 붙는다. `summary.decisions` 문자열 목록, 합본의 「지금 유효한 결정」, 다음 회의의 요약 재료에서는 빠진다. 그 결정이 뒤집은 연결은 그대로 둔다.
 - 한 회의에서 결정을 하나라도 고치면 그 회의를 다시 요약해도 결정은 모두 그대로다. 개요, 핵심, 할 일 변화, 주제만 새로 쓴다(사용자 결정 2026-11-09).
