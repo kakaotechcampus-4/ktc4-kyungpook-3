@@ -13,6 +13,11 @@ const TRIGGER =
 
 export interface DecisionMenuProps {
   decision: TopicDecision
+  /**
+   * 다른 고치기를 저장하는 중이다. 항목만 막는다 — 유효하지 않음 표시를 고른 뒤 포커스가 트리거에 있어
+   * 트리거를 막으면 포커스가 빠진다
+   */
+  pending: boolean
   /** 문장 고치기를 닫은 뒤 이 단추로 돌아온다 */
   triggerRef: (node: HTMLButtonElement | null) => void
   onEditText: () => void
@@ -24,6 +29,7 @@ export interface DecisionMenuProps {
 /** 결정 한 줄의 고치기 메뉴 */
 export function DecisionMenu({
   decision,
+  pending,
   triggerRef,
   onEditText,
   onToggleValid,
@@ -55,13 +61,15 @@ export function DecisionMenu({
           open()
         }}
       >
-        <DropdownMenuItem onSelect={() => (after.current = onEditText)}>
+        <DropdownMenuItem disabled={pending} onSelect={() => (after.current = onEditText)}>
           문장 고치기
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onToggleValid}>
+        <DropdownMenuItem disabled={pending} onSelect={onToggleValid}>
           {decision.state === 'invalid' ? '유효로 되돌리기' : '유효하지 않음으로 표시'}
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => (after.current = onRemove)}>지우기</DropdownMenuItem>
+        <DropdownMenuItem disabled={pending} onSelect={() => (after.current = onRemove)}>
+          지우기
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )

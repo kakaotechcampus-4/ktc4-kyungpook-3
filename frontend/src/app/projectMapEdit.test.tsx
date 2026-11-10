@@ -384,6 +384,91 @@ describe('결정 고치기 (#551)', () => {
   })
 })
 
+describe('고치기 사이를 옮길 때 (#551)', () => {
+  const LEAVE = '저장하지 않은 변경 내용이 있어요'
+
+  it('쓰던 결정 문장이 있으면 다른 고치기를 열기 전에 묻고, 계속 쓰면 그대로 둔다. 바뀐 것이 없으면 묻지 않는다', async () => {
+    await openTopic('배포·인프라')
+    const text = '배포는 스크립트 하나로 한다'
+    await chooseMenu(text, '문장 고치기')
+    const field = await within(panel()).findByRole('textbox', { name: '결정 문장' })
+    await userEvent.type(field, ' 롤백도')
+
+    await userEvent.click(within(panel()).getByRole('button', { name: '이름·설명 고치기' }))
+    let prompt = await screen.findByRole('dialog', { name: LEAVE })
+    await userEvent.click(within(prompt).getByRole('button', { name: '계속 작성하기' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: LEAVE })).toBeNull())
+    expect(within(panel()).getByRole('textbox', { name: '결정 문장' })).toHaveValue(
+      `${text} 롤백도`,
+    )
+    expect(within(panel()).queryByRole('form', { name: '주제 고치기' })).toBeNull()
+
+    await userEvent.click(within(panel()).getByRole('button', { name: '이름·설명 고치기' }))
+    prompt = await screen.findByRole('dialog', { name: LEAVE })
+    await userEvent.click(within(prompt).getByRole('button', { name: '변경 내용 버리고 나가기' }))
+    const name = await within(panel()).findByRole('textbox', { name: '이름' })
+    expect(within(panel()).queryByRole('form', { name: '결정 고치기' })).toBeNull()
+    await waitFor(() => expect(name).toHaveFocus())
+
+    await userEvent.type(name, '!')
+    await chooseMenu(text, '문장 고치기')
+    prompt = await screen.findByRole('dialog', { name: LEAVE })
+    await userEvent.click(within(prompt).getByRole('button', { name: '변경 내용 버리고 나가기' }))
+    const reopened = await within(panel()).findByRole('textbox', { name: '결정 문장' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: LEAVE })).toBeNull())
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(reopened).toHaveValue(text)
+    expect(reopened).toHaveFocus()
+
+    await userEvent.click(within(panel()).getByRole('button', { name: '취소' }))
+    await chooseMenu(text, '문장 고치기')
+    await within(panel()).findByRole('textbox', { name: '결정 문장' })
+    await chooseMenu('운영 DB 는 매일 새벽에 백업한다', '문장 고치기')
+    expect(screen.queryByRole('dialog', { name: LEAVE })).toBeNull()
+    expect(within(panel()).getByRole('textbox', { name: '결정 문장' })).toHaveValue(
+      '운영 DB 는 매일 새벽에 백업한다',
+    )
+  })
+
+  it('저장하는 동안에는 다른 고치기를 열 수 없고, 저장이 끝난 뒤 연 폼은 그 저장이 닫지 않는다', async () => {
+    const gate = deferred()
+    server.use(
+      http.patch('/api/v1/workspaces/:ws/topics/:id', async () => {
+        await gate.promise
+      }),
+    )
+    await openTopic('배포·인프라')
+    await userEvent.click(within(panel()).getByRole('button', { name: '이름·설명 고치기' }))
+    const name = within(panel()).getByRole('textbox', { name: '이름' })
+    await userEvent.clear(name)
+    await userEvent.type(name, '배포 절차')
+    await userEvent.click(within(panel()).getByRole('button', { name: '저장' }))
+
+    expect(within(panel()).getByRole('button', { name: '배포 스크립트 떼기' })).toBeDisabled()
+    await userEvent.click(menuOf('배포는 스크립트 하나로 한다'))
+    for (const item of ['문장 고치기', '유효하지 않음으로 표시', '지우기'])
+      expect(await screen.findByRole('menuitem', { name: item })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      )
+    await userEvent.keyboard('{Escape}')
+
+    gate.resolve()
+    await waitFor(() =>
+      expect(within(panel()).queryByRole('form', { name: '주제 고치기' })).toBeNull(),
+    )
+    expect(within(panel()).getByRole('button', { name: '배포 스크립트 떼기' })).toBeEnabled()
+
+    await chooseMenu('배포는 스크립트 하나로 한다', '문장 고치기')
+    const field = await within(panel()).findByRole('textbox', { name: '결정 문장' })
+    await userEvent.type(field, '!')
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)))
+    expect(within(panel()).getByRole('textbox', { name: '결정 문장' })).toHaveValue(
+      '배포는 스크립트 하나로 한다!',
+    )
+  })
+})
+
 describe('고치기는 보기와 화면 폭에 상관없이 같다 (#551)', () => {
   it('그래프에서 연 주제 패널에도 같은 고치기가 있다', async () => {
     renderApp(paths.projectMap(WS))

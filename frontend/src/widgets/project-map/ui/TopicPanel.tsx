@@ -23,7 +23,7 @@ import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf } from '@/shared/lib/date'
 import { queryView } from '@/shared/lib/query-view'
-import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { GuardedLink, guardLeave } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
@@ -35,7 +35,10 @@ const DESCRIPTION = 'text-body text-sub'
 const ACTIONS = 'flex flex-wrap items-center gap-8'
 const ALERT = 'text-caption text-danger'
 
-/** 패널이 지금 여는 고치기. 한 번에 하나다. 유효하지 않음 표시와 되돌리기는 바로 보내 여기에 없다 */
+/**
+ * 패널이 지금 여는 고치기. 한 번에 하나다. 유효하지 않음 표시와 되돌리기는 바로 보내 여기에 없다.
+ * 여는 값마다 새 객체라, 저장을 시작한 고치기가 아직 열려 있는지를 같은 객체인지로 본다
+ */
 type PanelMode =
   | { kind: 'view' }
   | { kind: 'edit-topic' }
@@ -134,7 +137,13 @@ function TopicView({
   onSelect: (selection: MapSelection) => void
 }) {
   const editor = useTopicEdit(workspaceId, topic.id)
-  const [mode, setMode] = useState<PanelMode>(VIEW)
+  const [mode, setShownMode] = useState<PanelMode>(VIEW)
+  // 저장 응답이 올 때의 모드. 렌더를 기다리지 않고 읽는다
+  const shown = useRef<PanelMode>(VIEW)
+  const setMode = (next: PanelMode) => {
+    shown.current = next
+    setShownMode(next)
+  }
   const editButton = useRef<HTMLButtonElement>(null)
   const decisionsHeading = useRef<HTMLHeadingElement>(null)
   const tasksHeading = useRef<HTMLHeadingElement>(null)
@@ -147,14 +156,23 @@ function TopicView({
     target?.focus()
   }, [mode])
 
+  // 저장하는 동안에는 다른 고치기를 열지 않는다. 쓰던 폼을 두고 옮기면 앱의 이탈 확인으로 묻는다
   const open = (next: PanelMode) => {
-    editor.clearFailure()
-    setMode(next)
+    if (editor.pending) return
+    guardLeave(() => {
+      editor.clearFailure()
+      setMode(next)
+    })
   }
   const close = (focus: () => HTMLElement | null | undefined) => {
     refocus.current = focus
     setMode(VIEW)
   }
+  /** 저장이 끝난 뒤 닫는다. 그 저장을 시작한 고치기가 아직 열려 있을 때만이다 */
+  const closeAfterSave =
+    (started: PanelMode, focus: () => HTMLElement | null | undefined) => () => {
+      if (shown.current === started) close(focus)
+    }
   const failureFor = (match: (edit: TopicEdit) => boolean) =>
     editor.failure !== null && match(editor.failure.edit) ? editor.failure : null
   const decisionFailure = (
@@ -204,7 +222,10 @@ function TopicView({
           pending={editor.pending}
           alert={topicAlert}
           onSave={(change) =>
-            editor.run({ kind: 'topic', ...change }, () => close(() => editButton.current))
+            editor.run(
+              { kind: 'topic', ...change },
+              closeAfterSave(mode, () => editButton.current),
+            )
           }
           onCancel={() => close(() => editButton.current)}
         />
@@ -217,6 +238,7 @@ function TopicView({
               ref={editButton}
               variant="outline"
               size="sm"
+              disabled={editor.pending}
               onClick={() => open({ kind: 'edit-topic' })}
             >
               이름·설명 고치기
@@ -225,6 +247,7 @@ function TopicView({
               <Button
                 variant="outline"
                 size="sm"
+                disabled={editor.pending}
                 onClick={() => open({ kind: 'merge', intoTopicId: null, fromEdit: false })}
               >
                 다른 주제와 합치기
@@ -259,8 +282,9 @@ function TopicView({
                         pending={editor.pending}
                         alert={textFailure === undefined ? null : <Alert>{textFailure}</Alert>}
                         onSave={(text) =>
-                          editor.run({ kind: 'decision', decisionId, text }, () =>
-                            close(backToMenu),
+                          editor.run(
+                            { kind: 'decision', decisionId, text },
+                            closeAfterSave(mode, backToMenu),
                           )
                         }
                         onCancel={() => close(backToMenu)}
@@ -271,6 +295,7 @@ function TopicView({
                   menu={
                     <DecisionMenu
                       decision={decision}
+                      pending={editor.pending}
                       triggerRef={(node) => {
                         if (node === null) decisionMenus.current.delete(decisionId)
                         else decisionMenus.current.set(decisionId, node)
@@ -315,6 +340,7 @@ function TopicView({
                   variant="text"
                   size="sm"
                   aria-label={`${task.title} 떼기`}
+                  disabled={editor.pending}
                   onClick={() => open({ kind: 'detach', taskId: task.taskId })}
                 >
                   떼기
@@ -353,7 +379,7 @@ function TopicView({
           onConfirm={() =>
             editor.run({ kind: 'detach', taskId: mode.taskId }, () => {
               toast.show({ title: '태스크를 뗐어요.' })
-              close(() => tasksHeading.current)
+              closeAfterSave(mode, () => tasksHeading.current)()
             })
           }
           onCancel={() => setMode(VIEW)}
@@ -374,8 +400,9 @@ function TopicView({
           pending={editor.pending}
           failure={decisionFailure(removing, ({ state }) => state === 'removed') ?? null}
           onConfirm={() =>
-            editor.run({ kind: 'decision', decisionId: removing, state: 'removed' }, () =>
-              close(() => decisionsHeading.current),
+            editor.run(
+              { kind: 'decision', decisionId: removing, state: 'removed' },
+              closeAfterSave(mode, () => decisionsHeading.current),
             )
           }
           onCancel={() => setMode(VIEW)}
