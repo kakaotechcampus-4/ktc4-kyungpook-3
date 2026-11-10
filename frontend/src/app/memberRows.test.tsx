@@ -11,6 +11,7 @@ import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import type { RecordedRequest } from '@/shared/test/requests'
+import { onTestFinished } from 'vitest'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -369,6 +370,40 @@ describe('팀원 목록 — 쓰기는 한 번에 하나', () => {
     await waitFor(() => expect(accountField('박민수')).toHaveTextContent('계정 고르기'))
     expect(memberWrites(log.started)).toEqual(['PATCH /members/mb_02'])
     expect(accountField('이재환')).toBeEnabled()
+  })
+
+  it('다른 줄의 이름을 저장하는 동안 이미 열어 둔 이름 칸의 `저장` 은 잠긴다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.patch(
+        '/api/v1/members/mb_03',
+        async () => {
+          await gate.promise
+        },
+        { once: true },
+      ),
+    )
+    const user = userEvent.setup()
+    const log = recordRequests()
+    const dialog = await openManage(user)
+    await user.click(dialog.getByRole('button', { name: '이재환 이름 고치기' }))
+    await user.click(dialog.getByRole('button', { name: '박민수 이름 고치기' }))
+    const minsu = dialog.getByRole('textbox', { name: '박민수의 새 이름' })
+    const minsuSave = within(minsu.closest('form')!).getByRole('button', { name: '저장' })
+    await user.type(minsu, '님')
+    const jaehwan = dialog.getByRole('textbox', { name: '이재환의 새 이름' })
+    await user.clear(jaehwan)
+    await user.type(jaehwan, '이재민{Enter}')
+
+    await waitFor(() => expect(minsuSave).toBeDisabled())
+    await user.click(minsuSave)
+    expect(memberWrites(log.started)).toEqual(['PATCH /members/mb_03'])
+
+    gate.resolve()
+    await dialog.findByRole('button', { name: '이재민 이름 고치기' })
+    await waitFor(() => expect(minsuSave).toBeEnabled())
+    expect(minsu).toHaveValue('박민수님')
   })
 
   it('응답을 읽지 못하면 실패라고 하지 않고 결과를 확인하지 못했다고 알린다', async () => {

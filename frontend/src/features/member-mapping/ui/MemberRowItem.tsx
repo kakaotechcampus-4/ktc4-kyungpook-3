@@ -109,7 +109,14 @@ function NameEditor({ member, tone, writes, onClose }: NameEditorProps) {
           writes.clearFailure(target)
         }}
       />
-      <Button type="submit" size="sm" variant="primary" className="min-h-[42px]" loading={saving}>
+      <Button
+        type="submit"
+        size="sm"
+        variant="primary"
+        className="min-h-[42px]"
+        loading={saving}
+        disabled={writes.busy && !saving}
+      >
         저장
       </Button>
       <Button
