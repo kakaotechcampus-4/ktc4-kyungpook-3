@@ -326,6 +326,8 @@ def test_approval_fact_origin_outcome(pg_engine):
         _approval(conn, "a9", _at(9), "not json")
         _approval(conn, "a10", _at(10), "null")
         _approval(conn, "a11", _at(11), {"x": 1}, status="cancelled")
+        # 본문에 NUL 이 든 payload 는 JSON 문법은 맞지만 jsonb 로 바꿀 수 없다. 이 행도 조회를 깨지 않아야 한다.
+        _approval(conn, "a12", _at(12), '{"meeting_id": "m-up", "note": "\\u0000"}')
 
     with pg_engine.connect() as conn:
         # 깨진 payload 한 행이 있어도 조회는 통째로 성공한다.

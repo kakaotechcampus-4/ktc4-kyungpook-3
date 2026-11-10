@@ -69,7 +69,7 @@ CREATE_APPROVAL_FACT = """
 CREATE VIEW kpi.approval_fact AS
 WITH a AS (
   SELECT r.type, r.status, r.requested_by, r.created_at, r.resolved_at,
-         CASE WHEN r.payload IS JSON OBJECT THEN r.payload::jsonb END AS j
+         CASE WHEN r.payload IS JSON OBJECT AND strpos(r.payload, '\\u0000') = 0 THEN r.payload::jsonb END AS j
   FROM approval_request r
   WHERE r.workspace_id NOT IN (SELECT workspace_id FROM kpi.excluded_workspace))
 SELECT a.created_at, a.resolved_at, a.type,
