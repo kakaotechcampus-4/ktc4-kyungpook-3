@@ -94,7 +94,7 @@ const SECTION_TAB = 'inline-flex h-[38px] items-center gap-7 px-3 text-body font
 const REVIEW_ROW = 'flex items-start gap-16 py-18'
 
 const BADGE_ACTIVE =
-  'inline-flex h-[21px] items-center gap-5 rounded-6 bg-ink px-8 text-meta font-semibold text-surface'
+  'inline-flex h-[21px] items-center gap-5 rounded-6 bg-ink-solid px-8 text-meta font-semibold text-surface'
 
 const BADGE_HOLD =
   'inline-flex h-[21px] items-center rounded-6 bg-control px-8 text-meta font-semibold text-sub'
@@ -149,7 +149,7 @@ function MeetingList() {
             {'pending' in meeting ? (
               <span className="flex w-full items-center gap-8">
                 <span className="flex-1 text-body font-semibold text-ink">{meeting.title}</span>
-                <span className="inline-flex h-18 min-w-18 items-center justify-center rounded-999 bg-ink px-6 text-[10.5px] font-semibold text-surface">
+                <span className="inline-flex h-18 min-w-18 items-center justify-center rounded-999 bg-ink-solid px-6 text-[10.5px] font-semibold text-surface">
                   {meeting.pending}
                 </span>
               </span>

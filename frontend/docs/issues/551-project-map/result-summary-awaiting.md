@@ -30,12 +30,11 @@
 
 ## 계약
 
-[대표 계약](../../contracts/frontend-api-contract.md) §4.4.2 「FE 사용 (#551)」 표의 `summary_status` 줄에 `awaiting_approval` 문구를, 새 줄에 `summary_waiting_count` 처리를 적었다(이 브랜치 1747·1748행). #645 가 고치는 줄은 충돌을 피하려고 건드리지 않았다. 그래서 #645 병합 전까지 이 브랜치의 계약은 상태 값을 두 벌로 말한다.
+[대표 계약](../../contracts/frontend-api-contract.md) §4.4.2 「FE 사용 (#551)」 표의 `summary_status` 줄에 `awaiting_approval` 문구를, 새 줄에 `summary_waiting_count` 처리를 적었다.
 
-#645 병합 뒤 develop 을 이 브랜치에 병합할 때 확인할 곳은 아래와 같다.
+2026-11-11 BE #645(`b3e51797`)·#669 가 병합된 develop 을 이 브랜치에 병합했다. 충돌은 계약의 「FE 사용」 메모 한 곳이었고, 묶음 B 의 메모와 합의 필요 줄을 살리고 이 묶음의 메모를 병합된 사실에 맞게 고쳤다. #645 가 남긴 회의록 조회 요약 표의 「`awaiting_approval` 은 아직 따로 그리지 않음」·「summary_waiting_count(FE 미사용)」 를 이 PR 의 FE 사용으로 바꿨고, 회의록 예시 JSON 에 `summary_waiting_count` 를 더했다. 값 표와 「`ready` · `pending` · `awaiting_approval` · `none`」 줄은 #645 가 이미 네 상태로 고쳐 두었다.
 
-- 이 브랜치에서 아직 세 값만 말하는 행(2026-11-10 커밋 기준 행 번호). 246행 회의록 조회 요약 표, 1629행 회의록 예시 JSON(`summary_waiting_count` 없음), 1644행 「`ready` · `pending` · `none` 이다」, 1682~1684행 §4.4.2 값 표. #645 가 이 행들을 고친다. 병합 뒤 값 표에 `awaiting_approval` 을 포함한 네 상태와 `summary_waiting_count` 규칙이 있는지 본다.
-- BE 브랜치(`feature/605-approved-summary`, `f3bb86de`)의 계약 246행에만 있는 두 문구. 「`awaiting_approval` 은 아직 따로 그리지 않음」과 「summary_waiting_count(FE 미사용)」. 이 브랜치에는 없다. 병합 뒤 develop 에 남으면 FE 가 이제 그린다는 뜻으로 고친다.
+develop 의 실제 BE 와 MSW 를 다시 대조했다. `backend/app/schemas/meeting.py` 의 `summary_status`·`summary_waiting_count`, `backend/app/api/meetings.py` 의 PM 에게만 주는 건수, `summary._state` 의 판정 순서, `item_fate.py` 는 이 묶음이 맞춘 #645 브랜치(`f3bb86de`)와 같다. 그 사이 `summary.py` 에서 바뀐 곳은 프로젝트 맵의 요약 요청 상태(`_request_state`)와 요약 문서 합치기라 회의록 승인 대기 판정과 무관하다.
 
 ## 검증 내역
 

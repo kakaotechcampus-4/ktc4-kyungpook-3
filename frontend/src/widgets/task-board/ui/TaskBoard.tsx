@@ -80,7 +80,7 @@ const GanttView = lazy(() =>
 
 const COUNT = 'text-meta font-normal text-dim tabular-nums'
 const ATTENTION_COUNT =
-  'inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-999 bg-ink px-5 text-[10.5px] font-normal leading-none text-surface tabular-nums'
+  'inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-999 bg-ink-solid px-5 text-[10.5px] font-normal leading-none text-surface tabular-nums'
 const CARDS = 'flex flex-col gap-28'
 const SECTION = 'flex flex-col gap-12'
 const SECTION_HEAD = 'flex items-center justify-between pt-12'
@@ -96,7 +96,7 @@ const ASSIGNEE =
 const ASSIGNEE_NAME = 'max-md:truncate'
 const DUE = 'shrink-0 text-caption text-dim tabular-nums'
 const EMPTY_UPLOAD =
-  'inline-flex h-40 items-center justify-center rounded-9 bg-ink px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
+  'inline-flex h-40 items-center justify-center rounded-9 bg-ink-solid px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
 
 /** 보기가 쓰는 조회 하나. 받지 못했을 때 알리는 이름과 다시 부를 조회다 */
 interface ViewSource {

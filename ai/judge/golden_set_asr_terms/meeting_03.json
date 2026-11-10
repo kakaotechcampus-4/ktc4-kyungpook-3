@@ -1,0 +1,390 @@
+{
+  "description": "3회차 — 발표 직전 정리. 담당 이관(폴러 유닛 원준 → 지민), 완료 보고(제브 E2E), 명시·애매·무마감 할 일, 마감 변경(PPT 16일 → 14일), 조건부(Soniox 보류), 재언급(토큰 집계)",
+  "meeting_date": "2026-11-09",
+  "workspace_id": "ws_asr_demo",
+  "tasks": [
+    {
+      "task_id": "t_kakao",
+      "notion_page_id": null,
+      "title": "카카오 로그인 구현",
+      "assignee_member_id": "m_kimhwan",
+      "due_date": "2026-11-13",
+      "status": "in_progress"
+    },
+    {
+      "task_id": "t_unit",
+      "notion_page_id": null,
+      "title": "폴러 서버 유닛 만들기",
+      "assignee_member_id": "m_wonjun",
+      "due_date": "2026-11-11",
+      "status": "in_progress"
+    },
+    {
+      "task_id": "t_luna",
+      "notion_page_id": null,
+      "title": "루나 프롬프트 정리",
+      "assignee_member_id": "m_kimhwan",
+      "due_date": null,
+      "status": "in_progress"
+    },
+    {
+      "task_id": "t_card",
+      "notion_page_id": null,
+      "title": "카드 목록 화면 PR 올리기",
+      "assignee_member_id": "m_jaehwan",
+      "due_date": "2026-11-10",
+      "status": "in_progress"
+    },
+    {
+      "task_id": "t_scn",
+      "notion_page_id": null,
+      "title": "시연 시나리오 초안 작성",
+      "assignee_member_id": "m_jinho",
+      "due_date": "2026-11-09",
+      "status": "in_progress"
+    },
+    {
+      "task_id": "t_ppt",
+      "notion_page_id": null,
+      "title": "발표 PPT 초안",
+      "assignee_member_id": "m_jimin",
+      "due_date": "2026-11-16",
+      "status": "in_progress"
+    }
+  ],
+  "transcript": {
+    "source": "meeting",
+    "segments": [
+      {
+        "speaker": "uid_jimin",
+        "start": 0.0,
+        "end": 11.0,
+        "text": "자, 녹음 시작했어요. 오늘은 발표 전에 남은 일만 빠르게 정리하고 끝낼게요.",
+        "seq": 0
+      },
+      {
+        "speaker": "uid_dongwoo",
+        "start": 11.8,
+        "end": 17.9,
+        "text": "네, 좋아요. 다들 주말 잘 보냈어요?",
+        "seq": 1
+      },
+      {
+        "speaker": "uid_wonjun",
+        "start": 18.7,
+        "end": 24.4,
+        "text": "저는 배포 로그만 보다가 끝났어요.",
+        "seq": 2
+      },
+      {
+        "speaker": "uid_kimhwan",
+        "start": 25.2,
+        "end": 28.5,
+        "text": "저도 비슷해요.",
+        "seq": 3
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 29.3,
+        "end": 39.6,
+        "text": "먼저 채팅 폴링부터요. 코드는 머지됐는데 서버에는 아직 안 올라갔잖아요.",
+        "seq": 4
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 40.4,
+        "end": 56.4,
+        "text": "제가 서버 systemd 유닛 파일 갱신하고 채팅 폴러 첫 실행 로그 확인하는 거, 11월 11일 수요일까지 끝낼게요.",
+        "seq": 5
+      },
+      {
+        "speaker": "uid_wonjun",
+        "start": 57.2,
+        "end": 67.1,
+        "text": "좋아요. 유닛 파일은 자동 배포가 안 되니까 수동으로 복사해야 해요.",
+        "seq": 6
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 67.9,
+        "end": 72.3,
+        "text": "네, 그건 알고 있어요.",
+        "seq": 7
+      },
+      {
+        "speaker": "uid_dongwoo",
+        "start": 73.1,
+        "end": 88.5,
+        "text": "아, 그리고 504번 제브 E2E는 지난주 금요일에 확인 끝났어요. 명시한 마감은 certain으로 잘 나왔어요.",
+        "seq": 8
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 89.3,
+        "end": 95.4,
+        "text": "오, 수고했어요. 그럼 사업성 쪽은요?",
+        "seq": 9
+      },
+      {
+        "speaker": "uid_dongwoo",
+        "start": 96.2,
+        "end": 110.9,
+        "text": "토큰량이요. 제가 회의 한 건당 LLM 호출 수랑 토큰량 집계해서 11월 12일 목요일까지 표로 정리할게요.",
+        "seq": 10
+      },
+      {
+        "speaker": "uid_kimhwan",
+        "start": 111.7,
+        "end": 121.1,
+        "text": "저는 카카오 로그인 PR이 develop이랑 충돌이 나 있어서요.",
+        "seq": 11
+      },
+      {
+        "speaker": "uid_kimhwan",
+        "start": 121.9,
+        "end": 130.4,
+        "text": "그 충돌 해결은 제가 다음 주 중에는 어떻게든 해 볼게요.",
+        "seq": 12
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 131.2,
+        "end": 136.7,
+        "text": "네, 너무 늦지만 않게 부탁해요.",
+        "seq": 13
+      },
+      {
+        "speaker": "uid_wonjun",
+        "start": 137.5,
+        "end": 150.0,
+        "text": "백엔드는 DB 백업이랑 복구 절차가 아직 하나도 없어요. 운영에서 한 번도 안 해 봤고요.",
+        "seq": 14
+      },
+      {
+        "speaker": "uid_wonjun",
+        "start": 150.8,
+        "end": 160.2,
+        "text": "그 절차는 제가 문서로 정리해 둘게요. 날짜는 아직 못 박겠어요.",
+        "seq": 15
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 161.0,
+        "end": 164.0,
+        "text": "네, 좋아요.",
+        "seq": 16
+      },
+      {
+        "speaker": "uid_wonjun",
+        "start": 164.8,
+        "end": 179.5,
+        "text": "아, 그리고 온보딩에 디스코드 서버 만드는 안내가 아예 없더라고요. 서버 없는 팀은 거기서 막힐 것 같아요.",
+        "seq": 17
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 180.3,
+        "end": 192.1,
+        "text": "맞아요. 그럼 그 프론트 요청 이슈는 직접 써 주실래요? 11월 10일 화요일까지요.",
+        "seq": 18
+      },
+      {
+        "speaker": "uid_wonjun",
+        "start": 192.9,
+        "end": 194.8,
+        "text": "네.",
+        "seq": 19
+      },
+      {
+        "speaker": "uid_dongwoo",
+        "start": 195.6,
+        "end": 206.6,
+        "text": "담당자 매칭 쪽은 501번 thirdname 원문 전송 PR이 리뷰 대기예요.",
+        "seq": 20
+      },
+      {
+        "speaker": "uid_dongwoo",
+        "start": 207.4,
+        "end": 216.6,
+        "text": "501번 리뷰는 김환님이 11월 10일 화요일까지 보기로 해요.",
+        "seq": 21
+      },
+      {
+        "speaker": "uid_kimhwan",
+        "start": 217.4,
+        "end": 219.3,
+        "text": "넵.",
+        "seq": 22
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 220.1,
+        "end": 233.3,
+        "text": "디자인 쪽은요, 스플래시 이미지는 수빈님이 11월 13일 금요일까지 다시 뽑아 주시기로 했어요.",
+        "seq": 23
+      },
+      {
+        "speaker": "uid_wonjun",
+        "start": 234.1,
+        "end": 237.8,
+        "text": "수빈님이 누구였죠?",
+        "seq": 24
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 238.6,
+        "end": 246.3,
+        "text": "다른 팀 디자이너분이요. 잠깐 도와주시기로 했어요.",
+        "seq": 25
+      },
+      {
+        "speaker": "uid_jinho",
+        "start": 247.1,
+        "end": 261.1,
+        "text": "저는 시연 시나리오 초안 공유드렸어요. 폴러가 채팅 가져오는 장면이랑 루나가 초안 쓰는 장면 넣었어요.",
+        "seq": 26
+      },
+      {
+        "speaker": "uid_jaehwan",
+        "start": 261.9,
+        "end": 274.4,
+        "text": "저는 카드 목록 화면 PR 올렸어요. 제브 점수 낮은 카드에 확인 필요 표시도 들어갔어요.",
+        "seq": 27
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 275.2,
+        "end": 291.0,
+        "text": "그리고 발표 PPT 초안이요. 원래 11월 16일 월요일까지였는데, 리허설하려면 11월 14일 토요일까지로 당길게요.",
+        "seq": 28
+      },
+      {
+        "speaker": "uid_dongwoo",
+        "start": 291.8,
+        "end": 296.2,
+        "text": "좋아요, 그게 낫겠네요.",
+        "seq": 29
+      },
+      {
+        "speaker": "uid_wonjun",
+        "start": 297.0,
+        "end": 311.3,
+        "text": "나중에 시간 되면 STT를 Soniox로 바꾸는 것도 생각해 볼 만하긴 해요. CER이 제일 낮았잖아요.",
+        "seq": 30
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 312.1,
+        "end": 321.3,
+        "text": "그건 이번에는 안 하는 걸로 해요. 발표 끝나고 다시 얘기해요.",
+        "seq": 31
+      },
+      {
+        "speaker": "uid_kimhwan",
+        "start": 322.1,
+        "end": 332.8,
+        "text": "루나 프롬프트 줄인 건 이번 주에 반영했어요. 초안 제목이 한결 짧아졌어요.",
+        "seq": 32
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 333.6,
+        "end": 340.8,
+        "text": "정리하면, 토큰 집계는 11월 12일까지 맞죠?",
+        "seq": 33
+      },
+      {
+        "speaker": "uid_dongwoo",
+        "start": 341.6,
+        "end": 346.6,
+        "text": "네, 제가 12일까지 할게요.",
+        "seq": 34
+      },
+      {
+        "speaker": "uid_kimhwan",
+        "start": 347.4,
+        "end": 352.4,
+        "text": "오늘 저녁 멘토링 몇 시였죠?",
+        "seq": 35
+      },
+      {
+        "speaker": "uid_wonjun",
+        "start": 353.2,
+        "end": 355.6,
+        "text": "7시요.",
+        "seq": 36
+      },
+      {
+        "speaker": "uid_jimin",
+        "start": 356.4,
+        "end": 363.8,
+        "text": "네, 그럼 오늘은 여기까지 할게요. 녹음 끕니다.",
+        "seq": 37
+      }
+    ]
+  },
+  "approve": [
+    {
+      "title_contains": "프론트 요청 이슈",
+      "title": "온보딩 프론트 요청 이슈 작성"
+    }
+  ],
+  "findings": [
+    {
+      "indices": [
+        5
+      ],
+      "summary": "지민이 서버 유닛 갱신과 폴러 첫 실행 확인을 11월 11일까지 맡음",
+      "title": "서버 유닛 갱신과 폴러 첫 실행 확인"
+    },
+    {
+      "indices": [
+        10
+      ],
+      "summary": "동우가 회의 한 건당 LLM 호출 수와 토큰량을 11월 12일까지 표로 정리",
+      "title": "회의 한 건당 토큰량 집계"
+    },
+    {
+      "indices": [
+        12
+      ],
+      "summary": "김환이 카카오 로그인 PR 충돌을 다음 주 중에 해결",
+      "title": "카카오 로그인 PR 충돌 해결"
+    },
+    {
+      "indices": [
+        15
+      ],
+      "summary": "원준이 DB 백업·복구 절차를 문서로 정리. 날짜 없음",
+      "title": "DB 백업 복구 절차 문서화"
+    },
+    {
+      "indices": [
+        18,
+        19
+      ],
+      "summary": "원준이 온보딩 디스코드 서버 안내 프론트 요청 이슈를 11월 10일까지 작성",
+      "title": "프론트 요청 이슈 작성"
+    }
+  ],
+  "expected": [
+    {
+      "note": "담당 이관 — 지민이 유닛 갱신 11월 11일",
+      "action": "update",
+      "target_task_id": "t_unit",
+      "due_date": "2026-11-11"
+    },
+    {
+      "note": "새 할 일 — 토큰 집계 11월 12일",
+      "action": "create",
+      "title_contains": "토큰",
+      "due_date": "2026-11-12"
+    },
+    {
+      "note": "마감 변경 — PPT 11월 16일 → 14일",
+      "action": "update",
+      "target_task_id": "t_ppt",
+      "due_date": "2026-11-14"
+    }
+  ]
+}

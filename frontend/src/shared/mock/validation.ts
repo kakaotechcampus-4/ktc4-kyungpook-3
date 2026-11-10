@@ -4,6 +4,15 @@ import { fail } from './envelope'
 export const PYTHON_STRIP =
   // eslint-disable-next-line no-control-regex
   /^[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/g
+
+/**
+ * BE `_has_unstorable`. DB 에 쓸 수 없는 NUL 과 짝 없는 서로게이트가 있으면 true 다.
+ * `u` 플래그는 짝이 맞은 쌍을 한 글자로 읽어 `\p{Cs}` 가 짝 없는 반쪽만 잡는다
+ */
+export function hasUnstorable(...texts: (string | null)[]): boolean {
+  return texts.some((text) => text !== null && (text.includes('\u0000') || /\p{Cs}/u.test(text)))
+}
+
 /** BE validate_username. 앞뒤 공백을 지우고 영문·숫자 4~20자면 소문자로, 아니면 null 이다 */
 export function checkedUsername(value: string): string | null {
   const username = value.replace(PYTHON_STRIP, '')

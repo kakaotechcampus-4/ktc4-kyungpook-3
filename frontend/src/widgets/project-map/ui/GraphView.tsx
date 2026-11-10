@@ -258,7 +258,7 @@ function PlacedGraph({
               ) : null}
               <circle
                 r={radius}
-                className={topic ? 'fill-ink' : 'fill-dashed stroke-surface'}
+                className={topic ? 'fill-ink-solid' : 'fill-dashed stroke-surface'}
                 strokeWidth={topic ? 0 : 1}
               />
               {topic || taskLabels ? (

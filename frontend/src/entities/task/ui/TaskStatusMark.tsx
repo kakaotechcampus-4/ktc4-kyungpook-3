@@ -4,7 +4,7 @@ import type { TaskStatus } from '../model/types'
    `border-dashed` 는 점선 모양까지 함께 주므로 할 일은 색만 점선 토큰에서 가져온다. 2px 둥글기는 토큰에 없어 값으로 적는다 */
 const MARK: Record<TaskStatus, string> = {
   todo: 'rounded-[2px] border-[1.5px] border-(--color-dashed) bg-transparent',
-  in_progress: 'rounded-[2px] bg-ink',
+  in_progress: 'rounded-[2px] bg-ink-solid',
   blocked: 'rounded-999 bg-accent-point',
   done: 'rounded-[2px] bg-line',
 }

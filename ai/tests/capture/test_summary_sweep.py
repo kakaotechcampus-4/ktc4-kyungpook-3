@@ -27,6 +27,16 @@ def test_nothing_queued_is_none_and_costs_nothing():
     assert runner.llm.prompts == [] and [c[0] for c in fake.calls] == ["POST"]
 
 
+def test_approval_waiting_meeting_is_not_claimed():
+    fake = FakeBe()
+    fake.add_summary("m1", blocked="awaiting_approval")
+    runner = _runner(fake, GOOD)
+
+    assert runner.run_once() is None
+
+    assert fake.summaries["m1"]["attempts"] == 0 and runner.llm.prompts == []
+
+
 def test_a_queued_meeting_goes_claim_read_summarize_put_with_real_ids():
     fake = FakeBe()
     fake.add_summary("m1")

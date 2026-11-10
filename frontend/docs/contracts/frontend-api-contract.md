@@ -78,7 +78,7 @@ FE는 crypto.getRandomValues로 만든 256비트 키를 sessionStorage에 보관
 | `MeetingMinutesResponse` | `permissions.can_review`·`can_undo` 가 불리언이 아님, `duration_ms` 가 숫자가 아님, 참석자·전사문 줄의 필수 필드 누락·타입 오류(`at_ms` 는 숫자) | 모르는 `source` 는 `알 수 없는 출처` 다. 머리 메타는 시작 시각만 보이고 전사문·근거 시각은 비운다. `summary` 가 `overview` 문자열·`key_points`·`decisions` 문자열 배열 모양이 아니면 BE 가 깨진 JSON 을 다루듯 요약 없음(null)으로 보고 전사문은 보인다 |
 | `ExtractionDetailResponse` | 항목의 `task.title`·`gate` 가 문자열이 아님, `assignee`·`due_date`·`evidence` 의 필드가 문자열·null(`evidence.at_ms` 는 숫자·null)이 아님, `task_id`·`approval_id` 가 문자열·null 이 아님, 그 밖의 필수 필드 누락. 한 항목만 틀려도 전체 | 모르는 `gate` 는 `hold`(자동으로 만든 태스크로 보이지 않음). 모르는 `approval_status` 는 없음(null, 반영으로 보지 않음). `reverted_at`·`approval_status` 가 없으면 null(옛 응답). 확신도(`confidence`·`task.confidence`·`assignee.confidence`·`due_date.confidence`)·`needs_check`·`alias_candidate`·`alias_text`·`extraction_path` 는 읽지 않는다 |
 | `ExtractionItemRevertResponse` | 네 필드(`item_id`·`reverted_task_id`·`approval_id`·`reverted_at`) 중 하나라도 문자열이 아님 | 없음 |
-| `GET .../project-map`·`GET .../topics/{topic_id}` (#551) | 모르는 노드 `kind`, 태스크 `status` 가 네 값 밖, 필수 필드 누락·타입 오류. 노드 한 개만 틀려도 전체 | 회의록 `summary_status` 는 표시용이라 모르는 값을 보존한다. 자세한 것은 §4.4.2 「FE 사용 (#551)」 |
+| `GET .../project-map`·`GET .../topics/{topic_id}`·주제·결정 고치기 응답 (#551) | 모르는 노드 `kind`, 태스크 `status` 가 네 값 밖, 결정 `state` 가 `valid`·`invalid` 밖, 필수 필드 누락·타입 오류. 노드 한 개만 틀려도 전체 | 회의록 `summary_status` 는 표시용이라 모르는 값을 보존한다. 결정 `state` 키가 없으면 `valid`, 주제·결정 `edited` 가 불리언이 아니면 false 다. 자세한 것은 §4.4.2 「FE 사용 (#551)」 |
 | 되돌리기 409 `AUTO_TASK_NOT_REVERTIBLE` `details` | 거절하지 않는다. 오류 응답이라 `INVALID_RESPONSE` 로 바꾸지 않는다 | 모르는 `reason`·문자열이 아닌 `reason` 은 기본 안내(`unknown`)다. `task_id`·`approval_id` 가 문자열이 아니면 없음(null) |
 | 메시지 목록 `InboxResponse`·대화 `ThreadDetailResponse`·대화 열기 `ThreadSummary` | 보낸 쪽(`sender`)이 `bot`·`pm`·`member` 밖, `dm_status` 가 `pending`·`claimed`·`delivered`·`failed` 밖, 팀원 메시지에 `reply_channel` 이 없음, 봇·PM 메시지에 `dm_status` 가 없음, 묶음 `status` 가 `scheduled`·`sent`·`cancelled`·`expired` 밖, 승인한 예정 묶음에 `approved_at` 이 없음, `draft_version` 이 정수가 아님, 그 밖의 필수 필드 누락·타입 오류. 목록·대화는 한 건만 틀려도 전체 | 모르는 `body_source` 는 `출처를 알 수 없는 문구`, 모르는 `draft_status` 는 작성 중, 모르는 `dm_failure_reason` 은 받은 값을 남기고 `이유를 알 수 없어요`, 모르는 `reply_channel` 은 웹 답장 표시 없음, 모르는 근거 `kind` 는 근거 없음. `author_member_id`·`author_name`(#519)이 없으면 작성자 없음(`PM` 으로 보인다), `web_reply_available`(#525)이 없으면 모름, `summary`·`reason`·`evidence`(#418)가 없으면 태스크 제목으로 줄인 요약·이유 없음·근거 없음. 메시지 `thread_id`·`scheduled_at`, 리마인드 `bundle_id`·`status`·`kind`·`origin`·`created_at` 은 읽지 않는다. 거절하면 초안 간격(10초)·창 포커스·연결 복귀·대화 신호로 다시 묻지 않는다 |
 | 답장 고르기 `GET …/threads/{thread_id}/attributions` | `status` 가 `needs_pm`·`resolved` 밖, `needs_pm` 의 후보·`resolved` 의 태스크 모양 오류. 한 건만 틀려도 전체 | 반대쪽 null 칸(`needs_pm` 의 `task`, `resolved` 의 `candidates`)은 읽지 않는다 |
@@ -243,7 +243,7 @@ FE 변경과 실제 검증은 [M6 후속 결과](../plan/m6/result.md)에 기록
 | `GET /workspaces/{id}/integrations`, `DELETE /workspaces/{id}/integrations/{provider}` | Discord·Notion 상태. 해제는 204 무본문. Discord 의 `chat_channel` 과 채팅 채널 목록·저장·해제는 §4.3.1 | [연동 API](../../src/entities/integration/api/integrations.ts), [연동 DTO](../../src/shared/types/api/integration.ts) |
 | `POST /workspaces/{id}/meetings/upload` | multipart `title`, ISO `started_at`, 참석자별 반복 `attendee_member_ids`, `file`. 202 data `{meeting_id,status}` | [업로드](../../src/entities/meeting/api/uploadMeeting.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
 | `GET /workspaces/{id}/meetings`, `GET /meetings/{id}` | 목록은 `{items,total}`, nullable title. 상세는 workspace_id·status·progress·processing(#483)·extraction_id·failed_stage | [회의 조회](../../src/entities/meeting/api/meetingQueries.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
-| `GET /meetings/{id}/minutes` | nullable summary·title, summary_status(빈 요약 문구만 고름, §4.4.2), 참석자 배열, 전사 배열, permissions `{can_review,can_undo}` | [회의록 조회](../../src/entities/minutes/api/minutesQuery.ts), [회의록 DTO](../../src/shared/types/api/minutes.ts) |
+| `GET /meetings/{id}/minutes` | nullable summary·title, summary_status(빈 요약 문구만 고름. `awaiting_approval` 은 `승인이 끝나면 요약이 만들어져요`, §4.4.2), summary_waiting_count(PM 에게만 숫자. 1 이상이면 남은 건수를 보임), 참석자 배열, 전사 배열, permissions `{can_review,can_undo}` | [회의록 조회](../../src/entities/minutes/api/minutesQuery.ts), [회의록 DTO](../../src/shared/types/api/minutes.ts) |
 | 회의 추출·대기 승인 조회 | 반영 항목과 확인 필요 항목을 조합. 일반 팀원은 대기 승인 조회·확인 필요 영역 제외 | [추출 조회](../../src/entities/extraction/api/extractionQuery.ts), [승인 조회](../../src/entities/approval/api/pendingApprovals.ts), [회의록 화면](../../src/pages/meetings) |
 
 업로드 화면의 형식·한도는 [uploadPolicy](../../src/entities/meeting/model/uploadPolicy.ts)의 MP3·WAV·M4A·OGG·WebM, 200 MiB·2시간이다. 브라우저 검증이 서버의 동일 검증을 보장하지 않는다. 전송 진행률 100%와 서버의 처리 완료는 다르며, 409 `MEETING_PROCESSING_IN_PROGRESS`는 `details.meeting_id`로 기존 처리 화면에 연결한다. 처리 상세는 3초 간격으로 추적하며 완료·실패·접근 상실 시 중단한다.
@@ -477,6 +477,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 - 비밀번호 재설정(BE PR #398, 2026-11-06 병합)이 `PASSWORD_RESET_TOKEN_INVALID(400)`·`MAIL_UNAVAILABLE(503)` 을 더했다. 위 31개에는 넣지 않았고 쓰임새는 §4.1.1 에 있다. 프론트 [오류 코드 목록](../../src/shared/api/errors.ts)과 [문구](../../src/shared/api/errorMessages.ts)에도 있다.
 - 회의 채팅 채널(#428)이 `DISCORD_CHANNEL_NOT_FOUND(404)`·`DISCORD_CHANNEL_NOT_ACCESSIBLE(409)` 를 더했다. 위 목록의 개수는 이 절을 처음 쓴 때 기준이며 전체 목록은 `core/errors.py` 가 원천이다 → §4.3.1.
 - 회의 요약과 프로젝트 맵(#462)이 `TOPIC_NOT_FOUND(404)`·`SUMMARY_NOT_FOUND(404)` 를 더했다 → §4.4.2.
+- 회의 기록 고치기(#605)가 `TOPIC_NAME_TAKEN(409)`·`DECISION_NOT_FOUND(404)`·`TRANSCRIPT_LINE_NOT_FOUND(404)` 를 더했다 → §4.4.3.
 - 본 뒤 바뀐 승인 카드 `APPROVAL_CHANGED(409)` 는 BE #547 이 더했다 → §2.5.
 - 로그인 시도 제한(BE PR #456, 2026-11-07 병합)이 `TOO_MANY_LOGIN_ATTEMPTS(429)` 를 더했다. 위 목록에는 넣지 않았고 쓰임새는 §4.1.3 에 있다.
 - 아래 3개는 **정의만 되고 아직 아무도 던지지 않는다.** 화면은 처리 경로를 갖되 실제로 오는지는 기대하지 않는다 → §4.0.
@@ -545,6 +546,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 2026-11-10 #613 FE 사용: Discord 를 연결하지 않은 팀의 온보딩 4단계와 팀원 연결 창이 `POST /members` 를 `{workspace_id, display_name}` 만으로 보낸다(`discord_user_id` 키 없음). 요청 형식은 위 그대로이고 BE 는 바꾸지 않았다. 서버는 같은 이름의 팀원을 막지 않는다. FE 가 보내기 전에 지금 팀원 목록과 이름(앞뒤 공백 제거, 대소문자 그대로)을 견줘 막는다(D-187). 같은 이름 거절을 서버 규약으로 둘지는 합의하지 않았다.
 
 2026-11-10 #660 FE 사용: Discord 를 연결한 팀의 팀원 연결 창과 온보딩 4단계도 서버에 없는 사람을 같은 형식(`{workspace_id, display_name}`)으로 만든다(D-188). 요청 형식과 BE 는 바꾸지 않았다.
+2026-11-10 #647 FE 사용: 팀원 관리 창과 온보딩 4단계가 팀원 한 명이 한 줄인 목록에서 줄마다 바로 보낸다. 이름 고치기는 `PATCH /members/{id}` `{display_name}`, 계정 잇기는 `{discord_user_id}`, 연결 풀기는 `{discord_user_id: null}` 이다. 다른 팀원에 연결된 계정을 옮길 때는 앞 팀원에 `{discord_user_id: null}` 을 보낸 뒤 새 팀원에 `{discord_user_id}` 를 보낸다. 같은 계정을 두 팀원에 붙이면 409 `DISCORD_USER_ALREADY_MAPPED` 라서다. 두 요청을 묶는 API 는 없어 두 번째가 실패하면 앞 팀원 연결만 풀린 채 남고 FE 가 그 상태를 보이고 다시 시도하게 한다. 연결 안 된 Discord 계정으로 팀원을 만들 때는 `POST /members` `{workspace_id, display_name, discord_user_id}` 이고 `display_name` 은 Discord 표시 이름(없으면 사용자명)이다. 요청 형식은 위 그대로이고 BE 는 바꾸지 않았다. 팀원 삭제는 BE API 가 없어 쓰지 않는다(#637). 근거: [D-190](../decision/frontend-decisions.md), MSW 기준 검증, 실서버 미검증.
 
 계정 영구 탈퇴용 익명 기록 주체는 기존 명단 비활성화와 구분한다. 영구 탈퇴자의 대화는 PM 목록·상세·읽음에 남고 표시명은 `탈퇴한 사용자`, `web_reply_available`은 false다. 프로필 수정·별칭 추가·초대·새 발송과 늦은 봇 결과는 거절한다. 기존 `is_deleted`만 있는 명단 비활성화의 unread 0·읽음 POST 404는 유지한다. [익명 주체 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-09-withdrawn-record-actor.md)에 첫 구현의 범위를 기록했고, 본인 탈퇴 API·화면과 기록용 목록은 위 [계정 탈퇴 규약](#계정-탈퇴와-정리-상태-575-2026-11-09)을 따른다. 실제 외부 제공자·운영 계정의 삭제를 확인한 기록은 아니다.
 
@@ -1590,6 +1592,8 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 | GET | `/api/v1/workspaces/{workspace_id}/meetings` | 회의록 목록 |
 | POST | `/api/v1/workspaces/{workspace_id}/meetings/upload` | **multipart**, 202 |
 | GET | `/api/v1/meetings/{meeting_id}/minutes` | 회의록 본문 |
+| PATCH | `/api/v1/meetings/{meeting_id}/title` | 제목 고치기 (#605, §4.4.3) |
+| PATCH | `/api/v1/meetings/{meeting_id}/transcript/{seq}` | 발화 한 줄 고치기 (#605, §4.4.3) |
 
 ```jsonc
 // GET .../meetings — started_at 내림차순, 일반 실패 제외·수동 업로드 화자 지정 만료 이력 유지 (D-093 개정, D-106)
@@ -1622,14 +1626,14 @@ POST .../meetings/upload            multipart/form-data
 
 ```jsonc
 // GET /meetings/{meeting_id}/minutes
-{"meeting_id": "mt_09", "title": "3주차 정기회의",
+{"meeting_id": "mt_09", "title": "3주차 정기회의", "title_edited": false, "title_original": null,
  "started_at": "2026-09-15T14:00:00Z", "duration_ms": 2730000, "source": "discord",
  "attendees": [{"member_id": "mb_01", "display_name": "김서연"}],
  "summary": {"overview": "...", "key_points": ["..."], "decisions": ["..."]},
- "summary_status": "ready",
- "transcript": [{"at_ms": 125000, "speaker_member_id": "mb_01",
+ "summary_status": "ready", "summary_waiting_count": null,
+ "transcript": [{"seq": 0, "at_ms": 125000, "speaker_member_id": "mb_01",
                  "speaker_display_name": "김서연", "speaker_fallback": "seoyeon_01",
-                 "text": "..."}],
+                 "text": "...", "edited": false, "original_text": null}],
  "permissions": {"can_review": true, "can_undo": true}}
 ```
 
@@ -1638,10 +1642,11 @@ POST .../meetings/upload            multipart/form-data
 - 일반 팀원에게 `확인 필요` 영역을 숨긴다. **개수와 존재 여부도 노출하지 않는다** (D-104). 프론트엔드가 `approval_id` 가 있는 항목을 걸러 낸다.
 - `permissions` 는 `member.role == 'pm'` 을 `can_review` · `can_undo` 두 값에 그대로 넣는다. 둘이 항상 같다.
 - `transcript`는 해당 회의의 Source를 seq 순서로 읽어 시각·화자·문장을 구성한다. Source가 없으면 빈 배열이다. 초기 하드코딩 상태는 §4.0-②-11의 과거 기록이다.
+- 전사 줄의 `seq` 는 발화 순번이고 줄 고치기 경로가 쓴다. `text` 는 팀원이 고친 문장이 있으면 그 문장이다. 그때 `edited` 가 true 이고 `original_text` 에 원문이 있다. 고치지 않은 줄은 `edited` 가 false, `original_text` 가 null 이다. `title_edited`·`title_original` 은 제목을 고쳤는가와 처음 제목이다(#605, §4.4.3).
   `extraction` 이 없으면 빈 배열이다. 필드 **이름과 형태는 계약대로**이므로 mapper 는 그대로 쓸 수 있고, 값만 비어 있다.
 - `attendees`는 같은 Source에서 `member_id`가 있는 팀원을 처음 발화한 순서로 중복 제거해 구성한다. 말하지 않았거나 팀원에 연결되지 않은 참석자는 포함하지 않는다. 업로드 때 선택한 전체 참석자 목록을 그대로 반환하는 것은 아니다.
 - `summary`는 최신 Extraction.summary JSON을 읽고 유효한 객체일 때 반환한다. 값이 없거나 잘못된 JSON·객체가 아닌 값이면 null이다. 생성 파이프라인의 실제 저장 성공 여부는 별도 검증한다.
-- `summary_status` 는 `ready` · `pending` · `none` 이다. 뜻은 §4.4.2.
+- `summary_status` 는 `ready` · `pending` · `awaiting_approval` · `none` 이다. 뜻과 `summary_waiting_count` 는 §4.4.2.
 - 비소속 사용자는 403 `FORBIDDEN` 이다. `MEETING_NOT_FOUND` 가 아니라 존재는 드러난다.
 
 #### 4.4.1 수동 업로드 실패 사유와 만료 이력 (#256, 2026-11-04)
@@ -1680,10 +1685,17 @@ POST .../meetings/upload            multipart/form-data
 | 값 | 뜻 |
 |---|---|
 | `ready` | 읽을 수 있는 요약이 있다. `summary` 가 `null` 이 아닌 것과 같다. 다시 요약하는 중에도 기존 요약이 있으면 `ready` 다 |
-| `pending` | 요약 대기 중이거나 만드는 중이다. 곧 나올 수 있다. 줄 세운 지 1시간 안에만 이 값이다 |
-| `none` | 요약이 없다. 두 번 실패, 줄 세운 지 1시간이 지난 회의, 채팅 회의, 표시되지 않은 옛 회의, 처리 중인 회의가 여기 든다. 1시간이 지난 회의도 일감은 남아 있어 나중에 `ready` 가 될 수 있다. 재시도 안내는 두지 않는다(사용자 결정 2026-11-06) |
+| `pending` | 요약 대기 중이거나 만드는 중이다. 곧 나올 수 있다. 줄 세운 때와 마지막 승인이나 반려 가운데 늦은 쪽에서 1시간 안에만 이 값이다 |
+| `awaiting_approval` | 그 회의 항목의 승인 요청(보류 포함)이 남아 있어 아직 만들지 않는다. 모두 처리되면 `pending` 이 된다. 시간 제한이 없다(#605) |
+| `none` | 요약이 없다. 두 번 실패, 1시간이 지난 회의, 승인된 항목이 없는 채팅 회의, 표시되지 않은 옛 회의, 처리 중인 회의가 여기 든다. 1시간이 지난 회의도 일감은 남아 있어 나중에 `ready` 가 될 수 있다. 재시도 안내는 두지 않는다(사용자 결정 2026-11-06) |
 
-**`summary` 의 더한 키.** `overview`, `key_points`, `decisions`(문자열 목록)는 그대로 항상 있다. AI 가 저장한 요약에는 `schema_version`, `discussion`, `decision_details`, `facts`, `task_changes`, `schedule`, `open_items`, `topics`(이름 목록), `meta` 가 더 있다.
+`summary_waiting_count` 는 `awaiting_approval` 일 때 남은 승인 요청 수다. PM 에게만 숫자이고 일반 팀원과 다른 상태에서는 `null` 이다(D-104). 여러 회의 항목이 합쳐진 카드는 한 장으로 센다(#605).
+
+처리된 합친 카드에 걸린 회의 하나를 삭제하면 카드 payload도 비워져, 남은 회의를 재요약할 때 PM의 승인 보정값을 잃을 수 있다. 삭제 원문을 보존하지 않는 현재 구현의 한계이며 자세한 재료 규칙은 [BE·AI 계약](../../../backend/docs/contracts/backend-ai-contract.md#회의-요약)에 있다.
+
+채팅 회의(`source: "chat"`)도 승인된 항목이 하나 이상 있으면 요약되어 `ready` 가 된다. 이 요약에는 `discussion` 이 없다.
+
+**`summary` 의 더한 키.** `overview`, `key_points`, `decisions`(문자열 목록)는 그대로 항상 있다. AI 가 저장한 요약에는 `schema_version`, `discussion`, `decision_details`, `facts`, `task_changes`, `schedule`, `open_items`, `topics`(이름 목록), `meta` 가 더 있다. `schema_version` 2(#605)부터 `decision_details[].decision_id`, `topics` 와 같은 순서의 `topic_ids`, `task_changes[].item_id` 가 있다. `task_changes` 는 지금 반영된 항목의 줄만 온다. 항목 키 없이 저장된 옛 요약은 `task_changes` 가 빈 목록이다(사용자 결정 2026-11-09). 결정과 주제 칸은 저장된 문자열이 아니라 지금 행에서 읽어 팀원이 고친 값이 보인다(#605, §4.4.3).
 
 `GET /workspaces/{workspace_id}/project-map`
 
@@ -1703,7 +1715,7 @@ POST .../meetings/upload            multipart/form-data
 
 - `nodes` 는 주제 전부와 지워지지 않은 태스크 전부다. 주제 없는 태스크도 들어가고 주제를 추정해 붙이지 않는다.
 - `edges` 에 종류 칸이 없다. 주제와 태스크의 선, 임베딩 유사도로 찾은 태스크끼리의 선이 섞여 있다.
-- 주제와 태스크의 선: 추출 항목에 달린 주제를 따라간다. 승인 전 수정 항목은 바로 이어지고, 승인 전 새 항목은 태스크가 생길 때 이어지고, 반려된 항목은 이어지지 않는다.
+- 주제와 태스크의 선: 추출 항목에 달린 주제를 따라간다. 승인 전 수정 항목과 새 항목은 승인 뒤에 이어지고, 반려된 항목은 이어지지 않는다(#605). 팀원이 뗀 짝도 잇지 않는다(§4.4.3).
 - `meeting_ids`는 그 태스크가 나온 회의와 주제로 이어진 살아 있는 회의다. 삭제된 회의의 태스크는 남지만 원문 링크는 제외한다. 시간순이다. `meetings` 는 노드가 가리키는 회의다.
 - `appeared_at` 은 주제면 처음 나온 회의 시각, 태스크면 만든 시각과 이어진 회의 시각 중 가장 이른 값이다.
 - 임베딩 유사도 기준(`EDGE_TOP_K`, `EDGE_MIN_SIMILARITY`)은 측정 전의 자리값이다.
@@ -1714,9 +1726,10 @@ POST .../meetings/upload            multipart/form-data
 // data
 {
   "topic_id": "tp1", "name": "로그인·계정", "description": "이메일 인증 뒤 가입과 카카오 로그인을 만든다.",
+  "edited": false,
   "decisions": [{"decision_id": "d1", "text": "이메일 인증 전에는 계정을 만들지 않는다", "reason": "…",
                  "meeting_id": "m6", "meeting_title": "인증 설계", "decided_at": "2026-11-03T05:00:00Z",
-                 "replaced_by": null}],
+                 "replaced_by": null, "state": "valid", "edited": false}],
   "tasks": [{"task_id": "tk1", "title": "카카오 로그인 구현", "status": "in_progress",
              "due_date": "2026-11-14", "assignee_name": "민수"}],
   "meetings": [{"meeting_id": "m6", "title": "인증 설계", "started_at": "2026-11-03T05:00:00Z"}]
@@ -1724,15 +1737,17 @@ POST .../meetings/upload            multipart/form-data
 ```
 
 - 없거나 다른 워크스페이스의 주제는 404 `TOPIC_NOT_FOUND` 다.
-- 뒤집힌 결정도 나온다. `replaced_by` 가 뒤집은 결정의 ID 이고 `null` 이면 유효하다. 시간순이다.
+- 뒤집힌 결정도 나온다. `replaced_by` 가 뒤집은 결정의 ID 이고 `null` 이면 유효하다. 여러 결정이 뒤집었으면 가장 이른 회의의 결정이다(#605). 시간순이다.
+- 팀원이 지운 결정은 나오지 않는다. 결정의 `state`·`edited` 와 주제의 `edited` 는 §4.4.3 이다(#605).
 
 `GET /meetings/{meeting_id}/summary.md`, `GET /workspaces/{workspace_id}/project-bundle.md?from=2026-09-01&to=2026-11-06`
 
 - 응답은 봉투 없는 Markdown 이다. `text/markdown; charset=utf-8`, `Content-Disposition: attachment; filename="summary.md"; filename*=UTF-8''<percent 인코딩 이름>`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store`. 오류는 평소 JSON 봉투다. 합본의 ASCII 이름은 `project-bundle.md` 다.
 - `summary.md` 는 요약이 없으면 404 `SUMMARY_NOT_FOUND` 다. 머리에 날짜, 참석자, 원문 링크, 주제가 있고 빈 섹션은 빠진다.
+- 채팅 회의의 요약본은 제목과 파일 이름이 `일일 요약`(`<날짜> 일일 요약.md`)이다. 머리의 `종류` 가 `일일 요약` 이고, `기간` 에 첫 메시지와 마지막 메시지의 한국 시간이 있다. 합본에서는 날짜 자리에 기간을 쓴다(#605).
 - `project-bundle.md` 의 머리말(팀원, 구조, 유효한 결정, 막힌 일)은 기간과 무관하게 지금 값이다. 본문의 회의 요약본만 기간으로 자른다. `from`·`to` 는 한국 시간 날짜이고 둘 다 포함한다. 없으면 그쪽 끝이 없고 둘 다 없으면 전체다(사용자 결정 2026-11-06). `from` 이 `to` 보다 늦으면 400 `INVALID_REQUEST` 다.
 - 합본은 워크스페이스 팀원 전체가 받는다. 다운로드 버튼 옆에 팀원 발언이 포함된다는 안내를 둔다(사용자 결정 2026-11-06).
-- 요약의 `할 일 변화` 에는 승인 전이나 반려된 일이 글로 들어갈 수 있다(사용자 결정 2026-11-06).
+- 요약의 `할 일 변화` 에는 지금 반영된 항목의 줄만 보인다(#605, 2026-11-06 결정을 바꿨다). 담당과 기한은 그 회의에서 승인한 값이라, 뒤 회의에서 바뀐 마감은 뒤 회의 요약에만 나온다. 개요와 핵심 같은 요약 문장은 회의 기록이라 반려된 일을 논의했다는 내용이 남을 수 있다. 반려된 일을 정해진 일이나 일정으로 쓰지 않게 AI 에 반려 목록을 주지만 모델이 어길 수 있다.
 
 구현 근거: [project_map 라우터](../../../backend/app/api/project_map.py), [서비스](../../../backend/app/services/project_map.py), [렌더러](../../../backend/app/services/summary_markdown.py), [스키마](../../../backend/app/schemas/project_map.py). 검증은 `backend/tests/api/test_project_map.py`, `backend/tests/services/test_summary_markdown.py` 로 SQLite 와 PostgreSQL 에서 했다. 응답 크기와 실서버 동작은 재지 않았다.
 
@@ -1741,7 +1756,8 @@ POST .../meetings/upload            multipart/form-data
 | 경로 | FE 가 읽는 것 | FE 가 거절하는 것 (`INVALID_RESPONSE`) | 받고 따로 다루는 것 |
 |---|---|---|---|
 | `GET .../project-map` | 노드의 `kind`·`label`·`appeared_at`, 태스크 노드의 `status`·`due_date`·`assignee_name`·`blocker`·`meeting_ids`, `edges`, `meetings` | 모르는 노드 `kind`(판별 값), 태스크 `status` 가 네 값 밖(D-184), 그 밖의 필수 필드 누락·타입 오류 | 끝이 `nodes` 에 없는 선은 그리지 않는다. 주제와 태스크를 잇는 선으로 목록 보기의 주제별 묶음을 만들고, 주제 선이 없는 태스크는 `주제 없는 태스크` 다. 태스크끼리의 선은 태스크 패널의 `이어진 태스크` 단추다(목록·키보드로도 같은 연결을 따라간다) |
-| `GET .../topics/{topic_id}` | 이름·설명·결정(`replaced_by` 가 있으면 흐리게 `뒤집힘`)·태스크·회의 | 태스크 `status` 가 네 값 밖, 필수 필드 누락·타입 오류 | 404 `TOPIC_NOT_FOUND` 는 패널 안 안내 `주제를 찾을 수 없어요. 지워졌을 수 있어요.` |
+| `GET .../topics/{topic_id}` | 이름·설명·결정(`replaced_by` 가 있으면 흐리게 `뒤집힘`)·태스크·회의. #669 의 주제 `edited`, 결정 `state`·`edited`(§4.4.3) | 태스크 `status` 가 네 값 밖, 결정 `state` 가 `valid`·`invalid` 밖(판별 값, D-191), 필수 필드 누락·타입 오류 | 404 `TOPIC_NOT_FOUND` 는 패널 안 안내 `주제를 찾을 수 없어요. 지워졌을 수 있어요.` 결정 `state` 키가 없으면(#669 전 BE) `valid`. `edited` 는 표시용이라 불리언이 아니면 고치지 않은 것(false)이다. `invalid` 는 흐리게 `유효하지 않음` 배지, `edited` 결정은 `고침` 배지, `edited` 주제는 `팀원이 고친 주제예요.` |
+| 주제·결정 고치기 네 경로(#669, §4.4.3): `PATCH .../topics/{id}`, `POST .../topics/{id}/merge`, `DELETE .../topics/{id}/tasks/{task_id}`, `PATCH .../decisions/{id}` | 응답의 `TopicDetailResponse` 를 위 주제 조회와 같은 스키마로 읽어 응답의 `topic_id` 키에 쓴다 | 위와 같다. 읽지 못하면 실패라 하지 않고 `변경 결과를 확인하지 못했어요` 토스트와 `새로고침`(맵·회의록을 다시 받는다)이다(#348) | 보낸 칸만 싣는다(이름을 안 바꾸면 `name` 없음). 409 `TOPIC_NAME_TAKEN` 은 `details.topic_id` 를 읽어 그 주제로 합치기를 권한다(문자열이 아니거나 그 주제 조회가 404 면 권하지 않는다). 맵에 없는 주제면 그 주제 상세로 이름을 채우고, 409 뒤 맵을 다시 받는다. 404 `TOPIC_NOT_FOUND`·`DECISION_NOT_FOUND`·`TASK_NOT_FOUND` 는 고치던 폼·확인 창 안 문구와 맵 다시 받기. 캐시는 §4.4.3 「고친 뒤 FE 가 다시 받을 캐시」 대로이고 `project-map` 은 접두로 무효화한다(다른 주제의 `replaced_by` 도 바뀐다). 화면은 D-191 |
 | `GET /meetings/{id}/summary.md` | 본문과 `Content-Disposition` 의 `filename*`(없으면 `filename`, 둘 다 없으면 `summary.md`) | 2xx 인데 `Content-Type` 이 `text/markdown` 이 아님 | 404 `SUMMARY_NOT_FOUND` 는 토스트. 단추는 `summary` 가 null 이 아닐 때만 보인다(팀원 포함) |
 | `GET .../project-bundle.md` | 위와 같다. 대체 이름은 `project-bundle.md` | 위와 같다 | `from`·`to` 는 적은 쪽만 보낸다. 둘 다 비면 전체 기간이다. `from > to` 는 보내지 않고 `시작일이 종료일보다 늦어요.`, 서버 400 `INVALID_REQUEST` 도 같은 문구다. 단추 옆 안내 `팀원 발언 요약이 들어 있어요. 외부 AI 에 첨부할 때 주의해 주세요.` |
 | `GET /meetings/{id}/minutes` 의 `summary_status` | 요약이 없을 때의 표시. `pending` 은 `요약을 만드는 중이에요`, `none` 은 요약 칸을 비운다(이슈 원문). `awaiting_approval`(#605) 은 모든 팀원에게 `승인이 끝나면 요약이 만들어져요` 다(2026-11-10) | 거절하지 않는다 | 표시용이라 모르는 값은 받은 글자를 보존하고 중립 문구 `요약이 없어요` 를 보인다(D-184 표시용). 키가 없거나 문자열이 아니면 `none` 이다. `summary` 가 있으면 상태와 무관하게 보인다. 재시도 단추는 없다 |
@@ -1749,9 +1765,57 @@ POST .../meetings/upload            multipart/form-data
 
 - 두 `.md` 요청은 `Accept: text/markdown, application/json` 을 보내고, 실패 응답은 다른 API 와 같은 봉투로 읽는다(401 알림 포함).
 - 구현: [응답 스키마](../../src/shared/types/api/projectMap.ts), [맵 조회](../../src/entities/project-map/api/projectMapQuery.ts), [맵 화면](../../src/widgets/project-map), [파일 요청](../../src/shared/api/client.ts), [합본](../../src/features/project-bundle-download), [요약본](../../src/features/summary-download), [회의록 스키마](../../src/shared/types/api/minutes.ts). 화면 배치는 D-186 이다.
-- 합의 필요: 위 FE 처리(특히 `summary_status` 를 표시용으로 본 것, 노드 `kind` 를 판별 값으로 본 것)는 FE 판단이다. BE 합의 여부 확인 필요.
-- `awaiting_approval`·`summary_waiting_count` 처리(2026-11-10)는 BE #645 브랜치(`feature/605-approved-summary`)의 스키마·라우터·요약 상태 서비스와 그 브랜치 계약 §4.4.2 를 읽고 MSW 로만 맞췄다. 이 브랜치의 §4.4.2 값 표는 #645 와 충돌하지 않게 고치지 않았다. #645 가 병합되기 전 develop 서버는 이 값을 보내지 않는다. 문구는 이슈 #551 댓글의 요청(2026-11-09)을 따랐다.
+- 고치기 네 경로(#551 묶음 B, 2026-11-10)는 BE #669 가 병합되기 전이라 MSW 로만 확인했다. MSW 는 BE `services/summary.py` 의 `rename_topic`·`merge_topics`·`detach_task`·`edit_decision` 규칙과 `record_edit.py` 의 저장 불가 글자(NUL·짝 없는 서로게이트) 400 을 따른다. 결정은 뒤집은 결정 목록(`replaces`)을 두고 `replaced_by` 를 읽을 때 지우지 않은 결정 중 가장 이른 회의의 것으로 계산한다([모의 핸들러](../../src/shared/mock/handlers/projectMap.ts)). 구현: [고치기 요청·캐시](../../src/entities/project-map/api/topicEdit.ts), [고치기 훅·화면](../../src/features/topic-edit), [주제 패널](../../src/widgets/project-map/ui/TopicPanel.tsx).
+- 합의 필요: 위 FE 처리(특히 `summary_status` 를 표시용으로 본 것, 노드 `kind` 와 결정 `state` 를 판별 값으로 본 것)는 FE 판단이다. BE 합의 여부 확인 필요.
+- `awaiting_approval`·`summary_waiting_count` 처리(#551 묶음 A, 2026-11-10)는 BE #645 의 스키마·라우터·요약 상태 서비스(`summary_state`)를 읽고 MSW 로 맞췄다. MSW 는 저장된 `awaiting_approval` 을 BE `_state` 순서(요약 있음 `ready`, 대기 카드 있음 `awaiting_approval`, 승인 항목 없는 채팅 회의 `none`, 그 밖 `pending`)로 다시 판정하고 건수는 PM 에게만 준다. `pending` 의 1시간 창은 흉내 내지 않는다. 승인·반려와 자동 반영 되돌리기 뒤에는 `workspaceKey(ws,'minutes')` 를 다시 받는다. 문구는 이슈 #551 댓글의 요청(2026-11-09)을 따랐다. 실서버로는 확인하지 않았다.
 
+
+#### 4.4.3 회의 기록 고치기 (#605, 2026-11-10)
+
+워크스페이스 팀원 누구나 전사 제목과 발화 줄, AI 가 만든 주제와 결정을 고친다. 원문은 남고 고친 것에는 표시가 남으며 다시 요약해도 덮이지 않는다.
+
+- 제공자는 BE 다. 화면은 아직 없고 FE 에 요청했다(#551). 합의 상태는 BE 구현(#605)이고 FE 합의 전이다. 고칠 수 있는 범위와 재요약 규칙은 사용자가 정했다(2026-11-09). 경로와 응답 모양은 이번 구현에서 정했다.
+- 여섯 경로 모두 워크스페이스 멤버면 부를 수 있고 PM 이 아니어도 된다. 세션 없음 401, 비소속 403 이다. 경로와 본문의 ID 가 그 워크스페이스에 없으면 404 다.
+- 삭제된 회의의 제목과 발화를 고치면 410 `MEETING_DELETED`, 삭제된 회의의 결정은 404 `DECISION_NOT_FOUND` 다.
+- 글에 NUL 이나 짝 없는 서로게이트가 있거나, 공백만이거나, 길이를 넘거나, 바꿀 칸이 하나도 없으면 400 `INVALID_REQUEST` 다.
+
+| 경로 | 본문 | 200 `data` | 오류 |
+|---|---|---|---|
+| `PATCH /meetings/{meeting_id}/title` | `{"title": 문자열 \| null}`. 앞뒤 공백을 빼고 1자 이상 200자 이하 | `{meeting_id, title, title_original, title_edited}`. 회의록과 같은 칸 이름이다 | 404 `MEETING_NOT_FOUND`, 410 `MEETING_DELETED` |
+| `PATCH /meetings/{meeting_id}/transcript/{seq}` | `{"text": 문자열 \| null}`. 1자 이상 10000자 이하이고 공백만이면 안 된다. 원문과 견주므로 앞뒤 공백은 빼지 않는다 | `{seq, text, original_text, edited}` | 404 `MEETING_NOT_FOUND`·`TRANSCRIPT_LINE_NOT_FOUND`, 410 `MEETING_DELETED` |
+| `PATCH /workspaces/{workspace_id}/topics/{topic_id}` | `{"name"?: 문자열, "description"?: 문자열}`. 이름은 앞뒤 공백을 빼고 1자 이상 100자 이하, 설명은 1000자 이하. 하나는 있어야 한다 | 그 주제의 `TopicDetailResponse` | 400 글자가 없는 이름, 404 `TOPIC_NOT_FOUND`, 409 `TOPIC_NAME_TAKEN` |
+| `POST /workspaces/{workspace_id}/topics/{topic_id}/merge` | `{"into_topic_id": 문자열}` | 합친 주제(`into_topic_id`)의 `TopicDetailResponse` | 400 자기 자신, 404 `TOPIC_NOT_FOUND` |
+| `DELETE /workspaces/{workspace_id}/topics/{topic_id}/tasks/{task_id}` | 없음 | 그 주제의 `TopicDetailResponse`. 다시 불러도 같다 | 404 `TOPIC_NOT_FOUND`·`TASK_NOT_FOUND` |
+| `PATCH /workspaces/{workspace_id}/decisions/{decision_id}` | `{"text"?: 문자열, "state"?: "valid" \| "invalid" \| "removed"}`. 문장은 앞뒤 공백을 빼고 1자 이상 1000자 이하. 하나는 있어야 한다 | 그 결정이 속한 주제의 `TopicDetailResponse`. 지운 결정은 들어 있지 않다 | 404 `DECISION_NOT_FOUND` |
+
+- 제목은 그 자리에서 바뀐다. 회의록, 회의 목록, 프로젝트 맵, 주제 상세, 요약본 머리와 파일 이름, 합본이 고친 제목을 쓴다. 채팅 회의 요약본은 고친 제목이 있으면 `일일 요약` 대신 그 제목을 쓴다.
+- `title_original` 은 처음 고치기 전 제목이고 고친 적 없으면 null 이다. 제목 없던 회의를 고치면 `title_original` 은 null 이고 `title_edited` 가 true 다. `null` 이나 처음 제목을 보내면 되돌린다.
+- 발화는 원문을 두고 고친 문장을 따로 둔다. 회의록 전사와 AI 의 요약 재료가 고친 문장을 쓰고, 승인 카드와 추출 상세의 근거 인용은 원문 그대로다. `null` 이나 원문과 같은 값을 보내면 되돌린다. 응답의 `original_text` 는 고쳤을 때만 원문이다.
+- 고친 제목과 발화로 담당자 별칭을 만들지 않는다.
+- 제목·발화·결정 편집은 버전이나 이전 값을 받지 않아 마지막으로 처리된 요청의 값이 남는다. 다른 팀원의 수정을 아직 보지 못한 채 저장해도 409로 거절하지 않는다. 이는 현재 BE 구현이며 FE 합의 여부 확인이 필요하다.
+- 주제 이름을 바꾸면 옛 이름이 그 주제의 별칭으로 남아, 다시 요약할 때 AI 가 옛 이름을 내도 이 주제로 간다. 다른 주제가 같은 이름(정규화한 값)을 쓰고 있으면 409 이고 `details.topic_id` 가 그 주제다. 합치기를 권할 때 쓴다.
+- 합치면 회의, 태스크 연결, 결정, 뗀 표시가 대상 주제로 옮겨 가고 원래 주제는 사라진다. 대상 주제가 합치기 전에 보이던 태스크는 원래 주제에서 뗐어도 대상 주제에 그대로 보인다. 원래 이름은 대상 주제의 별칭이 된다.
+- 떼기는 그 주제와 태스크의 선을 지운다. 맵, 주제 상세, 합본 어디에서도 다시 이어지지 않고 다시 요약해도 그대로다.
+- 태스크가 그 주제에 현재 보이지 않으면 200으로 주제 상세를 돌려주고 뗀 표시나 고친 시각을 만들지 않는다. 이미 뗀 짝의 재요청도 같다. 없는 태스크·다른 공간의 태스크·삭제된 태스크는 여전히 404다.
+- 이름·설명을 고치거나 합치거나 태스크를 뗀 주제는 `TopicDetailResponse.edited` 가 true 다. 그 주제가 나온 회의를 다시 요약해 AI 가 주제를 빼도 주제와 회의 연결이 남는다.
+- 결정의 `state` 는 `valid`(유효), `invalid`(유효하지 않음), `removed`(지움)다. `valid` 를 보내면 되돌린다. `edited` 는 팀원이 고쳤는가다. 응답과 조회에는 `valid` 와 `invalid` 만 나오고 `removed` 는 나오지 않는다.
+- 지운 결정은 회의록, 요약본, 주제 상세에서 빠진다. 그 결정이 뒤집었던 옛 결정은 다시 유효해지고, 되돌리면 다시 뒤집힌다. 다른 결정도 그 옛 결정을 뒤집었으면 옛 결정은 뒤집힌 채이고 `replaced_by` 가 남은 결정으로 바뀐다.
+- 유효하지 않다고 한 결정은 회의록 `summary.decision_details` 와 주제 상세에 `state: "invalid"` 로 남고 요약본에는 `(유효하지 않음)` 이 붙는다. `summary.decisions` 문자열 목록, 합본의 「지금 유효한 결정」, 다음 회의의 요약 재료에서는 빠진다. 그 결정이 뒤집은 연결은 그대로 둔다.
+- 따라서 후속 결정을 `invalid`로 바꾸면 이전 결정도 뒤집힌 채 남아 그 주제의 유효한 결정이 비어 있을 수 있다. 이전 결정을 자동 재채택하는 동작은 아니다.
+- 한 회의에서 결정을 하나라도 고치면 그 회의를 다시 요약해도 결정은 모두 그대로다. 개요, 핵심, 할 일 변화, 주제만 새로 쓴다(사용자 결정 2026-11-09).
+- 회의록 `summary` 의 결정과 주제 칸은 지금 행에서 읽는다. `decision_details` 는 지우지 않은 결정이 회의 안 순서로 오고 각각 `state` 와 `edited` 가 있다. 문장과 `topic` 은 고친 값이다. `replaces[].meeting_title` 은 그 회의의 지금 제목이고 지운 결정의 사본은 빠진다. `decisions` 는 `valid` 인 결정의 문장만이다. `topics`·`topic_ids` 는 회의에 이어진 주제의 지금 이름과 ID 다.
+- 회의 삭제(#576)는 고친 제목, 처음 제목, 고친 발화, 그 회의의 결정(고친 것과 지운 표시 포함)을 함께 지운다. 그 회의에만 있던 주제는 고쳤어도 지우고 별칭과 뗀 표시도 같이 지운다. 혼자 쓰던 워크스페이스를 탈퇴(#575)할 때도 같다. 함께 쓰는 워크스페이스에서는 다른 기록처럼 고친 문장도 남는다. 누가 고쳤는지는 저장하지 않는다.
+
+고친 뒤 FE 가 다시 받을 캐시는 경로마다 아래와 같다. 키는 FE 의 `workspaceKey` 모양이다. 회의록은 다른 회의의 고친 제목, 주제 이름, 결정도 보여 주므로(`replaces[].meeting_title`, `topics`, `decision_details[].topic`) 제목, 주제, 결정을 고치면 그 회의 하나가 아니라 회의록 전체를 다시 받는다.
+
+- 제목: `workspaceKey(ws,'meetings')`(목록과 상세), `workspaceKey(ws,'minutes')`, `workspaceKey(ws,'project-map')`.
+- 발화: 응답의 `seq` 로 `workspaceKey(ws,'minutes',meetingId)` 의 그 줄만 바꾼다. 다른 캐시는 그대로다.
+- 주제 이름·설명: 응답을 주제 키에 쓰고 `workspaceKey(ws,'project-map')`(그래프의 이름 포함). 이름을 바꿨으면 `workspaceKey(ws,'minutes')` 도.
+- 합치기: 응답을 `into_topic_id` 의 주제 키에 쓰고 원래 주제 키는 지운다. `workspaceKey(ws,'project-map')`, `workspaceKey(ws,'minutes')`.
+- 떼기: 응답을 주제 키에 쓰고 `workspaceKey(ws,'project-map')`(그래프의 선).
+- 결정: 응답을 그 주제 키에 쓰고 `workspaceKey(ws,'project-map')`(다른 주제에 있는 옛 결정의 뒤집힘), `workspaceKey(ws,'minutes')`.
+
+구현 근거: [회의 라우터](../../../backend/app/api/meetings.py), [project_map 라우터](../../../backend/app/api/project_map.py), [전사 고치기](../../../backend/app/services/transcript.py), [주제·결정 고치기와 요약 합치기](../../../backend/app/services/summary.py), [요청 스키마](../../../backend/app/schemas/record_edit.py). 결정 근거는 [0067](../../../ai/docs/basis_for_decision/ai/2026-11-10-0067-human-record-edits-survive-resummary.md). 검증은 `backend/tests/api/test_transcript_edit.py`, `backend/tests/api/test_topic_decision_edit.py`, `backend/tests/api/test_summary_save.py`, `backend/tests/test_migration_record_edits.py` 로 SQLite 와 PostgreSQL 에서 했다. 실서버와 화면에서는 돌려 보지 않았다.
 
 ### 4.5 Discord 서버 사용자 목록
 

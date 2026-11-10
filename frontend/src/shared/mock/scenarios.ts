@@ -137,6 +137,9 @@ export const MOCK_SCENARIOS = [
   // #660 settings-unmapped 에서 Discord 서버에 사용자가 아무도 없다 — 새로 만든 테스트 서버다. 아이디로 초대할 가입자가 있다
   'settings-discord-empty',
   'settings-member',
+  // #647 팀원 한 명이 한 줄인 팀원 관리. ws_01 PM 이다. 이재환에 지훈의 계정(1125)을 잘못 이어 두었다 —
+  // 최지훈 줄에서 그 계정을 고르면 옮기기를 확인한다. 1128 dahye 는 아무에게도 연결되지 않았고, 정하늘의 1126 은 서버를 떠났다
+  'member-rows',
   // #330 알림·자동 막힘. ws_01 PM 이다
   'notifications-default',
   // #344 리마인드 답장 판단. reply-judgment 는 ws_01 PM, reply-judgment-member 는 같은 상태의 일반 팀원(mb_01)이다
@@ -774,6 +777,30 @@ function addTeamInvitations(state: MockDb): void {
   )
 }
 
+function addMemberRows(state: MockDb): void {
+  const lee = state.members.find(({ member_id }) => member_id === 'mb_03')
+  if (lee) lee.discord_user_id = '1125'
+  state.members.push({
+    member_id: 'mb_05',
+    workspace_id: 'ws_01',
+    display_name: '최지훈',
+    discord_user_id: null,
+    notion_name: null,
+    role: 'member',
+    has_login_account: false,
+    created_at: '2026-09-02T00:00:00Z',
+  })
+  state.discordUsers.push({
+    discord_user_id: '1128',
+    username: 'dahye',
+    display_name: '다혜',
+    nick: '다혜',
+    global_name: null,
+    avatar_url: null,
+    is_bot: false,
+  })
+}
+
 export function createScenarioDb(scenario: MockScenario): MockDb {
   if (isSpeakerScenario(scenario)) return createSpeakerScenarioDb(scenario)
   if (isPasswordResetScenario(scenario)) return createPasswordResetScenarioDb(scenario)
@@ -1174,6 +1201,10 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       signInWith(state, ['ws_01'], 'ws_01')
       state.discordUsers = []
       addInviteeAccounts(state)
+      break
+    case 'member-rows':
+      signInWith(state, ['ws_01'], 'ws_01')
+      addMemberRows(state)
       break
     case 'settings-member':
       // 일반 팀원. Discord 는 미연결(요청 안내), Notion 은 연결됨(PM 이 관리한다는 안내)이다. 연결·매핑 쓰기는 PM 만 한다
