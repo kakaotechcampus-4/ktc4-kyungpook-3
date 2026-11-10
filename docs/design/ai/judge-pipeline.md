@@ -80,7 +80,7 @@ flowchart LR
 | Terra 에 규칙 폴백 없음, 후보는 번호로 | 유사도 규칙 폴백, task_id 문자열 응답 | 규칙은 "이미 반영된 내용" 판단을 못 한다. 문자열 ID 는 지어낼 수 있다 | [0011](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-09-23-0011-final-judge-no-rules-fallback-and-candidate-index.md) |
 | 부분 실패면 다시 돌린 뒤 인계 | 바로 인계 / 끝까지 재시도 / 실패한 finding 만 다시 | BE 는 회의당 추출을 한 번만 받는다. finding 하나 때문에 회의 전체를 막지 않는다 | [0016](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md) |
 | 재실행 결과를 얘기 단위로 합침 | 항목 많은 실행 하나 고르기 / 모든 실행 항목 보내기 | 실행 하나를 고르면 다른 실행에서 성공한 finding 을 버린다(#128 멘토 리뷰). 모두 보내면 카드가 겹친다 | [0054](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-07-0054-merge-judge-reruns-by-story.md) |
-| 숫자 점수 대신 조건 게이트 | 신뢰도 하나로 auto/review/hold | LLM 의 자기 신뢰도는 거의 항상 높다. 사유를 남기면 PM 화면과 운영 로그에서 왜 막혔는지 보인다 | [0031](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-02-0031-evidence-status-by-source-check.md), #232 |
+| 숫자 점수 대신 조건 게이트 | 신뢰도 하나로 auto/review/hold | LLM 의 자기 신뢰도는 거의 항상 높다. 운영 로그에 사유가 남는다. PM 화면은 빠진 값·근거 인용으로 이유를 보여 준다 | [0031](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-02-0031-evidence-status-by-source-check.md), #232 |
 | 새 할 일의 이름 지목은 원문만 보냄 | 문맥으로 고친 이름 보내기 | 추측한 이름이 BE 별칭으로 학습되지 않게 | [0057](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-07-0057-thirdname-sends-original-mention.md) |
 
 ## 어떻게 평가했나

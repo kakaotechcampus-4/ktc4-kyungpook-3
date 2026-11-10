@@ -86,7 +86,7 @@ auto 로 만든 태스크도 PM 이 되돌릴 수 있다(태스크를 소프트 
 |---|---|---|
 | 만든 모델이 스스로 채점하지 않게 Jev 분리 | 값을 만든 LLM 의 자기 표시는 거의 다 certain. 다른 모델에 "근거 원문에 명시됐나"를 다시 묻고 yes 확률 0.8 이상만 certain | 결정 [0031](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-02-0031-evidence-status-by-source-check.md), [근거 검증](../design/ai/evidence-check.md) |
 | 기존 task 변경 판단을 분리(②③) | "금요일까지로 미루죠" 같은 변경을 새 할 일과 구분. 임베딩으로 후보를 좁히고 Terra 가 현재 값과 비교 | 결정 [0010](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-09-22-0010-embedding-similarity-threshold.md)(threshold 0.4 = 명확한 불일치 최고 0.33 과 명확한 매치 최저 0.42 사이), [0011](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-09-23-0011-final-judge-no-rules-fallback-and-candidate-index.md) |
-| 숫자 점수 대신 조건 게이트 | 탈락 사유를 PM 에게 보일 수 있고 감사·재현 가능 | BE #232 |
+| 숫자 점수 대신 조건 게이트 | 탈락 사유가 운영 로그에 남아 감사·재현 가능 | BE #232 |
 | 근거 검증과 오인식 검사를 같은 Jev 호출로 | 호출 수가 늘지 않음 | 결정 [0051](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md), [전사 오인식 검사](../design/ai/asr-check.md) |
 | 수정 항목은 항상 PM 확인 | 유사도·판단이 틀리면 기존 데이터를 망가뜨림. 승인 때 409 충돌 검사 | [요구사항·리스크](requirements-risks.md) |
 
