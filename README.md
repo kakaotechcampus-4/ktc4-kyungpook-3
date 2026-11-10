@@ -1,3 +1,7 @@
+
+
+https://github.com/user-attachments/assets/5de0f6cf-fa4b-4d05-b493-b990bbfb8c20
+
 <div align="center">
 
 <img src="./frontend/public/icons/app-192.png" width="80" alt="Manager's Manager 로고" />
