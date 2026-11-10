@@ -58,8 +58,12 @@ export interface ProjectMap {
   relatedTasks: ReadonlyMap<string, readonly TaskNode[]>
 }
 
-/** 패널에 연 노드 */
-export type MapSelection = { kind: 'topic'; id: string } | { kind: 'task'; id: string } | null
+/**
+ * 패널에 연 노드. 주제의 `label` 은 맵에 아직 없는 주제(맵을 받은 뒤 생긴 주제에 합친 직후)를 고를 때 준다 —
+ * 맵을 다시 받을 때까지 패널이 그 이름으로 열려 있는다
+ */
+export type MapSelection =
+  { kind: 'topic'; id: string; label?: string } | { kind: 'task'; id: string } | null
 
 /** 팀원이 유효하지 않다고 표시한 결정은 `invalid` 다. 지운 결정은 오지 않는다 */
 export type DecisionState = 'valid' | 'invalid'

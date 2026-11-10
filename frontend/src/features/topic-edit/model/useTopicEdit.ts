@@ -45,8 +45,9 @@ interface Variables {
   isCurrent: () => boolean
 }
 
-/* 대상이 사라졌다. 맵을 다시 받아 화면이 따라오게 한다 */
-const GONE = new Set<string>([
+/* 맵이 낡았다. 대상이 사라졌거나, 맵을 받은 뒤 같은 이름의 주제가 생겼다. 맵을 다시 받아 화면이 따라오게 한다 */
+const STALE_MAP = new Set<string>([
+  ERROR_CODES.TOPIC_NAME_TAKEN,
   ERROR_CODES.TOPIC_NOT_FOUND,
   ERROR_CODES.DECISION_NOT_FOUND,
   ERROR_CODES.TASK_NOT_FOUND,
@@ -95,7 +96,7 @@ export function useTopicEdit(workspaceId: string, topicId: string): TopicEditor 
       }
       const message = failureNotice(error)
       if (message === null) return
-      if (error instanceof ApiError && GONE.has(error.code))
+      if (error instanceof ApiError && STALE_MAP.has(error.code))
         void queryClient.invalidateQueries({
           queryKey: projectMapQueryOptions(workspaceId).queryKey,
         })

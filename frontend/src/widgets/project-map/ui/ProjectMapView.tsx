@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Suspense, lazy, useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { projectMapQueryOptions } from '@/entities/project-map'
-import type { MapSelection, ProjectMap } from '@/entities/project-map'
+import type { MapNode, MapSelection, ProjectMap, TopicNode } from '@/entities/project-map'
 import { ProjectBundleDownload } from '@/features/project-bundle-download'
 import { queryView } from '@/shared/lib/query-view'
 import { panelTabStop } from '@/shared/lib/tab-panel'
@@ -118,6 +118,17 @@ function DesktopPanel({
   )
 }
 
+/** 고른 노드. 맵에 아직 없는 주제는 고를 때 받은 이름으로 연다 */
+function selectedNode(
+  map: ProjectMap,
+  selection: MapSelection,
+): MapNode | Pick<TopicNode, 'kind' | 'id' | 'label'> | undefined {
+  if (selection === null) return undefined
+  const node = map.nodeById.get(selection.id)
+  if (node !== undefined || selection.kind !== 'topic' || selection.label === undefined) return node
+  return { kind: 'topic', id: selection.id, label: selection.label }
+}
+
 function MapBody({
   workspaceId,
   map,
@@ -132,7 +143,7 @@ function MapBody({
   const [selection, setSelection] = useState<MapSelection>(null)
   // 패널을 닫으면 연 단추로 돌아간다. 그래프에서 열었으면 돌아갈 곳이 없다. 다음에 열 때 새로 적는다
   const opener = useRef<HTMLElement | null>(null)
-  const node = selection === null ? undefined : map.nodeById.get(selection.id)
+  const node = selectedNode(map, selection)
 
   const select = (next: MapSelection) => {
     if (selection === null && document.activeElement instanceof HTMLElement)

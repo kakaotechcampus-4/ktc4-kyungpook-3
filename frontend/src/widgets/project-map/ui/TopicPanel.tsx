@@ -8,7 +8,6 @@ import type {
   TopicDecision,
   TopicDetail,
   TopicEdit,
-  TopicNode,
 } from '@/entities/project-map'
 import {
   DecisionMenu,
@@ -42,13 +41,36 @@ const ALERT = 'text-caption text-danger'
 type PanelMode =
   | { kind: 'view' }
   | { kind: 'edit-topic' }
-  /** `fromEdit` 는 이름이 겹쳐 고치기 폼에서 연 합치기다. 취소하면 폼으로 돌아간다 */
-  | { kind: 'merge'; intoTopicId: string | null; fromEdit: boolean }
+  /**
+   * `into` 는 미리 고른 대상이다. 이름이 겹친 주제는 맵에 아직 없을 수 있어 이름을 같이 둔다.
+   * `fromEdit` 는 이름이 겹쳐 고치기 폼에서 연 합치기다. 취소하면 폼으로 돌아간다
+   */
+  | { kind: 'merge'; into: { id: string; label: string } | null; fromEdit: boolean }
   | { kind: 'detach'; taskId: string }
   | { kind: 'edit-decision'; decisionId: string }
   | { kind: 'remove-decision'; decisionId: string }
 
 const VIEW: PanelMode = { kind: 'view' }
+
+/**
+ * 409 `TOPIC_NAME_TAKEN` 이 알려 준 주제. 맵을 받은 뒤 다른 팀원이 만든 주제일 수 있어 맵에 없어도 상세로 이름을 받는다.
+ * 상세가 404 면 그 사이 사라진 주제라 권하지 않는다(null). 이름을 아직 모르면 `label` 이 null 이다
+ */
+function useTakenTopic(
+  workspaceId: string,
+  takenId: string | null,
+  map: ProjectMap,
+): { id: string; label: string | null } | null {
+  const query = useQuery({
+    ...topicQueryOptions(workspaceId, takenId ?? ''),
+    enabled: takenId !== null,
+  })
+  if (takenId === null) return null
+  if (query.error instanceof ApiError && query.error.code === ERROR_CODES.TOPIC_NOT_FOUND)
+    return null
+  const node = map.nodeById.get(takenId)
+  return { id: takenId, label: query.data?.name ?? (node?.kind === 'topic' ? node.label : null) }
+}
 
 function Decision({
   workspaceId,
@@ -125,18 +147,18 @@ function Alert({ children }: { children: ReactNode }) {
  */
 function TopicView({
   workspaceId,
-  topic,
+  topicId,
   detail,
   map,
   onSelect,
 }: {
   workspaceId: string
-  topic: TopicNode
+  topicId: string
   detail: TopicDetail
   map: ProjectMap
   onSelect: (selection: MapSelection) => void
 }) {
-  const editor = useTopicEdit(workspaceId, topic.id)
+  const editor = useTopicEdit(workspaceId, topicId)
   const [mode, setShownMode] = useState<PanelMode>(VIEW)
   // 저장 응답이 올 때의 모드. 렌더를 기다리지 않고 읽는다
   const shown = useRef<PanelMode>(VIEW)
@@ -183,29 +205,38 @@ function TopicView({
       ?.message
 
   const targets = map.topicGroups
-    .filter(({ topic: other }) => other.id !== topic.id)
-    .map(({ topic: other }) => ({ value: other.id, label: other.label }))
+    .filter(({ topic }) => topic.id !== topicId)
+    .map(({ topic }) => ({ value: topic.id, label: topic.label }))
   const editingTopic = mode.kind === 'edit-topic' || (mode.kind === 'merge' && mode.fromEdit)
 
   const topicFailure = failureFor((edit) => edit.kind === 'topic')
-  const takenId = topicFailure?.takenTopicId ?? null
-  const taken = takenId === null ? undefined : map.nodeById.get(takenId)
+  const taken = useTakenTopic(workspaceId, topicFailure?.takenTopicId ?? null, map)
+  // 이름을 아직 모르면 보낸 이름으로 고르게 한다 — 정규화하면 그 주제의 이름과 같다
+  const sentName = topicFailure?.edit.kind === 'topic' ? topicFailure.edit.name : undefined
   const topicAlert =
     topicFailure === null ? null : (
       <div className="flex flex-col items-start gap-8">
         <Alert>
-          {taken === undefined ? topicFailure.message : `「${taken.label}」 주제가 이미 있어요.`}
+          {taken === null || taken.label === null
+            ? topicFailure.message
+            : `「${taken.label}」 주제가 이미 있어요.`}
         </Alert>
-        {taken?.kind === 'topic' ? (
+        {taken === null ? null : (
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => setMode({ kind: 'merge', intoTopicId: taken.id, fromEdit: true })}
+            onClick={() =>
+              setMode({
+                kind: 'merge',
+                into: { id: taken.id, label: taken.label ?? sentName ?? taken.id },
+                fromEdit: true,
+              })
+            }
           >
             이 주제와 합치기
           </Button>
-        ) : null}
+        )}
       </div>
     )
 
@@ -248,7 +279,7 @@ function TopicView({
                 variant="outline"
                 size="sm"
                 disabled={editor.pending}
-                onClick={() => open({ kind: 'merge', intoTopicId: null, fromEdit: false })}
+                onClick={() => open({ kind: 'merge', into: null, fromEdit: false })}
               >
                 다른 주제와 합치기
               </Button>
@@ -356,14 +387,18 @@ function TopicView({
 
       {mode.kind === 'merge' ? (
         <TopicMergeModal
-          targets={targets}
-          initialTarget={mode.intoTopicId}
+          targets={
+            mode.into === null || targets.some(({ value }) => value === mode.into?.id)
+              ? targets
+              : [...targets, { value: mode.into.id, label: mode.into.label }]
+          }
+          initialTarget={mode.into?.id ?? null}
           pending={editor.pending}
           failure={failureFor((edit) => edit.kind === 'merge')?.message ?? null}
           onConfirm={(intoTopicId) =>
             editor.run({ kind: 'merge', intoTopicId }, (into) => {
               toast.show({ title: '주제를 합쳤어요.' })
-              onSelect({ kind: 'topic', id: into.topicId })
+              onSelect({ kind: 'topic', id: into.topicId, label: into.name })
             })
           }
           onCancel={() => setMode(mode.fromEdit ? { kind: 'edit-topic' } : VIEW)}
@@ -415,16 +450,16 @@ function TopicView({
 /** 주제 패널 본문. 주제가 바뀌면 새로 그린다(key) — 열린 폼·확인 창은 그 주제의 것이다 */
 export function TopicBody({
   workspaceId,
-  topic,
+  topicId,
   map,
   onSelect,
 }: {
   workspaceId: string
-  topic: TopicNode
+  topicId: string
   map: ProjectMap
   onSelect: (selection: MapSelection) => void
 }) {
-  const query = useQuery(topicQueryOptions(workspaceId, topic.id))
+  const query = useQuery(topicQueryOptions(workspaceId, topicId))
   const view = queryView(query)
   if (view === 'loading')
     return (
@@ -440,7 +475,7 @@ export function TopicBody({
   return (
     <TopicView
       workspaceId={workspaceId}
-      topic={topic}
+      topicId={topicId}
       detail={query.data!}
       map={map}
       onSelect={onSelect}

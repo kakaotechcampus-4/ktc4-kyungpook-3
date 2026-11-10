@@ -72,8 +72,8 @@ function TaskBody({
 export interface SelectionPanelProps {
   workspaceId: string
   map: ProjectMap
-  /** 맵에 있는 노드만 온다 */
-  node: TopicNode | TaskNode
+  /** 맵에 있는 노드다. 주제는 합친 직후처럼 맵에 아직 없을 수 있어 ID 만 본다 */
+  node: Pick<TopicNode, 'kind' | 'id'> | TaskNode
   onSelect: (selection: MapSelection) => void
 }
 
@@ -83,7 +83,13 @@ export interface SelectionPanelProps {
  */
 export function SelectionPanel({ workspaceId, map, node, onSelect }: SelectionPanelProps) {
   return node.kind === 'topic' ? (
-    <TopicBody key={node.id} workspaceId={workspaceId} topic={node} map={map} onSelect={onSelect} />
+    <TopicBody
+      key={node.id}
+      workspaceId={workspaceId}
+      topicId={node.id}
+      map={map}
+      onSelect={onSelect}
+    />
   ) : (
     <TaskBody workspaceId={workspaceId} task={node} map={map} onSelect={onSelect} />
   )

@@ -6,6 +6,7 @@ import { workspaceKey } from '@/shared/api/queryKeys'
 import { endSessionScope } from '@/shared/api/sessionScope'
 import { paths } from '@/shared/config/routes'
 import { COMPACT_QUERY } from '@/shared/lib/compact-screen'
+import { db } from '@/shared/mock/db'
 import { fail, ok } from '@/shared/mock/envelope'
 import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
@@ -172,6 +173,68 @@ describe('주제 이름·설명 고치기 (#551)', () => {
       method: 'GET',
       path: '/workspaces/ws_01/topics/tp_02',
     })
+  })
+
+  it('맵을 받은 뒤 생긴 주제와 이름이 겹쳐도 그 주제를 알리고 합친다. 맵이 늦어도 패널은 합친 주제에 남는다', async () => {
+    await openTopic('배포·인프라')
+    db.projectMap.topics.push({
+      topic_id: 'tp_new',
+      workspace_id: WS,
+      name: '모니터링',
+      description: '경보와 대시보드를 둔다.',
+      created_at: '2026-09-20T00:00:00Z',
+      meeting_ids: [],
+      items: [],
+      detached_task_ids: [],
+      edited: false,
+    })
+    const mapGate = deferred()
+    server.use(
+      http.get('/api/v1/workspaces/:ws/project-map', async () => {
+        await mapGate.promise
+      }),
+    )
+    const log = recordRequests()
+    await rename('모니터링')
+    expect(await within(panel()).findByText('「모니터링」 주제가 이미 있어요.')).toBeVisible()
+    expect(log.started).toContainEqual({ method: 'GET', path: '/workspaces/ws_01/project-map' })
+
+    await userEvent.click(within(panel()).getByRole('button', { name: '이 주제와 합치기' }))
+    const dialog = await screen.findByRole('dialog', { name: '다른 주제와 합칠까요?' })
+    expect(within(dialog).getByRole('combobox', { name: '합칠 주제' })).toHaveTextContent(
+      '모니터링',
+    )
+    await userEvent.click(within(dialog).getByRole('button', { name: '합치기' }))
+
+    expect(await screen.findByText('주제를 합쳤어요.')).toBeInTheDocument()
+    const heading = within(panel()).getByRole('heading', { level: 2, name: '모니터링' })
+    await waitFor(() => expect(heading).toHaveFocus())
+    expect(await within(panel()).findByText('배포는 스크립트 하나로 한다')).toBeVisible()
+
+    mapGate.resolve()
+    expect(await screen.findByRole('button', { name: '모니터링' })).toBeVisible()
+    await waitFor(() => expect(screen.queryByRole('button', { name: '배포·인프라' })).toBeNull())
+    expect(within(panel()).getByRole('heading', { level: 2, name: '모니터링' })).toBeVisible()
+  })
+
+  it('겹친다고 알려 준 주제가 이미 없으면 합치기를 권하지 않는다', async () => {
+    server.use(
+      http.patch('/api/v1/workspaces/:ws/topics/:id', () =>
+        fail('TOPIC_NAME_TAKEN', '같은 이름의 주제가 있습니다.', 409, { topic_id: 'tp_gone' }),
+      ),
+    )
+    const app = await openTopic('배포·인프라')
+    await rename('모니터링')
+    expect(await within(panel()).findByRole('alert')).toHaveTextContent(
+      '같은 이름의 주제가 이미 있어요.',
+    )
+    await waitFor(() =>
+      expect(
+        app.queryClient.getQueryState(workspaceKey(WS, 'project-map', 'topic', 'tp_gone'))?.status,
+      ).toBe('error'),
+    )
+    expect(within(panel()).queryByRole('button', { name: '이 주제와 합치기' })).toBeNull()
+    expect(within(panel()).getByRole('alert')).toHaveTextContent('같은 이름의 주제가 이미 있어요.')
   })
 
   it('응답을 읽지 못하면 실패라 하지 않고 확인 알림을 띄운다. 새로고침은 맵을 다시 받는다', async () => {
