@@ -4,15 +4,13 @@ import { fail, ok } from '../envelope'
 import { requireAuth, requireMember } from '../auth-guard'
 import { deletedMeetingResponse } from '../meetingDeletion'
 import { readJson } from '../utils'
-import { PYTHON_STRIP, invalidBody } from '../validation'
+import { PYTHON_STRIP, hasUnstorable, invalidBody } from '../validation'
 import type { FieldError } from '../validation'
 
 /* 회의 기록 고치기 (#605 BE PR #669 — api/meetings.py, services/transcript.py, schemas/record_edit.py, 계약 §4.4.3) */
 
 const TITLE_MAX = 200
 const LINE_MAX = 10_000
-
-const UNSTORABLE = /\0|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
 
 const codePoints = (text: string) => [...text].length
 
@@ -28,7 +26,7 @@ function nullableText(
   if (value === null) return { value: null }
   if (typeof value !== 'string')
     return { error: { loc: ['body', name], msg: 'Input should be a valid string' } }
-  const problem = UNSTORABLE.test(value)
+  const problem = hasUnstorable(value)
     ? 'Value error, NUL 이나 짝 없는 서로게이트 글자는 저장할 수 없습니다.'
     : check(value)
   return problem === null ? { value } : { error: { loc: ['body', name], msg: problem } }
