@@ -78,9 +78,9 @@ docker compose -f docker-compose.prod.yml logs -f api
 
 ## 심사용 시드
 
-심사 시연용으로 계정 6개, 공간 하나, 팀원 자리, 온보딩 단계, 지난 회의를 채우는 명령이다(#606). 계정·공간·자리는 DB 에 직접 만들고, 지난 회의는 AI 봇과 같은 서비스 토큰 API 로 재생한다(회의 데이터를 DB 에 직접 넣지 않는다). 같은 명령을 다시 실행해도 같은 결과이고, 멈춘 지점부터 이어 간다. 시드 데이터는 `app/cli/demo_seed/meetings.json` 이다.
+심사 시연용으로 계정 6개, 공간 하나, 팀원 자리, 온보딩 단계, 지난 회의를 채우는 명령이다(#606). 계정·공간·자리는 DB 에 직접 만들고, 지난 회의는 AI 봇과 같은 서비스 토큰 API 로 재생한다(회의 데이터를 DB 에 직접 넣지 않는다). 기본 데이터는 승인 완료된 회의 5개와 승인 대기 시연 회의 1개다. 같은 명령을 다시 실행해도 계정·회의를 중복 생성하지 않고 기존 승인과 요약을 보존한다. 시드 데이터는 `app/cli/demo_seed/meetings.json` 이다.
 
-전제는 세 가지다. API 서버에 `EMBEDDING_API_KEY` 가 있어야 하고(없으면 임베딩이 안 채워져 회의 사이에서 멈춘다), `AUTO_CREATE_ENABLED` 가 켜져 있어야 하고, 명령을 돌리는 환경에 `SERVICE_TOKEN` 이 있어야 한다.
+API 서버에 `EMBEDDING_API_KEY` 가 있어야 하고(없으면 임베딩이 안 채워져 회의 사이에서 멈춘다), `AUTO_CREATE_ENABLED` 가 켜져 있어야 하고, 명령을 돌리는 환경에 `SERVICE_TOKEN` 이 있어야 한다. 승인 완료로 선언한 새 회의는 `DEMO_PM_PASSWORD`로 실제 PM 로그인과 승인 API를 호출한다. 기존 PM 계정을 재사용하면 그 계정의 현재 비밀번호가 필요하다.
 
 운영(이메일은 자리표시자다. 실제 주소를 문서나 셸 기록에 남기지 않는다). 비밀번호는 셸 기록에 남지 않게 `read -rs DEMO_PM_PASSWORD && export DEMO_PM_PASSWORD` 처럼 입력해 둔다(`DEMO_MEMBER_PASSWORD` 도 같다).
 
@@ -107,14 +107,16 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | 종료 코드 | 뜻 |
 |---|---|
 | 0 | 성공 |
-| 1 | 시드 실패(데이터·API·임베딩 대기 오류). 한 줄이 stderr 에 나온다. 같은 명령을 다시 실행하면 이어 간다 |
+| 1 | 시드 실패(데이터·API·PM 로그인·임베딩 대기 오류). 한 줄이 stderr 에 나온다. 다시 실행하면 기존 승인을 보존하며 원문·추출 단계부터 이어 간다. 기존 추출의 요약 복구 제한은 아래를 참고한다 |
 | 2 | 입력·환경 부족(비밀번호, 이메일 패턴, `SERVICE_TOKEN`, 옵션)이나 시드가 아닌 기존 데이터 재사용 거절(`--allow-existing` 참고). 아무것도 쓰지 않았다 |
 | 3 | 데이터는 다 썼지만 gate 분포에 auto·review·hold 중 0 건이 있다. JSON 은 그대로 나오고 stderr 에 경고가 나온다 |
 
 알아 둘 점:
 
 - 임베딩 대기 시간 초과는 `EMBEDDING_API_KEY` 미설정일 수도 있고, 임베딩 API 가 제목을 거절한 행(`embedding_rejected_title`)일 수도 있다.
-- 운영 요약 워커(AI mm-worker, `MM_SUMMARY_LLM`)가 시드와 동시에 돌면 워커가 먼저 잡은 회의의 요약은 `summaries_skipped` 에 들어가고, 그 임대 15분 동안 같은 공간의 뒤 회의들도 건너뛸 수 있다. 시드 중에는 워커를 잠시 멈추거나, `summaries_skipped` 가 나오면 15분 뒤 같은 명령을 다시 실행한다. 요약만 채운다.
+- `approval_state`가 `approved`인 회의는 이번 실행에서 새로 만든 추출의 카드만 PM API로 승인한 뒤 고정 요약을 쓴다. 이 정책의 항목은 `action: create`만 허용한다. 필드가 없거나 `pending`인 회의는 자동 승인하거나 요약하지 않는다. 기본 6번째 회의에는 review·hold 카드가 하나씩 남는다.
+- 기존 추출은 사람이 보류·반려·수정한 것과 중단된 시드를 구분할 수 없어 자동 승인하지 않는다. 요약이 없더라도 고정 시드 요약을 다시 주입하지 않고, 승인 완료로 선언한 회의 제목을 `summaries_skipped`에 적는다. PM이 현재 승인 상태를 확인하고 정상 요약 워커로 처리하거나 새 공간에서 다시 시드한다. 기존 태스크와 저장된 요약은 덮어쓰지 않는다.
+- 운영 요약 워커(AI mm-worker, `MM_SUMMARY_LLM`)가 시드와 동시에 돌면 워커가 먼저 잡은 회의의 요약은 `summaries_skipped`에 들어가고, 그 임대 15분 동안 같은 공간의 뒤 회의들도 건너뛸 수 있다. 이 경우에도 재실행이 기존 추출의 고정 요약을 복구하지는 않는다.
 - 시드 항목의 `similar_count` 는 모두 0 이라 gate 분포는 유사 검색 결과로 바뀌지 않는다. 출력 JSON 의 `gates` 에서 auto 가 0 건이면 API 서버의 `AUTO_CREATE_ENABLED` 가 꺼져 있거나(auto 가 review 로 내려간다), 재생 중 임베딩이 아직 없는 task·승인 대기 카드가 남아 있던 경우(서버 로그의 `unsearched_task_exists`·`unsearched_pending_exists`)다.
 - 회의의 처리 완료 시각(`ended_at`)은 시드를 실행한 시각으로 남는다. 시작 시각만 며칠 전으로 합성한다.
 - 팀원2 자리는 초대·수락 시연용으로 비워 둔다. PM 이 초대할 때는 팀원2 의 아이디(출력 JSON 의 `usernames.p2`)를 정확히 입력해 찾는다. 동의 기록은 넣지 않아 첫 로그인 때 동의 화면이 뜬다.

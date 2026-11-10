@@ -42,3 +42,25 @@ BE Python은 저장소 루트의 `backend/.venv/Scripts/python.exe`를 사용했
 - `deslop` 스킬은 설치 목록과 로컬 경로에서 찾지 못했다. 별도 검토, Ruff와 실제 회귀 테스트로 변경을 확인했다.
 
 계약은 [BE·AI](../../../../backend/docs/contracts/backend-ai-contract.md#회의-요약)와 [FE](../../contracts/frontend-api-contract.md)에 반영했다. 기존 판단 근거는 [0066](../../../../ai/docs/basis_for_decision/ai/2026-11-10-0066-summary-after-approval.md)에 있다.
+
+## 2026-11-11 CI 실패 후속 수정
+
+사용자가 #669 동기화 복구와 #645 CI 수정을 지시했다. `c07d40ef`의 [BE CI](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/actions/runs/42842946629/job/129922690937)는 데모 시드 테스트 4개가 SQLite·PostgreSQL 양쪽에서 실패해 8 failed, 5584 passed, 71 skipped였다. 기존 데모 회의 5개 모두 pending 카드가 남아 새 승인 대기 규칙에 따라 claim이 거절됐고, 예상 요약 5개 대신 0개가 저장됐다. 부모도 같은 SQLite 실패 4개를 직접 재현했다.
+
+승인 판정은 완화하지 않고 시드를 고쳤다. 기본 데이터의 기존 회의 5개에 `approval_state: approved`를 명시하고 이번 실행에서 새로 만든 추출의 카드를 실제 PM 로그인과 승인 API로 처리한 뒤 고정 요약을 쓴다. 독립된 6번째 회의에는 review·hold 카드가 하나씩 남는다. 최초 정상 결과는 `done=6`, `summaries_written=5`, `summaries_skipped=[]`이고 마지막 회의는 `awaiting_approval`이다. 원래 5개 회의의 원문·항목·요약과 공통 인물·용어는 보존했다.
+
+사용자 지정 데이터의 정책 기본값은 `pending`이다. 독립 검토에서 approved 회의의 merge 입력이 기존 pending 카드를 승인하는 문제를 재현해, approved 정책의 입력은 `create`만 허용하도록 파서에서 제한했다. pending 정책의 기존 merge·update 입력은 유지했다. 서버의 PM 인증, 서비스 토큰 권한, Secure 쿠키 설정과 요약 게이트는 바꾸지 않았다. CLI는 실제 로그인 쿠키를 같은 API의 승인 요청에 보내고 외부 리디렉션을 따르지 않는다.
+
+재실행은 기존 추출의 카드와 요약을 보존한다. 중단된 시드와 사람이 보류한 상태를 구분할 수 없어 기존 추출은 자동 승인하지 않으며, 요약이 없어도 정적 시드 요약을 다시 넣지 않는다. 승인 완료로 선언한 회의의 요약이 없으면 `summaries_skipped`로 보고한다. 부분 시드의 완전 자동 복원보다 사용자의 처리 보존을 택한 근거는 [0066의 CI 통합 기록](../../../../ai/docs/basis_for_decision/ai/2026-11-10-0066-summary-after-approval.md#2026-11-11-데모-시드와의-통합)에 있다. [CLI 사용법](../../../../backend/README.md#심사용-시드)도 이 제한과 실제 PM 비밀번호 요구를 반영했다. 웹·봇 API 계약은 변경하지 않았다.
+
+### 후속 검증
+
+| 범위 | 실행과 실제 결과 |
+|---|---|
+| 최종 시드 전체 | WSL Python 3.12, PostgreSQL 16·pgvector의 전용 `mm_ci645_impl_20261111` DB와 SQLite. `tests/api/test_demo_seed_data.py`, `test_demo_seed_accounts.py`, `test_demo_seed_cli.py`, `test_demo_seed_meetings.py`를 `pytest -q -p no:cacheprovider`로 실행해 **129 passed**, skip 없음 |
+| 독립 재검토 | SQLite의 data·meeting 파일 전체 **40 passed, 25 skipped**. DB 매개변수에서 PostgreSQL 사례는 이 실행에서 건너뛰었다 |
+| 요약·삭제 주변 회귀 | 별도 PostgreSQL DB와 SQLite에서 seed meeting·summary queue·summary save·meeting deletion 4파일을 실행해 331 passed, 8 skipped, 2 failed였다. 두 실패는 로컬 DB 기본 시간대가 Asia/Seoul인 데 따른 기존 UTC 문자열 단언이었다. 전용 DB를 CI와 같은 UTC로 맞춘 뒤 해당 두 테스트를 양 DB에서 다시 실행해 **4 passed**였다. 제품 코드로 환경 차이를 우회하지 않았다 |
+| 데이터 보존 | `c07d40ef`의 JSON과 비교해 기존 5개 회의는 정책 필드 외에 같고, 공통 인물·용어도 같은 것을 확인했다 |
+| 정적 검사 | 변경 Python 파일 Ruff, `git diff --check`, 추가 상대 링크와 보호 문서 검사 통과 |
+
+HTTP·HTTPS에서의 정상 로그인과 승인, 외부 리디렉션 차단, 기존 pending·반려·PM 수정과 실제 워커 요약의 재실행 보존을 API 회귀로 확인했다. 유료 LLM·임베딩 호출, 운영 시드 실행과 배포는 하지 않았다. 최종 원격 CI는 두 PR의 최신 커밋 체크에서 별도로 확인한다.

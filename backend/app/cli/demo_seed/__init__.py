@@ -8,7 +8,7 @@
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 DEFAULT_DATA_PATH = Path(__file__).with_name("meetings.json")
 
@@ -42,6 +42,7 @@ class SeedMeeting:
     turns: list[SeedTurn]
     items: list[dict]
     summary: dict
+    approval_state: Literal["approved", "pending"] = "pending"
 
 
 @dataclass(frozen=True)
@@ -119,6 +120,7 @@ def _parse(raw: Any) -> SeedData:
             meeting = SeedMeeting(
                 title=title, days_ago=raw_meeting["days_ago"], turns=turns,
                 items=list(raw_meeting["items"]), summary=dict(raw_meeting["summary"]),
+                approval_state=raw_meeting.get("approval_state", "pending"),
             )
         except (KeyError, TypeError) as exc:
             raise SeedDataError(f"회의 모양이 다릅니다: {exc!r}") from exc
@@ -129,8 +131,12 @@ def _parse(raw: Any) -> SeedData:
                 raise SeedDataError(f"회의 '{title}': 모르는 화자 key {turn.speaker}")
         if not meeting.summary.get("overview"):
             raise SeedDataError(f"회의 '{title}': summary.overview 가 없습니다")
+        if meeting.approval_state not in ("approved", "pending"):
+            raise SeedDataError(f"회의 '{title}': approval_state 는 approved/pending 이어야 합니다")
         for index, item in enumerate(meeting.items):
             _validate_item(title, index, item, len(turns), keys, first=index == 0)
+            if meeting.approval_state == "approved" and item["action"] != "create":
+                raise SeedDataError(f"회의 '{title}' 항목 {index}: approved 회의는 create 항목만 허용합니다")
         meetings.append(meeting)
 
     if len({m.title for m in meetings}) != len(meetings):
