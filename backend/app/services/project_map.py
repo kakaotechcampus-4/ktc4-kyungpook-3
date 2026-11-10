@@ -1,22 +1,21 @@
 """프로젝트 맵 읽기. 주제와 태스크의 연결은 저장하지 않고 _visible_links 한 쿼리로 푼다.
 
-승인 코드에 훅이 없다. 회의 시점에는 대부분 Task 가 없어 주제를 추출 항목에 달아 두고, 승인·반려·되돌리기가 항목에 남긴
-task_id 와 승인 상태로 읽을 때 연결을 정한다.
+승인 코드에 훅이 없다. 회의 시점에는 대부분 Task 가 없어 주제를 추출 항목에 달아 두고, 읽을 때 item_fate 가 반영됐다고
+보는 항목만 잇는다.
 """
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, exists, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
 from app.models import (
-    ApprovalRequest,
-    ApprovalStatus,
     Decision,
+    DecisionState,
     Extraction,
-    ExtractionItem,
     Meeting,
+    MeetingSource,
     Member,
     MemberAlias,
     MemberRole,
@@ -26,6 +25,7 @@ from app.models import (
     Topic,
     TopicItem,
     TopicMeeting,
+    TopicTaskDetach,
     Workspace,
 )
 from app.schemas.project_map import (
@@ -38,7 +38,8 @@ from app.schemas.project_map import (
     TopicNode,
     TopicTask,
 )
-from app.services import embedding, mailer, summary
+from app.services import embedding, item_fate, mailer, summary
+from app.services.messages import utc
 from app.services.scheduler import WORKSPACE_TZ
 from app.services.summary_markdown import (
     BlockedTask,
@@ -65,29 +66,21 @@ class MarkdownFile:
 
 
 def _visible_links(workspace_id: str) -> Select:
-    """주제와 태스크 연결의 유일한 정의. (topic_id, task_id, meeting_id).
-
-    반려된 항목만 숨긴다. 대기 중인 수정 항목은 task_id 가 이미 있어 바로 보이고, 승인 전 새 항목과 되돌린 항목은 task_id 가 없어
-    안 보인다. reverted_at 은 보지 않는다.
-    """
+    """주제와 태스크 연결의 유일한 정의. (topic_id, task_id, meeting_id). 대기 중인 수정 항목은 승인 뒤에 잇고, 팀원이 뗀 짝은 잇지 않는다."""
+    final = item_fate.final_items().subquery()
     return (
         select(TopicItem.topic_id, Task.task_id, Extraction.meeting_id)
         .distinct()
         .join(Topic, Topic.topic_id == TopicItem.topic_id)
-        .join(ExtractionItem, ExtractionItem.item_id == TopicItem.item_id)
-        .join(Extraction, Extraction.extraction_id == ExtractionItem.extraction_id)
+        .join(final, final.c.item_id == TopicItem.item_id)
+        .join(Extraction, Extraction.extraction_id == final.c.extraction_id)
         .join(Meeting, Meeting.meeting_id == Extraction.meeting_id)
-        .join(Task, Task.task_id == ExtractionItem.task_id)
-        .outerjoin(ApprovalRequest, ApprovalRequest.approval_id == ExtractionItem.approval_id)
+        .join(Task, Task.task_id == final.c.task_id)
         .where(
             Topic.workspace_id == workspace_id,
             Task.workspace_id == workspace_id,
-            Task.is_deleted.is_(False),
             Meeting.deleted_at.is_(None),
-            or_(
-                ApprovalRequest.approval_id.is_(None),
-                ApprovalRequest.status != str(ApprovalStatus.REJECTED),
-            ),
+            ~exists().where(TopicTaskDetach.topic_id == TopicItem.topic_id, TopicTaskDetach.task_id == Task.task_id),
         )
     )
 
@@ -172,15 +165,29 @@ def build_graph(db: Session, workspace_id: str) -> GraphResponse:
     )
 
 
+def topic_decision(decision: Decision, meeting: Meeting) -> TopicDecision:
+    return TopicDecision(
+        decision_id=decision.decision_id,
+        text=decision.text,
+        reason=decision.reason,
+        meeting_id=meeting.meeting_id,
+        meeting_title=meeting.title,
+        decided_at=meeting.started_at,
+        replaced_by=decision.replaced_by,
+        state=decision.state,
+        edited=decision.edited_at is not None,
+    )
+
+
 def topic_detail(db: Session, workspace_id: str, topic_id: str) -> TopicDetailResponse:
-    """바뀐 결정도 replaced_by 와 함께 준다."""
+    """바뀐 결정도 replaced_by 와 함께 준다. 팀원이 지운 결정은 빼고 유효하지 않다고 한 결정은 state 로 알린다."""
     topic = db.get(Topic, topic_id)
     if topic is None or topic.workspace_id != workspace_id:
         raise AppError(ErrorCode.TOPIC_NOT_FOUND, details={"topic_id": topic_id})
     decisions = db.execute(
         select(Decision, Meeting)
         .join(Meeting, Meeting.meeting_id == Decision.meeting_id)
-        .where(Decision.topic_id == topic_id, Meeting.deleted_at.is_(None))
+        .where(Decision.topic_id == topic_id, Meeting.deleted_at.is_(None), Decision.state != DecisionState.REMOVED)
         .order_by(Meeting.started_at, Meeting.meeting_id, Decision.position)
     ).all()
     task_ids = select(_visible_links(workspace_id).where(TopicItem.topic_id == topic_id).subquery().c.task_id)
@@ -200,18 +207,8 @@ def topic_detail(db: Session, workspace_id: str, topic_id: str) -> TopicDetailRe
         topic_id=topic.topic_id,
         name=topic.name,
         description=topic.description,
-        decisions=[
-            TopicDecision(
-                decision_id=decision.decision_id,
-                text=decision.text,
-                reason=decision.reason,
-                meeting_id=meeting.meeting_id,
-                meeting_title=meeting.title,
-                decided_at=meeting.started_at,
-                replaced_by=decision.replaced_by,
-            )
-            for decision, meeting in decisions
-        ],
+        edited=topic.edited_at is not None,
+        decisions=[topic_decision(decision, meeting) for decision, meeting in decisions],
         tasks=[
             TopicTask(
                 task_id=task.task_id,
@@ -244,12 +241,19 @@ def _attendees(db: Session, meeting_ids: list[str]) -> dict[str, list[str]]:
 
 
 def _head(meeting: Meeting, document: dict, attendees: list[str]) -> SummaryHead:
+    chat = meeting.source == MeetingSource.CHAT
+    start = utc(meeting.started_at).astimezone(WORKSPACE_TZ)
+    # 채팅 회의는 수집이 붙인 "채팅 <날짜>" 대신 일일 요약이라 부르고, 팀원이 고친 제목이 있으면 그것을 쓴다
+    title = (meeting.title if meeting.title_edited_at is not None else "일일 요약") if chat else meeting.title or "회의"
     return SummaryHead(
-        title=meeting.title or "회의",
+        title=title,
         date=summary.meeting_date(meeting.started_at),
         attendees=attendees,
         source_url=f"{mailer.app_base_url()}/workspaces/{meeting.workspace_id}/meetings/{meeting.meeting_id}",
         topics=document.get("topics", []),
+        kind="일일 요약" if chat else "회의",
+        # ended_at 은 인계 시각이라 기간의 끝은 마지막 메시지 위치(duration_ms)로 잡는다
+        period=(start, start + timedelta(milliseconds=meeting.duration_ms or 0)) if chat else None,
     )
 
 
@@ -260,7 +264,7 @@ def summary_markdown(db: Session, meeting: Meeting) -> MarkdownFile:
         .order_by(Extraction.created_at.desc())
         .limit(1)
     ).first()
-    document = summary.load_document(extraction)
+    document = summary.documents(db, [(meeting, extraction)]).get(meeting.meeting_id)
     if document is None:
         raise AppError(ErrorCode.SUMMARY_NOT_FOUND, details={"meeting_id": meeting.meeting_id})
     head = _head(meeting, document, _attendees(db, [meeting.meeting_id])[meeting.meeting_id])
@@ -326,7 +330,8 @@ def _valid_decisions(db: Session, workspace_id: str) -> list[BundleDecision]:
         select(Topic.name, Decision.text, Meeting.started_at)
         .join(Topic, Topic.topic_id == Decision.topic_id)
         .join(Meeting, Meeting.meeting_id == Decision.meeting_id)
-        .where(Decision.workspace_id == workspace_id, Decision.replaced_by.is_(None), Meeting.deleted_at.is_(None))
+        .where(Decision.workspace_id == workspace_id, Decision.replaced_by.is_(None), Meeting.deleted_at.is_(None),
+               Decision.state == DecisionState.VALID)
         .order_by(Topic.name, Meeting.started_at, Decision.position)
     ).all()
     return [
@@ -362,11 +367,8 @@ def _period_summaries(
         stmt = stmt.where(Meeting.started_at < _day_start(end + timedelta(days=1)))
     # 시각 오름차순으로 덮어 회의마다 최신 추출만 남긴다
     latest = {meeting.meeting_id: (meeting, extraction) for meeting, extraction in db.execute(stmt)}
-    documents = [
-        (meeting, document)
-        for meeting, extraction in latest.values()
-        if (document := summary.load_document(extraction)) is not None
-    ]
+    shown = summary.documents(db, list(latest.values()))
+    documents = [(meeting, shown[meeting.meeting_id]) for meeting, _ in latest.values() if meeting.meeting_id in shown]
     attendees = _attendees(db, [meeting.meeting_id for meeting, _ in documents])
     return [(document, _head(meeting, document, attendees[meeting.meeting_id])) for meeting, document in documents]
 

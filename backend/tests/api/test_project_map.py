@@ -63,11 +63,22 @@ def _extraction(db, meeting, **fields):
     return row
 
 
+def _forged_claim(db, extraction):
+    """승인 게이트와 무관하게 연결을 보려고 claim 이 쓰는 임대를 직접 쓴다. 게이트는 test_summary_queue.py 가 잰다."""
+    token = "forged-claim-token"
+    workspace = db.get(Workspace, extraction.meeting.workspace_id)
+    extraction.summary_requested_at = extraction.summary_requested_at or T0
+    extraction.summary_attempts += 1
+    extraction.summary_claimed_at = datetime.now(timezone.utc)
+    extraction.summary_claim_token_hash = summary._token_hash(token, workspace.identity_epoch)
+    db.commit()
+    return token
+
+
 def _save(db, meeting, topics=(), *, extraction=None, **fields):
     row = extraction or _extraction(db, meeting, summary_requested_at=T0)
     body = {"model_name": "m", "overview": "핵심", "key_points": ["하나"], "topics": list(topics), **fields}
-    claim = summary.claim_next(db, only=[row.extraction_id])
-    body["claim_token"] = claim.claim_token
+    body["claim_token"] = _forged_claim(db, row)
     summary.save_summary(db, row.extraction_id, SummaryWriteRequest(**body))
     db.commit()
     return row
@@ -249,10 +260,13 @@ def test_row_4_rejected_create_stays_unlinked(client, mdb, mseed):
     assert case.linked_task_ids() == []
 
 
-def test_row_5_pending_update_links_at_once(client, mdb, mseed):
+def test_row_5_pending_update_links_after_approval(client, mdb, mseed):
     case = LinkCase(client, mdb, mseed, _update_value(mseed))
-
     assert case.refresh().approval_id is not None
+    assert case.linked_task_ids() == []
+
+    case.resolve("approved")
+
     assert case.linked_task_ids() == [mseed["tasks"][0].task_id]
 
 
@@ -534,6 +548,65 @@ def test_summary_markdown_download(client, mdb, mseed, monkeypatch):
     assert "## 핵심 요약" in text
 
 
+def _auto_item(client, db, seed, meeting):
+    db.add(MemberAlias(member_id=seed["alice"].member_id, workspace_id=seed["ws"], alias_text="앨리스님",
+                       alias_type="nickname", source="manual", confidence=1.0, verified=True))
+    db.commit()
+    extraction_id = _extract(client, meeting, [{"task_title": "자동 태스크", "task_confidence": 0.99,
+                                                "assignee_raw": "앨리스님", "assignee_type": "thirdname"},
+                                               {"task_title": "검토 태스크", "task_confidence": 0.6, "due_confidence": 0.0}])
+    db.expire_all()
+    auto, pending = db.scalars(select(ExtractionItem).where(ExtractionItem.extraction_id == extraction_id)
+                               .order_by(ExtractionItem.gate)).all()
+    assert (auto.gate, pending.gate) == ("auto", "review")
+    return db.get(Extraction, extraction_id), auto, pending
+
+
+def _task_changes_shown(client, meeting):
+    minutes = [c["task"] for c in _status(client, meeting)["summary"]["task_changes"]]
+    text = client.get(f"/api/v1/meetings/{meeting.meeting_id}/summary.md").text
+    return minutes, [task for task in ("반영된 일", "키 없는 일", "대기 중인 일") if task in text]
+
+
+def test_task_changes_show_only_items_that_are_final_now(client, mdb, mseed):
+    meeting = _meeting(mdb, mseed["ws"], status="processing")
+    extraction, auto, pending = _auto_item(client, mdb, mseed, meeting)
+    _save(mdb, meeting, extraction=extraction, task_changes=[
+        {"task": "반영된 일", "item_id": auto.item_id}, {"task": "키 없는 일"},
+        {"task": "대기 중인 일", "item_id": pending.item_id},
+    ])
+
+    assert _task_changes_shown(client, meeting) == (["반영된 일"], ["반영된 일"])
+
+
+def test_task_change_whose_item_is_reverted_after_the_summary_is_hidden(client, mdb, mseed):
+    meeting = _meeting(mdb, mseed["ws"], status="processing")
+    extraction, auto, _ = _auto_item(client, mdb, mseed, meeting)
+    _save(mdb, meeting, extraction=extraction, task_changes=[{"task": "반영된 일", "item_id": auto.item_id}])
+    assert _task_changes_shown(client, meeting) == (["반영된 일"], ["반영된 일"])
+
+    r = client.post(f"/api/v1/extractions/{extraction.extraction_id}/items/{auto.item_id}/revert")
+    assert r.status_code == 200, r.text
+
+    assert _task_changes_shown(client, meeting) == ([], [])
+
+
+def test_daily_chat_summary_markdown_is_named_and_headed_as_a_daily_summary(client, mdb, mseed):
+    meeting = _meeting(mdb, mseed["ws"], source="chat", title="채팅 2026-11-05")
+    meeting.duration_ms = 26 * 3600 * 1000
+    mdb.commit()
+    _save(mdb, meeting)
+
+    r = client.get(f"/api/v1/meetings/{meeting.meeting_id}/summary.md")
+
+    name = quote("2026-11-05 일일 요약.md", safe="")
+    assert r.headers["content-disposition"] == f"attachment; filename=\"summary.md\"; filename*=UTF-8''{name}"
+    assert '종류: "일일 요약"' in r.text and '기간: "2026-11-05 14:00 ~ 2026-11-06 16:00"' in r.text
+    assert "# 일일 요약\n" in r.text
+    bundle = client.get(f"/api/v1/workspaces/{mseed['ws']}/project-bundle.md").text
+    assert "### 일일 요약\n\n2026-11-05 14:00 ~ 2026-11-06 16:00, 원문: " in bundle
+
+
 def test_summary_markdown_date_is_the_workspace_date(client, mdb, mseed):
     meeting = _meeting(mdb, mseed["ws"], started_at=datetime(2026, 10, 31, 15, 30, tzinfo=timezone.utc))
     _save(mdb, meeting)
@@ -785,14 +858,77 @@ def test_minutes_none_once_attempts_ran_out(client, mdb, mseed):
     assert _status(client, meeting)["summary_status"] == "none"
 
 
-def test_minutes_none_for_old_meeting_chat_and_no_extraction(client, mdb, mseed):
+def test_minutes_none_for_old_meeting_and_no_extraction(client, mdb, mseed):
     old = _meeting(mdb, mseed["ws"])
     _extraction(mdb, old)
-    chat = _meeting(mdb, mseed["ws"], source="chat")
-    _extraction(mdb, chat)
     bare = _meeting(mdb, mseed["ws"])
 
-    assert [_status(client, m)["summary_status"] for m in (old, chat, bare)] == ["none", "none", "none"]
+    assert [_status(client, m)["summary_status"] for m in (old, bare)] == ["none", "none"]
+
+
+REVIEW = {"task_title": "검토 태스크", "task_confidence": 0.6, "due_confidence": 0.0}
+
+
+def _cards(db, extraction_id):
+    db.expire_all()
+    return list(dict.fromkeys(db.scalars(
+        select(ExtractionItem.approval_id)
+        .where(ExtractionItem.extraction_id == extraction_id, ExtractionItem.approval_id.is_not(None))
+        .order_by(ExtractionItem.created_at)
+    )))
+
+
+def test_minutes_awaiting_approval_gives_the_count_to_the_pm_only(client, mdb, mseed):
+    first = _meeting(mdb, mseed["ws"], status="processing")
+    [card] = _cards(mdb, _extract(client, first, [REVIEW]))
+    meeting = _meeting(mdb, mseed["ws"], status="processing")
+    merge = {"action": "merge", "target_approval_id": card, "task_title": "검토 태스크", "category": "due"}
+    extraction_id = _extract(client, meeting, [{**merge, "due_date": "2026-12-03"}, {**merge, "due_date": "2026-12-04"},
+                                               {**REVIEW, "task_title": "다른 일"}])
+    assert len(_cards(mdb, extraction_id)) == 2
+    member = TestClient(app, base_url="https://testserver")
+    member.cookies.set("session_token", "alice-token")
+
+    as_pm, as_member = _status(client, meeting), _status(member, meeting)
+
+    assert (as_pm["summary_status"], as_pm["summary_waiting_count"]) == ("awaiting_approval", 2)
+    assert (as_member["summary_status"], as_member["summary_waiting_count"]) == ("awaiting_approval", None)
+
+
+def test_minutes_waits_with_no_time_limit(client, mdb, mseed):
+    meeting = _meeting(mdb, mseed["ws"], status="processing")
+    extraction_id = _extract(client, meeting, [REVIEW])
+    mdb.get(Extraction, extraction_id).summary_requested_at = T0 - timedelta(days=30)
+    mdb.commit()
+
+    assert _status(client, meeting)["summary_status"] == "awaiting_approval"
+
+
+def test_minutes_pending_window_starts_at_the_last_resolve(client, mdb, mseed):
+    meeting = _meeting(mdb, mseed["ws"], status="processing")
+    extraction_id = _extract(client, meeting, [REVIEW])
+    mdb.get(Extraction, extraction_id).summary_requested_at = datetime.now(timezone.utc) - timedelta(days=2)
+    mdb.commit()
+
+    _resolve(client, _cards(mdb, extraction_id)[0], "approved")
+
+    data = _status(client, meeting)
+    assert (data["summary_status"], data["summary_waiting_count"]) == ("pending", None)
+
+
+def test_minutes_chat_is_none_until_an_item_is_approved(client, mdb, mseed):
+    chat = _meeting(mdb, mseed["ws"], source="chat", status="processing")
+    extraction_id = _extract(client, chat, [REVIEW])
+    [card] = _cards(mdb, extraction_id)
+    assert _status(client, chat)["summary_status"] == "awaiting_approval"
+    rejected = _meeting(mdb, mseed["ws"], source="chat", status="processing")
+    _resolve(client, _cards(mdb, _extract(client, rejected, [REVIEW]))[0], "rejected")
+    quiet = _meeting(mdb, mseed["ws"], source="chat", status="processing")
+    _extract(client, quiet, [])
+
+    _resolve(client, card, "approved")
+
+    assert [_status(client, m)["summary_status"] for m in (chat, rejected, quiet)] == ["pending", "none", "none"]
 
 
 def test_minutes_none_for_broken_document(client, mdb, mseed):

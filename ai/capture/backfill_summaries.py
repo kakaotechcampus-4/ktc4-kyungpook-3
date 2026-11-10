@@ -38,7 +38,7 @@ CLAIM_SCOPE_MAX = 500
 WON_PER_INPUT_TOKEN = 2 / 1_000_000 * 1400
 WON_PER_OUTPUT_TOKEN = 12 / 1_000_000 * 1400
 CHARS_PER_TOKEN = 2
-OUTPUT_TOKENS = 1_500
+OUTPUT_TOKENS = 3_500   # 추론 포함. 2026-11-10 실측 최대 3,508(합성 34분 입력)
 UNCONFIRMED = "단가 미확정 추정"
 
 
@@ -179,9 +179,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"재처리 표시 실패: {e}", file=sys.stderr)
         return 1
 
-    targets = RUNNABLE if a.run else READABLE if a.preview else ("requested",)
+    targets = RUNNABLE if a.run else READABLE if a.preview else (*RUNNABLE, "awaiting_approval")
     expected = sum(estimate_won(row["chars"]) for row in rows if row["state"] in targets)
-    print(f"대상 {len(rows)}건, 예상 약 {expected}원 ({UNCONFIRMED})")
+    estimate_scope = "직접 실행" if a.run else "미리 보기" if a.preview else "워커 처리 예정"
+    print(f"대상 {len(rows)}건, {estimate_scope} 예상 약 {expected}원 ({UNCONFIRMED})")
     if a.run:
         run_named(handoff.client, llm, rows, out_dir=out_dir, ledger=ledger)
     elif a.preview:
@@ -189,6 +190,10 @@ def main(argv: list[str] | None = None) -> int:
     elif not a.dry_run:
         for row in rows:
             if row["state"] == "queued":
+                row["result"] = "left"
+    if not a.dry_run and not a.preview:
+        for row in rows:
+            if row["state"] == "awaiting_approval":
                 row["result"] = "left"
     for row in rows:
         result = f" {row['result']}" if row.get("result") else ""
