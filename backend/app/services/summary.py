@@ -2,7 +2,8 @@
 
 대기열 상태는 Extraction의 요청·시도·임대에서 나오고 claim token hash가 같은 임대의 저장만 허용한다.
 
-- 대상 아님: summary_requested_at 이 NULL. 옛 회의와 채팅 회의가 여기 있어 표시 없이는 돌지 않는다.
+- 대상 아님: summary_requested_at 이 NULL. 옛 회의가 여기 있어 표시 없이는 돌지 않는다.
+- 승인 대기: 표시가 있어도 item_fate.ready 가 아니면 claim 이 건너뛴다. 승인이 끝나면 훅 없이 다음 claim 이 집는다.
 - 대기: 표시가 있고 attempts 가 상한 아래이며 임대가 없거나 지났다.
 - 처리 중: 임대가 살아 있다.
 - 포기: attempts 가 상한에 닿았고 임대가 지났다. 재처리(force)로만 살아난다.
@@ -15,6 +16,7 @@ import hashlib
 import logging
 import secrets
 import unicodedata
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
@@ -24,11 +26,12 @@ from sqlalchemy.orm import Session, aliased
 
 from app.core.errors import AppError, ErrorCode
 from app.models import (
+    ApprovalRequest,
     Decision,
     Extraction,
+    ExtractionAction,
     ExtractionItem,
     Meeting,
-    MeetingSource,
     MeetingStatus,
     Member,
     Source,
@@ -36,6 +39,7 @@ from app.models import (
     TopicItem,
     TopicMeeting,
     Workspace,
+    WorkspaceAsrTerm,
 )
 from app.schemas.project_map import (
     SummaryClaimResponse,
@@ -52,20 +56,19 @@ from app.schemas.project_map import (
     SummaryWriteRequest,
 )
 from app.services.messages import utc
-from app.services import lifecycle, meeting_deletion
+from app.services import item_fate, lifecycle, meeting_deletion
 from app.services.scheduler import WORKSPACE_TZ
 
 logger = logging.getLogger(__name__)
 
-SUMMARIZED_SOURCES = (str(MeetingSource.DISCORD), str(MeetingSource.MANUAL_UPLOAD))
 SUMMARY_MAX_ATTEMPTS = 2
 SUMMARY_LEASE = timedelta(minutes=15)
-# 표시한 지 이만큼 지나면 화면에 요약 중이라 하지 않는다. 스위치가 꺼졌거나 워커가 멈추면 끝없이 요약 중으로 보이기 때문이다.
-# 일감은 그대로 남아 나중에 집히면 요약이 나타난다
+# 표시나 마지막 승인 처리 뒤 이만큼 지나면 화면에 요약 중이라 하지 않는다. 스위치가 꺼졌거나 워커가 멈추면 끝없이 요약 중으로
+# 보이기 때문이다. 일감은 그대로 남아 나중에 집히면 요약이 나타난다
 SUMMARY_PENDING_WINDOW = timedelta(hours=1)
 JOB_TOPIC_LIMIT = 100
 JOB_DECISION_LIMIT = 50
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def meeting_date(started_at: datetime) -> date:
@@ -74,9 +77,7 @@ def meeting_date(started_at: datetime) -> date:
 
 
 def mark_requested(db: Session, meeting: Meeting, extraction: Extraction) -> None:
-    """요약 대상이면 줄 세운다. 커밋은 호출자가 한다."""
-    if meeting.source not in SUMMARIZED_SOURCES:
-        return
+    """발화가 있으면 줄 세운다. 승인을 기다리는지는 claim 이 본다. 커밋은 호출자가 한다."""
     if db.scalar(select(exists().where(Source.meeting_id == meeting.meeting_id))):
         extraction.summary_requested_at = datetime.now(timezone.utc)
 
@@ -108,11 +109,11 @@ def claim_next(db: Session, *, only: list[str] | None = None, now: datetime | No
             Workspace.deleted_at.is_(None),
             Meeting.deleted_at.is_(None),
             Meeting.status == MeetingStatus.DONE,
-            Meeting.source.in_(SUMMARIZED_SOURCES),
             Extraction.summary_requested_at.is_not(None),
             Extraction.summary_attempts < SUMMARY_MAX_ATTEMPTS,
             or_(Extraction.summary_claimed_at.is_(None), ~lease_alive),
             ~earlier_in_flight,
+            item_fate.ready(Extraction.extraction_id, Meeting.source),
         )
         .order_by(Meeting.started_at, Extraction.extraction_id)
         .limit(1)
@@ -126,13 +127,15 @@ def claim_next(db: Session, *, only: list[str] | None = None, now: datetime | No
     workspace = lifecycle.workspace(db, extraction.meeting.workspace_id, check_epoch=False)
     meeting = db.scalar(select(Meeting).where(Meeting.meeting_id == extraction.meeting_id)
                         .with_for_update().execution_options(populate_existing=True))
-    if (meeting is None or meeting.deleted_at is not None or meeting.status != MeetingStatus.DONE
-            or meeting.source not in SUMMARIZED_SOURCES):
+    if meeting is None or meeting.deleted_at is not None or meeting.status != MeetingStatus.DONE:
         return None
     extraction = db.get(Extraction, extraction.extraction_id, with_for_update=True, populate_existing=True)
     if extraction is None or extraction.summary_requested_at is None or extraction.summary_attempts >= SUMMARY_MAX_ATTEMPTS:
         return None
     if extraction.summary_claimed_at is not None and utc(extraction.summary_claimed_at) > utc(now) - SUMMARY_LEASE:
+        return None
+    # 고른 뒤 잠그기 전에 되돌리기나 합치기가 대기 카드를 붙였을 수 있다
+    if not item_fate.readiness(db, extraction, meeting.source).ready:
         return None
     token = secrets.token_urlsafe(32)
     extraction.summary_attempts += 1
@@ -178,8 +181,18 @@ def summary_input(db: Session, extraction_id: str) -> SummaryInputResponse:
         identity_epoch=workspace.identity_epoch,
         title=meeting.title,
         started_at=meeting.started_at,
+        source=meeting.source,
+        members=list(db.scalars(
+            select(Member.display_name)
+            .where(Member.workspace_id == meeting.workspace_id, Member.is_deleted.is_(False))
+            .order_by(Member.created_at, Member.member_id)
+        )),
+        asr_terms=sorted(db.scalars(
+            select(WorkspaceAsrTerm.word).where(WorkspaceAsrTerm.workspace_id == meeting.workspace_id)
+        )),
         lines=_input_lines(db, meeting.meeting_id),
-        items=_input_items(db, extraction_id),
+        items=(items := _input_items(db, extraction_id)),
+        rejected_items=_input_rejected(db, extraction_id, {item.title for item in items}),
         topics=_input_topics(db, meeting.workspace_id),
         decisions=_input_decisions(db, meeting),
     )
@@ -204,22 +217,96 @@ def _input_lines(db: Session, meeting_id: str) -> list[SummaryInputLine]:
 
 
 def _input_items(db: Session, extraction_id: str) -> list[SummaryInputItem]:
+    """반영된 항목만. 값은 그 회의 항목이 정한 값에 PM 이 승인하며 고친 값을 덮은 것이다. 뒤 회의나 직접 수정이
+    바꾼 Task 의 지금 값은 쓰지 않는다. 같은 Task 의 새 항목(create, merge)은 먼저 나온 하나만 둔다. 수정 항목은
+    카드마다 따로 승인되고 바꾼 칸만 있어 접으면 승인된 변경이 사라지므로 항목마다 둔다."""
+    final = item_fate.final_items().where(ExtractionItem.extraction_id == extraction_id).subquery()
     rows = db.execute(
-        select(ExtractionItem, Member.display_name)
-        .outerjoin(Member, Member.member_id == ExtractionItem.assignee_member_id)
-        .where(ExtractionItem.extraction_id == extraction_id)
-        .order_by(ExtractionItem.created_at, ExtractionItem.item_id)
+        select(ExtractionItem, ApprovalRequest.payload)
+        .join(final, final.c.item_id == ExtractionItem.item_id)
+        .outerjoin(ApprovalRequest, ApprovalRequest.approval_id == ExtractionItem.approval_id)
+        .order_by(final.c.created_at, final.c.item_id)
     ).all()
+    approved: dict[str, tuple[ExtractionItem, dict]] = {}
+    for item, payload in rows:
+        key = item.item_id if item.action == str(ExtractionAction.UPDATE) else item.task_id
+        approved.setdefault(key, (item, _approved_values(item, json.loads(payload) if payload else {})))
+    names = _member_names(db, {values["assignee_member_id"] for _, values in approved.values()})
     return [
         SummaryInputItem(
-            item_id=item.item_id,
-            action=item.action,
-            title=item.task_title,
-            assignee=display_name or item.assignee_raw,
-            due_date=item.due_date,
+            item_id=item.item_id, action=item.action, title=values["task_title"],
+            assignee=names.get(values["assignee_member_id"]), due_date=values["due_date"], status=values["status"],
+            cleared=values["cleared"], scope=values["scope"],
         )
-        for item, display_name in rows
+        for item, values in approved.values()
     ]
+
+
+# 수정 항목이 바꿀 수 있는 값. 카드 payload 에 같은 이름 키가 있으면 그 수정이 바꾼 것이고, 값이 None 이면 비운 것이다
+_UPDATE_FIELDS = ("assignee_member_id", "due_date", "status")
+# 비울 수 있는 칸과 재료에서의 이름
+_CLEARABLE = {"assignee_member_id": "assignee", "due_date": "due_date"}
+
+
+def _approved_values(item: ExtractionItem, payload: dict) -> dict:
+    """새 항목은 항목 값, 수정 항목은 그 수정이 바꾼 값에 PM 이 고친 값(task_overrides)을 덮는다."""
+    overrides = payload.get("task_overrides") or {}
+    if item.action == str(ExtractionAction.UPDATE):
+        return _update_change(item, {**payload, **overrides})
+    return {"task_title": item.task_title, "assignee_member_id": item.assignee_member_id,
+            "due_date": item.due_date, "status": None, "cleared": [], "scope": None, **overrides}
+
+
+def _update_change(item: ExtractionItem, card: dict) -> dict:
+    """수정 카드가 바꾼 값. 바꾸지 않은 칸은 None 이고 비운 칸은 cleared 에 적는다. 범위 결정은 바꾸는 칸이 없어
+    승인 때 이력에 남기는 설명(doc_text)을 scope 로 둔다."""
+    changed = {field: card[field] for field in _UPDATE_FIELDS if field in card}
+    doc_text = card.get("doc_text")
+    scope = doc_text.strip() if card.get("category") == "scope" and isinstance(doc_text, str) else ""
+    return {
+        "task_title": item.task_title,
+        **{field: changed.get(field) for field in _UPDATE_FIELDS},
+        "cleared": [name for field, name in _CLEARABLE.items() if field in changed and changed[field] is None],
+        "scope": scope or None,
+    }
+
+
+def _member_names(db: Session, member_ids: set[str | None]) -> dict[str, str]:
+    ids = member_ids - {None}
+    if not ids:
+        return {}
+    return dict(db.execute(select(Member.member_id, Member.display_name).where(Member.member_id.in_(ids))).all())
+
+
+def _input_rejected(db: Session, extraction_id: str, approved_titles: set[str]) -> list[str]:
+    """그 회의에서 PM 이 반려한 할 일. 요약 문장이 정해진 일로 쓰지 않게 준다. 수정 항목은 Task 가 그대로 있어 반려된
+    변경을 같이 적고, 바꿀 값이 없던 수정은 그 설명을 적는다. 반영된 항목의 제목과 같은 것은 빼서 승인된 일을 막지 않는다."""
+    rejected = item_fate.rejected_items().where(ExtractionItem.extraction_id == extraction_id).subquery()
+    rows = db.execute(
+        select(ExtractionItem, ApprovalRequest.payload)
+        .join(rejected, rejected.c.item_id == ExtractionItem.item_id)
+        .join(ApprovalRequest, ApprovalRequest.approval_id == ExtractionItem.approval_id)
+        .order_by(rejected.c.created_at, rejected.c.item_id)
+    ).all()
+    payloads = [json.loads(payload) for _, payload in rows]
+    names = _member_names(db, {payload.get("assignee_member_id") for payload in payloads})
+    titles: list[str] = []
+    for (item, _), payload in zip(rows, payloads):
+        title = item.task_title
+        if item.action == str(ExtractionAction.UPDATE):
+            change = _update_change(item, payload)
+            changed = [f"{label} {value}" for label, value in (
+                ("담당", "없앰" if "assignee" in change["cleared"] else names.get(change["assignee_member_id"])),
+                ("마감", "없앰" if "due_date" in change["cleared"] else change["due_date"]),
+                ("상태", change["status"]),
+            ) if value] + ([f"범위: {change['scope']}"] if change["scope"] else [])
+            changed = changed or ([item.doc_text] if item.doc_text else [])
+            if not changed:
+                continue
+            title = f"{title} (반려된 변경: {', '.join(changed)})"
+        if title not in approved_titles and title not in titles:
+            titles.append(title)
+    return titles
 
 
 def _input_topics(db: Session, workspace_id: str) -> list[SummaryInputTopic]:
@@ -306,8 +393,9 @@ def request_summaries(
         meeting_deletion.assert_live(meeting)
         extraction = extractions.get(meeting.meeting_id)
         meeting_chars = int(chars.get(meeting.meeting_id) or 0)
-        state = _request_state(meeting, extraction, meeting_chars, force=force, now=now)
-        if state == "requested" and not dry_run:
+        state = _request_state(db, meeting, extraction, meeting_chars, force=force, now=now)
+        if (state in ("requested", "awaiting_approval") and not dry_run
+                and (force or extraction.summary_requested_at is None)):
             extraction.summary_requested_at = now
             extraction.summary_attempts = 0
             extraction.summary_claimed_at = None
@@ -325,10 +413,9 @@ def request_summaries(
 
 
 def _request_state(
-    meeting: Meeting, extraction: Extraction | None, chars: int, *, force: bool, now: datetime
+    db: Session, meeting: Meeting, extraction: Extraction | None, chars: int, *, force: bool, now: datetime
 ) -> SummaryRequestState:
-    if meeting.source not in SUMMARIZED_SOURCES:
-        return "not_summarized_source"
+    """awaiting_approval 은 표시했거나 지금 표시하지만 승인이 끝나야 도는 회의, no_approved_items 는 표시하지 않는 채팅 회의다."""
     if meeting.status != MeetingStatus.DONE or extraction is None:
         return "not_done"
     if not chars:
@@ -336,11 +423,17 @@ def _request_state(
     leased = extraction.summary_claimed_at is not None and utc(extraction.summary_claimed_at) > utc(now) - SUMMARY_LEASE
     if extraction.summary_requested_at is not None and leased:
         return "queued"     # 돌고 있는 회의는 force 로도 덮지 않는다. 덮으면 같은 회의에 호출이 두 번 나간다
+    if not force and extraction.summary_requested_at is None and _stored(extraction) is not None:
+        return "done"
+    readiness = item_fate.readiness(db, extraction, meeting.source)
+    if not readiness.waiting_cards and not readiness.ready:
+        return "no_approved_items"
+    waits = "awaiting_approval" if readiness.waiting_cards else None
     if force:
-        return "requested"
+        return waits or "requested"
     if extraction.summary_requested_at is not None:
-        return "queued" if _queue_alive(extraction, now) else "gave_up"
-    return "done" if load_document(extraction) is not None else "requested"
+        return (waits or "queued") if _queue_alive(extraction, now) else "gave_up"
+    return waits or "requested"
 
 
 def _queue_alive(extraction: Extraction, now: datetime) -> bool:
@@ -353,8 +446,35 @@ def _queue_alive(extraction: Extraction, now: datetime) -> bool:
     return claimed_at is not None and utc(claimed_at) > utc(now) - SUMMARY_LEASE
 
 
-def load_document(extraction: Extraction | None) -> dict | None:
-    """저장된 요약. 없거나, 깨졌거나, 객체가 아니면 None."""
+def documents(db: Session, rows: list[tuple[Meeting, Extraction | None]]) -> dict[str, dict]:
+    """화면, summary.md, 합본이 읽는 유일한 요약. meeting_id -> 보여 줄 문서.
+
+    할 일 변화는 항목이 지금 반영된 것만 보인다. 항목 키가 없는 옛 요약의 할 일 변화와 요약 뒤 되돌린 항목은 숨는다.
+    """
+    stored = {
+        meeting.meeting_id: (extraction.extraction_id, document)
+        for meeting, extraction in rows
+        if (document := _stored(extraction)) is not None
+    }
+    final = item_fate.final_items().where(
+        ExtractionItem.extraction_id.in_({extraction_id for extraction_id, _ in stored.values()})
+    ).subquery()
+    shown = set(db.execute(select(final.c.extraction_id, final.c.item_id)).all()) if stored else set()
+    for extraction_id, document in stored.values():
+        if isinstance(document.get("task_changes"), list):
+            document["task_changes"] = [
+                change for change in document["task_changes"]
+                if isinstance(change, dict) and (extraction_id, change.get("item_id")) in shown
+            ]
+    return {meeting_id: document for meeting_id, (_, document) in stored.items()}
+
+
+def has_document(extraction: Extraction | None) -> bool:
+    return _stored(extraction) is not None
+
+
+def _stored(extraction: Extraction | None) -> dict | None:
+    """저장된 요약. 없거나, 깨졌거나, 객체가 아니면 None. 모듈 밖에서는 documents() 와 has_document() 를 쓴다."""
     if extraction is None or not extraction.summary:
         return None
     try:
@@ -364,13 +484,37 @@ def load_document(extraction: Extraction | None) -> dict | None:
     return document if isinstance(document, dict) else None
 
 
-def summary_status(extraction: Extraction | None, *, now: datetime | None = None) -> Literal["ready", "pending", "none"]:
-    if load_document(extraction) is not None:
-        return "ready"
-    now = now or datetime.now(timezone.utc)
+SummaryStatus = Literal["ready", "pending", "awaiting_approval", "none"]
+
+
+@dataclass(frozen=True)
+class SummaryState:
+    status: SummaryStatus
+    waiting_cards: int = 0
+
+
+_NO_EXTRACTION = item_fate.Readiness(ready=False, waiting_cards=0, last_resolved_at=None)
+
+
+def summary_state(
+    db: Session, meeting: Meeting, extraction: Extraction | None, *, now: datetime | None = None
+) -> SummaryState:
+    readiness = _NO_EXTRACTION if extraction is None else item_fate.readiness(db, extraction, meeting.source)
+    return _state(extraction, has_document(extraction), readiness, now or datetime.now(timezone.utc))
+
+
+def _state(extraction: Extraction | None, has_doc: bool, r: item_fate.Readiness, now: datetime) -> SummaryState:
+    """순수 함수. 승인 대기는 시간 제한 없이 기다리고, 승인된 항목이 없는 채팅 회의는 요약하지 않는다."""
+    if has_doc:
+        return SummaryState("ready")
     if extraction is None or not _queue_alive(extraction, now):
-        return "none"
-    return "pending" if utc(extraction.summary_requested_at) > utc(now) - SUMMARY_PENDING_WINDOW else "none"
+        return SummaryState("none")
+    if r.waiting_cards:
+        return SummaryState("awaiting_approval", r.waiting_cards)
+    if not r.ready:
+        return SummaryState("none")
+    since = max(utc(t) for t in (extraction.summary_requested_at, r.last_resolved_at) if t is not None)
+    return SummaryState("pending" if since > utc(now) - SUMMARY_PENDING_WINDOW else "none")
 
 
 def normalize_topic_name(name: str) -> str:
@@ -433,6 +577,7 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
             db.add(row)
             db.flush()
             details.append({
+                "decision_id": row.decision_id,
                 "text": decision.text,
                 "reason": decision.reason,
                 "rejected": decision.rejected,
@@ -442,7 +587,7 @@ def save_summary(db: Session, extraction_id: str, payload: SummaryWriteRequest) 
 
     db.add_all(TopicMeeting(topic_id=topic_id, meeting_id=meeting.meeting_id) for topic_id in topics)
     db.add_all(TopicItem(topic_id=topic_id, item_id=item_id) for topic_id, item_id in links)
-    extraction.summary = json.dumps(_document(payload, list(topics.values()), details), ensure_ascii=False)
+    extraction.summary = json.dumps(_document(payload, topics, details), ensure_ascii=False)
     extraction.summary_requested_at = None
     extraction.summary_attempts = 0
     extraction.summary_claimed_at = None
@@ -480,7 +625,7 @@ def remove_meeting_summary(db: Session, meeting: Meeting) -> None:
         Extraction.summary.is_not(None),
     ))
     for extraction in rows:
-        document = load_document(extraction)
+        document = _stored(extraction)
         if document is None:
             continue
         changed = False
@@ -562,8 +707,11 @@ def _delete_orphan_topics(db: Session, topic_ids: set[str]) -> None:
         )
 
 
-def _document(payload: SummaryWriteRequest, topic_names: list[str], details: list[dict]) -> dict:
-    """저장할 JSON 을 만드는 유일한 곳. 화면이 읽는 overview, key_points, decisions(문자열 목록)가 항상 있다."""
+def _document(payload: SummaryWriteRequest, topics: dict[str, str], details: list[dict]) -> dict:
+    """저장할 JSON 을 만드는 유일한 곳. 화면이 읽는 overview, key_points, decisions(문자열 목록)가 항상 있다.
+
+    topic_ids 는 topics 와 같은 순서이고 decision_details 의 decision_id 는 Decision 행이다. 사람이 고친 행과 다시 맞출 때 쓴다.
+    """
     return {
         "overview": payload.overview,
         "key_points": payload.key_points,
@@ -575,6 +723,7 @@ def _document(payload: SummaryWriteRequest, topic_names: list[str], details: lis
         "task_changes": [entry.model_dump() for entry in payload.task_changes],
         "schedule": [entry.model_dump() for entry in payload.schedule],
         "open_items": payload.open_items,
-        "topics": topic_names,
+        "topics": list(topics.values()),
+        "topic_ids": list(topics),
         "meta": {"model": payload.model_name, "truncated_input": payload.truncated_input},
     }

@@ -4,7 +4,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 SummaryRequestState = Literal[
-    "requested", "done", "queued", "gave_up", "no_sources", "not_summarized_source", "not_done"
+    "requested", "done", "queued", "gave_up", "no_sources", "awaiting_approval", "no_approved_items", "not_done"
 ]
 
 
@@ -36,6 +36,12 @@ class SummaryInputItem(BaseModel):
     title: str
     assignee: str | None
     due_date: date | None
+    # 수정 항목이 바꾼 상태. 새 항목과 상태를 바꾸지 않은 수정은 None
+    status: str | None = None
+    # 수정 항목이 비운 칸. assignee·due_date 가 None 인 것만으로는 바꾸지 않은 것과 구별되지 않는다
+    cleared: list[Literal["assignee", "due_date"]] = []
+    # 승인된 범위 결정 수정의 설명. 범위는 바꾸는 칸이 없어 따로 싣는다
+    scope: str | None = None
 
 
 class SummaryInputTopic(BaseModel):
@@ -58,8 +64,15 @@ class SummaryInputResponse(BaseModel):
     identity_epoch: int
     title: str | None
     started_at: datetime
+    source: str
+    # 전사 오인식을 고칠 때 쓰는 이름과 용어. 팀원은 워크스페이스 순서, 용어는 가나다순
+    members: list[str]
+    asr_terms: list[str]
     lines: list[SummaryInputLine]
+    # 반영된 항목만이고 값은 그 회의 항목이 정한 값에 PM 이 승인하며 고친 값을 덮은 것이다. 수정 항목은 바꾼 값만 있다
     items: list[SummaryInputItem]
+    # 이 회의에서 PM 이 반려한 할 일. 수정 항목은 반려된 변경을 괄호에 적는다. items 의 제목과 겹치는 것은 없다
+    rejected_items: list[str] = []
     topics: list[SummaryInputTopic]
     decisions: list[SummaryInputDecision]
 
@@ -102,6 +115,8 @@ class TaskChangeEntry(BaseModel):
     due: str = ""
     purpose: str = ""
     precondition: str = ""
+    # 이 회의의 추출 항목. 읽을 때 반영된 항목의 줄만 보인다
+    item_id: str | None = None
 
 
 class ScheduleEntry(BaseModel):

@@ -148,8 +148,10 @@ class MeetingMinutesResponse(BaseModel):
     source: str
     attendees: list[dict]
     summary: dict | None
-    # ready: 요약이 있다. pending: 곧 나온다. none: 없다(대상 아님, 실패)
-    summary_status: Literal["ready", "pending", "none"]
+    # ready: 요약이 있다. pending: 곧 나온다. awaiting_approval: 승인이 끝나면 만든다. none: 없다(대상 아님, 실패)
+    summary_status: Literal["ready", "pending", "awaiting_approval", "none"]
+    # awaiting_approval 일 때 남은 승인 요청 수. PM 에게만 준다(D-104)
+    summary_waiting_count: int | None = None
     transcript: list[dict]
     permissions: dict
 

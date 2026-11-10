@@ -120,16 +120,20 @@ class FakeBe:
     def add_summary(self, meeting_id: str, *, extraction_id: str | None = None, workspace_id: str = "ws-1",
                     requested: bool = True, attempts: int = 0, leased: bool = False, saved: dict | None = None,
                     blocked: str | None = None, chars: int = 100) -> None:
-        """blocked 는 요약 대상이 아닌 이유(no_sources, not_summarized_source, not_done)다. 대기열 칸은 Extraction 칸과 같다."""
+        """blocked 는 지금 돌지 않는 이유(no_sources, awaiting_approval, no_approved_items, not_done)다. 대기열 칸은 Extraction 칸과 같다."""
         extraction_id = None if blocked == "not_done" else extraction_id or f"e-{meeting_id}"
         self.summaries[meeting_id] = {
             "meeting_id": meeting_id, "extraction_id": extraction_id, "workspace_id": workspace_id,
             "identity_epoch": 0, "claim_token": None,
             "requested": requested, "attempts": attempts, "leased": leased, "saved": saved, "blocked": blocked,
             "chars": chars, "title": f"{meeting_id} 회의", "started_at": "2026-11-05T05:00:00Z",
+            "source": "discord", "members": ["민수"], "asr_terms": [],
             "lines": [{"seq": 1, "at_ms": 125000, "speaker": "민수", "text": "초대는 이메일로만 하죠"}],
             "items": [{"item_id": "item-1", "action": "create", "title": "초대 메일 보내기", "assignee": "민수",
-                       "due_date": "2026-11-14"}],
+                       "due_date": "2026-11-14", "status": None, "cleared": [], "scope": None},
+                      {"item_id": "item-2", "action": "update", "title": "초대 화면", "assignee": None,
+                       "due_date": None, "status": "done", "cleared": ["due_date"], "scope": "이메일 초대만 제공한다"}],
+            "rejected_items": [],
             "topics": [{"topic_id": "topic-1", "name": "팀원 초대", "description": "초대 방식"}],
             "decisions": [{"decision_id": "dec-1", "text": "초대 코드로 합류한다", "topic": "팀원 초대",
                            "decided_on": "2026-10-20"}],
@@ -363,7 +367,7 @@ class FakeBe:
     def _claim_summary(self, body: dict):
         only = body.get("extraction_ids")
         for row in self.summaries.values():
-            eligible = row["requested"] and row["attempts"] < 2 and not row["leased"]
+            eligible = row["requested"] and row["attempts"] < 2 and not row["leased"] and not row["blocked"]
             if eligible and (only is None or row["extraction_id"] in only):
                 row["attempts"] += 1
                 row["leased"] = True
@@ -382,8 +386,8 @@ class FakeBe:
             return _err(404, "EXTRACTION_NOT_FOUND", {"extraction_id": extraction_id})
         if "X-Privacy-Epoch" in headers and headers["X-Privacy-Epoch"] != str(row["identity_epoch"]):
             return _err(409, "PRIVACY_VERSION_CHANGED")
-        keys = ("extraction_id", "meeting_id", "workspace_id", "title", "started_at", "lines", "items", "topics",
-                "decisions", "identity_epoch")
+        keys = ("extraction_id", "meeting_id", "workspace_id", "title", "started_at", "source", "members", "asr_terms",
+                "lines", "items", "rejected_items", "topics", "decisions", "identity_epoch")
         return _ok(200, {k: row[k] for k in keys})
 
     def _put_summary(self, extraction_id: str, body: dict, headers: dict):
@@ -419,7 +423,8 @@ class FakeBe:
         items = []
         for row in rows:
             state = self._summary_state(row, bool(body.get("force")))
-            if state == "requested" and not body.get("dry_run", True):
+            marks = state == "requested" or (state == "awaiting_approval" and not row["requested"])
+            if marks and not body.get("dry_run", True):
                 row.update(requested=True, attempts=0, leased=False)
             items.append({"meeting_id": row["meeting_id"], "extraction_id": row["extraction_id"], "title": row["title"],
                           "started_at": row["started_at"], "state": state, "chars": row["chars"]})
@@ -427,6 +432,8 @@ class FakeBe:
 
     @staticmethod
     def _summary_state(row: dict, force: bool) -> str:
+        if not force and not row["requested"] and row["saved"] is not None:
+            return "done"
         if row["blocked"]:
             return row["blocked"]
         if row["requested"] and row["leased"]:

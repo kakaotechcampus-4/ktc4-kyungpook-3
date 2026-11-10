@@ -262,12 +262,15 @@ def test_actual_shared_withdrawal_rejects_old_summary_and_preserves_same_named_m
     meeting, extraction = _meeting(mdb, mseed["ws"])
     alice, bob = mseed["alice"], mseed["bob"]
     bob.display_name = alice.display_name
+    task = mseed["tasks"][0]
+    task.assignee_member_id = alice.member_id
     mdb.add_all([
         Source(meeting_id=meeting.meeting_id, seq=1, start_ms=1, end_ms=2, member_id=alice.member_id,
                speaker_name=alice.display_name, text="retained shared statement"),
         Source(meeting_id=meeting.meeting_id, seq=2, start_ms=2, end_ms=3, member_id=bob.member_id,
                speaker_name=bob.display_name, text="other shared statement"),
-        ExtractionItem(extraction_id=extraction.extraction_id, task_title="Keep work", assignee_member_id=alice.member_id),
+        ExtractionItem(extraction_id=extraction.extraction_id, task_title="Keep work", assignee_member_id=alice.member_id,
+                       task_id=task.task_id),
     ])
     mdb.commit()
     claim = _claim(client)

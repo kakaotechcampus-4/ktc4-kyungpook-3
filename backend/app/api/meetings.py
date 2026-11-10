@@ -330,6 +330,7 @@ def get_meeting_minutes(
     ]
 
     extraction = db.query(Extraction).filter(Extraction.meeting_id == meeting_id).order_by(Extraction.created_at.desc()).first()
+    state = summary.summary_state(db, meeting, extraction)
 
     return success(MeetingMinutesResponse(
         meeting_id=meeting.meeting_id,
@@ -338,8 +339,9 @@ def get_meeting_minutes(
         duration_ms=meeting.duration_ms or 0,
         source=meeting.source,
         attendees=attendees,
-        summary=summary.load_document(extraction),
-        summary_status=summary.summary_status(extraction),
+        summary=summary.documents(db, [(meeting, extraction)]).get(meeting.meeting_id),
+        summary_status=state.status,
+        summary_waiting_count=state.waiting_cards if state.status == "awaiting_approval" and member.role == "pm" else None,
         transcript=transcript,
         permissions={"can_review": member.role == "pm", "can_undo": member.role == "pm"}
     ).model_dump(mode="json"))
