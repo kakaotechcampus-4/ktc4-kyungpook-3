@@ -29,7 +29,7 @@
   "meetings": [
     {
       "title": "주간 회의 - 제브 근거 E2E와 폴러 유닛",
-      "days_ago": 17,
+      "days_ago": 16,
       "turns": [
         {
           "speaker": "p1",
@@ -485,7 +485,7 @@
     },
     {
       "title": "주간 회의 - 폴러 마감 확정과 시연 시나리오",
-      "days_ago": 14,
+      "days_ago": 13,
       "turns": [
         {
           "speaker": "p1",
@@ -929,7 +929,7 @@
     },
     {
       "title": "발표 전 정리 - 담당 이관과 PPT 마감",
-      "days_ago": 10,
+      "days_ago": 9,
       "turns": [
         {
           "speaker": "p1",
@@ -1442,7 +1442,7 @@
     },
     {
       "title": "주간 회의 - 제브 기준값과 발표 리허설",
-      "days_ago": 7,
+      "days_ago": 6,
       "turns": [
         {
           "speaker": "p1",
@@ -1864,7 +1864,7 @@
     },
     {
       "title": "발표 준비 마무리 - 폴러 타이머와 백업 절차",
-      "days_ago": 3,
+      "days_ago": 2,
       "turns": [
         {
           "speaker": "p1",
@@ -2312,7 +2312,7 @@
     },
     {
       "title": "심사 준비 - 승인 대기 시연",
-      "days_ago": 2,
+      "days_ago": 1,
       "turns": [
         {
           "speaker": "p1",
