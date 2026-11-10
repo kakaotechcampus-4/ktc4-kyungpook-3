@@ -412,8 +412,9 @@ def get_meeting_audio(
     filename, content_type = row.filename, row.content_type
     headers = {"Cache-Control": "private, no-store"}
     if upload_storage.storage_mode() == "s3":
-        url = upload_storage.presigned_audio_url(meeting_id, filename, content_type)
+        # 필요한 값을 다 읽었으니 공간·회의 잠금과 DB 연결을 먼저 놓는다. 서명은 자격 갱신으로 외부 요청이 끼일 수 있다
         db.close()
+        url = upload_storage.presigned_audio_url(meeting_id, filename, content_type)
         return RedirectResponse(url, status_code=302, headers=headers)
     path = upload_storage.local_audio_path(meeting_id, filename)
     if path is None:

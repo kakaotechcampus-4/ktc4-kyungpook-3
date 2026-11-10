@@ -241,6 +241,27 @@ def test_s3_mode_returns_db_connection_before_redirect(db, seed, s3):
     assert closed
 
 
+def test_s3_mode_signs_after_returning_db_connection(db, seed, s3, monkeypatch):
+    meeting_id, _ = _meeting(db, seed)
+    closed = []
+    original_close = db.close
+    db.close = lambda: (closed.append(True), original_close())[1]
+    original_presign = upload_storage.presigned_audio_url
+
+    def presign(*args, **kwargs):
+        # 서명 중에 자격 갱신 요청이 끼어도 공간·회의 잠금을 쥐고 있지 않도록 DB 연결을 먼저 돌려 준다
+        assert closed, "presigned URL 을 만들 때 DB 연결이 아직 열려 있다"
+        return original_presign(*args, **kwargs)
+
+    monkeypatch.setattr(upload_storage, "presigned_audio_url", presign)
+    try:
+        r = _audio(meeting_id)
+    finally:
+        db.close = original_close
+
+    assert r.status_code == 302, r.text
+
+
 def test_s3_mode_still_checks_permission_first(db, seed, s3):
     meeting_id, _ = _meeting(db, seed, status="processing")
 
