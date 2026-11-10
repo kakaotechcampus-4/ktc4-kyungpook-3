@@ -29,6 +29,7 @@ nav:
   - 홈: index.md
   - 사용자 가이드:
       - 시작하기: user/getting-started.md
+      - 처음 쓰는 분을 위한 안내: user/quick-guide.md
       - 회의 기록하기: user/record-meeting.md
       - 결과 확인과 승인: user/review-approve.md
       - 회의 뒤 관리: user/follow-up.md
