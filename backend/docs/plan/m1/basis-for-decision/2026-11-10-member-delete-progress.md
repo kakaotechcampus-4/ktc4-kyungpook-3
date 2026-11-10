@@ -29,8 +29,15 @@
 
 새 테스트에서 묶음 취소, DM 정리, 소켓 끊기, PM 잠금 호출을 하나씩 빼 보면 각각 해당 테스트가 실패하는 것을 확인했다. PostgreSQL 에서의 동시 삭제는 돌려 보지 않았다.
 
+건너뛴 이유는 `backend/` 에서 아래 명령으로 확인했다. 출력이 비면 PostgreSQL 이 없거나 SQLite 가 잠금을 무시해 건너뛴 것뿐이다.
+
+```
+.venv/bin/python -m pytest -q -p no:warnings -rs | grep '^SKIPPED' | grep -vE 'TEST_DATABASE_URL|PostgreSQL|SQLite|row locks'
+```
+
 ## 다음
 
 - 승인 대기 카드 payload 에 지운 팀원이 담당으로 든 경우는 승인 때 404 로 막힌다. 정리할지는 따로 정한다
 - 지운 팀원은 기록용 목록(`include_withdrawn=true`)에도 없어 이력의 이름을 FE 가 찾지 못한다
+- 자동 막힘 태스크의 담당자를 지우면 자동 막힘 되돌리기가 409 가 된다. 탈퇴와 같은 동작이며 그대로 둘지 정한다
 - FE 화면은 #647 이 붙인다
