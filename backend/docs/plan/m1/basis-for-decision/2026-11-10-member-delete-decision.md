@@ -32,7 +32,7 @@
 
 - 승인 대기 카드의 payload 에 지운 팀원이 담당으로 든 경우를 정리하지 않았다. 그 카드를 승인하면 지금 반영 경로가 지운 담당자를 404 `MEMBER_NOT_FOUND` 로 막는다
 - 지운 팀원은 `GET /members?include_withdrawn=true` 에도 나오지 않는다. 이력에 남은 그 팀원 ID 의 이름을 FE 가 이 목록으로 찾지 못한다
-- 지운 팀원의 `GET`·`PATCH /members/{id}` 는 200 이고, `GET /members/aliases` 에 그 팀원의 별칭이 남는다
+- 지운 팀원의 `GET /members/{id}` 는 200 이고 `PATCH` 는 404 다. `GET /members/aliases` 에 그 팀원의 별칭이 남는다
 - 그 팀원 대화에서 판단을 기다리던 답장(`reply_judgment` pending)은 닫지 않았다. 탈퇴는 `ACCOUNT_WITHDRAWN` 으로 닫는다
 - 72시간 무응답으로 자동 막힘이 된 태스크는 시계가 `stopped` 로 바뀌어 자동 막힘 되돌리기가 409 가 된다. 상태는 막힘 그대로라 PM 이 직접 고쳐야 한다. 계정 탈퇴도 같다
 - 지운 PM 이 다른 팀원에게 만들어 둔 재촉은 그대로 예약돼 있다. 문구를 다시 만들 때는 남은 PM 의 이름을 쓰지만, 이미 만든 문구는 지운 PM 의 이름 그대로다
