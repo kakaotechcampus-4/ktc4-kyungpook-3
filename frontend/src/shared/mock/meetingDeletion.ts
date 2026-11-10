@@ -22,6 +22,7 @@ export function purgeMeeting(meetingId: string): void {
   db.meetings = db.meetings.filter(({ meeting_id }) => meeting_id !== meetingId)
   db.meetingSummaries = db.meetingSummaries.filter(({ meeting_id }) => meeting_id !== meetingId)
   db.minutes = db.minutes.filter(({ meeting_id }) => meeting_id !== meetingId)
+  delete db.titleEdits[meetingId]
   db.extractions = db.extractions.filter(({ meeting_id }) => meeting_id !== meetingId)
   db.approvals = db.approvals.filter(({ payload }) => payload.meeting_id !== meetingId)
   delete db.meetingFlow.attendees[meetingId]

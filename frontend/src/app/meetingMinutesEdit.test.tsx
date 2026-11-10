@@ -9,6 +9,7 @@ import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { purgeMeeting } from '@/shared/mock/meetingDeletion'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
+import { deferred } from '@/shared/test/deferred'
 import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
@@ -195,7 +196,13 @@ describe('발화 고치기', () => {
       '공백만',
       () => undefined,
       '   ',
-      '발화를 비워 둘 수 없어요. 원문으로 돌리려면 원래대로를 눌러 주세요.',
+      '발화를 비워 둘 수 없어요. 고치지 않으려면 취소를 눌러 주세요.',
+    ],
+    [
+      'Python 이 지우는 공백(U+001C)만',
+      () => undefined,
+      '',
+      '발화를 비워 둘 수 없어요. 고치지 않으려면 취소를 눌러 주세요.',
     ],
     [
       '서버 길이 오류(400)',
@@ -310,5 +317,108 @@ describe('저장하지 않은 글 (D-138)', () => {
 
     expect(screen.queryByRole('button', { name: '계속 작성하기' })).toBeNull()
     expect(within(panel).getByRole('textbox')).toHaveValue('다음 주까지 확인할게요.')
+  })
+})
+
+describe('리뷰 #672 반영', () => {
+  it('앞 줄의 저장이 끝나도 그 사이 새로 연 줄의 초안과 포커스는 그대로다', async () => {
+    const gate = deferred()
+    server.use(
+      http.patch('/api/v1/meetings/:meetingId/transcript/:seq', async ({ params }) => {
+        await gate.promise
+        return ok({
+          seq: Number(params.seq),
+          text: '앞 줄 고침',
+          original_text: LINE_1,
+          edited: true,
+        })
+      }),
+    )
+    const user = userEvent.setup()
+    await openMinutes()
+    const panel = await openTranscript(user)
+    await user.click(within(panel).getByRole('button', { name: LINE_1 }))
+    const first = within(panel).getByRole('textbox', { name: '발화 고치기' })
+    await user.clear(first)
+    await user.type(first, '앞 줄 고침')
+    await user.click(within(panel).getByRole('button', { name: '저장' }))
+
+    await user.click(within(panel).getByRole('button', { name: '다음 주까지 확인할게요.' }))
+    await user.click(await screen.findByRole('button', { name: '변경 내용 버리고 나가기' }))
+    const next = within(panel).getByRole('textbox', { name: '발화 고치기' })
+    await user.type(next, ' 새 초안')
+    gate.resolve()
+
+    expect(await within(panel).findByRole('button', { name: '앞 줄 고침' })).toBeInTheDocument()
+    expect(within(panel).getByRole('textbox', { name: '발화 고치기' })).toHaveValue(
+      '다음 주까지 확인할게요. 새 초안',
+    )
+    expect(within(panel).getByRole('textbox', { name: '발화 고치기' })).toHaveFocus()
+  })
+
+  it('고치는 칸을 연 채 원문으로 되돌리면 칸을 닫고, 바꾼 글이 있으면 먼저 묻는다', async () => {
+    const stored = db.minutes.find(({ meeting_id }) => meeting_id === 'mt_09')!.transcript[1]
+    Object.assign(stored, { text: '이미 고친 문장', edited: true, original_text: LINE_1 })
+    const user = userEvent.setup()
+    await openMinutes()
+    const panel = await openTranscript(user)
+    await user.click(within(panel).getByRole('button', { name: '고친 발화 — 원문 보기' }))
+    await user.click(within(panel).getByRole('button', { name: '이미 고친 문장' }))
+    await user.type(within(panel).getByRole('textbox', { name: '발화 고치기' }), ' 더')
+
+    await user.click(within(panel).getByRole('button', { name: '원래 문장으로 되돌리기' }))
+    await user.click(await screen.findByRole('button', { name: '계속 작성하기' }))
+    expect(within(panel).getByRole('textbox', { name: '발화 고치기' })).toHaveValue(
+      '이미 고친 문장 더',
+    )
+    expect(stored.edited).toBe(true)
+
+    await user.click(within(panel).getByRole('button', { name: '원래 문장으로 되돌리기' }))
+    await user.click(await screen.findByRole('button', { name: '변경 내용 버리고 나가기' }))
+
+    expect(await within(panel).findByRole('button', { name: LINE_1 })).toHaveFocus()
+    expect(within(panel).queryByRole('textbox')).toBeNull()
+    expect(stored).toMatchObject({ text: LINE_1, edited: false })
+  })
+
+  it('제목 없던 회의를 되돌리면 회의 상세를 다시 받기 전에도 머리가 제목 없는 회의다', async () => {
+    db.meetings.find(({ meeting_id }) => meeting_id === 'mt_09')!.title = null
+    db.meetingSummaries.find(({ meeting_id }) => meeting_id === 'mt_09')!.title = null
+    db.minutes.find(({ meeting_id }) => meeting_id === 'mt_09')!.title = null
+    const user = userEvent.setup()
+    renderApp(MT_09)
+    await screen.findByRole('heading', { level: 2, name: '제목 없는 회의' })
+    await user.click(screen.getByRole('button', { name: '제목 고치기' }))
+    await user.type(screen.getByRole('textbox', { name: '회의 제목' }), '붙인 제목{Enter}')
+    await screen.findByRole('heading', { level: 2, name: '붙인 제목' })
+
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get('/api/v1/meetings/:meetingId', async () => {
+        await gate.promise
+        return fail('INTERNAL_ERROR', '서버 오류', 500)
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: '고친 제목 — 처음 제목 보기' }))
+    expect(screen.getByText('처음 제목: 제목 없음')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '처음 제목으로 되돌리기' }))
+
+    expect(await screen.findByText('처음 제목으로 되돌렸어요')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: '제목 없는 회의' })).toBeInTheDocument()
+  })
+
+  it('Python 이 지우는 공백만인 제목은 보내지 않는다', async () => {
+    const user = userEvent.setup()
+    await openMinutes()
+    const log = recordRequests()
+    await user.click(screen.getByRole('button', { name: '제목 고치기' }))
+    const input = screen.getByRole('textbox', { name: '회의 제목' })
+    await user.clear(input)
+    await user.type(input, '')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(patches(log)).toEqual([])
   })
 })

@@ -10,11 +10,10 @@ function transcriptLines(
   return lines.map((line, seq) => ({ ...line, seq, edited: false, original_text: null }))
 }
 
+/** 고친 제목의 기록은 BE 처럼 회의 단위(`db.titleEdits`)라 저장한 회의록에는 없다. 회의록 핸들러가 붙인다 */
 const minutes: MinutesDto = {
   meeting_id: 'mt_09',
   title: '3주차 정기회의',
-  title_edited: false,
-  title_original: null,
   started_at: '2026-09-15T05:00:00Z',
   duration_ms: 2730000,
   source: 'discord',
@@ -79,8 +78,6 @@ export const minutesFixtures: MinutesDto[] = [
   {
     meeting_id: 'mt_08',
     title: '채팅 2026-09-11',
-    title_edited: false,
-    title_original: null,
     started_at: '2026-09-11T00:12:00Z',
     duration_ms: 84_480_000,
     source: 'chat',

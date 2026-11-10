@@ -415,7 +415,8 @@ function MinutesContent({
         ? 0
         : null
 
-  const title = held !== null ? held.title : minutes.title !== '' ? minutes.title : meeting.title
+  // 고친 제목과 되돌린 빈 제목은 회의록에 바로 들어온다. 회의 상세의 제목은 다시 받기 전까지 옛 값이라 쓰지 않는다
+  const title = held !== null ? held.title : minutes.title
   const momentOf = (atMs: number) => formatMoment(minutes.source, minutes.startedAt, atMs)
 
   return (

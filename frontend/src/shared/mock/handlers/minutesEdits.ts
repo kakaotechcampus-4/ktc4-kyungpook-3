@@ -58,20 +58,18 @@ export const minutesEditHandlers = [
     const found = liveMeeting(String(params.meetingId))
     if ('denied' in found) return found.denied
     const { meeting } = found
-    const minutes = db.minutes.find(({ meeting_id }) => meeting_id === meeting.meeting_id)
-    const edited = minutes?.title_edited ?? false
-    const original = edited ? (minutes?.title_original ?? null) : meeting.title
+    const previous = db.titleEdits[meeting.meeting_id]
+    const original = previous === undefined ? meeting.title : previous.original
     const title = field.value === null ? null : field.value.replace(PYTHON_STRIP, '')
     const revert = field.value === null || title === original
     const next = revert ? original : title
     meeting.title = next
     for (const summary of db.meetingSummaries)
       if (summary.meeting_id === meeting.meeting_id) summary.title = next
-    if (minutes) {
-      minutes.title = next
-      minutes.title_edited = !revert
-      minutes.title_original = revert ? null : original
-    }
+    for (const minutes of db.minutes)
+      if (minutes.meeting_id === meeting.meeting_id) minutes.title = next
+    if (revert) delete db.titleEdits[meeting.meeting_id]
+    else db.titleEdits[meeting.meeting_id] = { original }
     return ok({
       meeting_id: meeting.meeting_id,
       title: next,

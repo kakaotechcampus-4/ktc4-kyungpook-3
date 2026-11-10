@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId } from 'react'
 import type { ReactNode } from 'react'
 import type { ExtractionItem } from '@/entities/extraction'
 import type { Minutes, MinutesSummary, TranscriptLine } from '@/entities/minutes'
@@ -9,10 +9,10 @@ import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { Skeleton } from '@/shared/ui/skeleton'
-import { guardLeave } from '@/shared/lib/unsaved-changes'
 import { useLineEdit } from '@/features/minutes-edit'
 import type { ExtractedTasks, PendingTask } from '../lib/extractedTasks'
 import { formatDue } from '../lib/format'
+import { useLineSession } from '../model/useLineSession'
 import { EditableLine } from './MinutesEditing'
 
 /* Meetings 캔버스 실측 — 영역 제목 14px 600 · 제목과 내용 14, 반영 카드 16 라운드 · 위아래 15 · 좌우 18 · 시각 칸 44,
@@ -137,7 +137,7 @@ export type MomentOf = (atMs: number) => string
 
 /**
  * 전사문 탭. 화자 이름이 등록되지 않았으면 Discord 이름으로 보인다 (D-028).
- * 팀원 누구나 발화를 눌러 고친다 (#551). 한 번에 한 줄이고, 고치던 글이 있으면 다른 줄로 옮기기 전에 묻는다
+ * 팀원 누구나 발화를 눌러 고친다 (#551). 한 번에 한 줄이고, 어느 줄과 그 초안은 `useLineSession` 이 쥔다
  */
 export function TranscriptPanel({
   workspaceId,
@@ -151,7 +151,7 @@ export function TranscriptPanel({
   momentOf: MomentOf
 }) {
   const edit = useLineEdit(workspaceId, meetingId)
-  const [editingSeq, setEditingSeq] = useState<number | null>(null)
+  const lines = useLineSession(transcript, edit)
   const hintId = useId()
   if (transcript.length === 0)
     return (
@@ -184,10 +184,16 @@ export function TranscriptPanel({
               <EditableLine
                 line={line}
                 edit={edit}
-                editing={seq !== null && editingSeq === seq}
+                draft={lines.draftOf(seq)}
                 hintId={hintId}
-                onOpen={() => guardLeave(() => setEditingSeq(seq))}
-                onClose={() => setEditingSeq(null)}
+                onOpen={() => {
+                  if (seq !== null) lines.open(seq)
+                }}
+                onDraft={lines.setDraft}
+                onClose={lines.closerOf(seq)}
+                onRevert={(done) => {
+                  if (seq !== null) lines.revert(seq, done)
+                }}
                 time={time}
                 speaker={speaker}
               />

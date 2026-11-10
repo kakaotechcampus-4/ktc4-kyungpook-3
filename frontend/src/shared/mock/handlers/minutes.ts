@@ -20,14 +20,23 @@ export const minutesHandlers = [
     if (denied) return denied
     const isPm = roleIn(meeting.workspace_id) === 'pm'
     const minutes = db.minutes.find(({ meeting_id }) => meeting_id === params.meetingId)
-    if (minutes) return ok({ ...minutes, permissions: { can_review: isPm, can_undo: isPm } })
+    const titleEdit = db.titleEdits[meeting.meeting_id]
+    const titleFields = {
+      title_edited: titleEdit !== undefined,
+      title_original: titleEdit?.original ?? null,
+    }
+    if (minutes)
+      return ok({
+        ...minutes,
+        ...titleFields,
+        permissions: { can_review: isPm, can_undo: isPm },
+      })
     // 백엔드는 extraction 이 없어도 200 을 준다. summary=null, transcript=[] 로 초기화한 뒤
     // 그대로 내려보낸다 (meetings.py 의 get_meeting_minutes). 빈 상태는 오류가 아니다.
     return ok({
       meeting_id: meeting.meeting_id,
       title: meeting.title,
-      title_edited: false,
-      title_original: null,
+      ...titleFields,
       started_at: meeting.started_at,
       duration_ms: 0,
       source:

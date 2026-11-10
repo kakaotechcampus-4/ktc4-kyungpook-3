@@ -5,6 +5,7 @@ import {
   LINE_EDIT_HINT,
   TITLE_EDIT_HINT,
   lineInputFailure,
+  normalizeTitle,
   titleInputFailure,
   useLineEdit,
   useTitleEdit,
@@ -249,7 +250,7 @@ function TitleForm({
   const input = useRef<HTMLInputElement>(null)
   const hintId = useId()
   const messageId = useId()
-  useUnsavedChanges(draft.trim() !== title)
+  useUnsavedChanges(normalizeTitle(draft) !== title)
   useEffect(() => {
     input.current?.focus()
     input.current?.select()
@@ -258,7 +259,7 @@ function TitleForm({
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (saving) return
-    const next = draft.trim()
+    const next = normalizeTitle(draft)
     if (next === title) return onCancel()
     const invalid = titleInputFailure(next)
     setLocal(invalid)
@@ -300,30 +301,38 @@ export type LineEditActions = ReturnType<typeof useLineEdit>
 
 /**
  * 전사문 한 줄. 줄 번호(`seq`)를 아는 줄은 글을 눌러 같은 자리에서 고친다. 고친 줄에는 「고침」이 붙어 원문과 되돌리기를 펼친다.
- * 줄 번호를 모르는 줄은 글만 보인다(D-192). 한 번에 한 줄만 고친다 — 어느 줄을 고치는지는 전사문 탭이 정한다
+ * 줄 번호를 모르는 줄은 글만 보인다(D-192). 어느 줄을 고치는지와 그 초안은 전사문 탭이 한 곳에서 쥔다(`useLineSession`)
  */
 export function EditableLine({
   line,
   edit,
-  editing,
+  draft,
   hintId,
   onOpen,
+  onDraft,
   onClose,
+  onRevert,
   time,
   speaker,
 }: {
   line: TranscriptLine
   edit: LineEditActions
-  editing: boolean
+  /** 이 줄을 고치는 중이면 그 초안, 아니면 null */
+  draft: string | null
   /** 「누르면 고친다」 안내. 줄 단추가 함께 읽는다 */
   hintId: string
   onOpen: () => void
-  onClose: () => void
+  onDraft: (draft: string) => void
+  /** 그 고치기가 아직 열려 있었으면 닫고 true. 다른 줄을 연 뒤 늦게 끝난 저장은 아무것도 닫지 않는다 */
+  onClose: () => boolean
+  /** 원문으로 되돌린다. 끝나면 `done` 을 부르고, 그때 열린 고치기가 없으면 `idle` 이 true 다 */
+  onRevert: (done: (idle: boolean) => void) => void
   time: ReactNode
   speaker: ReactNode
 }) {
   const [showOriginal, setShowOriginal] = useState(false)
   const lineButton = useRef<HTMLButtonElement>(null)
+  const editing = draft !== null
   const returnFocus = useReturnFocus(editing, lineButton)
   const originalId = useId()
   const { seq } = line
@@ -343,9 +352,8 @@ export function EditableLine({
     )
 
   const close = () => {
-    returnFocus()
     if (mine) edit.clearFailure()
-    onClose()
+    if (onClose()) returnFocus()
   }
 
   return (
@@ -368,8 +376,10 @@ export function EditableLine({
         {editing ? (
           <LineForm
             text={line.text}
+            draft={draft}
             saving={saving}
             failure={failure}
+            onDraft={onDraft}
             onCancel={close}
             onSave={(text) => edit.save({ seq, text }, close)}
           />
@@ -397,9 +407,9 @@ export function EditableLine({
               locked={saving}
               aria-busy={saving || undefined}
               onClick={() =>
-                edit.save({ seq, text: null }, () => {
+                onRevert((idle) => {
                   setShowOriginal(false)
-                  lineButton.current?.focus()
+                  if (idle) lineButton.current?.focus()
                 })
               }
             >
@@ -419,23 +429,25 @@ export function EditableLine({
 
 function LineForm({
   text,
+  draft,
   saving,
   failure,
+  onDraft,
   onCancel,
   onSave,
 }: {
   text: string
+  draft: string
   saving: boolean
   failure: string | null
+  onDraft: (draft: string) => void
   onCancel: () => void
   onSave: (text: string) => void
 }) {
-  const [draft, setDraft] = useState(text)
   const [local, setLocal] = useState<string | null>(null)
   const field = useRef<HTMLTextAreaElement>(null)
   const hintId = useId()
   const messageId = useId()
-  useUnsavedChanges(draft !== text)
   useEffect(() => {
     const element = field.current
     if (element === null) return
@@ -465,7 +477,7 @@ function LineForm({
         aria-invalid={local !== null || undefined}
         aria-describedby={message === null ? hintId : `${hintId} ${messageId}`}
         onChange={(event) => {
-          setDraft(event.target.value)
+          onDraft(event.target.value)
           setLocal(null)
         }}
         onKeyDown={(event) => {

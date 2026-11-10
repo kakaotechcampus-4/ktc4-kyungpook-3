@@ -211,8 +211,6 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
   const minutes: MinutesDto = {
     meeting_id: meeting.meeting_id,
     title: meeting.title,
-    title_edited: false,
-    title_original: null,
     started_at: meeting.started_at,
     duration_ms: GENERATED_DURATION_MS,
     source: sourceOf(state, meeting.meeting_id),

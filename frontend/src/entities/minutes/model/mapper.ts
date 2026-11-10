@@ -8,8 +8,8 @@ export function toMinutes(dto: MinutesDto): Minutes {
   return {
     meetingId: dto.meeting_id,
     title: dto.title ?? '',
-    titleEdited: dto.title_edited,
-    titleOriginal: dto.title_edited ? dto.title_original : null,
+    titleEdited: dto.title_edited ?? false,
+    titleOriginal: dto.title_edited ? (dto.title_original ?? null) : null,
     startedAt: dto.started_at,
     durationMs: dto.duration_ms,
     source: displayValue(dto.source, MEETING_SOURCES, 'minutes source'),

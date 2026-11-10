@@ -145,7 +145,8 @@ export function useTitleEdit(workspaceId: string, meetingId: string): EditAction
               titleOriginal: edit.titleOriginal,
             },
       )
-      await refreshTitleReaders(queryClient)
+      // 다시 받기는 기다리지 않는다. 회의록은 위에서 이미 바뀌었고, 느린 재조회가 알림·포커스를 붙잡지 않는다
+      void refreshTitleReaders(queryClient)
     },
     refresh: refreshTitleReaders,
     reverts: ({ title }) => title === null,

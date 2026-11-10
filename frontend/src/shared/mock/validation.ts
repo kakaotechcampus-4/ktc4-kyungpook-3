@@ -1,9 +1,7 @@
+import { PYTHON_STRIP } from '@/shared/lib/validation'
 import { fail } from './envelope'
 
-/** Python `str.strip()` 의 공백. JS `trim()` 과 달리 \x1c-\x1f·\x85 를 지우고 \ufeff 는 남긴다 */
-export const PYTHON_STRIP =
-  // eslint-disable-next-line no-control-regex
-  /^[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/g
+export { PYTHON_STRIP }
 /** BE validate_username. 앞뒤 공백을 지우고 영문·숫자 4~20자면 소문자로, 아니면 null 이다 */
 export function checkedUsername(value: string): string | null {
   const username = value.replace(PYTHON_STRIP, '')

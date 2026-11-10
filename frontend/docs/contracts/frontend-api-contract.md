@@ -1755,8 +1755,8 @@ POST .../meetings/upload            multipart/form-data
 | 경로 | FE 가 읽는 것 | FE 가 거절하는 것 (`INVALID_RESPONSE`) | 받고 따로 다루는 것 |
 |---|---|---|---|
 | `GET /meetings/{id}/minutes` 의 더한 칸 | `title_edited`·`title_original`, 줄의 `seq`·`edited`·`original_text` | 거절하지 않는다 | 표시용(D-184)이라 모양이 틀리면 그 표시만 버린다. `title_edited`·`edited` 는 false, `title_original`·`original_text` 는 null 이다. `seq` 가 없거나 0 이상 정수가 아니면 그 줄은 글만 보이고 고칠 수 없다(D-192). 키가 없는 이전 서버도 같다 |
-| `PATCH /meetings/{id}/title` | `meeting_id`·`title`·`title_original`·`title_edited` | `meeting_id`·`title` 의 모양이 틀림 | 앞뒤 공백을 빼고 1~200자(문자 수)만 보낸다. 바뀌지 않았으면 보내지 않는다. 되돌리기는 `null`. 성공하면 그 회의록 캐시의 제목 칸을 응답으로 바꾸고 `workspaceKey(ws,'meetings')`·`(ws,'minutes')`·`(ws,'project-map')` 을 무효화한다 |
-| `PATCH /meetings/{id}/transcript/{seq}` | `seq`·`text`·`original_text`·`edited` | `seq`·`text` 의 모양이 틀림 | 앞뒤 공백을 빼지 않고 보낸다. 공백만이거나 10,000자를 넘으면 보내지 않는다. 되돌리기는 `null`. 성공하면 그 회의록 캐시의 그 줄만 바꾸고 다시 받지 않는다 |
+| `PATCH /meetings/{id}/title` | `meeting_id`·`title`·`title_original`·`title_edited` | `meeting_id`·`title` 의 모양이 틀림 | 앞뒤 공백을 Python `strip` 처럼 빼고 1~200자(문자 수)만 보낸다. 바뀌지 않았으면 보내지 않는다. 되돌리기는 `null`. 성공하면 그 회의록 캐시의 제목 칸을 응답으로 바꾸고 `workspaceKey(ws,'meetings')`·`(ws,'minutes')`·`(ws,'project-map')` 을 무효화한다 |
+| `PATCH /meetings/{id}/transcript/{seq}` | `seq`·`text`·`original_text`·`edited` | `seq`·`text` 의 모양이 틀림 | 앞뒤 공백을 빼지 않고 보낸다. 공백만(Python `strip` 기준)이거나 10,000자를 넘으면 보내지 않는다. 되돌리기는 `null`. 성공하면 그 회의록 캐시의 그 줄만 바꾸고 다시 받지 않는다 |
 
 - 오류: 410 `MEETING_DELETED` 는 토스트 `삭제된 회의라 고칠 수 없어요.` 와 함께 회의 상세·회의록을 다시 받아 `삭제된 회의예요` 안내로 바꾼다. 404 `TRANSCRIPT_LINE_NOT_FOUND` 는 그 줄 아래 `발화를 찾을 수 없어요. 회의록을 다시 불러왔어요.` 와 회의록 재조회다. 400 `INVALID_REQUEST` 는 길이 문구다. 응답을 못 읽으면 `변경 결과를 확인하지 못했어요` 토스트와 재조회이고 고치던 글은 남긴다.
 - 회의록은 팀원이 고쳐 바뀌므로 완료 회의록도 `staleTime` 을 기본 30초로 둔다(D-136 의 5분을 D-192 가 바꿨다).

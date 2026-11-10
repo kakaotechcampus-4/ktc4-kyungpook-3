@@ -20,8 +20,8 @@ export const minutesSchema = z.object({
   // 서버 Meeting.title 이 nullable 이다
   title: z.string().nullable(),
   // 고친 표시와 처음 제목은 표시용이라 모양이 틀리면 표시만 버린다. 키가 없는 이전 서버는 고친 적 없는 회의다 (§4.4.3)
-  title_edited: z.boolean().catch(false),
-  title_original: z.string().nullable().catch(null),
+  title_edited: z.boolean().optional().catch(undefined),
+  title_original: z.string().nullable().optional().catch(undefined),
   started_at: z.string(),
   duration_ms: z.number(),
   // 표시용 분류라 모르는 값은 mapper 가 `알 수 없는 출처` 로 남긴다

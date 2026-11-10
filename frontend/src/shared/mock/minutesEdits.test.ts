@@ -124,3 +124,28 @@ it('삭제된 회의는 410, 없는 회의는 404, 비소속은 403 이다', asy
     fetchDto('/meetings/mt_07/title', jsonRequest('PATCH', { title: '제목' })),
   ).rejects.toMatchObject({ status: 403 })
 })
+
+it('회의록 행이 없는 회의도 처음 제목을 회의에 남겨 다시 고치고 되돌린다', async () => {
+  db.minutes = db.minutes.filter(({ meeting_id }) => meeting_id !== 'mt_09')
+  await patchTitle('edited once')
+  await expect(minutes()).resolves.toMatchObject({
+    title: 'edited once',
+    title_edited: true,
+    title_original: '3주차 정기회의',
+  })
+  await expect(patchTitle('edited twice')).resolves.toMatchObject({
+    title_original: '3주차 정기회의',
+  })
+  await expect(patchTitle(null)).resolves.toEqual({
+    meeting_id: 'mt_09',
+    title: '3주차 정기회의',
+    title_original: null,
+    title_edited: false,
+  })
+})
+
+it('회의를 지우면 고친 제목 기록도 지운다', async () => {
+  await patchTitle('고친 제목')
+  purgeMeeting('mt_09')
+  expect(db.titleEdits).toEqual({})
+})
