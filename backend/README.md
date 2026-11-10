@@ -70,7 +70,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 데이터 | DB는 `mm-prod_pgdata` 볼륨에 남는다. 로컬 개발용 볼륨(`mm-pgdata`)과 따로다 |
 | 업로드 녹음 | `UPLOAD_STORAGE`(local 기본 | s3)로 저장소를 고른다. 운영은 s3 이고 키는 `{UPLOAD_S3_PREFIX}{meeting_id}/audio.<확장자>`다(기본 `meetings/`). local 이면 `mm-prod_uploads` 볼륨(컨테이너의 `/data/uploads`)의 `{meeting_id}/`에 둔다. 회의가 done 이 돼도 지우지 않고 원문 듣기용으로 보관한다. failed 가 되면 바로 지운다 |
 | 녹음 보관·정리 | 보관 기간(`UPLOAD_AUDIO_RETENTION_DAYS`, 기본 7일)은 `meeting_audio.retention_from` 부터 센다. 업로드 회의는 녹음을 받은 시각(`uploaded_at`), 디스코드 회의는 회의 종료 시각(`meeting.ended_at`, 없으면 받은 시각)이다. 같은 sweeper 바퀴가 done 이면서 기간이 지난 녹음을 지우고 `deleted_at` 을 채운다. 처리 중(done·failed 가 아님)인 회의는 기간이 지나도 지우지 않는다. `UPLOAD_SWEEP_INTERVAL_SECONDS` 가 0 이하면 sweeper 가 돌지 않아 이 정리도 멈추고 S3 lifecycle 안전망만 남는다. 파일을 지우지 못하면 `deleted_at` 을 비워 두고 다음 바퀴에 다시 한다. 회의·공간 삭제와 탈퇴 정리는 S3 prefix 도 지운다. 근거는 [결정 기록](docs/plan/m5/basis-for-decision/2026-11-10-meeting-audio-s3-retention.md) |
-| 녹음 저장소 설정 | `UPLOAD_STORAGE=s3` 인데 `UPLOAD_S3_BUCKET` 이 비었거나 `UPLOAD_STORAGE` 가 `local`·`s3` 가 아니면 설정 오류다. 업로드·재생 요청은 500 으로 실패하고(가려 주는 코드는 없다), 만료 정리(`sweep_expired_audio`)는 로그만 남기고 다음 바퀴에 다시 시도한다. S3 클라이언트(`_s3_client`)는 프로세스당 한 번 만들어 캐시하므로 `AWS_REGION` 을 바꾸면 api 를 다시 띄워야 한다. 자격은 EC2 인스턴스 역할로 받는다. 앱 코드는 AWS 키 변수를 직접 읽지 않지만 compose 가 `.env` 를 통째로 넘기므로, 키를 `.env` 에 넣지 않는다(넣으면 boto3 기본 체인이 그 키를 쓰고 인스턴스 역할보다 우선한다). 인프라 준비는 [배포 안내](../deploy/README.md#회의-녹음-s3-준비) |
+| 녹음 저장소 설정 | `UPLOAD_STORAGE=s3` 인데 `UPLOAD_S3_BUCKET` 이 비었거나 `UPLOAD_STORAGE` 가 `local`·`s3` 가 아니면 설정 오류다. 업로드·재생 요청은 500 으로 실패하고(가려 주는 코드는 없다), 만료 정리(`sweep_expired_audio`)는 로그만 남기고 다음 바퀴에 다시 시도한다. S3 클라이언트(`_s3_client`)는 프로세스당 한 번 만들어 캐시하므로 `AWS_REGION` 을 바꾸면 api 를 다시 띄워야 한다. 자격은 boto3 기본 체인으로 받는다. 운영은 개인 AWS 계정 버킷이라 그 버킷 전용 IAM 사용자 키를 `.env` 의 `AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY` 에 둔다(키는 커밋하지 않는다). 인프라 준비는 [배포 안내](../deploy/README.md#회의-녹음-s3-준비) |
 | 업로드 sweeper | 서버 안의 워커가 `UPLOAD_SWEEP_INTERVAL_SECONDS`(기본 300, 0 이하면 끔)마다 멈춘 업로드 회의를 failed로 바꾸고 녹음 폴더 제거를 시도한다. AI가 가져간 뒤 진행이 3시간 없으면 `failed_stage=diarize`, 화자 지정을 7일 기다리면 `speaker_assignment_expired`, 가져가지 않은 채 24시간이 지나면 `upload_unclaimed`. live failed 업로드의 남은 폴더는 다음 바퀴마다 재시도한다. 과거 failed 잔존 파일도 대상이며 처리 실패가 삭제 완료를 뜻하지 않는다. 기준은 [봇 계약](docs/contracts/backend-ai-contract.md)의 "웹 업로드 가져가기" |
 | 세션 sweeper | 서버 안의 워커가 `SESSION_SWEEP_INTERVAL_SECONDS`(기본 3600, 0 이하면 끔)마다 만료된(`expires_at` 이 지난) 세션 행을 지운다. 만료 세션은 워커가 돌기 전에도 조회 때 401 이다 |
 | 리마인드 스케줄러 | 서버 안의 워커가 `REMINDER_SCHEDULER_INTERVAL_SECONDS`(기본 60, 0 이하면 끔)마다 재촉 제안, 발송 직전 확인, 72시간 무응답 막힘, 푸시 발송을 돈다. 브라우저 푸시는 `VAPID_PRIVATE_KEY`·`VAPID_PUBLIC_KEY`·`VAPID_SUBJECT` 가 모두 있어야 나가고, 하나라도 없으면 웹 안 알림만 쌓인다 |
@@ -565,7 +565,7 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 
 | 항목 | 동작 |
 |---|---|
-| 재생 | `GET /api/v1/meetings/{meeting_id}/audio`. done 회의는 소속이면 누구나, 그 밖의 상태는 PM 만 듣는다. 보관 기간 안이면 s3 저장소는 S3 presigned GET URL 로 302(`Cache-Control: private, no-store`, 응답 Content-Type 고정, 유효 시간 `UPLOAD_PLAYBACK_URL_TTL_SECONDS`), local 저장소는 파일을 그대로 보낸다(Range 지원). 없거나 지났으면 404 `AUDIO_NOT_AVAILABLE`. presigned URL 의 host 는 `<bucket>.s3.<AWS_REGION>.amazonaws.com`(리전 가상 호스트)이다. URL 은 인스턴스 역할의 임시 자격으로 서명되어, 그 자격이 먼저 끝나면 TTL 전에도 S3 가 403 으로 거절할 수 있다. 재생 오류가 나면 이 API 를 다시 불러(`<audio>` 의 `src` 를 다시 넣어) 새 URL 을 받는다 |
+| 재생 | `GET /api/v1/meetings/{meeting_id}/audio`. done 회의는 소속이면 누구나, 그 밖의 상태는 PM 만 듣는다. 보관 기간 안이면 s3 저장소는 S3 presigned GET URL 로 302(`Cache-Control: private, no-store`, 응답 Content-Type 고정, 유효 시간 `UPLOAD_PLAYBACK_URL_TTL_SECONDS`), local 저장소는 파일을 그대로 보낸다(Range 지원). 없거나 지났으면 404 `AUDIO_NOT_AVAILABLE`. presigned URL 의 host 는 `<bucket>.s3.<AWS_REGION>.amazonaws.com`(리전 가상 호스트)이다. URL 은 서명한 자격이 임시 자격(인스턴스 역할 등)이면 그 자격이 먼저 끝날 때 TTL 전에도 S3 가 403 으로 거절할 수 있다(지금 운영의 전용 사용자 키는 해당하지 않는다). 재생 오류가 나면 이 API 를 다시 불러(`<audio>` 의 `src` 를 다시 넣어) 새 URL 을 받는다 |
 | 재생 정보 | `GET /meetings/{meeting_id}/minutes` 의 `audio: {content_type, expires_at} \| null`. 호출자가 지금 들을 수 있을 때만 값이다. `expires_at` 은 `retention_from` + 보관 기간이다 |
 | 디스코드 녹음 받기 | `PUT /meetings/{meeting_id}/recording`(서비스 토큰). 개인정보 세대(`X-Privacy-Epoch`)는 보지 않는다. [봇 계약](docs/contracts/backend-ai-contract.md#회의-녹음-올리기-put-meetingsmeeting_idrecording--200) |
 | 녹음 삭제 | s3 저장소에서도 S3 prefix 와 함께 local 폴더(`UPLOAD_DIR/{meeting_id}`, local 로 운영하던 기간에 남은 것)를 지운다. 만료 정리는 파일을 잠금 없이 먼저 지운 뒤 공간·회의를 짧게 잠가 `deleted_at` 을 남긴다. 실패 업로드 파일 재시도는 보관 기록이 없는 옛 회의만 본다 |
@@ -580,7 +580,7 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 | `UPLOAD_AUDIO_RETENTION_DAYS` | `7` | 양의 정수. 잘못된 값은 경고 로그 뒤 7일 |
 | `UPLOAD_PLAYBACK_URL_TTL_SECONDS` | `3600` | presigned URL 유효 시간 |
 
-자격은 인스턴스 역할에서 받는다. 키를 `.env` 에 넣지 않는다(넣으면 boto3 기본 체인이 그 키를 쓴다). 보관 기준·처리 중 보호·정리 규칙은 위 [운영 실행](#운영-실행-docker)의 "녹음 보관·정리"에 있다.
+자격은 boto3 기본 자격 체인으로 받는다. 운영 버킷이 팀 계정 밖(개인 AWS 계정)에 있어, 그 버킷의 `meetings/*` 만 허용한 전용 IAM 사용자 키를 `.env` 의 `AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY` 에 둔다([배포 안내](../deploy/README.md#회의-녹음-s3-준비)). 보관 기준·처리 중 보호·정리 규칙은 위 [운영 실행](#운영-실행-docker)의 "녹음 보관·정리"에 있다.
 
 ## 가입 이름 규칙
 

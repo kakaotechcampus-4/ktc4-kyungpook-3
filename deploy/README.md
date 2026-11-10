@@ -108,15 +108,16 @@ backend 파일 재시도는 `MEETING_PURGE_INTERVAL_SECONDS`의 기존 워커가
 
 ## 회의 녹음 S3 준비
 
-회의 녹음을 S3 에 7일 보관하고 웹에서 다시 듣게 한다(#659, [결정 기록](../backend/docs/plan/m5/basis-for-decision/2026-11-10-meeting-audio-s3-retention.md)). `UPLOAD_STORAGE` 기본은 `local` 이라, 아래를 준비하고 `.env` 를 바꾸기 전에는 배포해도 동작이 바뀌지 않는다. 이 절은 인프라 담당이 확인할 체크리스트이며, 실제 AWS 설정과 운영 전환은 이번 로컬 개발에서 실행하거나 검증하지 않았다.
+회의 녹음을 S3 에 7일 보관하고 웹에서 다시 듣게 한다(#659, [결정 기록](../backend/docs/plan/m5/basis-for-decision/2026-11-10-meeting-audio-s3-retention.md)). `UPLOAD_STORAGE` 기본은 `local` 이라, 아래를 준비하고 `.env` 를 바꾸기 전에는 배포해도 동작이 바뀌지 않는다. 운영 버킷은 팀 AWS 계정이 아니라 담당자(@hwnv) 개인 AWS 계정에 있다(2026-11-10 사용자 결정). 그래서 EC2 인스턴스 역할 대신 그 계정의 전용 IAM 사용자 키로 연결한다.
 
-1. **버킷**: 서울(`ap-northeast-2`), 퍼블릭 액세스 모두 차단, 기본 암호화 SSE-S3. 녹음은 `meetings/{meeting_id}/audio.<확장자>` 키에 둔다(`UPLOAD_S3_PREFIX`, 기본 `meetings/`).
-2. **인스턴스 역할(IAM instance profile)**: EC2 에 붙은 역할에 아래 정책을 준다. AWS 키는 `.env` 에 넣지 않는다. 앱 코드는 AWS 키를 직접 읽지 않고 boto3 기본 자격 체인을 쓰는데, 넣으면 그 키가 인스턴스 역할보다 우선한다.
+1. **버킷**(준비함, 2026-11-10): 서울(`ap-northeast-2`), 퍼블릭 액세스 모두 차단, 객체 소유권 BucketOwnerEnforced, 기본 암호화 SSE-S3. 녹음은 `meetings/{meeting_id}/audio.<확장자>` 키에 둔다(`UPLOAD_S3_PREFIX`, 기본 `meetings/`). 버킷 이름은 운영 `.env` 에만 둔다.
+2. **전용 IAM 사용자**(준비함): 개인 계정의 `mm-backend-meeting-audio`. 인라인 정책은 아래 둘뿐이라 다른 버킷·접두어에는 접근하지 못한다(다른 접두어 쓰기와 버킷 목록 조회가 AccessDenied 인 것을 확인했다).
    - `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` — 리소스 `arn:aws:s3:::<bucket>/meetings/*`
    - `s3:ListBucket` — 리소스 `arn:aws:s3:::<bucket>`, 조건 `StringLike` `s3:prefix` = `meetings/*`. 회의 삭제·정리가 prefix 아래를 나열해 지운다.
-3. **lifecycle**: `meetings/` 접두어 객체를 30일 뒤 만료. BE 정리(`UPLOAD_AUDIO_RETENTION_DAYS`, 기본 7일)가 어긋나도 30일 안에는 사라지는 안전망이다.
-4. **IMDSv2 hop limit 2**: API 는 도커 컨테이너에서 돈다. 인스턴스 메타데이터 응답이 컨테이너(브리지 네트워크 한 홉 더)까지 닿아야 역할 자격을 받는다. `aws ec2 modify-instance-metadata-options --instance-id <id> --http-put-response-hop-limit 2 --http-tokens required` 로 정한다. hop limit 이 1 이면 컨테이너가 자격을 못 받아 업로드·재생이 500 이다.
-5. **`backend/.env`** (값은 [.env.example](../backend/.env.example)): `UPLOAD_STORAGE=s3`, `UPLOAD_S3_BUCKET=<bucket>`, `UPLOAD_S3_PREFIX=meetings/`, `AWS_REGION=ap-northeast-2`, `UPLOAD_AUDIO_RETENTION_DAYS=7`, `UPLOAD_PLAYBACK_URL_TTL_SECONDS=3600`. `uploads` 볼륨과 `UPLOAD_DIR` 는 그대로 둔다. `UPLOAD_STORAGE=s3` 인데 버킷이 없거나 값이 `local`·`s3` 가 아니면 설정 오류라 업로드·재생이 500 이다. S3 클라이언트는 프로세스당 한 번 만들어 캐시하므로 `AWS_REGION` 을 바꾸면 컨테이너를 다시 띄운다.
+   - 키는 운영 `backend/.env` 의 `AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY` 에만 둔다. 앱 코드는 키를 직접 읽지 않고 boto3 기본 자격 체인이 환경 변수에서 찾는다. 키가 새면 IAM 콘솔에서 그 사용자의 키를 비활성화하고 새로 발급해 `.env` 를 바꾼다.
+3. **lifecycle**(준비함): `meetings/` 접두어 객체를 30일 뒤 만료, 끝나지 않은 multipart 업로드는 1일 뒤 정리. BE 정리(`UPLOAD_AUDIO_RETENTION_DAYS`, 기본 7일)가 어긋나도 30일 안에는 사라지는 안전망이다.
+4. **실제 S3 확인**(2026-11-10, 로컬에서 전용 키로): `upload_storage` 로 저장 → presigned URL(host `<bucket>.s3.ap-northeast-2.amazonaws.com`)에 Range 요청 206·`audio/mp4` → 스트림 읽기 → 덮어쓰기 → prefix 삭제까지 성공했다. 운영 EC2 에서의 확인은 전환 때 한다.
+5. **`backend/.env`** (값은 [.env.example](../backend/.env.example)): `UPLOAD_STORAGE=s3`, `UPLOAD_S3_BUCKET=<bucket>`, `UPLOAD_S3_PREFIX=meetings/`, `AWS_REGION=ap-northeast-2`, `AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY`(전용 사용자 키), `UPLOAD_AUDIO_RETENTION_DAYS=7`, `UPLOAD_PLAYBACK_URL_TTL_SECONDS=3600`. `uploads` 볼륨과 `UPLOAD_DIR` 는 그대로 둔다. `UPLOAD_STORAGE=s3` 인데 버킷이 없거나 값이 `local`·`s3` 가 아니면 설정 오류라 업로드·재생이 500 이다. S3 클라이언트는 프로세스당 한 번 만들어 캐시하므로 `AWS_REGION` 을 바꾸면 컨테이너를 다시 띄운다.
 6. **전환 시점**: 디스크에서 S3 를 예비로 읽는 경로가 없다. 처리 중인 업로드가 없을 때(`processing`·`awaiting_speakers` 업로드 회의가 없는지 확인) `UPLOAD_STORAGE=s3` 로 바꾼다. 처리 중에 바꾸면 AI 가 `GET /uploads/{id}/file` 에서 404 를 받는다. 전환 시점 이전(local 기간)에 디스크에 저장된 녹음은 s3 모드에서 재생되지 않는다. 보관 기록(`meeting_audio`)이 있는 녹음은 재생 정보가 남아 있어도 S3 에 객체가 없어 브라우저가 S3 오류를 받는다. 정리는 된다: s3 모드의 녹음 삭제(만료 정리·회의 삭제·탈퇴 정리)가 S3 prefix 와 함께 디스크의 `UPLOAD_DIR/{meeting_id}` 폴더도 지운다. `.env` 변경은 `docker compose -f backend/docker-compose.prod.yml up -d` 로 컨테이너를 다시 만든다(restart 는 반영하지 않는다).
 7. **Caddy CSP `media-src`**: 브라우저는 302 로 S3 주소(`https://<bucket>.s3.ap-northeast-2.amazonaws.com`)에서 바로 받는다. BE 는 S3 클라이언트를 리전 endpoint·가상 호스트 방식으로 만들어, presigned URL 의 host 가 항상 이 출처(`AWS_REGION` 의 리전)다. 서버의 Caddy 설정에 `Content-Security-Policy` 가 있다면 `media-src` 가 이 출처를 허용하는지 확인한다(#654). Caddy 설정은 이 저장소에 없어 확인하지 못했다. 프론트가 `crossOrigin` 이나 Web Audio 를 쓰면 버킷 CORS 도 필요하다.
 
