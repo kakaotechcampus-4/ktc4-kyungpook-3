@@ -40,6 +40,11 @@ export const PROJECT_MAP_PARAMS = { view: 'view' } as const
  */
 export const MEMBERS_PARAMS = { connect: 'connect' } as const
 
+/**
+ * 회의록 화면의 검색 파라미터. `t` 는 녹음을 틀 위치(회의 시작부터의 ms)다 — '원문 듣기'가 근거 시각을 넘긴다 (#676)
+ */
+export const MEETING_PARAMS = { at: 't' } as const
+
 function withOptionalId(base: string, id: string | undefined): string {
   return id === undefined ? base : `${base}/${segment(id)}`
 }
@@ -76,8 +81,13 @@ export const paths = {
   onboardingReview: (workspaceId: string, step: string) =>
     `/onboarding/${segment(workspaceId)}/${segment(step)}?${ONBOARDING_REVIEW_PARAM}=1`,
   dashboard: (workspaceId: string) => `${workspaceBase(workspaceId)}/dashboard`,
-  meetings: (workspaceId: string, meetingId?: string) =>
-    withOptionalId(`${workspaceBase(workspaceId)}/meetings`, meetingId),
+  /** atMs 를 주면 회의록에서 그 위치부터 녹음을 튼다. 시각을 모르면(null) 이동만 한다 (#676) */
+  meetings: (workspaceId: string, meetingId?: string, atMs?: number | null) => {
+    const path = withOptionalId(`${workspaceBase(workspaceId)}/meetings`, meetingId)
+    return meetingId !== undefined && typeof atMs === 'number' && Number.isFinite(atMs) && atMs >= 0
+      ? `${path}?${new URLSearchParams({ [MEETING_PARAMS.at]: String(Math.floor(atMs)) }).toString()}`
+      : path
+  },
   /** 회의 올리기. PM 전용이다 — docs/impl-decision/2026-10-02-meeting-upload-policy.md */
   meetingUpload: (workspaceId: string) => `${workspaceBase(workspaceId)}/meetings/upload`,
   /** 회의 정리 중. 워크스페이스 팀원 모두 볼 수 있다 */

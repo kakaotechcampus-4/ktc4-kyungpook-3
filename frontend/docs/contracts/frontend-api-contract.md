@@ -480,6 +480,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 - 회의 기록 고치기(#605)가 `TOPIC_NAME_TAKEN(409)`·`DECISION_NOT_FOUND(404)`·`TRANSCRIPT_LINE_NOT_FOUND(404)` 를 더했다 → §4.4.3.
 - 본 뒤 바뀐 승인 카드 `APPROVAL_CHANGED(409)` 는 BE #547 이 더했다 → §2.5.
 - 로그인 시도 제한(BE PR #456, 2026-11-07 병합)이 `TOO_MANY_LOGIN_ATTEMPTS(429)` 를 더했다. 위 목록에는 넣지 않았고 쓰임새는 §4.1.3 에 있다.
+- 회의 녹음 재생(#676, BE PR #670 머지 전)이 `AUDIO_NOT_AVAILABLE(404)` 를 더한다. `details.reason` 은 `expired`·`no_recording` 이다. 위 목록에는 넣지 않았고 쓰임새는 §2.3.1 「회의 녹음 재생」에 있다.
 - 아래 3개는 **정의만 되고 아직 아무도 던지지 않는다.** 화면은 처리 경로를 갖되 실제로 오는지는 기대하지 않는다 → §4.0.
   `ONBOARDING_INCOMPLETE` · `INTEGRATION_REVOKED` · `AUDIO_TOO_LARGE`
 
@@ -617,13 +618,13 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 
 > **상태: BE 구현됨, FE 방향 합의(#256), FE 구현(2026-11-05, MSW 기준).** 아래는 `backend/app/api/meetings.py` 와 `backend/app/services/speaker_assignment.py` 의 구현 사실이다. #256 에서 FE 가 원본 + 구간 재생, 같은 멤버 다중 지정 허용, 외부 참석자 선택지(`null`)를 받아들였다(2026-11-03). 지정 후보를 업로드 때 고른 참석자로 제한할지는 FE 가 2026-11-05 에 「제한하지 않는다」로 정했고 BE 확인은 남았다(아래 「FE 구현」). AI 쪽 경로는 [backend-ai-contract.md](../../../backend/docs/contracts/backend-ai-contract.md) 에 있고 프론트는 호출하지 않는다. 실제 서버를 띄운 호출은 검증하지 않았고 테스트([test_speaker_assignment_api.py](../../../backend/tests/api/test_speaker_assignment_api.py))로 확인했다.
 
-세 경로 모두 로그인 세션이 필요하고 그 회의 워크스페이스의 PM 만 쓴다. 미로그인은 401, PM 이 아니면(일반 팀원, 다른 공간의 PM) 403 `FORBIDDEN`. 회의가 없거나 웹 업로드 회의가 아니거나 `meeting_upload` 행이 없으면 404 `MEETING_NOT_FOUND`.
+세 경로 모두 로그인 세션이 필요하고 그 회의 워크스페이스의 PM 만 쓴다. 미로그인은 401, PM 이 아니면(일반 팀원, 다른 공간의 PM) 403 `FORBIDDEN`. 회의가 없거나 웹 업로드 회의가 아니거나 `meeting_upload` 행이 없으면 404 `MEETING_NOT_FOUND`. BE PR #670(#659, 머지 전)부터 `/audio` 는 업로드 회의만의 경로가 아니고 권한·응답이 다르다 → 아래 「회의 녹음 재생과 회의록 `audio` (#676)」.
 
 | Method | Path | 용도 |
 |---|---|---|
 | GET | `/api/v1/meetings/{meeting_id}/speakers` | 화자 라벨·후보 참석자·저장된 지정 조회 |
 | PUT | `/api/v1/meetings/{meeting_id}/speakers` | 라벨별 팀원 지정 제출 |
-| GET | `/api/v1/meetings/{meeting_id}/audio` | 원본 녹음 재생 |
+| GET | `/api/v1/meetings/{meeting_id}/audio` | 원본 녹음 재생. 회의록의 '원문 듣기'도 쓴다(#676) |
 
 ```
 // GET /meetings/{meeting_id}/speakers  → 200 (봉투 data)
@@ -637,6 +638,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 - `speakers` 는 `total_sec` 내림차순, 같으면 `label` 오름차순이다. AI 가 아직 라벨을 보내지 않았으면 `[]` 다. `samples` 의 `start`·`end` 는 초 단위이고 원본 녹음 안의 위치다.
 - `candidates` 는 업로드할 때 고른 참석자 중 이 워크스페이스에서 탈퇴하지 않은 멤버다. 업로드 뒤 탈퇴한 참석자는 빠진다. 제출이 탈퇴 멤버를 400 으로 막으므로 같은 기준으로 뺀 것이다.
 - `audio` 는 녹음 파일이 있을 때만 주고, 처리가 `done`·`failed` 로 끝나 녹음 폴더가 지워졌으면 `null` 이다. `null` 이면 플레이어를 그리지 않는다. 이때 `/audio` 는 404 다.
+  **BE PR #670(머지 전)부터:** `failed` 면 `null` 이지만 `done` 뒤에도 보관 기간(7일) 동안은 값이 있다. 지정 화면은 `awaiting_speakers` 에서만 이 값을 읽고 「`done` 이면 `null`」을 가정하지 않는다(#676 확인). MSW 의 화자 조회만 그 가정이 있어 고쳤다.
 - `mapping` 은 지정을 제출하기 전에는 `null`, 제출한 뒤에는 `{label: member_id | null}` 이다.
 
 ```
@@ -662,6 +664,7 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 - `<audio>` 로 재생하고 `samples` 구간으로 이동해 들려준다. 서버는 구간을 자르지 않는다. 요청한 `Range` 에는 206 과 `Content-Range` 로 답한다.
 - 상태는 보지 않는다. 녹음 폴더가 있는 동안은 받을 수 있다. 처리가 `done`·`failed` 로 끝나 폴더가 지워지면 404 `MEETING_NOT_FOUND` 다.
 - 쿠키 세션으로 인증하므로 같은 출처에서 `<audio src>` 로 바로 쓸 수 있다. 헤더를 붙여야 하는 방식은 쓸 수 없다.
+- 위 200 응답과 404 `MEETING_NOT_FOUND` 는 BE PR #670 전의 동작이다. 그 뒤로는 S3 저장소에서 302, 들을 수 없으면 404 `AUDIO_NOT_AVAILABLE` 이다 → 아래 「회의 녹음 재생과 회의록 `audio` (#676)」.
 
 프론트가 맞춰야 할 것(2026-11-05 반영, 아래 「FE 구현」):
 
@@ -683,6 +686,40 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 - 샘플 재생: 화면에 `<audio preload="metadata" src=/api/v1/meetings/{id}/audio>` 하나를 두고 샘플마다 재생 버튼을 둔다. 누르면 그 `start` 로 옮겨 재생하고 `end` 에서 멈춘다. `timeupdate` 간격으로는 0.5초 구간을 넘기므로 화면 갱신마다와 남은 시간 타이머로 끝을 확인한다. 샘플이 1개, 2초 미만, 0개여도 그린다. `audio` 가 `null` 이거나 녹음을 불러오지 못하면 플레이어를 쓰지 않고 안내한다. 구현: [samplePlayback.ts](../../src/features/speaker-assignment/model/samplePlayback.ts), [useSamplePlayer.ts](../../src/features/speaker-assignment/model/useSamplePlayer.ts).
 - 제출 오류: 400 `INVALID_REQUEST` 의 `unknown_labels`·`missing_labels` 는 화자 목록을 다시 받고 다시 고르게 한다. `member_ids` 는 그 선택만 지우고 다시 받는다. 409 `MEETING_NOT_AWAITING_SPEAKERS` 는 `details.status` 가 `failed` 일 때만 만료로 보고 상세를 다시 받아 그 `failed_stage` 의 안내와 PM 재업로드 링크를 보이며 다시 낼 수 없다. 그 밖의 `details.status` 는 이미 지정됐다고 안내하고 처리 화면이나 회의록으로 잇는다. 403·404·네트워크 오류는 각각 문구로 안내한다. 제출 성공 뒤에는 처리 화면으로 옮겨 기존 추적이 끝까지 따라간다. 구현: [submitRejection.ts](../../src/features/speaker-assignment/model/submitRejection.ts), [useSpeakerSubmit.ts](../../src/features/speaker-assignment/model/useSpeakerSubmit.ts).
 - MSW: GET·PUT `/meetings/{id}/speakers`, GET `/meetings/{id}/audio`(코드로 만든 무음 WAV)와 `meeting-speakers*` 시나리오 다섯 개. 계약의 403·404·400 `details`·409 `details.status`·같은 지정 재제출 200을 흉내 낸다. 목록: [MSW 안내](../msw-guide.md).
+
+#### 회의 녹음 재생과 회의록 `audio` (#676)
+
+> **상태: BE 구현(PR #670, 머지 전), FE 구현(MSW 기준, 실서버 미검증).** 명세는 이슈 #676 본문(2026-11-10)과 BE PR #670 의 `backend/app/api/meetings.py`(`get_meeting_audio`, minutes)·`backend/app/services/meeting_audio.py` 를 읽은 것이다. BE 는 이 경로·필드·오류 코드를 고정하고, 바꿀 일이 생기면 #676 에 먼저 알리기로 했다. 실제 서버·S3·Safari 로는 확인하지 않았다. 결정 근거는 BE 결정 기록 `backend/docs/plan/m5/basis-for-decision/2026-11-10-meeting-audio-s3-retention.md`(PR #670 에만 있고 develop 에는 아직 없다)이다.
+
+웹 업로드 회의와 디스코드 음성 회의의 녹음을 S3 에 7일 보관하고 웹에서 들려 준다. 채팅 회의는 녹음이 없다. 보관 기준은 업로드 회의는 받은 시각, 디스코드 회의는 회의가 끝난 시각이다. 처리 중(`done`·`failed` 가 아님)인 업로드는 7일이 지나도 지우지 않고, `failed` 회의의 녹음은 바로 지운다.
+
+```
+// GET /meetings/{meeting_id}/audio
+권한: done 회의는 그 워크스페이스 팀원 모두. 그 밖의 상태는 PM 만(팀원은 403 FORBIDDEN). 팀원이 아니면 403, 삭제된 회의는 410
+local 저장소: 200 + 녹음 바이트(Range 지원, X-Content-Type-Options: nosniff)
+S3 저장소(운영): 302 → S3 임시 주소(유효 1시간. done 회의는 보관이 끝나는 시각을 넘지 않게 줄인다), Cache-Control: private, no-store
+들을 수 없음: 404 AUDIO_NOT_AVAILABLE, details {"meeting_id": "...", "reason": "expired" | "no_recording"}
+  expired      보관 기간이 지났다(done 회의)
+  no_recording 녹음이 없다(채팅 회의·실패한 회의·녹음을 받지 못한 회의·S3 전환 전에 끝난 업로드)
+```
+
+```jsonc
+// GET /meetings/{meeting_id}/minutes 에 더해진 필드
+"audio": {"content_type": "audio/mp4", "expires_at": "2026-11-17T05:45:30Z"}   // 지금 들을 수 없으면 null
+```
+
+- `audio` 는 호출자가 지금 들을 수 있을 때만 값이 있다. 재생 경로와 같은 권한이라 `done` 이 아니면 PM 에게만 온다.
+- 처리 중 회의는 `expires_at` 이 지나도 들을 수 있어 `audio` 가 값으로 온다. 들을 수 있는지는 `expires_at` 이 아니라 `audio` 가 `null` 인지로만 판단한다.
+- 근거 시각은 이미 응답에 있다(승인의 `evidence_at_ms`·`merged_items[].evidence_at_ms`, 회의록 `transcript[].at_ms`). 디스코드 녹음은 트랙을 샘플 0 에 맞춰 섞은 파일이라 이 시각이 녹음 안 위치와 같다(BE 결정 기록).
+
+FE 구현(#676, 2026-11-11, MSW 기준):
+
+- '원문 듣기': 승인 상세의 대표 근거·합쳐진 근거와 태스크 목록 확인 필요 카드의 링크가 `paths.meetings(ws, id, at_ms)` 로 `?t=<at_ms>` 를 붙인다. 시각이 `null` 이면 붙이지 않고 이동만 한다. 구현: [routes.ts](../../src/shared/config/routes.ts) `MEETING_PARAMS`.
+- 회의록: `audio` 는 `{contentType, expiresAt} | null` 로 읽는다. 키가 없는 이전 서버 응답과 모양이 틀린 값은 `null`(녹음 없음)이고 회의록은 그대로 보인다. 구현: [minutes 스키마](../../src/shared/types/api/minutes.ts), [mapper](../../src/entities/minutes/model/mapper.ts).
+- 플레이어: 정리가 끝난 회의록의 탭 줄 아래, 패널 위에 `<audio controls preload="metadata" src="/api/v1/meetings/{id}/audio">` 를 그린다. `crossOrigin` 속성·Web Audio 를 쓰지 않는다. `t` 가 있으면 메타데이터가 온 뒤 `t / 1000` 초로 옮기고 재생을 시도한다(자동 재생이 막히면 그 자리에서 멈춰 둔다). `audio` 가 `null` 이면 플레이어를 그리지 않고, `t` 가 있을 때만 「녹음이 없거나 보관 기간(7일)이 지났어요.」를 보인다. 구현: [MeetingRecording.tsx](../../src/features/meeting-audio/ui/MeetingRecording.tsx).
+- 재생 오류: `<audio>` 의 `error` 뒤 같은 경로를 `fetch(…, {credentials: 'include', redirect: 'manual'})` 로 한 번 묻는다. 302 를 따라가지 않으므로(브라우저는 `opaqueredirect`) S3 에는 요청하지 않는다. 404 `AUDIO_NOT_AVAILABLE` 이면 `details.reason` 으로 `expired` →「보관 기간(7일)이 지나 녹음을 들을 수 없어요.」, `no_recording` →「이 회의는 녹음이 없어요.」, 모르는 이유는 위의 일반 문구다. 302·2xx 면 임시 주소가 끝난 것으로 보고 `<audio>` 를 새로 만들어 같은 경로를 다시 부르고 듣던 위치로 옮기며, 재생 중이었으면 이어 튼다. 자동 다시 부르기는 받기에 성공(`loadeddata`·`playing`)할 때마다 한 번이다. 그 밖의 응답이나 다시 부른 뒤에도 실패하면 「녹음을 불러오지 못했어요.」와 `다시 시도` 다. 구현: [playback.ts](../../src/features/meeting-audio/model/playback.ts), [probe](../../src/entities/meeting/api/meetingAudio.ts).
+- MSW: `/meetings/{id}/audio` 는 위 권한대로 막고 들을 수 있으면 302 로 모의 S3 주소(`/__mock/s3/meetings/{id}/audio.wav`, 같은 출처, 600초 무음 WAV, Range 206)를 준다. 들을 수 없으면 404 `AUDIO_NOT_AVAILABLE` 이다. 픽스처 `mt_09` 는 들을 수 있고 `mt_07` 은 기간이 지났고 `mt_08`(채팅)은 녹음이 없다. 시나리오 `meeting-audio-expired`. 목록: [MSW 안내](../msw-guide.md).
+- #676 「확인할 것」의 FE 답: `crossOrigin`·Web Audio 를 쓰지 않고, 재생 오류 뒤 묻는 `fetch` 는 같은 출처에 `redirect: 'manual'` 이라 S3 버킷 CORS 가 필요 없다. S3 출처에 직접 가는 요청은 `<audio>` 의 미디어 요청뿐이다. 운영 Caddy CSP 를 쓰면 `media-src` 가 S3 출처를 허용해야 한다(BE 결정 기록). 302 를 따라간 S3 주소의 구간 이동은 실제 버킷·Safari 로 확인하지 못했다. MSW 의 302 → 모의 S3 에서 Chromium 이 구간 이동하는 것은 E2E 로 확인했다.
 
 ### 2.4 extractions
 
@@ -1634,9 +1671,11 @@ POST .../meetings/upload            multipart/form-data
  "transcript": [{"seq": 0, "at_ms": 125000, "speaker_member_id": "mb_01",
                  "speaker_display_name": "김서연", "speaker_fallback": "seoyeon_01",
                  "text": "...", "edited": false, "original_text": null}],
- "permissions": {"can_review": true, "can_undo": true}}
+ "permissions": {"can_review": true, "can_undo": true},
+ "audio": {"content_type": "audio/mp4", "expires_at": "2026-09-22T05:45:30Z"}}   // #676, BE PR #670 머지 전
 ```
 
+- `audio` 는 지금 들을 수 있는 녹음이다. 없거나 보관 기간이 지났으면 `null` 이다. 뜻과 FE 사용은 §2.3.1 「회의 녹음 재생과 회의록 `audio` (#676)」.
 - **반영된 태스크와 확인 필요 항목은 이 응답에 넣지 않아도 된다.** `GET /extractions/{extraction_id}` 의 항목이 `task_id` 와 `approval_id` 를 이미 들고 있어(§2.4) 프론트엔드가 조립할 수 있다.
 - `speaker_display_name` 이 `null` 이면 `speaker_fallback` 으로 표시한다 (D-028). → 필드 이름 3개 그대로 구현됐다
 - 일반 팀원에게 `확인 필요` 영역을 숨긴다. **개수와 존재 여부도 노출하지 않는다** (D-104). 프론트엔드가 `approval_id` 가 있는 항목을 걸러 낸다.
@@ -2092,6 +2131,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 | 화자 지정(`awaiting_speakers`) | `GET`·`PUT /meetings/{id}/speakers`, `GET /meetings/{id}/audio` | BE 구현됨, **FE 구현**(MSW 기준, 실서버 미검증) §2.3.1 |
 | 회의록 목록 | `GET /workspaces/{id}/meetings` | **구현됨** §4.4 |
 | 회의록 본문 | `GET /meetings/{meeting_id}/minutes` | 저장된 Source의 전사·참석자와 Extraction.summary 객체를 읽음. 유효 요약이 없으면 null |
+| 원문 듣기 녹음 | `GET /meetings/{meeting_id}/minutes` 의 `audio`, `GET /meetings/{id}/audio`(S3 302) | BE 구현(PR #670, 머지 전), **FE 구현**(MSW 기준, 실서버 미검증) §2.3.1 「회의 녹음 재생」 |
 | 회의록의 태스크 영역 | `GET /extractions/{extraction_id}` | **구현됨** §2.4 |
 
 - ~~Notion 미연결이면 업로드 화면으로 보내지 않고 차단 모달을 띄운다 (D-097).~~ **2026-11-07(#507):** Notion 연결과 상관없이 업로드 화면을 연다 (D-182).

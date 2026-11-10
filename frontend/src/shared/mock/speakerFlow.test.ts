@@ -165,5 +165,7 @@ describe('화자 지정 MSW (계약 §2.3.1)', () => {
     for (let poll = 0; poll < 3; poll += 1) statuses.push((await detail(id)).status)
     expect(statuses).toEqual(['processing', 'processing', 'done'])
     expect(db.meetingFlow.speakers[id].mapping).toEqual(ALL_ASSIGNED)
+    // 처리가 끝나도 보관 기간 동안 녹음이 남는다 (#676)
+    expect((await view(id)).audio).toMatchObject({ content_type: 'audio/wav' })
   })
 })

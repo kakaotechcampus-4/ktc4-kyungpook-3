@@ -95,6 +95,8 @@ export const MOCK_SCENARIOS = [
   'approval-asr-suspects-long',
   // #419 회의록 mt_09 의 수정 제안 it_08(tk_04 마감 변경). 승인 전에도 task_id 가 tk_04 다
   'minutes-edit-pending',
+  // #676 mt_09 의 녹음 보관 기간(7일)이 지났다. 회의록 audio 가 null 이고 재생은 404 AUDIO_NOT_AVAILABLE(expired)
+  'meeting-audio-expired',
   // #551 mt_09 의 요약이 승인을 기다린다. 대기 카드 ap_01~ap_03 이라 PM 은 3건을 보고, -member 는 건수 없이 본다
   'minutes-awaiting-approval',
   'minutes-awaiting-approval-member',
@@ -980,6 +982,10 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'minutes-edit-pending':
       signInWith(state, ['ws_01'], 'ws_01')
       addEditProposal(state)
+      break
+    case 'meeting-audio-expired':
+      signInWith(state, ['ws_01'], 'ws_01')
+      for (const minutes of state.minutes) minutes.audio = null
       break
     case 'minutes-awaiting-approval':
     case 'minutes-awaiting-approval-member':

@@ -63,6 +63,16 @@ export const minutesSchema = z.object({
   ),
   // 검토·되돌리기 권한이라 모양이 틀리면 응답 전체가 `INVALID_RESPONSE` 다
   permissions: z.object({ can_review: z.boolean(), can_undo: z.boolean() }),
+  // 호출자가 지금 들을 수 있는 녹음 (#676). 없으면 null 이다. 키가 없는 이전 서버도 녹음이 없는 것으로 본다.
+  // 플레이어를 그릴지만 정하는 값이라 모양이 틀려도 회의록은 보인다
+  audio: z
+    .object({ content_type: z.string(), expires_at: z.string() })
+    .nullable()
+    .default(null)
+    .catch(({ input }) => {
+      if (import.meta.env.DEV) console.warn('Invalid minutes audio:', input)
+      return null
+    }),
 })
 export type MinutesDto = z.infer<typeof minutesSchema>
 

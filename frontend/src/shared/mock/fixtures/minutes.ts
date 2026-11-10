@@ -66,6 +66,8 @@ const minutes: MinutesDto = {
     },
   ]),
   permissions: { can_review: true, can_undo: true },
+  // 디스코드 회의 녹음은 회의가 끝난 시각부터 7일 듣는다 (#676). MOCK_NOW(09-18) 에는 아직 들을 수 있다
+  audio: { content_type: 'audio/wav', expires_at: '2026-09-22T05:45:30Z' },
 }
 export const minutesFixtures: MinutesDto[] = [
   {
@@ -74,6 +76,8 @@ export const minutesFixtures: MinutesDto[] = [
     title: '2주차 정기회의',
     started_at: '2026-09-08T05:00:00Z',
     duration_ms: 2700000,
+    // 09-08 에 끝난 회의라 MOCK_NOW 에는 보관 기간(7일)이 지났다
+    audio: null,
   },
   minutes,
   {
@@ -121,5 +125,7 @@ export const minutesFixtures: MinutesDto[] = [
       },
     ]),
     permissions: { can_review: true, can_undo: true },
+    // 채팅 회의는 녹음이 없다
+    audio: null,
   },
 ]
