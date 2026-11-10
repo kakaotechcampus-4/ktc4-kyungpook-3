@@ -9,7 +9,7 @@ from app.models import Task, User, Member, MemberRole
 from app.services.sessions import find_session
 from app.services import lifecycle
 
-def authenticate(db: Session, session_token: str | None) -> tuple[User, datetime] | None:
+def authenticate(db: Session, session_token: str | None, *, exclusive: bool = False) -> tuple[User, datetime] | None:
     """쿠키 토큰이 살아 있는 세션이면 사용자와 만료 시각(UTC)을 돌려준다. HTTP 의존성과 소켓이 같이 쓴다."""
     if not session_token:
         return None
@@ -28,21 +28,30 @@ def authenticate(db: Session, session_token: str | None) -> tuple[User, datetime
     if not user:
         return None
     try:
-        return lifecycle.user(db, user.user_id), expires_at
+        return lifecycle.user(db, user.user_id, exclusive=exclusive), expires_at
     except AppError:
         return None
+
+
+def _current_user(request: Request, db: Session, *, exclusive: bool = False) -> User:
+    db.info["service_write"] = False
+    db.info["read_only_request"] = request.method in ("GET", "HEAD") and not request.url.path.endswith("/callback")
+    session = authenticate(db, request.cookies.get("session_token"), exclusive=exclusive)
+    if session is None:
+        raise AppError(ErrorCode.UNAUTHENTICATED)
+    return session[0]
 
 
 def get_current_user(
     request: Request,
     db: Session = Depends(get_db)
 ) -> User:
-    db.info["service_write"] = False
-    db.info["read_only_request"] = request.method in ("GET", "HEAD") and not request.url.path.endswith("/callback")
-    session = authenticate(db, request.cookies.get("session_token"))
-    if session is None:
-        raise AppError(ErrorCode.UNAUTHENTICATED)
-    return session[0]
+    return _current_user(request, db)
+
+
+def get_current_user_for_update(request: Request, db: Session = Depends(get_db)) -> User:
+    """사용자 행을 고치는 요청용. 겹친 같은 계정 요청이 FOR SHARE 를 쥔 채 UPDATE 하면 서로 기다려 교착하므로 처음부터 배타 잠금으로 읽는다."""
+    return _current_user(request, db, exclusive=True)
 
 def require_member(db: Session, user: User, workspace_id: str) -> Member:
     """workspace_id가 경로·쿼리에 없고 리소스나 요청 바디에서 나오는 경로용 멤버십 확인."""

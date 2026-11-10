@@ -16,6 +16,7 @@ from app.models import Integration, Member, Session as SessionModel, User, Works
 from app.services import notion, notion_connect, notion_oauth
 from app.services.notion_oauth import NONCE_COOKIE, NotionToken
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 FAILED = "oauth=notion&oauth_result=failed"
 # 허용 화면에서 템플릿 대신 기존 페이지를 골랐을 때의 토큰(duplicated_template_id 없음)
@@ -50,7 +51,7 @@ def oauth_env(monkeypatch):
 
 
 def _user(db, email: str, token: str) -> User:
-    user = User(email=email, name=email.split("@")[0])
+    user = User(username=username_for(email), email=email, name=email.split("@")[0])
     db.add(user)
     db.flush()
     db.add(SessionModel(user_id=user.user_id, session_token=hash_session_token(token), expires_at=datetime.now(timezone.utc) + timedelta(days=1)))

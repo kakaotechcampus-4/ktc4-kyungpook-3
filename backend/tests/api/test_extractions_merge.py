@@ -27,6 +27,7 @@ from app.models import (
     Workspace,
 )
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 # 임베딩 워커가 이미 채운 task. 임베딩이 없는 task가 있으면 auto로 보내지 않으므로 시드 task에 넣는다
 EMBEDDED = [0.1] * EMBEDDING_DIMENSIONS
@@ -62,7 +63,7 @@ def seed(db):
     db.flush()
 
     expires = datetime.now(timezone.utc) + timedelta(days=1)
-    pm_user = User(email="pm@example.com", name="pm")
+    pm_user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     db.add(pm_user)
     db.flush()
     db.add(SessionModel(user_id=pm_user.user_id, session_token=hash_session_token("pm-token"), expires_at=expires))

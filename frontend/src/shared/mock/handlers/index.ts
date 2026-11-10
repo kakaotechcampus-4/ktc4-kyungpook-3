@@ -17,12 +17,14 @@ import { messageHandlers } from './message'
 import { messageSettingsHandlers } from './messageSettings'
 import { notificationHandlers } from './notification'
 import { invitationHandlers } from './invitation'
+import { userHandlers } from './users'
 import { withdrawalHandlers } from './withdrawal'
 import { projectMapHandlers } from './projectMap'
 
 /** Entity handler modules are accumulated here for the common browser and test server. */
 export const handlers: RequestHandler[] = [
   ...authHandlers,
+  ...userHandlers,
   ...consentHandlers,
   ...withdrawalHandlers,
   ...passwordResetHandlers,

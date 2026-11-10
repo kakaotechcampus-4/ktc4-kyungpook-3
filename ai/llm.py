@@ -143,11 +143,12 @@ class MLAPIClient:
         timeout_s 가 지나면 타이머가 스트림을 닫고 TimeoutError 를 낸다. 이미 막힌 읽기는 close 로 풀리지 않아
         조각 사이 대기(READ_IDLE_S)가 끝나야 돌아온다. 그래서 상한 뒤 최대 READ_IDLE_S 가 더 걸린다. SDK 재시도는 끈다.
         """
-        import httpx  # openai 가 쓰는 HTTP 클라이언트. 지연 import 는 openai 와 같은 이유
+        # openai 가 내보내는 Timeout 을 쓴다. 그 밑의 HTTP 패키지는 버전마다 다르다(3.48 은 httpx 가 아니라 httpx2)
+        from openai import Timeout
 
         started = time.monotonic()
         deadline = started + timeout_s
-        timeout = httpx.Timeout(timeout_s, read=min(timeout_s, READ_IDLE_S))
+        timeout = Timeout(timeout_s, read=min(timeout_s, READ_IDLE_S))
         stream = self._client.with_options(timeout=timeout, max_retries=0).chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],

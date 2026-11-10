@@ -6,6 +6,7 @@ from app.main import app
 from app.models import Member, User
 from app.services.passwords import hash_password
 from tests.api.conftest import signup_verified
+from tests.usernames import username_for
 
 PASSWORD = "pw-123456"
 
@@ -123,7 +124,7 @@ def test_signup_rejects_lone_surrogate(mdb):
 
 
 def test_existing_account_with_empty_name_still_works(mdb):
-    mdb.add(User(email="legacy@example.com", name="", password_hash=hash_password(PASSWORD)))
+    mdb.add(User(username=username_for("legacy@example.com"), email="legacy@example.com", name="", password_hash=hash_password(PASSWORD)))
     mdb.commit()
     client = _client()
     login = client.post("/api/v1/auth/login", json={"email": "legacy@example.com", "password": PASSWORD})

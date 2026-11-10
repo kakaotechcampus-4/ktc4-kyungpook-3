@@ -21,6 +21,7 @@ from app.models import (
     Workspace,
 )
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 
 @pytest.fixture
@@ -45,7 +46,7 @@ def db():
 @pytest.fixture
 def seed(db):
     """워크스페이스에 로그인한 PM(alice)과 다른 멤버(carol)가 있다."""
-    alice = User(email="alice@example.com", name="alice")
+    alice = User(username=username_for("alice@example.com"), email="alice@example.com", name="alice")
     db.add(alice)
     db.flush()
     db.add(SessionModel(

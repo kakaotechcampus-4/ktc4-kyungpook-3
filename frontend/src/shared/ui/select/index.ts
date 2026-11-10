@@ -1,5 +1,7 @@
 export { Select, SelectInitial, SelectNoneMark } from './Select'
 export type { SelectProps } from './Select'
+export { Autocomplete } from './Autocomplete'
+export type { AutocompleteProps } from './Autocomplete'
 export { Combobox } from './Combobox'
 export type { ComboboxProps } from './Combobox'
 export type { SelectOption } from './options'

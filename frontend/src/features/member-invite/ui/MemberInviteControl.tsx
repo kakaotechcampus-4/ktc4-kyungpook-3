@@ -27,7 +27,7 @@ export function MemberInviteControl({ workspaceId, member }: MemberInviteControl
     ...latestInvitationsQueryOptions(workspaceId),
     select: (latest) => latest.get(member.id) ?? null,
   })
-  const actions = useMemberInviteActions(workspaceId, member)
+  const actions = useMemberInviteActions(workspaceId, member.id)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [revokeOpen, setRevokeOpen] = useState(false)
 
@@ -81,12 +81,15 @@ export function MemberInviteControl({ workspaceId, member }: MemberInviteControl
       <InviteDialog
         open={inviteOpen}
         onOpenChange={setInviteOpen}
+        workspaceId={workspaceId}
         displayName={member.displayName}
-        pendingEmail={latest?.status === 'pending' ? latest.email : null}
+        pendingInvitee={latest?.status === 'pending' ? latest.invitedUser : null}
         pending={actions.inviting}
         serverError={actions.inviteError}
-        onSubmit={(email) => actions.invite(email, () => setInviteOpen(false))}
-        onEdit={actions.clearInviteError}
+        onSubmit={(invitee, onUserGone) =>
+          actions.invite(invitee, () => setInviteOpen(false), onUserGone)
+        }
+        onClearError={actions.clearInviteError}
       />
       {close?.kind === 'revoke' ? (
         <RevokeConfirm

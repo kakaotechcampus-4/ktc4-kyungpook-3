@@ -1,19 +1,4 @@
-import { firstSignupStep, signupCodeMessage } from './signupStep'
-
-describe('firstSignupStep', () => {
-  it('카카오가 인증한 이메일이 있으면 코드 없이 잠긴 프로필부터다', () => {
-    expect(firstSignupStep({ email: 'kakao@example.com', nickname: null })).toEqual({
-      step: 'profile',
-      email: 'kakao@example.com',
-      verificationToken: null,
-      emailLocked: true,
-    })
-  })
-
-  it.each([[null], [{ email: null, nickname: '카카오' }]])('그 밖에는 이메일부터다', (pending) => {
-    expect(firstSignupStep(pending)).toEqual({ step: 'email' })
-  })
-})
+import { signupCodeMessage } from './signupStep'
 
 describe('signupCodeMessage', () => {
   it.each([

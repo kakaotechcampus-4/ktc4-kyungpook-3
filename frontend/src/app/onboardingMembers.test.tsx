@@ -13,6 +13,7 @@ import { deferred } from '@/shared/test/deferred'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import type { RecordedRequest } from '@/shared/test/requests'
 import { REVEAL_TARGETS } from '@/shared/ui/deferred-skeleton'
+import { onTestFinished } from 'vitest'
 import { renderApp } from './test/renderApp'
 
 /* U3-7·U3-8·U3-9·U3-10. ws_03 을 팀원 연결 단계로 둔다. 팀원은 생성자 PM(mb_90 최진호) 하나다.
@@ -113,7 +114,7 @@ describe('팀원 연결 목록 (U3-8)', () => {
     })
     await openMembers()
     expect(screen.queryByText('@manager_bot')).not.toBeInTheDocument()
-    expect(screen.getAllByRole('textbox')).toHaveLength(3)
+    expect(screen.getAllByRole('combobox', { name: /의 팀원 이름$/ })).toHaveLength(3)
     expect(nameInput('jihun_dev')).toHaveValue('이지훈')
     expect(nameInput('seoyeon_01')).toHaveValue('')
     expect(screen.getByText(/디스코드에서 팀원 3명을 찾았어요/)).toBeInTheDocument()
@@ -602,7 +603,7 @@ describe('팀원 연결 저장은 한 번에 하나다', () => {
    Discord 가 없으면 불러올 사용자가 없다 — 다시 시도만 있는 오류 대신 안내와 `건너뛰기` 를 보인다 */
 describe('Discord 없이 온 팀원 연결 (D-073 개정)', () => {
   const NOT_CONNECTED =
-    '디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이전 단계에서 연결하거나 건너뛸 수 있어요.'
+    '디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이름으로 팀원을 추가하거나, 이전 단계에서 연결하거나, 건너뛸 수 있어요.'
 
   /** Discord 는 건너뛰고 Notion 은 연결한 채 팀원 연결 단계다 */
   function atMembersWithoutDiscord() {
@@ -626,7 +627,7 @@ describe('Discord 없이 온 팀원 연결 (D-073 개정)', () => {
     const app = renderApp('/onboarding/ws_03/connect_members')
     expect(await screen.findByText(NOT_CONNECTED)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
-    expect(screen.queryAllByRole('textbox')).toEqual([])
+    expect(screen.queryByLabelText(/의 팀원 이름$/)).toBeNull()
     // 기다린 뒤 나타난 안내와 버튼에는 불투명도 전환이 걸린다 (#508)
     expect(screen.getByText(NOT_CONNECTED).closest(REVEAL_TARGETS)).not.toBeNull()
     expect(screen.getByRole('button', { name: '건너뛰기' }).closest(REVEAL_TARGETS)).not.toBeNull()
@@ -675,6 +676,171 @@ describe('Discord 없이 온 팀원 연결 (D-073 개정)', () => {
     await app.expectPath('/onboarding/ws_03/connect_members')
     await userEvent.click(screen.getByRole('button', { name: '건너뛰기' }))
     expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
+  })
+
+  it('이름만 적어 팀원을 추가하면 Discord 사용자 없이 만들고 목록에 보인다. `건너뛰기` 는 `다음` 이 된다 (#613)', async () => {
+    const bodies = recordRequestBodies('POST', '/members')
+    const user = userEvent.setup()
+    renderApp('/onboarding/ws_03/connect_members')
+    const name = await screen.findByRole('textbox', { name: '팀원 이름' })
+    expect(screen.getByRole('button', { name: '추가' })).toBeDisabled()
+    await user.type(name, '  김서연 ')
+    await user.click(screen.getByRole('button', { name: '추가' }))
+
+    const list = await screen.findByRole('list', { name: '추가한 팀원' })
+    expect(await within(list).findByText('김서연')).toHaveClass('wrap-anywhere')
+    expect(name).toHaveValue('')
+    expect(bodies).toEqual([{ workspace_id: 'ws_03', display_name: '김서연' }])
+    expect(db.members).toContainEqual(
+      expect.objectContaining({
+        workspace_id: 'ws_03',
+        display_name: '김서연',
+        discord_user_id: null,
+      }),
+    )
+    expect(screen.getByRole('button', { name: '다음' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: '건너뛰기' })).toBeNull()
+  })
+
+  it('팀원을 추가한 뒤 `다음` 을 누르면 팀원 연결을 완료로 저장해 대시보드로 간다 (#613)', async () => {
+    const bodies = recordRequestBodies('PATCH', '/workspaces/ws_03/onboarding')
+    const user = userEvent.setup()
+    const app = renderApp('/onboarding/ws_03/connect_members')
+    const name = await screen.findByRole('textbox', { name: '팀원 이름' })
+    expect(screen.getByRole('button', { name: '건너뛰기' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '다음' })).toBeNull()
+    await user.type(name, '김서연')
+    await user.click(screen.getByRole('button', { name: '추가' }))
+
+    await user.click(await screen.findByRole('button', { name: '다음' }))
+    expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
+    await app.expectPath('/workspaces/ws_03/dashboard')
+    expect(bodies).toEqual([{ step: 'connect_members', action: 'complete' }])
+  })
+
+  it('팀원 목록을 받는 동안은 `추가` 만 잠그고 오류는 보이지 않는다 (#613)', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get(
+        '/api/v1/members',
+        async () => {
+          await gate.promise
+          return undefined
+        },
+        { once: true },
+      ),
+    )
+    const user = userEvent.setup()
+    renderApp('/onboarding/ws_03/connect_members')
+    const name = await screen.findByRole('textbox', { name: '팀원 이름' })
+    await user.type(name, '김서연')
+    expect(screen.getByRole('button', { name: '추가' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull()
+
+    gate.resolve()
+    await waitFor(() => expect(screen.getByRole('button', { name: '추가' })).toBeEnabled())
+  })
+
+  it('팀원 목록을 받지 못하면 추가 칸 아래에 오류와 `다시 시도` 를 보이고, 다시 받으면 추가할 수 있다 (#613)', async () => {
+    let failing = true
+    server.use(
+      http.get('/api/v1/members', () => (failing ? fail('FORBIDDEN', 'x', 403) : undefined)),
+    )
+    const user = userEvent.setup()
+    renderApp('/onboarding/ws_03/connect_members')
+    const name = await screen.findByRole('textbox', { name: '팀원 이름' })
+    const retry = await screen.findByRole('button', { name: '다시 시도' })
+    expect(screen.getByText('정보를 불러오지 못했어요')).toBeInTheDocument()
+    await user.type(name, '김서연')
+    expect(screen.getByRole('button', { name: '추가' })).toBeDisabled()
+
+    failing = false
+    await user.click(retry)
+    await waitFor(() => expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull())
+    await user.click(screen.getByRole('button', { name: '추가' }))
+    expect(
+      await within(await screen.findByRole('list', { name: '추가한 팀원' })).findByText('김서연'),
+    ).toBeInTheDocument()
+  })
+
+  it('한글 조합을 확정하는 Enter 는 제출을 막고, 조합이 끝난 Enter 로 추가한다 (#613)', async () => {
+    const log = recordRequests()
+    const user = userEvent.setup()
+    renderApp('/onboarding/ws_03/connect_members')
+    const name = await screen.findByRole('textbox', { name: '팀원 이름' })
+    await user.type(name, '김서연')
+    await waitFor(() => expect(screen.getByRole('button', { name: '추가' })).toBeEnabled())
+    const memberPosts = () =>
+      log.started.filter(({ method, path }) => method === 'POST' && path === '/members')
+
+    expect(fireEvent.keyDown(name, { key: 'Enter', isComposing: true })).toBe(false)
+    expect(fireEvent.keyDown(name, { key: 'Enter', keyCode: 229 })).toBe(false)
+    expect(fireEvent.keyDown(name, { key: 'Enter' })).toBe(true)
+
+    await user.keyboard('{Enter}')
+    expect(
+      await within(await screen.findByRole('list', { name: '추가한 팀원' })).findByText('김서연'),
+    ).toBeInTheDocument()
+    expect(memberPosts()).toHaveLength(1)
+  })
+
+  it('같은 이름은 두 번 추가하지 못한다 — 앞뒤 공백만 달라도 막고, 대소문자가 다르면 다른 이름이다 (#613)', async () => {
+    const log = recordRequests()
+    const user = userEvent.setup()
+    renderApp('/onboarding/ws_03/connect_members')
+    const name = await screen.findByRole('textbox', { name: '팀원 이름' })
+    const memberPosts = () =>
+      log.started.filter(({ method, path }) => method === 'POST' && path === '/members')
+
+    // 생성자 PM 도 같은 이름의 팀원이다
+    await user.type(name, ' 최진호 ')
+    await user.click(screen.getByRole('button', { name: '추가' }))
+    expect(await screen.findByText('이미 같은 이름의 팀원이 있어요.')).toBeInTheDocument()
+    expect(name).toHaveAccessibleDescription('이미 같은 이름의 팀원이 있어요.')
+    await user.clear(name)
+    expect(screen.queryByText('이미 같은 이름의 팀원이 있어요.')).toBeNull()
+
+    await user.type(name, 'Alex')
+    await user.click(screen.getByRole('button', { name: '추가' }))
+    await waitFor(() => expect(name).toHaveValue(''))
+    await user.type(name, 'Alex  ')
+    await user.click(screen.getByRole('button', { name: '추가' }))
+    expect(await screen.findByText('이미 같은 이름의 팀원이 있어요.')).toBeInTheDocument()
+
+    await user.clear(name)
+    await user.type(name, 'alex')
+    await user.click(screen.getByRole('button', { name: '추가' }))
+    await waitFor(() => expect(name).toHaveValue(''))
+
+    expect(memberPosts()).toHaveLength(2)
+    expect(
+      db.members
+        .filter(({ workspace_id, role }) => workspace_id === 'ws_03' && role === 'member')
+        .map(({ display_name }) => display_name),
+    ).toEqual(['Alex', 'alex'])
+  })
+
+  it('같은 틱에 두 번 제출해도 팀원은 하나만 만든다 (#613)', async () => {
+    const log = recordRequests()
+    const user = userEvent.setup()
+    renderApp('/onboarding/ws_03/connect_members')
+    const name = await screen.findByRole('textbox', { name: '팀원 이름' })
+    await user.type(name, '박민수')
+    await waitFor(() => expect(screen.getByRole('button', { name: '추가' })).toBeEnabled())
+    const form = name.closest('form')!
+    fireEvent.submit(form)
+    fireEvent.submit(form)
+
+    await waitFor(() => expect(name).toHaveValue(''))
+    expect(
+      log.started.filter(({ method, path }) => method === 'POST' && path === '/members'),
+    ).toHaveLength(1)
+    expect(
+      db.members.filter(
+        ({ workspace_id, display_name }) => workspace_id === 'ws_03' && display_name === '박민수',
+      ),
+    ).toHaveLength(1)
   })
 
   it('처음 들어와 연동 상태를 모를 때 409 `INTEGRATION_NOT_CONNECTED` 가 와도 같은 안내다', async () => {

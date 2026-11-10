@@ -2,7 +2,6 @@ import type {
   MessageSettingsDto,
   MessageSettingsPatchDto,
 } from '@/shared/types/api/messageSettings'
-import { enumValue } from '@/shared/lib/enum'
 import { NUDGE_DAYS_BEFORE } from './types'
 import type { MessageSettings, MessageSettingsChange, NudgeDaysBefore, NudgeRule } from './types'
 
@@ -26,12 +25,7 @@ export function toMessageSettings(dto: MessageSettingsDto): MessageSettings {
     silenceAlert: dto.silence_alert,
     reminderAutoApprove: dto.reminder_auto_approve,
     nudgeRule: toNudgeRule(dto.nudge_rule),
-    pmAlertMethod: enumValue(
-      dto.pm_alert_method,
-      ['web', 'discord_dm', 'both'] as const,
-      'both',
-      'pm alert method',
-    ),
+    pmAlertMethod: dto.pm_alert_method,
     saved: dto.saved,
     pms: dto.pms.map((pm) => ({
       memberId: pm.member_id,

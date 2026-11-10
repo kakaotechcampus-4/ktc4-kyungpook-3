@@ -8,6 +8,7 @@ from app.models import Member, MessageSender, MessageThread, MessageThreadRead, 
 from app.services import message_reads
 from app.services.sessions import hash_session_token
 from tests.api.test_messages_api import P, client
+from tests.usernames import username_for
 
 BASE = datetime(2026, 1, 1, tzinfo=timezone.utc)
 _ORIGINAL_UNREAD_BY_THREAD = message_reads.unread_by_thread
@@ -47,7 +48,7 @@ def _count(c, seed):
 
 
 def _second_pm(db, seed):
-    user = User(email="pm2@example.com", name="pm2")
+    user = User(username=username_for("pm2@example.com"), email="pm2@example.com", name="pm2")
     db.add(user)
     db.flush()
     db.add(SessionModel(

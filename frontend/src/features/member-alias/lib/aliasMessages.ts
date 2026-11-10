@@ -1,15 +1,21 @@
 import type { AliasSource } from '@/entities/member'
 import { errorMessage } from '@/shared/api/errorMessages'
 import { ApiError, ERROR_CODES, isCanceledError } from '@/shared/api/errors'
+import { isKnownValue } from '@/shared/api/unknownValue'
+import type { UnknownValue } from '@/shared/api/unknownValue'
 
 /* 별칭 관리의 문구. 해요체로 원인과 PM 이 할 일을 함께 쓴다 (D-149). 근거는 backend members.py 와 #523 */
 
-/** 별칭이 어디서 왔는지. 칩마다 작게 붙인다 */
-export const ALIAS_SOURCE_LABEL: Record<AliasSource, string> = {
+const ALIAS_SOURCE_LABEL: Record<AliasSource, string> = {
   learned: '회의에서 배움',
   display_name: '이름',
   discord_profile: '디스코드',
   manual: '직접 추가',
+}
+
+/** 별칭이 어디서 왔는지. 칩마다 작게 붙인다. 모르는 출처는 짐작하지 않는다 (#348) */
+export function aliasSourceLabel(source: AliasSource | UnknownValue): string {
+  return isKnownValue(source) ? ALIAS_SOURCE_LABEL[source] : '알 수 없는 출처'
 }
 
 export const ALIAS_UNVERIFIED = '미확인'

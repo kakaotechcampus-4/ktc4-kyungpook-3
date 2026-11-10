@@ -56,21 +56,17 @@ describe('카카오에서 돌아온 결과 안내', () => {
     db.authenticated = false
   })
 
+  // 병합 안내(email_exists)는 없어졌다 (#627). 옛 사유가 붙어 와도 일반 실패이고 주소의 값을 싣지 않는다
   it.each([
-    ['oauth_result=failed', '카카오 로그인에 실패했어요. 다시 시도해 주세요.'],
-    [
-      'oauth_result=failed&oauth_reason=email_exists',
-      '이미 가입된 이메일이에요. 이메일로 로그인해 주세요.',
-    ],
-    // 주소의 값은 그대로 싣지 않는다
-    [
-      'oauth_result=failed&oauth_reason=%EC%9C%84%EC%A1%B0',
-      '카카오 로그인에 실패했어요. 다시 시도해 주세요.',
-    ],
-  ])('%s 는 오류로 알린다', async (query, message) => {
+    'oauth_result=failed',
+    'oauth_result=failed&oauth_reason=email_exists',
+    'oauth_result=failed&oauth_reason=%EC%9C%84%EC%A1%B0',
+  ])('%s 는 오류로 알린다', async (query) => {
     renderApp(returned(query))
-    expect(await screen.findByRole('alert')).toHaveTextContent(message)
-    expect(screen.queryByText('위조')).not.toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '카카오 로그인에 실패했어요. 다시 시도해 주세요.',
+    )
+    expect(screen.queryByText(/이미 가입된 이메일|위조/)).not.toBeInTheDocument()
   })
 
   it('취소는 조용한 안내다. 오류가 아니다', async () => {
@@ -80,7 +76,7 @@ describe('카카오에서 돌아온 결과 안내', () => {
   })
 
   it('주소에서 결과만 지우고 next 는 남긴다. 지운 뒤에도 안내는 보인다', async () => {
-    const app = renderApp(returned('oauth_result=failed&oauth_reason=email_exists', true), {
+    const app = renderApp(returned('oauth_result=failed', true), {
       strict: true,
     })
     expect(await screen.findByRole('alert')).toBeInTheDocument()

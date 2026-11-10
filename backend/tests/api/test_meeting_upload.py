@@ -19,6 +19,7 @@ from app.main import app
 from app.models import Meeting, MeetingUpload, Member, Session as SessionModel, User, Workspace
 from app.services import upload_storage
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 # 형식 검사는 파일 첫 부분만 본다. 머리만 진짜 모양이고 나머지는 아무 바이트다
@@ -71,7 +72,7 @@ def db(request):
 @pytest.fixture
 def seed(db):
     """워크스페이스 A의 PM(pm-token)과 팀원 둘, 탈퇴한 팀원, 다른 워크스페이스 B의 팀원."""
-    user = User(email="pm@example.com", name="pm")
+    user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     db.add(user)
     db.flush()
     db.add(SessionModel(
@@ -429,7 +430,7 @@ def test_concurrent_uploads_to_one_workspace_accept_only_one(monkeypatch):
             session.close()
 
     seed_session = make_session()
-    user = User(email="pm@example.com", name="pm")
+    user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     seed_session.add(user)
     seed_session.flush()
     seed_session.add(SessionModel(

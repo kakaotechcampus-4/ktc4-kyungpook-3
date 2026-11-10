@@ -81,7 +81,11 @@ export const integrationHandlers = [
     if (!integrations) return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
     // 백엔드는 provider 를 검증하지 않는다. 해당 행이 없으면 지울 게 없을 뿐 204 다.
     // 알 수 없는 provider 로도 400 이 나지 않는다. Discord 행을 지우면 채팅 수집 채널도 함께 사라진다.
-    const disconnected = { status: 'not_connected', display_name: null, connected_at: null }
+    const disconnected = {
+      status: 'not_connected' as const,
+      display_name: null,
+      connected_at: null,
+    }
     if (params.provider === 'discord')
       integrations.discord = { ...disconnected, chat_channel: null }
     if (params.provider === 'notion') integrations.notion = disconnected
