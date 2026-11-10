@@ -31,7 +31,8 @@ def edit_title(db: Session, meeting_id: str, title: str | None) -> Meeting:
 def edit_line(db: Session, meeting_id: str, seq: int, text: str | None) -> Source:
     """None 이나 원문과 같은 값은 고친 값을 비운다."""
     meeting_deletion.require_live_meeting(db, meeting_id, lock=True)
-    source = db.scalar(select(Source).where(Source.meeting_id == meeting_id, Source.seq == seq))
+    # Source.seq 는 PostgreSQL integer 라 그 밖의 번호로 찾으면 DB 가 500 을 낸다. 그런 줄은 없다
+    source = db.scalar(select(Source).where(Source.meeting_id == meeting_id, Source.seq == seq)) if 0 <= seq < 2**31 else None
     if source is None:
         raise AppError(ErrorCode.TRANSCRIPT_LINE_NOT_FOUND, details={"meeting_id": meeting_id, "seq": seq})
     source.text_edit = None if text is None or text == source.text else text

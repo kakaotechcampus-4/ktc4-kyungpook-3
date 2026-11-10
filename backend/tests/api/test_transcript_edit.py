@@ -82,8 +82,9 @@ def test_edits_on_a_deleted_meeting_are_410(mdb, mseed, alice, path, body):
     assert (r.status_code, r.json()["error"]["code"]) == (410, "MEETING_DELETED")
 
 
-def test_unknown_line_is_404(mdb, mseed, alice):
-    r = _line(alice, _meeting(mdb, mseed["ws"]), 7, "고친 문장")
+@pytest.mark.parametrize("seq", [7, -1, 2**31, 2**64])
+def test_unknown_line_is_404(mdb, mseed, alice, seq):
+    r = _line(alice, _meeting(mdb, mseed["ws"]), seq, "고친 문장")
 
     assert (r.status_code, r.json()["error"]["code"]) == (404, "TRANSCRIPT_LINE_NOT_FOUND")
 
