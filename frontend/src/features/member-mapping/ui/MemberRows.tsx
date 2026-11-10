@@ -9,7 +9,13 @@ import { Label } from '@/shared/ui/label'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { TextField } from '@/shared/ui/text-field'
-import { buildMemberRows, planPick, unlinkedAccounts, writeTarget } from '../model/memberRows'
+import {
+  accountMemberName,
+  buildMemberRows,
+  planPick,
+  unlinkedAccounts,
+  writeTarget,
+} from '../model/memberRows'
 import type { RowWrite } from '../model/memberRows'
 import { useMemberRowWrites } from '../model/useMemberRowWrites'
 import type { MemberRowWrites } from '../model/useMemberRowWrites'
@@ -72,7 +78,7 @@ function UnlinkedAccounts({ users, writes, onAdded }: UnlinkedAccountsProps) {
                     writes.run(
                       {
                         kind: 'create',
-                        displayName: user.displayName ?? user.username,
+                        displayName: accountMemberName(user),
                         discordUserId: user.discordUserId,
                       },
                       onAdded,

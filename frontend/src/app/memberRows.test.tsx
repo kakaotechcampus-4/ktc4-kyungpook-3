@@ -302,6 +302,36 @@ describe('팀원 목록 — 팀원 추가와 이름 고치기', () => {
     expect(memberWrites(log.started)).toEqual(['PATCH /members/mb_03'])
   })
 
+  it('이름을 비우고 저장하면 보내지 않고 칸을 연 채 이름을 적으라고 한다', async () => {
+    const user = userEvent.setup()
+    const log = recordRequests()
+    const dialog = await openManage(user)
+    await user.click(dialog.getByRole('button', { name: '이재환 이름 고치기' }))
+    const editor = dialog.getByRole('textbox', { name: '이재환의 새 이름' })
+    await user.clear(editor)
+    await user.type(editor, '   {Enter}')
+
+    expect(editor).toHaveAccessibleDescription('이름을 입력해 주세요.')
+    expect(dialog.getByRole('textbox', { name: '이재환의 새 이름' })).toBe(editor)
+    await user.click(within(editor.closest('form')!).getByRole('button', { name: '저장' }))
+    expect(editor).toBeInTheDocument()
+    expect(memberWrites(log.started)).toEqual([])
+    expect(dbMember('mb_03').display_name).toBe('이재환')
+  })
+
+  it('Discord 표시 이름이 공백뿐인 계정을 팀원으로 추가하면 사용자명으로 만든다', async () => {
+    db.discordUsers.find(({ username }) => username === 'jihun_dev')!.display_name = '  '
+    const bodies = recordRequestBodies('POST', '/members')
+    const user = userEvent.setup()
+    const dialog = await openManage(user)
+    await user.click(dialog.getByRole('button', { name: '@jihun_dev 팀원으로 추가' }))
+
+    expect(await dialog.findByRole('textbox', { name: 'jihun_dev의 새 이름' })).toHaveFocus()
+    expect(bodies).toEqual([
+      { workspace_id: 'ws_01', display_name: 'jihun_dev', discord_user_id: '1125' },
+    ])
+  })
+
   it('이름 고치기 칸의 Esc 는 고치기만 취소하고 창은 닫지 않는다', async () => {
     const user = userEvent.setup()
     const dialog = await openManage(user)

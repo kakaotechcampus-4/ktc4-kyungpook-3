@@ -42,6 +42,8 @@ export type MemberNameCheck =
 
 export const DUPLICATE_NAME = '이미 같은 이름의 팀원이 있어요.'
 
+export const EMPTY_NAME = '이름을 입력해 주세요.'
+
 /**
  * Discord 사용자 목록이 없으면(Discord 미연결) 계정을 알 수 없다. 그때는 계정 칸을 그리지 않으므로 모두 `none` 이다
  */
@@ -128,7 +130,15 @@ export function checkMemberName(
   return member ? { kind: 'duplicate', member } : { kind: 'ok', displayName }
 }
 
-/** 보내기 전 판단. 이름을 쓰는 쓰기만 본다 — 보낼 쓰기는 앞뒤 공백을 지운 이름으로 바꿔 돌려준다 */
+/** 연결 안 된 계정으로 만들 팀원의 이름. Discord 표시 이름이 비었거나 공백뿐이면 사용자명이다 */
+export function accountMemberName(user: DiscordUser): string {
+  return user.displayName?.trim() || user.username
+}
+
+/**
+ * 보내기 전 판단. 이름을 쓰는 쓰기만 본다 — 보낼 쓰기는 앞뒤 공백을 지운 이름으로 바꿔 돌려준다.
+ * 빈 이름은 거절한다. 보낼 것이 없는 `skip` 은 자기 이름 그대로인 고치기뿐이다 — 칸을 닫아도 잃는 글자가 없다
+ */
 export type WriteCheck =
   { kind: 'send'; write: RowWrite } | { kind: 'skip' } | { kind: 'reject'; message: string }
 
@@ -141,6 +151,7 @@ export function checkWrite(write: RowWrite, members: readonly Member[]): WriteCh
   )
   switch (checked.kind) {
     case 'empty':
+      return { kind: 'reject', message: EMPTY_NAME }
     case 'same':
       return { kind: 'skip' }
     case 'duplicate':

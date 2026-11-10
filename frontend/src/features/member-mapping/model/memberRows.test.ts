@@ -133,6 +133,13 @@ describe('checkWrite', () => {
     })
   })
 
+  it('빈 이름은 보내지 않고 이름을 적으라고 거절한다 — 자기 이름 그대로인 것과 다르다', () => {
+    expect(checkWrite({ kind: 'rename', memberId: 'mb_02', displayName: '   ' }, MEMBERS)).toEqual({
+      kind: 'reject',
+      message: '이름을 입력해 주세요.',
+    })
+  })
+
   it('자기 이름 그대로의 고치기는 보내지 않는다', () => {
     expect(
       checkWrite({ kind: 'rename', memberId: 'mb_02', displayName: '박민수' }, MEMBERS),
