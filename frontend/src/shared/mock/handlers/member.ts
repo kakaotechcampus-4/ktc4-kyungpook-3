@@ -5,7 +5,92 @@ import { requireMember, requirePmRole } from '../auth-guard'
 import { MOCK_NOW } from '../fixtures/constants'
 import { nextId } from '../utils'
 import { linkedUserIdOf } from '../sessions'
+import type { MemberDto } from '@/shared/types/api/member'
 const base = '/api/v1'
+
+/* 팀원을 만들거나 고칠 때 백엔드가 맞추는 자동 별칭 (services/member_aliases.py, api/members.py).
+   이름 별칭은 한글 두 글자 이상인 이름의 전체와 성을 뗀 꼴이다. 닉네임 별칭은 한글만인 Discord 이름이다 —
+   백엔드는 서버 별명·계정 표시 이름 순으로 보고, 모의 Discord 사용자는 그 결과인 표시 이름만 있다 */
+function nameAliasForms(displayName: string): string[] {
+  const name = displayName.trim()
+  if (!/^[가-힣]{2,}$/.test(name)) return []
+  return [name, name.length === 4 ? name.slice(2) : name.slice(1)]
+}
+
+/** 다른 팀원이 사람이 정한(manual·learned) 같은 글자를 가졌으면 자동 별칭을 넣지 않는다 */
+function takenByOther(member: MemberDto, text: string): boolean {
+  return db.aliases.some(
+    (alias) =>
+      alias.workspace_id === member.workspace_id &&
+      alias.member_id !== member.member_id &&
+      alias.alias_text === text &&
+      (alias.source === 'manual' || alias.source === 'learned') &&
+      !db.withdrawnMemberIds.includes(alias.member_id),
+  )
+}
+
+function addAutoAlias(member: MemberDto, text: string, kind: 'display_name' | 'discord_profile') {
+  db.aliases.push({
+    alias_id: nextId(
+      'al',
+      db.aliases.map(({ alias_id }) => alias_id),
+    ),
+    member_id: member.member_id,
+    workspace_id: member.workspace_id,
+    alias_text: text,
+    ...(kind === 'display_name'
+      ? { alias_type: 'realname', source: 'display_name', confidence: 1, verified: true }
+      : { alias_type: 'nickname', source: 'discord_profile', confidence: 0.8, verified: false }),
+    created_at: MOCK_NOW,
+  })
+}
+
+/** `sync_name_aliases`. 옛 이름을 주면 새 꼴에 없는 이름 별칭을 지운다. `onlyTexts` 를 주면 그 글자만 채운다 */
+function syncNameAliases(member: MemberDto, oldName?: string, onlyTexts?: ReadonlySet<string>) {
+  const forms = nameAliasForms(member.display_name)
+  if (oldName !== undefined)
+    db.aliases = db.aliases.filter(
+      (alias) =>
+        alias.member_id !== member.member_id ||
+        alias.source !== 'display_name' ||
+        forms.includes(alias.alias_text),
+    )
+  const own = new Set(
+    db.aliases
+      .filter(({ member_id }) => member_id === member.member_id)
+      .map(({ alias_text }) => alias_text),
+  )
+  for (const text of forms) {
+    if (onlyTexts !== undefined && !onlyTexts.has(text)) continue
+    if (own.has(text) || takenByOther(member, text)) continue
+    addAutoAlias(member, text, 'display_name')
+  }
+}
+
+/** `remove_discord_profile_aliases`. Discord 계정이 바뀌거나 풀리면 닉네임 별칭을 지우고 지운 글자를 돌려준다 */
+function removeDiscordProfileAliases(member: MemberDto): Set<string> {
+  const removed = new Set<string>()
+  db.aliases = db.aliases.filter((alias) => {
+    if (alias.member_id !== member.member_id || alias.source !== 'discord_profile') return true
+    removed.add(alias.alias_text)
+    return false
+  })
+  return removed
+}
+
+/** `add_discord_nickname_alias` */
+function addDiscordNicknameAlias(member: MemberDto, discordUserId: string) {
+  const nickname = db.discordUsers
+    .find((user) => user.discord_user_id === discordUserId)
+    ?.display_name?.trim()
+  if (nickname === undefined || !/^[가-힣]+$/.test(nickname)) return
+  const held = db.aliases.some(
+    ({ member_id, alias_text }) => member_id === member.member_id && alias_text === nickname,
+  )
+  if (held || takenByOther(member, nickname)) return
+  addAutoAlias(member, nickname, 'discord_profile')
+}
+
 export const memberHandlers = [
   http.get(`${base}/members/aliases`, ({ request }) => {
     const workspaceId = new URL(request.url).searchParams.get('workspace_id')
@@ -122,6 +207,8 @@ export const memberHandlers = [
       created_at: MOCK_NOW,
     }
     db.members.push(member)
+    syncNameAliases(member)
+    if (member.discord_user_id !== null) addDiscordNicknameAlias(member, member.discord_user_id)
     return ok(member, { status: 201 })
   }),
   http.get(`${base}/members/:memberId`, ({ params }) => {
@@ -167,12 +254,24 @@ export const memberHandlers = [
       )
     )
       return fail('DISCORD_USER_ALREADY_MAPPED', '이미 연결된 Discord 사용자입니다.', 409)
+    const oldName = member.display_name
+    const discordChanged =
+      'discord_user_id' in body &&
+      (typeof body.discord_user_id === 'string' || body.discord_user_id === null) &&
+      body.discord_user_id !== member.discord_user_id
+    const removedNicknames = discordChanged
+      ? removeDiscordProfileAliases(member)
+      : new Set<string>()
     if (
       'discord_user_id' in body &&
       (typeof body.discord_user_id === 'string' || body.discord_user_id === null)
     )
       member.discord_user_id = body.discord_user_id
     if (typeof body.display_name === 'string') member.display_name = body.display_name
+    if (member.display_name !== oldName) syncNameAliases(member, oldName)
+    else if (removedNicknames.size > 0) syncNameAliases(member, undefined, removedNicknames)
+    if (discordChanged && member.discord_user_id !== null)
+      addDiscordNicknameAlias(member, member.discord_user_id)
     if (
       'notion_name' in body &&
       (typeof body.notion_name === 'string' || body.notion_name === null)

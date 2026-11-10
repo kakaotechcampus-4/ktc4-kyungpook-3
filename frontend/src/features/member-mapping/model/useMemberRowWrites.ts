@@ -1,6 +1,12 @@
 import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
-import { createMember, memberListQueryOptions, updateMember, upsertMember } from '@/entities/member'
+import {
+  createMember,
+  memberAliasesQueryOptions,
+  memberListQueryOptions,
+  updateMember,
+  upsertMember,
+} from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { messageSettingsQueryOptions } from '@/entities/message-settings'
 import { errorMessage } from '@/shared/api/errorMessages'
@@ -99,6 +105,7 @@ function isStaleMapping(error: unknown): boolean {
  * - 옮기기는 앞 팀원 연결을 먼저 푼다. 같은 계정을 두 팀원에 붙일 수 없다(409 `DISCORD_USER_ALREADY_MAPPED`)
  * - 세션이 끝났으면 보내지 않고, 늦은 응답은 캐시·문구에 남기지 않는다 (#594)
  * - PM 의 Discord 연결이 알림 설정의 PM 연결 상태(`pms`)를 바꾸므로 알림 설정도 다시 받는다 (#340)
+ * - 팀원을 다시 받는 곳에서는 별칭도 다시 받는다. 이름을 바꾸면 서버가 옛 이름 별칭을 지우고 새 이름 별칭을 만든다
  */
 export function useMemberRowWrites(workspaceId: string): MemberRowWrites {
   const queryClient = useQueryClient()
@@ -107,7 +114,13 @@ export function useMemberRowWrites(workspaceId: string): MemberRowWrites {
   const lock = useRef(false)
   const [failure, setFailure] = useState<RowWriteFailure | null>(null)
 
-  const refreshMembers = () => queryClient.invalidateQueries({ queryKey })
+  // 서버는 팀원을 만들거나 이름·Discord 계정을 바꿀 때 자동 별칭도 맞춘다. 팀원과 별칭을 함께 다시 받는다
+  const refreshMembers = () => {
+    void queryClient.invalidateQueries({ queryKey })
+    void queryClient.invalidateQueries({
+      queryKey: memberAliasesQueryOptions(workspaceId).queryKey,
+    })
+  }
   const refreshSettings = () =>
     queryClient.invalidateQueries({ queryKey: messageSettingsQueryOptions(workspaceId).queryKey })
 
@@ -185,7 +198,7 @@ export function useMemberRowWrites(workspaceId: string): MemberRowWrites {
     },
     onSuccess: (_, { session }) => {
       if (!session.isCurrent()) return
-      void refreshMembers()
+      refreshMembers()
       void refreshSettings()
     },
     onError: (error, { write, session }) => {
@@ -199,12 +212,11 @@ export function useMemberRowWrites(workspaceId: string): MemberRowWrites {
       const cause = moved?.cause ?? error
       if (moved !== null) void refreshSettings()
       if (isInvalidResponse(cause)) {
-        void refreshMembers()
-        showWriteUnconfirmed(() => void refreshMembers())
+        refreshMembers()
+        showWriteUnconfirmed(refreshMembers)
         return
       }
-      if (moved !== null || mayHaveBeenApplied(cause) || isStaleMapping(cause))
-        void refreshMembers()
+      if (moved !== null || mayHaveBeenApplied(cause) || isStaleMapping(cause)) refreshMembers()
       setFailure(
         moved !== null && write.kind === 'move'
           ? {
