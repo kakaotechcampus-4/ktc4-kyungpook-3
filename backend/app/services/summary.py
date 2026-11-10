@@ -187,9 +187,8 @@ def summary_input(db: Session, extraction_id: str) -> SummaryInputResponse:
             .where(Member.workspace_id == meeting.workspace_id, Member.is_deleted.is_(False))
             .order_by(Member.created_at, Member.member_id)
         )),
-        asr_terms=list(db.scalars(
+        asr_terms=sorted(db.scalars(
             select(WorkspaceAsrTerm.word).where(WorkspaceAsrTerm.workspace_id == meeting.workspace_id)
-            .order_by(WorkspaceAsrTerm.word)
         )),
         lines=_input_lines(db, meeting.meeting_id),
         items=(items := _input_items(db, extraction_id)),
@@ -424,6 +423,8 @@ def _request_state(
     leased = extraction.summary_claimed_at is not None and utc(extraction.summary_claimed_at) > utc(now) - SUMMARY_LEASE
     if extraction.summary_requested_at is not None and leased:
         return "queued"     # 돌고 있는 회의는 force 로도 덮지 않는다. 덮으면 같은 회의에 호출이 두 번 나간다
+    if not force and extraction.summary_requested_at is None and _stored(extraction) is not None:
+        return "done"
     readiness = item_fate.readiness(db, extraction, meeting.source)
     if not readiness.waiting_cards and not readiness.ready:
         return "no_approved_items"
@@ -432,7 +433,7 @@ def _request_state(
         return waits or "requested"
     if extraction.summary_requested_at is not None:
         return (waits or "queued") if _queue_alive(extraction, now) else "gave_up"
-    return "done" if _stored(extraction) is not None else waits or "requested"
+    return waits or "requested"
 
 
 def _queue_alive(extraction: Extraction, now: datetime) -> bool:

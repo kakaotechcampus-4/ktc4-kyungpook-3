@@ -1677,6 +1677,8 @@ POST .../meetings/upload            multipart/form-data
 
 `summary_waiting_count` 는 `awaiting_approval` 일 때 남은 승인 요청 수다. PM 에게만 숫자이고 일반 팀원과 다른 상태에서는 `null` 이다(D-104). 여러 회의 항목이 합쳐진 카드는 한 장으로 센다(#605).
 
+처리된 합친 카드에 걸린 회의 하나를 삭제하면 카드 payload도 비워져, 남은 회의를 재요약할 때 PM의 승인 보정값을 잃을 수 있다. 삭제 원문을 보존하지 않는 현재 구현의 한계이며 자세한 재료 규칙은 [BE·AI 계약](../../../backend/docs/contracts/backend-ai-contract.md#회의-요약)에 있다.
+
 채팅 회의(`source: "chat"`)도 승인된 항목이 하나 이상 있으면 요약되어 `ready` 가 된다. 이 요약에는 `discussion` 이 없다.
 
 **`summary` 의 더한 키.** `overview`, `key_points`, `decisions`(문자열 목록)는 그대로 항상 있다. AI 가 저장한 요약에는 `schema_version`, `discussion`, `decision_details`, `facts`, `task_changes`, `schedule`, `open_items`, `topics`(이름 목록), `meta` 가 더 있다. `schema_version` 2(#605)부터 `decision_details[].decision_id`, `topics` 와 같은 순서의 `topic_ids`, `task_changes[].item_id` 가 있다. `task_changes` 는 지금 반영된 항목의 줄만 온다. 항목 키 없이 저장된 옛 요약은 `task_changes` 가 빈 목록이다(사용자 결정 2026-11-09).
