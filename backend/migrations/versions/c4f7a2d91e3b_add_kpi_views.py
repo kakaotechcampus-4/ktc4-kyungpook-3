@@ -10,7 +10,7 @@ Grafana Cloud 대시보드(#675)가 읽는 kpi 스키마를 만든다. 읽기 �
 
 view 에는 ID·제목·본문·payload·이름·이메일 컬럼을 두지 않는다. payload 는 JSON 객체일 때만 읽어서 깨진 한 행이
 조회 전체를 깨지 않게 한다. 이후 마이그레이션이 view 가 쓰는 컬럼을 지우거나 타입을 바꾸려면 PostgreSQL 이
-거부하므로 그 마이그레이션에서 view 를 DROP 한 뒤 다시 만든다(backend/README.md 의 "KPI view").
+거부하므로 그 마이그레이션에서 view 를 DROP 한 뒤 다시 만든다. `SELECT *` 는 쓰지 않고 쓰는 컬럼만 적어 그 밖의 컬럼은 자유롭게 바꿀 수 있게 한다(backend/README.md 의 "KPI view").
 
 PostgreSQL 전용이다. 다른 DB 에서는 아무것도 하지 않는다.
 
@@ -68,7 +68,8 @@ WHERE m.deleted_at IS NULL
 CREATE_APPROVAL_FACT = """
 CREATE VIEW kpi.approval_fact AS
 WITH a AS (
-  SELECT r.*, CASE WHEN r.payload IS JSON OBJECT THEN r.payload::jsonb END AS j
+  SELECT r.type, r.status, r.requested_by, r.created_at, r.resolved_at,
+         CASE WHEN r.payload IS JSON OBJECT THEN r.payload::jsonb END AS j
   FROM approval_request r
   WHERE r.workspace_id NOT IN (SELECT workspace_id FROM kpi.excluded_workspace))
 SELECT a.created_at, a.resolved_at, a.type,

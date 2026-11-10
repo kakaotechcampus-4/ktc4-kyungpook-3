@@ -418,9 +418,53 @@ def test_downgrade_drops_schema(pg_engine):
 
 @pg_only
 def test_view_blocks_dropping_used_column(pg_engine):
-    with pytest.raises(DBAPIError):
+    with pytest.raises(DBAPIError, match="depend"):
         with pg_engine.begin() as conn:
             conn.execute(text("ALTER TABLE meeting DROP COLUMN ended_at"))
+
+
+@pg_only
+def test_view_allows_dropping_unused_column(pg_engine):
+    # approval_request 의 다른 컬럼(resolved_by 등)은 view 가 쓰지 않으므로 지울 수 있어야 한다.
+    with pg_engine.begin() as conn:
+        conn.execute(text("ALTER TABLE approval_request DROP COLUMN resolved_by"))
+        conn.execute(text("ALTER TABLE meeting DROP COLUMN title"))
+        assert conn.execute(text("SELECT count(*) FROM kpi.approval_fact")).scalar_one() == 0
+
+
+@pg_only
+def test_views_depend_only_on_listed_columns(pg_engine):
+    # backend/README.md 의 "KPI view" 원천 컬럼 표와 같아야 한다.
+    expected = {
+        "meeting": {
+            "meeting_id", "workspace_id", "deleted_at", "source", "status", "failed_stage", "ended_at",
+            "duration_ms", "replaces_meeting_id",
+        },
+        "extraction": {"extraction_id", "meeting_id", "created_at", "extraction_path"},
+        "extraction_item": {"extraction_id", "created_at", "action", "gate", "reverted_at"},
+        "meeting_upload": {"meeting_id", "speakers_reported_at", "speakers_assigned_at"},
+        "approval_request": {
+            "workspace_id", "type", "payload", "requested_by", "status", "created_at", "resolved_at",
+        },
+    }
+    with pg_engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT DISTINCT c.relname, a.attname FROM pg_depend d "
+                "JOIN pg_rewrite rw ON rw.oid = d.objid "
+                "JOIN pg_class v ON v.oid = rw.ev_class "
+                "JOIN pg_namespace vn ON vn.oid = v.relnamespace "
+                "JOIN pg_class c ON c.oid = d.refobjid "
+                "JOIN pg_namespace cn ON cn.oid = c.relnamespace "
+                "JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = d.refobjsubid "
+                "WHERE vn.nspname = 'kpi' AND cn.nspname <> 'kpi' "
+                "AND d.classid = 'pg_rewrite'::regclass AND d.refclassid = 'pg_class'::regclass AND d.refobjsubid > 0"
+            )
+        ).all()
+    actual: dict[str, set[str]] = {}
+    for table, column in rows:
+        actual.setdefault(table, set()).add(column)
+    assert actual == expected
 
 
 def test_sqlite_noop():

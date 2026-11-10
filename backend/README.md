@@ -703,5 +703,6 @@ view 가 쓰는 원천 컬럼은 다음과 같다.
 | `meeting_upload` | `meeting_id`, `speakers_reported_at`, `speakers_assigned_at` |
 | `approval_request` | `workspace_id`, `type`, `payload`(키 `reverted_task_id`·`change_source`·`extraction_item_id`·`meeting_id`·`gate`·`task_overrides`·`asr_suspects`·`source_deleted`), `requested_by`, `status`, `created_at`, `resolved_at` |
 
+- view 는 `SELECT *` 없이 위 컬럼만 쓴다. 그 밖의 컬럼(예: `approval_request.resolved_by`)은 view 와 상관없이 바꿀 수 있다.
 - 이 컬럼을 DROP 하거나 타입을 바꾸는 마이그레이션은 PostgreSQL 이 거부한다. 같은 마이그레이션에서 view 를 DROP 한 뒤 다시 만든다. 다시 만든 뒤에는 읽기 계정의 GRANT 를 다시 실행한다.
 - 마이그레이션 테스트(`tests/test_migration_kpi_views.py`)가 view 컬럼 목록, 고정 행의 값, `downgrade()` 뒤 스키마가 남지 않는 것, 위 거부 동작을 확인한다. PostgreSQL 이 필요해 `TEST_DATABASE_URL` 이 있을 때만 돈다.
