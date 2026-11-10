@@ -1,5 +1,5 @@
 """팀원이 회의 기록을 고치는 요청. 사람이 쓴 글이 들어오는 신뢰 경계다."""
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
@@ -8,13 +8,13 @@ from app.schemas.project_map import _has_unstorable
 
 
 class _Storable(BaseModel):
-    @model_validator(mode="before")
-    @classmethod
-    def _storable_text(cls, data: Any) -> Any:
-        # DB 에 쓸 수 없는 글자(NUL, 짝 없는 서로게이트)는 PostgreSQL 500 대신 400 으로 막는다
-        if _has_unstorable(data):
+    @model_validator(mode="after")
+    def _storable_text(self) -> "_Storable":
+        # DB 에 쓸 수 없는 글자(NUL, 짝 없는 서로게이트)는 PostgreSQL 500 대신 400 으로 막는다. 모델이 버리는 키까지 훑으면
+        # 깊게 중첩된 아무 키가 RecursionError 로 500 이 되어, 검증을 마친 칸만 본다
+        if _has_unstorable(self.model_dump()):
             raise ValueError("NUL 이나 짝 없는 서로게이트 글자는 저장할 수 없습니다.")
-        return data
+        return self
 
 
 class TitleEditRequest(_Storable):

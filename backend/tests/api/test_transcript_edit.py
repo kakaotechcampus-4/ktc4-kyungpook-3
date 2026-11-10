@@ -107,6 +107,22 @@ def test_unstorable_empty_or_too_long_text_is_400(mdb, mseed, alice, path, body)
     assert (r.status_code, r.json()["error"]["code"]) == (400, "INVALID_REQUEST")
 
 
+def test_deeply_nested_unknown_key_is_ignored_like_any_other(mdb, mseed, alice):
+    junk = "[" * 600 + "]" * 600
+    headers = {"content-type": "application/json"}
+
+    title = _client("outsider-token").patch(
+        "/api/v1/meetings/nope/title", content='{"title": "x", "junk": ' + junk + "}", headers=headers,
+    )
+    decision = alice.patch(
+        f"/api/v1/workspaces/{mseed['ws']}/decisions/nope", content='{"state": "invalid", "junk": ' + junk + "}",
+        headers=headers,
+    )
+
+    assert (title.status_code, title.json()["error"]["code"]) == (404, "MEETING_NOT_FOUND")
+    assert (decision.status_code, decision.json()["error"]["code"]) == (404, "DECISION_NOT_FOUND")
+
+
 def test_edited_line_shows_in_minutes_and_summary_input_and_the_original_stays(mdb, mseed, alice):
     meeting = _meeting(mdb, mseed["ws"], summary=DOC)
 
