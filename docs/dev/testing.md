@@ -40,7 +40,7 @@ npm run test:e2e:consent          # 약관 동의 화면 E2E (별도 설정 play
 .venv/bin/python -m pytest                  # SQLite 변형
 TEST_DATABASE_URL=postgresql+psycopg://... .venv/bin/python -m pytest   # PostgreSQL 변형도 함께 (격리된 테스트 DB 필요)
 .venv/bin/python -m ruff check .            # 린트 (ruff.toml)
-alembic upgrade head && alembic check       # 빈 DB 에서 마이그레이션 검사 (CI migrations 잡과 같다)
+DATABASE_URL=postgresql+psycopg://mm:mm@localhost:5432/<빈 DB> .venv/bin/alembic upgrade head && DATABASE_URL=postgresql+psycopg://mm:mm@localhost:5432/<빈 DB> .venv/bin/alembic check   # CI 는 빈 mm_migrate DB 를 쓴다. DATABASE_URL 이 없으면 개발 DB(mm)에서 돈다
 ```
 
 ### ai (`ai/`)
