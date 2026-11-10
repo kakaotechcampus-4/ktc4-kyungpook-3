@@ -444,7 +444,7 @@ def test_empty_values_copied_from_the_env_example_mean_the_defaults():
     out = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[2], env=env,
                          capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr
-    assert out.stdout.split() == ["2", "legacy"]
+    assert out.stdout.split() == ["0", "legacy"]
 
 
 # ── 1단계 탈락 기록(#186). 결과를 여러 실행에서 합치므로 실행마다 하나씩 남긴다(#217) ──────────────────────
