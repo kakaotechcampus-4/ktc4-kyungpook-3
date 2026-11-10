@@ -9,8 +9,7 @@ import { RouteSkeleton } from './RouteSkeleton'
 import { RouteErrorBoundary } from './errors/RouteErrorBoundary'
 import { appRoutes } from './routes'
 
-/** 랜딩 캔버스의 h1 `한 번의 클릭으로,<br>매니저가 정리합니다` */
-const LANDING_HEADING = /한 번의 클릭으로,\s*매니저가 정리합니다/
+const LANDING_HEADING = /회의에서 나온 일을,\s*팀의 다음 행동으로\./
 
 /* <Routes> 가 안에서 하는 변환과 같다. 경로 표를 요소 그대로 훑으려고 쓴다 */
 const tree = createRoutesFromElements(appRoutes)
