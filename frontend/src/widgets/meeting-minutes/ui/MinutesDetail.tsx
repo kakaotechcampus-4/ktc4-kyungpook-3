@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
+import { useSearchParams } from 'react-router'
 import { pendingApprovalListQueryOptions } from '@/entities/approval'
 import { extractionQueryOptions } from '@/entities/extraction'
 import {
@@ -14,11 +15,12 @@ import {
 import type { Meeting, MeetingSummary } from '@/entities/meeting'
 import { minutesQueryOptions } from '@/entities/minutes'
 import type { Minutes } from '@/entities/minutes'
+import { MeetingRecording, startSecondsFrom } from '@/features/meeting-audio'
 import { MeetingDelete } from '@/features/meeting-delete'
 import { SPEAKERS_NEEDED_ACTION, SPEAKERS_NEEDED_TITLE } from '@/features/meeting-processing'
 import { SummaryDownloadButton } from '@/features/summary-download'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
-import { paths } from '@/shared/config/routes'
+import { MEETING_PARAMS, paths } from '@/shared/config/routes'
 import { formatSeoulDateTime } from '@/shared/lib/date'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
@@ -365,6 +367,9 @@ function MinutesContent({
   action: ReactNode
 }) {
   const [tab, setTab] = useState<TabId>('summary')
+  // '원문 듣기'가 넘긴 근거 시각(ms). 녹음을 그 자리로 옮긴다 (#676)
+  const [searchParams] = useSearchParams()
+  const at = searchParams.get(MEETING_PARAMS.at)
   const extractionId = meeting.extractionId
   const extraction = useQuery({
     ...extractionQueryOptions(workspaceId, extractionId ?? ''),
@@ -438,6 +443,13 @@ function MinutesContent({
         className={held !== null ? HELD_BODY : 'flex flex-col'}
         style={held !== null ? HELD_BODY_STYLE : undefined}
       >
+        {/* 회의나 시각이 바뀌면 플레이어를 새로 만든다 — 앞 회의의 재생·위치를 이어 쓰지 않는다 */}
+        <MeetingRecording
+          key={`${meeting.id}:${at ?? ''}`}
+          meetingId={meeting.id}
+          playable={minutes.audio !== null}
+          startAt={startSecondsFrom(at)}
+        />
         <MinutesTabs<TabId>
           label="회의록 내용"
           selected={tab}
