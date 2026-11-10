@@ -44,6 +44,7 @@ uv venv --python 3.12 .venv
 uv pip install -r requirements-dev.txt   # 운영 의존성 + pytest, ruff
 cp .env.example .env                     # OAUTH_STATE_SECRET, SERVICE_TOKEN 등을 채운다
 docker compose up -d db                  # PostgreSQL(pgvector) 기동
+source .venv/bin/activate                # Windows Git Bash 는 .venv/Scripts/activate. run.sh 가 alembic·uvicorn 을 PATH 로 부른다
 ./run.sh                                 # alembic upgrade head + uvicorn --reload (:8000)
 ```
 
@@ -87,7 +88,7 @@ python -m capture.worker           # 처리 워커. 저장된 회의를 전사·
 ## 세 파트를 함께 띄우는 순서
 
 1. **DB**: `backend/` 에서 `docker compose up -d db`. healthcheck 가 통과할 때까지 기다린다.
-2. **backend**: `./run.sh`. 마이그레이션을 먼저 올리고 `:8000` 에 뜬다.
+2. **backend**: `.venv` 를 활성화한 뒤 `./run.sh`. 마이그레이션을 먼저 올리고 `:8000` 에 뜬다.
 3. **frontend**: `npm run dev`. 브라우저로 `http://localhost:5173` 에 들어가 가입·워크스페이스·Discord 연결을 한다.
    - Discord·Notion·카카오 OAuth 를 로컬에서 쓰려면 각 개발자 콘솔에 `http://localhost:5173/api/v1/...` 콜백을 등록하고 `backend/.env` 의 `*_REDIRECT_URI` 와 맞춘다.
 4. **ai 봇**: `python -m capture.run_recorder`. 웹에서 연결한 Discord 서버에 봇이 들어가 있어야 한다.
@@ -101,7 +102,7 @@ sequenceDiagram
   participant FE as frontend
   participant AI as ai 봇·워커
   Dev->>DB: docker compose up -d db
-  Dev->>BE: ./run.sh (alembic upgrade head)
+  Dev->>BE: venv 활성화 후 ./run.sh (alembic upgrade head)
   Dev->>FE: npm run dev → 가입·Discord 연결
   Dev->>AI: run_recorder, worker
   AI->>BE: 회의 생성·발화·판단 결과 (X-Service-Token)
@@ -117,7 +118,7 @@ sequenceDiagram
 | `/stop` 후 "저장된 오디오가 없습니다" | py-cord 를 PR 브랜치로 설치했는지 |
 | 워커가 인계 단계에서 멈춘다 | `BE_BASE_URL`, `BE_SERVICE_TOKEN` 과 BE 의 `SERVICE_TOKEN` 일치 |
 | 슬래시 명령이 안 보인다 | `DISCORD_GUILD_ID` 를 비우면 글로벌 등록이라 반영에 최대 1시간 걸린다 |
-| Windows 에서 `./run.sh`, `source .venv/bin/activate` | 팀 README 는 bash 기준이다. Windows 절차는 [확인 필요] |
+| Windows 에서 `./run.sh`, `source .venv/bin/activate` | 팀 README 는 bash 기준이다. Git Bash 에서 `source .venv/Scripts/activate` 로 활성화한 뒤 `./run.sh` 를 실행한다 |
 
 ## 관련 문서
 
