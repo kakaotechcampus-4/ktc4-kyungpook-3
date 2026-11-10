@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { integrationsQueryOptions } from '@/entities/integration'
 import { discordUsersQueryOptions, memberListQueryOptions, pmsOf } from '@/entities/member'
 import type { Member } from '@/entities/member'
-import { MemberAddForm } from '@/features/member-add'
+import { MemberAddForm, NOT_IN_DISCORD_SERVER, useMemberAdding } from '@/features/member-add'
 import {
   MemberMappingFields,
   buildMappingRows,
@@ -83,6 +83,7 @@ function MembersForm({
     release,
   } = mapping
   const onboarding = useOnboardingSave(workspaceId)
+  const { adding, isAdding } = useMemberAdding(workspaceId)
 
   /* `확인 완료` · `나중에 하기` · `나가기` 저장은 한 번에 하나다 (F-r1 #7). 둘이 겹치면 같은 팀원 캐시로 계획해
      같은 줄에 POST 가 두 번 나갈 수 있다. 렌더를 기다리지 않고 ref 로 막는다 — 버튼이 비활성이 되기 전의 클릭도 막힌다 */
@@ -102,7 +103,7 @@ function MembersForm({
   const onSubmit = (event: FormEvent<HTMLFormElement>) =>
     submit((values) =>
       exclusive(async () => {
-        if (!(await save(values, true))) return
+        if (isAdding() || !(await save(values, true))) return
         await onboarding
           .save({ step: 'connect_members', action: 'complete' })
           .catch((error: unknown) => setFormError(errorMessage(error)))
@@ -121,9 +122,9 @@ function MembersForm({
     )
   }
 
-  /** 나가기 전 저장. 다른 저장이 진행 중이면 나가지 않는다 — 끝난 뒤 다시 누르면 된다 */
+  /** 나가기 전 저장. 다른 저장이나 이름 추가가 진행 중이면 나가지 않는다 — 끝난 뒤 다시 누르면 된다 */
   const beforeLeave = async (): Promise<boolean> => {
-    if (lock.current) return false
+    if (lock.current || isAdding()) return false
     if (!isDirty) return true
     let ok = false
     setExiting(true)
@@ -135,6 +136,7 @@ function MembersForm({
   }
 
   const busy = isSubmitting || onboarding.isPending || exiting
+  const formId = useId()
 
   return (
     <OnboardingLayout
@@ -145,38 +147,42 @@ function MembersForm({
       messages={messagesFor(initialRows)}
       nav={{ previous, onNext: skip, disabled: busy }}
     >
-      <form noValidate onSubmit={(event) => void onSubmit(event)}>
-        <OnboardingCard
-          title={CARD.title}
-          description={CARD.description}
-          actions={
-            <Reveal indicator={{ reveal }}>
-              <Button
-                type="submit"
-                variant="primary"
-                size="lg-onboarding"
-                loading={busy}
-                disabled={filled === 0}
-              >
-                {filled}명 확인 완료
-              </Button>
-              <Button
-                type="button"
-                variant="text"
-                size="lg-onboarding"
-                disabled={busy}
-                onClick={skip}
-              >
-                나중에 하기
-              </Button>
-            </Reveal>
-          }
-        >
+      <OnboardingCard
+        title={CARD.title}
+        description={CARD.description}
+        actions={
           <Reveal indicator={{ reveal }}>
-            <MemberMappingFields mapping={mapping} />
+            <Button
+              type="submit"
+              form={formId}
+              variant="primary"
+              size="lg-onboarding"
+              loading={busy}
+              disabled={filled === 0 || adding}
+            >
+              {filled}명 확인 완료
+            </Button>
+            <Button
+              type="button"
+              variant="text"
+              size="lg-onboarding"
+              disabled={busy}
+              onClick={skip}
+            >
+              나중에 하기
+            </Button>
           </Reveal>
-        </OnboardingCard>
-      </form>
+        }
+      >
+        <Reveal indicator={{ reveal }}>
+          {/* 이름 추가 칸은 자기 폼이 있어 이 폼 밖에 둔다 — 폼은 겹칠 수 없다 */}
+          <form id={formId} noValidate onSubmit={(event) => void onSubmit(event)}>
+            <MemberMappingFields mapping={mapping} />
+          </form>
+          <p className="pt-14 pb-10 text-body text-dim">{NOT_IN_DISCORD_SERVER}</p>
+          <MemberAddForm workspaceId={workspaceId} tone="onboarding" disabled={busy} />
+        </Reveal>
+      </OnboardingCard>
     </OnboardingLayout>
   )
 }
