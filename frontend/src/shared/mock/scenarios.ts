@@ -84,6 +84,8 @@ export const MOCK_SCENARIOS = [
   'approval-merged',
   // #512 같은 합치기가 PM 이 카드를 연 뒤에 일어난다. 첫 승인·반려가 409 APPROVAL_CHANGED 다
   'approval-merged-after-view',
+  // #643 생성 승인의 전사 오인식 의심. ap_01 은 고칠 후보, ap_02 는 확인 실패, ap_03 은 확인하지 않은 옛 카드(null)다
+  'approval-asr-suspects',
   // #419 회의록 mt_09 의 수정 제안 it_08(tk_04 마감 변경). 승인 전에도 task_id 가 tk_04 다
   'minutes-edit-pending',
   'notion-sync-pending',
@@ -868,6 +870,16 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'approval-merged-after-view':
       signInWith(state, ['ws_01'], 'ws_01')
       mergeIntoDeployDoc(state, scenario === 'approval-merged-after-view')
+      break
+    case 'approval-asr-suspects':
+      signInWith(state, ['ws_01'], 'ws_01')
+      approvalOf(state, 'ap_01').payload.asr_suspects = [
+        { word: '애포', source: 'title', candidates: ['배포'] },
+      ]
+      approvalOf(state, 'ap_02').payload.asr_suspects = [
+        { word: '', source: 'check_failed', candidates: [] },
+      ]
+      approvalOf(state, 'ap_03').payload.asr_suspects = null
       break
     case 'minutes-edit-pending':
       signInWith(state, ['ws_01'], 'ws_01')

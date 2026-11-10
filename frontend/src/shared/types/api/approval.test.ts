@@ -181,6 +181,7 @@ describe('MSW 픽스처가 같은 스키마를 따른다', () => {
     'approval-scope',
     'approval-chat',
     'approval-merged',
+    'approval-asr-suspects',
     'reply-judgment',
   ])('%s 상태에서 handler 가 내는 목록·상세', async (scenario) => {
     if (scenario !== null) applyScenario(scenario)
