@@ -69,8 +69,8 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 필수 값 | `OAUTH_STATE_SECRET`이 비어 있으면 `docker compose`가 기동 전에 멈춘다(OAuth state, 가입 이메일 증명, 카카오 로그인이 함께 쓰는 서명 키) |
 | 데이터 | DB는 `mm-prod_pgdata` 볼륨에 남는다. 로컬 개발용 볼륨(`mm-pgdata`)과 따로다 |
 | 업로드 녹음 | `UPLOAD_STORAGE`(local 기본 | s3)로 저장소를 고른다. 운영은 s3 이고 키는 `{UPLOAD_S3_PREFIX}{meeting_id}/audio.<확장자>`다(기본 `meetings/`). local 이면 `mm-prod_uploads` 볼륨(컨테이너의 `/data/uploads`)의 `{meeting_id}/`에 둔다. 회의가 done 이 돼도 지우지 않고 원문 듣기용으로 보관한다. failed 가 되면 바로 지운다 |
-| 녹음 보관·정리 | 보관 기간(`UPLOAD_AUDIO_RETENTION_DAYS`, 기본 7일)은 `meeting_audio.retention_from` 부터 센다. 업로드 회의는 녹음을 받은 시각(`uploaded_at`), 디스코드 회의는 회의 종료 시각(`meeting.ended_at`, 없으면 받은 시각)이다. 같은 sweeper 바퀴가 done 이면서 기간이 지난 녹음을 지우고 `deleted_at` 을 채운다. 처리 중(done·failed 가 아님)인 회의는 기간이 지나도 지우지 않는다. 파일을 지우지 못하면 `deleted_at` 을 비워 두고 다음 바퀴에 다시 한다. 회의·공간 삭제와 탈퇴 정리는 S3 prefix 도 지운다. 근거는 [결정 기록](docs/plan/m5/basis-for-decision/2026-11-10-meeting-audio-s3-retention.md) |
-| 녹음 저장소 설정 | `UPLOAD_STORAGE=s3` 인데 `UPLOAD_S3_BUCKET` 이 비었거나 `UPLOAD_STORAGE` 가 `local`·`s3` 가 아니면 설정 오류라 업로드·재생·정리가 500 으로 실패한다(가려 주는 코드는 없다). S3 클라이언트(`_s3_client`)는 프로세스당 한 번 만들어 캐시하므로 `AWS_REGION` 을 바꾸면 api 를 다시 띄워야 한다. 자격은 EC2 인스턴스 역할이고 AWS 키 변수는 읽지 않는다. 인프라 준비는 [배포 안내](../deploy/README.md#회의-녹음-s3-준비) |
+| 녹음 보관·정리 | 보관 기간(`UPLOAD_AUDIO_RETENTION_DAYS`, 기본 7일)은 `meeting_audio.retention_from` 부터 센다. 업로드 회의는 녹음을 받은 시각(`uploaded_at`), 디스코드 회의는 회의 종료 시각(`meeting.ended_at`, 없으면 받은 시각)이다. 같은 sweeper 바퀴가 done 이면서 기간이 지난 녹음을 지우고 `deleted_at` 을 채운다. 처리 중(done·failed 가 아님)인 회의는 기간이 지나도 지우지 않는다. `UPLOAD_SWEEP_INTERVAL_SECONDS` 가 0 이하면 sweeper 가 돌지 않아 이 정리도 멈추고 S3 lifecycle 안전망만 남는다. 파일을 지우지 못하면 `deleted_at` 을 비워 두고 다음 바퀴에 다시 한다. 회의·공간 삭제와 탈퇴 정리는 S3 prefix 도 지운다. 근거는 [결정 기록](docs/plan/m5/basis-for-decision/2026-11-10-meeting-audio-s3-retention.md) |
+| 녹음 저장소 설정 | `UPLOAD_STORAGE=s3` 인데 `UPLOAD_S3_BUCKET` 이 비었거나 `UPLOAD_STORAGE` 가 `local`·`s3` 가 아니면 설정 오류다. 업로드·재생 요청은 500 으로 실패하고(가려 주는 코드는 없다), 만료 정리(`sweep_expired_audio`)는 로그만 남기고 다음 바퀴에 다시 시도한다. S3 클라이언트(`_s3_client`)는 프로세스당 한 번 만들어 캐시하므로 `AWS_REGION` 을 바꾸면 api 를 다시 띄워야 한다. 자격은 EC2 인스턴스 역할로 받는다. 앱 코드는 AWS 키 변수를 직접 읽지 않지만 compose 가 `.env` 를 통째로 넘기므로, 키를 `.env` 에 넣지 않는다(넣으면 boto3 기본 체인이 그 키를 쓰고 인스턴스 역할보다 우선한다). 인프라 준비는 [배포 안내](../deploy/README.md#회의-녹음-s3-준비) |
 | 업로드 sweeper | 서버 안의 워커가 `UPLOAD_SWEEP_INTERVAL_SECONDS`(기본 300, 0 이하면 끔)마다 멈춘 업로드 회의를 failed로 바꾸고 녹음 폴더 제거를 시도한다. AI가 가져간 뒤 진행이 3시간 없으면 `failed_stage=diarize`, 화자 지정을 7일 기다리면 `speaker_assignment_expired`, 가져가지 않은 채 24시간이 지나면 `upload_unclaimed`. live failed 업로드의 남은 폴더는 다음 바퀴마다 재시도한다. 과거 failed 잔존 파일도 대상이며 처리 실패가 삭제 완료를 뜻하지 않는다. 기준은 [봇 계약](docs/contracts/backend-ai-contract.md)의 "웹 업로드 가져가기" |
 | 세션 sweeper | 서버 안의 워커가 `SESSION_SWEEP_INTERVAL_SECONDS`(기본 3600, 0 이하면 끔)마다 만료된(`expires_at` 이 지난) 세션 행을 지운다. 만료 세션은 워커가 돌기 전에도 조회 때 401 이다 |
 | 리마인드 스케줄러 | 서버 안의 워커가 `REMINDER_SCHEDULER_INTERVAL_SECONDS`(기본 60, 0 이하면 끔)마다 재촉 제안, 발송 직전 확인, 72시간 무응답 막힘, 푸시 발송을 돈다. 브라우저 푸시는 `VAPID_PRIVATE_KEY`·`VAPID_PUBLIC_KEY`·`VAPID_SUBJECT` 가 모두 있어야 나가고, 하나라도 없으면 웹 안 알림만 쌓인다 |
@@ -579,7 +579,7 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 | `UPLOAD_AUDIO_RETENTION_DAYS` | `7` | 양의 정수. 잘못된 값은 경고 로그 뒤 7일 |
 | `UPLOAD_PLAYBACK_URL_TTL_SECONDS` | `3600` | presigned URL 유효 시간 |
 
-AWS 키 변수는 읽지 않는다. 자격은 인스턴스 역할에서 받는다. 보관 기준·처리 중 보호·정리 규칙은 위 [운영 실행](#운영-실행-docker)의 "녹음 보관·정리"에 있다.
+자격은 인스턴스 역할에서 받는다. 키를 `.env` 에 넣지 않는다(넣으면 boto3 기본 체인이 그 키를 쓴다). 보관 기준·처리 중 보호·정리 규칙은 위 [운영 실행](#운영-실행-docker)의 "녹음 보관·정리"에 있다.
 
 ## 가입 이름 규칙
 
@@ -597,7 +597,8 @@ AWS 키 변수는 읽지 않는다. 자격은 인스턴스 역할에서 받는�
 | 구분 | API |
 |---|---|
 | PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, auto 되돌리기(`POST /extractions/{id}/items/{item_id}/revert`), Notion 재시도, 팀원 생성·수정, 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), Discord 연결 시작·콜백(`GET .../integrations/discord/start`, `GET /integrations/discord/callback`), Discord 채널 목록·채팅 수집 채널 저장·해제(`GET .../discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel`), 연동 해제, 회의 업로드, 온보딩 저장, 메시지 설정 변경(`PATCH /workspaces/{workspace_id}/message-settings`) |
-| 처리 상태에 따라 | 회의 녹음 재생(`GET /meetings/{id}/audio`)과 `GET /meetings/{id}/minutes` 의 `audio`: done 회의는 소속이면 누구나, 그 밖의 상태(처리 중 등)는 PM. 팀원이 done 이 아닌 회의를 요청하면 403 `FORBIDDEN` |
+| 처리 상태에 따라 | 회의 녹음 재생 `GET /meetings/{id}/audio`: done 회의는 소속이면 누구나, 그 밖의 상태(처리 중 등)는 PM 만. 팀원이 done 이 아닌 회의를 요청하면 403 `FORBIDDEN`(PM 만 할 수 있는 작업) |
+| 소속이면 누구나(값만 다름) | `GET /meetings/{id}/minutes` 는 항상 200 이고 `audio` 만 호출자가 지금 들을 수 있을 때 값이다. 팀원이 done 이 아닌 회의를 조회하면 `audio` 는 null 이다(403 아님) |
 | 소속이면 누구나 | 조회 API 전부(메시지 설정 조회 `GET .../message-settings` 포함), 승인 요청 생성(`POST /approvals`) |
 
 - Notion 연결 시작·콜백은 브라우저 페이지 이동이라 403 대신 앱 화면의 `?oauth=notion&oauth_result=failed`로 돌려보낸다.

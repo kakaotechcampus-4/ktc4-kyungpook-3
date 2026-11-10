@@ -111,7 +111,7 @@ backend 파일 재시도는 `MEETING_PURGE_INTERVAL_SECONDS`의 기존 워커가
 회의 녹음을 S3 에 7일 보관하고 웹에서 다시 듣게 한다(#659, [결정 기록](../backend/docs/plan/m5/basis-for-decision/2026-11-10-meeting-audio-s3-retention.md)). `UPLOAD_STORAGE` 기본은 `local` 이라, 아래를 준비하고 `.env` 를 바꾸기 전에는 배포해도 동작이 바뀌지 않는다. 이 절은 인프라 담당이 확인할 체크리스트이며, 실제 AWS 설정과 운영 전환은 이번 로컬 개발에서 실행하거나 검증하지 않았다.
 
 1. **버킷**: 서울(`ap-northeast-2`), 퍼블릭 액세스 모두 차단, 기본 암호화 SSE-S3. 녹음은 `meetings/{meeting_id}/audio.<확장자>` 키에 둔다(`UPLOAD_S3_PREFIX`, 기본 `meetings/`).
-2. **인스턴스 역할(IAM instance profile)**: EC2 에 붙은 역할에 아래 정책을 준다. AWS 키는 `.env` 에 넣지 않는다. 코드는 AWS 키 환경변수를 읽지 않고 boto3 기본 자격 체인을 쓴다.
+2. **인스턴스 역할(IAM instance profile)**: EC2 에 붙은 역할에 아래 정책을 준다. AWS 키는 `.env` 에 넣지 않는다. 앱 코드는 AWS 키를 직접 읽지 않고 boto3 기본 자격 체인을 쓰는데, 넣으면 그 키가 인스턴스 역할보다 우선한다.
    - `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` — 리소스 `arn:aws:s3:::<bucket>/meetings/*`
    - `s3:ListBucket` — 리소스 `arn:aws:s3:::<bucket>`, 조건 `StringLike` `s3:prefix` = `meetings/*`. 회의 삭제·정리가 prefix 아래를 나열해 지운다.
 3. **lifecycle**: `meetings/` 접두어 객체를 30일 뒤 만료. BE 정리(`UPLOAD_AUDIO_RETENTION_DAYS`, 기본 7일)가 어긋나도 30일 안에는 사라지는 안전망이다.
