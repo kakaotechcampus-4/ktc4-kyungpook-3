@@ -39,7 +39,7 @@ const MARK = {
   todo: { label: TASK_STATUS_LABEL.todo },
 } as const satisfies Record<string, StatusMark>
 
-/** 칩 색. 진행 중은 회색, 마감 임박(주의·위험)은 연한 레드 면에 먹색 굵은 제목(시안 600), 완료는 취소선 */
+/** 칩 색. 진행 중은 회색, 마감 임박(주의·위험)은 주황 면에 흰 굵은 제목, 완료는 취소선 */
 const CHIP: Record<TaskTone, { box: string; title: string; sub: string; mark: StatusMark }> = {
   done: {
     box: 'bg-surface-sunken',
@@ -48,15 +48,15 @@ const CHIP: Record<TaskTone, { box: string; title: string; sub: string; mark: St
     mark: MARK.done,
   },
   danger: {
-    box: 'bg-accent-chip',
-    title: 'font-semibold text-ink',
-    sub: 'text-sub',
+    box: 'bg-accent-solid',
+    title: 'font-semibold text-surface',
+    sub: 'text-surface',
     mark: MARK.urgent,
   },
   warn: {
-    box: 'bg-accent-chip',
-    title: 'font-semibold text-ink',
-    sub: 'text-sub',
+    box: 'bg-accent-solid',
+    title: 'font-semibold text-surface',
+    sub: 'text-surface',
     mark: MARK.urgent,
   },
   active: { box: 'bg-surface-selected', title: 'text-ink', sub: 'text-sub', mark: MARK.active },
@@ -188,7 +188,7 @@ export function CalendarView({
                       <GuardedLink
                         key={approval.id}
                         to={`${paths.tasks(workspaceId)}?tab=needs_review`}
-                        className={`${CHIP_BASE} bg-ink`}
+                        className={`${CHIP_BASE} bg-ink-solid`}
                         aria-label={chipName(
                           MARK.review,
                           approval.title,
@@ -304,7 +304,7 @@ function DayNumber({
     <span
       className={
         today
-          ? 'inline-flex h-22 min-w-[22px] items-center justify-center self-start rounded-999 bg-ink px-6 text-[12px] leading-none text-surface tabular-nums'
+          ? 'inline-flex h-22 min-w-[22px] items-center justify-center self-start rounded-999 bg-ink-solid px-6 text-[12px] leading-none text-surface tabular-nums'
           : `text-[12px] tabular-nums ${tone}`
       }
     >
@@ -354,7 +354,7 @@ function UndatedApproval({
   return (
     <GuardedLink
       to={`${paths.tasks(workspaceId)}?tab=needs_review`}
-      className="flex flex-col gap-1 rounded-7 bg-ink px-11 py-7 wrap-anywhere"
+      className="flex flex-col gap-1 rounded-7 bg-ink-solid px-11 py-7 wrap-anywhere"
       aria-label={chipName(MARK.review, approval.title, meta)}
     >
       <span className="text-[12px] leading-[1.4] font-bold text-surface">

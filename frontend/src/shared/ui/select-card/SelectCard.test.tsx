@@ -72,8 +72,8 @@ describe('SelectCard', () => {
     const selected = screen.getByRole('radio', { name: /전부 내가 확인한다/ })
     const other = screen.getByRole('radio', { name: /담당자/ })
 
-    expect(selected.querySelector('span.bg-ink')).toHaveClass('h-8', 'w-8', 'rounded-999')
-    expect(other.querySelector('span.bg-ink')).toBeNull()
+    expect(selected.querySelector('span.bg-ink-solid')).toHaveClass('h-8', 'w-8', 'rounded-999')
+    expect(other.querySelector('span.bg-ink-solid')).toBeNull()
   })
 
   it('lays the radio mark beside the text', () => {

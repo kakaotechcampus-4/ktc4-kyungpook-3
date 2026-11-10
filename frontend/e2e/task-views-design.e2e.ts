@@ -78,7 +78,7 @@ test('보드 직접 추가 — 제목 입력에 포커스가 있으면 펼친 �
   const form = active.getByRole('form', { name: '진행 중에 직접 추가' })
   expect(
     await cssOf(form, 'outline-style', 'outline-width', 'outline-color', 'outline-offset'),
-  ).toEqual(['solid', '2px', 'rgb(23, 23, 23)', '-1px'])
+  ).toEqual(['solid', '2px', 'rgb(38, 38, 38)', '-1px'])
 })
 
 test('동작 줄이기에서는 보드 제목 입력의 첫 포커스부터 테두리가 표시된다', async ({ page }) => {
@@ -114,7 +114,7 @@ test('동작 줄이기에서는 보드 제목 입력의 첫 포커스부터 테�
     const saved: unknown = JSON.parse(window.name)
     return saved
   })
-  expect(firstFocus).toEqual([true, 'solid', '2px', 'rgb(23, 23, 23)', '-1px', '0s'])
+  expect(firstFocus).toEqual([true, 'solid', '2px', 'rgb(38, 38, 38)', '-1px', '0s'])
 })
 
 test('캘린더 — 날짜 이동·마감일 없음·주말 숫자·마감 임박 칩이 시안 크기와 색이다', async ({
@@ -145,7 +145,7 @@ test('캘린더 — 날짜 이동·마감일 없음·주말 숫자·마감 임�
     (await cssOf(urgent, 'background-color'))[0],
     (await cssOf(title, 'color'))[0],
     (await cssOf(urgent.locator('xpath=*[last()]'), 'color'))[0],
-  ]).toEqual(['rgb(244, 217, 215)', 'rgb(23, 23, 23)', 'rgb(90, 90, 90)'])
+  ]).toEqual(['rgb(236, 107, 64)', 'rgb(255, 255, 255)', 'rgb(255, 255, 255)'])
   await expect(title).toHaveCSS('font-weight', '600')
 })
 

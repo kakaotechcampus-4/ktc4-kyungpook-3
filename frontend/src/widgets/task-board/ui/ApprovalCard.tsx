@@ -37,12 +37,12 @@ import { Label } from '@/shared/ui/label'
 import { Select } from '@/shared/ui/select'
 import { TextField } from '@/shared/ui/text-field'
 
-/* 시안의 `지금 봐야 하는 카드` 그림자 — 0 8px 24px rgba(23,23,23,.2). 토큰에 그림자가 없어 값을 그대로 쓴다 */
-const ATTENTION_SHADOW = 'shadow-[0_8px_24px_#17171733]'
+/* 시안의 `지금 봐야 하는 카드` 그림자 — 0 8px 24px, 먹 면(#333333) 20%. 토큰에 그림자가 없어 값을 그대로 쓴다 */
+const ATTENTION_SHADOW = 'shadow-[0_8px_24px_#33333333]'
 const HEAD = 'flex items-center justify-between gap-16'
 const BADGE_ROW = 'flex min-w-[0px] items-center gap-11'
 const ATTENTION_BADGE =
-  'inline-flex h-22 shrink-0 items-center gap-5 rounded-6 bg-ink px-9 text-meta font-semibold leading-none text-surface'
+  'inline-flex h-22 shrink-0 items-center gap-5 rounded-6 bg-ink-solid px-9 text-meta font-semibold leading-none text-surface'
 const HOLD_BADGE =
   'inline-flex h-22 shrink-0 items-center rounded-6 bg-control px-9 text-meta font-semibold leading-none text-dim'
 const TITLE = 'text-[19px] leading-[1.55] font-bold tracking-h2 text-ink'
@@ -274,7 +274,7 @@ function TaskCreateCard({
           </span>
           {approval.meetingId === null ? null : (
             <GuardedLink
-              to={paths.meetings(workspaceId, approval.meetingId)}
+              to={paths.meetings(workspaceId, approval.meetingId, approval.evidence.atMs)}
               className={EVIDENCE_LINK}
             >
               원문 듣기
@@ -397,7 +397,7 @@ function ApprovalFields({
         type="text"
         placeholder="YYYY-MM-DD 또는 미정"
         value={values.dueDate ?? ''}
-        style={dueMissing && !dueInvalid ? { color: 'var(--color-accent-solid)' } : undefined}
+        style={dueMissing && !dueInvalid ? { color: 'var(--color-accent)' } : undefined}
         readOnly={!editable}
         labelTone={dueMissing && !dueInvalid ? 'required-blocking' : 'normal'}
         error={dueInvalid ? '마감은 있는 날짜여야 해요.' : undefined}

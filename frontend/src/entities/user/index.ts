@@ -1,6 +1,7 @@
 export type { KakaoPending, LoginInput, Session, SignupInput, User } from './model/types'
 export { toSession, toUser } from './model/mapper'
 export { SESSION_QUERY_KEY, fetchSession, sessionQueryOptions } from './api/session'
+export { clearUserCache } from './api/userCache'
 export { login, logout, signup } from './api/auth'
 export { fetchWithdrawalPlan, fetchWithdrawalReceipt, withdrawAccount } from './api/withdrawal'
 export type { WithdrawalPlan, WithdrawalReceipt } from './api/withdrawal'

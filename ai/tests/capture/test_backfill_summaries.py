@@ -115,6 +115,48 @@ def test_dry_run_prints_targets_and_a_labelled_estimate_without_paying_or_writin
     assert "추정" in out and "미확정" in out
 
 
+def test_a_meeting_waiting_for_approval_is_queued_and_counted_in_the_estimate(fake, capsys):
+    fake.add_summary("m1", requested=False, blocked="awaiting_approval", chars=24000)
+    fake.add_summary("m2", requested=False, blocked="no_approved_items", chars=24000)
+    assert B.main(_ws("--all", "--dry-run")) == 0
+    assert f"예상 약 {B.estimate_won(24000)}원" in capsys.readouterr().out
+    assert B.main(_ws("--all")) == 2
+    assert fake.summaries["m1"]["requested"] is True and fake.summaries["m2"]["requested"] is False
+    assert "m1 awaiting_approval left" in capsys.readouterr().out
+
+
+def test_run_leaves_a_meeting_waiting_for_approval_without_claiming_it(fake, llm, tmp_path, capsys):
+    fake.add_summary("m1", requested=False, blocked="awaiting_approval")
+
+    assert B.main(_paid(tmp_path, "--meeting", "m1", "--run")) == 2
+
+    assert fake.summaries["m1"]["requested"] is True
+    assert _claims(fake) == [] and llm.prompts == []
+    assert "m1 awaiting_approval left" in capsys.readouterr().out
+
+
+def test_queue_estimate_includes_every_meeting_the_worker_will_run(fake, capsys):
+    for meeting_id, requested, blocked in (("new", False, None), ("queued", True, None),
+                                           ("waiting-new", False, "awaiting_approval"),
+                                           ("waiting-old", True, "awaiting_approval")):
+        fake.add_summary(meeting_id, requested=requested, blocked=blocked, chars=24000)
+
+    assert B.main(_ws("--all", "--dry-run")) == 0
+
+    assert f"워커 처리 예정 예상 약 {4 * B.estimate_won(24000)}원" in capsys.readouterr().out
+
+
+def test_capture_summary_input_parses_changed_and_rejected_items(fake):
+    fake.add_summary("m1")
+    client = H.BeClient("http://be", session=fake, service_token="svc-token")
+
+    data = client.summary_input("e-m1")
+
+    changed = next(item for item in data.items if item.action == "update")
+    assert (changed.status, changed.cleared, changed.scope) == ("done", ["due_date"], "이메일 초대만 제공한다")
+    assert data.rejected_items == []
+
+
 def test_without_a_mode_it_only_queues_and_never_claims(fake, llm, capsys):
     fake.add_summary("m1", requested=False)
     assert B.main(_ws("--all")) == 0

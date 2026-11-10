@@ -208,6 +208,31 @@ describe('팀 화면 — 별칭 (PM)', () => {
       expect(row.queryByRole('button', { name: "'재한' 별칭 지우기" })).toBeNull(),
     )
   })
+
+  it('팀원 관리 창에서 이름을 고치면 펼쳐 둔 별칭도 새 이름으로 바뀐다 — 옛 이름 별칭은 남지 않는다 (#647)', async () => {
+    renderApp(TEAM)
+    const { user, row } = await openAliases('이재환')
+    expect(chipTexts(row.getByRole('list', { name: '이재환의 별칭' }))).toContain('이재환이름')
+
+    await user.click(screen.getByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 관리' }))
+    await user.click(await dialog.findByRole('button', { name: '이재환 이름 고치기' }))
+    const editor = dialog.getByRole('textbox', { name: '이재환의 새 이름' })
+    await user.clear(editor)
+    await user.type(editor, '이재민{Enter}')
+    await dialog.findByRole('button', { name: '이재민 이름 고치기' })
+    await user.click(dialog.getByRole('button', { name: '닫기' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    const renamed = within(await screen.findByRole('region', { name: '이재민' }))
+    await waitFor(() =>
+      expect(chipTexts(renamed.getByRole('list', { name: '이재민의 별칭' }))).toEqual([
+        '이재민이름',
+        '재민이름',
+        '재한회의에서 배움',
+      ]),
+    )
+  })
 })
 
 describe('팀 화면 — 별칭 (일반 팀원)', () => {

@@ -2,6 +2,7 @@ import { fetchDto, fetchSessionDto, jsonRequest } from '@/shared/test/api'
 import type { ApprovalDto } from '@/shared/types/api/approval'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { ExtractionDto } from '@/shared/types/api/extraction'
+import type { MinutesDto } from '@/shared/types/api/minutes'
 import type { TaskDto, TaskHistoryDto } from '@/shared/types/api/task'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { db, initialDb, replaceDb, resetDb } from './db'
@@ -32,6 +33,8 @@ const M6_SCENARIOS = [
   'approval-asr-suspects',
   'approval-asr-suspects-long',
   'minutes-edit-pending',
+  'minutes-awaiting-approval',
+  'minutes-awaiting-approval-member',
   'notion-sync-pending',
   'notion-sync-failed',
   'tasks-member',
@@ -76,7 +79,7 @@ describe('M6 시나리오 목록', () => {
   })
 
   it.each(M6_SCENARIOS)('%s 는 저장 버전 그대로 sessionStorage 에서 복원된다', (scenario) => {
-    expect(MOCK_DB_VERSION).toBe(23)
+    expect(MOCK_DB_VERSION).toBe(25)
     replaceDb(createScenarioDb(scenario))
     saveDb(sessionStorage)
     resetDb()
@@ -236,6 +239,75 @@ describe('M6 시나리오 상태와 전이', () => {
         approval_status: 'rejected',
       })
       await expect(fetchDto('/tasks/tk_04')).resolves.toMatchObject({ due_date: '2026-09-24' })
+    })
+  })
+
+  describe('minutes-awaiting-approval: mt_09 요약이 승인을 기다린다 (#551)', () => {
+    const minutes = () => fetchDto<MinutesDto>('/meetings/mt_09/minutes')
+
+    it('PM 은 남은 대기 카드 수를 받고, 모두 처리하면 pending 으로 바뀐다', async () => {
+      applyScenario('minutes-awaiting-approval')
+      await expect(minutes()).resolves.toMatchObject({
+        summary: null,
+        summary_status: 'awaiting_approval',
+        summary_waiting_count: 3,
+      })
+      await resolve('ap_01', { status: 'rejected' })
+      await expect(minutes()).resolves.toMatchObject({ summary_waiting_count: 2 })
+      await resolve('ap_02', { status: 'rejected' })
+      await resolve('ap_03', { status: 'rejected' })
+      await expect(minutes()).resolves.toMatchObject({
+        summary_status: 'pending',
+        summary_waiting_count: null,
+      })
+    })
+
+    it('채팅 회의는 카드를 모두 반려하면 요약하지 않아 none 이다', async () => {
+      applyScenario('minutes-awaiting-approval')
+      db.minutes.find(({ meeting_id }) => meeting_id === 'mt_09')!.source = 'chat'
+      for (const id of ['ap_01', 'ap_02', 'ap_03']) await resolve(id, { status: 'rejected' })
+      await expect(minutes()).resolves.toMatchObject({
+        summary_status: 'none',
+        summary_waiting_count: null,
+      })
+    })
+
+    it('채팅 회의도 승인한 항목이 남아 있으면 마지막 카드 처리 뒤 pending 이다', async () => {
+      applyScenario('minutes-awaiting-approval')
+      db.minutes.find(({ meeting_id }) => meeting_id === 'mt_09')!.source = 'chat'
+      await resolve('ap_02', {
+        status: 'approved',
+        task_overrides: { due_date: '2026-09-30' },
+      })
+      await resolve('ap_01', { status: 'rejected' })
+      await expect(minutes()).resolves.toMatchObject({ summary_waiting_count: 1 })
+      await resolve('ap_03', { status: 'rejected' })
+      await expect(minutes()).resolves.toMatchObject({
+        summary_status: 'pending',
+        summary_waiting_count: null,
+      })
+    })
+
+    it('요약이 있으면 대기 카드가 남아도 ready 이고 건수가 없다', async () => {
+      applyScenario('minutes-awaiting-approval')
+      db.minutes.find(({ meeting_id }) => meeting_id === 'mt_09')!.summary = {
+        overview: '배포 준비를 정리했다.',
+        key_points: [],
+        decisions: [],
+      }
+      await expect(minutes()).resolves.toMatchObject({
+        summary_status: 'ready',
+        summary_waiting_count: null,
+      })
+    })
+
+    it('일반 팀원은 같은 상태를 건수 없이 받는다', async () => {
+      applyScenario('minutes-awaiting-approval-member')
+      await expect(minutes()).resolves.toMatchObject({
+        summary: null,
+        summary_status: 'awaiting_approval',
+        summary_waiting_count: null,
+      })
     })
   })
 

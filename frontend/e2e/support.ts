@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test'
 import type { Page, TestInfo } from '@playwright/test'
 
-/** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 + M6 태스크·승인 + M7 대시보드 + M8 태스크 보기·설정 + #320 팀원 초대 + #256 화자 지정 + #370 재촉 만들기 + #371 메시지 + #411 알림 띠 + #419 수정 제안 + #482 메시지 긴 문구 + #457 로그인 시도 제한 */
+/** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 + M6 태스크·승인 + M7 대시보드 + M8 태스크 보기·설정 + #320 팀원 초대 + #256 화자 지정 + #370 재촉 만들기 + #371 메시지 + #411 알림 띠 + #419 수정 제안 + #482 메시지 긴 문구 + #457 로그인 시도 제한 + #676 녹음 보관 만료 */
 export type Scenario =
   | 'policy-reconsent'
   | 'consent-required'
@@ -17,6 +17,7 @@ export type Scenario =
   | 'multiple-workspaces'
   | 'incomplete-workspace'
   | 'meeting-demo'
+  | 'meeting-demo-legacy'
   | 'meeting-instant'
   | 'meeting-fail'
   | 'meeting-fail-diarize'
@@ -40,6 +41,9 @@ export type Scenario =
   | 'approval-scope'
   | 'approval-asr-suspects-long'
   | 'minutes-edit-pending'
+  | 'meeting-audio-expired'
+  | 'minutes-awaiting-approval'
+  | 'minutes-awaiting-approval-member'
   | 'notion-sync-pending'
   | 'notion-sync-failed'
   | 'tasks-member'
@@ -56,6 +60,8 @@ export type Scenario =
   | 'dashboard-recent-overflow'
   | 'settings-discord-skipped'
   | 'settings-unmapped'
+  | 'settings-discord-empty'
+  | 'member-rows'
   | 'settings-member'
   | 'team-invitations'
   | 'invitation-pending'

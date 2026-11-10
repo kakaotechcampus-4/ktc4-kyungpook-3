@@ -28,7 +28,7 @@ export function ConsentFields({
               id={`${id}-${kind}`}
               type="checkbox"
               checked={value[kind]}
-              className="mt-3 size-16 shrink-0 accent-ink"
+              className="mt-3 size-16 shrink-0 accent-ink-solid"
               onChange={(event) => onChange({ ...value, [kind]: event.target.checked })}
             />
             <span>[필수] {policyDocuments[kind].title} 동의</span>

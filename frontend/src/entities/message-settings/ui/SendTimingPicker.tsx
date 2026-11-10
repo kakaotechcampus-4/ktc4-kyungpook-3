@@ -20,7 +20,7 @@ import { useDeadlineSend } from '../model/useDeadlineSend'
    고르지 않은·고를 수 있는 카드에만 준다 — 고른 먹 면, 고를 수 없는(disabled) 카드, 잠긴(aria-disabled) 카드는 hover 로 바뀌지 않는다 */
 const CARD_HOVER =
   'not-has-[input:checked]:not-has-[input:disabled]:not-has-[input[aria-disabled=true]]:hover:bg-control'
-const CARD = `${CARD_HOVER} relative flex cursor-pointer flex-col items-start gap-2 rounded-16 border border-line bg-surface px-15 py-13 text-left has-[input:checked]:border-ink has-[input:checked]:bg-ink has-[input:disabled]:cursor-not-allowed has-[input[aria-disabled=true]]:cursor-not-allowed has-[input:focus-visible]:outline-2 has-[input:focus-visible]:-outline-offset-1 has-[input:focus-visible]:outline-ink has-[input:checked]:has-[input:focus-visible]:-outline-offset-3 has-[input:checked]:has-[input:focus-visible]:outline-surface`
+const CARD = `${CARD_HOVER} relative flex cursor-pointer flex-col items-start gap-2 rounded-16 border border-line bg-surface px-15 py-13 text-left has-[input:checked]:border-ink-solid has-[input:checked]:bg-ink-solid has-[input:disabled]:cursor-not-allowed has-[input[aria-disabled=true]]:cursor-not-allowed has-[input:focus-visible]:outline-2 has-[input:focus-visible]:-outline-offset-1 has-[input:focus-visible]:outline-ink has-[input:checked]:has-[input:focus-visible]:-outline-offset-3 has-[input:checked]:has-[input:focus-visible]:outline-surface`
 const CARD_TITLE = 'text-body font-semibold text-sub group-has-[input:checked]:text-surface'
 const CARD_DETAIL = 'mono text-meta text-dim group-has-[input:checked]:text-surface'
 /* 고를 수 없는 카드(마감이 없거나 지났거나 재촉 규칙을 아직 모르는 마감 기준 카드)는 눌린 면에 흐린 글자다 — 고를 수 있는 카드와 구분한다 */

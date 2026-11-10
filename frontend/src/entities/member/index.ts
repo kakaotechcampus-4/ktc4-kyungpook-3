@@ -13,7 +13,11 @@ export { memberNameKey } from './lib/memberName'
 export { upsertMember } from './lib/upsertMember'
 export { pmsOf } from './lib/pmsOf'
 export { speakerName } from './lib/speakerName'
-export { memberListQueryOptions, recordMemberListQueryOptions } from './api/memberList'
+export {
+  fetchMembers,
+  memberListQueryOptions,
+  recordMemberListQueryOptions,
+} from './api/memberList'
 export { discordUsersQueryOptions } from './api/discordUsers'
 export { createMember, updateMember } from './api/memberMutations'
 export {

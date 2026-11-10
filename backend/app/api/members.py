@@ -10,13 +10,19 @@ from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import (
     AliasResolutionLog,
     AliasSource,
+    ChangeSource,
     Invitation,
     InvitationStatus,
     Meeting,
     Member,
     MemberAlias,
     MemberRole,
+    MessageThread,
+    ReplyJudgment,
+    ReplyJudgmentState,
     Source,
+    Task,
+    TaskStatus,
     User,
     Workspace,
 )
@@ -32,13 +38,14 @@ from app.schemas.member import (
     UnresolvedAliasResponse,
 )
 from app.api.deps import get_current_member, get_current_user, require_member, require_pm
-from app.services import message_reads
+from app.services import message_reads, messages, thread_signals
 from app.services.matching import resolved_texts
 from app.services.member_aliases import (
     add_discord_nickname_alias,
     remove_discord_profile_aliases,
     sync_name_aliases,
 )
+from app.services.tasks import apply_task_updates
 
 router = APIRouter(prefix="/members", tags=["members"])
 
@@ -430,6 +437,10 @@ def update_member(
         holder = _lock_discord_holder(db, member, move_to)
     elif "display_name" in updates or "discord_user_id" in updates:
         _lock_member(db, member)
+    # 위 검사와 잠금 사이에 DELETE 가 커밋됐을 수 있다. 잠근 뒤 다시 본다
+    db.refresh(member)
+    if member.is_deleted:
+        raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
 
     # 승격은 이 PATCH 의 commit 에 함께 넣는다. 올라가기 전 대화는 PM 이 되기 전 일이라 읽지 않은 것으로 세지 않는다.
     if updates.get("role") == MemberRole.PM and member.role != MemberRole.PM:
@@ -468,6 +479,66 @@ def update_member(
     return success(MemberResponse.model_validate(member).model_dump(mode="json"))
 
 
+@router.delete("/{member_id}", status_code=204)
+def delete_member(
+    member_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """팀원을 명단에서 뺀다(#637). 행과 이름·디스코드 계정·로그인 계정은 이력용으로 남기고 is_deleted 만 켠다.
+
+    물리 삭제는 대화(message_thread)가 CASCADE 로 지워지고 alias_review.reviewed_by 가 막아서 하지 않는다.
+    끝나지 않은 태스크의 담당은 태스크 변경 경로로 비워 이력·버전·Notion 동기화가 남게 하고, 대기 초대와 예약 DM 은 닫는다.
+    """
+    member = db.get(Member, member_id)
+    if member is None or member.withdrawn_at is not None:
+        raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
+    pm = require_pm(db, user, member.workspace_id)
+    # PM 행과 이 팀원 행을 member_id 순으로 잠근다. PM 이 아닌 팀원이면 요청한 PM 이 남아 늘 통과한다.
+    # 팀원 행을 먼저 잠가야 초대 만들기·수락과 순서가 맞는다(invitations.py).
+    _ensure_other_pm(db, member)
+    db.refresh(member)
+    if member.is_deleted:
+        raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
+    now = datetime.now(timezone.utc)
+
+    db.execute(
+        update(Invitation)
+        .where(Invitation.member_id == member_id, Invitation.status == str(InvitationStatus.PENDING))
+        .values(status=str(InvitationStatus.CANCELED), responded_at=now)
+    )
+    open_tasks = db.scalars(
+        select(Task)
+        .where(
+            Task.assignee_member_id == member_id,
+            Task.status != str(TaskStatus.DONE),
+            Task.is_deleted.is_(False),
+        )
+        .order_by(Task.task_id)
+        .with_for_update()
+    ).all()
+    for task in open_tasks:
+        apply_task_updates(
+            db, task, {"assignee_member_id": None},
+            change_source=str(ChangeSource.MANUAL), changed_by=pm.member_id,
+        )
+    thread_id = db.scalar(select(MessageThread.thread_id).where(MessageThread.member_id == member_id))
+    if thread_id is not None:
+        messages.cancel_scheduled_bundles(db, thread_id, now)
+        messages.stop_thread_dms(db, [thread_id], now, watching_only=True)
+        # 판단을 기다리는 답장을 닫는다. 남기면 방금 담당을 비운 태스크에 승인 카드가 새로 생긴다
+        db.execute(update(ReplyJudgment).where(
+            ReplyJudgment.thread_id == thread_id, ReplyJudgment.state == str(ReplyJudgmentState.PENDING),
+        ).values(state=str(ReplyJudgmentState.FAILED), claimed_at=None, finished_at=now,
+                 failure_reason="MEMBER_DELETED"))
+
+    member.is_deleted = True
+    member.deleted_at = now
+    db.commit()
+    # 로그인 계정이 있던 팀원의 열린 대화 소켓을 끊는다. 다음 요청부터는 require_member 가 403 으로 막는다.
+    thread_signals.revoke([member_id])
+
+
 @router.post(
     "/{member_id}/aliases", status_code=201, response_model=Envelope[MemberAliasResponse]
 )
@@ -478,6 +549,8 @@ def create_alias(
     db: Session = Depends(get_db),
 ) -> dict:
     member = _get_member(db, member_id, user, pm=True)
+    if member.is_deleted:  # PATCH 와 같다. 명단에 없는 사람에게 별칭이 쌓이지 않게 한다(#637)
+        raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
 
     exists = db.execute(
         select(MemberAlias).where(

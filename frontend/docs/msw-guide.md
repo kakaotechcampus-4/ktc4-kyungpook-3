@@ -82,7 +82,8 @@ it('빈 목록의 total도 0이다', async () => {
 | mode | 상세 조회 한 번에 | 쓰는 곳 |
 |---|---|---|
 | `manual` | 아무것도 하지 않는다 | Vitest 기본값, M4 시나리오 5개 |
-| `staged` | 한 단계 (`audio_merged` → `transcribed` → `extracted` → `done`) | 브라우저 데모 |
+| `staged` | 녹음 회의는 AI 보고 하나 — 대기 → 전사 시작(수치 없음) → 0/5 → 3/5 → 5/5(끝낸 음성 트랙 수, AI #653 순서) → 저장 → 추출 → 넘기기 → `done`. `progress` 는 서버처럼 단계 순위에서 얻고 `processing` 을 준다(#483). 채팅 회의는 `progress` 한 단계 | 브라우저 데모 |
+| `staged-legacy` | 한 단계 (`audio_merged` → `transcribed` → `extracted` → `done`). 응답에 `processing` 키가 없다(#542 전 BE) | 옛 응답 확인 |
 | `instant` | 바로 `done` | E2E |
 | `fail` | 바로 `failed` | 실패 흐름 |
 | `fail-chat-stalled` | 채팅 회의만 `failed`(`chat_stalled`), 업로드 회의는 그대로 | 멈춘 채팅 회의(#450) |
@@ -95,7 +96,8 @@ it('빈 목록의 total도 0이다', async () => {
 
 | 시나리오 | 역할 | mode | Notion | 해 볼 것 |
 |---|---|---|---|---|
-| `meeting-demo` | PM | `staged` | 연결됨 | 올리고 처리 화면에서 대기부터 세 단계가 차례로 진행되는 것(넘기는 중에도 마지막 단계 진행 중, #483), 다른 화면으로 가서 완료 토스트 |
+| `meeting-demo` | PM | `staged` | 연결됨 | 올리고 처리 화면에서 대기부터 다섯 단계(D-189)가 차례로 진행되는 것(넘기는 중에도 마지막 단계 진행 중, #483), 전사 단계의 `음성 트랙 0/5 → 3/5 → 5/5` 와 단계 경과, 다른 화면으로 가서 완료 토스트. 단계 시작 시각은 MOCK_NOW(2026-09-18 09:00 서울) 직전이라, 실제 날짜로 열면 경과가 큰 수다 — 브라우저 시계를 MOCK_NOW 로 두면 `5분째`·`2분째`·`1분째`·`방금 시작` 이 보인다 |
+| `meeting-demo-legacy` | PM | `staged-legacy` | 연결됨 | `meeting-demo` 와 같지만 #542 전 서버라 `processing` 이 없다. 진행 수·경과 없이 단계만 보인다 (#483) |
 | `meeting-instant` | PM | `instant` | 연결됨 | 올리자마자 회의록으로 |
 | `meeting-fail` | PM | `fail` | 연결됨 | 재업로드 토스트, 목록에서 빠진 회의 |
 | `meeting-notion-not-connected` | PM | `instant` | 미연결 | Notion 없이 회의 올리기 → 정리 → 회의록·태스크(D-182). 설정 Notion 영역 → 모의 OAuth → 설정 복귀 |
@@ -115,6 +117,24 @@ http://localhost:5173/workspaces/ws_01/meetings/upload?msw-scenario=meeting-demo
 
 PM 시나리오는 픽스처의 처리 중 회의 `mt_10` 을 먼저 끝내 둔다 — 처리 중 회의가 있으면 업로드가 409 이고 진입이 처리 화면으로 바뀐다(D-088·D-090). 파일은 아무 짧은 음원이면 된다. 브라우저가 길이를 읽을 수 있어야 폼이 받는다 — 저장소의 `e2e/fixtures/short-meeting.wav`(1초, 8 KB)를 써도 된다. 원본 파일은 db 에도 sessionStorage 에도 남지 않는다. 남는 것은 참석자 ID(`db.meetingFlow.attendees`)뿐이다.
 
+### 회의 녹음 재생 (#676)
+
+회의록의 '원문 듣기' 재생이다. `GET /meetings/{id}/audio` 는 실 서버의 S3 모드처럼 권한을 본 뒤 302 로 모의 S3 주소(`/__mock/s3/meetings/{id}/audio.wav`)를 준다. 그 주소는 같은 출처이고 600초 무음 WAV 를 Range 206 으로 준다. done 회의는 팀원 모두, 그 밖에는 PM 만 듣는다. 들을 수 없으면 404 `AUDIO_NOT_AVAILABLE` 이고 `details.reason` 이 `expired`·`no_recording` 이다(`shared/mock/meetingAudio.ts`). 모의 handler 는 시계를 읽지 않으므로 done 회의는 회의록의 `audio` 가 null 이면 보관 기간이 지난 것이다.
+
+| 회의 | 녹음 |
+|---|---|
+| `mt_09` | 들을 수 있다. 승인 `ap_01`~`ap_03` 의 근거가 이 회의다 |
+| `mt_07` | 보관 기간이 지났다(`expired`) |
+| `mt_08`(채팅)·실패한 회의 | 녹음이 없다(`no_recording`) |
+| 정리 중 업로드·`completeMeeting` 으로 끝낸 회의 | 들을 수 있다 |
+
+시나리오 `meeting-audio-expired` 는 `mt_09` 까지 기간이 지난 상태다. 실제 S3 출처·임시 주소 만료·Safari 의 구간 이동은 흉내 내지 않는다.
+
+```text
+http://localhost:5173/workspaces/ws_01/approvals/ap_02?msw-scenario=tasks-default        → 원문 듣기 → 02:45 부터
+http://localhost:5173/workspaces/ws_01/approvals/ap_02?msw-scenario=meeting-audio-expired → 원문 듣기 → 기간 지남 안내
+```
+
 ### Vitest 에서 고르기
 
 Vitest 는 시나리오를 거치지 않는다. 기본 db 는 `manual` 이라 회의가 저절로 끝나지 않는다. 필요한 테스트만 도우미를 부른다 — 모두 `shared/mock/` 에 있고 `state` 를 받는다(기본 `db`).
@@ -133,7 +153,7 @@ setMockRole('member') // ws_01 의 역할을 일반 팀원으로
 
 ### E2E 에서 고르기
 
-E2E 는 `start(page, 'meeting-instant', '/workspaces/ws_01/meetings/upload')`(`e2e/support.ts`)처럼 시나리오와 주소를 함께 준다. 테스트마다 새 컨텍스트라 서로 상태를 나누지 않는다. 정리 중에 다른 화면으로 떠날 틈이 필요하면 `meeting-demo`(3초 × 5회, #483)를 쓴다 — `instant` 는 처리 화면이 첫 조회에서 끝을 보고 회의록으로 옮긴다.
+E2E 는 `start(page, 'meeting-instant', '/workspaces/ws_01/meetings/upload')`(`e2e/support.ts`)처럼 시나리오와 주소를 함께 준다. 테스트마다 새 컨텍스트라 서로 상태를 나누지 않는다. 정리 중에 다른 화면으로 떠날 틈이 필요하면 `meeting-demo`(3초 × 9회, #483)를 쓴다 — `instant` 는 처리 화면이 첫 조회에서 끝을 보고 회의록으로 옮긴다.
 
 승인 요청에는 계약 §2.5의 `resolved_by`도 보낸다.
 

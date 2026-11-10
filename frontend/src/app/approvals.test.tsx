@@ -123,15 +123,29 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
       within(evidence).getByText('“박민수님이 테스트 계획 정리을 맡기로 했어요.”'),
     ).toBeVisible()
     await waitFor(() => expect(evidence).toHaveTextContent('전사문 02:45 · 김서연'))
+    // 원문 듣기는 근거 시각(02:45)부터 틀도록 그 시각을 넘긴다 (#676)
     expect(within(evidence).getByRole('link', { name: '원문 듣기' })).toHaveAttribute(
       'href',
-      paths.meetings('ws_01', 'mt_09'),
+      '/workspaces/ws_01/meetings/mt_09?t=165000',
     )
     expect(within(card).getByRole('link', { name: '3주차 정기회의 02:45' })).toHaveAttribute(
       'href',
       paths.meetings('ws_01', 'mt_09'),
     )
     expect(screen.queryByRole('button', { name: '보완하기' })).toBeNull()
+  })
+
+  it('목록 카드의 원문 듣기도 근거 시각을 넘긴다 (#676)', async () => {
+    renderApp(`${paths.tasks('ws_01')}?tab=needs_review`)
+    const list = await screen.findByRole('list', { name: '확인 필요 목록' })
+    const item = within(list)
+      .getAllByRole('article')
+      .find((each) => each.textContent?.includes('테스트 계획 정리'))
+    if (!item) throw new Error('approval card missing')
+    expect(within(item).getByRole('link', { name: '원문 듣기' })).toHaveAttribute(
+      'href',
+      '/workspaces/ws_01/meetings/mt_09?t=165000',
+    )
   })
 
   it('업로드 회의의 근거는 Discord uid 없이 팀원 ID 로 화자 이름을 찾는다 (#256)', async () => {

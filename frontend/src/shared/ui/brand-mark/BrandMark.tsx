@@ -24,7 +24,11 @@ export function BrandMark({ size = 'md', className }: BrandMarkProps) {
   return (
     <span
       aria-hidden="true"
-      className={['inline-flex shrink-0 items-center justify-center bg-ink', BOX[size], className]
+      className={[
+        'inline-flex shrink-0 items-center justify-center bg-ink-solid',
+        BOX[size],
+        className,
+      ]
         .filter(Boolean)
         .join(' ')}
     >

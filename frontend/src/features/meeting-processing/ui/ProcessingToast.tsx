@@ -34,12 +34,20 @@ function settledSubject(record: SettledMeeting): ProcessingSubject {
  */
 function trackedSubject(
   detail: Meeting | undefined,
+  observedAt: number,
   source: MeetingSource | null,
 ): ProcessingSubject | null {
   switch (detail?.status) {
     case 'processing':
     case 'awaiting_speakers':
-      return { phase: detail.status, title: detail.title, progress: detail.progress, source }
+      return {
+        phase: detail.status,
+        title: detail.title,
+        progress: detail.progress,
+        processing: detail.processing,
+        observedAt,
+        source,
+      }
     case 'done':
       return { phase: 'done', title: detail.title }
     default:
@@ -108,7 +116,14 @@ export function ProcessingToast({ workspaceId }: { workspaceId: string }) {
   }
   settledHere.forEach((record) => add(record, settledSubject(record)))
   trackedHere.forEach((meeting, index) =>
-    add(meeting, trackedSubject(details[index]?.data, sourceOf(meeting.meetingId))),
+    add(
+      meeting,
+      trackedSubject(
+        details[index]?.data,
+        details[index]?.dataUpdatedAt ?? 0,
+        sourceOf(meeting.meetingId),
+      ),
+    ),
   )
   if (items.length === 0) return null
 

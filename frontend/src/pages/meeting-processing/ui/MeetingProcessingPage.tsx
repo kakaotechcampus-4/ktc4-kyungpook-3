@@ -7,11 +7,13 @@ import {
   meetingFailure,
   meetingListQueryOptions,
   processingSteps,
+  stageDetail,
+  StageDetailText,
   trackMeeting,
   useMeetingSources,
   viewableMeeting,
 } from '@/entities/meeting'
-import type { Meeting, MeetingSource, ProcessingStep } from '@/entities/meeting'
+import type { Meeting, MeetingSource, ProcessingStep, StageDetail } from '@/entities/meeting'
 import { useMemberWorkspace } from '@/entities/workspace'
 import { ApiError, isInvalidResponse } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
@@ -38,7 +40,7 @@ const ROW = 'flex items-center gap-13 border-b border-line py-16 last:border-b-0
 /* 단계 표식 22px 원. 진행 중은 회전 대신 먹 점이다 — 공통 UI 는 스피너를 쓰지 않는다(Skeleton·Button) */
 const MARK = 'inline-flex size-22 shrink-0 items-center justify-center rounded-999 border'
 const LINK =
-  'inline-flex h-36 items-center justify-center self-start rounded-9 bg-ink px-16 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
+  'inline-flex h-36 items-center justify-center self-start rounded-9 bg-ink-solid px-16 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
 
 /**
  * Notion 반영 안내. 확실한 태스크는 바로, 확인 필요 태스크는 PM 승인 뒤 올라간다 (D-101). BE 는 회의록 본문을 Notion 에 올리지 않는다.
@@ -48,6 +50,12 @@ const NOTION_NOTE = {
   pm: 'Notion을 연결했다면 확실한 태스크는 바로, 확인이 필요한 태스크는 승인한 뒤 Notion에도 올라가요.',
   member: 'Notion을 연결했다면 확실한 태스크는 바로 Notion에도 올라가요.',
 } as const
+
+const LABEL: Record<ProcessingStep['state'], string> = {
+  done: 'text-body text-sub',
+  current: 'text-body font-semibold text-ink',
+  waiting: 'text-body text-dim',
+}
 
 const STEP_TEXT: Record<ProcessingStep['state'], string> = {
   done: '완료',
@@ -61,8 +69,9 @@ const STEP_TEXT: Record<ProcessingStep['state'], string> = {
  * 이 화면은 같은 캐시를 그린다. 이 화면에서 정리 중·화자 지정 대기 회의를 보면 추적기에 등록한다(다른 팀원이 올린 회의, 직접 링크).
  * 완료·실패 뒤 이동은 추적기가 한다 — 이 화면을 보고 있을 때만이다.
  *
- * 서버의 `progress` 세 값과 회의 상태를 단계로만 보인다 — 녹음 회의는 세 단계, 채팅 회의는 두 단계다 (#483). 캔버스의 진행 막대·경과·단계별 시간·말 겹침 안내·`중단하기` 는 넣지 않는다 —
- * 서버가 주지 않는 숫자이거나(U4-4) 범위 밖 기능이다(원본 재생, 중단 API 없음).
+ * 서버의 `progress`·`processing` 과 회의 상태로 단계를 정한다 — 녹음 회의는 서버 단계와 1:1 인 다섯 단계(`processing` 이 없는 옛 응답은
+ * 세 단계), 채팅 회의는 두 단계다 (#483). 지금 단계 줄에는 서버가 알린 전사 진행 수와 그 단계의 경과를 붙인다(없으면 붙이지 않는다). 캔버스의 진행 막대·단계별 시간·남은 시간·말 겹침 안내·
+ * `중단하기` 는 넣지 않는다 — 서버가 주지 않는 숫자이거나(U4-4) 범위 밖 기능이다(원본 재생, 중단 API 없음).
  */
 export function MeetingProcessingPage() {
   const workspaceId = useRouteId('workspaceId')
@@ -197,6 +206,7 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
           attendeeCount={attendeeCount}
           stale={stale}
           reveal={reveal}
+          observedAt={detail.dataUpdatedAt}
         />
       )
   }
@@ -243,6 +253,7 @@ function Processing({
   attendeeCount,
   stale,
   reveal,
+  observedAt,
 }: {
   meeting: Meeting
   source: MeetingSource | null
@@ -250,6 +261,8 @@ function Processing({
   attendeeCount: number | null
   stale: boolean
   reveal: boolean
+  /** 상세 응답을 마지막으로 받은 시각. 경과는 이 시각까지다 — polling 마다 다시 그려 따로 타이머가 없다 */
+  observedAt: number
 }) {
   return (
     <Layout
@@ -258,7 +271,7 @@ function Processing({
     >
       <Heading meeting={meeting} attendeeCount={attendeeCount} title="정리하고 있어요" />
       {/* 출처를 모르는 동안은 단계를 그리지 않는다 — 단계 수가 출처마다 다르다 (#483) */}
-      {source === null ? null : <Steps meeting={meeting} source={source} />}
+      {source === null ? null : <Steps meeting={meeting} source={source} observedAt={observedAt} />}
       {stale ? (
         <p className={META}>연결이 불안정해요. 다시 연결되면 정리 상태를 바로 확인할게요.</p>
       ) : null}
@@ -271,7 +284,7 @@ function Processing({
 }
 
 function stepStatus(meeting: Meeting, source: MeetingSource): string {
-  const steps = processingSteps(meeting.progress, meeting.status, source)
+  const steps = processingSteps(meeting.progress, meeting.status, source, meeting.processing)
   const position = stepPosition(steps)
   const current = steps.find(({ state }) => state === 'current')
   return current === undefined ? position : `${position} · ${current.label} 진행 중`
@@ -281,8 +294,18 @@ function stepPosition(steps: ProcessingStep[]): string {
   return `${steps.filter(({ state }) => state === 'done').length} / ${steps.length} 단계 완료`
 }
 
-function Steps({ meeting, source }: { meeting: Meeting; source: MeetingSource }) {
-  const steps = processingSteps(meeting.progress, meeting.status, source)
+function Steps({
+  meeting,
+  source,
+  observedAt,
+}: {
+  meeting: Meeting
+  source: MeetingSource
+  observedAt: number
+}) {
+  const steps = processingSteps(meeting.progress, meeting.status, source, meeting.processing)
+  const current = steps.find(({ state }) => state === 'current')
+  const detail = stageDetail(meeting.processing, current, observedAt)
   return (
     <div className="flex flex-col gap-10">
       <p className={STATUS} aria-hidden="true">
@@ -290,14 +313,15 @@ function Steps({ meeting, source }: { meeting: Meeting; source: MeetingSource })
       </p>
       <ol aria-label="정리 단계" className="flex flex-col">
         {steps.map((step) => (
-          <StepRow key={step.key} step={step} />
+          <StepRow key={step.key} step={step} detail={step.state === 'current' ? detail : null} />
         ))}
       </ol>
     </div>
   )
 }
 
-function StepRow({ step }: { step: ProcessingStep }) {
+function StepRow({ step, detail }: { step: ProcessingStep; detail: StageDetail | null }) {
+  const labelClass = LABEL[step.state]
   return (
     <li className={ROW} aria-current={step.state === 'current' ? 'step' : undefined}>
       {step.state === 'done' ? (
@@ -306,22 +330,19 @@ function StepRow({ step }: { step: ProcessingStep }) {
         </span>
       ) : step.state === 'current' ? (
         <span className={`${MARK} border-ink bg-surface`}>
-          <span className="size-8 rounded-999 bg-ink" />
+          <span className="size-8 rounded-999 bg-ink-solid" />
         </span>
       ) : (
         <span className={`${MARK} border-line-strong`} />
       )}
-      <span
-        className={
-          step.state === 'current'
-            ? 'flex-1 text-body font-semibold text-ink'
-            : step.state === 'done'
-              ? 'flex-1 text-body text-sub'
-              : 'flex-1 text-body text-dim'
-        }
-      >
-        {step.label}
-      </span>
+      {detail === null ? (
+        <span className={`flex-1 ${labelClass}`}>{step.label}</span>
+      ) : (
+        <span className="flex flex-1 flex-col gap-2">
+          <span className={labelClass}>{step.label}</span>
+          <StageDetailText detail={detail} className={STATUS} />
+        </span>
+      )}
       <span
         className={step.state === 'current' ? 'text-caption text-ink' : 'text-caption text-dim'}
       >

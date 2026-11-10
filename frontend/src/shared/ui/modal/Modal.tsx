@@ -19,6 +19,8 @@ export interface ModalProps {
   closeLabel?: string
   /** 카드에 덧붙인다 */
   className?: string
+  /** Esc 로 닫기 전에 부른다. `preventDefault` 하면 닫지 않는다 — 창 안에서 Esc 를 스스로 쓰는 칸(그 자리 고치기)이 쓴다 */
+  onEscapeKeyDown?: (event: KeyboardEvent) => void
 }
 
 /* 표는 모듈 스코프에 둔다 — 렌더마다 다시 만들지 않는다.
@@ -30,7 +32,7 @@ export interface ModalProps {
 const OVERLAY = 'fixed inset-[0px] z-100 flex items-center justify-center p-24'
 
 /** 스크림은 먹의 32% 알파다. 검정이 아니다 (§5-1 금지 목록과 어긋나지 않는다) */
-const SCRIM = 'absolute inset-[0px] cursor-pointer bg-ink/32'
+const SCRIM = 'absolute inset-[0px] cursor-pointer bg-ink-solid/32'
 
 /* `relative` 는 실측표에 없지만 빠뜨릴 수 없다 — 스크림이 `absolute` 라서
    자리잡지 않은 카드는 스크림 아래로 깔린다. 쌓임 순서를 위한 한 개다. */
@@ -78,6 +80,7 @@ export function Modal({
   width,
   closeLabel = '닫기',
   className,
+  onEscapeKeyDown,
 }: ModalProps) {
   const opener = useRef<HTMLElement | null>(null)
 
@@ -90,6 +93,7 @@ export function Modal({
           <DialogPrimitive.Content
             className={[CARD, className].filter(Boolean).join(' ')}
             style={width === undefined ? undefined : { width }}
+            onEscapeKeyDown={onEscapeKeyDown}
             onOpenAutoFocus={() => {
               // FocusScope 가 첫 요소로 옮기기 전이다 — 지금 포커스가 있는 요소가 모달을 연 요소다
               const active = document.activeElement

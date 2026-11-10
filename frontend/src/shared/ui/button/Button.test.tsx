@@ -3,7 +3,7 @@ import { Button } from './Button'
 import type { ButtonSize, ButtonVariant } from './Button'
 
 const VARIANT_CASES: Array<[ButtonVariant, string]> = [
-  ['primary', 'bg-ink text-surface'],
+  ['primary', 'bg-ink-solid text-surface'],
   ['default', 'border border-transparent bg-control text-ink'],
   ['ghost', 'bg-transparent text-sub'],
   ['text', 'bg-transparent text-dim'],
