@@ -102,7 +102,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `DEMO_PM_PASSWORD`, `DEMO_MEMBER_PASSWORD` | PM·팀원2 비밀번호. 없으면 터미널일 때만 입력을 받고, 아니면 종료 코드 2 로 아무것도 쓰지 않고 끝난다 |
 | `SERVICE_TOKEN` | 서비스 토큰 API 호출용. 없으면 종료 코드 2 |
 
-출력은 stdout 에 JSON 한 줄이다: `workspace_id`, `done`(끝난 회의 수), `gates`(auto·review·hold 별 항목 수), `processing`, `unembedded`, `summaries_written`, `summaries_skipped`.
+출력은 stdout 에 JSON 한 줄이다: `workspace_id`, `usernames`(계정별 아이디, 인물 키 p1~p6), `done`(끝난 회의 수), `gates`(auto·review·hold 별 항목 수), `processing`, `unembedded`, `summaries_written`, `summaries_skipped`.
 
 | 종료 코드 | 뜻 |
 |---|---|
@@ -117,7 +117,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 - 운영 요약 워커(AI mm-worker, `MM_SUMMARY_LLM`)가 시드와 동시에 돌면 워커가 먼저 잡은 회의의 요약은 `summaries_skipped` 에 들어가고, 그 임대 15분 동안 같은 공간의 뒤 회의들도 건너뛸 수 있다. 시드 중에는 워커를 잠시 멈추거나, `summaries_skipped` 가 나오면 15분 뒤 같은 명령을 다시 실행한다. 요약만 채운다.
 - 시드 항목의 `similar_count` 는 모두 0 이라 gate 분포는 유사 검색 결과로 바뀌지 않는다. 출력 JSON 의 `gates` 에서 auto 가 0 건이면 API 서버의 `AUTO_CREATE_ENABLED` 가 꺼져 있거나(auto 가 review 로 내려간다), 재생 중 임베딩이 아직 없는 task·승인 대기 카드가 남아 있던 경우(서버 로그의 `unsearched_task_exists`·`unsearched_pending_exists`)다.
 - 회의의 처리 완료 시각(`ended_at`)은 시드를 실행한 시각으로 남는다. 시작 시각만 며칠 전으로 합성한다.
-- 팀원2 자리는 초대·수락 시연용으로 비워 둔다. 동의 기록은 넣지 않아 첫 로그인 때 동의 화면이 뜬다.
+- 팀원2 자리는 초대·수락 시연용으로 비워 둔다. PM 이 초대할 때는 팀원2 의 아이디(출력 JSON 의 `usernames.p2`)를 정확히 입력해 찾는다. 동의 기록은 넣지 않아 첫 로그인 때 동의 화면이 뜬다.
 - 다시 시드하려면 새 `--workspace-name` 과 새 이메일을 쓴다. 지우는 기능은 없다.
 
 ## 응답 형식

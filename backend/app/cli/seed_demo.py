@@ -70,6 +70,7 @@ class SeededWorkspace:
     workspace_id: str
     member_ids: dict[str, str]
     user_ids: dict[str, str]
+    usernames: dict[str, str] = field(default_factory=dict)
 
 
 def emails_from_pattern(pattern: str, count: int = PERSON_COUNT) -> list[str]:
@@ -295,6 +296,7 @@ def seed_accounts(
         workspace_id=workspace.workspace_id,
         member_ids=member_ids,
         user_ids={key: user.user_id for key, user in users.items()},
+        usernames={key: user.username for key, user in users.items()},
     )
 
 
@@ -627,7 +629,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"오류: {error}", file=sys.stderr)
         return EXIT_FAILED
 
-    print(json.dumps({"workspace_id": seeded.workspace_id, **asdict(report)}, ensure_ascii=False))
+    print(json.dumps(
+        {"workspace_id": seeded.workspace_id, "usernames": seeded.usernames, **asdict(report)}, ensure_ascii=False))
     missing = [gate for gate in ("auto", "review", "hold") if report.gates.get(gate, 0) == 0]
     if missing:
         print(
