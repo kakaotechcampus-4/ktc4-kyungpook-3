@@ -5,7 +5,7 @@ import { db } from '../db'
 import { fail, ok } from '../envelope'
 import type { MockDecision, MockTopic } from '../fixtures/projectMap'
 import { readJson } from '../utils'
-import { PYTHON_STRIP } from '../validation'
+import { PYTHON_STRIP, hasUnstorable } from '../validation'
 
 /*
  * 백엔드 services/project_map.py 의 build_graph · topic_detail 과 services/summary.py 의 주제·결정 고치기(#605)와 같은 규칙이다.
@@ -196,6 +196,7 @@ function optionalString(value: unknown): value is string | null | undefined {
 }
 
 const invalid = (message: string) => fail('INVALID_REQUEST', message, 400)
+const UNSTORABLE = 'NUL 이나 짝 없는 서로게이트 글자는 저장할 수 없습니다.'
 const topicNotFound = (topicId: string) =>
   fail('TOPIC_NOT_FOUND', '주제를 찾을 수 없습니다.', 404, { topic_id: topicId })
 
@@ -230,6 +231,7 @@ export const projectMapHandlers = [
       return invalid('주제 이름은 1자 이상 100자 이하입니다.')
     if (description !== null && lengthOf(description) > 1000)
       return invalid('주제 설명은 1000자 이하입니다.')
+    if (hasUnstorable(name, description)) return invalid(UNSTORABLE)
     const topic = workspaceTopic(workspaceId, topicId)
     if (topic === undefined) return topicNotFound(topicId)
     if (name !== null) {
@@ -260,8 +262,9 @@ export const projectMapHandlers = [
       const denied = requireMember(workspaceId)
       if (denied) return denied
       const intoId = (await readJson(request))?.into_topic_id
-      if (typeof intoId !== 'string' || intoId.length < 1 || intoId.length > 36)
+      if (typeof intoId !== 'string' || lengthOf(intoId) < 1 || lengthOf(intoId) > 36)
         return invalid('합칠 주제가 올바르지 않습니다.')
+      if (hasUnstorable(intoId)) return invalid(UNSTORABLE)
       if (intoId === topicId) return invalid('같은 주제로는 합칠 수 없습니다.')
       const topic = workspaceTopic(workspaceId, topicId)
       if (topic === undefined) return topicNotFound(topicId)
@@ -322,6 +325,7 @@ export const projectMapHandlers = [
       if (text === null && state === null) return invalid('text 나 state 가 있어야 합니다.')
       if (text !== null && (lengthOf(text) < 1 || lengthOf(text) > 1000))
         return invalid('결정 문장은 1자 이상 1000자 이하입니다.')
+      if (hasUnstorable(text)) return invalid(UNSTORABLE)
       // 지운 결정도 찾는다 — valid 로 되살릴 수 있다. 삭제된 회의의 결정은 없는 결정이다
       const decision = db.projectMap.decisions.find(
         ({ decision_id, topic_id, meeting_id }) =>

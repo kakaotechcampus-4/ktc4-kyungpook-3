@@ -215,6 +215,26 @@ describe('결정 고치기', () => {
     ])
   })
 
+  it.each([
+    ['주제 설명의 NUL', 'topics/tp_02', { description: '\u0000' }],
+    ['주제 설명의 짝 없는 서로게이트', 'topics/tp_02', { description: '\ud800' }],
+    ['주제 이름의 NUL', 'topics/tp_02', { name: 'Deploy\u0000' }],
+    ['결정 문장의 NUL', 'decisions/dc_03', { text: 'Decision\u0000' }],
+  ])('BE 처럼 저장할 수 없는 글자(%s)는 400 INVALID_REQUEST 다', async (_, path, body) => {
+    await expect(
+      fetchDto(`/workspaces/${WS}/${path}`, { method: 'PATCH', body }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
+  })
+
+  it('짝이 맞는 서로게이트(이모지)는 저장한다', async () => {
+    await expect(
+      sendTopicEdit(WS, 'tp_02', { kind: 'topic', name: '배포 🚀', description: '🚀' }),
+    ).resolves.toMatchObject({ name: '배포 🚀', description: '🚀' })
+    await expect(
+      sendTopicEdit(WS, 'tp_02', { kind: 'decision', decisionId: 'dc_03', text: '배포 🚀' }),
+    ).resolves.toMatchObject({ decisions: [{ text: '배포 🚀' }, expect.anything()] })
+  })
+
   it('없는 결정은 404 DECISION_NOT_FOUND, 모르는 상태는 400 이다', async () => {
     await expect(
       sendTopicEdit(WS, 'tp_01', { kind: 'decision', decisionId: 'missing', state: 'invalid' }),
