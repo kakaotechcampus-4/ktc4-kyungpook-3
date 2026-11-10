@@ -51,7 +51,7 @@ sequenceDiagram
 | 코드 | 무엇을 막나 | 기준 | PM 이 할 일 |
 |---|---|---|---|
 | `APPROVAL_ALREADY_RESOLVED` | 같은 카드 두 번 처리 | `status = pending` 조건부 UPDATE, `rowcount = 0` | 새로고침 |
-| `APPROVAL_CHANGED` | 카드를 본 뒤 합치기로 내용이 바뀜(#547) | `payload_version` = payload 문자열 sha256 앞 16자. 요청에 오면 비교, 안 오면 검사 안 함 | 상세를 다시 받아 비교 후 재승인 |
+| `APPROVAL_CHANGED` | 카드를 본 뒤 합치기로 내용이 바뀜(#547) | `payload_version` = payload 문자열 sha256 앞 16자. 요청의 값 비교는 task_create 카드만(다르면 409, 안 보내면 이 검사는 없다). 이와 별개로 값을 안 보내도, 카드가 묶인 회의 root 잠금을 기다리는 사이 합치기가 먼저 끝나 payload 가 바뀌었으면 카드 종류와 상관없이 409 | 상세를 다시 받아 비교 후 재승인 |
 | `APPROVAL_CONFLICT` | 제안 뒤 태스크의 같은 필드가 바뀜 | 필드마다 `base_values`(AI 가 본 값) ≠ 지금 값이고, 지금 값 ≠ 제안 값. 대상 제목(`base_title`)이 바뀌어도 충돌 | 충돌을 본 `task_version` 을 `confirm_task_version` 으로 다시 보냄. 그사이 또 바뀌면 다시 409 |
 
 기준값은 **AI 가 유사 검색에서 본 값(`target_snapshot`)** 이다. 등록 시점의 DB 값을 쓰면, AI 가 검색하고 판단하는 사이 PM 이 고친 값이 기준값이 되어 충돌 없이 덮인다(#157). 스냅샷이 없으면 등록 시점 값을 쓴다. 지금 값이 이미 제안 값과 같으면 잃는 것이 없어 충돌로 보지 않는다. 반영에 실패하면 승인도 롤백해 카드는 pending 으로 남는다.
