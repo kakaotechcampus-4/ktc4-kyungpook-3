@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.main import app
-from app.models import Decision, ExtractionItem, Task, Topic, Workspace
+from app.models import Decision, ExtractionItem, Task, Topic, TopicTaskDetach, Workspace
 from app.services import embedding
 from tests.api.test_project_map import T0, _extraction, _meeting, _save
 
@@ -212,12 +212,30 @@ def test_detach_hides_the_task_from_graph_detail_and_bundle_and_is_idempotent(cl
     assert _edges(client, ws) == {(topic_id, task.task_id)}
 
     first = client.delete(f"{P}/{ws}/topics/{topic_id}/tasks/{task.task_id}")
+    edited_at = mdb.get(Topic, topic_id).edited_at
     again = client.delete(f"{P}/{ws}/topics/{topic_id}/tasks/{task.task_id}")
 
     assert first.status_code == again.status_code == 200
     assert first.json()["data"] == again.json()["data"] == _detail(client, ws, topic_id)
     assert (first.json()["data"]["topic_id"], first.json()["data"]["tasks"]) == (topic_id, [])
+    assert mdb.get(Topic, topic_id).edited_at == edited_at
     _assert_hidden(client, ws, topic_id, task)
+
+
+def test_detach_of_an_unlinked_task_leaves_the_topic_unchanged(client, mdb, mseed):
+    ws = mseed["ws"]
+    meeting, extraction, _, _, topic_id = _linked(mdb, ws)
+    task_id = mseed["tasks"][0].task_id
+    before = _detail(client, ws, topic_id)
+
+    response = client.delete(f"{P}/{ws}/topics/{topic_id}/tasks/{task_id}")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"] == before
+    assert mdb.get(TopicTaskDetach, (topic_id, task_id)) is None
+    assert mdb.get(Topic, topic_id).edited_at is None
+    _save(mdb, meeting, [], extraction=extraction)
+    assert topic_id not in _topic_ids(mdb, ws).values()
 
 
 def _assert_hidden(client, ws, topic_id, task):
