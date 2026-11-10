@@ -218,6 +218,9 @@ def upload_recording(
     existing = db.get(MeetingAudio, meeting_id)
     if existing is not None and existing.deleted_at is not None:
         return _recording_response(existing, stored=False)
+    if existing is not None and meeting_audio.expires_at(existing) <= now:
+        # 기간이 지났지만 정리 작업이 아직 안 돈 기록이다. 덮어써도 곧 정리될 녹음이라 받지 않는다
+        return _recording_response(existing, stored=False)
     if existing is None and meeting_audio.deadline(retention_from) <= now:
         # 보관 기간이 이미 지났다. 저장해도 바로 정리될 녹음이라 받지 않는다
         return success(

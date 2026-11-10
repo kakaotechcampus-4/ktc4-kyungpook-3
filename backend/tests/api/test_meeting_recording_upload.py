@@ -158,6 +158,32 @@ def test_discord_upload_after_retention_not_stored(db, ws_id):
     assert db.get(MeetingAudio, meeting_id) is None
 
 
+def test_reupload_after_retention_before_sweep_not_stored(db, ws_id):
+    # 행은 있고 deleted_at 은 비었지만 기한이 지난 상태(sweeper 가 아직 안 돈 때): 파일을 덮어쓰지 않는다
+    ended_at = datetime.now(timezone.utc) - timedelta(days=8)
+    meeting_id = _meeting(db, ws_id, ended_at=ended_at)
+    db.add(MeetingAudio(
+        meeting_id=meeting_id, filename="audio.m4a", content_type="audio/mp4",
+        size_bytes=len(AUDIO), retention_from=ended_at,
+    ))
+    db.commit()
+    folder = upload_storage.meeting_dir(meeting_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "audio.m4a").write_bytes(AUDIO)
+
+    r = _put(meeting_id, AUDIO_2)
+
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["stored"] is False
+    assert datetime.fromisoformat(data["expires_at"]) == ended_at + timedelta(days=7)
+    assert _stored(meeting_id) == AUDIO
+    db.expire_all()
+    row = db.get(MeetingAudio, meeting_id)
+    assert row.deleted_at is None
+    assert row.size_bytes == len(AUDIO)
+
+
 def test_reupload_keeps_retention_from(db, ws_id):
     meeting_id = _meeting(db, ws_id)
     assert _put(meeting_id).status_code == 200
