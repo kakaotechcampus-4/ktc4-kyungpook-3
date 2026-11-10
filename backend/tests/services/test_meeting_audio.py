@@ -152,3 +152,143 @@ def test_playback_info_when_playable_and_none_otherwise(db):
         "size_bytes": 1234,
     }
     assert meeting_audio.playback_info(db, meeting, RECEIVED + 8 * DAY) is None
+
+
+@pytest.mark.parametrize("raw", ["0", "-3", "abc", "1.5"])
+def test_retention_invalid_value_warns_and_uses_default(monkeypatch, caplog, raw):
+    monkeypatch.setenv("UPLOAD_AUDIO_RETENTION_DAYS", raw)
+
+    with caplog.at_level("WARNING"):
+        assert meeting_audio.retention() == 7 * DAY
+
+    assert "UPLOAD_AUDIO_RETENTION_DAYS" in caplog.text
+
+
+def test_retention_empty_value_uses_default_without_warning(monkeypatch, caplog):
+    monkeypatch.setenv("UPLOAD_AUDIO_RETENTION_DAYS", "")
+
+    with caplog.at_level("WARNING"):
+        assert meeting_audio.retention() == 7 * DAY
+
+    assert caplog.text == ""
+
+
+# --- 만료 정리(sweep_expired_audio) ---
+
+@pytest.fixture
+def storage(tmp_path, monkeypatch):
+    monkeypatch.delenv("UPLOAD_STORAGE", raising=False)
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
+    return tmp_path
+
+
+def _with_file(storage, meeting: Meeting):
+    folder = storage / meeting.meeting_id
+    folder.mkdir()
+    (folder / "audio.wav").write_bytes(b"RIFF")
+    return folder
+
+
+def test_sweep_deletes_expired_done_and_marks_row(db, storage):
+    meeting = _recorded(db)
+    folder = _with_file(storage, meeting)
+    now = RECEIVED + 7 * DAY + SECOND
+
+    assert meeting_audio.sweep_expired_audio(db, now) == [meeting.meeting_id]
+
+    assert not folder.exists()
+    assert _aware_deleted_at(db, meeting) == now
+
+
+def _aware_deleted_at(db, meeting):
+    db.expire_all()
+    return meeting_audio._aware(db.get(MeetingAudio, meeting.meeting_id).deleted_at)
+
+
+def test_sweep_keeps_unexpired(db, storage):
+    meeting = _recorded(db)
+    folder = _with_file(storage, meeting)
+
+    assert meeting_audio.sweep_expired_audio(db, RECEIVED + 7 * DAY - SECOND) == []
+
+    assert folder.exists()
+    assert db.get(MeetingAudio, meeting.meeting_id).deleted_at is None
+
+
+def test_sweep_keeps_processing_even_if_old(db, storage):
+    meeting = _recorded(db, status="processing")
+    folder = _with_file(storage, meeting)
+
+    assert meeting_audio.sweep_expired_audio(db, RECEIVED + 30 * DAY) == []
+
+    assert folder.exists()
+    assert db.get(MeetingAudio, meeting.meeting_id).deleted_at is None
+
+
+def test_sweep_deletes_failed_immediately(db, storage):
+    meeting = _recorded(db, status="failed")
+    folder = _with_file(storage, meeting)
+    now = RECEIVED + SECOND
+
+    assert meeting_audio.sweep_expired_audio(db, now) == [meeting.meeting_id]
+
+    assert not folder.exists()
+    assert _aware_deleted_at(db, meeting) == now
+
+
+def test_sweep_retries_after_remove_failure(db, storage, monkeypatch):
+    meeting = _recorded(db)
+    folder = _with_file(storage, meeting)
+    now = RECEIVED + 8 * DAY
+
+    real_remove = meeting_audio.upload_storage.remove_audio
+    calls = []
+
+    def fail_once(meeting_id):
+        calls.append(meeting_id)
+        if len(calls) == 1:
+            raise OSError("busy")
+        real_remove(meeting_id)
+
+    monkeypatch.setattr(meeting_audio.upload_storage, "remove_audio", fail_once)
+    assert meeting_audio.sweep_expired_audio(db, now) == []
+    assert db.get(MeetingAudio, meeting.meeting_id).deleted_at is None
+    assert folder.exists()
+
+    assert meeting_audio.sweep_expired_audio(db, now) == [meeting.meeting_id]
+    assert not folder.exists()
+    assert _aware_deleted_at(db, meeting) == now
+
+
+def test_sweep_skips_deleted_meeting(db, storage):
+    meeting = _recorded(db)
+    folder = _with_file(storage, meeting)
+    meeting.deleted_at = RECEIVED + DAY
+    db.commit()
+
+    assert meeting_audio.sweep_expired_audio(db, RECEIVED + 8 * DAY) == []
+
+    assert folder.exists()
+    assert db.get(MeetingAudio, meeting.meeting_id).deleted_at is None
+
+
+def test_sweep_skips_deleted_workspace(db, storage):
+    meeting = _recorded(db)
+    folder = _with_file(storage, meeting)
+    db.get(Workspace, meeting.workspace_id).deleted_at = RECEIVED + DAY
+    db.commit()
+
+    assert meeting_audio.sweep_expired_audio(db, RECEIVED + 8 * DAY) == []
+
+    assert folder.exists()
+
+
+def test_sweep_skips_already_deleted_row(db, storage):
+    meeting = _recorded(db)
+    folder = _with_file(storage, meeting)
+    db.get(MeetingAudio, meeting.meeting_id).deleted_at = RECEIVED + DAY
+    db.commit()
+
+    assert meeting_audio.sweep_expired_audio(db, RECEIVED + 8 * DAY) == []
+
+    assert folder.exists()

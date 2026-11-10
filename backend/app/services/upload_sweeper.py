@@ -2,6 +2,7 @@
 
 AI 가 업로드를 가져간 뒤 죽거나 PM 이 화자 지정을 하지 않으면 회의가 처리 중으로 남아, 그 워크스페이스는
 새 업로드가 409 로 막힌다. 주기 워커가 아래 기준으로 failed 로 바꾸고 녹음 폴더를 지운다.
+같은 바퀴에서 보관 기간이 지난 회의 녹음도 정리한다(`meeting_audio.sweep_expired_audio`, #659).
 
 - 처리 중(processing)이고 AI 가 가져간 업로드: 마지막 진행 시각(가져감·지정·다시 가져감·마지막 발화 저장 중
   가장 늦은 것)에서 CLAIM_STALL_SECONDS 가 지나면 failed_stage=diarize
@@ -24,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.models import Meeting, MeetingSource, MeetingStatus, MeetingUpload, Source, Workspace
-from app.services import meeting_deletion, meeting_failure, upload_storage
+from app.services import meeting_audio, meeting_deletion, meeting_failure, upload_storage
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +163,11 @@ def run_worker(stop_event: threading.Event, interval: float) -> None:
             sweep_stalled_uploads(db)
         except Exception:
             logger.exception("업로드 sweeper 워커 오류")
+            db.rollback()
+        try:
+            meeting_audio.sweep_expired_audio(db)
+        except Exception:
+            logger.exception("회의 녹음 만료 정리 워커 오류")
             db.rollback()
         finally:
             db.close()

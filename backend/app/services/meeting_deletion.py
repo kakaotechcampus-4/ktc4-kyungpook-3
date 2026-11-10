@@ -24,6 +24,7 @@ from app.models import (
     Meeting,
     MeetingPurge,
     MeetingStatus,
+    MeetingAudio,
     MeetingUpload,
     Notification,
     Source,
@@ -310,6 +311,7 @@ def _delete_content(db: Session, meeting: Meeting, now: datetime) -> None:
     db.execute(delete(Extraction).where(Extraction.meeting_id == meeting_id))
     db.execute(delete(Source).where(Source.meeting_id == meeting_id))
     db.execute(delete(MeetingUpload).where(MeetingUpload.meeting_id == meeting_id))
+    db.execute(delete(MeetingAudio).where(MeetingAudio.meeting_id == meeting_id))
     db.execute(
         delete(Notification).where(
             Notification.workspace_id == meeting.workspace_id,

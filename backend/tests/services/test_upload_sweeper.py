@@ -509,3 +509,56 @@ def test_worker_keeps_running_after_a_sweep_raises(monkeypatch):
 
     assert calls.count("sweep") == 2
     assert "rollback" in calls
+
+
+def _fake_worker_session(calls):
+    class FakeSession:
+        def rollback(self):
+            calls.append("rollback")
+
+        def close(self):
+            calls.append("close")
+
+    return FakeSession
+
+
+def test_worker_sweeps_expired_audio_even_if_stalled_sweep_raises(monkeypatch):
+    stop = threading.Event()
+    calls = []
+
+    def stalled(db):
+        calls.append("stalled")
+        raise RuntimeError("boom")
+
+    def audio(db):
+        calls.append("audio")
+        stop.set()
+        return []
+
+    monkeypatch.setattr(upload_sweeper, "SessionLocal", _fake_worker_session(calls))
+    monkeypatch.setattr(upload_sweeper, "sweep_stalled_uploads", stalled)
+    monkeypatch.setattr(upload_sweeper.meeting_audio, "sweep_expired_audio", audio)
+
+    upload_sweeper.run_worker(stop, 0)
+
+    assert calls.index("stalled") < calls.index("audio")
+
+
+def test_worker_keeps_running_after_audio_sweep_raises(monkeypatch):
+    stop = threading.Event()
+    calls = []
+
+    def audio(db):
+        calls.append("audio")
+        if calls.count("audio") == 1:
+            raise RuntimeError("boom")
+        stop.set()
+        return []
+
+    monkeypatch.setattr(upload_sweeper, "SessionLocal", _fake_worker_session(calls))
+    monkeypatch.setattr(upload_sweeper, "sweep_stalled_uploads", lambda db: [])
+    monkeypatch.setattr(upload_sweeper.meeting_audio, "sweep_expired_audio", audio)
+
+    upload_sweeper.run_worker(stop, 0)
+
+    assert calls.count("audio") == 2

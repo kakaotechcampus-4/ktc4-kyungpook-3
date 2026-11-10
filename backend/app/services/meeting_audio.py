@@ -4,13 +4,18 @@
 처리 중(`done`·`failed` 가 아님)인 회의는 기간이 지나도 만료로 보지 않는다. 처리에 아직 필요한 녹음이라 지우지 않는다.
 이 모듈은 DB 만 보고 판단하며 파일은 읽거나 지우지 않는다(파일은 `upload_storage` 담당).
 """
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
-from app.models import Meeting, MeetingAudio, MeetingStatus
+from app.models import Meeting, MeetingAudio, MeetingStatus, Workspace
+from app.services import meeting_deletion, upload_storage
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_RETENTION_DAYS = 7
 
@@ -19,8 +24,24 @@ REASON_NO_RECORDING = "no_recording"
 
 
 def retention() -> timedelta:
-    """녹음을 듣게 두는 기간. 환경변수 `UPLOAD_AUDIO_RETENTION_DAYS` 로 바꾼다."""
-    return timedelta(days=int(os.getenv("UPLOAD_AUDIO_RETENTION_DAYS") or DEFAULT_RETENTION_DAYS))
+    """녹음을 듣게 두는 기간. 환경변수 `UPLOAD_AUDIO_RETENTION_DAYS`(양의 정수)로 바꾼다.
+
+    값이 잘못되면 경고를 남기고 기본값(7일)을 쓴다. 설정 실수로 녹음이 바로 지워지거나 요청이 죽지 않게 한다.
+    """
+    raw = os.getenv("UPLOAD_AUDIO_RETENTION_DAYS")
+    if not raw:
+        return timedelta(days=DEFAULT_RETENTION_DAYS)
+    try:
+        days = int(raw)
+    except ValueError:
+        days = 0
+    if days <= 0:
+        logger.warning(
+            "UPLOAD_AUDIO_RETENTION_DAYS 는 양의 정수여야 합니다(받은 값=%r). 기본 %d일을 씁니다.",
+            raw, DEFAULT_RETENTION_DAYS,
+        )
+        return timedelta(days=DEFAULT_RETENTION_DAYS)
+    return timedelta(days=days)
 
 
 def _aware(value: datetime) -> datetime:
@@ -96,3 +117,48 @@ def playback_info(db: Session, meeting: Meeting, now: datetime) -> dict | None:
         "expires_at": expires_at(row),
         "size_bytes": row.size_bytes,
     }
+
+
+def sweep_expired_audio(db: Session, now: datetime | None = None) -> list[str]:
+    """지울 때가 된 녹음을 지우고 `deleted_at` 을 채운다. 지운 회의 id 목록을 돌려준다.
+
+    대상은 아직 지우지 않은 기록 중 회의·공간이 살아 있고, 회의가 failed 이거나(바로 지운다)
+    done 이면서 보관 기간이 지난 것이다. 처리 중인 회의는 지나도 건드리지 않는다.
+    회의마다 잠근 뒤 조건을 다시 확인하고, 파일 삭제가 성공한 뒤에만 `deleted_at` 을 커밋한다.
+    지우지 못하면 `deleted_at` 을 비워 두어 다음 바퀴에 다시 시도한다.
+    """
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - retention()
+    meeting_ids = db.scalars(
+        select(MeetingAudio.meeting_id)
+        .join(Meeting, Meeting.meeting_id == MeetingAudio.meeting_id)
+        .join(Workspace, Workspace.workspace_id == Meeting.workspace_id)
+        .where(
+            MeetingAudio.deleted_at.is_(None),
+            Meeting.deleted_at.is_(None),
+            Workspace.deleted_at.is_(None),
+            (Meeting.status == str(MeetingStatus.FAILED))
+            | ((Meeting.status == str(MeetingStatus.DONE)) & (MeetingAudio.received_at < cutoff)),
+        )
+    ).all()
+    swept: list[str] = []
+    for meeting_id in meeting_ids:
+        try:
+            meeting = meeting_deletion.require_live_meeting(db, meeting_id, lock=True)
+            row = db.get(MeetingAudio, meeting_id, populate_existing=True)
+            if row is None or row.deleted_at is not None:
+                continue
+            # 잠근 뒤 상태가 바뀌었을 수 있어 만료 판단을 다시 한다. 들을 수 있으면 지울 때가 아니다.
+            if _row_and_reason(db, meeting, now)[1] is None:
+                continue
+            upload_storage.remove_audio(meeting_id)
+            row.deleted_at = now
+            db.commit()
+            swept.append(meeting_id)
+        except AppError:
+            continue  # 그 사이 회의나 공간이 지워졌다. 삭제 경로가 파일을 정리한다.
+        except (OSError, ValueError):
+            logger.exception("회의 녹음 정리 실패 meeting_id=%s. 다음 바퀴에 다시 시도합니다.", meeting_id)
+        finally:
+            db.rollback()
+    return swept

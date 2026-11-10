@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -6,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.main import app
-from app.models import Extraction, Meeting, Source, Task
+from app.models import Extraction, Meeting, MeetingAudio, Source, Task
 from app.models import (
     ApprovalRequest,
     Evidence,
@@ -15,6 +16,7 @@ from app.models import (
     EMBEDDING_DIMENSIONS,
 )
 from app.services import meeting_deletion, embedding, upload_storage
+from tests.fake_s3 import FakeS3
 
 
 @pytest.fixture
@@ -160,6 +162,74 @@ def test_backend_files_are_removed(deleted_fixture, monkeypatch, tmp_path):
     assert client.delete(f"/api/v1/meetings/{mid}").status_code == 202
     assert not folder.exists()
     assert Path(root).exists()
+
+
+def _record_audio(mdb, mid):
+    mdb.add(
+        MeetingAudio(
+            meeting_id=mid, filename="audio.wav", content_type="audio/wav",
+            size_bytes=11, received_at=datetime.now(timezone.utc),
+        )
+    )
+    mdb.commit()
+
+
+def test_delete_removes_meeting_audio_row_and_folder(mdb, deleted_fixture, monkeypatch, tmp_path):
+    client, mid, _ = deleted_fixture
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
+    folder = tmp_path / mid
+    folder.mkdir()
+    (folder / "audio.wav").write_bytes(b"private-576")
+    _record_audio(mdb, mid)
+
+    assert client.delete(f"/api/v1/meetings/{mid}").status_code == 202
+
+    mdb.expire_all()
+    assert mdb.get(MeetingAudio, mid) is None
+    assert not folder.exists()
+
+
+@pytest.fixture
+def s3_fake(monkeypatch):
+    fake = FakeS3()
+    monkeypatch.setattr(upload_storage, "_s3_client", lambda: fake)
+    monkeypatch.setenv("UPLOAD_STORAGE", "s3")
+    monkeypatch.setenv("UPLOAD_S3_BUCKET", "b")
+    return fake
+
+
+def test_delete_purges_s3_objects(mdb, deleted_fixture, s3_fake):
+    client, mid, _ = deleted_fixture
+    s3_fake.put("b", f"meetings/{mid}/audio.wav", b"private-576", "audio/wav")
+    _record_audio(mdb, mid)
+
+    response = client.delete(f"/api/v1/meetings/{mid}")
+
+    assert response.status_code == 202
+    assert s3_fake.keys("b") == []
+    mdb.expire_all()
+    assert mdb.get(MeetingAudio, mid) is None
+    assert mdb.get(MeetingPurge, mid).backend_done_at is not None
+
+
+def test_s3_delete_failure_stays_pending_with_error_code(mdb, deleted_fixture, s3_fake):
+    client, mid, _ = deleted_fixture
+    s3_fake.put("b", f"meetings/{mid}/audio.wav", b"private-576", "audio/wav")
+    _record_audio(mdb, mid)
+    s3_fake.fail_next = "delete_objects"
+
+    response = client.delete(f"/api/v1/meetings/{mid}")
+
+    assert response.status_code == 202
+    mdb.expire_all()
+    purge = mdb.get(MeetingPurge, mid)
+    assert purge.backend_done_at is None
+    assert purge.last_error_code == "BACKEND_STORAGE_DELETE_FAILED"
+    assert mdb.get(MeetingAudio, mid) is None
+    meeting_deletion.purge_backend_files(mdb)
+    assert s3_fake.keys("b") == []
+    mdb.expire_all()
+    assert mdb.get(MeetingPurge, mid).backend_done_at is not None
 
 
 def test_business_history_jobs_and_chat_cursor_are_preserved(
