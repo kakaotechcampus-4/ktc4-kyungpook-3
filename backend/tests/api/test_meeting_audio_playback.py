@@ -142,6 +142,7 @@ def test_member_cannot_play_unfinished_meeting(db, seed, status):
 
     assert r.status_code == 403, r.text
     assert r.json()["error"]["code"] == "FORBIDDEN"
+    assert r.json()["error"]["message"] == "PM만 할 수 있는 작업입니다."
 
 
 @pytest.mark.parametrize("status", ["processing", "awaiting_speakers"])

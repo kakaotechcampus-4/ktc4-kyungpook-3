@@ -208,13 +208,18 @@ def test_candidates_leave_out_members_who_left_after_upload(db, seed):
     assert data["candidates"] == [{"member_id": seed["jimin"].member_id, "display_name": "지민"}]
 
 
-@pytest.mark.parametrize("kind", ["no_folder", "no_file"])
-def test_audio_info_is_null_when_the_recording_is_gone(db, seed, kind):
-    # 녹음 보관 기간 안이고 재생할 수 있을 때만 audio 에 값이 있다. failed 처럼 못 듣는 회의는 null 로 줘서 "회의 없음"과 가른다
-    meeting = _meeting(db, seed, status="failed")
-    if kind == "no_file":
-        _put_audio(meeting)
-        (upload_storage.meeting_dir(meeting.meeting_id) / "audio.ogg").unlink()
+@pytest.mark.parametrize("kind", ["failed", "expired", "deleted"])
+def test_audio_info_is_null_when_the_recording_cannot_be_played(db, seed, kind):
+    # 녹음 보관 기간 안이고 재생할 수 있을 때만 audio 에 값이 있다(DB 의 보관 기록만 본다). 사유별로 null 이 되고 "회의 없음"(404)과 가른다
+    status = "done" if kind in ("expired", "deleted") else "failed"
+    meeting = _meeting(db, seed, status=status)
+    row = db.get(MeetingAudio, meeting.meeting_id)
+    if kind == "expired":
+        row.received_at = datetime.now(timezone.utc) - timedelta(days=8)
+    elif kind == "deleted":
+        row.deleted_at = datetime.now(timezone.utc)
+    db.commit()
+    _put_audio(meeting)
 
     r = _get(meeting.meeting_id)
 

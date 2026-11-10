@@ -406,7 +406,8 @@ def get_meeting_audio(
     meeting = _get_meeting(db, meeting_id)
     member = require_member(db, user, meeting.workspace_id)
     if not _may_play(meeting, member):
-        raise AppError(ErrorCode.FORBIDDEN, details={"workspace_id": meeting.workspace_id})
+        # 팀원이어도 done 이 아니면 PM 만 듣는다. 기존과 같은 PM 전용 메시지로 막는다
+        require_pm(db, user, meeting.workspace_id)
     row = meeting_audio.require_playable(db, meeting, datetime.now(timezone.utc))
     filename, content_type = row.filename, row.content_type
     headers = {"Cache-Control": "private, no-store"}
