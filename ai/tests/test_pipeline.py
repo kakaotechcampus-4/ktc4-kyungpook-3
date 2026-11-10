@@ -1293,7 +1293,7 @@ def test_run_multi_word_workspace_terms_count_word_by_word(monkeypatch):
     _, jev = _asr_run(monkeypatch, ["카프카 정리는 제가 맡을게요."], "카프카 정리", candidates=be)
     assert set(jev.calls[0][1]) == {"task"}
     # 나눈 말은 BE 에 다시 올리지 않는다(이미 있는 용어를 쪼갠 것뿐이다)
-    assert all("애포" not in words and "체크" not in words for words, _ in be.pushed)
+    assert be.pushed == []
 
 
 def test_run_nouns_said_by_two_speakers_are_known_and_pushed(monkeypatch):
