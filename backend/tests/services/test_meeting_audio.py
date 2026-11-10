@@ -131,6 +131,15 @@ def test_deleted_row_is_no_recording(db):
     assert meeting_audio.unavailable_reason(db, meeting, RECEIVED + 2 * DAY) == "no_recording"
 
 
+def test_swept_after_retention_is_still_expired(db):
+    # 만료 정리가 파일을 지우고 deleted_at 을 채운 뒤에도, 지운 이유는 보관 기간이 지나서다
+    meeting = _recorded(db)
+    db.get(MeetingAudio, meeting.meeting_id).deleted_at = RECEIVED + 7 * DAY + SECOND
+    db.commit()
+
+    assert meeting_audio.unavailable_reason(db, meeting, RECEIVED + 8 * DAY) == "expired"
+
+
 def test_retention_days_env(db, monkeypatch):
     monkeypatch.setenv("UPLOAD_AUDIO_RETENTION_DAYS", "2")
     meeting = _recorded(db)

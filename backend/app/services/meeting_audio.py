@@ -92,10 +92,13 @@ def record(
 
 def _row_and_reason(db: Session, meeting: Meeting, now: datetime) -> tuple[MeetingAudio | None, str | None]:
     row = db.get(MeetingAudio, meeting.meeting_id)
-    if row is None or row.deleted_at is not None or meeting.status == MeetingStatus.FAILED:
+    if row is None or meeting.status == MeetingStatus.FAILED:
         return row, REASON_NO_RECORDING
+    # 만료 정리가 지운 뒤(deleted_at 있음)에도 보관 기간이 지났으면 이유는 expired 다
     if meeting.status == MeetingStatus.DONE and now >= expires_at(row):
         return row, REASON_EXPIRED
+    if row.deleted_at is not None:
+        return row, REASON_NO_RECORDING
     return row, None
 
 
