@@ -17,7 +17,8 @@ STT 가 "진도"를 "짐도"로 잘못 받아 적으면, 근거 원문에도 "�
  → ⑤ Jev 한 번 호출                           ← 근거 검증(할 일·마감) + 이 검사(제목 명사)
  → ⑥ BE 게이트(주요 조건): 말한 담당자 확정·할 일 certain·마감 inferred 아님·의심 단어 없음·겹치는 태스크 없음
                 → 반영된 것. 하나라도 아니면 확인 필요 (말한 담당자의 신뢰도가 0.5 미만이면 보류)
- → ⑦ PM 이 확인 카드 승인 → 그 제목의 명사가 다음 회의의 용어 목록으로
+ → ⑦ PM 이 새 할 일 확인 카드를 승인(고친 제목이면 고친 제목) → 그 제목의 명사가 다음 회의의 용어 목록으로
+                auto 로 반영된 제목, 반려, 기존 태스크 수정 승인은 넣지 않는다
 ```
 
 ⑥ 은 주요 조건만 적었다. 마감 상태와 날짜의 어긋남(`due_mismatch`), 대명사·역할로 가리킨 담당자(`assignee_inferred`), 검색이 못 본 후보(`unsearched_*`), 검사 실패(`asr_check_failed`)도 auto 를 막는다. 담당자는 말했을 때만, 마감은 `missing` 이면 막지 않는다. 전체 조건은 [`matching.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/matching.py) 의 `auto_blockers` 에 있다.
