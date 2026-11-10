@@ -473,8 +473,9 @@ AI 가 끝난 **디스코드 회의**의 녹음을 올린다. 팀원이 보관 �
 - 응답 `data`: `{meeting_id, size_bytes, expires_at, stored}`. `expires_at` 은 이 시각까지 들을 수 있다는 뜻(`retention_from` + 보관 기간)이다.
 - 보관 기준: 회의 종료 시각(`meeting.ended_at`, 없으면 받은 시각)부터 보관 기간을 센다. AI 가 늦게 올려도 듣는 기간이 길어지지 않는다. 같은 회의에 다시 올리면 파일만 바꾸고 기준 시각은 처음 값을 유지한다(멱등).
 - `stored=false`(200, 오류 아님): 저장하지 않았다. ① 보관 기간이 이미 지났다(기록도 만들지 않는다). ② 그 녹음이 이미 정리됐다(`deleted_at`). ③ 올리는 사이 정리 작업이 지웠다. AI 는 응답을 받았으니 대기 항목을 지운다.
-- 오류: 404 `MEETING_NOT_FOUND`, 410 `MEETING_DELETED`(삭제된 회의·공간, 저장했다면 파일을 치운다), 400 `INVALID_REQUEST`(디스코드 회의가 아님, `details.source` · 처리가 끝나지 않음, `details.status`가 `done` 이 아님), 422 `AUDIO_FORMAT_UNSUPPORTED`(`details.supported=["m4a"]`), 413 `AUDIO_TOO_LARGE`, 422 `AUDIO_UPLOAD_FAILED`(저장소 오류. 다시 올리는 경우에도 기존 녹음은 그대로다). 저장소 설정 오류는 500.
-- 같은 파일로 다시 해도 같은 결과인 오류(`MEETING_DELETED`·`MEETING_NOT_FOUND`·`INVALID_REQUEST`·`AUDIO_FORMAT_UNSUPPORTED`·`AUDIO_TOO_LARGE`)는 AI 가 대기 항목을 지우고, 네트워크·5xx 같은 나머지는 남겨 다음 바퀴에 다시 올린다(AI 구현, `ai/capture/audio_outbox.py`).
+- 개인정보 세대: 이 API 는 `X-Privacy-Epoch` 를 보지 않는다. 탈퇴로 `identity_epoch` 가 올라간 공간이어도 헤더 없이(또는 옛 값으로) 올릴 수 있고 409 `PRIVACY_VERSION_CHANGED` 가 나오지 않는다. 녹음 바이트에는 신원 정보가 없고, 공동 공간 팀원 정리도 음성 바이트는 남긴다. 공간 전체 정리는 회의·공간을 지우므로 아래 404·410 으로 끝난다.
+- 오류: 404 `MEETING_NOT_FOUND`, 404 `WORKSPACE_NOT_FOUND`(삭제된 공간, `details.workspace_id`), 410 `MEETING_DELETED`(삭제된 회의. 올리는 사이 회의·공간이 지워졌으면 저장한 파일을 치운다), 400 `INVALID_REQUEST`(디스코드 회의가 아님, `details.source` · 처리가 끝나지 않음, `details.status`가 `done` 이 아님), 422 `AUDIO_FORMAT_UNSUPPORTED`(`details.supported=["m4a"]`), 413 `AUDIO_TOO_LARGE`, 422 `AUDIO_UPLOAD_FAILED`(저장소 오류. 다시 올리는 경우에도 기존 녹음은 그대로다). 저장소 설정 오류는 500.
+- 같은 파일로 다시 해도 같은 결과인 오류(`MEETING_DELETED`·`MEETING_NOT_FOUND`·`INVALID_REQUEST`·`AUDIO_FORMAT_UNSUPPORTED`·`AUDIO_TOO_LARGE`, 안전망으로 `PRIVACY_VERSION_CHANGED`)는 AI 가 대기 항목을 지운다. `WORKSPACE_NOT_FOUND`·`UNAUTHENTICATED`·`AUDIO_UPLOAD_FAILED`·네트워크·5xx 같은 나머지는 남겨 다시 올린다. 다시 올리는 간격은 실패할 때마다 늘린다(60초 × 2^(실패 횟수-1), 최대 1시간). 인계 7일이 지나면 올리지 않고 지운다(AI 구현, `ai/capture/audio_outbox.py`. `PRIVACY_VERSION_CHANGED` 안전망과 간격 늘리기는 #659 최종 수정에서 AI 파트가 반영한다).
 - AI 가 올리는 것(AI 구현): 인계가 끝난 디스코드 회의의 화자별 16kHz 모노 wav 를 트랙 샘플 0 에 맞춰 더해 m4a(AAC, 32kbps)로 섞은 파일이다. 그래서 발화의 `Source.start_ms`(근거 `evidence_at_ms`, 대본 `at_ms`)가 녹음 안 위치와 같다. 올리기 전까지 `recordings/audio_outbox/` 에 두고, 인계 7일이 지나면 올리지 않고 지운다. 공동 공간 팀원 정리는 이 항목을 남기고 공간 전체 정리만 지운다. BE 쪽 선택 근거는 [결정 기록](../plan/m5/basis-for-decision/2026-11-10-meeting-audio-s3-retention.md), AI 쪽 선택 근거는 [AI 결정 기록 0066](../../../ai/docs/basis_for_decision/ai/2026-11-10-0066-mix-discord-audio-and-upload-to-be.md)에 있다.
 - BE 가 이 파일을 내려 주는 곳: 웹의 `GET /meetings/{meeting_id}/audio`(done 은 팀원, 그 밖은 PM)와 `GET /meetings/{meeting_id}/minutes` 의 `audio`. 웹 계약은 [프론트엔드 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md)이 관리한다.
 
@@ -910,8 +911,10 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 | `INTEGRATION_NOT_CONNECTED` | 409 | guilds/{guild_id}/workspace | `/record`는 녹음을 시작하지 않고 연결 안내. 처리할 때는 BE 단계를 멈춤 |
 | `INVALID_REQUEST` | 400 | 요청 검증 실패 전부(speakers 포함) | 실패 |
 | `AUDIO_FORMAT_UNSUPPORTED` · `AUDIO_TOO_LARGE` | 422 · 413 | recording | 같은 파일로 다시 해도 같다. 대기 항목을 지운다 |
-| `AUDIO_UPLOAD_FAILED` | 422 | recording | 저장소 오류. 대기 항목을 남겨 다음 바퀴에 다시 올린다 |
+| `AUDIO_UPLOAD_FAILED` | 422 | recording | 저장소 오류. 대기 항목을 남겨 간격을 늘리며 다시 올린다 |
 | `MEETING_DELETED` | 410 | recording | 대기 항목을 지운다 |
+| `WORKSPACE_NOT_FOUND` · `UNAUTHENTICATED` | 404 · 401 | recording | 대기 항목을 남겨 간격을 늘리며(최대 1시간) 다시 올리고, 인계 7일 뒤 지운다 |
+| `PRIVACY_VERSION_CHANGED` | 409 | recording 에서는 나오지 않는다(세대를 보지 않는다) | 받으면 대기 항목을 지운다(안전망) |
 
 ## 코드 근거
 
