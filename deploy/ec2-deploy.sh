@@ -9,8 +9,9 @@
 # 문서·테스트·평가 데이터만 바뀐 파트는 건너뛴다. 봇 재시작은 진행 중인 녹음을 끊기 때문이다.
 # git 갱신은 이 스크립트 밖(deploy.yml)에서 한다. 실행 중인 스크립트 파일을 git 이 덮어쓰면 bash 가 바뀐 줄을 읽는다.
 #
-# 빌드·설치 출력은 ~/mm-deploy.log 에만 쓰고, 실패했을 때 끝부분만 보여 준다. SSM 은 출력의 앞 24,000자만 돌려줘서
-# 빌드 로그를 그대로 내보내면 뒤의 결과 줄이 잘리고, 저장소가 공개라 Actions 로그도 누구나 볼 수 있다.
+# 빌드·설치 출력과 실패한 유닛의 저널은 ~/mm-deploy.log 에만 쓰고, 실패해도 어느 단계인지만 출력한다.
+# SSM 출력은 공개 저장소의 Actions 로그에 그대로 실려 누구나 볼 수 있고, 오류 추적에 이름이나 회의 문장이 섞일 수 있다.
+# 직전 배포의 로그는 ~/mm-deploy.log.prev 에 하나 남긴다. 실패 뒤 다음 배포가 로그를 비워도 원인을 볼 수 있다.
 set -euo pipefail
 
 REPO=/opt/mm
@@ -28,6 +29,7 @@ CHAT_POLL_UNITS="ai/deploy/systemd/mm-chat-poll.service ai/deploy/systemd/mm-cha
 MODE=${2:-changed}
 
 cd "$REPO"
+mv -f "$LOG" "$LOG.prev" 2>/dev/null || true
 : > "$LOG"
 NEW=$(git rev-parse HEAD)
 if ! { [ -s "$STATE" ] && git cat-file -e "$(cat "$STATE")^{commit}" 2>/dev/null; }; then
@@ -45,14 +47,13 @@ changed() {
     | grep -vE '\.md$|/(docs|tests|decision_log|eval_results)/|/golden_set[^/]*/|^ai/stt/eval/' || true)" ]
 }
 
-# 명령 출력을 로그 파일에만 쓴다. 실패하면 끝부분을 보여 주고 실패로 돌아온다.
+# 명령 출력을 로그 파일에만 쓴다. 실패하면 어느 단계인지만 알리고 실패로 돌아온다.
 quiet() {
   local label=$1
   shift
   echo "-- $label" >> "$LOG"
   if ! "$@" >> "$LOG" 2>&1; then
-    echo "$label 실패. 서버의 $LOG 끝부분:" >&2
-    tail -n 30 "$LOG" >&2
+    echo "$label 실패. 서버의 $LOG 에서 '-- $label' 아래를 본다" >&2
     return 1
   fi
 }
@@ -90,8 +91,9 @@ restart_if_running() {
   sudo systemctl restart "$unit"
   sleep 10
   if ! systemctl is-active -q "$unit"; then
-    echo "$unit 이 다시 뜨지 않았다:" >&2
-    sudo journalctl -u "$unit" -n 15 --no-pager >&2 || true
+    echo "-- $unit 저널" >> "$LOG"
+    sudo journalctl -u "$unit" -n 15 --no-pager >> "$LOG" 2>&1 || true
+    echo "$unit 이 다시 뜨지 않았다. 서버의 $LOG 에서 '-- $unit 저널' 아래를 본다" >&2
     return 1
   fi
   echo "$unit 재시작"
