@@ -1,6 +1,6 @@
 # 승인과 충돌
 
-review·hold 항목은 승인 카드(`ApprovalRequest`)가 되고, PM 이 값을 고쳐 승인하거나 반려한다. 카드가 기다리는 동안 태스크도 카드도 바뀔 수 있어서, "PM 이 본 것과 반영되는 것이 같다"를 서버가 지켜야 한다. 코드는 [`api/approvals.py`](../../../backend/app/api/approvals.py), [`services/tasks.py`](../../../backend/app/services/tasks.py), [`services/pending_merge.py`](../../../backend/app/services/pending_merge.py).
+review·hold 항목은 승인 카드(`ApprovalRequest`)가 되고, PM 이 값을 고쳐 승인하거나 반려한다. 카드가 기다리는 동안 태스크도 카드도 바뀔 수 있어서, "PM 이 본 것과 반영되는 것이 같다"를 서버가 지켜야 한다. 코드는 [`api/approvals.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/api/approvals.py), [`services/tasks.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/tasks.py), [`services/pending_merge.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/pending_merge.py).
 
 ## 문제
 
@@ -77,13 +77,13 @@ sequenceDiagram
 
 ### 다른 회의 항목 합치기(#533)
 
-AI 가 유사 검색에서 승인 대기 `task_create` 카드를 고르면 `action=merge` 로 보낸다. BE 는 새 카드 대신 그 카드 payload 에 합친다([`pending_merge.py`](../../../backend/app/services/pending_merge.py), DB 를 만지지 않는 순수 함수).
+AI 가 유사 검색에서 승인 대기 `task_create` 카드를 고르면 `action=merge` 로 보낸다. BE 는 새 카드 대신 그 카드 payload 에 합친다([`pending_merge.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/pending_merge.py), DB 를 만지지 않는 순수 함수).
 
 - 새 마감·상태가 있으면 덮고, 마감 지우기는 전달되지 않는다. 제목·대표 근거는 처음 회의 것이고 뒤 회의 근거는 `merged_items` 에 쌓인다.
 - 담당자를 말한 항목(`category=assignee`)일 때만 카드 담당자를 바꾸고, 그 항목을 `assignee_item_id` 로 남긴다. 별칭은 이 항목에서만 배운다.
 - 대상 카드가 없거나 처리됐거나 다른 공간이면 400 대신 새 카드로 만든다(`merge_target_unavailable` 로그). 회의 전체를 막지 않는다.
 - 승인하면 그 카드에 연결된 모든 추출 항목에 같은 `task_id` 가 채워진다.
-- 회의를 지우면 남은 회의의 기여로 카드를 다시 구성하고, 마지막 기여가 지워지면 빈 카드를 남기지 않는다([meeting-deletion](../../../backend/docs/plan/m3/basis-for-decision/2026-11-09-meeting-deletion.md)).
+- 회의를 지우면 남은 회의의 기여로 카드를 다시 구성하고, 마지막 기여가 지워지면 빈 카드를 남기지 않는다([meeting-deletion](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m3/basis-for-decision/2026-11-09-meeting-deletion.md)).
 
 ### 범위 변경 이력(#544)
 
@@ -93,25 +93,25 @@ AI 가 유사 검색에서 승인 대기 `task_create` 카드를 고르면 `acti
 
 | 결정 | 비교한 대안 | 고른 이유 | 기록 |
 |---|---|---|---|
-| 카드 버전은 payload 해시 | 정수 컬럼 +1 / `updated_at` | 마이그레이션이 없고 payload 를 쓰는 코드가 늘어도 빠뜨릴 일이 없다 | [approval-payload-version](../../../backend/docs/plan/m6/basis-for-decision/2026-11-08-approval-payload-version.md) |
+| 카드 버전은 payload 해시 | 정수 컬럼 +1 / `updated_at` | 마이그레이션이 없고 payload 를 쓰는 코드가 늘어도 빠뜨릴 일이 없다 | [approval-payload-version](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m6/basis-for-decision/2026-11-08-approval-payload-version.md) |
 | 새 코드 `APPROVAL_CHANGED` | `APPROVAL_CONFLICT` 재사용 | FE 가 기존 409 details 를 태스크 충돌로 읽는다. 둘을 구분해 달라고 했다 | 같은 기록 |
 | 반려도 지문 검사 | 승인만 | 반려는 합쳐진 다른 회의 항목까지 반려한다 | 같은 기록 |
-| 합친 내용은 payload JSON 안 | 카드-항목 연결 테이블 | 모델·마이그레이션을 늘리지 않는다 | [pending-merge](../../../backend/docs/plan/m6/basis-for-decision/2026-11-07-pending-merge.md) |
+| 합친 내용은 payload JSON 안 | 카드-항목 연결 테이블 | 모델·마이그레이션을 늘리지 않는다 | [pending-merge](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m6/basis-for-decision/2026-11-07-pending-merge.md) |
 | 되돌리기는 삭제 + 생성 카드 | 태스크를 직접 고치게 함 | auto 가 틀렸을 때 위험한 건 값 하나보다 중복·오판이다. 그건 고칠 값이 없다 | `revert_auto_item` 주석 |
-| 범위는 이력 한 줄 | Task 에 범위 컬럼 | 대응하는 필드가 없다. 이력이면 타임라인에 보인다 | [scope-change-history](../../../backend/docs/plan/m6/basis-for-decision/2026-11-08-scope-change-history.md) |
+| 범위는 이력 한 줄 | Task 에 범위 컬럼 | 대응하는 필드가 없다. 이력이면 타임라인에 보인다 | [scope-change-history](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m6/basis-for-decision/2026-11-08-scope-change-history.md) |
 
 ## 어떻게 검증했나
 
 | 범위 | 테스트 |
 |---|---|
-| 기준값 충돌·`confirm_task_version`·제목 변경 | [`tests/api/test_approval_conflict.py`](../../../backend/tests/api/test_approval_conflict.py) |
+| 기준값 충돌·`confirm_task_version`·제목 변경 | [`tests/api/test_approval_conflict.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/tests/api/test_approval_conflict.py) |
 | 값 고쳐 승인, 고칠 수 있는 필드 | `tests/api/test_approval_task_overrides.py` |
-| payload 지문 409 | [`tests/api/test_approval_payload_version.py`](../../../backend/tests/api/test_approval_payload_version.py) |
+| payload 지문 409 | [`tests/api/test_approval_payload_version.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/tests/api/test_approval_payload_version.py) |
 | 합치기 규칙·합친 카드 승인·동시 합치기 | `tests/services/test_pending_merge.py`, `tests/api/test_approval_merged_card.py`, `tests/api/test_pending_merge_concurrency.py`(PostgreSQL) |
 | 범위 이력 | `tests/api/test_approval_scope_history.py`, `test_reply_scope_history.py` |
 | auto 되돌리기 | `tests/api/test_extractions_judge_auto.py`(revert 사례), `test_extraction_approval_status.py` |
 
-2026-11-08 범위 이력 작업 뒤 `pytest` 2285 passed, 1528 skipped(PostgreSQL 전용, CI 에서 돈다)([M6 결과](../../../backend/docs/plan/m6/result.md)).
+2026-11-08 범위 이력 작업 뒤 `pytest` 2285 passed, 1528 skipped(PostgreSQL 전용, CI 에서 돈다)([M6 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m6/result.md)).
 
 ## 한계와 다음 단계
 

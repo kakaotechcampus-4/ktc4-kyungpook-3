@@ -6,9 +6,9 @@
 
 | 구분 | 구성 요소 | 하는 일 | 위치 |
 |---|---|---|---|
-| Frontend | React 19 + Vite SPA (PWA) | PM·팀원 화면: 회의록, 승인, 태스크, 메시지, 설정 | [frontend/](../../frontend/README.md) |
-| Backend | FastAPI + PostgreSQL 16/pgvector | 인증·권한, 매칭, 게이트, 승인, 이력, 리마인드, Notion 동기화 | [backend/](../../backend/README.md) |
-| AI | 녹음 봇 `mm-bot` | Discord `/record`·`/stop`, 화자별 트랙 저장, 리마인드 DM | [ai/capture/](../../ai/README.md) |
+| Frontend | React 19 + Vite SPA (PWA) | PM·팀원 화면: 회의록, 승인, 태스크, 메시지, 설정 | [frontend/](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/README.md) |
+| Backend | FastAPI + PostgreSQL 16/pgvector | 인증·권한, 매칭, 게이트, 승인, 이력, 리마인드, Notion 동기화 | [backend/](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md) |
+| AI | 녹음 봇 `mm-bot` | Discord `/record`·`/stop`, 화자별 트랙 저장, 리마인드 DM | [ai/capture/](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/README.md) |
 | AI | 처리 워커 `mm-worker` | 전사 → 판단 → BE 인계, 업로드 가져가기, 회의 요약 | `ai/capture/worker.py` |
 | AI | 채팅 폴러 `mm-chat-poll` | 매일 09:00 KST 채팅 수집 | `ai/capture/chat_poll.py` |
 | 외부 | Discord | 음성·채팅·DM, OAuth | |
@@ -63,7 +63,7 @@ flowchart LR
 | 웹 업로드 | PM 이 음성 1개 업로드(최대 100MiB), `MM_UPLOAD_INTAKE=1` 인 워커가 가져감 | pyannoteAI → PM 이 라벨마다 팀원 지정 | 동일 | 디스코드 회의보다 먼저 처리 |
 | Discord 채팅 | PM 이 고른 채널, BE 커서 이후 메시지를 하루치 "채팅 회의"로 | 메시지 작성자 | 항상 judge | auto 를 review 로 낮춤 |
 
-근거: [프로젝트 상세 §3.2](../프로젝트%20상세%20설명.md), 결정 [0028](../../ai/docs/basis_for_decision/ai/2026-11-01-0028-manual-upload-hosted-diarization-and-diarized-state.md), [0042](../../ai/docs/basis_for_decision/ai/2026-11-04-0042-chat-daily-poll-as-chat-meeting.md).
+근거: [프로젝트 상세 §3.2](../프로젝트%20상세%20설명.md), 결정 [0028](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-01-0028-manual-upload-hosted-diarization-and-diarized-state.md), [0042](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-04-0042-chat-daily-poll-as-chat-meeting.md).
 
 ## 회의 하나의 처리 순서 (음성, judge 경로)
 
@@ -92,7 +92,7 @@ sequenceDiagram
 3. 판단 파이프라인([에이전트 설계](agent-design.md))이 `/extractions` 항목을 만든다.
 4. BE 가 담당자를 매칭하고 게이트(auto / review / hold)를 정한다. 기존 task 수정은 항상 review.
 5. PM 승인 → Task 반영 → Notion outbox 동기화.
-6. 인계가 끝난 회의의 트랙 음성은 워커가 지운다(포기한 회의는 7일 뒤, 결정 [0055](../../ai/docs/basis_for_decision/ai/2026-11-08-0055-meeting-audio-retention.md)).
+6. 인계가 끝난 회의의 트랙 음성은 워커가 지운다(포기한 회의는 7일 뒤, 결정 [0055](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-08-0055-meeting-audio-retention.md)).
 
 ## 단계 상태와 재시작 (매니페스트)
 
@@ -104,9 +104,9 @@ sequenceDiagram
 | 재시작 | 워커가 매니페스트를 읽어 마지막으로 끝난 단계 다음부터 다시 한다. 회의 단위 재시도는 대기를 두 배씩 늘리고 포기하면 `--retry` 로 7일 안에 다시 처리 |
 | 멱등 | `POST /extractions` 는 이미 `done` 이면 기존 결과를 돌려준다. 재전송이 중복 카드를 만들지 않는다 |
 | BE 회의 상태 | `created / recording / processing / awaiting_speakers / done / failed`, 처리 단계 `stt → sources → extract → handoff` 를 웹에 표시 |
-| 외부 작업 이어 받기 | pyannoteAI 는 제출만 하고 job ID 를 기록해 다음 바퀴에 결과를 조회(결정 [0040](../../ai/docs/basis_for_decision/ai/2026-11-03-0040-upload-intake-in-worker-submit-then-fetch.md)) |
+| 외부 작업 이어 받기 | pyannoteAI 는 제출만 하고 job ID 를 기록해 다음 바퀴에 결과를 조회(결정 [0040](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-03-0040-upload-intake-in-worker-submit-then-fetch.md)) |
 
-근거: 결정 [0017](../../ai/docs/basis_for_decision/member/2026-10-05-0017-transcript-sources-stage.md), [0026](../../ai/docs/basis_for_decision/member/2026-10-13-0026-worker-only.md).
+근거: 결정 [0017](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/member/2026-10-05-0017-transcript-sources-stage.md), [0026](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/member/2026-10-13-0026-worker-only.md).
 
 ## 기술 스택
 
@@ -132,13 +132,13 @@ sequenceDiagram
 | GPU 전사 자동 전환 (#581) | 실제 호출 연속 6번 실패 + Elice 확인 3번 실패 → Lambda 스위치로 g4dn.xlarge 를 켬. Elice 확인 3번 연속 성공이면 복귀, GPU 호출 10분 없으면 끔. 하루 6시간·누적 15시간($9.7) 상한. `manual` 로 배포 → 리허설 → `auto` 순서. 기본은 꺼짐(`MM_GPU_FAILOVER` 가 비면 꺼짐)이고 실제 Lambda·GPU 로는 아직 리허설하지 않았다 |
 
 - GPU 운영 모드(현재 `manual` 인지 `auto` 인지) **[확인 필요]**.
-- 상세: [배포 문서](../../deploy/README.md), [개발 배포 안내](../dev/deploy.md), 결정 [0039](../../ai/docs/basis_for_decision/ai/2026-11-04-0039-gpu-stt-server.md)·[0056](../../ai/docs/basis_for_decision/ai/2026-11-08-0056-gpu-stt-auto-failover.md).
+- 상세: [배포 문서](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md), [개발 배포 안내](../dev/deploy.md), 결정 [0039](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-04-0039-gpu-stt-server.md)·[0056](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-08-0056-gpu-stt-auto-failover.md).
 
 ## 왜 이 구조인가 (요약)
 
 | 결정 | 근거 수치 | 링크 |
 |---|---|---|
-| 외부 STT 기본, 로컬·GPU 는 장애 대응 | 로컬 turbo RTF 1.36(62분 회의 85분), Elice 65초. GPU 상시 운영 손익분기 월 오디오 1,863시간 | 결정 [0019](../../ai/docs/basis_for_decision/member/2026-10-07-0019-elice-api-default-local-fallback.md), [STT](../design/ai/stt.md) |
+| 외부 STT 기본, 로컬·GPU 는 장애 대응 | 로컬 turbo RTF 1.36(62분 회의 85분), Elice 65초. GPU 상시 운영 손익분기 월 오디오 1,863시간 | 결정 [0019](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/member/2026-10-07-0019-elice-api-default-local-fallback.md), [STT](../design/ai/stt.md) |
 | 회의 뒤 배치 전사 | 실시간 전사를 번복(0003 → 0008) | [STT](../design/ai/stt.md) |
 | AI 는 HTTP API 로만 BE 와 대화 | 서비스 토큰으로 봇 경로 보호 | [인터페이스](interface.md) |
 | Notion 은 outbox | 요청 안에서 Notion 을 부르지 않음, 재시도·중복 방지 | [요구사항·리스크](requirements-risks.md) |

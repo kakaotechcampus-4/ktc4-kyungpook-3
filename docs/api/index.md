@@ -10,7 +10,7 @@ Backend는 FastAPI가 코드에서 자동으로 만드는 OpenAPI 스펙을 API 
 | `/redoc` | ReDoc. 읽기 전용으로 훑어볼 때 |
 | `/openapi.json` | 원본 OpenAPI 스펙. Postman 등으로 가져올 때 |
 
-- 로컬: `http://localhost:8000/docs` ([Backend 실행 안내](../../backend/README.md))
+- 로컬: `http://localhost:8000/docs` ([Backend 실행 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md))
 - 배포 서버: `[확정 후 기입]`
 - 정적 페이지(포털): `[후속 작업 — CI에서 openapi.json을 뽑아 ReDoc 페이지로 배포]`
 
@@ -34,6 +34,6 @@ Backend는 FastAPI가 코드에서 자동으로 만드는 OpenAPI 스펙을 API 
 
 자동 생성 스펙에 담기지 않는 합의 상태·오류 규칙·흐름은 계약 문서에 있다.
 
-- [FE API 계약](../../frontend/docs/contracts/frontend-api-contract.md): 웹 화면이 쓰는 API
-- [BE·AI 계약](../../backend/docs/contracts/backend-ai-contract.md): AI 워커·봇이 쓰는 API
+- [FE API 계약](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/contracts/frontend-api-contract.md): 웹 화면이 쓰는 API
+- [BE·AI 계약](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/contracts/backend-ai-contract.md): AI 워커·봇이 쓰는 API
 - 요약: [테크스펙 — 인터페이스 명세](../techspec/interface.md)

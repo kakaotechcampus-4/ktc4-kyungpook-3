@@ -40,16 +40,16 @@
 | 1단계 후보 추출 | `judge.eval_golden_set` | 골든셋 325문장, 3회 | 긴 문장 306~309/325, 짧은 문장 14/15~16 (규칙 기반 227/325) (2026-10-02) | `ai/judge/eval_results/2026-10-02-final-main.json` |
 | 1인칭 화자 판별 | 같음 | 화자 세트 16건×3 | 담당 유형 57/57, 누적 171건 중 2건(약 1%) 오분류 (2026-11-07, #502) | [프로젝트 상세 §8.2](../프로젝트%20상세%20설명.md#82-판단-품질) |
 | Terra 변경 판단 | `judge.eval_final_judge` | 2단계 골든셋 26 | 26/26 두 번 (2026-09-28) | `ai/judge/golden_set_stage2/` |
-| 파이프라인 E2E | `judge.eval_pipeline` | 회의 1개, 기대 6개 (가짜 BE) | 6/6 을 6회 연속 (2026-09-29) | [결정 기록](../../ai/docs/basis_for_decision/ai/2026-09-29-judge-pipeline.md) |
-| 암묵적 진척 보고 | `judge.eval_golden_set` | 골든셋 58 | 새 사실 보고 12/12, 완료 오판 0 (2026-11-04) | [결정 기록](../../ai/docs/basis_for_decision/ai/2026-11-04-terra-implicit-progress-status.md) |
-| Jev 근거 검증 | `judge.eval_evidence --repeat 3` | 대사 217개 × 3회 = 651호출, 유형 A~H 8종 | 잘못된 certain 할 일 1/83(상한 6.5%), 마감 1/44(상한 11.8%), 대사 단위 (2026-11-07, #529) | [결정 기록](../../ai/docs/basis_for_decision/ai/2026-11-07-jev-evidence-eval-extended.md), `ai/judge/eval_results/2026-11-07-evidence-extended.json` |
-| Jev 근거 E2E | 실제 API → BE | 명시·흐린·없는 마감 | certain → auto 생성, inferred → review, missing (2026-11-07, #504) | [결정 기록](../../ai/docs/basis_for_decision/ai/2026-11-07-jev-evidence-e2e.md) |
+| 파이프라인 E2E | `judge.eval_pipeline` | 회의 1개, 기대 6개 (가짜 BE) | 6/6 을 6회 연속 (2026-09-29) | [결정 기록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-09-29-judge-pipeline.md) |
+| 암묵적 진척 보고 | `judge.eval_golden_set` | 골든셋 58 | 새 사실 보고 12/12, 완료 오판 0 (2026-11-04) | [결정 기록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-04-terra-implicit-progress-status.md) |
+| Jev 근거 검증 | `judge.eval_evidence --repeat 3` | 대사 217개 × 3회 = 651호출, 유형 A~H 8종 | 잘못된 certain 할 일 1/83(상한 6.5%), 마감 1/44(상한 11.8%), 대사 단위 (2026-11-07, #529) | [결정 기록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-07-jev-evidence-eval-extended.md), `ai/judge/eval_results/2026-11-07-evidence-extended.json` |
+| Jev 근거 E2E | 실제 API → BE | 명시·흐린·없는 마감 | certain → auto 생성, inferred → review, missing (2026-11-07, #504) | [결정 기록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-07-jev-evidence-e2e.md) |
 | 전사 오인식 검사 (합성) | 첫 구현의 평가 스크립트(설계 변경으로 지금은 없음) | 튜닝 / 처음 보는 세트 | 처음 보는 세트 93% 차단, 10% 오차단 (2026-11-07) — 가정한 오류 모양으로 잰 값이라 채택 근거로 쓰지 않음 | `ai/judge/eval_results/2026-11-07-asr-check-holdout.json` |
-| 전사 오인식 검사 (실제 STT) | `judge.eval_asr_real` | AI Hub KconfSpeech 4회의 1,397발화, 명사 오류 발화 230 | 명사 오류 47%(41~53%) 차단, 정상 19%(17~21%) 차단, Jev 기준 0.8 (2026-11-08, #532) | 결정 [0051](../../ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md) |
-| 리마인드 답장 판단 | `judge.eval_reply` | 합성 30건 × 2 | 나뉨 60/60, 자동 반영 정밀도 26/26, 잘못된 certain 0/38, 평균 9.4초 (2026-11-04) | [결정 기록](../../ai/docs/basis_for_decision/ai/2026-11-04-reminder-reply-judgment.md) |
+| 전사 오인식 검사 (실제 STT) | `judge.eval_asr_real` | AI Hub KconfSpeech 4회의 1,397발화, 명사 오류 발화 230 | 명사 오류 47%(41~53%) 차단, 정상 19%(17~21%) 차단, Jev 기준 0.8 (2026-11-08, #532) | 결정 [0051](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md) |
+| 리마인드 답장 판단 | `judge.eval_reply` | 합성 30건 × 2 | 나뉨 60/60, 자동 반영 정밀도 26/26, 잘못된 certain 0/38, 평균 9.4초 (2026-11-04) | [결정 기록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-04-reminder-reply-judgment.md) |
 | STT CER | `ai/stt/eval/` | 실제 회의 녹음(대본 정렬본) | 4.67% (2026-11-03), 업체 비교 녹음 6개 Elice 11.52% / OpenAI 10.22% / 리턴제로 11.17% / Soniox 7.54% (2026-10-14) | `ai/stt/eval/results/` |
 | GPU 전사 동등성 | `ai/stt/eval/` | 62.42분 회의 | CER Elice 와 같음, 159.8초 (2026-11-04) | `ai/stt/eval/results/2026-11-04-gpu-serving/` |
-| legacy 추출 | `extract.eval_golden_set` | 17케이스 | 할 일 83개 중 P 99%, R 94%, F1 96% (ai/extract/README.md 예시 출력 기준, 이 출력이 들어간 커밋 243f262e 2026-09-26) | [ai/extract/README.md](../../ai/extract/README.md) |
+| legacy 추출 | `extract.eval_golden_set` | 17케이스 | 할 일 83개 중 P 99%, R 94%, F1 96% (ai/extract/README.md 예시 출력 기준, 이 출력이 들어간 커밋 243f262e 2026-09-26) | [ai/extract/README.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/extract/README.md) |
 
 ### 평가 방식에서 지킨 것
 

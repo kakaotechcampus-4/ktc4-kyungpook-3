@@ -1,6 +1,6 @@
 # 근거 검증 (Jev)
 
-judge 새 항목마다 "할 일과 마감이 근거 원문에 명시됐나"를 값을 만든 모델이 아닌 판정 모델 Jev 에게 다시 묻는다. 결과 `certain / inferred / missing` 은 BE auto 조건의 핵심 입력이다. 코드는 [`ai/judge/evidence.py`](../../../ai/judge/evidence.py), [`ai/jev.py`](../../../ai/jev.py).
+judge 새 항목마다 "할 일과 마감이 근거 원문에 명시됐나"를 값을 만든 모델이 아닌 판정 모델 Jev 에게 다시 묻는다. 결과 `certain / inferred / missing` 은 BE auto 조건의 핵심 입력이다. 코드는 [`ai/judge/evidence.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/judge/evidence.py), [`ai/jev.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/jev.py).
 
 ## 입력
 
@@ -57,7 +57,7 @@ LLM 에게 자기가 만든 값의 상태를 매기게 하면 거의 다 `certai
 
 - 기준 0.8: BE 의 담당자 확정 기준과 맞춘 값이다. Jev 의 `confidence` 는 계산식이 공개되지 않았고 고른 답(no 일 수도)에 대한 값이라, 방향이 분명한 yes 확률을 쓴다.
 - 요일을 함께 준다: 첫 평가에서 Jev 가 "금요일까지"인데 토요일 날짜를 yes 0.82 로 통과시켰다. 요일을 넣은 뒤 같은 평가에서 잘못된 certain 0.
-- 자세한 비교: [결정 0031](../../../ai/docs/basis_for_decision/ai/2026-11-02-0031-evidence-status-by-source-check.md).
+- 자세한 비교: [결정 0031](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-02-0031-evidence-status-by-source-check.md).
 
 ## 어떻게 평가했나
 
@@ -67,9 +67,9 @@ LLM 에게 자기가 만든 값의 상태를 매기게 하면 거의 다 `certai
 
 ### 2차 (2026-11-07, #529): 대사 217개 × 3회 = Jev 651회
 
-- 데이터: [`judge/golden_set_evidence/`](../../../ai/judge/golden_set_evidence) 기존 28개 + 189개. 유형 A~H(명시 약속+마감 30, 마감 없음 18, 확정 아님 40, 마감 문제 38, 여러 줄 21, 제목과 원문 불일치 12, 전사 잡음 15, 채팅체 15). 189개 중 106개(56%)는 정답이 False(auto 로 새면 안 되는 것).
-- 방법: [`judge/eval_evidence.py`](../../../ai/judge/eval_evidence.py). 3회 반복은 독립 표본이 아니므로 **대사 단위**로 센다(한 번이라도 틀리면 틀린 대사). 반복은 흔들림을 보는 데만 쓴다.
-- 대사 라벨과 지표 계산은 [`tests/test_eval_evidence.py`](../../../ai/tests/test_eval_evidence.py) 가 실제 API 없이 지킨다.
+- 데이터: [`judge/golden_set_evidence/`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/ai/judge/golden_set_evidence) 기존 28개 + 189개. 유형 A~H(명시 약속+마감 30, 마감 없음 18, 확정 아님 40, 마감 문제 38, 여러 줄 21, 제목과 원문 불일치 12, 전사 잡음 15, 채팅체 15). 189개 중 106개(56%)는 정답이 False(auto 로 새면 안 되는 것).
+- 방법: [`judge/eval_evidence.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/judge/eval_evidence.py). 3회 반복은 독립 표본이 아니므로 **대사 단위**로 센다(한 번이라도 틀리면 틀린 대사). 반복은 흔들림을 보는 데만 쓴다.
+- 대사 라벨과 지표 계산은 [`tests/test_eval_evidence.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/tests/test_eval_evidence.py) 가 실제 API 없이 지킨다.
 
 | 판정 (대사 단위) | 잘못된 certain (auto 로 새는 쪽) | 95% 상한 | 놓친 certain (PM 확인이 느는 쪽) |
 |---|---|---|---|
@@ -95,11 +95,11 @@ LLM 에게 자기가 만든 값의 상태를 매기게 하면 거의 다 `certai
 - 마감은 0.85 에서 잘못된 certain 0 이지만 맞는 마감의 57% 만 certain 이 된다.
 - 반복 사이에 판정이 바뀐 것은 11개, 모두 마감, yes 0.75~0.86 구간이다.
 - 유형별로 확정 아님(C) 0/40(상한 8.8%), 마감 문제(D) 0/30(상한 11.4%). 잘못된 certain 은 F(1/12)와 G(1/7)에서만 나왔다.
-- 결론: **0.8 유지.** 결과 요약 [`eval_results/2026-11-07-evidence-extended.json`](../../../ai/judge/eval_results/2026-11-07-evidence-extended.json), 기록 [jev-evidence-eval-extended](../../../ai/docs/basis_for_decision/ai/2026-11-07-jev-evidence-eval-extended.md).
+- 결론: **0.8 유지.** 결과 요약 [`eval_results/2026-11-07-evidence-extended.json`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/judge/eval_results/2026-11-07-evidence-extended.json), 기록 [jev-evidence-eval-extended](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-07-jev-evidence-eval-extended.md).
 
 ### E2E (2026-11-07, PR #504)
 
-실제 Jev → BE 까지 돌려 명시 마감 certain(yes 0.95) → auto 태스크 생성, 흐린 마감 inferred(unclear 0.88) → review, 마감 없음 → missing 을 확인했다([jev-evidence-e2e](../../../ai/docs/basis_for_decision/ai/2026-11-07-jev-evidence-e2e.md)).
+실제 Jev → BE 까지 돌려 명시 마감 certain(yes 0.95) → auto 태스크 생성, 흐린 마감 inferred(unclear 0.88) → review, 마감 없음 → missing 을 확인했다([jev-evidence-e2e](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-07-jev-evidence-e2e.md)).
 
 ## 신뢰 상한을 어떻게 읽나
 

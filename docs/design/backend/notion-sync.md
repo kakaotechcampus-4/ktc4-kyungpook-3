@@ -1,6 +1,6 @@
 # Notion 동기화
 
-승인된 태스크를 팀의 Notion 보드에 반영한다. 방향은 **BE → Notion 한 방향** 이다(Notion 에서 고친 값을 읽어 오는 코드는 없다). 코드는 연결 [`notion_oauth.py`](../../../backend/app/services/notion_oauth.py)·[`notion_connect.py`](../../../backend/app/services/notion_connect.py)·[`api/integrations.py`](../../../backend/app/api/integrations.py), 반영 [`notion_sync.py`](../../../backend/app/services/notion_sync.py)·[`notion.py`](../../../backend/app/services/notion.py).
+승인된 태스크를 팀의 Notion 보드에 반영한다. 방향은 **BE → Notion 한 방향** 이다(Notion 에서 고친 값을 읽어 오는 코드는 없다). 코드는 연결 [`notion_oauth.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/notion_oauth.py)·[`notion_connect.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/notion_connect.py)·[`api/integrations.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/api/integrations.py), 반영 [`notion_sync.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/notion_sync.py)·[`notion.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/notion.py).
 
 ## 문제
 
@@ -91,13 +91,13 @@ flowchart LR
 | 실패 연결은 토큰만 비움 | 행 삭제 | "연결한 적 없음"과 "끊김"을 PM 이 구분해야 다시 연결한다 |
 | DB 찾기는 응답 뒤 | callback 에서 기다림 | 복제에 십몇 초 걸린다 |
 
-결정 기록은 `backend/docs/plan` 에 따로 없고 근거는 모듈 머리 주석과 [backend README Notion 연동](../../../backend/README.md#notion-연동)에 있다.
+결정 기록은 `backend/docs/plan` 에 따로 없고 근거는 모듈 머리 주석과 [backend README Notion 연동](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md#notion-연동)에 있다.
 
 ## 어떻게 검증했나
 
 | 범위 | 테스트 |
 |---|---|
-| outbox·재시도·버전 건너뛰기·결과 모르는 생성·토큰 갱신 | [`tests/services/test_notion_sync.py`](../../../backend/tests/services/test_notion_sync.py) |
+| outbox·재시도·버전 건너뛰기·결과 모르는 생성·토큰 갱신 | [`tests/services/test_notion_sync.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/tests/services/test_notion_sync.py) |
 | Notion API 호출 모양·오류 분류 | `tests/services/test_notion.py` |
 | 템플릿 DB 찾기·속성 확인·토큰 비우기 | `tests/services/test_notion_connect.py` |
 | OAuth 주소·state·callback 갈래 | `tests/services/test_notion_oauth.py`, `tests/api/test_notion_oauth_api.py` |

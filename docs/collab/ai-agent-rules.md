@@ -27,11 +27,11 @@ flowchart TD
 
 | 파일 | 역할 |
 |---|---|
-| [CLAUDE.md](../../CLAUDE.md) · [AGENTS.md](../../AGENTS.md) | 도구별 진입점. 내용은 "공통 규칙을 먼저 읽는다"와 그 도구에만 필요한 지침뿐이다 |
+| [CLAUDE.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/CLAUDE.md) · [AGENTS.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/AGENTS.md) | 도구별 진입점. 내용은 "공통 규칙을 먼저 읽는다"와 그 도구에만 필요한 지침뿐이다 |
 | [docs/agent-rules.md](../agent-rules.md) | 작업 시작 절차, 수정 범위(보호 문서), 개발 후 기록 의무, 스킬 선택 기준, 마무리 점검 |
-| [docs/README.md](../README.md) | 문서 경로별 작성 주체·시점·내용 표 |
-| [.agents/README.md](../../.agents/README.md) | 팀 스킬 목록, 호출 예시, 원본·배포본 동기화 방법 |
-| [ai/CLAUDE.md](../../ai/CLAUDE.md) | AI 파트 "지도". 100줄 안팎을 유지하고 자세한 내용은 링크한다(#242) |
+| [docs/README.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/docs/README.md) | 문서 경로별 작성 주체·시점·내용 표 |
+| [.agents/README.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.agents/README.md) | 팀 스킬 목록, 호출 예시, 원본·배포본 동기화 방법 |
+| [ai/CLAUDE.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/CLAUDE.md) | AI 파트 "지도". 100줄 안팎을 유지하고 자세한 내용은 링크한다(#242) |
 | `.claude/settings.json`(루트·파트별) | 팀 공통 설정: 기본 모델, `.env` 계열 읽기·편집 차단(#240) |
 
 ### 공통 규칙의 핵심
@@ -57,7 +57,7 @@ flowchart TD
 
 ## 3. 팀 스킬
 
-`.agents/skills/` 가 원본이고 `.claude/skills/` 는 같은 내용을 복사한 배포본이다. 두 경로를 함께 Git 으로 관리하고, 동기화 스크립트 없이 수정 때 양쪽을 같이 고쳐 함께 커밋한다([.agents/README.md](../../.agents/README.md)).
+`.agents/skills/` 가 원본이고 `.claude/skills/` 는 같은 내용을 복사한 배포본이다. 두 경로를 함께 Git 으로 관리하고, 동기화 스크립트 없이 수정 때 양쪽을 같이 고쳐 함께 커밋한다([.agents/README.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.agents/README.md)).
 
 | 스킬 | 언제 | 하지 않는 것 |
 |---|---|---|
@@ -92,7 +92,7 @@ AI 파트는 기능 하나를 "설계 → 테스트 먼저 구현 → 셀프 리
 
 연결 장치:
 
-- 이슈 템플릿 [AI Feature (하네스)](../../.github/ISSUE_TEMPLATE/ai-feature.md): 목표, 먼저 읽을 것, 범위 안/밖, 지킬 것, 설계에서 같이 정할 것, 완료 조건, **선행 이슈**. `/mm-harness:ai-feature #번호` 로 부르면 이슈 본문을 요청으로 읽는다.
+- 이슈 템플릿 [AI Feature (하네스)](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/ISSUE_TEMPLATE/ai-feature.md): 목표, 먼저 읽을 것, 범위 안/밖, 지킬 것, 설계에서 같이 정할 것, 완료 조건, **선행 이슈**. `/mm-harness:ai-feature #번호` 로 부르면 이슈 본문을 요청으로 읽는다.
 - 선행 이슈가 닫히거나 `합의됨` 라벨이 붙기 전에는 하네스가 구현 전에 멈추고 묻는다. 합의되면 `ai-handoff-agreed.yml` 이 팀 Discord 에 알린다([그라운드룰](ground-rules.md#2-파트-간-계약과-요청)).
 - 하네스로 만든 PR 본문은 "요약 / 설계 / 변경 / 검증 / 사람이 확인할 것 / 기록 / 다른 파트 전달" 구조로 나온다(예: #526, #529, #532). "돌리지 못한 것"과 "사람이 확인할 것"을 따로 적는 것이 특징이다.
 
@@ -109,7 +109,7 @@ AI 파트는 기능 하나를 "설계 → 테스트 먼저 구현 → 셀프 리
 
 | 구분 | AI 작성 | 사람 작성 |
 |---|---|---|
-| AI 파트 진행 로그·결정 기록 | [ai/docs/basis_for_decision/ai/](../../ai/docs/basis_for_decision/ai/) — 93개 | [ai/docs/basis_for_decision/member/](../../ai/docs/basis_for_decision/member/) — 47개 |
+| AI 파트 진행 로그·결정 기록 | [ai/docs/basis_for_decision/ai/](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/ai/docs/basis_for_decision/ai) — 93개 | [ai/docs/basis_for_decision/member/](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/ai/docs/basis_for_decision/member) — 47개 |
 | 판별 기준 | 커밋에 `Co-Authored-By: Claude` 가 붙는 경우 | 팀원이 직접 쓴 경우 |
 | 트러블슈팅 | 쓰지 않는다. 정리안만 제시(`troubleshooting-review`) | `*/docs/plan/mN/trouble-shooting/` 에 사람이 작성 |
 | 커밋 | 본문 끝에 `Co-Authored-By: Claude …` | 없음 |
@@ -117,7 +117,7 @@ AI 파트는 기능 하나를 "설계 → 테스트 먼저 구현 → 셀프 리
 
 (파일 수는 2026-11-09 `ls` 기준.)
 
-- 기준은 [ai/docs/README.md](../../ai/docs/README.md) 에 있다. 진행 로그(`YYYY-MM-DD-제목.md`)와 결정 기록(`YYYY-MM-DD-NNNN-제목.md`)을 같은 폴더에 두고, 작성 주체로만 `ai/` 와 `member/` 를 나눈다.
+- 기준은 [ai/docs/README.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/README.md) 에 있다. 진행 로그(`YYYY-MM-DD-제목.md`)와 결정 기록(`YYYY-MM-DD-NNNN-제목.md`)을 같은 폴더에 두고, 작성 주체로만 `ai/` 와 `member/` 를 나눈다.
 - 한계: 규칙이지만 실제로는 섞여 있다. `member/` 폴더 파일 중 상당수(추가 커밋 기준 약 절반)가 Claude 공동 작성 커밋으로 들어왔다. 폴더만으로 작성 주체를 단정할 수 없다.
 - 효과: 리뷰어는 AI 가 쓴 근거를 더 의심하며 읽을 수 있고, 사람의 판단·회고(트러블슈팅)는 에이전트가 덮어쓰지 않는다.
 - develop 최근 비머지 커밋 2,000개 중 약 240개의 본문에 `Co-Authored-By: Claude` 가 있다(2026-11-09 `git log` 기준). 도구별 실제 사용 비율은 이 표시만으로 단정할 수 없다 `[확인 필요]`.

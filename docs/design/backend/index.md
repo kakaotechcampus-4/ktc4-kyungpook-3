@@ -39,7 +39,7 @@ flowchart TD
     BG[그 밖의 워커<br/>업로드 정리·세션 정리·임베딩·회의 삭제] -.-> TASK
 ```
 
-AI 는 값과 근거 상태를 만들 뿐이다. 태스크를 만들지, PM 에게 물을지, 언제 DM 을 보낼지는 모두 BE 가 정한다. 워커는 모두 API 프로세스 안의 스레드로 돈다([`app/main.py`](../../../backend/app/main.py) lifespan, 운영은 `--workers 1`).
+AI 는 값과 근거 상태를 만들 뿐이다. 태스크를 만들지, PM 에게 물을지, 언제 DM 을 보낼지는 모두 BE 가 정한다. 워커는 모두 API 프로세스 안의 스레드로 돈다([`app/main.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/main.py) lifespan, 운영은 `--workers 1`).
 
 ## 쪽 목록
 
@@ -53,7 +53,7 @@ AI 는 값과 근거 상태를 만들 뿐이다. 태스크를 만들지, PM 에�
 
 ## 도메인 모델 요약
 
-원본은 [`backend/app/models/models.py`](../../../backend/app/models/models.py)(테이블 45개). 묶음별로 줄였다.
+원본은 [`backend/app/models/models.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/models/models.py)(테이블 45개). 묶음별로 줄였다.
 
 | 묶음 | 테이블 | 핵심 |
 |---|---|---|
@@ -79,7 +79,7 @@ AI 는 값과 근거 상태를 만들 뿐이다. 태스크를 만들지, PM 에�
 
 ## 관련 문서
 
-- 파트 안내: [`backend/README.md`](../../../backend/README.md), 문서 안내 [`backend/docs/README.md`](../../../backend/docs/README.md)
-- 계약: [BE↔AI](../../../backend/docs/contracts/backend-ai-contract.md), [FE API](../../../frontend/docs/contracts/frontend-api-contract.md)
+- 파트 안내: [`backend/README.md`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md), 문서 안내 [`backend/docs/README.md`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/README.md)
+- 계약: [BE↔AI](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/contracts/backend-ai-contract.md), [FE API](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/contracts/frontend-api-contract.md)
 - AI 쪽 판단: [AI 판단 심화](../ai/index.md)
 - 테크스펙: [아키텍처](../../techspec/architecture.md), [인터페이스](../../techspec/interface.md), [요구사항·리스크](../../techspec/requirements-risks.md)

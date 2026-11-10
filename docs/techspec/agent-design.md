@@ -20,7 +20,7 @@ flowchart TD
 ```
 
 - 코드: `ai/judge/pipeline.py`(`run`, `to_item`), `ai/judge/semantic_judge.py`, `ai/judge/final_judge.py`, `ai/draft/doc_draft.py`, `ai/judge/evidence.py`, `ai/judge/asr_check.py`, BE `backend/app/services/matching.py`, `backend/app/api/extractions.py`.
-- 시작 결정 기록: [2026-09-29 판단 파이프라인](../../ai/docs/basis_for_decision/ai/2026-09-29-judge-pipeline.md).
+- 시작 결정 기록: [2026-09-29 판단 파이프라인](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-09-29-judge-pipeline.md).
 
 ## 단계별 명세
 
@@ -34,7 +34,7 @@ flowchart TD
 | ⑥ | 전사 오인식 검사 | kiwipiepy 형태소 + 용어 목록 + Jev(⑤와 같은 호출) | 제목 명사 중 용어 목록에 없는 말, 발음이 가까운 후보 최대 5개 | `asr_suspects[]` | Jev 실패·분석기 실패 → `check_failed`(보수적으로 막음). 채팅·수정 항목은 검사 안 함 |
 | ⑦ | 게이트 | BE `auto_blockers`, `decide_create_gate` | item + 담당자 매칭 결과 | auto / review / hold | 아래 표 |
 
-- 판단 못 한 finding 이 남으면 파이프라인을 최대 2번 다시 돌리고, 결과는 실행 하나를 고르지 않고 얘기 단위로 합친다(결정 [0016](../../ai/docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md), [0054](../../ai/docs/basis_for_decision/ai/2026-11-07-0054-merge-judge-reruns-by-story.md)).
+- 판단 못 한 finding 이 남으면 파이프라인을 최대 2번 다시 돌리고, 결과는 실행 하나를 고르지 않고 얘기 단위로 합친다(결정 [0016](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md), [0054](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-07-0054-merge-judge-reruns-by-story.md)).
 - 상대 날짜("내일")의 기준일은 회의 날짜다. 채팅은 메시지 작성일(KST).
 
 ## 상태: 값마다 출처가 하나
@@ -84,20 +84,20 @@ auto 로 만든 태스크도 PM 이 되돌릴 수 있다(태스크를 소프트 
 
 | 선택 | 이유 | 근거 |
 |---|---|---|
-| 만든 모델이 스스로 채점하지 않게 Jev 분리 | 값을 만든 LLM 의 자기 표시는 거의 다 certain. 다른 모델에 "근거 원문에 명시됐나"를 다시 묻고 yes 확률 0.8 이상만 certain | 결정 [0031](../../ai/docs/basis_for_decision/ai/2026-11-02-0031-evidence-status-by-source-check.md), [근거 검증](../design/ai/evidence-check.md) |
-| 기존 task 변경 판단을 분리(②③) | "금요일까지로 미루죠" 같은 변경을 새 할 일과 구분. 임베딩으로 후보를 좁히고 Terra 가 현재 값과 비교 | 결정 [0010](../../ai/docs/basis_for_decision/ai/2026-09-22-0010-embedding-similarity-threshold.md)(threshold 0.4 = 명확한 불일치 최고 0.33 과 명확한 매치 최저 0.42 사이), [0011](../../ai/docs/basis_for_decision/ai/2026-09-23-0011-final-judge-no-rules-fallback-and-candidate-index.md) |
+| 만든 모델이 스스로 채점하지 않게 Jev 분리 | 값을 만든 LLM 의 자기 표시는 거의 다 certain. 다른 모델에 "근거 원문에 명시됐나"를 다시 묻고 yes 확률 0.8 이상만 certain | 결정 [0031](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-02-0031-evidence-status-by-source-check.md), [근거 검증](../design/ai/evidence-check.md) |
+| 기존 task 변경 판단을 분리(②③) | "금요일까지로 미루죠" 같은 변경을 새 할 일과 구분. 임베딩으로 후보를 좁히고 Terra 가 현재 값과 비교 | 결정 [0010](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-09-22-0010-embedding-similarity-threshold.md)(threshold 0.4 = 명확한 불일치 최고 0.33 과 명확한 매치 최저 0.42 사이), [0011](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-09-23-0011-final-judge-no-rules-fallback-and-candidate-index.md) |
 | 숫자 점수 대신 조건 게이트 | 탈락 사유를 PM 에게 보일 수 있고 감사·재현 가능 | BE #232 |
-| 근거 검증과 오인식 검사를 같은 Jev 호출로 | 호출 수가 늘지 않음 | 결정 [0051](../../ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md), [전사 오인식 검사](../design/ai/asr-check.md) |
+| 근거 검증과 오인식 검사를 같은 Jev 호출로 | 호출 수가 늘지 않음 | 결정 [0051](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md), [전사 오인식 검사](../design/ai/asr-check.md) |
 | 수정 항목은 항상 PM 확인 | 유사도·판단이 틀리면 기존 데이터를 망가뜨림. 승인 때 409 충돌 검사 | [요구사항·리스크](requirements-risks.md) |
 
 ## 같은 구조를 쓰는 다른 에이전트
 
 | 에이전트 | 흐름 | 자동 반영 조건 | 링크 |
 |---|---|---|---|
-| 리마인드 답장 판단 | 팀원 DM 답장 → 회의 파이프라인에 넣어 상태·마감·담당 변경 판단 → Jev 상태 검증 | 상태 변경이 certain, 본인, 판단이 본 값이 지금도 그대로일 때만 BE 가 반영. 나머지는 PM 확인 카드 | `ai/judge/reply.py`, 결정 [0043](../../ai/docs/basis_for_decision/ai/2026-11-04-0043-reminder-reply-judgment.md), [답장 판단](../design/ai/reply-judgment.md) |
+| 리마인드 답장 판단 | 팀원 DM 답장 → 회의 파이프라인에 넣어 상태·마감·담당 변경 판단 → Jev 상태 검증 | 상태 변경이 certain, 본인, 판단이 본 값이 지금도 그대로일 때만 BE 가 반영. 나머지는 PM 확인 카드 | `ai/judge/reply.py`, 결정 [0043](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-04-0043-reminder-reply-judgment.md), [답장 판단](../design/ai/reply-judgment.md) |
 | 리마인드 문구 초안 | BE 가 묶음을 내주면 Luna 가 DM 가운데 문구 작성 → PM 승인 뒤 발송 | 자동 발송 없음(설정으로 묶음 자동 승인 가능) | `ai/draft/reminder_draft.py` |
-| 회의 요약 | 인계 뒤 BE 요약 대기열 → Luna 요약 → BE 저장 | — | BE 계약 [회의 요약](../../backend/docs/contracts/backend-ai-contract.md#회의-요약) |
+| 회의 요약 | 인계 뒤 BE 요약 대기열 → Luna 요약 → BE 저장 | — | BE 계약 [회의 요약](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/contracts/backend-ai-contract.md#회의-요약) |
 
 ## legacy 경로
 
-`MM_EXTRACT_PATH` 코드 기본값은 `legacy`(LLM 두 번: 관련 문장 필터 → 구조화 추출, 확신도 0.8/0.5 로 게이트)다. Jev 근거 상태·오인식 검사는 judge 경로에서만 쓰인다. 운영 서버의 `MM_EXTRACT_PATH` 값 **[확인 필요]**. 상세: [ai/extract/README.md](../../ai/extract/README.md).
+`MM_EXTRACT_PATH` 코드 기본값은 `legacy`(LLM 두 번: 관련 문장 필터 → 구조화 추출, 확신도 0.8/0.5 로 게이트)다. Jev 근거 상태·오인식 검사는 judge 경로에서만 쓰인다. 운영 서버의 `MM_EXTRACT_PATH` 값 **[확인 필요]**. 상세: [ai/extract/README.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/extract/README.md).

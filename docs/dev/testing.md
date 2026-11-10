@@ -11,7 +11,7 @@
 | ai | LLM·Jev·임베딩은 Null/Fake 클라이언트, 백엔드는 `tests/capture/fake_be.py`(BE 회의 API 의 상태 전이·409 를 흉내 냄), py-cord 없이 스텁 데이터로 돈다 |
 
 - 실제 API 를 부르는 측정은 **평가 스크립트**로 따로 두고 손으로 돌린다(과금·키 필요). CI 에 넣지 않는다.
-- DB 가 없어서 건너뛴(skip) 검사를 통과로 세지 않는다([backend README](../../backend/README.md#실행)).
+- DB 가 없어서 건너뛴(skip) 검사를 통과로 세지 않는다([backend README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md#실행)).
 
 ## 실행 명령
 
@@ -114,4 +114,4 @@ flowchart TB
 ## 관련 문서
 
 - [테스트 전략](../techspec/test-strategy.md) · [배포·CI](deploy.md) · [로컬 실행](local-setup.md)
-- [frontend README](../../frontend/README.md#검사) · [backend README](../../backend/README.md) · [ai README](../../ai/README.md#테스트)
+- [frontend README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/README.md#검사) · [backend README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md) · [ai README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/README.md#테스트)

@@ -4,9 +4,9 @@
 
 | 파트 | 예시 파일 | 읽는 곳 |
 |---|---|---|
-| frontend | [`frontend/.env.example`](../../frontend/.env.example) | Vite (`VITE_*` 는 브라우저 번들에 들어간다) |
-| backend | [`backend/.env.example`](../../backend/.env.example) | `run.sh`(로컬), `docker-compose.prod.yml`(운영) |
-| ai | [`ai/.env.example`](../../ai/.env.example) | `ai/shared/config.py`, 일부 모듈이 `os.environ` 에서 직접 |
+| frontend | [`frontend/.env.example`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/.env.example) | Vite (`VITE_*` 는 브라우저 번들에 들어간다) |
+| backend | [`backend/.env.example`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/.env.example) | `run.sh`(로컬), `docker-compose.prod.yml`(운영) |
+| ai | [`ai/.env.example`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/.env.example) | `ai/shared/config.py`, 일부 모듈이 `os.environ` 에서 직접 |
 
 > 비밀키·OAuth client secret 은 프론트엔드 환경 변수에 두지 않는다. `VITE_*` 값은 누구나 볼 수 있다.
 
@@ -17,13 +17,13 @@
 | 이름 | 파트 | 값 | 의미 | 운영 메모 |
 |---|---|---|---|---|
 | `AUTO_CREATE_ENABLED` | BE | true(기본) / false·0·off·no | 확신도가 높은 새 항목을 PM 확인 없이 태스크로 만든다(auto). 끄면 auto 를 review 로 내린다. 모르는 값은 꺼짐 | 처음 운영은 끄고 검증 결과·PM 승인 기록을 본 뒤 여는 것을 권한다(#382, #526). 바꾸면 `docker compose ... up -d` 로 컨테이너를 다시 만든다(restart 로는 반영 안 됨). 운영값 [확인 필요] |
-| `MEETING_DELETION_ENABLED` | BE | false(기본) / 정확히 소문자 `true` 만 켜짐(True·1·on 은 꺼짐). `AUTO_CREATE_ENABLED` 와 다르다 | 회의 삭제 API·UI 를 연다. 꺼져 있으면 DELETE 가 503 | 구 봇 교체와 녹음 계보 검증 뒤에만 켠다([deploy README](../../deploy/README.md#회의-삭제-활성화-576)) |
+| `MEETING_DELETION_ENABLED` | BE | false(기본) / 정확히 소문자 `true` 만 켜짐(True·1·on 은 꺼짐). `AUTO_CREATE_ENABLED` 와 다르다 | 회의 삭제 API·UI 를 연다. 꺼져 있으면 DELETE 가 503 | 구 봇 교체와 녹음 계보 검증 뒤에만 켠다([deploy README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md#회의-삭제-활성화-576)) |
 | `UPLOAD_MAX_BYTES` | BE | 바이트 (예시 104857600 = 100MiB) | 웹 녹음 업로드 한도 | 바꾸면 프론트 한도(`uploadPolicy`)도 같이 바꾼다 |
 | `MM_EXTRACT_PATH` | AI | 비움·legacy / judge | 할 일 추출 경로. judge 는 판단 파이프라인(`judge/pipeline.py`) | judge 는 `TERRA_*`, `LUNA_*`, `BE_*` 가 모두 있어야 돈다. Jev 근거 상태는 judge 에서만 쓴다. 운영값 [확인 필요] |
 | `MM_STT_BACKEND` | AI | local(기본) / elice | 전사 백엔드. local 은 로컬 Whisper(`MM_STT_MODEL`, 기본 large-v3-turbo) | 운영은 elice 로 본다(`ai/deploy/gpu-stt/README.md`: "워커는 지금처럼 Elice 만 쓴다"). `.env.example` 에는 없다 |
 | `MM_GPU_FAILOVER` | AI | off(기본) / manual / auto | Elice 전사가 계속 실패하면 GPU 대기 서버로 넘길지 | `MM_STT_BACKEND=elice` 일 때만 돈다. 절차는 `ai/deploy/gpu-stt/README.md` |
 | `MM_UPLOAD_INTAKE` | AI | 비움(끔) / 1 | 워커가 BE 의 웹 업로드를 가져와 pyannoteAI 로 화자 분리한다(과금) | BE claim 계약이 워커 한 대 전제라 **운영 서버 한 대에서만** 켠다 |
-| `MM_SUMMARY_LLM` | AI | 비움(끔) / luna / terra | 회의 요약 생성 모델 | 운영은 `mm-worker` systemd drop-in 으로 `luna` 를 설치한다([deploy README](../../deploy/README.md#자동-회의-요약-560)) |
+| `MM_SUMMARY_LLM` | AI | 비움(끔) / luna / terra | 회의 요약 생성 모델 | 운영은 `mm-worker` systemd drop-in 으로 `luna` 를 설치한다([deploy README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md#자동-회의-요약-560)) |
 | `DISCORD_GUILD_ID` | AI | 길드 ID / 비움 | 슬래시 명령을 한 서버에만 즉시 등록 | **운영에선 비운다.** 비우면 글로벌 등록이라 연결한 모든 서버에서 명령이 보인다(반영까지 최대 1시간). 개발 서버에서만 채운다 |
 | `PM_AGENT_LLM` | AI | 비움 / off | off 면 키가 있어도 LLM 을 부르지 않는다(Terra·Luna·추출 공통, 임베딩 무관) | 개발·테스트용 |
 | `MM_DEBUG_REPORT` | AI | 비움 / 1·on·true | 단계 시작·회의록 파일·처리 시간을 채널에 더 올린다 | 운영에서는 비운다 |
@@ -105,4 +105,4 @@
 ## 관련 문서
 
 - [로컬 실행](local-setup.md) · [배포](deploy.md)
-- [backend README](../../backend/README.md) · [ai README](../../ai/README.md) · [deploy README](../../deploy/README.md)
+- [backend README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md) · [ai README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/README.md) · [deploy README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md)

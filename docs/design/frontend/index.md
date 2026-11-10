@@ -5,26 +5,26 @@ PM·팀원이 AI 결과를 확인하고 고치는 웹 화면의 설계 선택과
 ## 이 쪽들을 읽는 법
 
 - 쪽마다 **문제 → 동작 → 왜 이 방식인가 → 어떻게 검증했나 → 한계와 다음 단계** 순서로 쓴다.
-- 결정 번호 `D-xxx` 는 [제품·기술 결정](../../../frontend/docs/decision/frontend-decisions.md), 날짜 이름 문서는 마일스톤별 `basis-for-decision/`, `#번호` 는 GitHub 이슈·PR 이다.
+- 결정 번호 `D-xxx` 는 [제품·기술 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/decision/frontend-decisions.md), 날짜 이름 문서는 마일스톤별 `basis-for-decision/`, `#번호` 는 GitHub 이슈·PR 이다.
 - 검증 대부분은 MSW(모의 API) 위의 Vitest·Playwright 다. 실서버·실기기에서 확인하지 않은 것은 쪽마다 "한계"에 따로 적었다.
 
 ## 구조 한 장
 
 | 항목 | 선택 | 근거 |
 |---|---|---|
-| 기본 | React 19, TypeScript, Vite 8, Node 24 고정 | [package.json](../../../frontend/package.json), D-107·D-127 |
-| 라우팅 | React Router 7, 모든 화면 lazy 로딩 + 화면별 오류 경계 | [routes.tsx](../../../frontend/src/app/router/routes.tsx) |
+| 기본 | React 19, TypeScript, Vite 8, Node 24 고정 | [package.json](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/package.json), D-107·D-127 |
+| 라우팅 | React Router 7, 모든 화면 lazy 로딩 + 화면별 오류 경계 | [routes.tsx](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/src/app/router/routes.tsx) |
 | 서버 데이터 | TanStack Query 5. 화면 상태(필터·보기)는 URL | D-110, D-132 |
 | UI 상태 | Zustand(토스트·처리 추적 등 UI 상태만) | D-109, D-110 |
-| 폼·검증 | React Hook Form + zod. API 응답도 zod 로 검증(#348) | D-111, [D-184](../../../frontend/docs/decision/frontend-decisions.md) |
+| 폼·검증 | React Hook Form + zod. API 응답도 zod 로 검증(#348) | D-111, [D-184](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/decision/frontend-decisions.md) |
 | HTTP | Axios 하나(`shared/api`), 응답 봉투 `{data, error}` 해제 | D-120 |
-| 스타일 | Tailwind CSS 4 + 디자인 토큰, Radix UI primitive | D-112, D-113, [디자인 시스템](../../../frontend/docs/design/design-system.md) |
-| 모의 API | MSW 2. 개발(선택)·Vitest·E2E 가 같은 핸들러 | D-159, [MSW 안내](../../../frontend/docs/msw-guide.md) |
+| 스타일 | Tailwind CSS 4 + 디자인 토큰, Radix UI primitive | D-112, D-113, [디자인 시스템](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/design/design-system.md) |
+| 모의 API | MSW 2. 개발(선택)·Vitest·E2E 가 같은 핸들러 | D-159, [MSW 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/msw-guide.md) |
 | 테스트 | Vitest + RTL, Playwright(Chromium). Storybook 은 지웠다(#482) | D-115~D-118, D-181 |
 
 ### FSD 계층
 
-`src/` 는 Feature-Sliced Design 이다. 의존은 위에서 아래로만 흐르고, ESLint `eslint-plugin-boundaries` 가 어기면 막는다(D-114, [eslint.config.js](../../../frontend/eslint.config.js)).
+`src/` 는 Feature-Sliced Design 이다. 의존은 위에서 아래로만 흐르고, ESLint `eslint-plugin-boundaries` 가 어기면 막는다(D-114, [eslint.config.js](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/eslint.config.js)).
 
 | 계층 | 하는 일 | 예 |
 |---|---|---|
@@ -50,7 +50,7 @@ DTO 를 아는 것은 `entities` 뿐이다. 화면은 도메인 모델만 받는
 | `RequireOnboardingComplete` | 온보딩 미완료 공간의 대시보드 접근(D-071) |
 | `RequirePM` | 회의 업로드·승인 상세는 PM 만(D-102, D-103) |
 
-부팅 때 세션과 워크스페이스 목록을 함께 받기 시작해 가드가 차례로 기다리는 워터폴을 막았다([bootQueries.ts](../../../frontend/src/app/bootQueries.ts)). 셸 탭에 다가가면(마우스·포커스·터치) 그 탭의, 셸이 한가할 때는 다섯 탭 모두의 화면 코드와 첫 데이터를 미리 받는다(#536, [shellPrefetch.ts](../../../frontend/src/app/router/shellPrefetch.ts)).
+부팅 때 세션과 워크스페이스 목록을 함께 받기 시작해 가드가 차례로 기다리는 워터폴을 막았다([bootQueries.ts](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/src/app/bootQueries.ts)). 셸 탭에 다가가면(마우스·포커스·터치) 그 탭의, 셸이 한가할 때는 다섯 탭 모두의 화면 코드와 첫 데이터를 미리 받는다(#536, [shellPrefetch.ts](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/src/app/router/shellPrefetch.ts)).
 
 ## 화면 지도
 

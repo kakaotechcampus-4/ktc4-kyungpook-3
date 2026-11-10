@@ -1,6 +1,6 @@
 # 리마인드 스케줄러와 백그라운드 작업
 
-마감 전 재촉을 제안하고, PM 이 승인한 문구를 봇이 DM 으로 보내고, 답장을 AI 가 판단해 태스크에 반영하고, 72시간 무응답이면 막힘으로 바꾸는 흐름이다. 코드는 [`services/scheduler.py`](../../../backend/app/services/scheduler.py), [`services/messages.py`](../../../backend/app/services/messages.py), [`services/replies.py`](../../../backend/app/services/replies.py), 봇 경로 [`api/bot_messages.py`](../../../backend/app/api/bot_messages.py).
+마감 전 재촉을 제안하고, PM 이 승인한 문구를 봇이 DM 으로 보내고, 답장을 AI 가 판단해 태스크에 반영하고, 72시간 무응답이면 막힘으로 바꾸는 흐름이다. 코드는 [`services/scheduler.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/scheduler.py), [`services/messages.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/messages.py), [`services/replies.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/replies.py), 봇 경로 [`api/bot_messages.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/api/bot_messages.py).
 
 ## 문제
 
@@ -81,7 +81,7 @@ sequenceDiagram
 
 ### 답장 판단 결과 반영
 
-봇이 `/bot/replies/claim` 으로 답장 한 통을 맡고(대화마다 가장 오래된 것부터, 3분 리스), 판단 결과를 보내면 게이트·반영·카드·기록·알림이 한 트랜잭션이다. 같은 attempt 재전송은 200, 다른 attempt 는 409. 큐에 들어온 지 10분이 지나면 맡기지 않는다(한 답장 최대 4회 시도, [reply-judgment-attempt-cap](../../../backend/docs/plan/m6/basis-for-decision/2026-11-08-reply-judgment-attempt-cap.md)).
+봇이 `/bot/replies/claim` 으로 답장 한 통을 맡고(대화마다 가장 오래된 것부터, 3분 리스), 판단 결과를 보내면 게이트·반영·카드·기록·알림이 한 트랜잭션이다. 같은 attempt 재전송은 200, 다른 attempt 는 409. 큐에 들어온 지 10분이 지나면 맡기지 않는다(한 답장 최대 4회 시도, [reply-judgment-attempt-cap](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m6/basis-for-decision/2026-11-08-reply-judgment-attempt-cap.md)).
 
 | 변경 줄 | 결과 |
 |---|---|
@@ -96,23 +96,23 @@ AI 쪽 판단 방법은 [리마인드 답장 판단](../ai/reply-judgment.md).
 
 | 경로 | 방식 |
 |---|---|
-| 메시지 웹소켓(#557) | [`api/message_socket.py`](../../../backend/app/api/message_socket.py). 본문은 보내지 않고 "새 줄 생김" 신호만 보낸다. FE 는 신호를 받으면 기존 조회를 다시 부른다(권한 검사를 조회 한 곳에 둔다). 같은 출처(Origin = Host)만 받고, 세션을 30초마다 다시 확인한다. 신호는 커밋 뒤에만 나가 롤백된 글은 신호가 없다([`thread_signals.py`](../../../backend/app/services/thread_signals.py)). 연결당 64개 넘게 밀리면 끊어 다시 붙게 한다 |
+| 메시지 웹소켓(#557) | [`api/message_socket.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/api/message_socket.py). 본문은 보내지 않고 "새 줄 생김" 신호만 보낸다. FE 는 신호를 받으면 기존 조회를 다시 부른다(권한 검사를 조회 한 곳에 둔다). 같은 출처(Origin = Host)만 받고, 세션을 30초마다 다시 확인한다. 신호는 커밋 뒤에만 나가 롤백된 글은 신호가 없다([`thread_signals.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/thread_signals.py)). 연결당 64개 넘게 밀리면 끊어 다시 붙게 한다 |
 | 웹 안 알림 | `Notification`. `dedupe_key` 로 같은 알림을 한 번만 |
-| 웹 푸시 | [`push.py`](../../../backend/app/services/push.py), VAPID. 키가 없으면 웹 안 알림만. 404·410 이면 구독 삭제, 400·401·403 은 재시도 안 함(키 설정 문제일 수 있어 구독은 남김). TTL 24시간 |
+| 웹 푸시 | [`push.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/push.py), VAPID. 키가 없으면 웹 안 알림만. 404·410 이면 구독 삭제, 400·401·403 은 재시도 안 함(키 설정 문제일 수 있어 구독은 남김). TTL 24시간 |
 
 ### 그 밖의 백그라운드 작업
 
-모두 API 프로세스 안의 스레드다([`app/main.py`](../../../backend/app/main.py)). 주기는 환경 변수, 0 이하면 끈다.
+모두 API 프로세스 안의 스레드다([`app/main.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/main.py)). 주기는 환경 변수, 0 이하면 끈다.
 
 | 워커 | 주기(기본) | 하는 일 | 실패·중단 대비 |
 |---|---|---|---|
 | 리마인드 스케줄러 | 60초 | 위 틱 | 항목별 커밋, advisory lock |
 | Notion 동기화 | 5초 | [Notion 동기화](notion-sync.md) | 300초 리스, 지수 백오프 |
 | 임베딩 채우기 | 5초 | 임베딩 없는 태스크를 `text-embedding-3-small` 로 채움(50개씩). 키 없으면 안 띄움 | 입력 오류(400·413·422)는 그 태스크만 건너뜀, 그 밖은 백오프 최대 300초. 임베딩 없는 태스크가 있으면 auto 를 막음 |
-| 업로드 정리 | 300초 | [`upload_sweeper.py`](../../../backend/app/services/upload_sweeper.py): 미인계 24시간, 진행 없음 3시간, 화자 지정 대기 7일, 채팅 `/end` 뒤 7시간 → `failed` + 녹음 폴더 삭제 | 공간→회의 잠금 뒤 조건부 UPDATE. AI 보고가 먼저 오면 건너뜀 |
+| 업로드 정리 | 300초 | [`upload_sweeper.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/upload_sweeper.py): 미인계 24시간, 진행 없음 3시간, 화자 지정 대기 7일, 채팅 `/end` 뒤 7시간 → `failed` + 녹음 폴더 삭제 | 공간→회의 잠금 뒤 조건부 UPDATE. AI 보고가 먼저 오면 건너뜀 |
 | 세션 정리 | 3600초 | 만료 세션 DELETE 한 문장 | 여러 번 돌려도 같음 |
 | 회의 삭제 정리 | 10초 | 삭제 접수된 회의의 BE 파일 정리, AI 정리 확인 대기 | claim token 해시·120초 리스 |
-| 요약 큐 | 봇이 claim | [`summary.py`](../../../backend/app/services/summary.py): 추출 등록 때 요약 요청 표시 → 봇이 맡아 요약 저장. 실패 알림 API 없이 15분 리스가 지나면 다시 맡김, 최대 2회 | claim token 해시가 같은 리스의 저장만 허용 |
+| 요약 큐 | 봇이 claim | [`summary.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/summary.py): 추출 등록 때 요약 요청 표시 → 봇이 맡아 요약 저장. 실패 알림 API 없이 15분 리스가 지나면 다시 맡김, 최대 2회 | claim token 해시가 같은 리스의 저장만 허용 |
 
 ## 왜 이 방식인가
 
@@ -120,16 +120,16 @@ AI 쪽 판단 방법은 [리마인드 답장 판단](../ai/reply-judgment.md).
 |---|---|---|---|
 | 상태만 보는 틱 | 시각마다 예약 작업 | 재시작·중복 실행에 결과가 같다 | `scheduler.py` 머리 주석 |
 | 72시간은 전달 보고부터 | 제안·발송 시각부터 | 전달 안 된 재촉으로 막으면 팀원 잘못이 아니다 | `_run_clock` |
-| 판단 재시도는 시간 창(10분) | 횟수 상한 | 봇 재시작·배포에도 판단 실패 알림 전에 한 번 더 돈다 | [reply-judgment-attempt-cap](../../../backend/docs/plan/m6/basis-for-decision/2026-11-08-reply-judgment-attempt-cap.md) |
-| 자동 막힘 여부는 되돌리기 API 조건으로 | 이력에서 판정 | 화면 표시와 되돌리기 가능 여부가 어긋나지 않게 | [task-auto-blocked](../../../backend/docs/plan/m2/basis-for-decision/2026-11-05-task-auto-blocked.md) |
-| 소켓은 신호만 | 본문 push | 권한 검사를 조회 한 곳에 둔다 | `message_socket.py` 머리 주석, #557 (별도 결정 기록 없음 [확인 필요]). 테스트 경계는 [socket-test-session-boundary](../../../backend/docs/plan/m0/basis-for-decision/2026-11-09-socket-test-session-boundary.md) |
-| 재촉 이유와 근거를 묶음에 | 문구만 | PM 이 왜 나가는지 보고 승인한다 | [bundle-reason-evidence](../../../backend/docs/plan/m6/basis-for-decision/2026-11-06-bundle-reason-evidence.md) |
+| 판단 재시도는 시간 창(10분) | 횟수 상한 | 봇 재시작·배포에도 판단 실패 알림 전에 한 번 더 돈다 | [reply-judgment-attempt-cap](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m6/basis-for-decision/2026-11-08-reply-judgment-attempt-cap.md) |
+| 자동 막힘 여부는 되돌리기 API 조건으로 | 이력에서 판정 | 화면 표시와 되돌리기 가능 여부가 어긋나지 않게 | [task-auto-blocked](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m2/basis-for-decision/2026-11-05-task-auto-blocked.md) |
+| 소켓은 신호만 | 본문 push | 권한 검사를 조회 한 곳에 둔다 | `message_socket.py` 머리 주석, #557 (별도 결정 기록 없음 [확인 필요]). 테스트 경계는 [socket-test-session-boundary](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m0/basis-for-decision/2026-11-09-socket-test-session-boundary.md) |
+| 재촉 이유와 근거를 묶음에 | 문구만 | PM 이 왜 나가는지 보고 승인한다 | [bundle-reason-evidence](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m6/basis-for-decision/2026-11-06-bundle-reason-evidence.md) |
 
 ## 어떻게 검증했나
 
 | 범위 | 테스트 |
 |---|---|
-| 제안·발송 직전·시계·막힘 | [`tests/api/test_scheduler.py`](../../../backend/tests/api/test_scheduler.py), `test_scheduler_rules.py`, `test_scheduler_settings.py`, `test_scheduler_outage.py`(꺼졌다 켜짐) |
+| 제안·발송 직전·시계·막힘 | [`tests/api/test_scheduler.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/tests/api/test_scheduler.py), `test_scheduler_rules.py`, `test_scheduler_settings.py`, `test_scheduler_outage.py`(꺼졌다 켜짐) |
 | 동시성 | `test_scheduler_concurrency.py`, `test_scheduler_extraction_lock.py`, `test_messages_concurrency.py`(PostgreSQL) |
 | 답장 판단·게이트·시계 효과 | `test_reply_judgment.py`, `test_replies.py`, `test_reply_clock.py`, `test_reply_review.py` |
 | 재촉 이유 | `test_reminder_reason.py` |

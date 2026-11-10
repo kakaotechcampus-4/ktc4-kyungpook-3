@@ -47,5 +47,5 @@ flowchart LR
 ## 관련 문서
 
 - [공통 에이전트 규칙](../agent-rules.md)
-- [문서 안내](../README.md)
+- [문서 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/docs/README.md)
 - [프로젝트 상세 설명 §2 팀과 협업 방식](../프로젝트%20상세%20설명.md#2-팀과-협업-방식)

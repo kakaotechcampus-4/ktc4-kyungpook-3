@@ -52,7 +52,7 @@ Manager's Manager(이하 "운영자")는 Manager's Manager(이하 "서비스")�
 
 공동 기록 참조와 재시도를 위한 비식별 Member·정리 영수증·삭제 표식은 남습니다. 이에 대한 보관·파기 기준의 법률 검토는 공개 전에 확인합니다. 공동 기록의 자유 본문·음성 전체를 자동 익명화하거나, 이미 Notion·Discord에 게시된 결과를 회수하는 기능은 이 로컬 정리 범위에 포함하지 않습니다. 다른 구성원이 사용하는 공동 연동도 계정 탈퇴만으로 일괄 철회하지 않습니다.
 
-회의 삭제 기능이 활성화되면 전사·회의록·추출·근거를 삭제하고 이미 생성된 태스크는 유지합니다. 태스크에는 `원본 회의가 삭제되어 근거를 볼 수 없음`을 표시합니다. 여러 회의가 합쳐진 승인 대기 카드는 삭제한 회의의 기여만 제거하고 남은 회의 내용으로 재구성합니다. 현재 회의 삭제는 서버 설정의 기본값이 비활성입니다. 새 워커·과거 계보 대조·별도 테스트를 확인한 뒤 활성화하는 [운영 절차](../../deploy/README.md#회의-삭제-활성화-576)를 적용하며, 코드 병합만으로 운영에서 사용할 수 있다고 표시하지 않습니다.
+회의 삭제 기능이 활성화되면 전사·회의록·추출·근거를 삭제하고 이미 생성된 태스크는 유지합니다. 태스크에는 `원본 회의가 삭제되어 근거를 볼 수 없음`을 표시합니다. 여러 회의가 합쳐진 승인 대기 카드는 삭제한 회의의 기여만 제거하고 남은 회의 내용으로 재구성합니다. 현재 회의 삭제는 서버 설정의 기본값이 비활성입니다. 새 워커·과거 계보 대조·별도 테스트를 확인한 뒤 활성화하는 [운영 절차](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md#회의-삭제-활성화-576)를 적용하며, 코드 병합만으로 운영에서 사용할 수 있다고 표시하지 않습니다.
 
 ## 4. 제3자 제공
 
@@ -124,9 +124,9 @@ Manager's Manager(이하 "운영자")는 Manager's Manager(이하 "서비스")�
 
 | 항목 | 근거와 확인 상태 |
 |---|---|
-| 탈퇴·단독 공간·재가입 | [#575](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/575), [API 계약](../../frontend/docs/contracts/frontend-api-contract.md#계정-탈퇴와-정리-상태-575-2026-11-09), [계정 처리 코드](../../backend/app/services/account_withdrawal.py) |
-| 회의 삭제·태스크 보존 | [#576](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/576), [삭제 코드](../../backend/app/services/meeting_deletion.py), [활성화 절차](../../deploy/README.md) |
-| 로컬 AI 정리·완료 확인 | [BE·AI 계약](../../backend/docs/contracts/backend-ai-contract.md#계정-탈퇴의-개인정보-정리-575-2026-11-09), [정리 코드](../../ai/capture/privacy_cleanup.py). 공급사 원격 삭제와 구분 |
+| 탈퇴·단독 공간·재가입 | [#575](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/575), [API 계약](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/contracts/frontend-api-contract.md#계정-탈퇴와-정리-상태-575-2026-11-09), [계정 처리 코드](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/account_withdrawal.py) |
+| 회의 삭제·태스크 보존 | [#576](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/576), [삭제 코드](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/meeting_deletion.py), [활성화 절차](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md) |
+| 로컬 AI 정리·완료 확인 | [BE·AI 계약](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/contracts/backend-ai-contract.md#계정-탈퇴의-개인정보-정리-575-2026-11-09), [정리 코드](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/capture/privacy_cleanup.py). 공급사 원격 삭제와 구분 |
 | 음성 자동 보관·정리 | [#360 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/360), PR #567·#568의 병합·운영 반영 확인 필요 |
 | 운영 주체·문의·법률·공급사 | [#565](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/565). 실제 연락처·공급사 조건·법률 검토 미완료 |
 

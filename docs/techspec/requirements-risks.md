@@ -25,7 +25,7 @@
 | 일관성 | 중복 카드·중복 태스크 없음 | 추출 등록 멱등, Notion "Task ID" 조회 후 생성 |
 | 자원 | t3.medium(2 vCPU, 4GB) 한 대 | 워커 MemoryMax 3G, BE 프로세스 하나 |
 | 접근성·모바일 | 360px 폭, 명도 대비 4.5:1 | FE E2E 로 검사(#478, #336) |
-| 개인정보 | 회의 음성 최소 보관 | 인계 직후 트랙 삭제, 포기 회의 7일(결정 [0055](../../ai/docs/basis_for_decision/ai/2026-11-08-0055-meeting-audio-retention.md)), 계정 탈퇴·익명화(#584) |
+| 개인정보 | 회의 음성 최소 보관 | 인계 직후 트랙 삭제, 포기 회의 7일(결정 [0055](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-08-0055-meeting-audio-retention.md)), 계정 탈퇴·익명화(#584) |
 
 ## 가드레일: auto 의 3중 관문
 
@@ -33,8 +33,8 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 
 | 관문 | 막는 것 | 실패 때 | 근거 |
 |---|---|---|---|
-| ① 근거 검증 (Jev) | 근거 원문에 할 일·마감이 명시되지 않은 항목(조건부·질문·제안·근사 마감) | Jev 실패·키 없음 → inferred → auto 안 됨 | [근거 검증](../design/ai/evidence-check.md), 결정 [0031](../../ai/docs/basis_for_decision/ai/2026-11-02-0031-evidence-status-by-source-check.md) |
-| ② 전사 오인식 검사 | 근거는 충실하지만 전사가 틀려 제목이 틀린 항목("진도 정리" → "짐도 정리") | 검사 실패 → `asr_check_failed` 로 막음 | [전사 오인식 검사](../design/ai/asr-check.md), 결정 [0051](../../ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md) |
+| ① 근거 검증 (Jev) | 근거 원문에 할 일·마감이 명시되지 않은 항목(조건부·질문·제안·근사 마감) | Jev 실패·키 없음 → inferred → auto 안 됨 | [근거 검증](../design/ai/evidence-check.md), 결정 [0031](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-02-0031-evidence-status-by-source-check.md) |
+| ② 전사 오인식 검사 | 근거는 충실하지만 전사가 틀려 제목이 틀린 항목("진도 정리" → "짐도 정리") | 검사 실패 → `asr_check_failed` 로 막음 | [전사 오인식 검사](../design/ai/asr-check.md), 결정 [0051](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md) |
 | ③ 자동 생성 스위치 `AUTO_CREATE_ENABLED` | 운영 초기 검증 기간에 끌 것을 권고한 자동 생성 전체(코드 기본은 켜짐) | 모르는 값(오타)은 꺼짐으로 봄 | BE `app/api/extractions.py` `auto_create_enabled`, #526 |
 
 - 스위치를 끈 동안에도 검증은 돌고 "켰으면 auto 였을 항목"을 로그로 남겨 PM 결과와 맞춰 본다.
@@ -60,13 +60,13 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 
 | 장애 | 대응 | 근거 |
 |---|---|---|
-| Elice STT 장애 | 워커가 연속 실패를 감지해 GPU 대기 서버(g4dn.xlarge)를 Lambda 로 켜고, Elice 회복 확인 3번이면 복귀. 하루 6시간·누적 15시간 상한, 운영 채널 `/gpu on\|off\|status` 수동 조작 | 결정 [0056](../../ai/docs/basis_for_decision/ai/2026-11-08-0056-gpu-stt-auto-failover.md) |
-| Notion API 실패 | outbox. 429·409·5xx 지수 백오프 최대 5회, 401 은 토큰 refresh 한 번. 결과를 모른 채 끝난 생성은 "Task ID" 속성으로 먼저 조회해 중복 방지 | [backend README](../../backend/README.md#notion-연동) |
+| Elice STT 장애 | 워커가 연속 실패를 감지해 GPU 대기 서버(g4dn.xlarge)를 Lambda 로 켜고, Elice 회복 확인 3번이면 복귀. 하루 6시간·누적 15시간 상한, 운영 채널 `/gpu on\|off\|status` 수동 조작 | 결정 [0056](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-08-0056-gpu-stt-auto-failover.md) |
+| Notion API 실패 | outbox. 429·409·5xx 지수 백오프 최대 5회, 401 은 토큰 refresh 한 번. 결과를 모른 채 끝난 생성은 "Task ID" 속성으로 먼저 조회해 중복 방지 | [backend README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md#notion-연동) |
 | 멈춘 업로드·채팅 회의 | BE sweeper(300초): 미인계 24시간, 진행 없음 3시간, 화자 지정 대기 7일, 채팅 `/end` 뒤 7시간 → failed | `backend/app/services/upload_sweeper.py` |
 | 워커 재시작·중단 | 매니페스트 단계 상태로 마지막 단계 다음부터 재개, 회의 단위 재시도 백오프, 포기 7일 안 `--retry` | [아키텍처](architecture.md#단계-상태와-재시작-매니페스트) |
-| LLM 1단계 응답 깨짐 | 그 자리에서 1번 더 부름(#580) | [결정 기록](../../ai/docs/basis_for_decision/ai/2026-11-09-extract-first-stage-retry.md) |
+| LLM 1단계 응답 깨짐 | 그 자리에서 1번 더 부름(#580) | [결정 기록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-09-extract-first-stage-retry.md) |
 | 임베딩 실패 | 입력 오류 task 만 건너뜀, 그 밖은 지수 백오프(최대 5분). 임베딩 없는 task 가 있으면 auto 를 막음 | BE README |
-| 배포 중 녹음 | 녹음 중이면 봇 재시작 건너뜀, 워커는 하던 회의를 마치고 종료 | [deploy/README.md](../../deploy/README.md) |
+| 배포 중 녹음 | 녹음 중이면 봇 재시작 건너뜀, 워커는 하던 회의를 마치고 종료 | [deploy/README.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md) |
 
 자세히: [Notion 동기화](../design/backend/notion-sync.md), [리마인드 스케줄러와 백그라운드 작업](../design/backend/reminder-scheduler.md)
 
@@ -82,7 +82,7 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 | 배포 | GitHub OIDC → SSM(장기 키 없음), API 는 `127.0.0.1` 에만 열고 Caddy 가 HTTPS |
 | AI 비밀값 | `.env` 는 에이전트가 읽지 않는 규칙, 평가 원문은 레포 밖 |
 
-상세: [backend README 세션 토큰·로그인 제한](../../backend/README.md#로그인-제한).
+상세: [backend README 세션 토큰·로그인 제한](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md#로그인-제한).
 
 자세히: [보안](../design/backend/security.md)
 

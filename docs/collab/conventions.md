@@ -6,9 +6,9 @@
 
 | 파트 | 도구 | 설정 | CI 에서 하는 일 |
 |---|---|---|---|
-| Frontend | ESLint 9 + typescript-eslint, Prettier 3 | [eslint.config.js](../../frontend/eslint.config.js), [.prettierrc.json](../../frontend/.prettierrc.json) | `npm run typecheck` → `lint` → `format:check` → `test`, 빌드, Playwright E2E ([frontend-ci.yml](../../.github/workflows/frontend-ci.yml)) |
-| Backend | ruff | [backend/ruff.toml](../../backend/ruff.toml) — ruff 기본 규칙(E4, E7, E9, F), `target-version = "py312"` | `ruff check .` → pytest(pgvector 서비스) → `alembic upgrade head` + `alembic check` → 이미지 빌드 ([backend-ci.yml](../../.github/workflows/backend-ci.yml)) |
-| AI | 없음 | [ai/pyproject.toml](../../ai/pyproject.toml) 은 pytest 설정만 있다. `ai/CLAUDE.md` 에 "lint/format 설정은 없다"고 적혀 있다 | pytest 만 ([ai-ci.yml](../../.github/workflows/ai-ci.yml)) |
+| Frontend | ESLint 9 + typescript-eslint, Prettier 3 | [eslint.config.js](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/eslint.config.js), [.prettierrc.json](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/.prettierrc.json) | `npm run typecheck` → `lint` → `format:check` → `test`, 빌드, Playwright E2E ([frontend-ci.yml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/workflows/frontend-ci.yml)) |
+| Backend | ruff | [backend/ruff.toml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/ruff.toml) — ruff 기본 규칙(E4, E7, E9, F), `target-version = "py312"` | `ruff check .` → pytest(pgvector 서비스) → `alembic upgrade head` + `alembic check` → 이미지 빌드 ([backend-ci.yml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/workflows/backend-ci.yml)) |
+| AI | 없음 | [ai/pyproject.toml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/pyproject.toml) 은 pytest 설정만 있다. `ai/CLAUDE.md` 에 "lint/format 설정은 없다"고 적혀 있다 | pytest 만 ([ai-ci.yml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/workflows/ai-ci.yml)) |
 
 ### Frontend 규칙 요점
 
@@ -59,7 +59,7 @@ Conventional Commits 형식 `<type>(<scope>): <설명>` 을 쓴다. 문서화된
 
 ### 본문 — PR 템플릿
 
-[.github/pull_request_template.md](../../.github/pull_request_template.md) 는 운영진이 배포했고 팀이 고칠 수 있다. `develop` 대상 PR 과 `main` 대상 PR 에 똑같이 뜬다.
+[.github/pull_request_template.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/pull_request_template.md) 는 운영진이 배포했고 팀이 고칠 수 있다. `develop` 대상 PR 과 `main` 대상 PR 에 똑같이 뜬다.
 
 | 절 | 내용 |
 |---|---|
@@ -72,7 +72,7 @@ AI 하네스로 만든 PR 은 별도 구조(요약 / 설계 / 변경 / 검증 / 
 
 ### convention-check 워크플로가 하는 일
 
-[convention-check.yml](../../.github/workflows/convention-check.yml) 은 운영진 배포 파일이다.
+[convention-check.yml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/workflows/convention-check.yml) 은 운영진 배포 파일이다.
 
 - `main` 대상 PR 이 열리거나 다시 열리거나 draft 를 벗어날 때만 돈다. 팀 내부 PR(`→ develop`)에는 돌지 않는다.
 - 운영 저장소(`kakaotechcampus-4/pr-pipeline`)의 스크립트 `convention-notice.sh` 를 받아 실행하고, PR 제목·작성자·base·head 브랜치 등을 넘긴다.
@@ -81,7 +81,7 @@ AI 하네스로 만든 PR 은 별도 구조(요약 / 설계 / 변경 / 검증 / 
 
 ## 4. 이슈 템플릿
 
-[.github/ISSUE_TEMPLATE/](../../.github/ISSUE_TEMPLATE/)
+[.github/ISSUE_TEMPLATE/](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/.github/ISSUE_TEMPLATE)
 
 | 템플릿 | 제목 머리 | 라벨 | 주요 절 |
 |---|---|---|---|
@@ -94,10 +94,10 @@ AI 하네스로 만든 PR 은 별도 구조(요약 / 설계 / 변경 / 검증 / 
 
 ## 5. CODEOWNERS 와 멘토 자동 지정
 
-- [.github/CODEOWNERS](../../.github/CODEOWNERS) 의 "운영진 영역" 4줄(`assign-mentor.yml`, `notify-discord.yml`, `convention-check.yml`, `CODEOWNERS`)은 운영진 팀 `pipeline-admin` 소유다. 팀은 고치지 않는다.
+- [.github/CODEOWNERS](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/CODEOWNERS) 의 "운영진 영역" 4줄(`assign-mentor.yml`, `notify-discord.yml`, `convention-check.yml`, `CODEOWNERS`)은 운영진 팀 `pipeline-admin` 소유다. 팀은 고치지 않는다.
 - "팀 자유 영역"에 파트별 리뷰어를 지정할 수 있지만 지금은 비어 있다. 파트 리뷰어는 PR 본문에서 직접 부른다(예: "BE 담당 리뷰 부탁드립니다").
-- [assign-mentor.yml](../../.github/workflows/assign-mentor.yml): `main` 대상 PR(draft 제외)에 담당 멘토를 자동 지정한다. 판정 로직은 운영 저장소 스크립트에 있다.
-- [notify-discord.yml](../../.github/workflows/notify-discord.yml): `main` 대상 PR 의 리뷰 요청·결과를 팀 Discord 에 알린다.
+- [assign-mentor.yml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/workflows/assign-mentor.yml): `main` 대상 PR(draft 제외)에 담당 멘토를 자동 지정한다. 판정 로직은 운영 저장소 스크립트에 있다.
+- [notify-discord.yml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/workflows/notify-discord.yml): `main` 대상 PR 의 리뷰 요청·결과를 팀 Discord 에 알린다.
 - 그 밖의 워크플로(파트 CI, 배포, 팀 알림)는 팀이 직접 추가했다.
 
 > 📷 **사진 자리**: main 대상 PR 에 convention-check 안내 코멘트와 멘토 자동 지정이 붙은 화면 (파일: ../assets/collab-convention-check.png)

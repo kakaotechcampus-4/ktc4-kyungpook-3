@@ -3,6 +3,8 @@
 site_name: Manager's Manager 문서
 repo_url: https://github.com/kakaotechcampus-4/ktc4-kyungpook-3
 docs_dir: docs
+exclude_docs: |
+  /README.md
 theme:
   name: material
   language: ko
@@ -15,6 +17,8 @@ plugins:
 markdown_extensions:
   - admonition
   - tables
+  - toc:
+      slugify: !!python/object/apply:pymdownx.slugs.slugify {kwds: {case: lower}}
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid

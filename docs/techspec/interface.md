@@ -8,7 +8,7 @@ Backend API 묶음, 대표 요청·응답, AI↔BE 계약을 요약한다. 경�
 |---|---|
 | 접두어 | `/api/v1` (헬스 체크 `/health`) |
 | 응답 봉투 | 성공 `{"data": {...}, "error": null}`, 실패 `{"data": null, "error": {"code", "message", "details"}}` |
-| 오류 코드 | `error.code` 로 분기. 원본 `backend/app/core/errors.py`, 표는 [backend README 에러 코드](../../backend/README.md#에러-코드) |
+| 오류 코드 | `error.code` 로 분기. 원본 `backend/app/core/errors.py`, 표는 [backend README 에러 코드](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md#에러-코드) |
 | 웹 인증 | 세션 쿠키 `session_token`(7일, DB 에는 해시) |
 | 봇·AI 인증 | `X-Service-Token` 헤더. 사용자 세션으로 대신할 수 없음 |
 | 실시간 | 메시지 스레드 웹소켓 신호(`message_socket`, #557), 그 밖은 polling |
@@ -41,7 +41,7 @@ Backend API 묶음, 대표 요청·응답, AI↔BE 계약을 요약한다. 경�
 
 ### 1. AI → BE 추출 등록 `POST /api/v1/extractions` → 201
 
-judge 새 항목 하나의 예. 전체 필드는 [계약](../../backend/docs/contracts/backend-ai-contract.md#추출-등록-post-extractions--201).
+judge 새 항목 하나의 예. 전체 필드는 [계약](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/contracts/backend-ai-contract.md#추출-등록-post-extractions--201).
 
 ```json
 {
@@ -142,8 +142,8 @@ PM 이 확인한 뒤 같은 수정값에 `"confirm_task_version": 7` 을 더해 
 
 계약 원문:
 
-- [백엔드 ↔ AI 계약](../../backend/docs/contracts/backend-ai-contract.md)
-- [프론트엔드 API 계약](../../frontend/docs/contracts/frontend-api-contract.md)
+- [백엔드 ↔ AI 계약](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/contracts/backend-ai-contract.md)
+- [프론트엔드 API 계약](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/contracts/frontend-api-contract.md)
 - [API 문서](../api/index.md)
 
 자세히: [담당자 매칭과 게이트](../design/backend/gate-matching.md)

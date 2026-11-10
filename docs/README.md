@@ -11,8 +11,8 @@
 ## 에이전트 공통 관리
 
 - [공통 작업 규칙](agent-rules.md): 작업 시작 절차, 문서 수정 권한, 기록 의무와 스킬 사용 시점.
-- [Codex 진입점](../AGENTS.md) · [Claude Code 진입점](../CLAUDE.md): 공통 규칙을 먼저 읽도록 안내.
-- [팀 스킬 사용 안내](../.agents/README.md): 일곱 스킬의 역할, 호출 방법과 수정 방법.
+- [Codex 진입점](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/AGENTS.md) · [Claude Code 진입점](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/CLAUDE.md): 공통 규칙을 먼저 읽도록 안내.
+- [팀 스킬 사용 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.agents/README.md): 일곱 스킬의 역할, 호출 방법과 수정 방법.
 - [파트별 전체 흐름](파트별%20전체%20흐름.md): 현재 코드로 확인한 프론트엔드 중심 처리 순서와 파트 경계.
 - [프로젝트 상세 설명](프로젝트%20상세%20설명.md): 프로젝트 전체(목표, 팀, 구조, 파트별 상세, 수치, 타임라인, 현재 상태, 남은 일)를 2026-11-07 기준으로 정리한 원자료. 최종 문서화·테크스펙·발표 자료의 바탕.
 
@@ -29,15 +29,15 @@
 
 ## 파트 문서
 
-- [Frontend](../frontend/README.md)
-- [Backend](../backend/README.md)
-- [AI](../ai/README.md) · [AI 문서 안내](../ai/docs/README.md)
+- [Frontend](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/README.md)
+- [Backend](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md)
+- [AI](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/README.md) · [AI 문서 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/README.md)
 
-현재 구현·검증 기록은 [FE 마일스톤 안내](../frontend/docs/plan/README.md), [FE 이슈 결과](../frontend/docs/issues/), [BE 마일스톤 안내](../backend/docs/plan/README.md), [AI 작성 기록](../ai/docs/basis_for_decision/ai/)·[팀원 작성 기록](../ai/docs/basis_for_decision/member/)에서 찾는다. 계획, 결과의 기록일과 검증 환경, 현재 배포 상태를 구분한다. 코드 병합이나 MSW 통과만으로 실서버·외부 공급사·iOS 검증 완료를 표시하지 않는다.
+현재 구현·검증 기록은 [FE 마일스톤 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/README.md), [FE 이슈 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/frontend/docs/issues), [BE 마일스톤 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/README.md), [AI 작성 기록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/ai/docs/basis_for_decision/ai)·[팀원 작성 기록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/ai/docs/basis_for_decision/member)에서 찾는다. 계획, 결과의 기록일과 검증 환경, 현재 배포 상태를 구분한다. 코드 병합이나 MSW 통과만으로 실서버·외부 공급사·iOS 검증 완료를 표시하지 않는다.
 
-Frontend는 [문서 안내](../frontend/docs/README.md), [대표 계약](../frontend/docs/contracts/frontend-api-contract.md), [전체 계획](../frontend/docs/plan/frontend-plan.md), [M0~M8 안내](../frontend/docs/plan/README.md)로 구조화했습니다. 기존 M0~M5 계획 원문과 완료 조건·인수인계·구현 결정 기록은 해당 마일스톤 폴더로 옮겼습니다. 이전 경로의 파일과 이동 안내는 삭제했습니다. 디자인·마스코트·성능 등 파트 고유 자료와 공유 기록은 유지합니다.
+Frontend는 [문서 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/README.md), [대표 계약](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/contracts/frontend-api-contract.md), [전체 계획](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/frontend-plan.md), [M0~M8 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/README.md)로 구조화했습니다. 기존 M0~M5 계획 원문과 완료 조건·인수인계·구현 결정 기록은 해당 마일스톤 폴더로 옮겼습니다. 이전 경로의 파일과 이동 안내는 삭제했습니다. 디자인·마스코트·성능 등 파트 고유 자료와 공유 기록은 유지합니다.
 
-Backend는 [문서 안내](../backend/docs/README.md), [AI 계약](../backend/docs/contracts/backend-ai-contract.md), [전체 계획](../backend/docs/plan/backend-plan.md), [M0~M7 안내](../backend/docs/plan/README.md)로 구조화했습니다. 전체 계획은 `backend-development-plan.md`에서 이름만 바꿨고, M0~M7의 plan.md는 빈 초기화 파일입니다. AI 문서는 아직 재배치하지 않았습니다.
+Backend는 [문서 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/README.md), [AI 계약](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/contracts/backend-ai-contract.md), [전체 계획](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/backend-plan.md), [M0~M7 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/README.md)로 구조화했습니다. 전체 계획은 `backend-development-plan.md`에서 이름만 바꿨고, M0~M7의 plan.md는 빈 초기화 파일입니다. AI 문서는 아직 재배치하지 않았습니다.
 
 ## 공통 문서 역할과 양식
 

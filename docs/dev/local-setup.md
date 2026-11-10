@@ -16,7 +16,7 @@ flowchart LR
   W -->|STT·LLM·Jev·임베딩| EXT[Elice MLAPI 등 외부 API]
 ```
 
-- 브라우저는 백엔드를 직접 부르지 않는다. 백엔드에 CORS 가 없어서 Vite proxy 를 거친다([frontend README](../../frontend/README.md#백엔드-연동)).
+- 브라우저는 백엔드를 직접 부르지 않는다. 백엔드에 CORS 가 없어서 Vite proxy 를 거친다([frontend README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/README.md#백엔드-연동)).
 - AI 봇·워커는 백엔드에 HTTP 로 회의·발화·판단 결과를 넘긴다. 이때 `BE_SERVICE_TOKEN`(AI)과 `SERVICE_TOKEN`(BE)이 같아야 한다([환경 변수](env.md)).
 
 ## 사전 준비
@@ -51,7 +51,7 @@ source .venv/bin/activate                # Windows Git Bash 는 .venv/Scripts/ac
 - 뜨면 `http://localhost:8000/docs` 에서 Swagger UI 로 API 를 본다.
 - 5432 포트가 이미 쓰이면 `POSTGRES_PORT=5433 docker compose up -d db` 로 띄우고 `DATABASE_URL` 포트도 바꾼다.
 - `run.sh` 가 `.env` 를 읽는다. `run.sh` 없이 uvicorn 을 직접 띄우면 `.env` 를 읽지 않는다.
-- 자세한 내용: [backend README](../../backend/README.md#실행)
+- 자세한 내용: [backend README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md#실행)
 
 ### frontend
 
@@ -65,7 +65,7 @@ npm run dev        # http://localhost:5173
 - 백엔드 없이 화면만 볼 때는 `frontend/.env` 에 `VITE_ENABLE_MSW=true` 를 둔다. 모의 계정은 `pm@example.com` / `mock-password`, 시작 상태는 `?msw-scenario=` 로 고른다.
 - 배포 백엔드에 붙일 때: `API_PROXY_TARGET=https://managers-manager.duckdns.org npm run dev`
 - 연결 확인: `http://localhost:5173/api/v1/auth/me` 가 `401 UNAUTHENTICATED` 봉투를 돌려주면 백엔드와 붙은 것이다.
-- 자세한 내용: [frontend README](../../frontend/README.md)
+- 자세한 내용: [frontend README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/README.md)
 
 ### ai
 
@@ -83,7 +83,7 @@ python -m capture.worker           # 처리 워커. 저장된 회의를 전사·
 - 판단 파이프라인(judge)으로 돌리려면 `.env` 에 `MM_EXTRACT_PATH=judge` 와 `TERRA_*`, `LUNA_*`, `BE_*` 를 채운다.
 - 전사는 기본이 로컬 모델(`MM_STT_BACKEND=local`, large-v3-turbo)이다. 외부 API 로 전사하려면 `MM_STT_BACKEND=elice` 와 `ELICE_*` 를 채운다.
 - 녹음 없이 오디오 파일 하나로 처리해 볼 때: `python -m upload.prepare <오디오> --started-at <ISO>`
-- 자세한 내용: [ai README](../../ai/README.md#설치-이-디렉토리-ai-안에서)
+- 자세한 내용: [ai README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/README.md#설치-이-디렉토리-ai-안에서)
 
 ## 세 파트를 함께 띄우는 순서
 

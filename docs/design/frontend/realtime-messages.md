@@ -1,6 +1,6 @@
 # 메시지·알림 실시간
 
-리마인드 DM 확인(PM), 팀원과의 대화·웹 답장, 알림 종·브라우저 푸시, 진행 토스트를 "얼마나 빨리, 어떤 길로" 화면에 반영하는지의 설계다. 화면 정책은 D-174(메시지 정책), 갱신 방식은 [2026-11-06 결정](../../../frontend/docs/plan/m8/basis-for-decision/2026-11-06-message-sync-and-e2e.md)과 #558 [결과](../../../frontend/docs/issues/558-message-websocket/result.md)에 있다.
+리마인드 DM 확인(PM), 팀원과의 대화·웹 답장, 알림 종·브라우저 푸시, 진행 토스트를 "얼마나 빨리, 어떤 길로" 화면에 반영하는지의 설계다. 화면 정책은 D-174(메시지 정책), 갱신 방식은 [2026-11-06 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-06-message-sync-and-e2e.md)과 #558 [결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/558-message-websocket/result.md)에 있다.
 
 ## 문제
 
@@ -47,7 +47,7 @@ flowchart TD
 | ② 알림 목록 연동 | 앱 어디서나, 30초 polling | 종이 받은 목록에서 처음 본 메시지 알림(`reminder_sent`·`nudge_suggested` 등 4종)이 있으면 메시지 쿼리를 무효화. 첫 목록은 기준점이라 무효화하지 않는다 |
 | ③ 초안 polling | 받은 응답에 `draft_status` 가 `needed`·`claimed` 인 묶음이 있을 때만 | 10초. `refetchInterval` 을 함수로 줘 그 쿼리의 데이터로 켜고 끈다. 백그라운드 탭에서는 멈춘다 |
 
-### 웹소켓 연결·재연결 ([`messageSignals.ts`](../../../frontend/src/entities/message/api/messageSignals.ts))
+### 웹소켓 연결·재연결 ([`messageSignals.ts`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/src/entities/message/api/messageSignals.ts))
 
 | 닫힘 | 처리 |
 |---|---|
@@ -69,8 +69,8 @@ flowchart TD
 
 | 항목 | 내용 | 근거 |
 |---|---|---|
-| 푸시 워커 | 앱의 서비스 워커는 푸시 하나. 고정 주소 `/push/sw.js` 로 빌드해 MSW 워커(`/`)와 범위가 겹치지 않게 했다. 워커는 `window` 가 없어 순수 모듈만 가져온다 | [vite.config.ts](../../../frontend/vite.config.ts), [`pushWorker.ts`](../../../frontend/src/features/browser-push/worker/pushWorker.ts) |
-| 권한 묻기 | 설정 알림 절, 그리고 팀원이 리마인드 대화를 열면 대화 머리 아래 띠. **버튼을 누를 때만** 권한을 묻는다. 닫으면 다시 보이지 않는다 | #411, [`pushPrompt.ts`](../../../frontend/src/features/browser-push/model/pushPrompt.ts) |
+| 푸시 워커 | 앱의 서비스 워커는 푸시 하나. 고정 주소 `/push/sw.js` 로 빌드해 MSW 워커(`/`)와 범위가 겹치지 않게 했다. 워커는 `window` 가 없어 순수 모듈만 가져온다 | [vite.config.ts](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/vite.config.ts), [`pushWorker.ts`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/src/features/browser-push/worker/pushWorker.ts) |
+| 권한 묻기 | 설정 알림 절, 그리고 팀원이 리마인드 대화를 열면 대화 머리 아래 띠. **버튼을 누를 때만** 권한을 묻는다. 닫으면 다시 보이지 않는다 | #411, [`pushPrompt.ts`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/src/features/browser-push/model/pushPrompt.ts) |
 | iOS | 홈 화면에 설치한 앱에서만 푸시가 된다. 그 상태면 띠가 설치 안내(`install`)로 바뀐다 | 같은 파일 |
 | 푸시를 누르면 | 그 대화·태스크 주소로. 로그인이 풀렸으면 `?next=` 로 로그인 뒤 돌아온다. `next` 는 앱 안 보호 경로만 받는다(`//evil.com`, 여러 번 인코딩한 `//` 등은 버림) | #411, `returnPath.ts` |
 | 설치형 앱 | `manifest.webmanifest` 의 `display: standalone`, iOS 시작 이미지 29장, `index.html` 정적 마스코트 스플래시 | #430, #510 |
