@@ -3,8 +3,8 @@ import { meetingAudioUrl } from '@/entities/meeting'
 import { Button } from '@/shared/ui/button'
 import { useMeetingAudio } from '../model/useMeetingAudio'
 
-/* 회의록 머리와 탭 줄 사이. 좌우 여백은 머리·탭 줄(36, 휴대폰 20)과 같다 */
-const SECTION = 'flex flex-col items-start gap-8 px-36 pb-14 max-md:px-20'
+/* 회의록 탭 줄 아래, 패널(위 여백 28) 위. 좌우 여백은 탭 줄·패널(36, 휴대폰 20)과 같다 */
+const SECTION = 'flex flex-col items-start gap-8 px-36 pt-20 max-md:px-20'
 const PLAYER = 'block h-40 w-full max-w-[560px]'
 const NOTE = 'text-caption text-dim'
 

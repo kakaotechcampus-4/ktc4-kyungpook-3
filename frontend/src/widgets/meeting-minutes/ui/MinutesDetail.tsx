@@ -443,17 +443,19 @@ function MinutesContent({
         className={held !== null ? HELD_BODY : 'flex flex-col'}
         style={held !== null ? HELD_BODY_STYLE : undefined}
       >
-        {/* 회의나 시각이 바뀌면 플레이어를 새로 만든다 — 앞 회의의 재생·위치를 이어 쓰지 않는다 */}
-        <MeetingRecording
-          key={`${meeting.id}:${at ?? ''}`}
-          meetingId={meeting.id}
-          playable={minutes.audio !== null}
-          startAt={startSecondsFrom(at)}
-        />
         <MinutesTabs<TabId>
           label="회의록 내용"
           selected={tab}
           onSelect={setTab}
+          beforePanel={
+            // 회의나 시각이 바뀌면 플레이어를 새로 만든다 — 앞 회의의 재생·위치를 이어 쓰지 않는다
+            <MeetingRecording
+              key={`${meeting.id}:${at ?? ''}`}
+              meetingId={meeting.id}
+              playable={minutes.audio !== null}
+              startAt={startSecondsFrom(at)}
+            />
+          }
           tabs={[
             {
               id: 'summary',
