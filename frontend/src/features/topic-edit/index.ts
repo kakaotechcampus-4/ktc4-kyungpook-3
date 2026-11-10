@@ -1,2 +1,8 @@
 export { useTopicEdit } from './model/useTopicEdit'
 export type { TopicEditFailure, TopicEditor } from './model/useTopicEdit'
+export { DecisionMenu } from './ui/DecisionMenu'
+export { DecisionTextForm } from './ui/DecisionTextForm'
+export { EditConfirm } from './ui/EditConfirm'
+export { TopicFieldsForm } from './ui/TopicFieldsForm'
+export type { TopicFieldsChange } from './ui/TopicFieldsForm'
+export { TopicMergeModal } from './ui/TopicMergeModal'

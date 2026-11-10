@@ -75,7 +75,7 @@ describe('프로젝트 맵 화면 (#551)', () => {
     expect(within(decisions[1]).queryByText('뒤집힘')).toBeNull()
 
     const tasks = within(aside).getByRole('region', { name: '태스크' })
-    expect(within(tasks).getByRole('button', { name: /회원가입 화면/ })).toBeVisible()
+    expect(within(tasks).getByRole('button', { name: /^회원가입 화면\s*할 일$/ })).toBeVisible()
 
     const meetings = within(aside).getByRole('region', { name: '나온 회의' })
     expect(
@@ -376,7 +376,7 @@ describe('휴대폰의 프로젝트 맵 (D-180)', () => {
     topic.focus()
     await user.keyboard('{Enter}')
     const sheet = await screen.findByRole('dialog', { name: '로그인·계정' })
-    const task = await within(sheet).findByRole('button', { name: /회원가입 화면/ })
+    const task = await within(sheet).findByRole('button', { name: /^회원가입 화면\s*할 일$/ })
     task.focus()
     await user.keyboard('{Enter}')
 
