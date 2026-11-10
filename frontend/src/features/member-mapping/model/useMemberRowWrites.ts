@@ -2,6 +2,7 @@ import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-quer
 import { useRef, useState } from 'react'
 import {
   createMember,
+  fetchMembers,
   memberAliasesQueryOptions,
   memberListQueryOptions,
   updateMember,
@@ -18,6 +19,7 @@ import {
   isCanceledError,
   isInvalidResponse,
 } from '@/shared/api/errors'
+import { fetchFresh } from '@/shared/api/fetchFresh'
 import { captureSessionScope } from '@/shared/api/sessionScope'
 import type { SessionScope } from '@/shared/api/sessionScope'
 import { showWriteUnconfirmed } from '@/shared/ui/toast'
@@ -101,7 +103,8 @@ function isStaleMapping(error: unknown): boolean {
  *   mutation key 와 ref 로 묻는다. 빠른 연속 조작, 같은 계정을 두 줄에서 동시에 고르기가 모두 이것으로 막힌다
  * - 응답을 잃은 실패 뒤에는 캐시를 믿을 수 없다. 보내기 전에 목록을 다시 받아 이름 중복을 다시 본다
  * - 옮기기는 앞 팀원 연결을 푸는 파괴적인 요청이라 캐시가 멀쩡해 보여도 늘 목록을 다시 받는다. 다른 탭·PM 이 바꾼 것은
- *   캐시를 무효로 만들지 않는다. 계정 주인이 확인받은 앞 팀원일 때만 풀고, 아니면 아무것도 보내지 않고 다시 고르게 한다
+ *   캐시를 무효로 만들지 않는다. 계정 주인이 확인받은 앞 팀원일 때만 풀고, 아니면 아무것도 보내지 않고 다시 고르게 한다.
+ *   다시 받기는 누른 뒤에 출발한 조회만 쓴다(`fetchFresh`) — 누르기 전에 날아간 조회는 그 전 주인을 읽었을 수 있다
  * - 옮기기는 앞 팀원 연결을 먼저 푼다. 같은 계정을 두 팀원에 붙일 수 없다(409 `DISCORD_USER_ALREADY_MAPPED`)
  * - 세션이 끝났으면 보내지 않고, 늦은 응답은 캐시·문구에 남기지 않는다 (#594)
  * - PM 의 Discord 연결이 알림 설정의 PM 연결 상태(`pms`)를 바꾸므로 알림 설정도 다시 받는다 (#340)
@@ -132,9 +135,10 @@ export function useMemberRowWrites(workspaceId: string): MemberRowWrites {
       let members = queryClient.getQueryData<Member[]>(queryKey) ?? []
       let checked = write
       if (write.kind === 'move' || queryClient.getQueryState(queryKey)?.isInvalidated) {
-        members = await queryClient.fetchQuery({
-          ...memberListQueryOptions(workspaceId),
-          staleTime: 0,
+        members = await fetchFresh(queryClient, {
+          queryKey,
+          queryFn: ({ signal }) =>
+            fetchMembers(workspaceId, AbortSignal.any([signal, session.signal])),
         })
         const recheck = checkWrite(write, members)
         if (recheck.kind === 'reject') throw new WriteRejectedError(recheck.message)

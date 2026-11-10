@@ -8,7 +8,7 @@ import { memberListQueryOptions } from '@/entities/member'
 import { createQueryClient } from '@/shared/api/queryClient'
 import { endSessionScope } from '@/shared/api/sessionScope'
 import { db } from '@/shared/mock/db'
-import { fail } from '@/shared/mock/envelope'
+import { fail, list } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
@@ -183,6 +183,81 @@ describe('useMemberRowWrites', () => {
     await waitFor(() =>
       expect(result.current.members?.find(({ id }) => id === 'mb_04')?.discordUserId).toBe('1124'),
     )
+  })
+
+  it('옮기기를 확인하기 전에 출발한 목록 조회는 주인 판정에 쓰지 않는다. 그 뒤 주인이 바뀌었으면 아무것도 보내지 않는다', async () => {
+    const client = createQueryClient()
+    const { result } = renderWrites(client)
+    await waitFor(() => expect(result.current.members).toBeDefined())
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get(
+        '/api/v1/members',
+        async () => {
+          const before = list(db.members.filter(({ workspace_id }) => workspace_id === 'ws_01'))
+          await gate.promise
+          return before
+        },
+        { once: true },
+      ),
+    )
+    const log = recordRequests()
+    // 직전 쓰기의 무효화나 창 포커스로 목록 조회가 날아가 있다. 이 조회는 1124 가 박민수(mb_02)에게 있을 때 읽었다
+    act(() => {
+      void client.invalidateQueries({ queryKey: memberListQueryOptions('ws_01').queryKey })
+    })
+    await waitFor(() => expect(client.isFetching()).toBe(1))
+    dbMember('mb_02').discord_user_id = '1125'
+    dbMember('mb_04').discord_user_id = '1124'
+
+    act(() => {
+      result.current.writes.run(moveToJaehwan)
+    })
+    gate.resolve()
+
+    await waitFor(() => expect(client.isMutating()).toBe(0))
+    expect(memberWrites(log)).toEqual([])
+    expect(dbMember('mb_02').discord_user_id).toBe('1125')
+    expect(dbMember('mb_04').discord_user_id).toBe('1124')
+    expect(result.current.writes.failure?.message).toBe(MOVE_STALE)
+  })
+
+  it('옮기기 전 목록 조회를 기다리는 사이 세션이 끝나면 그 조회를 끊고 아무것도 보내지 않는다', async () => {
+    const client = createQueryClient()
+    const { result } = renderWrites(client)
+    await waitFor(() => expect(result.current.members).toBeDefined())
+    // MSW 의 XHR 가로채기는 취소를 request.signal 로 넘기지 않아 XHR 의 abort 로 본다
+    const abort = vi.spyOn(XMLHttpRequest.prototype, 'abort')
+    onTestFinished(() => abort.mockRestore())
+    const arrived = deferred()
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get(
+        '/api/v1/members',
+        async () => {
+          arrived.resolve()
+          await gate.promise
+          return list(db.members.filter(({ workspace_id }) => workspace_id === 'ws_01'))
+        },
+        { once: true },
+      ),
+    )
+    const log = recordRequests()
+
+    act(() => {
+      result.current.writes.run(moveToJaehwan)
+    })
+    await arrived.promise
+    act(() => endSessionScope())
+
+    await waitFor(() => expect(abort).toHaveBeenCalledTimes(1))
+    gate.resolve()
+    await waitFor(() => expect(client.isMutating()).toBe(0))
+    expect(memberWrites(log)).toEqual([])
+    expect(dbMember('mb_02').discord_user_id).toBe('1124')
+    expect(result.current.writes.failure).toBeNull()
   })
 
   it('옮기기 전에 다시 받은 목록에서 계정이 아무에게도 연결돼 있지 않으면 보내지 않고 다시 고르게 한다', async () => {
