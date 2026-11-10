@@ -122,7 +122,7 @@ AI 쪽 판단 방법은 [리마인드 답장 판단](../ai/reply-judgment.md).
 | 72시간은 전달 보고부터 | 제안·발송 시각부터 | 전달 안 된 재촉으로 막으면 팀원 잘못이 아니다 | `_run_clock` |
 | 판단 재시도는 시간 창(10분) | 횟수 상한 | 봇 재시작·배포에도 판단 실패 알림 전에 한 번 더 돈다 | [reply-judgment-attempt-cap](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m6/basis-for-decision/2026-11-08-reply-judgment-attempt-cap.md) |
 | 자동 막힘 여부는 되돌리기 API 조건으로 | 이력에서 판정 | 화면 표시와 되돌리기 가능 여부가 어긋나지 않게 | [task-auto-blocked](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m2/basis-for-decision/2026-11-05-task-auto-blocked.md) |
-| 소켓은 신호만 | 본문 push | 권한 검사를 조회 한 곳에 둔다 | `message_socket.py` 머리 주석, #557 (별도 결정 기록 없음 [확인 필요]). 테스트 경계는 [socket-test-session-boundary](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m0/basis-for-decision/2026-11-09-socket-test-session-boundary.md) |
+| 소켓은 신호만 | 본문 push | 권한 검사를 조회 한 곳에 둔다 | `message_socket.py` 머리 주석, #557 (BE 결정 기록은 없고 근거는 이 머리 주석과 FE 558 result 의 신호 뒤 조회 재호출). 테스트 경계는 [socket-test-session-boundary](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m0/basis-for-decision/2026-11-09-socket-test-session-boundary.md) |
 | 재촉 이유와 근거를 묶음에 | 문구만 | PM 이 왜 나가는지 보고 승인한다 | [bundle-reason-evidence](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m6/basis-for-decision/2026-11-06-bundle-reason-evidence.md) |
 
 ## 어떻게 검증했나
