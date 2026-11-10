@@ -6,11 +6,24 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import event, select, update
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.main import app
-from app.models import Decision, Extraction, ExtractionItem, Meeting, Source, Topic, TopicMeeting, Workspace
+from app.models import (
+    ApprovalRequest,
+    Decision,
+    Extraction,
+    ExtractionItem,
+    Meeting,
+    MemberAlias,
+    Source,
+    Topic,
+    TopicMeeting,
+    Task,
+    Workspace,
+    WorkspaceAsrTerm,
+)
 from app.schemas.project_map import SummaryWriteRequest
 from app.services import summary
 from tests.api.conftest import SERVICE_TOKEN
@@ -22,7 +35,9 @@ BODY = {"claim_token": "not-claimed", "model_name": "gpt-5.6-luna", "overview": 
 
 @pytest.fixture
 def client(mdb):
-    return TestClient(app, base_url="https://testserver")
+    c = TestClient(app, base_url="https://testserver")
+    c.cookies.set("session_token", "pm-token")
+    return c
 
 
 def _meeting(db, ws, *, started_at=T0, source="discord", status="done", spoken=True, extraction=True, requested=True):
@@ -39,12 +54,39 @@ def _meeting(db, ws, *, started_at=T0, source="discord", status="done", spoken=T
     return meeting, row
 
 
-def _extract(client, meeting):
+def _extract(client, meeting, items=()):
     r = client.post("/api/v1/extractions", json={
-        "meeting_id": meeting.meeting_id, "workspace_id": meeting.workspace_id, "items": [],
+        "meeting_id": meeting.meeting_id, "workspace_id": meeting.workspace_id, "items": list(items),
     }, headers=H)
     assert r.status_code == 201, r.text
     return r.json()["data"]
+
+
+REVIEW = {"task_title": "검토 태스크", "task_confidence": 0.6, "due_confidence": 0.0}
+HOLD = {"task_title": "누가 할지 모름", "task_confidence": 0.99, "assignee_raw": "모르는사람"}
+
+
+def _handed_off(client, db, ws, items, *, started_at=T0, source="discord"):
+    meeting, _ = _meeting(db, ws, started_at=started_at, source=source, status="processing", extraction=False)
+    extraction_id = _extract(client, meeting, items)["extraction_id"]
+    db.expire_all()
+    cards = list(dict.fromkeys(db.scalars(
+        select(ExtractionItem.approval_id)
+        .where(ExtractionItem.extraction_id == extraction_id, ExtractionItem.approval_id.is_not(None))
+        .order_by(ExtractionItem.created_at)
+    )))
+    return extraction_id, cards
+
+
+def _resolve(client, approval_id, status):
+    r = client.patch(f"/api/v1/approvals/{approval_id}", json={"status": status})
+    assert r.status_code == 200, r.text
+
+
+def _claimable(db, extraction_id):
+    claim = summary.claim_next(db, only=[extraction_id])
+    db.rollback()
+    return claim is not None
 
 
 def _claim(client, **body):
@@ -75,13 +117,122 @@ def test_handoff_marks_spoken_voice_and_upload_meetings(client, mdb, mseed, sour
     assert mdb.get(Extraction, data["extraction_id"]).summary_requested_at is not None
 
 
-def test_handoff_does_not_mark_chat_meeting(client, mdb, mseed):
+def test_handoff_marks_chat_meeting_but_claims_it_only_with_an_approved_item(client, mdb, mseed):
     meeting, _ = _meeting(mdb, mseed["ws"], source="chat", status="processing", extraction=False)
 
     data = _extract(client, meeting)
 
-    assert mdb.get(Extraction, data["extraction_id"]).summary_requested_at is None
+    assert mdb.get(Extraction, data["extraction_id"]).summary_requested_at is not None
     assert _claim(client) is None
+
+
+@pytest.mark.parametrize("item", [REVIEW, HOLD], ids=["review", "hold"])
+def test_meeting_with_a_pending_card_is_not_claimed(client, mdb, mseed, item):
+    extraction_id, cards = _handed_off(client, mdb, mseed["ws"], [item])
+
+    assert len(cards) == 1
+    assert _claim(client) is None
+    assert mdb.get(Extraction, extraction_id).summary_requested_at is not None
+
+
+def test_the_last_approve_or_reject_makes_the_meeting_claimable(client, mdb, mseed):
+    extraction_id, cards = _handed_off(client, mdb, mseed["ws"], [REVIEW, {**REVIEW, "task_title": "다른 일"}])
+    assert len(cards) == 2
+
+    _resolve(client, cards[0], "approved")
+    assert _claim(client) is None
+    _resolve(client, cards[1], "rejected")
+
+    assert _claim(client)["extraction_id"] == extraction_id
+
+
+def test_one_resolve_of_a_merged_card_unblocks_every_meeting_on_it(client, mdb, mseed):
+    first_id, [card] = _handed_off(client, mdb, mseed["ws"], [REVIEW])
+    merged_id, merged_cards = _handed_off(client, mdb, mseed["ws"], [{
+        "action": "merge", "target_approval_id": card, "task_title": "검토 태스크", "category": "due",
+        "due_date": "2026-12-03",
+    }], started_at=T0 + timedelta(hours=1))
+    assert merged_cards == [card]
+    assert (_claimable(mdb, first_id), _claimable(mdb, merged_id)) == (False, False)
+
+    _resolve(client, card, "approved")
+
+    assert (_claimable(mdb, first_id), _claimable(mdb, merged_id)) == (True, True)
+
+
+def test_a_revert_before_the_claim_holds_the_meeting_again(client, mdb, mseed):
+    mdb.add(MemberAlias(member_id=mseed["alice"].member_id, workspace_id=mseed["ws"], alias_text="앨리스님",
+                        alias_type="nickname", source="manual", confidence=1.0, verified=True))
+    mdb.commit()
+    extraction_id, cards = _handed_off(client, mdb, mseed["ws"], [{
+        "task_title": "자동 태스크", "task_confidence": 0.99, "assignee_raw": "앨리스님", "assignee_type": "thirdname",
+    }])
+    assert cards == [] and _claimable(mdb, extraction_id)
+    item_id = mdb.scalars(select(ExtractionItem.item_id).where(ExtractionItem.extraction_id == extraction_id)).one()
+
+    r = client.post(f"/api/v1/extractions/{extraction_id}/items/{item_id}/revert")
+    assert r.status_code == 200, r.text
+
+    assert _claim(client) is None
+
+
+def test_a_later_ready_meeting_is_claimed_while_an_earlier_one_waits(client, mdb, mseed):
+    waiting_id, _ = _handed_off(client, mdb, mseed["ws"], [REVIEW], started_at=T0)
+    ready_id, _ = _handed_off(client, mdb, mseed["ws"], [], started_at=T0 + timedelta(days=1))
+
+    assert _claim(client)["extraction_id"] == ready_id
+    assert waiting_id != ready_id
+
+
+def test_chat_meeting_is_claimed_once_an_item_is_approved(client, mdb, mseed):
+    extraction_id, [card] = _handed_off(client, mdb, mseed["ws"], [REVIEW], source="chat")
+    assert _claim(client) is None
+
+    _resolve(client, card, "approved")
+
+    assert _claim(client)["extraction_id"] == extraction_id
+
+
+def test_chat_meeting_with_only_rejected_items_is_never_claimed(client, mdb, mseed):
+    _, [card] = _handed_off(client, mdb, mseed["ws"], [REVIEW], source="chat")
+
+    _resolve(client, card, "rejected")
+
+    assert _claim(client) is None
+
+
+def test_a_pending_card_attached_between_select_and_lock_is_not_claimed(mdb, mseed):
+    """되돌리기와 합치기는 claim 이 고른 뒤 잠그기 전에도 카드를 붙일 수 있다. 잠근 뒤 다시 본다."""
+    if mdb.get_bind().dialect.name != "postgresql":
+        pytest.skip("독립 트랜잭션은 PostgreSQL 에서만 확인한다")
+    meeting, extraction = _meeting(mdb, mseed["ws"])
+    task = mseed["tasks"][0]
+    item = ExtractionItem(extraction_id=extraction.extraction_id, action="update", task_title=task.title,
+                          task_id=task.task_id)
+    card = ApprovalRequest(workspace_id=mseed["ws"], type="task_update", payload="{}")
+    mdb.add_all([item, card])
+    mdb.commit()
+    item_id, card_id = item.item_id, card.approval_id
+    attached = []
+
+    def attach_card(conn, cursor, statement, parameters, context, many):
+        if (attached or not statement.lstrip().startswith("SELECT") or "FROM meeting" not in statement
+                or "FOR UPDATE" not in statement):
+            return
+        attached.append(True)
+        with Session(mdb.get_bind()) as writer:
+            writer.execute(update(ExtractionItem).where(ExtractionItem.item_id == item_id).values(approval_id=card_id))
+            writer.commit()
+
+    event.listen(mdb.get_bind(), "before_cursor_execute", attach_card)
+    try:
+        claim = summary.claim_next(mdb)
+    finally:
+        event.remove(mdb.get_bind(), "before_cursor_execute", attach_card)
+    mdb.rollback()
+
+    assert attached
+    assert claim is None
 
 
 def test_handoff_does_not_mark_meeting_without_sources(client, mdb, mseed):
@@ -375,9 +526,16 @@ def test_summary_input_changes_nothing_and_carries_stored_rows(client, mdb, msee
                speaker_discord_user_id="u1"),
         Source(meeting_id=meeting.meeting_id, seq=2, start_ms=2, end_ms=3, text="uid", speaker_discord_user_id="u2"),
         Source(meeting_id=meeting.meeting_id, seq=3, start_ms=3, end_ms=4, text="없음"),
+    ])
+    deploy, doc = mseed["tasks"][:2]
+    deploy.title = "배포"
+    doc.title = "문서"
+    mdb.add_all([
         ExtractionItem(extraction_id=extraction.extraction_id, action="create", task_title="배포",
-                       assignee_member_id=alice.member_id, assignee_raw="앨리스님", due_date=T0.date()),
-        ExtractionItem(extraction_id=extraction.extraction_id, action="update", task_title="문서", assignee_raw="누군가"),
+                       assignee_raw="앨리스님", assignee_member_id=alice.member_id, due_date=T0.date(),
+                       task_id=deploy.task_id),
+        ExtractionItem(extraction_id=extraction.extraction_id, action="update", task_title="문서", assignee_raw="누군가",
+                       task_id=doc.task_id),
     ])
     mdb.commit()
 
@@ -395,11 +553,219 @@ def test_summary_input_changes_nothing_and_carries_stored_rows(client, mdb, msee
     ]
     items = sorted(data["items"], key=lambda item: item["title"])
     assert [(i["action"], i["title"], i["assignee"], i["due_date"]) for i in items] == [
-        ("update", "문서", "누군가", None), ("create", "배포", "앨리스", "2026-11-05"),
+        ("update", "문서", None, None), ("create", "배포", "앨리스", "2026-11-05"),
     ]
     assert all(i["item_id"] for i in items)
     mdb.refresh(extraction)
     assert (extraction.summary_attempts, extraction.summary_claimed_at) == (0, None)
+
+
+def test_summary_input_items_are_the_approved_final_values(client, mdb, mseed):
+    ws, bob = mseed["ws"], mseed["bob"]
+    _, [card] = _handed_off(client, mdb, ws, [REVIEW], started_at=T0 - timedelta(days=1))
+    merge = {"action": "merge", "target_approval_id": card, "task_title": "검토 태스크", "category": "due"}
+    extraction_id, cards = _handed_off(client, mdb, ws, [
+        {**merge, "due_date": "2026-12-03"},
+        {**merge, "due_date": "2026-12-04"},
+        {**REVIEW, "task_title": "버릴 일"},
+        {"action": "update", "target_task_id": mseed["tasks"][1].task_id, "due_date": "2026-12-01"},
+        {"action": "update", "target_task_id": mseed["tasks"][2].task_id},
+        {**REVIEW, "task_title": "새 일"},
+    ])
+    assert cards[0] == card and len(cards) == 4
+    r = client.patch(f"/api/v1/approvals/{card}", json={"status": "approved", "task_overrides": {
+        "task_title": "PM 제목", "assignee_member_id": bob.member_id, "due_date": "2026-12-09"}})
+    assert r.status_code == 200, r.text
+    for approval_id, status in zip(cards[1:], ("rejected", "rejected", "approved")):
+        _resolve(client, approval_id, status)
+    mdb.expire_all()
+    extraction = mdb.get(Extraction, extraction_id)
+
+    items = _input(client, extraction)["items"]
+
+    assert sorted((i["title"], i["assignee"], i["due_date"]) for i in items) == [
+        ("PM 제목", "밥", "2026-12-09"), ("새 일", None, None), ("할일2", None, None),
+    ]
+    assert len({i["item_id"] for i in items}) == 3
+
+
+def test_summary_input_values_are_the_ones_approved_for_that_meeting(client, mdb, mseed):
+    ws, bob = mseed["ws"], mseed["bob"]
+    first_id, [card] = _handed_off(client, mdb, ws, [{**REVIEW, "due_date": "2026-12-01"}],
+                                   started_at=T0 - timedelta(days=1))
+    r = client.patch(f"/api/v1/approvals/{card}", json={"status": "approved", "task_overrides": {
+        "task_title": "PM 제목", "assignee_member_id": bob.member_id}})
+    assert r.status_code == 200, r.text
+    task_id = r.json()["data"]["related_task_id"]
+    second_id, [update] = _handed_off(client, mdb, ws, [
+        {"action": "update", "target_task_id": task_id, "due_date": "2026-12-08", "status": "done"}])
+    r = client.patch(f"/api/v1/approvals/{update}", json={"status": "approved", "task_overrides": {
+        "due_date": "2026-12-10"}})
+    assert r.status_code == 200, r.text
+    r = client.patch(f"/api/v1/tasks/{task_id}", json={"title": "나중에 바꾼 제목", "assignee_member_id": None})
+    assert r.status_code == 200, r.text
+    mdb.expire_all()
+
+    first = _input(client, mdb.get(Extraction, first_id))["items"]
+    second = _input(client, mdb.get(Extraction, second_id))["items"]
+
+    assert [(i["action"], i["title"], i["assignee"], i["due_date"], i["status"]) for i in first] == [
+        ("create", "PM 제목", "밥", "2026-12-01", None)]
+    assert [(i["action"], i["title"], i["assignee"], i["due_date"], i["status"]) for i in second] == [
+        ("update", "PM 제목", None, "2026-12-10", "done")]
+
+
+@pytest.mark.parametrize("override", [None, "2026-12-09"])
+def test_merged_summary_items_keep_their_meeting_values_unless_pm_overrides(client, mdb, mseed, override):
+    first_id, [card] = _handed_off(client, mdb, mseed["ws"], [{**REVIEW, "due_date": "2026-12-01"}],
+                                   started_at=T0 - timedelta(days=1))
+    second_id, [merged_card] = _handed_off(client, mdb, mseed["ws"], [{
+        "action": "merge", "target_approval_id": card, "task_title": REVIEW["task_title"],
+        "category": "due", "due_date": "2026-12-05"}])
+    assert merged_card == card
+    response = client.patch(f"/api/v1/approvals/{card}", json={"status": "approved", **(
+        {"task_overrides": {"due_date": override}} if override else {})})
+    assert response.status_code == 200, response.text
+
+    first = _input(client, mdb.get(Extraction, first_id))["items"]
+    second = _input(client, mdb.get(Extraction, second_id))["items"]
+
+    assert [item["due_date"] for item in first] == [override or "2026-12-01"]
+    assert [item["due_date"] for item in second] == [override or "2026-12-05"]
+
+
+def test_deleting_a_meeting_erases_merged_card_overrides_for_surviving_summary(client, mdb, mseed, monkeypatch):
+    monkeypatch.setenv("MEETING_DELETION_ENABLED", "true")
+    first_id, [card] = _handed_off(client, mdb, mseed["ws"], [REVIEW], started_at=T0 - timedelta(days=1))
+    second_id, _ = _handed_off(client, mdb, mseed["ws"], [{
+        "action": "merge", "target_approval_id": card, "task_title": "합쳐진 회의 제목"}])
+    response = client.patch(f"/api/v1/approvals/{card}", json={"status": "approved", "task_overrides": {
+        "task_title": "PM 수정 제목"}})
+    assert response.status_code == 200, response.text
+    assert _input(client, mdb.get(Extraction, first_id))["items"][0]["title"] == "PM 수정 제목"
+    deleted = mdb.get(Extraction, second_id).meeting
+    deleted.deletion_ready = True
+    mdb.commit()
+
+    response = client.delete(f"/api/v1/meetings/{deleted.meeting_id}")
+
+    assert response.status_code == 202, response.text
+    assert _input(client, mdb.get(Extraction, first_id))["items"][0]["title"] == REVIEW["task_title"]
+    assert json.loads(mdb.get(ApprovalRequest, card).payload) == {
+        "meeting_id": deleted.meeting_id, "source_deleted": True}
+
+
+def test_summary_input_lists_the_tasks_rejected_in_that_meeting(client, mdb, mseed):
+    ws, (_, moved, finished) = mseed["ws"], mseed["tasks"]
+    _, [elsewhere] = _handed_off(client, mdb, ws, [{**REVIEW, "task_title": "다른 회의에서 버린 일"}],
+                                 started_at=T0 - timedelta(days=1))
+    _resolve(client, elsewhere, "rejected")
+    extraction_id, cards = _handed_off(client, mdb, ws, [
+        {**REVIEW, "task_title": "버릴 일"},
+        {**REVIEW, "task_title": "받은 일"},
+        {**REVIEW, "task_title": "받은 일"},
+        {"action": "update", "target_task_id": moved.task_id, "due_date": "2026-12-01"},
+        {"action": "update", "target_task_id": finished.task_id, "status": "done"},
+    ])
+    for approval_id, status in zip(cards, ("rejected", "approved", "rejected", "rejected", "approved")):
+        _resolve(client, approval_id, status)
+    mdb.expire_all()
+
+    data = _input(client, mdb.get(Extraction, extraction_id))
+
+    assert sorted(i["title"] for i in data["items"]) == ["받은 일", "할일2"]
+    assert data["rejected_items"] == ["버릴 일", "할일1 (반려된 변경: 마감 2026-12-01)"]
+
+
+def _with_due(db, tasks):
+    for task in tasks:
+        task.due_date = datetime(2026, 12, 1).date()
+    db.commit()
+
+
+def test_summary_input_tells_an_approved_clear_and_scope_change_from_no_change(client, mdb, mseed):
+    cleared, overridden, scoped = mseed["tasks"]
+    _with_due(mdb, [cleared, overridden])
+    extraction_id, cards = _handed_off(client, mdb, mseed["ws"], [
+        {"action": "update", "target_task_id": cleared.task_id, "due_cleared": True},
+        {"action": "update", "target_task_id": overridden.task_id, "due_date": "2026-12-05"},
+        {"action": "update", "target_task_id": scoped.task_id, "category": "scope", "doc_text": "소셜 로그인은 이번에 뺀다"},
+    ])
+    assert len(cards) == 3
+    by_task = dict(mdb.execute(select(ExtractionItem.task_id, ExtractionItem.approval_id).where(
+        ExtractionItem.extraction_id == extraction_id,
+    )).all())
+    _resolve(client, by_task[cleared.task_id], "approved")
+    r = client.patch(f"/api/v1/approvals/{by_task[overridden.task_id]}", json={
+        "status": "approved", "task_overrides": {"due_date": None}})
+    assert r.status_code == 200, r.text
+    _resolve(client, by_task[scoped.task_id], "approved")
+    mdb.expire_all()
+
+    items = _input(client, mdb.get(Extraction, extraction_id))["items"]
+
+    assert sorted((i["title"], i["due_date"], i["cleared"], i["scope"]) for i in items) == [
+        ("할일0", None, ["due_date"], None),
+        ("할일1", None, ["due_date"], None),
+        ("할일2", None, [], "소셜 로그인은 이번에 뺀다"),
+    ]
+
+
+def test_summary_input_lists_a_rejected_clear_and_scope_change(client, mdb, mseed):
+    cleared, scoped, _ = mseed["tasks"]
+    _with_due(mdb, [cleared])
+    extraction_id, cards = _handed_off(client, mdb, mseed["ws"], [
+        {"action": "update", "target_task_id": cleared.task_id, "due_cleared": True},
+        {"action": "update", "target_task_id": scoped.task_id, "category": "scope", "doc_text": "결제는 다음 달로 미룬다"},
+    ])
+    for card in cards:
+        _resolve(client, card, "rejected")
+    mdb.expire_all()
+
+    data = _input(client, mdb.get(Extraction, extraction_id))
+
+    assert data["rejected_items"] == ["할일0 (반려된 변경: 마감 없앰)", "할일1 (반려된 변경: 범위: 결제는 다음 달로 미룬다)"]
+
+
+def test_summary_input_keeps_each_update_of_one_task_in_one_meeting(client, mdb, mseed):
+    task = mseed["tasks"][0]
+    extraction_id, cards = _handed_off(client, mdb, mseed["ws"], [
+        {"action": "update", "target_task_id": task.task_id},
+        {"action": "update", "target_task_id": task.task_id, "due_date": "2026-12-01"},
+        {"action": "update", "target_task_id": task.task_id, "status": "done"},
+    ])
+    assert len(cards) == 2
+    for card in cards:
+        _resolve(client, card, "approved")
+    mdb.expire_all()
+
+    items = _input(client, mdb.get(Extraction, extraction_id))["items"]
+
+    assert len(items) == 3
+    assert {(i["title"], i["due_date"], i["status"]) for i in items} == {
+        ("할일0", None, None), ("할일0", "2026-12-01", None), ("할일0", None, "done")}
+    by_change = {(i["due_date"], i["status"]): i["item_id"] for i in items}
+    changed = [by_change[("2026-12-01", None)], by_change[(None, "done")]]
+    assert _claim(client, extraction_ids=[extraction_id])["extraction_id"] == extraction_id
+    _put(client, extraction_id, {**BODY, "topics": [{"name": "일정", "item_ids": changed}], "task_changes": [
+        {"task": "할일0", "due": "2026-12-01", "item_id": changed[0]}, {"task": "할일0 완료", "item_id": changed[1]}]})
+    meeting_id = mdb.get(Extraction, extraction_id).meeting_id
+    minutes = client.get(f"/api/v1/meetings/{meeting_id}/minutes").json()["data"]
+    assert [c["task"] for c in minutes["summary"]["task_changes"]] == ["할일0", "할일0 완료"]
+
+
+def test_summary_input_gives_source_members_and_terms(client, mdb, mseed):
+    _, extraction = _meeting(mdb, mseed["ws"], source="chat")
+    for offset, name in enumerate(("pm", "alice", "bob")):
+        mseed[name].created_at = T0 + timedelta(seconds=offset)
+    mseed["carol"].is_deleted = True
+    words = ("젠킨스", "배포", "zebra", "Alpha", "alpha")
+    mdb.add_all([WorkspaceAsrTerm(workspace_id=mseed["ws"], word=word) for word in words])
+    mdb.commit()
+
+    data = _input(client, extraction)
+
+    assert (data["source"], data["members"], data["asr_terms"]) == ("chat", ["PM", "앨리스", "밥"], sorted(words))
 
 
 def test_summary_input_unknown_extraction_is_404(client, mdb, mseed):
@@ -487,6 +853,24 @@ def test_summary_request_marks_old_meeting_for_the_claim(client, mdb, mseed):
     assert _claim(client)["extraction_id"] == extraction.extraction_id
 
 
+def test_completed_chat_summary_stays_done_after_approved_task_is_deleted(client, mdb, mseed):
+    extraction_id, [card] = _handed_off(client, mdb, mseed["ws"], [REVIEW], source="chat")
+    _resolve(client, card, "approved")
+    assert _claim(client)["extraction_id"] == extraction_id
+    _put(client, extraction_id)
+    extraction = mdb.get(Extraction, extraction_id)
+    item = mdb.scalar(select(ExtractionItem).where(ExtractionItem.extraction_id == extraction_id))
+    mdb.get(Task, item.task_id).is_deleted = True
+    mdb.commit()
+
+    rows = _request(client, mseed["ws"], meeting_ids=[extraction.meeting_id], dry_run=False)
+
+    assert rows[extraction.meeting_id]["state"] == "done"
+    assert extraction.summary_requested_at is None
+    assert _request(client, mseed["ws"], meeting_ids=[extraction.meeting_id], force=True)[
+        extraction.meeting_id]["state"] == "no_approved_items"
+
+
 def test_summary_request_reports_each_state(client, mdb, mseed):
     ws = mseed["ws"]
     now = datetime.now(timezone.utc)
@@ -501,14 +885,23 @@ def test_summary_request_reports_each_state(client, mdb, mseed):
     done, done_row = _meeting(mdb, ws, requested=False)
     done_row.summary = '{"overview": "핵심"}'
     mdb.commit()
+    waiting_id, _ = _handed_off(client, mdb, ws, [REVIEW])
+    unmarked_id, _ = _handed_off(client, mdb, ws, [REVIEW])
+    mdb.get(Extraction, unmarked_id).summary_requested_at = None
+    mdb.commit()
+    waiting, unmarked = (mdb.get(Extraction, e).meeting for e in (waiting_id, unmarked_id))
 
     rows = _request(client, ws, include_all=True, dry_run=False)
 
-    assert {m: rows[m.meeting_id]["state"] for m in (chat, silent, processing, queued, leased, gave_up, done)} == {
-        chat: "not_summarized_source", silent: "no_sources", processing: "not_done", queued: "queued",
-        leased: "queued", gave_up: "gave_up", done: "done",
+    assert {m: rows[m.meeting_id]["state"]
+            for m in (chat, silent, processing, queued, leased, gave_up, done, waiting, unmarked)} == {
+        chat: "no_approved_items", silent: "no_sources", processing: "not_done", queued: "queued",
+        leased: "queued", gave_up: "gave_up", done: "done", waiting: "awaiting_approval", unmarked: "awaiting_approval",
     }
     assert rows[processing.meeting_id]["extraction_id"] is None
+    mdb.expire_all()
+    assert mdb.get(Extraction, unmarked_id).summary_requested_at is not None
+    assert mdb.get(Extraction, chat.extractions[0].extraction_id).summary_requested_at is None
 
 
 def test_force_requeues_given_up_and_done_and_keeps_old_summary(client, mdb, mseed):

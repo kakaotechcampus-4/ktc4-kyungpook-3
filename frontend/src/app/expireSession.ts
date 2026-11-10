@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { clearTrackedMeetings } from '@/entities/meeting'
-import { SESSION_QUERY_KEY, advanceSessionGeneration, sessionQueryOptions } from '@/entities/user'
+import { advanceSessionGeneration, clearUserCache, sessionQueryOptions } from '@/entities/user'
 import { clearReturnWorkspace } from '@/shared/lib/return-workspace'
 import { clearUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { toast } from '@/shared/ui/toast'
@@ -31,7 +31,7 @@ export function expireSession(queryClient: QueryClient): boolean {
   // 이전 사용자에게 띄운 알림도 남기지 않는다
   toast.clear()
   void queryClient.cancelQueries()
-  queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== SESSION_QUERY_KEY[0] })
+  clearUserCache(queryClient)
   queryClient.setQueryData(queryKey, null)
   return true
 }

@@ -4,7 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { getResponse, http } from 'msw'
 import type { ReactNode } from 'react'
 import { messageSettingsQueryOptions } from '@/entities/message-settings'
-import { advanceSessionGeneration } from '@/entities/user'
+import { advanceSessionGeneration, clearUserCache } from '@/entities/user'
 import { createQueryClient } from '@/shared/api/queryClient'
 import { db } from '@/shared/mock/db'
 import { handlers } from '@/shared/mock/handlers'
@@ -81,6 +81,44 @@ describe('useMessageSettings', () => {
     await waitFor(() => expect(client.isMutating()).toBe(0))
     expect(patchCount(log)).toBe(1)
     expect(db.messageSettings.ws_01?.reminder_auto_approve).not.toBe(true)
+  })
+
+  it('저장 중에 한 번 더 바꾸고 로그아웃하면 기다리던 변경도 보내지 않고 끝난다 (#681)', async () => {
+    const client = createQueryClient()
+    const { result } = renderSettings(client)
+    await waitFor(() => expect(result.current.settings).toBeDefined())
+    const log = recordRequests()
+    const first = deferred()
+    onTestFinished(() => first.resolve())
+    server.use(
+      http.patch(
+        SETTINGS_PATH,
+        async () => {
+          await first.promise
+        },
+        { once: true },
+      ),
+    )
+    act(() => {
+      result.current.change({ silenceAlert: false })
+      result.current.change({ reminderAutoApprove: true })
+    })
+    await waitFor(() => expect(patchCount(log)).toBe(1))
+    const waiting = client
+      .getMutationCache()
+      .getAll()
+      .find(({ state }) => state.isPaused)
+    expect(waiting?.state.variables).toMatchObject({ change: { reminderAutoApprove: true } })
+
+    act(() => {
+      advanceSessionGeneration()
+      clearUserCache(client)
+    })
+
+    await waitFor(() => expect(waiting?.state.status).toBe('error'))
+    expect(waiting?.state.error).toMatchObject({ code: 'REQUEST_CANCELED' })
+    expect(client.getMutationCache().getAll()).toEqual([])
+    expect(patchCount(log)).toBe(1)
   })
 
   it('변경 전 값을 읽은 조회가 변경 성공 뒤에 끝나도 저장한 값을 덮지 않고, 끝나면 서버 값을 다시 읽는다', async () => {

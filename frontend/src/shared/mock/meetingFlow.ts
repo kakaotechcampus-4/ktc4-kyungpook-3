@@ -221,14 +221,18 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
       decisions: ['확실한 항목은 바로 반영하고 나머지는 PM이 확인한다.'],
     },
     summary_status: 'ready',
+    summary_waiting_count: null,
     transcript: TRANSCRIPT_LINES.map((text, index) => {
       const member = speaker(index)
       return {
+        seq: index,
         at_ms: index * 60_000,
         speaker_member_id: member?.member_id ?? null,
         speaker_display_name: member?.display_name ?? null,
         speaker_fallback: member?.display_name ?? '참석자',
         text,
+        edited: false,
+        original_text: null,
       }
     }),
     // minutes handler 가 요청한 사람의 역할로 다시 채운다

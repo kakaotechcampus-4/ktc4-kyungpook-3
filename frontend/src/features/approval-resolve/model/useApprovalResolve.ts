@@ -73,12 +73,14 @@ export function toApprovalResolveProblem(error: unknown): ApprovalResolveProblem
  * 추출 key 는 `entities/extraction` 의 `['workspace', id, 'extractions', extractionId]` 다 — 승인에는 추출 ID 가 없어 공간 전체를 본다.
  * 회의록의 `확인 필요` 는 열린 승인 목록과 조인하므로 `approval_id` 가 남은 항목도 다시 받은 목록에서 빠진다.
  * 생성 승인은 `save_alias` 로 담당자의 별칭을 더할 수 있어 팀 화면의 별칭 목록도 다시 받는다 (#523)
+ * 회의록은 끝난 회의라도 승인 대기 요약 상태와 남은 건수가 승인·반려로 바뀐다. 합친 카드는 다른 회의도 기다려 공간 전체를 본다 (#551)
  */
 function syncAfterResolve(queryClient: QueryClient, workspaceId: string): void {
   for (const queryKey of [
     workspaceKey(workspaceId, 'approvals'),
     taskKeys(workspaceId),
     workspaceKey(workspaceId, 'extractions'),
+    workspaceKey(workspaceId, 'minutes'),
     memberAliasesQueryOptions(workspaceId).queryKey,
   ])
     void queryClient.invalidateQueries({ queryKey })

@@ -63,3 +63,27 @@ describe('expireSession', () => {
     expect(client.getQueryData(workspaceKey('ws_01', 'members'))).toEqual(['김서연'])
   })
 })
+
+it('사용자가 쓰던 mutation(고치기 글 포함)을 캐시에서 지운다 (#681)', () => {
+  const client = createQueryClient()
+  client.setQueryData(sessionKey, SESSION)
+  client.getMutationCache().build(
+    client,
+    { mutationKey: ['minutes-edit', 'ws_01', 'mt_09', 'line'], gcTime: Infinity },
+    {
+      context: undefined,
+      data: undefined,
+      error: null,
+      failureCount: 1,
+      failureReason: null,
+      isPaused: false,
+      status: 'error',
+      variables: { target: { seq: 1, text: '앞 계정의 초안' } },
+      submittedAt: 1,
+    },
+  )
+
+  expect(expireSession(client)).toBe(true)
+
+  expect(client.getMutationCache().getAll()).toEqual([])
+})

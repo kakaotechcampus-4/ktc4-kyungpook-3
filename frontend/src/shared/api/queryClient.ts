@@ -8,7 +8,7 @@ import type {
 } from '@tanstack/react-query'
 import { ApiError, isInvalidResponse } from './errors'
 
-/** D-136. 세션·워크스페이스·팀원·설정·완료 회의록 상세는 `long` */
+/** D-136. 세션·워크스페이스·팀원·설정은 `long`. 완료 회의록은 팀원이 고쳐 `default` 다 (D-192) */
 export const STALE_TIME = { default: 30_000, long: 5 * 60_000 } as const
 
 export const GC_TIME = 5 * 60_000

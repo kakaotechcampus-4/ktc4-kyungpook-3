@@ -143,13 +143,18 @@ class MeetingListResponse(BaseModel):
 class MeetingMinutesResponse(BaseModel):
     meeting_id: str
     title: str | None
+    # 팀원이 제목을 고쳤는가와 처음 제목(#605). 처음 제목은 고친 적 없으면 null 이다
+    title_edited: bool = False
+    title_original: str | None = None
     started_at: datetime
     duration_ms: int
     source: str
     attendees: list[dict]
     summary: dict | None
-    # ready: 요약이 있다. pending: 곧 나온다. none: 없다(대상 아님, 실패)
-    summary_status: Literal["ready", "pending", "none"]
+    # ready: 요약이 있다. pending: 곧 나온다. awaiting_approval: 승인이 끝나면 만든다. none: 없다(대상 아님, 실패)
+    summary_status: Literal["ready", "pending", "awaiting_approval", "none"]
+    # awaiting_approval 일 때 남은 승인 요청 수. PM 에게만 준다(D-104)
+    summary_waiting_count: int | None = None
     transcript: list[dict]
     permissions: dict
 
