@@ -145,3 +145,11 @@ sudo -u "$U" sh -c 'cd /opt/mm/ai && CHAT_POLL_INITIAL_HOURS=48 /usr/bin/flock -
 ```
 
 서비스의 `TimeoutStartSec` 를 7시간 이상으로 올리면 BE 의 채팅 회의 정리 기준(`chat_stalled`, 7시간)도 함께 올린다([봇 계약](../backend/docs/contracts/backend-ai-contract.md)).
+
+## 모니터링 (#675)
+
+서버 상태와 KPI 를 Grafana Cloud 무료 스택에서 본다. 서버에는 Alloy(지표 수집)와 PDC 에이전트(DB 연결)만 더 올리고, **이 설치는 배포 스크립트에 포함되지 않는다.** 서버에서 사람이 한 번 한다. 설치 순서, 읽기 계정 SQL, 패널 SQL, 공개 링크 전 점검은 [monitoring/README.md](monitoring/README.md)에 있다.
+
+- 바깥 확인용 경로는 `GET /api/v1/health/ready`(DB 까지 확인)다. 루트 `/health` 는 그대로다.
+- 설정 파일은 [monitoring/](monitoring/)에 있다. `config.alloy`·`override.conf`·`run-pdc.sh` 에 값이 없고, 접속 값은 서버의 `/etc/mm-monitoring/*.env`(root 600)에서만 읽는다.
+- Alloy 에 주는 docker 그룹은 root 와 같은 권한이다.
