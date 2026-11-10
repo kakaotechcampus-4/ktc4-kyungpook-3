@@ -1484,3 +1484,60 @@ def test_chat_channels_wrong_token_is_unauthenticated():
     with pytest.raises(H.BeError) as e:
         H.BeClient("http://be.local", session=FakeBe(), service_token="틀린 토큰").chat_channels()
     assert e.value.code == "UNAUTHENTICATED" and e.value.status == 401
+
+
+def test_stt_progress_payload_preserves_timeout_auth_and_privacy_epoch():
+    fake = FakeBe()
+    fake.meetings['m1'] = {'meeting_id': 'm1', 'workspace_id': 'ws-1', 'status': 'processing'}
+    manifest = {**_staged(), 'workspace_id': 'ws-1', 'identity_epoch': 7}
+    handoff = _handoff(fake)
+    handoff.report_stage(manifest, 'stt', stt={'done': 0, 'total': 3})
+    handoff.report_stage(manifest, 'stt', stt={'done': 1, 'total': 3})
+    assert fake.meetings['m1']['stt'] == {'done': 1, 'total': 3}
+    assert fake.calls[-1] == ('PATCH', '/meetings/m1/stage', {'stage': 'stt', 'stt': {'done': 1, 'total': 3}})
+    assert fake.headers[-1] == {'X-Service-Token': 'svc-token', 'X-Privacy-Epoch': '7'}
+    assert fake.timeouts[-1] == H.STAGE_TIMEOUT_S
+    handoff.report_stage(manifest, 'sources')
+    assert fake.meetings['m1']['stt'] is None
+
+
+@pytest.mark.parametrize('stage,stt', [
+    ('sources', {'done': 0, 'total': 1}),
+    ('stt', {'done': False, 'total': 1}),
+    ('stt', {'done': 0, 'total': True}),
+    ('stt', {'done': -1, 'total': 1}),
+    ('stt', {'done': 2, 'total': 1}),
+    ('stt', {'done': 0, 'total': 0}),
+    ('stt', {'done': 0, 'total': 2**31}),
+])
+def test_invalid_stt_progress_never_reaches_transport(stage, stt):
+    fake = FakeBe()
+    with pytest.raises(ValueError):
+        _client(fake).report_stage('m1', stage, stt=stt)
+    assert fake.calls == []
+
+
+def test_stt_hook_throttles_failed_attempts_and_always_sends_initial_and_final(monkeypatch):
+    fake = FakeBe()
+    fake.meetings['m1'] = {'meeting_id': 'm1', 'workspace_id': 'ws-1', 'status': 'processing'}
+    fake.stage_fail = 500
+    clock = iter([0.0, 0.5, 1.9, 2.0, 2.1, 2.2])
+    monkeypatch.setattr(H.time, 'monotonic', lambda: next(clock))
+    handoff = _handoff(fake)
+    report = handoff.stt_progress(_staged())
+    for done in (0, 1, 2, 3, 5):
+        report(done, 5)
+    assert [body['stt']['done'] for _, _, body in fake.calls] == [0, 3, 5]
+    handoff.stt_progress(_staged())(0, 5)
+    assert fake.calls[-1][2]['stt'] == {'done': 0, 'total': 5}
+
+
+def test_stt_hook_propagates_meeting_deletion():
+    class Deleted:
+        def request(self, *args, **kwargs):
+            return fake_be._err(410, 'MEETING_DELETED')
+
+    handoff = H.Handoff(H.BeClient('http://be', session=Deleted()))
+    with pytest.raises(H.MeetingEnded) as error:
+        handoff.stt_progress(_staged())(0, 2)
+    assert error.value.code == 'MEETING_DELETED'

@@ -71,6 +71,16 @@ class Track:
 
 
 @dataclass
+class _PendingTrack:
+    index: int
+    track: Track
+    audio_s: float
+    utterances: list[Utterance]
+    chunks: list[Chunk] | None
+    futures: list
+
+
+@dataclass
 class BatchStats:
     mode: str
     backend: str
@@ -501,7 +511,7 @@ def merge_turns(lines: list[Line], gap_s: float = TURN_GAP_S) -> list[Line]:
 def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: SpeechGate | None = None,
         workers: int = 1, pack_turns: bool = True, merge: bool = True,
         preprocess=None, max_inflight: int | None = None, progress=None,
-        ordered: bool | None = None) -> tuple[list[Line], BatchStats]:
+        ordered: bool | None = None, track_progress=None) -> tuple[list[Line], BatchStats]:
     """트랙 목록을 전사해 회의 전체 순번이 매겨진 Line 목록과 통계를 돌려준다.
 
     트랙은 하나씩 읽는다. 자르고 보낼 조각(복사본)을 풀에 넣은 뒤 트랙 배열과 클립의 뷰를 놓고
@@ -518,6 +528,8 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
     발화가 짧은 트랙이 많을 때 원격 API 의 병렬 이점을 잃지 않기 위해서다.
     progress(done, sent, tracks, total) 를 주면 호출이 하나 끝날 때마다 부른다. 끝난 호출, 보낸 호출, 읽은 트랙,
     전체 트랙 수다. 워커 스레드에서 불리므로 빨리 돌아와야 하고, 여기서 난 예외는 로그만 남기고 전사를 계속한다.
+    track_progress(done, total)는 수거와 추가 전사를 끝낸 입력 트랙 수다. 호출자 스레드에서 0부터 보고하며,
+    예외는 출력 저장 전에 호출자에게 전파한다. 최종 실패도 처리 완료에 포함하고 입력이 비면 보고하지 않는다.
     ordered 면(기본: 백엔드가 단어 시각을 주지 않을 때, gives_word_times=False) chunk 모드의 묶음을 다른 화자가
     말을 시작한 자리에서 가른다. 단어 시각이 없으면 묶음 하나가 회의록 한 줄이 되고, 그 줄이 다른 화자의 말을
     건너뛰면 회의록과 판단 1단계의 문장 번호가 말한 순서와 어긋난다. 다른 트랙의 클립 시작을 알아야 해서 트랙을
@@ -527,6 +539,19 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
         raise ValueError(f"mode 는 clip|chunk|track|whole 이다: {mode}")
     stats = BatchStats(mode=mode, backend=getattr(backend, "name", type(backend).__name__))
     t0 = time.monotonic()
+    remaining = [1] * len(tracks)
+    finished = 0
+    if tracks and track_progress is not None:
+        track_progress(0, len(tracks))
+
+    def settled(index: int) -> None:
+        nonlocal finished
+        remaining[index] -= 1
+        if remaining[index] == 0:
+            finished += 1
+            if track_progress is not None:
+                track_progress(finished, len(tracks))
+
     if ordered is None:
         ordered = not getattr(backend, "gives_word_times", True)
     ordered = ordered and mode == "chunk"
@@ -547,9 +572,9 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
     reclip = bool(getattr(backend, "reclip_unmapped", False)) and mode == "chunk"
     # 앞 줄을 받는 백엔드(운영 Prompted)면 min_s 보다 짧은 묶음은 나머지를 다 받은 뒤 시간순으로 보낸다(0031)
     defer_s = getattr(backend, "min_s", 0.0) if ordered and getattr(backend, "takes_context", False) else 0.0
-    deferred: list[tuple[Track, Chunk]] = []
+    deferred: list[tuple[int, Track, Chunk]] = []
 
-    pending: deque = deque()   # 제출은 했고 결과는 아직 안 받은 트랙: (track, audio_s, utts, chunks, futures)
+    pending: deque[_PendingTrack] = deque()
     all_lines: list[Line] = []
     inflight = threading.BoundedSemaphore(max_inflight or max(1, workers) * 2)
     counts = {"done": 0, "sent": 0, "tracks": 0}
@@ -583,11 +608,14 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
         return ex.submit(_job, pcm, speaker)
 
     def _held_bytes(entries) -> int:
-        return sum(c.pcm.nbytes for (_, _, _, chunks, _) in entries if chunks for c in chunks)
+        return sum(c.pcm.nbytes for entry in entries if entry.chunks for c in entry.chunks)
 
-    def _collect(ex, tr, audio_s, utts, chunks, futures) -> None:
+    def _collect(ex, entry: _PendingTrack) -> None:
+        tr, audio_s, utts, chunks, futures = (entry.track, entry.audio_s, entry.utterances,
+                                            entry.chunks, entry.futures)
         results = [f.result() for f in futures]
         if not futures:
+            settled(entry.index)
             return
         if mode == "clip":
             all_lines.extend(_clip_lines(tr, utts, results))
@@ -599,59 +627,66 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
             all_lines.extend(_track_lines(tr, utts, results[0], stats))
         else:
             all_lines.extend(_whole_lines(tr, audio_s, utts, results[0], stats))
+        settled(entry.index)
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
-        for k, tr in enumerate(tracks):
-            audio = load_track(tr.path)
-            if preprocess is not None:
-                audio = preprocess(audio, SR)
-            audio_s = len(audio) / SR
-            stats.tracks += 1
-            with count_lock:
-                counts["tracks"] += 1
-            stats.track_s += audio_s
-            utts = cut(audio, tr.speaker_id, stats)
-            if gate is not None:
-                kept = []
-                for u in utts:
-                    passed = (u.seq in kept_seqs[k]) if ordered else gate.accepts(u.pcm, SR, tag=f"{tr.speaker_name}#{u.seq}")
-                    if passed:
-                        kept.append(u)
-                    else:
-                        stats.gated += 1
-                utts = kept
-            stats.clips += len(utts)
-            stats.turns += len(group_turns(utts))
-            stats.speech_s += sum(u.duration_s for u in utts)
-            chunks = None
-            if mode == "clip":
-                units = [np.array(u.pcm, copy=True) for u in utts]
-            elif mode == "chunk":
-                barriers = ([t for spk, ts in starts_of.items() if spk != tr.speaker_id for t in ts]
-                            if ordered else None)
-                chunks = build_chunks(utts, pack_turns=pack_turns, barriers=barriers) if utts else []
-                if defer_s:
-                    deferred += [(tr, c) for c in chunks if len(c.pcm) < SR * defer_s]
-                    chunks = [c for c in chunks if len(c.pcm) >= SR * defer_s]
-                units = [c.pcm for c in chunks]
-            else:
-                units = [audio] if utts else []
-            if mode in ("clip", "chunk"):
-                for u in utts:
-                    u.pcm = _EMPTY   # 트랙 배열을 가리키는 뷰를 놓는다. 뒤 단계는 시각만 쓴다
-                del audio
-            futures = [_submit(ex, pcm, tr.speaker_id) for pcm in units]
-            pending.append((tr, audio_s, utts, chunks, futures))
-            # 결과가 다 온 앞 트랙은 바로 받아 묶음을 놓는다
-            while pending and all(f.done() for f in pending[0][4]):
-                _collect(ex, *pending.popleft())
-            # 붙잡은 묶음이 상한을 넘으면 앞 트랙이 끝날 때까지 기다려 받는다. 지금 트랙은 풀에서 계속 돈다
-            while len(pending) > 1 and _held_bytes(pending) > HOLD_PCM_MB * 1024 * 1024:
-                _collect(ex, *pending.popleft())
-        while pending:
-            _collect(ex, *pending.popleft())
+        try:
+            for k, tr in enumerate(tracks):
+                audio = load_track(tr.path)
+                if preprocess is not None:
+                    audio = preprocess(audio, SR)
+                audio_s = len(audio) / SR
+                stats.tracks += 1
+                with count_lock:
+                    counts["tracks"] += 1
+                stats.track_s += audio_s
+                utts = cut(audio, tr.speaker_id, stats)
+                if gate is not None:
+                    kept = []
+                    for u in utts:
+                        passed = (u.seq in kept_seqs[k]) if ordered else gate.accepts(u.pcm, SR, tag=f"{tr.speaker_name}#{u.seq}")
+                        if passed:
+                            kept.append(u)
+                        else:
+                            stats.gated += 1
+                    utts = kept
+                stats.clips += len(utts)
+                stats.turns += len(group_turns(utts))
+                stats.speech_s += sum(u.duration_s for u in utts)
+                chunks = None
+                if mode == "clip":
+                    units = [np.array(u.pcm, copy=True) for u in utts]
+                elif mode == "chunk":
+                    barriers = ([t for spk, ts in starts_of.items() if spk != tr.speaker_id for t in ts]
+                                if ordered else None)
+                    chunks = build_chunks(utts, pack_turns=pack_turns, barriers=barriers) if utts else []
+                    if defer_s:
+                        short = [(k, tr, c) for c in chunks if len(c.pcm) < SR * defer_s]
+                        remaining[k] += len(short)
+                        deferred.extend(short)
+                        chunks = [c for c in chunks if len(c.pcm) >= SR * defer_s]
+                    units = [c.pcm for c in chunks]
+                else:
+                    units = [audio] if utts else []
+                if mode in ("clip", "chunk"):
+                    for u in utts:
+                        u.pcm = _EMPTY   # 트랙 배열을 가리키는 뷰를 놓는다. 뒤 단계는 시각만 쓴다
+                    del audio
+                futures = [_submit(ex, pcm, tr.speaker_id) for pcm in units]
+                pending.append(_PendingTrack(k, tr, audio_s, utts, chunks, futures))
+                # 결과가 다 온 앞 트랙은 바로 받아 묶음을 놓는다
+                while pending and all(f.done() for f in pending[0].futures):
+                    _collect(ex, pending.popleft())
+                # 붙잡은 묶음이 상한을 넘으면 앞 트랙이 끝날 때까지 기다려 받는다. 지금 트랙은 풀에서 계속 돈다
+                while len(pending) > 1 and _held_bytes(pending) > HOLD_PCM_MB * 1024 * 1024:
+                    _collect(ex, pending.popleft())
+            while pending:
+                _collect(ex, pending.popleft())
+        except BaseException:
+            ex.shutdown(wait=True, cancel_futures=True)
+            raise
 
-    for tr, c in sorted(deferred, key=lambda d: d[1].pieces[0][1].start_ms):
+    for index, tr, c in sorted(deferred, key=lambda d: d[2].pieces[0][1].start_ms):
         start = c.pieces[0][1].start_ms
         before = [ln for ln in all_lines if ln.start_ms < start and ln.text.strip()]
         context = max(before, key=lambda ln: ln.start_ms).text.strip() if before else None
@@ -662,6 +697,7 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
             counts["done"] += 1
         _report()
         all_lines.extend(_chunk_lines(tr, [c], [r], stats))
+        settled(index)
 
     if merge:
         all_lines = merge_turns(all_lines)
