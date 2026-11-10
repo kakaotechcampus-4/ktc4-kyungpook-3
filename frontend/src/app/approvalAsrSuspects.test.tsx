@@ -29,6 +29,8 @@ afterEach(() => {
 
 const CANDIDATE = "'애포'는 '배포'일 수 있어요"
 const CHECK_FAILED = '전사 확인을 하지 못했어요'
+/** 상세는 앞에 「전사」 라벨이 있어 라벨을 되풀이하지 않는다 */
+const CHECK_FAILED_LABELED = '확인하지 못했어요'
 
 function payloadOf(id: string) {
   const found = db.approvals.find(({ approval_id }) => approval_id === id)
@@ -131,10 +133,10 @@ describe('승인 상세의 「확인이 필요한 이유」', () => {
     expect(rows.at(-1)).toBe(`전사${CANDIDATE}`)
   })
 
-  it('확인 실패는 그대로 알린다', async () => {
+  it('확인 실패는 라벨 「전사」를 되풀이하지 않고 알린다', async () => {
     replaceDb(createScenarioDb('approval-asr-suspects'))
     await openReasons('ap_02')
-    await waitFor(() => expect(suspectRows()).toEqual([`전사${CHECK_FAILED}`]))
+    await waitFor(() => expect(suspectRows()).toEqual([`전사${CHECK_FAILED_LABELED}`]))
   })
 
   it('빠진 값이 없어도 의심이 있으면 이유를 보인다', async () => {
@@ -146,7 +148,7 @@ describe('승인 상세의 「확인이 필요한 이유」', () => {
         within(reasons()!)
           .getAllByRole('listitem')
           .map((row) => row.textContent),
-      ).toEqual([`전사${CHECK_FAILED}`]),
+      ).toEqual([`전사${CHECK_FAILED_LABELED}`]),
     )
   })
 

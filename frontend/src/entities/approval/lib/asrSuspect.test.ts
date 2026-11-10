@@ -34,4 +34,11 @@ describe('전사 오인식 의심 문구 (#643)', () => {
   it('확인하지 못했으면 그렇게 알린다', () => {
     expect(asrSuspectLine({ kind: 'check_failed' })).toBe('전사 확인을 하지 못했어요')
   })
+
+  it('앞에 「전사」 라벨이 붙는 자리의 확인 실패는 라벨을 되풀이하지 않는다. 교정 후보 문구는 같다', () => {
+    expect(asrSuspectLine({ kind: 'check_failed' }, { labeled: true })).toBe('확인하지 못했어요')
+    expect(
+      asrSuspectLine({ kind: 'misheard', word: '애포', candidates: ['배포'] }, { labeled: true }),
+    ).toBe("'애포'는 '배포'일 수 있어요")
+  })
 })

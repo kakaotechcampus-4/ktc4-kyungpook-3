@@ -794,7 +794,7 @@ function ConfirmReasons({
           </li>
         ))}
         {approval.asrSuspects.map((suspect) => {
-          const line = asrSuspectLine(suspect)
+          const line = asrSuspectLine(suspect, { labeled: true })
           return (
             <li key={line} className="py-10 text-[15px] leading-[1.6] text-ink">
               <b className="mr-6 font-bold">전사</b>
