@@ -1,8 +1,8 @@
+import { useId, useRef, useState } from 'react'
 import { Icon } from '@/shared/ui/icon'
 import { CARD_WIDTH, SECTION_LEAD, SECTION_TITLE, TEXT_WIDTH } from './styles'
 
-/* Landing 캔버스의 가치 3절 · 기능 카드 4장 · 맡길 수 있는 일. 문구는 캔버스 그대로다.
-   카드 안 예시 블록은 정적 그림이라 누를 곳이 없다 — 캔버스의 버튼은 span 으로 옮겼다. */
+/* 카드 안 예시 블록은 정적 그림이라 누를 곳이 없다 — 캔버스의 버튼은 span 으로 옮겼다. */
 
 const VALUES = [
   {
@@ -171,39 +171,122 @@ export function FeatureCards() {
 }
 
 const TASKS = [
-  '회의록 정리',
-  '마감 리마인드',
-  '담당자 배치',
-  '진행 상황 점검',
-  '주간 요약',
+  {
+    id: 'minutes',
+    label: '회의록 정리',
+    lines: [
+      '녹음을 올리면 발화자를 나누고 회의 내용을 정리해요.',
+      '요약과 결정사항을 확인하고, Notion에 반영할 수 있어요.',
+    ],
+  },
+  {
+    id: 'reminders',
+    label: '마감 리마인드',
+    lines: [
+      '다가오는 마감과 담당자를 확인하고 알림을 준비해요.',
+      'Discord로 보낼 문구를 고친 뒤, 확인하고 발송하세요.',
+    ],
+  },
+  {
+    id: 'assignment',
+    label: '담당자 배치',
+    lines: [
+      '회의에서 정해진 업무에 담당자와 마감을 연결해요.',
+      '담당자가 여럿이면 후보를 확인하고 직접 고를 수 있어요.',
+    ],
+  },
+  {
+    id: 'progress',
+    label: '진행 상황 점검',
+    lines: [
+      '담당자에게 진행 상황을 물어보는 메시지를 준비해요.',
+      '보낼 내용을 확인하고, 돌아온 답변을 대화에서 살펴보세요.',
+    ],
+  },
+  {
+    id: 'weekly',
+    label: '주간 요약',
+    lines: [
+      '회의록과 태스크로 이번 주에 한 일과 남은 일을 살펴보세요.',
+      '다음 회의에서 확인할 내용을 정리하는 데 활용할 수 있어요.',
+    ],
+  },
 ] as const
+
+type Task = (typeof TASKS)[number]
 
 const TASK_PILL =
   'inline-flex h-40 items-center rounded-999 border px-18 text-[15px] leading-none font-semibold'
 
-/** `이런 일을 맡길 수 있어요`. 캔버스의 알약은 누르는 곳이 아니라 목록이다 */
 export function Capabilities() {
+  const prefix = useId()
+  const [selected, setSelected] = useState<Task>(TASKS[0])
+  const buttons = useRef(new Map<Task['id'], HTMLButtonElement>())
+
   return (
-    <section className={`${TEXT_WIDTH} flex flex-col items-center gap-28 pb-128 text-center`}>
-      <h2 className={SECTION_TITLE}>이런 일을 맡길 수 있어요</h2>
-      <ul className="flex flex-wrap items-center justify-center gap-10">
+    <section
+      aria-labelledby={`${prefix}-title`}
+      className={`${TEXT_WIDTH} flex flex-col items-center gap-28 pb-128 text-center`}
+    >
+      <h2 id={`${prefix}-title`} className={SECTION_TITLE}>
+        이런 일을 맡길 수 있어요
+      </h2>
+      <div
+        role="tablist"
+        aria-labelledby={`${prefix}-title`}
+        className="flex flex-wrap items-center justify-center gap-10"
+      >
         {TASKS.map((task, index) => (
-          <li
-            key={task}
+          <button
+            key={task.id}
+            ref={(node) => {
+              if (node === null) buttons.current.delete(task.id)
+              else buttons.current.set(task.id, node)
+            }}
+            type="button"
+            role="tab"
+            id={`${prefix}-tab-${task.id}`}
+            aria-selected={task.id === selected.id}
+            aria-controls={`${prefix}-panel`}
+            tabIndex={task.id === selected.id ? 0 : -1}
             className={`${TASK_PILL} ${
-              index === 0
+              task.id === selected.id
                 ? 'border-transparent bg-ink-solid text-surface'
-                : 'border-line bg-surface text-ink'
+                : 'border-line bg-surface text-ink hover:bg-control'
             }`}
+            onClick={() => setSelected(task)}
+            onKeyDown={(event) => {
+              const last = TASKS.length - 1
+              const next =
+                event.key === 'ArrowRight'
+                  ? (index + 1) % TASKS.length
+                  : event.key === 'ArrowLeft'
+                    ? (index + last) % TASKS.length
+                    : event.key === 'Home'
+                      ? 0
+                      : event.key === 'End'
+                        ? last
+                        : null
+              if (next === null) return
+              event.preventDefault()
+              setSelected(TASKS[next])
+              buttons.current.get(TASKS[next].id)?.focus()
+            }}
           >
-            {task}
-          </li>
+            {task.label}
+          </button>
         ))}
-      </ul>
-      <p className={`${SECTION_LEAD} max-w-[620px]`}>
-        녹음을 올리면 전사·요약·결정사항 추출까지 한 번에.
+      </div>
+      <p
+        role="tabpanel"
+        id={`${prefix}-panel`}
+        aria-labelledby={`${prefix}-tab-${selected.id}`}
+        tabIndex={0}
+        className={`${SECTION_LEAD} min-h-[58px] max-w-[620px]`}
+      >
+        {selected.lines[0]}
         <br />
-        Notion에 바로 올리고, 애매한 것만 승인 목록에 남깁니다.
+        {selected.lines[1]}
       </p>
       <a
         href="#features"
