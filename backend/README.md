@@ -566,7 +566,7 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 | 항목 | 동작 |
 |---|---|
 | 재생 | `GET /api/v1/meetings/{meeting_id}/audio`. done 회의는 소속이면 누구나, 그 밖의 상태는 PM 만 듣는다. 보관 기간 안이면 s3 저장소는 S3 presigned GET URL 로 302(`Cache-Control: private, no-store`, 응답 Content-Type 고정, 유효 시간 `UPLOAD_PLAYBACK_URL_TTL_SECONDS`. done 회의는 남은 보관 시간이 더 짧으면 그만큼으로 줄여 주소가 `expires_at` 뒤까지 열려 있지 않게 한다), local 저장소는 파일을 그대로 보낸다(Range 지원). 없거나 지났으면 404 `AUDIO_NOT_AVAILABLE`. presigned URL 의 host 는 `<bucket>.s3.<AWS_REGION>.amazonaws.com`(리전 가상 호스트)이다. URL 은 서명한 자격이 임시 자격(인스턴스 역할 등)이면 그 자격이 먼저 끝날 때 TTL 전에도 S3 가 403 으로 거절할 수 있다(지금 운영의 전용 사용자 키는 해당하지 않는다). 재생 오류가 나면 이 API 를 다시 불러(`<audio>` 의 `src` 를 다시 넣어) 새 URL 을 받는다 |
-| 재생 정보 | `GET /meetings/{meeting_id}/minutes` 의 `audio: {content_type, expires_at} \| null`. 호출자가 지금 들을 수 있을 때만 값이다. `expires_at` 은 `retention_from` + 보관 기간이다 |
+| 재생 정보 | `GET /meetings/{meeting_id}/minutes` 의 `audio: {content_type, expires_at} \| null`. 호출자가 지금 들을 수 있을 때만 값이다. `expires_at` 은 `retention_from` + 보관 기간이다. 처리 중(done·failed 가 아님)인 회의는 이 시각이 지나도 PM 이 들을 수 있어 `audio` 가 값으로 오므로, 화면은 `expires_at` 만 보고 "만료됨"으로 단정하지 않는다 |
 | 디스코드 녹음 받기 | `PUT /meetings/{meeting_id}/recording`(서비스 토큰). 개인정보 세대(`X-Privacy-Epoch`)는 보지 않는다. [봇 계약](docs/contracts/backend-ai-contract.md#회의-녹음-올리기-put-meetingsmeeting_idrecording--200) |
 | 녹음 삭제 | s3 저장소에서도 S3 prefix 와 함께 local 폴더(`UPLOAD_DIR/{meeting_id}`, local 로 운영하던 기간에 남은 것)를 지운다. 만료 정리는 파일을 잠금 없이 먼저 지운 뒤 공간·회의를 짧게 잠가 `deleted_at` 을 남긴다. 실패 업로드 파일 재시도는 보관 기록이 없는 옛 회의만 본다 |
 | 업로드 원본 가져가기 | `GET /uploads/{meeting_id}/file` 의 모양은 그대로다. s3 저장소에서는 BE 가 S3 에서 읽어 바이트를 대신 보낸다(리다이렉트 없음) |
