@@ -70,3 +70,11 @@ def test_mix_scales_down_clipping(tmp_path):
 def test_mix_without_tracks_is_an_error(tmp_path):
     with pytest.raises(ValueError):
         mix_to_m4a([], tmp_path / "mix.m4a")
+
+
+def test_mix_puts_moov_before_mdat_so_playback_can_start_before_download_ends(tmp_path):
+    a = _wav(tmp_path / "a.wav", 1.0)
+    dest = tmp_path / "out.m4a"
+    mix_to_m4a([a], dest)
+    data = dest.read_bytes()
+    assert 0 <= data.find(b"moov") < data.find(b"mdat")

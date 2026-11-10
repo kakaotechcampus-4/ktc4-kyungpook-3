@@ -1,10 +1,10 @@
 """인계한 디스코드 회의 녹음을 BE 로 올리는 대기 폴더(#659).
 
-recordings/audio_outbox/<회의ID>.m4a 와 <회의ID>.json({meeting_id, workspace_id, handed_off_at}) 한 쌍이 항목 하나다.
+recordings/audio_outbox/<회의ID>.m4a 와 <회의ID>.json({meeting_id, workspace_id, handed_off_at, 실패하면 attempts·next_at}) 한 쌍이 항목 하나다.
 매니페스트는 읽지도 쓰지도 않는다. 올리기 상태가 매니페스트에 섞이면 인계 단계의 복구·정리 규칙과 얽히기 때문이다.
 
   enqueue   트랙 wav 를 지우기 직전에 섞어(audio_mix) 넣는다. m4a 를 먼저, json 을 나중에 써서 json 이 있으면 m4a 도 있다
-  drain     워커가 바퀴마다 비운다. 올리면 지운다. 네트워크·5xx 는 남겨 다음 바퀴에 다시 한다
+  drain     워커가 바퀴마다 비운다. 올리면 지운다. 네트워크·5xx 는 남기고 간격을 늘리며(60초 × 2^(실패 횟수-1), 최대 1시간) 다시 한다
   remove_*  회의·워크스페이스 정리(meeting_purge, privacy_cleanup)가 항목도 지운다
 
 BE 는 보관 기간을 회의 종료 시각부터 세므로 인계(handed_off) 7일 뒤에는 올리지 않고 지운다(OUTBOX_KEEP_S).
@@ -25,7 +25,11 @@ from capture.handoff import BeError
 OUTBOX_DIR = "audio_outbox"
 OUTBOX_KEEP_S = 7 * 86400   # 인계 뒤 이만큼 지나면 올리지 않고 포기한다. 트랙 wav 의 포기 보관(AUDIO_KEEP_AFTER_GIVE_UP_S)과 같다
 # 같은 파일로 다시 올려도 결과가 같은 BE 오류. 항목을 지킬 이유가 없다
-PERMANENT_ERRORS = {"MEETING_DELETED", "MEETING_NOT_FOUND", "INVALID_REQUEST", "AUDIO_FORMAT_UNSUPPORTED", "AUDIO_TOO_LARGE"}
+# PRIVACY_VERSION_CHANGED 는 BE 가 이 API 에서 세대를 보지 않아 나오지 않는 안전망, WORKSPACE_NOT_FOUND 는 공간이 지워졌다는 뜻이다
+PERMANENT_ERRORS = {"MEETING_DELETED", "MEETING_NOT_FOUND", "INVALID_REQUEST", "AUDIO_FORMAT_UNSUPPORTED", "AUDIO_TOO_LARGE",
+                    "PRIVACY_VERSION_CHANGED", "WORKSPACE_NOT_FOUND"}
+RETRY_BASE_S = 60           # 올리기에 실패하면 60초 × 2^(실패 횟수-1) 뒤에 다시 한다
+RETRY_MAX_S = 3600          # 간격 상한 1시간. 계약 문서(backend-ai-contract.md 의 recording 오류 표)와 같다
 
 
 def _dir(recordings_dir: Path) -> Path:
@@ -74,6 +78,26 @@ def _read_meta(path: Path) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
+def _next_at(meta: dict) -> datetime | None:
+    """다시 올려도 되는 시각. 없거나 읽을 수 없으면 None(바로 올린다)."""
+    try:
+        at = datetime.fromisoformat(meta["next_at"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return at if at.tzinfo is not None else at.replace(tzinfo=timezone.utc)
+
+
+def _record_failure(meta_path: Path, data: dict, now: datetime) -> None:
+    """json 에 attempts 와 next_at 을 적는다(원자적으로)."""
+    attempts = data.get("attempts")
+    attempts = attempts + 1 if isinstance(attempts, int) and not isinstance(attempts, bool) and attempts >= 0 else 1
+    wait = min(RETRY_BASE_S * 2 ** min(attempts - 1, 20), RETRY_MAX_S)
+    tmp = meta_path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps({**data, "attempts": attempts, "next_at": (now + timedelta(seconds=wait)).isoformat()},
+                              ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, meta_path)
+
+
 def _handed_off_at(meta: dict) -> datetime | None:
     try:
         at = datetime.fromisoformat(meta["handed_off_at"])
@@ -104,7 +128,8 @@ def drain(recordings_dir: Path, client, *, now: datetime | None = None) -> list[
     """대기 항목을 BE 로 올리고 처리한(지운) 회의 ID 목록을 돌려준다. 한 항목의 예외가 나머지를 막지 않는다.
 
     인계 7일 뒤면 올리지 않고 지운다. 올렸으면(BE 가 보관 기간이 지났다며 stored=false 로 답해도) 지운다.
-    BE 가 다시 해도 같다고 답한 오류(PERMANENT_ERRORS)도 지우고, 네트워크·5xx 같은 나머지는 남겨 다음 바퀴에 다시 한다."""
+    BE 가 다시 해도 같다고 답한 오류(PERMANENT_ERRORS)도 지우고, 네트워크·5xx 같은 나머지는 남겨 next_at 이 지난 바퀴에 다시 한다.
+    실패하면 attempts 를 올리고 next_at 을 now + min(60초 × 2^(attempts-1), 1시간) 으로 적는다. 7일 포기 규칙은 next_at 보다 먼저 본다."""
     now = now or datetime.now(timezone.utc)
     done = []
     for meta in sorted(_dir(recordings_dir).glob("*.json")):
@@ -124,11 +149,16 @@ def drain(recordings_dir: Path, client, *, now: datetime | None = None) -> list[
                 remove_meeting(recordings_dir, meeting_id)
                 done.append(meeting_id)
                 continue
+            next_at = _next_at(data)
+            if next_at is not None and now < next_at:
+                continue
             try:
                 client.upload_recording(meeting_id, audio)
-            except BeError as e:
-                if e.code not in PERMANENT_ERRORS:
-                    print(f"[audio] {meeting_id} 녹음 올리기 실패(다음에 다시 한다): {e.code}", flush=True)
+            except Exception as e:  # noqa: BLE001 - BeError 가 아닌 읽기·전송 오류도 같은 간격으로 다시 한다
+                if not (isinstance(e, BeError) and e.code in PERMANENT_ERRORS):
+                    code = e.code if isinstance(e, BeError) else type(e).__name__
+                    print(f"[audio] {meeting_id} 녹음 올리기 실패(간격을 두고 다시 한다): {code}", flush=True)
+                    _record_failure(meta, data, now)
                     continue
             remove_meeting(recordings_dir, meeting_id)
             done.append(meeting_id)

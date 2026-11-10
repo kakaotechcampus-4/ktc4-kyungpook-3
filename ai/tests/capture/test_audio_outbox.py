@@ -106,9 +106,11 @@ def test_drain_keeps_on_network_error(tmp_path):
     _enqueue(rec)
     assert O.drain(rec, Client({"m1": BeError("NETWORK", "down")}), now=NOW) == []
     assert _entries(rec) == ["m1.json", "m1.m4a"]
-    assert O.drain(rec, Client({"m1": BeError("HTTP_502", "bad gateway", status=502)}), now=NOW) == []
+    bad_gateway = Client({"m1": BeError("HTTP_502", "bad gateway", status=502)})
+    assert O.drain(rec, bad_gateway, now=NOW + timedelta(minutes=2)) == []   # 간격(60초)이 지난 뒤라 실제로 부른다
+    assert len(bad_gateway.calls) == 1
     assert _entries(rec) == ["m1.json", "m1.m4a"]
-    assert O.drain(rec, Client(), now=NOW) == ["m1"]
+    assert O.drain(rec, Client(), now=NOW + timedelta(hours=1)) == ["m1"]
 
 
 def test_drain_keeps_on_upload_failure_that_may_pass_later(tmp_path):
@@ -122,12 +124,76 @@ def test_drain_keeps_on_upload_failure_that_may_pass_later(tmp_path):
                                    BeError("MEETING_NOT_FOUND", "x", status=404),
                                    BeError("INVALID_REQUEST", "x", status=400),
                                    BeError("AUDIO_FORMAT_UNSUPPORTED", "x", status=422),
-                                   BeError("AUDIO_TOO_LARGE", "x", status=413)])
+                                   BeError("AUDIO_TOO_LARGE", "x", status=413),
+                                   BeError("PRIVACY_VERSION_CHANGED", "x", status=409),
+                                   BeError("WORKSPACE_NOT_FOUND", "x", status=404)])
 def test_drain_deletes_when_retrying_cannot_help(tmp_path, error):
     rec = tmp_path / "rec"
     _enqueue(rec)
     assert O.drain(rec, Client({"m1": error}), now=NOW) == ["m1"]
     assert _entries(rec) == []
+
+
+def _meta(rec, meeting_id="m1"):
+    return json.loads((rec / "audio_outbox" / f"{meeting_id}.json").read_text(encoding="utf-8"))
+
+
+def test_failed_upload_is_not_retried_before_next_at_and_is_retried_after(tmp_path):
+    rec = tmp_path / "rec"
+    _enqueue(rec)
+    failing = Client({"m1": BeError("NETWORK", "down")})
+    assert O.drain(rec, failing, now=NOW) == []
+    meta = _meta(rec)
+    assert meta["attempts"] == 1
+    assert datetime.fromisoformat(meta["next_at"]) == NOW + timedelta(seconds=60)
+    assert (meta["meeting_id"], meta["workspace_id"]) == ("m1", "w1")   # 다른 정리 코드가 읽는 필드는 그대로
+    assert not list((rec / "audio_outbox").glob("*.tmp"))
+
+    waiting = Client()
+    assert O.drain(rec, waiting, now=NOW + timedelta(seconds=59)) == []
+    assert waiting.calls == []
+    assert O.drain(rec, waiting, now=NOW + timedelta(seconds=60)) == ["m1"]
+    assert len(waiting.calls) == 1 and _entries(rec) == []
+
+
+def test_retry_interval_doubles_and_is_capped_at_one_hour(tmp_path):
+    rec = tmp_path / "rec"
+    _enqueue(rec, handed=NOW)
+    now = NOW
+    waits = []
+    for _ in range(9):
+        assert O.drain(rec, Client({"m1": BeError("NETWORK", "down")}), now=now) == []
+        waits.append((datetime.fromisoformat(_meta(rec)["next_at"]) - now).total_seconds())
+        now = datetime.fromisoformat(_meta(rec)["next_at"])
+    assert waits == [60, 120, 240, 480, 960, 1920, 3600, 3600, 3600]
+    assert _meta(rec)["attempts"] == 9
+
+
+def test_failure_that_is_not_a_be_error_also_backs_off(tmp_path):
+    rec = tmp_path / "rec"
+    _enqueue(rec)
+    assert O.drain(rec, Client({"m1": OSError("disk")}), now=NOW) == []
+    again = Client()
+    assert O.drain(rec, again, now=NOW + timedelta(seconds=30)) == []
+    assert again.calls == []
+
+
+def test_unreadable_backoff_fields_mean_retry_now(tmp_path):
+    rec = tmp_path / "rec"
+    _enqueue(rec)
+    meta = _meta(rec)
+    meta.update(attempts="x", next_at="not a date")
+    (rec / "audio_outbox" / "m1.json").write_text(json.dumps(meta), encoding="utf-8")
+    assert O.drain(rec, Client(), now=NOW) == ["m1"]
+
+
+def test_backoff_does_not_extend_the_7_day_limit(tmp_path):
+    rec = tmp_path / "rec"
+    _enqueue(rec, handed=NOW - timedelta(seconds=O.OUTBOX_KEEP_S) + timedelta(minutes=30))
+    assert O.drain(rec, Client({"m1": BeError("NETWORK", "down")}), now=NOW) == []
+    later = NOW + timedelta(hours=1)   # next_at 는 아직 안 지났어도(1시간 상한 전) 7일이 지났으면 지운다
+    assert _meta(rec)["attempts"] == 1
+    assert O.drain(rec, Client(), now=later) == ["m1"]
 
 
 def test_drain_gives_up_after_7_days(tmp_path):

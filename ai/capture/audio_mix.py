@@ -66,7 +66,7 @@ def mix_to_m4a(tracks: list[Path], dest: Path) -> int:
         peak = max((float(np.max(np.abs(b))) for b in _blocks(files, length)), default=0.0)
         scale = CEILING / peak if peak > 1.0 else 1.0
         try:
-            with av.open(str(part), mode="w", format="mp4") as out:
+            with av.open(str(part), mode="w", format="mp4", options={"movflags": "+faststart"}) as out:
                 stream = out.add_stream("aac", rate=SAMPLE_RATE, layout="mono")
                 stream.bit_rate = BIT_RATE
                 pts = 0
