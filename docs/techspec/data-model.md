@@ -50,6 +50,113 @@ erDiagram
 | `approval_request.status` | `pending` / `approved` / `rejected` | 요약은 승인된 값만 쓴다 |
 | `task.status` | `todo` / `in_progress` / `blocked` / `done` | `blocked` 는 72시간 무응답이나 "막혔다"는 답장으로 바뀐다 |
 
+## 핵심 표의 필드
+
+회의에서 태스크까지 이어지는 표의 주요 필드다. 전체 정의는 `models.py` 에 있다.
+
+### meeting
+
+| 필드 | 타입 | 뜻 |
+|---|---|---|
+| `meeting_id` | String(36), PK | 회의 ID |
+| `workspace_id` | FK | 워크스페이스 |
+| `source` | String(20) | 입력 경로. `discord` / `manual_upload` / `chat` |
+| `status` | String(32) | 회의 상태 |
+| `failed_stage` | String(32), null | 실패한 단계 |
+| `processing_stage` | String(16), null | AI 가 알린 처리 단계. `stt` / `sources` / `extract` / `handoff` |
+| `processing_stt_done`, `processing_stt_total` | Integer, null | 전사가 끝난 트랙 수와 전체 트랙 수 |
+| `started_at`, `ended_at` | DateTime | 녹음 시작과 종료 |
+| `duration_ms` | Integer, null | 녹음 길이 |
+| `title`, `title_original`, `title_edited_at` | String(200), DateTime | 제목, 처음 제목, 사람이 고친 시각 |
+| `replaces_meeting_id` | FK, null | 다시 만든 회의가 가리키는 이전 회의 |
+| `deleted_at`, `deletion_ready` | DateTime, Boolean | 삭제 진행 상태 |
+
+### source
+
+| 필드 | 타입 | 뜻 |
+|---|---|---|
+| `source_id` | String(36), PK | 발화 ID |
+| `meeting_id` | FK | 회의 |
+| `seq` | Integer | 회의 안 발화 번호. 회의와 번호의 쌍이 유일하다 |
+| `speaker_discord_user_id` | String(64), null | 말한 사람의 디스코드 계정 |
+| `speaker_name` | String(100), null | 말한 사람의 표시 이름 |
+| `member_id` | FK, null | 연결된 팀원 |
+| `start_ms`, `end_ms` | Integer | 발화 시작과 끝 |
+| `text` | Text | 전사문 |
+| `text_edit` | Text, null | 사람이 고친 전사문 |
+
+### extraction_item
+
+| 필드 | 타입 | 뜻 |
+|---|---|---|
+| `item_id` | String(36), PK | 추출 항목 ID |
+| `extraction_id` | FK | 추출 |
+| `action` | String | 새 태스크인지 기존 태스크 수정인지 |
+| `task_title` | String(300) | 할 일 제목 |
+| `assignee_raw`, `assignee_type` | String, null | 원문의 담당자 호칭과 호칭 종류 |
+| `assignee_member_id` | FK, null | 매칭된 팀원 |
+| `assignee_needs_check` | Boolean | 담당자 확인이 필요한지 |
+| `due_date`, `due_raw` | Date, String, null | 마감일과 원문 표현 |
+| `gate` | String(10) | `auto` / `review` / `hold` |
+| `category`, `status` | String(16), null | 변경 종류와 상태 값 |
+| `task_evidence_status`, `due_evidence_status` | String(16), null | 할 일과 마감의 근거 검증 결과 |
+| `similar_count`, `top_similarity` | Integer, Float, null | 유사 검색 결과 수와 가장 높은 유사도 |
+| `reverted_at`, `reverted_by` | DateTime, FK, null | 자동 반영을 되돌린 시각과 사람 |
+| `task_id`, `approval_id` | FK, null | 만든 태스크, 승인 카드 |
+
+### approval_request
+
+| 필드 | 타입 | 뜻 |
+|---|---|---|
+| `approval_id` | String(36), PK | 승인 카드 ID |
+| `workspace_id` | FK | 워크스페이스 |
+| `type` | String(20) | `task_create` / `task_update` |
+| `payload` | Text(JSON) | 제안 값과 PM 이 본 기준값 |
+| `related_task_id` | FK, null | 수정 대상 태스크 |
+| `status` | String | `pending` / `approved` / `rejected` |
+| `requested_by`, `resolved_by`, `resolved_at` | FK, DateTime, null | 요청한 쪽, 처리한 사람과 시각 |
+| `embedding` | vector(1536), null | 승인 대기 중인 같은 일을 찾는 데 쓴다 |
+
+### task
+
+| 필드 | 타입 | 뜻 |
+|---|---|---|
+| `task_id` | String(36), PK | 태스크 ID |
+| `workspace_id`, `meeting_id` | FK | 워크스페이스, 연결된 회의 |
+| `title` | String(300) | 제목 |
+| `assignee_member_id` | FK, null | 담당자 |
+| `status` | String(16) | `todo` / `in_progress` / `blocked` / `done` |
+| `blocker` | Text, null | 막힌 이유 |
+| `start_date`, `due_date` | Date, null | 시작일, 마감일 |
+| `version` | Integer | 바뀔 때마다 오르는 버전 |
+| `notion_page_id`, `notion_database_id` | String(64), null | 반영된 Notion 페이지와 데이터베이스 |
+| `notion_synced_version`, `notion_sync_status` | Integer, String(16), null | Notion 에 반영된 버전과 상태 |
+| `embedding` | vector(1536), null | 비슷한 태스크 검색 |
+| `is_deleted`, `deleted_at` | Boolean, DateTime | 삭제 표시 |
+
+### task_history
+
+| 필드 | 타입 | 뜻 |
+|---|---|---|
+| `history_id` | String(36), PK | 이력 ID |
+| `task_id` | FK | 태스크 |
+| `changed_field` | String(20) | 바뀐 필드 |
+| `old_value`, `new_value` | Text, null | 전 값과 후 값 |
+| `change_source` | String(16) | 어떤 경로로 바뀌었는지 |
+| `changed_by` | FK, null | 바꾼 사람 |
+| `is_rolled_back`, `rolled_back_at` | Boolean, DateTime | 되돌렸는지와 시각 |
+
+### notion_sync_job
+
+| 필드 | 타입 | 뜻 |
+|---|---|---|
+| `job_id` | String(36), PK | 작업 ID |
+| `task_id`, `task_version` | FK, Integer | 반영할 태스크와 그 버전 |
+| `status` | String | 대기열 상태 |
+| `attempts`, `next_attempt_at` | Integer, DateTime | 시도 횟수와 다음 시도 시각 |
+| `locked_at` | DateTime, null | 워커가 잡은 시각 |
+| `last_error` | Text, null | 마지막 오류 |
+
 ## 설계에서 정한 것
 
 | 정한 것 | 이유 |
