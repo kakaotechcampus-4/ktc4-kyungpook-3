@@ -19,6 +19,7 @@ guide_updates = set(manifest.get("guide_updates", []))
 for record in records:
     source = record["source"]
     target = record["target"]
+    live_document = record["kind"] in ("reference-update", "guide-update")
     if source in sources or target in targets:
         errors.append(f"Duplicate source or target: {source}")
     sources.add(source)
@@ -29,7 +30,7 @@ for record in records:
         continue
     actual = path.read_bytes()
     if hashlib.sha256(actual).hexdigest() != record["target_sha256"]:
-        if source != target:
+        if not live_document:
             errors.append(f"Changed target content: {target}")
         else:
             evolved_live_files.append(target)
@@ -67,9 +68,9 @@ for record in records:
         if (start, end) not in link_spans or expected[start:end] != edit["old"]:
             errors.append(f"Edit is not an original Markdown link: {source}")
         expected = expected[:start] + edit["new"] + expected[end:]
-    if source != target and expected.encode("utf-8") != actual:
+    if not live_document and expected.encode("utf-8") != actual:
         errors.append(f"Body changed beyond allowed link edits: {target}")
-    if source == target and hashlib.sha256(expected.encode("utf-8")).hexdigest() != record["target_sha256"]:
+    if live_document and hashlib.sha256(expected.encode("utf-8")).hexdigest() != record["target_sha256"]:
         errors.append(f"Invalid original reference snapshot: {target}")
     if source != target and (root / source).exists():
         errors.append(f"Old source still exists: {source}")
