@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/9d2d7842-b822-4dd7-88dd-68f9444b1ba9
 회의에서 정한 할 일과 일정 변경을 **근거와 함께** 찾아, 확실한 것은 바로 태스크로 만들고 애매한 것만 PM에게 묻습니다. 카카오테크 캠퍼스 4기 경북대 3팀 프로젝트입니다.
 
 > [!TIP]
-> 바로 써 보려면 **[managers-manager.duckdns.org](https://managers-manager.duckdns.org)** 에 접속하고 [처음 쓰는 분을 위한 안내](./docs/user/quick-guide.md)를 따라 하세요. 심사·체험용 테스트 계정과 샘플 회의는 준비 중입니다(#606).
+> 바로 써 보려면 **[managers-manager.duckdns.org](https://managers-manager.duckdns.org)** 에 접속하고 [처음 쓰는 분을 위한 안내](./docs/user/quick-guide.md)를 따라 하세요. 테스트 계정으로 둘러보는 순서는 [시작하기](./docs/user/getting-started.md)에 있습니다.
 
 <!-- 대표 화면 GIF 자리: docs/assets/readme-hero.gif (#654) -->
 
@@ -36,11 +36,7 @@ https://github.com/user-attachments/assets/9d2d7842-b822-4dd7-88dd-68f9444b1ba9
 
 Manager's Manager(화면 이름 **매스**)는 Discord 회의를 듣고 **새 할 일과 기존 할 일의 변경**을 찾아 태스크와 Notion 보드에 반영합니다. 모든 항목에는 원문 인용·화자·회의 안 시각이 붙어, 왜 이 일이 나왔는지 바로 확인할 수 있습니다.
 
-```text
-Discord /record → 회의 → /stop → 전사 · 판단 → 반영된 것 / 확인 필요 / 보류
-                                                   │
-                        Notion 보드 동기화  ←  PM 승인  →  마감 전 리마인드 DM → 웹 답장
-```
+[![회의, 정리, 세 갈래, PM 확인, 반영, 챙김의 여섯 단계로 이어지는 서비스 흐름](./docs/assets/flow-service.png)](./docs/assets/flow-service.png)
 
 ## 주요 기능
 
@@ -61,10 +57,7 @@ Discord /record → 회의 → /stop → 전사 · 판단 → 반영된 것 / �
 
 LLM이 뽑은 결과를 그대로 반영하지 않고, 여러 검사를 지난 항목만 자동으로 반영합니다.
 
-```text
-전사 → 할 일 후보 추출 → 기존 태스크 검색 → 새 일·변경 판단 → 제목·마감 초안
-     → 근거 검증(Jev) → 전사 오류 검사 → 반영 조건 → 반영된 것 / 확인 필요 / 보류
-```
+[![전사록에서 후보 추출, 비슷한 할 일 검색, 변경 판단, 초안, 근거 검증과 전사 오인식 검사, 게이트를 거쳐 반영된 것, 확인 필요, 보류로 갈리는 판단 파이프라인](./docs/assets/techspec-pipeline-judge.png)](./docs/assets/techspec-pipeline-judge.png)
 
 | 단계 | 하는 일 |
 | --- | --- |
@@ -77,30 +70,16 @@ LLM이 뽑은 결과를 그대로 반영하지 않고, 여러 검사를 지난 �
 
 ## 서비스 구성
 
-```mermaid
-flowchart LR
-  subgraph 입력
-    V[Discord 음성 채널]
-    U[웹 음성 업로드]
-    C[Discord 텍스트 채널]
-  end
-  V --> BOT[AI 녹음 봇]
-  U --> W[AI 워커]
-  C --> P[채팅 수집]
-  BOT --> W
-  P --> W
-  W -- "전사 · 판단 · 초안" --> BE[Backend<br/>FastAPI + PostgreSQL]
-  BE -- "반영된 것 / 확인 필요 / 보류" --> FE[Frontend<br/>React PWA]
-  BE --> N[Notion 보드]
-  BE -- 리마인드 --> BOT
-  BOT --> M[팀원 개인 DM]
-```
+[![AWS EC2 한 대 안의 Caddy와 React, FastAPI, PostgreSQL, 녹음 봇, 채팅 폴러, 처리 워커가 Discord, Notion, Gmail, Elice MLAPI, pyannoteAI, GPU 대기 서버, Grafana Cloud 와 이어진 시스템 아키텍처](./docs/assets/techspec-architecture.png)](./docs/assets/techspec-architecture.png)
+
+한 대의 EC2 에서 Caddy 가 HTTPS 와 화면 파일을 내고 `/api` 는 FastAPI 로 넘깁니다. 녹음 봇과 처리 워커는 systemd 로 돌고 Backend 와는 서비스 토큰을 단 HTTP API 로만 통신합니다. 배포 구성과 파이프라인 그림은 [아키텍처 설계](./docs/techspec/architecture.md)에 있습니다.
 
 | 파트 | 기술 |
 | --- | --- |
 | Frontend | React 19 · TypeScript · Vite · TanStack Query · Tailwind CSS · PWA |
 | Backend | FastAPI · SQLAlchemy · Alembic · PostgreSQL 16(pgvector) |
 | AI | Python 3.12 · py-cord(Discord 녹음) · Elice STT · Elice MLAPI(LLM·임베딩·Jev) |
+| Infra | AWS EC2 · Docker Compose · Caddy · systemd · GitHub Actions(OIDC → SSM) |
 
 ## 시작하기
 
@@ -185,8 +164,10 @@ python -m capture.worker           # 처리 워커: 전사·판단 후 BE 로 �
 | 서비스 사용법 | [사용자 가이드](./docs/user/getting-started.md) · [처음 쓰는 분을 위한 안내](./docs/user/quick-guide.md) |
 | 실행·환경 변수·테스트·배포 | [개발자 가이드](./docs/dev/local-setup.md) |
 | 설계와 AI 판단 방식 | [테크스펙](./docs/techspec/index.md) · [설계 심화](./docs/design/index.md) |
+| 고민한 것과 고른 이유 | [트레이드오프](./docs/techspec/tradeoffs.md) · [일정·히스토리·스펙 아웃](./docs/techspec/history.md) |
+| 심사 항목별 근거 | [심사 항목별로 볼 곳](./docs/techspec/index.md#심사-항목별로-볼-곳) |
 | API | [API 문서](./docs/api/index.md) |
-| 그라운드룰·브랜치·컨벤션·리뷰 | [협업 문서](./docs/collab/index.md) |
+| 그라운드룰·브랜치·컨벤션·리뷰 | [협업 문서](./docs/collab/index.md) · [멘토 리뷰와 반영 기록](./docs/collab/code-reviews.md) |
 | 파트별 계약·계획·결과 | [문서 안내](./docs/README.md) · [FE API 계약](./frontend/docs/contracts/frontend-api-contract.md) · [BE·AI 계약](./backend/docs/contracts/backend-ai-contract.md) |
 
 문서 포털의 원본은 `docs/` 폴더입니다(`mkdocs.yml`).
