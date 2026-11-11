@@ -8,6 +8,8 @@
 | 2 | 재촉 → DM → 웹 답장 → 반영 | PM·팀원 | 재촉 제안, 답장 판단, 자동 반영 또는 확인 카드 |
 | 3 | 오프라인 회의 업로드 → 화자 지정 | PM | 화자 분리, 라벨별 팀원 지정, 처리 진행 표시 |
 
+![회의, 정리, 세 갈래, PM 확인, 반영, 챙김의 여섯 단계](../assets/flow-service.png)
+
 ## 1. 회의에서 정한 일이 보드에 들어가기까지
 
 1. 팀이 Discord 음성 채널에서 회의하고 봇에 `/record`, `/stop` 을 보낸다.
@@ -44,13 +46,9 @@ sequenceDiagram
   end
 ```
 
-> 📷 **사진 자리**: 승인 확인 화면 — 근거 인용·화자·시각·회의록으로 가는 원문 듣기 링크와 "확인이 필요한 이유" (파일: ../assets/techspec-approval-card.png)
-
-> 📷 **사진 자리**: 409 충돌 비교 화면(기준값·지금 값·제안 값) (파일: ../assets/techspec-approval-conflict.png)
-
-> 📷 **사진 자리**: 승인 뒤 Notion 보드에 반영된 태스크 (파일: ../assets/techspec-notion-board.png)
-
 ## 2. 마감 전 재촉과 팀원 답장
+
+![재촉 제안, PM 문구 승인, 발송 직전 확인, Discord DM, 팀원 웹 답장, 답장 판단, 자동 반영 또는 PM 확인 카드](../assets/flow-reminder.png)
 
 1. BE 리마인드 스케줄러가 마감 전 발송 시각(기본 마감 하루 전 09시) 3일 전부터 재촉을 제안한다.
 2. AI 가 DM 가운데 문구 초안을 쓴다. PM 이 메시지 화면에서 묶음을 확인·수정·승인한다(설정으로 자동 승인 가능).
@@ -82,13 +80,9 @@ sequenceDiagram
   Note over S,M: 72시간 무응답 → 막힘 표시 + PM 알림
 ```
 
-> 📷 **사진 자리**: 메시지 화면 — 보내기 전 확인 묶음과 팀원 웹 답장 (파일: ../assets/techspec-reminder-bundle.png)
-
-> 📷 **사진 자리**: Discord 재촉 DM 과 답장 (파일: ../assets/techspec-reminder-dm.png)
-
 ## 3. 오프라인 회의를 업로드하고 화자 지정
 
-1. PM 이 웹에서 음성 파일 1개(최대 200MiB, 코드 기본)와 제목·날짜·참석자를 올린다. Notion 을 연결하지 않아도 올릴 수 있다. 연결했다면 태스크가 Notion 에도 반영된다.
+1. PM 이 웹에서 음성 파일 1개(최대 700MiB, 3시간)와 제목·날짜·참석자를 올린다. Notion 을 연결하지 않아도 올릴 수 있다. 연결했다면 태스크가 Notion 에도 반영된다.
 2. AI 워커가 파일을 가져가 pyannoteAI 로 화자를 나누고, 라벨마다 다른 화자와 겹치지 않는 구간으로 10초 샘플을 보고한다.
 3. 회의 상태가 `awaiting_speakers` 가 되고 토스트가 "화자 지정 필요"를 알린다.
 4. PM 이 샘플을 들어 보고 라벨마다 팀원 또는 외부 참석자를 지정한다.
@@ -114,10 +108,6 @@ sequenceDiagram
   AI->>BE: GET /uploads/assigned → PATCH resume
   AI->>BE: 발화 저장 · 추출 등록 (시나리오 1과 같음)
 ```
-
-> 📷 **사진 자리**: 화자 지정 화면 — 라벨별 샘플 듣기와 팀원 선택 (파일: ../assets/techspec-speaker-assign.png)
-
-> 📷 **사진 자리**: 처리 진행 토스트(정리 중·화자 지정 필요·완료) (파일: ../assets/techspec-progress-toast.png)
 
 ## 함께 볼 곳
 

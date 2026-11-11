@@ -14,10 +14,16 @@
 | 외부 | Discord | 음성·채팅·DM, OAuth | |
 | 외부 | Notion | 태스크 보드 동기화(OAuth) | |
 | 외부 | Elice MLAPI | STT(whisper-large-v3), LLM Luna·Terra(`gpt-5.6-luna`·`gpt-5.6-terra`), Jev(`typesafe/jev-latest`), 임베딩(`text-embedding-3-small`) | `ai/llm.py`, `ai/jev.py`, `ai/embedding.py` |
+| 외부 | Gmail SMTP | 가입 인증 코드와 비밀번호 재설정 메일 | `backend/app/services/mailer.py` |
+| 외부 | Grafana Cloud | 서버 상태와 KPI 대시보드. 서버의 수집기 Alloy 가 보낸다. 자동 배포와 따로 설치하며, 운영 서버에 설치해 작동을 확인했다 | [deploy/monitoring/](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/monitoring/README.md) |
 | 외부 | pyannoteAI | 웹 업로드 화자 분리 | `ai/upload/` |
 | 외부 | GPU 대기 서버(g4dn.xlarge) | Elice 장애 때 전사 | `ai/deploy/gpu-stt/` |
 
 ## 전체 흐름
+
+![서버 한 대 안의 Caddy, FastAPI, PostgreSQL, 녹음 봇, 처리 워커와 Discord, Notion, Elice, pyannoteAI, GPU 대기 서버, Gmail, Grafana 의 연결](../assets/techspec-architecture.png)
+
+아래 mermaid 는 같은 흐름을 API 경로와 함께 적은 것이다.
 
 ```mermaid
 flowchart LR
@@ -53,19 +59,20 @@ flowchart LR
   FE <-->|"세션 쿠키"| API
 ```
 
-> 📷 **사진 자리**: 전체 구성도(서버 한 대 안의 컨테이너·systemd 유닛과 외부 서비스) 다듬은 그림 (파일: ../assets/techspec-architecture.png)
 
 ## 입력 경로 세 가지
 
 | 경로 | 시작 | 화자 구분 | 판단 경로 | 게이트 특이점 |
 |---|---|---|---|---|
 | Discord 음성 | 봇 `/record`, 서버 ID 로 워크스페이스 고정(연결 없으면 녹음 안 함) | 화자별 트랙(분리 불필요) | `MM_EXTRACT_PATH`(legacy 기본 / judge) | — |
-| 웹 업로드 | PM 이 음성 1개 업로드(최대 200MiB, 코드 기본), `MM_UPLOAD_INTAKE=1` 인 워커가 가져감 | pyannoteAI → PM 이 라벨마다 팀원 지정 | 동일 | 디스코드 회의보다 먼저 처리 |
+| 웹 업로드 | PM 이 음성 1개 업로드(최대 700MiB, 3시간), `MM_UPLOAD_INTAKE=1` 인 워커가 가져감 | pyannoteAI → PM 이 라벨마다 팀원 지정 | 동일 | 디스코드 회의보다 먼저 처리 |
 | Discord 채팅 | PM 이 고른 채널, BE 커서 이후 메시지를 하루치 "채팅 회의"로 | 메시지 작성자 | 항상 judge | auto 를 review 로 낮춤 |
 
 근거: [프로젝트 상세 §3.2](../프로젝트%20상세%20설명.md), 결정 [0028](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-01-0028-manual-upload-hosted-diarization-and-diarized-state.md), [0042](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-04-0042-chat-daily-poll-as-chat-meeting.md).
 
 ## 회의 하나의 처리 순서 (음성, judge 경로)
+
+![녹음에서 Notion 동기화까지 11단계. AI 6단계는 매니페스트에 상태를 남기고 Backend 5단계가 매칭, 게이트, 승인, 반영, 동기화를 맡는다](../assets/techspec-pipeline-meeting.png)
 
 ```mermaid
 sequenceDiagram
@@ -92,7 +99,7 @@ sequenceDiagram
 3. 판단 파이프라인([에이전트 설계](agent-design.md))이 `/extractions` 항목을 만든다.
 4. BE 가 담당자를 매칭하고 게이트(auto / review / hold)를 정한다. 기존 task 수정은 항상 review.
 5. PM 승인 → Task 반영 → Notion outbox 동기화.
-6. 인계가 끝난 회의의 트랙 음성은 워커가 지운다(포기한 회의는 7일 뒤, 결정 [0055](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-08-0055-meeting-audio-retention.md)).
+6. 회의 음성은 회의 종료부터 7일 보관한다. 워커가 화자별 트랙을 하나로 섞어 BE 로 올린 뒤 트랙을 지우고, 근거 시각부터 다시 들을 수 있다(#670, 결정 [0066](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-10-0066-mix-discord-audio-and-upload-to-be.md)). 포기한 회의의 트랙은 7일 뒤 지운다.
 
 ## 단계 상태와 재시작 (매니페스트)
 
@@ -121,6 +128,10 @@ sequenceDiagram
 
 ## 배포 구성
 
+![EC2 한 대 안의 Caddy, Docker Compose(api, db), systemd(mm-bot, mm-worker, mm-chat-poll)와 CI/CD, 외부 서비스](../assets/techspec-deploy.png)
+
+![develop push 에서 바뀐 파트 재시작까지 5단계와 파트별 방법](../assets/techspec-pipeline-deploy.png)
+
 | 항목 | 내용 |
 |---|---|
 | 서버 | EC2 `t3.medium` 1대, Ubuntu 24.04, 디스크 50GB. 사양 변경·서버 추가 불가 제약 |
@@ -128,10 +139,12 @@ sequenceDiagram
 | FE | 정적 빌드를 Caddy 가 서빙. `/api` 와 같은 오리진이라 CORS 불필요 |
 | AI | systemd `mm-bot`, `mm-worker`(MemoryMax 3G), `mm-chat-poll` + 타이머 |
 | 자동 배포 | develop push → 세 파트 CI 를 같은 커밋으로 → 모두 통과 시 SSM 으로 `/opt/mm` fast-forward → 바뀐 파트만 재시작. BE 는 시작 때 `alembic upgrade head` |
+| 동시 요청 | BE 가 동시 처리 요청을 30개로 막고 DB 연결 풀을 20+20 으로 둔다(결정 [0068](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-11-0068-request-gate.md)) |
+| 모니터링 | Grafana Cloud 무료 플랜과 수집기 Alloy, KPI view 3개(#675). 운영 서버에 설치해 작동을 확인했다. 설치는 자동 배포와 따로 사람이 한 번 한다 |
 | 녹음 보호 | 녹음 중이면 봇을 재시작하지 않음(`restart.lock`), 워커는 SIGTERM 에 하던 회의를 마치고 종료 |
 | GPU 전사 자동 전환 (#581) | 실제 호출 연속 6번 실패 + Elice 확인 3번 실패 → Lambda 스위치로 g4dn.xlarge 를 켬. Elice 확인 3번 연속 성공이면 복귀, GPU 호출 10분 없으면 끔. 하루 6시간·누적 15시간($9.7) 상한. `manual` 로 배포 → 리허설 → `auto` 순서. 기본은 꺼짐(`MM_GPU_FAILOVER` 가 비면 꺼짐)이고 실제 Lambda·GPU 로는 아직 리허설하지 않았다 |
 
-- GPU 운영 모드(현재 `manual` 인지 `auto` 인지) **[확인 필요]**.
+- GPU 전환 모드(`manual` / `auto`)는 서버 환경 변수 `MM_GPU_FAILOVER` 로 정한다. 비워 두면 꺼진다.
 - 상세: [배포 문서](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md), [개발 배포 안내](../dev/deploy.md), 결정 [0039](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-04-0039-gpu-stt-server.md)·[0056](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-08-0056-gpu-stt-auto-failover.md).
 
 ## 왜 이 구조인가 (요약)

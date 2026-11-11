@@ -2,7 +2,7 @@
 
 회의만 하면 할 일이 정리되는 PM 에이전트, Manager's Manager의 문서 포털입니다.
 
-> 📷 **사진 자리**: 서비스 대표 화면 — 대시보드와 회의록 (파일: assets/index-hero.png)
+![Manager's Manager 소개 배너. 회의만 하면 할 일이 정리됩니다](assets/readme-banner.png)
 
 ## 무엇을 하나요
 

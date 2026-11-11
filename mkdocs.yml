@@ -49,6 +49,9 @@ nav:
       - 테스트 전략: techspec/test-strategy.md
       - 추가 지표: techspec/metrics.md
       - 인터페이스 명세: techspec/interface.md
+      - 데이터 모델: techspec/data-model.md
+      - 트레이드오프: techspec/tradeoffs.md
+      - 일정·히스토리·스펙 아웃: techspec/history.md
   - 설계 심화:
       - 개요: design/index.md
       - AI:
@@ -81,7 +84,6 @@ nav:
   - 협업 문서:
       - 개요: collab/index.md
       - 그라운드룰: collab/ground-rules.md
-      - AI 에이전트 규칙: collab/ai-agent-rules.md
       - 브랜치 전략: collab/branch-strategy.md
       - 코딩 컨벤션: collab/conventions.md
       - 코드 리뷰 기록: collab/code-reviews.md
