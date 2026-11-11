@@ -90,13 +90,21 @@ for page in pages:
         resolved = (page.parent / unquote(url.path)).resolve()
         if not resolved.is_relative_to(root) or not resolved.exists():
             errors.append(f"Broken local link: {page.relative_to(root)} -> {target}")
-nav = (root / "mkdocs.yml").read_text(encoding="utf-8")
+# 목차는 문서 첫 화면, 설계 심화 개요, 프론트엔드 개요다. 발표 문서가 셋 중 한 곳에서 링크돼야 한다.
+# docs/ 밖의 frontend/docs 는 GitHub 주소로 링크하므로 그 주소도 저장소 경로로 바꿔 본다.
+repo_url = "https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/"
+nav_sources = [root / "docs/index.md", root / "docs/design/index.md", root / "frontend/docs/index.md"]
+nav = set()
+for source in nav_sources:
+    for target in re.findall(r"\]\(([^)\s]+)", source.read_text(encoding="utf-8")):
+        if target.startswith(repo_url):
+            nav.add((root / unquote(urlsplit(target[len(repo_url):]).path)).resolve())
+            continue
+        url = urlsplit(target)
+        if not url.scheme and not url.netloc and url.path:
+            nav.add((source.parent / unquote(url.path)).resolve())
 for page in nav_pages:
-    if page.is_relative_to(root / "docs"):
-        entry = page.relative_to(root / "docs").as_posix()
-    else:
-        entry = "https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/" + page.relative_to(root).as_posix()
-    if entry not in nav:
+    if page not in nav_sources and page.resolve() not in nav:
         errors.append(f"Missing navigation entry: {page.name}")
 for error in errors:
     print(error)

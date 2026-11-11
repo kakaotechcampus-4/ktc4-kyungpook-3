@@ -42,3 +42,9 @@ flowchart LR
 | [AI 결과 보여 주기](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/ai-result-ui.md) | 배지, 근거 원문, 승인 카드, 권한별 화면 |
 | [실시간 메시지](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/realtime-messages.md) | 웹소켓, 웹 푸시, PWA |
 | [접근성과 성능](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/a11y-performance.md) | 디자인 시스템, 접근성, 모바일, 성능 |
+
+## 보안 점검
+
+| 쪽 | 다루는 것 |
+|---|---|
+| [보안 점검 (2026-11-11)](security-audit.md) | BE·AI·FE·배포 전체 점검 범위와 고친 것 |

@@ -4,7 +4,7 @@
 
 ## 최종 제출 문서 (문서 포털)
 
-[포털 첫 화면](index.md)에서 시작한다. `mkdocs.yml`이 목차다. 원자료(이 문서 아래의 계획·결과·결정 기록·계약)를 요약하고 링크한다.
+[포털 첫 화면](index.md)에서 시작한다. 첫 화면과 각 영역의 개요 문서가 목차다. 원자료(이 문서 아래의 계획·결과·결정 기록·계약)를 요약하고 링크한다.
 
 - [사용자 가이드](user/getting-started.md) · [개발자 가이드](dev/local-setup.md) · [테크스펙](techspec/index.md) · [설계 심화](design/index.md) · [협업 문서](collab/index.md) · [API 문서](api/index.md)
 
