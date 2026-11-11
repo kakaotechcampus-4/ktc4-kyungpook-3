@@ -83,7 +83,7 @@ gitGraph
 |---|---|---|---|
 | `feature/` | 161 | `feature/348-meeting-schema` | 가장 많다 |
 | `fix/` | 49 | `fix/217-judge-retry-selection` | |
-| `feat/` | 44 | `feat/229-evidence-seqs` | `feature/` 와 같은 뜻으로 섞여 쓰임 |
+| `feat/` | 44 | `feat/229-evidence-seqs` | `feature/` 의 줄임 표기 |
 | `docs/` | 26 | `docs/manual-upload-overlap` | |
 | `chore/` | 17 | `chore/claude-team-settings` | |
 | `codex/` | 9 | `codex/572-release-readiness` | Codex 에이전트가 만든 브랜치 이름 |
@@ -93,7 +93,7 @@ gitGraph
 | `release/` | 1 | `release/week11` | |
 
 - `feature/`·`feat/`·`fix/` 브랜치 중 26개는 이슈 번호가 없다(예: `feature/asr-suspect-gate`, `feature/auto-create-switch`). 이슈 없이 PR 본문에서 리뷰 지적을 근거로 시작한 작업이 많다.
-- `feature/` 와 `feat/` 는 둘 다 쓴다. 하나로 맞추지는 않았다.
+- `feature/` 와 줄임 표기 `feat/` 를 함께 쓴다.
 
 ## 관련 문서
 
