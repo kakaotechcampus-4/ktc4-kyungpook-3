@@ -64,7 +64,7 @@ docker compose -f backend/docker-compose.prod.yml exec api python -c 'import os,
 ## 근거와 관련 문서
 
 - #437 설계 합의
-- [백엔드 README 세션 토큰](../../../../README.md#세션-토큰)
+- [백엔드 README 세션 토큰](../../../../docs/reference/auth.md#세션-토큰)
 - [이메일 정규화 결정 기록](2026-11-06-email-normalization.md)
 - 코드: `app/services/sessions.py`, 마이그레이션 `migrations/versions/3c9a1f7d2b64_hash_session_token.py`
 - 테스트: `tests/services/test_sessions.py`, `tests/api/test_session_hash_api.py`, `tests/test_migration_hash_session_token.py`

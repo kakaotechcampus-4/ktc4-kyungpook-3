@@ -166,7 +166,7 @@ plan.md 가 비어 있어 완료조건이 없다. 아래는 전체 계획 M5 의
 | `PUT /meetings/{id}/recording`(서비스 토큰): 디스코드 회의의 섞은 m4a 를 받는다. 보관 기준은 회의 종료 시각, 기간이 지났거나 정리됐으면 `stored=false`, 멱등, 다시 올리다 실패해도 기존 녹음 유지 | [sources.py](../../../app/api/sources.py) |
 | 회의 삭제·탈퇴 정리가 S3 prefix 도 지운다 | [meeting_deletion.py](../../../app/services/meeting_deletion.py), [account_withdrawal.py](../../../app/services/account_withdrawal.py) |
 | AI: 인계한 디스코드 회의의 wav 를 지우기 직전 m4a 로 섞어 `audio_outbox` 에 두고 BE 로 올린다. 봇 시작 안내에 7일 보관 문구 | [audio_mix.py](../../../../ai/capture/audio_mix.py), [audio_outbox.py](../../../../ai/capture/audio_outbox.py), [recorder.py](../../../../ai/capture/recorder.py) `prune_audio`, [discord_adapter.py](../../../../ai/capture/discord_adapter.py) |
-| 설정·문서 | [.env.example](../../../.env.example), [docker-compose.prod.yml](../../../docker-compose.prod.yml), [README](../../../README.md#회의-녹음-보관과-재생), [BE↔AI 계약](../../contracts/backend-ai-contract.md), [배포 안내](../../../../deploy/README.md#회의-녹음-s3-준비), [사용자 안내](../../../../docs/user/record-meeting.md) |
+| 설정·문서 | [.env.example](../../../.env.example), [docker-compose.prod.yml](../../../docker-compose.prod.yml), [README](../../../docs/reference/meeting-audio.md#회의-녹음-보관과-재생), [BE↔AI 계약](../../contracts/backend-ai-contract.md), [배포 안내](../../../../deploy/README.md#회의-녹음-s3-준비), [사용자 안내](../../../../docs/user/record-meeting.md) |
 
 선택과 근거는 [결정 기록](basis-for-decision/2026-11-10-meeting-audio-s3-retention.md)에 있다.
 

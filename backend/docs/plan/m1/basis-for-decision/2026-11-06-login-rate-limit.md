@@ -67,6 +67,6 @@ PR #382 멘토 리뷰(login_limit.py:9 스레드)가 "지금 규모에서는 받
 ## 근거와 관련 문서
 
 - #436 설계 합의
-- [백엔드 README 로그인 제한](../../../../README.md#로그인-제한)
+- [백엔드 README 로그인 제한](../../../../docs/reference/auth.md#로그인-제한)
 - [비밀번호 재설정 결정 기록](2026-11-05-password-reset.md)
 - [이메일 정규화 결정 기록](2026-11-06-email-normalization.md)

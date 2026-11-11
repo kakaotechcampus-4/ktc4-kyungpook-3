@@ -49,5 +49,5 @@
 ## 근거와 관련 문서
 
 - #435 설계 확정 댓글
-- [백엔드 README 가입 이름 규칙](../../../../README.md#가입-이름-규칙)
+- [백엔드 README 가입 이름 규칙](../../../../docs/reference/auth.md#가입-이름-규칙)
 - 테스트: `tests/api/test_auth_name_rule.py`

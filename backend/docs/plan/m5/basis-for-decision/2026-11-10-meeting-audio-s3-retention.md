@@ -70,6 +70,6 @@ BE `CURRENT_VERSIONS`(약관·방침 동의 버전)는 그대로 둔다. 음성 
 
 ## 근거와 관련 문서
 
-- [M5 결과](../result.md), [BE README](../../../../README.md#회의-녹음-보관과-재생), [배포 안내](../../../../../deploy/README.md#회의-녹음-s3-준비)
+- [M5 결과](../result.md), [BE README](../../../../docs/reference/meeting-audio.md#회의-녹음-보관과-재생), [배포 안내](../../../../../deploy/README.md#회의-녹음-s3-준비)
 - 구현: [저장소](../../../../app/services/upload_storage.py), [보관 판단·정리](../../../../app/services/meeting_audio.py), [재생](../../../../app/api/meetings.py), [녹음 받기](../../../../app/api/sources.py)
 - AI 쪽 구현: [audio_outbox.py](../../../../../ai/capture/audio_outbox.py), [audio_mix.py](../../../../../ai/capture/audio_mix.py). 이 기록은 BE 선택만 다루고, AI 쪽 선택(섞기·대기 폴더·포기)은 [AI 결정 기록 0066](../../../../../ai/docs/basis_for_decision/ai/2026-11-10-0066-mix-discord-audio-and-upload-to-be.md)에 있다.

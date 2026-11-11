@@ -86,7 +86,7 @@ M3 plan.md 는 비어 있다. 이번 작업은 #229(추출 근거를 발화 seq 
 | 글자 다듬기(앞뒤 공백 → 끝 조사 한 번 → 끝 님 → 공백 정리), 학습 대상 판정, 이미 누군가 가진 글자 조회, 저장(savepoint 로 유니크 충돌만 삼킴) | `app/services/alias_learning.py` |
 | 응답 `alias_candidate`·`alias_text`: 추출 조회 항목, 승인 요청 생성·목록·단건·처리 | `app/schemas/meeting.py`, `app/schemas/approval.py`, `app/api/extractions.py` `get_extraction`, `app/api/approvals.py` `_to_response` |
 | `PATCH /approvals/{id}` 의 `save_alias`(기본 false). task_create 승인에서 `create_task` 뒤에 저장 | `app/schemas/approval.py`, `app/api/approvals.py` `_apply_approval` |
-| 계약·설명·결정 | [AI 계약](../../contracts/backend-ai-contract.md), [Backend README](../../../README.md#승인-때-별칭-학습), [결정 기록](basis-for-decision/2026-11-06-learn-alias-on-approval.md) |
+| 계약·설명·결정 | [AI 계약](../../contracts/backend-ai-contract.md), [Backend README](../../../docs/reference/matching-and-alias.md#승인-때-별칭-학습), [결정 기록](basis-for-decision/2026-11-06-learn-alias-on-approval.md) |
 
 ## 완료조건 확인
 
