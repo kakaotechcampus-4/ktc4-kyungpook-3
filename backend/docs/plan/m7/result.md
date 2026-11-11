@@ -43,9 +43,9 @@ M7 plan.md 가 비어 있어 완료조건이 없다. 전체 계획의 M7 완료 
 | 리뷰: 같은 커밋의 검사 성공을 배포 조건으로 | 구현됨 · GitHub 실행 미검증 | actionlint 통과. 실제 push 실행은 머지 뒤 확인 |
 | 리뷰: 녹음 시작과 재시작이 같은 잠금 사용 | 배포 쪽 구현됨 · 봇 쪽 미구현 | 잠금 시뮬레이션 통과. 봇은 AI 요청 |
 | 리뷰: 되돌리는 방법과 마이그레이션 호환 범위 기록 | 문서화됨 · 절차 미실행 | 백업·downgrade 명령은 운영에서 실행하지 않음 |
-| #675: Grafana 가 읽을 KPI view | 구현됨 · 로컬 PostgreSQL 검증 · 운영 미적용 | 아래 검증 내역 |
-| #675: 바깥 확인 경로 | 구현됨 · 운영 미확인 | 테스트 통과. 운영 도메인의 `/health` 응답 모양은 확인하지 않음 |
-| #675: Alloy·PDC·Grafana·공개 링크 | 문서화됨 · 서버 설치 미실행 | 설정 파일 내용과 스크립트 거부 경로만 테스트 |
+| #675: Grafana 가 읽을 KPI view | 구현됨 · 운영 적용(2026-11-11 배포) | 아래 검증 내역. 운영 KPI 대시보드가 view 를 읽는 것을 확인 |
+| #675: 바깥 확인 경로 | 구현됨 · 운영 확인 | 운영 도메인에서 `/api/v1/health/ready` 200 JSON, 루트 `/health` 는 프론트 HTML(200) 을 확인(2026-11-11). Synthetic 체크 Up |
+| #675: Alloy·PDC·Grafana·공개 링크 | 운영 설치됨(2026-11-11) | 아래 검증 내역. 알림 규칙은 만들지 않음(계획 대비 변경) |
 
 ## 검증 내역
 
@@ -68,6 +68,13 @@ M7 plan.md 가 비어 있어 완료조건이 없다. 전체 계획의 M7 완료 
   - KPI view 테스트 11개를 로컬 PostgreSQL 16(`mm_test`, `TEST_DATABASE_URL`)에서 통과. 같은 DB 로 전체 테스트를 돌려 5407 passed, 70 skipped(view 수정 커밋 전 기준)
   - 빈 DB(`mm_migrate`)에서 `alembic upgrade head` 성공, `alembic check` "No new upgrade operations detected", `alembic downgrade -1` 뒤 `kpi` 스키마 없음, 다시 upgrade 성공
   - ready 테스트 3개, 모니터링 파일 테스트 8개 통과. `run-pdc.sh` 의 실제 `docker run`, Alloy·PDC·Grafana Cloud·Synthetic 연결은 실행하지 않았다
+- #675 운영 설치 (2026-11-11, 운영 서버와 Grafana Cloud)
+  - Alloy v1.21.3 설치(Grafana apt 저장소 갱신 오류로 GitHub .deb, SHA256 확인). `active`, `docker container factory successfully`. Explore 에서 `mm-prod-api-1`·`mm-prod-db-1`·`mm-worker.service`·`mm-bot.service` 네 대상의 메모리 지표 확인
+  - PDC 에이전트 `grafana/pdc-agent:0.0.67` 가 `Authenticated to private-datasource-connect-prod-ap-northeast-0...` 로 붙음
+  - `kpi-reader.sql` 실행 뒤 `has_table_privilege` 가 view 는 `t`, `public.meeting`·`kpi.excluded_workspace` 는 `f`
+  - Grafana PostgreSQL 데이터 소스 Save & test 성공. 서버 상태·KPI 대시보드 Import, KPI 패널 SQL 은 로컬 DB 의 같은 view 에 EXPLAIN 으로 먼저 확인
+  - Synthetic 체크(`/api/v1/health/ready`, 1곳·1분) Up, 공개 링크 두 개 생성
+  - 후속 저장소 수정(설치에서 바꾼 것)은 `backend/` 에서 ruff 통과, 모니터링 파일 테스트 12개 통과
 
 ## 계획 대비 변경
 
@@ -78,6 +85,15 @@ M7 plan.md 가 비어 있어 완료조건이 없다. 전체 계획의 M7 완료 
 - `approval_fact` 의 원본 선택을 `SELECT r.*` 에서 쓰는 컬럼 나열로 바꿨다. PostgreSQL 이 `*` 를 펼쳐 `approval_request` 의 모든 컬럼을 view 의존으로 잡아, 쓰지 않는 컬럼도 지울 수 없었기 때문이다(셀프 리뷰에서 발견). view 가 쓰는 컬럼 목록이 README 표와 같은지 테스트로 묶었다.
 - Alloy 의 컨테이너 수집을 `docker_only=false` 대신 `docker_only=true` 와 워커·봇 cgroup 허용 목록으로 바꿨다. 수집 시계열을 줄이면서 회의 처리 중 워커 메모리를 보기 위해서다. 서버에서 실제로 잡히는지는 설치 때 확인한다.
 
+#675 운영 설치에서 바뀐 것(2026-11-11, [결정 기록](basis-for-decision/2026-11-11-monitoring-install-changes.md))
+
+- 심사용 시드를 KPI 에서 빼지 않는다(사용자 결정). 대신 KPI 대시보드의 처리 시간 패널이 하루 넘게 잡힌 회의를 뺀다. 시드는 시작 시각을 며칠 전으로 합성해 처리 시간이 최대 384시간으로 잡혔다.
+- Alloy 를 root 로 돌린다. docker 그룹만으로는 containerd 소켓을 못 열어 api·db 컨테이너 지표가 비었다.
+- PDC 에이전트에 `/home/pdc/.ssh` tmpfs 를 더했다. `--read-only` 때문에 키를 못 만들고 멈췄다.
+- 읽기 계정 접속 제한을 3 에서 10 으로 올리고, Grafana 데이터 소스를 Max open 2 로 뒀다. 대시보드를 처음 열 때 패널 일부가 접속 제한에 걸렸다.
+- 화면 표시용 알림 규칙 4개는 만들지 않았다. 서버 대시보드의 색 표시와 Synthetic 체크 실패 알림으로 대신한다.
+- 대시보드 JSON 두 개를 `deploy/monitoring/dashboards/` 에 두었다.
+
 ## 남은 작업과 제한 사항
 
 - 봇이 녹음을 시작할 때 `restart.lock` 을 확인하기 전까지는 확인과 재시작 사이의 틈이 남는다
@@ -87,8 +103,8 @@ M7 plan.md 가 비어 있어 완료조건이 없다. 전체 계획의 M7 완료 
 - 리뷰에서 나온 의존성 버전 고정은 반영하지 않았다. `requirements.txt` 가 하한만 정해 CI 와 서버 빌드가 다른 버전을 받을 수 있다. 잠금 파일 도입은 별도 작업으로 남긴다. 2026-11-11 #694 에서 `requirements.lock` 을 도입해 운영 이미지와 CI 가 같은 잠금으로 설치한다(README "의존성 잠금")
 - 리뷰에서 나온 대로, CI 도 배포 워크플로의 동시 실행 제한 안에 있어 머지가 몰리면 다음 커밋은 앞 배포가 끝날 때까지 CI 도 시작하지 못한다. 지금은 감수한다
 
-- #675: 서버에 Alloy·PDC 설치, 읽기 계정 SQL, 시드 공간 제외, Grafana 대시보드·공개 링크, 실제 메모리·시계열 수 기록은 사람이 할 일이다
-- #675: 운영 `AUTO_CREATE_ENABLED` 값을 확인하지 않았다. 꺼져 있으면 auto 관련 KPI 가 비어 보인다
+- #675: Alloy·PDC 메모리, 활성 시계열 수, 회의 처리 중 최대 메모리는 아직 재지 않았다(모니터링 문서 기록란)
+- #675: 지금 운영 KPI 는 심사용 시드와 팀 테스트 데이터라 실제 사용 지표가 아니다. 운영 `AUTO_CREATE_ENABLED` 는 미설정(켜짐)으로 확인했다(2026-11-11)
 - #675: auto 탈락 사유 분포, "켰으면 auto 였을 항목", 409 빈도는 DB 에 없어 로그 수집(Loki) 뒤로 넘겼다
 - #675: 알림을 보내지 않아 누가 대시보드를 보기 전까지 장애를 모른다. AWS 실습 환경이 2026-11-20 에 끝나면 새 서버에 다시 설치한다
 
@@ -96,3 +112,4 @@ M7 plan.md 가 비어 있어 완료조건이 없다. 전체 계획의 M7 완료 
 
 - [CI 검사를 배포 조건으로 묶은 방식](basis-for-decision/2026-10-09-deploy-ci-gate.md)
 - [Grafana Cloud 모니터링과 KPI view (#675)](basis-for-decision/2026-11-10-grafana-cloud-monitoring.md)
+- [모니터링 운영 설치에서 바꾼 것 (#675)](basis-for-decision/2026-11-11-monitoring-install-changes.md)
