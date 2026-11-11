@@ -4,7 +4,7 @@ import type { ExtractionItem } from '@/entities/extraction'
 import type { Task } from '@/entities/task'
 import { RevertConfirmModal, useAutoItemRevert } from '@/features/auto-item-revert'
 import type { AutoItemRevertOutcome } from '@/features/auto-item-revert'
-import { FirstMeetingHint, QuickGuideButton } from '@/features/quick-guide'
+import { FirstMeetingHint } from '@/features/quick-guide'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
@@ -33,6 +33,8 @@ const EMPTY = 'flex flex-col items-start gap-10 py-18'
 const EMPTY_TITLE = 'text-body font-semibold text-ink'
 const EMPTY_LINK =
   'inline-flex h-32 items-center justify-center rounded-9 bg-control px-12 text-control font-semibold text-ink hover:bg-line-strong'
+const EMPTY_UPLOAD_LINK =
+  'inline-flex h-32 self-end items-center justify-center rounded-9 bg-ink-solid px-12 text-control font-semibold text-surface hover:bg-dim hover:text-surface active:bg-sub active:text-surface focus-visible:outline-surface focus-visible:-outline-offset-3'
 /** `외 N건` 줄. 높이가 RECENT_MORE_LINE_PX 다 */
 const MORE_LINE = 'flex h-32 items-center px-18 max-md:px-[0px]'
 
@@ -161,7 +163,6 @@ interface RecentEmptyProps {
 
 /**
  * 빈 상태 세 갈래 (D-040~D-042). 회의 업로드·Notion 설정은 PM 만 할 수 있어 일반 팀원에게는 이동을 두지 않는다.
- * 회의가 하나도 없으면 회의를 Discord 에서 기록한다는 것을 모르는 처음 쓰는 사람이다 — 누구에게나 안내를 연다 (#650)
  */
 function RecentEmpty({
   workspaceId,
@@ -181,17 +182,10 @@ function RecentEmpty({
             '회의를 정리하면 자동으로 반영한 일이 여기에 보여요.'
           )}
         </p>
-        {firstMeeting || isPm ? (
-          <div className="flex flex-wrap items-center gap-8">
-            {firstMeeting ? (
-              <QuickGuideButton className={EMPTY_LINK}>방법 보기</QuickGuideButton>
-            ) : null}
-            {isPm ? (
-              <GuardedLink to={paths.meetingUpload(workspaceId)} className={EMPTY_LINK}>
-                회의 업로드
-              </GuardedLink>
-            ) : null}
-          </div>
+        {isPm ? (
+          <GuardedLink to={paths.meetingUpload(workspaceId)} className={EMPTY_UPLOAD_LINK}>
+            회의 업로드
+          </GuardedLink>
         ) : null}
       </div>
     )

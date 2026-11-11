@@ -203,7 +203,7 @@ function PopperSelect<V extends string>(props: InnerSelectProps<V>) {
         <RadixSelect.Value placeholder={placeholder}>
           {shown ? <TriggerValue {...shown} /> : undefined}
         </RadixSelect.Value>
-        <TriggerChevron size={size} disabled={disabled} />
+        <TriggerChevron size={size} disabled={disabled} tone={tone} />
       </RadixSelect.Trigger>
       <RadixSelect.Portal>
         <RadixSelect.Content

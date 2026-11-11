@@ -111,14 +111,32 @@ BASE_URL=https://managers-manager.duckdns.org LT_WORKSPACES=1 LT_READONLY=1 LT_L
 |---|---|
 | ![](assets/2026-11-11-pool-gate/prod-before-k6.png) | ![](assets/2026-11-11-pool-gate/prod-before-server.png) |
 
+### 운영, 고친 뒤
+
+머지(`75fe5c4a`)와 배포가 끝난 뒤 운영 api 컨테이너에서 관문 30, 풀 20+20 이 올라온 것을 확인하고, 같은 방법으로 1·3·5·10·20 VU 를 쟀다.
+
+| VU | req/s | p50 ms | p95 ms | 실패율 | api CPU 최고 | 호스트 CPU 최고 | DB CPU 최고 |
+|---|---|---|---|---|---|---|---|
+| 1 | 2.7 | 61.8 | 88.4 | 0% | 50% | 46% | 32% |
+| 3 | 6.3 | 61.1 | 137.3 | 0% | 40% | 69% | 11% |
+| 5 | 11.5 | 78.0 | 265.4 | 0% | 38% | 54% | 12% |
+| 10 | 23.4 | 73.7 | 492.5 | 0% | 112% | 179% | 38% |
+| 20 | 44.3 | 91.3 | 1,240 | 0% | 127% | 174% | 28% |
+
+20 VU 까지 실패 0건이고 측정 동안 api 로그에 `QueuePool limit` 이 없었다. 5 VU 까지는 고치기 전과 같았다. 10 VU 부터는 호스트 CPU(2코어, api·DB·Caddy·봇·워커가 나눠 씀)가 바닥나 p95 가 늘었다. 연결 풀이 아니라 CPU 가 다음 병목이다. 측정 뒤 테스트 계정과 공간을 지웠고 0개가 남았다.
+
+| k6 | 서버 |
+|---|---|
+| ![](../../../../loadtest/results/2026-11-11-prod/after-k6.png) | ![](../../../../loadtest/results/2026-11-11-prod/after-server.png) |
+
 ### 테스트
 
 백엔드 테스트는 Postgres(`TEST_DATABASE_URL`)를 붙여 6002 통과, 71 건너뜀, ruff 통과.
 
-원자료는 레포 밖 `mm/eval-runs/loadtest/` 의 `20261111-701-before-local/`, `20261111-701-after-local/`, `20261111-701-after-local-handoff/`, `20261111-701-before-prod/`, `20261111-701-before-prod-5vu/` 에 있다. 운영 시드가 태스크 임베딩을 불러 약 0.2원이 들었다(장부 `fix-701-pool-gate.jsonl`).
+원자료는 레포 밖 `mm/eval-runs/loadtest/` 의 `20261111-701-before-local/`, `20261111-701-after-local/`, `20261111-701-after-local-handoff/`, `20261111-701-before-prod/`, `20261111-701-before-prod-5vu/`, `20261111-701-after-prod/` 에 있다. 운영 시드가 태스크 임베딩을 불러 시드마다 약 0.2원, 두 번에 약 0.4원이 들었다(장부 `fix-701-pool-gate.jsonl`).
 
 ## 다음
 
-- 운영 고친 뒤 측정: develop 에 머지돼 배포되면 같은 명령을 `LT_LEVELS=1,3,5,10,20` 으로 돌려 이 문서에 더한다
+- 운영 CPU 병목(10 VU 부터 호스트 CPU 2코어에 붙음)
 - 인증 단계 쿼리 수(요청마다 약 6개) 줄이기
 - 원격 샘플러 시각 보정은 #703 의 `run.sh`·`report.py` 에 넣었다(`clock_offset_s.txt`)

@@ -25,9 +25,11 @@ import { Skeleton } from '@/shared/ui/skeleton'
 import { ASSIGN_TITLE, COLUMN, PAGE, TITLE } from './styles'
 
 /* 로딩을 거쳐 나타난 내용의 불투명도 전환 (#508). 로딩 중에도 보이던 제목(h1)은 빼고 그 아래만 */
-const REVEAL_BELOW_TITLE = 'motion-safe:[&>:not(h1)]:animate-[loading-reveal_150ms_ease-out]'
-const LEAD = 'text-body text-sub'
-const META = 'text-caption text-dim tabular-nums'
+const REVEAL_BELOW_TITLE =
+  'motion-safe:[&>:not(:first-child)]:animate-[loading-reveal_150ms_ease-out]'
+const LEAD = 'text-[14px] leading-[1.7] text-sub'
+const META =
+  'inline-flex h-22 items-center rounded-6 bg-control px-8 text-[11.5px] leading-none font-semibold whitespace-nowrap text-sub tabular-nums'
 const LINK =
   'inline-flex h-36 items-center justify-center self-start rounded-9 bg-ink-solid px-16 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
 
@@ -168,18 +170,31 @@ function MeetingSpeakers({ workspaceId, meetingId }: { workspaceId: string; meet
       )
     case 'assigning': {
       const { meeting, view } = screen
-      const meta = [meeting.title, seoulDateOf(meeting.startedAt), `화자 ${view.speakers.length}명`]
-        .filter((part) => part !== null && part !== '')
-        .join(' · ')
+      const meta = [
+        meeting.title,
+        seoulDateOf(meeting.startedAt),
+        `화자 ${view.speakers.length}명`,
+      ].filter((part) => part !== null && part !== '')
       return (
-        <Layout reveal={reveal} title={ASSIGN_TITLE}>
-          <div className="flex flex-col gap-8">
-            <p className={META}>{meta}</p>
-            <p className={LEAD}>
-              샘플을 들어 보고 화자마다 팀원이나 외부 참석자를 골라 주세요. 모두 고르면 회의 정리를
-              이어 가요.
-            </p>
-          </div>
+        <Layout
+          reveal={reveal}
+          title={ASSIGN_TITLE}
+          titleDetails={
+            <div className="flex flex-col gap-12">
+              <div className="flex flex-wrap items-center gap-8">
+                {meta.map((part, index) => (
+                  <span key={index} className={META}>
+                    {part}
+                  </span>
+                ))}
+              </div>
+              <p className={LEAD}>
+                샘플을 들어 보고 화자마다 팀원이나 외부 참석자를 골라 주세요. 모두 고르면 회의
+                정리를 이어 가요.
+              </p>
+            </div>
+          }
+        >
           <SpeakerAssignmentForm
             meetingId={meetingId}
             view={view}
@@ -195,17 +210,22 @@ function MeetingSpeakers({ workspaceId, meetingId }: { workspaceId: string; meet
 function Layout({
   title,
   reveal = false,
+  titleDetails,
   children,
 }: {
   title: string
   /** 로딩을 거쳐 나타났다 — 제목 아래 내용에 불투명도 전환을 건다 */
   reveal?: boolean
+  titleDetails?: ReactNode
   children: ReactNode
 }) {
   return (
     <main className={PAGE}>
       <div className={reveal ? `${COLUMN} ${REVEAL_BELOW_TITLE}` : COLUMN}>
-        <h1 className={TITLE}>{title}</h1>
+        <div className="flex flex-col gap-12">
+          <h1 className={TITLE}>{title}</h1>
+          {titleDetails}
+        </div>
         {children}
       </div>
     </main>

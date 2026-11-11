@@ -64,7 +64,7 @@ const SIZE: Record<ButtonSize, string> = {
   md: 'h-36 gap-6 rounded-9 px-20 text-control',
   'md-compact': 'h-34 gap-6 rounded-9 px-13 text-caption',
   lg: 'h-40 gap-6 rounded-9 px-20 text-body',
-  'lg-onboarding': 'h-40 gap-6 rounded-8 px-18 text-body',
+  'lg-onboarding': 'h-40 gap-6 rounded-8 px-18 text-body leading-none',
   // 14.5px · 38px · 15px 는 토큰 스케일 밖이다 — docs/impl-decision/2026-09-16-values-outside-token-scale.md
   xl: 'h-44 gap-6 rounded-9 px-22 text-[14.5px]',
   auth: 'h-48 w-full gap-6 rounded-999 text-[15px]',

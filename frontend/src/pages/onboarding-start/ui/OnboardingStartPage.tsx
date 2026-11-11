@@ -35,16 +35,18 @@ export function OnboardingStartPage() {
       >
         <div className="flex flex-col gap-12 pt-8">
           <MyInvitations />
-          {Object.entries(OPTIONS).map(([intent, option]) => (
-            <GuardedLink
-              key={intent}
-              to={option.to}
-              className="flex flex-col gap-8 rounded-10 border border-line bg-surface px-18 py-13 hover:bg-surface-selected"
-            >
-              <span className="text-body font-semibold">{option.title}</span>
-              <span className="text-body text-sub">{option.description}</span>
-            </GuardedLink>
-          ))}
+          <div className="flex gap-12 max-sm:flex-col">
+            {Object.entries(OPTIONS).map(([intent, option]) => (
+              <GuardedLink
+                key={intent}
+                to={option.to}
+                className="flex min-w-0 flex-1 flex-col gap-8 rounded-10 border border-line bg-surface px-18 py-13 hover:bg-surface-selected"
+              >
+                <span className="text-body font-semibold">{option.title}</span>
+                <span className="text-body text-sub">{option.description}</span>
+              </GuardedLink>
+            ))}
+          </div>
         </div>
       </OnboardingCard>
     </OnboardingLayout>

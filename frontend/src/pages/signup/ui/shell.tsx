@@ -5,7 +5,7 @@ export const SIGNUP_SHELL = {
   title: '계정 만들기',
   formLabel: '회원가입',
   aside: {
-    pose: 'squint',
+    pose: 'idle',
     title: "계정을 만들고 Manager's Manager를 시작해보세요",
     description: (
       <>

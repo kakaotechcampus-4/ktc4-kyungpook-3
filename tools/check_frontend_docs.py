@@ -10,7 +10,7 @@ from urllib.parse import unquote, urlsplit
 root = Path(__file__).resolve().parents[1]
 baseline = root / ".verify/frontend-docs/baseline.json"
 pages = [
-    root / "docs/design/frontend" / name
+    root / "frontend/docs" / name
     for name in (
         "index.md",
         "techspec.md",
@@ -19,12 +19,14 @@ pages = [
         "tradeoffs-decisions.md",
         "performance.md",
         "verification.md",
+        "contract-first-msw.md",
+        "ai-result-ui.md",
+        "realtime-messages.md",
+        "a11y-performance.md",
     )
 ]
 nav_pages = pages + [root / "docs/index.md"]
 pages += [
-    root / "docs/design/frontend/realtime-messages.md",
-    root / "docs/design/frontend/a11y-performance.md",
     root / "docs/index.md",
     root / "frontend/docs/README.md",
     root / "frontend/docs/performance/README.md",
@@ -51,6 +53,8 @@ docs_only = sys.argv[1:] == ["--docs-only"]
 if sys.argv[1:] and not docs_only:
     raise SystemExit("Usage: python tools/check_frontend_docs.py [--baseline | --docs-only]")
 errors = []
+if (root / "docs/design/frontend").exists():
+    errors.append("Frontend documents belong in frontend/docs, not docs/design/frontend")
 if not baseline.exists():
     errors.append("Baseline missing. Preservation cannot be verified.")
 else:
@@ -86,11 +90,16 @@ for page in pages:
         resolved = (page.parent / unquote(url.path)).resolve()
         if not resolved.is_relative_to(root) or not resolved.exists():
             errors.append(f"Broken local link: {page.relative_to(root)} -> {target}")
-# 목차는 문서 첫 화면과 프론트엔드 개요다. 발표 문서가 둘 중 한 곳에서 링크돼야 한다.
-nav_sources = [root / "docs/index.md", root / "docs/design/frontend/index.md"]
+# 목차는 문서 첫 화면, 설계 심화 개요, 프론트엔드 개요다. 발표 문서가 셋 중 한 곳에서 링크돼야 한다.
+# docs/ 밖의 frontend/docs 는 GitHub 주소로 링크하므로 그 주소도 저장소 경로로 바꿔 본다.
+repo_url = "https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/"
+nav_sources = [root / "docs/index.md", root / "docs/design/index.md", root / "frontend/docs/index.md"]
 nav = set()
 for source in nav_sources:
     for target in re.findall(r"\]\(([^)\s]+)", source.read_text(encoding="utf-8")):
+        if target.startswith(repo_url):
+            nav.add((root / unquote(urlsplit(target[len(repo_url):]).path)).resolve())
+            continue
         url = urlsplit(target)
         if not url.scheme and not url.netloc and url.path:
             nav.add((source.parent / unquote(url.path)).resolve())

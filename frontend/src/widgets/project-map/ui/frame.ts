@@ -1,7 +1,7 @@
-/* 프로젝트 맵 화면 틀. 시안이 없어 팀 화면(Team)의 여백·제목과 회의록 탭 모양을 따른다 */
+/* ProjectMap 화면의 본문과 제목 수치. */
 
 export const MAIN =
-  'mx-auto flex w-full max-w-shell flex-1 flex-col gap-22 px-48 pt-48 pb-72 max-md:px-20 max-md:pt-12 max-md:pb-32'
+  'relative mx-auto flex w-full max-w-shell flex-1 flex-col gap-22 px-48 pt-48 pb-[116px] max-md:px-20 max-md:pt-12 max-md:pb-[140px]'
 export const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink max-md:text-[24px]'
 export const NOTE = 'text-caption text-dim'
 

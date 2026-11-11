@@ -23,14 +23,14 @@
 |---|---|---|
 | ① 문제·타겟·핵심 시나리오 | PM의 검토·수정과 팀원의 확인·답장을 회의 후 관리로 연결 | [테크스펙](techspec.md). |
 | ② 완성도·안정성·사용성 | 오류 위치의 안내, 화면 이동 중 처리 추적, 모바일·키보드, 로딩·사전 조회 | [문제 사례](troubleshooting.md), [접근성·성능](a11y-performance.md). |
-| ③ Agentic 경험·⑤ 워크플로우 | 자동 반영과 확인 필요 분기, 화자 지정 대기, 처리 실패·복구를 화면에서 이어 주는 역할 | [AI 결과 화면](ai-result-ui.md), [구조](structure.md). 판단·도구 실행 자체의 설계는 [AI 설계](../ai/index.md)와 [BE 설계](../backend/index.md)의 범위다. |
+| ③ Agentic 경험·⑤ 워크플로우 | 자동 반영과 확인 필요 분기, 화자 지정 대기, 처리 실패·복구를 화면에서 이어 주는 역할 | [AI 결과 화면](ai-result-ui.md), [구조](structure.md). 판단·도구 실행 자체의 설계는 [AI 설계](../../docs/design/ai/index.md)와 [BE 설계](../../docs/design/backend/index.md)의 범위다. |
 | ④ 서비스 개발 충실성 | 회의·승인·태스크 여러 보기·프로젝트 맵·메시지·팀 연결의 구현 근거 | [기능 구성](techspec.md), [마일스톤 기록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/README.md). |
 | ⑦ 가드레일·예외 대응 | 근거 중심 검토, 충돌 재확인, 비정상 응답 차단, 세션 변경, 되돌리기·재조회 | [대안과 결정](tradeoffs-decisions.md), [문제 사례](troubleshooting.md). |
 | ⑧ 코드 품질·테스트 | FSD 의존 검사, 단위·화면 통합·브라우저 E2E, 실패 회귀 | [구조](structure.md), 이 페이지의 검증 경계. |
-| ⑨ 배포·운영 | 실제 API·MSW 분리, 환경 변수, CI·번들·프록시 | [환경 변수](../../dev/env.md), [배포](../../dev/deploy.md). 현재 URL·배포 버전은 별도 확인한다. |
-| ⑩ 문서화·협업 | README·대표 계약·결정 기록·이슈 결과·리뷰 기록의 연결 | [FE 문서 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/README.md), [코드 리뷰 기록](../../collab/code-reviews.md). |
+| ⑨ 배포·운영 | 실제 API·MSW 분리, 환경 변수, CI·번들·프록시 | [환경 변수](../../docs/dev/env.md), [배포](../../docs/dev/deploy.md). 현재 URL·배포 버전은 별도 확인한다. |
+| ⑩ 문서화·협업 | README·대표 계약·결정 기록·이슈 결과·리뷰 기록의 연결 | [FE 문서 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/README.md), [코드 리뷰 기록](../../docs/collab/code-reviews.md). |
 
-⑥ AI 품질 평가는 FE 테스트 통과 수로 대신하지 않는다. 모델·테스트셋·실패 분석의 근거는 [AI 설계 문서](../ai/index.md)에서 확인한다. FE는 전사 의심 사유와 근거를 사용자가 검토하도록 표시하는 역할을 설명한다.
+⑥ AI 품질 평가는 FE 테스트 통과 수로 대신하지 않는다. 모델·테스트셋·실패 분석의 근거는 [AI 설계 문서](../../docs/design/ai/index.md)에서 확인한다. FE는 전사 의심 사유와 근거를 사용자가 검토하도록 표시하는 역할을 설명한다.
 
 ## 데모에서 확인할 핵심 흐름
 
@@ -53,7 +53,7 @@ MSW를 사용하면 모의 데이터·모의 외부 연동임을 밝힌다. 실�
 아래 항목은 미완료 기능 목록이 아니라 최종 발표 버전에서 확인할 작업이다. 실행 결과를 얻기 전에는 완료 표시하지 않는다.
 
 - [ ] 최종 커밋과 실제 배포 버전·접속 URL을 맞춘다. 로그인에서 핵심 시연을 끝까지 실행한다.
-- [ ] 같은 커밋에서 `policy:check`, `typecheck`, `lint`, `format:check`, `test`, `build`, 일반 E2E와 동의 E2E 결과를 남긴다. 실행법은 [테스트 안내](../../dev/testing.md)를 따른다.
+- [ ] 같은 커밋에서 `policy:check`, `typecheck`, `lint`, `format:check`, `test`, `build`, 일반 E2E와 동의 E2E 결과를 남긴다. 실행법은 [테스트 안내](../../docs/dev/testing.md)를 따른다.
 - [ ] 결과에 실행일·커밋·환경·통과·실패·skip을 함께 기록한다. 정적 파일 수와 실행된 테스트 수를 구분한다.
 - [ ] 실서버 메시지 소켓의 변경 수신·재연결·로그아웃 종료를 확인한다. 기존 #558 기록만으로 완료 처리하지 않는다.
 - [ ] 시연에 푸시를 쓰면 실제 데스크톱 또는 홈 화면 설치 iOS에서 수신·클릭 복귀·로그아웃 구독 처리를 확인한다.
@@ -61,7 +61,7 @@ MSW를 사용하면 모의 데이터·모의 외부 연동임을 밝힌다. 실�
 
 ## 과거 수치와 현재 상태를 구분한다
 
-[테스트 안내](../../dev/testing.md)의 2026-11-07 무렵 수치는 역사 기록이다. [#594 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m3/work-items/594-stale-session-writes/result.md)의 전체 통과 수 역시 독립 리뷰 수정 후 전체 재실행 대기라는 단서를 함께 읽어야 한다. 두 기록 모두 최종 발표 버전의 최신 성공 수로 옮기지 않는다.
+[테스트 안내](../../docs/dev/testing.md)의 2026-11-07 무렵 수치는 역사 기록이다. [#594 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m3/work-items/594-stale-session-writes/result.md)의 전체 통과 수 역시 독립 리뷰 수정 후 전체 재실행 대기라는 단서를 함께 읽어야 한다. 두 기록 모두 최종 발표 버전의 최신 성공 수로 옮기지 않는다.
 
 성능은 [측정 원문](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/performance/README.md)의 날짜·번들·브라우저·네트워크·반복 조건을 함께 제시한다. 스크린 리더, 운영 소켓, 실제 외부 공급사, 실기기 푸시의 미확인을 자동 테스트 성공으로 대신하지 않는다.
 

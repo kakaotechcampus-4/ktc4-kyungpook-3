@@ -11,7 +11,7 @@ export function NoAccessPage() {
   return (
     <main className={SCREEN}>
       <EmptyState
-        pose="squint"
+        pose="idle"
         title="이 워크스페이스에 접근할 수 없어요"
         description="소속된 워크스페이스만 볼 수 있어요."
         action={

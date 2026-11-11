@@ -95,8 +95,12 @@ const ASSIGNEE =
   'inline-flex shrink-0 items-center gap-7 text-caption text-dim max-md:max-w-[112px]'
 const ASSIGNEE_NAME = 'max-md:truncate'
 const DUE = 'shrink-0 text-caption text-dim tabular-nums'
+const EMPTY_PAGE =
+  'mb-[58px] flex flex-1 items-center justify-center px-48 pt-48 pb-96 max-md:mb-0 max-md:px-20'
 const EMPTY_UPLOAD =
-  'inline-flex h-40 items-center justify-center rounded-9 bg-ink-solid px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
+  'inline-flex h-40 items-center justify-center rounded-9 bg-ink-solid px-20 text-body leading-none font-semibold text-surface hover:bg-dim active:bg-sub'
+const EMPTY_MEETINGS =
+  'inline-flex h-40 items-center justify-center rounded-9 border border-line bg-surface px-20 text-body leading-none font-semibold text-ink hover:bg-control'
 
 /** 보기가 쓰는 조회 하나. 받지 못했을 때 알리는 이름과 다시 부를 조회다 */
 interface ViewSource {
@@ -357,6 +361,34 @@ export function TaskBoard({
   )
 
   const indicator = useLoadingIndicator(loading)
+  if (
+    !indicator.pending &&
+    ready &&
+    overlaid?.length === 0 &&
+    (!isPm || approvalList?.length === 0) &&
+    (view.view !== 'calendar' || (meetings.data !== undefined && calendarMeetings.length === 0)) &&
+    (isList || missing.length === 0)
+  )
+    return (
+      <main className={EMPTY_PAGE}>
+        <EmptyState
+          title="아직 태스크가 없어요"
+          description="회의를 정리하면 할 일이 여기에 모여요."
+          action={
+            <div className="flex flex-wrap items-center justify-center gap-10">
+              {isPm ? (
+                <GuardedLink to={paths.meetingUpload(workspaceId)} className={EMPTY_UPLOAD}>
+                  회의 올리기
+                </GuardedLink>
+              ) : null}
+              <GuardedLink to={paths.meetings(workspaceId)} className={EMPTY_MEETINGS}>
+                회의록 보기
+              </GuardedLink>
+            </div>
+          }
+        />
+      </main>
+    )
   if (indicator.pending)
     body = isList ? (
       <DeferredSkeleton indicator={indicator}>
@@ -634,7 +666,7 @@ function BoardList({
           // EmptyTasks 시안
           <EmptyState
             titleAs="h2"
-            pose="squint"
+            pose="idle"
             title="확인할 게 없어요"
             description="새 회의를 올리면 확인이 필요한 것만 여기에 모아 드릴게요."
             action={

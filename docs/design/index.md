@@ -37,11 +37,11 @@ flowchart LR
 
 | 쪽 | 다루는 것 |
 |---|---|
-| [개요](frontend/index.md) | FE 구조와 화면 지도 |
-| [계약 먼저, MSW 먼저](frontend/contract-first-msw.md) | 모의 API로 먼저 만들고 실제 API에 대조한 방식 |
-| [AI 결과 보여 주기](frontend/ai-result-ui.md) | 배지, 근거 원문, 승인 카드, 권한별 화면 |
-| [실시간 메시지](frontend/realtime-messages.md) | 웹소켓, 웹 푸시, PWA |
-| [접근성과 성능](frontend/a11y-performance.md) | 디자인 시스템, 접근성, 모바일, 성능 |
+| [개요](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/index.md) | FE 구조와 화면 지도 |
+| [계약 먼저, MSW 먼저](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/contract-first-msw.md) | 모의 API로 먼저 만들고 실제 API에 대조한 방식 |
+| [AI 결과 보여 주기](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/ai-result-ui.md) | 배지, 근거 원문, 승인 카드, 권한별 화면 |
+| [실시간 메시지](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/realtime-messages.md) | 웹소켓, 웹 푸시, PWA |
+| [접근성과 성능](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/a11y-performance.md) | 디자인 시스템, 접근성, 모바일, 성능 |
 
 ## 보안 점검
 

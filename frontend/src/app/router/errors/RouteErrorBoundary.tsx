@@ -25,7 +25,7 @@ function RouteErrorScreen() {
   return (
     <main className={SCREEN}>
       <EmptyState
-        pose="squint"
+        pose="idle"
         title="이 화면을 표시하지 못했어요"
         description="다른 화면은 그대로 쓸 수 있어요. 새로고침해도 같으면 잠시 후 다시 시도해 주세요."
         action={

@@ -1,6 +1,6 @@
 # AI 결과 화면
 
-AI 가 회의·답장에서 뽑은 값을 PM 이 "믿지도 무시하지도 않게" 보여 주는 화면 설계다. 게이트(auto·review·hold)는 BE 가 정하고([판단 파이프라인](../ai/judge-pipeline.md#게이트-auto--review--hold)), FE 는 그 결과를 반영됨·확인 필요·보류로 그리고, 근거를 붙이고, 고쳐 승인하거나 되돌리는 길을 준다.
+AI 가 회의·답장에서 뽑은 값을 PM 이 "믿지도 무시하지도 않게" 보여 주는 화면 설계다. 게이트(auto·review·hold)는 BE 가 정하고([판단 파이프라인](../../docs/design/ai/judge-pipeline.md#게이트-auto--review--hold)), FE 는 그 결과를 반영됨·확인 필요·보류로 그리고, 근거를 붙이고, 고쳐 승인하거나 되돌리는 길을 준다.
 
 ## 문제
 

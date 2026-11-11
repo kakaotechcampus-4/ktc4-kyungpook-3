@@ -17,9 +17,9 @@ AI 품질을 평가하려고 수집하거나 수집할 값을 정리한다. 지�
 | 판단 | 1인칭 오분류율 | 화자 본인 담당을 다른 유형으로 본 비율 | 누적 171건 중 2건(약 1%) (2026-11-07) | 같음 |
 | 오인식 | 차단율 | 명사가 틀린 발화 중 막은 비율 | 47% (41~53%) (2026-11-08, AI Hub KconfSpeech 1,397발화, Jev 기준 0.8) | `judge.eval_asr_real` |
 | 오인식 | 오차단율 | 명사가 맞는 발화 중 막은 비율 | 19% (17~21%) (같음) | 같음 |
-| 오인식 | 검사 실패율 | `asr_check_failed` 비율 | 운영에서 수집 예정 | `kpi.approval_fact.asr_flag='check_failed'` 비율([KPI 대시보드](../../deploy/monitoring/README.md), #675). 2026-11-07 이후 회의 추출의 review·hold 생성 카드만 센다 |
+| 오인식 | 검사 실패율 | `asr_check_failed` 비율 | 운영에서 수집 예정 | `kpi.approval_fact.asr_flag='check_failed'` 비율([KPI 대시보드](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/monitoring/README.md), #675). 2026-11-07 이후 회의 추출의 review·hold 생성 카드만 센다 |
 | 오인식 | 의심 유무별 PM 제목 수정 비율 | `asr_flag`(none·suspect·check_failed)별로 PM 이 제목을 고쳐 승인한 비율. 막힌 쪽이 뚜렷이 높으면 검사가 제 역할을 한다 | 운영에서 수집 예정 | `kpi.approval_fact.asr_flag`·`title_edited` (#675) |
-| 게이트 | 자동 반영률 | judge 새 항목 중 auto 비율 | 운영에서 수집 예정 | `kpi.extraction_item_fact.gate` ([KPI 대시보드](../../deploy/monitoring/README.md), #675) |
+| 게이트 | 자동 반영률 | judge 새 항목 중 auto 비율 | 운영에서 수집 예정 | `kpi.extraction_item_fact.gate` ([KPI 대시보드](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/monitoring/README.md), #675) |
 | 게이트 | 탈락 사유 분포 | auto 를 막은 사유별 건수(`task_not_certain`, `asr_suspect` 등) | 운영에서 수집 예정 | `auto_blockers` 결과. DB 에 저장되지 않아 로그 수집 뒤 센다(#675 범위 밖) |
 | 게이트 | 켰으면 auto 였을 항목 | `AUTO_CREATE_ENABLED=false` 또는 채팅 회의에서 review 로 내린 auto 항목 수 | 운영에서 수집 예정 | BE 로그 (`app/api/extractions.py`). 로그 수집 뒤 센다(#675 범위 밖) |
 | 승인 | PM 승인·수정·반려 비율 | 승인 카드 처리 결과, 게이트·근거 상태·카테고리별 | 운영에서 수집 예정 | `kpi.approval_fact.outcome` (#675). 수정 승인은 `task_overrides` 가 생긴 2026-11-04 이후 카드만 구분된다. 삭제된 회의의 승인 요청은 상태와 관계없이 소급해서 뺀다 |
