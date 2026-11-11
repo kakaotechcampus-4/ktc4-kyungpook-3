@@ -53,13 +53,11 @@
 
 ## 4. 테스트 계정과 샘플 데이터 (#606)
 
-결정(2026-11-11): 테스트 계정의 로그인 이메일·비밀번호와 샘플 음성 파일은 공개 저장소에 적지 않고 심사 운영진에게 Notion 으로 따로 전달한다. README 와 사용자 가이드에는 "따로 전달한다"고만 적었다. 이메일과 비밀번호는 시드를 실행할 때 정한다(`backend/app/cli/seed_demo.py:627-633, 646, 678-679`).
+결정(2026-11-11): 테스트 계정의 로그인 이메일·비밀번호, 샘플 음성 파일, 테스트용 Discord 서버는 공개 저장소에 적지 않고 심사 운영진에게 Notion 으로 따로 전달한다. 전달하는 계정은 PM 과 팀원 한 명이다(시드가 비밀번호를 정하는 계정이 이 둘이다, `backend/app/cli/seed_demo.py:206, 225`). README 와 사용자 가이드에는 "따로 전달한다"고만 적었다. 이메일과 비밀번호는 시드를 실행할 때 정한다(`backend/app/cli/seed_demo.py:627-633, 646, 678-679`).
 
 | 파일:줄 | 확인할 것 | 확인 방법(명령어) |
 |---|---|---|
 | `docs/user/getting-started.md:13-14` | 운영 서비스에 시드를 실행했는지. #654 는 `--today 2026-11-19` 로 11/18 회의 시각 이후에 실행한다고 적고 있다 | 운영 서버에서 `docker compose -f /opt/mm/backend/docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBER_PASSWORD api python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com' --today 2026-11-19 --dry-run` 으로 이미 있는 계정·회의 수를 본다(출처: `backend/README.md` "심사용 시드") |
-| `docs/user/getting-started.md:14` | Notion 전달 내용에 넣을 것: 로그인할 수 있는 계정은 PM 과 팀원2 둘뿐이다. 3~6번 계정(원준·김환·재환·진호)은 비밀번호가 무작위다(`seed_demo.py:225`) | 명령 없음. 3~6번도 주려면 시드 뒤 웹의 비밀번호 재설정으로 정해야 한다. `--reset-passwords` 는 PM·팀원2 만 바꾼다(`seed_demo.py:230`) |
-| `docs/user/getting-started.md:17` | 테스트용 Discord 서버. #606 의 심사 흐름은 심사위원이 자기 계정으로 서버를 만든다고 적고 있다 | `gh issue view 606` 의 "심사 흐름" 5번을 보고, 팀이 서버를 미리 만들어 줄지 정한다 |
 | `docs/user/getting-started.md:31, 33` | 추천 순서 4번(샘플 음성 올리기)과 6번(팀원 계정으로 로그인)이 Notion 으로 전달하는 내용과 맞는지 | 명령 없음. 전달 내용을 정한 뒤 순서를 다시 읽고 맞춘다 |
 
 ## 5. README 대표 GIF 촬영 시나리오 (#654)
