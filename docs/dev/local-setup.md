@@ -83,7 +83,7 @@ python -m capture.worker           # 처리 워커. 저장된 회의를 전사·
 - 판단 파이프라인(judge)으로 돌리려면 `.env` 에 `MM_EXTRACT_PATH=judge` 와 `TERRA_*`, `LUNA_*`, `BE_*` 를 채운다.
 - 전사는 기본이 로컬 모델(`MM_STT_BACKEND=local`, large-v3-turbo)이다. 외부 API 로 전사하려면 `MM_STT_BACKEND=elice` 와 `ELICE_*` 를 채운다.
 - 녹음 없이 오디오 파일 하나로 처리해 볼 때: `python -m upload.prepare <오디오> --started-at <ISO>`
-- 자세한 내용: [ai README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/README.md#설치-이-디렉토리-ai-안에서)
+- 자세한 내용: [ai README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/README.md#설치)
 
 ## 세 파트를 함께 띄우는 순서
 

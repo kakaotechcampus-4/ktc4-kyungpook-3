@@ -12,8 +12,8 @@ backend/docs/
     ├── backend-plan.md
     └── m0/ ~ m7/
         ├── plan.md
-        ├── basis-for-decision/
-        └── trouble-shooting/
+        ├── result.md
+        └── basis-for-decision/
 ```
 
 - [AI(녹음 봇) 계약](contracts/backend-ai-contract.md): 봇이 부르는 회의·발화·유사 검색·추출 등록·서버로 워크스페이스 찾기·전사 힌트 조회 API의 현재 코드 대조.
@@ -28,4 +28,4 @@ backend/docs/
 |---|---|---|
 | `plan/backend-development-plan.md` | [plan/backend-plan.md](plan/backend-plan.md) | 전체 계획. 내용 변경 없이 이름만 변경 |
 
-초기 구조화 뒤 M0·M1·M2·M3·M5·M6·M7의 결과와 개별 결정 기록이 추가됐다. [마일스톤 안내](plan/README.md)에서 찾는다. 빈 계획과 과거 결과를 근거로 새 완료조건·검증·합의를 만들지 않는다.
+초기 구조화 뒤 M0·M1·M2·M3·M5·M6·M7의 결과와 개별 결정 기록이 추가됐다. [마일스톤 안내](plan/README.md)에서 찾는다. 마일스톤별 plan.md 는 전체 계획의 해당 절(범위, 작업, 완료 기준)을 옮긴 것이다.
