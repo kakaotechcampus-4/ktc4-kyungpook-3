@@ -17,9 +17,10 @@
 |---|---|---|---|---|
 | AI | judge·draft·stt·upload·capture 모듈 (pytest) | 파이프라인 전체를 가짜 LLM·가짜 BE 로(`tests/test_pipeline.py`), 워커 GPU 전환(`tests/capture/test_worker_gpu.py`) | 실제 API 평가 스크립트(아래) | 1,885 passed (2026-11-09, #580 기록) |
 | BE | 서비스(매칭·게이트·스케줄러) | `tests/api/` FastAPI TestClient, SQLite in-memory 기본 + PostgreSQL 전용 변형(`TEST_DATABASE_URL`) | — | `tests/api` 1,461 passed, 1,241 skipped(PG 전용) (2026-11-07, SQLite) |
-| FE | Vitest + RTL | 같은 MSW 핸들러로 화면 단위 통합 | Playwright 28 spec, 122 테스트(360·390·768px 레이아웃, 명도 대비 포함) | 3,119 / 3,121 (실패 2개는 부하 시간 초과, #482 기록) |
+| FE | Vitest + RTL | 같은 MSW 핸들러로 화면 단위 통합 | Playwright 46 spec, 181 테스트(360·390·768px 레이아웃, 명도 대비 포함, 2026-11-11 정적 집계) | 3,119 / 3,121 (실패 2개는 부하 시간 초과, #482 기록) |
 
 - 기록된 AI 통과 수 추이: 680(09-30) → 980(10-12) → 1,108(11-04) → 1,290(11-06) → 1,885(11-09).
+- 2026-11-11 `develop`(`fee93a6e`) 정적 집계(실행 결과 아님, Git 추적 파일 기준): AI 테스트 파일 112·`def test_` 2,196, BE 파일 157·`def test_` 2,760, FE 단위·통합 파일 352, E2E spec 46·`test(` 181. 표의 통과 수는 각 날짜의 실행 기록이라 이 집계와 다르다.
 - 멘토가 #382 리뷰에서 확인한 CI 통과 수(2026-11-06, Actions 실행 42383311396): AI 1,831, BE 3,669, FE 3,245, E2E 264. 위 표와 세는 범위가 달라 숫자가 다르다.
 
 ## CI 에서 도는 것

@@ -20,7 +20,7 @@ API 공통 응답 봉투, 에러 코드, 권한, 아직 없는 기능을 정리�
 
 ## 에러 코드
 
-`error.code` 값과 HTTP 상태다(원본은 같은 파일). *(아직 미구현 경로)* 코드는 음성 전사·회의 분석이 실제로 붙기 전까지 내려오지 않는다.
+`error.code` 값과 HTTP 상태다(원본은 같은 파일). *(예약 코드)* 는 정의만 있고 지금 내려 주는 API 가 없다. 전사·분석은 BE 요청 안에서 돌지 않고 AI 워커가 비동기로 처리하므로, 그 실패는 API 오류가 아니라 회의 상태(`failed`)와 실패 단계로 알린다.
 
 ### 공통·서버 오류
 
@@ -89,7 +89,7 @@ API 공통 응답 봉투, 에러 코드, 권한, 아직 없는 기능을 정리�
 | `AUDIO_TOO_LARGE` | 413 | 업로드한 녹음이 한도(기본 700MiB, `UPLOAD_MAX_BYTES`)를 넘음. `details.size_bytes`·`max_bytes` |
 | `AUDIO_UPLOAD_FAILED` | 422 | 오디오 저장·병합 실패 |
 | `AUDIO_FORMAT_UNSUPPORTED` | 422 | 지원하지 않는 오디오 형식. `details.filename`·`supported` |
-| `TRANSCRIPTION_FAILED` | 502 | 음성 전사 실패 *(아직 미구현 경로)* |
+| `TRANSCRIPTION_FAILED` | 502 | 음성 전사 실패 *(예약 코드)* |
 
 - `AUDIO_NOT_AVAILABLE` 의 `details.reason`: `expired`(보관 기간 지남)·`no_recording`(녹음이 없거나 지워졌거나 failed 회의).
 
@@ -103,7 +103,7 @@ API 공통 응답 봉투, 에러 코드, 권한, 아직 없는 기능을 정리�
 | `SUMMARY_NOT_FOUND` | 404 | 그 회의의 요약본이 아직 없음(`summary.md`) |
 | `DECISION_NOT_FOUND` | 404 | 결정이 없음(결정 고치기). 다른 워크스페이스나 삭제된 회의의 결정도 같음. `details.decision_id` |
 | `TOPIC_NAME_TAKEN` | 409 | 바꾸려는 이름(정규화한 값)을 다른 주제가 쓰고 있음(주제 이름 고치기). `details.topic_id` 가 그 주제 |
-| `EXTRACTION_FAILED` | 502 | 회의 분석 실패 *(아직 미구현 경로)* |
+| `EXTRACTION_FAILED` | 502 | 회의 분석 실패 *(예약 코드)* |
 | `TASK_NOT_FOUND` | 404 | 태스크가 없음 |
 | `TASK_HISTORY_NOT_FOUND` | 404 | 반영 로그(태스크 히스토리)가 없음 |
 | `APPROVAL_NOT_FOUND` | 404 | 승인 요청이 없음 |
