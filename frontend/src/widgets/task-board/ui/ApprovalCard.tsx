@@ -54,7 +54,8 @@ const REASON = 'text-body text-sub'
 /* 후보는 공백 없이 100자까지 온다. 전역 keep-all 이라 글자 칸이 끊어 주지 않으면 카드 밖으로 나간다 */
 const SUSPECT = 'flex min-w-[0px] items-start gap-6 text-caption text-sub'
 const SUSPECT_TEXT = 'min-w-[0px] wrap-anywhere'
-const FIELDS = 'grid grid-cols-[minmax(0px,1.6fr)_minmax(0px,1fr)_minmax(0px,1fr)] gap-12'
+const FIELDS =
+  'grid grid-cols-[minmax(0px,1.6fr)_minmax(0px,1fr)_minmax(0px,1fr)] gap-12 max-md:grid-cols-1'
 const EVIDENCE = 'flex flex-col gap-7 rounded-12 bg-surface-sunken px-20 py-18'
 const EVIDENCE_HEAD = 'flex items-center justify-between gap-12'
 const EVIDENCE_META = 'text-[11px] text-dim tabular-nums'
@@ -414,7 +415,7 @@ function ApprovalFields({
       <Button
         type="button"
         variant="ghost"
-        className="col-start-3 w-full"
+        className="col-start-3 w-full max-md:col-start-1"
         disabled={!editable}
         onClick={() => onChange({ ...values, dueDate: null })}
       >

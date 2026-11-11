@@ -54,7 +54,7 @@ function approvalCard(page: Page) {
   return page.getByRole('region', { name: 'Notion 에 올라갈 태스크' })
 }
 
-for (const width of [1440, 390]) {
+for (const width of [1440, 390, 320]) {
   for (const view of ['list', 'detail'] as const) {
     test(`${width}px ${view} 입력 아이콘은 경고색을 함께 바꾸고 정상 입력이면 회색으로 돌아온다`, async ({
       page,
@@ -82,6 +82,19 @@ for (const width of [1440, 390]) {
       await expect(pencil).toHaveCSS('color', 'rgb(102, 102, 102)')
       await expect(calendar).toBeEnabled()
       await expect(calendar.locator('svg')).toHaveCSS('color', 'rgb(102, 102, 102)')
+      await page.evaluate(() => document.fonts.ready)
+      const dateFits = await due.evaluate((input) => {
+        const style = getComputedStyle(input)
+        const context = document.createElement('canvas').getContext('2d')
+        if (context === null) throw new Error('날짜 글자 폭을 확인할 수 없어요')
+        context.font = style.font
+        return (
+          input instanceof HTMLInputElement &&
+          context.measureText(input.value).width <=
+            input.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+        )
+      })
+      expect(dateFits, '마감 날짜 전체가 입력칸 안에 보인다').toBe(true)
 
       await title.fill('')
       await title.blur()
