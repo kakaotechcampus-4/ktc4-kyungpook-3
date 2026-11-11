@@ -36,7 +36,7 @@ flowchart TD
 | ⑥ | 전사 오인식 검사 | kiwipiepy 형태소 + 용어 목록 + Jev(⑤와 같은 호출) | 제목 명사 중 용어 목록에 없는 말, 발음이 가까운 후보 최대 5개 | `asr_suspects[]` | Jev 실패·분석기 실패 → `check_failed`(보수적으로 막음). 채팅·수정 항목은 검사 안 함 |
 | ⑦ | 게이트 | BE `auto_blockers`, `decide_create_gate` | item + 담당자 매칭 결과 | auto / review / hold | 아래 표 |
 
-- 판단 못 한 finding 이 남으면 파이프라인을 최대 2번 다시 돌리고, 결과는 실행 하나를 고르지 않고 얘기 단위로 합친다(결정 [0016](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md), [0054](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-07-0054-merge-judge-reruns-by-story.md)).
+- 판단 못 한 finding 이 남으면 파이프라인을 `MM_EXTRACT_RETRY_MAX` 번까지 다시 돌릴 수 있다. 기본값은 0 이다. 실패한 호출은 그 자리에서 한 번 더 하므로 회의 전체를 다시 돌리지 않는다(결정 [0063](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-10-0063-retry-the-failed-call-in-place.md)). 다시 돌린 경우 결과는 실행 하나를 고르지 않고 얘기 단위로 합친다(결정 [0016](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md), [0054](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-07-0054-merge-judge-reruns-by-story.md)).
 - 상대 날짜("내일")의 기준일은 회의 날짜다. 채팅은 메시지 작성일(KST).
 
 ## 상태: 값마다 출처가 하나

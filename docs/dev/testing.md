@@ -110,6 +110,8 @@ flowchart TB
 
 **2026-11-09** `develop` 에서 파일·함수 수를 다시 세면(정적 집계) AI 파일 107·`def test_` 2,032, BE 파일 128·`def test_` 2,318, FE 단위·통합 파일 305, E2E spec 39 이다.
 
+**2026-11-11** `develop`(`fee93a6e`)에서 Git 추적 파일만 같은 방법으로 세면 AI 파일 112·`def test_` 2,196, BE 파일 157·`def test_` 2,760, FE 단위·통합 파일 352, E2E spec 46·`test(` 181 이다. 위 표의 파일·통과 수는 그 날짜의 기록이다.
+
 ## 관련 문서
 
 - [테스트 전략](../techspec/test-strategy.md) · [배포·CI](deploy.md) · [로컬 실행](local-setup.md)

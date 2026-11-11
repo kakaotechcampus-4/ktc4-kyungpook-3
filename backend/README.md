@@ -312,8 +312,8 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `AUDIO_UPLOAD_FAILED` | 422 | 오디오 저장·병합 실패 |
 | `AUDIO_NOT_AVAILABLE` | 404 | 들을 수 있는 회의 녹음이 없음(`GET /meetings/{id}/audio`). `details.meeting_id`, `details.reason`: `expired`(보관 기간이 지났다) · `no_recording`(녹음이 없거나 지워졌거나 failed 회의다) |
 | `AUDIO_FORMAT_UNSUPPORTED` | 422 | 지원하지 않는 오디오 형식. `details.filename`·`supported` |
-| `TRANSCRIPTION_FAILED` | 502 | 음성 전사 실패 *(아직 미구현 경로)* |
-| `EXTRACTION_FAILED` | 502 | 회의 분석 실패 *(아직 미구현 경로)* |
+| `TRANSCRIPTION_FAILED` | 502 | 음성 전사 실패 *(예약 코드)* |
+| `EXTRACTION_FAILED` | 502 | 회의 분석 실패 *(예약 코드)* |
 | `NOTION_WRITE_FAILED` | 502 | Notion 페이지 생성/갱신 실패 *(Task API는 더 이상 내려주지 않음 — 아래 Notion 연동 참고)* |
 | `EMBEDDING_UNAVAILABLE` | 502 | 임베딩 서버 호출 실패 또는 임베딩 키 미설정 (유사 task 검색) |
 | `DISCORD_API_FAILED` | 502 | Discord 요청 실패(봇 토큰 미설정·권한·네트워크). `details.status`에 Discord 응답 상태(응답이 없으면 null), 채널 API 는 `details.reason` 도 준다 |
@@ -321,8 +321,8 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `DISCORD_CHANNEL_NOT_ACCESSIBLE` | 409 | 봇이 그 채널을 읽거나 메시지를 보낼 수 없음. `details`는 `{channel_id, need: "read"\|"send", discord_code}` |
 | `INTERNAL_ERROR` | 500 | 그 외 서버 내부 오류 |
 
-*(아직 미구현 경로)* 표시가 붙은 코드는 음성 전사·회의 분석이 실제로 붙기
-전까지는 절대 내려오지 않는다.
+*(예약 코드)* 는 정의만 있고 지금 내려 주는 API 가 없다. 전사·분석은 BE 요청 안에서 돌지 않고
+AI 워커가 비동기로 처리하므로, 그 실패는 API 오류가 아니라 회의 상태(`failed`)와 실패 단계로 알린다.
 
 ## Notion 연동
 
