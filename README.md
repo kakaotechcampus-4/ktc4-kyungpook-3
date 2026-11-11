@@ -189,4 +189,4 @@ python -m capture.worker           # 처리 워커: 전사·판단 후 BE 로 �
 | 그라운드룰·브랜치·컨벤션·리뷰 | [협업 문서](./docs/collab/index.md) |
 | 파트별 계약·계획·결과 | [문서 안내](./docs/README.md) · [FE API 계약](./frontend/docs/contracts/frontend-api-contract.md) · [BE·AI 계약](./backend/docs/contracts/backend-ai-contract.md) |
 
-문서 포털의 원본은 `docs/` 폴더입니다(`mkdocs.yml`).
+문서는 `docs/` 폴더에 있고 [문서 첫 화면](./docs/index.md)에서 시작합니다.
