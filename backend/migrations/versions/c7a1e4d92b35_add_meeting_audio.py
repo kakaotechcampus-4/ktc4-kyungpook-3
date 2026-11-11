@@ -5,7 +5,7 @@
 처리 중인 기존 업로드 회의는 PM 이 화자를 지정하는 동안 녹음을 들어야 하므로 meeting_upload 로 행을 채운다.
 
 Revision ID: c7a1e4d92b35
-Revises: b20d029aec7b
+Revises: 6631d28f2e1b
 Create Date: 2026-11-10 15:00:00.000000
 
 """
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'c7a1e4d92b35'
-down_revision: Union[str, Sequence[str], None] = 'b20d029aec7b'
+down_revision: Union[str, Sequence[str], None] = '6631d28f2e1b'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
