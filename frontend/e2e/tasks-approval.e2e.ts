@@ -54,6 +54,57 @@ function approvalCard(page: Page) {
   return page.getByRole('region', { name: 'Notion 에 올라갈 태스크' })
 }
 
+for (const width of [1440, 390]) {
+  for (const view of ['list', 'detail'] as const) {
+    test(`${width}px ${view} 입력 아이콘은 경고색을 함께 바꾸고 정상 입력이면 회색으로 돌아온다`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 1000 })
+      await start(
+        page,
+        'tasks-default',
+        `${WORKSPACE}/${view === 'list' ? 'tasks' : 'approvals/ap_02'}`,
+      )
+      const card =
+        view === 'list'
+          ? page.locator('article[data-kind="approval"]').filter({
+              has: page.getByRole('heading', { name: '테스트 계획 정리', exact: true }),
+            })
+          : approvalCard(page)
+      const title = card.getByRole('textbox', { name: '태스크명' })
+      const due = card.getByRole('textbox', { name: /^마감/ })
+      const pencil = title.locator('..').locator('svg')
+      const calendar = card.getByRole('button', { name: '마감 달력 열기' })
+      await expect(title).toBeEditable(FIRST_PAINT)
+      await due.fill('2026-10-20')
+      await due.blur()
+      await expect(pencil).toHaveCount(1)
+      await expect(pencil).toHaveCSS('color', 'rgb(102, 102, 102)')
+      await expect(calendar).toBeEnabled()
+      await expect(calendar.locator('svg')).toHaveCSS('color', 'rgb(102, 102, 102)')
+
+      await title.fill('')
+      await title.blur()
+      await expect(pencil).toHaveCSS('color', 'rgb(183, 72, 27)')
+      await expect(title.locator('..')).toHaveCSS('border-color', 'rgb(183, 72, 27)')
+      await due.fill('2026-02-30')
+      await due.blur()
+      await expect(calendar.locator('svg')).toHaveCSS('color', 'rgb(183, 72, 27)')
+      await expect(due.locator('..')).toHaveCSS('border-color', 'rgb(183, 72, 27)')
+      await page.screenshot({ path: test.info().outputPath('warning-icons.png'), fullPage: true })
+
+      await title.fill('테스트 계획 정리')
+      await title.blur()
+      await due.fill('2026-10-20')
+      await due.blur()
+      await expect(pencil).toHaveCSS('color', 'rgb(102, 102, 102)')
+      await expect(calendar.locator('svg')).toHaveCSS('color', 'rgb(102, 102, 102)')
+      await expectNoHorizontalOverflow(page)
+      await page.screenshot({ path: test.info().outputPath('normal-icons.png'), fullPage: true })
+    })
+  }
+}
+
 /**
  * 확인 필요 상세의 카드에서 빈 칸을 바로 채운다. 고르지 않은 칸만 채운다.
  * 고친 값은 아직 저장되지 않았다 — 승인해야 함께 저장된다

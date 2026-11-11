@@ -1,3 +1,5 @@
 export { QuickGuideButton } from './ui/QuickGuideButton'
 export type { QuickGuideButtonProps } from './ui/QuickGuideButton'
+export { QuickGuidePanel } from './ui/QuickGuidePanel'
+export type { QuickGuideForm } from './ui/QuickGuidePanel'
 export { FirstMeetingHint } from './ui/inline'

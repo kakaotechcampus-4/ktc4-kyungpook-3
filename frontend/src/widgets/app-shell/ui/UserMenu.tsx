@@ -1,7 +1,9 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { sessionQueryOptions } from '@/entities/user'
 import { LOGOUT_FAILED_MESSAGE, useLogout } from '@/features/auth'
+import { QuickGuidePanel } from '@/features/quick-guide'
+import type { QuickGuideForm } from '@/features/quick-guide'
 import { paths } from '@/shared/config/routes'
 import { useCompactScreen } from '@/shared/lib/compact-screen'
 import { hasPendingLeave, useGuardedNavigate } from '@/shared/lib/unsaved-changes'
@@ -39,8 +41,8 @@ export interface UserMenuProps {
 }
 
 /**
- * 사용자(프로필) 메뉴 — `설정` 과 `로그아웃`. 768px 미만에서는 아래 탭 막대에 없는 셸 탭(프로젝트 맵)이 `설정` 위에 있다 (#551).
- * 둘 다 저장하지 않은 변경이 있으면 먼저 묻는다.
+ * 사용자(프로필) 메뉴 — `설정`·`사용법 보기`·`로그아웃`. 768px 미만에서는 아래 탭 막대에 없는 셸 탭(프로젝트 맵)이 `설정` 위에 있다 (#551).
+ * 설정과 로그아웃은 저장하지 않은 변경이 있으면 먼저 묻는다.
  * `설정` 은 #244 사용자 요청으로 워크스페이스 메뉴에서 옮겨 왔다. 이동은 관문(useGuardedNavigate)을 탄다.
  * 로그아웃은 서버가 성공한 뒤에만 캐시를 지우고 로그인으로 간다 (useLogout). 실패하면 아바타 옆에 안내가 남는다.
  * 논모달이다(`modal={false}`) — 열려 있어도 뒤 화면을 aria-hidden·pointer-events·스크롤 잠금으로 막지 않는다.
@@ -52,15 +54,24 @@ export function UserMenu({ workspaceId }: UserMenuProps) {
   const { requestLogout, isPending, error } = useLogout()
   const navigate = useGuardedNavigate()
   const compact = useCompactScreen()
+  const [guideOpen, setGuideOpen] = useState(false)
+  const [guideForm, setGuideForm] = useState<QuickGuideForm>('modal')
   const user = session.data?.user
   const triggerRef = useRef<HTMLButtonElement>(null)
-  // 고른 항목이 다른 화면으로 옮겼는가. 닫힘 포커스 복귀(다음 태스크)에서 읽는다
-  const leftRef = useRef(false)
+  // 새 화면이나 안내 창이 가져간 포커스를 메뉴 닫힘이 되돌리지 않는다.
+  const skipFocusReturn = useRef(false)
 
   const openScreen = (path: string) => {
-    leftRef.current = navigate(path)
+    skipFocusReturn.current = navigate(path)
     // 이탈 확인이 붙잡았으면 그 창을 연 요소가 아바타가 되게 먼저 옮긴다 — `계속 작성하기` 로 닫으면 아바타로 돌아온다
     if (hasPendingLeave()) triggerRef.current?.focus()
+  }
+
+  const openGuide = () => {
+    triggerRef.current?.focus()
+    skipFocusReturn.current = true
+    setGuideForm(compact ? 'sheet' : 'modal')
+    setGuideOpen(true)
   }
 
   return (
@@ -81,8 +92,8 @@ export function UserMenu({ workspaceId }: UserMenuProps) {
         <DropdownMenuContent
           className="w-[240px]"
           onCloseAutoFocus={(event) => {
-            if (!leftRef.current) return
-            leftRef.current = false
+            if (!skipFocusReturn.current) return
+            skipFocusReturn.current = false
             event.preventDefault()
           }}
         >
@@ -109,19 +120,29 @@ export function UserMenu({ workspaceId }: UserMenuProps) {
               <span className={ITEM_TEXT}>설정</span>
             </DropdownMenuItem>
           )}
+          <DropdownMenuItem onSelect={openGuide} aria-haspopup="dialog">
+            <Icon name="help" size={15} className={ITEM_ICON} />
+            <span className={ITEM_TEXT}>사용법 보기</span>
+          </DropdownMenuItem>
           <DropdownMenuItem disabled={isPending} onSelect={requestLogout}>
             <Icon name="logout" size={15} className={ITEM_ICON} />
             <span className={ITEM_TEXT}>로그아웃</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => {
-              leftRef.current = navigate(paths.withdrawal())
+              skipFocusReturn.current = navigate(paths.withdrawal())
             }}
           >
             <span className={ITEM_TEXT}>계정 탈퇴</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <QuickGuidePanel
+        open={guideOpen}
+        onOpenChange={setGuideOpen}
+        form={guideForm}
+        returnFocus={() => triggerRef.current}
+      />
     </span>
   )
 }

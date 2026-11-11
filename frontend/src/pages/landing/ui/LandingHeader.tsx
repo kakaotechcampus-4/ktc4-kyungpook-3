@@ -16,7 +16,7 @@ export function LandingHeader() {
       >
         <a
           href="#top"
-          className="inline-flex items-center gap-9 text-[15px] font-semibold tracking-h3 text-ink sm:text-landing"
+          className="inline-flex items-center gap-9 text-[15px] font-semibold tracking-h3 text-ink max-[360px]:gap-7 max-[360px]:text-[13px] sm:text-landing"
         >
           <BrandMark />
           <span>Manager&apos;s Manager</span>
@@ -32,7 +32,7 @@ export function LandingHeader() {
             </a>
           ))}
         </nav>
-        <StartLink className={`${LINK_PRIMARY} ${NAV_SIZE}`}>시작하기</StartLink>
+        <StartLink className={`${LINK_PRIMARY} ${NAV_SIZE} max-[360px]:px-12`}>시작하기</StartLink>
       </div>
     </header>
   )

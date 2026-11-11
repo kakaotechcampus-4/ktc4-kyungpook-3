@@ -9,6 +9,7 @@ import { fail, ok } from '@/shared/mock/envelope'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { stubViewport } from '@/shared/test/viewport'
+import { deferred } from '@/shared/test/deferred'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -40,6 +41,28 @@ function stubGraphWidth(width: number) {
 }
 
 describe('프로젝트 맵 화면 (#551)', () => {
+  it.each(['graph', 'list'])(
+    '맵 응답을 기다릴 때 %s 전용 틀을 보이고 응답 뒤 걷는다',
+    async (view) => {
+      const gate = deferred()
+      onTestFinished(() => gate.resolve())
+      server.use(
+        http.get('/api/v1/workspaces/:workspaceId/project-map', async () => {
+          await gate.promise
+          return ok({ meetings: [], nodes: [], edges: [] })
+        }),
+      )
+      renderApp(`${paths.projectMap(WS)}?view=${view}`)
+      expect(await screen.findByTestId('project-map-skeleton-body')).toBeInTheDocument()
+      expect(screen.queryByTestId('project-map-skeleton-graph') !== null).toBe(view === 'graph')
+      gate.resolve()
+      expect(
+        await screen.findByRole('heading', { name: '아직 프로젝트 맵이 비어 있어요' }),
+      ).toBeVisible()
+      expect(screen.queryByTestId('project-map-skeleton-body')).toBeNull()
+    },
+  )
+
   it('넓은 화면은 헤더 탭으로 오고 그래프로 열린다. 목록 보기로 바꾸면 주소에 남는다', async () => {
     const app = renderApp(paths.dashboard(WS))
     const nav = await screen.findByRole('navigation', { name: '주요 화면' })
@@ -255,9 +278,15 @@ describe('프로젝트 맵 화면 (#551)', () => {
     applyScenario('project-map-empty')
     renderApp(paths.projectMap(WS))
     expect(
-      await screen.findByRole('heading', { name: '아직 프로젝트 맵이 비어 있어요' }, FIRST_PAINT),
+      await screen.findByRole(
+        'heading',
+        { level: 1, name: '아직 프로젝트 맵이 비어 있어요' },
+        FIRST_PAINT,
+      ),
     ).toBeVisible()
     expect(screen.getByText('회의에서 태스크가 생기면 여기에 나와요.')).toBeVisible()
+    expect(screen.queryByRole('tablist', { name: '보기 방식' })).toBeNull()
+    expect(screen.queryByRole('form', { name: '프로젝트 합본 내려받기' })).toBeNull()
   })
 
   it('주제가 아직 없으면 안내를 두고 태스크만으로 그래프와 목록을 보인다', async () => {
@@ -338,6 +367,7 @@ describe('휴대폰의 프로젝트 맵 (D-180)', () => {
     expect(items.map((item) => item.textContent)).toEqual([
       '프로젝트 맵',
       '설정',
+      '사용법 보기',
       '로그아웃',
       '계정 탈퇴',
     ])

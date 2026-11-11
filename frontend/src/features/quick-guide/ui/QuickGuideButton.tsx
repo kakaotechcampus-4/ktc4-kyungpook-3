@@ -8,7 +8,7 @@ export type QuickGuideButtonProps = Omit<ComponentProps<'button'>, 'type' | 'onC
 
 /**
  * 안내 패널을 여는 단추. 저절로 열지 않는다. 모양과 이름(글자나 aria-label)은 놓이는 자리가 준다 —
- * 헤더의 `?` · 빈 화면의 `방법 보기` · 온보딩의 `어떻게 쓰나요?`
+ * 빈 화면의 `방법 보기` · 온보딩의 `어떻게 쓰나요?`
  */
 export function QuickGuideButton(props: QuickGuideButtonProps) {
   const compact = useCompactScreen()

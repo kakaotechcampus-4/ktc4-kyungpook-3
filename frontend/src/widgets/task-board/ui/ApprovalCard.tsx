@@ -31,6 +31,7 @@ import { paths } from '@/shared/config/routes'
 import { GuardedLink, useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { Card } from '@/shared/ui/card'
+import { DateField } from '@/shared/ui/date-field'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { Icon } from '@/shared/ui/icon'
 import { Label } from '@/shared/ui/label'
@@ -365,6 +366,13 @@ function ApprovalFields({
         readOnly={!editable}
         labelTone={titleBlank ? 'required-blocking' : 'normal'}
         error={titleError ? '제목은 300자 이하로 입력해 주세요.' : undefined}
+        endAdornment={
+          <span
+            className={`inline-flex h-28 w-28 shrink-0 -mr-6 items-center justify-center rounded-6 ${!editable ? 'text-line-strong' : titleBlank || titleError ? 'text-accent' : 'text-dim'}`}
+          >
+            <Icon name="edit" size={16} strokeWidth={1.7} />
+          </span>
+        }
         onChange={(event) => onChange({ ...values, taskTitle: event.target.value })}
       />
       <div className="flex flex-col">
@@ -392,16 +400,16 @@ function ApprovalFields({
           disabled={!editable}
         />
       </div>
-      <TextField
+      <DateField
         label={dueMissing && !dueInvalid ? '마감 — 날짜를 정해 주세요' : '마감'}
-        type="text"
+        calendarLabel="마감 달력 열기"
         placeholder="YYYY-MM-DD 또는 미정"
         value={values.dueDate ?? ''}
         style={dueMissing && !dueInvalid ? { color: 'var(--color-accent)' } : undefined}
         readOnly={!editable}
         labelTone={dueMissing && !dueInvalid ? 'required-blocking' : 'normal'}
         error={dueInvalid ? '마감은 있는 날짜여야 해요.' : undefined}
-        onChange={(event) => onChange({ ...values, dueDate: event.target.value || null })}
+        onChange={(dueDate) => onChange({ ...values, dueDate: dueDate || null })}
       />
       <Button
         type="button"

@@ -5,14 +5,16 @@ import { projectMapQueryOptions } from '@/entities/project-map'
 import type { MapNode, MapSelection, ProjectMap, TopicNode } from '@/entities/project-map'
 import { ProjectBundleDownload } from '@/features/project-bundle-download'
 import { queryView } from '@/shared/lib/query-view'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { panelTabStop } from '@/shared/lib/tab-panel'
-import { EmptyState } from '@/shared/ui/empty-state'
+import { EmptyState, EmptyStatePage } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Sheet } from '@/shared/ui/sheet'
-import { Skeleton } from '@/shared/ui/skeleton'
-import { COLUMNS_WITH_PANEL, MAIN, NOTE, TITLE } from './frame'
+import { DeferredSkeleton } from '@/shared/ui/deferred-skeleton'
+import { COLUMNS_WITH_PANEL, MAIN, MAP_TAB, MAP_TABS, MAP_TOOLBAR, NOTE, TITLE } from './frame'
 import { MapListView } from './MapListView'
+import { ProjectMapBodySkeleton } from './ProjectMapSkeleton'
 import { SelectionPanel } from './SelectionPanel'
 
 /* 그래프와 배치 라이브러리(d3-force)는 그래프 탭을 고를 때 받는다. 목록으로 들어오면 내려받지 않는다 */
@@ -25,10 +27,6 @@ export type MapViewKind = 'graph' | 'list'
 const VIEW_LABEL: Record<MapViewKind, string> = { graph: '그래프', list: '목록 보기' }
 const VIEWS = ['graph', 'list'] as const satisfies readonly MapViewKind[]
 
-/* 회의록 탭과 같은 모양이다 (MinutesTabs) — 38px · 13.5px 600 · 선택은 먹 밑줄 2px */
-const TAB_LIST = 'flex items-center gap-18 border-b border-line'
-const TAB =
-  'inline-flex h-[38px] items-center border-b-2 border-transparent px-3 text-body font-semibold text-sub hover:text-ink aria-selected:border-ink aria-selected:text-ink'
 const ASIDE = 'sticky top-24 flex flex-col gap-16 rounded-16 border border-line p-20'
 const ASIDE_HEAD = 'flex items-start justify-between gap-12'
 const ASIDE_TITLE = 'text-[17px] leading-[1.4] font-bold text-ink wrap-anywhere outline-none'
@@ -64,7 +62,7 @@ function MapTabs({
     buttons.current.get(VIEWS[next])?.focus()
   }
   return (
-    <div role="tablist" aria-label="보기 방식" className={TAB_LIST}>
+    <div role="tablist" aria-label="보기 방식" className={MAP_TABS}>
       {VIEWS.map((view, index) => (
         <button
           key={view}
@@ -78,7 +76,7 @@ function MapTabs({
           aria-selected={view === selected}
           aria-controls={`${prefix}-panel`}
           tabIndex={view === selected ? 0 : -1}
-          className={TAB}
+          className={MAP_TAB}
           onClick={() => onSelect(view)}
           onKeyDown={(event) => move(event, index)}
         >
@@ -172,11 +170,7 @@ function MapBody({
   const content =
     view === 'graph' ? (
       <Suspense
-        fallback={
-          <div role="status" className="text-body text-dim">
-            그래프를 불러오는 중이에요
-          </div>
-        }
+        fallback={<ProjectMapBodySkeleton view="graph" label="그래프를 불러오는 중이에요" />}
       >
         <GraphView map={map} selection={selection} onSelect={select} />
       </Suspense>
@@ -233,13 +227,24 @@ export interface ProjectMapViewProps {
 export function ProjectMapView({ workspaceId, view, onViewChange, compact }: ProjectMapViewProps) {
   const query = useQuery(projectMapQueryOptions(workspaceId))
   const state = queryView(query)
+  const indicator = useLoadingIndicator(state === 'loading')
   const map = query.data
   const prefix = useId()
 
+  if (!indicator.pending && state !== 'error' && map?.nodes.length === 0)
+    return (
+      <EmptyStatePage>
+        <EmptyState
+          title="아직 프로젝트 맵이 비어 있어요"
+          description="회의에서 태스크가 생기면 여기에 나와요."
+        />
+      </EmptyStatePage>
+    )
+
   return (
-    <main className={MAIN}>
+    <main className={MAIN} aria-busy={indicator.pending || undefined}>
       <h1 className={TITLE}>프로젝트 맵</h1>
-      <div className="flex items-stretch justify-between gap-22 max-lg:flex-col">
+      <div className={MAP_TOOLBAR}>
         <MapTabs prefix={prefix} selected={view} onSelect={onViewChange} />
         <ProjectBundleDownload
           workspaceId={workspaceId}
@@ -253,21 +258,13 @@ export function ProjectMapView({ workspaceId, view, onViewChange, compact }: Pro
         aria-labelledby={`${prefix}-tab-${view}`}
         className="flex flex-col gap-16"
       >
-        {state === 'loading' ? (
-          <div role="status" aria-label="프로젝트 맵을 불러오는 중">
-            <Skeleton variant="block" height={360} className="rounded-16" />
-          </div>
+        {indicator.pending ? (
+          <DeferredSkeleton indicator={indicator}>
+            <ProjectMapBodySkeleton view={view} />
+          </DeferredSkeleton>
         ) : state === 'error' ? (
           <QueryErrorState error={query.error} onRetry={() => void query.refetch()} />
-        ) : map === undefined ? null : map.nodes.length === 0 ? (
-          <div className="flex justify-center py-48">
-            <EmptyState
-              titleAs="h2"
-              title="아직 프로젝트 맵이 비어 있어요"
-              description="회의에서 태스크가 생기면 여기에 나와요."
-            />
-          </div>
-        ) : (
+        ) : map === undefined ? null : (
           <>
             {map.topicGroups.length === 0 ? (
               <p className={NOTE}>
