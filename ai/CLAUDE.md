@@ -81,7 +81,7 @@ saved → transcribed → extracted → handed_off)는 [README](README.md)의 "A
 | 목표·마일스톤 | [docs/plan/전체 계획.md](docs/plan/전체%20계획.md) (보호 문서, 직접 수정 금지) |
 | 왜 이렇게 했나 | [docs/basis_for_decision/](docs/basis_for_decision/): 결정 기록 `YYYY-MM-DD-NNNN-*.md`, 진행 로그 `YYYY-MM-DD-*.md`. AI가 쓰면 `ai/`, 사람이 쓰면 `member/`. 양식은 [docs/README.md](docs/README.md) |
 | BE와의 약속 | [backend-ai 계약](../backend/docs/contracts/backend-ai-contract.md), 웹 API는 [frontend-api 계약](../frontend/docs/contracts/frontend-api-contract.md) |
-| 다른 파트의 요청 | [docs/request/](docs/request/) |
+| 다른 파트의 요청 | `docs/request/` (요청이 생기면 만든다) |
 | 전체 흐름 그림 | [../docs/Manager's Manager AI flow.excalidraw](../docs/Manager's%20Manager%20AI%20flow.excalidraw), [파트별 전체 흐름](../docs/파트별%20전체%20흐름.md) |
 | 골든셋 기준 | [extract/golden_set/README.md](extract/golden_set/README.md), `judge/golden_set*/` |
 

@@ -53,4 +53,4 @@ CI·병합·운영 활성화는 후속 확인 대상이다. 이미 저장한 공
 
 - [대표 BE·AI 계약](../../../../../../backend/docs/contracts/backend-ai-contract.md#회의-요약).
 - [임대와 삭제 경계 선택](../../../../../../backend/docs/plan/m3/basis-for-decision/2026-11-09-summary-lease-and-deletion.md).
-- [AI 실행 안내](../../../../../../ai/README.md#회의-요약).
+- [AI 실행 안내](../../../../../../ai/docs/api/pipeline-details.md#회의-요약).
