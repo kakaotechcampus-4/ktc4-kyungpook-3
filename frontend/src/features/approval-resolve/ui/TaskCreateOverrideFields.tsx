@@ -86,7 +86,9 @@ export function TaskCreateOverrideFields({
         error={errors.taskTitle?.message}
         disabled={disabled}
         endAdornment={
-          <span className="inline-flex h-28 w-28 shrink-0 -mr-6 items-center justify-center rounded-6 text-dim">
+          <span
+            className={`inline-flex h-28 w-28 shrink-0 -mr-6 items-center justify-center rounded-6 ${disabled ? 'text-line-strong' : attention.title !== null || errors.taskTitle !== undefined ? 'text-accent' : 'text-dim'}`}
+          >
             <Icon name="edit" size={16} strokeWidth={1.7} />
           </span>
         }

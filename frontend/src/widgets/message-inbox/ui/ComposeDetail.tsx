@@ -1,7 +1,7 @@
 import { useId } from 'react'
 import { ReminderCreateForm, createdNotice } from '@/features/reminder-create'
 import { toast } from '@/shared/ui/toast'
-import { COMPOSE_COLUMN, COMPOSE_PAGE, COMPOSE_TITLE } from './frame'
+import { COMPOSE_CARD, COMPOSE_COLUMN, COMPOSE_PAGE, COMPOSE_TITLE } from './frame'
 
 export interface ComposeDetailProps {
   workspaceId: string
@@ -35,15 +35,17 @@ export function ComposeDetail({
             나가요.
           </p>
         </div>
-        <ReminderCreateForm
-          workspaceId={workspaceId}
-          target={{ kind: 'choose' }}
-          onCreated={(created) => {
-            toast.show({ key: 'message-review-action', title: createdNotice(created) })
-            onCreated(created.bundle.id)
-          }}
-          onCancel={onCancel}
-        />
+        <div className={`${COMPOSE_CARD} p-24 max-md:p-20`}>
+          <ReminderCreateForm
+            workspaceId={workspaceId}
+            target={{ kind: 'choose' }}
+            onCreated={(created) => {
+              toast.show({ key: 'message-review-action', title: createdNotice(created) })
+              onCreated(created.bundle.id)
+            }}
+            onCancel={onCancel}
+          />
+        </div>
       </section>
     </div>
   )

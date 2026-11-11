@@ -12,7 +12,7 @@ import {
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Reveal } from '@/shared/ui/deferred-skeleton'
-import { EmptyState } from '@/shared/ui/empty-state'
+import { EmptyState, EmptyStatePage } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { PinnedToastHost } from '@/shared/ui/toast'
@@ -54,8 +54,6 @@ const AVATAR =
   'inline-flex shrink-0 items-center justify-center rounded-999 bg-divider font-semibold text-ink'
 const DATE = 'mono text-[11px] text-dim'
 const EMPTY_DETAIL = 'flex flex-1 items-center justify-center px-36 pt-48 pb-96 text-body text-dim'
-/* EmptyMessages 캔버스 — 가운데 정렬(위 48 · 좌우 48 · 아래 96), 주 액션 먹 면 40 */
-const EMPTY_PAGE = 'flex flex-1 items-center justify-center px-48 pt-48 pb-96 max-md:px-20'
 const EMPTY_ACTION =
   'inline-flex h-40 items-center justify-center rounded-9 bg-ink-solid px-20 text-body leading-none font-semibold text-surface hover:bg-dim active:bg-sub'
 /* 빈 화면의 두 번째 행동 — 아웃라인 버튼 모양(design-system §7-12) */
@@ -197,7 +195,7 @@ export function MessageInbox({
   // `알림 규칙 보기` 화면은 아직 없어 가장 가까운 팀 설정으로 보낸다 (결과 문서 C 의 차이표)
   if (nothing)
     return (
-      <main className={EMPTY_PAGE}>
+      <EmptyStatePage>
         {inbox.data.viewer === 'pm' ? (
           <EmptyState
             title="보낼 메시지가 없어요"
@@ -235,7 +233,7 @@ export function MessageInbox({
             }
           />
         )}
-      </main>
+      </EmptyStatePage>
     )
 
   let detail

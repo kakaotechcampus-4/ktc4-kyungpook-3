@@ -276,8 +276,8 @@ describe('휴대폰 셸 (D-180)', () => {
   it.each([
     ['알림', /^알림/, 1024, 390],
     ['공간 메뉴', /^워크스페이스 바꾸기/, 390, 1024],
-    ['도움말', /^도움말$/, 1024, 390],
-    ['도움말', /^도움말$/, 390, 1024],
+    ['계정 메뉴', /^내 계정/, 1024, 390],
+    ['계정 메뉴', /^내 계정/, 390, 1024],
   ] as const)(
     '자리를 옮기는 %s 버튼에 있던 포커스는 %ipx → %ipx 뒤에도 그 버튼에 있다',
     async (_, name, from, to) => {
@@ -294,21 +294,27 @@ describe('휴대폰 셸 (D-180)', () => {
 
 describe('헤더의 처음 쓰는 분을 위한 안내 (#650)', () => {
   it.each([1024, 390])(
-    '%ipx: 알림 옆 도움말 단추가 안내를 열고, 닫으면 그 단추로 포커스가 돌아온다',
+    '%ipx: 프로필 메뉴에서 안내를 열고 폭을 바꿔 닫아도 아바타로 포커스가 돌아온다',
     async (width) => {
-      stubViewportWidth(width)
+      const resize = stubViewportWidth(width)
       renderApp('/workspaces/ws_01/dashboard')
       const header = await shellHeader()
-      const help = within(header).getByRole('button', { name: '도움말' })
-      expect(help).toHaveAttribute('aria-haspopup', 'dialog')
+      expect(within(header).queryByRole('button', { name: '도움말' })).toBeNull()
+      const avatar = within(header).getByRole('button', { name: /^내 계정/ })
       expect(screen.queryByRole('dialog')).toBeNull()
-
+      await userEvent.click(avatar)
+      const menu = await screen.findByRole('menu', { name: /^내 계정/ })
+      const help = within(menu).getByRole('menuitem', { name: '사용법 보기' })
+      expect(help).toHaveAttribute('aria-haspopup', 'dialog')
       await userEvent.click(help)
       const panel = await screen.findByRole('dialog', { name: '처음 쓰는 분을 위한 안내' })
+      expect(screen.queryByRole('menu')).toBeNull()
       expect(within(panel).getAllByRole('heading', { level: 3 })).toHaveLength(5)
+      resize(width === 1024 ? 390 : 1024)
+      expect(screen.getByRole('dialog', { name: '처음 쓰는 분을 위한 안내' })).toBe(panel)
       await userEvent.keyboard('{Escape}')
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-      await waitFor(() => expect(help).toHaveFocus())
+      await waitFor(() => expect(avatar).toHaveFocus())
     },
   )
 })
@@ -363,6 +369,8 @@ describe('메뉴 키보드 (U4-3)', () => {
     // #244 로 `설정` 이 로그아웃 위에 들어와 처음 고른 항목이 `설정` 이다
     await waitFor(() => expect(within(menu).getByRole('menuitem', { name: '설정' })).toHaveFocus())
     await userEvent.keyboard('{ArrowDown}')
+    expect(within(menu).getByRole('menuitem', { name: '사용법 보기' })).toHaveFocus()
+    await userEvent.keyboard('{ArrowDown}')
     expect(within(menu).getByRole('menuitem', { name: '로그아웃' })).toHaveFocus()
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
@@ -389,7 +397,7 @@ describe('프로필 메뉴의 설정 (#244)', () => {
       within(menu)
         .getAllByRole('menuitem')
         .map((item) => item.textContent),
-    ).toEqual(['설정', '로그아웃', '계정 탈퇴'])
+    ).toEqual(['설정', '사용법 보기', '로그아웃', '계정 탈퇴'])
     await userEvent.click(within(menu).getByRole('menuitem', { name: '설정' }))
     expect(await screen.findByRole('heading', { name: '설정' })).toBeInTheDocument()
     await app.expectPath('/workspaces/ws_01/settings')

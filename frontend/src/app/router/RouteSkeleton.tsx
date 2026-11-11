@@ -14,11 +14,12 @@ import { useCompactScreen } from '@/shared/lib/compact-screen'
 import { todayInSeoul } from '@/shared/lib/date'
 import { useSplashHold } from '@/shared/lib/splash'
 import { parseRouteId } from '@/shared/lib/url'
-import { MESSAGE_PARAMS, SETTINGS_PARAMS } from '@/shared/config/routes'
+import { MESSAGE_PARAMS, PROJECT_MAP_PARAMS, SETTINGS_PARAMS } from '@/shared/config/routes'
 import { MinutesPageSkeleton, OnboardingSkeleton, PageSkeleton } from '@/shared/ui/page-skeleton'
 import { ApprovalRouteSkeleton } from '@/widgets/approval-review/skeleton'
 import { DashboardSkeleton } from '@/widgets/dashboard/skeleton'
 import { MessageInboxSkeleton } from '@/widgets/message-inbox/skeleton'
+import { ProjectMapRouteSkeleton } from '@/widgets/project-map/skeleton'
 import { TaskBoardSkeleton } from '@/widgets/task-board/skeleton'
 import { TaskDetailRouteSkeleton } from '@/widgets/task-detail/skeleton'
 import { TeamOverviewSkeleton } from '@/widgets/team/skeleton'
@@ -74,6 +75,12 @@ function screenSkeleton({ pathname, search, isPm, compact }: SkeletonContext): R
   if (at(`${WORKSPACE}/dashboard`)) return <DashboardSkeleton isPm={isPm} today={todayInSeoul()} />
   if (at(`${WORKSPACE}/tasks`))
     return <TaskBoardSkeleton search={search} isPm={isPm} today={todayInSeoul()} />
+  if (at(`${WORKSPACE}/project-map`)) {
+    const requested = params.get(PROJECT_MAP_PARAMS.view)
+    const view =
+      requested === 'graph' || requested === 'list' ? requested : compact ? 'list' : 'graph'
+    return <ProjectMapRouteSkeleton view={view} />
+  }
   if (at(`${WORKSPACE}/tasks/:taskId`)) return <TaskDetailRouteSkeleton />
   if (at(`${WORKSPACE}/approvals/:approvalId`)) return <ApprovalRouteSkeleton />
   if (at(`${WORKSPACE}/members`)) return <TeamOverviewSkeleton isPm={isPm} />

@@ -32,7 +32,7 @@ it('셸과 목록 보기는 그래프 코드를 받지 않고, 그래프 탭을 
   expect(modules.loaded).toEqual([])
 
   await user.click(screen.getByRole('tab', { name: '그래프' }))
-  expect(await screen.findByText('그래프를 불러오는 중이에요')).toBeVisible()
+  expect(await screen.findByRole('status', { name: '그래프를 불러오는 중이에요' })).toBeVisible()
   expect(modules.loaded).toEqual(['graph'])
 
   modules.release()

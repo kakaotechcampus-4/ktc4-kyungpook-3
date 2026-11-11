@@ -49,6 +49,7 @@ describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () =>
     ],
     ['/workspaces/ws_01/tasks', ['태스크', '전체', '확인 필요', '마감 전체', '담당자 전체']],
     ['/workspaces/ws_01/tasks?view=board', ['태스크', '시작 전', '진행 중', '완료']],
+    ['/workspaces/ws_01/project-map', ['프로젝트 맵', '그래프', '목록 보기', '시작일', '종료일']],
     ['/workspaces/ws_01/tasks/tk_01', ['태스크 목록', '태스크 정보', '변경 이력']],
     ['/workspaces/ws_01/approvals/ap_01', ['태스크 목록']],
     ['/workspaces/ws_01/messages', ['메시지', '새 재촉', '새 대화', '보내기 전 확인', '대화']],
@@ -74,6 +75,7 @@ describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () =>
     '/workspaces/ws_01/dashboard',
     '/workspaces/ws_01/tasks',
     '/workspaces/ws_01/tasks/tk_01',
+    '/workspaces/ws_01/project-map',
     '/workspaces/ws_01/messages',
     '/workspaces/ws_01/members',
     '/workspaces/ws_01/settings',
@@ -88,6 +90,18 @@ describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () =>
       expect(screen.queryAllByRole('button')).toHaveLength(0)
     },
   )
+
+  it.each([
+    ['', true],
+    ['?view=graph', true],
+    ['?view=list', false],
+  ])('프로젝트 맵 %s 는 보기와 맞는 대기 모양이며 조작할 수 없다', (search, graph) => {
+    renderAt(`/workspaces/ws_01/project-map${search}`)
+    expect(screen.getByTestId('project-map-skeleton-body')).toBeInTheDocument()
+    expect(screen.queryByTestId('project-map-skeleton-graph') !== null).toBe(graph)
+    expect(screen.queryByRole('tab')).toBeNull()
+    expect(screen.queryByRole('button')).toBeNull()
+  })
 
   it('그려져 있는 동안 스플래시를 잡는다 — 첫 화면이 아니다', () => {
     expect(getSplashHoldCount()).toBe(0)

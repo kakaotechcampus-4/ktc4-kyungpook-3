@@ -17,6 +17,8 @@ import {
   zoomCenter,
 } from '../lib/viewport'
 import type { Viewport } from '../lib/viewport'
+import { ProjectMapBodySkeleton } from './ProjectMapSkeleton'
+import { GRAPH_FRAME } from './frame'
 
 /* 한 프레임에 배치에 쓰는 시간. 60Hz 한 프레임(16ms) 안에 그리기 몫을 남긴다 */
 const FRAME_BUDGET_MS = 10
@@ -26,10 +28,7 @@ const WHEEL_ZOOM = 0.0015
 /* 노드를 누를 수 있는 자리의 화면 반지름(px). 지름 24px — 보이는 점(태스크 지름 10)은 휴대폰 폭에서 4px 아래로 준다 */
 const HIT_RADIUS_PX = 12
 
-const BOX =
-  'relative aspect-[8/5] w-full overflow-hidden rounded-16 border border-line bg-surface-sunken'
 const CONTROLS = 'absolute bottom-12 left-12 flex items-center gap-6'
-const WAIT = 'flex aspect-[8/5] w-full items-center justify-center rounded-16 border border-line'
 
 interface Placement {
   nodes: readonly MapNode[]
@@ -98,12 +97,7 @@ export interface GraphViewProps {
  */
 export function GraphView({ map, selection, onSelect }: GraphViewProps) {
   const placement = usePlacement(map.nodes, map.edges)
-  if (placement === null)
-    return (
-      <div role="status" className={WAIT}>
-        <span className="text-body text-dim">배치하는 중이에요</span>
-      </div>
-    )
+  if (placement === null) return <ProjectMapBodySkeleton view="graph" label="배치하는 중이에요" />
   return <PlacedGraph map={map} placement={placement} selection={selection} onSelect={onSelect} />
 }
 
@@ -191,7 +185,7 @@ function PlacedGraph({
   const shownNodes = map.nodes.slice(0, visible)
 
   return (
-    <div className={BOX}>
+    <div className={GRAPH_FRAME}>
       {/* 노드는 Tab 순서에 넣지 않는다 — 수백 개를 하나씩 지나가야 한다. 같은 내용과 패널을 목록 보기가 키보드로 준다 */}
       <svg
         ref={svgRef}

@@ -4,7 +4,7 @@ import { StartLink } from './StartLink'
 export function LandingHero() {
   return (
     <section className="flex min-w-0 flex-col items-start">
-      <h1 className="text-[clamp(38px,4.5vw,64px)] leading-[1.14] font-bold tracking-h3 text-ink">
+      <h1 className="text-[clamp(38px,4.5vw,64px)] leading-[1.14] font-bold tracking-h3 text-ink max-[360px]:text-[30px]">
         회의에서 나온 일을,
         <br />
         팀의 다음 행동으로.

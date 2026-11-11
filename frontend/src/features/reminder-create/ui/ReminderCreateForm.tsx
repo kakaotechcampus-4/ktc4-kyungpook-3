@@ -22,7 +22,7 @@ import { useCreateReminder } from '../model/useCreateReminder'
 
 /* 받는 사람·태스크는 시안 select-design.html 3. 메모 칸은 문구 고쳐 쓰기의 칸, 보낼 시각은 보내기 전 확인의 카드를 그대로 쓴다 */
 const TEXTAREA =
-  'min-h-[80px] w-full resize-y rounded-9 border border-input-border bg-surface px-12 py-10 text-[14px] leading-[1.8] text-ink focus-visible:-outline-offset-1'
+  'min-h-[112px] w-full resize-y rounded-9 border border-input-border bg-surface px-12 py-10 text-[14px] leading-[1.8] text-ink focus-visible:-outline-offset-1'
 const LINK = 'font-semibold text-ink underline underline-offset-4 hover:text-sub'
 
 /** 누구의 어느 태스크를 재촉하는가. task 는 그 태스크의 담당자에게, choose 는 PM 이 팀원과 태스크를 고른다 */
@@ -305,13 +305,21 @@ export function ReminderCreateForm({
         </p>
       </div>
 
-      <div className="flex flex-col gap-10">
+      <div className="flex flex-col gap-10 border-t border-line pt-18">
         <div className="flex items-center justify-end gap-8">
-          <Button variant="ghost" disabled={locked} onClick={onCancel}>
+          <Button
+            variant="ghost"
+            size="lg"
+            className="max-md:min-h-44"
+            disabled={locked}
+            onClick={onCancel}
+          >
             취소
           </Button>
           <LockedButton
             variant="primary"
+            size="lg"
+            className="max-md:min-h-44"
             aria-busy={locked || undefined}
             aria-describedby={lockHint === null ? undefined : lockHintId}
             locked={locked || lockHint !== null}
