@@ -393,7 +393,7 @@ const SCREENS: { name: string; path: string; check: (page: Page) => Promise<void
 async function expectCardFieldsInOneRow(page: Page) {
   const card = approvalCard(page)
   const boxes = [
-    await boxOf(card.getByRole('textbox', { name: '태스크명' })),
+    await boxOf(card.getByRole('textbox', { name: '태스크명' }).locator('..')),
     await boxOf(card.getByRole('combobox', { name: /^담당자/ })),
     await boxOf(card.getByRole('textbox', { name: /^마감/ }).locator('..')),
   ]

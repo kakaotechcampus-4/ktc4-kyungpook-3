@@ -11,7 +11,7 @@ export function NotFoundPage() {
   return (
     <main className={SCREEN}>
       <EmptyState
-        pose="squint"
+        pose="idle"
         title="페이지를 찾을 수 없어요"
         description="주소를 다시 확인해 주세요."
         action={

@@ -249,9 +249,8 @@ describe('요약·제목·회의 안내 (AC-01 · AC-05)', () => {
     ['PM', 'pm', true],
     ['일반 팀원', 'member', false],
   ] as const)(
-    '회의가 하나도 없으면 %s 에게 `/record` 안내와 방법 보기를 보이고, 방법 보기는 안내를 연다 (#650)',
+    '회의가 하나도 없으면 %s 에게 `/record` 안내를 보이고 방법 보기 없이 권한에 따라 업로드를 제공한다',
     async (_label, role, hasUpload) => {
-      const user = userEvent.setup()
       useScenario('dashboard-no-meeting')
       db.meetings.length = 0
       setMockRole(role)
@@ -262,12 +261,7 @@ describe('요약·제목·회의 안내 (AC-01 · AC-05)', () => {
       expect(within(hint).getByText('/record').tagName).toBe('CODE')
       expect(within(recent).queryByRole('link', { name: '회의 업로드' }) !== null).toBe(hasUpload)
 
-      const guide = within(recent).getByRole('button', { name: '방법 보기' })
-      await user.click(guide)
-      const panel = await screen.findByRole('dialog', { name: '처음 쓰는 분을 위한 안내' })
-      await user.click(within(panel).getByRole('button', { name: '닫기' }))
-      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-      await waitFor(() => expect(guide).toHaveFocus())
+      expect(within(recent).queryByRole('button', { name: '방법 보기' })).toBeNull()
     },
   )
 

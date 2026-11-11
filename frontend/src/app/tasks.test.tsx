@@ -353,7 +353,6 @@ describe('키보드 Tab 순서 (#337)', () => {
   it('누를 것이 없는 빈 패널은 패널 자신이 Tab 으로 닿아 안내를 읽는다', async () => {
     const user = userEvent.setup()
     db.tasks = db.tasks.filter(({ workspace_id }) => workspace_id !== 'ws_01')
-    db.approvals = db.approvals.filter(({ workspace_id }) => workspace_id !== 'ws_01')
     renderApp(`${paths.tasks('ws_01')}?tab=in_progress`)
     expect(
       await screen.findByRole('heading', { name: '이 구분에는 항목이 없어요' }, { timeout: 5_000 }),
@@ -416,11 +415,35 @@ describe('리스트 보기의 대기·실패·빈 목록', () => {
     ).toBeInTheDocument()
   })
 
-  it('태스크도 확인 필요도 없으면 `아직 태스크가 없어요` 이고 탭 개수는 모두 0 이다', async () => {
+  it('태스크도 확인 필요도 없으면 빈 화면에서 회의를 올리거나 회의록을 볼 수 있다', async () => {
     replaceDb(createScenarioDb('tasks-empty'))
     renderApp(paths.tasks('ws_01'))
-    expect(await screen.findByText('아직 태스크가 없어요')).toBeInTheDocument()
-    expect(tabTexts()).toEqual(['전체 0', '확인 필요 0', '진행 중 0', '완료 0'])
+    expect(
+      await screen.findByRole('heading', { level: 1, name: '아직 태스크가 없어요' }),
+    ).toBeVisible()
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.getByRole('link', { name: '회의 올리기' })).toHaveAttribute(
+      'href',
+      paths.meetingUpload('ws_01'),
+    )
+    expect(screen.getByRole('link', { name: '회의록 보기' })).toHaveAttribute(
+      'href',
+      paths.meetings('ws_01'),
+    )
+  })
+
+  it('태스크가 없는 일반 팀원은 회의록을 볼 수 있고 회의 올리기는 보이지 않는다', async () => {
+    replaceDb(createScenarioDb('tasks-empty'))
+    setMockRole('member')
+    renderApp(paths.tasks('ws_01'))
+    expect(
+      await screen.findByRole('heading', { level: 1, name: '아직 태스크가 없어요' }),
+    ).toBeVisible()
+    expect(screen.queryByRole('link', { name: '회의 올리기' })).toBeNull()
+    expect(screen.getByRole('link', { name: '회의록 보기' })).toHaveAttribute(
+      'href',
+      paths.meetings('ws_01'),
+    )
   })
 })
 

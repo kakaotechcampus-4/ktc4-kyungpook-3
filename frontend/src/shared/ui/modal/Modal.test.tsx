@@ -67,6 +67,39 @@ describe('Modal', () => {
     expect(container.querySelector('svg')).toBeNull()
   })
 
+  it.each(['absolute', 'sticky'] as const)(
+    'closes through the optional %s header button',
+    async (closeButton) => {
+      const user = userEvent.setup()
+      const onOpenChange = vi.fn()
+      render(<Modal open onOpenChange={onOpenChange} title="안내" closeButton={closeButton} />)
+
+      await user.click(within(parts().card).getByRole('button', { name: '닫기' }))
+
+      expect(onOpenChange).toHaveBeenCalledWith(false)
+    },
+  )
+
+  it('keeps the header close button disabled while its caller is busy', async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+    render(
+      <Modal
+        open
+        onOpenChange={onOpenChange}
+        title="팀원 관리"
+        closeButton="sticky"
+        closeDisabled
+      />,
+    )
+
+    const close = within(parts().card).getByRole('button', { name: '닫기' })
+    expect(close).toBeDisabled()
+    await user.click(close)
+
+    expect(onOpenChange).not.toHaveBeenCalled()
+  })
+
   it('bakes no button copy — the action row is whatever the caller passes', () => {
     render(
       <Modal

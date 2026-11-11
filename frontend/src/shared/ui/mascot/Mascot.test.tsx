@@ -134,6 +134,84 @@ describe('Mascot', () => {
     expect(part(container, 'eye-l')).toHaveAttribute('x', '91.73')
   })
 
+  it('looks toward the focused input and returns to its original pose on blur', () => {
+    const { container, getByLabelText, getByRole } = render(
+      <>
+        <input aria-label="왼쪽 입력" />
+        <Mascot pose="talking" />
+        <textarea aria-label="오른쪽 입력" />
+        <button>다음</button>
+      </>,
+    )
+    const left = getByLabelText('왼쪽 입력')
+    const right = getByLabelText('오른쪽 입력')
+    vi.spyOn(svgOf(container), 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(400, 0, 100, 100),
+    )
+    vi.spyOn(left, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 100, 40))
+    vi.spyOn(right, 'getBoundingClientRect').mockReturnValue(new DOMRect(800, 0, 100, 40))
+
+    act(() => left.focus())
+    expect(part(container, 'inner')).toHaveAttribute('cx', '106.98')
+    act(() => right.focus())
+    expect(part(container, 'inner')).toHaveAttribute('cx', '133.02')
+    act(() => getByRole('button').focus())
+    expect(part(container, 'inner')).toHaveAttribute('cx', '120')
+  })
+
+  it('keeps looking forward at a centered input and follows a resized layout', () => {
+    const { container, getByRole } = render(
+      <>
+        <Mascot />
+        <input />
+      </>,
+    )
+    const input = getByRole('textbox')
+    vi.spyOn(svgOf(container), 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(400, 0, 100, 100),
+    )
+    const bounds = vi
+      .spyOn(input, 'getBoundingClientRect')
+      .mockReturnValue(new DOMRect(400, 0, 100, 40))
+
+    act(() => input.focus())
+    expect(part(container, 'inner')).toHaveAttribute('cx', '120')
+    bounds.mockReturnValue(new DOMRect(800, 0, 100, 40))
+    act(() => {
+      window.dispatchEvent(new Event('resize'))
+    })
+    expect(part(container, 'inner')).toHaveAttribute('cx', '133.02')
+    act(() => input.blur())
+    expect(part(container, 'inner')).toHaveAttribute('cx', '120')
+  })
+
+  it('uses each visible mascot position and ignores a hidden input', () => {
+    const { container, getByRole } = render(
+      <>
+        <Mascot label="왼쪽 매스" />
+        <input />
+        <Mascot label="오른쪽 매스" />
+      </>,
+    )
+    const left = getByRole('img', { name: '왼쪽 매스' })
+    const right = getByRole('img', { name: '오른쪽 매스' })
+    const input = getByRole('textbox')
+    vi.spyOn(left, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 100, 100))
+    vi.spyOn(right, 'getBoundingClientRect').mockReturnValue(new DOMRect(800, 0, 100, 100))
+    const bounds = vi
+      .spyOn(input, 'getBoundingClientRect')
+      .mockReturnValue(new DOMRect(400, 0, 100, 40))
+
+    act(() => input.focus())
+    expect(left.querySelector('[data-part="inner"]')).toHaveAttribute('cx', '133.02')
+    expect(right.querySelector('[data-part="inner"]')).toHaveAttribute('cx', '106.98')
+    bounds.mockReturnValue(new DOMRect())
+    act(() => {
+      window.dispatchEvent(new Event('resize'))
+    })
+    expect(container.querySelectorAll('[data-part="inner"][cx="120"]')).toHaveLength(2)
+  })
+
   /* §8-3 의 두 번째 검산 — Signup.dc.html 의 squint 눈 */
   it('draws squint at the Signup artboard numbers', () => {
     const { container } = render(<Mascot pose="squint" />)

@@ -70,6 +70,7 @@ function UnlinkedAccounts({ users, writes, onAdded }: UnlinkedAccountsProps) {
                   ) : null}
                 </span>
                 <Button
+                  variant="primary"
                   size="sm"
                   aria-label={`@${user.username} 팀원으로 추가`}
                   loading={isPending(writes.pending, target)}

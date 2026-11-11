@@ -12,13 +12,23 @@ export function TriggerValue({ label, leading }: { label: string; leading?: Reac
   )
 }
 
-export function TriggerChevron({ size, disabled }: { size: 'md' | 'sm'; disabled: boolean }) {
+export function TriggerChevron({
+  size,
+  disabled,
+  tone = 'normal',
+}: {
+  size: 'md' | 'sm'
+  disabled: boolean
+  tone?: 'normal' | 'blocking'
+}) {
   return (
     <span
       aria-hidden
-      className={[CHEVRON, CHEVRON_RIGHT[size], disabled ? 'text-line-strong' : 'text-dim'].join(
-        ' ',
-      )}
+      className={[
+        CHEVRON,
+        CHEVRON_RIGHT[size],
+        disabled ? 'text-line-strong' : tone === 'blocking' ? 'text-accent' : 'text-dim',
+      ].join(' ')}
     >
       <Icon name="chevron-down" size={14} />
     </span>
@@ -63,7 +73,7 @@ export function FieldTrigger({
       className={[TRIGGER, TRIGGER_SIZE[size], triggerColor(tone, disabled)].join(' ')}
     >
       {shown ? <TriggerValue {...shown} /> : <span className="truncate">{placeholder}</span>}
-      <TriggerChevron size={size} disabled={disabled} />
+      <TriggerChevron size={size} disabled={disabled} tone={tone} />
     </button>
   )
 }

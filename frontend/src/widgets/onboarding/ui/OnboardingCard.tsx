@@ -4,6 +4,7 @@ import { Card } from '@/shared/ui/card'
 export interface OnboardingCardProps {
   /** 캔버스 카드 제목 — `팀 만들기` · `디스코드 연동` … */
   title: string
+  titleEnd?: ReactNode
   description: string
   /** 카드 본문(입력·목록). 없으면 설명 바로 아래가 버튼이다 */
   children?: ReactNode
@@ -16,10 +17,19 @@ const TITLE = 'text-[15px] font-bold tracking-h3 text-ink'
 const DESCRIPTION = 'text-[13px] leading-[1.65] text-dim'
 
 /** 단계 카드 한 장. Card 의 onboarding 변형(반경 10 · 22/22/18) 위에 제목·설명·본문·버튼 줄을 쌓는다 */
-export function OnboardingCard({ title, description, children, actions }: OnboardingCardProps) {
+export function OnboardingCard({
+  title,
+  titleEnd,
+  description,
+  children,
+  actions,
+}: OnboardingCardProps) {
   return (
     <Card variant="onboarding" as="section" aria-label={title} className="flex flex-col gap-8">
-      <h2 className={TITLE}>{title}</h2>
+      <div className="flex items-center gap-6">
+        <h2 className={TITLE}>{title}</h2>
+        {titleEnd}
+      </div>
       <p className={DESCRIPTION}>{description}</p>
       {children}
       {actions === undefined ? null : (

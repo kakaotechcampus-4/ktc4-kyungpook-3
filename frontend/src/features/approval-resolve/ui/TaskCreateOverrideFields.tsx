@@ -4,6 +4,7 @@ import { ASSIGNEE_NONE_OPTION, assigneeOptions } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { DateField } from '@/shared/ui/date-field'
 import { ErrorText } from '@/shared/ui/error-text'
+import { Icon } from '@/shared/ui/icon'
 import { Label } from '@/shared/ui/label'
 import { Select } from '@/shared/ui/select'
 import { TextField } from '@/shared/ui/text-field'
@@ -84,6 +85,11 @@ export function TaskCreateOverrideFields({
         labelTone={attention.title === null ? 'normal' : 'required-blocking'}
         error={errors.taskTitle?.message}
         disabled={disabled}
+        endAdornment={
+          <span className="inline-flex h-28 w-28 shrink-0 -mr-6 items-center justify-center rounded-6 text-dim">
+            <Icon name="edit" size={16} strokeWidth={1.7} />
+          </span>
+        }
         onChange={(event) => {
           onInputChange()
           void title.onChange(event)
