@@ -40,11 +40,11 @@ loadtest/run.sh down      # 스택과 테스트 데이터를 지운다
 운영은 팀에 알린 뒤 한가한 시간에 낮은 단계만 짧게 친다. 봇 전용 API 는 Caddy 가 밖에서 막으므로 운영에서는 `web.js` 만 친다. 테스트 계정은 서버에서 심사 시드로 만들고 정리는 `cleanup.py` 로 한다(PM 이 팀원을 빼고 탈퇴해 공간이 지워지는 제품 경로).
 
 ```
-BASE_URL=https://<운영 주소> LT_WORKSPACES=1 LT_READONLY=1 LT_LEVELS=1,3,5 LT_STAGE_SECONDS=30 \
+BASE_URL=https://<운영 주소> LT_WORKSPACES=1 LT_READONLY=1 LT_LEVELS=1,3,5,10,20 LT_STAGE_SECONDS=30 \
   LT_SSH=ktc-server LT_TARGETS="mm-prod-api-1 mm-prod-db-1 unit:mm-worker unit:mm-bot host" loadtest/run.sh web
 ```
 
-`LT_READONLY` 는 태스크 상태 변경을 빼고, `LT_SSH` 는 샘플러를 서버에서 돌려 컨테이너, systemd 서비스(cgroup), 호스트 메모리를 함께 적는다. 서버 시계는 이 기계와 어긋날 수 있어(2026-11-11 운영 서버는 36초 늦었다) 실행 전에 차이를 재 `clock_offset_s.txt` 에 남기고, `report.py` 가 그만큼 서버 샘플 시각을 옮겨 단계에 맞춘다. `server.csv` 는 서버 시각 그대로다. 동시 요청이 40개를 넘으면 BE 가 멈추므로(#701) 운영에서는 5 VU 를 넘기지 않는다.
+`LT_READONLY` 는 태스크 상태 변경을 빼고, `LT_SSH` 는 샘플러를 서버에서 돌려 컨테이너, systemd 서비스(cgroup), 호스트 메모리를 함께 적는다. 서버 시계는 이 기계와 어긋날 수 있어(2026-11-11 운영 서버는 36초 늦었다) 실행 전에 차이를 재 `clock_offset_s.txt` 에 남기고, `report.py` 가 그만큼 서버 샘플 시각을 옮겨 단계에 맞춘다. `server.csv` 는 서버 시각 그대로다. #705 로 연결 풀 교착(#701)을 고친 뒤 운영은 20 VU 까지 실패 없이 쟀다. 10 VU 부터 호스트 CPU 가 2코어에 붙으므로 운영에서는 20 VU 를 넘기지 않는다.
 
 ## 결과
 
