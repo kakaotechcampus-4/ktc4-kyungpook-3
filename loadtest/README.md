@@ -44,7 +44,7 @@ BASE_URL=https://<운영 주소> LT_WORKSPACES=1 LT_READONLY=1 LT_LEVELS=1,3,5 L
   LT_SSH=ktc-server LT_TARGETS="mm-prod-api-1 mm-prod-db-1 unit:mm-worker unit:mm-bot host" loadtest/run.sh web
 ```
 
-`LT_READONLY` 는 태스크 상태 변경을 빼고, `LT_SSH` 는 샘플러를 서버에서 돌려 컨테이너, systemd 서비스(cgroup), 호스트 메모리를 함께 적는다. 동시 요청이 40개를 넘으면 BE 가 멈추므로(#701) 운영에서는 5 VU 를 넘기지 않는다.
+`LT_READONLY` 는 태스크 상태 변경을 빼고, `LT_SSH` 는 샘플러를 서버에서 돌려 컨테이너, systemd 서비스(cgroup), 호스트 메모리를 함께 적는다. 서버 시계는 이 기계와 어긋날 수 있어(2026-11-11 운영 서버는 36초 늦었다) 실행 전에 차이를 재 `clock_offset_s.txt` 에 남기고, `report.py` 가 그만큼 서버 샘플 시각을 옮겨 단계에 맞춘다. `server.csv` 는 서버 시각 그대로다. 동시 요청이 40개를 넘으면 BE 가 멈추므로(#701) 운영에서는 5 VU 를 넘기지 않는다.
 
 ## 결과
 

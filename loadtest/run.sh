@@ -35,6 +35,11 @@ case "${1:-}" in
     out="${LT_OUT:-$HOME/Desktop/카테캠 아이디어톤/mm/eval-runs/loadtest/$(date +%Y%m%d-%H%M%S)-$1}"
     mkdir -p "$out"
     if [ -n "${LT_SSH:-}" ]; then
+      # 서버 시계가 이 기계와 수십 초 어긋날 수 있다. 왕복 가운데 시각과 비교해 차이를 남기고 report.py 가 맞춘다
+      before=$(python3 -c 'import time; print(time.time())')
+      remote=$(ssh -F "$HOME/Desktop/kakaotech4/secrets/ssh_config" "$LT_SSH" date +%s.%N)
+      after=$(python3 -c 'import time; print(time.time())')
+      python3 -c "print(round(($before + $after) / 2 - $remote, 1))" > "$out/clock_offset_s.txt"
       ssh -F "$HOME/Desktop/kakaotech4/secrets/ssh_config" "$LT_SSH" python3 - $LT_TARGETS < sampler.py > "$out/server.csv" &
     else
       python3 sampler.py mm-loadtest-api-1 mm-loadtest-db-1 > "$out/server.csv" &

@@ -39,10 +39,13 @@ def load_requests(path: Path):
 
 
 def load_server(path: Path):
+    # 원격 샘플러의 시각은 서버 시계라 run.sh 가 잰 차이(초)를 더해 k6 시각에 맞춘다. server.csv 는 원자료 그대로 둔다
+    offset_file = path.with_name("clock_offset_s.txt")
+    offset = float(offset_file.read_text()) if offset_file.exists() else 0.0
     samples = defaultdict(list)
     with open(path) as f:
         for row in csv.DictReader(f):
-            samples[row["container"]].append((float(row["ts"]), float(row["cpu_pct"]), float(row["mem_mib"])))
+            samples[row["container"]].append((float(row["ts"]) + offset, float(row["cpu_pct"]), float(row["mem_mib"])))
     return samples
 
 
