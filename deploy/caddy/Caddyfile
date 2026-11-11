@@ -23,7 +23,7 @@ managers-manager.duckdns.org {
 		respond @bot_create 404
 		respond @bot_state 404
 		request_body {
-			max_size 210MiB
+			max_size 710MiB
 		}
 		reverse_proxy 127.0.0.1:8000
 	}

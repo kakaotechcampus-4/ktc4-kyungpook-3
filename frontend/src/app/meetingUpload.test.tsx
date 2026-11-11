@@ -587,7 +587,7 @@ describe('업로드 오류 (U3-10)', () => {
     const { user, app } = await openUpload()
     await fillValid(user)
     await user.click(screen.getByRole('button', { name: '정리 시작하기' }))
-    expect(await screen.findByText('200 MiB 이하 파일만 올릴 수 있어요.')).toBeInTheDocument()
+    expect(await screen.findByText('700 MiB 이하 파일만 올릴 수 있어요.')).toBeInTheDocument()
     await app.expectPath(UPLOAD_PATH)
   })
 

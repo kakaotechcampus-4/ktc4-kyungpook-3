@@ -3,7 +3,7 @@ import { AUDIO_ACCEPT, checkAudioDuration, checkAudioFiles, fileExtension } from
 
 const MAX = MEETING_UPLOAD_POLICY.maxBytes
 
-/** 크기만 있는 파일 흉내 — 200 MiB 를 실제로 만들지 않는다 */
+/** 크기만 있는 파일 흉내 — 700 MiB 를 실제로 만들지 않는다 */
 function fake(name: string, size = 1024) {
   return { name, size }
 }
@@ -31,8 +31,8 @@ describe('파일 형식·크기 검사 (U3-4)', () => {
     expect(checkAudioFiles([fake('a.mp3', 0)])).toEqual({ ok: false, reason: 'empty' })
   })
 
-  it('정확히 200 MiB 는 통과, 1바이트라도 넘으면 막는다', () => {
-    expect(MAX).toBe(209_715_200)
+  it('정확히 700 MiB 는 통과, 1바이트라도 넘으면 막는다', () => {
+    expect(MAX).toBe(734_003_200)
     expect(checkAudioFiles([fake('a.mp3', MAX)])).toMatchObject({ ok: true })
     expect(checkAudioFiles([fake('a.mp3', MAX + 1)])).toEqual({ ok: false, reason: 'too_large' })
   })

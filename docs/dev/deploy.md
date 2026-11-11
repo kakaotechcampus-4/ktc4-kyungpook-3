@@ -82,7 +82,7 @@ flowchart TB
 | GPU 전사 | [`ai/deploy/gpu-stt/`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/ai/deploy/gpu-stt) | Elice 전사 장애 때 쓰는 GPU 대기 서버 절차 |
 
 - 리버스 프록시(Caddy) 설정의 원본은 [`deploy/caddy/Caddyfile`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/caddy/Caddyfile)이다. 서버의 `/etc/caddy/Caddyfile` 로는 자동 배포되지 않고 운영자가 손으로 반영한다(아래 [앞단 프록시](#앞단-프록시-caddy)).
-- 녹음 업로드(`POST /api/v1/workspaces/{id}/meetings/upload`)는 백엔드가 본문을 받는 동안 `UPLOAD_MAX_BYTES` + 1MiB 를 넘으면 413 으로 끊는다. 앞단 Caddy 도 `/api/*` 본문을 `max_size 210MiB` 로 막는다(2026-11-11 서버에서 확인, [M5 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m5/result.md)).
+- 녹음 업로드(`POST /api/v1/workspaces/{id}/meetings/upload`)는 백엔드가 본문을 받는 동안 `UPLOAD_MAX_BYTES` + 1MiB 를 넘으면 413 으로 끊는다. 앞단 Caddy 도 `/api/*` 본문을 `max_size 710MiB` 로 막는다(2026-11-11 서버에서 확인, [M5 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m5/result.md)).
 - systemd 유닛은 `/etc/systemd/system/` 에 복사해 설치한다. 유닛 파일 변경은 자동 배포에 포함되지 않는다(채팅 폴링 유닛만 예외적으로 이미 설치된 서버에서 덮어쓴다). 저장소 유닛은 "예시"이고 운영 계정은 drop-in 으로 덮는다.
 
 ## 앞단 프록시 Caddy
@@ -91,7 +91,7 @@ flowchart TB
 
 | 항목 | 결과 |
 |---|---|
-| 요청 크기 | `/api/*` 본문을 `request_body max_size 210MiB` 로 자른다 |
+| 요청 크기 | `/api/*` 본문을 `request_body max_size 710MiB` 로 자른다 |
 | 연결 수 | 제한 없음. 기본 Caddy 에는 IP 별·동시 연결 제한이 없고 플러그인이 필요하다 |
 | 클라이언트 IP | `trusted_proxies` 를 두지 않아 클라이언트가 보낸 `X-Forwarded-For` 를 버리고 실제 접속 주소로 덮어 넘긴다 |
 | 보안 헤더 | 없었다. 이 저장소 판에서 더했다 |
