@@ -36,8 +36,9 @@ set +a
 # 이미 있으면 교체한다. 없으면 rm 은 무시한다.
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 
-# 설치 때 확인: --read-only·--cap-drop ALL·--tmpfs /tmp 로 에이전트가 뜨는지는 공식 문서에 없는 설정이다.
-# 안 뜨면 `docker logs pdc-agent` 로 원인을 보고 필요한 것만 푼다(예: --tmpfs 경로 추가).
+# --read-only 로 띄우므로 에이전트가 쓰는 곳만 tmpfs 로 연다. 에이전트는 시작할 때 /home/pdc/.ssh 에 키와 인증서를
+# 만든다. 이 자리가 없으면 "mkdir /home/pdc/.ssh/: read-only file system" 으로 멈춘다(2026-11-11 설치에서 확인).
+# tmpfs 라 컨테이너가 다시 뜰 때마다 키를 새로 만들고 Grafana Cloud 에서 인증서를 다시 받는다. 동작에는 문제없다.
 # 토큰·클러스터·ID 는 인자가 아니라 환경 변수로 넘긴다. `--env NAME` 은 값을 이 스크립트의 환경에서 가져가므로
 # 호스트 `ps` 에 값이 보이지 않는다. 에이전트가 이 세 값을 환경 변수로도 받는 것은 PDC agent CLI 레퍼런스에 있다
 # (deploy/monitoring/README.md 3절에 링크).
@@ -49,6 +50,7 @@ docker run -d \
   --memory 64m \
   --read-only \
   --tmpfs /tmp \
+  --tmpfs /home/pdc/.ssh \
   --cap-drop ALL \
   --security-opt no-new-privileges \
   --env GCLOUD_PDC_SIGNING_TOKEN \

@@ -30,6 +30,9 @@ def test_kpi_reader_grants_only_views():
     assert not re.search(r"ALL\s+TABLES", sql, re.I)
     for setting in ("default_transaction_read_only", "statement_timeout", "CONNECTION LIMIT"):
         assert setting in sql, setting
+    # Grafana Cloud 는 대시보드를 열 때 여러 서버에서 접속을 한꺼번에 연다. 3 이면 패널 일부가
+    # "too many connections for role" 로 깨졌다(2026-11-11 설치). 다시 실행해도 10 으로 남아야 한다.
+    assert re.search(r"CONNECTION\s+LIMIT\s+10\b", sql), "CONNECTION LIMIT 10"
     # 비밀번호는 psql 변수로만 받는다
     assert ":'pw'" in sql
     # ALTER ROLE 이 실패하면 뒤의 GRANT 로 넘어가지 않고 멈춘다
@@ -50,6 +53,7 @@ def test_run_pdc_script_safety(tmp_path):
     for needle in (
         "--network mm-prod_default",
         "--read-only",
+        "--tmpfs /home/pdc/.ssh",
         "--cap-drop ALL",
         "--restart unless-stopped",
         "/etc/mm-monitoring/pdc.env",
@@ -139,6 +143,9 @@ def test_run_pdc_success_path_keeps_token_out_of_argv(tmp_path):
     assert run_args[0] == "run"
     assert "--network mm-prod_default" in joined
     assert "--read-only" in run_args
+    # --read-only 이면 에이전트가 키를 만들 곳이 없어 "mkdir /home/pdc/.ssh/: read-only file system" 으로 멈춘다(2026-11-11)
+    tmpfs = [run_args[i + 1] for i, a in enumerate(run_args) if a == "--tmpfs"]
+    assert "/home/pdc/.ssh" in tmpfs, tmpfs
     assert "--cap-drop ALL" in joined
     assert re.search(r"grafana/pdc-agent:[0-9][^\s]*", joined)
     # 토큰 값은 docker 인자에 없어야 한다(ps 로 다른 사용자가 읽을 수 있다). 이름만 --env 로 넘기면 docker 가 값을 환경에서 읽는다.
@@ -178,7 +185,7 @@ def test_examples_have_no_secrets():
     files = [
         p
         for p in MON.rglob("*")
-        if p.is_file() and (p.name.endswith(".example") or p.suffix in {".alloy", ".sh", ".sql", ".conf"})
+        if p.is_file() and (p.name.endswith(".example") or p.suffix in {".alloy", ".sh", ".sql", ".conf", ".json"})
     ]
     assert files, "deploy/monitoring 파일이 없다"
     for path in files:
@@ -215,11 +222,78 @@ def test_alloy_config_targets_units():
             assert "sys.env(" in code, line
 
 
-def test_alloy_override_limits_memory_and_docker_group():
+def test_alloy_override_runs_as_root_with_memory_cap():
+    # alloy 사용자로는 cadvisor 의 docker 수집이 containerd 소켓(root 전용)을 못 열어 api·db 컨테이너 지표가 빈다(2026-11-11).
     text = _read("alloy/override.conf")
-    assert "MemoryMax=200M" in text
-    assert "SupplementaryGroups=docker" in text
-    assert "EnvironmentFile=" in text
+    service = text.split("[Service]", 1)[1]
+    assert re.search(r"^User=root\s*$", service, re.M)
+    assert "MemoryMax=200M" in service
+    assert "EnvironmentFile=/etc/mm-monitoring/alloy.env" in service
+    # root 로 돌면 docker 그룹은 필요 없다
+    assert "SupplementaryGroups" not in service
+
+
+DASHBOARDS = MON / "dashboards"
+
+
+def _dashboard(name: str) -> dict:
+    import json
+
+    return json.loads((DASHBOARDS / name).read_text(encoding="utf-8"))
+
+
+def _datasource_uids(node):
+    if isinstance(node, dict):
+        ds = node.get("datasource")
+        if isinstance(ds, dict) and "uid" in ds:
+            yield ds["uid"]
+        for value in node.values():
+            yield from _datasource_uids(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _datasource_uids(value)
+
+
+def _raw_sqls(node):
+    if isinstance(node, dict):
+        if isinstance(node.get("rawSql"), str):
+            yield node["rawSql"]
+        for value in node.values():
+            yield from _raw_sqls(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _raw_sqls(value)
+
+
+def test_dashboards_are_importable_without_stack_specific_values():
+    """대시보드 JSON 은 Import 때 데이터 소스를 고르게 둔다. 스택 고유 uid·주소가 들어 있으면 다른 스택에 못 옮긴다."""
+    for name in ("mm-server.json", "mm-kpi.json"):
+        board = _dashboard(name)
+        text = (DASHBOARDS / name).read_text(encoding="utf-8")
+        inputs = {i["name"] for i in board["__inputs"]}
+        uids = set(_datasource_uids(board))
+        assert uids, name
+        assert all(u.startswith("${") and u[2:-1] in inputs for u in uids), (name, uids)
+        assert not re.search(r"https?://", text), name
+        assert "grafana.net" not in text, name
+
+
+def test_kpi_dashboard_reads_only_kpi_views():
+    board = _dashboard("mm-kpi.json")
+    sqls = list(_raw_sqls(board))
+    assert sqls
+    for sql in sqls:
+        tables = re.findall(r"\b(?:FROM|JOIN)\s+([a-z_][\w.]*)", sql, re.I)
+        assert tables and all(t.startswith("kpi.") and t != "kpi.excluded_workspace" for t in tables), (tables, sql)
+
+
+def test_kpi_dashboard_processing_time_skips_backdated_meetings():
+    """시드처럼 시작 시각을 옛날로 만든 회의는 처리 시간이 며칠로 잡힌다. 처리 시간 패널은 하루 넘는 값을 뺀다."""
+    board = _dashboard("mm-kpi.json")
+    processing = [sql for sql in _raw_sqls(board) if "processing_seconds" in sql and "meeting_fact" in sql]
+    assert processing
+    for sql in processing:
+        assert "processing_seconds < 86400" in sql, sql
 
 
 def test_readme_covers_required_sections():
