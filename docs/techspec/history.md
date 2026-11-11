@@ -19,6 +19,20 @@
 
 실제로 `main` 에 들어간 시점은 [브랜치 전략의 주간 PR 표](../collab/branch-strategy.md)에 있다. 첫 멘토 리뷰 PR(#17)이 09-14 에, 자동 배포 워크플로가 10-05 에 돌기 시작했다.
 
+### 상세 마일스톤 (계획과 실제)
+
+계획한 내용 옆에 그 기간에 실제로 머지된 것을 적었다. 날짜는 머지일이다.
+
+| 단계 | 계획 | 실제로 한 것 |
+|---|---|---|
+| 스프린트 0 | 녹음·매칭 인프라 검증, 골든셋 | 09-08 STT 모델 크기 결정(0001). 09-09 공통 골격(#3), 화자별 녹음(#6), faster-whisper 전사(#12)가 처음 머지됐다 |
+| 스프린트 1 | STT, 추출, Notion 반영 | 09-12 회의·추출 API(#19)와 AI·BE 계약 정리(#23). 09-16 배치 전사(#44), 할 일 추출과 골든셋 채점(#30), 워크스페이스·태스크 API(#38). 09-14 첫 `main` 머지(#17) |
+| 1차 배포 | 회의에서 Notion 까지 한 줄로 연결 | 09-21 Terra 1단계(#49), 09-23 Terra 2단계(#70)와 Notion 연동 모듈(#61), 09-26 Notion outbox(#80). 자동 배포 워크플로는 10-05 에 돌기 시작했다 |
+| 스프린트 2 | 변경 감지, 리마인드 | 판단 파이프라인 통합(8주차 `main` PR #128), 10-07 운영 전사를 Elice API 로(0019), 10-09 배포 전 CI 게이트. 리마인드는 스프린트 3 으로 밀렸다 |
+| 2차 배포 | DM 발송까지 | 10-12 디스코드 서버와 워크스페이스 연결(0021), 10-13 회의록 순서 보정(0023)과 처리 워커 단일화(0026). DM 발송은 11-04 에 들어갔다 |
+| 스프린트 3 | 되돌리기, 실패 설계, 통합, 버그 수정 | 11-01 업로드 화자 분리(0028), 11-02 근거 검증(0031), 11-04 리마인드·답장 판단(0034 ~ 0043)과 GPU 대기 서버(0039). 11-02 ~ 11-08 에 PR 149건이 머지됐다 |
+| 릴리즈 준비 | 산출물과 발표 자료 | 11-09 ~ 11-11 에 PR 108건. 부하 테스트(#703)와 동시 요청 관문(#705), 모니터링(#684), 보안 점검, 녹음 7일 보관(#670), 제출 문서 |
+
 ## 담당
 
 팀 역할과 파트별로 맡은 일은 [협업 문서의 팀 구성](../collab/index.md#팀-구성)에 있다. 파트 경계는 코드 경로(`ai/`, `backend/`, `frontend/`)이고, 파트 사이는 계약 문서와 요청 이슈로 잇는다.
@@ -38,6 +52,28 @@
 | 봇이 녹음과 처리를 모두 맡음 | 봇은 저장만, 처리 워커가 전사와 판단 | 처리 경로를 하나로 줄였다(코드 831 → 570줄) | 0026 |
 
 기획 때 세운 수치 목표 둘은 운영 지표로 옮겼다. "회의 종료 뒤 10분 안에 초안"은 처리 시간 p95 로, "자동 반영 되돌림 5% 이하"는 되돌림 비율로 KPI view 에서 뽑는다. 운영 데이터로 잰 값은 아직 없다([추가 지표](metrics.md)).
+
+### 참고한 자료
+
+기획과 개발에서 찾아보고 쓴 자료다. 어디에 썼는지와 그 판단이 남은 기록을 같이 적었다.
+
+| 자료 | 어디에 썼나 | 기록 |
+|---|---|---|
+| [faster-whisper](https://github.com/SYSTRAN/faster-whisper), [Whisper](https://github.com/openai/whisper) 모델 | 로컬 전사 구현, 모델 크기와 속도 비교 | 0001, 0008 |
+| [Silero VAD](https://github.com/snakers4/silero-vad) | 전사 앞의 말 필터 | 0005, 0030 |
+| [py-cord 문서](https://docs.pycord.dev) | 디스코드 화자별 음성 수신, 슬래시 명령 | #6, #46 |
+| [Discord 개발자 문서](https://discord.com/developers/docs) | 봇 권한, DM, 서버 멤버 확인 | 0037, 보안 점검 |
+| Elice ML API 문서 | 운영 전사(whisper-large-v3)와 판단 모델 호출, 응답 상한 | 0019, 0061 |
+| [pyannoteAI](https://www.pyannote.ai) 화자 분리 API | 업로드 녹음의 화자 분리 | 0028, 0064 |
+| [FLEURS](https://huggingface.co/datasets/google/fleurs) 한국어 | STT 공개 셋 비교 | #48 |
+| [AI Hub](https://aihub.or.kr) 회의 음성 | 미세조정 학습, 전사 오인식 검사 측정 | 0052, 0051 |
+| Soniox, OpenAI, 리턴제로 STT 문서 | STT 업체 비교 | [업체 비교](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/stt/eval/results/2026-10-14-stt-vendors/README.md) |
+| [pgvector](https://github.com/pgvector/pgvector) | 비슷한 태스크 검색 | 0010 |
+| [Notion API 문서](https://developers.notion.com) | 보드 반영, OAuth | [Notion 동기화](../design/backend/notion-sync.md) |
+| [k6 문서](https://grafana.com/docs/k6/latest/) | 부하 테스트 | 0068 |
+| [Grafana Alloy 문서](https://grafana.com/docs/alloy/latest/) | 운영 모니터링 | [모니터링 설치](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/monitoring/README.md) |
+| [MSW](https://mswjs.io), [Zod](https://zod.dev) | 계약 먼저 개발, 응답 검증 | [계약 먼저, MSW 먼저](../design/frontend/contract-first-msw.md) |
+| 주간 멘토 리뷰와 기술 멘토링 | 설계 방향과 측정 과제 | [코드 리뷰 기록](../collab/code-reviews.md) |
 
 ## 스펙 아웃: 하지 않기로 한 것
 
