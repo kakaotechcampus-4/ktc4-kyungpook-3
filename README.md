@@ -136,6 +136,10 @@ LLM이 뽑은 결과를 그대로 반영하지 않고, 여러 검사를 지난 �
 | AI | Python 3.12 · py-cord(Discord 녹음) · Elice STT · Elice MLAPI(LLM·임베딩·Jev) |
 | Infra | AWS EC2 · Docker Compose · Caddy · systemd · GitHub Actions(OIDC → SSM) |
 
+운영 지표는 Grafana 대시보드로 봅니다. 자동 반영 되돌림 비율, 처리 시간, 실패율, PM 승인 비율과 응답 시간을 한 화면에 모았습니다(2026-11-11 캡처, 최근 60일).
+
+[![Grafana KPI 대시보드. 자동 반영 되돌림 0.0%, 처리 시간 p95 2분, 10분 넘은 회의 0, 회의 실패율 0.0%, PM 승인 비율 97.2%](./docs/assets/grafana-kpi.jpg)](https://happysycamore2502.grafana.net/public-dashboards/256fe7b56cf34bfe9c345612ea9ac654)
+
 ## 시작하기
 
 ### 준비물

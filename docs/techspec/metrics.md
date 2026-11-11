@@ -29,6 +29,10 @@ AI 품질과 운영 상태를 보는 값을 정리한다. 개발하며 잰 값�
 
 운영에서 쌓이는 값은 Grafana Cloud 대시보드에서 본다. 운영 서버에 설치해 작동을 확인했다([모니터링 설치](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/monitoring/README.md), #675).
 
+[![Grafana KPI 대시보드](../assets/grafana-kpi.jpg)](https://happysycamore2502.grafana.net/public-dashboards/256fe7b56cf34bfe9c345612ea9ac654)
+
+2026-11-11 캡처(최근 60일) 기준으로 자동 반영 되돌림 0.0%, 처리 시간 p95 2분, 10분 넘은 회의 0건, 회의 실패율 0.0%, PM 승인 비율 97.2% 다. [공개 대시보드](https://happysycamore2502.grafana.net/public-dashboards/256fe7b56cf34bfe9c345612ea9ac654)에서 지금 값을 볼 수 있다.
+
 | 영역 | 지표 | 정의 | 관측 방법 |
 |---|---|---|---|
 | 오인식 | 검사 실패율 | `asr_check_failed` 비율 | `kpi.approval_fact.asr_flag='check_failed'` 비율([KPI 대시보드](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/monitoring/README.md), #675). 2026-11-07 이후 회의 추출의 review·hold 생성 카드만 센다 |
