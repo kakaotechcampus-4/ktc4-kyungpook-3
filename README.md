@@ -18,7 +18,7 @@ https://github.com/user-attachments/assets/84a8441a-2db7-490d-9440-d1b6ac693e23
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169e1?style=flat-square&logo=postgresql&logoColor=white)
 ![Discord](https://img.shields.io/badge/Discord_Bot-5865f2?style=flat-square&logo=discord&logoColor=white)
 
-[서비스 소개](#서비스-소개) • [주요 기능](#주요-기능) • [AI 판단 방식](#ai가-판단하는-방식) • [서비스 구성](#서비스-구성) • [시작하기](#시작하기) • [팀](#팀) • [문서](#문서)
+[서비스 소개](#서비스-소개) • [주요 기능](#주요-기능) • [AI 판단 방식](#ai가-판단하는-방식) • [서비스 구성](#서비스-구성) • [트레이드오프](./docs/techspec/tradeoffs.md) • [시작하기](#시작하기) • [팀](#팀) • [문서](#문서)
 
 </div>
 
