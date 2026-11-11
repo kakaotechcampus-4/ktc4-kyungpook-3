@@ -15,7 +15,7 @@ view 에는 ID·제목·본문·payload·이름·이메일 컬럼을 두지 않�
 PostgreSQL 전용이다. 다른 DB 에서는 아무것도 하지 않는다.
 
 Revision ID: c4f7a2d91e3b
-Revises: 6631d28f2e1b
+Revises: c7a1e4d92b35
 Create Date: 2026-11-11 10:00:00.000000
 
 """
@@ -26,7 +26,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'c4f7a2d91e3b'
-down_revision: Union[str, Sequence[str], None] = '6631d28f2e1b'
+down_revision: Union[str, Sequence[str], None] = 'c7a1e4d92b35'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
