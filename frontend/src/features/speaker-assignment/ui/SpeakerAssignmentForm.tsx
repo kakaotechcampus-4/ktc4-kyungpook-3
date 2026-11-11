@@ -13,7 +13,7 @@ import { SpeakerCard } from './SpeakerCard'
 
 const NOTE = 'text-caption text-dim'
 const ALERT = 'rounded-10 bg-surface-sunken px-14 py-12 text-body text-ink'
-const REMAINING = 'text-caption font-semibold text-ink tabular-nums'
+const REMAINING = 'text-[13px] leading-[1.7] font-semibold text-ink tabular-nums'
 
 const REJECTION_TEXT: Record<
   Exclude<SubmitRejection['kind'], 'expired' | 'alreadyMoved'>,
@@ -69,7 +69,7 @@ export function SpeakerAssignmentForm({
   }
 
   return (
-    <form onSubmit={(event) => void onSubmit(event)} className="flex flex-col gap-20" noValidate>
+    <form onSubmit={(event) => void onSubmit(event)} className="flex flex-col gap-24" noValidate>
       {view.audio === null ? (
         <p className={NOTE}>
           녹음이 남아 있지 않아 샘플을 들을 수 없어요. 회의 내용을 떠올려 골라 주세요.
@@ -86,7 +86,7 @@ export function SpeakerAssignmentForm({
           ) : null}
         </>
       )}
-      <div className="flex flex-col gap-12">
+      <div className="flex flex-col gap-20">
         {view.speakers.map((speaker, index) => (
           <SpeakerCard
             key={speaker.label}
@@ -108,15 +108,27 @@ export function SpeakerAssignmentForm({
           {rejectionText}
         </p>
       )}
-      <div className="flex flex-wrap items-center justify-end gap-14">
-        {draft.ready ? null : (
-          <p id={remainingId} className={REMAINING}>
-            {`아직 고르지 않은 화자 ${draft.remaining}명`}
-          </p>
-        )}
+      <div className="flex flex-wrap items-center justify-between gap-16 border-t border-divider pt-20">
+        <div className="flex items-center gap-14">
+          <span aria-hidden="true" className="flex gap-4">
+            {view.speakers.map(({ label }) => (
+              <span
+                key={label}
+                className={`h-4 w-22 rounded-2 ${choices[label] === undefined ? 'bg-inactive' : 'bg-ink-solid'}`}
+              />
+            ))}
+          </span>
+          {draft.ready ? null : (
+            <p id={remainingId} className={REMAINING}>
+              {`아직 고르지 않은 화자 ${draft.remaining}명`}
+            </p>
+          )}
+        </div>
         <Button
           type="submit"
           variant="primary"
+          size="lg"
+          className="px-22 text-[14px] leading-none disabled:bg-control"
           disabled={!draft.ready}
           loading={submission.pending}
           aria-describedby={draft.ready ? undefined : remainingId}

@@ -238,11 +238,11 @@ describe('Discord·Notion 연결 (U3-3)', () => {
    아래 테스트는 예전 연쇄(팀원 건너뜀 PATCH 가 뒤따름)를 단언했다 — 이제 PATCH 는 Discord 하나이고 팀원 단계는 pending 이다.
    "중간 실패" 는 연쇄의 두 번째 요청 대신, PATCH 는 됐는데 뒤의 상세 재조회가 실패한 경우로 옮겼다 */
 describe('처음 쓰는 분을 위한 안내 (#650)', () => {
-  it('Discord 단계는 `어떻게 쓰나요?` 로 안내를 열고, 닫으면 그 링크로 돌아온다 — 연결은 시작하지 않는다', async () => {
+  it('Discord 단계의 도움말 버튼으로 안내를 열고 닫으면 그 버튼으로 돌아온다', async () => {
     const user = userEvent.setup()
     renderApp('/onboarding/ws_03/connect_discord')
     const card = await screen.findByRole('region', { name: '디스코드 연동' })
-    const opener = await within(card).findByRole('button', { name: '어떻게 쓰나요?' })
+    const opener = await within(card).findByRole('button', { name: '디스코드 연동 사용법' })
     expect(screen.queryByRole('dialog')).toBeNull()
 
     await user.click(opener)
@@ -259,7 +259,7 @@ describe('처음 쓰는 분을 위한 안내 (#650)', () => {
     renderApp('/onboarding/ws_03/connect_notion')
     const card = await screen.findByRole('region', { name: '노션 연동' })
     await within(card).findByRole('button', { name: '연결하기' })
-    expect(screen.queryByRole('button', { name: '어떻게 쓰나요?' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '디스코드 연동 사용법' })).toBeNull()
   })
 })
 

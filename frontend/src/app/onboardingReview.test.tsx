@@ -41,12 +41,12 @@ function atMembers() {
 
 const stepNav = () => screen.getByRole('navigation', { name: '단계 이동' })
 
-/** 카드의 진행 버튼 이름. `어떻게 쓰나요?` 는 진행이 아니라 안내를 여는 글자 링크라 세지 않는다 (#650) */
+/** 안내를 여는 도움말 버튼은 단계 진행 액션에서 제외한다. */
 const cardActions = (card: HTMLElement) =>
   within(card)
     .getAllByRole('button')
+    .filter((button) => button.getAttribute('aria-label') !== '디스코드 연동 사용법')
     .map((button) => button.textContent)
-    .filter((name) => name !== '어떻게 쓰나요?')
 
 beforeEach(() => {
   applyScenario('incomplete-workspace')

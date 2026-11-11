@@ -21,7 +21,13 @@ interface Attempt {
 const ERROR_TEXT = 'text-[12px] leading-[1.5] text-accent'
 
 /** 외부 AI 에 첨부할 프로젝트 합본(.md). 기간을 비우면 전체 기간이다 (계약 §4.4.2) */
-export function ProjectBundleDownload({ workspaceId }: { workspaceId: string }) {
+export function ProjectBundleDownload({
+  workspaceId,
+  notesClassName,
+}: {
+  workspaceId: string
+  notesClassName?: string
+}) {
   const [period, setPeriod] = useState<PeriodInput>({ from: '', to: '' })
   // 입력 검사는 내려받기를 누른 뒤에만 보인다. 서버가 기간을 거절한 것도 같은 문구다
   const [attempted, setAttempted] = useState(false)
@@ -102,12 +108,12 @@ export function ProjectBundleDownload({ workspaceId }: { workspaceId: string }) 
         />
         <Button
           type="submit"
-          variant="outline"
+          variant="primary"
           size="xl"
           loading={download.isPending}
           aria-describedby={noticeId}
         >
-          {download.isPending ? '내려받는 중…' : '프로젝트 합본 내려받기'}
+          {download.isPending ? '내려받는 중…' : '프로젝트 내려받기'}
         </Button>
       </div>
       {reversed ? (
@@ -115,14 +121,16 @@ export function ProjectBundleDownload({ workspaceId }: { workspaceId: string }) 
           {PERIOD_MESSAGES.reversed}
         </p>
       ) : null}
-      {check.kind === 'ok' ? (
-        <p className="text-caption text-sub">
-          <span className="text-dim">내려받을 기간 ·</span> {check.label}
+      <div className={`flex flex-col gap-8 ${notesClassName ?? ''}`}>
+        {check.kind === 'ok' ? (
+          <p className="text-caption text-sub">
+            <span className="text-dim">내려받을 기간 ·</span> {check.label}
+          </p>
+        ) : null}
+        <p id={noticeId} className="text-caption text-dim">
+          팀원 발언 요약이 들어 있어요. 외부 AI 에 첨부할 때 주의해 주세요.
         </p>
-      ) : null}
-      <p id={noticeId} className="text-caption text-dim">
-        팀원 발언 요약이 들어 있어요. 외부 AI 에 첨부할 때 주의해 주세요.
-      </p>
+      </div>
     </form>
   )
 }

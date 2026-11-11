@@ -489,7 +489,7 @@ function DueRow({ workspaceId, task, assignee, overdue }: DueRowProps) {
       >
         {shortDate(dueDate)}
       </time>
-      <span className="min-w-[0px] flex-1 truncate text-control font-normal text-ink max-md:leading-[1.45] max-md:whitespace-normal">
+      <span className="w-[105px] min-w-0 shrink-0 truncate text-control font-normal text-ink max-md:w-auto max-md:flex-1 max-md:leading-[1.45] max-md:whitespace-normal">
         {task.title}
       </span>
       {overdue ? (
