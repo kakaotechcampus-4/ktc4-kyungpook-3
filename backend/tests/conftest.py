@@ -3,8 +3,12 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _upload_dir(tmp_path, monkeypatch):
-    """녹음 업로드를 테스트마다 임시 폴더에 저장한다. 저장소의 backend/uploads에 파일을 남기지 않는다."""
+    """녹음 업로드를 테스트마다 임시 폴더에 저장한다. 저장소의 backend/uploads에 파일을 남기지 않는다.
+
+    셸에 `UPLOAD_STORAGE=s3` 가 있어도 기본은 local 로 돈다. s3 가 필요한 테스트가 직접 켠다.
+    """
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.delenv("UPLOAD_STORAGE", raising=False)
 
 
 @pytest.fixture(autouse=True)

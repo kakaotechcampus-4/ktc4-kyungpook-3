@@ -106,6 +106,41 @@ backend 파일 재시도는 `MEETING_PURGE_INTERVAL_SECONDS`의 기존 워커가
 
 탈퇴로 지운 계정과 단독 공간 데이터는 스키마 downgrade로 복구되지 않는다. 최초 탈퇴 이후에는 개인정보 세대·삭제 표식을 무시하는 옛 BE·AI writer로 되돌리지 않는다. 되돌림이 필요하면 같은 정리 계약과 표식을 이해하는 호환 버전을 사용하고 대기 작업을 유지한다. 이 절의 운영 배포·되돌림·실제 계정 삭제는 이번 로컬 검증에서 실행하지 않았다.
 
+## 회의 녹음 S3 준비
+
+회의 녹음을 S3 에 7일 보관하고 웹에서 다시 듣게 한다(#659, [결정 기록](../backend/docs/plan/m5/basis-for-decision/2026-11-10-meeting-audio-s3-retention.md)). `UPLOAD_STORAGE` 기본은 `local` 이라, 아래를 준비하고 `.env` 를 바꾸기 전에는 배포해도 동작이 바뀌지 않는다. 운영 버킷은 팀 AWS 계정이 아니라 담당자(@hwnv) 개인 AWS 계정에 있다(2026-11-10 사용자 결정). 그래서 EC2 인스턴스 역할 대신 그 계정의 전용 IAM 사용자 키로 연결한다.
+
+1. **버킷**(준비함, 2026-11-10): 서울(`ap-northeast-2`), 퍼블릭 액세스 모두 차단, 객체 소유권 BucketOwnerEnforced, 기본 암호화 SSE-S3. 녹음은 `meetings/{meeting_id}/audio.<확장자>` 키에 둔다(`UPLOAD_S3_PREFIX`, 기본 `meetings/`). 버킷 이름은 운영 `.env` 에만 둔다.
+2. **전용 IAM 사용자**(준비함): 개인 계정의 `mm-backend-meeting-audio`. 인라인 정책은 아래 둘뿐이라 다른 버킷·접두어에는 접근하지 못한다(다른 접두어 쓰기와 버킷 목록 조회가 AccessDenied 인 것을 확인했다).
+   - `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` — 리소스 `arn:aws:s3:::<bucket>/meetings/*`
+   - `s3:ListBucket` — 리소스 `arn:aws:s3:::<bucket>`, 조건 `StringLike` `s3:prefix` = `meetings/*`. 회의 삭제·정리가 prefix 아래를 나열해 지운다.
+   - 키는 운영 `backend/.env` 의 `AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY` 에만 둔다. 앱 코드는 키를 직접 읽지 않고 boto3 기본 자격 체인이 환경 변수에서 찾는다. 키가 새면 IAM 콘솔에서 그 사용자의 키를 비활성화하고 새로 발급해 `.env` 를 바꾼다.
+3. **lifecycle**(준비함): `meetings/` 접두어 객체를 30일 뒤 만료, 끝나지 않은 multipart 업로드는 1일 뒤 정리. BE 정리(`UPLOAD_AUDIO_RETENTION_DAYS`, 기본 7일)가 어긋나도 30일 안에는 사라지는 안전망이다.
+4. **실제 S3 확인**(2026-11-10, 로컬에서 전용 키로): `upload_storage` 로 저장 → presigned URL(host `<bucket>.s3.ap-northeast-2.amazonaws.com`)에 Range 요청 206·`audio/mp4` → 스트림 읽기 → 덮어쓰기 → prefix 삭제까지 성공했다. 운영 EC2 에서의 확인은 전환 때 한다.
+5. **`backend/.env`** (값은 [.env.example](../backend/.env.example)): `UPLOAD_STORAGE=s3`, `UPLOAD_S3_BUCKET=<bucket>`, `UPLOAD_S3_PREFIX=meetings/`, `AWS_REGION=ap-northeast-2`, `AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY`(전용 사용자 키), `UPLOAD_AUDIO_RETENTION_DAYS=7`, `UPLOAD_PLAYBACK_URL_TTL_SECONDS=3600`. `uploads` 볼륨과 `UPLOAD_DIR` 는 그대로 둔다. `UPLOAD_STORAGE=s3` 인데 버킷이 없거나 값이 `local`·`s3` 가 아니면 설정 오류라 업로드·재생이 500 이다. S3 클라이언트는 프로세스당 한 번 만들어 캐시하므로 `AWS_REGION` 을 바꾸면 컨테이너를 다시 띄운다.
+6. **전환 시점**: 디스크에서 S3 를 예비로 읽는 경로가 없다. 처리 중인 업로드가 없을 때(`processing`·`awaiting_speakers` 업로드 회의가 없는지 확인) `UPLOAD_STORAGE=s3` 로 바꾼다. 처리 중에 바꾸면 AI 가 `GET /uploads/{id}/file` 에서 404 를 받는다. 전환 시점 이전(local 기간)에 디스크에 저장된 녹음은 s3 모드에서 재생되지 않는다. 보관 기록(`meeting_audio`)이 있는 녹음은 재생 정보가 남아 있어도 S3 에 객체가 없어 브라우저가 S3 오류를 받는다. 정리는 된다: s3 모드의 녹음 삭제(만료 정리·회의 삭제·탈퇴 정리)가 S3 prefix 와 함께 디스크의 `UPLOAD_DIR/{meeting_id}` 폴더도 지운다. `.env` 변경은 `docker compose -f backend/docker-compose.prod.yml up -d` 로 컨테이너를 다시 만든다(restart 는 반영하지 않는다).
+7. **Caddy CSP `media-src`**: 브라우저는 302 로 S3 주소(`https://<bucket>.s3.ap-northeast-2.amazonaws.com`)에서 바로 받는다. BE 는 S3 클라이언트를 리전 endpoint·가상 호스트 방식으로 만들어, presigned URL 의 host 가 항상 이 출처(`AWS_REGION` 의 리전)다. 서버의 Caddy 설정에 `Content-Security-Policy` 가 있다면 `media-src` 가 이 출처를 허용하는지 확인한다(#654). Caddy 설정은 이 저장소에 없어 확인하지 못했다. 프론트가 `crossOrigin` 이나 Web Audio 를 쓰면 버킷 CORS 도 필요하다.
+
+### 개인 계정 버킷의 위험과 키 운영
+
+운영 녹음을 팀원 한 명의 개인 계정에 두는 것은 이번 일정 안에 팀 계정에서 버킷·역할을 준비하기 어려워 고른 임시 방식이다(#670 리뷰). 옮길 시점은 정하지 않았다. 아래 위험을 알고 쓰며, 옮기게 되면 아래 절차를 따른다.
+
+- 키가 비활성화되거나, 계정 결제가 막히거나, 계정이 닫히면 S3 호출이 실패한다. 업로드·재생은 500, 회의 삭제(`purge_backend_files`)와 탈퇴 정리(`account_withdrawal.purge_backend`)는 `BACKEND_STORAGE_DELETE_FAILED` 로 남아 다시 시도만 반복한다. 탈퇴 영수증은 "정리 중"에서 끝나지 않는다.
+- 담당자(@hwnv)만 콘솔에서 버킷·키를 다룰 수 있다. 담당자 없이는 삭제 요청을 직접 확인하거나 키를 바꿀 수 없다.
+
+키 교체(정기·유출 의심 때):
+1. 담당자가 개인 계정 IAM 콘솔에서 `mm-backend-meeting-audio` 사용자에 새 액세스 키를 만든다(사용자당 키는 2개까지라 겹쳐 둘 수 있다).
+2. 운영 `backend/.env` 의 `AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY` 를 새 값으로 바꾸고 `docker compose -f backend/docker-compose.prod.yml up -d` 로 다시 만든다.
+3. 웹에서 녹음 재생이 되는지 확인한 뒤 옛 키를 비활성화하고, 하루 지나 문제가 없으면 지운다. 유출이 의심되면 1단계 직후 옛 키를 바로 비활성화한다(그 사이 업로드·재생은 실패할 수 있다).
+
+팀 계정으로 옮길 때(또는 서비스를 끝낼 때):
+1. 처리 중인 업로드가 없을 때 진행한다. 팀 계정에 같은 설정(서울, 공개 차단, SSE-S3, `meetings/` 30일 lifecycle)의 버킷과, 위 정책을 가진 EC2 인스턴스 역할을 준비하고 IMDSv2 hop limit 을 2 로 둔다(도커 컨테이너가 역할 자격을 받으려면 필요하다).
+2. 남은 녹음은 최대 7일치다. 옮기려면 `aws s3 sync s3://<옛 버킷>/meetings/ s3://<새 버킷>/meetings/` 로 복사하고, 옮기지 않으면 7일 기다리거나 그 기간의 재생을 포기한다(BE 기록상 들을 수 있는데 객체가 없으면 브라우저가 S3 오류를 받는다).
+3. 운영 `.env` 에서 키 두 줄을 지우고 `UPLOAD_S3_BUCKET` 을 새 버킷으로 바꾼 뒤 다시 만든다. 코드는 바꾸지 않는다.
+4. 옛 버킷의 `meetings/` 를 비우고, 전용 IAM 사용자의 키와 사용자를 지운다. 서비스를 끝내는 경우에도 3·4단계로 녹음과 키를 남기지 않는다.
+
+AI 서버(`mm-worker`)는 인계한 디스코드 회의의 녹음을 `ai/recordings/audio_outbox/` 에 두었다가 `PUT /meetings/{id}/recording` 으로 올린다. 이 폴더는 올릴 때까지 디스크를 쓰고 인계 7일 뒤 지운다. 서비스 토큰·BE 주소 설정은 기존 그대로다.
+
 ## 채팅 폴링 타이머 (#599)
 
 디스코드 채팅은 실시간으로 받지 않는다. `mm-chat-poll.timer` 가 매일 09:00 KST 에 `mm-chat-poll.service` 를 한 번 띄워, 연결된 채널(`GET /bot/chat-channels`)마다 새 메시지를 읽어 채팅 회의로 넘긴다. 유닛 파일은 [ai/deploy/systemd](../ai/deploy/systemd/)에 있다.
@@ -164,3 +199,11 @@ curl -sI https://managers-manager.duckdns.org/api/v1/ | grep -i content-security
 validate 가 실패하면 reload 하지 않고 백업으로 되돌린다. reload 는 기존 연결을 끊지 않는다.
 
 `deploy/` 아래 파일이라 이 파일만 바뀐 커밋이 배포돼도 `changed deploy` 가 참이 되어 요약 활성화(`enable-summary.py`)가 다시 돌고, 켜져 있는 `mm-worker` 가 재시작된다. 워커는 하던 회의를 마치고 내려간다.
+
+## 모니터링 (#675)
+
+서버 상태와 KPI 를 Grafana Cloud 무료 스택에서 본다. 서버에는 Alloy(지표 수집)와 PDC 에이전트(DB 연결)만 더 올리고, **이 설치는 배포 스크립트에 포함되지 않는다.** 서버에서 사람이 한 번 한다. 설치 순서, 읽기 계정 SQL, 패널 SQL, 공개 링크 전 점검은 [monitoring/README.md](monitoring/README.md)에 있다.
+
+- 바깥 확인용 경로는 `GET /api/v1/health/ready`(DB 까지 확인)다. 루트 `/health` 는 그대로다.
+- 설정 파일은 [monitoring/](monitoring/)에 있다. `config.alloy`·`override.conf`·`run-pdc.sh` 에 값이 없고, 접속 값은 서버의 `/etc/mm-monitoring/*.env`(root 600)에서만 읽는다.
+- Alloy 에 주는 docker 그룹은 root 와 같은 권한이다.

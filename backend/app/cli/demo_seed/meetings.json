@@ -3,238 +3,479 @@
   "people": [
     {
       "key": "p1",
-      "name": "유진"
+      "name": "지민"
     },
     {
       "key": "p2",
-      "name": "도윤"
+      "name": "동우"
     },
     {
       "key": "p3",
-      "name": "하은"
+      "name": "원준"
     },
     {
       "key": "p4",
-      "name": "민재"
+      "name": "김환"
     },
     {
       "key": "p5",
-      "name": "세영"
+      "name": "재환"
     },
     {
       "key": "p6",
-      "name": "서준"
+      "name": "진호"
     }
   ],
   "meetings": [
     {
-      "title": "스탠드업 - 로그인과 레이아웃 정리",
-      "days_ago": 21,
+      "title": "주간 회의 - 제브 근거 E2E와 폴러 유닛",
+      "days_ago": 16,
       "turns": [
         {
           "speaker": "p1",
-          "text": "자, 오늘 스탠드업 시작할게요. 어제 한 일이랑 오늘 할 일, 막히는 거 있으면 편하게 말씀해 주세요."
+          "text": "자, 녹음 시작했어요. 이번 주 회의 시작할게요."
         },
         {
           "speaker": "p2",
-          "text": "저는 어제 로그인 API 붙였고요, 음, 이번 주 목요일까지 리프레시 토큰 처리까지 끝낼게요."
+          "text": "네. 주말에 다들 푹 쉬었어요?"
+        },
+        {
+          "speaker": "p5",
+          "text": "저는 하루 종일 잤어요."
+        },
+        {
+          "speaker": "p6",
+          "text": "저는 밀린 빨래만 했어요."
         },
         {
           "speaker": "p1",
-          "text": "좋아요. 그럼 리프레시 토큰 작업 끝나면 하은님이 코드 리뷰 한번 부탁드려요."
+          "text": "좋아요. 오늘은 AI 쪽부터 볼게요. 제브가 근거를 제대로 찾는지 아직 끝까지 안 돌려 봤잖아요."
+        },
+        {
+          "speaker": "p2",
+          "text": "제브는 호출은 되는데 근거 문장이 어긋나는 경우가 있어서요."
+        },
+        {
+          "speaker": "p2",
+          "text": "제브 근거 E2E는 제가 10월 30일 금요일까지 돌려서 확인할게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "좋아요, 금요일까지요. 부탁해요."
         },
         {
           "speaker": "p3",
-          "text": "넵 확인할게요. 근데 어제 QA 팀에서 버그 리포트가 27건이나 왔더라고요. 일단 급한 것부터 오늘 안에 세 개는 고쳐볼게요."
+          "text": "서버 쪽은요, 채팅 폴러 코드는 거의 나왔는데 서버에 올릴 systemd 유닛이 아직 없어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "폴러는 서버에서 계속 돌면서 디스코드 채팅을 가져오는 거죠?"
+        },
+        {
+          "speaker": "p3",
+          "text": "네, 일정 간격으로 가져와요. 그래서 서버에 유닛 파일이 있어야 해요."
+        },
+        {
+          "speaker": "p3",
+          "text": "폴러 서버 유닛은 제가 다음 주 중에 만들어 놓을게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "다음 주 중이면 정확히 언제쯤이에요?"
+        },
+        {
+          "speaker": "p3",
+          "text": "수요일쯤 생각하는데, 다른 일이 끼면 밀릴 수도 있어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "일단 다음 주 중으로 적어 둘게요."
         },
         {
           "speaker": "p4",
-          "text": "음... 저는 어제 디자인 시스템 쪽 UI 컴포넌트 작업하다가 머지 컨플릭트가 나서 좀 헤맸어요. 그래도 오늘 중으로 PR은 올릴게요."
-        },
-        {
-          "speaker": "p1",
-          "text": "민재님, 그거 말고 지난주 회의 때 나온 반응형 레이아웃 작업도 다음 주 화요일까지 부탁드릴게요."
+          "text": "저는 루나 프롬프트가 너무 길어서 초안 제목이 매번 길게 나와요."
         },
         {
           "speaker": "p5",
-          "text": "어 죄송해요, 좀 늦었습니다—"
+          "text": "그건 화면에서 봐도 좀 길더라고요. 카드 제목이 두 줄 넘어가요."
+        },
+        {
+          "speaker": "p4",
+          "text": "루나 프롬프트 정리는 제가 맡을게요. 날짜는 아직 정하기 어려워요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네, 루나 쪽은 급한 건 아니니까 천천히 해 주세요."
         },
         {
           "speaker": "p2",
-          "text": "괜찮아요, 방금 시작했어요."
+          "text": "아, 루나가 제목에 날짜까지 넣어 버리는 것도 같이 봐 주세요."
+        },
+        {
+          "speaker": "p4",
+          "text": "알겠어요, 그것도 같이 볼게요."
         },
         {
           "speaker": "p5",
-          "text": "저는 노션 문서 정리하는 거 오늘까지 끝낼 계획이었는데 반나절 밀렸어요. 모레까지는 무조건 끝낼게요."
+          "text": "프런트는 로그인 화면 문구를 바꿔야 하는데요, 디자이너 확인을 받아야 해요."
+        },
+        {
+          "speaker": "p5",
+          "text": "로그인 화면 문구 수정은 제가 이번 주 금요일까지 끝낼게요."
         },
         {
           "speaker": "p1",
-          "text": "다들 점심 뭐 드실 거예요? 저는 오늘 국밥이요."
+          "text": "좋아요."
         },
         {
-          "speaker": "p2",
-          "text": "저는 아직 점심 메뉴 고민 중이에요, 하하."
+          "speaker": "p6",
+          "text": "저는 아직 맡은 게 없는데, 시연 시나리오 쪽을 해 볼까요?"
         },
         {
           "speaker": "p1",
-          "text": "아 그리고 이번 주 안으로 전체 코드 컨벤션 문서 한번 다 같이 검토하죠."
+          "text": "그건 다음 회의에서 같이 얘기해요. 오늘은 일단 큰 틀만 잡고요."
         },
         {
           "speaker": "p3",
-          "text": "아 참, 아까 말씀드린 버그 수정이요, 세 개 다 오늘 못 끝낼 것 같아서 내일 오전까지로 미룰게요."
+          "text": "그리고 나중에 시간 되면 STT를 Soniox로 바꾸는 것도 해 보면 좋을 것 같아요."
+        },
+        {
+          "speaker": "p3",
+          "text": "CER이 제일 낮게 나왔거든요."
         },
         {
           "speaker": "p1",
-          "text": "참고로 아까 민재님한테 부탁드린 반응형 레이아웃은 세영님이 대신 맡아주시기로 했어요. 민재님이 다른 일정이 있어서요."
+          "text": "그건 이번 달엔 안 하는 걸로 해요. 일단 보류할게요."
+        },
+        {
+          "speaker": "p3",
+          "text": "네, 알겠어요."
+        },
+        {
+          "speaker": "p4",
+          "text": "점심 뭐 먹을까요?"
+        },
+        {
+          "speaker": "p6",
+          "text": "저는 국밥이요."
+        },
+        {
+          "speaker": "p2",
+          "text": "좋아요, 국밥 가요."
         },
         {
           "speaker": "p1",
-          "text": "네, 오늘 스탠드업은 여기까지 할게요. 다들 수고하셨습니다."
+          "text": "네, 그럼 오늘은 여기까지 할게요. 녹음 끕니다."
         }
       ],
       "items": [
         {
           "action": "create",
-          "category": "decision",
-          "task_title": "리프레시 토큰 처리 완료",
-          "doc_text": "리프레시 토큰 처리를 도윤님이 이번 주 목요일까지 끝내기로 함",
+          "category": "assignee",
+          "task_title": "루나 프롬프트 정리",
+          "doc_text": "초안 제목이 길게 생성되는 문제를 해결하기 위해 루나 프롬프트 정리 작업을 새 할 일로 생성 / 루나 프롬프트 정리에 제목에 날짜가 포함되는 문제도 검토 범위로 추가",
           "assignee_type": "first",
           "assignee_raw": null,
-          "due_raw": "이번 주 목요일",
-          "due_in_days": 3,
-          "evidence_quote": "이번 주 목요일까지 리프레시 토큰 처리까지 끝낼게요",
+          "due_raw": null,
+          "evidence_quote": "루나 프롬프트 정리는 제가 맡을게요.",
+          "evidence_seqs": [
+            15,
+            17
+          ],
+          "task_status": "certain",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [],
+          "speaker_key": "p4"
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "제브 근거 E2E 실행 및 확인",
+          "doc_text": "제브 근거 E2E를 10/30(금)까지 실행해 확인",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "10월 30일 금요일까지",
+          "evidence_quote": "제브 근거 E2E는 제가 10월 30일 금요일까지 돌려서 확인할게요.",
+          "evidence_seqs": [
+            4,
+            5,
+            6
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [
+            {
+              "word": "실행",
+              "source": "title",
+              "candidates": [
+                "진행"
+              ]
+            }
+          ],
           "speaker_key": "p2",
+          "due_in_days": 4
+        },
+        {
+          "action": "create",
+          "category": "scope",
+          "task_title": "서버용 systemd 유닛 파일 추가",
+          "doc_text": "채팅 폴러를 서버에서 계속 실행하기 위한 systemd 유닛 파일을 추가 / 서버용 systemd 유닛 파일 추가 마감을 없음에서 11/8로 설정 / 서버용 systemd 유닛 파일 추가 마감을 11/8에서 11/8로 변경",
+          "assignee_type": "none",
+          "assignee_raw": null,
+          "due_raw": "다음 주 중",
+          "evidence_quote": "서버 쪽은요, 채팅 폴러 코드는 거의 나왔는데 서버에 올릴 systemd 유닛이 아직 없어요.",
           "evidence_seqs": [
-            1
+            8,
+            11,
+            12,
+            13,
+            14
+          ],
+          "task_status": "inferred",
+          "due_status": "inferred",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [],
+          "speaker_key": "p3",
+          "due_in_days": 13
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "로그인 화면 문구 수정",
+          "doc_text": "로그인 화면 문구 수정을 재환이 10/30(금)까지 하기로 함",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "이번 주 금요일까지",
+          "evidence_quote": "로그인 화면 문구 수정은 제가 이번 주 금요일까지 끝낼게요.",
+          "evidence_seqs": [
+            21,
+            22
           ],
           "task_status": "certain",
           "due_status": "certain",
           "similar_count": 0,
           "top_similarity": null,
-          "asr_suspects": []
+          "asr_suspects": [],
+          "speaker_key": "p5",
+          "due_in_days": 4
         },
         {
           "action": "create",
           "category": "decision",
-          "task_title": "리프레시 토큰 코드 리뷰",
-          "doc_text": "토큰 작업이 끝나면 하은님이 코드 리뷰를 하기로 함",
-          "assignee_type": "thirdname",
-          "assignee_raw": "하은님",
-          "evidence_quote": "하은님이 코드 리뷰 한번 부탁드려요",
-          "speaker_key": null,
+          "task_title": "Soniox 기반 STT 교체",
+          "doc_text": "CER이 가장 낮은 Soniox로 STT 교체를 이번 달에는 진행하지 않고 보류",
+          "assignee_type": "none",
+          "assignee_raw": null,
+          "due_raw": null,
+          "evidence_quote": "일단 보류할게요.",
           "evidence_seqs": [
-            2
+            26,
+            27,
+            28
           ],
           "task_status": "inferred",
           "due_status": "missing",
           "similar_count": 0,
           "top_similarity": null,
-          "asr_suspects": []
-        },
-        {
-          "action": "create",
-          "category": "decision",
-          "task_title": "반응형 레이아웃 작업",
-          "doc_text": "지난주에 나온 반응형 레이아웃 작업을 민재님이 다음 주 화요일까지 하기로 함",
-          "assignee_type": "thirdname",
-          "assignee_raw": "민재님",
-          "due_raw": "다음 주 화요일",
-          "due_in_days": 6,
-          "evidence_quote": "반응형 레이아웃 작업도 다음 주 화요일까지 부탁드릴게요",
-          "speaker_key": null,
-          "evidence_seqs": [
-            5
+          "asr_suspects": [
+            {
+              "word": "기반",
+              "source": "title",
+              "candidates": [
+                "기간",
+                "기본",
+                "기한",
+                "일반",
+                "집단"
+              ]
+            }
           ],
-          "task_status": "certain",
-          "due_status": "certain",
-          "similar_count": 0,
-          "top_similarity": null,
-          "asr_suspects": []
-        },
-        {
-          "action": "create",
-          "category": "decision",
-          "task_title": "반응형 레이아웃 담당 변경",
-          "doc_text": "민재님 대신 세영님이 반응형 레이아웃을 맡기로 함",
-          "assignee_type": "thirdname",
-          "assignee_raw": "세영님",
-          "evidence_quote": "세영님이 대신 맡아주시기로 했어요",
-          "speaker_key": null,
-          "evidence_seqs": [
-            13
-          ],
-          "task_status": "inferred",
-          "due_status": "missing",
-          "similar_count": 0,
-          "top_similarity": null,
-          "asr_suspects": []
+          "speaker_key": "p1"
         }
       ],
       "summary": {
-        "overview": "로그인 API 진행 상황과 오늘 할 일을 공유하고, 반응형 레이아웃 담당을 민재님에서 세영님으로 바꾸기로 했다.",
+        "overview": "제브 E2E와 폴러 서버 유닛 작업을 진행하고, 루나 프롬프트와 로그인 문구를 수정한다. Soniox STT 교체는 보류한다.",
         "key_points": [
-          "로그인 API 연동 완료, 리프레시 토큰 처리는 이번 주 목요일까지",
-          "QA 버그 리포트 27건 중 급한 3건은 내일 오전까지 수정",
-          "반응형 레이아웃은 세영님이 대신 맡음"
+          "제브 근거 E2E를 2026-10-30까지 확인한다.",
+          "폴러 서버용 systemd 유닛 파일을 다음 주 중 추가한다.",
+          "루나 프롬프트를 정리하고 제목의 날짜 포함 문제도 함께 본다.",
+          "로그인 화면 문구를 2026-10-30까지 수정한다.",
+          "Soniox 기반 STT 교체는 이번 달에 진행하지 않는다."
         ],
         "discussion": [
           {
-            "title": "진행 상황",
+            "title": "제브 근거",
             "points": [
-              "도윤님은 리프레시 토큰 처리 중",
-              "하은님은 급한 버그부터 수정"
+              "제브 호출은 되지만 근거 문장이 어긋나는 경우가 있다.",
+              "끝까지 실행한 E2E 확인이 아직 필요하다."
             ]
           },
           {
-            "title": "담당 변경",
+            "title": "폴러 서버",
             "points": [
-              "민재님의 다른 일정 때문에 레이아웃 담당을 세영님으로 변경"
+              "채팅 폴러 코드는 거의 완성됐다.",
+              "서버에서 디스코드 채팅을 일정 간격으로 가져온다."
+            ]
+          },
+          {
+            "title": "루나 프롬프트",
+            "points": [
+              "프롬프트가 길어 초안 제목이 길게 나온다.",
+              "루나가 제목에 날짜를 포함하는 문제도 확인한다."
+            ]
+          },
+          {
+            "title": "로그인 문구",
+            "points": [
+              "로그인 화면 문구 수정에 디자이너 확인이 필요하다."
+            ]
+          },
+          {
+            "title": "STT 교체",
+            "points": [
+              "Soniox가 CER 기준으로 가장 낮게 나왔다.",
+              "이번 달에는 교체하지 않기로 했다."
+            ]
+          },
+          {
+            "title": "기타 논의",
+            "points": [
+              "시연 시나리오는 다음 회의에서 논의한다."
             ]
           }
         ],
         "facts": [
-          "QA 팀 버그 리포트 27건"
+          "제브는 호출되고 있다.",
+          "제브 근거 문장이 어긋나는 경우가 있다.",
+          "채팅 폴러 코드는 거의 완성됐다.",
+          "폴러는 디스코드 채팅을 일정 간격으로 가져온다.",
+          "서버용 systemd 유닛 파일이 아직 없다.",
+          "루나 프롬프트가 길다.",
+          "루나 제목에 날짜가 포함되기도 한다.",
+          "로그인 화면 문구 수정에 디자이너 확인이 필요하다.",
+          "Soniox가 CER 기준으로 가장 낮게 나왔다.",
+          "시연 시나리오는 다음 회의에서 논의한다."
         ],
         "task_changes": [
           {
-            "task": "반응형 레이아웃 작업",
-            "assignee": "세영",
-            "due": "다음 주 화요일",
-            "purpose": "화면 크기별 레이아웃 대응",
+            "task": "루나 프롬프트 정리",
+            "assignee": "김환",
+            "due": "",
+            "purpose": "초안 제목을 짧게 정리",
             "precondition": ""
+          },
+          {
+            "task": "제브 근거 E2E 실행 및 확인",
+            "assignee": "동우",
+            "due": "2026-10-30",
+            "purpose": "제브 근거 문장 정합성 확인",
+            "precondition": ""
+          },
+          {
+            "task": "서버용 systemd 유닛 파일 추가",
+            "assignee": "미정",
+            "due": "2026-11-08",
+            "purpose": "서버에서 폴러를 계속 실행",
+            "precondition": ""
+          },
+          {
+            "task": "로그인 화면 문구 수정",
+            "assignee": "재환",
+            "due": "2026-10-30",
+            "purpose": "로그인 화면 문구 변경",
+            "precondition": "디자이너 확인"
+          },
+          {
+            "task": "Soniox 기반 STT 교체",
+            "assignee": "미정",
+            "due": "",
+            "purpose": "STT 품질 개선 검토",
+            "precondition": "이번 달에는 보류"
           }
         ],
         "schedule": [
           {
-            "when": "이번 주 목요일",
-            "what": "리프레시 토큰 처리 완료"
+            "when": "2026-10-30",
+            "what": "제브 근거 E2E 확인 및 로그인 문구 수정 완료"
           },
           {
-            "when": "다음 주 화요일",
-            "what": "반응형 레이아웃 작업 완료"
+            "when": "2026-11-02~2026-11-08",
+            "what": "서버용 systemd 유닛 파일 추가"
+          },
+          {
+            "when": "다음 회의",
+            "what": "시연 시나리오 논의"
           }
         ],
         "open_items": [
-          "코드 컨벤션 문서 검토 일정"
+          "제브 E2E 실행 결과 확인",
+          "폴러 서버 유닛 파일의 정확한 완료일 확정",
+          "로그인 문구에 대한 디자이너 확인",
+          "루나 프롬프트 정리 완료일 결정",
+          "루나 제목의 날짜 포함 문제 확인",
+          "시연 시나리오 논의",
+          "Soniox 기반 STT 교체 재검토 시점 결정"
         ],
         "topics": [
           {
-            "name": "로그인 인증",
-            "description": "로그인 API와 리프레시 토큰 처리",
+            "name": "제브 근거 E2E",
+            "description": "제브의 근거 문장 정합성을 E2E로 확인하는 영역",
             "decisions": [
               {
-                "text": "리프레시 토큰 처리를 이번 주 목요일까지 끝낸다",
-                "reason": "다음 작업이 이어짐"
+                "text": "제브 근거 E2E를 2026-10-30까지 실행하고 확인한다.",
+                "reason": "근거 문장이 어긋나는 경우가 있다.",
+                "rejected": []
               }
             ]
           },
           {
-            "name": "프론트 레이아웃",
-            "description": "반응형 레이아웃 작업 담당",
+            "name": "폴러 서버 운영",
+            "description": "디스코드 채팅 폴러의 서버 실행 환경",
             "decisions": [
               {
-                "text": "반응형 레이아웃은 세영님이 맡는다",
-                "reason": "민재님 일정 때문에"
+                "text": "서버용 systemd 유닛 파일을 다음 주 중 추가한다.",
+                "reason": "폴러를 서버에서 계속 실행해야 한다.",
+                "rejected": []
+              }
+            ]
+          },
+          {
+            "name": "루나 프롬프트",
+            "description": "루나 프롬프트와 생성 제목을 정리하는 영역",
+            "decisions": [
+              {
+                "text": "루나 프롬프트를 정리하고 제목의 날짜 포함 문제도 함께 확인한다.",
+                "reason": "프롬프트가 길고 제목이 길게 나온다.",
+                "rejected": []
+              }
+            ]
+          },
+          {
+            "name": "로그인 화면 문구",
+            "description": "로그인 화면에 표시되는 문구 수정 영역",
+            "decisions": [
+              {
+                "text": "로그인 화면 문구를 2026-10-30까지 수정한다.",
+                "reason": "로그인 화면 문구 변경이 필요하다.",
+                "rejected": []
+              }
+            ]
+          },
+          {
+            "name": "STT 엔진",
+            "description": "STT 엔진 교체 검토 영역",
+            "decisions": [
+              {
+                "text": "Soniox 기반 STT 교체는 이번 달에 진행하지 않는다.",
+                "reason": "이번 달 작업에서는 보류하기로 했다.",
+                "rejected": [
+                  "이번 달 Soniox 기반 STT 교체"
+                ]
               }
             ]
           }
@@ -243,826 +484,1829 @@
       "approval_state": "approved"
     },
     {
-      "title": "스프린트 계획 - 결제와 화면",
-      "days_ago": 14,
+      "title": "주간 회의 - 폴러 마감 확정과 시연 시나리오",
+      "days_ago": 13,
       "turns": [
         {
           "speaker": "p1",
-          "text": "자 스프린트 계획 시작하죠. 지난주 남은 것부터 정리하고 갈게요."
+          "text": "녹음 시작했어요. 목요일 회의 시작할게요."
         },
         {
           "speaker": "p2",
-          "text": "결제 모듈은 제가 계속 붙잡고 있는데요. 금요일까지는 1차 붙여놓겠습니다."
+          "text": "안녕하세요. 어제 비 엄청 왔죠?"
+        },
+        {
+          "speaker": "p6",
+          "text": "저는 우산이 없어서 다 젖었어요."
         },
         {
           "speaker": "p1",
-          "text": "좋아요. 그럼 결제 붙고 나면 하은님이 통합 테스트 시나리오 좀 짜주세요."
-        },
-        {
-          "speaker": "p3",
-          "text": "네 알겠습니다. 근데 지금 테스트 서버가 계속 죽어서요, 그것부터 봐야 할 것 같아요."
+          "text": "감기 조심해요. 먼저 지난 회의에서 정한 것부터 확인할게요."
         },
         {
           "speaker": "p1",
-          "text": "그건 인프라 담당이 처리하는 걸로 하죠. 이번 주 안에는 정리돼야 다음 작업이 안 밀려요."
-        },
-        {
-          "speaker": "p4",
-          "text": "저는 어제 화면 세 개 퍼블리싱 끝냈고요, 오늘은 좀 쉬엄쉬엄 하려고요."
-        },
-        {
-          "speaker": "p1",
-          "text": "민재님 그러면 이건 어때요, 남은 리스트 화면은 너가 맡아서 17일까지 마무리해주는 걸로."
-        },
-        {
-          "speaker": "p4",
-          "text": "아 네 그건 할 수 있을 것 같아요. 17일까지 올려둘게요."
-        },
-        {
-          "speaker": "p5",
-          "text": "저 잠깐 늦었는데 지금 무슨 얘기 중이에요?"
-        },
-        {
-          "speaker": "p1",
-          "text": "리스트 화면 일정 얘기요. 아 그리고 세영님, 저번에 말한 API 문서화는 어떻게 됐어요?"
-        },
-        {
-          "speaker": "p5",
-          "text": "그거 아직 손도 못 댔어요. 이번 주는 좀 빡셀 것 같고, 다음 주 월요일까지 해보겠습니다."
-        },
-        {
-          "speaker": "p1",
-          "text": "그리고 배포 스크립트 정리는 저번에 그분이 하시기로 했었죠? 도윤님 맞나요?"
+          "text": "동우님, 제브 근거 E2E는 어떻게 되고 있어요?"
         },
         {
           "speaker": "p2",
-          "text": "네 맞아요. 그건 제가 담당인데 이번 달 말까지로 잡아두면 될 것 같아요."
+          "text": "제브는 거의 다 봤어요. 내일 금요일까지는 문제없이 끝낼 수 있어요."
         },
         {
           "speaker": "p1",
-          "text": "코드 컨벤션 문서는 다 같이 한번 훑어보죠. 각자 시간 날 때 코멘트 남겨주세요."
+          "text": "좋아요. 원준님 폴러 유닛은요?"
         },
         {
           "speaker": "p3",
-          "text": "혹시 이 리팩터링은 누가 맡나요? 아직 정해진 게 없는 것 같아서요."
+          "text": "그게 다음 주 중으로 했는데, 오늘 보니까 코드 머지가 내일이라서 유닛 파일도 그 뒤에 써야 하더라고요."
+        },
+        {
+          "speaker": "p3",
+          "text": "폴러 서버 유닛은 제가 11월 4일 수요일까지로 못 박을게요."
         },
         {
           "speaker": "p1",
-          "text": "그건 다음 회의 때 다시 얘기하죠. 오늘은 여기까지 하겠습니다."
+          "text": "네, 11일 수요일로 확정하고 적어 둘게요."
+        },
+        {
+          "speaker": "p4",
+          "text": "루나 프롬프트는 길이를 절반으로 줄여 봤는데, 예시 두 개를 빼니까 제목이 좀 거칠어졌어요."
+        },
+        {
+          "speaker": "p6",
+          "text": "루나가 만든 초안 제목을 제가 몇 개 읽어 봤는데 동사가 빠져서 어색한 게 있더라고요."
+        },
+        {
+          "speaker": "p4",
+          "text": "아, 그 부분은 다음 버전에서 볼게요. 마감은 따로 안 잡을게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네, 루나는 급하지 않으니까요."
+        },
+        {
+          "speaker": "p5",
+          "text": "프런트는 카드 목록 화면 만들고 있어요. 제브 점수가 낮은 카드에 확인 필요 표시가 붙는 화면이요."
+        },
+        {
+          "speaker": "p5",
+          "text": "카드 목록 화면은 제가 11월 3일 화요일까지 PR 올릴게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "좋아요."
+        },
+        {
+          "speaker": "p5",
+          "text": "시간 되면 다크 모드도 해 보고 싶어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "그건 발표 끝나고 생각해요. 지금은 보류할게요."
+        },
+        {
+          "speaker": "p6",
+          "text": "저는 발표 시연 시나리오를 써 보겠다고 했었는데요, 아직 시작을 못 했어요."
+        },
+        {
+          "speaker": "p6",
+          "text": "시연 시나리오 초안은 제가 다음 주 초쯤 써서 공유할게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "좋아요. 시연에서는 폴러가 가져온 채팅이 카드로 바뀌는 장면이 중요해요."
+        },
+        {
+          "speaker": "p6",
+          "text": "네, 폴러 장면이랑 루나가 초안 쓰는 장면 둘 다 넣을게요."
+        },
+        {
+          "speaker": "p2",
+          "text": "시연 때 제브가 근거를 보여 주는 화면도 넣으면 좋겠어요."
+        },
+        {
+          "speaker": "p6",
+          "text": "좋아요, 그것도 적어 둘게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "디자인 쪽은 수빈님한테 스플래시 시안 부탁드렸어요."
+        },
+        {
+          "speaker": "p3",
+          "text": "수빈님이 누구죠?"
+        },
+        {
+          "speaker": "p1",
+          "text": "다른 팀 디자이너분이요. 잠깐 도와주시기로 했어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "수빈님 시안은 다음 주 금요일쯤 받을 것 같아요. 정확한 날은 아직 몰라요."
+        },
+        {
+          "speaker": "p4",
+          "text": "카카오 로그인 PR 충돌은 아직 안 건드렸어요. 죄송해요."
+        },
+        {
+          "speaker": "p1",
+          "text": "괜찮아요. 다음 회의 때 다시 얘기해요."
+        },
+        {
+          "speaker": "p3",
+          "text": "저녁에 멘토링 있는 거 잊지 마세요."
+        },
+        {
+          "speaker": "p2",
+          "text": "네, 7시요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네, 그럼 오늘은 여기까지 할게요. 녹음 끕니다."
         }
       ],
       "items": [
         {
           "action": "create",
-          "category": "decision",
-          "task_title": "결제 모듈 1차 연동",
-          "doc_text": "결제 모듈 1차 연동을 도윤님이 금요일까지 붙이기로 함",
+          "category": "scope",
+          "task_title": "제브 점수가 낮은 카드의 확인 필요 표시 카드 목록 화면 개발",
+          "doc_text": "제브 점수가 낮은 카드에 ‘확인 필요’ 표시가 붙는 프런트 카드 목록 화면을 개발 / 제브 점수가 낮은 카드의 확인 필요 표시 카드 목록 화면 개발 마감을 없음에서 11/3로 변경",
+          "assignee_type": "none",
+          "assignee_raw": null,
+          "due_raw": "11월 3일 화요일까지",
+          "evidence_quote": "제브 점수가 낮은 카드에 확인 필요 표시가 붙는 화면이요.",
+          "evidence_seqs": [
+            14,
+            15
+          ],
+          "task_status": "inferred",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [
+            {
+              "word": "점수",
+              "source": "title",
+              "candidates": [
+                "검수"
+              ]
+            }
+          ],
+          "speaker_key": "p5",
+          "due_in_days": 5
+        },
+        {
+          "action": "create",
+          "category": "schedule",
+          "task_title": "발표 시연 시나리오 초안 작성",
+          "doc_text": "발표 시연 시나리오 초안을 11/2(월)까지 작성해 공유하기로 함 / 발표 시연 시나리오 초안 작성에 폴러가 가져온 채팅이 카드로 바뀌는 장면과 루나가 초안을 작성하는 장면을 포함 / 발표 시연 시나리오 초안 작성에 제브가 근거를 보여 주는 화면을 추가",
           "assignee_type": "first",
           "assignee_raw": null,
-          "due_raw": "금요일",
-          "due_in_days": 4,
-          "evidence_quote": "금요일까지는 1차 붙여놓겠습니다",
-          "speaker_key": "p2",
+          "due_raw": "다음 주 초쯤",
+          "evidence_quote": "시연 시나리오 초안은 제가 다음 주 초쯤 써서 공유할게요.",
           "evidence_seqs": [
-            1
+            19,
+            20
+          ],
+          "task_status": "certain",
+          "due_status": "inferred",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [],
+          "speaker_key": "p6",
+          "due_in_days": 4
+        },
+        {
+          "action": "create",
+          "category": "assignee",
+          "task_title": "스플래시 시안 제작",
+          "doc_text": "수빈님이 스플래시 시안을 11/6(금)쯤 제작하기로 함",
+          "assignee_type": "thirdname",
+          "assignee_raw": "수빈님",
+          "due_raw": "다음 주 금요일쯤",
+          "evidence_quote": "수빈님 시안은 다음 주 금요일쯤 받을 것 같아요.",
+          "evidence_seqs": [
+            25,
+            27,
+            28
+          ],
+          "task_status": "certain",
+          "due_status": "inferred",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [
+            {
+              "word": "제작",
+              "source": "title",
+              "candidates": []
+            },
+            {
+              "word": "플래시",
+              "source": "title",
+              "candidates": [
+                "스플래시"
+              ]
+            }
+          ],
+          "speaker_key": "p1",
+          "due_in_days": 8
+        }
+      ],
+      "summary": {
+        "overview": "폴러 마감과 발표 시연 구성, 스플래시 시안 일정을 확인했다.",
+        "key_points": [
+          "제브 근거 E2E는 10월 30일까지 완료 예정이다.",
+          "폴러 서버 유닛 마감은 11월 4일로 확정됐다.",
+          "제브 점수가 낮은 카드 목록 화면 PR은 11월 3일까지다.",
+          "발표 시연 시나리오 초안은 11월 2일까지 작성한다.",
+          "스플래시 시안은 11월 6일경 받을 예정이다."
+        ],
+        "discussion": [
+          {
+            "title": "폴러 및 제브 진행",
+            "points": [
+              "제브 근거 E2E는 거의 완료됐다.",
+              "폴러 서버 유닛은 코드 머지 이후 작성한다.",
+              "낮은 제브 점수 카드에 확인 필요 표시를 붙인다."
+            ]
+          },
+          {
+            "title": "발표 시연 구성",
+            "points": [
+              "폴러 채팅이 카드로 바뀌는 장면을 포함한다.",
+              "루나가 초안을 작성하는 장면을 포함한다.",
+              "제브 근거 표시 화면도 포함한다."
+            ]
+          },
+          {
+            "title": "루나 프롬프트",
+            "points": [
+              "프롬프트 길이를 절반으로 줄였다.",
+              "예시를 빼면서 제목이 거칠어졌다.",
+              "동사가 빠진 제목이 있어 다음 버전에서 검토한다."
+            ]
+          },
+          {
+            "title": "디자인",
+            "points": [
+              "수빈님에게 스플래시 시안을 요청했다.",
+              "시안은 다음 주 금요일경 받을 예정이다."
+            ]
+          },
+          {
+            "title": "다크 모드",
+            "points": [
+              "카드 목록 화면의 다크 모드 추가 의견이 나왔다.",
+              "발표 이후로 보류했다."
+            ]
+          },
+          {
+            "title": "카카오 로그인",
+            "points": [
+              "카카오 로그인 PR 충돌은 아직 처리하지 않았다.",
+              "다음 회의에서 다시 논의한다."
+            ]
+          }
+        ],
+        "facts": [
+          "회의일은 2026년 10월 29일이다.",
+          "제브 근거 E2E 담당자는 동우다.",
+          "폴러 서버 유닛 담당자는 원준이다.",
+          "카드 목록 화면 담당자는 재환이다.",
+          "발표 시연 시나리오 담당자는 진호다.",
+          "스플래시 시안 담당자는 수빈님이다.",
+          "수빈님은 다른 팀 디자이너다.",
+          "루나 프롬프트는 예시 두 개를 제외했다.",
+          "카카오 로그인 PR 충돌은 미처리 상태다.",
+          "멘토링은 저녁 7시에 있다."
+        ],
+        "task_changes": [
+          {
+            "task": "제브 근거 E2E 완료",
+            "assignee": "동우",
+            "due": "2026-10-30",
+            "purpose": "제브 근거 검증 마무리",
+            "precondition": ""
+          },
+          {
+            "task": "폴러 서버 유닛 작성",
+            "assignee": "원준",
+            "due": "2026-11-04",
+            "purpose": "폴러 서버 유닛 완료",
+            "precondition": "코드 머지"
+          },
+          {
+            "task": "제브 점수가 낮은 카드의 확인 필요 표시 카드 목록 화면 개발",
+            "assignee": "미정",
+            "due": "2026-11-03",
+            "purpose": "낮은 제브 점수 카드 식별",
+            "precondition": ""
+          },
+          {
+            "task": "발표 시연 시나리오 초안 작성",
+            "assignee": "진호",
+            "due": "2026-11-02",
+            "purpose": "발표 시연 준비",
+            "precondition": ""
+          },
+          {
+            "task": "스플래시 시안 제작",
+            "assignee": "수빈님",
+            "due": "2026-11-06",
+            "purpose": "디자인 시안 확보",
+            "precondition": ""
+          },
+          {
+            "task": "루나 프롬프트 제목 검토",
+            "assignee": "미정",
+            "due": "",
+            "purpose": "동사가 빠진 제목 개선",
+            "precondition": "다음 버전 작성"
+          }
+        ],
+        "schedule": [
+          {
+            "when": "2026-10-30",
+            "what": "제브 근거 E2E 완료 예정"
+          },
+          {
+            "when": "2026-11-02",
+            "what": "발표 시연 시나리오 초안 마감"
+          },
+          {
+            "when": "2026-11-03",
+            "what": "카드 목록 화면 PR 마감"
+          },
+          {
+            "when": "2026-11-04",
+            "what": "폴러 서버 유닛 마감"
+          },
+          {
+            "when": "2026-11-06",
+            "what": "스플래시 시안 수령 예정"
+          },
+          {
+            "when": "다음 회의",
+            "what": "카카오 로그인 PR 충돌 재논의"
+          },
+          {
+            "when": "발표 이후",
+            "what": "다크 모드 검토"
+          },
+          {
+            "when": "2026-10-29 19:00",
+            "what": "멘토링"
+          }
+        ],
+        "open_items": [
+          "카카오 로그인 PR 충돌 처리 담당과 일정이 정해지지 않았다.",
+          "스플래시 시안의 정확한 수령일은 확정되지 않았다.",
+          "루나 프롬프트 제목 개선 일정은 정해지지 않았다.",
+          "다크 모드 적용 여부는 발표 이후 검토한다."
+        ],
+        "topics": [
+          {
+            "name": "제브 카드 목록",
+            "description": "제브 점수 기반 카드 목록 표시 기능",
+            "decisions": [
+              {
+                "text": "제브 점수가 낮은 카드에 확인 필요 표시를 붙이는 카드 목록 화면을 개발한다.",
+                "reason": "낮은 제브 점수 카드를 식별하기 위해",
+                "rejected": []
+              }
+            ]
+          },
+          {
+            "name": "발표 시연",
+            "description": "발표 시연 시나리오와 화면 구성",
+            "decisions": [
+              {
+                "text": "시연에 폴러 채팅이 카드로 바뀌는 장면을 포함한다.",
+                "reason": "폴러 핵심 흐름을 보여 주기 위해",
+                "rejected": []
+              },
+              {
+                "text": "시연에 루나 초안 작성 장면과 제브 근거 표시 화면을 포함한다.",
+                "reason": "관련 기능 흐름을 함께 보여 주기 위해",
+                "rejected": []
+              }
+            ]
+          },
+          {
+            "name": "디자인 시안",
+            "description": "스플래시 화면 디자인 시안",
+            "decisions": []
+          },
+          {
+            "name": "폴러 서버 유닛",
+            "description": "폴러 서버 유닛 테스트 작업",
+            "decisions": [
+              {
+                "text": "폴러 서버 유닛 마감을 2026년 11월 4일로 확정한다.",
+                "reason": "코드 머지 이후 유닛 파일을 작성해야 해서",
+                "rejected": []
+              }
+            ]
+          },
+          {
+            "name": "다크 모드",
+            "description": "카드 목록 화면의 다크 모드 적용",
+            "decisions": [
+              {
+                "text": "다크 모드 검토를 발표 이후로 보류한다.",
+                "reason": "현재 발표 준비를 우선하기 위해",
+                "rejected": []
+              }
+            ]
+          },
+          {
+            "name": "루나 프롬프트",
+            "description": "루나 프롬프트와 생성 제목 개선",
+            "decisions": []
+          }
+        ]
+      },
+      "approval_state": "approved"
+    },
+    {
+      "title": "발표 전 정리 - 담당 이관과 PPT 마감",
+      "days_ago": 9,
+      "turns": [
+        {
+          "speaker": "p1",
+          "text": "자, 녹음 시작했어요. 오늘은 발표 전에 남은 일만 빠르게 정리하고 끝낼게요."
+        },
+        {
+          "speaker": "p2",
+          "text": "네, 좋아요. 다들 주말 잘 보냈어요?"
+        },
+        {
+          "speaker": "p3",
+          "text": "저는 배포 로그만 보다가 끝났어요."
+        },
+        {
+          "speaker": "p4",
+          "text": "저도 비슷해요."
+        },
+        {
+          "speaker": "p1",
+          "text": "먼저 채팅 폴링부터요. 코드는 머지됐는데 서버에는 아직 안 올라갔잖아요."
+        },
+        {
+          "speaker": "p1",
+          "text": "제가 서버 systemd 유닛 파일 갱신하고 채팅 폴러 첫 실행 로그 확인하는 거, 11월 4일 수요일까지 끝낼게요."
+        },
+        {
+          "speaker": "p3",
+          "text": "좋아요. 유닛 파일은 자동 배포가 안 되니까 수동으로 복사해야 해요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네, 그건 알고 있어요."
+        },
+        {
+          "speaker": "p2",
+          "text": "아, 그리고 504번 제브 E2E는 지난주 금요일에 확인 끝났어요. 명시한 마감은 certain으로 잘 나왔어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "오, 수고했어요. 그럼 사업성 쪽은요?"
+        },
+        {
+          "speaker": "p2",
+          "text": "토큰량이요. 제가 회의 한 건당 LLM 호출 수랑 토큰량 집계해서 11월 5일 목요일까지 표로 정리할게요."
+        },
+        {
+          "speaker": "p4",
+          "text": "저는 카카오 로그인 PR이 develop이랑 충돌이 나 있어서요."
+        },
+        {
+          "speaker": "p4",
+          "text": "그 충돌 해결은 제가 다음 주 중에는 어떻게든 해 볼게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네, 너무 늦지만 않게 부탁해요."
+        },
+        {
+          "speaker": "p3",
+          "text": "백엔드는 DB 백업이랑 복구 절차가 아직 하나도 없어요. 운영에서 한 번도 안 해 봤고요."
+        },
+        {
+          "speaker": "p3",
+          "text": "그 절차는 제가 문서로 정리해 둘게요. 날짜는 아직 못 박겠어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네, 좋아요."
+        },
+        {
+          "speaker": "p3",
+          "text": "아, 그리고 온보딩에 디스코드 서버 만드는 안내가 아예 없더라고요. 서버 없는 팀은 거기서 막힐 것 같아요."
+        },
+        {
+          "speaker": "p1",
+          "text": "맞아요. 그럼 그 프론트 요청 이슈는 직접 써 주실래요? 11월 3일 화요일까지요."
+        },
+        {
+          "speaker": "p3",
+          "text": "네."
+        },
+        {
+          "speaker": "p2",
+          "text": "담당자 매칭 쪽은 501번 thirdname 원문 전송 PR이 리뷰 대기예요."
+        },
+        {
+          "speaker": "p2",
+          "text": "501번 리뷰는 김환님이 11월 3일 화요일까지 보기로 해요."
+        },
+        {
+          "speaker": "p4",
+          "text": "넵."
+        },
+        {
+          "speaker": "p1",
+          "text": "디자인 쪽은요, 스플래시 이미지는 수빈님이 11월 6일 금요일까지 다시 뽑아 주시기로 했어요."
+        },
+        {
+          "speaker": "p3",
+          "text": "수빈님이 누구였죠?"
+        },
+        {
+          "speaker": "p1",
+          "text": "다른 팀 디자이너분이요. 잠깐 도와주시기로 했어요."
+        },
+        {
+          "speaker": "p6",
+          "text": "저는 시연 시나리오 초안 공유드렸어요. 폴러가 채팅 가져오는 장면이랑 루나가 초안 쓰는 장면 넣었어요."
+        },
+        {
+          "speaker": "p5",
+          "text": "저는 카드 목록 화면 PR 올렸어요. 제브 점수 낮은 카드에 확인 필요 표시도 들어갔어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "그리고 발표 PPT 초안이요. 원래 11월 9일 월요일까지였는데, 리허설하려면 11월 7일 토요일까지로 당길게요."
+        },
+        {
+          "speaker": "p2",
+          "text": "좋아요, 그게 낫겠네요."
+        },
+        {
+          "speaker": "p3",
+          "text": "나중에 시간 되면 STT를 Soniox로 바꾸는 것도 생각해 볼 만하긴 해요. CER이 제일 낮았잖아요."
+        },
+        {
+          "speaker": "p1",
+          "text": "그건 이번에는 안 하는 걸로 해요. 발표 끝나고 다시 얘기해요."
+        },
+        {
+          "speaker": "p4",
+          "text": "루나 프롬프트 줄인 건 이번 주에 반영했어요. 초안 제목이 한결 짧아졌어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "정리하면, 토큰 집계는 11월 5일까지 맞죠?"
+        },
+        {
+          "speaker": "p2",
+          "text": "네, 제가 12일까지 할게요."
+        },
+        {
+          "speaker": "p4",
+          "text": "오늘 저녁 멘토링 몇 시였죠?"
+        },
+        {
+          "speaker": "p3",
+          "text": "7시요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네, 그럼 오늘은 여기까지 할게요. 녹음 끕니다."
+        }
+      ],
+      "items": [
+        {
+          "action": "create",
+          "category": "schedule",
+          "task_title": "회의별 LLM 호출 수 및 토큰량 집계",
+          "doc_text": "회의별 LLM 호출 수 및 토큰량을 집계해 11/5(목)까지 표로 정리하는 할 일 생성 / 회의별 LLM 호출 수 및 토큰량 집계 담당자를 말한 사람에서 동우로 변경",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "11월 5일 목요일까지",
+          "evidence_quote": "네, 제가 12일까지 할게요.",
+          "evidence_seqs": [
+            10,
+            33,
+            34
           ],
           "task_status": "certain",
           "due_status": "certain",
           "similar_count": 0,
           "top_similarity": null,
-          "asr_suspects": []
+          "asr_suspects": [],
+          "speaker_key": "p2",
+          "due_in_days": 3
+        },
+        {
+          "action": "create",
+          "category": "status",
+          "task_title": "배포 로그 확인",
+          "doc_text": "배포 로그 확인 작업을 완료 상태로 생성 / 배포 로그 확인 마감을 없음에서 11/4로 변경",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "11월 4일 수요일까지",
+          "evidence_quote": "저는 배포 로그만 보다가 끝났어요.",
+          "evidence_seqs": [
+            2
+          ],
+          "task_status": "inferred",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [],
+          "speaker_key": "p3",
+          "due_in_days": 2
+        },
+        {
+          "action": "create",
+          "category": "status",
+          "task_title": "504번 제브 E2E 확인",
+          "doc_text": "504번 제브 E2E 확인 할 일을 완료 상태로 생성",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": null,
+          "evidence_quote": "명시한 마감은 certain으로 잘 나왔어요.",
+          "evidence_seqs": [
+            8
+          ],
+          "task_status": "inferred",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [],
+          "speaker_key": "p2"
         },
         {
           "action": "create",
           "category": "decision",
-          "task_title": "통합 테스트 시나리오 작성",
-          "doc_text": "결제 연동 뒤 하은님이 통합 테스트 시나리오를 짜기로 함",
-          "assignee_type": "thirdname",
-          "assignee_raw": "하은님",
-          "evidence_quote": "하은님이 통합 테스트 시나리오 좀 짜주세요",
-          "speaker_key": null,
+          "task_title": "운영 DB 백업·복구 절차 문서 정리",
+          "doc_text": "운영 DB 백업·복구 절차 문서 정리를 할 일로 생성",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": null,
+          "evidence_quote": "날짜는 아직 못 박겠어요.",
           "evidence_seqs": [
-            2
+            14,
+            15
           ],
           "task_status": "certain",
           "due_status": "missing",
           "similar_count": 0,
           "top_similarity": null,
-          "asr_suspects": []
+          "asr_suspects": [],
+          "speaker_key": "p3"
         },
         {
           "action": "create",
-          "category": "decision",
-          "task_title": "테스트 서버 복구",
-          "doc_text": "죽는 테스트 서버를 인프라 담당이 이번 주 안에 정리하기로 함",
-          "assignee_type": "thirdrole",
-          "assignee_raw": "인프라 담당",
-          "due_raw": "이번 주 안",
-          "due_in_days": 3,
-          "evidence_quote": "인프라 담당이 처리하는 걸로 하죠",
-          "speaker_key": null,
-          "evidence_seqs": [
-            4
-          ],
-          "task_status": "certain",
-          "due_status": "certain",
-          "similar_count": 0,
-          "top_similarity": null,
-          "asr_suspects": []
-        },
-        {
-          "action": "create",
-          "category": "decision",
-          "task_title": "남은 리스트 화면 마무리",
-          "doc_text": "남은 리스트 화면을 민재님이 17일까지 마무리하기로 함",
+          "category": "schedule",
+          "task_title": "프론트 요청 이슈 작성",
+          "doc_text": "프론트 요청 이슈 작성을 원준이 11/3(화)까지 하기로 함",
           "assignee_type": "second",
-          "assignee_raw": "너",
-          "due_raw": "17일",
-          "due_in_days": 8,
-          "evidence_quote": "남은 리스트 화면은 너가 맡아서 17일까지 마무리해주는 걸로",
-          "speaker_key": "p4",
+          "assignee_raw": "원준",
+          "due_raw": "11월 3일 화요일까지요.",
+          "evidence_quote": "네.",
           "evidence_seqs": [
-            6,
-            7
+            18,
+            19
           ],
           "task_status": "certain",
           "due_status": "certain",
           "similar_count": 0,
           "top_similarity": null,
-          "asr_suspects": []
+          "asr_suspects": [],
+          "speaker_key": "p3",
+          "due_in_days": 1
         },
         {
           "action": "create",
-          "category": "decision",
-          "task_title": "API 문서화",
-          "doc_text": "API 문서화를 세영님이 다음 주 월요일까지 해보기로 함",
+          "category": "schedule",
+          "task_title": "501번 담당자 매칭 원문 전송 PR 리뷰",
+          "doc_text": "501번 담당자 매칭 원문 전송 PR 리뷰를 김환님이 11/3(화)까지 하기로 함",
+          "assignee_type": "thirdname",
+          "assignee_raw": "김환님",
+          "due_raw": "11월 3일 화요일까지",
+          "evidence_quote": "501번 리뷰는 김환님이 11월 3일 화요일까지 보기로 해요.",
+          "evidence_seqs": [
+            20,
+            21
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [
+            {
+              "word": "원문",
+              "source": "title",
+              "candidates": [
+                "원준",
+                "신문",
+                "인물",
+                "전문"
+              ]
+            }
+          ],
+          "speaker_key": "p2",
+          "due_in_days": 1
+        },
+        {
+          "action": "create",
+          "category": "schedule",
+          "task_title": "스플래시 이미지 재제작",
+          "doc_text": "스플래시 이미지 재제작을 수빈님이 11/6(금)까지 하기로 함",
+          "assignee_type": "thirdname",
+          "assignee_raw": "수빈님",
+          "due_raw": "11월 6일 금요일까지",
+          "evidence_quote": "디자인 쪽은요, 스플래시 이미지는 수빈님이 11월 6일 금요일까지 다시 뽑아 주시기로 했어요.",
+          "evidence_seqs": [
+            23
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [
+            {
+              "word": "제작",
+              "source": "title",
+              "candidates": []
+            },
+            {
+              "word": "플래시",
+              "source": "title",
+              "candidates": [
+                "스플래시"
+              ]
+            }
+          ],
+          "speaker_key": "p1",
+          "due_in_days": 4
+        },
+        {
+          "action": "create",
+          "category": "scope",
+          "task_title": "Soniox 전환 재논의",
+          "doc_text": "발표 종료 후 Soniox 전환을 다시 논의",
+          "assignee_type": "none",
+          "assignee_raw": null,
+          "due_raw": null,
+          "evidence_quote": "발표 끝나고 다시 얘기해요.",
+          "evidence_seqs": [
+            30,
+            31
+          ],
+          "task_status": "inferred",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [],
+          "speaker_key": "p1"
+        }
+      ],
+      "summary": {
+        "overview": "발표 전 남은 업무와 담당을 확인하고 PPT 마감일을 앞당겼다.",
+        "key_points": [
+          "PPT 초안 마감을 11월 7일로 앞당겼다.",
+          "채팅 폴링 서버 반영과 실행 로그 확인을 11월 4일까지 진행한다.",
+          "LLM 호출 수와 토큰량을 11월 5일까지 집계한다.",
+          "운영 DB 백업·복구 절차를 문서화한다.",
+          "Soniox 전환은 발표 후 재논의한다."
+        ],
+        "discussion": [
+          {
+            "title": "채팅 폴링 배포",
+            "points": [
+              "코드는 머지됐지만 서버 반영이 남아 있다.",
+              "systemd 유닛 파일은 수동 복사가 필요하다."
+            ]
+          },
+          {
+            "title": "LLM 사용량 집계",
+            "points": [
+              "회의별 LLM 호출 수와 토큰량을 표로 정리한다."
+            ]
+          },
+          {
+            "title": "운영 절차",
+            "points": [
+              "운영 DB 백업과 복구 절차가 아직 없다."
+            ]
+          },
+          {
+            "title": "온보딩 이슈",
+            "points": [
+              "온보딩에 디스코드 서버 생성 안내가 없다.",
+              "관련 프론트 요청 이슈를 작성한다."
+            ]
+          },
+          {
+            "title": "담당자 매칭",
+            "points": [
+              "501번 thirdname 원문 전송 PR이 리뷰 대기 중이다."
+            ]
+          },
+          {
+            "title": "발표 준비",
+            "points": [
+              "시연 시나리오와 카드 목록 화면 PR이 공유됐다.",
+              "스플래시 이미지를 재제작한다."
+            ]
+          }
+        ],
+        "facts": [
+          "504번 제브 E2E 확인은 완료됐다.",
+          "504번 제브 E2E의 명시 마감은 확실하게 도출됐다.",
+          "채팅 폴링 코드는 머지됐다.",
+          "systemd 유닛 파일은 자동 배포되지 않는다.",
+          "운영 DB 백업·복구는 운영에서 아직 수행하지 않았다.",
+          "카카오 로그인 PR에 develop 충돌이 있다.",
+          "스플래시 이미지 재제작은 다른 팀 디자이너가 지원한다.",
+          "시연 시나리오에는 폴러와 루나 장면이 포함됐다.",
+          "카드 목록 화면 PR에는 제브 점수 낮은 카드의 확인 필요 표시가 포함됐다.",
+          "루나 프롬프트 축약이 이번 주 반영됐다."
+        ],
+        "task_changes": [
+          {
+            "task": "회의별 LLM 호출 수 및 토큰량 집계",
+            "assignee": "동우",
+            "due": "2026-11-05",
+            "purpose": "사용량을 표로 정리",
+            "precondition": ""
+          },
+          {
+            "task": "배포 로그 확인",
+            "assignee": "원준",
+            "due": "2026-11-04",
+            "purpose": "배포 상태 확인",
+            "precondition": ""
+          },
+          {
+            "task": "504번 제브 E2E 확인",
+            "assignee": "동우",
+            "due": "",
+            "purpose": "E2E 동작 확인",
+            "precondition": ""
+          },
+          {
+            "task": "운영 DB 백업·복구 절차 문서 정리",
+            "assignee": "원준",
+            "due": "",
+            "purpose": "운영 절차 문서화",
+            "precondition": ""
+          },
+          {
+            "task": "프론트 요청 이슈 작성",
+            "assignee": "원준",
+            "due": "2026-11-03",
+            "purpose": "디스코드 서버 생성 안내 추가 요청",
+            "precondition": ""
+          },
+          {
+            "task": "501번 담당자 매칭 원문 전송 PR 리뷰",
+            "assignee": "김환님",
+            "due": "2026-11-03",
+            "purpose": "대기 중인 PR 검토",
+            "precondition": ""
+          },
+          {
+            "task": "스플래시 이미지 재제작",
+            "assignee": "수빈님",
+            "due": "2026-11-06",
+            "purpose": "발표용 디자인 보완",
+            "precondition": ""
+          },
+          {
+            "task": "Soniox 전환 재논의",
+            "assignee": "미정",
+            "due": "",
+            "purpose": "발표 후 STT 전환 검토",
+            "precondition": "발표 종료"
+          },
+          {
+            "task": "발표 PPT 초안 작성",
+            "assignee": "미정",
+            "due": "2026-11-07",
+            "purpose": "리허설 준비",
+            "precondition": ""
+          }
+        ],
+        "schedule": [
+          {
+            "when": "2026-11-03",
+            "what": "프론트 요청 이슈 작성 및 501번 PR 리뷰"
+          },
+          {
+            "when": "2026-11-04",
+            "what": "배포 로그 확인"
+          },
+          {
+            "when": "2026-11-05",
+            "what": "LLM 호출 수와 토큰량 집계 완료"
+          },
+          {
+            "when": "2026-11-06",
+            "what": "스플래시 이미지 재제작 완료"
+          },
+          {
+            "when": "2026-11-07",
+            "what": "발표 PPT 초안 마감"
+          },
+          {
+            "when": "발표 후",
+            "what": "Soniox 전환 재논의"
+          },
+          {
+            "when": "2026-11-02 19:00",
+            "what": "멘토링"
+          }
+        ],
+        "open_items": [
+          "카카오 로그인 PR의 develop 충돌 해결 일정은 다음 주 중으로만 언급됐다.",
+          "운영 DB 백업·복구 절차의 구체적인 마감일이 정해지지 않았다.",
+          "Soniox 전환 여부는 발표 후 재논의한다.",
+          "발표 PPT 초안 담당자는 명시되지 않았다."
+        ],
+        "topics": []
+      },
+      "approval_state": "approved"
+    },
+    {
+      "title": "주간 회의 - 제브 기준값과 발표 리허설",
+      "days_ago": 6,
+      "turns": [
+        {
+          "speaker": "p1",
+          "text": "녹음 시작했어요. 발표가 2주 남았으니까 오늘도 빠르게 갈게요."
+        },
+        {
+          "speaker": "p2",
+          "text": "네. 월요일 멘토링 얘기 좋았죠?"
+        },
+        {
+          "speaker": "p3",
+          "text": "네, 시연 때 실패하는 경우도 보여 주라고 하셨어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "먼저 폴러부터요. 어제 수요일에 서버에 유닛 올리고 첫 실행 로그 확인했어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "폴러는 30초마다 채팅 가져오고 있고, 에러 로그도 없었어요. 폴러 쪽은 끝났어요."
+        },
+        {
+          "speaker": "p3",
+          "text": "유닛 파일 갱신까지 하셨죠? 수고했어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네, 원준님이 알려 준 대로 수동으로 복사했어요."
+        },
+        {
+          "speaker": "p2",
+          "text": "그리고 토큰 집계는 오늘 아침에 끝냈어요. 한 건당 LLM 호출이 열 번 안팎이고요."
+        },
+        {
+          "speaker": "p1",
+          "text": "오, 빠르네요. 표는 어디 있어요?"
+        },
+        {
+          "speaker": "p2",
+          "text": "위키에 올렸어요. 제브 호출이 그중 절반이에요."
+        },
+        {
+          "speaker": "p3",
+          "text": "제브가 한 번에 질문을 묶어서 물어서 그렇죠. 호출 수 줄이긴 어려워요."
+        },
+        {
+          "speaker": "p2",
+          "text": "그래서 제브 기준값을 정해야 하는데, 지금 0.8로 쓰고 있잖아요. 이걸 올릴지 말지요."
+        },
+        {
+          "speaker": "p1",
+          "text": "올리면 확인 필요 카드가 많아지겠죠?"
+        },
+        {
+          "speaker": "p2",
+          "text": "네. 0.8이면 대부분 통과하고 이상한 것만 걸려요. 일단 0.8 유지가 좋겠어요."
+        },
+        {
+          "speaker": "p3",
+          "text": "저도 0.8 유지에 한 표요."
+        },
+        {
+          "speaker": "p1",
+          "text": "그럼 제브 기준값은 0.8 그대로 가요."
+        },
+        {
+          "speaker": "p4",
+          "text": "저는 카카오 로그인 충돌을 해결했어요. 어제 develop에 머지했어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "오, 다음 주 중이라더니 빨리 하셨네요."
+        },
+        {
+          "speaker": "p4",
+          "text": "발표 리허설 일정은 제가 잡아 볼게요. 날짜는 다음 주 초쯤으로요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네, 다음 주 초쯤으로 적어 둘게요."
+        },
+        {
+          "speaker": "p4",
+          "text": "루나 프롬프트 정리는 끝났어요. 제목이 훨씬 짧아졌어요."
+        },
+        {
+          "speaker": "p5",
+          "text": "맞아요, 카드에서 봤는데 한 줄로 딱 들어와요. 루나 제목 좋아졌어요."
+        },
+        {
+          "speaker": "p5",
+          "text": "제 쪽은 확인 필요 카드 화면 다듬는 중이에요. 11월 6일까지 마무리할게요."
+        },
+        {
+          "speaker": "p6",
+          "text": "시연 시나리오는 지민님이 보셨죠? 폴러 장면에 실패하는 경우를 하나 넣을까 해요."
+        },
+        {
+          "speaker": "p1",
+          "text": "좋아요. 채팅에서 단어가 잘못 적힌 경우를 보여 줘도 되고요."
+        },
+        {
+          "speaker": "p6",
+          "text": "네, 그럼 시나리오에 그 장면 추가해서 11월 6일까지 다시 올릴게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "수빈님 스플래시 소식이 있어요. 시험 기간이라 다음 주 월요일 11월 9일로 밀어 달라고 하셨어요."
+        },
+        {
+          "speaker": "p3",
+          "text": "그럼 16일 월요일로 바꿔 둘게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네, 그 이상은 못 미뤄요."
+        },
+        {
+          "speaker": "p3",
+          "text": "시간 되면 제브한테 근거 문장 두 개씩 보여 주게 해 보고 싶어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "그건 발표 전에는 안 하는 걸로 해요."
+        },
+        {
+          "speaker": "p2",
+          "text": "점심 뭐 먹어요?"
+        },
+        {
+          "speaker": "p4",
+          "text": "저는 샐러드요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네, 그럼 오늘은 여기까지 할게요. 녹음 끕니다."
+        }
+      ],
+      "items": [
+        {
+          "action": "create",
+          "category": "schedule",
+          "task_title": "발표 리허설 일정 조율",
+          "doc_text": "발표 리허설 일정을 다음 주 초쯤으로 잡기로 함",
           "assignee_type": "first",
           "assignee_raw": null,
-          "due_raw": "다음 주 월요일",
-          "due_in_days": 5,
-          "evidence_quote": "다음 주 월요일까지 해보겠습니다",
-          "speaker_key": "p5",
+          "due_raw": null,
+          "evidence_quote": "날짜는 다음 주 초쯤으로요.",
           "evidence_seqs": [
+            18
+          ],
+          "task_status": "certain",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [],
+          "speaker_key": "p4"
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "제브 기준값 0.8 유지",
+          "doc_text": "제브 기준값을 0.8로 유지",
+          "assignee_type": "none",
+          "assignee_raw": null,
+          "due_raw": null,
+          "evidence_quote": "8 그대로 가요.",
+          "evidence_seqs": [
+            11,
+            12,
+            13,
+            14,
+            15
+          ],
+          "task_status": "certain",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [],
+          "speaker_key": "p1"
+        },
+        {
+          "action": "create",
+          "category": "status",
+          "task_title": "루나 프롬프트 정리",
+          "doc_text": "루나 프롬프트 정리를 완료하고 프롬프트 제목을 훨씬 짧게 수정",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": null,
+          "evidence_quote": "제목이 훨씬 짧아졌어요.",
+          "evidence_seqs": [
+            20
+          ],
+          "task_status": "inferred",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [],
+          "speaker_key": "p4"
+        },
+        {
+          "action": "create",
+          "category": "schedule",
+          "task_title": "확인 필요 카드 화면 다듬기",
+          "doc_text": "확인 필요 카드 화면 다듬기 작업을 11/6(금)까지 진행",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "11월 6일까지",
+          "evidence_quote": "11월 6일까지 마무리할게요.",
+          "evidence_seqs": [
+            22
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [],
+          "speaker_key": "p5",
+          "due_in_days": 1
+        },
+        {
+          "action": "create",
+          "category": "scope",
+          "task_title": "시연 시나리오 실패 장면 추가",
+          "doc_text": "시연 시나리오에 폴러 실패 및 채팅 단어 오기 장면을 추가해 11/6(금)까지 다시 올리기로 함",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "11월 6일까지",
+          "evidence_quote": "네, 그럼 시나리오에 그 장면 추가해서 11월 6일까지 다시 올릴게요.",
+          "evidence_seqs": [
+            23,
+            24,
+            25
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [],
+          "speaker_key": "p6",
+          "due_in_days": 1
+        },
+        {
+          "action": "create",
+          "category": "schedule",
+          "task_title": "스플래시 일정 변경",
+          "doc_text": "스플래시 일정을 11/9(월)로 변경",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "다음 주 월요일 11월 9일",
+          "evidence_quote": "그럼 16일 월요일로 바꿔 둘게요.",
+          "evidence_seqs": [
+            26,
+            27
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [
+            {
+              "word": "플래시",
+              "source": "title",
+              "candidates": [
+                "스플래시"
+              ]
+            }
+          ],
+          "speaker_key": "p3",
+          "due_in_days": 4
+        },
+        {
+          "action": "create",
+          "category": "scope",
+          "task_title": "제브에게 근거 문장 두 개씩 보여 주기",
+          "doc_text": "제브에게 근거 문장 두 개씩 보여 주는 시도를 발표 전에는 진행하지 않기로 함",
+          "assignee_type": "none",
+          "assignee_raw": null,
+          "due_raw": null,
+          "evidence_quote": "그건 발표 전에는 안 하는 걸로 해요.",
+          "evidence_seqs": [
+            29,
+            30
+          ],
+          "task_status": "inferred",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [],
+          "speaker_key": "p1"
+        }
+      ],
+      "summary": {
+        "overview": "제브 기준값은 0.8로 유지하고, 발표 준비 작업 일정을 정리했다.",
+        "key_points": [
+          "제브 기준값 0.8을 유지한다.",
+          "발표 리허설은 다음 주 초에 진행하도록 일정을 잡는다.",
+          "루나 프롬프트 정리가 완료됐다.",
+          "확인 필요 카드와 시연 시나리오는 11월 6일까지 마무리한다.",
+          "스플래시 일정은 11월 9일로 변경한다."
+        ],
+        "discussion": [
+          {
+            "title": "제브 기준값",
+            "points": [
+              "기준값을 올리면 확인 필요 카드가 늘어날 수 있다.",
+              "0.8이면 대부분 통과하고 이상 항목만 걸린다."
+            ]
+          },
+          {
+            "title": "발표 리허설",
+            "points": [
+              "발표 리허설을 다음 주 초쯤 진행한다."
+            ]
+          },
+          {
+            "title": "시연 시나리오",
+            "points": [
+              "시연에서 실패하는 경우를 보여 주자는 의견이 나왔다.",
+              "채팅에 잘못된 단어가 입력된 장면을 추가할 수 있다."
+            ]
+          },
+          {
+            "title": "근거 문장 표시",
+            "points": [
+              "제브에게 근거 문장 두 개씩 보여 주는 방안이 제안됐다.",
+              "발표 전에는 적용하지 않기로 했다."
+            ]
+          }
+        ],
+        "facts": [
+          "폴러는 30초마다 채팅을 가져온다.",
+          "폴러 첫 실행 로그에서 에러가 없었다.",
+          "토큰 집계가 완료됐다.",
+          "한 건당 LLM 호출은 열 번 안팎이다.",
+          "제브 호출은 전체 호출의 절반이다.",
+          "카카오 로그인 충돌이 develop에 머지됐다.",
+          "루나 프롬프트 정리가 완료됐다.",
+          "확인 필요 카드 화면을 다듬는 중이다.",
+          "스플래시 일정 변경 요청이 있었다.",
+          "제브 근거 문장 표시는 발표 전 적용하지 않는다."
+        ],
+        "task_changes": [
+          {
+            "task": "발표 리허설 일정 조율",
+            "assignee": "김환",
+            "due": "",
+            "purpose": "발표 리허설 준비",
+            "precondition": "다음 주 초 일정 확인"
+          },
+          {
+            "task": "제브 기준값 0.8 유지",
+            "assignee": "미정",
+            "due": "",
+            "purpose": "이상 항목만 확인",
+            "precondition": ""
+          },
+          {
+            "task": "루나 프롬프트 정리",
+            "assignee": "김환",
+            "due": "",
+            "purpose": "제목을 짧게 표시",
+            "precondition": ""
+          },
+          {
+            "task": "확인 필요 카드 화면 다듬기",
+            "assignee": "재환",
+            "due": "2026-11-06",
+            "purpose": "카드 화면 개선",
+            "precondition": ""
+          },
+          {
+            "task": "시연 시나리오 실패 장면 추가",
+            "assignee": "진호",
+            "due": "2026-11-06",
+            "purpose": "실패 상황 시연",
+            "precondition": ""
+          },
+          {
+            "task": "스플래시 일정 변경",
+            "assignee": "원준",
+            "due": "2026-11-09",
+            "purpose": "시험 기간 반영",
+            "precondition": ""
+          },
+          {
+            "task": "제브에게 근거 문장 두 개씩 보여 주기",
+            "assignee": "미정",
+            "due": "",
+            "purpose": "근거 제시 방안 검토",
+            "precondition": "발표 전에는 적용하지 않음"
+          }
+        ],
+        "schedule": [
+          {
+            "when": "다음 주 초",
+            "what": "발표 리허설 일정 조율"
+          },
+          {
+            "when": "2026-11-06",
+            "what": "확인 필요 카드 화면 마무리"
+          },
+          {
+            "when": "2026-11-06",
+            "what": "시연 시나리오 실패 장면 추가본 제출"
+          },
+          {
+            "when": "2026-11-09",
+            "what": "스플래시 일정"
+          }
+        ],
+        "open_items": [
+          "발표 리허설의 구체적인 날짜와 시간이 정해지지 않았다.",
+          "제브 근거 문장 표시를 발표 이후에 적용할지는 정해지지 않았다."
+        ],
+        "topics": []
+      },
+      "approval_state": "approved"
+    },
+    {
+      "title": "발표 준비 마무리 - 폴러 타이머와 백업 절차",
+      "days_ago": 2,
+      "turns": [
+        {
+          "speaker": "p1",
+          "text": "녹음 시작했어요. 발표가 11월 20일 금요일이라 이제 열흘쯤 남았어요. 오늘은 마무리할 것들 정리할게요."
+        },
+        {
+          "speaker": "p2",
+          "text": "벌써요? 시간이 너무 빠르네요."
+        },
+        {
+          "speaker": "p5",
+          "text": "주말에 시연 영상도 한 번 찍어 봤는데 괜찮았어요."
+        },
+        {
+          "speaker": "p6",
+          "text": "저도 봤어요. 소리만 좀 작더라고요."
+        },
+        {
+          "speaker": "p1",
+          "text": "먼저 확인할게요. 수빈님 스플래시는 받았어요. 오늘 아침에 도착했어요."
+        },
+        {
+          "speaker": "p5",
+          "text": "저도 적용해 봤어요. 해상도 맞게 와서 그대로 쓸 수 있어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "그리고 발표 PPT 초안은 지난주에 공유했던 거 다들 봤죠?"
+        },
+        {
+          "speaker": "p2",
+          "text": "네, 봤어요. 슬라이드 수가 좀 많아요."
+        },
+        {
+          "speaker": "p1",
+          "text": "초안은 슬라이드 수를 줄여서 제가 11월 11일 수요일까지 다시 공유할게요."
+        },
+        {
+          "speaker": "p3",
+          "text": "폴러 얘기 먼저 할게요. 서버에서 이틀 돌렸는데 타이머 간격 30초가 조금 짧아서 가끔 겹쳐요."
+        },
+        {
+          "speaker": "p3",
+          "text": "폴러 타이머 간격은 제가 11월 10일 화요일까지 60초로 조정할게요."
+        },
+        {
+          "speaker": "p5",
+          "text": "폴러 로그에 간격이 찍히니까 저도 확인할 수 있어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네, 부탁해요. 바꾼 뒤에 로그만 한 번 봐 주세요."
+        },
+        {
+          "speaker": "p4",
+          "text": "루나 제목 품질 얘기도 있어요. 최근 회의 열 개로 돌려 봤는데 세 개는 제목이 동사로 안 끝나요."
+        },
+        {
+          "speaker": "p6",
+          "text": "루나 제목 중에 날짜가 붙은 것도 하나 있었어요."
+        },
+        {
+          "speaker": "p4",
+          "text": "그 날짜 문제는 프롬프트에서 뺐다고 생각했는데 한 번 더 볼게요."
+        },
+        {
+          "speaker": "p4",
+          "text": "루나 제목 검수는 제가 내일 오전까지 해 볼게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "내일 오전이요. 좋아요."
+        },
+        {
+          "speaker": "p2",
+          "text": "제브 호출 비용도 정리했어요. 회의 한 건에 제브가 대략 80번 나가요."
+        },
+        {
+          "speaker": "p3",
+          "text": "그건 제브 질문에 단어 확인까지 합쳐서 그런 거죠?"
+        },
+        {
+          "speaker": "p2",
+          "text": "네, 맞아요. 단어 확인은 같은 호출에 들어가서 호출 수가 늘진 않아요."
+        },
+        {
+          "speaker": "p2",
+          "text": "시간 되면 제브 호출을 한 번에 묶는 것도 해 보고 싶어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "그건 발표 끝나고 해요. 지금은 건드리지 않는 걸로 할게요."
+        },
+        {
+          "speaker": "p3",
+          "text": "아, DB 백업 절차 문서는 아직 못 했어요. 발표 끝나고 할게요. 날짜는 못 박기 어려워요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네, 그건 알고 있어요."
+        },
+        {
+          "speaker": "p6",
+          "text": "시연 대본은 제가 이번 주 안에 정리할게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "이번 주 안이면 늦어요. 수요일까지는 되죠?"
+        },
+        {
+          "speaker": "p6",
+          "text": "네, 그럼 18일 수요일까지 할게요."
+        },
+        {
+          "speaker": "p5",
+          "text": "확인 필요 카드 화면은 다 끝났어요. 지난주 금요일에 머지했어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "수고했어요. 폴러에서 가져온 채팅이 카드로 뜨는 것도 봤어요."
+        },
+        {
+          "speaker": "p5",
+          "text": "네, 폴러 쪽은 원준님이 잘 만들어 주셔서 붙이기 쉬웠어요."
+        },
+        {
+          "speaker": "p4",
+          "text": "오늘 저녁 뭐 해요?"
+        },
+        {
+          "speaker": "p2",
+          "text": "저는 집에 가서 슬라이드 볼래요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네, 그럼 오늘은 여기까지 할게요. 녹음 끕니다."
+        }
+      ],
+      "items": [
+        {
+          "action": "create",
+          "category": "scope",
+          "task_title": "루나 제목 날짜 문제 점검 및 검수",
+          "doc_text": "루나 제목에 날짜가 붙는 문제를 프롬프트에서 재점검하고 제목 검수를 11/10(화) 오전까지 진행",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "내일 오전까지",
+          "evidence_quote": "루나 제목 검수는 제가 내일 오전까지 해 볼게요.",
+          "evidence_seqs": [
+            15,
+            16
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": [],
+          "speaker_key": "p4",
+          "due_in_days": 1
+        },
+        {
+          "action": "create",
+          "category": "schedule",
+          "task_title": "발표",
+          "doc_text": "발표를 11/20(금)까지 진행 / 발표 진행 상태를 없음에서 진행 중으로 변경",
+          "assignee_type": "none",
+          "assignee_raw": null,
+          "due_raw": "11월 20일 금요일",
+          "evidence_quote": "발표가 11월 20일 금요일이라 이제 열흘쯤 남았어요.",
+          "evidence_seqs": [
+            0,
+            2,
+            3
+          ],
+          "task_status": "inferred",
+          "due_status": "inferred",
+          "similar_count": 2,
+          "top_similarity": 0.5629,
+          "asr_suspects": [],
+          "speaker_key": "p1",
+          "due_in_days": 11
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "폴러 타이머 간격 조정",
+          "doc_text": "폴러 타이머 간격을 30초에서 60초로 11/10(화)까지 조정 / 폴러 타이머 간격 조정에 변경 후 로그 확인을 범위에 추가",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "11월 10일 화요일까지",
+          "evidence_quote": "폴러 타이머 간격은 제가 11월 10일 화요일까지 60초로 조정할게요.",
+          "evidence_seqs": [
+            9,
             10
           ],
           "task_status": "inferred",
           "due_status": "certain",
           "similar_count": 0,
           "top_similarity": null,
-          "asr_suspects": []
-        }
-      ],
-      "summary": {
-        "overview": "결제 모듈 1차 연동과 리스트 화면 마무리 일정을 정하고, 테스트 서버 복구 담당을 인프라 담당으로 두었다.",
-        "key_points": [
-          "결제 모듈 1차 연동은 금요일까지",
-          "리스트 화면은 민재님이 17일까지",
-          "테스트 서버는 인프라 담당이 이번 주 안에 정리"
-        ],
-        "discussion": [
-          {
-            "title": "결제",
-            "points": [
-              "결제 연동이 끝나면 통합 테스트 시나리오 작성"
-            ]
-          },
-          {
-            "title": "환경",
-            "points": [
-              "테스트 서버가 계속 죽어 작업이 밀릴 수 있음"
-            ]
-          }
-        ],
-        "facts": [
-          "테스트 서버가 반복해서 다운됨"
-        ],
-        "task_changes": [],
-        "schedule": [
-          {
-            "when": "금요일",
-            "what": "결제 모듈 1차 연동"
-          },
-          {
-            "when": "17일",
-            "what": "리스트 화면 마무리"
-          },
-          {
-            "when": "다음 주 월요일",
-            "what": "API 문서화"
-          }
-        ],
-        "open_items": [
-          "리팩터링 담당 미정",
-          "코드 컨벤션 문서 검토"
-        ],
-        "topics": [
-          {
-            "name": "결제 연동",
-            "description": "결제 모듈과 통합 테스트",
-            "decisions": [
-              {
-                "text": "결제 1차 연동 뒤 통합 테스트 시나리오를 작성한다",
-                "reason": "순서 의존"
-              }
-            ]
-          },
-          {
-            "name": "테스트 환경",
-            "description": "테스트 서버 안정화",
-            "decisions": [
-              {
-                "text": "테스트 서버 복구는 인프라 담당이 맡는다"
-              }
-            ]
-          }
-        ]
-      },
-      "approval_state": "approved"
-    },
-    {
-      "title": "릴리스 준비 점검",
-      "days_ago": 9,
-      "turns": [
-        {
-          "speaker": "p1",
-          "text": "다음 릴리스 준비 상황 보죠. 각자 일정만 짧게 공유해주세요."
-        },
-        {
-          "speaker": "p2",
-          "text": "저는 마이그레이션 스크립트를 월요일까지 끝내겠습니다."
-        },
-        {
-          "speaker": "p3",
-          "text": "QA 체크리스트는 17일까지 정리해서 공유드릴게요."
-        },
-        {
-          "speaker": "p4",
-          "text": "디자인 QA는 2주 뒤에 한 번 더 돌면 좋을 것 같은데요."
-        },
-        {
-          "speaker": "p1",
-          "text": "그러죠. 민재님이 2주 뒤에 디자인 QA 한 번 더 돌려주세요."
-        },
-        {
-          "speaker": "p2",
-          "text": "아 그리고 로그 수집기는 이번 달 말까지 붙여놓을게요."
-        },
-        {
-          "speaker": "p3",
-          "text": "릴리스 노트 초안은 내일 오전 11시까지 드리겠습니다."
-        },
-        {
-          "speaker": "p1",
-          "text": "장애 대응 문서는 이번 주 안으로 한번 손보죠."
-        },
-        {
-          "speaker": "p4",
-          "text": "저 지난주에 아이콘 작업하다가 시안이 다 엎어져서 고생했어요."
-        },
-        {
-          "speaker": "p2",
-          "text": "성능 테스트는 언제 하는 게 좋을까요? 아직 일정이 안 잡혔네요."
-        },
-        {
-          "speaker": "p1",
-          "text": "그건 릴리스 끝나고 다시 얘기하죠."
-        },
-        {
-          "speaker": "p3",
-          "text": "그리고 모니터링 알림 설정은 다음 달 3일까지 마무리하겠습니다."
-        },
-        {
-          "speaker": "p4",
-          "text": "시간 되면 접근성 점검도 해볼게요."
-        },
-        {
-          "speaker": "p1",
-          "text": "보안 점검 항목은 하은님이 챙겨주세요. 기한은 따로 없고 릴리스 전까지만 되면 돼요."
-        },
-        {
-          "speaker": "p1",
-          "text": "네 오늘은 여기까지 하겠습니다. 수고하셨어요."
-        }
-      ],
-      "items": [
-        {
-          "action": "create",
-          "category": "decision",
-          "task_title": "마이그레이션 스크립트 완료",
-          "doc_text": "마이그레이션 스크립트를 도윤님이 월요일까지 끝내기로 함",
-          "assignee_type": "first",
-          "assignee_raw": null,
-          "due_raw": "월요일",
-          "due_in_days": 5,
-          "evidence_quote": "마이그레이션 스크립트를 월요일까지 끝내겠습니다",
-          "speaker_key": "p2",
-          "evidence_seqs": [
-            1
-          ],
-          "task_status": "certain",
-          "due_status": "certain",
-          "similar_count": 0,
-          "top_similarity": null,
-          "asr_suspects": []
-        },
-        {
-          "action": "create",
-          "category": "decision",
-          "task_title": "QA 체크리스트 공유",
-          "doc_text": "QA 체크리스트를 하은님이 17일까지 정리해 공유하기로 함",
-          "assignee_type": "first",
-          "assignee_raw": null,
-          "due_raw": "17일",
-          "due_in_days": 8,
-          "evidence_quote": "QA 체크리스트는 17일까지 정리해서 공유드릴게요",
+          "asr_suspects": [],
           "speaker_key": "p3",
-          "evidence_seqs": [
-            2
-          ],
-          "task_status": "certain",
-          "due_status": "certain",
-          "similar_count": 0,
-          "top_similarity": null,
-          "asr_suspects": []
+          "due_in_days": 1
         },
         {
           "action": "create",
           "category": "decision",
-          "task_title": "디자인 QA 재점검",
-          "doc_text": "디자인 QA를 민재님이 2주 뒤에 한 번 더 돌리기로 함",
-          "assignee_type": "thirdname",
-          "assignee_raw": "민재님",
-          "due_raw": "2주 뒤",
-          "due_in_days": 14,
-          "evidence_quote": "민재님이 2주 뒤에 디자인 QA 한 번 더 돌려주세요",
-          "speaker_key": null,
-          "evidence_seqs": [
-            4
-          ],
-          "task_status": "certain",
-          "due_status": "certain",
-          "similar_count": 0,
-          "top_similarity": null,
-          "asr_suspects": []
-        },
-        {
-          "action": "create",
-          "category": "decision",
-          "task_title": "로그 수집기 연동",
-          "doc_text": "로그 수집기를 도윤님이 이번 달 말까지 붙이기로 함",
+          "task_title": "제브 호출 비용 정리",
+          "doc_text": "제브 호출 비용을 회의당 약 80회 호출 기준으로 정리하며, 단어 확인은 추가 호출로 산정하지 않음",
           "assignee_type": "first",
           "assignee_raw": null,
-          "due_raw": "이번 달 말",
-          "due_in_days": 20,
-          "evidence_quote": "로그 수집기는 이번 달 말까지 붙여놓을게요",
-          "speaker_key": "p2",
+          "due_raw": null,
+          "evidence_quote": "단어 확인은 같은 호출에 들어가서 호출 수가 늘진 않아요.",
           "evidence_seqs": [
-            5
-          ],
-          "task_status": "certain",
-          "due_status": "certain",
-          "similar_count": 0,
-          "top_similarity": null,
-          "asr_suspects": []
-        },
-        {
-          "action": "create",
-          "category": "decision",
-          "task_title": "보안 점검 항목 확인",
-          "doc_text": "보안 점검 항목을 하은님이 릴리스 전까지 챙기기로 함(기한 따로 없음)",
-          "assignee_type": "thirdname",
-          "assignee_raw": "하은님",
-          "evidence_quote": "보안 점검 항목은 하은님이 챙겨주세요",
-          "speaker_key": null,
-          "evidence_seqs": [
-            13
+            18,
+            20
           ],
           "task_status": "inferred",
           "due_status": "missing",
           "similar_count": 0,
           "top_similarity": null,
-          "asr_suspects": []
-        }
-      ],
-      "summary": {
-        "overview": "릴리스 전에 각자 일정을 공유했다. 마이그레이션, QA 체크리스트, 로그 수집기 일정이 정해지고 성능 테스트 일정은 릴리스 뒤로 미뤘다.",
-        "key_points": [
-          "마이그레이션 스크립트는 월요일까지",
-          "QA 체크리스트는 17일까지",
-          "성능 테스트는 릴리스 뒤에 다시 논의"
-        ],
-        "discussion": [
-          {
-            "title": "일정",
-            "points": [
-              "마감 표현이 요일·날짜·N주 뒤로 섞여 나옴"
-            ]
-          }
-        ],
-        "facts": [
-          "지난주 아이콘 시안이 다 엎어짐"
-        ],
-        "task_changes": [],
-        "schedule": [
-          {
-            "when": "월요일",
-            "what": "마이그레이션 스크립트 완료"
-          },
-          {
-            "when": "17일",
-            "what": "QA 체크리스트 공유"
-          },
-          {
-            "when": "다음 달 3일",
-            "what": "모니터링 알림 설정 마무리"
-          }
-        ],
-        "open_items": [
-          "성능 테스트 일정 미정"
-        ],
-        "topics": [
-          {
-            "name": "릴리스 일정",
-            "description": "릴리스 전 작업 일정",
-            "decisions": [
-              {
-                "text": "성능 테스트 일정은 릴리스가 끝난 뒤 다시 정한다",
-                "reason": "릴리스가 우선"
-              }
-            ]
-          }
-        ]
-      },
-      "approval_state": "approved"
-    },
-    {
-      "title": "스프린트 회고",
-      "days_ago": 5,
-      "turns": [
-        {
-          "speaker": "p1",
-          "text": "이번 스프린트 회고 시작하겠습니다. 편하게 얘기해주세요."
-        },
-        {
-          "speaker": "p2",
-          "text": "여유 되면 온보딩 문서도 정리해둘게요."
-        },
-        {
-          "speaker": "p3",
-          "text": "그 부분은 좀 고민해볼게요."
-        },
-        {
-          "speaker": "p4",
-          "text": "저도 고민해보고 내일까지 의견 정리해서 공유드릴게요."
-        },
-        {
-          "speaker": "p2",
-          "text": "이 캐시 이슈는 누가 보는 게 맞을까요?"
-        },
-        {
-          "speaker": "p1",
-          "text": "그건 아마 하은님이 보실 것 같은데요."
-        },
-        {
-          "speaker": "p3",
-          "text": "아직 로그 정리는 못 했어요."
-        },
-        {
-          "speaker": "p3",
-          "text": "그건 목요일까지 마무리하겠습니다."
-        },
-        {
-          "speaker": "p4",
-          "text": "지금 하던 아이콘 작업은 계속 진행하겠습니다."
-        },
-        {
-          "speaker": "p2",
-          "text": "이 PR 검토해볼게요."
-        },
-        {
-          "speaker": "p1",
-          "text": "배포 자동화 얘기는 다음에 하죠."
-        },
-        {
-          "speaker": "p4",
-          "text": "필요하시면 디자인 쪽도 도와드릴게요."
-        },
-        {
-          "speaker": "p1",
-          "text": "테스트 커버리지 올리는 건 우리 모두 신경 쓰기로 하죠."
-        },
-        {
-          "speaker": "p1",
-          "text": "오늘 회고는 여기까지입니다. 다들 고생하셨어요."
-        }
-      ],
-      "items": [
-        {
-          "action": "create",
-          "category": "decision",
-          "task_title": "캐시 이슈 로그 정리",
-          "doc_text": "로그 정리를 하은님이 목요일까지 마무리하기로 함",
-          "assignee_type": "first",
-          "assignee_raw": null,
-          "due_raw": "목요일",
-          "due_in_days": 2,
-          "evidence_quote": "그건 목요일까지 마무리하겠습니다",
-          "speaker_key": "p3",
-          "evidence_seqs": [
-            7
+          "asr_suspects": [
+            {
+              "word": "비용",
+              "source": "title",
+              "candidates": [
+                "이용"
+              ]
+            }
           ],
-          "task_status": "certain",
-          "due_status": "certain",
-          "similar_count": 0,
-          "top_similarity": null,
-          "asr_suspects": []
+          "speaker_key": "p2"
         },
         {
           "action": "create",
           "category": "decision",
-          "task_title": "의견 정리 공유",
-          "doc_text": "고민해 본 뒤 민재님이 내일까지 의견을 정리해 공유하기로 함",
-          "assignee_type": "first",
+          "task_title": "제브 호출 일괄 묶기",
+          "doc_text": "발표 전에는 현재 제브 호출 방식을 유지하고, 발표 이후 제브 호출을 한 번에 묶는 작업을 진행",
+          "assignee_type": "none",
           "assignee_raw": null,
-          "due_raw": "내일",
-          "due_in_days": 1,
-          "evidence_quote": "고민해보고 내일까지 의견 정리해서 공유드릴게요",
-          "speaker_key": "p4",
+          "due_raw": null,
+          "evidence_quote": "지금은 건드리지 않는 걸로 할게요.",
           "evidence_seqs": [
-            3
-          ],
-          "task_status": "inferred",
-          "due_status": "certain",
-          "similar_count": 0,
-          "top_similarity": null,
-          "asr_suspects": []
-        },
-        {
-          "action": "create",
-          "category": "decision",
-          "task_title": "캐시 이슈 담당 확인",
-          "doc_text": "캐시 이슈는 하은님이 볼 것 같다고 함",
-          "assignee_type": "thirdname",
-          "assignee_raw": "하은님",
-          "evidence_quote": "그건 아마 하은님이 보실 것 같은데요",
-          "speaker_key": null,
-          "evidence_seqs": [
-            5
+            21,
+            22
           ],
           "task_status": "inferred",
           "due_status": "missing",
           "similar_count": 0,
           "top_similarity": null,
-          "asr_suspects": []
-        }
-      ],
-      "summary": {
-        "overview": "스프린트 회고에서 조건부 약속과 미정 사항을 정리했다. 캐시 이슈 로그 정리는 목요일까지 마무리한다.",
-        "key_points": [
-          "로그 정리는 목요일까지",
-          "배포 자동화는 다음에 논의",
-          "테스트 커버리지는 모두가 신경 쓰기"
-        ],
-        "discussion": [
-          {
-            "title": "회고",
-            "points": [
-              "조건부·보류 발언이 많아 확정된 일은 적음"
-            ]
-          }
-        ],
-        "facts": [],
-        "task_changes": [],
-        "schedule": [
-          {
-            "when": "목요일",
-            "what": "캐시 이슈 로그 정리"
-          }
-        ],
-        "open_items": [
-          "캐시 이슈 담당 확정",
-          "배포 자동화 논의"
-        ],
-        "topics": [
-          {
-            "name": "회고 정리",
-            "description": "이번 스프린트 회고",
-            "decisions": [
-              {
-                "text": "테스트 커버리지는 팀 전체가 신경 쓴다"
-              }
-            ]
-          }
-        ]
-      },
-      "approval_state": "approved"
-    },
-    {
-      "title": "결제 연동 킥오프",
-      "days_ago": 2,
-      "turns": [
-        {
-          "speaker": "p1",
-          "text": "결제 연동 킥오프 시작하겠습니다. 이번 스프린트는 결제 승인부터 정산까지 가는 걸 목표로 잡았어요."
+          "asr_suspects": [],
+          "speaker_key": "p1"
         },
-        {
-          "speaker": "p5",
-          "text": "결제 약관 문서는 제가 정리해서 공유드릴게요. 일정은 아직 정하지 않았어요."
-        },
-        {
-          "speaker": "p6",
-          "text": "저는 카드 승인 웹훅 처리를 이번 주 금요일까지 끝내 보겠습니다."
-        },
-        {
-          "speaker": "p1",
-          "text": "좋아요. 도윤님은 환불 API 설계를 다음 주 월요일까지 부탁드려요."
-        },
-        {
-          "speaker": "p2",
-          "text": "네, 환불 API 설계안은 월요일까지 올릴게요."
-        },
-        {
-          "speaker": "p3",
-          "text": "테스트 환경에 결제 샌드박스 키가 아직 없는 것 같아요. 그건 누가 받아 오나요?"
-        },
-        {
-          "speaker": "p1",
-          "text": "그건 아마 인프라 담당이 받아 줄 거예요. 이번 주 안에 확인해 달라고 해 둘게요."
-        },
-        {
-          "speaker": "p4",
-          "text": "정산 리포트 초안은 태오가 맡기로 했던 것 같은데, 확실하진 않아요."
-        },
-        {
-          "speaker": "p1",
-          "text": "그럼 정산 리포트 초안은 태오가 다음 주 수요일까지 준비해 주는 걸로 적어 둘게요."
-        },
-        {
-          "speaker": "p3",
-          "text": "결제 화면 문구는 제가 시간 되는 대로 다듬어 볼게요."
-        },
-        {
-          "speaker": "p1",
-          "text": "네, 오늘은 여기까지 하겠습니다. 수고하셨어요."
-        }
-      ],
-      "items": [
         {
           "action": "create",
-          "category": "decision",
-          "task_title": "결제 약관 문서 정리",
-          "doc_text": "결제 약관 문서를 세영님이 정리해 공유하기로 함(일정 미정)",
+          "category": "schedule",
+          "task_title": "시연 대본 정리",
+          "doc_text": "시연 대본 정리를 11/11(수)까지 완료",
           "assignee_type": "first",
           "assignee_raw": null,
-          "evidence_quote": "결제 약관 문서는 제가 정리해서 공유드릴게요",
-          "speaker_key": "p5",
+          "due_raw": "18일 수요일까지",
+          "evidence_quote": "네, 그럼 18일 수요일까지 할게요.",
           "evidence_seqs": [
-            1
+            25,
+            26,
+            27
           ],
           "task_status": "certain",
-          "due_status": "missing",
+          "due_status": "certain",
           "similar_count": 0,
           "top_similarity": null,
-          "asr_suspects": []
-        },
-        {
-          "action": "create",
-          "category": "decision",
-          "task_title": "카드 승인 웹훅 처리",
-          "doc_text": "카드 승인 웹훅 처리를 서준님이 이번 주 금요일까지 끝내기로 함",
-          "assignee_type": "first",
-          "assignee_raw": null,
-          "due_raw": "이번 주 금요일",
-          "due_in_days": 3,
-          "evidence_quote": "카드 승인 웹훅 처리를 이번 주 금요일까지 끝내 보겠습니다",
+          "asr_suspects": [],
           "speaker_key": "p6",
-          "evidence_seqs": [
-            2
-          ],
-          "task_status": "certain",
-          "due_status": "certain",
-          "similar_count": 0,
-          "top_similarity": null,
-          "asr_suspects": []
+          "due_in_days": 2
         },
         {
           "action": "create",
-          "category": "decision",
-          "task_title": "환불 API 설계",
-          "doc_text": "환불 API 설계안을 도윤님이 다음 주 월요일까지 올리기로 함",
+          "category": "status",
+          "task_title": "폴러 채팅 카드 표시 연동",
+          "doc_text": "폴러에서 가져온 채팅이 카드로 표시되도록 원준님이 연동을 완료",
           "assignee_type": "thirdname",
-          "assignee_raw": "도윤님",
-          "due_raw": "다음 주 월요일",
-          "due_in_days": 5,
-          "evidence_quote": "도윤님은 환불 API 설계를 다음 주 월요일까지 부탁드려요",
-          "speaker_key": null,
+          "assignee_raw": "원준님",
+          "due_raw": null,
+          "evidence_quote": "네, 폴러 쪽은 원준님이 잘 만들어 주셔서 붙이기 쉬웠어요.",
           "evidence_seqs": [
-            3,
-            4
-          ],
-          "task_status": "certain",
-          "due_status": "certain",
-          "similar_count": 0,
-          "top_similarity": null,
-          "asr_suspects": []
-        },
-        {
-          "action": "create",
-          "category": "decision",
-          "task_title": "결제 샌드박스 키 확인",
-          "doc_text": "결제 샌드박스 키를 인프라 담당이 이번 주 안에 확인하기로 함",
-          "assignee_type": "thirdrole",
-          "assignee_raw": "인프라 담당",
-          "due_raw": "이번 주 안",
-          "due_in_days": 4,
-          "evidence_quote": "인프라 담당이 받아 줄 거예요",
-          "speaker_key": null,
-          "evidence_seqs": [
-            6
+            29,
+            30
           ],
           "task_status": "inferred",
-          "due_status": "certain",
-          "similar_count": 0,
-          "top_similarity": null,
-          "asr_suspects": []
-        },
-        {
-          "action": "create",
-          "category": "decision",
-          "task_title": "정산 리포트 초안",
-          "doc_text": "정산 리포트 초안을 태오가 다음 주 수요일까지 준비하기로 함",
-          "assignee_type": "thirdname",
-          "assignee_raw": "태오가",
-          "due_raw": "다음 주 수요일",
-          "due_in_days": 7,
-          "evidence_quote": "정산 리포트 초안은 태오가 다음 주 수요일까지 준비해 주는 걸로",
-          "speaker_key": null,
-          "evidence_seqs": [
-            7,
-            8
+          "due_status": "missing",
+          "similar_count": 1,
+          "top_similarity": 0.4599,
+          "asr_suspects": [
+            {
+              "word": "표시",
+              "source": "title",
+              "candidates": [
+                "푸시"
+              ]
+            }
           ],
-          "task_status": "certain",
-          "due_status": "certain",
-          "similar_count": 0,
-          "top_similarity": null,
-          "asr_suspects": []
+          "speaker_key": "p5"
         }
       ],
       "summary": {
-        "overview": "결제 연동 킥오프에서 승인 웹훅, 환불 API 설계, 정산 리포트 초안의 담당과 일정을 정했다. 샌드박스 키는 아직 확인 중이다.",
+        "overview": "발표 전 마무리 작업과 폴러 타이머 조정, 제브 호출 및 백업 절차를 논의했다.",
         "key_points": [
-          "카드 승인 웹훅은 이번 주 금요일까지",
-          "환불 API 설계안은 다음 주 월요일까지",
-          "정산 리포트 초안은 다음 주 수요일까지"
+          "발표일은 2026년 11월 20일이다.",
+          "폴러 타이머 간격을 30초에서 60초로 조정한다.",
+          "루나 제목의 동사 종결과 날짜 포함 문제를 점검한다.",
+          "시연 대본과 발표 PPT를 11월 11일까지 정리한다.",
+          "제브 일괄 호출과 DB 백업 문서는 발표 후 진행한다."
         ],
         "discussion": [
           {
-            "title": "환경",
+            "title": "발표 자료",
             "points": [
-              "테스트 환경에 결제 샌드박스 키가 없어 인프라 담당이 확인"
+              "PPT 초안의 슬라이드 수가 많다는 의견이 있었다.",
+              "슬라이드 수를 줄인 수정본을 공유하기로 했다."
             ]
           },
           {
-            "title": "정산",
+            "title": "폴러 타이머",
             "points": [
-              "정산 리포트 초안 담당은 회의 중 한 번 더 확인함"
+              "30초 간격에서 호출이 가끔 겹쳤다.",
+              "로그에서 변경된 간격을 확인할 수 있다."
+            ]
+          },
+          {
+            "title": "루나 제목",
+            "points": [
+              "최근 회의 열 건 중 세 건의 제목이 동사로 끝나지 않았다.",
+              "제목에 날짜가 붙은 사례도 있었다."
+            ]
+          },
+          {
+            "title": "제브 호출",
+            "points": [
+              "회의 한 건에 제브 호출이 대략 80번 발생한다.",
+              "단어 확인은 기존 호출에 포함되어 호출 수를 늘리지 않는다."
+            ]
+          },
+          {
+            "title": "시연 준비",
+            "points": [
+              "시연 영상의 소리가 작다는 의견이 있었다.",
+              "시연 대본은 11월 11일까지 정리한다."
+            ]
+          },
+          {
+            "title": "카드 표시",
+            "points": [
+              "확인 필요 카드 화면은 지난주 금요일에 머지되었다.",
+              "폴러 채팅이 카드로 표시되는 것을 확인했다."
             ]
           }
         ],
         "facts": [
-          "결제 샌드박스 키가 아직 없음"
+          "발표일은 2026년 11월 20일이다.",
+          "수빈의 스플래시는 도착했다.",
+          "스플래시는 해상도가 맞아 적용할 수 있다.",
+          "폴러 타이머는 현재 30초다.",
+          "폴러 로그에 타이머 간격이 기록된다.",
+          "최근 회의 열 건 중 세 건의 루나 제목이 동사로 끝나지 않았다.",
+          "제브는 회의 한 건에 대략 80번 호출된다.",
+          "단어 확인은 제브 질문과 같은 호출에 포함된다.",
+          "확인 필요 카드 화면은 지난주 금요일에 머지되었다.",
+          "폴러 채팅의 카드 표시를 확인했다."
         ],
-        "task_changes": [],
+        "task_changes": [
+          {
+            "task": "루나 제목 날짜 문제 점검 및 검수",
+            "assignee": "김환",
+            "due": "2026-11-10",
+            "purpose": "제목 형식 오류 확인",
+            "precondition": "없음"
+          },
+          {
+            "task": "발표",
+            "assignee": "미정",
+            "due": "2026-11-20",
+            "purpose": "발표 진행",
+            "precondition": "발표 자료와 시연 준비"
+          },
+          {
+            "task": "폴러 타이머 간격 조정",
+            "assignee": "원준",
+            "due": "2026-11-10",
+            "purpose": "호출 겹침 방지",
+            "precondition": "없음"
+          },
+          {
+            "task": "제브 호출 비용 정리",
+            "assignee": "동우",
+            "due": "",
+            "purpose": "호출 규모 파악",
+            "precondition": "없음"
+          },
+          {
+            "task": "제브 호출 일괄 묶기",
+            "assignee": "미정",
+            "due": "",
+            "purpose": "호출 효율화 검토",
+            "precondition": "발표 종료"
+          },
+          {
+            "task": "시연 대본 정리",
+            "assignee": "진호",
+            "due": "2026-11-11",
+            "purpose": "시연 진행 준비",
+            "precondition": "없음"
+          },
+          {
+            "task": "폴러 채팅 카드 표시 연동",
+            "assignee": "원준님",
+            "due": "",
+            "purpose": "폴러 채팅의 카드 표시",
+            "precondition": "없음"
+          }
+        ],
         "schedule": [
           {
-            "when": "이번 주 금요일",
-            "what": "카드 승인 웹훅 처리"
+            "when": "2026-11-10",
+            "what": "루나 제목 검수와 폴러 타이머 조정"
           },
           {
-            "when": "다음 주 월요일",
-            "what": "환불 API 설계안"
+            "when": "2026-11-11",
+            "what": "수정 PPT 공유와 시연 대본 정리"
           },
           {
-            "when": "다음 주 수요일",
-            "what": "정산 리포트 초안"
+            "when": "2026-11-20",
+            "what": "발표"
+          },
+          {
+            "when": "발표 후",
+            "what": "제브 호출 일괄 묶기와 DB 백업 절차 문서화"
           }
         ],
         "open_items": [
-          "샌드박스 키 확보",
-          "결제 화면 문구 다듬기 일정"
+          "DB 백업 절차 문서의 완료 날짜는 정하지 못했다.",
+          "제브 호출 일괄 묶기는 발표 후 검토한다.",
+          "시연 영상의 작은 소리를 보완할지는 논의되지 않았다."
         ],
-        "topics": [
-          {
-            "name": "결제 연동 범위",
-            "description": "승인에서 정산까지의 작업 분담",
-            "decisions": [
-              {
-                "text": "이번 스프린트는 결제 승인부터 정산까지 간다",
-                "reason": "심사 전 데모 범위"
-              }
-            ]
-          }
-        ]
+        "topics": []
       },
       "approval_state": "approved"
     },
@@ -1075,12 +2319,12 @@
           "text": "제가 내일까지 심사 데모 동선을 점검할게요."
         },
         {
-          "speaker": "p3",
-          "text": "하은님이 회의록 다운로드도 확인해 주면 좋겠어요."
+          "speaker": "p4",
+          "text": "원준님이 회의록 다운로드도 확인해 주면 좋겠어요."
         },
         {
           "speaker": "p1",
-          "text": "지훈님은 발표 장비 확인을 부탁드려요."
+          "text": "수빈님은 발표 장비 확인을 부탁드려요."
         }
       ],
       "items": [
@@ -1088,7 +2332,7 @@
           "action": "create",
           "category": "decision",
           "task_title": "심사 데모 동선 점검",
-          "doc_text": "유진님이 내일까지 심사 데모 동선을 점검하기로 함",
+          "doc_text": "지민님이 내일까지 심사 데모 동선을 점검하기로 함",
           "assignee_type": "first",
           "assignee_raw": null,
           "due_raw": "내일까지",
@@ -1108,10 +2352,10 @@
           "action": "create",
           "category": "decision",
           "task_title": "데모 회의록 다운로드 확인",
-          "doc_text": "하은님의 회의록 다운로드 확인이 필요해 PM 확인을 기다림",
+          "doc_text": "원준님의 회의록 다운로드 확인이 필요해 PM 확인을 기다림",
           "assignee_type": "thirdname",
-          "assignee_raw": "하은님",
-          "evidence_quote": "하은님이 회의록 다운로드도 확인해 주면 좋겠어요",
+          "assignee_raw": "원준님",
+          "evidence_quote": "원준님이 회의록 다운로드도 확인해 주면 좋겠어요",
           "speaker_key": null,
           "evidence_seqs": [
             1
@@ -1126,10 +2370,10 @@
           "action": "create",
           "category": "decision",
           "task_title": "데모 발표 장비 확인",
-          "doc_text": "명단에 없는 지훈님에게 요청한 장비 확인은 PM의 담당자 지정을 기다림",
+          "doc_text": "명단에 없는 수빈님에게 요청한 장비 확인은 PM의 담당자 지정을 기다림",
           "assignee_type": "thirdname",
-          "assignee_raw": "지훈님",
-          "evidence_quote": "지훈님은 발표 장비 확인을 부탁드려요",
+          "assignee_raw": "수빈님",
+          "evidence_quote": "수빈님은 발표 장비 확인을 부탁드려요",
           "speaker_key": null,
           "evidence_seqs": [
             2
@@ -1148,27 +2392,68 @@
     }
   ],
   "asr_terms": [
-    "로그인 API",
-    "리프레시 토큰",
-    "반응형 레이아웃",
-    "코드 컨벤션",
-    "결제 모듈",
-    "통합 테스트",
-    "테스트 서버",
-    "API 문서화",
-    "마이그레이션",
-    "QA 체크리스트",
-    "로그 수집기",
-    "릴리스 노트",
-    "모니터링 알림",
-    "보안 점검",
-    "캐시 이슈",
-    "배포 자동화",
-    "테스트 커버리지",
-    "결제 약관",
-    "승인 웹훅",
-    "환불 API",
-    "샌드박스 키",
-    "정산 리포트"
+    "간격",
+    "값",
+    "경우",
+    "국밥",
+    "근거",
+    "금요일",
+    "기준",
+    "날짜",
+    "내일",
+    "다음",
+    "단어",
+    "때",
+    "로그",
+    "루나",
+    "리허설",
+    "발표",
+    "보",
+    "서버",
+    "수",
+    "수빈",
+    "수요일",
+    "슬라이드",
+    "시나리오",
+    "시연",
+    "시작",
+    "실패",
+    "안",
+    "얘기",
+    "오늘",
+    "오전",
+    "요청",
+    "월요일",
+    "유닛",
+    "유지",
+    "이번",
+    "이상",
+    "이슈",
+    "작성",
+    "장면",
+    "정리",
+    "제목",
+    "제브",
+    "주",
+    "지난주",
+    "진행",
+    "집계",
+    "쯤",
+    "채팅",
+    "초안",
+    "카드",
+    "토큰",
+    "팀",
+    "파일",
+    "폴러",
+    "표",
+    "프론트",
+    "프롬프트",
+    "필요",
+    "호출",
+    "화면",
+    "화요일",
+    "확인",
+    "회의"
   ]
 }

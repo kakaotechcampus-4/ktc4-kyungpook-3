@@ -1,6 +1,7 @@
 """심사용 시드 명령 진입점(#606). 환경변수·입력 검사와 실행 흐름을 확인한다."""
 import json
 import sys
+from datetime import date, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -189,3 +190,68 @@ def test_invalid_password_exits_2_writing_nothing(mdb, monkeypatch, capsys):
     assert seed_demo.main(_args()) == 2
 
     assert _count(mdb, User) == 0
+
+
+@pytest.mark.parametrize("value", ["2026-13-01", "20261119", "2026/11/19"])
+def test_bad_today_exits_2_writing_nothing(mdb, monkeypatch, capsys, value):
+    _env(monkeypatch)
+    monkeypatch.setattr(seed_demo, "SessionLocal", lambda: mdb)
+
+    with pytest.raises(SystemExit) as exit_info:
+        seed_demo.main(_args("--today", value))
+
+    assert exit_info.value.code == 2
+    assert capsys.readouterr().err
+    assert _count(mdb, User) == 0
+
+
+def test_dry_run_shows_today_and_meeting_dates(mdb, monkeypatch, capsys):
+    _env(monkeypatch, token=False)
+    monkeypatch.setattr(seed_demo, "SessionLocal", lambda: mdb)
+
+    assert seed_demo.main(_args("--dry-run", "--today", "2026-01-15")) == 0
+
+    out = capsys.readouterr().out
+    assert "기준일: 2026-01-15" in out
+    for meeting in load_seed_data().meetings:
+        day = date(2026, 1, 15) - timedelta(days=meeting.days_ago)
+        assert f"{day:%Y-%m-%d} 10:00 KST {meeting.title}" in out
+
+    assert seed_demo.main(_args("--dry-run")) == 0
+    assert "(KST, 실행일)" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("extra", [[], ["--dry-run"]])
+def test_future_today_exits_2_writing_nothing(mdb, monkeypatch, capsys, extra):
+    _env(monkeypatch)
+    _inject(monkeypatch, mdb)
+    future = seed_demo.today_kst() + timedelta(days=30)
+
+    assert seed_demo.main(_args(*extra, "--today", future.isoformat())) == 2
+
+    assert "늦습니다" in capsys.readouterr().err
+    assert _count(mdb, User) == 0
+
+
+def test_main_passes_today_to_replay(mdb, monkeypatch, capsys):
+    _env(monkeypatch)
+    _inject(monkeypatch, mdb)
+
+    assert seed_demo.main(_args("--today", "2026-01-15")) in (0, 3)
+
+    first = load_seed_data().meetings[0]
+    started_at = mdb.scalar(select(Meeting.started_at).where(Meeting.title == first.title))
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    assert started_at.astimezone(seed_demo.KST).date() == date(2026, 1, 15) - timedelta(days=first.days_ago)
+
+
+def test_other_today_exits_2_even_with_allow_existing(mdb, monkeypatch, capsys):
+    _env(monkeypatch)
+    _inject(monkeypatch, mdb)
+    assert seed_demo.main(_args("--today", "2026-01-15")) in (0, 3)
+    capsys.readouterr()
+
+    assert seed_demo.main(_args("--today", "2026-01-14", "--allow-existing")) == 2
+
+    assert "--today 2026-01-15" in capsys.readouterr().err

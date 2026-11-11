@@ -14,7 +14,7 @@ from app.core.errors import AppError, ErrorCode
 from app.services.meeting_deletion import require_live_meeting
 from app.models import Meeting, MeetingSource, MeetingStatus, MeetingUpload, Member
 from app.schemas.upload import SpeakerLabel
-from app.services import upload_storage
+from app.services import meeting_audio, upload_storage
 
 _ENDED = (str(MeetingStatus.DONE), str(MeetingStatus.FAILED))
 
@@ -176,19 +176,15 @@ def get_speaker_view(db: Session, meeting: Meeting) -> dict:
     """PM 이 화자를 지정하는 화면에 필요한 것: 라벨(말한 시간 많은 순), 후보 참석자, 저장된 지정, 녹음 정보.
 
     후보는 업로드 때 저장한 참석자 중 제출이 받는 멤버(이 워크스페이스의 탈퇴하지 않은 멤버)만 준다.
-    녹음 정보는 재생할 파일이 있을 때만 주고, 폴더가 지워졌으면(done·failed) null 이다.
+    녹음 정보는 녹음 보관 기간 안이고 재생할 수 있을 때만 값이고, 아니면(만료·녹음 없음) null 이다.
     """
     _, upload = _read_upload_meeting(db, meeting.meeting_id)
     speakers = json.loads(upload.speakers) if upload.speakers else []
     speakers.sort(key=lambda s: (-s["total_sec"], s["label"]))
     attendees = json.loads(upload.attendees)
     inactive = set(_inactive_member_ids(db, meeting.workspace_id, {a["member_id"] for a in attendees}))
-    path = upload_storage.audio_path(meeting.meeting_id, upload.stored_filename)
-    audio = (
-        {"content_type": playback_content_type(upload.stored_filename), "size_bytes": upload.size_bytes}
-        if path.is_file()
-        else None
-    )
+    info = meeting_audio.playback_info(db, meeting, datetime.now(timezone.utc))
+    audio = {"content_type": info["content_type"], "size_bytes": info["size_bytes"]} if info else None
     return {
         "meeting_id": meeting.meeting_id,
         "status": meeting.status,
@@ -203,15 +199,6 @@ def get_speaker_view(db: Session, meeting: Meeting) -> dict:
 def playback_content_type(stored_filename: str) -> str:
     extension = Path(stored_filename).suffix.lstrip(".").lower()
     return upload_storage.PLAYBACK_CONTENT_TYPES.get(extension, "application/octet-stream")
-
-
-def get_audio_for_playback(db: Session, meeting: Meeting) -> tuple[Path, str]:
-    """PM 재생용 원본 경로와 content-type. 상태는 보지 않는다. 폴더나 파일이 없으면 404."""
-    _, upload = _read_upload_meeting(db, meeting.meeting_id)
-    path = upload_storage.audio_path(meeting.meeting_id, upload.stored_filename)
-    if not path.is_file():
-        raise _not_found(meeting.meeting_id)
-    return path, playback_content_type(upload.stored_filename)
 
 
 def _inactive_member_ids(db: Session, workspace_id: str, member_ids: set[str]) -> list[str]:

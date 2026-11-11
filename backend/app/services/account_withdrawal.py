@@ -19,7 +19,7 @@ from app.core.database import Base
 from app.core.errors import AppError, ErrorCode
 from app.models import (
     AliasResolutionLog, AliasReview, ApprovalRequest, BotDmPart, Extraction, ExtractionItem,
-    Integration, Invitation, Meeting, MeetingUpload, Member, MemberRole,
+    Integration, Invitation, Meeting, MeetingAudio, MeetingUpload, Member, MemberRole,
     MessageThread, Notification, PrivacyCleanup, Reminder, ReminderBundle,
     ReminderStatus, ReminderWatch, ReplyJudgment, ReplyJudgmentState,
     SignupEmailCode, Source, ThreadMessage, User,
@@ -273,6 +273,7 @@ def _empty_workspace(db: Session, workspace: Workspace, now: datetime) -> None:
         if "workspace_id" in table.c and table.name not in ("workspace", "meeting", "privacy_cleanup"):
             db.execute(delete(table).where(table.c.workspace_id == workspace.workspace_id))
     db.execute(delete(MeetingUpload).where(MeetingUpload.meeting_id.in_([m.meeting_id for m in meetings])))
+    db.execute(delete(MeetingAudio).where(MeetingAudio.meeting_id.in_([m.meeting_id for m in meetings])))
     db.execute(delete(Source).where(Source.meeting_id.in_([m.meeting_id for m in meetings])))
     db.execute(delete(Extraction).where(Extraction.meeting_id.in_([m.meeting_id for m in meetings])))
 

@@ -23,7 +23,7 @@ export function UploadSkeleton() {
           </p>
         </div>
         <p className="text-meta text-dim tabular-nums">
-          mp3 · wav · m4a · ogg · webm — 최대 200 MiB · 2시간
+          mp3 · wav · m4a · ogg · webm — 최대 700 MiB · 2시간
         </p>
       </div>
       <div className="flex flex-col gap-18 rounded-16 border border-line bg-surface p-22">

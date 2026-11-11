@@ -7,10 +7,11 @@ from sqlalchemy import select
 
 from app.models import (
     AliasResolutionLog, AliasReview, ApprovalRequest, Extraction, ExtractionItem,
-    Invitation, Meeting, MeetingUpload, Member, MemberAlias, Notification, PrivacyCleanup, PushSubscription, Session as LoginSession,
+    Invitation, Meeting, MeetingAudio, MeetingUpload, Member, MemberAlias, Notification, PrivacyCleanup, PushSubscription, Session as LoginSession,
     Source, Task, User, WithdrawalReceipt, Workspace,
 )
-from app.services import account_withdrawal, messages, notifications
+from app.services import account_withdrawal, messages, notifications, upload_storage
+from tests.fake_s3 import FakeS3
 from tests.api.conftest import signup_verified
 from tests.api.test_messages_api import P, client
 
@@ -242,6 +243,32 @@ def test_sole_workspace_is_unavailable_immediately_and_purged_after_both_workers
     receipt = client().get(f"{P}/auth/withdrawals/{response.json()['data']['withdrawal_id']}", headers=headers)
     assert receipt.json()["data"]["cleanup_status"] == "complete"
     assert mdb.get(Workspace, wid) is None and mdb.get(Meeting, meeting_id) is None
+
+
+def test_sole_workspace_withdrawal_removes_audio_row_and_s3_objects(mdb, mseed, monkeypatch):
+    fake = FakeS3()
+    monkeypatch.setattr(upload_storage, "_s3_client", lambda: fake)
+    monkeypatch.setenv("UPLOAD_STORAGE", "s3")
+    monkeypatch.setenv("UPLOAD_S3_BUCKET", "b")
+    sole = Workspace(name="개인 공간")
+    mdb.add(sole)
+    mdb.flush()
+    mdb.add(Member(workspace_id=sole.workspace_id, user_id=mseed["alice"].user_id, display_name="앨리스", role="pm"))
+    meeting = Meeting(workspace_id=sole.workspace_id, title="개인 회의", status="done")
+    mdb.add(meeting)
+    mdb.flush()
+    meeting_id = meeting.meeting_id
+    mdb.add(MeetingAudio(meeting_id=meeting_id, filename="audio.wav", content_type="audio/wav",
+                         size_bytes=4, retention_from=datetime.now(timezone.utc)))
+    mdb.commit()
+    fake.put("b", f"meetings/{meeting_id}/audio.wav", b"RIFF", "audio/wav")
+
+    response = _withdraw(mseed)
+
+    assert response.status_code == 202, response.text
+    mdb.expire_all()
+    assert mdb.get(MeetingAudio, meeting_id) is None
+    assert fake.keys("b") == []
 
 
 def test_cleanup_lease_replacement_rejects_old_token_and_clears_shared_resource_selector(mdb, mseed):

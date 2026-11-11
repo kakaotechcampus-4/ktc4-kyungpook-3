@@ -9,7 +9,7 @@
 - [문서 안내](docs/README.md): 문서 구조와 기존 문서 배치.
 - 계약: [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md), 웹 화면용은 [프론트엔드 대표 계약](../frontend/docs/contracts/frontend-api-contract.md).
 - 계획: [전체 계획](docs/plan/backend-plan.md), [M0~M7 안내](docs/plan/README.md). 마일스톤별 plan.md는 아직 비어 있다. 과거 전체 계획의 상태와 후속 구현·검증 결과는 M0~M7 안내에서 구분한다.
-- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M1](docs/plan/m1/result.md)(가입 인증·카카오 로그인 PR 최신 기반 검증, 계정 탈퇴·공동 기록 익명화·파일 정리 #575, 동의 기록 API #564), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M3](docs/plan/m3/result.md)(추출 근거·담당자 별칭 #459, 회의 원문 삭제와 태스크 보존 #576), [M5](docs/plan/m5/result.md)(업로드 저장·AI 가져가기 API·화자 지정 만료 이력·만료 경합과 실패 파일 재시도. AI 워커 연결은 아래 안내 참조), [M6](docs/plan/m6/result.md)(AI 처리 단계 보고와 진행 표시 #381, 답장 담당자 변경 승인 #460, 승인 대기 요청 유사 검색과 합치기 #141, 메시지 탭 읽지 않은 수 #480, 범위 변경 승인 이력 #205), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서). 모두 마일스톤 완료를 판정하지 않았다.
+- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M1](docs/plan/m1/result.md)(가입 인증·카카오 로그인 PR 최신 기반 검증, 계정 탈퇴·공동 기록 익명화·파일 정리 #575, 동의 기록 API #564), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M3](docs/plan/m3/result.md)(추출 근거·담당자 별칭 #459, 회의 원문 삭제와 태스크 보존 #576), [M5](docs/plan/m5/result.md)(업로드 저장·AI 가져가기 API·화자 지정 만료 이력·만료 경합과 실패 파일 재시도. AI 워커 연결은 아래 안내 참조), [M6](docs/plan/m6/result.md)(AI 처리 단계 보고와 진행 표시 #381, 답장 담당자 변경 승인 #460, 승인 대기 요청 유사 검색과 합치기 #141, 메시지 탭 읽지 않은 수 #480, 범위 변경 승인 이력 #205), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서, Grafana Cloud 모니터링·KPI view #675). 모두 마일스톤 완료를 판정하지 않았다.
 - AI 웹 업로드 처리 코드는 [worker](../ai/capture/worker.py), [가져오기](../ai/upload/intake.py), [화자 지정](../ai/upload/assign.py), [AI 실행 안내](../ai/README.md)에 있다. M5 결과의 초기 `AI 미구현` 설명은 당시 기록이다. 현재 코드 존재와 실제 공급사·운영 성공을 구분한다.
 - 배포: [배포 안내](../deploy/README.md). 요청: [녹음 시작 때 배포 재시작 잠금 확인](docs/requests/bot-restart-lock.md)(AI).
 
@@ -83,7 +83,9 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 나머지 환경변수 | `NOTION_*`·`DISCORD_*`·`KAKAO_*`·`EMBEDDING_*`·`SERVICE_TOKEN` 등은 `.env`를 그대로 넘긴다 |
 | 필수 값 | `OAUTH_STATE_SECRET`이 비어 있으면 `docker compose`가 기동 전에 멈춘다(OAuth state, 가입 이메일 증명, 카카오 로그인이 함께 쓰는 서명 키) |
 | 데이터 | DB는 `mm-prod_pgdata` 볼륨에 남는다. 로컬 개발용 볼륨(`mm-pgdata`)과 따로다 |
-| 업로드 녹음 | `mm-prod_uploads` 볼륨(컨테이너의 `/data/uploads`)에 둔다. 회의가 done·failed가 되면 그 회의 폴더를 지운다 |
+| 업로드 녹음 | `UPLOAD_STORAGE`(local 기본 | s3)로 저장소를 고른다. 운영은 s3 이고 키는 `{UPLOAD_S3_PREFIX}{meeting_id}/audio.<확장자>`다(기본 `meetings/`). local 이면 `mm-prod_uploads` 볼륨(컨테이너의 `/data/uploads`)의 `{meeting_id}/`에 둔다. 회의가 done 이 돼도 지우지 않고 원문 듣기용으로 보관한다. failed 가 되면 바로 지운다 |
+| 녹음 보관·정리 | 보관 기간(`UPLOAD_AUDIO_RETENTION_DAYS`, 기본 7일)은 `meeting_audio.retention_from` 부터 센다. 업로드 회의는 녹음을 받은 시각(`uploaded_at`), 디스코드 회의는 회의 종료 시각(`meeting.ended_at`, 없으면 받은 시각)이다. 같은 sweeper 바퀴가 done 이면서 기간이 지난 녹음을 지우고 `deleted_at` 을 채운다. 처리 중(done·failed 가 아님)인 회의는 기간이 지나도 지우지 않는다. `UPLOAD_SWEEP_INTERVAL_SECONDS` 가 0 이하면 sweeper 가 돌지 않아 이 정리도 멈추고 S3 lifecycle 안전망만 남는다. 파일을 지우지 못하면 `deleted_at` 을 비워 두고 다음 바퀴에 다시 한다. 회의·공간 삭제와 탈퇴 정리는 S3 prefix 도 지운다. 근거는 [결정 기록](docs/plan/m5/basis-for-decision/2026-11-10-meeting-audio-s3-retention.md) |
+| 녹음 저장소 설정 | `UPLOAD_STORAGE=s3` 인데 `UPLOAD_S3_BUCKET` 이 비었거나 `UPLOAD_STORAGE` 가 `local`·`s3` 가 아니면 설정 오류다. 업로드·재생 요청은 500 으로 실패하고(가려 주는 코드는 없다), 만료 정리(`sweep_expired_audio`)는 로그만 남기고 다음 바퀴에 다시 시도한다. S3 클라이언트(`_s3_client`)는 프로세스당 한 번 만들어 캐시하므로 `AWS_REGION` 을 바꾸면 api 를 다시 띄워야 한다. 자격은 boto3 기본 체인으로 받는다. 운영은 개인 AWS 계정 버킷이라 그 버킷 전용 IAM 사용자 키를 `.env` 의 `AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY` 에 둔다(키는 커밋하지 않는다). 인프라 준비는 [배포 안내](../deploy/README.md#회의-녹음-s3-준비) |
 | 업로드 sweeper | 서버 안의 워커가 `UPLOAD_SWEEP_INTERVAL_SECONDS`(기본 300, 0 이하면 끔)마다 멈춘 업로드 회의를 failed로 바꾸고 녹음 폴더 제거를 시도한다. AI가 가져간 뒤 진행이 3시간 없으면 `failed_stage=diarize`, 화자 지정을 7일 기다리면 `speaker_assignment_expired`, 가져가지 않은 채 24시간이 지나면 `upload_unclaimed`. live failed 업로드의 남은 폴더는 다음 바퀴마다 재시도한다. 과거 failed 잔존 파일도 대상이며 처리 실패가 삭제 완료를 뜻하지 않는다. 기준은 [봇 계약](docs/contracts/backend-ai-contract.md)의 "웹 업로드 가져가기" |
 | 세션 sweeper | 서버 안의 워커가 `SESSION_SWEEP_INTERVAL_SECONDS`(기본 3600, 0 이하면 끔)마다 만료된(`expires_at` 이 지난) 세션 행을 지운다. 만료 세션은 워커가 돌기 전에도 조회 때 401 이다 |
 | 리마인드 스케줄러 | 서버 안의 워커가 `REMINDER_SCHEDULER_INTERVAL_SECONDS`(기본 60, 0 이하면 끔)마다 재촉 제안, 발송 직전 확인, 72시간 무응답 막힘, 푸시 발송을 돈다. 브라우저 푸시는 `VAPID_PRIVATE_KEY`·`VAPID_PUBLIC_KEY`·`VAPID_SUBJECT` 가 모두 있어야 나가고, 하나라도 없으면 웹 안 알림만 쌓인다 |
@@ -101,16 +103,19 @@ API 서버에 `EMBEDDING_API_KEY` 가 있어야 하고(없으면 임베딩이 �
 
 ```bash
 docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBER_PASSWORD api \
-  python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com'
+  python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com' --today 2026-11-11
 ```
 
-로컬 리허설은 API 를 띄운 뒤 같은 명령을 `python -m app.cli.seed_demo --email-pattern 'demo+{n}@example.com'` 로 돌린다. `--dry-run` 은 DB 를 읽기만 해서 이미 있는 계정 수, 재사용할 공간과 그 공간의 활성 자리·회의 수, 재생할 회의 제목을 출력한다. 쓰지 않고 HTTP 도 부르지 않는다(`SERVICE_TOKEN` 은 필요 없지만 비밀번호 검사는 하므로 비밀번호 환경변수는 필요하다). 실제 실행이 멈출 상황이면 이유를 stderr 에 적고 종료 코드 2 로 끝난다. 비밀번호를 환경변수로 넘기지 않고 입력받으려면 터미널(TTY)이 필요하다(`docker compose exec` 는 기본으로 붙고, 원격에서 명령 한 줄로 돌릴 때는 `ssh -t`). 컨테이너에는 `SERVICE_TOKEN` 이 `env_file` 로 이미 들어 있다.
+`--today` 는 회의 날짜의 기준일(KST)이다. 가장 늦은 회의 시작(기준일 − 가장 작은 `days_ago`, 10:00 KST)이 지난 뒤에만 끝까지 돈다. 서버가 미래 `started_at` 을 400 으로 거절하기 때문이고, 그 전이면 쓰기 전에 종료 코드 2 로 멈춘다. 재실행은 같은 기준일로 해야 이어 간다. 기준일이 다르면 종료 코드 2 와 원래 기준일 안내가 나온다(옵션 없이 처음 돌린 시드도 같고, `--allow-existing` 으로 넘길 수 없다).
+
+로컬 리허설은 API 를 띄운 뒤 같은 명령을 `python -m app.cli.seed_demo --email-pattern 'demo+{n}@example.com'` 로 돌린다. `--dry-run` 은 DB 를 읽기만 해서 이미 있는 계정 수, 재사용할 공간과 그 공간의 활성 자리·회의 수, 기준일, 재생할 회의의 날짜와 제목을 출력한다. 쓰지 않고 HTTP 도 부르지 않는다(`SERVICE_TOKEN` 은 필요 없지만 비밀번호 검사는 하므로 비밀번호 환경변수는 필요하다). 실제 실행이 멈출 상황이면 이유를 stderr 에 적고 종료 코드 2 로 끝난다. 비밀번호를 환경변수로 넘기지 않고 입력받으려면 터미널(TTY)이 필요하다(`docker compose exec` 는 기본으로 붙고, 원격에서 명령 한 줄로 돌릴 때는 `ssh -t`). 컨테이너에는 `SERVICE_TOKEN` 이 `env_file` 로 이미 들어 있다.
 
 | 옵션·환경변수 | 뜻 |
 |---|---|
 | `--email-pattern` | 필수. `{n}` 이 1~6 으로 바뀐다. 1번이 PM, 2번이 팀원2 |
 | `--base-url` | API 호스트 루트(기본 `http://localhost:8000`). 경로 앞에 `/api/v1` 은 명령이 붙인다 |
 | `--workspace-name` | 공간 이름. 기본은 시드 데이터 값 |
+| `--today` | 회의 날짜의 기준일. `YYYY-MM-DD` 형식(KST)이고 기본은 실행일이다. 회의 시작은 기준일 − `days_ago` 의 10:00 KST, 항목 마감은 회의일 + `due_in_days` 다. `--dry-run` 에도 같은 검사를 한다 |
 | `--embed-timeout` | 회의마다 임베딩을 기다리는 초(기본 120) |
 | `--reset-passwords` | 이미 있는 계정의 비밀번호도 다시 정하고, 그 계정의 로그인 세션을 지운다 |
 | `--allow-existing` | 시드가 아닌 기존 데이터가 있어도 재사용한다. 없으면 이름이 시드 인물과 다른 기존 계정, 찾은 공간의 시드 인물이 아닌 자리, 시드가 만들지 않은 회의가 하나라도 있을 때 아무것도 쓰지 않고 종료 코드 2 로 멈춘다 |
@@ -123,7 +128,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 |---|---|
 | 0 | 성공 |
 | 1 | 시드 실패(데이터·API·PM 로그인·임베딩 대기 오류). 한 줄이 stderr 에 나온다. 다시 실행하면 기존 승인을 보존하며 원문·추출 단계부터 이어 간다. 기존 추출의 요약 복구 제한은 아래를 참고한다 |
-| 2 | 입력·환경 부족(비밀번호, 이메일 패턴, `SERVICE_TOKEN`, 옵션)이나 시드가 아닌 기존 데이터 재사용 거절(`--allow-existing` 참고). 아무것도 쓰지 않았다 |
+| 2 | 입력·환경 부족(비밀번호, 이메일 패턴, `SERVICE_TOKEN`, 옵션)이나 시드가 아닌 기존 데이터 재사용 거절(`--allow-existing` 참고), 기준일 검사 실패(회의 시작이 지금보다 늦음, 이미 있는 회의의 날짜가 이번 기준일과 다름). 아무것도 쓰지 않았다 |
 | 3 | 데이터는 다 썼지만 gate 분포에 auto·review·hold 중 0 건이 있다. JSON 은 그대로 나오고 stderr 에 경고가 나온다 |
 
 알아 둘 점:
@@ -133,7 +138,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 - 기존 추출은 사람이 보류·반려·수정한 것과 중단된 시드를 구분할 수 없어 자동 승인하지 않는다. 요약이 없더라도 고정 시드 요약을 다시 주입하지 않고, 승인 완료로 선언한 회의 제목을 `summaries_skipped`에 적는다. PM이 현재 승인 상태를 확인하고 정상 요약 워커로 처리하거나 새 공간에서 다시 시드한다. 기존 태스크와 저장된 요약은 덮어쓰지 않는다.
 - 운영 요약 워커(AI mm-worker, `MM_SUMMARY_LLM`)가 시드와 동시에 돌면 워커가 먼저 잡은 회의의 요약은 `summaries_skipped`에 들어가고, 그 임대 15분 동안 같은 공간의 뒤 회의들도 건너뛸 수 있다. 이 경우에도 재실행이 기존 추출의 고정 요약을 복구하지는 않는다.
 - 시드 항목의 `similar_count` 는 모두 0 이라 gate 분포는 유사 검색 결과로 바뀌지 않는다. 출력 JSON 의 `gates` 에서 auto 가 0 건이면 API 서버의 `AUTO_CREATE_ENABLED` 가 꺼져 있거나(auto 가 review 로 내려간다), 재생 중 임베딩이 아직 없는 task·승인 대기 카드가 남아 있던 경우(서버 로그의 `unsearched_task_exists`·`unsearched_pending_exists`)다.
-- 회의의 처리 완료 시각(`ended_at`)은 시드를 실행한 시각으로 남는다. 시작 시각만 며칠 전으로 합성한다.
+- 회의의 처리 완료 시각(`ended_at`)은 시드를 실행한 시각으로 남는다. 시작 시각만 며칠 전으로 합성하며, `--today` 와는 무관하다.
 - 팀원2 자리는 초대·수락 시연용으로 비워 둔다. PM 이 초대할 때는 팀원2 의 아이디(출력 JSON 의 `usernames.p2`)를 정확히 입력해 찾는다. 동의 기록은 넣지 않아 첫 로그인 때 동의 화면이 뜬다.
 - 다시 시드하려면 새 `--workspace-name` 과 새 이메일을 쓴다. 지우는 기능은 없다.
 
@@ -207,6 +212,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 함. `details.member_id` |
 | `PASSWORD_RESET_TOKEN_INVALID` | 400 | 비밀번호 재설정 링크를 쓸 수 없음(없는·무효화된·이미 쓴·만료된 토큰). `details.reason` 은 `invalid`·`used`·`expired` |
 | `MAIL_UNAVAILABLE` | 503 | 메일을 보낼 수 없음(SMTP 설정이 없음). 비밀번호 재설정 요청과 가입 코드 요청에서 나온다. 발송 실패는 응답에 드러나지 않는다 |
+| `DATABASE_UNAVAILABLE` | 503 | DB 에 연결할 수 없음. `GET /api/v1/health/ready` 에서만 나온다. 원인 예외 문구는 응답에 넣지 않는다 |
 | `SIGNUP_CODE_RATE_LIMITED` | 429 | 가입 코드를 너무 자주 요청함. `details.reason` 은 `cooldown`(60초 재발송 제한)·`hourly`(시간당 5회)·`ip`(공인 IP 시간당 10회, #691)·`global`(전체 시간당 20통), `details.retry_after` 는 기다릴 초 |
 | `SIGNUP_CODE_INVALID` | 400 | 가입 코드를 쓸 수 없음. `details.reason` 은 `wrong`(`details.attempts_left` 함께)·`expired`(만료, 요청한 적 없음, 이미 씀)·`too_many`(5회 초과) |
 | `SIGNUP_VERIFICATION_INVALID` | 400 | 가입에 이메일 증명이 없거나 쓸 수 없음. 코드 인증부터 다시 한다 |
@@ -223,8 +229,9 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `SPEAKERS_ALREADY_REPORTED` | 409 | 이미 화자 목록을 받은 업로드에 저장된 것과 다른 목록을 보고하려 함(같은 목록의 재전송은 200). `details.status` |
 | `MEETING_NOT_AWAITING_SPEAKERS` | 409 | 회의가 화자 지정 대기(`awaiting_speakers`) 상태가 아닌데 화자를 지정하려 함. `details.status` |
 | `SPEAKERS_NOT_ASSIGNED` | 409 | PM이 화자 지정을 끝내지 않은 업로드의 처리를 AI가 이어 가려 함. `details.status` |
-| `AUDIO_TOO_LARGE` | 413 | 업로드한 녹음이 한도(기본 200MiB, `UPLOAD_MAX_BYTES`)를 넘음. `details.size_bytes`·`max_bytes` |
+| `AUDIO_TOO_LARGE` | 413 | 업로드한 녹음이 한도(기본 700MiB, `UPLOAD_MAX_BYTES`)를 넘음. `details.size_bytes`·`max_bytes` |
 | `AUDIO_UPLOAD_FAILED` | 422 | 오디오 저장·병합 실패 |
+| `AUDIO_NOT_AVAILABLE` | 404 | 들을 수 있는 회의 녹음이 없음(`GET /meetings/{id}/audio`). `details.meeting_id`, `details.reason`: `expired`(보관 기간이 지났다) · `no_recording`(녹음이 없거나 지워졌거나 failed 회의다) |
 | `AUDIO_FORMAT_UNSUPPORTED` | 422 | 지원하지 않는 오디오 형식. `details.filename`·`supported` |
 | `TRANSCRIPTION_FAILED` | 502 | 음성 전사 실패 *(아직 미구현 경로)* |
 | `EXTRACTION_FAILED` | 502 | 회의 분석 실패 *(아직 미구현 경로)* |
@@ -624,6 +631,29 @@ SMTP 설정이 없으면 코드 요청이 503 이라 이메일로는 가입할 �
 
 Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체 시간당 10통으로 묶는다. 같은 계정을 쓰는 가입 인증 메일(#454)의 상한과는 따로라, 두 경로를 하루 내내 채우면 한도를 넘을 수 있다([결정 기록](docs/plan/m1/basis-for-decision/2026-11-08-reset-mail-cap.md)). 다른 SMTP 로 옮길 때는 환경변수만 바꾼다(포트 465 면 `SMTP_SECURITY=ssl`).
 
+## 회의 녹음 보관과 재생
+
+회의 녹음(웹 업로드 원본, 디스코드 회의는 AI 가 섞어 올린 m4a)을 보관 기간 동안 팀원이 웹에서 다시 듣게 한다(#659). 기록은 `meeting_audio` 표(회의당 한 행: 파일명·형식·크기·`retention_from`·`deleted_at`)에 둔다.
+
+| 항목 | 동작 |
+|---|---|
+| 재생 | `GET /api/v1/meetings/{meeting_id}/audio`. done 회의는 소속이면 누구나, 그 밖의 상태는 PM 만 듣는다. 보관 기간 안이면 s3 저장소는 S3 presigned GET URL 로 302(`Cache-Control: private, no-store`, 응답 Content-Type 고정, 유효 시간 `UPLOAD_PLAYBACK_URL_TTL_SECONDS`. done 회의는 남은 보관 시간이 더 짧으면 그만큼으로 줄여 주소가 `expires_at` 뒤까지 열려 있지 않게 한다), local 저장소는 파일을 그대로 보낸다(Range 지원). 없거나 지났으면 404 `AUDIO_NOT_AVAILABLE`. presigned URL 의 host 는 `<bucket>.s3.<AWS_REGION>.amazonaws.com`(리전 가상 호스트)이다. URL 은 서명한 자격이 임시 자격(인스턴스 역할 등)이면 그 자격이 먼저 끝날 때 TTL 전에도 S3 가 403 으로 거절할 수 있다(지금 운영의 전용 사용자 키는 해당하지 않는다). 재생 오류가 나면 이 API 를 다시 불러(`<audio>` 의 `src` 를 다시 넣어) 새 URL 을 받는다 |
+| 재생 정보 | `GET /meetings/{meeting_id}/minutes` 의 `audio: {content_type, expires_at} \| null`. 호출자가 지금 들을 수 있을 때만 값이다. `expires_at` 은 `retention_from` + 보관 기간이다. 처리 중(done·failed 가 아님)인 회의는 이 시각이 지나도 PM 이 들을 수 있어 `audio` 가 값으로 오므로, 화면은 `expires_at` 만 보고 "만료됨"으로 단정하지 않는다 |
+| 디스코드 녹음 받기 | `PUT /meetings/{meeting_id}/recording`(서비스 토큰). 개인정보 세대(`X-Privacy-Epoch`)는 보지 않는다. [봇 계약](docs/contracts/backend-ai-contract.md#회의-녹음-올리기-put-meetingsmeeting_idrecording--200) |
+| 녹음 삭제 | s3 저장소에서도 S3 prefix 와 함께 local 폴더(`UPLOAD_DIR/{meeting_id}`, local 로 운영하던 기간에 남은 것)를 지운다. 만료 정리는 파일을 잠금 없이 먼저 지운 뒤 공간·회의를 짧게 잠가 `deleted_at` 을 남긴다. 실패 업로드 파일 재시도는 보관 기록이 없는 옛 회의만 본다 |
+| 업로드 원본 가져가기 | `GET /uploads/{meeting_id}/file` 의 모양은 그대로다. s3 저장소에서는 BE 가 S3 에서 읽어 바이트를 대신 보낸다(리다이렉트 없음) |
+
+| 환경변수 | 기본 | 설명 |
+|---|---|---|
+| `UPLOAD_STORAGE` | `local` | `local` 또는 `s3` |
+| `UPLOAD_S3_BUCKET` | 없음 | s3 일 때 필수. 비어 있으면 500 |
+| `UPLOAD_S3_PREFIX` | `meetings/` | 키 접두어. 끝에 `/` 가 없으면 붙인다 |
+| `AWS_REGION` | `ap-northeast-2` | S3 클라이언트 리전. 프로세스당 캐시라 바꾸면 재시작 |
+| `UPLOAD_AUDIO_RETENTION_DAYS` | `7` | 양의 정수. 잘못된 값은 경고 로그 뒤 7일 |
+| `UPLOAD_PLAYBACK_URL_TTL_SECONDS` | `3600` | presigned URL 유효 시간(초). 양의 정수가 아니면 경고를 남기고 기본값을 쓴다 |
+
+자격은 boto3 기본 자격 체인으로 받는다. 운영 버킷이 팀 계정 밖(개인 AWS 계정)에 있어, 그 버킷의 `meetings/*` 만 허용한 전용 IAM 사용자 키를 `.env` 의 `AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY` 에 둔다([배포 안내](../deploy/README.md#회의-녹음-s3-준비)). 보관 기준·처리 중 보호·정리 규칙은 위 [운영 실행](#운영-실행-docker)의 "녹음 보관·정리"에 있다.
+
 ## 가입 이름 규칙
 
 `POST /api/v1/auth/signup` 의 `name` 은 앞뒤 공백을 지운 값으로 저장한다. 지운 뒤 비었거나, 보이지 않는 글자(형식 문자·결합 부호)만 있거나, 제어문자·줄 구분자·짝 없는 서로게이트·글자 방향 제어 문자가 있거나, 100자를 넘으면 400 `INVALID_REQUEST` 다. 이미 있는 계정의 이름은 검사하지 않는다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-06-signup-name-rule.md), 원본은 `app/schemas/name.py` 의 `validate_name`(`NameStr`). 팀원 표시명도 같은 규칙을 쓴다(아래 [팀원 표시명 규칙](#팀원-표시명-규칙)).
@@ -648,6 +678,8 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 | 구분 | API |
 |---|---|
 | PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, auto 되돌리기(`POST /extractions/{id}/items/{item_id}/revert`), Notion 재시도, 팀원 생성·수정·삭제(`DELETE /members/{id}`), 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), Discord 연결 시작·콜백(`GET .../integrations/discord/start`, `GET /integrations/discord/callback`), Discord 채널 목록·채팅 수집 채널 저장·해제(`GET .../discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel`), 연동 해제, 회의 업로드, 온보딩 저장, 메시지 설정 변경(`PATCH /workspaces/{workspace_id}/message-settings`) |
+| 처리 상태에 따라 | 회의 녹음 재생 `GET /meetings/{id}/audio`: done 회의는 소속이면 누구나, 그 밖의 상태(처리 중 등)는 PM 만. 팀원이 done 이 아닌 회의를 요청하면 403 `FORBIDDEN`(PM 만 할 수 있는 작업) |
+| 소속이면 누구나(값만 다름) | `GET /meetings/{id}/minutes` 는 항상 200 이고 `audio` 만 호출자가 지금 들을 수 있을 때 값이다. 팀원이 done 이 아닌 회의를 조회하면 `audio` 는 null 이다(403 아님) |
 | 소속이면 누구나 | 조회 API 전부(메시지 설정 조회 `GET .../message-settings` 포함), 승인 요청 생성(`POST /approvals`) |
 
 - Notion 연결 시작·콜백은 브라우저 페이지 이동이라 403 대신 앱 화면의 `?oauth=notion&oauth_result=failed`로 돌려보낸다.
@@ -703,3 +735,42 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 - 한 대화의 닫기가 실패하면(알림 오류 등) 그 대화만 건너뛰고 다른 대화의 답장은 준다. 실패한 답장은 다음 claim·틱에서 다시 닫는다.
 - 닫힌 답장에 늦게 온 결과는 200 으로 받아 기록만 한다. PM 이 고른 재판단은 앞 차례 `attempt` 와 상관없이 새 10분 창을 받는다.
 - 결정 근거는 [결정 기록](docs/plan/m6/basis-for-decision/2026-11-08-reply-judgment-attempt-cap.md)에 있다.
+
+## health ready
+
+`GET /api/v1/health/ready` 는 DB 에 `SELECT 1` 을 보내 연결을 확인한다(#675). Grafana Cloud Synthetic Monitoring 이 밖에서 부르는 모니터링 전용 경로이고 FE·AI 는 부르지 않는다. 인증이 없다.
+
+- 정상이면 200 `{"data": {"status": "ok"}, "error": null}` 이다.
+- DB 에 연결할 수 없으면 503 `DATABASE_UNAVAILABLE` 이다. 응답에는 예외 문구(호스트·계정)를 넣지 않고, 로그에도 예외 클래스 이름만 warning 으로 남긴다.
+- Caddy 는 `/api` 만 백엔드로 넘기므로 경로가 `/api/v1` 아래에 있다. 루트 `/health` 는 DB 를 보지 않는 프로세스 확인이고, compose healthcheck 가 그대로 쓴다.
+
+## KPI view
+
+Grafana Cloud 대시보드(#675)가 읽는 `kpi` 스키마다. 마이그레이션 `c4f7a2d91e3b` 가 PostgreSQL 에만 만들고 sqlite 에서는 아무것도 하지 않는다. 설치와 패널 SQL 은 [deploy/monitoring/README.md](../deploy/monitoring/README.md)에 있다.
+
+| 이름 | 한 행 | 컬럼 |
+|---|---|---|
+| `kpi.meeting_fact` | 회의 한 건(삭제된 회의·`ended_at` 없는 회의 제외) | `ended_at`, `extracted_at`, `source`, `status`, `failed_stage`, `replaced`, `meeting_minutes`, `processing_seconds`, `speaker_wait_seconds` |
+| `kpi.extraction_item_fact` | 추출 항목 한 건(삭제된 회의 제외) | `created_at`, `meeting_source`, `extraction_path`, `action`, `gate`, `reverted`, `revert_after_seconds` |
+| `kpi.approval_fact` | 승인 요청 한 건(삭제된 회의의 요청은 상태와 관계없이 제외) | `created_at`, `resolved_at`, `type`, `origin`, `meeting_source`, `card_gate`, `outcome`, `response_seconds`, `asr_flag`, `title_edited` |
+| `kpi.excluded_workspace` | 세 view 에서 뺄 워크스페이스(`workspace_id` 하나). 비어 있고 운영 SQL 로 채운다 | `workspace_id` |
+
+- view 에는 ID·제목·본문·payload·이름·이메일 컬럼이 없다. 워크스페이스 컬럼도 없어 서비스 전체 값만 본다.
+- 값의 뜻: `processing_seconds` 는 녹음이 끝난 때부터 첫 추출 등록까지다. 디스코드 회의는 `ended_at` 이 워커가 처리를 시작한 시각(`PATCH /meetings/{id}/end`)이라 큐 대기가 빠지므로, `started_at + duration_ms`(마지막 발화 끝)를 녹음 끝으로 쓴다. `duration_ms` 가 없거나 디스코드가 아닌 회의는 `ended_at` 을 쓴다. `ended_at` 컬럼 자체는 그대로 내보내 워커 처리 구간(`ended_at`→`extracted_at`)을 볼 수 있다. `failed_stage` 는 실패한 회의에서만 알려진 단계(`stt`·`sources`·`extract`·`handoff`·`diarize`·`speaker_assignment_expired`·`upload_unclaimed`·`chat_stalled`)를 그대로 주고 그 밖의 값은 `other`, 실패가 아니면 null 이다. `replaced` 는 이 회의를 다시 시도한 회의가 있다는 뜻이다. `origin` 은 `auto_revert`·`manual`·`reply`·`meeting`·`other`, `outcome` 은 `pending`·`approved`·`approved_edited`·`rejected`·`other`, `asr_flag` 는 회의 추출로 만든 `task_create` 카드에서만 `none`·`suspect`·`check_failed`(그 밖은 null)다.
+- payload 는 JSON 객체일 때만 읽는다. 깨진 payload 한 행은 view 에서 빠지고 조회 전체를 깨지 않는다. JSON 문법은 맞아도 `\u0000`(NUL)이 든 payload 는 jsonb 로 바꿀 수 없어 같은 이유로 뺀다(조회가 실패하지 않게 막는 것이라 `\\u0000` 같은 드문 값도 함께 빠질 수 있다). 키 확인은 `?` 연산자 대신 `-> ... IS NOT NULL` 을 쓴다(바인드 해석을 피한다).
+- 새 상태값·새 `failed_stage` 가 생기면 view 가 `other` 로 담는다. 따로 고치지 않아도 조회는 깨지지 않는다.
+- view 는 소유자 권한으로 원본을 읽는다. 읽기 계정은 view 3개에만 SELECT 를 받고 원본 표와 `excluded_workspace` 는 보지 못한다.
+
+view 가 쓰는 원천 컬럼은 다음과 같다.
+
+| 표 | 컬럼 |
+|---|---|
+| `meeting` | `meeting_id`, `workspace_id`, `deleted_at`, `source`, `status`, `failed_stage`, `started_at`, `ended_at`, `duration_ms`, `replaces_meeting_id` |
+| `extraction` | `extraction_id`, `meeting_id`, `created_at`, `extraction_path` |
+| `extraction_item` | `extraction_id`, `created_at`, `action`, `gate`, `reverted_at` |
+| `meeting_upload` | `meeting_id`, `speakers_reported_at`, `speakers_assigned_at` |
+| `approval_request` | `workspace_id`, `type`, `payload`(키 `reverted_task_id`·`change_source`·`extraction_item_id`·`meeting_id`·`gate`·`task_overrides`·`asr_suspects`·`source_deleted`), `requested_by`, `status`, `created_at`, `resolved_at` |
+
+- view 는 `SELECT *` 없이 위 컬럼만 쓴다. 그 밖의 컬럼(예: `approval_request.resolved_by`)은 view 와 상관없이 바꿀 수 있다.
+- 이 컬럼을 DROP 하거나 타입을 바꾸는 마이그레이션은 PostgreSQL 이 거부한다. 같은 마이그레이션에서 view 를 DROP 한 뒤 다시 만든다. 다시 만든 뒤에는 읽기 계정의 GRANT 를 다시 실행한다.
+- 마이그레이션 테스트(`tests/test_migration_kpi_views.py`)가 view 컬럼 목록, 고정 행의 값, `downgrade()` 뒤 스키마가 남지 않는 것, 위 거부 동작, view 가 쓰지 않는 컬럼은 지울 수 있다는 것, view 가 실제로 기대는 원천 컬럼이 위 표와 같다는 것을 확인한다. 위 표를 고치면 `test_views_depend_only_on_listed_columns` 의 `expected` 도 같이 고친다. PostgreSQL 이 필요해 `TEST_DATABASE_URL` 이 있을 때만 돈다.

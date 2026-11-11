@@ -39,6 +39,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from capture import audio_outbox
 from capture.handoff import from_env as handoff_from_env
 from capture.judge_path import extract_path
 from capture.notify import FileOutbox, MeetingReporter, debug_from_env
@@ -276,6 +277,7 @@ class Worker:
         self._stopping = False
         self._current: str | None = None
         self._summary_task: asyncio.Task[None] | None = None
+        self._drain_task: asyncio.Task[None] | None = None
         self._started_at = now_iso()
 
     def stop(self) -> None:
@@ -414,6 +416,33 @@ class Worker:
         for session in dropped:
             print(f"[worker] 세션 {session} 음성 삭제", flush=True)
 
+    async def _drain_outbox(self) -> None:
+        """인계한 회의의 녹음(m4a)을 BE 로 올린다(#659). 대기 폴더는 prune_audio 가 wav 를 지우기 직전에 채운다.
+        BE 설정이 없으면 건너뛴다. 실패해도 로그만 남기고 바퀴는 계속 돈다(남은 항목은 다음 바퀴에 다시 한다)."""
+        handoff = self._handoff_factory()
+        if handoff is None or self._stopping:
+            return
+        try:
+            results = await asyncio.to_thread(audio_outbox.drain_results, self.recordings_dir, handoff.client)
+        except Exception as e:  # noqa: BLE001 - 녹음 올리기는 곁가지다. 다음 바퀴에 다시 한다
+            print(f"[worker] 녹음 올리기 오류: {type(e).__name__}: {e}", flush=True)
+            return
+        for meeting_id, outcome, reason in results:
+            if outcome == audio_outbox.UPLOADED:
+                print(f"[worker] 회의 {meeting_id} 녹음 올림", flush=True)
+            elif outcome == audio_outbox.NOT_STORED:
+                print(f"[worker] 회의 {meeting_id} 녹음을 BE 가 받지 않음(보관 기간 지남)", flush=True)
+            else:   # 운영에서 녹음이 빠진 걸 알 수 있게 따로 남긴다(#670 리뷰)
+                print(f"[worker] 경고: 회의 {meeting_id} 녹음 올리기 포기({reason}). 웹 재생 녹음 없음", flush=True)
+
+    def _schedule_drain(self) -> None:
+        """녹음 올리기를 요약처럼 따로 돌린다. BE·S3 가 느려도 다음 바퀴(새 회의 처리)가 기다리지 않는다(#670 리뷰).
+        앞 올리기가 아직 돌고 있으면 새로 띄우지 않는다."""
+        if self._stopping:
+            return
+        if self._drain_task is None or self._drain_task.done():
+            self._drain_task = asyncio.create_task(self._drain_outbox())
+
     async def _purge_once(self) -> None:
         from capture.meeting_purge import purge_one
         from capture.privacy_cleanup import cleanup_one as privacy_cleanup_one
@@ -455,12 +484,15 @@ class Worker:
                 await self._intake_once()
                 await self._purge_once()
                 await self._prune_audio()
+                self._schedule_drain()
                 self._schedule_summary()
                 await self._nap()
         finally:
             try:
-                if self._summary_task is not None:
-                    await self._summary_task
+                # 하던 올리기·요약은 마치고 끝낸다. 올리기는 항목마다 원자적으로 지우므로 중간에 멈춰도 다음 실행이 이어 간다
+                for task in (self._drain_task, self._summary_task):
+                    if task is not None:
+                        await asyncio.gather(task, return_exceptions=True)
             finally:
                 beat.cancel()
                 if control is not None:
