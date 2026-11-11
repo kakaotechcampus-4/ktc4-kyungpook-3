@@ -37,18 +37,70 @@ Manager's Manager(화면 이름 **매스**)는 Discord 회의를 듣고 **새 �
 
 ## 주요 기능
 
-- **세 가지 입력** — Discord 음성 회의(`/join` → `/record` → `/stop`), 녹음 파일 업로드, Discord 텍스트 채널
-- **변경까지 추적** — 새 할 일뿐 아니라 기존 태스크의 마감·상태·담당 변경을 찾아 해당 태스크에 연결
-- **근거가 붙는 회의록** — 결정·담당자·마감과 원문 인용, 회의록 원문으로 바로 이동
-- **확실한 것만 자동** — 검사를 모두 통과한 일만 승인 없이 태스크가 되고, 나머지는 PM이 확인
-- **배우는 담당자 매칭** — PM이 보류 카드에서 담당자를 고르면 그 호칭을 다음 회의부터 기억
-- **회의 뒤 관리** — 마감 전 Discord DM 리마인드, 웹 답장, 답장을 읽은 진행 상태 제안, Notion 동기화
+- **세 가지 입력** - Discord 음성 회의(`/join` → `/record` → `/stop`), 녹음 파일 업로드, Discord 텍스트 채널
+- **변경까지 추적** - 새 할 일뿐 아니라 기존 태스크의 마감·상태·담당 변경을 찾아 해당 태스크에 연결
+- **근거가 붙는 회의록** - 결정·담당자·마감과 원문 인용, 회의록 원문으로 바로 이동
+- **확실한 것만 자동** - 검사를 모두 통과한 일만 승인 없이 태스크가 되고, 나머지는 PM이 확인
+- **배우는 담당자 매칭** - PM이 보류 카드에서 담당자를 고르면 그 호칭을 다음 회의부터 기억
+- **회의 뒤 관리** - 마감 전 Discord DM 리마인드, 웹 답장, 답장을 읽은 진행 상태 제안, Notion 동기화
 
 | 표시 | 뜻 |
 | --- | --- |
 | **반영된 것** | 아래 검사를 모두 통과해 승인 없이 태스크가 된 일 |
 | **확인 필요** | 마감이 애매하거나("다음 주 중") 전사 오류가 의심되는 일. PM이 보고 승인 |
 | **보류** | 담당자를 찾지 못한 일. PM이 담당자를 골라 승인 |
+
+### 화면으로 보는 핵심 기능
+
+실제 브라우저에서 서비스를 조작하며 찍었습니다. 화면에 나오는 팀과 회의는 샘플 데이터입니다.
+
+#### 1. 가입하고 팀 만들기
+
+이메일로 받은 인증 코드로 가입합니다. 팀을 만들면 Discord 연결, Notion 연결, 팀원 연결로 이어집니다.
+
+<p align="center"><img src="./docs/assets/readme/feature-signup.gif" width="880" alt="랜딩에서 시작하기를 눌러 이메일 인증 코드로 가입하고 팀 이름을 입력해 Discord 연결 단계로 넘어가는 화면" /></p>
+
+#### 2. 회의 올리기
+
+Discord 음성 회의는 봇이 화자별로 녹음합니다. 녹음 파일은 웹에서 올립니다. 전사부터 할 일 추출까지 다섯 단계의 진행 상황이 보이고, 끝나면 회의록이 열립니다.
+
+<p align="center"><img src="./docs/assets/readme/feature-upload.gif" width="880" alt="녹음 파일을 올리고 참석자를 고른 뒤 정리 시작하기를 누르면 다섯 단계가 차례로 끝나고 회의록이 열리는 화면" /></p>
+
+#### 3. 들어 보고 화자 지정
+
+올린 녹음은 목소리를 화자별로 나눕니다. PM이 화자마다 샘플을 들어 보고 팀원을 고르면 정리를 이어 갑니다.
+
+<p align="center"><img src="./docs/assets/readme/feature-speakers.gif" width="880" alt="화자마다 샘플을 재생해 듣고 팀원을 고른 뒤 정리를 이어 가는 화면" /></p>
+
+#### 4. 근거가 붙는 회의록
+
+요약, 전사문, 추출된 일을 탭으로 봅니다. 추출된 일은 반영된 것과 확인이 필요한 일로 나뉘고, 원문 듣기로 그 말이 나온 시각으로 갑니다.
+
+<p align="center"><img src="./docs/assets/readme/feature-minutes.gif" width="880" alt="회의록의 요약, 전사문, 추출된 일 탭을 차례로 여는 화면" /></p>
+
+#### 5. 확인이 필요한 일만 승인
+
+마감이나 담당자가 애매한 일은 근거 원문과 함께 카드로 옵니다. 빈 칸을 채워 승인하면 태스크가 됩니다.
+
+<p align="center"><img src="./docs/assets/readme/feature-approve.gif" width="880" alt="확인 필요 카드에서 근거 원문을 보고 마감을 입력해 승인하는 화면" /></p>
+
+#### 6. 네 가지로 보는 태스크
+
+같은 태스크를 리스트, 보드, 캘린더, 간트로 봅니다.
+
+<p align="center"><img src="./docs/assets/readme/feature-views.gif" width="880" alt="태스크 화면을 리스트에서 보드, 캘린더, 간트로 바꾸는 화면" /></p>
+
+#### 7. 마감 리마인드와 답장
+
+마감 전에 보낼 Discord 개인 메시지 초안을 PM이 확인하고 보냅니다. 팀원의 답장은 대화로 모입니다.
+
+<p align="center"><img src="./docs/assets/readme/feature-messages.gif" width="880" alt="리마인드 초안을 확인해 발송하고 팀원과의 대화를 여는 화면" /></p>
+
+#### 8. 한눈에 보는 대시보드
+
+확인 대기, 기한 지남, 마감 임박, 최근 자동 반영을 한 화면에서 보고 바로 확인하러 갑니다.
+
+<p align="center"><img src="./docs/assets/readme/feature-dashboard.gif" width="880" alt="대시보드에서 확인이 필요한 일과 마감 임박, 최근 반영을 훑고 확인하기를 눌러 승인 화면으로 가는 화면" /></p>
 
 ## AI가 판단하는 방식
 
@@ -82,10 +134,10 @@ LLM이 뽑은 결과를 그대로 반영하지 않고, 여러 검사를 지난 �
 
 ### 준비물
 
-- [Node.js](https://nodejs.org) 24 LTS — frontend
-- Python 3.12와 [uv](https://docs.astral.sh/uv/) — backend, ai
-- [Docker](https://www.docker.com/) — backend 의 PostgreSQL(pgvector)
-- Discord 봇 토큰과 외부 API 키(Elice MLAPI 등) — ai. 없으면 해당 기능만 꺼집니다
+- [Node.js](https://nodejs.org) 24 LTS - frontend
+- Python 3.12와 [uv](https://docs.astral.sh/uv/) - backend, ai
+- [Docker](https://www.docker.com/) - backend 의 PostgreSQL(pgvector)
+- Discord 봇 토큰과 외부 API 키(Elice MLAPI 등) - ai. 없으면 해당 기능만 꺼집니다
 
 > [!TIP]
 > 화면만 보고 싶다면 백엔드 없이 frontend 의 모의 API(MSW)로 띄울 수 있습니다. 아래 Frontend 를 펼쳐 보세요.
