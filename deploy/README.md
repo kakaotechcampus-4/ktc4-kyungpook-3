@@ -61,7 +61,7 @@ AI 또는 배포 실행 코드가 바뀌면 [enable-summary.py](enable-summary.p
 
 | 워커 유닛 | 처리 |
 |---|---|
-| 존재하고 active | `/etc/systemd/system/mm-worker.service.d/90-summary.conf`에 `MM_SUMMARY_LLM=luna`를 설치한다. `daemon-reload` 뒤 기존 워커를 재시작한다. 부팅 시 자동 시작 여부와 무관하게 기존 배포 정책대로 재시작한다 |
+| 존재하고 active일 때만 | `/etc/systemd/system/mm-worker.service.d/90-summary.conf`에 `MM_SUMMARY_LLM=luna`를 설치한다. `daemon-reload` 뒤 기존 워커를 재시작한다. 부팅 시 자동 시작 여부와 무관하게 기존 배포 정책대로 재시작한다 |
 | 꺼진 워커 | 켜지 않는다. `status=not-on`을 출력하고 성공 배포 SHA를 갱신하지 않는다 |
 
 ### 검사하는 실행 명령
@@ -188,7 +188,7 @@ API 형식과 오류는 [FE 계약](../frontend/docs/contracts/frontend-api-cont
    - `.env` 변경은 `docker compose -f backend/docker-compose.prod.yml up -d` 로 컨테이너를 다시 만든다(restart 는 반영하지 않는다).
 7. **Caddy CSP `media-src`**: 브라우저는 302 로 S3 주소(`https://<bucket>.s3.ap-northeast-2.amazonaws.com`)에서 바로 받는다.
    - BE 는 S3 클라이언트를 리전 endpoint·가상 호스트 방식으로 만들어, presigned URL 의 host 가 항상 이 출처(`AWS_REGION` 의 리전)다.
-   - 서버의 Caddy 설정에 `Content-Security-Policy` 가 있다면 `media-src` 가 이 출처를 허용하는지 확인한다(#654). Caddy 설정은 이 저장소에 없어 확인하지 못했다.
+   - 서버의 Caddy 설정에 `Content-Security-Policy` 가 있다면 `media-src` 가 이 출처를 허용하는지 확인한다(#654). Caddy 설정은 [caddy/Caddyfile](caddy/Caddyfile) 에 있다.
    - 프론트가 `crossOrigin` 이나 Web Audio 를 쓰면 버킷 CORS 도 필요하다.
 
 ### 개인 계정 버킷의 위험과 키 운영
@@ -219,7 +219,7 @@ AI 서버(`mm-worker`)는 인계한 디스코드 회의의 녹음을 `ai/recordi
 
 | 상황 | 배포가 하는 일 |
 |---|---|
-| 이미 `/etc/systemd/system/mm-chat-poll.timer` 가 있는 서버에서 두 유닛 파일이 바뀐 배포(또는 mode=all) | 저장소 판으로 덮어쓰고 `daemon-reload` 한다. 타이머가 켜져 있으면 다시 걸고, 꺼져 있으면 켜지 않는다. 실행 중인 폴링은 끊지 않는다 |
+| 이미 `/etc/systemd/system/mm-chat-poll.timer` 가 있는 서버에서 두 유닛 파일이 바뀐 배포(또는 mode=all)일 때만 | 저장소 판으로 덮어쓰고 `daemon-reload` 한다. 타이머가 켜져 있으면 다시 걸고, 꺼져 있으면 켜지 않는다. 실행 중인 폴링은 끊지 않는다 |
 | 그 배포에서 타이머가 설치되지 않은 서버를 만남 | Actions 화면에 경고만 띄우고 배포는 정상 완료로 처리한다 |
 | backend 나 frontend 만 바뀐 배포 | 이 확인을 하지 않아 경고도 뜨지 않는다 |
 
