@@ -3,7 +3,7 @@
 저장소의 코드·설정·CI·PR 기록으로는 확인할 수 없어 문서에 "확인 필요" 표시를 남겨 둔 항목이다. 확인한 사람이 해당 문서의 표시를 값으로 바꾸고 이 표에서 줄을 지운다.
 
 - 기준: 2026-11-11, 브랜치 `docs/confirm-needed-cleanup`. 줄 번호는 이 브랜치 기준이다.
-- 남은 표시: 29건(아래 표 19줄로 묶음). `docs/user/review-approve.md:17` 은 화면 흐름도의 "확인 필요" 상태 이름이라 대상이 아니다.
+- 남은 표시: 16건(아래 1~3절 표 10줄로 묶음). #708 을 병합한 뒤 다시 센 수다. #708 이 표시를 지우거나 값을 채운 13건은 이 표에서 뺐다. `docs/user/review-approve.md:17` 은 화면 흐름도의 "확인 필요" 상태 이름이라 대상이 아니다.
 - 명령어에 비밀값을 넣지 않는다. 서버 명령은 운영 EC2 에서 실행한다.
 - "명령 없음"은 저장소에서 실행 가능한 명령을 확인하지 못했다는 뜻이다.
 
@@ -21,9 +21,8 @@
 
 | 파일:줄 | 확인할 것 | 확인 방법(명령어) |
 |---|---|---|
-| `docs/dev/env.md:19`, `docs/design/ai/evidence-check.md:108`, `docs/design/ai/index.md:69`, `docs/design/ai/judge-pipeline.md:108`, `docs/design/ai/asr-check.md:159`, `docs/design/backend/gate-matching.md:126`, `docs/techspec/test-strategy.md:62`, `docs/techspec/requirements-risks.md:41` | 운영 `AUTO_CREATE_ENABLED` 실제 값. 비어 있으면 기본값(켜짐) | `docker compose -f /opt/mm/backend/docker-compose.prod.yml exec -T api printenv AUTO_CREATE_ENABLED` (출처: `deploy/monitoring/README.md` 11절. 그 문서의 기록란에도 적는다) |
-| `docs/dev/env.md:22`, `docs/design/ai/judge-pipeline.md:72`, `docs/techspec/agent-design.md:103` | 운영 워커의 `MM_EXTRACT_PATH` 실제 값. 줄이 없거나 비면 `legacy` | `sudo systemctl show mm-worker -p Environment -p EnvironmentFiles` 로 유닛이 정한 값과 읽는 파일을 보고, `sudo grep -n '^MM_EXTRACT_PATH' /opt/mm/ai/.env` 로 파일 값을 본다. 유닛 환경이 `ai/.env` 보다 먼저다(`deploy/README.md` 의 "`ai/.env` 는 기존 프로세스 환경에 없는 값만 채운다") |
-| `docs/techspec/architecture.md:134` | GPU 전환 운영 모드가 `manual` 인지 `auto` 인지 | `sudo grep '"failover"' /opt/mm/ai/recordings/.worker/heartbeat.json` (출처: `ai/deploy/gpu-stt/README.md`) |
+| `docs/dev/env.md:19`, `docs/design/ai/evidence-check.md:108`, `docs/design/ai/index.md:69`, `docs/design/ai/judge-pipeline.md:108`, `docs/design/ai/asr-check.md:159`, `docs/design/backend/gate-matching.md:126` | 운영 `AUTO_CREATE_ENABLED` 실제 값. 비어 있으면 기본값(켜짐) | `docker compose -f /opt/mm/backend/docker-compose.prod.yml exec -T api printenv AUTO_CREATE_ENABLED` (출처: `deploy/monitoring/README.md` 11절. 그 문서의 기록란에도 적는다) |
+| `docs/dev/env.md:22`, `docs/design/ai/judge-pipeline.md:72` | 운영 워커의 `MM_EXTRACT_PATH` 실제 값. 줄이 없거나 비면 `legacy` | `sudo systemctl show mm-worker -p Environment -p EnvironmentFiles` 로 유닛이 정한 값과 읽는 파일을 보고, `sudo grep -n '^MM_EXTRACT_PATH' /opt/mm/ai/.env` 로 파일 값을 본다. 유닛 환경이 `ai/.env` 보다 먼저다(`deploy/README.md` 의 "`ai/.env` 는 기존 프로세스 환경에 없는 값만 채운다") |
 | `docs/design/backend/notion-sync.md:105` | 운영에서 실제 Notion 연결이 동작하는지 | 명령 없음. 운영 웹에서 워크스페이스에 Notion 을 연결하고 태스크 하나가 Notion 에 반영되는지 본 뒤 날짜와 결과를 적는다 |
 | `docs/design/backend/security.md:110` | 운영 `SERVICE_TOKEN`·`OAUTH_STATE_SECRET` 교체 주기 | 명령 없음. 운영 담당자에게 마지막 교체일과 주기를 묻는다. 값 자체는 문서에 적지 않는다 |
 | `docs/design/backend/reminder-scheduler.md:146` | 72시간 막힘이 운영에서 걸린 횟수 | 명령 없음. 집계 쿼리를 저장소에서 확인하지 못했다. BE 담당자가 운영 DB 나 API 로그에서 센다 |
@@ -32,22 +31,14 @@
 
 | 파일:줄 | 확인할 것 | 확인 방법(명령어) |
 |---|---|---|
-| `docs/techspec/test-strategy.md:23` | 제출 시점의 세 파트 테스트 재실행 결과 | `docs/dev/testing.md` 의 파트별 실행 명령으로 다시 돌리고 통과·실패 수와 날짜를 적는다 |
 | `docs/dev/testing.md:112` | 2026-11-07 표의 BE(파일 71·함수 1,316)와 FE 수치를 어떤 범위로 셌는지 | 다시 세기: `git ls-files 'backend/**/test_*.py' \| wc -l` 과 `git grep -h -E '^\s*(async )?def test_' -- 'backend/**/*.py' \| wc -l`. 2026-11-07 마지막 develop 커밋(`41b554fc`)은 이 방법으로 87·1,583 이다. 원래 집계한 사람에게 범위를 묻거나, 제출 직전 수치로 표를 바꾼다 |
-| `docs/design/ai/stt.md:72` | 업로드 음성 화자 분리 정확도(DER). 잰 적이 없다 | 명령 없음. 측정 스크립트를 저장소에서 확인하지 못했다. 재지 않기로 하면 표시를 "재지 않았다"로 확정한다 |
+| `docs/design/ai/stt.md:74` | 업로드 음성 화자 분리 정확도(DER). 잰 적이 없다 | 명령 없음. 측정 스크립트를 저장소에서 확인하지 못했다. 재지 않기로 하면 표시를 "재지 않았다"로 확정한다 |
 | `docs/design/ai/evidence-check.md:116` | Jev 호출 단가 | 명령 없음. 공급사 요금표나 청구 내역에서 확인한다 |
-| `docs/collab/ai-agent-rules.md:123` | 도구별 실제 사용 비율. 커밋의 `Co-Authored-By` 표시만으로는 알 수 없다 | 참고 집계: `git log --no-merges -n 2000 --format=%b develop \| grep -c 'Co-Authored-By: Claude'`. 비율은 팀원에게 물어야 한다. 확인할 방법이 없으면 "단정할 수 없다"로 확정한다 |
 
-## 3. 팀 기록·외부 자료
+## 3. 외부 자료
 
 | 파일:줄 | 확인할 것 | 확인 방법(명령어) |
 |---|---|---|
-| `docs/collab/index.md:7`, `docs/collab/ground-rules.md:16` | 공식 역할표가 있는지, 커밋·PR 로 추정한 파트 배치가 맞는지 | 명령 없음. 팀원 전원에게 문서의 파트 배치를 확인받는다 |
-| `docs/collab/ground-rules.md:103` | 정기 회의 일정·방식 | 명령 없음. 팀 채널의 회의 공지를 본다 |
-| `docs/collab/branch-strategy.md:41` | main PR 제목의 주차 번호가 2 → 7, 11 → 13 으로 건너뛴 이유. `main` 대상 PR 이 9건뿐인 것은 확인했다 | 목록 재확인: `gh pr list --base main --state all --limit 60 --json number,title,mergedAt`. 이유는 PR 을 올린 팀원에게 묻는다 |
-| `docs/collab/ai-agent-rules.md:101` | #246 을 #250 에서 되돌린 이유. #250 본문은 "Reverts #246" 한 줄이고 코멘트·리뷰가 없다 | `gh pr view 250 --json body,comments,reviews` 로 재확인. 이유는 #250 작성자(Y-Jimin)에게 묻는다 |
-| `docs/collab/ai-agent-rules.md:102` | `mm-harness` 플러그인의 원본 위치와 설치 방법 | 명령 없음. 플러그인을 쓰는 팀원의 Claude Code `/plugin` 화면에서 마켓플레이스 출처를 본다 |
-| `docs/collab/conventions.md:80` | `convention-check` 가 검사하는 항목. 스크립트가 외부 저장소(`kakaotechcampus-4/pr-pipeline` 의 `workflows/scripts/p2/convention-notice.sh`)에 있다 | `gh api repos/kakaotechcampus-4/pr-pipeline/contents/workflows/scripts/p2/convention-notice.sh -H "Accept: application/vnd.github.raw"`. 권한이 없으면 운영진에게 묻는다 |
 | `docs/user/faq.md:11` | Discord 채널 권한의 "애플리케이션 명령 사용"이 꺼지면 슬래시 명령이 막히는지 | 명령 없음. 시험 서버에서 그 권한을 끄고 봇 슬래시 명령이 보이는지 본다 |
 | `docs/user/quick-guide.md:63` | 15행의 Discord 도움말 링크가 설명과 맞는 문서를 가리키는지 | 명령 없음. 15행의 링크를 브라우저로 열어 본다 |
 
