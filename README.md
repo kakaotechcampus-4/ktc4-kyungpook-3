@@ -165,7 +165,6 @@ python -m capture.worker           # 처리 워커: 전사·판단 후 BE 로 �
 | 실행·환경 변수·테스트·배포 | [개발자 가이드](./docs/dev/local-setup.md) |
 | 설계와 AI 판단 방식 | [테크스펙](./docs/techspec/index.md) · [설계 심화](./docs/design/index.md) |
 | 고민한 것과 고른 이유 | [트레이드오프](./docs/techspec/tradeoffs.md) · [일정·히스토리·스펙 아웃](./docs/techspec/history.md) |
-| 심사 항목별 근거 | [심사 항목별로 볼 곳](./docs/techspec/index.md#심사-항목별로-볼-곳) |
 | API | [API 문서](./docs/api/index.md) |
 | 그라운드룰·브랜치·컨벤션·리뷰 | [협업 문서](./docs/collab/index.md) · [멘토 리뷰와 반영 기록](./docs/collab/code-reviews.md) |
 | 파트별 계약·계획·결과 | [문서 안내](./docs/README.md) · [FE API 계약](./frontend/docs/contracts/frontend-api-contract.md) · [BE·AI 계약](./backend/docs/contracts/backend-ai-contract.md) |

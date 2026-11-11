@@ -26,7 +26,7 @@
 |---|---|
 | 배포 서비스 URL (테스트 계정·샘플 데이터) | [사용자 가이드](user/getting-started.md) |
 | GitHub 저장소 (README, 실행·배포, 테스트, CI/CD) | [README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3) · [개발자 가이드](dev/local-setup.md) |
-| 테크스펙 | [테크스펙](techspec/index.md). 심사 항목별 근거는 [심사 항목별로 볼 곳](techspec/index.md#심사-항목별로-볼-곳) |
+| 테크스펙 | [테크스펙](techspec/index.md) |
 | 협업문서 | [협업 문서](collab/index.md) |
 
 ## 원자료
