@@ -98,10 +98,8 @@ AI 파트는 기능 하나를 "설계 → 테스트 먼저 구현 → 셀프 리
 
 변천:
 
-- 2026-10-31 #246 에서 저장소 안(`.claude/agents/`, `.claude/skills/`, pytest Stop 훅)으로 처음 넣었고, 같은 날 #250 에서 되돌렸다. 되돌린 이유는 PR 에 적혀 있지 않다 `[확인 필요]`.
-- 지금은 저장소 밖 Claude Code 플러그인 `mm-harness` 로 쓴다(이슈 템플릿·워크플로 주석 기준). 플러그인 원본 위치와 설치 방법은 저장소로 확인하지 못했다 `[확인 필요]`.
-
-> 📷 **사진 자리**: `/mm-harness:ai-feature` 실행 중 설계 질문 단계 터미널 화면 (파일: ../assets/collab-harness-run.png)
+- 2026-10-31 #246 에서 저장소 안(`.claude/agents/`, `.claude/skills/`, pytest Stop 훅)으로 처음 넣었고, 같은 날 #250 에서 되돌렸다. 되돌린 이유는 PR 에 적혀 있지 않다.
+- 지금은 저장소 밖 Claude Code 플러그인 `mm-harness` 로 쓴다(이슈 템플릿·워크플로 주석 기준). 플러그인 원본은 이 저장소 밖에 있다.
 
 ## 5. AI 가 만든 기록과 사람이 쓴 기록의 구분
 
@@ -120,11 +118,11 @@ AI 파트는 기능 하나를 "설계 → 테스트 먼저 구현 → 셀프 리
 - 기준은 [ai/docs/README.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/README.md) 에 있다. 진행 로그(`YYYY-MM-DD-제목.md`)와 결정 기록(`YYYY-MM-DD-NNNN-제목.md`)을 같은 폴더에 두고, 작성 주체로만 `ai/` 와 `member/` 를 나눈다.
 - 한계: 규칙이지만 실제로는 섞여 있다. `member/` 폴더 파일 중 상당수(추가 커밋 기준 약 절반)가 Claude 공동 작성 커밋으로 들어왔다. 폴더만으로 작성 주체를 단정할 수 없다.
 - 효과: 리뷰어는 AI 가 쓴 근거를 더 의심하며 읽을 수 있고, 사람의 판단·회고(트러블슈팅)는 에이전트가 덮어쓰지 않는다.
-- develop 최근 비머지 커밋 2,000개 중 약 240개의 본문에 `Co-Authored-By: Claude` 가 있다(2026-11-09 `git log` 기준). 도구별 실제 사용 비율은 이 표시만으로 단정할 수 없다 `[확인 필요]`.
+- develop 최근 비머지 커밋 2,000개 중 약 240개의 본문에 `Co-Authored-By: Claude` 가 있다(2026-11-09 `git log` 기준). 도구별 실제 사용 비율은 이 표시만으로 단정할 수 없다.
 
 ## 6. 한계
 
-- BE·FE 결정 기록(`*/docs/plan/mN/basis-for-decision/`)은 작성 주체를 폴더로 나누지 않는다 `[확인 필요: 팀 논의]`.
+- BE·FE 결정 기록(`*/docs/plan/mN/basis-for-decision/`)은 작성 주체를 폴더로 나누지 않는다.
 - 하네스는 사용자 PC 세션에서만 돌아 GitHub 이벤트로 자동 재시작되지 않는다. 사람이 알림을 보고 다시 부른다.
 
 ## 관련 문서

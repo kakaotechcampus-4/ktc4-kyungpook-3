@@ -21,11 +21,11 @@
 
 - Backend: 모델을 바꾸고 마이그레이션을 빠뜨리면 `alembic check` 가 CI 에서 실패한다.
 - AI: 포맷 도구 대신 구조 규칙을 테스트로 강제한다(예: `capture/` 밖에서 `discord` import 금지 — `tests/test_platform_isolation.py`). 자세한 내용은 [AI 에이전트 운영 규칙](ai-agent-rules.md#ai-파트의-깨면-안-되는-규칙-aiclaudemd).
-- AI 쪽 lint 도입 여부 `[팀 논의]`.
+- AI 쪽에는 lint 를 두지 않았다. 도입은 정하지 않았다.
 
 ## 2. 커밋 메시지
 
-Conventional Commits 형식 `<type>(<scope>): <설명>` 을 쓴다. 문서화된 규칙 파일은 없고 관행이다 `[확인 필요: 규칙 문서 위치]`.
+Conventional Commits 형식 `<type>(<scope>): <설명>` 을 쓴다. 팀 노션 "커밋 컨벤션"에서 type 목록과 scope 표기(`feat(stt): ...`, `fix(notion): ...`), 브랜치 이름(`feature/1-화자분리` 처럼 타입과 이슈 번호)을 정했다.
 
 관찰(2026-11-09, `develop` 최근 비머지 커밋 2,000개): 1,998개가 이 형식이다.
 
@@ -50,11 +50,11 @@ Conventional Commits 형식 `<type>(<scope>): <설명>` 을 쓴다. 문서화된
 | 형식 | 예 | 주로 쓰는 사람 |
 |---|---|---|
 | Conventional | `feat(judge): 전사 오인식 의심 단어가 있는 새 항목은 auto 로 보내지 않는다` | AI·BE |
-| 대괄호 태그 | `[FEAT] [FE] 카카오 로그인을 보완하고 휴대폰 로그인을 시안 H-1 배치로 바꾼다 (#538)` | FE(hotpringles 78건), 일부 BE(hwnv 7, wkddnjswns 4) |
+| 대괄호 태그 | `[FEAT] [FE] 카카오 로그인을 보완하고 휴대폰 로그인을 시안 H-1 배치로 바꾼다 (#538)` | FE(hotpringles 96건), 일부 BE(hwnv 7, wkddnjswns 4) |
 
-- 최근 머지 PR 300건 중 Conventional 208건, 대괄호 89건(2026-11-09 `gh pr list`).
+- `main` 밖 머지 PR 387건 중 Conventional 277건, 대괄호 107건(2026-11-11, GitHub GraphQL).
 - 대괄호 형식은 `[유형] [파트] 설명 (#이슈)` 이다. 유형은 이슈 템플릿 제목 머리(`[FEAT]`, `[BUG]`, `[TASK]`)와 `[FIX]`, `[REFACTOR]` 를 쓴다.
-- **현재 둘 다 쓰인다 — 통일 여부 `[팀 논의]`.**
+- 지금은 둘 다 쓴다. 하나로 맞추지는 않았다.
 - 주간 멘토 리뷰 PR 제목: `chore: N주차 개발 내용 develop → main 반영 (#PR,…)`.
 
 ### 본문 — PR 템플릿
@@ -77,7 +77,7 @@ AI 하네스로 만든 PR 은 별도 구조(요약 / 설계 / 변경 / 검증 / 
 - `main` 대상 PR 이 열리거나 다시 열리거나 draft 를 벗어날 때만 돈다. 팀 내부 PR(`→ develop`)에는 돌지 않는다.
 - 운영 저장소(`kakaotechcampus-4/pr-pipeline`)의 스크립트 `convention-notice.sh` 를 받아 실행하고, PR 제목·작성자·base·head 브랜치 등을 넘긴다.
 - 컨벤션 이탈을 **안내 코멘트**로만 알린다. 머지를 막지 않는다.
-- 어떤 항목을 검사하는지는 외부 스크립트에 있어 저장소로 확인하지 못했다 `[확인 필요]`.
+- 검사 항목은 운영 저장소의 스크립트에 있고 이 저장소에는 없다.
 
 ## 4. 이슈 템플릿
 
@@ -99,8 +99,6 @@ AI 하네스로 만든 PR 은 별도 구조(요약 / 설계 / 변경 / 검증 / 
 - [assign-mentor.yml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/workflows/assign-mentor.yml): `main` 대상 PR(draft 제외)에 담당 멘토를 자동 지정한다. 판정 로직은 운영 저장소 스크립트에 있다.
 - [notify-discord.yml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/workflows/notify-discord.yml): `main` 대상 PR 의 리뷰 요청·결과를 팀 Discord 에 알린다.
 - 그 밖의 워크플로(파트 CI, 배포, 팀 알림)는 팀이 직접 추가했다.
-
-> 📷 **사진 자리**: main 대상 PR 에 convention-check 안내 코멘트와 멘토 자동 지정이 붙은 화면 (파일: ../assets/collab-convention-check.png)
 
 ## 관련 문서
 
