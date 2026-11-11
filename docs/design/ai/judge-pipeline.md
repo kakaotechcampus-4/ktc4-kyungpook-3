@@ -69,7 +69,7 @@ flowchart LR
 | 채팅·답장 | 쓰지 않음 | 채팅과 답장은 플래그와 상관없이 항상 judge |
 | 기준 문서 | [`extract/README.md`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/extract/README.md), [`TASK_CRITERIA.md`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/extract/TASK_CRITERIA.md) | [`judge/pipeline.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/judge/pipeline.py) |
 
-경로는 `MM_EXTRACT_PATH` 로 정한다. 자동 반영(auto)은 judge 경로에서 `JEV_API_KEY` 가 있을 때 열린다.
+경로는 `MM_EXTRACT_PATH` 로 정하고 운영은 judge 경로로 돈다(2026-11-11 운영 서버에서 확인). 자동 반영(auto)은 judge 경로에서 `JEV_API_KEY` 가 있을 때 열린다.
 
 ## 왜 이 방식인가
 

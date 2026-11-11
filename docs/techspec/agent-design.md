@@ -102,4 +102,4 @@ auto 로 만든 태스크도 PM 이 되돌릴 수 있다(태스크를 소프트 
 
 ## legacy 경로
 
-`MM_EXTRACT_PATH` 코드 기본값은 `legacy`(LLM 두 번: 관련 문장 필터 → 구조화 추출, 확신도 0.8/0.5 로 게이트)다. Jev 근거 상태·오인식 검사는 judge 경로에서만 쓰인다. 운영 서버의 경로는 환경 변수 `MM_EXTRACT_PATH` 로 정한다. 채팅 회의는 이 값과 상관없이 judge 경로다. 상세: [ai/extract/README.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/extract/README.md).
+운영은 judge 경로로 돈다(2026-11-11 운영 서버에서 확인). `MM_EXTRACT_PATH` 코드 기본값은 `legacy`(LLM 두 번: 관련 문장 필터 → 구조화 추출, 확신도 0.8/0.5 로 게이트)다. Jev 근거 상태·오인식 검사는 judge 경로에서만 쓰인다. 운영 서버의 경로는 환경 변수 `MM_EXTRACT_PATH` 로 정한다. 채팅 회의는 이 값과 상관없이 judge 경로다. 상세: [ai/extract/README.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/extract/README.md).

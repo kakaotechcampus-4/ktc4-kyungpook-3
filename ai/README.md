@@ -94,7 +94,7 @@ pytest          # py-cord 없이 돕니다 (스텁 데이터 사용)
 |---|---|
 | `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID` | 봇 토큰. 서버 ID 를 넣으면 슬래시 명령이 바로 반영됩니다 |
 | `BE_BASE_URL`, `BE_SERVICE_TOKEN` | Backend 주소와 서비스 토큰. 없으면 인계 단계에서 멈춥니다 |
-| `MM_EXTRACT_PATH` | 추출 경로. `legacy`(기본) 또는 `judge`. `judge` 는 `TERRA_*`, `LUNA_*`, `BE_*` 가 필요합니다 |
+| `MM_EXTRACT_PATH` | 추출 경로. `legacy`(기본) 또는 `judge`. 운영은 `judge` 로 돕니다. `judge` 는 `TERRA_*`, `LUNA_*`, `BE_*` 가 필요합니다 |
 | `MM_UPLOAD_INTAKE` | `1` 이면 웹 업로드를 가져옵니다. `PYANNOTEAI_API_KEY` 가 함께 필요하고 운영 서버 한 대에서만 켭니다 |
 | `MM_SUMMARY_LLM` | 회의 요약 모델. 비우면 꺼짐이고 `luna` 나 `terra` 를 넣으면 켜집니다 |
 | `MM_GPU_FAILOVER` | Elice 장애 때 GPU 전사 서버로 넘기는 모드 |
