@@ -52,5 +52,6 @@ flowchart LR
 
 ## 관련 문서
 
+- [팀 노션 페이지](https://app.notion.com/p/elice-track/3-MANAGER-3bb2bb98425780ce8568e784af0f0229): 위클리 보고서, 회의록, 요청 문서, To-Do 와 트러블슈팅 로그의 원본
 - [문서 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/docs/README.md)
 - [프로젝트 상세 설명 §2 팀과 협업 방식](../프로젝트%20상세%20설명.md#2-팀과-협업-방식)
