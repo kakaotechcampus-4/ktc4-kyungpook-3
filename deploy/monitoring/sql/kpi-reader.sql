@@ -6,6 +6,8 @@
 -- 이 파일에는 비밀번호가 없다. psql 변수 pw 로만 받는다. 다시 실행해도 안전하다(비밀번호를 바꾸고 권한을 다시 준다).
 -- kpi view 를 DROP 하고 다시 만든 마이그레이션 뒤에는 이 파일을 다시 실행한다(GRANT 가 view 와 함께 사라진다).
 -- kpi.excluded_workspace 는 일부러 권한을 주지 않는다. 읽기 계정은 view 세 개만 본다.
+-- 접속 제한 10: Grafana Cloud 는 대시보드를 열 때 여러 서버에서 한꺼번에 접속한다. 3 이면 패널 일부가
+-- "too many connections for role" 로 깨졌다(2026-11-11). 읽기 전용이고 쿼리는 5초에 끊겨 10 이어도 DB 부담이 작다.
 
 \set ON_ERROR_STOP on
 
@@ -13,7 +15,7 @@ SELECT 'CREATE ROLE kpi_reader LOGIN'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kpi_reader')
 \gexec
 
-ALTER ROLE kpi_reader LOGIN CONNECTION LIMIT 3 PASSWORD :'pw';
+ALTER ROLE kpi_reader LOGIN CONNECTION LIMIT 10 PASSWORD :'pw';  -- secret-scan: allow (psql 변수 자리표시. 값은 실행할 때 read -rs 로 받는다)
 ALTER ROLE kpi_reader SET default_transaction_read_only = on;
 ALTER ROLE kpi_reader SET statement_timeout = '5s';
 
