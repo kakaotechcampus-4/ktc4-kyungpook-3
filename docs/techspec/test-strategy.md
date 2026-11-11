@@ -7,7 +7,7 @@
 | 원칙 | 내용 |
 |---|---|
 | 외부 API 없음 | AI 테스트는 LLM·Jev·임베딩을 Null/Fake 클라이언트로 대신한다. FE 는 MSW 를 유일한 데이터 출처로 쓴다 |
-| 평가와 테스트 분리 | 실제 API 를 부르는 평가 스크립트는 pytest 에 넣지 않는다(`ai/CLAUDE.md` 규칙) |
+| 평가와 테스트 분리 | 실제 API 를 부르는 평가 스크립트는 pytest 에 넣지 않는다(AI 파트 규칙) |
 | 경계는 테스트로 강제 | Discord import 는 `capture/` 에만(`tests/test_platform_isolation.py`), FSD 계층은 ESLint |
 | 평가 라벨도 테스트 | 평가 대사 라벨·지표 계산을 단위 테스트가 지킨다(예: `tests/test_eval_evidence.py` 361건) |
 

@@ -85,8 +85,7 @@ gitGraph
 | `fix/` | 49 | `fix/217-judge-retry-selection` | |
 | `feat/` | 44 | `feat/229-evidence-seqs` | `feature/` 의 줄임 표기 |
 | `docs/` | 26 | `docs/manual-upload-overlap` | |
-| `chore/` | 17 | `chore/claude-team-settings` | |
-| `codex/` | 9 | `codex/572-release-readiness` | Codex 에이전트가 만든 브랜치 이름 |
+| `chore/` | 17 | `chore/183-deploy-ci-gate` | |
 | `refactor/` | 6 | | |
 | `task/` | 4 | `task/505-discord-channel-button` | |
 | `test/` | 1 | | |

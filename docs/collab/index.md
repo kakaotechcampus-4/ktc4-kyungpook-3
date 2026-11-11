@@ -1,6 +1,6 @@
 # 협업 문서
 
-6명이 세 파트(AI·Backend·Frontend)로 나눠 한 저장소에서 일한 방식을 정리한다. 그라운드룰, AI 코딩 에이전트 운영 규칙, 브랜치 전략, 코딩 컨벤션, 코드 리뷰 기록으로 나눴다.
+6명이 세 파트(AI·Backend·Frontend)로 나눠 한 저장소에서 일한 방식을 정리한다. 그라운드룰, 브랜치 전략, 코딩 컨벤션, 코드 리뷰 기록으로 나눴다. 리뷰는 팀원이 PR 에 직접 코멘트를 달고, 작성자가 반영한 뒤 파트 안에서 머지했다.
 
 ## 팀 구성
 
@@ -32,7 +32,6 @@ GitHub 아이디 기준이다. 팀 역할은 팀 노션의 "1인 1역 정하기"
 | 쪽 | 내용 |
 |---|---|
 | [그라운드룰](ground-rules.md) | 파트 배치, 파트 간 계약·요청, 결정 기록 의무, 리뷰 응답 규칙, Discord 알림 |
-| [AI 에이전트 운영 규칙](ai-agent-rules.md) | Claude Code·Codex 를 팀 규칙으로 관리한 방식, 팀 스킬, AI 파트 하네스, AI 기록과 사람 기록의 구분 |
 | [브랜치 전략](branch-strategy.md) | 작업 브랜치 → develop → (release/weekN) → main, 브랜치 이름 규칙 |
 | [코딩 컨벤션](conventions.md) | 파트별 lint·포맷, 커밋 메시지, PR 제목·본문, 이슈 템플릿, CODEOWNERS |
 | [코드 리뷰 기록](code-reviews.md) | 주간 멘토 리뷰의 지적 → 반영 → 재리뷰 사례, 팀원 상호 리뷰 사례 |
@@ -53,6 +52,5 @@ flowchart LR
 
 ## 관련 문서
 
-- [공통 에이전트 규칙](../agent-rules.md)
 - [문서 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/docs/README.md)
 - [프로젝트 상세 설명 §2 팀과 협업 방식](../프로젝트%20상세%20설명.md#2-팀과-협업-방식)

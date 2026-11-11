@@ -8,7 +8,7 @@
 |---|---|---|---|
 | Frontend | ESLint 9 + typescript-eslint, Prettier 3 | [eslint.config.js](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/eslint.config.js), [.prettierrc.json](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/.prettierrc.json) | `npm run typecheck` → `lint` → `format:check` → `test`, 빌드, Playwright E2E ([frontend-ci.yml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/workflows/frontend-ci.yml)) |
 | Backend | ruff | [backend/ruff.toml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/ruff.toml) — ruff 기본 규칙(E4, E7, E9, F), `target-version = "py312"` | `ruff check .` → pytest(pgvector 서비스) → `alembic upgrade head` + `alembic check` → 이미지 빌드 ([backend-ci.yml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/workflows/backend-ci.yml)) |
-| AI | 없음 | [ai/pyproject.toml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/pyproject.toml) 은 pytest 설정만 있다. `ai/CLAUDE.md` 에 "lint/format 설정은 없다"고 적혀 있다 | pytest 만 ([ai-ci.yml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/workflows/ai-ci.yml)) |
+| AI | 없음 | [ai/pyproject.toml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/pyproject.toml) 은 pytest 설정만 있다. | pytest 만 ([ai-ci.yml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/workflows/ai-ci.yml)) |
 
 ### Frontend 규칙 요점
 
@@ -20,7 +20,7 @@
 ### Backend·AI 규칙 요점
 
 - Backend: 모델을 바꾸고 마이그레이션을 빠뜨리면 `alembic check` 가 CI 에서 실패한다.
-- AI: 포맷 도구 대신 구조 규칙을 테스트로 강제한다(예: `capture/` 밖에서 `discord` import 금지 — `tests/test_platform_isolation.py`). 자세한 내용은 [AI 에이전트 운영 규칙](ai-agent-rules.md#ai-파트의-깨면-안-되는-규칙-aiclaudemd).
+- AI: 포맷 도구 대신 구조 규칙을 테스트로 강제한다(예: `capture/` 밖에서 `discord` import 금지 — `tests/test_platform_isolation.py`).
 - AI 쪽에는 lint 를 두지 않았다. 도입은 정하지 않았다.
 
 ## 2. 커밋 메시지
@@ -41,7 +41,6 @@ Conventional Commits 형식 `<type>(<scope>): <설명>` 을 쓴다. 팀 노션 "
 - 설명은 한국어 평서문("~한다")이 많다. FE 담당 커밋은 영어 설명도 쓴다(예: `fix(summary): keep graph links within loaded live meetings`).
 - 리뷰 반영 커밋은 설명 앞에 `리뷰 반영 -` 을 붙인다(2,000개 중 378개).
 - 이슈 번호는 설명 안(`#348 …`)이나 끝(`(#348)`)에 붙인다.
-- AI 에이전트가 함께 쓴 커밋은 본문 끝에 `Co-Authored-By: Claude …` 를 단다([AI 에이전트 운영 규칙](ai-agent-rules.md#5-ai-가-만든-기록과-사람이-쓴-기록의-구분)).
 
 ## 3. PR 제목과 본문
 
@@ -68,8 +67,6 @@ Conventional Commits 형식 `<type>(<scope>): <설명>` 을 쓴다. 팀 노션 "
 | 고민했던 점 · 다른 선택지 | 두 방법 중 고른 이유 |
 | 지난 리뷰 반영 | 재리뷰 요청일 때만. 피드백 → 반영 위치. 반영하지 않은 것은 이유 |
 
-AI 하네스로 만든 PR 은 별도 구조(요약 / 설계 / 변경 / 검증 / 사람이 확인할 것 / 기록 / 다른 파트 전달)를 쓴다.
-
 ### convention-check 워크플로가 하는 일
 
 [convention-check.yml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/workflows/convention-check.yml) 은 운영진 배포 파일이다.
@@ -88,7 +85,7 @@ AI 하네스로 만든 PR 은 별도 구조(요약 / 설계 / 변경 / 검증 / 
 | Feature Request | `[FEAT] ` | enhancement | 담당 파트(ai/backend/frontend) 체크 … |
 | Bug Report | `[BUG] ` | bug | 버그 설명, 재현 경로 … |
 | Task / Chore | `[TASK] ` | chore | 담당 파트 체크 … |
-| AI Feature (하네스) | `[AI] ` | enhancement | 목표, 먼저 읽을 것, 범위 안/밖, 지킬 것, 설계에서 정할 것, 완료 조건, 선행 이슈 |
+| AI Feature | `[AI] ` | enhancement | 목표, 먼저 읽을 것, 범위 안/밖, 지킬 것, 설계에서 정할 것, 완료 조건, 선행 이슈 |
 
 팀이 더한 라벨: `chore`, `refactor`, `ai→be`, `ai→fe`, `contract`, `합의됨`([그라운드룰](ground-rules.md#2-파트-간-계약과-요청)).
 

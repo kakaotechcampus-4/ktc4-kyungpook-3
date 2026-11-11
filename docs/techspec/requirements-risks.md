@@ -81,7 +81,7 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 | 권한 | 승인·업로드·설정 쓰기는 PM 만. 마지막 PM 보호 |
 | 비밀번호 재설정 | 30분 1회용 토큰(해시 저장), 계정당 60초 1회·1시간 5회, 같은 공인 IP 시간당 5회, 서비스 전체 시간당 10회 |
 | 배포 | GitHub OIDC → SSM(장기 키 없음), API 는 `127.0.0.1` 에만 열고 Caddy 가 HTTPS |
-| AI 비밀값 | `.env` 는 에이전트가 읽지 않는 규칙, 평가 원문은 레포 밖 |
+| AI 비밀값 | `.env` 는 커밋하지 않고, 평가 원문은 레포 밖에 둔다 |
 
 상세: [backend README 세션 토큰·로그인 제한](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md#로그인-제한).
 
