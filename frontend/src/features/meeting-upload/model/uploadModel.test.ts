@@ -53,7 +53,7 @@ describe('업로드 실패 분류 (U3-8, U3-10)', () => {
   it('413 은 파일 칸에 화면 한도와 같은 문구로 알린다', () => {
     expect(classifyUploadError(http('AUDIO_TOO_LARGE', 413))).toEqual({
       kind: 'file',
-      message: '200 MiB 이하 파일만 올릴 수 있어요.',
+      message: '700 MiB 이하 파일만 올릴 수 있어요.',
     })
   })
 

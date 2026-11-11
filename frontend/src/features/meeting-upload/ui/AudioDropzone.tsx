@@ -79,7 +79,7 @@ export function AudioDropzone({
           </button>
         </p>
       </div>
-      <p className={LIMITS}>mp3 · wav · m4a · ogg · webm — 최대 200 MiB · 2시간</p>
+      <p className={LIMITS}>mp3 · wav · m4a · ogg · webm — 최대 700 MiB · 2시간</p>
       <input
         ref={inputRef}
         type="file"

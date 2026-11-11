@@ -176,11 +176,11 @@ def test_file_at_the_limit_is_accepted(db, seed, monkeypatch):
 
 
 def test_default_limit_matches_web_upload_limit(monkeypatch):
-    # 웹 화면 한도(frontend uploadPolicy maxBytes)와 같은 200MiB 다. 설정이 비어 있어도 기본값을 쓴다
+    # 웹 화면 한도(frontend uploadPolicy maxBytes)와 같은 700MiB 다. 설정이 비어 있어도 기본값을 쓴다
     monkeypatch.delenv("UPLOAD_MAX_BYTES", raising=False)
-    assert upload_storage.max_bytes() == 200 * 1024 * 1024
+    assert upload_storage.max_bytes() == 700 * 1024 * 1024
     monkeypatch.setenv("UPLOAD_MAX_BYTES", "")
-    assert upload_storage.max_bytes() == 200 * 1024 * 1024
+    assert upload_storage.max_bytes() == 700 * 1024 * 1024
 
 
 @pytest.mark.parametrize("who", ["outsider", "left"])

@@ -79,7 +79,7 @@ export interface MeetingUpload {
  * 회의록 목록에서 확인하게 한다. 같은 파일을 자동으로 다시 보내지 않는다.
  *
  * 원본 파일은 mutation 변수에 넣지 않는다. 변수는 끝난 뒤에도 MutationCache 에 `gcTime`(기본 5분) 동안 남는다 —
- * 최대 200 MiB 를 처리 화면까지 붙들게 된다 (U3-9). 파일은 보낼 때 한 번 꺼내 그 요청만 쥐고, 요청이 끝나면 놓인다.
+ * 최대 700 MiB 를 처리 화면까지 붙들게 된다 (U3-9). 파일은 보낼 때 한 번 꺼내 그 요청만 쥐고, 요청이 끝나면 놓인다.
  */
 export function useMeetingUpload(
   workspaceId: string,
