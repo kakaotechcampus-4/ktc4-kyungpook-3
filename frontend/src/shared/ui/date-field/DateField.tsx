@@ -16,9 +16,9 @@ export interface DateFieldProps extends Omit<
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
-/* 아이콘 오른쪽 끝을 Select 의 chevron 자리(테두리 안쪽 13px)에 맞춘다 — 28px 버튼에서 16px 아이콘의 여백 6px 만큼 당긴다 */
+/* 28px 버튼에서 16px 아이콘의 여백 6px 만큼 당긴다 */
 const CALENDAR_BUTTON =
-  'inline-flex h-28 w-28 shrink-0 -mr-6 items-center justify-center rounded-6 bg-transparent text-dim disabled:text-line-strong'
+  'inline-flex h-28 w-28 shrink-0 -mr-6 items-center justify-center rounded-6 bg-transparent disabled:text-line-strong'
 
 /**
  * 날짜 입력. 비우면 「미정」이라 `type="date"` 를 쓰지 않고 글로 받는다 — 형식 검증은 호출부가 한다.
@@ -35,6 +35,7 @@ export function DateField({
 }: DateFieldProps) {
   const pickerRef = useRef<HTMLInputElement>(null)
   const locked = Boolean(disabled) || Boolean(readOnly)
+  const emphasized = rest.labelTone === 'required-blocking' || Boolean(rest.error)
 
   const openPicker = () => {
     const picker = pickerRef.current
@@ -59,7 +60,7 @@ export function DateField({
         <span className="relative inline-flex shrink-0">
           <button
             type="button"
-            className={CALENDAR_BUTTON}
+            className={`${CALENDAR_BUTTON} ${emphasized ? 'text-accent' : 'text-dim'}`}
             aria-label={calendarLabel}
             disabled={locked}
             onClick={openPicker}

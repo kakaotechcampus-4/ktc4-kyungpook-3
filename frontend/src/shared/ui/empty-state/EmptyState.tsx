@@ -3,7 +3,7 @@ import { Mascot } from '../mascot/Mascot'
 import type { MascotPose } from '../mascot/Mascot'
 
 export interface EmptyStateProps {
-  /** 마스코트 포즈. 기본 'idle' — 완료 계열 빈 상태는 호출자가 'squint' 를 준다 */
+  /** 마스코트 포즈. 기본 'idle' */
   pose?: MascotPose
   /** 마스코트 지름. 기본 96 */
   mascotSize?: number

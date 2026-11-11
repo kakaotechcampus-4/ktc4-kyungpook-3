@@ -406,6 +406,7 @@ function ApprovalFields({
       <Button
         type="button"
         variant="ghost"
+        className="col-start-3 w-full"
         disabled={!editable}
         onClick={() => onChange({ ...values, dueDate: null })}
       >

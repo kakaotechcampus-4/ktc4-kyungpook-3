@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import type { ReactNode } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
+import { Icon } from '@/shared/ui/icon'
 
 export interface ModalProps {
   /** 열림 상태는 호출자가 소유한다 */
@@ -15,8 +16,10 @@ export interface ModalProps {
   actions?: ReactNode
   /** 카드 폭. 기본 380 은 클래스가 준다 — 여기에 값을 주면 그 값이 덮는다 */
   width?: number
-  /** 스크림의 접근성 이름. 구조에 속하므로 기본값을 둔다 */
+  /** 스크림과 닫기 버튼의 접근성 이름 */
   closeLabel?: string
+  closeButton?: 'absolute' | 'sticky'
+  closeDisabled?: boolean
   /** 카드에 덧붙인다 */
   className?: string
   /** Esc 로 닫기 전에 부른다. `preventDefault` 하면 닫지 않는다 — 창 안에서 Esc 를 스스로 쓰는 칸(그 자리 고치기)이 쓴다 */
@@ -48,22 +51,16 @@ const TITLE = 'text-[17px] font-bold tracking-h3 text-ink'
 const DESCRIPTION = 'text-body text-sub'
 
 const ACTIONS = 'flex justify-end gap-8 pt-6'
+const CLOSE = 'inline-flex size-32 items-center justify-center rounded-9 border-0 p-0 text-dim'
 
 /**
  * `@radix-ui/react-dialog` 의 `Root` `Portal` `Overlay` `Content` `Title` `Description` `Close` (§7-0 · §7-8).
- *
- * **닫기 X 버튼을 만들지 않는다.** 시안에 없다. 닫는 길은 세 개다 —
- * 스크림 클릭, `actions` 로 들어온 버튼, Esc(Radix 가 처리).
- * 스크림이 곧 닫기 조작이라서 `closeLabel` 이 그 이름이 된다.
  *
  * **여는/닫는 전환이 없다.** 줄이기를 켜지 않은 사람에게도 없다 — 시안에 전환이 없다.
  * 그래서 이 파일에는 `transition-*` 도 `animate-*` 도 한 개도 없다.
  *
  * `Title` 은 조건 없이 그린다. 없으면 Radix 가 콘솔 경고를 낸다.
  * `description` 을 안 주면 `aria-describedby` 를 명시적으로 지운다 — 같은 이유의 두 번째 경고를 막는다.
- *
- * 버튼을 안에 박지 않는다. `actions` 에 무엇이 들어올지는 호출부가 정한다 —
- * `취소`·`확인` 같은 문구도 컴포넌트가 갖지 않는다.
  *
  * **닫히면 연 요소로 포커스를 돌린다.** 열림을 호출자가 쥐어 Radix `Trigger` 가 없다 — Radix 는 Trigger 로만 돌려서
  * 포커스가 `body` 로 떨어졌다. 열릴 때 포커스가 있던 요소를 기억했다가 닫힐 때 돌린다. 그 요소가 문서에서 사라졌거나
@@ -79,10 +76,21 @@ export function Modal({
   actions,
   width,
   closeLabel = '닫기',
+  closeButton,
+  closeDisabled = false,
   className,
   onEscapeKeyDown,
 }: ModalProps) {
   const opener = useRef<HTMLElement | null>(null)
+  const close = (
+    <DialogPrimitive.Close
+      aria-label={closeLabel}
+      disabled={closeDisabled}
+      className={`${CLOSE} ${closeButton === 'sticky' ? 'absolute -top-4 -right-4 bg-surface' : 'absolute top-20 right-20 bg-transparent'}`}
+    >
+      <Icon name="close" size={18} strokeWidth={1.9} />
+    </DialogPrimitive.Close>
+  )
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
@@ -112,7 +120,13 @@ export function Modal({
             }}
             {...(description === undefined ? { 'aria-describedby': undefined } : null)}
           >
-            <DialogPrimitive.Title className={TITLE}>{title}</DialogPrimitive.Title>
+            {closeButton === 'sticky' ? (
+              <div className="sticky top-0 z-2 -mb-12 h-0">{close}</div>
+            ) : null}
+            <DialogPrimitive.Title className={closeButton === undefined ? TITLE : `${TITLE} pr-40`}>
+              {title}
+            </DialogPrimitive.Title>
+            {closeButton === 'absolute' ? close : null}
 
             {description === undefined ? null : (
               <DialogPrimitive.Description className={DESCRIPTION}>

@@ -102,25 +102,16 @@ describe('처리 화면과 #383 의 progress (#384)', () => {
   it.each([
     ['단계를 알린 회의(#383 뒤)', ALL_DONE],
     ['데이터로 판정한 회의', { audio_merged: true, transcribed: true, extracted: false }],
-  ])(
-    '항목 0개로 끝난 회의는 extracted 와 관계없이 정리가 끝난 화면이다 — %s',
-    async (_, progress) => {
-      const done = meeting('mt_07')
-      expect(done.status).toBe('done')
-      done.progress = progress
-      renderApp(paths.meetingProcessing('ws_01', 'mt_07'))
+  ])('항목 0개로 끝난 회의도 완료 화면 없이 회의록으로 바로 이동한다 — %s', async (_, progress) => {
+    const done = meeting('mt_07')
+    expect(done.status).toBe('done')
+    done.progress = progress
+    const app = renderApp(paths.meetingProcessing('ws_01', 'mt_07'))
 
-      expect(await screen.findByRole('heading', { name: '정리가 끝났어요' })).toBeInTheDocument()
-      expect(screen.getByRole('link', { name: '회의록 보기' })).toHaveAttribute(
-        'href',
-        paths.meetings('ws_01', 'mt_07'),
-      )
-      expect(screen.queryByRole('list', { name: '정리 단계' })).toBeNull()
-      expect(within(screen.getByRole('main')).getByRole('status')).toHaveTextContent(
-        '정리가 끝났어요',
-      )
-    },
-  )
+    await app.expectPath(paths.meetings('ws_01', 'mt_07'))
+    expect(screen.queryByRole('heading', { name: '정리가 끝났어요' })).toBeNull()
+    expect(screen.queryByRole('list', { name: '정리 단계' })).toBeNull()
+  })
 
   it('인계 단계에서 실패한 회의는 extracted 가 true 여도 실패 화면이고 단계를 완료로 보이지 않는다', async () => {
     meeting('mt_10').progress = ALL_DONE

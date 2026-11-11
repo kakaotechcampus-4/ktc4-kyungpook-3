@@ -39,10 +39,10 @@ const UPLOAD_LINK =
   'inline-flex h-32 items-center gap-6 rounded-9 bg-ink-solid px-12 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
 const EMPTY_PAGE = 'flex flex-1 items-center justify-center px-48 pt-48 pb-96 max-md:px-20'
 const EMPTY_UPLOAD =
-  'inline-flex h-40 items-center justify-center rounded-9 bg-ink-solid px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
+  'inline-flex h-40 items-center justify-center rounded-9 bg-ink-solid px-20 text-body leading-none font-semibold text-surface hover:bg-dim active:bg-sub'
 /* 업로드 옆의 보조 액션. 같은 높이의 컨트롤 면이다 */
 const EMPTY_GUIDE =
-  'inline-flex h-40 items-center justify-center rounded-9 bg-control px-20 text-body font-semibold text-ink hover:bg-line-strong'
+  'inline-flex h-40 items-center justify-center rounded-9 bg-control px-20 text-body leading-none font-semibold text-ink hover:bg-line-strong'
 
 export interface MeetingMinutesProps {
   workspaceId: string
