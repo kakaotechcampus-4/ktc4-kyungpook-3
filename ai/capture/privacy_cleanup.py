@@ -278,6 +278,7 @@ def _clean_session(recordings: Path, transcripts: Path, path: Path, manifest: di
 
 
 def apply_cleanup(recordings: Path, transcripts: Path, claim: dict, *, runs: Path | None = None) -> bool:
+    from capture import audio_outbox
     from capture.meeting_purge import _remove, mark_deleted, meeting_ids, purge_files
     from capture.recorder import manifest_path, try_lock, try_restart_lock
     from shared.config import RUNS_DIR
@@ -404,6 +405,8 @@ def apply_cleanup(recordings: Path, transcripts: Path, claim: dict, *, runs: Pat
             lock.release()
         restart.release()
     if claim['delete_workspace']:
+        # 올리지 못해 대기 중인 섞은 녹음(#659). 공동 공간 팀원 정리는 음성 바이트를 보존하니(계약) 공간 전체 정리에서만 지운다
+        audio_outbox.remove_workspace(recordings, workspace_id)
         for meeting_id in sorted(set(targets) | set(claim.get('meeting_ids') or [])):
             if not purge_files(recordings, transcripts, meeting_id):
                 return False

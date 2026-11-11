@@ -16,7 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
 from app.main import app
-from app.models import Meeting, MeetingUpload, Member, Session as SessionModel, User, Workspace
+from app.models import Meeting, MeetingAudio, MeetingUpload, Member, Session as SessionModel, User, Workspace
 from app.services import upload_storage
 from app.services.sessions import hash_session_token
 from tests.usernames import username_for
@@ -143,6 +143,11 @@ def test_upload_saves_audio_and_upload_row_and_creates_processing_meeting(db, se
     assert upload.content_type == "audio/wav"
     assert upload.uploaded_by_member_id == seed["pm"].member_id
     assert upload.uploaded_at is not None
+    # 재생용 보관 기록이 같은 커밋으로 남는다
+    audio = db.get(MeetingAudio, meeting.meeting_id)
+    assert (audio.filename, audio.content_type, audio.size_bytes) == ("audio.wav", "audio/wav", len(AUDIO))
+    assert audio.retention_from is not None
+    assert audio.deleted_at is None
 
 
 def test_repeated_attendee_is_saved_once(db, seed):
@@ -171,11 +176,11 @@ def test_file_at_the_limit_is_accepted(db, seed, monkeypatch):
 
 
 def test_default_limit_matches_web_upload_limit(monkeypatch):
-    # 웹 화면 한도(frontend uploadPolicy maxBytes)와 같은 200MiB 다. 설정이 비어 있어도 기본값을 쓴다
+    # 웹 화면 한도(frontend uploadPolicy maxBytes)와 같은 700MiB 다. 설정이 비어 있어도 기본값을 쓴다
     monkeypatch.delenv("UPLOAD_MAX_BYTES", raising=False)
-    assert upload_storage.max_bytes() == 200 * 1024 * 1024
+    assert upload_storage.max_bytes() == 700 * 1024 * 1024
     monkeypatch.setenv("UPLOAD_MAX_BYTES", "")
-    assert upload_storage.max_bytes() == 200 * 1024 * 1024
+    assert upload_storage.max_bytes() == 700 * 1024 * 1024
 
 
 @pytest.mark.parametrize("who", ["outsider", "left"])
@@ -285,6 +290,23 @@ def test_disk_failure_leaves_no_meeting_and_no_folder(db, seed, monkeypatch):
     assert r.json()["error"]["code"] == "AUDIO_UPLOAD_FAILED"
     assert _meetings(db) == []
     assert list(_upload_root().iterdir()) == []
+
+
+def test_upload_returns_audio_upload_failed_on_s3_error(db, seed, monkeypatch):
+    from tests.fake_s3 import FakeS3
+
+    fake = FakeS3()
+    fake.fail_next = "upload_fileobj"
+    monkeypatch.setenv("UPLOAD_STORAGE", "s3")
+    monkeypatch.setenv("UPLOAD_S3_BUCKET", "b")
+    monkeypatch.setattr(upload_storage, "_s3_client", lambda: fake)
+
+    r = _upload(seed, [seed["pm"].member_id])
+
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["code"] == "AUDIO_UPLOAD_FAILED"
+    assert _meetings(db) == []
+    assert fake.keys("b") == []
 
 
 def test_commit_failure_removes_saved_folder(db, seed, monkeypatch):

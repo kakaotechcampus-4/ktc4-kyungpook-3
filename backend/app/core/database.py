@@ -15,7 +15,12 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg://mm:mm@localhost:5
 # SQLite는 기본적으로 같은 커넥션을 다른 스레드에서 못 쓰므로 옵션 추가
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 
-engine = create_engine(DATABASE_URL, connect_args=connect_args, echo=False, pool_pre_ping=True)
+# 기본값(5+10)이면 동시 요청 15개쯤에서 연결이 바닥난다(#701). 요청 관문(app.core.request_gate)이 이보다 작다
+POOL_SIZE = 20
+MAX_OVERFLOW = 20
+pool_args = {} if DATABASE_URL.startswith("sqlite") else {"pool_size": POOL_SIZE, "max_overflow": MAX_OVERFLOW}
+
+engine = create_engine(DATABASE_URL, connect_args=connect_args, echo=False, pool_pre_ping=True, **pool_args)
 
 if DATABASE_URL.startswith("sqlite"):
     @event.listens_for(engine, "connect")

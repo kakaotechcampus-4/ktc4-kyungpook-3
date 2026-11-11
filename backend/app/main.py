@@ -14,8 +14,9 @@ from app.api import approvals, bot_lookups, bot_messages, extractions, invitatio
 from app.api import bot_summaries, consents, message_settings, message_socket, notifications, project_map
 from app.services import scheduler, meeting_deletion
 from app.api import meeting_purges
-from app.api import users, withdrawal
+from app.api import health, users, withdrawal
 from app.core.errors import AppError, Envelope, ErrorCode, failure, success
+from app.core.request_gate import RequestGateMiddleware
 from app.core.upload_limit import UploadBodyLimitMiddleware
 from app.services import embedding, notion_sync, sessions, upload_sweeper
 
@@ -69,8 +70,11 @@ app = FastAPI(
 )
 # 녹음 업로드 본문은 인증·핸들러 전에 받으면서 크기를 잰다
 app.add_middleware(UploadBodyLimitMiddleware)
+# 동시 처리 요청을 DB 연결 풀보다 적게 들여보낸다(#701). 맨 바깥에 둬 기다리는 요청이 아무것도 잡지 않게 한다
+app.add_middleware(RequestGateMiddleware)
 
 API_PREFIX = "/api/v1"
+app.include_router(health.router, prefix=API_PREFIX)
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(workspaces.router, prefix=API_PREFIX)
 app.include_router(members.router, prefix=API_PREFIX)

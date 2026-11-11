@@ -19,6 +19,7 @@ class ErrorCode(StrEnum):
     MEETING_NOT_PROCESSING = "MEETING_NOT_PROCESSING"
     MEETING_FAILED = "MEETING_FAILED"
     AUDIO_UPLOAD_FAILED = "AUDIO_UPLOAD_FAILED"
+    AUDIO_NOT_AVAILABLE = "AUDIO_NOT_AVAILABLE"
     AUDIO_FORMAT_UNSUPPORTED = "AUDIO_FORMAT_UNSUPPORTED"
     TRANSCRIPTION_FAILED = "TRANSCRIPTION_FAILED"
     EXTRACTION_FAILED = "EXTRACTION_FAILED"
@@ -97,6 +98,7 @@ class ErrorCode(StrEnum):
     # 비밀번호 재설정
     PASSWORD_RESET_TOKEN_INVALID = "PASSWORD_RESET_TOKEN_INVALID"
     MAIL_UNAVAILABLE = "MAIL_UNAVAILABLE"
+    DATABASE_UNAVAILABLE = "DATABASE_UNAVAILABLE"
     # 회의 요약·프로젝트 맵
     TOPIC_NOT_FOUND = "TOPIC_NOT_FOUND"
     SUMMARY_NOT_FOUND = "SUMMARY_NOT_FOUND"
@@ -132,6 +134,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.MEETING_NOT_PROCESSING: 409,
     ErrorCode.MEETING_FAILED: 409,
     ErrorCode.AUDIO_UPLOAD_FAILED: 422,
+    ErrorCode.AUDIO_NOT_AVAILABLE: 404,
     ErrorCode.AUDIO_FORMAT_UNSUPPORTED: 422,
     ErrorCode.TRANSCRIPTION_FAILED: 502,
     ErrorCode.EXTRACTION_FAILED: 502,
@@ -201,6 +204,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.REPLY_CHANGE_NOT_UNDOABLE: 409,
     ErrorCode.PASSWORD_RESET_TOKEN_INVALID: 400,
     ErrorCode.MAIL_UNAVAILABLE: 503,
+    ErrorCode.DATABASE_UNAVAILABLE: 503,
     ErrorCode.TOPIC_NOT_FOUND: 404,
     ErrorCode.SUMMARY_NOT_FOUND: 404,
     ErrorCode.TRANSCRIPT_LINE_NOT_FOUND: 404,
@@ -230,6 +234,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.MEETING_NOT_PROCESSING: "회의가 분석 중(PROCESSING) 상태가 아닙니다.",
     ErrorCode.MEETING_FAILED: "실패 처리된 회의입니다. 새 회의로 다시 시작해 주세요.",
     ErrorCode.AUDIO_UPLOAD_FAILED: "오디오 저장·병합에 실패했습니다.",
+    ErrorCode.AUDIO_NOT_AVAILABLE: "들을 수 있는 녹음이 없습니다.",
     ErrorCode.AUDIO_FORMAT_UNSUPPORTED: "지원하지 않는 오디오 형식입니다.",
     ErrorCode.TRANSCRIPTION_FAILED: "음성 전사에 실패했습니다.",
     ErrorCode.EXTRACTION_FAILED: "회의 분석에 실패했습니다.",
@@ -297,6 +302,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.REPLY_CHANGE_NOT_UNDOABLE: "되돌릴 수 없는 답장 변경입니다.",
     ErrorCode.PASSWORD_RESET_TOKEN_INVALID: "쓸 수 없는 재설정 링크입니다.",
     ErrorCode.MAIL_UNAVAILABLE: "지금은 메일을 보낼 수 없습니다.",
+    ErrorCode.DATABASE_UNAVAILABLE: "데이터베이스에 연결할 수 없습니다.",
     ErrorCode.TOPIC_NOT_FOUND: "해당 주제를 찾을 수 없습니다.",
     ErrorCode.SUMMARY_NOT_FOUND: "이 회의의 요약본이 아직 없습니다.",
     ErrorCode.TRANSCRIPT_LINE_NOT_FOUND: "해당 발화를 찾을 수 없습니다.",
