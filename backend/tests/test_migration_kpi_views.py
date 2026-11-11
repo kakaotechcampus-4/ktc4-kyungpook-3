@@ -74,17 +74,21 @@ VIEWS = {
 pg_only = pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL(PostgreSQL)이 없습니다.")
 
 
-def _load_migration():
-    paths = list(VERSIONS.glob("*_add_kpi_views.py"))
+ADD_KPI_VIEWS = "add_kpi_views"
+CAP_PROCESSING_END = "cap_kpi_processing_end"
+
+
+def _load_migration(name: str = ADD_KPI_VIEWS):
+    paths = list(VERSIONS.glob(f"*_{name}.py"))
     assert len(paths) == 1
-    spec = importlib.util.spec_from_file_location("add_kpi_views_migration", paths[0])
+    spec = importlib.util.spec_from_file_location(f"{name}_migration", paths[0])
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def _run(engine, fn_name: str):
-    module = _load_migration()
+def _run(engine, fn_name: str, name: str = ADD_KPI_VIEWS):
+    module = _load_migration(name)
     with engine.begin() as conn:
         with Operations.context(MigrationContext.configure(conn)):
             getattr(module, fn_name)()
@@ -111,6 +115,7 @@ def pg_engine():
             for workspace_id in (WS_A, WS_B):
                 conn.execute(Workspace.__table__.insert().values(workspace_id=workspace_id, name=workspace_id))
         _run(eng, "upgrade")
+        _run(eng, "upgrade", CAP_PROCESSING_END)
         yield eng
     finally:
         _drop_kpi(eng)
@@ -276,6 +281,58 @@ def test_meeting_fact_processing_and_filters(pg_engine):
     assert rows[_at(3)]["extracted_at"] is None
     assert rows[_at(3)]["processing_seconds"] is None
     assert rows[_at(11)]["processing_seconds"] == 60
+
+
+def _replacement_meeting(conn):
+    """교체로 다시 만든 디스코드 회의. AI 가 started_at 을 보내지 않아 started_at 이 행을 만든 시각(추출 직전)이고,
+    duration_ms 는 원래 녹음 전체(30분)다. 녹음 끝(started_at + duration_ms)이 ended_at·extracted_at 보다 늦다."""
+    _meeting(
+        conn, "m-replacement", ended_at=_at(1) + timedelta(seconds=10), started_at=_at(1), duration_ms=1_800_000,
+    )
+    _extraction(conn, "x-replacement", "m-replacement", _at(1) + timedelta(seconds=70))
+
+
+@pg_only
+def test_meeting_fact_caps_recording_end_at_ended_at(pg_engine):
+    # 녹음 끝은 /end 시각보다 늦을 수 없으므로 ended_at 으로 상한을 둔다. 음수가 아니라 ended_at 부터 잰 60초다.
+    with pg_engine.begin() as conn:
+        _replacement_meeting(conn)
+
+    with pg_engine.connect() as conn:
+        row = conn.execute(text("SELECT processing_seconds FROM kpi.meeting_fact")).mappings().one()
+
+    assert row["processing_seconds"] == 60
+
+
+@pg_only
+def test_cap_downgrade_restores_previous_view_and_keeps_grants(pg_engine):
+    with pg_engine.begin() as conn:
+        _replacement_meeting(conn)
+        conn.execute(text("GRANT SELECT ON kpi.meeting_fact TO PUBLIC"))
+
+    _run(pg_engine, "downgrade", CAP_PROCESSING_END)
+    with pg_engine.connect() as conn:
+        # 이전 식은 녹음 끝(T + 30분)부터 재서 음수가 나온다.
+        assert conn.execute(text("SELECT processing_seconds FROM kpi.meeting_fact")).scalar_one() == 70 - 1800
+        acl = conn.execute(text("SELECT relacl::text FROM pg_class WHERE oid = 'kpi.meeting_fact'::regclass")).scalar_one()
+    assert "=r/" in acl
+
+    _run(pg_engine, "upgrade", CAP_PROCESSING_END)
+    with pg_engine.connect() as conn:
+        assert conn.execute(text("SELECT processing_seconds FROM kpi.meeting_fact")).scalar_one() == 60
+        acl = conn.execute(text("SELECT relacl::text FROM pg_class WHERE oid = 'kpi.meeting_fact'::regclass")).scalar_one()
+        columns = [
+            row[0]
+            for row in conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = 'kpi' AND table_name = 'meeting_fact' ORDER BY ordinal_position"
+                )
+            )
+        ]
+    # CREATE OR REPLACE VIEW 라 GRANT 를 다시 돌리지 않아도 권한과 컬럼이 그대로다.
+    assert "=r/" in acl
+    assert columns == MEETING_FACT_COLUMNS
 
 
 @pg_only
@@ -486,9 +543,11 @@ def test_sqlite_noop():
     Base.metadata.create_all(eng)
     before = sorted(inspect(eng).get_table_names())
 
-    _run(eng, "upgrade")
-    assert sorted(inspect(eng).get_table_names()) == before
+    for name in (ADD_KPI_VIEWS, CAP_PROCESSING_END):
+        _run(eng, "upgrade", name)
+        assert sorted(inspect(eng).get_table_names()) == before
 
-    _run(eng, "downgrade")
-    assert sorted(inspect(eng).get_table_names()) == before
+    for name in (CAP_PROCESSING_END, ADD_KPI_VIEWS):
+        _run(eng, "downgrade", name)
+        assert sorted(inspect(eng).get_table_names()) == before
     eng.dispose()
