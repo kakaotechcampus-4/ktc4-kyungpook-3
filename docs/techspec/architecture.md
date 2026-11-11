@@ -140,9 +140,9 @@ sequenceDiagram
 | AI | systemd `mm-bot`, `mm-worker`(MemoryMax 3G), `mm-chat-poll` + 타이머 |
 | 자동 배포 | develop push → 세 파트 CI 를 같은 커밋으로 → 모두 통과 시 SSM 으로 `/opt/mm` fast-forward → 바뀐 파트만 재시작. BE 는 시작 때 `alembic upgrade head` |
 | 동시 요청 | BE 가 동시 처리 요청을 30개로 막고 DB 연결 풀을 20+20 으로 둔다(결정 [0068](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-11-0068-request-gate.md)) |
-| 모니터링 | Grafana Cloud 무료 플랜과 수집기 Alloy, KPI view 3개(#675). 운영 서버에 설치해 작동을 확인했다. 설치는 자동 배포와 따로 사람이 한 번 한다 |
+| 모니터링 | Grafana Cloud 무료 플랜과 수집기 Alloy, KPI view 3개(#675). 운영 서버에 설치해 작동을 확인했다. 서버 자원, 프로세스 상태, API 가동, 서비스 KPI 를 대시보드로 보고 알림 규칙 5개를 둔다([운영 관측 구성](metrics.md#운영-관측-구성)) |
 | 녹음 보호 | 녹음 중이면 봇을 재시작하지 않음(`restart.lock`), 워커는 SIGTERM 에 하던 회의를 마치고 종료 |
-| GPU 전사 자동 전환 (#581) | 실제 호출 연속 6번 실패 + Elice 확인 3번 실패 → Lambda 스위치로 g4dn.xlarge 를 켬. Elice 확인 3번 연속 성공이면 복귀, GPU 호출 10분 없으면 끔. 하루 6시간·누적 15시간($9.7) 상한. `manual` 로 배포 → 리허설 → `auto` 순서. 기본은 꺼짐(`MM_GPU_FAILOVER` 가 비면 꺼짐)이고 실제 Lambda·GPU 로는 아직 리허설하지 않았다 |
+| GPU 전사 자동 전환 (#581) | 실제 호출 연속 6번 실패 + Elice 확인 3번 실패 → Lambda 스위치로 g4dn.xlarge 를 켬. Elice 확인 3번 연속 성공이면 복귀, GPU 호출 10분 없으면 끔. 하루 6시간·누적 15시간($9.7) 상한. `manual` 로 배포 → 리허설 → `auto` 순서로 연다. 모드는 `MM_GPU_FAILOVER` 로 정한다 |
 
 - GPU 전환 모드(`manual` / `auto`)는 서버 환경 변수 `MM_GPU_FAILOVER` 로 정한다. 비워 두면 꺼진다.
 - 상세: [배포 문서](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md), [개발 배포 안내](../dev/deploy.md), 결정 [0039](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-04-0039-gpu-stt-server.md)·[0056](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-08-0056-gpu-stt-auto-failover.md).

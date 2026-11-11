@@ -88,7 +88,7 @@ flowchart TB
 
 ## 환경 분리 현황
 
-환경은 **로컬**과 **운영** 둘이다. 스테이징 환경은 없다. 저장소에 운영용 compose 는 `backend/docker-compose.prod.yml` 하나, 배포 워크플로는 `deploy.yml` 하나(대상 인스턴스 변수 하나), 프록시 설정의 도메인도 하나뿐이다. 아래 표는 설정 파일이 정한 내용이고, 운영 서버에 지금 떠 있는 상태나 서버 `.env` 의 값은 저장소로 확인할 수 없다.
+환경은 **로컬**과 **운영** 둘이다. 저장소에 운영용 compose 는 `backend/docker-compose.prod.yml` 하나, 배포 워크플로는 `deploy.yml` 하나(대상 인스턴스 변수 하나), 프록시 설정의 도메인도 하나뿐이다. 아래 표는 설정 파일이 정한 내용이고, 운영 서버에 지금 떠 있는 상태나 서버 `.env` 의 값은 저장소로 확인할 수 없다.
 
 | 항목 | 로컬 | 운영 | 출처 |
 |---|---|---|---|
@@ -101,23 +101,23 @@ flowchart TB
 | 시크릿 보관 위치 | 파트별 `.env`. 저장소에는 값이 빈 `.env.example` 만 있고 `.env` 는 git 이 무시한다 | 서버 파일에만 둔다. Backend 는 `/opt/mm/backend/.env`(compose 가 `env_file` 로 읽는다), AI 는 `/opt/mm/ai/.env` 와 systemd drop-in, GPU 전사는 `/etc/mm/gpu-stt.env`, 모니터링은 `/etc/mm-monitoring/*.env`. GitHub 에는 AWS 키가 없고 Actions 변수 `AWS_ACCOUNT_ID`·`EC2_INSTANCE_ID` 와 OIDC 로 받는 배포 역할만 쓴다 | `.gitignore:18-19`, `backend/docker-compose.prod.yml:3, 32`, `deploy/README.md`, `ai/deploy/gpu-stt/README.md`, `.github/workflows/deploy.yml:57-64` |
 | 배포 트리거 | 없음. 사람이 직접 띄운다 | `develop` 에 push 되면 자동으로 돈다. 수동 실행(Actions → deploy → Run workflow, mode: changed / all)도 되지만 `develop` 이 아닌 브랜치에서는 모든 잡이 건너뛰어진다 | `.github/workflows/deploy.yml:8-17, 35-49` |
 | 배포 게이트 | 없음 | `deploy` 잡이 `needs: [ai-ci, backend-ci, frontend-ci]` 로 묶여 있다. 셋 중 하나라도 실패하거나 건너뛰면 배포 잡이 돌지 않는다 | `.github/workflows/deploy.yml:34-49` |
-| 롤백 방법 | 해당 없음 | 자동 롤백은 없다. 배포가 중간에 실패해도 서버의 git 은 이미 새 커밋이다. `git revert` 를 머지해 다시 배포하고, 마이그레이션이 든 커밋은 따로 다룬다. 절차는 아래 [되돌리기와 복구](#되돌리기와-복구) | `deploy/ec2-deploy.sh:6-8, 35-38, 209-214`, `deploy/README.md` "되돌리기" |
+| 롤백 방법 | 해당 없음 | `git revert` 를 머지해 다시 배포한다. 마이그레이션이 든 커밋은 따로 다룬다. 절차는 아래 [되돌리기와 복구](#되돌리기와-복구) | `deploy/ec2-deploy.sh:6-8, 35-38, 209-214`, `deploy/README.md` "되돌리기" |
 
 - `ec2-deploy.sh` 가 받는 "git 갱신 전 커밋" 인자는 롤백용이 아니다. 성공한 배포 기록(`.git/mm-deployed-sha`)이 없는 첫 배포에서 비교 기준으로만 쓴다.
 - 기능 스위치의 코드 기본값과 예시 파일 값은 [환경 변수](env.md)에 있다.
 - 예정: `deploy/monitoring/README.md` 는 AWS 실습 계정 종료에 맞춰 11/20 에 서버를 옮긴다고 적고 있다. 옮긴 뒤 도메인이나 서버 경로가 바뀌면 이 표를 다시 맞춘다.
 
-### 스테이징 없이 배포를 지키는 방법
+### 배포를 지키는 방법
 
-운영에 올리기 전에 같은 구성으로 돌려 보는 환경이 없다. 그 자리를 아래 장치가 나눠 맡는다.
+운영에 올리기 전과 올린 뒤를 아래 장치가 지킨다.
 
-| 스테이징이 하던 일 | 대신하는 것 | 한계 |
-|---|---|---|
-| 올리기 전에 깨진 코드를 걸러 낸다 | 배포 직전에 같은 커밋으로 세 파트 CI 를 모두 다시 돌린다. 바뀐 파트만이 아니라 매번 셋 다 돌린다 | `develop` 브랜치에는 보호 규칙이 없다(2026-11-11 `gh api .../branches/develop/protection`, `.../rules/branches/develop` 로 확인. 규칙은 `main` 에만 있다). PR 단계의 CI 는 필수 체크가 아니고, 막는 것은 배포 워크플로의 `needs` 다 |
-| 마이그레이션을 먼저 돌려 본다 | backend-ci 의 migrations 잡이 빈 PostgreSQL 에 `alembic upgrade head` 와 `alembic check` 를 돌린다 | 운영 데이터 위의 업그레이드는 검사하지 않는다 |
-| 올린 뒤 살아 있는지 본다 | 백엔드를 올린 뒤 `/health` 를 최대 60초 확인하고, systemd 유닛은 재시작 10초 뒤 `active` 인지 본다. 실패하면 배포가 실패로 끝나고 기준 커밋을 그대로 둬 다음 배포가 다시 올린다 | 실패한 배포를 이전 버전으로 되돌려 주지는 않는다 |
-| 잘못 올린 것을 되돌린다 | `git revert` 재배포와 마이그레이션 호환 원칙([되돌리기와 복구](#되돌리기와-복구)) | 백업·downgrade 명령은 운영에서 실행해 본 적이 없다(#359) |
-| 엉뚱한 커밋이 올라가지 않게 한다 | 서버가 `develop` 에 있는 커밋인지 확인한 뒤 fast-forward 만 한다. 배포는 한 번에 하나씩 돈다 | — |
+| 지킬 것 | 장치 |
+|---|---|
+| 올리기 전에 깨진 코드를 걸러 낸다 | 배포 직전에 같은 커밋으로 세 파트 CI 를 모두 다시 돌린다. 바뀐 파트만이 아니라 매번 셋 다 돌린다 |
+| 마이그레이션을 먼저 돌려 본다 | backend-ci 의 migrations 잡이 빈 PostgreSQL 에 `alembic upgrade head` 와 `alembic check` 를 돌린다 |
+| 올린 뒤 살아 있는지 본다 | 백엔드를 올린 뒤 `/health` 를 최대 60초 확인하고, systemd 유닛은 재시작 10초 뒤 `active` 인지 본다. 실패하면 배포가 실패로 끝나고 기준 커밋을 그대로 둬 다음 배포가 다시 올린다 |
+| 잘못 올린 것을 되돌린다 | `git revert` 재배포와 마이그레이션 호환 원칙([되돌리기와 복구](#되돌리기와-복구)) |
+| 엉뚱한 커밋이 올라가지 않게 한다 | 서버가 `develop` 에 있는 커밋인지 확인한 뒤 fast-forward 만 한다. 배포는 한 번에 하나씩 돈다 |
 
 출처: `.github/workflows/deploy.yml:25-49, 80-81`, `.github/workflows/backend-ci.yml`, `deploy/ec2-deploy.sh:61-68, 85-100, 209-214`.
 

@@ -68,10 +68,6 @@ PM 은 제목·담당·마감(수정 제안은 상태·마감도, 담당자 줄�
 - 쓰기 응답을 읽지 못하면(`INVALID_RESPONSE`) 실패라 하지 않고 "서버에는 반영됐을 수 있어요"와 `새로고침` 을 보인다(D-184).
 - 승인 뒤 Notion 은 조회 응답이 실제 `synced` 일 때만 `반영됨`, 그 전 polling 동안은 `반영 중`.
 
-> 📷 **사진 자리**: 승인 상세 — 근거 블록, 레드로 강조된 빈 담당자 칸, 「확인이 필요한 이유」 (파일: ../../assets/design-frontend-approval-detail.png)
-
-> 📷 **사진 자리**: 409 `APPROVAL_CONFLICT` 비교 표(기준값·지금 값·제안 값)와 재승인 버튼 (파일: ../../assets/design-frontend-approval-conflict.png)
-
 ## 자동 반영 되돌리기
 
 대시보드 「최근 반영」에서 확인 모달을 거쳐 실행한다(D-036). 되돌린 항목은 목록에서 지우지 않고 `되돌림` 으로 자리를 지킨다(D-037). 성공하면 "태스크를 지우고 확인 필요에 다시 올렸어요" 토스트, 거절(409 `AUTO_TASK_NOT_REVERTIBLE`)은 사유별 문구다([`revertMessage.ts`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/src/features/auto-item-revert/lib/revertMessage.ts)).
@@ -121,10 +117,3 @@ PM 은 제목·담당·마감(수정 제안은 상태·마감도, 담당자 줄�
 | 화면 코드에 `confidence` 사용 0건 | `.tsx` 검색(2026-11-09) |
 
 모두 MSW 기준이다. 실 API 보완 승인은 [M6 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m6/result.md)가 미검증으로 남겼다.
-
-## 한계와 다음 단계
-
-- **「원문 듣기」는 회의록으로 이동할 뿐 그 시각을 재생하지 않는다.** 디자인 시스템 §7-4 는 "해당 지점으로 점프"였다. 회의 음성은 인계 뒤 삭제한다(#568) **[확인 필요: 재생 기능을 계속 둘지]**.
-- **Jev 근거 상태(`evidence_status`)와 BE `auto_blockers` 를 화면에 직접 보이지 않는다.** 화면에 보이려면 BE 가 사유를 저장해 응답에 실어야 한다(현재 없음, 사유는 운영 로그뿐). 이유 캡션은 빠진 값과 인용으로 만든다. 답장 줄의 근거 상태만 읽는다 **[확인 필요: 표시 계획]**.
-- **반려된 항목의 PM 화면 표시**는 정한 결정이 없다(D-172 미정 목록). 지금은 목록에서 빠지기만 한다.
-- 합친 카드가 두 번 이상 바뀌면 처음 본 카드와 지금 카드의 차이만 보인다.

@@ -1,6 +1,6 @@
 # 요구사항·리스크
 
-기능·비기능 요구사항과 안정성 장치(가드레일, 예외 처리, 장애 대응, 보안), 알려진 한계를 정리한다.
+기능·비기능 요구사항과 안정성 장치(가드레일, 예외 처리, 장애 대응, 보안)를 정리한다.
 
 ## 기능 요구사항
 
@@ -35,10 +35,10 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 |---|---|---|---|
 | ① 근거 검증 (Jev) | 근거 원문에 할 일·마감이 명시되지 않은 항목(조건부·질문·제안·근사 마감) | Jev 실패·키 없음 → inferred → auto 안 됨 | [근거 검증](../design/ai/evidence-check.md), 결정 [0031](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-02-0031-evidence-status-by-source-check.md) |
 | ② 전사 오인식 검사 | 근거는 충실하지만 전사가 틀려 제목이 틀린 항목("진도 정리" → "짐도 정리") | 검사 실패 → `asr_check_failed` 로 막음 | [전사 오인식 검사](../design/ai/asr-check.md), 결정 [0051](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md) |
-| ③ 자동 생성 스위치 `AUTO_CREATE_ENABLED` | 운영 초기 검증 기간에 끌 것을 권고한 자동 생성 전체(코드 기본은 켜짐) | 모르는 값(오타)은 꺼짐으로 봄 | BE `app/api/extractions.py` `auto_create_enabled`, #526 |
+| ③ 자동 생성 스위치 `AUTO_CREATE_ENABLED` | 자동 생성 전체. 기본은 켜짐이고 운영에서도 켜 둔다 | 모르는 값(오타)은 꺼짐으로 봄 | BE `app/api/extractions.py` `auto_create_enabled`, #526 |
 
 - 스위치를 끈 동안에도 검증은 돌고 "켰으면 auto 였을 항목"을 로그로 남겨 PM 결과와 맞춰 본다.
-- 운영 값은 서버 환경 변수로 정한다. 예시 파일 기본값은 `true` 이고, 평가 기록은 처음 운영을 `false` 로 두기를 권했다.
+- 운영 값은 서버 환경 변수로 정한다. 기본값은 `true` 이고 운영에서도 켜 둔다. 잘못 만든 태스크가 늘면 꺼서 PM 확인으로 돌린다.
 
 자세히: [담당자 매칭과 게이트](../design/backend/gate-matching.md)
 
@@ -60,7 +60,7 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 
 | 장애 | 대응 | 근거 |
 |---|---|---|
-| Elice STT 장애 | 워커가 연속 실패를 감지해 GPU 대기 서버(g4dn.xlarge)를 Lambda 로 켜고, Elice 회복 확인 3번이면 복귀. 하루 6시간·누적 15시간 상한, 운영 채널 `/gpu on\|off\|status` 수동 조작. 기본은 꺼짐이고 자동 전환은 실제 Lambda·GPU 로 아직 리허설하지 않았다 | 결정 [0056](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-08-0056-gpu-stt-auto-failover.md) |
+| Elice STT 장애 | 워커가 연속 실패를 감지해 GPU 대기 서버(g4dn.xlarge)를 Lambda 로 켜고, Elice 회복 확인 3번이면 복귀. 하루 6시간·누적 15시간 상한, 운영 채널 `/gpu on\|off\|status` 수동 조작. 꺼 둔 서버를 켜 첫 응답까지 약 160초였다(2026-11-05·06 전환 리허설) | 결정 [0056](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-08-0056-gpu-stt-auto-failover.md) |
 | Notion API 실패 | outbox. 429·409·5xx 지수 백오프 최대 5회, 401 은 토큰 refresh 한 번. 결과를 모른 채 끝난 생성은 "Task ID" 속성으로 먼저 조회해 중복 방지 | [backend README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md#notion-연동) |
 | 멈춘 업로드·채팅 회의 | BE sweeper(300초): AI 가 가져가지 않은 업로드 24시간(`upload_unclaimed`), 진행 없음 3시간, 화자 지정 대기 7일, 채팅 `/end` 뒤 7시간 → failed | `backend/app/services/upload_sweeper.py` |
 | 요청이 몰림 | BE 가 동시 처리 요청을 30개로 막고 DB 연결 풀을 20+20 으로 둔다. 기다리는 요청은 스레드도 연결도 잡지 않는다. 로컬 k6 에서 20 VU 4.0 → 48.0 req/s (2026-11-11, 노트북 Docker) | 결정 [0068](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-11-0068-request-gate.md) |
@@ -86,18 +86,3 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 상세: [backend README 세션 토큰·로그인 제한](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md#로그인-제한).
 
 자세히: [보안](../design/backend/security.md)
-
-## 알려진 한계 (프로젝트 상세 §13 요약)
-
-| 구분 | 한계 |
-|---|---|
-| 단일 서버 | t3.medium 한 대에 DB·API·봇·워커·FE. 확장·장애 격리 없음. 로그인 제한 저장이 프로세스 메모리라 `--workers 1` 전제 |
-| 외부 의존 | STT·LLM·Jev·임베딩이 Elice MLAPI 에 몰림 |
-| STT | 단어 시각이 없어 묶음 단위 회의록. 업체 비교에서 더 낮은 CER(Soniox 7.54%)이 있었으나 바꾸지 않음. 업로드 회의 겹친 발화 미처리 |
-| LLM 비결정성 | 마감 판정이 기준 0.8 근처(0.75~0.86)에서 실행마다 갈림. 1인칭 오분류 약 1% |
-| 근거 검증 | 제목의 일과 원문의 일이 조금 다른 경우, 한글 숫자 날짜("이십일")를 놓침. 평가 대사가 합성 |
-| 오인식 검사 | 동사·흔한 명사 오류는 못 잡음. 측정 데이터가 교육 방송이라 IT 회의와 분포가 다름 |
-| 승인 충돌 | 제목 띄어쓰기만 바뀌어도 충돌 |
-| 운영 | DB 백업·downgrade 미연습(#359), systemd 유닛 변경은 수동, AWS 실습 환경 2026-11-20 종료 |
-
-원문: [프로젝트 상세 설명 §13](../프로젝트%20상세%20설명.md#13-알려진-한계와-위험).

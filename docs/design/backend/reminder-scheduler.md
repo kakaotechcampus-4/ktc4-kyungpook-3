@@ -137,10 +137,3 @@ AI 쪽 판단 방법은 [리마인드 답장 판단](../ai/reply-judgment.md).
 | 업로드·세션 정리 | `tests/services/test_upload_sweeper.py`, `test_upload_sweeper_concurrency.py`, `tests/test_session_sweep_worker.py` |
 
 시각은 `now` 를 인자로 받아 테스트가 시간을 돌린다(72시간을 기다리지 않는다).
-
-## 한계와 다음 단계
-
-- 워크스페이스 시간대는 서울 고정(`UTC+9`)이다. 시간대 칼럼이 없다.
-- 웹소켓 연결표와 로그인 제한이 프로세스 메모리라 `--workers 1` 전제다. 늘리면 신호가 일부 연결에만 닿는다.
-- 기기가 24시간 넘게 꺼져 있으면 그 푸시는 버려지고 웹 안 알림만 남는다.
-- 72시간 막힘이 실제 운영에서 몇 번 걸렸는지는 [확인 필요].

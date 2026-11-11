@@ -98,7 +98,7 @@ judge 의 막는 사유(`auto_blockers`, 하나라도 있으면 auto 아님):
 | 1 | 역할 지목(`thirdrole`) | legacy 에서도 추측 이름이 별칭에 걸려 확신도가 오를 수 있다(#459) |
 | 2 | 대기 카드에 합치는 항목, 합치려다 대상을 못 쓴 항목 | PM 이 아직 안 본 카드를 고치는 일이고, 대상을 못 쓴 항목은 중복 검사를 못 거쳤다 |
 | 3 | 채팅 회의 | 전사를 거치지 않고 맥락이 약하다. "채팅이 아니었으면 auto"였던 항목을 로그로 센다([AI 0042](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-04-0042-chat-daily-poll-as-chat-meeting.md)) |
-| 4 | `AUTO_CREATE_ENABLED` 꺼짐 | 운영 초기 검증 기간용 스위치(#526). 경로와 무관. 코드 기본은 켜짐이고 끄기는 권고다 |
+| 4 | `AUTO_CREATE_ENABLED` 꺼짐 | 자동 반영을 한 번에 내리는 스위치(#526). 경로와 무관. 기본은 켜짐이고 운영에서도 켜 둔다 |
 
 강등 순서를 이렇게 둔 것은 로그가 "채팅·스위치 때문에만 막힌 항목"을 정확히 세게 하려는 것이다. 스위치는 `true`·`1`·`on`·`yes`·빈 값이면 켜짐, `false`·`0`·`off`·`no` 면 꺼짐, **모르는 값(오타)은 꺼짐** 으로 보고 경고를 남긴다.
 
@@ -120,11 +120,3 @@ judge 의 막는 사유(`auto_blockers`, 하나라도 있으면 auto 아님):
 | `auto_blockers` 사유별 | [`tests/services/test_matching_auto_blockers.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/tests/services/test_matching_auto_blockers.py), `test_auto_blockers_asr.py` |
 | 추출 등록 end-to-end(게이트·강등·스위치) | [`tests/api/test_extractions_judge_auto.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/tests/api/test_extractions_judge_auto.py), `test_extractions_judge.py`, `test_extractions_jev_evidence.py`, `test_extractions_merge.py` |
 | 승인 학습·1인칭 차단 | [`tests/services/test_alias_learning.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/tests/services/test_alias_learning.py)(규칙이 만드는 조합 전부), `tests/api/test_alias_learning_approval.py` |
-
-## 한계와 다음 단계
-
-- **운영 `AUTO_CREATE_ENABLED` 값은 저장소로 확인할 수 없다** [확인 필요]. 예시 기본값은 켜짐, 평가 기록은 처음 운영을 꺼짐으로 권고한다.
-- 스위치는 서버 전체 하나다. 워크스페이스별로 열 수 없다.
-- 동명이인은 ambiguous 로 hold/review 가 될 뿐 문맥으로 가르지 않는다.
-- 역할 지목 학습은 AI 가 역할 원문만 보내게 바뀌면 다시 넣는다(`LEARNABLE_ASSIGNEE_TYPES` 주석).
-- 다음: 스위치를 끈 기간의 "켰으면 auto" 로그와 PM 승인·수정·반려 결과를 맞춰 auto 개방을 정한다(#526).
