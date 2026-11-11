@@ -1,6 +1,5 @@
 
 
-
 <div align="center">
 
 <img src="./docs/assets/readme-banner.png" width="100%" alt="Manager's Manager 소개 배너. 회의만 하면 할 일이 정리됩니다" />
@@ -27,8 +26,6 @@ https://github.com/user-attachments/assets/84a8441a-2db7-490d-9440-d1b6ac693e23
 
 > [!TIP]
 > 바로 써 보려면 **[managers-manager.duckdns.org](https://managers-manager.duckdns.org)** 에 접속하고 [처음 쓰는 분을 위한 안내](./docs/user/quick-guide.md)를 따라 하세요. 심사용 테스트 계정의 로그인 정보는 저장소에 적지 않고 심사 운영진에게 따로 전달합니다(#606). 계정 구성과 샘플 회의 목록은 [사용자 가이드](./docs/user/getting-started.md#테스트-계정으로-바로-써-보기)에, 로컬에서 같은 데이터를 만드는 방법은 아래 [심사용 샘플 데이터](#심사용-샘플-데이터)에 있습니다.
-
-<!-- 대표 화면 GIF 자리: docs/assets/readme-hero.gif (#654) -->
 
 ## 서비스 소개
 

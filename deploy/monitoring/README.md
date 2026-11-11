@@ -335,7 +335,7 @@ curl -si https://<도메인>/health | head -n 12                # HTML 이 오�
 
 ## 11. 운영 `AUTO_CREATE_ENABLED` 확인
 
-2026-11-11 확인: 값이 없다(기본값, 켜짐). 꺼져 있으면 auto 항목이 없어 롤백률 패널이 0 으로 나온다. 서버에서 컨테이너의 값을 본다.
+운영에서는 켜 둔다(2026-11-11 확인: 값이 없어 기본값인 켜짐이다). 꺼져 있으면 auto 항목이 없어 롤백률 패널이 0 으로 나온다. 값은 서버에서 컨테이너로 본다.
 
 ```bash
 docker compose -f /opt/mm/backend/docker-compose.prod.yml exec -T api printenv AUTO_CREATE_ENABLED

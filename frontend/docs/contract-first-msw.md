@@ -95,12 +95,3 @@ flowchart LR
 
 - 주요 E2E: 회의 업로드·처리·실패(`meeting-flow`), 승인·충돌·키보드(`tasks-approval`), 메시지 승인·답장·토스트(`messages-*`), 대비(`color-contrast`), 레이아웃 폭(`layout`), 새로고침·OAuth 왕복 복원(`restore`).
 - 간헐 실패도 원인까지 본다. #593 에서 모의 DB 저장 시점(응답 뒤 알림 → `request:match`)과 동작 줄이기 CSS 가 만든 포커스 전환을 대조 실험으로 입증하고 고쳤다([결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m0/work-items/593-e2e-stability/result.md)).
-
-> 📷 **사진 자리**: `?msw-scenario=` 로 띄운 개발 서버와 Playwright HTML 리포트 한 장 (파일: ../../assets/design-frontend-msw-e2e.png)
-
-## 한계와 다음 단계
-
-- **MSW 통과는 실서버 검증이 아니다.** M4·M5 완료 판정은 MSW 기준이고, 실 API 보완 승인·Notion 반영 등은 결과 문서에 미검증으로 남아 있다([M6 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m6/result.md)). 실서비스 종단 검증은 #357 이 맡는다 **[확인 필요: 진행 상태]**.
-- **MSW 는 손으로 맞춘 흉내다.** BE 가 의미를 바꾸면 핸들러가 늦게 따라간다. 생성 타입이나 BE 계약 테스트가 없다. 배포 주소에 OpenAPI 가 공개되지 않은 것도 요청 후보로만 남았다(m6-api errors).
-- **E2E 는 Chromium 하나.** Safari·실제 휴대폰은 수동 확인이다(D-125·D-126).
-- 다음: 응답 스키마의 `status: str` 을 enum 타입으로 바꾸는 BE 요청(D-184 영향)과 FE 오류 수집(#358).

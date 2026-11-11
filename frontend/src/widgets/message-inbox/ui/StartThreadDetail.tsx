@@ -2,15 +2,19 @@ import { useQuery } from '@tanstack/react-query'
 import { useId } from 'react'
 import { memberListQueryOptions } from '@/entities/member'
 import { failureNotice } from '@/shared/api/errorMessages'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
+import { DeferredSkeleton } from '@/shared/ui/deferred-skeleton'
+import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { Skeleton } from '@/shared/ui/skeleton'
 import { avatarText } from '../lib/format'
 import { useOpenThread } from '../model/useOpenThread'
-import { COMPOSE_COLUMN, COMPOSE_PAGE, COMPOSE_TITLE } from './frame'
+import { COMPOSE_CARD, COMPOSE_COLUMN, COMPOSE_PAGE, COMPOSE_TITLE } from './frame'
 
 const MEMBER_ROW =
-  'flex w-full items-center gap-10 rounded-10 px-12 py-9 text-left hover:bg-surface-sunken disabled:cursor-default disabled:opacity-45 disabled:hover:bg-transparent'
+  'flex min-h-64 w-full items-center gap-12 px-20 py-14 text-left hover:bg-surface-sunken disabled:cursor-default disabled:opacity-45 disabled:hover:bg-transparent max-md:px-16'
 const AVATAR =
-  'inline-flex size-30 shrink-0 items-center justify-center rounded-999 bg-divider text-[11px] font-semibold text-ink'
+  'inline-flex size-36 shrink-0 items-center justify-center rounded-999 bg-control text-caption font-semibold text-ink'
 const FAILURE = 'text-[12.5px] leading-[1.6] text-accent'
 
 export interface StartThreadDetailProps {
@@ -32,6 +36,7 @@ export function StartThreadDetail({
   const headingId = useId()
   const opening = useOpenThread(workspaceId)
   const members = useQuery(memberListQueryOptions(workspaceId))
+  const indicator = useLoadingIndicator(members.data === undefined && members.error === null)
   const choices = (members.data ?? []).filter(({ id }) => id !== viewerMemberId)
   return (
     <div
@@ -53,25 +58,51 @@ export function StartThreadDetail({
             onRetry={() => void members.refetch()}
           />
         ) : (
-          <ul aria-label="팀원" className="flex flex-col gap-4">
-            {choices.map((member) => (
-              <li key={member.id}>
-                <button
-                  type="button"
-                  className={MEMBER_ROW}
-                  disabled={opening.pending}
-                  onClick={() => opening.open(member.id, (thread) => onOpened(thread.id))}
-                >
-                  <span aria-hidden="true" className={AVATAR}>
-                    {avatarText(member.displayName)}
-                  </span>
-                  <span className="text-control font-semibold wrap-anywhere text-ink">
-                    {member.displayName}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <div
+            className={COMPOSE_CARD}
+            aria-busy={members.data === undefined || indicator.pending || opening.pending}
+          >
+            <div className="flex items-center justify-between gap-12 border-b border-line px-20 py-14 text-caption text-sub max-md:px-16">
+              <span>대화할 팀원</span>
+              {members.data === undefined ? null : <span>{choices.length}명</span>}
+            </div>
+            {members.data === undefined || indicator.pending ? (
+              <DeferredSkeleton indicator={indicator}>
+                <div className="p-20">
+                  <Skeleton lines={3} />
+                </div>
+              </DeferredSkeleton>
+            ) : choices.length === 0 ? (
+              <p className="px-20 py-32 text-center text-body text-dim">대화할 팀원이 없어요.</p>
+            ) : (
+              <ul aria-label="팀원" className="flex flex-col">
+                {choices.map((member) => (
+                  <li key={member.id} className="border-b border-divider last:border-b-0">
+                    <button
+                      type="button"
+                      className={MEMBER_ROW}
+                      disabled={opening.pending}
+                      onClick={() => opening.open(member.id, (thread) => onOpened(thread.id))}
+                    >
+                      <span aria-hidden="true" className={AVATAR}>
+                        {avatarText(member.displayName)}
+                      </span>
+                      <span className="min-w-0 flex-1 text-body font-semibold wrap-anywhere text-ink">
+                        {member.displayName}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className="flex shrink-0 items-center gap-6 text-caption text-dim"
+                      >
+                        대화 열기
+                        <Icon name="chevron-right" size={16} />
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
       </section>
     </div>

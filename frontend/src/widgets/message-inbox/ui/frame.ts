@@ -31,5 +31,6 @@ export const COMPOSE_LINK =
 export const COMPOSE_PAGE =
   'flex flex-1 justify-center overflow-y-auto px-36 pt-44 pb-56 max-md:px-20 max-md:pt-24 max-md:pb-32'
 export const COMPOSE_COLUMN = 'flex w-full max-w-[604px] flex-col gap-24 self-start'
+export const COMPOSE_CARD = 'overflow-hidden rounded-16 border border-line bg-surface'
 export const COMPOSE_TITLE =
   'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink max-md:text-[24px]'

@@ -55,12 +55,12 @@
 ### 평가 방식에서 지킨 것
 
 - 반복 실행은 독립 표본이 아니므로 오답률·신뢰 상한은 대사 단위(한 번이라도 틀리면 틀린 대사)로 센다. 반복은 흔들림을 보는 데만 쓴다(#382 멘토 재리뷰).
-- 기준값은 같은 데이터로 골라 다시 재지 않는다. 오인식 검사 0.8 은 잠정값이고 운영 결과로 다시 정한다.
+- 기준값은 같은 데이터로 골라 다시 재지 않는다. 오인식 검사 기준 0.8 은 운영의 PM 제목 수정 비율로 다시 맞춘다.
 - 측정 조건이 다른 수치끼리 직접 비교하지 않는다.
 
 ## 부하 테스트
 
-k6 로 웹 사용자 시나리오(대시보드 요청 10개를 동시에)와 봇 인계 시나리오를 쟀다. 노트북의 Docker 에서 운영 이미지를 띄워 잰 값이고 운영 서버의 수치가 아니다. 도구와 원자료 안내는 PR #703 에 있다.
+k6 로 웹 사용자 시나리오(대시보드 요청 10개를 동시에)와 봇 인계 시나리오를 쟀다. 노트북의 Docker 에서 운영 이미지를 띄워 쟀다. 도구와 원자료 안내는 PR #703 에 있다.
 
 | 시나리오 | 고치기 전 | 고친 뒤 (동시 처리 30개 관문, 풀 20+20) |
 |---|---|---|
@@ -69,10 +69,10 @@ k6 로 웹 사용자 시나리오(대시보드 요청 10개를 동시에)와 봇
 | 멈추기 시작하는 동시 사용자 | 15 ~ 20 VU | 50 VU 까지 멈추지 않음 |
 | 봇 인계, 동시 회의 5개 / 20개 | | 242 req/s p95 61ms / 192 req/s p95 364ms, 실패 0% |
 
-원인은 동기 엔드포인트가 스레드풀과 DB 연결 풀을 서로 기다리는 교착이었다. 운영 서버는 읽기 전용으로 5 VU 까지만 쟀다(11.8 req/s, p95 321ms, 실패 0%). 근거: 결정 [0068](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-11-0068-request-gate.md), [진행 로그](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-11-request-gate.md).
+원인은 동기 엔드포인트가 스레드풀과 DB 연결 풀을 서로 기다리는 교착이었다. 운영 서버에서는 읽기 전용 5 VU 로 쟀다(11.8 req/s, p95 321ms, 실패 0%). 근거: 결정 [0068](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-11-0068-request-gate.md), [진행 로그](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-11-request-gate.md).
 
 ## 운영에서 이어서 볼 것
 
-- 스위치를 끈 기간(`AUTO_CREATE_ENABLED=false`)의 "켰으면 auto 였을 항목"과 PM 승인·수정·반려 결과 대조 → auto 개방 판단. 항목 ID 가 든 로그는 남고, PM 결정과 맞춰 보는 집계는 아직 돌리지 않았다.
+- 자동 반영으로 만든 태스크의 되돌림 비율과 PM 승인·수정·반려 비율 → 자동 반영 조건 조정. Grafana KPI 대시보드에서 주별로 본다.
 - `asr_suspect` 로 막힌 항목과 안 막힌 항목의 PM 제목 수정 비율 → 오인식 기준값 재조정.
 - 지표 정의는 [추가 지표](metrics.md).

@@ -112,11 +112,3 @@ AI 가 유사 검색에서 승인 대기 `task_create` 카드를 고르면 `acti
 | auto 되돌리기 | `tests/api/test_extractions_judge_auto.py`(revert 사례), `test_extraction_approval_status.py` |
 
 2026-11-08 범위 이력 작업 뒤 `pytest` 2285 passed, 1528 skipped(PostgreSQL 전용, CI 에서 돈다)([M6 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m6/result.md)).
-
-## 한계와 다음 단계
-
-- **`payload_version` 은 API 에서 선택 필드다.** FE 는 상세에서 받은 값을 task_create 승인과 반려 요청에 싣는다(#547). task_update 카드는 값이 없다. 값을 빼고 보내는 클라이언트에는 화면에서 본 뒤 바뀐 것을 잡는 검사가 없다.
-- 제목 비교는 앞뒤 공백만 무시한다. 띄어쓰기만 바뀌어도 충돌로 묻는다.
-- 지문은 내용이 같아도 저장 형식이 바뀌면 달라진다(막는 쪽으로 틀림).
-- 범위 결정은 Notion 페이지에 남지 않는다. Notion 만 보는 팀원은 모른다.
-- 추출 조회(`GET /extractions/{id}`) 응답에는 지문이 없다. 회의록 화면에서 승인하려면 승인 상세를 받아야 한다.

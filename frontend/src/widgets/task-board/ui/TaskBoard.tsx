@@ -25,7 +25,7 @@ import { panelTabStop } from '@/shared/lib/tab-panel'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Button } from '@/shared/ui/button'
-import { EmptyState } from '@/shared/ui/empty-state'
+import { EmptyState, EmptyStatePage } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
@@ -95,8 +95,6 @@ const ASSIGNEE =
   'inline-flex shrink-0 items-center gap-7 text-caption text-dim max-md:max-w-[112px]'
 const ASSIGNEE_NAME = 'max-md:truncate'
 const DUE = 'shrink-0 text-caption text-dim tabular-nums'
-const EMPTY_PAGE =
-  'mb-[58px] flex flex-1 items-center justify-center px-48 pt-48 pb-96 max-md:mb-0 max-md:px-20'
 const EMPTY_UPLOAD =
   'inline-flex h-40 items-center justify-center rounded-9 bg-ink-solid px-20 text-body leading-none font-semibold text-surface hover:bg-dim active:bg-sub'
 const EMPTY_MEETINGS =
@@ -370,7 +368,7 @@ export function TaskBoard({
     (isList || missing.length === 0)
   )
     return (
-      <main className={EMPTY_PAGE}>
+      <EmptyStatePage>
         <EmptyState
           title="아직 태스크가 없어요"
           description="회의를 정리하면 할 일이 여기에 모여요."
@@ -387,7 +385,7 @@ export function TaskBoard({
             </div>
           }
         />
-      </main>
+      </EmptyStatePage>
     )
   if (indicator.pending)
     body = isList ? (

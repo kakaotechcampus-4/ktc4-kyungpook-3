@@ -102,14 +102,4 @@ flowchart LR
 | 템플릿 DB 찾기·속성 확인·토큰 비우기 | `tests/services/test_notion_connect.py` |
 | OAuth 주소·state·callback 갈래 | `tests/services/test_notion_oauth.py`, `tests/api/test_notion_oauth_api.py` |
 
-실제 Notion 을 부르는 테스트는 없다(가짜 transport). 운영 연결 확인 결과 [확인 필요].
-
-> 📷 **사진 자리**: 태스크 승인 뒤 Notion 보드에 같은 카드가 생긴 화면과 웹의 동기화 상태 표시 (파일: ../../assets/design-backend-notion-sync.png)
-
-## 한계와 다음 단계
-
-- **한 방향이다.** Notion 에서 고친 값은 BE 로 돌아오지 않고, 다음 BE 변경 때 덮인다.
-- 워커는 프로세스당 하나 전제다(`--workers 1`). 늘리면 같은 작업을 두 워커가 볼 수 있다.
-- 끝난 작업 행을 지우지 않는다. Notion 을 안 쓰는 공간도 태스크를 고칠 때마다 한 줄씩 쌓인다.
-- 범위 결정(scope)은 Notion 에 남지 않는다([승인과 충돌](approval-conflict.md#범위-변경-이력544)).
-- 400·403 으로 실패하면 PM 이 원인을 고친 뒤 수동 재시도해야 한다. 자동 알림은 없다. 태스크의 동기화 상태(`failed`)로 보이고 서버 로그에 남는다.
+테스트는 가짜 transport 로 Notion 응답을 흉내 낸다.
