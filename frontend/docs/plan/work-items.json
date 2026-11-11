@@ -9528,7 +9528,7 @@
       "kind": "reference-update",
       "owner": "references",
       "source": "docs/design/frontend/a11y-performance.md",
-      "target": "docs/design/frontend/a11y-performance.md",
+      "target": "frontend/docs/a11y-performance.md",
       "source_origin": "git",
       "source_sha256": "6a4ec5e34d9f988e8e04486190cf387bd50b6929949a73954714f05e6c06c704",
       "target_sha256": "0e3d96e0c7d45142ab982ee92e78b96656aa3a7fe21320cb651aead902fa5eb7",
@@ -9549,7 +9549,7 @@
       "kind": "reference-update",
       "owner": "references",
       "source": "docs/design/frontend/contract-first-msw.md",
-      "target": "docs/design/frontend/contract-first-msw.md",
+      "target": "frontend/docs/contract-first-msw.md",
       "source_origin": "git",
       "source_sha256": "37b33c04a9782d514901bae356df0365c6f22a673759a363ad6deb5b98fadb72",
       "target_sha256": "26327c5663fae9582d45c01b5d42f146a672619e3243f461d9bb3fc371f2e0d4",
@@ -9570,7 +9570,7 @@
       "kind": "reference-update",
       "owner": "references",
       "source": "docs/design/frontend/performance.md",
-      "target": "docs/design/frontend/performance.md",
+      "target": "frontend/docs/performance.md",
       "source_origin": "git",
       "source_sha256": "991a35a00e9bb99c3857b8552dcf4806c2bc33279a07324d453d18df9751e048",
       "target_sha256": "eb3c1eeaa05c8ee97c0b72fda162540233aa92b0ac340b650468812515224e9b",
@@ -9609,7 +9609,7 @@
       "kind": "reference-update",
       "owner": "references",
       "source": "docs/design/frontend/realtime-messages.md",
-      "target": "docs/design/frontend/realtime-messages.md",
+      "target": "frontend/docs/realtime-messages.md",
       "source_origin": "git",
       "source_sha256": "f6d2665ed7bd9f3dc69c4990c81985b565dc257a125dd2f3bfafbe9e6580db2f",
       "target_sha256": "bace1f07f9f9e7b405b65d9f4498cbf9c40953bc364e57cd955c62ec7677d627",
@@ -9630,7 +9630,7 @@
       "kind": "reference-update",
       "owner": "references",
       "source": "docs/design/frontend/structure.md",
-      "target": "docs/design/frontend/structure.md",
+      "target": "frontend/docs/structure.md",
       "source_origin": "git",
       "source_sha256": "3e2c28cecb652b0ed5bf4b848bb66d9492a0af179cae926d2fe216d0fba7d53b",
       "target_sha256": "eea9f5c40adb55e75069164d5815f6d1bd21aac31356e955d075625ffd7b68bc",
@@ -9651,10 +9651,10 @@
       "kind": "reference-update",
       "owner": "references",
       "source": "docs/design/frontend/techspec.md",
-      "target": "docs/design/frontend/techspec.md",
+      "target": "frontend/docs/techspec.md",
       "source_origin": "git",
       "source_sha256": "d37b1b074e5b1ac54a4566b976f1aaaa70bdb2a5f28a713889d9326a3f0aa4a7",
-      "target_sha256": "05b12bf5d723b0798a3e4e263a0cdb76b1203d7fbad087213187256ede1c4121",
+      "target_sha256": "32d98232a897d5712a6f417e519c37ccb42f2023f5d44e7746167d2d1b2dfc60",
       "link_edits": [
         {
           "source_start": 1896,
@@ -9697,6 +9697,24 @@
           "target_start": 3862,
           "old": "https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/551-project-map/result.md",
           "new": "https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/work-items/551-project-map/result.md"
+        },
+        {
+          "source_start": 4609,
+          "target_start": 4693,
+          "old": "../../dev/local-setup.md",
+          "new": "../../docs/dev/local-setup.md"
+        },
+        {
+          "source_start": 4644,
+          "target_start": 4733,
+          "old": "../../dev/env.md",
+          "new": "../../docs/dev/env.md"
+        },
+        {
+          "source_start": 4668,
+          "target_start": 4762,
+          "old": "../../dev/deploy.md",
+          "new": "../../docs/dev/deploy.md"
         }
       ],
       "issues": [],
@@ -9708,7 +9726,7 @@
       "kind": "reference-update",
       "owner": "references",
       "source": "docs/design/frontend/tradeoffs-decisions.md",
-      "target": "docs/design/frontend/tradeoffs-decisions.md",
+      "target": "frontend/docs/tradeoffs-decisions.md",
       "source_origin": "git",
       "source_sha256": "13d56eedac2d4286a6343dd6b48721a4866f49faf8e39df0feef3a2d64399ea5",
       "target_sha256": "d7b5a7952bed3c3d0f0b42a2b27211a18e0f1f2514daca6977a204bb9d5d5318",
@@ -9759,7 +9777,7 @@
       "kind": "reference-update",
       "owner": "references",
       "source": "docs/design/frontend/troubleshooting.md",
-      "target": "docs/design/frontend/troubleshooting.md",
+      "target": "frontend/docs/troubleshooting.md",
       "source_origin": "git",
       "source_sha256": "17c0863059055c07f47c915cab14dc8275defee3addb3790935a4955ae7a7e58",
       "target_sha256": "443853f2db466db2f4fc41fe6af8f2030a1c915c7703b4a478cdb01325e82690",
@@ -9828,10 +9846,10 @@
       "kind": "reference-update",
       "owner": "references",
       "source": "docs/design/frontend/verification.md",
-      "target": "docs/design/frontend/verification.md",
+      "target": "frontend/docs/verification.md",
       "source_origin": "git",
       "source_sha256": "c152cb7afa9fa458af15afdc6a6760e4908f8fff313c54e373c14b29fbbc12ad",
-      "target_sha256": "2c0d9bd0344391ab5154315ec42a931ff634eec813bb4be1b20cb249e27d9113",
+      "target_sha256": "a8ee6e903ef6f43f7f5a677fa298042a43cd6251a258834a58e9b91a4760dcdb",
       "link_edits": [
         {
           "source_start": 1166,
@@ -9852,8 +9870,56 @@
           "new": "https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/work-items/558-message-websocket/result.md"
         },
         {
+          "source_start": 2035,
+          "target_start": 2071,
+          "old": "../ai/index.md",
+          "new": "../../docs/design/ai/index.md"
+        },
+        {
+          "source_start": 2060,
+          "target_start": 2111,
+          "old": "../backend/index.md",
+          "new": "../../docs/design/backend/index.md"
+        },
+        {
+          "source_start": 2552,
+          "target_start": 2618,
+          "old": "../../dev/env.md",
+          "new": "../../docs/dev/env.md"
+        },
+        {
+          "source_start": 2576,
+          "target_start": 2647,
+          "old": "../../dev/deploy.md",
+          "new": "../../docs/dev/deploy.md"
+        },
+        {
+          "source_start": 2788,
+          "target_start": 2864,
+          "old": "../../collab/code-reviews.md",
+          "new": "../../docs/collab/code-reviews.md"
+        },
+        {
+          "source_start": 2887,
+          "target_start": 2968,
+          "old": "../ai/index.md",
+          "new": "../../docs/design/ai/index.md"
+        },
+        {
+          "source_start": 4628,
+          "target_start": 4724,
+          "old": "../../dev/testing.md",
+          "new": "../../docs/dev/testing.md"
+        },
+        {
+          "source_start": 4950,
+          "target_start": 5051,
+          "old": "../../dev/testing.md",
+          "new": "../../docs/dev/testing.md"
+        },
+        {
           "source_start": 5010,
-          "target_start": 5046,
+          "target_start": 5116,
           "old": "https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/594-stale-session-writes/result.md",
           "new": "https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m3/work-items/594-stale-session-writes/result.md"
         }

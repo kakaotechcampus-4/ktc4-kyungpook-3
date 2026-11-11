@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
-import { start } from './support'
+import { expectNoHorizontalOverflow, start } from './support'
 
 /*
  * M7 §5 — 대시보드의 핵심 이동·되돌리기·키보드 (AC-02 · AC-04 · AC-06). 상태는 MSW 시나리오(shared/mock/scenarios.ts)로만 만든다.
@@ -16,6 +16,28 @@ test.describe.configure({ timeout: 60_000 })
 
 const FIRST_PAINT = { timeout: 15_000 }
 const DASHBOARD = '/workspaces/ws_01/dashboard'
+
+for (const width of [1280, 390]) {
+  test(`${width}px 최근 반영 빈 상태의 업로드는 오른쪽 먹색 버튼이고 방법 보기는 없다`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await start(page, 'dashboard-no-meeting', DASHBOARD)
+    const recent = page.getByRole('region', { name: '최근 반영' })
+    const upload = recent.getByRole('link', { name: '회의 업로드' })
+    await expect(upload).toBeVisible(FIRST_PAINT)
+    await expect(recent.getByRole('button', { name: '방법 보기' })).toHaveCount(0)
+    await expect(upload).toHaveCSS('background-color', 'rgb(51, 51, 51)')
+    await expect(upload).toHaveCSS('color', 'rgb(255, 255, 255)')
+    const actionBox = await upload.boundingBox()
+    const sectionBox = await recent.boundingBox()
+    if (actionBox === null || sectionBox === null) throw new Error('최근 반영이 보이지 않아요.')
+    expect(actionBox.x + actionBox.width).toBeCloseTo(sectionBox.x + sectionBox.width, 0)
+    await expectNoHorizontalOverflow(page)
+    await upload.click()
+    await expect(page).toHaveURL('/workspaces/ws_01/meetings/upload')
+  })
+}
 
 async function openDashboard(
   page: Page,

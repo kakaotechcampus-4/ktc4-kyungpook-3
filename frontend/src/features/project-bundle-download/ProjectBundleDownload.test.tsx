@@ -27,7 +27,7 @@ function renderDownload() {
 const bundleRequests = (log: ReturnType<typeof recordRequests>) =>
   log.started.filter(({ path }) => path.startsWith('/workspaces/ws_01/project-bundle.md'))
 
-const button = () => screen.getByRole('button', { name: /프로젝트 합본 내려받기|내려받는 중/ })
+const button = () => screen.getByRole('button', { name: /프로젝트 내려받기|내려받는 중/ })
 
 afterEach(() => {
   onlineManager.setOnline(true)
@@ -126,7 +126,7 @@ describe('프로젝트 합본 내려받기', () => {
     expect(await screen.findByText('프로젝트 합본을 내려받지 못했어요')).toBeInTheDocument()
     expect(screen.getByText('접근 권한이 없어요.')).toBeInTheDocument()
     expect(button()).toBeEnabled()
-    expect(button()).toHaveTextContent('프로젝트 합본 내려받기')
+    expect(button()).toHaveTextContent('프로젝트 내려받기')
   })
 
   it('받는 동안 버튼이 잠기고 내려받는 중이라고 말한다', async () => {
@@ -146,7 +146,7 @@ describe('프로젝트 합본 내려받기', () => {
     await waitFor(() => expect(button()).toHaveTextContent('내려받는 중…'))
     expect(button()).toBeDisabled()
     release()
-    await waitFor(() => expect(button()).toHaveTextContent('프로젝트 합본 내려받기'))
+    await waitFor(() => expect(button()).toHaveTextContent('프로젝트 내려받기'))
   })
 
   it('오프라인으로 기다리는 사이 세션이 끝나면 다시 연결돼도 요청을 보내지 않고 알리지도 않는다', async () => {
@@ -160,7 +160,7 @@ describe('프로젝트 합본 내려받기', () => {
     act(() => endSessionScope())
     act(() => onlineManager.setOnline(true))
 
-    await waitFor(() => expect(button()).toHaveTextContent('프로젝트 합본 내려받기'))
+    await waitFor(() => expect(button()).toHaveTextContent('프로젝트 내려받기'))
     expect(bundleRequests(log)).toEqual([])
     expect(saved).toEqual([])
     expect(screen.queryByText('프로젝트 합본을 내려받지 못했어요')).toBeNull()

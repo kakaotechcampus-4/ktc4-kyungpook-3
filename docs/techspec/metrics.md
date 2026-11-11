@@ -17,9 +17,9 @@ AI 품질을 평가하려고 수집하거나 수집할 값을 정리한다. 지�
 | 판단 | 1인칭 오분류율 | 화자 본인 담당을 다른 유형으로 본 비율 | 누적 171건 중 2건(약 1%) (2026-11-07) | 같음 |
 | 오인식 | 차단율 | 명사가 틀린 발화 중 막은 비율 | 47% (41~53%) (2026-11-08, AI Hub KconfSpeech 1,397발화, Jev 기준 0.8) | `judge.eval_asr_real` |
 | 오인식 | 오차단율 | 명사가 맞는 발화 중 막은 비율 | 19% (17~21%) (같음) | 같음 |
-| 오인식 | 검사 실패율 | `asr_check_failed` 비율 | 운영에서 수집 예정 | `kpi.approval_fact.asr_flag='check_failed'` 비율([KPI 대시보드](../../deploy/monitoring/README.md), #675). 2026-11-07 이후 회의 추출의 review·hold 생성 카드만 센다 |
+| 오인식 | 검사 실패율 | `asr_check_failed` 비율 | 운영에서 수집 예정 | `kpi.approval_fact.asr_flag='check_failed'` 비율([KPI 대시보드](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/monitoring/README.md), #675). 2026-11-07 이후 회의 추출의 review·hold 생성 카드만 센다 |
 | 오인식 | 의심 유무별 PM 제목 수정 비율 | `asr_flag`(none·suspect·check_failed)별로 PM 이 제목을 고쳐 승인한 비율. 막힌 쪽이 뚜렷이 높으면 검사가 제 역할을 한다 | 운영에서 수집 예정 | `kpi.approval_fact.asr_flag`·`title_edited` (#675) |
-| 게이트 | 자동 반영률 | judge 새 항목 중 auto 비율 | 운영에서 수집 예정 | `kpi.extraction_item_fact.gate` ([KPI 대시보드](../../deploy/monitoring/README.md), #675) |
+| 게이트 | 자동 반영률 | judge 새 항목 중 auto 비율 | 운영에서 수집 예정 | `kpi.extraction_item_fact.gate` ([KPI 대시보드](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/monitoring/README.md), #675) |
 | 게이트 | 탈락 사유 분포 | auto 를 막은 사유별 건수(`task_not_certain`, `asr_suspect` 등) | 운영에서 수집 예정 | `auto_blockers` 결과. DB 에 저장되지 않아 로그 수집 뒤 센다(#675 범위 밖) |
 | 게이트 | 켰으면 auto 였을 항목 | `AUTO_CREATE_ENABLED=false` 또는 채팅 회의에서 review 로 내린 auto 항목 수 | 운영에서 수집 예정 | BE 로그 (`app/api/extractions.py`). 로그 수집 뒤 센다(#675 범위 밖) |
 | 승인 | PM 승인·수정·반려 비율 | 승인 카드 처리 결과, 게이트·근거 상태·카테고리별 | 운영에서 수집 예정 | `kpi.approval_fact.outcome` (#675). 수정 승인은 `task_overrides` 가 생긴 2026-11-04 이후 카드만 구분된다. 삭제된 회의의 승인 요청은 상태와 관계없이 소급해서 뺀다 |
@@ -30,7 +30,7 @@ AI 품질을 평가하려고 수집하거나 수집할 값을 정리한다. 지�
 | 답장 | 잘못된 certain | 답장 상태 판정 오류 | 0/38 (같음) | 같음 |
 | 답장 | 72시간 무응답 막힘 수 | 자동 막힘 전환·PM 되돌림 건수 | 운영에서 수집 예정 | TaskHistory(`change_source=scheduler`) |
 | 처리 시간 | 업로드 → BE 인계 | 업로드부터 추출 등록까지 | 3분 57초 회의 4분 44초(1단계 실패 1회 포함, 2026-11-08 수동 업로드 테스트) | 워커 처리 기록. 운영 분포는 아래 회의 처리 시간 |
-| 처리 시간 | 회의 처리 시간 p50·p95, 10분 초과 건수 | 녹음 종료부터 추출 등록까지. 디스코드 회의는 마지막 발화가 끝난 시각(`started_at + duration_ms`), 업로드 회의는 업로드 시각을 녹음 종료로 본다. 디스코드 회의의 `ended_at` 은 워커가 처리를 시작한 시각이라 쓰지 않는다(큐 대기가 빠지기 때문). 업로드 회의의 화자 지정 대기는 빼고 채팅 회의는 제외 | 운영에서 수집 예정 | `kpi.meeting_fact.processing_seconds - speaker_wait_seconds` (#675) |
+| 처리 시간 | 회의 처리 시간 p50·p95, 10분 초과 건수 | 녹음 종료부터 추출 등록까지. 디스코드 회의는 마지막 발화가 끝난 시각(`started_at + duration_ms`, 단 `ended_at` 을 넘지 않게 자름), 업로드 회의는 업로드 시각을 녹음 종료로 본다. 디스코드 회의의 `ended_at` 은 워커가 처리를 시작한 시각이라 쓰지 않는다(큐 대기가 빠지기 때문). 업로드 회의의 화자 지정 대기는 빼고 채팅 회의는 제외 | 운영에서 수집 예정 | `kpi.meeting_fact.processing_seconds - speaker_wait_seconds` (#675) |
 | 운영 | 회의 실패율·실패 단계 | done·failed 회의 중 failed 비율과 `failed_stage` 별 건수. 다시 녹음해 회복한 회의는 따로 본다 | 운영에서 수집 예정 | `kpi.meeting_fact.status`·`failed_stage`·`replaced` (#675) |
 | 운영 | 회의 처리 중 서버 최대 메모리 | 회의 처리 구간의 서버 사용 메모리와 `mm-worker` 메모리 최대값 | 운영에서 수집 예정 | Grafana Alloy 메모리 지표 + `kpi.meeting_fact` 처리 구간 주석 (#675) |
 | 운영 | 동시 요청 처리량 | 동시 사용자 수별 초당 요청과 실패율 | 20 VU 4.0 → 48.0 req/s, 50 VU 104.4 req/s 서버 실패 0 (2026-11-11, 관문 30·풀 20+20, 노트북 Docker). 운영 서버 5 VU 11.8 req/s, p95 321ms | k6 (PR #703), 결정 0068 |

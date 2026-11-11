@@ -228,7 +228,7 @@ export interface ProjectMapViewProps {
 
 /**
  * 프로젝트 맵 화면 (#551). 주제·태스크를 그래프나 주제별 목록으로 보고, 누르면 같은 패널이 열린다.
- * 그래프는 나온 순서대로 다시 그려 볼 수 있다(재생). 맨 아래는 AI 에 줄 프로젝트 합본 내려받기다
+ * 그래프는 나온 순서대로 다시 그려 볼 수 있다(재생).
  */
 export function ProjectMapView({ workspaceId, view, onViewChange, compact }: ProjectMapViewProps) {
   const query = useQuery(projectMapQueryOptions(workspaceId))
@@ -239,7 +239,13 @@ export function ProjectMapView({ workspaceId, view, onViewChange, compact }: Pro
   return (
     <main className={MAIN}>
       <h1 className={TITLE}>프로젝트 맵</h1>
-      <MapTabs prefix={prefix} selected={view} onSelect={onViewChange} />
+      <div className="flex items-stretch justify-between gap-22 max-lg:flex-col">
+        <MapTabs prefix={prefix} selected={view} onSelect={onViewChange} />
+        <ProjectBundleDownload
+          workspaceId={workspaceId}
+          notesClassName="absolute right-48 bottom-24 left-48 max-md:right-20 max-md:left-20"
+        />
+      </div>
       <div
         ref={panelTabStop}
         id={`${prefix}-panel`}
@@ -278,7 +284,6 @@ export function ProjectMapView({ workspaceId, view, onViewChange, compact }: Pro
           </>
         )}
       </div>
-      <ProjectBundleDownload workspaceId={workspaceId} />
     </main>
   )
 }

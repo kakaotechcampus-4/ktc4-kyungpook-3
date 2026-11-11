@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import type { Invitee } from '@/entities/invitation'
 import { USERNAME_HINT, USERNAME_MESSAGES } from '@/entities/user'
 import { errorMessage } from '@/shared/api/errorMessages'
 import { Button } from '@/shared/ui/button'
+import { Label } from '@/shared/ui/label'
 import { Modal } from '@/shared/ui/modal'
 import { TextField } from '@/shared/ui/text-field'
 import { useInviteeSearch } from '../model/useInviteeSearch'
@@ -79,6 +80,7 @@ function InviteForm({
   const found = search.status === 'found' ? search.invitee : null
   const error = problemOf(search) ?? serverError ?? undefined
   const field = useRef<HTMLInputElement>(null)
+  const fieldId = useId()
 
   // 실패 문구는 칸의 설명으로 이어져 있다. 찾기·초대하기에 남은 포커스를 칸으로 옮겨 읽게 한다.
   // 404 로 찾은 사람을 버리면 초대하기가 꺼져 포커스가 거기 남는다
@@ -112,39 +114,44 @@ function InviteForm({
           만들어져요.
         </p>
       )}
-      <TextField
-        ref={field}
-        label="아이디"
-        autoComplete="off"
-        autoCapitalize="none"
-        spellCheck={false}
-        description={USERNAME_HINT}
-        value={input}
-        disabled={pending}
-        onChange={(event) => {
-          setInput(event.target.value)
-          onClearError()
-        }}
-        // 찾기 전에는 초대하기가 꺼져 있어 Enter 가 폼을 보내지 않는다. 찾기로 잇는다
-        onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
-          if (event.key !== 'Enter' || event.nativeEvent.isComposing || found !== null) return
-          event.preventDefault()
-          proceed()
-        }}
-        error={error}
-        endAdornment={
-          <Button
+      <div className="flex flex-col">
+        <Label htmlFor={fieldId} className="mb-6">
+          아이디
+        </Label>
+        <div className="flex items-start gap-8">
+          <TextField
+            id={fieldId}
+            className="min-w-0 flex-1"
+            ref={field}
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            description={USERNAME_HINT}
+            value={input}
+            disabled={pending}
+            onChange={(event) => {
+              setInput(event.target.value)
+              onClearError()
+            }}
+            // 찾기 전에는 초대하기가 꺼져 있어 Enter 가 폼을 보내지 않는다. 찾기로 잇는다
+            onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
+              if (event.key !== 'Enter' || event.nativeEvent.isComposing || found !== null) return
+              event.preventDefault()
+              proceed()
+            }}
+            error={error}
+          />
+          <button
             type="button"
-            size="sm"
-            className="shrink-0"
-            loading={searching}
-            disabled={pending || found !== null}
+            className="inline-flex h-[42px] shrink-0 items-center justify-center rounded-9 border border-transparent bg-control px-16 text-body leading-none font-semibold whitespace-nowrap text-ink hover:bg-line-strong active:bg-inactive disabled:bg-surface-selected disabled:text-faint"
+            aria-busy={searching || undefined}
+            disabled={pending || searching || found !== null}
             onClick={find}
           >
             찾기
-          </Button>
-        }
-      />
+          </button>
+        </div>
+      </div>
       <div role="status" className={found === null ? 'sr-only' : FOUND}>
         {found === null ? null : (
           <>

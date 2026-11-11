@@ -72,7 +72,7 @@
 | [Notion API 문서](https://developers.notion.com) | 보드 반영, OAuth | [Notion 동기화](../design/backend/notion-sync.md) |
 | [k6 문서](https://grafana.com/docs/k6/latest/) | 부하 테스트 | 0068 |
 | [Grafana Alloy 문서](https://grafana.com/docs/alloy/latest/) | 운영 모니터링 | [모니터링 설치](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/monitoring/README.md) |
-| [MSW](https://mswjs.io), [Zod](https://zod.dev) | 계약 먼저 개발, 응답 검증 | [계약 먼저, MSW 먼저](../design/frontend/contract-first-msw.md) |
+| [MSW](https://mswjs.io), [Zod](https://zod.dev) | 계약 먼저 개발, 응답 검증 | [계약 먼저, MSW 먼저](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/contract-first-msw.md) |
 | 주간 멘토 리뷰와 기술 멘토링 | 설계 방향과 측정 과제 | [코드 리뷰 기록](../collab/code-reviews.md) |
 
 ## 스펙 아웃: 하지 않기로 한 것

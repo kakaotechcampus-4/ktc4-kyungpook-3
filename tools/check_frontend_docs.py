@@ -10,7 +10,7 @@ from urllib.parse import unquote, urlsplit
 root = Path(__file__).resolve().parents[1]
 baseline = root / ".verify/frontend-docs/baseline.json"
 pages = [
-    root / "docs/design/frontend" / name
+    root / "frontend/docs" / name
     for name in (
         "index.md",
         "techspec.md",
@@ -19,12 +19,14 @@ pages = [
         "tradeoffs-decisions.md",
         "performance.md",
         "verification.md",
+        "contract-first-msw.md",
+        "ai-result-ui.md",
+        "realtime-messages.md",
+        "a11y-performance.md",
     )
 ]
 nav_pages = pages + [root / "docs/index.md"]
 pages += [
-    root / "docs/design/frontend/realtime-messages.md",
-    root / "docs/design/frontend/a11y-performance.md",
     root / "docs/index.md",
     root / "frontend/docs/README.md",
     root / "frontend/docs/performance/README.md",
@@ -51,6 +53,8 @@ docs_only = sys.argv[1:] == ["--docs-only"]
 if sys.argv[1:] and not docs_only:
     raise SystemExit("Usage: python tools/check_frontend_docs.py [--baseline | --docs-only]")
 errors = []
+if (root / "docs/design/frontend").exists():
+    errors.append("Frontend documents belong in frontend/docs, not docs/design/frontend")
 if not baseline.exists():
     errors.append("Baseline missing. Preservation cannot be verified.")
 else:
@@ -88,7 +92,11 @@ for page in pages:
             errors.append(f"Broken local link: {page.relative_to(root)} -> {target}")
 nav = (root / "mkdocs.yml").read_text(encoding="utf-8")
 for page in nav_pages:
-    if page.relative_to(root / "docs").as_posix() not in nav:
+    if page.is_relative_to(root / "docs"):
+        entry = page.relative_to(root / "docs").as_posix()
+    else:
+        entry = "https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/" + page.relative_to(root).as_posix()
+    if entry not in nav:
         errors.append(f"Missing navigation entry: {page.name}")
 for error in errors:
     print(error)

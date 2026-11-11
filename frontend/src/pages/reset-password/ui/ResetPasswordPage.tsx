@@ -11,7 +11,7 @@ export function ResetPasswordPage() {
       title="새 비밀번호"
       formLabel="비밀번호 재설정"
       aside={{
-        pose: 'squint',
+        pose: 'idle',
         title: '새 비밀번호를 정해 주세요',
         description:
           '바꾸면 로그인된 모든 기기에서 로그아웃돼요. 새 비밀번호로 다시 로그인해 주세요.',

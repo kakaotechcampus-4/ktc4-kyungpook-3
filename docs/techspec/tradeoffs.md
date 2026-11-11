@@ -76,7 +76,7 @@
 | 자동 반영을 누가 정하나 | AI 가 정해서 보냄: 지금 값 확인은 어차피 BE 가 해야 해서 정책이 두 곳으로 갈린다 | AI 는 근거와 검색 결과를 보내고 BE 가 정한다. 별칭 확정, 승인 대기 중복처럼 BE 만 아는 값이 조건에 들어간다 | [매칭과 게이트](../design/backend/gate-matching.md) |
 | 봇이 전사까지 할까 | 봇이 처리까지 하는 방식, 두 방식을 같이 두기, DB·Redis 큐 | 봇은 저장만 하고 워커가 처리한다. 봇 토큰을 워커에 두지 않으려고 둘은 파일로 주고받는다. 코드 831 → 570줄 | 0026 |
 | 재시작하면 어디서 이어 가나 | 담당 표시와 만료 시각을 DB 에 두기, SQS, Redis | 회의마다 매니페스트에 단계를 적고, 워커가 마지막으로 끝난 단계 다음부터 한다. 회의별 잠금으로 두 워커가 같은 회의를 잡지 않는다 | 0013, 0017 |
-| FE 를 BE 보다 먼저 만들 수 있나 | 대안을 견준 기록은 없다 | 계약을 먼저 쓰고 MSW 를 데이터 출처로 개발했다. 나중에 실제 API 와 대조해 12건을 맞췄다(FE 5, BE 7) | [계약 먼저, MSW 먼저](../design/frontend/contract-first-msw.md) |
+| FE 를 BE 보다 먼저 만들 수 있나 | 대안을 견준 기록은 없다 | 계약을 먼저 쓰고 MSW 를 데이터 출처로 개발했다. 나중에 실제 API 와 대조해 12건을 맞췄다(FE 5, BE 7) | [계약 먼저, MSW 먼저](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/contract-first-msw.md) |
 | Notion 을 요청 안에서 부를까 | 승인 요청 안에서 Notion 호출: DB 롤백과 Notion 반영이 엇갈린다(#78 멘토 지적) | 승인은 DB 에만 쓰고 outbox 워커가 따로 반영한다. 실패하면 다시 시도한다 | [Notion 동기화](../design/backend/notion-sync.md) |
 
 ## 6. 운영

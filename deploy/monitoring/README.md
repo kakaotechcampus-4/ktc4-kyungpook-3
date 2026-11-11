@@ -154,7 +154,7 @@ date_trunc('week', t AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul'
 | 패널 | 읽는 view | 조건과 값 |
 |---|---|---|
 | auto 롤백률(주별, 5% 기준선) | `extraction_item_fact` | `gate='auto' AND action='create'` 의 `avg(reverted::int)`. 항목을 만든 주 기준이라 최근 주는 낮게 나온다 |
-| 처리 시간 p50·p95, 10분 초과 | `meeting_fact` | `status='done' AND source IN ('discord','manual_upload')`. 값은 `processing_seconds - coalesce(speaker_wait_seconds,0)`. `percentile_cont`, `count(*) FILTER (WHERE … > 600)`. 채팅은 뺀다. 디스코드 회의는 마지막 발화 끝부터 재서 큐 대기가 들어간다 |
+| 처리 시간 p50·p95, 10분 초과 | `meeting_fact` | `status='done' AND source IN ('discord','manual_upload')`. 값은 `processing_seconds - coalesce(speaker_wait_seconds,0)`. `percentile_cont`, `count(*) FILTER (WHERE … > 600)`. 채팅은 뺀다. 디스코드 회의는 마지막 발화 끝부터 재서 큐 대기가 들어간다(단 `ended_at` 을 넘지 않게 자른다) |
 | 실패율·단계 | `meeting_fact` | `status IN ('done','failed')` 중 failed 비율, `failed_stage` 별, `replaced` 로 다시 시도해 회복했는지 가른다 |
 | 게이트 분포 | `extraction_item_fact` | `gate` 별 개수 |
 | 승인·수정·반려 | `approval_fact` | `outcome` 별 개수 |

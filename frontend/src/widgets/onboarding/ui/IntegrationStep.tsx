@@ -6,6 +6,7 @@ import { errorMessage } from '@/shared/api/errorMessages'
 import { useGuardedNavigate } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
+import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { ExitLink } from './ExitLink'
 import { OnboardingCard } from './OnboardingCard'
@@ -45,8 +46,8 @@ const NOTICE: Record<IntegrationNotice, string> = {
 
 const CONNECTED = 'pt-6 text-body font-semibold text-ink'
 
-/* 설명 바로 아래 글자 링크. 카드의 주 버튼(연결하기)과 겨루지 않게 작고 흐리다 */
-const GUIDE_LINK = 'self-start text-[13px] text-dim underline underline-offset-3 hover:text-ink'
+const GUIDE_BUTTON =
+  'inline-flex size-24 shrink-0 items-center justify-center rounded-6 text-dim hover:bg-control hover:text-ink'
 
 export interface IntegrationStepProps {
   workspaceId: string
@@ -139,6 +140,17 @@ export function IntegrationStep({ workspaceId, provider, review = false }: Integ
     >
       <OnboardingCard
         title={copy.title}
+        titleEnd={
+          provider === 'discord' ? (
+            <QuickGuideButton
+              className={GUIDE_BUTTON}
+              aria-label="디스코드 연동 사용법"
+              title="어떻게 쓰나요?"
+            >
+              <Icon name="help" size={16} />
+            </QuickGuideButton>
+          ) : undefined
+        }
         description={copy.description}
         actions={
           flow.integration === null ? null : review ? (
@@ -178,9 +190,6 @@ export function IntegrationStep({ workspaceId, provider, review = false }: Integ
           )
         }
       >
-        {provider === 'discord' ? (
-          <QuickGuideButton className={GUIDE_LINK}>어떻게 쓰나요?</QuickGuideButton>
-        ) : null}
         <FormErrorPanel message={failure} className="mt-6" />
         {flow.integration === null && flow.integrationsError ? (
           <QueryErrorState error={flow.integrationsError} onRetry={flow.retryIntegrations} />

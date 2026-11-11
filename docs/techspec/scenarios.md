@@ -114,4 +114,4 @@ sequenceDiagram
 - 채팅 수집 흐름(매일 09:00 하루치 "채팅 회의", auto 없음): [아키텍처](architecture.md#입력-경로-세-가지)
 - 업로드 상세 규칙: [BE↔AI 계약 웹 업로드](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/contracts/backend-ai-contract.md#웹-업로드-가져가기)
 - 사용자 가이드: [회의 기록](../user/record-meeting.md), [확인과 승인](../user/review-approve.md), [후속 관리](../user/follow-up.md)
-- 화면 설계: [AI 결과 보여 주기](../design/frontend/ai-result-ui.md), [실시간 메시지](../design/frontend/realtime-messages.md)
+- 화면 설계: [AI 결과 보여 주기](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/ai-result-ui.md), [실시간 메시지](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/realtime-messages.md)

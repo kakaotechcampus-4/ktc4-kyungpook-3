@@ -16,7 +16,7 @@
 | 개발자 가이드 | 코드를 실행·테스트·배포하려는 개발자 | [로컬 실행](dev/local-setup.md) |
 | 테크스펙 | 설계·에이전트 구조·안정성·품질 평가가 궁금한 분 | [테크스펙 요약](techspec/index.md) |
 | 설계 심화 | AI·BE·FE를 왜 이렇게 만들었고 어떻게 검증했는지 | [설계 심화](design/index.md) |
-| 프론트엔드 발표 문서 | FE 테크스펙·구조·문제 해결·선택·검증 근거를 찾는 분 | [프론트엔드 개요](design/frontend/index.md) |
+| 프론트엔드 발표 문서 | FE 테크스펙·구조·문제 해결·선택·검증 근거를 찾는 분 | [프론트엔드 개요](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/index.md) |
 | 협업 문서 | 팀의 그라운드룰·브랜치 전략·컨벤션·코드 리뷰 | [협업 개요](collab/index.md) |
 | API 문서 | 엔드포인트·스키마 | [API 문서](api/index.md) |
 

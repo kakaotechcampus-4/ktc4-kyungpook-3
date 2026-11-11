@@ -199,17 +199,10 @@ export async function expectAudioReady(page: Page): Promise<void> {
   await expect(page.getByText(/^\d+:\d{2} · /)).toBeVisible()
 }
 
-/**
- * 정리가 끝난 회의의 회의록이 열린다. 모의 `meeting-instant` 는 첫 조회에 바로 `done` 이라, 병렬 부하로 처리 화면(lazy)이
- * 그려지기 전에 완료 응답이 오면 추적기는 자동 이동 없이 도착한 사람에게 `정리가 끝났어요 · 회의록 보기` 를 보인다
- * (useProcessingTracker.leaveProcessingScreen — 그려진 처리 화면에서만 옮긴다). 둘 다 정상 결과라 링크가 보이면 눌러 회의록으로 간다.
- * 자동 이동 자체의 시점은 추적기 통합 테스트가 고정된 순서로 본다 (lateAsyncRaces·processingTracker)
- */
+/** 정리 완료 시 별도 링크 조작 없이 회의록으로 이동한다. */
 export async function expectMinutesOpened(page: Page, timeout = 15_000): Promise<void> {
   const minutes = /^\/workspaces\/ws_01\/meetings\/mt_\w+$/
-  const open = page.getByRole('link', { name: '회의록 보기' })
-  await expect(async () => {
-    if (!minutes.test(new URL(page.url()).pathname) && (await open.isVisible())) await open.click()
+  await expect(() => {
     expect(minutes.test(new URL(page.url()).pathname)).toBe(true)
   }).toPass({ timeout })
 }

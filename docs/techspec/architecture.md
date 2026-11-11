@@ -124,7 +124,7 @@ sequenceDiagram
 | AI | Python 3.12, py-cord(voice, 커밋 고정, capture 에만), Elice MLAPI(OpenAI 호환), faster-whisper(로컬 예비), kiwipiepy 0.24.1(형태소), pytest |
 | 인프라 | AWS EC2 t3.medium 1대(2 vCPU, 4GB), Docker Compose, Caddy(HTTPS·라우팅), systemd, GitHub Actions(OIDC → SSM) |
 
-자세히: [Frontend 구조와 화면 지도](../design/frontend/index.md) · [계약 먼저, MSW 먼저](../design/frontend/contract-first-msw.md) · [Backend 개요](../design/backend/index.md)
+자세히: [Frontend 구조와 화면 지도](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/index.md) · [계약 먼저, MSW 먼저](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/contract-first-msw.md) · [Backend 개요](../design/backend/index.md)
 
 ## 배포 구성
 

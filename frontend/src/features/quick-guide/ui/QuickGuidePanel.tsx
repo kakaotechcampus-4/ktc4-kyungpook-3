@@ -14,7 +14,7 @@ const STEP_TITLE = 'text-body font-bold text-ink'
 const STEP_BODY = 'flex min-w-[0px] flex-1 flex-col gap-6 text-body text-sub'
 const MEMBER = 'rounded-9 bg-surface-sunken px-10 py-6 text-caption text-sub'
 
-function QuickGuideContent() {
+function QuickGuideContent({ form }: { form: QuickGuideForm }) {
   return (
     <div className="flex flex-col gap-18">
       <p className={CALLOUT}>
@@ -39,7 +39,7 @@ function QuickGuideContent() {
           </li>
         ))}
       </ol>
-      <p className="text-body text-sub">
+      <p className={form === 'modal' ? 'text-right text-body text-sub' : 'text-body text-sub'}>
         <ExternalLink href={USER_GUIDE_URL}>
           자세히 보기 <span aria-hidden="true">→</span> 사용자 가이드
         </ExternalLink>
@@ -77,7 +77,7 @@ export function QuickGuidePanel({ open, onOpenChange, form, returnFocus }: Quick
         returnFocus={returnFocus}
       >
         <div className="min-h-[0px] flex-1 overflow-y-auto pt-6 pb-12">
-          <QuickGuideContent />
+          <QuickGuideContent form={form} />
         </div>
         <div className="flex justify-end pt-6">{close}</div>
       </Sheet>
@@ -91,10 +91,10 @@ export function QuickGuidePanel({ open, onOpenChange, form, returnFocus }: Quick
       title={QUICK_GUIDE_TITLE}
       width={560}
       className="max-h-full"
-      actions={close}
+      closeButton="absolute"
     >
-      <div className="min-h-[0px] overflow-y-auto">
-        <QuickGuideContent />
+      <div className="-mx-24 min-h-[0px] overflow-x-hidden overflow-y-auto px-24">
+        <QuickGuideContent form={form} />
       </div>
     </Modal>
   )

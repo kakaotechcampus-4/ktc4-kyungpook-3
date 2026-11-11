@@ -5,7 +5,6 @@ import { MemberInviteControl } from '@/features/member-invite'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink, guardLeave } from '@/shared/lib/unsaved-changes'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
-import { Button } from '@/shared/ui/button'
 import { Modal } from '@/shared/ui/modal'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
@@ -40,7 +39,7 @@ export interface MemberConnectDialogProps {
 
 /**
  * 팀원 관리 (D-074, D-075, #647). 팀 화면의 `팀원 관리`·`연결` 과 설정의 Discord 연결 성공이 이 창을 연다.
- * 팀원 한 명이 한 줄이고 줄마다 바로 저장한다 — 아래 버튼은 `닫기` 하나다. 줄 아래에 초대 상태와 조작을 둔다.
+ * 팀원 한 명이 한 줄이고 줄마다 바로 저장한다. 줄 아래에 초대 상태와 조작을 둔다.
  * 쓰는 동안에는 닫히지 않고 설정 링크로도 떠나지 않는다 — 떠나면 실패를 보일 곳이 없다. 고친 이름을 저장하지 않았으면 닫기 전에 공통 이탈 확인을 거친다
  */
 export function MemberConnectDialog({
@@ -70,6 +69,8 @@ export function MemberConnectDialog({
       description={DESCRIPTION}
       width={WIDTH}
       className={SCROLL}
+      closeButton="sticky"
+      closeDisabled={busy}
     >
       {source.status === 'loading' || indicator.pending ? (
         <DeferredSkeleton indicator={indicator}>
@@ -117,11 +118,6 @@ export function MemberConnectDialog({
           )}
         </Reveal>
       )}
-      <div className="flex justify-end pt-6">
-        <Button variant="ghost" disabled={busy} onClick={() => requestOpenChange(false)}>
-          닫기
-        </Button>
-      </div>
     </Modal>
   )
 }

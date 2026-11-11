@@ -123,6 +123,14 @@ describe('처음 쓰는 분을 위한 안내 (#650)', () => {
     }
   })
 
+  it('넓은 화면의 닫기는 본문 아래 대신 제목 오른쪽 아이콘 하나로 보인다', async () => {
+    const { panel } = await openGuide()
+    const close = within(panel).getByRole('button', { name: '닫기' })
+    expect(close.textContent).toBe('')
+    expect(close.querySelector('svg')).not.toBeNull()
+    expect(within(panel).queryByText('닫기')).toBeNull()
+  })
+
   it.each([
     ['닫기', closeByButton],
     ['Esc', closeByEscape],

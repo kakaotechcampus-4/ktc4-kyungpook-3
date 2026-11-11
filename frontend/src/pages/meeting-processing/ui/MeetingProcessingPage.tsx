@@ -18,9 +18,10 @@ import { useMemberWorkspace } from '@/entities/workspace'
 import { ApiError, isInvalidResponse } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf } from '@/shared/lib/date'
+import { useLivePathname } from '@/shared/lib/live-pathname'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import type { LoadingIndicator } from '@/shared/lib/loading-indicator'
-import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { GuardedLink, hasPendingLeave, useGuardedNavigate } from '@/shared/lib/unsaved-changes'
 import { useRouteId } from '@/shared/lib/url'
 import { DeferredSkeleton } from '@/shared/ui/deferred-skeleton'
 import { Icon } from '@/shared/ui/icon'
@@ -67,7 +68,7 @@ const STEP_TEXT: Record<ProcessingStep['state'], string> = {
  * 회의 정리 중 (U4). 워크스페이스 팀원 모두 볼 수 있다.
  * 상태는 상세 Query 캐시를 읽는다. polling 은 앱 수준 추적기가 한다 — 이 화면이 없어도 추적은 이어지고,
  * 이 화면은 같은 캐시를 그린다. 이 화면에서 정리 중·화자 지정 대기 회의를 보면 추적기에 등록한다(다른 팀원이 올린 회의, 직접 링크).
- * 완료·실패 뒤 이동은 추적기가 한다 — 이 화면을 보고 있을 때만이다.
+ * 정리 중 완료·실패 이동은 추적기가 한다. 이미 끝난 회의의 처리 주소로 들어오면 회의록으로 바로 이동한다.
  *
  * 서버의 `progress`·`processing` 과 회의 상태로 단계를 정한다 — 녹음 회의는 서버 단계와 1:1 인 다섯 단계(`processing` 이 없는 옛 응답은
  * 세 단계), 채팅 회의는 두 단계다 (#483). 지금 단계 줄에는 서버가 알린 전사 진행 수와 그 단계의 경과를 붙인다(없으면 붙이지 않는다). 캔버스의 진행 막대·단계별 시간·남은 시간·말 겹침 안내·
@@ -104,6 +105,8 @@ function Layout({
 }
 
 function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; meetingId: string }) {
+  const navigate = useGuardedNavigate()
+  const livePathname = useLivePathname()
   const detail = useQuery(meetingDetailQueryOptions(workspaceId, meetingId))
   // 참석 인원은 목록에만 있다. 추적기의 발견과 같은 캐시라 보통 새 요청이 없다
   const summary = useQuery({
@@ -112,6 +115,7 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
   })
   const meeting = viewableMeeting(detail)
   const watched = meeting?.status === 'processing' || meeting?.status === 'awaiting_speakers'
+  const completed = meeting?.status === 'done' && !isInvalidResponse(detail.error)
   const isPm = useMemberWorkspace(workspaceId)?.role === 'pm'
   // 단계 목록이 출처마다 달라(#483) 출처를 목록에서 읽는다. 목록에 없으면 한 번 새로 받고, 모르는 동안 단계를 그리지 않는다
   const sourceOf = useMeetingSources(
@@ -122,6 +126,15 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
   useEffect(() => {
     if (watched) trackMeeting({ workspaceId, meetingId })
   }, [watched, workspaceId, meetingId])
+  useEffect(() => {
+    if (
+      completed &&
+      livePathname() === paths.meetingProcessing(workspaceId, meetingId) &&
+      !hasPendingLeave()
+    ) {
+      navigate(paths.meetings(workspaceId, meetingId), { replace: true })
+    }
+  }, [completed, livePathname, navigate, workspaceId, meetingId])
   // 정리 상태를 받는 자리의 지연·최소 표시 (#508)
   const indicator = useLoadingIndicator(meeting === null && detail.error === null)
   const reveal = indicator.reveal
@@ -157,14 +170,7 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
 
   switch (meeting.status) {
     case 'done':
-      return (
-        <Layout status="정리가 끝났어요" reveal={reveal}>
-          <Heading meeting={meeting} attendeeCount={attendeeCount} title="정리가 끝났어요" />
-          <GuardedLink to={paths.meetings(workspaceId, meetingId)} className={LINK}>
-            회의록 보기
-          </GuardedLink>
-        </Layout>
-      )
+      return null
     case 'failed': {
       const failure = meetingFailure(meeting.failedStage)
       return (
