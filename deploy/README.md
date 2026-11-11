@@ -199,3 +199,11 @@ curl -sI https://managers-manager.duckdns.org/api/v1/ | grep -i content-security
 validate 가 실패하면 reload 하지 않고 백업으로 되돌린다. reload 는 기존 연결을 끊지 않는다.
 
 `deploy/` 아래 파일이라 이 파일만 바뀐 커밋이 배포돼도 `changed deploy` 가 참이 되어 요약 활성화(`enable-summary.py`)가 다시 돌고, 켜져 있는 `mm-worker` 가 재시작된다. 워커는 하던 회의를 마치고 내려간다.
+
+## 모니터링 (#675)
+
+서버 상태와 KPI 를 Grafana Cloud 무료 스택에서 본다. 서버에는 Alloy(지표 수집)와 PDC 에이전트(DB 연결)만 더 올리고, **이 설치는 배포 스크립트에 포함되지 않는다.** 서버에서 사람이 한 번 한다. 설치 순서, 읽기 계정 SQL, 패널 SQL, 공개 링크 전 점검은 [monitoring/README.md](monitoring/README.md)에 있다.
+
+- 바깥 확인용 경로는 `GET /api/v1/health/ready`(DB 까지 확인)다. 루트 `/health` 는 그대로다.
+- 설정 파일은 [monitoring/](monitoring/)에 있다. `config.alloy`·`override.conf`·`run-pdc.sh` 에 값이 없고, 접속 값은 서버의 `/etc/mm-monitoring/*.env`(root 600)에서만 읽는다.
+- Alloy 에 주는 docker 그룹은 root 와 같은 권한이다.

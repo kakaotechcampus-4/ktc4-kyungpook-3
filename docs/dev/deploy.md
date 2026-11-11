@@ -79,6 +79,7 @@ flowchart TB
 | ai | [`ai/deploy/systemd/`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/ai/deploy/systemd) | `mm-bot.service`(녹음 봇), `mm-worker.service`(처리 워커, Nice 10, MemoryMax 3G, SIGTERM 이면 하던 회의를 마치고 종료), `mm-chat-poll.service` + `.timer`(매일 09:00 KST, flock, 최대 6시간) |
 | 배포 스크립트 | [`deploy/ec2-deploy.sh`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/ec2-deploy.sh) | 바뀐 파트만 다시 올린다(아래) |
 | 요약 활성화 | [`deploy/enable-summary.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/enable-summary.py) | 활성 `mm-worker` 에 `MM_SUMMARY_LLM=luna` drop-in 설치·검사 |
+| 모니터링 | [`deploy/monitoring/`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/deploy/monitoring) | Grafana Cloud 로 보내는 Alloy 설정, PDC 에이전트 스크립트, 읽기 계정·시드 제외 SQL. **자동 배포에 포함되지 않는다**(서버에서 사람이 설치) |
 | GPU 전사 | [`ai/deploy/gpu-stt/`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/ai/deploy/gpu-stt) | Elice 전사 장애 때 쓰는 GPU 대기 서버 절차 |
 
 - 리버스 프록시(Caddy) 설정의 원본은 [`deploy/caddy/Caddyfile`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/caddy/Caddyfile)이다. 서버의 `/etc/caddy/Caddyfile` 로는 자동 배포되지 않고 운영자가 손으로 반영한다(아래 [앞단 프록시](#앞단-프록시-caddy)).
@@ -153,6 +154,7 @@ BE 의 `FORWARDED_ALLOW_IPS: "*"` 는 두 조건이 지켜질 때만 안전하�
 - [계정 탈퇴와 정리 작업 (#575)](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md#계정-탈퇴와-정리-작업-575)
 - [채팅 폴링 타이머 첫 설치·수동 실행 (#599)](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md#채팅-폴링-타이머-599)
 - [앞단 프록시 Caddy 반영 (#692)](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md#앞단-프록시-caddy-692)
+- [모니터링 설치 (#675, 자동 배포에 포함되지 않음)](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/monitoring/README.md)
 - [GPU 전사 대기 서버](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/deploy/gpu-stt/README.md)
 
 ## 관련 문서

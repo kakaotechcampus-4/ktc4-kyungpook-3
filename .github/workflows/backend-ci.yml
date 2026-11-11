@@ -7,6 +7,8 @@ on:
       - 'backend/**'
       # backend/tests/deploy 가 배포 스크립트를 돌려 본다
       - 'deploy/ec2-deploy.sh'
+      # backend/tests/deploy/test_monitoring_files.py 가 모니터링 설정을 본다
+      - 'deploy/monitoring/**'
       - '.github/workflows/backend-ci.yml'
   # deploy.yml 이 배포 전에 같은 커밋으로 부른다
   workflow_call:

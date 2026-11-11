@@ -9,7 +9,7 @@
 - [문서 안내](docs/README.md): 문서 구조와 기존 문서 배치.
 - 계약: [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md), 웹 화면용은 [프론트엔드 대표 계약](../frontend/docs/contracts/frontend-api-contract.md).
 - 계획: [전체 계획](docs/plan/backend-plan.md), [M0~M7 안내](docs/plan/README.md). 마일스톤별 plan.md는 아직 비어 있다. 과거 전체 계획의 상태와 후속 구현·검증 결과는 M0~M7 안내에서 구분한다.
-- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M1](docs/plan/m1/result.md)(가입 인증·카카오 로그인 PR 최신 기반 검증, 계정 탈퇴·공동 기록 익명화·파일 정리 #575, 동의 기록 API #564), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M3](docs/plan/m3/result.md)(추출 근거·담당자 별칭 #459, 회의 원문 삭제와 태스크 보존 #576), [M5](docs/plan/m5/result.md)(업로드 저장·AI 가져가기 API·화자 지정 만료 이력·만료 경합과 실패 파일 재시도. AI 워커 연결은 아래 안내 참조), [M6](docs/plan/m6/result.md)(AI 처리 단계 보고와 진행 표시 #381, 답장 담당자 변경 승인 #460, 승인 대기 요청 유사 검색과 합치기 #141, 메시지 탭 읽지 않은 수 #480, 범위 변경 승인 이력 #205), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서). 모두 마일스톤 완료를 판정하지 않았다.
+- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M1](docs/plan/m1/result.md)(가입 인증·카카오 로그인 PR 최신 기반 검증, 계정 탈퇴·공동 기록 익명화·파일 정리 #575, 동의 기록 API #564), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M3](docs/plan/m3/result.md)(추출 근거·담당자 별칭 #459, 회의 원문 삭제와 태스크 보존 #576), [M5](docs/plan/m5/result.md)(업로드 저장·AI 가져가기 API·화자 지정 만료 이력·만료 경합과 실패 파일 재시도. AI 워커 연결은 아래 안내 참조), [M6](docs/plan/m6/result.md)(AI 처리 단계 보고와 진행 표시 #381, 답장 담당자 변경 승인 #460, 승인 대기 요청 유사 검색과 합치기 #141, 메시지 탭 읽지 않은 수 #480, 범위 변경 승인 이력 #205), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서, Grafana Cloud 모니터링·KPI view #675). 모두 마일스톤 완료를 판정하지 않았다.
 - AI 웹 업로드 처리 코드는 [worker](../ai/capture/worker.py), [가져오기](../ai/upload/intake.py), [화자 지정](../ai/upload/assign.py), [AI 실행 안내](../ai/README.md)에 있다. M5 결과의 초기 `AI 미구현` 설명은 당시 기록이다. 현재 코드 존재와 실제 공급사·운영 성공을 구분한다.
 - 배포: [배포 안내](../deploy/README.md). 요청: [녹음 시작 때 배포 재시작 잠금 확인](docs/requests/bot-restart-lock.md)(AI).
 
@@ -212,6 +212,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 함. `details.member_id` |
 | `PASSWORD_RESET_TOKEN_INVALID` | 400 | 비밀번호 재설정 링크를 쓸 수 없음(없는·무효화된·이미 쓴·만료된 토큰). `details.reason` 은 `invalid`·`used`·`expired` |
 | `MAIL_UNAVAILABLE` | 503 | 메일을 보낼 수 없음(SMTP 설정이 없음). 비밀번호 재설정 요청과 가입 코드 요청에서 나온다. 발송 실패는 응답에 드러나지 않는다 |
+| `DATABASE_UNAVAILABLE` | 503 | DB 에 연결할 수 없음. `GET /api/v1/health/ready` 에서만 나온다. 원인 예외 문구는 응답에 넣지 않는다 |
 | `SIGNUP_CODE_RATE_LIMITED` | 429 | 가입 코드를 너무 자주 요청함. `details.reason` 은 `cooldown`(60초 재발송 제한)·`hourly`(시간당 5회)·`ip`(공인 IP 시간당 10회, #691)·`global`(전체 시간당 20통), `details.retry_after` 는 기다릴 초 |
 | `SIGNUP_CODE_INVALID` | 400 | 가입 코드를 쓸 수 없음. `details.reason` 은 `wrong`(`details.attempts_left` 함께)·`expired`(만료, 요청한 적 없음, 이미 씀)·`too_many`(5회 초과) |
 | `SIGNUP_VERIFICATION_INVALID` | 400 | 가입에 이메일 증명이 없거나 쓸 수 없음. 코드 인증부터 다시 한다 |
@@ -734,3 +735,42 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 - 한 대화의 닫기가 실패하면(알림 오류 등) 그 대화만 건너뛰고 다른 대화의 답장은 준다. 실패한 답장은 다음 claim·틱에서 다시 닫는다.
 - 닫힌 답장에 늦게 온 결과는 200 으로 받아 기록만 한다. PM 이 고른 재판단은 앞 차례 `attempt` 와 상관없이 새 10분 창을 받는다.
 - 결정 근거는 [결정 기록](docs/plan/m6/basis-for-decision/2026-11-08-reply-judgment-attempt-cap.md)에 있다.
+
+## health ready
+
+`GET /api/v1/health/ready` 는 DB 에 `SELECT 1` 을 보내 연결을 확인한다(#675). Grafana Cloud Synthetic Monitoring 이 밖에서 부르는 모니터링 전용 경로이고 FE·AI 는 부르지 않는다. 인증이 없다.
+
+- 정상이면 200 `{"data": {"status": "ok"}, "error": null}` 이다.
+- DB 에 연결할 수 없으면 503 `DATABASE_UNAVAILABLE` 이다. 응답에는 예외 문구(호스트·계정)를 넣지 않고, 로그에도 예외 클래스 이름만 warning 으로 남긴다.
+- Caddy 는 `/api` 만 백엔드로 넘기므로 경로가 `/api/v1` 아래에 있다. 루트 `/health` 는 DB 를 보지 않는 프로세스 확인이고, compose healthcheck 가 그대로 쓴다.
+
+## KPI view
+
+Grafana Cloud 대시보드(#675)가 읽는 `kpi` 스키마다. 마이그레이션 `c4f7a2d91e3b` 가 PostgreSQL 에만 만들고 sqlite 에서는 아무것도 하지 않는다. 설치와 패널 SQL 은 [deploy/monitoring/README.md](../deploy/monitoring/README.md)에 있다.
+
+| 이름 | 한 행 | 컬럼 |
+|---|---|---|
+| `kpi.meeting_fact` | 회의 한 건(삭제된 회의·`ended_at` 없는 회의 제외) | `ended_at`, `extracted_at`, `source`, `status`, `failed_stage`, `replaced`, `meeting_minutes`, `processing_seconds`, `speaker_wait_seconds` |
+| `kpi.extraction_item_fact` | 추출 항목 한 건(삭제된 회의 제외) | `created_at`, `meeting_source`, `extraction_path`, `action`, `gate`, `reverted`, `revert_after_seconds` |
+| `kpi.approval_fact` | 승인 요청 한 건(삭제된 회의의 요청은 상태와 관계없이 제외) | `created_at`, `resolved_at`, `type`, `origin`, `meeting_source`, `card_gate`, `outcome`, `response_seconds`, `asr_flag`, `title_edited` |
+| `kpi.excluded_workspace` | 세 view 에서 뺄 워크스페이스(`workspace_id` 하나). 비어 있고 운영 SQL 로 채운다 | `workspace_id` |
+
+- view 에는 ID·제목·본문·payload·이름·이메일 컬럼이 없다. 워크스페이스 컬럼도 없어 서비스 전체 값만 본다.
+- 값의 뜻: `processing_seconds` 는 녹음이 끝난 때부터 첫 추출 등록까지다. 디스코드 회의는 `ended_at` 이 워커가 처리를 시작한 시각(`PATCH /meetings/{id}/end`)이라 큐 대기가 빠지므로, `started_at + duration_ms`(마지막 발화 끝)를 녹음 끝으로 쓴다. `duration_ms` 가 없거나 디스코드가 아닌 회의는 `ended_at` 을 쓴다. `ended_at` 컬럼 자체는 그대로 내보내 워커 처리 구간(`ended_at`→`extracted_at`)을 볼 수 있다. `failed_stage` 는 실패한 회의에서만 알려진 단계(`stt`·`sources`·`extract`·`handoff`·`diarize`·`speaker_assignment_expired`·`upload_unclaimed`·`chat_stalled`)를 그대로 주고 그 밖의 값은 `other`, 실패가 아니면 null 이다. `replaced` 는 이 회의를 다시 시도한 회의가 있다는 뜻이다. `origin` 은 `auto_revert`·`manual`·`reply`·`meeting`·`other`, `outcome` 은 `pending`·`approved`·`approved_edited`·`rejected`·`other`, `asr_flag` 는 회의 추출로 만든 `task_create` 카드에서만 `none`·`suspect`·`check_failed`(그 밖은 null)다.
+- payload 는 JSON 객체일 때만 읽는다. 깨진 payload 한 행은 view 에서 빠지고 조회 전체를 깨지 않는다. JSON 문법은 맞아도 `\u0000`(NUL)이 든 payload 는 jsonb 로 바꿀 수 없어 같은 이유로 뺀다(조회가 실패하지 않게 막는 것이라 `\\u0000` 같은 드문 값도 함께 빠질 수 있다). 키 확인은 `?` 연산자 대신 `-> ... IS NOT NULL` 을 쓴다(바인드 해석을 피한다).
+- 새 상태값·새 `failed_stage` 가 생기면 view 가 `other` 로 담는다. 따로 고치지 않아도 조회는 깨지지 않는다.
+- view 는 소유자 권한으로 원본을 읽는다. 읽기 계정은 view 3개에만 SELECT 를 받고 원본 표와 `excluded_workspace` 는 보지 못한다.
+
+view 가 쓰는 원천 컬럼은 다음과 같다.
+
+| 표 | 컬럼 |
+|---|---|
+| `meeting` | `meeting_id`, `workspace_id`, `deleted_at`, `source`, `status`, `failed_stage`, `started_at`, `ended_at`, `duration_ms`, `replaces_meeting_id` |
+| `extraction` | `extraction_id`, `meeting_id`, `created_at`, `extraction_path` |
+| `extraction_item` | `extraction_id`, `created_at`, `action`, `gate`, `reverted_at` |
+| `meeting_upload` | `meeting_id`, `speakers_reported_at`, `speakers_assigned_at` |
+| `approval_request` | `workspace_id`, `type`, `payload`(키 `reverted_task_id`·`change_source`·`extraction_item_id`·`meeting_id`·`gate`·`task_overrides`·`asr_suspects`·`source_deleted`), `requested_by`, `status`, `created_at`, `resolved_at` |
+
+- view 는 `SELECT *` 없이 위 컬럼만 쓴다. 그 밖의 컬럼(예: `approval_request.resolved_by`)은 view 와 상관없이 바꿀 수 있다.
+- 이 컬럼을 DROP 하거나 타입을 바꾸는 마이그레이션은 PostgreSQL 이 거부한다. 같은 마이그레이션에서 view 를 DROP 한 뒤 다시 만든다. 다시 만든 뒤에는 읽기 계정의 GRANT 를 다시 실행한다.
+- 마이그레이션 테스트(`tests/test_migration_kpi_views.py`)가 view 컬럼 목록, 고정 행의 값, `downgrade()` 뒤 스키마가 남지 않는 것, 위 거부 동작, view 가 쓰지 않는 컬럼은 지울 수 있다는 것, view 가 실제로 기대는 원천 컬럼이 위 표와 같다는 것을 확인한다. 위 표를 고치면 `test_views_depend_only_on_listed_columns` 의 `expected` 도 같이 고친다. PostgreSQL 이 필요해 `TEST_DATABASE_URL` 이 있을 때만 돈다.
