@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import secrets
-import shutil
 import threading
 from datetime import datetime, timedelta, timezone
 
@@ -25,6 +24,7 @@ from app.models import (
     Meeting,
     MeetingPurge,
     MeetingStatus,
+    MeetingAudio,
     MeetingUpload,
     Notification,
     Source,
@@ -53,11 +53,12 @@ def deletion_available(db: Session, meeting: Meeting) -> bool:
 
 
 def require_live_meeting(
-    db: Session, meeting_id: str, *, lock: bool = False
+    db: Session, meeting_id: str, *, lock: bool = False, check_epoch: bool = True
 ) -> Meeting:
+    """살아 있는 회의를 돌려준다. `check_epoch=False` 면 서비스 쓰기의 개인정보 세대(X-Privacy-Epoch)를 보지 않는다."""
     owner = db.scalar(select(Meeting.workspace_id).where(Meeting.meeting_id == meeting_id))
     if owner is not None:
-        lifecycle.workspace(db, owner)
+        lifecycle.workspace(db, owner, check_epoch=check_epoch)
     stmt = select(Meeting).where(Meeting.meeting_id == meeting_id).execution_options(populate_existing=True)
     if lock:
         stmt = stmt.with_for_update().execution_options(populate_existing=True)
@@ -311,6 +312,7 @@ def _delete_content(db: Session, meeting: Meeting, now: datetime) -> None:
     db.execute(delete(Extraction).where(Extraction.meeting_id == meeting_id))
     db.execute(delete(Source).where(Source.meeting_id == meeting_id))
     db.execute(delete(MeetingUpload).where(MeetingUpload.meeting_id == meeting_id))
+    db.execute(delete(MeetingAudio).where(MeetingAudio.meeting_id == meeting_id))
     db.execute(
         delete(Notification).where(
             Notification.workspace_id == meeting.workspace_id,
@@ -331,16 +333,7 @@ def _delete_content(db: Session, meeting: Meeting, now: datetime) -> None:
 
 
 def remove_backend_files(meeting_id: str) -> None:
-    root = upload_storage.upload_dir().resolve()
-    target = root / meeting_id
-    if target.resolve().parent != root or target.is_symlink() or target.is_junction():
-        raise ValueError("unsafe meeting storage path")
-    try:
-        shutil.rmtree(target)
-    except FileNotFoundError:
-        pass
-    if target.exists():
-        raise OSError("meeting storage remains")
+    upload_storage.remove_audio(meeting_id)
 
 
 def purge_backend_files(db: Session, *, meeting_id: str | None = None) -> None:

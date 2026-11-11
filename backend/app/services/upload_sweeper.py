@@ -2,6 +2,7 @@
 
 AI 가 업로드를 가져간 뒤 죽거나 PM 이 화자 지정을 하지 않으면 회의가 처리 중으로 남아, 그 워크스페이스는
 새 업로드가 409 로 막힌다. 주기 워커가 아래 기준으로 failed 로 바꾸고 녹음 폴더를 지운다.
+같은 바퀴에서 보관 기간이 지난 회의 녹음도 정리한다(`meeting_audio.sweep_expired_audio`, #659).
 
 - 처리 중(processing)이고 AI 가 가져간 업로드: 마지막 진행 시각(가져감·지정·다시 가져감·마지막 발화 저장 중
   가장 늦은 것)에서 CLAIM_STALL_SECONDS 가 지나면 failed_stage=diarize
@@ -13,7 +14,8 @@ AI 가 업로드를 가져간 뒤 죽거나 PM 이 화자 지정을 하지 않�
 - Discord 회의와 끝난 회의는 대상이 아니다
 
 회의마다 공간→회의 잠금을 얻은 뒤 새 조건부 UPDATE로 판정한다. 후보를 고른 뒤 AI 의 보고나 PM 의 제출이
-먼저 반영되면 건너뛴다. failed 업로드의 남은 파일은 매 바퀴 다시 지운다. 처리 실패와 파일 정리는 별개다.
+먼저 반영되면 건너뛴다. failed 업로드의 남은 파일은 매 바퀴 다시 지운다(보관 기록이 있는 회의는 녹음 만료
+정리가 맡는다). 처리 실패와 파일 정리는 별개다.
 """
 import logging
 import threading
@@ -23,8 +25,8 @@ from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
-from app.models import Meeting, MeetingSource, MeetingStatus, MeetingUpload, Source, Workspace
-from app.services import meeting_deletion, meeting_failure, upload_storage
+from app.models import Meeting, MeetingAudio, MeetingSource, MeetingStatus, MeetingUpload, Source, Workspace
+from app.services import meeting_audio, meeting_deletion, meeting_failure, upload_storage
 
 logger = logging.getLogger(__name__)
 
@@ -105,19 +107,27 @@ def _chat_stalled_condition(cutoff: datetime):
 
 
 def _retry_failed_upload_cleanup(db: Session) -> None:
-    """처리 실패 뒤 파일 제거 오류·프로세스 종료로 남은 녹음을 재시도한다. 삭제 회의는 전용 purge가 맡는다."""
+    """처리 실패 뒤 파일 제거 오류·프로세스 종료로 남은 녹음을 재시도한다. 삭제 회의는 전용 purge가 맡는다.
+
+    보관 기록(`meeting_audio`)이 있는 회의는 녹음 만료 정리(`sweep_expired_audio`)가 failed 녹음을 지우므로
+    기록이 없는 옛 회의만 본다. 같은 회의를 두 정리가 매 바퀴 지우지 않게 한다.
+    파일은 공간·회의 잠금을 푼 뒤 지운다(S3 I/O 동안 잠금을 쥐지 않는다). failed 는 다시 바뀌지 않는다.
+    """
     meeting_ids = db.scalars(
         select(Meeting.meeting_id)
         .join(Workspace, Workspace.workspace_id == Meeting.workspace_id)
         .where(
             _is_upload(), Meeting.status == str(MeetingStatus.FAILED),
             Meeting.deleted_at.is_(None), Workspace.deleted_at.is_(None),
+            ~exists().where(MeetingAudio.meeting_id == Meeting.meeting_id),
         )
     ).all()
     for meeting_id in meeting_ids:
         try:
             meeting = meeting_deletion.require_live_meeting(db, meeting_id, lock=True)
-            if meeting.status == MeetingStatus.FAILED and meeting.source == MeetingSource.MANUAL_UPLOAD:
+            retry = meeting.status == MeetingStatus.FAILED and meeting.source == MeetingSource.MANUAL_UPLOAD
+            db.rollback()
+            if retry:
                 upload_storage.remove_upload(meeting_id)
         except Exception:
             logger.exception("실패한 업로드 파일 정리 재시도 오류 meeting_id=%s", meeting_id)
@@ -162,6 +172,11 @@ def run_worker(stop_event: threading.Event, interval: float) -> None:
             sweep_stalled_uploads(db)
         except Exception:
             logger.exception("업로드 sweeper 워커 오류")
+            db.rollback()
+        try:
+            meeting_audio.sweep_expired_audio(db)
+        except Exception:
+            logger.exception("회의 녹음 만료 정리 워커 오류")
             db.rollback()
         finally:
             db.close()

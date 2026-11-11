@@ -57,6 +57,15 @@ class MeetingCreateResponse(BaseModel):
     started_at: datetime
 
 
+class RecordingUploadResponse(BaseModel):
+    """AI 가 올린 디스코드 회의 녹음을 보관한 결과. 이미 정리된 녹음이면 저장하지 않고 `stored=false`."""
+
+    meeting_id: str
+    size_bytes: int
+    expires_at: datetime
+    stored: bool
+
+
 class MeetingEndResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -140,6 +149,11 @@ class MeetingListResponse(BaseModel):
     total: int
 
 
+class MeetingAudioInfo(BaseModel):
+    content_type: str
+    expires_at: datetime = Field(description="이 시각까지 원문 녹음을 들을 수 있다")
+
+
 class MeetingMinutesResponse(BaseModel):
     meeting_id: str
     title: str | None
@@ -157,6 +171,9 @@ class MeetingMinutesResponse(BaseModel):
     summary_waiting_count: int | None = None
     transcript: list[dict]
     permissions: dict
+    audio: MeetingAudioInfo | None = Field(
+        None, description="호출자가 이 회의 녹음을 들을 수 있을 때만 값(보관 기간 안, done 이 아니면 PM 만). 아니면 null"
+    )
 
 
 

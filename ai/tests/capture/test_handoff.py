@@ -1548,3 +1548,82 @@ def test_stt_hook_propagates_meeting_deletion():
     with pytest.raises(H.MeetingEnded) as error:
         handoff.stt_progress(_staged())(0, 2)
     assert error.value.code == 'MEETING_DELETED'
+
+
+# ───────────────────────────────────────────── 녹음 올리기(#659)
+class _PutSession:
+    """requests.Session 자리에 들어가 요청을 적어 두고 정해 둔 응답을 돌려준다."""
+
+    def __init__(self, status=200, payload=None, raises=None):
+        self.status, self.raises = status, raises
+        self.payload = payload if payload is not None else {"data": {"meeting_id": "m1", "size_bytes": 4, "expires_at": "x", "stored": True}}
+        self.seen = []
+
+    def request(self, method, url, **kwargs):
+        if self.raises:
+            raise self.raises
+        files = kwargs.get("files")
+        name, fileobj, content_type = files["file"]
+        self.seen.append({"method": method, "url": url, "headers": kwargs.get("headers") or {}, "timeout": kwargs.get("timeout"),
+                          "name": name, "content_type": content_type, "bytes": fileobj.read(), "json": kwargs.get("json")})
+        payload, status = self.payload, self.status
+
+        class R:
+            status_code = status
+            text = ""
+
+            def json(self):
+                return payload
+        return R()
+
+
+def _m4a(tmp_path):
+    p = tmp_path / "m1.m4a"
+    p.write_bytes(b"\x00\x00\x00\x18ftypM4A ")
+    return p
+
+
+def test_upload_recording_puts_the_m4a_as_multipart_file(tmp_path):
+    session = _PutSession()
+    client = H.BeClient("http://be", session=session, service_token="svc")
+    assert client.upload_recording("m1", _m4a(tmp_path)) == {"meeting_id": "m1", "size_bytes": 4, "expires_at": "x", "stored": True}
+    (seen,) = session.seen
+    assert (seen["method"], seen["url"]) == ("PUT", "http://be/api/v1/meetings/m1/recording")
+    assert (seen["name"], seen["content_type"]) == ("audio.m4a", "audio/mp4")
+    assert seen["bytes"] == b"\x00\x00\x00\x18ftypM4A "
+    assert seen["headers"]["X-Service-Token"] == "svc"
+    assert seen["timeout"] == H.DOWNLOAD_TIMEOUT_S
+    assert seen["json"] is None
+
+
+def test_upload_recording_sends_the_privacy_epoch_of_the_meeting(tmp_path):
+    session = _PutSession()
+    client = H.BeClient("http://be", session=session, service_token="svc")
+    client.meeting_epochs["m1"] = 3
+    client.upload_recording("m1", _m4a(tmp_path))
+    assert session.seen[0]["headers"]["X-Privacy-Epoch"] == "3"
+    fresh = _PutSession()
+    H.BeClient("http://be", session=fresh).upload_recording("m1", _m4a(tmp_path))
+    assert "X-Privacy-Epoch" not in fresh.seen[0]["headers"]
+
+
+@pytest.mark.parametrize("status,code", [(413, "AUDIO_TOO_LARGE"), (422, "AUDIO_FORMAT_UNSUPPORTED"), (404, "MEETING_NOT_FOUND")])
+def test_upload_recording_raises_the_be_error_code(tmp_path, status, code):
+    session = _PutSession(status, {"error": {"code": code, "message": "no"}})
+    with pytest.raises(H.BeError) as e:
+        H.BeClient("http://be", session=session).upload_recording("m1", _m4a(tmp_path))
+    assert e.value.code == code and e.value.status == status
+
+
+def test_upload_recording_of_a_deleted_meeting_is_meeting_ended(tmp_path):
+    session = _PutSession(410, {"error": {"code": "MEETING_DELETED", "message": "gone"}})
+    with pytest.raises(H.MeetingEnded):
+        H.BeClient("http://be", session=session).upload_recording("m1", _m4a(tmp_path))
+
+
+def test_upload_recording_connection_failure_is_a_network_error(tmp_path):
+    import requests
+    session = _PutSession(raises=requests.ConnectionError("down"))
+    with pytest.raises(H.BeError) as e:
+        H.BeClient("http://be", session=session).upload_recording("m1", _m4a(tmp_path))
+    assert e.value.code == "NETWORK"
