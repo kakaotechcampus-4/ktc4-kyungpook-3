@@ -111,7 +111,7 @@ judge 새 항목 하나의 예. 전체 필드는 [계약](https://github.com/kak
   "data": null,
   "error": {
     "code": "APPROVAL_CONFLICT",
-    "message": "제안 이후 태스크가 바뀌었습니다.",
+    "message": "제안 이후 task가 바뀌었습니다. 지금 값을 확인한 뒤 다시 승인해 주세요.",
     "details": {
       "approval_id": "a_1",
       "task_id": "t_9",
@@ -122,7 +122,7 @@ judge 새 항목 하나의 예. 전체 필드는 [계약](https://github.com/kak
 }
 ```
 
-PM 이 확인한 뒤 같은 수정값에 `"confirm_task_version": 7` 을 더해 다시 보낸다. 그사이 또 바뀌면 다시 409. (예시의 `message` 문구는 실제 서버 문구와 다를 수 있다 **[확인 필요]**.)
+PM 이 확인한 뒤 같은 수정값에 `"confirm_task_version": 7` 을 더해 다시 보낸다. 그사이 또 바뀌면 다시 409. (예시의 `message` 는 서버 기본 문구다. 출처: `backend/app/core/errors.py` 의 `ErrorCode.APPROVAL_CONFLICT` 문구, `backend/app/api/approvals.py` 가 별도 문구 없이 이 코드를 낸다.)
 
 자세히: [승인과 충돌](../design/backend/approval-conflict.md)
 
