@@ -9,7 +9,7 @@
 
 **회의만 하면 할 일이 정리되는 PM 에이전트**
 
-https://github.com/user-attachments/assets/9d2d7842-b822-4dd7-88dd-68f9444b1ba9
+https://github.com/user-attachments/assets/84a8441a-2db7-490d-9440-d1b6ac693e23
 
 [![Service](https://img.shields.io/badge/Service-%EB%A7%A4%EC%8A%A4_%EC%8B%9C%EC%9E%91%ED%95%98%EA%B8%B0-191919?style=flat-square)](https://managers-manager.duckdns.org)
 ![Node.js](https://img.shields.io/badge/Node.js-24-3c873a?style=flat-square&logo=node.js&logoColor=white)
