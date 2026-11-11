@@ -38,7 +38,7 @@ flowchart LR
 | 13주차 | #382 | develop | 2026-11-08 | 변경 요청 → 승인 |
 
 - 매주 멘토가 먼저 변경을 요청하고(CHANGES_REQUESTED), 반영 뒤 재리뷰에서 승인(APPROVED)하는 흐름이 반복됐다.
-- 주차 표기는 PR 제목 그대로다. `main` 대상 PR 은 위 9건(#17, #45, #78, #128, #175, #230, #239, #300, #382)이 전부이고 3~6주차·12주차 제목의 PR 은 없다(2026-11-11 `gh pr list --base main --state all`). 1·2·7·8주차 PR 의 머지일은 한 주 간격으로 이어진다. 주차 번호가 건너뛴 이유는 저장소 기록에 없다 `[확인 필요]`.
+- 주차 표기는 PR 제목 그대로다. 처음 두 번(#17, #45)은 개발 주차로, 그 뒤는 캠프 주차로 적어서 3 ~ 6주차가 비어 보인다. 12주차 작업은 13주차 #382 에 합쳐 올렸다. `main` PR 은 이 표가 전부다.
 - 본문은 PR 템플릿(이번에 한 일 / 리뷰에서 봐주셨으면 하는 곳 / 고민한 점 / 지난 리뷰 반영)을 따른다.
 
 ```mermaid
@@ -69,7 +69,7 @@ gitGraph
 3. 그래서 승인한 커밋 `3970dda` 를 그대로 가리키는 `release/week11` 을 만들고 #300 으로 다시 올렸다. 멘토는 head SHA 만 확인하고 다시 승인했고, 머지 뒤 #239 는 닫았다.
 4. #300 본문에서 "앞으로 main PR 은 `develop` 대신 주차별 `release/weekN` 브랜치로 올리겠다"고 정했다.
 
-이후 상태: 13주차 #382 는 다시 `develop` 을 head 로 올렸다. 재리뷰 범위를 head `41b554f` 로 명시해 승인받았지만, `release/weekN` 규칙이 계속 지켜지지는 않았다 `[확인 필요: 이유와 앞으로의 운영 — 팀 논의]`. 원격에 남은 release 브랜치는 `release/week11` 하나다(2026-11-09).
+이후 상태: 13주차 #382 는 다시 `develop` 을 head 로 올렸다. 재리뷰 범위를 head `41b554f` 로 명시해 승인받았지만, `release/weekN` 규칙이 계속 지켜지지는 않았다. 원격에 남은 release 브랜치는 `release/week11` 하나다(2026-11-09).
 
 ## 4. 브랜치 이름 규칙
 
@@ -83,17 +83,16 @@ gitGraph
 |---|---|---|---|
 | `feature/` | 161 | `feature/348-meeting-schema` | 가장 많다 |
 | `fix/` | 49 | `fix/217-judge-retry-selection` | |
-| `feat/` | 44 | `feat/229-evidence-seqs` | `feature/` 와 같은 뜻으로 섞여 쓰임 |
+| `feat/` | 44 | `feat/229-evidence-seqs` | `feature/` 의 줄임 표기 |
 | `docs/` | 26 | `docs/manual-upload-overlap` | |
-| `chore/` | 17 | `chore/claude-team-settings` | |
-| `codex/` | 9 | `codex/572-release-readiness` | Codex 에이전트가 만든 브랜치 이름 |
+| `chore/` | 17 | `chore/183-deploy-ci-gate` | |
 | `refactor/` | 6 | | |
 | `task/` | 4 | `task/505-discord-channel-button` | |
 | `test/` | 1 | | |
 | `release/` | 1 | `release/week11` | |
 
 - `feature/`·`feat/`·`fix/` 브랜치 중 26개는 이슈 번호가 없다(예: `feature/asr-suspect-gate`, `feature/auto-create-switch`). 이슈 없이 PR 본문에서 리뷰 지적을 근거로 시작한 작업이 많다.
-- `feature/` 와 `feat/` 통일 여부 `[팀 논의]`.
+- `feature/` 와 줄임 표기 `feat/` 를 함께 쓴다.
 
 ## 관련 문서
 

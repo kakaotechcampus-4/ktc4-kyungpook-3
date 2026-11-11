@@ -21,11 +21,11 @@
 |---|---|---|
 | 처리 시간 | 62분 회의 전사가 서버 한 대에서 감당돼야 함 | Elice 65초(동시 6호출), GPU 예비 159.8초 (2026-10-06, 11-04) |
 | 정확도 | 잘못 자동 반영되는 항목을 낮게 | Jev 잘못된 certain 할 일 상한 6.5%, 마감 상한 11.8%(대사 단위, 2026-11-07). 상세 [지표](metrics.md) |
-| 가용성 | 외부 STT 장애 때 복구 수단 | GPU 대기 서버 자동 전환(#581, 구현 완료·기본 꺼짐) |
+| 가용성 | 외부 STT 장애 때 복구 수단 | GPU 대기 서버 자동 전환(#581, 구현 완료·기본 꺼짐, 실제 Lambda·GPU 리허설 전). 수동 전환 경로는 2026-11-07 에 리허설했다 |
 | 일관성 | 중복 카드·중복 태스크 없음 | 추출 등록 멱등, Notion "Task ID" 조회 후 생성 |
 | 자원 | t3.medium(2 vCPU, 4GB) 한 대 | 워커 MemoryMax 3G, BE 프로세스 하나 |
 | 접근성·모바일 | 360px 폭, 명도 대비 4.5:1 | FE E2E 로 검사(#478, #336) |
-| 개인정보 | 회의 음성 최소 보관 | 인계 직후 트랙 삭제, 포기 회의 7일(결정 [0055](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-08-0055-meeting-audio-retention.md)), 계정 탈퇴·익명화(#584) |
+| 개인정보 | 회의 음성 보관 기한 | 회의 종료부터 7일 보관한 뒤 지운다. 처리 중인 회의는 지우지 않고 실패한 회의는 바로 지운다(#670). 녹음 공지에 외부 전송을 알린다(#568). 계정 탈퇴·익명화(#584) |
 
 ## 가드레일: auto 의 3중 관문
 
@@ -38,7 +38,7 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 | ③ 자동 생성 스위치 `AUTO_CREATE_ENABLED` | 운영 초기 검증 기간에 끌 것을 권고한 자동 생성 전체(코드 기본은 켜짐) | 모르는 값(오타)은 꺼짐으로 봄 | BE `app/api/extractions.py` `auto_create_enabled`, #526 |
 
 - 스위치를 끈 동안에도 검증은 돌고 "켰으면 auto 였을 항목"을 로그로 남겨 PM 결과와 맞춰 본다.
-- 운영 `.env` 의 `AUTO_CREATE_ENABLED` 실제 값 **[확인 필요]** (예시 파일 기본값은 `true`, 평가 기록은 처음 운영을 `false` 로 권고).
+- 운영 값은 서버 환경 변수로 정한다. 예시 파일 기본값은 `true` 이고, 평가 기록은 처음 운영을 `false` 로 두기를 권했다.
 
 자세히: [담당자 매칭과 게이트](../design/backend/gate-matching.md)
 
@@ -60,9 +60,10 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 
 | 장애 | 대응 | 근거 |
 |---|---|---|
-| Elice STT 장애 | 워커가 연속 실패를 감지해 GPU 대기 서버(g4dn.xlarge)를 Lambda 로 켜고, Elice 회복 확인 3번이면 복귀. 하루 6시간·누적 15시간 상한, 운영 채널 `/gpu on\|off\|status` 수동 조작 | 결정 [0056](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-08-0056-gpu-stt-auto-failover.md) |
+| Elice STT 장애 | 워커가 연속 실패를 감지해 GPU 대기 서버(g4dn.xlarge)를 Lambda 로 켜고, Elice 회복 확인 3번이면 복귀. 하루 6시간·누적 15시간 상한, 운영 채널 `/gpu on\|off\|status` 수동 조작. 기본은 꺼짐이고 자동 전환은 실제 Lambda·GPU 로 아직 리허설하지 않았다 | 결정 [0056](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-08-0056-gpu-stt-auto-failover.md) |
 | Notion API 실패 | outbox. 429·409·5xx 지수 백오프 최대 5회, 401 은 토큰 refresh 한 번. 결과를 모른 채 끝난 생성은 "Task ID" 속성으로 먼저 조회해 중복 방지 | [backend README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md#notion-연동) |
 | 멈춘 업로드·채팅 회의 | BE sweeper(300초): AI 가 가져가지 않은 업로드 24시간(`upload_unclaimed`), 진행 없음 3시간, 화자 지정 대기 7일, 채팅 `/end` 뒤 7시간 → failed | `backend/app/services/upload_sweeper.py` |
+| 요청이 몰림 | BE 가 동시 처리 요청을 30개로 막고 DB 연결 풀을 20+20 으로 둔다. 기다리는 요청은 스레드도 연결도 잡지 않는다. 로컬 k6 에서 20 VU 4.0 → 48.0 req/s (2026-11-11, 노트북 Docker) | 결정 [0068](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-11-0068-request-gate.md) |
 | 워커 재시작·중단 | 매니페스트 단계 상태로 마지막 단계 다음부터 재개, 회의 단위 재시도 백오프, 포기 7일 안 `--retry` | [아키텍처](architecture.md#단계-상태와-재시작-매니페스트) |
 | LLM 1단계 응답 깨짐 | 그 자리에서 1번 더 부름(#580) | [결정 기록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-09-extract-first-stage-retry.md) |
 | 임베딩 실패 | 입력 오류 task 만 건너뜀, 그 밖은 지수 백오프(최대 5분). 임베딩 없는 task 가 있으면 auto 를 막음 | BE README |
@@ -80,7 +81,7 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 | 권한 | 승인·업로드·설정 쓰기는 PM 만. 마지막 PM 보호 |
 | 비밀번호 재설정 | 30분 1회용 토큰(해시 저장), 계정당 60초 1회·1시간 5회, 같은 공인 IP 시간당 5회, 서비스 전체 시간당 10회 |
 | 배포 | GitHub OIDC → SSM(장기 키 없음), API 는 `127.0.0.1` 에만 열고 Caddy 가 HTTPS |
-| AI 비밀값 | `.env` 는 에이전트가 읽지 않는 규칙, 평가 원문은 레포 밖 |
+| AI 비밀값 | `.env` 는 커밋하지 않고, 평가 원문은 레포 밖에 둔다 |
 
 상세: [backend README 세션 토큰·로그인 제한](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md#로그인-제한).
 
@@ -97,6 +98,6 @@ judge 새 항목이 사람 확인 없이 태스크가 되려면 세 관문을 �
 | 근거 검증 | 제목의 일과 원문의 일이 조금 다른 경우, 한글 숫자 날짜("이십일")를 놓침. 평가 대사가 합성 |
 | 오인식 검사 | 동사·흔한 명사 오류는 못 잡음. 측정 데이터가 교육 방송이라 IT 회의와 분포가 다름 |
 | 승인 충돌 | 제목 띄어쓰기만 바뀌어도 충돌 |
-| 운영 | DB 백업·downgrade 미연습(#359), 모니터링 부족, systemd 유닛 변경은 수동, AWS 실습 환경 2026-11-20 종료 |
+| 운영 | DB 백업·downgrade 미연습(#359), 모니터링은 설치 절차와 KPI view 까지 준비했고 서버 설치 기록은 아직 없음(#675), systemd 유닛 변경은 수동, AWS 실습 환경 2026-11-20 종료 |
 
 원문: [프로젝트 상세 설명 §13](../프로젝트%20상세%20설명.md#13-알려진-한계와-위험).

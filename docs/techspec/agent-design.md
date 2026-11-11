@@ -19,6 +19,8 @@ flowchart TD
   ITEM --> G["⑦ BE 게이트<br/>auto / review / hold"]
 ```
 
+![전사록에서 후보 추출, 유사 검색, 변경 판단, 초안, 근거 검증과 오인식 검사, 게이트를 거쳐 반영된 것, 확인 필요, 보류로 갈리는 흐름](../assets/techspec-pipeline-judge.png)
+
 - 코드: `ai/judge/pipeline.py`(`run`, `to_item`), `ai/judge/semantic_judge.py`, `ai/judge/final_judge.py`, `ai/draft/doc_draft.py`, `ai/judge/evidence.py`, `ai/judge/asr_check.py`, BE `backend/app/services/matching.py`, `backend/app/api/extractions.py`.
 - 시작 결정 기록: [2026-09-29 판단 파이프라인](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-09-29-judge-pipeline.md).
 
@@ -100,4 +102,4 @@ auto 로 만든 태스크도 PM 이 되돌릴 수 있다(태스크를 소프트 
 
 ## legacy 경로
 
-`MM_EXTRACT_PATH` 코드 기본값은 `legacy`(LLM 두 번: 관련 문장 필터 → 구조화 추출, 확신도 0.8/0.5 로 게이트)다. Jev 근거 상태·오인식 검사는 judge 경로에서만 쓰인다. 운영 서버의 `MM_EXTRACT_PATH` 값 **[확인 필요]**. 상세: [ai/extract/README.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/extract/README.md).
+`MM_EXTRACT_PATH` 코드 기본값은 `legacy`(LLM 두 번: 관련 문장 필터 → 구조화 추출, 확신도 0.8/0.5 로 게이트)다. Jev 근거 상태·오인식 검사는 judge 경로에서만 쓰인다. 운영 서버의 경로는 환경 변수 `MM_EXTRACT_PATH` 로 정한다. 채팅 회의는 이 값과 상관없이 judge 경로다. 상세: [ai/extract/README.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/extract/README.md).
