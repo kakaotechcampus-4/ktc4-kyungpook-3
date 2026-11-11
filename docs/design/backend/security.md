@@ -93,18 +93,3 @@ Notion·Discord 연결과 카카오 로그인이 같이 쓴다([`oauth_state.py`
 | 탈퇴·회의 삭제·동의 | `test_account_withdrawal.py`, `test_withdrawal_concurrency.py`(PostgreSQL), `test_withdrawn_actor.py`, `test_meeting_deletion.py`, `test_consents_api.py` |
 
 재설정 메일은 2026-11-08 운영에서 실제 발송을 확인했다(#451, [reset-mail-cap](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m1/basis-for-decision/2026-11-08-reset-mail-cap.md)). 배포 쪽 장치(OIDC→SSM, API 는 `127.0.0.1`, Caddy HTTPS)는 [deploy/README.md](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/deploy/README.md).
-
-## 한계와 다음 단계
-
-- 로그인·재설정·가입 코드 IP 제한이 메모리라 `--workers 1` 전제. 재시작하면 횟수가 풀린다.
-- 로그인·재설정·가입 코드 IP 제한은 `uvicorn --proxy-headers` 가 해석한 `request.client.host` 에 기댄다. 운영 Caddy 는 클라이언트가 보낸 `X-Forwarded-For` 를 실제 접속 주소로 덮어 넘긴다(2026-11-11 확인, #692). API 가 `127.0.0.1` 에만 열려 있고 Caddy 앞에 다른 프록시가 없다는 전제다. 이 전제가 바뀌면 [배포 문서](../../dev/deploy.md#앞단-프록시-caddy)대로 `trusted_proxies` 를 함께 고친다.
-- 운영 Caddy 에 IP 별·동시 연결 제한은 없다. 본문은 710MiB 에서 자르지만, 한도 아래 업로드를 동시에 많이 받으면 임시 디스크를 쓴다.
-- 보안 헤더는 HSTS·`nosniff`·`Referrer-Policy`·화면 끼워 넣기 차단(`frame-ancestors`, `X-Frame-Options`)까지다. 스크립트·스타일 CSP 는 아직 없다.
-- 옛 해시(26만 회) 계정이 같은 순간에 두 번 로그인하면, 먼저 끝난 쪽이 해시를 새 횟수로 바꿔 나중 쪽은 한 번 401 이 된다. 계정마다 많아야 한 번이고 다시 입력하면 들어간다(#691).
-- 전체 메일 상한은 IP 여러 개로 채울 수 있다. 로그(`reason=global`)로 알아채고 IP 를 막는 운영 대응이다.
-- 서버는 약관에 동의하지 않은 사용자의 다른 API 를 막지 않는다(FE 가 동의 화면을 띄운다).
-- 가입 코드 요청(`POST /auth/signup/code`)의 `EMAIL_ALREADY_EXISTS` 로 이메일 가입 여부가 여전히 드러난다. #691 부터 공인 IP 시간당 10회·전체 상한 안에서만 물어볼 수 있고, IP 여러 개나 사설 주소 경로로는 더 물을 수 있다. 아이디 확인 API(`GET /auth/username-availability`, 인증·횟수 제한 없음)로는 아이디 존재가 드러난다(아이디는 초대에 쓰는 공개 식별자). 남은 노출이다.
-- 로그인이 잠긴 이메일의 재설정 요청은 전체 메일 상한을 넘을 수 있다. 계정당 시간당 5통·IP 시간당 5번은 그대로라, IP 여러 개로 잠근 계정마다 요청해야 한도를 쓴다(#691).
-- 옛 해시 계정이 같은 순간 두 번 로그인하면, 다시 해시한 쪽이 먼저 끝난 뒤 다른 쪽은 해시가 바뀐 것으로 보고 401 을 받는다. 계정마다 한 번뿐인 경우라 감수한다.
-- 탈퇴 정리는 로컬 사본까지다. 외부 공급사(STT·LLM)의 원격 보관과 이미 나간 Discord 메시지는 회수했다고 주장하지 않는다.
-- 운영 `SERVICE_TOKEN`·`OAUTH_STATE_SECRET` 교체 주기 [확인 필요].

@@ -4,10 +4,10 @@
 
 ## 이 쪽들을 읽는 법
 
-- 기능마다 **입력 → 처리 → 출력 → 왜 이 방식인가 → 어떻게 평가했나 → 한계와 다음 단계** 순서로 쓴다.
+- 기능마다 **입력 → 처리 → 출력 → 왜 이 방식인가 → 어떻게 평가했나** 순서로 쓴다.
 - 수치에는 날짜·데이터·반복 횟수를 함께 적는다. 조건이 다른 수치끼리는 직접 비교하지 않는다.
 - 세부 비교와 버린 선택지는 결정 기록(`ai/docs/basis_for_decision/`)에 있다. 여기서는 요약하고 링크한다.
-- 평가 대부분은 합성 데이터나 대본 낭독 녹음으로 쟀다. 실제 운영 분포의 정확도가 아니다. 각 쪽의 "한계"에 따로 적었다.
+- 평가는 합성 데이터와 대본 낭독 녹음으로 쟀다. 어떤 데이터로 쟀는지는 수치 옆에 적었다.
 
 ## AI 파트가 하는 일 한 장
 
@@ -66,7 +66,7 @@ AI 는 값과 근거 상태를 만들어 보낼 뿐, auto·review·hold 를 직�
 | 확인 못 하면 보수적으로 | Jev 실패 → inferred, 분석기 실패 → `check_failed`. 둘 다 auto 를 막는다 | [근거 검증](evidence-check.md), [전사 오인식 검사](asr-check.md) |
 | 검사는 auto 를 막기만 하고 열지 않는다 | 잘못된 auto 는 PM 확인 없이 틀린 Task 를 만든다. 잘못된 review 는 PM 이 한 번 더 볼 뿐이다 | BE [`matching.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/matching.py) `auto_blockers` |
 | 측정 전에 기준을 정하고, 같은 데이터로 기준값을 다시 고르지 않는다 | 그 데이터에 맞춘 값이 된다 | [LoRA 결정 0052](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-07-0052-lora-not-adopted.md), [0051](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-07-0051-asr-suspect-gate.md) |
-| 처음 운영은 auto 를 끄고 검증만 하라고 권고했다(운영값 [확인 필요]) | 위 평가들은 "근거 명시 여부"를 잰 것이지 태스크 정답률이 아니다 | BE `AUTO_CREATE_ENABLED`(#526) |
+| 자동 반영은 스위치 하나로 켜고 끈다. 운영에서는 켜 둔다 | 잘못 만든 태스크가 늘면 코드 변경 없이 auto 를 review 로 내릴 수 있다 | BE `AUTO_CREATE_ENABLED`(#526) |
 
 ## 평가 스크립트 한눈에
 

@@ -87,10 +87,6 @@ flowchart TD
 
 메시지 화면에서는 토스트가 답장 줄·발송 버튼을 가리지 않게 위치를 화면별로 정했다(F-2~F-5, 휴대폰은 아래 탭 막대 위 24px).
 
-> 📷 **사진 자리**: 메시지 화면 — 보내기 전 확인 묶음과 팀원 대화의 웹 답장 칸 (파일: ../../assets/design-frontend-messages.png)
-
-> 📷 **사진 자리**: 팀원 리마인드 대화 위 「기기 알림 켜기」 띠와 휴대폰 기기 알림 (파일: ../../assets/design-frontend-push-prompt.png)
-
 ## 왜 이 방식인가
 
 | 결정 | 실제로 비교한 대안 | 고른 이유 | 기록 |
@@ -112,11 +108,3 @@ flowchart TD
 | Vite 프록시 업그레이드 | 가짜 백엔드 | 101 업그레이드, `Host`·`Origin` 이 개발 서버 주소 |
 | 메시지 E2E | `messages-approve`·`-reply`·`-reminder`·`-toast`·`-layout` | 승인 → 예정, 409 `BUNDLE_CHANGED` 뒤 새 문구로 승인, 초안 도착 자동 갱신, 웹 답장, 알림 띠, 토스트 위치 |
 | 푸시 | `browserPush.test.tsx`, `browserPushPrompt.test.tsx`, `pushAccountSync.test.tsx` | MSW 기준 |
-
-## 한계와 다음 단계
-
-- **실제 BE·배포(Caddy)를 거친 웹소켓은 확인하지 않았다.** 로컬 BE 는 PostgreSQL 이 필요한데 당시 Docker 가 꺼져 있었다(#558 남은 것). 운영 BE 는 프로세스 하나(`--workers 1`)라 소켓이 한 곳에 모인다는 전제다.
-- **실기기 푸시는 부분 확인**이다(프로젝트 상세 §11 "실기기 검증 부분적"). 알림·푸시 실서버 확인은 #364·#366 **[확인 필요: 진행 상태]**.
-- 소켓은 메시지 화면에서만 연다. 알림 종은 여전히 30초 polling 이라 다른 화면의 알림은 최대 30초 늦다.
-- BE 는 Discord 답장·DM 전달 결과·웹 답장·PM 글·묶음 변경 때 신호를 보낸다. MSW 는 웹 답장에서만 흉내 낸다.
-- 메시지 읽지 않은 수는 BE API 가 있으니(#480, #517) FE 가 붙이면 위·아래 탭에 같이 붙인다.

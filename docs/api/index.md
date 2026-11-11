@@ -11,10 +11,6 @@ Backend는 FastAPI가 코드에서 자동으로 만드는 OpenAPI 스펙을 API 
 | `/openapi.json` | 원본 OpenAPI 스펙. Postman 등으로 가져올 때 |
 
 - 로컬: `http://localhost:8000/docs` ([Backend 실행 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md))
-- 배포 서버: `[확정 후 기입]`
-- 정적 페이지(포털): `[후속 작업 — CI에서 openapi.json을 뽑아 ReDoc 페이지로 배포]`
-
-> 📷 **사진 자리**: Swagger UI 화면 — 회의·승인 API 묶음이 펼쳐진 모습 (파일: ../assets/api-swagger.png)
 
 ## API 묶음
 

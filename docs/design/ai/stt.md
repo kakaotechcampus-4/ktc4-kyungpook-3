@@ -67,11 +67,11 @@ flowchart LR
 | 리턴제로 sommers | 11.17% |
 | **Soniox stt-async-v5** | **7.54%** |
 
-트랙을 통째로(무음만 빼고) 보낸 조건이라 운영 파이프라인(28초 묶음)의 CER 과 다르다. 업체 변경은 정하지 않았다. 새 계정, 회의 음성의 외부 전송, 비용을 팀이 정해야 한다 **[확인 필요: 업체 유지 결정 여부]**.
+트랙을 통째로(무음만 빼고) 보낸 조건이라 운영 파이프라인(28초 묶음)의 CER 과 다르다. 업체를 바꾸면 새 계정, 회의 음성의 외부 전송, 비용이 따라서 Elice 를 유지했다.
 
 ### 화자 분리: pyannoteAI
 
-업로드 음성만 필요하다. t3.medium 에서 로컬 pyannote 는 돌릴 수 없다고 보고(직접 재지는 않음) 호스팅 API 로 정했다([0028](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-01-0028-manual-upload-hosted-diarization-and-diarized-state.md)). 라벨마다 다른 라벨과 겹치지 않는 2초 이상 구간을 최대 3개 골라 10초 샘플로 보고하고, PM 이 듣고 팀원을 지정한다. 겹친 발화는 처리하지 않는다(0027). 화자 분리 정확도(DER)는 재지 않았다 **[확인 필요]**.
+업로드 음성만 필요하다. t3.medium 에서 처리 워커와 로컬 pyannote 를 같이 띄우기 어렵다고 보고 호스팅 API 로 정했다([0028](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-01-0028-manual-upload-hosted-diarization-and-diarized-state.md)). 라벨마다 다른 라벨과 겹치지 않는 2초 이상 구간을 최대 3개 골라 10초 샘플로 보고하고, PM 이 듣고 팀원을 지정한다. 겹친 구간은 따로 분리하지 않는다(0027).
 
 ### LoRA 미채택 (2026-11-07)
 
@@ -119,13 +119,3 @@ CER 은 공백·문장부호를 지운 글자열의 편집 거리 / 정답 글�
 | 2026-11-08 | 자동 전환(가짜 서버·가짜 시계) | 상태 전이 확인. 리뷰 결함 14건 재현 후 수정. 실제 Lambda·GPU 로는 아직 | [gpu-stt-auto-failover](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-08-gpu-stt-auto-failover.md) |
 
 상수(VAD 침묵, 묶음 길이 등)는 기본값 주변을 흔들어 "평탄·경사·절벽"을 보는 민감도 측정으로 정했다([`stt/eval/README.md`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/stt/eval/README.md), [2026-09-26-units](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/stt/eval/results/2026-09-26-units/README.md)).
-
-## 한계와 다음 단계
-
-- **녹음이 모두 대본 낭독이다.** 자유 발화 성능을 재지 못했다. 회의 수도 적다(실제 회의 3개 기준 CER 4.67%).
-- **단어 시각이 없다.** Elice 새 엔드포인트가 단어 시각을 주지 않아 회의록이 턴이 아니라 묶음 단위로 남는다.
-- **더 낮은 CER 업체(Soniox 7.54%)가 있었지만 바꾸지 않았다.**
-- **외부 의존.** STT·LLM·Jev·임베딩이 Elice 에 몰려 있다. GPU 자동 전환은 실제 Lambda·운영 서버로 아직 리허설하지 않았고, 무프롬프트 빈 구간 0 은 회의 1건 값이다.
-- **GPU 경로는 개인 AWS 를 지난다.** 회의 음성이 개인 계정을 지나는 경로를 #360 에 공지했다. 2026-12-31 장애 대응 기간이 끝나면 Lambda·대기 서버를 지운다.
-- **업로드 화자 분리 정확도 미측정.** 겹친 발화는 두 화자로 두 번 전사될 수 있다(0027).
-- 다음: 대본 없는 실제 회의 녹음과 정답이 쌓이면 다시 재고, 수천 시간 규모 학습에서 개선이 확인되면 LoRA 를 다시 본다.

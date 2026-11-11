@@ -21,7 +21,6 @@
 
 - Backend: 모델을 바꾸고 마이그레이션을 빠뜨리면 `alembic check` 가 CI 에서 실패한다.
 - AI: 포맷 도구 대신 구조 규칙을 테스트로 강제한다(예: `capture/` 밖에서 `discord` import 금지 — `tests/test_platform_isolation.py`).
-- AI 쪽에는 lint 를 두지 않았다. 도입은 정하지 않았다.
 
 ## 2. 커밋 메시지
 

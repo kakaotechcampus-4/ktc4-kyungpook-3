@@ -56,8 +56,6 @@
 - 768px 을 넘나들어도(회전) 열린 메뉴와 포커스가 남는다. 처음엔 닫히고 포커스가 body 로 갔다(독립 리뷰가 찾음).
 - `env(safe-area-inset-*)` 만큼 비켜 그린다. 넓은 콘텐츠(캘린더·간트)는 그 칸 안에서만 가로 스크롤.
 
-> 📷 **사진 자리**: 390px 휴대폰 — 아래 탭 막대, 태스크 보드 칸 고르기(H-3), 막대 위 정리 중 토스트 (파일: ../../assets/design-frontend-mobile-360.png)
-
 ### 로딩 표시 (#508)
 
 | 구간 | 표시 |
@@ -68,8 +66,6 @@
 | 내용 등장 | 150ms 불투명도 전환(움직임 줄이기면 없음) |
 
 공통 훅 `useLoadingIndicator`(`LOADING_DELAY_MS` 200, `LOADING_MIN_MS` 400)와 `DeferredSkeleton`·`Reveal` 하나로 모든 화면이 같은 규칙을 쓴다([결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-07-skeleton-delay.md)).
-
-> 📷 **사진 자리**: 회의록 첫 진입 스켈레톤과 내용 전환 (파일: ../../assets/design-frontend-skeleton.png)
 
 ## 왜 이 방식인가
 
@@ -112,11 +108,3 @@
 | 2026-11-05 | 태스크 보드 파생값 | 프로덕션 모양 번들, 2,000건, 15라운드 중앙값 | 한 번에 5.3~8.7ms, 화면 비중 최대 약 5% → 코드 변경 보류 | [taskboard-derived](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/performance/2026-11-05-taskboard-derived.md), #351 |
 
 - 측정했지만 고치지 않은 것은 [성능 개선 거리](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/performance/README.md)에 모은다. 고치면 결정 기록으로 옮긴다.
-
-## 한계와 다음 단계
-
-- **WCAG 2.2 AA 완전 준수를 선언하지 않는다**(D-128). 외부 감사는 2026-10-30 보고서 한 번이고, 디자인 시스템 §11 체크리스트는 포커스 한 줄만 완료 표시다(흑백 구분·키보드 승인 흐름 등은 E2E 로 일부 확인했지만 문서 체크는 갱신되지 않음) **[확인 필요: 체크리스트 갱신]**.
-- **스크린 리더 실사용 검사 기록이 없다.** 역할·이름은 RTL `getByRole` 로 간접 확인한다.
-- **첫 화면을 막는 것은 JS 다.** Slow 4G 로그인에서 메인 JS 가 3.15초에 끝나고 화면 조각을 받아 3.85초에 그린다. `modulepreload` 조각 25개의 직렬 대기는 [2026-09-29 기록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/performance/2026-09-29-font-loading.md)의 고칠 거리 3(메인 번들)으로 남았다.
-- 성능 측정은 headless Chromium·API 지연 없음이다. 실제 휴대폰·실서버 왕복은 재지 않았다. 실기기 `display-mode: standalone` 도 흉내 내지 못했다(#478).
-- 768~1023px 태블릿 폭의 화면 배치는 데스크톱 셸 그대로다.

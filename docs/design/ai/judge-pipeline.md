@@ -69,7 +69,7 @@ flowchart LR
 | 채팅·답장 | 쓰지 않음 | 채팅과 답장은 플래그와 상관없이 항상 judge |
 | 기준 문서 | [`extract/README.md`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/extract/README.md), [`TASK_CRITERIA.md`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/extract/TASK_CRITERIA.md) | [`judge/pipeline.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/judge/pipeline.py) |
 
-운영 서버가 지금 어느 경로인지는 저장소로 확인할 수 없다 **[확인 필요]**. `JEV_API_KEY` 가 없거나 legacy 면 judge auto 는 열리지 않는다.
+경로는 `MM_EXTRACT_PATH` 로 정한다. 자동 반영(auto)은 judge 경로에서 `JEV_API_KEY` 가 있을 때 열린다.
 
 ## 왜 이 방식인가
 
@@ -97,12 +97,3 @@ flowchart LR
 
 - 기본 원칙: 한 번 어긋났다고 프롬프트를 바로 고치지 않고 `--repeat` 로 반복해 흔들림부터 본다(LLM 온도를 낮출 수 없다).
 - pytest 는 가짜 LLM 으로 합치기·실패 처리·게이트 입력 모양을 지킨다([`tests/test_pipeline.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/tests/test_pipeline.py)).
-
-## 한계와 다음 단계
-
-- **골든셋이 작고 합성이다.** 1단계 325문장, Terra 26건, E2E 회의 1개. 실제 회의 분포의 정확도가 아니다. 운영에서 PM 의 승인·수정·반려 비율로 다시 재야 한다.
-- **LLM 비결정성.** 같은 입력도 실행마다 다르다. 재실행 합치기(0054)는 이를 흡수하려는 장치지만, 엇갈린 얘기의 항목도 그대로 게이트를 지난다(틀리면 PM 이 auto 되돌리기).
-- **비용·시간을 운영에서 재지 않았다.** 회의 하나의 호출은 최대 1 + 2F(F = finding 수)에 Jev F 회. 재실행하면 최대 3배. Elice 클라이언트에 호출 제한 시간이 없어 SDK 기본값(600초)을 쓴다.
-- **유사도 0.4 는 fixture 10개로 정했다.** 실제 태스크 제목이 쌓이면 다시 보정한다.
-- **같은 Task 의 수정 카드가 두 장** 나올 수 있다(근거 줄이 겹치지 않을 때). 두 번째 승인은 BE 충돌 확인에 걸린다.
-- 다음: 스위치를 끈 기간(`AUTO_CREATE_ENABLED=false`, 권고이며 운영값 [확인 필요])의 "켰으면 auto 였을 항목" 로그와 PM 결과를 맞춰 auto 개방을 정한다(#526).

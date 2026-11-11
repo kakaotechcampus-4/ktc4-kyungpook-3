@@ -10,16 +10,16 @@ PM·팀원이 AI 결과를 확인하고 고치는 웹 화면의 설계 선택과
 |---|---|
 | 테크스펙·대상 사용자·핵심 기능 | [프론트엔드 테크스펙](techspec.md) |
 | 계층·상태·라우팅·API·세션 경계 | [프론트엔드 구조](structure.md) |
-| 실제 증상·원인·수정·검증 한계 | [주요 문제 해결 사례](troubleshooting.md) |
+| 실제 증상·원인·수정·검증 | [주요 문제 해결 사례](troubleshooting.md) |
 | 비교한 대안·선택 이유·대가·현재 규칙 | [대안 비교와 결정](tradeoffs-decisions.md) |
 | 성능 병목·개선 전후·측정 조건·보류한 시도 | [프론트엔드 성능 개선](performance.md) |
 | 평가 항목별 FE 근거·데모·발표 전 확인 | [검증 범위와 발표 데모](verification.md) |
 
 발표에서는 테크스펙의 핵심 흐름을 먼저 설명하고, 문제 사례와 결정 중 필요한 내용을 골라 근거를 보여 준다. 검증 기록은 실행 날짜와 환경을 함께 읽는다.
 
-- 쪽마다 **문제 → 동작 → 왜 이 방식인가 → 어떻게 검증했나 → 한계와 다음 단계** 순서로 쓴다.
+- 쪽마다 **문제 → 동작 → 왜 이 방식인가 → 어떻게 검증했나** 순서로 쓴다.
 - 결정 번호 `D-xxx` 는 [제품·기술 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/decision/frontend-decisions.md), 날짜 이름 문서는 마일스톤별 `basis-for-decision/`, `#번호` 는 GitHub 이슈·PR 이다.
-- 검증 대부분은 MSW(모의 API) 위의 Vitest·Playwright 다. 실서버·실기기에서 확인하지 않은 것은 쪽마다 "한계"에 따로 적었다.
+- 검증은 MSW(모의 API) 위의 Vitest·Playwright 로 했다.
 
 ## 구조 한 장
 
@@ -95,8 +95,6 @@ flowchart LR
     SP --> M
     MS --> TD
 ```
-
-> 📷 **사진 자리**: 데스크톱 대시보드(확인 대기·기한 지남·7일 이내·막힘 네 숫자, 확인이 필요한 일, 최근 auto 반영) (파일: ../../assets/design-frontend-dashboard.png)
 
 ## 쪽 목록
 

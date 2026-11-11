@@ -281,7 +281,7 @@ Grafana Alerting 에 규칙만 만든다. 연락 지점(Discord·메일)은 연�
 
 ## 11. 운영 `AUTO_CREATE_ENABLED` 확인
 
-운영값이 아직 확인되지 않았다. 꺼져 있으면 auto 항목이 없어 롤백률 패널이 0 으로 나온다. 서버에서 컨테이너의 값을 본다.
+운영에서는 켜 둔다. 꺼져 있으면 auto 항목이 없어 롤백률 패널이 0 으로 나온다. 값은 서버에서 컨테이너로 본다.
 
 ```bash
 docker compose -f /opt/mm/backend/docker-compose.prod.yml exec -T api printenv AUTO_CREATE_ENABLED
