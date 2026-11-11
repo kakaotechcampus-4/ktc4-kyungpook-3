@@ -121,4 +121,4 @@ BASE_URL=https://managers-manager.duckdns.org LT_WORKSPACES=1 LT_READONLY=1 LT_L
 
 - 운영 고친 뒤 측정: develop 에 머지돼 배포되면 같은 명령을 `LT_LEVELS=1,3,5,10,20` 으로 돌려 이 문서에 더한다
 - 인증 단계 쿼리 수(요청마다 약 6개) 줄이기
-- 원격 샘플러의 시각을 노트북 시계에 맞추는 것을 `loadtest/run.sh` 에 넣기(#703)
+- 원격 샘플러 시각 보정은 #703 의 `run.sh`·`report.py` 에 넣었다(`clock_offset_s.txt`)
