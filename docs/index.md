@@ -2,7 +2,7 @@
 
 회의만 하면 할 일이 정리되는 PM 에이전트, Manager's Manager의 문서 포털입니다.
 
-> 📷 **사진 자리**: 서비스 대표 화면 — 대시보드와 회의록 (파일: assets/index-hero.png)
+![Manager's Manager 소개 배너. 회의만 하면 할 일이 정리됩니다](assets/readme-banner.png)
 
 ## 무엇을 하나요
 
@@ -26,7 +26,7 @@
 |---|---|
 | 배포 서비스 URL (테스트 계정·샘플 데이터) | [사용자 가이드](user/getting-started.md) |
 | GitHub 저장소 (README, 실행·배포, 테스트, CI/CD) | [README](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3) · [개발자 가이드](dev/local-setup.md) |
-| 테크스펙 | [테크스펙](techspec/index.md) |
+| 테크스펙 | [테크스펙](techspec/index.md). 심사 항목별 근거는 [심사 항목별로 볼 곳](techspec/index.md#심사-항목별로-볼-곳) |
 | 협업문서 | [협업 문서](collab/index.md) |
 
 ## 원자료

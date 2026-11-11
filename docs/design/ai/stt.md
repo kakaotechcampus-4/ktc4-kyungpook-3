@@ -13,6 +13,8 @@
 
 ## 처리
 
+![화자별 wav 에서 VAD 클립, 턴, 28초 묶음, Elice STT, 회의록까지 6단계와 Elice 장애 때의 GPU 전환 흐름](../../assets/techspec-pipeline-stt.png)
+
 ```mermaid
 flowchart LR
     W[화자별 wav] --> V[VAD 클립<br/>800ms 침묵에서 자름]

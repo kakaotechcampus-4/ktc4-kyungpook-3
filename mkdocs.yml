@@ -49,6 +49,9 @@ nav:
       - 테스트 전략: techspec/test-strategy.md
       - 추가 지표: techspec/metrics.md
       - 인터페이스 명세: techspec/interface.md
+      - 데이터 모델: techspec/data-model.md
+      - 트레이드오프: techspec/tradeoffs.md
+      - 일정·히스토리·스펙 아웃: techspec/history.md
   - 설계 심화:
       - 개요: design/index.md
       - AI:
@@ -73,11 +76,11 @@ nav:
           - 대안 비교와 결정: design/frontend/tradeoffs-decisions.md
           - 성능 개선: design/frontend/performance.md
           - 검증 범위와 발표 데모: design/frontend/verification.md
-      - 보안 점검 (2026-11-11): design/security-audit.md
           - 계약 먼저, MSW 먼저: design/frontend/contract-first-msw.md
           - AI 결과 보여 주기: design/frontend/ai-result-ui.md
           - 실시간 메시지: design/frontend/realtime-messages.md
           - 접근성과 성능: design/frontend/a11y-performance.md
+      - 보안 점검 (2026-11-11): design/security-audit.md
   - 협업 문서:
       - 개요: collab/index.md
       - 그라운드룰: collab/ground-rules.md
