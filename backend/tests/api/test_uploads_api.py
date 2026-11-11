@@ -16,8 +16,8 @@ from sqlalchemy.pool import StaticPool
 from app.api import uploads as uploads_api
 from app.core.database import Base, get_db
 from app.main import app
-from app.models import Meeting, MeetingUpload, Member, Workspace
-from app.services import upload_storage
+from app.models import Meeting, MeetingAudio, MeetingUpload, Member, Workspace
+from app.services import meeting_audio, upload_storage
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 TOKEN = "test-service-token"
@@ -106,6 +106,7 @@ def _upload(db, ws, *, uploaded_at=UPLOADED_AT, claimed_at=None, **kwargs) -> Me
         attendees=json.dumps([{"member_id": "m1", "display_name": "지민"}], ensure_ascii=False),
         claimed_at=claimed_at,
     ))
+    meeting_audio.record(db, meeting.meeting_id, "audio.ogg", "audio/ogg", len(AUDIO), uploaded_at)
     db.commit()
     folder = upload_storage.meeting_dir(meeting.meeting_id)
     folder.mkdir(parents=True)
@@ -272,6 +273,47 @@ def test_file_returns_the_db_connection_before_sending_the_file(db, ws, monkeypa
     assert in_transaction_when_sending == [False]
 
 
+@pytest.fixture
+def s3(monkeypatch):
+    from tests.fake_s3 import FakeS3
+
+    fake = FakeS3()
+    monkeypatch.setenv("UPLOAD_STORAGE", "s3")
+    monkeypatch.setenv("UPLOAD_S3_BUCKET", "b")
+    monkeypatch.setattr(upload_storage, "_s3_client", lambda: fake)
+    return fake
+
+
+def test_s3_file_is_read_after_releasing_the_lock(db, ws, s3, monkeypatch):
+    """s3 저장소에서 녹음을 읽기(get_object) 전에 공간·회의 잠금과 트랜잭션을 끝낸다. 느린 S3 가 잠금을 붙잡지 않는다."""
+    meeting = _upload(db, ws)
+    s3.put("b", f"meetings/{meeting.meeting_id}/audio.ogg", AUDIO, "audio/ogg")
+    real_open = upload_storage.open_audio_stream
+    in_transaction = []
+
+    def open_stream(meeting_id, filename):
+        in_transaction.append(db.in_transaction())
+        return real_open(meeting_id, filename)
+
+    monkeypatch.setattr(upload_storage, "open_audio_stream", open_stream)
+
+    r = _client().get(f"/api/v1/uploads/{meeting.meeting_id}/file", headers=HEADERS)
+
+    assert r.status_code == 200, r.text
+    assert r.content == AUDIO
+    assert r.headers["content-type"] == "audio/ogg"
+    assert in_transaction == [False]
+
+
+def test_s3_file_missing_object_gets_404(db, ws, s3):
+    meeting = _upload(db, ws)
+
+    r = _client().get(f"/api/v1/uploads/{meeting.meeting_id}/file", headers=HEADERS)
+
+    assert r.status_code == 404, r.text
+    assert r.json()["error"]["code"] == "MEETING_NOT_FOUND"
+
+
 def _register_extraction(meeting: Meeting):
     return _client().post("/api/v1/extractions", headers=HEADERS, json={
         "meeting_id": meeting.meeting_id, "workspace_id": meeting.workspace_id, "items": [],
@@ -284,7 +326,7 @@ def _fail(meeting: Meeting):
     )
 
 
-def test_done_upload_removes_its_folder(db, ws, other_ws):
+def test_done_upload_keeps_its_recording(db, ws, other_ws):
     meeting = _upload(db, ws)
     other = _upload(db, other_ws)
     _claim(meeting.meeting_id)
@@ -294,8 +336,13 @@ def test_done_upload_removes_its_folder(db, ws, other_ws):
     assert r.status_code == 201, r.text
     db.expire_all()
     assert meeting.status == "done"
-    assert not upload_storage.meeting_dir(meeting.meeting_id).exists()
+    # 처리가 끝나도 녹음은 보관 기간 동안 남긴다(원문 듣기)
+    assert upload_storage.meeting_dir(meeting.meeting_id).exists()
+    assert (upload_storage.meeting_dir(meeting.meeting_id) / "audio.ogg").exists()
     assert upload_storage.meeting_dir(other.meeting_id).exists()
+    row = db.get(MeetingAudio, meeting.meeting_id)
+    assert row is not None
+    assert row.deleted_at is None
 
 
 @pytest.mark.parametrize("claimed", [False, True])
@@ -321,11 +368,9 @@ def test_failing_discord_meeting_leaves_upload_folders(db, ws, other_ws):
 
 
 def test_rejected_end_reports_keep_the_folder(db, ws, other_ws):
-    """이미 끝난 회의에 결과가 다시 와도(멱등 응답·409) 폴더를 건드리지 않는다. 폴더는 끝날 때 한 번만 지운다."""
+    """이미 끝난 회의에 결과가 다시 와도(멱등 응답·409) 폴더를 건드리지 않는다. done 은 녹음을 남기고 failed 만 지운다."""
     done = _upload(db, ws)
     assert _register_extraction(done).status_code == 201
-    # 끝난 뒤 폴더가 남은 경우(삭제 실패 등)를 만든다
-    upload_storage.meeting_dir(done.meeting_id).mkdir(parents=True)
     failed = _upload(db, other_ws, status="failed")
 
     assert _register_extraction(done).status_code == 201  # 멱등 응답
@@ -762,7 +807,7 @@ def test_resume_of_unknown_discord_or_rowless_meeting_gets_404(db, ws):
         assert r.json()["error"]["code"] == "MEETING_NOT_FOUND"
 
 
-def test_extraction_after_resume_finishes_and_removes_folder(db, ws):
+def test_extraction_after_resume_finishes_and_keeps_folder(db, ws):
     meeting = _upload(db, ws, claimed_at=UPLOADED_AT)
     assert _report(meeting.meeting_id).status_code == 200
     early = _register_extraction(meeting)  # 지정 전에는 받지 않는다
@@ -776,4 +821,4 @@ def test_extraction_after_resume_finishes_and_removes_folder(db, ws):
 
     assert r.status_code == 201, r.text
     assert _state(db, meeting)[0] == "done"
-    assert not upload_storage.meeting_dir(meeting.meeting_id).exists()
+    assert upload_storage.meeting_dir(meeting.meeting_id).exists()

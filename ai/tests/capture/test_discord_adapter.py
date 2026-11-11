@@ -572,6 +572,11 @@ def test_the_recording_notice_says_audio_goes_to_an_outside_service_and_how_to_r
     assert A.NOTICE.startswith("🔴 녹음·전사 중입니다.")
 
 
+def test_notice_mentions_7_day_retention():
+    assert "최대 7일" in A.NOTICE
+    assert A.NOTICE.index("Elice") < A.NOTICE.index("최대 7일") < A.NOTICE.index("녹음을 원하지 않으면")
+
+
 # ── 명령은 봇이 있는 음성 채널에 들어와 있는 사람만 ─────────────────────────────────────────
 
 def _outsider(guild, *, voice_channel=None):

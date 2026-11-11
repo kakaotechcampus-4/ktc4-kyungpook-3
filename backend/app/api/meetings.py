@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from app.models import Extraction, Meeting, MeetingProcessingStage, MeetingStatu
 from app.schemas.meeting import (
     MeetingCreateRequest,
     MeetingCreateResponse,
+    MeetingAudioInfo,
     MeetingDetailResponse,
     MeetingEndResponse,
     MeetingFailRequest,
@@ -24,7 +25,7 @@ from app.schemas.meeting import (
 )
 from app.schemas.record_edit import LineEditRequest, LineEditResponse, TitleEditRequest, TitleEditResponse
 from app.schemas.upload import SpeakerAssignRequest, SpeakerAssignResponse, SpeakerViewResponse
-from app.services import meeting_failure, meeting_stage, speaker_assignment, summary, transcript
+from app.services import meeting_audio, meeting_failure, meeting_stage, speaker_assignment, summary, transcript, upload_storage
 from app.services import meeting_deletion
 from app.schemas.meeting_deletion import MeetingDeletionReceipt
 
@@ -286,6 +287,11 @@ def get_meeting(
     return success(detail.model_dump(mode="json"))
 
 
+def _may_play(meeting: Meeting, member: Member) -> bool:
+    """녹음을 들을 수 있는 사람: 처리가 끝난 회의는 팀원 누구나, 그 밖에는 PM 만."""
+    return meeting.status == MeetingStatus.DONE or member.role == "pm"
+
+
 @router.get("/{meeting_id}/minutes", response_model=Envelope[MeetingMinutesResponse])
 def get_meeting_minutes(
     meeting_id: str,
@@ -336,6 +342,13 @@ def get_meeting_minutes(
     extraction = db.query(Extraction).filter(Extraction.meeting_id == meeting_id).order_by(Extraction.created_at.desc()).first()
     state = summary.summary_state(db, meeting, extraction)
 
+    # 재생 API 와 같은 규칙으로, 호출자가 지금 들을 수 있을 때만 알려 준다(done 이 아니면 PM 만)
+    audio = None
+    if _may_play(meeting, member):
+        info = meeting_audio.playback_info(db, meeting, datetime.now(timezone.utc))
+        if info is not None:
+            audio = MeetingAudioInfo(content_type=info["content_type"], expires_at=info["expires_at"])
+
     return success(MeetingMinutesResponse(
         meeting_id=meeting.meeting_id,
         title=meeting.title,
@@ -349,7 +362,8 @@ def get_meeting_minutes(
         summary_status=state.status,
         summary_waiting_count=state.waiting_cards if state.status == "awaiting_approval" and member.role == "pm" else None,
         transcript=transcript,
-        permissions={"can_review": member.role == "pm", "can_undo": member.role == "pm"}
+        permissions={"can_review": member.role == "pm", "can_undo": member.role == "pm"},
+        audio=audio,
     ).model_dump(mode="json"))
 
 
@@ -429,21 +443,40 @@ def assign_meeting_speakers(
 @router.get(
     "/{meeting_id}/audio",
     response_class=FileResponse,
-    responses={200: {"content": {"audio/*": {}}, "description": "업로드한 녹음 원본(Range 지원)"}},
+    responses={
+        200: {"content": {"audio/*": {}}, "description": "회의 녹음 원본(local 저장소일 때. Range 지원)"},
+        302: {"description": "s3 저장소일 때 브라우저가 S3 에서 바로 받는 임시 주소로 보낸다(Cache-Control: private, no-store)"},
+        404: {"description": "AUDIO_NOT_AVAILABLE: 보관 기간이 지났거나(expired) 녹음이 없다(no_recording)"},
+    },
 )
 def get_meeting_audio(
     meeting_id: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> FileResponse:
-    """PM 이 화자를 가리려고 듣는 원본. 폴더가 있는 동안 상태와 무관하게 준다. Range 는 starlette 가 처리한다."""
+) -> Response:
+    """보관 기간 안의 회의 녹음. done 은 워크스페이스 팀원, 그 밖의 상태는 PM 만 듣는다."""
     meeting = _get_meeting(db, meeting_id)
-    require_pm(db, user, meeting.workspace_id)
-    path, content_type = speaker_assignment.get_audio_for_playback(db, meeting)
+    member = require_member(db, user, meeting.workspace_id)
+    if not _may_play(meeting, member):
+        # 팀원이어도 done 이 아니면 PM 만 듣는다. 기존과 같은 PM 전용 메시지로 막는다
+        require_pm(db, user, meeting.workspace_id)
+    now = datetime.now(timezone.utc)
+    row = meeting_audio.require_playable(db, meeting, now)
+    filename, content_type = row.filename, row.content_type
+    headers = {"Cache-Control": "private, no-store"}
+    if upload_storage.storage_mode() == "s3":
+        # done 회의는 주소가 보관 기간(expires_at)이 끝난 뒤까지 열려 있지 않게 남은 시간으로 줄인다
+        max_expires_in = meeting_audio.remaining_seconds(meeting, row, now)
+        # 필요한 값을 다 읽었으니 공간·회의 잠금과 DB 연결을 먼저 놓는다. 서명은 자격 갱신으로 외부 요청이 끼일 수 있다
+        db.close()
+        url = upload_storage.presigned_audio_url(meeting_id, filename, content_type, max_expires_in)
+        return RedirectResponse(url, status_code=302, headers=headers)
+    path = upload_storage.local_audio_path(meeting_id, filename)
+    if path is None:
+        raise AppError(
+            ErrorCode.AUDIO_NOT_AVAILABLE,
+            details={"meeting_id": meeting_id, "reason": meeting_audio.REASON_NO_RECORDING},
+        )
     # get_db 정리는 응답을 다 보낸 뒤라, 닫지 않으면 파일을 보내는 동안(브라우저가 요청을 열어 둔 동안) DB 연결을 잡고 있다
     db.close()
-    return FileResponse(
-        path,
-        media_type=content_type,
-        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
-    )
+    return FileResponse(path, media_type=content_type, headers={"X-Content-Type-Options": "nosniff", **headers})

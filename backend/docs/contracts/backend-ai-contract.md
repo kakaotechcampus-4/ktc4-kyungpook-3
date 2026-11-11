@@ -4,7 +4,7 @@
 
 - 제공자: Backend (`backend/app/api/`)
 - 소비자: AI 녹음 봇 (`ai/capture/handoff.py`의 `BeClient`·`Handoff`, 판단 파이프라인 `ai/judge/pipeline.py`). [웹 업로드 가져가기](#웹-업로드-가져가기)의 소비자는 AI 쪽 업로드 처리 워커(`ai/capture/worker.py`)다. [회의 요약](#회의-요약)은 AI `capture/summary_sweep.py`가 소비한다(#560)
-- 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로, 추출 등록의 auto 판단 키는 2026-10-16 #232 변경 코드로 다시 대조했다. 웹 업로드 가져가기는 2026-10-14 #219 브랜치 코드로, 화자 지정 경로(speakers·assigned·resume)는 2026-11-02 #266 브랜치 코드로, 처리 단계 보고(`PATCH /meetings/{meeting_id}/stage`)는 2026-11-05 #381 브랜치 코드로 대조했다. 라벨 보고 재전송과 지정 대기 만료는 2026-11-06 #438 에서 develop 코드로 다시 대조했다. 회의 요약 경로는 2026-11-07 #462 브랜치 코드로, 승인 대기와 채팅 요약은 2026-11-10 #605 브랜치 코드로 대조했다
+- 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로, 추출 등록의 auto 판단 키는 2026-10-16 #232 변경 코드로 다시 대조했다. 웹 업로드 가져가기는 2026-10-14 #219 브랜치 코드로, 화자 지정 경로(speakers·assigned·resume)는 2026-11-02 #266 브랜치 코드로, 처리 단계 보고(`PATCH /meetings/{meeting_id}/stage`)는 2026-11-05 #381 브랜치 코드로 대조했다. 라벨 보고 재전송과 지정 대기 만료는 2026-11-06 #438 에서 develop 코드로 다시 대조했다. 회의 요약 경로는 2026-11-07 #462 브랜치 코드로, 승인 대기와 채팅 요약은 2026-11-10 #605 브랜치 코드로 대조했다. 회의 녹음 올리기(`PUT /meetings/{meeting_id}/recording`)와 업로드 녹음의 보관·저장소 변경은 2026-11-10 #659 브랜치 코드로 대조했다.
 - 합의 근거: 인계 방식은 [AI 결정 0009](../../../ai/docs/basis_for_decision/member/2026-09-19-0009-bot-hands-off-to-be-api.md), 발화 저장은 [AI 결정 0017](../../../ai/docs/basis_for_decision/member/2026-10-05-0017-transcript-sources-stage.md)에 AI 쪽 기록이 있다. 이 문서는 그 이후의 필드·오류 세부를 코드에서 읽은 것이며, 별도 합의 문서가 없는 항목은 구현 사실로만 적는다.
 
 ## 계정 탈퇴의 개인정보 정리 (#575, 2026-11-09)
@@ -349,7 +349,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 - 합의 상태: **합의됨(#255).** 가져가기(#219)와 화자 지정 경로(#266)를 BE가 만들었고 AI·BE 계약 부분은 #255에서 합의했다. AI는 구현했다(#289 묶음: 가져오기·라벨 보고·지정 받기·전사와 BE 인계). 업로드 회의를 BE로 인계할 때의 규칙은 [업로드 회의 인계 규칙](#업로드-회의-인계-규칙)이다.
 - 업로드 회의는 `source=manual_upload`이고 **업로드하자마자 `processing`**이다. 프론트가 Discord 회의처럼 정리 중으로 추적하고, 끝날 때까지 그 워크스페이스의 다음 업로드는 409다(프론트 D-088·D-089). 다만 `awaiting_speakers`(PM 지정 대기)는 막지 않는다. AI가 가져갔는지는 회의 상태가 아니라 `meeting_upload.claimed_at`으로 가린다.
 - 결과 보고는 Discord 회의와 같은 [발화 저장](#발화-저장-post-meetingsmeeting_idsources--201)·[추출 등록](#추출-등록-post-extractions--201)·[실패](#patch-meetingsmeeting_idfail--200)를 쓴다.
-- 녹음은 원본 그대로 서버 디스크(`UPLOAD_DIR/{meeting_id}/audio.<확장자>`)에 있고, 참석자·파일 정보는 DB `meeting_upload` 에 있다. 받는 형식은 wav·mp3·m4a·ogg·webm이고, BE는 확장자와 파일 첫 바이트만 확인한다. 실제로 디코딩되는지와 녹음 길이는 확인하지 않는다.
+- 녹음은 원본 그대로 `UPLOAD_STORAGE` 저장소에 있고(local 은 서버 디스크 `UPLOAD_DIR/{meeting_id}/audio.<확장자>`, s3 는 `{UPLOAD_S3_PREFIX}{meeting_id}/audio.<확장자>`, #659), 참석자·파일 정보는 DB `meeting_upload`, 보관 기록은 `meeting_audio` 에 있다. 받는 형식은 wav·mp3·m4a·ogg·webm이고, BE는 확장자와 파일 첫 바이트만 확인한다. 실제로 디코딩되는지와 녹음 길이는 확인하지 않는다.
 
 | 순서 | 요청 | 회의 상태 |
 |---|---|---|
@@ -400,7 +400,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 
 ### `GET /uploads/{meeting_id}/file` → 200
 
-- 녹음 원본을 그대로 스트리밍한다. Content-Type은 업로드 때 받은 값(없으면 `application/octet-stream`), 파일명은 `stored_filename`이다.
+- 녹음 원본을 그대로 스트리밍한다. Content-Type은 업로드 때 받은 값(없으면 `application/octet-stream`), 파일명은 `stored_filename`이다. 모양은 저장소와 상관없이 같다. s3 저장소(#659)에서는 BE 가 S3 에서 읽어 바이트를 대신 보내며 리다이렉트하지 않는다(`Content-Length`·`Content-Disposition: attachment` 포함).
 - 상태는 보지 않는다. claim 전후 모두 받을 수 있고, 다시 받아도 된다.
 - 업로드 정보가 없거나 녹음 파일이 없으면 404 `MEETING_NOT_FOUND`. 녹음이 없으면 처리할 수 없으니 실패 보고를 한다.
 
@@ -454,7 +454,7 @@ PM이 지정을 끝냈고(`speakers_assigned_at` 있음) 아직 다시 가져가
 
 ### 처리할 때 주의할 점
 
-- **녹음은 결과 보고 전에 받는다.** 추출 등록으로 `done`이 되거나 실패 보고로 `failed`가 되면 BE가 커밋 뒤 녹음 폴더 제거를 시도한다. `failed`는 처리 실패이며 파일 삭제 완료를 뜻하지 않는다. 파일 잠금·I/O 오류나 커밋 직후 프로세스 종료로 남은 live failed 수동 업로드는 다음 sweeper 바퀴에서 다시 제거한다. 과거 failed 업로드의 잔존 파일도 같은 대상이다. 삭제된 회의·공간은 기존 회의 purge·탈퇴 cleanup이 맡고, 각 영수증의 완료 기준을 따른다. sweeper가 꺼져 있으면 이 재시도도 실행되지 않는다. done·DB 미등록 폴더는 이 실패 업로드 재시도에 포함하지 않는다.
+- **녹음은 결과 보고 전에 받는다.** 추출 등록으로 `done`이 되어도 BE는 업로드 녹음을 지우지 않는다. 원문 듣기용으로 보관하고 보관 기간(`UPLOAD_AUDIO_RETENTION_DAYS`, 기본 7일, 업로드는 받은 시각부터)이 지난 뒤 sweeper가 지운다(#659). 처리 중에는 그 기간이 지나도 지우지 않는다. 실패 보고로 `failed`가 되면 BE가 커밋 뒤 녹음 폴더(s3는 prefix) 제거를 시도한다. `failed`는 처리 실패이며 파일 삭제 완료를 뜻하지 않는다. 파일 잠금·I/O 오류나 커밋 직후 프로세스 종료로 남은 live failed 수동 업로드는 다음 sweeper 바퀴에서 다시 제거한다. 과거 failed 업로드의 잔존 파일도 같은 대상이다. 삭제된 회의·공간은 기존 회의 purge·탈퇴 cleanup이 맡고, 각 영수증의 완료 기준을 따른다. sweeper가 꺼져 있으면 이 재시도도 실행되지 않는다. done·DB 미등록 폴더는 이 실패 업로드 재시도에 포함하지 않는다.
 - 업로드 녹음에는 Discord uid가 없다. 화자 분리 없이 전사하면 발화의 `speaker`는 null이고, 회의록 참석자는 발화에서 만들므로 비어 보인다. 업로드 참석자는 지금 `meeting_upload.attendees` 에만 있고 회의록은 이를 읽지 않는다.
 - AI 가 없거나 처리 도중 멈추면 업로드 회의가 `processing`에 남아 그 워크스페이스의 업로드가 409 로 막힌다. AI가 가져간 회의와 24시간 동안 가져가지 않은 회의는 BE sweeper가 정리한다(기본 5분마다, `UPLOAD_SWEEP_INTERVAL_SECONDS`가 0 이하면 sweeper가 돌지 않아 7일이 지나도 `failed`가 되지 않는다).
   - `processing`이고 가져간 업로드: 가져간 시각·지정 시각·다시 가져간 시각·마지막 발화 저장 시각 중 가장 늦은 것에서 3시간이 지나면 `failed`(`failed_stage=diarize`). 지정 뒤에 멈춰도 같은 값이다. AI가 발화를 나눠 보내면 그때마다 3시간이 다시 시작된다.
@@ -463,6 +463,21 @@ PM이 지정을 끝냈고(`speakers_assigned_at` 있음) 아직 다시 가져가
   - 정리된 뒤 AI는 `/fail`·라벨 보고·claim·resume에서 409 `MEETING_ALREADY_ENDED`(`details.status=failed`), 발화 저장에서 409 `MEETING_FAILED`를 받는다. 원본 받기는 파일이 실제로 지워지면 404이며, 제거 실패로 남아 있으면 받을 수도 있다. 실패 상태를 받은 AI는 다시 보내지 않고 로컬 파일을 지우고 끝낸다(#288).
   - `processing`이고 아직 아무도 가져가지 않은 업로드: 업로드 시각(`uploaded_at`)에서 24시간이 지나면 `failed`(`failed_stage=upload_unclaimed`, #563). 정확히 24시간은 남긴다. 24시간은 잰 값이 아니라 초기값이다. 그 전에는 `PATCH /meetings/{meeting_id}/fail`(서비스 토큰)로 풀 수 있다. claim과 sweeper는 공간→회의 잠금을 공유한다. claim이 먼저 커밋되면 잠금 뒤 새 UPDATE가 claimed_at을 읽어 만료를 건너뛴다. 만료가 먼저 커밋되면 claim은 409 `MEETING_ALREADY_ENDED`를 받는다.
   - 현재 구현은 후보 조회 후 공간→회의 잠금을 얻고, 그 뒤 새 UPDATE 문장으로 시각·상태 조건을 다시 판단한다. 앞서 완료된 화자 지정·resume·발화 저장의 진행을 반영한다. sweeper 반환 목록은 새 failed 전환 목록이며 파일 삭제 완료 영수증이 아니다. 이 경합·재시도 보완은 BE 구현이며 AI와의 추가 합의 기록은 없다.
+
+### 회의 녹음 올리기 `PUT /meetings/{meeting_id}/recording` → 200
+
+AI 가 끝난 **디스코드 회의**의 녹음을 올린다. 팀원이 보관 기간 동안 웹에서 원문을 듣게 된다(#659). 서비스 토큰(`X-Service-Token`)으로 막는다.
+
+- 합의 상태: 이 PR 에서 BE 와 AI 를 같이 구현했다(이슈 #659, 리뷰 반영 2026-11-10 사용자 확인). AI 담당과 따로 주고받은 합의 기록은 없어 **AI 쪽 합의 여부는 확인 필요**다(PR 본문으로 알린다). 아래는 현재 구현이다.
+- 요청: `multipart/form-data` 의 `file` 필드 하나. m4a 만 받는다. 클라이언트가 보낸 파일명·확장자는 보지 않고 파일 첫 바이트(`ftyp`)만 확인하며, 저장 이름은 `audio.m4a` 로 고정한다. 크기 상한은 `UPLOAD_MAX_BYTES`(기본 200MiB).
+- 응답 `data`: `{meeting_id, size_bytes, expires_at, stored}`. `expires_at` 은 이 시각까지 들을 수 있다는 뜻(`retention_from` + 보관 기간)이다.
+- 보관 기준: 회의 종료 시각(`meeting.ended_at`, 없으면 받은 시각)부터 보관 기간을 센다. AI 가 늦게 올려도 듣는 기간이 길어지지 않는다. 같은 회의에 다시 올리면 파일만 바꾸고 기준 시각은 처음 값을 유지한다(멱등).
+- `stored=false`(200, 오류 아님): 저장하지 않았다. ① 보관 기간이 이미 지났다(기록이 없으면 만들지 않고, 정리 작업이 아직 안 돈 기록이 있어도 파일을 덮어쓰지 않는다). ② 그 녹음이 이미 정리됐다(`deleted_at`). ③ 올리는 사이 정리 작업이 지웠다. AI 는 응답을 받았으니 대기 항목을 지운다.
+- 개인정보 세대: 이 API 는 `X-Privacy-Epoch` 를 보지 않는다. 탈퇴로 `identity_epoch` 가 올라간 공간이어도 헤더 없이(또는 옛 값으로) 올릴 수 있고 409 `PRIVACY_VERSION_CHANGED` 가 나오지 않는다. 녹음 바이트에는 신원 정보가 없고, 공동 공간 팀원 정리도 음성 바이트는 남긴다. 공간 전체 정리는 회의·공간을 지우므로 아래 404·410 으로 끝난다.
+- 오류: 404 `MEETING_NOT_FOUND`, 404 `WORKSPACE_NOT_FOUND`(삭제된 공간, `details.workspace_id`), 410 `MEETING_DELETED`(삭제된 회의. 올리는 사이 회의·공간이 지워졌으면 저장한 파일을 치운다), 400 `INVALID_REQUEST`(디스코드 회의가 아님, `details.source` · 처리가 끝나지 않음, `details.status`가 `done` 이 아님), 422 `AUDIO_FORMAT_UNSUPPORTED`(`details.supported=["m4a"]`), 413 `AUDIO_TOO_LARGE`, 422 `AUDIO_UPLOAD_FAILED`(저장소 오류. 다시 올리는 경우에도 기존 녹음은 그대로다). 저장소 설정 오류는 500.
+- 같은 파일로 다시 해도 같은 결과인 오류(`MEETING_DELETED`·`MEETING_NOT_FOUND`·`WORKSPACE_NOT_FOUND`·`INVALID_REQUEST`·`AUDIO_FORMAT_UNSUPPORTED`·`AUDIO_TOO_LARGE`, 안전망으로 `PRIVACY_VERSION_CHANGED`)는 AI 가 대기 항목을 지운다. `UNAUTHENTICATED`·`AUDIO_UPLOAD_FAILED`·네트워크·5xx 같은 나머지는 남겨 다시 올린다. 다시 올리는 간격은 실패할 때마다 늘린다(60초 × 2^(실패 횟수-1), 최대 1시간). 인계 7일이 지나면 올리지 않고 지운다(AI 구현, `ai/capture/audio_outbox.py`).
+- AI 가 올리는 것(AI 구현): 인계가 끝난 디스코드 회의의 화자별 16kHz 모노 wav 를 트랙 샘플 0 에 맞춰 더해 m4a(AAC, 32kbps)로 섞은 파일이다. 그래서 발화의 `Source.start_ms`(근거 `evidence_at_ms`, 대본 `at_ms`)가 녹음 안 위치와 같다. 올리기 전까지 `recordings/audio_outbox/` 에 두고, 인계 7일이 지나면 올리지 않고 지운다. 공동 공간 팀원 정리는 이 항목을 남기고 공간 전체 정리만 지운다. BE 쪽 선택 근거는 [결정 기록](../plan/m5/basis-for-decision/2026-11-10-meeting-audio-s3-retention.md), AI 쪽 선택 근거는 [AI 결정 기록 0066](../../../ai/docs/basis_for_decision/ai/2026-11-10-0066-mix-discord-audio-and-upload-to-be.md)에 있다.
+- BE 가 이 파일을 내려 주는 곳: 웹의 `GET /meetings/{meeting_id}/audio`(done 은 팀원, 그 밖은 PM)와 `GET /meetings/{meeting_id}/minutes` 의 `audio`. 웹 계약은 [프론트엔드 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md)이 관리한다.
 
 ### 업로드 회의 인계 규칙
 
@@ -892,7 +907,7 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 | 코드 | HTTP | 나오는 경로 | 봇 처리 |
 |---|---|---|---|
 | `UNAUTHENTICATED` | 401 | 봇 경로 전부 | 실패 (stage 는 로그만 남기고 계속) |
-| `MEETING_NOT_FOUND` | 404 | end, stage, fail, sources, extractions, uploads claim·file·speakers·resume, summary-requests | 실패 (stage 는 로그만 남기고 계속) |
+| `MEETING_NOT_FOUND` | 404 | end, stage, fail, sources, extractions, recording, uploads claim·file·speakers·resume, summary-requests | 실패 (stage 는 로그만 남기고 계속) |
 | `WORKSPACE_NOT_FOUND` | 404 | tasks/similar, members/names, asr-terms, summary-requests | 실패 |
 | `EXTRACTION_NOT_FOUND` | 404 | summary-input, PUT summary | 실패. 임대가 지나 다시 맡겨진다 |
 | `WORKSPACE_MISMATCH` | 400 | extractions | 실패 |
@@ -911,11 +926,17 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 | `DRAFT_STALE` | 409 | bot/drafts | 버리고 넘어간다 |
 | `INTEGRATION_NOT_CONNECTED` | 409 | guilds/{guild_id}/workspace | `/record`는 녹음을 시작하지 않고 연결 안내. 처리할 때는 BE 단계를 멈춤 |
 | `INVALID_REQUEST` | 400 | 요청 검증 실패 전부(speakers 포함) | 실패 |
+| `AUDIO_FORMAT_UNSUPPORTED` · `AUDIO_TOO_LARGE` | 422 · 413 | recording | 같은 파일로 다시 해도 같다. 대기 항목을 지운다 |
+| `AUDIO_UPLOAD_FAILED` | 422 | recording | 저장소 오류. 대기 항목을 남겨 간격을 늘리며 다시 올린다 |
+| `MEETING_DELETED` | 410 | recording | 대기 항목을 지운다 |
+| `WORKSPACE_NOT_FOUND` | 404 | recording | 공간이 지워졌다. 다시 해도 같다. 대기 항목을 지운다 |
+| `UNAUTHENTICATED` | 401 | recording | 대기 항목을 남겨 간격을 늘리며(최대 1시간) 다시 올리고, 인계 7일 뒤 지운다 |
+| `PRIVACY_VERSION_CHANGED` | 409 | recording 에서는 나오지 않는다(세대를 보지 않는다) | 받으면 대기 항목을 지운다(안전망) |
 
 ## 코드 근거
 
-- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`(`chat-cursor`·`asr-terms` 포함), `app/api/integrations.py`의 `list_bot_chat_channels`, `app/services/chat_channel.py`, `app/schemas/integration.py`, `app/api/approvals.py`(채팅 이력 출처), `app/api/workspaces.py`(업로드 가드), `app/api/uploads.py`, `app/services/speaker_assignment.py`, `app/services/meeting_stage.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`, `app/api/bot_messages.py`, `app/services/messages.py`, `app/schemas/message.py`, `app/api/bot_summaries.py`, `app/services/summary.py`, `app/schemas/project_map.py`
-- AI: `ai/capture/handoff.py`의 `BeClient`(`report_stage`, `STAGE_TIMEOUT_S`), `Handoff`(`report_stage`), `from_env`, `ai/capture/recorder.py`의 `process_session`(`begin`), `ai/draft/reminder_draft.py`의 `draft_reminder`, `ai/capture/dm.py`의 `DmCog`
+- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`(`chat-cursor`·`asr-terms` 포함), `app/api/integrations.py`의 `list_bot_chat_channels`, `app/services/chat_channel.py`, `app/schemas/integration.py`, `app/api/approvals.py`(채팅 이력 출처), `app/api/workspaces.py`(업로드 가드), `app/api/uploads.py`, `app/services/speaker_assignment.py`, `app/services/meeting_stage.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`, `app/services/meeting_audio.py`(#659), `app/api/bot_messages.py`, `app/services/messages.py`, `app/schemas/message.py`, `app/api/bot_summaries.py`, `app/services/summary.py`, `app/schemas/project_map.py`
+- AI: `ai/capture/handoff.py`의 `BeClient`(`report_stage`, `STAGE_TIMEOUT_S`), `Handoff`(`report_stage`), `from_env`, `ai/capture/recorder.py`의 `process_session`(`begin`)과 `prune_audio`, `ai/capture/audio_outbox.py`·`ai/capture/audio_mix.py`(녹음 올리기, #659), `BeClient.upload_recording`, `ai/draft/reminder_draft.py`의 `draft_reminder`, `ai/capture/dm.py`의 `DmCog`
 
 회의 요약 경로는 `backend/tests/api/test_summary_queue.py`, `test_summary_save.py` 로 SQLite 와 PostgreSQL 에서 검증했다. 실제 봇과 연결해 돌리지는 않았다. `ai/tests/capture/fixtures/summary_put.json` 은 BE 테스트가 `SummaryWriteRequest` 왕복으로 검증하고, AI 구현이 같은 파일을 쓰게 되어 있다.
 

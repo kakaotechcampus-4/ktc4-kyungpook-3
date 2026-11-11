@@ -179,8 +179,8 @@ class BeClient:
         finally:
             _privacy_epoch.reset(token)
 
-    def _call(self, method: str, path: str, body: dict | None = None, *, headers: dict | None = None,
-              timeout: float | None = None) -> Any:
+    def _request_headers(self, method: str, path: str, body: dict | None, headers: dict | None) -> tuple[int | None, dict | None]:
+        """요청에 실을 헤더: 개인정보 정리 세대(X-Privacy-Epoch)와 서비스 토큰. 세대 값도 함께 돌려준다."""
         epoch = _privacy_epoch.get()
         if epoch is None and body and body.get('workspace_id'):
             epoch = self.workspace_epochs.get(body['workspace_id'], 0)
@@ -191,6 +191,11 @@ class BeClient:
             headers = {**(headers or {}), 'X-Privacy-Epoch': str(epoch)}
         if self.service_token:
             headers = {**(headers or {}), "X-Service-Token": self.service_token}
+        return epoch, headers
+
+    def _call(self, method: str, path: str, body: dict | None = None, *, headers: dict | None = None,
+              timeout: float | None = None) -> Any:
+        epoch, headers = self._request_headers(method, path, body, headers)
         extra = {"headers": headers} if headers else {}
         try:
             r = self._session.request(method, self.api + path, json=body, timeout=timeout or self.timeout, **extra)
@@ -325,6 +330,24 @@ class BeClient:
             close = getattr(r, "close", None)
             if close:
                 close()
+
+    def upload_recording(self, meeting_id: str, path: Path) -> dict:
+        """회의 녹음(m4a)을 BE 에 올린다(PUT /meetings/{id}/recording, multipart 필드 file). 성공하면 {meeting_id, size_bytes,
+        expires_at, stored}. 보관 기간이 이미 지났으면 BE 가 200 에 stored=false 로 답한다. 같은 회의에 다시 올려도 된다.
+
+        BeError: 400 INVALID_REQUEST(디스코드·done 회의가 아님), 422 AUDIO_FORMAT_UNSUPPORTED, 413 AUDIO_TOO_LARGE,
+        422 AUDIO_UPLOAD_FAILED, 410 MEETING_DELETED(MeetingEnded), 404 MEETING_NOT_FOUND, NETWORK. 파일을 못 읽으면 OSError."""
+        _, headers = self._request_headers("PUT", f"/meetings/{meeting_id}/recording", None, None)
+        try:
+            with open(path, "rb") as f:
+                r = self._session.request("PUT", f"{self.api}/meetings/{meeting_id}/recording", timeout=DOWNLOAD_TIMEOUT_S,
+                                          headers=headers or {}, files={"file": ("audio.m4a", f, "audio/mp4")})
+        except requests.RequestException as e:
+            raise BeError("NETWORK", f"{type(e).__name__}: {e}") from e
+        data = self._unwrap(r)
+        if not isinstance(data, dict):
+            raise BeError("BAD_RESPONSE", "녹음 올리기 응답에 data 객체가 없다")
+        return data
 
     def guild_workspace(self, guild_id: str) -> str:
         """디스코드 서버에 연결된 워크스페이스(#199, BE #197). 연결이 없으면 BeError(INTEGRATION_NOT_CONNECTED)."""

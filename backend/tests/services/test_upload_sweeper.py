@@ -13,8 +13,15 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
-from app.models import Meeting, MeetingPurge, MeetingUpload, Member, PrivacyCleanup, Source, User, Workspace
-from app.services import account_withdrawal, meeting_deletion, meeting_failure, upload_storage, upload_sweeper
+from app.models import Meeting, MeetingAudio, MeetingPurge, MeetingUpload, Member, PrivacyCleanup, Source, User, Workspace
+from app.services import (
+    account_withdrawal,
+    meeting_audio,
+    meeting_deletion,
+    meeting_failure,
+    upload_storage,
+    upload_sweeper,
+)
 from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
@@ -204,6 +211,49 @@ def test_previously_failed_upload_file_is_cleaned_after_restart(db, ws):
     assert not _folder(meeting).exists()
     assert _folder(unrelated).exists()
     assert _state(db, meeting) == ("failed", None)
+
+
+def test_failed_upload_file_retry_runs_without_holding_a_transaction(db, ws, monkeypatch):
+    """옛 failed 업로드 파일을 다시 지울 때 공간·회의 잠금(트랜잭션)을 쥐지 않는다(S3 I/O 를 잠금 밖에서)."""
+    meeting = _upload(db, ws, status="failed")
+    real_remove = upload_storage.remove_audio
+    in_transaction = []
+
+    def remove(meeting_id):
+        in_transaction.append(db.in_transaction())
+        real_remove(meeting_id)
+
+    monkeypatch.setattr(upload_storage, "remove_audio", remove)
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == []
+
+    assert in_transaction == [False]
+    assert not _folder(meeting).exists()
+
+
+def test_failed_upload_with_audio_record_is_left_to_the_audio_sweep(db, ws, monkeypatch):
+    """보관 기록(meeting_audio)이 있는 failed 업로드는 녹음 만료 정리가 지운다. 실패 파일 재시도는 건드리지 않는다."""
+    meeting = _upload(db, ws, status="failed")
+    meeting_audio.record(db, meeting.meeting_id, "audio.ogg", "audio/ogg", 4, NOW - HOUR)
+    db.commit()
+    removed = []
+    real_remove = upload_storage.remove_audio
+
+    def remove(meeting_id):
+        removed.append(meeting_id)
+        real_remove(meeting_id)
+
+    monkeypatch.setattr(upload_storage, "remove_audio", remove)
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == []
+    assert removed == []
+    assert _folder(meeting).exists()
+
+    assert meeting_audio.sweep_expired_audio(db, NOW) == [meeting.meeting_id]
+    assert removed == [meeting.meeting_id]
+    assert not _folder(meeting).exists()
+    db.expire_all()
+    assert db.get(MeetingAudio, meeting.meeting_id).deleted_at is not None
 
 
 def test_deleted_meeting_file_retry_is_owned_by_meeting_purge(db, ws, monkeypatch):
@@ -504,8 +554,63 @@ def test_worker_keeps_running_after_a_sweep_raises(monkeypatch):
 
     monkeypatch.setattr(upload_sweeper, "SessionLocal", FakeSession)
     monkeypatch.setattr(upload_sweeper, "sweep_stalled_uploads", sweep)
+    # 녹음 만료 정리는 이 테스트의 대상이 아니다. 가짜 세션에서 진짜 정리가 돌지 않게 아무것도 하지 않게 둔다
+    monkeypatch.setattr(upload_sweeper.meeting_audio, "sweep_expired_audio", lambda db: [])
 
     upload_sweeper.run_worker(stop, 0)
 
     assert calls.count("sweep") == 2
     assert "rollback" in calls
+
+
+def _fake_worker_session(calls):
+    class FakeSession:
+        def rollback(self):
+            calls.append("rollback")
+
+        def close(self):
+            calls.append("close")
+
+    return FakeSession
+
+
+def test_worker_sweeps_expired_audio_even_if_stalled_sweep_raises(monkeypatch):
+    stop = threading.Event()
+    calls = []
+
+    def stalled(db):
+        calls.append("stalled")
+        raise RuntimeError("boom")
+
+    def audio(db):
+        calls.append("audio")
+        stop.set()
+        return []
+
+    monkeypatch.setattr(upload_sweeper, "SessionLocal", _fake_worker_session(calls))
+    monkeypatch.setattr(upload_sweeper, "sweep_stalled_uploads", stalled)
+    monkeypatch.setattr(upload_sweeper.meeting_audio, "sweep_expired_audio", audio)
+
+    upload_sweeper.run_worker(stop, 0)
+
+    assert calls.index("stalled") < calls.index("audio")
+
+
+def test_worker_keeps_running_after_audio_sweep_raises(monkeypatch):
+    stop = threading.Event()
+    calls = []
+
+    def audio(db):
+        calls.append("audio")
+        if calls.count("audio") == 1:
+            raise RuntimeError("boom")
+        stop.set()
+        return []
+
+    monkeypatch.setattr(upload_sweeper, "SessionLocal", _fake_worker_session(calls))
+    monkeypatch.setattr(upload_sweeper, "sweep_stalled_uploads", lambda db: [])
+    monkeypatch.setattr(upload_sweeper.meeting_audio, "sweep_expired_audio", audio)
+
+    upload_sweeper.run_worker(stop, 0)
+
+    assert calls.count("audio") == 2

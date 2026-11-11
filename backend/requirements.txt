@@ -13,3 +13,4 @@ httpx>=0.27   # app/services/notion.py 의 Notion API 호출에도 쓴다
 python-multipart>=0.0.9   # app/api/workspaces.py 회의록 업로드(Form/File)에 필요하다
 pywebpush>=2.0   # app/services/push.py 의 웹 푸시(VAPID) 발송
 urllib3>=2.0   # app/schemas/notification.py 가 발송과 같은 파서로 구독 주소를 검사한다
+boto3>=1.34   # app/services/upload_storage.py 의 UPLOAD_STORAGE=s3 녹음 보관(자격은 boto3 기본 체인)

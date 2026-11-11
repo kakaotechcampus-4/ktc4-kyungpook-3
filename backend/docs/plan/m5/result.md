@@ -150,6 +150,45 @@ plan.md 가 비어 있어 완료조건이 없다. 아래는 전체 계획 M5 의
 
 매 바퀴 과거 failed 메타데이터도 조회·잠금·제거 시도한다. 이 비용은 측정하지 않았다. done·DB 미등록 폴더는 실패 업로드 재시도 대상이 아니다. 전체 백엔드 테스트·Linux CI·실서버·공급사 처리·운영 파일 삭제는 이 로컬 검증 결과에 포함하지 않는다.
 
+## 2026-11-10 추가: 회의 녹음 S3 보관과 원문 듣기 (#659)
+
+### 작업 근거와 구현
+
+이슈 #659 와 사용자와 정한 설계(리뷰 반영 2026-11-10 포함)로 진행했다. 이 M5 의 plan.md 는 비어 있어 이슈를 작업 근거로 삼으며 마일스톤 완료를 선언하지 않는다. 한 PR 에서 backend/ 와 ai/ 를 함께 고쳤다. frontend/ 는 고치지 않았고 FE 이슈로 요청한다.
+
+| 변경 | 위치 |
+|---|---|
+| 저장소 추상화: `UPLOAD_STORAGE=local|s3`, 키 `{UPLOAD_S3_PREFIX}{meeting_id}/audio.<확장자>`, presigned URL, S3 prefix 삭제. 자격은 boto3 기본 체인(운영은 개인 계정 버킷 전용 IAM 사용자 키) | [upload_storage.py](../../../app/services/upload_storage.py), [fake_s3.py](../../../tests/fake_s3.py) |
+| 보관 기록 `meeting_audio`(파일명·형식·크기·`retention_from`·`deleted_at`)와 재생 가능 판단·만료 정리. 처리 중에는 만료로 보지 않는다. 마이그레이션이 처리 중인 기존 업로드 회의만 채운다 | [models.py](../../../app/models/models.py) `MeetingAudio`, [meeting_audio.py](../../../app/services/meeting_audio.py), [마이그레이션](../../../migrations/versions/c7a1e4d92b35_add_meeting_audio.py) |
+| done 이 돼도 업로드 녹음을 지우지 않는다(failed 는 즉시 삭제). sweeper 바퀴가 만료 녹음을 지운다 | [extractions.py](../../../app/api/extractions.py), [upload_sweeper.py](../../../app/services/upload_sweeper.py) |
+| `GET /meetings/{id}/audio`: done 은 팀원, 그 밖은 PM. s3 는 presigned 302, local 은 파일 응답. 새 에러 `AUDIO_NOT_AVAILABLE`(404, `reason` = `expired`·`no_recording`). `minutes` 의 `audio: {content_type, expires_at} \| null` | [meetings.py](../../../app/api/meetings.py), [errors.py](../../../app/core/errors.py), [meeting.py](../../../app/schemas/meeting.py) |
+| `GET /uploads/{id}/file`: s3 에서 BE 가 바이트를 대신 보낸다(모양 그대로) | [uploads.py](../../../app/api/uploads.py) |
+| `PUT /meetings/{id}/recording`(서비스 토큰): 디스코드 회의의 섞은 m4a 를 받는다. 보관 기준은 회의 종료 시각, 기간이 지났거나 정리됐으면 `stored=false`, 멱등, 다시 올리다 실패해도 기존 녹음 유지 | [sources.py](../../../app/api/sources.py) |
+| 회의 삭제·탈퇴 정리가 S3 prefix 도 지운다 | [meeting_deletion.py](../../../app/services/meeting_deletion.py), [account_withdrawal.py](../../../app/services/account_withdrawal.py) |
+| AI: 인계한 디스코드 회의의 wav 를 지우기 직전 m4a 로 섞어 `audio_outbox` 에 두고 BE 로 올린다. 봇 시작 안내에 7일 보관 문구 | [audio_mix.py](../../../../ai/capture/audio_mix.py), [audio_outbox.py](../../../../ai/capture/audio_outbox.py), [recorder.py](../../../../ai/capture/recorder.py) `prune_audio`, [discord_adapter.py](../../../../ai/capture/discord_adapter.py) |
+| 설정·문서 | [.env.example](../../../.env.example), [docker-compose.prod.yml](../../../docker-compose.prod.yml), [README](../../../README.md#회의-녹음-보관과-재생), [BE↔AI 계약](../../contracts/backend-ai-contract.md), [배포 안내](../../../../deploy/README.md#회의-녹음-s3-준비), [사용자 안내](../../../../docs/user/record-meeting.md) |
+
+선택과 근거는 [결정 기록](basis-for-decision/2026-11-10-meeting-audio-s3-retention.md)에 있다.
+
+### 계획 대비 차이
+
+- 전체 계획 M5 의 "음성 보존: 처리 중 임시 보관, 최종 종료 후 삭제"와 "원본 다시 듣기: 1차 제외"(위 완료조건 확인의 해당 행)는 이번 작업이 바꿨다. 이제 done 뒤에도 7일 보관하고 원문을 듣게 한다. 보호 계획 파일은 고치지 않았고, 위 표의 두 행은 그 시점의 기록이다.
+- 보관 기준은 설계 초안의 "받은 시각"에서 이슈 리뷰 뒤 바뀌었다. 업로드는 받은 시각, 디스코드는 회의 종료 시각이다(컬럼 `retention_from`).
+- 동의 버전(`CURRENT_VERSIONS`)은 올리지 않았다(사용자 결정). 방침 문구는 FE 가 고친다.
+
+### 검증
+
+- 이 문서화 작업(Task 7)의 마지막 커밋 상태에서 `backend/` 에서 `.venv/bin/python -m ruff check --no-cache .`: 통과. `.venv/bin/python -m pytest -q -p no:cacheprovider`: **3297 passed, 2279 skipped**(PostgreSQL 변형 skip), 0 failed. `ai/` 에서 `.venv/bin/python -m pytest -q`: 설정 때문에 요약 줄이 나오지 않아 진행 표시를 세었다. 통과 3063개, skip 1개, 실패 없음.
+- 앞선 구현 태스크에서 PostgreSQL(mm_test) 로 바뀐 테스트 파일 400 passed / 4 skipped, 로컬 DB 에서 `alembic downgrade b20d029aec7b` → `upgrade head` → `alembic check` 성공("No new upgrade operations detected")을 확인했다. 이번 문서 작업에서는 다시 돌리지 않았다.
+- 2026-11-10 개인 AWS 계정에 버킷·lifecycle·전용 IAM 사용자를 만들고, 로컬에서 그 키로 `upload_storage` 의 저장·presigned Range 요청(206)·스트림·덮어쓰기·prefix 삭제를 실제 S3 에 돌려 성공했다. 운영 EC2 에서의 전환·Caddy CSP·ffmpeg 없는 환경의 AI 운영 실행은 확인하지 않았다. 테스트는 가짜 S3(`tests/fake_s3.py`)를 쓴다. presigned URL 로 브라우저가 실제로 재생되는지(CORS 포함)도 확인하지 않았다.
+- 체크리스트(인프라)와 운영 전환 절차는 문서만 썼고 실행하지 않았다. AI 결정 기록(0055 후속)은 [0066](../../../../ai/docs/basis_for_decision/ai/2026-11-10-0066-mix-discord-audio-and-upload-to-be.md)에 썼다.
+
+### 다른 파트에 알릴 것
+
+- FE(이슈로 요청, 이 PR 은 frontend/ 를 고치지 않음): 원문 듣기 재생(`/api/v1/meetings/{id}/audio` 302), `minutes.audio`, `AUDIO_NOT_AVAILABLE` 처리, 주소 만료 시 `src` 재설정, `/speakers` 의 `audio` 가 done 뒤에도 보관 기간 동안 값, 방침 문구(`POLICY_VERSION` 그대로, 업로드 회의가 처리 중이면 7일을 넘길 수 있음), FE 계약.
+- AI: 이 PR 이 `ai/capture/` 와 0055(인계 즉시 wav 삭제)의 후속 동작을 바꿨다. 결정 기록은 [0066](../../../../ai/docs/basis_for_decision/ai/2026-11-10-0066-mix-discord-audio-and-upload-to-be.md)이다.
+- 인프라: 버킷·lifecycle·전용 IAM 사용자(개인 AWS 계정, 준비함)와 운영 `.env`·Caddy CSP `media-src` 는 [배포 안내](../../../../deploy/README.md#회의-녹음-s3-준비)의 체크리스트다. 처리 중 업로드가 없을 때 `UPLOAD_STORAGE=s3` 로 전환한다.
+
 ## 2026-11-11 추가: 업로드 본문 크기를 받는 동안 끊기
 
 ### 작업 근거와 구현

@@ -19,6 +19,7 @@ class ErrorCode(StrEnum):
     MEETING_NOT_PROCESSING = "MEETING_NOT_PROCESSING"
     MEETING_FAILED = "MEETING_FAILED"
     AUDIO_UPLOAD_FAILED = "AUDIO_UPLOAD_FAILED"
+    AUDIO_NOT_AVAILABLE = "AUDIO_NOT_AVAILABLE"
     AUDIO_FORMAT_UNSUPPORTED = "AUDIO_FORMAT_UNSUPPORTED"
     TRANSCRIPTION_FAILED = "TRANSCRIPTION_FAILED"
     EXTRACTION_FAILED = "EXTRACTION_FAILED"
@@ -132,6 +133,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.MEETING_NOT_PROCESSING: 409,
     ErrorCode.MEETING_FAILED: 409,
     ErrorCode.AUDIO_UPLOAD_FAILED: 422,
+    ErrorCode.AUDIO_NOT_AVAILABLE: 404,
     ErrorCode.AUDIO_FORMAT_UNSUPPORTED: 422,
     ErrorCode.TRANSCRIPTION_FAILED: 502,
     ErrorCode.EXTRACTION_FAILED: 502,
@@ -230,6 +232,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.MEETING_NOT_PROCESSING: "회의가 분석 중(PROCESSING) 상태가 아닙니다.",
     ErrorCode.MEETING_FAILED: "실패 처리된 회의입니다. 새 회의로 다시 시작해 주세요.",
     ErrorCode.AUDIO_UPLOAD_FAILED: "오디오 저장·병합에 실패했습니다.",
+    ErrorCode.AUDIO_NOT_AVAILABLE: "들을 수 있는 녹음이 없습니다.",
     ErrorCode.AUDIO_FORMAT_UNSUPPORTED: "지원하지 않는 오디오 형식입니다.",
     ErrorCode.TRANSCRIPTION_FAILED: "음성 전사에 실패했습니다.",
     ErrorCode.EXTRACTION_FAILED: "회의 분석에 실패했습니다.",

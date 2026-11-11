@@ -2,7 +2,10 @@
 
 디스코드 봇이 사용자 세션 없이 부르는 경로라 세션 대신 서비스 토큰(X-Service-Token)으로 막는다.
 """
-from fastapi import APIRouter, Depends
+from datetime import datetime, timezone
+import logging
+
+from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -12,9 +15,13 @@ from app.api.deps import require_service_token
 from app.core.database import get_db
 from app.services.meeting_deletion import require_live_meeting
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import MeetingSource, MeetingStatus, Source
+from app.models import MeetingAudio, MeetingSource, MeetingStatus, Source
+from app.schemas.meeting import RecordingUploadResponse
 from app.schemas.source import TranscriptCreateRequest, TranscriptCreateResponse
+from app.services import meeting_audio, upload_storage
 from app.services.matching import active_members_by_id, resolve_speaker
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/meetings", tags=["meetings"], dependencies=[Depends(require_service_token)]
@@ -146,3 +153,122 @@ def create_sources(
             duration_ms=meeting.duration_ms,
         ).model_dump(mode="json")
     )
+
+
+# AI 가 올리는 섞은 녹음의 저장 이름·형식. 재생 쪽이 이 값으로 파일을 찾고 Content-Type 을 정한다.
+RECORDING_FILENAME = "audio.m4a"
+RECORDING_CONTENT_TYPE = "audio/mp4"
+
+
+def _recording_response(row: MeetingAudio, *, stored: bool) -> dict:
+    return success(
+        RecordingUploadResponse(
+            meeting_id=row.meeting_id,
+            size_bytes=row.size_bytes,
+            expires_at=meeting_audio.expires_at(row),
+            stored=stored,
+        ).model_dump(mode="json")
+    )
+
+
+@router.put(
+    "/{meeting_id}/recording",
+    response_model=Envelope[RecordingUploadResponse],
+)
+def upload_recording(
+    meeting_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> dict:
+    """AI 가 끝난 디스코드 회의의 섞은 녹음(m4a)을 올린다. 팀원이 보관 기간 동안 원문을 듣게 된다.
+
+    같은 회의에 다시 올리면 파일만 바꾸고 보관 기준 시각(`retention_from`)은 처음 값을 유지한다.
+    이미 정리된(`deleted_at`) 녹음에는 저장하지 않고 `stored=false` 로 성공한다. AI 가 다시 보내도 깨지지 않게 한다.
+    개인정보 세대(`X-Privacy-Epoch`)는 보지 않는다. 녹음 바이트에는 신원 정보가 없고 공동 공간 팀원 정리도
+    음성 바이트는 남긴다. 공간 전체 정리는 회의·공간을 지우므로 404·410 으로 끝난다.
+    """
+    meeting = require_live_meeting(db, meeting_id, lock=True, check_epoch=False)
+    if meeting.source != MeetingSource.DISCORD:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message="디스코드 회의에만 녹음을 올릴 수 있습니다.",
+            details={"meeting_id": meeting_id, "source": meeting.source},
+        )
+    if meeting.status != MeetingStatus.DONE:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message="처리가 끝난 회의에만 녹음을 올릴 수 있습니다.",
+            details={"meeting_id": meeting_id, "status": meeting.status},
+        )
+    if not upload_storage.is_supported_audio(RECORDING_FILENAME, file.file):
+        raise AppError(
+            ErrorCode.AUDIO_FORMAT_UNSUPPORTED,
+            details={"filename": file.filename, "supported": ["m4a"]},
+        )
+    size_bytes = upload_storage.file_size(file.file)
+    max_bytes = upload_storage.max_bytes()
+    if size_bytes > max_bytes:
+        raise AppError(
+            ErrorCode.AUDIO_TOO_LARGE,
+            details={"size_bytes": size_bytes, "max_bytes": max_bytes},
+        )
+    now = datetime.now(timezone.utc)
+    # 보관 기간은 회의가 끝난 시각부터 센다. AI 가 늦게 올려도 팀원이 듣는 기간이 길어지지 않는다
+    retention_from = meeting.ended_at or now
+    existing = db.get(MeetingAudio, meeting_id)
+    if existing is not None and existing.deleted_at is not None:
+        return _recording_response(existing, stored=False)
+    if existing is not None and meeting_audio.expires_at(existing) <= now:
+        # 기간이 지났지만 정리 작업이 아직 안 돈 기록이다. 덮어써도 곧 정리될 녹음이라 받지 않는다
+        return _recording_response(existing, stored=False)
+    if existing is None and meeting_audio.deadline(retention_from) <= now:
+        # 보관 기간이 이미 지났다. 저장해도 바로 정리될 녹음이라 받지 않는다
+        return success(
+            RecordingUploadResponse(
+                meeting_id=meeting_id,
+                size_bytes=size_bytes,
+                expires_at=meeting_audio.deadline(retention_from),
+                stored=False,
+            ).model_dump(mode="json")
+        )
+
+    # 녹음을 복사하는 동안 DB 연결을 붙잡지 않도록 읽기 트랜잭션과 회의 잠금을 끝낸다.
+    # 그 사이 바뀐 것은 아래 커밋 직전 잠금과 재확인이 잡는다
+    first_upload = existing is None
+    db.rollback()
+    try:
+        saved_size = upload_storage.save_audio(
+            meeting_id, file.file, RECORDING_FILENAME, overwrite=True
+        )
+    except OSError:
+        # 다시 올리는 경우에도 save_audio 가 이전 녹음은 지우지 않는다
+        logger.exception("디스코드 회의 녹음을 저장하지 못했습니다: meeting_id=%s", meeting_id)
+        raise AppError(ErrorCode.AUDIO_UPLOAD_FAILED)
+
+    try:
+        require_live_meeting(db, meeting_id, lock=True, check_epoch=False)
+        # 복사하는 사이 정리 작업이 이 녹음을 지웠을 수 있다. 정리된 기록에는 새 파일을 남기지 않는다
+        current = db.get(MeetingAudio, meeting_id, populate_existing=True)
+        if current is not None and current.deleted_at is not None:
+            db.rollback()
+            upload_storage.remove_upload(meeting_id)
+            return _recording_response(current, stored=False)
+    except AppError:
+        # 복사하는 사이 회의가 지워졌다. 삭제 경로는 이미 지나갔으니 방금 저장한 파일은 여기서 치운다.
+        # 지우지 못해도 410 은 그대로 낸다
+        db.rollback()
+        upload_storage.remove_upload(meeting_id)
+        raise
+    try:
+        row = meeting_audio.record(
+            db, meeting_id, RECORDING_FILENAME, RECORDING_CONTENT_TYPE,
+            saved_size, retention_from,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        if first_upload:
+            # 행이 없는데 파일만 남지 않게 한다. 다시 올린 경우는 기존 행이 가리키는 파일이라 둔다
+            upload_storage.remove_upload(meeting_id)
+        raise
+    return _recording_response(row, stored=True)

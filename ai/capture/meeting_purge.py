@@ -6,6 +6,7 @@ import json
 import shutil
 from pathlib import Path
 
+from capture import audio_outbox
 from capture.recorder import manifest_path, save_manifest, try_lock, try_restart_lock
 
 
@@ -120,9 +121,11 @@ def purge_files(recordings: Path, transcripts: Path, meeting_id: str) -> bool:
                 _remove(recordings / data['meeting_dir'], recordings)
             for mid in ids:
                 _remove(recordings / '.uploads' / _component(mid), recordings)
+                audio_outbox.remove_meeting(recordings, mid)   # 아직 올리지 못한 섞은 녹음(#659)
             _remove(path.with_suffix('.json.tmp'), recordings)
             _remove(path, recordings)
         _remove(recordings / '.uploads' / meeting_id, recordings)
+        audio_outbox.remove_meeting(recordings, meeting_id)
         return True
     finally:
         for lock in reversed(locks):
