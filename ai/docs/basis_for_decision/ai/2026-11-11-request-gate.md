@@ -38,7 +38,7 @@
 | k6 | ![](assets/2026-11-11-pool-gate/local-before-k6.png) | ![](assets/2026-11-11-pool-gate/local-after-k6.png) |
 | 서버 | ![](assets/2026-11-11-pool-gate/local-before-server.png) | ![](assets/2026-11-11-pool-gate/local-after-server.png) |
 
-백엔드 테스트 3536 통과, 2537 건너뜀(Postgres 가 필요한 테스트), ruff 통과.
+백엔드 테스트는 Postgres(`TEST_DATABASE_URL`)를 붙여 6002 통과, 71 건너뜀, ruff 통과.
 
 원자료는 레포 밖 `mm/eval-runs/loadtest/20261111-701-before-local/`, `20261111-701-after-local/`, `20261111-701-after-local-handoff/` 에 있다.
 
