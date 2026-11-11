@@ -50,3 +50,35 @@
 | `docs/collab/conventions.md:80` | `convention-check` 가 검사하는 항목. 스크립트가 외부 저장소(`kakaotechcampus-4/pr-pipeline` 의 `workflows/scripts/p2/convention-notice.sh`)에 있다 | `gh api repos/kakaotechcampus-4/pr-pipeline/contents/workflows/scripts/p2/convention-notice.sh -H "Accept: application/vnd.github.raw"`. 권한이 없으면 운영진에게 묻는다 |
 | `docs/user/faq.md:11` | Discord 채널 권한의 "애플리케이션 명령 사용"이 꺼지면 슬래시 명령이 막히는지 | 명령 없음. 시험 서버에서 그 권한을 끄고 봇 슬래시 명령이 보이는지 본다 |
 | `docs/user/quick-guide.md:63` | 15행의 Discord 도움말 링크가 설명과 맞는 문서를 가리키는지 | 명령 없음. 15행의 링크를 브라우저로 열어 본다 |
+
+## 4. 테스트 계정과 샘플 데이터 (#606)
+
+시드 명령(`python -m app.cli.seed_demo`)은 준비돼 있지만 계정 이메일과 비밀번호는 저장소에 없다. 이메일은 `--email-pattern`, 비밀번호는 `DEMO_PM_PASSWORD`·`DEMO_MEMBER_PASSWORD` 로 실행할 때 정한다(`backend/app/cli/seed_demo.py:627-633, 646, 678-679`). 그래서 README 의 "준비 중" 문구(`README.md:29`)와 사용자 가이드 표의 "확정 후 기입" 칸은 남겨 두었다.
+
+| 파일:줄 | 확인할 것 | 확인 방법(명령어) |
+|---|---|---|
+| `README.md:29`, `docs/user/getting-started.md:13-14` | 운영 서비스에 시드를 실행했는지, 실행했다면 PM·팀원2 로그인 이메일과 비밀번호. #654 는 `--today 2026-11-19` 로 11/18 회의 시각 이후에 실행한다고 적고 있다 | 운영 서버에서 `docker compose -f /opt/mm/backend/docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBER_PASSWORD api python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com' --today 2026-11-19 --dry-run` 으로 이미 있는 계정·회의 수를 본다(출처: `backend/README.md` "심사용 시드"). 실행한 뒤 README 의 "준비 중" 문구를 지우고 표를 채운다 |
+| `docs/user/getting-started.md:13-14` | 심사용 비밀번호를 공개 문서에 적을지. `backend/README.md` 는 실제 이메일을 문서에 남기지 말라고 한다 | 명령 없음. 팀이 정한다. 공개 저장소에 적기로 하면 그 줄에 `<!-- secret-scan: allow -->` 를 달아야 커밋 훅을 통과한다. 적지 않기로 하면 제출 양식으로만 전달하고 표에 그렇게 적는다 |
+| `docs/user/getting-started.md:14` | 3~6번 계정(원준·김환·재환·진호)은 비밀번호가 무작위라 로그인할 수 없다(`seed_demo.py:225`). "팀원 계정 5개"를 심사자에게 모두 줄지, 팀원2 하나만 줄지 | 명령 없음. 모두 주려면 시드 뒤 웹의 비밀번호 재설정으로 정해야 한다. `--reset-passwords` 는 PM·팀원2 만 바꾼다(`seed_demo.py:230`) |
+| `docs/user/getting-started.md:16` | 샘플 음성 파일. 저장소에 음성 파일이 없다 | `git ls-files \| grep -iE '\.(mp3\|wav\|m4a\|ogg\|webm)$'` 로 재확인. 파일을 어디에 두고 어떻게 전달할지 팀이 정한다 |
+| `docs/user/getting-started.md:17` | 테스트용 Discord 서버. #606 의 심사 흐름은 심사위원이 자기 계정으로 서버를 만든다고 적고 있다 | `gh issue view 606` 의 "심사 흐름" 5번을 보고, 팀이 서버를 미리 만들어 줄지 정한다 |
+| `docs/user/getting-started.md:31, 33` | 추천 순서 4번(샘플 음성 올리기)과 6번(팀원 계정으로 로그인)이 위 결정과 맞는지 | 명령 없음. 위 세 항목이 정해진 뒤 순서를 다시 읽고 맞춘다 |
+
+## 5. README 대표 GIF 촬영 시나리오 (#654)
+
+`README.md:31` 의 자리 주석은 그대로 두었다. 파일 경로는 주석에 적힌 `docs/assets/readme-hero.gif` 다. 운영 시드를 실행한 뒤 PM 계정으로 찍는다.
+
+화면과 순서는 사용자 가이드의 추천 순서(`docs/user/getting-started.md` "테스트 계정으로 바로 써 보기")와 회의록·승인 설명(`docs/user/review-approve.md` 1~2절)에서 가져왔다. 길이는 제안이다.
+
+| 순서 | 화면 | 보여 줄 것 | 길이(제안) |
+|---|---|---|---|
+| 1 | 대시보드 | 확인 대기·기한 지남 숫자 | 3초 |
+| 2 | 회의록 목록 | 샘플 회의 6개, **심사 준비 - 승인 대기 시연** 을 고른다 | 3초 |
+| 3 | 회의록 > 요약 탭 → 추출된 일 탭 | **반영된 것** 과 **확인이 필요한 일** 두 칸, **확인 필요**·**보류** 배지와 까닭 | 6초 |
+| 4 | 태스크 > 확인 필요 탭의 승인 카드(회의록에서는 **확인하기** 버튼) | 근거 원문, 칸 하나를 고쳐 승인 | 8초 |
+| 5 | 회의록 > 추출된 일 탭으로 돌아오기 | 방금 승인한 일이 **반영된 것** 으로 옮겨진 모습 | 3초 |
+
+- 전체 20~25초, 가로 1280px 안팎, 반복 재생. 용량이 크면 README 가 느리게 뜨므로 10MB 를 넘지 않게 줄인다(제안).
+- 찍기 전에 확인할 것: 5번에서 승인한 일이 실제로 **반영된 것** 칸으로 옮겨 보이는지는 화면에서 확인하지 않았다. 다르게 보이면 5번을 빼거나 바꾼다.
+- 계정 이메일이 화면에 보이면 가린다.
+- 넣은 뒤 `README.md:31` 의 주석을 `![대표 화면](./docs/assets/readme-hero.gif)` 로 바꾼다.
