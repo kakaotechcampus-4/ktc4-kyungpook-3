@@ -13,6 +13,9 @@ state를 다른 제공자의 callback에 쓰지 못하게 한다.
 
 state를 한 번만 쓰게 하는 일은 API 계층의 짝 쿠키(`nonce_cookie()`)가 맡는다. state 안의
 nonce와 쿠키 값이 같아야 통과시키고, 응답에서 쿠키를 지운다.
+
+로그인 전 흐름(카카오 로그인 state, 가입 이메일 증명, 카카오 대기 쿠키)도 같은 서명을 `seal`·`decode`로
+쓴다. 종류는 서명된 `v` 값으로 나뉘어서 한 종류의 토큰을 다른 종류로 열 수 없다.
 """
 import base64
 import hashlib
@@ -89,6 +92,43 @@ def encode(payload: dict[str, object]) -> str:
     return f"{segment}.{_signature(segment)}"
 
 
+def seal(kind: str, ttl: int, fields: dict[str, object], *, now: float | None = None) -> str:
+    """`kind`로만 열리고 `ttl`초 뒤 만료되는 서명 토큰을 만든다."""
+    issued_at = int(time.time() if now is None else now)
+    return encode({**fields, "v": kind, "e": issued_at + ttl})
+
+
+def decode(kind: str, token: str, *, now: float | None = None) -> dict[str, object] | None:
+    """`kind`로 서명했고 만료되지 않은 토큰의 내용을 돌려준다. 아니면 None이다."""
+    parts = token.split(".") if isinstance(token, str) else []
+    if len(parts) != 2:
+        return None
+    segment, signature = parts
+    try:
+        if not hmac.compare_digest(signature.encode(), _signature(segment).encode()):
+            return None
+    except UnicodeEncodeError:  # 짝 없는 서로게이트는 JSON 을 통과하지만 utf-8 로 바뀌지 않는다
+        return None
+    try:
+        data = json.loads(_b64decode(segment))
+    except ValueError:  # base64·UTF-8·JSON 오류가 모두 ValueError의 하위 클래스다
+        return None
+    if not isinstance(data, dict) or data.get("v") != kind:
+        return None
+    expires_at = data.get("e")
+    if isinstance(expires_at, bool) or not isinstance(expires_at, int):
+        return None
+    if (time.time() if now is None else now) >= expires_at:
+        return None
+    return data
+
+
+def mac(purpose: str, text: str) -> str:
+    """서명 키에서 용도별 키를 파생해 만든 해시(64자). DB가 유출돼도 키 없이는 값을 맞춰 볼 수 없다."""
+    key = hmac.new(_secret(), purpose.encode(), hashlib.sha256).digest()
+    return hmac.new(key, text.encode(), hashlib.sha256).hexdigest()
+
+
 def safe_return_path(path: str | None) -> str:
     """앱 안의 경로만 받는다. 외부 주소로 보내는 리디렉트가 되지 않게 아니면 `/`로 바꾼다."""
     if not path or len(path) > MAX_RETURN_PATH_LENGTH:
@@ -104,43 +144,23 @@ def sign_state(
     provider: str, workspace_id: str, user_id: str, return_path: str, *, now: float | None = None
 ) -> tuple[str, str]:
     """(제공자에 보낼 state, 짝 쿠키에 심을 nonce)를 돌려준다."""
-    issued_at = int(time.time() if now is None else now)
     nonce = secrets.token_urlsafe(16)
-    state = encode(
-        {
-            "v": provider,
-            "w": workspace_id,
-            "u": user_id,
-            "p": safe_return_path(return_path),
-            "n": nonce,
-            "e": issued_at + STATE_TTL_SECONDS,
-        }
+    state = seal(
+        provider,
+        STATE_TTL_SECONDS,
+        {"w": workspace_id, "u": user_id, "p": safe_return_path(return_path), "n": nonce},
+        now=now,
     )
     return state, nonce
 
 
 def verify_state(provider: str, token: str, *, now: float | None = None) -> StatePayload | None:
     """이 제공자로 서명했고 만료되지 않은 state의 내용을 돌려준다. 아니면 None이다."""
-    parts = token.split(".") if isinstance(token, str) else []
-    if len(parts) != 2:
+    data = decode(provider, token, now=now)
+    if data is None:
         return None
-    segment, signature = parts
-    if not hmac.compare_digest(signature.encode(), _signature(segment).encode()):
-        return None
-    try:
-        data = json.loads(_b64decode(segment))
-    except ValueError:  # base64·UTF-8·JSON 오류가 모두 ValueError의 하위 클래스다
-        return None
-    if not isinstance(data, dict) or data.get("v") != provider:
-        return None
-
     workspace_id, user_id, return_path, nonce = (data.get(key) for key in ("w", "u", "p", "n"))
-    expires_at = data.get("e")
     if not all(isinstance(v, str) and v for v in (workspace_id, user_id, return_path, nonce)):
-        return None
-    if isinstance(expires_at, bool) or not isinstance(expires_at, int):
-        return None
-    if (time.time() if now is None else now) >= expires_at:
         return None
     return StatePayload(workspace_id, user_id, safe_return_path(return_path), nonce)
 
@@ -158,7 +178,7 @@ def frontend_return_url(provider: str, path: str, result: str) -> str:
     query = [
         (key, value)
         for key, value in parse_qsl(parts.query, keep_blank_values=True)
-        if key not in ("oauth", "oauth_result")
+        if key not in ("oauth", "oauth_result", "oauth_reason")
     ]
     query += [("oauth", provider), ("oauth_result", result)]
     return urlunsplit(("", "", parts.path, urlencode(query), parts.fragment))

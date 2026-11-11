@@ -9,11 +9,19 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
 from app.main import app
-from app.models import Member, Session as SessionModel, Task, User, Workspace
+from app.models import Integration, Member, Session as SessionModel, Task, User, Workspace
+from app.schemas.email import normalize_email
+from app.services import oauth_state, signup_codes
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 SERVICE_TOKEN = "test-service-token"
+
+
+@pytest.fixture
+def sqlite_message_url():
+    return "sqlite:///:memory:"
 
 
 @pytest.fixture(
@@ -25,17 +33,19 @@ SERVICE_TOKEN = "test-service-token"
         ),
     ]
 )
-def mdb(request, monkeypatch):
+def mdb(request, monkeypatch, sqlite_message_url):
     monkeypatch.setenv("SERVICE_TOKEN", SERVICE_TOKEN)
     if request.param == "postgresql":
         engine = create_engine(TEST_DATABASE_URL)
         with engine.begin() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         Base.metadata.drop_all(engine)
-    else:
+    elif sqlite_message_url == "sqlite:///:memory:":
         engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
+            sqlite_message_url, connect_args={"check_same_thread": False}, poolclass=StaticPool
         )
+    else:
+        engine = create_engine(sqlite_message_url, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     # 앱 세션(SessionLocal)과 같이 autoflush 를 끈다. 서비스가 조회 전에 flush 를 빠뜨리면 여기서 드러난다.
     session = sessionmaker(bind=engine, autoflush=False)()
@@ -53,8 +63,40 @@ def mdb(request, monkeypatch):
         engine.dispose()
 
 
+@pytest.fixture
+def signup_secret(monkeypatch):
+    """`signup_verified` 가 증명을 서명할 키. 키 없는 경우를 재는 Notion·Discord 테스트 때문에 전역으로 두지 않는다."""
+    monkeypatch.setenv("OAUTH_STATE_SECRET", "k" * 40)
+
+
+def signup_verified(client, email: str, password: str = "pw-123456", name: str = "테스터", username: str | None = None):
+    """코드 메일을 거치지 않고 인증을 마친 상태로 가입한다. 코드 흐름은 test_signup_api.py 가 잰다."""
+    proof = oauth_state.seal(signup_codes.PROOF_KIND, 60, {"m": normalize_email(email)})
+    body = {"verification_token": proof, "password": password, "name": name, "username": username or username_for(email)}
+    return client.post("/api/v1/auth/signup", json=body)
+
+
+@pytest.fixture
+def guild_members(monkeypatch):
+    """팀원에 붙이는 디스코드 계정이 모두 연결한 서버의 멤버라고 답하는 get_guild_member 스텁. 부른 (서버, 계정)을 모은다.
+
+    서버 멤버 확인 자체는 test_member_discord_guild_check.py 가 잰다.
+    """
+    from app.services import discord
+
+    seen: list[tuple[str, str]] = []
+
+    def fake(bot_token, guild_id, user_id, **kwargs):
+        seen.append((guild_id, user_id))
+        return {"nick": None, "user": {"id": user_id}}
+
+    monkeypatch.setenv("DISCORD_BOT_TOKEN", "bot-token")
+    monkeypatch.setattr(discord, "get_guild_member", fake)
+    return seen
+
+
 def _user(db, name: str) -> User:
-    user = User(email=f"{name}@example.com", name=name)
+    user = User(username=username_for(f"{name}@example.com"), email=f"{name}@example.com", name=name)
     db.add(user)
     db.flush()
     db.add(SessionModel(
@@ -67,7 +109,7 @@ def _user(db, name: str) -> User:
 @pytest.fixture
 def mseed(mdb):
     """워크스페이스 A: PM(pm), 계정과 디스코드가 있는 팀원 alice, 계정은 있고 디스코드가 없는 bob,
-    계정 없는 디스코드 팀원 carol. 태스크 셋. outsider 는 A에 속하지 않는다."""
+    계정 없는 디스코드 팀원 carol. 태스크 셋. outsider 는 A에 속하지 않는다. A 는 Discord 서버 g_seed 를 연결했다."""
     pm_user, alice_user, bob_user = _user(mdb, "pm"), _user(mdb, "alice"), _user(mdb, "bob")
     _user(mdb, "outsider")
     ws = Workspace(name="A")
@@ -80,6 +122,7 @@ def mseed(mdb):
     bob = Member(workspace_id=wid, user_id=bob_user.user_id, display_name="밥", role="member")
     carol = Member(workspace_id=wid, display_name="캐럴", role="member", discord_user_id="d_carol")
     mdb.add_all([pm, alice, bob, carol])
+    mdb.add(Integration(workspace_id=wid, provider="discord", provider_channel_id="g_seed"))
     tasks = [Task(workspace_id=wid, title=f"할일{i}", status="todo") for i in range(3)]
     mdb.add_all(tasks)
     mdb.commit()

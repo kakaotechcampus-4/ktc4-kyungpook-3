@@ -9,10 +9,17 @@ T = TypeVar("T")
 class ErrorCode(StrEnum):
     INVALID_REQUEST = "INVALID_REQUEST"
     MEETING_NOT_FOUND = "MEETING_NOT_FOUND"
+    MEETING_DELETED = "MEETING_DELETED"
+    MEETING_DELETE_BLOCKED = "MEETING_DELETE_BLOCKED"
+    MEETING_DELETION_UNAVAILABLE = "MEETING_DELETION_UNAVAILABLE"
+    MEETING_LINEAGE_UNVERIFIED = "MEETING_LINEAGE_UNVERIFIED"
+    MEETING_CLIENT_UPDATE_REQUIRED = "MEETING_CLIENT_UPDATE_REQUIRED"
+    PURGE_CLAIM_EXPIRED = "PURGE_CLAIM_EXPIRED"
     MEETING_ALREADY_ENDED = "MEETING_ALREADY_ENDED"
     MEETING_NOT_PROCESSING = "MEETING_NOT_PROCESSING"
     MEETING_FAILED = "MEETING_FAILED"
     AUDIO_UPLOAD_FAILED = "AUDIO_UPLOAD_FAILED"
+    AUDIO_NOT_AVAILABLE = "AUDIO_NOT_AVAILABLE"
     AUDIO_FORMAT_UNSUPPORTED = "AUDIO_FORMAT_UNSUPPORTED"
     TRANSCRIPTION_FAILED = "TRANSCRIPTION_FAILED"
     EXTRACTION_FAILED = "EXTRACTION_FAILED"
@@ -22,8 +29,11 @@ class ErrorCode(StrEnum):
     APPROVAL_NOT_FOUND = "APPROVAL_NOT_FOUND"
     APPROVAL_ALREADY_RESOLVED = "APPROVAL_ALREADY_RESOLVED"
     APPROVAL_CONFLICT = "APPROVAL_CONFLICT"
+    APPROVAL_CHANGED = "APPROVAL_CHANGED"
     NOTION_WRITE_FAILED = "NOTION_WRITE_FAILED"
     WORKSPACE_NOT_FOUND = "WORKSPACE_NOT_FOUND"
+    PRIVACY_VERSION_CHANGED = "PRIVACY_VERSION_CHANGED"
+    WITHDRAWAL_ACCOUNT_CHANGED = "WITHDRAWAL_ACCOUNT_CHANGED"
     WORKSPACE_MISMATCH = "WORKSPACE_MISMATCH"
     MEMBER_NOT_FOUND = "MEMBER_NOT_FOUND"
     MEMBER_ALIAS_NOT_FOUND = "MEMBER_ALIAS_NOT_FOUND"
@@ -44,6 +54,8 @@ class ErrorCode(StrEnum):
     MEETING_PROCESSING_IN_PROGRESS = "MEETING_PROCESSING_IN_PROGRESS"
     AUDIO_TOO_LARGE = "AUDIO_TOO_LARGE"
     DISCORD_USER_ALREADY_MAPPED = "DISCORD_USER_ALREADY_MAPPED"
+    DISCORD_USER_NOT_IN_GUILD = "DISCORD_USER_NOT_IN_GUILD"
+    MEMBER_NAME_DUPLICATED = "MEMBER_NAME_DUPLICATED"
     LAST_PM_REQUIRED = "LAST_PM_REQUIRED"
     EMBEDDING_UNAVAILABLE = "EMBEDDING_UNAVAILABLE"
     DISCORD_API_FAILED = "DISCORD_API_FAILED"
@@ -69,11 +81,12 @@ class ErrorCode(StrEnum):
 
     # 팀원 초대
     INVITATION_NOT_FOUND = "INVITATION_NOT_FOUND"
+    USER_NOT_FOUND = "USER_NOT_FOUND"
     INVITATION_NOT_PENDING = "INVITATION_NOT_PENDING"
     INVITATION_NOT_ACCEPTED = "INVITATION_NOT_ACCEPTED"
     MEMBER_ALREADY_LINKED = "MEMBER_ALREADY_LINKED"
     ALREADY_WORKSPACE_MEMBER = "ALREADY_WORKSPACE_MEMBER"
-    EMAIL_ALREADY_INVITED = "EMAIL_ALREADY_INVITED"
+    USER_ALREADY_INVITED = "USER_ALREADY_INVITED"
     PM_MEMBER_NOT_INVITABLE = "PM_MEMBER_NOT_INVITABLE"
     MEMBER_HAS_PENDING_INVITATION = "MEMBER_HAS_PENDING_INVITATION"
 
@@ -85,18 +98,43 @@ class ErrorCode(StrEnum):
     # 비밀번호 재설정
     PASSWORD_RESET_TOKEN_INVALID = "PASSWORD_RESET_TOKEN_INVALID"
     MAIL_UNAVAILABLE = "MAIL_UNAVAILABLE"
+    DATABASE_UNAVAILABLE = "DATABASE_UNAVAILABLE"
+    # 회의 요약·프로젝트 맵
+    TOPIC_NOT_FOUND = "TOPIC_NOT_FOUND"
+    SUMMARY_NOT_FOUND = "SUMMARY_NOT_FOUND"
+    TRANSCRIPT_LINE_NOT_FOUND = "TRANSCRIPT_LINE_NOT_FOUND"
+    TOPIC_NAME_TAKEN = "TOPIC_NAME_TAKEN"
+    DECISION_NOT_FOUND = "DECISION_NOT_FOUND"
 
+    # 가입 이메일 인증·카카오 로그인
+    SIGNUP_CODE_RATE_LIMITED = "SIGNUP_CODE_RATE_LIMITED"
+    SIGNUP_CODE_INVALID = "SIGNUP_CODE_INVALID"
+    SIGNUP_VERIFICATION_INVALID = "SIGNUP_VERIFICATION_INVALID"
+    KAKAO_LINK_EXPIRED = "KAKAO_LINK_EXPIRED"
+    KAKAO_ALREADY_LINKED = "KAKAO_ALREADY_LINKED"
+    USERNAME_TAKEN = "USERNAME_TAKEN"
     # 로그인 시도 제한
     TOO_MANY_LOGIN_ATTEMPTS = "TOO_MANY_LOGIN_ATTEMPTS"
+
+    # 약관·개인정보처리방침 동의
+    CONSENT_VERSION_MISMATCH = "CONSENT_VERSION_MISMATCH"
+    CONSENT_ACCOUNT_CHANGED = "CONSENT_ACCOUNT_CHANGED"
 
 
 ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.INVALID_REQUEST: 400,
     ErrorCode.MEETING_NOT_FOUND: 404,
+    ErrorCode.MEETING_DELETED: 410,
+    ErrorCode.MEETING_DELETION_UNAVAILABLE: 503,
+    ErrorCode.MEETING_LINEAGE_UNVERIFIED: 409,
+    ErrorCode.MEETING_CLIENT_UPDATE_REQUIRED: 409,
+    ErrorCode.MEETING_DELETE_BLOCKED: 409,
+    ErrorCode.PURGE_CLAIM_EXPIRED: 409,
     ErrorCode.MEETING_ALREADY_ENDED: 409,
     ErrorCode.MEETING_NOT_PROCESSING: 409,
     ErrorCode.MEETING_FAILED: 409,
     ErrorCode.AUDIO_UPLOAD_FAILED: 422,
+    ErrorCode.AUDIO_NOT_AVAILABLE: 404,
     ErrorCode.AUDIO_FORMAT_UNSUPPORTED: 422,
     ErrorCode.TRANSCRIPTION_FAILED: 502,
     ErrorCode.EXTRACTION_FAILED: 502,
@@ -106,8 +144,11 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.APPROVAL_NOT_FOUND: 404,
     ErrorCode.APPROVAL_ALREADY_RESOLVED: 409,
     ErrorCode.APPROVAL_CONFLICT: 409,
+    ErrorCode.APPROVAL_CHANGED: 409,
     ErrorCode.NOTION_WRITE_FAILED: 502,
     ErrorCode.WORKSPACE_NOT_FOUND: 404,
+    ErrorCode.PRIVACY_VERSION_CHANGED: 409,
+    ErrorCode.WITHDRAWAL_ACCOUNT_CHANGED: 409,
     ErrorCode.WORKSPACE_MISMATCH: 400,
     ErrorCode.MEMBER_NOT_FOUND: 404,
     ErrorCode.MEMBER_ALIAS_NOT_FOUND: 404,
@@ -126,6 +167,8 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.MEETING_PROCESSING_IN_PROGRESS: 409,
     ErrorCode.AUDIO_TOO_LARGE: 413,
     ErrorCode.DISCORD_USER_ALREADY_MAPPED: 409,
+    ErrorCode.DISCORD_USER_NOT_IN_GUILD: 409,
+    ErrorCode.MEMBER_NAME_DUPLICATED: 409,
     ErrorCode.LAST_PM_REQUIRED: 409,
     ErrorCode.EMBEDDING_UNAVAILABLE: 502,
     ErrorCode.DISCORD_API_FAILED: 502,
@@ -147,11 +190,12 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.NOTIFICATION_NOT_FOUND: 404,
     ErrorCode.AUTO_BLOCK_NOT_FOUND: 409,
     ErrorCode.INVITATION_NOT_FOUND: 404,
+    ErrorCode.USER_NOT_FOUND: 404,
     ErrorCode.INVITATION_NOT_PENDING: 409,
     ErrorCode.INVITATION_NOT_ACCEPTED: 409,
     ErrorCode.MEMBER_ALREADY_LINKED: 409,
     ErrorCode.ALREADY_WORKSPACE_MEMBER: 409,
-    ErrorCode.EMAIL_ALREADY_INVITED: 409,
+    ErrorCode.USER_ALREADY_INVITED: 409,
     ErrorCode.PM_MEMBER_NOT_INVITABLE: 409,
     ErrorCode.MEMBER_HAS_PENDING_INVITATION: 409,
     ErrorCode.REPLY_JUDGMENT_NOT_FOUND: 404,
@@ -160,16 +204,37 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.REPLY_CHANGE_NOT_UNDOABLE: 409,
     ErrorCode.PASSWORD_RESET_TOKEN_INVALID: 400,
     ErrorCode.MAIL_UNAVAILABLE: 503,
+    ErrorCode.DATABASE_UNAVAILABLE: 503,
+    ErrorCode.TOPIC_NOT_FOUND: 404,
+    ErrorCode.SUMMARY_NOT_FOUND: 404,
+    ErrorCode.TRANSCRIPT_LINE_NOT_FOUND: 404,
+    ErrorCode.TOPIC_NAME_TAKEN: 409,
+    ErrorCode.DECISION_NOT_FOUND: 404,
+    ErrorCode.SIGNUP_CODE_RATE_LIMITED: 429,
+    ErrorCode.SIGNUP_CODE_INVALID: 400,
+    ErrorCode.SIGNUP_VERIFICATION_INVALID: 400,
+    ErrorCode.KAKAO_LINK_EXPIRED: 400,
+    ErrorCode.KAKAO_ALREADY_LINKED: 409,
+    ErrorCode.USERNAME_TAKEN: 409,
     ErrorCode.TOO_MANY_LOGIN_ATTEMPTS: 429,
+    ErrorCode.CONSENT_VERSION_MISMATCH: 400,
+    ErrorCode.CONSENT_ACCOUNT_CHANGED: 409,
 }
 
 ERROR_MESSAGE: dict[ErrorCode, str] = {
+    ErrorCode.MEETING_DELETED: "삭제된 회의입니다.",
+    ErrorCode.MEETING_DELETION_UNAVAILABLE: "회의 삭제 기능을 준비하고 있습니다.",
+    ErrorCode.MEETING_LINEAGE_UNVERIFIED: "회의 재처리 기록을 확인한 뒤 삭제할 수 있습니다.",
+    ErrorCode.MEETING_CLIENT_UPDATE_REQUIRED: "녹음 봇을 최신 버전으로 업데이트해 주세요.",
+    ErrorCode.MEETING_DELETE_BLOCKED: "처리 중인 회의는 삭제할 수 없습니다.",
+    ErrorCode.PURGE_CLAIM_EXPIRED: "파일 정리 작업의 처리 권한이 만료되었습니다.",
     ErrorCode.INVALID_REQUEST: "요청 형식이 올바르지 않습니다.",
     ErrorCode.MEETING_NOT_FOUND: "해당 회의 세션을 찾을 수 없습니다.",
     ErrorCode.MEETING_ALREADY_ENDED: "이미 종료된 회의 세션입니다.",
     ErrorCode.MEETING_NOT_PROCESSING: "회의가 분석 중(PROCESSING) 상태가 아닙니다.",
     ErrorCode.MEETING_FAILED: "실패 처리된 회의입니다. 새 회의로 다시 시작해 주세요.",
     ErrorCode.AUDIO_UPLOAD_FAILED: "오디오 저장·병합에 실패했습니다.",
+    ErrorCode.AUDIO_NOT_AVAILABLE: "들을 수 있는 녹음이 없습니다.",
     ErrorCode.AUDIO_FORMAT_UNSUPPORTED: "지원하지 않는 오디오 형식입니다.",
     ErrorCode.TRANSCRIPTION_FAILED: "음성 전사에 실패했습니다.",
     ErrorCode.EXTRACTION_FAILED: "회의 분석에 실패했습니다.",
@@ -179,6 +244,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.APPROVAL_NOT_FOUND: "해당 승인 요청을 찾을 수 없습니다.",
     ErrorCode.APPROVAL_ALREADY_RESOLVED: "이미 처리된 승인 요청입니다.",
     ErrorCode.APPROVAL_CONFLICT: "제안 이후 task가 바뀌었습니다. 지금 값을 확인한 뒤 다시 승인해 주세요.",
+    ErrorCode.APPROVAL_CHANGED: "보신 뒤 승인 요청 내용이 바뀌었습니다. 새 내용을 확인한 뒤 다시 처리해 주세요.",
     ErrorCode.NOTION_WRITE_FAILED: "Notion 반영에 실패했습니다.",
     ErrorCode.WORKSPACE_NOT_FOUND: "해당 워크스페이스를 찾을 수 없습니다.",
     ErrorCode.WORKSPACE_MISMATCH: "요청한 워크스페이스가 대상 리소스의 워크스페이스와 다릅니다.",
@@ -199,6 +265,8 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.MEETING_PROCESSING_IN_PROGRESS: "이미 처리 중인 회의가 있습니다.",
     ErrorCode.AUDIO_TOO_LARGE: "오디오 파일 용량이 너무 큽니다.",
     ErrorCode.DISCORD_USER_ALREADY_MAPPED: "이미 다른 팀원에 연결된 Discord 사용자입니다.",
+    ErrorCode.DISCORD_USER_NOT_IN_GUILD: "연결한 Discord 서버에 없는 사용자입니다. 서버에 들어온 계정만 팀원에 연결할 수 있습니다.",
+    ErrorCode.MEMBER_NAME_DUPLICATED: "같은 이름의 팀원이 이미 있습니다.",
     ErrorCode.LAST_PM_REQUIRED: "워크스페이스에 PM이 한 명은 있어야 합니다. 다른 팀원을 먼저 PM으로 지정해 주세요.",
     ErrorCode.EMBEDDING_UNAVAILABLE: "임베딩 서버 호출에 실패했습니다. 잠시 후 다시 시도해 주세요.",
     ErrorCode.DISCORD_API_FAILED: "Discord 요청에 실패했습니다. 잠시 후 다시 시도해 주세요.",
@@ -220,11 +288,12 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.NOTIFICATION_NOT_FOUND: "알림을 찾을 수 없습니다.",
     ErrorCode.AUTO_BLOCK_NOT_FOUND: "스케줄러가 건 막힘이 아니거나 그 뒤 바뀌어 되돌릴 수 없습니다.",
     ErrorCode.INVITATION_NOT_FOUND: "해당 초대를 찾을 수 없습니다.",
+    ErrorCode.USER_NOT_FOUND: "해당 사용자를 찾을 수 없습니다.",
     ErrorCode.INVITATION_NOT_PENDING: "이미 수락·거절·취소된 초대입니다.",
     ErrorCode.INVITATION_NOT_ACCEPTED: "수락한 초대만 연결을 끊을 수 있습니다.",
     ErrorCode.MEMBER_ALREADY_LINKED: "이미 로그인 계정이 연결된 팀원입니다.",
     ErrorCode.ALREADY_WORKSPACE_MEMBER: "이미 이 워크스페이스의 팀원인 계정입니다.",
-    ErrorCode.EMAIL_ALREADY_INVITED: "이 이메일로 다른 팀원에게 보낸 초대가 대기 중입니다.",
+    ErrorCode.USER_ALREADY_INVITED: "이 사용자에게 다른 팀원으로 보낸 초대가 대기 중입니다.",
     ErrorCode.PM_MEMBER_NOT_INVITABLE: "PM 인 팀원은 초대할 수 없습니다. 팀원으로 바꿔 초대하고, 수락한 뒤 PM 으로 바꿔 주세요.",
     ErrorCode.MEMBER_HAS_PENDING_INVITATION: "대기 중인 초대가 있어 PM 으로 바꿀 수 없습니다. 초대를 수락한 뒤 바꾸거나 초대를 취소해 주세요.",
     ErrorCode.REPLY_JUDGMENT_NOT_FOUND: "해당 답장의 판단 기록을 찾을 수 없습니다.",
@@ -233,7 +302,21 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.REPLY_CHANGE_NOT_UNDOABLE: "되돌릴 수 없는 답장 변경입니다.",
     ErrorCode.PASSWORD_RESET_TOKEN_INVALID: "쓸 수 없는 재설정 링크입니다.",
     ErrorCode.MAIL_UNAVAILABLE: "지금은 메일을 보낼 수 없습니다.",
+    ErrorCode.DATABASE_UNAVAILABLE: "데이터베이스에 연결할 수 없습니다.",
+    ErrorCode.TOPIC_NOT_FOUND: "해당 주제를 찾을 수 없습니다.",
+    ErrorCode.SUMMARY_NOT_FOUND: "이 회의의 요약본이 아직 없습니다.",
+    ErrorCode.TRANSCRIPT_LINE_NOT_FOUND: "해당 발화를 찾을 수 없습니다.",
+    ErrorCode.TOPIC_NAME_TAKEN: "같은 이름의 주제가 이미 있습니다.",
+    ErrorCode.DECISION_NOT_FOUND: "해당 결정을 찾을 수 없습니다.",
+    ErrorCode.SIGNUP_CODE_RATE_LIMITED: "인증 코드를 너무 자주 요청했습니다. 잠시 후 다시 시도해 주세요.",
+    ErrorCode.SIGNUP_CODE_INVALID: "인증 코드가 맞지 않습니다.",
+    ErrorCode.SIGNUP_VERIFICATION_INVALID: "이메일 인증이 필요합니다. 인증을 다시 진행해 주세요.",
+    ErrorCode.KAKAO_LINK_EXPIRED: "카카오 로그인 정보가 만료됐습니다. 카카오로 다시 시작해 주세요.",
+    ErrorCode.KAKAO_ALREADY_LINKED: "이미 다른 계정에 연결된 카카오 계정입니다.",
+    ErrorCode.USERNAME_TAKEN: "이미 사용 중인 아이디입니다.",
     ErrorCode.TOO_MANY_LOGIN_ATTEMPTS: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+    ErrorCode.CONSENT_VERSION_MISMATCH: "지금 문서 버전이 아닙니다. 문서를 다시 확인해 주세요.",
+    ErrorCode.CONSENT_ACCOUNT_CHANGED: "로그인한 계정이 바뀌었습니다. 계정을 다시 확인해 주세요.",
 }
 
 

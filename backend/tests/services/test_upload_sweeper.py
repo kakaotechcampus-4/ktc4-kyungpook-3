@@ -8,13 +8,21 @@ import threading
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import create_engine, text, update
+from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
-from app.models import Meeting, MeetingUpload, Source, Workspace
-from app.services import meeting_failure, upload_storage, upload_sweeper
+from app.models import Meeting, MeetingAudio, MeetingPurge, MeetingUpload, Member, PrivacyCleanup, Source, User, Workspace
+from app.services import (
+    account_withdrawal,
+    meeting_audio,
+    meeting_deletion,
+    meeting_failure,
+    upload_storage,
+    upload_sweeper,
+)
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 NOW = datetime(2026, 11, 3, 12, 0, tzinfo=timezone.utc)
@@ -115,15 +123,207 @@ def test_recent_claim_is_left_alone(db, ws):
     assert _folder(meeting).exists()
 
 
-def test_unclaimed_upload_is_never_swept(db, ws):
+@pytest.mark.parametrize(
+    ("uploaded_ago", "failed"),
+    [(23 * HOUR, False), (24 * HOUR, False), (25 * HOUR, True)],
+    ids=["unclaimed-23h", "unclaimed-24h", "unclaimed-25h"],
+)
+def test_unclaimed_upload_fails_after_a_day(db, ws, uploaded_ago, failed):
+    """AI 가 가져가지 않은 업로드는 업로드 24시간이 지나면 정리한다(#563). 정확히 24시간은 남긴다."""
     meeting = _upload(db, ws, claimed_at=None)
-    db.execute(update(MeetingUpload).values(uploaded_at=NOW - 10 * DAY))
+    db.execute(update(MeetingUpload).values(uploaded_at=NOW - uploaded_ago))
     db.commit()
+
+    result = upload_sweeper.sweep_stalled_uploads(db, now=NOW)
+
+    assert result == ([(meeting.meeting_id, "upload_unclaimed")] if failed else [])
+    assert _state(db, meeting) == (("failed", "upload_unclaimed") if failed else ("processing", None))
+    assert _folder(meeting).exists() is not failed
+
+
+def test_unclaimed_rule_skips_claimed_and_other_states(db, ws):
+    """24시간 규칙은 가져가지 않은 processing 업로드에만 건다. 가져간 업로드는 3시간 규칙만 본다."""
+    old = NOW - 2 * DAY
+    claimed = _upload(db, ws, claimed_at=NOW - HOUR)
+    waiting = _upload(db, ws, status="awaiting_speakers", claimed_at=None)
+    discord = _upload(db, ws, source="discord", claimed_at=None)
+    db.execute(update(MeetingUpload).values(uploaded_at=old))
+    db.commit()
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == []
+
+    assert _state(db, claimed) == ("processing", None)
+    assert _state(db, waiting) == ("awaiting_speakers", None)
+    assert _state(db, discord) == ("processing", None)
+
+
+def test_claim_after_candidate_selection_is_not_overridden(db, ws, monkeypatch):
+    """후보를 고른 뒤 AI 가 먼저 가져가면, 같은 조건을 다시 건 UPDATE 가 지고 회의는 처리 중으로 남는다."""
+    meeting = _upload(db, ws, claimed_at=None)
+    db.execute(update(MeetingUpload).values(uploaded_at=NOW - 2 * DAY))
+    db.commit()
+    real = meeting_failure.fail_meeting_if
+
+    def claimed_first(db_, meeting_id, failed_stage, *extra_where, now=None):
+        db_.execute(update(MeetingUpload).where(MeetingUpload.meeting_id == meeting_id).values(claimed_at=NOW))
+        db_.commit()
+        return real(db_, meeting_id, failed_stage, *extra_where, now=now)
+
+    monkeypatch.setattr(meeting_failure, "fail_meeting_if", claimed_first)
 
     assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == []
 
     assert _state(db, meeting) == ("processing", None)
     assert _folder(meeting).exists()
+
+
+def test_failed_upload_file_removal_is_retried_on_the_next_sweep(db, ws, monkeypatch):
+    meeting = _upload(db, ws, uploaded_at=NOW - 25 * HOUR)
+    real = upload_storage.shutil.rmtree
+    attempts = []
+
+    def unavailable_once(path):
+        attempts.append(path)
+        if len(attempts) == 1:
+            raise PermissionError("temporary file lock")
+        return real(path)
+
+    monkeypatch.setattr(upload_storage.shutil, "rmtree", unavailable_once)
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == [(meeting.meeting_id, "upload_unclaimed")]
+    assert _state(db, meeting) == ("failed", "upload_unclaimed")
+    assert _folder(meeting).exists()
+    assert len(attempts) == 1
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW + HOUR) == []
+    assert not _folder(meeting).exists()
+    assert len(attempts) == 2
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW + 2 * HOUR) == []
+    assert _state(db, meeting) == ("failed", "upload_unclaimed")
+
+
+def test_previously_failed_upload_file_is_cleaned_after_restart(db, ws):
+    meeting = _upload(db, ws, status="failed")
+    unrelated = _upload(db, ws, status="failed", source="discord")
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == []
+
+    assert not _folder(meeting).exists()
+    assert _folder(unrelated).exists()
+    assert _state(db, meeting) == ("failed", None)
+
+
+def test_failed_upload_file_retry_runs_without_holding_a_transaction(db, ws, monkeypatch):
+    """옛 failed 업로드 파일을 다시 지울 때 공간·회의 잠금(트랜잭션)을 쥐지 않는다(S3 I/O 를 잠금 밖에서)."""
+    meeting = _upload(db, ws, status="failed")
+    real_remove = upload_storage.remove_audio
+    in_transaction = []
+
+    def remove(meeting_id):
+        in_transaction.append(db.in_transaction())
+        real_remove(meeting_id)
+
+    monkeypatch.setattr(upload_storage, "remove_audio", remove)
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == []
+
+    assert in_transaction == [False]
+    assert not _folder(meeting).exists()
+
+
+def test_failed_upload_with_audio_record_is_left_to_the_audio_sweep(db, ws, monkeypatch):
+    """보관 기록(meeting_audio)이 있는 failed 업로드는 녹음 만료 정리가 지운다. 실패 파일 재시도는 건드리지 않는다."""
+    meeting = _upload(db, ws, status="failed")
+    meeting_audio.record(db, meeting.meeting_id, "audio.ogg", "audio/ogg", 4, NOW - HOUR)
+    db.commit()
+    removed = []
+    real_remove = upload_storage.remove_audio
+
+    def remove(meeting_id):
+        removed.append(meeting_id)
+        real_remove(meeting_id)
+
+    monkeypatch.setattr(upload_storage, "remove_audio", remove)
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == []
+    assert removed == []
+    assert _folder(meeting).exists()
+
+    assert meeting_audio.sweep_expired_audio(db, NOW) == [meeting.meeting_id]
+    assert removed == [meeting.meeting_id]
+    assert not _folder(meeting).exists()
+    db.expire_all()
+    assert db.get(MeetingAudio, meeting.meeting_id).deleted_at is not None
+
+
+def test_deleted_meeting_file_retry_is_owned_by_meeting_purge(db, ws, monkeypatch):
+    monkeypatch.setenv("MEETING_DELETION_ENABLED", "true")
+    meeting = _upload(db, ws, status="failed")
+    meeting.deletion_ready = True
+    db.commit()
+    real = upload_storage.shutil.rmtree
+    unavailable, attempts = True, []
+
+    def remove(path):
+        attempts.append(path)
+        if unavailable:
+            raise PermissionError("temporary file lock")
+        return real(path)
+
+    monkeypatch.setattr(upload_storage.shutil, "rmtree", remove)
+    receipt = meeting_deletion.delete_meeting(db, meeting.meeting_id)
+    purge = db.get(MeetingPurge, meeting.meeting_id)
+    assert receipt.cleanup_status == "pending"
+    assert purge.backend_done_at is None and purge.last_error_code == "BACKEND_STORAGE_DELETE_FAILED"
+    assert db.get(MeetingUpload, meeting.meeting_id) is None
+    assert _folder(meeting).exists()
+    count = len(attempts)
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == []
+    assert len(attempts) == count
+    assert _folder(meeting).exists()
+
+    unavailable = False
+    meeting_deletion.purge_backend_files(db, meeting_id=meeting.meeting_id)
+    assert not _folder(meeting).exists()
+    assert purge.backend_done_at is not None and purge.last_error_code is None
+    assert purge.ai_done_at is None
+
+
+def test_withdrawn_workspace_file_retry_is_owned_by_privacy_cleanup(db, ws, monkeypatch):
+    meeting = _upload(db, ws, status="failed")
+    user = User(username=username_for("sole-retention@example.com"), email="sole-retention@example.com", name="sole")
+    db.add(user)
+    db.flush()
+    db.add(Member(workspace_id=ws.workspace_id, user_id=user.user_id, display_name="sole", role="pm"))
+    db.commit()
+    real = upload_storage.shutil.rmtree
+    unavailable, attempts = True, []
+
+    def remove(path):
+        attempts.append(path)
+        if unavailable:
+            raise PermissionError("temporary file lock")
+        return real(path)
+
+    monkeypatch.setattr(upload_storage.shutil, "rmtree", remove)
+    account_withdrawal.withdraw(db, user.user_id, "owned-retention-withdrawal-proof")
+    cleanup = db.scalar(select(PrivacyCleanup).where(PrivacyCleanup.workspace_id == ws.workspace_id))
+    assert cleanup.backend_done_at is None and cleanup.last_error_code == "BACKEND_STORAGE_DELETE_FAILED"
+    assert db.get(Workspace, ws.workspace_id).deleted_at is not None
+    assert db.get(MeetingUpload, meeting.meeting_id) is None
+    assert _folder(meeting).exists()
+    count = len(attempts)
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == []
+    assert len(attempts) == count
+    assert _folder(meeting).exists()
+
+    unavailable = False
+    account_withdrawal.purge_backend(db)
+    assert not _folder(meeting).exists()
+    assert cleanup.backend_done_at is not None and cleanup.last_error_code is None
+    assert cleanup.ai_done_at is None
 
 
 def test_awaiting_speakers_expires_after_seven_days(db, ws):
@@ -250,7 +450,7 @@ def test_chat_meeting_is_swept_only_after_seven_hours(db, ws):
     assert _state(db, meeting) == ("failed", "chat_stalled")
 
 
-def test_discord_and_ended_meetings_are_untouched(db, ws):
+def test_unrelated_states_are_preserved_and_only_failed_upload_files_are_retried(db, ws):
     old = NOW - 20 * DAY
     discord = _upload(db, ws, source="discord", row=False)
     discord_with_row = _upload(db, ws, source="discord", claimed_at=old)
@@ -267,7 +467,8 @@ def test_discord_and_ended_meetings_are_untouched(db, ws):
     assert _state(db, rowless) == ("processing", None)
     assert _state(db, done) == ("done", None)
     assert _state(db, failed) == ("failed", "STT")
-    assert _folder(failed).exists() and _folder(done).exists()
+    assert not _folder(failed).exists()
+    assert _folder(done).exists()
 
 
 def test_second_sweep_returns_nothing_and_changes_nothing(db, ws):
@@ -353,8 +554,63 @@ def test_worker_keeps_running_after_a_sweep_raises(monkeypatch):
 
     monkeypatch.setattr(upload_sweeper, "SessionLocal", FakeSession)
     monkeypatch.setattr(upload_sweeper, "sweep_stalled_uploads", sweep)
+    # 녹음 만료 정리는 이 테스트의 대상이 아니다. 가짜 세션에서 진짜 정리가 돌지 않게 아무것도 하지 않게 둔다
+    monkeypatch.setattr(upload_sweeper.meeting_audio, "sweep_expired_audio", lambda db: [])
 
     upload_sweeper.run_worker(stop, 0)
 
     assert calls.count("sweep") == 2
     assert "rollback" in calls
+
+
+def _fake_worker_session(calls):
+    class FakeSession:
+        def rollback(self):
+            calls.append("rollback")
+
+        def close(self):
+            calls.append("close")
+
+    return FakeSession
+
+
+def test_worker_sweeps_expired_audio_even_if_stalled_sweep_raises(monkeypatch):
+    stop = threading.Event()
+    calls = []
+
+    def stalled(db):
+        calls.append("stalled")
+        raise RuntimeError("boom")
+
+    def audio(db):
+        calls.append("audio")
+        stop.set()
+        return []
+
+    monkeypatch.setattr(upload_sweeper, "SessionLocal", _fake_worker_session(calls))
+    monkeypatch.setattr(upload_sweeper, "sweep_stalled_uploads", stalled)
+    monkeypatch.setattr(upload_sweeper.meeting_audio, "sweep_expired_audio", audio)
+
+    upload_sweeper.run_worker(stop, 0)
+
+    assert calls.index("stalled") < calls.index("audio")
+
+
+def test_worker_keeps_running_after_audio_sweep_raises(monkeypatch):
+    stop = threading.Event()
+    calls = []
+
+    def audio(db):
+        calls.append("audio")
+        if calls.count("audio") == 1:
+            raise RuntimeError("boom")
+        stop.set()
+        return []
+
+    monkeypatch.setattr(upload_sweeper, "SessionLocal", _fake_worker_session(calls))
+    monkeypatch.setattr(upload_sweeper, "sweep_stalled_uploads", lambda db: [])
+    monkeypatch.setattr(upload_sweeper.meeting_audio, "sweep_expired_audio", audio)
+
+    upload_sweeper.run_worker(stop, 0)
+
+    assert calls.count("audio") == 2

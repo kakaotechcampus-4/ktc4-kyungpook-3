@@ -1,5 +1,7 @@
+import functools
 import json
 import logging
+import os
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends
@@ -8,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_member, require_pm, require_service_token
 from app.core.database import get_db
+from app.services.meeting_deletion import require_live_meeting
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import (
     ApprovalRequest,
@@ -57,7 +60,7 @@ from app.services.matching import (
     resolve_speaker,
     speaker_match,
 )
-from app.services import upload_storage
+from app.services import summary
 from app.services.alias_learning import (
     card_assignee_item,
     learnable_alias_texts,
@@ -68,6 +71,33 @@ from app.services.pending_merge import NOT_FOUND, merge_into_pending, merge_targ
 from app.services.tasks import create_task, delete_task
 
 logger = logging.getLogger(__name__)
+
+
+_AUTO_CREATE_ON = {"", "true", "1", "on", "yes"}
+_AUTO_CREATE_OFF = {"false", "0", "off", "no"}
+
+
+@functools.lru_cache(maxsize=32)
+def _warn_unknown_auto_create(value: str) -> None:
+    logger.warning("AUTO_CREATE_ENABLED=%r 를 알아보지 못해 자동 생성을 끈 것으로 봅니다(켜려면 true).", value)
+
+
+def auto_create_enabled() -> bool:
+    """새 항목을 PM 확인 없이 태스크로 만들어도 되는지(환경변수 AUTO_CREATE_ENABLED, 기본 켜짐).
+
+    true·1·on·yes·빈 값·없음이면 켜짐, false·0·off·no 면 auto 로 정해진 새 항목을 review 로 내린다. legacy·judge
+    모두 해당하고 hold 는 그대로다. 안전장치라 모르는 값(오타 "flase", "disabled" 등)은 꺼짐으로 보고 값마다 한 번
+    경고한다(#526 리뷰). 요청마다 읽지만 운영 컨테이너는 env_file 을 만들 때만 읽으므로 값을 바꾸면
+    `docker compose -f docker-compose.prod.yml up -d` 로 컨테이너를 다시 만든다(restart 로는 반영되지 않는다).
+    검증 실행은 AI 쪽 JEV_API_KEY 가 따로 정한다.
+    """
+    value = os.getenv("AUTO_CREATE_ENABLED", "true").strip().lower()
+    if value in _AUTO_CREATE_ON:
+        return True
+    if value not in _AUTO_CREATE_OFF:
+        _warn_unknown_auto_create(value)
+    return False
+
 
 router = APIRouter(prefix="/extractions", tags=["extractions"])
 
@@ -95,11 +125,7 @@ def create_extraction(
     db: Session = Depends(get_db),
 ) -> dict:
     """AI 분석 결과를 저장한다. 담당자 매칭·게이트 판정이 함께 수행된다."""
-    meeting = db.get(Meeting, payload.meeting_id)
-    if meeting is None:
-        raise AppError(
-            ErrorCode.MEETING_NOT_FOUND, details={"meeting_id": payload.meeting_id}
-        )
+    meeting = require_live_meeting(db, payload.meeting_id, lock=True)
     if meeting.workspace_id != payload.workspace_id:
         raise AppError(
             ErrorCode.WORKSPACE_MISMATCH,
@@ -125,7 +151,7 @@ def create_extraction(
     if result.rowcount == 0:
         # 선점 실패 — 이미 다른 요청이 처리했거나, processing 상태가 아님
         db.rollback()
-        meeting = db.get(Meeting, payload.meeting_id)
+        meeting = require_live_meeting(db, payload.meeting_id, lock=True)
         if meeting.status == str(MeetingStatus.DONE):
             # 멱등성: 이미 만들어진 Extraction을 돌려준다
             existing = _find_existing_extraction(db, payload.meeting_id)
@@ -264,6 +290,7 @@ def create_extraction(
             due_raw=raw_item.due_raw,
             due_confidence=raw_item.due_confidence,
         )
+        auto_held = False  # 자동 생성 스위치로 auto 를 review 로 내렸는지(아래 로그용)
         if target is not None:
             # 기존 task 수정은 유사도·LLM 판단이 틀릴 수 있어 신뢰도와 무관하게 항상 PM 승인을 거친다.
             gate = Gate.REVIEW
@@ -286,6 +313,8 @@ def create_extraction(
                         similar_count=raw_item.similar_count,
                         unsearched_tasks_exist=unsearched_tasks,
                         unsearched_pending_exist=bool(unsearched_pending),
+                        asr_suspect_count=sum(1 for s in raw_item.asr_suspects or [] if s.source != "check_failed"),
+                        asr_check_failed=any(s.source == "check_failed" for s in raw_item.asr_suspects or []),
                     ),
                     assignee_type=raw_item.assignee_type,
                     assignee=match if mentioned else None,
@@ -300,8 +329,8 @@ def create_extraction(
                 blockers=blockers,
             )
             if raw_item.assignee_type == "thirdrole" and gate == Gate.AUTO:
-                # 역할 지목은 AI가 역할 원문 대신 문맥으로 추측한 이름을 assignee_raw로 보낼 수 있다. 그 이름이 별칭에
-                # 걸려 legacy 확신도가 높아져도 추측이라 PM이 본다(#459).
+                # 역할은 맡은 사람이 바뀔 수 있다. 역할 원문("BE 리더")이 별칭에 걸려 legacy 확신도가 높아져도
+                # PM이 본다(#459). update 카드나 이 변경 전의 옛 카드는 추측한 이름일 수도 있다.
                 # 판단 경로(judge)는 auto_blockers가 이미 막으므로 사실상 legacy에 걸리지만, 경로와 무관하게 막는다.
                 # 채팅 강등보다 먼저 둔다. 아래 로그가 "채팅이 아니었으면 auto였을 항목"만 세게 하려는 것이다
                 gate = Gate.REVIEW
@@ -322,6 +351,11 @@ def create_extraction(
                     "chat 회의라 auto 항목을 review로 내립니다. meeting_id=%s title=%s",
                     meeting.meeting_id, raw_item.task_title,
                 )
+            if gate == Gate.AUTO and not auto_create_enabled():
+                # 자동 생성 스위치(#382 멘토 리뷰). 검증(AI 의 Jev)은 그대로 돌고 근거 상태도 저장하되, 태스크는 PM 확인
+                # 뒤에만 만든다. 아래 로그가 "켰으면 auto 였을 항목"이라, 승인·수정·반려 결과와 맞춰 보고 단계적으로 연다
+                gate = Gate.REVIEW
+                auto_held = True
             if blockers:
                 # auto 조건과 유사도 기준을 조정할 때 어떤 조건에서 많이 걸리는지 본다
                 logger.info(
@@ -354,6 +388,14 @@ def create_extraction(
         )
         db.add(item)
         db.flush()  # item_id 확보 (approval/task 연결에 필요)
+        if auto_held:
+            # 항목 단위로 PM 결과와 맞출 수 있게 추출·항목 ID 를 남긴다(#526 리뷰)
+            logger.info(
+                "자동 생성이 꺼져 있어 auto 항목을 review로 내립니다. meeting_id=%s extraction_id=%s item_id=%s "
+                "path=%s title=%s",
+                meeting.meeting_id, extraction.extraction_id, item.item_id, raw_item.extraction_path(),
+                raw_item.task_title,
+            )
         saved_count += 1
         _add_item_evidence(db, meeting.meeting_id, item, raw_item.evidence_seqs, sources_by_seq)
 
@@ -417,6 +459,9 @@ def create_extraction(
                 "meeting_id": meeting.meeting_id,
                 "gate": str(gate),
                 "doc_text": raw_item.doc_text,
+                # 확인 카드가 "'애포'는 '배포'일 수 있어요"를 보여 줄 수 있게 싣는다(FE 표시는 후속)
+                # [] (검사했고 없음)와 None (옛 AI) 을 구별해 받은 그대로 싣는다(계약)
+                "asr_suspects": None if raw_item.asr_suspects is None else [s.model_dump() for s in raw_item.asr_suspects],
                 "category": raw_item.category,
             }
             if raw_item.status:
@@ -432,11 +477,10 @@ def create_extraction(
             db.flush()
             item.approval_id = approval.approval_id
 
+    summary.mark_requested(db, meeting, extraction)
     db.commit()
     db.refresh(extraction)
-    # 결과를 저장했으니 업로드 녹음은 더 필요 없다(처리 중에만 보관). 커밋이 성공한 뒤에 지운다
-    if meeting.source == MeetingSource.MANUAL_UPLOAD:
-        upload_storage.remove_upload(meeting.meeting_id)
+    # 업로드 녹음은 처리가 끝나도 남긴다. 원문 듣기용이라 보관 기간(meeting_audio)이 지나면 정리한다
 
     return success(
         ExtractionCreateResponse(
@@ -680,6 +724,10 @@ def _request_task_update(
     base_values: dict[str, object] = {}
     if raw_item.due_date is not None and raw_item.due_date != target.due_date:
         changes["due_date"] = raw_item.due_date.isoformat()
+        base_values["due_date"] = base("due_date", target.due_date)
+    elif raw_item.due_cleared and raw_item.due_date is None and target.due_date is not None:
+        # 마감을 없애는 변경안. 승인하면 null 이 그대로 반영된다(#624)
+        changes["due_date"] = None
         base_values["due_date"] = base("due_date", target.due_date)
     if raw_item.status is not None and str(raw_item.status) != target.status:
         changes["status"] = str(raw_item.status)

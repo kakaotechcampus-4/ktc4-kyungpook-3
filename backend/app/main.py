@@ -11,9 +11,13 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import approvals, bot_lookups, bot_messages, extractions, invitations, messages, meetings, members, similar_tasks, sources, tasks, uploads, workspaces, auth, integrations
-from app.api import message_settings, notifications
-from app.services import scheduler
+from app.api import bot_summaries, consents, message_settings, message_socket, notifications, project_map
+from app.services import scheduler, meeting_deletion
+from app.api import meeting_purges
+from app.api import health, users, withdrawal
 from app.core.errors import AppError, Envelope, ErrorCode, failure, success
+from app.core.request_gate import RequestGateMiddleware
+from app.core.upload_limit import UploadBodyLimitMiddleware
 from app.services import embedding, notion_sync, sessions, upload_sweeper
 
 logger = logging.getLogger(__name__)
@@ -46,6 +50,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         workers.append(upload_sweeper.start_worker(UPLOAD_SWEEP_INTERVAL_SECONDS))
     if SESSION_SWEEP_INTERVAL_SECONDS > 0:
         workers.append(sessions.start_worker(SESSION_SWEEP_INTERVAL_SECONDS))
+    purge_interval = float(os.getenv("MEETING_PURGE_INTERVAL_SECONDS", "10"))
+    if purge_interval > 0:
+        workers.append(meeting_deletion.start_worker(purge_interval))
     try:
         yield
     finally:
@@ -61,8 +68,13 @@ app = FastAPI(
     description="회의 → 추출 → 매칭 → 게이트 파이프라인 백엔드",
     lifespan=lifespan,
 )
+# 녹음 업로드 본문은 인증·핸들러 전에 받으면서 크기를 잰다
+app.add_middleware(UploadBodyLimitMiddleware)
+# 동시 처리 요청을 DB 연결 풀보다 적게 들여보낸다(#701). 맨 바깥에 둬 기다리는 요청이 아무것도 잡지 않게 한다
+app.add_middleware(RequestGateMiddleware)
 
 API_PREFIX = "/api/v1"
+app.include_router(health.router, prefix=API_PREFIX)
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(workspaces.router, prefix=API_PREFIX)
 app.include_router(members.router, prefix=API_PREFIX)
@@ -79,11 +91,19 @@ app.include_router(integrations.bot_chat_router, prefix=API_PREFIX)
 app.include_router(similar_tasks.router, prefix=API_PREFIX)
 app.include_router(sources.router, prefix=API_PREFIX)
 app.include_router(messages.router, prefix=API_PREFIX)
+app.include_router(message_socket.router, prefix=API_PREFIX)
 app.include_router(bot_messages.router, prefix=API_PREFIX)
 app.include_router(notifications.router, prefix=API_PREFIX)
 app.include_router(notifications.push_router, prefix=API_PREFIX)
 app.include_router(message_settings.router, prefix=API_PREFIX)
 app.include_router(bot_lookups.router, prefix=API_PREFIX)
+app.include_router(bot_summaries.router, prefix=API_PREFIX)
+app.include_router(project_map.router, prefix=API_PREFIX)
+app.include_router(consents.router, prefix=API_PREFIX)
+app.include_router(meeting_purges.router, prefix=API_PREFIX)
+app.include_router(users.router, prefix=API_PREFIX)
+app.include_router(withdrawal.router, prefix=API_PREFIX)
+app.include_router(withdrawal.bot_router, prefix=API_PREFIX)
 
 
 @app.exception_handler(AppError)

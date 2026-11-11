@@ -1,15 +1,17 @@
-import { ApiError, ERROR_CODES, CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
+import { ApiError, ERROR_CODES } from '@/shared/api/errors'
+import {
+  approvalAlreadyResolvedDetailsSchema,
+  approvalConflictDetailsSchema,
+} from '@/shared/types/api/approval'
 import type { ApprovalDto, ApprovalResolveRequestDto } from '@/shared/types/api/approval'
-import { enumValue } from '@/shared/lib/enum'
-import { z } from 'zod'
 import type { ApprovalResolution } from './resolution'
 import type { ExtractionEvidence } from '@/shared/types/common'
 import type {
   Approval,
-  ApprovalConflict,
   ApprovalMissing,
   ApprovalResolveFailure,
-  ApprovalStatus,
+  AsrSuspect,
+  MergedApprovalItem,
   TaskUpdateCategory,
 } from './types'
 
@@ -27,6 +29,17 @@ function evidence(payload: Record<string, unknown>): ExtractionEvidence {
         ? payload.evidence_at_ms
         : null,
   }
+}
+
+/** 합쳐진 항목 하나는 근거 키를 payload 와 같은 이름으로 담는다 (backend services/pending_merge.py) */
+function mergedItems(items: readonly Record<string, unknown>[]): MergedApprovalItem[] {
+  return items.map((item) => ({
+    extractionItemId: text(item.extraction_item_id),
+    meetingId: text(item.meeting_id),
+    evidence: evidence(item),
+    docText: text(item.doc_text) || null,
+    mergedAt: text(item.merged_at),
+  }))
 }
 
 const taskUpdateCategories: readonly TaskUpdateCategory[] = [
@@ -47,27 +60,52 @@ function taskUpdateCategory(value: unknown): TaskUpdateCategory | null {
   return null
 }
 
+type AsrSuspectDto = NonNullable<NonNullable<ApprovalDto['payload']['asr_suspects']>[number]>
+
+function misheard({ word, candidates }: AsrSuspectDto): AsrSuspect | null {
+  const heard = word.trim()
+  if (heard === '') return null
+  return {
+    kind: 'misheard',
+    word: heard,
+    candidates: candidates.map((each) => each.trim()).filter((each) => each !== ''),
+  }
+}
+
+/** 서버 `source` 마다 화면이 읽는 의심 (#643). evidence·title 은 고칠 후보, check_failed 는 확인하지 못했다는 뜻이다 */
+const asrSuspectBySource = new Map<string, (dto: AsrSuspectDto) => AsrSuspect | null>([
+  ['evidence', misheard],
+  ['title', misheard],
+  ['check_failed', () => ({ kind: 'check_failed' })],
+])
+
+/** 모르는 source·빈 글자는 버린다. 확인 실패는 몇 개가 와도 한 줄이다 */
+function asrSuspects(items: ApprovalDto['payload']['asr_suspects']): AsrSuspect[] {
+  const suspects: AsrSuspect[] = []
+  for (const item of items ?? []) {
+    if (item === null) continue
+    const read = asrSuspectBySource.get(item.source)
+    if (read === undefined) {
+      if (import.meta.env.DEV) console.warn(`Unknown asr suspect source: ${item.source}`)
+      continue
+    }
+    const suspect = read(item)
+    if (suspect === null) continue
+    if (suspect.kind === 'check_failed' && suspects.some(({ kind }) => kind === 'check_failed'))
+      continue
+    suspects.push(suspect)
+  }
+  return suspects
+}
+
 /** 범위 변경은 바꿀 필드가 없어도 승인 요청이 된다 (#205). 화면은 모두 이 판정을 쓴다 */
 export function isScopeChange(approval: Approval): boolean {
   return approval.kind === 'task_update' && approval.category === 'scope'
 }
 
-const createOverridesSchema = z.object({
-  task_title: z.string().optional(),
-  assignee_member_id: z.string().nullable().optional(),
-  due_date: z.string().nullable().optional(),
-})
-const updateOverridesSchema = z.object({
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done']).optional(),
-  due_date: z.string().nullable().optional(),
-  assignee_member_id: z.string().nullable().optional(),
-})
+type StoredOverrides = NonNullable<ApprovalDto['payload']['task_overrides']>
 
-function storedCreateOverrides(value: unknown) {
-  if (value === undefined) return {}
-  const result = createOverridesSchema.safeParse(value)
-  if (!result.success) throw createClientError(CLIENT_ERROR_CODES.INVALID_RESPONSE)
-  const parsed = result.data
+function storedCreateOverrides(parsed: StoredOverrides = {}) {
   return {
     ...(parsed.task_title !== undefined ? { taskTitle: parsed.task_title } : {}),
     ...(parsed.assignee_member_id !== undefined
@@ -76,11 +114,7 @@ function storedCreateOverrides(value: unknown) {
     ...(parsed.due_date !== undefined ? { dueDate: parsed.due_date } : {}),
   }
 }
-function storedUpdateOverrides(value: unknown) {
-  if (value === undefined) return {}
-  const result = updateOverridesSchema.safeParse(value)
-  if (!result.success) throw createClientError(CLIENT_ERROR_CODES.INVALID_RESPONSE)
-  const parsed = result.data
+function storedUpdateOverrides(parsed: StoredOverrides = {}) {
   return {
     ...(parsed.status !== undefined ? { status: parsed.status } : {}),
     ...(parsed.due_date !== undefined ? { dueDate: parsed.due_date } : {}),
@@ -109,12 +143,7 @@ export function toApproval(dto: ApprovalDto): Approval {
   const base = {
     id: dto.approval_id,
     workspaceId: dto.workspace_id,
-    status: enumValue(
-      dto.status,
-      ['pending', 'approved', 'rejected'] as const,
-      'pending',
-      'approval status',
-    ),
+    status: dto.status,
     relatedTaskId: dto.related_task_id,
     requestedBy: dto.requested_by,
     resolvedBy: dto.resolved_by,
@@ -145,6 +174,12 @@ export function toApproval(dto: ApprovalDto): Approval {
       meetingId: text(payload.meeting_id),
       extractionItemId: text(payload.extraction_item_id),
       gate,
+      aliasCandidate:
+        dto.alias_candidate === true && dto.alias_text?.trim() ? dto.alias_text : null,
+      payloadVersion: dto.payload_version || null,
+      mergedItems: mergedItems(payload.merged_items ?? []),
+      assigneeItemId: payload.assignee_item_id || text(payload.extraction_item_id),
+      asrSuspects: asrSuspects(payload.asr_suspects),
     }
   }
   // 대상 태스크 이름은 `task_title`(없으면 제안 때 본 `base_title`)이다. `title` 은 바꿀 제목이라 이름으로 쓰지 않는다
@@ -174,8 +209,13 @@ export function toApproval(dto: ApprovalDto): Approval {
 export function toApprovalResolveRequestDto(
   resolution: ApprovalResolution,
 ): ApprovalResolveRequestDto {
-  if (resolution.status === 'rejected') return { status: 'rejected' }
-  const body: ApprovalResolveRequestDto = { status: 'approved' }
+  const seen =
+    resolution.status === 'rejected' || resolution.kind === 'task_create'
+      ? resolution.payloadVersion
+      : undefined
+  const version = seen === undefined ? {} : { payload_version: seen }
+  if (resolution.status === 'rejected') return { status: 'rejected', ...version }
+  const body: ApprovalResolveRequestDto = { status: 'approved', ...version }
   if (resolution.kind === 'task_update') {
     if (resolution.confirmTaskVersion !== undefined)
       body.confirm_task_version = resolution.confirmTaskVersion
@@ -189,6 +229,7 @@ export function toApprovalResolveRequestDto(
           : {}),
       }
   } else {
+    if (resolution.saveAlias) body.save_alias = true
     const edits = resolution.taskOverrides
     if (edits)
       body.task_overrides = {
@@ -204,56 +245,34 @@ export function toApprovalResolveRequestDto(
   return body
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function toConflict(value: unknown): ApprovalConflict | null {
-  if (!isRecord(value) || typeof value.field !== 'string') return null
-  if (!('base' in value) || !('current' in value) || !('proposed' in value)) return null
-  return { field: value.field, base: value.base, current: value.current, proposed: value.proposed }
-}
-
 /**
- * 승인 처리 실패 중 화면이 따로 다룰 두 가지를 읽는다. 나머지(권한·검증·네트워크)는 null 이다.
- * - 409 APPROVAL_CONFLICT: `details.task_version` 과 `details.conflicts[]`(field·base·current·proposed).
+ * 승인 처리 실패 중 화면이 따로 다룰 세 가지를 읽는다. 나머지(권한·검증·네트워크)는 null 이다.
+ * - 409 APPROVAL_CONFLICT: `details.task_version` 과 `details.conflicts[]`(field·base·current·proposed). 스키마로 읽는다.
  *   모양이 틀리면 재승인 기준이 없으므로 null 이다
+ * - 409 APPROVAL_CHANGED: 본 뒤 카드가 바뀌었다. 어느 칸인지는 서버가 주지 않아 화면이 새 카드와 비교한다
  * - 409 APPROVAL_ALREADY_RESOLVED: `details.current_status`. 모르는 값이면 null 로 둔다
  */
 export function toApprovalResolveFailure(error: unknown): ApprovalResolveFailure | null {
   if (!(error instanceof ApiError) || error.kind !== 'http' || error.status !== 409) return null
   const details = error.details
   if (error.code === ERROR_CODES.APPROVAL_CONFLICT) {
-    if (
-      !isRecord(details) ||
-      typeof details.approval_id !== 'string' ||
-      typeof details.task_id !== 'string' ||
-      typeof details.task_version !== 'number' ||
-      !Number.isInteger(details.task_version) ||
-      details.task_version < 1 ||
-      !Array.isArray(details.conflicts)
-    )
-      return null
-    const conflicts = details.conflicts.map(toConflict)
-    if (conflicts.some((conflict) => conflict === null)) return null
+    const parsed = approvalConflictDetailsSchema.safeParse(details)
+    if (!parsed.success) return null
     return {
       kind: 'conflict',
-      approvalId: details.approval_id,
-      taskId: details.task_id,
-      taskVersion: details.task_version,
-      conflicts: conflicts as ApprovalConflict[],
+      approvalId: parsed.data.approval_id,
+      taskId: parsed.data.task_id,
+      taskVersion: parsed.data.task_version,
+      conflicts: parsed.data.conflicts,
     }
   }
+  if (error.code === ERROR_CODES.APPROVAL_CHANGED) return { kind: 'changed' }
   if (error.code === 'APPROVAL_ALREADY_RESOLVED') {
-    const statuses: readonly ApprovalStatus[] = ['pending', 'approved', 'rejected']
-    const current = isRecord(details) ? details.current_status : undefined
+    const parsed = approvalAlreadyResolvedDetailsSchema.safeParse(details)
     return {
       kind: 'already_resolved',
-      approvalId:
-        isRecord(details) && typeof details.approval_id === 'string' ? details.approval_id : null,
-      currentStatus: (statuses as readonly unknown[]).includes(current)
-        ? (current as ApprovalStatus)
-        : null,
+      approvalId: parsed.success ? parsed.data.approval_id : null,
+      currentStatus: parsed.success ? parsed.data.current_status : null,
     }
   }
   return null

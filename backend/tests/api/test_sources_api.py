@@ -17,6 +17,7 @@ from app.main import app
 from app.models import Meeting, MeetingStatus, Member, Session as SessionModel, Source, User, Workspace
 from app.schemas.source import MAX_SECONDS
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TOKEN = "test-service-token"
 HEADERS = {"X-Service-Token": TOKEN}
@@ -271,7 +272,7 @@ def test_duration_counts_all_saved_segments_and_never_shrinks(client, db, meetin
 
 def _login_member(client, db, workspace_id: str) -> None:
     """회의 상세는 워크스페이스 멤버만 읽는다. 그 워크스페이스 멤버로 client에 세션 쿠키를 심는다."""
-    user = User(email="member@example.com", name="member")
+    user = User(username=username_for("member@example.com"), email="member@example.com", name="member")
     db.add(user)
     db.flush()
     db.add_all([

@@ -2,6 +2,7 @@ import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { initialDb, replaceDb } from './db'
 import type { MeetingFlowMode, MockDb, MockInvitation } from './db'
 import { MOCK_NOW } from './fixtures/constants'
+import { LONG_ASR_CANDIDATE, LONG_ASR_WORD } from './fixtures/approval'
 import {
   LONG_BUNDLE_BODY,
   LONG_RECIPIENT_NAME,
@@ -11,11 +12,14 @@ import {
   mergeSourceBundle,
   messagesMemberBundle,
   messagesMemberThread,
+  pmThreadMessages,
   reply,
   schedulePassedBundle,
+  SECOND_PM,
 } from './fixtures/message'
 import { completeMeeting, failMeeting, setMeetingFlowMode, startChatMeeting } from './meetingFlow'
 import { notificationFixtures } from './fixtures/notification'
+import { largeProjectMap } from './fixtures/projectMap'
 import { addReplyJudgments } from './fixtures/reply'
 import { setMockRole } from './sessions'
 import {
@@ -25,6 +29,8 @@ import {
 } from './passwordResetScenarios'
 import { SPEAKER_SCENARIOS, createSpeakerScenarioDb, isSpeakerScenario } from './speakerScenarios'
 import { blockBySilence, createTask } from './task-state'
+import type { MockExtractionItem } from './aliasLearning'
+import { mergeIntoApproval } from './approvalMerge'
 
 /*
  * 브라우저·E2E 용 시작 상태. 모두 픽스처 계정 pm@example.com / mock-password 로 로그인한다.
@@ -33,6 +39,14 @@ import { blockBySilence, createTask } from './task-state'
  */
 
 export const MOCK_SCENARIOS = [
+  'policy-reconsent',
+  'consent-required',
+  'consent-signup',
+  'consent-agreed',
+  'consent-mismatch',
+  'consent-read-error',
+  'consent-write-error',
+  'consent-response-lost',
   'signed-out',
   // #457 비로그인이고 pm@example.com 이 로그인 시도 제한에 걸려 있다. 맞는 비밀번호도 429 다
   'login-rate-limited',
@@ -42,10 +56,13 @@ export const MOCK_SCENARIOS = [
   'incomplete-workspace',
   // M5 회의 흐름. 모두 ws_01 하나에 로그인한다 — docs/impl-decision/2026-10-02-meeting-upload-policy.md
   'meeting-demo',
+  // meeting-demo 와 같은 흐름을 #542 전 서버로 본다 — 상세에 processing 이 없어 진행 수·경과가 없다
+  'meeting-demo-legacy',
   'meeting-instant',
   'meeting-fail',
   'meeting-fail-diarize',
   'meeting-fail-expired',
+  'meeting-fail-unclaimed',
   'meeting-expired-member',
   // Notion 을 연결하지 않은 공간. 회의 올리기·정리·회의록·태스크를 그대로 쓴다 (D-182)
   'meeting-notion-not-connected',
@@ -64,10 +81,25 @@ export const MOCK_SCENARIOS = [
   'approval-resolved',
   'approval-conflict',
   'approval-scope',
+  // #644 tk_04 의 마감을 없애자는 변경 승인 ap_09. payload 에 due_date 가 null 로 실린다 (backend-ai-contract update 마감 해제)
+  'approval-due-clear',
   // #397 채팅 회의(mt_08)에서 나온 생성 승인 ap_07. 근거 시각이 실제 작성 시각이다
   'approval-chat',
+  // #512 ap_03(배포 문서 보완)에 2주차 정기회의(mt_07)의 항목 it_21 이 합쳐져 담당자·마감이 바뀌었다
+  'approval-merged',
+  // #512 같은 합치기가 PM 이 카드를 연 뒤에 일어난다. 첫 승인·반려가 409 APPROVAL_CHANGED 다
+  'approval-merged-after-view',
+  // #643 생성 승인의 전사 오인식 의심. ap_01 은 고칠 후보, ap_02 는 확인 실패, ap_03 은 확인하지 않은 옛 카드(null)다
+  'approval-asr-suspects',
+  // #643 공백 없는 긴 의심 단어·후보. ap_02 는 빠진 값이 없어 대시보드도 의심 문구를 사유로 보인다
+  'approval-asr-suspects-long',
   // #419 회의록 mt_09 의 수정 제안 it_08(tk_04 마감 변경). 승인 전에도 task_id 가 tk_04 다
   'minutes-edit-pending',
+  // #676 mt_09 의 녹음 보관 기간(7일)이 지났다. 회의록 audio 가 null 이고 재생은 404 AUDIO_NOT_AVAILABLE(expired)
+  'meeting-audio-expired',
+  // #551 mt_09 의 요약이 승인을 기다린다. 대기 카드 ap_01~ap_03 이라 PM 은 3건을 보고, -member 는 건수 없이 본다
+  'minutes-awaiting-approval',
+  'minutes-awaiting-approval-member',
   'notion-sync-pending',
   'notion-sync-failed',
   'tasks-member',
@@ -99,18 +131,36 @@ export const MOCK_SCENARIOS = [
   'messages-schedule-passed',
   'messages-merge',
   'messages-long-content',
+  // #519·#525 PM 이 웹에서 쓴 글. 다른 PM 의 글과 내 글, 웹 계정이 이어진 팀원(박민수)과 아닌 팀원(이재환)
+  'messages-pm-thread',
   // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
   'settings-discord-skipped',
   'settings-unmapped',
+  // #660 settings-unmapped 에서 Discord 서버에 사용자가 아무도 없다 — 새로 만든 테스트 서버다. 아이디로 초대할 가입자가 있다
+  'settings-discord-empty',
   'settings-member',
+  // #647 팀원 한 명이 한 줄인 팀원 관리. ws_01 PM 이다. 이재환에 지훈의 계정(1125)을 잘못 이어 두었다 —
+  // 최지훈 줄에서 그 계정을 고르면 옮기기를 확인한다. 1128 dahye 는 아무에게도 연결되지 않았고, 정하늘의 1126 은 서버를 떠났다
+  'member-rows',
   // #330 알림·자동 막힘. ws_01 PM 이다
   'notifications-default',
   // #344 리마인드 답장 판단. reply-judgment 는 ws_01 PM, reply-judgment-member 는 같은 상태의 일반 팀원(mb_01)이다
   'reply-judgment',
   'reply-judgment-member',
-  // #320 팀원 초대. team-invitations 는 ws_01 PM 이 보는 초대 상태, invitation-pending 은 초대받은 사람의 가입 전이다
+  // #320 팀원 초대. team-invitations 는 ws_01 PM 이 보는 초대 상태, invitation-pending 은 초대받은 사람의 로그인 전이다
   'team-invitations',
   'invitation-pending',
+  // #627 아이디. username-taken 은 비로그인이고 박민수(minsu)가 가입해 있다. username-race 는 비로그인이고
+  // newuser1 을 중복 확인하면 쓸 수 있다고 답하지만 가입·아이디 변경은 409 USERNAME_TAKEN 이다(확인 뒤 남이 가져감).
+  // kakao-account 는 이메일·비밀번호 없이 카카오로 가입한 계정(userpm, 최진호)으로 ws_01 PM 에 로그인한다
+  'username-taken',
+  'username-race',
+  'kakao-account',
+  // #551 프로젝트 맵. ws_01 PM 이다. no-topics 는 요약 전이라 주제·결정이 없고 태스크끼리의 선만 있다.
+  // empty 는 태스크도 주제도 없다. large 는 픽스처에 주제 36 · 태스크 500 · 선 1,173 을 더한다(브라우저 성능 확인용)
+  'project-map-no-topics',
+  'project-map-empty',
+  'project-map-large',
   // #356 비밀번호 재설정. 모두 비로그인이다
   ...PASSWORD_RESET_SCENARIOS,
 ] as const
@@ -172,6 +222,7 @@ function addCreatedWorkspace(state: MockDb, workspace: WorkspaceDto): void {
     discord_user_id: null,
     notion_name: null,
     role: 'pm',
+    has_login_account: false,
     created_at: MOCK_NOW,
   })
   state.integrations[workspace.workspace_id] = {
@@ -285,6 +336,14 @@ function approvalOf(state: MockDb, approvalId: string) {
   return approval
 }
 
+/** 요약을 아직 만들지 않았다. 남은 건수는 minutes handler 가 지금 대기 카드로 센다 */
+function awaitApprovalSummary(state: MockDb, meetingId: string): void {
+  const minutes = state.minutes.find(({ meeting_id }) => meeting_id === meetingId)
+  if (!minutes) throw new Error(`mock minutes ${meetingId} is missing`)
+  minutes.summary = null
+  minutes.summary_status = 'awaiting_approval'
+}
+
 function taskOf(state: MockDb, taskId: string) {
   const task = state.tasks.find(({ task_id }) => task_id === taskId)
   if (!task) throw new Error(`mock task ${taskId} is missing`)
@@ -325,6 +384,45 @@ function resolvedCreateApproval(state: MockDb): void {
   if (item) item.task_id = task.task_id
 }
 
+/**
+ * 2주차 정기회의(mt_07) 항목 it_21. 같은 일(배포 문서)을 이재환에게 26일까지 맡긴다. ap_03 에 합쳐지면
+ * 담당자를 정한 항목(`assignee_item_id`)이 된다. `afterView` 면 합치지 않고 처리 요청 직전에 합쳐지게 둔다
+ */
+function mergeIntoDeployDoc(state: MockDb, afterView: boolean): void {
+  const item: MockExtractionItem = {
+    item_id: 'it_21',
+    task: { title: '배포 문서 마무리', confidence: 0.9 },
+    assignee: {
+      raw: '재환',
+      member_id: 'mb_03',
+      display_name: '이재환',
+      confidence: 0.9,
+      needs_check: false,
+    },
+    due_date: { value: '2026-09-26', raw: '26일', confidence: 0.9 },
+    confidence: 0.85,
+    gate: 'review',
+    evidence: {
+      quote: '배포 문서는 재환님이 26일까지 마무리해 주세요.',
+      speaker: '1123',
+      speaker_member_id: 'mb_01',
+      at_ms: 1_250_000,
+    },
+    reverted_at: null,
+    task_id: null,
+    approval_id: null,
+    approval_status: null,
+    alias_candidate: false,
+    alias_text: null,
+  }
+  const extraction = state.extractions.find(({ meeting_id }) => meeting_id === 'mt_07')
+  if (!extraction) throw new Error('mock extraction for mt_07 is missing')
+  extraction.items.push(item)
+  const facts = { category: 'assignee', status: null, docText: null }
+  if (afterView) item.merge_into = { approval_id: 'ap_03', ...facts }
+  else mergeIntoApproval(approvalOf(state, 'ap_03'), 'mt_07', item, facts, '2026-09-17T03:00:00Z')
+}
+
 function conflictingUpdateApproval(state: MockDb): void {
   state.approvals.push({
     approval_id: 'ap_04',
@@ -346,6 +444,8 @@ function conflictingUpdateApproval(state: MockDb): void {
     resolved_by: null,
     created_at: '2026-09-17T03:00:00Z',
     resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
   })
 }
 
@@ -402,6 +502,8 @@ function addScopeChanges(state: MockDb): void {
       resolved_by: null,
       created_at: createdAt,
       resolved_at: null,
+      alias_candidate: false,
+      alias_text: null,
     })
   state.taskHistory.push({
     history_id: 'hs_03',
@@ -415,6 +517,36 @@ function addScopeChanges(state: MockDb): void {
     is_rolled_back: false,
     rolled_back_at: null,
     created_at: '2026-09-17T02:00:00Z',
+  })
+}
+
+function addDueClearProposal(state: MockDb): void {
+  const task = taskOf(state, 'tk_04')
+  state.approvals.push({
+    approval_id: 'ap_09',
+    workspace_id: 'ws_01',
+    type: 'task_update',
+    payload: {
+      due_date: null,
+      base_values: { due_date: task.due_date },
+      base_task_version: task.version,
+      base_title: task.title,
+      task_title: task.title,
+      evidence_quote: '배포 스크립트는 날짜를 아직 못 박겠어요.',
+      evidence_speaker: '1123',
+      evidence_speaker_member_id: 'mb_01',
+      evidence_at_ms: 412_000,
+      meeting_id: 'mt_09',
+      gate: 'review',
+    },
+    related_task_id: task.task_id,
+    requested_by: null,
+    status: 'pending',
+    resolved_by: null,
+    created_at: '2026-09-17T04:10:00Z',
+    resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
   })
 }
 
@@ -445,6 +577,8 @@ function addEditProposal(state: MockDb): void {
     task_id: task.task_id,
     approval_id: 'ap_08',
     approval_status: 'pending',
+    alias_candidate: false,
+    alias_text: null,
   })
   state.approvals.push({
     approval_id: 'ap_08',
@@ -471,6 +605,8 @@ function addEditProposal(state: MockDb): void {
     resolved_by: null,
     created_at: '2026-09-17T04:00:00Z',
     resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
   })
 }
 
@@ -502,6 +638,8 @@ function addChatApproval(state: MockDb): void {
     resolved_by: null,
     created_at: '2026-09-12T00:03:00Z',
     resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
   })
 }
 
@@ -545,11 +683,11 @@ function removeMeeting(state: MockDb, meetingId: string): void {
   )
 }
 
-/** ws_01 PM(us_01)이 보낸 초대. iv_02 는 이재환(mb_03)에게 jaehwan@example.com 으로 보낸 대기 초대다 */
+/** ws_01 PM(us_01)이 보낸 초대. iv_02 는 이재환(mb_03)에게 그 사람 계정(us_03)으로 보낸 대기 초대다 */
 function invitation(
   id: string,
   memberId: string,
-  email: string,
+  invitedUserId: string,
   status: MockInvitation['status'],
   createdAt: string,
 ): MockInvitation {
@@ -557,7 +695,7 @@ function invitation(
     invitation_id: id,
     workspace_id: 'ws_01',
     member_id: memberId,
-    email,
+    invited_user_id: invitedUserId,
     status,
     invited_by_user_id: 'us_01',
     accepted_user_id: null,
@@ -567,16 +705,21 @@ function invitation(
 }
 
 const pendingInvitation = () =>
-  invitation('iv_02', 'mb_03', 'jaehwan@example.com', 'pending', '2026-09-16T09:00:00Z')
+  invitation('iv_02', 'mb_03', 'us_03', 'pending', '2026-09-16T09:00:00Z')
 
-/**
- * 팀원마다 최근 초대가 다르다. 박민수(mb_02)는 us_02 가 수락했고, 이재환(mb_03)은 대기, 정하늘(mb_04)은 거절이다.
- * 이재환에게는 오타로 보냈다가 취소한 더 오래된 초대(iv_00)도 있다 — 화면은 최근 것만 본다
- */
-function addTeamInvitations(state: MockDb): void {
+const acceptedByMinsu = (): MockInvitation => ({
+  ...invitation('iv_01', 'mb_02', 'us_02', 'accepted', '2026-09-15T09:00:00Z'),
+  accepted_user_id: 'us_02',
+})
+
+/** 어느 공간에도 직접 속하지 않은 가입자. 비밀번호는 픽스처 계정과 같다 */
+function addAccount(
+  state: MockDb,
+  user: { user_id: string; username: string; email: string; name: string },
+): void {
   state.accounts.push({
     session: {
-      user: { user_id: 'us_02', email: 'minsu@example.com', name: '박민수', avatar_url: null },
+      user: { ...user, avatar_url: null },
       workspace_count: 0,
       last_workspace_id: null,
     },
@@ -584,15 +727,80 @@ function addTeamInvitations(state: MockDb): void {
     workspaceIds: [],
     memberIds: {},
   })
+}
+
+/** 박민수(us_02, 아이디 minsu). 어느 공간에도 직접 속하지 않는다 */
+function addMinsuAccount(state: MockDb): void {
+  addAccount(state, {
+    user_id: 'us_02',
+    username: 'minsu',
+    email: 'minsu@example.com',
+    name: '박민수',
+  })
+}
+
+/**
+ * 초대에 쓰는 가입자. 박민수(us_02, minsu), 이재환(us_03, jaehwan), 정하늘(us_04, haneul),
+ * 한도윤(us_05, doyun). 한도윤은 어느 팀원과도 이어지지 않아 아이디로 찾아 초대할 수 있다
+ */
+function addInviteeAccounts(state: MockDb): void {
+  addMinsuAccount(state)
+  addAccount(state, {
+    user_id: 'us_03',
+    username: 'jaehwan',
+    email: 'jaehwan@example.com',
+    name: '이재환',
+  })
+  addAccount(state, {
+    user_id: 'us_04',
+    username: 'haneul',
+    email: 'haneul@example.com',
+    name: '정하늘',
+  })
+  addAccount(state, {
+    user_id: 'us_05',
+    username: 'doyun',
+    email: 'doyun@example.com',
+    name: '한도윤',
+  })
+}
+
+/**
+ * 팀원마다 최근 초대가 다르다. 박민수(mb_02)는 us_02 가 수락했고, 이재환(mb_03)은 대기, 정하늘(mb_04)은 거절이다.
+ * 이재환에게는 다른 사람(한도윤)을 잘못 골라 보냈다가 취소한 더 오래된 초대(iv_00)도 있다 — 화면은 최근 것만 본다
+ */
+function addTeamInvitations(state: MockDb): void {
+  addInviteeAccounts(state)
   state.invitations.push(
-    invitation('iv_00', 'mb_03', 'jaehwan@exmaple.com', 'canceled', '2026-09-14T09:00:00Z'),
-    {
-      ...invitation('iv_01', 'mb_02', 'minsu@example.com', 'accepted', '2026-09-15T09:00:00Z'),
-      accepted_user_id: 'us_02',
-    },
+    invitation('iv_00', 'mb_03', 'us_05', 'canceled', '2026-09-14T09:00:00Z'),
+    acceptedByMinsu(),
     pendingInvitation(),
-    invitation('iv_03', 'mb_04', 'haneul@example.com', 'declined', '2026-09-17T09:00:00Z'),
+    invitation('iv_03', 'mb_04', 'us_04', 'declined', '2026-09-17T09:00:00Z'),
   )
+}
+
+function addMemberRows(state: MockDb): void {
+  const lee = state.members.find(({ member_id }) => member_id === 'mb_03')
+  if (lee) lee.discord_user_id = '1125'
+  state.members.push({
+    member_id: 'mb_05',
+    workspace_id: 'ws_01',
+    display_name: '최지훈',
+    discord_user_id: null,
+    notion_name: null,
+    role: 'member',
+    has_login_account: false,
+    created_at: '2026-09-02T00:00:00Z',
+  })
+  state.discordUsers.push({
+    discord_user_id: '1128',
+    username: 'dahye',
+    display_name: '다혜',
+    nick: '다혜',
+    global_name: null,
+    avatar_url: null,
+    is_bot: false,
+  })
 }
 
 export function createScenarioDb(scenario: MockScenario): MockDb {
@@ -600,6 +808,33 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
   if (isPasswordResetScenario(scenario)) return createPasswordResetScenarioDb(scenario)
   const state = initialDb()
   switch (scenario) {
+    case 'policy-reconsent':
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.consents = state.consents.map((row) => ({ ...row, version: '2026-11-08' }))
+      break
+    case 'consent-required':
+    case 'consent-signup':
+    case 'consent-agreed':
+    case 'consent-mismatch':
+    case 'consent-read-error':
+    case 'consent-write-error':
+    case 'consent-response-lost':
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.consentVersions = { terms: 'test-terms-v1', privacy: 'test-privacy-v1' }
+      state.consents = []
+      if (scenario === 'consent-signup') state.authenticated = false
+      if (scenario === 'consent-mismatch') state.consentVersions.terms = 'server-new-terms'
+      if (scenario === 'consent-read-error') state.consentFailure = 'read'
+      if (scenario === 'consent-write-error') state.consentFailure = 'write'
+      if (scenario === 'consent-response-lost') state.consentFailure = 'response-lost'
+      if (scenario === 'consent-agreed')
+        state.consents = (['terms', 'privacy'] as const).map((kind) => ({
+          user_id: state.session.user.user_id,
+          kind,
+          version: state.consentVersions[kind],
+          agreed_at: MOCK_NOW,
+        }))
+      break
     case 'signed-out':
       state.authenticated = false
       break
@@ -629,6 +864,9 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       // 브라우저 데모: 상세 조회(처리 화면 polling)마다 한 단계씩 보인다
       readyToUpload(state, 'staged')
       break
+    case 'meeting-demo-legacy':
+      readyToUpload(state, 'staged-legacy')
+      break
     case 'meeting-instant':
       // E2E: 업로드 뒤 첫 상세 조회에 정리가 끝난다
       readyToUpload(state, 'instant')
@@ -641,6 +879,9 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       break
     case 'meeting-fail-expired':
       readyToUpload(state, 'fail-expired')
+      break
+    case 'meeting-fail-unclaimed':
+      readyToUpload(state, 'fail-unclaimed')
       break
     case 'meeting-expired-member':
       signInWith(state, ['ws_01'], 'ws_01')
@@ -703,13 +944,54 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       signInWith(state, ['ws_01'], 'ws_01')
       addScopeChanges(state)
       break
+    case 'approval-due-clear':
+      signInWith(state, ['ws_01'], 'ws_01')
+      addDueClearProposal(state)
+      break
     case 'approval-chat':
       signInWith(state, ['ws_01'], 'ws_01')
       addChatApproval(state)
       break
+    case 'approval-merged':
+    case 'approval-merged-after-view':
+      signInWith(state, ['ws_01'], 'ws_01')
+      mergeIntoDeployDoc(state, scenario === 'approval-merged-after-view')
+      break
+    case 'approval-asr-suspects':
+      signInWith(state, ['ws_01'], 'ws_01')
+      approvalOf(state, 'ap_01').payload.asr_suspects = [
+        { word: '애포', source: 'title', candidates: ['배포'] },
+      ]
+      approvalOf(state, 'ap_02').payload.asr_suspects = [
+        { word: '', source: 'check_failed', candidates: [] },
+      ]
+      approvalOf(state, 'ap_03').payload.asr_suspects = null
+      break
+    case 'approval-asr-suspects-long':
+      signInWith(state, ['ws_01'], 'ws_01')
+      approvalOf(state, 'ap_01').payload.asr_suspects = [
+        { word: '애포', source: 'title', candidates: [LONG_ASR_CANDIDATE] },
+      ]
+      Object.assign(approvalOf(state, 'ap_02').payload, {
+        due_date: '2026-09-30',
+        asr_suspects: [
+          { word: LONG_ASR_WORD, source: 'title', candidates: [LONG_ASR_CANDIDATE, '배포'] },
+        ],
+      })
+      break
     case 'minutes-edit-pending':
       signInWith(state, ['ws_01'], 'ws_01')
       addEditProposal(state)
+      break
+    case 'meeting-audio-expired':
+      signInWith(state, ['ws_01'], 'ws_01')
+      for (const minutes of state.minutes) minutes.audio = null
+      break
+    case 'minutes-awaiting-approval':
+    case 'minutes-awaiting-approval-member':
+      signInWith(state, ['ws_01'], 'ws_01')
+      awaitApprovalSummary(state, 'mt_09')
+      if (scenario === 'minutes-awaiting-approval-member') setMockRole('member', 'ws_01', state)
       break
     case 'notion-sync-pending':
       // tk_04 가 반영 대기다. synced 로 넘기는 워커는 없다 — 테스트가 필드를 직접 바꾼다
@@ -788,6 +1070,8 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
         resolved_by: null,
         created_at: '2026-09-17T05:00:00Z',
         resolved_at: null,
+        alias_candidate: false,
+        alias_text: null,
       })
       break
     case 'dashboard-member':
@@ -880,6 +1164,25 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       )
       state.messageBundles.push(structuredClone(mergeSourceBundle))
       break
+    case 'messages-pm-thread':
+      // 두 번째 PM 오지현(mb_06)이 이재환(th_01)에게 쓴 글은 Discord 가 없어 가지 못했다. 김서연(mb_01)은 박민수(th_02)에게 썼다.
+      // 박민수만 초대를 수락해 웹 계정이 이어졌다 — 이재환은 웹 답장 불가다
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.members.push({
+        ...SECOND_PM,
+        workspace_id: 'ws_01',
+        notion_name: null,
+        role: 'pm',
+        has_login_account: true,
+        created_at: '2026-09-02T00:00:00Z',
+      })
+      for (const { thread_id, message } of pmThreadMessages)
+        state.messageThreads
+          .find((thread) => thread.thread_id === thread_id)
+          ?.messages.push(structuredClone(message))
+      addMinsuAccount(state)
+      state.invitations.push(acceptedByMinsu())
+      break
     case 'messages-long-content':
       // messages-default 에 긴 문구를 더한다. 공간(봇) 이름과 이재환(bd_01·th_01)의 이름이 띄어 쓰지 않은 긴 이름이고,
       // bd_01 은 여러 줄 본문 끝에 줄바꿈할 곳이 없는 주소가 있다. th_01 에는 그 주소의 답장, th_02(박민수)에는 며칠에 걸친 30통이 더 있다
@@ -899,6 +1202,15 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'settings-unmapped':
       // 픽스처 그대로의 ws_01 이다. Discord 연결됨, 1125(지훈)는 미매핑, mb_04 의 1126 은 서버를 떠났다(inactive), 1199 는 봇이다
       signInWith(state, ['ws_01'], 'ws_01')
+      break
+    case 'settings-discord-empty':
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.discordUsers = []
+      addInviteeAccounts(state)
+      break
+    case 'member-rows':
+      signInWith(state, ['ws_01'], 'ws_01')
+      addMemberRows(state)
       break
     case 'settings-member':
       // 일반 팀원. Discord 는 미연결(요청 안내), Notion 은 연결됨(PM 이 관리한다는 안내)이다. 연결·매핑 쓰기는 PM 만 한다
@@ -929,11 +1241,62 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       signInWith(state, ['ws_01'], 'ws_01')
       addTeamInvitations(state)
       break
-    case 'invitation-pending':
-      // 비로그인. jaehwan@example.com 으로 가입하면 iv_02 가 내 초대에 보인다
+    case 'username-taken':
       state.authenticated = false
+      addMinsuAccount(state)
+      break
+    case 'username-race':
+      state.authenticated = false
+      state.usernameRace = ['newuser1']
+      break
+    case 'kakao-account':
+      signInWith(state, ['ws_01'], 'ws_01')
+      for (const user of [state.session.user, state.accounts[0].session.user]) user.email = null
+      state.accounts[0].password = null
+      break
+    case 'project-map-no-topics':
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.projectMap.topics = []
+      state.projectMap.decisions = []
+      break
+    case 'project-map-empty':
+      signInWith(state, ['ws_01'], 'ws_01')
+      clearTasks(state)
+      state.projectMap = { topics: [], decisions: [], taskLinks: [] }
+      break
+    case 'project-map-large': {
+      signInWith(state, ['ws_01'], 'ws_01')
+      // 픽스처 태스크·주제는 승인·회의록이 가리키므로 남기고 그 위에 더한다
+      const large = largeProjectMap()
+      state.tasks.push(...large.tasks)
+      state.projectMap.topics.push(...large.projectMap.topics)
+      state.projectMap.taskLinks.push(...large.projectMap.taskLinks)
+      break
+    }
+    case 'invitation-pending':
+      // 비로그인. 이재환(jaehwan@example.com, mock-password)으로 로그인하면 iv_02 가 내 초대에 보인다
+      state.authenticated = false
+      addInviteeAccounts(state)
       state.invitations.push(pendingInvitation())
       break
+  }
+  if (!scenario.startsWith('consent-') && scenario !== 'policy-reconsent') {
+    for (const account of state.accounts) {
+      for (const kind of ['terms', 'privacy'] as const) {
+        if (
+          !state.consents.some(
+            (row) => row.user_id === account.session.user.user_id && row.kind === kind,
+          )
+        ) {
+          state.consents.push({
+            user_id: account.session.user.user_id,
+            kind,
+            version: state.consentVersions[kind],
+            agreed_at: MOCK_NOW,
+          })
+        }
+      }
+    }
   }
   return state
 }

@@ -8,6 +8,7 @@ import { latestMinutesId, meetingListQueryOptions } from '@/entities/meeting'
 import { discordUsersQueryOptions, memberListQueryOptions } from '@/entities/member'
 import { messageInboxQueryOptions, messageThreadQueryOptions } from '@/entities/message'
 import { minutesQueryOptions } from '@/entities/minutes'
+import { projectMapQueryOptions } from '@/entities/project-map'
 import { taskListQueryOptions } from '@/entities/task'
 import { paths } from '@/shared/config/routes'
 import { provideScreenCode } from '@/shared/lib/screen-code'
@@ -19,10 +20,10 @@ import { IDLE_FALLBACK_MS } from './router/shellPrefetch'
 import { renderApp } from './test/renderApp'
 
 /*
- * #536 — 셸 탭 다섯 개의 화면 코드와 첫 화면 데이터를 미리 받는다.
- * 탭에 다가간 순간(가리키기·포커스·터치) 그 탭을, 셸이 뜬 뒤 한가할 때 다섯 탭 모두를 받는다. 받은 값은 화면과 같은 Query 의 캐시다.
+ * #536 — 셸 탭의 화면 코드와 첫 화면 데이터를 미리 받는다.
+ * 탭에 다가간 순간(가리키기·포커스·터치) 그 탭을, 셸이 뜬 뒤 한가할 때 모든 탭을 받는다. 받은 값은 화면과 같은 Query 의 캐시다.
  * 테스트 setup 은 한가해지지 않는 브라우저(requestIdleCallback 이 부르지 않음)라 한가할 때 받기를 보는 검사만 바꿔 끼운다.
- * 시작 화면은 설정이다 — 다섯 탭의 데이터를 부르지 않는 셸 화면이라 미리 받은 값만 캐시에 남는다.
+ * 시작 화면은 설정이다 — 탭들의 데이터를 부르지 않는 셸 화면이라 미리 받은 값만 캐시에 남는다.
  */
 
 vi.setConfig({ testTimeout: 10_000 })
@@ -156,7 +157,7 @@ describe('탭에 다가간 순간 그 탭의 첫 화면 데이터를 받는다',
   })
 })
 
-describe('셸이 뜬 뒤 한가할 때 다섯 탭을 한 번 받는다', () => {
+describe('셸이 뜬 뒤 한가할 때 모든 탭을 한 번 받는다', () => {
   function captureIdle() {
     const callbacks: IdleRequestCallback[] = []
     const request = vi.fn((callback: IdleRequestCallback) => callbacks.push(callback))
@@ -171,7 +172,7 @@ describe('셸이 뜬 뒤 한가할 때 다섯 탭을 한 번 받는다', () => {
     }
   }
 
-  it('한가해지면 다섯 탭의 첫 화면 데이터와 화면 코드를 받는다', async () => {
+  it('한가해지면 여섯 탭의 첫 화면 데이터와 화면 코드를 받는다', async () => {
     const idle = captureIdle()
     const requested = watchScreenCode()
     const { queryClient } = await openSettings()
@@ -183,6 +184,7 @@ describe('셸이 뜬 뒤 한가할 때 다섯 탭을 한 번 받는다', () => {
       taskListQueryOptions(WS).queryKey,
       meetingListQueryOptions(WS).queryKey,
       messageInboxQueryOptions(WS).queryKey,
+      projectMapQueryOptions(WS).queryKey,
       memberListQueryOptions(WS).queryKey,
       discordUsersQueryOptions(WS).queryKey,
     ])
@@ -193,11 +195,12 @@ describe('셸이 뜬 뒤 한가할 때 다섯 탭을 한 번 받는다', () => {
       paths.meetings(WS),
       paths.tasks(WS),
       paths.messages(WS),
+      paths.projectMap(WS),
       paths.members(WS),
     ])
   })
 
-  it('받은 탭으로 처음 옮기면 화면의 조회가 다시 묻지 않는다', async () => {
+  it('받은 탭으로 처음 옮기면 화면의 조회가 다시 묻지 않는다 — 메시지는 신호 소켓이 열린 뒤 목록을 한 번 맞춘다', async () => {
     const idle = captureIdle()
     const { queryClient } = await openSettings()
     idle.run()
@@ -209,7 +212,10 @@ describe('셸이 뜬 뒤 한가할 때 다섯 탭을 한 번 받는다', () => {
     await userEvent.click(tab('메시지'))
     expect(await screen.findByRole('heading', { level: 1, name: '메시지' })).toBeInTheDocument()
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
-    expect(businessRequests(requests.started)).toEqual([])
+    // 서버는 소켓이 열리기 전의 신호를 다시 보내지 않아, 미리 받은 목록도 열린 뒤 한 번 다시 받는다 (#558)
+    expect(businessRequests(requests.started)).toEqual([
+      { method: 'GET', path: `/workspaces/${WS}/messages` },
+    ])
   })
 
   it('requestIdleCallback 이 없는 브라우저는 짧은 타이머 뒤에 받는다', async () => {

@@ -1,10 +1,12 @@
 import type { IntegrationProvider } from '@/entities/integration'
 import { useIntegrationStep } from '@/features/onboarding'
 import type { IntegrationNotice } from '@/features/onboarding'
+import { QuickGuideButton } from '@/features/quick-guide'
 import { errorMessage } from '@/shared/api/errorMessages'
 import { useGuardedNavigate } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
+import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { ExitLink } from './ExitLink'
 import { OnboardingCard } from './OnboardingCard'
@@ -43,6 +45,9 @@ const NOTICE: Record<IntegrationNotice, string> = {
 }
 
 const CONNECTED = 'pt-6 text-body font-semibold text-ink'
+
+const GUIDE_BUTTON =
+  'inline-flex size-24 shrink-0 items-center justify-center rounded-6 text-dim hover:bg-control hover:text-ink'
 
 export interface IntegrationStepProps {
   workspaceId: string
@@ -135,6 +140,17 @@ export function IntegrationStep({ workspaceId, provider, review = false }: Integ
     >
       <OnboardingCard
         title={copy.title}
+        titleEnd={
+          provider === 'discord' ? (
+            <QuickGuideButton
+              className={GUIDE_BUTTON}
+              aria-label="디스코드 연동 사용법"
+              title="어떻게 쓰나요?"
+            >
+              <Icon name="help" size={16} />
+            </QuickGuideButton>
+          ) : undefined
+        }
         description={copy.description}
         actions={
           flow.integration === null ? null : review ? (

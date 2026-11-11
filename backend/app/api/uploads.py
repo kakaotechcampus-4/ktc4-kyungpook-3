@@ -9,15 +9,16 @@ AI는 대기 목록을 주기적으로 읽고 → 한 회의를 가져가고(cla
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, Response
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_service_token
 from app.core.database import get_db
+from app.services.meeting_deletion import require_live_meeting
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Meeting, MeetingSource, MeetingStatus, MeetingUpload
+from app.models import Meeting, MeetingSource, MeetingStatus, MeetingUpload, Workspace
 from app.schemas.upload import (
     AssignedUpload,
     AssignedUploadListResponse,
@@ -60,6 +61,7 @@ def list_pending_uploads(db: Session = Depends(get_db)) -> dict:
         PendingUpload(
             meeting_id=meeting.meeting_id,
             workspace_id=meeting.workspace_id,
+            identity_epoch=db.get(Workspace, meeting.workspace_id).identity_epoch,
             title=meeting.title,
             started_at=meeting.started_at,
             attendees=json.loads(upload.attendees),
@@ -78,6 +80,7 @@ def list_pending_uploads(db: Session = Depends(get_db)) -> dict:
 def claim_upload(meeting_id: str, db: Session = Depends(get_db)) -> dict:
     """처리 중인 업로드 회의를 가져간다(`claimed_at` 기록). 두 번 불러도 한 번만 성공한다."""
     # 읽고 나서 쓰면 동시에 부른 둘이 모두 가져갈 수 있다. 판정과 쓰기를 한 문장으로 묶는다
+    require_live_meeting(db, meeting_id, lock=True)
     result = db.execute(
         update(MeetingUpload)
         .where(
@@ -97,9 +100,9 @@ def claim_upload(meeting_id: str, db: Session = Depends(get_db)) -> dict:
         )
 
     db.rollback()
-    meeting = db.get(Meeting, meeting_id)
+    meeting = require_live_meeting(db, meeting_id, lock=True)
     upload = db.get(MeetingUpload, meeting_id)
-    if meeting is None or upload is None:
+    if upload is None:
         raise _not_found(meeting_id)
     if meeting.status != MeetingStatus.PROCESSING:
         raise AppError(
@@ -128,6 +131,7 @@ def list_assigned_uploads(db: Session = Depends(get_db)) -> dict:
         AssignedUpload(
             meeting_id=meeting.meeting_id,
             workspace_id=meeting.workspace_id,
+            identity_epoch=db.get(Workspace, meeting.workspace_id).identity_epoch,
             title=meeting.title,
             started_at=meeting.started_at,
             mapping=json.loads(upload.speaker_mapping or "{}"),
@@ -146,6 +150,7 @@ def resume_upload(meeting_id: str, db: Session = Depends(get_db)) -> dict:
         ResumeResponse(
             meeting_id=meeting_id,
             status=meeting.status,
+            identity_epoch=db.get(Workspace, meeting.workspace_id).identity_epoch,
             mapping=json.loads(upload.speaker_mapping or "{}"),
         ).model_dump()
     )
@@ -156,16 +161,29 @@ def resume_upload(meeting_id: str, db: Session = Depends(get_db)) -> dict:
     response_class=FileResponse,
     responses={200: {"content": {"application/octet-stream": {}}, "description": "업로드한 녹음 원본"}},
 )
-def download_upload(meeting_id: str, db: Session = Depends(get_db)) -> FileResponse:
-    """업로드한 녹음 원본. 상태는 보지 않는다(가져가기 전후 모두 받을 수 있다)."""
+def download_upload(meeting_id: str, db: Session = Depends(get_db)) -> Response:
+    """업로드한 녹음 원본. 상태는 보지 않는다(가져가기 전후 모두 받을 수 있다). s3 저장소여도 리다이렉트 없이 바이트를 그대로 보낸다."""
+    require_live_meeting(db, meeting_id, lock=True)
     upload = db.get(MeetingUpload, meeting_id)
     if upload is None:
         raise _not_found(meeting_id)
-    path = upload_storage.audio_path(meeting_id, upload.stored_filename)
-    if not path.is_file():
-        raise _not_found(meeting_id)
     media_type = upload.content_type or "application/octet-stream"
     filename = upload.stored_filename
-    # get_db 정리는 응답을 다 보낸 뒤라, 닫지 않으면 파일을 보내는 동안 DB 연결을 잡고 있다
+    if upload_storage.storage_mode() == "s3":
+        # S3 에서 읽기 전에 공간·회의 잠금과 트랜잭션을 끝낸다. get_db 정리는 응답을 다 보낸 뒤라,
+        # 닫지 않으면 S3 가 느릴 때와 파일을 보내는 동안 잠금과 DB 연결을 잡고 있다
+        db.close()
+        try:
+            chunks, size = upload_storage.open_audio_stream(meeting_id, filename)
+        except FileNotFoundError:
+            raise _not_found(meeting_id) from None
+        return StreamingResponse(
+            chunks,
+            media_type=media_type,
+            headers={"Content-Length": str(size), "Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    path = upload_storage.local_audio_path(meeting_id, filename)
+    if path is None:
+        raise _not_found(meeting_id)
     db.close()
     return FileResponse(path, media_type=media_type, filename=filename)

@@ -17,9 +17,10 @@ from sqlalchemy.pool import StaticPool
 from app.api import meetings as meetings_api
 from app.core.database import Base, get_db
 from app.main import app
-from app.services import upload_storage
-from app.models import Meeting, MeetingUpload, Member, Session as SessionModel, User, Workspace
+from app.services import speaker_assignment, upload_storage
+from app.models import Meeting, MeetingAudio, MeetingUpload, Member, Session as SessionModel, User, Workspace
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 SERVICE_TOKEN = "test-service-token"
@@ -73,7 +74,7 @@ def db(request, monkeypatch):
 
 
 def _add_user(db, email, token, ws_id, role, name):
-    user = User(email=email, name=name)
+    user = User(username=username_for(email), email=email, name=name)
     db.add(user)
     db.flush()
     db.add(SessionModel(
@@ -126,6 +127,11 @@ def _meeting(db, seed, *, status="awaiting_speakers", speakers=REPORTED, source=
             claimed_at=datetime(2026, 10, 13, tzinfo=timezone.utc),
             speakers=None if speakers is None else json.dumps(speakers),
             speakers_reported_at=None if speakers is None else datetime(2026, 10, 13, tzinfo=timezone.utc),
+        ))
+        # 업로드 API 가 같은 커밋에 남기는 재생용 보관 기록. 보관 기간은 지금부터 센다
+        db.add(MeetingAudio(
+            meeting_id=meeting.meeting_id, filename="audio.ogg", content_type="audio/ogg",
+            size_bytes=1234, retention_from=datetime.now(timezone.utc),
         ))
     db.commit()
     return meeting
@@ -202,13 +208,18 @@ def test_candidates_leave_out_members_who_left_after_upload(db, seed):
     assert data["candidates"] == [{"member_id": seed["jimin"].member_id, "display_name": "지민"}]
 
 
-@pytest.mark.parametrize("kind", ["no_folder", "no_file"])
-def test_audio_info_is_null_when_the_recording_is_gone(db, seed, kind):
-    # done·failed 로 폴더가 지워지면 재생할 수 없으므로 audio 를 null 로 줘서 "회의 없음"과 가른다
-    meeting = _meeting(db, seed, status="failed")
-    if kind == "no_file":
-        _put_audio(meeting)
-        (upload_storage.meeting_dir(meeting.meeting_id) / "audio.ogg").unlink()
+@pytest.mark.parametrize("kind", ["failed", "expired", "deleted"])
+def test_audio_info_is_null_when_the_recording_cannot_be_played(db, seed, kind):
+    # 녹음 보관 기간 안이고 재생할 수 있을 때만 audio 에 값이 있다(DB 의 보관 기록만 본다). 사유별로 null 이 되고 "회의 없음"(404)과 가른다
+    status = "done" if kind in ("expired", "deleted") else "failed"
+    meeting = _meeting(db, seed, status=status)
+    row = db.get(MeetingAudio, meeting.meeting_id)
+    if kind == "expired":
+        row.retention_from = datetime.now(timezone.utc) - timedelta(days=8)
+    elif kind == "deleted":
+        row.deleted_at = datetime.now(timezone.utc)
+    db.commit()
+    _put_audio(meeting)
 
     r = _get(meeting.meeting_id)
 
@@ -557,6 +568,10 @@ def _stored(db, meeting, *, filename, content_type):
     upload = db.get(MeetingUpload, meeting.meeting_id)
     upload.stored_filename = filename
     upload.content_type = content_type
+    # 재생 응답의 Content-Type 은 업로드 때 서버가 확장자로 정해 meeting_audio 에 남긴 값이다(클라이언트 값이 아니다)
+    audio = db.get(MeetingAudio, meeting.meeting_id)
+    audio.filename = filename
+    audio.content_type = speaker_assignment.playback_content_type(filename)
     db.commit()
     folder = upload_storage.meeting_dir(meeting.meeting_id)
     folder.mkdir(parents=True, exist_ok=True)
@@ -582,7 +597,7 @@ def test_audio_content_type_comes_from_the_stored_extension_not_the_client(db, s
 
 
 @pytest.mark.parametrize("status", ["awaiting_speakers", "processing"])
-def test_audio_is_served_regardless_of_status_while_folder_exists(db, seed, status):
+def test_pm_plays_the_audio_before_the_meeting_is_done(db, seed, status):
     meeting = _meeting(db, seed, status=status)
     _put_audio(meeting)
 
@@ -590,7 +605,7 @@ def test_audio_is_served_regardless_of_status_while_folder_exists(db, seed, stat
 
 
 @pytest.mark.parametrize("token", ["member-token", "other-pm-token"])
-def test_audio_requires_pm_of_the_workspace(db, seed, token):
+def test_audio_before_done_requires_pm_of_the_workspace(db, seed, token):
     meeting = _meeting(db, seed)
     _put_audio(meeting)
 
@@ -609,16 +624,16 @@ def test_audio_without_login_gets_401(db, seed):
 
 @pytest.mark.parametrize("kind", ["not_upload", "no_upload_row", "missing", "no_folder", "no_file"])
 def test_audio_gets_404_when_there_is_nothing_to_play(db, seed, kind):
-    if kind == "not_upload":
-        meeting = _meeting(db, seed, source="discord_realtime")
-        _put_audio(meeting)
-        meeting_id = meeting.meeting_id
-    elif kind == "no_upload_row":
-        meeting = _meeting(db, seed, upload=False)
+    expected = "AUDIO_NOT_AVAILABLE"
+    if kind in ("not_upload", "no_upload_row"):
+        # 업로드한 적 없는 회의(디스코드 등)에는 보관 기록이 없다
+        source = "discord_realtime" if kind == "not_upload" else "manual_upload"
+        meeting = _meeting(db, seed, source=source, upload=False)
         _put_audio(meeting)
         meeting_id = meeting.meeting_id
     elif kind == "missing":
         meeting_id = "00000000-0000-0000-0000-000000000000"
+        expected = "MEETING_NOT_FOUND"
     elif kind == "no_folder":
         meeting_id = _meeting(db, seed).meeting_id
     else:
@@ -630,7 +645,7 @@ def test_audio_gets_404_when_there_is_nothing_to_play(db, seed, kind):
     r = _audio(meeting_id)
 
     assert r.status_code == 404, r.text
-    assert r.json()["error"]["code"] == "MEETING_NOT_FOUND"
+    assert r.json()["error"]["code"] == expected
 
 
 # ── 전체 흐름 ──
@@ -688,5 +703,6 @@ def test_upload_to_done_flow_with_speaker_assignment(db, seed):
     done = register()
     assert done.status_code == 201, done.text
     assert _status(db, Meeting(meeting_id=meeting_id)) == "done"
-    assert not folder.exists()
-    assert pm.get(f"/api/v1/meetings/{meeting_id}/audio").status_code == 404
+    # 처리가 끝나도 녹음은 보관 기간(기본 7일) 동안 남아 듣는다
+    assert folder.exists()
+    assert pm.get(f"/api/v1/meetings/{meeting_id}/audio").content == WAV

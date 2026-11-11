@@ -107,13 +107,25 @@ def test_pyannote_gets_the_16k_mono_wav(env, monkeypatch):
     seen = {}
 
     class Spy(FakeDiarizer):
-        def submit(self, path):
+        def submit(self, path, **kw):
             info = sf.info(str(path))
             seen.update(sr=info.samplerate, ch=info.channels)
-            return super().submit(path)
+            return super().submit(path, **kw)
 
     _drive(env, diar=Spy(SEGS))
     assert seen == {"sr": 16000, "ch": 1}
+
+
+def test_attendee_count_is_sent_as_min_speakers(env):
+    env.be.uploads[MID]["item"]["attendees"] = [{"member_id": f"u{i}", "display_name": f"멤버{i}"} for i in range(4)]
+    _drive(env)
+    assert env.diar.min_speakers == [4]
+
+
+def test_no_attendees_sends_no_speaker_count(env):
+    env.be.uploads[MID]["item"]["attendees"] = []
+    _drive(env)
+    assert env.diar.min_speakers == [0]   # 0 이면 PyannoteAiDiarizer 가 minSpeakers 를 빼고 보낸다
 
 
 def test_claim_response_lost_then_continue_from_claiming_record(env):
@@ -186,11 +198,11 @@ class FlakySubmit(FakeDiarizer):
         super().__init__(segs)
         self.fail_times = fail_times
 
-    def submit(self, path):
+    def submit(self, path, **kw):
         if self.fail_times > 0:
             self.fail_times -= 1
             raise RuntimeError("pyannoteAI 503")
-        return super().submit(path)
+        return super().submit(path, **kw)
 
 
 def test_transient_failure_backs_off_then_recovers(env):
@@ -370,7 +382,7 @@ def _json_error():
 
 def test_a_valueerror_from_the_diarizer_submit_is_transient_not_a_fail(env):
     class BadJsonSubmit(FakeDiarizer):
-        def submit(self, path):
+        def submit(self, path, **kw):
             raise _json_error()
 
     assert _drive(env, BadJsonSubmit(SEGS))[-1] == "retry"
@@ -618,3 +630,32 @@ def test_waiting_does_not_sleep_past_the_deadline(env, monkeypatch):
     assert _step(env, diar).event == "waiting"
     env.clock.advance(FETCH_POLL_S / 2 + 1)
     assert _step(env, diar).event == "failed"
+
+
+def test_audio_longer_than_the_cap_fails_before_anything_is_sent_to_pyannote(env, monkeypatch):
+    monkeypatch.setenv("MM_UPLOAD_MAX_SECONDS", "5")   # 올린 오디오는 12초
+    assert _drive(env)[-1] == "failed"
+    assert env.diar.submits == [] and env.diar.calls == []
+    assert env.be.meetings[MID]["status"] == "failed" and env.be.meetings[MID]["failed_stage"] == "diarize"
+    assert sorted(p.name for p in (env.rec / ".uploads" / MID).iterdir()) == ["intake.json"]
+    assert "길다" in _state(env)["error"]
+
+
+def test_audio_within_the_cap_goes_through(env, monkeypatch):
+    monkeypatch.setenv("MM_UPLOAD_MAX_SECONDS", "20")
+    assert _drive(env)[-1] == "done"
+    assert len(env.diar.submits) == 1
+
+
+@pytest.mark.parametrize("value", ["", "abc", "0", "-1"])
+def test_a_missing_or_unusable_cap_means_three_hours(value, monkeypatch):
+    from upload.intake import max_upload_seconds
+    monkeypatch.setenv("MM_UPLOAD_MAX_SECONDS", value)
+    assert max_upload_seconds() == 3 * 3600
+
+
+def test_an_upload_with_an_unknown_extension_fails_without_decoding(env):
+    env.be.uploads[MID]["item"]["stored_filename"] = "audio.bin"
+    assert _drive(env)[-1] == "failed"
+    assert env.diar.submits == []
+    assert env.be.meetings[MID]["failed_stage"] == "diarize"

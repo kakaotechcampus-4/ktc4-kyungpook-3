@@ -13,6 +13,7 @@ from app.main import app
 from app.models import (
     EMBEDDING_DIMENSIONS,
     ApprovalRequest,
+    AsrTitleQueue,
     ExtractionItem,
     Meeting,
     Member,
@@ -25,6 +26,7 @@ from app.models import (
     Workspace,
 )
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 # 임베딩 워커가 이미 채운 task. 임베딩이 없는 task가 있으면 auto로 보내지 않으므로 시드 task에 넣는다
 EMBEDDED = [0.1] * EMBEDDING_DIMENSIONS
@@ -66,8 +68,8 @@ def seed(db):
     db.flush()
 
     expires = datetime.now(timezone.utc) + timedelta(days=1)
-    pm_user = User(email="pm@example.com", name="pm")
-    member_user = User(email="member@example.com", name="member")
+    pm_user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
+    member_user = User(username=username_for("member@example.com"), email="member@example.com", name="member")
     db.add_all([pm_user, member_user])
     db.flush()
     db.add_all([
@@ -175,6 +177,8 @@ def test_judge_item_meeting_every_condition_is_created_automatically(client, db,
     assert item["task"]["evidence_status"] == "certain"
     assert item["due_date"]["evidence_status"] == "certain"
     assert (item["similar_count"], item["top_similarity"], item["reverted_at"]) == (0, None, None)
+    # PM 이 확인한 제목이 아니라 용어 목록 큐에 넣지 않는다(#532)
+    assert db.execute(select(AsrTitleQueue)).first() is None
 
 
 def test_judge_item_without_assignee_or_due_mention_is_auto(client, seed):
@@ -608,6 +612,158 @@ def test_approve_meeting_create_still_records_meeting_source(client, db, seed):
     assert history.change_source == "meeting"
 
 
+# ── 전사 오인식 의심 단어 (asr_suspects, AI judge/asr_check.py) ───────────────────
+
+
+def _suspect(word="애포", source="evidence", candidates=("배포",)):
+    return {"word": word, "source": source, "candidates": list(candidates)}
+
+
+def test_asr_suspect_blocks_auto_and_rides_on_the_approval(client, db, seed, caplog):
+    with caplog.at_level("INFO", logger="app.api.extractions"):
+        item = _only_item(client, _extract(client, seed, [_judge(asr_suspects=[_suspect()])]))
+
+    assert item["gate"] == "review"
+    assert item["task_id"] is None
+    assert "asr_suspect" in caplog.text
+    [approval] = _approvals(db)
+    # 확인 카드가 "'애포'는 '배포'일 수 있어요"를 보여 줄 수 있게 그대로 싣는다
+    assert json.loads(approval.payload)["asr_suspects"] == [_suspect()]
+
+
+def test_asr_check_failure_also_blocks_auto_with_its_own_reason(client, seed, caplog):
+    # 분석기 장애로 모두 막히는 것과 오탐 증가를 BE 로그만으로 구별할 수 있게 사유를 나눈다(#532 리뷰)
+    failed = {"word": "", "source": "check_failed", "candidates": []}
+    with caplog.at_level("INFO", logger="app.api.extractions"):
+        assert _gate(client, seed, asr_suspects=[failed]) == "review"
+    assert "asr_check_failed" in caplog.text
+    assert "reasons=asr_suspect" not in caplog.text and ",asr_suspect" not in caplog.text
+
+
+@pytest.mark.parametrize("count, status", [(50, 201), (51, 400)])
+def test_asr_suspects_limit_is_fifty(client, seed, count, status):
+    suspects = [_suspect(word=f"단어{i}") for i in range(count)]
+    r = client.post("/api/v1/extractions", json={
+        "meeting_id": seed["meeting"].meeting_id, "workspace_id": seed["ws"].workspace_id,
+        "items": [_judge(asr_suspects=suspects)],
+    }, headers=SERVICE_HEADERS)
+    assert r.status_code == status, r.text
+
+
+def test_unknown_source_is_accepted_and_kept(client, db, seed):
+    # AI 가 새 source 를 먼저 배포해도 회의 전체가 400 이 되지 않는다. 모르는 값도 그대로 싣는다
+    _only_item(client, _extract(client, seed, [_judge(asr_suspects=[_suspect(source="context")])]))
+    [approval] = _approvals(db)
+    assert json.loads(approval.payload)["asr_suspects"][0]["source"] == "context"
+
+
+@pytest.mark.parametrize("sent", ["empty", "missing"])
+def test_no_suspects_keeps_the_gate_as_before(client, db, seed, sent):
+    # 검사를 했는데 없으면([]), 또는 옛 AI 가 필드를 보내지 않으면 지금과 같다
+    fields = {"asr_suspects": []} if sent == "empty" else {}
+    item = _only_item(client, _extract(client, seed, [_judge(**fields)]))
+
+    assert item["gate"] == "auto"
+    assert db.get(Task, item["task_id"]).title == "결제 API 연동"
+
+
+# ── 자동 생성 스위치 (AUTO_CREATE_ENABLED, #382 멘토 리뷰) ─────────────────────────
+
+
+def _legacy_auto() -> dict:
+    """legacy 경로에서 확신도로 auto 가 되는 새 항목."""
+    return {
+        "task_title": "결제 환불 기능 구현", "task_confidence": 0.95, "assignee_raw": "지민님",
+        "due_date": "2026-10-20", "due_confidence": 0.95,
+        "evidence_quote": "지민님이 20일까지 결제 환불 붙여 주세요", "evidence_speaker": "uid-pm",
+    }
+
+
+@pytest.mark.parametrize("value", ["false", "0", "off", "no", " False "])
+def test_auto_create_off_turns_judge_auto_into_review(client, db, seed, monkeypatch, caplog, value):
+    # 검증(Jev)은 그대로 돌아 근거 상태가 저장되고, 태스크만 PM 확인 뒤에 생긴다
+    monkeypatch.setenv("AUTO_CREATE_ENABLED", value)
+    with caplog.at_level("INFO", logger="app.api.extractions"):
+        item = _only_item(client, _extract(client, seed, [_judge()]))
+
+    assert item["gate"] == "review"
+    assert item["task_id"] is None and item["approval_id"] is not None
+    assert item["task"]["evidence_status"] == "certain"
+    assert item["due_date"]["evidence_status"] == "certain"
+    assert db.execute(select(Task).where(Task.title == "결제 API 연동")).scalar_one_or_none() is None
+    [line] = [m for m in caplog.messages if "자동 생성이 꺼져 있어 auto 항목을 review로 내립니다" in m]
+    # 항목 단위로 PM 결과와 맞출 수 있게 추출·항목 ID 를 싣는다(#526 리뷰)
+    assert f"item_id={item['item_id']}" in line and "extraction_id=" in line and "path=judge" in line
+
+
+def test_auto_create_off_also_stops_legacy_auto(client, db, seed, monkeypatch):
+    monkeypatch.setenv("AUTO_CREATE_ENABLED", "false")
+    item = _only_item(client, _extract(client, seed, [_legacy_auto()]))
+
+    assert item["gate"] == "review"
+    assert db.execute(select(Task).where(Task.title == "결제 환불 기능 구현")).scalar_one_or_none() is None
+
+
+def test_auto_create_off_keeps_hold(client, seed, monkeypatch):
+    # 끄는 것은 auto 만 review 로 내린다. PM 이 채워야 하는 hold 는 그대로다
+    monkeypatch.setenv("AUTO_CREATE_ENABLED", "false")
+    assert _gate(client, seed, assignee_raw="모르는사람") == "hold"
+
+
+@pytest.mark.parametrize("value", [None, "", "true", "1", "on", "yes", " TRUE "])
+def test_auto_create_on_or_unset_keeps_auto(client, db, seed, monkeypatch, value):
+    if value is None:
+        monkeypatch.delenv("AUTO_CREATE_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("AUTO_CREATE_ENABLED", value)
+    item = _only_item(client, _extract(client, seed, [_judge()]))
+
+    assert item["gate"] == "auto"
+    assert db.get(Task, item["task_id"]).title == "결제 API 연동"
+
+
+def test_asr_suspect_does_not_turn_hold_into_review(client, seed):
+    # 막는 조건만 더한다. 담당자를 못 찾은 hold 는 그대로 hold 다
+    assert _gate(client, seed, assignee_raw="모르는사람", asr_suspects=[_suspect()]) == "hold"
+
+
+@pytest.mark.parametrize("bad", [
+    [{"word": "애포"}],                                          # source 없음
+    [{"word": "가" * 101, "source": "evidence", "candidates": []}],  # 너무 긴 단어
+    [_suspect(candidates=["a", "b", "c", "d", "e", "f"])],      # 후보는 5개까지
+    "애포",                                                       # 목록이 아님
+])
+def test_malformed_asr_suspects_are_rejected(client, seed, bad):
+    r = client.post("/api/v1/extractions", json={
+        "meeting_id": seed["meeting"].meeting_id, "workspace_id": seed["ws"].workspace_id,
+        "items": [_judge(asr_suspects=bad)],
+    }, headers=SERVICE_HEADERS)
+    assert r.status_code == 400, r.text
+
+
+@pytest.mark.parametrize("value", ["flase", "disabled", "n", "끔"])
+def test_unknown_switch_values_count_as_off_and_warn_once(client, db, seed, monkeypatch, caplog, value):
+    # 안전장치라 오타·모르는 값은 꺼짐으로 본다. 껐다고 믿었는데 auto 가 열려 있으면 안 된다(#526 리뷰)
+    from app.api import extractions
+    extractions._warn_unknown_auto_create.cache_clear()
+    monkeypatch.setenv("AUTO_CREATE_ENABLED", value)
+    with caplog.at_level("WARNING", logger="app.api.extractions"):
+        assert _gate(client, seed) == "review"
+        # 경고 횟수는 스위치를 직접 두 번 읽어 본다. 두 번째 등록은 앞 등록이 만든 임베딩 없는 승인 대기에
+        # 먼저 막혀(unsearched_pending_exists) 스위치를 읽지 않을 수 있다(#526 리뷰)
+        assert extractions.auto_create_enabled() is False
+        assert extractions.auto_create_enabled() is False
+    warnings = [m for m in caplog.messages if "AUTO_CREATE_ENABLED" in m]
+    assert len(warnings) == 1   # 요청마다 읽지만 같은 값은 한 번만 경고한다
+
+
+def test_legacy_auto_item_is_auto_when_switch_is_on(client, db, seed, monkeypatch):
+    # 끔 테스트가 스위치 덕분에 review 인지 확인하려면, 같은 입력이 켜짐에서는 auto 여야 한다(#526 리뷰)
+    monkeypatch.delenv("AUTO_CREATE_ENABLED", raising=False)
+    item = _only_item(client, _extract(client, seed, [_legacy_auto()]))
+    assert item["gate"] == "auto"
+
+
 # ── 승인 대기 요청(pending) 이 유사 검색에 잡히는지 ────────────────────────────
 
 
@@ -667,6 +823,15 @@ def test_pending_created_earlier_in_the_same_request_does_not_block_auto(client,
     # 첫 항목이 실제로 pending task_create 를 만들었는데도 두 번째 항목은 auto 다
     pending = [r for r in _approvals(db) if r.type == "task_create" and r.status == "pending"]
     assert len(pending) == 1
+
+
+@pytest.mark.parametrize("sent, stored", [("empty", []), ("missing", None)])
+def test_approval_keeps_empty_suspects_apart_from_an_old_ai(client, db, seed, sent, stored):
+    # [] 는 "검사했고 없음", 필드 없음은 "옛 AI". 막힌 쪽·안 막힌 쪽을 나눠 볼 때 둘을 구별해야 한다(#532 리뷰)
+    fields = {"asr_suspects": []} if sent == "empty" else {}
+    assert _gate(client, seed, task_status="inferred", **fields) == "review"
+    [approval] = _approvals(db)
+    assert json.loads(approval.payload)["asr_suspects"] == stored
 
 
 def test_pending_signal_is_read_even_after_a_legacy_auto_item(client, db, seed, caplog):

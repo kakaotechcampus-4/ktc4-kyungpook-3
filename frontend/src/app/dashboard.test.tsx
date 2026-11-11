@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
+import type { ApprovalStatus } from '@/entities/approval'
 import { clearTrackedMeetings, meetingDetailQueryOptions } from '@/entities/meeting'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
@@ -242,6 +243,52 @@ describe('요약·제목·회의 안내 (AC-01 · AC-05)', () => {
     await screen.findByRole('heading', { name: '대시보드' })
     // 제목 아래 안내와 최근 반영 영역 — 두 자리는 로딩 자리의 최소 표시가 따로 끝난다 (#508)
     await waitFor(() => expect(screen.getAllByText('아직 정리한 회의가 없어요')).toHaveLength(2))
+  })
+
+  it.each([
+    ['PM', 'pm', true],
+    ['일반 팀원', 'member', false],
+  ] as const)(
+    '회의가 하나도 없으면 %s 에게 `/record` 안내를 보이고 방법 보기 없이 권한에 따라 업로드를 제공한다',
+    async (_label, role, hasUpload) => {
+      useScenario('dashboard-no-meeting')
+      db.meetings.length = 0
+      setMockRole(role)
+      renderApp(DASHBOARD)
+      const recent = await screen.findByRole('region', { name: '최근 반영' })
+      const hint = await within(recent).findByText(/디스코드 음성 채널에서/)
+      expect(hint).toHaveTextContent('디스코드 음성 채널에서 /record로 첫 회의를 기록해 보세요.')
+      expect(within(hint).getByText('/record').tagName).toBe('CODE')
+      expect(within(recent).queryByRole('link', { name: '회의 업로드' }) !== null).toBe(hasUpload)
+
+      expect(within(recent).queryByRole('button', { name: '방법 보기' })).toBeNull()
+    },
+  )
+
+  it.each([
+    ['PM', 'pm', true],
+    ['일반 팀원', 'member', false],
+  ] as const)(
+    '정리 중인 회의만 있으면 %s 에게 첫 회의 안내와 방법 보기를 두지 않는다 (#650)',
+    async (_label, role, hasUpload) => {
+      // 이 시나리오에는 정리 중 회의(mt_10) 하나만 있다
+      useScenario('dashboard-no-meeting')
+      setMockRole(role)
+      renderApp(DASHBOARD)
+      const recent = await screen.findByRole('region', { name: '최근 반영' })
+      expect(
+        await within(recent).findByText('회의를 정리하면 자동으로 반영한 일이 여기에 보여요.'),
+      ).toBeInTheDocument()
+      expect(within(recent).queryByText(/디스코드 음성 채널에서/)).toBeNull()
+      expect(within(recent).queryByRole('button', { name: '방법 보기' })).toBeNull()
+      expect(within(recent).queryByRole('link', { name: '회의 업로드' }) !== null).toBe(hasUpload)
+    },
+  )
+
+  it('정리한 회의가 있으면 방법 보기가 없다 (#650)', async () => {
+    await openDashboard()
+    expect(screen.queryByText(/디스코드 음성 채널에서/)).toBeNull()
+    expect(screen.queryByRole('button', { name: '방법 보기' })).toBeNull()
   })
 })
 
@@ -899,7 +946,7 @@ describe('되돌린 뒤 승인·반려 (E-03)', () => {
   it('일반 팀원은 승인된 행에 반영 상태 배지만, 반려·대기 행에 되돌림 배지만 본다 — 승인 문구가 없다', async () => {
     // it_01 승인돼 다시 만듦(tk_90 반영 완료), it_02 반려, it_03 승인 대기 — 모두 되돌린 뒤의 서버 상태다
     const items = db.extractions[1].items
-    const approval = (id: string, status: string) => ({
+    const approval = (id: string, status: ApprovalStatus) => ({
       ...structuredClone(db.approvals[0]),
       approval_id: id,
       status,
@@ -1246,7 +1293,11 @@ describe('키보드·포커스 (AC-06)', () => {
     expect(summaryButton).toHaveFocus()
   })
 
-  it('성공 응답에 승인 ID 가 없어 링크가 없으면 포커스가 그 행으로 간다 (E-04)', async () => {
+  it('성공 응답에 승인 ID 가 없으면 읽지 못한 응답이라 되돌리기 버튼이 남고 포커스가 그 버튼으로 돌아온다 (E-04, #348)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    onTestFinished(() => {
+      vi.restoreAllMocks()
+    })
     server.use(
       http.post('/api/v1/extractions/:extractionId/items/:itemId/revert', () =>
         HttpResponse.json({
@@ -1261,8 +1312,12 @@ describe('키보드·포커스 (AC-06)', () => {
       ),
     )
     await revertByKeyboard('회원가입 화면')
-    await waitFor(() => expect(rowOf('회원가입 화면')).toHaveFocus())
-    expect(rowOf('회원가입 화면')).toHaveAccessibleName(/회원가입 화면/)
+    expect(await screen.findByText('변경 결과를 확인하지 못했어요')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        within(rowOf('회원가입 화면')).getByRole('button', { name: '회원가입 화면 되돌리기' }),
+      ).toHaveFocus(),
+    )
   })
 
   it('응답 전에 사용자가 다른 요소로 포커스를 옮겼으면 뺏지 않는다 (E-04)', async () => {

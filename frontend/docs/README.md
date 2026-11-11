@@ -4,6 +4,8 @@
 
 ## 대표 경로
 
+해커톤 발표용 요약은 [프론트엔드 설계 문서](index.md)에서 시작한다. 테크스펙·구조·문제 해결 사례·대안과 결정·검증 및 데모를 연결한다. 이 요약은 아래 원본 계획·결과·계약을 대체하지 않는다.
+
 ```text
 frontend/docs/
 ├── contracts/
@@ -39,14 +41,14 @@ frontend/docs/
 | `impl-decision/`의 인증·온보딩·앱 셸·검증 도구 기록 10개 | [M4 결정](plan/m4/basis-for-decision) | M4 사용자 흐름·검증 도구 구현 근거 |
 | `impl-decision/`의 업로드·처리·회의록 기록 7개 | [M5 결정](plan/m5/basis-for-decision) | M5 구현 단위·후속 UX 기록 |
 
-M0~M5의 기존 계획을 빈 초기화 파일 자리로 옮겼다. M6~M8의 계획은 여전히 0바이트다. 결과 문서를 새로 만들거나 과거 선택·검증을 소급 작성하지 않았다. 보호 계획의 이동 전 인라인 경로 표기는 [마일스톤 안내](plan/README.md)에서 해석한다.
+M0~M5의 기존 계획은 해당 마일스톤으로 옮겼다. M6~M8도 현재는 계획·결과가 작성돼 있다. [M6 결과](plan/m6/result.md), [M7 결과](plan/m7/result.md), [M8 A](plan/m8/result-a.md)·[B](plan/m8/result-b.md)·[C](plan/m8/result-c.md)의 기록일·검증 환경·잔여 사항을 함께 확인한다. 결과 원문의 과거 상태를 현재 운영 검증으로 바꾸지 않는다. 보호 계획의 이동 전 인라인 경로 표기는 [마일스톤 안내](plan/README.md)에서 해석한다.
 
 ## 유지한 고유·공유 영역
 
 - [디자인 시스템](design/design-system.md), [캔버스 안내](design/canvas/README.md), [캐릭터](design/character.md): 시안·폰트·프로토타입과 함께 유지.
 - [마스코트](mascot/mascot.md): HTML·JS 자산과 함께 유지.
 - [성능 자료](performance/README.md): 측정·후속 개선 자료.
-- [이슈 작업 결과](issues/): 마일스톤 계획 밖에서 이슈로 진행한 작업의 결과. 폴더 이름은 `<이슈 번호>-<요약>/result.md`. 예: [#379 채팅 출처 회의](issues/379-chat-meeting/result.md). 파트 README에는 줄을 더하지 않는다. 2026-11-07 까지의 목록은 [issues/README.md](issues/README.md)에 있다.
+- [실제 작업 이력](plan/README.md): 초기 마일스톤과 후속 작업을 실제 이슈·PR·병합일에 연결한다. 원래 issues 기록은 담당 `plan/mN/work-items/` 또는 `plan/refactor/work-items/`로 이관했다. 같은 이슈의 별도 결과도 보존한다. [과거 후속 목록](plan/history/2026-11-07-followups.md)은 역사 기록이다.
 - [제품·기술 결정](decision/frontend-decisions.md): 여러 마일스톤이 공유하는 D-번호와 합의 근거.
 - [구현 결정 안내](plan/basis-for-decision-guide.md): 기존 작성 양식과 이동한 원문 탐색 안내.
 - [MSW 사용 안내](msw-guide.md): 개발·테스트의 공통 모의 데이터 사용법.

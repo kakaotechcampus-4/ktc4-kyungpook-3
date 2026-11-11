@@ -24,9 +24,18 @@ export const MOCK_DB_STORAGE_KEY = 'msw-db'
  * 14: 리마인드 답장 판단(`replies`) 칸 추가 (#344). 태스크 고르기·태스크 기록·되돌리기가 이 기록을 읽는다.
  * 15: Discord 연동에 회의 채팅 채널(`chat_channel`)과 모의 서버의 텍스트 채널(`discordChannels`) 칸 추가 (#429).
  * 16: 로그인 시도 제한(`loginLimit`) 칸 추가 (#457).
+ * 17: 가입 인증·카카오 대기(#427)와 별칭 후보(#523)가 각 브랜치에서 같은 버전 번호를 사용했다.
+ * 18: 가입 인증·카카오 대기와 별칭 후보를 함께 저장한다. 서로 다른 17 저장본은 복원하지 않는다.
+ * 19: 삭제된 회의의 원문 없는 삭제 기록을 저장한다 (#576).
+ * 20: 계정 탈퇴의 익명 팀원과 개인정보 없는 정리 영수증을 저장한다 (#575).
+ * 21: 사용자별 동의 행과 독립된 서버 판본을 저장한다 (#566).
+ * 22: 프로젝트 맵의 주제·결정·태스크 선(`projectMap`) 칸 추가 (#551).
+ * 23: 초대가 이메일 대신 초대받은 계정(`invited_user_id`)을 가리킨다 (#632).
+ * 24: 프로젝트 맵 주제에 뗀 태스크(`detached_task_ids`)·고침(`edited`), 결정에 상태(`state`)·고침(`edited`) 칸 추가 (#551).
+ * 25: 프로젝트 맵 결정이 뒤집은 결정(`replaces`)을 저장하고 `replaced_by` 는 읽을 때 계산한다 (#551).
  * 올리면 e2e/restore.e2e.ts 와 src/shared/mock/taskScenarios.test.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
  */
-export const MOCK_DB_VERSION = 16
+export const MOCK_DB_VERSION = 25
 
 interface StoredDb {
   version: number
@@ -44,7 +53,9 @@ function hasStrings(value: unknown, keys: readonly string[]): boolean {
 function isSession(value: unknown): boolean {
   return (
     isRecord(value) &&
-    hasStrings(value.user, ['user_id', 'email', 'name']) &&
+    isRecord(value.user) &&
+    hasStrings(value.user, ['user_id', 'username', 'name']) &&
+    (typeof value.user.email === 'string' || value.user.email === null) &&
     typeof value.workspace_count === 'number'
   )
 }
@@ -76,6 +87,16 @@ function isPasswordReset(value: unknown): boolean {
   )
 }
 
+function isSignupVerification(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isRecord(value.codes) &&
+    isRecord(value.proofs) &&
+    Array.isArray(value.outbox) &&
+    value.outbox.every((mail) => hasStrings(mail, ['to', 'code', 'sentAt']))
+  )
+}
+
 /**
  * 모양만 본다. 칸마다 시작 상태와 같은 종류(배열·객체·불리언)인지, 화면 흐름이 기대는 칸은
  * 필드까지 맞는지 확인한다. 하나라도 어긋나면 손상으로 본다.
@@ -92,11 +113,37 @@ function isMockDb(value: unknown): value is MockDb {
   const state = value as unknown as MockDb
   return (
     isSession(state.session) &&
+    hasStrings(state.consentVersions, ['terms', 'privacy']) &&
+    ['none', 'read', 'write', 'response-lost'].includes(state.consentFailure) &&
+    state.consents.every(
+      (entry) =>
+        hasStrings(entry, ['user_id', 'version', 'agreed_at']) &&
+        (entry.kind === 'terms' || entry.kind === 'privacy'),
+    ) &&
+    state.withdrawnMemberIds.every((id) => typeof id === 'string') &&
+    state.withdrawals.every(
+      (entry) =>
+        isRecord(entry) &&
+        typeof entry.keyHash === 'string' &&
+        isRecord(entry.receipt) &&
+        hasStrings(entry.receipt, ['withdrawal_id', 'account_deleted_at']) &&
+        (entry.receipt.cleanup_status === 'pending' ||
+          entry.receipt.cleanup_status === 'complete') &&
+        typeof entry.checks === 'number',
+    ) &&
+    state.meetingDeletions.every(
+      (receipt) =>
+        isRecord(receipt) &&
+        hasStrings(receipt, ['meeting_id', 'workspace_id', 'deleted_at']) &&
+        (receipt.cleanup_status === 'pending' || receipt.cleanup_status === 'complete') &&
+        Array.isArray(receipt.deleted_meeting_ids) &&
+        receipt.deleted_meeting_ids.every((id) => typeof id === 'string'),
+    ) &&
     state.accounts.every(
       (account) =>
         isRecord(account) &&
         isSession(account.session) &&
-        typeof account.password === 'string' &&
+        (typeof account.password === 'string' || account.password === null) &&
         Array.isArray(account.workspaceIds) &&
         isRecord(account.memberIds),
     ) &&
@@ -107,6 +154,9 @@ function isMockDb(value: unknown): value is MockDb {
         Array.isArray(workspace.onboarding.steps),
     ) &&
     state.members.every((member) => hasStrings(member, ['member_id', 'workspace_id'])) &&
+    state.invitations.every((invitation) =>
+      hasStrings(invitation, ['invitation_id', 'workspace_id', 'member_id', 'invited_user_id']),
+    ) &&
     Object.values(state.integrations).every(
       (integration) =>
         hasStrings(integration.discord, ['status']) &&
@@ -118,7 +168,12 @@ function isMockDb(value: unknown): value is MockDb {
       hasStrings(channel, ['channel_id', 'name', 'access']),
     ) &&
     isMeetingFlow(state.meetingFlow) &&
+    Array.isArray(state.projectMap.topics) &&
+    Array.isArray(state.projectMap.decisions) &&
+    Array.isArray(state.projectMap.taskLinks) &&
     isPasswordReset(state.passwordReset) &&
+    isSignupVerification(state.signupVerification) &&
+    (state.kakao.pending === null || hasStrings(state.kakao.pending, ['kakaoId'])) &&
     Object.values(state.loginLimit).every(
       (entry) =>
         isRecord(entry) &&
@@ -163,6 +218,26 @@ function withTaskDefaults(state: MockDb): MockDb {
   return state
 }
 
+/**
+ * #551 에서 회의록 줄에 `seq`·`edited`·`original_text` 가, db 에 고친 제목 기록(`titleEdits`)이 생겼다.
+ * 칸만 더해져 버전은 올리지 않고, 그 전에 저장된 값은 고친 적 없는 것으로 채운다. 줄 번호는 서버처럼 순서다
+ */
+function withMinutesDefaults(state: MockDb): MockDb {
+  for (const minutes of state.minutes as Partial<MockDb['minutes'][number]>[]) {
+    if (!isRecord(minutes)) continue
+    if (!Array.isArray(minutes.transcript)) continue
+    minutes.transcript.forEach(
+      (line: Partial<MockDb['minutes'][number]['transcript'][number]>, seq) => {
+        if (!isRecord(line)) return
+        line.seq ??= seq
+        line.edited ??= false
+        line.original_text ??= null
+      },
+    )
+  }
+  return state
+}
+
 /** 저장값을 읽는다. 없거나, 버전이 다르거나, 손상됐으면 지우고 null */
 export function loadSavedDb(storage: Storage): MockDb | null {
   let raw: string | null
@@ -174,8 +249,10 @@ export function loadSavedDb(storage: Storage): MockDb | null {
   if (raw === null) return null
   try {
     const parsed: unknown = JSON.parse(raw)
-    if (isRecord(parsed) && parsed.version === MOCK_DB_VERSION && isMockDb(parsed.db))
-      return withTaskDefaults(parsed.db)
+    if (isRecord(parsed) && parsed.version === MOCK_DB_VERSION && isRecord(parsed.db)) {
+      parsed.db.titleEdits ??= {}
+      if (isMockDb(parsed.db)) return withMinutesDefaults(withTaskDefaults(parsed.db))
+    }
   } catch {
     // JSON 이 아니다. 아래에서 지운다
   }

@@ -108,7 +108,7 @@
 - [앱 테스트](../../../src/app/tasks.test.tsx)에 세 보기 전환 검증이 있다.
 - [taskViews 테스트](../../../src/widgets/task-board/lib/taskViews.test.ts)는 URL 기본값·왕복·다른 조건 보존도 검증한다.
 - [taskBoard 테스트](../../../src/widgets/task-board/lib/taskBoard.test.ts)는 목록의 정렬·탭·날짜 조건·상태 overlay를 검증한다.
-- [기존 스토리](../../../src/widgets/task-board/ui/TaskBoard.stories.tsx)는 리스트 기본·팀원·키보드·빈 상태·로딩·오류를 다룬다.
+- [기존 스토리](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/ed2585631203156d789a0acb57561e4eaaeaee16/frontend/src/widgets/task-board/ui/TaskBoard.stories.tsx)는 리스트 기본·팀원·키보드·빈 상태·로딩·오류를 다룬다.
 - [기존 E2E](../../../e2e/tasks-approval.e2e.ts)의 1024/1440/1920px 검증에는 세 보기가 포함되지 않는다.
 - [MSW 시나리오](../../../src/shared/mock/scenarios.ts)에 `tasks-default`·`tasks-empty`·`tasks-member` 등이 있다. 세 보기의 긴 콘텐츠·다량 데이터·부분 조회 실패를 위한 전용 시나리오는 없다. 기존 스토리의 느린 응답·실패는 handler override로 만든다.
 
@@ -308,7 +308,7 @@ PM 승인 조회가 모든 보기를 막는 현재 구조와 팀원·회의 실�
 
 | 영역 | 현재 코드 |
 |---|---|
-| 설정 | [SettingsPage](../../../src/pages/settings/ui/SettingsPage.tsx)에는 두 가지만 있다. 하나는 `PagePlaceholder` 안의 `워크스페이스 이름` 입력 한 칸이다. 저장 API 없이 `되돌리기`만 있고, 이탈 확인을 점검하는 용도다. 다른 하나는 M5가 앞당긴 [NotionConnectionSection](../../../src/features/notion-connection/ui/NotionConnectionSection.tsx)이다. |
+| 설정 | [SettingsPage](../../../src/pages/settings/ui/SettingsPage.tsx)에는 두 가지만 있다. 하나는 `PagePlaceholder` 안의 `워크스페이스 이름` 입력 한 칸이다. 저장 API 없이 `되돌리기`만 있고, 이탈 확인을 점검하는 용도다. 다른 하나는 M5가 앞당긴 [NotionConnectionSection](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/515456fd257e66f37dd3838f81fd310594faf2ac/frontend/src/features/notion-connection/ui/NotionConnectionSection.tsx)이다. |
 | Notion 연결 영역 | PM만 `연결하기`·`다시 연결하기`를 본다(`canManage`). 일반 팀원은 상태와 요청 안내만 본다. 복귀 뒤 연동 상태를 다시 조회하고, 차단 모달에서 왔으면 업로드 화면으로 돌아간다(D-098). 코드 주석에 "`속성 다시 맞추기`·`연결 끊기`·Discord 줄은 M8"이라고 적혀 있다. |
 | 팀 | [MembersPage](../../../src/pages/members/ui/MembersPage.tsx)는 `GET /members` 결과의 이름 목록만 보여 주는 플레이스홀더다. 로딩·오류·다시 시도만 있다. |
 | 없는 것 | 설정의 Discord 연결 관리, 건너뛴 연결을 완료하는 별도 경로나 표시(D-011), 온보딩 뒤의 팀원 연결 재진입(D-074·D-075), `연결되지 않은 계정` 영역(D-076), 연결 끊기 UI는 코드에서 찾지 못했다. |
@@ -318,11 +318,11 @@ PM 승인 조회가 모든 보기를 막는 현재 구조와 팀원·회의 실�
 
 | 대상 | 위치 | 재사용 가능성 |
 |---|---|---|
-| 매핑 모델 `buildMappingRows`·`findMappingIssues`·`planRow`·`saveMemberMappings`·`MappingSaveError` | [features/onboarding/model/memberMapping.ts](../../../src/features/onboarding/model/memberMapping.ts) | 순수 함수와 저장 순서 규칙이다. D-026~D-029, #228의 PM 연결([리팩터 계획](../refactor/plan-onboarding-pm-discord-link.md))을 담고 있어 그대로 쓸 수 있다. 위치가 `onboarding` 슬라이스라는 점만 다르다. |
+| 매핑 모델 `buildMappingRows`·`findMappingIssues`·`planRow`·`saveMemberMappings`·`MappingSaveError` | [features/onboarding/model/memberMapping.ts](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/a08f5911a1d3a13ccde2e4b61d56586a5c91df1e/frontend/src/features/onboarding/model/memberMapping.ts) | 순수 함수와 저장 순서 규칙이다. D-026~D-029, #228의 PM 연결([리팩터 계획](../refactor/work-items/228-onboarding-pm-discord-link/plan.md))을 담고 있어 그대로 쓸 수 있다. 위치가 `onboarding` 슬라이스라는 점만 다르다. |
 | 연결 상태 조합 `linkDiscordUsers` | [entities/member/lib/linkDiscordUsers.ts](../../../src/entities/member/lib/linkDiscordUsers.ts) | `linked`·`unlinked`·`inactive`(D-028·D-031) 판정이 이미 있다. `연결되지 않은 계정` 목록의 출처로 쓸 수 있다. |
 | 팀원 연결 화면 | [widgets/onboarding/ui/MembersStep.tsx](../../../src/widgets/onboarding/ui/MembersStep.tsx) | 폼 본문(줄·PM 체크·오류 문구·부분 실패 재시도)은 재사용할 가치가 있다. 다만 `OnboardingLayout`·`ExitLink`·`useOnboardingSave`(`connect_members` 저장)와 묶여 있어 그대로는 쓸 수 없다. |
 | 연결 단계 훅 `useIntegrationStep` | [features/onboarding/model/useIntegrationStep.ts](../../../src/features/onboarding/model/useIntegrationStep.ts) | OAuth 복귀 확인 규칙은 같지만 성공 뒤 온보딩 단계를 저장한다. 설정에서는 쓰지 않는다. |
-| 설정 연결 훅 `useNotionConnection` | [features/notion-connection/model/useNotionConnection.ts](../../../src/features/notion-connection/model/useNotionConnection.ts) | 단계를 저장하지 않는 설정용 복귀 확인 규칙이다. 경합 처리(세션 종료, 화면 이탈, 이탈 확인)를 갖췄지만 provider가 `notion`으로 고정되어 있다. Discord에 쓰려면 일반화가 필요하다. |
+| 설정 연결 훅 `useNotionConnection` | [features/notion-connection/model/useNotionConnection.ts](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/515456fd257e66f37dd3838f81fd310594faf2ac/frontend/src/features/notion-connection/model/useNotionConnection.ts) | 단계를 저장하지 않는 설정용 복귀 확인 규칙이다. 경합 처리(세션 종료, 화면 이탈, 이탈 확인)를 갖췄지만 provider가 `notion`으로 고정되어 있다. Discord에 쓰려면 일반화가 필요하다. |
 | OAuth 시작·복귀 | [entities/integration](../../../src/entities/integration/index.ts)의 `integrationStartUrl`·`readIntegrationReturn`·`waitWhileConnecting` | provider와 무관하게 쓸 수 있다. |
 | 모의 OAuth | [shared/mock/oauth](../../../src/shared/mock/oauth/MockOAuthPage.tsx), [결정 기록](../m4/basis-for-decision/2026-09-29-msw-storage-oauth-mock.md) | Discord·Notion 모두 `연결 허용`·`취소`·`실패 재현`을 지원한다. |
 | 필드 오류 표시 | [강조색](../m4/basis-for-decision/2026-09-29-field-error-accent.md), [낭독 방식](../m4/basis-for-decision/2026-09-29-field-error-announcement.md) | 매핑 폼의 오류는 이 규칙(`error` 강조색, `aria-describedby`만 사용)을 그대로 따른다. |
@@ -343,7 +343,7 @@ FSD 경계([eslint.config.js](../../../eslint.config.js))상 `features`는 다�
   - [pages.test.tsx](../../../src/app/router/pages.test.tsx): 팀 목록 403·재시도, 설정 이탈 확인.
   - [onboardingMembers.test.tsx](../../../src/app/onboardingMembers.test.tsx), [onboardingModel.test.ts](../../../src/features/onboarding/model/onboardingModel.test.ts): 매핑.
   - [linkDiscordUsers.test.ts](../../../src/entities/member/lib/linkDiscordUsers.test.ts).
-- **Storybook**: [NotionConnectionSection.stories.tsx](../../../src/features/notion-connection/ui/NotionConnectionSection.stories.tsx), [NotionRequiredModal.stories.tsx](../../../src/features/notion-connection/ui/NotionRequiredModal.stories.tsx), [OnboardingSteps.stories.tsx](../../../src/widgets/onboarding/ui/OnboardingSteps.stories.tsx). 설정·팀 페이지 스토리는 없다.
+- **Storybook**: [NotionConnectionSection.stories.tsx](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/515456fd257e66f37dd3838f81fd310594faf2ac/frontend/src/features/notion-connection/ui/NotionConnectionSection.stories.tsx), [NotionRequiredModal.stories.tsx](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/515456fd257e66f37dd3838f81fd310594faf2ac/frontend/src/features/notion-connection/ui/NotionRequiredModal.stories.tsx), [OnboardingSteps.stories.tsx](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/9d1a8e48ca1148545b5fe20c817da271bb33b91a/frontend/src/widgets/onboarding/ui/OnboardingSteps.stories.tsx). 설정·팀 페이지 스토리는 없다.
 - **E2E**
   - [signup-onboarding.e2e.ts](../../../e2e/signup-onboarding.e2e.ts): 온보딩 팀원 연결.
   - [select-switch.e2e.ts](../../../e2e/select-switch.e2e.ts): 설정 화면에서 공간 전환.
@@ -404,7 +404,7 @@ D-011·D-012의 `워크스페이스 관리·설정`, D-076의 `워크스페이�
 - 결정: [frontend-decisions.md](../../decision/frontend-decisions.md)의 D-011~D-013, D-026~D-031, D-073~D-076, D-097·D-098, D-102~D-105(역할 분기 선례), D-137, D-158, D-168, D-173
 - 선행 마일스톤
   - [M4 계획](../m4/plan.md), [M4 인수인계](../m4/m4-handoff.md): 온보딩 연결과 실 API 제약
-  - [PM 연결 리팩터 계획](../refactor/plan-onboarding-pm-discord-link.md)
+  - [PM 연결 리팩터 계획](../refactor/work-items/228-onboarding-pm-discord-link/plan.md)
   - [M7 계획](../m7/plan.md): 양식 기준
 - 계약: [frontend-api-contract.md](../../contracts/frontend-api-contract.md) §2.2, §4.3, §4.5, §5.3, §5.8
 - 디자인: [캔버스 안내](../../design/canvas/README.md)의 [Team](../../design/canvas/Team.dc.html)·[Settings](../../design/canvas/Settings.dc.html)
@@ -629,7 +629,7 @@ MSW를 PM 전용으로 바꾸면, 일반 팀원으로 매핑·연결을 호출�
 | 발송 권한 | **기본값 없음** | 문서 근거 없음. 확인 필요 태스크의 PM 전용 규칙(D-102)은 메시지에 적용된다는 근거가 없어 참고만 한다 |
 | 발송 시점·문구 수정·반려 | **기본값 없음** | 시안에 `언제 보낼까요?`·`고쳐 쓰기`·`반려`가 있으나 결정 없음 |
 
-화면 노출의 임시 기본값은 D-171의 「내비게이션 항목과 `/messages` 라우트는 유지하고 준비 중 안내」와 기존 모드 분기 선례([승인 처리 경로](../../../src/features/approval-resolve/model/transport.ts)의 `import.meta.env.DEV && config.mswEnabled`)에 근거한다. 이렇게 하면 production과 Vitest 기본 모드의 동작이 바뀌지 않아 위 테스트 6개가 그대로 유지된다.
+화면 노출의 임시 기본값은 D-171의 「내비게이션 항목과 `/messages` 라우트는 유지하고 준비 중 안내」와 기존 모드 분기 선례([승인 처리 경로](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/8a8784abb151eccdb5e99aefe39b758d2b26774e/frontend/src/features/approval-resolve/model/transport.ts)의 `import.meta.env.DEV && config.mswEnabled`)에 근거한다. 이렇게 하면 production과 Vitest 기본 모드의 동작이 바뀌지 않아 위 테스트 6개가 그대로 유지된다.
 
 ### C-4. 의존 사항과 관련 문서
 

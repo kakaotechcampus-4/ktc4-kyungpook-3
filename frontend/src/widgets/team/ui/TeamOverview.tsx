@@ -1,16 +1,30 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { integrationsQueryOptions } from '@/entities/integration'
-import { discordUsersQueryOptions, memberListQueryOptions } from '@/entities/member'
+import {
+  discordUsersQueryOptions,
+  memberAliasesQueryOptions,
+  memberListQueryOptions,
+} from '@/entities/member'
+import type { MemberAlias } from '@/entities/member'
 import { taskListQueryOptions } from '@/entities/task'
+import { MemberAliasPanel } from '@/features/member-alias'
+import type { MemberAliasesState } from '@/features/member-alias'
 import { MemberInviteControl } from '@/features/member-invite'
+import { MemberRoleControl } from '@/features/member-role'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Button } from '@/shared/ui/button'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
-import { firstAttention, inactiveMemberIds, tasksByMember, unlinkedDiscordUsers } from '../lib/team'
+import {
+  aliasesByMember,
+  firstAttention,
+  inactiveMemberIds,
+  tasksByMember,
+  unlinkedDiscordUsers,
+} from '../lib/team'
 import { MemberConnectDialog } from './MemberConnectDialog'
 import type { MappingSource } from './MemberConnectDialog'
 import { COLUMNS, HEADER, LEAD, LEAD_TEXT, MAIN, TITLE } from './frame'
@@ -21,6 +35,7 @@ import type { UnlinkedAccountsState } from './SideCards'
 import { WeekAhead } from './WeekAhead'
 
 const EMPTY_TASKS: never[] = []
+const EMPTY_ALIASES: readonly MemberAlias[] = []
 
 function isNotConnected(error: unknown): boolean {
   return error instanceof ApiError && error.code === ERROR_CODES.INTEGRATION_NOT_CONNECTED
@@ -62,6 +77,19 @@ export function TeamOverview({
     isNotConnected(discordUsers.error)
 
   const grouped = useMemo(() => tasksByMember(tasks.data ?? EMPTY_TASKS), [tasks.data])
+  // 공간 하나에 한 번 받아 팀원마다 나눈다. 접힌 단추에도 개수를 적어야 해서 펼치기 전에 받는다
+  const aliases = useQuery(memberAliasesQueryOptions(workspaceId))
+  const aliasGroups = useMemo(
+    () => (aliases.data === undefined ? null : aliasesByMember(aliases.data)),
+    [aliases.data],
+  )
+  const retryAliases = () => void aliases.refetch()
+  const aliasesOf = (memberId: string): MemberAliasesState =>
+    aliasGroups !== null
+      ? { status: 'ready', aliases: aliasGroups.get(memberId) ?? EMPTY_ALIASES }
+      : aliases.isError
+        ? { status: 'error', retry: retryAliases }
+        : { status: 'loading' }
   const names = useMemo(
     () => new Map((members.data ?? []).map(({ id, displayName }) => [id, displayName])),
     [members.data],
@@ -142,18 +170,37 @@ export function TeamOverview({
             </DeferredSkeleton>
           ) : members.data !== undefined && tasks.data !== undefined ? (
             <Reveal indicator={listIndicator}>
-              {members.data.map((member) => (
-                <MemberSection
-                  key={member.id}
-                  member={member}
-                  tasks={grouped.get(member.id) ?? EMPTY_TASKS}
-                  today={today}
-                  inactive={inactive.has(member.id)}
-                  invite={
-                    isPm ? <MemberInviteControl workspaceId={workspaceId} member={member} /> : null
-                  }
-                />
-              ))}
+              {members.data.map((member) => {
+                const memberAliases = aliasesOf(member.id)
+                return (
+                  <MemberSection
+                    key={member.id}
+                    member={member}
+                    tasks={grouped.get(member.id) ?? EMPTY_TASKS}
+                    today={today}
+                    inactive={inactive.has(member.id)}
+                    invite={
+                      isPm ? (
+                        <>
+                          <MemberInviteControl workspaceId={workspaceId} member={member} />
+                          <MemberRoleControl workspaceId={workspaceId} member={member} />
+                        </>
+                      ) : null
+                    }
+                    aliases={{
+                      count: memberAliases.status === 'ready' ? memberAliases.aliases.length : null,
+                      panel: (
+                        <MemberAliasPanel
+                          workspaceId={workspaceId}
+                          member={member}
+                          state={memberAliases}
+                          canManage={isPm}
+                        />
+                      ),
+                    }}
+                  />
+                )
+              })}
             </Reveal>
           ) : (
             <Reveal indicator={listIndicator}>

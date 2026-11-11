@@ -11,6 +11,9 @@ import { recordRequestBodies } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
 vi.setConfig({ testTimeout: 20_000 })
+
+/** 생성 승인은 본 카드의 지문을 함께 보낸다 (#547). 값 자체는 approvalMerged.test.tsx 가 본다 */
+const SEEN: unknown = expect.stringMatching(/^[0-9a-f]{16}$/)
 afterEach(() => clearTrackedMeetings())
 
 const approve = () => screen.getByRole('button', { name: /^승인$/ })
@@ -54,7 +57,11 @@ it('creates with undecided assignee/deadline through the live path and shows sav
   await userEvent.click(approve())
   await screen.findByTestId('approval-result')
   expect(bodies).toEqual([
-    { status: 'approved', task_overrides: { task_title: '보완한 제목', due_date: null } },
+    {
+      status: 'approved',
+      payload_version: SEEN,
+      task_overrides: { task_title: '보완한 제목', due_date: null },
+    },
   ])
   expect(values('반영한 값')).toContain('보완한 제목')
   expect(values('반영한 값')).toContain('미정')
@@ -132,6 +139,34 @@ it('clearing a proposed deadline keeps the field empty and approves the original
   await screen.findByTestId('approval-result')
   expect(bodies).toEqual([{ status: 'approved' }])
   expect(db.tasks[0]).toMatchObject({ due_date: '2026-10-10' })
+})
+
+describe('마감 해제 카드 (#644)', () => {
+  beforeEach(() => {
+    updateProposal({ due_date: null, base_values: { due_date: '2026-11-10' } })
+    db.tasks[0].due_date = '2026-11-10'
+  })
+
+  it('shows the cleared proposal as 미정 and clears the deadline when approved untouched', async () => {
+    const bodies = recordRequestBodies('PATCH', '/approvals/ap_01')
+    await open()
+    expect(dueInput()).toHaveValue('')
+    expect(dueInput()).toHaveAttribute('placeholder', '원래 제안 유지 · 미정')
+    await userEvent.click(approve())
+    await screen.findByTestId('approval-result')
+    expect(bodies).toEqual([{ status: 'approved' }])
+    expect(db.tasks[0]).toMatchObject({ due_date: null })
+  })
+
+  it('approves a typed date instead of clearing', async () => {
+    const bodies = recordRequestBodies('PATCH', '/approvals/ap_01')
+    await open()
+    await userEvent.type(dueInput(), '2026-10-12')
+    await userEvent.click(approve())
+    await screen.findByTestId('approval-result')
+    expect(bodies).toEqual([{ status: 'approved', task_overrides: { due_date: '2026-10-12' } }])
+    expect(db.tasks[0]).toMatchObject({ due_date: '2026-10-12' })
+  })
 })
 
 it('replays exact saved edits with each explicit conflict version, retaining drafts across repeated conflicts', async () => {
@@ -238,7 +273,11 @@ it('inline approval card sends partial real API edits and leaves original eviden
   await userEvent.click(within(card).getByRole('button', { name: /^승인$/ }))
   await waitFor(() => expect(bodies).toHaveLength(1))
   expect(bodies).toEqual([
-    { status: 'approved', task_overrides: { task_title: '목록에서 고친 제목' } },
+    {
+      status: 'approved',
+      payload_version: SEEN,
+      task_overrides: { task_title: '목록에서 고친 제목' },
+    },
   ])
   expect(original).toContain('원문 담당자')
   expect(db.approvals[1].payload.task_title).toBe('테스트 계획 정리')

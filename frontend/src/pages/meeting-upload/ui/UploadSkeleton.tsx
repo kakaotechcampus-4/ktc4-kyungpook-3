@@ -1,3 +1,7 @@
+import {
+  UPLOAD_EXTERNAL_PROCESSING_NOTICE,
+  UPLOAD_NOTION_NOTICE,
+} from '@/shared/config/meetingUpload'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { COLUMN, LEAD, LEAD_TEXT, PAGE, TITLE, TITLE_TEXT } from './styles'
 
@@ -19,7 +23,7 @@ export function UploadSkeleton() {
           </p>
         </div>
         <p className="text-meta text-dim tabular-nums">
-          mp3 · wav · m4a · ogg · webm — 최대 200 MiB · 2시간
+          mp3 · wav · m4a · ogg · webm — 최대 700 MiB · 2시간
         </p>
       </div>
       <div className="flex flex-col gap-18 rounded-16 border border-line bg-surface p-22">
@@ -41,8 +45,9 @@ export function UploadSkeleton() {
       </div>
       {/* 아래 줄 — 안내 문구와 `정리 시작하기` (MeetingUploadForm 의 FOOTER) */}
       <div className="flex items-center justify-between gap-20 max-md:flex-wrap">
-        <div className="flex h-lh flex-1 items-center text-caption">
-          <Skeleton width="60%" />
+        <div className="flex min-w-0 flex-1 flex-col gap-10 max-md:basis-full">
+          <p className="text-caption text-dim">{UPLOAD_EXTERNAL_PROCESSING_NOTICE}</p>
+          <p className="text-caption text-dim">{UPLOAD_NOTION_NOTICE}</p>
         </div>
         <Skeleton variant="block" width={132} height={44} className="rounded-9" />
       </div>

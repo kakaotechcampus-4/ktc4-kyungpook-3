@@ -26,7 +26,7 @@ from app.models import (
     Source,
 )
 from app.schemas.meeting import MeetingListResponse
-from app.services import upload_storage
+from app.services import meeting_audio, speaker_assignment, upload_storage
 from app.services.member_aliases import sync_name_aliases
 from app.schemas.workspace import (
     WorkspaceCreateRequest,
@@ -215,11 +215,13 @@ def list_workspace_meetings(
         
     meetings = db.query(Meeting).filter(
         Meeting.workspace_id == workspace_id,
+        Meeting.deleted_at.is_(None),
         or_(
             Meeting.status != MeetingStatus.FAILED,
             and_(
                 Meeting.source == MeetingSource.MANUAL_UPLOAD,
-                Meeting.failed_stage == "speaker_assignment_expired",
+                # PM 이 다시 올려야 하는 업로드 실패는 목록에 남겨 알린다(#563 리뷰)
+                Meeting.failed_stage.in_(["speaker_assignment_expired", "upload_unclaimed"]),
             ),
         ),
     ).order_by(Meeting.started_at.desc()).all()
@@ -321,6 +323,7 @@ def upload_meeting(
         workspace_id=workspace_id,
         title=title,
         source=str(MeetingSource.MANUAL_UPLOAD),
+        deletion_ready=True,
         status=str(MeetingStatus.PROCESSING),
         # UTC로 맞춰 저장한다. 시간대를 못 담는 DB(SQLite)에서도 같은 순간이 같은 값으로 남는다
         started_at=started_at.astimezone(timezone.utc) if started_at else now,
@@ -342,7 +345,7 @@ def upload_meeting(
             ensure_ascii=False,
         ),
     )
-    # 녹음을 복사하는 동안(100MiB면 몇 초) DB 연결을 붙잡지 않도록 읽기 트랜잭션을 끝내 풀에 돌려준다.
+    # 녹음을 복사하는 동안(200MiB면 몇 초) DB 연결을 붙잡지 않도록 읽기 트랜잭션을 끝내 풀에 돌려준다.
     # 그 사이 바뀐 것은 아래 커밋 직전 잠금과 재확인이 잡는다
     db.rollback()
     try:
@@ -371,6 +374,15 @@ def upload_meeting(
         if busy_id is not None:
             raise AppError(ErrorCode.MEETING_PROCESSING_IN_PROGRESS, details={"meeting_id": busy_id})
         db.add_all([meeting, upload])
+        # 재생용 보관 기록은 같은 커밋에 둔다. 업로드 회의는 녹음이 들어온 이 시각부터 보관 기간을 센다
+        meeting_audio.record(
+            db,
+            meeting.meeting_id,
+            upload.stored_filename,
+            speaker_assignment.playback_content_type(upload.stored_filename),
+            upload.size_bytes,
+            now,
+        )
         db.commit()
     except Exception:
         db.rollback()

@@ -40,7 +40,7 @@ function renderAt(path: string, { role }: RenderOptions = {}) {
 describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () => {
   it.each([
     ['/login', ["Manager's Manager", '이메일', '비밀번호를 잊으셨나요?', '처음이신가요?']],
-    ['/signup', ['계정 만들기', '이름', '8자 이상, 숫자 포함', '이미 계정이 있으신가요?']],
+    ['/signup', ['계정 만들기', '이메일', '또는', '이미 계정이 있으신가요?']],
     ['/forgot-password', ['비밀번호 찾기', '이메일']],
     ['/workspaces', ['워크스페이스 선택', '들어갈 워크스페이스를 골라 주세요.']],
     [
@@ -49,9 +49,10 @@ describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () =>
     ],
     ['/workspaces/ws_01/tasks', ['태스크', '전체', '확인 필요', '마감 전체', '담당자 전체']],
     ['/workspaces/ws_01/tasks?view=board', ['태스크', '시작 전', '진행 중', '완료']],
+    ['/workspaces/ws_01/project-map', ['프로젝트 맵', '그래프', '목록 보기', '시작일', '종료일']],
     ['/workspaces/ws_01/tasks/tk_01', ['태스크 목록', '태스크 정보', '변경 이력']],
     ['/workspaces/ws_01/approvals/ap_01', ['태스크 목록']],
-    ['/workspaces/ws_01/messages', ['메시지', '새 재촉', '보내기 전 확인', '대화']],
+    ['/workspaces/ws_01/messages', ['메시지', '새 재촉', '새 대화', '보내기 전 확인', '대화']],
     ['/workspaces/ws_01/members', ['팀', '팀원 관리', '연결되지 않은 계정']],
     ['/workspaces/ws_01/settings', ['설정', '일반', '워크스페이스 이름', 'Discord', 'Notion']],
     ['/workspaces/ws_01/meetings/upload', ['회의를 올려 주세요', '회의 제목', '참석자']],
@@ -62,12 +63,19 @@ describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () =>
     for (const text of texts) expect(within(main).getAllByText(text).length).toBeGreaterThan(0)
   })
 
+  it('가입 첫 단계의 뼈대에는 인증할 이메일만 있고 프로필 칸은 없다', () => {
+    const { main } = renderAt('/signup')
+    expect(within(main).queryByText('이름')).not.toBeInTheDocument()
+    expect(within(main).queryByText('비밀번호')).not.toBeInTheDocument()
+  })
+
   it.each([
     '/login',
     '/workspaces',
     '/workspaces/ws_01/dashboard',
     '/workspaces/ws_01/tasks',
     '/workspaces/ws_01/tasks/tk_01',
+    '/workspaces/ws_01/project-map',
     '/workspaces/ws_01/messages',
     '/workspaces/ws_01/members',
     '/workspaces/ws_01/settings',
@@ -82,6 +90,18 @@ describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () =>
       expect(screen.queryAllByRole('button')).toHaveLength(0)
     },
   )
+
+  it.each([
+    ['', true],
+    ['?view=graph', true],
+    ['?view=list', false],
+  ])('프로젝트 맵 %s 는 보기와 맞는 대기 모양이며 조작할 수 없다', (search, graph) => {
+    renderAt(`/workspaces/ws_01/project-map${search}`)
+    expect(screen.getByTestId('project-map-skeleton-body')).toBeInTheDocument()
+    expect(screen.queryByTestId('project-map-skeleton-graph') !== null).toBe(graph)
+    expect(screen.queryByRole('tab')).toBeNull()
+    expect(screen.queryByRole('button')).toBeNull()
+  })
 
   it('그려져 있는 동안 스플래시를 잡는다 — 첫 화면이 아니다', () => {
     expect(getSplashHoldCount()).toBe(0)
@@ -108,6 +128,7 @@ describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () =>
     ['/workspaces/ws_01/tasks', '확인 필요'],
     ['/workspaces/ws_01/members', '팀원 관리'],
     ['/workspaces/ws_01/messages', '새 재촉'],
+    ['/workspaces/ws_01/messages', '새 대화'],
     ['/workspaces/ws_01/messages', '보내기 전 확인'],
   ])('팀원의 %s 에는 PM 의 「%s」 가 없다', (path, pmOnly) => {
     renderAt(path, { role: 'member' })
@@ -149,7 +170,7 @@ describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () =>
   it.each([
     ['/login/', '이메일'],
     ['/LOGIN', '이메일'],
-    ['/Signup/', '8자 이상, 숫자 포함'],
+    ['/Signup/', '이메일'],
     ['/Workspaces/', '워크스페이스 선택'],
     ['/Workspaces/ws_01/Dashboard/', '워크스페이스 현황'],
     ['/workspaces/ws_01/TASKS?view=board', '시작 전'],

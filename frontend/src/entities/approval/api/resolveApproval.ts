@@ -1,5 +1,6 @@
 import { request } from '@/shared/api/client'
-import type { ApprovalDto } from '@/shared/types/api/approval'
+import { parseResponse } from '@/shared/api/parseResponse'
+import { approvalSchema } from '@/shared/types/api/approval'
 import { toApproval, toApprovalResolveRequestDto } from '../model/mapper'
 import { planApprovalResolution } from '../model/resolution'
 import type { ApprovalDecision, ApprovalResolveContext, TaskCreateIssue } from '../model/resolution'
@@ -21,22 +22,29 @@ export class ApprovalNotResolvableError extends Error {
 /**
  * 승인·반려 (`PATCH /approvals/{approval_id}`, PM 전용). 본문은 `planApprovalResolution` 이 허락한 것만 보낸다.
  * 판정을 통과하지 못하거나 다른 공간의 승인이면 요청하지 않고 `ApprovalNotResolvableError` 를 던진다.
- * 409 는 `toApprovalResolveFailure` 로 충돌·이미 처리됨을 구분한다. 자동으로 다시 보내지 않는다
+ * 409 는 `toApprovalResolveFailure` 로 충돌·이미 처리됨을 구분한다. 자동으로 다시 보내지 않는다.
+ * `signal` 은 누를 때의 세션 범위다. 그 세션이 끝나면 요청이 취소된다
  */
 export async function resolveApproval(
   workspaceId: string,
   approval: Approval,
   decision: ApprovalDecision,
   context: ApprovalResolveContext = {},
+  signal?: AbortSignal,
 ): Promise<Approval> {
   if (approval.workspaceId !== workspaceId)
     throw new ApprovalNotResolvableError('다른 워크스페이스의 확인 요청이에요.')
   const plan = planApprovalResolution(approval, decision, context)
   if (!plan.ok) throw new ApprovalNotResolvableError(plan.reason, plan.issues)
   return toApproval(
-    await request<ApprovalDto>(`/approvals/${encodeURIComponent(approval.id)}`, {
-      method: 'PATCH',
-      body: toApprovalResolveRequestDto(plan.resolution),
-    }),
+    parseResponse(
+      approvalSchema,
+      await request<unknown>(`/approvals/${encodeURIComponent(approval.id)}`, {
+        method: 'PATCH',
+        body: toApprovalResolveRequestDto(plan.resolution),
+        signal,
+      }),
+      'approval',
+    ),
   )
 }

@@ -16,9 +16,10 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
 from app.main import app
-from app.models import Meeting, MeetingUpload, Member, Session as SessionModel, User, Workspace
+from app.models import Meeting, MeetingAudio, MeetingUpload, Member, Session as SessionModel, User, Workspace
 from app.services import upload_storage
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 # 형식 검사는 파일 첫 부분만 본다. 머리만 진짜 모양이고 나머지는 아무 바이트다
@@ -71,7 +72,7 @@ def db(request):
 @pytest.fixture
 def seed(db):
     """워크스페이스 A의 PM(pm-token)과 팀원 둘, 탈퇴한 팀원, 다른 워크스페이스 B의 팀원."""
-    user = User(email="pm@example.com", name="pm")
+    user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     db.add(user)
     db.flush()
     db.add(SessionModel(
@@ -142,6 +143,11 @@ def test_upload_saves_audio_and_upload_row_and_creates_processing_meeting(db, se
     assert upload.content_type == "audio/wav"
     assert upload.uploaded_by_member_id == seed["pm"].member_id
     assert upload.uploaded_at is not None
+    # 재생용 보관 기록이 같은 커밋으로 남는다
+    audio = db.get(MeetingAudio, meeting.meeting_id)
+    assert (audio.filename, audio.content_type, audio.size_bytes) == ("audio.wav", "audio/wav", len(AUDIO))
+    assert audio.retention_from is not None
+    assert audio.deleted_at is None
 
 
 def test_repeated_attendee_is_saved_once(db, seed):
@@ -167,6 +173,14 @@ def test_file_at_the_limit_is_accepted(db, seed, monkeypatch):
     monkeypatch.setenv("UPLOAD_MAX_BYTES", str(len(AUDIO)))
 
     assert _upload(seed, [seed["pm"].member_id]).status_code == 202
+
+
+def test_default_limit_matches_web_upload_limit(monkeypatch):
+    # 웹 화면 한도(frontend uploadPolicy maxBytes)와 같은 700MiB 다. 설정이 비어 있어도 기본값을 쓴다
+    monkeypatch.delenv("UPLOAD_MAX_BYTES", raising=False)
+    assert upload_storage.max_bytes() == 700 * 1024 * 1024
+    monkeypatch.setenv("UPLOAD_MAX_BYTES", "")
+    assert upload_storage.max_bytes() == 700 * 1024 * 1024
 
 
 @pytest.mark.parametrize("who", ["outsider", "left"])
@@ -276,6 +290,23 @@ def test_disk_failure_leaves_no_meeting_and_no_folder(db, seed, monkeypatch):
     assert r.json()["error"]["code"] == "AUDIO_UPLOAD_FAILED"
     assert _meetings(db) == []
     assert list(_upload_root().iterdir()) == []
+
+
+def test_upload_returns_audio_upload_failed_on_s3_error(db, seed, monkeypatch):
+    from tests.fake_s3 import FakeS3
+
+    fake = FakeS3()
+    fake.fail_next = "upload_fileobj"
+    monkeypatch.setenv("UPLOAD_STORAGE", "s3")
+    monkeypatch.setenv("UPLOAD_S3_BUCKET", "b")
+    monkeypatch.setattr(upload_storage, "_s3_client", lambda: fake)
+
+    r = _upload(seed, [seed["pm"].member_id])
+
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["code"] == "AUDIO_UPLOAD_FAILED"
+    assert _meetings(db) == []
+    assert fake.keys("b") == []
 
 
 def test_commit_failure_removes_saved_folder(db, seed, monkeypatch):
@@ -421,7 +452,7 @@ def test_concurrent_uploads_to_one_workspace_accept_only_one(monkeypatch):
             session.close()
 
     seed_session = make_session()
-    user = User(email="pm@example.com", name="pm")
+    user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     seed_session.add(user)
     seed_session.flush()
     seed_session.add(SessionModel(
@@ -499,3 +530,67 @@ def test_upload_allowed_while_chat_meeting_processing(db, seed):
     r = _upload(seed, [seed["pm"].member_id])
 
     assert r.status_code == 202, r.text
+
+
+# 본문 크기 제한(upload_limit). 인증과 핸들러보다 먼저, 본문을 다 받기 전에 413 으로 끊는다
+def _post_upload(seed, *, content=None, cookie=None, headers=None):
+    c = TestClient(app, base_url="https://testserver")
+    if cookie:
+        c.cookies.set("session_token", cookie)
+    url = f"/api/v1/workspaces/{seed['ws'].workspace_id}/meetings/upload"
+    if content is None:
+        return c.post(
+            url,
+            data={"title": "주간 회의", "attendee_member_ids": [seed["pm"].member_id]},
+            files={"file": ("회의.wav", AUDIO, "audio/wav")},
+        )
+    return c.post(url, content=content, headers=headers)
+
+
+@pytest.fixture
+def tiny_limit(monkeypatch):
+    from app.core import upload_limit
+
+    monkeypatch.setenv("UPLOAD_MAX_BYTES", "100")
+    monkeypatch.setattr(upload_limit, "MULTIPART_OVERHEAD_BYTES", 0)
+
+
+@pytest.mark.parametrize("cookie", [None, "pm-token"])
+def test_body_over_limit_by_content_length_gets_413_before_auth(db, seed, tiny_limit, cookie):
+    r = _post_upload(seed, cookie=cookie)
+
+    # 로그인하지 않은 요청도 401 이 아니라 413 이다. 인증보다 먼저 끊기 때문이다
+    assert r.status_code == 413, r.text
+    assert r.json() == {
+        "data": None,
+        "error": {
+            "code": "AUDIO_TOO_LARGE",
+            "message": "오디오 파일 용량이 너무 큽니다.",
+            "details": {"max_bytes": 100},
+        },
+    }
+    assert _meetings(db) == []
+    assert not _upload_root().exists()
+
+
+def test_body_over_limit_without_content_length_gets_413(db, seed, tiny_limit):
+    def chunks():
+        for _ in range(10):
+            yield b"x" * 50
+
+    r = _post_upload(seed, content=chunks(), headers={"content-type": "multipart/form-data; boundary=b"})
+
+    assert r.status_code == 413, r.text
+    assert r.json()["error"]["code"] == "AUDIO_TOO_LARGE"
+    assert _meetings(db) == []
+
+
+def test_body_under_limit_without_login_still_gets_401(db, seed):
+    assert _post_upload(seed).status_code == 401
+
+
+def test_other_routes_ignore_upload_body_limit(db, seed, tiny_limit):
+    c = TestClient(app, base_url="https://testserver")
+    r = c.post("/api/v1/auth/login", json={"email": "pm@example.com", "password": "x" * 500})
+
+    assert r.status_code != 413, r.text

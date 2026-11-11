@@ -1,10 +1,10 @@
 import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
 import { ApiError, createWorkspaceMismatchError, isWorkspaceMismatch } from '@/shared/api/errors'
+import { parseResponse } from '@/shared/api/parseResponse'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { workspaceKey } from '@/shared/api/queryKeys'
-import type { ListDto } from '@/shared/types/api/envelope'
-import type { MeetingDto, MeetingSummaryDto } from '@/shared/types/api/meeting'
+import { meetingListSchema, meetingSchema } from '@/shared/types/api/meeting'
 import { toMeeting, toMeetingSummary } from '../model/mapper'
 import type { Meeting, MeetingSummary } from '../model/types'
 
@@ -22,9 +22,10 @@ export async function fetchMeetingList(
   workspaceId: string,
   signal?: AbortSignal,
 ): Promise<MeetingSummary[]> {
-  const { items } = await request<ListDto<MeetingSummaryDto>>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/meetings`,
-    { signal },
+  const { items } = parseResponse(
+    meetingListSchema,
+    await request<unknown>(`/workspaces/${encodeURIComponent(workspaceId)}/meetings`, { signal }),
+    'meeting',
   )
   return items.map(toMeetingSummary)
 }
@@ -45,15 +46,17 @@ export function meetingListQueryOptions(workspaceId: string) {
  * 회의 상세. 처리 상태와 `progress` 를 읽는다 — 처리 추적의 polling 대상이다.
  * 경로에 워크스페이스가 없다(봇 경로, 계약 §2.3). key 에는 요청한 화면의 워크스페이스를 넣고, 응답의 공간이 그와 다르면
  * 성공 데이터로 돌려주지 않고 `WORKSPACE_MISMATCH`(`isWorkspaceMismatch`)로 던진다 — 캐시의 회의는 언제나 key 의 공간 것이다.
- * 받아 둔 정상 상세는 그 실패로 덮이지 않는다(TanStack Query 는 실패에 data 를 지우지 않는다)
+ * 받아 둔 정상 상세는 그 실패로 덮이지 않는다(TanStack Query 는 실패에 data 를 지우지 않는다).
  */
 export function meetingDetailQueryOptions(workspaceId: string, meetingId: string) {
   return queryOptions({
     queryKey: workspaceKey(workspaceId, 'meetings', 'detail', meetingId),
     queryFn: async ({ signal }) => {
-      const dto = await request<MeetingDto>(`/meetings/${encodeURIComponent(meetingId)}`, {
-        signal,
-      })
+      const dto = parseResponse(
+        meetingSchema,
+        await request<unknown>(`/meetings/${encodeURIComponent(meetingId)}`, { signal }),
+        'meeting',
+      )
       if (dto.workspace_id !== workspaceId)
         throw createWorkspaceMismatchError(workspaceId, dto.workspace_id)
       return toMeeting(dto)
@@ -63,12 +66,14 @@ export function meetingDetailQueryOptions(workspaceId: string, meetingId: string
 
 /** 접근 권한을 잃었거나(403) 회의가 없다(404). 다시 물어도 같다 — 일시적 실패가 아니다 */
 export function isAccessLost(error: unknown): boolean {
-  return error instanceof ApiError && error.kind === 'http' && [403, 404].includes(error.status)
+  return (
+    error instanceof ApiError && error.kind === 'http' && [403, 404, 410].includes(error.status)
+  )
 }
 
 /** 회의가 지워졌다(404) */
 export function isMeetingGone(error: unknown): boolean {
-  return error instanceof ApiError && error.kind === 'http' && error.status === 404
+  return error instanceof ApiError && error.kind === 'http' && [404, 410].includes(error.status)
 }
 
 export function isMeetingUnavailable(error: unknown): boolean {

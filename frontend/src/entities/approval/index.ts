@@ -4,12 +4,16 @@ export type {
   ApprovalResolveFailure,
   ApprovalStatus,
   ApprovalMissing,
+  AsrSuspect,
+  MergedApprovalItem,
   TaskCreateApproval,
   TaskUpdateApproval,
   TaskUpdateCategory,
   UnsupportedApproval,
 } from './model/types'
 export { isScopeChange, toApproval, toApprovalResolveFailure } from './model/mapper'
+export { approvalChange, mergedCount } from './model/merged'
+export type { ApprovalChange } from './model/merged'
 export type {
   ApprovalDecision,
   ApprovalResolution,
@@ -25,6 +29,7 @@ export {
   APPROVAL_RESOLUTION_REASONS,
   ASSIGNEE_PICK_REASON,
   TASK_TITLE_MAX_LENGTH,
+  aliasToLearn,
   planApprovalResolution,
   taskCreateValues,
   taskUpdateChanges,
@@ -32,6 +37,7 @@ export {
 } from './model/resolution'
 export { ApprovalNotResolvableError, resolveApproval } from './api/resolveApproval'
 export { sortByWaiting } from './lib/sortByWaiting'
+export { asrSuspectLine } from './lib/asrSuspect'
 export { dueFillSuggestion } from './lib/dueFill'
 export { approvalDetailQueryOptions } from './api/approvalDetail'
 export { approvalIds, pendingApprovalListQueryOptions } from './api/pendingApprovals'

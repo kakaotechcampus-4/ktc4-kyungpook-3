@@ -10,8 +10,9 @@ import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
 /*
- * #320 — 초대받은 사람은 가입하거나 로그인한 뒤 받은 초대를 보고, 수락하면 그 공간에 들어간다.
- * invitation-pending: 비로그인이고 iv_02 가 jaehwan@example.com 으로 이재환(mb_03, ws_01)을 기다린다
+ * #320 — 초대받은 사람은 로그인한 뒤 받은 초대를 보고, 수락하면 그 공간에 들어간다.
+ * invitation-pending: 비로그인이고 iv_02 가 가입자 이재환(us_03, 아이디 jaehwan)에게 팀원 이재환(mb_03, ws_01)으로 기다린다.
+ * #632 — 초대는 계정에 묶여 PM 이 아이디로 찾아 보낸다
  */
 
 vi.setConfig({ testTimeout: 15_000 })
@@ -22,15 +23,14 @@ const toastWith = (text: string) =>
     node.textContent?.includes(text),
   ) ?? null
 
-async function signUpAsInvitee() {
-  db.authenticated = false
-  const app = renderApp('/signup')
-  await screen.findByRole('heading', { name: '회원가입' })
-  await userEvent.type(screen.getByLabelText('이름'), '이재환')
-  await userEvent.type(screen.getByLabelText('이메일'), 'jaehwan@example.com')
-  await userEvent.type(screen.getByLabelText('비밀번호'), 'pass1234')
-  await userEvent.click(screen.getByRole('button', { name: '계정 만들기' }))
+async function signInAsInvitee() {
+  const app = renderApp('/login')
+  await userEvent.type(await screen.findByLabelText('이메일'), 'jaehwan@example.com')
+  await userEvent.type(screen.getByLabelText('비밀번호'), 'mock-password')
+  await userEvent.click(screen.getByRole('button', { name: '로그인' }))
   await app.expectPath('/onboarding/start')
+  // 주소가 바뀐 뒤에도 시작 화면은 잠깐 불러오는 중(aria-busy)이다. 다 그린 뒤에 시작한다
+  await screen.findByRole('link', { name: /팀원으로 시작/ })
   return app
 }
 
@@ -44,12 +44,14 @@ describe('받은 초대', () => {
     applyScenario('invitation-pending')
   })
 
-  it('초대받은 이메일로 가입하면 시작 화면과 팀 확인 화면에 받은 초대가 보인다', async () => {
-    const app = await signUpAsInvitee()
+  it('초대받은 계정으로 로그인하면 시작 화면과 팀 확인 화면에 받은 초대가 보인다', async () => {
+    const app = await signInAsInvitee()
 
     const row = await invitationRow('카테캠 3팀')
     expect(row.getByText('팀원 이름 이재환 · 초대한 사람 최진호')).toBeInTheDocument()
-    expect(screen.queryByText('PM에게 가입한 이메일로 초대를 요청하세요.')).toBeNull()
+    expect(
+      screen.queryByText('PM에게 내 아이디(jaehwan)를 알려 주고 초대를 요청하세요.'),
+    ).toBeNull()
 
     await userEvent.click(screen.getByRole('link', { name: /팀원으로 시작/ }))
     await app.expectPath('/onboarding/member')
@@ -59,7 +61,7 @@ describe('받은 초대', () => {
   })
 
   it('수락하면 공간 목록을 새로 받은 뒤 그 공간 대시보드로 들어가고, 일반 팀원이다', async () => {
-    const app = await signUpAsInvitee()
+    const app = await signInAsInvitee()
     const log = recordRequests()
 
     await userEvent.click((await invitationRow('카테캠 3팀')).getByRole('button', { name: '수락' }))
@@ -68,7 +70,7 @@ describe('받은 초대', () => {
     const accepted = log.timeline.indexOf('answer POST /invitations/iv_02/accept')
     expect(accepted).toBeGreaterThanOrEqual(0)
     expect(log.timeline.indexOf('start GET /workspaces', accepted)).toBeGreaterThan(accepted)
-    expect(db.invitations[0]).toMatchObject({ status: 'accepted', accepted_user_id: 'us_02' })
+    expect(db.invitations[0]).toMatchObject({ status: 'accepted', accepted_user_id: 'us_03' })
 
     app.navigate(paths.members('ws_01'))
     expect(await screen.findByRole('region', { name: '이재환' })).toBeInTheDocument()
@@ -76,7 +78,7 @@ describe('받은 초대', () => {
   })
 
   it('수락 전에 시작한 목록 다시 확인이 늦게 끝나도 수락 뒤 새로 받은 목록으로 그 공간에 들어간다', async () => {
-    const app = await signUpAsInvitee()
+    const app = await signInAsInvitee()
     await userEvent.click(screen.getByRole('link', { name: /팀원으로 시작/ }))
     await invitationRow('카테캠 3팀')
     let release = () => {}
@@ -107,7 +109,7 @@ describe('받은 초대', () => {
   })
 
   it('거절은 먼저 묻고, 거절하면 줄이 빠지고 초대를 요청하라는 안내가 보인다', async () => {
-    await signUpAsInvitee()
+    await signInAsInvitee()
 
     await userEvent.click((await invitationRow('카테캠 3팀')).getByRole('button', { name: '거절' }))
     const dialog = within(
@@ -115,19 +117,23 @@ describe('받은 초대', () => {
     )
     await userEvent.click(dialog.getByRole('button', { name: '거절' }))
 
-    expect(await screen.findByText('PM에게 가입한 이메일로 초대를 요청하세요.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('PM에게 내 아이디(jaehwan)를 알려 주고 초대를 요청하세요.'),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: '받은 초대' })).toBeNull()
     expect(db.invitations[0].status).toBe('declined')
   })
 
   it('그새 닫힌 초대를 수락하면 수락할 수 없다고 알리고 줄을 지운다', async () => {
-    const app = await signUpAsInvitee()
+    const app = await signInAsInvitee()
     const accept = (await invitationRow('카테캠 3팀')).getByRole('button', { name: '수락' })
     db.invitations[0].status = 'canceled'
 
     await userEvent.click(accept)
 
-    expect(await screen.findByText('PM에게 가입한 이메일로 초대를 요청하세요.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('PM에게 내 아이디(jaehwan)를 알려 주고 초대를 요청하세요.'),
+    ).toBeInTheDocument()
     expect(toastWith('이 초대는 더 이상 수락할 수 없어요. PM에게 문의하세요.')).not.toBeNull()
     await app.expectPath('/onboarding/start')
   })
@@ -138,7 +144,7 @@ describe('받은 초대', () => {
       invitation_id: 'iv_05',
       workspace_id: 'ws_01',
       member_id: 'mb_03',
-      email: 'pm@example.com',
+      invited_user_id: 'us_01',
       status: 'pending',
       invited_by_user_id: 'us_01',
       accepted_user_id: null,
@@ -148,7 +154,7 @@ describe('받은 초대', () => {
     const app = renderApp(paths.workspaceSelect())
 
     const row = await invitationRow('카테캠 3팀')
-    expect(screen.queryByText('PM에게 가입한 이메일로 초대를 요청하세요.')).toBeNull()
+    expect(screen.queryByText('PM에게 내 아이디(userpm)를 알려 주고 초대를 요청하세요.')).toBeNull()
     await userEvent.click(row.getByRole('button', { name: '수락' }))
 
     await app.expectPath(paths.dashboard('ws_01'))

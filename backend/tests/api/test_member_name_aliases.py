@@ -9,8 +9,14 @@ from sqlalchemy import select
 from app.main import app
 from app.models import Member, MemberAlias
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 API = "/api/v1"
+
+
+@pytest.fixture(autouse=True)
+def _in_guild(guild_members):
+    """팀원에 붙이는 디스코드 계정은 모두 연결한 서버의 멤버로 본다."""
 
 
 @pytest.fixture
@@ -67,7 +73,7 @@ def test_create_workspace_gives_pm_member_name_aliases(client, mdb, mseed):
 
     from app.models import Session as SessionModel, User
 
-    user = User(email="korean@example.com", name="김동우")
+    user = User(username=username_for("korean@example.com"), email="korean@example.com", name="김동우")
     mdb.add(user)
     mdb.flush()
     mdb.add(SessionModel(

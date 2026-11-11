@@ -15,6 +15,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models import Meeting, Member, Session as SessionModel, Source, User, Workspace
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 SERVICE_TOKEN = "test-service-token"
 SERVICE_HEADERS = {"X-Service-Token": SERVICE_TOKEN}
@@ -66,7 +67,7 @@ def db(request):
 
 @pytest.fixture
 def seed(db):
-    user = User(email="pm@example.com", name="pm")
+    user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     db.add(user)
     db.flush()
     db.add(SessionModel(

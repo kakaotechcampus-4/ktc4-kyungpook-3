@@ -11,7 +11,7 @@ export const TRIGGER_SIZE = {
 
 export const CHEVRON = 'absolute top-1/2 flex -translate-y-1/2 group-data-[state=open]:rotate-180'
 
-export const CHEVRON_RIGHT = { md: 'right-13', sm: 'right-11' } as const
+export const CHEVRON_RIGHT = { md: 'right-14', sm: 'right-11' } as const
 
 /* 경계·글자·포커스 선 색은 한 곳에서만 고른다 — 두 클래스를 같이 붙이면 CSS 순서가 이긴다.
    막힌 칸의 포커스 선은 강조색이다 — 먹 선이 덮으면 포커스 중에 "승인이 막힌 칸"이라는 신호가 사라진다.
@@ -19,7 +19,7 @@ export const CHEVRON_RIGHT = { md: 'right-13', sm: 'right-11' } as const
 export function triggerColor(tone: 'normal' | 'blocking', disabled: boolean) {
   if (disabled) return 'cursor-not-allowed border-line bg-surface-sunken text-faint'
   if (tone === 'blocking')
-    return 'cursor-pointer border-accent bg-surface text-ink data-[placeholder]:text-accent-solid focus-visible:outline-accent-point'
+    return 'cursor-pointer border-accent bg-surface text-ink data-[placeholder]:text-accent focus-visible:outline-accent-point'
   return 'cursor-pointer border-input-border bg-surface text-ink data-[placeholder]:text-dim hover:not-data-[state=open]:border-sub data-[state=open]:border-ink'
 }
 

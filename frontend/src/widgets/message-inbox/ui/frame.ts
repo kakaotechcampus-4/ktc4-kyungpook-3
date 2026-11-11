@@ -26,3 +26,11 @@ export const DETAIL = 'relative flex min-w-[0px] flex-1 flex-col'
 
 export const COMPOSE_LINK =
   'shrink-0 rounded-9 px-10 py-4 text-caption font-semibold text-sub hover:bg-surface-sunken hover:text-ink aria-[current=page]:bg-surface-selected aria-[current=page]:text-ink max-md:inline-flex max-md:min-h-44 max-md:items-center max-md:px-14 max-md:text-body'
+
+/* 오른쪽 칸의 만들기 화면(새 재촉·새 대화). 보내기 전 확인과 같은 가운데 604 열이다(ReviewDetail) */
+export const COMPOSE_PAGE =
+  'flex flex-1 justify-center overflow-y-auto px-36 pt-44 pb-56 max-md:px-20 max-md:pt-24 max-md:pb-32'
+export const COMPOSE_COLUMN = 'flex w-full max-w-[604px] flex-col gap-24 self-start'
+export const COMPOSE_CARD = 'overflow-hidden rounded-16 border border-line bg-surface'
+export const COMPOSE_TITLE =
+  'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink max-md:text-[24px]'

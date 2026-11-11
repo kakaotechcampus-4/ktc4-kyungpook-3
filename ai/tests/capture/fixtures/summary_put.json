@@ -1,0 +1,77 @@
+{
+  "model_name": "gpt-5.6-luna",
+  "truncated_input": true,
+  "overview": "팀원 초대 방식을 이메일로 바꾸고 로그인 범위를 정했다.",
+  "key_points": [
+    "초대 코드를 없앤다",
+    "카카오 로그인을 먼저 만든다"
+  ],
+  "discussion": [
+    {
+      "title": "초대 방식",
+      "points": [
+        "코드는 유출 위험이 있다",
+        "이메일은 인증과 묶을 수 있다"
+      ]
+    }
+  ],
+  "facts": [
+    "메일 발송 한도는 하루 500건이다"
+  ],
+  "task_changes": [
+    {
+      "task": "초대 메일 보내기",
+      "assignee": "민수",
+      "due": "11월 14일",
+      "purpose": "코드 없이 합류한다",
+      "precondition": "메일 도메인 인증",
+      "item_id": "00000000-0000-0000-0000-00000000bbbb"
+    }
+  ],
+  "schedule": [
+    {
+      "when": "11/20",
+      "what": "중간 발표"
+    }
+  ],
+  "open_items": [
+    "구글 로그인을 넣을지 정하지 못했다"
+  ],
+  "topics": [
+    {
+      "topic_id": "00000000-0000-0000-0000-00000000aaaa",
+      "name": "팀원 초대",
+      "description": "",
+      "item_ids": [
+        "00000000-0000-0000-0000-00000000bbbb"
+      ],
+      "decisions": [
+        {
+          "text": "초대는 이메일로만 한다",
+          "reason": "코드는 유출되면 막을 수 없다",
+          "rejected": [
+            "초대 코드"
+          ],
+          "replaces": [
+            "00000000-0000-0000-0000-00000000cccc"
+          ]
+        }
+      ]
+    },
+    {
+      "topic_id": null,
+      "name": "로그인·계정",
+      "description": "이메일 인증 뒤 가입과 카카오 로그인을 만든다.",
+      "item_ids": [],
+      "decisions": [
+        {
+          "text": "이메일 인증 전에는 계정을 만들지 않는다",
+          "reason": null,
+          "rejected": [],
+          "replaces": []
+        }
+      ]
+    }
+  ],
+  "claim_token": "fixture-claim-token"
+}

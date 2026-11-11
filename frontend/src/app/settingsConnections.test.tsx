@@ -94,11 +94,11 @@ describe('설정의 Discord 연결 영역 — PM', () => {
     expect(area.getByRole('button', { name: 'Discord 다시 연결하기' })).toBeInTheDocument()
   })
 
-  it('성공 복귀는 연동을 다시 조회해 connected 면 팀 화면의 팀원 연결 창으로 간다 (D-074)', async () => {
+  it('성공 복귀는 연동을 다시 조회해 connected 면 팀 화면의 팀원 관리 창으로 간다 (D-074)', async () => {
     settleMockOAuth({ workspaceId: WS, provider: 'discord', outcome: 'success' })
     const log = recordRequests()
     const app = renderApp(returnFrom('success'))
-    expect(await screen.findByRole('dialog', { name: '팀원 연결' })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: '팀원 관리' })).toBeInTheDocument()
     await app.expectPath(paths.members(WS))
     await app.expectSearch('?connect=members')
     // 창 뒤는 팀 화면이다 — 모달이 열려 있어 나머지는 접근성 트리에서 가려져 있다
@@ -111,7 +111,7 @@ describe('설정의 Discord 연결 영역 — PM', () => {
     settleMockOAuth({ workspaceId: WS, provider: 'discord', outcome: 'success' })
     const log = recordRequests()
     renderApp(returnFrom('success'))
-    expect(await screen.findByRole('dialog', { name: '팀원 연결' })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: '팀원 관리' })).toBeInTheDocument()
     expect(log.started.filter(({ method }) => method === 'PATCH')).toEqual([])
     expect(onboardingOf(WS)).toEqual(before)
     expect(before?.steps).toContainEqual({ step: 'connect_discord', status: 'skipped' })

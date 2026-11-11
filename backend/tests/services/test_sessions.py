@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base
 from app.models import Session as SessionModel, User
 from app.services import sessions
+from tests.usernames import username_for
 
 NOW = datetime(2026, 11, 6, 0, 0, tzinfo=timezone.utc)
 
@@ -28,7 +29,7 @@ def db():
 
 @pytest.fixture
 def user_id(db):
-    user = User(email="a@example.com", name="a")
+    user = User(username=username_for("a@example.com"), email="a@example.com", name="a")
     db.add(user)
     db.commit()
     return user.user_id

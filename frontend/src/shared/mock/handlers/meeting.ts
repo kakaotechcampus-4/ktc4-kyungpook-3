@@ -3,12 +3,70 @@ import type { MeetingDto } from '@/shared/types/api/meeting'
 import { db } from '../db'
 import { ok, list, fail } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
-import { requireMember } from '../auth-guard'
+import { deletedMeetingResponse, purgeMeeting } from '../meetingDeletion'
+import { requireMember, requirePmRole, requireAuth } from '../auth-guard'
 import { readJson, nextId } from '../utils'
-import { isChatMeeting, readMeeting } from '../meetingFlow'
+import { isChatMeeting, meetingResponse, readMeeting } from '../meetingFlow'
 import { registerSpeakerUpload } from '../speakerFlow'
 
+/** PM 이 다시 올려야 하는 업로드 실패. BE `list_workspace_meetings` 가 수동 업로드일 때만 목록에 남긴다 */
+const LISTED_UPLOAD_FAILURES: readonly (string | null)[] = [
+  'speaker_assignment_expired',
+  'upload_unclaimed',
+]
+
 export const meetingHandlers = [
+  http.delete('/api/v1/meetings/:meetingId', ({ params }) => {
+    const unauthenticated = requireAuth()
+    if (unauthenticated) return unauthenticated
+    const id = String(params.meetingId)
+    const previous = db.meetingDeletions.find(({ meeting_id }) => meeting_id === id)
+    const meeting = db.meetings.find(({ meeting_id }) => meeting_id === id)
+    const workspaceId = previous?.workspace_id ?? meeting?.workspace_id
+    if (!workspaceId) return fail('MEETING_NOT_FOUND', '회의가 없습니다.', 404)
+    const denied = requirePmRole(workspaceId)
+    if (denied) return denied
+    if (previous)
+      return ok(
+        {
+          meeting_id: id,
+          deleted_at: previous.deleted_at,
+          cleanup_status: previous.cleanup_status,
+          deleted_meeting_ids: previous.deleted_meeting_ids,
+        },
+        { status: previous.cleanup_status === 'complete' ? 200 : 202 },
+      )
+    if (!meeting) return fail('MEETING_NOT_FOUND', '회의가 없습니다.', 404)
+    if (meeting.status !== 'done' && meeting.status !== 'failed')
+      return fail('MEETING_DELETE_BLOCKED', '정리 중인 회의는 삭제할 수 없습니다.', 409, {
+        status: meeting.status,
+      })
+    if (meeting.deletion_available !== true)
+      return fail('MEETING_LINEAGE_UNVERIFIED', '회의 삭제 준비를 확인하지 못했습니다.', 409)
+    const receipt = {
+      meeting_id: id,
+      deleted_at: MOCK_NOW,
+      cleanup_status: 'pending' as const,
+      deleted_meeting_ids: [id],
+    }
+    db.meetingDeletions.push({ ...receipt, workspace_id: workspaceId })
+    purgeMeeting(id)
+    return ok(receipt, { status: 202 })
+  }),
+  http.get('/api/v1/meetings/:meetingId/deletion', ({ params }) => {
+    const unauthenticated = requireAuth()
+    if (unauthenticated) return unauthenticated
+    const receipt = db.meetingDeletions.find(({ meeting_id }) => meeting_id === params.meetingId)
+    if (!receipt) return fail('MEETING_NOT_FOUND', '삭제 기록이 없습니다.', 404)
+    const denied = requirePmRole(receipt.workspace_id)
+    if (denied) return denied
+    return ok({
+      meeting_id: receipt.meeting_id,
+      deleted_at: receipt.deleted_at,
+      cleanup_status: receipt.cleanup_status,
+      deleted_meeting_ids: receipt.deleted_meeting_ids,
+    })
+  }),
   http.get('/api/v1/workspaces/:workspaceId/meetings', ({ params }) => {
     // 백엔드는 get_current_user 뒤 멤버십을 직접 확인해 403 을 낸다
     const denied = requireMember(String(params.workspaceId))
@@ -19,7 +77,7 @@ export const meetingHandlers = [
       (meeting) =>
         meeting.workspace_id === params.workspaceId &&
         (meeting.status !== 'failed' ||
-          (meeting.failed_stage === 'speaker_assignment_expired' &&
+          (LISTED_UPLOAD_FAILURES.includes(meeting.failed_stage) &&
             db.meetingSummaries.some(
               (summary) =>
                 summary.meeting_id === meeting.meeting_id && summary.source === 'manual_upload',
@@ -44,10 +102,18 @@ export const meetingHandlers = [
     )
   }),
   http.get('/api/v1/meetings/:meetingId', ({ params }) => {
+    const deleted = deletedMeetingResponse(String(params.meetingId))
+    if (deleted) return deleted
     // 처리 중 회의는 흐름 방식(db.meetingFlow.mode)대로 진행한다(readMeeting). Vitest 기본값 manual 은 그대로다
     const meeting = readMeeting(String(params.meetingId))
     return meeting
-      ? ok({ ...meeting, extraction_id: meeting.status === 'done' ? meeting.extraction_id : null })
+      ? ok({
+          ...meetingResponse(meeting),
+          extraction_id: meeting.status === 'done' ? meeting.extraction_id : null,
+          deletion_available:
+            meeting.deletion_available === true &&
+            (meeting.status === 'done' || meeting.status === 'failed'),
+        })
       : fail('MEETING_NOT_FOUND', '회의가 없습니다.', 404)
   }),
   http.post('/api/v1/meetings', async ({ request }) => {
@@ -71,6 +137,8 @@ export const meetingHandlers = [
       ended_at: null,
       extraction_id: null,
       failed_stage: null,
+      deletion_available:
+        body.source === 'manual_upload' || request.headers.get('X-Meeting-Lineage-Version') === '1',
       // 백엔드는 progress 를 항상 계산해 준다. 갓 만든 회의는 오디오도 추출도 없다
       progress: { audio_merged: false, transcribed: false, extracted: false },
     }
@@ -96,6 +164,8 @@ export const meetingHandlers = [
     )
   }),
   http.patch('/api/v1/meetings/:meetingId/end', ({ params }) => {
+    const deleted = deletedMeetingResponse(String(params.meetingId))
+    if (deleted) return deleted
     const meeting = db.meetings.find(({ meeting_id }) => meeting_id === params.meetingId)
     if (!meeting) return fail('MEETING_NOT_FOUND', '회의가 없습니다.', 404)
     if (['processing', 'done', 'failed'].includes(meeting.status))
@@ -167,6 +237,7 @@ export const meetingHandlers = [
       ended_at: null,
       extraction_id: null,
       failed_stage: null,
+      deletion_available: true,
       progress: { audio_merged: false, transcribed: false, extracted: false },
     }
     db.meetings.push(meeting)

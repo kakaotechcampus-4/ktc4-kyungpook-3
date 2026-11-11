@@ -1,29 +1,31 @@
+import { z } from 'zod'
+
 /*
  * 리마인드 답장 판단 (계약 §5.7 「리마인드 답장 판단」). backend/app/schemas/reply.py 와 칸을 1:1 로 맞춘다
  */
 
-export interface TaskRefDto {
-  task_id: string
-  title: string
-}
+const taskRefSchema = z.object({ task_id: z.string(), title: z.string() })
+export type TaskRefDto = z.infer<typeof taskRefSchema>
 
-/** 어느 태스크인지 PM 이 골라야 하는 답장. 지운 태스크는 후보에 없다 */
-export interface NeedsPickAttributionDto {
-  message_id: string
-  status: 'needs_pm'
-  candidates: TaskRefDto[]
-  task: null
-}
+/**
+ * 답장이 어느 태스크에 대한 것인지 (`ReplyAttribution`). `status` 가 PM 이 고를 차례인지 정해 모르는 값이면 응답 전체가
+ * `INVALID_RESPONSE` 다 (#348). needs_pm 은 후보가 있고(지운 태스크는 없다), resolved 는 고른 태스크다(null 이면 해당 없음)
+ */
+export const replyAttributionSchema = z.discriminatedUnion('status', [
+  z.object({
+    message_id: z.string(),
+    status: z.literal('needs_pm'),
+    candidates: z.array(taskRefSchema),
+  }),
+  z.object({
+    message_id: z.string(),
+    status: z.literal('resolved'),
+    task: taskRefSchema.nullable(),
+  }),
+])
+export type ReplyAttributionDto = z.infer<typeof replyAttributionSchema>
 
-/** PM 이 고른 답장. `task` 가 null 이면 해당 없음이다 */
-export interface ResolvedAttributionDto {
-  message_id: string
-  status: 'resolved'
-  candidates: null
-  task: TaskRefDto | null
-}
-
-export type ReplyAttributionDto = NeedsPickAttributionDto | ResolvedAttributionDto
+export const replyAttributionListSchema = z.object({ items: z.array(replyAttributionSchema) })
 
 export interface AttributionRequestDto {
   /** null 이면 해당 없음 */
@@ -34,45 +36,60 @@ export interface AttributionResponseDto {
   message_id: string
 }
 
+/** 서버가 내는 답장 줄 종류와 결과. 응답 스키마는 문자열로 받는다 */
 export type TimelineChangeField =
   'status' | 'due_date' | 'assignee' | 'scope' | 'unknown' | 'due_clear' | 'failed' | 'none'
 
 export type TimelineChangeResult =
   'applied' | 'undone' | 'pending' | 'approved' | 'rejected' | 'noted' | 'recorded'
 
-export interface TimelineChangeDto {
-  change_id: string
-  field: TimelineChangeField
-  new_value: string | null
-  evidence_status: 'certain' | 'inferred' | null
+/*
+ * 태스크 기록(`GET /tasks/{task_id}/timeline`) 응답 스키마. FE 가 읽는 필드만 본다 (#348).
+ * 칸 종류(`kind`)를 모르면 그릴 수 없어 응답 전체가 `INVALID_RESPONSE` 다. 줄의 `field`·`result` 와 `channel`·`evidence_status` 는
+ * 표시용이라 문자열로 받고 mapper 가 정한다. 종류나 결과를 모르는 줄은 `undoable` 이 true 여도 되돌릴 수 없는 줄로 읽는다
+ */
+export const timelineChangeSchema = z.object({
+  change_id: z.string(),
+  field: z.string(),
+  new_value: z.string().nullable(),
+  evidence_status: z.string().nullable(),
   /** AI 해석. 대화 주인과 PM 에게만 온다 */
-  summary: string | null
+  summary: z.string().nullable(),
   /** 대화 주인과 PM 에게만 온다 */
-  evidence_quote: string | null
-  result: TimelineChangeResult
-  undoable: boolean
-}
+  evidence_quote: z.string().nullable(),
+  result: z.string(),
+  undoable: z.boolean(),
+})
+export type TimelineChangeDto = z.infer<typeof timelineChangeSchema>
 
-export interface TimelineReplyDto {
-  kind: 'reply'
-  at: string
-  message_id: string
-  member_name: string
-  channel: 'discord' | 'web' | null
+export const timelineReplySchema = z.object({
+  kind: z.literal('reply'),
+  at: z.string(),
+  message_id: z.string(),
+  member_name: z.string(),
+  channel: z.string().nullable(),
   /** 대화 주인과 PM 에게만 온다 */
-  body: string | null
-  changes: TimelineChangeDto[]
-}
+  body: z.string().nullable(),
+  changes: z.array(timelineChangeSchema),
+})
+export type TimelineReplyDto = z.infer<typeof timelineReplySchema>
 
 /** 답장에 이어지지 않은 이력 한 줄. `/history` 의 같은 이력과 history_id 가 같다 */
-export interface TimelineHistoryDto {
-  kind: 'history'
-  at: string
-  history_id: string
-  changed_field: string
-  old_value: string | null
-  new_value: string | null
-  change_source: string
-}
+export const timelineHistorySchema = z.object({
+  kind: z.literal('history'),
+  at: z.string(),
+  history_id: z.string(),
+  changed_field: z.string(),
+  old_value: z.string().nullable(),
+  new_value: z.string().nullable(),
+  change_source: z.string(),
+})
+export type TimelineHistoryDto = z.infer<typeof timelineHistorySchema>
 
-export type TimelineItemDto = TimelineReplyDto | TimelineHistoryDto
+export const timelineItemSchema = z.discriminatedUnion('kind', [
+  timelineReplySchema,
+  timelineHistorySchema,
+])
+export type TimelineItemDto = z.infer<typeof timelineItemSchema>
+
+export const timelineListSchema = z.object({ items: z.array(timelineItemSchema) })

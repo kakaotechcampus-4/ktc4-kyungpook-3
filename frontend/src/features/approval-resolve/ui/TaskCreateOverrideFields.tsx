@@ -4,11 +4,13 @@ import { ASSIGNEE_NONE_OPTION, assigneeOptions } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { DateField } from '@/shared/ui/date-field'
 import { ErrorText } from '@/shared/ui/error-text'
+import { Icon } from '@/shared/ui/icon'
 import { Label } from '@/shared/ui/label'
 import { Select } from '@/shared/ui/select'
 import { TextField } from '@/shared/ui/text-field'
 import { OVERRIDE_FORM_MESSAGES } from '../model/overridesSchema'
 import type { TaskCreateOverrides } from '../model/useTaskCreateOverrides'
+import { AliasSaveField } from './AliasSaveField'
 
 const OVERRIDE_FIELDS_ROW =
   'grid grid-cols-1 items-start gap-12 sm:grid-cols-[minmax(0px,1.6fr)_minmax(0px,1fr)_minmax(0px,1fr)]'
@@ -17,6 +19,7 @@ export interface TaskCreateOverrideFieldsProps {
   overrides: TaskCreateOverrides
   /** 지금 공간의 팀원. 받기 전에는 담당자를 고를 수 없다 */
   members: readonly Member[] | undefined
+  retainedNames?: ReadonlyMap<string, string>
   /** 값이 바뀌면 부른다 — 앞서 받은 충돌 확인을 지운다 */
   onInputChange: () => void
   /** 승인·반려 요청 중이면 잠근다 */
@@ -32,11 +35,12 @@ function labelOf(name: string, missing: boolean): string {
 
 /**
  * 태스크명·담당자·마감을 한 줄에서 바로 고친다 (E-6). 세 칸 모두 44px 다.
- * 빠졌거나 승인할 수 없는 값의 칸은 레드 R2 — 라벨·경계 accent, 플레이스홀더 accent-solid, 포커스 accent-point
+ * 빠졌거나 승인할 수 없는 값의 칸은 강조색 — 라벨·경계·플레이스홀더 accent, 포커스 accent-point
  */
 export function TaskCreateOverrideFields({
   overrides,
   members,
+  retainedNames,
   onInputChange,
   disabled,
   autoFocusFirstEmpty,
@@ -81,6 +85,13 @@ export function TaskCreateOverrideFields({
         labelTone={attention.title === null ? 'normal' : 'required-blocking'}
         error={errors.taskTitle?.message}
         disabled={disabled}
+        endAdornment={
+          <span
+            className={`inline-flex h-28 w-28 shrink-0 -mr-6 items-center justify-center rounded-6 ${disabled ? 'text-line-strong' : attention.title !== null || errors.taskTitle !== undefined ? 'text-accent' : 'text-dim'}`}
+          >
+            <Icon name="edit" size={16} strokeWidth={1.7} />
+          </span>
+        }
         onChange={(event) => {
           onInputChange()
           void title.onChange(event)
@@ -103,7 +114,11 @@ export function TaskCreateOverrideFields({
                 onInputChange()
                 field.onChange(value ?? '')
               }}
-              options={assigneeOptions(members, field.value === '' ? null : field.value)}
+              options={assigneeOptions(
+                members,
+                field.value === '' ? null : field.value,
+                retainedNames,
+              )}
               noneOption={ASSIGNEE_NONE_OPTION}
               label="담당자"
               placeholder={assigneeMissing ? '담당자 고르기' : undefined}
@@ -118,6 +133,17 @@ export function TaskCreateOverrideFields({
                 {OVERRIDE_FORM_MESSAGES.assignee}
               </ErrorText>
             ) : null}
+            <AliasSaveField
+              aliasText={overrides.aliasText}
+              members={members}
+              assigneeMemberId={field.value === '' ? null : field.value}
+              checked={overrides.saveAlias}
+              onCheckedChange={(checked) => {
+                onInputChange()
+                overrides.setSaveAlias(checked)
+              }}
+              disabled={disabled}
+            />
           </div>
         )}
       />

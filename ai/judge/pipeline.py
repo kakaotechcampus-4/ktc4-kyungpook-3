@@ -10,17 +10,20 @@
   - 새 항목/수정, 대상, 상태, 분류 → JudgeResult  (Terra 가 후보와 비교해 판정)
   - 제목, 마감일, 설명 문장        → DraftResult  (Luna 가 생성)
   - 근거 상태                      → judge/evidence.py 가 Jev 에게 근거 원문에 명시됐는지 다시 물음
+  - 전사 오인식 의심 단어          → 제목 명사 중 용어 목록에 없는 말을 같은 Jev 호출로 확인(judge/asr_check.py)
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field, replace
 from datetime import date
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from draft.doc_draft import DraftUnavailableError, draft
 from jev import get_jev
-from judge.evidence import verify, worse
+from judge import asr_check
+from judge.evidence import verify_with_words, worse
 from judge.final_judge import JudgeUnavailableError, judge
 from judge.semantic_judge import empty_drops, extract_findings_counted
 from llm import get_llm
@@ -33,18 +36,28 @@ from shared.schemas import (
     Transcript,
 )
 
-# 별칭 텍스트가 아닌 호칭 — "네가", "그분", "백엔드 리더" 를 BE 가 별칭으로 조회하면 영원히 안 맞는다.
-# 문맥으로 풀린 이름(assignee_resolved)이 없으면 보내지 않는다 (capture/handoff.py 와 같은 규칙).
-_NOT_ALIAS_TYPES = {"second", "thirdpronoun", "thirdrole"}
+# 별칭 텍스트가 아닌 호칭 — "네가", "그분" 을 BE 가 별칭으로 조회하면 영원히 안 맞는다.
+# 문맥으로 풀린 이름(assignee_resolved)만 보낸다.
+_NOT_ALIAS_TYPES = {"second", "thirdpronoun"}
+# 원문을 별칭 조회 키로 보내는 타입. 새 할 일(create·merge)은 원문만 보낸다 — 추측한 이름이 BE 별칭으로
+# 학습되지 않게 (capture/handoff.py 와 같은 규칙, #501·#522). BE 는 create 승인 때만 별칭을 배우므로
+# 수정·담당자 변경 카드(update)는 예전처럼 고친 이름이 있으면 그것을, 없으면 원문을 보낸다.
+# 프롬프트가 thirdrole 의 resolved 를 비워 두므로 역할 담당 변경은 사실상 원문이 가고, 예전에 버려지던
+# "BE 리더가 맡아 주세요" 같은 담당 변경도 update 카드가 된다. update 는 늘 PM 검토라 의도한 동작이다(0060).
+_ORIGINAL_MENTION_TYPES = {"thirdname", "thirdrole"}
 
-# 답장 판단(judge/reply.py)이 이 값으로 마감 지움을 알아본다
-DUE_CLEARED_REASON = "마감을 없애는 변경은 아직 보낼 수 없습니다(BE 는 null 을 '바꾸지 않음'으로 받음)."
+def _assignee(finding: JudgeFinding, *, is_new: bool) -> tuple[str | None, str | None]:
+    """(assignee_type, assignee_raw) — BE 가 member_id 로 해소할 값. is_new: 새 할 일(create) 항목인가.
 
-
-def _assignee(finding: JudgeFinding) -> tuple[str | None, str | None]:
-    """(assignee_type, assignee_raw) — BE 가 member_id 로 해소할 값."""
-    mention = None if finding.assignee_type in _NOT_ALIAS_TYPES else finding.assignee_raw
-    return finding.assignee_type, finding.assignee_resolved or mention
+    first·group·none 은 보낼 글자가 없다 — "우리" 같은 글자가 오면 BE 가 별칭으로 조회해 hold 로 돌린다.
+    """
+    if finding.assignee_type in ("first", "group", "none"):
+        return finding.assignee_type, None
+    if finding.assignee_type in _NOT_ALIAS_TYPES:
+        return finding.assignee_type, finding.assignee_resolved
+    if finding.assignee_type in _ORIGINAL_MENTION_TYPES and not is_new:
+        return finding.assignee_type, finding.assignee_resolved or finding.assignee_raw
+    return finding.assignee_type, finding.assignee_raw
 
 
 def _evidence_at_ms(finding: JudgeFinding, transcript: Transcript) -> int | None:
@@ -63,6 +76,8 @@ def _evidence(finding: JudgeFinding, transcript: Transcript) -> dict[str, Any]:
         "evidence_at_ms": _evidence_at_ms(finding, transcript),
     }
 
+
+logger = logging.getLogger(__name__)
 
 _MAX_EVIDENCE_SEQS = 100  # BE MAX_EVIDENCE_SEQS(schemas/meeting.py)와 같은 값. 넘으면 요청 전체가 400 이다
 
@@ -90,7 +105,7 @@ def to_item(
     if not result.is_new and target is None:
         raise ValueError("기존 항목 수정인데 수정 대상 후보가 없다.")
 
-    assignee_type, assignee_raw = _assignee(finding)
+    assignee_type, assignee_raw = _assignee(finding, is_new=result.is_new)
     item: dict[str, Any] = {
         "action": "create" if result.is_new else "update",
         "target_task_id": None if result.is_new else target.task_id,
@@ -124,6 +139,10 @@ def to_item(
     # ── update: 현재 값과 달라지는 필드만 남긴다
     if item["due_date"] == target.due_date:
         item["due_date"] = None
+    # BE 는 due_date=null 을 "바꾸지 않음"으로 받는다. 마감을 없애는 결정은 따로 보낸다(0062). 원래 마감이 없으면
+    # BE 가 등록 시점 값으로 보고 승인 요청을 만들지 않는다. 답장 판단은 이 값으로 PM 에게 알린다
+    if drafted.structured.due_cleared:
+        item["due_cleared"] = True
     if item["status"] == target.status:
         item["status"] = None
     if result.category != "assignee":
@@ -140,7 +159,8 @@ def to_item(
 
 def _has_change(item: dict[str, Any]) -> bool:
     """update item 에 바꿀 필드가 남아 있는지."""
-    return bool(item["due_date"] or item["status"] or item["assignee_raw"] or item["assignee_type"] == "first")
+    return bool(item["due_date"] or item.get("due_cleared") or item["status"] or item["assignee_raw"]
+                or item["assignee_type"] == "first")
 
 
 # ── 같은 회의 안 중복 · 번복 (#140) ─────────────────────────────────────────
@@ -155,6 +175,8 @@ def _with_edit(base: NotionCandidate, card: dict[str, Any]) -> NotionCandidate:
     changes = []
     if card["due_date"] is not None:
         changes.append(f"마감을 {base.due_date or '없음'} → {card['due_date']}")
+    if card.get("due_cleared") and base.due_date is not None:
+        changes.append(f"마감을 {base.due_date} → 없음")
     if card["status"] is not None:
         changes.append(f"상태를 {base.status} → {card['status']}")
     if card["assignee_raw"] or card["assignee_type"] == "first":
@@ -162,7 +184,7 @@ def _with_edit(base: NotionCandidate, card: dict[str, Any]) -> NotionCandidate:
     what = ", ".join(changes) + " 바꾸자고 함" if changes else "이 항목을 다룸"
     return replace(
         base,
-        due_date=card["due_date"] if card["due_date"] is not None else base.due_date,
+        due_date=None if card.get("due_cleared") else card["due_date"] if card["due_date"] is not None else base.due_date,
         status=card["status"] if card["status"] is not None else base.status,
         meeting_note=f"이번 회의 앞부분에서 {what}. 아직 승인 전",
     )
@@ -176,14 +198,20 @@ def _new_card_candidate(n: int, card: dict[str, Any]) -> NotionCandidate:
                            due_date=card["due_date"], status=card["status"], meeting_note=note)
 
 
-def _evidence_fields(finding: JudgeFinding, drafted: DraftResult, task: str | None, today: date) -> dict[str, Any]:
+def _evidence_fields(finding: JudgeFinding, drafted: DraftResult, task: str | None, today: date,
+                     words: dict[str, list[str]] | None = None) -> dict[str, Any]:
     """create 항목의 근거 상태 — 근거 원문에 명시됐는지 Jev 에게 다시 묻는다(호출 1회).
 
     근거는 finding.evidence 원문만 준다. 비어 있어도 LLM 요약(finding.text)으로 대신하지 않는다.
+    words(제목의 의심 단어 → 교정 후보)를 주면 같은 호출로 묻고 asr_suspects 를 싣는다. None 이면 싣지 않는다.
     """
     s = drafted.structured
-    task_status, due_status = verify(finding.evidence, task, s.due_date, s.due_raw, today, get_jev())
-    return {"task_status": task_status, "due_status": due_status, "due_raw": s.due_raw}
+    task_status, due_status, asr = verify_with_words(finding.evidence, task, s.due_date, s.due_raw, today, get_jev(),
+                                                     words or {})
+    out = {"task_status": task_status, "due_status": due_status, "due_raw": s.due_raw}
+    if words is not None:
+        out["asr_suspects"] = asr
+    return out
 
 
 def _search_fields(found: list[NotionCandidate]) -> dict[str, Any]:
@@ -198,12 +226,16 @@ def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult
     마감 · 상태 · 담당은 뒤 발화가 덮어쓴다 — 나중에 말한 것이 최신 결정이다. 제목 · 스냅샷은 앞 카드 그대로다.
     근거는 담당을 정한 발화를 따른다. 그래야 "제가 맡을게요" 를 BE 가 그 말을 한 사람으로 찾는다.
     base 는 수정 카드의 DB 원래 후보다. 합친 값이 원래 값과 같아지면(되돌림) 그 필드를 지운다.
-    마감을 없애자는 결정(due_cleared)은 앞 카드의 마감 제안을 지운다. 원래 마감이 없던 업무면 되돌림이 된다.
+    마감을 없애자는 결정(due_cleared)은 앞 카드의 마감 제안을 지운다. 원래 마감이 없던 업무면 되돌림이 되고,
+    원래 마감이 있는 Task 의 수정 카드면 그 마감을 없애는 카드(due_cleared)가 된다(#624).
     """
     if drafted.structured.due_cleared:
         card["due_date"] = None
+        if card["action"] == "update" and base is not None and base.due_date is not None:
+            card["due_cleared"] = True
     elif drafted.structured.due_date is not None:
         card["due_date"] = drafted.structured.due_date
+        card.pop("due_cleared", None)
     if card["action"] == "create":
         ev = _evidence_fields(finding, drafted, card["task_title"], today)
         card["task_status"] = worse(card["task_status"], ev["task_status"])
@@ -218,7 +250,7 @@ def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult
     if result.status is not None:
         card["status"] = result.status
     if result.category == "assignee":
-        card["assignee_type"], card["assignee_raw"] = _assignee(finding)
+        card["assignee_type"], card["assignee_raw"] = _assignee(finding, is_new=card["action"] == "create")
         card.update(_evidence(finding, transcript))
     # 인계 때 화자가 비면(업로드의 외부 참석자 포함) BE 는 1인칭 담당자를 가장 큰 seq 의 화자로 찾는다. 담당과 상관없는 뒤 발화를
     # 더하면 그 사람이 담당자가 된다. 여기서는 인계 때 화자가 남을지 몰라 1인칭 카드에는 더하지 않는다
@@ -232,6 +264,61 @@ def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult
             card["due_date"] = None
         if card["status"] == base.status:
             card["status"] = None
+
+
+def _member_words(candidates: Any, workspace_id: str) -> list[str]:
+    """팀원 이름·별칭. 유사 검색 구현(BeClient)이 member_names 를 주면 쓰고, 못 받으면 빈 목록이다."""
+    fetch = getattr(candidates, "member_names", None)
+    if fetch is None:
+        return []
+    try:
+        rows = fetch(workspace_id)
+    except Exception:  # noqa: BLE001 - 이름을 못 받아도 검사는 업무 용어·회의 발화로 돈다
+        return []
+    words: list[str] = []
+    for r in rows or []:
+        if isinstance(r, dict):
+            words += [w for w in [r.get("name"), *(r.get("aliases") or [])] if isinstance(w, str)]
+    return words
+
+
+def _workspace_terms(candidates: Any, workspace_id: str, team: set[str]) -> set[str]:
+    """BE 의 워크스페이스 용어 목록. PM 이 승인한 제목(pending_titles)은 여기서 명사를 뽑아 목록에 넣고, 이 회의에서 두
+    사람 이상이 말한 명사(team)도 올린다. BE 구현(BeClient)이 없거나 실패하면 빈 목록으로 두고 검사는 기본 목록으로 돈다.
+    """
+    fetch, push = getattr(candidates, "asr_terms", None), getattr(candidates, "add_asr_terms", None)
+    if fetch is None:
+        return set()
+    try:
+        data = fetch(workspace_id)
+    except Exception as e:  # noqa: BLE001 - 목록을 못 받으면 의심 단어가 늘 뿐이다(Jev 가 확인한다)
+        logger.warning("워크스페이스 용어 목록을 받지 못했다: %s: %s", type(e).__name__, e)
+        return set()
+    words = {w for w in data.get("words") or [] if isinstance(w, str)}
+    pending = [p for p in data.get("pending_titles") or [] if isinstance(p, dict) and p.get("title_id")]
+    approved = set().union(*(asr_check.nouns(p.get("title") or "") for p in pending)) if pending else set()
+    new = sorted((approved | team) - words)
+    if push is not None and (new or pending):
+        try:
+            push(workspace_id, new, [p["title_id"] for p in pending])
+        except Exception as e:  # noqa: BLE001 - 올리지 못하면 다음 회의에서 다시 올린다(BE 는 중복을 건너뛴다)
+            logger.warning("워크스페이스 용어를 올리지 못했다: %s: %s", type(e).__name__, e)
+    # 사람이 넣은 여러 단어 용어(심사용 시드 #621)도 제목을 쪼개는 방식대로 나눠 안다. 나눈 말은 BE 에 다시 올리지 않는다
+    return asr_check.term_words(words) | approved
+
+
+def _asr_vocab(candidates: Any, workspace_id: str, transcript: Transcript) -> set[str] | None:
+    """이 회의의 전사 오인식 검사 용어 목록. 분석기를 올리지 못하면 None — 새 항목을 모두 check_failed 로 막는다."""
+    try:
+        vocab = asr_check.base_vocab()
+        team = asr_check.team_nouns((seg.speaker or seg.speaker_member_id, seg.text) for seg in transcript.segments)
+        vocab |= team | _workspace_terms(candidates, workspace_id, team)
+    except Exception as e:  # noqa: BLE001 - 검사를 못 하면 보수적으로 막는다
+        logger.warning("전사 오인식 검사를 준비하지 못했다: %s: %s", type(e).__name__, e)
+        return None
+    for name in _member_words(candidates, workspace_id):
+        vocab.update(name.split())
+    return vocab
 
 
 class CandidateSource(Protocol):
@@ -251,11 +338,35 @@ class PipelineFailure:
 
 
 @dataclass
+class FindingOutcome:
+    """판단 결과 하나. 다시 돌린 실행끼리 근거 문장 번호로 같은 얘기를 짝짓는 데 쓴다(#217).
+
+    나간 카드와 실패마다 정확히 하나다. 앞 카드에 합쳐진 finding 은 따로 남지 않고 그 카드의 indices 에 더해진다.
+    카드가 되돌려져 사라지면 skip 이 된다. skip 은 의미 없음이거나 바뀌는 것 없는 수정이다.
+    """
+
+    indices: list[int]
+    kind: Literal["item", "skip", "failure"]
+    item: dict[str, Any] | None = None           # items 안의 그 카드
+    failure: PipelineFailure | None = None       # failures 안의 그 실패
+
+
+@dataclass
 class PipelineResult:
     items: list[dict[str, Any]] = field(default_factory=list)  # POST /extractions 로 보낼 item
     failures: list[PipelineFailure] = field(default_factory=list)
+    outcomes: list[FindingOutcome] = field(default_factory=list)
     # 1단계에서 검증에 탈락한 항목 기록(semantic_judge.empty_drops). 회의 기록에 남겨 어느 회의에서 왜 버려졌는지 본다(#186)
     dropped: dict[str, Any] = field(default_factory=empty_drops)
+
+
+def _fail(out: PipelineResult, finding: JudgeFinding, failure: PipelineFailure) -> None:
+    out.failures.append(failure)
+    out.outcomes.append(FindingOutcome(list(finding.indices), "failure", failure=failure))
+
+
+def _outcome_of(out: PipelineResult, card: dict[str, Any]) -> FindingOutcome:
+    return next(o for o in out.outcomes if o.item is card)
 
 
 class PipelineUnavailableError(RuntimeError):
@@ -300,15 +411,19 @@ def run(
         findings = [f for f in findings if f.seq == judge_seq]
 
     out = PipelineResult(dropped=dropped)
+    # 전사 오인식 검사의 용어 목록. 채팅은 전사를 거치지 않아 보지 않는다(asr_suspects 를 싣지 않음)
+    vocab = _asr_vocab(candidates, workspace_id, transcript) if transcript.source != "chat" else None
+    seen_titles: set[str] = set()  # 유사 검색에서 본 기존 태스크 제목. 그 명사도 팀 용어다
     new_cards: list[dict[str, Any]] = []                         # 이번 회의 새 항목 카드
     edits: dict[str, tuple[NotionCandidate, dict[str, Any]]] = {}  # task_id → (DB 원래 후보, 수정 카드)
     for finding in findings:
         try:
             found = candidates.similar_tasks(workspace_id, finding.text)
         except Exception as e:  # 검색 구현(HTTP 등)의 어떤 실패든 이 finding 만의 실패로 본다
-            out.failures.append(PipelineFailure("similar", finding.text, f"{type(e).__name__}: {e}"))
+            _fail(out, finding, PipelineFailure("similar", finding.text, f"{type(e).__name__}: {e}"))
             continue
 
+        seen_titles.update(c.title for c in found if c.title)
         shown = [_with_edit(*edits[c.task_id]) if c.task_id in edits else c for c in found]
         # 검색이 못 찾은 수정 카드도 보여 준다 — "마감은 원래대로" 처럼 Task 이름 없이 오면 검색에 안 잡혀
         # 번복을 못 알아본다(PR #206 리뷰). 새 항목 카드처럼 검색과 상관없이 넣는다
@@ -320,11 +435,12 @@ def run(
         try:
             result = judge(judge_input)
         except JudgeUnavailableError as e:
-            out.failures.append(PipelineFailure("judge", finding.text, str(e)))
+            _fail(out, finding, PipelineFailure("judge", finding.text, str(e)))
             continue
 
-        if not result.is_meaningful:
-            continue  # 이미 반영됐거나 바꿀 게 없다 — 실패가 아니다
+        if not result.is_meaningful:  # 이미 반영됐거나 바꿀 게 없다 — 실패가 아니다
+            out.outcomes.append(FindingOutcome(list(finding.indices), "skip"))
+            continue
 
         target = None
         if not result.is_new:
@@ -335,7 +451,7 @@ def run(
             )  # matched_task_id 가 None 이면 None == None 으로 task_id 없는 후보가 잡히므로 먼저 거른다
             if target is None:
                 # task_id 없는(Notion 에만 있는) 후보를 고른 경우 — 수정할 Task 가 없다
-                out.failures.append(PipelineFailure("target", finding.text, "수정 대상 후보를 찾지 못했습니다."))
+                _fail(out, finding, PipelineFailure("target", finding.text, "수정 대상 후보를 찾지 못했습니다."))
                 continue
 
         day = (dates or {}).get(finding.seq, today)
@@ -343,41 +459,57 @@ def run(
             drafted = draft(finding, result, candidate=target, today=day)
         except DraftUnavailableError as e:
             failed_id = target.task_id if target is not None and not target.task_id.startswith(_PENDING) else None
-            out.failures.append(PipelineFailure("draft", finding.text, str(e), failed_id))
+            _fail(out, finding, PipelineFailure("draft", finding.text, str(e), failed_id))
             continue
 
         task_id = target.task_id if target is not None else None
-        # 원래 마감이 있는 Task 의 마감을 없애자는 결정은 보낼 칸이 없다. BE 는 due_date=null 을 "바꾸지 않음"으로
-        # 받는다. 앞 카드에 합쳐 마감 제안을 지우는 것(원래 마감이 없던 업무의 되돌림)만 표현할 수 있다
-        if drafted.structured.due_cleared and (
-                task_id in edits and edits[task_id][0].due_date is not None
-                or task_id not in edits and not (task_id or "").startswith(_PENDING)):
-            out.failures.append(PipelineFailure("draft", finding.text, DUE_CLEARED_REASON, task_id))
-            continue
         if task_id is not None and task_id.startswith(_PENDING):  # 이번 회의 새 항목 카드에 합친다
-            _merge_into(new_cards[int(task_id[len(_PENDING):])], finding, result, drafted, base=None, today=day, found=found,
-                        transcript=transcript)
+            card = new_cards[int(task_id[len(_PENDING):])]
+            _merge_into(card, finding, result, drafted, base=None, today=day, found=found, transcript=transcript)
+            _outcome_of(out, card).indices += finding.indices
             continue
         if task_id in edits:  # 같은 Task 수정 카드에 합친다 — 번복 · 재변경
             base, card = edits[task_id]
             _merge_into(card, finding, result, drafted, base=base, today=day, found=found, transcript=transcript)
+            outcome = _outcome_of(out, card)
+            outcome.indices += finding.indices
             if result.category == "scope":
                 # 합치는 순서와 상관없이 범위 결정이 남는다. 필드가 다 되돌려져도 BE 가 필드 없는 결정으로 받고,
                 # 답장 판단(judge/reply.py)은 run 이 주는 합친 카드에서 이 값으로만 범위 결정을 알아본다
                 card["category"] = "scope"
             if not _has_change(card) and card["category"] != "scope":  # 되돌려서 바꿀 게 없다
                 out.items = [i for i in out.items if i is not card]
+                outcome.kind, outcome.item = "skip", None
                 del edits[task_id]
             continue
 
         item = to_item(finding, result, drafted, target, transcript)
         if item is None:  # 바뀌는 게 없는 update — 실패가 아니다
+            out.outcomes.append(FindingOutcome(list(finding.indices), "skip"))
             continue
         out.items.append(item)
+        out.outcomes.append(FindingOutcome(list(finding.indices), "item", item=item))
         if result.is_new:
-            item.update(_evidence_fields(finding, drafted, item["task_title"], day))
+            words = _title_words(item["task_title"], vocab, seen_titles) if transcript.source != "chat" else None
+            ev = _evidence_fields(finding, drafted, item["task_title"], day, words)
+            asr = ev.pop("asr_suspects", None)
+            item.update(ev)
             item.update(_search_fields(found))
+            if transcript.source != "chat":   # BE 로 가는 본문의 키 순서를 지킨다(asr_suspects 는 마지막)
+                item["asr_suspects"] = asr if words is not None else asr_check.failed()
             new_cards.append(item)
         else:
             edits[task_id] = (target, item)  # 여기 오는 target 은 덮어 보이지 않은 DB 원래 후보다
     return out
+
+
+def _title_words(title: str | None, vocab: set[str] | None, seen_titles: set[str]) -> dict[str, list[str]] | None:
+    """제목의 의심 단어 → 교정 후보. 목록 준비나 분석이 실패했으면 None — 호출자가 check_failed 로 막는다."""
+    if vocab is None:
+        return None
+    try:
+        known = vocab | set().union(*(asr_check.nouns(t) for t in seen_titles))
+        return {w: asr_check.candidates(w, known) for w in asr_check.suspects(title, known)}
+    except Exception as e:  # noqa: BLE001 - 분석이 실패하면 이 항목만 check_failed 로 막는다
+        logger.warning("제목 의심 단어를 찾지 못했다: %s: %s", type(e).__name__, e)
+        return None

@@ -17,21 +17,52 @@ it('maps attendees, summary, permissions and speaker fallback without interpreti
     ],
   })
   expect(minutes.transcript[3]).toEqual({
+    seq: 3,
     atMs: 360000,
     speakerMemberId: null,
     speakerName: 'jihun_dev',
     isFallbackName: true,
     text: '다음 주까지 확인할게요.',
+    edited: false,
+    originalText: null,
   })
   expect(minutes.transcript[0]).toMatchObject({ speakerName: '김서연', isFallbackName: false })
   expect(minutes.summary?.keyPoints).toHaveLength(2)
 })
 
-// 백엔드 MeetingMinutesResponse 는 summary·title 이 nullable 이고, 실 API 는 요약을 채우는
-// 경로가 없어 항상 null 을 준다 (계약 §4.0-②-11). 화면이 "요약 없음" 을 정상 상태로 다뤄야 한다
+// 백엔드 MeetingMinutesResponse 는 summary·title 이 nullable 이다. 쓸 수 있는 요약이 없으면 summary 는 null 이고
+// 이유는 summary_status 가 말한다 (계약 §4.4.2). 화면이 "요약 없음" 을 정상 상태로 다뤄야 한다
 it('keeps a null summary and an absent title as normal values', () => {
-  const dto = { ...structuredClone(minutesFixtures[0]), summary: null, title: null }
-  expect(toMinutes(dto)).toMatchObject({ title: '', summary: null })
+  const dto = {
+    ...structuredClone(minutesFixtures[0]),
+    summary: null,
+    summary_status: 'pending',
+    title: null,
+  }
+  expect(toMinutes(dto)).toMatchObject({ title: '', summary: null, summaryStatus: 'pending' })
+})
+
+it('keeps an unknown summary_status as the received text', () => {
+  const dto = {
+    ...structuredClone(minutesFixtures[0]),
+    summary: null,
+    summary_status: 'regenerating',
+  }
+  expect(toMinutes(dto).summaryStatus).toEqual({ unknown: 'regenerating' })
+})
+
+it('passes the awaiting status and the remaining approval count through', () => {
+  const dto = {
+    ...structuredClone(minutesFixtures[0]),
+    summary: null,
+    summary_status: 'awaiting_approval',
+    summary_waiting_count: 3,
+  }
+  expect(toMinutes(dto)).toMatchObject({
+    summaryStatus: 'awaiting_approval',
+    summaryWaitingCount: 3,
+  })
+  expect(toMinutes(minutesFixtures[0]).summaryWaitingCount).toBeNull()
 })
 
 it('preserves false permissions and does not treat an empty display name as null', () => {
@@ -44,4 +75,14 @@ it('preserves false permissions and does not treat an empty display name as null
 
 it('keeps a chat source instead of falling back to discord', () => {
   expect(toMinutes({ ...minutesFixtures[1], source: 'chat' }).source).toBe('chat')
+})
+
+// 들을 수 있는지는 audio 가 null 인지로만 정한다. 보관 끝 시각은 받은 글자 그대로 두고 지났는지 따지지 않는다 (#676)
+it('keeps the playable recording as received and a missing one as null', () => {
+  const playable = toMinutes({
+    ...structuredClone(minutesFixtures[1]),
+    audio: { content_type: 'audio/mp4', expires_at: '2020-01-01T00:00:00Z' },
+  })
+  expect(playable.audio).toEqual({ contentType: 'audio/mp4', expiresAt: '2020-01-01T00:00:00Z' })
+  expect(toMinutes({ ...structuredClone(minutesFixtures[1]), audio: null }).audio).toBeNull()
 })

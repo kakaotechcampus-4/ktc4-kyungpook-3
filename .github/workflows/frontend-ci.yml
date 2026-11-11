@@ -5,6 +5,8 @@ on:
     branches: [develop]
     paths:
       - 'frontend/**'
+      - 'docs/policy/**'
+      - 'backend/app/services/consents.py'
       - '.github/workflows/frontend-ci.yml'
   # deploy.yml 이 배포 전에 같은 커밋으로 부른다
   workflow_call:
@@ -24,6 +26,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm run policy:check
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
@@ -72,12 +75,18 @@ jobs:
       - if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
       - run: npm run test:e2e
-      # 실패한 테스트의 재시도 trace(on-first-retry)와 HTML 리포트를 남긴다
+      - run: npm run test:e2e:consent -- --output=test-results-consent
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-consent
+      # 재시도로 통과한 실행도 재시도 trace(on-first-retry)와 HTML 리포트를 남긴다
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: ${{ !cancelled() }}
         with:
           name: frontend-e2e-report
           path: |
             frontend/playwright-report
             frontend/test-results
+            frontend/playwright-report-consent
+            frontend/test-results-consent
+          if-no-files-found: ignore
           retention-days: 7

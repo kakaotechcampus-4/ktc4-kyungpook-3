@@ -16,6 +16,7 @@ from app.main import app
 from app.models import Integration, Member, Session as SessionModel, User, Workspace
 from app.services import chat_channel, discord
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 SERVICE_TOKEN = "test-service-token"
@@ -70,7 +71,7 @@ def env(monkeypatch):
 
 
 def _user(db, email: str, token: str) -> User:
-    user = User(email=email, name=email.split("@")[0])
+    user = User(username=username_for(email), email=email, name=email.split("@")[0])
     db.add(user)
     db.flush()
     db.add(SessionModel(user_id=user.user_id, session_token=hash_session_token(token), expires_at=datetime.now(timezone.utc) + timedelta(days=1)))
@@ -619,8 +620,8 @@ def test_bot_chat_channels_lists_enabled_only(client, seed, db):
 
     assert response.status_code == 200
     assert response.json()["data"] == {"items": [
-        {"workspace_id": first, "guild_id": "g1", "channel_id": "c1"},
-        {"workspace_id": "ws-zzz", "guild_id": "g3", "channel_id": "c3"},
+        {"workspace_id": first, "guild_id": "g1", "channel_id": "c1", "identity_epoch": 0},
+        {"workspace_id": "ws-zzz", "guild_id": "g3", "channel_id": "c3", "identity_epoch": 0},
     ]}
 
 

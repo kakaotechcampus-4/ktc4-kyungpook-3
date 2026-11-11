@@ -3,8 +3,12 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _upload_dir(tmp_path, monkeypatch):
-    """녹음 업로드를 테스트마다 임시 폴더에 저장한다. 저장소의 backend/uploads에 파일을 남기지 않는다."""
+    """녹음 업로드를 테스트마다 임시 폴더에 저장한다. 저장소의 backend/uploads에 파일을 남기지 않는다.
+
+    셸에 `UPLOAD_STORAGE=s3` 가 있어도 기본은 local 로 돈다. s3 가 필요한 테스트가 직접 켠다.
+    """
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.delenv("UPLOAD_STORAGE", raising=False)
 
 
 @pytest.fixture(autouse=True)
@@ -15,3 +19,13 @@ def _reset_login_limit():
     login_limit.reset()
     yield
     login_limit.reset()
+
+
+@pytest.fixture(autouse=True)
+def _reset_password_reset_limit():
+    """재설정 요청 IP 제한기도 프로세스 메모리에 있으므로 테스트마다 비운다."""
+    from app.services import password_reset_limit
+
+    password_reset_limit.reset()
+    yield
+    password_reset_limit.reset()

@@ -1,155 +1,148 @@
-# PM 에이전트 — AI 파트
+# Manager's Manager AI 파트
 
-`../implementation_plan_1.md` 의 AI 파트 구현. **현재 캡처(Phase 0 일부)까지 구현됨.**
+회의 음성과 채팅을 전사하고, 할 일과 기존 태스크의 변경을 근거(원문, 화자, 시각)와 함께 찾아 Backend 에 넘깁니다. PM 승인과 Notion 반영은 Backend 와 Frontend 가 맡습니다.
 
-모노레포 구조상 이 저장소는 `ai/` `backend/` `frontend/` 가 각자 독립된 하위 프로젝트입니다(각자 자기
-venv·의존성·테스트를 따로 가짐). **이 디렉토리(`ai/`) 자체가 AI 파트의 프로젝트 루트**이고, 아래 명령은
-전부 이 디렉토리 안에서 실행하는 걸 기준으로 적었습니다.
+| 항목 | 내용 |
+|---|---|
+| 실행 환경 | Python 3.12, `uv` |
+| 입력 | Discord 음성 회의, 웹에 올린 녹음 파일, Discord 텍스트 채널 |
+| 출력 | 회의록 전사, 할 일과 변경 제안, 회의 요약. 모두 Backend API 로 넘깁니다 |
+| 외부 서비스 | Elice MLAPI(전사, LLM, 임베딩, 근거 판정), pyannoteAI(화자 분리) |
 
+이 저장소는 `ai/`, `backend/`, `frontend/` 가 각자 독립된 프로젝트입니다. 아래 명령은 모두 `ai/` 안에서 실행합니다.
+
+## 처리 흐름
+
+```mermaid
+flowchart LR
+  A[Discord 음성 회의] --> R[녹음 봇]
+  U[웹에 올린 녹음] --> D[화자 분리]
+  C[Discord 채팅] --> P[채팅 폴링]
+  R --> W[처리 워커]
+  D --> W
+  W --> S[전사]
+  S --> J[판단]
+  P --> J
+  J --> B[(Backend API)]
+  W --> M[회의 요약]
+  M --> B
 ```
-shared/schemas.py   AI·BE 공통 계약 (MVP 4테이블 + 단계 간 입출력 타입). 바꾸면 전원 공유.
-shared/config.py    .env 로딩
-capture/            discord_adapter.py (RecordingCog, Discord 이름은 이 안에서만) · recording_store.py · run_recorder.py (검증용 실행기)
-docs/               문서 (plan/ 계획 · api/ 계약·흐름도 · request/ 타 파트 요청 · basis_for_decision/ 진행 로그·결정 기록)
-tests/              pytest — 외부 서비스 없이 실행
-recordings/         녹음 산출물 (git 제외)
-```
 
-## AI ↔ BE 경계
+| 입력 | 처리 |
+|---|---|
+| Discord 음성 회의 | 봇이 `/join` → `/record` → `/stop` 으로 화자별 트랙을 녹음합니다. 워커가 전사 → 회의록 → 할 일 추출 → Backend 인계를 합니다 |
+| 웹에 올린 녹음 | 워커가 Backend 에서 파일을 가져와 화자를 나누고 샘플 구간을 보고합니다. PM 이 웹에서 화자를 지정하면 전사와 인계를 이어 갑니다 |
+| Discord 채팅 | 매일 09:00 KST 에 채널 대화를 모아 같은 판단 경로로 정리합니다 |
+| 회의 요약 | 워커가 Backend 요약 대기열에서 한 건씩 가져와 요약을 저장합니다 |
 
-- `capture/discord_adapter.py` 는 **봇을 띄우지 않습니다.** `RecordingCog` 를 export 하고, BE 의
-  `backend/bot/main.py`(다른 디렉토리, 다른 프로젝트)가 `bot.add_cog(RecordingCog(bot, on_session_saved=...))`
-  로 붙입니다. BE 가 준비되기 전에는 `capture/run_recorder.py` 로 같은 구성을 띄워 검증합니다.
-- `/stop` 이면 봇은 트랙을 닫고 저장한 뒤 워커(`capture/worker.py`)를 찌르고 `on_session_saved(manifest,
-  manifest_path)` 훅을 부릅니다. 처리는 워커 하나가 합니다(`docs/basis_for_decision/member/2026-10-13-0026-worker-only.md`).
-  워커가 `capture/recorder.py` 의 `process_session` 으로 전사(`stt/batch.py`) → 회의록 저장 → 할일 추출 → BE 인계
-  (`capture/handoff.py`)를 돌리고, 단계가 끝날 때마다 그 채널에 알릴 글을 우편함(`recordings/.worker/outbox`)에
-  씁니다. 봇이 그 글을 채널에 올립니다. BE 가 읽는 전사는 `transcripts/session_{ts}.transcript.json` 입니다.
-- 운영에 올리는 Cog 는 `RecordingCog` 하나입니다. `capture/realtime/` 은 실행기에 등록하지 않고 공용 계층
-  (`voice_client.py`, `streaming_sink.py`, `track_writer.py`)에 기댈 뿐이며 반대 방향 의존은 없습니다. 재연결
-  키 갱신처럼 두 경로에 다 필요한 처리는 공용 계층에 있습니다.
-- BE 인계는 봇과 워커가 BE 회의 API 를 직접 부릅니다 (`docs/basis_for_decision/member/2026-09-19-0009-bot-hands-off-to-be-api.md`). `/record` 에서 봇이 `POST /api/v1/meetings`,
-  워커가 `PATCH /meetings/{id}/end`, 추출 뒤 `POST /extractions`, 자동 재시도를 멈추면
-  `PATCH /meetings/{id}/fail`. `BE_BASE_URL` 과 `BE_SERVICE_TOKEN` 이 없으면 이 단계에서 멈춥니다. 워크스페이스는
-  `/record` 때 디스코드 서버로 BE 에 물어 매니페스트에 고정합니다. 웹에서 연결하지 않은 서버면 녹음을 시작하지 않고,
-  처리할 때 연결이 없으면 채널에 한 번 알리고 연결될 때까지 전사하지 않습니다(#199).
-- 웹 업로드 회의 가져오기도 워커가 BE 를 직접 부릅니다. 대기 목록·claim·파일은 `GET /uploads/pending`,
-  `PATCH /uploads/{id}/claim`, `GET /uploads/{id}/file`(헤더 `X-Service-Token`)이고, 분리에 실패하면
-  `PATCH /meetings/{id}/fail` 에 `failed_stage=diarize` 를 보냅니다. 진행은 `recordings/.uploads/<meeting_id>/intake.json`,
-  결과는 세션 `upload_<meeting_id>` 의 `diarized` 매니페스트(`be`, `workspace_id`, `attendees`, `upload` 포함)입니다. 자세한 흐름은 아래
-  "수동 업로드" 항목에 있습니다.
-  PM 의 지정이 끝난 뒤에는 `mapped` 매니페스트를 처리 바퀴가 집어 `POST /meetings/{id}/sources`(화자는 `speaker_member_id`)와 `POST /extractions` 로 인계하며
-  `POST /meetings`·`PATCH /end` 는 부르지 않습니다. 그 앞 단계에서 화자 라벨 보고(`POST /uploads/{id}/speakers`), 지정 조회(`GET /uploads/assigned`),
-  `PATCH /uploads/{id}/resume` 도 같은 워커가 부릅니다(아래 "업로드 회의 인계").
-- 추출 단계의 추출기는 `MM_EXTRACT_PATH` 로 고릅니다 (`docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md`). 기본(`legacy`)은 `extract/` 의
-  `extract_tasks`, `judge` 는 판단 파이프라인(`judge/pipeline.py`)입니다. `judge` 는 1단계가 전사록에서 고른
-  finding(결정이나 진척 보고 하나. 근거 줄 하나나 여러 줄과 요약 문장)마다 그 요약 문장으로 BE 의 유사 task 검색
-  (`POST /workspaces/{id}/tasks/similar`, 헤더 `X-Service-Token`)을 부릅니다. 전사록의 줄마다가 아닙니다. 나온 항목은
-  회의마다 한 번 그대로 `POST /extractions` 로 보냅니다. 판단하지 못한 finding 이 남으면 인계를 미루고 다시 돌리며,
-  등록할 항목 없이 판단하지 못한 finding 만 남으면 빈 추출을 등록하지 않고 단계 실패로 셉니다.
-- 매니페스트 `recordings/session_{ts}.json` = `{"session", "status", "stages", "started_at", "timezone", "meeting_dir",
-  "transcript", "tasks" 또는 "items", "be", "speakers": [{"user_id", "display_name", "file", "duration_sec"}]}`. `status` 는
-  recording → saved → transcribed → extracted → handed_off (실패 시 failed 와 `failed_stage`) 이고, 워커가
-  마지막으로 끝난 단계 다음부터 마저 처리합니다. 실패 5회로 자동 재시도를 멈춘 회의는 서버에서
-  `python -m capture.worker --retry <서버ID>` 로 다시 돌립니다. 상대 날짜("내일")의 기준일은 처리하는 날이 아니라
-  `started_at` 을 `timezone` 으로 바꾼 회의 날짜입니다.
-- 수동 업로드(`upload/`): 회의를 녹음하지 못했을 때 오디오 파일 하나를 `python -m upload.prepare <오디오> --started-at <ISO>`
-  (pyannoteAI 를 실제로 부르므로 `PYANNOTEAI_API_KEY` 가 필요하고 과금됩니다)로 화자 분리해 화자 라벨마다 원본 길이의 가상 트랙
-  `recordings/upload_{ts}/{id}_{ts}.wav` 와 `diarization.json`, 매니페스트를 만듭니다. 매니페스트는 `status` 가 `diarized`,
-  `source` 가 `upload` 입니다. 화자 라벨을 멤버에 지정하는 함수는 `upload.mapping.apply_mapping` 이고, 개발·운영용으로 `python -m upload.mapping <매니페스트> <mapping.json>` 입구가 있습니다(PM 이 쓰는 경로가 아닙니다). PM 의 지정을 웹으로 받는 BE 경로와는 `upload/assign.py` 가 assigned·resume 으로 연결합니다(아래 지정 받기).
-  `mapping.json` 은 `{"mapping": {"SPEAKER_00": "멤버ID", "SPEAKER_01": null}}` 이거나 안쪽 객체 그대로이고, 키는 `SPEAKER_00` 도
-  `SPEAKER00` 도 됩니다. 모든 라벨을 한 번에 지정해야 하고(빠진·모르는 라벨, 빈 문자열이거나 앞뒤 공백이 있는 멤버 ID 는 거절하며
-  파일은 그대로입니다), `null` 은 외부 참석자이고, 같은 멤버를 여러 라벨에 지정해도 됩니다. 결과는 `speakers[].member_id`,
-  최상위 `mapped_at`, `status` 가 `mapped` 입니다. `user_id`(라벨 id)·`file`·wav 이름은 그대로이고 `mapped` 에서 다시 지정하면
-  덮어씁니다. `diarized` 인 업로드 매니페스트와 `workspace_id`·BE 회의(`be.meeting_id`)가 없는 업로드 매니페스트는 상태가 무엇이든
-  (사람이 `saved` 로 고쳐도) 워커의 자동 바퀴·`--retry` 바퀴·복구 어디서도 처리하지 않습니다. 이 경로(`prepare`)로 만든
-  매니페스트에는 `workspace_id` 와 BE 회의 정보가 없고 디스코드 길드·채널이 없어 `guild`·`channel` 이 null 이라 여기에 해당합니다.
-  PM 의 지정은 BE 웹 경로와 `upload.assign` 이 받고, 지정이 끝나 `mapped` 가 된 BE 업로드 회의는 워커의 처리 바퀴가 전사·BE 인계합니다
-  (아래 "업로드 회의 인계").
-- 웹 업로드 가져오기(`upload/intake.py`): PM 이 웹에 올린 오디오 회의를 워커가 가져와 같은 `diarized` 매니페스트로 만듭니다.
-  명시적 opt-in 입니다. 환경 변수 `MM_UPLOAD_INTAKE=1` 이고 `BE_BASE_URL`·`BE_SERVICE_TOKEN`·`PYANNOTEAI_API_KEY` 가 모두 있을 때만 켜지고,
-  아니면 BE 도 pyannoteAI 도 부르지 않습니다. **운영 서버 한 대에서만 켭니다(BE 의 claim 계약은 단일 워커를 전제로 합니다).** 워커가 바퀴 끝(정지 신호가 없을 때만)에 한 번 `intake_one` 을 부르며, 한 번에 한 건을 한 단계만 진전시킵니다.
-  흐름은 BE `GET /uploads/pending` → `PATCH /uploads/{id}/claim`(조건부 한 번) → 원본 내려받기(`size_bytes` 확인) → 16kHz mono
-  wav 변환 → pyannoteAI 제출(`job_id` 기록. `job_id` 를 적은 뒤에는 재시작해도 다시 제출하지 않습니다. 다만 제출 응답을 받기 전에 끊기거나 30분이 지나도 결과가 없거나 job 이 실패하면 다시 제출(과금)될 수 있습니다). claim 한 뒤 2시간 30분이 지나면 다시 맡기지 않고 `failed_stage=diarize` 로 실패를 보고합니다(BE 가 3시간 뒤 정리하기 전에 끝내기 위해서입니다) → 결과 조회 → 트랙·매니페스트
-  작성 → 원본·wav 삭제입니다. 진행 기록은 `recordings/.uploads/<meeting_id>/intake.json`(상태 `claiming`·`claimed`·`converted`·
-  `submitted`·`done`·`failed`)이라 재시작해도 이어 갑니다. 일시 실패는 복구와 같은 시도 한도·대기로 다시 하고, 영구 실패나 한도 초과는
-  BE 에 `PATCH /meetings/{id}/fail`(`failed_stage=diarize`)을 보냅니다. 보내지 못하면 다음 바퀴에 다시 보냅니다. 세션 이름은
-  `upload_<meeting_id>` 이고 매니페스트(`recordings/session_upload_<meeting_id>.json`)는 `be`(`{meeting_id, status}`), `workspace_id`,
-  `title`, `attendees`, `upload`(원본 파일 정보)를 더해 `status` 가 `diarized` 입니다. 이 매니페스트도 위와 같이 워커의 처리 바퀴가
-  집지 않습니다(지정 전이라서입니다). 워커 로그에는 `[worker] 업로드 <meeting_id> <진행>` 한 줄이 남고,
-  하트비트 `current` 는 가져오는 동안 `upload` 입니다.
-- 지정 받기(`upload/assign.py`): PM 이 웹에서 화자 지정을 끝낸 업로드 회의를 워커가 `mapped` 로 바꿉니다. 같은 opt-in 이고, 워커가 같은
-  자리(한 번에 한 회의)에서 `intake_one` 보다 먼저 `assign_one` 을 한 번 부릅니다. 한 번에 한 건을 한 단계만 진전시킵니다.
-  흐름은 BE `GET /uploads/assigned` → `PATCH /uploads/{id}/resume` 직전에 로컬 기록(`recordings/.uploads/<meeting_id>/intake.json` 의
-  `resume` 키, 상태 `resuming`)을 남김 → resume 응답의 mapping 으로 `apply_mapping` → `mapped` 기록입니다. assigned 는 resume 하지
-  않은 건만 주므로, resume 응답을 잃거나 죽어도 로컬 기록을 보고 다시 resume 합니다(resume 은 멱등입니다). 때가 된 `resuming` 기록을
-  assigned 보다 먼저 이어 갑니다. 409 `SPEAKERS_NOT_ASSIGNED` 는 매니페스트를 그대로 두고 fail 도 보내지 않고 다음에 다시 봅니다.
-  409 `MEETING_ALREADY_ENDED` 와 404 는 BE 가 이미 끝낸 회의라 로컬 매니페스트·트랙·잠금을 지우고 `ended` 로 기록하며 fail 을 보내지
-  않습니다. 연결 실패·5xx·`apply_mapping` 잠금 경합은 일시 실패라 대기 뒤 다시 하고 포기 한도는 없습니다. assigned 에 나왔는데 로컬
-  매니페스트가 없으면 resume 하지 않고 건너뜁니다(로그는 실행 동안 회의마다 한 번). resume 은 됐는데 지정을 쓸 수 없으면(라벨 불일치 등)
-  `PATCH /meetings/{id}/fail`(`failed_stage=diarize`)을 보내고(409 ended 는 성공으로 봅니다) 로컬을 정리해 `failed` 로 기록하며,
-  fail 을 보내지 못하면 기록에 남겨 다음에 다시 보냅니다. `mapped` 매니페스트는 워커의 처리 바퀴가 이어서 집습니다(아래 "업로드 회의 인계"). 로그는 같은
-  `[worker] 업로드 <meeting_id> <진행>` 한 줄입니다.
-- 라벨 보고(`upload/report.py`): 가져오기가 끝난(`done`) 회의의 화자 라벨과 샘플 구간을 워커가 BE 에 보고합니다. 같은 opt-in 이고, 워커가
-  같은 자리(한 번에 한 회의)에서 `assign_one` 다음, `intake_one` 보다 먼저 `report_one` 을 한 번 부릅니다. BE 는 보고를 받아야
-  `awaiting_speakers` 로 바뀌고 PM 이 웹에서 지정할 수 있습니다.
-  - 샘플 규칙: 라벨마다 `total_sec` 는 그 라벨 구간 길이의 합(다른 라벨과 겹친 부분 포함, 소수 셋째 자리)입니다. 샘플은 다른 라벨과 겹치지
-    않는 구간 중 2초 이상을 긴 순서로 최대 3개 고르고 각각 앞에서부터 10초로 자르며, 시작 시각 오름차순으로 보냅니다. 2초 이상인 깨끗한
-    구간이 없으면 가장 긴 깨끗한 구간 하나, 깨끗한 구간이 전혀 없으면 가장 긴 원래 구간 하나를 씁니다. 같은 입력이면 같은 결과이고
-    매니페스트의 모든 라벨이 한 번씩 들어갑니다.
-  - 기록: `recordings/.uploads/<meeting_id>/intake.json` 의 `report` 키(상태 `reporting` → `reported`·`ended`, 실패는 `failing` → `failed`)입니다.
-    보고 본문은 처음 만들 때 기록에 고정하고 재전송은 그 본문을 그대로 보내므로, 응답을 잃어도 같은 내용으로 다시 보냅니다. 가져오기 상태와
-    매니페스트(`diarized`)는 바꾸지 않습니다. `reporting` 인데 지정 받기가 남긴 `resume` 키가 있으면(PM 지정이 이미 끝난 회의) BE 를 부르지 않고 `reported` 로 닫습니다.
-    아래 어느 응답 처리에서도 `mapped` 매니페스트는 지우지 않습니다.
-  - 응답 처리: 200 이면 `reported` 입니다. 409 `SPEAKERS_ALREADY_REPORTED` 는 BE 가 가진 라벨이 우리 것과 같으면 `reported`, 다르면 로컬을
-    정리하고 `failed_stage=diarize` 로 실패를 보고합니다. 409 `MEETING_ALREADY_ENDED` 와 404 는 로컬을 정리하고 `ended` 로 기록하며 fail 을
-    보내지 않습니다. 409 `UPLOAD_NOT_CLAIMED` 와 400 은 로컬 정리 뒤 fail 을 보냅니다. 매니페스트·분리 파일이 없거나 깨졌거나 라벨이 어긋나도
-    같습니다. 연결 실패·5xx·401·BAD_RESPONSE 는 일시 실패라 대기 뒤 다시 하고 포기 한도는 없습니다. fail 을 보내지 못하면 `failing` 으로 남겨
-    다음에 다시 보냅니다.
-- 업로드 회의 인계(`capture/handoff.py`·`capture/recorder.py`): 지정이 끝나 `mapped` 가 되고(모든 화자에 `member_id` 키가 있음) `workspace_id`·`be.meeting_id` 가
-  있는 업로드 매니페스트는 워커의 처리 바퀴(`run_pass`·복구)가 디스코드 회의보다 먼저 집어 전사 → 회의록 → 할일 추출 → BE 인계를 합니다. 디스코드 서버가
-  없어도 집습니다. 디스코드 회의가 BE 에 보내는 요청은 그대로입니다.
-  - 변환은 인계 직전에만 합니다. 전사 계약 파일과 추출 입력은 라벨 id(`SPEAKER00`)를 그대로 쓰고, BE 로 나갈 때만 라벨을 멤버 ID 로 바꿉니다.
-  - `POST /meetings/{id}/sources` 는 모든 발화에 `speaker` 를 null 로 두고, 멤버에 지정된 라벨의 발화에는 `speaker_member_id` 를 싣습니다. `speaker_names` 는 보내지 않습니다.
-  - `POST /extractions` 는 judge·legacy 항목 모두 `evidence_speaker` 를 null 로 두고 `evidence_speaker_member_id` 를 싣습니다.
-  - 외부 참석자로 지정한 라벨은 화자도 멤버 ID 도 비웁니다. 그 발화도 전사·발화 저장·추출에는 넣습니다. LLM 에는 "외부 참석자 N" 이라는 이름으로 보입니다.
-  - BE 회의는 가져오기 때 이미 만들어져 있어 `POST /meetings`·`PATCH /meetings/{id}/end` 를 부르지 않습니다.
-  - 400 `details.member_ids` 를 받으면 그 ID 를 null 로 바꿔 다시 보내고(서로 다른 ID 수만큼만), 버린 ID 는 `be.sources.dropped_member_ids` 와 로그에 남깁니다.
-  - 발화 저장의 409 `MEETING_FAILED`·404, 추출 등록의 409 `MEETING_NOT_PROCESSING`·404 는 BE 가 이미 끝낸 회의라는 뜻입니다. 새 회의를 만들지 않고 실패 횟수·`/fail` 도 없이
-    잠금을 놓은 뒤 로컬 매니페스트·잠금·트랙 폴더를 지웁니다.
+## 폴더 구조
 
-## 설치 (이 디렉토리, `ai/` 안에서)
+| 위치 | 역할 |
+|---|---|
+| `capture/` | Discord 녹음(`discord_adapter.py`), 처리 워커(`worker.py`), 단계 진행(`recorder.py`), Backend 인계(`handoff.py`), 채팅 폴링(`chat_poll.py`), 회의 요약 대기열(`summary_sweep.py`) |
+| `stt/` | 화자별 트랙 전사. 운영 기본은 Elice API 이고, 로컬 faster-whisper 와 GPU 서버는 장애 대응입니다 |
+| `upload/` | 올린 녹음의 화자 분리, 화자 라벨 보고, PM 지정 반영, 로컬 정리 |
+| `judge/` | 판단 파이프라인. 후보 찾기 → 비슷한 태스크 검색 → 변경 판단 → 초안 → 근거 검증 |
+| `extract/` | 이전 추출 경로(`MM_EXTRACT_PATH=legacy`) |
+| `draft/` | 승인 항목의 제목, 마감일, 설명 초안 |
+| `summary/` | 회의 요약 생성 |
+| `shared/` | Backend 와 공유하는 타입 계약(`schemas.py`), 설정 로딩(`config.py`) |
+| `llm.py`, `embedding.py`, `jev.py` | LLM, 임베딩, 근거 판정 클라이언트 |
+| `deploy/` | 운영 systemd 유닛(`mm-bot`, `mm-worker`, `mm-chat-poll`)과 GPU 전사 서버 전환 |
+| `tests/` | pytest. 외부 서비스와 API 키 없이 돕니다 |
+| `docs/` | 계획, 결정 기록, 진행 로그, [처리 상세](docs/api/pipeline-details.md) |
+
+`recordings/` 와 `transcripts/` 는 녹음과 전사 산출물이 쌓이는 곳이라 git 에서 뺍니다.
+
+## 시작하기
+
+### 설치
 
 ```bash
 uv venv --python 3.12 .venv
-uv pip install -r requirements.txt   # py-cord 는 PR #3159 브랜치라 git 필요. Linux: sudo apt install libopus0
+uv pip install -r requirements.txt   # py-cord 는 PR #3159 브랜치라 git 이 필요합니다. Linux: sudo apt install libopus0
 source .venv/bin/activate
-cp .env.example .env                 # DISCORD_BOT_TOKEN 채우기 (DISCORD_GUILD_ID 넣으면 슬래시 커맨드 즉시 반영)
+cp .env.example .env                 # DISCORD_BOT_TOKEN 을 채웁니다
 ```
 
-⚠️ Discord 음성 수신은 2026-03 부터 DAVE(E2EE) 필수. PyPI 의 py-cord 2.8.x 로는 녹음이 **안 됩니다**.
-`requirements.txt` 의 PR 브랜치를 쓰세요. `/stop` 후 "저장된 오디오가 없습니다"가 나오면 라이브러리
-문제일 가능성이 큽니다.
+> [!WARNING]
+> Discord 음성 수신은 2026-03 부터 DAVE(E2EE)가 필수입니다. PyPI 의 py-cord 2.8.x 로는 녹음이 되지 않으니 `requirements.txt` 의 PR 브랜치를 쓰세요. `/stop` 뒤 "저장된 오디오가 없습니다"가 나오면 라이브러리 문제일 가능성이 큽니다.
 
-## 실행
+### 실행
+
+| 명령 | 하는 일 |
+|---|---|
+| `python -m capture.run_recorder` | 녹음 봇. Discord 에서 `/join` → `/record` → (말하기) → `/stop` |
+| `python -m capture.worker` | 저장된 회의를 처리합니다. 단계가 끝날 때마다 채널에 알릴 글을 남기고, 올리는 것은 봇입니다 |
+| `python -m capture.worker --retry <서버ID>` | 자동 재시도를 멈춘 회의까지 그 서버만 한 바퀴 다시 처리합니다 |
+| `python -m capture.chat_poll` | 채팅 폴링. 운영에서는 타이머가 돌립니다. `--dry-run` 은 Backend 에 쓰지 않고 판단만 합니다 |
+| `python -m capture.backfill_summaries --workspace ID --all --dry-run` | 옛 회의의 요약 대상과 예상 비용을 봅니다 |
+
+산출물은 `recordings/{guild}_{ts}/{user_id}_{ts}.wav`, `recordings/session_{ts}.json`, `transcripts/session_{ts}.transcript.json` 에 남습니다.
+
+### 테스트
 
 ```bash
-python -m capture.run_recorder    # 봇. Discord 에서 /join → /record → (말하기) → /stop → 저장
-python -m capture.worker          # 워커. 저장된 회의를 처리하고 단계가 끝날 때마다 채널에 알린다(올리는 것은 봇)
-#    recordings/{guild}_{ts}/{user_id}_{ts}.wav · recordings/session_{ts}.json · transcripts/session_{ts}.transcript.json
-
-python -m capture.worker --retry <서버ID>   # 자동 재시도를 멈춘 회의까지 그 서버만 한 바퀴 다시 돌린다
-
-# .env 에 MM_DEBUG_REPORT=1 이면 단계 시작, 회의록 파일, 할 일 목록, 처리 시간·대기·메모리 한 줄도 채널에 올린다(개발용)
-# 판단 경로로 돌리려면 .env 에 MM_EXTRACT_PATH=judge 와 TERRA_*, LUNA_*, BE_* 를 채운다
+pytest          # py-cord 없이 돕니다 (스텁 데이터 사용)
 ```
 
-## 테스트
+## 주요 환경 변수
 
-```bash
-pytest          # py-cord 없이 실행 가능 (스텁 데이터 사용)
-```
+값은 `.env.example` 을 참고합니다. 전체 목록은 [환경 변수](../docs/dev/env.md)에 있습니다.
 
-## 다음 단계
+| 변수 | 뜻 |
+|---|---|
+| `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID` | 봇 토큰. 서버 ID 를 넣으면 슬래시 명령이 바로 반영됩니다 |
+| `BE_BASE_URL`, `BE_SERVICE_TOKEN` | Backend 주소와 서비스 토큰. 없으면 인계 단계에서 멈춥니다 |
+| `MM_EXTRACT_PATH` | 추출 경로. `legacy`(기본) 또는 `judge`. 운영은 `judge` 로 돕니다. `judge` 는 `TERRA_*`, `LUNA_*`, `BE_*` 가 필요합니다 |
+| `MM_UPLOAD_INTAKE` | `1` 이면 웹 업로드를 가져옵니다. `PYANNOTEAI_API_KEY` 가 함께 필요하고 운영 서버 한 대에서만 켭니다 |
+| `MM_SUMMARY_LLM` | 회의 요약 모델. 비우면 꺼짐이고 `luna` 나 `terra` 를 넣으면 켜집니다 |
+| `MM_GPU_FAILOVER` | Elice 장애 때 GPU 전사 서버로 넘기는 모드 |
+| `MM_DEBUG_REPORT` | `1` 이면 단계 시작, 회의록 파일, 할 일 목록, 처리 시간을 채널에 올립니다(개발용) |
 
-STT 전사(`stt/`)를 붙여서 `recordings/` 결과를 텍스트로 바꾸는 작업.
+## AI ↔ BE 경계
+
+- Backend 와는 HTTP API 로만 이야기합니다. 모든 호출에 `X-Service-Token` 을 싣고, 호출은 `capture/handoff.py` 의 `BeClient` 를 거칩니다.
+- Discord 는 `capture/` 안에만 있습니다. `stt`, `judge`, `summary` 등은 `discord` 를 import 하지 않습니다(`tests/test_platform_isolation.py`).
+- `shared/schemas.py` 는 Backend 와 공유하는 계약입니다. 바꾸면 [AI 계약](../backend/docs/contracts/backend-ai-contract.md)도 같이 고칩니다.
+
+### Backend 호출
+
+| 시점 | 호출 | 누가 |
+|---|---|---|
+| 녹음 시작(`/record`) | `POST /api/v1/meetings` | 봇 |
+| 녹음이 끝난 뒤 | `PATCH /meetings/{id}/end` | 워커 |
+| 판단 중 | `POST /workspaces/{id}/tasks/similar` | 워커 |
+| 추출 뒤 | `POST /extractions` (회의마다 한 번) | 워커 |
+| 자동 재시도를 멈출 때 | `PATCH /meetings/{id}/fail` | 워커 |
+| 웹 업로드 가져오기 | `GET /uploads/pending`, `PATCH /uploads/{id}/claim`, `GET /uploads/{id}/file` | 워커 |
+| 화자 라벨 보고와 지정 받기 | `POST /uploads/{id}/speakers`, `GET /uploads/assigned`, `PATCH /uploads/{id}/resume` | 워커 |
+| 업로드 회의 인계 | `POST /meetings/{id}/sources`, `POST /extractions` | 워커 |
+
+### 단계 상태
+
+매니페스트 `recordings/session_{ts}.json` 의 `status` 로 진행을 적습니다. 워커는 마지막으로 끝난 단계 다음부터 이어서 처리합니다.
+
+| 상태 | 뜻 |
+|---|---|
+| `recording` → `saved` | 녹음 중, 트랙 저장 완료 |
+| `transcribed` | 전사 완료 |
+| `extracted` | 할 일 추출 완료 |
+| `handed_off` | Backend 인계 완료 |
+| `failed` | 실패. 멈춘 단계는 `failed_stage` 에 적습니다 |
+| `diarized` → `mapped` | 업로드 회의의 화자 분리 완료, PM 의 화자 지정 완료 |
+
+- 실패가 5회 쌓이면 자동 재시도를 멈춥니다. `python -m capture.worker --retry <서버ID>` 로 다시 돌리고, 포기 7일 뒤에는 음성이 지워져 다시 돌릴 수 없습니다.
+- 상대 날짜("내일")의 기준일은 처리한 날이 아니라 회의 날짜입니다.
+
+단계별 요청과 응답 처리, 웹 업로드의 가져오기·라벨 보고·지정 받기·인계는 [처리 상세](docs/api/pipeline-details.md)에 있습니다.
+
+## 문서
+
+| 문서 | 내용 |
+|---|---|
+| [문서 안내](docs/README.md) | AI 파트 문서의 위치와 양식 |
+| [처리 상세](docs/api/pipeline-details.md) | 녹음 뒤 처리, Backend 인계, 웹 업로드, 회의 요약의 단계별 동작 |
+| [결정 기록과 진행 로그](docs/basis_for_decision/) | 왜 이렇게 만들었는지와 측정 결과 |
+| [AI 설계 문서](../docs/design/ai/index.md) | 전사, 판단, 근거 검증, 오인식 검사, 답장 판단의 설계 |
+| [AI 계약](../backend/docs/contracts/backend-ai-contract.md) | Backend 와 주고받는 API |

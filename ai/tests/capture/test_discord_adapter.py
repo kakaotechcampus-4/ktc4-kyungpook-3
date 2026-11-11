@@ -60,8 +60,9 @@ class FakeTextChannel:
 
 
 class FakeVoiceChannel:
-    def __init__(self):
-        self.id, self.name = ROOM_ID, "회의방"
+    def __init__(self, cid=ROOM_ID):
+        self.id, self.name = cid, "회의방"
+        self.members = []          # 지금 이 음성 채널에 있는 사람
 
 
 class FakeVC:
@@ -120,8 +121,13 @@ class FakeBot:
 
 
 class FakeCtx:
-    def __init__(self, guild, vc, channel):
+    def __init__(self, guild, vc, channel, author=None):
+        """author 를 주지 않으면 봇과 같은 음성 채널에 있는 사람이 명령한다."""
         self.guild, self.voice_client, self.channel = guild, vc, channel
+        if author is None:
+            author = FakeMember(1, "민수", guild)
+            author.voice = State(vc.channel)
+        self.author = author
         self.responses = []
         self.deferred = False
 
@@ -297,7 +303,8 @@ async def test_record_creates_the_be_meeting_and_the_worker_hands_the_tasks_off(
     assert rec.be["meeting_id"] == "m1" and _manifest(tmp_path, rec)["be"]["meeting_id"] == "m1"
     assert rec.workspace_id == "ws-1" and _manifest(tmp_path, rec)["workspace_id"] == "ws-1"
     assert fake.calls[0][:2] == ("GET", f"/integrations/discord/guilds/{GUILD_ID}/workspace")
-    assert fake.calls[1][2]["title"].startswith("회의방 ") and fake.calls[1][2]["workspace_id"] == "ws-1"
+    assert fake.calls[1][:2] == ('GET', '/workspaces/ws-1/members/names')
+    assert fake.calls[2][2]["title"].startswith("회의방 ") and fake.calls[2][2]["workspace_id"] == "ws-1"
     rec.sink.on_samples(1, _tone(2000), 0)
     rec.sink.on_samples(2, _tone(3000), 5000)
     await _run(A.RecordingCog.stop, cog, ctx)
@@ -306,8 +313,8 @@ async def test_record_creates_the_be_meeting_and_the_worker_hands_the_tasks_off(
     m = _manifest(tmp_path, rec)
     assert m["status"] == "handed_off" and set(m["stages"]) == {"transcribed", "sourced", "extracted", "handed_off"}
     calls = without_stage(fake.calls)                  # 단계 보고(진행 표시)는 흐름 단정에서 뺀다
-    assert [c[1] for c in calls] == [f"/integrations/discord/guilds/{GUILD_ID}/workspace", "/meetings",
-                                     "/meetings/m1/end", "/workspaces/ws-1/members/names",
+    assert [c[1] for c in calls] == [f"/integrations/discord/guilds/{GUILD_ID}/workspace", "/workspaces/ws-1/members/names", "/meetings",
+                                     "/meetings/m1/end",
                                      "/meetings/m1/sources", "/extractions"]
     sent = calls[5][2]["items"][0]
     assert sent["evidence_speaker"] == "1" and sent["assignee_type"] == "first" and sent["assignee_raw"] is None
@@ -315,23 +322,36 @@ async def test_record_creates_the_be_meeting_and_the_worker_hands_the_tasks_off(
     assert [t.split(" ", 1)[0] for t, _ in channel.sent][-5:] == ["⏳", "📝", "🗂", "📋", "📨"]
 
 
-async def test_be_being_down_at_record_does_not_stop_the_recording(tmp_path):
+async def test_record_refuses_before_audio_when_workspace_identity_cannot_be_pinned(tmp_path):
     fake = FakeBe()
     fake.guilds = {str(GUILD_ID): "ws-1"}           # 이 서버는 웹에서 ws-1 에 연결돼 있다
     fake.down = True
     handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
     cog, guild, vc, channel, ctx = _setup(tmp_path, handoff=handoff)
     await _run(A.RecordingCog.record, cog, ctx)
+    assert GUILD_ID not in cog._active and vc.started is None
+    assert not list((tmp_path / 'recordings').glob('session_*.json'))
+    assert any('확인하지 못해 녹음을 시작하지 않았습니다' in text for text in ctx.responses)
+
+
+async def test_deleted_workspace_privacy_marker_stops_active_recording_and_cleanup_retries(tmp_path):
+    from capture.privacy_cleanup import apply_cleanup
+    fake = FakeBe()
+    fake.guilds = {str(GUILD_ID): 'ws-1'}
+    handoff = H.Handoff(H.BeClient('http://be', session=fake, service_token='svc-token'))
+    cog, guild, vc, channel, ctx = _setup(tmp_path, handoff=handoff)
+    await _run(A.RecordingCog.record, cog, ctx)
     rec = cog._active[GUILD_ID]
-    assert "meeting_id" not in rec.be and "NETWORK" in rec.be["error"] and vc.started is not None
-    rec.sink.on_samples(1, _tone(2000), 0)
-    await _run(A.RecordingCog.stop, cog, ctx)
-    await asyncio.wait_for(rec.done.wait(), 20)
-    fake.down = False                                           # 워커가 처리할 때는 BE 가 살아났다
-    await _worker(tmp_path, extractor=first_person_extractor, handoff=handoff).run_pass()
-    m = _manifest(tmp_path, rec)
-    assert m["status"] == "handed_off" and m["be"]["meeting_id"] == "m1"     # 인계 단계가 회의를 만들었다
-    assert m["workspace_id"] == "ws-1"                                       # 처리할 때 다시 물어 찾았다
+    rec.sink.on_samples(1, _tone(1000), 0)
+    cleanup = {'cleanup_id': 'cleanup-stop', 'workspace_id': 'ws-1', 'member_ids': ['member-a'],
+               'meeting_ids': [rec.be['meeting_id']], 'guild_ids': [str(GUILD_ID)],
+               'delete_workspace': True, 'identity_epoch': 1}
+    assert not apply_cleanup(tmp_path / 'recordings', tmp_path / 'transcripts', cleanup, runs=tmp_path / 'runs')
+    await asyncio.wait_for(rec.done.wait(), 5)
+    assert vc.started is None and GUILD_ID not in cog._active
+    assert apply_cleanup(tmp_path / 'recordings', tmp_path / 'transcripts', cleanup, runs=tmp_path / 'runs')
+    assert not (tmp_path / 'recordings' / rec.meeting_id).exists()
+    assert not R.manifest_path(tmp_path / 'recordings', rec.meeting_id).exists()
 
 
 def test_the_unconnected_notices_say_who_connects_it_and_where():
@@ -543,3 +563,84 @@ async def test_record_keeps_the_server_member_names_for_the_name_hint(tmp_path):
     rec = cog._active[GUILD_ID]
     assert _manifest(tmp_path, rec)["hint_names"] == ["민수", "서연"]
     rec.flush_task.cancel()
+
+
+def test_the_recording_notice_says_audio_goes_to_an_outside_service_and_how_to_refuse():
+    """녹음 공지(/record 와 늦게 들어온 사람 알림)가 외부 전송과 거부하는 방법을 알린다(#562)."""
+    assert "외부 서비스(Elice)로 보냅니다" in A.NOTICE
+    assert "음성 채널에서 나가 주세요" in A.NOTICE
+    assert A.NOTICE.startswith("🔴 녹음·전사 중입니다.")
+
+
+def test_notice_mentions_7_day_retention():
+    assert "최대 7일" in A.NOTICE
+    assert A.NOTICE.index("Elice") < A.NOTICE.index("최대 7일") < A.NOTICE.index("녹음을 원하지 않으면")
+
+
+# ── 명령은 봇이 있는 음성 채널에 들어와 있는 사람만 ─────────────────────────────────────────
+
+def _outsider(guild, *, voice_channel=None):
+    """봇과 같은 음성 채널에 없는 사람. voice_channel 을 주면 그 다른 방에 있다."""
+    m = FakeMember(4, "외부인", guild)
+    m.voice = State(voice_channel) if voice_channel is not None else None
+    return m
+
+
+async def test_record_by_someone_outside_the_bots_voice_channel_is_refused(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    for where in (None, FakeVoiceChannel(cid=6)):
+        out = FakeCtx(guild, vc, channel, author=_outsider(guild, voice_channel=where))
+        await _run(A.RecordingCog.record, cog, out)
+        assert out.responses == [A.NOT_IN_VOICE_REFUSED]
+        assert vc.started is None and GUILD_ID not in cog._active
+        assert not list((tmp_path / "recordings").glob("session_*"))
+    assert channel.sent == []
+
+
+async def test_record_by_someone_in_the_bots_voice_channel_starts(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    await _run(A.RecordingCog.record, cog, ctx)
+    assert vc.started is not None and GUILD_ID in cog._active
+    cog._active[GUILD_ID].flush_task.cancel()
+
+
+async def test_stop_leave_end_by_someone_outside_the_voice_channel_are_refused(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    await _run(A.RecordingCog.record, cog, ctx)
+    rec = cog._active[GUILD_ID]
+    out = FakeCtx(guild, vc, channel, author=_outsider(guild))
+    for command in (A.RecordingCog.stop, A.RecordingCog.end, A.RecordingCog.leave):
+        await _run(command, cog, out)
+    assert out.responses == [A.NOT_IN_VOICE_REFUSED] * 3
+    assert vc.started is not None and cog._active.get(GUILD_ID) is rec and vc.disconnected == 0
+    # 녹음이 끝난 뒤에도 밖에서는 봇을 내보내지 못한다
+    await _run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(rec.done.wait(), 20)
+    for command in (A.RecordingCog.leave, A.RecordingCog.end):
+        await _run(command, cog, out)
+    assert out.responses[-2:] == [A.NOT_IN_VOICE_REFUSED] * 2 and vc.disconnected == 0
+    await _run(A.RecordingCog.leave, cog, ctx)                       # 안에 있는 사람은 된다
+    assert vc.disconnected == 1
+
+
+async def test_record_notice_mentions_everyone_already_in_the_voice_channel(tmp_path):
+    """녹음 시작 공지가 이미 방에 있는 사람(봇 제외)을 부른다. 그 사람이 다시 들어와도 또 부르지 않는다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    helper = FakeMember(3, "녹음봇", guild)
+    helper.bot = True
+    vc.channel.members = [guild.get_member(1), guild.get_member(2), helper]
+    await _run(A.RecordingCog.record, cog, ctx)
+    assert ctx.responses == [f"<@1> <@2> {A.NOTICE}"]
+    rec = cog._active[GUILD_ID]
+    await cog.on_voice_state_update(guild.get_member(2), State(None), State(vc.channel))
+    assert not any(t.startswith("<@2>") for t, _ in channel.sent)
+    rec.flush_task.cancel()
+
+
+async def test_record_notice_stays_within_the_discord_message_limit(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    vc.channel.members = [FakeMember(10**17 + i, f"m{i}", guild) for i in range(150)]
+    await _run(A.RecordingCog.record, cog, ctx)
+    (text,) = ctx.responses
+    assert len(text) <= 2000 and text.endswith(A.NOTICE) and text.startswith(f"<@{10**17}>")
+    cog._active[GUILD_ID].flush_task.cancel()

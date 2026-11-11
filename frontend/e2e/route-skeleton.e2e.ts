@@ -37,12 +37,25 @@ const CASES: ScreenCase[] = [
     widths: [1280],
   },
   {
+    name: '로그인 휴대폰(H-1)',
+    scenario: 'signed-out',
+    path: '/login',
+    against: 'loaded',
+    anchors: [
+      "Manager's Manager",
+      '회의가 끝나면 할 일은 매스가 챙겨요',
+      '비밀번호를 잊으셨나요?',
+      '가입하기',
+    ],
+    widths: [390],
+  },
+  {
     name: '회원가입',
     scenario: 'signed-out',
     path: '/signup',
     against: 'loaded',
-    anchors: ['이름', '8자 이상, 숫자 포함', '로그인'],
-    widths: [1280],
+    anchors: ['계정 만들기', '이메일', '또는', '로그인'],
+    widths: [1280, 390],
   },
   {
     name: '공간 선택',
@@ -116,8 +129,14 @@ const CASES: ScreenCase[] = [
     scenario: 'meeting-demo',
     path: `${W}/meetings/upload`,
     against: 'screen',
-    anchors: ['회의를 올려 주세요', '회의 제목', '참석자'],
-    widths: [1280],
+    anchors: [
+      '회의를 올려 주세요',
+      '회의 제목',
+      '참석자',
+      '회의록을 만들기 위해 음성과 전사 내용을 외부 서비스(Elice, pyannoteAI)로 보내요. 참석자에게 알린 뒤 올려 주세요.',
+      'Notion을 연결했다면 태스크도 Notion에 올라가요. 확인이 필요한 태스크는 승인한 뒤에 올라가요.',
+    ],
+    widths: [1280, 360],
   },
 ]
 
@@ -130,7 +149,7 @@ function holdScript(mode: Mode): string {
     const mode = ${JSON.stringify(mode)}
     const auth = (url) => {
       const path = new URL(url, window.location.href).pathname
-      return path === '/api/v1/auth/me' || path === '/api/v1/workspaces'
+      return path === '/api/v1/auth/me' || path === '/api/v1/workspaces' || path === '/api/v1/consents/me'
     }
     const hold = (url) => {
       if (!url.includes('/api/v1/') || mode === 'loaded') return false

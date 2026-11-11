@@ -125,7 +125,7 @@ describe('목록과 기본 선택 (U5-1)', () => {
     const app = renderApp(paths.meetings('ws_01'))
     await app.expectPath(MT_09)
     // 목록은 로딩 자리의 최소 표시가 끝난 뒤 그려진다 (#508)
-    await within(meetingList()).findByRole('list', { name: '정리된 회의' })
+    await screen.findByRole('list', { name: '정리된 회의' })
 
     await user.click(within(minutesList()).getByRole('link', { name: /2주차 정기회의/ }))
     await app.expectPath(MT_07)
@@ -154,7 +154,10 @@ describe('상태 항목과 빈 상태 (U5-2)', () => {
     db.meetings = db.meetings.filter(({ meeting_id }) => meeting_id === 'mt_10')
     const log = recordRequests()
     renderApp(paths.meetings('ws_01'))
-    const expired = await screen.findByRole('list', { name: '화자 지정 기한 만료' })
+    const expired = await screen.findByRole('list', { name: '기한 만료' })
+    expect(within(expired).getByRole('link', { name: /기획 논의 녹음/ })).toHaveTextContent(
+      '화자 지정 기한 만료',
+    )
     expect(screen.queryByText('아직 올린 회의가 없어요')).toBeNull()
     await user.click(within(expired).getByRole('link', { name: /기획 논의 녹음/ }))
     expect(
@@ -166,6 +169,33 @@ describe('상태 항목과 빈 상태 (U5-2)', () => {
     )
     expect(minutesRequests(log)).toEqual([])
     expect(extractionRequests(log)).toEqual([])
+  })
+
+  it('24시간 동안 가져가지 않은 업로드(upload_unclaimed)는 사유 배지로 남고, 상세는 사유와 다시 업로드를 보이며 파일을 지웠다고 하지 않는다 (#598)', async () => {
+    const user = userEvent.setup()
+    failMeeting('mt_10', { failedStage: 'upload_unclaimed' })
+    const log = recordRequests()
+    renderApp(paths.meetings('ws_01'))
+    const expired = await screen.findByRole('list', { name: '기한 만료' })
+    const row = within(expired).getByRole('link', { name: /기획 논의 녹음/ })
+    expect(row).toHaveTextContent('정리 시작 기한 만료')
+    expect(within(minutesList()).queryByText('기획 논의 녹음')).toBeNull()
+    await user.click(row)
+    expect(
+      await screen.findByRole('heading', { name: '정리 시작 기한이 지났어요' }),
+    ).toBeInTheDocument()
+    expect(
+      within(detail()).getByText(
+        '업로드 뒤 24시간 동안 정리가 시작되지 않아 회의 정리가 종료됐어요. 다시 진행하려면 원본 파일을 다시 올려 주세요.',
+      ),
+    ).toBeInTheDocument()
+    expect(within(detail()).queryByText(/지웠|지워|삭제됐|삭제했/)).toBeNull()
+    expect(within(detail()).getByRole('link', { name: '다시 업로드' })).toHaveAttribute(
+      'href',
+      paths.meetingUpload('ws_01'),
+    )
+    // 목록 첫 진입은 가장 최근 회의록(mt_09)을 연다. 실패한 mt_10 의 회의록은 읽지 않는다
+    expect(minutesRequests(log).map(({ path }) => path)).not.toContain('/meetings/mt_10/minutes')
   })
 
   it('멈춘 채팅 회의(chat_stalled)를 직접 열면 다시 올리라고 하지 않는다 (#450)', async () => {
@@ -243,10 +273,26 @@ describe('상태 항목과 빈 상태 (U5-2)', () => {
       else expect(cta).toBeNull()
       // 캔버스의 `텍스트로 붙여넣기` 는 범위 밖이다
       expect(screen.queryByText('텍스트로 붙여넣기')).toBeNull()
+      // 회의는 Discord 에서 기록한다는 안내와 그 방법을 여는 단추는 역할과 상관없이 있다 (#650)
+      const hint = screen.getByText(/디스코드 음성 채널에서/)
+      expect(hint).toHaveTextContent('디스코드 음성 채널에서 /record로 첫 회의를 기록해 보세요.')
+      expect(within(hint).getByText('/record').tagName).toBe('CODE')
+      const guide = screen.getByRole('button', { name: '방법 보기' })
+      await userEvent.click(guide)
+      await screen.findByRole('dialog', { name: '처음 쓰는 분을 위한 안내' })
+      await userEvent.keyboard('{Escape}')
+      await waitFor(() => expect(guide).toHaveFocus())
       await settle()
       expect(app.visited().map(({ pathname }) => pathname)).toEqual([paths.meetings('ws_01')])
     },
   )
+
+  it('회의가 있으면 빈 화면이 아니라 방법 보기도 없다 (#650)', async () => {
+    renderApp(MT_09)
+    await screen.findByRole('list', { name: '정리된 회의' })
+    expect(screen.queryByText('아직 올린 회의가 없어요')).toBeNull()
+    expect(screen.queryByRole('button', { name: '방법 보기' })).toBeNull()
+  })
 
   it('정리 끝난 회의가 없고 정리 중만 있으면 목록엔 상태 항목, 본문은 빈 상태다 — 주소를 바꾸지 않는다', async () => {
     server.use(
@@ -326,9 +372,10 @@ describe('회의록 상세 (U5-3)', () => {
     expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
   })
 
-  it('요약 null · 빈 전사문 · 참석자 없음 · 추출 결과 없음은 각각 빈 상태다 — 추출 요청을 보내지 않는다', async () => {
+  it('요약 null(none)은 빈 칸, 빈 전사문 · 참석자 없음 · 추출 결과 없음은 각각 빈 상태다 — 추출 요청을 보내지 않는다', async () => {
     const minutes = db.minutes.find(({ meeting_id }) => meeting_id === 'mt_07')!
     minutes.summary = null
+    minutes.summary_status = 'none'
     minutes.transcript = []
     minutes.attendees = []
     db.meetings.find(({ meeting_id }) => meeting_id === 'mt_07')!.extraction_id = null
@@ -337,7 +384,7 @@ describe('회의록 상세 (U5-3)', () => {
     await openMinutes(MT_07, '2주차 정기회의')
 
     expect(within(detail()).getByText('참석자 정보가 없어요')).toBeInTheDocument()
-    expect(within(screen.getByRole('tabpanel')).getByText('요약이 아직 없어요')).toBeInTheDocument()
+    expect(screen.getByRole('tabpanel', { name: '요약' })).toBeEmptyDOMElement()
     expect(within(await openTab(user, /전사문/)).getByText('전사문이 없어요')).toBeInTheDocument()
     expect(within(detail()).queryByRole('list', { name: '전사문' })).toBeNull()
     const tasks = await openTab(user, /추출된 일/)

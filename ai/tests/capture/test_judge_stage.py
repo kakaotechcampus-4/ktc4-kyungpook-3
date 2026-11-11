@@ -39,6 +39,11 @@ def _fail(text, stage="judge"):
 
 A, B_, C = _item("결제 환불 기능 구현"), _item("검색 성능 개선"), _item("문서 정리")
 F1, F2, F3 = _fail("로그인 마감을 미루기로 함"), _fail("소셜 로그인은 빼기로 함"), _fail("색상표를 정리하기로 함", "draft")
+FB = _fail("검색을 빠르게 하기로 함", "similar")       # B_ 와 같은 얘기를 판단하지 못한 것
+
+# 얘기마다 근거 문장 번호. 번호가 같으면 실행이 달라도 같은 얘기다(#217). 표에 없는 것은 따로 떨어진 번호를 받는다
+AT = {"결제 환불 기능 구현": 1, "검색 성능 개선": 2, "검색을 빠르게 하기로 함": 2, "문서 정리": 3,
+      "로그인 마감을 미루기로 함": 4, "소셜 로그인은 빼기로 함": 5, "색상표를 정리하기로 함": 6}
 
 
 class Runs:
@@ -56,8 +61,19 @@ class Runs:
         return out
 
 
+def _o(kind, value=None, *, at):
+    """finding 하나의 결과. at 은 근거 문장 번호다."""
+    return {"indices": list(at), "kind": kind, "item": value if kind == "item" else None,
+            "failure": value if kind == "failure" else None}
+
+
 def _out(items, failures=(), dropped=None):
-    return J.JudgeOutput(items=list(items), failures=list(failures), dropped=dict(dropped or {}))
+    """항목과 판단하지 못한 finding 을 finding 별 결과로 만든다. 근거 문장 번호는 AT 표에서 찾는다."""
+    def at(text, k):
+        return [AT.get(text, 100 + k)]
+    outcomes = ([_o("item", i, at=at(i["task_title"], k)) for k, i in enumerate(items)]
+                + [_o("failure", f, at=at(f["text"], 50 + k)) for k, f in enumerate(failures)])
+    return J.JudgeOutput(outcomes=outcomes, dropped=dict(dropped or {}))
 
 
 # 1단계에서 검증에 탈락한 항목 기록(#186). 실행마다 다르다
@@ -106,10 +122,10 @@ def test_partial_failures_hold_the_handoff_and_wait_for_a_rerun(tmp_path, clock,
     assert R.pending_sessions(rec) == [path]
 
 
-def test_a_clean_rerun_clears_the_failure_marks(tmp_path, clock, limits):
+def test_a_rerun_that_judges_the_failed_story_clears_the_failure_marks(tmp_path, clock, limits):
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
-    ex = Runs(_out([A], [F1]), _out([A, B_]))
+    ex = Runs(_out([A], [FB]), _out([A, B_]))
     _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
     r2 = _again(rec, tmp_path, ex, fake, clock)
     assert r2["ran"] == ["extracted", "handed_off"] and r2["items"] == [A, B_] and r2["extract_failures"] == []
@@ -118,8 +134,23 @@ def test_a_clean_rerun_clears_the_failure_marks(tmp_path, clock, limits):
     assert fake.extractions["m1"]["items"] == [A, B_] and "missing_findings" not in saved["be"] and ex.calls == 2
 
 
-def test_a_worse_rerun_does_not_replace_the_kept_result(tmp_path, clock, limits):
-    """1단계는 돌릴 때마다 발화를 다르게 묶을 수 있다. 다시 돌린 결과가 더 나쁘면 앞의 것을 둔다."""
+def test_each_story_keeps_what_some_run_got_right(tmp_path, clock, limits):
+    """#128 멘토 리뷰의 예. 1회차는 A 얘기에서 항목 2개와 B 실패, 2회차는 A 를 바꿀 것 없음으로 보고 B 를 판단했다.
+    항목 수로 실행 하나를 고르면 1회차가 남아 B 가 끝까지 실패로 남는다. 얘기마다 합치면 A 는 1회차의 항목,
+    B 는 2회차의 항목을 쓰고 실패 없이 인계한다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    first = J.JudgeOutput(outcomes=[_o("item", A, at=[1]), _o("item", C, at=[3]), _o("failure", FB, at=[2])])
+    second = J.JudgeOutput(outcomes=[_o("skip", at=[1, 3]), _o("item", B_, at=[2])])
+    ex = Runs(first, second)
+    _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
+    r2 = _again(rec, tmp_path, ex, fake, clock)
+    assert r2["ran"] == ["extracted", "handed_off"] and r2["items"] == [A, C, B_] and r2["extract_failures"] == []
+    assert fake.extractions["m1"]["items"] == [A, C, B_] and "missing_findings" not in _saved(path)["be"]
+
+
+def test_a_story_that_fails_only_in_the_rerun_counts_as_unjudged(tmp_path, clock, limits):
+    """1단계는 돌릴 때마다 발화를 다르게 묶는다. 다시 돌린 실행에서 처음 나와 실패한 얘기도 판단하지 못한 것이다."""
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
     ex = Runs(_out([A, B_], [F1]), _out([A], [F1, F2]))
@@ -127,13 +158,12 @@ def test_a_worse_rerun_does_not_replace_the_kept_result(tmp_path, clock, limits)
     r2 = _again(rec, tmp_path, ex, fake, clock)
     assert r2["status"] == "failed" and r2["attempts"] == 2 and r2["retry_in_s"] == 120.0
     saved = _saved(path)
-    assert _items_on_disk(path) == [A, B_] and saved["extract_failures"] == [F1] and saved["extract_runs"] == 2
+    assert _items_on_disk(path) == [A, B_] and saved["extract_failures"] == [F1, F2] and saved["extract_runs"] == 2
     assert fake.extractions == {}
 
 
 def test_an_empty_rerun_does_not_replace_the_kept_result(tmp_path, clock, limits):
-    """다시 돌렸더니 1단계가 발화를 하나도 고르지 못했다(항목 0, 실패 0). 실패 수만 견주면 빈 결과가 가진 결과를
-    밀어내고 빈 추출이 등록된다. 항목이 더 많은 쪽을 남기고, 남긴 결과에 실패가 있으니 다시 돌린다."""
+    """다시 돌렸더니 1단계가 발화를 하나도 고르지 못했다(finding 0). 가진 결과를 지우지 않고, 실패가 남았으니 다시 돌린다."""
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
     ex = Runs(_out([A, B_], [F1]), _out([]))
@@ -147,17 +177,81 @@ def test_an_empty_rerun_does_not_replace_the_kept_result(tmp_path, clock, limits
     assert fake.extractions["m1"]["items"] == [A, B_] and _saved(path)["be"]["missing_findings"] == 1
 
 
-def test_a_rerun_with_fewer_items_does_not_replace_on_equal_failures(tmp_path, clock, limits):
-    rec, path, manifest = _session(tmp_path)
-    fake = FakeBe()
-    ex = Runs(_out([A, B_, C], [F1]), _out([A], [F2]))
-    _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
-    _again(rec, tmp_path, ex, fake, clock)
-    assert _items_on_disk(path) == [A, B_, C] and _saved(path)["extract_failures"] == [F1]
+def _transcript(tmp_path, text):
+    seg = {"seq": 0, "start": 0.0, "end": 1.0, "text": text, "speaker": "111"}
+    (tmp_path / "session_s.transcript.json").write_text(json.dumps({"segments": [seg]}, ensure_ascii=False), encoding="utf-8")
 
 
-def test_a_rerun_with_more_items_replaces_the_kept_result(tmp_path, clock, limits):
-    """항목이 더 많으면 실패가 늘었어도 바꾼다. 1단계가 발화를 더 잘게 골라 판단한 것이 더 많다."""
+def _held(tmp_path, items=(A,), failures=(F1,)):
+    """옛 규칙으로 돌던 회의. 항목 파일과 실패 표시는 있고 실행 기록은 없다."""
+    path = tmp_path / "session_s.items.json"
+    path.write_text(json.dumps(list(items), ensure_ascii=False), encoding="utf-8")
+    _transcript(tmp_path, "전사")
+    return {"session": "s", "items": str(path), "extract_failures": list(failures), "extract_runs": 1}
+
+
+def test_a_meeting_held_across_the_deploy_keeps_its_items_when_the_rerun_finds_nothing(tmp_path, clock, limits):
+    """배포 때 재시도를 기다리던 회의에는 실행 기록이 없어 합칠 수 없다. BE 는 회의당 추출을 한 번만 받으므로, 이때는
+    옛 규칙으로 견줘 앞 결과를 지킨다. 지키지 않으면 항목이 빈 채로 닫혀 되돌릴 수 없다."""
+    manifest = _held(tmp_path)
+    with pytest.raises(R.ExtractIncomplete):
+        R._keep_judge_output(tmp_path, manifest, J.JudgeOutput())
+    assert json.loads(Path(manifest["items"]).read_text(encoding="utf-8")) == [A]
+    assert manifest["extract_failures"] == [F1]
+    assert manifest["extract_runs"] == 2
+
+
+def test_a_meeting_held_across_the_deploy_starts_merging_from_a_better_rerun(tmp_path, clock, limits):
+    manifest = _held(tmp_path)
+    R._keep_judge_output(tmp_path, manifest, _out([A, B_]))
+    assert json.loads(Path(manifest["items"]).read_text(encoding="utf-8")) == [A, B_]
+    assert "extract_failures" not in manifest and manifest["judge_runs"]
+
+
+def test_runs_on_another_transcript_are_not_merged(tmp_path, clock, limits):
+    """전사가 바뀐 표시가 지워지지 못하고 남아도(되살린 줄이 있어도 일찍 돌아가거나, 매니페스트를 쓰기 전에 죽은 경우)
+    번호가 다른 문장을 가리키는 실행을 합치면 안 된다."""
+    _transcript(tmp_path, "옛 전사")
+    manifest = {"session": "s"}
+    with pytest.raises(R.ExtractIncomplete):
+        R._keep_judge_output(tmp_path, manifest, _out([A], [F1]))
+    _transcript(tmp_path, "새 전사")
+    R._keep_judge_output(tmp_path, manifest, _out([C]))
+    assert json.loads(Path(manifest["items"]).read_text(encoding="utf-8")) == [C]
+    assert "extract_failures" not in manifest
+
+
+def test_runs_survive_a_transcript_whose_speakers_were_rewritten(tmp_path, clock, limits):
+    """개인정보 정리는 전사의 화자 값만 바꾸고 문장은 그대로 둔다. 근거 문장 번호가 가리키는 문장이 같으니 앞선 실행을 버리지 않는다."""
+    src = tmp_path / "session_s.transcript.json"
+    seg = {"seq": 0, "start": 0.0, "end": 1.0, "text": "제가 할게요.", "speaker": "111"}
+    src.write_text(json.dumps({"segments": [seg]}), encoding="utf-8")
+    manifest = {"session": "s"}
+    with pytest.raises(R.ExtractIncomplete):
+        R._keep_judge_output(tmp_path, manifest, _out([A], [F1]))
+    src.write_text(json.dumps({"segments": [{**seg, "speaker": "member-a"}]}), encoding="utf-8")
+    R._keep_judge_output(tmp_path, manifest, J.JudgeOutput(outcomes=[_o("skip", at=[AT[F1["text"]]])]))
+    assert json.loads(Path(manifest["items"]).read_text(encoding="utf-8")) == [A]
+
+
+def test_a_write_cut_short_leaves_the_kept_runs_readable(tmp_path, clock, limits, monkeypatch):
+    """실행 기록을 쓰다 죽어도 앞선 실행을 읽을 수 있어야 한다. 잘린 파일은 회의 전체를 실패로 닫는다."""
+    _transcript(tmp_path, "전사")
+    manifest = {"session": "s"}
+    with pytest.raises(R.ExtractIncomplete):
+        R._keep_judge_output(tmp_path, manifest, _out([A], [F1]))
+
+    def cut(*args):
+        raise OSError("디스크가 가득 찼다")
+
+    monkeypatch.setattr(R.os, "replace", cut)
+    with pytest.raises(OSError):
+        R._keep_judge_output(tmp_path, manifest, _out([B_]))
+    assert len(json.loads((tmp_path / "session_s.judge_runs.json").read_text(encoding="utf-8"))) == 1
+
+
+def test_items_found_only_in_the_rerun_are_added(tmp_path, clock, limits):
+    """1단계가 다시 돌린 실행에서 발화를 더 잘게 골라 새 항목을 냈다. 가진 항목에 더한다."""
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
     ex = Runs(_out([A], [F1]), _out([A, B_, C], [F1, F2]))
@@ -167,7 +261,7 @@ def test_a_rerun_with_more_items_replaces_the_kept_result(tmp_path, clock, limit
     assert _saved(path)["extract_failures"] == [F1, F2]
 
 
-def test_after_two_reruns_the_best_result_goes_out_with_failures_recorded(tmp_path, clock, limits):
+def test_after_two_reruns_every_story_goes_out_with_what_is_still_unjudged(tmp_path, clock, limits):
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
     ex = Runs(_out([A], [F1, F2]), _out([A, B_], [F1]), _out([A], [F2, F3]))
@@ -175,10 +269,10 @@ def test_after_two_reruns_the_best_result_goes_out_with_failures_recorded(tmp_pa
     _again(rec, tmp_path, ex, fake, clock)
     r3 = _again(rec, tmp_path, ex, fake, clock)
     assert ex.calls == 3 and r3["ran"] == ["extracted", "handed_off"] and r3["status"] == "handed_off"
-    assert r3["items"] == [A, B_] and r3["extract_failures"] == [F1]      # 세 번 중 항목이 가장 많았던 결과
+    assert r3["items"] == [A, B_] and r3["extract_failures"] == [F1, F2, F3]   # 어느 실행에서도 판단하지 못한 얘기들
     saved = _saved(path)
-    assert saved["extract_partial"] is True and saved["extract_failures"] == [F1] and "recovery" not in saved
-    assert fake.extractions["m1"]["items"] == [A, B_] and saved["be"]["missing_findings"] == 1
+    assert saved["extract_partial"] is True and "recovery" not in saved
+    assert fake.extractions["m1"]["items"] == [A, B_] and saved["be"]["missing_findings"] == 3
     assert _fails(fake) == 0 and R.pending_sessions(rec) == []
 
 
@@ -340,6 +434,7 @@ def test_a_changed_transcript_drops_a_kept_result_still_waiting_for_a_rerun(tmp_
     assert "retried" in r3["ran"] and r3["status"] == "failed" and fake.extractions == {}
     saved = _saved(path)
     assert _items_on_disk(path) == [C] and saved["extract_failures"] == [F2, F3] and saved["extract_runs"] == 1
+    assert len(json.loads(Path(saved["judge_runs"]).read_text(encoding="utf-8"))) == 1   # 옛 전사의 실행과 합치지 않는다
 
 
 def test_empty_values_copied_from_the_env_example_mean_the_defaults():
@@ -349,35 +444,26 @@ def test_empty_values_copied_from_the_env_example_mean_the_defaults():
     out = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[2], env=env,
                          capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr
-    assert out.stdout.split() == ["2", "legacy"]
+    assert out.stdout.split() == ["0", "legacy"]
 
 
-# ── 1단계 탈락 기록(#186). 남기기로 고른 결과의 것만 매니페스트에 적는다 ──────────────────────────────────
+# ── 1단계 탈락 기록(#186). 결과를 여러 실행에서 합치므로 실행마다 하나씩 남긴다(#217) ──────────────────────
 
 def test_the_drops_of_stage_one_are_kept_with_the_meeting(tmp_path):
     rec, path, manifest = _session(tmp_path)
     r = _run(rec, manifest, tmp_path, extractor=Runs(_out([A, B_], dropped=D1)), handoff=_handoff(FakeBe()))
-    assert r["status"] == "handed_off" and _saved(path)["extract_dropped"] == D1
+    assert r["status"] == "handed_off" and _saved(path)["extract_dropped"] == [D1]
 
 
-def test_a_rerun_that_replaces_the_result_replaces_its_drops_too(tmp_path, clock, limits):
-    """항목은 2회차 결과인데 탈락 기록은 1회차 것이면 서로 맞지 않는다."""
+def test_each_run_keeps_its_own_drops(tmp_path, clock, limits):
+    """항목은 여러 실행에서 온다. 탈락 기록을 한 실행 것만 남기면 다른 실행에서 버려진 것을 찾지 못한다."""
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
-    ex = Runs(_out([A], [F1], dropped=D1), _out([A, B_], dropped=D2))
+    ex = Runs(_out([A], [FB], dropped=D1), _out([A, B_], dropped=D2))
     _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
-    assert _saved(path)["extract_dropped"] == D1
+    assert _saved(path)["extract_dropped"] == [D1]
     r2 = _again(rec, tmp_path, ex, fake, clock)
-    assert r2["status"] == "handed_off" and _items_on_disk(path) == [A, B_] and _saved(path)["extract_dropped"] == D2
-
-
-def test_a_rerun_that_keeps_the_result_keeps_its_drops(tmp_path, clock, limits):
-    rec, path, manifest = _session(tmp_path)
-    fake = FakeBe()
-    ex = Runs(_out([A, B_], [F1], dropped=D1), _out([A], [F1, F2], dropped=D2))
-    _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
-    _again(rec, tmp_path, ex, fake, clock)
-    assert _items_on_disk(path) == [A, B_] and _saved(path)["extract_dropped"] == D1
+    assert r2["status"] == "handed_off" and _saved(path)["extract_dropped"] == [D1, D2]
 
 
 def test_the_legacy_path_leaves_no_drops(tmp_path):
@@ -386,3 +472,21 @@ def test_the_legacy_path_leaves_no_drops(tmp_path):
     manifest["extract_dropped"] = D1
     _run(rec, manifest, tmp_path, extractor=_extractor({}))
     assert "tasks" in _saved(path) and "extract_dropped" not in _saved(path)
+
+
+def test_a_meeting_closed_with_missing_lines_gives_up_instead_of_retrying_stt_forever(tmp_path, clock, limits, monkeypatch):
+    """전사 재시도 상한에 닿아 빠진 구간을 둔 채 넘어간 회의는 그 구간을 다시 전사하지 않는다. 다시 전사하면 그때마다
+    전사 단계가 닫혀 시도 횟수가 지워지고, 추출이 계속 실패하는 회의가 포기 없이 STT 와 파이프라인을 계속 부른다."""
+    monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 1)
+    fake = FakeBe()
+    ex = Runs(J.JudgeAllFailed("등록할 항목이 없고 판단하지 못한 발화 2개만 남았다."))
+    rec, path, manifest = _session(tmp_path)
+    stt = DiesOnLong()
+    assert _run(rec, manifest, tmp_path, backend=stt, extractor=ex, handoff=_handoff(fake))["status"] == "partial"
+    stt.limit_s = 0                                       # 빠진 구간은 다시 보내도 계속 죽는다
+    for _ in range(R.RECOVERY_MAX_ATTEMPTS + 2):
+        r = _again(rec, tmp_path, ex, fake, clock, backend=stt)
+        if r["gave_up"]:
+            break
+    assert r["gave_up"] is True and r["attempts"] == R.RECOVERY_MAX_ATTEMPTS and fake.meetings["m1"]["status"] == "failed"
+    assert ex.calls == R.RECOVERY_MAX_ATTEMPTS            # 복구 바퀴마다 한 번. 처음 실행은 전사가 partial 이라 추출 전에 멈춘다

@@ -7,7 +7,10 @@
 export const OAUTH_OUTCOMES = ['success', 'cancelled', 'failed'] as const
 export type OAuthOutcome = (typeof OAUTH_OUTCOMES)[number]
 
-export const OAUTH_RETURN_PARAMS = { provider: 'oauth', outcome: 'oauth_result' } as const
+export const OAUTH_RETURN_PARAMS = {
+  provider: 'oauth',
+  outcome: 'oauth_result',
+} as const
 
 /** 복귀 주소를 만들 때 쓰는 가짜 origin. 경로·검색·해시만 꺼낸다 */
 const BASE = 'http://return.invalid'

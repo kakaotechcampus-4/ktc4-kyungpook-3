@@ -1,4 +1,5 @@
 import { ApiError, createClientError } from '@/shared/api/errors'
+import { createInvalidResponseError } from '@/shared/api/parseResponse'
 import { formatAudioDuration, formatAudioSize } from '../lib/formatAudio'
 import { classifyUploadError } from './uploadOutcome'
 import { toUploadPhase } from './uploadPhase'
@@ -52,7 +53,7 @@ describe('업로드 실패 분류 (U3-8, U3-10)', () => {
   it('413 은 파일 칸에 화면 한도와 같은 문구로 알린다', () => {
     expect(classifyUploadError(http('AUDIO_TOO_LARGE', 413))).toEqual({
       kind: 'file',
-      message: '200 MiB 이하 파일만 올릴 수 있어요.',
+      message: '700 MiB 이하 파일만 올릴 수 있어요.',
     })
   })
 
@@ -69,6 +70,12 @@ describe('업로드 실패 분류 (U3-8, U3-10)', () => {
 
   it('응답을 받지 못한 것은 「잃음」이다 — 실패로 단정하지 않는다', () => {
     expect(classifyUploadError(createClientError('NETWORK_ERROR'))).toEqual({ kind: 'lost' })
+  })
+
+  it('응답을 읽지 못한 것도 「잃음」이다 — 서버가 받았을 수 있어 목록으로 판단한다 (#348)', () => {
+    expect(classifyUploadError(createInvalidResponseError('meeting', 'status'))).toEqual({
+      kind: 'lost',
+    })
   })
 
   it('취소는 무시한다', () => {

@@ -151,6 +151,19 @@ def test_submit_uploads_and_creates_job_without_polling(tmp_path):
     assert sleeps == []
 
 
+@pytest.mark.parametrize("min_speakers", [None, 0])
+def test_submit_sends_only_the_url_without_a_speaker_count(tmp_path, min_speakers):
+    d, sess, _sl, f = _make(tmp_path, [])
+    d.submit(f, min_speakers=min_speakers)
+    assert sess.calls[2][2]["json"] == {"url": sess.calls[0][2]["json"]["url"]}
+
+
+def test_submit_sends_min_speakers(tmp_path):
+    d, sess, _sl, f = _make(tmp_path, [])
+    d.submit(f, min_speakers=4)
+    assert sess.calls[2][2]["json"] == {"url": sess.calls[0][2]["json"]["url"], "minSpeakers": 4}
+
+
 def test_submit_requires_key(tmp_path, monkeypatch):
     monkeypatch.delenv("PYANNOTEAI_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="PYANNOTEAI_API_KEY"):

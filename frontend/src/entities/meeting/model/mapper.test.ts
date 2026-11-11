@@ -1,6 +1,15 @@
 import { toMeeting, toMeetingSummary, toMeetingUploadResult, toSpeakerView } from './mapper'
 import { meetingFixtures, meetingSummaryFixtures } from '@/shared/mock/fixtures/meeting'
 
+it.each([undefined, false, true])(
+  '서버가 명시적으로 허용할 때만 삭제 가능 상태로 변환한다 (%s)',
+  (available) => {
+    expect(
+      toMeeting({ ...meetingFixtures[1], deletion_available: available }).deletionAvailable,
+    ).toBe(available === true)
+  },
+)
+
 it('maps detail and summary independently including the required progress', () => {
   expect(toMeeting(meetingFixtures[1])).toEqual({
     id: 'mt_09',
@@ -11,8 +20,10 @@ it('maps detail and summary independently including the required progress', () =
     endedAt: '2026-09-15T05:45:30Z',
     extractionId: 'ex_01',
     failedStage: null,
+    deletionAvailable: true,
     // 백엔드가 필수로 내려주므로 픽스처에도 있다 (계약 §2.3, §4.7-1)
     progress: { audioMerged: true, transcribed: true, extracted: true },
+    processing: null,
   })
   expect(toMeetingSummary(meetingSummaryFixtures[2])).toEqual({
     id: 'mt_10',
@@ -44,13 +55,40 @@ it('treats a missing progress as null instead of throwing', () => {
   expect(toMeeting(dto).progress).toBeNull()
 })
 
-it('falls back unknown status and source without throwing', () => {
+it('정리 중 처리 단계를 읽고, 모르는 단계면 처리 단계 전체를 없는 것으로 본다 (#483)', () => {
+  const processing = {
+    stage: 'stt',
+    stage_at: '2026-09-18T00:00:00Z',
+    stt: { done: 3, total: 5 },
+  }
+  expect(toMeeting({ ...meetingFixtures[2], processing }).processing).toEqual({
+    stage: 'stt',
+    stageAt: '2026-09-18T00:00:00Z',
+    stt: { done: 3, total: 5 },
+  })
   const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
   try {
     expect(
-      toMeetingSummary({ ...meetingSummaryFixtures[0], status: 'future', source: 'future' }),
-    ).toMatchObject({ status: 'created', source: 'discord' })
-    expect(warning).toHaveBeenCalledTimes(2)
+      toMeeting({ ...meetingFixtures[2], processing: { ...processing, stage: 'diarize' } })
+        .processing,
+    ).toBeNull()
+  } finally {
+    warning.mockRestore()
+  }
+  expect(
+    toMeeting({ ...meetingFixtures[2], processing: { stage: null, stage_at: null, stt: null } })
+      .processing,
+  ).toEqual({ stage: null, stageAt: null, stt: null })
+  expect(toMeeting({ ...meetingFixtures[2], processing: undefined }).processing).toBeNull()
+})
+
+it('모르는 출처는 discord 로 바꾸지 않고 받은 글자를 남긴다. 모르는 상태는 스키마가 거절한다 (#348)', () => {
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    expect(toMeetingSummary({ ...meetingSummaryFixtures[0], source: 'zoom' }).source).toEqual({
+      unknown: 'zoom',
+    })
+    expect(warning).toHaveBeenCalledTimes(1)
   } finally {
     warning.mockRestore()
   }

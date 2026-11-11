@@ -1,12 +1,14 @@
 import { queryOptions } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
-import { ApiError, CLIENT_ERROR_CODES, ERROR_CODES, createClientError } from '@/shared/api/errors'
+import type { RequestOptions } from '@/shared/api/client'
+import { ApiError, ERROR_CODES } from '@/shared/api/errors'
+import { createInvalidResponseError, parseResponse } from '@/shared/api/parseResponse'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { workspaceKey } from '@/shared/api/queryKeys'
-import type { ListDto } from '@/shared/types/api/envelope'
-import type { TimelineItemDto } from '@/shared/types/api/reply'
-import type { TaskDto, TaskHistoryDto } from '@/shared/types/api/task'
+import { timelineListSchema } from '@/shared/types/api/reply'
+import type { TaskDto } from '@/shared/types/api/task'
+import { taskHistoryListSchema, taskListSchema, taskSchema } from '@/shared/types/api/task'
 import { toTask, toTaskHistory, toTaskTimeline } from '../model/mapper'
 import type { Task, TaskStatus } from '../model/types'
 
@@ -38,12 +40,23 @@ function toWorkspaceTask(dto: TaskDto, workspaceId: string): Task {
   return toTask(dto)
 }
 
+/** 태스크 하나를 돌려주는 경로(조회·변경·생성·되돌리기) 모두 같은 스키마와 공간 확인을 거친다 */
+async function requestTask(
+  workspaceId: string,
+  path: string,
+  options?: RequestOptions,
+): Promise<Task> {
+  const data = await request<unknown>(path, options)
+  return toWorkspaceTask(parseResponse(taskSchema, data, 'task'), workspaceId)
+}
+
 /** 공간의 태스크 전체. 서버가 마감 오름차순·생성 내림차순으로 준다 (backend tasks.py list_tasks) */
 export async function fetchTaskList(workspaceId: string, signal?: AbortSignal): Promise<Task[]> {
-  const { items } = await request<ListDto<TaskDto>>('/tasks', {
-    params: { workspace_id: workspaceId },
-    signal,
-  })
+  const { items } = parseResponse(
+    taskListSchema,
+    await request<unknown>('/tasks', { params: { workspace_id: workspaceId }, signal }),
+    'task',
+  )
   return items.map((dto) => toWorkspaceTask(dto, workspaceId))
 }
 
@@ -53,10 +66,7 @@ export async function fetchTask(
   taskId: string,
   signal?: AbortSignal,
 ): Promise<Task> {
-  return toWorkspaceTask(
-    await request<TaskDto>(`/tasks/${encodeURIComponent(taskId)}`, { signal }),
-    workspaceId,
-  )
+  return requestTask(workspaceId, `/tasks/${encodeURIComponent(taskId)}`, { signal })
 }
 
 /** 태스크 목록. 기본 최신 시간(30초)이다 */
@@ -99,13 +109,15 @@ export function taskHistoryQueryOptions(workspaceId: string, taskId: string) {
   return queryOptions({
     queryKey: workspaceKey(workspaceId, 'tasks', 'history', taskId),
     queryFn: async ({ signal, client }) => {
-      const [, history, timeline] = await Promise.all([
+      const [, historyData, timelineData] = await Promise.all([
         client.ensureQueryData(taskDetailQueryOptions(workspaceId, taskId)),
-        request<ListDto<TaskHistoryDto>>(`${path}/history`, { signal }),
-        request<ListDto<TimelineItemDto>>(`${path}/timeline`, { signal }),
+        request<unknown>(`${path}/history`, { signal }),
+        request<unknown>(`${path}/timeline`, { signal }),
       ])
-      if (history.items.some((dto) => dto.task_id !== taskId))
-        throw createClientError(CLIENT_ERROR_CODES.INVALID_RESPONSE)
+      const history = parseResponse(taskHistoryListSchema, historyData, 'task history')
+      const timeline = parseResponse(timelineListSchema, timelineData, 'task timeline')
+      const stray = history.items.findIndex((dto) => dto.task_id !== taskId)
+      if (stray !== -1) throw createInvalidResponseError('task history', `items[${stray}].task_id`)
       return toTaskTimeline(timeline.items, history.items.map(toTaskHistory), taskId)
     },
   })
@@ -119,14 +131,13 @@ export async function updateTaskStatus(
   workspaceId: string,
   taskId: string,
   status: TaskStatus,
+  signal?: AbortSignal,
 ): Promise<Task> {
-  return toWorkspaceTask(
-    await request<TaskDto>(`/tasks/${encodeURIComponent(taskId)}`, {
-      method: 'PATCH',
-      body: { status },
-    }),
-    workspaceId,
-  )
+  return requestTask(workspaceId, `/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'PATCH',
+    body: { status },
+    signal,
+  })
 }
 
 /** 상세에서 고치는 담당자·마감. 있는 키만 보낸다. null 은 비우기다 */
@@ -142,17 +153,14 @@ export async function updateTaskFields(
   patch: TaskFieldsPatch,
   init: { signal?: AbortSignal } = {},
 ): Promise<Task> {
-  return toWorkspaceTask(
-    await request<TaskDto>(`/tasks/${encodeURIComponent(taskId)}`, {
-      method: 'PATCH',
-      body: {
-        ...('assigneeMemberId' in patch ? { assignee_member_id: patch.assigneeMemberId } : {}),
-        ...('dueDate' in patch ? { due_date: patch.dueDate } : {}),
-      },
-      signal: init.signal,
-    }),
-    workspaceId,
-  )
+  return requestTask(workspaceId, `/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'PATCH',
+    body: {
+      ...('assigneeMemberId' in patch ? { assignee_member_id: patch.assigneeMemberId } : {}),
+      ...('dueDate' in patch ? { due_date: patch.dueDate } : {}),
+    },
+    signal: init.signal,
+  })
 }
 
 export interface TaskCreateInput {
@@ -165,32 +173,36 @@ export interface TaskCreateInput {
  * PM 의 태스크 직접 생성 (`POST /tasks`, 계약 §2.6, 서버는 PM 전용). 생성자(`created_by`)는 보내지 않는다 —
  * 서버가 세션의 팀원으로 기록한다. 담당자가 없으면 그 필드를 보내지 않는다. 서버가 돌려준 태스크의 공간을 확인한다
  */
-export async function createTask(workspaceId: string, input: TaskCreateInput): Promise<Task> {
-  return toWorkspaceTask(
-    await request<TaskDto>('/tasks', {
-      method: 'POST',
-      body: {
-        workspace_id: workspaceId,
-        title: input.title,
-        status: input.status,
-        ...(input.assigneeMemberId === null ? {} : { assignee_member_id: input.assigneeMemberId }),
-      },
-    }),
-    workspaceId,
-  )
+export async function createTask(
+  workspaceId: string,
+  input: TaskCreateInput,
+  signal?: AbortSignal,
+): Promise<Task> {
+  return requestTask(workspaceId, '/tasks', {
+    method: 'POST',
+    body: {
+      workspace_id: workspaceId,
+      title: input.title,
+      status: input.status,
+      ...(input.assigneeMemberId === null ? {} : { assignee_member_id: input.assigneeMemberId }),
+    },
+    signal,
+  })
 }
 
 /**
  * Notion 반영 실패를 다시 대기열에 넣는다 (`POST /tasks/{task_id}/notion-sync/retry`, PM 전용).
  * 본문이 없다. 돌아온 상태는 보통 `pending` 이며, 반영 완료는 이후 조회의 `synced` 로만 판단한다
  */
-export async function retryTaskNotionSync(workspaceId: string, taskId: string): Promise<Task> {
-  return toWorkspaceTask(
-    await request<TaskDto>(`/tasks/${encodeURIComponent(taskId)}/notion-sync/retry`, {
-      method: 'POST',
-    }),
-    workspaceId,
-  )
+export async function retryTaskNotionSync(
+  workspaceId: string,
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<Task> {
+  return requestTask(workspaceId, `/tasks/${encodeURIComponent(taskId)}/notion-sync/retry`, {
+    method: 'POST',
+    signal,
+  })
 }
 
 /**
@@ -202,13 +214,10 @@ export async function undoTaskAutoBlock(
   taskId: string,
   signal?: AbortSignal,
 ): Promise<Task> {
-  return toWorkspaceTask(
-    await request<TaskDto>(`/tasks/${encodeURIComponent(taskId)}/auto-block/undo`, {
-      method: 'POST',
-      signal,
-    }),
-    workspaceId,
-  )
+  return requestTask(workspaceId, `/tasks/${encodeURIComponent(taskId)}/auto-block/undo`, {
+    method: 'POST',
+    signal,
+  })
 }
 
 /**
@@ -221,11 +230,9 @@ export async function undoReplyChange(
   changeId: string,
   signal?: AbortSignal,
 ): Promise<Task> {
-  return toWorkspaceTask(
-    await request<TaskDto>(
-      `/tasks/${encodeURIComponent(taskId)}/reply-changes/${encodeURIComponent(changeId)}/undo`,
-      { method: 'POST', signal },
-    ),
+  return requestTask(
     workspaceId,
+    `/tasks/${encodeURIComponent(taskId)}/reply-changes/${encodeURIComponent(changeId)}/undo`,
+    { method: 'POST', signal },
   )
 }

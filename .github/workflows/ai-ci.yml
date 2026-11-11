@@ -5,6 +5,8 @@ on:
     branches: [develop]
     paths:
       - 'ai/**'
+      # ai/tests/deploy 가 배포 스크립트를 돌려 본다
+      - 'deploy/ec2-deploy.sh'
       - '.github/workflows/ai-ci.yml'
   # deploy.yml 이 배포 전에 같은 커밋으로 부른다
   workflow_call:
@@ -22,7 +24,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libopus0
       - uses: astral-sh/setup-uv@v3
         with:
-          python-version: "3.12"
+          version: "0.13.7"
       - run: uv venv --python 3.12 .venv
       - run: uv pip install --python .venv/bin/python -r requirements.txt
       - run: .venv/bin/python -m pytest

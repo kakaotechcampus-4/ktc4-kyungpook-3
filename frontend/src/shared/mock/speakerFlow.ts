@@ -1,7 +1,8 @@
-import type { MeetingDto, SpeakerViewDto } from '@/shared/types/api/meeting'
+import type { MeetingDto, MeetingSummaryDto, SpeakerViewDto } from '@/shared/types/api/meeting'
 import { db } from './db'
 import type { MockDb, MockSpeakerUpload } from './db'
-import { SPEAKER_AUDIO_SECONDS, speakerLabelFixtures } from './fixtures/speaker'
+import { speakerLabelFixtures } from './fixtures/speaker'
+import { MOCK_RECORDING_SECONDS, audioUnavailableReason } from './meetingAudio'
 import { silentWavSize } from './speakerAudio'
 
 /*
@@ -16,7 +17,11 @@ function meetingOf(state: MockDb, meetingId: string): MeetingDto {
   return meeting
 }
 
-function setSummaryStatus(state: MockDb, meetingId: string, status: string): void {
+function setSummaryStatus(
+  state: MockDb,
+  meetingId: string,
+  status: MeetingSummaryDto['status'],
+): void {
   const summary = state.meetingSummaries.find(({ meeting_id }) => meeting_id === meetingId)
   if (summary) summary.status = status
 }
@@ -73,7 +78,6 @@ export function speakerViewOf(
   upload: MockSpeakerUpload,
   state: MockDb = db,
 ): SpeakerViewDto {
-  const finished = meeting.status === 'done' || meeting.status === 'failed'
   return {
     meeting_id: meeting.meeting_id,
     status: meeting.status,
@@ -82,9 +86,10 @@ export function speakerViewOf(
     ),
     candidates: candidatesOf(state, meeting),
     mapping: upload.mapping,
+    // 처리가 끝나도 보관 기간(7일) 동안은 녹음이 있다. 실패한 회의는 바로 지운다 (#676)
     audio:
-      upload.audio && !finished
-        ? { content_type: 'audio/wav', size_bytes: silentWavSize(SPEAKER_AUDIO_SECONDS) }
+      audioUnavailableReason(meeting, state) === null
+        ? { content_type: 'audio/wav', size_bytes: silentWavSize(MOCK_RECORDING_SECONDS) }
         : null,
   }
 }

@@ -16,13 +16,20 @@ export type TaskUpdateEdits = Partial<{
   assigneeMemberId: string | null
 }>
 export type ApprovalEdits =
-  | { kind: 'task_create'; values: TaskCreateEdits }
+  | { kind: 'task_create'; values: TaskCreateEdits; saveAlias?: boolean }
   | { kind: 'task_update'; values: TaskUpdateEdits }
 export type TaskCreateIssue = 'title' | 'assignee' | 'due'
 export const TASK_TITLE_MAX_LENGTH = 300
+/** `payloadVersion` 은 처리할 카드의 지문이다 (#547). 생성 승인이고 서버가 값을 줬을 때만 있다 */
 export type ApprovalResolution =
-  | { status: 'rejected' }
-  | { status: 'approved'; kind: 'task_create'; taskOverrides?: TaskCreateEdits }
+  | { status: 'rejected'; payloadVersion?: string }
+  | {
+      status: 'approved'
+      kind: 'task_create'
+      taskOverrides?: TaskCreateEdits
+      saveAlias?: true
+      payloadVersion?: string
+    }
   | {
       status: 'approved'
       kind: 'task_update'
@@ -60,6 +67,17 @@ export function taskCreateValues(
   }
 }
 
+/**
+ * 이 값으로 승인하면 담당자의 별칭으로 등록할 글자 (#523). 담당자가 미정이면 등록할 사람이 없어 null 이다.
+ * 승인 본문의 `save_alias` 와 화면의 등록 체크박스가 모두 이 판정을 쓴다
+ */
+export function aliasToLearn(
+  approval: TaskCreateApproval,
+  fields: TaskCreateFields,
+): string | null {
+  return fields.assigneeMemberId === null ? null : approval.aliasCandidate
+}
+
 export function taskUpdateChanges(approval: TaskUpdateApproval, edits: TaskUpdateEdits = {}) {
   const changes = new Map(approval.changes.map(({ field, value }) => [field, value]))
   if (edits.status !== undefined) changes.set('status', edits.status)
@@ -91,7 +109,11 @@ export function planApprovalResolution(
     return { ok: false, issues: [], reason: APPROVAL_RESOLUTION_REASONS.resolved }
   if (approval.kind === 'unsupported')
     return { ok: false, issues: [], reason: APPROVAL_RESOLUTION_REASONS.unsupported }
-  if (decision === 'rejected') return { ok: true, resolution: { status: 'rejected' } }
+  const version =
+    approval.kind === 'task_create' && approval.payloadVersion !== null
+      ? { payloadVersion: approval.payloadVersion }
+      : {}
+  if (decision === 'rejected') return { ok: true, resolution: { status: 'rejected', ...version } }
   if (context.edits && context.edits.kind !== approval.kind)
     return { ok: false, issues: [], reason: '확인 요청 종류와 보완 값이 달라요.' }
   if (approval.kind === 'task_update') {
@@ -122,11 +144,10 @@ export function planApprovalResolution(
       },
     }
   }
-  const edits = context.edits?.kind === 'task_create' ? context.edits.values : {}
-  const issues = validateTaskCreateFields(
-    taskCreateValues(approval, edits),
-    context.memberIds ?? [],
-  )
+  const createEdits = context.edits?.kind === 'task_create' ? context.edits : null
+  const edits = createEdits?.values ?? {}
+  const fields = taskCreateValues(approval, edits)
+  const issues = validateTaskCreateFields(fields, context.memberIds ?? [])
   if (issues.length)
     return {
       ok: false,
@@ -146,6 +167,10 @@ export function planApprovalResolution(
             },
           }
         : {}),
+      ...(createEdits?.saveAlias === true && aliasToLearn(approval, fields) !== null
+        ? { saveAlias: true }
+        : {}),
+      ...version,
     },
   }
 }

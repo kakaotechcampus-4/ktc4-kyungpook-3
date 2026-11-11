@@ -52,11 +52,16 @@ describe('온보딩 전체 흐름 (U3-11)', { timeout: 15_000 }, () => {
     expect(await screen.findByRole('heading', { name: 'Notion 연결' })).toBeInTheDocument()
 
     app = await connectVia(app, 'notion')
-    await screen.findByLabelText('@seoyeon_01의 팀원 이름', {}, { timeout: 3000 })
-    // 확인 완료는 PM 체크가 있어야 한다 (#228) — 예전에는 생성자 이름을 그대로 적어 이었다
-    await userEvent.click(screen.getByRole('checkbox', { name: '@seoyeon_01 — PM 최진호' }))
-    await userEvent.type(screen.getByLabelText('@minsu의 팀원 이름'), '박민수')
-    await userEvent.click(screen.getByRole('button', { name: '2명 확인 완료' }))
+    const pmAccount = await screen.findByRole(
+      'combobox',
+      { name: '최진호의 디스코드 계정' },
+      { timeout: 3000 },
+    )
+    // 확인 완료는 PM 이 디스코드에 연결돼 있어야 한다 (#228). PM 줄에서 계정을 고르면 이름이 달라도 PM 에 잇는다
+    await userEvent.click(pmAccount)
+    await userEvent.click(await screen.findByRole('option', { name: /^@seoyeon_01/ }))
+    await userEvent.click(screen.getByRole('button', { name: '@minsu 팀원으로 추가' }))
+    await userEvent.click(await screen.findByRole('button', { name: '2명 확인 완료' }))
 
     expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
     await app.expectPath('/workspaces/ws_03/dashboard')
@@ -90,7 +95,7 @@ describe('온보딩 전체 흐름 (U3-11)', { timeout: 15_000 }, () => {
     await app.expectPath('/onboarding/ws_03/connect_members')
     expect(
       await screen.findByText(
-        '디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이전 단계에서 연결하거나 건너뛸 수 있어요.',
+        '디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이름으로 팀원을 추가하거나, 이전 단계에서 연결하거나, 건너뛸 수 있어요.',
       ),
     ).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: '건너뛰기' }))

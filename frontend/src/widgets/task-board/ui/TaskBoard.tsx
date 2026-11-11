@@ -6,7 +6,7 @@ import { pendingApprovalListQueryOptions } from '@/entities/approval'
 import type { Approval } from '@/entities/approval'
 import { meetingListQueryOptions } from '@/entities/meeting'
 import type { MeetingSummary } from '@/entities/meeting'
-import { memberListQueryOptions } from '@/entities/member'
+import { memberListQueryOptions, recordMemberListQueryOptions } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import {
   TASK_STATUS_LABEL,
@@ -25,7 +25,7 @@ import { panelTabStop } from '@/shared/lib/tab-panel'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Button } from '@/shared/ui/button'
-import { EmptyState } from '@/shared/ui/empty-state'
+import { EmptyState, EmptyStatePage } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
@@ -80,7 +80,7 @@ const GanttView = lazy(() =>
 
 const COUNT = 'text-meta font-normal text-dim tabular-nums'
 const ATTENTION_COUNT =
-  'inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-999 bg-ink px-5 text-[10.5px] font-normal leading-none text-surface tabular-nums'
+  'inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-999 bg-ink-solid px-5 text-[10.5px] font-normal leading-none text-surface tabular-nums'
 const CARDS = 'flex flex-col gap-28'
 const SECTION = 'flex flex-col gap-12'
 const SECTION_HEAD = 'flex items-center justify-between pt-12'
@@ -96,7 +96,9 @@ const ASSIGNEE =
 const ASSIGNEE_NAME = 'max-md:truncate'
 const DUE = 'shrink-0 text-caption text-dim tabular-nums'
 const EMPTY_UPLOAD =
-  'inline-flex h-40 items-center justify-center rounded-9 bg-ink px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
+  'inline-flex h-40 items-center justify-center rounded-9 bg-ink-solid px-20 text-body leading-none font-semibold text-surface hover:bg-dim active:bg-sub'
+const EMPTY_MEETINGS =
+  'inline-flex h-40 items-center justify-center rounded-9 border border-line bg-surface px-20 text-body leading-none font-semibold text-ink hover:bg-control'
 
 /** 보기가 쓰는 조회 하나. 받지 못했을 때 알리는 이름과 다시 부를 조회다 */
 interface ViewSource {
@@ -151,6 +153,7 @@ export function TaskBoard({
   const tasks = useQuery(taskListQueryOptions(workspaceId))
   const approvals = useQuery({ ...pendingApprovalListQueryOptions(workspaceId), enabled: isPm })
   const members = useQuery(memberListQueryOptions(workspaceId))
+  const recordMembers = useQuery(recordMemberListQueryOptions(workspaceId))
   // 카드의 회의 링크 이름·근거 시각과 캘린더의 회의 칩에만 쓴다. 못 받아도 화면은 그린다
   const meetings = useQuery({
     ...meetingListQueryOptions(workspaceId),
@@ -158,7 +161,10 @@ export function TaskBoard({
   })
   const pending = useTaskStatusOverlay(workspaceId)
 
-  const names = useMemo(() => memberNames(members.data), [members.data])
+  const names = useMemo(
+    () => memberNames(recordMembers.data ?? members.data),
+    [recordMembers.data, members.data],
+  )
   const meetingById = useMemo(
     () => new Map((meetings.data ?? []).map((meeting) => [meeting.id, meeting])),
     [meetings.data],
@@ -218,6 +224,7 @@ export function TaskBoard({
     { name: '태스크', query: tasks },
     ...(isPm ? [{ name: '확인 필요', query: approvals }] : []),
     { name: '팀원', query: members },
+    { name: '공동 기록 작성자', query: recordMembers },
     ...(view.view === 'calendar' ? [{ name: '회의', query: meetings }] : []),
   ]
   const missing =
@@ -324,7 +331,7 @@ export function TaskBoard({
     body = (
       <GanttView
         workspaceId={workspaceId}
-        members={memberList}
+        members={recordMembers.data ?? memberList}
         names={names}
         tasks={overlaid}
         approvals={createList}
@@ -352,6 +359,34 @@ export function TaskBoard({
   )
 
   const indicator = useLoadingIndicator(loading)
+  if (
+    !indicator.pending &&
+    ready &&
+    overlaid?.length === 0 &&
+    (!isPm || approvalList?.length === 0) &&
+    (view.view !== 'calendar' || (meetings.data !== undefined && calendarMeetings.length === 0)) &&
+    (isList || missing.length === 0)
+  )
+    return (
+      <EmptyStatePage>
+        <EmptyState
+          title="아직 태스크가 없어요"
+          description="회의를 정리하면 할 일이 여기에 모여요."
+          action={
+            <div className="flex flex-wrap items-center justify-center gap-10">
+              {isPm ? (
+                <GuardedLink to={paths.meetingUpload(workspaceId)} className={EMPTY_UPLOAD}>
+                  회의 올리기
+                </GuardedLink>
+              ) : null}
+              <GuardedLink to={paths.meetings(workspaceId)} className={EMPTY_MEETINGS}>
+                회의록 보기
+              </GuardedLink>
+            </div>
+          }
+        />
+      </EmptyStatePage>
+    )
   if (indicator.pending)
     body = isList ? (
       <DeferredSkeleton indicator={indicator}>
@@ -629,7 +664,7 @@ function BoardList({
           // EmptyTasks 시안
           <EmptyState
             titleAs="h2"
-            pose="squint"
+            pose="idle"
             title="확인할 게 없어요"
             description="새 회의를 올리면 확인이 필요한 것만 여기에 모아 드릴게요."
             action={

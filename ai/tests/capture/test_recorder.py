@@ -935,7 +935,7 @@ def test_the_judge_path_counts_the_llm_calls_of_the_extract_stage(tmp_path, monk
     def judging(transcript, names, today, workspace_id=None):
         clients["terra"].calls += 2
         clients["luna"].calls += 3
-        return JudgeOutput(items=[], failures=[])
+        return JudgeOutput()
 
     rec, path, manifest = _session(tmp_path)
     r = _run(rec, manifest, tmp_path, extractor=judging)
@@ -1067,6 +1067,9 @@ def test_a_mapped_upload_is_processed_and_handed_off_with_member_ids_and_no_meet
     assert ext["meeting_id"] == "m-up1" and ext["items"][0]["evidence_speaker"] is None
     assert ext["items"][0]["evidence_speaker_member_id"] == "u1"
     assert json.loads(path.read_text(encoding="utf-8"))["status"] == "handed_off"
+    counts = [body["stt"] for method, route, body in fake.calls
+              if method == "PATCH" and route.endswith("/stage") and "stt" in body]
+    assert counts[0] == {"done": 0, "total": 2} and counts[-1] == {"done": 2, "total": 2}
 
 
 def _pending_upload_cases():
@@ -1184,7 +1187,7 @@ def test_an_upload_whose_be_status_is_not_processing_ends_before_any_work(tmp_pa
 
 # ─────────────────────────────────────────────────────────── 처리 단계 보고
 def _stages_reported(fake):
-    return [c[2]["stage"] for c in fake.calls if c[0] == "PATCH" and c[1].endswith("/stage")]
+    return [c[2]["stage"] for c in fake.calls if c[0] == "PATCH" and c[1].endswith("/stage") and "stt" not in c[2]]
 
 
 def _paths(fake):
@@ -1199,7 +1202,7 @@ def test_process_session_reports_stages_in_order(tmp_path):
     assert _stages_reported(fake) == ["stt", "sources", "extract", "handoff"]
     # 단계는 그 일이 시작되기 전에 알린다. 발화 저장 앞에 sources, 추출 등록 앞에 handoff
     paths = _paths(fake)
-    stage_at = [i for i, p in enumerate(paths) if p.endswith("/stage")]
+    stage_at = [i for i, call in enumerate(fake.calls) if call[1].endswith("/stage") and "stt" not in call[2]]
     assert stage_at[0] < paths.index("/meetings/m1/sources") and stage_at[1] < paths.index("/meetings/m1/sources")
     assert stage_at[3] < paths.index("/extractions")
 
@@ -1231,7 +1234,7 @@ def test_stage_report_goes_out_after_the_progress_note_and_before_the_ops_stage_
     real_request = fake.request
 
     def spy(method, url, **kw):
-        if method == "PATCH" and url.endswith("/stage"):
+        if method == "PATCH" and url.endswith("/stage") and "stt" not in kw["json"]:
             events.append(("report", kw["json"]["stage"]))
         return real_request(method, url, **kw)
 
@@ -1253,6 +1256,8 @@ def test_resume_from_extract_reports_only_remaining_stages(tmp_path):
     r = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_extractor({}), handoff=_be(fake))
     assert r["ran"] == ["extracted", "handed_off"]
     assert _stages_reported(fake) == ["extract", "handoff"]
+    assert not any("stt" in body for method, route, body in fake.calls
+                   if method == "PATCH" and route.endswith("/stage"))
 
 
 def test_no_handoff_no_stage_calls(tmp_path):
@@ -1273,3 +1278,21 @@ def test_partial_retry_reports_stt(tmp_path, monkeypatch):
                         transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=_be(fake))
     assert results[0]["ran"][0] == "retried"
     assert _stages_reported(fake).count("stt") == 1          # 다시 보내는 길도 전사 단계로 알린다
+    counts = [body["stt"] for method, route, body in fake.calls
+              if method == "PATCH" and route.endswith("/stage") and "stt" in body]
+    assert counts[0] == {"done": 0, "total": 2} and counts[-1] == {"done": 2, "total": 2}
+
+
+def test_worker_without_discord_progress_reports_initial_and_final_before_sources(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    result = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake), progress=None)
+    stages = [(i, body) for i, (method, route, body) in enumerate(fake.calls)
+              if method == 'PATCH' and route.endswith('/stage')]
+    counts = [(i, body['stt']) for i, body in stages if 'stt' in body]
+    assert result['status'] == 'handed_off'
+    assert counts[0][1] == {'done': 0, 'total': 2}
+    assert counts[-1][1] == {'done': 2, 'total': 2}
+    sources_index = next(i for i, body in stages if body['stage'] == 'sources')
+    assert all(i < sources_index for i, _ in counts)
+    assert fake.meetings['m1']['stt'] is None

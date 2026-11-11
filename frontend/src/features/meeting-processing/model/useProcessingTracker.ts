@@ -14,6 +14,7 @@ import {
 } from '@/entities/meeting'
 import type { Meeting, TrackedMeeting } from '@/entities/meeting'
 import { findMemberWorkspace, workspaceListQueryOptions } from '@/entities/workspace'
+import { hasReadableResponse } from '@/shared/api/queryClient'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
 import { useLivePathname } from '@/shared/lib/live-pathname'
@@ -28,10 +29,11 @@ function invalidateMeetings(queryClient: QueryClient, { workspaceId, meetingId }
   const finishedKey = meetingDetailQueryOptions(workspaceId, meetingId).queryKey
   void queryClient.invalidateQueries({
     queryKey: meetingKeys(workspaceId),
-    predicate: ({ queryKey }) =>
+    predicate: (query) =>
+      hasReadableResponse(query) &&
       !(
-        queryKey.length === finishedKey.length &&
-        queryKey.every((part, index) => part === finishedKey[index])
+        query.queryKey.length === finishedKey.length &&
+        query.queryKey.every((part, index) => part === finishedKey[index])
       ),
   })
 }
@@ -40,7 +42,10 @@ function invalidateMeetings(queryClient: QueryClient, { workspaceId, meetingId }
 function invalidateFinished(queryClient: QueryClient, meeting: TrackedMeeting): void {
   invalidateMeetings(queryClient, meeting)
   for (const scope of ['minutes', 'extractions', 'tasks', 'approvals'] as const)
-    void queryClient.invalidateQueries({ queryKey: workspaceKey(meeting.workspaceId, scope) })
+    void queryClient.invalidateQueries({
+      queryKey: workspaceKey(meeting.workspaceId, scope),
+      predicate: hasReadableResponse,
+    })
 }
 
 /**
@@ -48,11 +53,13 @@ function invalidateFinished(queryClient: QueryClient, meeting: TrackedMeeting): 
  *
  * - 등록된 회의마다 상세를 3초 간격으로 polling 한다. 정리 중일 때만이다(화자 지정 대기는 30초) — 끝났거나(완료·실패) 볼 수 없게 되면(403·404) 멈춘다.
  *   일시적 조회 실패(네트워크)는 정리 실패가 아니다. 그대로 지켜보고, 창 포커스·온라인 복귀 때 바로 다시 묻는다 (U4-8).
+ *   응답을 읽지 못했으면(`INVALID_RESPONSE`) polling·포커스·복귀 재조회를 모두 멈추고 끝내지도 않는다. 처리 화면의 다시 시도가
+ *   성공하면 다시 지켜본다 (#348).
  * - 끝난 회의는 `finishMeeting` 이 처음 끝냈을 때만 알린다 — 재렌더·StrictMode·재발견·화면 이동에도 회의마다 한 번이다.
  * - 알림은 진행 토스트(ProcessingToast)가 그린다. 추적기는 끝난 결과(`settleMeeting`)만 적고, 정리 중·대기는 토스트가
  *   같은 상세 캐시를 읽는다 — 같은 회의의 신호는 토스트 하나다 (#424).
  * - 완료: 관련 캐시를 무효화하고 완료 결과를 적는다(`회의 정리가 끝났어요` + `회의록 보기`, D-095).
- * - 실패: 화자 지정 만료는 목록에 남기고 상세로 잇는다. 그 외 실패는 목록에서 뺀다.
+ * - 실패: 목록 배지가 있는 두 만료(화자 지정·정리 시작, `expiredLabel`)는 목록에 남기고 상세로 잇는다. 그 외 실패는 목록에서 뺀다.
  *   실패 결과는 failed_stage 그대로 적는다 — 알 수 없는 값도 일반 실패(D-092)다. Notion 연결 상태는 묻지 않는다.
  *   서버의 정리 실패는 AI 단계와 멈춤 정리에서만 오고 Notion 때문에 실패하지 않는다 (D-182). 팀원에게 실패를 보이지
  *   않는 것은 토스트가 정한다. 실패 회의의 결과·원본을 다시 쓰는 길은 없다 — 다시 올리기만 안내한다 (D-091).
@@ -84,7 +91,8 @@ export function useProcessingTracker(): void {
       ...meetingDetailQueryOptions(meeting.workspaceId, meeting.meetingId),
       refetchInterval: ({ state }: { state: { data?: Meeting; error: unknown } }) =>
         pollInterval(state.data, state.error),
-      // 30초 최신 시간과 무관하게 돌아오면 바로 다시 묻는다 — 끊긴 사이에 끝났을 수 있다
+      // 30초 최신 시간과 무관하게 돌아오면 바로 다시 묻는다 — 끊긴 사이에 끝났을 수 있다. 읽지 못한 응답은 앱의
+      // QueryClient 가 묻지 않는다 (D-184)
       refetchOnWindowFocus: 'always' as const,
       refetchOnReconnect: 'always' as const,
     })),
@@ -137,10 +145,10 @@ export function useProcessingTracker(): void {
     (meeting: TrackedMeeting, detail: Meeting) => {
       const { workspaceId, meetingId } = meeting
       const { failedStage } = detail
-      const failure = meetingFailure(failedStage)
-      // 만료 이력은 유지하고, 나머지 실패는 기존 정책대로 목록에서 뺀다.
+      // 만료 이력(화자 지정·정리 시작)은 유지하고, 나머지 실패는 기존 정책대로 목록에서 뺀다.
+      const expired = meetingFailure(failedStage).expiredLabel !== null
       queryClient.setQueryData(meetingListQueryOptions(workspaceId).queryKey, (list) =>
-        failure.kind === 'expired'
+        expired
           ? list?.map((item) =>
               item.id === meetingId ? { ...item, status: 'failed' as const, failedStage } : item,
             )
@@ -148,10 +156,7 @@ export function useProcessingTracker(): void {
       )
       invalidateMeetings(queryClient, meeting)
       settleMeeting({ ...meeting, title: detail.title, outcome: 'failed', failedStage })
-      leaveProcessingScreen(
-        meeting,
-        paths.meetings(workspaceId, failure.kind === 'expired' ? meetingId : undefined),
-      )
+      leaveProcessingScreen(meeting, paths.meetings(workspaceId, expired ? meetingId : undefined))
     },
     [leaveProcessingScreen, queryClient],
   )
@@ -165,7 +170,7 @@ export function useProcessingTracker(): void {
         if (promptSpeakers(meeting)) onAwaitingSpeakers(meeting)
         return
       }
-      if (outcome === 'processing') return
+      if (outcome === 'processing' || outcome === 'invalid') return
       // 이 호출이 처음 끝냈을 때만 알린다. 볼 수 없게 된 회의(lost)는 알리지 않고 그만 본다
       if (!finishMeeting(meeting) || result.data === undefined) return
       if (outcome === 'done') onDone(meeting, result.data)

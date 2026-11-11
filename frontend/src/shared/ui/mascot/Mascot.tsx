@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
 } from 'react'
 import type { Ref } from 'react'
+import { useInputGaze } from './useInputGaze'
 
 export type MascotPose =
   'idle' | 'left' | 'right' | 'squint' | 'upLeft' | 'upRight' | 'talking' | 'dial'
@@ -49,7 +50,7 @@ const R = 84
 const CENTER = 120
 const VIEW_BOX = '0 0 240 240'
 
-const INK = '#171717'
+const INK = '#333333'
 const CORAL = '#FF6969'
 /** 얼굴과 줄무늬는 포즈·팔레트와 무관하게 항상 흰색이다 (§8-1) */
 const WHITE = '#FFFFFF'
@@ -441,7 +442,7 @@ function puppetTransform(bounce: number): string | undefined {
  */
 export function Mascot({
   ref,
-  pose = 'idle',
+  pose: restingPose = 'idle',
   smile = false,
   dial,
   lambda = LAMBDA,
@@ -452,6 +453,8 @@ export function Mascot({
   onClick,
   className,
 }: MascotProps) {
+  const [element, setElement] = useState<SVGSVGElement | null>(null)
+  const pose = useInputGaze(element) ?? restingPose
   // useId 는 SSR·StrictMode 이중 마운트에서도 어긋나지 않는다. 전역 카운터를 쓰지 않는다 (§8-4)
   const faceClipId = `mascot-face-${useId()}`
   const capClipId = `mascot-cap-${useId()}`
@@ -598,6 +601,7 @@ export function Mascot({
 
   return (
     <svg
+      ref={setElement}
       className={className}
       width={size}
       height={size}

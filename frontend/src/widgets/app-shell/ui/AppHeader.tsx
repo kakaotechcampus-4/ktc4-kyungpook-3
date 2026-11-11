@@ -9,7 +9,7 @@ import type { ShellTabKey } from '../model/shellTabs'
 import { UserMenu } from './UserMenu'
 import { WorkspaceMenu } from './WorkspaceMenu'
 
-/* design-system.md §7-11 · Main 캔버스: 76px 헤더 · 좌측 마크 + 탭 5개 · 우측 워크스페이스 메뉴 + 아바타.
+/* design-system.md §7-11 · Main 캔버스: 76px 헤더 · 좌측 마크 + 탭(캔버스 5개, #551 의 프로젝트 맵까지 6개) · 우측 워크스페이스 메뉴 + 아바타.
    좌우 40px 은 가로로 눕힌 휴대폰의 안전 영역보다 좁아지지 않는다 */
 const HEADER =
   'flex h-header shrink-0 items-center justify-between gap-24 border-b border-divider bg-surface pr-[max(40px,env(safe-area-inset-right))] pl-[max(40px,env(safe-area-inset-left))]'
@@ -19,7 +19,8 @@ const HEADER =
 const COMPACT_HEADER =
   'flex h-[calc(56px+env(safe-area-inset-top))] shrink-0 items-center justify-between gap-12 bg-surface pt-[env(safe-area-inset-top)] pr-[max(20px,env(safe-area-inset-right))] pl-[max(20px,env(safe-area-inset-left))]'
 
-const ACTIONS = 'flex items-center gap-24'
+/* 탭은 줄지 않고, 오른쪽 묶음이 남는 폭만 쓴다. 1024px 아래는 간격을 좁히고 공간 이름을 줄여 768px 에서도 한 줄이다 */
+const ACTIONS = 'flex min-w-0 items-center gap-24 max-lg:gap-8'
 
 /* 공간 메뉴는 왼쪽 끝, 알림 · 아바타는 오른쪽이다. 공간 이름이 길면 공간 메뉴가 줄어든다 */
 const COMPACT_ACTIONS = 'flex min-w-0 flex-1 items-center gap-8 [&>:first-child]:mr-auto'
@@ -51,7 +52,7 @@ export function AppHeader({ workspaceId, onTabIntent }: AppHeaderProps) {
   return (
     <header className={compact ? COMPACT_HEADER : HEADER}>
       {compact ? null : (
-        <div className="flex items-center gap-30">
+        <div className="flex shrink-0 items-center gap-30">
           <GuardedLink
             to={paths.dashboard(workspaceId)}
             aria-label="Manager's Manager 대시보드"
@@ -80,13 +81,13 @@ export function AppHeader({ workspaceId, onTabIntent }: AppHeaderProps) {
   )
 }
 
-/* 탭 글자 폭 — `대시보드` · `회의록` · `태스크` · `메시지` · `팀` (13px 600 실측 근삿값) */
-const TAB_SKELETON_WIDTHS = [52, 39, 39, 39, 13]
+/* 탭 글자 폭 — `대시보드` · `회의록` · `태스크` · `메시지` · `프로젝트 맵` · `팀` (13px 600 실측 근삿값) */
+const TAB_SKELETON_WIDTHS = [52, 39, 39, 39, 68, 13]
 
 /**
  * 헤더 자리의 뼈대 — 가드가 세션·소속을 기다리는 동안 앱 셸 틀(WorkspaceLayout)과 함께 그린다.
  * 진짜 헤더와 같은 상자라 헤더가 그려질 때 아래 화면이 내려가지 않는다 (UX1-M01).
- * 마크 · 탭 다섯 · 워크스페이스 메뉴 · 아바타 자리를 같은 크기로 둔다. 장식이라 통째로 aria-hidden 이고 header 랜드마크가 아니다 —
+ * 마크 · 탭 여섯 · 워크스페이스 메뉴 · 아바타 자리를 같은 크기로 둔다. 장식이라 통째로 aria-hidden 이고 header 랜드마크가 아니다 —
  * 기다리는 표시(aria-busy)는 아래 화면 뼈대가 진다.
  */
 export function AppHeaderSkeleton() {

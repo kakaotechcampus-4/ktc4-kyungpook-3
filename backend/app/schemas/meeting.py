@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import (
     AwareDatetime,
@@ -27,6 +27,7 @@ MAX_EVIDENCE_SEQS = 100
 
 
 class MeetingCreateRequest(BaseModel):
+    replaces_meeting_id: str | None = None
     workspace_id: str = Field(..., description="소속 워크스페이스 ID")
     title: str | None = Field(None, description="회의 제목 (optional)")
     source: MeetingSource = Field(
@@ -54,6 +55,15 @@ class MeetingCreateResponse(BaseModel):
     workspace_id: str
     status: str
     started_at: datetime
+
+
+class RecordingUploadResponse(BaseModel):
+    """AI 가 올린 디스코드 회의 녹음을 보관한 결과. 이미 정리된 녹음이면 저장하지 않고 `stored=false`."""
+
+    meeting_id: str
+    size_bytes: int
+    expires_at: datetime
+    stored: bool
 
 
 class MeetingEndResponse(BaseModel):
@@ -120,6 +130,7 @@ class MeetingProcessing(BaseModel):
 
 class MeetingDetailResponse(BaseModel):
     meeting_id: str
+    deletion_available: bool = False
     workspace_id: str
     title: str | None
     status: str
@@ -138,16 +149,31 @@ class MeetingListResponse(BaseModel):
     total: int
 
 
+class MeetingAudioInfo(BaseModel):
+    content_type: str
+    expires_at: datetime = Field(description="이 시각까지 원문 녹음을 들을 수 있다")
+
+
 class MeetingMinutesResponse(BaseModel):
     meeting_id: str
     title: str | None
+    # 팀원이 제목을 고쳤는가와 처음 제목(#605). 처음 제목은 고친 적 없으면 null 이다
+    title_edited: bool = False
+    title_original: str | None = None
     started_at: datetime
     duration_ms: int
     source: str
     attendees: list[dict]
     summary: dict | None
+    # ready: 요약이 있다. pending: 곧 나온다. awaiting_approval: 승인이 끝나면 만든다. none: 없다(대상 아님, 실패)
+    summary_status: Literal["ready", "pending", "awaiting_approval", "none"]
+    # awaiting_approval 일 때 남은 승인 요청 수. PM 에게만 준다(D-104)
+    summary_waiting_count: int | None = None
     transcript: list[dict]
     permissions: dict
+    audio: MeetingAudioInfo | None = Field(
+        None, description="호출자가 이 회의 녹음을 들을 수 있을 때만 값(보관 기간 안, done 이 아니면 PM 만). 아니면 null"
+    )
 
 
 
@@ -231,7 +257,7 @@ class ExtractionItemResponse(BaseModel):
     )
     alias_candidate: bool = Field(
         False,
-        description="담당자를 못 찾은 이름 지목(thirdname) 항목의 pending 생성 승인이고, 그 항목이 카드의 담당 항목(payload assignee_item_id, 없으면 extraction_item_id)이며(다른 회의 항목을 합친 카드는 담당 항목에만 나온다), 같은 워크스페이스에서 탈퇴하지 않은 팀원 누구도 그 글자(님·조사를 뗀 찾기 후보 포함)를 별칭으로 갖고 있지 않으면 true. PM 이 담당자를 골라 save_alias=true 로 승인하면 alias_text 를 그 팀원의 별칭으로 저장한다. 탈퇴하지 않은 누군가가 이미 갖고 있으면 false 이고 저장하지 않는다(탈퇴한 팀원의 별칭은 세지 않는다)",
+        description="담당자를 못 찾은 이름·역할 지목(thirdname·thirdrole) 항목의 pending 생성 승인이고, 그 항목이 카드의 담당 항목(payload assignee_item_id, 없으면 extraction_item_id)이며(다른 회의 항목을 합친 카드는 담당 항목에만 나온다), 같은 워크스페이스에서 탈퇴하지 않은 팀원 누구도 그 글자(님·조사를 뗀 찾기 후보 포함)를 별칭으로 갖고 있지 않으면 true. PM 이 담당자를 골라 save_alias=true 로 승인하면 alias_text 를 그 팀원의 별칭으로 저장한다. 탈퇴하지 않은 누군가가 이미 갖고 있으면 false 이고 저장하지 않는다(탈퇴한 팀원의 별칭은 세지 않는다)",
     )
     alias_text: str | None = Field(
         None,
@@ -268,6 +294,21 @@ class TargetSnapshot(BaseModel):
         None,
         max_length=300,
         description="AI가 이 task를 고른 근거가 된 제목. 바꿀 값이 아니라 승인 때 대상이 그대로인지 확인하는 기준이다",
+    )
+
+
+class AsrSuspect(BaseModel):
+    """전사 오인식 의심 단어 하나(AI judge/asr_check.py). 확인 카드에 "'애포'는 '배포'일 수 있어요"로 보일 수 있다."""
+
+    word: str = Field(max_length=100, description="의심 단어. 검사를 하지 못했으면 빈 문자열")
+    source: str = Field(
+        max_length=32,
+        description="evidence(근거 발화) · title(제목) · check_failed(검사 실패, word 는 빈 문자열). "
+        "AI 가 새 값을 먼저 배포해도 회의 전체가 400 이 되지 않게 문자열로 받는다. 모르는 값도 payload 에 그대로 싣고 "
+        "FE 는 evidence·title 만 교정 후보로, check_failed 는 \"검사하지 못함\"으로 따로 보인다",
+    )
+    candidates: list[Annotated[str, Field(max_length=100)]] = Field(
+        default_factory=list, max_length=5, description="발음이 가까운 업무 용어 후보. 가까운 순, 최대 5개"
     )
 
 
@@ -313,6 +354,11 @@ class ExtractionItemCreate(BaseModel):
         "없거나 탈퇴한 팀원이면 그 발화의 화자 uid. 그 발화를 찾지 못하면 화자가 없다.",
     )
     due_date: date | None = None
+    due_cleared: bool = Field(
+        False,
+        description="update에서 대상 task의 마감을 없애자는 결정이면 true. due_date=null은 '바꾸지 않음'이라 따로 둔다. "
+        "due_date가 함께 오면 due_date를 따른다. 대상 task에 마감이 없으면 바뀌는 것이 없다.",
+    )
     due_raw: str | None = None
     due_confidence: float | None = Field(
         None, description="마감 확신도(0~1). legacy 경로만 보낸다. 보내지 않으면 null(측정 안 함)."
@@ -363,6 +409,12 @@ class ExtractionItemCreate(BaseModel):
         le=1.0,
         description="그 태스크들 중 가장 높은 유사도. 기록용이라 게이트 판단에는 쓰지 않는다. "
         "검색 결과가 없으면 null",
+    )
+    asr_suspects: list[AsrSuspect] | None = Field(
+        None,
+        max_length=50,
+        description="전사 오인식 의심 단어. judge 새 항목만 보낸다. 하나라도 있으면 auto로 보내지 않는다. "
+        "검사해서 없으면 빈 목록, 보내지 않으면(옛 AI) null이고 둘 다 게이트에 영향이 없다",
     )
     target_snapshot: TargetSnapshot | None = Field(
         None,

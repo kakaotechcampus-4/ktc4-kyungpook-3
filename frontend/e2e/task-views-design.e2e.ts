@@ -78,7 +78,43 @@ test('보드 직접 추가 — 제목 입력에 포커스가 있으면 펼친 �
   const form = active.getByRole('form', { name: '진행 중에 직접 추가' })
   expect(
     await cssOf(form, 'outline-style', 'outline-width', 'outline-color', 'outline-offset'),
-  ).toEqual(['solid', '2px', 'rgb(23, 23, 23)', '-1px'])
+  ).toEqual(['solid', '2px', 'rgb(38, 38, 38)', '-1px'])
+})
+
+test('동작 줄이기에서는 보드 제목 입력의 첫 포커스부터 테두리가 표시된다', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.addInitScript(() => {
+    document.addEventListener(
+      'focus',
+      (event) => {
+        const input = event.target
+        if (!(input instanceof HTMLInputElement)) return
+        if (input.getAttribute('aria-label') !== '진행 중 새 태스크 제목') return
+        const form = input.closest('form')
+        if (!form) return
+        // Playwright 왕복 전에 첫 포커스의 실제 스타일을 보관한다. 이후 전환 완료를 기다리지 않는다.
+        const style = getComputedStyle(form)
+        window.name = JSON.stringify([
+          input.matches(':focus-visible'),
+          style.outlineStyle,
+          style.outlineWidth,
+          style.outlineColor,
+          style.outlineOffset,
+          style.transitionDuration,
+        ])
+      },
+      { capture: true },
+    )
+  })
+  await openView(page, 'board')
+  const active = page.getByRole('region', { name: '진행 중' })
+  await active.getByRole('button', { name: '진행 중에 직접 추가' }).click(FIRST_PAINT)
+  await expect(active.getByRole('textbox', { name: '진행 중 새 태스크 제목' })).toBeFocused()
+  const firstFocus = await page.evaluate(() => {
+    const saved: unknown = JSON.parse(window.name)
+    return saved
+  })
+  expect(firstFocus).toEqual([true, 'solid', '2px', 'rgb(38, 38, 38)', '-1px', '0s'])
 })
 
 test('캘린더 — 날짜 이동·마감일 없음·주말 숫자·마감 임박 칩이 시안 크기와 색이다', async ({
@@ -109,7 +145,7 @@ test('캘린더 — 날짜 이동·마감일 없음·주말 숫자·마감 임�
     (await cssOf(urgent, 'background-color'))[0],
     (await cssOf(title, 'color'))[0],
     (await cssOf(urgent.locator('xpath=*[last()]'), 'color'))[0],
-  ]).toEqual(['rgb(244, 217, 215)', 'rgb(23, 23, 23)', 'rgb(90, 90, 90)'])
+  ]).toEqual(['rgb(236, 107, 64)', 'rgb(255, 255, 255)', 'rgb(255, 255, 255)'])
   await expect(title).toHaveCSS('font-weight', '600')
 })
 

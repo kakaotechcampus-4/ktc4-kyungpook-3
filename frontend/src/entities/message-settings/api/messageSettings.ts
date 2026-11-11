@@ -1,7 +1,8 @@
 import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
+import { parseResponse } from '@/shared/api/parseResponse'
 import { workspaceKey } from '@/shared/api/queryKeys'
-import type { MessageSettingsDto } from '@/shared/types/api/messageSettings'
+import { messageSettingsSchema } from '@/shared/types/api/messageSettings'
 import { toMessageSettings, toMessageSettingsPatch } from '../model/mapper'
 import type { MessageSettings, MessageSettingsChange } from '../model/types'
 
@@ -12,7 +13,13 @@ export async function fetchMessageSettings(
   workspaceId: string,
   signal?: AbortSignal,
 ): Promise<MessageSettings> {
-  return toMessageSettings(await request<MessageSettingsDto>(path(workspaceId), { signal }))
+  return toMessageSettings(
+    parseResponse(
+      messageSettingsSchema,
+      await request<unknown>(path(workspaceId), { signal }),
+      'message settings',
+    ),
+  )
 }
 
 /** 보낸 칸만 바꾸고 전체 설정을 돌려준다. PM 만 할 수 있다(그 밖은 403) */
@@ -22,11 +29,15 @@ export async function updateMessageSettings(
   signal?: AbortSignal,
 ): Promise<MessageSettings> {
   return toMessageSettings(
-    await request<MessageSettingsDto>(path(workspaceId), {
-      method: 'PATCH',
-      body: toMessageSettingsPatch(change),
-      signal,
-    }),
+    parseResponse(
+      messageSettingsSchema,
+      await request<unknown>(path(workspaceId), {
+        method: 'PATCH',
+        body: toMessageSettingsPatch(change),
+        signal,
+      }),
+      'message settings',
+    ),
   )
 }
 

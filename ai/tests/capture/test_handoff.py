@@ -257,12 +257,37 @@ def test_from_env_needs_the_base_url_and_the_token_only(monkeypatch):
 
 
 def test_unresolved_second_person_and_pronouns_are_not_sent_as_aliases():
-    """"네가", "그분", "백엔드 리더" 는 별칭이 아니다. 이름으로 풀리지 않았으면 BE 에 조회를 시키지 않는다."""
-    for kind, mention in (("second", "네가"), ("thirdpronoun", "그분이"), ("thirdrole", "백엔드 리더가")):
+    """"네가", "그분" 은 별칭이 아니다. 이름으로 풀리지 않았으면 BE 에 조회를 시키지 않는다."""
+    for kind, mention in (("second", "네가"), ("thirdpronoun", "그분이")):
         t = _task(assignee_type=kind, assignee_mention=mention, assignee_resolved=None)
         assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] is None, kind
     t = _task(assignee_type="thirdname", assignee_mention="민수", assignee_resolved=None)
     assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "민수"
+
+
+def test_thirdname_sends_the_original_mention_even_when_resolved():
+    """이름 지목은 원문만 보낸다. 추출기가 고친 이름이 틀리면 BE 가 그 글자를 별칭으로 배운다."""
+    t = _task(assignee_type="thirdname", assignee_mention="화은이가", assignee_resolved="하은")
+    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "화은이가"
+    t = _task(assignee_type="first", assignee_mention=None, assignee_resolved="민수")
+    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] is None
+
+
+def test_thirdrole_sends_the_original_role_mention():
+    """역할 지목은 원문만 보낸다(#522). BE 가 그 글자로 역할 별칭을 찾고, 승인 때 배운다."""
+    t = _task(assignee_type="thirdrole", assignee_mention="백엔드 리더가", assignee_resolved="환")
+    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "백엔드 리더가"
+    t = _task(assignee_type="thirdrole", assignee_mention="백엔드 리더가", assignee_resolved=None)
+    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "백엔드 리더가"
+    t = _task(assignee_type="thirdrole", assignee_mention=None, assignee_resolved="환")
+    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] is None
+
+
+def test_first_group_none_never_send_assignee_text():
+    """추출기가 "우리" 같은 글자를 채워도 BE 가 별칭으로 조회해 hold 로 돌리지 않게 None 을 보낸다."""
+    for kind in ("first", "group", "none"):
+        t = _task(assignee_type=kind, assignee_mention="우리", assignee_resolved=None)
+        assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] is None, kind
 
 
 def test_register_marks_a_partial_meeting_in_the_be_record(tmp_path):
@@ -435,7 +460,10 @@ def test_every_be_call_carries_the_service_token():
     assert [c[:2] for c in fake.calls] == [("POST", "/meetings"), ("PATCH", f"/meetings/{mid}/end"),
                                            ("POST", "/extractions"), ("POST", "/meetings"),
                                            ("PATCH", f"/meetings/{other}/fail")]
-    assert all(h == {"X-Service-Token": "svc-token"} for h in fake.headers)
+    assert all(headers["X-Service-Token"] == "svc-token" for headers in fake.headers)
+    for (_, path, _), headers in zip(fake.calls, fake.headers):
+        if path == "/meetings":
+            assert headers["X-Meeting-Lineage-Version"] == "1"
 
 
 def test_the_be_refuses_meeting_calls_without_the_token():
@@ -1463,3 +1491,139 @@ def test_chat_channels_wrong_token_is_unauthenticated():
     with pytest.raises(H.BeError) as e:
         H.BeClient("http://be.local", session=FakeBe(), service_token="틀린 토큰").chat_channels()
     assert e.value.code == "UNAUTHENTICATED" and e.value.status == 401
+
+
+def test_stt_progress_payload_preserves_timeout_auth_and_privacy_epoch():
+    fake = FakeBe()
+    fake.meetings['m1'] = {'meeting_id': 'm1', 'workspace_id': 'ws-1', 'status': 'processing'}
+    manifest = {**_staged(), 'workspace_id': 'ws-1', 'identity_epoch': 7}
+    handoff = _handoff(fake)
+    handoff.report_stage(manifest, 'stt', stt={'done': 0, 'total': 3})
+    handoff.report_stage(manifest, 'stt', stt={'done': 1, 'total': 3})
+    assert fake.meetings['m1']['stt'] == {'done': 1, 'total': 3}
+    assert fake.calls[-1] == ('PATCH', '/meetings/m1/stage', {'stage': 'stt', 'stt': {'done': 1, 'total': 3}})
+    assert fake.headers[-1] == {'X-Service-Token': 'svc-token', 'X-Privacy-Epoch': '7'}
+    assert fake.timeouts[-1] == H.STAGE_TIMEOUT_S
+    handoff.report_stage(manifest, 'sources')
+    assert fake.meetings['m1']['stt'] is None
+
+
+@pytest.mark.parametrize('stage,stt', [
+    ('sources', {'done': 0, 'total': 1}),
+    ('stt', {'done': False, 'total': 1}),
+    ('stt', {'done': 0, 'total': True}),
+    ('stt', {'done': -1, 'total': 1}),
+    ('stt', {'done': 2, 'total': 1}),
+    ('stt', {'done': 0, 'total': 0}),
+    ('stt', {'done': 0, 'total': 2**31}),
+])
+def test_invalid_stt_progress_never_reaches_transport(stage, stt):
+    fake = FakeBe()
+    with pytest.raises(ValueError):
+        _client(fake).report_stage('m1', stage, stt=stt)
+    assert fake.calls == []
+
+
+def test_stt_hook_throttles_failed_attempts_and_always_sends_initial_and_final(monkeypatch):
+    fake = FakeBe()
+    fake.meetings['m1'] = {'meeting_id': 'm1', 'workspace_id': 'ws-1', 'status': 'processing'}
+    fake.stage_fail = 500
+    clock = iter([0.0, 0.5, 1.9, 2.0, 2.1, 2.2])
+    monkeypatch.setattr(H.time, 'monotonic', lambda: next(clock))
+    handoff = _handoff(fake)
+    report = handoff.stt_progress(_staged())
+    for done in (0, 1, 2, 3, 5):
+        report(done, 5)
+    assert [body['stt']['done'] for _, _, body in fake.calls] == [0, 3, 5]
+    handoff.stt_progress(_staged())(0, 5)
+    assert fake.calls[-1][2]['stt'] == {'done': 0, 'total': 5}
+
+
+def test_stt_hook_propagates_meeting_deletion():
+    class Deleted:
+        def request(self, *args, **kwargs):
+            return fake_be._err(410, 'MEETING_DELETED')
+
+    handoff = H.Handoff(H.BeClient('http://be', session=Deleted()))
+    with pytest.raises(H.MeetingEnded) as error:
+        handoff.stt_progress(_staged())(0, 2)
+    assert error.value.code == 'MEETING_DELETED'
+
+
+# ───────────────────────────────────────────── 녹음 올리기(#659)
+class _PutSession:
+    """requests.Session 자리에 들어가 요청을 적어 두고 정해 둔 응답을 돌려준다."""
+
+    def __init__(self, status=200, payload=None, raises=None):
+        self.status, self.raises = status, raises
+        self.payload = payload if payload is not None else {"data": {"meeting_id": "m1", "size_bytes": 4, "expires_at": "x", "stored": True}}
+        self.seen = []
+
+    def request(self, method, url, **kwargs):
+        if self.raises:
+            raise self.raises
+        files = kwargs.get("files")
+        name, fileobj, content_type = files["file"]
+        self.seen.append({"method": method, "url": url, "headers": kwargs.get("headers") or {}, "timeout": kwargs.get("timeout"),
+                          "name": name, "content_type": content_type, "bytes": fileobj.read(), "json": kwargs.get("json")})
+        payload, status = self.payload, self.status
+
+        class R:
+            status_code = status
+            text = ""
+
+            def json(self):
+                return payload
+        return R()
+
+
+def _m4a(tmp_path):
+    p = tmp_path / "m1.m4a"
+    p.write_bytes(b"\x00\x00\x00\x18ftypM4A ")
+    return p
+
+
+def test_upload_recording_puts_the_m4a_as_multipart_file(tmp_path):
+    session = _PutSession()
+    client = H.BeClient("http://be", session=session, service_token="svc")
+    assert client.upload_recording("m1", _m4a(tmp_path)) == {"meeting_id": "m1", "size_bytes": 4, "expires_at": "x", "stored": True}
+    (seen,) = session.seen
+    assert (seen["method"], seen["url"]) == ("PUT", "http://be/api/v1/meetings/m1/recording")
+    assert (seen["name"], seen["content_type"]) == ("audio.m4a", "audio/mp4")
+    assert seen["bytes"] == b"\x00\x00\x00\x18ftypM4A "
+    assert seen["headers"]["X-Service-Token"] == "svc"
+    assert seen["timeout"] == H.DOWNLOAD_TIMEOUT_S
+    assert seen["json"] is None
+
+
+def test_upload_recording_sends_the_privacy_epoch_of_the_meeting(tmp_path):
+    session = _PutSession()
+    client = H.BeClient("http://be", session=session, service_token="svc")
+    client.meeting_epochs["m1"] = 3
+    client.upload_recording("m1", _m4a(tmp_path))
+    assert session.seen[0]["headers"]["X-Privacy-Epoch"] == "3"
+    fresh = _PutSession()
+    H.BeClient("http://be", session=fresh).upload_recording("m1", _m4a(tmp_path))
+    assert "X-Privacy-Epoch" not in fresh.seen[0]["headers"]
+
+
+@pytest.mark.parametrize("status,code", [(413, "AUDIO_TOO_LARGE"), (422, "AUDIO_FORMAT_UNSUPPORTED"), (404, "MEETING_NOT_FOUND")])
+def test_upload_recording_raises_the_be_error_code(tmp_path, status, code):
+    session = _PutSession(status, {"error": {"code": code, "message": "no"}})
+    with pytest.raises(H.BeError) as e:
+        H.BeClient("http://be", session=session).upload_recording("m1", _m4a(tmp_path))
+    assert e.value.code == code and e.value.status == status
+
+
+def test_upload_recording_of_a_deleted_meeting_is_meeting_ended(tmp_path):
+    session = _PutSession(410, {"error": {"code": "MEETING_DELETED", "message": "gone"}})
+    with pytest.raises(H.MeetingEnded):
+        H.BeClient("http://be", session=session).upload_recording("m1", _m4a(tmp_path))
+
+
+def test_upload_recording_connection_failure_is_a_network_error(tmp_path):
+    import requests
+    session = _PutSession(raises=requests.ConnectionError("down"))
+    with pytest.raises(H.BeError) as e:
+        H.BeClient("http://be", session=session).upload_recording("m1", _m4a(tmp_path))
+    assert e.value.code == "NETWORK"

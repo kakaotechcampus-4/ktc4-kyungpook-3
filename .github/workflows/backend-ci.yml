@@ -5,6 +5,10 @@ on:
     branches: [develop]
     paths:
       - 'backend/**'
+      # backend/tests/deploy 가 배포 스크립트를 돌려 본다
+      - 'deploy/ec2-deploy.sh'
+      # backend/tests/deploy/test_monitoring_files.py 가 모니터링 설정을 본다
+      - 'deploy/monitoring/**'
       - '.github/workflows/backend-ci.yml'
   # deploy.yml 이 배포 전에 같은 커밋으로 부른다
   workflow_call:
@@ -20,9 +24,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
-          python-version: "3.12"
+          version: "0.13.7"
       - run: uv venv --python 3.12 .venv
-      - run: uv pip install --python .venv/bin/python -r requirements-dev.txt
+      - run: uv pip install --python .venv/bin/python -r requirements.lock -r requirements-dev.txt
+      # requirements.txt 를 바꾸고 잠금 파일을 다시 만들지 않았으면 실패한다. 기존 잠금을 -o 로 넘기면 고정한 버전은 그대로 두고
+      # 바뀐 것만 다시 푼다. 같은 버전에 휠이 새로 올라와 해시만 늘 수 있어 패키지와 버전 줄만 비교한다
+      - name: 잠금 파일 확인
+        run: |
+          cp requirements.lock "$RUNNER_TEMP/check.lock"
+          uv pip compile requirements.txt --universal --python-version 3.12 --generate-hashes --quiet -o "$RUNNER_TEMP/check.lock"
+          diff <(grep -E '^[a-z0-9]' requirements.lock) <(grep -E '^[a-z0-9]' "$RUNNER_TEMP/check.lock")
       # 설정은 backend/ruff.toml
       - run: .venv/bin/python -m ruff check .
 
@@ -50,9 +61,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
-          python-version: "3.12"
+          version: "0.13.7"
       - run: uv venv --python 3.12 .venv
-      - run: uv pip install --python .venv/bin/python -r requirements-dev.txt
+      - run: uv pip install --python .venv/bin/python -r requirements.lock -r requirements-dev.txt
       # -rs: 건너뛴 테스트와 이유를 로그에 남긴다(pg 테스트가 skip되지 않았는지 확인용)
       - run: .venv/bin/python -m pytest -rs
 
@@ -81,9 +92,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
-          python-version: "3.12"
+          version: "0.13.7"
       - run: uv venv --python 3.12 .venv
-      - run: uv pip install --python .venv/bin/python -r requirements.txt
+      - run: uv pip install --python .venv/bin/python -r requirements.lock
       - run: .venv/bin/alembic upgrade head
       # 모델을 바꾸고 마이그레이션을 빠뜨렸으면 여기서 실패한다
       - run: .venv/bin/alembic check

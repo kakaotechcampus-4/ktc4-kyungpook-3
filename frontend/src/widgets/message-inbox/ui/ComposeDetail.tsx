@@ -1,12 +1,7 @@
 import { useId } from 'react'
 import { ReminderCreateForm, createdNotice } from '@/features/reminder-create'
 import { toast } from '@/shared/ui/toast'
-
-/* 보내기 전 확인과 같은 가운데 604 열이다(ReviewDetail) */
-const PAGE =
-  'flex flex-1 justify-center overflow-y-auto px-36 pt-44 pb-56 max-md:px-20 max-md:pt-24 max-md:pb-32'
-const COLUMN = 'flex w-full max-w-[604px] flex-col gap-24 self-start'
-const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink max-md:text-[24px]'
+import { COMPOSE_CARD, COMPOSE_COLUMN, COMPOSE_PAGE, COMPOSE_TITLE } from './frame'
 
 export interface ComposeDetailProps {
   workspaceId: string
@@ -27,12 +22,12 @@ export function ComposeDetail({
   const headingId = useId()
   return (
     <div
-      className={PAGE}
+      className={COMPOSE_PAGE}
       style={toastClearance > 56 ? { paddingBottom: toastClearance } : undefined}
     >
-      <section aria-labelledby={headingId} className={COLUMN}>
+      <section aria-labelledby={headingId} className={COMPOSE_COLUMN}>
         <div className="flex flex-col gap-8">
-          <h2 id={headingId} className={TITLE}>
+          <h2 id={headingId} className={COMPOSE_TITLE}>
             새 재촉
           </h2>
           <p className="text-[14px] text-sub">
@@ -40,15 +35,17 @@ export function ComposeDetail({
             나가요.
           </p>
         </div>
-        <ReminderCreateForm
-          workspaceId={workspaceId}
-          target={{ kind: 'choose' }}
-          onCreated={(created) => {
-            toast.show({ key: 'message-review-action', title: createdNotice(created) })
-            onCreated(created.bundle.id)
-          }}
-          onCancel={onCancel}
-        />
+        <div className={`${COMPOSE_CARD} p-24 max-md:p-20`}>
+          <ReminderCreateForm
+            workspaceId={workspaceId}
+            target={{ kind: 'choose' }}
+            onCreated={(created) => {
+              toast.show({ key: 'message-review-action', title: createdNotice(created) })
+              onCreated(created.bundle.id)
+            }}
+            onCancel={onCancel}
+          />
+        </div>
       </section>
     </div>
   )

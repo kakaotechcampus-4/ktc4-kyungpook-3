@@ -210,3 +210,33 @@ def test_an_unjudged_finding_with_no_items_is_not_registered_as_an_empty_extract
     assert "JudgeAllFailed" in result["error"] and "판단하지 못한 발화 1개" in result["error"]
     assert "첫 실패(judge)" in result["error"]
     assert fake.extractions == {} and fake.meetings["m1"]["status"] == "processing" and "items" not in saved
+
+
+def test_a_rerun_of_the_real_pipeline_keeps_what_each_run_judged(tmp_path, monkeypatch):
+    """#128 멘토 리뷰의 예를 실제 파이프라인으로 돈다. 1회차는 환불과 검색이 항목이고 로그인에서 Terra 가 실패한다.
+    2회차는 앞 둘을 바꿀 것 없음으로 보고 로그인만 항목으로 낸다. 항목 수로 실행을 고르면 로그인이 끝까지 빠진다."""
+    monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 2)   # 기본은 0(#624). 다시 돌리는 장치는 설정으로 남아 있다
+    fake = FakeBe()
+    fake.tasks |= {"task_search", "task_login"}
+    fake.similar["검색"] = [_candidate("task_search", "검색 기능 성능 개선")]
+    fake.similar["로그인"] = [_candidate("task_login", "로그인 화면 시안 마무리", due_date="2026-09-28")]
+    rec, tdir, path, manifest = _transcribed(tmp_path, MEETING)
+    client = H.BeClient("http://be", session=fake, service_token="svc-token")
+    extractor = J.build_extractor(run=pipeline.run, candidates=client, cfg=_cfg())
+
+    def process(manifest):
+        return R.process_session(rec, manifest, backend=None, model_name="echo", workers=1, transcripts_dir=tdir,
+                                 extractor=extractor, handoff=H.Handoff(client))
+
+    _fake_llms(monkeypatch, stage1={"findings": FINDINGS}, terra=[*TERRA[:2], None], drafts=DRAFTS[:2])
+    first = process(manifest)
+    assert first["status"] == "failed" and fake.extractions == {}
+
+    nothing = {"is_meaningful": False, "category": "none", "is_new": False, "matched_candidate_index": None,
+               "status": None, "evidence": "바꿀 것 없음"}
+    _fake_llms(monkeypatch, stage1={"findings": FINDINGS}, terra=[nothing, nothing, TERRA[2]], drafts=DRAFTS[2:])
+    second = process(json.loads(path.read_text(encoding="utf-8")))
+
+    assert second["status"] == "handed_off" and second["extract_failures"] == []
+    assert [(i["action"], i["target_task_id"]) for i in fake.extractions["m1"]["items"]] == [
+        ("create", None), ("update", "task_search"), ("update", "task_login")]

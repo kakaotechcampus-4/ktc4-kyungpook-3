@@ -1,3 +1,4 @@
+import type { UnknownValue } from '@/shared/api/unknownValue'
 import type { Role } from '@/shared/types/common'
 export interface Member {
   id: string
@@ -6,25 +7,21 @@ export interface Member {
   discordUserId: string | null
   notionName: string | null
   role: Role
+  hasLoginAccount: boolean
   createdAt: string
 }
-export type AliasType = 'realname' | 'nickname' | 'mention' | 'inferred'
-export type AliasSource = 'manual' | 'discord_profile' | 'learned'
+export const ALIAS_SOURCES = ['manual', 'discord_profile', 'learned', 'display_name'] as const
+export type AliasSource = (typeof ALIAS_SOURCES)[number]
 export interface MemberAlias {
   id: string
   memberId: string
   workspaceId: string
   text: string
-  type: AliasType
-  source: AliasSource
+  /** 표시용 분류다. 모르는 출처는 받은 값을 남긴다 */
+  source: AliasSource | UnknownValue
   confidence: number
   verified: boolean
   createdAt: string
-}
-export interface UnresolvedAlias {
-  text: string
-  occurrences: number
-  lastSeenAt: string
 }
 export interface DiscordUser {
   discordUserId: string

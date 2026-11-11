@@ -4,10 +4,12 @@ import {
   mergeSourceBundle,
   messageBundleFixtures,
   messageThreadFixtures,
+  pmMessage,
   reply,
   schedulePassedBundle,
 } from './fixtures/message'
-import type { MockBundle, MockMessageThread } from './fixtures/message'
+import type { MockBundle, MockMessageThread, MockThreadMessage } from './fixtures/message'
+import type { MockNotification } from './fixtures/notification'
 import { memberFixtures } from './fixtures/member'
 import {
   approveBundle,
@@ -17,9 +19,12 @@ import {
   createReminder,
   editBundle,
   editReminder,
+  notifyNewMessage,
+  openThread,
   rebuildBundle,
   reminderWithBundleDto,
   threadSummaryOf,
+  writeMessage,
 } from './message-state'
 import type { BundleContext, ReminderContext, ReminderResult } from './message-state'
 
@@ -37,9 +42,12 @@ const context = (
   members: memberFixtures,
   pmName: '김서연',
   workspaceName: '카테캠 3팀',
+  linkedMemberIds: new Set(),
   ...overrides,
 })
 const ASK = '지금 어디까지 됐는지 편하게 알려 주세요!'
+
+const NONE: ReadonlySet<string> = new Set()
 
 describe('threadSummaryOf', () => {
   const thread = (messages: MockMessageThread['messages']): MockMessageThread => ({
@@ -55,17 +63,20 @@ describe('threadSummaryOf', () => {
         botMessage('mg_3', 'c', '2026-09-16T18:00:00+09:00'),
         botMessage('mg_4', 'd', '2026-09-17T18:00:00+09:00'),
       ]),
+      NONE,
     )
     expect(summary.awaiting_reply_since).toBe('2026-09-16T09:00:00.000Z')
     expect(summary.last_message).toMatchObject({ message_id: 'mg_4', sender: 'bot' })
-    expect(threadSummaryOf(thread([reply('mg_2', 'b', MOCK_NOW)])).awaiting_reply_since).toBeNull()
-    expect(threadSummaryOf(thread([])).last_message).toBeNull()
+    expect(
+      threadSummaryOf(thread([reply('mg_2', 'b', MOCK_NOW)]), NONE).awaiting_reply_since,
+    ).toBeNull()
+    expect(threadSummaryOf(thread([]), NONE).last_message).toBeNull()
   })
 
-  it('dm_failed 는 마지막 봇 메시지만 본다', () => {
+  it('dm_failed 는 DM 으로 나가는 마지막 글(봇·PM)만 본다', () => {
     const failed = { status: 'failed', reason: 'dm_blocked' } as const
     expect(
-      threadSummaryOf(thread([botMessage('mg_1', 'a', '2026-09-15T09:00:00+09:00', failed)]))
+      threadSummaryOf(thread([botMessage('mg_1', 'a', '2026-09-15T09:00:00+09:00', failed)]), NONE)
         .dm_failed,
     ).toBe(true)
     expect(
@@ -75,8 +86,36 @@ describe('threadSummaryOf', () => {
           botMessage('mg_2', 'b', '2026-09-16T09:00:00+09:00'),
           reply('mg_3', 'c', '2026-09-17T09:00:00+09:00'),
         ]),
+        NONE,
       ).dm_failed,
     ).toBe(false)
+  })
+
+  const SEOYEON = { member_id: 'mb_01', display_name: '김서연' }
+
+  it('PM 글은 답장 기다림을 만들지 않고, DM 으로 나가는 글이라 dm_failed 와 마지막 메시지의 작성자에 든다', () => {
+    const failed = { status: 'failed', reason: 'discord_not_linked' } as const
+    const summary = threadSummaryOf(
+      thread([
+        reply('mg_1', 'a', '2026-09-15T09:00:00+09:00'),
+        pmMessage('mg_2', 'b', '2026-09-16T09:00:00+09:00', SEOYEON, failed),
+      ]),
+      NONE,
+    )
+    expect(summary.awaiting_reply_since).toBeNull()
+    expect(summary.dm_failed).toBe(true)
+    expect(summary.last_message).toMatchObject({
+      sender: 'pm',
+      author_member_id: 'mb_01',
+      author_name: '김서연',
+    })
+    const plain = threadSummaryOf(thread([botMessage('mg_1', 'a', MOCK_NOW)]), NONE)
+    expect(plain.last_message).toMatchObject({ author_member_id: null, author_name: null })
+  })
+
+  it('웹 답장은 대화 주인에게 이어진 웹 계정이 있을 때만이다', () => {
+    expect(threadSummaryOf(thread([]), NONE).web_reply_available).toBe(false)
+    expect(threadSummaryOf(thread([]), new Set(['mb_03'])).web_reply_available).toBe(true)
   })
 })
 
@@ -428,6 +467,7 @@ function workspace(): ReminderContext {
     members: memberFixtures,
     pmName: '김서연',
     workspaceName: '카테캠 3팀',
+    linkedMemberIds: new Set(),
     allBundles,
     allThreads,
   }
@@ -694,5 +734,121 @@ describe('cancelReminder', () => {
     expect(bundleDto(bundle, space).reminders.map(({ reminder_id }) => reminder_id)).toEqual([
       'rm_03',
     ])
+  })
+})
+
+describe('openThread', () => {
+  it('PM 은 공간의 누구든 연다 — 있으면 그 대화, 없으면 빈 대화를 하나만 만든다', () => {
+    const space = workspace()
+    const pm = { viewer: 'pm', memberId: 'mb_01' } as const
+    expect(openThread('mb_03', pm, space)).toEqual({ thread: space.allThreads[0] })
+    const created = openThread('mb_01', pm, space)
+    expect(created).toEqual({
+      thread: {
+        thread_id: 'th_12',
+        workspace_id: 'ws_01',
+        member_id: 'mb_01',
+        name: '김서연',
+        messages: [],
+      },
+    })
+    expect(openThread('mb_01', pm, space)).toEqual(created)
+    expect(space.allThreads).toHaveLength(messageThreadFixtures.length + 1)
+  })
+
+  it('팀원은 자기 대화만 연다. 권한을 팀원 찾기보다 먼저 보고, 없는 팀원은 member_not_found 다', () => {
+    const space = workspace()
+    const member = { viewer: 'member', memberId: 'mb_02' } as const
+    expect(openThread('mb_02', member, space)).toMatchObject({ thread: { thread_id: 'th_02' } })
+    expect(openThread('mb_03', member, space)).toEqual({ refusal: 'forbidden' })
+    expect(openThread('mb_99', member, space)).toEqual({ refusal: 'forbidden' })
+    expect(openThread('mb_99', { viewer: 'pm', memberId: 'mb_01' }, space)).toEqual({
+      refusal: 'member_not_found',
+    })
+    expect(space.allThreads).toHaveLength(messageThreadFixtures.length)
+  })
+})
+
+describe('writeMessage', () => {
+  const SEOYEON = { member_id: 'mb_01', display_name: '김서연' }
+
+  it('대화 주인의 글은 Discord 로 나가지 않는 웹 답장이다', () => {
+    const space = workspace()
+    const own = space.allThreads[1]
+    const message = writeMessage(
+      own,
+      { member_id: 'mb_02', display_name: '박민수' },
+      '네',
+      MOCK_NOW,
+      space,
+    )
+    expect(message).toEqual({
+      message_id: 'mg_22',
+      sender: 'member',
+      body: '네',
+      created_at: MOCK_NOW,
+      reply_channel: 'web',
+      dm_status: null,
+      dm_failure_reason: null,
+      scheduled_at: null,
+      author_member_id: null,
+      author_name: null,
+    })
+    expect(own.messages.at(-1)).toBe(message)
+  })
+
+  it('PM 이 남의 대화에 쓰면 작성자가 붙은 PM 글이고, 받는 팀원의 Discord 가 없으면 못 보냄으로 닫는다', () => {
+    const space = workspace()
+    const [jaehwan, minsu] = space.allThreads
+    expect(writeMessage(minsu, SEOYEON, '확인했어요', MOCK_NOW, space)).toMatchObject({
+      sender: 'pm',
+      reply_channel: null,
+      dm_status: 'pending',
+      dm_failure_reason: null,
+      scheduled_at: null,
+      author_member_id: 'mb_01',
+      author_name: '김서연',
+    })
+    expect(writeMessage(jaehwan, SEOYEON, '확인했어요', MOCK_NOW, space)).toMatchObject({
+      sender: 'pm',
+      dm_status: 'failed',
+      dm_failure_reason: 'discord_not_linked',
+    })
+  })
+
+  it('PM 글의 알림은 대화·5분 구간마다 하나다. 구간이 바뀌면 다시 알리고, 대화 주인의 답장은 알리지 않는다', () => {
+    const space = workspace()
+    const minsu = space.allThreads[1]
+    const notifications: MockNotification[] = []
+    const write = (writer: typeof SEOYEON, at: string) =>
+      notifyNewMessage(
+        notifications,
+        minsu,
+        writeMessage(minsu, writer, '확인했어요', at, space) as MockThreadMessage,
+        at,
+      )
+    const later = (seconds: number) => new Date(Date.parse(MOCK_NOW) + seconds * 1000).toISOString()
+
+    write(SEOYEON, MOCK_NOW)
+    write(SEOYEON, later(299))
+    write({ member_id: 'mb_02', display_name: '박민수' }, later(300))
+    expect(notifications).toHaveLength(1)
+    write(SEOYEON, later(300))
+    expect(
+      notifications.map(({ member_id, text, created_at }) => [member_id, text, created_at]),
+    ).toEqual([
+      ['mb_02', '김서연: 확인했어요', '2026-09-18T00:00:00.000Z'],
+      ['mb_02', '김서연: 확인했어요', '2026-09-18T00:05:00.000Z'],
+    ])
+  })
+
+  it('받는 팀원이 공간에 없으면 쓰지 않는다', () => {
+    const space = workspace()
+    const missing = space.allThreads[3]
+    const before = structuredClone(missing.messages)
+    expect(writeMessage(missing, SEOYEON, 'x', MOCK_NOW, space)).toEqual({
+      refusal: 'member_not_found',
+    })
+    expect(missing.messages).toEqual(before)
   })
 })

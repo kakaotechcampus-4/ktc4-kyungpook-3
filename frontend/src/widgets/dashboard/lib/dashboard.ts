@@ -1,5 +1,5 @@
 import type { Approval } from '@/entities/approval'
-import { isScopeChange, sortByWaiting } from '@/entities/approval'
+import { asrSuspectLine, isScopeChange, sortByWaiting } from '@/entities/approval'
 import type { ExtractionItem } from '@/entities/extraction'
 import type { IntegrationStatus } from '@/entities/integration'
 import type { MeetingSummary } from '@/entities/meeting'
@@ -215,7 +215,10 @@ export function durationLabel(durationMs: number | null): string | null {
   return `${Math.max(1, Math.round(durationMs / 60_000))}분`
 }
 
-/** 확인 필요 행 아래 한 줄 — 왜 확인해야 하는지. 회의록·태스크 목록의 문구와 같다 */
+/**
+ * 확인 필요 행 아래 한 줄 — 왜 확인해야 하는지. 회의록·태스크 목록의 문구와 같다.
+ * 빠진 값이 없을 때만 첫 전사 오인식 의심을 보인다 (#643)
+ */
 export function approvalReason(approval: Approval): string {
   if (approval.kind === 'task_update' && approval.assigneePick !== null)
     return '담당자를 골라야 하는 답장이에요'
@@ -227,7 +230,8 @@ export function approvalReason(approval: Approval): string {
   if (missing.includes('assignee') && missing.includes('due')) return '담당자와 마감을 정해야 해요'
   if (missing.includes('assignee')) return '담당자를 정해야 해요'
   if (missing.includes('due')) return '마감을 정해야 해요'
-  return '내용을 확인해야 해요'
+  const [suspect] = approval.asrSuspects
+  return suspect === undefined ? '내용을 확인해야 해요' : asrSuspectLine(suspect)
 }
 
 /** 확인 필요 행의 제목 */

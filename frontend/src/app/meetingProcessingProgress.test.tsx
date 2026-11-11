@@ -4,7 +4,7 @@ import { onTestFinished } from 'vitest'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { completeMeeting, failMeeting, startChatMeeting } from '@/shared/mock/meetingFlow'
-import { fail } from '@/shared/mock/envelope'
+import { fail, ok } from '@/shared/mock/envelope'
 import { server } from '@/shared/mock/server'
 import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
@@ -23,8 +23,34 @@ function meeting(meetingId: string) {
 }
 
 describe('처리 화면과 #383 의 progress (#384)', () => {
-  it('인계 중이면 extracted 가 참이어도 마지막 단계는 아직 진행 중이다 (#483)', async () => {
+  it('인계 중이면 extracted 가 참이어도 마지막 단계 정리 결과 보내기는 아직 진행 중이다 (#483)', async () => {
     meeting('mt_10').progress = ALL_DONE
+    renderApp(paths.meetingProcessing('ws_01', 'mt_10'))
+
+    expect(await screen.findByRole('heading', { name: '정리하고 있어요' })).toBeInTheDocument()
+    const steps = within(screen.getByRole('list', { name: '정리 단계' })).getAllByRole('listitem')
+    expect(steps.map((step) => step.textContent)).toEqual([
+      '차례 기다리는 중완료',
+      '음성을 텍스트로 옮기기완료',
+      '회의록 정리하기완료',
+      '결정사항과 할 일 뽑아내기완료',
+      '정리 결과 보내기진행 중',
+    ])
+    expect(steps[4]).toHaveAttribute('aria-current', 'step')
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /^4 \/ 5 단계 완료 · 정리 결과 보내기 진행 중$/,
+    )
+  })
+
+  it('처리 단계가 없는 옛 서버(#542 전)는 세 단계이고, 인계 중에도 뽑아내기가 진행 중이다 (#483)', async () => {
+    meeting('mt_10').progress = ALL_DONE
+    server.use(
+      http.get('/api/v1/meetings/mt_10', () => {
+        const legacy: Record<string, unknown> = { ...structuredClone(meeting('mt_10')) }
+        delete legacy.processing
+        return ok(legacy)
+      }),
+    )
     renderApp(paths.meetingProcessing('ws_01', 'mt_10'))
 
     expect(await screen.findByRole('heading', { name: '정리하고 있어요' })).toBeInTheDocument()
@@ -34,7 +60,6 @@ describe('처리 화면과 #383 의 progress (#384)', () => {
       '음성을 텍스트로 옮기기완료',
       '결정사항과 할 일 뽑아내기진행 중',
     ])
-    expect(steps[2]).toHaveAttribute('aria-current', 'step')
     expect(screen.getByRole('status')).toHaveTextContent(
       /^2 \/ 3 단계 완료 · 결정사항과 할 일 뽑아내기 진행 중$/,
     )
@@ -77,25 +102,16 @@ describe('처리 화면과 #383 의 progress (#384)', () => {
   it.each([
     ['단계를 알린 회의(#383 뒤)', ALL_DONE],
     ['데이터로 판정한 회의', { audio_merged: true, transcribed: true, extracted: false }],
-  ])(
-    '항목 0개로 끝난 회의는 extracted 와 관계없이 정리가 끝난 화면이다 — %s',
-    async (_, progress) => {
-      const done = meeting('mt_07')
-      expect(done.status).toBe('done')
-      done.progress = progress
-      renderApp(paths.meetingProcessing('ws_01', 'mt_07'))
+  ])('항목 0개로 끝난 회의도 완료 화면 없이 회의록으로 바로 이동한다 — %s', async (_, progress) => {
+    const done = meeting('mt_07')
+    expect(done.status).toBe('done')
+    done.progress = progress
+    const app = renderApp(paths.meetingProcessing('ws_01', 'mt_07'))
 
-      expect(await screen.findByRole('heading', { name: '정리가 끝났어요' })).toBeInTheDocument()
-      expect(screen.getByRole('link', { name: '회의록 보기' })).toHaveAttribute(
-        'href',
-        paths.meetings('ws_01', 'mt_07'),
-      )
-      expect(screen.queryByRole('list', { name: '정리 단계' })).toBeNull()
-      expect(within(screen.getByRole('main')).getByRole('status')).toHaveTextContent(
-        '정리가 끝났어요',
-      )
-    },
-  )
+    await app.expectPath(paths.meetings('ws_01', 'mt_07'))
+    expect(screen.queryByRole('heading', { name: '정리가 끝났어요' })).toBeNull()
+    expect(screen.queryByRole('list', { name: '정리 단계' })).toBeNull()
+  })
 
   it('인계 단계에서 실패한 회의는 extracted 가 true 여도 실패 화면이고 단계를 완료로 보이지 않는다', async () => {
     meeting('mt_10').progress = ALL_DONE

@@ -61,7 +61,11 @@ def parse_wav_stem(stem: str) -> tuple[str, str]:
 
 
 def parse_transcript_stem(stem: str) -> tuple[str, str, str]:
-    """'{user_id}_{ts}__{model}' → (user_id, ts, model)"""
+    """세션별 또는 이전 파일명에서 (user_id, session, model)을 읽는다."""
+    if stem.startswith('session_') and stem.count('__') >= 2:
+        session, base, model = stem.split('__', 2)
+        user_id, _ = parse_wav_stem(base)
+        return user_id, session.removeprefix('session_'), model or '?'
     base, _, model = stem.partition("__")
     user_id, ts = parse_wav_stem(base)
     return user_id, ts, model or "?"
@@ -142,7 +146,13 @@ def build_session_transcript(out_dir: Path, session: str, model_name: str,
     """
     segs: list[dict] = []
     speakers: dict[str, str] = {}
-    found = sorted(files) if files is not None else sorted(out_dir.glob(f"*_{session}__{model_name}.json"))
+    if files is not None:
+        found = sorted(files)
+    else:
+        found = sorted(out_dir.glob(f"session_{session}__*__{model_name}.json"))
+        if not found:
+            found = sorted(p for p in out_dir.glob(f"*_{session}__{model_name}.json")
+                           if not p.name.startswith('session_'))
     for jp in found:
         if not jp.exists():
             continue
@@ -214,7 +224,7 @@ def results_from_lines(tracks: list, lines: list, *, mode: str, model_name: str,
 
 def transcribe_session_batch(wavs: list[Path], names: dict[str, str], backend, *, mode: str,
                              model_name: str, gate=None, workers: int = 1,
-                             lines_out: list | None = None, progress=None) -> tuple[dict[Path, dict], dict]:
+                             lines_out: list | None = None, progress=None, track_progress=None) -> tuple[dict[Path, dict], dict]:
     """한 세션의 트랙들을 stt.batch 로 전사해 파일당 결과 dict 를 돌려준다.
 
     한 세션을 한 번에 넣는 이유는 순번(seq)이 회의 전체 기준이기 때문이다. 돌려주는 두 번째 값은
@@ -223,7 +233,8 @@ def transcribe_session_batch(wavs: list[Path], names: dict[str, str], backend, *
     from stt import batch as B
 
     tracks = _tracks_for(wavs, names)
-    lines, stats = B.run(tracks, backend, mode=mode, gate=gate, workers=workers, progress=progress)
+    lines, stats = B.run(tracks, backend, mode=mode, gate=gate, workers=workers, progress=progress,
+                         track_progress=track_progress)
     if lines_out is not None:
         lines_out.extend(lines)   # 회의록(md/jsonl)을 쓰려는 호출자용
     results = results_from_lines(tracks, lines, mode=mode, model_name=model_name, backend=backend,
@@ -247,7 +258,7 @@ def save_session_outputs(lines: list, *, results: dict[Path, dict], summary: dic
     out_dir.mkdir(parents=True, exist_ok=True)
     files = []
     for w, result in results.items():
-        stem = out_dir / f"{w.stem}__{model_name}"
+        stem = out_dir / f"session_{session}__{w.stem}__{model_name}"
         _save(result, stem)
         files.append(stem.with_suffix(".json"))
     (out_dir / f"session_{session}__{model_name}.batch.json").write_text(
@@ -258,7 +269,7 @@ def save_session_outputs(lines: list, *, results: dict[Path, dict], summary: dic
 
 def run_session(wavs: list[Path], names: dict[str, str], backend, *, mode: str = "chunk",
                 model_name: str, gate=None, workers: int = 1, out_dir: Path,
-                session_id: str | None = None, progress=None) -> dict:
+                session_id: str | None = None, progress=None, track_progress=None) -> dict:
     """한 세션을 전사해 파일당 json/txt, 세션 통계, 병합 Transcript 까지 쓴다.
 
     돌려주는 dict: results(파일당 결과), summary(통계), lines(회의록용 Line), transcript_json(경로).
@@ -267,7 +278,8 @@ def run_session(wavs: list[Path], names: dict[str, str], backend, *, mode: str =
     """
     lines: list = []
     results, summary = transcribe_session_batch(wavs, names, backend, mode=mode, model_name=model_name,
-                                                gate=gate, workers=workers, lines_out=lines, progress=progress)
+                                                gate=gate, workers=workers, lines_out=lines, progress=progress,
+                                                track_progress=track_progress)
     session = session_id or (parse_wav_stem(wavs[0].stem)[1] if wavs else "")
     merged = save_session_outputs(lines, results=results, summary=summary, model_name=model_name,
                                   out_dir=out_dir, session=session)
@@ -275,7 +287,7 @@ def run_session(wavs: list[Path], names: dict[str, str], backend, *, mode: str =
 
 
 def retry_failed_lines(wavs: list[Path], names: dict[str, str], backend, *, model_name: str, mode: str,
-                       out_dir: Path, session: str) -> dict:
+                       out_dir: Path, session: str, track_progress=None) -> dict:
     """session_<id>.lines.json 의 실패한 줄만 화자 wav 에서 잘라 다시 보내고 산출물을 다시 쓴다.
 
     묶음 대신 클립 하나씩 보내므로 단어 시각 없이도 시각이 맞는다. 순번(seq)은 첫 전사 때 실패한
@@ -289,6 +301,16 @@ def retry_failed_lines(wavs: list[Path], names: dict[str, str], backend, *, mode
     lines = lines_from_json(path)
     tracks = _tracks_for(wavs, names)
     by_speaker = {tr.speaker_id: tr for tr in tracks}
+    index_of = {tr.speaker_id: index for index, tr in enumerate(tracks)}
+    remaining = [0] * len(tracks)
+    for ln in lines:
+        if ln.error and ln.speaker_id in index_of:
+            remaining[index_of[ln.speaker_id]] += 1
+    finished = sum(count == 0 for count in remaining)
+    if tracks and track_progress is not None:
+        track_progress(0, len(tracks))
+        if finished:
+            track_progress(finished, len(tracks))
     stats = B.BatchStats(mode=mode, backend=getattr(backend, "name", type(backend).__name__))
     audio: dict[str, np.ndarray] = {}
     retried = 0
@@ -306,6 +328,12 @@ def retry_failed_lines(wavs: list[Path], names: dict[str, str], backend, *, mode
         ln.text = r.text if (r is not None and not err) else ""
         ln.error = err
         ln.transcribe_s = round(dt, 3)
+        index = index_of[ln.speaker_id]
+        remaining[index] -= 1
+        if remaining[index] == 0:
+            finished += 1
+            if track_progress is not None:
+                track_progress(finished, len(tracks))
     results = results_from_lines(tracks, lines, mode=mode, model_name=model_name, backend=backend,
                                  by_speaker_s=stats.by_speaker_s)
     summary_path = out_dir / f"session_{session}__{model_name}.batch.json"
@@ -414,7 +442,7 @@ def main() -> int:
         print(f"\n=== {backend.name} · mode={args.mode} · workers={workers} · gate={'off' if gate is None else 'on'} ===")
 
         for ts, session_wavs in sorted(by_session.items()):
-            stems = {w: out_dir / f"{w.stem}__{model_name}" for w in session_wavs}
+            stems = {w: out_dir / f"session_{ts}__{w.stem}__{model_name}" for w in session_wavs}
             done = all(s.with_suffix(".json").exists() for s in stems.values())
             if done and not args.overwrite:
                 for w, stem in stems.items():

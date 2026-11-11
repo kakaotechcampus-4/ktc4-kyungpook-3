@@ -45,7 +45,7 @@ export function settleMockOAuth({
   const integrations = db.integrations[workspaceId]
   if (requirePmRole(workspaceId) !== null || integrations === undefined) return 'failed'
   const connected = {
-    status: 'connected',
+    status: 'connected' as const,
     display_name: `${PROVIDER_NAME[provider]} 연결됨`,
     connected_at: MOCK_NOW,
   }

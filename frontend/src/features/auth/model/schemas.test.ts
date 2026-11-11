@@ -1,9 +1,12 @@
 import {
   AUTH_MESSAGES,
   forgotPasswordSchema,
+  kakaoProfileSchema,
   loginSchema,
   resetPasswordSchema,
-  signupSchema,
+  signupCodeSchema,
+  signupEmailSchema,
+  signupProfileSchema,
 } from './schemas'
 
 function issues(result: {
@@ -13,30 +16,24 @@ function issues(result: {
   return (result.error?.issues ?? []).map(({ path, message }) => [path.join('.'), message])
 }
 
-describe('회원가입 검증', () => {
-  const valid = { name: '최진호', email: 'pm@example.com', password: 'abcd1234' }
+const profile = { username: 'newuser1', name: '새 사용자', password: 'pass1234' }
 
-  it('이름·이메일·비밀번호가 규칙에 맞으면 통과하고 이름·이메일의 앞뒤 공백을 지운다', () => {
-    expect(
-      signupSchema.parse({ name: '  최진호 ', email: ' pm@example.com ', password: 'abcd1234' }),
-    ).toEqual(valid)
-  })
-
-  it('이름은 필수다 — 공백만 있어도 비었다', () => {
-    expect(issues(signupSchema.safeParse({ ...valid, name: '   ' }))).toEqual([
-      ['name', AUTH_MESSAGES.nameRequired],
-    ])
+describe('회원가입 이메일 단계', () => {
+  it('앞뒤 공백을 지운다', () => {
+    expect(signupEmailSchema.parse({ email: ' pm@example.com ' })).toEqual({
+      email: 'pm@example.com',
+    })
   })
 
   it('이름은 100자까지다 — 101자는 거절한다 (#446)', () => {
-    expect(issues(signupSchema.safeParse({ ...valid, name: 'a'.repeat(101) }))).toEqual([
+    expect(issues(signupProfileSchema.safeParse({ ...profile, name: 'a'.repeat(101) }))).toEqual([
       ['name', AUTH_MESSAGES.nameTooLong],
     ])
-    expect(signupSchema.safeParse({ ...valid, name: 'a'.repeat(100) }).success).toBe(true)
+    expect(signupProfileSchema.safeParse({ ...profile, name: 'a'.repeat(100) }).success).toBe(true)
   })
 
   it('이름 길이는 앞뒤 공백을 지운 뒤에 센다', () => {
-    expect(signupSchema.parse({ ...valid, name: `  ${'a'.repeat(100)} ` }).name).toBe(
+    expect(signupProfileSchema.parse({ ...profile, name: `  ${'a'.repeat(100)} ` }).name).toBe(
       'a'.repeat(100),
     )
   })
@@ -46,26 +43,63 @@ describe('회원가입 검증', () => {
     ['pm', AUTH_MESSAGES.emailFormat],
     ['pm@', AUTH_MESSAGES.emailFormat],
   ])('이메일 %j 는 %s', (email, message) => {
-    expect(issues(signupSchema.safeParse({ ...valid, email }))).toEqual([['email', message]])
+    expect(issues(signupEmailSchema.safeParse({ email }))).toEqual([['email', message]])
+  })
+})
+
+describe('회원가입 코드 단계', () => {
+  it('메일에서 복사한 앞뒤 공백을 지운다', () => {
+    expect(signupCodeSchema.parse({ code: ' 012345 ' })).toEqual({ code: '012345' })
+  })
+
+  it.each(['', '12345', '1234567', '12a456', '１２３４５６'])('코드 %j 는 거절한다', (code) => {
+    expect(issues(signupCodeSchema.safeParse({ code }))).toEqual([
+      ['code', AUTH_MESSAGES.codeFormat],
+    ])
+  })
+})
+
+describe('회원가입 프로필 단계', () => {
+  const valid = { username: 'newuser1', name: '최진호', password: 'abcd1234' }
+
+  it('이름의 앞뒤 공백을 지운다', () => {
+    expect(signupProfileSchema.parse({ ...valid, name: '  최진호 ' })).toEqual(valid)
+  })
+
+  it('이름은 필수다 — 공백만 있어도 비었다', () => {
+    expect(issues(signupProfileSchema.safeParse({ ...valid, name: '   ' }))).toEqual([
+      ['name', AUTH_MESSAGES.nameRequired],
+    ])
   })
 
   it.each([
     ['abc123', '8자 미만'],
     ['abcdefgh', '숫자 없음'],
+    ['😀😀😀😀1', '이모지 4개 + 숫자는 UTF-16 으로 9칸이지만 BE 는 5자로 센다'],
   ])('비밀번호 %j 는 거절한다 (%s)', (password) => {
-    expect(issues(signupSchema.safeParse({ ...valid, password }))[0]).toEqual([
+    expect(issues(signupProfileSchema.safeParse({ ...valid, password }))[0]).toEqual([
       'password',
       AUTH_MESSAGES.passwordRule,
     ])
   })
 
   it('비밀번호는 8자 이상이고 숫자가 있으면 된다 — 강도는 보지 않는다', () => {
-    expect(signupSchema.safeParse({ ...valid, password: '1aaaaaaa' }).success).toBe(true)
-    expect(signupSchema.safeParse({ ...valid, password: '12345678' }).success).toBe(true)
+    expect(signupProfileSchema.safeParse({ ...valid, password: '1aaaaaaa' }).success).toBe(true)
+    expect(signupProfileSchema.safeParse({ ...valid, password: '12345678' }).success).toBe(true)
+    expect(signupProfileSchema.safeParse({ ...valid, password: '😀😀😀😀😀😀😀1' }).success).toBe(
+      true,
+    )
   })
 
   it('약관 동의 칸이 없다', () => {
-    expect(Object.keys(signupSchema.shape)).toEqual(['name', 'email', 'password'])
+    expect(Object.keys(signupProfileSchema.shape)).toEqual(['username', 'name', 'password'])
+  })
+
+  it('카카오 가입은 비밀번호를 보지 않는다 (#627)', () => {
+    expect(kakaoProfileSchema.safeParse({ ...valid, password: '' }).success).toBe(true)
+    expect(issues(kakaoProfileSchema.safeParse({ ...valid, name: ' ' }))).toEqual([
+      ['name', AUTH_MESSAGES.nameRequired],
+    ])
   })
 })
 
@@ -96,6 +130,7 @@ describe('비밀번호 재설정 검증 (#356)', () => {
     ['', AUTH_MESSAGES.passwordRequired],
     ['abc123', AUTH_MESSAGES.passwordRule],
     ['abcdefgh', AUTH_MESSAGES.passwordRule],
+    ['😀😀😀😀1', AUTH_MESSAGES.passwordRule],
   ])('새 비밀번호 %j 는 가입과 같은 규칙으로 거절한다', (newPassword, message) => {
     expect(issues(resetPasswordSchema.safeParse({ newPassword }))[0]).toEqual([
       'newPassword',

@@ -1,14 +1,15 @@
 import type { Bundle, Message, MessageThread } from '@/entities/message'
 import {
-  DM_FAILURE_TEXT,
   avatarText,
   awaitingDays,
   clockTime,
   dayLabel,
+  dmFailureText,
   groupByDay,
   shortDateTime,
 } from '../lib/format'
-import type { ThreadPolicy } from './viewer'
+import { isOwnMessage } from './viewer'
+import type { Authorship, ThreadPolicy } from './viewer'
 
 export interface BubbleItem {
   kind: 'bubble'
@@ -28,6 +29,8 @@ export interface BubbleItem {
   dmFailure: string | null
   /** 왼쪽 말풍선만 */
   avatar: string | null
+  /** 말풍선 위에 보이는 작성자. 왼쪽 PM 글만 갖는다 — PM 이 여럿일 수 있다 */
+  author: string | null
 }
 
 /** `여기서부터 답장이 없습니다` — 마지막 메시지 바로 뒤에 둔다 */
@@ -79,14 +82,28 @@ function messageBubble(
           : clockTime(message.createdAt),
       dmFailure: null,
       avatar: side === 'other' ? avatarText(ctx.name) : null,
+      author: null,
     }
+  const dmFailure =
+    message.dm.status === 'failed' ? `DM 못 보냄 · ${dmFailureText(message.dm.reason)}` : null
+  if (message.sender === 'pm') {
+    const author = message.authorName ?? 'PM'
+    return {
+      ...base,
+      speaker: side === 'own' ? '나' : author,
+      timeLine: clockTime(message.createdAt),
+      dmFailure,
+      avatar: side === 'other' ? avatarText(author) : null,
+      author: side === 'other' ? author : null,
+    }
+  }
   return {
     ...base,
     speaker: '봇',
     timeLine: clockTime(message.createdAt),
-    dmFailure:
-      message.dm.status === 'failed' ? `DM 못 보냄 · ${DM_FAILURE_TEXT[message.dm.reason]}` : null,
+    dmFailure,
     avatar: side === 'other' ? avatarText(ctx.botName) : null,
+    author: null,
   }
 }
 
@@ -105,6 +122,7 @@ function bundleBubble(bundle: Bundle, side: 'own' | 'other', now: number): Bubbl
     drafting: bundle.drafting,
     dmFailure: null,
     avatar: null,
+    author: null,
   }
 }
 
@@ -114,22 +132,26 @@ export function threadHeading(
   policy: ThreadPolicy,
   botName: string,
 ): Pick<ConversationView, 'title' | 'subtitle' | 'avatar'> {
+  if (policy.audience === 'pm')
+    return {
+      title: name,
+      subtitle: `Discord 개인 메시지 · ${botName} 봇으로 보냄`,
+      avatar: avatarText(name),
+    }
   return {
-    title: policy.ownSender === 'member' ? `${botName} 봇` : name,
-    subtitle: policy.reply
-      ? 'Discord 개인 메시지 · 웹에서도 답장할 수 있어요'
-      : `Discord 개인 메시지 · ${botName} 봇으로 보냄`,
-    avatar: avatarText(policy.ownSender === 'member' ? botName : name),
+    title: `${botName} 봇`,
+    subtitle: 'Discord 개인 메시지 · 웹에서도 답장할 수 있어요',
+    avatar: avatarText(botName),
   }
 }
 
-/** 대화를 그릴 모양으로. 보낸 쪽이 policy.ownSender 와 같으면 오른쪽이다 */
+/** 대화를 그릴 모양으로. 오른쪽(내 글)은 isOwnMessage 가 정한다 */
 export function buildConversation(
   thread: MessageThread,
   ctx: { policy: ThreadPolicy; botName: string; today: string; now: number },
 ): ConversationView {
   const { policy, botName, today, now } = ctx
-  const sideOf = (sender: 'bot' | 'member') => (sender === policy.ownSender ? 'own' : 'other')
+  const sideOf = (message: Authorship) => (isOwnMessage(policy, message) ? 'own' : 'other')
   const waitingDays =
     policy.awaiting && thread.awaitingReplySince !== null
       ? awaitingDays(thread.awaitingReplySince, today)
@@ -137,14 +159,17 @@ export function buildConversation(
 
   const placed: { at: string; item: ConversationItem }[] = thread.messages.map((message) => ({
     at: message.createdAt,
-    item: messageBubble(message, sideOf(message.sender), { name: thread.name, botName }),
+    item: messageBubble(message, sideOf(message), { name: thread.name, botName }),
   }))
   const last = placed.at(-1)
   if (waitingDays !== null && last !== undefined)
     placed.push({ at: last.at, item: { kind: 'waiting', id: 'waiting', days: waitingDays } })
   // 같은 시각이면 메시지가 먼저다 — 정렬은 안정적이다
   for (const bundle of thread.upcoming)
-    placed.push({ at: bundle.scheduledAt, item: bundleBubble(bundle, sideOf('bot'), now) })
+    placed.push({
+      at: bundle.scheduledAt,
+      item: bundleBubble(bundle, sideOf({ sender: 'bot' }), now),
+    })
   placed.sort((left, right) => Date.parse(left.at) - Date.parse(right.at))
 
   return {

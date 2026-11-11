@@ -19,6 +19,7 @@ from app.models import (
     Workspace,
 )
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 
 @pytest.fixture
@@ -42,7 +43,7 @@ def db():
 
 @pytest.fixture
 def seed(db):
-    user = User(email="pm@example.com", name="pm")
+    user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     db.add(user)
     db.flush()
     db.add(
@@ -180,6 +181,7 @@ def test_workspace_meeting_list_reads_source_once(client, db, seed):
     ("source", "stage", "visible"),
     [
         ("manual_upload", "speaker_assignment_expired", True),
+        ("manual_upload", "upload_unclaimed", True),
         ("manual_upload", "diarize", False),
         ("manual_upload", "STT", False),
         ("manual_upload", None, False),
@@ -187,7 +189,7 @@ def test_workspace_meeting_list_reads_source_once(client, db, seed):
         ("discord", "speaker_assignment_expired", False),
     ],
 )
-def test_list_keeps_only_expired_manual_upload_failures(client, db, seed, source, stage, visible):
+def test_list_keeps_only_reupload_manual_upload_failures(client, db, seed, source, stage, visible):
     meeting = Meeting(
         workspace_id=seed["ws"], title="기한이 지난 업로드",
         source=source, status="failed", failed_stage=stage,
@@ -246,7 +248,8 @@ def test_audio_merged_follows_source(client, db, seed):
 @pytest.mark.parametrize(
     ("stored", "expected"),
     [
-        ('{"decisions": ["배포 일정 확정"]}', {"decisions": ["배포 일정 확정"]}),
+        ('{"overview": "배포 일정 확정"}', {"overview": "배포 일정 확정", "decisions": [], "decision_details": [],
+                                      "topics": [], "topic_ids": []}),
         ("{깨진 JSON", None),
         ('["목록"]', None),
         ('"문자열"', None),

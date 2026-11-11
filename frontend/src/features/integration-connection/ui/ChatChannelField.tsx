@@ -1,4 +1,5 @@
 import { useId, useState } from 'react'
+import { chatChannelLabel } from '@/entities/integration'
 import type { DiscordIntegration } from '@/entities/integration'
 import { useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
@@ -53,7 +54,10 @@ export function ChatChannelField({ workspaceId, integration }: ChatChannelFieldP
   const failureId = `${id}-failure`
   const showNotice = isDirty && selected !== null
 
-  const options = channels.map(({ channelId, name }) => ({ value: channelId, label: `#${name}` }))
+  const options = channels.map((channel) => ({
+    value: channel.channelId,
+    label: chatChannelLabel(channel),
+  }))
 
   const change = (channelId: string | null) => {
     setDraft(channelId)

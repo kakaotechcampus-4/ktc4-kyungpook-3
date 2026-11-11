@@ -2,8 +2,10 @@ import { unwrap } from '@/shared/api/envelope'
 import type { Envelope, ListDto } from '@/shared/types/api/envelope'
 import type { MemberDto } from '@/shared/types/api/member'
 import type { DiscordUserDto, MemberAliasDto } from '@/shared/types/api/member'
-import { toDiscordUser, toMember, toMemberAlias, toUnresolvedAlias } from './model/mapper'
-import type { UnresolvedAliasDto } from '@/shared/types/api/member'
+import { toDiscordUser, toMember, toMemberAlias } from './model/mapper'
+import type { MockUnresolvedAlias } from '@/shared/mock/fixtures/member'
+import { db } from '@/shared/mock/db'
+import { setMockRole } from '@/shared/mock/sessions'
 
 it('scopes members and supports unlinking a Discord user', async () => {
   const list = await fetch('http://localhost:3000/api/v1/members?workspace_id=ws_01')
@@ -30,12 +32,12 @@ it('creates, lists and deletes aliases and maps unresolved names', async () => {
   const created = await fetch(`${base}/members/mb_03/aliases`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ alias_text: '재환' }),
+    body: JSON.stringify({ alias_text: '재환이' }),
   })
   const alias = toMemberAlias(
     unwrap((await created.json()) as Envelope<MemberAliasDto>, created.status),
   )
-  expect(alias).toMatchObject({ text: '재환', memberId: 'mb_03' })
+  expect(alias).toMatchObject({ text: '재환이', memberId: 'mb_03', source: 'manual' })
   expect((await fetch(`${base}/members/aliases/${alias.id}`, { method: 'DELETE' })).status).toBe(
     204,
   )
@@ -44,11 +46,9 @@ it('creates, lists and deletes aliases and maps unresolved names', async () => {
   )
   const unresolved = await fetch(`${base}/members/unresolved-aliases?workspace_id=ws_01`)
   expect(
-    unwrap(
-      (await unresolved.json()) as Envelope<ListDto<UnresolvedAliasDto>>,
-      unresolved.status,
-    ).items.map(toUnresolvedAlias),
-  ).toEqual([{ text: '지훈', occurrences: 3, lastSeenAt: '2026-09-15T06:00:00Z' }])
+    unwrap((await unresolved.json()) as Envelope<ListDto<MockUnresolvedAlias>>, unresolved.status)
+      .items,
+  ).toEqual([{ alias_text: '지훈', occurrences: 3, last_seen_at: '2026-09-15T06:00:00Z' }])
   expect((await fetch(`${base}/workspaces/ws_02/discord/members`)).status).toBe(409)
 })
 
@@ -57,11 +57,11 @@ it('keeps alias ids unique after an alias is deleted', async () => {
   const firstCreated = await fetch(`${base}/members/mb_02/aliases`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ alias_text: '민수' }),
+    body: JSON.stringify({ alias_text: '민수 님' }),
   })
   expect(
     unwrap((await firstCreated.json()) as Envelope<MemberAliasDto>, firstCreated.status).alias_id,
-  ).toBe('al_02')
+  ).toBe('al_11')
   expect((await fetch(`${base}/members/aliases/al_01`, { method: 'DELETE' })).status).toBe(204)
 
   const created = await fetch(`${base}/members/mb_03/aliases`, {
@@ -70,7 +70,7 @@ it('keeps alias ids unique after an alias is deleted', async () => {
     body: JSON.stringify({ alias_text: '새 별칭' }),
   })
   const alias = unwrap((await created.json()) as Envelope<MemberAliasDto>, created.status)
-  expect(alias.alias_id).toBe('al_03')
+  expect(alias.alias_id).toBe('al_12')
 })
 
 it('creates a member, rejects invalid roles and requires an existing workspace', async () => {
@@ -99,11 +99,22 @@ it('covers Discord users, aliases, workspace scoping, duplicate mapping, and mis
   expect(users).toHaveLength(4)
   expect(users.find(({ discordUserId }) => discordUserId === '1199')).toMatchObject({ isBot: true })
   const aliases = await fetch('http://localhost:3000/api/v1/members/aliases?workspace_id=ws_01')
-  expect(
-    unwrap((await aliases.json()) as Envelope<ListDto<MemberAliasDto>>, aliases.status).items.map(
-      toMemberAlias,
-    ),
-  ).toMatchObject([{ text: '서연', type: 'nickname' }])
+  const listed = unwrap(
+    (await aliases.json()) as Envelope<ListDto<MemberAliasDto>>,
+    aliases.status,
+  ).items.map(toMemberAlias)
+  // 최근에 만든 것부터 온다
+  expect(listed.slice(0, 2)).toMatchObject([
+    { text: '재한', source: 'learned' },
+    { text: '서연', source: 'manual' },
+  ])
+  expect(new Set(listed.map(({ source }) => source))).toEqual(
+    new Set(['manual', 'display_name', 'discord_profile', 'learned']),
+  )
+  expect(listed.find(({ text }) => text === '하늘이')).toMatchObject({
+    memberId: 'mb_04',
+    verified: false,
+  })
   const ws2 = await fetch('http://localhost:3000/api/v1/members?workspace_id=ws_02')
   expect(unwrap((await ws2.json()) as Envelope<ListDto<MemberDto>>, ws2.status).total).toBe(0)
   const duplicate = await fetch('http://localhost:3000/api/v1/members', {
@@ -124,7 +135,7 @@ describe('unresolved aliases', () => {
   const unresolved = async () => {
     const response = await fetch(`${base}/members/unresolved-aliases?workspace_id=ws_01`)
     return unwrap(
-      (await response.json()) as Envelope<ListDto<UnresolvedAliasDto>>,
+      (await response.json()) as Envelope<ListDto<MockUnresolvedAlias>>,
       response.status,
     ).items.map(({ alias_text }) => alias_text)
   }
@@ -184,4 +195,129 @@ it('returns the existing alias instead of creating a duplicate', async () => {
   const listed = await fetch(`${base}/members/aliases?workspace_id=ws_01`)
   const aliases = unwrap((await listed.json()) as Envelope<ListDto<MemberAliasDto>>, listed.status)
   expect(aliases.items.filter(({ alias_text }) => alias_text === '중복 별칭')).toHaveLength(1)
+})
+
+describe('alias writes', () => {
+  const base = `${location.origin}/api/v1`
+  const post = (memberId: string, body: unknown) =>
+    fetch(`${base}/members/${memberId}/aliases`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  const read = async (response: Response) =>
+    unwrap((await response.json()) as Envelope<MemberAliasDto>, response.status)
+  const remove = (aliasId: string) =>
+    fetch(`${base}/members/aliases/${aliasId}`, { method: 'DELETE' })
+
+  it('rejects writes from a non-PM member and leaves the aliases alone', async () => {
+    setMockRole('member')
+    const created = await post('mb_03', { alias_text: '새 별칭' })
+    expect(created.status).toBe(403)
+    expect(await created.json()).toMatchObject({ error: { code: 'FORBIDDEN' } })
+    expect((await remove('al_10')).status).toBe(403)
+    // 별칭이 없으면 권한보다 먼저 404 다
+    expect((await remove('al_99')).status).toBe(404)
+
+    const listed = await fetch(`${base}/members/aliases?workspace_id=ws_01`)
+    const items = unwrap(
+      (await listed.json()) as Envelope<ListDto<MemberAliasDto>>,
+      listed.status,
+    ).items
+    expect(items.map(({ alias_text }) => alias_text)).toContain('재한')
+    expect(items.map(({ alias_text }) => alias_text)).not.toContain('새 별칭')
+  })
+
+  it('stores the text trimmed with inner whitespace collapsed', async () => {
+    expect(await read(await post('mb_03', { alias_text: '  재환   대리 ' }))).toMatchObject({
+      alias_text: '재환 대리',
+      source: 'manual',
+      verified: true,
+    })
+  })
+
+  it('rejects blank, over-100 and server-only display_name requests with 400', async () => {
+    for (const body of [
+      { alias_text: '   ' },
+      { alias_text: '가'.repeat(101) },
+      { alias_text: '새 별칭', source: 'display_name' },
+    ]) {
+      const response = await post('mb_03', body)
+      expect(response.status, JSON.stringify(body)).toBe(400)
+      expect(await response.json()).toMatchObject({ error: { code: 'INVALID_REQUEST' } })
+    }
+    expect((await post('mb_03', { alias_text: '가'.repeat(100) })).status).toBe(201)
+    expect((await post('mb_99', { alias_text: '새 별칭' })).status).toBe(404)
+  })
+
+  it('counts the length in characters (code points) like the server, not UTF-16 units', async () => {
+    const emoji = String.fromCodePoint(0x1f600)
+    expect((await post('mb_03', { alias_text: emoji.repeat(100) })).status).toBe(201)
+    expect((await post('mb_03', { alias_text: emoji.repeat(101) })).status).toBe(400)
+  })
+
+  it('upgrades an automatic alias to manual when a PM adds the same text', async () => {
+    expect(await read(await post('mb_02', { alias_text: '민수' }))).toMatchObject({
+      alias_id: 'al_04',
+      source: 'manual',
+      alias_type: 'nickname',
+    })
+    expect(await read(await post('mb_04', { alias_text: '하늘이' }))).toMatchObject({
+      alias_id: 'al_09',
+      source: 'manual',
+      verified: true,
+      confidence: 1,
+    })
+    // 사람이 정한 별칭과 자동 출처로 다시 넣는 요청은 그대로 둔다
+    expect(
+      await read(await post('mb_01', { alias_text: '서연', source: 'learned' })),
+    ).toMatchObject({ alias_id: 'al_01', source: 'manual' })
+    expect(
+      await read(await post('mb_03', { alias_text: '이재환', source: 'discord_profile' })),
+    ).toMatchObject({ alias_id: 'al_05', source: 'display_name' })
+    // 다른 팀원은 같은 글자를 가져도 된다
+    expect(await read(await post('mb_01', { alias_text: '민수' }))).toMatchObject({
+      member_id: 'mb_01',
+      alias_text: '민수',
+    })
+  })
+})
+
+// 백엔드 pick_discord_nickname: 서버 별명(nick) → 계정 표시 이름(global_name) 순으로 한글만인 첫 값. 사용자 이름은 보지 않는다
+describe('Discord nickname alias on link', () => {
+  const base = `${location.origin}/api/v1`
+  const linkJihun = async () => {
+    const response = await fetch(`${base}/members/mb_03`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ discord_user_id: '1125' }),
+    })
+    expect(response.status).toBe(200)
+    const aliases = await fetch(`${base}/members/aliases?workspace_id=ws_01`)
+    return unwrap((await aliases.json()) as Envelope<ListDto<MemberAliasDto>>, aliases.status)
+      .items.map(toMemberAlias)
+      .filter(({ memberId, source }) => memberId === 'mb_03' && source === 'discord_profile')
+      .map(({ text }) => text)
+  }
+  const jihun = () => db.discordUsers.find(({ discord_user_id }) => discord_user_id === '1125')!
+
+  it('takes the server nickname before the account display name', async () => {
+    Object.assign(jihun(), { display_name: '제이', nick: '제이', global_name: '박지훈' })
+    expect(await linkJihun()).toEqual(['제이'])
+  })
+
+  it('falls back to the account display name when the server nickname is not Hangul only', async () => {
+    Object.assign(jihun(), { display_name: 'JH', nick: 'JH', global_name: '지훈이' })
+    expect(await linkJihun()).toEqual(['지훈이'])
+  })
+
+  it('never takes the username', async () => {
+    Object.assign(jihun(), {
+      display_name: '지훈',
+      nick: null,
+      global_name: null,
+      username: '지훈',
+    })
+    expect(await linkJihun()).toEqual([])
+  })
 })

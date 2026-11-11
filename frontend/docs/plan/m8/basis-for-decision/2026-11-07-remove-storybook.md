@@ -1,7 +1,7 @@
 # Storybook 을 지우고 검사를 RTL·E2E 로 모은다(D-181, D-141 폐기)
 
 - 기록일: 2026-11-07
-- 관련 마일스톤: 마일스톤 밖 작업(#482). 결과는 [#482 결과](../../../issues/482-remove-storybook/result.md)
+- 관련 마일스톤: 마일스톤 밖 작업(#482). 결과는 [#482 결과](../../m0/work-items/482-remove-storybook/result.md)
 
 ## 문제와 제약
 
@@ -47,5 +47,5 @@
 ## 근거와 관련 문서
 
 - 이슈 [#482](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/482) 본문(배경 수치와 결정일).
-- 분류표: 로컬 검증 자료 `frontend/.verify/reports/482-classification.md`(git 제외). 요약은 [#482 결과](../../../issues/482-remove-storybook/result.md)에 옮겼다.
+- 분류표: 로컬 검증 자료 `frontend/.verify/reports/482-classification.md`(git 제외). 요약은 [#482 결과](../../m0/work-items/482-remove-storybook/result.md)에 옮겼다.
 - [MSW 사용 안내](../../../msw-guide.md) 「E2E 에서 고르기」.

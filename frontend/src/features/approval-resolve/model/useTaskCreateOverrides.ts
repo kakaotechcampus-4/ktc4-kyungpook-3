@@ -1,8 +1,14 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWatch } from 'react-hook-form'
 import type { UseFormReturn } from 'react-hook-form'
-import { taskCreateValues, validateTaskCreateFields } from '@/entities/approval'
+import {
+  aliasToLearn,
+  approvalChange,
+  taskCreateValues,
+  validateTaskCreateFields,
+} from '@/entities/approval'
 import type {
+  ApprovalChange,
   TaskCreateApproval,
   TaskCreateEdits,
   TaskCreateFields,
@@ -22,18 +28,47 @@ export interface TaskCreateOverrides {
   edits: TaskCreateEdits
   dirty: boolean
   attention: Record<TaskCreateIssue, FieldAttention>
+  /** 지금 담당자에게 별칭으로 등록할 글자. null 이면 묻지 않는다 (#523) */
+  aliasText: string | null
+  /** 별칭 등록 체크. 처음엔 켜져 있고, 미정을 골라 숨겨도 PM 이 고른 값을 기억한다 */
+  saveAlias: boolean
+  setSaveAlias: (saveAlias: boolean) => void
+  /**
+   * 지금 폼이 맞춰진 카드. 승인·반려는 PM 이 화면에서 본 이 카드의 `payloadVersion` 을 싣는다 (#547).
+   * 별칭 후보는 payload 밖에서 지금 별칭으로 구하므로 지문이 같아도 바뀐다. 그 값만 최신 응답을 쓴다
+   */
+  seen: TaskCreateApproval
+  /** 폼을 연 뒤 카드가 바뀌었으면 처음 본 카드와 지금 카드의 차이. 바뀐 적 없으면 null */
+  change: { before: TaskCreateApproval; diff: ApprovalChange } | null
 }
 
 /**
  * 생성 승인의 늘 열린 입력 칸 (#471). 고친 값은 이 폼 하나가 쥐고, 승인할 때 `edits` 를 그대로 보낸다.
- * 검사는 승인 본문과 같은 `overridesSchema`(= `validateTaskCreateFields`)다
+ * 검사는 승인 본문과 같은 `overridesSchema`(= `validateTaskCreateFields`)다.
+ * 같은 승인의 새 카드(`payloadVersion` 이 다름)를 받으면 고치지 않은 칸만 새 값으로 바꾸고 PM 이 고친 칸은 둔다 (#512)
  */
 export function useTaskCreateOverrides(
   approval: TaskCreateApproval,
   memberIds: readonly string[],
 ): TaskCreateOverrides {
   const schema = useMemo(() => overridesSchema(memberIds), [memberIds])
-  const { form } = useAppForm(schema, toOverrideFormValues(taskCreateValues(approval)))
+  const [seen, setSeen] = useState(approval)
+  const [firstSeen, setFirstSeen] = useState<TaskCreateApproval | null>(null)
+  if (approval.payloadVersion !== seen.payloadVersion) {
+    setFirstSeen(firstSeen ?? seen)
+    setSeen(approval)
+  }
+  const { form } = useAppForm(schema, toOverrideFormValues(taskCreateValues(seen)))
+  const applied = useRef(seen)
+  useEffect(() => {
+    if (applied.current === seen) return
+    applied.current = seen
+    // 기본값을 새 카드로 옮겨, 뒤에 PM 이 고치는 칸도 새 제안과 비교한다
+    form.reset(toOverrideFormValues(taskCreateValues(seen)), {
+      keepDirtyValues: true,
+      keepDirty: true,
+    })
+  }, [form, seen])
   const fields = toTaskCreateFields(useWatch({ control: form.control }) as OverrideFormValues)
   const { dirtyFields, isDirty } = form.formState
   const edits: TaskCreateEdits = {
@@ -42,11 +77,18 @@ export function useTaskCreateOverrides(
     ...(dirtyFields.dueDate ? { dueDate: fields.dueDate } : {}),
   }
   const issues = validateTaskCreateFields(fields, memberIds)
+  const [saveAlias, setSaveAlias] = useState(true)
   return {
     form,
     fields,
     edits,
     dirty: isDirty,
     attention: fieldAttention(approval.missing, fields, issues),
+    aliasText: aliasToLearn(approval, fields),
+    saveAlias,
+    setSaveAlias,
+    seen: { ...seen, aliasCandidate: approval.aliasCandidate },
+    change:
+      firstSeen === null ? null : { before: firstSeen, diff: approvalChange(firstSeen, seen) },
   }
 }

@@ -1,0 +1,261 @@
+from datetime import date, datetime
+from typing import Annotated, Any, Literal
+
+from pydantic import BaseModel, Field, model_validator
+
+from app.models import DecisionState
+
+SummaryRequestState = Literal[
+    "requested", "done", "queued", "gave_up", "no_sources", "awaiting_approval", "no_approved_items", "not_done"
+]
+
+
+class SummaryClaimBody(BaseModel):
+    """본문이 없으면 범위 없이 가져간다. 빈 목록은 아무것도 가져가지 않는다."""
+
+    extraction_ids: list[str] | None = Field(None, max_length=500)
+
+
+class SummaryClaimResponse(BaseModel):
+    extraction_id: str
+    meeting_id: str
+    workspace_id: str
+    attempt: int
+    claim_token: str
+    identity_epoch: int
+
+
+class SummaryInputLine(BaseModel):
+    seq: int
+    at_ms: int
+    speaker: str
+    text: str
+
+
+class SummaryInputItem(BaseModel):
+    item_id: str
+    action: str
+    title: str
+    assignee: str | None
+    due_date: date | None
+    # 수정 항목이 바꾼 상태. 새 항목과 상태를 바꾸지 않은 수정은 None
+    status: str | None = None
+    # 수정 항목이 비운 칸. assignee·due_date 가 None 인 것만으로는 바꾸지 않은 것과 구별되지 않는다
+    cleared: list[Literal["assignee", "due_date"]] = []
+    # 승인된 범위 결정 수정의 설명. 범위는 바꾸는 칸이 없어 따로 싣는다
+    scope: str | None = None
+
+
+class SummaryInputTopic(BaseModel):
+    topic_id: str
+    name: str
+    description: str
+
+
+class SummaryInputDecision(BaseModel):
+    decision_id: str
+    text: str
+    topic: str
+    decided_on: date
+
+
+class SummaryInputResponse(BaseModel):
+    extraction_id: str
+    meeting_id: str
+    workspace_id: str
+    identity_epoch: int
+    title: str | None
+    started_at: datetime
+    source: str
+    # 전사 오인식을 고칠 때 쓰는 이름과 용어. 팀원은 워크스페이스 순서, 용어는 가나다순
+    members: list[str]
+    asr_terms: list[str]
+    lines: list[SummaryInputLine]
+    # 반영된 항목만이고 값은 그 회의 항목이 정한 값에 PM 이 승인하며 고친 값을 덮은 것이다. 수정 항목은 바꾼 값만 있다
+    items: list[SummaryInputItem]
+    # 이 회의에서 PM 이 반려한 할 일. 수정 항목은 반려된 변경을 괄호에 적는다. items 의 제목과 겹치는 것은 없다
+    rejected_items: list[str] = []
+    topics: list[SummaryInputTopic]
+    decisions: list[SummaryInputDecision]
+
+
+class SummaryDecisionIn(BaseModel):
+    text: str = Field(min_length=1)
+    reason: str | None = None
+    rejected: list[str] = []
+    # 뒤집은 이전 결정의 decision_id
+    replaces: list[str] = []
+
+
+class SummaryTopicIn(BaseModel):
+    """기존 주제는 topic_id 와 그 이름, 새 주제는 name. 결정을 주제 아래에 둬서 주제 없는 결정이 표현되지 않는다.
+
+    기존 주제의 이름도 받는 것은 재료를 읽은 뒤 다른 회의의 재요약이 그 주제를 지웠을 때 이름으로 다시 찾기 위해서다.
+    """
+
+    topic_id: str | None = None
+    name: str | None = Field(None, max_length=100)
+    description: str = ""
+    item_ids: list[str] = Field(default_factory=list, max_length=500)
+    decisions: list[SummaryDecisionIn] = []
+
+    @model_validator(mode="after")
+    def _topic_is_named(self) -> "SummaryTopicIn":
+        if self.topic_id is None and self.name is None:
+            raise ValueError("topic_id 나 name 이 있어야 합니다.")
+        return self
+
+
+class DiscussionBlock(BaseModel):
+    title: str
+    points: list[str] = []
+
+
+class TaskChangeEntry(BaseModel):
+    task: str
+    assignee: str = ""
+    due: str = ""
+    purpose: str = ""
+    precondition: str = ""
+    # 이 회의의 추출 항목. 읽을 때 반영된 항목의 줄만 보인다
+    item_id: str | None = None
+
+
+class ScheduleEntry(BaseModel):
+    when: str
+    what: str
+
+
+def _has_unstorable(value: Any) -> bool:
+    if isinstance(value, str):
+        return any(ch == "\x00" or "\ud800" <= ch <= "\udfff" for ch in value)
+    if isinstance(value, dict):
+        return any(_has_unstorable(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_has_unstorable(v) for v in value)
+    return False
+
+
+class SummaryWriteRequest(BaseModel):
+    """LLM 이 만든 글이 들어오는 신뢰 경계다. DB 에 쓸 수 없는 글자(NUL, 짝 없는 서로게이트)는 500 대신 400 으로 막는다."""
+
+    claim_token: str = Field(min_length=1, max_length=128)
+    model_name: str
+    truncated_input: bool = False
+    overview: str = Field(min_length=1)
+    key_points: list[str]
+    discussion: list[DiscussionBlock] = []
+    facts: list[str] = []
+    task_changes: list[TaskChangeEntry] = []
+    schedule: list[ScheduleEntry] = []
+    open_items: list[str] = []
+    topics: list[SummaryTopicIn] = []
+
+    @model_validator(mode="before")
+    @classmethod
+    def _storable_text(cls, data: Any) -> Any:
+        if _has_unstorable(data):
+            raise ValueError("NUL 이나 짝 없는 서로게이트 글자는 저장할 수 없습니다.")
+        return data
+
+
+class SummarySaveResponse(BaseModel):
+    extraction_id: str
+    meeting_id: str
+    applied: bool
+    topic_count: int
+    decision_count: int
+
+
+class SummaryRequestBody(BaseModel):
+    meeting_ids: list[str] | None = None
+    include_all: bool = False
+    force: bool = False
+    dry_run: bool = True
+
+    @model_validator(mode="after")
+    def _one_scope(self) -> "SummaryRequestBody":
+        if self.include_all == (self.meeting_ids is not None):
+            raise ValueError("meeting_ids 와 include_all 중 하나만 보냅니다.")
+        return self
+
+
+class SummaryRequestRow(BaseModel):
+    meeting_id: str
+    extraction_id: str | None
+    title: str | None
+    started_at: datetime
+    state: SummaryRequestState
+    chars: int
+
+
+class SummaryRequestResponse(BaseModel):
+    items: list[SummaryRequestRow]
+
+
+class MeetingRef(BaseModel):
+    meeting_id: str
+    title: str | None
+    started_at: datetime
+
+
+class TopicNode(BaseModel):
+    id: str
+    kind: Literal["topic"] = "topic"
+    label: str
+    appeared_at: datetime
+
+
+class TaskNode(BaseModel):
+    id: str
+    kind: Literal["task"] = "task"
+    label: str
+    status: str
+    due_date: date | None
+    assignee_name: str | None
+    blocker: str | None
+    meeting_ids: list[str]
+    appeared_at: datetime
+
+
+class GraphEdge(BaseModel):
+    source: str
+    target: str
+
+
+class GraphResponse(BaseModel):
+    meetings: list[MeetingRef]
+    nodes: list[Annotated[TopicNode | TaskNode, Field(discriminator="kind")]]
+    edges: list[GraphEdge]
+
+
+class TopicDecision(BaseModel):
+    decision_id: str
+    text: str
+    reason: str | None
+    meeting_id: str
+    meeting_title: str | None
+    decided_at: datetime
+    replaced_by: str | None
+    # removed(지움)는 고친 응답에만 나온다. edited 는 팀원이 고쳤는가(#605)
+    state: DecisionState = DecisionState.VALID
+    edited: bool = False
+
+
+class TopicTask(BaseModel):
+    task_id: str
+    title: str
+    status: str
+    due_date: date | None
+    assignee_name: str | None
+
+
+class TopicDetailResponse(BaseModel):
+    topic_id: str
+    name: str
+    description: str
+    # 팀원이 이름·설명을 고치거나 합치거나 태스크를 뗐다(#605)
+    edited: bool = False
+    decisions: list[TopicDecision]
+    tasks: list[TopicTask]
+    meetings: list[MeetingRef]

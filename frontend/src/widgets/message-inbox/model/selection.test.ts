@@ -1,5 +1,5 @@
 import type { Bundle, MessageInbox, MessageThreadSummary } from '@/entities/message'
-import { inboxPane, nextPaneMemory, selectDetail } from './selection'
+import { composeKindOf, inboxPane, nextPaneMemory, selectDetail } from './selection'
 import type { InboxPane, PaneMemory } from './selection'
 
 const bundle = (id: string, stage: Bundle['stage'] = 'awaitingApproval') =>
@@ -21,7 +21,7 @@ const select = (input: Partial<Parameters<typeof selectDetail>[0]>) =>
     threadId: null,
     bundleId: undefined,
     invalidPath: false,
-    composing: false,
+    compose: null,
     ...input,
   })
 
@@ -74,13 +74,21 @@ it('PM 이 고른 묶음을 열고, 목록에 없거나 모양이 틀린 파라�
   expect(select({ inbox: pmInbox([], ['th_01']) }).kind).toBe('choose')
 })
 
-it('재촉 만들기는 목록을 기다리지 않고 고른 묶음보다 앞선다. 대화 주소와 틀린 주소가 먼저다', () => {
-  expect(select({ composing: true })).toEqual({ kind: 'compose' })
+it('검색 파라미터 new 는 재촉 만들기와 대화 시작만 연다', () => {
+  expect(composeKindOf('reminder')).toBe('reminder')
+  expect(composeKindOf('thread')).toBe('thread')
+  expect(composeKindOf('bundle')).toBeNull()
+  expect(composeKindOf(null)).toBeNull()
+})
+
+it('재촉 만들기·대화 시작은 목록을 기다리지 않고 고른 묶음보다 앞선다. 대화 주소와 틀린 주소가 먼저다', () => {
+  expect(select({ compose: 'thread' })).toEqual({ kind: 'compose', compose: 'thread' })
+  expect(select({ compose: 'reminder' })).toEqual({ kind: 'compose', compose: 'reminder' })
   expect(
-    select({ inbox: pmInbox([bundle('bd_01')], []), bundleId: 'bd_01', composing: true }),
-  ).toEqual({ kind: 'compose' })
-  expect(select({ threadId: 'th_01', composing: true }).kind).toBe('thread')
-  expect(select({ invalidPath: true, composing: true }).kind).toBe('invalid')
+    select({ inbox: pmInbox([bundle('bd_01')], []), bundleId: 'bd_01', compose: 'reminder' }),
+  ).toEqual({ kind: 'compose', compose: 'reminder' })
+  expect(select({ threadId: 'th_01', compose: 'reminder' }).kind).toBe('thread')
+  expect(select({ invalidPath: true, compose: 'reminder' }).kind).toBe('invalid')
 })
 
 describe('inboxPane', () => {
@@ -90,7 +98,7 @@ describe('inboxPane', () => {
       threadId: null,
       bundleId: undefined,
       invalidPath: false,
-      composing: false,
+      compose: null,
       ...input,
     })
 
@@ -103,11 +111,12 @@ describe('inboxPane', () => {
     expect(pane({})).toBe('list')
   })
 
-  it('휴대폰은 주소가 대화·묶음·새 재촉·틀린 주소를 가리키면 상세를 화면 전체로 연다', () => {
+  it('휴대폰은 주소가 대화·묶음·새 재촉·새 대화·틀린 주소를 가리키면 상세를 화면 전체로 연다', () => {
     expect(pane({ threadId: 'th_01' })).toBe('detail')
     expect(pane({ bundleId: 'bd_01' })).toBe('detail')
     expect(pane({ bundleId: null })).toBe('detail')
-    expect(pane({ composing: true })).toBe('detail')
+    expect(pane({ compose: 'reminder' })).toBe('detail')
+    expect(pane({ compose: 'thread' })).toBe('detail')
     expect(pane({ invalidPath: true })).toBe('detail')
   })
 })

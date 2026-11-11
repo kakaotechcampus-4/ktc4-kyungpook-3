@@ -11,7 +11,7 @@ import { start } from './support'
 const RECORD_KEY = 'splash-last-shown:v1'
 const NOW = new Date('2026-11-08T09:00:00+09:00')
 const HOUR = 60 * 60 * 1000
-const LANDING_TITLE = /한 번의 클릭으로/
+const LANDING_TITLE = /회의에서 나온 일을/
 
 interface SplashSeen {
   /** React 가 그린 스플래시 판(`.splash` 이고 #boot-splash 가 아닌 것)이 문서에 붙었다 */

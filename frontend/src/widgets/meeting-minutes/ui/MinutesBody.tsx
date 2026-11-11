@@ -1,6 +1,8 @@
+import { useId } from 'react'
 import type { ReactNode } from 'react'
 import type { ExtractionItem } from '@/entities/extraction'
-import type { MinutesSummary, TranscriptLine } from '@/entities/minutes'
+import type { Minutes, MinutesSummary, TranscriptLine } from '@/entities/minutes'
+import { isKnownValue } from '@/shared/api/unknownValue'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
@@ -8,8 +10,11 @@ import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { Skeleton } from '@/shared/ui/skeleton'
+import { useLineEdit } from '@/features/minutes-edit'
 import type { ExtractedTasks, PendingTask } from '../lib/extractedTasks'
 import { formatDue } from '../lib/format'
+import { useLineSession } from '../model/useLineSession'
+import { EditableLine } from './MinutesEditing'
 
 /* Meetings 캔버스 실측 — 영역 제목 14px 600 · 제목과 내용 14, 반영 카드 16 라운드 · 위아래 15 · 좌우 18 · 시각 칸 44,
    확인 필요 행 위아래 18 · 구분선, 제목 15px 600, 배지 21px */
@@ -23,7 +28,7 @@ const TIME = 'min-w-44 shrink-0 text-[12px] leading-[1.7] whitespace-nowrap text
 const APPLIED_ROW = 'flex items-start gap-14 rounded-16 border border-line bg-surface px-18 py-15'
 const PENDING_ROW = 'flex items-start gap-16 border-b border-line py-18 last:border-b-0'
 const BADGE_REVIEW =
-  'inline-flex h-[21px] shrink-0 items-center gap-5 rounded-6 bg-ink px-8 text-meta leading-none font-semibold text-surface'
+  'inline-flex h-[21px] shrink-0 items-center gap-5 rounded-6 bg-ink-solid px-8 text-meta leading-none font-semibold text-surface'
 const BADGE_HOLD =
   'inline-flex h-[21px] shrink-0 items-center rounded-6 bg-control px-8 text-meta leading-none font-semibold text-sub'
 const REVIEW_LINK =
@@ -75,19 +80,51 @@ function Section({
   )
 }
 
-/** 요약 탭. 실 API 는 아직 요약을 채우지 않아 늘 null 이다 (계약 §4.7-4) — 빈 상태가 기본이다 */
-export function SummaryPanel({ summary }: { summary: MinutesSummary | null }) {
+const TRANSCRIPT_HINT = '발언은 전사문에서 볼 수 있어요.'
+const NO_SUMMARY = { title: '요약이 없어요', description: TRANSCRIPT_HINT }
+
+/** 요약이 비었을 때 상태별 안내. `null` 은 칸을 비운다(#551 만들 것 7) */
+const EMPTY_SUMMARY: Record<
+  Extract<Minutes['summaryStatus'], string>,
+  (waitingCount: number | null) => { title: string; description: string } | null
+> = {
+  ready: () => NO_SUMMARY,
+  pending: () => ({
+    title: '요약을 만드는 중이에요',
+    description: `요약이 만들어지면 여기에 보여요. ${TRANSCRIPT_HINT}`,
+  }),
+  // 0건은 기다린다는 제목과 어긋나 건수를 말하지 않는다. 건수는 PM 에게만 온다 (D-104)
+  awaiting_approval: (waitingCount) => ({
+    title: '승인이 끝나면 요약이 만들어져요',
+    description:
+      waitingCount !== null && waitingCount > 0
+        ? `승인 대기 ${waitingCount}건이 남았어요. ${TRANSCRIPT_HINT}`
+        : TRANSCRIPT_HINT,
+  }),
+  none: () => null,
+}
+
+/**
+ * 요약 탭. 요약이 있으면 상태와 무관하게 보인다 (계약 §4.4.2).
+ * 없을 때의 안내는 `EMPTY_SUMMARY` 가 상태별로 고른다. 모르는 상태는 이유를 단정하지 않는 중립 문구다
+ */
+export function SummaryPanel({
+  summary,
+  status,
+  waitingCount,
+}: {
+  summary: MinutesSummary | null
+  status: Minutes['summaryStatus']
+  waitingCount: number | null
+}) {
   const overview = summary?.overview.trim() ?? ''
   if (
     summary === null ||
     (overview === '' && summary.keyPoints.length === 0 && summary.decisions.length === 0)
-  )
-    return (
-      <SectionEmpty
-        title="요약이 아직 없어요"
-        description="이 회의는 요약 없이 정리됐어요. 발언은 전사문에서 볼 수 있어요."
-      />
-    )
+  ) {
+    const empty = isKnownValue(status) ? EMPTY_SUMMARY[status](waitingCount) : NO_SUMMARY
+    return empty === null ? null : <SectionEmpty {...empty} />
+  }
   return (
     <>
       {overview === '' ? null : <p className={BODY}>{overview}</p>}
@@ -120,24 +157,39 @@ export function SummaryPanel({ summary }: { summary: MinutesSummary | null }) {
 /** 회의 안 시각(ms)을 보이는 글자로. 녹음 회의와 채팅 회의가 읽는 방식이 달라 회의록이 정해 준다 (`formatMoment`) */
 export type MomentOf = (atMs: number) => string
 
-/** 전사문 탭. 화자 이름이 등록되지 않았으면 Discord 이름으로 보인다 (D-028) */
+/**
+ * 전사문 탭. 화자 이름이 등록되지 않았으면 Discord 이름으로 보인다 (D-028).
+ * 팀원 누구나 발화를 눌러 고친다 (#551). 한 번에 한 줄이고, 어느 줄과 그 초안은 `useLineSession` 이 쥔다
+ */
 export function TranscriptPanel({
+  workspaceId,
+  meetingId,
   transcript,
   momentOf,
 }: {
+  workspaceId: string
+  meetingId: string
   transcript: readonly TranscriptLine[]
   momentOf: MomentOf
 }) {
+  const edit = useLineEdit(workspaceId, meetingId)
+  const lines = useLineSession(transcript, edit)
+  const hintId = useId()
   if (transcript.length === 0)
     return (
       <SectionEmpty title="전사문이 없어요" description="이 회의에서 옮겨 적은 발언이 없어요." />
     )
   return (
-    <ol aria-label="전사문" className="flex flex-col">
-      {transcript.map((line, index) => (
-        <li key={index} className={TRANSCRIPT_LINE}>
-          <span className={TIME}>{momentOf(line.atMs)}</span>
-          <div className="flex min-w-0 flex-1 flex-col gap-2">
+    <>
+      {transcript.some(({ seq }) => seq !== null) ? (
+        <p id={hintId} className="text-caption text-dim">
+          발화를 누르면 잘못 적힌 이름이나 용어를 고칠 수 있어요.
+        </p>
+      ) : null}
+      <ol aria-label="전사문" className="flex flex-col">
+        {transcript.map((line, index) => {
+          const time = <span className={TIME}>{momentOf(line.atMs)}</span>
+          const speaker = (
             <span
               className={
                 line.isFallbackName
@@ -147,11 +199,31 @@ export function TranscriptPanel({
             >
               {line.speakerName}
             </span>
-            <p className={BODY}>{line.text}</p>
-          </div>
-        </li>
-      ))}
-    </ol>
+          )
+          const { seq } = line
+          return (
+            <li key={seq ?? `line-${index}`} className={TRANSCRIPT_LINE}>
+              <EditableLine
+                line={line}
+                edit={edit}
+                draft={lines.draftOf(seq)}
+                hintId={hintId}
+                onOpen={() => {
+                  if (seq !== null) lines.open(seq)
+                }}
+                onDraft={lines.setDraft}
+                onClose={lines.closerOf(seq)}
+                onRevert={(done) => {
+                  if (seq !== null) lines.revert(seq, done)
+                }}
+                time={time}
+                speaker={speaker}
+              />
+            </li>
+          )
+        })}
+      </ol>
+    </>
   )
 }
 

@@ -18,7 +18,7 @@ function RootErrorScreen() {
   return (
     <main className={SCREEN}>
       <EmptyState
-        pose="squint"
+        pose="idle"
         title="앱을 표시하지 못했어요"
         description="새로고침해 주세요. 계속되면 잠시 후 다시 시도해 주세요."
         action={

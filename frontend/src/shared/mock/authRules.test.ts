@@ -9,8 +9,18 @@ const EMAIL = 'pm@example.com'
 const PASSWORD = 'mock-password'
 const BLOCK_SECONDS = 15 * 60
 
-const signup = (name: string, email = 'new@example.com') =>
-  fetchDto<SessionDto>('/auth/signup', jsonRequest('POST', { name, email, password: 'pass1234' }))
+const signup = (name: string, email = 'new@example.com') => {
+  db.signupVerification.proofs.proof = { email, expiresAt: Date.now() + 60_000 }
+  return fetchDto<SessionDto>(
+    '/auth/signup',
+    jsonRequest('POST', {
+      name,
+      username: 'newuser1',
+      verification_token: 'proof',
+      password: 'pass1234',
+    }),
+  )
+}
 const login = (password: string, email = EMAIL) =>
   fetchDto<SessionDto>('/auth/login', jsonRequest('POST', { email, password }))
 

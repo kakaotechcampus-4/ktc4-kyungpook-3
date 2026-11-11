@@ -146,6 +146,12 @@ def cancel(reservation: Reservation) -> None:
         _undo(reservation.ip_key, IP_LIMIT)
 
 
+def email_blocked(email: str, *, now: float) -> bool:
+    """이 이메일의 로그인이 지금 막혀 있는지. 세지 않고 보기만 한다."""
+    with _lock:
+        return _remaining(_EMAIL_PREFIX + email, now) > 0
+
+
 def clear_email(email: str) -> None:
     with _lock:
         _entries.pop(_EMAIL_PREFIX + email, None)

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, Header, Response
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from app.models import Extraction, Meeting, MeetingProcessingStage, MeetingStatu
 from app.schemas.meeting import (
     MeetingCreateRequest,
     MeetingCreateResponse,
+    MeetingAudioInfo,
     MeetingDetailResponse,
     MeetingEndResponse,
     MeetingFailRequest,
@@ -22,8 +23,11 @@ from app.schemas.meeting import (
     MeetingStageResponse,
     MeetingSttProgress,
 )
+from app.schemas.record_edit import LineEditRequest, LineEditResponse, TitleEditRequest, TitleEditResponse
 from app.schemas.upload import SpeakerAssignRequest, SpeakerAssignResponse, SpeakerViewResponse
-from app.services import meeting_failure, meeting_stage, speaker_assignment
+from app.services import meeting_audio, meeting_failure, meeting_stage, speaker_assignment, summary, transcript, upload_storage
+from app.services import meeting_deletion
+from app.schemas.meeting_deletion import MeetingDeletionReceipt
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
@@ -36,12 +40,29 @@ _ENDED_STATUSES = {
 
 
 def _get_meeting(db: Session, meeting_id: str) -> Meeting:
+    return meeting_deletion.require_live_meeting(db, meeting_id, lock=True)
+
+
+@router.delete('/{meeting_id}', response_model=Envelope[MeetingDeletionReceipt])
+def delete_meeting(meeting_id: str, response: Response, user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)) -> dict:
     meeting = db.get(Meeting, meeting_id)
     if meeting is None:
-        raise AppError(
-            ErrorCode.MEETING_NOT_FOUND, details={"meeting_id": meeting_id}
-        )
-    return meeting
+        raise AppError(ErrorCode.MEETING_NOT_FOUND)
+    require_pm(db, user, meeting.workspace_id)
+    result = meeting_deletion.delete_meeting(db, meeting_id)
+    response.status_code = 200 if result.cleanup_status == 'complete' else 202
+    return success(result.model_dump(mode='json'))
+
+
+@router.get('/{meeting_id}/deletion', response_model=Envelope[MeetingDeletionReceipt])
+def get_deletion(meeting_id: str, user: User = Depends(get_current_user),
+                 db: Session = Depends(get_db)) -> dict:
+    meeting = db.get(Meeting, meeting_id)
+    if meeting is None:
+        raise AppError(ErrorCode.MEETING_NOT_FOUND)
+    require_pm(db, user, meeting.workspace_id)
+    return success(meeting_deletion.receipt(db, meeting).model_dump(mode='json'))
 
 
 def _compute_progress(db: Session, meeting: Meeting) -> MeetingProgress:
@@ -97,13 +118,35 @@ def _processing(meeting: Meeting) -> MeetingProcessing | None:
 def create_meeting(
     payload: MeetingCreateRequest,
     db: Session = Depends(get_db),
+    x_meeting_lineage_version: str | None = Header(None),
 ) -> dict:
+    from app.services import lifecycle
+    lifecycle.workspace(db, payload.workspace_id)
+    versioned = x_meeting_lineage_version == "1"
+    if payload.source == "discord" and meeting_deletion.enabled() and not versioned:
+        raise AppError(ErrorCode.MEETING_CLIENT_UPDATE_REQUIRED)
     meeting = Meeting(
         workspace_id=payload.workspace_id,
         title=payload.title,
         source=str(payload.source),
         status=str(MeetingStatus.CREATED),
+        deletion_ready=payload.source != "discord" or versioned,
     )
+    if payload.replaces_meeting_id is not None:
+        predecessor = meeting_deletion.require_live_meeting(db, payload.replaces_meeting_id)
+        root_id = predecessor.recording_root_id or predecessor.meeting_id
+        meeting_deletion.require_live_meeting(db, root_id, lock=True)
+        db.refresh(predecessor)
+        meeting_deletion.assert_live(predecessor)
+        if predecessor.workspace_id != payload.workspace_id:
+            raise AppError(ErrorCode.WORKSPACE_MISMATCH)
+        if predecessor.source != str(payload.source) or predecessor.source == 'manual_upload' or predecessor.status != 'failed':
+            raise AppError(ErrorCode.INVALID_REQUEST, message='failed 상태의 같은 출처 회의만 교체할 수 있습니다.')
+        existing = db.scalar(select(Meeting).where(Meeting.replaces_meeting_id == predecessor.meeting_id))
+        if existing is not None:
+            return success(MeetingCreateResponse.model_validate(existing).model_dump(mode='json'))
+        meeting.recording_root_id = root_id
+        meeting.replaces_meeting_id = predecessor.meeting_id
     if payload.started_at is not None:
         # 미래 시각이 done 이 되면 chat-cursor 가 그 뒤를 가리켜 채팅 수집이 멈춘다
         if payload.started_at > datetime.now(timezone.utc):
@@ -194,6 +237,7 @@ def fail_meeting(
     meeting = _get_meeting(db, meeting_id)
     detail = MeetingDetailResponse(
         meeting_id=meeting.meeting_id,
+        deletion_available=meeting_deletion.deletion_available(db, meeting),
         workspace_id=meeting.workspace_id,
         title=meeting.title,
         status=meeting.status,
@@ -229,6 +273,7 @@ def get_meeting(
 
     detail = MeetingDetailResponse(
         meeting_id=meeting.meeting_id,
+        deletion_available=meeting_deletion.deletion_available(db, meeting),
         workspace_id=meeting.workspace_id,
         title=meeting.title,
         status=meeting.status,
@@ -242,13 +287,17 @@ def get_meeting(
     return success(detail.model_dump(mode="json"))
 
 
+def _may_play(meeting: Meeting, member: Member) -> bool:
+    """녹음을 들을 수 있는 사람: 처리가 끝난 회의는 팀원 누구나, 그 밖에는 PM 만."""
+    return meeting.status == MeetingStatus.DONE or member.role == "pm"
+
+
 @router.get("/{meeting_id}/minutes", response_model=Envelope[MeetingMinutesResponse])
 def get_meeting_minutes(
     meeting_id: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> dict:
-    import json
     meeting = _get_meeting(db, meeting_id)
     
     member = db.query(Member).filter(
@@ -273,7 +322,10 @@ def get_meeting_minutes(
             "speaker_display_name": display_name,
             # 팀원이 아니면 FE가 이름 대신 보여 주는 값이다. 디스코드 표시 이름, 없으면 uid 순으로 쓴다
             "speaker_fallback": src.speaker_name or src.speaker_discord_user_id or "Unknown",
-            "text": src.text,
+            "seq": src.seq,
+            "text": src.shown_text,
+            "edited": src.text_edit is not None,
+            "original_text": src.text if src.text_edit is not None else None,
         }
         for src, display_name in lines
     ]
@@ -287,30 +339,76 @@ def get_meeting_minutes(
         for member_id, display_name in first_spoken.items()
     ]
 
-    summary = None
-
     extraction = db.query(Extraction).filter(Extraction.meeting_id == meeting_id).order_by(Extraction.created_at.desc()).first()
-    if extraction:
-        if extraction.summary:
-            try:
-                summary = json.loads(extraction.summary)
-            except ValueError:  # JSONDecodeError 포함. 깨진 요약은 없는 것으로 본다
-                pass
-            # JSON으로는 맞아도 객체가 아니면(목록·문자열) 응답 스키마(dict | None)에서 500이 난다. 없는 것으로 본다
-            if not isinstance(summary, dict):
-                summary = None
+    state = summary.summary_state(db, meeting, extraction)
+
+    # 재생 API 와 같은 규칙으로, 호출자가 지금 들을 수 있을 때만 알려 준다(done 이 아니면 PM 만)
+    audio = None
+    if _may_play(meeting, member):
+        info = meeting_audio.playback_info(db, meeting, datetime.now(timezone.utc))
+        if info is not None:
+            audio = MeetingAudioInfo(content_type=info["content_type"], expires_at=info["expires_at"])
 
     return success(MeetingMinutesResponse(
         meeting_id=meeting.meeting_id,
         title=meeting.title,
+        title_edited=meeting.title_edited_at is not None,
+        title_original=meeting.title_original,
         started_at=meeting.started_at,
         duration_ms=meeting.duration_ms or 0,
         source=meeting.source,
         attendees=attendees,
-        summary=summary,
+        summary=summary.documents(db, [(meeting, extraction)]).get(meeting.meeting_id),
+        summary_status=state.status,
+        summary_waiting_count=state.waiting_cards if state.status == "awaiting_approval" and member.role == "pm" else None,
         transcript=transcript,
-        permissions={"can_review": member.role == "pm", "can_undo": member.role == "pm"}
+        permissions={"can_review": member.role == "pm", "can_undo": member.role == "pm"},
+        audio=audio,
     ).model_dump(mode="json"))
+
+
+def _meeting_of_member(db: Session, user: User, meeting_id: str) -> None:
+    meeting = db.get(Meeting, meeting_id)
+    if meeting is None:
+        raise AppError(ErrorCode.MEETING_NOT_FOUND, details={"meeting_id": meeting_id})
+    require_member(db, user, meeting.workspace_id)
+
+
+@router.patch("/{meeting_id}/title", response_model=Envelope[TitleEditResponse])
+def edit_meeting_title(
+    meeting_id: str,
+    payload: TitleEditRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """팀원 누구나 제목을 고친다. 처음 제목은 title_original 로 남는다."""
+    _meeting_of_member(db, user, meeting_id)
+    meeting = transcript.edit_title(db, meeting_id, payload.title)
+    data = TitleEditResponse(
+        meeting_id=meeting.meeting_id, title=meeting.title, title_original=meeting.title_original,
+        title_edited=meeting.title_edited_at is not None,
+    ).model_dump(mode="json")
+    db.commit()
+    return success(data)
+
+
+@router.patch("/{meeting_id}/transcript/{seq}", response_model=Envelope[LineEditResponse])
+def edit_transcript_line(
+    meeting_id: str,
+    seq: int,
+    payload: LineEditRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """팀원 누구나 발화 한 줄을 고친다. 원문은 남고 승인 근거 인용은 원문을 쓴다."""
+    _meeting_of_member(db, user, meeting_id)
+    source = transcript.edit_line(db, meeting_id, seq, payload.text)
+    data = LineEditResponse(
+        seq=source.seq, text=source.shown_text,
+        original_text=source.text if source.text_edit is not None else None, edited=source.text_edit is not None,
+    ).model_dump(mode="json")
+    db.commit()
+    return success(data)
 
 
 @router.get("/{meeting_id}/speakers", response_model=Envelope[SpeakerViewResponse])
@@ -345,21 +443,40 @@ def assign_meeting_speakers(
 @router.get(
     "/{meeting_id}/audio",
     response_class=FileResponse,
-    responses={200: {"content": {"audio/*": {}}, "description": "업로드한 녹음 원본(Range 지원)"}},
+    responses={
+        200: {"content": {"audio/*": {}}, "description": "회의 녹음 원본(local 저장소일 때. Range 지원)"},
+        302: {"description": "s3 저장소일 때 브라우저가 S3 에서 바로 받는 임시 주소로 보낸다(Cache-Control: private, no-store)"},
+        404: {"description": "AUDIO_NOT_AVAILABLE: 보관 기간이 지났거나(expired) 녹음이 없다(no_recording)"},
+    },
 )
 def get_meeting_audio(
     meeting_id: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> FileResponse:
-    """PM 이 화자를 가리려고 듣는 원본. 폴더가 있는 동안 상태와 무관하게 준다. Range 는 starlette 가 처리한다."""
+) -> Response:
+    """보관 기간 안의 회의 녹음. done 은 워크스페이스 팀원, 그 밖의 상태는 PM 만 듣는다."""
     meeting = _get_meeting(db, meeting_id)
-    require_pm(db, user, meeting.workspace_id)
-    path, content_type = speaker_assignment.get_audio_for_playback(db, meeting)
+    member = require_member(db, user, meeting.workspace_id)
+    if not _may_play(meeting, member):
+        # 팀원이어도 done 이 아니면 PM 만 듣는다. 기존과 같은 PM 전용 메시지로 막는다
+        require_pm(db, user, meeting.workspace_id)
+    now = datetime.now(timezone.utc)
+    row = meeting_audio.require_playable(db, meeting, now)
+    filename, content_type = row.filename, row.content_type
+    headers = {"Cache-Control": "private, no-store"}
+    if upload_storage.storage_mode() == "s3":
+        # done 회의는 주소가 보관 기간(expires_at)이 끝난 뒤까지 열려 있지 않게 남은 시간으로 줄인다
+        max_expires_in = meeting_audio.remaining_seconds(meeting, row, now)
+        # 필요한 값을 다 읽었으니 공간·회의 잠금과 DB 연결을 먼저 놓는다. 서명은 자격 갱신으로 외부 요청이 끼일 수 있다
+        db.close()
+        url = upload_storage.presigned_audio_url(meeting_id, filename, content_type, max_expires_in)
+        return RedirectResponse(url, status_code=302, headers=headers)
+    path = upload_storage.local_audio_path(meeting_id, filename)
+    if path is None:
+        raise AppError(
+            ErrorCode.AUDIO_NOT_AVAILABLE,
+            details={"meeting_id": meeting_id, "reason": meeting_audio.REASON_NO_RECORDING},
+        )
     # get_db 정리는 응답을 다 보낸 뒤라, 닫지 않으면 파일을 보내는 동안(브라우저가 요청을 열어 둔 동안) DB 연결을 잡고 있다
     db.close()
-    return FileResponse(
-        path,
-        media_type=content_type,
-        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
-    )
+    return FileResponse(path, media_type=content_type, headers={"X-Content-Type-Options": "nosniff", **headers})

@@ -4,14 +4,111 @@ import { fail, list, ok } from '../envelope'
 import { requireMember, requirePmRole } from '../auth-guard'
 import { MOCK_NOW } from '../fixtures/constants'
 import { nextId } from '../utils'
+import { linkedUserIdOf } from '../sessions'
+import type { MemberDto } from '@/shared/types/api/member'
+import type { MockDiscordUser } from '../fixtures/member'
 const base = '/api/v1'
+
+/* 팀원을 만들거나 고칠 때 백엔드가 맞추는 자동 별칭 (services/member_aliases.py, api/members.py).
+   이름 별칭은 한글 두 글자 이상인 이름의 전체와 성을 뗀 꼴이다. 닉네임 별칭은 한글만인 Discord 이름이다 */
+function nameAliasForms(displayName: string): string[] {
+  const name = displayName.trim()
+  if (!/^[가-힣]{2,}$/.test(name)) return []
+  return [name, name.length === 4 ? name.slice(2) : name.slice(1)]
+}
+
+/** 다른 팀원이 사람이 정한(manual·learned) 같은 글자를 가졌으면 자동 별칭을 넣지 않는다 */
+function takenByOther(member: MemberDto, text: string): boolean {
+  return db.aliases.some(
+    (alias) =>
+      alias.workspace_id === member.workspace_id &&
+      alias.member_id !== member.member_id &&
+      alias.alias_text === text &&
+      (alias.source === 'manual' || alias.source === 'learned') &&
+      !db.withdrawnMemberIds.includes(alias.member_id),
+  )
+}
+
+function addAutoAlias(member: MemberDto, text: string, kind: 'display_name' | 'discord_profile') {
+  db.aliases.push({
+    alias_id: nextId(
+      'al',
+      db.aliases.map(({ alias_id }) => alias_id),
+    ),
+    member_id: member.member_id,
+    workspace_id: member.workspace_id,
+    alias_text: text,
+    ...(kind === 'display_name'
+      ? { alias_type: 'realname', source: 'display_name', confidence: 1, verified: true }
+      : { alias_type: 'nickname', source: 'discord_profile', confidence: 0.8, verified: false }),
+    created_at: MOCK_NOW,
+  })
+}
+
+/** `sync_name_aliases`. 옛 이름을 주면 새 꼴에 없는 이름 별칭을 지운다. `onlyTexts` 를 주면 그 글자만 채운다 */
+function syncNameAliases(member: MemberDto, oldName?: string, onlyTexts?: ReadonlySet<string>) {
+  const forms = nameAliasForms(member.display_name)
+  if (oldName !== undefined)
+    db.aliases = db.aliases.filter(
+      (alias) =>
+        alias.member_id !== member.member_id ||
+        alias.source !== 'display_name' ||
+        forms.includes(alias.alias_text),
+    )
+  const own = new Set(
+    db.aliases
+      .filter(({ member_id }) => member_id === member.member_id)
+      .map(({ alias_text }) => alias_text),
+  )
+  for (const text of forms) {
+    if (onlyTexts !== undefined && !onlyTexts.has(text)) continue
+    if (own.has(text) || takenByOther(member, text)) continue
+    addAutoAlias(member, text, 'display_name')
+  }
+}
+
+/** `remove_discord_profile_aliases`. Discord 계정이 바뀌거나 풀리면 닉네임 별칭을 지우고 지운 글자를 돌려준다 */
+function removeDiscordProfileAliases(member: MemberDto): Set<string> {
+  const removed = new Set<string>()
+  db.aliases = db.aliases.filter((alias) => {
+    if (alias.member_id !== member.member_id || alias.source !== 'discord_profile') return true
+    removed.add(alias.alias_text)
+    return false
+  })
+  return removed
+}
+
+/** `pick_discord_nickname`. 서버 별명 → 계정 표시 이름 순으로 한글만인 첫 값. 사용자 이름은 보지 않는다 */
+function pickDiscordNickname({ nick, global_name }: MockDiscordUser): string | null {
+  for (const value of [nick, global_name]) {
+    const text = value?.trim()
+    if (text !== undefined && /^[가-힣]+$/.test(text)) return text
+  }
+  return null
+}
+
+/** `add_discord_nickname_alias` */
+function addDiscordNicknameAlias(member: MemberDto, discordUserId: string) {
+  const user = db.discordUsers.find(({ discord_user_id }) => discord_user_id === discordUserId)
+  const nickname = user === undefined ? null : pickDiscordNickname(user)
+  if (nickname === null) return
+  const held = db.aliases.some(
+    ({ member_id, alias_text }) => member_id === member.member_id && alias_text === nickname,
+  )
+  if (held || takenByOther(member, nickname)) return
+  addAutoAlias(member, nickname, 'discord_profile')
+}
+
 export const memberHandlers = [
   http.get(`${base}/members/aliases`, ({ request }) => {
     const workspaceId = new URL(request.url).searchParams.get('workspace_id')
     return workspaceId
       ? list(
           db.aliases
-            .filter(({ workspace_id }) => workspace_id === workspaceId)
+            .filter(
+              ({ workspace_id, member_id }) =>
+                workspace_id === workspaceId && !db.withdrawnMemberIds.includes(member_id),
+            )
             .sort((a, b) => b.created_at.localeCompare(a.created_at)),
         )
       : fail('INVALID_REQUEST', 'workspace_id가 필요합니다.', 400)
@@ -40,6 +137,9 @@ export const memberHandlers = [
   http.delete(`${base}/members/aliases/:aliasId`, ({ params }) => {
     const index = db.aliases.findIndex(({ alias_id }) => alias_id === params.aliasId)
     if (index < 0) return fail('MEMBER_ALIAS_NOT_FOUND', '별칭이 없습니다.', 404)
+    // 백엔드는 별칭을 찾은 뒤 그 공간의 PM 인지 본다 (members.py 의 delete_alias)
+    const denied = requirePmRole(db.aliases[index].workspace_id)
+    if (denied) return denied
     db.aliases.splice(index, 1)
     return new Response(null, { status: 204 })
   }),
@@ -52,13 +152,36 @@ export const memberHandlers = [
     // 모의 Discord 서버는 하나다. 어느 공간이든 연결만 되면 같은 사용자 목록을 돌려준다 —
     // 새로 만든 공간도 Discord 연결 뒤 팀원 연결 단계를 진행할 수 있어야 한다
     return db.integrations[String(params.workspaceId)]?.discord.status === 'connected'
-      ? list(db.discordUsers)
+      ? list(
+          db.discordUsers.map(
+            ({ discord_user_id, username, display_name, avatar_url, is_bot }) => ({
+              discord_user_id,
+              username,
+              display_name,
+              avatar_url,
+              is_bot,
+            }),
+          ),
+        )
       : fail('INTEGRATION_NOT_CONNECTED', 'Discord 연결이 필요합니다.', 409)
   }),
   http.get(`${base}/members`, ({ request }) => {
-    const workspaceId = new URL(request.url).searchParams.get('workspace_id')
+    const params = new URL(request.url).searchParams
+    const workspaceId = params.get('workspace_id')
+    const includeWithdrawn = params.get('include_withdrawn') === 'true'
     return workspaceId
-      ? list(db.members.filter(({ workspace_id }) => workspace_id === workspaceId))
+      ? list(
+          db.members
+            .filter(
+              ({ workspace_id, member_id }) =>
+                workspace_id === workspaceId &&
+                (includeWithdrawn || !db.withdrawnMemberIds.includes(member_id)),
+            )
+            .map((member) => ({
+              ...member,
+              has_login_account: linkedUserIdOf(member.member_id) !== null,
+            })),
+        )
       : fail('INVALID_REQUEST', 'workspace_id가 필요합니다.', 400)
   }),
   http.post(`${base}/members`, async ({ request }) => {
@@ -98,17 +221,28 @@ export const memberHandlers = [
       discord_user_id: typeof body.discord_user_id === 'string' ? body.discord_user_id : null,
       notion_name: typeof body.notion_name === 'string' ? body.notion_name : null,
       role: body.role === 'pm' ? 'pm' : 'member',
+      has_login_account: false,
       created_at: MOCK_NOW,
     }
     db.members.push(member)
+    syncNameAliases(member)
+    if (member.discord_user_id !== null) addDiscordNicknameAlias(member, member.discord_user_id)
     return ok(member, { status: 201 })
   }),
   http.get(`${base}/members/:memberId`, ({ params }) => {
-    const member = db.members.find(({ member_id }) => member_id === params.memberId)
-    return member ? ok(member) : fail('MEMBER_NOT_FOUND', '팀원이 없습니다.', 404)
+    const member = db.members.find(
+      ({ member_id }) =>
+        member_id === params.memberId && !db.withdrawnMemberIds.includes(member_id),
+    )
+    return member
+      ? ok({ ...member, has_login_account: linkedUserIdOf(member.member_id) !== null })
+      : fail('MEMBER_NOT_FOUND', '팀원이 없습니다.', 404)
   }),
   http.patch(`${base}/members/:memberId`, async ({ params, request }) => {
-    const member = db.members.find(({ member_id }) => member_id === params.memberId)
+    const member = db.members.find(
+      ({ member_id }) =>
+        member_id === params.memberId && !db.withdrawnMemberIds.includes(member_id),
+    )
     if (!member) return fail('MEMBER_NOT_FOUND', '팀원이 없습니다.', 404)
     // 백엔드는 팀원을 찾은 뒤 그 공간의 PM 인지 본다 (members.py 의 _get_member(..., pm=True))
     const denied = requirePmRole(member.workspace_id)
@@ -138,23 +272,33 @@ export const memberHandlers = [
       )
     )
       return fail('DISCORD_USER_ALREADY_MAPPED', '이미 연결된 Discord 사용자입니다.', 409)
+    const oldName = member.display_name
+    const discordChanged =
+      'discord_user_id' in body &&
+      (typeof body.discord_user_id === 'string' || body.discord_user_id === null) &&
+      body.discord_user_id !== member.discord_user_id
+    const removedNicknames = discordChanged
+      ? removeDiscordProfileAliases(member)
+      : new Set<string>()
     if (
       'discord_user_id' in body &&
       (typeof body.discord_user_id === 'string' || body.discord_user_id === null)
     )
       member.discord_user_id = body.discord_user_id
     if (typeof body.display_name === 'string') member.display_name = body.display_name
+    if (member.display_name !== oldName) syncNameAliases(member, oldName)
+    else if (removedNicknames.size > 0) syncNameAliases(member, undefined, removedNicknames)
+    if (discordChanged && member.discord_user_id !== null)
+      addDiscordNicknameAlias(member, member.discord_user_id)
     if (
       'notion_name' in body &&
       (typeof body.notion_name === 'string' || body.notion_name === null)
     )
       member.notion_name = body.notion_name
     if (body.role === 'pm' || body.role === 'member') member.role = body.role
-    return ok(member)
+    return ok({ ...member, has_login_account: linkedUserIdOf(member.member_id) !== null })
   }),
   http.post(`${base}/members/:memberId/aliases`, async ({ params, request }) => {
-    const member = db.members.find(({ member_id }) => member_id === params.memberId)
-    if (!member) return fail('MEMBER_NOT_FOUND', '팀원이 없습니다.', 404)
     const body = (await request.json()) as {
       alias_text?: unknown
       alias_type?: unknown
@@ -166,21 +310,47 @@ export const memberHandlers = [
       body.alias_type === undefined ||
       (typeof body.alias_type === 'string' &&
         ['realname', 'nickname', 'mention', 'inferred'].includes(body.alias_type))
+    // display_name 은 서버가 이름에서 채우는 출처라 받지 않는다 (schemas/member.py)
     const validSource =
       body.source === undefined ||
       (typeof body.source === 'string' &&
         ['manual', 'discord_profile', 'learned'].includes(body.source))
-    if (typeof body.alias_text !== 'string' || !validType || !validSource)
+    // 길이는 받은 그대로 문자(코드 포인트)로 재고(Python len), 저장은 앞뒤 공백을 지우고 안쪽 공백을 한 칸으로 줄인 값이다 (matching.py normalize_alias_text)
+    const aliasText =
+      typeof body.alias_text === 'string' && [...body.alias_text].length <= 100
+        ? body.alias_text.trim().replace(/\s+/g, ' ')
+        : ''
+    if (aliasText === '' || !validType || !validSource)
       return fail('INVALID_REQUEST', '별칭 요청이 올바르지 않습니다.', 400)
-    // 백엔드는 같은 workspace_id + member_id + alias_text 가 있으면 기존 행을 그대로 돌려준다.
+    // 본문 검증(400) 다음에 팀원을 찾고(404) 그 공간의 PM 인지 본다 (members.py 의 _get_member(..., pm=True))
+    const member = db.members.find(
+      ({ member_id }) =>
+        member_id === params.memberId && !db.withdrawnMemberIds.includes(member_id),
+    )
+    if (!member) return fail('MEMBER_NOT_FOUND', '팀원이 없습니다.', 404)
+    const denied = requirePmRole(member.workspace_id)
+    if (denied) return denied
+    const aliasType = typeof body.alias_type === 'string' ? body.alias_type : 'nickname'
+    const source = typeof body.source === 'string' ? body.source : 'manual'
+    const confidence = typeof body.confidence === 'number' ? body.confidence : 1
+    const verified = typeof body.verified === 'boolean' ? body.verified : true
+    // 백엔드는 같은 workspace_id + member_id + alias_text 가 있으면 기존 행을 돌려준다.
     const duplicate = db.aliases.find(
       (existing) =>
         existing.workspace_id === member.workspace_id &&
         existing.member_id === member.member_id &&
-        existing.alias_text === body.alias_text,
+        existing.alias_text === aliasText,
     )
-    // 라우트 선언이 status_code=201 이라 기존 행을 돌려줘도 201 이다 (members.py:215)
-    if (duplicate) return ok(duplicate, { status: 201 })
+    if (duplicate) {
+      // 자동 별칭(이름·디스코드 닉네임)을 사람이 정한 출처로 다시 넣으면 그 출처로 올린다
+      if (
+        (duplicate.source === 'display_name' || duplicate.source === 'discord_profile') &&
+        (source === 'manual' || source === 'learned')
+      )
+        Object.assign(duplicate, { alias_type: aliasType, source, confidence, verified })
+      // 라우트 선언이 status_code=201 이라 기존 행을 돌려줘도 201 이다 (members.py:215)
+      return ok(duplicate, { status: 201 })
+    }
     const alias = {
       alias_id: nextId(
         'al',
@@ -188,11 +358,11 @@ export const memberHandlers = [
       ),
       member_id: member.member_id,
       workspace_id: member.workspace_id,
-      alias_text: body.alias_text,
-      alias_type: typeof body.alias_type === 'string' ? body.alias_type : 'nickname',
-      source: typeof body.source === 'string' ? body.source : 'manual',
-      confidence: typeof body.confidence === 'number' ? body.confidence : 1,
-      verified: typeof body.verified === 'boolean' ? body.verified : true,
+      alias_text: aliasText,
+      alias_type: aliasType,
+      source,
+      confidence,
+      verified,
       created_at: MOCK_NOW,
     }
     db.aliases.push(alias)

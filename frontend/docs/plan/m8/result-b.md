@@ -65,7 +65,7 @@ Codex 독립 리뷰가 찾은 세 결함을 고쳤다. 각각 고치기 전에 �
 ### 남은 작업과 제한 사항
 
 - 실제 BE·Discord 서버와 붙인 저장·공지는 확인하지 않았다. MSW 기준이다.
-- 카드의 `채널 바꾸기` 자리 버튼과 이 칸의 뜻이 겹쳤다. 사용자 결정(2026-11-07)으로 버튼을 지웠다(#505, [결과](../../issues/505-discord-channel-button/result.md), [결정 기록](basis-for-decision/2026-11-07-chat-channel-save-flow.md)).
+- 카드의 `채널 바꾸기` 자리 버튼과 이 칸의 뜻이 겹쳤다. 사용자 결정(2026-11-07)으로 버튼을 지웠다(#505, [결과](work-items/505-discord-channel-button/result.md), [결정 기록](basis-for-decision/2026-11-07-chat-channel-save-flow.md)).
 - 안내 문구와 위치는 #429 의 FE 기본값이다. PM·디자인 검토는 받지 않았다.
 - 전체 Storybook play 와 전체 E2E 는 CI 에 맡겼다.
 
@@ -82,7 +82,7 @@ Codex 독립 리뷰가 찾은 세 결함을 고쳤다. 각각 고치기 전에 �
 - 응답 타입 [messageSettings.ts](../../../src/shared/types/api/messageSettings.ts), 엔티티 [entities/message-settings](../../../src/entities/message-settings/index.ts)(매퍼·조회·변경, 재촉 규칙 문구 `nudgeRule.ts`). 쿼리 키는 `['workspace', id, 'message-settings']` 다.
 - 변경 훅 [useMessageSettings](../../../src/features/message-settings/model/useMessageSettings.ts): mutation `scope` 로 한 공간의 변경을 순서대로 보내고, 진행 중 변경을 서버 값 위에 겹쳐 보인다. 실패하면 겹침이 사라져 값이 돌아오고 토스트 `알림 설정을 저장하지 못했어요` 가 뜬다.
 - [NotificationSection](../../../src/pages/settings/ui/NotificationSection.tsx)과 문구 함수 [notificationCopy.ts](../../../src/pages/settings/lib/notificationCopy.ts): 재촉 규칙 선택 두 개(`재촉 며칠 전`·`재촉 보낼 시각`), 규칙을 따르는 토글 제목, `pms[].discord_linked` 기준 `웹으로만` 안내, 이미 만든 제안 안내와 예외 문구, 저장만 되는 두 항목의 준비 중 문구.
-- 메시지 화면 [SendTimingPicker](../../../src/widgets/message-inbox/ui/SendTimingPicker.tsx)·[format.ts](../../../src/widgets/message-inbox/lib/format.ts): 마감 기준 카드의 제목·시각이 공간의 규칙을 따른다. 규칙을 받기 전·실패면 고를 수 없다.
+- 메시지 화면 [SendTimingPicker](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/190440b017b4d36e764238810136f020115d825a/frontend/src/widgets/message-inbox/ui/SendTimingPicker.tsx)·[format.ts](../../../src/widgets/message-inbox/lib/format.ts): 마감 기준 카드의 제목·시각이 공간의 규칙을 따른다. 규칙을 받기 전·실패면 고를 수 없다.
 - MSW [handlers/messageSettings.ts](../../../src/shared/mock/handlers/messageSettings.ts): 기본값·`saved`, PM 아닌 `PATCH` 403, 형식 오류 400. 모의 DB 버전 10.
 - E2E [settings-notifications.e2e.ts](../../../e2e/settings-notifications.e2e.ts)와 검증 스킬의 `notifications` 여정.
 
@@ -207,7 +207,7 @@ Codex 독립 리뷰가 찾은 세 결함을 고쳤다. 각각 고치기 전에 �
   - 통합: [team.test.tsx](../../../src/app/team.test.tsx)(재작업 7 → 수정 라운드 뒤 9), [settingsPage.test.tsx](../../../src/app/settingsPage.test.tsx)(7 → 9).
   - 스토리: `M8 팀/화면`(6: PM 기본·팀원·Discord 미연결·팀원 연결 창·로딩·오류), `M8 설정/화면`(3: PM 연결됨·PM Discord 미연결·팀원).
   - E2E: 새 파일·사례 없음. [settings-team.e2e.ts](../../../e2e/settings-team.e2e.ts)의 OAuth 왕복을 D-074 도착으로 바꾸고, 세 너비 테스트에 팀 화면 넘침 검사를 더했다(테스트 수 4 그대로).
-  - Storybook 회귀 블록([stories.sb.ts](../../../e2e/storybook/stories.sb.ts))은 바꾸지 않았다. `m8-` 접두어로 새 스토리를 함께 모은다.
+  - Storybook 회귀 블록([stories.sb.ts](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/58923cff9cd94235ea52955d7f41fef4ab75c1c7/frontend/e2e/storybook/stories.sb.ts))은 바꾸지 않았다. `m8-` 접두어로 새 스토리를 함께 모은다.
 
 ### 기존 테스트 단언 변경
 
@@ -254,7 +254,7 @@ Node v24.11.0, `frontend/`. 무거운 명령은 공통 잠금 래퍼(`heavy.sh`)
 
 | 발견 | 처리 | 확인한 원인 | 고친 것 | 잡는 테스트 |
 |---|---|---|---|---|
-| VR-01 major — 팀 스토리 `로딩`·`오류` 렌더 실패 | 수정 | `.storybook/preview.tsx`는 `parameters.msw`를 배열로 펼치는데 두 스토리가 `{ handlers: [...] }` 객체를 넘겼다 | [TeamOverview.stories.tsx](../../../src/widgets/team/ui/TeamOverview.stories.tsx)의 두 스토리가 배열을 넘긴다 | 두 스토리의 play(기존). `test:storybook` 121 통과 |
+| VR-01 major — 팀 스토리 `로딩`·`오류` 렌더 실패 | 수정 | `.storybook/preview.tsx`는 `parameters.msw`를 배열로 펼치는데 두 스토리가 `{ handlers: [...] }` 객체를 넘겼다 | [TeamOverview.stories.tsx](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/8aab703d5ff31d6cc3034416604ddb75bfb96cbd/frontend/src/widgets/team/ui/TeamOverview.stories.tsx)의 두 스토리가 배열을 넘긴다 | 두 스토리의 play(기존). `test:storybook` 121 통과 |
 | VR-02 major — 저장 중 Esc·바깥 클릭으로 창이 닫히고 실패가 사라짐 | 수정 | 저장 중 상태가 안쪽 폼에만 있고 창은 `onOpenChange`를 그대로 넘겼다. 닫히면 폼이 사라져 실패를 보일 곳이 없었다 | [MemberConnectDialog](../../../src/widgets/team/ui/MemberConnectDialog.tsx)가 저장 중 여부를 갖고(폼이 제출 처리 안에서 알린다) 그동안 Esc·덮개의 닫기 요청을 무시한다. `저장` 성공과 `나중에 하기`(저장 중 비활성)는 그대로 닫는다 | `team.test.tsx` 「저장하는 동안에는 Esc·바깥 클릭으로 창이 닫히지 않고, 실패하면 창 안에 오류가 남는다」 |
 | VR-03 major — 팀원 조회 실패 시 창이 계속 뼈대 | 수정 | 창 자료(`mappingSource`)가 Discord 사용자 오류만 보고 팀원 오류는 보지 않았다 | [TeamOverview](../../../src/widgets/team/ui/TeamOverview.tsx)가 받은 팀원이 없을 때의 팀원 오류를 먼저 보고 창에 오류·`다시 시도`(팀원 재조회)·`닫기`를 보인다. 받은 자료가 없을 때만 오류로 본다 — 다시 받다 실패해도 열린 창의 입력을 지우지 않는다(Discord 사용자에도 같은 규칙) | `team.test.tsx` 「팀원 조회가 실패하면 창도 뼈대에 머물지 않고 오류·다시 시도·닫기를 보인다」(다시 시도 뒤 줄이 보이는 것까지) |
 | VR-04 minor — 끊기 성공 뒤 재조회 실패면 `연결됨` 유지 | 수정 | 성공 뒤 `invalidateQueries`만 했다. 재조회 실패는 던지지 않아 이전 데이터가 남았다 | [useDisconnectIntegration](../../../src/features/integration-connection/model/useDisconnectIntegration.ts)이 서버 2xx 뒤 그 provider를 미연결(서버의 행 삭제와 같은 값)로 캐시에 쓰고 다시 받는다. 서버 성공 뒤 반영이라 D-137에 맞는다 | `settingsPage.test.tsx` 「끊은 뒤 연동 상태를 다시 받지 못해도 서버가 끊은 결과대로 미연결을 보이고 제목으로 포커스를 옮긴다」(Discord) |
@@ -335,7 +335,7 @@ Node v24.11.0, `frontend/`. 무거운 명령은 공통 잠금 래퍼(`heavy.sh`)
 - Space로 열리고 바깥을 누르면 닫힌다.
 - 선택 화면의 프로필 메뉴에는 `설정`이 없다.
 
-[AppShell 스토리](../../../src/widgets/app-shell/ui/AppShell.stories.tsx) `계정_메뉴_열림`의 play에 항목 순서와 헤더 비숨김 단언을 더했다. M8 회귀 블록(`stories.sb.ts`)은 건드리지 않았다.
+[AppShell 스토리](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/f5ab3f266d3209d567a7005d1a910eff8d980653/frontend/src/widgets/app-shell/ui/AppShell.stories.tsx) `계정_메뉴_열림`의 play에 항목 순서와 헤더 비숨김 단언을 더했다. M8 회귀 블록(`stories.sb.ts`)은 건드리지 않았다.
 
 기존 단언 변경 — 모두 설정 위치가 바뀌어서다.
 
@@ -445,7 +445,7 @@ Node v24.11.0, `frontend/`. 코드 커밋 af4efd2의 작업 트리다. 다른 �
   - 브라우저 저장 모양은 바뀌지 않아 `MOCK_DB_VERSION`(2)은 올리지 않았다.
 - **매핑 모델·폼** — [features/member-mapping](../../../src/features/member-mapping/index.ts)
   - 모델은 내용 변경 없이 옮겼다.
-  - 폼 훅은 [useMemberMappingForm](../../../src/features/member-mapping/model/useMemberMappingForm.ts)이고, 줄 UI는 [MemberMappingFields](../../../src/features/member-mapping/ui/MemberMappingFields.tsx)다.
+  - 폼 훅은 [useMemberMappingForm](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/e63880744444ad4ba4e65fa8f763df726245ec06/frontend/src/features/member-mapping/model/useMemberMappingForm.ts)이고, 줄 UI는 [MemberMappingFields](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/e63880744444ad4ba4e65fa8f763df726245ec06/frontend/src/features/member-mapping/ui/MemberMappingFields.tsx)다.
   - 온보딩 [MembersStep](../../../src/widgets/onboarding/ui/MembersStep.tsx)은 이 둘을 조합한다.
 - **설정 연결** — [features/integration-connection](../../../src/features/integration-connection/index.ts)
   - [useIntegrationConnection](../../../src/features/integration-connection/model/useIntegrationConnection.ts)은 `(workspaceId, provider, { returnPath, connectedTo })`를 받는다.
@@ -456,8 +456,8 @@ Node v24.11.0, `frontend/`. 코드 커밋 af4efd2의 작업 트리다. 다른 �
 - **테스트·스토리**
   - 통합 테스트: [settingsConnections.test.tsx](../../../src/app/settingsConnections.test.tsx)
   - MSW 테스트: [connectionWrites.test.ts](../../../src/shared/mock/connectionWrites.test.ts), [scenarios.test.ts](../../../src/shared/mock/scenarios.test.ts)
-  - 스토리: [DiscordConnectionSection.stories.tsx](../../../src/features/integration-connection/ui/DiscordConnectionSection.stories.tsx)(7개)
-  - E2E: [settings-team.e2e.ts](../../../e2e/settings-team.e2e.ts)(4건), [stories.sb.ts](../../../e2e/storybook/stories.sb.ts)의 M8 수집
+  - 스토리: [DiscordConnectionSection.stories.tsx](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/f6c4fb60f74320950a2735640f64fc30364dcccd/frontend/src/features/integration-connection/ui/DiscordConnectionSection.stories.tsx)(7개)
+  - E2E: [settings-team.e2e.ts](../../../e2e/settings-team.e2e.ts)(4건), [stories.sb.ts](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/58923cff9cd94235ea52955d7f41fef4ab75c1c7/frontend/e2e/storybook/stories.sb.ts)의 M8 수집
 - 백엔드·계약 문서·라우트(`pages/members`, `routes.tsx`, `shared/config/routes.ts`)에는 develop 대비 커밋 차이가 없다(V2·V3 리뷰의 `git diff --exit-code` 0).
 
 ## 완료조건 확인
@@ -603,7 +603,7 @@ MSW 결과로 대체하지 않는다. 계획 「완료 판정과 미검증 연�
 | `frontend/docs/plan/refactor/plan-onboarding-pm-discord-link.md:18` | `src/features/onboarding/model/memberMapping.ts` |
 | `frontend/docs/plan/refactor/result-onboarding-pm-discord-link.md:21` | `src/features/onboarding/model/memberMapping.ts` |
 
-링크는 살아 있지만 안내가 뒤처진 곳도 있다. 아래 위치는 「PM 을 골라 잇기 (#228)」 테스트가 `onboardingModel.test.ts`에 있다고 적고 있다. 이 테스트는 이제 [memberMapping.test.ts](../../../src/features/member-mapping/model/memberMapping.test.ts)에 있다.
+링크는 살아 있지만 안내가 뒤처진 곳도 있다. 아래 위치는 「PM 을 골라 잇기 (#228)」 테스트가 `onboardingModel.test.ts`에 있다고 적고 있다. 이 테스트는 이제 [memberMapping.test.ts](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/e63880744444ad4ba4e65fa8f763df726245ec06/frontend/src/features/member-mapping/model/memberMapping.test.ts)에 있다.
 
 - `frontend/docs/plan/refactor/plan-onboarding-pm-discord-link.md:43`
 - `frontend/docs/plan/refactor/result-onboarding-pm-discord-link.md:39`, `:71`(테스트 개수)
@@ -629,8 +629,8 @@ M5 결정 기록과 인수인계에는 `features/notion-connection`이 링크가
 
 세 브랜치(#243·#244·#245) 병합 뒤 한 번에 반영할 문장 제안이다. 따옴표 안의 링크 경로는 각 README 기준이다.
 
-- [마일스톤 안내](../README.md)의 M8 행 상태 칸: "B(#244)는 B-1(설정 Discord·Notion 연결, MSW PM 전용 쓰기, 매핑 폼 분리)과 결정 5(디자인 캔버스 기준) 뒤의 설정·팀 화면(팀원 연결 재진입·연결 끊기)을 구현하고 `[B 결과](m8/result-b.md)`에 근거를 기록했다. 계획의 B-2 AC는 아직 없어 완료 판정 없음"
-- [Frontend README](../../../README.md) 상태 문단의 M8 문장: "M8-B는 `[결과](docs/plan/m8/result-b.md)`에 B-1의 AC-B-01~08 프론트·MSW 기준 근거와 Node v24.11.0 게이트(전체 Vitest는 `--maxWorkers=2`에서 통과, 기본 설정은 이 기계의 병렬 부하로 타임아웃)를 기록했다. 설정·팀 화면은 Settings·Team 아트보드 기준으로 만들었고(결정 5), 실제 Discord·Notion 연동은 미검증이다."
+- [마일스톤 안내](../README.md)의 M8 행 상태 칸: "B(#244)는 B-1(설정 Discord·Notion 연결, MSW PM 전용 쓰기, 매핑 폼 분리)과 결정 5(디자인 캔버스 기준) 뒤의 설정·팀 화면(팀원 연결 재진입·연결 끊기)을 구현하고 `[B 결과](result-b.md)`에 근거를 기록했다. 계획의 B-2 AC는 아직 없어 완료 판정 없음"
+- [Frontend README](../../../README.md) 상태 문단의 M8 문장: "M8-B는 `[결과](result-b.md)`에 B-1의 AC-B-01~08 프론트·MSW 기준 근거와 Node v24.11.0 게이트(전체 Vitest는 `--maxWorkers=2`에서 통과, 기본 설정은 이 기계의 병렬 부하로 타임아웃)를 기록했다. 설정·팀 화면은 Settings·Team 아트보드 기준으로 만들었고(결정 5), 실제 Discord·Notion 연동은 미검증이다."
 
 ## 관련 기록
 

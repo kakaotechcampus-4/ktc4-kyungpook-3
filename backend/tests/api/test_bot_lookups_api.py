@@ -15,6 +15,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models import Meeting, Member, MemberAlias, Session as SessionModel, User, Workspace
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 TOKEN = "test-token"
@@ -74,7 +75,7 @@ def seed(db):
 
     정렬의 동점 비교가 DB 콜레이션에 흔들리지 않게 ID는 영숫자로만 정한다.
     """
-    user = User(email="pm@example.com", name="pm")
+    user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     a = Workspace(workspace_id="wsa", name="A")
     b = Workspace(workspace_id="wsb", name="B")
     c = Workspace(workspace_id="wsc", name="C")
@@ -175,6 +176,7 @@ def test_member_names_use_display_name_and_aliases_in_creation_order(seed):
     assert r.status_code == 200, r.text
     assert r.json() == {
         "data": {
+            "identity_epoch": 0,
             "items": [
                 {"member_id": "m2", "name": "유재환", "discord_user_id": None, "aliases": []},
                 {
@@ -200,7 +202,7 @@ def test_member_names_do_not_leak_other_workspaces(seed):
 
     b = client.get(_names_url("wsb")).json()["data"]["items"]
     assert b == [{"member_id": "m9", "name": "다른팀원", "discord_user_id": "900", "aliases": ["남의별칭"]}]
-    assert client.get(_names_url("wsc")).json() == {"data": {"items": []}, "error": None}
+    assert client.get(_names_url("wsc")).json() == {"data": {"items": [], "identity_epoch": 0}, "error": None}
 
 
 # ---------- 채팅 커서 ----------

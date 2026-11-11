@@ -15,11 +15,19 @@ import type {
   TaskCreateEdits,
   TaskUpdateEdits,
 } from '@/entities/approval'
+import { memberAliasesQueryOptions } from '@/entities/member'
 import { taskDetailQueryOptions, taskHistoryQueryOptions, taskKeys } from '@/entities/task'
-import { captureSession } from '@/entities/user'
 import { errorMessage } from '@/shared/api/errorMessages'
-import { isCanceledError } from '@/shared/api/errors'
+import {
+  CLIENT_ERROR_CODES,
+  createClientError,
+  isCanceledError,
+  isInvalidResponse,
+} from '@/shared/api/errors'
 import { workspaceKey } from '@/shared/api/queryKeys'
+import { captureSessionScope } from '@/shared/api/sessionScope'
+import type { SessionScope } from '@/shared/api/sessionScope'
+import { showWriteUnconfirmed } from '@/shared/ui/toast'
 
 /** 승인 처리 mutation 의 key. 셋째 칸이 승인이라 같은 승인의 진행 중 요청을 따로 센다 */
 export function approvalResolveMutationKey(workspaceId: string, approvalId: string) {
@@ -32,17 +40,20 @@ interface ResolveVariables {
   confirmTaskVersion?: number
   revision: number
   approval: Approval
-  isCurrentSession: () => boolean
+  session: SessionScope
 }
 
 /** 화면이 승인 처리 실패를 그리는 모양 */
 export type ApprovalResolveProblem =
   | { kind: 'conflict'; taskId: string; taskVersion: number; conflicts: ApprovalConflict[] }
   | { kind: 'already_resolved' }
+  | { kind: 'changed'; message: string }
   | { kind: 'error'; message: string }
 
 export function toApprovalResolveProblem(error: unknown): ApprovalResolveProblem | null {
-  if (error === null || error === undefined || isCanceledError(error)) return null
+  // 응답을 읽지 못한 실패는 토스트가 알린다. 처리됐을 수 있어 카드에 실패로 보이지 않는다 (#348)
+  if (error === null || error === undefined || isCanceledError(error) || isInvalidResponse(error))
+    return null
   if (error instanceof ApprovalNotResolvableError) return { kind: 'error', message: error.reason }
   const failure = toApprovalResolveFailure(error)
   if (failure?.kind === 'conflict')
@@ -53,19 +64,24 @@ export function toApprovalResolveProblem(error: unknown): ApprovalResolveProblem
       conflicts: failure.conflicts,
     }
   if (failure?.kind === 'already_resolved') return { kind: 'already_resolved' }
+  if (failure?.kind === 'changed') return { kind: 'changed', message: errorMessage(error) }
   return { kind: 'error', message: errorMessage(error) }
 }
 
 /**
  * 승인 뒤 서버와 맞출 캐시 (계획 §4-6). 승인 목록·상세, 태스크 목록·상세·이력, 그 공간의 추출.
  * 추출 key 는 `entities/extraction` 의 `['workspace', id, 'extractions', extractionId]` 다 — 승인에는 추출 ID 가 없어 공간 전체를 본다.
- * 회의록의 `확인 필요` 는 열린 승인 목록과 조인하므로 `approval_id` 가 남은 항목도 다시 받은 목록에서 빠진다
+ * 회의록의 `확인 필요` 는 열린 승인 목록과 조인하므로 `approval_id` 가 남은 항목도 다시 받은 목록에서 빠진다.
+ * 생성 승인은 `save_alias` 로 담당자의 별칭을 더할 수 있어 팀 화면의 별칭 목록도 다시 받는다 (#523)
+ * 회의록은 끝난 회의라도 승인 대기 요약 상태와 남은 건수가 승인·반려로 바뀐다. 합친 카드는 다른 회의도 기다려 공간 전체를 본다 (#551)
  */
 function syncAfterResolve(queryClient: QueryClient, workspaceId: string): void {
   for (const queryKey of [
     workspaceKey(workspaceId, 'approvals'),
     taskKeys(workspaceId),
     workspaceKey(workspaceId, 'extractions'),
+    workspaceKey(workspaceId, 'minutes'),
+    memberAliasesQueryOptions(workspaceId).queryKey,
   ])
     void queryClient.invalidateQueries({ queryKey })
 }
@@ -99,24 +115,36 @@ export function useApprovalResolve(
   const { mutate, isPending, variables, error, reset } = useMutation({
     mutationKey,
     retry: false,
-    mutationFn: ({ approval, decision, edits, confirmTaskVersion }: ResolveVariables) =>
-      resolveApproval(workspaceId, approval, decision, {
-        memberIds,
-        edits,
-        confirmTaskVersion,
-      }),
-    onSuccess: (resolved, { isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    mutationFn: ({ approval, decision, edits, confirmTaskVersion, session }: ResolveVariables) => {
+      // 오프라인으로 기다리는 사이 세션이 끝났을 수 있다. 그대로 보내면 다음에 로그인한 계정의 쿠키로 승인한다 (#594)
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
+      return resolveApproval(
+        workspaceId,
+        approval,
+        decision,
+        { memberIds, edits, confirmTaskVersion },
+        session.signal,
+      )
+    },
+    onSuccess: (resolved, { session }) => {
+      if (!session.isCurrent()) return
       queryClient.setQueryData(
         approvalDetailQueryOptions(workspaceId, resolved.id).queryKey,
         resolved,
       )
       syncAfterResolve(queryClient, workspaceId)
     },
-    onError: (failure, { isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    onError: (failure, { session }) => {
+      if (!session.isCurrent()) return
+      if (isInvalidResponse(failure)) {
+        showWriteUnconfirmed(() => syncAfterResolve(queryClient, workspaceId))
+        return
+      }
       const problem = toApprovalResolveProblem(failure)
       if (problem?.kind === 'already_resolved') syncAfterResolve(queryClient, workspaceId)
+      // 본 뒤 바뀐 카드는 새로 받아야 화면이 비교할 수 있다. 목록 카드와 상세가 모두 이 key 아래다
+      if (problem?.kind === 'changed')
+        void queryClient.invalidateQueries({ queryKey: workspaceKey(workspaceId, 'approvals') })
       if (problem?.kind === 'conflict')
         for (const { queryKey } of [
           taskDetailQueryOptions(workspaceId, problem.taskId),
@@ -190,7 +218,7 @@ export function useApprovalResolve(
         ...(confirm && problem?.kind === 'conflict'
           ? { confirmTaskVersion: problem.taskVersion }
           : {}),
-        isCurrentSession: captureSession(),
+        session: captureSessionScope(),
       })
     },
     [queryClient, mutate, workspaceId, approvalId, error, variables],

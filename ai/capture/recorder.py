@@ -25,8 +25,9 @@ discord 이름은 여기 없다. capture/discord_adapter.py 가 이 함수들을
   extract_runs       판단하지 못한 finding 을 남긴 채 끝난 실행 수. EXTRACT_RETRY_MAX 번까지 다시 돌린다
   extract_partial    다시 돌려도 남아서 판단하지 못한 finding 을 둔 채 인계로 갔다
   extract_error      포기 직전 차례에 파이프라인이 통째로 실패해 앞선 결과로 닫았을 때, 그 실패 한 줄
-  extract_dropped    남긴 판단 결과에서 1단계가 검증에 탈락시킨 항목 기록(#186). {"not_dict", "no_valid_indices",
-                     "bad_indices", "bad_indices_total", "lines"}. 원문은 없다
+  extract_dropped    판단 실행마다 1단계가 검증에 탈락시킨 항목 기록(#186) 의 리스트. 하나는 {"not_dict",
+                     "no_valid_indices", "bad_indices", "bad_indices_total", "lines"}. 원문은 없다
+  judge_runs         같은 전사로 돈 판단 실행들의 finding 별 결과 파일 경로. 이것을 얘기 단위로 합쳐 items 를 쓴다(#217)
   be           BE 인계 상태 {"meeting_id", "status", "extraction_id", ...}. capture/handoff.py 가 쓴다
   claimed_by, claimed_at   누가 언제부터 이 회의를 처리 중인지 보여 주는 표시. 누가 처리할지는 회의 잠금
                 (session_<회의ID>.lock 의 OS 파일 잠금)만 정한다. 놓으면 지운다
@@ -59,20 +60,21 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import hashlib
 import json
 import os
 import shutil
 import socket
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from zoneinfo import ZoneInfo
 
 import soundfile as sf
 
-from capture import judge_path, ops_record
-from capture.judge_path import JudgeOutput
-from capture.handoff import MeetingEnded, speaker_names
+from capture import audio_outbox, judge_path, ops_record
+from capture.handoff import MeetingEnded, session_privacy, speaker_names
+from capture.judge_path import JudgeOutput, merge_runs
 from shared.config import TRANSCRIPTS_DIR, settings
 from shared.config import today as config_today
 from shared.schemas import now_iso
@@ -109,9 +111,12 @@ RECOVERY_BACKOFF_S = float(os.environ.get("MM_RECOVERY_BACKOFF_S", "60"))      #
 RECOVERY_BACKOFF_CEIL_S = 3600.0                                                # 두 배로 늘려도 한 시간에서 멈춘다
 # 판단 경로에서 finding 몇 개만 실패했을 때 인계를 미루고 파이프라인을 다시 돌리는 횟수. 상한에 닿으면 가장 나은
 # 결과로 인계한다. 실패한 finding 만 다시 돌리는 진입점이 파이프라인에 없어 통째로 다시 돈다(docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md)
-EXTRACT_RETRY_MAX = int(os.environ.get("MM_EXTRACT_RETRY_MAX") or "2")       # .env 에 빈 값으로 적혀 있어도 기본값
+# 기본 0: 판단·초안은 실패한 호출을 그 자리에서 한 번 더 한다. 그 뒤에도 남는 실패는 같은 입력에서 되풀이돼, 2 일 때
+# 4분 회의 하나가 통째 재실행 두 번과 대기로 6분 30초를 더 썼다(#624)
+EXTRACT_RETRY_MAX = int(os.environ.get("MM_EXTRACT_RETRY_MAX") or "0")       # .env 에 빈 값으로 적혀 있어도 기본값
 # 판단 경로가 매니페스트에 적는 칸. 전사가 바뀌거나 옛 경로로 다시 뽑으면 같이 버린다
-_JUDGE_KEYS = ("items", "extract_failures", "extract_runs", "extract_partial", "extract_error", "extract_dropped")
+_JUDGE_KEYS = ("items", "extract_failures", "extract_runs", "extract_partial", "extract_error", "extract_dropped",
+               "judge_runs")
 # 끊긴 녹음의 마지막 트랙 쓰기가 이보다 오래됐으면 회의가 끝났다고 보고 재시작 안내를 하지 않는다. 잠정값이다
 RESUME_NOTICE_WINDOW_S = 3600.0
 
@@ -138,6 +143,8 @@ def manifest_path(recordings_dir: Path, session) -> Path:
 
 def save_manifest(path: Path, manifest: dict) -> None:
     """임시 파일에 쓴 뒤 바꿔 끼운다. 쓰는 도중 죽어도 반쯤 쓰인 JSON 이 남지 않는다."""
+    from capture.privacy_cleanup import guard_manifest
+    guard_manifest(path, manifest)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -372,7 +379,7 @@ def remember_member_names(manifest: dict, handoff) -> bool:
 
 
 def transcribe_session(recordings_dir: Path, manifest: dict, *, backend, model_name: str, workers: int,
-                       gate=None, transcripts_dir: Path | None = None, progress=None) -> dict:
+                       gate=None, transcripts_dir: Path | None = None, progress=None, track_progress=None) -> dict:
     """매니페스트의 트랙을 chunk 모드로 전사해 회의록까지 쓴다. 스레드에서 부른다.
 
     산출물은 셋이다. transcripts/ 의 파일당 json 과 session_<회의ID>.transcript.json (BE 계약),
@@ -385,7 +392,7 @@ def transcribe_session(recordings_dir: Path, manifest: dict, *, backend, model_n
     wavs, names = _wavs_and_names(recordings_dir, manifest)
     run = run_session(wavs, names, hinted(backend, manifest), mode="chunk", model_name=model_name, gate=gate,
                       workers=workers, out_dir=transcripts_dir or TRANSCRIPTS_DIR, session_id=str(manifest["session"]),
-                      progress=progress)
+                      progress=progress, track_progress=track_progress)
     meeting_dir = recordings_dir / manifest["meeting_dir"]
     md = write_transcript(run["lines"], meeting_dir, manifest["meeting_dir"])
     return {"markdown": md["markdown"], "jsonl": md["jsonl"], "failed": md["failed"],
@@ -394,14 +401,15 @@ def transcribe_session(recordings_dir: Path, manifest: dict, *, backend, model_n
 
 
 def retry_failed(recordings_dir: Path, manifest: dict, *, backend, model_name: str,
-                 transcripts_dir: Path | None = None) -> dict:
+                 transcripts_dir: Path | None = None, track_progress=None) -> dict:
     """failed_units 의 구간만 화자 wav 에서 잘라 다시 보내고 회의록과 계약 파일을 다시 쓴다."""
     from stt.transcribe import retry_failed_lines
     from stt.transcript_writer import write_transcript
 
     wavs, names = _wavs_and_names(recordings_dir, manifest)
     out = retry_failed_lines(wavs, names, hinted(backend, manifest), model_name=model_name, mode="chunk",
-                             out_dir=transcripts_dir or TRANSCRIPTS_DIR, session=str(manifest["session"]))
+                             out_dir=transcripts_dir or TRANSCRIPTS_DIR, session=str(manifest["session"]),
+                             track_progress=track_progress)
     md = write_transcript(out["lines"], recordings_dir / manifest["meeting_dir"], manifest["meeting_dir"])
     return {"markdown": md["markdown"], "jsonl": md["jsonl"], "failed": out["still_failed"],
             "retried": out["retried"], "transcript_json": out["transcript_json"], "lines": out["lines"],
@@ -473,7 +481,8 @@ def drop_local(recordings_dir: Path, session: str) -> None:
 
 def drop_transcripts(transcripts_dir: Path, manifest: dict) -> None:
     """이 회의의 전사 산출물을 지운다: session_<회의>.* (계약 파일·줄 목록·추출 결과)와 session_<회의>__*(세션 통계),
-    트랙마다 쓴 <트랙 이름>__<모델>.* (파일당 전사). BE 가 끝낸 업로드를 정리할 때 drop_local 과 같이 쓴다(#288, #389 리뷰)."""
+    새 파일당 전사는 세션 접두사에 포함되고, 이전 <트랙 이름>__<모델>.* 캐시도 지운다.
+    BE 가 끝낸 업로드를 정리할 때 drop_local 과 같이 쓴다(#288, #389 리뷰)."""
     if not transcripts_dir.exists():
         return
     session = str(manifest["session"])
@@ -483,6 +492,152 @@ def drop_transcripts(transcripts_dir: Path, manifest: dict) -> None:
         for f in transcripts_dir.glob(pat):
             if f.is_file():
                 f.unlink(missing_ok=True)
+
+
+AUDIO_KEEP_AFTER_GIVE_UP_S = 7 * 86400   # 포기한 회의는 이만큼 두어 --retry 로 다시 돌릴 수 있게 하고, 멈춘 회의도 마지막 진행 뒤 이만큼 둔다(#561)
+# 음성 삭제는 이 시각 뒤에 인계되거나 포기한 회의에만 쓴다. 그 전 회의는 팀원 동의를 받은 E2E·검증용이라 남기고,
+# 지우려면 사람이 직접 지운다(#568, 결정 기록 0055)
+AUDIO_PRUNE_SINCE = datetime(2026, 11, 9, tzinfo=ZoneInfo("Asia/Seoul"))
+
+
+def _track_files(recordings_dir: Path, manifest: dict) -> list[Path]:
+    """소유 세션 폴더 안의 실제 wav 트랙만 고른다. 잘못된 항목이 있으면 전체 삭제를 보류한다."""
+    session = manifest["session"]
+    directory = recordings_dir / session
+    if directory.is_symlink() or getattr(directory, "is_junction", lambda: False)():
+        raise ValueError("audio session directory is a link")
+    root = recordings_dir.resolve()
+    if directory.resolve().parent != root:
+        raise ValueError("audio session directory is outside recordings")
+    out = []
+    for e in manifest.get("speakers") or []:
+        if isinstance(e, dict) and e.get("file"):
+            raw = e["file"]
+            if not isinstance(raw, str):
+                raise ValueError("audio track path is not text")
+            relative = PurePosixPath(raw.replace("\\", "/"))
+            if (relative.is_absolute() or len(relative.parts) != 2 or relative.parts[0] != session
+                    or ":" in raw or relative.suffix.lower() != ".wav"):
+                raise ValueError("audio track does not belong to this session")
+            p = recordings_dir.joinpath(*relative.parts)
+            if (p.is_symlink() or getattr(p, "is_junction", lambda: False)()
+                    or p.resolve().parent != directory.resolve()):
+                raise ValueError("audio track is a link or leaves its session")
+            if p.is_file():
+                out.append(p)
+            elif p.exists():
+                raise ValueError("audio track is not a regular file")
+    return out
+
+
+def _since(raw) -> datetime | None:
+    """보관 판정의 시각. 없거나 깨졌거나 시간대가 없으면 None."""
+    try:
+        at = datetime.fromisoformat(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+    return at if at is not None and at.tzinfo is not None else None
+
+
+def _last_progress(m: dict) -> datetime | None:
+    """멈춘 회의가 마지막으로 진행한 시각: 저장 시각(recorded_at)·단계 시각(stages)·다음 재시도 시각(recovery.next_at) 중
+    가장 늦은 것. 매니페스트 수정 시각·claimed_at·workspace_wait 는 워커가 다시 확인할 때마다 새로 쓰여 진행이 아니다."""
+    stages = m.get("stages") if isinstance(m.get("stages"), dict) else {}
+    state = m.get("recovery") if isinstance(m.get("recovery"), dict) else {}
+    raw_times = [raw for raw in (m.get("recorded_at"), *stages.values(), state.get("next_at")) if raw]
+    times = [_since(raw) for raw in raw_times]
+    if any(at is None for at in times):
+        return None
+    return max(times) if times else None
+
+
+def _audio_expired(recordings_dir: Path, m: dict, now: datetime) -> bool:
+    """이 회의의 음성을 지울 때인가. 인계가 끝나 더 돌 일이 없으면 바로, 처리를 포기했으면 포기 7일 뒤,
+    인계도 포기도 못 하고 멈춘 디스코드 회의는 마지막 진행 7일 뒤다. 기준 시각(인계·포기·마지막 진행)이
+    AUDIO_PRUNE_SINCE 뒤일 때만 지운다. 시각이 없거나 읽을 수 없는 회의와 자동 복구 전의 실패(recovery 없는 failed)는
+    정책 시행 전 회의로 보고 지우지 않는다. 녹음 중인 회의와 업로드(#439 정리와 BE 만료가 맡는다)는 멈춘 회의로 보지 않는다."""
+    status = m.get("status")
+    if status == STATUS_HANDED_OFF:
+        stages = m.get("stages")
+        at = _since(stages.get("handed_off")) if isinstance(stages, dict) else None
+        if at is None or at < AUDIO_PRUNE_SINCE or at > now:
+            return False
+        return not _is_pending(recordings_dir, m)   # partial 재전사가 남은 디스코드 회의는 트랙이 더 필요하다
+    state = m.get("recovery")
+    if isinstance(state, dict) and state.get("gave_up_at"):
+        at = _since(state.get("gave_up_at"))
+    elif status == STATUS_RECORDING or m.get("source") == "upload" or (state is None and status == STATUS_FAILED):
+        return False
+    else:
+        at = _last_progress(m)
+    if at is None or at < AUDIO_PRUNE_SINCE:
+        return False
+    return now >= at + timedelta(seconds=AUDIO_KEEP_AFTER_GIVE_UP_S)
+
+
+def _enqueue_recording(recordings_dir: Path, m: dict, files: list[Path], now: datetime) -> None:
+    """wav 를 지우기 직전에 인계한 디스코드 회의의 트랙을 섞어 BE 로 올릴 대기 폴더에 넣는다(#659).
+    인계가 끝난 디스코드 회의이고 BE 회의 ID 가 있을 때만 하고, 인계 AUDIO_KEEP_AFTER_GIVE_UP_S 가 지났으면 섞지 않는다.
+    BE 가 그만큼 지난 회의는 보관 기간이 끝났다고 답하고, 섞기가 계속 실패해도 디스크를 지켜야 해서다.
+    섞지 못하면 예외가 나가고, 호출자(prune_audio)는 로그를 남긴 뒤 wav 를 그대로 지운다. 매니페스트는 읽기만 한다."""
+    be = m.get("be") if isinstance(m.get("be"), dict) else {}
+    meeting_id = be.get("meeting_id")
+    if m.get("status") != STATUS_HANDED_OFF or m.get("source") == "upload" or not meeting_id:
+        return
+    stages = m.get("stages") if isinstance(m.get("stages"), dict) else {}
+    handed = _since(stages.get("handed_off"))
+    if handed is None or now >= handed + timedelta(seconds=AUDIO_KEEP_AFTER_GIVE_UP_S):
+        return
+    if audio_outbox.has(recordings_dir, str(meeting_id)):
+        return
+    audio_outbox.enqueue(recordings_dir, meeting_id=str(meeting_id), workspace_id=m.get("workspace_id") or None,
+                         handed_off_at=handed, tracks=files)
+
+
+def prune_audio(recordings_dir: Path, *, now: datetime | None = None) -> list[str]:
+    """음성 보관 기한이 지난 회의의 트랙 wav 를 지우고 그 회의 목록을 돌려준다(#561, #360 결정). 기한은 _audio_expired.
+
+    트랙 wav(speakers[].file)만 지운다. 매니페스트·대본·처리 기록·diarization.json 은 남긴다. 잠긴 회의는 건너뛴다.
+    AUDIO_PRUNE_SINCE 전에 인계되거나 포기한 회의(팀원 동의를 받은 검증용)는 남긴다.
+    인계한 디스코드 회의는 지우기 직전에 트랙을 섞어 audio_outbox 에 넣는다(#659). 섞지 못하면 로그만 남기고 그대로 지운다
+    (그 회의는 웹 재생 녹음이 없다). 녹음 올리기가 디스크 정리를 막지 않게 하려는 것이다(#670 리뷰).
+    워커가 바퀴마다 부른다. 예외는 올리지 않는다."""
+    now = now or utcnow()
+    recordings_dir = Path(recordings_dir)
+    dropped = []
+    for path in sorted(recordings_dir.glob("session_*.json")):
+        lock = None
+        try:
+            if path.is_symlink() or getattr(path, "is_junction", lambda: False)() or not path.is_file():
+                continue
+            lock = try_lock(path)
+            if lock is None:
+                continue
+            m = _load(path)
+            if not isinstance(m, dict):
+                continue
+            session = m.get("session")
+            if (not isinstance(session, str) or not session or session in (".", "..")
+                    or any(c in session for c in "\\/:*?[]") or path != manifest_path(recordings_dir, session)):
+                raise ValueError("audio manifest does not match its session lock")
+            files = _track_files(recordings_dir, m)
+            if not files or not _audio_expired(recordings_dir, m, now):
+                continue
+            try:
+                _enqueue_recording(recordings_dir, m, files, now)
+            except Exception as e:  # noqa: BLE001 - 녹음 올리기는 곁가지다. 섞지 못해도(디스크 가득 참 등) wav 는 지워 공간을 비운다
+                mid = (m.get("be") or {}).get("meeting_id")
+                print(f"[audio] {session} 녹음 섞기 실패(회의 {mid} 은 웹 재생 녹음 없이 wav 를 지운다): "
+                      f"{type(e).__name__}: {e}", flush=True)
+            for f in files:
+                f.unlink(missing_ok=True)
+            dropped.append(session)
+        except Exception as e:  # noqa: BLE001 - 한 회의의 정리 실패가 바퀴를 멈추지 않는다. 다음 바퀴에 다시 본다
+            print(f"[audio] {path.name} 음성 정리 실패(다음에 다시 한다): {type(e).__name__}: {e}", flush=True)
+        finally:
+            if lock is not None:
+                lock.release()
+    return dropped
 
 
 def _resume_mapped(recordings_dir: Path, meeting_id: str) -> bool:
@@ -564,6 +719,7 @@ class Claims:
         잠금을 먼저 잡고 매니페스트를 읽는다. process_session 은 이 dict 를 통째로 저장하므로 표시가 같이 남는다.
         다 쓰면 release 로 놓는다.
         """
+        from capture.privacy_cleanup import PrivacyPending
         lock = try_lock(path)
         if lock is None:
             return None
@@ -576,7 +732,14 @@ class Claims:
             self._dead[str(m.get("session"))] = str(m["claimed_by"])
         m["claimed_by"] = self.owner
         m["claimed_at"] = _iso(utcnow())
-        save_manifest(path, m)
+        try:
+            save_manifest(path, m)
+        except PrivacyPending:
+            lock.release()
+            return None
+        except Exception:
+            lock.release()
+            raise
         self._locks[str(m.get("session"))] = lock
         return m
 
@@ -584,11 +747,11 @@ class Claims:
         """방금 잡은 회의를 전에 쥐었다가 처리 도중 죽은 쪽. 없으면 None. 한 번만 돌려준다."""
         return self._dead.pop(str(manifest.get("session")), None)
 
-    def release(self, path: Path, manifest: dict) -> None:
+    def release(self, path: Path, manifest: dict, *, save: bool = True) -> None:
         """놓는다. manifest 는 acquire 가 준 dict 다. 마지막 상태에서 표시만 지우고 저장한 뒤 잠금을 푼다."""
         lock = self._locks.pop(str(manifest.get("session")), None)
         try:
-            if manifest.get("claimed_by") == self.owner:
+            if save and manifest.get("claimed_by") == self.owner:
                 manifest.pop("claimed_by", None)
                 manifest.pop("claimed_at", None)
                 save_manifest(path, manifest)
@@ -649,6 +812,7 @@ def sources_saved(manifest: dict) -> bool:
         (be.get("sources") or {}).get("meeting_id") == be.get("meeting_id")
 
 
+@session_privacy
 def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name: str, workers: int,
                     gate=None, transcripts_dir: Path | None = None, extractor=None, handoff=None,
                     name_of=None, progress=None, wait_for_workspace: bool = False) -> dict:
@@ -802,9 +966,10 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 lambda done, sent, tracks, total: tell("stt", {"done": done, "sent": sent, "tracks": tracks,
                                                               "tracks_total": total}))
             out = transcribe_session(recordings_dir, manifest, backend=backend, model_name=model_name,
-                                     workers=workers, gate=gate, transcripts_dir=tdir, progress=counted_by)
+                                     workers=workers, gate=gate, transcripts_dir=tdir, progress=counted_by,
+                                     track_progress=handoff.stt_progress(manifest) if handoff is not None else None)
             ops.end()                                  # partial 이면 실패를 세며 BE 에 fail 을 보낼 수 있다. 전사 시간에 넣지 않는다
-            manifest["transcript"] = str(Path(out["markdown"]).relative_to(recordings_dir))
+            manifest["transcript"] = Path(out["markdown"]).relative_to(recordings_dir).as_posix()
             manifest["transcript_json"] = str(out["transcript_json"]) if out["transcript_json"] else None
             result["transcribe"] = {"markdown": out["markdown"], "failed": out["failed"],
                                     "summary": out["summary"], "lines": len(out["lines"])}
@@ -822,13 +987,16 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 result["status"] = STATUS_PARTIAL
                 return result
             finish(STATUS_TRANSCRIBED)
-        elif manifest.get("failed_units"):
+        elif manifest.get("failed_units") and not (manifest.get("partial")
+                                                   and manifest.get("retry_runs", 0) >= PARTIAL_RETRY_MAX):
             # 지난번에 실패한 줄만 다시 보낸다. 상한 전에는 partial 로 두고 다음 시도를 기다린다.
-            # 상한에 닿으면 빠진 구간을 둔 채 추출·인계로 간다. 구간은 매니페스트에 남는다
+            # 상한에 닿으면 빠진 구간을 둔 채 추출·인계로 간다. 구간은 매니페스트에 남는다. 그 뒤에는 다시 보내지 않는다.
+            # 보내면 바퀴마다 전사 단계가 닫혀 recovery 가 지워지고, 뒤 단계가 계속 실패해도 포기하지 않는다
             stage = STATUS_TRANSCRIBED
             ops.load_model(backend)
             begin(FAILED_STAGE[stage])
-            out = retry_failed(recordings_dir, manifest, backend=backend, model_name=model_name, transcripts_dir=tdir)
+            out = retry_failed(recordings_dir, manifest, backend=backend, model_name=model_name, transcripts_dir=tdir,
+                               track_progress=handoff.stt_progress(manifest) if handoff is not None else None)
             ops.end()                                  # 이 길은 finish 를 지나지 않는다. 여기서 닫아야 다음 단계 준비가 안 섞인다
             manifest["retry_runs"] = manifest.get("retry_runs", 0) + 1
             manifest["transcript_json"] = str(out["transcript_json"]) if out["transcript_json"] else None
@@ -926,6 +1094,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
         # 로컬 정리는 잠금을 놓은 뒤 recover_one 이 한다. 여기서 지우면 Claims.release·_keep_ops 가 매니페스트를 다시 쓴다
         ops.end()
         result["ended"] = f"{e.code}: {e}"
+        result["deleted"] = e.code == "MEETING_DELETED"
     except Exception as e:  # noqa: BLE001 - 어느 단계가 죽어도 매니페스트에 남기고 돌아온다
         ops.end()                                      # 단계 시간은 예외까지다. 실패 세기와 포기 알림은 넣지 않는다
         manifest["status"] = STATUS_FAILED
@@ -1038,7 +1207,7 @@ def _due(manifest: dict, now: datetime) -> bool:
     state = manifest.get("recovery") or {}
     if state.get("gave_up_at"):
         be = manifest.get("be") or {}
-        return bool(be.get("meeting_id")) and be.get("status") not in ("failed", "done")
+        return bool(be.get("meeting_id")) and be.get("status") not in ("failed", "done", "deleted")
     nxt = state.get("next_at")
     return not nxt or now >= _parse_time(nxt)
 
@@ -1079,7 +1248,19 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
         who = claims.holder(path, cur) if cur is not None else None
         return {"session": cur.get("session"), "busy": True, **who} if who is not None else None
     ended = False
+    removed = False
     try:
+        from capture.meeting_purge import (
+            deleted,
+            mark_deleted,
+            meeting_ids,
+            purge_files,
+        )
+        mid = (m.get("be") or {}).get("meeting_id")
+        if any(deleted(recordings_dir, identity) for identity in meeting_ids(m)):
+            ended = True
+            removed = True
+            return {"session": m.get("session"), "ended": True}
         dead = claims.died_before(m)
         if dead is not None and _is_pending(recordings_dir, m):
             _count_dead_run(m, handoff, dead)
@@ -1095,12 +1276,20 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
                                  transcripts_dir=transcripts_dir, extractor=extractor, handoff=handoff, name_of=name_of,
                                  wait_for_workspace=wait_for_workspace, progress=progress)
         ended = bool(result.get("ended"))
+        removed = bool(result.get("deleted"))
         return result
     finally:
-        claims.release(path, m)
-        if ended:
-            drop_local(recordings_dir, str(m["session"]))   # 잠금을 놓은 뒤에 지운다. 놓기 전에 지우면 release 가 매니페스트를 다시 쓴다
-            drop_transcripts(transcripts_dir or TRANSCRIPTS_DIR, m)
+        try:
+            if removed:
+                mark_deleted(recordings_dir, meeting_ids(m))
+            elif ended:
+                path.unlink(missing_ok=True)
+                shutil.rmtree(recordings_dir / str(m['session']), ignore_errors=True)
+                drop_transcripts(transcripts_dir or TRANSCRIPTS_DIR, m)
+        finally:
+            claims.release(path, m, save=not ended)
+        if removed and mid:
+            purge_files(recordings_dir, transcripts_dir or TRANSCRIPTS_DIR, mid)
 
 
 def queue_ahead(recordings_dir: Path, session, *, exclude=None) -> int:
@@ -1191,6 +1380,7 @@ def build_extractor():
         return judge_path.build_extractor()
     try:
         from openai import OpenAI
+
         from extract.llm import extract_tasks
         from shared.config import settings
     except ImportError:
@@ -1266,6 +1456,28 @@ def _last_attempt(manifest: dict) -> bool:
     return (manifest.get("recovery") or {}).get("attempts", 0) + 1 >= RECOVERY_MAX_ATTEMPTS
 
 
+def _kept_judge_runs(transcripts_dir: Path, manifest: dict, transcript: str) -> list[dict]:
+    """이 전사로 앞서 돈 판단 실행들의 finding 별 결과. 다시 돌릴 차례를 기다리는 회의에만 있다(#217).
+
+    근거 문장 번호는 전사마다 다른 문장을 가리키므로, 전사가 바뀐 표시를 지우지 못하고 남은 실행은 뺀다.
+    """
+    path = transcripts_dir / f"session_{manifest['session']}.judge_runs.json"
+    if manifest.get("judge_runs") != str(path) or not path.exists():
+        return []
+    return [r for r in json.loads(path.read_text(encoding="utf-8")) if r["transcript"] == transcript]
+
+
+def _kept_before_runs(path: Path, manifest: dict, out: JudgeOutput) -> bool:
+    """실행 기록 없이 재시도를 기다리던 회의의 결과를 지킬까. 합칠 수 없으니 옛 규칙(항목 수, 실패 수)으로 견준다.
+
+    합치는 규칙이 배포되기 전부터 기다리던 회의에만 있다. 번호가 없어 실행 기록으로 옮길 수 없다.
+    """
+    if "judge_runs" in manifest or manifest.get("items") != str(path) or not path.exists():
+        return False
+    items = json.loads(path.read_text(encoding="utf-8"))
+    return (len(out.items), -len(out.failures)) <= (len(items), -len(manifest.get("extract_failures") or []))
+
+
 def _keep_judge_output(transcripts_dir: Path, manifest: dict, out: JudgeOutput) -> Path:
     """판단 경로의 결과를 파일과 매니페스트에 적고, 이 결과로 단계를 닫을지 정한다. 항목은 인계 단계가 그대로 보낸다.
 
@@ -1273,23 +1485,33 @@ def _keep_judge_output(transcripts_dir: Path, manifest: dict, out: JudgeOutput) 
     그러면 기존 재시도 규칙(60초부터 두 배)이 파이프라인을 다시 돌린다. 성공한 것만 먼저 인계하지 않는 이유는
     BE 가 회의 하나에 추출을 한 번만 받아서 나머지를 나중에 넣을 수 없기 때문이다.
 
-    다시 돌린 결과는 항목이 더 많을 때, 같으면 실패가 더 적을 때만 바꿔 끼운다. 1단계는 돌릴 때마다 발화를 다르게
-    묶고, 응답이 이상하면 하나도 못 고른 채(항목 0, 실패 0) 끝난다. 실패 수만 견주면 그 빈 결과가 가진 결과를
-    밀어내고 빈 추출이 등록된다. 닫을지는 남긴 결과에 실패가 있는지로 정한다.
-    EXTRACT_RETRY_MAX 번 다시 돌렸거나 이번 실패가 포기가 되는 차례면(_last_attempt) 가장 나은 결과로 닫고
+    실행마다 finding 별 결과를 session_<회의ID>.judge_runs.json 에 쌓고, 지금까지의 실행을 얘기 단위로 합친
+    결과(judge_path.merge_runs)를 항목 파일과 extract_failures 에 쓴다. 실행 하나를 통째로 고르면 다시 돌려서
+    성공한 finding 이 버려진다(#217). 닫을지는 합친 결과에 실패가 있는지로 정한다.
+    EXTRACT_RETRY_MAX 번 다시 돌렸거나 이번 실패가 포기가 되는 차례면(_last_attempt) 합친 결과로 닫고
     extract_partial 과 extract_failures 를 남긴다. 가진 결과를 두고 회의를 실패로 닫지 않는다. 그 차례에
     파이프라인이 통째로 실패한 경우는 extract_after_transcription 이 같은 규칙으로 닫는다.
     """
     path = transcripts_dir / f"session_{manifest['session']}.items.json"
-    kept = None
-    if _kept_judge_result(transcripts_dir, manifest):
+    if _kept_before_runs(path, manifest, out):
         kept = manifest.get("extract_failures") or []
-        kept_items = len(json.loads(path.read_text(encoding="utf-8")))
-    if kept is None or (len(out.items), -len(out.failures)) > (kept_items, -len(kept)):
-        path.write_text(json.dumps(out.items, ensure_ascii=False, indent=2), encoding="utf-8")
-        kept = out.failures
-        # 1단계 탈락 기록(#186)도 이 결과의 것만 적는다. 바꿔 끼우지 않은 실행의 것이 남으면 항목과 맞지 않는다
-        manifest["extract_dropped"] = out.dropped
+    else:
+        runs_path = transcripts_dir / f"session_{manifest['session']}.judge_runs.json"
+        src = transcripts_dir / f"session_{manifest['session']}.transcript.json"
+        # 근거 문장 번호는 세그먼트의 시각과 문장으로 정해진다. 개인정보 정리처럼 화자 값만 바뀐 전사는 같은 전사로 본다
+        segments = json.loads(src.read_text(encoding="utf-8")).get("segments", [])
+        transcript = hashlib.sha256(json.dumps([[s.get("start"), s.get("text")] for s in segments],
+                                               ensure_ascii=False).encode()).hexdigest()
+        history = _kept_judge_runs(transcripts_dir, manifest, transcript)
+        history.append({"transcript": transcript, "outcomes": out.outcomes, "dropped": out.dropped})
+        tmp = runs_path.with_suffix(runs_path.suffix + ".tmp")   # 쓰다 죽어도 앞선 실행을 읽을 수 있게 바꿔 끼운다
+        tmp.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, runs_path)
+        manifest["judge_runs"] = str(runs_path)
+        items, kept = merge_runs([r["outcomes"] for r in history])
+        path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+        # 1단계 탈락 기록(#186). 항목이 여러 실행에서 오므로 실행마다 하나씩 남긴다
+        manifest["extract_dropped"] = [r["dropped"] for r in history]
     manifest["items"] = str(path)
     manifest.pop("tasks", None)
     if not kept:

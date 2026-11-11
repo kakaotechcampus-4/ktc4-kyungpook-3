@@ -1,3 +1,4 @@
+import hashlib
 import json
 from datetime import date, datetime, timezone
 
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_member, get_current_user, require_member, require_pm
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, ExtractionItem, Meeting, MeetingSource, Member, MemberRole, Task, TaskStatus, User
+from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, AsrTitleQueue, ChangeSource, ExtractionItem, Meeting, MeetingSource, Member, MemberRole, Task, TaskStatus, User
 from app.schemas.approval import (
     ApprovalCreateRequest,
     ApprovalListResponse,
@@ -27,6 +28,7 @@ from app.services.tasks import (
     apply_task_updates,
     create_task,
     log_manual_edit,
+    log_scope_change,
     parse_date,
     validate_task_fields,
 )
@@ -40,7 +42,6 @@ _TASK_UPDATE_FIELDS = {"title", "assignee_member_id", "status", "blocker", "due_
 _EDITABLE_FIELDS: dict[str, frozenset[str]] = {
     str(ApprovalType.TASK_CREATE): frozenset({"task_title", "assignee_member_id", "due_date"}),
     str(ApprovalType.TASK_UPDATE): frozenset({"status", "due_date"}),
-    str(ApprovalType.REMINDER_DM): frozenset(),
 }
 # null 은 "미정"으로 두겠다는 뜻이다. 값이 꼭 있어야 하는 필드(task_title, status)는 null 을 받지 않는다
 _UNDETERMINABLE_FIELDS = frozenset({"due_date", "assignee_member_id"})
@@ -274,6 +275,8 @@ def _apply_approval(
                 changed_by=approval.resolved_by,
             )
         approval.related_task_id = task.task_id
+        # PM 이 확인한 최종 제목을 AI 가 받아 명사를 용어 목록에 올린다(#532). 승인이 되돌려지면 함께 사라진다
+        db.add(AsrTitleQueue(workspace_id=approval.workspace_id, title=task.title))
 
         # 합쳐진 항목(action="merge")도 같은 카드에서 나왔으므로 카드가 만든 task 를 함께 가리킨다
         linked_items = db.execute(
@@ -344,12 +347,14 @@ def _apply_approval(
         proposed = {k: v for k, v in updates.items() if k not in changed}
         if "due_date" in proposed:
             proposed["due_date"] = parse_date(proposed["due_date"], field="due_date")
+        source = payload.get("change_source") or _change_source(
+            db, payload.get("meeting_id"), ChangeSource.MEETING
+        )
         entries = apply_task_updates(
             db,
             task,
             proposed,
-            change_source=payload.get("change_source")
-            or _change_source(db, payload.get("meeting_id"), ChangeSource.MEETING),
+            change_source=source,
             changed_by=approval.resolved_by,
         )
         edited = dict(changed)
@@ -362,14 +367,30 @@ def _apply_approval(
             change_source=str(ChangeSource.MANUAL),
             changed_by=approval.resolved_by,
         )
+        if payload.get("category") == "scope":
+            doc_text = payload.get("doc_text")
+            text = doc_text.strip() if isinstance(doc_text, str) else ""
+            entries.append(
+                log_scope_change(
+                    db,
+                    task,
+                    new_value=text or None,
+                    change_source=source,
+                    changed_by=approval.resolved_by,
+                )
+            )
         if payload.get("change_source") == str(ChangeSource.REMINDER_REPLY):
             replies.link_history(db, approval.approval_id, entries)
 
-    # REMINDER_DM: 태스크에 반영할 내용이 없다. 승인해도 이 행을 읽어 보내는 코드는 BE·AI 어디에도 없다(리마인드는
-    # 메시지 묶음 승인으로 나간다). 지금은 만들 수 없고 남은 행만 이 분기를 지난다. #335 2차 PR 에서 분기와 enum 을 지운다.
-
     if changed:
         approval.payload = json.dumps({**payload, "task_overrides": changed}, ensure_ascii=False)
+
+
+def _payload_version(row: ApprovalRequest) -> str | None:
+    """task_create 카드의 payload 지문. 합치기가 payload 를 바꾸면 값이 달라져 승인 화면의 낡은 내용을 알아챈다."""
+    if row.type != str(ApprovalType.TASK_CREATE):
+        return None
+    return hashlib.sha256(row.payload.encode("utf-8")).hexdigest()[:16]
 
 
 def _to_response(row: ApprovalRequest, alias_text: str | None = None) -> ApprovalResponse:
@@ -388,6 +409,7 @@ def _to_response(row: ApprovalRequest, alias_text: str | None = None) -> Approva
         resolved_by=row.resolved_by,
         created_at=row.created_at,
         resolved_at=row.resolved_at,
+        payload_version=_payload_version(row),
         alias_candidate=alias_text is not None,
         alias_text=alias_text,
     )
@@ -405,13 +427,32 @@ def create_approval(
     아니라 로그인한 팀원으로 기록한다. 바디 값을 믿으면 다른 팀원 이름으로 요청을 올릴 수 있다.
     """
     member = require_member(db, user, payload.workspace_id)
-    # 리마인드는 묶음 승인(POST /messages/bundles/{id}/approve)으로 옮겼다. 남은 행의 조회·처리만 두고 새로 만들지 않는다(#335)
-    if payload.type == ApprovalType.REMINDER_DM:
-        raise AppError(
-            ErrorCode.INVALID_REQUEST,
-            message="reminder_dm 승인 요청은 더 이상 만들 수 없습니다. 리마인드는 메시지 묶음 승인으로 처리합니다.",
-            details={"field": "type", "allowed": [str(ApprovalType.TASK_CREATE), str(ApprovalType.TASK_UPDATE)]},
-        )
+    from app.services.meeting_deletion import require_live_meeting
+    merged = payload.payload.get("merged_items")
+    if merged is not None and (
+        not isinstance(merged, list) or any(not isinstance(part, dict) for part in merged)
+    ):
+        raise AppError(ErrorCode.INVALID_REQUEST, details={"field": "merged_items"})
+    parts = [payload.payload, *(merged or [])]
+    meeting_ids = set()
+    for part in parts:
+        meeting_id = part.get("meeting_id")
+        if meeting_id is None:
+            continue
+        if not isinstance(meeting_id, str) or not meeting_id:
+            raise AppError(ErrorCode.INVALID_REQUEST, details={"field": "meeting_id"})
+        meeting_ids.add(meeting_id)
+    roots = set()
+    for meeting_id in sorted(meeting_ids):
+        meeting = require_live_meeting(db, meeting_id)
+        if meeting.workspace_id != payload.workspace_id:
+            raise AppError(ErrorCode.WORKSPACE_MISMATCH)
+        roots.add(meeting.recording_root_id or meeting.meeting_id)
+    # 삭제도 root부터 잠근다. payload 순서는 같은 녹음 계보의 잠금 순서를 바꿀 수 없다.
+    for root_id in sorted(roots):
+        require_live_meeting(db, root_id, lock=True)
+    for meeting_id in sorted(meeting_ids):
+        require_live_meeting(db, meeting_id, lock=True)
     # task_overrides는 승인하는 PM의 요청에서만 받는다. 요청 단계에서 미리 넣어 두면 PM이 고친 값처럼 읽힐 수 있다
     if "task_overrides" in payload.payload:
         raise AppError(
@@ -539,6 +580,22 @@ def resolve_approval(
             details={"approval_id": approval_id},
         )
     member = require_pm(db, user, target.workspace_id)
+    db.refresh(target)
+    source_payload = target.payload
+    source_parts = json.loads(source_payload)
+    source_parts = [source_parts, *(source_parts.get('merged_items') or [])]
+    source_ids = {part.get('meeting_id') for part in source_parts if isinstance(part, dict) and part.get('meeting_id')}
+    roots = set()
+    for source_id in source_ids:
+        source_meeting = db.get(Meeting, source_id)
+        if source_meeting is not None:
+            roots.add(source_meeting.recording_root_id or source_meeting.meeting_id)
+    if roots:
+        db.scalars(select(Meeting).where(Meeting.meeting_id.in_(roots)).order_by(Meeting.meeting_id)
+                   .with_for_update().execution_options(populate_existing=True)).all()
+        db.refresh(target)
+        if target.payload != source_payload:
+            raise AppError(ErrorCode.APPROVAL_CHANGED)
     # 이미 처리한 카드에는 고친 값이 틀렸다는 안내보다 처리됐다는 안내가 맞다. 경합은 아래 조건부 UPDATE 가 막는다
     if target.status != str(ApprovalStatus.PENDING):
         raise AppError(
@@ -577,6 +634,16 @@ def resolve_approval(
     # 바꿨어도 승인은 DB 의 최신 값으로 task 를 만들어야 한다
     approval = db.get(ApprovalRequest, approval_id)
     db.refresh(approval)
+
+    # 카드를 본 뒤 payload 가 바뀌었으면 승인·반려 모두 되돌리고 새 내용을 보게 한다. refresh 한 값으로 비교해야 한다
+    current_version = _payload_version(approval)
+    requested_version = payload.payload_version
+    if requested_version is not None and current_version is not None and requested_version != current_version:
+        db.rollback()
+        raise AppError(
+            ErrorCode.APPROVAL_CHANGED,
+            details={"approval_id": approval_id, "payload_version": current_version},
+        )
 
     if payload.status == ApprovalStatus.APPROVED:
         try:

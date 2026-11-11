@@ -2,7 +2,12 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { onTestFinished } from 'vitest'
-import { clearTrackedMeetings, trackMeeting, useMeetingTrackerStore } from '@/entities/meeting'
+import {
+  clearTrackedMeetings,
+  settleMeeting,
+  trackMeeting,
+  useMeetingTrackerStore,
+} from '@/entities/meeting'
 import { advanceSessionGeneration } from '@/entities/user'
 import {
   PROCESSING_DONE_TITLE,
@@ -10,6 +15,7 @@ import {
   SPEAKERS_NEEDED_TITLE,
 } from '@/features/meeting-processing'
 import { paths } from '@/shared/config/routes'
+import { workspaceKey } from '@/shared/api/queryKeys'
 import { db, replaceDb } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import {
@@ -24,6 +30,7 @@ import { setMockRole } from '@/shared/mock/sessions'
 import { awaitSpeakers } from '@/shared/mock/speakerFlow'
 import { AWAITING_MEETING_ID, createSpeakerScenarioDb } from '@/shared/mock/speakerScenarios'
 import { deferred } from '@/shared/test/deferred'
+import { recordRequests } from '@/shared/test/requests'
 import { processingSignals, signalsWith } from './test/processingToast'
 import { renderApp } from './test/renderApp'
 
@@ -95,24 +102,140 @@ function meetingRow() {
   return db.meetings.find(({ meeting_id }) => meeting_id === AWAITING_MEETING_ID)!
 }
 
-function setStatus(status: 'processing' | 'awaiting_speakers') {
+function setStatus(status: 'processing' | 'awaiting_speakers' | 'failed') {
   meetingRow().status = status
   db.meetingSummaries.find(({ meeting_id }) => meeting_id === AWAITING_MEETING_ID)!.status = status
 }
+
+describe('진행 알림 닫기 (#614)', () => {
+  it.each(['pm', 'member'] as const)(
+    '%s은 대기 알림을 닫아도 화면 이동·정리 재개 뒤 숨김을 유지하고 완료와 캐시 갱신을 받는다',
+    async (role) => {
+      fakeIntervals()
+      replaceDb(
+        createSpeakerScenarioDb(role === 'pm' ? 'meeting-speakers' : 'meeting-speakers-member'),
+      )
+      setMeetingFlowMode('manual')
+      const log = recordRequests()
+      const app = await openTasks()
+      await waitFor(() => expect(useMeetingTrackerStore.getState().meetings).toEqual([UPLOAD]))
+      const current =
+        role === 'pm'
+          ? await screen.findByRole('region', { name: SPEAKERS_NEEDED_TITLE })
+          : await screen.findByRole('group', { name: '주간 회고 녹음 정리 알림' })
+      fireEvent.click(within(current).getByRole('button', { name: '닫기' }))
+      expect(processingSignals()).toEqual([])
+      expect(useMeetingTrackerStore.getState().meetings).toEqual([UPLOAD])
+      expect(useMeetingTrackerStore.getState().dismissed).toEqual(['ws_01/mt_11'])
+
+      fireEvent.click(screen.getByRole('link', { name: '팀' }))
+      await app.expectPath(paths.members('ws_01'))
+      await screen.findByRole('heading', { level: 1, name: '팀' })
+      const requestsBefore = log.started.filter(({ path }) => path === '/meetings/mt_11').length
+      await poll(30_000)
+      await waitFor(() =>
+        expect(log.started.filter(({ path }) => path === '/meetings/mt_11').length).toBeGreaterThan(
+          requestsBefore,
+        ),
+      )
+      expect(processingSignals()).toEqual([])
+
+      setStatus('processing')
+      await poll(30_000)
+      expect(processingSignals()).toEqual([])
+      const keys = [
+        workspaceKey('ws_01', 'minutes', 'mt_11'),
+        workspaceKey('ws_01', 'tasks', 'list'),
+      ]
+      keys.forEach((key) => app.queryClient.setQueryData(key, { cached: true }))
+      completeMeeting(AWAITING_MEETING_ID)
+      await poll()
+      await waitFor(() => expect(signalsWith(PROCESSING_DONE_TITLE)).toHaveLength(1))
+      await waitFor(() => expect(useMeetingTrackerStore.getState().meetings).toEqual([]))
+      for (const key of keys) expect(app.queryClient.getQueryState(key)?.isInvalidated).toBe(true)
+      expect(signalsWith(PROCESSING_DONE_TITLE)[0]).toHaveTextContent('주간 회고 녹음')
+      fireEvent.click(
+        within(signalsWith(PROCESSING_DONE_TITLE)[0]).getByRole('button', { name: '닫기' }),
+      )
+      expect(processingSignals()).toEqual([])
+    },
+    15_000,
+  )
+
+  it('PM은 숨긴 화자 지정 대기가 실패해도 실패 결과를 받는다', async () => {
+    fakeIntervals()
+    replaceDb(createSpeakerScenarioDb('meeting-speakers'))
+    setMeetingFlowMode('manual')
+    await openTasks()
+    const card = await screen.findByRole('region', { name: SPEAKERS_NEEDED_TITLE })
+    fireEvent.click(within(card).getByRole('button', { name: '닫기' }))
+    setStatus('failed')
+    meetingRow().failed_stage = 'speaker_assignment_expired'
+    await poll(30_000)
+    await waitFor(() => expect(signalsWith(PROCESSING_FAILED_TITLE)).toHaveLength(1))
+    expect(signalsWith(PROCESSING_FAILED_TITLE)[0]).toHaveTextContent('화자 지정 대기가 7일을 넘어')
+    expect(useMeetingTrackerStore.getState().meetings).toEqual([])
+  })
+
+  it('팀원의 숨긴 대기가 실패하면 기존 역할 정책대로 결과를 보이지 않는다', async () => {
+    fakeIntervals()
+    replaceDb(createSpeakerScenarioDb('meeting-speakers-member'))
+    setMeetingFlowMode('manual')
+    await openTasks()
+    const pillGroup = await screen.findByRole('group', { name: '주간 회고 녹음 정리 알림' })
+    fireEvent.click(within(pillGroup).getByRole('button', { name: '닫기' }))
+    setStatus('failed')
+    meetingRow().failed_stage = 'speaker_assignment_expired'
+    await poll(30_000)
+    await waitFor(() => expect(useMeetingTrackerStore.getState().meetings).toEqual([]))
+    expect(processingSignals()).toEqual([])
+  })
+
+  it.each(['processing', 'speakers', 'done'] as const)(
+    '세션이 바뀐 뒤 남은 %s 닫기 콜백은 새 세션의 추적과 결과를 바꾸지 않는다',
+    async (kind) => {
+      fakeIntervals()
+      replaceDb(createSpeakerScenarioDb('meeting-speakers'))
+      setMeetingFlowMode('manual')
+      if (kind === 'processing') setStatus('processing')
+      await openTasks()
+      await waitFor(() => expect(useMeetingTrackerStore.getState().meetings).toEqual([UPLOAD]))
+      if (kind === 'done') {
+        setStatus('processing')
+        completeMeeting(AWAITING_MEETING_ID)
+        await poll(30_000)
+        await waitFor(() => expect(signalsWith(PROCESSING_DONE_TITLE)).toHaveLength(1))
+      }
+      const close = screen.getByRole('button', { name: '닫기' })
+      act(() => {
+        advanceSessionGeneration()
+        clearTrackedMeetings()
+        if (kind === 'done') settleMeeting({ ...UPLOAD, title: '새 세션 결과', outcome: 'done' })
+        else trackMeeting(UPLOAD)
+      })
+      const nextSessionState = useMeetingTrackerStore.getState()
+      fireEvent.click(close)
+      expect(useMeetingTrackerStore.getState()).toBe(nextSessionState)
+      expect(useMeetingTrackerStore.getState().dismissed).toEqual([])
+      if (kind === 'done')
+        expect(useMeetingTrackerStore.getState().settled[0]?.title).toBe('새 세션 결과')
+    },
+  )
+})
 
 describe('상태 전환 — 같은 회의의 토스트 하나가 바뀐다', () => {
   it('PM: 정리 중 → 화자 지정 필요 → 정리 중 → 완료', async () => {
     fakeIntervals()
     processingUpload()
     const app = renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
 
     const processing = await openCard()
     expect(processing).toHaveTextContent('주간 회고 녹음 정리 중')
     expect(processing).toHaveTextContent('차례를 기다리고 있어요')
-    expect(processing).toHaveTextContent('0 / 3 단계 완료')
-    expect(within(processing).queryByRole('button', { name: '닫기' })).toBeNull()
+    expect(processing).toHaveTextContent('0 / 5 단계 완료')
+    expect(within(processing).getByRole('button', { name: '닫기' })).toBeVisible()
     const status = announcement()
 
     awaitSpeakers(AWAITING_MEETING_ID)
@@ -123,7 +246,7 @@ describe('상태 전환 — 같은 회의의 토스트 하나가 바뀐다', () 
     })
     expect(speakers).toHaveTextContent('주간 회고 녹음 · 누가 말했는지 정하면 정리가 이어져요')
     expect(speakers).toHaveTextContent('7일 안에 정해 주세요')
-    expect(within(speakers).queryByRole('button', { name: '닫기' })).toBeNull()
+    expect(within(speakers).getByRole('button', { name: '닫기' })).toBeVisible()
     expect(within(speakers).getByRole('button', { name: '접기' })).toBeVisible()
     expect(processingSignals()).toHaveLength(1)
 
@@ -131,9 +254,7 @@ describe('상태 전환 — 같은 회의의 토스트 하나가 바뀐다', () 
     setStatus('processing')
     meetingRow().progress = { audio_merged: true, transcribed: true, extracted: false }
     await poll(30_000)
-    await waitFor(() =>
-      expect(processingCard()).toHaveTextContent('결정사항과 할 일을 뽑고 있어요'),
-    )
+    await waitFor(() => expect(processingCard()).toHaveTextContent('회의록을 정리하고 있어요'))
     expect(processingSignals()).toHaveLength(1)
 
     completeMeeting(AWAITING_MEETING_ID)
@@ -179,12 +300,13 @@ describe('역할별 노출', () => {
     replaceDb(createSpeakerScenarioDb('meeting-speakers-member'))
     setMeetingFlowMode('manual')
     renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
 
     const card = await openCard()
     expect(card).toHaveTextContent('화자 지정을 기다리고 있어요')
-    expect(card).toHaveTextContent('1 / 3 단계 완료')
+    // 서버는 화자 지정 대기에 처리 단계를 주지 않지만, 정리 중과 같은 다섯 단계라 대기를 오가도 칸 수가 그대로다
+    expect(card).toHaveTextContent('1 / 5 단계 완료')
     expect(signalsWith(SPEAKERS_NEEDED_TITLE)).toEqual([])
     expect(screen.queryByRole('button', { name: '화자 지정하기' })).toBeNull()
   })
@@ -203,7 +325,7 @@ describe('역할별 노출', () => {
     const user = userEvent.setup()
     replaceDb(createSpeakerScenarioDb('meeting-speakers'))
     const app = renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
     const speakers = await waitFor(() => {
       expect(signalsWith(SPEAKERS_NEEDED_TITLE)).toHaveLength(1)
@@ -261,7 +383,7 @@ describe('같은 공간의 이어진 정리', () => {
     fakeIntervals()
     processingUpload()
     renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
     await openCard()
 
@@ -288,7 +410,7 @@ describe('같은 공간의 이어진 정리', () => {
     db.meetingFlow.attendees.mt_12 = db.meetingFlow.attendees[AWAITING_MEETING_ID]
     act(() => trackMeeting({ workspaceId: 'ws_01', meetingId: 'mt_12' }))
     await waitFor(() => expect(processingSignals()).toHaveLength(2))
-    await waitFor(() => expect(pill()).toHaveTextContent('정리 중0/3'))
+    await waitFor(() => expect(pill()).toHaveTextContent('정리 중0/5'))
 
     completeMeeting('mt_12')
     await poll()
@@ -332,9 +454,9 @@ describe('보이는 자리', () => {
       onboarding: {
         completed: true,
         current_step: null,
-        steps: ['create_workspace', 'connect_discord', 'connect_notion', 'connect_members'].map(
-          (step) => ({ step, status: 'completed' }),
-        ),
+        steps: (
+          ['create_workspace', 'connect_discord', 'connect_notion', 'connect_members'] as const
+        ).map((step) => ({ step, status: 'completed' as const })),
       },
     })
     db.accounts[0].workspaceIds.push('ws_04')
@@ -387,7 +509,7 @@ describe('세션 경계', () => {
   it('세션이 바뀐 뒤 누른 「화자 지정하기」는 옮기지 않는다', async () => {
     replaceDb(createSpeakerScenarioDb('meeting-speakers'))
     const app = renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
     await waitFor(() => expect(signalsWith(SPEAKERS_NEEDED_TITLE)).toHaveLength(1))
 
@@ -399,12 +521,12 @@ describe('세션 경계', () => {
 })
 
 describe('접기', () => {
-  it('화면 폭과 상관없이 정리 중은 「정리 중 n/3」 알약으로 시작하고, 펼치면 같은 공간의 다른 화면에서도 펼친 채다. 새로 열면 다시 알약이다', async () => {
+  it('화면 폭과 상관없이 정리 중은 「정리 중 n/5」 알약으로 시작하고, 펼치면 같은 공간의 다른 화면에서도 펼친 채다. 새로 열면 다시 알약이다', async () => {
     const user = userEvent.setup()
     const first = await openTasks()
     const button = await waitForPill()
     expect(processingCard()).toBeNull()
-    expect(button).toHaveTextContent('정리 중1/3')
+    expect(button).toHaveTextContent('정리 중1/5')
     expect(button).toHaveAttribute('aria-expanded', 'false')
 
     await user.click(button)
@@ -432,14 +554,14 @@ describe('접기', () => {
     const user = userEvent.setup()
     processingUpload()
     renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
 
-    expect(await waitForPill()).toHaveTextContent('정리 중0/3')
+    expect(await waitForPill()).toHaveTextContent('정리 중0/5')
 
     meetingRow().progress = { audio_merged: true, transcribed: false, extracted: false }
     await poll()
-    await waitFor(() => expect(pill()).toHaveTextContent('정리 중1/3'))
+    await waitFor(() => expect(pill()).toHaveTextContent('정리 중1/5'))
     expect(processingCard()).toBeNull()
 
     awaitSpeakers(AWAITING_MEETING_ID)
@@ -453,16 +575,14 @@ describe('접기', () => {
 
     await user.click(within(speakers).getByRole('button', { name: '접기' }))
     expect(pill()).toHaveTextContent(SPEAKERS_NEEDED_TITLE)
-    expect(pill()).not.toHaveTextContent(/\d\/3/)
+    expect(pill()).not.toHaveTextContent(/\d\/\d/)
     expect(pill()).toHaveFocus()
-    expect(screen.queryByRole('button', { name: '닫기' })).toBeNull()
+    expect(screen.getByRole('button', { name: '닫기' })).toBeVisible()
 
     setStatus('processing')
     meetingRow().progress = { audio_merged: true, transcribed: true, extracted: false }
     await poll(30_000)
-    await waitFor(() =>
-      expect(processingCard()).toHaveTextContent('결정사항과 할 일을 뽑고 있어요'),
-    )
+    await waitFor(() => expect(processingCard()).toHaveTextContent('회의록을 정리하고 있어요'))
     expect(pill()).toBeNull()
   }, 15_000)
 
@@ -470,7 +590,7 @@ describe('접기', () => {
     const user = userEvent.setup()
     replaceDb(createSpeakerScenarioDb('meeting-speakers'))
     renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
     const speakers = await waitFor(() => {
       expect(signalsWith(SPEAKERS_NEEDED_TITLE)).toHaveLength(1)
@@ -492,7 +612,7 @@ describe('접기', () => {
     fakeIntervals()
     processingUpload()
     renderApp(paths.members('ws_01'))
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
     await waitForPill()
 
@@ -509,7 +629,7 @@ describe('접기', () => {
 })
 
 describe('단계 표시는 처리 화면과 같은 목록이다 (#483)', () => {
-  it('녹음 회의는 넘기는 중(extracted 참, 아직 processing)에도 2/3 이고 마지막 칸이 진행 중이다', async () => {
+  it('녹음 회의는 넘기는 중(extracted 참, 아직 processing)에도 4/5 이고 마지막 칸 정리 결과 보내기가 진행 중이다', async () => {
     fakeIntervals()
     db.meetings.find(({ meeting_id }) => meeting_id === 'mt_10')!.progress = {
       audio_merged: true,
@@ -517,10 +637,10 @@ describe('단계 표시는 처리 화면과 같은 목록이다 (#483)', () => {
       extracted: true,
     }
     await openTasks()
-    expect(await waitForPill()).toHaveTextContent('정리 중2/3')
+    expect(await waitForPill()).toHaveTextContent('정리 중4/5')
     const card = await openCard()
-    expect(card).toHaveTextContent('결정사항과 할 일을 뽑고 있어요')
-    expect(card).toHaveTextContent('2 / 3 단계 완료')
+    expect(card).toHaveTextContent('정리 결과를 보내고 있어요')
+    expect(card).toHaveTextContent('4 / 5 단계 완료')
   })
 
   it('채팅 회의는 두 단계다 — 대화 모으기 0/2 → 뽑아내기 1/2, 넘기는 중에도 1/2 다', async () => {
@@ -584,7 +704,7 @@ describe('화면 읽기 알림 (role=status)', () => {
     await openCard()
     const status = announcement()!
     expect(status).toHaveTextContent('음성을 텍스트로 옮기고 있어요')
-    expect(status).not.toHaveTextContent(/단계 완료|\d\/3/)
+    expect(status).not.toHaveTextContent(/단계 완료|\d\/\d/)
 
     const changes: MutationRecord[] = []
     const observer = new MutationObserver((records) => changes.push(...records))
@@ -601,7 +721,7 @@ describe('화면 읽기 알림 (role=status)', () => {
 
     advanceMeeting('mt_10')
     await poll()
-    await waitFor(() => expect(status).toHaveTextContent('결정사항과 할 일을 뽑고 있어요'))
+    await waitFor(() => expect(status).toHaveTextContent('회의록을 정리하고 있어요'))
     expect(changes.length).toBeGreaterThan(0)
   })
 })

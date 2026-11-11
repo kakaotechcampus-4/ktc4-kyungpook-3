@@ -1,5 +1,10 @@
 import { toApprovalResolveRequestDto } from './mapper'
-import { planApprovalResolution, taskCreateValues, validateTaskCreateFields } from './resolution'
+import {
+  aliasToLearn,
+  planApprovalResolution,
+  taskCreateValues,
+  validateTaskCreateFields,
+} from './resolution'
 import type { ApprovalResolveContext, TaskCreateFields } from './resolution'
 import type { Approval, TaskCreateApproval, TaskUpdateApproval } from './types'
 
@@ -30,6 +35,11 @@ function createApproval(overrides: Partial<TaskCreateApproval> = {}): TaskCreate
     meetingId: 'mt_09',
     extractionItemId: 'ei_04',
     gate: 'review',
+    aliasCandidate: null,
+    payloadVersion: null,
+    mergedItems: [],
+    assigneeItemId: 'ei_04',
+    asrSuspects: [],
     ...overrides,
   }
 }
@@ -66,6 +76,26 @@ function body(
   const plan = planApprovalResolution(approval, decision, context)
   return plan.ok ? toApprovalResolveRequestDto(plan.resolution) : null
 }
+
+describe('본 카드의 payload_version (#547)', () => {
+  const seen = createApproval({ payloadVersion: 'c'.repeat(16) })
+
+  it('생성 승인의 승인·반려 본문에 그 카드의 지문을 싣는다', () => {
+    expect(body(seen, 'approved', { memberIds: MEMBERS })).toEqual({
+      status: 'approved',
+      payload_version: 'c'.repeat(16),
+    })
+    expect(body(seen, 'rejected', {})).toEqual({
+      status: 'rejected',
+      payload_version: 'c'.repeat(16),
+    })
+  })
+
+  it('지문이 없는 카드와 변경 승인은 보내지 않는다', () => {
+    expect(body(createApproval(), 'rejected', {})).toEqual({ status: 'rejected' })
+    expect(body(updateApproval(), 'approved', {})).toEqual({ status: 'approved' })
+  })
+})
 
 describe('생성 승인 필수값', () => {
   it('세 값이 유효하면 이슈가 없다', () => {
@@ -271,9 +301,68 @@ describe('변경 승인과 confirm_task_version', () => {
   })
 })
 
+describe('별칭 등록 (save_alias, #523)', () => {
+  const candidate = createApproval({ assigneeMemberId: null, aliasCandidate: '지훈' })
+  const chosen = { kind: 'task_create', values: { assigneeMemberId: 'mb_02' } } as const
+
+  it('후보에 담당자를 골라 등록을 켜고 승인하면 save_alias 를 보낸다', () => {
+    expect(
+      body(candidate, 'approved', { memberIds: MEMBERS, edits: { ...chosen, saveAlias: true } }),
+    ).toEqual({
+      status: 'approved',
+      save_alias: true,
+      task_overrides: { assignee_member_id: 'mb_02' },
+    })
+  })
+
+  it('담당자가 처음부터 있는 후보도 등록을 켜면 보낸다', () => {
+    expect(
+      body(createApproval({ aliasCandidate: '지훈' }), 'approved', {
+        memberIds: MEMBERS,
+        edits: { kind: 'task_create', values: {}, saveAlias: true },
+      }),
+    ).toEqual({ status: 'approved', save_alias: true })
+  })
+
+  it.each([
+    ['등록을 끔', candidate, { ...chosen, saveAlias: false }],
+    ['등록을 고르지 않음', candidate, chosen],
+    [
+      '담당자가 미정',
+      candidate,
+      { kind: 'task_create', values: { assigneeMemberId: null }, saveAlias: true },
+    ],
+    ['후보가 아님', createApproval({ assigneeMemberId: null }), { ...chosen, saveAlias: true }],
+  ] as const)('%s 이면 save_alias 를 싣지 않는다', (_, approval, edits) => {
+    const sent = body(approval, 'approved', { memberIds: MEMBERS, edits })
+    expect(sent).toMatchObject({ status: 'approved' })
+    expect(sent).not.toHaveProperty('save_alias')
+  })
+
+  it('반려에는 싣지 않는다', () => {
+    expect(
+      body(candidate, 'rejected', { memberIds: MEMBERS, edits: { ...chosen, saveAlias: true } }),
+    ).toEqual({ status: 'rejected' })
+  })
+
+  it('변경 승인은 등록을 실을 수 없다', () => {
+    const sent = body(updateApproval(), 'approved', {
+      edits: { kind: 'task_update', values: {} },
+    })
+    expect(sent).toEqual({ status: 'approved' })
+  })
+
+  it('등록할 별칭은 담당자가 있을 때만 있다', () => {
+    const fields = { taskTitle: '배포 문서 보완', dueDate: null }
+    expect(aliasToLearn(candidate, { ...fields, assigneeMemberId: 'mb_01' })).toBe('지훈')
+    expect(aliasToLearn(candidate, { ...fields, assigneeMemberId: null })).toBeNull()
+    expect(aliasToLearn(createApproval(), { ...fields, assigneeMemberId: 'mb_01' })).toBeNull()
+  })
+})
+
 describe('처리할 수 없는 승인', () => {
   it('지원하지 않는 종류는 승인·반려 본문을 만들지 않는다', () => {
-    const approval: Approval = { ...base, kind: 'unsupported', type: 'reminder_dm' }
+    const approval: Approval = { ...base, kind: 'unsupported', type: 'future_kind' }
     for (const decision of ['approved', 'rejected'] as const)
       expect(planApprovalResolution(approval, decision)).toMatchObject({
         ok: false,

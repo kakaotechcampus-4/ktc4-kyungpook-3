@@ -2,6 +2,8 @@
 
 EC2 한 대에 백엔드(API·DB 컨테이너), 프론트엔드 정적 파일, 녹음 봇·AI 워커(systemd)를 함께 올린다.
 
+이 문서는 자동 배포 흐름과 되돌리기, 그리고 기능별 운영 절차(자동 회의 요약, 회의 삭제, 계정 탈퇴, 회의 녹음 S3, 채팅 폴링, Caddy, 모니터링)를 다룬다.
+
 ## 흐름
 
 1. develop 에 push 되면 [deploy.yml](../.github/workflows/deploy.yml)이 같은 커밋으로 ai·backend·frontend CI 를 모두 돌린다. 하나라도 실패하면 배포하지 않는다.
@@ -52,3 +54,232 @@ downgrade 와 revert 배포 사이에는 새 코드가 옛 스키마에서 돈�
 ## 수동 실행
 
 Actions → deploy → Run workflow 에서 develop 을 고른다. mode 를 all 로 고르면 세 파트를 모두 다시 올린다. 수동 실행도 세 CI 를 먼저 통과해야 한다.
+
+## 자동 회의 요약 (#560)
+
+AI 또는 배포 실행 코드가 바뀌면 [enable-summary.py](enable-summary.py)가 실제 `mm-worker.service`를 검사한다.
+
+| 워커 유닛 | 처리 |
+|---|---|
+| 존재하고 active일 때만 | `/etc/systemd/system/mm-worker.service.d/90-summary.conf`에 `MM_SUMMARY_LLM=luna`를 설치한다. `daemon-reload` 뒤 기존 워커를 재시작한다. 부팅 시 자동 시작 여부와 무관하게 기존 배포 정책대로 재시작한다 |
+| 꺼진 워커 | 켜지 않는다. `status=not-on`을 출력하고 성공 배포 SHA를 갱신하지 않는다 |
+
+### 검사하는 실행 명령
+
+- 검사는 실제 MainPID의 Python 명령, 사용자, 작업 디렉터리, 환경을 사용한다.
+- 지원하는 실행 명령은 절대 경로 Python의 `[-u] -m capture.worker`와 장기 워커 옵션 `--recordings`, `--transcripts`, `--interval`이다.
+- 다른 모듈, 미지원 옵션, 즉시 종료하는 `--retry`는 거부한다.
+- 같은 사용자와 실행 환경에서 `summary_from_env()`를 생성하되 회의 claim·BE 요청·LLM 호출은 하지 않는다.
+
+### 재시작 전후 확인
+
+| 시점 | 확인 |
+|---|---|
+| 재시작 전 | Luna를 선택할 때의 설정을 검사한다 |
+| 재시작 뒤 | 새 PID와 시작시각에 해당하는 `[summary] runner ready model=luna` 로그를 먼저 기다리고, 표식을 확인한 뒤에만 해당 프로세스의 명령과 실제 selector·runner를 검사한다 |
+
+따라서 시작 중인 프로세스의 임시 명령 형태를 최종 worker 명령으로 판정하지 않는다.
+
+- 준비 표식이 끝까지 없으면 기존 30회 확인 뒤 `new-worker-ready-marker-missing`으로 실패한다.
+- 표식이 있어도 명령·실제 설정·최종 실행 식별자 검사를 생략하지 않는다.
+- 로그의 monotonic 시각은 systemd가 보고한 현재 main process 시작시각 이상이어야 한다.
+- PID와 시작시각이 최종 확인까지 같아야 하며, 시작시각이 없으면 `worker-start-time-unavailable`로 실패한다.
+
+### 로그에 남기는 것
+
+- 로그는 selector, 설정 존재 여부, PID와 ready 여부를 공개한다.
+- `worker_command_shape`는 인자 수·절대 경로 여부·알려진 실행기와 옵션 label만 공개하고 나머지는 redacted로 표시한다.
+- 실제 인자 값·경로·키·URL·토큰과 journal 원문은 출력하지 않는다.
+
+### 설정 충돌과 실패
+
+`ai/.env`는 기존 프로세스 환경에 없는 값만 채운다. 설정 probe에서 아래를 발견하면 실패한다.
+
+| 설정 probe에서 발견한 것 | 실패 코드 |
+|---|---|
+| systemd의 `EnvironmentFile` 등이 덮은 selector | `effective-selector-conflict` |
+| `PM_AGENT_LLM=off` | `global-llm-off` |
+| Luna 키·URL 또는 BE URL·서비스 토큰 누락 | `required-settings-missing` |
+
+- 새 워커의 잘못된 설정 때문에 준비 표식 자체가 나오지 않으면 구체 설정 오류 대신 `new-worker-ready-marker-missing`으로 실패할 수 있다.
+- 이 helper는 다른 기능의 전역 LLM 설정을 바꾸지 않는다.
+- 실패하면 설치된 drop-in을 자동으로 되돌리지 않으며 성공 배포 SHA를 유지한다.
+
+### 결과와 끄기
+
+`status=on`은 새 운영 프로세스의 요약 runner 준비를 뜻한다. 공급사 인증·실제 요약 저장·품질 검증 결과는 별도다. 대기 중인 요약은 재시작 후 워커가 자연스럽게 처리하며, 이 배포는 과거 회의를 새로 backfill 등록하지 않는다.
+
+요약을 끄려면 운영자가 해당 drop-in의 값을 빈 문자열로 바꾸고 `daemon-reload`와 워커 재시작을 수행한다. AI 또는 배포 코드의 다음 배포는 고정 Luna 값을 다시 설치하므로 지속적으로 끄려면 배포 정책도 함께 변경한다.
+
+## 회의 삭제 활성화 (#576)
+
+회의 삭제는 `MEETING_DELETION_ENABLED=false`가 기본이다. 자동 배포는 BE·FE 뒤에 AI를 반영하고 녹음 중 봇 재시작을 건너뛸 수 있다. 따라서 배포 성공만으로 삭제를 활성화하지 않는다. 새 DELETE API는 gate가 꺼져 있으면 503을 반환하며 UI도 삭제 CTA를 숨긴다.
+
+기존 회의 ID와 태스크는 유지한다. 새 Discord 회의는 `X-Meeting-Lineage-Version: 1`을 보내는 AI 클라이언트가 만든 경우에만 삭제 준비 상태를 가진다. gate 활성화 후에는 구 클라이언트의 Discord 회의 생성을 거절한다. 수동 업로드와 chat은 실패 시 새 ID로 재생성하는 Discord 계보와 구분한다.
+
+운영자가 다음 조건을 확인한 뒤 활성화한다. 아래 운영 절차는 이번 로컬 개발에서 실행하지 않았다.
+
+1. 삭제 gate를 끈 상태로 새 스키마·API·AI 코드를 배포한다. 실제로 사용하는 봇·워커·소급 저장 프로세스를 식별하고 구 버전 writer를 중지한다. 녹음 중 재시작을 건너뛴 상태를 완료로 보지 않는다.
+2. 과거 Discord 회의는 AI recordings 디렉터리의 manifest를 읽기 전용으로 연결해 `python -m app.cli.reconcile_meeting_lineages`로 대조한다. 기본 dry-run에서 DB가 바뀌지 않는지와 출력 계획을 확인한다. 실행 인자는 해당 명령의 `--help`에 있다.
+3. 모든 과거 Discord 행이 설명되고 손상·임시·ID 누락 manifest, 순환·분기·다른 공간·출처·기존 연결 충돌이 없는 경우에만 `--apply`로 계보와 삭제 준비 상태를 원자적으로 반영한다. 태스크·본문·상태·ID는 바꾸지 않는다. 반복 실행은 변경 0건이어야 한다.
+4. manifest가 부족하면 임의의 관계를 만들거나 일부 과거 회의를 준비 완료로 바꾸지 않는다. 과거 데이터 복구는 보류한다. 새 버전 클라이언트로 생성한 검증된 회의는 별도로 사용할 수 있다.
+5. 새 AI 프로세스 가동과 구 writer 중단을 확인하고 `backend/.env`의 `MEETING_DELETION_ENABLED=true`를 명시적으로 적용한다. `docker compose -f backend/docker-compose.prod.yml up -d`로 API 컨테이너를 다시 만든다. 단순 restart는 변경된 환경 파일을 반영하지 않는다.
+6. 별도 테스트 회의에서 PM 삭제, 보존 태스크, 오래된 링크410과 receipt의 pending→complete를 확인한다. 파일 정리 중에는 실제 삭제 완료로 보고하지 않는다.
+
+gate를 다시 꺼도 이미 접수한 파일 정리와 receipt 조회는 계속된다. AI purge는 다른 회의가 녹음·처리 중이면 잠금을 기다려 완료를 보류할 수 있다. 과거 공유 이름의 STT 트랙 cache는 다른 회의와 소유권이 겹칠 수 있어 삭제 때 함께 무효화될 수 있다. 세션별 새 출력과 다른 회의의 통합 전사는 유지한다.
+
+이미 스키마를 반영한 API 이미지와 실행 중인 DB가 있을 때 EC2의 `/opt/mm`에서 다음 dry-run을 사용한다. 원본 recordings mount는 읽기 전용이다.
+
+```bash
+docker compose -f backend/docker-compose.prod.yml run --rm --no-deps \
+  --entrypoint python -v /opt/mm/ai/recordings:/var/mm-recordings:ro api \
+  -m app.cli.reconcile_meeting_lineages --recordings-dir /var/mm-recordings
+```
+
+출력 계획을 확인하고 writer를 실제로 중지한 뒤에만 같은 명령에 `--apply --writers-stopped`를 추가한다. `--writers-stopped`는 운영자의 확인 표시이며 프로세스 중단을 검사하거나 실행하는 옵션이 아니다. CLI는 적용 전 manifest 목록·해시와 DB 관계를 재검증하고 하나의 트랜잭션으로 반영한다.
+
+API 형식과 오류는 [FE 계약](../frontend/docs/contracts/frontend-api-contract.md#회의-삭제와-보존-태스크-576-2026-11-09), 봇 파일 정리는 [BE·AI 계약](../backend/docs/contracts/backend-ai-contract.md#명시적-회의-삭제와-재처리-계보-576-2026-11-09)에 있다.
+
+## 계정 탈퇴와 정리 작업 (#575)
+
+계정 탈퇴는 계정·세션 삭제와 파일·AI 정리 확인을 분리한다. AI가 중단돼 있으면 계정 이용은 종료되지만 화면은 `개인정보 정리 중`이다. backend와 AI가 모두 확인한 뒤 `탈퇴 완료`가 된다. 재가입은 정리 대기 중에도 새 계정으로 허용하며 이전 역할·초대를 복원하지 않는다.
+
+`MEETING_DELETION_ENABLED`는 일반 회의 삭제의 gate이며 계정 탈퇴의 조건이 아니다. 계정 탈퇴에는 별도 기본 off 플래그를 추가하지 않았다. BE와 AI를 같은 개인정보 정리 계약으로 배포하고, 녹음 중 재시작을 건너뛴 경우에는 새 AI 워커가 실제 가동했는지 확인한다. 이전 AI는 세대가 바뀐 공간에 쓸 수 없고, 새 정리 워커가 없으면 AI 완료가 대기한다.
+
+| 항목 | 내용 |
+|---|---|
+| backend 파일 재시도 | `MEETING_PURGE_INTERVAL_SECONDS`의 기존 워커가 수행한다. 기본값은 10초이며 0 이하는 정지다 |
+| AI 정리 | `/bot/privacy-cleanups`의 120초 임대로 실제 파일·캐시를 정리한 뒤 ack한다. 다른 활성 manifest writer 때문에 대기할 수도 있다 |
+| 상태 확인 | `privacy_cleanup`의 backend_done_at·ai_done_at·attempts·lease_until·last_error_code와 AI 워커 로그를 함께 본다 |
+| backend 저장소 오류 | 다음 주기에 재시도한다 |
+| AI 소유 관계가 불명확한 legacy 자료 | 추정 삭제하거나 완료로 바꾸지 않는다 |
+
+처리 중·완료 작업에서 원문 토큰·이름·개인 Discord ID를 운영 로그나 정리 큐에 추가하지 않는다. guild ID는 과거 녹음 탐색용 공동 리소스 selector이며 AI 확인 후 제거한다. 원격 호스팅 diarizer 보관·삭제와 이미 게시된 Notion·Discord 결과 처리는 별도 확인 범위다.
+
+탈퇴로 지운 계정과 단독 공간 데이터는 스키마 downgrade로 복구되지 않는다. 최초 탈퇴 이후에는 개인정보 세대·삭제 표식을 무시하는 옛 BE·AI writer로 되돌리지 않는다. 되돌림이 필요하면 같은 정리 계약과 표식을 이해하는 호환 버전을 사용하고 대기 작업을 유지한다. 이 절의 운영 배포·되돌림·실제 계정 삭제는 이번 로컬 검증에서 실행하지 않았다.
+
+## 회의 녹음 S3 준비
+
+회의 녹음을 S3 에 7일 보관하고 웹에서 다시 듣게 한다(#659, [결정 기록](../backend/docs/plan/m5/basis-for-decision/2026-11-10-meeting-audio-s3-retention.md)).
+
+- `UPLOAD_STORAGE` 기본은 `local` 이라, 아래를 준비하고 `.env` 를 바꾸기 전에는 배포해도 동작이 바뀌지 않는다.
+- 운영 버킷은 팀 AWS 계정이 아니라 담당자(@hwnv) 개인 AWS 계정에 있다(2026-11-10 사용자 결정).
+- 그래서 EC2 인스턴스 역할 대신 그 계정의 전용 IAM 사용자 키로 연결한다.
+
+### 준비 항목
+
+1. **버킷**(준비함, 2026-11-10): 서울(`ap-northeast-2`), 퍼블릭 액세스 모두 차단, 객체 소유권 BucketOwnerEnforced, 기본 암호화 SSE-S3. 녹음은 `meetings/{meeting_id}/audio.<확장자>` 키에 둔다(`UPLOAD_S3_PREFIX`, 기본 `meetings/`). 버킷 이름은 운영 `.env` 에만 둔다.
+2. **전용 IAM 사용자**(준비함): 개인 계정의 `mm-backend-meeting-audio`. 인라인 정책은 아래 둘뿐이라 다른 버킷·접두어에는 접근하지 못한다(다른 접두어 쓰기와 버킷 목록 조회가 AccessDenied 인 것을 확인했다).
+   - `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` — 리소스 `arn:aws:s3:::<bucket>/meetings/*`
+   - `s3:ListBucket` — 리소스 `arn:aws:s3:::<bucket>`, 조건 `StringLike` `s3:prefix` = `meetings/*`. 회의 삭제·정리가 prefix 아래를 나열해 지운다.
+   - 키는 운영 `backend/.env` 의 `AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY` 에만 둔다. 앱 코드는 키를 직접 읽지 않고 boto3 기본 자격 체인이 환경 변수에서 찾는다. 키가 새면 IAM 콘솔에서 그 사용자의 키를 비활성화하고 새로 발급해 `.env` 를 바꾼다.
+3. **lifecycle**(준비함): `meetings/` 접두어 객체를 30일 뒤 만료, 끝나지 않은 multipart 업로드는 1일 뒤 정리. BE 정리(`UPLOAD_AUDIO_RETENTION_DAYS`, 기본 7일)가 어긋나도 30일 안에는 사라지는 안전망이다.
+4. **실제 S3 확인**(2026-11-10, 로컬에서 전용 키로): `upload_storage` 로 저장 → presigned URL(host `<bucket>.s3.ap-northeast-2.amazonaws.com`)에 Range 요청 206·`audio/mp4` → 스트림 읽기 → 덮어쓰기 → prefix 삭제까지 성공했다. 운영 EC2 에서의 확인은 전환 때 한다.
+5. **`backend/.env`** (값은 [.env.example](../backend/.env.example)): 아래 값을 둔다. `uploads` 볼륨과 `UPLOAD_DIR` 는 그대로 둔다.
+   - `UPLOAD_STORAGE=s3`, `UPLOAD_S3_BUCKET=<bucket>`, `UPLOAD_S3_PREFIX=meetings/`, `AWS_REGION=ap-northeast-2`
+   - `AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY`(전용 사용자 키)
+   - `UPLOAD_AUDIO_RETENTION_DAYS=7`, `UPLOAD_PLAYBACK_URL_TTL_SECONDS=3600`
+
+   `UPLOAD_STORAGE=s3` 인데 버킷이 없거나 값이 `local`·`s3` 가 아니면 설정 오류라 업로드·재생이 500 이다. S3 클라이언트는 프로세스당 한 번 만들어 캐시하므로 `AWS_REGION` 을 바꾸면 컨테이너를 다시 띄운다.
+6. **전환 시점**: 디스크에서 S3 를 예비로 읽는 경로가 없다.
+   - 처리 중인 업로드가 없을 때(`processing`·`awaiting_speakers` 업로드 회의가 없는지 확인) `UPLOAD_STORAGE=s3` 로 바꾼다. 처리 중에 바꾸면 AI 가 `GET /uploads/{id}/file` 에서 404 를 받는다.
+   - 전환 시점 이전(local 기간)에 디스크에 저장된 녹음은 s3 모드에서 재생되지 않는다. 보관 기록(`meeting_audio`)이 있는 녹음은 재생 정보가 남아 있어도 S3 에 객체가 없어 브라우저가 S3 오류를 받는다.
+   - 정리는 된다: s3 모드의 녹음 삭제(만료 정리·회의 삭제·탈퇴 정리)가 S3 prefix 와 함께 디스크의 `UPLOAD_DIR/{meeting_id}` 폴더도 지운다.
+   - `.env` 변경은 `docker compose -f backend/docker-compose.prod.yml up -d` 로 컨테이너를 다시 만든다(restart 는 반영하지 않는다).
+7. **Caddy CSP `media-src`**: 브라우저는 302 로 S3 주소(`https://<bucket>.s3.ap-northeast-2.amazonaws.com`)에서 바로 받는다.
+   - BE 는 S3 클라이언트를 리전 endpoint·가상 호스트 방식으로 만들어, presigned URL 의 host 가 항상 이 출처(`AWS_REGION` 의 리전)다.
+   - 서버의 Caddy 설정에 `Content-Security-Policy` 가 있다면 `media-src` 가 이 출처를 허용하는지 확인한다(#654). Caddy 설정은 [caddy/Caddyfile](caddy/Caddyfile) 에 있다.
+   - 프론트가 `crossOrigin` 이나 Web Audio 를 쓰면 버킷 CORS 도 필요하다.
+
+### 개인 계정 버킷의 위험과 키 운영
+
+운영 녹음을 팀원 한 명의 개인 계정에 두는 것은 이번 일정 안에 팀 계정에서 버킷·역할을 준비하기 어려워 고른 임시 방식이다(#670 리뷰). 옮길 시점은 정하지 않았다. 아래 위험을 알고 쓰며, 옮기게 되면 아래 절차를 따른다.
+
+- 키가 비활성화되거나, 계정 결제가 막히거나, 계정이 닫히면 S3 호출이 실패한다. 업로드·재생은 500, 회의 삭제(`purge_backend_files`)와 탈퇴 정리(`account_withdrawal.purge_backend`)는 `BACKEND_STORAGE_DELETE_FAILED` 로 남아 다시 시도만 반복한다. 탈퇴 영수증은 "정리 중"에서 끝나지 않는다.
+- 담당자(@hwnv)만 콘솔에서 버킷·키를 다룰 수 있다. 담당자 없이는 삭제 요청을 직접 확인하거나 키를 바꿀 수 없다.
+
+키 교체(정기·유출 의심 때):
+1. 담당자가 개인 계정 IAM 콘솔에서 `mm-backend-meeting-audio` 사용자에 새 액세스 키를 만든다(사용자당 키는 2개까지라 겹쳐 둘 수 있다).
+2. 운영 `backend/.env` 의 `AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY` 를 새 값으로 바꾸고 `docker compose -f backend/docker-compose.prod.yml up -d` 로 다시 만든다.
+3. 웹에서 녹음 재생이 되는지 확인한 뒤 옛 키를 비활성화하고, 하루 지나 문제가 없으면 지운다. 유출이 의심되면 1단계 직후 옛 키를 바로 비활성화한다(그 사이 업로드·재생은 실패할 수 있다).
+
+팀 계정으로 옮길 때(또는 서비스를 끝낼 때):
+1. 처리 중인 업로드가 없을 때 진행한다. 팀 계정에 같은 설정(서울, 공개 차단, SSE-S3, `meetings/` 30일 lifecycle)의 버킷과, 위 정책을 가진 EC2 인스턴스 역할을 준비하고 IMDSv2 hop limit 을 2 로 둔다(도커 컨테이너가 역할 자격을 받으려면 필요하다).
+2. 남은 녹음은 최대 7일치다. 옮기려면 `aws s3 sync s3://<옛 버킷>/meetings/ s3://<새 버킷>/meetings/` 로 복사하고, 옮기지 않으면 7일 기다리거나 그 기간의 재생을 포기한다(BE 기록상 들을 수 있는데 객체가 없으면 브라우저가 S3 오류를 받는다).
+3. 운영 `.env` 에서 키 두 줄을 지우고 `UPLOAD_S3_BUCKET` 을 새 버킷으로 바꾼 뒤 다시 만든다. 코드는 바꾸지 않는다.
+4. 옛 버킷의 `meetings/` 를 비우고, 전용 IAM 사용자의 키와 사용자를 지운다. 서비스를 끝내는 경우에도 3·4단계로 녹음과 키를 남기지 않는다.
+
+AI 서버(`mm-worker`)는 인계한 디스코드 회의의 녹음을 `ai/recordings/audio_outbox/` 에 두었다가 `PUT /meetings/{id}/recording` 으로 올린다. 이 폴더는 올릴 때까지 디스크를 쓰고 인계 7일 뒤 지운다. 서비스 토큰·BE 주소 설정은 기존 그대로다.
+
+## 채팅 폴링 타이머 (#599)
+
+디스코드 채팅은 실시간으로 받지 않는다. `mm-chat-poll.timer` 가 매일 09:00 KST 에 `mm-chat-poll.service` 를 한 번 띄워, 연결된 채널(`GET /bot/chat-channels`)마다 새 메시지를 읽어 채팅 회의로 넘긴다. 유닛 파일은 [ai/deploy/systemd](../ai/deploy/systemd/)에 있다.
+
+배포 스크립트는 첫 설치를 하지 않는다. 아래 일은 AI 파트가 바뀐 배포에서만 한다(유닛 파일도 `ai/` 아래라 여기에 든다).
+
+| 상황 | 배포가 하는 일 |
+|---|---|
+| 이미 `/etc/systemd/system/mm-chat-poll.timer` 가 있는 서버에서 두 유닛 파일이 바뀐 배포(또는 mode=all)일 때만 | 저장소 판으로 덮어쓰고 `daemon-reload` 한다. 타이머가 켜져 있으면 다시 걸고, 꺼져 있으면 켜지 않는다. 실행 중인 폴링은 끊지 않는다 |
+| 그 배포에서 타이머가 설치되지 않은 서버를 만남 | Actions 화면에 경고만 띄우고 배포는 정상 완료로 처리한다 |
+| backend 나 frontend 만 바뀐 배포 | 이 확인을 하지 않아 경고도 뜨지 않는다 |
+
+저장소 유닛은 `User=mm` 이지만 운영의 봇·워커는 다른 계정으로 돈다. 폴러는 `ai/.env` 를 읽고 `ai/runs` 에 쓰므로 워커와 같은 계정이어야 한다. 그래서 계정은 drop-in `mm-chat-poll.service.d/10-user.conf` 로 덮는다. 배포는 이 파일이 없을 때만 `mm-worker` 의 계정으로 만들고, 있으면 그대로 둔다.
+
+### 첫 설치
+
+서버에서 ubuntu 로 한 번 한다.
+
+```bash
+cd /opt/mm
+U=$(systemctl show -p User --value mm-worker); U=${U:-ubuntu}; echo "User=$U"
+sudo install -m 0644 ai/deploy/systemd/mm-chat-poll.service ai/deploy/systemd/mm-chat-poll.timer /etc/systemd/system/
+sudo mkdir -p /etc/systemd/system/mm-chat-poll.service.d
+printf '[Service]\nUser=%s\n' "$U" | sudo tee /etc/systemd/system/mm-chat-poll.service.d/10-user.conf
+sudo systemctl daemon-reload
+systemctl show -p User --value mm-chat-poll.service   # 위의 $U 와 같아야 한다
+sudo systemctl enable --now mm-chat-poll.timer        # 서비스가 아니라 타이머를 켠다
+systemctl list-timers mm-chat-poll.timer              # NEXT 가 다음 09:00 KST
+```
+
+### 손으로 한 번 돌리기
+
+```bash
+sudo systemctl start mm-chat-poll.service   # oneshot 이라 끝날 때까지 기다린다
+journalctl -u mm-chat-poll.service -n 80 --no-pager
+```
+
+채팅 회의가 아직 없는 워크스페이스는 최근 24시간(`CHAT_POLL_INITIAL_HOURS`)만 읽는다. 그보다 오래된 대화를 한 번만 더 읽으려면 그 워크스페이스만 따로 돌린다. 이미 채팅 회의가 있으면 그 시각부터 이어 읽으므로 이 값은 소용없다.
+
+```bash
+U=$(systemctl show -p User --value mm-chat-poll.service)   # 이 서비스가 도는 계정
+sudo -u "$U" sh -c 'cd /opt/mm/ai && CHAT_POLL_INITIAL_HOURS=48 /usr/bin/flock -n /run/lock/mm-chat-poll.lock .venv/bin/python -m capture.chat_poll --workspace <워크스페이스 ID>'
+```
+
+서비스의 `TimeoutStartSec` 를 7시간 이상으로 올리면 BE 의 채팅 회의 정리 기준(`chat_stalled`, 7시간)도 함께 올린다([봇 계약](../backend/docs/contracts/backend-ai-contract.md)).
+
+## 앞단 프록시 Caddy (#692)
+
+운영 Caddy 설정의 원본은 [caddy/Caddyfile](caddy/Caddyfile)이다. 서버 `/etc/caddy/Caddyfile`(2026-11-09 수정본)과 같고, 보안 헤더 `header` 블록만 더했다. 배포 스크립트는 이 파일을 서버에 반영하지 않는다. 바꾼 뒤에는 운영자가 서버에서 아래 순서로 직접 반영한다.
+
+```bash
+cd /opt/mm
+diff -w /etc/caddy/Caddyfile deploy/caddy/Caddyfile        # header 블록 말고 다른 차이가 있으면 멈추고 맞춘다
+sudo cp -p /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$(date +%Y%m%d)
+sudo cp deploy/caddy/Caddyfile /etc/caddy/Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl reload caddy
+curl -sI https://managers-manager.duckdns.org/ | grep -i -E 'strict-transport|x-content-type|referrer-policy|content-security|x-frame'
+curl -sI https://managers-manager.duckdns.org/api/v1/ | grep -i content-security   # 응답 코드와 상관없이 API 응답에도 붙는지
+```
+
+validate 가 실패하면 reload 하지 않고 백업으로 되돌린다. reload 는 기존 연결을 끊지 않는다.
+
+`deploy/` 아래 파일이라 이 파일만 바뀐 커밋이 배포돼도 `changed deploy` 가 참이 되어 요약 활성화(`enable-summary.py`)가 다시 돌고, 켜져 있는 `mm-worker` 가 재시작된다. 워커는 하던 회의를 마치고 내려간다.
+
+## 모니터링 (#675)
+
+서버 상태와 KPI 를 Grafana Cloud 무료 스택에서 본다. 서버에는 Alloy(지표 수집)와 PDC 에이전트(DB 연결)만 더 올리고, **이 설치는 배포 스크립트에 포함되지 않는다.** 서버에서 사람이 한 번 한다. 설치 순서, 읽기 계정 SQL, 패널 SQL, 공개 링크 전 점검은 [monitoring/README.md](monitoring/README.md)에 있다.
+
+- 바깥 확인용 경로는 `GET /api/v1/health/ready`(DB 까지 확인)다. 루트 `/health` 는 그대로다.
+- 설정 파일은 [monitoring/](monitoring/)에 있다. `config.alloy`·`override.conf`·`run-pdc.sh` 에 값이 없고, 접속 값은 서버의 `/etc/mm-monitoring/*.env`(root 600)에서만 읽는다.
+- Alloy 에 주는 docker 그룹은 root 와 같은 권한이다.

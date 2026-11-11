@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 import type { Approval } from '@/entities/approval'
-import { evidenceMoment, MEETING_SOURCE_TRAITS } from '@/entities/meeting'
+import { evidenceMoment, meetingSourceTraits } from '@/entities/meeting'
 import type { MeetingSummary } from '@/entities/meeting'
 import type { Member } from '@/entities/member'
 import type { Task } from '@/entities/task'
@@ -183,7 +183,7 @@ function MeetingLead({ data }: { data: DashboardData }) {
   const { title, source, durationMs } = meeting.meeting
   // 채팅 회의의 길이는 녹음 분량이 아니라 첫 메시지부터 마지막 메시지까지의 기간이라 쓰지 않는다 (#379)
   const duration =
-    MEETING_SOURCE_TRAITS[source].timeAxis === 'recording' ? durationLabel(durationMs) : null
+    meetingSourceTraits(source).timeAxis === 'recording' ? durationLabel(durationMs) : null
   return (
     <p className={lead}>
       {date === null ? '' : `${monthDayLabel(date)} `}
@@ -374,7 +374,7 @@ function ReviewRow({ workspaceId, approval, meetings }: ReviewRowProps) {
           {hold ? (
             <span className={`${BADGE} bg-control text-sub`}>보류</span>
           ) : (
-            <span className={`${BADGE} bg-ink text-surface`}>
+            <span className={`${BADGE} bg-ink-solid text-surface`}>
               <span aria-hidden="true" className="mr-3 h-5 w-5 rounded-999 bg-current" />
               확인 필요
             </span>
@@ -382,7 +382,9 @@ function ReviewRow({ workspaceId, approval, meetings }: ReviewRowProps) {
           <span className={`${REVIEW_TITLE} ${hold ? 'text-sub' : ''}`}>{title}</span>
           {at === null ? null : <span className="text-meta text-dim tabular-nums">{at}</span>}
         </div>
-        <p className="text-control font-normal text-sub">{approvalReason(approval)}</p>
+        <p className="text-control font-normal wrap-anywhere text-sub">
+          {approvalReason(approval)}
+        </p>
       </div>
       {/* D-034·D-162: 처리는 확인 필요 상세에서 한다. 보류는 `채워 넣기` 다 — 보완 폼을 열고 간다 (D-176) */}
       {/* 행마다 같은 글자라 읽는 이름에 제목을 붙인다. 보이는 글자로 시작한다 */}
@@ -487,7 +489,7 @@ function DueRow({ workspaceId, task, assignee, overdue }: DueRowProps) {
       >
         {shortDate(dueDate)}
       </time>
-      <span className="min-w-[0px] flex-1 truncate text-control font-normal text-ink max-md:leading-[1.45] max-md:whitespace-normal">
+      <span className="w-[105px] min-w-0 shrink-0 truncate text-control font-normal text-ink max-md:w-auto max-md:flex-1 max-md:leading-[1.45] max-md:whitespace-normal">
         {task.title}
       </span>
       {overdue ? (

@@ -27,6 +27,7 @@ from app.models import (
     DmStatus,
     Member,
     MessageSender,
+    MessageThread,
     Notification,
     PushSubscription,
     Reminder,
@@ -215,6 +216,10 @@ def _answered_last(db: Session, task: Task) -> bool:
 
 
 def _suggest(db: Session, task: Task, slot: datetime, now: datetime, settings: MessageSettings) -> None:
+    from app.services import lifecycle
+    lifecycle.worker_gate(db)
+    lifecycle.workspace(db, task.workspace_id, check_epoch=False)
+    db.refresh(task)
     thread = messages.get_or_create_thread(db, task.workspace_id, task.assignee_member_id)
     db.flush()
     approved_before = db.scalar(
@@ -283,6 +288,8 @@ def before_dispatch(db: Session, now: datetime) -> list[str]:
     잠그지 않고 사유부터 보고, 뺄 것만 잠가 다시 확인한다. 봇이 가져갈 때마다 도는 길이라 PM 조작을 세우지 않으려는
     것이다. 항목마다 savepoint 를 두어 한 행의 실패가 다른 워크스페이스를 막지 않고, 확인하지 못한 묶음을 돌려준다.
     """
+    from app.services import lifecycle
+    lifecycle.worker_gate(db)
     now = messages.utc(now)
     db.flush()
     pending = db.execute(
@@ -291,6 +298,8 @@ def before_dispatch(db: Session, now: datetime) -> list[str]:
         .where(Reminder.status == ReminderStatus.SCHEDULED, ReminderBundle.status == ReminderStatus.SCHEDULED)
         .order_by(Reminder.created_at, Reminder.reminder_id)
     ).all()
+    for workspace_id in sorted({workspace_id for _, workspace_id, _ in pending}):
+        lifecycle.workspace(db, workspace_id, check_epoch=False)
     dropped: list[tuple[Reminder, str]] = []
     was_approved: dict[str, bool] = {}
     unchecked: list[str] = []
@@ -385,9 +394,13 @@ def open_watches(db: Session, now: datetime) -> None:
     sent = db.execute(
         select(Reminder, ReminderBundle.message_id)
         .join(ReminderBundle, ReminderBundle.bundle_id == Reminder.bundle_id)
+        .join(MessageThread, MessageThread.thread_id == ReminderBundle.thread_id)
+        .join(Member, Member.member_id == MessageThread.member_id)
         .outerjoin(ReminderWatch, ReminderWatch.reminder_id == Reminder.reminder_id)
         .where(
             Reminder.status == ReminderStatus.SENT,
+            # 받은 팀원을 지웠거나 탈퇴했으면 시계를 열지 않는다(#637). 열면 72시간 뒤 태스크가 막힘이 된다
+            Member.is_deleted.is_(False),
             Reminder.task_id.is_not(None),
             ReminderBundle.message_id.is_not(None),
             ReminderWatch.watch_id.is_(None),
@@ -447,6 +460,12 @@ def settle_watches(db: Session, now: datetime) -> None:
 
 
 def _settle(db: Session, watch_id: str, now: datetime) -> None:
+    from app.services import lifecycle
+    lifecycle.worker_gate(db)
+    workspace_id = db.scalar(select(ReminderWatch.workspace_id).where(ReminderWatch.watch_id == watch_id))
+    if workspace_id is None:
+        return
+    lifecycle.workspace(db, workspace_id, check_epoch=False)
     task_id = db.scalar(select(ReminderWatch.task_id).where(ReminderWatch.watch_id == watch_id))
     task = db.get(Task, task_id, with_for_update=True, populate_existing=True)
     watch = db.get(ReminderWatch, watch_id, populate_existing=True)

@@ -1,7 +1,10 @@
+import hmac
+import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Request, Response
-from sqlalchemy import and_, func, select
+from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.responses import RedirectResponse
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -11,18 +14,30 @@ from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Invitation, InvitationStatus, Member, User
 from app.schemas.auth import (
     AuthResponse,
+    KakaoPendingResponse,
     LoginRequest,
     PasswordResetConfirmRequest,
     PasswordResetRequest,
     PasswordResetVerifyRequest,
     PasswordResetVerifyResponse,
+    SignupCodeConfirmRequest,
+    SignupCodeConfirmResponse,
+    SignupCodeRequest,
+    SignupCodeResponse,
     SignupRequest,
     UserResponse,
+    UsernameAvailabilityResponse,
 )
-from app.services import login_limit, mailer, password_reset, sessions
-from app.services.passwords import DUMMY_PASSWORD_HASH, hash_password, verify_password
+from app.schemas.username import validate_username
+from app.services import kakao_oauth, login_limit, mailer, oauth_state, password_reset, password_reset_limit, sessions, signup_codes
+from app.services.kakao_oauth import KakaoOAuthError
+from app.services.passwords import dummy_password_hash, hash_password, needs_rehash, verify_password
+from app.services import lifecycle
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 def _create_session(db: Session, user: User, response: Response):
     token = sessions.create_session(db, user.user_id)
@@ -34,6 +49,16 @@ def _create_session(db: Session, user: User, response: Response):
         samesite="lax",
         secure=True
     )
+
+def user_response(user: User) -> UserResponse:
+    return UserResponse(
+        user_id=user.user_id,
+        username=user.username,
+        email=user.email,
+        name=user.name,
+        avatar_url=user.profile_image_url
+    )
+
 
 def _build_auth_response(db: Session, user: User) -> AuthResponse:
     workspace_count = db.query(Member).filter(Member.user_id == user.user_id, Member.is_deleted.is_(False)).count()
@@ -55,39 +80,129 @@ def _build_auth_response(db: Session, user: User) -> AuthResponse:
     )
 
     return AuthResponse(
-        user=UserResponse(
-            user_id=user.user_id,
-            email=user.email,
-            name=user.name,
-            avatar_url=user.profile_image_url
-        ),
+        user=user_response(user),
         workspace_count=workspace_count,
         last_workspace_id=last_workspace.workspace_id if last_workspace else None
     )
 
-@router.post("/signup", status_code=201, response_model=Envelope[AuthResponse])
-def signup(payload: SignupRequest, response: Response, db: Session = Depends(get_db)):
-    existing = db.query(User).filter(User.email == payload.email).first()
-    if existing:
-        raise AppError(ErrorCode.EMAIL_ALREADY_EXISTS)
+@router.get("/username-availability", response_model=Envelope[UsernameAvailabilityResponse])
+def username_availability(username: str = Query(...), db: Session = Depends(get_db)):
+    # 규칙 밖의 값도 400 이 아니라 결과로 알려 준다. 가입 화면이 입력하는 동안 묻는다.
+    try:
+        username = validate_username(username)
+    except ValueError:
+        return success(UsernameAvailabilityResponse(available=False, reason="invalid").model_dump(mode="json"))
+    taken = db.scalar(select(User.user_id).where(User.username == username)) is not None
+    result = UsernameAvailabilityResponse(available=not taken, reason="taken" if taken else None)
+    return success(result.model_dump(mode="json"))
 
-    user = User(
-        email=payload.email,
-        password_hash=hash_password(payload.password),
-        name=payload.name,
-        provider="local"
+
+_SIGNUP_IP_SCOPE = "signup:"
+
+
+@router.post("/signup/code", response_model=Envelope[SignupCodeResponse])
+def request_signup_code(request: Request, payload: SignupCodeRequest, db: Session = Depends(get_db)):
+    if not mailer.is_configured():
+        raise AppError(ErrorCode.MAIL_UNAVAILABLE)
+    # 첫 DB 쿼리 전에 공인 IP 하나의 요청 수를 막는다(#691). 가입한 이메일을 묻는 요청도 여기서 센다.
+    ip_key = login_limit.client_ip_key(request.client.host if request.client else None)
+    clock = login_limit.clock()
+    if not password_reset_limit.allow(ip_key, clock, scope=_SIGNUP_IP_SCOPE, limit=signup_codes.IP_HOURLY_LIMIT):
+        logger.warning("signup code request blocked: reason=ip key=%s", ip_key)
+        retry_after = password_reset_limit.retry_after(ip_key, clock, scope=_SIGNUP_IP_SCOPE)
+        raise AppError(ErrorCode.SIGNUP_CODE_RATE_LIMITED, details={"reason": "ip", "retry_after": retry_after})
+    mail = signup_codes.request_code(db, payload.email, now=datetime.now(timezone.utc))
+    db.commit()
+    mailer.send_in_background(mail.to, mail.subject, mail.text, log_label="signup_code", html=mail.html)
+    return success(
+        SignupCodeResponse(
+            expires_in=int(signup_codes.CODE_TTL.total_seconds()),
+            resend_after=int(signup_codes.COOLDOWN.total_seconds()),
+        ).model_dump(mode="json")
     )
+
+
+@router.post("/signup/code/confirm", response_model=Envelope[SignupCodeConfirmResponse])
+def confirm_signup_code(payload: SignupCodeConfirmRequest, db: Session = Depends(get_db)):
+    token = signup_codes.confirm_code(db, payload.email, payload.code, now=datetime.now(timezone.utc))
+    return success(
+        SignupCodeConfirmResponse(
+            verification_token=token, expires_in=signup_codes.PROOF_TTL_SECONDS
+        ).model_dump(mode="json")
+    )
+
+
+def _kakao_user_stmt(provider_id: str):
+    return select(User).where(User.provider == kakao_oauth.PROVIDER, User.provider_id == provider_id)
+
+
+def _clear_pending(response: Response) -> None:
+    response.delete_cookie(
+        kakao_oauth.PENDING_COOKIE, path=kakao_oauth.PENDING_PATH, httponly=True, secure=True, samesite="lax"
+    )
+
+
+def _signup_conflict(db: Session, user: User) -> ErrorCode | None:
+    if user.email is not None and db.scalars(_login_user_stmt(user.email)).first() is not None:
+        return ErrorCode.EMAIL_ALREADY_EXISTS
+    if user.provider_id is not None and db.scalars(_kakao_user_stmt(user.provider_id)).first() is not None:
+        return ErrorCode.KAKAO_ALREADY_LINKED
+    if db.scalar(select(User.user_id).where(User.username == user.username)) is not None:
+        return ErrorCode.USERNAME_TAKEN
+    return None
+
+
+def _new_user(payload: SignupRequest, request: Request) -> User:
+    """요청이 증명한 신원으로 만들 계정. 카카오 가입은 카카오가 이메일을 줘도 저장하지 않는다(#610)."""
+    if payload.link_kakao:
+        kakao = kakao_oauth.read_pending(request.cookies.get(kakao_oauth.PENDING_COOKIE, ""))
+        if kakao is None:
+            raise AppError(ErrorCode.KAKAO_LINK_EXPIRED)
+        return User(
+            email=None, username=payload.username, password_hash=None, name=payload.name,
+            provider=kakao_oauth.PROVIDER, provider_id=kakao.provider_id,
+        )
+    email = signup_codes.read_proof(payload.verification_token or "")
+    if email is None:
+        raise AppError(ErrorCode.SIGNUP_VERIFICATION_INVALID)
+    return User(
+        email=email, username=payload.username, password_hash=hash_password(payload.password), name=payload.name,
+        provider="local",
+    )
+
+
+@router.post("/signup", status_code=201, response_model=Envelope[AuthResponse])
+def signup(payload: SignupRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    user = _new_user(payload, request)
+    for identity in lifecycle.user_identities(user):
+        lifecycle.identity_lock(db, identity)
+    conflict = _signup_conflict(db, user)
+    if conflict is not None:
+        raise AppError(conflict)
+
     db.add(user)
     try:
         db.commit()
-    except IntegrityError:
-        # 사전 조회와 저장 사이에 같은 이메일이 먼저 가입된 경우. 유일 제약이 막으므로 409 로 돌려준다.
-        # user 테이블의 제약은 PK(서버가 만든 UUID)와 이메일 유일뿐이라 종류를 가리지 않는다. 제약이 늘면 이메일 충돌만 고른다.
+    except IntegrityError as exc:
+        # PostgreSQL 은 실패한 트랜잭션에서 다시 읽지 못하므로 되돌린 뒤 어느 쪽과 겹쳤는지 찾는다.
+        # 되돌리면 user 는 세션에서 빠지지만 넣으려던 값은 그대로 남는다.
+        # 다시 찾아도 없으면 이긴 쪽이 그 사이 아이디를 바꿨거나 탈퇴한 것이라, 막힌 제약으로 고른다.
         db.rollback()
-        raise AppError(ErrorCode.EMAIL_ALREADY_EXISTS) from None
+        # PostgreSQL 은 제약 이름을 따로 주고, SQLite 는 문구에 "user.username" 으로만 남긴다. PostgreSQL 문구에는 입력값이 들어가서 보지 않는다.
+        constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+        username_lost = constraint == "ix_user_username" if constraint else "user.username" in str(exc.orig)
+        if username_lost:
+            fallback = ErrorCode.USERNAME_TAKEN
+        elif user.email is None:
+            # 카카오 가입은 이메일을 넣지 않으므로 남은 유일 제약은 카카오 id 다.
+            fallback = ErrorCode.KAKAO_ALREADY_LINKED
+        else:
+            fallback = ErrorCode.EMAIL_ALREADY_EXISTS
+        raise AppError(_signup_conflict(db, user) or fallback) from None
     db.refresh(user)
 
     _create_session(db, user, response)
+    _clear_pending(response)
     return success(_build_auth_response(db, user).model_dump(mode="json"))
 
 def _login_user_stmt(email: str):
@@ -119,11 +234,23 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     try:
         user = db.scalars(_login_user_stmt(payload.email)).first()
         # 없는 이메일·비밀번호 없는 계정도 같은 해시 계산을 거치게 해 응답 시간으로 가입 여부가 드러나지 않게 한다.
-        stored = user.password_hash if user and user.password_hash else DUMMY_PASSWORD_HASH
+        stored = user.password_hash if user and user.password_hash else dummy_password_hash()
         ok = verify_password(payload.password, stored)
         if not user or not user.password_hash or not ok:
             raise AppError(ErrorCode.INVALID_CREDENTIALS)
-        if db.scalar(_password_hash_lock_stmt(user.user_id)) != user.password_hash:
+        if needs_rehash(user.password_hash):
+            # 옛 횟수 해시는 지금 횟수로 바꾼다(#691). 해시 계산은 잠금 밖에서 하고, 해시가 그대로일 때만 바꾸는 UPDATE 가
+            # 공유 잠금 재확인을 대신한다. 공유 잠금을 잡은 채 UPDATE 하면 같은 계정의 로그인 둘이 서로 기다리다 교착한다.
+            upgraded = hash_password(payload.password)
+            unchanged = db.execute(
+                update(User)
+                .where(User.user_id == user.user_id, User.password_hash == user.password_hash)
+                .values(password_hash=upgraded)
+                .execution_options(synchronize_session=False)
+            ).rowcount == 1
+        else:
+            unchanged = db.scalar(_password_hash_lock_stmt(user.user_id)) == user.password_hash
+        if not unchanged:
             raise AppError(ErrorCode.INVALID_CREDENTIALS)
 
         _create_session(db, user, response)
@@ -153,12 +280,120 @@ def get_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)
     return success(_build_auth_response(db, user).model_dump(mode="json"))
 
 
+# ---------- 카카오 로그인 (start → 카카오 동의 화면 → callback) ----------
+#
+# 페이지 이동으로 들어오므로 start·callback 은 항상 302 다. 계정을 만드는 곳은 signup 하나뿐이다.
+
+
+def _kakao_redirect(return_path: str, result: str) -> RedirectResponse:
+    return RedirectResponse(kakao_oauth.frontend_return_url(return_path, result), status_code=302)
+
+
+def _kakao_session_user_stmt(provider_id: str):
+    # 로그인과 같은 이유로 공유 잠금으로 읽는다(`_login_user_stmt`).
+    return _kakao_user_stmt(provider_id).with_for_update(read=True)
+
+
+def _finish_kakao_login(request: Request, code: str, state: str, error: str, db: Session) -> RedirectResponse:
+    login = kakao_oauth.verify_state(state)
+    return_path = login.return_path if login else "/"
+    if error:
+        # 카카오 문서의 취소 예시에 state 가 없어서 state 검사보다 먼저 본다.
+        logger.info("카카오 로그인 callback 취소 또는 오류")
+        return _kakao_redirect(return_path, "cancelled" if error == "access_denied" else "failed")
+    cookie_nonce = request.cookies.get(kakao_oauth.NONCE_COOKIE, "")
+    if login is None or not hmac.compare_digest(cookie_nonce.encode(), login.nonce.encode()):
+        logger.warning("카카오 로그인 callback 실패 reason=state")
+        return _kakao_redirect(return_path, "failed")
+    try:
+        identity = kakao_oauth.fetch_identity(code)
+    except KakaoOAuthError as exc:
+        logger.warning("카카오 로그인 callback 실패 reason=%s", exc)
+        return _kakao_redirect(return_path, "failed")
+
+    # 카카오 신원으로 이어진 계정만 로그인한다. 같은 이메일의 기존 계정이 있어도 병합하지 않고 가입으로 보낸다(#610).
+    user = db.scalars(_kakao_session_user_stmt(identity.provider_id)).first()
+    if user is None:
+        response = RedirectResponse(kakao_oauth.signup_url(return_path), status_code=302)
+        response.set_cookie(
+            kakao_oauth.PENDING_COOKIE,
+            kakao_oauth.seal_pending(identity),
+            max_age=kakao_oauth.PENDING_TTL_SECONDS,
+            path=kakao_oauth.PENDING_PATH,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+        )
+        return response
+    response = _kakao_redirect(return_path, "success")
+    # 앞서 다른 카카오로 가입하다 멈춘 대기 쿠키가 남아 있으면 이 브라우저의 다음 가입에 이어지지 않게 지운다.
+    _clear_pending(response)
+    # 주입받은 Response 의 쿠키는 RedirectResponse 를 돌려주면 사라지므로 redirect 에 직접 싣는다.
+    _create_session(db, user, response)
+    return response
+
+
+@router.get("/kakao/start")
+def kakao_start(next_path: str = Query("", alias="next")) -> RedirectResponse:
+    return_path = oauth_state.safe_return_path(next_path)
+    try:
+        state, nonce = kakao_oauth.sign_state(return_path)
+        location = kakao_oauth.authorize_url(state)
+    except oauth_state.OAuthConfigError as exc:
+        logger.error("카카오 로그인 시작 실패 reason=config: %s", exc)
+        return _kakao_redirect(return_path, "failed")
+    response = RedirectResponse(location, status_code=302)
+    response.set_cookie(
+        kakao_oauth.NONCE_COOKIE,
+        nonce,
+        max_age=oauth_state.STATE_TTL_SECONDS,
+        path=kakao_oauth.CALLBACK_PATH,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+    )
+    return response
+
+
+@router.get("/kakao/callback")
+def kakao_callback(
+    request: Request, code: str = "", state: str = "", error: str = "", db: Session = Depends(get_db)
+) -> RedirectResponse:
+    try:
+        response = _finish_kakao_login(request, code, state, error, db)
+    except oauth_state.OAuthConfigError as exc:
+        logger.error("카카오 로그인 callback 실패 reason=config: %s", exc)
+        response = _kakao_redirect("/", "failed")
+    # 같은 state 로 다시 들어와도 통과하지 못하게 결과와 상관없이 지운다.
+    response.delete_cookie(
+        kakao_oauth.NONCE_COOKIE, path=kakao_oauth.CALLBACK_PATH, httponly=True, secure=True, samesite="lax"
+    )
+    return response
+
+
+@router.get("/kakao/pending", response_model=Envelope[KakaoPendingResponse])
+def kakao_pending(request: Request):
+    kakao = kakao_oauth.read_pending(request.cookies.get(kakao_oauth.PENDING_COOKIE, ""))
+    if kakao is None:
+        raise AppError(ErrorCode.KAKAO_LINK_EXPIRED)
+    return success(KakaoPendingResponse(nickname=kakao.nickname).model_dump(mode="json"))
+
+
 @router.post("/password-reset/request", response_model=Envelope[dict])
-def request_password_reset(payload: PasswordResetRequest, db: Session = Depends(get_db)):
+def request_password_reset(request: Request, payload: PasswordResetRequest, db: Session = Depends(get_db)):
     if not mailer.is_configured():
         raise AppError(ErrorCode.MAIL_UNAVAILABLE)
+    # 첫 DB 쿼리 전에 막는다. 가입 여부가 드러나지 않게 막혀도 같은 응답을 준다.
+    ip_key = login_limit.client_ip_key(request.client.host if request.client else None)
+    if not password_reset_limit.allow(ip_key, login_limit.clock()):
+        logger.warning("password reset request blocked: reason=ip key=%s", ip_key)
+        return success({})
     mail = password_reset.request_reset(
-        db, payload.email, now=datetime.now(timezone.utc), base_url=mailer.app_base_url()
+        db,
+        payload.email,
+        now=datetime.now(timezone.utc),
+        base_url=mailer.app_base_url(),
+        login_locked=login_limit.email_blocked(payload.email, now=login_limit.clock()),
     )
     db.commit()
     # 가입 여부와 쿨다운 여부가 응답으로 드러나지 않게 항상 같은 응답을 준다.

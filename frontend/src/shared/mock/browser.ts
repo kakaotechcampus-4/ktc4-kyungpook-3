@@ -1,12 +1,13 @@
 import { delay, http } from 'msw'
 import { setupWorker } from 'msw/browser'
 import { handlers } from './handlers'
+import { messageSocketHandler } from './handlers/messageSocket'
 import { prepareBrowserDb } from './browserDb'
 import { saveDb } from './persistence'
 import { fixClock } from '@/shared/lib/date'
 import { MOCK_NOW } from './fixtures/constants'
 
-export const worker = setupWorker(...handlers)
+export const worker = setupWorker(...handlers, messageSocketHandler)
 
 /**
  * 로그인 확인(세션·공간 목록) 답을 늦추는 검색 파라미터(ms). 예: `/dashboard?msw-auth-delay=4000`.
@@ -42,8 +43,8 @@ export async function startMockWorker(): Promise<void> {
     }
     worker.use(http.get('/api/v1/auth/me', lag), http.get('/api/v1/workspaces', lag))
   }
-  // 응답을 보낸 뒤마다 쓴다. handler 가 db 를 바꾼 직후라 새로고침해도 그 상태로 돌아온다
-  worker.events.on('response:mocked', () => {
+  // handler 실행 뒤, 응답을 넘기기 전에 저장한다. 응답 직후 이동해도 변경을 잃지 않는다.
+  worker.events.on('request:match', () => {
     saveDb(window.sessionStorage)
   })
   await worker.start({ onUnhandledRequest: 'warn' })

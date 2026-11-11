@@ -1,12 +1,14 @@
-import { fetchDto, jsonRequest } from '@/shared/test/api'
-import type { SessionDto } from '@/shared/types/api/auth'
+import { fetchDto, jsonRequest, signUpVerified } from '@/shared/test/api'
+import type { SessionDto, SignupCodeConfirmedDto } from '@/shared/types/api/auth'
+import type { ApprovalDto } from '@/shared/types/api/approval'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { IntegrationsDto } from '@/shared/types/api/integration'
-import type { MemberDto } from '@/shared/types/api/member'
+import type { MemberAliasDto, MemberDto } from '@/shared/types/api/member'
 import type { TaskDto } from '@/shared/types/api/task'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { db, initialDb, resetDb } from './db'
 import { settleMockOAuth } from './oauth/mockOAuth'
+import { applyScenario } from './scenarios'
 import {
   MOCK_DB_STORAGE_KEY,
   MOCK_DB_VERSION,
@@ -22,10 +24,7 @@ afterEach(() => {
 
 /** 가입부터 팀원 연결까지 한 번씩 바꾼다. 새로고침 뒤에 이 상태가 남아야 한다 */
 async function walkThroughOnboarding(): Promise<string> {
-  await fetchDto(
-    '/auth/signup',
-    jsonRequest('POST', { email: 'new@example.com', password: 'pass1234', name: '새 사용자' }),
-  )
+  await signUpVerified({ email: 'new@example.com', password: 'pass1234', name: '새 사용자' })
   const { workspace_id } = await fetchDto<WorkspaceDto>(
     '/workspaces',
     jsonRequest('POST', { name: '새 팀' }),
@@ -88,6 +87,17 @@ describe('sessionStorage 영속', () => {
     expect(stored.version).toBe(MOCK_DB_VERSION)
   })
 
+  it('이메일·비밀번호 없는 카카오 계정으로 로그인한 상태도 새로고침 뒤 복원된다 (#627)', () => {
+    applyScenario('kakao-account')
+    const saved = structuredClone(db)
+    saveDb(sessionStorage)
+    resetDb()
+    expect(restoreDb(sessionStorage)).toBe(true)
+    expect(db.authenticated).toBe(true)
+    expect(db.session.user).toEqual(saved.session.user)
+    expect(db.accounts[0]).toMatchObject({ password: null, session: { user: { email: null } } })
+  })
+
   it('저장값이 없으면 복원하지 않고 db 를 건드리지 않는다', () => {
     expect(restoreDb(sessionStorage)).toBe(false)
     expect(db).toEqual(initialDb())
@@ -102,6 +112,53 @@ describe('sessionStorage 영속', () => {
     expect(restoreDb(sessionStorage)).toBe(false)
     expect(db.authenticated).toBe(true)
     expect(sessionStorage.getItem(MOCK_DB_STORAGE_KEY)).toBeNull()
+  })
+
+  it.each([
+    { name: '가입 인증만 있는 17', omitted: ['alias_candidate', 'alias_text'] },
+    { name: '별칭 관리만 있는 17', omitted: ['signupVerification', 'kakao'] },
+  ])('서로 다른 스키마가 같은 버전을 쓴 저장본은 복원하지 않는다: $name', ({ omitted }) => {
+    sessionStorage.setItem(
+      MOCK_DB_STORAGE_KEY,
+      JSON.stringify({ version: 17, db: initialDb() }, (key, value: unknown) =>
+        omitted.includes(key) ? undefined : value,
+      ),
+    )
+
+    expect(restoreDb(sessionStorage)).toBe(false)
+    expect(sessionStorage.getItem(MOCK_DB_STORAGE_KEY)).toBeNull()
+    expect(db).toEqual(initialDb())
+  })
+
+  it('가입 증명·카카오 신원과 별칭·별칭 후보를 함께 저장하고 복원한다', async () => {
+    await fetchDto('/members/mb_02/aliases', jsonRequest('POST', { alias_text: '복원 별칭' }))
+    const email = 'pending-restore@example.com'
+    await fetchDto('/auth/signup/code', jsonRequest('POST', { email }))
+    const mail = db.signupVerification.outbox.at(-1)
+    if (mail === undefined) throw new Error('가입 코드 메일이 없다')
+    const { verification_token } = await fetchDto<SignupCodeConfirmedDto>(
+      '/auth/signup/code/confirm',
+      jsonRequest('POST', { email, code: mail.code }),
+    )
+    db.accounts[0].kakaoId = 'linked-kakao'
+    db.kakao.pending = { kakaoId: 'pending-kakao', nickname: '가입 대기' }
+    saveDb(sessionStorage)
+
+    resetDb()
+    expect(restoreDb(sessionStorage)).toBe(true)
+
+    expect(db.signupVerification.proofs[verification_token]).toMatchObject({ email })
+    expect(db.signupVerification.outbox).toContainEqual(mail)
+    expect(db.accounts[0].kakaoId).toBe('linked-kakao')
+    await expect(fetchDto('/auth/kakao/pending')).resolves.toEqual({ nickname: '가입 대기' })
+    const aliases = await fetchDto<ListDto<MemberAliasDto>>('/members/aliases?workspace_id=ws_01')
+    expect(aliases.items).toContainEqual(
+      expect.objectContaining({ member_id: 'mb_02', alias_text: '복원 별칭', verified: true }),
+    )
+    await expect(fetchDto<ApprovalDto>('/approvals/ap_03')).resolves.toMatchObject({
+      alias_candidate: true,
+      alias_text: '지훈',
+    })
   })
 
   it.each([
@@ -157,6 +214,28 @@ describe('sessionStorage 영속', () => {
     }
     const restored = await fetchDto<TaskDto>(`/tasks/${legacy.tasks[1].task_id}`)
     expect(restored).toMatchObject({ title: '저장된 제목', version: 1, notion_sync_status: null })
+  })
+
+  it('고친 발화 칸과 고친 제목 기록이 없는 예전 저장본은 고친 적 없고 줄 번호가 순서인 회의록으로 복원한다 (#551)', async () => {
+    const legacy = JSON.parse(JSON.stringify(initialDb())) as Record<string, unknown> & {
+      minutes: { transcript: Record<string, unknown>[] }[]
+    }
+    delete legacy.titleEdits
+    for (const minutes of legacy.minutes)
+      for (const line of minutes.transcript)
+        for (const key of ['seq', 'edited', 'original_text']) delete line[key]
+    sessionStorage.setItem(
+      MOCK_DB_STORAGE_KEY,
+      JSON.stringify({ version: MOCK_DB_VERSION, db: legacy }),
+    )
+
+    expect(restoreDb(sessionStorage)).toBe(true)
+    expect(db.minutes).toEqual(initialDb().minutes)
+    expect(db.titleEdits).toEqual({})
+    await expect(fetchDto('/meetings/mt_09/minutes')).resolves.toMatchObject({
+      title_edited: false,
+      title_original: null,
+    })
   })
 
   it('이미 있는 version·notion_sync_status 는 복원할 때 바꾸지 않는다', () => {

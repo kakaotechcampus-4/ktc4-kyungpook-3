@@ -9,10 +9,12 @@ import {
 } from '@/entities/extraction'
 import type { AutoItemRevert, AutoItemRevertReason } from '@/entities/extraction'
 import { taskKeys } from '@/entities/task'
-import { captureSession } from '@/entities/user'
 import { errorMessage } from '@/shared/api/errorMessages'
+import { CLIENT_ERROR_CODES, createClientError, isInvalidResponse } from '@/shared/api/errors'
 import { workspaceKey } from '@/shared/api/queryKeys'
-import { toast } from '@/shared/ui/toast'
+import { captureSessionScope } from '@/shared/api/sessionScope'
+import type { SessionScope } from '@/shared/api/sessionScope'
+import { showWriteUnconfirmed, toast } from '@/shared/ui/toast'
 import { REVERT_SUCCESS, revertRejectionMessage } from '../lib/revertMessage'
 
 /** 되돌리기 mutation 의 key. 한 공간에서 되돌리기는 한 번에 하나다 */
@@ -37,18 +39,20 @@ export type AutoItemRevertOutcome =
 interface RevertVariables {
   extractionId: string
   itemId: string
-  isCurrentSession: () => boolean
+  session: SessionScope
 }
 
 /**
  * 되돌리기 뒤 서버와 맞출 캐시. 지운 태스크(목록·상세), 새 생성 승인(대기 목록), 항목의 연결(추출).
- * 실패해도 같은 캐시를 다시 받는다 — 거절 사유가 다른 화면의 변경 때문일 수 있다
+ * 실패해도 같은 캐시를 다시 받는다 — 거절 사유가 다른 화면의 변경 때문일 수 있다.
+ * 새 생성 승인은 그 회의 요약의 승인 대기 건수도 늘려 회의록도 다시 받는다 (#551)
  */
 function syncAfterRevert(queryClient: QueryClient, workspaceId: string): void {
   for (const queryKey of [
     taskKeys(workspaceId),
     workspaceKey(workspaceId, 'approvals'),
     extractionKeys(workspaceId),
+    workspaceKey(workspaceId, 'minutes'),
   ])
     void queryClient.invalidateQueries({ queryKey })
 }
@@ -66,7 +70,8 @@ export interface AutoItemRevertControl {
  * PM 의 auto 태스크 되돌리기 (계획 §4, D-036·D-037·D-137).
  * - 서버 성공 뒤에만 반영한다. 낙관적 업데이트는 없다. 성공 응답을 그 추출 캐시의 항목에 쓰고 관련 캐시를 무효화한다.
  *   결과 알림(토스트)도 그때 한 번 띄운다 (D-037)
- * - 거절(409)은 사유별 안내로, 그 밖의 실패(403·404·네트워크)는 공통 오류 문구로 남긴다. 둘 다 최신 상태를 다시 받는다
+ * - 거절(409)은 사유별 안내로, 그 밖의 실패(403·404·네트워크)는 공통 오류 문구로 남긴다. 둘 다 최신 상태를 다시 받는다.
+ *   응답을 읽지 못했으면 되돌려졌을 수 있어 실패로 남기지 않고 토스트와 `새로고침`으로 알린다 (#348)
  * - 자동 재시도는 없다. 같은 틱의 두 번째 누름도 막는다
  * - 요청 중 세션이 끝났으면 늦은 응답은 캐시에도 결과에도 남기지 않는다
  */
@@ -90,9 +95,12 @@ export function useAutoItemRevert(workspaceId: string): AutoItemRevertControl {
   const { mutate, isPending, variables } = useMutation<AutoItemRevert, Error, RevertVariables>({
     mutationKey,
     retry: false,
-    mutationFn: ({ extractionId, itemId }) => revertAutoItem(extractionId, itemId),
-    onSuccess: (reverted, { extractionId, itemId, isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    mutationFn: ({ extractionId, itemId, session }) => {
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
+      return revertAutoItem(extractionId, itemId, session.signal)
+    },
+    onSuccess: (reverted, { extractionId, itemId, session }) => {
+      if (!session.isCurrent()) return
       queryClient.setQueryData(
         extractionQueryOptions(workspaceId, extractionId).queryKey,
         (current) =>
@@ -115,8 +123,12 @@ export function useAutoItemRevert(workspaceId: string): AutoItemRevertControl {
       toast.show({ key: 'auto-item-revert', ...REVERT_SUCCESS })
       syncAfterRevert(queryClient, workspaceId)
     },
-    onError: (error, { itemId, isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    onError: (error, { itemId, session }) => {
+      if (!session.isCurrent()) return
+      if (isInvalidResponse(error)) {
+        showWriteUnconfirmed(() => syncAfterRevert(queryClient, workspaceId))
+        return
+      }
       const rejection = toAutoItemRevertRejection(error)
       record(
         itemId,
@@ -139,7 +151,7 @@ export function useAutoItemRevert(workspaceId: string): AutoItemRevertControl {
       if (queryClient.isMutating({ mutationKey: autoItemRevertMutationKey(workspaceId) }) > 0)
         return
       record(itemId, null)
-      mutate({ extractionId, itemId, isCurrentSession: captureSession() }, { onSettled })
+      mutate({ extractionId, itemId, session: captureSessionScope() }, { onSettled })
     },
     [queryClient, mutate, record, workspaceId],
   )

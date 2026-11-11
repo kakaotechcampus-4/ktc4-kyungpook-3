@@ -5,8 +5,15 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.models import Member, User
 from app.services.passwords import hash_password
+from tests.api.conftest import signup_verified
+from tests.usernames import username_for
 
 PASSWORD = "pw-123456"
+
+
+@pytest.fixture(autouse=True)
+def _secret(signup_secret):
+    pass
 
 
 def _client():
@@ -14,7 +21,7 @@ def _client():
 
 
 def _signup(client, name, email="name@example.com"):
-    return client.post("/api/v1/auth/signup", json={"email": email, "password": PASSWORD, "name": name})
+    return signup_verified(client, email, PASSWORD, name)
 
 
 def _assert_name_rejected(res):
@@ -117,7 +124,7 @@ def test_signup_rejects_lone_surrogate(mdb):
 
 
 def test_existing_account_with_empty_name_still_works(mdb):
-    mdb.add(User(email="legacy@example.com", name="", password_hash=hash_password(PASSWORD)))
+    mdb.add(User(username=username_for("legacy@example.com"), email="legacy@example.com", name="", password_hash=hash_password(PASSWORD)))
     mdb.commit()
     client = _client()
     login = client.post("/api/v1/auth/login", json={"email": "legacy@example.com", "password": PASSWORD})
@@ -162,11 +169,19 @@ def test_signup_rejects_bidi_control_characters(mdb, mark, shape):
 
 def test_too_long_name_is_rejected_before_scanning_characters(monkeypatch):
     """아주 긴 이름은 글자 범주를 구하기 전에 길이로 거절한다(PR #445 리뷰)."""
-    from app.schemas import auth
+    from app.schemas import name as name_rule
 
     def _must_not_run(_ch):
         raise AssertionError("길이를 먼저 검사해야 한다")
 
-    monkeypatch.setattr(auth.unicodedata, "category", _must_not_run)
+    monkeypatch.setattr(name_rule.unicodedata, "category", _must_not_run)
     with pytest.raises(ValueError):
-        auth.validate_name("가" * 100_000)
+        name_rule.validate_name("가" * 100_000)
+
+
+def test_name_str_strips_surrounding_whitespace():
+    from pydantic import TypeAdapter
+
+    from app.schemas.name import NameStr
+
+    assert TypeAdapter(NameStr).validate_python("  홍길동 ") == "홍길동"

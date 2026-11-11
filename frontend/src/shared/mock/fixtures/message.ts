@@ -1,9 +1,4 @@
-import type {
-  BundleDto,
-  DmFailureReasonDto,
-  MessageDto,
-  ReminderDto,
-} from '@/shared/types/api/message'
+import type { BundleDto, MessageDto, ReminderDto } from '@/shared/types/api/message'
 
 /*
  * 메시지 픽스처 (계약 §5.7 모양). 기준 시각은 MOCK_NOW(2026-09-18 금 09:00)다. 시각은 읽기 쉽게 +09:00 으로 두고
@@ -17,8 +12,27 @@ import type {
  * ws_02: 대화 1건 — 공간을 바꾸면 이전 공간의 메시지가 보이지 않는지 확인한다 (AC-05)
  */
 
+type DmFailureReasonDto = 'dm_blocked' | 'discord_not_linked' | 'unknown'
+type ReminderStatusDto = BundleDto['status']
+
+/*
+ * 백엔드 응답에는 있지만 화면이 읽지 않아 스키마가 보지 않는 칸 (#348). 모의 서버는 백엔드와 같은 모양으로 낸다
+ */
+
+/** 백엔드 `MessageResponse` 그대로의 메시지 */
+export type MockMessageResponse = MessageDto & { thread_id: string; scheduled_at: string | null }
+
+/** 백엔드 `ReminderResponse` 그대로의 리마인드 */
+export type MockReminderResponse = ReminderDto & {
+  bundle_id: string
+  status: ReminderStatusDto
+  kind: 'nudge'
+  origin: 'pm' | 'scheduler'
+  created_at: string
+}
+
 /** 대화에 쌓인 메시지. thread_id 는 담긴 대화가 정한다 */
-export type MockThreadMessage = Omit<MessageDto, 'thread_id'>
+export type MockThreadMessage = Omit<MockMessageResponse, 'thread_id'>
 
 export interface MockMessageThread {
   thread_id: string
@@ -32,7 +46,7 @@ export interface MockMessageThread {
  * 리마인드. 취소 시각·만든 사람은 응답에 없다 — 취소 시각은 닫힌 묶음의 응답에 함께 취소된 것만 싣는 데 (백엔드 bundle_reminders),
  * 만든 사람(PM 의 member_id)은 PM 이 만든 재촉의 이유 문장에 쓴다 (백엔드 reminder_reason). 응답의 이유·근거는 handler 가 계산한다
  */
-export interface MockReminder extends Omit<ReminderDto, 'reason' | 'evidence'> {
+export interface MockReminder extends Omit<MockReminderResponse, 'reason' | 'evidence'> {
   cancelled_at: string | null
   created_by: string | null
 }
@@ -63,6 +77,30 @@ export function botMessage(
     dm_status: dm.status,
     dm_failure_reason: dm.status === 'failed' ? dm.reason : null,
     scheduled_at: created_at,
+    author_member_id: null,
+    author_name: null,
+  }
+}
+
+/** PM 이 웹에서 쓴 글. 예약 없이 바로 발송 대기로 간다 (백엔드 add_pm_message) */
+export function pmMessage(
+  message_id: string,
+  body: string,
+  created_at: string,
+  author: { member_id: string; display_name: string },
+  dm: DmResult = DELIVERED,
+): MockThreadMessage {
+  return {
+    message_id,
+    sender: 'pm',
+    body,
+    created_at,
+    reply_channel: null,
+    dm_status: dm.status,
+    dm_failure_reason: dm.status === 'failed' ? dm.reason : null,
+    scheduled_at: null,
+    author_member_id: author.member_id,
+    author_name: author.display_name,
   }
 }
 
@@ -81,6 +119,8 @@ export function reply(
     dm_status: null,
     dm_failure_reason: null,
     scheduled_at: null,
+    author_member_id: null,
+    author_name: null,
   }
 }
 
@@ -300,6 +340,36 @@ export const messagesMemberThread: MockMessageThread = {
     }),
   ],
 }
+
+/** `messages-pm-thread` 의 두 번째 PM. Discord 가 연결돼 있다 */
+export const SECOND_PM = { member_id: 'mb_06', display_name: '오지현', discord_user_id: '1127' }
+
+/**
+ * 기본 목록에 넣지 않는다. `messages-pm-thread` 만 더한다. PM 이 웹에서 쓴 글이다.
+ * 이재환(th_01)에게는 두 번째 PM(오지현)이 썼고 Discord 가 연결되지 않아 DM 으로 가지 못했다.
+ * 박민수(th_02)에게는 픽스처 계정의 PM(김서연, mb_01)이 썼다
+ */
+export const pmThreadMessages: { thread_id: string; message: MockThreadMessage }[] = [
+  {
+    thread_id: 'th_01',
+    message: pmMessage(
+      'mg_31',
+      '재환님, 명세서 초안만 먼저 올려 주셔도 괜찮아요.',
+      '2026-09-17T11:00:00+09:00',
+      SECOND_PM,
+      { status: 'failed', reason: 'discord_not_linked' },
+    ),
+  },
+  {
+    thread_id: 'th_02',
+    message: pmMessage(
+      'mg_32',
+      '민수님, 올려 주신 화면 확인했어요. 고마워요!',
+      '2026-09-17T15:00:00+09:00',
+      { member_id: 'mb_01', display_name: '김서연' },
+    ),
+  },
+]
 
 /** th_06 에 매달린 보낼 메시지. 팀원에게는 오지 않는다 */
 export const messagesMemberBundle: MockBundle = {

@@ -19,6 +19,9 @@ import { renderApp } from './test/renderApp'
 
 vi.setConfig({ testTimeout: 20_000 })
 
+/** 생성 승인은 본 카드의 지문을 함께 보낸다 (#547). 값 자체는 approvalMerged.test.tsx 가 본다 */
+const SEEN: unknown = expect.stringMatching(/^[0-9a-f]{16}$/)
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(MOCK_NOW))
@@ -97,6 +100,8 @@ function addConflictingUpdate(): void {
     resolved_by: null,
     created_at: '2026-09-17T03:00:00Z',
     resolved_at: null,
+    alias_candidate: false,
+    alias_text: null,
   })
 }
 
@@ -118,15 +123,29 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
       within(evidence).getByText('“박민수님이 테스트 계획 정리을 맡기로 했어요.”'),
     ).toBeVisible()
     await waitFor(() => expect(evidence).toHaveTextContent('전사문 02:45 · 김서연'))
+    // 원문 듣기는 근거 시각(02:45)부터 틀도록 그 시각을 넘긴다 (#676)
     expect(within(evidence).getByRole('link', { name: '원문 듣기' })).toHaveAttribute(
       'href',
-      paths.meetings('ws_01', 'mt_09'),
+      '/workspaces/ws_01/meetings/mt_09?t=165000',
     )
     expect(within(card).getByRole('link', { name: '3주차 정기회의 02:45' })).toHaveAttribute(
       'href',
       paths.meetings('ws_01', 'mt_09'),
     )
     expect(screen.queryByRole('button', { name: '보완하기' })).toBeNull()
+  })
+
+  it('목록 카드의 원문 듣기도 근거 시각을 넘긴다 (#676)', async () => {
+    renderApp(`${paths.tasks('ws_01')}?tab=needs_review`)
+    const list = await screen.findByRole('list', { name: '확인 필요 목록' })
+    const item = within(list)
+      .getAllByRole('article')
+      .find((each) => each.textContent?.includes('테스트 계획 정리'))
+    if (!item) throw new Error('approval card missing')
+    expect(within(item).getByRole('link', { name: '원문 듣기' })).toHaveAttribute(
+      'href',
+      '/workspaces/ws_01/meetings/mt_09?t=165000',
+    )
   })
 
   it('업로드 회의의 근거는 Discord uid 없이 팀원 ID 로 화자 이름을 찾는다 (#256)', async () => {
@@ -165,7 +184,7 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
     )
   })
 
-  it('미정인 담당자·마감은 승인을 막지 않으며 반려는 status만 보낸다', async () => {
+  it('미정인 담당자·마감은 승인을 막지 않으며 반려는 status 와 본 카드의 지문만 보낸다', async () => {
     const bodies = recordRequestBodies('PATCH', '/approvals/ap_01')
     const before = db.tasks.length
     await openApproval('ap_01')
@@ -173,7 +192,7 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
     expect(rejectButton()).toBeEnabled()
     await userEvent.click(rejectButton())
     expect(await screen.findByTestId('approval-result')).toHaveTextContent('반려했어요')
-    expect(bodies).toEqual([{ status: 'rejected' }])
+    expect(bodies).toEqual([{ status: 'rejected', payload_version: SEEN }])
     expect(db.tasks).toHaveLength(before)
     expect(itemOf('it_04').task_id).toBeNull()
     expect(screen.queryByRole('button', { name: '승인' })).toBeNull()
@@ -194,7 +213,7 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
 
     await userEvent.click(approveButton())
     expect(await screen.findByTestId('approval-result')).toHaveTextContent('승인했어요')
-    expect(bodies).toEqual([{ status: 'approved' }])
+    expect(bodies).toEqual([{ status: 'approved', payload_version: SEEN }])
     const created = approvalOf('ap_02').related_task_id
     expect(created).toBe('tk_90')
     const link = await within(screen.getByLabelText('처리된 태스크')).findByRole('link', {
@@ -328,12 +347,12 @@ describe('승인·반려는 서버 성공 뒤에, 한 번만 (AC-05 · AC-06)', 
     db.approvals.push({
       ...approvalOf('ap_01'),
       approval_id: 'ap_05',
-      type: 'reminder_dm',
+      type: 'future_kind',
       payload: { message: '내일까지 부탁해요' },
     })
     const log = recordRequests()
     await openApproval('ap_05', '지원하지 않는 확인 요청')
-    expect(screen.getByText('reminder_dm')).toBeVisible()
+    expect(screen.getByText('future_kind')).toBeVisible()
     expect(screen.getByText('지원하지 않는 확인 요청이라 여기서 처리할 수 없어요.')).toBeVisible()
     expect(screen.queryByRole('button', { name: '승인' })).toBeNull()
     expect(screen.queryByRole('button', { name: '반려' })).toBeNull()

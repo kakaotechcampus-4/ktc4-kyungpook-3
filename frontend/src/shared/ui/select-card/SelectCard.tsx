@@ -39,7 +39,7 @@ const MARK_TONE = {
 }
 
 /** 선택 표식 — 8×8 먹 점 */
-const DOT = 'h-8 w-8 rounded-999 bg-ink'
+const DOT = 'h-8 w-8 rounded-999 bg-ink-solid'
 
 const TEXT = 'flex-1'
 

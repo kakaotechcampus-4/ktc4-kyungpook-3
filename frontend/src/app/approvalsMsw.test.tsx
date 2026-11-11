@@ -18,6 +18,9 @@ vi.mock('@/shared/config/env', () => ({
 
 vi.setConfig({ testTimeout: 20_000 })
 
+/** 생성 승인은 본 카드의 지문을 함께 보낸다 (#547). 값 자체는 approvalMerged.test.tsx 가 본다 */
+const SEEN: unknown = expect.stringMatching(/^[0-9a-f]{16}$/)
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(MOCK_NOW))
@@ -94,7 +97,7 @@ describe('승인 확인은 한 카드에서 바로 고친다 (E-6 · AC-05)', ()
     expect(assigneeSelect()).toHaveClass('border-accent', 'focus-visible:outline-accent-point')
     expect(dueInput()).toHaveAccessibleName('마감 · 미정')
     expect(dueInput()).toHaveValue('')
-    expect(dueInput()).toHaveClass('placeholder:text-accent-solid')
+    expect(dueInput()).toHaveClass('placeholder:text-accent')
     expect(dueInput().parentElement).toHaveClass('border-accent')
     for (const raw of ['민수', '다음 주 월요일'])
       expect(within(evidence()).getByText(raw)).toHaveClass('text-accent')
@@ -148,7 +151,9 @@ describe('확인이 필요한 이유와 마감 채우기 (#471)', () => {
 
     await userEvent.click(approveButton())
     await screen.findByTestId('approval-result')
-    expect(bodies).toEqual([{ status: 'approved', task_overrides: { due_date: '2026-09-21' } }])
+    expect(bodies).toEqual([
+      { status: 'approved', payload_version: SEEN, task_overrides: { due_date: '2026-09-21' } },
+    ])
   })
 
   it('「배포 전」처럼 날짜 하나로 정해지지 않는 말은 안내만 두고 채우기가 없다', async () => {
@@ -175,6 +180,110 @@ describe('확인이 필요한 이유와 마감 채우기 (#471)', () => {
   })
 })
 
+describe('담당자를 고르며 회의에서 부른 이름을 별칭으로 등록 (#523)', () => {
+  const aliasBox = () => screen.queryByRole('checkbox', { name: /의 별칭에도 등록$/ })
+  /** 모의 서버가 저장한 그 글자의 별칭을 가진 팀원 */
+  const holders = (text: string) =>
+    db.aliases.filter(({ alias_text }) => alias_text === text).map(({ member_id }) => member_id)
+
+  it('미정일 때는 묻지 않고, 팀원을 고르면 켜진 채로 묻는다. 그대로 승인하면 save_alias 를 보내고 그 팀원의 별칭이 된다', async () => {
+    const bodies = recordRequestBodies('PATCH', '/approvals/ap_03')
+    await openApproval('ap_03')
+    expect(aliasBox()).toBeNull()
+    assigneeSelect().focus()
+    await userEvent.keyboard('{Enter}')
+    // 별칭은 고를 거리가 아니다. 미정과 팀원 이름만 있다
+    expect(
+      within(await screen.findByRole('listbox'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['?미정', '김김서연', '박박민수', '이이재환', '정정하늘'])
+    await userEvent.click(screen.getByRole('option', { name: '박민수' }))
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())
+
+    expect(screen.getByRole('checkbox', { name: "'지훈'을 박민수의 별칭에도 등록" })).toBeChecked()
+    await userEvent.click(approveButton())
+    await screen.findByTestId('approval-result')
+    expect(bodies).toEqual([
+      {
+        status: 'approved',
+        payload_version: SEEN,
+        save_alias: true,
+        task_overrides: { assignee_member_id: 'mb_02' },
+      },
+    ])
+    expect(holders('지훈')).toEqual(['mb_02'])
+    expect(aliasBox()).toBeNull()
+  })
+
+  it('끈 선택은 미정을 골라 숨겼다가 다른 팀원을 골라도 남는다. 끈 채로 승인하면 save_alias 없이 보내고 별칭을 달지 않는다', async () => {
+    const bodies = recordRequestBodies('PATCH', '/approvals/ap_03')
+    await openApproval('ap_03')
+    await pickAssignee('박민수')
+    await userEvent.click(screen.getByRole('checkbox', { name: "'지훈'을 박민수의 별칭에도 등록" }))
+    await pickAssignee('미정')
+    expect(aliasBox()).toBeNull()
+    await pickAssignee('김서연')
+    expect(
+      screen.getByRole('checkbox', { name: "'지훈'을 김서연의 별칭에도 등록" }),
+    ).not.toBeChecked()
+
+    await userEvent.click(approveButton())
+    await screen.findByTestId('approval-result')
+    expect(bodies).toEqual([
+      {
+        status: 'approved',
+        payload_version: SEEN,
+        task_overrides: { assignee_member_id: 'mb_01' },
+      },
+    ])
+    expect(holders('지훈')).toEqual([])
+  })
+
+  it('이미 누군가의 별칭인 이름이면 팀원을 골라도 묻지 않는다', async () => {
+    const bodies = recordRequestBodies('PATCH', '/approvals/ap_01')
+    renderApp(paths.approval('ws_01', 'ap_01'))
+    await screen.findByRole('heading', { level: 1, name: CREATE })
+    await waitFor(() => expect(assigneeSelect()).toBeEnabled())
+    await pickAssignee('박민수')
+    expect(aliasBox()).toBeNull()
+    await userEvent.click(approveButton())
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0]).not.toHaveProperty('save_alias')
+  })
+
+  it('태스크 목록의 확인 카드에서도 팀원을 고르면 묻고, 켠 채로 승인하면 save_alias 를 보낸다', async () => {
+    const bodies = recordRequestBodies('PATCH', '/approvals/ap_03')
+    renderApp(`${paths.tasks('ws_01')}?tab=needs_review`)
+    const list = await screen.findByRole('list', { name: '확인 필요 목록' })
+    const card = within(list)
+      .getAllByRole('article')
+      .find((each) => each.textContent?.includes('배포 문서 보완'))
+    if (!card) throw new Error('approval card missing')
+    const select = within(card).getByRole('combobox', { name: /^담당자/ })
+    await waitFor(() => expect(select).toBeEnabled())
+    expect(within(card).queryByRole('checkbox')).toBeNull()
+    select.focus()
+    await userEvent.keyboard('{Enter}')
+    await userEvent.click(await screen.findByRole('option', { name: '박민수' }))
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())
+
+    expect(
+      within(card).getByRole('checkbox', { name: "'지훈'을 박민수의 별칭에도 등록" }),
+    ).toBeChecked()
+    await userEvent.click(within(card).getByRole('button', { name: /^승인$/ }))
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies).toEqual([
+      {
+        status: 'approved',
+        payload_version: SEEN,
+        save_alias: true,
+        task_overrides: { assignee_member_id: 'mb_02' },
+      },
+    ])
+  })
+})
+
 describe('담당자 선택 상자 (#471)', () => {
   it('맨 위 「미정」과 지금 공간 팀원만 고를 수 있다. 정해진 담당자를 미정으로 바꾸면 null 을 보낸다', async () => {
     const bodies = recordRequestBodies('PATCH', '/approvals/ap_02')
@@ -198,7 +307,9 @@ describe('담당자 선택 상자 (#471)', () => {
 
     await userEvent.click(approveButton())
     await screen.findByTestId('approval-result')
-    expect(bodies).toEqual([{ status: 'approved', task_overrides: { assignee_member_id: null } }])
+    expect(bodies).toEqual([
+      { status: 'approved', payload_version: SEEN, task_overrides: { assignee_member_id: null } },
+    ])
   })
 
   it('현재 공간 팀원이 아닌 담당자가 오면 그 칸이 레드 R2 이고 오류 문구가 칸에 이어지며 승인할 수 없다. 팀원을 고르면 풀린다', async () => {
@@ -275,7 +386,11 @@ describe('입력 검증 — 칸에 연결된 오류 (AC-05)', () => {
     await userEvent.click(approveButton())
     await screen.findByTestId('approval-result')
     expect(bodies).toEqual([
-      { status: 'approved', task_overrides: { task_title: '😀'.repeat(300) } },
+      {
+        status: 'approved',
+        payload_version: SEEN,
+        task_overrides: { task_title: '😀'.repeat(300) },
+      },
     ])
   })
 
@@ -346,6 +461,7 @@ describe('승인은 한 번에, 실패는 흔적 없이 (AC-05)', () => {
     expect(bodies).toEqual([
       {
         status: 'approved',
+        payload_version: SEEN,
         task_overrides: {
           task_title: '알림 문구 최종 검토',
           assignee_member_id: 'mb_02',
@@ -448,7 +564,7 @@ describe('승인은 한 번에, 실패는 흔적 없이 (AC-05)', () => {
     await userEvent.click(rejectButton())
 
     expect(await screen.findByTestId('approval-result')).toHaveTextContent('반려했어요')
-    expect(bodies).toEqual([{ status: 'rejected' }])
+    expect(bodies).toEqual([{ status: 'rejected', payload_version: SEEN }])
     expect(db.tasks).toHaveLength(before)
     expect(itemOf('it_04')).toMatchObject({ task_id: null, approval_id: 'ap_01' })
     expect(approvalOf('ap_01').payload.task_title).toBe('알림 문구 검토')
@@ -462,7 +578,7 @@ describe('승인은 한 번에, 실패는 흔적 없이 (AC-05)', () => {
     expect(approveButton()).toBeEnabled()
     await userEvent.click(approveButton())
     expect(await screen.findByTestId('approval-result')).toHaveTextContent('승인했어요')
-    expect(bodies).toEqual([{ status: 'approved' }])
+    expect(bodies).toEqual([{ status: 'approved', payload_version: SEEN }])
   })
 })
 

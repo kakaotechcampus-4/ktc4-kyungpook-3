@@ -45,7 +45,7 @@ export function recordRequests(): RequestLog {
   return log
 }
 
-const BOOT_PATHS = new Set(['/auth/me', '/workspaces'])
+const BOOT_PATHS = new Set(['/auth/me', '/workspaces', '/consents/me'])
 
 /** 기존 화면 테스트가 보는 공간. 다른 공간 화면을 보는 테스트는 `trackerWorkspaceId` 를 넘긴다 */
 const DEFAULT_TRACKER_WORKSPACE = 'ws_01'
@@ -97,7 +97,8 @@ export interface BusinessRequestOptions {
 }
 
 /**
- * 부팅 조회(세션·워크스페이스 목록), 처리 추적기와 알림 종의 상시 요청을 뺀 나머지. 이것이 「화면의 업무 API」다.
+ * 부팅 조회(세션·워크스페이스 목록·동의 상태), 처리 추적기와 알림 종의 상시 요청을 뺀 나머지.
+ * 동의 저장 POST는 제외하지 않는다. 이것이 「화면의 업무 API」다.
  *
  * M5 U4 부터 인증된 앱 영역의 추적기가 워크스페이스 화면마다 지금 공간의 회의 목록을 받고, 정리 중 회의의 상세를
  * polling 한다(계획 §2·§3, U4-1). 부팅 조회처럼 화면과 무관하게 앱이 내는 요청이라 함께 뺀다 —
@@ -141,7 +142,7 @@ export interface DashboardRequestScope {
 }
 
 /**
- * M7 대시보드 화면 자신의 조회인가 (widgets/dashboard useDashboardData). 태스크 목록·대기 승인·팀원·연동과 최신 완료 회의의 추출이다.
+ * M7 대시보드 화면 자신의 조회인가 (widgets/dashboard useDashboardData). 태스크 목록·대기 승인·활성 팀원·기록용 팀원·연동과 최신 완료 회의의 추출이다.
  * 회의 목록·회의 상세는 추적기 요청과 같은 모양이라 `businessRequests` 가 이미 뺀다.
  * 대시보드로 착지하는 가드·부팅 테스트가 「그 밖의 업무 요청은 없다」를 단언할 때 쓴다
  */
@@ -155,6 +156,7 @@ export function isDashboardRequest(
     `/tasks?workspace_id=${id}`,
     `/approvals?workspace_id=${id}&status=pending`,
     `/members?workspace_id=${id}`,
+    `/members?workspace_id=${id}&include_withdrawn=true`,
     `/workspaces/${id}/integrations`,
     ...(extractionId === null ? [] : [`/extractions/${encodeURIComponent(extractionId)}`]),
   ].includes(path)

@@ -1,11 +1,12 @@
 import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
+import { parseResponse } from '@/shared/api/parseResponse'
 import { workspaceKey } from '@/shared/api/queryKeys'
-import type {
-  ChatChannelClearDto,
-  ChatChannelDto,
-  DiscordChannelListDto,
-  IntegrationsDto,
+import {
+  chatChannelClearSchema,
+  chatChannelSchema,
+  discordChannelListSchema,
+  integrationsSchema,
 } from '@/shared/types/api/integration'
 import { CONNECTING_POLL_MS } from '../lib/waitWhileConnecting'
 import { toChatChannel, toIntegrations } from '../model/mapper'
@@ -18,7 +19,11 @@ export async function fetchIntegrations(
   signal?: AbortSignal,
 ): Promise<Integrations> {
   return toIntegrations(
-    await request<IntegrationsDto>(`${workspacePath(workspaceId)}/integrations`, { signal }),
+    parseResponse(
+      integrationsSchema,
+      await request<unknown>(`${workspacePath(workspaceId)}/integrations`, { signal }),
+      'integration',
+    ),
   )
 }
 
@@ -46,10 +51,11 @@ export function integrationsQueryOptions(workspaceId: string) {
 export async function disconnectIntegration(
   workspaceId: string,
   provider: IntegrationProvider,
+  signal?: AbortSignal,
 ): Promise<void> {
   await request<void>(
     `/workspaces/${encodeURIComponent(workspaceId)}/integrations/${encodeURIComponent(provider)}`,
-    { method: 'DELETE' },
+    { method: 'DELETE', signal },
   )
 }
 
@@ -58,9 +64,10 @@ export async function fetchDiscordChannels(
   workspaceId: string,
   signal?: AbortSignal,
 ): Promise<ChatChannel[]> {
-  const { items } = await request<DiscordChannelListDto>(
-    `${workspacePath(workspaceId)}/discord/channels`,
-    { signal },
+  const { items } = parseResponse(
+    discordChannelListSchema,
+    await request<unknown>(`${workspacePath(workspaceId)}/discord/channels`, { signal }),
+    'integration',
   )
   return items.map(toChatChannel)
 }
@@ -83,13 +90,14 @@ export async function setChatChannel(
   signal?: AbortSignal,
 ): Promise<ChatChannel> {
   return toChatChannel(
-    await request<ChatChannelDto>(
-      `${workspacePath(workspaceId)}/integrations/discord/chat-channel`,
-      {
+    parseResponse(
+      chatChannelSchema,
+      await request<unknown>(`${workspacePath(workspaceId)}/integrations/discord/chat-channel`, {
         method: 'PUT',
         body: { channel_id: channelId },
         signal,
-      },
+      }),
+      'integration',
     ),
   )
 }
@@ -99,9 +107,13 @@ export async function clearChatChannel(
   workspaceId: string,
   signal?: AbortSignal,
 ): Promise<{ offNoticeSent: boolean }> {
-  const dto = await request<ChatChannelClearDto>(
-    `${workspacePath(workspaceId)}/integrations/discord/chat-channel`,
-    { method: 'DELETE', signal },
+  const dto = parseResponse(
+    chatChannelClearSchema,
+    await request<unknown>(`${workspacePath(workspaceId)}/integrations/discord/chat-channel`, {
+      method: 'DELETE',
+      signal,
+    }),
+    'integration',
   )
   return { offNoticeSent: dto.off_notice_sent }
 }

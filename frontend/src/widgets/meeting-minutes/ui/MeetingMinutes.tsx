@@ -1,18 +1,20 @@
+import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { meetingListQueryOptions, toMinutesList } from '@/entities/meeting'
+import { meetingFailure, meetingListQueryOptions, toMinutesList } from '@/entities/meeting'
 import type { MeetingSummary, MinutesList } from '@/entities/meeting'
+import { FirstMeetingHint, QuickGuideButton } from '@/features/quick-guide'
 import { paths } from '@/shared/config/routes'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Reveal } from '@/shared/ui/deferred-skeleton'
-import { EmptyState } from '@/shared/ui/empty-state'
+import { EmptyState, EmptyStatePage } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { MinutesDetailSkeleton, MinutesListSkeleton } from '@/shared/ui/page-skeleton'
-import { listMeta, SOURCE_BADGE } from '../lib/format'
+import { listMeta, sourceBadge } from '../lib/format'
 import { prefetchMinutes } from '../lib/prefetchMinutes'
 import { useShownMeeting } from '../model/useShownMeeting'
-import { MinutesDetail, UnavailableMeeting } from './MinutesDetail'
+import { DeletedMeeting, MinutesDetail, UnavailableMeeting } from './MinutesDetail'
 
 /* Meetings 캔버스 실측 — 왼쪽 목록 308 · 오른쪽 선, 목록 제목 17px, 행 위아래 13 · 좌우 14 · 라운드 10 · 간격 4 */
 /* 폭 768 미만은 목록 위 · 본문 아래 한 열이다(D-180). 목록 아래 선이 본문과 가른다 */
@@ -34,10 +36,12 @@ const STATUS_BADGE =
   'inline-flex h-18 shrink-0 items-center gap-5 rounded-6 bg-control px-6 text-[10.5px] leading-none font-semibold text-sub'
 /* 업로드 진입. PM 만 본다 — 캔버스의 검색 자리다(검색은 범위 밖) */
 const UPLOAD_LINK =
-  'inline-flex h-32 items-center gap-6 rounded-9 bg-ink px-12 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
-const EMPTY_PAGE = 'flex flex-1 items-center justify-center px-48 pt-48 pb-96 max-md:px-20'
+  'inline-flex h-32 items-center gap-6 rounded-9 bg-ink-solid px-12 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
 const EMPTY_UPLOAD =
-  'inline-flex h-40 items-center justify-center rounded-9 bg-ink px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
+  'inline-flex h-40 items-center justify-center rounded-9 bg-ink-solid px-20 text-body leading-none font-semibold text-surface hover:bg-dim active:bg-sub'
+/* 업로드 옆의 보조 액션. 같은 높이의 컨트롤 면이다 */
+const EMPTY_GUIDE =
+  'inline-flex h-40 items-center justify-center rounded-9 bg-control px-20 text-body leading-none font-semibold text-ink hover:bg-line-strong'
 
 export interface MeetingMinutesProps {
   workspaceId: string
@@ -60,6 +64,7 @@ export function MeetingMinutes({
   invalidMeetingId = false,
   isPm,
 }: MeetingMinutesProps) {
+  const [deletedId, setDeletedId] = useState<string | null>(null)
   const list = useQuery({ ...meetingListQueryOptions(workspaceId), select: toMinutesList })
   // 고른 회의의 목록 요약 — 본문을 기다리는 동안 머리를 이것으로 먼저 바꾼다. 없으면 이전 회의를 들고 있지 않는다 (UX1-M02)
   const selectedSummary =
@@ -70,6 +75,7 @@ export function MeetingMinutes({
     workspaceId,
     invalidMeetingId ? null : meetingId,
     selectedSummary !== null,
+    deletedId,
   )
   const selected = meetingId !== null || invalidMeetingId
   // 로딩 자리의 지연·최소 표시 (#508). 본문은 첫 진입(목록 → 기본 회의 → 회의록)을 한 자리로 잰다 — 단계마다 다시 지연하면
@@ -96,13 +102,14 @@ export function MeetingMinutes({
     list.data.expired.length === 0
   )
     return (
-      <main className={EMPTY_PAGE}>
+      <EmptyStatePage>
         <MinutesEmpty workspaceId={workspaceId} isPm={isPm} />
-      </main>
+      </EmptyStatePage>
     )
 
   let detail
   if (invalidMeetingId) detail = <UnavailableMeeting />
+  else if (meetingId !== null && meetingId === deletedId) detail = <DeletedMeeting />
   else if (meetingId !== null && shown.shownId !== null)
     detail = (
       // 새 회의록을 기다리는 잠깐 동안 이전 회의록 본문을 들고 있다 — 머리는 고른 회의, 본문은 흐리게 묶는다 (useShownMeeting).
@@ -112,6 +119,7 @@ export function MeetingMinutes({
         workspaceId={workspaceId}
         meetingId={shown.shownId}
         isPm={isPm}
+        onDeleted={setDeletedId}
         // 머리를 요약으로 먼저 바꾸는 것은 회의를 바꿀 때뿐이다 — 첫 진입은 머리 뼈대 그대로 (useShownMeeting)
         selected={shown.holding || shown.switched ? selectedSummary : null}
         holding={shown.holding}
@@ -128,7 +136,7 @@ export function MeetingMinutes({
           titleAs="h2"
           title={
             list.data.expired.length > 0
-              ? '화자 지정 기한이 지난 회의가 있어요'
+              ? '기한이 지나 정리가 종료된 회의가 있어요'
               : '아직 정리가 끝난 회의가 없어요'
           }
           description={
@@ -188,21 +196,24 @@ export function MeetingMinutes({
 
 function MinutesEmpty({ workspaceId, isPm }: { workspaceId: string; isPm: boolean }) {
   // 캔버스의 `텍스트로 붙여넣기` 는 범위 밖이라 없다 (계획 §1). 업로드 CTA 는 PM 만 (U5-2)
+  const guide = <QuickGuideButton className={EMPTY_GUIDE}>방법 보기</QuickGuideButton>
   return isPm ? (
     <EmptyState
       title="아직 올린 회의가 없어요"
-      description="녹음 파일을 올리면 결정된 것과 담당자, 마감을 정리해 드려요."
+      description={
+        <>
+          <FirstMeetingHint /> 만나서 회의했다면 녹음 파일을 올려도 돼요.
+        </>
+      }
       action={
         <GuardedLink to={paths.meetingUpload(workspaceId)} className={EMPTY_UPLOAD}>
           회의 올리기
         </GuardedLink>
       }
+      secondaryAction={guide}
     />
   ) : (
-    <EmptyState
-      title="아직 올린 회의가 없어요"
-      description="PM이 회의를 올리거나 Discord 회의가 정리되면 여기에서 회의록을 볼 수 있어요."
-    />
+    <EmptyState title="아직 올린 회의가 없어요" description={<FirstMeetingHint />} action={guide} />
   )
 }
 
@@ -255,14 +266,16 @@ function MeetingList({
       {list.expired.length === 0 ? null : (
         <div className="flex flex-col gap-4">
           <p id="meetings-expired" className={GROUP_LABEL}>
-            화자 지정 기한 만료
+            기한 만료
           </p>
           <ul aria-labelledby="meetings-expired" className={LIST}>
             {list.expired.map((meeting) => (
               <li key={meeting.id}>
                 <GuardedLink to={paths.meetings(workspaceId, meeting.id)} className={ROW}>
                   <RowTitle meeting={meeting} />
-                  <span className={STATUS_BADGE}>화자 지정 기한 만료</span>
+                  <span className={STATUS_BADGE}>
+                    {meetingFailure(meeting.failedStage).expiredLabel}
+                  </span>
                   <span className={ROW_META}>{listMeta(meeting)}</span>
                 </GuardedLink>
               </li>
@@ -275,7 +288,7 @@ function MeetingList({
 }
 
 function SourceBadge({ meeting }: { meeting: MeetingSummary }) {
-  const badge = SOURCE_BADGE[meeting.source]
+  const badge = sourceBadge(meeting.source)
   return badge === null ? null : <span className={STATUS_BADGE}>{badge}</span>
 }
 
@@ -316,7 +329,7 @@ function InProgressRow({ workspaceId, meeting }: { workspaceId: string; meeting:
         <span className="flex-1 text-body text-sub group-hover:text-ink">{title}</span>
         <SourceBadge meeting={meeting} />
         <span className={STATUS_BADGE}>
-          <span aria-hidden="true" className="size-5 shrink-0 rounded-999 bg-ink" />
+          <span aria-hidden="true" className="size-5 shrink-0 rounded-999 bg-ink-solid" />
           {status.label}
         </span>
       </span>

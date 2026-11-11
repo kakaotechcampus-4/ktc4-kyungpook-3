@@ -3,7 +3,7 @@ import { Button } from './Button'
 import type { ButtonSize, ButtonVariant } from './Button'
 
 const VARIANT_CASES: Array<[ButtonVariant, string]> = [
-  ['primary', 'bg-ink text-surface'],
+  ['primary', 'bg-ink-solid text-surface'],
   ['default', 'border border-transparent bg-control text-ink'],
   ['ghost', 'bg-transparent text-sub'],
   ['text', 'bg-transparent text-dim'],
@@ -18,6 +18,7 @@ const SIZE_CASES: Array<[ButtonSize, string]> = [
   ['lg-onboarding', 'h-40 rounded-8 px-18 text-body'],
   ['xl', 'h-44 rounded-9 px-22 text-[14.5px]'],
   ['auth', 'h-48 w-full rounded-999 text-[15px]'],
+  ['auth-phone', 'h-[52px] w-full rounded-12 text-[16px] font-bold'],
   ['landing-hero', 'h-44 rounded-999 px-24 text-landing'],
   ['landing-nav', 'h-[38px] rounded-999 px-18 text-[15px]'],
   ['message-edit', 'h-36 gap-6 rounded-9 px-11 text-[12px]'],

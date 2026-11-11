@@ -109,3 +109,114 @@ plan.md 가 비어 있어 완료조건이 없다. 아래는 전체 계획 M5 의
 ### 차이와 남은 작업
 
 기존 실패 회의 숨김 정책에 화자 지정 기한 만료 예외를 추가했다. 회의 메타데이터 보존을 이용하므로 원본 음성 보관이나 재처리 정책은 달라지지 않는다. 자동 실패를 만드는 BE PR #301은 현재 미병합이며 이 변경에 포함하지 않는다. 실서버 배포·AI 처리·실제 7일 경과와 PostgreSQL 변형은 미검증이다. FE 제출 UI가 없어서 만료 직후 409 처리의 실제 화면 연결도 후속 작업이다.
+
+## 2026-11-08 추가: 가져가지 않은 업로드 정리
+
+### 작업 근거와 구현
+
+이슈 #563 으로 진행했다. 이 M5 의 plan.md 는 비어 있어 이슈를 작업 근거로 삼으며 마일스톤 완료를 선언하지 않는다.
+
+- sweeper 가 `processing` 이고 AI 가 가져가지 않은 업로드를 `uploaded_at` 24시간 뒤 `failed`(`failed_stage=upload_unclaimed`)로 바꾸고 녹음 폴더를 지운다. 기존 3시간·7일·7시간 규칙은 그대로다.
+- 위 "남은 작업"의 아무도 가져가지 않은 업로드 회의 정리가 이것이다. 2026-11-03 의 "정리하지 않는다" 결정을 바꿨다([결정 기록](basis-for-decision/2026-11-08-unclaimed-upload-sweep.md)).
+- 계약: [봇 계약](../../contracts/backend-ai-contract.md) "웹 업로드 가져가기"와 [FE API 계약](../../../../frontend/docs/contracts/frontend-api-contract.md) §4.4.1 의 `failed_stage` 값.
+
+### 검증
+
+- Python 3.12 에서 `.venv/bin/python -m pytest -q tests/services/test_upload_sweeper.py`: 23 passed, 22 skipped(PostgreSQL 변형). 23시간·정확히 24시간은 남고 25시간은 정리, 가져간 업로드·화자 지정 대기·Discord 는 그대로, 후보 선택 뒤 claim 이 먼저 오면 UPDATE 가 지는지 확인했다.
+- 전체 `.venv/bin/python -m pytest -q`: 2394 passed, 1546 skipped. `ruff check .`: 통과.
+- 실서버 24시간 경과와 PostgreSQL 변형은 확인하지 않았다.
+
+## 2026-11-09 추가: 만료 경합과 실패 파일 정리 재시도
+
+### 작업 근거와 구현
+
+사용자는 #572 후속 작업 중 PR #567 검토와 처리 가능한 코드·문서 보완을 요청했다. M5 plan.md는 비어 있어 이 지시와 기존 #563 구현을 작업 근거로 삼으며 마일스톤 완료를 판정하지 않는다.
+
+- `meeting_failure.fail_meeting_if`는 기존 공간→회의 잠금을 얻고, 그 뒤 새 조건부 UPDATE로 상태·시각을 판단한다. 앞서 claim·resume·발화 저장이 끝났다면 해당 진행을 읽는다. 기존 24시간·3시간·7일·7시간 정책은 유지한다.
+- sweeper 시작 시 live failed/manual_upload와 MeetingUpload가 있는 회의의 남은 폴더를 재시도한다. DB 커밋 뒤 파일 제거 오류나 프로세스 종료가 있어도 다음 바퀴에 복구한다. 새 실패 전환 목록과 bool은 파일 삭제 완료 영수증이 아니다.
+- 삭제된 회의·공간의 파일 정리는 기존 MeetingPurge·PrivacyCleanup이 맡는다. 재시도 pass가 해당 영수증을 완료로 바꾸지 않는다. 별도 컬럼·파일명 상태 표식·전역 워커 잠금은 추가하지 않았다.
+- [결정 기록](basis-for-decision/2026-11-09-failed-upload-cleanup-fence.md)에 기존 상태에서 재시도를 찾는 안과 별도 작업 상태 안의 비교·선택을 기록했다. [봇 계약](../../contracts/backend-ai-contract.md)과 Backend README의 운영 의미도 갱신했다.
+
+### 검증
+
+- 수정 전 실제 HTTP claim과 독립 PostgreSQL sweep 세션의 대기를 `pg_blocking_pids`로 고정했다. claim 200 뒤 failed와 음성 삭제가 발생했다. 파일 제거 1회 오류·기존 failed 잔존 파일의 재시도 부재까지 합쳐 새 회귀 **5 failed**를 확인한 뒤 구현을 수정했다.
+- 수정 후 `python -B -m pytest tests/services/test_upload_sweeper_concurrency.py tests/services/test_upload_sweeper.py tests/api/test_upload_sweeper_api.py -q --basetemp=<소유 임시 경로>`: **82 passed**. SQLite·PostgreSQL 변형, 실제 claim 선행·만료 선행, done·deleted 변경 선행, 다른 공간의 독립 진행, 제거 오류 후 다음 바퀴 복구·반복 실행, 실제 회의 삭제·탈퇴 purge 인계를 확인했다.
+- 공통 파일 제거 소비자까지 확대한 `test_uploads_api.py`, `test_meeting_upload.py`, `test_meeting_deletion.py`, `test_meeting_deletion_rollout.py`, `test_account_withdrawal.py`, `test_withdrawal_concurrency.py`: **374 passed, 8 skipped, 3 failed**. 세 실패는 PostgreSQL 연결의 `TimeZone=Asia/Seoul`이 출력한 `+09:00` 시각을 기존 테스트가 UTC 문자열로 기대한 경우다. 연결을 읽기 전용으로 비교해 기본 Asia/Seoul과 명시 UTC를 확인했으며 서버 설정·제품 코드는 바꾸지 않았다.
+- 추가 HTTP resume·발화 저장 선행 회귀 2개를 포함해 위 9개 파일을 `TEST_DATABASE_URL` 전용 DB와 검증 프로세스의 `PGOPTIONS='-c timezone=UTC'`로 명시해 재실행했다. **461 passed, 8 skipped**(400.06초). 8개 skip은 PostgreSQL 잠금 검증을 수행할 수 없는 SQLite 변형이며, PostgreSQL 변형은 실행했다. 앞선 UTC 문자열 실패 3개도 통과했다. 원본 실제 claim 반례는 별도의 DB와 새 실행에서 claim 200·sweep 제외·processing·음성 보존을 독립 확인했다. `ruff check .`와 `git diff --check`는 통과했다.
+
+### 차이와 남은 작업
+
+이전 구현의 조건부 UPDATE만으로 claim 경합을 막는다는 가정을 실제 PG 반례에 따라 변경했다. 상태 전환에 앞서 같은 생명주기 잠금을 얻도록 했다. 과거 failed 업로드도 파일 정리 대상에 포함되므로 기존 삭제 오류로 남은 음성이 삭제될 수 있다. 이는 처리 종료 후 음성을 삭제하는 기존 정책의 복구이며 보존 기간 변경은 아니다.
+
+매 바퀴 과거 failed 메타데이터도 조회·잠금·제거 시도한다. 이 비용은 측정하지 않았다. done·DB 미등록 폴더는 실패 업로드 재시도 대상이 아니다. 전체 백엔드 테스트·Linux CI·실서버·공급사 처리·운영 파일 삭제는 이 로컬 검증 결과에 포함하지 않는다.
+
+## 2026-11-10 추가: 회의 녹음 S3 보관과 원문 듣기 (#659)
+
+### 작업 근거와 구현
+
+이슈 #659 와 사용자와 정한 설계(리뷰 반영 2026-11-10 포함)로 진행했다. 이 M5 의 plan.md 는 비어 있어 이슈를 작업 근거로 삼으며 마일스톤 완료를 선언하지 않는다. 한 PR 에서 backend/ 와 ai/ 를 함께 고쳤다. frontend/ 는 고치지 않았고 FE 이슈로 요청한다.
+
+| 변경 | 위치 |
+|---|---|
+| 저장소 추상화: `UPLOAD_STORAGE=local|s3`, 키 `{UPLOAD_S3_PREFIX}{meeting_id}/audio.<확장자>`, presigned URL, S3 prefix 삭제. 자격은 boto3 기본 체인(운영은 개인 계정 버킷 전용 IAM 사용자 키) | [upload_storage.py](../../../app/services/upload_storage.py), [fake_s3.py](../../../tests/fake_s3.py) |
+| 보관 기록 `meeting_audio`(파일명·형식·크기·`retention_from`·`deleted_at`)와 재생 가능 판단·만료 정리. 처리 중에는 만료로 보지 않는다. 마이그레이션이 처리 중인 기존 업로드 회의만 채운다 | [models.py](../../../app/models/models.py) `MeetingAudio`, [meeting_audio.py](../../../app/services/meeting_audio.py), [마이그레이션](../../../migrations/versions/c7a1e4d92b35_add_meeting_audio.py) |
+| done 이 돼도 업로드 녹음을 지우지 않는다(failed 는 즉시 삭제). sweeper 바퀴가 만료 녹음을 지운다 | [extractions.py](../../../app/api/extractions.py), [upload_sweeper.py](../../../app/services/upload_sweeper.py) |
+| `GET /meetings/{id}/audio`: done 은 팀원, 그 밖은 PM. s3 는 presigned 302, local 은 파일 응답. 새 에러 `AUDIO_NOT_AVAILABLE`(404, `reason` = `expired`·`no_recording`). `minutes` 의 `audio: {content_type, expires_at} \| null` | [meetings.py](../../../app/api/meetings.py), [errors.py](../../../app/core/errors.py), [meeting.py](../../../app/schemas/meeting.py) |
+| `GET /uploads/{id}/file`: s3 에서 BE 가 바이트를 대신 보낸다(모양 그대로) | [uploads.py](../../../app/api/uploads.py) |
+| `PUT /meetings/{id}/recording`(서비스 토큰): 디스코드 회의의 섞은 m4a 를 받는다. 보관 기준은 회의 종료 시각, 기간이 지났거나 정리됐으면 `stored=false`, 멱등, 다시 올리다 실패해도 기존 녹음 유지 | [sources.py](../../../app/api/sources.py) |
+| 회의 삭제·탈퇴 정리가 S3 prefix 도 지운다 | [meeting_deletion.py](../../../app/services/meeting_deletion.py), [account_withdrawal.py](../../../app/services/account_withdrawal.py) |
+| AI: 인계한 디스코드 회의의 wav 를 지우기 직전 m4a 로 섞어 `audio_outbox` 에 두고 BE 로 올린다. 봇 시작 안내에 7일 보관 문구 | [audio_mix.py](../../../../ai/capture/audio_mix.py), [audio_outbox.py](../../../../ai/capture/audio_outbox.py), [recorder.py](../../../../ai/capture/recorder.py) `prune_audio`, [discord_adapter.py](../../../../ai/capture/discord_adapter.py) |
+| 설정·문서 | [.env.example](../../../.env.example), [docker-compose.prod.yml](../../../docker-compose.prod.yml), [README](../../../docs/reference/meeting-audio.md#회의-녹음-보관과-재생), [BE↔AI 계약](../../contracts/backend-ai-contract.md), [배포 안내](../../../../deploy/README.md#회의-녹음-s3-준비), [사용자 안내](../../../../docs/user/record-meeting.md) |
+
+선택과 근거는 [결정 기록](basis-for-decision/2026-11-10-meeting-audio-s3-retention.md)에 있다.
+
+### 계획 대비 차이
+
+- 전체 계획 M5 의 "음성 보존: 처리 중 임시 보관, 최종 종료 후 삭제"와 "원본 다시 듣기: 1차 제외"(위 완료조건 확인의 해당 행)는 이번 작업이 바꿨다. 이제 done 뒤에도 7일 보관하고 원문을 듣게 한다. 보호 계획 파일은 고치지 않았고, 위 표의 두 행은 그 시점의 기록이다.
+- 보관 기준은 설계 초안의 "받은 시각"에서 이슈 리뷰 뒤 바뀌었다. 업로드는 받은 시각, 디스코드는 회의 종료 시각이다(컬럼 `retention_from`).
+- 동의 버전(`CURRENT_VERSIONS`)은 올리지 않았다(사용자 결정). 방침 문구는 FE 가 고친다.
+
+### 검증
+
+- 이 문서화 작업(Task 7)의 마지막 커밋 상태에서 `backend/` 에서 `.venv/bin/python -m ruff check --no-cache .`: 통과. `.venv/bin/python -m pytest -q -p no:cacheprovider`: **3297 passed, 2279 skipped**(PostgreSQL 변형 skip), 0 failed. `ai/` 에서 `.venv/bin/python -m pytest -q`: 설정 때문에 요약 줄이 나오지 않아 진행 표시를 세었다. 통과 3063개, skip 1개, 실패 없음.
+- 앞선 구현 태스크에서 PostgreSQL(mm_test) 로 바뀐 테스트 파일 400 passed / 4 skipped, 로컬 DB 에서 `alembic downgrade b20d029aec7b` → `upgrade head` → `alembic check` 성공("No new upgrade operations detected")을 확인했다. 이번 문서 작업에서는 다시 돌리지 않았다.
+- 2026-11-10 개인 AWS 계정에 버킷·lifecycle·전용 IAM 사용자를 만들고, 로컬에서 그 키로 `upload_storage` 의 저장·presigned Range 요청(206)·스트림·덮어쓰기·prefix 삭제를 실제 S3 에 돌려 성공했다. 운영 EC2 에서의 전환·Caddy CSP·ffmpeg 없는 환경의 AI 운영 실행은 확인하지 않았다. 테스트는 가짜 S3(`tests/fake_s3.py`)를 쓴다. presigned URL 로 브라우저가 실제로 재생되는지(CORS 포함)도 확인하지 않았다.
+- 체크리스트(인프라)와 운영 전환 절차는 문서만 썼고 실행하지 않았다. AI 결정 기록(0055 후속)은 [0066](../../../../ai/docs/basis_for_decision/ai/2026-11-10-0066-mix-discord-audio-and-upload-to-be.md)에 썼다.
+
+### 다른 파트에 알릴 것
+
+- FE(이슈로 요청, 이 PR 은 frontend/ 를 고치지 않음): 원문 듣기 재생(`/api/v1/meetings/{id}/audio` 302), `minutes.audio`, `AUDIO_NOT_AVAILABLE` 처리, 주소 만료 시 `src` 재설정, `/speakers` 의 `audio` 가 done 뒤에도 보관 기간 동안 값, 방침 문구(`POLICY_VERSION` 그대로, 업로드 회의가 처리 중이면 7일을 넘길 수 있음), FE 계약.
+- AI: 이 PR 이 `ai/capture/` 와 0055(인계 즉시 wav 삭제)의 후속 동작을 바꿨다. 결정 기록은 [0066](../../../../ai/docs/basis_for_decision/ai/2026-11-10-0066-mix-discord-audio-and-upload-to-be.md)이다.
+- 인프라: 버킷·lifecycle·전용 IAM 사용자(개인 AWS 계정, 준비함)와 운영 `.env`·Caddy CSP `media-src` 는 [배포 안내](../../../../deploy/README.md#회의-녹음-s3-준비)의 체크리스트다. 처리 중 업로드가 없을 때 `UPLOAD_STORAGE=s3` 로 전환한다.
+
+## 2026-11-11 추가: 업로드 본문 크기를 받는 동안 끊기
+
+### 작업 근거와 구현
+
+사용자는 녹음 업로드 경로의 보안 수정을 요청했다. M5 plan.md 는 비어 있어 이 지시를 작업 근거로 삼고 마일스톤 완료는 판정하지 않는다.
+
+FastAPI 는 multipart 본문을 끝까지 받아 임시 파일에 쓴 뒤에 인증과 핸들러를 돈다. 그래서 핸들러의 200MiB 검사는 본문을 다 받은 뒤에야 돌았고, 로그인하지 않은 요청도 본문을 끝까지 보낸 뒤에 401 을 받았다.
+
+| 변경 | 위치 |
+|---|---|
+| `POST /api/v1/workspaces/{id}/meetings/upload` 에만 붙는 순수 ASGI 미들웨어. 한도는 `UPLOAD_MAX_BYTES` + 1MiB(multipart 머리 몫). `Content-Length` 가 한도를 넘으면 본문을 읽지 않고 413, 없거나 작게 적힌 요청은 받는 동안 바이트를 세다 넘는 순간 앱에 넘기지 않고 413. 응답은 기존 `AUDIO_TOO_LARGE` 봉투, `details` 는 `max_bytes` 만, `connection: close` | [upload_limit.py](../../../app/core/upload_limit.py), [main.py](../../../app/main.py) |
+| 핸들러의 파일 크기 검사(413, `size_bytes`·`max_bytes`)는 그대로 둔다. 파일이 한도를 조금 넘는 요청은 지금처럼 핸들러가 거절한다 | [workspaces.py](../../../app/api/workspaces.py) `upload_meeting` |
+| 리버스 프록시에서도 이 경로 본문을 막으라는 안내 | [배포 문서](../../../../docs/dev/deploy.md) |
+
+리버스 프록시만으로 막는 안, 핸들러가 직접 스트림을 읽는 안과 비교한 근거는 [결정 기록](basis-for-decision/2026-11-11-upload-body-limit.md)에 있다. 인증보다 먼저 끊으므로 한도를 넘는 요청은 로그인 여부와 상관없이 401 이 아니라 413 이다. 프론트는 이미 200MiB 를 넘는 파일을 보내지 않는다.
+
+### 검증
+
+2026-11-11 로컬(macOS, Python 3.12.13)에서 실행했다.
+
+- 새 테스트 `tests/api/test_upload_body_limit.py`(미들웨어를 ASGI 로 바로 부름): `Content-Length` 초과는 본문을 읽지 않고 413, 끝없이 오는 조각은 한도를 넘는 조각에서 멈추고 앱에 그 조각을 넘기지 않음, 앱이 본문 오류로 400 을 보내도 413 하나만 나감, 한도와 같은 본문은 통과, 다른 경로·GET 은 그대로
+- `tests/api/test_meeting_upload.py` 에 앱 전체로 4개: 로그인 안 함·PM 둘 다 413 이고 회의·업로드 폴더가 생기지 않음, `Content-Length` 없는 본문 413, 한도 안의 비로그인 요청은 그대로 401, 다른 경로(로그인)는 413 이 아님
+- 미들웨어 등록을 빼면 앱 전체 413 테스트 3개가, 응답 바꿔치기를 빼면 `Content-Length` 없는 본문 테스트 2개가 실패하는 것을 확인했다. 후자는 FastAPI 가 본문 읽기 오류를 400 `INVALID_REQUEST` 로 바꾸기 때문이다
+- uvicorn 을 띄워 curl 로 확인(`UPLOAD_MAX_BYTES=1000000`, 로그인 안 함): 50MB `Content-Length` 요청은 0바이트 보낸 채 413, chunked 로 50MB 파일을 보내면 약 3.3MB 보낸 뒤 413, 1MB 파일은 401
+- `.venv/bin/python -m pytest -q`: 3430 passed, 2464 skipped. 건너뛴 것은 PostgreSQL 이 있어야 도는 테스트다. `ruff check .`: 통과
+
+### 남은 작업과 제한 사항
+
+- 한도는 요청 하나 단위다. 한도 안의 본문은 지금처럼 인증 전에 임시 파일로 받으므로, 동시에 여러 요청이 오면 요청마다 약 201MiB 까지 디스크를 쓸 수 있다. 연결 수와 느린 전송은 이 코드가 막지 않는다
+- 리버스 프록시(Caddy) 설정은 저장소에 없어 바꾸지 않았다. 배포 문서에 이 경로 본문 상한(약 210MB)을 두라고 적었고, 서버에 적용됐는지는 확인하지 않았다
+- 실서버와 PostgreSQL 변형은 이번에 돌리지 않았다

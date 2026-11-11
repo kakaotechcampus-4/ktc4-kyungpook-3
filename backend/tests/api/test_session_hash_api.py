@@ -2,6 +2,7 @@
 import hashlib
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -10,8 +11,15 @@ from app.models import Session as SessionModel, User
 from app.services import password_reset
 from app.services.passwords import hash_password
 from app.services.sessions import hash_session_token
+from tests.api.conftest import signup_verified
+from tests.usernames import username_for
 
 PW = "password123"
+
+
+@pytest.fixture(autouse=True)
+def _secret(signup_secret):
+    pass
 
 
 def _client():
@@ -19,7 +27,7 @@ def _client():
 
 
 def _signup(c, email="s@example.com"):
-    res = c.post("/api/v1/auth/signup", json={"email": email, "password": PW, "name": "세션"})
+    res = signup_verified(c, email, PW, "세션")
     assert res.status_code == 201
     return res.cookies["session_token"]
 
@@ -81,7 +89,7 @@ def test_password_reset_confirm_invalidates_all_sessions(mdb):
 
 
 def test_expired_session_is_401(mdb):
-    user = User(email="e@example.com", name="e", password_hash=hash_password(PW))
+    user = User(username=username_for("e@example.com"), email="e@example.com", name="e", password_hash=hash_password(PW))
     mdb.add(user)
     mdb.flush()
     mdb.add(SessionModel(

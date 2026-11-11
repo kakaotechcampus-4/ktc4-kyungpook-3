@@ -1,0 +1,102 @@
+// Grafana Alloy 설정(#675). 서버 지표를 Grafana Cloud(Prometheus)로 보낸다.
+// 저장소에는 값이 없다. 접속 주소·사용자·토큰은 alloy.env(서버의 /etc/mm-monitoring/alloy.env)에서
+// sys.env() 로 읽는다. 설치는 deploy/monitoring/README.md 를 본다.
+// 컴포넌트·옵션 이름은 Alloy 공식 문서(reference/components/prometheus)로 확인했다.
+// 문서에서 확인하지 못한 옵션과 서버에서만 알 수 있는 값은 "설치 때 확인:" 주석을 달았다.
+
+// ---- 보내는 곳 ----
+
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GCLOUD_RW_URL")
+
+    basic_auth {
+      username = sys.env("GCLOUD_RW_USER")
+      password = sys.env("GCLOUD_RW_TOKEN")
+    }
+  }
+}
+
+// ---- 호스트(노드) 지표 + systemd 유닛 ----
+
+prometheus.exporter.unix "host" {
+  // 기본 수집기에 systemd 만 더한다.
+  enable_collectors = ["systemd"]
+
+  systemd {
+    // 모니터링 대상 유닛만 본다. mm-chat-poll 은 oneshot 이라 service 와 timer 둘 다 넣는다.
+    unit_include    = "(mm-bot|mm-worker|mm-chat-poll)\\.(service|timer)"
+    enable_restarts = true
+  }
+}
+
+prometheus.scrape "host" {
+  targets         = prometheus.exporter.unix.host.targets
+  forward_to      = [prometheus.relabel.host.receiver]
+  job_name        = "mm-host"
+  scrape_interval = "60s"
+}
+
+// 필요한 지표만 남겨 활성 시계열(무료 10,000개)을 아낀다.
+prometheus.relabel "host" {
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+
+  rule {
+    action        = "keep"
+    source_labels = ["__name__"]
+    regex         = "node_(cpu_seconds_total|memory_(MemTotal|MemAvailable|SwapTotal|SwapFree)_bytes|filesystem_(avail|size)_bytes|load(1|5|15)|network_(receive|transmit)_bytes_total|systemd_unit_state|systemd_service_restart_total)"
+  }
+
+  // 공개 링크에 호스트 이름이 새지 않게 instance 를 고정값으로 바꾼다.
+  rule {
+    action       = "replace"
+    target_label = "instance"
+    replacement  = "mm-prod"
+  }
+}
+
+// ---- 컨테이너(api·db)와 mm-worker·mm-bot 의 CPU·메모리 ----
+
+prometheus.exporter.cadvisor "containers" {
+  // 설치 때 확인: docker_only = true 로 두고 systemd 서비스 cgroup 만 raw_cgroup_prefix_allowlist 로 더한다.
+  // 서비스 두 개가 지표에 안 나오면 docker_only = false 로 바꾸고 아래 relabel 의 keep 만 믿는다(지표가 늘어난다).
+  docker_only                 = true
+  raw_cgroup_prefix_allowlist = ["/system.slice/mm-worker.service", "/system.slice/mm-bot.service"]
+
+  // 컨테이너 라벨·환경 변수를 지표 라벨로 옮기지 않는다(환경 변수에 비밀이 있다).
+  store_container_labels = false
+  enabled_metrics        = ["cpu", "memory", "network"]
+}
+
+prometheus.scrape "containers" {
+  targets         = prometheus.exporter.cadvisor.containers.targets
+  forward_to      = [prometheus.relabel.containers.receiver]
+  job_name        = "mm-containers"
+  scrape_interval = "60s"
+}
+
+prometheus.relabel "containers" {
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+
+  // 지표 종류: CPU, working set 메모리, 메모리 상한, 네트워크, 시작 시각(재시작 확인).
+  rule {
+    action        = "keep"
+    source_labels = ["__name__"]
+    regex         = "container_(cpu_usage_seconds_total|memory_working_set_bytes|spec_memory_limit_bytes|network_(receive|transmit)_bytes_total|start_time_seconds)"
+  }
+
+  // 대상: mm-worker·mm-bot 서비스와 api·db 컨테이너만. id 와 name 을 ";" 로 이어 한 번에 맞춘다.
+  // 설치 때 확인: 컨테이너 이름은 `docker ps --format '{{.Names}}'` 로 본 이름(compose 기본값 mm-prod-api-1, mm-prod-db-1)과 맞아야 한다.
+  // 설치 때 확인: name 라벨이 store_container_labels = false 에서도 붙는지(안 붙으면 대상이 비니 true 로 바꾼다).
+  rule {
+    action        = "keep"
+    source_labels = ["id", "name"]
+    regex         = "(/system\\.slice/(mm-worker|mm-bot)\\.service;.*)|(.*;mm-prod-(api|db)-[0-9]+)"
+  }
+
+  rule {
+    action       = "replace"
+    target_label = "instance"
+    replacement  = "mm-prod"
+  }
+}

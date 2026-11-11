@@ -7,11 +7,13 @@ import { ok } from '@/shared/mock/envelope'
 import { server } from '@/shared/mock/server'
 import { recordRequests } from '@/shared/test/requests'
 import type { RecordedRequest } from '@/shared/test/requests'
-import type { BundleDto, ReminderDto } from '@/shared/types/api/message'
+import type { MockReminderResponse } from '@/shared/mock/fixtures/message'
+import type { BundleDto } from '@/shared/types/api/message'
 import {
   createReminder,
   messageInboxQueryOptions,
   messageThreadQueryOptions,
+  openThread,
   replyAttributionsQueryOptions,
   requestMessageAction,
 } from './messageQueries'
@@ -20,7 +22,7 @@ import {
 
 const BASE = '/api/v1/workspaces/ws_01/messages'
 
-const reminderDto = (patch: Partial<ReminderDto> = {}): ReminderDto => ({
+const reminderDto = (patch: Partial<MockReminderResponse> = {}): MockReminderResponse => ({
   reminder_id: 'rm_02',
   bundle_id: 'bd_02',
   task_id: 'tk_04',
@@ -122,6 +124,29 @@ describe('메모 고치기', () => {
     expect(received).toEqual([
       { method: 'PATCH', path: `${BASE}/reminders/rm_02`, body: { note: '시안 3차까지' } },
       { method: 'PATCH', path: `${BASE}/reminders/rm_02`, body: { note: null } },
+    ])
+  })
+})
+
+describe('대화 열기', () => {
+  it('대화 경로로 팀원 ID 만 보내고, 돌려받은 요약을 대화로 읽는다', async () => {
+    const received = answer('post', 'threads', {
+      thread_id: 'th_07',
+      member_id: 'mb_02',
+      name: '박민수',
+      last_message: null,
+      awaiting_reply_since: null,
+      dm_failed: false,
+      web_reply_available: false,
+    })
+    await expect(openThread('ws_01', 'mb_02')).resolves.toMatchObject({
+      id: 'th_07',
+      memberId: 'mb_02',
+      lastMessage: null,
+      webReply: 'unavailable',
+    })
+    expect(received).toEqual([
+      { method: 'POST', path: `${BASE}/threads`, body: { member_id: 'mb_02' } },
     ])
   })
 })
@@ -267,4 +292,83 @@ describe('초안을 기다리는 조회는 옵션을 만든 세션에 묶인다'
       await vi.waitFor(() => expect(messageReads(log.started.slice(ended))).toHaveLength(2))
     },
   )
+})
+
+describe('응답 검증 (#348)', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('목록 대화의 모르는 보낸 쪽은 잘못된 응답이다. 캐시에 넣지 않고 다시 요청하지 않는다', async () => {
+    server.use(
+      http.get(BASE, () =>
+        ok({
+          threads: [
+            {
+              thread_id: 'th_01',
+              member_id: 'mb_03',
+              name: '이재환',
+              last_message: {
+                message_id: 'mg_01',
+                sender: 'system',
+                body: '안내',
+                created_at: '2026-09-16T00:00:00Z',
+                author_member_id: null,
+                author_name: null,
+              },
+              awaiting_reply_since: null,
+              dm_failed: false,
+              web_reply_available: true,
+            },
+          ],
+          bundles: [bundleDto()],
+        }),
+      ),
+    )
+    const requests = recordRequests()
+    const client = createQueryClient()
+    const options = messageInboxQueryOptions('ws_01')
+    await expect(client.fetchQuery(options)).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+      kind: 'invalid_response',
+      details: { entity: 'message', path: 'threads[0].last_message.sender' },
+    })
+    expect(client.getQueryData(options.queryKey)).toBeUndefined()
+    expect(requests.started).toHaveLength(1)
+  })
+
+  it('답장 고르기의 모르는 상태는 잘못된 응답이다', async () => {
+    server.use(
+      http.get(`${BASE}/threads/:threadId/attributions`, () =>
+        ok({ items: [{ message_id: 'mg_05', status: 'skipped', task: null }] }),
+      ),
+    )
+    await expect(
+      createQueryClient().fetchQuery(replyAttributionsQueryOptions('ws_01', 'th_01')),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE', details: { path: 'items[0].status' } })
+  })
+
+  it('시각 옮기기 응답의 모르는 묶음 상태는 잘못된 응답이다 — 쓰기는 반영됐을 수 있다', async () => {
+    answer('patch', 'bundles/:id', { ...bundleDto(), status: 'paused' })
+    await expect(
+      requestMessageAction('ws_01', {
+        kind: 'schedule',
+        bundleId: 'bd_02',
+        scheduledAt: '2026-09-26T05:00:00Z',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE', details: { path: 'status' } })
+  })
+
+  it('막 만든 재촉의 묶음이 예정이 아니면 잘못된 응답이다', async () => {
+    answer('post', 'reminders', { reminder: reminderDto(), bundle: bundleDto({ status: 'sent' }) })
+    await expect(
+      createReminder('ws_01', {
+        memberId: 'mb_04',
+        taskId: 'tk_04',
+        scheduledAt: '2026-09-25T05:00:00Z',
+        note: null,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE', details: { path: 'bundle.status' } })
+  })
 })

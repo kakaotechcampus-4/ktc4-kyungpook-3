@@ -41,6 +41,13 @@ function atMembers() {
 
 const stepNav = () => screen.getByRole('navigation', { name: '단계 이동' })
 
+/** 안내를 여는 도움말 버튼은 단계 진행 액션에서 제외한다. */
+const cardActions = (card: HTMLElement) =>
+  within(card)
+    .getAllByRole('button')
+    .filter((button) => button.getAttribute('aria-label') !== '디스코드 연동 사용법')
+    .map((button) => button.textContent)
+
 beforeEach(() => {
   applyScenario('incomplete-workspace')
   vi.mocked(leaveApp).mockClear()
@@ -207,8 +214,10 @@ describe('지금 단계의 하단 버튼', () => {
     const app = renderApp('/onboarding/ws_03/connect_notion')
     await screen.findByRole('button', { name: '건너뛰기' })
     await userEvent.click(within(stepNav()).getByRole('button', { name: '다음 단계' }))
-    // 제목은 불러오는 틀 → 입력 틀로 바뀌며 다시 그려진다. 마지막 화면의 입력 칸을 기다린다
-    expect(await screen.findByLabelText('@seoyeon_01의 팀원 이름')).toBeInTheDocument()
+    // 제목은 불러오는 틀 → 입력 틀로 바뀌며 다시 그려진다. 마지막 화면의 계정 칸을 기다린다
+    expect(
+      await screen.findByRole('combobox', { name: '최진호의 디스코드 계정' }),
+    ).toBeInTheDocument()
     await app.expectPath('/onboarding/ws_03/connect_members')
     await waitFor(() => expect(bodies).toEqual([{ step: 'connect_notion', action: 'skip' }]))
   })
@@ -217,7 +226,7 @@ describe('지금 단계의 하단 버튼', () => {
     atMembers()
     const bodies = recordRequestBodies('PATCH', ONBOARDING_PATCH)
     const app = renderApp('/onboarding/ws_03/connect_members')
-    await screen.findByLabelText('@seoyeon_01의 팀원 이름')
+    await screen.findByRole('combobox', { name: '최진호의 디스코드 계정' })
     await userEvent.click(within(stepNav()).getByRole('button', { name: '다음 단계' }))
 
     expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
@@ -225,11 +234,14 @@ describe('지금 단계의 하단 버튼', () => {
     expect(bodies).toEqual([{ step: 'connect_members', action: 'skip' }])
   })
 
-  it('팀원 연결에서 입력 중 `이전 단계` 는 이탈 확인을 거치고, `계속 작성하기` 면 입력이 남는다', async () => {
+  it('팀원 연결에서 이름을 고치는 중 `이전 단계` 는 이탈 확인을 거치고, `계속 작성하기` 면 입력이 남는다', async () => {
     atMembers()
     const log = recordRequests()
     const app = renderApp('/onboarding/ws_03/connect_members')
-    await userEvent.type(await screen.findByLabelText('@seoyeon_01의 팀원 이름'), '김서연')
+    await userEvent.click(await screen.findByRole('button', { name: '최진호 이름 고치기' }))
+    const editor = screen.getByRole('textbox', { name: '최진호의 새 이름' })
+    await userEvent.clear(editor)
+    await userEvent.type(editor, '김서연')
     await userEvent.click(within(stepNav()).getByRole('button', { name: '이전 단계' }))
 
     expect(
@@ -238,7 +250,7 @@ describe('지금 단계의 하단 버튼', () => {
     await userEvent.click(screen.getByRole('button', { name: '계속 작성하기' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await app.expectPath('/onboarding/ws_03/connect_members')
-    expect(screen.getByLabelText('@seoyeon_01의 팀원 이름')).toHaveValue('김서연')
+    expect(screen.getByRole('textbox', { name: '최진호의 새 이름' })).toHaveValue('김서연')
 
     // 버리고 나가면 Notion 둘러보기다. 입력은 저장하지 않는다
     await userEvent.click(within(stepNav()).getByRole('button', { name: '이전 단계' }))
@@ -257,11 +269,7 @@ describe('연동 단계 둘러보기', () => {
     renderApp('/onboarding/ws_03/connect_discord?review=1')
     const card = await screen.findByRole('region', { name: '디스코드 연동' })
     expect(await within(card).findByText('연결됨')).toBeInTheDocument()
-    expect(
-      within(card)
-        .getAllByRole('button')
-        .map((button) => button.textContent),
-    ).toEqual(['다음'])
+    expect(cardActions(card)).toEqual(['다음'])
     expect(within(stepNav()).getByRole('button', { name: '이전 단계' })).toBeEnabled()
     expect(within(stepNav()).getByRole('button', { name: '다음 단계' })).toBeEnabled()
   })
@@ -303,11 +311,7 @@ describe('연동 단계 둘러보기', () => {
     expect(log.started).toContainEqual({ method: 'GET', path: '/workspaces/ws_03/integrations' })
     expect(patches(log.started)).toHaveLength(0)
     // 연결됐으니 `연결하기`·`건너뛰기` 대신 `다음` 이다
-    expect(
-      within(returned)
-        .getAllByRole('button')
-        .map((button) => button.textContent),
-    ).toEqual(['다음'])
+    expect(cardActions(returned)).toEqual(['다음'])
 
     await userEvent.click(within(stepNav()).getByRole('button', { name: '다음 단계' }))
     expect(await screen.findByRole('heading', { name: 'Notion 연결' })).toBeInTheDocument()
@@ -316,7 +320,9 @@ describe('연동 단계 둘러보기', () => {
 
     // Notion 을 `›`(건너뛰기)로 넘기면 팀원 연결은 보통 화면이다 (D-073 개정)
     await userEvent.click(within(stepNav()).getByRole('button', { name: '다음 단계' }))
-    expect(await screen.findByLabelText('@seoyeon_01의 팀원 이름')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('combobox', { name: '최진호의 디스코드 계정' }),
+    ).toBeInTheDocument()
     await app.expectPath('/onboarding/ws_03/connect_members')
   })
 

@@ -1,5 +1,8 @@
+import type { UnknownValue } from '@/shared/api/unknownValue'
 import type { MeetingSource } from '@/shared/types/common'
 export type { MeetingSource } from '@/shared/types/common'
+/** 응답에서 읽은 출처. 모르는 값은 받은 글자를 남긴다 — 시각 축·처리 단계·배지가 없다 (`meetingSourceTraits`, #348) */
+export type MeetingSourceValue = MeetingSource | UnknownValue
 /** `awaiting_speakers` 는 웹 업로드 회의만 거친다 — PM 이 화자를 지정하면 `processing` 으로 돌아간다 (계약 §2.3.1) */
 export type MeetingStatus =
   'created' | 'recording' | 'processing' | 'awaiting_speakers' | 'done' | 'failed'
@@ -7,7 +10,7 @@ export interface MeetingSummary {
   id: string
   title: string
   status: MeetingStatus
-  source: MeetingSource
+  source: MeetingSourceValue
   startedAt: string
   durationMs: number | null
   attendeeCount: number
@@ -19,6 +22,20 @@ export interface MeetingProgress {
   transcribed: boolean
   extracted: boolean
 }
+/** AI 가 알린 지금 처리 단계 (BE MeetingProcessing.stage) */
+export const PROCESSING_STAGES = ['stt', 'sources', 'extract', 'handoff'] as const
+export type ProcessingStage = (typeof PROCESSING_STAGES)[number]
+export interface SttProgress {
+  done: number
+  total: number
+}
+/** 녹음 회의는 이 값이 있으면 서버 단계와 1:1 인 다섯 단계이고, 지금 단계 옆에 진행 수·경과를 붙인다 (#483) */
+export interface MeetingProcessing {
+  /** AI 가 아직 아무 단계도 알리지 않았다면 null */
+  stage: ProcessingStage | null
+  stageAt: string | null
+  stt: SttProgress | null
+}
 export interface Meeting {
   id: string
   workspaceId: string
@@ -28,7 +45,10 @@ export interface Meeting {
   endedAt: string | null
   extractionId: string | null
   failedStage: string | null
+  deletionAvailable: boolean
   progress: MeetingProgress | null
+  /** 정리 중이 아니거나, #542 전 서버이거나, 모양이 틀렸거나, 모르는 단계면 null */
+  processing: MeetingProcessing | null
 }
 /** 업로드 요청. 회의 시각은 ISO 문자열이다 — 날짜를 고치지 않았으면 파일의 원래 시각이다 (D-079, D-164) */
 export interface UploadMeetingInput {

@@ -28,11 +28,14 @@ export function MinutesTabs<Id extends string>({
   tabs,
   selected,
   onSelect,
+  beforePanel,
 }: {
   label: string
   tabs: readonly MinutesTab<Id>[]
   selected: Id
   onSelect: (id: Id) => void
+  /** 탭 줄 아래, 어느 탭이든 패널 위에 둔다. 탭 줄 위에 두면 본문이 온 뒤 탭 줄이 밀린다 (UX1-M01) */
+  beforePanel?: ReactNode
 }) {
   const prefix = useId()
   const buttons = useRef(new Map<Id, HTMLButtonElement>())
@@ -91,6 +94,7 @@ export function MinutesTabs<Id extends string>({
           )
         })}
       </div>
+      {beforePanel}
       <div
         ref={panelTabStop}
         role="tabpanel"

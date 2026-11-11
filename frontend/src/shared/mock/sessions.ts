@@ -26,9 +26,37 @@ export function setMockRole(role: MockRole, workspaceId = 'ws_01', state: MockDb
  * 초대로 이어진 계정은 수락한 초대가 대응이다. 둘 다 없는 공간에서는 세션 팀원을 정할 수 없으므로 태스크·승인 쓰기가 403 이다.
  */
 
-/** 초대 이메일 비교 형태. 백엔드 normalize_email 과 같다. 가입·로그인 이메일은 백엔드도 입력 그대로 비교한다 */
+/** 이메일 비교 형태. 백엔드 normalize_email 과 같다 */
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
+}
+
+/** 세션 사용자의 비교용 이메일. 카카오로 가입한 계정은 이메일이 없다 (#627) */
+export function sessionEmail(user: { email: string | null }): string | null {
+  return user.email === null ? null : normalizeEmail(user.email)
+}
+
+/** 백엔드 by_email_stmt 처럼 대소문자·앞뒤 공백을 빼고 계정을 찾는다 */
+export function accountWithEmail(email: string) {
+  const wanted = normalizeEmail(email)
+  return db.accounts.find(({ session }) => sessionEmail(session.user) === wanted)
+}
+
+/** 아이디는 소문자로 저장하므로 정규화한 값으로 찾는다 */
+export function accountWithUsername(username: string) {
+  return db.accounts.find(({ session }) => session.user.username === username)
+}
+
+/**
+ * BE 마이그레이션이 기존 계정에 채우는 아이디(번호 붙이기 전). 이메일 앞부분을 소문자 영문·숫자만 남기고,
+ * 4자보다 짧으면 앞에 user 를 붙이고 20자로 자른다. 픽스처 계정의 아이디를 이 규칙으로 정한다
+ */
+export function usernameFromEmail(email: string): string {
+  const local = email
+    .slice(0, email.lastIndexOf('@'))
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+  return (local.length < 4 ? `user${local}` : local).slice(0, 20)
 }
 
 const currentUserId = (state: MockDb) => state.session.user.user_id

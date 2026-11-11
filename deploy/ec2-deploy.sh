@@ -9,8 +9,9 @@
 # 문서·테스트·평가 데이터만 바뀐 파트는 건너뛴다. 봇 재시작은 진행 중인 녹음을 끊기 때문이다.
 # git 갱신은 이 스크립트 밖(deploy.yml)에서 한다. 실행 중인 스크립트 파일을 git 이 덮어쓰면 bash 가 바뀐 줄을 읽는다.
 #
-# 빌드·설치 출력은 ~/mm-deploy.log 에만 쓰고, 실패했을 때 끝부분만 보여 준다. SSM 은 출력의 앞 24,000자만 돌려줘서
-# 빌드 로그를 그대로 내보내면 뒤의 결과 줄이 잘리고, 저장소가 공개라 Actions 로그도 누구나 볼 수 있다.
+# 빌드·설치 출력과 실패한 유닛의 저널은 ~/mm-deploy.log 에만 쓰고, 실패해도 어느 단계인지만 출력한다.
+# SSM 출력은 공개 저장소의 Actions 로그에 그대로 실려 누구나 볼 수 있고, 오류 추적에 이름이나 회의 문장이 섞일 수 있다.
+# 직전 배포의 로그는 ~/mm-deploy.log.prev 에 하나 남긴다. 실패 뒤 다음 배포가 로그를 비워도 원인을 볼 수 있다.
 set -euo pipefail
 
 REPO=/opt/mm
@@ -22,9 +23,13 @@ STATE="$REPO/.git/mm-deployed-sha"   # .git 안이라 git status 에 안 잡히�
 RESTART_LOCK="$REPO/ai/recordings/restart.lock"
 RESTART_LOCK_WAIT=60   # 봇은 녹음을 시작하는 짧은 순간만 쥔다. 이보다 오래 못 잡으면 무언가 멈춘 것이다
 LOG="$HOME/mm-deploy.log"
+SYSTEMD_DIR=/etc/systemd/system
+# 채팅 폴링 유닛(#599). 매일 09:00 KST 에 타이머가 서비스를 한 번 띄운다. 첫 설치는 사람이 한다(deploy/README.md)
+CHAT_POLL_UNITS="ai/deploy/systemd/mm-chat-poll.service ai/deploy/systemd/mm-chat-poll.timer"
 MODE=${2:-changed}
 
 cd "$REPO"
+mv -f "$LOG" "$LOG.prev" 2>/dev/null || true
 : > "$LOG"
 NEW=$(git rev-parse HEAD)
 if ! { [ -s "$STATE" ] && git cat-file -e "$(cat "$STATE")^{commit}" 2>/dev/null; }; then
@@ -42,14 +47,13 @@ changed() {
     | grep -vE '\.md$|/(docs|tests|decision_log|eval_results)/|/golden_set[^/]*/|^ai/stt/eval/' || true)" ]
 }
 
-# 명령 출력을 로그 파일에만 쓴다. 실패하면 끝부분을 보여 주고 실패로 돌아온다.
+# 명령 출력을 로그 파일에만 쓴다. 실패하면 어느 단계인지만 알리고 실패로 돌아온다.
 quiet() {
   local label=$1
   shift
   echo "-- $label" >> "$LOG"
   if ! "$@" >> "$LOG" 2>&1; then
-    echo "$label 실패. 서버의 $LOG 끝부분:" >&2
-    tail -n 30 "$LOG" >&2
+    echo "$label 실패. 서버의 $LOG 에서 '-- $label' 아래를 본다" >&2
     return 1
   fi
 }
@@ -87,14 +91,57 @@ restart_if_running() {
   sudo systemctl restart "$unit"
   sleep 10
   if ! systemctl is-active -q "$unit"; then
-    echo "$unit 이 다시 뜨지 않았다:" >&2
-    sudo journalctl -u "$unit" -n 15 --no-pager >&2 || true
+    echo "-- $unit 저널" >> "$LOG"
+    sudo journalctl -u "$unit" -n 15 --no-pager >> "$LOG" 2>&1 || true
+    echo "$unit 이 다시 뜨지 않았다. 서버의 $LOG 에서 '-- $unit 저널' 아래를 본다" >&2
     return 1
   fi
   echo "$unit 재시작"
 }
 
 complete=1   # 건너뛴 일 없이 끝까지 올렸나. 아니면 기록을 남기지 않아 다음 배포가 다시 올린다
+
+activate_summary() {
+  local result=0
+  sudo python3 deploy/enable-summary.py || result=$?
+  if [ "$result" = 3 ]; then
+    complete=0
+    echo "::warning::mm-worker 요약은 ON이 아니다. 꺼진 유닛은 시작하지 않았다"
+  elif [ "$result" != 0 ]; then
+    echo "mm-worker 요약 활성화 검증 실패. 배포 기준 커밋을 유지한다" >&2
+    return "$result"
+  fi
+}
+
+# 채팅 폴링 유닛을 저장소 판으로 맞춘다. 이미 설치된 서버에서 유닛 파일이 바뀌었을 때만 한다.
+# 설치되지 않았으면 설치·enable 하지 않고 경고만 낸다. 꺼 둔 유닛을 켜지 않는다는 restart_if_running 과 같은 원칙이다.
+# 기준 커밋은 묶지 않는다. 묶으면 배포마다 AI 단계가 다시 돌아 봇이 재시작된다.
+# 저장소 유닛은 User=mm 이지만 운영의 봇·워커는 다른 계정이라, 계정은 drop-in 으로 워커와 맞춘다. 있는 drop-in 은 두고 간다.
+# 실행 중인 폴링은 유닛 파일을 바꿔도 끊기지 않으므로 서비스는 재시작하지 않는다. 타이머만 다시 걸어 새 OnCalendar 를 읽힌다.
+sync_chat_poll() {
+  local drop_in="$SYSTEMD_DIR/mm-chat-poll.service.d/10-user.conf" user
+  if [ ! -e "$SYSTEMD_DIR/mm-chat-poll.timer" ]; then
+    echo "::warning::mm-chat-poll.timer 가 설치되지 않았다. 채팅이 수집되지 않는다. deploy/README.md 의 절차로 설치한다"
+    return 0
+  fi
+  # shellcheck disable=SC2086  # 유닛 경로 두 개로 나눠 넘긴다
+  if [ "$MODE" != all ] && git diff --quiet "$OLD" "$NEW" -- $CHAT_POLL_UNITS; then
+    return 0
+  fi
+  # shellcheck disable=SC2086
+  quiet "채팅 폴링 유닛 복사" sudo install -m 0644 $CHAT_POLL_UNITS "$SYSTEMD_DIR"/
+  if [ ! -e "$drop_in" ]; then
+    user=$(systemctl show -p User --value mm-worker 2>/dev/null || true)
+    user=${user:-$(id -un)}
+    quiet "채팅 폴링 계정 설정" sudo mkdir -p "${drop_in%/*}"
+    printf '[Service]\nUser=%s\n' "$user" | sudo tee "$drop_in" >/dev/null
+  fi
+  quiet "systemd 다시 읽기" sudo systemctl daemon-reload
+  if systemctl is-active -q mm-chat-poll.timer; then
+    quiet "채팅 폴링 타이머 다시 걸기" sudo systemctl restart mm-chat-poll.timer
+  fi
+  echo "채팅 폴링 유닛 갱신"
+}
 
 if changed backend; then
   echo "== backend"
@@ -129,7 +176,7 @@ if changed ai; then
     echo "ai 의존성 설치 완료"
   fi
   # 워커는 SIGTERM 을 받으면 하던 회의를 마치고 끝난다(mm-worker.service TimeoutStopSec)
-  restart_if_running mm-worker
+  activate_summary
   mkdir -p ai/recordings
   # 녹음 확인과 재시작 사이에 새 녹음이 시작되지 않게 잠금을 쥔 채로 둘을 한다.
   # 재시작 뒤 살아났는지 기다리는 10초도 쥐고 있어서, 그동안 새 봇의 녹음 시작은 거절된다.
@@ -150,8 +197,13 @@ if changed ai; then
     restart_if_running mm-bot
   fi
   exec 8>&-   # 잠금을 놓는다. 열지 못했으면 닫을 것이 없고, 열리지 않은 번호를 닫아도 오류가 아니다
+  # 봇 재시작 뒤에 둔다. 여기서 실패하면 배포가 실패하고 기준 커밋이 남아 다음 배포가 다시 한다
+  sync_chat_poll
 else
   echo "== ai 변경 없음"
+  if changed deploy; then
+    activate_summary
+  fi
 fi
 
 if [ "$complete" = 1 ]; then

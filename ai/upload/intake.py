@@ -20,13 +20,22 @@ fail 을 보낸다. 보내지 못하면 fail_pending 이 남아 다음 호출이
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, NamedTuple
 
 from capture.handoff import BeError
-from capture.recorder import RECOVERY_MAX_ATTEMPTS, _iso, backoff_s, manifest_path, save_manifest, utcnow
+from capture.meeting_purge import upload_writer
+from capture.recorder import (
+    RECOVERY_MAX_ATTEMPTS,
+    _iso,
+    backoff_s,
+    manifest_path,
+    save_manifest,
+    utcnow,
+)
 from upload.diarize import Diarizer, JobNotFound, normalize
 from upload.prepare import _epoch, prepare_from_segments
 from upload.tracks import load_mono_16k, to_wav_16k
@@ -37,6 +46,11 @@ FETCH_POLL_S = 30.0           # 결과를 기다릴 때 다시 확인하는 간�
 # failed 로 바꾸므로 그보다 먼저 끝낸다(#288 합의). 결과 대기 30분 × 5회와 재시도 간격만 더해도 3시간 근처라 따로 둔다
 INTAKE_DEADLINE_S = 2.5 * 3600
 FAILED_STAGE = "diarize"
+# 풀어 낸 음성 길이의 상한. BE 는 바이트(200MB)만 막아서, 비트레이트가 낮으면 그 안에 몇십 시간이 들어간다.
+# 넘으면 메모리(서버 4GB)와 유료 분리·전사를 쓰기 전에 실패로 보고한다
+DEFAULT_MAX_SECONDS = 3 * 3600
+# 받는 확장자(BE upload_storage._SIGNATURES)마다 여는 FFmpeg 형식. 내용을 보고 형식을 고르게 두지 않는다
+_FORMATS = {".mp3": "mp3", ".m4a": "mp4", ".wav": "wav", ".ogg": "ogg", ".webm": "webm"}
 _FINISHED = ("done", "failed")
 _CLEAN = ("claiming", "claimed", "converted", "submitted")
 
@@ -81,6 +95,15 @@ def _source(d: Path, rec: dict) -> Path:
     return d / f"source{Path(str(rec['item'].get('stored_filename') or '')).suffix}"
 
 
+def max_upload_seconds() -> float:
+    """MM_UPLOAD_MAX_SECONDS. 비었거나 숫자가 아니거나 0 이하면 기본값(오타로 모든 업로드를 실패시키지 않는다)."""
+    try:
+        v = float(os.getenv("MM_UPLOAD_MAX_SECONDS") or DEFAULT_MAX_SECONDS)
+    except ValueError:
+        return DEFAULT_MAX_SECONDS
+    return v if v > 0 else DEFAULT_MAX_SECONDS
+
+
 def _wav(d: Path) -> Path:
     return d / "audio_16k.wav"
 
@@ -114,16 +137,18 @@ def _unfinished(recordings_dir: Path) -> list[tuple[Path, dict]]:
     return out
 
 
+@upload_writer
 def intake_one(recordings_dir: Path, *, client, diarizer: Diarizer, now: Callable[[], datetime] = utcnow,
                timezone: str | None = None) -> Progress | None:
     """한 건을 한 단계 진전시킨다. 할 일이 없으면(대기 업로드 없음, 모두 대기 시각 전) None.
 
     끝나지 않은 로컬 기록 중 때가 된 것을 BE 대기 목록보다 먼저 이어 간다. 없으면 대기 목록의 첫 새 건을 claim 한다.
     예외는 올리지 않는다(실패는 기록하고 Progress.event 로 알린다)."""
+    from capture.meeting_purge import deleted
     recordings_dir = Path(recordings_dir)
     t = now()
     for d, rec in _unfinished(recordings_dir):
-        if _due(rec, t):
+        if not deleted(recordings_dir, rec["meeting_id"]) and _due(rec, t):
             return _advance(recordings_dir, d, rec, client=client, diarizer=diarizer, now=now, timezone=timezone,
                             fresh=False)
     root = recordings_dir / ".uploads"
@@ -135,7 +160,7 @@ def intake_one(recordings_dir: Path, *, client, diarizer: Diarizer, now: Callabl
         return None
     for item in pending:
         mid = str(item.get("meeting_id") or "")
-        if not mid or mid in known:
+        if not mid or mid in known or deleted(recordings_dir, mid):
             continue
         d = _dir(recordings_dir, mid)
         d.mkdir(parents=True, exist_ok=True)
@@ -148,6 +173,8 @@ def intake_one(recordings_dir: Path, *, client, diarizer: Diarizer, now: Callabl
 
 def _advance(recordings_dir, d: Path, rec: dict, *, client, diarizer, now, timezone, fresh: bool) -> Progress:
     mid = rec["meeting_id"]
+    if hasattr(client, 'meeting_epochs'):
+        client.meeting_epochs[mid] = int((rec.get('item') or {}).get('identity_epoch') or 0)
     if rec.get("fail_pending"):
         return _report_fail(d, rec, client, now())
     if manifest_path(recordings_dir, f"upload_{mid}").exists():   # 매니페스트가 이미 있다: 분리하지 않고 정리만
@@ -167,6 +194,13 @@ def _advance(recordings_dir, d: Path, rec: dict, *, client, diarizer, now, timez
             return _fail(d, rec, client, f"claim 뒤 기한 {INTAKE_DEADLINE_S:.0f}초를 넘겼다", t)
     try:
         return _step(recordings_dir, d, rec, client=client, diarizer=diarizer, now=now, timezone=timezone, fresh=fresh)
+    except BeError as e:
+        if e.code == "MEETING_DELETED":
+            from capture.meeting_purge import mark_deleted
+            mark_deleted(recordings_dir, {mid})
+            shutil.rmtree(d)
+            return Progress(mid, "skipped")
+        return _transient(d, rec, client, now(), f"{type(e).__name__}: {e}")
     except _Skip:
         shutil.rmtree(d, ignore_errors=True)
         return Progress(mid, "skipped")
@@ -217,6 +251,8 @@ def _step(recordings_dir, d, rec, *, client, diarizer, now, timezone, fresh) -> 
         try:
             size = client.download_upload(mid, src)
         except BeError as e:
+            if e.code == "MEETING_DELETED":
+                raise
             if _gone(e):
                 raise _Permanent(f"원본 파일이 없다: {e}") from e
             raise
@@ -224,14 +260,18 @@ def _step(recordings_dir, d, rec, *, client, diarizer, now, timezone, fresh) -> 
         if expected is not None and size != expected:
             src.unlink(missing_ok=True)
             raise OSError(f"받은 크기 {size} 가 올린 크기 {expected} 와 다르다")
+        fmt = _FORMATS.get(src.suffix.lower())
+        if fmt is None:
+            raise _Permanent(f"받지 않는 확장자다: {src.name}")
         try:
-            to_wav_16k(src, _wav(d))
-        except ValueError as e:   # 디코딩할 수 없는 파일: 다시 받아도 같다
+            to_wav_16k(src, _wav(d), max_seconds=max_upload_seconds(), format=fmt)
+        except ValueError as e:   # 디코딩할 수 없거나 상한보다 긴 파일: 다시 받아도 같다
             raise _Permanent(f"{type(e).__name__}: {e}") from e
         _set(d, rec, "converted")
         return Progress(mid, "converted")
     if state == "converted":
-        rec["job_id"] = diarizer.submit(_wav(d))
+        # 참석자는 워크스페이스 멤버만 고를 수 있어 외부 화자가 더 있을 수 있다. 그래서 정확한 수가 아니라 최소로 넘긴다
+        rec["job_id"] = diarizer.submit(_wav(d), min_speakers=len(item.get("attendees") or []))
         rec["submitted_at"] = _iso(now())
         _set(d, rec, "submitted")
         return Progress(mid, "submitted")
@@ -255,6 +295,7 @@ def _step(recordings_dir, d, rec, *, client, diarizer, now, timezone, fresh) -> 
             audio, total, segments, recordings_dir, source_name=str(item.get("original_filename") or ""),
             started_at=item["started_at"], timezone=timezone, session=f"upload_{mid}",
             meta={"be": {"meeting_id": mid, "status": "processing"}, "workspace_id": item.get("workspace_id"),
+                  "identity_epoch": item.get("identity_epoch", 0),
                   "title": item.get("title"), "attendees": item.get("attendees") or [],
                   "upload": {k: item.get(k) for k in ("original_filename", "stored_filename", "content_type",
                                                       "size_bytes", "uploaded_at")}})
@@ -304,10 +345,10 @@ def _fail(d: Path, rec: dict, client, error: str, t: datetime) -> Progress:
 
 
 def _gone(e: Exception) -> bool:
-    """BE 가 "그 회의(또는 원본 파일)가 없다"고 답했다. 오류 봉투의 MEETING_NOT_FOUND 만 그렇게 본다.
+    """BE 오류 봉투가 회의·원본 없음 또는 삭제를 명시했다.
     BE 는 없는 회의·파일에 늘 이 봉투를 준다. 봉투 없는 404(잘못된 경로·프록시·BE 배포 중)는 일시 실패로 다시 해 본다.
     건너뛰거나 실패로 보고하면 되돌릴 수 없다(#326 리뷰)."""
-    return isinstance(e, BeError) and e.code == "MEETING_NOT_FOUND"
+    return isinstance(e, BeError) and e.code in ("MEETING_NOT_FOUND", "MEETING_DELETED")
 
 
 def _report_fail(d: Path, rec: dict, client, t: datetime) -> Progress:

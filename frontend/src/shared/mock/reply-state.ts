@@ -8,6 +8,11 @@ import type {
 } from '@/shared/types/api/reply'
 import type { TaskHistoryDto } from '@/shared/types/api/task'
 import { db } from './db'
+
+/** 백엔드 `ReplyAttribution` 그대로 — 고르기 전은 task 가, 고른 뒤는 candidates 가 null 칸으로 온다. 화면은 읽지 않는다 */
+export type MockAttributionResponse =
+  | (Extract<ReplyAttributionDto, { status: 'needs_pm' }> & { task: null })
+  | (Extract<ReplyAttributionDto, { status: 'resolved' }> & { candidates: null })
 import type { MockDb } from './db'
 import { MOCK_NOW } from './fixtures/constants'
 import type { MockTask } from './fixtures/task'
@@ -78,10 +83,10 @@ export function replyAttributions(
   workspaceId: string,
   threadId: string,
   state: MockDb = db,
-): ReplyAttributionDto[] {
+): MockAttributionResponse[] {
   return state.replies.judgments
     .filter((row) => row.workspace_id === workspaceId && row.thread_id === threadId)
-    .flatMap((row): ReplyAttributionDto[] => {
+    .flatMap((row): MockAttributionResponse[] => {
       const line = state.replies.changes.find(
         (change) =>
           change.message_id === row.message_id && ATTRIBUTION_OUTCOMES.has(change.outcome),

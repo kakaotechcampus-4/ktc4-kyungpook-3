@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useRef, useState } from 'react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { PointerEventsCheckLevel } from '@testing-library/user-event'
 import { Sheet } from './Sheet'
 
@@ -24,6 +24,37 @@ async function openSheet() {
   await user.click(trigger)
   const sheet = await screen.findByRole('dialog', { name: '담당자' })
   return { user, trigger, sheet }
+}
+
+/** 트리거 없이 화면이 여는 시트. 항목 단추로 열고, 안에서 다른 항목으로 넘어갈 수 있다 */
+function Opened() {
+  const [item, setItem] = useState<string | null>(null)
+  const opener = useRef<HTMLElement | null>(null)
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(event) => {
+          opener.current = event.currentTarget
+          setItem('첫 항목')
+        }}
+      >
+        항목 열기
+      </button>
+      <Sheet
+        open={item !== null}
+        onOpenChange={(open) => {
+          if (!open) setItem(null)
+        }}
+        title={item ?? ''}
+        returnFocus={() => opener.current}
+      >
+        <button type="button" onClick={() => setItem('둘째 항목')}>
+          둘째로
+        </button>
+      </Sheet>
+    </>
+  )
 }
 
 /** 손잡이·제목 자리를 dy 만큼 끌어 내렸다 놓는다 */
@@ -66,5 +97,44 @@ describe('Sheet', () => {
     drag(sheet, 40)
     expect(sheet.style.transform).toBe('')
     expect(screen.getByRole('dialog', { name: '담당자' })).toBeInTheDocument()
+  })
+
+  it('트리거 없이 연 시트를 닫으면 returnFocus 가 준 요소로 포커스가 돌아온다', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.Never })
+    render(<Opened />)
+    const opener = screen.getByRole('button', { name: '항목 열기' })
+    await user.click(opener)
+    await screen.findByRole('dialog', { name: '첫 항목' })
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(opener).toHaveFocus())
+  })
+
+  it('열린 채 제목이 바뀌면 포커스가 새 제목으로 간다', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.Never })
+    render(<Opened />)
+    await user.click(screen.getByRole('button', { name: '항목 열기' }))
+    await user.click(await screen.findByRole('button', { name: '둘째로' }))
+    const sheet = await screen.findByRole('dialog', { name: '둘째 항목' })
+    expect(within(sheet).getByRole('heading', { name: '둘째 항목' })).toHaveFocus()
+  })
+
+  it('항목 키를 주면 같은 항목의 제목만 바뀔 때 포커스를 옮기지 않는다', async () => {
+    function Renamed() {
+      const [title, setTitle] = useState('처음 이름')
+      return (
+        <Sheet open onOpenChange={() => undefined} title={title} itemKey="item">
+          <button type="button" onClick={() => setTitle('고친 이름')}>
+            이름 고치기
+          </button>
+        </Sheet>
+      )
+    }
+    const user = userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.Never })
+    render(<Renamed />)
+    const rename = await screen.findByRole('button', { name: '이름 고치기' })
+    await user.click(rename)
+    expect(await screen.findByRole('dialog', { name: '고친 이름' })).toBeInTheDocument()
+    expect(rename).toHaveFocus()
   })
 })

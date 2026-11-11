@@ -1,6 +1,10 @@
 import { request } from '@/shared/api/client'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
-import type { ExtractionItemRevertDto } from '@/shared/types/api/extraction'
+import { parseResponse } from '@/shared/api/parseResponse'
+import {
+  autoTaskNotRevertibleDetailsSchema,
+  extractionItemRevertSchema,
+} from '@/shared/types/api/extraction'
 import type { AutoItemRevert, AutoItemRevertReason, AutoItemRevertRejection } from '../model/types'
 
 /**
@@ -11,10 +15,15 @@ import type { AutoItemRevert, AutoItemRevertReason, AutoItemRevertRejection } fr
 export async function revertAutoItem(
   extractionId: string,
   itemId: string,
+  signal?: AbortSignal,
 ): Promise<AutoItemRevert> {
-  const dto = await request<ExtractionItemRevertDto>(
-    `/extractions/${encodeURIComponent(extractionId)}/items/${encodeURIComponent(itemId)}/revert`,
-    { method: 'POST' },
+  const dto = parseResponse(
+    extractionItemRevertSchema,
+    await request<unknown>(
+      `/extractions/${encodeURIComponent(extractionId)}/items/${encodeURIComponent(itemId)}/revert`,
+      { method: 'POST', signal },
+    ),
+    'extraction',
   )
   return {
     itemId: dto.item_id,
@@ -32,10 +41,6 @@ const REASONS = [
   'pending_approval',
 ] as const satisfies readonly AutoItemRevertReason[]
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 /** 409 AUTO_TASK_NOT_REVERTIBLE 이면 사유를, 다른 실패(403·404·네트워크 등)면 null 을 돌려준다 */
 export function toAutoItemRevertRejection(error: unknown): AutoItemRevertRejection | null {
   if (
@@ -45,13 +50,13 @@ export function toAutoItemRevertRejection(error: unknown): AutoItemRevertRejecti
     error.code !== ERROR_CODES.AUTO_TASK_NOT_REVERTIBLE
   )
     return null
-  const details = isRecord(error.details) ? error.details : {}
-  const reason = (REASONS as readonly unknown[]).includes(details.reason)
-    ? (details.reason as AutoItemRevertReason)
-    : 'unknown'
+  const parsed = autoTaskNotRevertibleDetailsSchema.safeParse(error.details)
+  const details = parsed.success ? parsed.data : { reason: '' }
   return {
-    reason,
-    taskId: typeof details.task_id === 'string' ? details.task_id : null,
-    approvalId: typeof details.approval_id === 'string' ? details.approval_id : null,
+    reason: (REASONS as readonly string[]).includes(details.reason)
+      ? (details.reason as AutoItemRevertReason)
+      : 'unknown',
+    taskId: details.task_id ?? null,
+    approvalId: details.approval_id ?? null,
   }
 }

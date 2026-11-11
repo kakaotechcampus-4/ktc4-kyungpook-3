@@ -29,6 +29,7 @@ from app.models import (
     Workspace,
 )
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
@@ -98,7 +99,7 @@ def seed(db):
     db.add(ws)
     db.flush()
 
-    pm_user = User(email="pm@example.com", name="pm")
+    pm_user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     db.add(pm_user)
     db.flush()
     db.add(SessionModel(
@@ -186,7 +187,7 @@ def test_first_person_still_uses_speaker_and_saves_type(client, db, seed):
 
 
 def test_legacy_thirdrole_item_is_not_auto(client, db, seed):
-    """AI 가 thirdrole 로 추측한 이름이 확인된 별칭에 걸려 legacy 확신도가 높아져도 역할 지목은 PM 이 본다(#459)."""
+    """역할은 맡은 사람이 바뀔 수 있어서, 역할 원문이 확인된 별칭에 걸려 legacy 확신도가 높아져도 PM 이 본다(#459)."""
     r = _post(client, seed, [_legacy("백엔드 배포", 0.95, assignee_type="thirdrole", assignee_raw="BE 리더")])
 
     assert r.status_code == 201
@@ -325,15 +326,36 @@ def test_save_alias_creates_learned_alias(client, pm_client, db, seed):
     assert r.json()["data"]["alias_candidate"] is False
 
 
-def test_thirdrole_item_is_not_alias_candidate_and_not_saved(client, pm_client, db, seed):
-    """역할 지목은 AI 가 원문 대신 문맥으로 추측한 이름("환")을 assignee_raw 로 보낼 수 있다. BE 는 둘을 구분할 수 없어
-    AI 가 역할 원문을 보낼 때까지 묻지도 배우지도 않는다(#464 리뷰)."""
-    extraction_id = _hold_item(client, seed, title="백엔드 배포", raw="환", type_="thirdrole")
+def test_thirdrole_item_is_alias_candidate_and_saved(client, pm_client, db, seed):
+    """역할 지목은 AI 가 역할 원문을 assignee_raw 로 보내므로(#522) 이름처럼 묻고 배운다.
+
+    seed 의 지민은 "BE 리더" 별칭이 있어 "BE 리더가"는 찾혀서 대상이 아니다. 못 찾는 역할 원문("서버 리더가")을 쓴다."""
+    extraction_id = _hold_item(client, seed, title="백엔드 배포", raw="서버 리더가", type_="thirdrole")
     item = _extraction_item(pm_client, extraction_id)
     before = len(_aliases(db))
 
-    r = _approve(pm_client, db, assignee=seed["haeun"].member_id)
+    r = _approve(pm_client, db, assignee=seed["leader"].member_id)
 
+    assert (item["alias_candidate"], item["alias_text"]) == (True, "서버 리더")
+    _assert_approved_with_task(db, r, "백엔드 배포")
+    learned = [a for a in _aliases(db) if a.source == "learned"]
+    assert len(_aliases(db)) == before + 1
+    assert len(learned) == 1
+    assert learned[0].member_id == seed["leader"].member_id
+    assert learned[0].alias_text == "서버 리더"
+    assert learned[0].verified is True
+    assert r.json()["data"]["alias_candidate"] is False
+
+
+def test_thirdrole_item_found_by_existing_role_alias_is_not_alias_candidate(client, pm_client, db, seed):
+    """이미 있는 역할 별칭("BE 리더")으로 찾힌 thirdrole 항목은 묻지도 저장하지도 않는다(#607 리뷰, thirdname 과 같은 경로)."""
+    extraction_id = _hold_item(client, seed, title="백엔드 배포", raw="BE 리더가", type_="thirdrole")
+    item = _extraction_item(pm_client, extraction_id)
+    before = len(_aliases(db))
+
+    r = _approve(pm_client, db, assignee=seed["leader"].member_id)
+
+    assert item["assignee"]["member_id"] == seed["leader"].member_id
     assert (item["alias_candidate"], item["alias_text"]) == (False, None)
     _assert_approved_with_task(db, r, "백엔드 배포")
     assert len(_aliases(db)) == before
@@ -767,6 +789,55 @@ def test_save_alias_learns_from_merged_assignee_item(client, pm_client, db, seed
 
     _assert_approved_with_task(db, resp)
     assert _learned(db) == [(seed["leader"].member_id, "화은")]
+
+
+def _detail_of(pm_client, card_id: str) -> dict:
+    r = pm_client.get(f"/api/v1/approvals/{card_id}")
+    assert r.status_code == 200, r.text
+    return r.json()["data"]
+
+
+def test_assignee_merge_then_stale_version_save_alias_is_409_without_alias(client, pm_client, db, seed):
+    """카드를 본 뒤 담당자 항목이 합쳐지면, 옛 버전으로 별칭 저장을 눌러도 막히고 별칭이 남지 않는다."""
+    _hold_item(client, seed, raw="하은")
+    card = _approvals(db, "task_create")[0]
+    stale = _detail_of(pm_client, card.approval_id)["payload_version"]
+    r = _post_in_new_meeting(client, db, seed, [_merge(card.approval_id, assignee_raw="화은이가")])
+    assert r.status_code == 201, r.text
+    current = _detail_of(pm_client, card.approval_id)["payload_version"]
+    assert current != stale
+    before = len(_aliases(db))
+
+    resp = pm_client.patch(f"/api/v1/approvals/{card.approval_id}", json={
+        "status": "approved", "save_alias": True, "payload_version": stale,
+        "task_overrides": {"assignee_member_id": seed["leader"].member_id},
+    })
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["error"]["code"] == "APPROVAL_CHANGED"
+    assert resp.json()["error"]["details"] == {"approval_id": card.approval_id, "payload_version": current}
+    db.expire_all()
+    assert len(_aliases(db)) == before
+    assert _learned(db) == []
+    assert db.get(ApprovalRequest, card.approval_id).status == "pending"
+
+
+def test_current_version_save_alias_saves_shown_alias_text(client, pm_client, db, seed):
+    """새 버전으로 별칭 저장을 누르면, 그 버전 상세가 보여 준 alias_text 가 그대로 저장된다."""
+    _hold_item(client, seed, raw="하은")
+    card = _approvals(db, "task_create")[0]
+    r = _post_in_new_meeting(client, db, seed, [_merge(card.approval_id, assignee_raw="화은이가")])
+    assert r.status_code == 201, r.text
+    shown = _detail_of(pm_client, card.approval_id)
+    assert shown["alias_text"] == "화은"
+
+    resp = pm_client.patch(f"/api/v1/approvals/{card.approval_id}", json={
+        "status": "approved", "save_alias": True, "payload_version": shown["payload_version"],
+        "task_overrides": {"assignee_member_id": seed["leader"].member_id},
+    })
+
+    _assert_approved_with_task(db, resp)
+    assert _learned(db) == [(seed["leader"].member_id, shown["alias_text"])]
 
 
 def test_save_alias_ignores_forged_assignee_item_id(client, pm_client, db, seed):

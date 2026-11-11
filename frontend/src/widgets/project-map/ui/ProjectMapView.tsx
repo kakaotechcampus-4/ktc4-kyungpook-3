@@ -1,0 +1,286 @@
+import { useQuery } from '@tanstack/react-query'
+import { Suspense, lazy, useEffect, useId, useRef, useState } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
+import { projectMapQueryOptions } from '@/entities/project-map'
+import type { MapNode, MapSelection, ProjectMap, TopicNode } from '@/entities/project-map'
+import { ProjectBundleDownload } from '@/features/project-bundle-download'
+import { queryView } from '@/shared/lib/query-view'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
+import { panelTabStop } from '@/shared/lib/tab-panel'
+import { EmptyState, EmptyStatePage } from '@/shared/ui/empty-state'
+import { Icon } from '@/shared/ui/icon'
+import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { Sheet } from '@/shared/ui/sheet'
+import { DeferredSkeleton } from '@/shared/ui/deferred-skeleton'
+import { COLUMNS_WITH_PANEL, MAIN, MAP_TAB, MAP_TABS, MAP_TOOLBAR, NOTE, TITLE } from './frame'
+import { MapListView } from './MapListView'
+import { ProjectMapBodySkeleton } from './ProjectMapSkeleton'
+import { SelectionPanel } from './SelectionPanel'
+
+/* 그래프와 배치 라이브러리(d3-force)는 그래프 탭을 고를 때 받는다. 목록으로 들어오면 내려받지 않는다 */
+const GraphView = lazy(() =>
+  import('./GraphView').then(({ GraphView }) => ({ default: GraphView })),
+)
+
+export type MapViewKind = 'graph' | 'list'
+
+const VIEW_LABEL: Record<MapViewKind, string> = { graph: '그래프', list: '목록 보기' }
+const VIEWS = ['graph', 'list'] as const satisfies readonly MapViewKind[]
+
+const ASIDE = 'sticky top-24 flex flex-col gap-16 rounded-16 border border-line p-20'
+const ASIDE_HEAD = 'flex items-start justify-between gap-12'
+const ASIDE_TITLE = 'text-[17px] leading-[1.4] font-bold text-ink wrap-anywhere outline-none'
+const CLOSE =
+  'inline-flex h-28 w-28 shrink-0 items-center justify-center rounded-7 text-sub hover:bg-control'
+
+/** WAI-ARIA 탭 패턴 — 화살표·Home·End 로 옮기고 옮긴 탭을 바로 고른다. 고른 탭만 Tab 순서에 들어간다 */
+function MapTabs({
+  prefix,
+  selected,
+  onSelect,
+}: {
+  prefix: string
+  selected: MapViewKind
+  onSelect: (view: MapViewKind) => void
+}) {
+  const buttons = useRef(new Map<MapViewKind, HTMLButtonElement>())
+  const move = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const last = VIEWS.length - 1
+    const next =
+      event.key === 'ArrowRight'
+        ? (index + 1) % VIEWS.length
+        : event.key === 'ArrowLeft'
+          ? (index + last) % VIEWS.length
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? last
+              : null
+    if (next === null) return
+    event.preventDefault()
+    onSelect(VIEWS[next])
+    buttons.current.get(VIEWS[next])?.focus()
+  }
+  return (
+    <div role="tablist" aria-label="보기 방식" className={MAP_TABS}>
+      {VIEWS.map((view, index) => (
+        <button
+          key={view}
+          ref={(node) => {
+            if (node === null) buttons.current.delete(view)
+            else buttons.current.set(view, node)
+          }}
+          type="button"
+          role="tab"
+          id={`${prefix}-tab-${view}`}
+          aria-selected={view === selected}
+          aria-controls={`${prefix}-panel`}
+          tabIndex={view === selected ? 0 : -1}
+          className={MAP_TAB}
+          onClick={() => onSelect(view)}
+          onKeyDown={(event) => move(event, index)}
+        >
+          {VIEW_LABEL[view]}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function DesktopPanel({
+  itemId,
+  title,
+  onClose,
+  children,
+}: {
+  itemId: string
+  title: string
+  onClose: () => void
+  children: ReactNode
+}) {
+  const heading = useRef<HTMLHeadingElement>(null)
+  // 고른 항목이 바뀌면 패널 제목으로 옮긴다 — 키보드로 고른 사람이 바로 이어 읽는다. 이름만 바뀐 것(고치기)은 옮기지 않는다
+  useEffect(() => heading.current?.focus(), [itemId])
+  return (
+    <aside aria-label="고른 항목" className={ASIDE}>
+      <div className={ASIDE_HEAD}>
+        <h2 ref={heading} tabIndex={-1} className={ASIDE_TITLE}>
+          {title}
+        </h2>
+        <button type="button" aria-label="패널 닫기" className={CLOSE} onClick={onClose}>
+          <Icon name="close" size={16} />
+        </button>
+      </div>
+      {children}
+    </aside>
+  )
+}
+
+/** 고른 노드. 맵에 아직 없는 주제는 고를 때 받은 이름으로 연다 */
+function selectedNode(
+  map: ProjectMap,
+  selection: MapSelection,
+): MapNode | Pick<TopicNode, 'kind' | 'id' | 'label'> | undefined {
+  if (selection === null) return undefined
+  const node = map.nodeById.get(selection.id)
+  if (node !== undefined || selection.kind !== 'topic' || selection.label === undefined) return node
+  return { kind: 'topic', id: selection.id, label: selection.label }
+}
+
+function MapBody({
+  workspaceId,
+  map,
+  view,
+  compact,
+  tabId,
+}: {
+  workspaceId: string
+  map: ProjectMap
+  view: MapViewKind
+  compact: boolean
+  /** 고른 보기 탭. 닫을 때 돌아갈 단추가 없으면 여기로 간다 */
+  tabId: string
+}) {
+  const [selection, setSelection] = useState<MapSelection>(null)
+  // 패널을 닫으면 연 단추로 돌아간다. 다음에 열 때 새로 적는다
+  const opener = useRef<HTMLElement | null>(null)
+  const node = selectedNode(map, selection)
+
+  const select = (next: MapSelection) => {
+    if (selection === null && document.activeElement instanceof HTMLElement)
+      opener.current = document.activeElement
+    setSelection(next)
+  }
+  // 연 단추가 사라졌으면(합쳐서 없어진 주제) 지금 고른 노드의 목록 줄로, 그것도 없으면(그래프) 보기 탭으로 간다.
+  // 그래프의 노드도 data-node-id 를 갖지만 포커스를 받지 못하는 SVG 라 목록 단추만 고른다
+  const returnTarget = (): HTMLElement | null => {
+    if (opener.current?.isConnected === true) return opener.current
+    const row = [...document.querySelectorAll<HTMLElement>('button[data-node-id]')].find(
+      (element) => element.dataset.nodeId === selection?.id,
+    )
+    return row ?? document.getElementById(tabId)
+  }
+  const close = () => {
+    opener.current = returnTarget()
+    setSelection(null)
+    // 시트는 닫힘이 끝난 뒤(포커스 가둠이 풀린 뒤) 스스로 돌려보낸다
+    if (!compact) opener.current?.focus()
+  }
+
+  const content =
+    view === 'graph' ? (
+      <Suspense
+        fallback={<ProjectMapBodySkeleton view="graph" label="그래프를 불러오는 중이에요" />}
+      >
+        <GraphView map={map} selection={selection} onSelect={select} />
+      </Suspense>
+    ) : (
+      <MapListView map={map} selection={selection} onSelect={select} />
+    )
+  const panel =
+    node === undefined ? null : (
+      <SelectionPanel workspaceId={workspaceId} map={map} node={node} onSelect={select} />
+    )
+
+  if (compact)
+    return (
+      <>
+        {content}
+        <Sheet
+          open={node !== undefined}
+          onOpenChange={(open) => {
+            if (!open) close()
+          }}
+          title={node?.label ?? ''}
+          itemKey={node?.id}
+          returnFocus={() => opener.current}
+        >
+          <div className="min-h-[0px] overflow-y-auto pb-8">{panel}</div>
+        </Sheet>
+      </>
+    )
+  return (
+    <div className={node === undefined ? 'flex flex-col' : COLUMNS_WITH_PANEL}>
+      <div className="min-w-[0px]">{content}</div>
+      {node === undefined ? null : (
+        <DesktopPanel itemId={node.id} title={node.label} onClose={close}>
+          {panel}
+        </DesktopPanel>
+      )}
+    </div>
+  )
+}
+
+export interface ProjectMapViewProps {
+  workspaceId: string
+  /** URL 이 정한 보기. 없으면 페이지가 폭으로 정해 넘긴다 */
+  view: MapViewKind
+  onViewChange: (view: MapViewKind) => void
+  /** 폭 768px 미만. 패널이 옆 칸이 아니라 아래 시트다 */
+  compact: boolean
+}
+
+/**
+ * 프로젝트 맵 화면 (#551). 주제·태스크를 그래프나 주제별 목록으로 보고, 누르면 같은 패널이 열린다.
+ * 그래프는 나온 순서대로 다시 그려 볼 수 있다(재생).
+ */
+export function ProjectMapView({ workspaceId, view, onViewChange, compact }: ProjectMapViewProps) {
+  const query = useQuery(projectMapQueryOptions(workspaceId))
+  const state = queryView(query)
+  const indicator = useLoadingIndicator(state === 'loading')
+  const map = query.data
+  const prefix = useId()
+
+  if (!indicator.pending && state !== 'error' && map?.nodes.length === 0)
+    return (
+      <EmptyStatePage>
+        <EmptyState
+          title="아직 프로젝트 맵이 비어 있어요"
+          description="회의에서 태스크가 생기면 여기에 나와요."
+        />
+      </EmptyStatePage>
+    )
+
+  return (
+    <main className={MAIN} aria-busy={indicator.pending || undefined}>
+      <h1 className={TITLE}>프로젝트 맵</h1>
+      <div className={MAP_TOOLBAR}>
+        <MapTabs prefix={prefix} selected={view} onSelect={onViewChange} />
+        <ProjectBundleDownload
+          workspaceId={workspaceId}
+          notesClassName="absolute right-48 bottom-24 left-48 max-md:right-20 max-md:left-20"
+        />
+      </div>
+      <div
+        ref={panelTabStop}
+        id={`${prefix}-panel`}
+        role="tabpanel"
+        aria-labelledby={`${prefix}-tab-${view}`}
+        className="flex flex-col gap-16"
+      >
+        {indicator.pending ? (
+          <DeferredSkeleton indicator={indicator}>
+            <ProjectMapBodySkeleton view={view} />
+          </DeferredSkeleton>
+        ) : state === 'error' ? (
+          <QueryErrorState error={query.error} onRetry={() => void query.refetch()} />
+        ) : map === undefined ? null : (
+          <>
+            {map.topicGroups.length === 0 ? (
+              <p className={NOTE}>
+                아직 주제가 없어요. 회의 요약이 만들어지면 주제와 결정이 생겨요.
+              </p>
+            ) : null}
+            <MapBody
+              workspaceId={workspaceId}
+              map={map}
+              view={view}
+              compact={compact}
+              tabId={`${prefix}-tab-${view}`}
+            />
+          </>
+        )}
+      </div>
+    </main>
+  )
+}

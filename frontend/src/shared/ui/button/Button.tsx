@@ -10,6 +10,7 @@ export type ButtonSize =
   | 'lg-onboarding'
   | 'xl'
   | 'auth'
+  | 'auth-phone'
   | 'landing-hero'
   | 'landing-nav'
   | 'message-edit'
@@ -44,7 +45,7 @@ const INK_FACE_FOCUS =
 
 const VARIANT: Record<ButtonVariant, string> = {
   // 먹 면 → hover/pressed 는 같은 축에서 한 단 이동한 보조. 검정도 opacity 도 쓰지 않는다
-  primary: `bg-ink text-surface hover:bg-dim hover:text-surface active:bg-sub active:text-surface disabled:bg-surface-selected disabled:text-faint aria-disabled:bg-surface-selected aria-disabled:text-faint ${INK_FACE_FOCUS}`,
+  primary: `bg-ink-solid text-surface hover:bg-dim hover:text-surface active:bg-sub active:text-surface disabled:bg-surface-selected disabled:text-faint aria-disabled:bg-surface-selected aria-disabled:text-faint ${INK_FACE_FOCUS}`,
   // 컨트롤 면 #EDEDED → hover 는 같은 회색 축에서 한 단 진한 강조 테두리색 #C9C9C9.
   // 차콜(#666)은 면이 바뀌는 느낌이 나서 쓰지 않는다.
   default:
@@ -63,10 +64,12 @@ const SIZE: Record<ButtonSize, string> = {
   md: 'h-36 gap-6 rounded-9 px-20 text-control',
   'md-compact': 'h-34 gap-6 rounded-9 px-13 text-caption',
   lg: 'h-40 gap-6 rounded-9 px-20 text-body',
-  'lg-onboarding': 'h-40 gap-6 rounded-8 px-18 text-body',
+  'lg-onboarding': 'h-40 gap-6 rounded-8 px-18 text-body leading-none',
   // 14.5px · 38px · 15px 는 토큰 스케일 밖이다 — docs/impl-decision/2026-09-16-values-outside-token-scale.md
   xl: 'h-44 gap-6 rounded-9 px-22 text-[14.5px]',
   auth: 'h-48 w-full gap-6 rounded-999 text-[15px]',
+  // 휴대폰 로그인(H-1) 52px·모서리 12·16px. 52px 는 토큰 스케일 밖이다
+  'auth-phone': 'h-[52px] w-full gap-6 rounded-12 text-[16px]',
   'landing-hero': 'h-44 gap-6 rounded-999 px-24 text-landing',
   'landing-nav': 'h-[38px] gap-6 rounded-999 px-18 text-[15px]',
   /* 메시지(M8) — Messages·MessagesThread 캔버스 실측. 제품 최소 높이 36(design-system §7-6)을 지킨다.
@@ -101,7 +104,10 @@ export function Button({
   ...rest
 }: ButtonProps) {
   // 굵기는 한 곳에서만 고른다 — font-semibold 와 font-bold 를 같이 붙이면 CSS 순서가 이긴다
-  const weight = size === 'lg-onboarding' && variant === 'primary' ? 'font-bold' : 'font-semibold'
+  const weight =
+    (size === 'lg-onboarding' && variant === 'primary') || size === 'auth-phone'
+      ? 'font-bold'
+      : 'font-semibold'
 
   const classes = [
     BASE,

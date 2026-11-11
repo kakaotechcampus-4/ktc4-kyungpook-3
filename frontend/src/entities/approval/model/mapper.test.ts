@@ -1,5 +1,6 @@
 import { ApiError } from '@/shared/api/errors'
 import { approvalFixtures } from '@/shared/mock/fixtures/approval'
+import { approvalSchema } from '@/shared/types/api/approval'
 import { isScopeChange, toApproval, toApprovalResolveFailure } from './mapper'
 
 it('maps task-create payload and derives each missing-field combination', () => {
@@ -17,6 +18,135 @@ it('maps task-create payload and derives each missing-field combination', () => 
     { id: 'ap_02', missing: ['due'], assigneeMemberId: 'mb_02', gate: 'review' },
     { id: 'ap_03', missing: ['assignee'], dueDate: '2026-09-25', gate: 'review' },
   ])
+})
+
+describe('합쳐진 카드와 payload_version (#512, #547)', () => {
+  const merged = {
+    ...approvalFixtures[2],
+    payload_version: 'a'.repeat(16),
+    payload: {
+      ...approvalFixtures[2].payload,
+      assignee_item_id: 'it_21',
+      merged_items: [
+        {
+          extraction_item_id: 'it_21',
+          meeting_id: 'mt_07',
+          evidence_quote: '배포 문서는 재환님이 맡아 주세요.',
+          evidence_speaker: '1123',
+          evidence_speaker_member_id: 'mb_01',
+          evidence_at_ms: 1_250_000,
+          doc_text: '',
+          merged_at: '2026-09-17T03:00:00Z',
+        },
+      ],
+    },
+  }
+
+  it('지문과 합쳐진 항목, 담당자를 정한 항목을 읽는다', () => {
+    expect(toApproval(merged)).toMatchObject({
+      kind: 'task_create',
+      payloadVersion: 'a'.repeat(16),
+      extractionItemId: 'it_06',
+      assigneeItemId: 'it_21',
+      mergedItems: [
+        {
+          extractionItemId: 'it_21',
+          meetingId: 'mt_07',
+          evidence: {
+            quote: '배포 문서는 재환님이 맡아 주세요.',
+            speaker: '1123',
+            speakerMemberId: 'mb_01',
+            atMs: 1_250_000,
+          },
+          docText: null,
+          mergedAt: '2026-09-17T03:00:00Z',
+        },
+      ],
+    })
+  })
+
+  it('합치지 않은 카드는 만든 항목이 담당자 항목이고, 지문이 없으면 null 이다', () => {
+    expect(toApproval(approvalFixtures[2])).toMatchObject({
+      payloadVersion: null,
+      mergedItems: [],
+      assigneeItemId: 'it_06',
+    })
+  })
+})
+
+describe('별칭 후보 (#523)', () => {
+  it('서버가 후보라고 하고 글자가 있으면 그 글자를 등록할 별칭으로 읽는다', () => {
+    expect(
+      toApproval({ ...approvalFixtures[2], alias_candidate: true, alias_text: '지훈' }),
+    ).toMatchObject({ kind: 'task_create', aliasCandidate: '지훈' })
+  })
+
+  it.each([
+    ['후보가 아님', false, null],
+    ['후보가 아닌데 글자만 옴', false, '지훈'],
+    ['후보인데 글자가 없음', true, null],
+    ['후보인데 글자가 비었음', true, '  '],
+  ])('%s 이면 등록할 별칭이 없다', (_, alias_candidate, alias_text) => {
+    expect(toApproval({ ...approvalFixtures[2], alias_candidate, alias_text })).toMatchObject({
+      aliasCandidate: null,
+    })
+  })
+})
+
+describe('전사 오인식 의심 (#643)', () => {
+  const read = (asr_suspects: unknown) => {
+    const approval = toApproval(
+      approvalSchema.parse({
+        ...approvalFixtures[2],
+        payload: { ...approvalFixtures[2].payload, asr_suspects },
+      }),
+    )
+    if (approval.kind !== 'task_create') throw new Error('not a task_create approval')
+    return approval.asrSuspects
+  }
+
+  it('근거·제목에서 나온 의심은 들린 말과 고칠 후보로 읽고, 빈 후보는 버린다', () => {
+    expect(
+      read([
+        { word: '애포', source: 'title', candidates: ['배포'] },
+        { word: '폴런', source: 'evidence', candidates: ['풀런', ' ', '폴른'] },
+        { word: '스펙', source: 'evidence', candidates: [] },
+      ]),
+    ).toEqual([
+      { kind: 'misheard', word: '애포', candidates: ['배포'] },
+      { kind: 'misheard', word: '폴런', candidates: ['풀런', '폴른'] },
+      { kind: 'misheard', word: '스펙', candidates: [] },
+    ])
+  })
+
+  it('확인 실패는 여러 개가 와도 하나다', () => {
+    const failed = { word: '', source: 'check_failed', candidates: [] }
+    expect(read([failed, failed])).toEqual([{ kind: 'check_failed' }])
+  })
+
+  it('확인하지 않은 옛 카드(null·키 없음)와 의심이 없는 카드([])는 비어 있다', () => {
+    expect(read(null)).toEqual([])
+    expect(read([])).toEqual([])
+    expect(read(undefined)).toEqual([])
+    expect(read('garbage')).toEqual([])
+  })
+
+  it('모르는 출처·빈 글자·모양이 틀린 항목은 버리고 나머지는 읽는다', () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(
+        read([
+          { word: '애포', source: 'future', candidates: ['배포'] },
+          { word: '  ', source: 'title', candidates: ['배포'] },
+          { word: 3, source: 'title', candidates: [] },
+          { word: '애포', source: 'title', candidates: ['배포'] },
+        ]),
+      ).toEqual([{ kind: 'misheard', word: '애포', candidates: ['배포'] }])
+      expect(warning).toHaveBeenCalledTimes(1)
+    } finally {
+      warning.mockRestore()
+    }
+  })
 })
 
 it('tolerates missing payload leaves and follows the backend title fallback order', () => {
@@ -170,22 +300,16 @@ describe('task_update 의 범위 변경 (#205)', () => {
   })
 })
 
-it('marks reminder and unknown types unsupported and defaults unknown statuses', () => {
-  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
-  try {
-    expect(toApproval({ ...approvalFixtures[0], type: 'reminder_dm' })).toMatchObject({
-      kind: 'unsupported',
-      type: 'reminder_dm',
-    })
-    expect(toApproval({ ...approvalFixtures[0], type: 'future', status: 'future' })).toMatchObject({
-      kind: 'unsupported',
-      type: 'future',
-      status: 'pending',
-    })
-    expect(warning).toHaveBeenCalled()
-  } finally {
-    warning.mockRestore()
-  }
+it('모르는 종류는 지원하지 않는 요청으로 읽는다. 모르는 상태는 스키마가 거절한다 (#348)', () => {
+  expect(toApproval({ ...approvalFixtures[0], type: 'future_kind' })).toMatchObject({
+    kind: 'unsupported',
+    type: 'future_kind',
+  })
+  expect(toApproval({ ...approvalFixtures[0], type: 'future' })).toMatchObject({
+    kind: 'unsupported',
+    type: 'future',
+    status: 'pending',
+  })
 })
 
 describe('toApprovalResolveFailure', () => {
@@ -244,6 +368,17 @@ describe('toApprovalResolveFailure', () => {
     ).toEqual({ kind: 'already_resolved', approvalId: 'ap_01', currentStatus: null })
   })
 
+  it('본 뒤 바뀐 카드(APPROVAL_CHANGED)는 변경 충돌(APPROVAL_CONFLICT)과 다른 실패다', () => {
+    expect(
+      toApprovalResolveFailure(
+        httpError('APPROVAL_CHANGED', { approval_id: 'ap_01', payload_version: 'b'.repeat(16) }),
+      ),
+    ).toEqual({ kind: 'changed' })
+    expect(toApprovalResolveFailure(httpError('APPROVAL_CONFLICT', conflictDetails))?.kind).toBe(
+      'conflict',
+    )
+  })
+
   it('409 가 아니거나 다른 코드·다른 오류는 null 이다', () => {
     expect(
       toApprovalResolveFailure(httpError('APPROVAL_CONFLICT', conflictDetails, 400)),
@@ -264,7 +399,7 @@ describe('stored approval edits', () => {
         status: 'approved',
         payload: {
           ...original.payload,
-          task_overrides: { task_title: '최종 제목', due_date: null, future: true },
+          task_overrides: { task_title: '최종 제목', due_date: null },
         },
       }),
     ).toMatchObject({
@@ -290,19 +425,5 @@ describe('stored approval edits', () => {
       ],
       storedOverrides: { dueDate: null, assigneeMemberId: 'mb_02' },
     })
-  })
-  it.each([
-    ['task_create', { task_title: null }],
-    ['task_create', { assignee_member_id: 1 }],
-    ['task_create', { due_date: false }],
-    ['task_update', { status: null }],
-    ['task_update', { status: 'invalid' }],
-    ['task_update', { due_date: 2 }],
-    ['task_update', { assignee_member_id: 1 }],
-    ['task_create', null],
-  ])('rejects malformed known stored fields for %s', (type, task_overrides) => {
-    expect(() => toApproval({ ...approvalFixtures[0], type, payload: { task_overrides } })).toThrow(
-      expect.objectContaining({ kind: 'invalid_response', code: 'INVALID_RESPONSE' }),
-    )
   })
 })

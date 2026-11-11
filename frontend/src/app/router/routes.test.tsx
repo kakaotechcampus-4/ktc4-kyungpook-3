@@ -9,8 +9,7 @@ import { RouteSkeleton } from './RouteSkeleton'
 import { RouteErrorBoundary } from './errors/RouteErrorBoundary'
 import { appRoutes } from './routes'
 
-/** 랜딩 캔버스의 h1 `한 번의 클릭으로,<br>매니저가 정리합니다` */
-const LANDING_HEADING = /한 번의 클릭으로,\s*매니저가 정리합니다/
+const LANDING_HEADING = /회의에서 나온 일을,\s*팀의 다음 행동으로\./
 
 /* <Routes> 가 안에서 하는 변환과 같다. 경로 표를 요소 그대로 훑으려고 쓴다 */
 const tree = createRoutesFromElements(appRoutes)
@@ -46,7 +45,7 @@ describe('경로 표', () => {
 
   /* 기대값을 바꿨다 — 대기 화면은 경로에 맞는 뼈대를 고르는 RouteSkeleton 이다(온보딩은 가운데 열 뼈대).
      고르는 규칙은 RouteSkeleton.test.tsx 가 본다 */
-  it('주요 화면 21개는 지연 로드하고 Suspense 에 RouteSkeleton 을 쓴다', () => {
+  it('주요 화면 25개는 지연 로드하고 Suspense 에 RouteSkeleton 을 쓴다', () => {
     const lazyScreens = leaves(tree)
       .map(lazyScreen)
       .filter((element) => element !== null)
@@ -54,7 +53,8 @@ describe('경로 표', () => {
     // M5 U4 가 처리 화면 자리표시자를 지연 로드 화면(pages/meeting-processing)으로 바꿔 14 → 15
     // M6 S3 가 태스크 목록·상세를 한 자리표시자(`tasks/:taskId?`)에서 두 지연 로드 화면(pages/tasks, pages/task-detail)으로 나눠 15 → 16
     // #356 이 비밀번호 재설정 요청·변경 화면을 더해 19 → 21
-    expect(lazyScreens).toHaveLength(21)
+    // #551 이 프로젝트 맵 화면을 더해 24 → 25
+    expect(lazyScreens).toHaveLength(25)
     for (const { props } of lazyScreens) {
       expect(isValidElement(props.fallback) && props.fallback.type === RouteSkeleton).toBe(true)
     }
@@ -69,6 +69,7 @@ describe('등록 경로', () => {
     ['/signup', '회원가입'],
     ['/forgot-password', '비밀번호 재설정 요청'],
     ['/reset-password', '비밀번호 재설정'],
+    ['/account/withdrawal', '계정 탈퇴 확인'],
   ])('비로그인 %s → %s', async (path, heading) => {
     db.authenticated = false
     renderApp(path)

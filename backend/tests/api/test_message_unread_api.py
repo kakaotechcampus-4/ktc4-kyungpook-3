@@ -8,6 +8,7 @@ from app.models import Member, MessageSender, MessageThread, MessageThreadRead, 
 from app.services import message_reads
 from app.services.sessions import hash_session_token
 from tests.api.test_messages_api import P, client
+from tests.usernames import username_for
 
 BASE = datetime(2026, 1, 1, tzinfo=timezone.utc)
 _ORIGINAL_UNREAD_BY_THREAD = message_reads.unread_by_thread
@@ -47,7 +48,7 @@ def _count(c, seed):
 
 
 def _second_pm(db, seed):
-    user = User(email="pm2@example.com", name="pm2")
+    user = User(username=username_for("pm2@example.com"), email="pm2@example.com", name="pm2")
     db.add(user)
     db.flush()
     db.add(SessionModel(
@@ -75,6 +76,30 @@ def test_unread_count_for_member_and_read_clears(mdb, seed):
     assert data["unread_count"] == 0 and data["total_unread_count"] == 0
     assert data["last_read_at"] is not None
     assert _count(alice, seed) == 0
+
+
+def test_pm_message_counts_for_recipient_and_explicit_read_clears(mdb, seed):
+    thread = _thread(mdb, seed["alice"])
+    _msg(mdb, thread, MessageSender.PM, 1)
+    alice = client("alice")
+
+    assert _count(alice, seed) == 1
+    response = alice.post(_url(seed, f"/threads/{thread.thread_id}/read"))
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["total_unread_count"] == 0
+    assert _count(alice, seed) == 0
+
+
+def test_open_existing_thread_returns_its_unread_count(mdb, seed):
+    thread = _thread(mdb, seed["alice"])
+    _msg(mdb, thread, MessageSender.PM, 1)
+
+    response = client("alice").post(_url(seed, "/threads"), json={"member_id": seed["alice"].member_id})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["thread_id"] == thread.thread_id
+    assert response.json()["data"]["unread_count"] == 1
 
 
 def test_read_twice_is_200_and_empty_thread_has_null_last_read_at(mdb, seed):

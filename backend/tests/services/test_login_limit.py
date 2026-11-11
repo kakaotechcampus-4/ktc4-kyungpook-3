@@ -128,3 +128,15 @@ def test_entries_stay_under_cap(monkeypatch):
 )
 def test_client_ip_key(host, expected):
     assert login_limit.client_ip_key(host) == expected
+
+
+def test_email_blocked_reports_the_lock_without_counting():
+    for _ in range(login_limit.EMAIL_LIMIT - 1):
+        login_limit.reserve("a@example.com", None, now=0.0)
+    assert not login_limit.email_blocked("a@example.com", now=0.0)
+    login_limit.reserve("a@example.com", None, now=0.0)
+
+    assert login_limit.email_blocked("a@example.com", now=1.0)
+    assert login_limit.email_blocked("a@example.com", now=1.0)
+    assert not login_limit.email_blocked("a@example.com", now=login_limit.BLOCK_SECONDS)
+    assert not login_limit.email_blocked("b@example.com", now=1.0)

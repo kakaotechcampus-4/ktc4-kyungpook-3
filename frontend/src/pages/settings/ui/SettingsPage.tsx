@@ -10,6 +10,7 @@ import { useRouteId } from '@/shared/lib/url'
 import { useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { TextField } from '@/shared/ui/text-field'
+import { AccountSection } from './AccountSection'
 import { AutoApplySection } from './AutoApplySection'
 import { DeleteTeamSection } from './DeleteTeamSection'
 import { NotificationSection } from './NotificationSection'
@@ -19,7 +20,7 @@ import { SettingsSection } from './SettingsSection'
 import { ASIDE, COLUMNS, CONNECTIONS_LEAD, CONTENT, MAIN, TITLE } from './settingsStyles'
 
 /**
- * 설정 화면 (Settings 캔버스). 목차 · 일반 · 연결 · 자동 반영 기준 · 알림 · 이 팀 삭제하기.
+ * 설정 화면 (Settings 캔버스). 목차 · 일반 · 연결 · 자동 반영 기준 · 알림 · 계정(#627) · 이 팀 삭제하기.
  * 연결은 Discord·Notion 카드다 — 온보딩에서 건너뛴 연결을 여기서 마친다 (D-011).
  * 이름·자동 반영·팀 삭제는 저장 API 가 없다. 알림은 메시지·알림 설정 API 로 저장한다 (#340). 이름은 `되돌리기` 만 있고 값이 처음과 다르면 dirty 다 — 이탈 확인을 건다.
  * 바꾸는 조작은 PM 만 한다. 일반 팀원은 이름·선택지·토글을 꺼진 채로 읽고 팀 삭제는 보지 않는다
@@ -85,6 +86,7 @@ function SettingsScreen({ workspaceId, initialName, isPm }: SettingsScreenProps)
           </SettingsSection>
           <AutoApplySection canManage={isPm} />
           <NotificationSection workspaceId={workspaceId} canManage={isPm} />
+          <AccountSection />
           {isPm ? <DeleteTeamSection /> : null}
         </div>
       </div>

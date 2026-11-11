@@ -1,27 +1,9 @@
-import { z } from 'zod'
+import { pushPayloadSchema } from '@/shared/types/api/notification'
+import type { NotificationDto } from '@/shared/types/api/notification'
 import type { Notification, NotificationLink, PushNotification } from './types'
 
-const linkSchema = z.object({ type: z.string(), id: z.string() })
-
-const notificationSchema = z.object({
-  notification_id: z.string(),
-  kind: z.string(),
-  text: z.string(),
-  link: linkSchema,
-  read_at: z.iso.datetime({ offset: true }).nullable(),
-  created_at: z.iso.datetime({ offset: true }),
-})
-
-const pushPayloadSchema = z.object({
-  notification_id: z.string(),
-  workspace_id: z.string(),
-  kind: z.string(),
-  text: z.string(),
-  link: linkSchema,
-})
-
 /** 모르는 `type` 은 버리지 않고 `unknown` 으로 남긴다 — 뒤에 링크 종류가 더해진다 */
-function toNotificationLink(link: z.infer<typeof linkSchema>): NotificationLink {
+function toNotificationLink(link: NotificationDto['link']): NotificationLink {
   switch (link.type) {
     case 'thread':
     case 'bundle':
@@ -32,9 +14,8 @@ function toNotificationLink(link: z.infer<typeof linkSchema>): NotificationLink 
   }
 }
 
-/** 목록 경로에는 공간이 있고 항목에는 없다. 부른 공간을 넣는다 */
-export function toNotification(input: unknown, workspaceId: string): Notification {
-  const dto = notificationSchema.parse(input)
+/** 스키마를 통과한 항목만 받는다. 목록 경로에는 공간이 있고 항목에는 없다. 부른 공간을 넣는다 */
+export function toNotification(dto: NotificationDto, workspaceId: string): Notification {
   return {
     id: dto.notification_id,
     workspaceId,

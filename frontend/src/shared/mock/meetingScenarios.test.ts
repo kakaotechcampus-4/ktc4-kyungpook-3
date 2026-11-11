@@ -69,12 +69,41 @@ describe('회의 시나리오 (U2-4)', () => {
     },
   )
 
-  it('meeting-demo: 업로드한 회의가 대기부터 조회마다 한 단계씩 보이다가 끝난다 (#483)', async () => {
+  it('meeting-demo: 업로드한 회의가 대기부터 조회마다 AI 보고 하나씩 보이다가 끝난다 (#483)', async () => {
     applyScenario('meeting-demo')
     const { meeting_id } = await upload()
-    const statuses: string[] = []
-    for (let poll = 0; poll < 5; poll += 1) statuses.push((await detail(meeting_id)).status)
-    expect(statuses).toEqual(['processing', 'processing', 'processing', 'processing', 'done'])
+    const seen: string[] = []
+    for (let poll = 0; poll < 9; poll += 1) {
+      const { status, processing } = await detail(meeting_id)
+      seen.push(`${status}:${processing?.stage ?? '-'}:${processing?.stt?.done ?? '-'}`)
+    }
+    expect(seen).toEqual([
+      'processing:-:-',
+      'processing:stt:-',
+      'processing:stt:0',
+      'processing:stt:3',
+      'processing:stt:5',
+      'processing:sources:-',
+      'processing:extract:-',
+      'processing:handoff:-',
+      'done:-:-',
+    ])
+  })
+
+  it('meeting-demo-legacy: #542 전 서버처럼 처리 단계 없이 조회마다 progress 한 칸씩 가다가 끝난다', async () => {
+    applyScenario('meeting-demo-legacy')
+    expect(db.meetingFlow.mode).toBe('staged-legacy')
+    const { meeting_id } = await upload()
+    const answers: MeetingDto[] = []
+    for (let poll = 0; poll < 5; poll += 1) answers.push(await detail(meeting_id))
+    expect(answers.map(({ status }) => status)).toEqual([
+      'processing',
+      'processing',
+      'processing',
+      'processing',
+      'done',
+    ])
+    for (const answer of answers) expect(answer).not.toHaveProperty('processing')
   })
 
   it('meeting-instant: 인위적 지연 없이 첫 조회에 끝난다', async () => {
@@ -95,6 +124,20 @@ describe('회의 시나리오 (U2-4)', () => {
     applyScenario('meeting-notion-not-connected')
     const { meeting_id } = await upload()
     await expect(detail(meeting_id)).resolves.toMatchObject({ status: 'done' })
+  })
+
+  it('meeting-fail-unclaimed: 첫 조회에 upload_unclaimed 로 끝나고 목록에 이력으로 남는다 (#598)', async () => {
+    applyScenario('meeting-fail-unclaimed')
+    const { meeting_id } = await upload()
+    await expect(detail(meeting_id)).resolves.toMatchObject({
+      status: 'failed',
+      failed_stage: 'upload_unclaimed',
+    })
+    const { items } = await fetchDto<ListDto<MeetingSummaryDto>>('/workspaces/ws_01/meetings')
+    expect(items.find(({ meeting_id: id }) => id === meeting_id)).toMatchObject({
+      status: 'failed',
+      failed_stage: 'upload_unclaimed',
+    })
   })
 
   it('meeting-chat-processing: 정리 중인 채팅 회의가 있어도 업로드는 202 이고 채팅 회의는 저절로 끝나지 않는다 (#450)', async () => {
@@ -185,13 +228,13 @@ describe('sessionStorage 영속 (U2-4)', () => {
         [meeting_id]: { speakers: [], mapping: null, audio: true, expireOnSubmit: false },
       },
     })
-    // 복원된 진행 단계에서 이어 간다 — 첫 조회가 대기를 답하고 stt 로 넘어가 있었다 (#483)
+    // 복원된 진행 단계에서 이어 간다 — 첫 조회가 대기를 답하고 수치 없는 stt 로 넘어가 있었다 (#483)
     await expect(detail(meeting_id)).resolves.toMatchObject({
       progress: { audio_merged: true, transcribed: false, extracted: false },
+      processing: { stage: 'stt', stt: null },
     })
-    await detail(meeting_id)
-    await detail(meeting_id)
-    await detail(meeting_id)
+    // 남은 보고 0/5·3/5·5/5·sources·extract·handoff 를 지나면 끝난다
+    for (let poll = 0; poll < 6; poll += 1) await detail(meeting_id)
     await expect(fetchDto<MinutesDto>(`/meetings/${meeting_id}/minutes`)).resolves.toMatchObject({
       attendees: [{ member_id: 'mb_01' }, { member_id: 'mb_04' }],
     })

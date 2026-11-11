@@ -237,6 +237,32 @@ describe('Discord·Notion 연결 (U3-3)', () => {
 /* D-073 개정(2026-09-29, 사용자 결정): Discord 를 건너뛰어도 팀원 연결을 함께 건너뛰지 않는다.
    아래 테스트는 예전 연쇄(팀원 건너뜀 PATCH 가 뒤따름)를 단언했다 — 이제 PATCH 는 Discord 하나이고 팀원 단계는 pending 이다.
    "중간 실패" 는 연쇄의 두 번째 요청 대신, PATCH 는 됐는데 뒤의 상세 재조회가 실패한 경우로 옮겼다 */
+describe('처음 쓰는 분을 위한 안내 (#650)', () => {
+  it('Discord 단계의 도움말 버튼으로 안내를 열고 닫으면 그 버튼으로 돌아온다', async () => {
+    const user = userEvent.setup()
+    renderApp('/onboarding/ws_03/connect_discord')
+    const card = await screen.findByRole('region', { name: '디스코드 연동' })
+    const opener = await within(card).findByRole('button', { name: '디스코드 연동 사용법' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    await user.click(opener)
+    const panel = await screen.findByRole('dialog', { name: '처음 쓰는 분을 위한 안내' })
+    expect(within(panel).getByRole('heading', { level: 3, name: '회의 기록' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(opener).toHaveFocus())
+    expect(leaveApp).not.toHaveBeenCalled()
+  })
+
+  it('Notion 단계에는 없다', async () => {
+    atNotion('completed')
+    renderApp('/onboarding/ws_03/connect_notion')
+    const card = await screen.findByRole('region', { name: '노션 연동' })
+    await within(card).findByRole('button', { name: '연결하기' })
+    expect(screen.queryByRole('button', { name: '디스코드 연동 사용법' })).toBeNull()
+  })
+})
+
 describe('Discord 건너뛰기 (U3-4, D-073 개정)', () => {
   it('Discord 를 건너뛰면 Discord 만 건너뜀으로 저장한다 — 팀원 연결은 pending 이다', async () => {
     const bodies = recordRequestBodies('PATCH', ONBOARDING_PATCH)
@@ -397,7 +423,7 @@ describe('Discord 건너뛰기 (U3-4, D-073 개정)', () => {
     await userEvent.click(await screen.findByRole('button', { name: '건너뛰기' }))
     expect(
       await screen.findByText(
-        '디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이전 단계에서 연결하거나 건너뛸 수 있어요.',
+        '디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이름으로 팀원을 추가하거나, 이전 단계에서 연결하거나, 건너뛸 수 있어요.',
       ),
     ).toBeInTheDocument()
     await app.expectPath('/onboarding/ws_03/connect_members')

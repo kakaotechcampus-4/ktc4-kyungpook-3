@@ -11,9 +11,10 @@ from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
+from app.services.meeting_deletion import require_live_meeting
 from app.models import Meeting, MeetingSource, MeetingStatus, MeetingUpload, Member
 from app.schemas.upload import SpeakerLabel
-from app.services import upload_storage
+from app.services import meeting_audio, upload_storage
 
 _ENDED = (str(MeetingStatus.DONE), str(MeetingStatus.FAILED))
 
@@ -50,9 +51,9 @@ def normalize_speakers(speakers: list[SpeakerLabel] | list[dict]) -> list[dict]:
 
 def _read_upload_meeting(db: Session, meeting_id: str) -> tuple[Meeting, MeetingUpload]:
     """업로드 회의와 업로드 정보를 읽는다. 없거나 업로드 회의가 아니면 404."""
-    meeting = db.get(Meeting, meeting_id)
+    meeting = require_live_meeting(db, meeting_id, lock=True)
     upload = db.get(MeetingUpload, meeting_id)
-    if meeting is None or upload is None or meeting.source != str(MeetingSource.MANUAL_UPLOAD):
+    if upload is None or meeting.source != str(MeetingSource.MANUAL_UPLOAD):
         raise _not_found(meeting_id)
     return meeting, upload
 
@@ -67,12 +68,14 @@ def report_speakers(
     잠금에서 기다렸다가 status 조건에 걸려 rowcount 0 이 된다. 이긴 쪽만 같은 트랜잭션에서
     meeting_upload 에 라벨을 쓰고 한 번에 커밋한다. 같은 내용을 다시 보내면 멱등으로 성공한다.
     """
+    require_live_meeting(db, meeting_id, lock=True)
     now = now or datetime.now(timezone.utc)
     normalized = normalize_speakers(speakers)
     result = db.execute(
         update(Meeting)
         .where(
             Meeting.meeting_id == meeting_id,
+            Meeting.deleted_at.is_(None),
             Meeting.source == str(MeetingSource.MANUAL_UPLOAD),
             Meeting.status == str(MeetingStatus.PROCESSING),
             exists().where(
@@ -138,6 +141,7 @@ def resume_upload(
     이미 가져갔고 회의가 아직 processing 이면 같은 mapping 으로 200 을 준다. resume 은 응답에 실린
     mapping 이 있어야 이어서 처리할 수 있어서, 커밋 뒤 응답을 잃은 재시도도 다시 받게 한다.
     """
+    require_live_meeting(db, meeting_id, lock=True)
     now = now or datetime.now(timezone.utc)
     result = db.execute(
         update(MeetingUpload)
@@ -172,19 +176,15 @@ def get_speaker_view(db: Session, meeting: Meeting) -> dict:
     """PM 이 화자를 지정하는 화면에 필요한 것: 라벨(말한 시간 많은 순), 후보 참석자, 저장된 지정, 녹음 정보.
 
     후보는 업로드 때 저장한 참석자 중 제출이 받는 멤버(이 워크스페이스의 탈퇴하지 않은 멤버)만 준다.
-    녹음 정보는 재생할 파일이 있을 때만 주고, 폴더가 지워졌으면(done·failed) null 이다.
+    녹음 정보는 녹음 보관 기간 안이고 재생할 수 있을 때만 값이고, 아니면(만료·녹음 없음) null 이다.
     """
     _, upload = _read_upload_meeting(db, meeting.meeting_id)
     speakers = json.loads(upload.speakers) if upload.speakers else []
     speakers.sort(key=lambda s: (-s["total_sec"], s["label"]))
     attendees = json.loads(upload.attendees)
     inactive = set(_inactive_member_ids(db, meeting.workspace_id, {a["member_id"] for a in attendees}))
-    path = upload_storage.audio_path(meeting.meeting_id, upload.stored_filename)
-    audio = (
-        {"content_type": playback_content_type(upload.stored_filename), "size_bytes": upload.size_bytes}
-        if path.is_file()
-        else None
-    )
+    info = meeting_audio.playback_info(db, meeting, datetime.now(timezone.utc))
+    audio = {"content_type": info["content_type"], "size_bytes": info["size_bytes"]} if info else None
     return {
         "meeting_id": meeting.meeting_id,
         "status": meeting.status,
@@ -199,15 +199,6 @@ def get_speaker_view(db: Session, meeting: Meeting) -> dict:
 def playback_content_type(stored_filename: str) -> str:
     extension = Path(stored_filename).suffix.lstrip(".").lower()
     return upload_storage.PLAYBACK_CONTENT_TYPES.get(extension, "application/octet-stream")
-
-
-def get_audio_for_playback(db: Session, meeting: Meeting) -> tuple[Path, str]:
-    """PM 재생용 원본 경로와 content-type. 상태는 보지 않는다. 폴더나 파일이 없으면 404."""
-    _, upload = _read_upload_meeting(db, meeting.meeting_id)
-    path = upload_storage.audio_path(meeting.meeting_id, upload.stored_filename)
-    if not path.is_file():
-        raise _not_found(meeting.meeting_id)
-    return path, playback_content_type(upload.stored_filename)
 
 
 def _inactive_member_ids(db: Session, workspace_id: str, member_ids: set[str]) -> list[str]:
@@ -270,6 +261,7 @@ def assign_speakers(
         update(Meeting)
         .where(
             Meeting.meeting_id == meeting_id,
+            Meeting.deleted_at.is_(None),
             Meeting.source == str(MeetingSource.MANUAL_UPLOAD),
             Meeting.status == str(MeetingStatus.AWAITING_SPEAKERS),
         )

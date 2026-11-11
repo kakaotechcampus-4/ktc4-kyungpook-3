@@ -2,16 +2,20 @@
 
 AI 가 업로드를 가져간 뒤 죽거나 PM 이 화자 지정을 하지 않으면 회의가 처리 중으로 남아, 그 워크스페이스는
 새 업로드가 409 로 막힌다. 주기 워커가 아래 기준으로 failed 로 바꾸고 녹음 폴더를 지운다.
+같은 바퀴에서 보관 기간이 지난 회의 녹음도 정리한다(`meeting_audio.sweep_expired_audio`, #659).
 
 - 처리 중(processing)이고 AI 가 가져간 업로드: 마지막 진행 시각(가져감·지정·다시 가져감·마지막 발화 저장 중
   가장 늦은 것)에서 CLAIM_STALL_SECONDS 가 지나면 failed_stage=diarize
 - 화자 지정 대기(awaiting_speakers): 라벨 보고 시각에서 SPEAKER_ASSIGNMENT_TTL_SECONDS 가 지나면
   failed_stage=speaker_assignment_expired. 3시간 규칙은 쓰지 않는다
+- 처리 중(processing)이고 AI 가 아직 가져가지 않은 업로드: 업로드 시각에서 UNCLAIMED_TTL_SECONDS 가 지나면
+  failed_stage=upload_unclaimed(#563). AI 워커가 꺼져 있어도 그 워크스페이스의 업로드가 계속 막히지 않게 한다
 - 채팅 회의가 /end 뒤 CHAT_STALL_SECONDS 가 지나도록 processing: failed_stage=chat_stalled
-- 아직 가져가지 않은 업로드, Discord 회의, 끝난 회의는 대상이 아니다
+- Discord 회의와 끝난 회의는 대상이 아니다
 
-회의마다 조건부 UPDATE 한 번으로 바꾼다. 후보를 고른 뒤 AI 의 보고나 PM 의 제출이 먼저 반영되면 UPDATE 가
-져서 건너뛴다(같은 시각 조건을 UPDATE 에도 다시 건다).
+회의마다 공간→회의 잠금을 얻은 뒤 새 조건부 UPDATE로 판정한다. 후보를 고른 뒤 AI 의 보고나 PM 의 제출이
+먼저 반영되면 건너뛴다. failed 업로드의 남은 파일은 매 바퀴 다시 지운다(보관 기록이 있는 회의는 녹음 만료
+정리가 맡는다). 처리 실패와 파일 정리는 별개다.
 """
 import logging
 import threading
@@ -21,17 +25,20 @@ from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
-from app.models import Meeting, MeetingSource, MeetingStatus, MeetingUpload, Source
-from app.services import meeting_failure
+from app.models import Meeting, MeetingAudio, MeetingSource, MeetingStatus, MeetingUpload, Source, Workspace
+from app.services import meeting_audio, meeting_deletion, meeting_failure, upload_storage
 
 logger = logging.getLogger(__name__)
 
 CLAIM_STALL_SECONDS = 3 * 3600
 SPEAKER_ASSIGNMENT_TTL_SECONDS = 7 * 86400
+# 24시간은 잰 값이 아니라 초기값이다. AI 가 잠깐 멈췄다 돌아와도 처리할 시간을 주고, 막힌 업로드는 하루 안에 풀리게 한다
+UNCLAIMED_TTL_SECONDS = 24 * 3600
 CHAT_STALL_SECONDS = 7 * 3600   # 폴러 시간 제한(TimeoutStartSec)보다 길게 둬서 살아 있는 폴러의 결과를 버리지 않게 한다
 FAILED_STAGE_STALLED = "diarize"
 FAILED_STAGE_CHAT = "chat_stalled"
 FAILED_STAGE_EXPIRED = "speaker_assignment_expired"
+FAILED_STAGE_UNCLAIMED = "upload_unclaimed"
 
 
 def _is_upload():
@@ -76,6 +83,19 @@ def _expired_condition(cutoff: datetime):
     )
 
 
+def _unclaimed_condition(cutoff: datetime):
+    """처리 중인데 AI 가 가져가지 않았고 업로드 시각이 cutoff 이전이다. claim 이 먼저 오면 UPDATE 가 진다."""
+    return and_(
+        _is_upload(),
+        Meeting.status == str(MeetingStatus.PROCESSING),
+        exists().where(
+            MeetingUpload.meeting_id == Meeting.meeting_id,
+            MeetingUpload.claimed_at.is_(None),
+            MeetingUpload.uploaded_at < cutoff,
+        ),
+    )
+
+
 def _chat_stalled_condition(cutoff: datetime):
     """채팅 회의가 /end 뒤 cutoff 가 지나도록 processing 에 머문다(폴러가 /fail 도 못 보내고 죽은 경우)."""
     return and_(
@@ -86,12 +106,43 @@ def _chat_stalled_condition(cutoff: datetime):
     )
 
 
+def _retry_failed_upload_cleanup(db: Session) -> None:
+    """처리 실패 뒤 파일 제거 오류·프로세스 종료로 남은 녹음을 재시도한다. 삭제 회의는 전용 purge가 맡는다.
+
+    보관 기록(`meeting_audio`)이 있는 회의는 녹음 만료 정리(`sweep_expired_audio`)가 failed 녹음을 지우므로
+    기록이 없는 옛 회의만 본다. 같은 회의를 두 정리가 매 바퀴 지우지 않게 한다.
+    파일은 공간·회의 잠금을 푼 뒤 지운다(S3 I/O 동안 잠금을 쥐지 않는다). failed 는 다시 바뀌지 않는다.
+    """
+    meeting_ids = db.scalars(
+        select(Meeting.meeting_id)
+        .join(Workspace, Workspace.workspace_id == Meeting.workspace_id)
+        .where(
+            _is_upload(), Meeting.status == str(MeetingStatus.FAILED),
+            Meeting.deleted_at.is_(None), Workspace.deleted_at.is_(None),
+            ~exists().where(MeetingAudio.meeting_id == Meeting.meeting_id),
+        )
+    ).all()
+    for meeting_id in meeting_ids:
+        try:
+            meeting = meeting_deletion.require_live_meeting(db, meeting_id, lock=True)
+            retry = meeting.status == MeetingStatus.FAILED and meeting.source == MeetingSource.MANUAL_UPLOAD
+            db.rollback()
+            if retry:
+                upload_storage.remove_upload(meeting_id)
+        except Exception:
+            logger.exception("실패한 업로드 파일 정리 재시도 오류 meeting_id=%s", meeting_id)
+        finally:
+            db.rollback()
+
+
 def sweep_stalled_uploads(db: Session, now: datetime | None = None) -> list[tuple[str, str]]:
-    """멈춘 업로드 회의를 failed 로 바꾸고 (meeting_id, failed_stage) 목록을 돌려준다."""
+    """남은 실패 파일을 재시도하고 새로 failed로 바꾼 목록을 돌려준다. 반환값은 파일 삭제 영수증이 아니다."""
     now = now or datetime.now(timezone.utc)
+    _retry_failed_upload_cleanup(db)
     rules = [
         (_stalled_condition, now - timedelta(seconds=CLAIM_STALL_SECONDS), FAILED_STAGE_STALLED),
         (_expired_condition, now - timedelta(seconds=SPEAKER_ASSIGNMENT_TTL_SECONDS), FAILED_STAGE_EXPIRED),
+        (_unclaimed_condition, now - timedelta(seconds=UNCLAIMED_TTL_SECONDS), FAILED_STAGE_UNCLAIMED),
         (_chat_stalled_condition, now - timedelta(seconds=CHAT_STALL_SECONDS), FAILED_STAGE_CHAT),
     ]
     swept: list[tuple[str, str]] = []
@@ -121,6 +172,11 @@ def run_worker(stop_event: threading.Event, interval: float) -> None:
             sweep_stalled_uploads(db)
         except Exception:
             logger.exception("업로드 sweeper 워커 오류")
+            db.rollback()
+        try:
+            meeting_audio.sweep_expired_audio(db)
+        except Exception:
+            logger.exception("회의 녹음 만료 정리 워커 오류")
             db.rollback()
         finally:
             db.close()

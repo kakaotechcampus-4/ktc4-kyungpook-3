@@ -15,6 +15,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models import Integration, Member, Session as SessionModel, User, Workspace
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 TOKEN = "test-service-token"
@@ -68,7 +69,7 @@ def db(request, monkeypatch):
 @pytest.fixture
 def seed(db):
     """GUILD를 연결한 워크스페이스 A, 디스코드 없이 Notion만 연결한 워크스페이스 B, A의 PM 세션."""
-    user = User(email="pm@example.com", name="pm")
+    user = User(username=username_for("pm@example.com"), email="pm@example.com", name="pm")
     a = Workspace(name="A")
     b = Workspace(name="B")
     db.add_all([user, a, b])
@@ -95,7 +96,7 @@ def test_returns_the_workspace_connected_to_the_guild(seed):
     r = TestClient(app).get(_url(GUILD), headers=HEADERS)
 
     assert r.status_code == 200, r.text
-    assert r.json() == {"data": {"guild_id": GUILD, "workspace_id": seed["a"]}, "error": None}
+    assert r.json() == {"data": {"guild_id": GUILD, "workspace_id": seed["a"], "identity_epoch": 0}, "error": None}
 
 
 @pytest.mark.parametrize("guild_id", [OTHER_GUILD, "unknown"], ids=["other-provider", "never-connected"])

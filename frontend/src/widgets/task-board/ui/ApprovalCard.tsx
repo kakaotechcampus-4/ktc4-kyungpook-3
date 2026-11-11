@@ -1,7 +1,11 @@
 import { useId, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   APPROVAL_RESOLUTION_REASONS,
+  aliasToLearn,
+  asrSuspectLine,
   isScopeChange,
+  mergedCount,
   planApprovalResolution,
   validateTaskCreateFields,
   taskCreateValues,
@@ -14,33 +18,44 @@ import type {
 } from '@/entities/approval'
 import { evidenceMoment } from '@/entities/meeting'
 import type { MeetingSummary } from '@/entities/meeting'
-import { ASSIGNEE_NONE_OPTION, assigneeOptions, speakerName } from '@/entities/member'
+import {
+  ASSIGNEE_NONE_OPTION,
+  assigneeOptions,
+  recordMemberListQueryOptions,
+  speakerName,
+} from '@/entities/member'
 import type { Member } from '@/entities/member'
-import { useApprovalResolve } from '@/features/approval-resolve'
+import { AliasSaveField, useApprovalResolve } from '@/features/approval-resolve'
 import type { ApprovalResolve } from '@/features/approval-resolve'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink, useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { Card } from '@/shared/ui/card'
+import { DateField } from '@/shared/ui/date-field'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { Icon } from '@/shared/ui/icon'
 import { Label } from '@/shared/ui/label'
 import { Select } from '@/shared/ui/select'
 import { TextField } from '@/shared/ui/text-field'
 
-/* 시안의 `지금 봐야 하는 카드` 그림자 — 0 8px 24px rgba(23,23,23,.2). 토큰에 그림자가 없어 값을 그대로 쓴다 */
-const ATTENTION_SHADOW = 'shadow-[0_8px_24px_#17171733]'
+/* 시안의 `지금 봐야 하는 카드` 그림자 — 0 8px 24px, 먹 면(#333333) 20%. 토큰에 그림자가 없어 값을 그대로 쓴다 */
+const ATTENTION_SHADOW = 'shadow-[0_8px_24px_#33333333]'
 const HEAD = 'flex items-center justify-between gap-16'
 const BADGE_ROW = 'flex min-w-[0px] items-center gap-11'
 const ATTENTION_BADGE =
-  'inline-flex h-22 shrink-0 items-center gap-5 rounded-6 bg-ink px-9 text-meta font-semibold leading-none text-surface'
+  'inline-flex h-22 shrink-0 items-center gap-5 rounded-6 bg-ink-solid px-9 text-meta font-semibold leading-none text-surface'
 const HOLD_BADGE =
   'inline-flex h-22 shrink-0 items-center rounded-6 bg-control px-9 text-meta font-semibold leading-none text-dim'
 const TITLE = 'text-[19px] leading-[1.55] font-bold tracking-h2 text-ink'
 const MEETING_LINK =
   'inline-flex shrink-0 items-center gap-6 text-[12px] text-dim hover:text-ink tabular-nums'
+const REASON_BLOCK = 'flex flex-col gap-6'
 const REASON = 'text-body text-sub'
-const FIELDS = 'grid grid-cols-[minmax(0px,1.6fr)_minmax(0px,1fr)_minmax(0px,1fr)] gap-12'
+/* 후보는 공백 없이 100자까지 온다. 전역 keep-all 이라 글자 칸이 끊어 주지 않으면 카드 밖으로 나간다 */
+const SUSPECT = 'flex min-w-[0px] items-start gap-6 text-caption text-sub'
+const SUSPECT_TEXT = 'min-w-[0px] wrap-anywhere'
+const FIELDS =
+  'grid grid-cols-[minmax(0px,1.6fr)_minmax(0px,1fr)_minmax(0px,1fr)] gap-12 max-md:grid-cols-1'
 const EVIDENCE = 'flex flex-col gap-7 rounded-12 bg-surface-sunken px-20 py-18'
 const EVIDENCE_HEAD = 'flex items-center justify-between gap-12'
 const EVIDENCE_META = 'text-[11px] text-dim tabular-nums'
@@ -129,6 +144,14 @@ function TaskCreateCard({
   members,
   meetings,
 }: ApprovalCardProps & { approval: TaskCreateApproval }) {
+  const recordMembers = useQuery(recordMemberListQueryOptions(workspaceId))
+  const retainedNames = useMemo(
+    () =>
+      new Map(
+        (recordMembers.data ?? members ?? []).map(({ id, displayName }) => [id, displayName]),
+      ),
+    [recordMembers.data, members],
+  )
   const hold = approval.gate === 'hold'
   const memberList = useMemo(() => members ?? [], [members])
   const memberIds = useMemo(() => memberList.map(({ id }) => id), [memberList])
@@ -138,6 +161,7 @@ function TaskCreateCard({
   const edits = resolver.draft?.kind === 'task_create' ? resolver.draft.values : {}
   const values = taskCreateValues(approval, edits)
   const [filling, setFilling] = useState(!hold)
+  const [saveAlias, setSaveAlias] = useState(true)
   const dirty = !sameFields(values, original)
   useUnsavedChanges(dirty)
 
@@ -154,6 +178,7 @@ function TaskCreateCard({
   const atClock = evidenceMoment(meeting, approval.evidence.atMs)
   const hint = hold && !filling ? '내용을 확인하고 미정인 채로도 승인할 수 있어요' : blockedReason
   const problem = resolver.problem
+  const merged = mergedCount(approval)
 
   return (
     <Card
@@ -194,14 +219,43 @@ function TaskCreateCard({
         )}
       </div>
 
-      <p className={REASON}>{reasonLine(approval)}</p>
+      <div className={REASON_BLOCK}>
+        <p className={REASON}>
+          {reasonLine(approval)}
+          {merged === null ? null : (
+            <span className={`${SUB_NOTE} ml-8 tabular-nums`}>
+              회의 {merged.meetings}곳 · 항목 {merged.items}개 합침
+            </span>
+          )}
+        </p>
+        {approval.asrSuspects.length === 0 ? null : (
+          <ul aria-label="전사 확인" className="flex flex-col gap-4">
+            {approval.asrSuspects.map((suspect) => {
+              const line = asrSuspectLine(suspect)
+              return (
+                <li key={line} className={SUSPECT}>
+                  <Icon name="mic" size={13} className="mt-[5px] shrink-0" />
+                  <span className={SUSPECT_TEXT}>{line}</span>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
 
       {filling ? (
         <ApprovalFields
           values={values}
           issues={issues}
           members={memberList}
+          retainedNames={retainedNames}
           editable={!resolver.pending}
+          aliasText={aliasToLearn(approval, values)}
+          saveAlias={saveAlias}
+          onSaveAliasChange={(checked) => {
+            resolver.invalidateConfirmation()
+            setSaveAlias(checked)
+          }}
           onChange={(next) => {
             resolver.editCreate({
               ...(next.taskTitle !== values.taskTitle ? { taskTitle: next.taskTitle } : {}),
@@ -218,11 +272,11 @@ function TaskCreateCard({
         <div className={EVIDENCE_HEAD}>
           <span className={EVIDENCE_META}>
             전사문{atClock === null ? '' : ` ${atClock}`} ·{' '}
-            {speakerName(members, approval.evidence) ?? '알 수 없음'}
+            {speakerName(recordMembers.data ?? members, approval.evidence) ?? '알 수 없음'}
           </span>
           {approval.meetingId === null ? null : (
             <GuardedLink
-              to={paths.meetings(workspaceId, approval.meetingId)}
+              to={paths.meetings(workspaceId, approval.meetingId, approval.evidence.atMs)}
               className={EVIDENCE_LINK}
             >
               원문 듣기
@@ -235,10 +289,10 @@ function TaskCreateCard({
         ) : (
           <p className={QUOTE}>“{approval.evidence.quote}”</p>
         )}
-        <p className={SUB_NOTE}>
-          원문 담당자 {approval.assigneeRaw ?? '없음'} · 원문 마감 {approval.dueRaw ?? '없음'}
-        </p>
+        {merged === null ? <RawLine approval={approval} /> : null}
       </div>
+      {/* 합친 카드의 원문은 담당자·마감을 정한 다른 회의의 것이라 대표 인용 칸 밖에 둔다 (#512) */}
+      {merged === null ? null : <RawLine approval={approval} />}
 
       <CardFooter
         approval={approval}
@@ -247,9 +301,11 @@ function TaskCreateCard({
         hold={hold && !filling}
         approveBlocked={blockedReason !== null}
         onFill={() => setFilling(true)}
-        onApprove={() => resolver.approve(approval)}
+        onApprove={() =>
+          resolver.approve(approval, { kind: 'task_create', values: edits, saveAlias })
+        }
       />
-      {problem?.kind === 'error' ? (
+      {problem?.kind === 'error' || problem?.kind === 'changed' ? (
         <FormErrorPanel message={problem.message} />
       ) : problem?.kind === 'already_resolved' ? (
         <p role="status" className={SUB_NOTE}>
@@ -260,11 +316,25 @@ function TaskCreateCard({
   )
 }
 
+function RawLine({ approval }: { approval: TaskCreateApproval }) {
+  return (
+    <p className={SUB_NOTE}>
+      {approval.mergedItems.length === 0 ? null : '합친 제안의 '}
+      원문 담당자 {approval.assigneeRaw ?? '없음'} · 원문 마감 {approval.dueRaw ?? '없음'}
+    </p>
+  )
+}
+
 interface ApprovalFieldsProps {
   values: TaskCreateFields
   issues: readonly TaskCreateIssue[]
   members: readonly Member[]
+  retainedNames: ReadonlyMap<string, string>
   editable: boolean
+  /** 담당자에게 별칭으로 등록할 글자 (#523). null 이면 묻지 않는다 */
+  aliasText: string | null
+  saveAlias: boolean
+  onSaveAliasChange: (checked: boolean) => void
   onChange: (next: TaskCreateFields) => void
 }
 
@@ -272,7 +342,17 @@ interface ApprovalFieldsProps {
  * 제목·담당자·마감. 비우면 승인이 막히는 칸은 라벨에 안내를 붙이고 강조색으로 보인다.
  * 제목은 비었을 때만이 아니라 길이가 넘을 때도 오류다 — 그 오류만 문구가 붙는다
  */
-function ApprovalFields({ values, issues, members, editable, onChange }: ApprovalFieldsProps) {
+function ApprovalFields({
+  values,
+  issues,
+  members,
+  retainedNames,
+  editable,
+  aliasText,
+  saveAlias,
+  onSaveAliasChange,
+  onChange,
+}: ApprovalFieldsProps) {
   const assigneeId = useId()
   const assigneeMissing = issues.includes('assignee')
   const dueMissing = issues.includes('due')
@@ -287,6 +367,13 @@ function ApprovalFields({ values, issues, members, editable, onChange }: Approva
         readOnly={!editable}
         labelTone={titleBlank ? 'required-blocking' : 'normal'}
         error={titleError ? '제목은 300자 이하로 입력해 주세요.' : undefined}
+        endAdornment={
+          <span
+            className={`inline-flex h-28 w-28 shrink-0 -mr-6 items-center justify-center rounded-6 ${!editable ? 'text-line-strong' : titleBlank || titleError ? 'text-accent' : 'text-dim'}`}
+          >
+            <Icon name="edit" size={16} strokeWidth={1.7} />
+          </span>
+        }
         onChange={(event) => onChange({ ...values, taskTitle: event.target.value })}
       />
       <div className="flex flex-col">
@@ -298,28 +385,37 @@ function ApprovalFields({ values, issues, members, editable, onChange }: Approva
           label="담당자"
           value={values.assigneeMemberId}
           onValueChange={(assigneeMemberId) => onChange({ ...values, assigneeMemberId })}
-          options={assigneeOptions(members, values.assigneeMemberId)}
+          options={assigneeOptions(members, values.assigneeMemberId, retainedNames)}
           noneOption={ASSIGNEE_NONE_OPTION}
           placeholder={assigneeMissing ? '담당자 고르기' : undefined}
           tone={assigneeMissing ? 'blocking' : 'normal'}
           disabled={!editable}
           aria-invalid={assigneeMissing}
         />
+        <AliasSaveField
+          aliasText={aliasText}
+          members={members}
+          assigneeMemberId={values.assigneeMemberId}
+          checked={saveAlias}
+          onCheckedChange={onSaveAliasChange}
+          disabled={!editable}
+        />
       </div>
-      <TextField
+      <DateField
         label={dueMissing && !dueInvalid ? '마감 — 날짜를 정해 주세요' : '마감'}
-        type="text"
+        calendarLabel="마감 달력 열기"
         placeholder="YYYY-MM-DD 또는 미정"
         value={values.dueDate ?? ''}
-        style={dueMissing && !dueInvalid ? { color: 'var(--color-accent-solid)' } : undefined}
+        style={dueMissing && !dueInvalid ? { color: 'var(--color-accent)' } : undefined}
         readOnly={!editable}
         labelTone={dueMissing && !dueInvalid ? 'required-blocking' : 'normal'}
         error={dueInvalid ? '마감은 있는 날짜여야 해요.' : undefined}
-        onChange={(event) => onChange({ ...values, dueDate: event.target.value || null })}
+        onChange={(dueDate) => onChange({ ...values, dueDate: dueDate || null })}
       />
       <Button
         type="button"
         variant="ghost"
+        className="col-start-3 w-full max-md:col-start-1"
         disabled={!editable}
         onClick={() => onChange({ ...values, dueDate: null })}
       >

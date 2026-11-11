@@ -21,6 +21,7 @@ from app.models import Integration, Member, Session as SessionModel, User, Works
 from app.services import discord, discord_oauth, notion_oauth
 from app.services.discord_oauth import NONCE_COOKIE, DiscordGuild
 from app.services.sessions import hash_session_token
+from tests.usernames import username_for
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 FAILED = "oauth=discord&oauth_result=failed"
@@ -79,7 +80,7 @@ def oauth_env(monkeypatch):
 
 
 def _user(db, email: str, token: str) -> User:
-    user = User(email=email, name=email.split("@")[0])
+    user = User(username=username_for(email), email=email, name=email.split("@")[0])
     db.add(user)
     db.flush()
     db.add(SessionModel(user_id=user.user_id, session_token=hash_session_token(token), expires_at=datetime.now(timezone.utc) + timedelta(days=1)))
