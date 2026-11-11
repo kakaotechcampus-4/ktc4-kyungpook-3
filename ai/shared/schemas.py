@@ -100,9 +100,12 @@ class ExtractedTask(_Base):
     # ── 담당자 호칭 분류 (BE alias 설계와 1:1). 기준은 extract/TASK_CRITERIA.md
     # BE 는 assignee_type 을 보고 처리 경로를 고른다: first/mention 은 발화자·멤버 테이블로 직행,
     # thirdname 은 alias 테이블 조회, second/thirdpronoun 은 AI 가 해소한 결과를 쓰고,
-    # thirdrole/group/none 은 PM 확인으로 보낸다.
+    # thirdrole 은 원문으로 별칭 조회(새 항목은 PM 검토), group/none 은 PM 확인으로 보낸다.
     assignee_type: str = "none"  # first|second|thirdname|thirdpronoun|thirdrole|group|none
-    assignee_resolved: str | None = None  # second/thirdpronoun 을 문맥으로 푼 이름 (못 풀면 None)
+    assignee_resolved: str | None = None  # second/thirdpronoun 을 문맥으로 푼 이름 (못 풀면 None).
+    # BE 로 가는 경로: 새 할 일(create·merge)은 second/thirdpronoun 일 때만 이 값을 보내고(thirdname·thirdrole 은
+    # 원문), 담당자 변경(update)은 thirdname·thirdrole 도 이 값을 먼저 쓰고 없으면 원문을 보낸다.
+    # 그 밖의 타입에 채워져도 초안·알림에만 쓴다
     due_raw: str | None = None  # 마감을 가리킨 원문 표현 ("이번 주 목요일까지")
 
     # ── 필드별 근거 상태. 사용자에겐 정확도 % 대신 이걸 보여준다 (숫자는 로그로만)
@@ -170,7 +173,10 @@ class JudgeFinding(_Base):
     # assignee_raw 로 그대로 흘러가 별칭 조회 키가 된다. first/group/none 이면 None
     assignee_resolved: str | None = None  # second/thirdpronoun 을 문맥으로 푼 실제 이름
     # ("그분" → "환"). 못 풀면 None. 원문(assignee_raw)과 섞지 않는다 — "너"를 별칭으로
-    # 조회하면 영원히 안 맞기 때문에 BE 가 둘을 구분할 수 있어야 한다
+    # 조회하면 영원히 안 맞기 때문에 BE 가 둘을 구분할 수 있어야 한다.
+    # BE 로 가는 경로: 새 할 일(create·merge)은 second/thirdpronoun 일 때만 이 값을 보내고(thirdname·thirdrole 은
+    # 원문), 담당자 변경(update)은 thirdname·thirdrole 도 이 값을 먼저 쓰고 없으면 원문을 보낸다.
+    # 그 밖의 타입에 채워져도 초안·알림에만 쓴다
 
     # ── 이후 단계가 채우는 칸 (1단계에서는 항상 None)
     evidence_status: str | None = None  # certain | inferred | missing — 근거가 원문에 얼마나 명시적인가
@@ -307,11 +313,17 @@ class SummaryLine(_Base):
 
 @dataclass(frozen=True)
 class SummaryItem(_Base):
+    """그 회의 항목이 정한 값에 PM 이 승인하며 고친 값을 덮은 것이다. update 는 그 수정이 바꾼 값만 있고 나머지는 None.
+    update 가 비운 칸은 cleared("assignee", "due_date"), 승인된 범위 결정은 scope 로 온다."""
+
     item_id: str
     action: str
     title: str
     assignee: str | None
     due_date: str | None
+    status: str | None = None
+    cleared: list[str] = field(default_factory=list)
+    scope: str | None = None
 
 
 @dataclass(frozen=True)
@@ -343,6 +355,10 @@ class SummaryInput(_Base):
     topics: list[SummaryTopic]
     decisions: list[SummaryPriorDecision]
     identity_epoch: int
+    source: str = ""                # "chat" 이면 일일 채팅 요약 틀을 쓴다
+    members: list[str] = field(default_factory=list)       # 오인식된 이름을 고칠 팀원 이름
+    asr_terms: list[str] = field(default_factory=list)     # 오인식된 용어를 고칠 워크스페이스 용어
+    rejected_items: list[str] = field(default_factory=list)  # 이 회의에서 PM 이 반려한 할 일. 정해진 일로 쓰지 않게 한다
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "SummaryInput":
@@ -368,6 +384,7 @@ class TaskChange(_Base):
     due: str
     purpose: str
     precondition: str
+    item_id: str | None = None      # 재료의 항목. BE 는 반영된 항목의 줄만 보인다
 
 
 @dataclass(frozen=True)

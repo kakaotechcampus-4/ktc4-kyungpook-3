@@ -1,0 +1,1174 @@
+{
+  "workspace_name": "심사용 데모 팀",
+  "people": [
+    {
+      "key": "p1",
+      "name": "유진"
+    },
+    {
+      "key": "p2",
+      "name": "도윤"
+    },
+    {
+      "key": "p3",
+      "name": "하은"
+    },
+    {
+      "key": "p4",
+      "name": "민재"
+    },
+    {
+      "key": "p5",
+      "name": "세영"
+    },
+    {
+      "key": "p6",
+      "name": "서준"
+    }
+  ],
+  "meetings": [
+    {
+      "title": "스탠드업 - 로그인과 레이아웃 정리",
+      "days_ago": 21,
+      "turns": [
+        {
+          "speaker": "p1",
+          "text": "자, 오늘 스탠드업 시작할게요. 어제 한 일이랑 오늘 할 일, 막히는 거 있으면 편하게 말씀해 주세요."
+        },
+        {
+          "speaker": "p2",
+          "text": "저는 어제 로그인 API 붙였고요, 음, 이번 주 목요일까지 리프레시 토큰 처리까지 끝낼게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "좋아요. 그럼 리프레시 토큰 작업 끝나면 하은님이 코드 리뷰 한번 부탁드려요."
+        },
+        {
+          "speaker": "p3",
+          "text": "넵 확인할게요. 근데 어제 QA 팀에서 버그 리포트가 27건이나 왔더라고요. 일단 급한 것부터 오늘 안에 세 개는 고쳐볼게요."
+        },
+        {
+          "speaker": "p4",
+          "text": "음... 저는 어제 디자인 시스템 쪽 UI 컴포넌트 작업하다가 머지 컨플릭트가 나서 좀 헤맸어요. 그래도 오늘 중으로 PR은 올릴게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "민재님, 그거 말고 지난주 회의 때 나온 반응형 레이아웃 작업도 다음 주 화요일까지 부탁드릴게요."
+        },
+        {
+          "speaker": "p5",
+          "text": "어 죄송해요, 좀 늦었습니다—"
+        },
+        {
+          "speaker": "p2",
+          "text": "괜찮아요, 방금 시작했어요."
+        },
+        {
+          "speaker": "p5",
+          "text": "저는 노션 문서 정리하는 거 오늘까지 끝낼 계획이었는데 반나절 밀렸어요. 모레까지는 무조건 끝낼게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "다들 점심 뭐 드실 거예요? 저는 오늘 국밥이요."
+        },
+        {
+          "speaker": "p2",
+          "text": "저는 아직 점심 메뉴 고민 중이에요, 하하."
+        },
+        {
+          "speaker": "p1",
+          "text": "아 그리고 이번 주 안으로 전체 코드 컨벤션 문서 한번 다 같이 검토하죠."
+        },
+        {
+          "speaker": "p3",
+          "text": "아 참, 아까 말씀드린 버그 수정이요, 세 개 다 오늘 못 끝낼 것 같아서 내일 오전까지로 미룰게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "참고로 아까 민재님한테 부탁드린 반응형 레이아웃은 세영님이 대신 맡아주시기로 했어요. 민재님이 다른 일정이 있어서요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네, 오늘 스탠드업은 여기까지 할게요. 다들 수고하셨습니다."
+        }
+      ],
+      "items": [
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "리프레시 토큰 처리 완료",
+          "doc_text": "리프레시 토큰 처리를 도윤님이 이번 주 목요일까지 끝내기로 함",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "이번 주 목요일",
+          "due_in_days": 3,
+          "evidence_quote": "이번 주 목요일까지 리프레시 토큰 처리까지 끝낼게요",
+          "speaker_key": "p2",
+          "evidence_seqs": [
+            1
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "리프레시 토큰 코드 리뷰",
+          "doc_text": "토큰 작업이 끝나면 하은님이 코드 리뷰를 하기로 함",
+          "assignee_type": "thirdname",
+          "assignee_raw": "하은님",
+          "evidence_quote": "하은님이 코드 리뷰 한번 부탁드려요",
+          "speaker_key": null,
+          "evidence_seqs": [
+            2
+          ],
+          "task_status": "inferred",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "반응형 레이아웃 작업",
+          "doc_text": "지난주에 나온 반응형 레이아웃 작업을 민재님이 다음 주 화요일까지 하기로 함",
+          "assignee_type": "thirdname",
+          "assignee_raw": "민재님",
+          "due_raw": "다음 주 화요일",
+          "due_in_days": 6,
+          "evidence_quote": "반응형 레이아웃 작업도 다음 주 화요일까지 부탁드릴게요",
+          "speaker_key": null,
+          "evidence_seqs": [
+            5
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "반응형 레이아웃 담당 변경",
+          "doc_text": "민재님 대신 세영님이 반응형 레이아웃을 맡기로 함",
+          "assignee_type": "thirdname",
+          "assignee_raw": "세영님",
+          "evidence_quote": "세영님이 대신 맡아주시기로 했어요",
+          "speaker_key": null,
+          "evidence_seqs": [
+            13
+          ],
+          "task_status": "inferred",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        }
+      ],
+      "summary": {
+        "overview": "로그인 API 진행 상황과 오늘 할 일을 공유하고, 반응형 레이아웃 담당을 민재님에서 세영님으로 바꾸기로 했다.",
+        "key_points": [
+          "로그인 API 연동 완료, 리프레시 토큰 처리는 이번 주 목요일까지",
+          "QA 버그 리포트 27건 중 급한 3건은 내일 오전까지 수정",
+          "반응형 레이아웃은 세영님이 대신 맡음"
+        ],
+        "discussion": [
+          {
+            "title": "진행 상황",
+            "points": [
+              "도윤님은 리프레시 토큰 처리 중",
+              "하은님은 급한 버그부터 수정"
+            ]
+          },
+          {
+            "title": "담당 변경",
+            "points": [
+              "민재님의 다른 일정 때문에 레이아웃 담당을 세영님으로 변경"
+            ]
+          }
+        ],
+        "facts": [
+          "QA 팀 버그 리포트 27건"
+        ],
+        "task_changes": [
+          {
+            "task": "반응형 레이아웃 작업",
+            "assignee": "세영",
+            "due": "다음 주 화요일",
+            "purpose": "화면 크기별 레이아웃 대응",
+            "precondition": ""
+          }
+        ],
+        "schedule": [
+          {
+            "when": "이번 주 목요일",
+            "what": "리프레시 토큰 처리 완료"
+          },
+          {
+            "when": "다음 주 화요일",
+            "what": "반응형 레이아웃 작업 완료"
+          }
+        ],
+        "open_items": [
+          "코드 컨벤션 문서 검토 일정"
+        ],
+        "topics": [
+          {
+            "name": "로그인 인증",
+            "description": "로그인 API와 리프레시 토큰 처리",
+            "decisions": [
+              {
+                "text": "리프레시 토큰 처리를 이번 주 목요일까지 끝낸다",
+                "reason": "다음 작업이 이어짐"
+              }
+            ]
+          },
+          {
+            "name": "프론트 레이아웃",
+            "description": "반응형 레이아웃 작업 담당",
+            "decisions": [
+              {
+                "text": "반응형 레이아웃은 세영님이 맡는다",
+                "reason": "민재님 일정 때문에"
+              }
+            ]
+          }
+        ]
+      },
+      "approval_state": "approved"
+    },
+    {
+      "title": "스프린트 계획 - 결제와 화면",
+      "days_ago": 14,
+      "turns": [
+        {
+          "speaker": "p1",
+          "text": "자 스프린트 계획 시작하죠. 지난주 남은 것부터 정리하고 갈게요."
+        },
+        {
+          "speaker": "p2",
+          "text": "결제 모듈은 제가 계속 붙잡고 있는데요. 금요일까지는 1차 붙여놓겠습니다."
+        },
+        {
+          "speaker": "p1",
+          "text": "좋아요. 그럼 결제 붙고 나면 하은님이 통합 테스트 시나리오 좀 짜주세요."
+        },
+        {
+          "speaker": "p3",
+          "text": "네 알겠습니다. 근데 지금 테스트 서버가 계속 죽어서요, 그것부터 봐야 할 것 같아요."
+        },
+        {
+          "speaker": "p1",
+          "text": "그건 인프라 담당이 처리하는 걸로 하죠. 이번 주 안에는 정리돼야 다음 작업이 안 밀려요."
+        },
+        {
+          "speaker": "p4",
+          "text": "저는 어제 화면 세 개 퍼블리싱 끝냈고요, 오늘은 좀 쉬엄쉬엄 하려고요."
+        },
+        {
+          "speaker": "p1",
+          "text": "민재님 그러면 이건 어때요, 남은 리스트 화면은 너가 맡아서 17일까지 마무리해주는 걸로."
+        },
+        {
+          "speaker": "p4",
+          "text": "아 네 그건 할 수 있을 것 같아요. 17일까지 올려둘게요."
+        },
+        {
+          "speaker": "p5",
+          "text": "저 잠깐 늦었는데 지금 무슨 얘기 중이에요?"
+        },
+        {
+          "speaker": "p1",
+          "text": "리스트 화면 일정 얘기요. 아 그리고 세영님, 저번에 말한 API 문서화는 어떻게 됐어요?"
+        },
+        {
+          "speaker": "p5",
+          "text": "그거 아직 손도 못 댔어요. 이번 주는 좀 빡셀 것 같고, 다음 주 월요일까지 해보겠습니다."
+        },
+        {
+          "speaker": "p1",
+          "text": "그리고 배포 스크립트 정리는 저번에 그분이 하시기로 했었죠? 도윤님 맞나요?"
+        },
+        {
+          "speaker": "p2",
+          "text": "네 맞아요. 그건 제가 담당인데 이번 달 말까지로 잡아두면 될 것 같아요."
+        },
+        {
+          "speaker": "p1",
+          "text": "코드 컨벤션 문서는 다 같이 한번 훑어보죠. 각자 시간 날 때 코멘트 남겨주세요."
+        },
+        {
+          "speaker": "p3",
+          "text": "혹시 이 리팩터링은 누가 맡나요? 아직 정해진 게 없는 것 같아서요."
+        },
+        {
+          "speaker": "p1",
+          "text": "그건 다음 회의 때 다시 얘기하죠. 오늘은 여기까지 하겠습니다."
+        }
+      ],
+      "items": [
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "결제 모듈 1차 연동",
+          "doc_text": "결제 모듈 1차 연동을 도윤님이 금요일까지 붙이기로 함",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "금요일",
+          "due_in_days": 4,
+          "evidence_quote": "금요일까지는 1차 붙여놓겠습니다",
+          "speaker_key": "p2",
+          "evidence_seqs": [
+            1
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "통합 테스트 시나리오 작성",
+          "doc_text": "결제 연동 뒤 하은님이 통합 테스트 시나리오를 짜기로 함",
+          "assignee_type": "thirdname",
+          "assignee_raw": "하은님",
+          "evidence_quote": "하은님이 통합 테스트 시나리오 좀 짜주세요",
+          "speaker_key": null,
+          "evidence_seqs": [
+            2
+          ],
+          "task_status": "certain",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "테스트 서버 복구",
+          "doc_text": "죽는 테스트 서버를 인프라 담당이 이번 주 안에 정리하기로 함",
+          "assignee_type": "thirdrole",
+          "assignee_raw": "인프라 담당",
+          "due_raw": "이번 주 안",
+          "due_in_days": 3,
+          "evidence_quote": "인프라 담당이 처리하는 걸로 하죠",
+          "speaker_key": null,
+          "evidence_seqs": [
+            4
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "남은 리스트 화면 마무리",
+          "doc_text": "남은 리스트 화면을 민재님이 17일까지 마무리하기로 함",
+          "assignee_type": "second",
+          "assignee_raw": "너",
+          "due_raw": "17일",
+          "due_in_days": 8,
+          "evidence_quote": "남은 리스트 화면은 너가 맡아서 17일까지 마무리해주는 걸로",
+          "speaker_key": "p4",
+          "evidence_seqs": [
+            6,
+            7
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "API 문서화",
+          "doc_text": "API 문서화를 세영님이 다음 주 월요일까지 해보기로 함",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "다음 주 월요일",
+          "due_in_days": 5,
+          "evidence_quote": "다음 주 월요일까지 해보겠습니다",
+          "speaker_key": "p5",
+          "evidence_seqs": [
+            10
+          ],
+          "task_status": "inferred",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        }
+      ],
+      "summary": {
+        "overview": "결제 모듈 1차 연동과 리스트 화면 마무리 일정을 정하고, 테스트 서버 복구 담당을 인프라 담당으로 두었다.",
+        "key_points": [
+          "결제 모듈 1차 연동은 금요일까지",
+          "리스트 화면은 민재님이 17일까지",
+          "테스트 서버는 인프라 담당이 이번 주 안에 정리"
+        ],
+        "discussion": [
+          {
+            "title": "결제",
+            "points": [
+              "결제 연동이 끝나면 통합 테스트 시나리오 작성"
+            ]
+          },
+          {
+            "title": "환경",
+            "points": [
+              "테스트 서버가 계속 죽어 작업이 밀릴 수 있음"
+            ]
+          }
+        ],
+        "facts": [
+          "테스트 서버가 반복해서 다운됨"
+        ],
+        "task_changes": [],
+        "schedule": [
+          {
+            "when": "금요일",
+            "what": "결제 모듈 1차 연동"
+          },
+          {
+            "when": "17일",
+            "what": "리스트 화면 마무리"
+          },
+          {
+            "when": "다음 주 월요일",
+            "what": "API 문서화"
+          }
+        ],
+        "open_items": [
+          "리팩터링 담당 미정",
+          "코드 컨벤션 문서 검토"
+        ],
+        "topics": [
+          {
+            "name": "결제 연동",
+            "description": "결제 모듈과 통합 테스트",
+            "decisions": [
+              {
+                "text": "결제 1차 연동 뒤 통합 테스트 시나리오를 작성한다",
+                "reason": "순서 의존"
+              }
+            ]
+          },
+          {
+            "name": "테스트 환경",
+            "description": "테스트 서버 안정화",
+            "decisions": [
+              {
+                "text": "테스트 서버 복구는 인프라 담당이 맡는다"
+              }
+            ]
+          }
+        ]
+      },
+      "approval_state": "approved"
+    },
+    {
+      "title": "릴리스 준비 점검",
+      "days_ago": 9,
+      "turns": [
+        {
+          "speaker": "p1",
+          "text": "다음 릴리스 준비 상황 보죠. 각자 일정만 짧게 공유해주세요."
+        },
+        {
+          "speaker": "p2",
+          "text": "저는 마이그레이션 스크립트를 월요일까지 끝내겠습니다."
+        },
+        {
+          "speaker": "p3",
+          "text": "QA 체크리스트는 17일까지 정리해서 공유드릴게요."
+        },
+        {
+          "speaker": "p4",
+          "text": "디자인 QA는 2주 뒤에 한 번 더 돌면 좋을 것 같은데요."
+        },
+        {
+          "speaker": "p1",
+          "text": "그러죠. 민재님이 2주 뒤에 디자인 QA 한 번 더 돌려주세요."
+        },
+        {
+          "speaker": "p2",
+          "text": "아 그리고 로그 수집기는 이번 달 말까지 붙여놓을게요."
+        },
+        {
+          "speaker": "p3",
+          "text": "릴리스 노트 초안은 내일 오전 11시까지 드리겠습니다."
+        },
+        {
+          "speaker": "p1",
+          "text": "장애 대응 문서는 이번 주 안으로 한번 손보죠."
+        },
+        {
+          "speaker": "p4",
+          "text": "저 지난주에 아이콘 작업하다가 시안이 다 엎어져서 고생했어요."
+        },
+        {
+          "speaker": "p2",
+          "text": "성능 테스트는 언제 하는 게 좋을까요? 아직 일정이 안 잡혔네요."
+        },
+        {
+          "speaker": "p1",
+          "text": "그건 릴리스 끝나고 다시 얘기하죠."
+        },
+        {
+          "speaker": "p3",
+          "text": "그리고 모니터링 알림 설정은 다음 달 3일까지 마무리하겠습니다."
+        },
+        {
+          "speaker": "p4",
+          "text": "시간 되면 접근성 점검도 해볼게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "보안 점검 항목은 하은님이 챙겨주세요. 기한은 따로 없고 릴리스 전까지만 되면 돼요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네 오늘은 여기까지 하겠습니다. 수고하셨어요."
+        }
+      ],
+      "items": [
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "마이그레이션 스크립트 완료",
+          "doc_text": "마이그레이션 스크립트를 도윤님이 월요일까지 끝내기로 함",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "월요일",
+          "due_in_days": 5,
+          "evidence_quote": "마이그레이션 스크립트를 월요일까지 끝내겠습니다",
+          "speaker_key": "p2",
+          "evidence_seqs": [
+            1
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "QA 체크리스트 공유",
+          "doc_text": "QA 체크리스트를 하은님이 17일까지 정리해 공유하기로 함",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "17일",
+          "due_in_days": 8,
+          "evidence_quote": "QA 체크리스트는 17일까지 정리해서 공유드릴게요",
+          "speaker_key": "p3",
+          "evidence_seqs": [
+            2
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "디자인 QA 재점검",
+          "doc_text": "디자인 QA를 민재님이 2주 뒤에 한 번 더 돌리기로 함",
+          "assignee_type": "thirdname",
+          "assignee_raw": "민재님",
+          "due_raw": "2주 뒤",
+          "due_in_days": 14,
+          "evidence_quote": "민재님이 2주 뒤에 디자인 QA 한 번 더 돌려주세요",
+          "speaker_key": null,
+          "evidence_seqs": [
+            4
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "로그 수집기 연동",
+          "doc_text": "로그 수집기를 도윤님이 이번 달 말까지 붙이기로 함",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "이번 달 말",
+          "due_in_days": 20,
+          "evidence_quote": "로그 수집기는 이번 달 말까지 붙여놓을게요",
+          "speaker_key": "p2",
+          "evidence_seqs": [
+            5
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "보안 점검 항목 확인",
+          "doc_text": "보안 점검 항목을 하은님이 릴리스 전까지 챙기기로 함(기한 따로 없음)",
+          "assignee_type": "thirdname",
+          "assignee_raw": "하은님",
+          "evidence_quote": "보안 점검 항목은 하은님이 챙겨주세요",
+          "speaker_key": null,
+          "evidence_seqs": [
+            13
+          ],
+          "task_status": "inferred",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        }
+      ],
+      "summary": {
+        "overview": "릴리스 전에 각자 일정을 공유했다. 마이그레이션, QA 체크리스트, 로그 수집기 일정이 정해지고 성능 테스트 일정은 릴리스 뒤로 미뤘다.",
+        "key_points": [
+          "마이그레이션 스크립트는 월요일까지",
+          "QA 체크리스트는 17일까지",
+          "성능 테스트는 릴리스 뒤에 다시 논의"
+        ],
+        "discussion": [
+          {
+            "title": "일정",
+            "points": [
+              "마감 표현이 요일·날짜·N주 뒤로 섞여 나옴"
+            ]
+          }
+        ],
+        "facts": [
+          "지난주 아이콘 시안이 다 엎어짐"
+        ],
+        "task_changes": [],
+        "schedule": [
+          {
+            "when": "월요일",
+            "what": "마이그레이션 스크립트 완료"
+          },
+          {
+            "when": "17일",
+            "what": "QA 체크리스트 공유"
+          },
+          {
+            "when": "다음 달 3일",
+            "what": "모니터링 알림 설정 마무리"
+          }
+        ],
+        "open_items": [
+          "성능 테스트 일정 미정"
+        ],
+        "topics": [
+          {
+            "name": "릴리스 일정",
+            "description": "릴리스 전 작업 일정",
+            "decisions": [
+              {
+                "text": "성능 테스트 일정은 릴리스가 끝난 뒤 다시 정한다",
+                "reason": "릴리스가 우선"
+              }
+            ]
+          }
+        ]
+      },
+      "approval_state": "approved"
+    },
+    {
+      "title": "스프린트 회고",
+      "days_ago": 5,
+      "turns": [
+        {
+          "speaker": "p1",
+          "text": "이번 스프린트 회고 시작하겠습니다. 편하게 얘기해주세요."
+        },
+        {
+          "speaker": "p2",
+          "text": "여유 되면 온보딩 문서도 정리해둘게요."
+        },
+        {
+          "speaker": "p3",
+          "text": "그 부분은 좀 고민해볼게요."
+        },
+        {
+          "speaker": "p4",
+          "text": "저도 고민해보고 내일까지 의견 정리해서 공유드릴게요."
+        },
+        {
+          "speaker": "p2",
+          "text": "이 캐시 이슈는 누가 보는 게 맞을까요?"
+        },
+        {
+          "speaker": "p1",
+          "text": "그건 아마 하은님이 보실 것 같은데요."
+        },
+        {
+          "speaker": "p3",
+          "text": "아직 로그 정리는 못 했어요."
+        },
+        {
+          "speaker": "p3",
+          "text": "그건 목요일까지 마무리하겠습니다."
+        },
+        {
+          "speaker": "p4",
+          "text": "지금 하던 아이콘 작업은 계속 진행하겠습니다."
+        },
+        {
+          "speaker": "p2",
+          "text": "이 PR 검토해볼게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "배포 자동화 얘기는 다음에 하죠."
+        },
+        {
+          "speaker": "p4",
+          "text": "필요하시면 디자인 쪽도 도와드릴게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "테스트 커버리지 올리는 건 우리 모두 신경 쓰기로 하죠."
+        },
+        {
+          "speaker": "p1",
+          "text": "오늘 회고는 여기까지입니다. 다들 고생하셨어요."
+        }
+      ],
+      "items": [
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "캐시 이슈 로그 정리",
+          "doc_text": "로그 정리를 하은님이 목요일까지 마무리하기로 함",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "목요일",
+          "due_in_days": 2,
+          "evidence_quote": "그건 목요일까지 마무리하겠습니다",
+          "speaker_key": "p3",
+          "evidence_seqs": [
+            7
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "의견 정리 공유",
+          "doc_text": "고민해 본 뒤 민재님이 내일까지 의견을 정리해 공유하기로 함",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "내일",
+          "due_in_days": 1,
+          "evidence_quote": "고민해보고 내일까지 의견 정리해서 공유드릴게요",
+          "speaker_key": "p4",
+          "evidence_seqs": [
+            3
+          ],
+          "task_status": "inferred",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "캐시 이슈 담당 확인",
+          "doc_text": "캐시 이슈는 하은님이 볼 것 같다고 함",
+          "assignee_type": "thirdname",
+          "assignee_raw": "하은님",
+          "evidence_quote": "그건 아마 하은님이 보실 것 같은데요",
+          "speaker_key": null,
+          "evidence_seqs": [
+            5
+          ],
+          "task_status": "inferred",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        }
+      ],
+      "summary": {
+        "overview": "스프린트 회고에서 조건부 약속과 미정 사항을 정리했다. 캐시 이슈 로그 정리는 목요일까지 마무리한다.",
+        "key_points": [
+          "로그 정리는 목요일까지",
+          "배포 자동화는 다음에 논의",
+          "테스트 커버리지는 모두가 신경 쓰기"
+        ],
+        "discussion": [
+          {
+            "title": "회고",
+            "points": [
+              "조건부·보류 발언이 많아 확정된 일은 적음"
+            ]
+          }
+        ],
+        "facts": [],
+        "task_changes": [],
+        "schedule": [
+          {
+            "when": "목요일",
+            "what": "캐시 이슈 로그 정리"
+          }
+        ],
+        "open_items": [
+          "캐시 이슈 담당 확정",
+          "배포 자동화 논의"
+        ],
+        "topics": [
+          {
+            "name": "회고 정리",
+            "description": "이번 스프린트 회고",
+            "decisions": [
+              {
+                "text": "테스트 커버리지는 팀 전체가 신경 쓴다"
+              }
+            ]
+          }
+        ]
+      },
+      "approval_state": "approved"
+    },
+    {
+      "title": "결제 연동 킥오프",
+      "days_ago": 2,
+      "turns": [
+        {
+          "speaker": "p1",
+          "text": "결제 연동 킥오프 시작하겠습니다. 이번 스프린트는 결제 승인부터 정산까지 가는 걸 목표로 잡았어요."
+        },
+        {
+          "speaker": "p5",
+          "text": "결제 약관 문서는 제가 정리해서 공유드릴게요. 일정은 아직 정하지 않았어요."
+        },
+        {
+          "speaker": "p6",
+          "text": "저는 카드 승인 웹훅 처리를 이번 주 금요일까지 끝내 보겠습니다."
+        },
+        {
+          "speaker": "p1",
+          "text": "좋아요. 도윤님은 환불 API 설계를 다음 주 월요일까지 부탁드려요."
+        },
+        {
+          "speaker": "p2",
+          "text": "네, 환불 API 설계안은 월요일까지 올릴게요."
+        },
+        {
+          "speaker": "p3",
+          "text": "테스트 환경에 결제 샌드박스 키가 아직 없는 것 같아요. 그건 누가 받아 오나요?"
+        },
+        {
+          "speaker": "p1",
+          "text": "그건 아마 인프라 담당이 받아 줄 거예요. 이번 주 안에 확인해 달라고 해 둘게요."
+        },
+        {
+          "speaker": "p4",
+          "text": "정산 리포트 초안은 태오가 맡기로 했던 것 같은데, 확실하진 않아요."
+        },
+        {
+          "speaker": "p1",
+          "text": "그럼 정산 리포트 초안은 태오가 다음 주 수요일까지 준비해 주는 걸로 적어 둘게요."
+        },
+        {
+          "speaker": "p3",
+          "text": "결제 화면 문구는 제가 시간 되는 대로 다듬어 볼게요."
+        },
+        {
+          "speaker": "p1",
+          "text": "네, 오늘은 여기까지 하겠습니다. 수고하셨어요."
+        }
+      ],
+      "items": [
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "결제 약관 문서 정리",
+          "doc_text": "결제 약관 문서를 세영님이 정리해 공유하기로 함(일정 미정)",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "evidence_quote": "결제 약관 문서는 제가 정리해서 공유드릴게요",
+          "speaker_key": "p5",
+          "evidence_seqs": [
+            1
+          ],
+          "task_status": "certain",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "카드 승인 웹훅 처리",
+          "doc_text": "카드 승인 웹훅 처리를 서준님이 이번 주 금요일까지 끝내기로 함",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "이번 주 금요일",
+          "due_in_days": 3,
+          "evidence_quote": "카드 승인 웹훅 처리를 이번 주 금요일까지 끝내 보겠습니다",
+          "speaker_key": "p6",
+          "evidence_seqs": [
+            2
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "환불 API 설계",
+          "doc_text": "환불 API 설계안을 도윤님이 다음 주 월요일까지 올리기로 함",
+          "assignee_type": "thirdname",
+          "assignee_raw": "도윤님",
+          "due_raw": "다음 주 월요일",
+          "due_in_days": 5,
+          "evidence_quote": "도윤님은 환불 API 설계를 다음 주 월요일까지 부탁드려요",
+          "speaker_key": null,
+          "evidence_seqs": [
+            3,
+            4
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "결제 샌드박스 키 확인",
+          "doc_text": "결제 샌드박스 키를 인프라 담당이 이번 주 안에 확인하기로 함",
+          "assignee_type": "thirdrole",
+          "assignee_raw": "인프라 담당",
+          "due_raw": "이번 주 안",
+          "due_in_days": 4,
+          "evidence_quote": "인프라 담당이 받아 줄 거예요",
+          "speaker_key": null,
+          "evidence_seqs": [
+            6
+          ],
+          "task_status": "inferred",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "정산 리포트 초안",
+          "doc_text": "정산 리포트 초안을 태오가 다음 주 수요일까지 준비하기로 함",
+          "assignee_type": "thirdname",
+          "assignee_raw": "태오가",
+          "due_raw": "다음 주 수요일",
+          "due_in_days": 7,
+          "evidence_quote": "정산 리포트 초안은 태오가 다음 주 수요일까지 준비해 주는 걸로",
+          "speaker_key": null,
+          "evidence_seqs": [
+            7,
+            8
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        }
+      ],
+      "summary": {
+        "overview": "결제 연동 킥오프에서 승인 웹훅, 환불 API 설계, 정산 리포트 초안의 담당과 일정을 정했다. 샌드박스 키는 아직 확인 중이다.",
+        "key_points": [
+          "카드 승인 웹훅은 이번 주 금요일까지",
+          "환불 API 설계안은 다음 주 월요일까지",
+          "정산 리포트 초안은 다음 주 수요일까지"
+        ],
+        "discussion": [
+          {
+            "title": "환경",
+            "points": [
+              "테스트 환경에 결제 샌드박스 키가 없어 인프라 담당이 확인"
+            ]
+          },
+          {
+            "title": "정산",
+            "points": [
+              "정산 리포트 초안 담당은 회의 중 한 번 더 확인함"
+            ]
+          }
+        ],
+        "facts": [
+          "결제 샌드박스 키가 아직 없음"
+        ],
+        "task_changes": [],
+        "schedule": [
+          {
+            "when": "이번 주 금요일",
+            "what": "카드 승인 웹훅 처리"
+          },
+          {
+            "when": "다음 주 월요일",
+            "what": "환불 API 설계안"
+          },
+          {
+            "when": "다음 주 수요일",
+            "what": "정산 리포트 초안"
+          }
+        ],
+        "open_items": [
+          "샌드박스 키 확보",
+          "결제 화면 문구 다듬기 일정"
+        ],
+        "topics": [
+          {
+            "name": "결제 연동 범위",
+            "description": "승인에서 정산까지의 작업 분담",
+            "decisions": [
+              {
+                "text": "이번 스프린트는 결제 승인부터 정산까지 간다",
+                "reason": "심사 전 데모 범위"
+              }
+            ]
+          }
+        ]
+      },
+      "approval_state": "approved"
+    },
+    {
+      "title": "심사 준비 - 승인 대기 시연",
+      "days_ago": 1,
+      "turns": [
+        {
+          "speaker": "p1",
+          "text": "제가 내일까지 심사 데모 동선을 점검할게요."
+        },
+        {
+          "speaker": "p3",
+          "text": "하은님이 회의록 다운로드도 확인해 주면 좋겠어요."
+        },
+        {
+          "speaker": "p1",
+          "text": "지훈님은 발표 장비 확인을 부탁드려요."
+        }
+      ],
+      "items": [
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "심사 데모 동선 점검",
+          "doc_text": "유진님이 내일까지 심사 데모 동선을 점검하기로 함",
+          "assignee_type": "first",
+          "assignee_raw": null,
+          "due_raw": "내일까지",
+          "due_in_days": 1,
+          "evidence_quote": "제가 내일까지 심사 데모 동선을 점검할게요",
+          "speaker_key": "p1",
+          "evidence_seqs": [
+            0
+          ],
+          "task_status": "certain",
+          "due_status": "certain",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "데모 회의록 다운로드 확인",
+          "doc_text": "하은님의 회의록 다운로드 확인이 필요해 PM 확인을 기다림",
+          "assignee_type": "thirdname",
+          "assignee_raw": "하은님",
+          "evidence_quote": "하은님이 회의록 다운로드도 확인해 주면 좋겠어요",
+          "speaker_key": null,
+          "evidence_seqs": [
+            1
+          ],
+          "task_status": "inferred",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        },
+        {
+          "action": "create",
+          "category": "decision",
+          "task_title": "데모 발표 장비 확인",
+          "doc_text": "명단에 없는 지훈님에게 요청한 장비 확인은 PM의 담당자 지정을 기다림",
+          "assignee_type": "thirdname",
+          "assignee_raw": "지훈님",
+          "evidence_quote": "지훈님은 발표 장비 확인을 부탁드려요",
+          "speaker_key": null,
+          "evidence_seqs": [
+            2
+          ],
+          "task_status": "certain",
+          "due_status": "missing",
+          "similar_count": 0,
+          "top_similarity": null,
+          "asr_suspects": []
+        }
+      ],
+      "summary": {
+        "overview": "심사 데모 동선과 회의록 다운로드, 발표 장비 준비를 논의했다. 담당자가 불명확한 항목은 PM 확인을 기다린다."
+      },
+      "approval_state": "pending"
+    }
+  ],
+  "asr_terms": [
+    "로그인 API",
+    "리프레시 토큰",
+    "반응형 레이아웃",
+    "코드 컨벤션",
+    "결제 모듈",
+    "통합 테스트",
+    "테스트 서버",
+    "API 문서화",
+    "마이그레이션",
+    "QA 체크리스트",
+    "로그 수집기",
+    "릴리스 노트",
+    "모니터링 알림",
+    "보안 점검",
+    "캐시 이슈",
+    "배포 자동화",
+    "테스트 커버리지",
+    "결제 약관",
+    "승인 웹훅",
+    "환불 API",
+    "샌드박스 키",
+    "정산 리포트"
+  ]
+}

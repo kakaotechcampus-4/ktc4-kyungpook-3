@@ -56,6 +56,8 @@ export const MOCK_SCENARIOS = [
   'incomplete-workspace',
   // M5 회의 흐름. 모두 ws_01 하나에 로그인한다 — docs/impl-decision/2026-10-02-meeting-upload-policy.md
   'meeting-demo',
+  // meeting-demo 와 같은 흐름을 #542 전 서버로 본다 — 상세에 processing 이 없어 진행 수·경과가 없다
+  'meeting-demo-legacy',
   'meeting-instant',
   'meeting-fail',
   'meeting-fail-diarize',
@@ -93,6 +95,11 @@ export const MOCK_SCENARIOS = [
   'approval-asr-suspects-long',
   // #419 회의록 mt_09 의 수정 제안 it_08(tk_04 마감 변경). 승인 전에도 task_id 가 tk_04 다
   'minutes-edit-pending',
+  // #676 mt_09 의 녹음 보관 기간(7일)이 지났다. 회의록 audio 가 null 이고 재생은 404 AUDIO_NOT_AVAILABLE(expired)
+  'meeting-audio-expired',
+  // #551 mt_09 의 요약이 승인을 기다린다. 대기 카드 ap_01~ap_03 이라 PM 은 3건을 보고, -member 는 건수 없이 본다
+  'minutes-awaiting-approval',
+  'minutes-awaiting-approval-member',
   'notion-sync-pending',
   'notion-sync-failed',
   'tasks-member',
@@ -129,7 +136,12 @@ export const MOCK_SCENARIOS = [
   // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
   'settings-discord-skipped',
   'settings-unmapped',
+  // #660 settings-unmapped 에서 Discord 서버에 사용자가 아무도 없다 — 새로 만든 테스트 서버다. 아이디로 초대할 가입자가 있다
+  'settings-discord-empty',
   'settings-member',
+  // #647 팀원 한 명이 한 줄인 팀원 관리. ws_01 PM 이다. 이재환에 지훈의 계정(1125)을 잘못 이어 두었다 —
+  // 최지훈 줄에서 그 계정을 고르면 옮기기를 확인한다. 1128 dahye 는 아무에게도 연결되지 않았고, 정하늘의 1126 은 서버를 떠났다
+  'member-rows',
   // #330 알림·자동 막힘. ws_01 PM 이다
   'notifications-default',
   // #344 리마인드 답장 판단. reply-judgment 는 ws_01 PM, reply-judgment-member 는 같은 상태의 일반 팀원(mb_01)이다
@@ -322,6 +334,14 @@ function approvalOf(state: MockDb, approvalId: string) {
   const approval = state.approvals.find(({ approval_id }) => approval_id === approvalId)
   if (!approval) throw new Error(`mock approval ${approvalId} is missing`)
   return approval
+}
+
+/** 요약을 아직 만들지 않았다. 남은 건수는 minutes handler 가 지금 대기 카드로 센다 */
+function awaitApprovalSummary(state: MockDb, meetingId: string): void {
+  const minutes = state.minutes.find(({ meeting_id }) => meeting_id === meetingId)
+  if (!minutes) throw new Error(`mock minutes ${meetingId} is missing`)
+  minutes.summary = null
+  minutes.summary_status = 'awaiting_approval'
 }
 
 function taskOf(state: MockDb, taskId: string) {
@@ -759,6 +779,30 @@ function addTeamInvitations(state: MockDb): void {
   )
 }
 
+function addMemberRows(state: MockDb): void {
+  const lee = state.members.find(({ member_id }) => member_id === 'mb_03')
+  if (lee) lee.discord_user_id = '1125'
+  state.members.push({
+    member_id: 'mb_05',
+    workspace_id: 'ws_01',
+    display_name: '최지훈',
+    discord_user_id: null,
+    notion_name: null,
+    role: 'member',
+    has_login_account: false,
+    created_at: '2026-09-02T00:00:00Z',
+  })
+  state.discordUsers.push({
+    discord_user_id: '1128',
+    username: 'dahye',
+    display_name: '다혜',
+    nick: '다혜',
+    global_name: null,
+    avatar_url: null,
+    is_bot: false,
+  })
+}
+
 export function createScenarioDb(scenario: MockScenario): MockDb {
   if (isSpeakerScenario(scenario)) return createSpeakerScenarioDb(scenario)
   if (isPasswordResetScenario(scenario)) return createPasswordResetScenarioDb(scenario)
@@ -819,6 +863,9 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'meeting-demo':
       // 브라우저 데모: 상세 조회(처리 화면 polling)마다 한 단계씩 보인다
       readyToUpload(state, 'staged')
+      break
+    case 'meeting-demo-legacy':
+      readyToUpload(state, 'staged-legacy')
       break
     case 'meeting-instant':
       // E2E: 업로드 뒤 첫 상세 조회에 정리가 끝난다
@@ -935,6 +982,16 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'minutes-edit-pending':
       signInWith(state, ['ws_01'], 'ws_01')
       addEditProposal(state)
+      break
+    case 'meeting-audio-expired':
+      signInWith(state, ['ws_01'], 'ws_01')
+      for (const minutes of state.minutes) minutes.audio = null
+      break
+    case 'minutes-awaiting-approval':
+    case 'minutes-awaiting-approval-member':
+      signInWith(state, ['ws_01'], 'ws_01')
+      awaitApprovalSummary(state, 'mt_09')
+      if (scenario === 'minutes-awaiting-approval-member') setMockRole('member', 'ws_01', state)
       break
     case 'notion-sync-pending':
       // tk_04 가 반영 대기다. synced 로 넘기는 워커는 없다 — 테스트가 필드를 직접 바꾼다
@@ -1145,6 +1202,15 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'settings-unmapped':
       // 픽스처 그대로의 ws_01 이다. Discord 연결됨, 1125(지훈)는 미매핑, mb_04 의 1126 은 서버를 떠났다(inactive), 1199 는 봇이다
       signInWith(state, ['ws_01'], 'ws_01')
+      break
+    case 'settings-discord-empty':
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.discordUsers = []
+      addInviteeAccounts(state)
+      break
+    case 'member-rows':
+      signInWith(state, ['ws_01'], 'ws_01')
+      addMemberRows(state)
       break
     case 'settings-member':
       // 일반 팀원. Discord 는 미연결(요청 안내), Notion 은 연결됨(PM 이 관리한다는 안내)이다. 연결·매핑 쓰기는 PM 만 한다

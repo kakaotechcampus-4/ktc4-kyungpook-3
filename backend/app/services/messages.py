@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -31,6 +31,7 @@ from app.models import (
     DmFailureReason,
     DmStatus,
     DraftStatus,
+    Integration,
     Member,
     MemberRole,
     MessageSender,
@@ -457,6 +458,35 @@ def cancel_bundle(db: Session, bundle: ReminderBundle, *, now: datetime) -> Remi
     return bundle
 
 
+def stop_thread_dms(db: Session, thread_ids: list[str], now: datetime, *, watching_only: bool = False) -> None:
+    """명단에서 빠진 팀원의 대화에서 아직 안 나간 DM 을 못 보냄으로 닫고 답을 기다리는 시계를 멈춘다.
+
+    계정 탈퇴와 팀원 삭제가 같이 쓴다. 대화와 메시지 본문은 남긴다. watching_only 면 재고 있는 시계만 멈춘다.
+    팀원 삭제가 쓴다. 자동 막힘이 걸린 시계는 담당이 바뀔 때(scheduler._settle)처럼 남겨 되돌릴 수 있게 하고,
+    이미 닫힌 시계의 상태와 닫힌 시각은 이력이라 덮지 않는다.
+    """
+    db.execute(update(ThreadMessage).where(
+        ThreadMessage.thread_id.in_(thread_ids), ThreadMessage.dm_status.in_(("pending", "claimed")),
+    ).values(dm_status="failed", dm_failure_reason="discord_not_linked", claimed_at=None))
+    watches = update(ReminderWatch).where(ReminderWatch.thread_id.in_(thread_ids))
+    if watching_only:
+        watches = watches.where(ReminderWatch.state == str(WatchState.WATCHING))
+    db.execute(watches.values(state=str(WatchState.STOPPED), closed_at=now, paused_at=None))
+
+
+def cancel_scheduled_bundles(db: Session, thread_id: str, now: datetime) -> None:
+    """대화의 예약 묶음을 PM 의 묶음 취소와 같은 길로 모두 닫는다. 팀원 삭제가 부른다."""
+    _lock_thread(db, thread_id)
+    bundles = db.scalars(
+        select(ReminderBundle)
+        .where(ReminderBundle.thread_id == thread_id, ReminderBundle.status == ReminderStatus.SCHEDULED)
+        .order_by(ReminderBundle.bundle_id)
+        .with_for_update()
+    ).all()
+    for bundle in bundles:
+        cancel_bundle(db, bundle, now=now)
+
+
 def _has_pm_reminder(bundle_id):
     """묶음에 PM 이 직접 넣은 재촉이 남아 있는지. 재촉 제안을 꺼도 이런 묶음은 PM 이 보내려던 것이다."""
     return (
@@ -762,10 +792,15 @@ def claim_for_bot(db: Session, now: datetime) -> list[ClaimedMessage]:
         .order_by(ThreadMessage.created_at, ThreadMessage.message_id)
         .with_for_update(skip_locked=True)
     ).all()
+    # 디스코드 서버를 연결하지 않은 워크스페이스의 계정에는 DM 을 보내지 않는다. 팀원 계정은 연결한 서버의 멤버만 붙인다.
+    linked = set(db.scalars(select(Integration.workspace_id).where(
+        Integration.provider == "discord", Integration.provider_channel_id.is_not(None),
+        Integration.provider_channel_id != "",
+    )))
     claimed = []
     for message in pending:
         member = message.thread.member
-        if member.is_deleted or not member.discord_user_id:
+        if member.is_deleted or not member.discord_user_id or message.thread.workspace_id not in linked:
             # 발송 요청을 만든 뒤 연결이 끊기거나 탈퇴했다. 이 메시지만 닫고 같은 배치의 나머지는 준다.
             message.dm_status = DmStatus.FAILED
             message.dm_failure_reason = DmFailureReason.DISCORD_NOT_LINKED

@@ -57,9 +57,9 @@ Actions → deploy → Run workflow 에서 develop 을 고른다. mode 를 all �
 
 AI 또는 배포 실행 코드가 바뀌면 [enable-summary.py](enable-summary.py)가 실제 `mm-worker.service`를 검사한다. 유닛이 존재하고 active일 때만 `/etc/systemd/system/mm-worker.service.d/90-summary.conf`에 `MM_SUMMARY_LLM=luna`를 설치한다. `daemon-reload` 뒤 기존 워커를 재시작한다. 꺼진 워커를 켜지 않으며, 이 경우 `status=not-on`을 출력하고 성공 배포 SHA를 갱신하지 않는다. active 유닛은 부팅 시 자동 시작 여부와 무관하게 기존 배포 정책대로 재시작한다.
 
-검사는 실제 MainPID의 Python 명령, 사용자, 작업 디렉터리, 환경을 사용한다. 지원하는 실행 명령은 절대 경로 Python의 `[-u] -m capture.worker`와 장기 워커 옵션 `--recordings`, `--transcripts`, `--interval`이다. 다른 모듈, 미지원 옵션, 즉시 종료하는 `--retry`는 거부한다. 같은 사용자와 실행 환경에서 `summary_from_env()`를 생성하되 회의 claim·BE 요청·LLM 호출은 하지 않는다. 재시작 전에는 Luna를 선택할 때의 설정을 검사하고, 재시작 뒤에는 새 PID의 실제 selector와 runner, 해당 PID의 `[summary] runner ready model=luna` 로그를 함께 확인한다. 로그의 monotonic 시각은 systemd가 보고한 현재 main process 시작시각 이상이어야 한다. PID와 시작시각이 최종 확인까지 같아야 하며, 시작시각이 없으면 `worker-start-time-unavailable`로 실패한다. 로그는 selector, 설정 존재 여부, PID와 ready 여부를 공개한다. `worker_command_shape`는 인자 수·절대 경로 여부·알려진 실행기와 옵션 label만 공개하고 나머지는 redacted로 표시한다. 실제 인자 값·경로·키·URL·토큰과 journal 원문은 출력하지 않는다.
+검사는 실제 MainPID의 Python 명령, 사용자, 작업 디렉터리, 환경을 사용한다. 지원하는 실행 명령은 절대 경로 Python의 `[-u] -m capture.worker`와 장기 워커 옵션 `--recordings`, `--transcripts`, `--interval`이다. 다른 모듈, 미지원 옵션, 즉시 종료하는 `--retry`는 거부한다. 같은 사용자와 실행 환경에서 `summary_from_env()`를 생성하되 회의 claim·BE 요청·LLM 호출은 하지 않는다. 재시작 전에는 Luna를 선택할 때의 설정을 검사한다. 재시작 뒤에는 새 PID와 시작시각에 해당하는 `[summary] runner ready model=luna` 로그를 먼저 기다리고, 표식을 확인한 뒤에만 해당 프로세스의 명령과 실제 selector·runner를 검사한다. 따라서 시작 중인 프로세스의 임시 명령 형태를 최종 worker 명령으로 판정하지 않는다. 준비 표식이 끝까지 없으면 기존 30회 확인 뒤 `new-worker-ready-marker-missing`으로 실패하며, 표식이 있어도 명령·실제 설정·최종 실행 식별자 검사를 생략하지 않는다. 로그의 monotonic 시각은 systemd가 보고한 현재 main process 시작시각 이상이어야 한다. PID와 시작시각이 최종 확인까지 같아야 하며, 시작시각이 없으면 `worker-start-time-unavailable`로 실패한다. 로그는 selector, 설정 존재 여부, PID와 ready 여부를 공개한다. `worker_command_shape`는 인자 수·절대 경로 여부·알려진 실행기와 옵션 label만 공개하고 나머지는 redacted로 표시한다. 실제 인자 값·경로·키·URL·토큰과 journal 원문은 출력하지 않는다.
 
-`ai/.env`는 기존 프로세스 환경에 없는 값만 채운다. systemd의 `EnvironmentFile` 등이 selector를 덮으면 실제 값 검사에서 `effective-selector-conflict`로 실패한다. `PM_AGENT_LLM=off`는 `global-llm-off`, Luna 키·URL 또는 BE URL·서비스 토큰 누락은 `required-settings-missing`으로 실패한다. 이 helper는 다른 기능의 전역 LLM 설정을 바꾸지 않는다. 실패하면 설치된 drop-in을 자동으로 되돌리지 않으며 성공 배포 SHA를 유지한다.
+`ai/.env`는 기존 프로세스 환경에 없는 값만 채운다. 설정 probe에서 systemd의 `EnvironmentFile` 등이 덮은 selector를 발견하면 `effective-selector-conflict`로 실패한다. 같은 검사에서 `PM_AGENT_LLM=off`는 `global-llm-off`, Luna 키·URL 또는 BE URL·서비스 토큰 누락은 `required-settings-missing`으로 실패한다. 새 워커의 잘못된 설정 때문에 준비 표식 자체가 나오지 않으면 구체 설정 오류 대신 `new-worker-ready-marker-missing`으로 실패할 수 있다. 이 helper는 다른 기능의 전역 LLM 설정을 바꾸지 않는다. 실패하면 설치된 drop-in을 자동으로 되돌리지 않으며 성공 배포 SHA를 유지한다.
 
 `status=on`은 새 운영 프로세스의 요약 runner 준비를 뜻한다. 공급사 인증·실제 요약 저장·품질 검증 결과는 별도다. 대기 중인 요약은 재시작 후 워커가 자연스럽게 처리하며, 이 배포는 과거 회의를 새로 backfill 등록하지 않는다.
 
@@ -180,3 +180,22 @@ sudo -u "$U" sh -c 'cd /opt/mm/ai && CHAT_POLL_INITIAL_HOURS=48 /usr/bin/flock -
 ```
 
 서비스의 `TimeoutStartSec` 를 7시간 이상으로 올리면 BE 의 채팅 회의 정리 기준(`chat_stalled`, 7시간)도 함께 올린다([봇 계약](../backend/docs/contracts/backend-ai-contract.md)).
+
+## 앞단 프록시 Caddy (#692)
+
+운영 Caddy 설정의 원본은 [caddy/Caddyfile](caddy/Caddyfile)이다. 서버 `/etc/caddy/Caddyfile`(2026-11-09 수정본)과 같고, 보안 헤더 `header` 블록만 더했다. 배포 스크립트는 이 파일을 서버에 반영하지 않는다. 바꾼 뒤에는 운영자가 서버에서 아래 순서로 직접 반영한다.
+
+```bash
+cd /opt/mm
+diff -w /etc/caddy/Caddyfile deploy/caddy/Caddyfile        # header 블록 말고 다른 차이가 있으면 멈추고 맞춘다
+sudo cp -p /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$(date +%Y%m%d)
+sudo cp deploy/caddy/Caddyfile /etc/caddy/Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl reload caddy
+curl -sI https://managers-manager.duckdns.org/ | grep -i -E 'strict-transport|x-content-type|referrer-policy|content-security|x-frame'
+curl -sI https://managers-manager.duckdns.org/api/v1/ | grep -i content-security   # 응답 코드와 상관없이 API 응답에도 붙는지
+```
+
+validate 가 실패하면 reload 하지 않고 백업으로 되돌린다. reload 는 기존 연결을 끊지 않는다.
+
+`deploy/` 아래 파일이라 이 파일만 바뀐 커밋이 배포돼도 `changed deploy` 가 참이 되어 요약 활성화(`enable-summary.py`)가 다시 돌고, 켜져 있는 `mm-worker` 가 재시작된다. 워커는 하던 회의를 마치고 내려간다.

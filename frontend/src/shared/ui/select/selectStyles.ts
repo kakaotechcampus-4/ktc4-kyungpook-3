@@ -19,7 +19,7 @@ export const CHEVRON_RIGHT = { md: 'right-13', sm: 'right-11' } as const
 export function triggerColor(tone: 'normal' | 'blocking', disabled: boolean) {
   if (disabled) return 'cursor-not-allowed border-line bg-surface-sunken text-faint'
   if (tone === 'blocking')
-    return 'cursor-pointer border-accent bg-surface text-ink data-[placeholder]:text-accent-solid focus-visible:outline-accent-point'
+    return 'cursor-pointer border-accent bg-surface text-ink data-[placeholder]:text-accent focus-visible:outline-accent-point'
   return 'cursor-pointer border-input-border bg-surface text-ink data-[placeholder]:text-dim hover:not-data-[state=open]:border-sub data-[state=open]:border-ink'
 }
 

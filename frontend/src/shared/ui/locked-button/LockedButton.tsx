@@ -17,7 +17,7 @@ export interface LockedButtonProps extends Omit<ButtonProps, 'disabled' | 'loadi
    메시지 화면이 쓰는 변형만 둔다. `Button` 의 VARIANT 를 바꾸면 여기도 같이 바꾼다 */
 const KEEP_LOOK: Partial<Record<ButtonVariant, string>> = {
   primary:
-    'data-[lock=quiet]:aria-disabled:bg-ink data-[lock=quiet]:aria-disabled:text-surface data-[lock=quiet]:aria-disabled:hover:bg-dim data-[lock=quiet]:aria-disabled:focus-visible:outline-surface data-[lock=quiet]:aria-disabled:focus-visible:-outline-offset-3',
+    'data-[lock=quiet]:aria-disabled:bg-ink-solid data-[lock=quiet]:aria-disabled:text-surface data-[lock=quiet]:aria-disabled:hover:bg-dim data-[lock=quiet]:aria-disabled:focus-visible:outline-surface data-[lock=quiet]:aria-disabled:focus-visible:-outline-offset-3',
   default:
     'data-[lock=quiet]:aria-disabled:bg-control data-[lock=quiet]:aria-disabled:text-ink data-[lock=quiet]:aria-disabled:hover:bg-line-strong',
   ghost: 'data-[lock=quiet]:aria-disabled:text-sub',

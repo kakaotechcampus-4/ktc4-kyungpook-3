@@ -530,3 +530,67 @@ def test_upload_allowed_while_chat_meeting_processing(db, seed):
     r = _upload(seed, [seed["pm"].member_id])
 
     assert r.status_code == 202, r.text
+
+
+# 본문 크기 제한(upload_limit). 인증과 핸들러보다 먼저, 본문을 다 받기 전에 413 으로 끊는다
+def _post_upload(seed, *, content=None, cookie=None, headers=None):
+    c = TestClient(app, base_url="https://testserver")
+    if cookie:
+        c.cookies.set("session_token", cookie)
+    url = f"/api/v1/workspaces/{seed['ws'].workspace_id}/meetings/upload"
+    if content is None:
+        return c.post(
+            url,
+            data={"title": "주간 회의", "attendee_member_ids": [seed["pm"].member_id]},
+            files={"file": ("회의.wav", AUDIO, "audio/wav")},
+        )
+    return c.post(url, content=content, headers=headers)
+
+
+@pytest.fixture
+def tiny_limit(monkeypatch):
+    from app.core import upload_limit
+
+    monkeypatch.setenv("UPLOAD_MAX_BYTES", "100")
+    monkeypatch.setattr(upload_limit, "MULTIPART_OVERHEAD_BYTES", 0)
+
+
+@pytest.mark.parametrize("cookie", [None, "pm-token"])
+def test_body_over_limit_by_content_length_gets_413_before_auth(db, seed, tiny_limit, cookie):
+    r = _post_upload(seed, cookie=cookie)
+
+    # 로그인하지 않은 요청도 401 이 아니라 413 이다. 인증보다 먼저 끊기 때문이다
+    assert r.status_code == 413, r.text
+    assert r.json() == {
+        "data": None,
+        "error": {
+            "code": "AUDIO_TOO_LARGE",
+            "message": "오디오 파일 용량이 너무 큽니다.",
+            "details": {"max_bytes": 100},
+        },
+    }
+    assert _meetings(db) == []
+    assert not _upload_root().exists()
+
+
+def test_body_over_limit_without_content_length_gets_413(db, seed, tiny_limit):
+    def chunks():
+        for _ in range(10):
+            yield b"x" * 50
+
+    r = _post_upload(seed, content=chunks(), headers={"content-type": "multipart/form-data; boundary=b"})
+
+    assert r.status_code == 413, r.text
+    assert r.json()["error"]["code"] == "AUDIO_TOO_LARGE"
+    assert _meetings(db) == []
+
+
+def test_body_under_limit_without_login_still_gets_401(db, seed):
+    assert _post_upload(seed).status_code == 401
+
+
+def test_other_routes_ignore_upload_body_limit(db, seed, tiny_limit):
+    c = TestClient(app, base_url="https://testserver")
+    r = c.post("/api/v1/auth/login", json={"email": "pm@example.com", "password": "x" * 500})
+
+    assert r.status_code != 413, r.text

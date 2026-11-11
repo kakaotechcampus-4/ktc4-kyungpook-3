@@ -1,6 +1,13 @@
 import { expect, test } from '@playwright/test'
 import type { Page, Response } from '@playwright/test'
-import { expectAudioReady, expectMinutesOpened, SHORT_AUDIO, start } from './support'
+import {
+  capture,
+  expectAudioReady,
+  expectMinutesOpened,
+  expectNoHorizontalOverflow,
+  SHORT_AUDIO,
+  start,
+} from './support'
 
 /*
  * M5 U6-2 — 회의 올리기 → 정리 → 회의록. 상태는 MSW 시나리오(shared/mock/scenarios.ts)로만 만든다.
@@ -8,7 +15,8 @@ import { expectAudioReady, expectMinutesOpened, SHORT_AUDIO, start } from './sup
  *
  * - meeting-instant: 업로드 뒤 첫 상세 조회에 정리가 끝난다(인위적 지연 없음)
  * - meeting-notion-not-connected: meeting-instant 와 같고 Notion 을 연결하지 않았다. Notion 은 선택 기능이다(D-182)
- * - meeting-demo: 상세 조회마다 한 단계씩 간다. 앱의 3초 polling 으로 대기·세 단계·넘기기 + 완료를 밟는다(#483) — 정리 중에 다른 화면으로
+ * - meeting-demo: 상세 조회마다 AI 보고 하나씩 간다. 앱의 3초 polling 으로 대기·stt 넷(수치 없음·0/5·3/5·5/5)·sources·extract·넘기기 + 완료,
+ *   아홉 번(대기 1 + 보고 7 + 완료 1) 조회한다(#483) — 정리 중에 다른 화면으로
  *   떠날 틈이 있어야 하는 ② 에만 쓴다. instant 는 처리 화면이 첫 조회에서 끝을 보고 회의록으로 옮겨 그 틈이 없다(U4-5)
  * - meeting-fail: 첫 상세 조회에 실패로 끝난다(일반 실패, D-092)
  * - meeting-member: ws_01 의 일반 팀원
@@ -16,9 +24,10 @@ import { expectAudioReady, expectMinutesOpened, SHORT_AUDIO, start } from './sup
 
 /*
  * 한 테스트가 lazy 화면 셋(회의 올리기·처리·회의록)을 지난다. 개발 서버는 처음 요청받은 화면을 그때 변환해서, 병렬로 처음 돌 때
- * 한 테스트가 기본 30초에 닿았다(27초 관찰, 따뜻한 서버에서는 8~15초). 단언 한도는 그대로 두고 테스트 전체 한도만 늘린다 (F-r3)
+ * 한 테스트가 기본 30초에 닿았다(27초 관찰, 따뜻한 서버에서는 8~15초). 단언 한도는 그대로 두고 테스트 전체 한도만 늘린다 (F-r3).
+ * meeting-demo 는 끝나기까지 3초 × 9번 조회라 ②·⑩ 만으로 27초를 기다린다 (#483)
  */
-test.describe.configure({ timeout: 60_000 })
+test.describe.configure({ timeout: 90_000 })
 
 /** lazy 화면으로 옮긴 뒤 첫 단언 — 개발 서버가 그 화면을 처음 변환하는 동안 기본 5초를 넘길 때가 있다 (support.start 와 같은 까닭) */
 const FIRST_PAINT = { timeout: 15_000 }
@@ -151,9 +160,9 @@ test('② 정리 중에 다른 화면으로 가면 진행 토스트가 따라오
     .click()
   await expect(processing.getByRole('button', { name: '자세히 보기' })).toBeVisible()
 
-  // 앱 수준 추적기가 polling 을 이어 간다(3초 간격, 대기·세 단계·넘기기 + 완료, #483). 다른 화면이라 옮기지 않고 토스트만 완료로 바뀐다 (U4-1, U4-5)
+  // 앱 수준 추적기가 polling 을 이어 간다(3초 간격, 대기 1 + 보고 7 + 완료 1 의 아홉 번, #483). 다른 화면이라 옮기지 않고 토스트만 완료로 바뀐다 (U4-1, U4-5)
   const toast = signalOf(page, '회의 정리가 끝났어요')
-  await expect(toast).toBeVisible({ timeout: 25_000 })
+  await expect(toast).toBeVisible({ timeout: 40_000 })
   await expect(page).toHaveURL(`${WORKSPACE}/tasks`)
   await expect(processing).toHaveCount(0)
 
@@ -356,8 +365,9 @@ test('⑨ 멈춘 채팅 회의(chat_stalled)는 토스트·처리 화면·회의
 })
 
 /*
- * #483 — 처리 화면의 단계가 서버의 실제 처리 순서대로 바뀌고, 넘기는 중(`extracted` 참, 아직 processing)에도 마지막 단계가
- * 진행 중이다. 흐름 방식 staged 는 조회마다 서버 순서로 한 단계씩 간다(shared/mock/meetingFlow.ts readMeeting).
+ * #483 — 처리 화면의 단계가 서버 단계와 1:1 로 실제 처리 순서대로 바뀌고, 넘기는 중(`extracted` 참, 아직 processing)에도 마지막
+ * 단계가 진행 중이다. 흐름 방식 staged 는 조회마다 서버 순서로 AI 보고 하나씩 간다(shared/mock/meetingFlow.ts readMeeting).
+ * 전사 진행(stt 수치 없음·0/5·3/5·5/5)은 같은 단계라 단계 안내가 늘지 않는다
  */
 
 /** 상세 조회 주소에서 회의 ID 를 꺼낸다 */
@@ -404,11 +414,13 @@ async function warmProcessingScreen(page: Page) {
     expect((await page.request.get(module)).ok()).toBe(true)
 }
 
-test('⑩ 녹음 회의의 단계는 대기 → 텍스트로 옮기기 → 뽑아내기 순서이고, 넘기는 중에도 마지막 단계가 진행 중이다 (#483)', async ({
+test('⑩ 녹음 회의의 단계는 대기 → 텍스트로 옮기기 → 회의록 정리 → 뽑아내기 → 보내기 순서이고, 넘기는 중에도 마지막 단계가 진행 중이다 (#483)', async ({
   page,
 }) => {
   await warmProcessingScreen(page)
   const announcements = await recordStepAnnouncements(page)
+  // 모의 단계 시작 시각은 MOCK_NOW 직전이다. 실제 날짜면 경과가 수천 시간이라 시계를 MOCK_NOW 로 둔다
+  await page.clock.setFixedTime(new Date('2026-09-18T09:00:00+09:00'))
   await start(page, 'meeting-demo', UPLOAD)
   const answers: string[] = []
   let meetingId = ''
@@ -421,7 +433,7 @@ test('⑩ 녹음 회의의 단계는 대기 → 텍스트로 옮기기 → 뽑�
   const handoff = page.waitForResponse(
     async (response) =>
       meetingId !== '' && (await detailAnswer(response, meetingId)) === 'processing:111',
-    { timeout: 30_000 },
+    { timeout: 40_000 },
   )
 
   await uploadShortAudio(page)
@@ -434,15 +446,19 @@ test('⑩ 녹음 회의의 단계는 대기 → 텍스트로 옮기기 → 뽑�
   await expect(steps).toHaveText([
     /차례 기다리는 중\s*완료/,
     /음성을 텍스트로 옮기기\s*완료/,
-    /결정사항과 할 일 뽑아내기\s*진행 중/,
+    /회의록 정리하기\s*완료/,
+    /결정사항과 할 일 뽑아내기\s*완료/,
+    /정리 결과 보내기\s*방금 시작\s*진행 중/,
   ])
-  await expect(steps.nth(2)).toHaveAttribute('aria-current', 'step')
+  await expect(steps.nth(4)).toHaveAttribute('aria-current', 'step')
 
   await expectMinutesOpened(page, 20_000)
   expect(await announcements()).toEqual([
-    '0 / 3 단계 완료 · 차례 기다리는 중 진행 중',
-    '1 / 3 단계 완료 · 음성을 텍스트로 옮기기 진행 중',
-    '2 / 3 단계 완료 · 결정사항과 할 일 뽑아내기 진행 중',
+    '0 / 5 단계 완료 · 차례 기다리는 중 진행 중',
+    '1 / 5 단계 완료 · 음성을 텍스트로 옮기기 진행 중',
+    '2 / 5 단계 완료 · 회의록 정리하기 진행 중',
+    '3 / 5 단계 완료 · 결정사항과 할 일 뽑아내기 진행 중',
+    '4 / 5 단계 완료 · 정리 결과 보내기 진행 중',
   ])
   expect(answers).toEqual(
     expect.arrayContaining(['processing:100', 'processing:110', 'processing:111', 'done:111']),
@@ -470,4 +486,47 @@ test('⑪ 채팅 회의는 대화 모으기 → 뽑아내기 두 단계이고, �
     '0 / 2 단계 완료 · 대화 모으기 진행 중',
     '1 / 2 단계 완료 · 결정사항과 할 일 뽑아내기 진행 중',
   ])
+})
+
+test('⑫ 요약이 승인을 기다리면 PM 은 남은 건수를 보고, 하나를 반려하고 돌아오면 건수가 준다 (#551)', async ({
+  page,
+}, testInfo) => {
+  await start(page, 'minutes-awaiting-approval', `${WORKSPACE}/meetings/mt_09`)
+  const summary = page.getByRole('tabpanel')
+  await expect(summary.getByText('승인이 끝나면 요약이 만들어져요')).toBeVisible()
+  await expect(
+    summary.getByText('승인 대기 3건이 남았어요. 발언은 전사문에서 볼 수 있어요.'),
+  ).toBeVisible()
+  await capture(page, testInfo, 'awaiting-pm.png')
+
+  await page.getByRole('tab', { name: /추출된 일/ }).click()
+  await page
+    .getByRole('tabpanel')
+    .getByRole('link', { name: /확인하기$/ })
+    .first()
+    .click()
+  await page.getByRole('button', { name: '반려', exact: true }).click()
+  await expect(page.getByTestId('approval-result')).toHaveText(/^반려했어요/)
+
+  await page.goBack()
+  await page.getByRole('tab', { name: '요약' }).click()
+  await expect(
+    page
+      .getByRole('tabpanel')
+      .getByText('승인 대기 2건이 남았어요. 발언은 전사문에서 볼 수 있어요.'),
+  ).toBeVisible()
+  await capture(page, testInfo, 'awaiting-pm-after-reject.png')
+})
+
+test('⑬ 요약이 승인을 기다리면 일반 팀원은 같은 문구를 건수 없이 본다 (#551)', async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await start(page, 'minutes-awaiting-approval-member', `${WORKSPACE}/meetings/mt_09`)
+  const summary = page.getByRole('tabpanel')
+  await expect(summary.getByText('승인이 끝나면 요약이 만들어져요')).toBeVisible()
+  await expect(summary.getByText('발언은 전사문에서 볼 수 있어요.', { exact: true })).toBeVisible()
+  await expect(summary.getByText(/승인 대기/)).toHaveCount(0)
+  await expectNoHorizontalOverflow(page)
+  await capture(page, testInfo, 'awaiting-member-390.png')
 })

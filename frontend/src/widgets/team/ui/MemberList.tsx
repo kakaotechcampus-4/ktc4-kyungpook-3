@@ -23,7 +23,7 @@ const STATUS =
 const RISK_LABEL: Record<MemberRisk, string> = { danger: '위험', warn: '주의', normal: '정상' }
 const RISK_CLASS: Record<MemberRisk, string> = {
   danger: 'bg-accent-badge text-accent',
-  warn: 'bg-ink text-surface',
+  warn: 'bg-ink-solid text-surface',
   normal: 'bg-control text-sub',
 }
 

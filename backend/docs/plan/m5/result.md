@@ -188,3 +188,35 @@ plan.md 가 비어 있어 완료조건이 없다. 아래는 전체 계획 M5 의
 - FE(이슈로 요청, 이 PR 은 frontend/ 를 고치지 않음): 원문 듣기 재생(`/api/v1/meetings/{id}/audio` 302), `minutes.audio`, `AUDIO_NOT_AVAILABLE` 처리, 주소 만료 시 `src` 재설정, `/speakers` 의 `audio` 가 done 뒤에도 보관 기간 동안 값, 방침 문구(`POLICY_VERSION` 그대로, 업로드 회의가 처리 중이면 7일을 넘길 수 있음), FE 계약.
 - AI: 이 PR 이 `ai/capture/` 와 0055(인계 즉시 wav 삭제)의 후속 동작을 바꿨다. 결정 기록은 [0066](../../../../ai/docs/basis_for_decision/ai/2026-11-10-0066-mix-discord-audio-and-upload-to-be.md)이다.
 - 인프라: 버킷·lifecycle·전용 IAM 사용자(개인 AWS 계정, 준비함)와 운영 `.env`·Caddy CSP `media-src` 는 [배포 안내](../../../../deploy/README.md#회의-녹음-s3-준비)의 체크리스트다. 처리 중 업로드가 없을 때 `UPLOAD_STORAGE=s3` 로 전환한다.
+
+## 2026-11-11 추가: 업로드 본문 크기를 받는 동안 끊기
+
+### 작업 근거와 구현
+
+사용자는 녹음 업로드 경로의 보안 수정을 요청했다. M5 plan.md 는 비어 있어 이 지시를 작업 근거로 삼고 마일스톤 완료는 판정하지 않는다.
+
+FastAPI 는 multipart 본문을 끝까지 받아 임시 파일에 쓴 뒤에 인증과 핸들러를 돈다. 그래서 핸들러의 200MiB 검사는 본문을 다 받은 뒤에야 돌았고, 로그인하지 않은 요청도 본문을 끝까지 보낸 뒤에 401 을 받았다.
+
+| 변경 | 위치 |
+|---|---|
+| `POST /api/v1/workspaces/{id}/meetings/upload` 에만 붙는 순수 ASGI 미들웨어. 한도는 `UPLOAD_MAX_BYTES` + 1MiB(multipart 머리 몫). `Content-Length` 가 한도를 넘으면 본문을 읽지 않고 413, 없거나 작게 적힌 요청은 받는 동안 바이트를 세다 넘는 순간 앱에 넘기지 않고 413. 응답은 기존 `AUDIO_TOO_LARGE` 봉투, `details` 는 `max_bytes` 만, `connection: close` | [upload_limit.py](../../../app/core/upload_limit.py), [main.py](../../../app/main.py) |
+| 핸들러의 파일 크기 검사(413, `size_bytes`·`max_bytes`)는 그대로 둔다. 파일이 한도를 조금 넘는 요청은 지금처럼 핸들러가 거절한다 | [workspaces.py](../../../app/api/workspaces.py) `upload_meeting` |
+| 리버스 프록시에서도 이 경로 본문을 막으라는 안내 | [배포 문서](../../../../docs/dev/deploy.md) |
+
+리버스 프록시만으로 막는 안, 핸들러가 직접 스트림을 읽는 안과 비교한 근거는 [결정 기록](basis-for-decision/2026-11-11-upload-body-limit.md)에 있다. 인증보다 먼저 끊으므로 한도를 넘는 요청은 로그인 여부와 상관없이 401 이 아니라 413 이다. 프론트는 이미 200MiB 를 넘는 파일을 보내지 않는다.
+
+### 검증
+
+2026-11-11 로컬(macOS, Python 3.12.13)에서 실행했다.
+
+- 새 테스트 `tests/api/test_upload_body_limit.py`(미들웨어를 ASGI 로 바로 부름): `Content-Length` 초과는 본문을 읽지 않고 413, 끝없이 오는 조각은 한도를 넘는 조각에서 멈추고 앱에 그 조각을 넘기지 않음, 앱이 본문 오류로 400 을 보내도 413 하나만 나감, 한도와 같은 본문은 통과, 다른 경로·GET 은 그대로
+- `tests/api/test_meeting_upload.py` 에 앱 전체로 4개: 로그인 안 함·PM 둘 다 413 이고 회의·업로드 폴더가 생기지 않음, `Content-Length` 없는 본문 413, 한도 안의 비로그인 요청은 그대로 401, 다른 경로(로그인)는 413 이 아님
+- 미들웨어 등록을 빼면 앱 전체 413 테스트 3개가, 응답 바꿔치기를 빼면 `Content-Length` 없는 본문 테스트 2개가 실패하는 것을 확인했다. 후자는 FastAPI 가 본문 읽기 오류를 400 `INVALID_REQUEST` 로 바꾸기 때문이다
+- uvicorn 을 띄워 curl 로 확인(`UPLOAD_MAX_BYTES=1000000`, 로그인 안 함): 50MB `Content-Length` 요청은 0바이트 보낸 채 413, chunked 로 50MB 파일을 보내면 약 3.3MB 보낸 뒤 413, 1MB 파일은 401
+- `.venv/bin/python -m pytest -q`: 3430 passed, 2464 skipped. 건너뛴 것은 PostgreSQL 이 있어야 도는 테스트다. `ruff check .`: 통과
+
+### 남은 작업과 제한 사항
+
+- 한도는 요청 하나 단위다. 한도 안의 본문은 지금처럼 인증 전에 임시 파일로 받으므로, 동시에 여러 요청이 오면 요청마다 약 201MiB 까지 디스크를 쓸 수 있다. 연결 수와 느린 전송은 이 코드가 막지 않는다
+- 리버스 프록시(Caddy) 설정은 저장소에 없어 바꾸지 않았다. 배포 문서에 이 경로 본문 상한(약 210MB)을 두라고 적었고, 서버에 적용됐는지는 확인하지 않았다
+- 실서버와 PostgreSQL 변형은 이번에 돌리지 않았다

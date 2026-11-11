@@ -31,8 +31,10 @@ import type { MockReplies } from './reply-state'
 /**
  * 처리 중 회의를 상세 조회(`GET /meetings/{id}`)가 어떻게 진행시키는가. 진행 규칙은 meetingFlow.ts 에 있다.
  * - `manual`: 저절로 바뀌지 않는다. 테스트가 `advanceMeeting` 등으로 직접 바꾼다 — Vitest 와 기존 시나리오의 기본값
- * - `staged`: 조회마다 한 단계. 서버 순서대로 녹음은 대기 → `audio_merged`(stt) → `transcribed`(sources) → `extracted`(handoff, 아직 processing) → `done`,
- *   채팅은 대기 → 앞 두 값(발화 저장) → `extracted` → `done` 이다 (#483). 브라우저 데모용
+ * - `staged`: 조회마다 AI 보고 하나. 녹음은 대기 → stt(수치 없음) → 0/5 → 3/5 → 5/5 → sources → extract → handoff(아직 processing) → `done` 이고
+ *   `progress` 는 보고한 단계에서 서버처럼 얻는다. 채팅은 단계를 알리지 않아 대기 → 앞 두 값(발화 저장) → `extracted` → `done` 이다 (#483).
+ *   상세 응답의 `processing` 은 BE `_processing` 처럼 정리 중일 때만 객체다. 브라우저 데모용
+ * - `staged-legacy`: #542 전 서버. 조회마다 `progress` 한 단계(녹음 대기 → stt → sources → handoff → `done`)이고 상세 응답에 `processing` 키가 없다
  * - `instant`: 첫 조회에 바로 `done`. 인위적 지연이 없다 — E2E 용
  * - `fail`: 첫 조회에 `failed`
  * - `fail-unclaimed`: 첫 조회에 `failed`(`upload_unclaimed`)다. 24시간 동안 AI 가 가져가지 않은 업로드를 BE sweeper 가 끝낸 것을 흉내 낸다 (#598)
@@ -42,6 +44,7 @@ import type { MockReplies } from './reply-state'
 export type MeetingFlowMode =
   | 'manual'
   | 'staged'
+  | 'staged-legacy'
   | 'instant'
   | 'fail'
   | 'fail-diarize'
@@ -53,6 +56,7 @@ export type MeetingFlowMode =
 export const MEETING_FLOW_MODES = [
   'manual',
   'staged',
+  'staged-legacy',
   'instant',
   'fail',
   'fail-diarize',
@@ -234,6 +238,8 @@ export interface MockDb {
   /** #428 모의 Discord 서버의 텍스트 채널. 팀원 목록(`discordUsers`)처럼 서버가 하나라 어느 공간이든 연결하면 이 목록이다 */
   discordChannels: MockDiscordChannel[]
   meetingDeletions: MockMeetingDeletion[]
+  /** 팀원이 고친 제목의 처음 제목. 회의 ID 별이고 고친 적 없으면 없다 (BE Meeting.title_original·title_edited_at, #551) */
+  titleEdits: Record<string, { original: string | null }>
   meetings: typeof meetingFixtures
   meetingSummaries: typeof meetingSummaryFixtures
   minutes: typeof minutesFixtures
@@ -303,6 +309,7 @@ export function initialDb(): MockDb {
     integrations: structuredClone(integrationFixtures),
     discordChannels: structuredClone(discordChannelFixtures),
     meetingDeletions: [],
+    titleEdits: {},
     meetings: structuredClone(meetingFixtures),
     meetingSummaries: structuredClone(meetingSummaryFixtures),
     minutes: structuredClone(minutesFixtures),

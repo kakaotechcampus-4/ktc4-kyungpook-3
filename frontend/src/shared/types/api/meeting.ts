@@ -48,6 +48,22 @@ export const meetingSchema = z.object({
   progress: z
     .object({ audio_merged: z.boolean(), transcribed: z.boolean(), extracted: z.boolean() })
     .nullish(),
+  // #542 전 서버는 없다. 없으면 녹음 회의 단계를 `progress` 만으로 세 단계로 그릴 수 있어, 모양이 틀리면 응답을 거절하지 않고
+  // 없는 것으로 본다(D-184). 정리 중일 때만 객체다
+  processing: z
+    .object({
+      stage: z.string().nullable(),
+      stage_at: z.string().nullable(),
+      stt: z
+        .object({ done: z.number().int().min(0), total: z.number().int().min(1) })
+        .refine(({ done, total }) => done <= total)
+        .nullable(),
+    })
+    .nullish()
+    .catch(({ input }) => {
+      if (import.meta.env.DEV) console.warn('Invalid meeting processing:', input)
+      return null
+    }),
 })
 export type MeetingDto = z.infer<typeof meetingSchema>
 

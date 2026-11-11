@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { meetingFailure, meetingListQueryOptions, toMinutesList } from '@/entities/meeting'
 import type { MeetingSummary, MinutesList } from '@/entities/meeting'
+import { FirstMeetingHint, QuickGuideButton } from '@/features/quick-guide'
 import { paths } from '@/shared/config/routes'
 import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
@@ -35,10 +36,13 @@ const STATUS_BADGE =
   'inline-flex h-18 shrink-0 items-center gap-5 rounded-6 bg-control px-6 text-[10.5px] leading-none font-semibold text-sub'
 /* 업로드 진입. PM 만 본다 — 캔버스의 검색 자리다(검색은 범위 밖) */
 const UPLOAD_LINK =
-  'inline-flex h-32 items-center gap-6 rounded-9 bg-ink px-12 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
+  'inline-flex h-32 items-center gap-6 rounded-9 bg-ink-solid px-12 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
 const EMPTY_PAGE = 'flex flex-1 items-center justify-center px-48 pt-48 pb-96 max-md:px-20'
 const EMPTY_UPLOAD =
-  'inline-flex h-40 items-center justify-center rounded-9 bg-ink px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
+  'inline-flex h-40 items-center justify-center rounded-9 bg-ink-solid px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
+/* 업로드 옆의 보조 액션. 같은 높이의 컨트롤 면이다 */
+const EMPTY_GUIDE =
+  'inline-flex h-40 items-center justify-center rounded-9 bg-control px-20 text-body font-semibold text-ink hover:bg-line-strong'
 
 export interface MeetingMinutesProps {
   workspaceId: string
@@ -193,21 +197,24 @@ export function MeetingMinutes({
 
 function MinutesEmpty({ workspaceId, isPm }: { workspaceId: string; isPm: boolean }) {
   // 캔버스의 `텍스트로 붙여넣기` 는 범위 밖이라 없다 (계획 §1). 업로드 CTA 는 PM 만 (U5-2)
+  const guide = <QuickGuideButton className={EMPTY_GUIDE}>방법 보기</QuickGuideButton>
   return isPm ? (
     <EmptyState
       title="아직 올린 회의가 없어요"
-      description="녹음 파일을 올리면 결정된 것과 담당자, 마감을 정리해 드려요."
+      description={
+        <>
+          <FirstMeetingHint /> 만나서 회의했다면 녹음 파일을 올려도 돼요.
+        </>
+      }
       action={
         <GuardedLink to={paths.meetingUpload(workspaceId)} className={EMPTY_UPLOAD}>
           회의 올리기
         </GuardedLink>
       }
+      secondaryAction={guide}
     />
   ) : (
-    <EmptyState
-      title="아직 올린 회의가 없어요"
-      description="PM이 회의를 올리거나 Discord 회의가 정리되면 여기에서 회의록을 볼 수 있어요."
-    />
+    <EmptyState title="아직 올린 회의가 없어요" description={<FirstMeetingHint />} action={guide} />
   )
 }
 
@@ -323,7 +330,7 @@ function InProgressRow({ workspaceId, meeting }: { workspaceId: string; meeting:
         <span className="flex-1 text-body text-sub group-hover:text-ink">{title}</span>
         <SourceBadge meeting={meeting} />
         <span className={STATUS_BADGE}>
-          <span aria-hidden="true" className="size-5 shrink-0 rounded-999 bg-ink" />
+          <span aria-hidden="true" className="size-5 shrink-0 rounded-999 bg-ink-solid" />
           {status.label}
         </span>
       </span>

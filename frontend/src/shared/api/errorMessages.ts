@@ -44,7 +44,10 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
   TASK_HISTORY_NOT_FOUND: '변경 기록을 찾을 수 없어요.',
   TASK_HISTORY_ALREADY_ROLLED_BACK: '이미 되돌린 변경이에요.',
   TOPIC_NOT_FOUND: '주제를 찾을 수 없어요. 지워졌을 수 있어요.',
+  TOPIC_NAME_TAKEN: '같은 이름의 주제가 이미 있어요.',
+  DECISION_NOT_FOUND: '결정을 찾을 수 없어요. 지워졌을 수 있어요.',
   SUMMARY_NOT_FOUND: '이 회의의 요약본이 아직 없어요.',
+  TRANSCRIPT_LINE_NOT_FOUND: '발화를 찾을 수 없어요.',
   INTERNAL_ERROR: '서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
   UNAUTHENTICATED: '로그인이 필요해요.',
   FORBIDDEN: '접근 권한이 없어요.',
@@ -95,6 +98,7 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
   KAKAO_ALREADY_LINKED: '이미 다른 계정에 연결된 카카오 계정이에요.',
   USERNAME_TAKEN: '이미 사용 중인 아이디예요.',
   TOO_MANY_LOGIN_ATTEMPTS: '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.',
+  AUDIO_NOT_AVAILABLE: '들을 수 있는 녹음이 없어요.',
 }
 
 const CLIENT_MESSAGES: Record<ClientErrorCode, string> = {

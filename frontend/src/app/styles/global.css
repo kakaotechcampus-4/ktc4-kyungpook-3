@@ -72,7 +72,7 @@
   }
 
   ::selection {
-    background: var(--color-ink);
+    background: var(--color-ink-solid);
     color: var(--color-surface);
   }
 

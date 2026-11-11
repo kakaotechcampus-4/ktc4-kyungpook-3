@@ -8,10 +8,12 @@
 
 명령
   /join     명령한 사람이 있는 음성 채널에 봇 입장
-  /record   화자별 트랙 녹음 시작. 채널에 "녹음·전사 중" 을 알리고 BE 에 회의를 만든다
+  /record   화자별 트랙 녹음 시작. 채널에 "녹음·전사 중" 을 알리며 방에 있는 사람을 부르고 BE 에 회의를 만든다
   /stop     녹음 종료. 트랙을 닫고 저장한 뒤 워커를 찌른다. 처리 진행은 워커가 이 채널에 알린다
   /leave    음성 채널 퇴장 (녹음 중에는 거절)
   /end      자기 녹음의 저장까지 끝나면 퇴장. 그 사이 새 녹음이 시작됐으면 남는다
+  /record /stop /leave /end 는 봇이 있는 음성 채널에 들어와 있는 사람만 쓴다. 다른 방이나 글 채널에서만
+            보는 사람이 남의 회의를 녹음하거나 끊지 못하게 한다
   /gpu      GPU 전사 서버 켜기·끄기 요청과 상태(#530). 비공개 운영 채널(MM_OPS_CHANNEL_ID)에서 친 명령만 받는다
 
 녹음은 StreamingSink + TrackWriter 다. 패킷을 받는 즉시 16kHz 모노로 바꿔 화자별 wav 에 흘리고
@@ -71,6 +73,7 @@ NOTICE = ("🔴 녹음·전사 중입니다. 이 음성 채널의 말은 화자�
 # 봇은 서버에 있는데 웹에서 이 서버를 워크스페이스에 연결하지 않았다(#199). /record 는 녹음하지 않고 이렇게 답한다
 NOT_CONNECTED_REFUSED = ("⚠️ 이 디스코드 서버가 웹 워크스페이스에 연결돼 있지 않아 녹음을 시작하지 않았습니다. "
                          "PM 이 웹 온보딩의 디스코드 연결 단계에서 이 서버를 연결한 뒤 다시 `/record` 해 주세요.")
+NOT_IN_VOICE_REFUSED = "봇이 있는 음성채널에 들어와 있는 사람만 쓸 수 있습니다."
 DEPLOYING_NOTICE = "⏳ 새 버전을 배포하느라 봇이 곧 다시 시작됩니다. 1분쯤 뒤에 다시 `/record` 해 주세요."
 FLUSH_EVERY_S = 0.2   # 재정렬 창에 갇힌 마지막 패킷을 이 주기로 비운다. 패킷은 20ms 마다 온다
 RESUME_NOTICE = ("⚠️ 봇이 다시 시작되어 끊긴 회의의 녹음된 부분을 처리합니다. "
@@ -86,6 +89,28 @@ def is_recording(vc) -> bool:
     if callable(fn):
         return bool(fn())
     return bool(getattr(vc, "recording", False))
+
+
+def in_bot_voice_channel(ctx) -> bool:
+    """명령한 사람이 봇과 같은 음성 채널에 있는가. 녹음 중에는 방을 옮길 수 없어 봇의 방이 곧 녹음 중인 방이다."""
+    vc = ctx.voice_client
+    voice = getattr(ctx.author, "voice", None)
+    room = getattr(voice, "channel", None)
+    return vc is not None and room is not None and room.id == vc.channel.id
+
+
+def notice_with_mentions(members) -> tuple[str, list]:
+    """녹음 시작 공지. 이미 방에 있는 사람(봇 제외)을 앞에 부른다. 메시지 상한을 넘는 사람은 뺀다. (글, 부른 사람)"""
+    limit = 2000                       # 디스코드 메시지 한 개의 글자 수 상한
+    size, called = len(NOTICE), []
+    for m in members:
+        if getattr(m, "bot", False):
+            continue
+        if size + len(m.mention) + 1 > limit:
+            break
+        size += len(m.mention) + 1
+        called.append(m)
+    return "".join(f"{m.mention} " for m in called) + NOTICE, called
 
 
 def required_intents() -> discord.Intents:
@@ -187,6 +212,8 @@ class RecordingCog(discord.Cog):
         vc = ctx.voice_client
         if vc is None or not vc.is_connected():
             return "봇이 음성채널에 없습니다. `/join` 먼저 실행해 주세요."
+        if not in_bot_voice_channel(ctx):
+            return NOT_IN_VOICE_REFUSED
         if is_recording(vc) or ctx.guild.id in self._active:
             return "이미 녹음 중입니다. `/stop` 으로 먼저 종료하세요."
         return None
@@ -280,7 +307,10 @@ class RecordingCog(discord.Cog):
         finally:
             restart.release()
         rec.flush_task = asyncio.create_task(self._flush_loop(rec))
-        await ctx.respond(NOTICE)
+        # 이미 방에 있는 사람도 늦게 들어온 사람처럼 불러서 녹음 중인 것을 안다. 부른 사람은 다시 들어와도 또 부르지 않는다
+        notice, called = notice_with_mentions(getattr(vc.channel, "members", None) or [])
+        rec.notified.update(m.id for m in called)
+        await ctx.respond(notice)
         # BE 에 회의를 먼저 만들어 둔다. 실패해도 녹음은 계속되고 처리할 때 다시 한다
         if handoff is not None and rec.workspace_id:
             try:
@@ -297,6 +327,9 @@ class RecordingCog(discord.Cog):
         if vc is None or not is_recording(vc) or ctx.guild.id not in self._active:
             await ctx.respond("진행 중인 녹음이 없습니다.", ephemeral=True)
             return
+        if not in_bot_voice_channel(ctx):
+            await ctx.respond(NOT_IN_VOICE_REFUSED, ephemeral=True)
+            return
         # 먼저 답한다. stop_recording() 은 동기이고 라우터 join 에 최대 5초를 쓴다
         await ctx.respond("⏹ 녹음 종료. 트랙을 닫고 저장합니다. 처리 진행이 이 채널에 올라옵니다.")
         vc.stop_recording()
@@ -306,6 +339,9 @@ class RecordingCog(discord.Cog):
         vc = ctx.voice_client
         if vc is None:
             await ctx.respond("봇이 음성채널에 없습니다.", ephemeral=True)
+            return
+        if not in_bot_voice_channel(ctx):
+            await ctx.respond(NOT_IN_VOICE_REFUSED, ephemeral=True)
             return
         if is_recording(vc) or ctx.guild.id in self._active:
             await ctx.respond("녹음 중입니다. 먼저 `/stop` 으로 종료하거나, 저장까지 기다렸다가 나가려면 `/end` 를 사용하세요.",
@@ -319,6 +355,9 @@ class RecordingCog(discord.Cog):
         vc = ctx.voice_client
         if vc is None:
             await ctx.respond("봇이 음성채널에 없습니다.", ephemeral=True)
+            return
+        if not in_bot_voice_channel(ctx):
+            await ctx.respond(NOT_IN_VOICE_REFUSED, ephemeral=True)
             return
         rec = self._active.get(ctx.guild.id)
         waiting = [r for r in self._processing.values() if r.guild_id == ctx.guild.id]

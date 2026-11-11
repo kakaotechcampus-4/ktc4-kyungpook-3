@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
+import { useSearchParams } from 'react-router'
 import { pendingApprovalListQueryOptions } from '@/entities/approval'
 import { extractionQueryOptions } from '@/entities/extraction'
 import {
@@ -14,13 +15,14 @@ import {
 import type { Meeting, MeetingSummary } from '@/entities/meeting'
 import { minutesQueryOptions } from '@/entities/minutes'
 import type { Minutes } from '@/entities/minutes'
+import { MeetingRecording, startSecondsFrom } from '@/features/meeting-audio'
 import { MeetingDelete } from '@/features/meeting-delete'
 import { SPEAKERS_NEEDED_ACTION, SPEAKERS_NEEDED_TITLE } from '@/features/meeting-processing'
 import { SummaryDownloadButton } from '@/features/summary-download'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
-import { paths } from '@/shared/config/routes'
+import { MEETING_PARAMS, paths } from '@/shared/config/routes'
 import { formatSeoulDateTime } from '@/shared/lib/date'
-import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { GuardedLink, guardLeave } from '@/shared/lib/unsaved-changes'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import type { LoadingIndicator } from '@/shared/lib/loading-indicator'
 import { MinutesDetailSkeleton } from '@/shared/ui/page-skeleton'
@@ -30,6 +32,7 @@ import { MINUTES_DIM_DELAY_MS } from '../model/useShownMeeting'
 import { SummaryPanel, TasksPanel, TranscriptPanel } from './MinutesBody'
 import type { ReviewState, TasksState } from './MinutesBody'
 import { ATTENDEE_ROW, AttendeeRow, CHIP } from './AttendeeRow'
+import { EditableTitle } from './MinutesEditing'
 import { MinutesTabs } from './MinutesTabs'
 import { MinutesTitle } from './MinutesTitle'
 
@@ -49,7 +52,7 @@ const HELD_BODY_STYLE = { transitionDelay: `${MINUTES_DIM_DELAY_MS}ms` }
 const NOTICE = 'flex flex-col items-start gap-10 px-36 pt-44 pb-56 max-md:px-20'
 const NOTICE_TEXT = 'text-body text-sub'
 const LINK =
-  'inline-flex h-36 items-center justify-center rounded-9 bg-ink px-16 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
+  'inline-flex h-36 items-center justify-center rounded-9 bg-ink-solid px-16 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
 
 type TabId = 'summary' | 'transcript' | 'tasks'
 
@@ -89,7 +92,8 @@ function Head({
   action,
   children,
 }: {
-  title: string
+  /** 글이면 읽기만 하는 제목, 노드면 그 제목 줄(고치기)이다 */
+  title: string | ReactNode
   meta: string
   source: MeetingSummary['source']
   action?: ReactNode
@@ -97,7 +101,11 @@ function Head({
 }) {
   return (
     <header className={HEAD}>
-      <MinutesTitle title={title === '' ? '제목 없는 회의' : title} />
+      {typeof title === 'string' ? (
+        <MinutesTitle title={title === '' ? '제목 없는 회의' : title} />
+      ) : (
+        title
+      )}
       <div className={META_ROW}>
         {meta === '' ? null : <span className={`min-w-[0px] truncate ${META}`}>{meta}</span>}
         <span className={CHIP}>{sourceLabel(source)}</span>
@@ -365,6 +373,9 @@ function MinutesContent({
   action: ReactNode
 }) {
   const [tab, setTab] = useState<TabId>('summary')
+  // '원문 듣기'가 넘긴 근거 시각(ms). 녹음을 그 자리로 옮긴다 (#676)
+  const [searchParams] = useSearchParams()
+  const at = searchParams.get(MEETING_PARAMS.at)
   const extractionId = meeting.extractionId
   const extraction = useQuery({
     ...extractionQueryOptions(workspaceId, extractionId ?? ''),
@@ -409,7 +420,8 @@ function MinutesContent({
         ? 0
         : null
 
-  const title = held !== null ? held.title : minutes.title !== '' ? minutes.title : meeting.title
+  // 고친 제목과 되돌린 빈 제목은 회의록에 바로 들어온다. 회의 상세의 제목은 다시 받기 전까지 옛 값이라 쓰지 않는다
+  const title = held !== null ? held.title : minutes.title
   const momentOf = (atMs: number) => formatMoment(minutes.source, minutes.startedAt, atMs)
 
   return (
@@ -418,7 +430,16 @@ function MinutesContent({
         <SummaryHead summary={held} />
       ) : (
         <Head
-          title={title}
+          title={
+            <EditableTitle
+              key={minutes.meetingId}
+              workspaceId={workspaceId}
+              meetingId={minutes.meetingId}
+              title={title}
+              titleEdited={minutes.titleEdited}
+              titleOriginal={minutes.titleOriginal}
+            />
+          }
           meta={detailMeta(minutes.source, minutes.startedAt, minutes.durationMs)}
           source={minutes.source}
           action={action}
@@ -441,17 +462,41 @@ function MinutesContent({
         <MinutesTabs<TabId>
           label="회의록 내용"
           selected={tab}
-          onSelect={setTab}
+          // 탭을 옮기면 고치던 발화가 사라진다. 저장하지 않은 글이 있으면 먼저 묻는다
+          onSelect={(next) => guardLeave(() => setTab(next))}
+          beforePanel={
+            // 회의나 시각이 바뀌면 플레이어를 새로 만든다 — 앞 회의의 재생·위치를 이어 쓰지 않는다
+            <MeetingRecording
+              key={`${meeting.id}:${at ?? ''}`}
+              meetingId={meeting.id}
+              playable={minutes.audio !== null}
+              startAt={startSecondsFrom(at)}
+            />
+          }
           tabs={[
             {
               id: 'summary',
               label: '요약',
-              panel: <SummaryPanel summary={minutes.summary} status={minutes.summaryStatus} />,
+              panel: (
+                <SummaryPanel
+                  summary={minutes.summary}
+                  status={minutes.summaryStatus}
+                  waitingCount={minutes.summaryWaitingCount}
+                />
+              ),
             },
             {
               id: 'transcript',
               label: '전사문',
-              panel: <TranscriptPanel transcript={minutes.transcript} momentOf={momentOf} />,
+              panel: (
+                <TranscriptPanel
+                  key={minutes.meetingId}
+                  workspaceId={workspaceId}
+                  meetingId={minutes.meetingId}
+                  transcript={minutes.transcript}
+                  momentOf={momentOf}
+                />
+              ),
             },
             {
               id: 'tasks',

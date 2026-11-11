@@ -20,7 +20,7 @@ from shared.schemas import (
     TaskChange,
     TopicDraft,
 )
-from summary.prompt import COMPACT, FULL, build_prompt, local_keys
+from summary.prompt import CHAT, COMPACT, FULL, build_prompt, local_keys
 
 SUMMARY_TIMEOUT_S = 300.0           # 측정 뒤 확정. BE 임대 15분보다 짧아야 같은 회의에 돈이 두 번 들지 않는다
 REASONING_EFFORT = "low"            # 측정 뒤 확정
@@ -64,12 +64,16 @@ def parse_summary(raw: dict[str, Any], summary_input: SummaryInput, *, model_nam
         truncated_input=truncated_input,
         overview=overview,
         key_points=_texts(key_points),
-        discussion=[DiscussionBlock(_text(x.get("title")), _texts(x.get("points")))
-                    for x in _dicts(raw.get("discussion")) if _text(x.get("title"))],
+        # 일일 채팅 요약에는 논의 절이 없다. 틀이 요구하지 않았는데 모델이 쓰면 버린다
+        discussion=[] if summary_input.source == CHAT else [
+            DiscussionBlock(_text(x.get("title")), _texts(x.get("points")))
+            for x in _dicts(raw.get("discussion")) if _text(x.get("title"))],
         facts=_texts(raw.get("facts")),
+        # 항목 키가 없거나 모르는 줄은 승인 여부를 가릴 수 없어 BE 가 보이지 않는다. 보내지 않는다
         task_changes=[TaskChange(_text(x.get("task")), _text(x.get("assignee")), _text(x.get("due")),
-                                 _text(x.get("purpose")), _text(x.get("precondition")))
-                      for x in _dicts(raw.get("task_changes")) if _text(x.get("task"))],
+                                 _text(x.get("purpose")), _text(x.get("precondition")), item_keys[_text(x.get("item"))])
+                      for x in _dicts(raw.get("task_changes"))
+                      if _text(x.get("task")) and _text(x.get("item")) in item_keys],
         schedule=[ScheduleEntry(_text(x.get("when")), _text(x.get("what")))
                   for x in _dicts(raw.get("schedule")) if _text(x.get("when")) and _text(x.get("what"))],
         open_items=_texts(raw.get("open_items")),

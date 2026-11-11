@@ -272,11 +272,32 @@ def test_business_history_jobs_and_chat_cursor_are_preserved(
 
 
 def test_raw_database_copies_are_removed_in_one_delete(mdb, mseed, deleted_fixture):
-    from app.models import AliasResolutionLog, AliasReview, MeetingUpload, Notification
+    from datetime import datetime, timezone
+    from app.models import (
+        AliasResolutionLog, AliasReview, Decision, MeetingUpload, Notification, Topic, TopicAlias, TopicMeeting,
+        TopicTaskDetach,
+    )
 
+    if mdb.get_bind().dialect.name == "sqlite":
+        # 주제를 지우면 별칭과 뗀 표시가 FK 로 따라 지워지는 것을 운영 DB 처럼 본다
+        mdb.connection().exec_driver_sql("PRAGMA foreign_keys=ON")
     client, mid, tid = deleted_fixture
+    now = datetime.now(timezone.utc)
+    meeting = mdb.get(Meeting, mid)
+    meeting.title, meeting.title_original, meeting.title_edited_at = "private-576 고친 제목", "private-576", now
     source = mdb.scalar(select(Source).where(Source.meeting_id == mid))
+    source.text_edit = "private-576 고친 발화"
     extraction = mdb.scalar(select(Extraction).where(Extraction.meeting_id == mid))
+    topic = Topic(workspace_id=mseed["ws"], name="private-576", name_key="private576", edited_at=now)
+    mdb.add(topic)
+    mdb.flush()
+    decision = Decision(workspace_id=mseed["ws"], meeting_id=mid, topic_id=topic.topic_id, position=0,
+                        text="private-576", state="removed", edited_at=now)
+    mdb.add_all([
+        decision, TopicMeeting(topic_id=topic.topic_id, meeting_id=mid),
+        TopicAlias(workspace_id=mseed["ws"], name_key="옛private576", topic_id=topic.topic_id),
+        TopicTaskDetach(topic_id=topic.topic_id, task_id=tid, workspace_id=mseed["ws"]),
+    ])
     item = ExtractionItem(
         extraction_id=extraction.extraction_id,
         task_title="private-576",
@@ -323,11 +344,67 @@ def test_raw_database_copies_are_removed_in_one_delete(mdb, mseed, deleted_fixtu
         (AliasReview, review.review_id),
         (MeetingUpload, mid),
         (Notification, notification.notification_id),
+        (Decision, decision.decision_id),
+        (Topic, topic.topic_id),
+        (TopicAlias, (mseed["ws"], "옛private576")),
+        (TopicTaskDetach, (topic.topic_id, tid)),
     ]
     assert client.delete(f"/api/v1/meetings/{mid}").status_code == 202
     mdb.expire_all()
     for model, row_id in ids:
         assert mdb.get(model, row_id) is None
+    deleted = mdb.get(Meeting, mid)
+    assert (deleted.title, deleted.title_original, deleted.title_edited_at) == (None, None, None)
+
+
+@pytest.mark.parametrize("renamed", [None, "김민수 병가 처리"])
+def test_names_of_a_topic_merged_away_from_the_deleted_meeting_are_removed(mdb, mseed, monkeypatch, renamed):
+    from datetime import timedelta
+    from app.models import Topic, TopicAlias
+    from app.services import summary
+    from tests.api.test_project_map import T0, _meeting, _save
+
+    monkeypatch.setenv("MEETING_DELETION_ENABLED", "true")
+    ws = mseed["ws"]
+    private = _meeting(mdb, ws, title="1:1")
+    private.deletion_ready = True
+    mdb.commit()
+    _save(mdb, private, [{"name": "김민수 병가 private-576"}])
+    _save(mdb, _meeting(mdb, ws, started_at=T0 + timedelta(days=1)), [{"name": "인사"}])
+    ids = {t.name: t.topic_id for t in mdb.scalars(select(Topic))}
+    if renamed:
+        summary.rename_topic(mdb, ws, ids["김민수 병가 private-576"], name=renamed, description=None)
+    summary.merge_topics(mdb, ws, ids["김민수 병가 private-576"], ids["인사"])
+    mdb.commit()
+
+    meeting_deletion.delete_meeting(mdb, private.meeting_id)
+    mdb.commit()
+    mdb.expire_all()
+
+    assert list(mdb.scalars(select(TopicAlias.name_key))) == []
+
+
+def test_old_name_another_meeting_still_summarized_stays_after_a_deletion(mdb, mseed, monkeypatch):
+    from datetime import timedelta
+    from app.models import Topic, TopicAlias
+    from app.services import summary
+    from tests.api.test_project_map import T0, _meeting, _save
+
+    monkeypatch.setenv("MEETING_DELETION_ENABLED", "true")
+    ws = mseed["ws"]
+    deleted = _meeting(mdb, ws)
+    deleted.deletion_ready = True
+    mdb.commit()
+    _save(mdb, deleted, [{"name": "배포"}])
+    _save(mdb, _meeting(mdb, ws, started_at=T0 + timedelta(days=1)), [{"name": "배포"}])
+    summary.rename_topic(mdb, ws, mdb.scalar(select(Topic.topic_id)), name="인프라 배포", description=None)
+    mdb.commit()
+
+    meeting_deletion.delete_meeting(mdb, deleted.meeting_id)
+    mdb.commit()
+    mdb.expire_all()
+
+    assert list(mdb.scalars(select(TopicAlias.name_key))) == [summary.normalize_topic_name("배포")]
 
 
 def merged_card(mdb, workspace, deleted_mid):

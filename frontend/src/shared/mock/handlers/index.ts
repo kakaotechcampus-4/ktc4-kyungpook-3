@@ -8,7 +8,9 @@ import { workspaceHandlers } from './workspace'
 import { integrationHandlers } from './integration'
 import { meetingHandlers } from './meeting'
 import { speakerHandlers } from './speaker'
+import { meetingAudioHandlers } from './meetingAudio'
 import { minutesHandlers } from './minutes'
+import { minutesEditHandlers } from './minutesEdits'
 import { markdownFileHandlers } from './markdownFiles'
 import { extractionHandlers } from './extraction'
 import { taskHandlers } from './task'
@@ -34,7 +36,9 @@ export const handlers: RequestHandler[] = [
   ...integrationHandlers,
   ...meetingHandlers,
   ...speakerHandlers,
+  ...meetingAudioHandlers,
   ...minutesHandlers,
+  ...minutesEditHandlers,
   ...markdownFileHandlers,
   ...extractionHandlers,
   ...taskHandlers,

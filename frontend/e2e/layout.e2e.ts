@@ -5,7 +5,7 @@ import type { Scenario } from './support'
 
 /*
  * U5-4 레이아웃 — 주요 화면에 가로 스크롤이 없고 핵심 요소가 화면 안에 보인다. 최소 지원 폭은 360px 이다 (D-180).
- * 1024px 미만(360·390·768)은 `narrow` 인 화면만 본다. 랜딩·로그인·회원가입의 휴대폰 배치는 #478 의 다음 PR 이 한다.
+ * 1024px 미만(360·390·768)은 `narrow` 인 화면만 본다. 로그인·회원가입의 휴대폰 배치는 #478 의 다음 PR 이 한다.
  * 768px 은 휴대폰 셸과 데스크톱 셸의 경계라 한 번 본다.
  * 화면마다 스크린샷을 테스트 결과에 붙인다(playwright-report).
  */
@@ -30,7 +30,14 @@ const SCREENS: {
   /** 데이터 본문(또는 빈 상태)이 그려졌다는 표지. 제목은 불러오는 중에도 보여 그것만으로는 넘침을 잴 때가 아니다 */
   ready?: (page: Page) => Locator
 }[] = [
-  { name: '랜딩', role: 'link', scenario: 'signed-out', path: '/', landmark: '시작하기' },
+  {
+    name: '랜딩',
+    role: 'link',
+    scenario: 'signed-out',
+    path: '/',
+    landmark: '시작하기',
+    narrow: true,
+  },
   { name: '로그인', role: 'button', scenario: 'signed-out', path: '/login', landmark: '로그인' },
   {
     name: '회원가입',
@@ -207,7 +214,7 @@ for (const width of VIEWPORTS) {
           .getByRole('banner')
           .filter({ has: page.getByRole('button', { name: /^워크스페이스 바꾸기/ }) })
         await expect(header.getByRole('link')).toHaveCount(0)
-        for (const name of [/^알림/, /^워크스페이스 바꾸기/, /^내 계정/])
+        for (const name of [/^도움말/, /^알림/, /^워크스페이스 바꾸기/, /^내 계정/])
           await expect(header.getByRole('button', { name })).toBeInViewport({ ratio: 1 })
 
         const toast = page.getByTestId('pinned-toast-slot')
@@ -225,7 +232,7 @@ for (const width of VIEWPORTS) {
       return
     }
 
-    test('앱 헤더 — 탭 6개와 두 메뉴가 한 줄에 보인다', async ({ page }) => {
+    test('앱 헤더 — 탭 6개와 도움말·알림·두 메뉴가 한 줄에 보인다', async ({ page }) => {
       await start(page, 'multiple-workspaces', '/workspaces/ws_01/dashboard')
       const header = page.getByRole('banner')
       const nav = header.getByRole('navigation', { name: '주요 화면' })
@@ -236,10 +243,11 @@ for (const width of VIEWPORTS) {
       const tabs = TAB_NAMES.map((name) => nav.getByRole('link', { name, exact: true }))
       for (const tab of tabs) await expect(tab).toHaveCount(1)
       await expect(nav.getByRole('link')).toHaveText(TAB_NAMES)
-      const menus = [/^워크스페이스 바꾸기/, /^내 계정/].map((name) =>
+      const menus = [/^도움말/, /^알림/, /^워크스페이스 바꾸기/, /^내 계정/].map((name) =>
         header.getByRole('button', { name }),
       )
-      for (const menu of menus) await expect(menu).toBeInViewport()
+      // 일부만 걸쳐도 통과하지 않게 통째로 화면 안인지 본다 (#650 에서 768px 의 계정 단추가 밀려났다)
+      for (const menu of menus) await expect(menu).toBeInViewport({ ratio: 1 })
 
       // 높이 대신 위치로 본다 — 줄바꿈이 없으면 탭은 모두 같은 top, 헤더 항목은 모두 같은 세로 중심에 있다
       const boxOf = async (locator: Locator) => {

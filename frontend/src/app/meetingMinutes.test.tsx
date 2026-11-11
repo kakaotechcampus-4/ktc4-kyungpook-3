@@ -125,7 +125,7 @@ describe('목록과 기본 선택 (U5-1)', () => {
     const app = renderApp(paths.meetings('ws_01'))
     await app.expectPath(MT_09)
     // 목록은 로딩 자리의 최소 표시가 끝난 뒤 그려진다 (#508)
-    await within(meetingList()).findByRole('list', { name: '정리된 회의' })
+    await screen.findByRole('list', { name: '정리된 회의' })
 
     await user.click(within(minutesList()).getByRole('link', { name: /2주차 정기회의/ }))
     await app.expectPath(MT_07)
@@ -273,10 +273,26 @@ describe('상태 항목과 빈 상태 (U5-2)', () => {
       else expect(cta).toBeNull()
       // 캔버스의 `텍스트로 붙여넣기` 는 범위 밖이다
       expect(screen.queryByText('텍스트로 붙여넣기')).toBeNull()
+      // 회의는 Discord 에서 기록한다는 안내와 그 방법을 여는 단추는 역할과 상관없이 있다 (#650)
+      const hint = screen.getByText(/디스코드 음성 채널에서/)
+      expect(hint).toHaveTextContent('디스코드 음성 채널에서 /record로 첫 회의를 기록해 보세요.')
+      expect(within(hint).getByText('/record').tagName).toBe('CODE')
+      const guide = screen.getByRole('button', { name: '방법 보기' })
+      await userEvent.click(guide)
+      await screen.findByRole('dialog', { name: '처음 쓰는 분을 위한 안내' })
+      await userEvent.keyboard('{Escape}')
+      await waitFor(() => expect(guide).toHaveFocus())
       await settle()
       expect(app.visited().map(({ pathname }) => pathname)).toEqual([paths.meetings('ws_01')])
     },
   )
+
+  it('회의가 있으면 빈 화면이 아니라 방법 보기도 없다 (#650)', async () => {
+    renderApp(MT_09)
+    await screen.findByRole('list', { name: '정리된 회의' })
+    expect(screen.queryByText('아직 올린 회의가 없어요')).toBeNull()
+    expect(screen.queryByRole('button', { name: '방법 보기' })).toBeNull()
+  })
 
   it('정리 끝난 회의가 없고 정리 중만 있으면 목록엔 상태 항목, 본문은 빈 상태다 — 주소를 바꾸지 않는다', async () => {
     server.use(

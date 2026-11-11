@@ -36,11 +36,15 @@ from shared.schemas import (
     Transcript,
 )
 
-# 별칭 텍스트가 아닌 호칭 — "네가", "그분", "백엔드 리더" 를 BE 가 별칭으로 조회하면 영원히 안 맞는다.
-# 문맥으로 풀린 이름(assignee_resolved)만 보낸다. 새 할 일(create)의 thirdname 은 원문만 보낸다 — 추측한 이름이
-# BE 별칭으로 학습되지 않게 (capture/handoff.py 와 같은 규칙). BE 는 create 승인 때만 별칭을 배우므로
-# 수정·담당자 변경 카드는 예전처럼 고친 이름을 보낸다.
-_NOT_ALIAS_TYPES = {"second", "thirdpronoun", "thirdrole"}
+# 별칭 텍스트가 아닌 호칭 — "네가", "그분" 을 BE 가 별칭으로 조회하면 영원히 안 맞는다.
+# 문맥으로 풀린 이름(assignee_resolved)만 보낸다.
+_NOT_ALIAS_TYPES = {"second", "thirdpronoun"}
+# 원문을 별칭 조회 키로 보내는 타입. 새 할 일(create·merge)은 원문만 보낸다 — 추측한 이름이 BE 별칭으로
+# 학습되지 않게 (capture/handoff.py 와 같은 규칙, #501·#522). BE 는 create 승인 때만 별칭을 배우므로
+# 수정·담당자 변경 카드(update)는 예전처럼 고친 이름이 있으면 그것을, 없으면 원문을 보낸다.
+# 프롬프트가 thirdrole 의 resolved 를 비워 두므로 역할 담당 변경은 사실상 원문이 가고, 예전에 버려지던
+# "BE 리더가 맡아 주세요" 같은 담당 변경도 update 카드가 된다. update 는 늘 PM 검토라 의도한 동작이다(0060).
+_ORIGINAL_MENTION_TYPES = {"thirdname", "thirdrole"}
 
 def _assignee(finding: JudgeFinding, *, is_new: bool) -> tuple[str | None, str | None]:
     """(assignee_type, assignee_raw) — BE 가 member_id 로 해소할 값. is_new: 새 할 일(create) 항목인가.
@@ -49,9 +53,10 @@ def _assignee(finding: JudgeFinding, *, is_new: bool) -> tuple[str | None, str |
     """
     if finding.assignee_type in ("first", "group", "none"):
         return finding.assignee_type, None
-    if finding.assignee_type in _NOT_ALIAS_TYPES or (finding.assignee_type == "thirdname" and not is_new):
-        return finding.assignee_type, finding.assignee_resolved or (
-            finding.assignee_raw if finding.assignee_type == "thirdname" else None)
+    if finding.assignee_type in _NOT_ALIAS_TYPES:
+        return finding.assignee_type, finding.assignee_resolved
+    if finding.assignee_type in _ORIGINAL_MENTION_TYPES and not is_new:
+        return finding.assignee_type, finding.assignee_resolved or finding.assignee_raw
     return finding.assignee_type, finding.assignee_raw
 
 
@@ -298,7 +303,8 @@ def _workspace_terms(candidates: Any, workspace_id: str, team: set[str]) -> set[
             push(workspace_id, new, [p["title_id"] for p in pending])
         except Exception as e:  # noqa: BLE001 - 올리지 못하면 다음 회의에서 다시 올린다(BE 는 중복을 건너뛴다)
             logger.warning("워크스페이스 용어를 올리지 못했다: %s: %s", type(e).__name__, e)
-    return words | approved
+    # 사람이 넣은 여러 단어 용어(심사용 시드 #621)도 제목을 쪼개는 방식대로 나눠 안다. 나눈 말은 BE 에 다시 올리지 않는다
+    return asr_check.term_words(words) | approved
 
 
 def _asr_vocab(candidates: Any, workspace_id: str, transcript: Transcript) -> set[str] | None:

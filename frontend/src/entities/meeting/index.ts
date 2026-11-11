@@ -1,8 +1,11 @@
 export type {
   Meeting,
   MeetingSummary,
+  MeetingProcessing,
   MeetingProgress,
   MeetingStatus,
+  ProcessingStage,
+  SttProgress,
   MeetingSource,
   MeetingSourceValue,
   MeetingUploadResult,
@@ -29,6 +32,8 @@ export {
 } from './api/meetingQueries'
 export { useMeetingSources } from './api/meetingSources'
 export { assignSpeakers, meetingAudioUrl, speakerViewQueryOptions } from './api/speakers'
+export type { AudioProbe, AudioUnavailableReason } from './api/meetingAudio'
+export { probeMeetingAudio, toAudioProbe } from './api/meetingAudio'
 export { speakerTitle, speakingTime } from './lib/speakers'
 export type { UploadMeetingOptions } from './api/uploadMeeting'
 export { toUploadForm, uploadMeeting } from './api/uploadMeeting'
@@ -39,6 +44,9 @@ export { latestMinutesId, toMinutesList } from './lib/minutesList'
 export { meetingFailure } from './lib/meetingFailure'
 export type { ProcessingStep, ProcessingStepKey, ProcessingStepState } from './lib/processingSteps'
 export { processingSteps } from './lib/processingSteps'
+export type { StageDetail } from './lib/stageDetail'
+export { stageDetail } from './lib/stageDetail'
+export { StageDetailText } from './ui/StageDetailText'
 export type { SettledMeeting, TrackedMeeting } from './model/processingTracker'
 export {
   clearTrackedMeetings,

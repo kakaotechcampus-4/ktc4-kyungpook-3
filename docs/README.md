@@ -33,7 +33,7 @@
 - [Backend](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/README.md)
 - [AI](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/README.md) · [AI 문서 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/README.md)
 
-현재 구현·검증 기록은 [FE 마일스톤 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/README.md), [FE 이슈 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/frontend/docs/issues), [BE 마일스톤 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/README.md), [AI 작성 기록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/ai/docs/basis_for_decision/ai)·[팀원 작성 기록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/ai/docs/basis_for_decision/member)에서 찾는다. 계획, 결과의 기록일과 검증 환경, 현재 배포 상태를 구분한다. 코드 병합이나 MSW 통과만으로 실서버·외부 공급사·iOS 검증 완료를 표시하지 않는다.
+현재 구현·검증 기록은 [FE 마일스톤 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/README.md), [FE 이슈 결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/frontend/docs/plan), [BE 마일스톤 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/README.md), [AI 작성 기록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/ai/docs/basis_for_decision/ai)·[팀원 작성 기록](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/tree/develop/ai/docs/basis_for_decision/member)에서 찾는다. 계획, 결과의 기록일과 검증 환경, 현재 배포 상태를 구분한다. 코드 병합이나 MSW 통과만으로 실서버·외부 공급사·iOS 검증 완료를 표시하지 않는다.
 
 Frontend는 [문서 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/README.md), [대표 계약](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/contracts/frontend-api-contract.md), [전체 계획](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/frontend-plan.md), [M0~M8 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/README.md)로 구조화했습니다. 기존 M0~M5 계획 원문과 완료 조건·인수인계·구현 결정 기록은 해당 마일스톤 폴더로 옮겼습니다. 이전 경로의 파일과 이동 안내는 삭제했습니다. 디자인·마스코트·성능 등 파트 고유 자료와 공유 기록은 유지합니다.
 
@@ -56,6 +56,7 @@ Backend는 [문서 안내](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3
 | `<part>/docs/plan/<part>-plan.md` | 사용자 | 전체 목표, 마일스톤·산출물·완료조건, 의존성 |
 | `<part>/docs/plan/mN/plan.md` | 사용자 또는 명시적으로 요청한 계획 작성 스킬 | 목표·범위·작업 순서·의존성·검증 방법·완료조건. 초기에는 빈 파일 |
 | `<part>/docs/plan/mN/result.md` | 개발 후 에이전트 | 실제 구현·코드, 조건별 상태와 근거, 실제 검증, 계획 대비 차이·이유·영향, 잔여 작업 |
+| `frontend/docs/plan/mN/work-items/<식별자>-<이름>/` | FE 후속 작업 시 에이전트 | 실제 이슈·PR에 연결한 결과. 독립 개선은 `plan/refactor/work-items/`에 두며 색인에서 이슈와 PR 종류를 구분 |
 | `<part>/docs/plan/mN/basis-for-decision/*.md` | 의미 있는 선택 시 에이전트 | 문제·제약, 실제 대안, 선택·이유, 장단점·영향·관련 근거 |
 | `<part>/docs/plan/mN/trouble-shooting/*.md` | 사람 | 증상·조사·시도·결과, 해결 또는 미해결 상태, 고민과 인사이트 |
 

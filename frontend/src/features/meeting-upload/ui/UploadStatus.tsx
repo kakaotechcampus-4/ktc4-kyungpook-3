@@ -9,7 +9,7 @@ export interface UploadStatusProps {
 const ROOT = 'flex flex-col gap-8'
 const TEXT = 'text-body text-sub tabular-nums'
 const TRACK = 'h-4 w-full overflow-hidden rounded-999 bg-control'
-const FILL = 'h-full rounded-999 bg-ink'
+const FILL = 'h-full rounded-999 bg-ink-solid'
 /* 불확정 — 크기를 모르니 채움 폭이 뜻을 갖지 않는다. 트랙 전체를 옅은 면으로 둔다(전환 없음, design-system §5) */
 const FILL_UNKNOWN = 'h-full w-full rounded-999 bg-line-strong'
 

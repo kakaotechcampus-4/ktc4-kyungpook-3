@@ -4,4 +4,5 @@ export {
   countVisibleCharacters,
   normalizeWorkspaceName,
 } from './workspaceName'
+export { PYTHON_STRIP, pythonStrip } from './pythonStrip'
 export type { WorkspaceNameCheck, WorkspaceNameIssue } from './workspaceName'

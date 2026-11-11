@@ -157,13 +157,18 @@ class MeetingAudioInfo(BaseModel):
 class MeetingMinutesResponse(BaseModel):
     meeting_id: str
     title: str | None
+    # 팀원이 제목을 고쳤는가와 처음 제목(#605). 처음 제목은 고친 적 없으면 null 이다
+    title_edited: bool = False
+    title_original: str | None = None
     started_at: datetime
     duration_ms: int
     source: str
     attendees: list[dict]
     summary: dict | None
-    # ready: 요약이 있다. pending: 곧 나온다. none: 없다(대상 아님, 실패)
-    summary_status: Literal["ready", "pending", "none"]
+    # ready: 요약이 있다. pending: 곧 나온다. awaiting_approval: 승인이 끝나면 만든다. none: 없다(대상 아님, 실패)
+    summary_status: Literal["ready", "pending", "awaiting_approval", "none"]
+    # awaiting_approval 일 때 남은 승인 요청 수. PM 에게만 준다(D-104)
+    summary_waiting_count: int | None = None
     transcript: list[dict]
     permissions: dict
     audio: MeetingAudioInfo | None = Field(
@@ -252,7 +257,7 @@ class ExtractionItemResponse(BaseModel):
     )
     alias_candidate: bool = Field(
         False,
-        description="담당자를 못 찾은 이름 지목(thirdname) 항목의 pending 생성 승인이고, 그 항목이 카드의 담당 항목(payload assignee_item_id, 없으면 extraction_item_id)이며(다른 회의 항목을 합친 카드는 담당 항목에만 나온다), 같은 워크스페이스에서 탈퇴하지 않은 팀원 누구도 그 글자(님·조사를 뗀 찾기 후보 포함)를 별칭으로 갖고 있지 않으면 true. PM 이 담당자를 골라 save_alias=true 로 승인하면 alias_text 를 그 팀원의 별칭으로 저장한다. 탈퇴하지 않은 누군가가 이미 갖고 있으면 false 이고 저장하지 않는다(탈퇴한 팀원의 별칭은 세지 않는다)",
+        description="담당자를 못 찾은 이름·역할 지목(thirdname·thirdrole) 항목의 pending 생성 승인이고, 그 항목이 카드의 담당 항목(payload assignee_item_id, 없으면 extraction_item_id)이며(다른 회의 항목을 합친 카드는 담당 항목에만 나온다), 같은 워크스페이스에서 탈퇴하지 않은 팀원 누구도 그 글자(님·조사를 뗀 찾기 후보 포함)를 별칭으로 갖고 있지 않으면 true. PM 이 담당자를 골라 save_alias=true 로 승인하면 alias_text 를 그 팀원의 별칭으로 저장한다. 탈퇴하지 않은 누군가가 이미 갖고 있으면 false 이고 저장하지 않는다(탈퇴한 팀원의 별칭은 세지 않는다)",
     )
     alias_text: str | None = Field(
         None,

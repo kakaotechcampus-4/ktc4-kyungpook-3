@@ -122,7 +122,7 @@ function pageHtml({ mascot, size }, font) {
 }
 html, body { margin: 0; height: 100%; background: #ffffff; }
 body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: ${size.gap}px; }
-p { margin: 0; font: ${WORDMARK_FONT}; line-height: 1.2; color: #171717; }
+p { margin: 0; font: ${WORDMARK_FONT}; line-height: 1.2; color: #262626; }
 </style>
 </head>
 <body>${mascot}<p>${WORDMARK}</p></body>

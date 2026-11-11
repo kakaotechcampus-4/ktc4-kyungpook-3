@@ -1,5 +1,9 @@
-"""비밀번호 재설정 요청의 공인 IP 시간당 상한(#550). 서버가 단일 프로세스라는 전제라 메모리에 둔다."""
+"""비밀번호 재설정 요청의 공인 IP 시간당 상한(#550). 서버가 단일 프로세스라는 전제라 메모리에 둔다.
 
+가입 코드 요청(#691)도 `scope` 를 달리해 같이 쓴다. scope 가 다르면 횟수를 따로 센다.
+"""
+
+import math
 import threading
 from dataclasses import dataclass
 
@@ -34,23 +38,33 @@ def _evict(now: float) -> None:
         del _entries[key]
 
 
-def allow(ip_key: str | None, now: float) -> bool:
+def allow(ip_key: str | None, now: float, *, scope: str = "", limit: int = IP_HOURLY_LIMIT) -> bool:
     """허용이면 셈하고 True. 상한이면 세지 않고 False. 키가 없으면(사설·해석 불가) 늘 True."""
     if ip_key is None:
         return True
+    key = scope + ip_key
     with _lock:
-        entry = _entries.get(ip_key)
+        entry = _entries.get(key)
         if entry is not None and _expired(entry, now):
-            del _entries[ip_key]
+            del _entries[key]
             entry = None
         if entry is None:
             _evict(now)
             entry = _Entry(count=0, window_started=now)
-            _entries[ip_key] = entry
-        if entry.count >= IP_HOURLY_LIMIT:
+            _entries[key] = entry
+        if entry.count >= limit:
             return False
         entry.count += 1
         return True
+
+
+def retry_after(ip_key: str, now: float, *, scope: str = "") -> int:
+    """막힌 IP 가 다시 보낼 수 있을 때까지 남은 초. 창이 이미 끝났으면 1."""
+    with _lock:
+        entry = _entries.get(scope + ip_key)
+        if entry is None:
+            return 1
+        return max(math.ceil(entry.window_started + WINDOW_SECONDS - now), 1)
 
 
 def reset() -> None:

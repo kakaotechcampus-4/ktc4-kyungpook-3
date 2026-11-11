@@ -132,10 +132,10 @@ export function LegendItem({
 export function CalendarLegend() {
   return (
     <>
-      <LegendItem swatch="bg-ink text-surface" icon="eye">
+      <LegendItem swatch="bg-ink-solid text-surface" icon="eye">
         확인 필요
       </LegendItem>
-      <LegendItem swatch="bg-accent-chip text-ink" icon="alert">
+      <LegendItem swatch="bg-accent-solid text-surface" icon="alert">
         마감 임박
       </LegendItem>
       <LegendItem swatch="bg-surface-selected">진행 중</LegendItem>
@@ -148,7 +148,7 @@ export function CalendarLegend() {
 export function GanttLegend() {
   return (
     <>
-      <LegendItem swatch="bg-ink">진행 중</LegendItem>
+      <LegendItem swatch="bg-ink-solid">진행 중</LegendItem>
       <LegendItem swatch="border border-line-strong bg-surface">시작 전</LegendItem>
       <LegendItem swatch="bg-surface-sunken">완료</LegendItem>
       <LegendItem swatch="border-2 border-dashed bg-surface">확인 필요</LegendItem>

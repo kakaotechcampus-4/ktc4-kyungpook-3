@@ -1,6 +1,6 @@
 """요약본과 합본 Markdown. 저장된 JSON 에서 코드로 만든다."""
 import json
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from app.services.summary_markdown import (
     BlockedTask,
@@ -96,6 +96,16 @@ def test_empty_sections_are_left_out():
     assert "짧은 회의" in text
 
 
+def test_invalid_decision_is_marked():
+    doc = {**EMPTY, "decision_details": [
+        {"text": "유효한 결정", "state": "valid"}, {"text": "틀린 결정", "state": "invalid"},
+    ]}
+
+    text = render_summary(doc, HEAD)
+
+    assert "## 결정\n- 유효한 결정\n- 틀린 결정 (유효하지 않음)\n" in text
+
+
 def test_empty_optional_fields_leave_no_labels():
     doc = {**EMPTY, "decision_details": [{"text": "결정", "reason": None, "rejected": [], "topic": "t", "replaces": []}],
            "task_changes": [{"task": "할 일", "assignee": "", "due": "", "purpose": "", "precondition": ""}]}
@@ -165,3 +175,35 @@ def test_bundle_lists_each_part():
     assert "- 배포 (담당: 민수): 키가 없다" in text
     assert "### 3주차: 정기회의" in text
     assert "#### 핵심 요약" in text
+
+
+DAILY = SummaryHead(
+    title="일일 요약",
+    date=date(2026, 11, 5),
+    attendees=["민수"],
+    source_url="https://app.example/workspaces/w/meetings/c",
+    topics=[],
+    kind="일일 요약",
+    period=(datetime(2026, 11, 5, 9, 0, tzinfo=timezone(timedelta(hours=9))),
+            datetime(2026, 11, 6, 11, 0, tzinfo=timezone(timedelta(hours=9)))),
+)
+
+
+def test_daily_chat_summary_says_its_kind_and_period_and_has_no_discussion():
+    doc = {key: value for key, value in FULL.items() if key != "discussion"}
+    lines = render_summary(doc, DAILY).splitlines()
+
+    fields = dict(line.split(": ", 1) for line in lines[1:lines.index("---", 1)])
+    assert json.loads(fields["종류"]) == "일일 요약"
+    assert json.loads(fields["기간"]) == "2026-11-05 09:00 ~ 2026-11-06 11:00"
+    assert "# 일일 요약" in lines and "## 논의" not in lines
+
+
+def test_a_meeting_head_has_no_period():
+    assert "기간" not in render_summary(FULL, HEAD)
+
+
+def test_daily_chat_summary_in_the_bundle_shows_its_period():
+    text = render_summary(EMPTY, DAILY, heading_level=3, front_matter=False)
+
+    assert text.startswith("### 일일 요약\n\n2026-11-05 09:00 ~ 2026-11-06 11:00, 원문: ")

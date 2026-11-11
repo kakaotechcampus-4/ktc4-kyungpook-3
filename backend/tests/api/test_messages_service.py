@@ -8,6 +8,7 @@ from app.core.errors import AppError, ErrorCode
 from app.models import (
     DmFailureReason,
     DmStatus,
+    Integration,
     Member,
     MessageSender,
     ReminderStatus,
@@ -691,6 +692,7 @@ def _alice_in_workspace_b(mdb, created_at, name="B"):
     ws = Workspace(name=name)
     mdb.add(ws)
     mdb.flush()
+    mdb.add(Integration(workspace_id=ws.workspace_id, provider="discord", provider_channel_id=f"g_{name}"))
     member = Member(workspace_id=ws.workspace_id, display_name=f"앨리스{name}", role="member",
                     discord_user_id="d_alice", created_at=created_at)
     task = Task(workspace_id=ws.workspace_id, title="B할일", status="todo")

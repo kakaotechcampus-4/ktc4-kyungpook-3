@@ -45,7 +45,7 @@ const INK_FACE_FOCUS =
 
 const VARIANT: Record<ButtonVariant, string> = {
   // 먹 면 → hover/pressed 는 같은 축에서 한 단 이동한 보조. 검정도 opacity 도 쓰지 않는다
-  primary: `bg-ink text-surface hover:bg-dim hover:text-surface active:bg-sub active:text-surface disabled:bg-surface-selected disabled:text-faint aria-disabled:bg-surface-selected aria-disabled:text-faint ${INK_FACE_FOCUS}`,
+  primary: `bg-ink-solid text-surface hover:bg-dim hover:text-surface active:bg-sub active:text-surface disabled:bg-surface-selected disabled:text-faint aria-disabled:bg-surface-selected aria-disabled:text-faint ${INK_FACE_FOCUS}`,
   // 컨트롤 면 #EDEDED → hover 는 같은 회색 축에서 한 단 진한 강조 테두리색 #C9C9C9.
   // 차콜(#666)은 면이 바뀌는 느낌이 나서 쓰지 않는다.
   default:

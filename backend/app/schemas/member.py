@@ -38,6 +38,10 @@ class MemberUpdateRequest(BaseModel):
     )
     notion_name: str | None = None
     role: MemberRole | None = None
+    move_discord_link: bool = Field(
+        False,
+        description="true 면 discord_user_id 를 가진 다른 활성 팀원의 연결을 풀고 이 팀원에 잇는다. false 면 그때는 409",
+    )
 
     @field_validator("discord_user_id", mode="before")
     @classmethod

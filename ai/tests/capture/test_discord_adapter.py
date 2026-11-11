@@ -60,8 +60,9 @@ class FakeTextChannel:
 
 
 class FakeVoiceChannel:
-    def __init__(self):
-        self.id, self.name = ROOM_ID, "회의방"
+    def __init__(self, cid=ROOM_ID):
+        self.id, self.name = cid, "회의방"
+        self.members = []          # 지금 이 음성 채널에 있는 사람
 
 
 class FakeVC:
@@ -120,8 +121,13 @@ class FakeBot:
 
 
 class FakeCtx:
-    def __init__(self, guild, vc, channel):
+    def __init__(self, guild, vc, channel, author=None):
+        """author 를 주지 않으면 봇과 같은 음성 채널에 있는 사람이 명령한다."""
         self.guild, self.voice_client, self.channel = guild, vc, channel
+        if author is None:
+            author = FakeMember(1, "민수", guild)
+            author.voice = State(vc.channel)
+        self.author = author
         self.responses = []
         self.deferred = False
 
@@ -569,3 +575,72 @@ def test_the_recording_notice_says_audio_goes_to_an_outside_service_and_how_to_r
 def test_notice_mentions_7_day_retention():
     assert "최대 7일" in A.NOTICE
     assert A.NOTICE.index("Elice") < A.NOTICE.index("최대 7일") < A.NOTICE.index("녹음을 원하지 않으면")
+
+
+# ── 명령은 봇이 있는 음성 채널에 들어와 있는 사람만 ─────────────────────────────────────────
+
+def _outsider(guild, *, voice_channel=None):
+    """봇과 같은 음성 채널에 없는 사람. voice_channel 을 주면 그 다른 방에 있다."""
+    m = FakeMember(4, "외부인", guild)
+    m.voice = State(voice_channel) if voice_channel is not None else None
+    return m
+
+
+async def test_record_by_someone_outside_the_bots_voice_channel_is_refused(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    for where in (None, FakeVoiceChannel(cid=6)):
+        out = FakeCtx(guild, vc, channel, author=_outsider(guild, voice_channel=where))
+        await _run(A.RecordingCog.record, cog, out)
+        assert out.responses == [A.NOT_IN_VOICE_REFUSED]
+        assert vc.started is None and GUILD_ID not in cog._active
+        assert not list((tmp_path / "recordings").glob("session_*"))
+    assert channel.sent == []
+
+
+async def test_record_by_someone_in_the_bots_voice_channel_starts(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    await _run(A.RecordingCog.record, cog, ctx)
+    assert vc.started is not None and GUILD_ID in cog._active
+    cog._active[GUILD_ID].flush_task.cancel()
+
+
+async def test_stop_leave_end_by_someone_outside_the_voice_channel_are_refused(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    await _run(A.RecordingCog.record, cog, ctx)
+    rec = cog._active[GUILD_ID]
+    out = FakeCtx(guild, vc, channel, author=_outsider(guild))
+    for command in (A.RecordingCog.stop, A.RecordingCog.end, A.RecordingCog.leave):
+        await _run(command, cog, out)
+    assert out.responses == [A.NOT_IN_VOICE_REFUSED] * 3
+    assert vc.started is not None and cog._active.get(GUILD_ID) is rec and vc.disconnected == 0
+    # 녹음이 끝난 뒤에도 밖에서는 봇을 내보내지 못한다
+    await _run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(rec.done.wait(), 20)
+    for command in (A.RecordingCog.leave, A.RecordingCog.end):
+        await _run(command, cog, out)
+    assert out.responses[-2:] == [A.NOT_IN_VOICE_REFUSED] * 2 and vc.disconnected == 0
+    await _run(A.RecordingCog.leave, cog, ctx)                       # 안에 있는 사람은 된다
+    assert vc.disconnected == 1
+
+
+async def test_record_notice_mentions_everyone_already_in_the_voice_channel(tmp_path):
+    """녹음 시작 공지가 이미 방에 있는 사람(봇 제외)을 부른다. 그 사람이 다시 들어와도 또 부르지 않는다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    helper = FakeMember(3, "녹음봇", guild)
+    helper.bot = True
+    vc.channel.members = [guild.get_member(1), guild.get_member(2), helper]
+    await _run(A.RecordingCog.record, cog, ctx)
+    assert ctx.responses == [f"<@1> <@2> {A.NOTICE}"]
+    rec = cog._active[GUILD_ID]
+    await cog.on_voice_state_update(guild.get_member(2), State(None), State(vc.channel))
+    assert not any(t.startswith("<@2>") for t, _ in channel.sent)
+    rec.flush_task.cancel()
+
+
+async def test_record_notice_stays_within_the_discord_message_limit(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    vc.channel.members = [FakeMember(10**17 + i, f"m{i}", guild) for i in range(150)]
+    await _run(A.RecordingCog.record, cog, ctx)
+    (text,) = ctx.responses
+    assert len(text) <= 2000 and text.endswith(A.NOTICE) and text.startswith(f"<@{10**17}>")
+    cog._active[GUILD_ID].flush_task.cancel()

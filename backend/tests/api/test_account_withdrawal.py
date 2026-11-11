@@ -215,7 +215,8 @@ def test_sole_workspace_is_unavailable_immediately_and_purged_after_both_workers
     mdb.add(sole)
     mdb.flush()
     mdb.add(Member(workspace_id=sole.workspace_id, user_id=mseed["alice"].user_id, display_name="앨리스", role="pm"))
-    meeting = Meeting(workspace_id=sole.workspace_id, title="진행중 개인 회의", status="recording")
+    meeting = Meeting(workspace_id=sole.workspace_id, title="진행중 개인 회의", status="recording",
+                      title_original="고치기 전 개인 회의", title_edited_at=datetime.now(timezone.utc))
     mdb.add(meeting)
     mdb.commit()
     wid, meeting_id = sole.workspace_id, meeting.meeting_id
@@ -225,7 +226,8 @@ def test_sole_workspace_is_unavailable_immediately_and_purged_after_both_workers
     response = client("alice").delete(f"{P}/auth/me", headers=headers)
     assert response.status_code == 202, response.text
     assert mdb.get(Workspace, wid).deleted_at is not None
-    assert mdb.get(Meeting, meeting_id).title is None
+    emptied = mdb.get(Meeting, meeting_id)
+    assert (emptied.title, emptied.title_original, emptied.title_edited_at) == (None, None, None)
     service = client(service=True)
     assert service.post(f"{P}/meetings", json={"workspace_id": wid}).status_code == 404
     row = mdb.scalar(select(PrivacyCleanup).where(PrivacyCleanup.workspace_id == wid))

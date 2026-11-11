@@ -137,6 +137,50 @@ describe('E2E 시나리오', () => {
     ).toMatchObject([{ member_id: 'mb_04', discord_user_id: '1126' }])
   })
 
+  it('팀원 줄: 이재환에 잘못 이은 계정을 최지훈 줄에서 다시 고를 수 있고, 연결 안 된 계정과 떠난 계정이 있다 (#647)', async () => {
+    applyScenario('member-rows')
+    await expect(listedWorkspaces()).resolves.toEqual([
+      { id: 'ws_01', role: 'pm', completed: true },
+    ])
+    const { items: users } = await fetchDto<ListDto<DiscordUserDto>>(
+      '/workspaces/ws_01/discord/members',
+    )
+    const { items: members } = await fetchDto<ListDto<MemberDto>>('/members?workspace_id=ws_01')
+    expect(
+      members.map(({ member_id, display_name, discord_user_id, role }) => [
+        member_id,
+        display_name,
+        discord_user_id,
+        role,
+      ]),
+    ).toEqual([
+      ['mb_01', '김서연', '1123', 'pm'],
+      ['mb_02', '박민수', '1124', 'member'],
+      ['mb_03', '이재환', '1125', 'member'],
+      ['mb_04', '정하늘', '1126', 'member'],
+      ['mb_05', '최지훈', null, 'member'],
+    ])
+    const mapped = new Set(members.map(({ discord_user_id }) => discord_user_id))
+    const listed = new Set(users.map(({ discord_user_id }) => discord_user_id))
+    expect(
+      users.filter(({ is_bot, discord_user_id }) => !is_bot && !mapped.has(discord_user_id)),
+    ).toMatchObject([{ discord_user_id: '1128', username: 'dahye' }])
+    expect(listed.has('1126')).toBe(false)
+
+    // 이슈의 재현: 이재환의 연결을 먼저 풀고 최지훈에 잇는다. 이재환은 이름이 그대로다
+    await fetchDto('/members/mb_03', jsonRequest('PATCH', { discord_user_id: null }))
+    await fetchDto('/members/mb_05', jsonRequest('PATCH', { discord_user_id: '1125' }))
+    const { items: after } = await fetchDto<ListDto<MemberDto>>('/members?workspace_id=ws_01')
+    expect(after.find(({ member_id }) => member_id === 'mb_03')).toMatchObject({
+      display_name: '이재환',
+      discord_user_id: null,
+    })
+    expect(after.find(({ member_id }) => member_id === 'mb_05')).toMatchObject({
+      display_name: '최지훈',
+      discord_user_id: '1125',
+    })
+  })
+
   it('일반 팀원 설정: ws_01 의 일반 팀원이다. 연동 조회는 되고 연결 쓰기는 403 이다', async () => {
     applyScenario('settings-member')
     await expect(listedWorkspaces()).resolves.toEqual([

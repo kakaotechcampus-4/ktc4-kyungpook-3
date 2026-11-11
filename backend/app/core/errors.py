@@ -54,6 +54,8 @@ class ErrorCode(StrEnum):
     MEETING_PROCESSING_IN_PROGRESS = "MEETING_PROCESSING_IN_PROGRESS"
     AUDIO_TOO_LARGE = "AUDIO_TOO_LARGE"
     DISCORD_USER_ALREADY_MAPPED = "DISCORD_USER_ALREADY_MAPPED"
+    DISCORD_USER_NOT_IN_GUILD = "DISCORD_USER_NOT_IN_GUILD"
+    MEMBER_NAME_DUPLICATED = "MEMBER_NAME_DUPLICATED"
     LAST_PM_REQUIRED = "LAST_PM_REQUIRED"
     EMBEDDING_UNAVAILABLE = "EMBEDDING_UNAVAILABLE"
     DISCORD_API_FAILED = "DISCORD_API_FAILED"
@@ -99,6 +101,9 @@ class ErrorCode(StrEnum):
     # 회의 요약·프로젝트 맵
     TOPIC_NOT_FOUND = "TOPIC_NOT_FOUND"
     SUMMARY_NOT_FOUND = "SUMMARY_NOT_FOUND"
+    TRANSCRIPT_LINE_NOT_FOUND = "TRANSCRIPT_LINE_NOT_FOUND"
+    TOPIC_NAME_TAKEN = "TOPIC_NAME_TAKEN"
+    DECISION_NOT_FOUND = "DECISION_NOT_FOUND"
 
     # 가입 이메일 인증·카카오 로그인
     SIGNUP_CODE_RATE_LIMITED = "SIGNUP_CODE_RATE_LIMITED"
@@ -161,6 +166,8 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.MEETING_PROCESSING_IN_PROGRESS: 409,
     ErrorCode.AUDIO_TOO_LARGE: 413,
     ErrorCode.DISCORD_USER_ALREADY_MAPPED: 409,
+    ErrorCode.DISCORD_USER_NOT_IN_GUILD: 409,
+    ErrorCode.MEMBER_NAME_DUPLICATED: 409,
     ErrorCode.LAST_PM_REQUIRED: 409,
     ErrorCode.EMBEDDING_UNAVAILABLE: 502,
     ErrorCode.DISCORD_API_FAILED: 502,
@@ -198,6 +205,9 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.MAIL_UNAVAILABLE: 503,
     ErrorCode.TOPIC_NOT_FOUND: 404,
     ErrorCode.SUMMARY_NOT_FOUND: 404,
+    ErrorCode.TRANSCRIPT_LINE_NOT_FOUND: 404,
+    ErrorCode.TOPIC_NAME_TAKEN: 409,
+    ErrorCode.DECISION_NOT_FOUND: 404,
     ErrorCode.SIGNUP_CODE_RATE_LIMITED: 429,
     ErrorCode.SIGNUP_CODE_INVALID: 400,
     ErrorCode.SIGNUP_VERIFICATION_INVALID: 400,
@@ -253,6 +263,8 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.MEETING_PROCESSING_IN_PROGRESS: "이미 처리 중인 회의가 있습니다.",
     ErrorCode.AUDIO_TOO_LARGE: "오디오 파일 용량이 너무 큽니다.",
     ErrorCode.DISCORD_USER_ALREADY_MAPPED: "이미 다른 팀원에 연결된 Discord 사용자입니다.",
+    ErrorCode.DISCORD_USER_NOT_IN_GUILD: "연결한 Discord 서버에 없는 사용자입니다. 서버에 들어온 계정만 팀원에 연결할 수 있습니다.",
+    ErrorCode.MEMBER_NAME_DUPLICATED: "같은 이름의 팀원이 이미 있습니다.",
     ErrorCode.LAST_PM_REQUIRED: "워크스페이스에 PM이 한 명은 있어야 합니다. 다른 팀원을 먼저 PM으로 지정해 주세요.",
     ErrorCode.EMBEDDING_UNAVAILABLE: "임베딩 서버 호출에 실패했습니다. 잠시 후 다시 시도해 주세요.",
     ErrorCode.DISCORD_API_FAILED: "Discord 요청에 실패했습니다. 잠시 후 다시 시도해 주세요.",
@@ -290,6 +302,9 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.MAIL_UNAVAILABLE: "지금은 메일을 보낼 수 없습니다.",
     ErrorCode.TOPIC_NOT_FOUND: "해당 주제를 찾을 수 없습니다.",
     ErrorCode.SUMMARY_NOT_FOUND: "이 회의의 요약본이 아직 없습니다.",
+    ErrorCode.TRANSCRIPT_LINE_NOT_FOUND: "해당 발화를 찾을 수 없습니다.",
+    ErrorCode.TOPIC_NAME_TAKEN: "같은 이름의 주제가 이미 있습니다.",
+    ErrorCode.DECISION_NOT_FOUND: "해당 결정을 찾을 수 없습니다.",
     ErrorCode.SIGNUP_CODE_RATE_LIMITED: "인증 코드를 너무 자주 요청했습니다. 잠시 후 다시 시도해 주세요.",
     ErrorCode.SIGNUP_CODE_INVALID: "인증 코드가 맞지 않습니다.",
     ErrorCode.SIGNUP_VERIFICATION_INVALID: "이메일 인증이 필요합니다. 인증을 다시 진행해 주세요.",

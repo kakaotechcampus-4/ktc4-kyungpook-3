@@ -1,6 +1,7 @@
 import type { IntegrationProvider } from '@/entities/integration'
 import { useIntegrationStep } from '@/features/onboarding'
 import type { IntegrationNotice } from '@/features/onboarding'
+import { QuickGuideButton } from '@/features/quick-guide'
 import { errorMessage } from '@/shared/api/errorMessages'
 import { useGuardedNavigate } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
@@ -43,6 +44,9 @@ const NOTICE: Record<IntegrationNotice, string> = {
 }
 
 const CONNECTED = 'pt-6 text-body font-semibold text-ink'
+
+/* 설명 바로 아래 글자 링크. 카드의 주 버튼(연결하기)과 겨루지 않게 작고 흐리다 */
+const GUIDE_LINK = 'self-start text-[13px] text-dim underline underline-offset-3 hover:text-ink'
 
 export interface IntegrationStepProps {
   workspaceId: string
@@ -174,6 +178,9 @@ export function IntegrationStep({ workspaceId, provider, review = false }: Integ
           )
         }
       >
+        {provider === 'discord' ? (
+          <QuickGuideButton className={GUIDE_LINK}>어떻게 쓰나요?</QuickGuideButton>
+        ) : null}
         <FormErrorPanel message={failure} className="mt-6" />
         {flow.integration === null && flow.integrationsError ? (
           <QueryErrorState error={flow.integrationsError} onRetry={flow.retryIntegrations} />

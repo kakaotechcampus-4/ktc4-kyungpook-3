@@ -19,11 +19,11 @@
 
 | 장치 | 구현 | 코드 |
 |---|---|---|
-| 비밀번호 | PBKDF2-HMAC-SHA256 260,000회, 무작위 salt. 비교는 `hmac.compare_digest`. 없는 계정도 더미 해시로 한 번 계산해 응답 시간을 맞춘다 | [`passwords.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/passwords.py) |
+| 비밀번호 | PBKDF2-HMAC-SHA256 600,000회(#691), 무작위 salt. 저장 형식 `pbkdf2_sha256$횟수$salt$digest` 에 횟수를 담는다. 횟수가 없는 옛 형식(`salt$digest`, 260,000회)도 맞춰 보고, 로그인에 성공하면 해시가 그대로일 때만 600,000회로 다시 해시한다. 비교는 `hmac.compare_digest`. 없는 계정도 더미 해시(지금 횟수)로 한 번 계산하고, 옛 해시는 모자란 횟수를 더 계산해 응답 시간을 맞춘다 | [`passwords.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/passwords.py) |
 | 세션(#437) | 쿠키 `session_token`(7일)에는 원문, DB 에는 **sha256 해시만**. 쿠키 값을 해시해 찾는다. 만료 세션은 401 을 주고, 지우는 일은 정리 워커(1시간) 몫. 로그아웃은 그 행 하나, 재설정 확인은 그 계정 세션 전부를 지운다 | [`sessions.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/sessions.py) |
 | 로그인 잠금 | 같은 이메일 15분 10회, 같은 공인 IP 15분 50회 실패 → 15분 429 `TOO_MANY_LOGIN_ATTEMPTS`(`Retry-After`). 막힌 동안은 **해시 계산도 DB 연결도 없이** 끊는다. 이메일·IP 막힘, 있는·없는 이메일 응답이 같다. IPv6 는 /64, 사설 주소는 IP 제한 생략. 운영 프록시 뒤 XFF 위조 차단은 미확인(한계 참고) | [`login_limit.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/login_limit.py) |
-| 비밀번호 재설정 | 30분 1회용 토큰(해시 저장). 계정당 60초 1회·1시간 5회, 공인 IP 시간당 5회(#550), 전체 시간당 10통. 확인이 커밋되면 그 이메일의 로그인 막힘도 푼다 | [`password_reset.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/password_reset.py), [`password_reset_limit.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/password_reset_limit.py) |
-| 가입 이메일 인증 | 6자리 코드 10분, 코드당 5회, 재발송 60초, 시간당 5회, 전체 시간당 20통. DB 에는 HMAC 만. 맞으면 이메일을 담은 서명 증명(30분)을 준다 | [`signup_codes.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/signup_codes.py) |
+| 비밀번호 재설정 | 30분 1회용 토큰(해시 저장). 계정당 60초 1회·1시간 5회, 공인 IP 시간당 5회(#550), 전체 시간당 10통. 로그인이 잠긴 이메일의 요청은 전체 상한을 보지 않는다(#691, 계정당·IP 제한은 그대로). 확인이 커밋되면 그 이메일의 로그인 막힘도 푼다 | [`password_reset.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/password_reset.py), [`password_reset_limit.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/password_reset_limit.py) |
+| 가입 이메일 인증 | 6자리 코드 10분, 코드당 5회, 재발송 60초, 시간당 5회, 공인 IP 시간당 10회(#691, 사설 주소는 생략), 전체 시간당 20통. 이미 가입한 이메일인지는 이 제한을 모두 본 뒤에 판단한다. DB 에는 HMAC 만. 맞으면 이메일을 담은 서명 증명(30분)을 준다 | [`signup_codes.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/signup_codes.py) |
 | 카카오 로그인 | state·nonce 확인 → 카카오 사용자 조회. 이미 가입한 카카오 계정이면 세션을 만든다. 아니면 서명된 대기 쿠키(HttpOnly, Secure, SameSite=Lax, 30분)에 카카오 id 와 닉네임만 담고 가입 화면으로 보낸다. 카카오가 이메일을 줘도 저장하지 않고 같은 이메일의 기존 계정과 잇지도 않는다(#610). 가입 화면에서는 이메일 인증 없이 이름·아이디만 정하며 비밀번호는 없다 | [`kakao_oauth.py`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/app/services/kakao_oauth.py) |
 
 **#549 재검토.** 이메일 기준 잠금은 남이 내 이메일로 10번 틀려 15분 막을 수 있다. (이메일, IP) 조합 키도 다시 봤지만 버리고, 429 화면에서 재설정 안내(FE)로 완화했다. 429 에 이메일·IP 구분을 싣지 않는 것은 공격자에게 무엇을 바꿀지 신호가 되기 때문이다.
@@ -77,6 +77,7 @@ Notion·Discord 연결과 카카오 로그인이 같이 쓴다([`oauth_state.py`
 | 세션 해시 저장 + 데이터만 바꾸는 마이그레이션 | 원문 저장 유지 / 컬럼 이름 변경 | DB 가 새도 세션을 못 쓴다. 이미 로그인한 사용자는 그대로 | [session-token-hash](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m1/basis-for-decision/2026-11-06-session-token-hash.md) |
 | 로그인 잠금은 프로세스 메모리 | DB 테이블 | 막힌 요청을 DB 연결 없이 끊고, 공격 중 실패마다 쓰기가 생기지 않는다. 재시작이 비상 해제 수단 | [login-rate-limit](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m1/basis-for-decision/2026-11-06-login-rate-limit.md) |
 | 재설정 메일 IP·전체 상한 | 계정별 제한만 | 가입된 주소 여러 개로 팀 Gmail 하루 한도(약 500통)를 바닥낼 수 있다 | [reset-mail-cap](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m1/basis-for-decision/2026-11-08-reset-mail-cap.md) |
+| 가입 코드 IP 상한, 잠긴 이메일의 재설정은 전체 상한 밖, 해시 횟수 저장(#691) | 재설정 전체 상한을 넉넉히 / 가입한 이메일에도 같은 200 을 주고 메일로 안내 / 횟수를 설정값으로만 | IP 하나로 남의 가입·재설정을 막지 못하게 하고, 가입 여부 확인을 횟수 제한 안에 넣는다. 같은 200 은 가입 화면 흐름과 계약이 바뀌어 뒤로 미뤘다 | [auth-abuse-hardening](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m1/basis-for-decision/2026-11-11-auth-abuse-hardening-decision.md) |
 | 탈퇴자 Member 보존 | 기록 주체 테이블 신설(FK 16개 이전) | 공동 기록의 참조를 그대로 두는 비용이 더 작다 | [withdrawn-record-actor](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m1/basis-for-decision/2026-11-09-withdrawn-record-actor.md) |
 | 카카오 callback 은 계정을 만들지 않고, 카카오 가입을 카카오만으로 끝내며 이메일 기반 기존 계정 병합을 두지 않음(#610) | callback 에서 바로 가입 / 인증된 카카오 이메일로 기존 계정에 병합(#610 이전 안) | 카카오 이메일을 저장하지 않으므로 같은 이메일 계정을 선점하거나 잇는 경로가 없다. 카카오 가입 계정은 이메일·비밀번호 없이 카카오 id 로만 로그인한다 | [kakao-login-decision](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/backend/docs/plan/m1/basis-for-decision/2026-11-06-kakao-login-decision.md) |
 
@@ -95,10 +96,15 @@ Notion·Discord 연결과 카카오 로그인이 같이 쓴다([`oauth_state.py`
 
 ## 한계와 다음 단계
 
-- 로그인·재설정 IP 제한이 메모리라 `--workers 1` 전제. 재시작하면 횟수가 풀린다.
-- 로그인·재설정 IP 제한은 `uvicorn --proxy-headers` 가 해석한 `request.client.host` 에 기댄다. 운영 프록시(Caddy) 뒤에서 위조한 `X-Forwarded-For` 가 걸러지는지는 아직 확인하지 않았다.
+- 로그인·재설정·가입 코드 IP 제한이 메모리라 `--workers 1` 전제. 재시작하면 횟수가 풀린다.
+- 로그인·재설정·가입 코드 IP 제한은 `uvicorn --proxy-headers` 가 해석한 `request.client.host` 에 기댄다. 운영 Caddy 는 클라이언트가 보낸 `X-Forwarded-For` 를 실제 접속 주소로 덮어 넘긴다(2026-11-11 확인, #692). API 가 `127.0.0.1` 에만 열려 있고 Caddy 앞에 다른 프록시가 없다는 전제다. 이 전제가 바뀌면 [배포 문서](../../dev/deploy.md#앞단-프록시-caddy)대로 `trusted_proxies` 를 함께 고친다.
+- 운영 Caddy 에 IP 별·동시 연결 제한은 없다. 본문은 210MiB 에서 자르지만, 한도 아래 업로드를 동시에 많이 받으면 임시 디스크를 쓴다.
+- 보안 헤더는 HSTS·`nosniff`·`Referrer-Policy`·화면 끼워 넣기 차단(`frame-ancestors`, `X-Frame-Options`)까지다. 스크립트·스타일 CSP 는 아직 없다.
+- 옛 해시(26만 회) 계정이 같은 순간에 두 번 로그인하면, 먼저 끝난 쪽이 해시를 새 횟수로 바꿔 나중 쪽은 한 번 401 이 된다. 계정마다 많아야 한 번이고 다시 입력하면 들어간다(#691).
 - 전체 메일 상한은 IP 여러 개로 채울 수 있다. 로그(`reason=global`)로 알아채고 IP 를 막는 운영 대응이다.
 - 서버는 약관에 동의하지 않은 사용자의 다른 API 를 막지 않는다(FE 가 동의 화면을 띄운다).
-- 가입 코드 요청(`POST /auth/signup/code`)의 `EMAIL_ALREADY_EXISTS` 로 이메일 가입 여부가, 아이디 확인 API(`GET /auth/username-availability`, 인증·횟수 제한 없음)로 아이디 존재가 드러난다(아이디는 초대에 쓰는 공개 식별자). 남은 노출이다.
+- 가입 코드 요청(`POST /auth/signup/code`)의 `EMAIL_ALREADY_EXISTS` 로 이메일 가입 여부가 여전히 드러난다. #691 부터 공인 IP 시간당 10회·전체 상한 안에서만 물어볼 수 있고, IP 여러 개나 사설 주소 경로로는 더 물을 수 있다. 아이디 확인 API(`GET /auth/username-availability`, 인증·횟수 제한 없음)로는 아이디 존재가 드러난다(아이디는 초대에 쓰는 공개 식별자). 남은 노출이다.
+- 로그인이 잠긴 이메일의 재설정 요청은 전체 메일 상한을 넘을 수 있다. 계정당 시간당 5통·IP 시간당 5번은 그대로라, IP 여러 개로 잠근 계정마다 요청해야 한도를 쓴다(#691).
+- 옛 해시 계정이 같은 순간 두 번 로그인하면, 다시 해시한 쪽이 먼저 끝난 뒤 다른 쪽은 해시가 바뀐 것으로 보고 401 을 받는다. 계정마다 한 번뿐인 경우라 감수한다.
 - 탈퇴 정리는 로컬 사본까지다. 외부 공급사(STT·LLM)의 원격 보관과 이미 나간 Discord 메시지는 회수했다고 주장하지 않는다.
 - 운영 `SERVICE_TOKEN`·`OAUTH_STATE_SECRET` 교체 주기 [확인 필요].
