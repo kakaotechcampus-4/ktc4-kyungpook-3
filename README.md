@@ -60,53 +60,53 @@ Manager's Manager(화면 이름 **매스**)는 Discord 회의를 듣고 **새 �
 
 <p align="center"><img src="./docs/assets/readme/feature-signup.gif" width="880" alt="랜딩에서 시작하기를 눌러 이메일 인증 코드로 가입하고 팀 이름을 입력해 Discord 연결 단계로 넘어가는 화면" /></p>
 
-#### 2. 회의 올리기
+#### 2. 녹음을 올리고 들어 보며 화자 지정
 
-Discord 음성 회의는 봇이 화자별로 녹음합니다. 녹음 파일은 웹에서 올립니다. 전사부터 할 일 추출까지 다섯 단계의 진행 상황이 보이고, 끝나면 회의록이 열립니다.
+Discord 음성 회의는 봇이 화자별로 녹음합니다. 녹음 파일은 웹에서 올립니다. 올린 녹음은 목소리를 화자별로 나누고, PM이 화자마다 샘플을 들어 보고 팀원을 고르면 전사부터 할 일 추출까지 이어서 정리합니다.
 
-<p align="center"><img src="./docs/assets/readme/feature-upload.gif" width="880" alt="녹음 파일을 올리고 참석자를 고른 뒤 정리 시작하기를 누르면 다섯 단계가 차례로 끝나고 회의록이 열리는 화면" /></p>
+<p align="center"><img src="./docs/assets/readme/feature-upload.gif?v=2" width="880" alt="녹음 파일을 올리고 정리를 시작한 뒤, 화자마다 샘플을 재생해 듣고 팀원을 골라 정리를 이어 가 회의록이 열리는 화면" /></p>
 
-#### 3. 들어 보고 화자 지정
-
-올린 녹음은 목소리를 화자별로 나눕니다. PM이 화자마다 샘플을 들어 보고 팀원을 고르면 정리를 이어 갑니다.
-
-<p align="center"><img src="./docs/assets/readme/feature-speakers.gif" width="880" alt="화자마다 샘플을 재생해 듣고 팀원을 고른 뒤 정리를 이어 가는 화면" /></p>
-
-#### 4. Discord 채팅도 하루 한 번 정리
+#### 3. Discord 채팅도 하루 한 번 정리
 
 Discord 텍스트 채널의 대화도 하루 한 번 모아 회의처럼 정리합니다. 채팅에서 나온 일은 바로 반영하지 않고 확인 필요로 올립니다. 영상 앞부분의 채널 화면은 대화 흐름을 보여 주려고 다시 그린 화면입니다.
 
-<p align="center"><img src="./docs/assets/readme/feature-chat.gif" width="880" alt="팀 채널에 대화가 올라온 뒤 웹의 회의록에 채팅 회의가 생기고, 요약과 전사문, 확인이 필요한 일 두 건이 보이는 화면" /></p>
+<p align="center"><img src="./docs/assets/readme/feature-chat.gif?v=2" width="880" alt="팀 채널에 대화가 올라온 뒤 웹의 회의록에 채팅 회의가 생기고, 요약과 전사문, 확인이 필요한 일 두 건이 보이는 화면" /></p>
 
-#### 5. 근거가 붙는 회의록
+#### 4. 근거가 붙는 회의록
 
 요약, 전사문, 추출된 일을 탭으로 봅니다. 추출된 일은 반영된 것과 확인이 필요한 일로 나뉘고, 원문 듣기로 그 말이 나온 시각으로 갑니다.
 
-<p align="center"><img src="./docs/assets/readme/feature-minutes.gif" width="880" alt="회의록의 요약, 전사문, 추출된 일 탭을 차례로 여는 화면" /></p>
+<p align="center"><img src="./docs/assets/readme/feature-minutes.gif?v=2" width="880" alt="회의록의 요약, 전사문, 추출된 일 탭을 차례로 여는 화면" /></p>
 
-#### 6. 확인이 필요한 일만 승인
+#### 5. 확인이 필요한 일만 승인
 
 마감이나 담당자가 애매한 일은 근거 원문과 함께 카드로 옵니다. 빈 칸을 채워 승인하면 태스크가 됩니다.
 
-<p align="center"><img src="./docs/assets/readme/feature-approve.gif" width="880" alt="확인 필요 카드에서 근거 원문을 보고 마감을 입력해 승인하는 화면" /></p>
+<p align="center"><img src="./docs/assets/readme/feature-approve.gif?v=2" width="880" alt="확인 필요 카드에서 근거 원문을 보고 마감을 입력해 승인하는 화면" /></p>
 
-#### 7. 네 가지로 보는 태스크
+#### 6. 네 가지로 보는 태스크
 
 같은 태스크를 리스트, 보드, 캘린더, 간트로 봅니다.
 
-<p align="center"><img src="./docs/assets/readme/feature-views.gif" width="880" alt="태스크 화면을 리스트에서 보드, 캘린더, 간트로 바꾸는 화면" /></p>
+<p align="center"><img src="./docs/assets/readme/feature-views.gif?v=2" width="880" alt="태스크 화면을 리스트에서 보드, 캘린더, 간트로 바꾸는 화면" /></p>
+
+#### 7. 주제로 묶어 보는 프로젝트 맵
+
+회의에서 나온 결정과 태스크를 주제별로 묶어 그래프로 봅니다. 주제의 이름과 설명을 고치고, 겹치는 주제는 하나로 합칩니다.
+
+<p align="center"><img src="./docs/assets/readme/feature-projectmap.gif" width="880" alt="프로젝트 맵에서 주제를 골라 이름을 고쳐 저장하고 다른 주제와 합치는 화면" /></p>
 
 #### 8. 마감 리마인드와 답장
 
 마감 전에 보낼 Discord 개인 메시지 초안을 PM이 확인하고 보냅니다. 팀원의 답장은 대화로 모입니다.
 
-<p align="center"><img src="./docs/assets/readme/feature-messages.gif" width="880" alt="리마인드 초안을 확인해 발송하고 팀원과의 대화를 여는 화면" /></p>
+<p align="center"><img src="./docs/assets/readme/feature-messages.gif?v=2" width="880" alt="리마인드 초안을 확인해 발송하고 팀원과의 대화를 여는 화면" /></p>
 
 #### 9. 한눈에 보는 대시보드
 
 확인 대기, 기한 지남, 마감 임박, 최근 자동 반영을 한 화면에서 보고 바로 확인하러 갑니다.
 
-<p align="center"><img src="./docs/assets/readme/feature-dashboard.gif" width="880" alt="대시보드에서 확인이 필요한 일과 마감 임박, 최근 반영을 훑고 확인하기를 눌러 승인 화면으로 가는 화면" /></p>
+<p align="center"><img src="./docs/assets/readme/feature-dashboard.gif?v=2" width="880" alt="대시보드에서 확인이 필요한 일과 마감 임박, 최근 반영을 훑고 확인하기를 눌러 승인 화면으로 가는 화면" /></p>
 
 ## AI가 판단하는 방식
 
