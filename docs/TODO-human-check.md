@@ -78,3 +78,15 @@
 - 찍기 전에 확인할 것: 5번에서 승인한 일이 실제로 **반영된 것** 칸으로 옮겨 보이는지는 화면에서 확인하지 않았다. 다르게 보이면 5번을 빼거나 바꾼다.
 - 계정 이메일이 화면에 보이면 가린다.
 - 넣은 뒤 `README.md:31` 의 주석을 `![대표 화면](./docs/assets/readme-hero.gif)` 로 바꾼다.
+
+## 6. 환경 구성과 배포 (작업 3)
+
+`docs/dev/deploy.md` 의 "환경 분리 현황" 표는 설정 파일이 정한 내용이다. 아래는 저장소로 확인할 수 없거나 팀이 정해야 하는 것이다.
+
+| 파일:줄 | 확인할 것 | 확인 방법(명령어) |
+|---|---|---|
+| `docs/dev/deploy.md` "환경 분리 현황" 표의 운영 열 | 운영 서버가 실제로 표와 같은 구성으로 떠 있는지(컨테이너 둘, systemd 유닛 셋, 프록시) | 운영 서버에서 `docker compose -f /opt/mm/backend/docker-compose.prod.yml ps`, `systemctl is-active mm-bot mm-worker mm-chat-poll.timer caddy`, `cat /opt/mm/.git/mm-deployed-sha` |
+| 같은 표의 "시크릿 보관 위치" | 서버의 시크릿 파일이 표에 적은 위치에 있고 다른 사용자가 읽지 못하는지 | 운영 서버에서 `ls -l /opt/mm/backend/.env /opt/mm/ai/.env /etc/mm/ /etc/mm-monitoring/`. 값은 출력하지 않는다 |
+| 같은 표의 "롤백 방법", `docs/dev/deploy.md` "되돌리기와 복구" | 백업·`alembic downgrade` 절차를 운영에서 한 번도 실행해 보지 않았다(#359). 정기 DB 백업 설정도 저장소에 없다 | `deploy/README.md` "마이그레이션이 들어간 커밋을 되돌릴 때"의 `pg_dump` 명령으로 백업이 만들어지는지 먼저 본다. downgrade 리허설을 제출 전에 할지 팀이 정한다 |
+| `docs/dev/deploy.md` "스테이징 없이 배포를 지키는 방법" | `develop` 에 브랜치 보호 규칙이 없어 PR 의 CI 가 필수 체크가 아니다. 이대로 둘지 | `gh api repos/kakaotechcampus-4/ktc4-kyungpook-3/rules/branches/develop` (빈 배열이면 규칙 없음). 필수 체크를 걸지는 팀이 정한다 |
+| `docs/dev/deploy.md` "환경 분리 현황"의 예정 항목 | 11/20 서버 이전 뒤 도메인·서버 경로·시크릿 위치가 바뀌는지 | 이전 뒤 `deploy/caddy/Caddyfile` 과 Actions 변수(`gh variable list`)를 보고 표를 다시 맞춘다 |
