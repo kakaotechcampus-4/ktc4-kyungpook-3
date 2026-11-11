@@ -30,6 +30,11 @@
 #     작업 트리 변경 전체를 함께 본다(과검출 쪽으로 기운다). 새 파일은 이 경우
 #     잡지 못하므로 `git add` 와 `git commit` 을 나눠 실행하는 편이 정확하다.
 #   - 패턴 검사일 뿐이다. 통과가 비밀값이 없다는 보증은 아니다.
+#
+# 병합 중일 때
+#   병합 중(MERGE_HEAD 가 있을 때)에는 상대 브랜치의 변경 전체가 "추가된 줄"로 보인다.
+#   그 줄은 이미 상대 브랜치에 들어가 있는 내용이라 여기서 막아도 고칠 수 없다. 그래서 병합 중에는
+#   HEAD 와 MERGE_HEAD 양쪽 모두에 없던 줄, 곧 충돌을 풀면서 새로 생긴 줄과 파일만 검사한다.
 
 set -u
 
@@ -81,10 +86,22 @@ $("${G[@]}" diff HEAD "${diff_opts[@]}" 2>/dev/null)"
 fi
 
 # 추가된 줄만 "경로<TAB>내용" 형태로 만든다. 허용 표시(예외 ④)가 있는 줄은 버린다.
-added_lines="$(printf '%s\n' "$diff_text" | awk '
-  /^\+\+\+ / { f = substr($0, 5); sub(/^b\//, "", f); next }
-  /^\+/      { print f "\t" substr($0, 2) }
-' | grep -v 'secret-scan: allow' | sort -u)"
+annotate() {
+  awk '
+    /^\+\+\+ / { f = substr($0, 5); sub(/^b\//, "", f); next }
+    /^\+/      { print f "\t" substr($0, 2) }
+  ' | grep -v 'secret-scan: allow' | LC_ALL=C sort -u
+}
+added_lines="$(printf '%s\n' "$diff_text" | annotate)"
+
+# 병합 중이면 상대 브랜치에 이미 있는 줄과 파일을 뺀다 (위 "병합 중일 때" 참고).
+if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+  scope="$scope (병합 중: 상대 브랜치에 이미 있는 내용 제외)"
+  theirs_lines="$("${G[@]}" diff --cached MERGE_HEAD "${diff_opts[@]}" 2>/dev/null | annotate)"
+  added_lines="$(LC_ALL=C comm -12 <(printf '%s\n' "$added_lines") <(printf '%s\n' "$theirs_lines"))"
+  theirs_files="$("${G[@]}" diff --cached MERGE_HEAD --name-only --diff-filter=A 2>/dev/null | LC_ALL=C sort -u)"
+  added_files="$(LC_ALL=C comm -12 <(printf '%s\n' "$added_files" | LC_ALL=C sort -u) <(printf '%s\n' "$theirs_files"))"
+fi
 
 findings=""
 add_finding() { findings="${findings}${findings:+
