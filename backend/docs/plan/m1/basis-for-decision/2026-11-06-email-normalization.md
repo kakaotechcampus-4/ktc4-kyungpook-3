@@ -73,6 +73,6 @@ SELECT count(*) FROM "user" WHERE email <> lower(btrim(email));
 ## 근거와 관련 문서
 
 - #434 설계 확정 댓글
-- [백엔드 README 이메일 정규화](../../../../README.md#이메일-정규화)
+- [백엔드 README 이메일 정규화](../../../../docs/reference/auth.md#이메일-정규화)
 - [비밀번호 재설정 결정 기록](2026-11-05-password-reset.md)
 - 테스트: `tests/api/test_auth_email_case.py`, `tests/test_migration_normalize_user_email.py`

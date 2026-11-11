@@ -54,5 +54,5 @@
 ## 근거와 관련 문서
 
 - 이슈 #550 설계 확정·보충 댓글, #454, #451
-- [백엔드 README 비밀번호 재설정](../../../../README.md#비밀번호-재설정)
+- [백엔드 README 비밀번호 재설정](../../../../docs/reference/auth.md#비밀번호-재설정)
 - 테스트: `tests/api/test_password_reset_service.py`, `tests/api/test_password_reset_api.py`, `tests/services/test_password_reset_limit.py`

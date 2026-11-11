@@ -66,4 +66,4 @@
 - 이슈 #459 본문 "정한 규칙"과 설계 확정 댓글
 - 코드: `backend/app/services/alias_learning.py`, `backend/app/api/approvals.py`(`_apply_approval`), `backend/app/api/extractions.py`(`create_extraction`, `get_extraction`), `backend/app/services/matching.py`(`resolve_assignee`)
 - 테스트: `backend/tests/services/test_alias_learning.py`, `backend/tests/api/test_alias_learning_approval.py`
-- [Backend README 승인 때 별칭 학습](../../../../README.md#승인-때-별칭-학습), [AI 계약](../../../contracts/backend-ai-contract.md)
+- [Backend README 승인 때 별칭 학습](../../../../docs/reference/matching-and-alias.md#승인-때-별칭-학습), [AI 계약](../../../contracts/backend-ai-contract.md)

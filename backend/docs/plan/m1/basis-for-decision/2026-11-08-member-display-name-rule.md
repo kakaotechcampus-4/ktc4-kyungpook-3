@@ -49,5 +49,5 @@
 
 - #447 설계 확정 댓글
 - [가입 이름 검증 결정](2026-11-06-signup-name-rule.md)
-- [백엔드 README 팀원 표시명 규칙](../../../../README.md#팀원-표시명-규칙)
+- [백엔드 README 팀원 표시명 규칙](../../../../docs/reference/auth.md#팀원-표시명-규칙)
 - 테스트: `tests/api/test_member_display_name_rule.py`, `tests/api/test_auth_name_rule.py`
