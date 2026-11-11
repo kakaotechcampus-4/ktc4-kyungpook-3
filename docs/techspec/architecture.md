@@ -64,7 +64,7 @@ flowchart LR
 
 | 경로 | 시작 | 화자 구분 | 판단 경로 | 게이트 특이점 |
 |---|---|---|---|---|
-| Discord 음성 | 봇 `/record`, 서버 ID 로 워크스페이스 고정(연결 없으면 녹음 안 함) | 화자별 트랙(분리 불필요) | `MM_EXTRACT_PATH`(legacy 기본 / judge) | — |
+| Discord 음성 | 봇 `/record`, 서버 ID 로 워크스페이스 고정(연결 없으면 녹음 안 함) | 화자별 트랙(분리 불필요) | `MM_EXTRACT_PATH`(운영은 judge, 코드 기본은 legacy) | — |
 | 웹 업로드 | PM 이 음성 1개 업로드(최대 700MiB, 3시간), `MM_UPLOAD_INTAKE=1` 인 워커가 가져감 | pyannoteAI → PM 이 라벨마다 팀원 지정 | 동일 | 디스코드 회의보다 먼저 처리 |
 | Discord 채팅 | PM 이 고른 채널, BE 커서 이후 메시지를 하루치 "채팅 회의"로 | 메시지 작성자 | 항상 judge | auto 를 review 로 낮춤 |
 
