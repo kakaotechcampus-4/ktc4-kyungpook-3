@@ -8,8 +8,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+# 잠금 파일의 버전과 해시 그대로 설치한다. CI 가 같은 파일로 테스트한다. 갱신 방법은 README "의존성 잠금"
+COPY requirements.lock .
+RUN pip install --require-hashes --no-deps -r requirements.lock
 
 COPY alembic.ini .
 COPY migrations ./migrations

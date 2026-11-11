@@ -1,0 +1,7 @@
+ts	phase	decision	why	evidence	result
+2026-11-11T06:34:41.288045+09:00	frame	실제 이슈와 PR 이력으로 사후 안내를 구성했다	과거 계획을 현재 결과처럼 다시 쓰지 않는다	frontend/docs/plan/README.md	초기 구현과 후속 작업 분리
+2026-11-11T06:34:41.288074+09:00	coverage	폴더뿐 아니라 그 안의 개별 파일까지 전수 이관했다	551의 추가 결과 세 개를 누락하지 않는다	frontend/docs/plan/work-items.json	결과66·refactor11·과거목록1 원문78파일
+2026-11-11T06:34:41.288081+09:00	proof	Git 원문과 링크 편집을 직접 비교한다	파일 개수나 현재 해시만으로 본문 보존을 추정하지 않는다	tools/check_frontend_history.py	원문 변조·대상 삭제·색인 누락 감지
+2026-11-11T06:34:41.288086+09:00	correction	refactor 원문 전수 포함 검사를 추가했다	독립 대조에서 원래 계획 항목 누락이 통과하던 빈틈을 확인했다	tools/check_frontend_history.py	같은 누락 대조가 수정 후 실패
+2026-11-11T06:34:41.288091+09:00	landing	발표 문서 PR683을 일반 merge로 병합했다	squash는 저장소에서 허용하지 않는다	https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/683	check·build·e2e 통과 후 MERGED 확인
+2026-11-11T06:34:41.288096+09:00	integration	후속 재구성을 병합된 develop 위에 맞췄다	별도 병합된 682 원문도 Git 기준으로 보존을 재검사한다	b009f81dfd6e03a7860cb207436ee1d276b28ac2	이슈와 PR 상태를 별도 기록

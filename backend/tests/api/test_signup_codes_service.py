@@ -213,6 +213,34 @@ def test_registered_email_is_refused(mdb):
     assert err.code == ErrorCode.EMAIL_ALREADY_EXISTS
 
 
+def test_registered_email_hits_the_global_cap_before_the_existence_check(mdb):
+    # 가입 여부 판단이 횟수 제한 뒤에 있어야, 제한에 걸린 동안은 가입 여부를 물어볼 수 없다(#691).
+    for i in range(svc.GLOBAL_HOURLY_LIMIT):
+        _request(mdb, email=f"user{i}@example.com")
+    mdb.add(User(username=username_for("taken@example.com"), email="taken@example.com", name="t", provider="local"))
+    mdb.commit()
+
+    err = _failure(lambda: svc.request_code(mdb, "taken@example.com", now=NOW))
+
+    assert err.code == ErrorCode.SIGNUP_CODE_RATE_LIMITED
+    assert err.details["reason"] == "global"
+
+
+def test_registered_email_with_a_recent_code_hits_the_cooldown_first(mdb):
+    # 코드를 받은 뒤 가입한 이메일. 재발송 제한이 가입 여부보다 먼저다(#691).
+    _request(mdb)
+    mdb.add(User(username=username_for(EMAIL), email=EMAIL, name="t", provider="local"))
+    mdb.commit()
+
+    err = _failure(lambda: svc.request_code(mdb, EMAIL, now=NOW + timedelta(seconds=1)))
+
+    assert err.code == ErrorCode.SIGNUP_CODE_RATE_LIMITED
+    assert err.details["reason"] == "cooldown"
+    assert _failure(lambda: svc.request_code(mdb, EMAIL, now=NOW + timedelta(minutes=2))).code == (
+        ErrorCode.EMAIL_ALREADY_EXISTS
+    )
+
+
 def test_rows_older_than_a_day_are_removed_by_later_requests(mdb):
     _request(mdb)
 

@@ -22,7 +22,7 @@ from app.models import (
     Integration, Invitation, Meeting, MeetingUpload, Member, MemberRole,
     MessageThread, Notification, PrivacyCleanup, Reminder, ReminderBundle,
     ReminderStatus, ReminderWatch, ReplyJudgment, ReplyJudgmentState,
-    SignupEmailCode, Source, ThreadMessage, User, WatchState,
+    SignupEmailCode, Source, ThreadMessage, User,
     WithdrawalReceipt, Workspace,
 )
 from app.schemas.withdrawal import WithdrawalResponse
@@ -194,13 +194,11 @@ def _scrub_shared(db: Session, workspace_id: str, members: list[Member], now: da
     affected_thread_ids = sorted(set(thread_ids) | set(authored_threads))
     db.execute(delete(BotDmPart).where(BotDmPart.message_id.in_(message_ids)))
     db.execute(update(ThreadMessage).where(ThreadMessage.message_id.in_(message_ids)).values(discord_message_id=None))
-    db.execute(update(ThreadMessage).where(
-        ThreadMessage.thread_id.in_(thread_ids), ThreadMessage.dm_status.in_(("pending", "claimed")),
-    ).values(dm_status="failed", dm_failure_reason="discord_not_linked", claimed_at=None))
+    from app.services.messages import stop_thread_dms
+    stop_thread_dms(db, thread_ids, now)
     db.execute(update(ReplyJudgment).where(ReplyJudgment.thread_id.in_(thread_ids), ReplyJudgment.state == "pending").values(
         state=str(ReplyJudgmentState.FAILED), claimed_at=None, finished_at=now, failure_reason="ACCOUNT_WITHDRAWN",
     ))
-    db.execute(update(ReminderWatch).where(ReminderWatch.thread_id.in_(thread_ids)).values(state=str(WatchState.STOPPED), closed_at=now, paused_at=None))
     db.execute(delete(Notification).where(Notification.member_id.in_(member_ids)))
     # 생성된 알림의 수신자 이름은 thread 외에도 bundle·task 링크로 복사된다.
     bundle_ids = select(ReminderBundle.bundle_id).where(

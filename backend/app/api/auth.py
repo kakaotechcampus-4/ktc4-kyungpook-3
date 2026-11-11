@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import RedirectResponse
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -31,7 +31,7 @@ from app.schemas.auth import (
 from app.schemas.username import validate_username
 from app.services import kakao_oauth, login_limit, mailer, oauth_state, password_reset, password_reset_limit, sessions, signup_codes
 from app.services.kakao_oauth import KakaoOAuthError
-from app.services.passwords import DUMMY_PASSWORD_HASH, hash_password, verify_password
+from app.services.passwords import dummy_password_hash, hash_password, needs_rehash, verify_password
 from app.services import lifecycle
 
 logger = logging.getLogger(__name__)
@@ -97,10 +97,20 @@ def username_availability(username: str = Query(...), db: Session = Depends(get_
     return success(result.model_dump(mode="json"))
 
 
+_SIGNUP_IP_SCOPE = "signup:"
+
+
 @router.post("/signup/code", response_model=Envelope[SignupCodeResponse])
-def request_signup_code(payload: SignupCodeRequest, db: Session = Depends(get_db)):
+def request_signup_code(request: Request, payload: SignupCodeRequest, db: Session = Depends(get_db)):
     if not mailer.is_configured():
         raise AppError(ErrorCode.MAIL_UNAVAILABLE)
+    # 첫 DB 쿼리 전에 공인 IP 하나의 요청 수를 막는다(#691). 가입한 이메일을 묻는 요청도 여기서 센다.
+    ip_key = login_limit.client_ip_key(request.client.host if request.client else None)
+    clock = login_limit.clock()
+    if not password_reset_limit.allow(ip_key, clock, scope=_SIGNUP_IP_SCOPE, limit=signup_codes.IP_HOURLY_LIMIT):
+        logger.warning("signup code request blocked: reason=ip key=%s", ip_key)
+        retry_after = password_reset_limit.retry_after(ip_key, clock, scope=_SIGNUP_IP_SCOPE)
+        raise AppError(ErrorCode.SIGNUP_CODE_RATE_LIMITED, details={"reason": "ip", "retry_after": retry_after})
     mail = signup_codes.request_code(db, payload.email, now=datetime.now(timezone.utc))
     db.commit()
     mailer.send_in_background(mail.to, mail.subject, mail.text, log_label="signup_code", html=mail.html)
@@ -224,11 +234,23 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     try:
         user = db.scalars(_login_user_stmt(payload.email)).first()
         # 없는 이메일·비밀번호 없는 계정도 같은 해시 계산을 거치게 해 응답 시간으로 가입 여부가 드러나지 않게 한다.
-        stored = user.password_hash if user and user.password_hash else DUMMY_PASSWORD_HASH
+        stored = user.password_hash if user and user.password_hash else dummy_password_hash()
         ok = verify_password(payload.password, stored)
         if not user or not user.password_hash or not ok:
             raise AppError(ErrorCode.INVALID_CREDENTIALS)
-        if db.scalar(_password_hash_lock_stmt(user.user_id)) != user.password_hash:
+        if needs_rehash(user.password_hash):
+            # 옛 횟수 해시는 지금 횟수로 바꾼다(#691). 해시 계산은 잠금 밖에서 하고, 해시가 그대로일 때만 바꾸는 UPDATE 가
+            # 공유 잠금 재확인을 대신한다. 공유 잠금을 잡은 채 UPDATE 하면 같은 계정의 로그인 둘이 서로 기다리다 교착한다.
+            upgraded = hash_password(payload.password)
+            unchanged = db.execute(
+                update(User)
+                .where(User.user_id == user.user_id, User.password_hash == user.password_hash)
+                .values(password_hash=upgraded)
+                .execution_options(synchronize_session=False)
+            ).rowcount == 1
+        else:
+            unchanged = db.scalar(_password_hash_lock_stmt(user.user_id)) == user.password_hash
+        if not unchanged:
             raise AppError(ErrorCode.INVALID_CREDENTIALS)
 
         _create_session(db, user, response)
@@ -367,7 +389,11 @@ def request_password_reset(request: Request, payload: PasswordResetRequest, db: 
         logger.warning("password reset request blocked: reason=ip key=%s", ip_key)
         return success({})
     mail = password_reset.request_reset(
-        db, payload.email, now=datetime.now(timezone.utc), base_url=mailer.app_base_url()
+        db,
+        payload.email,
+        now=datetime.now(timezone.utc),
+        base_url=mailer.app_base_url(),
+        login_locked=login_limit.email_blocked(payload.email, now=login_limit.clock()),
     )
     db.commit()
     # 가입 여부와 쿨다운 여부가 응답으로 드러나지 않게 항상 같은 응답을 준다.

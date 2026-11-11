@@ -149,7 +149,7 @@ FE는 crypto.getRandomValues로 만든 256비트 키를 sessionStorage에 보관
 
 - 서버 경계는 [삭제 서비스](../../../backend/app/services/meeting_deletion.py), [회의 API](../../../backend/app/api/meetings.py), [Task 응답](../../../backend/app/schemas/task.py)에 있다.
 - FE는 [삭제 기능](../../src/features/meeting-delete/ui/MeetingDelete.tsx), [Task 변환](../../src/entities/task/model/mapper.ts), [라우팅 테스트](../../src/app/meetingDelete.test.tsx), [Chromium E2E](../../e2e/meeting-delete.e2e.ts)로 검증한다.
-- 실제 실행 결과와 남은 환경 검증은 [#576 FE 결과](../issues/576-meeting-delete/result.md)와 [BE M3 결과](../../../backend/docs/plan/m3/result.md)에 기록한다. 봇 파일 정리 규약은 [BE·AI 대표 계약](../../../backend/docs/contracts/backend-ai-contract.md)에 둔다.
+- 실제 실행 결과와 남은 환경 검증은 [#576 FE 결과](../plan/m5/work-items/576-meeting-delete/result.md)와 [BE M3 결과](../../../backend/docs/plan/m3/result.md)에 기록한다. 봇 파일 정리 규약은 [BE·AI 대표 계약](../../../backend/docs/contracts/backend-ai-contract.md)에 둔다.
 
 ## Notion 선택 기능 (#507, 2026-11-07)
 
@@ -478,6 +478,8 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 - 회의 채팅 채널(#428)이 `DISCORD_CHANNEL_NOT_FOUND(404)`·`DISCORD_CHANNEL_NOT_ACCESSIBLE(409)` 를 더했다. 위 목록의 개수는 이 절을 처음 쓴 때 기준이며 전체 목록은 `core/errors.py` 가 원천이다 → §4.3.1.
 - 회의 요약과 프로젝트 맵(#462)이 `TOPIC_NOT_FOUND(404)`·`SUMMARY_NOT_FOUND(404)` 를 더했다 → §4.4.2.
 - 회의 기록 고치기(#605)가 `TOPIC_NAME_TAKEN(409)`·`DECISION_NOT_FOUND(404)`·`TRANSCRIPT_LINE_NOT_FOUND(404)` 를 더했다 → §4.4.3.
+- 팀원 이름 중복(#652)이 `MEMBER_NAME_DUPLICATED(409)` 를 더했다 → §2.2.
+- 팀원 디스코드 계정의 서버 멤버 확인(2026-11-11)이 `DISCORD_USER_NOT_IN_GUILD(409)` 를 더했다 → §2.2.
 - 본 뒤 바뀐 승인 카드 `APPROVAL_CHANGED(409)` 는 BE #547 이 더했다 → §2.5.
 - 로그인 시도 제한(BE PR #456, 2026-11-07 병합)이 `TOO_MANY_LOGIN_ATTEMPTS(429)` 를 더했다. 위 목록에는 넣지 않았고 쓰임새는 §4.1.3 에 있다.
 - 회의 녹음 재생(#676, BE PR #670 머지 전)이 `AUDIO_NOT_AVAILABLE(404)` 를 더한다. `details.reason` 은 `expired`·`no_recording` 이다. 위 목록에는 넣지 않았고 쓰임새는 §2.3.1 「회의 녹음 재생」에 있다.
@@ -518,11 +520,12 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 |---|---|---|
 | POST | `/api/v1/members` | 201 |
 | GET | `/api/v1/members?workspace_id=` | `workspace_id` 필수 |
-| GET · PATCH | `/api/v1/members/{member_id}` | 대기 초대가 있는 팀원을 PM 으로 올리면 409 (§5.9) |
+| GET · PATCH | `/api/v1/members/{member_id}` | 대기 초대가 있는 팀원을 PM 으로 올리면 409 (§5.9). 디스코드 연결 옮기기 `move_discord_link`(#652) |
 | POST | `/api/v1/members/{member_id}/aliases` | 별칭 추가 |
 | GET | `/api/v1/members/aliases?workspace_id=` | 별칭 목록 |
 | GET | `/api/v1/members/unresolved-aliases?workspace_id=` | **미매칭 이름** |
 | DELETE | `/api/v1/members/aliases/{alias_id}` | 204 |
+| DELETE | `/api/v1/members/{member_id}` | 팀원 삭제. PM 전용, 204 (아래 2026-11-10 #637) |
 
 ```jsonc
 // MemberResponse
@@ -530,7 +533,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
  "discord_user_id": "1123...", "notion_name": null,
  "role": "member", "has_login_account": true, "created_at": "2026-09-15T04:10:00Z"}
 // POST 요청: {workspace_id, display_name, discord_user_id?, notion_name?, role?}
-// PATCH 요청: 위 4개 모두 선택
+// PATCH 요청: 위 4개 모두 선택. move_discord_link?: boolean (기본 false, #652)
 
 // MemberAliasResponse
 {"alias_id": "al_01", "member_id": "mb_01", "workspace_id": "ws_01",
@@ -544,10 +547,20 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 
 2026-11-09 #575 구현은 `MemberResponse.has_login_account: boolean`을 추가한다. 활성 팀원에 로그인 계정이 연결됐는지 나타내며 User ID는 반환하지 않는다. FE는 `hasLoginAccount`로 옮기고, PM에게 로그인 연결된 일반 팀원의 `PM 권한 부여`를 제공한다. 기존 `PATCH /members/{id}`의 `{role:"pm"}`를 사용하며 기존 PM의 권한은 유지한다. 대기 초대의 `MEMBER_HAS_PENDING_INVITATION` 등 서버 오류는 그대로 따른다. 생산자·소비자 코드를 함께 변경한 현재 구현이며, 별도 파트 합의·병합·배포 완료 기록은 아니다.
 
-2026-11-10 #613 FE 사용: Discord 를 연결하지 않은 팀의 온보딩 4단계와 팀원 연결 창이 `POST /members` 를 `{workspace_id, display_name}` 만으로 보낸다(`discord_user_id` 키 없음). 요청 형식은 위 그대로이고 BE 는 바꾸지 않았다. 서버는 같은 이름의 팀원을 막지 않는다. FE 가 보내기 전에 지금 팀원 목록과 이름(앞뒤 공백 제거, 대소문자 그대로)을 견줘 막는다(D-187). 같은 이름 거절을 서버 규약으로 둘지는 합의하지 않았다.
+2026-11-10 #613 FE 사용: Discord 를 연결하지 않은 팀의 온보딩 4단계와 팀원 연결 창이 `POST /members` 를 `{workspace_id, display_name}` 만으로 보낸다(`discord_user_id` 키 없음). 요청 형식은 위 그대로이고 BE 는 바꾸지 않았다. ~~서버는 같은 이름의 팀원을 막지 않는다.~~ FE 가 보내기 전에 지금 팀원 목록과 이름(앞뒤 공백 제거, 대소문자 그대로)을 견줘 막는다(D-187). ~~같은 이름 거절을 서버 규약으로 둘지는 합의하지 않았다.~~ 2026-11-10 #652 부터 서버도 같은 규칙으로 막는다(아래).
+
+2026-11-10 #652 BE 현재 구현(FE #647 이 쓸 예정, FE 반영과 합의 여부 확인 필요): 아래 세 가지를 더했다. 결정 근거는 [BE 결정 기록](../../../backend/docs/plan/m1/basis-for-decision/2026-11-10-discord-link-move-decision.md).
+
+- 연결 옮기기: `PATCH /members/{member_id}` 에 `{discord_user_id: "<계정>", move_discord_link: true}` 를 보내면, 그 계정을 가진 같은 워크스페이스의 다른 활성 팀원의 연결을 풀고 이 팀원에 잇는다. 한 트랜잭션이라 중간에 실패해도 둘 다 풀리는 일이 없다. 두 팀원의 이름은 바뀌지 않는다. 앞 팀원의 `discord_profile` 별칭은 연결 해제와 같이 지운다. 플래그가 없거나 `false` 면 지금처럼 409 `DISCORD_USER_ALREADY_MAPPED` 다. 그 계정을 가진 활성 팀원이 없으면 보통 연결과 같고, `discord_user_id` 없이 플래그만 보내면 아무것도 바꾸지 않는다. 응답은 지금과 같은 `MemberResponse`(이 팀원)이고 앞 팀원 id 는 싣지 않는다. 앞 팀원의 바뀐 연결은 `GET /members` 를 다시 읽어 확인한다
+- 지난 발화 화자: 팀원에 계정을 이으면(`POST /members` 의 `discord_user_id`, `PATCH` 의 새 계정, 옮기기 모두) 이 워크스페이스 회의의 발화 중 그 계정이 말한 행의 `speaker_member_id` 가 이 팀원으로 바뀐다. 전에 연결이 없던 발화(`null`)와 삭제한 팀원에 붙어 있던 발화도 포함한다. 그래서 회의록(`GET /meetings/{id}/minutes`)의 `speaker_display_name` 과 참석자가 새 팀원 이름으로 나온다. 연결을 풀기만 하면(`null`) 발화는 그대로다. 탈퇴한 팀원의 발화는 화자 계정이 지워져 있어 바뀌지 않는다. 이미 만든 요약 문서와 승인 카드 payload 의 `evidence_speaker_member_id` 는 바꾸지 않는다
+- 같은 이름 거절: `POST /members` 와 이름이 바뀌는 `PATCH display_name` 이 같은 워크스페이스 활성 팀원(삭제·탈퇴 제외)과 이름이 같으면 409 `MEMBER_NAME_DUPLICATED`, `details: {display_name, member_id}`(`member_id` 는 이미 그 이름을 쓰는 팀원). 위 #613 의 FE 규칙처럼 앞뒤 공백만 지우고 견주며 대소문자는 그대로 본다. 자기 이름을 그대로 보내거나 다른 칸만 고치면 통과하고, 이미 저장된 중복은 그대로 둔다. 공백은 JS `trim` 과 같은 글자를 지운다. 같은 이름을 동시에 보내면 워크스페이스 행 잠금으로 차례로 처리돼 두 번째가 409 다
 
 2026-11-10 #660 FE 사용: Discord 를 연결한 팀의 팀원 연결 창과 온보딩 4단계도 서버에 없는 사람을 같은 형식(`{workspace_id, display_name}`)으로 만든다(D-188). 요청 형식과 BE 는 바꾸지 않았다.
 2026-11-10 #647 FE 사용: 팀원 관리 창과 온보딩 4단계가 팀원 한 명이 한 줄인 목록에서 줄마다 바로 보낸다. 이름 고치기는 `PATCH /members/{id}` `{display_name}`, 계정 잇기는 `{discord_user_id}`, 연결 풀기는 `{discord_user_id: null}` 이다. 다른 팀원에 연결된 계정을 옮길 때는 앞 팀원에 `{discord_user_id: null}` 을 보낸 뒤 새 팀원에 `{discord_user_id}` 를 보낸다. 같은 계정을 두 팀원에 붙이면 409 `DISCORD_USER_ALREADY_MAPPED` 라서다. 두 요청을 묶는 API 는 없어 두 번째가 실패하면 앞 팀원 연결만 풀린 채 남고 FE 가 그 상태를 보이고 다시 시도하게 한다. 연결 안 된 Discord 계정으로 팀원을 만들 때는 `POST /members` `{workspace_id, display_name, discord_user_id}` 이고 `display_name` 은 Discord 표시 이름(없으면 사용자명)이다. 요청 형식은 위 그대로이고 BE 는 바꾸지 않았다. 팀원 삭제는 BE API 가 없어 쓰지 않는다(#637). 근거: [D-190](../decision/frontend-decisions.md), MSW 기준 검증, 실서버 미검증.
+
+2026-11-10 #637 BE 구현: `DELETE /members/{member_id}` 는 팀원을 명단에서 뺀다. 본문 없이 204 를 돌려준다. 행은 지우지 않고 `is_deleted` 만 켜며 이름·`discord_user_id`·로그인 연결은 이력용으로 남긴다(탈퇴의 익명화와 다르다). 그 공간의 PM 만 부른다. 일반 팀원과 다른 공간의 사용자는 403 `FORBIDDEN`, 없거나 탈퇴했거나 이미 지운 팀원은 404 `MEMBER_NOT_FOUND`, 로그인 계정이 있는 PM 이 남지 않게 되면(마지막 PM 이 자기를 지울 때) 409 `LAST_PM_REQUIRED` 다. 지우면 기본 `GET /members` 목록·담당자 찾기·봇 이름 목록에서 빠지고, 끝나지 않은(`done` 이 아닌) 태스크의 담당이 비워진다(태스크 이력 `assignee`, `change_source=manual`, `changed_by` 는 지운 PM). `done` 태스크와 지운 태스크는 그대로다. 대기 초대는 `canceled`, 예약 재촉 묶음과 리마인드는 `cancelled`, 안 나간 DM 은 `failed`(`discord_not_linked`) 가 되고 대화는 남는다. 같은 디스코드 계정은 다른 팀원에 다시 이을 수 있다. 지운 팀원은 `include_withdrawn=true` 목록에도 들어오지 않아, 이력에 남은 그 팀원 ID 의 이름을 FE 가 이 목록으로 찾지 못한다. 지운 팀원의 `GET /members/{id}` 는 이력용으로 200 이고, `PATCH` 는 404 `MEMBER_NOT_FOUND` 다. FE 화면은 #647 이 붙이며 아직 이 API 를 쓰지 않는다. 생산자 코드만 바꾼 현재 구현이고 파트 합의 기록은 아니다. 근거: [members.py](../../../backend/app/api/members.py) `delete_member`, [결정 기록](../../../backend/docs/plan/m1/basis-for-decision/2026-11-10-member-delete-decision.md).
+
+2026-11-11 BE 구현, FE 처리 전: `POST /members` 와 `PATCH /members/{id}` 가 `discord_user_id` 를 새로 붙일 때 그 계정이 워크스페이스에 연결한 Discord 서버의 멤버인지 봇 토큰으로 확인하고, 확인되지 않으면 저장하지 않는다. 연결한 서버가 없으면 409 `INTEGRATION_NOT_CONNECTED`(`details.provider: "discord"`), 서버에 없는 계정이면 409 `DISCORD_USER_NOT_IN_GUILD`(`details.discord_user_id`), 봇 토큰이 없거나 Discord 가 답하지 않으면 502 `DISCORD_API_FAILED` 다. 502 는 다시 시도하면 될 수 있다. 확인 중 서버 연결이 끊기거나 다른 서버로 바뀌어도 409 `INTEGRATION_NOT_CONNECTED` 다. 같은 워크스페이스의 다른 팀원이 쓰는 계정이면 Discord 를 부르기 전에 지금처럼 409 `DISCORD_USER_ALREADY_MAPPED` 이고, `move_discord_link: true` 로 옮겨 올 때도 서버 멤버 확인은 똑같이 한다. 연결 풀기(`null`)와 지금과 같은 값을 다시 보내는 PATCH 는 확인하지 않는다. 요청 형식은 그대로이고, FE 는 아직 새 코드의 문구를 따로 두지 않았다. 디스코드 서버를 연결하지 않은 워크스페이스의 안 나간 DM 은 봇에 넘기지 않고 `failed`(`discord_not_linked`) 로 닫는다. 생산자 코드만 바꾼 현재 구현이고 파트 합의 기록은 아니다. 근거: [members.py](../../../backend/app/api/members.py) `create_member`·`update_member`, [member_aliases.py](../../../backend/app/services/member_aliases.py) `lookup_guild_member`, [결정 기록](../../../backend/docs/plan/m1/basis-for-decision/2026-11-11-member-discord-guild-check.md).
 
 계정 영구 탈퇴용 익명 기록 주체는 기존 명단 비활성화와 구분한다. 영구 탈퇴자의 대화는 PM 목록·상세·읽음에 남고 표시명은 `탈퇴한 사용자`, `web_reply_available`은 false다. 프로필 수정·별칭 추가·초대·새 발송과 늦은 봇 결과는 거절한다. 기존 `is_deleted`만 있는 명단 비활성화의 unread 0·읽음 POST 404는 유지한다. [익명 주체 결정](../../../backend/docs/plan/m1/basis-for-decision/2026-11-09-withdrawn-record-actor.md)에 첫 구현의 범위를 기록했고, 본인 탈퇴 API·화면과 기록용 목록은 위 [계정 탈퇴 규약](#계정-탈퇴와-정리-상태-575-2026-11-09)을 따른다. 실제 외부 제공자·운영 계정의 삭제를 확인한 기록은 아니다.
 
@@ -1389,7 +1402,8 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - `POST /auth/signup`은 이메일을 받지 않는다. `link_kakao`가 거짓이면 증명 토큰의 이메일로 만든다. 참이면 대기 쿠키가 있어야 하고, 쿠키에 인증된 이메일이 있으면 그 값으로 만들고 토큰은 무시한다. 없으면 토큰이 있어야 한다.
 - 이메일은 앞뒤 공백을 빼고 소문자로 비교한다. 코드 요청과 카카오 충돌 판단, 로그인이 같은 규칙이다.
 - 코드는 10분 유효, 코드당 5회 입력, 재발송 60초, 시간당 5회다. 증명 토큰과 대기 쿠키는 30분이다.
-- `SIGNUP_CODE_RATE_LIMITED`의 `details`는 `{"reason": "cooldown" | "hourly" | "global", "retry_after": 초}`다. 재발송 제한 중에는 앞 코드가 그대로 유효하다.
+- `SIGNUP_CODE_RATE_LIMITED`의 `details`는 `{"reason": "cooldown" | "hourly" | "ip" | "global", "retry_after": 초}`다. 재발송 제한 중에는 앞 코드가 그대로 유효하다.
+- `ip`(BE #691)는 같은 공인 IP 의 요청이 시간당 10회를 넘은 경우다. 가입한 이메일을 묻는 요청도 센다. FE 는 `cooldown` 만 따로 읽고 나머지는 같은 문구라 코드 변경이 없다. 이미 가입한 이메일의 409 `EMAIL_ALREADY_EXISTS` 는 이제 재발송·시간당·전체 제한을 모두 본 뒤에 나온다. 제한에 걸리면 409 대신 429 다.
 - `SIGNUP_CODE_INVALID`의 `details`는 `{"reason": "wrong", "attempts_left": n}`, `{"reason": "expired"}`, `{"reason": "too_many"}`다. 다섯 번째 틀린 입력은 `wrong`에 `attempts_left: 0`이고 그 뒤가 `too_many`다.
 - 대기 쿠키 `kakao_pending`은 HttpOnly이고 Path가 `/api/v1/auth`다. 카카오 신원은 URL에 싣지 않는다. 인증되지 않은 카카오 이메일은 쿠키에 담지 않아 `pending.email`이 null이다.
 
@@ -1424,7 +1438,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 
 **돌아갈 경로.** 로그인 화면의 회원가입 링크와 `/signup`은 `next`를 들고 있어 로그인으로 옮겨도 이어진다. 가입을 마친 새 계정은 `next`를 쓰지 않고 시작 화면으로 간다(#411, D-182).
 
-**#538 보완 (2026-11-09).** API 형태는 바꾸지 않았다. FE는 휴대폰 로그인 화면을 시안 H-1 배치로 바꿨다(D-185). 카카오 버튼 문구는 `카카오 로그인`이다(D-182). E2E에 실패 복귀, 대기 없는 `kakao=1`에서 카카오로 다시 시작, 기존 계정 연결 뒤 이어진 카카오 로그인, 360·390·1280px 화면 확인을 더했다([결과](../issues/538-kakao-login-finish/result.md)).
+**#538 보완 (2026-11-09).** API 형태는 바꾸지 않았다. FE는 휴대폰 로그인 화면을 시안 H-1 배치로 바꿨다(D-185). 카카오 버튼 문구는 `카카오 로그인`이다(D-182). E2E에 실패 복귀, 대기 없는 `kakao=1`에서 카카오로 다시 시작, 기존 계정 연결 뒤 이어진 카카오 로그인, 360·390·1280px 화면 확인을 더했다([결과](../plan/m4/work-items/538-kakao-login-finish/result.md)).
 
 **확인하지 않은 것.** 실제 카카오 로그인, 실제 메일 수신, 실서버 왕복은 하지 않았다. BE 코드는 읽어서 대조만 했다. `Secure` 쿠키와 카카오 redirect URI, 비즈 앱 이메일 동의 설정은 배포 환경에서 확인해야 한다. 배포 순서상 BE의 새 signup이 먼저 나가면 지금 배포된 FE의 가입이 400이 되므로 FE와 함께 내보낸다.
 
@@ -1474,7 +1488,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - 문서 내용을 바꾸면 FE 문서 화면의 버전과 BE `CURRENT_VERSIONS` 를 같이 올린다.
 - `2026-11-08`은 정책 초안·BE 제안의 판본이다. 최종 공개 시 검토 완료한 새 판본으로 문서·BE·FE를 함께 맞춰 초안 판본의 동의 행을 유효 동의로 재사용하지 않는다. `required=false`는 서버 설정 판본의 두 기록이 있다는 뜻이며 법률 검토 완료·정책 공개 승인·다른 API의 접근 권한 판정을 뜻하지 않는다.
 
-**2026-11-09 #566 화면 연결 후속.** 위 제목과 초안·공개 승인에 관한 기존 기록은 유지한다. 후속 구현은 [FE 결과](../issues/566-consent-connection/result.md)에 구분한다. 사용자 지시에 따른 구현 규약이며 법률 검토·정책 공개의 합의를 뜻하지 않는다.
+**2026-11-09 #566 화면 연결 후속.** 위 제목과 초안·공개 승인에 관한 기존 기록은 유지한다. 후속 구현은 [FE 결과](../plan/m4/work-items/566-consent-connection/result.md)에 구분한다. 사용자 지시에 따른 구현 규약이며 법률 검토·정책 공개의 합의를 뜻하지 않는다.
 
 - GET·POST 모두 선택 헤더 `X-Consent-Account-ID: <화면이 기대하는 user_id>`를 받는다. 쿠키로 인증한 사용자와 다르면 동의 상태를 읽거나 저장하기 전에 `409 CONSENT_ACCOUNT_CHANGED`다. FE는 항상 보낸다. 본문에 사용자 ID를 추가하지 않는다. 헤더를 생략한 기존 호출자는 이전처럼 동작하며 기대 계정 비교가 적용되지 않는다.
 - 현재 제품의 `preparing` 상태에서는 동의 API를 호출하지 않는다. 최종 두 본문·판본·시행일이 들어 있는 `published` 문서 쌍을 코드로 제공한 뒤에만 체크와 가드가 활성화된다. 환경 변수·URL이 공개 상태를 정하지 않는다. 공개 문서·계정 탈퇴는 동의 가드 밖이다.
@@ -1488,7 +1502,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - FE는 기본 두 항목을 모두 체크하기 전 가입·동의 제출을 막고, 실제 저장 상태 확인 뒤 업무 화면을 연다. 공개 문서와 계정 탈퇴는 계속 가드 밖이다.
 - 동의 상태 조회 중에는 앱의 기존 `GuardSkeleton`을 유지해 헤더·본문 자리가 움직이지 않게 한다. 필요한 동의가 확인되면 동의 폼을 표시하며 조회 대기를 동의 완료로 간주하지 않는다.
 - 공식 자료 링크를 본문과 함께 제공한다. Elice의 국내 처리 설명과 모든 운영 엔드포인트의 적용 확인을 구분한다. 보관 기간·학습 이용 조건 등 미확인 사실을 확인 완료로 바꾸지 않는다. 별도 국외 이전 동의 API를 추가하거나 법적 요건을 충족했다고 선언한 변경은 아니다.
-- 사이트와 Markdown의 본문 및 BE 판본 일치는 `npm run policy:check`로 검사한다. 실행·배포 검증 근거는 [#565 결과](../issues/565-policy-publication/result.md)에 기록한다.
+- 사이트와 Markdown의 본문 및 BE 판본 일치는 `npm run policy:check`로 검사한다. 실행·배포 검증 근거는 [#565 결과](../plan/m4/work-items/565-policy-publication/result.md)에 기록한다.
 
 #### 4.1.6 아이디 (#627): 합의된 규약, BE PR #626 미병합
 
@@ -1898,6 +1912,7 @@ POST .../meetings/upload            multipart/form-data
 | 팀원 생성과 동시에 Discord 사용자 연결 | `POST /api/v1/members` `{workspace_id, display_name, discord_user_id}` |
 | 이미 있는 팀원에 연결 | `PATCH /api/v1/members/{member_id}` `{discord_user_id}` |
 | 연결 해제 | `PATCH /api/v1/members/{member_id}` `{discord_user_id: null}` |
+| 다른 팀원에서 옮겨 오기 (#652) | `PATCH /api/v1/members/{member_id}` `{discord_user_id, move_discord_link: true}` → §2.2 |
 | 매핑 현황 | `GET /api/v1/members?workspace_id=` 의 `discord_user_id` 와 위 목록을 클라이언트에서 조인 |
 
 - 한 Discord 사용자가 두 팀원에 붙지 않도록 **`member.discord_user_id` 에 워크스페이스 범위 유일 제약**을 걸어 달라 (D-027). 위반은 409 `DISCORD_USER_ALREADY_MAPPED`.

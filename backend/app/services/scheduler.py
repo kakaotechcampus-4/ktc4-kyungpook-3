@@ -27,6 +27,7 @@ from app.models import (
     DmStatus,
     Member,
     MessageSender,
+    MessageThread,
     Notification,
     PushSubscription,
     Reminder,
@@ -393,9 +394,13 @@ def open_watches(db: Session, now: datetime) -> None:
     sent = db.execute(
         select(Reminder, ReminderBundle.message_id)
         .join(ReminderBundle, ReminderBundle.bundle_id == Reminder.bundle_id)
+        .join(MessageThread, MessageThread.thread_id == ReminderBundle.thread_id)
+        .join(Member, Member.member_id == MessageThread.member_id)
         .outerjoin(ReminderWatch, ReminderWatch.reminder_id == Reminder.reminder_id)
         .where(
             Reminder.status == ReminderStatus.SENT,
+            # 받은 팀원을 지웠거나 탈퇴했으면 시계를 열지 않는다(#637). 열면 72시간 뒤 태스크가 막힘이 된다
+            Member.is_deleted.is_(False),
             Reminder.task_id.is_not(None),
             ReminderBundle.message_id.is_not(None),
             ReminderWatch.watch_id.is_(None),

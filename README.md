@@ -3,7 +3,7 @@
 
 <div align="center">
 
-<img src="./frontend/public/icons/app-192.png" width="80" alt="Manager's Manager 로고" />
+<img src="./docs/assets/readme-banner.png" width="100%" alt="Manager's Manager 소개 배너. 회의만 하면 할 일이 정리됩니다" />
 
 # Manager's Manager
 

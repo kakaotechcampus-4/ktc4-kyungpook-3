@@ -1,6 +1,6 @@
 # 메시지·알림 실시간
 
-리마인드 DM 확인(PM), 팀원과의 대화·웹 답장, 알림 종·브라우저 푸시, 진행 토스트를 "얼마나 빨리, 어떤 길로" 화면에 반영하는지의 설계다. 화면 정책은 D-174(메시지 정책), 갱신 방식은 [2026-11-06 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-06-message-sync-and-e2e.md)과 #558 [결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/558-message-websocket/result.md)에 있다.
+리마인드 DM 확인(PM), 팀원과의 대화·웹 답장, 알림 종·브라우저 푸시, 진행 토스트를 "얼마나 빨리, 어떤 길로" 화면에 반영하는지의 설계다. 화면 정책은 D-174(메시지 정책), 갱신 방식은 [2026-11-06 결정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/basis-for-decision/2026-11-06-message-sync-and-e2e.md)과 #558 [결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m8/work-items/558-message-websocket/result.md)에 있다.
 
 ## 문제
 
@@ -57,7 +57,8 @@ flowchart TD
 
 - 주소는 REST 와 같은 API 기준 주소에서 만든다. 라우터 위치를 쓰다 `ws://undefined` 가 된 이슈를 피했다.
 - 연결을 연 세션의 취소 신호를 넘겨, 로그아웃·계정 전환이면 화면이 떠 있어도 닫는다. 멈추면 그 소켓의 핸들러를 바로 떼어 늦게 온 이벤트가 닿지 않게 한다.
-- 끊긴 동안의 신호는 서버가 다시 보내지 않는다. 그래서 다시 열리면 무조건 한 번 다시 받는다. 받는 중인 조회는 끊고(`cancelQueries`) 다시 받는다. `cancelRefetch` 만 쓰면 데이터 없는 첫 조회가 안 끊겨 신호 전 응답이 무효 표시를 지우는 결함을 리뷰 두 곳이 찾았다.
+- 끊긴 동안의 신호는 서버가 다시 보내지 않는다. 연결이 열릴 때 진행 중인 조회는 완료를 기다린 뒤 다시 받는다. `thread_updated` 신호를 받으면 진행 중 조회를 `cancelQueries`로 끊고 다시 받는다. `cancelRefetch`만으로는 데이터 없는 첫 조회가 끊기지 않아 옛 응답이 무효 표시를 지우는 문제가 있었다.
+- `INVALID_RESPONSE` 상태의 조회는 자동 갱신에서 제외한다. 사용자가 재시도해 정상 응답을 받으면 자동 갱신을 재개한다.
 - 끊겨도 화면에 표시하지 않는다. ②·③ 과 탭 복귀 재조회가 폴백이다.
 
 ### 읽음
@@ -71,7 +72,7 @@ flowchart TD
 |---|---|---|
 | 푸시 워커 | 앱의 서비스 워커는 푸시 하나. 고정 주소 `/push/sw.js` 로 빌드해 MSW 워커(`/`)와 범위가 겹치지 않게 했다. 워커는 `window` 가 없어 순수 모듈만 가져온다 | [vite.config.ts](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/vite.config.ts), [`pushWorker.ts`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/src/features/browser-push/worker/pushWorker.ts) |
 | 권한 묻기 | 설정 알림 절, 그리고 팀원이 리마인드 대화를 열면 대화 머리 아래 띠. **버튼을 누를 때만** 권한을 묻는다. 닫으면 다시 보이지 않는다 | #411, [`pushPrompt.ts`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/src/features/browser-push/model/pushPrompt.ts) |
-| iOS | 홈 화면에 설치한 앱에서만 푸시가 된다. 그 상태면 띠가 설치 안내(`install`)로 바뀐다 | 같은 파일 |
+| iOS | 현재 구현은 iOS에서 standalone이 아니면 설치 안내(`install`)를 반환한다. 홈 화면에 설치한 상태에서 푸시 설정을 진행한다 | `useBrowserPush.ts` |
 | 푸시를 누르면 | 그 대화·태스크 주소로. 로그인이 풀렸으면 `?next=` 로 로그인 뒤 돌아온다. `next` 는 앱 안 보호 경로만 받는다(`//evil.com`, 여러 번 인코딩한 `//` 등은 버림) | #411, `returnPath.ts` |
 | 설치형 앱 | `manifest.webmanifest` 의 `display: standalone`, iOS 시작 이미지 29장, `index.html` 정적 마스코트 스플래시 | #430, #510 |
 

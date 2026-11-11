@@ -1,7 +1,7 @@
 # 프로젝트 맵 그래프의 라이브러리·배치·내비 위치
 
 - 기록일: 2026-11-09
-- 관련: #551(BE #560·#602). 마일스톤 계획 밖의 이슈 작업이다. 제품 결정은 [D-186](../../../decision/frontend-decisions.md), 결과는 [#551 결과](../../../issues/551-project-map/result.md)에 있다.
+- 관련: #551(BE #560·#602). 마일스톤 계획 밖의 이슈 작업이다. 제품 결정은 [D-186](../../../decision/frontend-decisions.md), 결과는 [#551 결과](../work-items/551-project-map/result.md)에 있다.
 
 ## 문제와 제약
 

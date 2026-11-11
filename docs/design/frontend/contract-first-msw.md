@@ -94,7 +94,7 @@ flowchart LR
 | CI | [frontend-ci.yml](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/.github/workflows/frontend-ci.yml) | typecheck → lint → format → test, build, e2e(재시도 1) | 세 파트 CI 가 같은 커밋에서 통과해야 배포 |
 
 - 주요 E2E: 회의 업로드·처리·실패(`meeting-flow`), 승인·충돌·키보드(`tasks-approval`), 메시지 승인·답장·토스트(`messages-*`), 대비(`color-contrast`), 레이아웃 폭(`layout`), 새로고침·OAuth 왕복 복원(`restore`).
-- 간헐 실패도 원인까지 본다. #593 에서 모의 DB 저장 시점(응답 뒤 알림 → `request:match`)과 동작 줄이기 CSS 가 만든 포커스 전환을 대조 실험으로 입증하고 고쳤다([결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/issues/593-e2e-stability/result.md)).
+- 간헐 실패도 원인까지 본다. #593 에서 모의 DB 저장 시점(응답 뒤 알림 → `request:match`)과 동작 줄이기 CSS 가 만든 포커스 전환을 대조 실험으로 입증하고 고쳤다([결과](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/frontend/docs/plan/m0/work-items/593-e2e-stability/result.md)).
 
 > 📷 **사진 자리**: `?msw-scenario=` 로 띄운 개발 서버와 Playwright HTML 리포트 한 장 (파일: ../../assets/design-frontend-msw-e2e.png)
 

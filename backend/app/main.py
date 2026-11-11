@@ -16,6 +16,7 @@ from app.services import scheduler, meeting_deletion
 from app.api import meeting_purges
 from app.api import health, users, withdrawal
 from app.core.errors import AppError, Envelope, ErrorCode, failure, success
+from app.core.upload_limit import UploadBodyLimitMiddleware
 from app.services import embedding, notion_sync, sessions, upload_sweeper
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,8 @@ app = FastAPI(
     description="회의 → 추출 → 매칭 → 게이트 파이프라인 백엔드",
     lifespan=lifespan,
 )
+# 녹음 업로드 본문은 인증·핸들러 전에 받으면서 크기를 잰다
+app.add_middleware(UploadBodyLimitMiddleware)
 
 API_PREFIX = "/api/v1"
 app.include_router(health.router, prefix=API_PREFIX)

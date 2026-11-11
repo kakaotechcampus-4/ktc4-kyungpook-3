@@ -19,7 +19,7 @@ DB는 PostgreSQL이다. 로컬에서는 Docker로 띄운다(Docker Desktop 필�
 
 ```bash
 uv venv --python 3.12 .venv
-uv pip install -r requirements-dev.txt   # requirements.txt(운영) + pytest, ruff
+uv pip install -r requirements.lock -r requirements-dev.txt   # 운영 잠금 버전 + pytest, ruff
 cp .env.example .env
 
 docker compose up -d db         # PostgreSQL(pgvector 포함) 기동, 데이터는 mm-pgdata 볼륨에 남는다
@@ -36,6 +36,21 @@ docker compose up -d db         # PostgreSQL(pgvector 포함) 기동, 데이터�
 - 테스트(`pytest`)는 기본 SQLite 변형과 `TEST_DATABASE_URL`이 있을 때의 PostgreSQL 변형을 구분한다. API 잠금·경합과 pgvector 검색의 PostgreSQL 검증에는 격리된 테스트 DB가 필요하다. DB가 없어서 건너뛴 검사를 통과로 세지 않는다. 설정은 `tests/api/conftest.py`와 `tests/services/test_embedding_search_pg.py`를 확인한다.
 - CI(`.github/workflows/backend-ci.yml`)는 ruff 린트, pytest, 빈 PostgreSQL에 `alembic upgrade head`·`alembic check`, 운영 이미지 빌드를 돌린다.
   로컬에서 린트는 `.venv/bin/python -m ruff check .`(설정 `ruff.toml`).
+
+### 의존성 잠금
+
+운영 이미지와 CI 는 `requirements.lock`(버전과 해시 고정)으로 설치한다. `requirements.txt` 는 직접 쓰는 패키지와 하한만 적는 입력이다. 둘 다 `backend/` 에서, CI 와 같은 uv 0.13.7 로 만든다.
+
+```bash
+# requirements.txt 를 고친 뒤. 이미 고정한 버전은 그대로 두고 바뀐 것만 다시 푼다
+uvx uv@0.13.7 pip compile requirements.txt --universal --python-version 3.12 --generate-hashes -o requirements.lock
+# 특정 패키지만 올릴 때
+uvx uv@0.13.7 pip compile requirements.txt --universal --python-version 3.12 --generate-hashes -o requirements.lock --upgrade-package fastapi
+# 전부 최신으로 올릴 때(CI 와 운영 이미지 빌드를 다시 확인한다)
+uvx uv@0.13.7 pip compile requirements.txt --universal --python-version 3.12 --generate-hashes -o requirements.lock --upgrade
+```
+
+`requirements.txt` 만 고치고 잠금 파일을 다시 만들지 않으면 CI lint 잡의 "잠금 파일 확인" 이 실패한다. `--universal` 은 서버(리눅스)에서만 쓰는 패키지가 맥에서 만들 때 빠지지 않게 한다.
 
 서버가 뜨면 `http://localhost:8000` 기준으로:
 
@@ -86,16 +101,19 @@ API 서버에 `EMBEDDING_API_KEY` 가 있어야 하고(없으면 임베딩이 �
 
 ```bash
 docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBER_PASSWORD api \
-  python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com'
+  python -m app.cli.seed_demo --base-url http://localhost:8000 --email-pattern '<팀메일>+demo-{n}@gmail.com' --today 2026-11-11
 ```
 
-로컬 리허설은 API 를 띄운 뒤 같은 명령을 `python -m app.cli.seed_demo --email-pattern 'demo+{n}@example.com'` 로 돌린다. `--dry-run` 은 DB 를 읽기만 해서 이미 있는 계정 수, 재사용할 공간과 그 공간의 활성 자리·회의 수, 재생할 회의 제목을 출력한다. 쓰지 않고 HTTP 도 부르지 않는다(`SERVICE_TOKEN` 은 필요 없지만 비밀번호 검사는 하므로 비밀번호 환경변수는 필요하다). 실제 실행이 멈출 상황이면 이유를 stderr 에 적고 종료 코드 2 로 끝난다. 비밀번호를 환경변수로 넘기지 않고 입력받으려면 터미널(TTY)이 필요하다(`docker compose exec` 는 기본으로 붙고, 원격에서 명령 한 줄로 돌릴 때는 `ssh -t`). 컨테이너에는 `SERVICE_TOKEN` 이 `env_file` 로 이미 들어 있다.
+`--today` 는 회의 날짜의 기준일(KST)이다. 가장 늦은 회의 시작(기준일 − 가장 작은 `days_ago`, 10:00 KST)이 지난 뒤에만 끝까지 돈다. 서버가 미래 `started_at` 을 400 으로 거절하기 때문이고, 그 전이면 쓰기 전에 종료 코드 2 로 멈춘다. 재실행은 같은 기준일로 해야 이어 간다. 기준일이 다르면 종료 코드 2 와 원래 기준일 안내가 나온다(옵션 없이 처음 돌린 시드도 같고, `--allow-existing` 으로 넘길 수 없다).
+
+로컬 리허설은 API 를 띄운 뒤 같은 명령을 `python -m app.cli.seed_demo --email-pattern 'demo+{n}@example.com'` 로 돌린다. `--dry-run` 은 DB 를 읽기만 해서 이미 있는 계정 수, 재사용할 공간과 그 공간의 활성 자리·회의 수, 기준일, 재생할 회의의 날짜와 제목을 출력한다. 쓰지 않고 HTTP 도 부르지 않는다(`SERVICE_TOKEN` 은 필요 없지만 비밀번호 검사는 하므로 비밀번호 환경변수는 필요하다). 실제 실행이 멈출 상황이면 이유를 stderr 에 적고 종료 코드 2 로 끝난다. 비밀번호를 환경변수로 넘기지 않고 입력받으려면 터미널(TTY)이 필요하다(`docker compose exec` 는 기본으로 붙고, 원격에서 명령 한 줄로 돌릴 때는 `ssh -t`). 컨테이너에는 `SERVICE_TOKEN` 이 `env_file` 로 이미 들어 있다.
 
 | 옵션·환경변수 | 뜻 |
 |---|---|
 | `--email-pattern` | 필수. `{n}` 이 1~6 으로 바뀐다. 1번이 PM, 2번이 팀원2 |
 | `--base-url` | API 호스트 루트(기본 `http://localhost:8000`). 경로 앞에 `/api/v1` 은 명령이 붙인다 |
 | `--workspace-name` | 공간 이름. 기본은 시드 데이터 값 |
+| `--today` | 회의 날짜의 기준일. `YYYY-MM-DD` 형식(KST)이고 기본은 실행일이다. 회의 시작은 기준일 − `days_ago` 의 10:00 KST, 항목 마감은 회의일 + `due_in_days` 다. `--dry-run` 에도 같은 검사를 한다 |
 | `--embed-timeout` | 회의마다 임베딩을 기다리는 초(기본 120) |
 | `--reset-passwords` | 이미 있는 계정의 비밀번호도 다시 정하고, 그 계정의 로그인 세션을 지운다 |
 | `--allow-existing` | 시드가 아닌 기존 데이터가 있어도 재사용한다. 없으면 이름이 시드 인물과 다른 기존 계정, 찾은 공간의 시드 인물이 아닌 자리, 시드가 만들지 않은 회의가 하나라도 있을 때 아무것도 쓰지 않고 종료 코드 2 로 멈춘다 |
@@ -108,7 +126,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 |---|---|
 | 0 | 성공 |
 | 1 | 시드 실패(데이터·API·PM 로그인·임베딩 대기 오류). 한 줄이 stderr 에 나온다. 다시 실행하면 기존 승인을 보존하며 원문·추출 단계부터 이어 간다. 기존 추출의 요약 복구 제한은 아래를 참고한다 |
-| 2 | 입력·환경 부족(비밀번호, 이메일 패턴, `SERVICE_TOKEN`, 옵션)이나 시드가 아닌 기존 데이터 재사용 거절(`--allow-existing` 참고). 아무것도 쓰지 않았다 |
+| 2 | 입력·환경 부족(비밀번호, 이메일 패턴, `SERVICE_TOKEN`, 옵션)이나 시드가 아닌 기존 데이터 재사용 거절(`--allow-existing` 참고), 기준일 검사 실패(회의 시작이 지금보다 늦음, 이미 있는 회의의 날짜가 이번 기준일과 다름). 아무것도 쓰지 않았다 |
 | 3 | 데이터는 다 썼지만 gate 분포에 auto·review·hold 중 0 건이 있다. JSON 은 그대로 나오고 stderr 에 경고가 나온다 |
 
 알아 둘 점:
@@ -118,7 +136,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 - 기존 추출은 사람이 보류·반려·수정한 것과 중단된 시드를 구분할 수 없어 자동 승인하지 않는다. 요약이 없더라도 고정 시드 요약을 다시 주입하지 않고, 승인 완료로 선언한 회의 제목을 `summaries_skipped`에 적는다. PM이 현재 승인 상태를 확인하고 정상 요약 워커로 처리하거나 새 공간에서 다시 시드한다. 기존 태스크와 저장된 요약은 덮어쓰지 않는다.
 - 운영 요약 워커(AI mm-worker, `MM_SUMMARY_LLM`)가 시드와 동시에 돌면 워커가 먼저 잡은 회의의 요약은 `summaries_skipped`에 들어가고, 그 임대 15분 동안 같은 공간의 뒤 회의들도 건너뛸 수 있다. 이 경우에도 재실행이 기존 추출의 고정 요약을 복구하지는 않는다.
 - 시드 항목의 `similar_count` 는 모두 0 이라 gate 분포는 유사 검색 결과로 바뀌지 않는다. 출력 JSON 의 `gates` 에서 auto 가 0 건이면 API 서버의 `AUTO_CREATE_ENABLED` 가 꺼져 있거나(auto 가 review 로 내려간다), 재생 중 임베딩이 아직 없는 task·승인 대기 카드가 남아 있던 경우(서버 로그의 `unsearched_task_exists`·`unsearched_pending_exists`)다.
-- 회의의 처리 완료 시각(`ended_at`)은 시드를 실행한 시각으로 남는다. 시작 시각만 며칠 전으로 합성한다.
+- 회의의 처리 완료 시각(`ended_at`)은 시드를 실행한 시각으로 남는다. 시작 시각만 며칠 전으로 합성하며, `--today` 와는 무관하다.
 - 팀원2 자리는 초대·수락 시연용으로 비워 둔다. PM 이 초대할 때는 팀원2 의 아이디(출력 JSON 의 `usernames.p2`)를 정확히 입력해 찾는다. 동의 기록은 넣지 않아 첫 로그인 때 동의 화면이 뜬다.
 - 다시 시드하려면 새 `--workspace-name` 과 새 이메일을 쓴다. 지우는 기능은 없다.
 
@@ -193,7 +211,7 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `PASSWORD_RESET_TOKEN_INVALID` | 400 | 비밀번호 재설정 링크를 쓸 수 없음(없는·무효화된·이미 쓴·만료된 토큰). `details.reason` 은 `invalid`·`used`·`expired` |
 | `MAIL_UNAVAILABLE` | 503 | 메일을 보낼 수 없음(SMTP 설정이 없음). 비밀번호 재설정 요청과 가입 코드 요청에서 나온다. 발송 실패는 응답에 드러나지 않는다 |
 | `DATABASE_UNAVAILABLE` | 503 | DB 에 연결할 수 없음. `GET /api/v1/health/ready` 에서만 나온다. 원인 예외 문구는 응답에 넣지 않는다 |
-| `SIGNUP_CODE_RATE_LIMITED` | 429 | 가입 코드를 너무 자주 요청함. `details.reason` 은 `cooldown`(60초 재발송 제한)·`hourly`(시간당 5회)·`global`(전체 시간당 20통), `details.retry_after` 는 기다릴 초 |
+| `SIGNUP_CODE_RATE_LIMITED` | 429 | 가입 코드를 너무 자주 요청함. `details.reason` 은 `cooldown`(60초 재발송 제한)·`hourly`(시간당 5회)·`ip`(공인 IP 시간당 10회, #691)·`global`(전체 시간당 20통), `details.retry_after` 는 기다릴 초 |
 | `SIGNUP_CODE_INVALID` | 400 | 가입 코드를 쓸 수 없음. `details.reason` 은 `wrong`(`details.attempts_left` 함께)·`expired`(만료, 요청한 적 없음, 이미 씀)·`too_many`(5회 초과) |
 | `SIGNUP_VERIFICATION_INVALID` | 400 | 가입에 이메일 증명이 없거나 쓸 수 없음. 코드 인증부터 다시 한다 |
 | `KAKAO_LINK_EXPIRED` | 400 | 카카오 대기 쿠키가 없거나 만료됨. 카카오 로그인부터 다시 한다 |
@@ -201,7 +219,10 @@ docker compose -f docker-compose.prod.yml exec -e DEMO_PM_PASSWORD -e DEMO_MEMBE
 | `USERNAME_TAKEN` | 409 | 가입이나 아이디 변경에서 다른 계정이 이미 쓰는 아이디. 대소문자만 다른 아이디도 같은 아이디다 |
 | `TOO_MANY_LOGIN_ATTEMPTS` | 429 | 같은 이메일 10회·같은 공인 IP 50회 실패가 15분 안에 쌓여 로그인이 막힘(맞는 비밀번호도 막음). `Retry-After` 헤더와 `details.retry_after_seconds` 는 같은 정수 초 |
 | `MESSAGE_RESULT_CONFLICT` | 409 | 이미 다른 결과가 보고됐거나 아직 가져가지 않은 메시지에 결과를 보고함. `details.message_id` |
+| `DISCORD_USER_NOT_IN_GUILD` | 409 | 팀원에 붙이려는 디스코드 계정이 워크스페이스에 연결한 Discord 서버에 없음(`details.discord_user_id`). 연결한 서버가 없으면 이 코드가 아니라 409 `INTEGRATION_NOT_CONNECTED`, 봇 토큰이 없거나 Discord 가 답하지 않으면 502 `DISCORD_API_FAILED` |
 | `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST` |
+| `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST`. `PATCH` 에 `move_discord_link: true` 를 같이 보내면 이 오류 대신 계정을 옮긴다([팀원 디스코드 연결 옮기기](#팀원-디스코드-연결-옮기기)) |
+| `MEMBER_NAME_DUPLICATED` | 409 | 팀원 추가나 이름 고치기에서 같은 워크스페이스의 활성 팀원과 이름이 같음(앞뒤 공백만 지우고 견줌). `details.display_name`·`member_id`(이미 그 이름을 쓰는 팀원) |
 | `UPLOAD_NOT_CLAIMED` | 409 | AI가 아직 가져가지(claim) 않은 업로드에 화자를 보고하려 함. `details.status`(그 시점의 회의 상태) |
 | `SPEAKERS_ALREADY_REPORTED` | 409 | 이미 화자 목록을 받은 업로드에 저장된 것과 다른 목록을 보고하려 함(같은 목록의 재전송은 200). `details.status` |
 | `MEETING_NOT_AWAITING_SPEAKERS` | 409 | 회의가 화자 지정 대기(`awaiting_speakers`) 상태가 아닌데 화자를 지정하려 함. `details.status` |
@@ -456,7 +477,7 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 | 찾기 | `resolve_assignee`가 `assignee_raw`에서 "님"·조사를 뗀 후보를 만들어 긴 것부터 찾는다("하은이가" → 하은이가, 하은이, 하은). 처음 걸린 후보에 팀원이 1명이면 매칭, 2명 이상이면 애매함, 아무 후보도 안 걸리면 못 찾음이다. 탈퇴한 팀원의 별칭은 보지 않는다. 한 글자 별칭으로 찾으면 담당자는 채우되 확인 필요로 둬서 auto 가 되지 않는다(조사를 떼면 "하은" → "하"처럼 한 글자 후보가 생겨, 팀에 없는 사람이 엉뚱한 팀원에게 자동 배정될 수 있다). 후보 규칙(`matching.name_candidates`)은 AI 평가 도구 `_name_candidates`(`ai/extract/eval_golden_set.py`)와 같은 규칙이다(#522 에서 AI 가 맞춤. 바꾸면 둘 다 바꾼다). 규칙은 세 가지다. 공백을 한 칸으로 줄이고 후보마다 앞뒤 공백을 지운다(띄어 쓴 님: "환 님이" → 환). 조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보다("하은이는" → 하은이는, 하은이, 하은). "님"처럼 "씨"·"분"도 떼고("민수 씨", "민수씨가" → 민수, "디자이너분이" → 디자이너, "분"은 #607 리뷰), 호칭을 뗀 뒤에도 "이"를 한 번 더 뗀다("하은이님이", "하은이 씨는" → 하은) |
 | 미매칭 목록 | `GET /members/unresolved-aliases`도 같은 후보 규칙으로 판정한다. 처음 걸린 후보의 별칭이 1개이고 확인된(`verified`) 것이면 해결로 보고 목록에서 뺀다. 한 글자 별칭은 PM 이 직접 등록한(`manual`·`learned`) 것만 해결로 본다. 이름에서 자동으로 만든 한 글자 별칭("김환" → "환")은 목록에 남는다. 담당자 찾기는 한 글자면 계속 확인 필요다 |
 | 팀원 이름 | 팀원을 만들 때(`POST /members`, 워크스페이스를 만들 때의 PM)와 이름을 바꿀 때 이름과 성 뗀 이름을 `source=display_name` 별칭으로 넣는다(확인됨, 확신도 1.0). 한글 2글자 이상만 넣고, 4글자는 앞 두 글자, 그 외는 첫 글자를 성으로 본다("김동우" → 김동우, 동우). 규칙은 AI 전사 힌트 `member_forms`(`ai/stt/backend.py`)와 같다. 이름을 바꾸면 옛 이름에서 만든 `display_name` 별칭만 지우고, PM이 넣은 별칭과 닉네임 별칭은 남긴다. `display_name` 은 서버만 쓰는 값이라 별칭 등록 API(`POST /members/{id}/aliases`)에 보내면 400 `INVALID_REQUEST` 다. 이 API 는 `alias_text` 의 공백을 후보와 같은 규칙으로 정리해 저장하고(한 칸으로 줄이고 앞뒤를 지움), 공백뿐이면 400 이다. 같은 글자의 자동 별칭이 이미 있으면 요청의 `source` 가 `manual`·`learned` 일 때만 그 행을 요청 값으로 올린다. 기존 팀원은 마이그레이션 `1032faab5855`가 채웠다 |
-| 디스코드 닉네임 | 팀원에 `discord_user_id`를 붙이면 팀원을 저장한 뒤 봇 토큰으로 Discord `GET /guilds/{guild_id}/members/{user_id}`를 부른다(제한 3초, 호출 동안 DB 트랜잭션을 열지 않는다). 서버 닉네임, 계정 표시 이름(`global_name`) 순서로 한글로만 된 첫 값을 `source=discord_profile` 별칭으로 넣는다(미확인, 확신도 0.8. 이 별칭으로 찾으면 담당자는 채워지지만 PM 검토로 간다). 토큰·연동이 없거나 호출이 실패해도 경고 로그만 남기고 응답은 그대로다. `discord_user_id`가 바뀌거나 풀리면 그 팀원의 `discord_profile` 별칭을 지우고 새 계정이면 다시 넣는다. 이미 연결돼 있던 팀원의 닉네임은 채우지 않았다 |
+| 디스코드 닉네임 | 팀원에 `discord_user_id`를 새로 붙이면 저장하기 전에 봇 토큰으로 Discord `GET /guilds/{guild_id}/members/{user_id}`를 불러 연결한 서버의 멤버인지 확인한다(제한 3초, 호출 동안 DB 트랜잭션을 열지 않는다). 연동이 없으면 409 `INTEGRATION_NOT_CONNECTED`, 서버에 없는 계정이면 409 `DISCORD_USER_NOT_IN_GUILD`, 토큰이 없거나 호출이 실패하면 502 `DISCORD_API_FAILED` 이고 팀원은 저장하지 않는다. 확인에서 받은 서버 닉네임, 계정 표시 이름(`global_name`) 순서로 한글로만 된 첫 값을 팀원 저장 뒤 `source=discord_profile` 별칭으로 넣는다(미확인, 확신도 0.8. 이 별칭으로 찾으면 담당자는 채워지지만 PM 검토로 간다). 별칭 저장이 실패해도 경고 로그만 남기고 응답은 그대로다. `discord_user_id`가 바뀌거나 풀리면 그 팀원의 `discord_profile` 별칭을 지우고 새 계정이면 다시 넣는다. 이미 연결돼 있던 팀원의 닉네임은 채우지 않았다 |
 | 겹칠 때 | 자동 별칭은 같은 팀원이 이미 같은 글자를 가졌거나, 탈퇴하지 않은 다른 팀원이 PM이 넣은(`manual`·`learned`) 같은 글자를 가졌으면 넣지 않는다. 자동 별칭끼리 겹치면(김민수·이민수 → "민수") 둘 다 넣어 애매함이 된다 |
 
 ## 승인 때 별칭 학습
@@ -532,7 +553,7 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 
 | 경로 | 요청 | 응답 |
 |---|---|---|
-| `POST /api/v1/auth/signup/code` | `{email}` | 200 `{expires_in: 600, resend_after: 60}`. 503 `MAIL_UNAVAILABLE`, 409 `EMAIL_ALREADY_EXISTS`, 429 `SIGNUP_CODE_RATE_LIMITED` |
+| `POST /api/v1/auth/signup/code` | `{email}` | 200 `{expires_in: 600, resend_after: 60}`. 503 `MAIL_UNAVAILABLE`, 409 `EMAIL_ALREADY_EXISTS`, 429 `SIGNUP_CODE_RATE_LIMITED`. 공인 IP 시간당 10회(#691), 재발송·시간당·전체 제한을 모두 본 뒤에 가입 여부를 판단한다 |
 | `POST /api/v1/auth/signup/code/confirm` | `{email, code}`(숫자 6자리) | 200 `{verification_token, expires_in: 1800}`. 400 `SIGNUP_CODE_INVALID` |
 | `POST /api/v1/auth/signup` | 이메일 가입 `{verification_token, password, name, username}`, 카카오 가입 `{link_kakao: true, name, username}` | 201 사용자 정보와 세션 쿠키, 대기 쿠키 삭제. 본문의 이메일은 읽지 않는다. 카카오 가입에 `password`·`verification_token` 이 오면 400 `INVALID_REQUEST` |
 | `GET /api/v1/auth/username-availability?username=` | 로그인 없음 | 200 `{available, reason}`. `reason` 은 `taken`·`invalid`·null. 규칙 밖 값도 400 이 아니라 `invalid` 다. 내 아이디도 `taken` 이다 |
@@ -592,6 +613,7 @@ SMTP 설정이 없으면 코드 요청이 503 이라 이메일로는 가입할 �
 - 전체·IP 상한(#550): 아래에 걸려도 응답은 같은 200 `{}` 이고 토큰·메일을 만들지 않으며 이전 링크는 살아 있다. 막힌 이유는 서버 로그(`password reset request blocked: reason=ip|global`)로만 남기고 이메일은 남기지 않는다.
   - 같은 공인 IP(IPv6 는 /64): 1시간에 5번. 가입 여부와 상관없이 모든 요청을 세고, 막힌 요청은 세지 않는다. 메일 설정 503 검사 뒤, 첫 DB 조회 전에 메모리에서 막는다. IP 판단은 [로그인 제한](#로그인-제한)과 같다(사설 주소·해석할 수 없는 값은 건너뜀). 원본은 `app/services/password_reset_limit.py`. 서버를 재시작하면 풀리고 단일 프로세스 전제다.
   - 전체: 지난 1시간에 발급한 재설정 토큰(쓰거나 무효가 된 것 포함)이 10개면 새로 발급하지 않는다. IP 상한(5)보다 크게 두어 공인 IP 하나로는 다 쓰지 못한다. 사용자 조회 전에 DB 에서 세므로 재시작해도 풀리지 않는다. 동시 요청이 몰리면 몇 통 넘을 수 있다.
+  - 로그인이 잠긴 이메일(#691): 전체 상한을 보지 않는다. 남이 전체 상한을 채우고 내 이메일로 로그인을 잠가도 재설정 메일은 받는다. 계정마다·IP 제한은 그대로다. 근거는 [결정 기록](docs/plan/m1/basis-for-decision/2026-11-11-auth-abuse-hardening-decision.md).
 - 발송: 응답 뒤 백그라운드에서 보내고, 실패하면 2·4·8초 뒤 3번 더 보낸다. 그래도 실패하면 로그만 남긴다(사용자는 다시 요청한다). 서버가 재시작되면 보내던 메일은 사라진다.
 - 비밀번호 규칙: 8자 이상, 숫자(0-9) 하나 이상. 회원가입(`POST /api/v1/auth/signup`)에도 같이 적용되고 어기면 400 `INVALID_REQUEST`.
 
@@ -614,6 +636,14 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 
 `POST /api/v1/members` 와 `PATCH /api/v1/members/{member_id}` 의 `display_name` 은 [가입 이름 규칙](#가입-이름-규칙)과 같은 규칙을 따른다. 앞뒤 공백을 지운 값으로 저장하고, 규칙을 어기면 400 `INVALID_REQUEST` 이며 `details.fields[].loc` 에 `display_name` 이 들어간다. PATCH 에서 `display_name` 을 빼면 이름을 바꾸지 않고, `null` 을 보내면 400 이다. 이미 저장된 표시명은 검사하지 않는다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-08-member-display-name-rule.md), 규칙 원본은 `app/schemas/name.py` 의 `validate_name`(`NameStr`).
 
+같은 워크스페이스의 활성 팀원(삭제·탈퇴 제외)과 이름이 같으면 409 `MEMBER_NAME_DUPLICATED` 다. 앞뒤 공백만 지우고 견주며 대소문자는 그대로 본다(FE `memberNameKey` 와 같다). 공백은 JS `trim` 과 같은 글자(BOM·전각 공백·NBSP 포함)를 지운다. `PATCH` 는 이름이 바뀔 때만 보므로 자기 이름을 그대로 보내거나 다른 칸만 고치면 통과한다. 이미 저장된 중복은 그대로 둔다. 같은 워크스페이스의 쓰기는 워크스페이스 행 잠금으로 차례로 처리돼, 같은 이름을 동시에 보내면 두 번째가 409 다. DB 제약은 없어서 이 잠금을 거치지 않는 쓰기 경로가 생기면 막지 못한다. 원본은 `app/api/members.py` 의 `_ensure_name_free`(#652).
+
+## 팀원 디스코드 연결 옮기기
+
+`PATCH /api/v1/members/{member_id}` 에 `{discord_user_id, move_discord_link: true}` 를 보내면 그 계정을 가진 같은 워크스페이스의 다른 활성 팀원의 연결을 풀고 이 팀원에 잇는다(#652). 한 트랜잭션이고, 두 팀원 행을 `member_id` 순서로 잠근다. 앞 팀원의 이름은 그대로이고 `discord_profile` 별칭은 연결 해제 때처럼 지운다. 플래그가 없거나 `false` 면 409 `DISCORD_USER_ALREADY_MAPPED` 다. 응답은 이 팀원의 `MemberResponse` 다.
+
+팀원에 계정을 이으면(`POST` 의 `discord_user_id`, `PATCH` 의 새 계정, 옮기기) 같은 트랜잭션에서 이 워크스페이스 회의의 `source` 중 `speaker_discord_user_id` 가 그 계정인 행의 `member_id` 를 이 팀원으로 바꾼다. 연결이 없던 발화와 삭제한 팀원에 붙어 있던 발화도 포함한다. 연결을 풀기만 하면 발화는 그대로다. 계정 탈퇴는 그 팀원 발화의 화자 계정을 지우므로 다시 붙지 않는다. 이미 저장된 요약 문서와 승인 카드 payload 의 `evidence_speaker_member_id` 는 바꾸지 않는다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-10-discord-link-move-decision.md).
+
 ## 권한
 
 로그인한 사용자가 요청한 워크스페이스의 팀원인지(소속) 확인하고, 아래 쓰기 API는 PM인지까지 확인한다. 아니면 403 `FORBIDDEN`.
@@ -621,12 +651,13 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 재설정 메일은 전체
 
 | 구분 | API |
 |---|---|
-| PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, auto 되돌리기(`POST /extractions/{id}/items/{item_id}/revert`), Notion 재시도, 팀원 생성·수정, 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), Discord 연결 시작·콜백(`GET .../integrations/discord/start`, `GET /integrations/discord/callback`), Discord 채널 목록·채팅 수집 채널 저장·해제(`GET .../discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel`), 연동 해제, 회의 업로드, 온보딩 저장, 메시지 설정 변경(`PATCH /workspaces/{workspace_id}/message-settings`) |
+| PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, auto 되돌리기(`POST /extractions/{id}/items/{item_id}/revert`), Notion 재시도, 팀원 생성·수정·삭제(`DELETE /members/{id}`), 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), Discord 연결 시작·콜백(`GET .../integrations/discord/start`, `GET /integrations/discord/callback`), Discord 채널 목록·채팅 수집 채널 저장·해제(`GET .../discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel`), 연동 해제, 회의 업로드, 온보딩 저장, 메시지 설정 변경(`PATCH /workspaces/{workspace_id}/message-settings`) |
 | 소속이면 누구나 | 조회 API 전부(메시지 설정 조회 `GET .../message-settings` 포함), 승인 요청 생성(`POST /approvals`) |
 
 - Notion 연결 시작·콜백은 브라우저 페이지 이동이라 403 대신 앱 화면의 `?oauth=notion&oauth_result=failed`로 돌려보낸다.
 - 일반 팀원은 할일을 직접 바꾸지 못하고 승인 요청을 올려 PM의 승인을 받는다. 요청자(`requested_by`)는 바디 값이 아니라 로그인한 팀원으로 기록한다.
 - PM 역할은 `PATCH /members/{id}`의 `role`로 바꾼다. PM을 넘길 때는 다른 팀원을 먼저 PM으로 올린 뒤 자기를 내린다. 로그인 계정이 있는 PM이 한 명도 남지 않게 되면 409 `LAST_PM_REQUIRED`.
+- 팀원 삭제(`DELETE /members/{id}`, 204)는 행을 남기고 `is_deleted` 만 켠다. 이름·디스코드 계정·로그인 연결은 이력용으로 남는다. 마지막 PM 이 자기를 지우면 409 `LAST_PM_REQUIRED`, 없거나 탈퇴했거나 이미 지운 팀원은 404 `MEMBER_NOT_FOUND`. 끝나지 않은 태스크의 담당을 태스크 이력으로 비우고, 대기 초대와 예약 재촉·안 나간 DM 을 닫는다. 근거는 [결정 기록](docs/plan/m1/basis-for-decision/2026-11-10-member-delete-decision.md).
 - 봇 경로(회의 생성·종료·단계 보고·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회, 채팅 수집 대상 목록 `GET /bot/chat-channels`)는 사용자 세션 대신 서비스 토큰(`X-Service-Token`, `deps.require_service_token`)으로 막는다. 없거나 틀리면 401 `UNAUTHENTICATED`. 자세한 내용은 [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md#인증).
 
 ## 아직 없는 것
