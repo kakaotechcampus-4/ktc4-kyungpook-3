@@ -58,6 +58,6 @@
 
 ---
 
-더 자세한 내용은 사용자 가이드를 봐요.
+더 자세한 내용은 사용자 가이드를 봐요. 심사·체험용 테스트 계정과 샘플 회의는 [시작하기](getting-started.md#테스트-계정으로-바로-써-보기)에 정리해요.
 
 <!-- 근거: 아이디 초대 #631·#632(InviteDialog.tsx, MyInvitations.tsx), 슬래시 명령 ai/capture/discord_adapter.py, DM 답장은 웹에서만 ai/capture/dm.py:1-15, 온보딩 뒤 첫 화면 entities/workspace/lib/entryPath.ts. DM 차단 시 처리: 봇이 discord.Forbidden 을 dm_blocked 실패로 보고하고(ai/capture/dm.py:292-293) 웹 메시지 화면에 "서버 DM이 막혀 있어요"로 보인다(frontend/src/widgets/message-inbox/lib/format.ts:62). Discord 도움말 링크 내용은 [확인 필요] -->

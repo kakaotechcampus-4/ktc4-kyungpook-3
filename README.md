@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/9d2d7842-b822-4dd7-88dd-68f9444b1ba9
 회의에서 정한 할 일과 일정 변경을 **근거와 함께** 찾아, 확실한 것은 바로 태스크로 만들고 애매한 것만 PM에게 묻습니다. 카카오테크 캠퍼스 4기 경북대 3팀 프로젝트입니다.
 
 > [!TIP]
-> 바로 써 보려면 **[managers-manager.duckdns.org](https://managers-manager.duckdns.org)** 에 접속하고 [처음 쓰는 분을 위한 안내](./docs/user/quick-guide.md)를 따라 하세요. 심사·체험용 테스트 계정과 샘플 회의는 준비 중입니다(#606).
+> 바로 써 보려면 **[managers-manager.duckdns.org](https://managers-manager.duckdns.org)** 에 접속하고 [처음 쓰는 분을 위한 안내](./docs/user/quick-guide.md)를 따라 하세요. 심사·체험용 테스트 계정과 샘플 회의는 준비 중입니다(#606). 운영 서비스에 넣을 계정 구성과 샘플 회의 목록은 [사용자 가이드](./docs/user/getting-started.md#테스트-계정으로-바로-써-보기)에, 로컬에서 같은 데이터를 만드는 방법은 아래 [심사용 샘플 데이터](#심사용-샘플-데이터)에 있습니다.
 
 <!-- 대표 화면 GIF 자리: docs/assets/readme-hero.gif (#654) -->
 
@@ -162,6 +162,25 @@ python -m capture.worker           # 처리 워커: 전사·판단 후 BE 로 �
 > Discord 음성 수신은 DAVE(E2EE)가 필수라 PyPI 의 py-cord 로는 녹음되지 않습니다. `ai/requirements.txt` 의 브랜치 버전을 그대로 씁니다.
 
 </details>
+
+### 심사용 샘플 데이터
+
+로컬에서 Backend 를 띄운 뒤 시드 명령으로 계정 6개(PM 1 + 팀원 5), 워크스페이스 "심사용 데모 팀", 지난 회의 6개(승인 완료 5개 + 승인 대기 1개)를 넣습니다(#606).
+
+```bash
+cd backend
+source .venv/bin/activate
+set -a; . <(tr -d '\r' < .env); set +a   # run.sh 처럼 .env 를 올린다(SERVICE_TOKEN, DATABASE_URL)
+read -rs DEMO_PM_PASSWORD && export DEMO_PM_PASSWORD           # PM 계정 비밀번호를 직접 정한다
+read -rs DEMO_MEMBER_PASSWORD && export DEMO_MEMBER_PASSWORD   # 팀원2 계정 비밀번호를 직접 정한다
+python -m app.cli.seed_demo --email-pattern 'demo+{n}@example.com' --dry-run   # 쓰지 않고 만들 내용만 본다
+python -m app.cli.seed_demo --email-pattern 'demo+{n}@example.com'
+```
+
+- 이메일은 패턴의 `{n}` 이 1~6 으로 바뀝니다. 1번이 PM, 2번이 팀원2 입니다. 비밀번호는 저장소에 없고 실행할 때 정합니다.
+- 로그인할 수 있는 계정은 PM 과 팀원2 입니다. 3~6번 계정은 팀원 자리에 연결만 되고 비밀번호는 무작위로 만들어집니다.
+- 팀원2 자리는 초대·수락을 직접 해 볼 수 있게 비워 둡니다. PM 이 팀원2 의 아이디(출력 JSON 의 `usernames.p2`)로 초대합니다.
+- API 서버에 `EMBEDDING_API_KEY` 가 있어야 하고 `AUTO_CREATE_ENABLED` 가 켜져 있어야 합니다. 옵션과 종료 코드, 운영 서버에서 돌리는 방법은 [backend README 의 심사용 시드](./backend/README.md#심사용-시드)에 있습니다.
 
 환경 변수, 테스트, CI/CD와 배포는 [개발자 가이드](./docs/dev/local-setup.md)와 [배포 안내](./deploy/README.md)에 있습니다.
 
