@@ -1,0 +1,55 @@
+# 부하테스트용 로컬 스택(#688). 운영 이미지(backend/Dockerfile, uvicorn --workers 1)를 그대로 띄운다.
+# 개발 DB(backend/docker-compose.yml)와 볼륨을 나눠, 다 친 뒤 `down -v` 로 테스트 데이터가 모두 지워진다.
+# api 에 운영 서버(t3.medium)와 같은 vCPU 2개 상한을 둔다. 메모리 상한은 두지 않고 샘플러로 잰다.
+name: mm-loadtest
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: mm
+      POSTGRES_PASSWORD: mm
+      POSTGRES_DB: mm
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mm -d mm"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # 임베딩 API 대신 0원으로 같은 모양의 벡터를 준다. 유사 task 검색의 BE 쪽 비용만 재기 위해서다
+  embedding:
+    image: python:3.12-slim
+    command: ["python", "/stub/embedding_stub.py"]
+    volumes:
+      - ./embedding_stub.py:/stub/embedding_stub.py:ro
+
+  api:
+    build: ../backend
+    image: mm-backend-loadtest
+    cpus: 2
+    environment:
+      DATABASE_URL: postgresql+psycopg://mm:mm@db:5432/mm
+      SERVICE_TOKEN: ${LT_SERVICE_TOKEN:?run.sh 가 만든다}
+      OAUTH_STATE_SECRET: loadtest-only
+      EMBEDDING_API_KEY: stub
+      EMBEDDING_BASE_URL: http://embedding:8100
+      EMBEDDING_SYNC_INTERVAL_SECONDS: "2"
+      FORWARDED_ALLOW_IPS: "*"
+    ports:
+      - "127.0.0.1:${LT_API_PORT:-18000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      embedding:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 3s
+      timeout: 5s
+      start_period: 20s
+      retries: 20
+
+volumes:
+  pgdata:
