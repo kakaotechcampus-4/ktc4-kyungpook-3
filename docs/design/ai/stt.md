@@ -116,6 +116,6 @@ CER 은 공백·문장부호를 지운 글자열의 편집 거리 / 정답 글�
 | 2026-11-03 | 짧은 묶음 앞 줄 프롬프트 (실제 회의 3개) | CER 4.78 → 4.67% | [short-chunk-context](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/stt/eval/results/2026-11-03-short-chunk-context/README.md) |
 | 2026-11-04 | GPU(T4) large-v3 | CER Elice 와 같음, 62.42분 회의 159.8초, 콜드 스타트 22.1분 → 5.0분 | [gpu-serving](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/stt/eval/results/2026-11-04-gpu-serving/README.md) |
 | 2026-11-05/06 | 운영 서버에서 GPU 호출 | 꺼 둔 서버 켜서 첫 응답 약 160초, 전사 포함 약 5.4분 | [gpu-fallback-prod](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/stt/eval/results/2026-11-05-gpu-fallback-prod/README.md) |
-| 2026-11-08 | 자동 전환(가짜 서버·가짜 시계) | 상태 전이 확인. 리뷰 결함 14건 재현 후 수정. 실제 Lambda·GPU 로는 아직 | [gpu-stt-auto-failover](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-08-gpu-stt-auto-failover.md) |
+| 2026-11-08 | 자동 전환(가짜 서버·가짜 시계) | 상태 전이 확인. 리뷰 결함 14건 재현 후 수정. | [gpu-stt-auto-failover](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/docs/basis_for_decision/ai/2026-11-08-gpu-stt-auto-failover.md) |
 
 상수(VAD 침묵, 묶음 길이 등)는 기본값 주변을 흔들어 "평탄·경사·절벽"을 보는 민감도 측정으로 정했다([`stt/eval/README.md`](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/stt/eval/README.md), [2026-09-26-units](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/blob/develop/ai/stt/eval/results/2026-09-26-units/README.md)).
